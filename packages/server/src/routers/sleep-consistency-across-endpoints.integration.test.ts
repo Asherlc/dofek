@@ -7,8 +7,11 @@ import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
 import {
   createClickHouseTestActivitySensorStore,
-  seedClickHouseMetricStreamRows,
+  getClickHouseTestClient,
+  insertClickHouseMetricStreamRows,
+  rebuildClickHouseSensorAnalytics,
 } from "./clickhouse-integration-test-helpers.ts";
+import { seedClickHouseSensorServingRows } from "./clickhouse-sensor-serving-test-helpers.ts";
 
 /**
  * Integration test: sleep data consistency across all dashboard endpoints.
@@ -144,7 +147,7 @@ describe("sleep data consistency across endpoints", () => {
 
     const sensorStore = await createClickHouseTestActivitySensorStore(testCtx);
     const loadStartedAt = new Date(loadActivity.started_at);
-    await seedClickHouseMetricStreamRows(testCtx, [
+    const sensorFixtureRows1 = await insertClickHouseMetricStreamRows(testCtx, [
       {
         activityId: loadActivity.id,
         userId: TEST_USER_ID,
@@ -164,6 +167,27 @@ describe("sleep data consistency across endpoints", () => {
         scalar: 140,
       },
     ]);
+    await seedClickHouseSensorServingRows(getClickHouseTestClient(testCtx), {
+      scalarSamples: [],
+      winners: sensorFixtureRows1.flatMap((row) =>
+        row.scalar == null
+          ? []
+          : [
+              {
+                ...row,
+                scalar: row.scalar,
+                memberActivityId: row.activityId ?? null,
+                sourceActivityId: row.activityId ?? null,
+                sourceMetricStreamId: row.id,
+                measurementKind: "unknown" as const,
+                providerPriority: 100,
+                refreshVersion: 1,
+                isDeleted: false,
+              },
+            ],
+      ),
+    });
+    await rebuildClickHouseSensorAnalytics(testCtx);
     const app = createApp(testCtx.db, sensorStore);
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {

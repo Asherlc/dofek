@@ -1,4 +1,5 @@
 import { buildActivitySensorSummaryRowsTableSql } from "../../../../src/db/clickhouse-activity-sensor-summary.ts";
+import { buildIncrementalDedupedSensorBaseTableStatements } from "../../../../src/db/clickhouse-deduped-sensor.ts";
 
 export interface IsolatedClickHouseDatabases {
   analytics: string;
@@ -74,6 +75,13 @@ export const analyticsBuildOrder = [
 ] as const;
 
 export function buildTestAnalyticsTableStatement(viewName: string): string {
+  if (viewName.endsWith(".deduped_sensor")) {
+    const statement = buildIncrementalDedupedSensorBaseTableStatements().find((sql) =>
+      sql.startsWith("CREATE TABLE IF NOT EXISTS analytics.deduped_sensor "),
+    );
+    if (!statement) throw new Error("Missing canonical deduped sensor schema");
+    return statement.replace("analytics.deduped_sensor", viewName);
+  }
   const columnDefinitionsByViewName: Record<string, string> = {
     v_activity: `id UUID,
 provider_id String,
@@ -314,23 +322,6 @@ nutrition_daily UInt64,
 clinical_records UInt64,
 is_deleted UInt8,
 refresh_version UInt64,
-refreshed_at DateTime64(9)`,
-    deduped_sensor: `user_id UUID,
-recorded_at DateTime64(6, 'UTC'),
-recorded_date Date,
-channel String,
-scalar Nullable(Float32),
-provider_id Nullable(String),
-member_activity_id Nullable(UUID),
-device_id Nullable(String),
-source_external_id Nullable(String),
-source_type Nullable(String),
-measurement_kind String,
-source_metric_stream_id Nullable(UUID),
-source_activity_id Nullable(UUID),
-provider_priority UInt16,
-refresh_version UInt64,
-is_deleted UInt8,
 refreshed_at DateTime64(9)`,
     deduped_location: `activity_id UUID,
 user_id UUID,

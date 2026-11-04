@@ -14,6 +14,7 @@ import {
   syncClickHouseTestActivityPowerCurveStore,
   syncClickHouseTestActivitySensorStore,
 } from "./clickhouse-integration-test-helpers.ts";
+import { seedClickHouseSensorServingRows } from "./clickhouse-sensor-serving-test-helpers.ts";
 
 const testUserId = "00000000-0000-0000-0000-000000000001";
 const testRunStartedAtMs = Date.now();
@@ -110,7 +111,7 @@ function powerSampleRows(
     deviceId?: string;
     measurementKind?: "direct" | "estimated" | "unknown";
   } = {},
-): ClickHouseMetricStreamSeedRow[] {
+): (ClickHouseMetricStreamSeedRow & { measurementKind: "direct" | "estimated" | "unknown" })[] {
   const startedAtMs = Date.parse(startedAt);
 
   return samples.map((sample) => ({
@@ -122,6 +123,7 @@ function powerSampleRows(
     sourceType: "api",
     channel: "power",
     scalar: sample.power,
+    measurementKind: options.measurementKind ?? "direct",
     metadata: JSON.stringify({ measurement_kind: options.measurementKind ?? "direct" }),
   }));
 }
@@ -242,7 +244,7 @@ describe("activity_power_curve read model", () => {
       planActivityStartedAt,
       testTimestamp(21_600),
     );
-    await insertClickHouseMetricStreamRows(
+    const sensorFixtureRows1 = await insertClickHouseMetricStreamRows(
       testContext,
       powerSampleRows(
         planActivityId,
@@ -250,6 +252,26 @@ describe("activity_power_curve read model", () => {
         Array.from({ length: 3601 }, (_, offsetSeconds) => ({ offsetSeconds, power: 200 })),
       ),
     );
+    await seedClickHouseSensorServingRows(getClickHouseTestClient(testContext), {
+      scalarSamples: [],
+      winners: sensorFixtureRows1.flatMap((row) =>
+        row.scalar == null
+          ? []
+          : [
+              {
+                ...row,
+                scalar: row.scalar,
+                memberActivityId: row.activityId ?? null,
+                sourceActivityId: row.activityId ?? null,
+                sourceMetricStreamId: row.id,
+                measurementKind: row.measurementKind,
+                providerPriority: 100,
+                refreshVersion: 1,
+                isDeleted: false,
+              },
+            ],
+      ),
+    });
     await syncClickHouseTestActivityPowerCurveStore(testContext);
     const client = getClickHouseTestClient(testContext);
     const result = await client.query({
@@ -281,7 +303,7 @@ describe("activity_power_curve read model", () => {
       gappedActivityStartedAt,
       testTimestamp(3630),
     );
-    await insertClickHouseMetricStreamRows(testContext, [
+    const sensorFixtureRows2 = await insertClickHouseMetricStreamRows(testContext, [
       ...powerSampleRows(regularActivityId, regularActivityStartedAt, [
         { offsetSeconds: 0, power: 200 },
         { offsetSeconds: 1, power: 200 },
@@ -299,6 +321,26 @@ describe("activity_power_curve read model", () => {
         { offsetSeconds: 22, power: 500 },
       ]),
     ]);
+    await seedClickHouseSensorServingRows(getClickHouseTestClient(testContext), {
+      scalarSamples: [],
+      winners: sensorFixtureRows2.flatMap((row) =>
+        row.scalar == null
+          ? []
+          : [
+              {
+                ...row,
+                scalar: row.scalar,
+                memberActivityId: row.activityId ?? null,
+                sourceActivityId: row.activityId ?? null,
+                sourceMetricStreamId: row.id,
+                measurementKind: row.measurementKind,
+                providerPriority: 100,
+                refreshVersion: 1,
+                isDeleted: false,
+              },
+            ],
+      ),
+    });
     await syncClickHouseTestActivityPowerCurveStore(testContext);
 
     const rows = await sensorStore.query(
@@ -336,7 +378,7 @@ describe("activity_power_curve read model", () => {
       varyingPowerStartedAt,
       testTimestamp(7206),
     );
-    await insertClickHouseMetricStreamRows(testContext, [
+    const sensorFixtureRows3 = await insertClickHouseMetricStreamRows(testContext, [
       ...powerSampleRows(varyingActivityId, varyingPowerStartedAt, [
         { offsetSeconds: 0, power: 100 },
         { offsetSeconds: 1, power: 200 },
@@ -346,6 +388,26 @@ describe("activity_power_curve read model", () => {
         { offsetSeconds: 5, power: 300 },
       ]),
     ]);
+    await seedClickHouseSensorServingRows(getClickHouseTestClient(testContext), {
+      scalarSamples: [],
+      winners: sensorFixtureRows3.flatMap((row) =>
+        row.scalar == null
+          ? []
+          : [
+              {
+                ...row,
+                scalar: row.scalar,
+                memberActivityId: row.activityId ?? null,
+                sourceActivityId: row.activityId ?? null,
+                sourceMetricStreamId: row.id,
+                measurementKind: row.measurementKind,
+                providerPriority: 100,
+                refreshVersion: 1,
+                isDeleted: false,
+              },
+            ],
+      ),
+    });
     await syncClickHouseTestActivityPowerCurveStore(testContext);
 
     const rows = await sensorStore.query(
@@ -383,7 +445,7 @@ describe("activity_power_curve read model", () => {
       duplicateVersionActivityStartedAt,
       testTimestamp(25_206),
     );
-    await insertClickHouseMetricStreamRows(
+    const sensorFixtureRows4 = await insertClickHouseMetricStreamRows(
       testContext,
       powerSampleRows(
         duplicateVersionActivityId,
@@ -391,6 +453,26 @@ describe("activity_power_curve read model", () => {
         Array.from({ length: 6 }, (_, offsetSeconds) => ({ offsetSeconds, power: 100 })),
       ),
     );
+    await seedClickHouseSensorServingRows(getClickHouseTestClient(testContext), {
+      scalarSamples: [],
+      winners: sensorFixtureRows4.flatMap((row) =>
+        row.scalar == null
+          ? []
+          : [
+              {
+                ...row,
+                scalar: row.scalar,
+                memberActivityId: row.activityId ?? null,
+                sourceActivityId: row.activityId ?? null,
+                sourceMetricStreamId: row.id,
+                measurementKind: row.measurementKind,
+                providerPriority: 100,
+                refreshVersion: 1,
+                isDeleted: false,
+              },
+            ],
+      ),
+    });
     await syncClickHouseTestActivityPowerCurveStore(testContext);
     const client = getClickHouseTestClient(testContext);
     await client.command({
@@ -450,7 +532,7 @@ describe("activity_power_curve read model", () => {
       starvationActivityStartedAt,
       testTimestamp(28_806),
     );
-    await insertClickHouseMetricStreamRows(
+    const sensorFixtureRows5 = await insertClickHouseMetricStreamRows(
       testContext,
       powerSampleRows(
         starvationActivityId,
@@ -458,6 +540,26 @@ describe("activity_power_curve read model", () => {
         Array.from({ length: 6 }, (_, offsetSeconds) => ({ offsetSeconds, power: 250 })),
       ),
     );
+    await seedClickHouseSensorServingRows(getClickHouseTestClient(testContext), {
+      scalarSamples: [],
+      winners: sensorFixtureRows5.flatMap((row) =>
+        row.scalar == null
+          ? []
+          : [
+              {
+                ...row,
+                scalar: row.scalar,
+                memberActivityId: row.activityId ?? null,
+                sourceActivityId: row.activityId ?? null,
+                sourceMetricStreamId: row.id,
+                measurementKind: row.measurementKind,
+                providerPriority: 100,
+                refreshVersion: 1,
+                isDeleted: false,
+              },
+            ],
+      ),
+    });
     await syncClickHouseTestActivityPowerCurveStore(testContext);
     await client.command({
       query: `CREATE TABLE ${targetTable} (
@@ -570,7 +672,7 @@ describe("activity_power_curve read model", () => {
       finalGapActivityStartedAt,
       testTimestamp(10_820),
     );
-    await insertClickHouseMetricStreamRows(testContext, [
+    const sensorFixtureRows6 = await insertClickHouseMetricStreamRows(testContext, [
       ...powerSampleRows(finalGapActivityId, finalGapActivityStartedAt, [
         { offsetSeconds: 0, power: 200 },
         { offsetSeconds: 1, power: 200 },
@@ -578,6 +680,26 @@ describe("activity_power_curve read model", () => {
         { offsetSeconds: 15, power: 200 },
       ]),
     ]);
+    await seedClickHouseSensorServingRows(getClickHouseTestClient(testContext), {
+      scalarSamples: [],
+      winners: sensorFixtureRows6.flatMap((row) =>
+        row.scalar == null
+          ? []
+          : [
+              {
+                ...row,
+                scalar: row.scalar,
+                memberActivityId: row.activityId ?? null,
+                sourceActivityId: row.activityId ?? null,
+                sourceMetricStreamId: row.id,
+                measurementKind: row.measurementKind,
+                providerPriority: 100,
+                refreshVersion: 1,
+                isDeleted: false,
+              },
+            ],
+      ),
+    });
     await syncClickHouseTestActivityPowerCurveStore(testContext);
 
     const rows = await sensorStore.query(
@@ -607,7 +729,7 @@ describe("activity_power_curve read model", () => {
       unalignedActivityStartedAt,
       testTimestamp(14_410),
     );
-    await insertClickHouseMetricStreamRows(testContext, [
+    const sensorFixtureRows7 = await insertClickHouseMetricStreamRows(testContext, [
       ...powerSampleRows(unalignedActivityId, unalignedActivityStartedAt, [
         { offsetSeconds: 0, power: 200 },
         { offsetSeconds: 1, power: 200 },
@@ -617,6 +739,26 @@ describe("activity_power_curve read model", () => {
         { offsetSeconds: 5.1, power: 200 },
       ]),
     ]);
+    await seedClickHouseSensorServingRows(getClickHouseTestClient(testContext), {
+      scalarSamples: [],
+      winners: sensorFixtureRows7.flatMap((row) =>
+        row.scalar == null
+          ? []
+          : [
+              {
+                ...row,
+                scalar: row.scalar,
+                memberActivityId: row.activityId ?? null,
+                sourceActivityId: row.activityId ?? null,
+                sourceMetricStreamId: row.id,
+                measurementKind: row.measurementKind,
+                providerPriority: 100,
+                refreshVersion: 1,
+                isDeleted: false,
+              },
+            ],
+      ),
+    });
     await syncClickHouseTestActivityPowerCurveStore(testContext);
 
     const rows = await sensorStore.query(
@@ -686,7 +828,7 @@ describe("activity_power_curve read model", () => {
         new Date(Date.parse(startedAt) + duration * 1000).toISOString(),
       );
     }
-    await insertClickHouseMetricStreamRows(testContext, [
+    const sensorFixtureRows8 = await insertClickHouseMetricStreamRows(testContext, [
       ...powerSampleRows(referenceConstantActivityId, referenceConstantStartedAt, constantSamples, {
         providerId: "wahoo",
         deviceId: "elemnt-bolt",
@@ -717,6 +859,30 @@ describe("activity_power_curve read model", () => {
         deviceId: "peloton-bike",
       }),
     ]);
+    await seedClickHouseSensorServingRows(getClickHouseTestClient(testContext), {
+      scalarSamples: [],
+      winners: sensorFixtureRows8
+        .filter(
+          (row) => row.activityId !== referenceConstantActivityId || row.providerId === "wahoo",
+        )
+        .flatMap((row) =>
+          row.scalar == null
+            ? []
+            : [
+                {
+                  ...row,
+                  scalar: row.scalar,
+                  memberActivityId: row.activityId ?? null,
+                  sourceActivityId: row.activityId ?? null,
+                  sourceMetricStreamId: row.id,
+                  measurementKind: row.measurementKind,
+                  providerPriority: 100,
+                  refreshVersion: 1,
+                  isDeleted: false,
+                },
+              ],
+        ),
+    });
     await syncClickHouseTestActivitySensorStore(testContext);
 
     const rows = await sensorStore.query(

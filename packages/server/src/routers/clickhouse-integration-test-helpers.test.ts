@@ -100,8 +100,6 @@ describe("clickhouse integration test helpers", () => {
     expect(dedupedInsert).toContain("representative_activity_id,primary_provider_id");
 
     expect(analyticsInsertTargets()).toEqual([
-      "sensor_scalar_sample",
-      "deduped_sensor",
       "v_activity",
       "deduped_activities",
       "activity_sensor_sample",
@@ -121,8 +119,6 @@ describe("clickhouse integration test helpers", () => {
     await syncClickHouseTestActivityPowerCurveStore(testContext);
 
     expect(analyticsInsertTargets()).toEqual([
-      "sensor_scalar_sample",
-      "deduped_sensor",
       "v_activity",
       "deduped_activities",
       "activity_sensor_sample",
@@ -430,22 +426,7 @@ describe("clickhouse integration test helpers", () => {
           command.includes("INSERT INTO analytics_test_") && command.includes(".deduped_location"),
       ),
     ).toBe(true);
-    expect(
-      commands.some(
-        (command) =>
-          command.includes("INSERT INTO analytics_test_") &&
-          command.includes(".sensor_scalar_sample") &&
-          command.includes("FROM ingest_test_"),
-      ),
-    ).toBe(true);
-    expect(
-      commands.some(
-        (command) =>
-          command.includes("INSERT INTO analytics_test_") &&
-          command.includes(".deduped_sensor") &&
-          command.includes("FROM analytics_test_"),
-      ),
-    ).toBe(true);
+
     expect(
       commands.some(
         (command) =>

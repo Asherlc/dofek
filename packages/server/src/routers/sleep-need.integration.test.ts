@@ -11,9 +11,12 @@ import { executeWithSchema } from "../lib/typed-sql.ts";
 import { CacheTTL, requestCacheKey } from "../trpc.ts";
 import {
   createClickHouseTestActivitySensorStore,
-  seedClickHouseMetricStreamRows,
+  getClickHouseTestClient,
+  insertClickHouseMetricStreamRows,
+  rebuildClickHouseSensorAnalytics,
   syncClickHouseTestActivitySensorStore,
 } from "./clickhouse-integration-test-helpers.ts";
+import { seedClickHouseSensorServingRows } from "./clickhouse-sensor-serving-test-helpers.ts";
 import type { SleepNeedResult, SleepNeedV2, SleepPerformanceInfo } from "./sleep-need.ts";
 
 /**
@@ -301,7 +304,7 @@ describe("sleep-need router integration", () => {
     }
 
     await syncClickHouseTestActivitySensorStore(testCtx);
-    await seedClickHouseMetricStreamRows(testCtx, [
+    const sensorFixtureRows1 = await insertClickHouseMetricStreamRows(testCtx, [
       {
         activityId: loadActivityId,
         userId: TEST_USER_ID,
@@ -321,6 +324,27 @@ describe("sleep-need router integration", () => {
         scalar: 0,
       },
     ]);
+    await seedClickHouseSensorServingRows(getClickHouseTestClient(testCtx), {
+      scalarSamples: [],
+      winners: sensorFixtureRows1.flatMap((row) =>
+        row.scalar == null
+          ? []
+          : [
+              {
+                ...row,
+                scalar: row.scalar,
+                memberActivityId: row.activityId ?? null,
+                sourceActivityId: row.activityId ?? null,
+                sourceMetricStreamId: row.id,
+                measurementKind: "unknown" as const,
+                providerPriority: 100,
+                refreshVersion: 1,
+                isDeleted: false,
+              },
+            ],
+      ),
+    });
+    await rebuildClickHouseSensorAnalytics(testCtx);
     await queryCache.invalidateAll();
 
     const result = await query<SleepNeedV2>("sleepNeed.calculateV2", {

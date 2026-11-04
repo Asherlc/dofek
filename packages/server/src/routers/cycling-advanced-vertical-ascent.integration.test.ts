@@ -8,9 +8,12 @@ import { createApp } from "../index.ts";
 import {
   type ClickHouseMetricStreamSeedRow,
   createClickHouseTestActivitySensorStore,
-  seedClickHouseMetricStreamRows,
+  getClickHouseTestClient,
+  insertClickHouseMetricStreamRows,
+  rebuildClickHouseSensorAnalytics,
   syncClickHouseTestActivitySensorStore,
 } from "./clickhouse-integration-test-helpers.ts";
+import { seedClickHouseSensorServingRows } from "./clickhouse-sensor-serving-test-helpers.ts";
 
 describe("cyclingAdvanced vertical ascent integration", () => {
   let server: ReturnType<import("express").Express["listen"]>;
@@ -155,7 +158,31 @@ describe("cyclingAdvanced vertical ascent integration", () => {
     }
 
     await syncClickHouseTestActivitySensorStore(testCtx);
-    await seedClickHouseMetricStreamRows(testCtx, metricStreamSeedRows);
+    const sensorFixtureRows1 = await insertClickHouseMetricStreamRows(
+      testCtx,
+      metricStreamSeedRows,
+    );
+    await seedClickHouseSensorServingRows(getClickHouseTestClient(testCtx), {
+      scalarSamples: [],
+      winners: sensorFixtureRows1.flatMap((row) =>
+        row.scalar == null
+          ? []
+          : [
+              {
+                ...row,
+                scalar: row.scalar,
+                memberActivityId: row.activityId ?? null,
+                sourceActivityId: row.activityId ?? null,
+                sourceMetricStreamId: row.id,
+                measurementKind: "unknown" as const,
+                providerPriority: 100,
+                refreshVersion: 1,
+                isDeleted: false,
+              },
+            ],
+      ),
+    });
+    await rebuildClickHouseSensorAnalytics(testCtx);
     await queryCache.invalidateAll();
 
     const result = await query<

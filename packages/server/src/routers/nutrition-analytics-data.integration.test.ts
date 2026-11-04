@@ -8,8 +8,11 @@ import { createApp } from "../index.ts";
 import {
   type ClickHouseMetricStreamSeedRow,
   createClickHouseTestActivitySensorStore,
-  seedClickHouseMetricStreamRows,
+  getClickHouseTestClient,
+  insertClickHouseMetricStreamRows,
+  rebuildClickHouseSensorAnalytics,
 } from "./clickhouse-integration-test-helpers.ts";
+import { seedClickHouseSensorServingRows } from "./clickhouse-sensor-serving-test-helpers.ts";
 import type {
   AdaptiveTdeeResult,
   MacroRatioRow,
@@ -262,7 +265,31 @@ describe("Nutrition analytics data coverage", () => {
 
     // Start server
     const sensorStore = await createClickHouseTestActivitySensorStore(testCtx);
-    await seedClickHouseMetricStreamRows(testCtx, metricStreamSeedRows);
+    const sensorFixtureRows1 = await insertClickHouseMetricStreamRows(
+      testCtx,
+      metricStreamSeedRows,
+    );
+    await seedClickHouseSensorServingRows(getClickHouseTestClient(testCtx), {
+      scalarSamples: [],
+      winners: sensorFixtureRows1.flatMap((row) =>
+        row.scalar == null
+          ? []
+          : [
+              {
+                ...row,
+                scalar: row.scalar,
+                memberActivityId: row.activityId ?? null,
+                sourceActivityId: row.activityId ?? null,
+                sourceMetricStreamId: row.id,
+                measurementKind: "unknown" as const,
+                providerPriority: 100,
+                refreshVersion: 1,
+                isDeleted: false,
+              },
+            ],
+      ),
+    });
+    await rebuildClickHouseSensorAnalytics(testCtx);
     const app = createApp(testCtx.db, sensorStore);
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {

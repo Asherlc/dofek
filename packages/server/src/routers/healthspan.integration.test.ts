@@ -11,9 +11,11 @@ import {
   createClickHouseTestActivitySensorStore,
   executeClickHouseTestCommand,
   getClickHouseTestClient,
-  seedClickHouseMetricStreamRows,
+  insertClickHouseMetricStreamRows,
+  rebuildClickHouseSensorAnalytics,
   syncClickHouseTestActivitySensorStore,
 } from "./clickhouse-integration-test-helpers.ts";
+import { seedClickHouseSensorServingRows } from "./clickhouse-sensor-serving-test-helpers.ts";
 
 /**
  * Integration test for healthspan zone time calculation.
@@ -133,7 +135,31 @@ describe("healthspan zone time with variable-interval HR data", () => {
     }
 
     const sensorStore = await createClickHouseTestActivitySensorStore(testCtx);
-    await seedClickHouseMetricStreamRows(testCtx, metricStreamSeedRows);
+    const sensorFixtureRows1 = await insertClickHouseMetricStreamRows(
+      testCtx,
+      metricStreamSeedRows,
+    );
+    await seedClickHouseSensorServingRows(getClickHouseTestClient(testCtx), {
+      scalarSamples: [],
+      winners: sensorFixtureRows1.flatMap((row) =>
+        row.scalar == null
+          ? []
+          : [
+              {
+                ...row,
+                scalar: row.scalar,
+                memberActivityId: row.activityId ?? null,
+                sourceActivityId: row.activityId ?? null,
+                sourceMetricStreamId: row.id,
+                measurementKind: "unknown" as const,
+                providerPriority: 100,
+                refreshVersion: 1,
+                isDeleted: false,
+              },
+            ],
+      ),
+    });
+    await rebuildClickHouseSensorAnalytics(testCtx);
     const app = createApp(testCtx.db, sensorStore);
     await new Promise<void>((resolve) => {
       server = app.listen(0, () => {
@@ -328,7 +354,31 @@ describe("healthspan zone time with variable-interval HR data", () => {
       });
     }
     await syncClickHouseTestActivitySensorStore(testCtx);
-    await seedClickHouseMetricStreamRows(testCtx, powerMetricStreamSeedRows);
+    const sensorFixtureRows2 = await insertClickHouseMetricStreamRows(
+      testCtx,
+      powerMetricStreamSeedRows,
+    );
+    await seedClickHouseSensorServingRows(getClickHouseTestClient(testCtx), {
+      scalarSamples: [],
+      winners: sensorFixtureRows2.flatMap((row) =>
+        row.scalar == null
+          ? []
+          : [
+              {
+                ...row,
+                scalar: row.scalar,
+                memberActivityId: row.activityId ?? null,
+                sourceActivityId: row.activityId ?? null,
+                sourceMetricStreamId: row.id,
+                measurementKind: "unknown" as const,
+                providerPriority: 100,
+                refreshVersion: 1,
+                isDeleted: false,
+              },
+            ],
+      ),
+    });
+    await rebuildClickHouseSensorAnalytics(testCtx);
     const identitiesResult = await getClickHouseTestClient(testCtx).query({
       query: `SELECT toString(activity_id) AS activity_id
         FROM analytics.deduped_activities FINAL

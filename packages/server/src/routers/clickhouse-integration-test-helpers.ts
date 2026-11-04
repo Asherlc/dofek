@@ -10,10 +10,6 @@ import {
   parsePostgresConnectionForClickHouse,
 } from "../../../../src/db/clickhouse.ts";
 import { buildActivityVo2MaxEstimateTableSql } from "../../../../src/db/clickhouse-activity-vo2max-estimate.ts";
-import {
-  buildDedupedSensorBackfillSql,
-  buildSensorScalarSampleBackfillSql,
-} from "../../../../src/db/clickhouse-deduped-sensor.ts";
 import { createMigration as createActivityLocationMemberChangeMigration } from "../../../../src/db/clickhouse-migrations/0086_activity_location_member_change.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { ClickHouseActivitySensorStore } from "../repositories/clickhouse-activity-sensor-store.ts";
@@ -893,13 +889,14 @@ function formatClickHouseMetricStreamSeedValue(row: ClickHouseMetricStreamSeedRo
   )`;
 }
 
-export async function insertClickHouseMetricStreamRows(
+export async function insertClickHouseMetricStreamRows<T extends ClickHouseMetricStreamSeedRow>(
   testContext: ClickHouseSyncTestContext,
-  rows: readonly ClickHouseMetricStreamSeedRow[],
-): Promise<void> {
+  rows: readonly T[],
+): Promise<readonly (T & { id: string })[]> {
   if (rows.length === 0) {
-    return;
+    return [];
   }
+  const rowsWithIds = rows.map((row) => ({ ...row, id: row.id ?? randomUUID() }));
 
   const handle = handlesByContext.get(testContext);
   if (!handle) {
@@ -925,8 +922,9 @@ export async function insertClickHouseMetricStreamRows(
       is_deleted,
       version,
       generation
-    ) VALUES ${rows.map(formatClickHouseMetricStreamSeedValue).join(",\n")}`,
+    ) VALUES ${rowsWithIds.map(formatClickHouseMetricStreamSeedValue).join(",\n")}`,
   });
+  return rowsWithIds;
 }
 
 export async function rebuildClickHouseSensorAnalytics(
@@ -960,21 +958,9 @@ export async function rebuildClickHouseTestActivityPowerCurve(
   await rebuildTestActivityPowerCurve(handle.setupClient);
 }
 
-export async function seedClickHouseMetricStreamRows(
-  testContext: ClickHouseSyncTestContext,
-  rows: readonly ClickHouseMetricStreamSeedRow[],
-): Promise<void> {
-  await insertClickHouseMetricStreamRows(testContext, rows);
-  await rebuildClickHouseSensorAnalytics(testContext);
-}
-
 async function rebuildClickHouseSensorAnalyticsWithClient(client: ClickHouseClient): Promise<void> {
-  await client.command({ query: "TRUNCATE TABLE analytics.sensor_scalar_sample" });
-  await client.command({ query: "TRUNCATE TABLE analytics.deduped_sensor" });
   await client.command({ query: "TRUNCATE TABLE analytics.deduped_activities" });
   await client.command({ query: "TRUNCATE TABLE analytics.activity_vo2max_estimate" });
-  await client.command({ query: buildSensorScalarSampleBackfillSql() });
-  await client.command({ query: buildDedupedSensorBackfillSql() });
 
   for (const viewName of analyticsBuildOrder) {
     await client.command({ query: `REBUILD TEST ANALYTICS TABLE ${viewName}` });
@@ -984,11 +970,7 @@ async function rebuildClickHouseSensorAnalyticsWithClient(client: ClickHouseClie
 async function rebuildClickHouseActivityPowerCurveDependenciesWithClient(
   client: ClickHouseClient,
 ): Promise<void> {
-  await client.command({ query: "TRUNCATE TABLE analytics.sensor_scalar_sample" });
-  await client.command({ query: "TRUNCATE TABLE analytics.deduped_sensor" });
   await client.command({ query: "TRUNCATE TABLE analytics.deduped_activities" });
-  await client.command({ query: buildSensorScalarSampleBackfillSql() });
-  await client.command({ query: buildDedupedSensorBackfillSql() });
 
   for (const viewName of [
     "analytics.v_activity",

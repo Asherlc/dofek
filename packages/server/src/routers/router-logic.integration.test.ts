@@ -9,9 +9,12 @@ import { createApp } from "../index.ts";
 import {
   type ClickHouseMetricStreamSeedRow,
   createClickHouseTestActivitySensorStore,
-  seedClickHouseMetricStreamRows,
+  getClickHouseTestClient,
+  insertClickHouseMetricStreamRows,
+  rebuildClickHouseSensorAnalytics,
   syncClickHouseTestActivitySensorStore,
 } from "./clickhouse-integration-test-helpers.ts";
+import { seedClickHouseSensorServingRows } from "./clickhouse-sensor-serving-test-helpers.ts";
 
 /**
  * Integration tests that INSERT data and verify JS transformation logic
@@ -391,7 +394,31 @@ describe("Router transformation logic", () => {
       }
 
       await syncClickHouseTestActivitySensorStore(testCtx);
-      await seedClickHouseMetricStreamRows(testCtx, sleepNeedMetricStreamRows);
+      const sensorFixtureRows1 = await insertClickHouseMetricStreamRows(
+        testCtx,
+        sleepNeedMetricStreamRows,
+      );
+      await seedClickHouseSensorServingRows(getClickHouseTestClient(testCtx), {
+        scalarSamples: [],
+        winners: sensorFixtureRows1.flatMap((row) =>
+          row.scalar == null
+            ? []
+            : [
+                {
+                  ...row,
+                  scalar: row.scalar,
+                  memberActivityId: row.activityId ?? null,
+                  sourceActivityId: row.activityId ?? null,
+                  sourceMetricStreamId: row.id,
+                  measurementKind: "unknown" as const,
+                  providerPriority: 100,
+                  refreshVersion: 1,
+                  isDeleted: false,
+                },
+              ],
+        ),
+      });
+      await rebuildClickHouseSensorAnalytics(testCtx);
       await queryCache.invalidateAll();
     }, 30_000);
 
@@ -529,7 +556,31 @@ describe("Router transformation logic", () => {
       );
 
       await syncClickHouseTestActivitySensorStore(testCtx);
-      await seedClickHouseMetricStreamRows(testCtx, cyclingMetricStreamRows);
+      const sensorFixtureRows2 = await insertClickHouseMetricStreamRows(
+        testCtx,
+        cyclingMetricStreamRows,
+      );
+      await seedClickHouseSensorServingRows(getClickHouseTestClient(testCtx), {
+        scalarSamples: [],
+        winners: sensorFixtureRows2.flatMap((row) =>
+          row.scalar == null
+            ? []
+            : [
+                {
+                  ...row,
+                  scalar: row.scalar,
+                  memberActivityId: row.activityId ?? null,
+                  sourceActivityId: row.activityId ?? null,
+                  sourceMetricStreamId: row.id,
+                  measurementKind: "unknown" as const,
+                  providerPriority: 100,
+                  refreshVersion: 1,
+                  isDeleted: false,
+                },
+              ],
+        ),
+      });
+      await rebuildClickHouseSensorAnalytics(testCtx);
     }, 120_000);
 
     beforeAll(async () => {
@@ -661,7 +712,31 @@ describe("Router transformation logic", () => {
       );
 
       await syncClickHouseTestActivitySensorStore(testCtx);
-      await seedClickHouseMetricStreamRows(testCtx, healthspanBodyMetricRows);
+      const sensorFixtureRows3 = await insertClickHouseMetricStreamRows(
+        testCtx,
+        healthspanBodyMetricRows,
+      );
+      await seedClickHouseSensorServingRows(getClickHouseTestClient(testCtx), {
+        scalarSamples: [],
+        winners: sensorFixtureRows3.flatMap((row) =>
+          row.scalar == null
+            ? []
+            : [
+                {
+                  ...row,
+                  scalar: row.scalar,
+                  memberActivityId: row.activityId ?? null,
+                  sourceActivityId: row.activityId ?? null,
+                  sourceMetricStreamId: row.id,
+                  measurementKind: "unknown" as const,
+                  providerPriority: 100,
+                  refreshVersion: 1,
+                  isDeleted: false,
+                },
+              ],
+        ),
+      });
+      await rebuildClickHouseSensorAnalytics(testCtx);
       await queryCache.invalidateAll();
     }, 30_000);
 
@@ -881,7 +956,31 @@ describe("Router transformation logic", () => {
       }
 
       await syncClickHouseTestActivitySensorStore(testCtx);
-      await seedClickHouseMetricStreamRows(testCtx, hikingMetricStreamRows);
+      const sensorFixtureRows4 = await insertClickHouseMetricStreamRows(
+        testCtx,
+        hikingMetricStreamRows,
+      );
+      await seedClickHouseSensorServingRows(getClickHouseTestClient(testCtx), {
+        scalarSamples: [],
+        winners: sensorFixtureRows4.flatMap((row) =>
+          row.scalar == null
+            ? []
+            : [
+                {
+                  ...row,
+                  scalar: row.scalar,
+                  memberActivityId: row.activityId ?? null,
+                  sourceActivityId: row.activityId ?? null,
+                  sourceMetricStreamId: row.id,
+                  measurementKind: "unknown" as const,
+                  providerPriority: 100,
+                  refreshVersion: 1,
+                  isDeleted: false,
+                },
+              ],
+        ),
+      });
+      await rebuildClickHouseSensorAnalytics(testCtx);
     }, 60_000);
 
     it("computes grade-adjusted pace using Minetti cost factor", async () => {
@@ -1001,7 +1100,31 @@ describe("Router transformation logic", () => {
       }
 
       await syncClickHouseTestActivitySensorStore(testCtx);
-      await seedClickHouseMetricStreamRows(testCtx, intervalMetricStreamRows);
+      const sensorFixtureRows5 = await insertClickHouseMetricStreamRows(
+        testCtx,
+        intervalMetricStreamRows,
+      );
+      await seedClickHouseSensorServingRows(getClickHouseTestClient(testCtx), {
+        scalarSamples: [],
+        winners: sensorFixtureRows5.flatMap((row) =>
+          row.scalar == null
+            ? []
+            : [
+                {
+                  ...row,
+                  scalar: row.scalar,
+                  memberActivityId: row.activityId ?? null,
+                  sourceActivityId: row.activityId ?? null,
+                  sourceMetricStreamId: row.id,
+                  measurementKind: "unknown" as const,
+                  providerPriority: 100,
+                  refreshVersion: 1,
+                  isDeleted: false,
+                },
+              ],
+        ),
+      });
+      await rebuildClickHouseSensorAnalytics(testCtx);
     }, 30_000);
 
     it("detects intervals from intensity changes", async () => {

@@ -154,6 +154,35 @@ describe("bounded canonical scalar and dedup pages", () => {
     expect(await fixture.dedup()).toEqual([expected(winner, fallback.ingested_at)]);
   });
 
+  it("unchangedWahooPowerWinsOverChangedStravaWithCompleteProvenance", async () => {
+    await fixture.command(`INSERT INTO ${fixture.database}.sensor_provider_priority VALUES
+      ('wahoo','power',1,0),('strava','power',2,0)`);
+    const winner = sensorRow(1, {
+      channel: "power",
+      provider_id: "wahoo",
+      scalar: 250,
+      activity_id: sensorId(500),
+      external_id: "wahoo-workout",
+      device_id: "elemnt-bolt",
+      source_type: "device",
+    });
+    const changed = newer(
+      sensorRow(2, {
+        channel: "power",
+        provider_id: "strava",
+        scalar: 275,
+        activity_id: sensorId(501),
+        external_id: "strava-activity",
+        device_id: "strava-import",
+        source_type: "api",
+      }),
+    );
+    await fixture.seed([winner, changed, unrelated()]);
+    await fixture.page([{ before: null, after: changed }]);
+    await fixture.scalar();
+    expect(await fixture.dedup()).toEqual([expected(winner, changed.ingested_at)]);
+  });
+
   it("duplicateEffectsMatchFullStablePayload", async () => {
     const winner = sensorRow(1),
       fallback = newer(sensorRow(2, { provider_id: "fallback" }));
