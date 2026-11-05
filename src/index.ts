@@ -10,8 +10,10 @@ import { createDatabaseFromEnv } from "./db/index.ts";
 import { runWithTokenUser } from "./db/token-user-context.ts";
 import { ensureProvider, saveTokens } from "./db/tokens.ts";
 import { ensureProvidersRegistered } from "./jobs/provider-registration.ts";
+import { captureException } from "./lib/error-reporting.ts";
 import { logger } from "./logger.ts";
 import { startMetricStreamClickHouseSinkFromEnv } from "./metric-stream/clickhouse-sink.ts";
+import { closeAllMetricStreamEventPublishers } from "./metric-stream/pulsar-producer.ts";
 import { getAllProviders } from "./providers/index.ts";
 
 export async function handleAuthCommand(args: string[]): Promise<number> {
@@ -176,16 +178,29 @@ export async function handleImportCommand(args: string[]): Promise<number> {
 export async function main() {
   const command = process.argv[2] ?? "sync";
 
-  if (command === "sync") {
-    process.exit(await handleSyncCommand(process.argv));
+  if (command === "sync" || command === "import") {
+    let exitCode = 1;
+    try {
+      exitCode =
+        command === "sync"
+          ? await handleSyncCommand(process.argv)
+          : await handleImportCommand(process.argv);
+    } catch (error) {
+      captureException(error, { tags: { phase: "cli-command" } });
+      logger.error(`[${command}] Command failed`);
+    }
+    try {
+      await closeAllMetricStreamEventPublishers();
+    } catch (error) {
+      captureException(error, { tags: { phase: "cli-publisher-shutdown" } });
+      logger.error(`[${command}] Publisher cleanup failed`);
+      exitCode = 1;
+    }
+    process.exit(exitCode);
   }
 
   if (command === "auth") {
     process.exit(await handleAuthCommand(process.argv));
-  }
-
-  if (command === "import") {
-    process.exit(await handleImportCommand(process.argv));
   }
 
   if (command === "metric-stream-clickhouse-sink") {

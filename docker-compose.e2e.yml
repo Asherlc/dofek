@@ -22,7 +22,7 @@ services:
       retries: 15
 
   clickhouse:
-    image: mirror.gcr.io/clickhouse/clickhouse-server:26.9.19-alpine
+    image: mirror.gcr.io/clickhouse/clickhouse-server:26.10.2.103-alpine@sha256:d474afd5cd0abfb9fdc6e2ebbc82116324779b085f5c15a851aa91bec968291d
     mem_limit: 2048m
     environment:
       CLICKHOUSE_DB: fitness
@@ -31,6 +31,7 @@ services:
     volumes:
       - ./deploy/clickhouse/users.d/allow-experimental-nullable-tuple-type.xml:/etc/clickhouse-server/users.d/allow-experimental-nullable-tuple-type.xml:ro
       - ./deploy/clickhouse/config.d/system-log-ttl.xml:/etc/clickhouse-server/config.d/system-log-ttl.xml:ro
+      - ./deploy/clickhouse/config.d/metric-stream-storage.xml:/etc/clickhouse-server/config.d/metric-stream-storage.xml:ro
       - ./deploy/clickhouse/config.d/memory-limits-e2e.xml:/etc/clickhouse-server/config.d/memory-limits.xml:ro
     healthcheck:
       test:

@@ -29,7 +29,7 @@ export async function main(): Promise<void> {
       `[migrate] ClickHouse migrations complete — ${clickHouseCount} migration(s) applied`,
     );
   } finally {
-    await clickHouseClient.close?.();
+    await clickHouseClient.close();
   }
 }
 

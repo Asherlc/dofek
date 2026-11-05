@@ -1,9 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  KafkaMetricStreamEventPublisher,
-  type KafkaProducerLike,
-  type KafkaProducerSendInput,
-} from "../metric-stream/redpanda-producer.ts";
+import { PulsarMetricStreamEventPublisher } from "../metric-stream/pulsar-producer.ts";
 import {
   createLazyDefaultMetricStreamEventPublisher,
   createLazyMetricStreamEventPublisher,
@@ -14,8 +10,8 @@ const redpandaProducerMocks = vi.hoisted(() => ({
   getDefaultMetricStreamEventPublisher: vi.fn(),
 }));
 
-vi.mock("../metric-stream/redpanda-producer.ts", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../metric-stream/redpanda-producer.ts")>()),
+vi.mock("../metric-stream/pulsar-producer.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../metric-stream/pulsar-producer.ts")>()),
   getDefaultMetricStreamEventPublisher: redpandaProducerMocks.getDefaultMetricStreamEventPublisher,
 }));
 
@@ -31,13 +27,9 @@ const metricStreamRow = {
 };
 
 function makePublisher() {
-  const send = vi.fn(async (_input: KafkaProducerSendInput) => undefined);
-  const producer: KafkaProducerLike = {
-    connect: vi.fn(async () => undefined),
-    disconnect: vi.fn(async () => undefined),
-    send,
-  };
-  const delegate = new KafkaMetricStreamEventPublisher(producer, "metric-stream-v1");
+  const send = vi.fn(async (_input: { data: Buffer; partitionKey: string }) => undefined);
+  const close = vi.fn(async () => undefined);
+  const delegate = new PulsarMetricStreamEventPublisher({ send, close }, close);
   const recordPublishedBatch = vi.fn(async () => undefined);
   const publisher = new MetricStreamProcessingPublisher(delegate, {
     operationId: "30000000-0000-4000-8000-000000000001",
@@ -76,9 +68,9 @@ describe("MetricStreamProcessingPublisher", () => {
     });
     expect(publisher.hasPublishedBatches).toBe(true);
 
-    const sentMarkers = send.mock.calls.map((call) =>
-      JSON.parse(call[0].messages.at(-1)?.value ?? "{}"),
-    );
+    const sentMarkers = send.mock.calls
+      .map(([message]) => JSON.parse(message.data.toString("utf8")))
+      .filter((event) => event.eventType === "metric_stream_batch_completed");
     expect(sentMarkers[0]?.batchId).toBe(sentMarkers[1]?.batchId);
     expect(sentMarkers[2]?.batchId).not.toBe(sentMarkers[0]?.batchId);
     expect(recordPublishedBatch).toHaveBeenCalledTimes(3);
@@ -183,7 +175,7 @@ describe("MetricStreamProcessingPublisher", () => {
       operationRevision,
     );
 
-    const marker = JSON.parse(send.mock.calls[0]?.[0].messages.at(-1)?.value ?? "{}");
+    const marker = JSON.parse(send.mock.calls.at(-1)?.[0].data.toString("utf8") ?? "{}");
     expect(marker).toMatchObject({
       eventType: "metric_stream_batch_completed",
       operationId: "30000000-0000-4000-8000-000000000001",

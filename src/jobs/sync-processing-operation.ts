@@ -1,5 +1,5 @@
 import type { SyncDatabase } from "../db/index.ts";
-import { createKafkaMetricStreamEventPublisherForRoute } from "../metric-stream/redpanda-producer.ts";
+import { createPulsarMetricStreamEventPublisherForRoute } from "../metric-stream/pulsar-producer.ts";
 import { metricStreamRouteForSyncJob } from "../metric-stream/routes.ts";
 import { currentMetricStreamWriteDatabase } from "../metric-stream/write-fence-context.ts";
 import {
@@ -135,7 +135,7 @@ export class SyncProcessingOperation {
       emittedMetricStreamDatasetKeys.length > 0
         ? new MetricStreamProcessingPublisher(
             createLazyMetricStreamEventPublisher(() =>
-              createKafkaMetricStreamEventPublisherForRoute(
+              createPulsarMetricStreamEventPublisherForRoute(
                 metricStreamRouteForSyncJob(job.data.targetRefreshWindow),
               ),
             ),

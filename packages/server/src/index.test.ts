@@ -16,6 +16,8 @@ const mockLoggerInfo = vi.fn();
 const mockSentryCaptureException = vi.fn();
 const mockInitSentry = vi.fn();
 const mockGetDefaultMetricStreamEventPublisher = vi.fn();
+const mockCloseAllMetricStreamEventPublishers = vi.fn(async (): Promise<void> => undefined);
+const mockCloseProviderOperationFencePool = vi.fn(async (): Promise<void> => undefined);
 const mockValidateAccountErasureLedgerKeyring = vi.fn();
 const mockReconcileAccountErasureRestoreIntents = vi.fn(async () => ({ recoveredRequestIds: [] }));
 const mockAccountErasureRestoreLedger = {
@@ -107,8 +109,13 @@ vi.mock("dofek/db/clickhouse", () => ({
   bootstrapClickHouseFromEnv: vi.fn(),
   createClickHouseClientFromEnv: vi.fn(),
 }));
-vi.mock("../../../src/metric-stream/redpanda-producer.ts", () => ({
+vi.mock("../../../src/metric-stream/pulsar-producer.ts", () => ({
   getDefaultMetricStreamEventPublisher: mockGetDefaultMetricStreamEventPublisher,
+  closeAllMetricStreamEventPublishers: mockCloseAllMetricStreamEventPublishers,
+}));
+vi.mock("dofek/db/provider-operation-fence", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("dofek/db/provider-operation-fence")>()),
+  closeProviderOperationFencePool: mockCloseProviderOperationFencePool,
 }));
 vi.mock("../../../src/account-erasure/identity.ts", () => ({
   validateAccountErasureLedgerKeyring: mockValidateAccountErasureLedgerKeyring,
@@ -834,6 +841,8 @@ describe("main", () => {
 describe("createGracefulShutdownHandler", () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    mockCloseAllMetricStreamEventPublishers.mockReset().mockResolvedValue(undefined);
+    mockCloseProviderOperationFencePool.mockReset().mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -959,6 +968,78 @@ describe("createGracefulShutdownHandler", () => {
     shutdown("SIGINT");
 
     expect(markShuttingDown).toHaveBeenCalledOnce();
+  });
+
+  it.each(["publisher", "fence"])(
+    "keeps the force deadline active while %s cleanup is pending",
+    async (resource) => {
+      let finish = () => {};
+      const pending = new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      const target =
+        resource === "publisher"
+          ? mockCloseAllMetricStreamEventPublishers
+          : mockCloseProviderOperationFencePool;
+      target.mockImplementationOnce(() => pending);
+      const onExit = vi.fn();
+      const shutdown = createGracefulShutdownHandler({
+        server: { close: (callback) => callback() },
+        markShuttingDown: vi.fn(),
+        drainDelayMs: 0,
+        forceExitAfterMs: 1000,
+        onExit,
+      });
+      shutdown("SIGTERM");
+      await vi.advanceTimersByTimeAsync(0);
+      expect(onExit).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(onExit.mock.calls).toEqual([[1]]);
+      finish();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(onExit.mock.calls).toEqual([[1]]);
+    },
+  );
+
+  it("closes publishers after HTTP drain and waits for both cleanup outcomes before failure exit", async () => {
+    let closeCallback: ((error?: Error) => void) | undefined;
+    let finishFence = () => {};
+    const fence = new Promise<void>((resolve) => {
+      finishFence = resolve;
+    });
+    mockCloseAllMetricStreamEventPublishers.mockRejectedValueOnce(
+      new Error("publisher cleanup failed"),
+    );
+    mockCloseProviderOperationFencePool.mockImplementationOnce(() => fence);
+    const onExit = vi.fn();
+    const shutdown = createGracefulShutdownHandler({
+      server: {
+        close: (callback) => {
+          closeCallback = callback;
+        },
+      },
+      markShuttingDown: vi.fn(),
+      drainDelayMs: 0,
+      forceExitAfterMs: 1000,
+      onExit,
+    });
+    shutdown("SIGTERM");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(mockCloseAllMetricStreamEventPublishers).not.toHaveBeenCalled();
+    closeCallback?.();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(mockCloseAllMetricStreamEventPublishers).toHaveBeenCalledOnce();
+    expect(mockCloseProviderOperationFencePool).toHaveBeenCalledOnce();
+    expect(onExit).not.toHaveBeenCalled();
+    finishFence();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(onExit.mock.calls).toEqual([[1]]);
+    expect(mockSentryCaptureException).toHaveBeenCalledWith(
+      expect.any(AggregateError),
+      expect.any(Object),
+    );
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(onExit.mock.calls).toEqual([[1]]);
   });
 });
 

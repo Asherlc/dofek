@@ -9,7 +9,7 @@ import type {
   MetricStreamEventPublisher,
   MetricStreamReplacementPublishResult,
 } from "../metric-stream/publisher.ts";
-import { getDefaultMetricStreamEventPublisher } from "../metric-stream/redpanda-producer.ts";
+import { getDefaultMetricStreamEventPublisher } from "../metric-stream/pulsar-producer.ts";
 import {
   prepareMetricStreamRows,
   withAccountErasureMetricStreamWriteFence,

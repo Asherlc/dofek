@@ -5,10 +5,12 @@ import {
   buildMetricStreamDeleteAcknowledgementTableSql,
   buildMetricStreamDeleteScopeTableSql,
   buildMetricStreamProcessingAcknowledgementTableSql,
+  buildMetricStreamSourcePlacementIngestSql,
   buildProviderDataGenerationTableSql,
   INGEST_DATABASE,
   METRIC_STREAM_TABLE,
 } from "../metric-stream/clickhouse-table.ts";
+import { analyticsWorkSchemaStatements } from "./analytics-work-schema.ts";
 import { buildIncrementalActivitySummaryStatements } from "./clickhouse-activity-summary.ts";
 import { buildActivityTrendDailyCreateReadModelStatements } from "./clickhouse-activity-trend-read-model.ts";
 import { buildIncrementalDedupedSensorStatements } from "./clickhouse-deduped-sensor.ts";
@@ -21,11 +23,9 @@ import { buildRestingHeartRateSleepWindowTableSql } from "./clickhouse-resting-h
 import { standardViewHeader } from "./clickhouse-sql-helpers.ts";
 import { cyclingPowerSchemaStatements } from "./cycling-power-schema.ts";
 
-export function buildClickHouseBootstrapStatementsForNativeMetricStream(
-  postgresConnectionString: string,
-): string[] {
-  void postgresConnectionString;
-  const metricStreamStatements = [
+export function buildMetricStreamSinkSchemaStatements(): string[] {
+  return [
+    "CREATE DATABASE IF NOT EXISTS analytics",
     `CREATE DATABASE IF NOT EXISTS ${INGEST_DATABASE}`,
     buildIngestMetricStreamCreateTableSql(),
     buildMetricStreamDeleteAcknowledgementTableSql(),
@@ -34,14 +34,20 @@ export function buildClickHouseBootstrapStatementsForNativeMetricStream(
     buildProviderDataGenerationTableSql(),
     buildAccountErasureFenceTableSql(),
     buildAccountErasureOperationFenceTableSql(),
+    ...analyticsWorkSchemaStatements(),
+    buildMetricStreamSourcePlacementIngestSql(),
+  ];
+}
+
+export function buildClickHouseBootstrapStatementsForNativeMetricStream(
+  postgresConnectionString: string,
+): string[] {
+  void postgresConnectionString;
+  return [
+    ...buildMetricStreamSinkSchemaStatements(),
     "CREATE DATABASE IF NOT EXISTS postgres_fitness",
     ...buildPostgresFitnessRawTableStatements(),
     ...buildBodyMeasurementSampleProjectionStatements(),
-  ];
-
-  return [
-    "CREATE DATABASE IF NOT EXISTS analytics",
-    ...metricStreamStatements,
     ...buildAnalyticsFitnessReadModelStatements(),
     ...buildIncrementalDedupedSensorStatements(),
     buildRestingHeartRateSleepWindowTableSql(),

@@ -35,7 +35,7 @@ const { mockMetricStreamPublishRows, publishedMetricStreamBatches } = vi.hoisted
   publishedMetricStreamBatches: [],
 }));
 
-vi.mock("../metric-stream/redpanda-producer.ts", () => ({
+vi.mock("../metric-stream/pulsar-producer.ts", () => ({
   getDefaultMetricStreamEventPublisher: async () => ({
     publishRows: mockMetricStreamPublishRows,
   }),

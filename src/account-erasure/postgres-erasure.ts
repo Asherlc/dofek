@@ -4,6 +4,9 @@ import type { Database } from "../db/index.ts";
 import { executeWithSchema, type SchemaExecutionDatabase } from "../db/typed-sql.ts";
 
 const SHARED_SYSTEM_TABLES = new Set([
+  // Delivery positions, group digests and query-owner intent identities contain no account payload.
+  "fitness.analytics_query_owner",
+  "fitness.analytics_stream_state",
   "fitness.app_store_notification",
   "fitness.daily_metric_type",
   "fitness.device_priority",

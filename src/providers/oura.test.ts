@@ -74,7 +74,7 @@ vi.mock("../db/provider-activity-sync.ts", async (importOriginal) => {
   };
 });
 
-vi.mock("../metric-stream/redpanda-producer.ts", () => ({
+vi.mock("../metric-stream/pulsar-producer.ts", () => ({
   getDefaultMetricStreamEventPublisher: async () => ({
     publishRows: async (rows: readonly Record<string, unknown>[]) => {
       publishedMetricStreamBatches.push([...rows]);

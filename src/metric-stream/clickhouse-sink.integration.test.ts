@@ -1,27 +1,32 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { type ClickHouseClient, createClickHouseClientFromEnv } from "../db/clickhouse.ts";
-import { buildClickHouseBootstrapStatementsForNativeMetricStream } from "../db/clickhouse-metric-stream-bootstrap.ts";
+import { loadAnalyticsStreamState } from "../analytics/analytics-work-store.ts";
+import { verifyAnalyticsDeliveryReceipts } from "../analytics/effect-journal-group.ts";
+import { analyticsPosition } from "../analytics/test-helpers.ts";
+import type { ClickHouseClient } from "../db/clickhouse.ts";
+import { mapMetricStreamEventToClickHouseRow } from "./clickhouse-row.ts";
 import {
   applyMetricStreamEventsToClickHouse,
   type ClickHouseMetricStreamInsertClient,
-  insertMetricStreamEventsIntoClickHouse,
-  mapMetricStreamEventToClickHouseRow,
   markMetricStreamScopeDeletedInClickHouse,
   markMetricStreamScopesDeletedInClickHouse,
 } from "./clickhouse-sink.ts";
 import {
   METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE,
   METRIC_STREAM_DELETE_SCOPE_TABLE,
+  METRIC_STREAM_PROCESSING_ACKNOWLEDGEMENT_TABLE,
   METRIC_STREAM_TABLE,
 } from "./clickhouse-table.ts";
 import {
+  createMetricStreamBatchCompletedEvent,
   createMetricStreamDeletedEvent,
   createMetricStreamEvent,
   type MetricStreamDeleteScopeInput,
+  type MetricStreamRedpandaEvent,
   type MetricStreamRowInput,
 } from "./events.ts";
+import { createMetricStreamAnalyticsTestContext } from "./test-helpers.ts";
 
 const testUserId = randomUUID();
 const testEventId = "5e6f7a8b-0c1d-4e2f-8a3b-4c5d6e7f8a90";
@@ -87,51 +92,172 @@ function assertInsertCapable(
   }
 }
 
-async function removeTestEvent(client: ClickHouseClient): Promise<void> {
-  await client.command({
-    query: `ALTER TABLE ${METRIC_STREAM_DELETE_SCOPE_TABLE} DELETE WHERE user_id = {user_id:UUID} SETTINGS mutations_sync = 1`,
-    query_params: { user_id: testUserId },
-  });
-  await client.command({
-    query: `ALTER TABLE ${METRIC_STREAM_TABLE}
-      DELETE WHERE id IN {ids:Array(UUID)}
-      SETTINGS mutations_sync = 1`,
-    query_params: {
-      ids: [
-        testEventId,
-        latestScopeTestEventId,
-        nullExternalIdTestEventId,
-        replacementTestEventId,
-        crossRouteReplacementTestEventId,
-        ...zeppSamples.map((event) => event.id),
-        batchedDeleteTestEventId,
-        batchedDeleteSecondTestEventId,
-        batchedDeleteUnrelatedTestEventId,
-        ...longDeleteTestEventIds,
-      ],
-    },
-  });
-}
-
 describe("metric stream ClickHouse sink (integration)", () => {
-  const client = createClickHouseClientFromEnv();
-  assertInsertCapable(client);
+  let context: Awaited<ReturnType<typeof createMetricStreamAnalyticsTestContext>>;
+  let client: ClickHouseClient & ClickHouseMetricStreamInsertClient;
+  let nextEntry = 1n;
+  async function applyEvents(
+    target: ClickHouseClient,
+    events: readonly MetricStreamRedpandaEvent[],
+  ) {
+    const positions = events.map(() => analyticsPosition(context.stream, nextEntry++));
+    return applyMetricStreamEventsToClickHouse(
+      target,
+      events,
+      {
+        topic: context.stream.topic,
+        partition: -1,
+        positions,
+        assertActive: async () => undefined,
+      },
+      context.database,
+    );
+  }
 
   beforeAll(async () => {
-    for (const statement of buildClickHouseBootstrapStatementsForNativeMetricStream("")) {
-      await client.command({ query: statement });
-    }
-    await removeTestEvent(client);
+    context = await createMetricStreamAnalyticsTestContext();
+    client = context.client;
+    assertInsertCapable(client);
   }, 120_000);
 
   afterAll(async () => {
-    await removeTestEvent(client);
-    await client.close?.();
+    if (context) await context.cleanup();
+  });
+
+  it.each([1, 500])(
+    "finite native group %s preserves raw rows, receipts and exact PG frontier",
+    async (count) => {
+      const events = Array.from({ length: count }, (_value, index) =>
+        createCurrentMetricStreamEvent({
+          id: randomUUID(),
+          userId: testUserId,
+          providerId: "native-group-fixture",
+          externalId: `sample-${index}-${count}`,
+          sourceType: "sensor",
+          channel: "heart_rate",
+          recordedAt: new Date(Date.UTC(2026, 10, 3) + index * 1000).toISOString(),
+          scalar: 70 + (index % 5),
+          metadata: { device: "fixture", source: "native sink" },
+        }),
+      );
+      const positions = events.map(() => analyticsPosition(context.stream, nextEntry++));
+      const batch = {
+        topic: context.stream.topic,
+        partition: -1,
+        positions,
+        assertActive: async () => undefined,
+      };
+      expect(
+        await applyMetricStreamEventsToClickHouse(client, events, batch, context.database),
+      ).toBe(count);
+      await verifyAnalyticsDeliveryReceipts(client, positions);
+      const state = await loadAnalyticsStreamState(context.database, context.stream);
+      expect(state?.processed).toEqual(positions.at(-1));
+      expect(state?.pending).toBeNull();
+      expect(state?.completedGroup).toMatchObject({
+        memberCount: count,
+        first: positions[0],
+        last: positions.at(-1),
+      });
+      const raw = await client.query({
+        query: `SELECT id,scalar,metadata FROM ${METRIC_STREAM_TABLE} FINAL WHERE id IN {ids:Array(UUID)} ORDER BY toString(id)`,
+        query_params: { ids: events.map((event) => event.id) },
+        format: "JSONEachRow",
+      });
+      const rows = z
+        .array(z.object({ id: z.string(), scalar: z.number(), metadata: z.string() }))
+        .parse(await raw.json());
+      expect(rows).toEqual(
+        events
+          .map((event) => ({
+            id: event.id,
+            scalar: event.scalar,
+            metadata: JSON.stringify(event.metadata),
+          }))
+          .sort((left, right) => left.id.localeCompare(right.id)),
+      );
+      const manifests = await client.query({
+        query:
+          "SELECT count() AS count FROM analytics.delivery_receipt FINAL WHERE serialized_message_id IN {ids:Array(String)} AND status='committed'",
+        query_params: { ids: positions.map((position) => position.serializedMessageId) },
+        format: "JSONEachRow",
+      });
+      expect(z.array(z.object({ count: z.coerce.number() })).parse(await manifests.json())).toEqual(
+        [{ count }],
+      );
+    },
+  );
+
+  it("finite native delete and marker recover completed redelivery without repeating raw mutation", async () => {
+    const event = createCurrentMetricStreamEvent({
+      id: randomUUID(),
+      userId: testUserId,
+      providerId: "native-control-fixture",
+      externalId: "source",
+      sourceType: "sensor",
+      channel: "heart_rate",
+      scalar: 72,
+      recordedAt: "2026-11-03T01:00:00.000Z",
+    });
+    await applyEvents(client, [event]);
+    const deletion = createCurrentMetricStreamDeletedEvent(
+      { userId: testUserId, providerId: event.providerId, externalId: "source" },
+      "1000000000000010",
+    );
+    const marker = createMetricStreamBatchCompletedEvent(
+      { operationId: randomUUID(), batchId: randomUUID(), datasetKeys: ["metric_stream"] },
+      1,
+    );
+    const events = [deletion, marker];
+    const positions = events.map(() => analyticsPosition(context.stream, nextEntry++));
+    const batch = {
+      topic: context.stream.topic,
+      partition: -1,
+      positions,
+      assertActive: async () => undefined,
+    };
+    await applyMetricStreamEventsToClickHouse(client, events, batch, context.database);
+    await verifyAnalyticsDeliveryReceipts(client, positions);
+    const versions = async () => {
+      const result = await client.query({
+        query: `SELECT count() AS count FROM ${METRIC_STREAM_TABLE} WHERE id={id:UUID}`,
+        query_params: { id: event.id },
+        format: "JSONEachRow",
+      });
+      return z.array(z.object({ count: z.coerce.number() })).parse(await result.json());
+    };
+    const originalVersions = await versions();
+    await applyMetricStreamEventsToClickHouse(client, events, batch, context.database);
+    expect(await versions()).toEqual(originalVersions);
+    const raw = await client.query({
+      query: `SELECT is_deleted FROM ${METRIC_STREAM_TABLE} FINAL WHERE id={id:UUID}`,
+      query_params: { id: event.id },
+      format: "JSONEachRow",
+    });
+    expect(z.array(z.object({ is_deleted: z.number() })).parse(await raw.json())).toEqual([
+      { is_deleted: 1 },
+    ]);
+    const acknowledgement = await client.query({
+      query: `SELECT marker_offset,marker_transport,marker_epoch,marker_message_id FROM ${METRIC_STREAM_PROCESSING_ACKNOWLEDGEMENT_TABLE} FINAL WHERE operation_id={operation:UUID} AND batch_id={batch:String}`,
+      query_params: { operation: marker.operationId, batch: marker.batchId },
+      format: "JSONEachRow",
+    });
+    expect(await acknowledgement.json()).toEqual([
+      {
+        marker_offset: null,
+        marker_transport: "pulsar",
+        marker_epoch: context.stream.epoch,
+        marker_message_id: positions[1]?.serializedMessageId,
+      },
+    ]);
+    const state = await loadAnalyticsStreamState(context.database, context.stream);
+    expect(state?.processed).toEqual(positions[1]);
+    expect(state?.pending).toBeNull();
   });
 
   it("retains Zepp vectors and units, distinct same-millisecond records, and deduplicated retries", async () => {
-    await applyMetricStreamEventsToClickHouse(client, zeppSamples);
-    await applyMetricStreamEventsToClickHouse(client, zeppSamples);
+    await applyEvents(client, zeppSamples);
+    await applyEvents(client, zeppSamples);
 
     const result = await client.query({
       query: `SELECT id, channel, vector, metadata
@@ -165,7 +291,7 @@ describe("metric stream ClickHouse sink (integration)", () => {
       scalar: 84.862,
     });
 
-    await insertMetricStreamEventsIntoClickHouse(client, [event]);
+    await applyEvents(client, [event]);
 
     const result = await client.query<{ count: string }>({
       query: `SELECT count() AS count FROM ${METRIC_STREAM_TABLE} WHERE id = {id:UUID}`,
@@ -198,7 +324,7 @@ describe("metric stream ClickHouse sink (integration)", () => {
     expect(clamped[0]?.id).toBe(clamped[1]?.id);
     expect(raw[0]?.id).not.toBe(raw[1]?.id);
     try {
-      await insertMetricStreamEventsIntoClickHouse(client, [...clamped, ...raw]);
+      await applyEvents(client, [...clamped, ...raw]);
       const counts = await client.query({
         query: `SELECT device_id, count() AS count FROM ${METRIC_STREAM_TABLE} FINAL
           WHERE user_id = {userId:UUID} GROUP BY device_id ORDER BY device_id`,
@@ -242,7 +368,7 @@ describe("metric stream ClickHouse sink (integration)", () => {
       channel: "body_weight",
       scalar: 84.862,
     });
-    await insertMetricStreamEventsIntoClickHouse(client, [event, event, event, event]);
+    await applyEvents(client, [event, event, event, event]);
 
     await markMetricStreamScopeDeletedInClickHouse(client, {
       userId: testUserId,
@@ -283,12 +409,12 @@ describe("metric stream ClickHouse sink (integration)", () => {
     const latestEvent = { ...matchingEvent, providerId: "garmin" };
     try {
       const matchingRow = {
-        ...mapMetricStreamEventToClickHouseRow(matchingEvent),
+        ...mapMetricStreamEventToClickHouseRow(matchingEvent, "2026-06-08T14:36:12.000Z"),
         ingested_at: "2026-06-08T14:36:12.000Z",
         version: 1,
       };
       const latestRow = {
-        ...mapMetricStreamEventToClickHouseRow(latestEvent),
+        ...mapMetricStreamEventToClickHouseRow(latestEvent, "2026-06-08T14:36:13.000Z"),
         ingested_at: "2026-06-08T14:36:13.000Z",
         version: 2,
       };
@@ -349,7 +475,7 @@ describe("metric stream ClickHouse sink (integration)", () => {
       channel: "body_weight",
       scalar: 84.862,
     });
-    await insertMetricStreamEventsIntoClickHouse(client, [event]);
+    await applyEvents(client, [event]);
 
     await markMetricStreamScopeDeletedInClickHouse(client, {
       userId: testUserId,
@@ -376,7 +502,7 @@ describe("metric stream ClickHouse sink (integration)", () => {
       channel: "heart_rate",
       scalar: 72,
     } satisfies Omit<MetricStreamRowInput, "externalId" | "id">;
-    await insertMetricStreamEventsIntoClickHouse(client, [
+    await applyEvents(client, [
       createCurrentMetricStreamEvent(
         {
           ...baseRow,
@@ -450,7 +576,7 @@ describe("metric stream ClickHouse sink (integration)", () => {
       },
       "1000000000000001",
     );
-    await applyMetricStreamEventsToClickHouse(client, [initialEvent]);
+    await applyEvents(client, [initialEvent]);
 
     const replacementEvent = createCurrentMetricStreamEvent(
       {
@@ -466,7 +592,7 @@ describe("metric stream ClickHouse sink (integration)", () => {
       "1000000000000002",
     );
 
-    await applyMetricStreamEventsToClickHouse(client, [
+    await applyEvents(client, [
       createCurrentMetricStreamDeletedEvent(
         { providerId: "garmin-dump", userId: testUserId },
         "1000000000000002",
@@ -525,17 +651,17 @@ describe("metric stream ClickHouse sink (integration)", () => {
       return result.json();
     };
 
-    await applyMetricStreamEventsToClickHouse(client, [historyDelete, historyReplacement]);
+    await applyEvents(client, [historyDelete, historyReplacement]);
     expect(await readCurrentRow()).toEqual([
       { is_deleted: 0, scalar: 70, version: "2000000000000003" },
     ]);
 
-    await applyMetricStreamEventsToClickHouse(client, [liveDelete, liveReplacement]);
+    await applyEvents(client, [liveDelete, liveReplacement]);
     expect(await readCurrentRow()).toEqual([
       { is_deleted: 0, scalar: 75, version: "2000000000000007" },
     ]);
 
-    await applyMetricStreamEventsToClickHouse(client, [lateHistoryDelete, lateHistoryReplacement]);
+    await applyEvents(client, [lateHistoryDelete, lateHistoryReplacement]);
     expect(await readCurrentRow()).toEqual([
       { is_deleted: 0, scalar: 75, version: "2000000000000007" },
     ]);
@@ -564,11 +690,8 @@ describe("metric stream ClickHouse sink (integration)", () => {
     const historyB = createCurrentMetricStreamEvent({ ...row, externalId: "B", scalar: 71 }, "101");
     const liveA = createCurrentMetricStreamEvent({ ...row, externalId: "A", scalar: 75 }, "103");
     try {
-      await applyMetricStreamEventsToClickHouse(client, [
-        createCurrentMetricStreamDeletedEvent(scope, "103"),
-        liveA,
-      ]);
-      await applyMetricStreamEventsToClickHouse(client, [
+      await applyEvents(client, [createCurrentMetricStreamDeletedEvent(scope, "103"), liveA]);
+      await applyEvents(client, [
         createCurrentMetricStreamDeletedEvent(scope, "101"),
         historyA,
         historyB,
@@ -605,11 +728,12 @@ describe("metric stream ClickHouse sink (integration)", () => {
         "1000000000000040",
       ),
     );
-    const profiledClient: ClickHouseMetricStreamInsertClient = {
+    const profiledClient: ClickHouseClient = {
+      exec: (options) => client.exec(options),
       command: (options) => client.command(options),
       insert: (options) => client.insert(options),
       query: (options) => {
-        const queryId = randomUUID();
+        const queryId = options.query_id ?? randomUUID();
         if (options.query.includes(METRIC_STREAM_DELETE_SCOPE_TABLE)) {
           scopeQueryIds.push(queryId);
         }
@@ -638,7 +762,7 @@ describe("metric stream ClickHouse sink (integration)", () => {
         clickhouse_settings: { date_time_input_format: "best_effort" },
       });
 
-      await applyMetricStreamEventsToClickHouse(profiledClient, rows);
+      await applyEvents(profiledClient, rows);
       const currentRows = await client.query({
         query: `SELECT count() AS count FROM ${METRIC_STREAM_TABLE} FINAL
           WHERE user_id = {userId:UUID} AND is_deleted = 0`,
@@ -673,6 +797,33 @@ describe("metric stream ClickHouse sink (integration)", () => {
     }
   });
 
+  it("retains the legacy zero revision when pruning scopes for mixed V1 and V2 rows", async () => {
+    const userId = randomUUID();
+    const scope = { userId, providerId: "legacy-mixed-revision-test" };
+    const row = {
+      ...scope,
+      recordedAt: "2026-06-11T14:36:12.000Z",
+      sourceType: "api",
+      channel: "heart_rate",
+      scalar: 75,
+    };
+    await applyEvents(client, [
+      createCurrentMetricStreamDeletedEvent(scope, "10"),
+      createCurrentMetricStreamEvent({ ...row, externalId: "current" }, "20"),
+      { ...row, id: randomUUID(), generation: 0, version: 1, externalId: "legacy" },
+    ]);
+    const result = await client.query({
+      query: `SELECT external_id,is_deleted,toString(version) AS version
+        FROM ${METRIC_STREAM_TABLE} FINAL WHERE user_id={userId:UUID} ORDER BY external_id`,
+      query_params: { userId },
+      format: "JSONEachRow",
+    });
+    expect(await result.json()).toEqual([
+      { external_id: "current", is_deleted: 0, version: "41" },
+      { external_id: "legacy", is_deleted: 1, version: "20" },
+    ]);
+  });
+
   it("guards older rows in a mixed-version batch while retaining same-operation and newer rows", async () => {
     const userId = randomUUID();
     const scope = { userId, providerId: "mixed-revision-test" };
@@ -692,7 +843,7 @@ describe("metric stream ClickHouse sink (integration)", () => {
     ];
 
     try {
-      await applyMetricStreamEventsToClickHouse(client, [
+      await applyEvents(client, [
         createCurrentMetricStreamDeletedEvent(scope, "5000000000000102"),
         ...rows,
       ]);
@@ -725,7 +876,7 @@ describe("metric stream ClickHouse sink (integration)", () => {
     }
   });
 
-  it("applies a long delete run within HTTP limits before its replacement rows", async () => {
+  it("applies individual native delete controls before their replacement row", async () => {
     const ids = longDeleteTestEventIds;
     const scopeIndexes = [0, 100, 349];
     const rows = ids.map((id, index) =>
@@ -740,9 +891,9 @@ describe("metric stream ClickHouse sink (integration)", () => {
         scalar: 94,
       }),
     );
-    await insertMetricStreamEventsIntoClickHouse(client, rows);
+    await applyEvents(client, rows);
     const revision = "1000000000000003";
-    const deletes = Array.from({ length: 350 }, (_, index) =>
+    const deletes = [0, 100, 349, 350].map((index) =>
       createCurrentMetricStreamDeletedEvent(
         {
           userId: testUserId,
@@ -766,10 +917,55 @@ describe("metric stream ClickHouse sink (integration)", () => {
       revision,
     );
 
-    await applyMetricStreamEventsToClickHouse(client, [...deletes, replacement]);
+    let httpCalls = 0;
+    const measuredClient: ClickHouseClient = {
+      exec: (options) => {
+        httpCalls++;
+        return client.exec(options);
+      },
+      command: (options) => {
+        httpCalls++;
+        return client.command(options);
+      },
+      insert: (options) => {
+        httpCalls++;
+        return client.insert(options);
+      },
+      query: (options) => {
+        httpCalls++;
+        return client.query(options);
+      },
+    };
+    const positions = deletes.map(() => analyticsPosition(context.stream, nextEntry++));
+    const startedAt = performance.now();
+    for (const [index, deletion] of deletes.entries()) {
+      const position = positions[index];
+      if (!position) throw new Error("Native control fixture position missing");
+      await applyMetricStreamEventsToClickHouse(
+        measuredClient,
+        [deletion],
+        {
+          topic: context.stream.topic,
+          partition: -1,
+          positions: [position],
+          assertActive: async () => undefined,
+        },
+        context.database,
+      );
+    }
+    process.stdout.write(
+      `${JSON.stringify({
+        event: "native-control-fixture",
+        controls: deletes.length,
+        elapsedMs: performance.now() - startedAt,
+        httpCalls,
+      })}\n`,
+    );
+    await verifyAnalyticsDeliveryReceipts(client, positions);
+    await applyEvents(client, [replacement]);
 
     const result = await client.query({
-      query: `SELECT external_id, is_deleted, scalar FROM ${METRIC_STREAM_TABLE} FINAL
+      query: `SELECT external_id, is_deleted, scalar, toString(version) AS version FROM ${METRIC_STREAM_TABLE} FINAL
         WHERE id IN {ids:Array(UUID)} ORDER BY external_id`,
       query_params: { ids },
       format: "JSONEachRow",
@@ -779,12 +975,13 @@ describe("metric stream ClickHouse sink (integration)", () => {
         external_id: z.string(),
         is_deleted: z.number(),
         scalar: z.number(),
+        version: z.string(),
       }),
     );
     expect(rowsSchema.parse(await result.json())).toEqual([
-      { external_id: "bounded-delete-0", is_deleted: 1, scalar: 94 },
-      { external_id: "bounded-delete-100", is_deleted: 1, scalar: 94 },
-      { external_id: "bounded-delete-349", is_deleted: 0, scalar: 99 },
+      { external_id: "bounded-delete-0", is_deleted: 1, scalar: 94, version: "2000000000000006" },
+      { external_id: "bounded-delete-100", is_deleted: 1, scalar: 94, version: "2000000000000006" },
+      { external_id: "bounded-delete-349", is_deleted: 0, scalar: 99, version: "2000000000000007" },
     ]);
     const acknowledgements = await client.query({
       query: `SELECT count() AS count FROM ${METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE} FINAL
@@ -793,7 +990,7 @@ describe("metric stream ClickHouse sink (integration)", () => {
       format: "JSONEachRow",
     });
     const countSchema = z.array(z.object({ count: z.coerce.number() }));
-    expect(countSchema.parse(await acknowledgements.json())).toEqual([{ count: 350 }]);
+    expect(countSchema.parse(await acknowledgements.json())).toEqual([{ count: 4 }]);
   });
 
   it("matches nullable and bounded scopes precisely without deleting equal-revision replacements", async () => {
@@ -834,10 +1031,8 @@ describe("metric stream ClickHouse sink (integration)", () => {
       ),
     );
     try {
-      await applyMetricStreamEventsToClickHouse(client, [
-        createCurrentMetricStreamDeletedEvent(scope, newerRevision),
-      ]);
-      await applyMetricStreamEventsToClickHouse(client, fixtures);
+      await applyEvents(client, [createCurrentMetricStreamDeletedEvent(scope, newerRevision)]);
+      await applyEvents(client, fixtures);
       const result = await client.query({
         query: `SELECT scalar FROM ${METRIC_STREAM_TABLE} FINAL WHERE id IN {ids:Array(UUID)} AND is_deleted = 0 ORDER BY scalar`,
         query_params: { ids: fixtures.map((event) => event.id) },
@@ -858,7 +1053,7 @@ describe("metric stream ClickHouse sink (integration)", () => {
       providerId: "withings",
     });
 
-    await applyMetricStreamEventsToClickHouse(client, [deletedEvent]);
+    await applyEvents(client, [deletedEvent]);
 
     const result = await client.query<{ acknowledgement_count: string }>({
       query: `SELECT count() AS acknowledgement_count

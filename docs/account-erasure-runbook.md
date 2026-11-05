@@ -55,6 +55,25 @@ confirmation: <https://www.postgresql.org/docs/current/tutorial-transactions.htm
 BullMQ jobs are designed to be idempotent because delivery can be retried:
 <https://docs.bullmq.io/patterns/idempotent-jobs>.
 
+## Native delivery coordination inventory
+
+The native delivery schema adds two shared-system PostgreSQL tables:
+
+- `fitness.analytics_stream_state` stores transport positions, an owner nonce,
+  and a bounded group descriptor containing positions, count, digest and an
+  ingestion-time reservation. It contains no event payload or account key.
+- `fitness.analytics_query_owner` stores the publication resource, owner nonce,
+  backend/query identifiers, terminal state and a digest-derived delivery intent.
+  Delivery intents must not contain account identifiers.
+
+These classifications follow the [schema](../src/db/schema/analytics-work.ts),
+[delivery admission](../src/analytics/analytics-work-store.ts),
+[intent construction](../src/analytics/analytics-delivery-group.ts) and
+[query owner](../src/analytics/analytics-query-owner.ts). The existing
+[PostgreSQL erasure coverage check](../src/account-erasure/postgres-erasure.ts)
+recognizes both tables. This inventory covers coordination state; it does not
+replace erasure of raw rows, the effect journal, placements or archives.
+
 ## User Flow
 
 1. The signed-in user opens account deletion on web or iOS, types `DELETE`, and

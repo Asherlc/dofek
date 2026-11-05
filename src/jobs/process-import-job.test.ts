@@ -107,7 +107,7 @@ const mockMetricStreamPublishRows = vi.fn(
   async (rows: readonly MetricStreamRowInput[], options: MetricStreamPublishOptions) =>
     rows.map((row) => createMetricStreamEvent(row, options.operationRevision)),
 );
-vi.mock("../metric-stream/redpanda-producer.ts", () => ({
+vi.mock("../metric-stream/pulsar-producer.ts", () => ({
   getDefaultMetricStreamEventPublisher: vi.fn(async () => ({
     publishRows: mockMetricStreamPublishRows,
   })),

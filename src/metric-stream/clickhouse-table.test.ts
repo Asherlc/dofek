@@ -24,7 +24,7 @@ describe("buildMetricStreamProcessingAcknowledgementTableSql", () => {
     expect(sql).toContain("expected_event_count UInt64");
     expect(sql).toContain("topic String");
     expect(sql).toContain("partition Int32");
-    expect(sql).toContain("marker_offset UInt64");
+    expect(sql).toContain("marker_offset Nullable(UInt64)");
     expect(sql).toContain("ENGINE = ReplacingMergeTree(applied_at)");
     expect(sql).toContain("ORDER BY (operation_id, batch_id)");
   });

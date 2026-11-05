@@ -37,7 +37,7 @@ const providerActivityAbsenceMocks = vi.hoisted(() => ({
   upsertProviderActivity: vi.fn().mockResolvedValue({ id: "workout-uuid-1" }),
 }));
 
-vi.mock("../metric-stream/redpanda-producer.ts", () => ({
+vi.mock("../metric-stream/pulsar-producer.ts", () => ({
   getDefaultMetricStreamEventPublisher: async () => ({
     publishRows: async (rows: readonly Record<string, unknown>[]) => {
       publishedMetricStreamBatches.push([...rows]);

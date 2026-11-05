@@ -2,6 +2,7 @@ import type { Worker } from "bullmq";
 import type { createDatabaseFromEnv } from "../db/index.ts";
 import { captureException } from "../lib/error-reporting.ts";
 import { logger } from "../logger.ts";
+import { closeAllMetricStreamEventPublishers } from "../metric-stream/pulsar-producer.ts";
 import type { startAccountErasureOutboxDispatcher } from "./account-erasure-outbox.ts";
 import type { createAccountErasureRuntime } from "./account-erasure-runtime.ts";
 import type { createAccountErasureWorkLockPoolFromEnv } from "./account-erasure-work-guard.ts";
@@ -61,6 +62,7 @@ export function createWorkerLifecycle({
     ]);
     await closeAnalyticsRefreshWaiters();
     await Promise.all(allWorkers.map((worker) => worker.close()));
+    await closeAllMetricStreamEventPublishers();
     await Promise.all([
       garminImportProgressCoordinator.close(),
       accountErasureRuntime.close(),
@@ -73,8 +75,15 @@ export function createWorkerLifecycle({
   }
 
   function registerProcessHandlers() {
-    process.on("SIGTERM", shutdown);
-    process.on("SIGINT", shutdown);
+    const shutdownFromSignal = () => {
+      void shutdown().catch((error: unknown) => {
+        captureException(error, { tags: { context: "worker-shutdown" } });
+        logger.error("[worker] Graceful shutdown failed; exiting with failure");
+        process.exit(1);
+      });
+    };
+    process.on("SIGTERM", shutdownFromSignal);
+    process.on("SIGINT", shutdownFromSignal);
 
     // Prevent unhandled promise rejections from crashing the worker process.
     // BullMQ and DB operations can produce rejections that escape the job

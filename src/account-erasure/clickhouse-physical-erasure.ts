@@ -228,7 +228,7 @@ export async function applyClickHousePhysicalErasureMutation(
     query_params: target.predicate.mutationQueryParameters ?? target.predicate.queryParameters,
     clickhouse_settings: {
       log_queries: 0,
-      mutations_sync: 2,
+      mutations_sync: "2",
     },
   });
   const rowsRemaining = await countRowsMatchingPredicate(client, target.table, target.predicate);

@@ -33,7 +33,7 @@ services:
       retries: 10
 
   clickhouse:
-    image: clickhouse/clickhouse-server:26.9.19-alpine
+    image: clickhouse/clickhouse-server:26.10.2.103-alpine@sha256:d474afd5cd0abfb9fdc6e2ebbc82116324779b085f5c15a851aa91bec968291d
     restart: unless-stopped
     mem_limit: 1536m
     environment:
@@ -47,6 +47,7 @@ services:
       - clickhouse_data:/var/lib/clickhouse
       - ./deploy/clickhouse/users.d/default-query-guardrails.xml:/etc/clickhouse-server/users.d/default-query-guardrails.xml:ro
       - ./deploy/clickhouse/config.d/system-log-ttl.xml:/etc/clickhouse-server/config.d/system-log-ttl.xml:ro
+      - ./deploy/clickhouse/config.d/metric-stream-storage.xml:/etc/clickhouse-server/config.d/metric-stream-storage.xml:ro
       - ./deploy/clickhouse/config.d/memory-limits.xml:/etc/clickhouse-server/config.d/memory-limits.xml:ro
     healthcheck:
       test:

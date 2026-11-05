@@ -55,7 +55,7 @@ vi.mock("@sentry/node", () => ({
   captureException: mockSentryCaptureException,
 }));
 
-vi.mock("../../../../src/metric-stream/redpanda-producer.ts", () => ({
+vi.mock("../../../../src/metric-stream/pulsar-producer.ts", () => ({
   getDefaultMetricStreamEventPublisher: async () => ({
     publishRows: mockMetricStreamPublishRows,
   }),

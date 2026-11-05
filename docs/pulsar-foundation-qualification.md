@@ -74,3 +74,74 @@ limits were 64 MiB compressed, 256 MiB decompressed and 30 seconds. The
 measurement of every offloaded record or the older legacy inventory.
 Oversized records remain a fail-closed erasure condition with an
 [operator recovery path](account-erasure-runbook.md#backup-and-restore-behavior).
+
+## November 5 native journal storage routing
+
+The local qualification used ClickHouse
+[26.10.2.103 stable](https://github.com/ClickHouse/ClickHouse/releases/tag/v26.10.2.103-stable).
+The upstream release API identified it as the latest stable release during this
+check. The registry's multi-platform image index was
+`sha256:d474afd5cd0abfb9fdc6e2ebbc82116324779b085f5c15a851aa91bec968291d`;
+the local ARM64 manifest was
+`sha256:88ccb7d52d9c2efe263ded5616417295dcdfbb4832b9e27ec7bb97a6f4ff3c2a`.
+Compose, CI and the proposed production configuration use the image index so
+each architecture selects its corresponding manifest.
+
+The [journal configuration](../deploy/clickhouse/config.d/metric-stream-storage.xml)
+defines a local disk and policy named `metric_stream_journal`, rooted at
+`/var/lib/clickhouse/metric-stream-journal/`. For the local qualification, the
+configuration was copied into the existing test container and loaded with stock
+`SYSTEM RELOAD CONFIG`. Its existing data volume, 4 GiB container memory limit
+and 3 GiB server memory limit were preserved. No production service was changed.
+ClickHouse documents [storage policies](https://clickhouse.com/docs/operations/storing-data)
+and [configuration reload](https://clickhouse.com/docs/sql-reference/statements/system#system-reload-config).
+
+The [real-engine storage test](../src/db/metric-stream-journal-storage.integration.test.ts)
+ran the registered current-schema migration in two isolated databases. It
+verified all four journal/receipt/placement tables use the named policy, an
+actual receipt part lands on that disk, and a raw insertion reaches the
+placement materialized view on that disk. The raw part remained on its existing
+default disk. Every test query used a 128 MiB allowance; the test databases were
+dropped after the run.
+
+The placement view covers future insertions. This test inserted a new row;
+neither migration `0112` nor this test populates placements for existing raw
+history. The bounded historical placement bootstrap remains an activation gate;
+see the [view definition](../src/metric-stream/clickhouse-table.ts).
+
+This qualifies storage routing, **not the physical quota**. Production activation
+still requires the host directory's project quota, writer identity and capability
+checks, measured allocations and reserve, the maintenance procedure, and the
+whole-host test. Policy configuration alone does not establish those boundaries.
+See the [living remaining-work index](https://github.com/Asherlc/dofek/blob/dull-baboon/docs/pulsar-remaining-work.md).
+
+## November 5 native grouped sink database qualification
+
+The [sink integration file](../src/metric-stream/clickhouse-sink.integration.test.ts)
+passed all 19 cases against real Postgres and ClickHouse, with one worker,
+no retries and a 128 MiB per-query allowance. Exact raw contents, receipts and
+frontiers were checked for groups of one and 500, replay, deletion scopes and
+native completion markers. The complete run observed 879 ClickHouse requests
+and no HTTP errors; its isolated databases were removed afterward.
+
+The grouped writer uses the official client's
+[`exec(values)` streaming API](https://clickhouse.com/docs/integrations/javascript#exec-method),
+with synchronous execution and `wait_end_of_query=1`. The query owner reads the
+response to EOF before admitting its next query. The response's written-row count
+is checked only as a lower bound: materialized views can add writes, so equality
+would reject valid inserts. Exactness is checked against actual raw rows in the
+integration tests. Unit tests cover interrupted responses and invalid summaries.
+Independent source review found no critical or important issue in this checkpoint;
+the interrupted-response boundary has not yet been exercised as one real-engine
+crash fixture.
+
+Four individual native deletion controls, three matching and one empty, followed
+by a replacement preserved exact versions and produced a receipt for each control.
+The controls alone took about 1.40 seconds and 134 ClickHouse requests, excluding
+setup, assertion reads and the replacement. A 350-control burst and realistic
+provider-deletion drain remain whole-host soak checks.
+
+These database tests use synthetic native positions. They do not qualify a real
+broker-to-Consumer-to-sink path, current-path throughput, production addressing,
+physical quotas or the historical placement bootstrap. No production deployment
+or hold restoration occurred.

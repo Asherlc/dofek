@@ -30,7 +30,7 @@ vi.mock("../../db/token-user-context.ts", () => ({
   runWithTokenUser: async (_userId: string, callback: () => Promise<unknown>) => callback(),
 }));
 
-vi.mock("../../metric-stream/redpanda-producer.ts", () => ({
+vi.mock("../../metric-stream/pulsar-producer.ts", () => ({
   getDefaultMetricStreamEventPublisher: async () => ({
     publishRows: async (rows: readonly unknown[]) => {
       publishedMetricRows.push(...rows);

@@ -1,8 +1,17 @@
 import { createHash } from "node:crypto";
 import type { Server } from "node:http";
+import Pulsar, { type Client } from "pulsar-client";
 import { z } from "zod";
+import {
+  coordinateAnalyticsDelivery,
+  coordinateAnalyticsDeliveryGroup,
+} from "../analytics/analytics-delivery.ts";
+import { loadAnalyticsStreamState } from "../analytics/analytics-work-store.ts";
+import { metricStreamPositionIdentity } from "../analytics/journal-position.ts";
 import { type ClickHouseClient, createClickHouseClientFromEnv } from "../db/clickhouse.ts";
+import { createDatabaseFromEnv, type Database } from "../db/index.ts";
 import { captureException } from "../lib/error-reporting.ts";
+import type { ClickHouseMetricStreamRow } from "./clickhouse-row.ts";
 import {
   ACCOUNT_ERASURE_FENCE_TABLE,
   ACCOUNT_ERASURE_OPERATION_FENCE_TABLE,
@@ -10,8 +19,8 @@ import {
   METRIC_STREAM_DELETE_SCOPE_TABLE,
   METRIC_STREAM_PROCESSING_ACKNOWLEDGEMENT_TABLE,
   METRIC_STREAM_TABLE,
-  PROVIDER_DATA_GENERATION_TABLE,
 } from "./clickhouse-table.ts";
+import type { MetricStreamConsumerBatchContext } from "./consumer-context.ts";
 import {
   createMetricStreamConsumerReadinessServer,
   MetricStreamConsumerReadiness,
@@ -19,17 +28,23 @@ import {
 import {
   isMetricStreamBatchCompletedEvent,
   isMetricStreamDeletedEvent,
-  type MetricStreamBatchCompletedEventV1,
   type MetricStreamDeletedEventV3,
   type MetricStreamDeleteScope,
+  type MetricStreamEventV1,
+  type MetricStreamEventV2,
   type MetricStreamRedpandaEvent,
   type MetricStreamRowEvent,
 } from "./events.ts";
+import { runPulsarMetricStreamConsumer } from "./pulsar-consumer.ts";
 import {
-  createKafkaMetricStreamConsumerFromEnv,
-  type MetricStreamConsumerBatchContext,
-  runMetricStreamEventConsumer,
-} from "./redpanda-consumer.ts";
+  applyMetricStreamSourceEffects,
+  prepareMetricStreamSourceEffects,
+} from "./source-effects.ts";
+import {
+  applyMetricStreamSourceEffectsGroup,
+  prepareMetricStreamSourceEffectsGroup,
+} from "./source-effects-group.ts";
+import { compareMetricStreamPositions, metricStreamPositionSchema } from "./transport-position.ts";
 
 export interface ClickHouseMetricStreamInsertClient {
   command?(options: {
@@ -51,337 +66,9 @@ export interface ClickHouseMetricStreamInsertClient {
   }): Promise<unknown>;
 }
 
-export interface ClickHouseMetricStreamRow {
-  recorded_at: string;
-  user_id: string;
-  provider_id: string;
-  generation: number;
-  external_id: string | null;
-  device_id: string | null;
-  source_type: string;
-  channel: string;
-  activity_id: string | null;
-  scalar: number | null;
-  vector: number[];
-  point: string | null;
-  metadata: string;
-  id: string;
-  ingested_at: string;
-  is_deleted: 0 | 1;
-  version: number | string;
-}
-
-const MAX_METRIC_STREAM_ROWS_PER_WRITE = 1_000;
-const METRIC_STREAM_HEARTBEAT_INTERVAL_MS = 3_000;
-
-function isClickHouseReplicatedEvent(event: MetricStreamRowEvent): boolean {
-  return event.channel !== "imu";
-}
-
-function normalizePointForClickHouse(point: string | null | undefined): string | null {
-  if (!point) return null;
-
-  const ewktMatch = /^SRID=4326;POINT\((-?\d+(?:\.\d+)?) (-?\d+(?:\.\d+)?)\)$/.exec(point);
-  if (!ewktMatch) return point;
-
-  const longitude = Number(ewktMatch[1]);
-  const latitude = Number(ewktMatch[2]);
-  return JSON.stringify({
-    type: "Point",
-    coordinates: [longitude, latitude],
-  });
-}
-
-export function mapMetricStreamEventToClickHouseRow(
-  event: MetricStreamRowEvent,
-): ClickHouseMetricStreamRow {
-  return {
-    recorded_at: event.recordedAt,
-    user_id: event.userId,
-    provider_id: event.providerId,
-    generation: event.generation,
-    external_id: event.externalId ?? null,
-    device_id: event.deviceId ?? null,
-    source_type: event.sourceType,
-    channel: event.channel,
-    activity_id: event.activityId ?? null,
-    scalar: event.scalar ?? null,
-    vector: event.vector ?? [],
-    point: normalizePointForClickHouse(event.point),
-    metadata: JSON.stringify(event.metadata ?? null),
-    id: event.id,
-    ingested_at: new Date().toISOString(),
-    is_deleted: 0,
-    version: event.version === 1 ? 0 : (BigInt(event.operationRevision) * 2n + 1n).toString(),
-  };
-}
-
-async function keepMetricStreamHeartbeatAlive<T>(
-  context: MetricStreamConsumerBatchContext | undefined,
-  operation: () => Promise<T>,
-): Promise<T> {
-  if (!context) {
-    return operation();
-  }
-
-  let heartbeatFailure: unknown;
-  let heartbeatInFlight: Promise<void> | undefined;
-  const heartbeat = (): void => {
-    if (heartbeatInFlight || heartbeatFailure) {
-      return;
-    }
-    heartbeatInFlight = context
-      .heartbeat()
-      .catch((error: unknown) => {
-        heartbeatFailure = error;
-        captureException(error, {
-          tags: {
-            metricStreamConsumer: "clickhouse-sink",
-            metricStreamFailure: "heartbeat",
-          },
-        });
-      })
-      .finally(() => {
-        heartbeatInFlight = undefined;
-      });
-  };
-  const timer = setInterval(heartbeat, METRIC_STREAM_HEARTBEAT_INTERVAL_MS);
-  const stopHeartbeat = async (): Promise<void> => {
-    clearInterval(timer);
-    await heartbeatInFlight;
-  };
-
-  try {
-    const result = await operation();
-    await stopHeartbeat();
-    if (heartbeatFailure) {
-      throw heartbeatFailure;
-    }
-    return result;
-  } catch (error) {
-    await stopHeartbeat();
-    throw error;
-  }
-}
-
-const providerDataGenerationRowsSchema = z.array(
-  z.object({
-    generation: z.coerce.number().int().nonnegative(),
-    provider_id: z.string().min(1),
-    user_id: z.uuid(),
-  }),
-);
-const deletionAcknowledgementRowsSchema = z.array(
-  z.object({ acknowledgement_count: z.coerce.number().int().nonnegative() }),
-);
-const accountErasureFenceRowsSchema = z.array(z.object({ user_hash: z.string().length(64) }));
 const accountErasureOperationFenceRowsSchema = z.array(
   z.object({ operation_hash: z.string().length(64) }),
 );
-
-function providerGenerationKey(userId: string, providerId: string): string {
-  return `${userId}\0${providerId}`;
-}
-
-async function isMetricStreamDeletionAcknowledged(
-  client: ClickHouseMetricStreamInsertClient,
-  eventId: string,
-): Promise<boolean> {
-  if (!client.query) return false;
-  const result = await client.query({
-    query: `SELECT 1 AS acknowledgement_count
-      FROM ${METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE}
-      WHERE event_id = {event_id:UUID}
-      LIMIT 1`,
-    query_params: { event_id: eventId },
-    format: "JSONEachRow",
-  });
-  return deletionAcknowledgementRowsSchema
-    .parse(await result.json())
-    .some((row) => row.acknowledgement_count > 0);
-}
-
-async function filterEventsByProviderGeneration(
-  client: ClickHouseMetricStreamInsertClient,
-  events: readonly MetricStreamRowEvent[],
-): Promise<MetricStreamRowEvent[]> {
-  if (events.length === 0) return [];
-  if (!client.query) {
-    throw new Error("ClickHouse metric-stream ingestion requires a query-capable client");
-  }
-
-  const providerScopes = new Map<string, { providerId: string; userId: string }>();
-  for (const event of events) {
-    providerScopes.set(providerGenerationKey(event.userId, event.providerId), {
-      providerId: event.providerId,
-      userId: event.userId,
-    });
-  }
-
-  const queryParams: Record<string, unknown> = {};
-  const predicates = [...providerScopes.values()].map((scope, index) => {
-    queryParams[`user_id_${index}`] = scope.userId;
-    queryParams[`provider_id_${index}`] = scope.providerId;
-    return `(user_id = {user_id_${index}:UUID} AND provider_id = {provider_id_${index}:String})`;
-  });
-  const result = await client.query({
-    query: `SELECT user_id, provider_id, max(generation) AS generation
-      FROM ${PROVIDER_DATA_GENERATION_TABLE}
-      WHERE ${predicates.join(" OR ")}
-      GROUP BY user_id, provider_id`,
-    query_params: queryParams,
-    format: "JSONEachRow",
-  });
-  const activeGenerations = new Map<string, number>();
-  for (const row of providerDataGenerationRowsSchema.parse(await result.json())) {
-    activeGenerations.set(providerGenerationKey(row.user_id, row.provider_id), row.generation);
-  }
-
-  return events.filter(
-    (event) =>
-      event.generation >=
-      (activeGenerations.get(providerGenerationKey(event.userId, event.providerId)) ?? 0),
-  );
-}
-
-async function filterEventsByAccountErasureFence(
-  client: ClickHouseMetricStreamInsertClient,
-  events: readonly MetricStreamRowEvent[],
-): Promise<MetricStreamRowEvent[]> {
-  if (events.length === 0) return [];
-  if (!client.query) {
-    throw new Error("ClickHouse metric-stream ingestion requires a query-capable client");
-  }
-  const userHashes = new Map<string, string>();
-  for (const event of events) {
-    userHashes.set(event.userId, createHash("sha256").update(event.userId).digest("hex"));
-  }
-  const result = await client.query({
-    query: `SELECT user_hash
-      FROM ${ACCOUNT_ERASURE_FENCE_TABLE} FINAL
-      WHERE user_hash IN {user_hashes:Array(String)}`,
-    query_params: {
-      user_hashes: [...userHashes.values()],
-    },
-    format: "JSONEachRow",
-  });
-  const erasedUserHashes = new Set(
-    accountErasureFenceRowsSchema.parse(await result.json()).map((row) => row.user_hash),
-  );
-  return events.filter((event) => !erasedUserHashes.has(userHashes.get(event.userId) ?? ""));
-}
-
-async function isOperationAccountErasureFenced(
-  client: ClickHouseMetricStreamInsertClient,
-  operationId: string,
-): Promise<boolean> {
-  if (!client.query) {
-    throw new Error(
-      "ClickHouse metric-stream processing acknowledgement requires a query-capable client",
-    );
-  }
-  const operationHash = createHash("sha256").update(operationId).digest("hex");
-  const result = await client.query({
-    query: `SELECT operation_hash
-      FROM ${ACCOUNT_ERASURE_OPERATION_FENCE_TABLE} FINAL
-      WHERE operation_hash = {operation_hash:FixedString(64)}
-      LIMIT 1`,
-    query_params: { operation_hash: operationHash },
-    format: "JSONEachRow",
-    clickhouse_settings: { log_queries: 0 },
-  });
-  return accountErasureOperationFenceRowsSchema.parse(await result.json()).length > 0;
-}
-
-async function tombstoneMetricStreamIds(
-  client: ClickHouseMetricStreamInsertClient,
-  rowIds: readonly string[],
-): Promise<void> {
-  if (rowIds.length === 0) return;
-  if (!client.command) {
-    throw new Error(
-      "ClickHouse metric-stream generation fencing requires a command-capable client",
-    );
-  }
-  await client.command({
-    query: `INSERT INTO ${METRIC_STREAM_TABLE} (
-        id, activity_id, user_id, recorded_at, channel, provider_id, external_id,
-        device_id, source_type, scalar, vector, point, metadata, ingested_at,
-        is_deleted, version, generation
-      )
-      SELECT
-        id,
-        latest_row.1 AS activity_id,
-        latest_row.2 AS user_id,
-        latest_row.3 AS recorded_at,
-        latest_row.4 AS channel,
-        latest_row.5 AS provider_id,
-        latest_row.6 AS external_id,
-        latest_row.7 AS device_id,
-        latest_row.8 AS source_type,
-        latest_row.9 AS scalar,
-        latest_row.10 AS vector,
-        latest_row.11 AS point,
-        latest_row.12 AS metadata,
-        now64(9) AS ingested_at,
-        1 AS is_deleted,
-        latest_row.15 + 1 AS version,
-        latest_row.13 AS generation
-      FROM (
-        SELECT
-          id,
-          argMax(
-            tuple(
-              activity_id,
-              user_id,
-              recorded_at,
-              channel,
-              provider_id,
-              external_id,
-              device_id,
-              source_type,
-              scalar,
-              vector,
-              point,
-              metadata,
-              generation,
-              is_deleted,
-              version
-            ),
-            tuple(version, ingested_at)
-          ) AS latest_row
-        FROM ${METRIC_STREAM_TABLE}
-        WHERE id IN {row_ids:Array(UUID)}
-        GROUP BY id
-      )
-      WHERE latest_row.14 = 0`,
-    query_params: {
-      row_ids: rowIds,
-    },
-  });
-}
-
-export async function insertMetricStreamEventsIntoClickHouse(
-  client: ClickHouseMetricStreamInsertClient,
-  events: readonly MetricStreamRowEvent[],
-): Promise<number> {
-  const rows = events.filter(isClickHouseReplicatedEvent).map(mapMetricStreamEventToClickHouseRow);
-
-  if (rows.length === 0) {
-    return 0;
-  }
-
-  await client.insert({
-    table: METRIC_STREAM_TABLE,
-    values: rows,
-    format: "JSONEachRow",
-    // recorded_at / ingested_at are ISO-8601 strings with a trailing Z;
-    // ClickHouse only accepts that offset format with best_effort datetime parsing.
-    clickhouse_settings: { date_time_input_format: "best_effort" },
-  });
-
-  return rows.length;
-}
 
 interface ClickHouseDeleteScopeColumnExpressions {
   activityId: string;
@@ -467,80 +154,6 @@ interface MetricStreamDeleteCommand {
 // Each scope can add seven HTTP parameters. Keep requests below ClickHouse's
 // default 1,000-field limit, including the revision and client settings.
 const MAX_METRIC_STREAM_DELETE_SCOPES_PER_WRITE = 100;
-
-async function tombstoneRowsWithNewerDeleteScopes(
-  client: ClickHouseMetricStreamInsertClient,
-  events: readonly MetricStreamRowEvent[],
-): Promise<void> {
-  if (events.length === 0) return;
-  if (!client.query)
-    throw new Error("ClickHouse metric-stream ingestion requires a query-capable client");
-  // The row insert precedes this read, and scope persistence precedes the delete
-  // scan. Concurrent sinks therefore cannot both miss an overlapping write.
-  const incomingRows = events.map(mapMetricStreamEventToClickHouseRow);
-  const result = await client.query({
-    query: `SELECT row.row_index AS row_index, toString(max(scope.operation_revision * 2)) AS version
-      FROM (
-        SELECT event.1 AS row_index, event.2 AS user_id, event.3 AS provider_id,
-          event.4 AS activity_id, event.5 AS channel, event.6 AS external_id,
-          parseDateTime64BestEffort(event.7, 6) AS recorded_at, toUInt64(event.8) AS version
-        FROM (SELECT arrayJoin(arrayZip(
-          {row_indexes:Array(UInt16)}, {row_user_ids:Array(UUID)},
-          {provider_ids:Array(String)}, {activity_ids:Array(Nullable(UUID))},
-          {channels:Array(String)}, {external_ids:Array(Nullable(String))},
-          {recorded_ats:Array(String)}, {versions:Array(String)}
-        )) AS event)
-      ) AS row
-      CROSS JOIN (SELECT * FROM ${METRIC_STREAM_DELETE_SCOPE_TABLE} FINAL
-        WHERE (user_id IS NULL OR user_id IN {user_ids:Array(UUID)})
-          AND operation_revision * 2 > arrayMin(arrayMap(
-            row_version -> toUInt64(row_version), {versions:Array(String)}
-          ))) AS scope
-      WHERE (scope.user_id IS NULL OR scope.user_id = row.user_id)
-        AND (scope.provider_id IS NULL OR scope.provider_id = row.provider_id)
-        AND (scope.activity_id IS NULL OR scope.activity_id = row.activity_id)
-        AND (scope.channel IS NULL OR scope.channel = row.channel)
-        AND (scope.external_id_set = 0 OR isNotDistinctFrom(scope.external_id, row.external_id))
-        AND (scope.recorded_at_start IS NULL OR row.recorded_at >= scope.recorded_at_start)
-        AND (scope.recorded_at_end IS NULL OR row.recorded_at < scope.recorded_at_end)
-        AND row.version < scope.operation_revision * 2
-      GROUP BY row.row_index`,
-    query_params: {
-      row_indexes: incomingRows.map((_row, index) => index),
-      row_user_ids: incomingRows.map((row) => row.user_id),
-      provider_ids: incomingRows.map((row) => row.provider_id),
-      activity_ids: incomingRows.map((row) => row.activity_id),
-      channels: incomingRows.map((row) => row.channel),
-      external_ids: incomingRows.map((row) => row.external_id),
-      recorded_ats: incomingRows.map((row) => row.recorded_at),
-      versions: incomingRows.map((row) => String(row.version)),
-      user_ids: [...new Set(events.map((event) => event.userId))],
-    },
-    format: "JSONEachRow",
-  });
-  const guards = new Map(
-    z
-      .array(
-        z.object({ row_index: z.number().int().nonnegative(), version: z.string().regex(/^\d+$/) }),
-      )
-      .parse(await result.json())
-      .map((row) => [row.row_index, row.version]),
-  );
-  const rows = incomingRows.flatMap((row, index) => {
-    const version = guards.get(index);
-    return version && BigInt(row.version) < BigInt(version)
-      ? [{ ...row, is_deleted: 1 as const, version }]
-      : [];
-  });
-  if (rows.length > 0) {
-    await client.insert({
-      table: METRIC_STREAM_TABLE,
-      values: rows,
-      format: "JSONEachRow",
-      clickhouse_settings: { date_time_input_format: "best_effort" },
-    });
-  }
-}
 
 async function markMetricStreamDeleteCommandsInClickHouse(
   client: Pick<ClickHouseMetricStreamInsertClient, "command">,
@@ -715,219 +328,6 @@ export async function markMetricStreamScopeDeletedInClickHouse(
   await markMetricStreamDeleteCommandsInClickHouse(client, [{ scope, eventId, operationRevision }]);
 }
 
-export async function applyMetricStreamEventsToClickHouse(
-  client: ClickHouseMetricStreamInsertClient,
-  events: readonly MetricStreamRedpandaEvent[],
-  context?: MetricStreamConsumerBatchContext,
-): Promise<number> {
-  let inserted = 0;
-  let rowBuffer: MetricStreamRowEvent[] = [];
-  const heartbeat = async (): Promise<void> => {
-    if (context) {
-      await context.heartbeat();
-    }
-  };
-  const flushRows = async () => {
-    if (rowBuffer.length > 0) {
-      await keepMetricStreamHeartbeatAlive(context, async () => {
-        const replicatedEvents = rowBuffer.filter(isClickHouseReplicatedEvent);
-        const accountActiveEvents = await filterEventsByAccountErasureFence(
-          client,
-          replicatedEvents,
-        );
-        await insertMetricStreamEventsIntoClickHouse(client, accountActiveEvents);
-        await tombstoneRowsWithNewerDeleteScopes(client, accountActiveEvents);
-        const currentGenerationEvents = await filterEventsByProviderGeneration(
-          client,
-          accountActiveEvents,
-        );
-        const currentEventIds = new Set(currentGenerationEvents.map((event) => event.id));
-        const staleEventIds = [
-          ...new Set(
-            accountActiveEvents
-              .filter((event) => !currentEventIds.has(event.id))
-              .map((event) => event.id),
-          ),
-        ];
-        await tombstoneMetricStreamIds(client, staleEventIds);
-        inserted += currentGenerationEvents.length;
-        rowBuffer = [];
-      });
-      await heartbeat();
-    }
-  };
-
-  const acknowledgeProcessingBatch = async (
-    event: MetricStreamBatchCompletedEventV1,
-    eventIndex: number,
-  ): Promise<void> => {
-    if (!context) {
-      throw new Error("metric-stream processing marker requires Kafka batch context");
-    }
-    const markerOffset = context.eventOffsets[eventIndex];
-    if (markerOffset === undefined) {
-      throw new Error("metric-stream processing marker is missing its Kafka offset");
-    }
-    if (!client.command) {
-      throw new Error(
-        "ClickHouse metric-stream processing acknowledgement requires a command-capable client",
-      );
-    }
-    if (await isOperationAccountErasureFenced(client, event.operationId)) {
-      return;
-    }
-    await client.command({
-      query: `INSERT INTO ${METRIC_STREAM_PROCESSING_ACKNOWLEDGEMENT_TABLE} (
-          operation_id,
-          batch_id,
-          dataset_keys,
-          expected_event_count,
-          topic,
-          topic_partition,
-          marker_offset
-        ) VALUES (
-          {operation_id:UUID},
-          {batch_id:String},
-          {dataset_keys:Array(String)},
-          {expected_event_count:UInt64},
-          {topic:String},
-          {partition:Int32},
-          {marker_offset:UInt64}
-        )`,
-      query_params: {
-        operation_id: event.operationId,
-        batch_id: event.batchId,
-        dataset_keys: event.datasetKeys,
-        expected_event_count: event.expectedEventCount,
-        topic: context.topic,
-        partition: context.partition,
-        marker_offset: markerOffset,
-      },
-    });
-  };
-
-  let eventIndex = 0;
-  while (eventIndex < events.length) {
-    const event = events[eventIndex];
-    if (!event) {
-      break;
-    }
-    if (isMetricStreamBatchCompletedEvent(event)) {
-      await flushRows();
-      await heartbeat();
-      await keepMetricStreamHeartbeatAlive(context, () =>
-        acknowledgeProcessingBatch(event, eventIndex),
-      );
-      await heartbeat();
-      eventIndex += 1;
-      continue;
-    }
-    if (isMetricStreamDeletedEvent(event)) {
-      await flushRows();
-      await heartbeat();
-      if ("operationRevision" in event) {
-        const deleteRun: MetricStreamDeletedEventV3[] = [];
-        let nextEventIndex = eventIndex;
-        while (nextEventIndex < events.length) {
-          const candidate = events[nextEventIndex];
-          if (
-            !candidate ||
-            !isMetricStreamDeletedEvent(candidate) ||
-            !("operationRevision" in candidate) ||
-            candidate.operationRevision !== event.operationRevision
-          ) {
-            break;
-          }
-          deleteRun.push(candidate);
-          nextEventIndex += 1;
-        }
-        const unacknowledgedDeletes: MetricStreamDeletedEventV3[] = [];
-        for (const deleteEvent of deleteRun) {
-          const acknowledged = await keepMetricStreamHeartbeatAlive(context, () =>
-            isMetricStreamDeletionAcknowledged(client, deleteEvent.eventId),
-          );
-          if (!acknowledged) {
-            unacknowledgedDeletes.push(deleteEvent);
-          }
-          await heartbeat();
-        }
-        await keepMetricStreamHeartbeatAlive(context, () =>
-          markMetricStreamScopesDeletedInClickHouse(client, unacknowledgedDeletes),
-        );
-        await heartbeat();
-        eventIndex = nextEventIndex;
-        continue;
-      }
-      if (
-        "eventId" in event &&
-        (await keepMetricStreamHeartbeatAlive(context, () =>
-          isMetricStreamDeletionAcknowledged(client, event.eventId),
-        ))
-      ) {
-        await heartbeat();
-        eventIndex += 1;
-        continue;
-      }
-      await keepMetricStreamHeartbeatAlive(context, () =>
-        markMetricStreamScopeDeletedInClickHouse(
-          client,
-          event.scope,
-          "eventId" in event ? event.eventId : undefined,
-          undefined,
-        ),
-      );
-      await heartbeat();
-      eventIndex += 1;
-      continue;
-    }
-    rowBuffer.push(event);
-    if (rowBuffer.length >= MAX_METRIC_STREAM_ROWS_PER_WRITE) {
-      await flushRows();
-    }
-    eventIndex += 1;
-  }
-
-  await flushRows();
-  return inserted;
-}
-
-function hasClickHouseInsertClient(
-  client: ClickHouseClient,
-): client is ClickHouseClient & ClickHouseMetricStreamInsertClient {
-  return typeof client.insert === "function";
-}
-
-export async function runMetricStreamClickHouseSinkFromEnv(
-  readiness: MetricStreamConsumerReadiness,
-): Promise<void> {
-  const client = createClickHouseClientFromEnv();
-  if (!hasClickHouseInsertClient(client)) {
-    throw new Error("ClickHouse metric-stream sink requires an insert-capable client");
-  }
-
-  const { consumer, quarantine, topic } = createKafkaMetricStreamConsumerFromEnv();
-  if (!consumer.observeGroupLifecycle) {
-    throw new Error("ClickHouse metric-stream sink requires Kafka group lifecycle events");
-  }
-  await runMetricStreamEventConsumer({
-    consumer,
-    quarantine,
-    topic,
-    lifecycleListener: readiness,
-    handleEvents: async (events, context) => {
-      await applyMetricStreamEventsToClickHouse(client, events, context);
-    },
-  });
-}
-
-export async function startMetricStreamClickHouseSinkFromEnv(): Promise<void> {
-  const readiness = new MetricStreamConsumerReadiness();
-  const readinessServer = createMetricStreamConsumerReadinessServer(readiness);
-  await listenReadinessServer(readinessServer);
-  readinessServer.unref();
-  await runMetricStreamClickHouseSinkFromEnv(readiness);
-}
-
 function listenReadinessServer(server: Server): Promise<void> {
   return new Promise((resolve, reject) => {
     const onError = (error: Error): void => {
@@ -942,4 +342,353 @@ function listenReadinessServer(server: Server): Promise<void> {
     server.once("listening", onListening);
     server.listen(3001, "0.0.0.0");
   });
+}
+
+async function keepMetricStreamOwnershipActive<T>(
+  context: MetricStreamConsumerBatchContext,
+  operation: () => Promise<T>,
+): Promise<T> {
+  let failure: unknown;
+  let pending: Promise<void> | undefined;
+  const timer = setInterval(() => {
+    if (pending || failure) return;
+    pending = context
+      .assertActive()
+      .catch((error: unknown) => {
+        failure = error;
+        captureException(error, {
+          tags: { metricStreamConsumer: "clickhouse-sink", metricStreamFailure: "ownership" },
+        });
+      })
+      .finally(() => {
+        pending = undefined;
+      });
+  }, 3_000);
+  const stop = async () => {
+    clearInterval(timer);
+    await pending;
+  };
+  let result: T;
+  try {
+    result = await operation();
+  } catch (error) {
+    await stop();
+    throw error;
+  }
+  await stop();
+  if (failure) throw failure;
+  return result;
+}
+
+export async function applyMetricStreamEventsToClickHouse(
+  client: ClickHouseClient,
+  events: readonly MetricStreamRedpandaEvent[],
+  context: MetricStreamConsumerBatchContext,
+  database: Database,
+): Promise<number> {
+  if (!client.insert)
+    throw new Error("Metric-stream sink requires an insert-capable analytics journal client");
+  if (
+    context.positions.length !== events.length ||
+    context.positions.some(
+      (position) =>
+        !metricStreamPositionSchema.safeParse(position).success ||
+        position.topic !== context.topic ||
+        position.partition !== context.partition,
+    )
+  )
+    throw new Error(
+      "Metric-stream delivery positions must align with every event and batch stream",
+    );
+  for (let index = 1; index < context.positions.length; index++) {
+    const prior = context.positions[index - 1],
+      current = context.positions[index];
+    if (!prior || !current || compareMetricStreamPositions(prior, current) >= 0)
+      throw new Error(
+        "Metric-stream delivery positions must preserve strict native delivery order",
+      );
+  }
+  let inserted = 0;
+  for (let index = 0; index < events.length; ) {
+    const event = events[index];
+    if (!event) throw new Error("Metric-stream event is missing");
+    const position = context.positions[index];
+    if (!position) throw new Error("Metric-stream delivery position is missing");
+    if (isMetricStreamRow(event)) {
+      const members: {
+        event: MetricStreamEventV1 | MetricStreamEventV2;
+        position: typeof position;
+      }[] = [];
+      const seen = new Set<string>();
+      while (index < events.length && members.length < 500) {
+        const next = events[index],
+          nextPosition = context.positions[index];
+        if (!next || !nextPosition) throw new Error("Metric-stream group input is incomplete");
+        if (!isMetricStreamRow(next) || seen.has(next.id.toLowerCase())) break;
+        seen.add(next.id.toLowerCase());
+        members.push({ event: next, position: nextPosition });
+        index++;
+      }
+      const byPosition = new Map(
+        members.map((member) => [metricStreamPositionIdentity(member.position), member]),
+      );
+      const inputs = (positions: readonly (typeof position)[], times: readonly string[]) => {
+        if (positions.length !== times.length)
+          throw new Error("Grouped ingestion times do not match native members");
+        return positions.map((position, ordinal) => {
+          const member = byPosition.get(metricStreamPositionIdentity(position)),
+            ingestedAt = times[ordinal];
+          if (!member || !ingestedAt)
+            throw new Error("Grouped native member or ingestion time is missing");
+          return { ...member, ingestedAt };
+        });
+      };
+      await keepMetricStreamOwnershipActive(context, () =>
+        coordinateAnalyticsDeliveryGroup(
+          { database, clickhouse: client },
+          {
+            positions: members.map((member) => member.position),
+            maximum: 500,
+            assertActive: context.assertActive,
+            prepare: (owner, positions, times) =>
+              prepareMetricStreamSourceEffectsGroup(owner, inputs(positions, times)),
+            apply: async (owner, positions, effects, times) => {
+              inserted += await applyMetricStreamSourceEffectsGroup(
+                owner,
+                inputs(positions, times),
+                effects,
+              );
+            },
+          },
+        ),
+      );
+      await context.assertActive();
+      continue;
+    }
+    if (isMetricStreamBatchCompletedEvent(event) && position.transport !== "pulsar")
+      throw new Error("Native processing marker requires a Pulsar position");
+    await context.assertActive();
+    await keepMetricStreamOwnershipActive(context, () =>
+      coordinateAnalyticsDelivery(
+        { database, clickhouse: client },
+        {
+          position,
+          assertActive: context.assertActive,
+          prepare: (owner) => prepareMetricStreamSourceEffects(owner, event, position),
+          applyControl: async (owner) => {
+            if (isMetricStreamDeletedEvent(event) && "operationRevision" in event) {
+              const scope = event.scope;
+              if (!owner.client.insert) throw new Error("Source owner requires insert");
+              await owner.client.insert({
+                table: METRIC_STREAM_DELETE_SCOPE_TABLE,
+                format: "JSONEachRow",
+                values: [
+                  {
+                    user_id: scope.userId ?? null,
+                    provider_id: scope.providerId ?? null,
+                    activity_id: scope.activityId ?? null,
+                    channel: scope.channel ?? null,
+                    external_id: scope.externalId ?? null,
+                    external_id_set: scope.externalId === undefined ? 0 : 1,
+                    recorded_at_start: scope.recordedAtStart ?? null,
+                    recorded_at_end: scope.recordedAtEnd ?? null,
+                    operation_revision: event.operationRevision,
+                  },
+                ],
+                clickhouse_settings: { date_time_input_format: "best_effort" },
+              });
+            }
+          },
+          apply: async (owner, effects) => {
+            inserted += await applyMetricStreamSourceEffects(owner, event, effects);
+          },
+          acknowledgeEffects: async (owner) => {
+            if (isMetricStreamDeletedEvent(event) && "eventId" in event) {
+              await owner.client.command({
+                query: `INSERT INTO ${METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE} (event_id) VALUES ({eventId:UUID})`,
+                query_params: { eventId: event.eventId },
+              });
+            }
+            if (isMetricStreamBatchCompletedEvent(event)) {
+              if (position.transport !== "pulsar")
+                throw new Error("Native processing marker requires a Pulsar position");
+              if (await isOperationAccountErasureFenced(owner.client, event.operationId)) return;
+              await owner.client.command({
+                query:
+                  "INSERT INTO " +
+                  METRIC_STREAM_PROCESSING_ACKNOWLEDGEMENT_TABLE +
+                  " (operation_id,batch_id,dataset_keys,expected_event_count,topic,topic_partition,marker_offset,marker_transport,marker_epoch,marker_message_id)" +
+                  " VALUES ({operation_id:UUID},{batch_id:String},{dataset_keys:Array(String)},{expected_event_count:UInt64},{topic:String},{partition:Int32},{marker_offset:Nullable(UInt64)},{marker_transport:String},{marker_epoch:Nullable(String)},{marker_message_id:Nullable(String)})",
+                query_params: {
+                  operation_id: event.operationId,
+                  batch_id: event.batchId,
+                  dataset_keys: event.datasetKeys,
+                  expected_event_count: event.expectedEventCount,
+                  topic: position.topic,
+                  partition: position.partition,
+                  marker_offset: null,
+                  marker_transport: "pulsar",
+                  marker_epoch: position.epoch,
+                  marker_message_id: position.serializedMessageId,
+                },
+              });
+            }
+          },
+        },
+      ),
+    );
+    await context.assertActive();
+    index++;
+  }
+  return inserted;
+}
+
+function isMetricStreamRow(event: MetricStreamRedpandaEvent): event is MetricStreamRowEvent {
+  return !isMetricStreamDeletedEvent(event) && !isMetricStreamBatchCompletedEvent(event);
+}
+async function isOperationAccountErasureFenced(
+  client: Pick<ClickHouseClient, "query">,
+  operationId: string,
+): Promise<boolean> {
+  const result = await client.query({
+    query:
+      "SELECT operation_hash FROM " +
+      ACCOUNT_ERASURE_OPERATION_FENCE_TABLE +
+      " FINAL WHERE operation_hash={operation_hash:FixedString(64)} LIMIT 1",
+    query_params: { operation_hash: createHash("sha256").update(operationId).digest("hex") },
+    format: "JSONEachRow",
+    clickhouse_settings: { log_queries: 0 },
+  });
+  return accountErasureOperationFenceRowsSchema.parse(await result.json()).length > 0;
+}
+function requiredSinkEnvironment(
+  key:
+    | "PULSAR_SERVICE_URL"
+    | "METRIC_STREAM_TOPIC"
+    | "METRIC_STREAM_TRANSPORT_EPOCH"
+    | "METRIC_STREAM_SUBSCRIPTION",
+): string {
+  const value = process.env[key]?.trim();
+  if (!value) throw new Error(`${key} is required`);
+  return value;
+}
+export async function runMetricStreamClickHouseSinkFromEnv(
+  readiness: MetricStreamConsumerReadiness,
+): Promise<void> {
+  const controller = new AbortController();
+  const stop = () => {
+    readiness.markUnavailable();
+    controller.abort();
+  };
+  process.once("SIGTERM", stop);
+  process.once("SIGINT", stop);
+  let database: Database | undefined;
+  let client: ReturnType<typeof createClickHouseClientFromEnv> | undefined;
+  let native: Client | undefined;
+  let failed = false;
+  let failure: unknown;
+  const cleanupErrors: unknown[] = [];
+  try {
+    const serviceUrl = requiredSinkEnvironment("PULSAR_SERVICE_URL");
+    const topic = requiredSinkEnvironment("METRIC_STREAM_TOPIC");
+    const epoch = requiredSinkEnvironment("METRIC_STREAM_TRANSPORT_EPOCH");
+    const subscription = requiredSinkEnvironment("METRIC_STREAM_SUBSCRIPTION");
+    if (!topic.startsWith("persistent://"))
+      throw new Error("METRIC_STREAM_TOPIC must name one concrete persistent Pulsar topic");
+    const db = createDatabaseFromEnv();
+    database = db;
+    const clickhouse = createClickHouseClientFromEnv();
+    client = clickhouse;
+    const pulsar = new Pulsar.Client({ serviceUrl });
+    native = pulsar;
+    const stream = { transport: "pulsar" as const, epoch, topic, partition: -1 };
+    await runPulsarMetricStreamConsumer({
+      client: pulsar,
+      readiness,
+      topic,
+      epoch,
+      partition: -1,
+      subscription,
+      receiverQueueSize: 20,
+      nativeBatchMessages: 20,
+      nativeBatchBytes: 8 * 1024 * 1024,
+      maxGroupMessages: 500,
+      maxGroupBytes: 8 * 1024 * 1024,
+      signal: controller.signal,
+      loadPendingGroup: async () =>
+        (await loadAnalyticsStreamState(db, stream))?.pendingGroup ?? null,
+      handleEvents: async (events, context) => {
+        await applyMetricStreamEventsToClickHouse(clickhouse, events, context, db);
+      },
+    });
+  } catch (error) {
+    failed = true;
+    failure = error;
+    captureException(error, {
+      tags: { metricStreamConsumer: "clickhouse-sink", metricStreamFailure: "runtime" },
+    });
+  } finally {
+    readiness.markUnavailable();
+    process.off("SIGTERM", stop);
+    process.off("SIGINT", stop);
+    const closing: Promise<unknown>[] = [];
+    const ownedNative = native,
+      ownedClient = client,
+      ownedDatabase = database;
+    if (ownedNative) closing.push(Promise.resolve().then(() => ownedNative.close()));
+    if (ownedClient) closing.push(Promise.resolve().then(() => ownedClient.close()));
+    if (ownedDatabase) closing.push(Promise.resolve().then(() => ownedDatabase.$client.end()));
+    const outcomes = await Promise.allSettled(closing);
+    for (const result of outcomes)
+      if (result.status === "rejected") {
+        cleanupErrors.push(result.reason);
+        captureException(result.reason, {
+          tags: { metricStreamConsumer: "clickhouse-sink", metricStreamFailure: "cleanup" },
+        });
+      }
+  }
+  if (cleanupErrors.length)
+    throw new AggregateError(
+      failed ? [failure, ...cleanupErrors] : cleanupErrors,
+      "Metric-stream sink and cleanup failed",
+    );
+  if (failed) throw failure;
+}
+export async function startMetricStreamClickHouseSinkFromEnv(): Promise<void> {
+  const readiness = new MetricStreamConsumerReadiness();
+  const server = createMetricStreamConsumerReadinessServer(readiness);
+  let failed = false;
+  let failure: unknown;
+  const cleanupErrors: unknown[] = [];
+  try {
+    await listenReadinessServer(server);
+    server.unref();
+    await runMetricStreamClickHouseSinkFromEnv(readiness);
+  } catch (error) {
+    failed = true;
+    failure = error;
+    captureException(error, {
+      tags: { metricStreamConsumer: "clickhouse-sink", metricStreamFailure: "readiness" },
+    });
+  } finally {
+    readiness.markUnavailable();
+    if (server.listening) {
+      try {
+        await new Promise<void>((resolve, reject) =>
+          server.close((error) => (error ? reject(error) : resolve())),
+        );
+      } catch (error) {
+        captureException(error, {
+          tags: { metricStreamConsumer: "clickhouse-sink", metricStreamFailure: "readiness-close" },
+        });
+        cleanupErrors.push(error);
+      }
+    }
+  }
+  if (cleanupErrors.length)
+    throw new AggregateError(
+      failed ? [failure, ...cleanupErrors] : cleanupErrors,
+      "Metric-stream sink and readiness close failed",
+    );
+  if (failed) throw failure;
 }

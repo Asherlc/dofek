@@ -120,6 +120,7 @@ allowBuilds:
   msw: true
   nx: false
   protobufjs: false
+  pulsar-client: true
   sharp: true
   ssh2: false
 

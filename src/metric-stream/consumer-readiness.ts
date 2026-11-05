@@ -3,18 +3,21 @@ import { createServer, type Server } from "node:http";
 type MetricStreamConsumerReadinessStatus = "ready" | "starting" | "unavailable";
 
 export class MetricStreamConsumerReadiness {
-  #status: MetricStreamConsumerReadinessStatus = "starting";
+  #state: { status: "starting" | "unavailable" } | { status: "ready"; isActive(): boolean } = {
+    status: "starting",
+  };
 
-  markGroupJoined(): void {
-    this.#status = "ready";
+  markReady(isActive: () => boolean): void {
+    this.#state = { status: "ready", isActive };
   }
 
   markUnavailable(): void {
-    this.#status = "unavailable";
+    this.#state = { status: "unavailable" };
   }
 
   getStatus(): MetricStreamConsumerReadinessStatus {
-    return this.#status;
+    const state = this.#state;
+    return state.status === "ready" && !state.isActive() ? "unavailable" : state.status;
   }
 }
 

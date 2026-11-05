@@ -334,4 +334,35 @@ describe("handleSyncCommand", () => {
     expect(mockQueueEventsClose).toHaveBeenCalledOnce();
     expect(mockQueueClose).toHaveBeenCalledOnce();
   });
+
+  it("settles both temporary workers before reporting cleanup failure", async () => {
+    mockGetEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
+    const error = new Error("first worker close failed");
+    let finish = () => {};
+    const pending = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    mockWorkerClose.mockRejectedValueOnce(error).mockImplementationOnce(() => pending);
+    let settled = false;
+    const outcome = handleSyncCommand(["node", "index.ts", "sync"]).then(
+      (code) => {
+        settled = true;
+        return code;
+      },
+      (failure: unknown) => {
+        settled = true;
+        return failure;
+      },
+    );
+    await vi.waitFor(() => expect(mockWorkerClose).toHaveBeenCalledTimes(2));
+    expect(settled).toBe(false);
+    expect(mockQueueClose).not.toHaveBeenCalled();
+    finish();
+    expect(await outcome).toBe(1);
+    expect(mockQueueClose).toHaveBeenCalledOnce();
+    expect(mockCloseAccountErasureWorkLockPool).toHaveBeenCalledOnce();
+    expect(mockCaptureException).toHaveBeenCalledWith(expect.any(AggregateError), {
+      tags: { phase: "cli-sync-cleanup" },
+    });
+  });
 });

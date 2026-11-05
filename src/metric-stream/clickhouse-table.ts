@@ -146,6 +146,14 @@ ${metricStreamIngestMetadataColumnDefinitions},
 ${metricStreamReplacingMergeTreeEngine()}`;
 }
 
+export function buildMetricStreamSourcePlacementIngestSql(): string {
+  return `CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.source_placement_ingest
+    TO analytics.source_placement AS
+    SELECT id AS source_id,user_id,provider_id,toUInt64(version) AS source_version,
+      generation,channel,recorded_at,ingested_at,activity_id,toUInt8(is_deleted) AS deleted
+    FROM ${METRIC_STREAM_TABLE}`;
+}
+
 export function buildMetricStreamDeleteAcknowledgementTableSql(): string {
   return `CREATE TABLE IF NOT EXISTS ${METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE} (
   event_id UUID,
@@ -172,6 +180,13 @@ ORDER BY (user_id, provider_id, activity_id, channel, external_id_set, external_
 SETTINGS allow_nullable_key = 1`;
 }
 
+export function metricStreamProcessingPositionConstraint(): string {
+  return `(marker_transport = 'kafka' AND isNotNull(marker_offset)
+    AND isNull(marker_epoch) AND isNull(marker_message_id))
+    OR (marker_transport = 'pulsar' AND isNull(marker_offset)
+      AND notEmpty(ifNull(marker_epoch, '')) AND notEmpty(ifNull(marker_message_id, '')))`;
+}
+
 export function buildMetricStreamProcessingAcknowledgementTableSql(): string {
   return `CREATE TABLE IF NOT EXISTS ${METRIC_STREAM_PROCESSING_ACKNOWLEDGEMENT_TABLE} (
   operation_id UUID,
@@ -180,8 +195,12 @@ export function buildMetricStreamProcessingAcknowledgementTableSql(): string {
   expected_event_count UInt64,
   topic String,
   topic_partition Int32,
-  marker_offset UInt64,
-  applied_at DateTime64(9) DEFAULT now64(9)
+  marker_offset Nullable(UInt64),
+  marker_transport Enum8('kafka' = 1, 'pulsar' = 2) DEFAULT 'kafka',
+  marker_epoch Nullable(String),
+  marker_message_id Nullable(String),
+  applied_at DateTime64(9) DEFAULT now64(9),
+  CONSTRAINT valid_marker_position CHECK ${metricStreamProcessingPositionConstraint()}
 )
 ENGINE = ReplacingMergeTree(applied_at)
 ORDER BY (operation_id, batch_id)`;

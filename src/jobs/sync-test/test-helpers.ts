@@ -159,8 +159,8 @@ export const mockCreateMetricStreamEventPublisherForRoute = vi.fn(async () => ({
   publishRows: mockMetricStreamPublishRows,
   replaceRows: mockMetricStreamReplaceRows,
 }));
-vi.mock("../../metric-stream/redpanda-producer.ts", () => ({
-  createKafkaMetricStreamEventPublisherForRoute: mockCreateMetricStreamEventPublisherForRoute,
+vi.mock("../../metric-stream/pulsar-producer.ts", () => ({
+  createPulsarMetricStreamEventPublisherForRoute: mockCreateMetricStreamEventPublisherForRoute,
 }));
 
 // Mock dependencies — the mock functions are accessed via module-level refs
