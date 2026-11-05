@@ -35528,3 +35528,24 @@ initial tests and achieved 100% mutation score (6 killed, 0 survived, 0 timeouts
 0 errors; 2 string-literal mutants excluded by the existing configuration).
 Future worker-backed SDK test guidance should name both SDK and asset
 imports as dependencies of the mock boundary.
+
+
+## 2026-11-05: Automatic deployment paused during Pulsar release work
+
+The first focused Pulsar PR is infrastructure/test-only, but successful main CI
+would trigger Deploy Web. The existing stack rollout requires the history
+ClickHouse sink to return to one replica, conflicting with its approved zero
+replica hold. This was identified before merge; no unintended rollout occurred.
+
+The user authorized pausing automatic production deployment. `gh workflow disable
+deploy-web.yml` succeeded; the workflow API confirmed `disabled_manually`, and
+the ten latest deployment runs were all completed. The website and CI were not
+stopped. Re-enable the workflow only as part of the reviewed cutover/restoration
+decision, with the four production holds accounted for. See the
+[deployment trigger](../.github/workflows/deploy-web.yml) and
+[full-stack desired replica check](../.github/workflows/deploy-web-stack.yml).
+
+PR CI also exposed Expo SDK patch-version drift at `expo install --check` and
+two native-tool spelling terms. The compatibility pins are being corrected in
+a separate dependency PR; no check is disabled or ignored. Until that fix and
+required CI/review pass, the Pulsar PR remains unmerged.

@@ -9,6 +9,9 @@ it("evacuates surviving native ledgers before retiring exclusive source storage"
   timeout: 300_000,
 }, () => {
   // This is a Linux CI fixture: local admission is an explicit, independent prerequisite.
+  if (process.platform !== "linux") {
+    throw new Error("Native BookKeeper fixture requires Linux");
+  }
   const available = /^MemAvailable:\s+(\d+) kB$/m.exec(readFileSync("/proc/meminfo", "utf8"));
   if (!available?.[1] || Number(available[1]) < 2816 * 1024) {
     throw new Error("Native BookKeeper fixture requires MemAvailable >= 2816 MiB before startup");
