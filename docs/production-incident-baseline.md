@@ -35927,3 +35927,32 @@ before both original distributed and interleaved-background reference cases
 passed again with the unchanged budget. See the
 [canonical macro](../analytics/macros/analytics_sensor_candidates.sql) and
 [resource fixtures](../src/db/deduped-sensor-read-model.integration.test.ts).
+
+### 2026-11-05 — Isolated lifecycle qualification: fixture assumptions corrected
+
+Production was unaffected. The local qualification stopped before end-to-end
+expiry and physical cleanup. The first fatal line was
+`STOP: observed-age-alert-and-incident observation budget exhausted`.
+Two earlier setup defects were confirmed: an empty HTTP 301 metrics redirect,
+and a CLI text map parsed as JSON. The trailing-slash endpoint and native JSON
+configuration endpoint corrected those defects; a preflight-only rehearsal passed.
+
+The next full run observed the correct metric but exhausted its 100-second
+window at reported age 45. The confirmed cause is that
+[non-precise age uses the ledger timestamp](https://github.com/apache/pulsar/blob/v5.0.1/pulsar-broker/src/main/java/org/apache/pulsar/broker/service/persistent/PersistentTopic.java#L4661),
+[set at close](https://github.com/apache/pulsar/blob/v5.0.1/managed-ledger/src/main/java/org/apache/bookkeeper/mledger/impl/ManagedLedgerImpl.java#L2335),
+rather than the seed time. L1 closed at seed plus 61.252 seconds; the metric
+appeared at plus 64.145 with age two and rose continuously. One corrected run
+has a source-derived 145-second alert window, conditional on the full survivor
+timeline and existing remaining-TTL guard. No deletion criterion is waived.
+All owned services stopped cleanly. Expiry and physical cleanup remain
+unqualified; see the [qualification evidence](pulsar-qualification.md#november-5-native-lifecycle-qualification-setup-remains-unqualified).
+Future fixture timing must account for the native signal's timestamp origin,
+not just its refresh cadence, and validate HTTP status and output format first.
+
+Independently, manual R2 offload finished: 189 unread-tail objects passed all
+per-range proofs and the final current-ETag audit. Combined with the consumed
+prefix, the verified copy covers 53,283,854 records in 534 objects. The unread
+local tail remains while its replay route is unqualified. Fresh source positions
+and high watermark were unchanged, public health passed, and free space was
+33,005,129,728 bytes. All four production holds remain.

@@ -86,6 +86,71 @@ established prerequisite. The subsequently authorized manual offload below is
 the selected capacity assessment; further archive-provenance investigation has
 not begun.
 
+### November 5 native lifecycle qualification: setup remains unqualified
+
+The isolated runs have not yet exercised expiry, R2 deletion and evacuation
+end to end. Bootstrap, policies, the mixed A/B ledger, healthy acknowledgements
+and the stalled-subscription age metric were observed. All attempt-owned
+services stopped successfully; production settings, holds, existing volumes and
+original archives were preserved.
+
+Two setup defects were confirmed and corrected: the bare metrics route returned
+HTTP 301 with an empty body, and the runtime-configuration CLI printed text
+rather than JSON. The fixture now uses the trailing-slash metrics route and the
+native JSON REST configuration endpoint. See the pinned
+[metrics context registration](https://github.com/apache/pulsar/blob/v5.0.1/pulsar-broker/src/main/java/org/apache/pulsar/broker/PulsarService.java#L1290)
+and [CLI map printer](https://github.com/apache/pulsar/blob/v5.0.1/pulsar-client-tools/src/main/java/org/apache/pulsar/admin/cli/CliCommand.java#L106).
+A preflight-only rehearsal passed without seeding or claiming lifecycle success.
+
+The subsequent full run stopped with
+`STOP: observed-age-alert-and-incident observation budget exhausted`.
+All 36 HTTP observations succeeded, but the metric first appeared at seed plus
+64.145 seconds with age two, rising to 45 at seed plus 106.966 seconds. The
+fixture's 100-second window was inconsistent with native behavior: the
+[non-precise age check uses the closed ledger's timestamp](https://github.com/apache/pulsar/blob/v5.0.1/pulsar-broker/src/main/java/org/apache/pulsar/broker/service/persistent/PersistentTopic.java#L4661),
+which is [assigned when the ledger closes](https://github.com/apache/pulsar/blob/v5.0.1/managed-ledger/src/main/java/org/apache/bookkeeper/mledger/impl/ManagedLedgerImpl.java#L2335).
+The retained broker log records L1 closing at seed plus 61.252 seconds. This
+explains the observed age; response caching is not the diagnosis.
+
+One corrected run is authorized with a 145-second alert observation budget:
+63 seconds for rollover including jitter, 60 seconds of reported age, ten for
+refresh, ten for HTTP and two for polling. The full survivor timeline must still
+meet the existing remaining-TTL guard before evacuation. B is scheduled at
+seed plus 540 seconds with TTL 600 seconds. Recovery admission requires at least
+420 seconds of B's TTL left, so it must begin by approximately seed plus 720;
+the existing 300-second recovery bound then leaves 120 seconds of B's TTL and
+60 seconds within the 18-minute outer limit. Actual deletion must be observed,
+and a late phase fails the guard. A setup failure parks the fixture; a failure
+of preservation or deletion criteria requires a user decision. The lifecycle
+remains unqualified until those criteria pass.
+
+For production, this non-precise alert understates message age by up to the
+rollover interval, proposed as four hours plus jitter. The day-seven alert
+budget must include that lag. The fixture must observe expiry independently;
+the age metric does not establish the timestamp used by TTL.
+
+The proposed timing model is operational budgets plus day-29 verification and a
+supported operator action, rather than guaranteed completion from polling
+intervals. These are targets for an active erasure, not deployed policies:
+
+| Stage | Proposed production target | Isolated fixture |
+| --- | --- | --- |
+| Fence and healthy drain | Fence at day 0; target drain within one day | A write cutoff is a prerequisite; application integration excluded |
+| Ledger rollover and offload | Four-hour rollover plus native jitter; offload sealed ledgers at threshold zero | One-minute rollover; threshold zero |
+| Local offload deletion | Zero lag proposed | Ten-minute lag preserves B's native bytes as a positive control |
+| Stalled backlog | Alert by day 7; expiry around day 14 when needed for the deletion deadline | Observed age at least 60 seconds; TTL 600 seconds |
+| Retention and R2 cleanup | One-day retention; verify actual object removal | One-minute retention; ten-second eligibility checks |
+| Bookie cleanup | GC followed by evacuation in the day 20–25 window | Existing 300-second evacuation bound |
+| Verification | Day 29, retaining the day-30 deadline | Eighteen-minute observation bound after seeding |
+
+The [pinned managed-ledger implementation](https://github.com/apache/pulsar/blob/v5.0.1/managed-ledger/src/main/java/org/apache/bookkeeper/mledger/impl/ManagedLedgerImpl.java)
+and [broker configuration](https://github.com/apache/pulsar/blob/v5.0.1/conf/broker.conf)
+provide scheduling controls, not hard completion guarantees. Production drain
+and realistic-copy evacuation durations remain inputs to the whole-host gate.
+The fixture uses uncompressed synthetic markers; production physical checks
+must rely on complete ledger/object inventories when payloads are compressed.
+Failed-delete orphan cleanup remains the separately recorded residual risk.
+
 ### November 4 manual offload: verified method, bulk copy in progress
 
 **November 5, 00:35 UTC update:** the consumed prefix is complete. All 345
@@ -100,6 +165,16 @@ The unread 18,836,612-record tail is now being copied with the same proofs and
 no automatic trim. Its local copy remains until the archive audit and the
 R2-to-Pulsar recovery route are qualified. Copy completion does not mean the
 history has been ingested or the migration is ready for cutover.
+
+At 01:26 UTC, that unread-tail copy completed all 189 ranges: 18,836,612 records,
+8,025,553,104 payload bytes and 574,486,983 compressed bytes. Every range passed
+independent raw-byte read-back, second broker read, contiguity and the deployed
+erasure-parser dry run. The final current-object audit passed and published its
+proof manifests. Together with the consumed prefix, 534 objects cover exactly
+53,283,854 records across the entire frozen retained range. A fresh source check
+confirmed unchanged consumer positions and high watermark, healthy public service
+and 33,005,129,728 free bytes. The local unread copy remains because the
+replay-route gate is still open.
 
 **November 5, 00:09 UTC update:** 296 objects covering exactly 29,600,000
 records in `[21,161,777, 50,761,777)` passed all checks below. The final audit
