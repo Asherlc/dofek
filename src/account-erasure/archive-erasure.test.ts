@@ -517,14 +517,36 @@ describe("eraseMetricStreamArchive", () => {
     );
   });
 
-  it("skips blank archive lines while rewriting", async () => {
+  it.each([" ", "\t"])("rejects a %j line without a JSON record", async (payload) => {
+    const storage = new MemoryArchiveStorage();
+    const key = "metric-stream/v1/date=2026-07-26/hour=10/metric-stream-v1-0-16-16.jsonl.gz";
+    const original = gzipSync(`${payload}\n`);
+    storage.objects.set(key, original);
+    const completed = vi.fn();
+    await expect(
+      eraseMetricStreamArchive(
+        storage,
+        {
+          activityIds: new Set(),
+          operationIds: new Set(),
+          userId: deletingUserId,
+        },
+        { onObjectCompleted: completed },
+      ),
+    ).rejects.toThrow("Malformed JSON");
+    expect(storage.objects.get(key)).toEqual(original);
+    expect(storage.completedExpectedEtags).toEqual([]);
+    expect(completed).not.toHaveBeenCalled();
+  });
+
+  it.each(["\n", "\r\n"])("skips %j blank archive lines while rewriting", async (blank) => {
     const storage = new MemoryArchiveStorage();
     const key = "metric-stream/v1/date=2026-07-26/hour=10/metric-stream-v1-0-16-16.jsonl.gz";
     const preservedEvent = metricEvent(otherUserId, "90000000-0000-4000-8000-000000001994");
     storage.objects.set(
       key,
       gzipSync(
-        `\n${JSON.stringify(metricEvent(deletingUserId, "a0000000-0000-4000-8000-000000001994"))}\n\n${JSON.stringify(preservedEvent)}\n`,
+        `${blank}${JSON.stringify(metricEvent(deletingUserId, "a0000000-0000-4000-8000-000000001994"))}\n${blank}${JSON.stringify(preservedEvent)}\n`,
       ),
     );
 

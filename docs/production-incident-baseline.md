@@ -35640,3 +35640,14 @@ A single read-only availability check of the same URL subsequently returned
 HTTP 200. No retry, timeout, installer or workflow setting was changed. The
 required dotenv job must still pass on the final revision before merge; see
 [the archive-stream PR checks](https://github.com/Asherlc/dofek/pull/3230/checks).
+
+Review then reproduced two boundary defects in the new reader: a CRLF-only
+blank line blocked erasure, and a source reusing its buffer changed bytes
+retained across chunks. Both regressions failed first. A shared blank-line
+predicate preserves the prior CRLF behavior, and copying retained fragments
+protects accumulated payload bytes. The revised 54-test focused suite and six
+real-S3 cases passed; a full 23,754-test unit/mobile run also passed before two
+additional strict-whitespace assertions. The sanitized
+[line-size measurement record](pulsar-foundation-qualification.md#november-5-retained-archive-line-size-measurement)
+is now retained with its source ranges and explicit sampling limits. These
+were pre-merge corrections; no production deployment occurred.

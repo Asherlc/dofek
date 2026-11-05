@@ -6,6 +6,19 @@ async function* chunks(values: readonly Uint8Array[]) {
 }
 
 describe("readMetricStreamArchiveLines", () => {
+  it("preserves accumulated bytes when a source reuses its yielded buffer", async () => {
+    const reused = Buffer.alloc(2);
+    async function* source() {
+      reused.write("ab");
+      yield reused;
+      reused.write("c\n");
+      yield reused;
+    }
+    const lines = [];
+    for await (const line of readMetricStreamArchiveLines(source(), 4)) lines.push(line);
+    expect(lines).toEqual([{ payload: Buffer.from("abc"), lineOrdinal: 1, terminated: true }]);
+  });
+
   it.each([0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1])(
     "rejects an invalid %s-byte bound before reading the source",
     async (bound) => {

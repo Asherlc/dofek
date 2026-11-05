@@ -410,10 +410,11 @@ The scan places decompression and record consumption inside one awaited Node
 [stream pipeline](https://nodejs.org/api/stream.html#streampipelinesource-transforms-destination-options)
 so failures propagate before it returns a count.
 
-A November 5 check of three retained, independently verified manual-offload
-objects covered 247,242 lines; the largest payload was 902 bytes. This sample
+A [November 5 retained measurement](pulsar-foundation-qualification.md#november-5-retained-archive-line-size-measurement)
+of three independently verified manual-offload objects covered 247,242 lines;
+the largest payload was 902 bytes. This sample
 is comfortably below the limit, but it does not qualify every line in the
-53.28-million-record offload or the older archive inventory. An oversized
+complete offload or the older archive inventory. An oversized
 legacy record is an explicit residual risk: it blocks that object's erasure.
 This is an erasure rewrite boundary, not a change to legacy storage. Existing
 objects retain their flat keys and gzip JSONL format; erasure replaces only

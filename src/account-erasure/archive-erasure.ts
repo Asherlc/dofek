@@ -256,6 +256,10 @@ export interface ArchiveErasureResult {
   recordsRemoved: number;
 }
 
+function isBlankArchiveLine(line: Buffer): boolean {
+  return line.length === 0 || (line.length === 1 && line[0] === 0x0d);
+}
+
 function belongsToAccount(
   payload: Buffer,
   identifiers: ArchiveErasureIdentifiers,
@@ -362,7 +366,7 @@ async function countMatchingArchiveRecords(
       source,
       MAX_ARCHIVE_LINE_PAYLOAD_BYTES,
     )) {
-      if (line.length > 0 && belongsToAccount(line, identifiers, { key, lineNumber })) {
+      if (!isBlankArchiveLine(line) && belongsToAccount(line, identifiers, { key, lineNumber })) {
         matches += 1;
       }
     }
@@ -413,7 +417,7 @@ async function rewriteArchiveObject(
       lineOrdinal: lineNumber,
       terminated,
     } of readMetricStreamArchiveLines(gunzip, MAX_ARCHIVE_LINE_PAYLOAD_BYTES)) {
-      if (line.length === 0) continue;
+      if (isBlankArchiveLine(line)) continue;
       if (belongsToAccount(line, identifiers, { key, lineNumber })) {
         removed += 1;
       } else {

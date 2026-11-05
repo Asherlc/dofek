@@ -70,9 +70,9 @@ describe("R2 archive erasure against SeaweedFS S3", () => {
     await client.send(
       new PutObjectCommand({
         Body: gzipSync(
-          `${JSON.stringify(
+          `\r\n${JSON.stringify(
             metricEvent(deletingUserId, "30000000-0000-4000-8000-000000001994"),
-          )}\n${preserved}`,
+          )}\n\r\n${preserved}`,
         ),
         Bucket: bucket,
         ContentEncoding: "x-gzip",
@@ -129,7 +129,7 @@ describe("R2 archive erasure against SeaweedFS S3", () => {
     const preserved = `  ${foreign}\r\n\r${foreign}\n\t${foreign}`;
     await client.send(
       new PutObjectCommand({
-        Body: gzipSync(`${owned.join("\n")}\n${preserved}`),
+        Body: gzipSync(`\r\n${owned.join("\n")}\n\r\n${preserved}`),
         Bucket: bucket,
         Key: key,
         ContentEncoding: "x-gzip",

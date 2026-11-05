@@ -14,7 +14,7 @@ export async function* readMetricStreamArchiveLines(
       throw new Error(
         `Archive line payload exceeds its ${maxLineBytes}-byte limit at line ${lineOrdinal + 1}; contact support before retrying`,
       );
-    if (part.byteLength) parts.push(part);
+    if (part.byteLength) parts.push(Buffer.from(part));
   };
   const line = (terminated: boolean) => {
     const payload = Buffer.concat(parts, lineBytes);
