@@ -88,6 +88,19 @@ not begun.
 
 ### November 4 manual offload: verified method, bulk copy in progress
 
+**November 5, 00:35 UTC update:** the consumed prefix is complete. All 345
+objects, covering `[21,161,777, 55,609,019)` and exactly 34,447,242 records,
+passed the final audit and current-ETag checks. Their 18,001,078,232 original
+payload bytes occupy 1,381,320,745 compressed bytes. Structural proof manifests
+are published remotely. A second guarded stock trim advanced the broker start
+to the unchanged ClickHouse consumer position, `55,609,019`; the high watermark
+remains `74,445,631`. Free space increased from 30,105,157,632 to
+33,039,454,208 bytes in that operation. Public health and all four holds passed.
+The unread 18,836,612-record tail is now being copied with the same proofs and
+no automatic trim. Its local copy remains until the archive audit and the
+R2-to-Pulsar recovery route are qualified. Copy completion does not mean the
+history has been ingested or the migration is ready for cutover.
+
 **November 5, 00:09 UTC update:** 296 objects covering exactly 29,600,000
 records in `[21,161,777, 50,761,777)` passed all checks below. The final audit
 confirmed current object ETags and published the structural proof manifests.
