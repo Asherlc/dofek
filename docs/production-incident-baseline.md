@@ -35625,11 +35625,18 @@ defect. Do not trade away the two-pass EOF and cancellation checks when
 simplifying the archive reader.
 
 The initial CI mutation shard then failed at 64.71%, below its unchanged 75%
-threshold, because the separate pipeline promise carried outcome bookkeeping
-that the consumer could not observe. The awaited-consumer pipeline removes
+threshold, because the separate pipeline promise carried redundant outcome
+bookkeeping. The awaited-consumer pipeline removes
 that redundant state; an added byte-order-mark regression also checks the
 decoder's strict JSON boundary. Local mutation testing then covered the
 changed eraser lines at 100% and the line reader at 97.14%. One surviving
 reader mutation removes only the empty-fragment allocation guard; no threshold
 or exclusion changed. Fresh CI remains required before merge. The production
 deployment pause and ingestion/analytics holds remain unchanged.
+
+The next CI run failed before dotenv linting: the pinned v4.0.0 installer
+received HTTP 504 from GitHub while downloading its Linux release archive.
+A single read-only availability check of the same URL subsequently returned
+HTTP 200. No retry, timeout, installer or workflow setting was changed. The
+required dotenv job must still pass on the final revision before merge; see
+[the archive-stream PR checks](https://github.com/Asherlc/dofek/pull/3230/checks).
