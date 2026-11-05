@@ -35956,3 +35956,13 @@ prefix, the verified copy covers 53,283,854 records in 534 objects. The unread
 local tail remains while its replay route is unqualified. Fresh source positions
 and high watermark were unchanged, public health passed, and free space was
 33,005,129,728 bytes. All four production holds remain.
+
+The source-corrected lifecycle run subsequently passed the age-61 alert and
+mixed-ledger R2 offload, then stopped after scheduled B2 publication. Its first
+fatal assertion was `currentLedgerEntries === 1`, with actual zero. Retained
+internal stats show B2 in ledger 8 with one entry and offloaded, while the
+current ledger 17 was empty. The fixture's assumption about the current ledger
+was wrong; no missing-message finding was established. Owned cleanup passed,
+and the fixture is parked with no further run authorized. A read-only assertion
+review precedes any user decision on another run. No production setting or hold
+changed; expiry and full physical cleanup remain unqualified.

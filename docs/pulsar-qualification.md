@@ -124,6 +124,17 @@ and a late phase fails the guard. A setup failure parks the fixture; a failure
 of preservation or deletion criteria requires a user decision. The lifecycle
 remains unqualified until those criteria pass.
 
+The corrected run passed the alert at reported age 61, observed L1's R2 data
+and index objects, and published B2 on schedule. It then stopped at an
+instantaneous fixture assertion: `currentLedgerEntries === 1` returned zero.
+Retained native stats show the actual B2 ledger, 8, contained one entry and was
+already offloaded; ledger 17 was the empty current ledger. The fixture had
+incorrectly assumed the survivor must still occupy the open ledger. This is a
+fixture failure, not evidence of data loss or a native lifecycle failure.
+Owned-service cleanup passed. No further run is authorized: the fixture is
+parked pending an assertion review and a user decision. TTL expiry, R2 deletion,
+evacuation and final verification remain unqualified together.
+
 For production, this non-precise alert understates message age by up to the
 rollover interval, proposed as four hours plus jitter. The day-seven alert
 budget must include that lag. The fixture must observe expiry independently;
