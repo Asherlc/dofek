@@ -71,7 +71,7 @@ export interface AccountErasurePhaseRunnerDependencies {
     snapshot: AccountErasureRemoteSnapshot,
     options: ArchiveSweepOptions,
   ): Promise<ArchiveErasureResult>;
-  eraseClickHouse(snapshot: AccountErasureRemoteSnapshot): Promise<void>;
+  eraseClickHouse(snapshot: AccountErasureRemoteSnapshot, requestId: string): Promise<void>;
   erasePostgres(requestId: string, userId: string): Promise<void>;
   eraseProcessors(
     snapshot: AccountErasureRemoteSnapshot,
@@ -83,7 +83,7 @@ export interface AccountErasurePhaseRunnerDependencies {
     progress: AccountErasureProcessorProgress,
   ): Promise<Record<string, unknown>>;
   eraseStripe(snapshot: AccountErasureRemoteSnapshot): Promise<StripeAccountErasureResult>;
-  fenceIngest(snapshot: AccountErasureRemoteSnapshot): Promise<void>;
+  fenceIngest(snapshot: AccountErasureRemoteSnapshot, requestId: string): Promise<void>;
   now(): Date;
   purgeWork(snapshot: AccountErasureRemoteSnapshot): Promise<void>;
   revokeRemote(
@@ -169,7 +169,7 @@ export function createAccountErasurePhaseRunner(
       switch (phase) {
         case "ingest_fence": {
           const snapshot = await loadSnapshot(phase, execution);
-          await dependencies.fenceIngest(snapshot);
+          await dependencies.fenceIngest(snapshot, execution.request.id);
           const highWatermarks = await dependencies.captureHighWatermarks();
           return { highWatermarks };
         }
@@ -244,7 +244,7 @@ export function createAccountErasurePhaseRunner(
         case "clickhouse_initial":
         case "clickhouse_verification": {
           const snapshot = await loadSnapshot(phase, execution);
-          await dependencies.eraseClickHouse(snapshot);
+          await dependencies.eraseClickHouse(snapshot, execution.request.id);
           return { verified: phase === "clickhouse_verification" };
         }
         case "archive_initial": {

@@ -154,7 +154,7 @@ describe("createAccountErasurePhaseRunner", () => {
       ],
     });
 
-    expect(deps.fenceIngest).toHaveBeenCalledWith(snapshot);
+    expect(deps.fenceIngest).toHaveBeenCalledWith(snapshot, request.id);
     expect(deps.fenceIngest).toHaveBeenCalledBefore(vi.mocked(deps.captureHighWatermarks));
     expect(run.loadCheckpointDetails).toHaveBeenCalledWith("ingest_fence");
     expect(deps.assertConsumersDrained).toHaveBeenCalledWith([

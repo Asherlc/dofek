@@ -4,6 +4,17 @@ import type { Database } from "../db/index.ts";
 import { executeWithSchema, type SchemaExecutionDatabase } from "../db/typed-sql.ts";
 
 const SHARED_SYSTEM_TABLES = new Set([
+  // Global publication fence: executor/query IDs and opaque erasure-request
+  // intents, never raw account IDs or payloads. Removing it could admit an old writer.
+  "fitness.analytics_query_owner",
+  // One sealed run may cover several accounts; attributable links live in
+  // analytics_required_frontier and are erased without deleting the shared run.
+  "fitness.analytics_run",
+  // Shared page bounds/revisions and integrity commitments must survive one
+  // account's erasure so another account's work is neither skipped nor replayed.
+  "fitness.analytics_stage_cursor",
+  // Global transport receipt/frontier metadata, not account-scoped topic names.
+  "fitness.analytics_stream_state",
   "fitness.app_store_notification",
   "fitness.daily_metric_type",
   "fitness.device_priority",

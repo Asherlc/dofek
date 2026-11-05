@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   cpSync,
   mkdirSync,
@@ -10,13 +10,16 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Client } from "pg";
+import { sql } from "drizzle-orm";
+import { Client, escapeIdentifier } from "pg";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { assertPostgresAccountErasureCoverage } from "../account-erasure/postgres-erasure.ts";
 import { resetLegacyClimbingTables } from "./climbing-migration-test-helpers.ts";
+import { createDatabase } from "./index.ts";
 import { runMigrations } from "./migrate.ts";
 import { setupTestDatabase, type TestContext, writeTestMigrationFiles } from "./test-helpers.ts";
+import { executeWithSchema } from "./typed-sql.ts";
 
 // cspell:ignore pkey relkind relname relnamespace relreplident nspname
 
@@ -62,6 +65,35 @@ describe("runMigrations", () => {
 
   it("classifies every table in the migrated schema for account erasure", async () => {
     await expect(assertPostgresAccountErasureCoverage(ctx.db)).resolves.toBeUndefined();
+  });
+
+  it("bootstraps a blank canonical database with classified analytics coordination tables", async () => {
+    const name = `canonical_analytics_${randomUUID().replaceAll("-", "")}`;
+    const admin = new Client({ connectionString: ctx.connectionString });
+    await admin.connect();
+    const url = new URL(ctx.connectionString);
+    url.pathname = `/${name}`;
+    await admin.query(`CREATE DATABASE ${escapeIdentifier(name)} TEMPLATE template0`);
+    const fresh = createDatabase(url.toString());
+    try {
+      await expect(runMigrations(url.toString())).resolves.toBeGreaterThan(0);
+      const result = await executeWithSchema(
+        fresh,
+        tableNameRowsSchema.element,
+        sql`SELECT tablename AS table_name FROM pg_tables WHERE schemaname='fitness' AND tablename IN ('analytics_query_owner','analytics_run','analytics_stage_cursor','analytics_stream_state') ORDER BY tablename`,
+      );
+      expect(result).toEqual([
+        { table_name: "analytics_query_owner" },
+        { table_name: "analytics_run" },
+        { table_name: "analytics_stage_cursor" },
+        { table_name: "analytics_stream_state" },
+      ]);
+      await expect(assertPostgresAccountErasureCoverage(fresh)).resolves.toBeUndefined();
+    } finally {
+      await fresh.$client.end();
+      await admin.query(`DROP DATABASE ${escapeIdentifier(name)} WITH (FORCE)`);
+      await admin.end();
+    }
   });
 
   it("runs migrations successfully and returns count", async () => {

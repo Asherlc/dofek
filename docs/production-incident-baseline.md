@@ -35966,3 +35966,31 @@ was wrong; no missing-message finding was established. Owned cleanup passed,
 and the fixture is parked with no further run authorized. A read-only assertion
 review precedes any user decision on another run. No production setting or hold
 changed; expiry and full physical cleanup remain unqualified.
+
+### 2026-11-05 — CDC capture exposes missing analytics erasure policies
+
+A fresh, disposable local CDC fixture stopped in the canonical
+[`runMigrations()` entrypoint](../src/db/migrate.ts) before synthetic seeding or
+Debezium startup. Its first fatal line was `Postgres account-erasure schema
+coverage failed`, naming `fitness.analytics_query_owner`, `analytics_run`,
+`analytics_stage_cursor` and `analytics_stream_state`. Migrations 0176 and 0178
+introduced these global coordination tables without classifying them in the
+[Postgres erasure inventory](../src/account-erasure/postgres-erasure.ts).
+The guard correctly blocked startup. Production was unaffected; the branch
+has not been deployed and its four production holds remain.
+
+The column and writer audit also found account UUIDs embedded in the two erasure
+owner intents. Shared classification requires replacing those account identifiers
+with the existing erasure-request identity, preserving exact pending-intent
+recovery and Q7. The other coordination fields hold executor/run IDs and shared
+transport/page progress; `analytics_required_frontier` retains account/operation
+attribution and its existing erasure behavior. The repair adds explicit shared policies after passing the existing request ID
+through the two erasure dependencies. Real-Postgres catalog, blank-database
+migration and mixed-account preservation regressions passed, along with the
+request-ID replay checks. Independent review found no critical or important
+issue. No erasure guard was bypassed and no owner with unresolved queries was discarded.
+
+The failed fixture's fresh containers and volumes were removed successfully;
+existing workspace resources and original archives were preserved. No native
+fitness envelopes were captured. A second setup failure ends this capture
+qualification under the agreed stop rule.

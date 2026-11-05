@@ -73,6 +73,34 @@ confirmation: <https://www.postgresql.org/docs/current/tutorial-transactions.htm
 BullMQ jobs are designed to be idempotent because delivery can be retried:
 <https://docs.bullmq.io/patterns/idempotent-jobs>.
 
+## Analytics Coordination Inventory
+
+The [Postgres erasure policy](../src/account-erasure/postgres-erasure.ts) retains
+four shared coordination tables whose [typed schema](../src/db/schema/analytics-work.ts)
+does not assign rows to individual accounts:
+
+| Table | Reason for shared preservation |
+| --- | --- |
+| `analytics_query_owner` | The publication fence records executor/query state across ingestion, projection and erasure. Removing it can discard the evidence needed to fence a previous writer. |
+| `analytics_run` | A sealed run can cover several accounts; deleting it for one account would remove another account's run. |
+| `analytics_stage_cursor` | Page bounds, publication revisions and completion state preserve progress across mixed-account pages. Effect digests are integrity commitments, not an anonymity claim. |
+| `analytics_stream_state` | Processed/pending positions and group manifests describe a shared transport stream rather than one account's records. |
+
+Coordination metadata must not carry account identifiers or source/metric
+payloads, including in topic, resource and intent names. The
+[erasure runtime](../src/jobs/account-erasure-runtime.ts) uses the existing
+request UUID for stable `account-erasure:<requestUUID>:fence|erase` intents.
+Failed or pending attempts replay that same request identity; classification
+does not authorize clearing unknown owners or bypassing recovery.
+
+`analytics_required_frontier` remains attributable through its operation/account
+foreign keys and is erased per account. The
+[real PostgreSQL regression](../src/account-erasure/postgres-erasure.integration.test.ts)
+checks that removing one account's frontiers preserves another account's
+frontiers and the shared run, stream, cursor and publication-owner state.
+Complete mixed-page publication and restore/erasure qualification remain release
+gates in the [bounded analytics plan](superpowers/plans/2026-11-03-bounded-analytics.md#task-7-erasure-ownership-and-writer-barriers-for-all-new-state).
+
 ## User Flow
 
 1. The signed-in user opens account deletion on web or iOS, types `DELETE`, and

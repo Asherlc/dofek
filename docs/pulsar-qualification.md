@@ -194,6 +194,17 @@ raw writes, receipts, frontiers and acknowledgements remain caller obligations
 for the following CDC slices. The gate is not activated and must not ship before
 its production caller and those handoffs are implemented.
 
+The first fitness-schema capture stopped before seeding: canonical migration
+coverage rejected four unclassified analytics coordination tables. The repair
+records their shared policy after replacing raw account IDs in erasure-owner
+intents with existing request IDs. The new blank-database regression applies
+181 migrations and verifies coverage; the mixed-account regression preserves
+shared state while removing the erased account's required frontiers. Affected
+Postgres tests (24) and unit tests (39) pass with independent review. Q7 remains
+unchanged. The disposable fixture was removed; no native fitness envelopes or
+decoder qualification resulted from that setup attempt. One capture attempt
+remains under the two-setup-failure stop rule.
+
 ### November 5 legacy archive metadata inventory
 
 A bounded, read-only LIST reached EOF after 400 pages: 399,547 objects and

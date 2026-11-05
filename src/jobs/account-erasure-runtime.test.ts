@@ -251,6 +251,56 @@ function execution(
 
 describe("createAccountErasureRuntime", () => {
   beforeEach(() => vi.clearAllMocks());
+  it.each([
+    ["ingest_fence", "fence", "pending"],
+    ["ingest_fence", "fence", "write failed"],
+    ["clickhouse_initial", "erase", "pending"],
+    ["clickhouse_initial", "erase", "write failed"],
+  ] as const)(
+    "replays %s after %s using the existing request identity (%s)",
+    async (phase, suffix, failure) => {
+      mocks.decryptSnapshot.mockResolvedValue(snapshot);
+      const database = {
+        $client: ownerDatabase.$client,
+        execute: vi.fn(async () => []),
+        transaction: vi.fn(),
+      };
+      const clickhouse = {
+        command: vi.fn(async () => undefined),
+        insert: vi.fn(async () => undefined),
+        query: vi.fn(async () => ({ json: async () => [] })),
+      };
+      const runtime = await createAccountErasureRuntime(database, clickhouse, {
+        close: vi.fn(async () => undefined),
+        purge: vi.fn(async () => undefined),
+      });
+      try {
+        if (failure === "pending")
+          mocks.withOwner.mockRejectedValueOnce(new Error("Existing intent is pending"));
+        else
+          (phase === "ingest_fence"
+            ? mocks.fenceClickHouse
+            : mocks.eraseClickHouse
+          ).mockRejectedValueOnce(new Error("Erasure write failed"));
+        await expect(runtime.phaseRunner.runPhase(phase, execution())).rejects.toThrow(
+          failure === "pending" ? "pending" : "write failed",
+        );
+        await runtime.phaseRunner.runPhase(phase, execution());
+        expect(mocks.withOwner.mock.calls.map((call) => call[2])).toEqual([
+          {
+            resourceId: "metric-stream-source",
+            intentId: `account-erasure:${request.id}:${suffix}`,
+          },
+          {
+            resourceId: "metric-stream-source",
+            intentId: `account-erasure:${request.id}:${suffix}`,
+          },
+        ]);
+      } finally {
+        await runtime.close();
+      }
+    },
+  );
   it("withholds ClickHouse erasure writes while the shared predecessor is unknown", async () => {
     mocks.decryptSnapshot.mockResolvedValue(snapshot);
     mocks.fenceClickHouse.mockClear();

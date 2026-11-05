@@ -178,13 +178,13 @@ export async function createAccountErasureRuntime(
           },
           options,
         ),
-      eraseClickHouse: (snapshot) =>
+      eraseClickHouse: (snapshot, requestId) =>
         withAnalyticsQueryOwner(
           database,
           clickHouseClient,
           {
             resourceId: ANALYTICS_PUBLICATION_RESOURCE,
-            intentId: `account-erasure:${snapshot.localIdentifiers.userId}:erase`,
+            intentId: `account-erasure:${requestId}:erase`,
           },
           (owner) => eraseClickHouseAccount(owner.client, identifiers(snapshot)),
         ),
@@ -194,13 +194,13 @@ export async function createAccountErasureRuntime(
       eraseStripe: (snapshot) => eraseStripeAccount(snapshot),
       // Activation already committed its PG fence; never hold that transaction
       // while waiting for this global ClickHouse publication owner.
-      fenceIngest: (snapshot) =>
+      fenceIngest: (snapshot, requestId) =>
         withAnalyticsQueryOwner(
           database,
           clickHouseClient,
           {
             resourceId: ANALYTICS_PUBLICATION_RESOURCE,
-            intentId: `account-erasure:${snapshot.localIdentifiers.userId}:fence`,
+            intentId: `account-erasure:${requestId}:fence`,
           },
           (owner) =>
             fenceClickHouseAccount(
