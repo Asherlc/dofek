@@ -32,16 +32,21 @@ Detailed source requirements:
 [qualification evidence](pulsar-qualification.md),
 [account-erasure runbook](account-erasure-runbook.md).
 
-### Release assembly decision still pending
+### Release assembly and continuation
 
 The development branch contains deferred and partly wired analytics/CDC work.
 It is not the first-release artifact. The proposed assembly path is a dedicated
 release branch from `main`, carrying only the first-release transport, grouped
 sink/journal, erasure, archive, deployment and storage changes. Deferred work
-would remain on `dull-baboon`. **Creating or switching that branch is not yet
-approved**; obtain explicit approval when the release pieces are ready to
-assemble, as required by the repository's branch rule. No branch switch or
-rebase is authorized by the release split.
+remains on `dull-baboon`. The user explicitly approved the separate
+`pulsar-foundation` branch and workspace for the first infrastructure/test PR.
+It is being assembled from the isolated topology, offload correction and
+native evacuation CI, without application pipeline changes.
+
+The user also authorized monitoring each focused PR, correcting failures,
+merging after required checks and review pass, and continuing through subsequent
+work until the whole project is finished. Keep this index current across that
+cycle. Production maintenance and restoring the holds remain separate gates.
 
 The assembly audit must show that every included new table has a production
 writer and erasure policy, every export has a production consumer, and no
@@ -60,13 +65,13 @@ assembly gates, not completed review findings.
 | Scalar executor | Owner, page recovery, account guards, generation checks, publication revisions and visible memory failure are implemented. Deduplication and activity execution are not activated. See [executor tests](../src/analytics/bounded-analytics.integration.test.ts). |
 | CDC source boundary | Transaction accounting and typed decoding cover seven source tables plus projected parent ownership context. Snapshot, complete parent-delete cascade and temporal boundary evidence are retained. No owned CDC writes or cross-topic application frontier exist. See [fixtures](../src/analytics/test-fixtures/README.md). |
 | Latest code validation | Commit `841064140`: 66 focused cases, the real ClickHouse temporal round-trip case, TypeScript and source formatting/spelling checks pass. Full unit tier: 24,782 passed, 19 existing skips. |
-| Lifecycle | Prior run demonstrated alert, mixed-ledger offload, stalled expiry, removal of A from broker/BookKeeper metadata/R2 and evacuation metadata. B readability after restart remained unqualified after the replacement IP changed. One user-authorized stable-endpoint run is in progress; no result is assumed. See the [prior result](pulsar-qualification.md#november-5-lifecycle-result-replacement-address-changed-after-restart). |
+| Lifecycle | The authorized stable-endpoint run passed alert, mixed-ledger offload, expiry, A removal, evacuation, exact B reads before/after deliberate broker and replacement restarts, old-source retirement and cleanup. This qualifies the local model only. See the [successful result](pulsar-qualification.md#november-5-stable-endpoint-lifecycle-passes). |
 
 ## First milestone: unfinished release gates
 
 | Work | Current state | Next concrete evidence / completion rule |
 | --- | --- | --- |
-| Full transport lifecycle | Stable-endpoint run in progress | Read exact B immediately after evacuation with old storage offline, then after broker/replacement restarts; verify A absent and truthful final state. Preserve the one-run stop rule. Production Swarm addressing is a later, separate check. |
+| Full transport lifecycle | Local stable-endpoint model passed | Carry its tested sequence into erasure integration. Production Swarm addressing, realistic evacuation duration and whole-host limits remain separate checks; do not repeat the completed local qualification. |
 | Physical storage boundary | Qualification work exists; production boundary not enabled | Finish the [storage preflight and isolation gate](superpowers/plans/2026-11-03-bounded-analytics.md#task-8-physical-storage-preflight-resource-isolation-and-aggregate-qualification), including outage/fill behavior. Prepare a reviewed maintenance procedure before changing filesystem features. Logical backlog quotas and alerts do not replace this gate. |
 | Production Pulsar deployment | No Pulsar services in the production stack | Add reviewed pinned broker, bookie, metadata and offload configuration through the [deployment task](superpowers/plans/2026-11-03-single-server-pulsar.md#task-6-production-configuration-resource-enforcement-and-recovery-evidence). Verify required secret names, stable addressing, actual caps, matched restore and failure behavior. No production deployment is authorized by this document. |
 | Native sender and runtime wiring | Position codec, envelope types, Consumer and grouped sink exist; sender/runtime cutover incomplete | Finish [producer task 2](superpowers/plans/2026-11-03-single-server-pulsar.md#task-2-native-producer-and-durable-transport-positions) and [consumer task 3](superpowers/plans/2026-11-03-single-server-pulsar.md#task-3-bounded-consumer-and-processing-evidence). Exercise send/acceptance/receipt/ack crashes, control commands and byte bounds. One canonical sensor transport at cutover. Audit the accumulated branch changes against first-release entrypoints so deferred analytics/CDC paths cannot be activated accidentally; do not deploy this development branch as-is. |
@@ -105,10 +110,10 @@ permits unread backlog expiry for the deletion deadline only with an alert,
 operator incident and incomplete sync status; it does not authorize arbitrary
 loss or false reconstruction claims.
 
-Immediate next step: reconcile the active lifecycle run's retained result,
-both B reads and cleanup before starting another qualification run. Do not
-duplicate or retry it automatically. Then take the next unfinished first-release
-gate above. Local terminal sessions and private artifact paths are in the
+Immediate next step: complete checks and review on the isolated
+`pulsar-foundation` PR, merge when its required gates pass, then take the next
+unfinished first-release gate above. The local lifecycle run is terminal and
+passed; do not duplicate it. Local terminal sessions and private artifact paths are in the
 workspace progress ledger; checked-in evidence is linked from the qualification
 record. Use [the testing guide](testing.md) and preserve the approved local
 resource overlays when running engine tests.

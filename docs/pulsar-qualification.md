@@ -201,6 +201,38 @@ whole-host soak check, using Docker's
 No DNS-cache tuning, production configuration change or new run is included in
 this proposal.
 
+### November 5 stable-endpoint lifecycle passes
+
+The single newly authorized run completed successfully at 04:56:56 UTC. It used
+the stock Compose static-address model proposed above, with unchanged TTL,
+memory, observation and evacuation budgets. The native criteria passed and
+the runner exited zero after successful evidence capture and service shutdown.
+
+The alert was observed at backlog age 60 seconds before expiry. The mixed
+A/B1 ledger was offloaded and then expired under the approved stalled-consumer
+policy; its broker references, BookKeeper metadata and exact R2 objects were
+absent before evacuation. The surviving B2 ledger and remote objects remained.
+Every surviving ensemble moved to the replacement endpoint, with the original
+bookie then offline. The original bookie's exclusively owned fixture files
+were retired only after both surviving-data reads passed.
+
+The stalled subscription read exactly native ID `CAgQAA==` with the original
+B2 payload at 04:56:10 UTC, after recovery and the required broker start, before
+deliberate restarts. It read that same ID and payload again at 04:56:28 UTC,
+after both broker and replacement underwent SIGKILL/restart. Neither read
+acknowledged B2. The final healthy-consumer read then acknowledged B2, with
+the stalled backlog still incomplete. Six replacement files were scanned:
+B2's marker was present; A and B1 markers were absent. Final R2 identity checks
+and cleanup passed. Only this fresh fixture's resources were touched.
+
+This closes the local broker lifecycle/readability gate. Production service
+address stability and task restart behavior still need the real Swarm soak;
+the static Compose endpoint models that property rather than qualifying it.
+Production capacity, realistic evacuation duration, application fence
+integration, long-term account archive deletion and the failed-delete orphan
+residual risk remain open. No automatic day-30 guarantee or disk-loss recovery
+claim follows. All four production holds remain unchanged.
+
 ### November 5 source-neutral CDC transaction admission
 
 The pure transaction gate now admits already validated records only when the
