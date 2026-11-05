@@ -948,9 +948,42 @@ jobs:
           path: integration-test-timings.json
           if-no-files-found: error
 
+  test-bookie-evacuation:
+    name: Native BookKeeper Evacuation
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || '' }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup-node-pnpm
+      - name: Select installed JDK compiler
+        run: |
+          test -n "$JAVA_HOME_25_X64"
+          test -x "$JAVA_HOME_25_X64/bin/javac"
+          echo "$JAVA_HOME_25_X64/bin" >> "$GITHUB_PATH"
+          "$JAVA_HOME_25_X64/bin/javac" -version
+      - name: Qualify native replacement without retries
+        run: pnpm exec vitest run --project=pulsar-integration src/metric-stream/bookie-evacuation.pulsar.integration.test.ts --retry=0
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: native-bookie-evacuation-evidence
+          path: |
+            reports/bookie-evacuation/**/fixture/
+            reports/bookie-evacuation/**/*.stdout
+            reports/bookie-evacuation/**/*.stderr
+            reports/bookie-evacuation/**/*.json
+            reports/bookie-evacuation/**/*.txt
+          if-no-files-found: warn
+          retention-days: 7
+
   test-gate:
     name: Unit & Integration Tests
-    needs: [test-unit, test-fit-decoder, test-integration, test-peerdb-integration, coverage]
+    needs: [test-unit, test-fit-decoder, test-integration, test-peerdb-integration, test-bookie-evacuation, coverage]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -961,12 +994,17 @@ jobs:
             "${{ needs.test-fit-decoder.result }}" \
             "${{ needs.test-integration.result }}" \
             "${{ needs.test-peerdb-integration.result }}" \
+            "${{ needs.test-bookie-evacuation.result }}" \
             "${{ needs.coverage.result }}"; do
             if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
               echo "A required job failed or was cancelled"
               exit 1
             fi
           done
+          if [ "${{ needs.test-bookie-evacuation.result }}" != "success" ]; then
+            echo "Required native BookKeeper qualification did not succeed"
+            exit 1
+          fi
 
   # ── E2E ────────────────────────────────────────────────────────────────
 
