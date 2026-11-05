@@ -109,7 +109,7 @@ vi.mock("dofek/db/clickhouse", () => ({
   bootstrapClickHouseFromEnv: vi.fn(),
   createClickHouseClientFromEnv: vi.fn(),
 }));
-vi.mock("../../../src/metric-stream/pulsar-producer.ts", () => ({
+vi.mock("../../../src/metric-stream/publisher-factory.ts", () => ({
   getDefaultMetricStreamEventPublisher: mockGetDefaultMetricStreamEventPublisher,
   closeAllMetricStreamEventPublishers: mockCloseAllMetricStreamEventPublishers,
 }));

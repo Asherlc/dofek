@@ -32,7 +32,7 @@ function serializeEvent(event: unknown): string {
   return serialized;
 }
 
-export class PulsarMetricStreamEventPublisher implements MetricStreamEventPublisher {
+class PulsarMetricStreamEventPublisher implements MetricStreamEventPublisher {
   readonly #producer: Producer;
   readonly #closeResources: () => Promise<void>;
   #closed = false;
@@ -127,7 +127,7 @@ const publishers = new Map<string, Promise<PulsarMetricStreamEventPublisher>>();
 let shuttingDown = false;
 let shutdown: Promise<void> | undefined;
 
-export function closeAllMetricStreamEventPublishers(): Promise<void> {
+export function closePulsarMetricStreamEventPublishers(): Promise<void> {
   shuttingDown = true;
   shutdown ??= (async () => {
     const initialized = await Promise.allSettled([...publishers.values()]);
@@ -148,10 +148,6 @@ export function closeAllMetricStreamEventPublishers(): Promise<void> {
     }
   })();
   return shutdown;
-}
-
-export function getDefaultMetricStreamEventPublisher(): Promise<MetricStreamEventPublisher> {
-  return createPulsarMetricStreamEventPublisherForRoute("live");
 }
 
 export async function createPulsarMetricStreamEventPublisherForRoute(

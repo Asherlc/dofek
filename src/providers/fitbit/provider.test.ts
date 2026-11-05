@@ -33,7 +33,7 @@ const { publishedMetricStreamBatches, replacementScopes } = vi.hoisted<{
   replacementScopes: [],
 }));
 
-vi.mock("../../metric-stream/pulsar-producer.ts", () => ({
+vi.mock("../../metric-stream/publisher-factory.ts", () => ({
   getDefaultMetricStreamEventPublisher: async () => ({
     publishRows: async (rows: readonly Record<string, unknown>[]) => {
       publishedMetricStreamBatches.push([...rows]);

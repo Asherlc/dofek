@@ -1,9 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { MetricStreamProcessingContext } from "./events.ts";
-import {
-  createPulsarMetricStreamEventPublisherForRoute,
-  PulsarMetricStreamEventPublisher,
-} from "./pulsar-producer.ts";
+import { createPulsarMetricStreamEventPublisherForRoute } from "./pulsar-producer.ts";
 
 const sdk = vi.hoisted(() => ({ createProducer: vi.fn(), close: vi.fn(), construct: vi.fn() }));
 const captureException = vi.hoisted(() => vi.fn());
@@ -42,11 +39,21 @@ function deferred() {
   });
   return { promise, resolve, reject };
 }
-function setup() {
-  const send = vi.fn(async (_message: Message): Promise<unknown> => undefined);
-  const close = vi.fn(async (): Promise<void> => undefined);
-  const publisher = new PulsarMetricStreamEventPublisher({ send, close }, close);
-  return { publisher, send, close };
+function nativeFixture() {
+  return {
+    send: vi.fn(async (_message: Message): Promise<unknown> => undefined),
+    close: vi.fn(async (): Promise<void> => undefined),
+  };
+}
+let fixtureId = 0;
+async function setup() {
+  const native = nativeFixture();
+  sdk.createProducer.mockResolvedValue(native);
+  const publisher = await createPulsarMetricStreamEventPublisherForRoute("live", {
+    PULSAR_SERVICE_URL: "pulsar://fixture:6650",
+    METRIC_STREAM_LIVE_TOPIC: `persistent://public/default/adapter-${++fixtureId}`,
+  });
+  return { publisher, ...native };
 }
 const decode = (message: Message | undefined) => {
   if (!message) throw new Error("Expected a sent message");
@@ -54,10 +61,13 @@ const decode = (message: Message | undefined) => {
 };
 
 describe("PulsarMetricStreamEventPublisher", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    sdk.close.mockResolvedValue(undefined);
+  });
 
   it("returns stable versioned events after native acceptance using event IDs as keys", async () => {
-    const { publisher, send } = setup();
+    const { publisher, send } = await setup();
     const events = await publisher.publishRows([row], { operationRevision });
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({
@@ -70,13 +80,13 @@ describe("PulsarMetricStreamEventPublisher", () => {
   });
 
   it("does not send rows or markers for empty input", async () => {
-    const { publisher, send } = setup();
+    const { publisher, send } = await setup();
     await expect(publisher.publishRows([], { operationRevision, processing })).resolves.toEqual([]);
     expect(send).not.toHaveBeenCalled();
   });
 
   it("keeps explicit and processing keys and waits for row acceptance before the marker", async () => {
-    const { publisher, send } = setup();
+    const { publisher, send } = await setup();
     const accepted = deferred();
     send.mockImplementationOnce(() => accepted.promise);
     const publishing = publisher.publishRows([row], {
@@ -99,7 +109,7 @@ describe("PulsarMetricStreamEventPublisher", () => {
   });
 
   it("admits at most twenty messages before waiting for the whole window", async () => {
-    const { publisher, send } = setup();
+    const { publisher, send } = await setup();
     const held = Array.from({ length: 20 }, deferred);
     for (const item of held) send.mockImplementationOnce(() => item.promise);
     const publishing = publisher.publishRows(
@@ -118,7 +128,7 @@ describe("PulsarMetricStreamEventPublisher", () => {
   });
 
   it("bounds serialized bytes even when fewer than twenty messages fit", async () => {
-    const { publisher, send } = setup();
+    const { publisher, send } = await setup();
     const accepted = deferred();
     send.mockImplementationOnce(() => accepted.promise);
     const publishing = publisher.publishRows(
@@ -137,7 +147,7 @@ describe("PulsarMetricStreamEventPublisher", () => {
   });
 
   it("rejects an oversized atomic event without sending it", async () => {
-    const { publisher, send } = setup();
+    const { publisher, send } = await setup();
     await expect(
       publisher.publishRows([{ ...row, metadata: { blob: "x".repeat(900_000) } }], {
         operationRevision,
@@ -147,7 +157,7 @@ describe("PulsarMetricStreamEventPublisher", () => {
   });
 
   it("waits for all pending outcomes after failure and never sends a later window or marker", async () => {
-    const { publisher, send } = setup();
+    const { publisher, send } = await setup();
     const failed = deferred();
     const pending = deferred();
     send.mockImplementationOnce(() => failed.promise).mockImplementationOnce(() => pending.promise);
@@ -176,7 +186,7 @@ describe("PulsarMetricStreamEventPublisher", () => {
   });
 
   it("accepts the delete before any replacement row and completes only after rows", async () => {
-    const { publisher, send } = setup();
+    const { publisher, send } = await setup();
     const accepted = deferred();
     send.mockImplementationOnce(() => accepted.promise);
     const publishing = publisher.replaceRows(
@@ -203,7 +213,7 @@ describe("PulsarMetricStreamEventPublisher", () => {
   });
 
   it("does not send replacements after delete rejection", async () => {
-    const { publisher, send } = setup();
+    const { publisher, send } = await setup();
     send.mockRejectedValueOnce(new Error("Timeout"));
     await expect(
       publisher.replaceRows({ userId: row.userId }, [row], operationRevision, processing),
@@ -214,7 +224,7 @@ describe("PulsarMetricStreamEventPublisher", () => {
   it.each(["size", "serialization"])(
     "rejects a replacement %s error before publishing its delete",
     async (failure) => {
-      const { publisher, send } = setup();
+      const { publisher, send } = await setup();
       const original = JSON.stringify;
       const serialization = vi.spyOn(JSON, "stringify").mockImplementation((value) => {
         if (failure === "serialization" && value?.channel === "heart_rate")
@@ -240,7 +250,7 @@ describe("PulsarMetricStreamEventPublisher", () => {
   );
 
   it("rejects an oversized processing marker before publishing rows", async () => {
-    const { publisher, send } = setup();
+    const { publisher, send } = await setup();
     await expect(
       publisher.publishRows([row], {
         operationRevision,
@@ -251,7 +261,7 @@ describe("PulsarMetricStreamEventPublisher", () => {
   });
 
   it("validates later rows before submitting any otherwise-valid window", async () => {
-    const { publisher, send } = setup();
+    const { publisher, send } = await setup();
     const rows = Array.from({ length: 21 }, (_, i) => ({ ...row, externalId: `preflight-${i}` }));
     await expect(
       publisher.publishRows([...rows, { ...row, metadata: { blob: "x".repeat(900_000) } }], {
@@ -264,7 +274,7 @@ describe("PulsarMetricStreamEventPublisher", () => {
   it.each(["rows", "replacement"])(
     "validates the %s completion envelope before any publication",
     async (kind) => {
-      const { publisher, send } = setup();
+      const { publisher, send } = await setup();
       const invalid = { ...processing, batchId: "" };
       const publishing =
         kind === "rows"
@@ -280,7 +290,7 @@ describe("PulsarMetricStreamEventPublisher", () => {
   );
 
   it("closes resources once and rejects subsequent publication", async () => {
-    const { publisher, send, close } = setup();
+    const { publisher, send, close } = await setup();
     await Promise.all([publisher.disconnect(), publisher.disconnect()]);
     expect(close).toHaveBeenCalledOnce();
     await expect(publisher.publishRows([row], { operationRevision })).rejects.toThrow(/closed/);
@@ -311,7 +321,7 @@ describe("Pulsar route factory", () => {
     const { createPulsarMetricStreamEventPublisherForRoute: create } = await import(
       "./pulsar-producer.ts"
     );
-    const native = setup();
+    const native = nativeFixture();
     sdk.createProducer.mockResolvedValue({ send: native.send, close: native.close });
     const first = await create("live", env);
     expect(await create("live", env)).toBe(first);
@@ -338,7 +348,7 @@ describe("Pulsar route factory", () => {
     sdk.createProducer.mockRejectedValueOnce(new Error("Unavailable"));
     await expect(create("live", env)).rejects.toThrow("Unavailable");
     expect(sdk.close).toHaveBeenCalledOnce();
-    const native = setup();
+    const native = nativeFixture();
     sdk.createProducer.mockResolvedValue({ send: native.send, close: native.close });
     await expect(create("live", env)).resolves.toHaveProperty("publishRows");
     expect(sdk.createProducer).toHaveBeenCalledTimes(2);
@@ -347,7 +357,7 @@ describe("Pulsar route factory", () => {
     const { createPulsarMetricStreamEventPublisherForRoute: create } = await import(
       "./pulsar-producer.ts"
     );
-    const native = setup();
+    const native = nativeFixture();
     native.close.mockRejectedValueOnce(new Error("close failed"));
     sdk.createProducer.mockResolvedValue({ send: native.send, close: native.close });
     const first = await create("live", env);
@@ -360,7 +370,7 @@ describe("Pulsar route factory", () => {
     const { createPulsarMetricStreamEventPublisherForRoute: create } = await import(
       "./pulsar-producer.ts"
     );
-    const native = setup();
+    const native = nativeFixture();
     const producerError = new Error("producer close failed");
     const clientError = new Error("client close failed");
     native.close.mockRejectedValueOnce(producerError);
@@ -385,7 +395,7 @@ describe("Pulsar route factory", () => {
     });
     await expect(create("live", env)).rejects.toThrow("invalid client config");
     expect(captureException).toHaveBeenCalledOnce();
-    const native = setup();
+    const native = nativeFixture();
     sdk.createProducer.mockResolvedValue({ send: native.send, close: native.close });
     await expect(create("live", env)).resolves.toHaveProperty("publishRows");
     expect(sdk.close).not.toHaveBeenCalled();
@@ -394,9 +404,9 @@ describe("Pulsar route factory", () => {
   it("waits for in-flight initialization, closes it once, and permanently rejects late factories", async () => {
     const {
       createPulsarMetricStreamEventPublisherForRoute: create,
-      closeAllMetricStreamEventPublishers: closeAll,
+      closePulsarMetricStreamEventPublishers: closeAll,
     } = await import("./pulsar-producer.ts");
-    const native = setup();
+    const native = nativeFixture();
     const initialized = deferred();
     sdk.createProducer.mockImplementationOnce(() =>
       initialized.promise.then(() => ({ send: native.send, close: native.close })),
@@ -420,10 +430,10 @@ describe("Pulsar route factory", () => {
   it("settles every publisher close before reporting shutdown failure", async () => {
     const {
       createPulsarMetricStreamEventPublisherForRoute: create,
-      closeAllMetricStreamEventPublishers: closeAll,
+      closePulsarMetricStreamEventPublishers: closeAll,
     } = await import("./pulsar-producer.ts");
-    const first = setup();
-    const second = setup();
+    const first = nativeFixture();
+    const second = nativeFixture();
     const held = deferred();
     first.close.mockRejectedValueOnce(new Error("first close failed"));
     second.close.mockImplementationOnce(() => held.promise);
@@ -456,9 +466,9 @@ describe("Pulsar route factory", () => {
   it("cleans successful publishers even when another cached initialization fails", async () => {
     const {
       createPulsarMetricStreamEventPublisherForRoute: create,
-      closeAllMetricStreamEventPublishers: closeAll,
+      closePulsarMetricStreamEventPublishers: closeAll,
     } = await import("./pulsar-producer.ts");
-    const native = setup();
+    const native = nativeFixture();
     const initialized = deferred();
     sdk.createProducer.mockResolvedValueOnce({ send: native.send, close: native.close });
     await create("live", env);

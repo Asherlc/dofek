@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { PulsarMetricStreamEventPublisher } from "../metric-stream/pulsar-producer.ts";
+import {
+  createMetricStreamDeletedEvent,
+  createMetricStreamEvent,
+} from "../metric-stream/events.ts";
+import type { MetricStreamEventPublisher } from "../metric-stream/publisher.ts";
 import {
   createLazyDefaultMetricStreamEventPublisher,
   createLazyMetricStreamEventPublisher,
@@ -10,8 +14,8 @@ const redpandaProducerMocks = vi.hoisted(() => ({
   getDefaultMetricStreamEventPublisher: vi.fn(),
 }));
 
-vi.mock("../metric-stream/pulsar-producer.ts", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../metric-stream/pulsar-producer.ts")>()),
+vi.mock("../metric-stream/publisher-factory.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../metric-stream/publisher-factory.ts")>()),
   getDefaultMetricStreamEventPublisher: redpandaProducerMocks.getDefaultMetricStreamEventPublisher,
 }));
 
@@ -27,16 +31,23 @@ const metricStreamRow = {
 };
 
 function makePublisher() {
-  const send = vi.fn(async (_input: { data: Buffer; partitionKey: string }) => undefined);
-  const close = vi.fn(async () => undefined);
-  const delegate = new PulsarMetricStreamEventPublisher({ send, close }, close);
+  const publishRows = vi.fn<MetricStreamEventPublisher["publishRows"]>(async (rows, options) =>
+    rows.map((row) => createMetricStreamEvent(row, options.operationRevision)),
+  );
+  const replaceRows = vi.fn<NonNullable<MetricStreamEventPublisher["replaceRows"]>>(
+    async (scope, rows, revision) => ({
+      deleted: createMetricStreamDeletedEvent(scope, revision),
+      rows: rows.map((row) => createMetricStreamEvent(row, revision)),
+    }),
+  );
+  const delegate: MetricStreamEventPublisher = { publishRows, replaceRows };
   const recordPublishedBatch = vi.fn(async () => undefined);
   const publisher = new MetricStreamProcessingPublisher(delegate, {
     operationId: "30000000-0000-4000-8000-000000000001",
     datasetKeys: ["recovery", "training"],
     recordPublishedBatch,
   });
-  return { publisher, recordPublishedBatch, send };
+  return { publisher, recordPublishedBatch, publishRows, replaceRows };
 }
 
 describe("MetricStreamProcessingPublisher", () => {
@@ -58,7 +69,7 @@ describe("MetricStreamProcessingPublisher", () => {
   });
 
   it("uses a deterministic batch id and records broker-acknowledged publication evidence", async () => {
-    const { publisher, recordPublishedBatch, send } = makePublisher();
+    const { publisher, recordPublishedBatch, publishRows } = makePublisher();
 
     expect(publisher.hasPublishedBatches).toBe(false);
     await publisher.publishRows([metricStreamRow], { operationRevision });
@@ -68,9 +79,7 @@ describe("MetricStreamProcessingPublisher", () => {
     });
     expect(publisher.hasPublishedBatches).toBe(true);
 
-    const sentMarkers = send.mock.calls
-      .map(([message]) => JSON.parse(message.data.toString("utf8")))
-      .filter((event) => event.eventType === "metric_stream_batch_completed");
+    const sentMarkers = publishRows.mock.calls.map(([_rows, options]) => options.processing);
     expect(sentMarkers[0]?.batchId).toBe(sentMarkers[1]?.batchId);
     expect(sentMarkers[2]?.batchId).not.toBe(sentMarkers[0]?.batchId);
     expect(recordPublishedBatch).toHaveBeenCalledTimes(3);
@@ -157,17 +166,17 @@ describe("MetricStreamProcessingPublisher", () => {
   });
 
   it("does not record a batch when no metric events were emitted", async () => {
-    const { publisher, recordPublishedBatch, send } = makePublisher();
+    const { publisher, recordPublishedBatch, publishRows } = makePublisher();
 
     await expect(publisher.publishRows([], { operationRevision })).resolves.toEqual([]);
 
     expect(publisher.hasPublishedBatches).toBe(false);
-    expect(send).not.toHaveBeenCalled();
+    expect(publishRows).toHaveBeenCalledWith([], { operationRevision });
     expect(recordPublishedBatch).not.toHaveBeenCalled();
   });
 
   it("correlates scoped delete-and-replace batches with the same operation", async () => {
-    const { publisher, recordPublishedBatch, send } = makePublisher();
+    const { publisher, recordPublishedBatch, replaceRows } = makePublisher();
 
     await publisher.replaceRows(
       { activityId: "20000000-0000-4000-8000-000000000001" },
@@ -175,16 +184,14 @@ describe("MetricStreamProcessingPublisher", () => {
       operationRevision,
     );
 
-    const marker = JSON.parse(send.mock.calls.at(-1)?.[0].data.toString("utf8") ?? "{}");
+    const marker = replaceRows.mock.calls[0]?.[3];
     expect(marker).toMatchObject({
-      eventType: "metric_stream_batch_completed",
       operationId: "30000000-0000-4000-8000-000000000001",
       datasetKeys: ["recovery", "training"],
-      expectedEventCount: 2,
     });
     expect(recordPublishedBatch).toHaveBeenCalledWith({
       operationId: "30000000-0000-4000-8000-000000000001",
-      batchId: marker.batchId,
+      batchId: marker?.batchId,
       datasetKeys: ["recovery", "training"],
       expectedEventCount: 2,
     });

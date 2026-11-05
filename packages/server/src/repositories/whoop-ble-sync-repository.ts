@@ -4,7 +4,7 @@ import type { Database } from "dofek/db";
 import { HEART_RATE, RR_INTERVAL_MS } from "../../../../src/db/sensor-channels.ts";
 import type { MetricStreamRowInput } from "../../../../src/metric-stream/events.ts";
 import type { MetricStreamEventPublisher } from "../../../../src/metric-stream/publisher.ts";
-import { getDefaultMetricStreamEventPublisher } from "../../../../src/metric-stream/pulsar-producer.ts";
+import { getDefaultMetricStreamEventPublisher } from "../../../../src/metric-stream/publisher-factory.ts";
 import { writeMetricStreamRows } from "../../../../src/metric-stream/write-metric-stream.ts";
 import { canonicalizeTimestampForExternalId } from "../lib/canonical-timestamp.ts";
 import { ensurePushProvider } from "./push-provider-repository.ts";

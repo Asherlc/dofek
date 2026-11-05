@@ -19,7 +19,7 @@ import {
 } from "./cli-test/test-helpers.ts";
 
 const closePublishers = vi.hoisted(() => vi.fn(async (): Promise<void> => undefined));
-vi.mock("./metric-stream/pulsar-producer.ts", () => ({
+vi.mock("./metric-stream/publisher-factory.ts", () => ({
   closeAllMetricStreamEventPublishers: closePublishers,
 }));
 

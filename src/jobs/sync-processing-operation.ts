@@ -1,5 +1,5 @@
 import type { SyncDatabase } from "../db/index.ts";
-import { createPulsarMetricStreamEventPublisherForRoute } from "../metric-stream/pulsar-producer.ts";
+import { createMetricStreamEventPublisherForRoute } from "../metric-stream/publisher-factory.ts";
 import { metricStreamRouteForSyncJob } from "../metric-stream/routes.ts";
 import { currentMetricStreamWriteDatabase } from "../metric-stream/write-fence-context.ts";
 import {
@@ -135,7 +135,7 @@ export class SyncProcessingOperation {
       emittedMetricStreamDatasetKeys.length > 0
         ? new MetricStreamProcessingPublisher(
             createLazyMetricStreamEventPublisher(() =>
-              createPulsarMetricStreamEventPublisherForRoute(
+              createMetricStreamEventPublisherForRoute(
                 metricStreamRouteForSyncJob(job.data.targetRefreshWindow),
               ),
             ),

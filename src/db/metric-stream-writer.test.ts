@@ -30,7 +30,7 @@ const mockReplaceRows = vi.fn(
   }),
 );
 
-vi.mock("../metric-stream/pulsar-producer.ts", () => ({
+vi.mock("../metric-stream/publisher-factory.ts", () => ({
   getDefaultMetricStreamEventPublisher: vi.fn(async () => ({
     publishRows: mockPublishRows,
     replaceRows: mockReplaceRows,

@@ -13,7 +13,7 @@ import { ensureProvidersRegistered } from "./jobs/provider-registration.ts";
 import { captureException } from "./lib/error-reporting.ts";
 import { logger } from "./logger.ts";
 import { startMetricStreamClickHouseSinkFromEnv } from "./metric-stream/clickhouse-sink.ts";
-import { closeAllMetricStreamEventPublishers } from "./metric-stream/pulsar-producer.ts";
+import { closeAllMetricStreamEventPublishers } from "./metric-stream/publisher-factory.ts";
 import { startMetricStreamR2ArchiveFromEnv } from "./metric-stream/r2-archive.ts";
 import { getAllProviders } from "./providers/index.ts";
 

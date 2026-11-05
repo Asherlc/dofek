@@ -2,7 +2,7 @@ import type { Worker } from "bullmq";
 import type { createDatabaseFromEnv } from "../db/index.ts";
 import { captureException } from "../lib/error-reporting.ts";
 import { logger } from "../logger.ts";
-import { closeAllMetricStreamEventPublishers } from "../metric-stream/pulsar-producer.ts";
+import { closeAllMetricStreamEventPublishers } from "../metric-stream/publisher-factory.ts";
 import type { startAccountErasureOutboxDispatcher } from "./account-erasure-outbox.ts";
 import type { createAccountErasureRuntime } from "./account-erasure-runtime.ts";
 import type { createAccountErasureWorkLockPoolFromEnv } from "./account-erasure-work-guard.ts";

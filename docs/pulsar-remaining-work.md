@@ -56,7 +56,7 @@ Detailed source requirements:
 The development branch contains deferred and partly wired analytics/CDC work.
 It is not the first-release artifact. The proposed assembly path is a dedicated
 release branch from `main`, carrying only the first-release transport, grouped
-sink/journal, erasure, archive, deployment and storage changes. Deferred work
+raw sink/checkpoints, erasure, archive, deployment and storage changes. Deferred work
 remains on `dull-baboon`. The user explicitly approved the separate
 `pulsar-foundation` branch and workspace for the first infrastructure/test PR.
 It contains the isolated topology, offload correction and native evacuation CI,
@@ -125,7 +125,7 @@ assembly gates, not completed review findings.
 | Production Pulsar deployment | No Pulsar services in the production stack | Add reviewed pinned broker, bookie, metadata and offload configuration through the [deployment task](superpowers/plans/2026-11-03-single-server-pulsar.md#task-6-production-configuration-resource-enforcement-and-recovery-evidence). Verify required secret names, stable addressing, actual caps, matched restore and failure behavior. No production deployment is authorized by this document. |
 | Native sender and runtime wiring | Reviewed source checkpoint [01fafeb89](https://github.com/Asherlc/dofek/commit/01fafeb89) is pushed on Foundation: sender, Consumer, grouped sink, native state and marker schema; not merged or deployed | Finish [producer task 2](superpowers/plans/2026-11-03-single-server-pulsar.md#task-2-native-producer-and-durable-transport-positions) and [consumer task 3](superpowers/plans/2026-11-03-single-server-pulsar.md#task-3-bounded-consumer-and-processing-evidence). Qualify real broker replay across an interrupted acknowledgement, controls and byte bounds. One canonical sensor transport at cutover. Complete archive intake, erasure and physical boundaries in the release unit; keep its PR unmerged until the reviewed cutover is ready. |
 | JSONL archive consumer | Existing writer consumes Kafka | Move its transport intake onto the official Pulsar Consumer while preserving payload bytes, erasure reachability and archive acknowledgement semantics. Legacy keys remain unchanged; new objects use the explicit native key variant described below. Verify restart and failed-upload behavior. The gzip JSONL payload format stays unchanged. |
-| Erasure integration | Writer handoff and reservation reuse qualified in [a4631e92c](https://github.com/Asherlc/dofek/commit/a4631e92c); receipt replay remains a release blocker | Five real database cases and 80 focused cases cover known-terminal handoff, durable reservations and guard failures. Preserve unknown-state Q7 blocking. Finish structural receipt redaction and incomplete scope-delete preparation attempts; replay must not restore erased identifiers or lose another account's effects. Complete [transport erasure task 4](superpowers/plans/2026-11-03-single-server-pulsar.md#task-4-erasure-and-physical-retention-proofs), including native publication fencing and archive drain before R2 rewrites, day-29 inventory and restore handling. Failed-delete orphan cleanup remains a documented residual risk. Safe journal retirement stays in R2. |
+| Erasure integration | Writer handoff and reservation reuse qualified in [a4631e92c](https://github.com/Asherlc/dofek/commit/a4631e92c); smaller raw-sink integration remains open | Preserve fail-closed unknown-state recovery and prove raw replay cannot restore erased identifiers. Complete [transport erasure task 4](superpowers/plans/2026-11-03-single-server-pulsar.md#task-4-erasure-and-physical-retention-proofs), including native publication fencing and archive drain before R2 rewrites, day-29 inventory and restore handling. Journal receipt redaction and control preparation attempts move to R2. Failed-delete orphan cleanup remains a documented residual risk. |
 | Large-account identifier capture | Replacement source passed local 400,000/800,000 sensor-row cases with every erasure query capped at 128 MiB; not deployed | Carry the coherent paged capture, bounded snapshot, typed ownership checks, native physical proof and caller migration into the release. Complete release integration under [analytics task 7](superpowers/plans/2026-11-03-bounded-analytics.md#task-7-erasure-ownership-and-writer-barriers-for-all-new-state). The tests qualify their finite fixtures, not production erasure duration or the whole-host workload. |
 | Retained-PeerDB host fit and cutover | Earlier paper fit is conditional; no combined soak or production addressing qualification | Reconcile the host budget with PeerDB retained, archive intake and required storage reserve. Exercise real addressing/restarts, R2 outage, stopped consumption, bounded disk/RSS and the website workload. Then prepare the sealed cutover/rollback procedure. Keep the unread tail and all four holds until their explicit gates and restoration decision. |
 
@@ -135,18 +135,18 @@ are inputs to these tests, not substitutes for measured physical deletion.
 The fixture's static endpoint models stability; actual production service
 addressing must be tested with [Swarm service discovery](https://docs.docker.com/engine/swarm/networking/#configure-service-discovery).
 
-The native sink's finite four-control check measured about 1.40 seconds and
+The earlier journal-backed sink's finite four-control check measured about 1.40 seconds and
 134 ClickHouse calls, excluding setup, assertion reads and the replacement row.
 Each control has its own receipt and frontier step; its scope is scalar.
 The whole-host soak must measure the 350-control burst and a realistic large
-provider deletion, including effect pages. Record total drain time and the delay
+provider deletion on the final R1 raw-sink path. Record total drain time and the delay
 to live messages queued behind it. This small fixture is not that qualification;
 see the [native sink integration cases](../src/metric-stream/clickhouse-sink.integration.test.ts).
 
-Hold restoration also requires either safe journal retirement or a measured capacity
-proof for the entire history/provider drain with margin. R1 journal exhaustion
-stops acknowledgments and intake; alerting must show time until full. This
-capacity gate supplements the separate restoration consent.
+Hold restoration still requires a measured capacity proof for the entire
+history/provider drain with margin, plus the separate restoration consent.
+R1 no longer writes the analytics journal. R2 must qualify journal retirement
+and capacity before enabling analytics journal intake or bulk replay through it.
 
 The bounded-erasure implementation has local source qualification; production
 release integration remains unfinished. Its canonical
@@ -196,24 +196,25 @@ provenance only; this slice makes no position-ordering, partition-consistency or
 replay-validity claim. Native decoding and its dependency remain with the actual
 writer/replay consumers; the stricter development checkpoint is retained.
 
-The current storage inputs and their limits are recorded in the
+The earlier journal-backed storage inputs and their limits are recorded in the
 [runway table](analytics-storage-runbook.md#initial-journal-runway-inputs).
 They do not establish a production allocation or sustained ingestion runway.
 A post-merge fixture reduced the active-data estimate to about 0.98 GB/day
 combined at the observed average, or 2.13 GB/day at the higher observed rate.
-The user chose to keep safe retirement in R2. R1 retains the current grouped
-sink, with an explicitly accepted stop if its journal cap fills. Alert at 70%
-and report projected time to full; warning time depends on the qualified cap
-and measured rate. Native sink assembly can proceed under this scope. Exact
+The user subsequently approved removing the journal and placements from R1.
+These estimates now inform R2, not an R1 journal allocation. Exact Pulsar
 capacity, deployment and restoration gates remain binding; production holds
-are unchanged.
+are unchanged. The unfinished journal replay and erasure implementation is
+preserved in [checkpoint 4be97e4ff](https://github.com/Asherlc/dofek/commit/4be97e4ff).
+It has source/unit evidence but no final engine qualification and must not be
+treated as release-ready.
 Source placement is permanent structural growth, not journal backlog. Its
 bounded keyset bootstrap remains required before global identity lookup can
-cover existing raw data. It remains an R1 activation gate: the current
+cover existing raw data. It becomes an R2 activation gate: the deferred
 [delete preparation](../src/metric-stream/source-effects.ts) scans matching raw
 IDs and fails closed if any lacks a placement. This dependency is required for
-raw deletion itself, even while analytics is held; deferring the effect bootstrap
-to R2 does not remove it. A November 5 metadata-only observation counted
+effect-driven deletion path; R1 must instead qualify direct raw-scope deletion
+without placement lookup. A November 5 metadata-only observation counted
 189,609,383 active physical raw rows in 30 parts, with no source-placement
 parts returned. This is not a distinct-ID count or bootstrap-size proof; see
 the [measurement record](pulsar-qualification.md#november-5-journal-sizing-and-mutation-metadata-observations).
@@ -256,7 +257,8 @@ evidence and erasure races remain release gates.
 
 | Work | Existing implementation / evidence | Resume point |
 | --- | --- | --- |
-| Safe journal retirement — R2 | Explicitly deferred by the user on November 5; not implemented | Complete the [retirement to-do list](#r2-safe-journal-retirement-to-do) before reclaiming recovery proofs. R1 retains them behind its physical cap. |
+| Analytics journal, placements and erasure-safe replay — R2 | Source preserved in [4be97e4ff](https://github.com/Asherlc/dofek/commit/4be97e4ff), not engine-qualified | Restore only with their actual analytics consumers. Finish fenced preparation, receipt redaction, complete versus partial control attempts, erasure interleavings and fail-closed recovery. Bootstrap effects and placements from all raw data, including R1 intake. |
+| Safe journal retirement — R2 | Explicitly deferred by the user on November 5; not implemented | Complete the [retirement to-do list](#r2-safe-journal-retirement-to-do) before reclaiming recovery proofs. R2 journal activation needs its own capacity proof and physical cap. |
 | Bounded activity effects | Sensor SQL and structural journal foundations exist | [Analytics task 4](superpowers/plans/2026-11-03-bounded-analytics.md#task-4-bounded-activity-impact-and-durable-downstream-effects): complete prior/current associations, paged fan-out, deletion and activity-only CDC edits. |
 | Deduplication/activity executor and activation | Scalar checkpoint exists; remaining stages and full closure do not | [Tasks 5–6](superpowers/plans/2026-11-03-bounded-analytics.md#task-5-serialized-executor-query-ownership-and-output-before-cursor-recovery): stage recovery, query ownership, causal coverage and truthful job/cache completion. Bootstrap effects over existing raw data before activation. Retire unowned dbt subprocess writers as required by the final ownership model. |
 | Owned CDC | Pure transaction gate and eight-context decoder exist; no raw writes | [Owned CDC assessment](owned-cdc-assessment.md) and [CDC coverage task](superpowers/plans/2026-11-03-bounded-analytics.md#task-6-causal-sensorcdc-coverage-and-truthful-jobcache-completion). First establish bounded cross-topic commit-prefix application; a complete transaction alone is insufficient. Then implement revision-scoped parent ownership, CDC effects, atomic transaction integration and all 18 destinations. Unknown ownership/schema/incarnation blocks. PeerDB retirement is deferred. |

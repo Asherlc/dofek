@@ -41,7 +41,7 @@ import type { MetricStreamEventPublisher } from "../../../src/metric-stream/publ
 import {
   closeAllMetricStreamEventPublishers,
   getDefaultMetricStreamEventPublisher,
-} from "../../../src/metric-stream/pulsar-producer.ts";
+} from "../../../src/metric-stream/publisher-factory.ts";
 import { isAdmin } from "./auth/admin.ts";
 import { getSessionIdFromRequest } from "./auth/cookies.ts";
 import { validateSession } from "./auth/session.ts";

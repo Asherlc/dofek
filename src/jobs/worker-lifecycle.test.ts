@@ -3,7 +3,7 @@ import { EventEmitter } from "node:events";
 import { describe, expect, it, vi } from "vitest";
 
 const closePublishers = vi.hoisted(() => vi.fn(async (): Promise<void> => undefined));
-vi.mock("../metric-stream/pulsar-producer.ts", () => ({
+vi.mock("../metric-stream/publisher-factory.ts", () => ({
   closeAllMetricStreamEventPublishers: closePublishers,
 }));
 
