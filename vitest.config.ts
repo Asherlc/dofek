@@ -128,12 +128,27 @@ export default defineConfig({
             "packages/*/src/**/*.integration.test.ts",
             "scripts/**/*.integration.test.ts",
           ],
-          exclude: ["**/packages/mobile/**", "**/*.peerdb.integration.test.ts"],
+          exclude: [
+            "**/packages/mobile/**",
+            "**/*.peerdb.integration.test.ts",
+            "**/*.pulsar.integration.test.ts",
+          ],
           env: {
             ...sharedTestEnv,
             CLICKHOUSE_URL: testClickHouseUrl,
             TEST_TOKEN_USER_ID: "00000000-0000-0000-0000-000000000001",
           },
+        },
+      },
+      {
+        extends: false,
+        test: {
+          ...sharedTestConfig,
+          name: "pulsar-integration",
+          fileParallelism: false,
+          maxWorkers: 1,
+          include: ["src/**/*.pulsar.integration.test.ts"],
+          env: sharedTestEnv,
         },
       },
       {

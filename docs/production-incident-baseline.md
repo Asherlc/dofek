@@ -35528,3 +35528,77 @@ initial tests and achieved 100% mutation score (6 killed, 0 survived, 0 timeouts
 0 errors; 2 string-literal mutants excluded by the existing configuration).
 Future worker-backed SDK test guidance should name both SDK and asset
 imports as dependencies of the mock boundary.
+
+
+## 2026-11-05: Automatic deployment paused during Pulsar release work
+
+The first focused Pulsar PR is infrastructure/test-only, but successful main CI
+would trigger Deploy Web. The existing stack rollout requires the history
+ClickHouse sink to return to one replica, conflicting with its approved zero
+replica hold. This was identified before merge; no unintended rollout occurred.
+
+The user authorized pausing automatic production deployment. `gh workflow disable
+deploy-web.yml` succeeded; the workflow API confirmed `disabled_manually`, and
+the ten latest deployment runs were all completed. A read-only API observation
+on 2026-11-05 UTC still reported `disabled_manually` for
+[workflow 258723662](https://api.github.com/repos/Asherlc/dofek/actions/workflows/258723662).
+The latest deployment was [run 41666680770](https://github.com/Asherlc/dofek/actions/runs/41666680770),
+completed successfully for `f02798b72a144d137a0bd06ca111ad23f0c2c800`;
+the [workflow run API](https://api.github.com/repos/Asherlc/dofek/actions/workflows/258723662/runs?per_page=10)
+provides the corresponding run records. These observations establish state, not
+the identity or timestamp of the operator who disabled the workflow. The website and CI were not
+stopped. Re-enable the workflow only as part of the reviewed cutover/restoration
+decision, with the four production holds accounted for. See the
+[deployment trigger](../.github/workflows/deploy-web.yml) and
+[full-stack desired replica check](../.github/workflows/deploy-web-stack.yml).
+
+PR CI also exposed Expo SDK patch-version drift at `expo install --check`,
+two native-tool spelling terms and a clock-dependent sleep fixture. The router
+fixture seeded `NOW() - INTERVAL '8 hours'` but expected the UTC current date;
+the existing model assigns its sleep day from the start time minus six hours.
+At 05:26 UTC the correct result was the previous date. Fixed UTC overnight
+timestamps reproduced the mismatch against real Postgres and ClickHouse, then
+passed with the explicit model date and all duration/stage assertions retained.
+
+[Prerequisite PR #3227](https://github.com/Asherlc/dofek/pull/3227) aligned the
+SDK pins and fixed that fixture. It merged after all CI checks, including the
+iOS archive and Simulator bridge, passed. No check was disabled or ignored.
+The Pulsar foundation PR still requires its own refreshed CI and review before
+merge. Future date-sensitive fixtures should name their timestamps and model
+day explicitly rather than assuming the current UTC date.
+
+
+## 2026-11-05: Pulsar source build caught an unavailable Alpine pin
+
+The first [ARM source-build job](https://github.com/Asherlc/dofek/actions/runs/41989038528/job/127116601047)
+failed at `apk add --no-cache patch=2.8-r0`, before compilation. The first fatal
+package error was `patch-2.8.1-r0: breaks: world[patch=2.8-r0]`: the pinned
+Temurin image uses Alpine 3.24, whose repository now supplies 2.8.1-r0.
+The [fixing commit](https://github.com/Asherlc/dofek/commit/ad1ec1d87867e49936b6f9073ce7e6fbab79b9da)
+updates that exact build-tool pin while retaining the image digest, source
+checksum, memory limit and test commands. See the
+[Alpine package record](https://pkgs.alpinelinux.org/package/v3.24/main/aarch64/patch).
+No retry, timeout or ignored error was added. Production was unaffected and automatic deployment remained disabled.
+
+The second [cold source build](https://github.com/Asherlc/dofek/actions/runs/41989377396)
+passed installation, then failed with `ResourceExhausted: cannot allocate memory`.
+A fresh local builder reproduced the failure under `memory.max=4294967296`;
+`memory.events` recorded one OOM kill. The 08:03:10 UTC process sample showed
+Gradle (1,432,872 KiB RSS), Kotlin (1,005,848 KiB), Checkstyle (518,556 KiB)
+and the test JVM (738,380 KiB) resident together. The earlier warm build had
+used cached tasks and did not establish cold-build fit.
+
+The direct fix separates compilation, test-class compilation, NAR packaging and
+style checks from test execution into two Docker RUN steps, ending compiler
+and style processes before the test JVM starts. The same fresh-builder
+validation passed: 28 first-step tasks executed; the second step executed 16
+tasks with 25 up to date, including the selected upstream test. Both Gradle
+invocations succeeded with retries disabled and the original heap/worker
+settings. The verified builder limit remained 4 GiB with no swap; no OOM or
+OOM kill was recorded. The subsequent
+[successful ARM source-build job](https://github.com/Asherlc/dofek/actions/runs/41993332932/job/127130525556)
+at `7f98465d7` confirms package installation and the corrected cold build.
+All remaining PR checks are required before merge. This change adds
+no wait, retry, ignored failure or increased limit. Docker documents
+[RUN build steps](https://docs.docker.com/reference/dockerfile/#run); Linux
+documents [cgroup memory accounting](https://docs.kernel.org/admin-guide/cgroup-v2.html#memory).

@@ -139,6 +139,25 @@ immediately when the Postgres URL is absent; it never creates an unbounded
 generic Testcontainers instance. Within a Vitest process it creates one
 migrated template database and clones an isolated database for each test file.
 
+### Native Pulsar qualification
+
+The `:all` commands select the unit, mobile and integration projects; they do
+not include `pulsar-integration`. See the [test command implementation](../scripts/run-tests.ts)
+and [Vitest project configuration](../vitest.config.ts). Run the native tier explicitly:
+
+```bash
+pnpm exec vitest run --project=pulsar-integration src/metric-stream/bookie-evacuation.pulsar.integration.test.ts
+```
+
+This [fixture](../src/metric-stream/bookie-evacuation.pulsar.integration.test.ts)
+requires a Linux Docker daemon with at least 2,816 MiB `MemAvailable` and a JDK.
+It starts its own isolated `docker-compose.bookie-evacuation.yml` topology;
+do not start `docker-compose.pulsar.yml` beforehand. The
+[native CI job](../.github/workflows/test.yml) supplies the pinned tools.
+Vitest documents [explicit project selection](https://vitest.dev/guide/projects).
+
+### PeerDB CDC integration
+
 `pnpm test:peerdb-integration` is the end-to-end CDC contract tier. It adds the
 pinned PeerDB/Temporal stack from `docker-compose.peerdb.yml`, runs only
 `*.peerdb.integration.test.ts`, and removes the current workspace's disposable
