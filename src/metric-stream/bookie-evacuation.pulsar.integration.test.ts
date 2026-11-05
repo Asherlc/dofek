@@ -3,6 +3,41 @@ import { randomUUID } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { expect, it } from "vitest";
+import { z } from "zod";
+import { captureException } from "../lib/error-reporting.ts";
+
+const bookieStateSchema = z.object({
+  running: z.boolean(),
+  readOnly: z.boolean(),
+  shuttingDown: z.boolean(),
+});
+const serverIdentitySchema = z.object({
+  name: z.string(),
+  public: z.string(),
+  internal: z.string(),
+});
+const dataServerSchema = z.object({ data_server: z.object({ identity: serverIdentitySchema }) });
+const namespaceSchema = z.object({
+  namespace: z.object({
+    name: z.string(),
+    initial_shard_count: z.number(),
+    replication_factor: z.number(),
+    notifications_enabled: z.boolean(),
+  }),
+});
+const namespaceAssignmentSchema = z.object({
+  namespace_status: z.object({
+    replication_factor: z.number(),
+    shards: z.record(
+      z.string(),
+      z.object({
+        status: z.number(),
+        leader: serverIdentitySchema,
+        ensemble: z.array(serverIdentitySchema),
+      }),
+    ),
+  }),
+});
 
 it("evacuates surviving native ledgers before retiring exclusive source storage", {
   retry: 0,
@@ -121,13 +156,15 @@ it("evacuates surviving native ledgers before retiring exclusive source storage"
   ];
   const metadataAdmin = (...args: string[]) => compose([...coordinatorAdmin, ...args]);
   const state = (service: string) =>
-    JSON.parse(
-      client(
-        "curl",
-        "--fail",
-        "--silent",
-        "--show-error",
-        `http://${service}:8000/api/v1/bookie/state`,
+    bookieStateSchema.parse(
+      JSON.parse(
+        client(
+          "curl",
+          "--fail",
+          "--silent",
+          "--show-error",
+          `http://${service}:8000/api/v1/bookie/state`,
+        ),
       ),
     );
   try {
@@ -159,7 +196,7 @@ it("evacuates surviving native ledgers before retiring exclusive source storage"
       );
     }
     // This native read succeeds only after Raft leadership and runtime publication, even on an empty cluster.
-    expect(JSON.parse(leaderState)).toEqual([]);
+    expect(z.array(z.unknown()).parse(JSON.parse(leaderState))).toEqual([]);
     phase = "metadata-data-server";
     metadataAdmin(
       "dataserver",
@@ -175,7 +212,9 @@ it("evacuates surviving native ledgers before retiring exclusive source storage"
       public: "pulsar-oxia:6648",
       internal: "pulsar-oxia:6649",
     };
-    expect(JSON.parse(metadataAdmin("dataserver", "get", "pulsar-oxia"))).toMatchObject({
+    expect(
+      dataServerSchema.parse(JSON.parse(metadataAdmin("dataserver", "get", "pulsar-oxia"))),
+    ).toMatchObject({
       data_server: { identity },
     });
     phase = "metadata-namespace";
@@ -188,7 +227,9 @@ it("evacuates surviving native ledgers before retiring exclusive source storage"
       "--replication-factor",
       "1",
     );
-    expect(JSON.parse(metadataAdmin("namespace", "get", "bookkeeper"))).toMatchObject({
+    expect(
+      namespaceSchema.parse(JSON.parse(metadataAdmin("namespace", "get", "bookkeeper"))),
+    ).toMatchObject({
       namespace: {
         name: "bookkeeper",
         initial_shard_count: 1,
@@ -200,9 +241,11 @@ it("evacuates surviving native ledgers before retiring exclusive source storage"
     shell("metaformat", "-nonInteractive");
     // Successful native formatting requires usable shard assignments; inspect their exact identity too.
     phase = "metadata-assignment";
-    const namespace = JSON.parse(metadataAdmin("namespace", "get", "bookkeeper"));
-    expect(namespace.namespace_status?.replication_factor).toBe(1);
-    const shards = Object.values(namespace.namespace_status?.shards ?? {});
+    const namespace = namespaceAssignmentSchema.parse(
+      JSON.parse(metadataAdmin("namespace", "get", "bookkeeper")),
+    );
+    expect(namespace.namespace_status.replication_factor).toBe(1);
+    const shards = Object.values(namespace.namespace_status.shards);
     expect(shards).toHaveLength(1);
     expect(shards[0]).toMatchObject({ status: 1, leader: identity, ensemble: [identity] });
     phase = "source-ready";
@@ -221,21 +264,25 @@ it("evacuates surviving native ledgers before retiring exclusive source storage"
       shuttingDown: false,
     });
     phase = "manual-readonly";
-    const readonly = JSON.parse(
-      client(
-        "curl",
-        "--fail",
-        "--silent",
-        "--show-error",
-        "-X",
-        "PUT",
-        "-H",
-        "Content-Type: application/json",
-        "--data",
-        '{"readOnly":true}',
-        "http://source:8000/api/v1/bookie/state/readonly",
-      ),
-    );
+    const readonly = z
+      .object({ readOnly: z.boolean() })
+      .parse(
+        JSON.parse(
+          client(
+            "curl",
+            "--fail",
+            "--silent",
+            "--show-error",
+            "-X",
+            "PUT",
+            "-H",
+            "Content-Type: application/json",
+            "--data",
+            '{"readOnly":true}',
+            "http://source:8000/api/v1/bookie/state/readonly",
+          ),
+        ),
+      );
     expect(readonly).toMatchObject({ readOnly: true });
     expect(state("source")).toMatchObject({ running: true, readOnly: true, shuttingDown: false });
     java("registered"); // Includes independent source read verification after the manual transition.
@@ -269,6 +316,7 @@ it("evacuates surviving native ledgers before retiring exclusive source storage"
     );
     succeeded = true;
   } catch (error) {
+    captureException(error);
     writeFileSync(join(owned, "failure.txt"), String(error instanceof Error ? error.stack : error));
     throw error;
   } finally {
@@ -284,20 +332,28 @@ it("evacuates surviving native ledgers before retiring exclusive source storage"
       try {
         compose(args, 15_000, true);
       } catch (error) {
+        captureException(error);
         failures.push(error);
       }
     }
     writeFileSync(join(owned, "phase.json"), JSON.stringify({ succeeded, phase: failedPhase }));
     phase = "cleanup";
-    try {
-      if (succeeded) {
+    if (succeeded) {
+      try {
         compose(["stop", "-t", "10", "replacement"], 30_000, true);
+        // Do not remove native files unless the bookie stopped successfully.
         compose(
           ["exec", "-T", "client", "rm", "-rf", "/replacement/journal", "/replacement/ledgers"],
           15_000,
           true,
         );
+      } catch (error) {
+        captureException(error);
+        failures.push(error);
       }
+    }
+    // Always attempt teardown even when replacement stop or file removal failed.
+    try {
       compose(
         succeeded
           ? ["down", "--remove-orphans", "--volumes", "--timeout", "10"]
@@ -306,6 +362,7 @@ it("evacuates surviving native ledgers before retiring exclusive source storage"
         true,
       );
     } catch (error) {
+      captureException(error);
       failures.push(error);
     }
     if (failures.length > 0) {

@@ -8,8 +8,13 @@ The broker Dockerfile builds checksum-pinned Apache source with a narrow
 [repeatable payload patch](repeatable-offload-payload.patch). Its bounded sealed
 ledger blocks and index can be reopened for signing and upload; native object
 layout is unchanged. The build runs the affected upstream test class and style
-checks with retries disabled. The normal Docker source-build path passed on
-an isolated 4 GiB builder, including tests, style checks and NAR packaging.
+checks with retries disabled. The standalone
+[source-build workflow](../../.github/workflows/pulsar-source-build.yml) checks
+that normal Docker source path on ARM with a verified 4 GiB builder limit,
+without importing a host-built NAR. Its [workflow runs](https://github.com/Asherlc/dofek/actions/workflows/pulsar-source-build.yml)
+provide commit-specific build evidence; the workflow definition alone is not a
+passing qualification result. Docker documents the builder's
+[memory and swap controls](https://docs.docker.com/build/builders/drivers/docker-container/).
 See the [pinned upstream offloader](https://github.com/apache/pulsar/blob/v5.0.1/tiered-storage/jcloud/src/main/java/org/apache/bookkeeper/mledger/offload/jcloud/impl/BlobStoreManagedLedgerOffloader.java).
 
 Build through the workspace wrapper:

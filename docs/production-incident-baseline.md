@@ -35539,7 +35539,14 @@ replica hold. This was identified before merge; no unintended rollout occurred.
 
 The user authorized pausing automatic production deployment. `gh workflow disable
 deploy-web.yml` succeeded; the workflow API confirmed `disabled_manually`, and
-the ten latest deployment runs were all completed. The website and CI were not
+the ten latest deployment runs were all completed. A read-only API observation
+on 2026-11-05 UTC still reported `disabled_manually` for
+[workflow 258723662](https://api.github.com/repos/Asherlc/dofek/actions/workflows/258723662).
+The latest deployment was [run 41666680770](https://github.com/Asherlc/dofek/actions/runs/41666680770),
+completed successfully for `f02798b72a144d137a0bd06ca111ad23f0c2c800`;
+the [workflow run API](https://api.github.com/repos/Asherlc/dofek/actions/workflows/258723662/runs?per_page=10)
+provides the corresponding run records. These observations establish state, not
+the identity or timestamp of the operator who disabled the workflow. The website and CI were not
 stopped. Re-enable the workflow only as part of the reviewed cutover/restoration
 decision, with the four production holds accounted for. See the
 [deployment trigger](../.github/workflows/deploy-web.yml) and

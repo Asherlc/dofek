@@ -157,7 +157,7 @@ Provider-agnostic fitness/health data pipeline. Syncs data from various provider
 - `pnpm test:mobile` — run local mobile unit tests
 - `pnpm test:changed` — run Docker-free tests affected by files changed from `origin/main`
 - `pnpm test:integration` — start the workspace Compose dependencies and run integration tests
-- `pnpm test:all` — start the workspace Compose dependencies and run every Vitest project
+- `pnpm test:all` — start the workspace Compose dependencies and run unit, mobile, and integration projects; the native Pulsar tier runs separately (see [testing guide](docs/testing.md#native-pulsar-qualification))
 - `pnpm test:changed:all` — start dependencies and run every test tier affected by `origin/main`
 - `pnpm test:watch` — run tests in watch mode
 - `pnpm dev` — run sync in dev mode

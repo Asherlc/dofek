@@ -5,12 +5,23 @@ Production remains unchanged. It does not include CDC replacement, analytics
 activation, publisher cutover, archive conversion or production configuration.
 
 The repeatable-payload correction was tested against actual Cloudflare R2 using
-a separately scoped qualification bucket. Host source compilation, upstream
-tests and packaging passed. The normal Docker source-build path subsequently
-passed on an isolated 4 GiB builder: the affected upstream test class, both
-style checks and NAR packaging completed with retries disabled. The build
-executed that source stage rather than substituting a prebuilt host artifact.
+a separately scoped qualification bucket; the immutable
+[corrected native offloader record](https://github.com/Asherlc/dofek/blob/ee7350f79/docs/pulsar-qualification.md#corrected-native-offloader-evidence)
+records upload and remote reads, host source compilation, upstream tests and
+packaging, and distinguishes those artifacts from a normal Docker source build.
 The patch is maintained locally and is not a claim of stock R2 compatibility.
+
+The standalone [source-build workflow](../.github/workflows/pulsar-source-build.yml)
+now defines the repeatable Docker source-build regression: ARM, a verified 4 GiB
+memory and memory-plus-swap limit on the
+[container builder](https://docs.docker.com/build/builders/drivers/docker-container/),
+no imported host NAR and no cached build layers. The
+[Dockerfile](../deploy/pulsar/Dockerfile) runs the affected upstream test class,
+both style checks and NAR packaging with retries disabled, then copies that NAR
+into the broker image. It runs independently of the existing Test Gate and does
+not run services, publish images or use R2 credentials. Commit-specific success
+must be established by its [workflow runs](https://github.com/Asherlc/dofek/actions/workflows/pulsar-source-build.yml);
+no CI source-build pass is claimed by this checkpoint yet.
 
 The historical, pre-PR [native evacuation ARM job](https://github.com/Asherlc/dofek/actions/runs/41871869660/job/126721886208)
 passed at commit 10735959f in 135.687 seconds, within its 300-second bound and

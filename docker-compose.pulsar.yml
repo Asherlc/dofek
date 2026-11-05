@@ -39,6 +39,11 @@ services:
     depends_on:
       pulsar-oxia:
         condition: service_started
+    healthcheck:
+      test: ["CMD", "oxia", "admin", "--admin-address", "localhost:6650", "--output", "json", "dataserver", "get"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
 
   pulsar-init:
     image: apachepulsar/pulsar:5.0.1@sha256:4507075d8c11b34629f3a0b41f48e3c659951e601538562ee0c088cd2c737ec0
@@ -62,7 +67,7 @@ services:
       - pulsar_bookie_data:/pulsar/data/bookkeeper
     depends_on:
       pulsar-oxia-coordinator:
-        condition: service_started
+        condition: service_healthy
 
   pulsar-bookie:
     image: apachepulsar/pulsar:5.0.1@sha256:4507075d8c11b34629f3a0b41f48e3c659951e601538562ee0c088cd2c737ec0
