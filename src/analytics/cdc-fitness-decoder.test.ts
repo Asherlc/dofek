@@ -3,22 +3,23 @@ import { describe, expect, it } from "vitest";
 import { admitCdcTransaction } from "./cdc-admission.ts";
 import { decodeFitnessCdc } from "./cdc-fitness-decoder.ts";
 
-const captures = readFileSync(
-  new URL("./test-fixtures/cdc-fitness-envelopes.ndjson", import.meta.url),
-  "utf8",
-)
-  .trim()
-  .split("\n")
-  .map((line) => {
-    const capture = JSON.parse(line);
-    return {
-      topic: capture.topic,
-      serializedMessageId: capture.messageIdBase64,
-      key: capture.key,
-      properties: capture.properties,
-      data: Buffer.from(capture.dataBase64, "base64"),
-    };
-  });
+function readCaptures(name: string) {
+  return readFileSync(new URL(`./test-fixtures/${name}`, import.meta.url), "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => {
+      const capture = JSON.parse(line);
+      return {
+        topic: capture.topic,
+        serializedMessageId: capture.messageIdBase64,
+        key: capture.key,
+        properties: capture.properties,
+        data: Buffer.from(capture.dataBase64, "base64"),
+      };
+    });
+}
+const captures = readCaptures("cdc-fitness-envelopes.ndjson");
+const parentCaptures = readCaptures("cdc-fitness-parent-envelopes.ndjson");
 const source = {
   topicPrefix: "persistent://public/default/ownedcdc-fitness-small-2",
   connectorName: "ownedcdc-fitness-small-2",
@@ -340,5 +341,176 @@ describe("native fitness CDC decoder", () => {
         }),
       ),
     ).toThrow();
+  });
+});
+
+const parentSource = {
+  ...source,
+  topicPrefix: "persistent://public/default/ownedcdc-fitness-parent-1",
+  connectorName: "ownedcdc-fitness-parent-1",
+};
+describe("captured processing-operation ownership context", () => {
+  it("decodes all 48 native envelopes with exact parent projections and explicit owned/system snapshots", () => {
+    const results = parentCaptures.map((delivery) => decodeFitnessCdc(parentSource, delivery));
+    expect(results).toHaveLength(48);
+    expect(results.filter((r) => r.kind === "snapshot")).toHaveLength(11);
+    expect(results.filter((r) => r.kind === "row")).toHaveLength(12);
+    results.forEach((result, i) => {
+      expect(result.delivery).toBe(parentCaptures[i]);
+    });
+    const parents = results.filter(
+      (r) => r.kind === "snapshot" && r.after?.table === "processing_operation",
+    );
+    expect(parents).toHaveLength(3);
+    for (const result of parents) {
+      if (result.kind !== "snapshot" || result.after?.table !== "processing_operation")
+        throw new Error("Expected parent snapshot");
+      expect(Object.keys(result.after.fields).sort()).toEqual(["id", "user_id"]);
+      expect(result.after.key).toEqual({ id: result.after.fields.id });
+      expect(result.sourceRevision).toBe("0");
+      expect(result.after.owner).toEqual(
+        result.after.fields.user_id === null
+          ? { kind: "shared-system" }
+          : { kind: "direct-user", userId: result.after.fields.user_id },
+      );
+    }
+    expect(
+      parents.some(
+        (r) =>
+          r.kind === "snapshot" &&
+          r.after?.table === "processing_operation" &&
+          r.after.fields.user_id === null,
+      ),
+    ).toBe(true);
+  });
+  it("admits parent before ownership and marker cascade together by raw XID, with missing parent ordinal pending", () => {
+    const decoded = parentCaptures.map((delivery) => decodeFitnessCdc(parentSource, delivery));
+    const records = decoded
+      .filter((r) => r.kind === "row" || r.kind === "end")
+      .filter((r) => (r.kind === "row" ? r.xid === "848" : r.transactionId.startsWith("848:")));
+    const parent = records.find(
+      (r) => r.kind === "row" && r.before?.table === "processing_operation",
+    );
+    const marker = records.find(
+      (r) => r.kind === "row" && r.before?.table === "processing_flow_marker",
+    );
+    if (
+      parent?.kind !== "row" ||
+      parent.before?.table !== "processing_operation" ||
+      marker?.kind !== "row" ||
+      marker.before?.table !== "processing_flow_marker"
+    )
+      throw new Error("Missing captured cascade");
+    expect(parent.operation).toBe("d");
+    expect(marker.operation).toBe("d");
+    expect(parent.xid).toBe(marker.xid);
+    expect(parent.before.owner).toEqual({
+      kind: "direct-user",
+      userId: "00000000-0000-4000-8000-000000000001",
+    });
+    expect(marker.before.owner).toEqual({
+      kind: "inherited",
+      parentTable: "fitness.processing_operation",
+      key: parent.before.key,
+    });
+    expect(admitCdcTransaction({ admission: parentSource, xid: "848", records })).toMatchObject({
+      state: "complete",
+      rows: expect.arrayContaining([
+        expect.objectContaining({ record: parent }),
+        expect.objectContaining({ record: marker }),
+      ]),
+    });
+    expect(
+      admitCdcTransaction({
+        admission: parentSource,
+        xid: "848",
+        records: records.filter((record) => record !== parent),
+      }),
+    ).toMatchObject({ state: "pending", reason: "missing-ordinals" });
+  });
+  it.each([undefined, "invalid", 123])(
+    "rejects missing or invalid parent ownership %s",
+    (userId) => {
+      const native = parentCaptures.find(
+        (d) => d.topic.endsWith(".processing_operation") && d.data.toString().includes('"op":"r"'),
+      );
+      if (!native) throw new Error("Missing native parent snapshot");
+      const value = JSON.parse(native.data.toString());
+      if (userId === undefined) delete value.after.user_id;
+      else value.after.user_id = userId;
+      expect(() =>
+        decodeFitnessCdc(parentSource, { ...native, data: Buffer.from(JSON.stringify(value)) }),
+      ).toThrow();
+    },
+  );
+  it("rejects undeclared parent fields and a malformed parent key", () => {
+    const native = parentCaptures.find(
+      (d) => d.topic.endsWith(".processing_operation") && d.data.toString().includes('"op":"r"'),
+    );
+    if (!native) throw new Error("Missing native parent snapshot");
+    const value = JSON.parse(native.data.toString());
+    value.after.kind = "analytics_build";
+    expect(() =>
+      decodeFitnessCdc(parentSource, { ...native, data: Buffer.from(JSON.stringify(value)) }),
+    ).toThrow();
+    expect(() => decodeFitnessCdc(parentSource, { ...native, key: '{"id":"invalid"}' })).toThrow();
+  });
+});
+
+describe("CDC UTC microsecond temporal domain", () => {
+  it.each([
+    "2026-02-30T01:02:03.123456Z",
+    "2026-02-29T01:02:03.123456Z",
+    "2026-13-01T01:02:03.123456Z",
+    "2026-01-00T01:02:03.123456Z",
+    "2026-01-01T24:00:00.000000Z",
+    "2026-01-01T01:60:03.123456Z",
+    "2026-01-01T01:02:60.123456Z",
+    "0000-01-01T00:00:00.000000Z",
+    "10000-01-01T00:00:00.000000Z",
+    "infinity",
+    "-infinity",
+    "0001-01-01 BC",
+    "2026-01-01T01:02:03.1234567Z",
+  ])("rejects invalid or unsupported calendar timestamp %s with its field path", (timestamp) => {
+    expect(() =>
+      decodeFitnessCdc(
+        source,
+        mutated((v) => {
+          v.after.started_at = timestamp;
+        }),
+      ),
+    ).toThrow(/valid UTC timestamp.*0001-9999/);
+    expect(() =>
+      decodeFitnessCdc(
+        source,
+        mutated((v) => {
+          v.after.started_at = timestamp;
+        }),
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        issues: expect.arrayContaining([expect.objectContaining({ path: ["started_at"] })]),
+      }),
+    );
+  });
+  it.each([
+    "2024-02-29T23:59:59.123456Z",
+    "0001-01-01T00:00:00.000001Z",
+    "9999-12-31T23:59:59.999999Z",
+    "2026-01-01T01:02:03Z",
+    "2026-01-01T01:02:03.1Z",
+    "2026-01-01T01:02:03.000001Z",
+  ])("retains valid timestamp %s byte-for-byte", (timestamp) => {
+    const result = decodeFitnessCdc(
+      source,
+      mutated((v) => {
+        v.after.started_at = timestamp;
+      }),
+    );
+    if (result.kind !== "row" || result.after?.table !== "activity")
+      throw new Error("Expected activity");
+    expect(result.after.fields.started_at).toBe(timestamp);
+    expect(result.stablePayload).toContain(timestamp);
   });
 });

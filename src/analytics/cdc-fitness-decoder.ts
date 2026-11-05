@@ -24,7 +24,18 @@ const long = z
   .transform(String);
 const int = long.refine((v) => BigInt(v) >= -(1n << 31n) && BigInt(v) < 1n << 31n);
 const ordinal = long.refine((v) => BigInt(v) > 0n);
-const timestamp = text.regex(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,6})?Z$/);
+const temporalDomain =
+  "Expected valid UTC timestamp in years 0001-9999 with at most six fractional digits";
+const timestamp = text
+  .regex(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,6})?Z$/, temporalDomain)
+  .refine((value) => {
+    const parsed = new Date(value);
+    if (!Number.isFinite(parsed.getTime()) || value.startsWith("0000-")) return false;
+    // Date supplies calendar validation only. Compare its millisecond rendering,
+    // then retain the untouched source string, including all six microseconds.
+    const milliseconds = value.slice(20, -1).padEnd(3, "0").slice(0, 3);
+    return parsed.toISOString() === `${value.slice(0, 19)}.${milliseconds}Z`;
+  }, temporalDomain);
 const idKey = z.strictObject({ id: uuid });
 const providerKey = z.strictObject({ provider_id: text });
 const fieldKey = providerKey.extend({ field_key: text });
@@ -74,6 +85,8 @@ const schemas = {
   device_priority: deviceKey.extend(priorities),
   sensor_provider_priority: sensorKey.extend({ priority: long }),
   sensor_device_priority: sensorDeviceKey.extend({ priority: long }),
+  // Projected source ownership context only; this is not a raw destination.
+  processing_operation: idKey.extend({ user_id: uuid.nullable() }),
   processing_flow_marker: idKey.extend({
     operation_id: uuid,
     dataset_key: text,
@@ -91,6 +104,7 @@ const keys = {
   sensor_provider_priority: sensorKey,
   sensor_device_priority: sensorDeviceKey,
   processing_flow_marker: idKey,
+  processing_operation: idKey,
 };
 const tableSchema = z.enum([
   "activity",
@@ -100,6 +114,7 @@ const tableSchema = z.enum([
   "sensor_provider_priority",
   "sensor_device_priority",
   "processing_flow_marker",
+  "processing_operation",
 ]);
 type Table = z.infer<typeof tableSchema>;
 type Owner =
@@ -114,6 +129,12 @@ const inheritedOwner = z.strictObject({
 });
 const sharedOwner = z.strictObject({ kind: z.literal("shared-system") });
 const scopeSchema = z.discriminatedUnion("table", [
+  z.strictObject({
+    table: z.literal("processing_operation"),
+    fields: schemas.processing_operation,
+    key: idKey,
+    owner: z.union([directOwner, sharedOwner]),
+  }),
   z.strictObject({
     table: z.literal("activity"),
     fields: schemas.activity,
@@ -203,7 +224,7 @@ function scope(table: Table, value: unknown): Scope | null {
     ),
   );
   const owner: Owner =
-    "user_id" in fields
+    "user_id" in fields && fields.user_id !== null
       ? { kind: "direct-user", userId: fields.user_id }
       : "operation_id" in fields
         ? {
@@ -252,7 +273,14 @@ const sourceSchema = z.strictObject({
   connector: z.literal("postgresql"),
   name: text,
   ts_ms: long,
-  snapshot: z.enum(["first", "last", "last_in_data_collection", "true", "false"]),
+  snapshot: z.enum([
+    "first",
+    "last",
+    "first_in_data_collection",
+    "last_in_data_collection",
+    "true",
+    "false",
+  ]),
   db: text,
   sequence: text,
   ts_us: long,

@@ -273,6 +273,60 @@ matching the [pinned connector](https://github.com/debezium/debezium/blob/v3.7.0
 Final focused tests pass 41 cases; the full unit tier passes 24,757 cases with
 19 existing skips. TypeScript, formatting, spelling and diff checks pass.
 
+### November 5 parent ownership and destination-domain checkpoint
+
+A further bounded native capture adds `processing_operation` as ownership
+context, restricted to `id,user_id` through Debezium's
+[column include list](https://debezium.io/documentation/reference/3.7/connectors/postgresql.html#postgresql-property-column-include-list).
+All eight sources use FULL replica identity in the disposable fixture. Its
+48 retained messages contain eleven snapshot rows and twelve streamed changes
+in three transactions. Parent deletion preserves its former user, and the
+marker cascade has the same raw XID, 848. Complete END, ordinal and collection
+accounting pass. The native client, wrapper and fresh-project cleanup all exit
+zero. See the unchanged
+[parent envelopes](../src/analytics/test-fixtures/cdc-fitness-parent-envelopes.ndjson)
+and their [hash and provenance](../src/analytics/test-fixtures/README.md).
+
+The ownership map remains unimplemented. It will represent ownership at the
+applied source prefix, rather than current Postgres state. Transaction-local
+parent before-images resolve cascaded deletes; explicit NULL ownership is
+distinct from missing evidence. An unresolved owner blocks the transaction.
+The caller must consume the transaction-control topic in order and hold later
+transactions behind an earlier incomplete transaction. The single-transaction
+admission function does not prove this prefix. Bounded pending storage, replay
+ownership evidence and account erasure of owned map entries remain required
+before a map or CDC writes can be activated.
+
+Source/destination inspection also identifies six narrowing integer conversions in the
+[current raw builder](../src/db/clickhouse-raw-tables.ts): two sensor-priority
+`bigint` columns map to `Int32`, and the start/end UTC-offset columns in both
+activity and sleep-session map to `Int16`. New-generation destinations must use
+`Int64` for these six columns. This does not change current PeerDB tables.
+The strict executable catalog gate belongs with the actual new-generation
+builder; no replacement test-only schema or unused mapping API is introduced.
+
+Temporal types require an explicit supported domain, because Postgres supports
+[infinite and wider dates](https://www.postgresql.org/docs/18/datatype-datetime.html)
+than ClickHouse. The planned domain is AD years 1 through 9999, valid calendar
+dates, and UTC timestamps with at most six fractional digits. ClickHouse's
+[Date32](https://clickhouse.com/docs/reference/data-types/date32) and
+[DateTime64](https://clickhouse.com/docs/reference/data-types/datetime64)
+document that range; the decoder must reject unsupported values before writes,
+without clamping. Actual new-generation destination checks and a bounded
+aggregate-only production temporal preflight remain release gates. The
+synthetic oversized priority value provides no evidence of a production defect.
+
+The decoder now accepts the eighth projected context and rejects invalid
+calendar values while retaining the original microseconds. Sixty-six focused
+cases pass, including incomplete parent-cascade evidence. The real ClickHouse
+26.10.2.103 fixture inserts and reads back the exact supported AD minimum,
+one microsecond above it and the maximum, unchanged, using `Date32` and
+`DateTime64(6, 'UTC')`. Separate native probes reject five-digit and negative
+date strings with parsing errors; no clamping is relied upon. This is a type
+round-trip test, not a new-generation schema qualification. Independent review
+finds no critical or important issue. The full unit tier passes 24,782 cases
+with 19 existing skips; TypeScript, formatting and source spelling checks pass.
+
 ### November 5 approved transport and archive layout
 
 The user approved “Use account-specific archive topics (recommended)” for both

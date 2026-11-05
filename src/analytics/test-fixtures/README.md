@@ -14,8 +14,17 @@ key, enumerable properties and base64 payload bytes.
   include synthetic bigint 2147483648. Markers are append-only: parent deletion
   cascades to the original marker, followed by a new marker under another
   synthetic operation.
+- `cdc-fitness-parent-envelopes.ndjson`: 48 additional messages from the same
+  pinned engines and a fresh canonical database. Eleven snapshot rows cover
+  the seven tables plus `processing_operation`, projected by the stock column
+  include list to `id,user_id` only. The parent has owned and explicit NULL-owner
+  snapshot rows. Its delete before-image retains the former owner and shares
+  raw transaction 848 with the marker cascade; END, ordinal and collection
+  accounting pass for that transaction. The native client and wrapper both
+  exited zero, and disposable cleanup passed. SHA-256:
+  `e5192845e0ff3eeda0cac357ec03fc3dc0f8c39d266c37e305a1a4d90d4d07a4`.
 
-The fitness native client exited successfully. The throwaway wrapper raced its
+The original seven-table fitness native client exited successfully. Its throwaway wrapper raced its
 normal exit; checks were validated offline from the retained native
 artifact. Its SHA-256 is
 `2ca5343c7df0498cfead19f3d7476cd373245905056285eb7742dffa7554f0d7`.
