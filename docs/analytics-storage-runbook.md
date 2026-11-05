@@ -1,6 +1,6 @@
 # Analytics and transport physical storage boundaries
 
-<!-- cspell:words cloudbeaver FSTYPE fsprogs quotaon repquota mountinfo chattr Privs tmpfs -->
+<!-- cspell:words cloudbeaver FSTYPE fsprogs quotaon repquota mountinfo chattr Privs tmpfs offloader prjquota setquota -->
 
 This runbook prepares the physical storage gate for the
 [transport-first release](pulsar-remaining-work.md). Production project quotas,
@@ -50,6 +50,15 @@ journal/receipt proofs even after frontier advancement and owner release.
 Pending, uncertain and retained completed groups must remain recoverable.
 Safe retirement needs a durable protocol certificate plus downstream coverage;
 it remains mandatory R2 work. R2 raw-effect bootstrap also covers R1 intake.
+
+The November 5 live-topic metadata window, 10:03:50–10:09:15 UTC, observed
+partition 0 at epoch 1 with the high watermark unchanged at 238,803,373.
+That is zero deliveries over 325 seconds, an idle interval rather than a
+long-run growth bound. Retained sink benchmarks do not record physical
+journal/receipt/manifest bytes per event. Both capacity inputs remain open;
+neither this idle window nor raw-table bytes per row sizes the journal cap.
+Retain meaningful historical intake and physical table-size measurements
+beside throughput evidence, including small-part and merge overlap.
 
 ## Latest read-only host observation
 
@@ -218,6 +227,27 @@ does not meet that condition. The startup barrier and native-service packaging
 remain unresolved; do not activate production enforcement until both gates exist.
 
 ## Maintenance approval and procedure
+
+### Candidate native command contract
+
+The following templates identify the native operations to qualify against the
+installed tools. They are not an executable maintenance procedure or approval
+to run mutations. Paths, project IDs, allocations, inode policy and recovery
+assets are unresolved. The quota package is absent; its eventual installed
+options and report format must be checked before implementing a parser.
+
+| Operation | Candidate command / required qualification |
+| --- | --- |
+| Offline features | `tune2fs -O project,quota -Q prjquota DEVICE`, after ordinary unmount. Confirm inode-size support, preserve unrelated quota features and follow installed-tool filesystem-check requirements. See [tune2fs](https://man7.org/linux/man-pages/man8/tune2fs.8.html). |
+| Existing membership | Assign each reviewed existing inode with `chattr -p PROJECT_ID PATH`; set `chattr +P DIRECTORY` on existing writable directories. Root-only inheritance does not assign old descendants. Resolve nested mounts, symlinks and cross-project hard links before traversal. See [chattr](https://man7.org/linux/man-pages/man1/chattr.1.html). |
+| Hard limits | `setquota -P PROJECT_ID BLOCK_SOFT_KIB BLOCK_HARD_KIB INODE_SOFT INODE_HARD FILESYSTEM`. Block units are 1,024 bytes; inode units are counts. Require exact integer conversion and an explicit soft/inode policy; zero can mean unlimited. See [setquota](https://man7.org/linux/man-pages/man8/setquota.8.html). |
+| Read-only reports | Inspect features with `tune2fs -l DEVICE`, membership with `lsattr -p -d PATH`, and enforcement with `quotaon -P -p FILESYSTEM`. Candidate limit report: `LC_ALL=C repquota -P -n -v -p -O csv FILESYSTEM`; confirm installed CSV columns and units first. Ordinary `quotaon -P` enables quotas and is a mutation. See [quotaon](https://man7.org/linux/man-pages/man8/quotaon.8.html) and [repquota](https://man7.org/linux/man-pages/man8/repquota.8.html). |
+
+Mount configuration must preserve the reviewed UUID and enable `prjquota`;
+actual enforcement still needs inspection. Do not use XFS-only enforcement
+options for ext4. See [ext4 mount options](https://man7.org/linux/man-pages/man5/ext4.5.html).
+
+### Delivery and downtime approval
 
 The delivery method remains an approval gate. Existing host configuration is
 managed through the stack or Terraform; the canonical Terraform state is not

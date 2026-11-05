@@ -52,8 +52,8 @@ on `dull-baboon`.
 The next focused PR, [#3228](https://github.com/Asherlc/dofek/pull/3228), moves
 the three existing publisher interfaces into a transport-neutral module and
 updates direct imports. It changes no Kafka behavior or schema. Lint, all three
-type checks, focused tests and independent review passed; full tests and required
-CI remain pending. This is preparatory work, not a working Pulsar sensor path.
+type checks, 23,698 unit/mobile tests and independent review passed; required
+CI remains pending. This is preparatory work, not a working Pulsar sensor path.
 
 The user also authorized monitoring each focused PR, correcting failures,
 merging after required checks and review pass, and continuing through subsequent
@@ -120,6 +120,14 @@ than a speculative legacy converter. If that precondition changes, rollout stops
 for a recovery decision. Old request producers and workers must remain quiesced
 through the transition; a table lock alone does not fence them after commit.
 
+The String bridge domain is `group_id`. A November 5 read-only aggregate over
+all retained managed physical String columns found only
+`analytics.activity_duplicate_groups`: 8,692 rows, maximum key length 36 bytes.
+The bounded implementation will admit exact-byte keys up to 4 KiB and reject
+larger keys explicitly before payload capture. This keeps each keyset cursor
+within one parameter. The closure, immutable physical proofs and resource gates
+are still unfinished; successful reader tests alone do not qualify erasure.
+
 ### Native archive format and deployment order
 
 Legacy gzip JSONL objects and their keys remain unchanged. New Pulsar objects
@@ -133,6 +141,14 @@ at [checkpoint 81b5fb84f](https://github.com/Asherlc/dofek/commit/81b5fb84f):
 writer, release assembly and production activation are not done. See
 the [current archive parser](../src/metric-stream/r2-replay.ts) and
 [archive erasure](../src/account-erasure/archive-erasure.ts).
+
+The focused first-release parser slice will recognize the native key grammar
+without decoding its endpoint bytes. The existing eraser discards the parsed
+return and determines ownership from strict event payloads and retained
+identifiers, with an ETag guard before rewriting. Opaque endpoints are upload
+provenance only; this slice makes no position-ordering, partition-consistency or
+replay-validity claim. Native decoding and its dependency remain with the actual
+writer/replay consumers; the stricter development checkpoint is retained.
 
 The approved Node Consumer remains the intake strategy. Queue, group-count and
 byte bounds are required settings, with RSS measured at activation. Create-only
