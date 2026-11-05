@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 import { once } from "node:events";
-import { createInterface } from "node:readline";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { createGunzip, createGzip } from "node:zlib";
@@ -16,6 +15,7 @@ import {
   UploadPartCommand,
 } from "@aws-sdk/client-s3";
 import * as Sentry from "@sentry/node";
+import { readMetricStreamArchiveLines } from "../metric-stream/archive-lines.ts";
 import {
   isMetricStreamBatchCompletedEvent,
   isMetricStreamDeletedEvent,
@@ -26,6 +26,7 @@ import { parseMetricStreamArchiveObjectKey } from "../metric-stream/r2-replay.ts
 const ARCHIVE_PREFIX = "metric-stream/v1/";
 const MAX_ARCHIVE_LIST_PAGES = 10_000;
 const MULTIPART_PART_BYTES = 8 * 1024 * 1024;
+const MAX_ARCHIVE_LINE_PAYLOAD_BYTES = 900_000;
 
 export interface MetricStreamArchiveMetadata {
   cacheControl?: string;
@@ -255,11 +256,23 @@ export interface ArchiveErasureResult {
   recordsRemoved: number;
 }
 
+function isBlankArchiveLine(line: Buffer): boolean {
+  return line.length === 0 || (line.length === 1 && line[0] === 0x0d);
+}
+
 function belongsToAccount(
-  line: string,
+  payload: Buffer,
   identifiers: ArchiveErasureIdentifiers,
   context: { key: string; lineNumber: number },
 ): boolean {
+  let line: string;
+  try {
+    line = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(payload);
+  } catch {
+    throw new Error(
+      `Invalid UTF-8 in R2 archive object ${context.key} at line ${context.lineNumber}`,
+    );
+  }
   let parsedJson: unknown;
   try {
     parsedJson = JSON.parse(line);
@@ -332,8 +345,12 @@ async function uploadCompressedParts(
   return parts;
 }
 
-async function writeLine(output: ReturnType<typeof createGzip>, line: string): Promise<void> {
-  if (!output.write(`${line}\n`)) {
+async function writeLine(
+  output: ReturnType<typeof createGzip>,
+  line: Buffer,
+  terminated: boolean,
+): Promise<void> {
+  if (!output.write(terminated ? Buffer.concat([line, Buffer.from("\n")]) : line)) {
     await once(output, "drain");
   }
 }
@@ -343,26 +360,18 @@ async function countMatchingArchiveRecords(
   identifiers: ArchiveErasureIdentifiers,
   key: string,
 ): Promise<number> {
-  const gunzip = createGunzip();
-  const sourcePipeline = pipeline(body, gunzip);
   let matches = 0;
-  try {
-    const lines = createInterface({ input: gunzip, crlfDelay: Infinity });
-    let lineNumber = 0;
-    for await (const line of lines) {
-      lineNumber += 1;
-      if (line.length > 0 && belongsToAccount(line, identifiers, { key, lineNumber })) {
+  await pipeline(body, createGunzip(), async (source) => {
+    for await (const { payload: line, lineOrdinal: lineNumber } of readMetricStreamArchiveLines(
+      source,
+      MAX_ARCHIVE_LINE_PAYLOAD_BYTES,
+    )) {
+      if (!isBlankArchiveLine(line) && belongsToAccount(line, identifiers, { key, lineNumber })) {
         matches += 1;
       }
     }
-    await sourcePipeline;
-    return matches;
-  } catch (error: unknown) {
-    body.destroy();
-    gunzip.destroy();
-    await Promise.allSettled([sourcePipeline]);
-    throw error;
-  }
+  });
+  return matches;
 }
 
 async function rewriteArchiveObject(
@@ -403,15 +412,16 @@ async function rewriteArchiveObject(
   let multipartCompleted = false;
 
   try {
-    const lines = createInterface({ input: gunzip, crlfDelay: Infinity });
-    let lineNumber = 0;
-    for await (const line of lines) {
-      lineNumber += 1;
-      if (line.length === 0) continue;
+    for await (const {
+      payload: line,
+      lineOrdinal: lineNumber,
+      terminated,
+    } of readMetricStreamArchiveLines(gunzip, MAX_ARCHIVE_LINE_PAYLOAD_BYTES)) {
+      if (isBlankArchiveLine(line)) continue;
       if (belongsToAccount(line, identifiers, { key, lineNumber })) {
         removed += 1;
       } else {
-        await writeLine(gzip, line);
+        await writeLine(gzip, line, terminated);
       }
     }
     gzip.end();

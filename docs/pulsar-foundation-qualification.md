@@ -51,3 +51,26 @@ production holds until their own restoration decision.
 
 The source patch preserves the [pinned native offload layout](https://github.com/apache/pulsar/blob/v5.0.1/tiered-storage/jcloud/src/main/java/org/apache/bookkeeper/mledger/offload/jcloud/impl/BlobStoreManagedLedgerOffloader.java).
 Offloaded data is not a substitute for metadata recovery; see [Pulsar tiered storage](https://pulsar.apache.org/docs/5.0.x/tiered-storage-overview/).
+
+## November 5 retained archive line-size measurement
+
+This is the retained aggregate record of a bounded local scan performed on
+November 5, 2026, from 13:04:00.613 to 13:04:00.872 UTC. It read three retained
+manual-offload objects, checking each compressed digest, decompressed digest
+and line count against its verified export receipt. No new production or R2
+read was made. Payloads, credentials and account identifiers are excluded from
+this record; source offset ranges identify the sampled portions.
+
+| Source offset range, end exclusive | Lines | Largest payload, bytes | Decompressed bytes | Compressed and decompressed receipt digests matched |
+| --- | ---: | ---: | ---: | --- |
+| 21,161,777–21,261,777 | 100,000 | 655 | 52,195,417 | Yes |
+| 55,561,777–55,609,019 | 47,242 | 902 | 21,336,359 | Yes |
+| 55,609,019–55,709,019 | 100,000 | 454 | 42,583,647 | Yes |
+
+Totals were 247,242 lines, 8,779,459 compressed bytes and 116,115,423
+decompressed bytes, with a maximum line payload of 902 bytes. The scan's
+limits were 64 MiB compressed, 256 MiB decompressed and 30 seconds. The
+900,000-byte erasure limit is above this observed sample; this is not a
+measurement of every offloaded record or the older legacy inventory.
+Oversized records remain a fail-closed erasure condition with an
+[operator recovery path](account-erasure-runbook.md#backup-and-restore-behavior).

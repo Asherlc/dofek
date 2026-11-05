@@ -398,6 +398,34 @@ silently replacing it with hard-coded gzip headers:
 [CreateMultipartUpload](https://docs.aws.amazon.com/AmazonS3/latest/API/API_CreateMultipartUpload.html),
 [CopyObject metadata directive](https://docs.aws.amazon.com/AmazonS3/latest/API/API_CopyObject.html#API_CopyObject_RequestSyntax).
 
+Metric archive scanning admits at most 900,000 payload bytes per line, excluding
+the LF delimiter. It validates UTF-8 and the event schema before replacement,
+and requires successful gzip EOF on both the scan and rewrite reads. Surviving
+records retain their original bytes, including CR characters, whitespace and
+whether the final record ended with LF. Legacy and native object keys use the
+same bounded reader; see the [eraser](../src/account-erasure/archive-erasure.ts),
+[line reader](../src/metric-stream/archive-lines.ts) and
+[real S3 tests](../src/account-erasure/archive-erasure.integration.test.ts).
+The scan places decompression and record consumption inside one awaited Node
+[stream pipeline](https://nodejs.org/api/stream.html#streampipelinesource-transforms-destination-options)
+so failures propagate before it returns a count.
+
+A [November 5 retained measurement](pulsar-foundation-qualification.md#november-5-retained-archive-line-size-measurement)
+of three independently verified manual-offload objects covered 247,242 lines;
+the largest payload was 902 bytes. This sample
+is comfortably below the limit, but it does not qualify every line in the
+complete offload or the older archive inventory. An oversized
+legacy record is an explicit residual risk: it blocks that object's erasure.
+This is an erasure rewrite boundary, not a change to legacy storage. Existing
+objects retain their flat keys and gzip JSONL format; erasure replaces only
+objects containing matching records, at the same canonical keys.
+Keep the original object and ETag, preserve the failed checkpoint, and open an
+erasure incident. A reviewed bounded repair must account for the complete
+record and pass full-EOF validation, the conditional replacement and read-back
+before retry. Never skip or truncate the record, raise the limit merely to
+suppress the failure, or mark the request complete. A failed source stream or
+corrupt gzip also leaves the object checkpoint incomplete.
+
 Confirmation writes an encrypted, immutable deletion-ledger intent to
 `dofek-account-erasure-ledger` before the request can be considered durable.
 The `account-erasure/v1/` prefix is locked indefinitely and has no lifecycle
