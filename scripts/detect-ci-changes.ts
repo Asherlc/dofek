@@ -8,6 +8,7 @@ const outputNames = [
   "analytics",
   "docker_ml",
   "docker_ota",
+  "docker_pulsar",
   "docker_server",
   "e2e_web",
   "ml",
@@ -220,6 +221,7 @@ function classifyChanges(
       analytics: true,
       docker_ml: true,
       docker_ota: true,
+      docker_pulsar: true,
       docker_server: true,
       e2e_web: true,
       ml: true,
@@ -288,6 +290,10 @@ function classifyChanges(
         changedFiles,
         /^(?:deploy\/ota\/|\.github\/workflows\/build-private-ota\.yml$|scripts\/check-ota-image-visibility\.ts$)/,
       ),
+    docker_pulsar: hasMatchingFile(
+      changedFiles,
+      /^(?:deploy\/pulsar\/|\.github\/workflows\/build-pulsar-qualification\.yml$)/,
+    ),
     docker_server: serverChange,
     e2e_web:
       serverChange ||

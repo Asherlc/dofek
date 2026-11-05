@@ -1130,7 +1130,7 @@ jobs:
           build-args: DEPENDENCY_CACHE_BUST=${{ hashFiles('package.json', 'pnpm-lock.yaml', 'Dockerfile') }}
           cache-from: type=registry,ref=${{ steps.image-name.outputs.name }}:e2e-buildcache
       - name: Start e2e dependencies
-        run: docker compose -f docker-compose.e2e.yml up -d --wait --no-build db clickhouse redis account-erasure-minio redpanda
+        run: docker compose -f docker-compose.e2e.yml up -d --wait --no-build db clickhouse redis account-erasure-minio redpanda pulsar-broker
       - name: Run e2e migrations
         run: |
           docker compose -f docker-compose.e2e.yml up -d --no-build migrate
@@ -1150,7 +1150,7 @@ jobs:
       - run: pnpm e2e:web:run
       - name: Dump e2e service logs
         if: failure()
-        run: docker compose -f docker-compose.e2e.yml logs --no-color db clickhouse redis redpanda migrate seed review-seed-clickhouse analytics server
+        run: docker compose -f docker-compose.e2e.yml logs --no-color db clickhouse redis redpanda pulsar-broker migrate seed review-seed-clickhouse analytics server
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:

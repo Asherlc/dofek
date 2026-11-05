@@ -9,6 +9,8 @@ on:
         value: ${{ jobs.detect.outputs.docker_ml }}
       docker_ota:
         value: ${{ jobs.detect.outputs.docker_ota }}
+      docker_pulsar:
+        value: ${{ jobs.detect.outputs.docker_pulsar }}
       docker_server:
         value: ${{ jobs.detect.outputs.docker_server }}
       e2e_web:
@@ -36,6 +38,7 @@ jobs:
       analytics: ${{ steps.detect.outputs.analytics }}
       docker_ml: ${{ steps.detect.outputs.docker_ml }}
       docker_ota: ${{ steps.detect.outputs.docker_ota }}
+      docker_pulsar: ${{ steps.detect.outputs.docker_pulsar }}
       docker_server: ${{ steps.detect.outputs.docker_server }}
       e2e_web: ${{ steps.detect.outputs.e2e_web }}
       ml: ${{ steps.detect.outputs.ml }}

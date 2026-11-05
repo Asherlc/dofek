@@ -72,6 +72,21 @@ services:
       retries: 30
       start_period: 5s
 
+  # Standalone broker for web boot publisher only; not the production Oxia topology.
+  # https://pulsar.apache.org/docs/5.0.x/getting-started-docker/
+  pulsar-broker:
+    image: apachepulsar/pulsar:5.0.1@sha256:4507075d8c11b34629f3a0b41f48e3c659951e601538562ee0c088cd2c737ec0
+    mem_limit: 2g
+    environment:
+      PULSAR_MEM: -Xms256m -Xmx768m -XX:MaxDirectMemorySize=512m
+    command: ["bin/pulsar", "standalone", "--advertised-address", "pulsar-broker"]
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8080/admin/v2/brokers/health"]
+      interval: 2s
+      timeout: 5s
+      retries: 45
+      start_period: 10s
+
   account-erasure-minio:
     # SeaweedFS S3 API stand-in; service hostname kept for R2_ENDPOINT wiring.
     # https://github.com/seaweedfs/seaweedfs/releases/tag/4.47
@@ -209,6 +224,7 @@ services:
       CLICKHOUSE_PASSWORD: health
       REDIS_URL: redis://redis:6379
       REDPANDA_BROKERS: redpanda:9092
+      PULSAR_SERVICE_URL: pulsar://pulsar-broker:6650
       METRIC_STREAM_LEGACY_TOPIC: metric-stream-v1
       METRIC_STREAM_LIVE_TOPIC: metric-stream-live-v1
       METRIC_STREAM_HISTORY_TOPIC: metric-stream-history-v1
@@ -236,6 +252,8 @@ services:
       redis:
         condition: service_healthy
       redpanda:
+        condition: service_healthy
+      pulsar-broker:
         condition: service_healthy
       account-erasure-minio:
         condition: service_healthy

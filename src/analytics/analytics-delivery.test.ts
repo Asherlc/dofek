@@ -155,4 +155,60 @@ describe("raw delivery coordination", () => {
     expect(mocks.write).not.toHaveBeenCalled();
     expect(mocks.read).toHaveBeenCalledOnce();
   });
+
+  it("fails when a processed frontier no longer covers the replayed group", async () => {
+    mocks.load
+      .mockResolvedValueOnce({
+        processed: positions[1],
+        completedGroup: {
+          ...describeAnalyticsDeliveryGroup(positions, 500),
+          ingestedAt: owner.ingestedAt,
+          intentId: analyticsDeliveryGroupIntentId(describeAnalyticsDeliveryGroup(positions, 500)),
+        },
+      })
+      .mockResolvedValueOnce({ processed: positions[0], completedGroup: null });
+    await expect(
+      coordinateAnalyticsDeliveryGroup({ database, clickhouse: owner.client }, input()),
+    ).rejects.toThrow(/no longer covers replayed group members/);
+    expect(mocks.write).not.toHaveBeenCalled();
+  });
+
+  it("fails when a processed frontier has no completed group descriptor", async () => {
+    mocks.load.mockResolvedValue({ processed: positions[1], completedGroup: null });
+    await expect(
+      coordinateAnalyticsDeliveryGroup({ database, clickhouse: owner.client }, input()),
+    ).rejects.toThrow(/no completed group descriptor/);
+  });
+
+  it("publishes only uncovered positions after a partial frontier cover", async () => {
+    const completedGroup = {
+      ...describeAnalyticsDeliveryGroup([positions[0]!], 500),
+      ingestedAt: owner.ingestedAt,
+      intentId: analyticsDeliveryGroupIntentId(describeAnalyticsDeliveryGroup([positions[0]!], 500)),
+    };
+    mocks.load
+      .mockResolvedValueOnce({ processed: positions[0], completedGroup })
+      .mockResolvedValueOnce({ processed: positions[0], completedGroup })
+      .mockResolvedValue({ owner_id: "owner-1", processed: positions[0], pendingGroup: null });
+    const request = input();
+    await coordinateAnalyticsDeliveryGroup({ database, clickhouse: owner.client }, request);
+    expect(request.publish).toHaveBeenCalledWith(
+      owner,
+      [positions[1]],
+      expect.any(Array),
+      new Set(),
+    );
+    expect(mocks.claim).toHaveBeenCalledWith(
+      database,
+      expect.objectContaining({ expectedOwnerId: "owner-1" }),
+    );
+  });
+
+  it("skips fence selection when the delivery group has no user ids", async () => {
+    const request = input();
+    request.userIds = [];
+    await coordinateAnalyticsDeliveryGroup({ database, clickhouse: owner.client }, request);
+    expect(transaction.execute).not.toHaveBeenCalled();
+    expect(request.publish).toHaveBeenCalledWith(owner, positions, expect.any(Array), new Set());
+  });
 });

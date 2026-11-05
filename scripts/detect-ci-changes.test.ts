@@ -7,6 +7,7 @@ const changeOutputsSchema = z.object({
   analytics: z.boolean(),
   docker_ml: z.boolean(),
   docker_ota: z.boolean(),
+  docker_pulsar: z.boolean(),
   docker_server: z.boolean(),
   e2e_web: z.boolean(),
   ml: z.boolean(),
@@ -61,6 +62,7 @@ describe("CI change detector", () => {
       analytics: false,
       docker_ml: false,
       docker_ota: false,
+      docker_pulsar: false,
       docker_server: false,
       e2e_web: false,
       ml: false,
@@ -78,6 +80,7 @@ describe("CI change detector", () => {
       analytics: false,
       docker_ml: false,
       docker_ota: false,
+      docker_pulsar: false,
       docker_server: false,
       e2e_web: false,
       ml: false,
@@ -88,6 +91,18 @@ describe("CI change detector", () => {
       web: false,
       zepp: false,
     });
+  });
+
+  it.each([
+    "deploy/pulsar/Dockerfile",
+    "deploy/pulsar/repeatable-offload-payload.patch",
+    ".github/workflows/build-pulsar-qualification.yml",
+  ])("selects the Pulsar qualification image for its build input %s", (changedFile) => {
+    expect(detectChangedAreas(changedFile).docker_pulsar).toBe(true);
+  });
+
+  it("keeps unrelated application changes outside the Pulsar qualification image scope", () => {
+    expect(detectChangedAreas("packages/web/src/App.tsx").docker_pulsar).toBe(false);
   });
 
   it("runs mobile and server surfaces for an IMU package change", () => {
