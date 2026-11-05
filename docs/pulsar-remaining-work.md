@@ -126,6 +126,15 @@ behind feature flags or compatibility bridges. Verify Kafka retirement and
 the absence of dual sensor writers before production cutover. These are open
 assembly gates, not completed review findings.
 
+The raw sink's replay guard depends on a single serialized writer. Every raw
+row writer, scope delete, tombstone and erasure phase must use the existing
+publication owner; future conversion and replay writers must join it before
+activation. Legacy sinks must be quiesced at cutover and analytics remain held.
+The owner makes a bounded current-key read followed by an insert safe against
+another application writer. Equal versions otherwise use insertion order in
+[ReplacingMergeTree](https://clickhouse.com/docs/engines/table-engines/mergetree-family/replacingmergetree),
+so preserving an ingestion timestamp alone does not protect replay after merges.
+
 ## Verified checkpoint
 
 | Area | Evidence and limit |
