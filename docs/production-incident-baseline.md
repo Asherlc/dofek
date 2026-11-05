@@ -36013,3 +36013,27 @@ stable-address Compose model with separate pre/post-restart reads needs a user
 decision; no timeout, retry or DNS-cache setting was changed. Production Swarm
 service/VIP addressing remains a later deployment and whole-host-soak gate.
 See the [qualification evidence and scope](pulsar-qualification.md#november-5-lifecycle-result-replacement-address-changed-after-restart).
+
+### November 5, 2026 — quota qualification boundary; no production incident
+
+A source review of the planned R1 physical cap found that removing capabilities
+does not revoke an inode owner's project-attribute permissions in the initial
+user namespace. The existing EDQUOT fixture tested ordinary writes, not hostile
+project reassignment. A bounded read-only host check recorded kernel
+`6.17.0-1011-oracle` and matching host/ClickHouse user namespace IDs. No project
+quota was enabled, no mutation was attempted and user impact was unchanged.
+See [upstream attribute admission](https://github.com/torvalds/linux/blob/v6.17/fs/file_attr.c#L170-L205).
+
+R1 qualification targets runaway growth and outages, not hostile-writer
+containment. Split preflight into privileged read-only quota/reserve inspection
+before deploy and unprivileged mount/project/identity checks before writes;
+do not grant the writer quota-administration privileges. Project quota queries
+lack the user/group ownership exemption; see [Linux quota permissions](https://github.com/torvalds/linux/blob/v6.17/fs/quota/quota.c#L24-L47).
+Cap allocations, final startup packaging and maintenance approval remain open
+in the [storage runbook](analytics-storage-runbook.md). Automatic deployment and
+all four production holds remain unchanged.
+
+The earlier lifecycle entry above describes a superseded attempt. The later
+authorized stable-address run passed both survivor reads, including after
+restarts, and retired only its isolated fixture storage. Production Swarm
+addressing remains unqualified; see the [passing local result](pulsar-qualification.md#november-5-stable-endpoint-lifecycle-passes).

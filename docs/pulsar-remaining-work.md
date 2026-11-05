@@ -1,6 +1,7 @@
 # Pulsar release scope and remaining work
 
-Last reconciled: November 5, 2026 UTC, through source checkpoint `81b5fb84f`.
+Last reconciled: November 5, 2026 UTC; PR #3228 merged and PR #3229 open.
+Deferred development source remains on `dull-baboon`.
 
 This is the current continuation index for the Pulsar project. It separates
 the next release milestone from the work still required afterward. The dated
@@ -49,11 +50,17 @@ also merged. The approved foundation workspace is being brought forward with
 normal merges from main for subsequent focused PRs; deferred source remains
 on `dull-baboon`.
 
-The next focused PR, [#3228](https://github.com/Asherlc/dofek/pull/3228), moves
+The next focused PR, [#3228](https://github.com/Asherlc/dofek/pull/3228), moved
 the three existing publisher interfaces into a transport-neutral module and
 updates direct imports. It changes no Kafka behavior or schema. Lint, all three
-type checks, 23,698 unit/mobile tests and independent review passed; required
-CI remains pending. This is preparatory work, not a working Pulsar sensor path.
+type checks, 23,698 unit/mobile tests, independent review and all 126 CI checks
+passed. It merged as [`b5a29c6c0`](https://github.com/Asherlc/dofek/commit/b5a29c6c01819b2587a1ef9a351271f66a189d37).
+This is preparatory work, not a working Pulsar sensor path.
+
+[#3229](https://github.com/Asherlc/dofek/pull/3229) prepares native archive-key
+recognition in the existing eraser, with no new dependencies or writer activation.
+Its 54 focused unit cases, two real S3 erasure cases, types, lint and independent
+review passed; full tests and required CI remain pending.
 
 The user also authorized monitoring each focused PR, correcting failures,
 merging after required checks and review pass, and continuing through subsequent
@@ -82,7 +89,7 @@ assembly gates, not completed review findings.
 | Bounded sensor SQL | Original, pathological and four-times-background cases exercised the 128 MiB query allowance. Deduplication reached approximately 120 MB with 320 held parts; production overlap remains a risk. See [resource tests](../src/db/deduped-sensor-read-model.integration.test.ts). |
 | Scalar executor | Owner, page recovery, account guards, generation checks, publication revisions and visible memory failure are implemented. Deduplication and activity execution are not activated. See [executor tests](../src/analytics/bounded-analytics.integration.test.ts). |
 | CDC source boundary | Transaction accounting and typed decoding cover seven source tables plus projected parent ownership context. Snapshot, complete parent-delete cascade and temporal boundary evidence are retained. No owned CDC writes or cross-topic application frontier exist. See [fixtures](../src/analytics/test-fixtures/README.md). |
-| Latest code validation | Commit `841064140`: 66 focused cases, the real ClickHouse temporal round-trip case, TypeScript and source formatting/spelling checks pass. Full unit tier: 24,782 passed, 19 existing skips. |
+| Earlier development validation | Commit `841064140`: 66 focused cases, the real ClickHouse temporal round-trip case, TypeScript and source formatting/spelling checks pass. Full unit tier: 24,782 passed, 19 existing skips. |
 | Native archive parser and eraser | Legacy/native keys, malformed-ID rejection and exact surviving bytes pass unit and real S3 tests. Source checkpoint `81b5fb84f` is pushed; production activation remains gated. See [archive layout](metric-stream-redpanda-r2-runbook.md#prepared-pulsar-native-key-variant). |
 | Lifecycle | The authorized stable-endpoint run passed alert, mixed-ledger offload, expiry, A removal, evacuation, exact B reads before/after deliberate broker and replacement restarts, old-source retirement and cleanup. This qualifies the local model only. See the [successful result](pulsar-qualification.md#november-5-stable-endpoint-lifecycle-passes). |
 

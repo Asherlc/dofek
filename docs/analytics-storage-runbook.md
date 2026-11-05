@@ -30,6 +30,17 @@ path cap alone does not bound those table files. See
 and [MergeTree rewrite overlap](https://clickhouse.com/resources/engineering/clickhouse-optimize-table-final).
 No paths, project IDs or numerical production allocations have been adopted.
 
+R1 qualifies physical backpressure against excess writes from backlog, R2
+outages, slow consumption and runaway growth. It does not claim isolation of
+a deliberately hostile writer. Dropping capabilities and setting
+`no_new_privs` does not revoke inode ownership: upstream Linux permits an
+owner in the initial user namespace to change project attributes. The ordinary
+EDQUOT fixture does not test that escape. The November 5 host inspection found
+kernel `6.17.0-1011-oracle` and the current ClickHouse writer in the host's initial
+user namespace. Do not describe the cap as hostile-writer containment. See
+[Linux project-attribute checks](https://github.com/torvalds/linux/blob/v6.17/fs/file_attr.c#L170-L205)
+and [ownership admission](https://github.com/torvalds/linux/blob/v6.17/fs/file_attr.c#L249-L279).
+
 Other existing databases, jobs, volumes and logs remain explicit measured
 reserve/growth obligations. They are not all required to gain new project-quota
 startup packaging in R1. The required preflight and final writer checks apply
@@ -197,7 +208,7 @@ The required observations and acceptance rules are:
 | Project membership | Match project IDs and inheritance on writable directories; verify existing descendant files are charged correctly. Root-directory inheritance alone is insufficient. |
 | Limits | Match finite nonzero byte hard limits with exact integer unit conversion; record inode limits, usage and grace state. Soft limits alone cannot pass. |
 | Reserve | Reject ceilings exceeding capacity or unclassified writable owners; deduplicate shared projects and bind mounts. |
-| Runtime privilege | Match final effective/filesystem UID and namespace mapping; reject quota bypass or ability to reacquire it. |
+| Runtime privilege | Match final effective/filesystem UID and namespace mapping; reject quota-bypassing capabilities or ways to regain them. Apply the growth-only threat model above. |
 
 Mount roots and device numbers are available in the process mount namespace's
 [mountinfo](https://man7.org/linux/man-pages/man5/proc_pid_mountinfo.5.html).
@@ -212,7 +223,7 @@ is not part of this inspection.
 Inspect the actual writer after its final identity drop, including every
 thread's UID/fsUID, capability sets, `NoNewPrivs`, user namespace mapping and
 process start identity. Reject `CAP_SYS_RESOURCE` and privileges permitting quota,
-mount or project mutation, including `CAP_SYS_ADMIN`; unknown capability decoding
+mount administration, including `CAP_SYS_ADMIN`; unknown capability decoding
 fails. A privileged inspector's identity is not the writer's identity.
 Capabilities are per-thread and `CAP_SYS_RESOURCE` can override quotas; see
 [capabilities](https://man7.org/linux/man-pages/man7/capabilities.7.html) and
@@ -225,6 +236,13 @@ startup barrier must check the final writer mount/privilege context before its
 first write. Checking an old task or inspecting a new task after writes begin
 does not meet that condition. The startup barrier and native-service packaging
 remain unresolved; do not activate production enforcement until both gates exist.
+
+Split those checks by privilege. The privileged, read-only host preflight
+validates enforcement, each project hard limit and reserve before stack apply.
+The unprivileged writer checks its own mount, project ID, inheritance and
+identity before executing the writer. It must not gain `CAP_SYS_ADMIN` merely
+to query limits: Linux's own-user/group quota exemptions do not extend to
+project quota queries. See the [quota permission checks](https://github.com/torvalds/linux/blob/v6.17/fs/quota/quota.c#L24-L47).
 
 ## Maintenance approval and procedure
 
