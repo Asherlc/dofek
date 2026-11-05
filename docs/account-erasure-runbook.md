@@ -314,7 +314,7 @@ incident channels.
 | `postgres_erasure` / `postgres_profile_delete` | PostgreSQL transaction error and exhaustive ownership assertion | Repair the schema/query cause and retry. Never issue broad ad-hoc deletes or clear `user_id` manually. |
 | `peerdb_drain_verification` | Captured WAL LSN, PeerDB mirror position, SeaweedFS S3 lifecycle/versioning/object/upload checks | Restore CDC or staging retention, then let the proof rerun. Follow the CDC health runbook for slot or mirror failures. |
 | `clickhouse_initial` / verification | Mutation status, failed part/reason, and attributable-row counts across the managed table allowlist | Fix the mutation/schema issue and wait for physical deletion. Do not treat an accepted mutation as completed. |
-| `archive_initial` / verification | R2 object key, conditional-write result, and persisted last-key progress | Resolve R2 access or concurrent-write conflicts and resume. The verifier performs another full sweep from the beginning. |
+| `archive_initial` / verification | R2 object key, conditional-write result, and persisted last-key progress | Resolve R2 access or concurrent-write conflicts and resume. The verifier performs another full sweep from the beginning. See the prepared oversized-record procedure below. |
 | `request_pii_scrub` | Database transaction failure and remaining ownership assertion | Repair the direct cause. Do not manually remove the encrypted snapshot before all preceding verification completes. |
 | `retention_verification` | Quarantine topic configuration and low watermarks, Axiom/Sentry retention response, database-backup lifecycle, and objects at or before `pii_scrubbed_at` | Correct topic-policy drift, retention, or credentials; sweep expired backups; and retry. Never mark complete while any pre-boundary quarantine payload or other proof remains unavailable. |
 
@@ -434,6 +434,33 @@ Cloudflare notes that R2 lifecycle deletion is asynchronous, which is why the
 workflow lists and verifies objects instead of relying on policy configuration
 alone:
 <https://developers.cloudflare.com/r2/buckets/object-lifecycles/>.
+
+### Prepared bounded archive records
+
+The pending bounded-erasure migration limits one JSONL payload to 900,000 bytes,
+excluding its LF delimiter, and preserves survivor bytes exactly. It is not yet
+deployed. Oversized records, malformed payloads and corrupt gzip EOF block the
+object; no skip, truncation or successful verification is allowed. The
+[archive implementation](../src/account-erasure/archive-erasure.ts) is the
+source contract. A November 5 bounded check of three retained, independently
+verified manual-offload objects counted 247,242 records; the largest payload
+was 902 bytes. Both compressed and raw digests matched their manifests. This
+sample does not qualify all 53.28 million offloaded records or the legacy
+archive inventory.
+
+An oversized legacy record is an explicit residual risk. The operator must
+keep the request incomplete, preserve the original object and its ETag, and
+open a deadline-risk incident. Inspect only the affected object under a finite
+byte/memory budget, reporting lengths, hashes and attribution results without
+publishing health payloads. Prepare a reviewed, bounded repair preserving exact
+survivor bytes; require full gzip EOF, conditional replacement against the
+source ETag and independent read-back before resuming verification. Do not
+raise the global limit or delete an object on an ownership guess. If the
+object cannot be safely repaired, escalate at day-29 verification rather than
+claiming completion. Conditional operations follow
+[R2's S3 API](https://developers.cloudflare.com/r2/api/s3/api/).
+
+### Existing archive metadata and recovery ledger
 
 When account erasure rewrites a mixed-user metric archive, the staged
 multipart upload reuses the source object's `Content-Type`,

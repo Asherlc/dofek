@@ -191,6 +191,12 @@ and [real-engine cases](../src/account-erasure/clickhouse-erasure.integration.te
 This development checkpoint is still uncommitted; the linked files name the
 migration destination, not a released implementation. The final native subset
 also covers historical lookup by exact table UUID across a prior rename.
+Remaining caller work reuses bounded exact-byte archive line parsing and a
+cohesive PeerDB mirrored-row proof, while retaining its real slot/WAL gate.
+The [oversized-record procedure](account-erasure-runbook.md#prepared-bounded-archive-records)
+documents the 900,000-byte line limit, sampled real-data evidence and the
+unqualified legacy-data risk. Full erasure and scaling suites still gate the
+single coherent erasure commit.
 
 The native sender and process-cleanup slice passes 270 focused tests and type
 checks. The actual final server image also loaded the official native module
