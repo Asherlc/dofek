@@ -94,7 +94,7 @@ assembly gates, not completed review findings.
 | Area | Evidence and limit |
 | --- | --- |
 | Retained history | All 53,283,854 retained records in 534 objects were independently verified in R2. The consumed prefix was trimmed using stock record deletion. About 33 GB was free at the last observation. The 18,836,612-record unread tail also remains local. Original R2 archives are preserved. See the [manual offload record](pulsar-qualification.md#november-4-manual-offload-verified-method-bulk-copy-in-progress). |
-| Sink | An earlier DULL fixture reached 984.3 samples/s for 500 rows, but does not qualify the production SDK path. A later Foundation test using the actual client factory found receipts/frontier could advance with no raw row because `command()` ignores the unsupported streamed `values` argument. That path is blocked pending stock `exec()` use, full response consumption and written-row proof; repeat the finite 1/500-row checks and measure throughput afterward. See the [affected grouped writer](../src/metric-stream/source-effects-group.ts) and [pinned client artifact](https://registry.npmjs.org/@clickhouse/client/-/client-1.23.1.tgz). Nothing was deployed. |
+| Sink | The Foundation path now uses the official streaming `exec()` API and consumes the full response under the query owner. Its complete 19-case real Postgres/ClickHouse suite passes, including exact raw rows for groups of 1 and 500, replay, individual controls, receipts and frontiers. These tests use synthetic native positions; real broker-to-sink qualification, review and current-path throughput remain open. The earlier DULL figure of 984.3 samples/s does not qualify this path. See the [grouped writer](../src/metric-stream/source-effects-group.ts) and [official client API](https://clickhouse.com/docs/integrations/javascript#exec-method). Nothing was deployed. |
 | Bounded sensor SQL | Original, pathological and four-times-background cases exercised the 128 MiB query allowance. Deduplication reached approximately 120 MB with 320 held parts; production overlap remains a risk. See [resource tests](../src/db/deduped-sensor-read-model.integration.test.ts). |
 | Scalar executor | Owner, page recovery, account guards, generation checks, publication revisions and visible memory failure are implemented. Deduplication and activity execution are not activated. See [executor tests](../src/analytics/bounded-analytics.integration.test.ts). |
 | CDC source boundary | Transaction accounting and typed decoding cover seven source tables plus projected parent ownership context. Snapshot, complete parent-delete cascade and temporal boundary evidence are retained. No owned CDC writes or cross-topic application frontier exist. See [fixtures](../src/analytics/test-fixtures/README.md). |
@@ -120,6 +120,14 @@ and [tiered storage](https://pulsar.apache.org/docs/5.0.x/tiered-storage-overvie
 are inputs to these tests, not substitutes for measured physical deletion.
 The fixture's static endpoint models stability; actual production service
 addressing must be tested with [Swarm service discovery](https://docs.docker.com/engine/swarm/networking/#configure-service-discovery).
+
+The native sink's finite four-control check measured about 1.40 seconds and
+134 ClickHouse calls, excluding setup, assertion reads and the replacement row.
+Each control has its own receipt and frontier step; its scope is scalar.
+The whole-host soak must measure the 350-control burst and a realistic large
+provider deletion, including effect pages. Record total drain time and the delay
+to live messages queued behind it. This small fixture is not that qualification;
+see the [native sink integration cases](../src/metric-stream/clickhouse-sink.integration.test.ts).
 
 Hold restoration also requires either safe journal retirement or a measured capacity
 proof for the entire history/provider drain with margin. R1 journal exhaustion
