@@ -31,6 +31,47 @@ and do not qualify enforcement. The inspection commands are documented below;
 their field semantics are described by [tune2fs](https://man7.org/linux/man-pages/man8/tune2fs.8.html)
 and [findmnt](https://man7.org/linux/man-pages/man8/findmnt.8.html).
 
+### November 5 storage-owner census
+
+A bounded read-only census at 08:38 UTC confirmed DockerRootDir is
+`/var/lib/docker` on the separate root ext4 filesystem (`/dev/sda1`). Root
+available space was 12,945,637,376 bytes; data-volume available space was
+32,951,267,328 bytes. Website health was OK before and after the census.
+These are observations, not quota allocations or startup qualification.
+
+A single-filesystem `du --block-size=1 --max-depth=1` observation returned:
+
+| Data path | Allocated bytes |
+| --- | ---: |
+| `clickhouse` | 60,916,539,392 |
+| `redpanda` | 40,402,919,424 |
+| `postgres` | 12,894,035,968 |
+| `climbing-cutover-20261015` | 1,384,534,016 |
+| `peerdb-catalog` | 333,852,672 |
+| `redis` | 201,043,968 |
+| `peerdb-minio` | 164,524,032 |
+| `databasus` | 71,049,216 |
+
+The retained climbing-cutover directory is an additional obligation whose
+ownership and recovery role must be classified; it is not cleanup credit.
+The shared `dofek_job_files` named volume was observed under DockerRootDir,
+mounted by web and worker containers. Traefik state and two running non-stack
+container volumes also live there. Data-volume quotas alone therefore do not
+cover all current writes. Preserve these resources until their owners and
+maintenance obligations are identified. Docker describes
+[volume placement and inspection](https://docs.docker.com/engine/storage/volumes/).
+
+All 30 observed running containers had writable roots. Source declares USER
+1000:1000 for the application image, but most native service identities and
+drops are inherited. The census records entry-process UID and capabilities;
+it does not prove every descendant writer or a pre-write barrier. Include
+application temporary files, Docker layers/logs, named volumes, deployment
+one-shots and retained inactive volumes in the allocation and quiescence
+inventory. See the [stack](../deploy/stack.yml),
+[Oracle override](../deploy/stack.oracle.yml),
+[application image](../Dockerfile) and
+[deployment one-shots](../.github/workflows/deploy-web-stack.yml).
+
 ## Prepare the allocation and recovery package
 
 Before proposing maintenance, record the following unresolved production inputs
