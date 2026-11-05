@@ -6,7 +6,10 @@ activation, publisher cutover, archive conversion or production configuration.
 
 The repeatable-payload correction was tested against actual Cloudflare R2 using
 a separately scoped qualification bucket. Host source compilation, upstream
-tests and packaging passed; a cold full Docker build remains unverified.
+tests and packaging passed. The normal Docker source-build path subsequently
+passed on an isolated 4 GiB builder: the affected upstream test class, both
+style checks and NAR packaging completed with retries disabled. The build
+executed that source stage rather than substituting a prebuilt host artifact.
 The patch is maintained locally and is not a claim of stock R2 compatibility.
 
 The [native evacuation ARM job](https://github.com/Asherlc/dofek/actions/runs/41871869660/job/126721886208)

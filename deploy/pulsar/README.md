@@ -8,7 +8,8 @@ The broker Dockerfile builds checksum-pinned Apache source with a narrow
 [repeatable payload patch](repeatable-offload-payload.patch). Its bounded sealed
 ledger blocks and index can be reopened for signing and upload; native object
 layout is unchanged. The build runs the affected upstream test class and style
-checks with retries disabled. A cold Docker source build still requires verification.
+checks with retries disabled. The normal Docker source-build path passed on
+an isolated 4 GiB builder, including tests, style checks and NAR packaging.
 See the [pinned upstream offloader](https://github.com/apache/pulsar/blob/v5.0.1/tiered-storage/jcloud/src/main/java/org/apache/bookkeeper/mledger/offload/jcloud/impl/BlobStoreManagedLedgerOffloader.java).
 
 Build through the workspace wrapper:
