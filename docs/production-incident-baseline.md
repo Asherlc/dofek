@@ -35566,3 +35566,17 @@ iOS archive and Simulator bridge, passed. No check was disabled or ignored.
 The Pulsar foundation PR still requires its own refreshed CI and review before
 merge. Future date-sensitive fixtures should name their timestamps and model
 day explicitly rather than assuming the current UTC date.
+
+
+## 2026-11-05: Pulsar source build caught an unavailable Alpine pin
+
+The first [ARM source-build job](https://github.com/Asherlc/dofek/actions/runs/41989038528/job/127116601047)
+failed at `apk add --no-cache patch=2.8-r0`, before compilation. The first fatal
+package error was `patch-2.8.1-r0: breaks: world[patch=2.8-r0]`: the pinned
+Temurin image uses Alpine 3.24, whose repository now supplies 2.8.1-r0.
+The direct fix updates that exact build-tool pin, retaining the image digest,
+source checksum, memory limit and test commands. A clean container from the
+same image installed 2.8.1-r0 and reported GNU patch 2.8.1. See the
+[Alpine package record](https://pkgs.alpinelinux.org/package/v3.24/main/aarch64/patch).
+Full source-build CI remains required; no retry, timeout or ignored error was
+added. Production was unaffected and automatic deployment remained disabled.

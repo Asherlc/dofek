@@ -1,6 +1,6 @@
 FROM eclipse-temurin:25-jdk-alpine@sha256:425f0b733cb23843bd78dbe5552513976d0cf12b9722752c48a5161cf5cd2f32 AS offloader-build
 
-RUN apk add --no-cache patch=2.8-r0
+RUN apk add --no-cache patch=2.8.1-r0
 WORKDIR /src
 ADD --checksum=sha256:687e2670dfb71ad10fd9972957de7426e4596a095b08781364950c4aa3fcafde \
     https://archive.apache.org/dist/pulsar/pulsar-5.0.1/apache-pulsar-5.0.1-src.tar.gz /tmp/pulsar-source.tar.gz
