@@ -1,6 +1,6 @@
 # Pulsar release scope and remaining work
 
-Last reconciled: November 5, 2026 UTC; PRs #3226, #3228 and #3229 merged.
+Last reconciled: November 5, 2026 UTC; PRs #3226, #3228, #3229 and #3230 merged.
 Deferred development source remains on `dull-baboon`.
 
 This is the current continuation index for the Pulsar project. It separates
@@ -187,7 +187,11 @@ capacity, deployment and restoration gates remain binding; production holds
 are unchanged.
 Source placement is permanent structural growth, not journal backlog. Its
 bounded keyset bootstrap remains required before global identity lookup can
-cover existing raw data. A November 5 metadata-only observation counted
+cover existing raw data. It remains an R1 activation gate: the current
+[delete preparation](../src/metric-stream/source-effects.ts) scans matching raw
+IDs and fails closed if any lacks a placement. This dependency is required for
+raw deletion itself, even while analytics is held; deferring the effect bootstrap
+to R2 does not remove it. A November 5 metadata-only observation counted
 189,609,383 active physical raw rows in 30 parts, with no source-placement
 parts returned. This is not a distinct-ID count or bootstrap-size proof; see
 the [measurement record](pulsar-qualification.md#november-5-journal-sizing-and-mutation-metadata-observations).
