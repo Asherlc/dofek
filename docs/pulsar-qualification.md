@@ -203,7 +203,51 @@ shared state while removing the erased account's required frontiers. Affected
 Postgres tests (24) and unit tests (39) pass with independent review. Q7 remains
 unchanged. The disposable fixture was removed; no native fitness envelopes or
 decoder qualification resulted from that setup attempt. One capture attempt
-remains under the two-setup-failure stop rule.
+remained under the two-setup-failure stop rule.
+
+The remaining capture produced 42 native messages: eight snapshot rows across
+all seven tables, plus three source transactions. The native client exited zero
+and wrote its completion artifact. The throwaway wrapper raced that exit and
+failed its observation check; postconditions were validated offline from the
+retained native artifact, with no capture rerun. Its SHA-256 is
+`2ca5343c7df0498cfead19f3d7476cd373245905056285eb7742dffa7554f0d7`.
+Full before/after column shapes, microsecond timestamps, JSON arrays/nulls,
+unchanged external text, activity PK headers and supported marker parent-cascade
+delete/new-event behavior passed. Disposable cleanup passed. The unchanged
+[synthetic envelopes](../src/analytics/test-fixtures/cdc-fitness-envelopes.ndjson)
+and [provenance](../src/analytics/test-fixtures/README.md) are retained for decoder
+work; the wrapper will not be fixed or reused.
+
+The value 2147483648 is synthetic and confirms that current sensor-priority
+`Int32` destinations cannot represent the Postgres `bigint` domain. It is not an
+observed production value. Planned new-generation CDC tables must map source
+types without narrowing (`bigint` to `Int64`), with an executable canonical
+Postgres/Drizzle/destination type comparison before writes. No decoder, raw
+writes, physical-erasure or production-fit result follows from this capture.
+
+### November 5 approved transport and archive layout
+
+The user approved “Use account-specific archive topics (recommended)” for both
+converted history and ongoing sensor archives. The design uses shared transport
+topics with retention inside the erasure budget, plus account-specific topics
+for long-term sensor preservation. CDC remains shared transport, with Postgres
+as its canonical source. Account-topic deletion, offloaded-object removal and
+BookKeeper cleanup still require qualification before release; the current
+shared-transport lifecycle fixture does not qualify that archive path.
+
+Legacy conversion preserves original event bytes and each source occurrence,
+including overlaps, with object/line provenance. Archive preservation is separate
+from applying records to ClickHouse. The verified unread history tail is the
+known ingestion candidate; other archives' ClickHouse coverage remains unknown.
+Replaying old version-zero events with newly allocated ingestion times must not
+silently change current winners. Markers remain provenance rather than evidence
+of new processing completion.
+
+Routing must verify account ownership for markers and inherited delete scopes.
+Missing or conflicting ownership blocks routing. No global per-event registry,
+new publisher, converter routing or dual archive writer has been implemented by
+this decision. The existing strict reader is the prepared conversion component;
+its sender, transfer ledger and erasure integration remain work to complete.
 
 ### November 5 legacy archive metadata inventory
 
