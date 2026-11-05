@@ -105,6 +105,34 @@ Archive objects use partitioned prefixes:
 metric-stream/v1/date=YYYY-MM-DD/hour=HH/<topic>-<partition>-<first-offset>-<last-offset>.jsonl.gz
 ```
 
+### Prepared Pulsar native-key variant
+
+The [shared parser](../src/metric-stream/r2-replay.ts) and
+[account eraser](../src/account-erasure/archive-erasure.ts) also support this
+explicit variant under the same prefix. It is prepared release work; no native
+archive writer has been activated. Legacy keys above remain unchanged.
+
+```text
+metric-stream/v1/date=YYYY-MM-DD/hour=HH/pulsar/epoch=<encoded-epoch>/topic=<encoded-concrete-topic>/first=<serialized-id-hex>/last=<serialized-id-hex>.jsonl.gz
+```
+
+Epoch and concrete persistent topic use canonical UTF-8 percent encoding;
+endpoints use lowercase hex of the official client serialized message ID.
+The concrete topic supplies partition identity, which must agree with each ID.
+An ID carries no topic name, so this check does not authenticate ledger-to-topic
+ownership. Endpoints describe original upload provenance; erasure rewrites
+retain the key and surviving lines cannot reconstruct per-line native positions.
+Native keys obey the [S3 1,024-byte key limit](https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-keys.html).
+
+Malformed protobuf is validated in JavaScript before the native client call,
+because the [pinned binding](https://github.com/apache/pulsar-client-node/blob/v1.18.0/src/MessageId.cc)
+does not catch the C++ deserializer exception. The parser follows the pinned
+[proto2 MessageIdData schema](https://github.com/apache/pulsar-client-cpp/blob/v4.2.0/proto/PulsarApi.proto),
+including zero-valued field presence. Chunked and acknowledgment-set IDs remain
+unqualified and fail explicitly. Unknown layouts also fail; they are never
+skipped during erasure. Both parser and eraser support must be deployed before
+or together with the first native archive object.
+
 Each object contains newline-delimited JSON records. Every record must validate
 against `metricStreamRedpandaEventSchema` in `src/metric-stream/events.ts`.
 Current producers emit:

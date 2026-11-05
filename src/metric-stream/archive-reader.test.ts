@@ -45,6 +45,16 @@ async function collect(value: Parameters<typeof readMetricStreamArchiveObject>[0
 afterEach(() => vi.clearAllMocks());
 
 describe("readMetricStreamArchiveObject", () => {
+  it("reads native-key payload bytes with physical line provenance", async () => {
+    const objectKey = `metric-stream/v1/date=2026-11-05/hour=03/pulsar/epoch=e1/topic=${encodeURIComponent("persistent://public/default/sensor-partition-2")}/first=080a10e70718022001/last=080a10e70718022002.jsonl.gz`;
+    const payload = Buffer.from(`  ${JSON.stringify(row)} `);
+    const result = await collect(
+      input(gzipSync(Buffer.concat([payload, Buffer.from("\n")])), { objectKey }),
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ objectKey, payload, lineOrdinal: 1 });
+  });
+
   it("preserves original bytes, omitted generation, revisions and physical line provenance", async () => {
     const first = Buffer.from(`  ${JSON.stringify(row)} \r`);
     const second = Buffer.from(
