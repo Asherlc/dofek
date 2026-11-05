@@ -1,9 +1,19 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AccountErasureRemoteSnapshot } from "../account-erasure/remote-snapshot.ts";
 import type { ClaimedAccountErasureRequest } from "../db/account-erasure-processing.ts";
+import type { ClickHouseClient } from "../db/clickhouse.ts";
+import { createDatabase } from "../db/index.ts";
 import type { AccountErasurePhaseExecution } from "./process-account-erasure-request.ts";
 
 const mocks = vi.hoisted(() => ({
+  withOwner: vi.fn(
+    async (
+      _database: unknown,
+      client: ClickHouseClient,
+      _input: unknown,
+      operation: (owner: { client: ClickHouseClient }) => Promise<unknown>,
+    ) => operation({ client }),
+  ),
   assertConsumersDrained: vi.fn(async () => undefined),
   assertPeerDbDrained: vi.fn(async () => undefined),
   assertQuarantineExpired: vi.fn(async () => undefined),
@@ -33,6 +43,18 @@ const mocks = vi.hoisted(() => ({
     recordsRemoved: 0,
   })),
   eraseClickHouse: vi.fn(async () => undefined),
+  prepareIdentifiers: vi.fn(async () => undefined),
+  readIdentifierPage: vi.fn(
+    async (
+      _family: unknown,
+      _after?: string,
+    ): Promise<{ entries: Array<{ key: string; value: string }>; nextCursor: string | null }> => ({
+      entries: [{ key: "a".repeat(64), value: "40000000-0000-4000-8000-000000001994" }],
+      nextCursor: null,
+    }),
+  ),
+  assertIdentifierClosure: vi.fn(async (_stage: "initial" | "final") => undefined),
+  identifierStoreCreated: vi.fn(),
   erasePostgres: vi.fn(async () => undefined),
   eraseProcessors: vi.fn(async () => ({ processor: "queued" })),
   eraseStripe: vi.fn(async () => ({
@@ -62,6 +84,13 @@ const mocks = vi.hoisted(() => ({
   verifyProcessors: vi.fn(async () => ({ processor: "complete" })),
 }));
 
+vi.mock("../analytics/analytics-query-owner.ts", () => ({
+  ANALYTICS_PUBLICATION_RESOURCE: "metric-stream-source",
+  withAnalyticsQueryOwner: mocks.withOwner,
+}));
+const ownerDatabase = createDatabase("postgres://unit:unit@localhost/unit");
+afterAll(async () => ownerDatabase.$client.end());
+
 vi.mock("../r2-storage.ts", () => ({
   createR2Client: vi.fn(() => mocks.r2Client),
   requiredR2EnvironmentVariable: vi.fn((name: string) => `${name.toLowerCase()}-bucket`),
@@ -87,6 +116,25 @@ vi.mock("../account-erasure/database-backup-storage.ts", () => ({
 vi.mock("../account-erasure/clickhouse-erasure.ts", () => ({
   eraseClickHouseAccount: mocks.eraseClickHouse,
   fenceClickHouseAccount: mocks.fenceClickHouse,
+  prepareClickHouseAccountErasure: mocks.prepareIdentifiers,
+}));
+
+vi.mock("../account-erasure/identifier-store.ts", () => ({
+  ACCOUNT_ERASURE_IDENTIFIER_PAGE_SIZE: 500,
+  AccountErasureIdentifierStore: class {
+    constructor(database: unknown, input: unknown) {
+      mocks.identifierStoreCreated(database, input);
+    }
+    readPage(family: unknown, after?: string) {
+      return mocks.readIdentifierPage(family, after);
+    }
+    loadPhysicalProgress() {
+      return Promise.resolve({ step: "apply", afterIntentKey: null, pending: null });
+    }
+    assertClosureComplete(stage: "initial" | "final") {
+      return mocks.assertIdentifierClosure(stage);
+    }
+  },
 }));
 
 vi.mock("../account-erasure/peerdb-erasure.ts", () => ({
@@ -202,12 +250,9 @@ const snapshot: AccountErasureRemoteSnapshot = {
   authIdentities: [],
   externalEffects: [],
   localIdentifiers: {
-    activityIds: ["30000000-0000-4000-8000-000000001994"],
     exportObjects: [],
     fileUploads: [],
-    processingOperationIds: ["40000000-0000-4000-8000-000000001994"],
     sessionIds: [],
-    sleepSessionIds: ["50000000-0000-4000-8000-000000001994"],
     userId: request.userId ?? "missing-user",
   },
   posthogDistinctId: "posthog-distinct-1994",
@@ -222,6 +267,7 @@ function execution(
   claimedRequest: ClaimedAccountErasureRequest = request,
 ): AccountErasurePhaseExecution {
   return {
+    leaseOwner: "runtime-fixture-worker",
     deleteProfile: vi.fn(async () => ({ walLsn: "0/1A2B" })),
     loadCheckpointDetails,
     loadProgress: vi.fn(async () => null),
@@ -233,15 +279,147 @@ function execution(
 }
 
 describe("createAccountErasureRuntime", () => {
+  beforeEach(() => vi.clearAllMocks());
+  it.each([false, true])(
+    "fences each canonical operation page and keeps later-page failure visible: %s",
+    async (fail) => {
+      const first = "40000000-0000-4000-8000-000000001994";
+      const second = "50000000-0000-4000-8000-000000001994";
+      vi.mocked(mocks.readIdentifierPage).mockResolvedValueOnce({
+        entries: [{ key: "a".repeat(64), value: first }],
+        nextCursor: "a".repeat(64),
+      });
+      if (fail)
+        vi.mocked(mocks.readIdentifierPage).mockRejectedValueOnce(
+          new Error("operation page unavailable"),
+        );
+      else
+        vi.mocked(mocks.readIdentifierPage).mockResolvedValueOnce({
+          entries: [{ key: "b".repeat(64), value: second }],
+          nextCursor: null,
+        });
+      const database = {
+        $client: ownerDatabase.$client,
+        execute: vi.fn(async () => []),
+        transaction: vi.fn(),
+      };
+      const clickhouse = {
+        exec: vi.fn<ClickHouseClient["exec"]>(),
+        command: vi.fn(async () => undefined),
+        insert: vi.fn(async () => undefined),
+        query: vi.fn(async () => ({ json: async () => [] })),
+      };
+      const runtime = await createAccountErasureRuntime(database, clickhouse, {
+        close: vi.fn(async () => undefined),
+        purge: vi.fn(async () => undefined),
+      });
+      try {
+        const operation = runtime.phaseRunner.runPhase("ingest_fence", execution());
+        if (fail) {
+          await expect(operation).rejects.toThrow("operation page unavailable");
+          expect(mocks.captureHighWatermarks).not.toHaveBeenCalled();
+        } else {
+          await operation;
+          expect(mocks.fenceClickHouse).toHaveBeenNthCalledWith(2, clickhouse, request.userId, [
+            second,
+          ]);
+        }
+        expect(mocks.fenceClickHouse).toHaveBeenNthCalledWith(1, clickhouse, request.userId, [
+          first,
+        ]);
+        expect(mocks.readIdentifierPage).toHaveBeenNthCalledWith(2, "operation", "a".repeat(64));
+      } finally {
+        await runtime.close();
+      }
+    },
+  );
+  it.each([
+    ["ingest_fence", "fence", "pending"],
+    ["ingest_fence", "fence", "write failed"],
+    ["clickhouse_initial", "erase:initial", "pending"],
+    ["clickhouse_initial", "erase:initial", "write failed"],
+  ] as const)(
+    "replays %s after %s using the existing request identity (%s)",
+    async (phase, suffix, failure) => {
+      mocks.decryptSnapshot.mockResolvedValue(snapshot);
+      const database = {
+        $client: ownerDatabase.$client,
+        execute: vi.fn(async () => []),
+        transaction: vi.fn(),
+      };
+      const clickhouse = {
+        exec: vi.fn<ClickHouseClient["exec"]>(),
+        command: vi.fn(async () => undefined),
+        insert: vi.fn(async () => undefined),
+        query: vi.fn(async () => ({ json: async () => [] })),
+      };
+      const runtime = await createAccountErasureRuntime(database, clickhouse, {
+        close: vi.fn(async () => undefined),
+        purge: vi.fn(async () => undefined),
+      });
+      try {
+        if (failure === "pending")
+          mocks.withOwner.mockRejectedValueOnce(new Error("Existing intent is pending"));
+        else
+          (phase === "ingest_fence"
+            ? mocks.fenceClickHouse
+            : mocks.eraseClickHouse
+          ).mockRejectedValueOnce(new Error("Erasure write failed"));
+        await expect(runtime.phaseRunner.runPhase(phase, execution())).rejects.toThrow(
+          failure === "pending" ? "pending" : "write failed",
+        );
+        await runtime.phaseRunner.runPhase(phase, execution());
+        expect(mocks.withOwner.mock.calls.map((call) => call[2])).toEqual([
+          {
+            resourceId: "metric-stream-source",
+            intentId: `account-erasure:${request.id}:${suffix}`,
+          },
+          {
+            resourceId: "metric-stream-source",
+            intentId: `account-erasure:${request.id}:${suffix}`,
+          },
+        ]);
+      } finally {
+        await runtime.close();
+      }
+    },
+  );
+  it("withholds ClickHouse erasure writes while the shared predecessor is unknown", async () => {
+    mocks.decryptSnapshot.mockResolvedValue(snapshot);
+    mocks.fenceClickHouse.mockClear();
+    const database = {
+      $client: ownerDatabase.$client,
+      execute: vi.fn(async () => []),
+      transaction: vi.fn(),
+    };
+    const clickhouse = {
+      exec: vi.fn<ClickHouseClient["exec"]>(),
+      command: vi.fn(async () => undefined),
+      insert: vi.fn(async () => undefined),
+      query: vi.fn(async () => ({ json: async () => [] })),
+    };
+    const runtime = await createAccountErasureRuntime(database, clickhouse, {
+      close: vi.fn(async () => undefined),
+      purge: vi.fn(async () => undefined),
+    });
+    mocks.withOwner.mockRejectedValueOnce(new Error("Previous owner needs verified recovery"));
+    await expect(runtime.phaseRunner.runPhase("ingest_fence", execution())).rejects.toThrow(
+      "verified recovery",
+    );
+    expect(mocks.fenceClickHouse).not.toHaveBeenCalled();
+    await runtime.close();
+  });
   it("connects concrete production adapters and closes owned resources", async () => {
     mocks.decryptSnapshot.mockResolvedValue(snapshot);
     mocks.closePeerDbStaging.mockClear();
     mocks.r2Client.destroy.mockClear();
     const database = {
+      $client: ownerDatabase.$client,
       execute: vi.fn(async () => []),
       transaction: vi.fn(),
     };
     const clickHouseClient = {
+      exec: vi.fn<ClickHouseClient["exec"]>(),
       command: vi.fn(async () => undefined),
       insert: vi.fn(async () => undefined),
       query: vi.fn(async () => ({ json: async () => [] })),
@@ -281,7 +459,7 @@ describe("createAccountErasureRuntime", () => {
     expect(mocks.fenceClickHouse).toHaveBeenCalledWith(
       clickHouseClient,
       snapshot.localIdentifiers.userId,
-      snapshot.localIdentifiers.processingOperationIds,
+      ["40000000-0000-4000-8000-000000001994"],
     );
     await expect(
       runtime.phaseRunner.runPhase(
@@ -291,6 +469,20 @@ describe("createAccountErasureRuntime", () => {
     ).resolves.toEqual({
       quarantineHighWatermarks,
     });
+    expect(mocks.prepareIdentifiers).toHaveBeenCalledWith(
+      expect.objectContaining({ client: clickHouseClient }),
+      expect.anything(),
+      {
+        requestId: request.id,
+        userId: request.userId,
+        leaseOwner: "runtime-fixture-worker",
+        stage: "initial",
+      },
+    );
+    expect(mocks.identifierStoreCreated).toHaveBeenCalledWith(
+      database,
+      expect.objectContaining({ requestId: request.id, leaseOwner: "runtime-fixture-worker" }),
+    );
     expect(mocks.assertConsumersDrained).toHaveBeenCalledWith(
       { name: "redpanda-admin" },
       "metric-stream-v1",
@@ -380,12 +572,16 @@ describe("createAccountErasureRuntime", () => {
     await expect(runtime.phaseRunner.runPhase("clickhouse_initial", execution())).resolves.toEqual({
       verified: false,
     });
-    expect(mocks.eraseClickHouse).toHaveBeenCalledWith(clickHouseClient, {
-      activityIds: snapshot.localIdentifiers.activityIds,
-      operationIds: snapshot.localIdentifiers.processingOperationIds,
-      sleepSessionIds: snapshot.localIdentifiers.sleepSessionIds,
-      userId: snapshot.localIdentifiers.userId,
-    });
+    expect(mocks.eraseClickHouse).toHaveBeenCalledWith(
+      expect.objectContaining({ client: clickHouseClient }),
+      expect.anything(),
+      expect.objectContaining({
+        userId: snapshot.localIdentifiers.userId,
+        requestId: execution().request.id,
+        leaseOwner: execution().leaseOwner,
+        stage: "initial",
+      }),
+    );
 
     await expect(runtime.phaseRunner.runPhase("archive_initial", execution())).resolves.toEqual({
       objectsRewritten: 0,
@@ -394,8 +590,8 @@ describe("createAccountErasureRuntime", () => {
     expect(mocks.eraseArchive).toHaveBeenCalledWith(
       expect.anything(),
       {
-        activityIds: new Set(snapshot.localIdentifiers.activityIds),
-        operationIds: new Set(snapshot.localIdentifiers.processingOperationIds),
+        store: expect.anything(),
+        stage: "initial",
         userId: snapshot.localIdentifiers.userId,
       },
       expect.objectContaining({
@@ -414,10 +610,8 @@ describe("createAccountErasureRuntime", () => {
       ),
     );
     expect(mocks.assertPeerDbDrained).toHaveBeenCalledWith(database, clickHouseClient, "0/1A2B", {
-      activityIds: snapshot.localIdentifiers.activityIds,
-      operationIds: snapshot.localIdentifiers.processingOperationIds,
-      sleepSessionIds: snapshot.localIdentifiers.sleepSessionIds,
       userId: snapshot.localIdentifiers.userId,
+      store: expect.anything(),
     });
     expect(mocks.capturePeerDbStagingBoundary).toHaveBeenCalledWith(
       database,
@@ -445,10 +639,12 @@ describe("createAccountErasureRuntime", () => {
     mocks.connectRedpanda.mockRejectedValueOnce(startupError);
     vi.mocked(Sentry.captureException).mockClear();
     const database = {
+      $client: ownerDatabase.$client,
       execute: vi.fn(async () => []),
       transaction: vi.fn(),
     };
     const clickHouseClient = {
+      exec: vi.fn<ClickHouseClient["exec"]>(),
       command: vi.fn(async () => undefined),
       insert: vi.fn(async () => undefined),
       query: vi.fn(async () => ({ json: async () => [] })),
@@ -482,10 +678,12 @@ describe("createAccountErasureRuntime", () => {
     mocks.closeRedpanda.mockRejectedValueOnce(cleanupError);
     vi.mocked(Sentry.captureException).mockClear();
     const database = {
+      $client: ownerDatabase.$client,
       execute: vi.fn(async () => []),
       transaction: vi.fn(),
     };
     const clickHouseClient = {
+      exec: vi.fn<ClickHouseClient["exec"]>(),
       command: vi.fn(async () => undefined),
       insert: vi.fn(async () => undefined),
       query: vi.fn(async () => ({ json: async () => [] })),

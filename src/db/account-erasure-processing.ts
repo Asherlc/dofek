@@ -3,6 +3,10 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { captureAccountErasurePostgresWalLsn } from "../account-erasure/peerdb-erasure.ts";
 import { assertPostgresAccountErasureComplete } from "../account-erasure/postgres-erasure.ts";
+import {
+  ACCOUNT_ERASURE_SNAPSHOT_LIMITS,
+  assertAccountErasureSnapshotEncryptedBytes,
+} from "../account-erasure/snapshot-budget.ts";
 import type { AccountErasurePhase } from "../jobs/process-account-erasure-job.ts";
 import type { Database } from "./index.ts";
 import { executeWithSchema, timestampStringSchema } from "./typed-sql.ts";
@@ -17,6 +21,7 @@ const checkpointDetailsRowSchema = z.object({
 const claimedRequestRowSchema = z.object({
   completion_deadline: timestampStringSchema,
   encrypted_remote_snapshot: z.string().min(1).nullable(),
+  encrypted_snapshot_bytes: z.coerce.number().int().nonnegative(),
   id: z.uuid(),
   pii_scrubbed_at: timestampStringSchema.nullable(),
   requested_at: timestampStringSchema,
@@ -207,13 +212,16 @@ export async function claimAccountErasureRequest(
           user_id,
           user_hash,
           user_hash_key_id,
-          encrypted_remote_snapshot,
+          coalesce(octet_length(encrypted_remote_snapshot),0) AS encrypted_snapshot_bytes,
+          CASE WHEN octet_length(encrypted_remote_snapshot)<=${ACCOUNT_ERASURE_SNAPSHOT_LIMITS.encryptedBytes}
+            THEN encrypted_remote_snapshot ELSE NULL END AS encrypted_remote_snapshot,
           pii_scrubbed_at,
           requested_at,
           replay_retained_until,
           completion_deadline`,
   );
   const row = rows[0];
+  if (row) assertAccountErasureSnapshotEncryptedBytes(row.encrypted_snapshot_bytes);
   return row
     ? {
         completionDeadline: new Date(row.completion_deadline),
@@ -551,6 +559,11 @@ export async function scrubAccountErasureRequestPii(
     if (profiles[0]?.count !== 0) {
       throw new Error("Account erasure cannot scrub request PII before deleting the user profile");
     }
+
+    await transaction.execute(
+      sql`DELETE FROM fitness.account_erasure_identifier
+          WHERE request_id = ${requestId}::uuid`,
+    );
 
     await transaction.execute(
       sql`INSERT INTO fitness.account_erasure_checkpoint (

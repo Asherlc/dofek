@@ -24,12 +24,9 @@ const snapshot: AccountErasureRemoteSnapshot = {
   authIdentities: [],
   externalEffects: [],
   localIdentifiers: {
-    activityIds: ["30000000-0000-4000-8000-000000001994"],
     exportObjects: [],
     fileUploads: [],
-    processingOperationIds: ["40000000-0000-4000-8000-000000001994"],
     sessionIds: [],
-    sleepSessionIds: [],
     userId: request.userId ?? "missing-user",
   },
   posthogDistinctId: request.userId ?? "missing-user",
@@ -52,6 +49,8 @@ const peerDbStagingBoundary = {
 
 function dependencies(): AccountErasurePhaseRunnerDependencies {
   return {
+    prepareIdentifiers: vi.fn().mockResolvedValue(undefined),
+    assertIdentifiersReady: vi.fn().mockResolvedValue(undefined),
     assertConsumersDrained: vi.fn().mockResolvedValue(undefined),
     assertPeerDbDrained: vi.fn().mockResolvedValue(undefined),
     assertQuarantineExpired: vi.fn().mockResolvedValue(undefined),
@@ -102,6 +101,7 @@ function execution(
   overrides: Partial<AccountErasurePhaseExecution> = {},
 ): AccountErasurePhaseExecution {
   return {
+    leaseOwner: "phase-fixture-worker",
     deleteProfile: vi.fn().mockResolvedValue({ walLsn: "0/1A2B" }),
     loadCheckpointDetails: vi.fn().mockResolvedValue(null),
     loadProgress: vi.fn().mockResolvedValue(null),
@@ -118,6 +118,54 @@ beforeEach(() => {
 });
 
 describe("createAccountErasurePhaseRunner", () => {
+  it("prepares complete initial identity closure after drain and before completing its checkpoint", async () => {
+    const deps = dependencies();
+    const run = execution({
+      loadCheckpointDetails: vi.fn().mockResolvedValue({
+        highWatermarks: [{ topic: "metric-stream-v1", low: "1", offset: "2", partition: 0 }],
+      }),
+    });
+    vi.mocked(deps.prepareIdentifiers).mockRejectedValueOnce(
+      new Error("identity closure incomplete"),
+    );
+    await expect(
+      createAccountErasurePhaseRunner(deps).runPhase("consumer_drain", run),
+    ).rejects.toThrow("identity closure incomplete");
+    expect(deps.assertConsumersDrained).toHaveBeenCalled();
+    expect(deps.captureQuarantineHighWatermarks).not.toHaveBeenCalled();
+    expect(deps.prepareIdentifiers).toHaveBeenCalledWith({
+      requestId: request.id,
+      userId: request.userId,
+      leaseOwner: "phase-fixture-worker",
+      stage: "initial",
+    });
+  });
+
+  it.each([
+    "remote_revocation",
+    "processor_erasure",
+    "postgres_erasure",
+    "clickhouse_initial",
+    "archive_initial",
+    "postgres_profile_delete",
+    "archive_verification",
+  ] as const)("refuses %s effects without its durable identity closure proof", async (phase) => {
+    const deps = dependencies();
+    vi.mocked(deps.assertIdentifiersReady).mockRejectedValueOnce(
+      new Error("identity closure incomplete"),
+    );
+    const run = execution();
+    await expect(createAccountErasurePhaseRunner(deps).runPhase(phase, run)).rejects.toThrow(
+      "identity closure incomplete",
+    );
+    expect(deps.erasePostgres).not.toHaveBeenCalled();
+    expect(deps.eraseClickHouse).not.toHaveBeenCalled();
+    expect(deps.eraseArchive).not.toHaveBeenCalled();
+    expect(deps.eraseProcessors).not.toHaveBeenCalled();
+    expect(deps.revokeRemote).not.toHaveBeenCalled();
+    expect(run.deleteProfile).not.toHaveBeenCalled();
+  });
+
   it("saves refreshed remote credentials before propagating a deletion failure", async () => {
     const deps = dependencies();
     const run = execution();
@@ -154,7 +202,11 @@ describe("createAccountErasurePhaseRunner", () => {
       ],
     });
 
-    expect(deps.fenceIngest).toHaveBeenCalledWith(snapshot);
+    expect(deps.fenceIngest).toHaveBeenCalledWith({
+      requestId: request.id,
+      userId: request.userId,
+      leaseOwner: "phase-fixture-worker",
+    });
     expect(deps.fenceIngest).toHaveBeenCalledBefore(vi.mocked(deps.captureHighWatermarks));
     expect(run.loadCheckpointDetails).toHaveBeenCalledWith("ingest_fence");
     expect(deps.assertConsumersDrained).toHaveBeenCalledWith([
@@ -198,7 +250,12 @@ describe("createAccountErasurePhaseRunner", () => {
     });
     expect(deps.eraseArchive).toHaveBeenNthCalledWith(
       1,
-      snapshot,
+      {
+        requestId: request.id,
+        userId: request.userId,
+        leaseOwner: "phase-fixture-worker",
+        stage: "initial",
+      },
       expect.objectContaining({
         startAfter: "metric-stream/v1/2026/07/part-1.jsonl.gz",
       }),
@@ -214,12 +271,22 @@ describe("createAccountErasurePhaseRunner", () => {
     });
     expect(deps.eraseArchive).toHaveBeenNthCalledWith(
       2,
-      snapshot,
+      {
+        requestId: request.id,
+        userId: request.userId,
+        leaseOwner: "phase-fixture-worker",
+        stage: "final",
+      },
       expect.objectContaining({ startAfter: undefined }),
     );
     expect(deps.eraseArchive).toHaveBeenNthCalledWith(
       3,
-      snapshot,
+      {
+        requestId: request.id,
+        userId: request.userId,
+        leaseOwner: "phase-fixture-worker",
+        stage: "final",
+      },
       expect.objectContaining({ startAfter: undefined }),
     );
   });
@@ -280,7 +347,10 @@ describe("createAccountErasurePhaseRunner", () => {
 
     expect(run.deleteProfile).toHaveBeenCalledOnce();
     expect(run.loadCheckpointDetails).toHaveBeenCalledWith("postgres_profile_delete");
-    expect(deps.assertPeerDbDrained).toHaveBeenCalledWith(snapshot, "0/1A2B");
+    expect(deps.assertPeerDbDrained).toHaveBeenCalledWith(
+      { requestId: request.id, userId: request.userId, leaseOwner: "phase-fixture-worker" },
+      "0/1A2B",
+    );
     expect(deps.assertPeerDbDrained).toHaveBeenCalledBefore(
       vi.mocked(deps.capturePeerDbStagingBoundary),
     );

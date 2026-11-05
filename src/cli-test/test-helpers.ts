@@ -146,3 +146,8 @@ export const mockRunMetricStreamClickHouseSinkFromEnv = vi.fn(async () => undefi
 vi.mock("../metric-stream/clickhouse-sink.ts", () => ({
   startMetricStreamClickHouseSinkFromEnv: mockRunMetricStreamClickHouseSinkFromEnv,
 }));
+
+export const mockStartMetricStreamR2ArchiveFromEnv = vi.fn(async () => undefined);
+vi.mock("../metric-stream/r2-archive.ts", () => ({
+  startMetricStreamR2ArchiveFromEnv: mockStartMetricStreamR2ArchiveFromEnv,
+}));

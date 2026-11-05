@@ -1,0 +1,17 @@
+# Native client/broker tests only; not the production Oxia/offload topology.
+# https://pulsar.apache.org/docs/5.0.x/getting-started-docker/
+services:
+  pulsar-consumer-broker:
+    image: apachepulsar/pulsar:5.0.1@sha256:4507075d8c11b34629f3a0b41f48e3c659951e601538562ee0c088cd2c737ec0
+    mem_limit: 4g
+    environment:
+      PULSAR_MEM: -Xms256m -Xmx1g -XX:MaxDirectMemorySize=1g
+    command: ["bin/pulsar", "standalone", "--advertised-address", "localhost"]
+    ports:
+      - "127.0.0.1:6650:6650"
+      - "127.0.0.1:8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8080/admin/v2/brokers/health"]
+      interval: 2s
+      timeout: 5s
+      retries: 30

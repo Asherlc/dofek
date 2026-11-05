@@ -175,3 +175,37 @@ This qualifies finite delivery and acknowledgement-failure replay. It does not
 qualify a process kill during a ClickHouse response, sustained throughput/RSS,
 production Swarm addressing, R2 outage behavior or physical storage caps. Those
 remain release gates in the living index.
+
+## November 5 native archive and paged identifier checks
+
+The [archive consumer](../src/metric-stream/r2-archive.ts) now has a production
+CLI caller. Its focused tests cover original bytes, contiguous publish-hour
+grouping, native provenance keys, create-only uploads, bounded collision reads,
+upload-before-ACK ordering and resource cleanup. Two real S3 cases passed using
+the existing bounded SeaweedFS fixture, including identical create-only
+redelivery and the production eraser's rewrite of a native-key object followed
+by refusal to overwrite those changed bytes. The final run used the paged
+erasure API, observed 37 requests and no HTTP errors, and removed its owned
+test container. See the [integration cases](../src/metric-stream/r2-archive.integration.test.ts).
+
+The curated [identifier store](../src/account-erasure/identifier-store.ts) passed
+47 real Postgres cases, including the canonical migration's empty-state success
+and legacy-request refusal, lease checks, crypto ownership and paging across
+500 identifiers. Its source curation has 423 focused unit cases passing. This
+does not requalify the full ClickHouse erasure path or production account size;
+the 400,000/800,000-row evidence from the earlier development branch must be
+repeated after release integration.
+
+The native broker composition is now selected explicitly by a required
+`Native Pulsar Sink` CI job; the existing BookKeeper job selects a different
+fixture. The new job uses a separate standalone broker, Postgres and ClickHouse,
+with service memory limits totaling 9 GiB and a 512 MiB Node heap. GitHub
+currently specifies 16 GB for the public repository's
+[ARM64 standard runner](https://docs.github.com/en/actions/reference/runners/github-hosted-runners#standard-github-hosted-runners-for-public-repositories).
+Workflow/Compose validation passed; execution on that CI runner is pending.
+These service limits do not qualify production physical quotas or RSS.
+
+Release remains blocked on native erasure fencing/drain, safe writer handoff
+when retained work fails, and replay after erasure removes personal journal
+data, in addition to storage and deployment qualification. No production service
+or held provider queue has been changed.

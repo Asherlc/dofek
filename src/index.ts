@@ -14,6 +14,7 @@ import { captureException } from "./lib/error-reporting.ts";
 import { logger } from "./logger.ts";
 import { startMetricStreamClickHouseSinkFromEnv } from "./metric-stream/clickhouse-sink.ts";
 import { closeAllMetricStreamEventPublishers } from "./metric-stream/pulsar-producer.ts";
+import { startMetricStreamR2ArchiveFromEnv } from "./metric-stream/r2-archive.ts";
 import { getAllProviders } from "./providers/index.ts";
 
 export async function handleAuthCommand(args: string[]): Promise<number> {
@@ -203,13 +204,18 @@ export async function main() {
     process.exit(await handleAuthCommand(process.argv));
   }
 
+  if (command === "metric-stream-r2-archive") {
+    await startMetricStreamR2ArchiveFromEnv();
+    return;
+  }
+
   if (command === "metric-stream-clickhouse-sink") {
     await startMetricStreamClickHouseSinkFromEnv();
     return;
   }
 
   logger.error(
-    `Unknown command: ${command}\nUsage: health-data <sync|auth|import|metric-stream-clickhouse-sink>`,
+    `Unknown command: ${command}\nUsage: health-data <sync|auth|import|metric-stream-clickhouse-sink|metric-stream-r2-archive>`,
   );
   process.exit(1);
 }

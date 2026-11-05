@@ -21,11 +21,17 @@ vi.mock("../logger.ts", () => ({
 
 import { runClickHouseMigrations } from "./clickhouse-migrations.ts";
 
-function makeClient(appliedMigrationIds: string[] = []): ClickHouseCommandClient {
+function makeClient(
+  appliedMigrationIds: string[] = [],
+  physicalTables: readonly object[] = [],
+): ClickHouseCommandClient {
   return {
     command: vi.fn(),
     query: async <TRow extends object>({ query }: { query: string }) => ({
       json: async (): Promise<TRow[]> => {
+        if (query.includes("SELECT count() AS tables"))
+          return JSON.parse(JSON.stringify([{ tables: physicalTables.length, bytes: 1024 }]));
+        if (query.includes("FROM system.tables")) return JSON.parse(JSON.stringify(physicalTables));
         const row = {
           migration_count: appliedMigrationIds.some((migrationId) =>
             query.includes(`'${migrationId}'`),
@@ -43,6 +49,26 @@ describe("runClickHouseMigrations", () => {
   beforeEach(() => {
     mockClickHouseMigrations.mockReset();
     mockRunClickHouseMigrationStatement.mockReset();
+  });
+
+  it("rejects an uncovered physical table at startup even when no migrations are pending", async () => {
+    mockClickHouseMigrations.mockReturnValue([]);
+    const client = makeClient(
+      [],
+      [
+        {
+          uuid: "10000000-0000-4000-8000-000000001994",
+          age_milliseconds: 0,
+          database: "analytics",
+          name: "unclassified_rows",
+          engine: "MergeTree",
+          columns: [["id", "UUID"]],
+        },
+      ],
+    );
+    await expect(runClickHouseMigrations(client, "postgres://test")).rejects.toThrow(
+      "Unclassified ClickHouse UUID identity ownership domain: analytics.unclassified_rows.id",
+    );
   });
 
   it("runs statement migrations and records them", async () => {

@@ -13,6 +13,7 @@ import {
   mockLoggerInfo,
   mockRunMetricStreamClickHouseSinkFromEnv,
   mockSaveTokens,
+  mockStartMetricStreamR2ArchiveFromEnv,
   mockWaitForAuthCode,
   mockWaitUntilFinished,
 } from "./cli-test/test-helpers.ts";
@@ -742,6 +743,16 @@ describe("main", () => {
     vi.clearAllMocks();
     closePublishers.mockReset().mockResolvedValue(undefined);
     mockWaitUntilFinished.mockReset().mockResolvedValue(undefined);
+  });
+
+  it("runs the native metric stream R2 archive command", async () => {
+    process.argv = ["node", "index.ts", "metric-stream-r2-archive"];
+    try {
+      await main();
+      expect(mockStartMetricStreamR2ArchiveFromEnv).toHaveBeenCalledOnce();
+    } finally {
+      process.argv = savedArgvForMain;
+    }
   });
 
   it("runs the ClickHouse metric stream sink command", async () => {

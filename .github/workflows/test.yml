@@ -989,9 +989,71 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
+  test-native-sink:
+    name: Native Pulsar Sink
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: timescale/timescaledb-ha:pg18.3-ts2.26.4-all
+        env:
+          POSTGRES_DB: test
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+        ports:
+          - 5432:5432
+        options: >-
+          --memory=1g --cpus=1
+          --health-cmd "pg_isready -U test -d test"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
+      clickhouse:
+        image: clickhouse/clickhouse-server:26.10.2.103-alpine@sha256:d474afd5cd0abfb9fdc6e2ebbc82116324779b085f5c15a851aa91bec968291d
+        env:
+          CLICKHOUSE_DB: fitness
+          CLICKHOUSE_USER: default
+          CLICKHOUSE_PASSWORD: ${{ github.run_id }}
+        ports:
+          - 8123:8123
+        options: >-
+          --memory=4g --cpus=1
+          --health-cmd "clickhouse-client --password ${{ github.run_id }} --query 'SELECT 1'"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    env:
+      TEST_DATABASE_URL: postgres://test:test@localhost:5432/test
+      CLICKHOUSE_URL: http://default:${{ github.run_id }}@localhost:8123
+      PULSAR_TEST_SERVICE_URL: pulsar://localhost:6650
+      PULSAR_TEST_ADMIN_URL: http://localhost:8080
+      NODE_OPTIONS: --max-old-space-size=512
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || '' }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup-node-pnpm
+      - name: Configure ClickHouse journal storage
+        run: |
+          docker cp deploy/clickhouse/config.d/metric-stream-storage.xml '${{ job.services.clickhouse.id }}:/etc/clickhouse-server/config.d/metric-stream-storage.xml'
+          docker exec '${{ job.services.clickhouse.id }}' sh -c 'exec clickhouse-client --password "$CLICKHOUSE_PASSWORD" --query "SYSTEM RELOAD CONFIG"'
+      - name: Start bounded standalone broker
+        run: pnpm compose -- -f docker-compose.pulsar-test.yml up -d --wait --wait-timeout 180
+      - name: Verify native delivery, replay and controls
+        run: pnpm exec vitest run --project pulsar-integration --maxWorkers=1 --retry=0 --bail=1 src/metric-stream/native-sink.pulsar.integration.test.ts
+      - name: Capture native broker failure logs
+        if: failure()
+        run: pnpm compose -- -f docker-compose.pulsar-test.yml logs --no-color
+      - name: Remove owned broker resources
+        if: always()
+        run: pnpm compose -- -f docker-compose.pulsar-test.yml down --remove-orphans --volumes
+
   test-gate:
     name: Unit & Integration Tests
-    needs: [test-unit, test-fit-decoder, test-integration, test-peerdb-integration, test-bookie-evacuation, coverage]
+    needs: [test-unit, test-fit-decoder, test-integration, test-peerdb-integration, test-bookie-evacuation, test-native-sink, coverage]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -1003,6 +1065,7 @@ jobs:
             "${{ needs.test-integration.result }}" \
             "${{ needs.test-peerdb-integration.result }}" \
             "${{ needs.test-bookie-evacuation.result }}" \
+            "${{ needs.test-native-sink.result }}" \
             "${{ needs.coverage.result }}"; do
             if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
               echo "A required job failed or was cancelled"
@@ -1011,6 +1074,10 @@ jobs:
           done
           if [ "${{ needs.test-bookie-evacuation.result }}" != "success" ]; then
             echo "Required native BookKeeper qualification did not succeed"
+            exit 1
+          fi
+          if [ "${{ needs.test-native-sink.result }}" != "success" ]; then
+            echo "Required native Pulsar sink qualification did not succeed"
             exit 1
           fi
 

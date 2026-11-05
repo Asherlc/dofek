@@ -35658,4 +35658,33 @@ were pre-merge corrections; no production deployment occurred.
 - **Confirmed cause:** The repository's inherited `command(values)` interface did not match `@clickhouse/client` 1.23.1. Its packaged `dist/common/client.js` forwards streamed values through `exec()`, not `command()`. The unit fake consumed the unsupported argument and hid the mismatch. See the [published client artifact](https://registry.npmjs.org/@clickhouse/client/-/client-1.23.1.tgz) and [JavaScript client API](https://clickhouse.com/docs/integrations/javascript#exec-method).
 - **Correction and validation:** The grouped writer now uses stock `exec(values)` with `wait_end_of_query=1` and consumes the full response to EOF under the query owner before committing receipts or advancing the frontier. A `written_rows` lower bound catches an undercount; equality is invalid because materialized views add writes to the summary. Prepared recovery manifests remain pending on failure. Official client signatures now constrain the fakes. The full real Postgres/ClickHouse sink file passes all 19 cases, including exact raw rows for groups of one and 500, replay, deletes, markers and acknowledgement ordering; focused unit tests cover interrupted responses and summary failures. No timeout, retry or resource limit was raised. See the [client completion settings](https://clickhouse.com/docs/integrations/javascript#clickhouse-settings).
 - **Additional test defects:** Real-engine reproduction confirmed that a display alias `toString(id) AS id` shadowed the native UUID predicate and returned an empty result. The readback now selects the native column and orders explicitly by its string representation where the assertion expects string order. An obsolete 350-control coalescing test was replaced with exact per-control receipts and versions matching the native consumer contract. The four-control diagnostic took about 1.40 seconds and 134 ClickHouse calls; it does not qualify a large provider deletion.
-- **Remaining release gates:** Independent source review, real broker-to-sink qualification and current-path throughput remain open. The earlier DULL throughput figure is not qualification of this client path. Carry control-burst drain time into the whole-host soak, alongside the existing physical storage and deployment gates. Automatic deployment and all production holds remain unchanged.
+- **Subsequent qualification and remaining gates:** Independent source review found no critical or important issue, and both finite real-broker composition cases passed. Current-path throughput remains open; the earlier DULL figure does not qualify this client path. Carry control-burst drain time into the whole-host soak, alongside the physical storage, erasure and deployment gates. Automatic deployment and all production holds remain unchanged.
+
+## 2026-11-05 — Erasure handoff and local test qualification remain unresolved
+
+- **Impact:** Local R1 release qualification only. Production transport, paused
+  deployment and all four holds are unchanged.
+- **Confirmed erasure handoff defect:** A real Postgres/ClickHouse test persisted
+  a complete pending group descriptor and its ingestion reservation, then observed
+  a fully consumed native server error. Admission of the erasure writer failed
+  with `has pending intent ...; replay that intent before admitting another delivery`.
+  The [owner](../src/analytics/analytics-query-owner.ts) retains a failed write's
+  intent even after it is known terminal. A journal that is physically full could
+  therefore prevent erasure from acquiring the writer. This test qualifies the
+  known-terminal error boundary, not physical EDQUOT enforcement.
+- **Related proof dependency:** Erasure removes personal journal/effect-receipt
+  rows that [delivery replay](../src/analytics/analytics-delivery.ts) currently
+  re-verifies. The correction must preserve structural recovery evidence while
+  physically removing identifying columns, retain original membership and time
+  reservations, and keep unknown request outcomes blocked. Streaming delete
+  effects come from current raw rows matching a scope; they cannot all be
+  reconstructed from the native message after erasure. No protocol correction
+  has been implemented or qualified. Safe journal retirement remains R2 work.
+- **Unresolved test-runner event:** A combined unit/mobile run stopped after
+  3,819 passing cases because the reporter's child fixture had not emitted
+  `hook.start` by its existing ten-second deadline. Its original error incorrectly
+  claimed pipes had not closed without observing closure. The test diagnostic now
+  records safe lifecycle states, marker presence, byte counts and event names.
+  One isolated run passed in 931 ms; that does not establish the broad-run cause.
+  A bounded instrumented broad reproduction is pending. No timeout, retry,
+  assertion or production reporter behavior was changed.

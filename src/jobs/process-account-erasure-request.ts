@@ -1,6 +1,7 @@
 import * as Sentry from "@sentry/node";
 import { z } from "zod";
 import { updateAccountErasureProviderCredentials } from "../account-erasure/remote-snapshot.ts";
+import { AccountErasureSnapshotBudgetError } from "../account-erasure/snapshot-budget.ts";
 import type { TokenSet } from "../auth/oauth.ts";
 import {
   type ClaimedAccountErasureRequest,
@@ -47,6 +48,7 @@ function reportAccountErasureFailure(
 }
 
 export interface AccountErasurePhaseExecution {
+  leaseOwner: string;
   deleteProfile(): Promise<{ walLsn: string }>;
   request: ClaimedAccountErasureRequest;
   persistProviderCredentials(providerId: string, tokens: TokenSet): Promise<void>;
@@ -128,13 +130,32 @@ export async function processAccountErasureRequest(
   phaseRunner: AccountErasurePhaseRunner,
   now = new Date(),
 ): Promise<AccountErasureRequestProcessingResult> {
-  const request = await claimAccountErasureRequest(
-    database,
-    requestId,
-    leaseOwner,
-    LEASE_DURATION_MS,
-    now,
-  );
+  let request: ClaimedAccountErasureRequest | null;
+  try {
+    request = await claimAccountErasureRequest(
+      database,
+      requestId,
+      leaseOwner,
+      LEASE_DURATION_MS,
+      now,
+    );
+  } catch (error: unknown) {
+    reportAccountErasureFailure("coordination", error);
+    // This typed refusal happens only after claim committed our request lease.
+    if (error instanceof AccountErasureSnapshotBudgetError) {
+      try {
+        await markAccountErasureFailed(database, requestId, leaseOwner, error.message);
+      } catch (persistenceError: unknown) {
+        reportAccountErasureFailure("retry_state", persistenceError);
+        throw new AggregateError(
+          [error, persistenceError],
+          "Account erasure failed and its retry state could not be fully persisted",
+          { cause: error },
+        );
+      }
+    }
+    throw error;
+  }
   if (!request) return { status: "not_claimed" };
 
   const heartbeat = startLeaseHeartbeat(database, request.id, leaseOwner);
@@ -191,6 +212,7 @@ export async function processAccountErasureRequest(
           try {
             heartbeat.assertHealthy();
             const details = await phaseRunner.runPhase(phase, {
+              leaseOwner,
               deleteProfile: async () => {
                 if (!request.userId) {
                   throw new Error("Account erasure user profile was already deleted");
