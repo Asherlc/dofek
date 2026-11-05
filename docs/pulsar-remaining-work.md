@@ -11,6 +11,18 @@ or the release scope changes. A local fixture pass is not production approval.
 
 ## Approved release split
 
+**Pending scope decision:** The user requested minimal changes and a small
+transport-neutral application boundary, so changing brokers does not change
+jobs such as `sync-processing-operation`. A proposal awaits approval to defer
+the analytics journal and placements to R2 and retain R1's raw sink, durable
+replay checkpoints, archive, erasure and storage gates. This would supersede
+the capped-journal choice below; it has **not** been approved. Preserve the
+unfinished journal work and do not assemble either alternative as settled.
+Legacy version-0 rows need explicit replay qualification: the
+[current production sink](../src/metric-stream/clickhouse-sink.ts) assigns
+ingestion times, so storage-engine replacement alone is insufficient evidence
+that replay preserves the winning row.
+
 The user approved a transport-first milestone on November 5. Its scope is:
 
 - Replace sensor transport with Pulsar, the official Consumer and the existing
