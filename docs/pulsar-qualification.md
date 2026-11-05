@@ -1525,3 +1525,28 @@ physical certificate must precede cleanup, and the current mutation descriptor
 must remain until metadata absence is verified, before advancing its cursor.
 Crash tests and a real-engine upgrade regression remain required. See the
 stock [KILL MUTATION command](https://clickhouse.com/docs/sql-reference/statements/kill#kill-mutation).
+
+## November 5: ARM server-image native module check
+
+The final `server` target from the existing [Dockerfile](../Dockerfile) built
+once for `linux/arm64`, using the bounded 4 GiB builder with no swap. The
+uncommitted source snapshot was tree `c556c82585c5fe2e4f248e406947c4773e7a7f76`;
+the resulting image was
+`sha256:d4e61f726214a4c4559b462b12d3d7793931d810349a85deb803fd54892af4cf`.
+It loaded `pulsar-client` 1.18.0 with networking disabled, a 512 MiB container
+limit and the shipping image's UID 1000. No Client was constructed and no
+broker connection or HTTP server was started. Build and load both exited zero.
+
+The upstream [musl/ARM64 build matrix](https://github.com/apache/pulsar-client-node/blob/v1.18.0/.github/workflows/ci-build-release-napi.yml)
+and [official artifact](https://archive.apache.org/dist/pulsar/pulsar-client-node/pulsar-client-node-1.18.0/napi-linux-musl-arm64.tar.gz)
+support packaging intent; the actual image load supplies evidence for our
+runtime. No compatibility package or native-client patch was added. This does
+not qualify message delivery, outage behavior, sustained RSS or production fit.
+
+The builder reported peak charge of 4,295,868,416 bytes, including cache, with
+zero OOM events or kills. Do not claim headroom below its configured limit.
+It was stopped after the observer completed. Local Docker space preparation
+removed 97 re-inspected stopped containers without volume deletion, pruned
+1.28 GB of rebuildable cache and reclaimed 7.742 GB of unused images. Running
+containers and database volumes were preserved. The native lifecycle fixture
+was not repeated and production was unchanged.

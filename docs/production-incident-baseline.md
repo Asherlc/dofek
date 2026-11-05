@@ -36057,3 +36057,18 @@ passed. No checks were disabled and no retries or timeouts were added. All
 required checks subsequently passed and PR #3229 merged as
 [`5a16593ba`](https://github.com/Asherlc/dofek/commit/5a16593ba574f547ec20907494fb1a4f67469397).
 Automatic deployment remains disabled; no production deployment occurred.
+
+### November 5, 2026 — local ARM image qualification preparation
+
+Local Docker had about 8.2 GiB available before the final ARM server-image
+check. Under standing cleanup approval, 97 stopped containers were re-inspected
+and removed without deleting volumes; cache and unused-image pruning restored
+about 18.3 GiB available. Running services and named database volumes remained.
+The source-context guard first rejected committed non-secret defaults and
+historical Markdown before any build began. The corrected context excludes
+workspace evidence and local environments while retaining only the unchanged
+tracked defaults required by the Dockerfile. No production code workaround was
+introduced. The subsequent single image build and isolated module load passed;
+see the [qualification and limits](pulsar-qualification.md#november-5-arm-server-image-native-module-check).
+Next time, prepare the Git source snapshot and local disk budget before
+starting native image qualification. Production and its holds were unchanged.

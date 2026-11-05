@@ -177,7 +177,7 @@ cover existing raw data. A November 5 metadata-only observation counted
 189,609,383 active physical raw rows in 30 parts, with no source-placement
 parts returned. This is not a distinct-ID count or bootstrap-size proof; see
 the [measurement record](pulsar-qualification.md#november-5-journal-sizing-and-mutation-metadata-observations).
-Physical erasure metadata now passes 45 real Postgres tests, but its native
+Physical erasure metadata now passes 47 real Postgres tests, but its native
 proof and caller integration remain unfinished. The selected cleanup order is
 durable physical completion, removal and verified absence of native mutation
 metadata, then the cleanup cursor advance. See the
@@ -188,6 +188,15 @@ not qualify the full path: crash recovery, schema drift, projection lineage,
 remaining consumers and the 400,000-row/scaling resource gates remain open.
 See the [physical proof implementation](../src/account-erasure/clickhouse-physical-erasure.ts)
 and [real-engine cases](../src/account-erasure/clickhouse-erasure.integration.test.ts).
+This development checkpoint is still uncommitted; the linked files name the
+migration destination, not a released implementation. The final native subset
+also covers historical lookup by exact table UUID across a prior rename.
+
+The native sender and process-cleanup slice passes 270 focused tests and type
+checks. The actual final server image also loaded the official native module
+on Linux ARM64 as UID 1000, with networking disabled. This closes module
+packaging only, not sender/Consumer behavior or whole-host resource gates.
+See the [shipping-image result](pulsar-qualification.md#november-5-arm-server-image-native-module-check).
 
 The approved Node Consumer remains the intake strategy. Queue, group-count and
 byte bounds are required settings, with RSS measured at activation. Create-only
