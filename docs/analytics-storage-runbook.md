@@ -51,7 +51,11 @@ Analytics stays held in R1, so the journal is retained and can fill its cap.
 The cap must fail closed: failed sink writes prevent acknowledgment, bounded
 Pulsar backlog then holds producers. Measure live intake, size the retained-work
 window with merge margin, and alert before exhaustion with estimated time to
-full. R1 makes no indefinite-ingestion claim. Restoring the holds requires
+full. The user confirmed on November 5 that safe retirement stays in R2:
+R1 alerts at 70% with projected time to full and accepts a controlled intake
+stop if the cap fills. Exact cap allocations and runway still require
+qualification before deployment. R1 makes no indefinite-ingestion claim.
+Restoring the holds requires
 retirement support or proof that the cap covers the complete drain, including
 remaining providers and the verified history tail, with margin.
 
@@ -60,7 +64,9 @@ No age-only TTL or partition purge is approved. Current
 journal/receipt proofs even after frontier advancement and owner release.
 Pending, uncertain and retained completed groups must remain recoverable.
 Safe retirement needs a durable protocol certificate plus downstream coverage;
-it remains mandatory R2 work. R2 raw-effect bootstrap also covers R1 intake.
+it remains mandatory R2 work, tracked in the
+[safe-retirement to-do list](pulsar-remaining-work.md#r2-safe-journal-retirement-to-do).
+R2 raw-effect bootstrap also covers R1 intake.
 
 The November 5 live-topic metadata window, 10:03:50–10:09:15 UTC, observed
 partition 0 at epoch 1 with the high watermark unchanged at 238,803,373.
@@ -97,12 +103,13 @@ placement has its own retention and bootstrap obligation; do not assume it can
 be retired with delivery proofs. Measure sustained post-merge bytes per event
 for each table, merge/mutation peak and the expected retention interval before
 adopting allocations. Compare the resulting runway with the time needed to
-ship safe retirement. If it cannot fit the host budget, explicitly decide
-between bringing retirement into R1 and a planned stop of live intake.
+ship safe retirement and state the planned stop boundary explicitly. The user
+selected the retained, capped journal for R1; this does not authorize exceeding
+the cap or reserve while waiting for R2.
 The smaller merged figures supersede fresh-part allocation as an estimate of
 retained active data, while the larger immediate allocation remains evidence
-that rewrite overlap must be budgeted. Native sink assembly waits for that
-retention decision; independent shutdown and erasure work can continue.
+that rewrite overlap must be budgeted. The retention decision is settled, so
+native sink assembly can proceed. Capacity and activation remain open gates.
 
 ## Latest read-only host observation
 

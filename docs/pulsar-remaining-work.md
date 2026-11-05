@@ -21,6 +21,10 @@ The user approved a transport-first milestone on November 5. Its scope is:
 - Keep physical storage limits, resource qualification and account-erasure
   gates binding, including bounded identifier capture for large accounts.
 - Keep all four production holds until a separate restoration decision.
+- Keep safe journal retirement in R2, as the user confirmed on November 5.
+  R1 retains the grouped sink and physically capped journal, alerts at 70%
+  with projected time remaining, and stops intake if the cap fills. Exact
+  allocations and runway must pass the host-budget gate before deployment.
 
 This milestone is **not completion of the full project**. Bounded analytics,
 owned CDC, the new CDC generation and complete legacy archive conversion remain
@@ -167,10 +171,12 @@ The current storage inputs and their limits are recorded in the
 They do not establish a production allocation or sustained ingestion runway.
 A post-merge fixture reduced the active-data estimate to about 0.98 GB/day
 combined at the observed average, or 2.13 GB/day at the higher observed rate.
-The user decision is pending: retain the current sink with an explicitly
-accepted cap-exhaustion stop, bring retirement into R1, or change the sink's
-retained state. No option changes the production holds. Do not assemble a
-different sink protocol before that decision.
+The user chose to keep safe retirement in R2. R1 retains the current grouped
+sink, with an explicitly accepted stop if its journal cap fills. Alert at 70%
+and report projected time to full; warning time depends on the qualified cap
+and measured rate. Native sink assembly can proceed under this scope. Exact
+capacity, deployment and restoration gates remain binding; production holds
+are unchanged.
 Source placement is permanent structural growth, not journal backlog. Its
 bounded keyset bootstrap remains required before global identity lookup can
 cover existing raw data. A November 5 metadata-only observation counted
@@ -216,7 +222,7 @@ evidence and erasure races remain release gates.
 
 | Work | Existing implementation / evidence | Resume point |
 | --- | --- | --- |
-| Journal retirement | No safe retirement boundary exists in the current covered-replay protocol | Add a durable retirement certificate and downstream-coverage proof before deleting journal/manifests/receipts. R1 retains them on a physically capped disk with visible backpressure. No age-only TTL or partition purge. R2 bootstrap must cover raw rows ingested during R1 too; see [cap scope](analytics-storage-runbook.md#first-release-cap-scope-and-journal-retention). |
+| Safe journal retirement — R2 | Explicitly deferred by the user on November 5; not implemented | Complete the [retirement to-do list](#r2-safe-journal-retirement-to-do) before reclaiming recovery proofs. R1 retains them behind its physical cap. |
 | Bounded activity effects | Sensor SQL and structural journal foundations exist | [Analytics task 4](superpowers/plans/2026-11-03-bounded-analytics.md#task-4-bounded-activity-impact-and-durable-downstream-effects): complete prior/current associations, paged fan-out, deletion and activity-only CDC edits. |
 | Deduplication/activity executor and activation | Scalar checkpoint exists; remaining stages and full closure do not | [Tasks 5–6](superpowers/plans/2026-11-03-bounded-analytics.md#task-5-serialized-executor-query-ownership-and-output-before-cursor-recovery): stage recovery, query ownership, causal coverage and truthful job/cache completion. Bootstrap effects over existing raw data before activation. Retire unowned dbt subprocess writers as required by the final ownership model. |
 | Owned CDC | Pure transaction gate and eight-context decoder exist; no raw writes | [Owned CDC assessment](owned-cdc-assessment.md) and [CDC coverage task](superpowers/plans/2026-11-03-bounded-analytics.md#task-6-causal-sensorcdc-coverage-and-truthful-jobcache-completion). First establish bounded cross-topic commit-prefix application; a complete transaction alone is insufficient. Then implement revision-scoped parent ownership, CDC effects, atomic transaction integration and all 18 destinations. Unknown ownership/schema/incarnation blocks. PeerDB retirement is deferred. |
@@ -225,6 +231,36 @@ evidence and erasure races remain release gates.
 | Full legacy conversion | Streaming byte-preserving reader exists; complete metadata census reached EOF | [Transport task 5](superpowers/plans/2026-11-03-single-server-pulsar.md#task-5-convert-all-existing-r2-archives-into-native-pulsar-storage): sender, transfer ledger, account routing, changed-object recovery, completion and read verification. Preserve every source occurrence and original bytes. Ownerless personal controls are blocked unless canonical ownership is established. Markers provide provenance, not new completion. |
 | Archive capacity and replay | 399,547 objects / 56,803,150,041 compressed listed bytes inventoried; no full conversion rate proof | Measure producer compression, hot ledger/offload bandwidth and bounded memory/disk on representative objects. Do not extrapolate one gzip ratio to the full archive. Only the verified unread history tail is a known raw-ingestion candidate; other archives' ClickHouse coverage remains unknown. Replaying old version-zero rows with fresh ingestion times can change winners. |
 | Final restoration and retirement | No production Pulsar cutover or provider restoration | [Final integration](superpowers/plans/2026-11-03-bounded-analytics.md#task-9-bootstrap-migration-integration-and-final-restoration-gates) and [transport task 7](superpowers/plans/2026-11-03-single-server-pulsar.md#task-7-sealed-cutover-complete-archive-conversion-and-incident-recovery). Reconcile all source/transfer boundaries, restore holds only by explicit decision, verify original provider checkpoints and retire obsolete paths only after verified replacement. |
+
+### R2 safe journal retirement to-do
+
+Status: **required, deferred to R2, not implemented**. The user confirmed this
+release boundary on November 5. Start from the current
+[covered-replay coordinator](../src/analytics/analytics-delivery.ts),
+[stream state](../src/analytics/analytics-work-store.ts) and
+[journal/receipt protocol](../src/analytics/effect-journal.ts).
+
+- [ ] Persist a monotonic retirement certificate per stream. Advance it only
+  when the processed frontier covers the range and no pending group, retained
+  completed descriptor or owner intent still requires its proofs.
+- [ ] Make replay recognize certified retired ranges while preserving full
+  receipt verification above the certificate. Unknown owner state, epochs or
+  recovery evidence must block safely.
+- [ ] Implement bounded physical cleanup under the existing serialized owner.
+  Persist eligibility before deleting anything; make cleanup resumable after
+  a crash. A time window alone is not proof of eligibility.
+- [ ] Require downstream coverage when analytics is active. Bootstrap effects
+  from all required raw data, including R1 intake, before analytics activation.
+- [ ] Qualify crashes around certificate persistence, cleanup and
+  acknowledgment; pending/completed descriptor protection; replay after
+  cleanup; account erasure across retained and retired ranges; and actual
+  space reclamation within the storage budget.
+
+This retires ingestion bookkeeping, not canonical sensor data. Preserve raw
+ClickHouse data, R2 archives and permanent source-placement indexes according
+to their own lifecycle policies. Keep physical caps and alerts after retirement
+ships. Restoring the production holds still needs its capacity proof and
+separate approval; see the [storage contract](analytics-storage-runbook.md#first-release-cap-scope-and-journal-retention).
 
 ## Continuation rules and immediate next step
 
