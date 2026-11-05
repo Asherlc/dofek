@@ -208,7 +208,7 @@ remained under the two-setup-failure stop rule.
 The remaining capture produced 42 native messages: eight snapshot rows across
 all seven tables, plus three source transactions. The native client exited zero
 and wrote its completion artifact. The throwaway wrapper raced that exit and
-failed its observation check; postconditions were validated offline from the
+failed its observation check; checks were validated offline from the
 retained native artifact, with no capture rerun. Its SHA-256 is
 `2ca5343c7df0498cfead19f3d7476cd373245905056285eb7742dffa7554f0d7`.
 Full before/after column shapes, microsecond timestamps, JSON arrays/nulls,

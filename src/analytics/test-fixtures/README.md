@@ -16,7 +16,7 @@ key, enumerable properties and base64 payload bytes.
   synthetic operation.
 
 The fitness native client exited successfully. The throwaway wrapper raced its
-normal exit; postconditions were validated offline from the retained native
+normal exit; checks were validated offline from the retained native
 artifact. Its SHA-256 is
 `2ca5343c7df0498cfead19f3d7476cd373245905056285eb7742dffa7554f0d7`.
 The wrapper was not fixed or reused. These fixtures qualify source envelopes,
