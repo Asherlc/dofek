@@ -99,7 +99,7 @@ assembly gates, not completed review findings.
 | Scalar executor | Owner, page recovery, account guards, generation checks, publication revisions and visible memory failure are implemented. Deduplication and activity execution are not activated. See [executor tests](../src/analytics/bounded-analytics.integration.test.ts). |
 | CDC source boundary | Transaction accounting and typed decoding cover seven source tables plus projected parent ownership context. Snapshot, complete parent-delete cascade and temporal boundary evidence are retained. No owned CDC writes or cross-topic application frontier exist. See [fixtures](../src/analytics/test-fixtures/README.md). |
 | Earlier development validation | Commit `841064140`: 66 focused cases, the real ClickHouse temporal round-trip case, TypeScript and source formatting/spelling checks pass. Full unit tier: 24,782 passed, 19 existing skips. |
-| Native archive parser and eraser | Legacy/native keys, malformed-ID rejection and exact surviving bytes pass unit and real S3 tests. Source checkpoint `81b5fb84f` is pushed; production activation remains gated. See [archive layout](metric-stream-redpanda-r2-runbook.md#prepared-pulsar-native-key-variant). |
+| Native archive parser and eraser | Key parsing merged in PR #3229. Bounded, exact-byte streaming merged in [PR #3230](https://github.com/Asherlc/dofek/pull/3230) as [`2752451fb`](https://github.com/Asherlc/dofek/commit/2752451fb4a7404e5d887d32341595a42a673dcd), with all nine required CI checks passing. Its 54 focused cases and six real-S3 cases cover framing, byte bounds, buffer ownership, EOF and ETag safety. Source is merged; automatic deployment remains paused. See [archive layout](metric-stream-redpanda-r2-runbook.md#prepared-pulsar-native-key-variant). |
 | Lifecycle | The authorized stable-endpoint run passed alert, mixed-ledger offload, expiry, A removal, evacuation, exact B reads before/after deliberate broker and replacement restarts, old-source retirement and cleanup. This qualifies the local model only. See the [successful result](pulsar-qualification.md#november-5-stable-endpoint-lifecycle-passes). |
 
 ## First milestone: unfinished release gates
@@ -289,6 +289,16 @@ passed; do not duplicate it. Local terminal sessions and private artifact paths 
 workspace progress ledger; checked-in evidence is linked from the qualification
 record. Use [the testing guide](testing.md) and preserve the approved local
 resource overlays when running engine tests.
+
+Merging the archive prerequisite does not activate production Pulsar. The
+sender, Consumer, sink, archive writer, storage/deployment qualification and
+controlled cutover still have to form the release unit. When integrating the
+prepared paged erasure code, build on the
+[merged byte reader](https://github.com/Asherlc/dofek/blob/2752451fb4a7404e5d887d32341595a42a673dcd/src/metric-stream/archive-lines.ts)
+and [eraser](https://github.com/Asherlc/dofek/blob/2752451fb4a7404e5d887d32341595a42a673dcd/src/account-erasure/archive-erasure.ts).
+Preserve final-line termination, CRLF blank-line handling, copied source
+fragments and the awaited scan pipeline; replacing those files from an older
+development snapshot would regress the merged fixes.
 
 At each milestone, update the relevant row with its commit, verification and
 remaining limit. Keep deferred items open until their stated proof exists.
