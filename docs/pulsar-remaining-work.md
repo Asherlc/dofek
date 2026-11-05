@@ -1,6 +1,6 @@
 # Pulsar release scope and remaining work
 
-Last reconciled: November 5, 2026 UTC, through commit `841064140`.
+Last reconciled: November 5, 2026 UTC, through source checkpoint `81b5fb84f`.
 
 This is the current continuation index for the Pulsar project. It separates
 the next release milestone from the work still required afterward. The dated
@@ -75,6 +75,7 @@ assembly gates, not completed review findings.
 | Scalar executor | Owner, page recovery, account guards, generation checks, publication revisions and visible memory failure are implemented. Deduplication and activity execution are not activated. See [executor tests](../src/analytics/bounded-analytics.integration.test.ts). |
 | CDC source boundary | Transaction accounting and typed decoding cover seven source tables plus projected parent ownership context. Snapshot, complete parent-delete cascade and temporal boundary evidence are retained. No owned CDC writes or cross-topic application frontier exist. See [fixtures](../src/analytics/test-fixtures/README.md). |
 | Latest code validation | Commit `841064140`: 66 focused cases, the real ClickHouse temporal round-trip case, TypeScript and source formatting/spelling checks pass. Full unit tier: 24,782 passed, 19 existing skips. |
+| Native archive parser and eraser | Legacy/native keys, malformed-ID rejection and exact surviving bytes pass unit and real S3 tests. Source checkpoint `81b5fb84f` is pushed; production activation remains gated. See [archive layout](metric-stream-redpanda-r2-runbook.md#prepared-pulsar-native-key-variant). |
 | Lifecycle | The authorized stable-endpoint run passed alert, mixed-ledger offload, expiry, A removal, evacuation, exact B reads before/after deliberate broker and replacement restarts, old-source retirement and cleanup. This qualifies the local model only. See the [successful result](pulsar-qualification.md#november-5-stable-endpoint-lifecycle-passes). |
 
 ## First milestone: unfinished release gates
@@ -113,7 +114,10 @@ will use an explicit native key variant under the existing erasure prefix,
 retaining original event bytes and native-position provenance. The shared
 parser and eraser must support both variants in production before or together
 with the first native object; writer activation must never precede erasure
-support. Unknown key forms fail closed. The implementation is not done. See
+support. Unknown key forms fail closed. Parser and eraser source are qualified
+at [checkpoint 81b5fb84f](https://github.com/Asherlc/dofek/commit/81b5fb84f):
+109 focused cases, a real S3 erasure case and 24,826 unit tests passed. The
+writer, release assembly and production activation are not done. See
 the [current archive parser](../src/metric-stream/r2-replay.ts) and
 [archive erasure](../src/account-erasure/archive-erasure.ts).
 
