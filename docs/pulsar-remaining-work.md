@@ -32,6 +32,24 @@ Detailed source requirements:
 [qualification evidence](pulsar-qualification.md),
 [account-erasure runbook](account-erasure-runbook.md).
 
+### Release assembly decision still pending
+
+The development branch contains deferred and partly wired analytics/CDC work.
+It is not the first-release artifact. The proposed assembly path is a dedicated
+release branch from `main`, carrying only the first-release transport, grouped
+sink/journal, erasure, archive, deployment and storage changes. Deferred work
+would remain on `dull-baboon`. **Creating or switching that branch is not yet
+approved**; obtain explicit approval when the release pieces are ready to
+assemble, as required by the repository's branch rule. No branch switch or
+rebase is authorized by the release split.
+
+The assembly audit must show that every included new table has a production
+writer and erasure policy, every export has a production consumer, and no
+deferred migration or runtime path is activated. Do not hide deferred work
+behind feature flags or compatibility bridges. Verify Kafka retirement and
+the absence of dual sensor writers before production cutover. These are open
+assembly gates, not completed review findings.
+
 ## Verified checkpoint
 
 | Area | Evidence and limit |
