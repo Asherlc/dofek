@@ -36072,3 +36072,19 @@ introduced. The subsequent single image build and isolated module load passed;
 see the [qualification and limits](pulsar-qualification.md#november-5-arm-server-image-native-module-check).
 Next time, prepare the Git source snapshot and local disk budget before
 starting native image qualification. Production and its holds were unchanged.
+
+### November 5, 2026 — deployment-pause verification target
+
+A read-only checkpoint queried `deploy-web-stack.yml` (workflow 268030869)
+instead of the automatic `deploy-web.yml` (258723662). The stack workflow was
+briefly disabled, then restored to its prior active state after the complete
+workflow inventory exposed the target mismatch. `Deploy Web` remained
+`disabled_manually` throughout; no workflow run or deployment was triggered.
+The stack workflow's recent runs were completed manual-dispatch runs, not
+evidence that automatic deployment had resumed.
+
+For the next checkpoint, inspect the workflow inventory and verify the exact
+automatic workflow ID before changing its state. Preserve the approved pause
+until the reviewed cutover. GitHub documents the
+[workflow inventory API](https://docs.github.com/en/rest/actions/workflows#list-repository-workflows)
+and [workflow state controls](https://docs.github.com/en/rest/actions/workflows#disable-a-workflow).
