@@ -40,13 +40,22 @@ release branch from `main`, carrying only the first-release transport, grouped
 sink/journal, erasure, archive, deployment and storage changes. Deferred work
 remains on `dull-baboon`. The user explicitly approved the separate
 `pulsar-foundation` branch and workspace for the first infrastructure/test PR.
-It is being assembled from the isolated topology, offload correction and
-native evacuation CI, without application pipeline changes.
+It contains the isolated topology, offload correction and native evacuation CI,
+without application pipeline changes. The first PR is
+[#3226](https://github.com/Asherlc/dofek/pull/3226). Its Expo compatibility
+prerequisite is [#3227](https://github.com/Asherlc/dofek/pull/3227); current check
+and review results belong to those PRs.
 
 The user also authorized monitoring each focused PR, correcting failures,
 merging after required checks and review pass, and continuing through subsequent
 work until the whole project is finished. Keep this index current across that
 cycle. Production maintenance and restoring the holds remain separate gates.
+The user approved pausing automatic Deploy Web: its API state was verified as
+`disabled_manually`, with no deployment in flight. Re-enabling it is an explicit
+cutover/restoration step: the current [full-stack replica check](../.github/workflows/deploy-web-stack.yml)
+requires the history sink at one replica, conflicting with its zero-replica hold.
+The [deployment trigger](../.github/workflows/deploy-web.yml) remains disabled
+while focused PRs merge.
 
 The assembly audit must show that every included new table has a production
 writer and erasure policy, every export has a production consumer, and no
@@ -77,7 +86,7 @@ assembly gates, not completed review findings.
 | Native sender and runtime wiring | Position codec, envelope types, Consumer and grouped sink exist; sender/runtime cutover incomplete | Finish [producer task 2](superpowers/plans/2026-11-03-single-server-pulsar.md#task-2-native-producer-and-durable-transport-positions) and [consumer task 3](superpowers/plans/2026-11-03-single-server-pulsar.md#task-3-bounded-consumer-and-processing-evidence). Exercise send/acceptance/receipt/ack crashes, control commands and byte bounds. One canonical sensor transport at cutover. Audit the accumulated branch changes against first-release entrypoints so deferred analytics/CDC paths cannot be activated accidentally; do not deploy this development branch as-is. |
 | JSONL archive consumer | Existing writer consumes Kafka | Move its transport intake onto the official Pulsar Consumer while preserving payload bytes, key grammar, erasure reachability and archive acknowledgement semantics. Verify restart and failed-upload behavior. Do not introduce a second archive format for this milestone. |
 | Erasure integration | New coordination tables classified; full production integration unfinished | Complete [transport erasure task 4](superpowers/plans/2026-11-03-single-server-pulsar.md#task-4-erasure-and-physical-retention-proofs), including day-29 inventory, restore handling and explicit incidents for unattributed ledgers. Failed-delete orphan cleanup remains a documented residual risk, not an automatic-delete permission. |
-| Large-account identifier capture | A 400,000-ID fixture exceeded 128 MiB in the existing single aggregation | Page capture within budget and qualify it under [analytics task 7](superpowers/plans/2026-11-03-bounded-analytics.md#task-7-erasure-ownership-and-writer-barriers-for-all-new-state). The fixture does not prove failure at production's different ceiling; it also does not qualify large-account erasure. |
+| Large-account identifier capture | A 400,000-ID fixture exceeded 128 MiB in the existing single aggregation | Source audit also found whole identifier sets retained in Node, remote snapshots and verification parameters. Paging only the initial SELECT is insufficient. Classify direct ownership predicates and dependency-ordered parent predicates first; retain a durable paged inventory only for families that genuinely require it. Qualify the complete path under [analytics task 7](superpowers/plans/2026-11-03-bounded-analytics.md#task-7-erasure-ownership-and-writer-barriers-for-all-new-state). The fixture does not prove failure at production's different ceiling; it also does not qualify large-account erasure. |
 | Retained-PeerDB host fit and cutover | Earlier paper fit is conditional; no combined soak or production addressing qualification | Reconcile the host budget with PeerDB retained, archive intake and required storage reserve. Exercise real addressing/restarts, R2 outage, stopped consumption, bounded disk/RSS and the website workload. Then prepare the sealed cutover/rollback procedure. Keep the unread tail and all four holds until their explicit gates and restoration decision. |
 
 Pulsar's [retention/expiry](https://pulsar.apache.org/docs/5.0.x/cookbooks-retention-expiry/)
