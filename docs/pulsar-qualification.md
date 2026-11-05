@@ -1489,6 +1489,30 @@ remain unqualified. The [storage runbook](analytics-storage-runbook.md#initial-j
 combines these observations with the retained live-topic rate and states the
 extrapolation limits.
 
+The requested follow-up used 10,000 events through twenty groups of 500, then
+stock `OPTIMIZE TABLE ... FINAL` on the four new tables. Every raw row, effect,
+prepared/committed receipt and final frontier reconciled, under the same
+resource limits. Each table had one active merged part. Journal parent parts
+totaled 2,906,403 bytes; their active directories allocated 3,035,136 bytes.
+Source placement added 702,490 parent-part bytes and 831,488 allocated bytes.
+Projection directories are included. All four complete table directories
+still allocated 23,564,288 bytes immediately after merges, including inactive
+rewrite parts. The run did not force their cleanup or claim they were gone.
+The isolated database was dropped successfully afterward. These observations
+reduce the active-data estimate, but do not measure a sustained workload,
+physical cleanup latency or maximum merge overlap. See the stock
+[OPTIMIZE behavior](https://clickhouse.com/docs/sql-reference/statements/optimize).
+
+A separate bounded read-only production metadata query at 12:11 UTC returned
+189,609,383 active physical rows in 30 `ingest.metric_stream` parts, totaling
+35,914,864,604 parent-part bytes. No active `analytics.source_placement` parts
+were returned. No payloads were read. These are physical rows, including
+retained versions, not distinct identities or a measured bootstrap size.
+The placement materialized view covers new inserts; existing rows still need
+the planned bounded bootstrap. See the
+[view builder](../src/metric-stream/clickhouse-table.ts) and
+[ClickHouse materialized-view insert semantics](https://clickhouse.com/docs/materialized-view/incremental-materialized-view).
+
 A separate two-row native check on ClickHouse 26.10.2.103 completed a hashed
 predicate mutation, verified logical residue and original-part absence with
 `_state` requested, and saved that physical result before cleanup. Exact

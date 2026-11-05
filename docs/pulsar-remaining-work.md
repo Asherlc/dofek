@@ -165,6 +165,18 @@ writer/replay consumers; the stricter development checkpoint is retained.
 The current storage inputs and their limits are recorded in the
 [runway table](analytics-storage-runbook.md#initial-journal-runway-inputs).
 They do not establish a production allocation or sustained ingestion runway.
+A post-merge fixture reduced the active-data estimate to about 0.98 GB/day
+combined at the observed average, or 2.13 GB/day at the higher observed rate.
+The user decision is pending: retain the current sink with an explicitly
+accepted cap-exhaustion stop, bring retirement into R1, or change the sink's
+retained state. No option changes the production holds. Do not assemble a
+different sink protocol before that decision.
+Source placement is permanent structural growth, not journal backlog. Its
+bounded keyset bootstrap remains required before global identity lookup can
+cover existing raw data. A November 5 metadata-only observation counted
+189,609,383 active physical raw rows in 30 parts, with no source-placement
+parts returned. This is not a distinct-ID count or bootstrap-size proof; see
+the [measurement record](pulsar-qualification.md#november-5-journal-sizing-and-mutation-metadata-observations).
 Physical erasure metadata now passes 45 real Postgres tests, but its native
 proof and caller integration remain unfinished. The selected cleanup order is
 durable physical completion, removal and verified absence of native mutation

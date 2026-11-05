@@ -84,9 +84,14 @@ parts and filesystem allocation. See the
 | Journal, receipts and manifests: parent part bytes | 402.88 | 1.03 | 2.22 | 0.975 / 0.451 |
 | Same three tables: filesystem allocation | 827.39 | 2.11 | 4.56 | 0.475 / 0.219 |
 | Including source placement: filesystem allocation | 1,187.84 | 3.03 | 6.54 | 0.331 / 0.153 |
+| After merges, journal: active part allocation | 303.51 | 0.77 | 1.67 | 1.294 / 0.598 |
+| After merges, source placement: active part allocation | 83.15 | 0.21 | 0.46 | 4.722 / 2.184 |
+| After merges, combined active part allocation | 386.66 | 0.98 | 2.13 | 1.015 / 0.470 |
 
-GB means decimal gigabytes. These are fresh-fixture extrapolations, before
-merge overlap, not steady-state measurements or a cap recommendation. Projection
+GB means decimal gigabytes. The first three rows describe fresh 500-event
+parts. The last three come from one 10,000-event fixture after native merges;
+active part allocation excludes retained inactive parts and table metadata.
+Neither measures sustained physical allocation or justifies a cap. Projection
 bytes are included in parent totals and must not be added twice. Source
 placement has its own retention and bootstrap obligation; do not assume it can
 be retired with delivery proofs. Measure sustained post-merge bytes per event
@@ -94,6 +99,10 @@ for each table, merge/mutation peak and the expected retention interval before
 adopting allocations. Compare the resulting runway with the time needed to
 ship safe retirement. If it cannot fit the host budget, explicitly decide
 between bringing retirement into R1 and a planned stop of live intake.
+The smaller merged figures supersede fresh-part allocation as an estimate of
+retained active data, while the larger immediate allocation remains evidence
+that rewrite overlap must be budgeted. Native sink assembly waits for that
+retention decision; independent shutdown and erasure work can continue.
 
 ## Latest read-only host observation
 
