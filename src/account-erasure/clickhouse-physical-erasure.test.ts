@@ -4,6 +4,7 @@ import type { ClickHouseClient } from "../db/clickhouse.ts";
 import { unexpectedClickHouseExec } from "../db/clickhouse-test-helpers.ts";
 import type { Database } from "../db/index.ts";
 import {
+  assertNoClickHouseDetachedParts,
   classifyClickHouseManagedTableEngine,
   executeClickHousePhysicalErasure,
   prepareClickHousePhysicalBaseline,
@@ -331,6 +332,47 @@ describe("executeClickHousePhysicalErasure orchestration", () => {
     expect(state.complete).not.toHaveBeenCalled();
     expect(state.retire).not.toHaveBeenCalled();
     expect(state.trace).not.toContain("kill");
+  });
+  it("waits out one incomplete native mutation poll before accepting completion", async () => {
+    const answers = successAnswers();
+    const incompleteIndex = answers.findIndex((value) => value.label === "mutation-incomplete");
+    if (incompleteIndex < 0) throw new Error("Missing mutation-incomplete fixture");
+    answers.splice(
+      incompleteIndex,
+      1,
+      countAnswer("mutation-incomplete-first", 1),
+      countAnswer("mutation-incomplete-cleared", 0),
+    );
+    const state = fixture(answers);
+    state.options.waitTimeoutMilliseconds = 60_000;
+    state.options.pollIntervalMilliseconds = 0;
+    await state.execute();
+    expect(state.trace).toContain("query:mutation-incomplete-first");
+    expect(state.trace).toContain("query:mutation-incomplete-cleared");
+    expect(state.complete).toHaveBeenCalledOnce();
+  });
+  it("times out when the native mutation stays incomplete through the wait budget", async () => {
+    const answers = successAnswers();
+    const incomplete = answers.find((value) => value.label === "mutation-incomplete");
+    if (!incomplete) throw new Error("Missing mutation-incomplete fixture");
+    incomplete.rows = [{ count: 1 }];
+    const state = fixture(answers);
+    state.options.waitTimeoutMilliseconds = 0;
+    state.options.pollIntervalMilliseconds = 0;
+    await expect(state.execute()).rejects.toThrow("native mutation is incomplete");
+    expect(state.complete).not.toHaveBeenCalled();
+  });
+  it("passes database and table identity when proving detached parts are absent", async () => {
+    const state = fixture([countAnswer("detached")]);
+    await assertNoClickHouseDetachedParts(state.owner, {
+      database: "ingest",
+      name: "metric_stream",
+    });
+    expect(state.query).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query_params: { database: "ingest", table: "metric_stream" },
+      }),
+    );
   });
   it("requires recorded mutation evidence to recover an admitted request", async () => {
     const answers = successAnswers();
