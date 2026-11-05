@@ -171,6 +171,15 @@ revision, and rejects conflicting payloads, delivery reuse and lineage changes.
 Missing END or ordinal evidence remains pending. Streaming revisions use the
 adopted UInt128 encoding within one admitted generation and lineage.
 
+The fitness-schema capture and eventual CDC migration will use
+`REPLICA IDENTITY FULL` on the seven first-slice source tables. PostgreSQL
+[records old values of all columns under FULL](https://www.postgresql.org/docs/18/sql-altertable.html#SQL-ALTERTABLE-REPLICA-IDENTITY),
+which is needed for the planned before-placement and deletion handling. The
+capture must verify the resulting Debezium images, including unchanged external
+text, rather than infer them from this setting. Only the disposable fixture is
+changed now; the production migration and its WAL/capacity check remain release
+gates. No production replica identity has been changed by this qualification.
+
 Nineteen unit cases pass against retained synthetic native captures, including
 the primary-key split in transaction 820, reversed allocation/commit order in
 825/826 and 25 actual republications. Independent review found no critical or
