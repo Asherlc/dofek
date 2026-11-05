@@ -1,6 +1,6 @@
 import type { SyncDatabase } from "../db/index.ts";
 import type { SyncLogOrigin } from "../db/schema/events.ts";
-import type { MetricStreamEventPublisher } from "../metric-stream/redpanda-producer.ts";
+import type { MetricStreamEventPublisher } from "../metric-stream/publisher.ts";
 import type { SyncWindow } from "./sync-window.ts";
 
 /**

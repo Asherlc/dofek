@@ -2,7 +2,7 @@ import type { SyncDatabase } from "../../db/index.ts";
 import { upsertProviderActivity } from "../../db/provider-activity-sync.ts";
 import { enqueueFitFileImportAndWait } from "../../jobs/enqueue-fit-file-import.ts";
 import { logger } from "../../logger.ts";
-import type { MetricStreamEventPublisher } from "../../metric-stream/redpanda-producer.ts";
+import type { MetricStreamEventPublisher } from "../../metric-stream/publisher.ts";
 import type { SyncError } from "../types.ts";
 import type { WahooClient } from "./client.ts";
 import type { ParsedCardioActivity } from "./parsers.ts";
