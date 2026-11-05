@@ -15,6 +15,157 @@ function nativeId(hex: string) {
 }
 
 describe("native metric stream position", () => {
+  it("orders Kafka positions equally and in both directions without rounding", () => {
+    const left = { transport: "kafka" as const, ...stream, offset: "9007199254740993" };
+    const right = { ...left, offset: "9007199254740994" };
+    expect(compareMetricStreamPositions(left, left)).toBe(0);
+    expect(compareMetricStreamPositions(left, right)).toBe(-1);
+    expect(compareMetricStreamPositions(right, left)).toBe(1);
+  });
+
+  it("validates both persisted positions before comparing them", () => {
+    const valid = metricStreamPosition(stream, nativeId("080a100018022000"));
+    const invalid = { ...valid, serializedMessageId: "invalid" };
+    expect(() => compareMetricStreamPositions(invalid, valid)).toThrow();
+    expect(() => compareMetricStreamPositions(valid, invalid)).toThrow();
+  });
+
+  it("keeps real delivered coordinates distinct from the latest sentinel", () => {
+    const native = metricStreamPosition(stream, nativeId("080a100018022000"));
+    const maximum = "9223372036854775807";
+    for (const delivery of [
+      { major: maximum, minor: maximum, batch: 0 },
+      { major: maximum, minor: "0", batch: -1 },
+      { major: "0", minor: maximum, batch: -1 },
+    ]) {
+      expect(metricStreamPositionSchema.parse({ ...native, delivery })).toEqual({
+        ...native,
+        delivery,
+      });
+    }
+  });
+
+  it("accepts native int64 and int32 maxima without rounding", () => {
+    const maximum = "9223372036854775807";
+    const position = metricStreamPosition(
+      { ...stream, partition: 2147483647 },
+      {
+        serialize: () => Buffer.from([1]),
+        toString: () => `(${maximum},${maximum},2147483647,2147483647)`,
+      },
+    );
+    expect(position.delivery).toEqual({ major: maximum, minor: maximum, batch: 2147483647 });
+  });
+
+  it.each(["(9223372036854775808,0,2,0)", "(0,9223372036854775808,2,0)"])(
+    "reports unsupported native int64 coordinates %s",
+    (representation) => {
+      expect(() =>
+        metricStreamPosition(stream, {
+          serialize: () => Buffer.from([1]),
+          toString: () => representation,
+        }),
+      ).toThrow(/representation: coordinates exceed int64/);
+    },
+  );
+
+  it.each([
+    { partition: 2, representation: "(0,0,2,2147483648)" },
+    { partition: 2147483648, representation: "(0,0,2147483648,0)" },
+  ])("reports unsupported native int32 coordinates $representation", (fixture) => {
+    expect(() =>
+      metricStreamPosition(
+        { ...stream, partition: fixture.partition },
+        { serialize: () => Buffer.from([1]), toString: () => fixture.representation },
+      ),
+    ).toThrow(/representation: coordinates exceed int32/);
+  });
+
+  it.each(["", "-1", "01", "+1", "1.5", "1x", "9223372036854775808"])(
+    "rejects invalid persisted coordinates %j",
+    (coordinate) => {
+      const native = metricStreamPosition(stream, nativeId("080a100018022000"));
+      for (const field of ["major", "minor"] as const) {
+        expect(() =>
+          metricStreamPositionSchema.parse({
+            ...native,
+            delivery: { ...native.delivery, [field]: coordinate },
+          }),
+        ).toThrow();
+      }
+      expect(() =>
+        metricStreamPositionSchema.parse({ transport: "kafka", ...stream, offset: coordinate }),
+      ).toThrow();
+    },
+  );
+
+  it.each(["", "A", "AA", "AA=", "AA===", "AAAA=", "!AAA", "AAAA\n"])(
+    "rejects an invalid serialized native identity %j",
+    (serializedMessageId) => {
+      const native = metricStreamPosition(stream, nativeId("080a100018022000"));
+      expect(() => metricStreamPositionSchema.parse({ ...native, serializedMessageId })).toThrow();
+    },
+  );
+
+  it("accepts the full native coordinate domain and compares entry IDs before batch IDs", () => {
+    const native = metricStreamPosition(stream, nativeId("080a100018022000"));
+    for (const serializedMessageId of ["AA==", "AAA=", "AAAA"]) {
+      expect(metricStreamPositionSchema.parse({ ...native, serializedMessageId })).toEqual({
+        ...native,
+        serializedMessageId,
+      });
+    }
+    const first = { ...native, delivery: { major: "9223372036854775807", minor: "0", batch: 5 } };
+    const second = { ...first, delivery: { ...first.delivery, minor: "1", batch: -1 } };
+    expect(compareMetricStreamPositions(first, second)).toBe(-1);
+    expect(compareMetricStreamPositions(second, first)).toBe(1);
+    expect(
+      metricStreamPositionSchema.parse({
+        ...first,
+        partition: 2147483647,
+        delivery: { major: "0", minor: "9223372036854775807", batch: 2147483647 },
+      }),
+    ).toMatchObject({ partition: 2147483647 });
+  });
+
+  it.each([
+    { epoch: "" },
+    { topic: "" },
+    { partition: -2 },
+    { partition: 0.5 },
+    { partition: 2147483648 },
+  ])("rejects an invalid stream descriptor %j", (invalid) => {
+    const native = metricStreamPosition(stream, nativeId("080a100018022000"));
+    expect(() => metricStreamPositionSchema.parse({ ...native, ...invalid })).toThrow();
+    expect(() =>
+      metricStreamPosition({ ...stream, ...invalid }, nativeId("080a100018022000")),
+    ).toThrow();
+  });
+
+  it.each([-2, 0.5, 2147483648])("rejects an invalid persisted batch index %j", (batch) => {
+    const native = metricStreamPosition(stream, nativeId("080a100018022000"));
+    expect(() =>
+      metricStreamPositionSchema.parse({ ...native, delivery: { ...native.delivery, batch } }),
+    ).toThrow();
+  });
+
+  it.each([
+    "(9223372036854775808,0,2,0)",
+    "(0,9223372036854775808,2,0)",
+    "(0,0,2,2147483648)",
+    "(0,0,2147483648,0)",
+    "(0,0,2,-2)",
+    "(0,0,02,0)",
+    "(0,0,2,00)",
+  ])("rejects native coordinates outside the supported domain %s", (representation) => {
+    expect(() =>
+      metricStreamPosition(stream, {
+        serialize: () => Buffer.from([1]),
+        toString: () => representation,
+      }),
+    ).toThrow();
+  });
+
   it("preservesKafkaOffsetsWithoutInventingNativeCoordinates", () => {
     const position = {
       transport: "kafka" as const,
