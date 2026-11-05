@@ -158,7 +158,8 @@ replacement; it does not derive ownership from the key. See the
 
 No Pulsar writer is activated by this support. The parser and eraser must be
 deployed before or together with the first native archive object. The existing
-gzip JSONL payload format and original legacy objects stay unchanged.
+gzip JSONL payload format and legacy flat-key layout remain unchanged. Account
+erasure still rewrites matching objects in place.
 
 ## Redpanda Connect Archive Expectations
 

@@ -108,13 +108,20 @@ describe("parseMetricStreamArchiveObjectKey", () => {
     ["uppercase endpoint hex", nativeKey({ lastHex: "FF" })],
     ["invalid UTC date", nativeKey().replace("2026-11-05", "2026-02-30")],
     ["invalid UTC hour", nativeKey().replace("hour=03", "hour=24")],
-    ["alternate percent escape", nativeKey().replace("%3A", "%3a")],
-    ["malformed percent escape", nativeKey().replace("%3A", "%ZZ")],
+    ["alternate percent escape", nativeKey().replaceAll("%3A", "%3a")],
+    ["malformed percent escape", nativeKey().replaceAll("%3A", "%ZZ")],
     ["escaped unreserved component", nativeKey().replace("epoch%2F1", "%65%70%6F%63%68%2F1")],
     ["unescaped epoch slash", nativeKey().replace("epoch%2F1", "epoch/1")],
     ["incomplete topic", nativeKey({ topic: "persistent://public/default" })],
     ["empty topic component", nativeKey({ topic: "persistent://public//sensor" })],
     ["nonpersistent topic", nativeKey({ topic: "non-persistent://public/default/sensor" })],
+    ...["\n", "\r", "\u2028", "\u2029"].flatMap((terminator) => [
+      [
+        "topic line terminator",
+        nativeKey({ topic: `persistent://public/default/sensor${terminator}` }),
+      ],
+      ["key line terminator", `${nativeKey()}${terminator}`],
+    ]),
     [
       "unknown nested layout",
       "metric-stream/v1/date=2026-11-05/hour=03/other/topic-2-1-2.jsonl.gz",

@@ -54,7 +54,7 @@ export function parseMetricStreamArchiveObjectKey(key: string): MetricStreamArch
       .parse(hour);
     const epoch = decodeArchiveComponent(encodedEpoch);
     const topic = decodeArchiveComponent(encodedTopic);
-    if (!/^persistent:\/\/[^/]+\/[^/]+\/[^/]+$/.test(topic)) {
+    if (/[\r\n\u2028\u2029]/u.test(topic) || !/^persistent:\/\/[^/]+\/[^/]+\/[^/]+$/.test(topic)) {
       throw new Error("Native archive requires a concrete persistent topic");
     }
     // Endpoints are opaque original-upload provenance, including after erasure.
