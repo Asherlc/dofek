@@ -1,6 +1,6 @@
 # Analytics and transport physical storage boundaries
 
-<!-- cspell:words cloudbeaver FSTYPE quotaon repquota mountinfo chattr Privs tmpfs -->
+<!-- cspell:words cloudbeaver FSTYPE fsprogs quotaon repquota mountinfo chattr Privs tmpfs -->
 
 This runbook prepares the physical storage gate for the
 [transport-first release](pulsar-remaining-work.md). Production project quotas,
@@ -16,6 +16,20 @@ the limit. These are test values, not production allocations. The production
 data filesystem was observed without project/quota features. The failed local
 Docker-kernel quota mount is not enforcement evidence. See the
 [recorded physical-storage results](pulsar-qualification.md#production-safety-and-next-decision).
+
+## Latest read-only host observation
+
+On November 5, 2026 UTC, `findmnt`, `df -B1`, `tune2fs -l` and
+`dpkg-query --status` confirmed the existing data mount: `/dev/sdb`, ext4,
+UUID `450afc84-97ef-4dfe-9b31-cd6d639a5ba2`. Available bytes were
+33,000,845,312; the superblock still had neither project nor quota features.
+The installed e2fsprogs package was `1.47.0-2.4~exp1ubuntu4.1`, util-linux was
+`2.39.3-9ubuntu6.5`, and the quota package was absent. The 1,966,080 reserved
+blocks at 4,096 bytes each must be distinguished from available-space and
+project-allocation arithmetic. These observations changed no filesystem state
+and do not qualify enforcement. The inspection commands are documented below;
+their field semantics are described by [tune2fs](https://man7.org/linux/man-pages/man8/tune2fs.8.html)
+and [findmnt](https://man7.org/linux/man-pages/man8/findmnt.8.html).
 
 ## Prepare the allocation and recovery package
 
