@@ -17,7 +17,7 @@
   ],
   "dictionaries": ["typescript", "node", "npm", "html", "css", "en_US"],
   "words": [
-    "Oxia", "offloader", "javac", "metaformat",
+    "Oxia", "offloader", "javac", "metaformat", "chgrp",
     "pyproject",
     "mashumaro",
     "nonblank",

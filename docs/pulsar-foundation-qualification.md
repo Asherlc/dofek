@@ -12,11 +12,14 @@ style checks and NAR packaging completed with retries disabled. The build
 executed that source stage rather than substituting a prebuilt host artifact.
 The patch is maintained locally and is not a claim of stock R2 compatibility.
 
-The [native evacuation ARM job](https://github.com/Asherlc/dofek/actions/runs/41871869660/job/126721886208)
+The historical, pre-PR [native evacuation ARM job](https://github.com/Asherlc/dofek/actions/runs/41871869660/job/126721886208)
 passed at commit 10735959f in 135.687 seconds, within its 300-second bound and
 without retries. It verified surviving payloads, replacement ensembles,
 old-storage-offline reads, restart and new writes, and marker scans. The CI
 fixture is retained here with the dedicated native test project.
+That historical run does not qualify a later commit. The extracted fixture
+also passed the [PR ARM job at commit 3a320e12c](https://github.com/Asherlc/dofek/actions/runs/41974906401/job/127072892431).
+Subsequent fixture changes must pass that required job again before merge.
 
 The subsequent [local stable-endpoint lifecycle result](https://github.com/Asherlc/dofek/blob/ee7350f79/docs/pulsar-qualification.md#november-5-stable-endpoint-lifecycle-passes)
 also passed mixed-ledger expiry/offload/removal, exact surviving-data reads

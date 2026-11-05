@@ -26,6 +26,35 @@ BookKeeper metadata, without force, before the first bookie start. Never format
 populated metadata or delete existing volumes. These are explicit qualification
 actions; production bootstrap is not implemented here.
 
+### Metadata readiness before initialization
+
+Do not start the entire profile on an empty metadata store. First start only
+`pulsar-oxia` and `pulsar-oxia-coordinator`, using the wrapper and file chain
+above with a fresh `--project-suffix`. Keep that suffix for every command.
+Starting a container is not proof that its metadata service is ready.
+
+Run the following native admin operations through
+`exec -T pulsar-oxia-coordinator oxia admin --admin-address localhost:6650 --output json`:
+
+1. `dataserver get`: require a successful JSON response before proceeding.
+2. `dataserver create pulsar-oxia --public pulsar-oxia:6648 --internal pulsar-oxia:6649`.
+3. `namespace create pulsar --initial-shards 1 --replication-factor 1`.
+4. `namespace create bookkeeper --initial-shards 1 --replication-factor 1`.
+5. `namespace get pulsar` and `namespace get bookkeeper`: require both namespaces
+   and their shard assignments to name the expected server before initialization.
+
+Stop on a failed prerequisite; do not start `pulsar-init`, format metadata or
+add a retry to conceal it. The [native fixture](../../src/metric-stream/bookie-evacuation.pulsar.integration.test.ts)
+demonstrates the coordinator-read and BookKeeper assignment checks against
+the pinned [Oxia admin implementation](https://github.com/oxia-db/oxia/tree/v0.18.0/cmd/admin).
+Only after those observations may the operator initialize Pulsar metadata and
+format fresh BookKeeper metadata, then start the bookie and broker.
+
+The Pulsar initializer itself tolerates existing cluster, tenant and namespace
+metadata through its [create-if-absent operations](https://github.com/apache/pulsar/blob/v5.0.1/pulsar-broker/src/main/java/org/apache/pulsar/PulsarClusterMetadataSetup.java).
+Do not add a skip-on-error branch. These fresh-project instructions do not
+authorize formatting existing BookKeeper storage on a subsequent start.
+
 No ports are published. Use the packaged tools through the Compose wrapper.
 Replication factor one and restart tests do not prove recovery from disk loss.
 See [Apache deployment](https://pulsar.apache.org/docs/5.0.x/deploy-docker/) and

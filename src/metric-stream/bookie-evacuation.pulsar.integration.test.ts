@@ -21,7 +21,7 @@ it("evacuates surviving native ledgers before retiring exclusive source storage"
   const fixture = join(owned, "fixture");
   for (const path of [fixture, join(owned, "source"), join(owned, "replacement")]) {
     mkdirSync(path, { recursive: true });
-    chmodSync(path, 0o777);
+    chmodSync(path, 0o770);
   }
   const suffix = `bookie-evacuation-${randomUUID()}`;
   const environment = { ...process.env, BOOKIE_EVACUATION_DIR: owned };
@@ -132,6 +132,9 @@ it("evacuates surviving native ledgers before retiring exclusive source storage"
     );
   try {
     compose(["up", "-d", "pulsar-oxia", "pulsar-oxia-coordinator", "client"]);
+    // The pinned bookies run as UID 10000, GID 0. Retain host ownership and
+    // grant their group access without making the bind directories public.
+    client("chgrp", "0", "/fixture", "/old", "/replacement");
     compose(["cp", "client:/pulsar/lib", join(owned, "lib")]);
     run(compiler, [
       "-J-Xmx256m",
