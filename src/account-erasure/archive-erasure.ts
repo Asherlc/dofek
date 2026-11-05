@@ -356,31 +356,18 @@ async function countMatchingArchiveRecords(
   identifiers: ArchiveErasureIdentifiers,
   key: string,
 ): Promise<number> {
-  const gunzip = createGunzip();
-  // Observe rejection immediately while the downstream iterator yields control.
-  const sourceOutcome = pipeline(body, gunzip).then(
-    () => ({ succeeded: true }),
-    (error: unknown) => ({ error }),
-  );
   let matches = 0;
-  try {
+  await pipeline(body, createGunzip(), async (source) => {
     for await (const { payload: line, lineOrdinal: lineNumber } of readMetricStreamArchiveLines(
-      gunzip,
+      source,
       MAX_ARCHIVE_LINE_PAYLOAD_BYTES,
     )) {
       if (line.length > 0 && belongsToAccount(line, identifiers, { key, lineNumber })) {
         matches += 1;
       }
     }
-    const outcome = await sourceOutcome;
-    if ("error" in outcome) throw outcome.error;
-    return matches;
-  } catch (error: unknown) {
-    body.destroy();
-    gunzip.destroy();
-    await sourceOutcome;
-    throw error;
-  }
+  });
+  return matches;
 }
 
 async function rewriteArchiveObject(

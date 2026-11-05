@@ -35603,13 +35603,33 @@ no wait, retry, ignored failure or increased limit. Docker documents
 [RUN build steps](https://docs.docker.com/reference/dockerfile/#run); Linux
 documents [cgroup memory accounting](https://docs.kernel.org/admin-guide/cgroup-v2.html#memory).
 
-### November 5, 2026 — archive-stream PR local lint environment
+## 2026-11-05 — Archive-stream PR validation
 
 The isolated archive-stream PR passed the sandbox lint gates, then SQLFluff
 failed with `Connection refused` while dbt used the default ClickHouse port.
 This workspace had no `.env.local`; the prepared database was running under
-the original workspace's generated ports. Loading that existing environment
-before `pnpm lint` directs the unchanged dbt profile to the prepared service.
+the original workspace's generated ports. Exporting that existing environment
+with `set -a; . ../dull-baboon/.env.local; set +a; pnpm lint` directs the
+unchanged dbt profile to the prepared service.
 No service was recreated, no production setting changed, and no timeout or
 retry was added. Keep environment loading explicit when validating a focused
 PR in a sibling workspace; see the [integration dependency procedure](testing.md#integration-dependencies).
+
+A local `Readable.compose()` scan refactor then failed the existing truncated
+gzip test at its unchanged timeout and emitted unhandled `ABORT_ERR` errors
+when validation ended consumption. It was not committed or deployed. The
+replacement keeps decompression and the asynchronous scan consumer inside one
+awaited `pipeline()` call, covered by the same error and EOF regressions.
+This records a rejected local implementation, not a demonstrated Node platform
+defect. Do not trade away the two-pass EOF and cancellation checks when
+simplifying the archive reader.
+
+The initial CI mutation shard then failed at 64.71%, below its unchanged 75%
+threshold, because the separate pipeline promise carried outcome bookkeeping
+that the consumer could not observe. The awaited-consumer pipeline removes
+that redundant state; an added byte-order-mark regression also checks the
+decoder's strict JSON boundary. Local mutation testing then covered the
+changed eraser lines at 100% and the line reader at 97.14%. One surviving
+reader mutation removes only the empty-fragment allocation guard; no threshold
+or exclusion changed. Fresh CI remains required before merge. The production
+deployment pause and ingestion/analytics holds remain unchanged.

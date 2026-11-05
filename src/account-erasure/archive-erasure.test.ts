@@ -206,6 +206,35 @@ describe("eraseMetricStreamArchive", () => {
     },
   );
 
+  it("rejects a JSON byte-order mark without changing or checkpointing its object", async () => {
+    const storage = new MemoryArchiveStorage();
+    const key = "metric-stream/v1/date=2026-07-26/hour=10/metric-stream-v1-0-10-11.jsonl.gz";
+    const original = gzipSync(
+      Buffer.concat([
+        Buffer.from([0xef, 0xbb, 0xbf]),
+        Buffer.from(
+          `${JSON.stringify(metricEvent(deletingUserId, "30000000-0000-4000-8000-000000001994"))}\n`,
+        ),
+      ]),
+    );
+    storage.objects.set(key, original);
+    const completed = vi.fn();
+    await expect(
+      eraseMetricStreamArchive(
+        storage,
+        {
+          activityIds: new Set(),
+          operationIds: new Set(),
+          userId: deletingUserId,
+        },
+        { onObjectCompleted: completed },
+      ),
+    ).rejects.toThrow("Malformed JSON");
+    expect(storage.objects.get(key)).toEqual(original);
+    expect(storage.completedExpectedEtags).toEqual([]);
+    expect(completed).not.toHaveBeenCalled();
+  });
+
   it("rejects invalid UTF-8 before replacement or checkpointing", async () => {
     const storage = new MemoryArchiveStorage();
     const key = "metric-stream/v1/date=2026-07-26/hour=10/metric-stream-v1-0-10-11.jsonl.gz";
@@ -278,45 +307,50 @@ describe("eraseMetricStreamArchive", () => {
     },
   );
 
-  it("propagates a source failure before replacement or checkpointing", async () => {
-    class FailedSourceStorage extends MemoryArchiveStorage {
-      override async getObject(key: string): Promise<MetricStreamArchiveObject> {
-        const object = await super.getObject(key);
-        const original = this.objects.get(key);
-        if (!original) throw new Error("Missing fixture archive");
-        return {
-          ...object,
-          body: Readable.from(
-            (async function* () {
-              yield original;
-              throw new Error("archive source interrupted");
-            })(),
-          ),
-        };
+  it.each([1, 2])(
+    "propagates a source failure on read %i before replacement or checkpointing",
+    async (read) => {
+      class FailedSourceStorage extends MemoryArchiveStorage {
+        override async getObject(key: string): Promise<MetricStreamArchiveObject> {
+          const object = await super.getObject(key);
+          if (this.getCounts.get(key) !== read) return object;
+          const original = this.objects.get(key);
+          if (!original) throw new Error("Missing fixture archive");
+          return {
+            ...object,
+            body: Readable.from(
+              (async function* () {
+                yield original;
+                throw new Error("archive source interrupted");
+              })(),
+            ),
+          };
+        }
       }
-    }
-    const storage = new FailedSourceStorage();
-    const key = "metric-stream/v1/date=2026-07-26/hour=10/metric-stream-v1-0-10-11.jsonl.gz";
-    const original = gzipSync(
-      `${JSON.stringify(metricEvent(deletingUserId, "30000000-0000-4000-8000-000000001994"))}\n`,
-    );
-    storage.objects.set(key, original);
-    const completed = vi.fn();
-    await expect(
-      eraseMetricStreamArchive(
-        storage,
-        {
-          activityIds: new Set(),
-          operationIds: new Set(),
-          userId: deletingUserId,
-        },
-        { onObjectCompleted: completed },
-      ),
-    ).rejects.toThrow("archive source interrupted");
-    expect(storage.objects.get(key)).toEqual(original);
-    expect(storage.completedExpectedEtags).toEqual([]);
-    expect(completed).not.toHaveBeenCalled();
-  });
+      const storage = new FailedSourceStorage();
+      const key = "metric-stream/v1/date=2026-07-26/hour=10/metric-stream-v1-0-10-11.jsonl.gz";
+      const original = gzipSync(
+        `${JSON.stringify(metricEvent(deletingUserId, "30000000-0000-4000-8000-000000001994"))}\n`,
+      );
+      storage.objects.set(key, original);
+      const completed = vi.fn();
+      await expect(
+        eraseMetricStreamArchive(
+          storage,
+          {
+            activityIds: new Set(),
+            operationIds: new Set(),
+            userId: deletingUserId,
+          },
+          { onObjectCompleted: completed },
+        ),
+      ).rejects.toThrow("archive source interrupted");
+      expect(storage.objects.get(key)).toEqual(original);
+      expect(storage.completedExpectedEtags).toEqual([]);
+      expect(storage.uploads.size).toBe(0);
+      expect(completed).not.toHaveBeenCalled();
+    },
+  );
 
   it("erases native-key rows and controls while preserving other-account bytes and provenance", async () => {
     const storage = new MemoryArchiveStorage();

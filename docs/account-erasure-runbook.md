@@ -406,12 +406,18 @@ whether the final record ended with LF. Legacy and native object keys use the
 same bounded reader; see the [eraser](../src/account-erasure/archive-erasure.ts),
 [line reader](../src/metric-stream/archive-lines.ts) and
 [real S3 tests](../src/account-erasure/archive-erasure.integration.test.ts).
+The scan places decompression and record consumption inside one awaited Node
+[stream pipeline](https://nodejs.org/api/stream.html#streampipelinesource-transforms-destination-options)
+so failures propagate before it returns a count.
 
 A November 5 check of three retained, independently verified manual-offload
 objects covered 247,242 lines; the largest payload was 902 bytes. This sample
 is comfortably below the limit, but it does not qualify every line in the
 53.28-million-record offload or the older archive inventory. An oversized
 legacy record is an explicit residual risk: it blocks that object's erasure.
+This is an erasure rewrite boundary, not a change to legacy storage. Existing
+objects retain their flat keys and gzip JSONL format; erasure replaces only
+objects containing matching records, at the same canonical keys.
 Keep the original object and ETag, preserve the failed checkpoint, and open an
 erasure incident. A reviewed bounded repair must account for the complete
 record and pass full-EOF validation, the conditional replacement and read-back
