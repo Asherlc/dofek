@@ -2,8 +2,12 @@ FROM eclipse-temurin:25-jdk-alpine@sha256:425f0b733cb23843bd78dbe5552513976d0cf1
 
 RUN apk add --no-cache patch=2.8.1-r0
 WORKDIR /src
+# Official current host (archive.apache.org TLS timeouts observed in lab).
+# sha512 on downloads.apache.org matches archive.apache.org; Docker ADD pins
+# the equivalent sha256 of the identical tarball bytes.
+# https://downloads.apache.org/pulsar/pulsar-5.0.1/apache-pulsar-5.0.1-src.tar.gz.sha512
 ADD --checksum=sha256:687e2670dfb71ad10fd9972957de7426e4596a095b08781364950c4aa3fcafde \
-    https://archive.apache.org/dist/pulsar/pulsar-5.0.1/apache-pulsar-5.0.1-src.tar.gz /tmp/pulsar-source.tar.gz
+    https://downloads.apache.org/pulsar/pulsar-5.0.1/apache-pulsar-5.0.1-src.tar.gz /tmp/pulsar-source.tar.gz
 RUN tar -xzf /tmp/pulsar-source.tar.gz --strip-components=1 && rm /tmp/pulsar-source.tar.gz
 COPY repeatable-offload-payload.patch /tmp/repeatable-offload-payload.patch
 RUN patch -p1 < /tmp/repeatable-offload-payload.patch
