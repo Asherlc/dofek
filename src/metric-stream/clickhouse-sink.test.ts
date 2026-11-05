@@ -48,6 +48,10 @@ vi.mock("../analytics/analytics-delivery.ts", () => ({
   coordinateAnalyticsDelivery: mocks.control,
 }));
 vi.mock("../analytics/analytics-work-store.ts", () => ({ loadAnalyticsStreamState: mocks.load }));
+vi.mock("../analytics/effect-journal.ts", async (original) => ({
+  ...(await original<typeof import("../analytics/effect-journal.ts")>()),
+  recordAnalyticsEffectOutcomes: vi.fn(async () => undefined),
+}));
 vi.mock("./pulsar-consumer.ts", () => ({ runPulsarMetricStreamConsumer: mocks.run }));
 vi.mock("./consumer-readiness.ts", async (original) => ({
   ...(await original<typeof import("./consumer-readiness.ts")>()),
@@ -167,6 +171,8 @@ describe("native grouped ClickHouse applier", () => {
       [],
       [],
       [{ source_id: sourceEvent.id, generation: "1", recorded_at: sourceEvent.recordedAt }],
+      [],
+      [],
       [],
     ]);
     const context = batchContext([sourceEvent]);
@@ -338,6 +344,8 @@ describe("native sink runner", () => {
       [],
       [],
       [{ source_id: sourceEvent.id, generation: "1", recorded_at: sourceEvent.recordedAt }],
+      [],
+      [],
       [],
     ]);
     const pending = { memberCount: 1 };

@@ -5,7 +5,12 @@ import {
   applyMetricStreamSourceEffectsGroup,
   prepareMetricStreamSourceEffectsGroup,
 } from "./source-effects-group.ts";
-import { sourceEvent, sourceIngestedAt, sourceOwner, sourcePosition } from "./test-helpers.ts";
+import {
+  sourceOwner as createSourceOwner,
+  sourceEvent,
+  sourceIngestedAt,
+  sourcePosition,
+} from "./test-helpers.ts";
 
 const second = { ...sourceEvent, id: "10000000-0000-4000-8000-000000000002", scalar: 73 };
 const inputs = [
@@ -29,7 +34,29 @@ function policyFixture() {
   ]);
 }
 
+vi.mock("../analytics/effect-journal.ts", async (original) => ({
+  ...(await original<typeof import("../analytics/effect-journal.ts")>()),
+  recordAnalyticsEffectOutcomes: vi.fn(async () => undefined),
+}));
+function sourceOwner(rows: readonly (readonly object[])[] = []) {
+  return createSourceOwner([...rows, [], []]);
+}
+
 describe("grouped source effects", () => {
+  it("filters a previously prepared live row that became stale without issuing an empty INSERT", async () => {
+    const fixture = createSourceOwner([
+      [],
+      [],
+      [{ source_id: sourceEvent.id, generation: "1", recorded_at: sourceEvent.recordedAt }],
+      [],
+      [],
+      [{ user_id: sourceEvent.userId, provider_id: sourceEvent.providerId, generation: "2" }],
+    ]);
+    const effects = await prepareMetricStreamSourceEffectsGroup(fixture.owner, [inputs[0]]);
+    expect(effects[0]?.after?.deleted).toBe(false);
+    expect(await applyMetricStreamSourceEffectsGroup(fixture.owner, [inputs[0]], effects)).toBe(0);
+    expect(fixture.executions).toEqual([]);
+  });
   it.each(["missing", "0", "invalid", "-1", "1.5"])(
     "rejects missing, malformed or under-count completed written_rows %s",
     async (count) => {

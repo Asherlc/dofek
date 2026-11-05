@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import { TupleParam } from "@clickhouse/client";
 
@@ -46,6 +46,8 @@ export interface AnalyticsJournalClient {
   database: Database;
 }
 
+export const DETERMINISTIC_PREPARATION_ATTEMPT = "00000000-0000-0000-0000-000000000000";
+
 const stageSchema = z.enum(["scalar", "dedup", "activity"]);
 
 export const stageOrder = { scalar: 1, dedup: 2, activity: 3 } as const;
@@ -83,6 +85,7 @@ const effectSchema = z.object({
 });
 
 export const receiptSchema = z.object({
+  preparation_attempt: z.uuid(),
   serialized_message_id: z.string(),
   effect_count: sourcePlacementSchema.shape.sourceVersion,
   chunk_count: sourcePlacementSchema.shape.sourceVersion,
@@ -91,6 +94,8 @@ export const receiptSchema = z.object({
 });
 
 export const discoveryReceiptSchema = z.object({
+  preparation_attempt: z.uuid(),
+  outcome: z.enum(["written", "fenced", "generation_filtered"]),
   transport: z.enum(["pulsar", "kafka"]),
   kafka_offset: z.string(),
   epoch: z.string(),
@@ -197,7 +202,9 @@ export const storageKeySchema = discoveryReceiptSchema.pick({
   batch: true,
 });
 
-const effectKeySchema = storageKeySchema.extend({
+const attemptKeySchema = storageKeySchema.extend({ preparation_attempt: z.uuid() });
+
+const effectKeySchema = attemptKeySchema.extend({
   effect_ordinal: sourcePlacementSchema.shape.sourceVersion,
   stage: stageSchema,
 });
@@ -220,10 +227,12 @@ export function storageKey(row: StorageKey): string {
 }
 
 function effectKey(row: EffectKey): string {
-  return JSON.stringify([storageKey(row), row.effect_ordinal, row.stage]);
+  return JSON.stringify([storageKey(row), row.preparation_attempt, row.effect_ordinal, row.stage]);
 }
 
-export function selectKeys(keys: readonly (StorageKey | EffectKey)[]) {
+export function selectKeys(
+  keys: readonly (StorageKey | z.infer<typeof attemptKeySchema> | EffectKey)[],
+) {
   // Delivery manifests can cover one finite intake group. Effect/reference
   // callers still enforce their separate twenty-reference page bound.
   z.number().int().min(1).max(500).parse(keys.length);
@@ -240,6 +249,8 @@ export function selectKeys(keys: readonly (StorageKey | EffectKey)[]) {
       ["minor", "UInt64", key.minor],
       ["batch", "Int32", key.batch],
     ];
+    if ("preparation_attempt" in key)
+      fields.push(["preparation_attempt", "UUID", key.preparation_attempt]);
     if ("effect_ordinal" in key)
       fields.push(["effect_ordinal", "UInt64", key.effect_ordinal], ["stage", "String", key.stage]);
     columns = fields.map(([name]) => name).join(",");
@@ -275,9 +286,11 @@ export function indexProofRows<Row>(
 async function readEffectProofs(
   client: Pick<ClickHouseClient, "query">,
   effects: readonly AnalyticsEffect[],
+  preparationAttempt: string,
 ) {
   const keys = effects.map((effect) => ({
     ...deliveryParams(effect.position),
+    preparation_attempt: preparationAttempt,
     effect_ordinal: effect.cursor.effectOrdinal,
     stage: effect.stage,
   }));
@@ -291,7 +304,7 @@ async function readEffectProofs(
   ];
   const delivery = selectKeys(deliveries);
   const manifests = await client.query({
-    query: `SELECT ${delivery.columns},serialized_message_id,effect_count,chunk_count,effect_digest,stages
+    query: `SELECT ${delivery.columns},preparation_attempt,serialized_message_id,effect_count,chunk_count,effect_digest,stages
       FROM analytics.delivery_receipt FINAL WHERE ${delivery.where} AND status='committed'
       LIMIT 2 BY ${delivery.columns}`,
     query_params: delivery.params,
@@ -311,7 +324,7 @@ async function readEffectProofs(
   const expected = new Set(keys.map(effectKey));
   const hashSchema = effectKeySchema.extend({ effect_hash: z.string() });
   const discovery = await client.query({
-    query: `SELECT ${selected.columns},effect_hash FROM analytics.effect_receipt FINAL
+    query: `SELECT ${selected.columns},effect_hash,outcome FROM analytics.effect_receipt FINAL
       WHERE ${selected.where} LIMIT 2 BY ${selected.columns}`,
     query_params: selected.params,
     format: "JSONEachRow",
@@ -319,7 +332,7 @@ async function readEffectProofs(
   });
   const receipts = indexProofRows(
     z
-      .array(hashSchema)
+      .array(hashSchema.extend({ outcome: z.enum(["written", "fenced", "generation_filtered"]) }))
       .max(keys.length * 2)
       .parse(await discovery.json()),
     expected,
@@ -349,7 +362,7 @@ async function readReceipt(
   status: "prepared" | "committed" = "committed",
 ) {
   const result = await client.query({
-    query: `SELECT serialized_message_id,effect_count,chunk_count,effect_digest,stages FROM analytics.delivery_receipt FINAL WHERE ${deliveryWhere} AND status={status:String} LIMIT 2`,
+    query: `SELECT preparation_attempt,serialized_message_id,effect_count,chunk_count,effect_digest,stages FROM analytics.delivery_receipt FINAL WHERE ${deliveryWhere} AND status={status:String} LIMIT 2`,
     query_params: { ...deliveryParams(position), status },
     format: "JSONEachRow",
     clickhouse_settings: integerSettings,
@@ -363,9 +376,12 @@ export async function persistAnalyticsEffectPage(
   client: ClickHouseClient,
   effects: readonly AnalyticsEffect[],
   phase: "prepare" | "commit" | "prepareFresh" | "commitFresh",
+  preparationAttempt: string,
+  outcome: "written" | "generation_filtered",
 ): Promise<void> {
   if (!client.insert)
     throw new Error("Analytics journal requires a ClickHouse insert-capable client");
+  z.enum(["written", "generation_filtered"]).parse(outcome);
   const validated = validateEffectBatch(effects);
   const rows: object[] = [];
   const receipts: object[] = [];
@@ -374,13 +390,12 @@ export async function persistAnalyticsEffectPage(
     // A fresh group has one artifact probe under exclusive publication ownership.
     // Its newly written rows are verified together before the frontier advances.
     const proofs =
-      phase === "prepareFresh" || phase === "commitFresh"
-        ? null
-        : await readEffectProofs(client, page);
+      phase === "prepareFresh" ? null : await readEffectProofs(client, page, preparationAttempt);
     for (const effect of page) {
       const hash = effectHash(effect);
       const key = {
         ...deliveryParams(effect.position),
+        preparation_attempt: preparationAttempt,
         effect_ordinal: effect.cursor.effectOrdinal,
         stage: effect.stage,
       };
@@ -395,6 +410,8 @@ export async function persistAnalyticsEffectPage(
         throw new Error(
           "Analytics delivery receipt forbids adding or changing effects in a closed stage",
         );
+      if (expected.some((row) => row.outcome === "fenced"))
+        throw new Error("Ordinary receipt publication cannot restore a fenced effect");
       if (expected.some((row) => row.effect_hash !== hash))
         throw new Error("Replay changed an existing analytics effect receipt identity");
       for (const row of proofs?.journal.get(effectKey(key)) ?? [])
@@ -404,6 +421,7 @@ export async function persistAnalyticsEffectPage(
       if (!owner) throw new Error("Analytics effect account ownership is missing");
       rows.push({
         ...receiptValues(effect.position),
+        preparation_attempt: preparationAttempt,
         effect_ordinal: effect.cursor.effectOrdinal,
         stage: effect.stage,
         serialized_message_id:
@@ -419,10 +437,12 @@ export async function persistAnalyticsEffectPage(
       });
       receipts.push({
         ...receiptValues(effect.position),
+        preparation_attempt: preparationAttempt,
         effect_ordinal: effect.cursor.effectOrdinal,
         stage: effect.stage,
         effect_hash: hash,
         is_empty: 0,
+        outcome: expected[0]?.outcome === "generation_filtered" ? "generation_filtered" : outcome,
         user_id: owner,
       });
     }
@@ -445,7 +465,55 @@ export async function persistAnalyticsEffectPage(
   }
 }
 
+/** Application outcomes are structural proof only; the manifest commits the whole delivery. */
+export async function recordAnalyticsEffectOutcomes(
+  client: ClickHouseClient,
+  effects: readonly AnalyticsEffect[],
+  outcome: "written" | "generation_filtered",
+): Promise<void> {
+  z.enum(["written", "generation_filtered"]).parse(outcome);
+  if (!effects.length) return;
+  z.number().int().max(500).parse(effects.length);
+  const selected = selectKeys([
+    ...new Map(
+      effects.map((effect) => {
+        const key = deliveryParams(effect.position);
+        return [storageKey(key), key] as const;
+      }),
+    ).values(),
+  ]);
+  const response = await client.query({
+    query: `SELECT ${selected.columns},preparation_attempt,serialized_message_id,effect_count,chunk_count,effect_digest,stages
+      FROM analytics.delivery_receipt FINAL WHERE ${selected.where} AND status='prepared'
+      LIMIT 2 BY ${selected.columns}`,
+    query_params: selected.params,
+    format: "JSONEachRow",
+    clickhouse_settings: integerSettings,
+  });
+  const manifests = indexProofRows(
+    z
+      .array(storageKeySchema.merge(receiptSchema))
+      .max(effects.length * 2)
+      .parse(await response.json()),
+    new Set(effects.map((effect) => storageKey(deliveryParams(effect.position)))),
+    storageKey,
+  );
+  const attempts = new Map<string, AnalyticsEffect[]>();
+  for (const effect of effects) {
+    const rows = manifests.get(storageKey(deliveryParams(effect.position))) ?? [];
+    if (rows.length !== 1 || !rows[0])
+      throw new Error("Application outcome has no exact prepared manifest");
+    const attempt = rows[0].preparation_attempt;
+    const page = attempts.get(attempt) ?? [];
+    page.push(effect);
+    attempts.set(attempt, page);
+  }
+  for (const [attempt, page] of attempts)
+    await persistAnalyticsEffectPage(client, page, "commit", attempt, outcome);
+}
+
 const journalRowSchema = z.object({
+  preparation_attempt: z.uuid(),
   transport: z.enum(["pulsar", "kafka"]),
   kafka_offset: z.string(),
   epoch: z.string(),
@@ -503,40 +571,93 @@ function decodeJournalRow(row: z.infer<typeof journalRowSchema>): AnalyticsEffec
   return effect;
 }
 
-async function* readSourceIntentPages(client: ClickHouseClient, position: MetricStreamPosition) {
+async function* readSourceReferences(
+  client: ClickHouseClient,
+  position: MetricStreamPosition,
+  preparationAttempt: string,
+) {
   let afterOrdinal = "-1";
   for (;;) {
     const result = await client.query({
-      query: `SELECT * FROM analytics.effect_journal FINAL WHERE ${deliveryWhere}
-        AND stage='scalar' AND effect_ordinal>{afterOrdinal:Int128}
-        ORDER BY effect_ordinal LIMIT {limit:UInt32}`,
-      query_params: { ...deliveryParams(position), afterOrdinal, limit: RECEIPT_PAGE_SIZE },
+      query: `SELECT * FROM (
+        (SELECT epoch,topic,partition,transport,kafka_offset,major,minor,batch,preparation_attempt,effect_ordinal,stage,effect_hash,0 AS is_empty,user_id,'written' AS outcome
+        FROM analytics.effect_journal AS intent FINAL WHERE ${deliveryWhere}
+          AND preparation_attempt={preparationAttempt:UUID} AND stage='scalar'
+          AND intent.effect_ordinal>{afterOrdinal:Int128}
+        ORDER BY intent.effect_ordinal LIMIT {limit:UInt32})
+        UNION ALL
+        (SELECT epoch,topic,partition,transport,kafka_offset,major,minor,batch,preparation_attempt,effect_ordinal,stage,effect_hash,is_empty,user_id,toString(outcome) AS outcome
+        FROM analytics.effect_receipt AS reference FINAL WHERE ${deliveryWhere}
+          AND preparation_attempt={preparationAttempt:UUID} AND stage='scalar' AND reference.outcome='fenced'
+          AND reference.effect_ordinal>{afterOrdinal:Int128}
+        ORDER BY reference.effect_ordinal LIMIT {limit:UInt32})
+      ) ORDER BY effect_ordinal LIMIT {combinedLimit:UInt32}`,
+      query_params: {
+        ...deliveryParams(position),
+        preparationAttempt,
+        afterOrdinal,
+        limit: RECEIPT_PAGE_SIZE,
+        combinedLimit: RECEIPT_PAGE_SIZE * 2,
+      },
       format: "JSONEachRow",
       clickhouse_settings: integerSettings,
     });
-    const rows = z.array(journalRowSchema).parse(await result.json());
-    if (!rows.length) return;
-    const effects = rows.map(decodeJournalRow);
-    for (const effect of effects) {
-      if (metricStreamPositionIdentity(effect.position) !== metricStreamPositionIdentity(position))
-        throw new Error("Prepared intent native message identity changed");
-      if (BigInt(effect.cursor.effectOrdinal) !== BigInt(afterOrdinal) + 1n)
-        throw new Error("Prepared intent contains a missing or duplicate ordinal");
-      afterOrdinal = effect.cursor.effectOrdinal;
+    const candidates = z
+      .array(discoveryReceiptSchema)
+      .max(RECEIPT_PAGE_SIZE * 2)
+      .parse(await result.json());
+    const merged = new Map<string, DiscoveryReceipt>();
+    for (const candidate of candidates) {
+      const previous = merged.get(candidate.effect_ordinal);
+      if (previous) {
+        if (
+          previous.effect_hash !== candidate.effect_hash ||
+          previous.outcome === candidate.outcome
+        )
+          throw new Error("Prepared structural references disagree on an effect identity");
+        if (candidate.outcome === "fenced") merged.set(candidate.effect_ordinal, candidate);
+      } else merged.set(candidate.effect_ordinal, candidate);
     }
-    yield effects;
+    const refs = [...merged.values()]
+      .sort((left, right) => (BigInt(left.effect_ordinal) < BigInt(right.effect_ordinal) ? -1 : 1))
+      .slice(0, RECEIPT_PAGE_SIZE);
+    if (!refs.length) return;
+    const resolved = await readReferencedEffects(client, refs);
+    for (const { reference } of resolved) {
+      if (BigInt(reference.effect_ordinal) !== BigInt(afterOrdinal) + 1n)
+        throw new Error("Prepared intent contains a missing or duplicate ordinal");
+      afterOrdinal = reference.effect_ordinal;
+    }
+    yield resolved;
   }
 }
 
-async function sourceIntentFingerprint(client: ClickHouseClient, position: MetricStreamPosition) {
+async function* readSourceIntentPages(
+  client: ClickHouseClient,
+  position: MetricStreamPosition,
+  preparationAttempt: string,
+) {
+  for await (const page of readSourceReferences(client, position, preparationAttempt)) {
+    const effects = page.flatMap(({ effect }) => (effect ? [effect] : []));
+    for (const effect of effects)
+      if (metricStreamPositionIdentity(effect.position) !== metricStreamPositionIdentity(position))
+        throw new Error("Prepared intent native message identity changed");
+    if (effects.length) yield effects;
+  }
+}
+
+async function sourceIntentFingerprint(
+  client: ClickHouseClient,
+  position: MetricStreamPosition,
+  preparationAttempt: string,
+) {
   const digest = createHash("sha256");
   let count = 0n;
-  for await (const page of readSourceIntentPages(client, position)) {
-    for (const effect of page) {
-      digest.update(effectHash(effect));
+  for await (const page of readSourceReferences(client, position, preparationAttempt))
+    for (const { reference } of page) {
+      digest.update(reference.effect_hash);
       count++;
     }
-  }
   return { effect_count: String(count), effect_digest: digest.digest("hex") };
 }
 
@@ -544,7 +665,7 @@ async function verifyPreparation(client: ClickHouseClient, position: MetricStrea
   const receipt = await readReceipt(client, position, "prepared");
   if (!receipt)
     throw new Error("Delivery has no complete preparation; resume preparing the original intent");
-  const actual = await sourceIntentFingerprint(client, position);
+  const actual = await sourceIntentFingerprint(client, position, receipt.preparation_attempt);
   if (
     receipt.serialized_message_id !==
       (position.transport === "pulsar" ? position.serializedMessageId : "") ||
@@ -565,7 +686,11 @@ async function verifyPreparation(client: ClickHouseClient, position: MetricStrea
  */
 export async function prepareAnalyticsDelivery(
   client: ClickHouseClient,
-  input: { position: MetricStreamPosition; pages(): AsyncIterable<readonly AnalyticsEffect[]> },
+  input: {
+    position: MetricStreamPosition;
+    preparation: "deterministic" | "control";
+    pages(): AsyncIterable<readonly AnalyticsEffect[]>;
+  },
 ): Promise<void> {
   metricStreamPositionSchema.parse(input.position);
   if (!client.insert) throw new Error("Analytics preparation requires an insert-capable client");
@@ -575,6 +700,8 @@ export async function prepareAnalyticsDelivery(
   }
   if (await readReceipt(client, input.position))
     throw new Error("Cannot prepare an already committed delivery");
+  const preparationAttempt =
+    input.preparation === "control" ? randomUUID() : DETERMINISTIC_PREPARATION_ATTEMPT;
   const digest = createHash("sha256");
   let count = 0n;
   for await (const page of input.pages()) {
@@ -595,10 +722,10 @@ export async function prepareAnalyticsDelivery(
       digest.update(effectHash(effect));
       count++;
     }
-    await persistAnalyticsEffectPage(client, effects, "prepare");
+    await persistAnalyticsEffectPage(client, effects, "prepare", preparationAttempt, "written");
   }
   const expected = { effect_count: String(count), effect_digest: digest.digest("hex") };
-  const actual = await sourceIntentFingerprint(client, input.position);
+  const actual = await sourceIntentFingerprint(client, input.position, preparationAttempt);
   if (
     expected.effect_count !== actual.effect_count ||
     expected.effect_digest !== actual.effect_digest
@@ -610,6 +737,7 @@ export async function prepareAnalyticsDelivery(
     values: [
       {
         ...receiptValues(input.position),
+        preparation_attempt: preparationAttempt,
         ...expected,
         serialized_message_id:
           input.position.transport === "pulsar" ? input.position.serializedMessageId : "",
@@ -627,8 +755,8 @@ export async function* readPreparedAnalyticsEffectPages(
   position: MetricStreamPosition,
 ): AsyncGenerator<readonly AnalyticsEffect[]> {
   // Verify the whole manifest with bounded reads before returning any raw-write work.
-  await verifyPreparation(client, position);
-  yield* readSourceIntentPages(client, position);
+  const prepared = await verifyPreparation(client, position);
+  yield* readSourceIntentPages(client, position, prepared.preparation_attempt);
 }
 
 /** The caller must finish every raw mutation before making this intent discoverable. */
@@ -641,8 +769,14 @@ export async function commitPreparedAnalyticsDelivery(
   const previous = await readReceipt(client, position);
   if (previous && JSON.stringify(previous) !== JSON.stringify(prepared))
     throw new Error("Committed delivery differs from its complete preparation");
-  for await (const page of readSourceIntentPages(client, position))
-    await persistAnalyticsEffectPage(client, page, "commit");
+  for await (const page of readSourceIntentPages(client, position, prepared.preparation_attempt))
+    await persistAnalyticsEffectPage(
+      client,
+      page,
+      "commit",
+      prepared.preparation_attempt,
+      "written",
+    );
   if (prepared.effect_count === "0")
     await client.insert({
       table: "analytics.effect_receipt",
@@ -650,6 +784,8 @@ export async function commitPreparedAnalyticsDelivery(
       values: [
         {
           ...receiptValues(position),
+          preparation_attempt: prepared.preparation_attempt,
+          outcome: "written",
           effect_ordinal: "-1",
           stage: "scalar",
           effect_hash: EMPTY_DIGEST,
@@ -670,10 +806,15 @@ export async function commitPreparedAnalyticsDelivery(
 export async function readReferencedEffects(
   client: Pick<ClickHouseClient, "query">,
   receipts: readonly DiscoveryReceipt[],
-): Promise<(AnalyticsEffect | null)[]> {
+): Promise<{ reference: DiscoveryReceipt; effect: AnalyticsEffect | null }[]> {
   z.number().int().max(500).parse(receipts.length);
   const nonempty: EffectKey[] = [];
   for (const receipt of receipts) {
+    if (receipt.outcome === "fenced") {
+      if (receipt.user_id !== null || receipt.is_empty !== 0 || receipt.effect_ordinal === "-1")
+        throw new Error("Malformed fenced structural receipt");
+      continue;
+    }
     if (receipt.is_empty) {
       if (receipt.effect_ordinal !== "-1" || receipt.effect_hash !== EMPTY_DIGEST)
         throw new Error("Malformed empty analytics discovery receipt");
@@ -702,7 +843,8 @@ export async function readReferencedEffects(
     indexed = indexProofRows(rows, expected, effectKey);
   }
   return receipts.map((receipt) => {
-    if (receipt.is_empty) return null;
+    if (receipt.is_empty || receipt.outcome === "fenced")
+      return { reference: receipt, effect: null };
     const rows = indexed.get(effectKey(effectKeySchema.parse(receipt))) ?? [];
     const row = rows[0];
     if (rows.length !== 1 || !row)
@@ -717,7 +859,7 @@ export async function readReferencedEffects(
       row.effect_hash !== receipt.effect_hash
     )
       throw new Error("Analytics journal ownership or receipt effect identity is corrupt");
-    return effect;
+    return { reference: receipt, effect };
   });
 }
 
@@ -739,9 +881,10 @@ async function verifyAnalyticsDeliveryReceipt(
     afterStage = 0;
   for (;;) {
     const result = await client.query({
-      query: `SELECT * FROM analytics.effect_receipt FINAL WHERE ${deliveryWhere} AND stage IN {stages:Array(String)} AND (effect_ordinal>{afterOrdinal:Int128} OR (effect_ordinal={afterOrdinal:Int128} AND toInt8(stage)>{afterStage:Int8})) ORDER BY effect_ordinal,stage LIMIT {limit:UInt32}`,
+      query: `SELECT * FROM analytics.effect_receipt FINAL WHERE ${deliveryWhere} AND preparation_attempt={preparationAttempt:UUID} AND stage IN {stages:Array(String)} AND (effect_ordinal>{afterOrdinal:Int128} OR (effect_ordinal={afterOrdinal:Int128} AND toInt8(stage)>{afterStage:Int8})) ORDER BY effect_ordinal,stage LIMIT {limit:UInt32}`,
       query_params: {
         ...deliveryParams(position),
+        preparationAttempt: receipt.preparation_attempt,
         stages: receipt.stages,
         afterOrdinal,
         afterStage,
@@ -757,10 +900,10 @@ async function verifyAnalyticsDeliveryReceipt(
     const effects = await readReferencedEffects(client, refs);
     for (const [index, reference] of refs.entries()) {
       chunkCount++;
-      const effect = effects[index];
-      if (effect) {
+      const resolved = effects[index];
+      if (resolved && !resolved.reference.is_empty) {
         effectCount++;
-        digest.update(effectHash(effect));
+        digest.update(resolved.reference.effect_hash);
       }
       afterOrdinal = reference.effect_ordinal;
       afterStage = stageOrder[reference.stage];

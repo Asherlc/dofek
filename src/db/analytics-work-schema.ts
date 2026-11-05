@@ -7,7 +7,7 @@ export function analyticsWorkSchemaStatements(): string[] {
        OR (transport='kafka' AND major=0 AND minor=0 AND batch=-1))`;
   return [
     `CREATE TABLE IF NOT EXISTS analytics.effect_journal (
-      ${delivery}, effect_ordinal UInt64, stage Enum8('scalar'=1,'dedup'=2,'activity'=3),
+      ${delivery}, preparation_attempt UUID, effect_ordinal UInt64, stage Enum8('scalar'=1,'dedup'=2,'activity'=3),
       serialized_message_id String, operation_id Nullable(UUID), user_id UUID,
       source_id UUID, source_version UInt64, generation UInt64,
       before Nullable(String), after Nullable(String), effect_hash FixedString(64),
@@ -15,16 +15,21 @@ export function analyticsWorkSchemaStatements(): string[] {
         ((transport='pulsar' AND serialized_message_id!='')
          OR (transport='kafka' AND serialized_message_id=''))
     ) ENGINE=ReplacingMergeTree
-    ORDER BY (epoch,topic,partition,transport,kafka_offset,major,minor,batch,effect_ordinal,stage)
+    ORDER BY (epoch,topic,partition,transport,kafka_offset,major,minor,batch,preparation_attempt,effect_ordinal,stage)
     SETTINGS storage_policy='metric_stream_journal'`,
     `CREATE TABLE IF NOT EXISTS analytics.effect_receipt (
       ${delivery}, effect_ordinal Int128, stage Enum8('scalar'=1,'dedup'=2,'activity'=3),
-      effect_hash FixedString(64), is_empty UInt8, user_id Nullable(UUID)
+      effect_hash FixedString(64), is_empty UInt8, user_id Nullable(UUID),
+      outcome Enum8('written'=1,'fenced'=2,'generation_filtered'=3),
+      CONSTRAINT canonical_effect_outcome CHECK
+        ((outcome='fenced' AND user_id IS NULL AND is_empty=0 AND effect_ordinal>=0)
+         OR (outcome!='fenced' AND ((is_empty=1 AND user_id IS NULL AND effect_ordinal=-1)
+           OR (is_empty=0 AND user_id IS NOT NULL AND effect_ordinal>=0))))
     ) ENGINE=ReplacingMergeTree
-    ORDER BY (epoch,topic,partition,transport,kafka_offset,major,minor,batch,effect_ordinal,stage)
+    ORDER BY (epoch,topic,partition,transport,kafka_offset,major,minor,batch,preparation_attempt,effect_ordinal,stage)
     SETTINGS storage_policy='metric_stream_journal'`,
     `CREATE TABLE IF NOT EXISTS analytics.delivery_receipt (
-      ${delivery}, serialized_message_id String, effect_count UInt64, chunk_count UInt64,
+      ${delivery}, preparation_attempt UUID, serialized_message_id String, effect_count UInt64, chunk_count UInt64,
       effect_digest FixedString(64), stages Array(String),
       status Enum8('prepared'=1,'committed'=2) DEFAULT 'committed',
       CONSTRAINT canonical_message_identity CHECK

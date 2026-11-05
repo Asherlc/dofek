@@ -210,6 +210,7 @@ export async function coordinateAnalyticsDelivery(
       }
       await prepareAnalyticsDelivery(owner.client, {
         position: input.position,
+        preparation: "control",
         pages: () => input.prepare(deliveryOwner),
       });
       await input.applyControl(deliveryOwner);

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   createMetricStreamDeletedEvent,
   type MetricStreamBatchCompletedEventV1,
@@ -8,7 +8,20 @@ import {
   metricStreamSourceEffect,
   prepareMetricStreamSourceEffects,
 } from "./source-effects.ts";
-import { sourceEvent, sourceIngestedAt, sourceOwner, sourcePosition } from "./test-helpers.ts";
+import {
+  sourceOwner as createSourceOwner,
+  sourceEvent,
+  sourceIngestedAt,
+  sourcePosition,
+} from "./test-helpers.ts";
+
+vi.mock("../analytics/effect-journal.ts", async (original) => ({
+  ...(await original<typeof import("../analytics/effect-journal.ts")>()),
+  recordAnalyticsEffectOutcomes: vi.fn(async () => undefined),
+}));
+function sourceOwner(rows: readonly (readonly object[])[] = []) {
+  return createSourceOwner([...rows, []]);
+}
 
 describe("streaming source control effects", () => {
   it("applies only prepared tombstone versions under the frozen owner time", async () => {

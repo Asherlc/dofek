@@ -12,6 +12,7 @@ import {
 import {
   type AnalyticsEffect,
   commitPreparedAnalyticsDelivery,
+  DETERMINISTIC_PREPARATION_ATTEMPT,
   type DiscoveryReceipt,
   deliveryParams,
   discoveryReceiptSchema,
@@ -45,7 +46,7 @@ export async function verifyAnalyticsDeliveryReceipts(
     positions.map((position) => [storageKey(deliveryParams(position)), position]),
   );
   const result = await client.query({
-    query: `SELECT ${selected.columns},serialized_message_id,effect_count,chunk_count,effect_digest,stages
+    query: `SELECT ${selected.columns},preparation_attempt,serialized_message_id,effect_count,chunk_count,effect_digest,stages
       FROM analytics.delivery_receipt FINAL WHERE ${selected.where} AND status='committed'
       LIMIT 2 BY ${selected.columns}`,
     query_params: selected.params,
@@ -89,14 +90,24 @@ export async function verifyAnalyticsDeliveryReceipts(
       receipt.stages[0] === "scalar",
   );
   const referenceLimit = simpleGroup ? positions.length : RECEIPT_PAGE_SIZE;
+  const referenceKeys = selectKeys(
+    positions.map((position) => {
+      const member = state.get(storageKey(deliveryParams(position)));
+      if (!member) throw new Error("Grouped receipt has no selected delivery manifest");
+      return {
+        ...deliveryParams(position),
+        preparation_attempt: member.receipt.preparation_attempt,
+      };
+    }),
+  );
   let after: DiscoveryReceipt | undefined;
   for (;;) {
     const page = await client.query({
-      query: `SELECT * FROM analytics.effect_receipt FINAL WHERE ${selected.where}
+      query: `SELECT * FROM analytics.effect_receipt FINAL WHERE ${referenceKeys.where}
         ${after ? "AND (kafka_offset,major,minor,batch,effect_ordinal,toInt8(stage)) > ({afterOffset:UInt64},{afterMajor:UInt64},{afterMinor:UInt64},{afterBatch:Int32},{afterOrdinal:Int128},{afterStage:Int8})" : ""}
         ORDER BY kafka_offset,major,minor,batch,effect_ordinal,stage LIMIT {limit:UInt32}`,
       query_params: {
-        ...selected.params,
+        ...referenceKeys.params,
         limit: simpleGroup ? referenceLimit + 1 : referenceLimit,
         ...(after
           ? {
@@ -125,10 +136,10 @@ export async function verifyAnalyticsDeliveryReceipts(
       member.chunkCount++;
       if (member.chunkCount > BigInt(member.receipt.chunk_count))
         throw new Error("Analytics delivery receipt has unexpected effect references");
-      const effect = effects[index];
-      if (effect) {
+      const resolved = effects[index];
+      if (resolved && !resolved.reference.is_empty) {
         member.effectCount++;
-        member.digest.update(effectHash(effect));
+        member.digest.update(resolved.reference.effect_hash);
       }
       after = ref;
     }
@@ -256,6 +267,7 @@ export async function prepareAnalyticsDeliveryGroup(
     for (const position of input.positions) {
       await prepareAnalyticsDelivery(client, {
         position,
+        preparation: "deterministic",
         pages: async function* () {
           const key = storageKey(deliveryParams(position));
           const page = (await generate()).filter(
@@ -273,7 +285,13 @@ export async function prepareAnalyticsDeliveryGroup(
     return { positions: input.positions, effects, fresh: false };
   }
   const effects = await generate();
-  await persistAnalyticsEffectPage(client, effects, "prepareFresh");
+  await persistAnalyticsEffectPage(
+    client,
+    effects,
+    "prepareFresh",
+    DETERMINISTIC_PREPARATION_ATTEMPT,
+    "written",
+  );
   await client.insert({
     table: "analytics.delivery_receipt",
     format: "JSONEachRow",
@@ -293,7 +311,13 @@ export async function commitAnalyticsDeliveryGroup(
       await commitPreparedAnalyticsDelivery(client, position);
     return;
   }
-  await persistAnalyticsEffectPage(client, prepared.effects, "commitFresh");
+  await persistAnalyticsEffectPage(
+    client,
+    prepared.effects,
+    "commitFresh",
+    DETERMINISTIC_PREPARATION_ATTEMPT,
+    "written",
+  );
   const nonempty = new Set(
     prepared.effects.map((effect) => storageKey(deliveryParams(effect.position))),
   );
@@ -306,6 +330,8 @@ export async function commitAnalyticsDeliveryGroup(
       format: "JSONEachRow",
       values: empty.map((position) => ({
         ...receiptValues(position),
+        preparation_attempt: DETERMINISTIC_PREPARATION_ATTEMPT,
+        outcome: "written",
         effect_ordinal: "-1",
         stage: "scalar",
         effect_hash: EMPTY_DIGEST,
@@ -334,6 +360,7 @@ function groupManifestRows(
     const effect = indexed.get(storageKey(deliveryParams(position)));
     return {
       ...receiptValues(position),
+      preparation_attempt: DETERMINISTIC_PREPARATION_ATTEMPT,
       serialized_message_id: position.transport === "pulsar" ? position.serializedMessageId : "",
       effect_count: effect ? "1" : "0",
       chunk_count: "1",

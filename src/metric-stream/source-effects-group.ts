@@ -3,7 +3,10 @@ import { Readable } from "node:stream";
 import { TupleParam } from "@clickhouse/client";
 import { z } from "zod";
 import type { AnalyticsQueryOwner } from "../analytics/analytics-query-owner.ts";
-import type { AnalyticsEffect } from "../analytics/effect-journal.ts";
+import {
+  type AnalyticsEffect,
+  recordAnalyticsEffectOutcomes,
+} from "../analytics/effect-journal.ts";
 import { journalDeliveryKey, metricStreamPositionIdentity } from "../analytics/journal-position.ts";
 import { resolveSourcePlacements, type SourcePlacement } from "../analytics/source-placement.ts";
 import { mapMetricStreamEventToClickHouseRow } from "./clickhouse-row.ts";
@@ -242,6 +245,46 @@ export async function applyMetricStreamSourceEffectsGroup(
     };
   });
   if (!rows.length) return 0;
+  const params = policyParameters(validated);
+  const fenceResult = await owner.client.query({
+    query: `SELECT user_hash FROM ${ACCOUNT_ERASURE_FENCE_TABLE} FINAL WHERE user_hash IN {hashes:Array(String)}`,
+    query_params: { hashes: params.hashes },
+    format: "JSONEachRow",
+    clickhouse_settings: { log_queries: 0 },
+  });
+  if (z.array(z.object({ user_hash: z.string() })).parse(await fenceResult.json()).length)
+    throw new Error(
+      "Prepared account effect is fenced; finish erasure structural proof before replay",
+    );
+  const generationResult = await owner.client.query({
+    query: `SELECT user_id,provider_id,toString(current_generation) AS generation FROM (${currentGenerations})`,
+    query_params: params,
+    format: "JSONEachRow",
+  });
+  const generations = new Map(
+    z
+      .array(z.object({ user_id: z.uuid(), provider_id: z.string(), generation: unsigned }))
+      .parse(await generationResult.json())
+      .map((row) => [
+        JSON.stringify([identity(row.user_id), row.provider_id]),
+        BigInt(row.generation),
+      ]),
+  );
+  const eligible = rows
+    .map((row, index) => ({ row, effect: effects[index] }))
+    .filter(
+      ({ row }) =>
+        row.is_deleted === 1 ||
+        BigInt(row.generation) >=
+          (generations.get(JSON.stringify([identity(row.user_id), row.provider_id])) ?? 0n),
+    );
+  const eligibleIds = new Set(eligible.map(({ row }) => identity(row.id)));
+  const filtered = effects.filter((effect) => !eligibleIds.has(identity(effect.sourceId)));
+  if (!eligible.length) {
+    await recordAnalyticsEffectOutcomes(owner.client, filtered, "generation_filtered");
+    return 0;
+  }
+  const eligibleRows = eligible.map(({ row }) => row);
   const result = await owner.client.exec({
     query: `INSERT INTO ${METRIC_STREAM_TABLE} (id,activity_id,user_id,recorded_at,channel,provider_id,external_id,device_id,source_type,scalar,vector,point,metadata,ingested_at,is_deleted,version,generation)
       SELECT incoming.id,incoming.activity_id,incoming.user_id,parseDateTime64BestEffort(incoming.recorded_at,6),incoming.channel,incoming.provider_id,
@@ -256,11 +299,11 @@ export async function applyMetricStreamSourceEffectsGroup(
         AND (incoming.is_deleted=1 OR incoming.generation>=ifNull(current.current_generation,0))
       FORMAT JSONEachRow`,
     query_params: {
-      owners: rows.map((row) => new TupleParam([row.user_id, row.provider_id])),
-      hashes: [...new Set(rows.map((row) => userHash(row.user_id)))],
+      owners: eligibleRows.map((row) => new TupleParam([row.user_id, row.provider_id])),
+      hashes: [...new Set(eligibleRows.map((row) => userHash(row.user_id)))],
     },
     values: Readable.from(
-      rows.map((row) => `${JSON.stringify({ ...row, point: row.point ?? "" })}\n`),
+      eligibleRows.map((row) => `${JSON.stringify({ ...row, point: row.point ?? "" })}\n`),
     ),
     clickhouse_settings: { wait_end_of_query: 1, insert_deduplicate: 0 },
   });
@@ -270,10 +313,16 @@ export async function applyMetricStreamSourceEffectsGroup(
   if (
     typeof writtenRows !== "string" ||
     !/^(0|[1-9]\d*)$/.test(writtenRows) ||
-    BigInt(writtenRows) < BigInt(rows.length)
+    BigInt(writtenRows) < BigInt(eligibleRows.length)
   )
     throw new Error(
-      `Raw write summary written_rows ${writtenRows ?? "missing"} is below ${rows.length} sent rows`,
+      `Raw write summary written_rows ${writtenRows ?? "missing"} is below ${eligibleRows.length} sent rows`,
     );
-  return rows.filter((row) => row.is_deleted === 0).length;
+  await recordAnalyticsEffectOutcomes(
+    owner.client,
+    effects.filter((effect) => eligibleIds.has(identity(effect.sourceId))),
+    "written",
+  );
+  await recordAnalyticsEffectOutcomes(owner.client, filtered, "generation_filtered");
+  return eligibleRows.filter((row) => row.is_deleted === 0).length;
 }

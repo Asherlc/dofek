@@ -1,7 +1,10 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { AnalyticsQueryOwner } from "../analytics/analytics-query-owner.ts";
-import type { AnalyticsEffect } from "../analytics/effect-journal.ts";
+import {
+  type AnalyticsEffect,
+  recordAnalyticsEffectOutcomes,
+} from "../analytics/effect-journal.ts";
 import { journalDeliveryKey } from "../analytics/journal-position.ts";
 import { resolveSourcePlacements, type SourcePlacement } from "../analytics/source-placement.ts";
 import type { ClickHouseClient } from "../db/clickhouse.ts";
@@ -172,6 +175,23 @@ export async function applyMetricStreamSourceEffects(
     if (!effect.after?.deleted) throw new Error("Prepared deletion has no terminal tombstone");
     return effect.after;
   });
+  const hashes = [
+    ...new Set(
+      placements.map((placement) =>
+        createHash("sha256").update(placement.userId.toLowerCase()).digest("hex"),
+      ),
+    ),
+  ];
+  const fences = await owner.client.query({
+    query: `SELECT user_hash FROM ${ACCOUNT_ERASURE_FENCE_TABLE} FINAL WHERE user_hash IN {hashes:Array(String)}`,
+    query_params: { hashes },
+    format: "JSONEachRow",
+    clickhouse_settings: { log_queries: 0 },
+  });
+  if (z.array(z.object({ user_hash: z.string() })).parse(await fences.json()).length)
+    throw new Error(
+      "Prepared control effect is fenced; finish erasure structural proof before replay",
+    );
   await owner.client.command({
     query: `INSERT INTO ${METRIC_STREAM_TABLE} (id,activity_id,user_id,recorded_at,channel,provider_id,external_id,device_id,source_type,scalar,vector,point,metadata,ingested_at,is_deleted,version,generation)
       SELECT source.id,latest.1,latest.2,latest.3,latest.4,latest.5,latest.6,latest.7,latest.8,latest.9,latest.10,latest.11,latest.12,
@@ -186,5 +206,6 @@ export async function applyMetricStreamSourceEffects(
       ingested: owner.ingestedAt,
     },
   });
+  await recordAnalyticsEffectOutcomes(owner.client, effects, "written");
   return 0;
 }

@@ -126,7 +126,10 @@ describe("grouped analytics coordination", () => {
     const artifacts: { table: string; statuses: unknown[] }[] = [];
     owner.client = {
       ...client,
-      query: async () => ({ json: async () => JSON.parse('[{"present":0}]') }),
+      query: async ({ query }) => ({
+        json: async () =>
+          JSON.parse(query.includes("SELECT count()>0 AS present") ? '[{"present":0}]' : "[]"),
+      }),
       insert: async ({ table, values }) => {
         artifacts.push({
           table,
@@ -156,7 +159,10 @@ describe("grouped analytics coordination", () => {
     owner.client = {
       exec: client.exec,
       command: client.command,
-      query: async () => ({ json: async () => JSON.parse('[{"present":0}]') }),
+      query: async ({ query }) => ({
+        json: async () =>
+          JSON.parse(query.includes("SELECT count()>0 AS present") ? '[{"present":0}]' : "[]"),
+      }),
       insert: async ({ table, values }) => {
         if (table === "analytics.effect_journal") trace.push("journal");
         if (table === "analytics.effect_receipt") trace.push("effect-receipts");
