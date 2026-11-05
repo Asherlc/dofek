@@ -8,8 +8,7 @@ RUN tar -xzf /tmp/pulsar-source.tar.gz --strip-components=1 && rm /tmp/pulsar-so
 COPY repeatable-offload-payload.patch /tmp/repeatable-offload-payload.patch
 RUN patch -p1 < /tmp/repeatable-offload-payload.patch
 RUN --mount=type=cache,target=/root/.gradle \
-    ./gradlew :tiered-storage:tiered-storage-jcloud:test \
-      --tests '*BlobStoreManagedLedgerOffloaderTest' \
+    ./gradlew :tiered-storage:tiered-storage-jcloud:testClasses \
       :tiered-storage:tiered-storage-jcloud:nar \
       :tiered-storage:tiered-storage-jcloud:checkstyleMain \
       :tiered-storage:tiered-storage-jcloud:checkstyleTest \
@@ -18,6 +17,16 @@ RUN --mount=type=cache,target=/root/.gradle \
       -Dorg.gradle.jvmargs='-Xmx1500m -Xss2m -XX:+UseG1GC' \
       > /tmp/offloader-build.log 2>&1; \
     result=$?; tail -n 30 /tmp/offloader-build.log; exit "$result"
+
+# End compiler and style worker processes before starting the test JVM.
+RUN --mount=type=cache,target=/root/.gradle \
+    ./gradlew :tiered-storage:tiered-storage-jcloud:test \
+      --tests '*BlobStoreManagedLedgerOffloaderTest' \
+      -PtestRetryCount=0 -PtestMaxParallelForks=1 \
+      --max-workers=2 --no-daemon \
+      -Dorg.gradle.jvmargs='-Xmx1500m -Xss2m -XX:+UseG1GC' \
+      > /tmp/offloader-test.log 2>&1; \
+    result=$?; tail -n 30 /tmp/offloader-test.log; exit "$result"
 
 FROM apachepulsar/pulsar:5.0.1@sha256:4507075d8c11b34629f3a0b41f48e3c659951e601538562ee0c088cd2c737ec0
 COPY --from=offloader-build /src/tiered-storage/jcloud/build/libs/tiered-storage-jcloud-5.0.1.nar \

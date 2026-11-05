@@ -35580,3 +35580,23 @@ same image installed 2.8.1-r0 and reported GNU patch 2.8.1. See the
 [Alpine package record](https://pkgs.alpinelinux.org/package/v3.24/main/aarch64/patch).
 Full source-build CI remains required; no retry, timeout or ignored error was
 added. Production was unaffected and automatic deployment remained disabled.
+
+The next [cold source build](https://github.com/Asherlc/dofek/actions/runs/41989377396)
+passed installation, then failed with `ResourceExhausted: cannot allocate memory`.
+A fresh local builder reproduced the failure under `memory.max=4294967296`;
+`memory.events` recorded one OOM kill. The 08:03:10 UTC process sample showed
+Gradle (1,432,872 KiB RSS), Kotlin (1,005,848 KiB), Checkstyle (518,556 KiB)
+and the test JVM (738,380 KiB) resident together. The earlier warm build had
+used cached tasks and did not establish cold-build fit.
+
+The direct fix separates compilation, test-class compilation, NAR packaging and
+style checks from test execution into two Docker RUN steps, ending compiler
+and style processes before the test JVM starts. The same fresh-builder
+validation passed: 28 first-step tasks executed; the second step executed 16
+tasks with 25 up to date, including the selected upstream test. Both Gradle
+invocations succeeded with retries disabled and the original heap/worker
+settings. The verified builder limit remained 4 GiB with no swap; no OOM or
+OOM kill was recorded. Remote CI remains the release gate. This change adds
+no wait, retry, ignored failure or increased limit. Docker documents
+[RUN build steps](https://docs.docker.com/reference/dockerfile/#run); Linux
+documents [cgroup memory accounting](https://docs.kernel.org/admin-guide/cgroup-v2.html#memory).
