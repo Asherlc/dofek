@@ -144,6 +144,16 @@ remain unresolved; do not activate production enforcement until both gates exist
 
 ## Maintenance approval and procedure
 
+The delivery method remains an approval gate. Existing host configuration is
+managed through the stack or Terraform; the canonical Terraform state is not
+currently available. Updating the [Oracle cloud-init definition](../deploy/oracle-free/cloud-init.yml)
+alone does not update this existing host: cloud-init's
+[`runcmd` module runs once per instance](https://cloudinit.readthedocs.io/en/latest/reference/modules.html#runcmd).
+The proposed alternative is a committed, idempotent maintenance script, with
+matching rebuilt-host configuration and the storage preflight as its post-check.
+Obtain explicit approval for that delivery exception together with the concrete
+maintenance window. No script or host change is authorized by this proposal.
+
 Prepare and review the exact installed-tool commands, allocations, tracked
 infrastructure changes and recovery procedure before requesting maintenance
 approval. The following sequence is a gate list, not an executable enablement

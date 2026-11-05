@@ -95,6 +95,16 @@ are inputs to these tests, not substitutes for measured physical deletion.
 The fixture's static endpoint models stability; actual production service
 addressing must be tested with [Swarm service discovery](https://docs.docker.com/engine/swarm/networking/#configure-service-discovery).
 
+The bounded-erasure implementation is in progress, not qualified. Its canonical
+contract uses direct account predicates, typed indirect domains and request-owned
+pages; unknown ClickHouse schemas and unmatched staging tables fail closed.
+Physical-proof pages must survive destructive mutations. A November 5 read-only
+production count found zero erasure requests or retained snapshots. The planned
+schema transition therefore uses a locked, atomic empty-state precondition rather
+than a speculative legacy converter. If that precondition changes, rollout stops
+for a recovery decision. Old request producers and workers must remain quiesced
+through the transition; a table lock alone does not fence them after commit.
+
 ## Deferred work that remains required
 
 | Work | Existing implementation / evidence | Resume point |
