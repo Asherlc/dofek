@@ -43,8 +43,9 @@ remains on `dull-baboon`. The user explicitly approved the separate
 It contains the isolated topology, offload correction and native evacuation CI,
 without application pipeline changes. The first PR is
 [#3226](https://github.com/Asherlc/dofek/pull/3226). Its Expo compatibility
-prerequisite is [#3227](https://github.com/Asherlc/dofek/pull/3227); current check
-and review results belong to those PRs.
+prerequisite [#3227](https://github.com/Asherlc/dofek/pull/3227) has merged.
+The foundation PR has passed its initial CI; subsequent review corrections
+require fresh checks before merge. Current results belong to those PRs.
 
 The user also authorized monitoring each focused PR, correcting failures,
 merging after required checks and review pass, and continuing through subsequent
@@ -104,6 +105,25 @@ schema transition therefore uses a locked, atomic empty-state precondition rathe
 than a speculative legacy converter. If that precondition changes, rollout stops
 for a recovery decision. Old request producers and workers must remain quiesced
 through the transition; a table lock alone does not fence them after commit.
+
+### Native archive format and deployment order
+
+Legacy gzip JSONL objects and their keys remain unchanged. New Pulsar objects
+will use an explicit native key variant under the existing erasure prefix,
+retaining original event bytes and native-position provenance. The shared
+parser and eraser must support both variants in production before or together
+with the first native object; writer activation must never precede erasure
+support. Unknown key forms fail closed. The implementation is not done. See
+the [current archive parser](../src/metric-stream/r2-replay.ts) and
+[archive erasure](../src/account-erasure/archive-erasure.ts).
+
+The approved Node Consumer remains the intake strategy. Queue, group-count and
+byte bounds are required settings, with RSS measured at activation. Create-only
+uploads must verify identical existing content before acknowledging. A crash
+may produce overlapping objects when group boundaries change; this is an
+at-least-once archive, not an exactly-once claim. Avoid duplicating partition
+identity in the key unless the parser checks agreement. Ownership, native drain
+evidence and erasure races remain release gates.
 
 ## Deferred work that remains required
 
