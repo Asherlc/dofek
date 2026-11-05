@@ -35994,3 +35994,22 @@ The failed fixture's fresh containers and volumes were removed successfully;
 existing workspace resources and original archives were preserved. No native
 fitness envelopes were captured. A second setup failure ends this capture
 qualification under the agreed stop rule.
+
+### 2026-11-05 — Lifecycle read blocked by stale replacement address
+
+The authorized isolated lifecycle run passed expiry, R2 removal and all-ledger
+recovery metadata checks, then stopped after the broker and replacement bookie
+restarts. The native client first failed with `Failed to create consumer:
+TimeOut`. The broker's causal error was a ten-second connection timeout to
+`lifecycle-replacement/192.168.176.8:3181`, reading ledger 4 entry 0 for its
+system-topic reader. The replacement's retained startup logs show its local IP
+changed to `.7`; the broker still targeted `.8`. The hostname was already
+advertised, so missing hostname configuration is not the cause.
+
+Both services were healthy in the retained pre-cleanup state. The run did not
+prove survivor readability, did not retire old storage, and stopped its owned
+services successfully. Production and all four holds were unchanged. A proposed
+stable-address Compose model with separate pre/post-restart reads needs a user
+decision; no timeout, retry or DNS-cache setting was changed. Production Swarm
+service/VIP addressing remains a later deployment and whole-host-soak gate.
+See the [qualification evidence and scope](pulsar-qualification.md#november-5-lifecycle-result-replacement-address-changed-after-restart).

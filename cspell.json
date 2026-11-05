@@ -20,6 +20,7 @@
     "apachepulsar",
     "Debezium",
     "oldkey",
+    "ownedcdc",
     "javac",
     "Oxia",
     "metaformat",

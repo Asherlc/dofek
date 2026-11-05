@@ -162,6 +162,38 @@ The fixture uses uncompressed synthetic markers; production physical checks
 must rely on complete ledger/object inventories when payloads are compressed.
 Failed-delete orphan cleanup remains the separately recorded residual risk.
 
+### November 5 lifecycle result: replacement address changed after restart
+
+The authorized corrected run observed the alert, mixed-ledger offload and
+expiry of A and foreign B1 from the stalled backlog. A's ledger disappeared from
+broker inventory, BookKeeper metadata and its exact R2 prefix. B remained unread
+with more than the required 420 seconds of TTL reserve. Native recovery moved
+all surviving ledger ensembles to the replacement; the old source went offline,
+then the broker and replacement were restarted.
+
+The final read remained unqualified: the native client failed to create its
+consumer with `TimeOut`. Retained broker logs show a connection timeout to the
+replacement at `192.168.176.8:3181`, reading ledger 4 for the system topic. The
+replacement's local-address logs changed from `.8` before restart to `.7`
+afterward; the pinned BookKeeper local-node code obtains this address from
+`InetAddress.getLocalHost()`. Both services were healthy in the retained state,
+and the replacement had bound its RPC listener before the failed connection.
+The evidence identifies a stale replacement address, not an old-bookie ensemble
+reference or a missing-message finding. Old storage was not retired. Cleanup
+stopped all owned services successfully; no retry followed.
+
+A further run requires user authorization. The reviewed proposal is a stock
+Compose [static IPv4 address](https://docs.docker.com/reference/compose-file/services/#ipv4_address-ipv6_address)
+for this fixture's replacement endpoint, plus separate B reads immediately after
+evacuation and after restarts. All existing limits remain. This models a stable
+endpoint; it does not qualify production networking. The current
+[production stack](../deploy/stack.yml) has no Pulsar services yet. Future bookie
+service-DNS/VIP addressing and task restart behavior require an explicit
+whole-host soak check, using Docker's
+[Swarm service discovery](https://docs.docker.com/engine/swarm/networking/#configure-service-discovery).
+No DNS-cache tuning, production configuration change or new run is included in
+this proposal.
+
 ### November 5 source-neutral CDC transaction admission
 
 The pure transaction gate now admits already validated records only when the
@@ -224,6 +256,22 @@ observed production value. Planned new-generation CDC tables must map source
 types without narrowing (`bigint` to `Int64`), with an executable canonical
 Postgres/Drizzle/destination type comparison before writes. No decoder, raw
 writes, physical-erasure or production-fit result follows from this capture.
+
+The seven-table [fitness decoder](../src/analytics/cdc-fitness-decoder.ts) now
+uses the committed envelopes to produce closed typed keys, direct/inherited/shared
+ownership descriptors, complete source images and explicit control records.
+Snapshot rows carry revision zero; only END admission assigns streaming
+revisions. Native evidence is preserved. Before writes, owner resolution,
+incarnation validation, durable buffering, destination typing and receipts remain
+required. No raw writes, frontiers or application acknowledgements are activated.
+
+Review caught integral real-number encodings (`1`, `1.0`, `1e0`) being rejected
+or normalized inconsistently. Raw-wire regressions now give all three numeric
+one and identical stable payloads while retaining exact Int64 boundaries. Exact
+TOAST placeholders fail; legitimate text containing the marker is preserved,
+matching the [pinned connector](https://github.com/debezium/debezium/blob/v3.7.0.Final/debezium-connector-postgres/src/main/java/io/debezium/connector/postgresql/PostgresValueConverter.java#L1648-L1652).
+Final focused tests pass 41 cases; the full unit tier passes 24,757 cases with
+19 existing skips. TypeScript, formatting, spelling and diff checks pass.
 
 ### November 5 approved transport and archive layout
 
