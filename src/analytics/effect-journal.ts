@@ -339,6 +339,30 @@ export async function appendAnalyticsEffects(
 ): Promise<void> {
   return persistAnalyticsEffectPage(client, effects, "append");
 }
+
+/** Exact bounded downstream proof; source-delivery manifests remain unchanged. */
+export async function verifyAnalyticsEffectPage(
+  client: Pick<ClickHouseClient, "query">,
+  effects: readonly AnalyticsEffect[],
+): Promise<void> {
+  z.array(effectSchema).max(RECEIPT_PAGE_SIZE).parse(effects);
+  if (!effects.length) return;
+  const references = effects.map((effect) => ({
+    ...receiptValues(effect.position),
+    effect_ordinal: effect.cursor.effectOrdinal,
+    stage: effect.stage,
+    effect_hash: effectHash(effect),
+    is_empty: 0,
+    user_id: effect.after?.userId ?? effect.before?.userId ?? null,
+  }));
+  const proofs = await readEffectProofs(client, effects);
+  for (const reference of references) {
+    const receipts = proofs.receipts.get(effectKey(reference)) ?? [];
+    if (receipts.length !== 1 || receipts[0]?.effect_hash !== reference.effect_hash)
+      throw new Error("Missing or conflicting downstream analytics effect receipt");
+  }
+  await readReferencedEffects(client, references);
+}
 export async function persistAnalyticsEffectPage(
   client: ClickHouseClient,
   effects: readonly AnalyticsEffect[],

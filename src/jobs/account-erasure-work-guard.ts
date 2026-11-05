@@ -62,7 +62,13 @@ export interface AccountErasureWorkLockPool {
   runWithSharedUserLock<T>(userId: string, work: () => Promise<T>, providerId?: string): Promise<T>;
 }
 
-class PostgresAccountErasureWorkLockPool implements AccountErasureWorkLockPool {
+export interface AccountErasureSharedUserLocks {
+  runWithSharedUserLocks<T>(userIds: readonly string[], work: () => Promise<T>): Promise<T>;
+}
+
+class PostgresAccountErasureWorkLockPool
+  implements AccountErasureWorkLockPool, AccountErasureSharedUserLocks
+{
   readonly #pool: Pool;
   readonly #connectionPermits = new AsyncPermitPool(ACCOUNT_ERASURE_WORK_LOCK_POOL_SIZE);
 
@@ -85,12 +91,20 @@ class PostgresAccountErasureWorkLockPool implements AccountErasureWorkLockPool {
   ): Promise<T> {
     return runWithUserLock(this.#pool, this.#connectionPermits, userId, work, providerId, false);
   }
+
+  runWithSharedUserLocks<T>(userIds: readonly string[], work: () => Promise<T>): Promise<T> {
+    const ids = z
+      .array(z.uuid())
+      .max(40)
+      .parse([...new Set(userIds.map((id) => id.toLowerCase()))]);
+    return runWithUserLock(this.#pool, this.#connectionPermits, ids, work, undefined, false);
+  }
 }
 
 function runWithUserLock<T>(
   pool: Pool,
   connectionPermits: AsyncPermitPool,
-  userId: string,
+  userId: string | readonly string[],
   work: () => Promise<T>,
   providerId: string | undefined,
   exclusive: false,
@@ -98,7 +112,7 @@ function runWithUserLock<T>(
 function runWithUserLock<T>(
   pool: Pool,
   connectionPermits: AsyncPermitPool,
-  userId: string,
+  userId: string | readonly string[],
   work: () => Promise<T>,
   providerId: string | undefined,
   exclusive: true,
@@ -106,11 +120,16 @@ function runWithUserLock<T>(
 async function runWithUserLock<T>(
   pool: Pool,
   connectionPermits: AsyncPermitPool,
-  userId: string,
+  userId: string | readonly string[],
   work: () => Promise<T>,
   providerId: string | undefined,
   exclusive: boolean,
 ): Promise<T | undefined> {
+  const userIds = [
+    ...new Set((typeof userId === "string" ? [userId] : userId).map((id) => id.toLowerCase())),
+  ].sort();
+  const firstUserId = userIds[0];
+  if (!firstUserId) return work();
   const releaseConnectionPermit = exclusive
     ? connectionPermits.tryAcquire()
     : await connectionPermits.acquire();
@@ -118,7 +137,7 @@ async function runWithUserLock<T>(
   try {
     const client = await pool.connect();
     const providerLockName =
-      providerId === undefined ? undefined : providerExecutionLockName(userId, providerId);
+      providerId === undefined ? undefined : providerExecutionLockName(firstUserId, providerId);
     const onSessionError = (error: Error): never => {
       try {
         Sentry.captureException(error, {
@@ -161,18 +180,19 @@ async function runWithUserLock<T>(
         const rows = await executeWithSchema(
           database,
           z.object({ acquired: z.boolean() }),
-          sql`SELECT pg_try_advisory_lock(hashtextextended(${accountErasureQueuedUserWorkLockName(userId)}::text, 0)) AS acquired`,
+          sql`SELECT pg_try_advisory_lock(hashtextextended(${accountErasureQueuedUserWorkLockName(firstUserId)}::text, 0)) AS acquired`,
         );
         if (!rows[0]?.acquired) {
           releaseClient();
           return undefined;
         }
       } else {
-        await executeWithSchema(
-          database,
-          z.object({}),
-          sql`SELECT pg_advisory_lock_shared(hashtextextended(${accountErasureQueuedUserWorkLockName(userId)}::text, 0))`,
-        );
+        for (const guardedUserId of userIds)
+          await executeWithSchema(
+            database,
+            z.object({}),
+            sql`SELECT pg_advisory_lock_shared(hashtextextended(${accountErasureQueuedUserWorkLockName(guardedUserId)}::text, 0))`,
+          );
       }
     } catch (error: unknown) {
       releaseClient(true);
@@ -193,16 +213,18 @@ async function runWithUserLock<T>(
       );
 
     try {
-      const unlockRows = await executeWithSchema(
-        database,
-        advisoryUnlockRowSchema,
-        exclusive
-          ? sql`SELECT pg_advisory_unlock(hashtextextended(${accountErasureQueuedUserWorkLockName(userId)}::text, 0)) AS unlocked`
-          : sql`SELECT pg_advisory_unlock_shared(hashtextextended(${accountErasureQueuedUserWorkLockName(userId)}::text, 0)) AS unlocked`,
-      );
-      const unlockRow = unlockRows[0];
-      if (!unlockRow?.unlocked) {
-        throw new Error("Queued user work advisory lock was not held by its PostgreSQL session");
+      for (const guardedUserId of [...userIds].reverse()) {
+        const unlockRows = await executeWithSchema(
+          database,
+          advisoryUnlockRowSchema,
+          exclusive
+            ? sql`SELECT pg_advisory_unlock(hashtextextended(${accountErasureQueuedUserWorkLockName(guardedUserId)}::text, 0)) AS unlocked`
+            : sql`SELECT pg_advisory_unlock_shared(hashtextextended(${accountErasureQueuedUserWorkLockName(guardedUserId)}::text, 0)) AS unlocked`,
+        );
+        const unlockRow = unlockRows[0];
+        if (!unlockRow?.unlocked) {
+          throw new Error("Queued user work advisory lock was not held by its PostgreSQL session");
+        }
       }
       if (providerLockName !== undefined) {
         const providerUnlockRows = await executeWithSchema(
@@ -240,7 +262,7 @@ async function runWithUserLock<T>(
 
 export function createAccountErasureWorkLockPool(
   connectionString: string,
-): AccountErasureWorkLockPool {
+): AccountErasureWorkLockPool & AccountErasureSharedUserLocks {
   const pool = new Pool({
     application_name: "dofek-account-erasure-work-lock",
     connectionString,
@@ -259,7 +281,8 @@ export function createAccountErasureWorkLockPool(
   return new PostgresAccountErasureWorkLockPool(pool);
 }
 
-export function createAccountErasureWorkLockPoolFromEnv(): AccountErasureWorkLockPool {
+export function createAccountErasureWorkLockPoolFromEnv(): AccountErasureWorkLockPool &
+  AccountErasureSharedUserLocks {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
     throw new Error("DATABASE_URL environment variable is required");

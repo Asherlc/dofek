@@ -22,6 +22,100 @@ describe("analytics query ownership", () => {
   afterAll(async () => {
     await context?.cleanup();
   });
+  test("publicationReservationAdvancesPastPersistedFutureMicroseconds", async () => {
+    const resourceId = randomUUID();
+    await context.database.execute(
+      sql`INSERT INTO fitness.analytics_query_owner(resource_id,ingested_at) VALUES (${resourceId},'2099-01-01T00:00:00.123456Z')`,
+    );
+    const times: string[] = [];
+    for (let index = 0; index < 2; index++)
+      await withAnalyticsQueryOwner(
+        context.database,
+        context.clickhouse,
+        { resourceId, intentId: randomUUID() },
+        async (owner) => {
+          times.push(owner.ingestedAt);
+        },
+      );
+    expect(times).toEqual(["2099-01-01T00:00:00.123457Z", "2099-01-01T00:00:00.123458Z"]);
+  });
+
+  test("terminalPageFailureReleasesIntentOnlyWithPositiveLastRequestHistory", async () => {
+    const resourceId = randomUUID();
+    const seen: string[] = [];
+    const client = {
+      ...context.clickhouse,
+      command: async (options: Parameters<typeof context.clickhouse.command>[0]) => {
+        if (options.query_id) seen.push(options.query_id);
+        try {
+          return await context.clickhouse.command(options);
+        } finally {
+          // Fixture-only: create durable native evidence before owner finalization.
+          if (options.query_id) await context.clickhouse.command({ query: "SYSTEM FLUSH LOGS" });
+        }
+      },
+    };
+    await expect(
+      withAnalyticsQueryOwner(
+        context.database,
+        client,
+        { resourceId, intentId: randomUUID(), releaseFailedPage: true },
+        async (owner) => {
+          await owner.client.command({
+            query: "SELECT 1",
+            clickhouse_settings: { log_queries: 0 },
+          });
+          await owner.client.command({
+            query: "SELECT throwIf(1,'page terminal fixture')",
+            clickhouse_settings: { log_queries: 1 },
+          });
+        },
+      ),
+    ).rejects.toThrow("page terminal fixture");
+    expect(seen).toHaveLength(2);
+    expect(
+      await context.database.execute(
+        sql`SELECT intent_id,quiescent,query_terminal FROM fitness.analytics_query_owner WHERE resource_id=${resourceId}`,
+      ),
+    ).toEqual([{ intent_id: null, quiescent: true, query_terminal: true }]);
+    await expect(
+      withAnalyticsQueryOwner(
+        context.database,
+        context.clickhouse,
+        { resourceId, intentId: randomUUID() },
+        async () => undefined,
+      ),
+    ).resolves.toBeUndefined();
+  });
+
+  test("unloggedLastPageRequestBlocksDifferentIntentEvenAfterTerminalResponse", async () => {
+    const resourceId = randomUUID();
+    await expect(
+      withAnalyticsQueryOwner(
+        context.database,
+        context.clickhouse,
+        { resourceId, intentId: randomUUID(), releaseFailedPage: true },
+        async (owner) => {
+          await owner.client.command({
+            query: "SELECT 1",
+            clickhouse_settings: { log_queries: 1 },
+          });
+          await owner.client.command({
+            query: "SELECT throwIf(1,'unlogged terminal fixture')",
+            clickhouse_settings: { log_queries: 0 },
+          });
+        },
+      ),
+    ).rejects.toThrow("unlogged terminal fixture");
+    await expect(
+      withAnalyticsQueryOwner(
+        context.database,
+        context.clickhouse,
+        { resourceId, intentId: randomUUID() },
+        async () => undefined,
+      ),
+    ).rejects.toThrow("verified recovery");
+  });
 
   const atBoundary = (exchange: Parameters<typeof databaseAtSessionBoundary>[1]) =>
     databaseAtSessionBoundary(context.database, exchange);

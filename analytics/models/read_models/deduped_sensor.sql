@@ -22,7 +22,13 @@ WITH {{ analytics_effect_scope('dedup') }}
 current_samples AS (
     SELECT * FROM {{ ref('sensor_scalar_sample') }}
     WHERE (user_id, channel, recorded_date, recorded_at, provider_id, id) IN (
-        SELECT user_id, channel, toDate(recorded_at), recorded_at, provider_id, id
+        SELECT
+            user_id,
+            channel,
+            toDate(recorded_at) AS recorded_date,
+            recorded_at,
+            provider_id,
+            id
         FROM analytics_sensor_rows
     )
     ORDER BY user_id ASC, channel ASC, recorded_date ASC, recorded_at ASC, provider_id ASC, id ASC, refresh_version DESC
@@ -43,7 +49,9 @@ scalar_publication_check AS (
 ),
 selected_samples AS (
     SELECT
-        samples.user_id AS user_id, samples.recorded_at AS recorded_at, samples.channel AS channel,
+        samples.user_id AS user_id,
+        samples.recorded_at AS recorded_at,
+        samples.channel AS channel,
         argMinIf(tuple(samples.scalar, samples.provider_id, samples.member_activity_id, samples.device_id,
             samples.source_external_id, samples.source_type, samples.measurement_kind, samples.id, samples.activity_id),
             (samples.provider_priority, samples.provider_id,

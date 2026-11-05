@@ -35872,3 +35872,58 @@ qualification or restoration of freshness follows from this reclaim alone.
 The useful improvement is to preserve sanitized child failure context and to
 classify keys from the existing publisher contract before starting an operator
 export. Retain raw bytes independently of parser output when proving a copy.
+
+At 00:35 UTC, the manual offload's complete consumed prefix independently passed
+the final 345-object audit: 34,447,242 records through offset 55,609,019,
+including current ETags and remotely published proof manifests. A second stock
+trim advanced the start to that unchanged ClickHouse consumer position; the
+high watermark stayed 74,445,631. Measured free space rose from 30,105,157,632
+to 33,039,454,208 bytes. Website health and all four holds passed. The unread
+18,836,612-record tail is being copied without automatic deletion; its local
+copy remains until archive proofs and the R2-to-Pulsar recovery route qualify.
+
+### 2026-11-05 — Local executor qualification preserves resource boundaries
+
+The ordinary `pnpm test:integration` startup recreated local ClickHouse and
+Postgres from the checked-in Compose base instead of the approved qualification
+overlays: ClickHouse became 1536 MiB and Postgres lost its 1 GiB container cap.
+The initial one-row test therefore ran on an unqualified image. Root restored
+the exact approved ClickHouse 26.10.2.103 image, 4 GiB container/3 GiB server
+allowance, Postgres 1 GiB cap and original qualification named volumes; no data
+loss was observed. Subsequent focused runs used the prepared dependencies
+directly. Production, deployments and all four operational holds were unchanged.
+The [testing procedure](testing.md#integration-dependencies) now explains the
+boundary; Docker documents explicit
+[Compose file merging](https://docs.docker.com/compose/how-tos/multiple-compose-files/merge/).
+
+The real scalar pathological-page query failed visibly within its unchanged
+128 MiB budget, without output, downstream receipts or cursor advancement.
+An additional large-account erasure exercise then exposed an existing
+[`captureIdentifiersFromTable`](../src/account-erasure/clickhouse-erasure.ts)
+aggregation limit: request `17733c8e-e896-4a6e-9ac5-671ea76a1495` reported
+`145.97 MiB` required against `128.00 MiB` while aggregating the
+400,000-identifier fixture. Identifier capture builds unbounded `groupArray`
+results; no query, retry, timeout or memory allowance was changed to hide the
+failure. ClickHouse documents the per-query
+[`max_memory_usage` setting](https://clickhouse.com/docs/operations/settings/settings#max_memory_usage).
+Large-account erasure remains an unresolved Task 7 release gate; this local
+fixture does not establish whether production's different memory allocation
+would fail. Scalar failure protection and concrete finite-account erasure are
+qualified separately in the [executor tests](../src/analytics/bounded-analytics.integration.test.ts).
+
+For future qualification, inspect the complete image, volume and memory profile
+before a wrapper can start dependencies, and keep scalar resource evidence
+separate from erasure scalability evidence. The next improvement is a bounded
+identifier-capture design and real-engine qualification in Task 7; its approach
+requires alignment before implementation.
+
+The initial inline generation guard also regressed the existing distributed
+sensor fixtures to 128.73 MiB and 129.55 MiB under that same 128 MiB allowance.
+Its lookup depended on the complete current-raw candidate pipeline, duplicating
+that work inside deduplication. The reviewed correction scopes the generation
+table by the captured page users and retains the exact user/provider join;
+global owner checks are unchanged. Generation and erasure-fence behavior passed
+before both original distributed and interleaved-background reference cases
+passed again with the unchanged budget. See the
+[canonical macro](../analytics/macros/analytics_sensor_candidates.sql) and
+[resource fixtures](../src/db/deduped-sensor-read-model.integration.test.ts).

@@ -67,6 +67,47 @@ beforeEach(() => {
 });
 
 describe("PostgreSQL queued-work lock pool", () => {
+  it("guards forty sorted accounts on one session and releases them in reverse order", async () => {
+    const pool = createAccountErasureWorkLockPool("postgres://database.test/dofek");
+    const users = Array.from(
+      { length: 40 },
+      (_, index) => `a0000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+    );
+    await expect(
+      pool.runWithSharedUserLocks(
+        [...users].reverse().concat(users[0]?.toUpperCase() ?? ""),
+        async () => {
+          expect(mocks.pool.connect).toHaveBeenCalledOnce();
+          expect(mocks.poolClient.query).toHaveBeenCalledTimes(40);
+          return "published";
+        },
+      ),
+    ).resolves.toBe("published");
+    expect(mocks.poolClient.query.mock.calls.map(([, values]) => values)).toEqual(
+      [...users, ...[...users].reverse()].map((user) => [
+        `account-erasure-queued-user-work:${user}`,
+      ]),
+    );
+    expect(mocks.poolClient.release).toHaveBeenCalledWith();
+  });
+  it("destroys a partially acquired multiaccount session and reports the failure", async () => {
+    const pool = createAccountErasureWorkLockPool("postgres://database.test/dofek");
+    const failure = new Error("second account acquisition failed");
+    mocks.poolClient.query.mockResolvedValueOnce({ rows: [{}] }).mockRejectedValueOnce(failure);
+    const work = vi.fn();
+    await expect(
+      pool.runWithSharedUserLocks(
+        ["a0000000-0000-4000-8000-000000000001", "a0000000-0000-4000-8000-000000000002"],
+        work,
+      ),
+    ).rejects.toMatchObject({ cause: failure });
+    expect(work).not.toHaveBeenCalled();
+    expect(mocks.poolClient.release).toHaveBeenCalledWith(true);
+    expect(mocks.captureException).toHaveBeenCalledWith(
+      expect.objectContaining({ cause: failure }),
+      expect.anything(),
+    );
+  });
   it("holds an exclusive session barrier for cleanup without starting a transaction", async () => {
     const pool = createAccountErasureWorkLockPool("postgres://database.test/dofek");
     mocks.poolClient.query.mockResolvedValueOnce({ rows: [{ acquired: true }] });

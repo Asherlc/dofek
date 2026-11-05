@@ -182,6 +182,28 @@ immediately when the Postgres URL is absent; it never creates an unbounded
 generic Testcontainers instance. Within a Vitest process it creates one
 migrated template database and clones an isolated database for each test file.
 
+For a qualification environment already started with explicitly approved image,
+memory or named-volume overrides, do not rerun the ordinary integration wrapper:
+its startup step can recreate services from the checked-in base configuration.
+Verify the complete rendered Compose file chain and running container limits
+first. `COMPOSE_FILE` alone cannot override a wrapper that supplies its own file
+arguments; Docker documents ordered
+[Compose file merging](https://docs.docker.com/compose/how-tos/multiple-compose-files/merge/).
+After those dependencies are healthy, run a focused integration project directly
+with the generated workspace environment, preserving the prepared services:
+
+```bash
+set -a
+. ./.env.local
+set +a
+TEST_DATABASE_URL="$DATABASE_URL" pnpm exec vitest run --project integration path/to/file.integration.test.ts --retry 0 --maxWorkers 1
+```
+
+This path skips dependency startup only; the suite still uses real database
+engines and isolated test databases. It requires the same prerequisite and
+resource checks as the ordinary integration tier; see the
+[test runner](../scripts/run-tests.ts) and [Compose wrapper](../scripts/compose-env.ts).
+
 `pnpm test:peerdb-integration` is the end-to-end CDC contract tier. It adds the
 pinned PeerDB/Temporal stack from `docker-compose.peerdb.yml`, runs only
 `*.peerdb.integration.test.ts`, and removes the current workspace's disposable

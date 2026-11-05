@@ -72,6 +72,68 @@ describe("account-erasure queued-work barrier (integration)", () => {
   afterAll(async () => {
     await context.cleanup();
   });
+  it("holds forty account guards on one backend and releases every lock after callback failure", async () => {
+    const pool = createAccountErasureWorkLockPool(context.connectionString);
+    context.addCleanup(() => pool.close());
+    const users = Array.from(
+      { length: 40 },
+      (_, index) => `b0000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+    );
+    await expect(
+      pool.runWithSharedUserLocks([...users].reverse(), async () => {
+        const locks = await context.db.execute<{ pid: number; count: number }>(
+          sql`SELECT activity.pid,count(*)::integer AS count FROM pg_locks AS locks JOIN pg_stat_activity AS activity ON activity.pid=locks.pid WHERE locks.locktype='advisory' AND locks.granted AND activity.datname=current_database() AND activity.application_name='dofek-account-erasure-work-lock' GROUP BY activity.pid`,
+        );
+        expect(locks).toEqual([{ pid: expect.any(Number), count: 40 }]);
+        throw new Error("fixture publication failed");
+      }),
+    ).rejects.toThrow("fixture publication failed");
+    expect(
+      await context.db.execute(
+        sql`SELECT locks.pid FROM pg_locks AS locks JOIN pg_stat_activity AS activity ON activity.pid=locks.pid WHERE locks.locktype='advisory' AND activity.datname=current_database() AND activity.application_name='dofek-account-erasure-work-lock'`,
+      ),
+    ).toEqual([]);
+  });
+
+  it("destroys a partially acquired multiaccount session after native query cancellation", async () => {
+    const pool = createAccountErasureWorkLockPool(context.connectionString);
+    context.addCleanup(() => pool.close());
+    const first = "b1000000-0000-4000-8000-000000000001",
+      second = "b1000000-0000-4000-8000-000000000002";
+    const blocker = new Client({ connectionString: context.connectionString });
+    await blocker.connect();
+    await blocker.query("SELECT pg_advisory_lock(hashtextextended($1,0))", [
+      accountErasureQueuedUserWorkLockName(second),
+    ]);
+    const work = vi.fn(async () => undefined);
+    const pending = pool.runWithSharedUserLocks([second, first], work);
+    const rejected = expect(pending).rejects.toMatchObject({ cause: { code: "57014" } });
+    try {
+      await vi.waitFor(async () => expect(await hasDatabaseLockWaiter(context.db)).toBe(true));
+      const sessions = await context.db.execute<{ pid: number }>(
+        sql`SELECT pid FROM pg_stat_activity WHERE datname=current_database() AND application_name='dofek-account-erasure-work-lock' AND wait_event='advisory'`,
+      );
+      const pid = sessions[0]?.pid;
+      if (!pid || sessions.length !== 1)
+        throw new Error("Expected one blocked multiaccount backend");
+      await context.db.execute(sql`SELECT pg_cancel_backend(${pid})`);
+      await rejected;
+      expect(work).not.toHaveBeenCalled();
+      await vi.waitFor(async () =>
+        expect(
+          await context.db.execute(
+            sql`SELECT pid FROM pg_locks WHERE locktype='advisory' AND pid=${pid}`,
+          ),
+        ).toEqual([]),
+      );
+    } finally {
+      await blocker.query("SELECT pg_advisory_unlock(hashtextextended($1,0))", [
+        accountErasureQueuedUserWorkLockName(second),
+      ]);
+      await blocker.end();
+      await Promise.allSettled([pending]);
+    }
+  });
 
   it.each(["upload", "cleanup"] as const)(
     "serializes cleanup and upload when %s starts first across processes",

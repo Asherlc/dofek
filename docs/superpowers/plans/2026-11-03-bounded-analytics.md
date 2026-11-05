@@ -175,6 +175,44 @@ physical erasure of every new metadata table and remains a release gate.
 
 ### Task 5: Serialized executor, query ownership and output-before-cursor recovery
 
+**2026-11-04 implementation decision — scalar checkpoint only:** The scalar
+[executor](../../../src/analytics/bounded-analytics.ts) reuses the persisted
+`metric-stream-source` owner, native dbt compiler and journal. Typed pending and
+completed descriptors live on the existing stage cursor; original membership
+and bounds survive attempts. Each new current-state attempt receives a fresh
+durable publication revision before dispatch, while raw operation revisions
+remain immutable. After tracked output and exact downstream verification, an
+attempt-bound completion record allows cursor-only recovery. This avoids
+different current payloads sharing one replacement version; see the
+[real recovery cases](../../../src/analytics/bounded-analytics.integration.test.ts).
+
+Publication holds the existing sorted per-account shared advisory guards on one
+session through the last PostgreSQL fence check, writes and cursor commit.
+Account activation releases its transaction locks before its ClickHouse phase
+waits for the common owner. Known-terminal failed-page admission can be released
+only with positive native evidence for its last registered request; earlier
+requests were consumed before successor registration. There is no runtime log
+flush, polling or restart-based automatic proof. The
+[native terminal event types](https://clickhouse.com/docs/reference/system-tables/query_log)
+and [PostgreSQL lock semantics](https://www.postgresql.org/docs/current/explicit-locking.html#ADVISORY-LOCKS)
+underpin these checks.
+
+**Separate unresolved Task 7 gate:** The 400,000-identifier fixture exposed an
+existing account-erasure identifier-capture aggregation requiring 145.97 MiB
+under the fixed 128 MiB query allowance. Scalar failure protection and finite
+account erasure are separate executable cases. The identifier query and budget
+remain unchanged; this fixture result does not establish production memory fit.
+Dedup/activity activation, dbt subprocess ownership, owned CDC, external-writer
+retirement and combined throughput/host qualification remain incomplete.
+
+The inline generation lookup reads only the generation table and finite captured
+page users; it does not depend on the current-raw candidate pipeline. Its exact
+user/provider match and missing-generation-zero behavior remain intact. After
+this correction, five generation/fence cases and both existing complete-key
+resource/reference cases passed at 128 MiB. The full preceding checkpoint run
+passed all 14 executor, 48 query-owner, eight work-store and ten user-guard cases;
+the two detected resource regressions were then verified again by the focused runs.
+
 **Files:** Create `bounded-analytics.ts`, `analytics-query-owner.ts`, `analytics-model-compiler.ts` and their colocated/unit/real-engine tests; extend `src/db/clickhouse.ts` command options for actual query IDs/cancellation; modify build/local-build scripts and their tests.
 
 **Interfaces:** `runBoundedAnalyticsPage(input: { runId: string; stage: AnalyticsStage; stream: AnalyticsStream; pageSize: number }): Promise<{ progressed: boolean; remaining: boolean }>`; `assertPreviousAnalyticsQueriesTerminal(client, runId: string): Promise<void>`; `compileAnalyticsPageSql(input: { stage: AnalyticsStage; vars: Record<string, string>; artifactDirectory: string }): Promise<string>`. Required clients/work-store/fence dependencies are supplied by the production composition root, not optional test branches.

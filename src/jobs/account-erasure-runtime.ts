@@ -38,6 +38,11 @@ import {
   type AccountErasureRemoteSnapshot,
   decryptAccountErasureSnapshot,
 } from "../account-erasure/remote-snapshot.ts";
+import {
+  ANALYTICS_PUBLICATION_RESOURCE,
+  withAnalyticsQueryOwner,
+} from "../analytics/analytics-query-owner.ts";
+import type { ClickHouseClient } from "../db/clickhouse.ts";
 import { createPeerDbMirrorApiClientFromEnv } from "../db/clickhouse-cdc.ts";
 import type { Database } from "../db/index.ts";
 import { getAllProviders } from "../providers/index.ts";
@@ -62,9 +67,8 @@ export interface AccountErasureRuntime {
   phaseRunner: AccountErasurePhaseRunner;
 }
 
-type AccountErasureRuntimeDatabase = Pick<Database, "execute" | "transaction">;
-type AccountErasureRuntimeClickHouseClient = Parameters<typeof eraseClickHouseAccount>[0] &
-  Parameters<typeof assertPeerDbAccountErasureDrained>[1];
+type AccountErasureRuntimeDatabase = Pick<Database, "execute" | "transaction" | "$client">;
+type AccountErasureRuntimeClickHouseClient = ClickHouseClient;
 
 export async function createAccountErasureRuntime(
   database: AccountErasureRuntimeDatabase,
@@ -175,16 +179,35 @@ export async function createAccountErasureRuntime(
           options,
         ),
       eraseClickHouse: (snapshot) =>
-        eraseClickHouseAccount(clickHouseClient, identifiers(snapshot)),
+        withAnalyticsQueryOwner(
+          database,
+          clickHouseClient,
+          {
+            resourceId: ANALYTICS_PUBLICATION_RESOURCE,
+            intentId: `account-erasure:${snapshot.localIdentifiers.userId}:erase`,
+          },
+          (owner) => eraseClickHouseAccount(owner.client, identifiers(snapshot)),
+        ),
       erasePostgres: (requestId, userId) => erasePostgresAccount(database, requestId, userId),
       eraseProcessors: (snapshot, progress) =>
         eraseAccountProcessors(snapshot, processorConfig, progress),
       eraseStripe: (snapshot) => eraseStripeAccount(snapshot),
+      // Activation already committed its PG fence; never hold that transaction
+      // while waiting for this global ClickHouse publication owner.
       fenceIngest: (snapshot) =>
-        fenceClickHouseAccount(
+        withAnalyticsQueryOwner(
+          database,
           clickHouseClient,
-          snapshot.localIdentifiers.userId,
-          snapshot.localIdentifiers.processingOperationIds,
+          {
+            resourceId: ANALYTICS_PUBLICATION_RESOURCE,
+            intentId: `account-erasure:${snapshot.localIdentifiers.userId}:fence`,
+          },
+          (owner) =>
+            fenceClickHouseAccount(
+              owner.client,
+              snapshot.localIdentifiers.userId,
+              snapshot.localIdentifiers.processingOperationIds,
+            ),
         ),
       now: () => new Date(),
       purgeWork: (snapshot) => workPurger.purge(snapshot),

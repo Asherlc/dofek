@@ -17,9 +17,12 @@ import type { SourcePlacement } from "../analytics/source-placement.ts";
 import { analyticsPosition } from "../analytics/test-helpers.ts";
 import { logger } from "../logger.ts";
 import {
+  buildAccountErasureFenceTableSql,
   buildIngestMetricStreamCreateTableSql,
   buildMetricStreamSourcePlacementIngestSql,
+  buildProviderDataGenerationTableSql,
 } from "../metric-stream/clickhouse-table.ts";
+import type { MetricStreamPosition } from "../metric-stream/transport-position.ts";
 import { createProcessingOperation } from "../processing/processing-event-store.ts";
 import { analyticsWorkSchemaStatements } from "./analytics-work-schema.ts";
 import type { ClickHouseClient } from "./clickhouse.ts";
@@ -187,6 +190,8 @@ export class BoundedSensorFixture {
     this.#operationId = operation.id;
     await this.command(`CREATE DATABASE ${this.database}`);
     await this.command(buildIngestMetricStreamCreateTableSql());
+    await this.command(buildProviderDataGenerationTableSql());
+    await this.command(buildAccountErasureFenceTableSql());
     for (const sql of analyticsWorkSchemaStatements()) await this.command(sql);
     await this.command(buildMetricStreamSourcePlacementIngestSql());
     for (const sql of buildIncrementalDedupedSensorStatements()) await this.command(sql);
@@ -247,6 +252,7 @@ export class BoundedSensorFixture {
     effects: { before: SensorFixtureRow | null; after: SensorFixtureRow | null }[],
     publication = "1",
     transport: "kafka" | "pulsar" = "kafka",
+    stages: readonly ("scalar" | "dedup")[] = ["scalar", "dedup"],
   ): Promise<void> {
     if (!this.#postgres) throw new Error("Create the bounded fixture before capturing a page");
     this.#stream = {
@@ -262,7 +268,7 @@ export class BoundedSensorFixture {
     const journal: AnalyticsEffect[] = effects.flatMap((effect, ordinal) => {
       const source = effect.after ?? effect.before;
       if (!source) throw new Error("Fixture effect requires a placement");
-      return (["scalar", "dedup"] as const).map((stage) => ({
+      return stages.map((stage) => ({
         stream: this.#stream,
         position,
         cursor: { delivery: journalDeliveryKey(position), effectOrdinal: String(ordinal) },
@@ -284,6 +290,17 @@ export class BoundedSensorFixture {
     await this.#postgres.db.execute(
       sql`UPDATE fitness.analytics_stream_state SET processed=${JSON.stringify(position)}::jsonb WHERE transport=${this.#stream.transport} AND epoch=${this.#stream.epoch} AND topic=${this.#stream.topic} AND partition=${this.#stream.partition}`,
     );
+    await this.sealPosition(position);
+    this.publicationRevision = publication;
+  }
+  async sealPosition(position: MetricStreamPosition): Promise<void> {
+    if (!this.#postgres) throw new Error("Create the bounded fixture before sealing work");
+    this.#stream = {
+      transport: position.transport,
+      epoch: position.epoch,
+      topic: position.topic,
+      partition: position.partition,
+    };
     this.#runId = randomUUID();
     await sealAnalyticsRun(this.#postgres.db, {
       runId: this.#runId,
@@ -291,7 +308,15 @@ export class BoundedSensorFixture {
         { operationId: this.#operationId, datasetKey: "activity", stream: this.#stream, position },
       ],
     });
-    this.publicationRevision = publication;
+  }
+  get work() {
+    if (!this.#postgres) throw new Error("Create the bounded fixture before executing work");
+    return {
+      database: this.#postgres.db,
+      connectionString: this.#postgres.connectionString,
+      runId: this.#runId,
+      stream: this.#stream,
+    };
   }
   async capture(stage: "scalar" | "dedup") {
     if (!this.#postgres) throw new Error("Create the bounded fixture before capturing a page");

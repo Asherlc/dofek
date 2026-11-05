@@ -79,9 +79,16 @@ analytics_current_raw AS (
         payload[1].6 AS provider_id, payload[1].7 AS source_external_id,
         payload[1].8 AS device_id, payload[1].9 AS source_type,
         payload[1].10 AS raw_scalar, payload[1].13 AS metadata, payload[1].14 AS ingested_at,
-        payload[1].15 AS raw_deleted, payload[1].16 AS source_version
+        payload[1].15 AS raw_deleted, payload[1].16 AS source_version,
+        payload[1].17 AS generation
     FROM analytics_checked
     WHERE (SELECT owner_check + placement_check + payload_check + structure_check FROM analytics_candidate_check) = 0
+),
+analytics_current_generations AS (
+    SELECT user_id, provider_id, max(generation) AS generation
+    FROM {{ source('ingest', 'provider_data_generation') }}
+    WHERE user_id IN (SELECT user_id FROM analytics_keys)
+    GROUP BY user_id, provider_id
 ),
 analytics_historical_samples AS (
     SELECT source_id, user_id, provider_id,
@@ -106,16 +113,21 @@ analytics_sensor_rows AS (
             if(coalesce(raw.raw_scalar, 0) > 0 AND isFinite(coalesce(raw.raw_scalar, 0)),
                 toFloat32(60000.0 / nullIf(raw.raw_scalar, 0)), 0), coalesce(raw.raw_scalar, 0))) AS scalar,
         toInt8(NOT is_current OR raw.raw_deleted != 0 OR raw.raw_scalar IS null
+            OR raw.generation < coalesce(current_generation.generation, 0)
             OR (raw.original_channel = 'rr_interval_ms'
                 AND NOT (coalesce(raw.raw_scalar, 0) > 0 AND isFinite(coalesce(raw.raw_scalar, 0))))) AS is_deleted,
         raw.ingested_at AS ingested_at, raw.source_version AS source_version
     FROM analytics_historical_samples AS history
     INNER JOIN analytics_current_raw AS raw ON history.source_id = raw.id
+    LEFT JOIN analytics_current_generations AS current_generation
+        ON raw.user_id = current_generation.user_id AND raw.provider_id = current_generation.provider_id
     WHERE history.normalized_channel IN (
         'heart_rate', 'power', 'speed', 'cadence', 'altitude', 'grade', 'distance', 'temperature',
         'left_right_balance', 'left_torque_effectiveness', 'right_torque_effectiveness',
         'left_pedal_smoothness', 'right_pedal_smoothness', 'stance_time',
         'vertical_oscillation', 'ground_contact_time', 'stride_length'
+    ) AND lower(hex(SHA256(toString(history.user_id)))) NOT IN (
+        SELECT user_hash FROM {{ source('ingest', 'account_erasure_fence') }} FINAL
     )
 ),
 {% endmacro %}

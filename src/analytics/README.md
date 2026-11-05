@@ -129,6 +129,32 @@ missing process or elapsed time never authorizes takeover. The
 [owner engine cases](analytics-query-owner.integration.test.ts) cover lost
 registration/final responses, late writes and actual executor death.
 
+The [scalar page executor](bounded-analytics.ts) uses that same publication owner
+as source ingestion and ClickHouse account erasure. Its required account guard
+holds sorted shared advisory locks on one PostgreSQL session through the account
+fence check, output, downstream receipts and cursor commit. Forty accounts do not
+require forty connections; the [guard fixtures](../jobs/account-erasure-work-guard.integration.test.ts)
+verify the acquired and released native locks. PostgreSQL documents
+[session advisory locks](https://www.postgresql.org/docs/current/explicit-locking.html#ADVISORY-LOCKS).
+
+An incomplete page retains its original membership digest and bounds. A new
+attempt persists a new monotonic publication revision before reading current
+source data; immutable raw operation revisions are unchanged. A proved output
+attempt can recover its cursor without publishing again. After a known-terminal
+page failure, releasing publication admission additionally requires one exact
+terminal record for the last request in
+[`system.query_log`](https://clickhouse.com/docs/reference/system-tables/query_log).
+Missing or disabled logging blocks admission; runtime code never flushes or polls
+the log to manufacture proof. The [executor fixtures](bounded-analytics.integration.test.ts)
+cover process death, generation retraction, account activation and real query
+memory failure. This checkpoint does not activate dedup/activity draining or
+replace remaining dbt subprocess entrypoints; those remain cutover gates.
+
+SQLFluff receives one typed bounded page through the lint-only dbt context in
+[lint configuration](../../analytics/pyproject.toml), exercising the source
+and key loops without adding production defaults. SQLFluff documents this
+[dbt variable context](https://docs.sqlfluff.com/en/stable/configuration/templating/dbt.html#installation-configuration).
+
 Processed receipt replay uses the coordinator's required completion verifier:
 fresh frontier coverage, the full exact receipt and the final transport-active
 check precede its returned intent identity. That identity names the proof's

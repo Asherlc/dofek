@@ -1,9 +1,19 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AccountErasureRemoteSnapshot } from "../account-erasure/remote-snapshot.ts";
 import type { ClaimedAccountErasureRequest } from "../db/account-erasure-processing.ts";
+import type { ClickHouseClient } from "../db/clickhouse.ts";
+import { createDatabase } from "../db/index.ts";
 import type { AccountErasurePhaseExecution } from "./process-account-erasure-request.ts";
 
 const mocks = vi.hoisted(() => ({
+  withOwner: vi.fn(
+    async (
+      _database: unknown,
+      client: ClickHouseClient,
+      _input: unknown,
+      operation: (owner: { client: ClickHouseClient }) => Promise<unknown>,
+    ) => operation({ client }),
+  ),
   assertConsumersDrained: vi.fn(async () => undefined),
   assertPeerDbDrained: vi.fn(async () => undefined),
   assertQuarantineExpired: vi.fn(async () => undefined),
@@ -61,6 +71,13 @@ const mocks = vi.hoisted(() => ({
   })),
   verifyProcessors: vi.fn(async () => ({ processor: "complete" })),
 }));
+
+vi.mock("../analytics/analytics-query-owner.ts", () => ({
+  ANALYTICS_PUBLICATION_RESOURCE: "metric-stream-source",
+  withAnalyticsQueryOwner: mocks.withOwner,
+}));
+const ownerDatabase = createDatabase("postgres://unit:unit@localhost/unit");
+afterAll(async () => ownerDatabase.$client.end());
 
 vi.mock("../r2-storage.ts", () => ({
   createR2Client: vi.fn(() => mocks.r2Client),
@@ -233,11 +250,37 @@ function execution(
 }
 
 describe("createAccountErasureRuntime", () => {
+  beforeEach(() => vi.clearAllMocks());
+  it("withholds ClickHouse erasure writes while the shared predecessor is unknown", async () => {
+    mocks.decryptSnapshot.mockResolvedValue(snapshot);
+    mocks.fenceClickHouse.mockClear();
+    const database = {
+      $client: ownerDatabase.$client,
+      execute: vi.fn(async () => []),
+      transaction: vi.fn(),
+    };
+    const clickhouse = {
+      command: vi.fn(async () => undefined),
+      insert: vi.fn(async () => undefined),
+      query: vi.fn(async () => ({ json: async () => [] })),
+    };
+    const runtime = await createAccountErasureRuntime(database, clickhouse, {
+      close: vi.fn(async () => undefined),
+      purge: vi.fn(async () => undefined),
+    });
+    mocks.withOwner.mockRejectedValueOnce(new Error("Previous owner needs verified recovery"));
+    await expect(runtime.phaseRunner.runPhase("ingest_fence", execution())).rejects.toThrow(
+      "verified recovery",
+    );
+    expect(mocks.fenceClickHouse).not.toHaveBeenCalled();
+    await runtime.close();
+  });
   it("connects concrete production adapters and closes owned resources", async () => {
     mocks.decryptSnapshot.mockResolvedValue(snapshot);
     mocks.closePeerDbStaging.mockClear();
     mocks.r2Client.destroy.mockClear();
     const database = {
+      $client: ownerDatabase.$client,
       execute: vi.fn(async () => []),
       transaction: vi.fn(),
     };
@@ -445,6 +488,7 @@ describe("createAccountErasureRuntime", () => {
     mocks.connectRedpanda.mockRejectedValueOnce(startupError);
     vi.mocked(Sentry.captureException).mockClear();
     const database = {
+      $client: ownerDatabase.$client,
       execute: vi.fn(async () => []),
       transaction: vi.fn(),
     };
@@ -482,6 +526,7 @@ describe("createAccountErasureRuntime", () => {
     mocks.closeRedpanda.mockRejectedValueOnce(cleanupError);
     vi.mocked(Sentry.captureException).mockClear();
     const database = {
+      $client: ownerDatabase.$client,
       execute: vi.fn(async () => []),
       transaction: vi.fn(),
     };

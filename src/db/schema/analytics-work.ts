@@ -4,6 +4,7 @@ import {
   check,
   integer,
   jsonb,
+  numeric,
   primaryKey,
   text,
   timestamp,
@@ -128,7 +129,14 @@ export const analyticsStageCursor = fitness.table(
     epoch: text("epoch").notNull(),
     topic: text("topic").notNull(),
     partition: integer("partition").notNull(),
-    cursor: jsonb("cursor").$type<AnalyticsEffectCursor>().notNull(),
+    cursor: jsonb("cursor").$type<AnalyticsEffectCursor>(),
+    pageAfter: jsonb("page_after").$type<AnalyticsEffectCursor>(),
+    pageSize: integer("page_size"),
+    pagePublicationRevision: numeric("page_publication_revision", { precision: 20, scale: 0 }),
+    pageState: text("page_state", { enum: ["pending", "completed"] }),
+    pageNext: jsonb("page_next").$type<AnalyticsEffectCursor>(),
+    pageOutputComplete: boolean("page_output_complete").notNull().default(false),
+    pageEffectsDigest: text("page_effects_digest"),
   },
   (table) => [
     primaryKey({
@@ -142,5 +150,15 @@ export const analyticsStageCursor = fitness.table(
       ],
     }),
     check("analytics_stage_cursor_stage", sql`${table.stage} IN ('scalar','dedup','activity')`),
+    check(
+      "analytics_stage_cursor_page",
+      sql`(
+      ${table.pageState} IS NULL AND ${table.pageAfter} IS NULL AND ${table.pageSize} IS NULL AND ${table.pagePublicationRevision} IS NULL AND ${table.pageNext} IS NULL
+    ) OR (
+      ${table.pageState} IS NOT NULL AND ${table.pageState} IN ('pending','completed') AND ${table.pageSize} IS NOT NULL AND ${table.pageSize} BETWEEN 1 AND 20
+      AND ${table.pagePublicationRevision} IS NOT NULL AND ${table.pagePublicationRevision} > 0 AND ${table.pagePublicationRevision} <= 18446744073709551615
+      AND (${table.pageState} <> 'completed' OR ${table.pageNext} IS NOT DISTINCT FROM ${table.cursor})
+    )`,
+    ),
   ],
 );

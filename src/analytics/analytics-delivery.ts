@@ -7,6 +7,7 @@ import {
   describeAnalyticsDeliveryGroup,
 } from "./analytics-delivery-group.ts";
 import {
+  ANALYTICS_PUBLICATION_RESOURCE,
   type AnalyticsQueryOwner,
   withAnalyticsQueryOwner,
   withAnalyticsReceiptQueryOwner,
@@ -33,8 +34,6 @@ import {
 } from "./effect-journal-group.ts";
 import { metricStreamPositionIdentity } from "./journal-position.ts";
 
-const SOURCE_RESOURCE = "metric-stream-source";
-
 async function coordinateAnalyticsPublicationGroup(
   journal: AnalyticsJournalClient,
   input: {
@@ -60,7 +59,7 @@ async function coordinateAnalyticsPublicationGroup(
     await withAnalyticsReceiptQueryOwner(
       journal.database,
       journal.clickhouse,
-      { resourceId: SOURCE_RESOURCE },
+      { resourceId: ANALYTICS_PUBLICATION_RESOURCE },
       async (owner) => {
         await input.assertActive();
         const state = await loadAnalyticsStreamState(journal.database, original.stream);
@@ -92,7 +91,7 @@ async function coordinateAnalyticsPublicationGroup(
   await withAnalyticsQueryOwner(
     journal.database,
     journal.clickhouse,
-    { resourceId: SOURCE_RESOURCE, intentId: analyticsDeliveryGroupIntentId(group) },
+    { resourceId: ANALYTICS_PUBLICATION_RESOURCE, intentId: analyticsDeliveryGroupIntentId(group) },
     async (owner) => {
       await input.assertActive();
       const state = await loadAnalyticsStreamState(journal.database, group.stream);

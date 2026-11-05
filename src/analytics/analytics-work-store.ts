@@ -38,6 +38,205 @@ export interface RequiredAnalyticsFrontier {
   stream: AnalyticsStream;
   position: MetricStreamPosition;
 }
+
+export async function loadAnalyticsPageState(
+  database: Database,
+  input: { runId: string; stage: AnalyticsStage; stream: AnalyticsStream },
+) {
+  return database.transaction(async (transaction) => {
+    const run = await lockRun(transaction, input.runId);
+    if (!run.sealed) throw new Error("Analytics page requires a sealed run");
+    const rows = await executeWithSchema(
+      transaction,
+      z.object({ cursor: cursorSchema.nullable() }),
+      sql`SELECT cursor FROM fitness.analytics_stage_cursor WHERE run_id=${input.runId} AND stage=${input.stage} AND ${streamWhere(input.stream)}`,
+    );
+    return { ownerId: run.owner_id, cursor: rows[0]?.cursor ?? null };
+  });
+}
+
+export async function admitAnalyticsPage(
+  database: Database,
+  input: {
+    runId: string;
+    ownerId: string;
+    stage: AnalyticsStage;
+    stream: AnalyticsStream;
+    pageSize: number;
+    publicationRevision: string;
+  },
+) {
+  z.number().int().min(1).max(20).parse(input.pageSize);
+  z.string()
+    .regex(/^[1-9]\d*$/)
+    .refine((value) => BigInt(value) <= 18446744073709551615n)
+    .parse(input.publicationRevision);
+  return database.transaction(async (transaction) => {
+    const run = await lockRun(transaction, input.runId);
+    if (!run.sealed || run.owner_id !== input.ownerId)
+      throw new Error("Analytics page admission requires its current sealed-run owner");
+    const rows = await executeWithSchema(
+      transaction,
+      z.object({
+        cursor: cursorSchema.nullable(),
+        page_after: cursorSchema.nullable(),
+        page_size: z.number().nullable(),
+        page_publication_revision: z.string().nullable(),
+        page_state: z.enum(["pending", "completed"]).nullable(),
+        page_next: cursorSchema.nullable(),
+        page_output_complete: z.boolean(),
+      }),
+      sql`SELECT cursor,page_after,page_size,page_publication_revision,page_state,page_next,page_output_complete FROM fitness.analytics_stage_cursor WHERE run_id=${input.runId} AND stage=${input.stage} AND ${streamWhere(input.stream)} FOR UPDATE`,
+    );
+    const row = rows[0];
+    if (row?.page_state === "pending") {
+      if (
+        row.page_size === null ||
+        row.page_publication_revision === null ||
+        JSON.stringify(row.cursor) !== JSON.stringify(row.page_after)
+      )
+        throw new Error("Pending analytics page has an inconsistent descriptor or cursor");
+      if (!row.page_output_complete)
+        await transaction.execute(
+          sql`UPDATE fitness.analytics_stage_cursor SET page_publication_revision=${input.publicationRevision}::numeric WHERE run_id=${input.runId} AND stage=${input.stage} AND ${streamWhere(input.stream)}`,
+        );
+      return {
+        after: row.page_after,
+        pageSize: row.page_size,
+        publicationRevision: row.page_output_complete
+          ? row.page_publication_revision
+          : input.publicationRevision,
+        state: row.page_state,
+        next: row.page_next,
+        outputComplete: row.page_output_complete,
+      };
+    }
+    if (
+      row?.page_state === "completed" &&
+      JSON.stringify(row.page_next) !== JSON.stringify(row.cursor)
+    )
+      throw new Error("Completed analytics page no longer matches its exact cursor");
+    const after = row?.cursor ?? null;
+    await transaction.execute(sql`INSERT INTO fitness.analytics_stage_cursor (run_id,stage,transport,epoch,topic,partition,cursor,page_after,page_size,page_publication_revision,page_state,page_next)
+      VALUES (${input.runId},${input.stage},${input.stream.transport},${input.stream.epoch},${input.stream.topic},${input.stream.partition},${after === null ? null : JSON.stringify(after)}::jsonb,${after === null ? null : JSON.stringify(after)}::jsonb,${input.pageSize},${input.publicationRevision}::numeric,'pending',NULL)
+      ON CONFLICT (run_id,stage,transport,epoch,topic,partition) DO UPDATE SET page_after=EXCLUDED.page_after,page_size=EXCLUDED.page_size,page_publication_revision=EXCLUDED.page_publication_revision,page_state='pending',page_next=NULL,page_output_complete=false,page_effects_digest=NULL`);
+    return {
+      after,
+      pageSize: input.pageSize,
+      publicationRevision: input.publicationRevision,
+      state: "pending" as const,
+      next: null,
+      outputComplete: false,
+    };
+  });
+}
+
+export async function captureAnalyticsPage(
+  database: Database,
+  input: {
+    runId: string;
+    ownerId: string;
+    stage: AnalyticsStage;
+    stream: AnalyticsStream;
+    publicationRevision: string;
+    next: AnalyticsEffectCursor | null;
+    effectsDigest: string;
+  },
+): Promise<void> {
+  z.string()
+    .regex(/^[a-f0-9]{64}$/)
+    .parse(input.effectsDigest);
+  await database.transaction(async (transaction) => {
+    const run = await lockRun(transaction, input.runId);
+    if (run.owner_id !== input.ownerId)
+      throw new Error("Analytics page owner changed before membership capture");
+    const rows = await executeWithSchema(
+      transaction,
+      changedSchema,
+      sql`UPDATE fitness.analytics_stage_cursor SET page_next=${input.next === null ? null : JSON.stringify(input.next)}::jsonb,page_effects_digest=${input.effectsDigest}
+      WHERE run_id=${input.runId} AND stage=${input.stage} AND ${streamWhere(input.stream)} AND page_state='pending' AND page_publication_revision=${input.publicationRevision}::numeric
+      AND (page_effects_digest IS NULL OR (page_effects_digest=${input.effectsDigest} AND page_next IS NOT DISTINCT FROM ${input.next === null ? null : JSON.stringify(input.next)}::jsonb)) RETURNING 1 AS changed`,
+    );
+    if (rows.length !== 1)
+      throw new Error(
+        "Captured analytics page membership changed; preserve its pending work and reconcile missing receipts",
+      );
+  });
+}
+
+export async function markAnalyticsPageOutputComplete(
+  database: Database,
+  input: {
+    runId: string;
+    ownerId: string;
+    stage: AnalyticsStage;
+    stream: AnalyticsStream;
+    publicationRevision: string;
+  },
+): Promise<void> {
+  await database.transaction(async (transaction) => {
+    const run = await lockRun(transaction, input.runId);
+    if (run.owner_id !== input.ownerId)
+      throw new Error("Analytics page owner changed before output proof");
+    const rows = await executeWithSchema(
+      transaction,
+      changedSchema,
+      sql`UPDATE fitness.analytics_stage_cursor SET page_output_complete=true WHERE run_id=${input.runId} AND stage=${input.stage} AND ${streamWhere(input.stream)} AND page_state='pending' AND page_effects_digest IS NOT NULL AND page_publication_revision=${input.publicationRevision}::numeric AND cursor IS NOT DISTINCT FROM page_after RETURNING 1 AS changed`,
+    );
+    if (rows.length !== 1)
+      throw new Error("Analytics output proof no longer matches its exact page attempt");
+  });
+}
+
+export async function completeAnalyticsEmptyPage(
+  database: Database,
+  input: {
+    runId: string;
+    ownerId: string;
+    stage: AnalyticsStage;
+    stream: AnalyticsStream;
+    publicationRevision: string;
+  },
+) {
+  await database.transaction(async (transaction) => {
+    const run = await lockRun(transaction, input.runId);
+    if (run.owner_id !== input.ownerId)
+      throw new Error("Analytics page owner changed before empty completion");
+    const rows = await executeWithSchema(
+      transaction,
+      changedSchema,
+      sql`UPDATE fitness.analytics_stage_cursor SET page_state='completed',page_next=cursor,page_output_complete=true
+      WHERE run_id=${input.runId} AND stage=${input.stage} AND ${streamWhere(input.stream)} AND page_state='pending'
+      AND page_publication_revision=${input.publicationRevision}::numeric AND cursor IS NOT DISTINCT FROM page_after RETURNING 1 AS changed`,
+    );
+    if (rows.length !== 1)
+      throw new Error("Analytics empty page descriptor changed before completion");
+  });
+}
+
+/** Recheck after structural discovery; CH erasure must subsequently join the same query owner. */
+export async function assertAnalyticsPageAccountsActive(
+  database: Database,
+  userIds: readonly string[],
+): Promise<void> {
+  const ids = z
+    .array(z.uuid())
+    .max(40)
+    .parse([...new Set(userIds)]);
+  if (!ids.length) return;
+  const rows = await executeWithSchema(
+    database,
+    z.object({ id: z.uuid() }),
+    sql`SELECT profile.id FROM fitness.user_profile AS profile WHERE profile.id IN (${sql.join(
+      ids.map((id) => sql`${id}::uuid`),
+      sql`,`,
+    )}) AND NOT EXISTS (SELECT 1 FROM fitness.account_erasure_request AS erasure WHERE erasure.user_id=profile.id AND erasure.status<>'completed')`,
+  );
+  if (rows.length !== ids.length)
+    throw new Error(
+      "Analytics page contains a missing account or active account erasure; finish erasure before retrying this page",
+    );
+}
 // A successful CAS fences checkpoints. The caller must first establish that the
 // previous writer and its server-side queries are terminal before transferring ownership.
 export async function claimAnalyticsRunOwnership(
@@ -448,6 +647,7 @@ export async function checkpointAnalyticsPage(
     stream: AnalyticsStream;
     expected: AnalyticsEffectCursor | null;
     next: AnalyticsEffectCursor;
+    publicationRevision?: string;
   },
 ): Promise<void> {
   z.uuid().parse(input.ownerId);
@@ -478,11 +678,17 @@ export async function checkpointAnalyticsPage(
     const changed = await executeWithSchema(
       transaction,
       changedSchema,
-      input.expected === null
-        ? sql`INSERT INTO fitness.analytics_stage_cursor(run_id,stage,transport,epoch,topic,partition,cursor)
+      input.publicationRevision !== undefined
+        ? sql`UPDATE fitness.analytics_stage_cursor SET cursor=${JSON.stringify(next)}::jsonb,page_state='completed',page_next=${JSON.stringify(next)}::jsonb
+          WHERE run_id=${input.runId} AND stage=${input.stage} AND ${streamWhere(input.stream)}
+            AND cursor IS NOT DISTINCT FROM ${expected}::jsonb AND page_after IS NOT DISTINCT FROM ${expected}::jsonb
+            AND page_state='pending' AND page_output_complete AND page_effects_digest IS NOT NULL
+            AND page_next=${JSON.stringify(next)}::jsonb AND page_publication_revision=${input.publicationRevision}::numeric RETURNING 1 AS changed`
+        : input.expected === null
+          ? sql`INSERT INTO fitness.analytics_stage_cursor(run_id,stage,transport,epoch,topic,partition,cursor)
     VALUES (${input.runId},${input.stage},${input.stream.transport},${input.stream.epoch},${input.stream.topic},${input.stream.partition},${JSON.stringify(next)}::jsonb)
     ON CONFLICT DO NOTHING RETURNING 1 AS changed`
-        : sql`UPDATE fitness.analytics_stage_cursor SET cursor=${JSON.stringify(next)}::jsonb WHERE run_id=${input.runId} AND stage=${input.stage} AND ${streamWhere(input.stream)} AND cursor=${expected}::jsonb RETURNING 1 AS changed`,
+          : sql`UPDATE fitness.analytics_stage_cursor SET cursor=${JSON.stringify(next)}::jsonb WHERE run_id=${input.runId} AND stage=${input.stage} AND ${streamWhere(input.stream)} AND cursor=${expected}::jsonb RETURNING 1 AS changed`,
     );
     if (!changed.length)
       throw new Error("Analytics cursor changed; stale page owner cannot checkpoint");

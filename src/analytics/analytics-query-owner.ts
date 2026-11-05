@@ -6,6 +6,8 @@ import type { Database } from "../db/index.ts";
 import { captureException } from "../lib/error-reporting.ts";
 import { analyticsDeliveryGroupIngestionTimes } from "./analytics-delivery-group.ts";
 
+export const ANALYTICS_PUBLICATION_RESOURCE = "metric-stream-source";
+
 export interface AnalyticsQueryOwner {
   client: ClickHouseClient;
   ingestedAt: string;
@@ -29,9 +31,9 @@ const ownerRowSchema = z.object({
  * neither an available PG lock nor an absent CH process proves it cannot publish.
  */
 export async function withAnalyticsQueryOwner<T>(
-  database: Database,
+  database: Pick<Database, "$client">,
   clickhouse: ClickHouseClient,
-  input: { resourceId: string; intentId: string },
+  input: { resourceId: string; intentId: string; releaseFailedPage?: true },
   operation: (owner: AnalyticsQueryOwner) => Promise<T>,
 ): Promise<T> {
   z.object({ resourceId: z.string().min(1), intentId: z.string().min(1) }).parse(input);
@@ -42,7 +44,7 @@ export async function withAnalyticsQueryOwner<T>(
  * Unrelated pending intents are preserved. Receipt proof never proves recovery.
  */
 export async function withAnalyticsReceiptQueryOwner(
-  database: Database,
+  database: Pick<Database, "$client">,
   clickhouse: ClickHouseClient,
   input: { resourceId: string },
   verify: (owner: AnalyticsReceiptQueryOwner) => Promise<{ completedIntentId: string }>,
@@ -54,9 +56,12 @@ export async function withAnalyticsReceiptQueryOwner(
 }
 
 async function withOwnedQueries<T>(
-  database: Database,
+  database: Pick<Database, "$client">,
   clickhouse: ClickHouseClient,
-  input: { resourceId: string } & ({ mode: "write"; intentId: string } | { mode: "receipt" }),
+  input: { resourceId: string } & (
+    | { mode: "write"; intentId: string; releaseFailedPage?: true }
+    | { mode: "receipt" }
+  ),
   operation: (owner: AnalyticsQueryOwner) => Promise<T>,
 ): Promise<T> {
   const session = await database.$client.connect();
@@ -176,6 +181,26 @@ async function withOwnedQueries<T>(
       );
     assertSessionConnected();
     queryTerminal = true;
+  }
+
+  async function assertLastRequestNativeTerminal(queryId: string) {
+    // Predecessors were consumed before successor registration. Never flush or poll.
+    const result = await clickhouse.query({
+      query: `SELECT query_id FROM system.query_log
+        WHERE query_id={queryId:String} AND is_initial_query=1
+          AND type IN ('QueryFinish','ExceptionBeforeStart','ExceptionWhileProcessing') LIMIT 2`,
+      query_params: { queryId },
+      format: "JSONEachRow",
+      clickhouse_settings: { readonly: 1, log_queries: 0 },
+    });
+    const proof = z
+      .tuple([z.object({ query_id: z.literal(queryId) })])
+      .safeParse(await result.json());
+    if (!proof.success)
+      throw new Error(
+        "Analytics page owner is BLOCKED: last request has no exact native terminal proof; verified recovery is required",
+      );
+    await assertOwnerActive();
   }
 
   async function execute<R>(dispatch: (queryId: string) => Promise<R>): Promise<R> {
@@ -350,6 +375,15 @@ async function withOwnedQueries<T>(
         if (acknowledgedQueryId !== null) await markRequestTerminal(acknowledgedQueryId);
         await assertOwnerActive();
         if (
+          input.mode === "write" &&
+          input.releaseFailedPage &&
+          outcome &&
+          "error" in outcome &&
+          acknowledgedQueryId !== null
+        ) {
+          await assertLastRequestNativeTerminal(acknowledgedQueryId);
+        }
+        if (
           input.mode === "receipt" &&
           outcome &&
           "value" in outcome &&
@@ -357,7 +391,7 @@ async function withOwnedQueries<T>(
           admittedIntentId === completedIntentId
         )
           await retireCompletedIntent();
-        if (input.mode === "write" && outcome && "value" in outcome)
+        if (input.mode === "write" && outcome && ("value" in outcome || input.releaseFailedPage))
           await session.query(
             "UPDATE fitness.analytics_query_owner SET intent_id=NULL WHERE resource_id=$1 AND owner_id=$2",
             [input.resourceId, ownerId],

@@ -23,6 +23,8 @@ sources:
   - name: ingest
     schema: "{{ env_var('DBT_INGEST_SOURCE_SCHEMA', 'ingest') }}"
     tables:
+      - name: provider_data_generation
+      - name: account_erasure_fence
       - name: metric_stream
         config:
           event_time: recorded_at
