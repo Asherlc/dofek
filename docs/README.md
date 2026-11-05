@@ -129,6 +129,7 @@ Cross-provider reverse-engineering references:
 | [xcode-cloud.md](xcode-cloud.md) | Xcode Cloud setup and troubleshooting. |
 | [ios-physical-device-release-audit.md](ios-physical-device-release-audit.md) | TestFlight release gate for HealthKit, BLE, motion, Watch, camera, and background behavior on synthetic-only physical hardware. |
 | [storage-alerting-and-volume-upgrade.md](storage-alerting-and-volume-upgrade.md) | Storage danger-zone alerts and volume expansion notes for OCI production. |
+| [analytics-storage-runbook.md](analytics-storage-runbook.md) | Physical quota, writer-privilege, allocation and maintenance gates for the Pulsar release; not an enablement approval. |
 | [database-backup-recovery-runbook.md](database-backup-recovery-runbook.md) | Databasus service health, R2 freshness monitoring, and isolated restore verification. |
 | [record-local-time.md](record-local-time.md) | Dry-run and execute the bounded historical activity local-time context backfill. |
 | [activity-effort-identity-runbook.md](activity-effort-identity-runbook.md) | Audit retained raw activity identities and run the scoped ClickHouse/dbt refresh. |
