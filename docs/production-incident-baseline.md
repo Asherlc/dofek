@@ -35576,13 +35576,11 @@ package error was `patch-2.8.1-r0: breaks: world[patch=2.8-r0]`: the pinned
 Temurin image uses Alpine 3.24, whose repository now supplies 2.8.1-r0.
 The [fixing commit](https://github.com/Asherlc/dofek/commit/ad1ec1d87867e49936b6f9073ce7e6fbab79b9da)
 updates that exact build-tool pin while retaining the image digest, source
-checksum, memory limit and test commands. The subsequent
-[successful source-build job](https://github.com/Asherlc/dofek/actions/runs/41993332932/job/127130525556)
-records installation of 2.8.1-r0 and completion of the source build. See the
+checksum, memory limit and test commands. See the
 [Alpine package record](https://pkgs.alpinelinux.org/package/v3.24/main/aarch64/patch).
 No retry, timeout or ignored error was added. Production was unaffected and automatic deployment remained disabled.
 
-The next [cold source build](https://github.com/Asherlc/dofek/actions/runs/41989377396)
+The second [cold source build](https://github.com/Asherlc/dofek/actions/runs/41989377396)
 passed installation, then failed with `ResourceExhausted: cannot allocate memory`.
 A fresh local builder reproduced the failure under `memory.max=4294967296`;
 `memory.events` recorded one OOM kill. The 08:03:10 UTC process sample showed
@@ -35597,7 +35595,10 @@ validation passed: 28 first-step tasks executed; the second step executed 16
 tasks with 25 up to date, including the selected upstream test. Both Gradle
 invocations succeeded with retries disabled and the original heap/worker
 settings. The verified builder limit remained 4 GiB with no swap; no OOM or
-OOM kill was recorded. Remote CI remains the release gate. This change adds
+OOM kill was recorded. The subsequent
+[successful ARM source-build job](https://github.com/Asherlc/dofek/actions/runs/41993332932/job/127130525556)
+at `7f98465d7` confirms package installation and the corrected cold build.
+All remaining PR checks are required before merge. This change adds
 no wait, retry, ignored failure or increased limit. Docker documents
 [RUN build steps](https://docs.docker.com/reference/dockerfile/#run); Linux
 documents [cgroup memory accounting](https://docs.kernel.org/admin-guide/cgroup-v2.html#memory).
