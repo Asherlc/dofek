@@ -32,7 +32,7 @@ import {
 } from "../fit/stream-decoder.ts";
 import { captureException } from "../lib/error-reporting.ts";
 import { logger } from "../logger.ts";
-import type { MetricStreamEventPublisher } from "../metric-stream/redpanda-producer.ts";
+import type { MetricStreamEventPublisher } from "../metric-stream/publisher.ts";
 import {
   createProviderArtifactStorageFromEnv,
   type ProviderArtifactStorage,

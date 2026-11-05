@@ -12,7 +12,7 @@ import { SOURCE_TYPE_API } from "../../db/sensor-channels.ts";
 import { withSyncLog } from "../../db/sync-log.ts";
 import { deleteTokens, ensureProvider, loadTokens, saveTokens } from "../../db/tokens.ts";
 import { logger } from "../../logger.ts";
-import type { MetricStreamEventPublisher } from "../../metric-stream/redpanda-producer.ts";
+import type { MetricStreamEventPublisher } from "../../metric-stream/publisher.ts";
 import { parseTcx, tcxToSensorSamples } from "../../tcx/parser.ts";
 import {
   authFailureReasonFromError,
