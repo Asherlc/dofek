@@ -1,5 +1,12 @@
 # Single-server Pulsar qualification — 2026-11-03
 
+**Current release scope (November 5):** see the
+[remaining-work index](pulsar-remaining-work.md). The user approved transport
+first, retaining PeerDB and all four holds. CDC replacement, analytics
+activation and complete legacy conversion remain later project work. Physical
+storage and erasure gates remain binding. This document retains chronological
+evidence; earlier blocked findings must be read alongside later checkpoints.
+
 **Decision: blocked before application migration or production deployment.**
 The isolated topology works on ARM64. A narrow source correction to the bundled
 offloader now passes actual Cloudflare R2 upload and readback; stock drivers

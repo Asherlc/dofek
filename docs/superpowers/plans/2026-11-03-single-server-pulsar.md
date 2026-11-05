@@ -1,5 +1,12 @@
 # Single-server Pulsar Implementation Plan
 
+**November 5 release split:** the user approved a transport-first milestone
+with PeerDB and production holds retained. Full archive conversion, account
+archives, owned CDC and bounded analytics remain required afterward. Physical
+storage and erasure gates remain binding. Use the current
+[remaining-work index](../../pulsar-remaining-work.md) for sequencing and status;
+the detailed tasks below are not all first-release prerequisites.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans or superpowers:subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Execute in this conversation without branch switches or rebases. The user subsequently explicitly approved Codex subagents, superseding the original no-agent instruction.
 
 **Goal:** Replace Redpanda with self-hosted Pulsar on the existing server, convert the existing R2 archive, and restore safe historical processing without losing source data or weakening deletion guarantees.

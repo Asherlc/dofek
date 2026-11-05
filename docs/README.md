@@ -26,6 +26,8 @@ the exact section.
 - [testing.md](testing.md): testing patterns that come up repeatedly in this codebase.
 - [processing-status-runbook.md](processing-status-runbook.md): durable processing evidence, deployment order, and stage diagnosis.
 - [account-erasure-runbook.md](account-erasure-runbook.md): durable account deletion, retention proof, restore reconciliation, and incident response.
+- [pulsar-remaining-work.md](pulsar-remaining-work.md): approved transport-first
+  release, verified checkpoints, remaining gates and deferred project work.
 - [roadmap.md](roadmap.md): product strategy, release gates, Daily Brief,
   calendar, and trust roadmap.
 - [review-fixture-scenarios.md](review-fixture-scenarios.md): paired web/mobile

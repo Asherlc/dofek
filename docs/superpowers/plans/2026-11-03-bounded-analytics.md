@@ -1,5 +1,12 @@
 # Bounded Analytics Implementation Plan
 
+**November 5 release split:** bounded-analytics activation and owned CDC are
+deferred from the next Pulsar transport milestone, not cancelled. Shared
+physical-storage and erasure gates still apply to that milestone. The current
+[remaining-work index](../../pulsar-remaining-work.md) records implemented
+checkpoints, unfinished tasks and the approved release order. Preserve the
+detailed contracts below for continuation.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. The user explicitly approved Codex subagents; preserve that authorization and this conversation's worktree/branch.
 
 **Goal:** Replace unbounded historical sensor discovery/reconciliation with durable complete-key pages, causal completion evidence and independently enforced temporary-storage limits.
