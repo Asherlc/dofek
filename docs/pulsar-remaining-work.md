@@ -41,11 +41,13 @@ sink/journal, erasure, archive, deployment and storage changes. Deferred work
 remains on `dull-baboon`. The user explicitly approved the separate
 `pulsar-foundation` branch and workspace for the first infrastructure/test PR.
 It contains the isolated topology, offload correction and native evacuation CI,
-without application pipeline changes. The first PR is
-[#3226](https://github.com/Asherlc/dofek/pull/3226). Its Expo compatibility
-prerequisite [#3227](https://github.com/Asherlc/dofek/pull/3227) has merged.
-The foundation PR has passed its initial CI; subsequent review corrections
-require fresh checks before merge. Current results belong to those PRs.
+without application pipeline changes. The first PR, [#3226](https://github.com/Asherlc/dofek/pull/3226), merged on
+November 5 after all current checks and review passed, as
+[`8328b28d4`](https://github.com/Asherlc/dofek/commit/8328b28d4d47ea3fd765f1b1cd4df77d9c20c0bf).
+Its Expo compatibility prerequisite [#3227](https://github.com/Asherlc/dofek/pull/3227)
+also merged. The approved foundation workspace is being brought forward with
+normal merges from main for subsequent focused PRs; deferred source remains
+on `dull-baboon`.
 
 The user also authorized monitoring each focused PR, correcting failures,
 merging after required checks and review pass, and continuing through subsequent
