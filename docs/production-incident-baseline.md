@@ -1,5 +1,12 @@
 # Production Incident Baseline
 
+## 2026-11-05 — Pulsar dependency installation blocks PR checks
+
+- **Impact and evidence:** [PR #3231](https://github.com/Asherlc/dofek/pull/3231) failed dependency installation in [CI run 42099939657](https://github.com/Asherlc/dofek/actions/runs/42099939657). The first failure was a native SDK binary GET from `archive.apache.org` with an empty fetch-error reason; the subsequent `pulsar/c/message.h` compile error was the source-build fallback. The underlying runner network error remains unknown. Production deployment remains disabled.
+- **Approved fix:** Use the SDK's supported binary-host environment setting with [Apache Downloads](https://downloads.apache.org/pulsar/pulsar-client-node/pulsar-client-node-1.18.0/). Configure the variable explicitly in CI, Docker and mise: [pnpm 11 no longer exports configuration as lifecycle environment variables](https://pnpm.io/scripts). No download retry, TLS change or source-build workaround is added.
+- **Security:** Override `tar` to 7.5.22, addressing [SNYK-JS-TAR-18319500](https://security.snyk.io/vuln/SNYK-JS-TAR-18319500), introduced through the native SDK's installer.
+- **Validation and remaining risk:** The official Linux glibc x64 archive matched Apache's SHA-512 checksum. The frozen local install passed, using existing native artifacts; this does not qualify a fresh SDK download. A fresh CI installation and all required checks must pass before release.
+
 ## 2026-11-01 — Climbing activity card displays a cardio icon
 
 - **Symptoms / impact:** [Activity 2590bf35](https://dofek.fit/activity/2590bf35-bfea-4b57-ac9c-5c9ad96ff617) displays the lightning/cardio icon beside its Kaya climbing title.

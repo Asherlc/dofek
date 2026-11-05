@@ -13,3 +13,4 @@ runs:
       shell: bash
       env:
         CYPRESS_INSTALL_BINARY: "0"
+        npm_config_pulsar_binary_host_mirror: https://downloads.apache.org/pulsar/pulsar-client-node/

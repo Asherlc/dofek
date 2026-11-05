@@ -58,6 +58,7 @@ COPY . .
 FROM base AS workspace-manifests
 WORKDIR /app
 ENV CYPRESS_INSTALL_BINARY=0
+ENV npm_config_pulsar_binary_host_mirror=https://downloads.apache.org/pulsar/pulsar-client-node/
 ARG DEPENDENCY_CACHE_BUST
 COPY .npmrc package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY patches ./patches
