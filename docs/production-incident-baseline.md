@@ -35574,12 +35574,13 @@ The first [ARM source-build job](https://github.com/Asherlc/dofek/actions/runs/4
 failed at `apk add --no-cache patch=2.8-r0`, before compilation. The first fatal
 package error was `patch-2.8.1-r0: breaks: world[patch=2.8-r0]`: the pinned
 Temurin image uses Alpine 3.24, whose repository now supplies 2.8.1-r0.
-The direct fix updates that exact build-tool pin, retaining the image digest,
-source checksum, memory limit and test commands. A clean container from the
-same image installed 2.8.1-r0 and reported GNU patch 2.8.1. See the
+The [fixing commit](https://github.com/Asherlc/dofek/commit/ad1ec1d87867e49936b6f9073ce7e6fbab79b9da)
+updates that exact build-tool pin while retaining the image digest, source
+checksum, memory limit and test commands. The subsequent
+[successful source-build job](https://github.com/Asherlc/dofek/actions/runs/41993332932/job/127130525556)
+records installation of 2.8.1-r0 and completion of the source build. See the
 [Alpine package record](https://pkgs.alpinelinux.org/package/v3.24/main/aarch64/patch).
-Full source-build CI remains required; no retry, timeout or ignored error was
-added. Production was unaffected and automatic deployment remained disabled.
+No retry, timeout or ignored error was added. Production was unaffected and automatic deployment remained disabled.
 
 The next [cold source build](https://github.com/Asherlc/dofek/actions/runs/41989377396)
 passed installation, then failed with `ResourceExhausted: cannot allocate memory`.

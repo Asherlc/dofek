@@ -156,6 +156,8 @@ do not start `docker-compose.pulsar.yml` beforehand. The
 [native CI job](../.github/workflows/test.yml) supplies the pinned tools.
 Vitest documents [explicit project selection](https://vitest.dev/guide/projects).
 
+### PeerDB CDC integration
+
 `pnpm test:peerdb-integration` is the end-to-end CDC contract tier. It adds the
 pinned PeerDB/Temporal stack from `docker-compose.peerdb.yml`, runs only
 `*.peerdb.integration.test.ts`, and removes the current workspace's disposable

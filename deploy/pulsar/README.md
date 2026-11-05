@@ -13,7 +13,9 @@ checks with retries disabled. The standalone
 that normal Docker source path on ARM with a verified 4 GiB builder limit,
 without importing a host-built NAR. Its [workflow runs](https://github.com/Asherlc/dofek/actions/workflows/pulsar-source-build.yml)
 provide commit-specific build evidence; the workflow definition alone is not a
-passing qualification result. Docker documents the builder's
+passing qualification result. The [ARM job at 7f98465d7](https://github.com/Asherlc/dofek/actions/runs/41993332932/job/127130525556)
+passed the cold build, both style checks, NAR packaging and selected upstream
+tests. Docker documents the builder's
 [memory and swap controls](https://docs.docker.com/build/builders/drivers/docker-container/).
 See the [pinned upstream offloader](https://github.com/apache/pulsar/blob/v5.0.1/tiered-storage/jcloud/src/main/java/org/apache/bookkeeper/mledger/offload/jcloud/impl/BlobStoreManagedLedgerOffloader.java).
 

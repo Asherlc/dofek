@@ -21,7 +21,13 @@ both style checks and NAR packaging with retries disabled, then copies that NAR
 into the broker image. It runs independently of the existing Test Gate and does
 not run services, publish images or use R2 credentials. Commit-specific success
 must be established by its [workflow runs](https://github.com/Asherlc/dofek/actions/workflows/pulsar-source-build.yml);
-no CI source-build pass is claimed by this checkpoint yet.
+the [ARM source-build job](https://github.com/Asherlc/dofek/actions/runs/41993332932/job/127130525556)
+passed at commit `7f98465d7330c554d5f71364cab29aff325e0f0c`. That cold build
+compiled and packaged the NAR, ran both style checks, then executed the selected
+upstream tests in a separate RUN step under the same 4 GiB limit. The
+[tested Dockerfile](https://github.com/Asherlc/dofek/blob/7f98465d7330c554d5f71364cab29aff325e0f0c/deploy/pulsar/Dockerfile)
+ends compiler/style process lifetimes before starting the test JVM; it changes
+no heap, worker, retry or test-selection settings.
 
 The historical, pre-PR [native evacuation ARM job](https://github.com/Asherlc/dofek/actions/runs/41871869660/job/126721886208)
 passed at commit 10735959f in 135.687 seconds, within its 300-second bound and
