@@ -363,15 +363,6 @@ function validateOwnershipDomain(table: PhysicalTable): void {
     assertColumnContract(table, {
       event_id: "UUID",
       applied_at: "DateTime64(9)",
-      command_id: "Nullable(UUID)",
-      deletion_event_id: "Nullable(UUID)",
-      user_id: "Nullable(UUID)",
-      provider_id: "Nullable(String)",
-      generation: "Nullable(UInt64)",
-      previous_command_id: "Nullable(UUID)",
-      command_hash: "Nullable(FixedString(64))",
-      command_complete: "Nullable(UInt8)",
-      position: "Nullable(String)",
     });
     return;
   }

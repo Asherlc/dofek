@@ -87,6 +87,16 @@ function table(name: string, columns: readonly ColumnDefinition[]) {
   };
 }
 describe("ClickHouse erasure ownership coverage", () => {
+  it("classifies deletion acknowledgements as structural metadata", async () => {
+    const canonical = {
+      ...table("metric_stream_delete_acknowledgement", [
+        ["event_id", "UUID"],
+        ["applied_at", "DateTime64(9)"],
+      ]),
+      database: "ingest",
+    };
+    await expect(inspectClickHouseAccountErasureCoverage(client([canonical]))).resolves.toEqual([]);
+  });
   it("rejects a target without a physical UUID binding", async () => {
     await expect(
       inspectClickHouseAccountErasureCoverage(

@@ -1,5 +1,12 @@
 # Production Incident Baseline
 
+## 2026-11-05 — Native addon crashes mutation workers; erasure coverage rejects the acknowledgement table
+
+- **Impact and first failures:** [CI run 42106860779](https://github.com/Asherlc/dofek/actions/runs/42106860779) passed native sink integration and migration lint, but mutation workers exited with `SIGSEGV`, `SIGABRT` or `SIGILL` during their initial run. Web E2E migration separately failed with `metric_stream_delete_acknowledgement.command_id violates its column contract`. No production deployment occurred.
+- **Crash diagnosis and fix:** Twenty local worker-thread load/unload controls passed without Pulsar; loading `pulsar-client` then terminated Node 26.7.0 with signal 11. Twenty separate child processes loading the same addon passed. Stryker's [runner defaults to threads and overrides Vitest's pool](https://stryker-mutator.io/docs/stryker-js/vitest-runner/); configure its supported `vitest.pool: forks` explicitly, matching the existing Vitest configuration and the [documented native-addon isolation guidance](https://vitest.dev/config/pool). No retries, exclusions or score thresholds change.
+- **Schema diagnosis and fix:** The erasure classifier expected nine CDC command columns absent from the canonical acknowledgement builder. Its strict contract now matches the actual `event_id` and `applied_at` columns. Extra or mistyped columns still fail closed. All 20 coverage unit tests passed; E2E requalification remains required.
+- **Remaining gates:** A separate physical-erasure mutation shard has missing unit coverage and surviving mutants; process isolation does not address that failure. Full mutation and E2E checks remain required before release.
+
 ## 2026-11-05 — Pulsar dependency installation blocks PR checks
 
 - **Impact and evidence:** [PR #3231](https://github.com/Asherlc/dofek/pull/3231) failed dependency installation in [CI run 42099939657](https://github.com/Asherlc/dofek/actions/runs/42099939657). The first failure was a native SDK binary GET from `archive.apache.org` with an empty fetch-error reason; the subsequent `pulsar/c/message.h` compile error was the source-build fallback. The underlying runner network error remains unknown. Production deployment remains disabled.
