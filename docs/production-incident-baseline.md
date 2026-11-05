@@ -35844,3 +35844,31 @@ reclaim is credited before a supported deletion and measured filesystem result.
 The [manual-offload checkpoint](pulsar-qualification.md#november-4-manual-offload-verified-method-bulk-copy-in-progress)
 states the recovery contract and remaining gates. Website health and all four
 holds remain unchanged.
+
+### 2026-11-05 — Verified manual R2 offload releases transition space
+
+The one-time operator batch stopped at the export step for
+`[50,761,777, 50,861,777)` before upload. A read-only reproduction reported
+`stage=source-export offset=50806573`; private inspection found a valid V2 event,
+zero headers and the normal `activity:<activityId>` publisher key. The exporter
+had omitted that key class. Exact-match positive and mismatched-key negative
+checks validate the correction; no source row was skipped. The original batch
+also discarded child diagnostics, so its bounded continuation now retains only
+allowlisted stage/offset/category messages. These are one-time operator actions,
+not changes to the steady-state publisher or broker configuration.
+
+The preceding 296 objects, exactly 29,600,000 records, independently passed
+original-byte read-back, second source read, contiguous ranges, deployed erasure
+parser and current-ETag audits. At 00:09 UTC, stock
+[`rpk topic trim-prefix`](https://docs.redpanda.com/streaming/current/reference/rpk/rpk-topic/rpk-topic-trim-prefix/)
+advanced the history partition start from 21,161,777 to 50,761,777. Free space
+rose from 8,132,595,712 to 26,983,030,784 bytes; the high watermark, consumer
+positions, leader epoch and partition-directory identity stayed unchanged.
+Health passed and the three queue pauses plus zero history-sink replicas remain.
+The remaining consumed prefix and unread tail are still local. Finish their
+verified copies before retention expiry; no expansion requirement, Pulsar
+qualification or restoration of freshness follows from this reclaim alone.
+
+The useful improvement is to preserve sanitized child failure context and to
+classify keys from the existing publisher contract before starting an operator
+export. Retain raw bytes independently of parser output when proving a copy.

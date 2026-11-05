@@ -88,6 +88,34 @@ not begun.
 
 ### November 4 manual offload: verified method, bulk copy in progress
 
+**November 5, 00:09 UTC update:** 296 objects covering exactly 29,600,000
+records in `[21,161,777, 50,761,777)` passed all checks below. The final audit
+confirmed current object ETags and published the structural proof manifests.
+Payload comparisons used original value bytes, before parsing, on both the
+independent R2 read-back and the second broker read. Stock `rpk topic trim-prefix`
+then advanced the history partition start to `50,761,777`. The high watermark
+remained `74,445,631`, the ClickHouse consumer remained at `55,609,019`, and the
+archive consumer remained at that high watermark. Free space immediately rose
+from 8,132,595,712 to 26,983,030,784 bytes, a measured gain of 18,850,435,072
+bytes. Public health passed. All four production holds remain in place;
+available capacity does not qualify Pulsar or authorize fresh ingestion.
+
+The following chunk stopped before upload at offset `50,806,573`: its valid
+event used the existing publisher's `activity:<activityId>` key, which the
+one-time exporter's classifier had omitted. Exact matching and mismatched-key
+controls now cover the correction; no record was skipped. The publisher's
+[key rule](../src/metric-stream/events.ts) and
+[replacement tests](../src/metric-stream/redpanda-producer.test.ts) identify this as an
+operator classification defect rather than invalid source data. Continuation
+starts explicitly at the last verified chunk boundary, `50,761,777`, retaining
+the failed partial file as evidence. The unread 18,836,612-record tail remains
+local and must receive the same proofs before its local copy is retired.
+Measured bulk verification was about 5,580 records/second, projecting roughly
+71 minutes for the remaining consumed prefix and unread tail together, excluding
+final audits and any further stops. This is an operator-copy observation, not
+Pulsar ingestion throughput. Complete migration overlap and lifecycle gates
+remain open.
+
 The user authorized manual R2 offload to qualify migration on the existing disk.
 Fresh broker inspection found one history partition with retained offsets
 `[21,161,777, 74,445,631)`, a ClickHouse consumer position of `55,609,019`, and
