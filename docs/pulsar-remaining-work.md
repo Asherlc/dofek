@@ -99,6 +99,11 @@ are inputs to these tests, not substitutes for measured physical deletion.
 The fixture's static endpoint models stability; actual production service
 addressing must be tested with [Swarm service discovery](https://docs.docker.com/engine/swarm/networking/#configure-service-discovery).
 
+Hold restoration also requires either safe journal retirement or a measured capacity
+proof for the entire history/provider drain with margin. R1 journal exhaustion
+stops acknowledgments and intake; alerting must show time until full. This
+capacity gate supplements the separate restoration consent.
+
 The bounded-erasure implementation is in progress, not qualified. Its canonical
 contract uses direct account predicates, typed indirect domains and request-owned
 pages; unknown ClickHouse schemas and unmatched staging tables fail closed.
@@ -135,6 +140,7 @@ evidence and erasure races remain release gates.
 
 | Work | Existing implementation / evidence | Resume point |
 | --- | --- | --- |
+| Journal retirement | No safe retirement boundary exists in the current covered-replay protocol | Add a durable retirement certificate and downstream-coverage proof before deleting journal/manifests/receipts. R1 retains them on a physically capped disk with visible backpressure. No age-only TTL or partition purge. R2 bootstrap must cover raw rows ingested during R1 too; see [cap scope](analytics-storage-runbook.md#first-release-cap-scope-and-journal-retention). |
 | Bounded activity effects | Sensor SQL and structural journal foundations exist | [Analytics task 4](superpowers/plans/2026-11-03-bounded-analytics.md#task-4-bounded-activity-impact-and-durable-downstream-effects): complete prior/current associations, paged fan-out, deletion and activity-only CDC edits. |
 | Deduplication/activity executor and activation | Scalar checkpoint exists; remaining stages and full closure do not | [Tasks 5–6](superpowers/plans/2026-11-03-bounded-analytics.md#task-5-serialized-executor-query-ownership-and-output-before-cursor-recovery): stage recovery, query ownership, causal coverage and truthful job/cache completion. Bootstrap effects over existing raw data before activation. Retire unowned dbt subprocess writers as required by the final ownership model. |
 | Owned CDC | Pure transaction gate and eight-context decoder exist; no raw writes | [Owned CDC assessment](owned-cdc-assessment.md) and [CDC coverage task](superpowers/plans/2026-11-03-bounded-analytics.md#task-6-causal-sensorcdc-coverage-and-truthful-jobcache-completion). First establish bounded cross-topic commit-prefix application; a complete transaction alone is insufficient. Then implement revision-scoped parent ownership, CDC effects, atomic transaction integration and all 18 destinations. Unknown ownership/schema/incarnation blocks. PeerDB retirement is deferred. |

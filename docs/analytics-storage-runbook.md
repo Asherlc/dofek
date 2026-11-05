@@ -17,6 +17,40 @@ data filesystem was observed without project/quota features. The failed local
 Docker-kernel quota mount is not enforcement evidence. See the
 [recorded physical-storage results](pulsar-qualification.md#production-safety-and-next-decision).
 
+## First-release cap scope and journal retention
+
+R1 physically bounds new storage whose growth depends on backlog or R2
+availability: BookKeeper journal/ledgers, actual broker/offloader local staging,
+Oxia data, ClickHouse query spill, and the new effect journal and receipts.
+Use a dedicated ClickHouse disk with a stock storage policy for the journal,
+effect receipts and prepared/committed delivery manifests. Its project cap
+must cover table parts and their merge/mutation overlap; a query-temporary
+path cap alone does not bound those table files. See
+[ClickHouse storage policies](https://clickhouse.com/docs/concepts/features/configuration/server-config/storing-data)
+and [MergeTree rewrite overlap](https://clickhouse.com/resources/engineering/clickhouse-optimize-table-final).
+No paths, project IDs or numerical production allocations have been adopted.
+
+Other existing databases, jobs, volumes and logs remain explicit measured
+reserve/growth obligations. They are not all required to gain new project-quota
+startup packaging in R1. The required preflight and final writer checks apply
+to the capped set above; the whole-host budget still accounts for every owner.
+Do not count Redpanda space until it is actually retired.
+
+Analytics stays held in R1, so the journal is retained and can fill its cap.
+The cap must fail closed: failed sink writes prevent acknowledgment, bounded
+Pulsar backlog then holds producers. Measure live intake, size the retained-work
+window with merge margin, and alert before exhaustion with estimated time to
+full. R1 makes no indefinite-ingestion claim. Restoring the holds requires
+retirement support or proof that the cap covers the complete drain, including
+remaining providers and the verified history tail, with margin.
+
+No age-only TTL or partition purge is approved. Current
+[covered replay](../src/analytics/analytics-delivery.ts) re-verifies original
+journal/receipt proofs even after frontier advancement and owner release.
+Pending, uncertain and retained completed groups must remain recoverable.
+Safe retirement needs a durable protocol certificate plus downstream coverage;
+it remains mandatory R2 work. R2 raw-effect bootstrap also covers R1 intake.
+
 ## Latest read-only host observation
 
 On November 5, 2026 UTC, `findmnt`, `df -B1`, `tune2fs -l` and
