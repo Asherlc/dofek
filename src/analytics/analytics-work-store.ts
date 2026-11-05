@@ -37,8 +37,9 @@ const streamStateSchema = z.object({
   group_first_ingested_at: z.iso.datetime({ precision: 6 }).nullable(),
 });
 
+// The database constraint bounds member counts to 500; return a native JS number.
 const streamStateColumns = sql`owner_id,processed,pending,group_state,
-  group_first_position,group_last_position,group_member_count,group_positions_digest,
+  group_first_position,group_last_position,group_member_count::integer AS group_member_count,group_positions_digest,
   to_char(group_first_ingested_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS group_first_ingested_at`;
 
 const changedSchema = z.object({ changed: z.number() });

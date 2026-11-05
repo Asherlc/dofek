@@ -1,8 +1,8 @@
 import { sql } from "drizzle-orm";
 import {
+  bigint,
   boolean,
   check,
-  integer,
   jsonb,
   primaryKey,
   text,
@@ -15,7 +15,7 @@ import { fitness } from "./core.ts";
 export const analyticsQueryOwner = fitness.table("analytics_query_owner", {
   resourceId: text("resource_id").primaryKey(),
   ownerId: uuid("owner_id"),
-  backendPid: integer("backend_pid"),
+  backendPid: bigint("backend_pid", { mode: "number" }),
   quiescent: boolean("quiescent").notNull().default(true),
   intentId: text("intent_id"),
   ingestedAt: timestamp("ingested_at", { withTimezone: true }).notNull().default(sql`'epoch'`),
@@ -29,14 +29,14 @@ export const analyticsStreamState = fitness.table(
     transport: text("transport", { enum: ["pulsar", "kafka"] }).notNull(),
     epoch: text("epoch").notNull(),
     topic: text("topic").notNull(),
-    partition: integer("partition").notNull(),
+    partition: bigint("partition", { mode: "number" }).notNull(),
     ownerId: uuid("owner_id").notNull(),
     processed: jsonb("processed").$type<MetricStreamPosition>(),
     pending: jsonb("pending").$type<MetricStreamPosition>(),
     groupState: text("group_state", { enum: ["pending", "completed"] }),
     groupFirstPosition: jsonb("group_first_position").$type<MetricStreamPosition>(),
     groupLastPosition: jsonb("group_last_position").$type<MetricStreamPosition>(),
-    groupMemberCount: integer("group_member_count"),
+    groupMemberCount: bigint("group_member_count", { mode: "number" }),
     groupPositionsDigest: text("group_positions_digest"),
     groupFirstIngestedAt: timestamp("group_first_ingested_at", {
       withTimezone: true,
