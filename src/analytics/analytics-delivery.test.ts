@@ -181,20 +181,29 @@ describe("raw delivery coordination", () => {
   });
 
   it("publishes only uncovered positions after a partial frontier cover", async () => {
+    const [coveredPosition, uncoveredPosition] = positions;
+    if (coveredPosition === undefined || uncoveredPosition === undefined) {
+      throw new Error("expected covered and uncovered fixture positions");
+    }
+    const coveredGroup = describeAnalyticsDeliveryGroup([coveredPosition], 500);
     const completedGroup = {
-      ...describeAnalyticsDeliveryGroup([positions[0]!], 500),
+      ...coveredGroup,
       ingestedAt: owner.ingestedAt,
-      intentId: analyticsDeliveryGroupIntentId(describeAnalyticsDeliveryGroup([positions[0]!], 500)),
+      intentId: analyticsDeliveryGroupIntentId(coveredGroup),
     };
     mocks.load
-      .mockResolvedValueOnce({ processed: positions[0], completedGroup })
-      .mockResolvedValueOnce({ processed: positions[0], completedGroup })
-      .mockResolvedValue({ owner_id: "owner-1", processed: positions[0], pendingGroup: null });
+      .mockResolvedValueOnce({ processed: coveredPosition, completedGroup })
+      .mockResolvedValueOnce({ processed: coveredPosition, completedGroup })
+      .mockResolvedValue({
+        owner_id: "owner-1",
+        processed: coveredPosition,
+        pendingGroup: null,
+      });
     const request = input();
     await coordinateAnalyticsDeliveryGroup({ database, clickhouse: owner.client }, request);
     expect(request.publish).toHaveBeenCalledWith(
       owner,
-      [positions[1]],
+      [uncoveredPosition],
       expect.any(Array),
       new Set(),
     );

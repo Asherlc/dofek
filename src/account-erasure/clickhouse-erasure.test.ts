@@ -1,14 +1,17 @@
 import { createHash } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ClickHouseCommandClient } from "../db/clickhouse.ts";
-import type { PhysicalTable } from "./clickhouse-erasure-coverage.ts";
+import type { AnalyticsQueryOwner } from "../analytics/analytics-query-owner.ts";
+import type { ClickHouseClient } from "../db/clickhouse.ts";
+import { unexpectedClickHouseExec } from "../db/clickhouse-test-helpers.ts";
 import {
+  type ClickHouseAccountErasureStore,
   clickHouseAccountErasurePredicates,
   eraseClickHouseAccount,
   fenceClickHouseAccount,
   prepareClickHouseAccountErasure,
   prepareClickHouseAccountErasureIdentifiers,
 } from "./clickhouse-erasure.ts";
+import type { PhysicalTable } from "./clickhouse-erasure-coverage.ts";
 import type { AccountErasureIdentifierStore } from "./identifier-store.ts";
 
 const userId = "10000000-0000-4000-8000-000000001994";
@@ -67,16 +70,11 @@ function hash(value: string): string {
 }
 
 function createStore(
-  overrides: Partial<{
-    beginClosure: ReturnType<typeof vi.fn>;
-    sealClosure: ReturnType<typeof vi.fn>;
-    assertClosureComplete: ReturnType<typeof vi.fn>;
-    append: ReturnType<typeof vi.fn>;
-    readPage: ReturnType<typeof vi.fn>;
-    loadPhysicalProgress: ReturnType<typeof vi.fn>;
-    assertPhysicalPlanPrepared: ReturnType<typeof vi.fn>;
-  }> = {},
-) {
+  overrides: Partial<ClickHouseAccountErasureStore> = {},
+): ClickHouseAccountErasureStore {
+  const unusedPhysical = async (): Promise<never> => {
+    throw new Error("Unexpected physical store call in logical erasure unit fixture");
+  };
   return {
     beginClosure: overrides.beginClosure ?? vi.fn(async () => true),
     sealClosure: overrides.sealClosure ?? vi.fn(async () => undefined),
@@ -85,37 +83,40 @@ function createStore(
     readPage:
       overrides.readPage ??
       vi.fn(async () => ({
-        entries: [] as Array<{ key: string; value: string }>,
-        nextCursor: null as string | null,
+        entries: [] satisfies Array<{ key: string; value: string }>,
+        nextCursor: null,
       })),
     loadPhysicalProgress: overrides.loadPhysicalProgress ?? vi.fn(async () => null),
     assertPhysicalPlanPrepared:
       overrides.assertPhysicalPlanPrepared ?? vi.fn(async () => undefined),
-  } satisfies Pick<
-    AccountErasureIdentifierStore,
-    | "beginClosure"
-    | "sealClosure"
-    | "assertClosureComplete"
-    | "append"
-    | "readPage"
-    | "loadPhysicalProgress"
-    | "assertPhysicalPlanPrepared"
-  >;
+    appendPhysical: overrides.appendPhysical ?? unusedPhysical,
+    readPhysicalPage: overrides.readPhysicalPage ?? unusedPhysical,
+    readPhysicalEntry: overrides.readPhysicalEntry ?? unusedPhysical,
+    sealPhysicalPlan: overrides.sealPhysicalPlan ?? unusedPhysical,
+    startPhysicalIntent: overrides.startPhysicalIntent ?? unusedPhysical,
+    admitPhysicalIntent: overrides.admitPhysicalIntent ?? unusedPhysical,
+    finishPhysicalIntent: overrides.finishPhysicalIntent ?? unusedPhysical,
+    finishPhysicalApply: overrides.finishPhysicalApply ?? unusedPhysical,
+    markPhysicalComplete: overrides.markPhysicalComplete ?? unusedPhysical,
+    retirePhysicalMutation: overrides.retirePhysicalMutation ?? unusedPhysical,
+    finishPhysicalCleanup: overrides.finishPhysicalCleanup ?? unusedPhysical,
+  };
 }
 
-function createOwner(queryImpl?: ClickHouseCommandClient["query"]) {
+function createOwner(
+  queryRows: Array<{ count: number }> = [{ count: 0 }],
+): Pick<AnalyticsQueryOwner, "client" | "assertActive"> {
   const assertActive = vi.fn(async () => undefined);
-  const command = vi.fn(async () => undefined);
-  const insert = vi.fn(async () => undefined);
-  const query =
-    queryImpl ??
-    vi.fn(async () => ({
-      json: async () => [{ count: 0 }],
-    }));
-  return {
+  const command = vi.fn<ClickHouseClient["command"]>(async () => undefined);
+  const insert = vi.fn<NonNullable<ClickHouseClient["insert"]>>(async () => undefined);
+  const query: ClickHouseClient["query"] = async () => ({
+    json: async () => JSON.parse(JSON.stringify(queryRows)),
+  });
+  const owner: Pick<AnalyticsQueryOwner, "client" | "assertActive"> = {
     assertActive,
-    client: { command, insert, query },
+    client: { command, insert, query, exec: unexpectedClickHouseExec },
   };
+  return owner;
 }
 
 async function collectPredicates(
@@ -142,8 +143,8 @@ beforeEach(() => {
 
 describe("fenceClickHouseAccount", () => {
   it("rejects an oversized caller page before admitting any fence", async () => {
-    const command = vi.fn<ClickHouseCommandClient["command"]>(async () => undefined);
-    const insert = vi.fn<NonNullable<ClickHouseCommandClient["insert"]>>(async () => undefined);
+    const command = vi.fn<ClickHouseClient["command"]>(async () => undefined);
+    const insert = vi.fn<NonNullable<ClickHouseClient["insert"]>>(async () => undefined);
     await expect(
       fenceClickHouseAccount(
         { command, insert, query: async () => ({ json: async () => [] }) },
@@ -155,8 +156,8 @@ describe("fenceClickHouseAccount", () => {
   });
 
   it("fences exact user and operation hashes, deduplicating its bounded input", async () => {
-    const command = vi.fn<ClickHouseCommandClient["command"]>(async () => undefined);
-    const insert = vi.fn<NonNullable<ClickHouseCommandClient["insert"]>>(async () => undefined);
+    const command = vi.fn<ClickHouseClient["command"]>(async () => undefined);
+    const insert = vi.fn<NonNullable<ClickHouseClient["insert"]>>(async () => undefined);
     await fenceClickHouseAccount(
       { command, insert, query: async () => ({ json: async () => [] }) },
       userId,
@@ -185,8 +186,8 @@ describe("fenceClickHouseAccount", () => {
   });
 
   it("writes only the user fence when the operation page is empty", async () => {
-    const command = vi.fn<ClickHouseCommandClient["command"]>(async () => undefined);
-    const insert = vi.fn<NonNullable<ClickHouseCommandClient["insert"]>>(async () => undefined);
+    const command = vi.fn<ClickHouseClient["command"]>(async () => undefined);
+    const insert = vi.fn<NonNullable<ClickHouseClient["insert"]>>(async () => undefined);
     await fenceClickHouseAccount(
       { command, insert, query: async () => ({ json: async () => [] }) },
       userId,
@@ -465,11 +466,7 @@ describe("prepareClickHouseAccountErasureIdentifiers", () => {
         columns: [["user_id", "UUID"]],
       }),
     ]);
-    const owner = createOwner(
-      vi.fn(async () => ({
-        json: async () => [{ count: 2 }],
-      })),
-    );
+    const owner = createOwner([{ count: 2 }]);
     await expect(
       prepareClickHouseAccountErasureIdentifiers(owner, createStore(), {
         userId,
@@ -536,15 +533,14 @@ describe("eraseClickHouseAccount", () => {
       entries: [{ key: "g".repeat(64), value: activityId }],
       nextCursor: null,
     };
-    const store = createStore({
-      readPage: vi
-        .fn()
-        .mockResolvedValueOnce({
-          entries: [{ key: "f".repeat(64), value: operationId }],
-          nextCursor: null,
-        })
-        .mockResolvedValue(relationPage),
-    });
+    const readPage = vi
+      .fn<AccountErasureIdentifierStore["readPage"]>()
+      .mockResolvedValueOnce({
+        entries: [{ key: "f".repeat(64), value: operationId }],
+        nextCursor: null,
+      })
+      .mockResolvedValue(relationPage);
+    const store = createStore({ readPage });
     const { clickHouseErasureSchemaDigest } = await import("./clickhouse-erasure-coverage.ts");
     const digest = clickHouseErasureSchemaDigest([table]);
     mocks.executePhysical.mockImplementation(async (_owner, _store, _stage, resolveIntent) => {
@@ -570,7 +566,7 @@ describe("eraseClickHouseAccount", () => {
       await expect(
         resolveIntent(["initial", table.database, "missing", table.uuid, digest, "user"]),
       ).rejects.toThrow(/UUID\/schema changed/);
-      store.readPage.mockResolvedValueOnce({
+      readPage.mockResolvedValueOnce({
         entries: [{ key: "wrong".repeat(16).slice(0, 64), value: activityId }],
         nextCursor: null,
       });

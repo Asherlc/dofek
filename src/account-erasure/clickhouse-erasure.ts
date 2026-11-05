@@ -25,6 +25,7 @@ import { readClickHouseErasureIdentifierPage } from "./clickhouse-identifier-pag
 import {
   assertNoClickHouseDetachedParts,
   type ClickHousePhysicalErasurePredicate,
+  type ClickHousePhysicalErasureStore,
   executeClickHousePhysicalErasure,
   prepareClickHousePhysicalBaseline,
   prepareClickHousePhysicalErasure,
@@ -34,6 +35,20 @@ import type {
   AccountErasureIdentifierFamily,
   AccountErasureIdentifierStore,
 } from "./identifier-store.ts";
+
+/** Logical + physical store surface for account ClickHouse erasure helpers. */
+export type ClickHouseAccountErasureStore = Pick<
+  AccountErasureIdentifierStore,
+  | "append"
+  | "assertClosureComplete"
+  | "assertPhysicalPlanPrepared"
+  | "beginClosure"
+  | "loadPhysicalProgress"
+  | "readPage"
+  | "sealClosure"
+> &
+  ClickHousePhysicalErasureStore;
+
 import {
   ACCOUNT_ERASURE_IDENTIFIER_PAGE_SIZE,
   AccountErasureIdentifierBudgetError,
@@ -256,7 +271,7 @@ async function assertErasableTables(
 /** Complete identity discovery under the writer owner before any parent is removed. */
 export async function prepareClickHouseAccountErasureIdentifiers(
   owner: Pick<AnalyticsQueryOwner, "client" | "assertActive">,
-  store: AccountErasureIdentifierStore,
+  store: ClickHouseAccountErasureStore,
   input: { userId: string; stage: "initial" | "final" },
   accountErasureOptions: ClickHouseAccountErasureOptions = {},
 ): Promise<void> {
@@ -338,7 +353,7 @@ export async function fenceClickHouseAccount(
 /** Freeze bounded predicates and pre-mutation provenance before destructive phases. */
 export async function prepareClickHouseAccountErasure(
   owner: Pick<AnalyticsQueryOwner, "client" | "assertActive">,
-  store: AccountErasureIdentifierStore,
+  store: ClickHouseAccountErasureStore,
   input: { userId: string; stage: AccountErasurePhysicalStage },
   accountErasureOptions: ClickHouseAccountErasureOptions = {},
 ): Promise<void> {
@@ -385,7 +400,7 @@ export async function prepareClickHouseAccountErasure(
 
 export async function eraseClickHouseAccount(
   owner: Pick<AnalyticsQueryOwner, "client" | "assertActive">,
-  store: AccountErasureIdentifierStore,
+  store: ClickHouseAccountErasureStore,
   input: { userId: string; stage: AccountErasurePhysicalStage },
   accountErasureOptions: ClickHouseAccountErasureOptions = {},
 ): Promise<void> {

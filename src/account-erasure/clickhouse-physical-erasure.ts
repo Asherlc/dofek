@@ -47,6 +47,22 @@ export interface ClickHousePhysicalErasureOptions {
   maximumPasses: number;
 }
 type Owner = Pick<AnalyticsQueryOwner, "client" | "assertActive">;
+/** Store surface used by physical erasure; keeps unit fixtures from implementing the class. */
+export type ClickHousePhysicalErasureStore = Pick<
+  AccountErasureIdentifierStore,
+  | "admitPhysicalIntent"
+  | "appendPhysical"
+  | "finishPhysicalApply"
+  | "finishPhysicalCleanup"
+  | "finishPhysicalIntent"
+  | "loadPhysicalProgress"
+  | "markPhysicalComplete"
+  | "readPhysicalEntry"
+  | "readPhysicalPage"
+  | "retirePhysicalMutation"
+  | "sealPhysicalPlan"
+  | "startPhysicalIntent"
+>;
 const hashBytes = (bytes: Uint8Array | string) => createHash("sha256").update(bytes).digest("hex");
 const tableSql = (intent: AccountErasurePhysicalIntent) => `\`${intent[1]}\`.\`${intent[2]}\``;
 const tableParameters = (intent: AccountErasurePhysicalIntent) => ({
@@ -140,7 +156,7 @@ async function* names(
 }
 async function retainNames(
   owner: Owner,
-  store: AccountErasureIdentifierStore,
+  store: ClickHousePhysicalErasureStore,
   intent: AccountErasurePhysicalIntent,
   source: string,
   parameters: Record<string, unknown>,
@@ -158,7 +174,7 @@ async function retainNames(
 /** Missing retained history is a blocked proof, never evidence that predecessor bytes disappeared. */
 async function completeLineage(
   owner: Owner,
-  store: AccountErasureIdentifierStore,
+  store: ClickHousePhysicalErasureStore,
   stage: AccountErasurePhysicalStage,
   maximumPasses: number,
 ): Promise<void> {
@@ -217,7 +233,7 @@ async function completeLineage(
 }
 async function captureTarget(
   owner: Owner,
-  store: AccountErasureIdentifierStore,
+  store: ClickHousePhysicalErasureStore,
   resolved: ResolvedIntent,
 ): Promise<void> {
   await assertNoClickHouseDetachedParts(owner, {
@@ -235,7 +251,7 @@ async function captureTarget(
 /** Historical unreadable parts can contain this account even when logical residue is zero. */
 export async function prepareClickHousePhysicalBaseline(
   owner: Owner,
-  store: AccountErasureIdentifierStore,
+  store: ClickHousePhysicalErasureStore,
   intent: AccountErasurePhysicalIntent,
 ): Promise<void> {
   await assertNoClickHouseDetachedParts(owner, { database: intent[1], name: intent[2] });
@@ -255,7 +271,7 @@ export async function prepareClickHousePhysicalBaseline(
 }
 export async function prepareClickHousePhysicalErasure(
   owner: Owner,
-  store: AccountErasureIdentifierStore,
+  store: ClickHousePhysicalErasureStore,
   resolved: ResolvedIntent,
 ): Promise<void> {
   await owner.assertActive();
@@ -264,7 +280,7 @@ export async function prepareClickHousePhysicalErasure(
 }
 export async function sealClickHousePhysicalErasure(
   owner: Owner,
-  store: AccountErasureIdentifierStore,
+  store: ClickHousePhysicalErasureStore,
   stage: AccountErasurePhysicalStage,
   schemaDigest: string,
   maximumPasses: number,
@@ -276,7 +292,7 @@ export async function sealClickHousePhysicalErasure(
 }
 async function recoverMutation(
   owner: Owner,
-  store: AccountErasureIdentifierStore,
+  store: ClickHousePhysicalErasureStore,
   resolved: ResolvedIntent,
   intentKey: string,
   options: ClickHousePhysicalErasureOptions,
@@ -337,7 +353,7 @@ async function recoverMutation(
     );
 }
 async function nextIntent(
-  store: AccountErasureIdentifierStore,
+  store: ClickHousePhysicalErasureStore,
   stage: AccountErasurePhysicalStage,
   after: string | null,
 ) {
@@ -351,7 +367,7 @@ async function nextIntent(
 }
 async function retainedParts(
   owner: Owner,
-  store: AccountErasureIdentifierStore,
+  store: ClickHousePhysicalErasureStore,
   stage: AccountErasurePhysicalStage,
 ): Promise<number> {
   let retained = 0;
@@ -388,7 +404,7 @@ async function retainedParts(
 /** Apply every frozen predicate before one global physical proof; only its durable certificate admits cleanup. */
 export async function executeClickHousePhysicalErasure(
   owner: Owner,
-  store: AccountErasureIdentifierStore,
+  store: ClickHousePhysicalErasureStore,
   stage: AccountErasurePhysicalStage,
   resolveIntent: (intent: AccountErasurePhysicalIntent) => Promise<ResolvedIntent>,
   assertSchema: () => Promise<void>,
