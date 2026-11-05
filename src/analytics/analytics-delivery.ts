@@ -113,7 +113,8 @@ async function coordinateAnalyticsPublicationGroup(
         expected: state?.processed ?? null,
         ingestedAt: base,
       });
-      await owner.reserveIngestionThrough(through);
+      if (state?.pendingGroup) await owner.reuseIngestionReservation(state.pendingGroup);
+      else await owner.reserveIngestionThrough(through);
       await input.publish(owner, positions, times, Boolean(state?.pendingGroup));
       await input.assertActive();
       await completeAnalyticsDeliveryGroup(journal.database, owner.client, {

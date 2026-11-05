@@ -65,6 +65,9 @@ export function sourceOwner(queryRows: readonly (readonly object[])[] = []) {
     reserveIngestionThrough: async () => {
       throw new Error("Unexpected ingestion reservation");
     },
+    reuseIngestionReservation: async () => {
+      throw new Error("Unexpected reservation reuse outside the coordinator");
+    },
   };
   return { owner, requests, commands, executions, rows };
 }

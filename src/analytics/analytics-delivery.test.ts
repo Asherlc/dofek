@@ -2,7 +2,10 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDatabase } from "../db/index.ts";
 import { coordinateAnalyticsDeliveryGroup } from "./analytics-delivery.ts";
-import { describeAnalyticsDeliveryGroup } from "./analytics-delivery-group.ts";
+import {
+  analyticsDeliveryGroupIntentId,
+  describeAnalyticsDeliveryGroup,
+} from "./analytics-delivery-group.ts";
 import type { AnalyticsQueryOwner } from "./analytics-query-owner.ts";
 import { analyticsEffect, analyticsPosition } from "./test-helpers.ts";
 
@@ -64,6 +67,9 @@ const owner: AnalyticsQueryOwner = {
   assertActive: async () => undefined,
   reserveIngestionThrough: async () => {
     trace.push("reserve");
+  },
+  reuseIngestionReservation: async () => {
+    trace.push("reuse");
   },
 };
 beforeEach(() => {
@@ -214,7 +220,11 @@ describe("grouped analytics coordination", () => {
     mocks.load.mockResolvedValue({
       owner_id: randomUUID(),
       processed: null,
-      pendingGroup: { ...group, ingestedAt: "2026-11-03T23:59:59.999999Z" },
+      pendingGroup: {
+        ...group,
+        ingestedAt: "2026-11-03T23:59:59.999999Z",
+        intentId: analyticsDeliveryGroupIntentId(group),
+      },
     });
     mocks.prepareGroup.mockResolvedValue({ positions, effects, fresh: false });
     mocks.hasReceipt.mockResolvedValueOnce(true).mockResolvedValue(false);
@@ -224,6 +234,8 @@ describe("grouped analytics coordination", () => {
       owner.client,
       expect.objectContaining({ wasPending: true }),
     );
+    expect(trace).toContain("reuse");
+    expect(trace).not.toContain("reserve");
     expect(request.prepare).not.toHaveBeenCalled();
     expect(request.apply).toHaveBeenCalledWith(owner, positions.slice(1), effects.slice(1), [
       "2026-11-04T00:00:00.000000Z",

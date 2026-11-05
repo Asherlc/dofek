@@ -35657,7 +35657,7 @@ were pre-merge corrections; no production deployment occurred.
 - **Impact:** Local release qualification only; no production Pulsar deployment or data loss. The first finite native one-row test returned an inserted count of one and advanced receipts/frontier, but its raw-row query returned no rows. The command used the integration project with one worker, `--retry=0 --bail=1` and `-t "finite native"`; later cases stopped and the owned test databases were cleaned up.
 - **Confirmed cause:** The repository's inherited `command(values)` interface did not match `@clickhouse/client` 1.23.1. Its packaged `dist/common/client.js` forwards streamed values through `exec()`, not `command()`. The unit fake consumed the unsupported argument and hid the mismatch. See the [published client artifact](https://registry.npmjs.org/@clickhouse/client/-/client-1.23.1.tgz) and [JavaScript client API](https://clickhouse.com/docs/integrations/javascript#exec-method).
 - **Correction and validation:** The grouped writer now uses stock `exec(values)` with `wait_end_of_query=1` and consumes the full response to EOF under the query owner before committing receipts or advancing the frontier. A `written_rows` lower bound catches an undercount; equality is invalid because materialized views add writes to the summary. Prepared recovery manifests remain pending on failure. Official client signatures now constrain the fakes. The full real Postgres/ClickHouse sink file passes all 19 cases, including exact raw rows for groups of one and 500, replay, deletes, markers and acknowledgement ordering; focused unit tests cover interrupted responses and summary failures. No timeout, retry or resource limit was raised. See the [client completion settings](https://clickhouse.com/docs/integrations/javascript#clickhouse-settings).
-- **Additional test defects:** Real-engine reproduction confirmed that a display alias `toString(id) AS id` shadowed the native UUID predicate and returned an empty result. The readback now selects the native column and orders explicitly by its string representation where the assertion expects string order. An obsolete 350-control coalescing test was replaced with exact per-control receipts and versions matching the native consumer contract. The four-control diagnostic took about 1.40 seconds and 134 ClickHouse calls; it does not qualify a large provider deletion.
+- **Additional test defects:** Real-engine reproduction confirmed that a display alias `toString(id) AS id` shadowed the native UUID predicate and returned an empty result. The read query now selects the native column and orders explicitly by its string representation where the assertion expects string order. An obsolete 350-control coalescing test was replaced with exact per-control receipts and versions matching the native consumer contract. The four-control diagnostic took about 1.40 seconds and 134 ClickHouse calls; it does not qualify a large provider deletion.
 - **Subsequent qualification and remaining gates:** Independent source review found no critical or important issue, and both finite real-broker composition cases passed. Current-path throughput remains open; the earlier DULL figure does not qualify this client path. Carry control-burst drain time into the whole-host soak, alongside the physical storage, erasure and deployment gates. Automatic deployment and all production holds remain unchanged.
 
 ## 2026-11-05 — Erasure handoff and local test qualification remain unresolved
@@ -35680,11 +35680,21 @@ were pre-merge corrections; no production deployment occurred.
   effects come from current raw rows matching a scope; they cannot all be
   reconstructed from the native message after erasure. No protocol correction
   has been implemented or qualified. Safe journal retirement remains R2 work.
+- **Partial correction qualified:** Source-group intent release now requires a
+  complete persisted descriptor, its full reservation below the retained HWM and
+  the existing positive terminal/session guards. Explicit reservation reuse checks
+  exact descriptor identity and performs no HWM update. Five real database cases
+  and 80 focused unit cases pass; independent review found no critical or important
+  issue. Unknown outcomes, missing descriptors and unreserved slots remain
+  blocked. This fixes writer handoff and time reuse only; receipt redaction and
+  replay after erasure remain unresolved.
 - **Unresolved test-runner event:** A combined unit/mobile run stopped after
   3,819 passing cases because the reporter's child fixture had not emitted
   `hook.start` by its existing ten-second deadline. Its original error incorrectly
   claimed pipes had not closed without observing closure. The test diagnostic now
   records safe lifecycle states, marker presence, byte counts and event names.
   One isolated run passed in 931 ms; that does not establish the broad-run cause.
-  A bounded instrumented broad reproduction is pending. No timeout, retry,
-  assertion or production reporter behavior was changed.
+  The instrumented broad reproduction passed 23,889 tests, including this case
+  before the owner changes; it does not establish the original cause or qualify
+  the final tree. No timeout, retry, assertion or production reporter behavior
+  was changed.

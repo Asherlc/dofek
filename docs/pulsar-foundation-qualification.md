@@ -192,8 +192,8 @@ The curated [identifier store](../src/account-erasure/identifier-store.ts) passe
 47 real Postgres cases, including the canonical migration's empty-state success
 and legacy-request refusal, lease checks, crypto ownership and paging across
 500 identifiers. Its source curation has 423 focused unit cases passing. This
-does not requalify the full ClickHouse erasure path or production account size;
-the 400,000/800,000-row evidence from the earlier development branch must be
+does not qualify the full ClickHouse erasure path or production account size;
+  the 400,000/800,000-row evidence from the earlier development branch must be
 repeated after release integration.
 
 The native broker composition is now selected explicitly by a required

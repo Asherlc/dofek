@@ -4,7 +4,11 @@ import { z } from "zod";
 import type { ClickHouseClient } from "../db/clickhouse.ts";
 import type { Database } from "../db/index.ts";
 import { captureException } from "../lib/error-reporting.ts";
-import { analyticsDeliveryGroupIngestionTimes } from "./analytics-delivery-group.ts";
+import {
+  analyticsDeliveryGroupIngestionTimes,
+  analyticsDeliveryGroupIntentId,
+  type PersistedAnalyticsDeliveryGroup,
+} from "./analytics-delivery-group.ts";
 
 export const ANALYTICS_PUBLICATION_RESOURCE = "metric-stream-source";
 
@@ -12,6 +16,7 @@ export interface AnalyticsQueryOwner {
   client: ClickHouseClient;
   ingestedAt: string;
   reserveIngestionThrough(through: string): Promise<void>;
+  reuseIngestionReservation(group: PersistedAnalyticsDeliveryGroup): Promise<void>;
   assertActive(): Promise<void>;
 }
 
@@ -350,6 +355,52 @@ async function withOwnedQueries<T>(
         if (parsed.length !== 1)
           throw new Error("Analytics ingestion reservation lost its owner or high-watermark");
       },
+      reuseIngestionReservation: async (group) => {
+        assertSessionActive();
+        if (
+          group.intentId !== admittedIntentId ||
+          group.intentId !== analyticsDeliveryGroupIntentId(group)
+        )
+          throw new Error("Durable ingestion reservation does not belong to this intent");
+        const through = analyticsDeliveryGroupIngestionTimes(
+          group.ingestedAt,
+          group.memberCount,
+        ).at(-1);
+        if (!through) throw new Error("Durable ingestion reservation has no time slots");
+        const result = await session.query(
+          `SELECT publication.owner_id FROM fitness.analytics_query_owner AS publication
+           JOIN fitness.analytics_stream_state AS stream
+             ON stream.transport=$3 AND stream.epoch=$4 AND stream.topic=$5 AND stream.partition=$6
+           WHERE publication.resource_id=$1 AND publication.owner_id=$2
+             AND NOT publication.quiescent AND publication.intent_id=$7
+             AND publication.ingested_at >= $8::timestamptz
+             AND stream.group_state IN ('pending','completed')
+             AND stream.group_first_position=$9::jsonb AND stream.group_last_position=$10::jsonb
+             AND stream.group_member_count=$11 AND stream.group_positions_digest=$12
+             AND stream.group_first_ingested_at=$13::timestamptz`,
+          [
+            input.resourceId,
+            ownerId,
+            group.stream.transport,
+            group.stream.epoch,
+            group.stream.topic,
+            group.stream.partition,
+            group.intentId,
+            through,
+            JSON.stringify(group.first),
+            JSON.stringify(group.last),
+            group.memberCount,
+            group.positionsDigest,
+            group.ingestedAt,
+          ],
+        );
+        assertSessionConnected();
+        const proof = z.tuple([z.object({ owner_id: z.literal(ownerId) })]).safeParse(result.rows);
+        if (result.rowCount !== 1 || !proof.success)
+          throw new Error(
+            "Durable ingestion reservation is missing, changed or exceeds its high-watermark",
+          );
+      },
     });
     closed = true;
     returnedWithRequest = inFlight !== null;
@@ -386,6 +437,31 @@ async function withOwnedQueries<T>(
             "UPDATE fitness.analytics_query_owner SET intent_id=NULL WHERE resource_id=$1 AND owner_id=$2",
             [input.resourceId, ownerId],
           );
+        else if (
+          input.mode === "write" &&
+          outcome &&
+          "error" in outcome &&
+          /^source-group:[a-f0-9]{64}$/.test(input.intentId)
+        ) {
+          // The descriptor retains the dirty work and its exact time slots.
+          // Release only a terminal request whose entire reservation is durable;
+          // otherwise a full journal could prevent the erasure writer from running.
+          await session.query(
+            `UPDATE fitness.analytics_query_owner AS publication SET intent_id=NULL
+             WHERE resource_id=$1 AND owner_id=$2 AND intent_id=$3 AND query_terminal
+               AND (SELECT count(*) FROM fitness.analytics_stream_state AS stream
+                    WHERE stream.group_positions_digest=$4
+                      AND stream.group_state IN ('pending','completed')
+                      AND publication.ingested_at >= stream.group_first_ingested_at
+                        + (stream.group_member_count-1) * interval '1 microsecond')=1`,
+            [
+              input.resourceId,
+              ownerId,
+              input.intentId,
+              input.intentId.slice("source-group:".length),
+            ],
+          );
+        }
         await session.query(
           `UPDATE fitness.analytics_query_owner SET quiescent=true,backend_pid=NULL
            WHERE resource_id=$1 AND owner_id=$2`,
