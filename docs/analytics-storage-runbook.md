@@ -65,11 +65,35 @@ it remains mandatory R2 work. R2 raw-effect bootstrap also covers R1 intake.
 The November 5 live-topic metadata window, 10:03:50–10:09:15 UTC, observed
 partition 0 at epoch 1 with the high watermark unchanged at 238,803,373.
 That is zero deliveries over 325 seconds, an idle interval rather than a
-long-run growth bound. Retained sink benchmarks do not record physical
-journal/receipt/manifest bytes per event. Both capacity inputs remain open;
-neither this idle window nor raw-table bytes per row sizes the journal cap.
-Retain meaningful historical intake and physical table-size measurements
-beside throughput evidence, including small-part and merge overlap.
+long-run growth bound. Later measurements below replace this idle interval as
+the initial sizing input; raw-table bytes per row do not size the journal cap.
+
+### Initial journal runway inputs
+
+A November 5 read-only Axiom aggregate over 1,358 retained live-sink observations
+spanned November 4 11:00:06.713 to November 5 10:31:09.030 UTC. The high-watermark
+increase was 2,495,670 offsets over 84,662.317 seconds: 29.48 offsets/s. The
+largest observed within-hour span was 63.75 offsets/s, 2.16 times the average.
+Neither is an instantaneous peak or future rate bound. A fresh local group of
+500 verified every raw row, effect, receipt and frontier, then measured active
+parts and filesystem allocation. See the
+[measurement limits](pulsar-qualification.md#november-5-journal-sizing-and-mutation-metadata-observations).
+
+| Initial fixture input | Bytes/event | GB/day at average | GB/day at higher observed rate | Days per GB, average / higher |
+| --- | ---: | ---: | ---: | ---: |
+| Journal, receipts and manifests: parent part bytes | 402.88 | 1.03 | 2.22 | 0.975 / 0.451 |
+| Same three tables: filesystem allocation | 827.39 | 2.11 | 4.56 | 0.475 / 0.219 |
+| Including source placement: filesystem allocation | 1,187.84 | 3.03 | 6.54 | 0.331 / 0.153 |
+
+GB means decimal gigabytes. These are fresh-fixture extrapolations, before
+merge overlap, not steady-state measurements or a cap recommendation. Projection
+bytes are included in parent totals and must not be added twice. Source
+placement has its own retention and bootstrap obligation; do not assume it can
+be retired with delivery proofs. Measure sustained post-merge bytes per event
+for each table, merge/mutation peak and the expected retention interval before
+adopting allocations. Compare the resulting runway with the time needed to
+ship safe retirement. If it cannot fit the host budget, explicitly decide
+between bringing retirement into R1 and a planned stop of live intake.
 
 ## Latest read-only host observation
 

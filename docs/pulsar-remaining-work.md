@@ -1,6 +1,6 @@
 # Pulsar release scope and remaining work
 
-Last reconciled: November 5, 2026 UTC; PR #3228 merged and PR #3229 open.
+Last reconciled: November 5, 2026 UTC; PRs #3226, #3228 and #3229 merged.
 Deferred development source remains on `dull-baboon`.
 
 This is the current continuation index for the Pulsar project. It separates
@@ -59,8 +59,13 @@ This is preparatory work, not a working Pulsar sensor path.
 
 [#3229](https://github.com/Asherlc/dofek/pull/3229) prepares native archive-key
 recognition in the existing eraser, with no new dependencies or writer activation.
-Its 54 focused unit cases, two real S3 erasure cases, types, lint and independent
-review passed; full tests and required CI remain pending.
+Its final 62 focused unit cases, two real S3 erasure cases, types, lint,
+23,729 unit/mobile tests and required CI passed. Review fixes reject decoded
+topic line terminators. It merged as
+[`5a16593ba`](https://github.com/Asherlc/dofek/commit/5a16593ba574f547ec20907494fb1a4f67469397).
+The native sender now has 18 focused tests and migrated production callers in
+the foundation workspace. It remains uncommitted and cannot ship until Consumer,
+archive, shutdown and deployment wiring form a complete runtime slice.
 
 The user also authorized monitoring each focused PR, correcting failures,
 merging after required checks and review pass, and continuing through subsequent
@@ -149,13 +154,22 @@ writer, release assembly and production activation are not done. See
 the [current archive parser](../src/metric-stream/r2-replay.ts) and
 [archive erasure](../src/account-erasure/archive-erasure.ts).
 
-The focused first-release parser slice will recognize the native key grammar
+The merged first-release parser slice recognizes the native key grammar
 without decoding its endpoint bytes. The existing eraser discards the parsed
 return and determines ownership from strict event payloads and retained
 identifiers, with an ETag guard before rewriting. Opaque endpoints are upload
 provenance only; this slice makes no position-ordering, partition-consistency or
 replay-validity claim. Native decoding and its dependency remain with the actual
 writer/replay consumers; the stricter development checkpoint is retained.
+
+The current storage inputs and their limits are recorded in the
+[runway table](analytics-storage-runbook.md#initial-journal-runway-inputs).
+They do not establish a production allocation or sustained ingestion runway.
+Physical erasure metadata now passes 45 real Postgres tests, but its native
+proof and caller integration remain unfinished. The selected cleanup order is
+durable physical completion, removal and verified absence of native mutation
+metadata, then the cleanup cursor advance. See the
+[engine observation](pulsar-qualification.md#november-5-journal-sizing-and-mutation-metadata-observations).
 
 The approved Node Consumer remains the intake strategy. Queue, group-count and
 byte bounds are required settings, with RSS measured at activation. Create-only
@@ -190,9 +204,10 @@ permits unread backlog expiry for the deletion deadline only with an alert,
 operator incident and incomplete sync status; it does not authorize arbitrary
 loss or false reconstruction claims.
 
-Immediate next step: complete checks and review on the isolated
-`pulsar-foundation` PR, merge when its required gates pass, then take the next
-unfinished first-release gate above. The local lifecycle run is terminal and
+Immediate next step: complete native sender/Consumer/archive runtime composition
+and bounded erasure proof integration in parallel. Open each release unit only
+when it has its production callers and prerequisites, then monitor and merge
+after its required checks and review pass. The local lifecycle run is terminal and
 passed; do not duplicate it. Local terminal sessions and private artifact paths are in the
 workspace progress ledger; checked-in evidence is linked from the qualification
 record. Use [the testing guide](testing.md) and preserve the approved local

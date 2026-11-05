@@ -1468,3 +1468,35 @@ remain unqualified. No service limit, capture topology or hold changed.
 The useful distinction is fixture loading/verification versus measured model
 execution, and query-owned failure versus aggregate server pressure. Preserve
 those phases and the physical part layout when reviewing future resource results.
+
+## November 5: journal sizing and mutation metadata observations
+
+One finite local fixture used the actual grouped sink and current final schema,
+with fresh groups of one and 500 events. All 501 raw rows, effects, receipts and
+frontiers reconciled. Each query retained the 128 MiB allowance and one thread;
+the ClickHouse container retained its 4 GiB cap and 3 GiB native ceiling. This
+was a storage observation, not a throughput or process-RSS qualification.
+
+For 500 events, journal/receipt/manifest parent parts used 201,440 bytes and
+filesystem allocation was 413,696 bytes. Including source placement gave
+243,464 and 593,920 bytes respectively. Parent totals already include their
+projections; see [ClickHouse's part accounting](https://github.com/ClickHouse/ClickHouse/blob/v26.10.2.103-stable/src/Storages/MergeTree/MergedBlockOutputStream.cpp).
+The one-event case allocated 385,024 bytes across all four tables, showing why
+fresh metadata costs cannot be treated as sustained bytes per event. Both
+isolated databases were removed after verification. Natural merge steady state,
+rewrite peak, source-placement bootstrap and production event-size variation
+remain unqualified. The [storage runbook](analytics-storage-runbook.md#initial-journal-runway-inputs)
+combines these observations with the retained live-topic rate and states the
+extrapolation limits.
+
+A separate two-row native check on ClickHouse 26.10.2.103 completed a hashed
+predicate mutation, verified logical residue and original-part absence with
+`_state` requested, and saved that physical result before cleanup. Exact
+`KILL MUTATION` returned `waiting`, but a subsequent `system.mutations` query
+confirmed zero matching rows. The surviving row remained readable and the
+isolated database was removed. This qualifies that engine behavior only; it
+does not qualify the unfinished production erasure integration. The durable
+physical certificate must precede cleanup, and the current mutation descriptor
+must remain until metadata absence is verified, before advancing its cursor.
+Crash tests and a real-engine upgrade regression remain required. See the
+stock [KILL MUTATION command](https://clickhouse.com/docs/sql-reference/statements/kill#kill-mutation).

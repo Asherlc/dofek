@@ -36037,3 +36037,23 @@ The earlier lifecycle entry above describes a superseded attempt. The later
 authorized stable-address run passed both survivor reads, including after
 restarts, and retired only its isolated fixture storage. Production Swarm
 addressing remains unqualified; see the [passing local result](pulsar-qualification.md#november-5-stable-endpoint-lifecycle-passes).
+
+### November 5, 2026 — archive PR code-scanning gate
+
+PR #3229's initial CodeQL check failed with two new high-severity annotations
+in negative encoding fixtures: “This replaces only the first occurrence of
+%3A.” The fixtures intentionally create invalid inputs; replacing every matching
+escape with `replaceAll` expresses that intent without partial-replacement
+warnings. Review also found decoded topic line terminators accepted by the new
+grammar. Four regression cases failed first, then passed after explicit
+line-terminator rejection. The legacy-object wording now distinguishes unchanged
+format/key layout from normal erasure rewrites.
+
+Fix [`d95c848e8`](https://github.com/Asherlc/dofek/commit/d95c848e825d234a999cda32b4f8557627fe6dc2)
+passed 62 focused tests, all type checks, lint and 23,729 unit/mobile tests.
+The [fresh CodeQL analysis](https://github.com/Asherlc/dofek/actions/runs/42012172646/job/127193646111)
+and its [code-scanning gate](https://github.com/Asherlc/dofek/runs/127194820337)
+passed. No checks were disabled and no retries or timeouts were added. All
+required checks subsequently passed and PR #3229 merged as
+[`5a16593ba`](https://github.com/Asherlc/dofek/commit/5a16593ba574f547ec20907494fb1a4f67469397).
+Automatic deployment remains disabled; no production deployment occurred.
