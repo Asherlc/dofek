@@ -35602,3 +35602,14 @@ All remaining PR checks are required before merge. This change adds
 no wait, retry, ignored failure or increased limit. Docker documents
 [RUN build steps](https://docs.docker.com/reference/dockerfile/#run); Linux
 documents [cgroup memory accounting](https://docs.kernel.org/admin-guide/cgroup-v2.html#memory).
+
+### November 5, 2026 — archive-stream PR local lint environment
+
+The isolated archive-stream PR passed the sandbox lint gates, then SQLFluff
+failed with `Connection refused` while dbt used the default ClickHouse port.
+This workspace had no `.env.local`; the prepared database was running under
+the original workspace's generated ports. Loading that existing environment
+before `pnpm lint` directs the unchanged dbt profile to the prepared service.
+No service was recreated, no production setting changed, and no timeout or
+retry was added. Keep environment loading explicit when validating a focused
+PR in a sibling workspace; see the [integration dependency procedure](testing.md#integration-dependencies).
