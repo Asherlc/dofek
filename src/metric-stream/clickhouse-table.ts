@@ -146,14 +146,6 @@ ${metricStreamIngestMetadataColumnDefinitions},
 ${metricStreamReplacingMergeTreeEngine()}`;
 }
 
-export function buildMetricStreamSourcePlacementIngestSql(): string {
-  return `CREATE MATERIALIZED VIEW IF NOT EXISTS analytics.source_placement_ingest
-    TO analytics.source_placement AS
-    SELECT id AS source_id,user_id,provider_id,toUInt64(version) AS source_version,
-      generation,channel,recorded_at,ingested_at,activity_id,toUInt8(is_deleted) AS deleted
-    FROM ${METRIC_STREAM_TABLE}`;
-}
-
 export function buildMetricStreamDeleteAcknowledgementTableSql(): string {
   return `CREATE TABLE IF NOT EXISTS ${METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE} (
   event_id UUID,

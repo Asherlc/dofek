@@ -74,7 +74,7 @@ export function sourceOwner(queryRows: readonly (readonly object[])[] = []) {
 
 import { randomUUID } from "node:crypto";
 
-/** Actual current PG/schema builders; namespace isolation never substitutes journal DDL. */
+/** Actual current PG/schema builders; namespace isolation preserves production DDL. */
 export async function createMetricStreamAnalyticsTestContext() {
   const postgres = await setupTestDatabase();
   let real: ReturnType<typeof createClickHouseClientFromEnv>;

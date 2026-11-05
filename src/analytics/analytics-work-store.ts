@@ -1,6 +1,5 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import type { ClickHouseClient } from "../db/clickhouse.ts";
 import type { Database } from "../db/index.ts";
 import { executeWithSchema, type SchemaExecutionDatabase } from "../db/typed-sql.ts";
 import {
@@ -15,7 +14,6 @@ import {
   describeAnalyticsDeliveryGroup,
   type PersistedAnalyticsDeliveryGroup,
 } from "./analytics-delivery-group.ts";
-import { verifyAnalyticsDeliveryReceipts } from "./effect-journal-group.ts";
 import {
   type AnalyticsStream,
   assertPositionStream,
@@ -208,7 +206,9 @@ export async function beginAnalyticsDeliveryGroup(
       return;
     }
     if (state.pending)
-      throw new Error("Prior ordered analytics delivery has no complete receipt before this group");
+      throw new Error(
+        "Prior ordered analytics delivery has no completed frontier before this group",
+      );
     analyticsDeliveryGroupIngestionTimes(input.ingestedAt, group.memberCount);
     await transaction.execute(sql`UPDATE fitness.analytics_stream_state
       SET pending=${JSON.stringify(group.last)}::jsonb,
@@ -221,8 +221,7 @@ export async function beginAnalyticsDeliveryGroup(
 }
 
 export async function completeAnalyticsDeliveryGroup(
-  database: Database,
-  client: ClickHouseClient,
+  transaction: Pick<Database, "execute">,
   input: {
     stream: AnalyticsStream;
     ownerId: string;
@@ -234,22 +233,18 @@ export async function completeAnalyticsDeliveryGroup(
   const group = describeAnalyticsDeliveryGroup(positions, input.maximum);
   assertPositionStream(group.first, input.stream);
   z.uuid().parse(input.ownerId);
-  await verifyAnalyticsDeliveryReceipts(client, positions);
-  await database.transaction(async (transaction) => {
-    const state = await lockStream(transaction, input.stream);
-    if (state.owner_id !== input.ownerId)
-      throw new Error("Analytics delivery group owner is stale");
-    if (state.completedGroup) {
-      if (!sameGroup(state.completedGroup, group))
-        throw new Error("Analytics completed group membership differs from its original group");
-      return;
-    }
-    if (!state.pendingGroup || !sameGroup(state.pendingGroup, group))
-      throw new Error("Analytics delivery group membership was not admitted in order");
-    if (state.processed && compareMetricStreamPositions(group.first, state.processed) <= 0)
-      throw new Error("Analytics processed frontier changed before group completion");
-    await transaction.execute(sql`UPDATE fitness.analytics_stream_state
+  const state = await lockStream(transaction, input.stream);
+  if (state.owner_id !== input.ownerId) throw new Error("Analytics delivery group owner is stale");
+  if (state.completedGroup) {
+    if (!sameGroup(state.completedGroup, group))
+      throw new Error("Analytics completed group membership differs from its original group");
+    return;
+  }
+  if (!state.pendingGroup || !sameGroup(state.pendingGroup, group))
+    throw new Error("Analytics delivery group membership was not admitted in order");
+  if (state.processed && compareMetricStreamPositions(group.first, state.processed) <= 0)
+    throw new Error("Analytics processed frontier changed before group completion");
+  await transaction.execute(sql`UPDATE fitness.analytics_stream_state
       SET processed=group_last_position,pending=NULL,group_state='completed'
       WHERE ${streamWhere(input.stream)}`);
-  });
 }

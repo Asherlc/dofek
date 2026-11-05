@@ -1,28 +1,22 @@
 import { createHash } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type {
-  coordinateAnalyticsDelivery,
-  coordinateAnalyticsDeliveryGroup,
-} from "../analytics/analytics-delivery.ts";
+import type { coordinateAnalyticsDeliveryGroup } from "../analytics/analytics-delivery.ts";
 import type { AnalyticsQueryOwner } from "../analytics/analytics-query-owner.ts";
 import { analyticsPosition } from "../analytics/test-helpers.ts";
 import { createDatabase } from "../db/index.ts";
+import { mapMetricStreamEventToClickHouseRow } from "./clickhouse-row.ts";
 import {
   applyMetricStreamEventsToClickHouse,
-  markMetricStreamScopeDeletedInClickHouse,
-  markMetricStreamScopesDeletedInClickHouse,
   runMetricStreamClickHouseSinkFromEnv,
   startMetricStreamClickHouseSinkFromEnv,
 } from "./clickhouse-sink.ts";
-import { METRIC_STREAM_TABLE } from "./clickhouse-table.ts";
 import type { MetricStreamConsumerBatchContext } from "./consumer-context.ts";
 import { MetricStreamConsumerReadiness } from "./consumer-readiness.ts";
 import {
   createMetricStreamBatchCompletedEvent,
   createMetricStreamDeletedEvent,
   type MetricStreamDeleteScopeInput,
-  type MetricStreamEventV1,
   type MetricStreamRedpandaEvent,
 } from "./events.ts";
 import type { runPulsarMetricStreamConsumer } from "./pulsar-consumer.ts";
@@ -45,13 +39,8 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock("../analytics/analytics-delivery.ts", () => ({
   coordinateAnalyticsDeliveryGroup: mocks.group,
-  coordinateAnalyticsDelivery: mocks.control,
 }));
 vi.mock("../analytics/analytics-work-store.ts", () => ({ loadAnalyticsStreamState: mocks.load }));
-vi.mock("../analytics/effect-journal.ts", async (original) => ({
-  ...(await original<typeof import("../analytics/effect-journal.ts")>()),
-  recordAnalyticsEffectOutcomes: vi.fn(async () => undefined),
-}));
 vi.mock("./pulsar-consumer.ts", () => ({ runPulsarMetricStreamConsumer: mocks.run }));
 vi.mock("./consumer-readiness.ts", async (original) => ({
   ...(await original<typeof import("./consumer-readiness.ts")>()),
@@ -99,9 +88,56 @@ function batchContext(
 function prepareFixture(rows: readonly (readonly object[])[]) {
   fixture = sourceOwner(rows);
   owner = fixture.owner;
+  const query = owner.client.query;
+  owner.client.query = async (request) => {
+    if (request.query.includes("AS incoming_nanos")) {
+      expect(request.use_multipart_params).toBe(true);
+      const rows = request.query_params?.keys;
+      if (!Array.isArray(rows)) throw new Error("Guard fixture requires bounded rows");
+      return {
+        json: async () =>
+          JSON.parse(
+            JSON.stringify(
+              rows.map((_row, index) => ({
+                row_index: index,
+                key_count: "1",
+                present: 0,
+                incoming_nanos: "1",
+              })),
+            ),
+          ),
+      };
+    }
+    return query(request);
+  };
   owner.client.insert = mocks.insert;
   mocks.clickhouse.mockReturnValue({ ...owner.client, close: mocks.chClose });
   return fixture;
+}
+function currentReadRow(overrides: object = {}, event = sourceEvent) {
+  const row = mapMetricStreamEventToClickHouseRow(event, sourceIngestedAt);
+  return {
+    row_index: 0,
+    key_count: "1",
+    present: 1,
+    incoming_nanos: "1",
+    ingested_nanos: "1",
+    version: String(row.version),
+    has_conflict: 0,
+    payload: [
+      row.provider_id,
+      String(row.generation),
+      row.external_id,
+      row.device_id,
+      row.source_type,
+      row.scalar === null ? null : String(Math.fround(row.scalar)),
+      row.vector.map((value) => String(Math.fround(value))),
+      row.point ?? "",
+      row.metadata,
+      row.is_deleted,
+    ],
+    ...overrides,
+  };
 }
 beforeEach(() => {
   vi.resetAllMocks();
@@ -129,19 +165,7 @@ beforeEach(() => {
       const times = input.positions.map((_position, index) =>
         index ? "2026-11-03T01:00:00.123457Z" : sourceIngestedAt,
       );
-      const effects = await input.prepare(owner, input.positions, times);
-      await input.apply(owner, input.positions, effects, times);
-    },
-  );
-  mocks.control.mockImplementation(
-    async (_journal, input: Parameters<typeof coordinateAnalyticsDelivery>[1]) => {
-      trace.push("control");
-      const pages = [];
-      for await (const page of input.prepare(owner)) pages.push(page);
-      await input.applyControl(owner);
-      for (const page of pages) await input.apply(owner, page);
-      trace.push("receipt");
-      await input.acknowledgeEffects(owner);
+      await input.publish(owner, input.positions, times, new Set());
     },
   );
   vi.spyOn(process, "once").mockImplementation((event, listener) => {
@@ -166,15 +190,8 @@ afterEach(() => {
 });
 
 describe("native grouped ClickHouse applier", () => {
-  it("sends a single row through the canonical grouped owner and frozen source preparation", async () => {
-    prepareFixture([
-      [],
-      [],
-      [{ source_id: sourceEvent.id, generation: "1", recorded_at: sourceEvent.recordedAt }],
-      [],
-      [],
-      [],
-    ]);
+  it("sends a single row through the canonical grouped owner and durable raw timestamp", async () => {
+    prepareFixture([[], [], []]);
     const context = batchContext([sourceEvent]);
     expect(
       await applyMetricStreamEventsToClickHouse(owner.client, [sourceEvent], context, database),
@@ -189,6 +206,153 @@ describe("native grouped ClickHouse applier", () => {
       version: "9007199254740993",
     });
   });
+  it("skips committed account fences before raw insertion and validates only eligible rows", async () => {
+    const erased = {
+      ...sourceEvent,
+      id: "00000000-0000-4000-8000-000000000099",
+      userId: "00000000-0000-4000-8000-000000000098",
+    };
+    prepareFixture([
+      [{ user_hash: createHash("sha256").update(erased.userId).digest("hex") }],
+      [],
+      [],
+    ]);
+    const events = [erased, sourceEvent];
+    await expect(
+      applyMetricStreamEventsToClickHouse(owner.client, events, batchContext(events), database),
+    ).resolves.toBe(1);
+    expect(fixture.rows).toHaveLength(1);
+    expect(fixture.rows[0]).toMatchObject({
+      id: sourceEvent.id,
+      ingested_at: "2026-11-03T01:00:00.123457Z",
+    });
+  });
+  it("propagates a raw summary shortfall before a later completion marker", async () => {
+    prepareFixture([[]]);
+    const original = owner.client.exec;
+    owner.client.exec = async (request) => ({ ...(await original(request)), summary: undefined });
+    const marker = createMetricStreamBatchCompletedEvent(
+      {
+        operationId: "00000000-0000-4000-8000-000000000003",
+        batchId: "batch",
+        datasetKeys: ["metric_stream"],
+      },
+      1,
+    );
+    const events = [sourceEvent, marker];
+    await expect(
+      applyMetricStreamEventsToClickHouse(owner.client, events, batchContext(events), database),
+    ).rejects.toThrow(/written_rows missing/);
+    expect(mocks.group).toHaveBeenCalledOnce();
+    expect(fixture.commands).toHaveLength(0);
+  });
+  it("retains a generation tombstone for a stale row using the reserved timestamp", async () => {
+    prepareFixture([
+      [],
+      [],
+      [
+        {
+          user_id: sourceEvent.userId,
+          provider_id: sourceEvent.providerId,
+          generation: sourceEvent.generation + 1,
+        },
+      ],
+    ]);
+    await expect(
+      applyMetricStreamEventsToClickHouse(
+        owner.client,
+        [sourceEvent],
+        batchContext([sourceEvent]),
+        database,
+      ),
+    ).resolves.toBe(0);
+    expect(fixture.commands).toHaveLength(1);
+    expect(fixture.commands[0]?.query_params).toMatchObject({
+      row_ids: [sourceEvent.id],
+      ingested_ats: [sourceIngestedAt],
+    });
+  });
+  it("skips older current-key replay without writing raw rows or applying its generation correction", async () => {
+    prepareFixture([]);
+    owner.client.query = async ({ query }) => ({
+      json: async () =>
+        JSON.parse(
+          query.includes("AS incoming_nanos")
+            ? JSON.stringify([currentReadRow({ ingested_nanos: "2" })])
+            : "[]",
+        ),
+    });
+    await expect(
+      applyMetricStreamEventsToClickHouse(
+        owner.client,
+        [sourceEvent],
+        batchContext([sourceEvent]),
+        database,
+      ),
+    ).resolves.toBe(0);
+    expect(fixture.rows).toHaveLength(0);
+    expect(fixture.commands).toHaveLength(0);
+  });
+  it("fails a conflicting equal-time payload before raw publication", async () => {
+    prepareFixture([]);
+    owner.client.query = async ({ query }) => ({
+      json: async () =>
+        JSON.parse(
+          query.includes("AS incoming_nanos")
+            ? JSON.stringify([currentReadRow({ has_conflict: 1 })])
+            : "[]",
+        ),
+    });
+    await expect(
+      applyMetricStreamEventsToClickHouse(
+        owner.client,
+        [sourceEvent],
+        batchContext([sourceEvent]),
+        database,
+      ),
+    ).rejects.toThrow(/conflicting.*payload/i);
+    expect(fixture.rows).toHaveLength(0);
+  });
+  it("skips an identical canonical Float32 and nullable payload at the same rank", async () => {
+    prepareFixture([]);
+    owner.client.query = async ({ query }) => ({
+      json: async () =>
+        JSON.parse(query.includes("AS incoming_nanos") ? JSON.stringify([currentReadRow()]) : "[]"),
+    });
+    await expect(
+      applyMetricStreamEventsToClickHouse(
+        owner.client,
+        [sourceEvent],
+        batchContext([sourceEvent]),
+        database,
+      ),
+    ).resolves.toBe(0);
+    expect(fixture.rows).toHaveLength(0);
+    expect(fixture.commands).toHaveLength(0);
+  });
+  it.each(["scalar", "vector"])(
+    "skips identical replay of a serialized signed zero in %s",
+    async (field) => {
+      prepareFixture([]);
+      const event = {
+        ...sourceEvent,
+        ...(field === "scalar" ? { scalar: -0 } : { vector: [-0, 1] }),
+      };
+      owner.client.query = async ({ query }) => ({
+        json: async () =>
+          JSON.parse(
+            query.includes("AS incoming_nanos")
+              ? JSON.stringify([currentReadRow({}, event)])
+              : "[]",
+          ),
+      });
+      await expect(
+        applyMetricStreamEventsToClickHouse(owner.client, [event], batchContext([event]), database),
+      ).resolves.toBe(0);
+      expect(fixture.rows).toHaveLength(0);
+      expect(fixture.commands).toHaveLength(0);
+    },
+  );
   it("rejects missing position membership before dispatch", async () => {
     const context = { ...batchContext([sourceEvent]), positions: [] };
     await expect(
@@ -210,9 +374,9 @@ describe("native grouped ClickHouse applier", () => {
     await expect(
       applyMetricStreamEventsToClickHouse(owner.client, events, batchContext(events), database),
     ).rejects.toThrow("journal failed");
-    expect(mocks.control).not.toHaveBeenCalled();
+    expect(mocks.group).toHaveBeenCalledOnce();
   });
-  it("writes a native completion coordinate only after control receipt proof", async () => {
+  it("writes a native completion coordinate after ordered raw publication", async () => {
     prepareFixture([[]]);
     const marker = createMetricStreamBatchCompletedEvent(
       {
@@ -226,7 +390,7 @@ describe("native grouped ClickHouse applier", () => {
     expect(
       await applyMetricStreamEventsToClickHouse(owner.client, [marker], context, database),
     ).toBe(0);
-    expect(trace).toEqual(["control", "receipt"]);
+    expect(trace).toEqual(["group"]);
     expect(fixture.commands).toHaveLength(1);
     expect(fixture.commands[0]?.query_params).toMatchObject({
       operation_id: marker.operationId,
@@ -272,17 +436,15 @@ describe("native grouped ClickHouse applier", () => {
       batchContext([event]),
       database,
     );
-    expect(mocks.insert).toHaveBeenCalledWith(
-      expect.objectContaining({
-        values: [
-          expect.objectContaining({
-            user_id: sourceEvent.userId,
-            operation_revision: operationRevision,
-          }),
-        ],
-      }),
-    );
-    expect(fixture.commands[0]?.query_params).toEqual({ eventId: event.eventId });
+    expect(fixture.commands[0]?.query).toContain(`"operation_revision":"${operationRevision}"`);
+    expect(fixture.commands[1]?.query_params).toMatchObject({
+      ingested_at: sourceIngestedAt,
+      replacement_version: "2000000000000000",
+    });
+    expect(fixture.commands.at(-1)?.query_params).toEqual({
+      event_id: event.eventId,
+      ingested_at: sourceIngestedAt,
+    });
   });
 });
 
@@ -340,14 +502,7 @@ describe("native sink runner", () => {
     expect(readiness.getStatus()).toBe("unavailable");
   });
   it("wires the concrete stream, exact pending group loader and canonical handler", async () => {
-    prepareFixture([
-      [],
-      [],
-      [{ source_id: sourceEvent.id, generation: "1", recorded_at: sourceEvent.recordedAt }],
-      [],
-      [],
-      [],
-    ]);
+    prepareFixture([[], [], []]);
     const pending = { memberCount: 1 };
     mocks.load.mockResolvedValue({ pendingGroup: pending });
     const readiness = new MetricStreamConsumerReadiness();
@@ -424,88 +579,5 @@ describe("native sink runner", () => {
     expect(mocks.chClose).toHaveBeenCalledOnce();
     expect(mocks.dbClose).toHaveBeenCalledOnce();
     expect(mocks.nativeClose).not.toHaveBeenCalled();
-  });
-});
-
-const heartRateEvent = {
-  version: 1,
-  id: "10000000-0000-4000-8000-000000000001",
-  recordedAt: "2026-06-06T19:00:00.000Z",
-  userId: "00000000-0000-4000-8000-000000000001",
-  providerId: "apple_health",
-  generation: 0,
-  externalId: "hk:heart-rate-1",
-  deviceId: "Apple Watch",
-  sourceType: "api",
-  channel: "heart_rate",
-  activityId: null,
-  scalar: 72,
-  vector: null,
-  point: null,
-  metadata: null,
-} satisfies MetricStreamEventV1;
-
-function firstCommandQuery(command: CallableVitestMock): string {
-  const call = command.mock.calls
-    .map((args: unknown[]) => args[0])
-    .find(
-      (arg: unknown) =>
-        typeof arg === "object" &&
-        arg !== null &&
-        "query" in arg &&
-        typeof arg.query === "string" &&
-        arg.query.startsWith(`INSERT INTO ${METRIC_STREAM_TABLE} (`),
-    );
-  if (!call || typeof call !== "object" || !("query" in call) || typeof call.query !== "string") {
-    throw new Error("expected command call");
-  }
-  return call.query;
-}
-
-describe("legacy eraser scope API", () => {
-  it("batches compatible delete scopes into one stream-table scan", async () => {
-    const command = vi.fn(async () => undefined);
-    const firstDelete = createCurrentMetricStreamDeletedEvent({
-      userId: heartRateEvent.userId,
-      providerId: heartRateEvent.providerId,
-      externalId: "hk:heart-rate-1",
-    });
-    const secondDelete = createCurrentMetricStreamDeletedEvent({
-      userId: heartRateEvent.userId,
-      providerId: heartRateEvent.providerId,
-      externalId: "hk:heart-rate-2",
-    });
-
-    await markMetricStreamScopesDeletedInClickHouse({ command }, [firstDelete, secondDelete]);
-
-    expect(command).toHaveBeenCalledTimes(4);
-    expect(firstCommandQuery(command)).toContain(
-      "candidate_row.external_id = {external_id_0:String}",
-    );
-    expect(firstCommandQuery(command)).toContain("scope_index = 0 AND latest_row.2");
-    expect(firstCommandQuery(command)).toContain("latest_row.6 = {external_id_0:String}");
-    expect(firstCommandQuery(command)).toContain(
-      "candidate_row.external_id = {external_id_1:String}",
-    );
-    expect(command).toHaveBeenNthCalledWith(2, {
-      query: expect.stringContaining(`INSERT INTO ${METRIC_STREAM_TABLE}`),
-      query_params: {
-        external_id_0: "hk:heart-rate-1",
-        external_id_1: "hk:heart-rate-2",
-        provider_id_0: heartRateEvent.providerId,
-        provider_id_1: heartRateEvent.providerId,
-        replacement_version: "2000000000000000",
-        user_id_0: heartRateEvent.userId,
-        user_id_1: heartRateEvent.userId,
-      },
-    });
-  });
-  it("rejects replacement delete scopes that produce no ClickHouse conditions", async () => {
-    await expect(
-      markMetricStreamScopeDeletedInClickHouse(
-        { command: vi.fn(async () => undefined), insert: vi.fn(async () => undefined) },
-        {},
-      ),
-    ).rejects.toThrow("Metric stream delete scope produced no ClickHouse conditions");
   });
 });

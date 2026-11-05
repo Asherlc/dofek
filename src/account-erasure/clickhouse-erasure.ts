@@ -15,7 +15,6 @@ import {
   identifierColumns,
   identifierNameSchema,
   inspectClickHouseAccountErasureCoverage,
-  isStructuralEffectReceiptTable,
   isUserProfileTable,
   type PhysicalTable,
   PRODUCTION_MANAGED_DATABASES,
@@ -416,24 +415,6 @@ export async function eraseClickHouseAccount(
     );
     cursor = page.nextCursor ?? undefined;
   } while (cursor);
-  // The committed fence and shared owner exclude new account effects. Preserve
-  // structural references for pending journal-only effects before any payload deletion.
-  for (const receipt of currentTables.filter(isStructuralEffectReceiptTable)) {
-    const journal = currentTables.find(
-      (table) => table.database === receipt.database && table.name === "effect_journal",
-    );
-    if (!journal)
-      throw new Error("Structural receipt preservation requires its account journal table");
-    await owner.assertActive();
-    await owner.client.command({
-      query: `INSERT INTO ${qualifiedTable(receipt.database, receipt.name)}
-        (epoch,topic,partition,transport,kafka_offset,major,minor,batch,preparation_attempt,effect_ordinal,stage,effect_hash,is_empty,user_id,outcome)
-        SELECT epoch,topic,partition,transport,kafka_offset,major,minor,batch,preparation_attempt,effect_ordinal,stage,effect_hash,0,NULL,'fenced'
-        FROM ${qualifiedTable(journal.database, journal.name)} FINAL WHERE user_id={user_id:UUID}`,
-      query_params: { user_id: userId },
-      clickhouse_settings: { log_queries: 0 },
-    });
-  }
   await executeClickHousePhysicalErasure(
     owner,
     store,
@@ -451,14 +432,7 @@ export async function eraseClickHouseAccount(
           "ClickHouse physical intent table UUID/schema changed; contact support before retrying",
         );
       const binding = intent[5];
-      if (binding === "user")
-        return {
-          intent,
-          predicate: userPredicate(table, userId),
-          mutation: isStructuralEffectReceiptTable(table)
-            ? ("redact-receipt" as const)
-            : ("delete" as const),
-        };
+      if (binding === "user") return { intent, predicate: userPredicate(table, userId) };
       const [column, family, lower, upper] = binding;
       const definition = captureColumns(table).find(
         ([name, definition]) => name === column && retainedFamily(definition) === family,
@@ -469,7 +443,6 @@ export async function eraseClickHouseAccount(
         throw new Error("ClickHouse physical intent identity interval is incomplete");
       return {
         intent,
-        mutation: "delete" as const,
         predicate: boundedRelationPredicate(
           table,
           column,

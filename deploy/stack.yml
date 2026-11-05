@@ -326,9 +326,6 @@ services:
       - source: clickhouse_system_log_ttl
         target: /etc/clickhouse-server/config.d/system-log-ttl.xml
         mode: 0444
-      - source: clickhouse_metric_stream_storage_v1
-        target: /etc/clickhouse-server/config.d/metric-stream-storage.xml
-        mode: 0444
       - source: clickhouse_memory_limits_13g
         target: /etc/clickhouse-server/config.d/memory-limits.xml
         mode: 0444
@@ -862,8 +859,6 @@ configs:
     file: ./clickhouse/users.d/default-query-guardrails.xml
   clickhouse_system_log_ttl:
     file: ./clickhouse/config.d/system-log-ttl.xml
-  clickhouse_metric_stream_storage_v1:
-    file: ./clickhouse/config.d/metric-stream-storage.xml
   clickhouse_memory_limits_13g:
     file: ./clickhouse/config.d/memory-limits-13g.xml
   netdata_db_limits_v2:

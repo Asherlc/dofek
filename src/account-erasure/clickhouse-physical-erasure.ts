@@ -390,9 +390,7 @@ export async function executeClickHousePhysicalErasure(
   owner: Owner,
   store: AccountErasureIdentifierStore,
   stage: AccountErasurePhysicalStage,
-  resolveIntent: (
-    intent: AccountErasurePhysicalIntent,
-  ) => Promise<ResolvedIntent & { mutation: "delete" | "redact-receipt" }>,
+  resolveIntent: (intent: AccountErasurePhysicalIntent) => Promise<ResolvedIntent>,
   assertSchema: () => Promise<void>,
   options: ClickHousePhysicalErasureOptions,
 ): Promise<void> {
@@ -430,7 +428,7 @@ export async function executeClickHousePhysicalErasure(
       await owner.assertActive();
       if (await store.admitPhysicalIntent(stage, entry.key)) {
         await owner.client.command({
-          query: `ALTER TABLE ${tableSql(entry.value)} ${resolved.mutation === "redact-receipt" ? "UPDATE user_id=NULL,outcome='fenced'" : "DELETE"} WHERE (${resolved.predicate.mutationSql}) AND '${entry.key}'='${entry.key}'`,
+          query: `ALTER TABLE ${tableSql(entry.value)} DELETE WHERE (${resolved.predicate.mutationSql}) AND '${entry.key}'='${entry.key}'`,
           query_params: resolved.predicate.mutationQueryParameters,
           clickhouse_settings: { ...settings, mutations_sync: "2" },
         });

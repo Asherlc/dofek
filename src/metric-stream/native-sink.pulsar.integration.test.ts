@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import Pulsar, { type Message, type MessageId } from "pulsar-client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { loadAnalyticsStreamState } from "../analytics/analytics-work-store.ts";
-import { verifyAnalyticsDeliveryReceipts } from "../analytics/effect-journal-group.ts";
 import { applyMetricStreamEventsToClickHouse } from "./clickhouse-sink.ts";
 import {
   METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE,
@@ -186,7 +185,6 @@ describe("finite native broker to grouped sink", () => {
             expect(await raw.json()).toEqual([
               { scalar: 73, metadata: JSON.stringify(row.metadata), is_deleted: 0 },
             ]);
-            await verifyAnalyticsDeliveryReceipts(fixture.client, [first]);
             expect(await loadAnalyticsStreamState(fixture.database, stream)).toMatchObject({
               processed: first,
               pending: null,
@@ -206,7 +204,6 @@ describe("finite native broker to grouped sink", () => {
           afterHandled: async (index) => {
             handled.push(index);
             expect(await physicalCount()).toEqual(count);
-            await verifyAnalyticsDeliveryReceipts(fixture.client, [positions[index] ?? first]);
           },
         }),
       ).toBe(2);
@@ -224,7 +221,6 @@ describe("finite native broker to grouped sink", () => {
           marker_message_id: last.serializedMessageId,
         },
       ]);
-      await verifyAnalyticsDeliveryReceipts(fixture.client, positions);
       expect(await loadAnalyticsStreamState(fixture.database, stream)).toMatchObject({
         processed: last,
         pending: null,
@@ -278,7 +274,6 @@ describe("finite native broker to grouped sink", () => {
         }),
       ).toBe(3);
       expect(handled).toEqual([0, 1, 2]);
-      await verifyAnalyticsDeliveryReceipts(fixture.client, positions);
       expect(await loadAnalyticsStreamState(fixture.database, stream)).toMatchObject({
         processed: positions[2],
         pending: null,

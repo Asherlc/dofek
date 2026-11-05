@@ -302,8 +302,8 @@ describe("ClickHouse account erasure (integration)", () => {
             toInt64(1) AS version,toUInt64(0) AS generation,toInt8(0) AS is_deleted FROM numbers(${offset},${count})`;
           for (const query of [
             `INSERT INTO ${database}.metric_stream (id,activity_id,user_id,recorded_at,channel,provider_id,external_id,device_id,source_type,scalar,metadata,ingested_at,version,generation,is_deleted) ${input}`,
-            `INSERT INTO ${database}.sensor_scalar_sample SELECT id,activity_id,activity_id,user_id,recorded_at,toDate(recorded_at),channel,provider_id,external_id,device_id,source_type,'direct',scalar,1,ingested_at,is_deleted,version,toUInt64(1) FROM (${input})`,
-            `INSERT INTO ${database}.deduped_sensor SELECT user_id,recorded_at,toDate(recorded_at),channel,scalar,provider_id,activity_id,device_id,external_id,source_type,'direct',id,activity_id,1,ingested_at,toUInt64(1),toUInt8(0),ingested_at FROM (${input})`,
+            `INSERT INTO ${database}.sensor_scalar_sample SELECT id,activity_id,activity_id,user_id,recorded_at,toDate(recorded_at),channel,provider_id,external_id,device_id,source_type,'direct',scalar,1,ingested_at,is_deleted,version FROM (${input})`,
+            `INSERT INTO ${database}.deduped_sensor SELECT user_id,recorded_at,toDate(recorded_at),channel,scalar,provider_id,activity_id,device_id,external_id,source_type,'direct',id,activity_id,1,toUInt64(1),toUInt8(0),ingested_at FROM (${input})`,
           ]) {
             const queryId = randomUUID();
             seedQueries.push(queryId);
@@ -604,7 +604,7 @@ describe("ClickHouse account erasure (integration)", () => {
     }
     expect(comparisons).toHaveLength(2);
     expect(comparisons[1]).toEqual(comparisons[0]);
-  }, 120000);
+  }, 180_000);
 
   it("bounds worst-case String identifier capture", async () => {
     const database = databaseName("account_erasure_string_budget");
@@ -1035,22 +1035,6 @@ describe("ClickHouse account erasure (integration)", () => {
     },
     120_000,
   );
-
-  it("typed ownership coverage rejects a nullable system domain enlarged with personal links", async () => {
-    await client.command({
-      query:
-        "ALTER TABLE analytics.effect_receipt ADD COLUMN operation_id Nullable(UUID), ADD COLUMN email String DEFAULT ''",
-    });
-    try {
-      await expect(
-        inspectClickHouseAccountErasureCoverage(client, { managedDatabases: ["analytics"] }),
-      ).rejects.toThrow("column contract");
-    } finally {
-      await client.command({
-        query: "ALTER TABLE analytics.effect_receipt DROP COLUMN operation_id, DROP COLUMN email",
-      });
-    }
-  }, 120_000);
 
   it("typed ownership coverage rejects personal columns added to a protected shared fence", async () => {
     const userId = randomUUID();

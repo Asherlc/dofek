@@ -81,30 +81,10 @@ const peerDbColumns = {
   _peerdb_version: "Int64",
 };
 
-const deliveryColumns = {
-  epoch: "String",
-  topic: "String",
-  partition: "Int32",
-  transport: "Enum8('pulsar'=1,'kafka'=2)",
-  kafka_offset: "UInt64",
-  major: "UInt64",
-  minor: "UInt64",
-  batch: "Int32",
-};
-
 const sharedSystemColumns: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   "analytics.schema_migrations": { id: "String", applied_at: "DateTime" },
   "analytics.sleep_heart_rate_cutover": { cutover_at: "DateTime64(9, 'UTC')" },
-  "analytics.delivery_receipt": {
-    ...deliveryColumns,
-    preparation_attempt: "UUID",
-    serialized_message_id: "String",
-    effect_count: "UInt64",
-    chunk_count: "UInt64",
-    effect_digest: "FixedString(64)",
-    stages: "Array(String)",
-    status: "Enum8('prepared'=1,'committed'=2)",
-  },
+
   [ACCOUNT_ERASURE_FENCE_TABLE]: { user_hash: "FixedString(64)", erased_at: "DateTime64(9)" },
   [ACCOUNT_ERASURE_OPERATION_FENCE_TABLE]: {
     operation_hash: "FixedString(64)",
@@ -174,7 +154,6 @@ function sharedSystemContract(table: PhysicalTable): Readonly<Record<string, str
 const harmlessIdentifierColumns = new Set([
   "absent_source_external_ids",
   "batch_id",
-  "preparation_attempt",
   "device_id",
   "event_id",
   "external_id",
@@ -332,10 +311,6 @@ function validatePhysicalTableSchema(table: PhysicalTable): void {
   }
 }
 
-export function isStructuralEffectReceiptTable(table: Pick<PhysicalTable, "name">): boolean {
-  return table.name === "effect_receipt";
-}
-
 function validateOwnershipDomain(table: PhysicalTable): void {
   const shared = sharedSystemContract(table);
   if (shared) {
@@ -351,19 +326,6 @@ function validateOwnershipDomain(table: PhysicalTable): void {
       user_id: "Nullable(UUID)",
       created_at: "DateTime64(6, 'UTC')",
       ...peerDbColumns,
-    });
-    return;
-  }
-  if (isStructuralEffectReceiptTable(table)) {
-    assertColumnContract(table, {
-      ...deliveryColumns,
-      preparation_attempt: "UUID",
-      effect_ordinal: "Int128",
-      stage: "Enum8('scalar'=1,'dedup'=2,'activity'=3)",
-      effect_hash: "FixedString(64)",
-      is_empty: "UInt8",
-      user_id: "Nullable(UUID)",
-      outcome: "Enum8('written'=1,'fenced'=2,'generation_filtered'=3)",
     });
     return;
   }

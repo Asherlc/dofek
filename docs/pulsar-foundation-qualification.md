@@ -75,49 +75,16 @@ measurement of every offloaded record or the older legacy inventory.
 Oversized records remain a fail-closed erasure condition with an
 [operator recovery path](account-erasure-runbook.md#backup-and-restore-behavior).
 
-## November 5 native journal storage routing
+## Historical analytics journal qualification
 
-The local qualification used ClickHouse
-[26.10.2.103 stable](https://github.com/ClickHouse/ClickHouse/releases/tag/v26.10.2.103-stable).
-The upstream release API identified it as the latest stable release during this
-check. The registry's multi-platform image index was
-`sha256:d474afd5cd0abfb9fdc6e2ebbc82116324779b085f5c15a851aa91bec968291d`;
-the local ARM64 manifest was
-`sha256:88ccb7d52d9c2efe263ded5616417295dcdfbb4832b9e27ec7bb97a6f4ff3c2a`.
-Compose, CI and the proposed production configuration use the image index so
-each architecture selects its corresponding manifest.
+The journal, receipt and placement storage routing check belongs to the deferred
+analytics implementation preserved at [checkpoint 4be97e4ff](https://github.com/Asherlc/dofek/commit/4be97e4ff).
+Its tables, storage policy and test are excluded from the transport release. That check established
+routing only; it did not establish a physical quota.
 
-The [journal configuration](../deploy/clickhouse/config.d/metric-stream-storage.xml)
-defines a local disk and policy named `metric_stream_journal`, rooted at
-`/var/lib/clickhouse/metric-stream-journal/`. For the local qualification, the
-configuration was copied into the existing test container and loaded with stock
-`SYSTEM RELOAD CONFIG`. Its existing data volume, 4 GiB container memory limit
-and 3 GiB server memory limit were preserved. No production service was changed.
-ClickHouse documents [storage policies](https://clickhouse.com/docs/operations/storing-data)
-and [configuration reload](https://clickhouse.com/docs/sql-reference/statements/system#system-reload-config).
+## Historical November 5 grouped sink database qualification
 
-The [real-engine storage test](../src/db/metric-stream-journal-storage.integration.test.ts)
-ran the registered current-schema migration in two isolated databases. It
-verified all four journal/receipt/placement tables use the named policy, an
-actual receipt part lands on that disk, and a raw insertion reaches the
-placement materialized view on that disk. The raw part remained on its existing
-default disk. Every test query used a 128 MiB allowance; the test databases were
-dropped after the run.
-
-The placement view covers future insertions. This test inserted a new row;
-neither migration `0112` nor this test populates placements for existing raw
-history. The bounded historical placement bootstrap remains an activation gate;
-see the [view definition](../src/metric-stream/clickhouse-table.ts).
-
-This qualifies storage routing, **not the physical quota**. Production activation
-still requires the host directory's project quota, writer identity and capability
-checks, measured allocations and reserve, the maintenance procedure, and the
-whole-host test. Policy configuration alone does not establish those boundaries.
-See the [living remaining-work index](https://github.com/Asherlc/dofek/blob/dull-baboon/docs/pulsar-remaining-work.md).
-
-## November 5 native grouped sink database qualification
-
-The [sink integration file](../src/metric-stream/clickhouse-sink.integration.test.ts)
+Before the transport release scope reduction, the [sink integration file at checkpoint 4be97e4ff](https://github.com/Asherlc/dofek/blob/4be97e4ff/src/metric-stream/clickhouse-sink.integration.test.ts)
 passed all 19 cases against real Postgres and ClickHouse, with one worker,
 no retries and a 128 MiB per-query allowance. Exact raw contents, receipts and
 frontiers were checked for groups of one and 500, replay, deletion scopes and
@@ -145,9 +112,9 @@ These database tests use synthetic native positions. They do not qualify
 current-path throughput, production addressing, physical quotas or the historical
 placement bootstrap. No production deployment or hold restoration occurred.
 
-## November 5 real broker to native sink composition
+## Historical November 5 real broker to native sink composition
 
-The [native composition test](../src/metric-stream/native-sink.pulsar.integration.test.ts)
+Before the transport release scope reduction, the [native composition test at checkpoint 4be97e4ff](https://github.com/Asherlc/dofek/blob/4be97e4ff/src/metric-stream/native-sink.pulsar.integration.test.ts)
 passed both finite cases against the existing standalone Pulsar 5.0.1 broker,
 the official Node client and the same real Postgres/ClickHouse fixture. It used
 one worker, no retries, a 128 MiB per-query allowance, a receive queue of 20,
@@ -196,6 +163,21 @@ does not qualify the full ClickHouse erasure path or production account size;
   the 400,000/800,000-row evidence from the earlier development branch must be
 repeated after release integration.
 
+On 2026-11-05 the user approved raising only the combined
+`physically erases 400000 and 800000…` Vitest case budget from 120s to 180s
+(zero retries, unchanged 128 MiB `max_memory_usage` and assertions). Measured
+Foundation phase totals under `--retry=0` were about 51s for 400k plus 69s for
+800k (`/tmp/pulsar-foundation-erasure-resource-phase-diag-120s-retry0.log`);
+product `executeinitial` dominated, so no product wait or assertion changes.
+Earlier 120s first-failure evidence remains
+`/tmp/pulsar-foundation-erasure-resource-120s-FAIL-retry2-894693.log`.
+The approved 180s / `--retry=0` qualification then passed in 126.8s
+(`/tmp/pulsar-foundation-erasure-resource-180s-retry0.log`): both sizes kept
+identical family/snapshot shapes; EXIT:0. The budget claim is enforced
+`max_memory_usage` 128 MiB on every client query/command/insert; logged seed
+`query_log` peaks (2 080 278 bytes) are seed-fixture evidence only, not an
+erasure-path memory measurement (`erasurePeakBytes` remains unset).
+
 The native broker composition is now selected explicitly by a required
 `Native Pulsar Sink` CI job; the existing BookKeeper job selects a different
 fixture. The new job uses a separate standalone broker, Postgres and ClickHouse,
@@ -209,3 +191,9 @@ Release remains blocked on native erasure fencing/drain, safe writer handoff
 when retained work fails, and replay after erasure removes personal journal
 data, in addition to storage and deployment qualification. No production service
 or held provider queue has been changed.
+
+
+The historical runs above include the deferred receipt path. They do not qualify
+the reduced raw transport sink. Its current source requires fresh database and native
+broker qualification after review; no production deployment or hold restoration
+is authorized by these results.

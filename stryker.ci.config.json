@@ -4,6 +4,7 @@
   "plugins": ["@stryker-mutator/vitest-runner"],
   "vitest": {
     "configFile": "vitest.config.mutation.ts",
+    "pool": "forks",
     "related": true
   },
   "ignoreStatic": true,

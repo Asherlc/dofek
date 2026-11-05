@@ -318,10 +318,6 @@ jobs:
         uses: ./.github/actions/setup-node-pnpm
       - name: Setup uv
         uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
-      - name: Configure ClickHouse journal storage
-        run: |
-          docker cp deploy/clickhouse/config.d/metric-stream-storage.xml '${{ job.services.clickhouse.id }}:/etc/clickhouse-server/config.d/metric-stream-storage.xml'
-          docker exec '${{ job.services.clickhouse.id }}' sh -c 'exec clickhouse-client --password "$CLICKHOUSE_PASSWORD" --query "SYSTEM RELOAD CONFIG"'
       - name: Run lint policies
         run: pnpm lint
         env:
@@ -831,10 +827,6 @@ jobs:
           path: .build/fit-decoder/bin
       - name: Make FIT decoder executable
         run: chmod +x .build/fit-decoder/bin/dofek-fit-decoder
-      - name: Configure ClickHouse journal storage
-        run: |
-          docker cp deploy/clickhouse/config.d/metric-stream-storage.xml '${{ job.services.clickhouse.id }}:/etc/clickhouse-server/config.d/metric-stream-storage.xml'
-          docker exec '${{ job.services.clickhouse.id }}' sh -c 'exec clickhouse-client --password "$CLICKHOUSE_PASSWORD" --query "SYSTEM RELOAD CONFIG"'
       - id: integration-tests
         run: pnpm exec vitest run --project integration --coverage --shard=${{ matrix.shard }}/4
         timeout-minutes: 12
@@ -1036,10 +1028,6 @@ jobs:
           ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || '' }}
           persist-credentials: false
       - uses: ./.github/actions/setup-node-pnpm
-      - name: Configure ClickHouse journal storage
-        run: |
-          docker cp deploy/clickhouse/config.d/metric-stream-storage.xml '${{ job.services.clickhouse.id }}:/etc/clickhouse-server/config.d/metric-stream-storage.xml'
-          docker exec '${{ job.services.clickhouse.id }}' sh -c 'exec clickhouse-client --password "$CLICKHOUSE_PASSWORD" --query "SYSTEM RELOAD CONFIG"'
       - name: Start bounded standalone broker
         run: pnpm compose -- -f docker-compose.pulsar-test.yml up -d --wait --wait-timeout 180
       - name: Verify native delivery, replay and controls
