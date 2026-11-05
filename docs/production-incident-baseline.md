@@ -35545,7 +35545,17 @@ decision, with the four production holds accounted for. See the
 [deployment trigger](../.github/workflows/deploy-web.yml) and
 [full-stack desired replica check](../.github/workflows/deploy-web-stack.yml).
 
-PR CI also exposed Expo SDK patch-version drift at `expo install --check` and
-two native-tool spelling terms. The compatibility pins are being corrected in
-a separate dependency PR; no check is disabled or ignored. Until that fix and
-required CI/review pass, the Pulsar PR remains unmerged.
+PR CI also exposed Expo SDK patch-version drift at `expo install --check`,
+two native-tool spelling terms and a clock-dependent sleep fixture. The router
+fixture seeded `NOW() - INTERVAL '8 hours'` but expected the UTC current date;
+the existing model assigns its sleep day from the start time minus six hours.
+At 05:26 UTC the correct result was the previous date. Fixed UTC overnight
+timestamps reproduced the mismatch against real Postgres and ClickHouse, then
+passed with the explicit model date and all duration/stage assertions retained.
+
+[Prerequisite PR #3227](https://github.com/Asherlc/dofek/pull/3227) aligned the
+SDK pins and fixed that fixture. It merged after all CI checks, including the
+iOS archive and Simulator bridge, passed. No check was disabled or ignored.
+The Pulsar foundation PR still requires its own refreshed CI and review before
+merge. Future date-sensitive fixtures should name their timestamps and model
+day explicitly rather than assuming the current UTC date.
