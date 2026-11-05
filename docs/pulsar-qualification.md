@@ -151,6 +151,46 @@ The fixture uses uncompressed synthetic markers; production physical checks
 must rely on complete ledger/object inventories when payloads are compressed.
 Failed-delete orphan cleanup remains the separately recorded residual risk.
 
+### November 5 source-neutral CDC transaction admission
+
+The pure transaction gate now admits already validated records only when the
+END record, all transaction ordinals and all per-table counts agree. It retains
+original native delivery evidence, collapses source republication to one source
+revision, and rejects conflicting payloads, delivery reuse and lineage changes.
+Missing END or ordinal evidence remains pending. Streaming revisions use the
+adopted UInt128 encoding within one admitted generation and lineage.
+
+Nineteen unit cases pass against retained synthetic native captures, including
+the primary-key split in transaction 820, reversed allocation/commit order in
+825/826 and 25 actual republications. Independent review found no critical or
+important issue; root TypeScript, formatting and spelling checks pass. See the
+[gate](../src/analytics/cdc-admission.ts) and its
+[tests](../src/analytics/cdc-admission.test.ts).
+
+This qualifies transaction accounting, not the seven production table decoders.
+The captures use qualification tables rather than the fitness schema. Native
+position validation, bounded durable pending storage, ownership resolution,
+raw writes, receipts, frontiers and acknowledgements remain caller obligations
+for the following CDC slices. The gate is not activated and must not ship before
+its production caller and those handoffs are implemented.
+
+### November 5 legacy archive metadata inventory
+
+A bounded, read-only LIST reached EOF after 400 pages: 399,547 objects and
+56,803,150,041 listed bytes. All observed keys passed the existing archive-key
+parser. Private output used 248,975,878 bytes within its 256 MiB limit; the run
+also retained the 1,000-page, ten-second request and fifteen-minute overall
+limits, with one request attempt. It issued no HEAD, GET or object mutations.
+The inventory digest is
+`ba97b598595dd980e7946f62cc5b518b2fd635d5852071891cd45577ad371061`.
+
+This completes the metadata census only. Source origins remain unknown, and a
+single listing does not prove immutable object revisions or conversion
+correctness. Filename ranges do not establish that event identities are
+isolated between overlap components. The converter must settle cross-component
+identity conflicts before claiming safe publication; no per-event registry or
+new storage mechanism has been adopted.
+
 ### November 4 manual offload: verified method, bulk copy in progress
 
 **November 5, 00:35 UTC update:** the consumed prefix is complete. All 345
