@@ -112,7 +112,7 @@ assembly gates, not completed review findings.
 | Native sender and runtime wiring | Position codec, envelope types, Consumer and grouped sink exist; sender/runtime cutover incomplete | Finish [producer task 2](superpowers/plans/2026-11-03-single-server-pulsar.md#task-2-native-producer-and-durable-transport-positions) and [consumer task 3](superpowers/plans/2026-11-03-single-server-pulsar.md#task-3-bounded-consumer-and-processing-evidence). Exercise send/acceptance/receipt/ack crashes, control commands and byte bounds. One canonical sensor transport at cutover. Audit the accumulated branch changes against first-release entrypoints so deferred analytics/CDC paths cannot be activated accidentally; do not deploy this development branch as-is. |
 | JSONL archive consumer | Existing writer consumes Kafka | Move its transport intake onto the official Pulsar Consumer while preserving payload bytes, erasure reachability and archive acknowledgement semantics. Legacy keys remain unchanged; new objects use the explicit native key variant described below. Verify restart and failed-upload behavior. The gzip JSONL payload format stays unchanged. |
 | Erasure integration | New coordination tables classified; full production integration unfinished | Complete [transport erasure task 4](superpowers/plans/2026-11-03-single-server-pulsar.md#task-4-erasure-and-physical-retention-proofs), including day-29 inventory, restore handling and explicit incidents for unattributed ledgers. Failed-delete orphan cleanup remains a documented residual risk, not an automatic-delete permission. |
-| Large-account identifier capture | A 400,000-ID fixture exceeded 128 MiB in the existing single aggregation | Source audit also found whole identifier sets retained in Node, remote snapshots and verification parameters. Paging only the initial SELECT is insufficient. Classify direct ownership predicates and dependency-ordered parent predicates first; retain a durable paged inventory only for families that genuinely require it. Qualify the complete path under [analytics task 7](superpowers/plans/2026-11-03-bounded-analytics.md#task-7-erasure-ownership-and-writer-barriers-for-all-new-state). The fixture does not prove failure at production's different ceiling; it also does not qualify large-account erasure. |
+| Large-account identifier capture | Replacement source passed local 400,000/800,000 sensor-row cases with every erasure query capped at 128 MiB; not deployed | Carry the coherent paged capture, bounded snapshot, typed ownership checks, native physical proof and caller migration into the release. Complete release integration under [analytics task 7](superpowers/plans/2026-11-03-bounded-analytics.md#task-7-erasure-ownership-and-writer-barriers-for-all-new-state). The tests qualify their finite fixtures, not production erasure duration or the whole-host workload. |
 | Retained-PeerDB host fit and cutover | Earlier paper fit is conditional; no combined soak or production addressing qualification | Reconcile the host budget with PeerDB retained, archive intake and required storage reserve. Exercise real addressing/restarts, R2 outage, stopped consumption, bounded disk/RSS and the website workload. Then prepare the sealed cutover/rollback procedure. Keep the unread tail and all four holds until their explicit gates and restoration decision. |
 
 Pulsar's [retention/expiry](https://pulsar.apache.org/docs/5.0.x/cookbooks-retention-expiry/)
@@ -126,10 +126,18 @@ proof for the entire history/provider drain with margin. R1 journal exhaustion
 stops acknowledgments and intake; alerting must show time until full. This
 capacity gate supplements the separate restoration consent.
 
-The bounded-erasure implementation is in progress, not qualified. Its canonical
+The bounded-erasure implementation has local source qualification; production
+release integration remains unfinished. Its canonical
 contract uses direct account predicates, typed indirect domains and request-owned
 pages; unknown ClickHouse schemas and unmatched staging tables fail closed.
-Physical-proof pages must survive destructive mutations. A November 5 read-only
+The [real-engine tests](../src/account-erasure/clickhouse-erasure.integration.test.ts)
+cover 400,000 and 800,000 sensor rows with the same small parent graph, fixed
+captured identity counts and 378-byte snapshots, enforcing 128 MiB per query.
+The complete erasure integration run passed 213 tests across 22 files; the two
+executor/erasure race cases passed separately after correcting fixture schema
+isolation. The unit/mobile regression passed 24,814 tests. These are local
+results, not production rollout or deadline measurements.
+Physical-proof pages survive destructive mutations. A November 5 read-only
 production count found zero erasure requests or retained snapshots. The planned
 schema transition therefore uses a locked, atomic empty-state precondition rather
 than a speculative legacy converter. If that precondition changes, rollout stops
@@ -139,10 +147,10 @@ through the transition; a table lock alone does not fence them after commit.
 The String bridge domain is `group_id`. A November 5 read-only aggregate over
 all retained managed physical String columns found only
 `analytics.activity_duplicate_groups`: 8,692 rows, maximum key length 36 bytes.
-The bounded implementation will admit exact-byte keys up to 4 KiB and reject
+The bounded implementation admits exact-byte keys up to 4 KiB and rejects
 larger keys explicitly before payload capture. This keeps each keyset cursor
-within one parameter. The closure, immutable physical proofs and resource gates
-are still unfinished; successful reader tests alone do not qualify erasure.
+within one parameter. The closure and immutable physical proofs are covered by
+the local erasure tests; production activation and the host budget remain gates.
 
 ### Native archive format and deployment order
 

@@ -87,6 +87,9 @@ function placement(row: SensorFixtureRow): SourcePlacement {
 }
 export class BoundedSensorFixture {
   readonly database = `bounded_sensor_${randomUUID().replaceAll("-", "")}`;
+  get databases(): Readonly<Record<"analytics" | "ingest" | "postgres_fitness", string>> {
+    return { analytics: this.database, ingest: this.database, postgres_fitness: this.database };
+  }
   readonly queryIds: string[] = [];
   readonly evidencePath = join(mkdtempSync(join(tmpdir(), "bounded-sensor-")), "requests.json");
   readonly requests: {
@@ -123,10 +126,12 @@ export class BoundedSensorFixture {
     });
   }
   scope(sql: string): string {
-    return sql
-      .replaceAll("analytics.", `${this.database}.`)
-      .replaceAll("ingest.", `${this.database}.`)
-      .replaceAll("postgres_fitness.", `${this.database}.`);
+    let scoped = sql;
+    for (const [logical, physical] of Object.entries(this.databases))
+      scoped = scoped
+        .replaceAll(`${logical}.`, `${physical}.`)
+        .replaceAll(`\`${logical}\`.`, `\`${physical}\`.`);
+    return scoped;
   }
   async command(sql: string): Promise<void> {
     await this.#request(sql, (queryId) =>
@@ -188,7 +193,8 @@ export class BoundedSensorFixture {
       datasetKeys: ["activity"],
     });
     this.#operationId = operation.id;
-    await this.command(`CREATE DATABASE ${this.database}`);
+    for (const database of new Set(Object.values(this.databases)))
+      await this.command(`CREATE DATABASE ${database}`);
     await this.command(buildIngestMetricStreamCreateTableSql());
     await this.command(buildProviderDataGenerationTableSql());
     await this.command(buildAccountErasureFenceTableSql());
@@ -196,21 +202,25 @@ export class BoundedSensorFixture {
     await this.command(buildMetricStreamSourcePlacementIngestSql());
     for (const sql of buildIncrementalDedupedSensorStatements()) await this.command(sql);
     await this.command(
-      `CREATE VIEW ${this.database}.metric_stream_freshness AS SELECT * FROM ${this.database}.metric_stream`,
+      `CREATE VIEW analytics.metric_stream_freshness AS SELECT * FROM ingest.metric_stream`,
     );
-    await this.command(`CREATE TABLE ${this.database}.sensor_provider_priority
+    await this.createSensorPriorityTables();
+    await this.command(`INSERT INTO postgres_fitness.sensor_provider_priority
+      (provider_id,channel,priority,_peerdb_is_deleted) VALUES
+      ('reported','heart_rate',1,0),('fallback','heart_rate',2,0),('reported','power',1,0)`);
+  }
+  protected async createSensorPriorityTables(): Promise<void> {
+    await this.command(`CREATE TABLE postgres_fitness.sensor_provider_priority
       (provider_id String, channel String, priority UInt16, _peerdb_is_deleted UInt8)
       ENGINE=ReplacingMergeTree ORDER BY (provider_id,channel)`);
-    await this.command(`CREATE TABLE ${this.database}.sensor_device_priority
+    await this.command(`CREATE TABLE postgres_fitness.sensor_device_priority
       (provider_id String, source_name_pattern String, channel String, priority UInt16, _peerdb_is_deleted UInt8)
       ENGINE=ReplacingMergeTree ORDER BY (provider_id,source_name_pattern,channel)`);
-    await this.command(`INSERT INTO ${this.database}.sensor_provider_priority VALUES
-      ('reported','heart_rate',1,0),('fallback','heart_rate',2,0),('reported','power',1,0)`);
   }
   async seed(rows: SensorFixtureRow[]): Promise<void> {
     await this.#request(`INSERT metric_stream (${rows.length} fixture rows)`, (queryId) =>
       this.client.insert({
-        table: `${this.database}.metric_stream`,
+        table: `${this.databases.ingest}.metric_stream`,
         format: "JSONEachRow",
         values: rows,
         query_id: queryId,
@@ -347,9 +357,9 @@ export class BoundedSensorFixture {
       PATH: `${resolve(".venv-analytics/bin")}:${process.env.PATH ?? ""}`,
       DBT_TARGET: "dev",
       DBT_CLICKHOUSE_SCHEMA: this.database,
-      DBT_ANALYTICS_SOURCE_SCHEMA: this.database,
-      DBT_INGEST_SOURCE_SCHEMA: this.database,
-      DBT_POSTGRES_FITNESS_SOURCE_SCHEMA: this.database,
+      DBT_ANALYTICS_SOURCE_SCHEMA: this.databases.analytics,
+      DBT_INGEST_SOURCE_SCHEMA: this.databases.ingest,
+      DBT_POSTGRES_FITNESS_SOURCE_SCHEMA: this.databases.postgres_fitness,
     };
     const before = new Map(Object.keys(overrides).map((key) => [key, process.env[key]]));
     Object.assign(process.env, overrides);
@@ -393,7 +403,8 @@ export class BoundedSensorFixture {
       );
     }
     try {
-      await this.command(`DROP DATABASE IF EXISTS ${this.database} SYNC`);
+      for (const database of new Set(Object.values(this.databases)))
+        await this.command(`DROP DATABASE IF EXISTS ${database} SYNC`);
     } finally {
       await this.client.close();
       await this.#postgres?.cleanup();

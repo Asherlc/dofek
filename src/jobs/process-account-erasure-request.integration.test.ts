@@ -44,6 +44,8 @@ function createRetentionPhaseRunner(now: Date) {
     verified: true as const,
   }));
   const dependencies = {
+    prepareIdentifiers: unexpectedDependency,
+    assertIdentifiersReady: unexpectedDependency,
     assertConsumersDrained: unexpectedDependency,
     assertPeerDbDrained: unexpectedDependency,
     assertQuarantineExpired: vi.fn(async () => undefined),
@@ -93,6 +95,54 @@ describe("processAccountErasureRequest request-to-completion (integration)", () 
 
   afterAll(async () => {
     await context?.cleanup();
+  });
+
+  it("persists actionable failure and releases the lease when retained snapshot admission fails", async () => {
+    const budgetUserId = "8a000000-0000-4000-8000-000000001994";
+    const now = new Date();
+    await context.db.execute(sql`INSERT INTO fitness.user_profile(id,name)
+      VALUES (${budgetUserId}::uuid,'Snapshot admission fixture')`);
+    const accepted = await initiateAccountErasure(
+      context.db,
+      budgetUserId,
+      async () => "bounded-fixture-snapshot",
+      async () => undefined,
+      { now },
+    );
+    // Simulate retained-data corruption after the canonical capture/encryption checks.
+    await context.db.execute(sql`UPDATE fitness.account_erasure_request
+      SET encrypted_remote_snapshot=${`enc:v1:${"A".repeat(2 * 1024 * 1024)}`}
+      WHERE id=${accepted.requestId}::uuid`);
+    const runPhase = vi.fn(async () => null);
+    await expect(
+      processAccountErasureRequest(
+        context.db,
+        accepted.requestId,
+        "snapshot-admission-worker",
+        { runPhase },
+        now,
+      ),
+    ).rejects.toThrow(/Account deletion snapshot exceeds.*limit.*Contact support/);
+    expect(runPhase).not.toHaveBeenCalled();
+    const rows =
+      await context.db.execute(sql`SELECT status,last_error,failure_count::integer AS failure_count,
+      lease_owner,lease_expires_at,retry_at IS NOT NULL AS retry_scheduled
+      FROM fitness.account_erasure_request WHERE id=${accepted.requestId}::uuid`);
+    expect(rows).toEqual([
+      expect.objectContaining({
+        status: "failed",
+        last_error: expect.stringMatching(
+          /Account deletion snapshot exceeds.*limit.*Contact support/,
+        ),
+        failure_count: 1,
+        lease_owner: null,
+        lease_expires_at: null,
+        retry_scheduled: true,
+      }),
+    ]);
+    await expect(findAccountErasureStatus(context.db, accepted.statusToken, now)).resolves.toEqual(
+      expect.objectContaining({ status: "failed", message: expect.any(String) }),
+    );
   });
 
   it("persists both waits, erases relational ownership, scrubs PII, and completes", async () => {

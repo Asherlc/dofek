@@ -1268,6 +1268,13 @@
       "when": 1793836800000,
       "tag": "0180_analytics_page_descriptor",
       "breakpoints": true
+    },
+    {
+      "idx": 181,
+      "version": "7",
+      "when": 1793857500000,
+      "tag": "0181_account_erasure_identifiers",
+      "breakpoints": true
     }
   ]
 }

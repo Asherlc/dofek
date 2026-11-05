@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { AccountErasureSnapshotBudgetError } from "../account-erasure/snapshot-budget.ts";
 import type { ClaimedAccountErasureRequest } from "../db/account-erasure-processing.ts";
 import type { Database } from "../db/index.ts";
 import {
@@ -105,6 +106,51 @@ afterEach(() => {
 });
 
 describe("processAccountErasureRequest", () => {
+  it("reports snapshot admission failure without exposing identifying state and persists its actionable error", async () => {
+    const error = new AccountErasureSnapshotBudgetError(
+      "Account deletion snapshot exceeds its 2 MiB encrypted size limit. Contact support before retrying.",
+    );
+    accountErasureDatabaseMocks.claimAccountErasureRequest.mockRejectedValueOnce(error);
+    await expect(
+      processAccountErasureRequest(database, request.id, "worker-1", phaseRunner()),
+    ).rejects.toBe(error);
+    expect(accountErasureDatabaseMocks.markAccountErasureFailed).toHaveBeenCalledWith(
+      database,
+      request.id,
+      "worker-1",
+      error.message,
+    );
+    expect(sentryMocks.captureException).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "Account erasure phase failed" }),
+      {
+        tags: {
+          accountErasurePhase: "coordination",
+          errorName: "AccountErasureSnapshotBudgetError",
+          source: "account-erasure-request",
+        },
+      },
+    );
+  });
+
+  it("reports an unrelated claim failure without trying to repair an unowned request", async () => {
+    const error = new Error("private database detail");
+    accountErasureDatabaseMocks.claimAccountErasureRequest.mockRejectedValueOnce(error);
+    await expect(
+      processAccountErasureRequest(database, request.id, "worker-1", phaseRunner()),
+    ).rejects.toBe(error);
+    expect(accountErasureDatabaseMocks.markAccountErasureFailed).not.toHaveBeenCalled();
+    expect(sentryMocks.captureException).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "Account erasure phase failed" }),
+      {
+        tags: {
+          accountErasurePhase: "coordination",
+          errorName: "Error",
+          source: "account-erasure-request",
+        },
+      },
+    );
+  });
+
   it("commits refreshed credentials and exposes the new encrypted snapshot to verification", async () => {
     const claimed = { ...request };
     const tokens = {

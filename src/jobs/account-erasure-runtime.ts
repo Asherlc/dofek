@@ -7,8 +7,13 @@ import { verifyAccountErasureBackupRetention } from "../account-erasure/backup-r
 import {
   eraseClickHouseAccount,
   fenceClickHouseAccount,
+  prepareClickHouseAccountErasure,
 } from "../account-erasure/clickhouse-erasure.ts";
 import { R2DatabaseBackupStorage } from "../account-erasure/database-backup-storage.ts";
+import {
+  ACCOUNT_ERASURE_IDENTIFIER_PAGE_SIZE,
+  AccountErasureIdentifierStore,
+} from "../account-erasure/identifier-store.ts";
 import { assertPeerDbAccountErasureDrained } from "../account-erasure/peerdb-erasure.ts";
 import {
   createPeerDbStagingStorageFromEnv,
@@ -102,13 +107,41 @@ export async function createAccountErasureRuntime(
     startupCleanup.push(() => redpanda.close());
     await redpanda.connect();
 
-    const identifiers = (snapshot: AccountErasureRemoteSnapshot) => ({
-      activityIds: snapshot.localIdentifiers.activityIds,
-      operationIds: snapshot.localIdentifiers.processingOperationIds,
-      sleepSessionIds: snapshot.localIdentifiers.sleepSessionIds,
-      userId: snapshot.localIdentifiers.userId,
-    });
+    const identifiers = (input: { requestId: string; leaseOwner: string }) =>
+      new AccountErasureIdentifierStore(database, {
+        ...input,
+        pageSize: ACCOUNT_ERASURE_IDENTIFIER_PAGE_SIZE,
+      });
     const dependencies: AccountErasurePhaseRunnerDependencies = {
+      prepareIdentifiers: (input) =>
+        withAnalyticsQueryOwner(
+          database,
+          clickHouseClient,
+          {
+            resourceId: ANALYTICS_PUBLICATION_RESOURCE,
+            intentId: `account-erasure:${input.requestId}:prepare-identities:${input.stage}`,
+          },
+          (owner) =>
+            prepareClickHouseAccountErasure(
+              owner,
+              new AccountErasureIdentifierStore(database, {
+                requestId: input.requestId,
+                leaseOwner: input.leaseOwner,
+                pageSize: ACCOUNT_ERASURE_IDENTIFIER_PAGE_SIZE,
+              }),
+              input,
+            ),
+        ),
+      assertIdentifiersReady: async (input) => {
+        const store = new AccountErasureIdentifierStore(database, {
+          requestId: input.requestId,
+          leaseOwner: input.leaseOwner,
+          pageSize: ACCOUNT_ERASURE_IDENTIFIER_PAGE_SIZE,
+        });
+        await store.assertClosureComplete(input.stage);
+        if (!(await store.loadPhysicalProgress(input.stage)))
+          throw new Error("Account erasure physical preparation is incomplete");
+      },
       assertConsumersDrained: async (highWatermarks) => {
         for (const route of redpanda.routes) {
           const captured = highWatermarks.filter((entry) => entry.topic === route.topic);
@@ -122,13 +155,11 @@ export async function createAccountErasureRuntime(
           );
         }
       },
-      assertPeerDbDrained: (snapshot, walLsn) =>
-        assertPeerDbAccountErasureDrained(
-          database,
-          clickHouseClient,
-          walLsn,
-          identifiers(snapshot),
-        ),
+      assertPeerDbDrained: (input, walLsn) =>
+        assertPeerDbAccountErasureDrained(database, clickHouseClient, walLsn, {
+          userId: input.userId,
+          store: identifiers(input),
+        }),
       assertQuarantineExpired: async (highWatermarks) => {
         for (const route of redpanda.routes) {
           const captured = highWatermarks.filter((entry) => entry.topic === route.topic);
@@ -168,25 +199,30 @@ export async function createAccountErasureRuntime(
           )
         ).flat(),
       decryptSnapshot: decryptAccountErasureSnapshot,
-      eraseArchive: (snapshot, options) =>
+      eraseArchive: (input, options) =>
         eraseMetricStreamArchive(
           archiveStorage,
-          {
-            activityIds: new Set(snapshot.localIdentifiers.activityIds),
-            operationIds: new Set(snapshot.localIdentifiers.processingOperationIds),
-            userId: snapshot.localIdentifiers.userId,
-          },
+          { userId: input.userId, stage: input.stage, store: identifiers(input) },
           options,
         ),
-      eraseClickHouse: (snapshot, requestId) =>
+      eraseClickHouse: (input) =>
         withAnalyticsQueryOwner(
           database,
           clickHouseClient,
           {
             resourceId: ANALYTICS_PUBLICATION_RESOURCE,
-            intentId: `account-erasure:${requestId}:erase`,
+            intentId: `account-erasure:${input.requestId}:erase:${input.stage}`,
           },
-          (owner) => eraseClickHouseAccount(owner.client, identifiers(snapshot)),
+          (owner) =>
+            eraseClickHouseAccount(
+              owner,
+              new AccountErasureIdentifierStore(database, {
+                requestId: input.requestId,
+                leaseOwner: input.leaseOwner,
+                pageSize: ACCOUNT_ERASURE_IDENTIFIER_PAGE_SIZE,
+              }),
+              input,
+            ),
         ),
       erasePostgres: (requestId, userId) => erasePostgresAccount(database, requestId, userId),
       eraseProcessors: (snapshot, progress) =>
@@ -194,20 +230,27 @@ export async function createAccountErasureRuntime(
       eraseStripe: (snapshot) => eraseStripeAccount(snapshot),
       // Activation already committed its PG fence; never hold that transaction
       // while waiting for this global ClickHouse publication owner.
-      fenceIngest: (snapshot, requestId) =>
+      fenceIngest: (input) =>
         withAnalyticsQueryOwner(
           database,
           clickHouseClient,
           {
             resourceId: ANALYTICS_PUBLICATION_RESOURCE,
-            intentId: `account-erasure:${requestId}:fence`,
+            intentId: `account-erasure:${input.requestId}:fence`,
           },
-          (owner) =>
-            fenceClickHouseAccount(
-              owner.client,
-              snapshot.localIdentifiers.userId,
-              snapshot.localIdentifiers.processingOperationIds,
-            ),
+          async (owner) => {
+            const store = identifiers(input);
+            let cursor: string | undefined;
+            do {
+              const page = await store.readPage("operation", cursor);
+              await fenceClickHouseAccount(
+                owner.client,
+                input.userId,
+                page.entries.map((entry) => entry.value),
+              );
+              cursor = page.nextCursor ?? undefined;
+            } while (cursor);
+          },
         ),
       now: () => new Date(),
       purgeWork: (snapshot) => workPurger.purge(snapshot),

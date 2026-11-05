@@ -16,7 +16,11 @@ process.once("message", async (message) => {
     const input = z
       .object({
         connectionString: z.string(),
-        namespace: z.string(),
+        databases: z.object({
+          analytics: z.string(),
+          ingest: z.string(),
+          postgres_fitness: z.string(),
+        }),
         runId: z.uuid(),
         stream: analyticsStreamSchema,
         artifactDirectory: z.string(),
@@ -33,11 +37,14 @@ process.once("message", async (message) => {
         output_format_json_quote_64bit_integers: 1,
       },
     });
-    const scope = (query: string) =>
-      query
-        .replaceAll("analytics.", `${input.namespace}.`)
-        .replaceAll("ingest.", `${input.namespace}.`)
-        .replaceAll("postgres_fitness.", `${input.namespace}.`);
+    const scope = (query: string) => {
+      let scoped = query;
+      for (const [logical, physical] of Object.entries(input.databases))
+        scoped = scoped
+          .replaceAll(`${logical}.`, `${physical}.`)
+          .replaceAll(`\`${logical}\`.`, `\`${physical}\`.`);
+      return scoped;
+    };
     let lastId = "",
       stopNextRegistration = false;
     const stop = async () => {

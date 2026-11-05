@@ -13,6 +13,7 @@ import {
   createMetricStreamDeletedEvent,
 } from "../metric-stream/events.ts";
 import { eraseMetricStreamArchive, R2MetricStreamArchiveStorage } from "./archive-erasure.ts";
+import { archiveIdentityFixture } from "./archive-erasure-test-helpers.ts";
 import { createSeaweedFsS3Container } from "./test-helpers.ts";
 
 const bucket = "metric-archive";
@@ -92,8 +93,8 @@ describe("R2 archive erasure against SeaweedFS S3", () => {
     }
 
     const identifiers = {
-      activityIds: new Set<string>(),
-      operationIds: new Set([operationId]),
+      stage: "initial" as const,
+      store: archiveIdentityFixture([], [operationId]),
       userId: deletingUserId,
     };
 

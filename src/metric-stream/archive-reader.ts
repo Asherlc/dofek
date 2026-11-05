@@ -3,6 +3,7 @@ import { type Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { createGunzip } from "node:zlib";
 import * as Sentry from "@sentry/node";
+import { readMetricStreamArchiveLines } from "./archive-lines.ts";
 import { type MetricStreamRedpandaEvent, metricStreamRedpandaEventSchema } from "./events.ts";
 import { parseMetricStreamArchiveObjectKey } from "./r2-replay.ts";
 
@@ -85,21 +86,8 @@ export async function* readMetricStreamArchiveObject(
       () => ({}),
       (error: unknown) => ({ error }),
     );
-    const parts: Buffer[] = [];
-    let lineBytes = 0;
-    const append = (part: Buffer) => {
-      lineBytes += part.byteLength;
-      if (lineBytes > limits.maxLineBytes) {
-        throw new ArchiveReadError(`Line byte limit exceeded at line ${lineOrdinal + 1}`);
-      }
-      if (part.byteLength) parts.push(part);
-    };
-    const decodeLine = (): ArchivedMetricStreamEvent | null => {
-      lineOrdinal += 1;
-      if (lineBytes === 0) return null;
-      const payload = Buffer.concat(parts, lineBytes);
-      parts.length = 0;
-      lineBytes = 0;
+    const decodeLine = (payload: Buffer, lineOrdinal: number): ArchivedMetricStreamEvent | null => {
+      if (payload.byteLength === 0) return null;
       let text: string;
       try {
         text = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(payload);
@@ -125,33 +113,45 @@ export async function* readMetricStreamArchiveObject(
         payloadSha256: createHash("sha256").update(payload).digest("hex"),
       };
     };
-    for await (const chunk of gunzip) {
-      const bytes: Buffer = chunk;
-      decompressedBytes += bytes.byteLength;
-      if (decompressedBytes > limits.maxDecompressedBytes) {
-        throw new ArchiveReadError("Decompressed byte limit exceeded");
-      }
-      let start = 0;
-      for (let end = bytes.indexOf(10); end !== -1; end = bytes.indexOf(10, start)) {
-        append(bytes.subarray(start, end));
-        const record = decodeLine();
+    const decompressedCounter = new Transform({
+      transform(chunk: Buffer, _encoding, callback) {
+        decompressedBytes += chunk.byteLength;
+        if (decompressedBytes > limits.maxDecompressedBytes) {
+          callback(new ArchiveReadError("Decompressed byte limit exceeded"));
+          return;
+        }
+        callback(null, chunk);
+      },
+    });
+    const decompressedResult = pipeline(gunzip, decompressedCounter).then(
+      () => ({}),
+      (error: unknown) => ({ error }),
+    );
+    try {
+      for await (const { payload, lineOrdinal: ordinal } of readMetricStreamArchiveLines(
+        decompressedCounter,
+        limits.maxLineBytes,
+      )) {
+        lineOrdinal = ordinal;
+        const record = decodeLine(payload, ordinal);
         if (record) yield record;
-        start = end + 1;
       }
-      append(bytes.subarray(start));
-    }
-    const result = await sourceResult;
-    if (result.error) throw result.error;
-    if (lineBytes) {
-      const record = decodeLine();
-      if (record) yield record;
+      const results = await Promise.all([sourceResult, decompressedResult]);
+      for (const result of results) if ("error" in result) throw result.error;
+    } finally {
+      decompressedCounter.destroy();
+      await decompressedResult;
     }
     if (contentHash.digest("hex") !== objectVersion.contentSha256) {
       throw new ArchiveReadError("Content digest mismatch");
     }
   } catch (error: unknown) {
     const sanitized =
-      error instanceof ArchiveReadError ? error : new ArchiveReadError("Compressed stream failed");
+      error instanceof ArchiveReadError
+        ? error
+        : error instanceof Error && error.message.startsWith("Archive line payload exceeds")
+          ? new ArchiveReadError(`Line byte limit exceeded at line ${lineOrdinal + 1}`)
+          : new ArchiveReadError("Compressed stream failed");
     Sentry.captureException(sanitized);
     throw sanitized;
   } finally {

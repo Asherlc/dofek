@@ -3,8 +3,13 @@ import { randomUUID } from "node:crypto";
 import { dirname } from "node:path";
 import { sql } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { eraseClickHouseAccount } from "../account-erasure/clickhouse-erasure.ts";
+import {
+  eraseClickHouseAccount,
+  prepareClickHouseAccountErasure,
+} from "../account-erasure/clickhouse-erasure.ts";
+import { AccountErasureIdentifierStore } from "../account-erasure/identifier-store.ts";
 import { initiateAccountErasure } from "../db/account-erasure.ts";
+import { claimAccountErasureRequest } from "../db/account-erasure-processing.ts";
 import {
   seedSensorResourceHistory,
   sensorResourceRow,
@@ -40,6 +45,34 @@ describe("real bounded scalar executor", () => {
     await fixture.seed([row]);
     await fixture.page([{ before: null, after: row }], "1", "kafka", ["scalar"]);
     return row;
+  }
+  async function erasePublishedAccount(userId: string) {
+    const [request] = await fixture.work.database.execute(
+      sql`SELECT id FROM fitness.account_erasure_request WHERE user_id=${userId}::uuid`,
+    );
+    if (!request || typeof request.id !== "string")
+      throw new Error("Missing accepted erasure fixture");
+    const leaseOwner = randomUUID();
+    await claimAccountErasureRequest(fixture.work.database, request.id, leaseOwner, 300000);
+    const store = new AccountErasureIdentifierStore(fixture.work.database, {
+      requestId: request.id,
+      leaseOwner,
+      pageSize: 500,
+    });
+    const input = { userId, stage: "initial" as const };
+    const options = { managedDatabases: ["analytics", "ingest", "postgres_fitness"] };
+    await withAnalyticsQueryOwner(
+      fixture.work.database,
+      fixture.ownedClient,
+      {
+        resourceId: ANALYTICS_PUBLICATION_RESOURCE,
+        intentId: `account-erasure:${request.id}:erase`,
+      },
+      async (owner) => {
+        await prepareClickHouseAccountErasure(owner, store, input, options);
+        await eraseClickHouseAccount(owner, store, input, options);
+      },
+    );
   }
   async function cursor() {
     return fixture.work.database.execute(
@@ -300,7 +333,7 @@ describe("real bounded scalar executor", () => {
         });
         child.send({
           connectionString: fixture.work.connectionString,
-          namespace: fixture.database,
+          databases: fixture.databases,
           runId: fixture.work.runId,
           stream: fixture.work.stream,
           artifactDirectory: dirname(fixture.evidencePath),
@@ -382,20 +415,7 @@ describe("real bounded scalar executor", () => {
     await fixture.execute(client);
     await activation;
     expect(committed).toBe(true);
-    await withAnalyticsQueryOwner(
-      fixture.work.database,
-      fixture.ownedClient,
-      {
-        resourceId: ANALYTICS_PUBLICATION_RESOURCE,
-        intentId: `account-erasure:${row.user_id}:erase`,
-      },
-      (owner) =>
-        eraseClickHouseAccount(
-          owner.client,
-          { userId: row.user_id, activityIds: [], sleepSessionIds: [], operationIds: [] },
-          { managedDatabases: [fixture.database] },
-        ),
-    );
+    await erasePublishedAccount(row.user_id);
     expect(activated).toBe(true);
     expect(
       await fixture.read("SELECT count() AS count FROM analytics.sensor_scalar_sample"),
@@ -480,17 +500,7 @@ describe("real bounded scalar executor", () => {
       async () => "encrypted-fixture",
       async () => undefined,
     );
-    await withAnalyticsQueryOwner(
-      fixture.work.database,
-      fixture.ownedClient,
-      { resourceId: ANALYTICS_PUBLICATION_RESOURCE, intentId: `account-erasure:${userId}:erase` },
-      (owner) =>
-        eraseClickHouseAccount(
-          owner.client,
-          { userId, activityIds: [], sleepSessionIds: [], operationIds: [] },
-          { managedDatabases: [fixture.database] },
-        ),
-    );
+    await erasePublishedAccount(userId);
     await expect(fixture.execute()).rejects.toMatchObject({ state: "failed" });
     expect(
       await fixture.read("SELECT count() AS count FROM analytics.sensor_scalar_sample"),

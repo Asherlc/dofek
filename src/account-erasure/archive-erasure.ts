@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 import { once } from "node:events";
-import { createInterface } from "node:readline";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { createGunzip, createGzip } from "node:zlib";
@@ -16,6 +15,7 @@ import {
   UploadPartCommand,
 } from "@aws-sdk/client-s3";
 import * as Sentry from "@sentry/node";
+import { readMetricStreamArchiveLines } from "../metric-stream/archive-lines.ts";
 import {
   isMetricStreamBatchCompletedEvent,
   isMetricStreamDeletedEvent,
@@ -23,10 +23,14 @@ import {
   metricStreamRedpandaEventSchema,
 } from "../metric-stream/events.ts";
 import { parseMetricStreamArchiveObjectKey } from "../metric-stream/r2-replay.ts";
+import type { AccountErasureIdentifierStore } from "./identifier-store.ts";
+import type { AccountErasurePhysicalStage } from "./retained-state.ts";
 
 const ARCHIVE_PREFIX = "metric-stream/v1/";
 const MAX_ARCHIVE_LIST_PAGES = 10_000;
 const MULTIPART_PART_BYTES = 8 * 1024 * 1024;
+// Supported serialized transport payload; legacy oversized records block erasure explicitly.
+const MAX_ARCHIVE_LINE_PAYLOAD_BYTES = 900_000;
 
 export interface MetricStreamArchiveMetadata {
   cacheControl?: string;
@@ -245,8 +249,11 @@ export class R2MetricStreamArchiveStorage implements MetricStreamArchiveStorage 
 }
 
 export interface ArchiveErasureIdentifiers {
-  activityIds: ReadonlySet<string>;
-  operationIds: ReadonlySet<string>;
+  store: Pick<
+    AccountErasureIdentifierStore,
+    "findPresent" | "assertClosureComplete" | "loadPhysicalProgress"
+  >;
+  stage: AccountErasurePhysicalStage;
   userId: string;
 }
 
@@ -256,11 +263,19 @@ export interface ArchiveErasureResult {
   recordsRemoved: number;
 }
 
-function belongsToAccount(
-  line: string,
+async function belongsToAccount(
+  payload: Buffer,
   identifiers: ArchiveErasureIdentifiers,
   context: { key: string; lineNumber: number },
-): boolean {
+): Promise<boolean> {
+  let line: string;
+  try {
+    line = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(payload);
+  } catch {
+    throw new Error(
+      `Invalid UTF-8 in R2 archive object ${context.key} at line ${context.lineNumber}`,
+    );
+  }
   let parsedJson: unknown;
   try {
     parsedJson = JSON.parse(line);
@@ -277,21 +292,22 @@ function belongsToAccount(
   }
   const event = parsedEvent.data;
   if (isMetricStreamBatchCompletedEvent(event)) {
-    return identifiers.operationIds.has(event.operationId);
+    return (await identifiers.store.findPresent("operation", [event.operationId])).length > 0;
   }
   if (isMetricStreamProviderGenerationDeletedEvent(event))
     return event.userId === identifiers.userId;
   if (isMetricStreamDeletedEvent(event)) {
     return (
       event.scope.userId === identifiers.userId ||
-      (event.scope.activityId !== undefined && identifiers.activityIds.has(event.scope.activityId))
+      (event.scope.activityId !== undefined &&
+        (await identifiers.store.findPresent("activity", [event.scope.activityId])).length > 0)
     );
   }
   return (
     event.userId === identifiers.userId ||
     (event.activityId !== null &&
       event.activityId !== undefined &&
-      identifiers.activityIds.has(event.activityId))
+      (await identifiers.store.findPresent("activity", [event.activityId])).length > 0)
   );
 }
 
@@ -335,8 +351,8 @@ async function uploadCompressedParts(
   return parts;
 }
 
-async function writeLine(output: ReturnType<typeof createGzip>, line: string): Promise<void> {
-  if (!output.write(`${line}\n`)) {
+async function writeLine(output: ReturnType<typeof createGzip>, line: Buffer): Promise<void> {
+  if (!output.write(Buffer.concat([line, Buffer.from("\n")]))) {
     await once(output, "drain");
   }
 }
@@ -347,23 +363,28 @@ async function countMatchingArchiveRecords(
   key: string,
 ): Promise<number> {
   const gunzip = createGunzip();
-  const sourcePipeline = pipeline(body, gunzip);
+  // Observe rejection immediately: membership may await while the source fails.
+  const sourceOutcome = pipeline(body, gunzip).then(
+    () => ({ succeeded: true }),
+    (error: unknown) => ({ error }),
+  );
   let matches = 0;
   try {
-    const lines = createInterface({ input: gunzip, crlfDelay: Infinity });
-    let lineNumber = 0;
-    for await (const line of lines) {
-      lineNumber += 1;
-      if (line.length > 0 && belongsToAccount(line, identifiers, { key, lineNumber })) {
+    for await (const { payload: line, lineOrdinal: lineNumber } of readMetricStreamArchiveLines(
+      gunzip,
+      MAX_ARCHIVE_LINE_PAYLOAD_BYTES,
+    )) {
+      if (line.length > 0 && (await belongsToAccount(line, identifiers, { key, lineNumber }))) {
         matches += 1;
       }
     }
-    await sourcePipeline;
+    const outcome = await sourceOutcome;
+    if ("error" in outcome) throw outcome.error;
     return matches;
   } catch (error: unknown) {
     body.destroy();
     gunzip.destroy();
-    await Promise.allSettled([sourcePipeline]);
+    await sourceOutcome;
     throw error;
   }
 }
@@ -406,12 +427,12 @@ async function rewriteArchiveObject(
   let multipartCompleted = false;
 
   try {
-    const lines = createInterface({ input: gunzip, crlfDelay: Infinity });
-    let lineNumber = 0;
-    for await (const line of lines) {
-      lineNumber += 1;
+    for await (const { payload: line, lineOrdinal: lineNumber } of readMetricStreamArchiveLines(
+      gunzip,
+      MAX_ARCHIVE_LINE_PAYLOAD_BYTES,
+    )) {
       if (line.length === 0) continue;
-      if (belongsToAccount(line, identifiers, { key, lineNumber })) {
+      if (await belongsToAccount(line, identifiers, { key, lineNumber })) {
         removed += 1;
       } else {
         await writeLine(gzip, line);
@@ -478,15 +499,23 @@ export async function eraseMetricStreamArchive(
     startAfter?: string;
   } = {},
 ): Promise<ArchiveErasureResult> {
-  let lastKey: string | null = null;
-  let objectsRewritten = 0;
-  let recordsRemoved = 0;
-  for await (const key of storage.listObjectKeys(options.startAfter)) {
-    const removed = await rewriteArchiveObject(storage, key, identifiers);
-    if (removed > 0) objectsRewritten += 1;
-    recordsRemoved += removed;
-    lastKey = key;
-    await options.onObjectCompleted?.(key);
+  try {
+    await identifiers.store.assertClosureComplete(identifiers.stage);
+    if (!(await identifiers.store.loadPhysicalProgress(identifiers.stage)))
+      throw new Error("Account erasure physical preparation is incomplete");
+    let lastKey: string | null = null;
+    let objectsRewritten = 0;
+    let recordsRemoved = 0;
+    for await (const key of storage.listObjectKeys(options.startAfter)) {
+      const removed = await rewriteArchiveObject(storage, key, identifiers);
+      if (removed > 0) objectsRewritten += 1;
+      recordsRemoved += removed;
+      lastKey = key;
+      await options.onObjectCompleted?.(key);
+    }
+    return { lastKey, objectsRewritten, recordsRemoved };
+  } catch (error: unknown) {
+    Sentry.captureException(error, { tags: { accountErasureStep: "eraseArchive" } });
+    throw error;
   }
-  return { lastKey, objectsRewritten, recordsRemoved };
 }
