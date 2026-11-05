@@ -141,7 +141,37 @@ The controls alone took about 1.40 seconds and 134 ClickHouse requests, excludin
 setup, assertion reads and the replacement. A 350-control burst and realistic
 provider-deletion drain remain whole-host soak checks.
 
-These database tests use synthetic native positions. They do not qualify a real
-broker-to-Consumer-to-sink path, current-path throughput, production addressing,
-physical quotas or the historical placement bootstrap. No production deployment
-or hold restoration occurred.
+These database tests use synthetic native positions. They do not qualify
+current-path throughput, production addressing, physical quotas or the historical
+placement bootstrap. No production deployment or hold restoration occurred.
+
+## November 5 real broker to native sink composition
+
+The [native composition test](../src/metric-stream/native-sink.pulsar.integration.test.ts)
+passed both finite cases against the existing standalone Pulsar 5.0.1 broker,
+the official Node client and the same real Postgres/ClickHouse fixture. It used
+one worker, no retries, a 128 MiB per-query allowance, a receive queue of 20,
+one-message native/application groups and 8 MiB byte bounds. The complete run
+took 11.61 seconds; this includes fixture work and is not a throughput result.
+
+The first case published a row and completion marker, verified exact raw
+contents, a committed receipt and the Postgres frontier, then deliberately failed
+immediately before forwarding the first native acknowledgement. After closing
+and restarting the Consumer on the same subscription, it received the original
+ID and bytes, preserved the physical raw-version count and acknowledged the row
+and marker. Native marker evidence and the final frontier matched the actual
+producer-returned positions. The second case verified an initial row, a native
+delete control and its replacement in order, with exact versions and receipts.
+These exercise the [Consumer](../src/metric-stream/pulsar-consumer.ts) and
+[grouped sink](../src/metric-stream/clickhouse-sink.ts), not a simulated broker.
+
+The initial run stopped on a test representation mismatch: `count()` returned
+numeric `1`, while the assertion expected string `"1"`. Correcting that exact
+expectation allowed both cases to pass without changing application behavior,
+timeouts or resource settings. All owned clients and databases were closed and
+only the unique fixture topics were deleted; the preexisting broker was preserved.
+
+This qualifies finite delivery and acknowledgement-failure replay. It does not
+qualify a process kill during a ClickHouse response, sustained throughput/RSS,
+production Swarm addressing, R2 outage behavior or physical storage caps. Those
+remain release gates in the living index.
