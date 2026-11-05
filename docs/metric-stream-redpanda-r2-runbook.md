@@ -132,6 +132,34 @@ The ClickHouse sink applies delete events by inserting newer matching
 `ingest.metric_stream` rows with `is_deleted = 1` before inserting replacement
 row events.
 
+## Prepared Pulsar key recognition
+
+The archive eraser also recognizes the explicit native key layout:
+
+```text
+metric-stream/v1/date=YYYY-MM-DD/hour=HH/pulsar/epoch=<encoded-epoch>/topic=<encoded-concrete-topic>/first=<hex>/last=<hex>.jsonl.gz
+```
+
+Epoch and topic use canonical `encodeURIComponent` escaping. The topic must
+have the concrete `persistent://tenant/namespace/topic` shape. The UTC date and
+hour are validated; endpoint fields must be nonempty lowercase, even-length
+hex. Native keys must fit the [S3 1,024-byte key limit](https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-keys.html).
+Legacy flat keys remain supported. Unknown nested layouts fail before object
+access or erasure checkpoint advancement. See the
+[shared parser](../src/metric-stream/r2-replay.ts).
+
+The endpoint bytes are opaque original-upload provenance. Recognition does
+not decode native message IDs or prove ordering, partition consistency or
+replay validity. The writer and replay consumers must qualify those properties
+where they use positions. Erasure determines ownership from the validated
+JSONL payload and retained identifiers, then uses conditional ETag-protected
+replacement; it does not derive ownership from the key. See the
+[archive eraser](../src/account-erasure/archive-erasure.ts).
+
+No Pulsar writer is activated by this support. The parser and eraser must be
+deployed before or together with the first native archive object. The existing
+gzip JSONL payload format and original legacy objects stay unchanged.
+
 ## Redpanda Connect Archive Expectations
 
 The archive service should use Redpanda Connect with:
@@ -278,7 +306,7 @@ Keep each scoped delete and its replacement rows on the same route and partition
 key. KafkaJS documents partition keys as the way to preserve message order for
 the same entity: [producing messages](https://kafka.js.org/docs/producing#key).
 Do not reset offsets or move an existing consumer group to a different topic as
-part of the rollout. Deploy through the canonical workflow, which quiesces all
+part of the rollout. Deploy through the canonical workflow, which stops all
 three ClickHouse sinks until migrations and CDC readiness pass; see the
 [deployment procedure](../deploy/README.md#production-secrets).
 
@@ -374,7 +402,7 @@ Production writers are already Redpanda-first. Keep these invariants true:
    rows over a bounded recent window when validating replay behavior.
 
 Bounded R2 replay automation remains an explicit recovery gap. Do not describe
-the archive as operator-replayable until a checked-in replay command validates
+the archive as ready for operator replay until a checked-in replay command validates
 row counts and checksums against a temporary ClickHouse table.
 
 All provider and mobile metric-stream writers should use `writeMetricStreamRows()`

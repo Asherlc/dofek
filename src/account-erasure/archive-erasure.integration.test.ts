@@ -1,12 +1,17 @@
-import { gzipSync } from "node:zlib";
+import { gunzipSync, gzipSync } from "node:zlib";
 import {
   CreateBucketCommand,
+  GetObjectCommand,
   HeadObjectCommand,
   PutObjectCommand,
   S3Client,
 } from "@aws-sdk/client-s3";
 import type { StartedTestContainer } from "testcontainers";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import {
+  createMetricStreamBatchCompletedEvent,
+  createMetricStreamDeletedEvent,
+} from "../metric-stream/events.ts";
 import { eraseMetricStreamArchive, R2MetricStreamArchiveStorage } from "./archive-erasure.ts";
 import { createSeaweedFsS3Container } from "./test-helpers.ts";
 
@@ -35,7 +40,9 @@ describe("R2 archive erasure against SeaweedFS S3", () => {
   let container: StartedTestContainer | undefined;
 
   beforeAll(async () => {
-    container = await createSeaweedFsS3Container().start();
+    container = await createSeaweedFsS3Container()
+      .withResourcesQuota({ memory: 0.5, cpu: 1 })
+      .start();
     client = new S3Client({
       credentials: {
         accessKeyId: username,
@@ -97,5 +104,52 @@ describe("R2 archive erasure against SeaweedFS S3", () => {
         "source-cluster": "redpanda-production",
       },
     });
+  });
+
+  it("erases native-key payloads and controls while preserving exact foreign bytes and metadata", async () => {
+    const key = `metric-stream/v1/date=2026-11-05/hour=03/pulsar/epoch=e1/topic=${encodeURIComponent("persistent://public/default/sensor-partition-2")}/first=ff/last=00.jsonl.gz`;
+    const operationId = "50000000-0000-4000-8000-000000001994";
+    const owned = [
+      metricEvent(deletingUserId, "30000000-0000-4000-8000-000000001994"),
+      createMetricStreamDeletedEvent({ userId: deletingUserId }, "1"),
+      createMetricStreamBatchCompletedEvent(
+        { operationId, batchId: "batch-1994", datasetKeys: ["metric-stream"] },
+        1,
+      ),
+    ].map((event) => JSON.stringify(event));
+    const preserved = `  ${JSON.stringify(metricEvent(otherUserId, "40000000-0000-4000-8000-000000001994"))} `;
+    await client.send(
+      new PutObjectCommand({
+        Body: gzipSync(`${owned.join("\n")}\n${preserved}\n`),
+        Bucket: bucket,
+        Key: key,
+        ContentEncoding: "x-gzip",
+        ContentType: "application/vnd.dofek.metric-stream+jsonl",
+        Metadata: { "archive-generation": "7", "source-cluster": "pulsar-qualification" },
+      }),
+    );
+    const identifiers = {
+      activityIds: new Set<string>(),
+      operationIds: new Set([operationId]),
+      userId: deletingUserId,
+    };
+    await expect(
+      eraseMetricStreamArchive(new R2MetricStreamArchiveStorage(client, bucket), identifiers),
+    ).resolves.toEqual({ lastKey: key, objectsRewritten: 1, recordsRemoved: 3 });
+    await expect(
+      client.send(new HeadObjectCommand({ Bucket: bucket, Key: key })),
+    ).resolves.toMatchObject({
+      ContentEncoding: "x-gzip",
+      ContentType: "application/vnd.dofek.metric-stream+jsonl",
+      Metadata: { "archive-generation": "7", "source-cluster": "pulsar-qualification" },
+    });
+    const object = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+    if (!object.Body) throw new Error("Rewritten archive has no body");
+    expect(gunzipSync(await object.Body.transformToByteArray()).toString("utf8")).toBe(
+      `${preserved}\n`,
+    );
+    await expect(
+      eraseMetricStreamArchive(new R2MetricStreamArchiveStorage(client, bucket), identifiers),
+    ).resolves.toEqual({ lastKey: key, objectsRewritten: 0, recordsRemoved: 0 });
   });
 });
