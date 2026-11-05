@@ -182,6 +182,12 @@ proof and caller integration remain unfinished. The selected cleanup order is
 durable physical completion, removal and verified absence of native mutation
 metadata, then the cleanup cursor advance. See the
 [engine observation](pulsar-qualification.md#november-5-journal-sizing-and-mutation-metadata-observations).
+Initial native regressions now exercise completed-mutation cleanup and retained
+inactive bytes when logical residue is already zero. These focused passes do
+not qualify the full path: crash recovery, schema drift, projection lineage,
+remaining consumers and the 400,000-row/scaling resource gates remain open.
+See the [physical proof implementation](../src/account-erasure/clickhouse-physical-erasure.ts)
+and [real-engine cases](../src/account-erasure/clickhouse-erasure.integration.test.ts).
 
 The approved Node Consumer remains the intake strategy. Queue, group-count and
 byte bounds are required settings, with RSS measured at activation. Create-only

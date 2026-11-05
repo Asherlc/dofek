@@ -1473,7 +1473,8 @@ those phases and the physical part layout when reviewing future resource results
 
 One finite local fixture used the actual grouped sink and current final schema,
 with fresh groups of one and 500 events. All 501 raw rows, effects, receipts and
-frontiers reconciled. Each query retained the 128 MiB allowance and one thread;
+frontiers reconciled. Measured sink and observation queries retained the
+128 MiB allowance and one thread;
 the ClickHouse container retained its 4 GiB cap and 3 GiB native ceiling. This
 was a storage observation, not a throughput or process-RSS qualification.
 
