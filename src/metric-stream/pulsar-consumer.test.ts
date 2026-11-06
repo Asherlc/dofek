@@ -736,4 +736,127 @@ describe("Pulsar metric intake", () => {
     ).rejects.toThrow();
     expect(fixture.client.subscribe).not.toHaveBeenCalled();
   });
+
+  describe("startup option validation", () => {
+    const nativeBatchCountError = "Pulsar native batch count must be between 1 and 20";
+    const applicationGroupCountError = "Pulsar application group count must be between 1 and 500";
+    const byteLimitsError = "Pulsar native and application byte limits must be between 1 and 8MiB";
+    const identityError = "Pulsar epoch, concrete topic and subscription are required";
+    const partitionError =
+      "Pulsar partition must be an int32 partition or -1 for a topic without partitions";
+    const queueSizeError = "Pulsar receive queue size must be 20";
+
+    async function expectRejectedBeforeSubscribe(
+      overrides: Partial<ReturnType<typeof input>["options"]>,
+      expectedMessage: string,
+    ) {
+      const fixture = input();
+      await expect(
+        runPulsarMetricStreamConsumer({
+          ...fixture.options,
+          ...overrides,
+          handleEvents: vi.fn(),
+        }),
+      ).rejects.toThrow(expectedMessage);
+      expect(fixture.client.subscribe).not.toHaveBeenCalled();
+    }
+
+    async function expectAcceptedThroughSubscribe(
+      overrides: Partial<ReturnType<typeof input>["options"]>,
+      subscribeAssertion?: (subscribeCall: unknown) => void,
+    ) {
+      const fixture = input();
+      fixture.consumer.batchReceive.mockImplementation(async () => {
+        fixture.controller.abort();
+        return [];
+      });
+      await runPulsarMetricStreamConsumer({
+        ...fixture.options,
+        ...overrides,
+        handleEvents: vi.fn(),
+      });
+      expect(fixture.client.subscribe).toHaveBeenCalledOnce();
+      if (subscribeAssertion) {
+        subscribeAssertion(fixture.client.subscribe.mock.calls[0]?.[0]);
+      }
+    }
+
+    it.each([0, 1.5, 21])(
+      "rejects nativeBatchMessages %s with the configured count error",
+      async (nativeBatchMessages) => {
+        await expectRejectedBeforeSubscribe({ nativeBatchMessages }, nativeBatchCountError);
+      },
+    );
+
+    it.each([1, 20])(
+      "accepts nativeBatchMessages %s and passes it to batchReceivePolicy",
+      async (nativeBatchMessages) => {
+        await expectAcceptedThroughSubscribe({ nativeBatchMessages }, (config) => {
+          expect(config).toMatchObject({
+            batchReceivePolicy: { maxNumMessages: nativeBatchMessages },
+          });
+        });
+      },
+    );
+
+    it.each([0, 501])(
+      "rejects maxGroupMessages %s with the configured group count error",
+      async (maxGroupMessages) => {
+        await expectRejectedBeforeSubscribe({ maxGroupMessages }, applicationGroupCountError);
+      },
+    );
+
+    it.each([1, 500])("accepts maxGroupMessages %s before subscribe", async (maxGroupMessages) => {
+      await expectAcceptedThroughSubscribe({ maxGroupMessages });
+    });
+
+    it.each([
+      ["nativeBatchBytes", 0],
+      ["nativeBatchBytes", 8 * 1024 * 1024 + 1],
+      ["maxGroupBytes", 0],
+      ["maxGroupBytes", 8 * 1024 * 1024 + 1],
+    ] as const)("rejects %s=%s with the configured byte limit error", async (field, value) => {
+      await expectRejectedBeforeSubscribe({ [field]: value }, byteLimitsError);
+    });
+
+    it.each([
+      ["nativeBatchBytes", 1],
+      ["nativeBatchBytes", 8 * 1024 * 1024],
+      ["maxGroupBytes", 1],
+      ["maxGroupBytes", 8 * 1024 * 1024],
+    ] as const)("accepts %s=%s before subscribe", async (field, value) => {
+      await expectAcceptedThroughSubscribe({ [field]: value });
+    });
+
+    it("rejects empty epoch while topic and subscription stay set", async () => {
+      await expectRejectedBeforeSubscribe({ epoch: "" }, identityError);
+    });
+
+    it("rejects empty topic while epoch and subscription stay set", async () => {
+      await expectRejectedBeforeSubscribe({ topic: "" }, identityError);
+    });
+
+    it("rejects empty subscription while epoch and topic stay set", async () => {
+      await expectRejectedBeforeSubscribe({ subscription: "" }, identityError);
+    });
+
+    it.each([-2, 2147483648])(
+      "rejects partition %s with the configured partition error",
+      async (partition) => {
+        await expectRejectedBeforeSubscribe({ partition }, partitionError);
+      },
+    );
+
+    it.each([-1, 2147483647])("accepts partition %s before subscribe", async (partition) => {
+      await expectAcceptedThroughSubscribe({ partition });
+    });
+
+    it("rejects non-integer partition with the configured partition error", async () => {
+      await expectRejectedBeforeSubscribe({ partition: 1.5 }, partitionError);
+    });
+
+    it("rejects invalid receiverQueueSize with the exact queue size error", async () => {
+      await expectRejectedBeforeSubscribe({ receiverQueueSize: 19 }, queueSizeError);
+    });
+  });
 });

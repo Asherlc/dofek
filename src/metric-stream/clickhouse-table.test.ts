@@ -6,10 +6,22 @@ import {
   METRIC_STREAM_PROVIDER_CURRENT_STATE_RECORDED_AT_PROJECTION,
   METRIC_STREAM_PROVIDER_EXTERNAL_ID_PROJECTION,
   METRIC_STREAM_USER_CHANNEL_RECORDED_AT_PROJECTION,
+  metricStreamProcessingPositionConstraint,
   metricStreamProviderCurrentStateRecordedAtProjectionDefinition,
   metricStreamProviderExternalIdProjectionDefinition,
   metricStreamUserChannelRecordedAtProjectionDefinition,
 } from "./clickhouse-table.ts";
+
+describe("metricStreamProcessingPositionConstraint", () => {
+  it("requires kafka offset XOR pulsar epoch/message id marker fields", () => {
+    expect(metricStreamProcessingPositionConstraint()).toBe(
+      `(marker_transport = 'kafka' AND isNotNull(marker_offset)
+    AND isNull(marker_epoch) AND isNull(marker_message_id))
+    OR (marker_transport = 'pulsar' AND isNull(marker_offset)
+      AND notEmpty(ifNull(marker_epoch, '')) AND notEmpty(ifNull(marker_message_id, '')))`,
+    );
+  });
+});
 
 describe("buildMetricStreamProcessingAcknowledgementTableSql", () => {
   it("builds an idempotent exact batch acknowledgement table", () => {
@@ -23,8 +35,12 @@ describe("buildMetricStreamProcessingAcknowledgementTableSql", () => {
     expect(sql).toContain("dataset_keys Array(String)");
     expect(sql).toContain("expected_event_count UInt64");
     expect(sql).toContain("topic String");
-    expect(sql).toContain("partition Int32");
+    expect(sql).toContain("topic_partition Int32");
     expect(sql).toContain("marker_offset Nullable(UInt64)");
+    expect(sql).toContain("marker_transport Enum8('kafka' = 1, 'pulsar' = 2) DEFAULT 'kafka'");
+    expect(sql).toContain(
+      `CONSTRAINT valid_marker_position CHECK ${metricStreamProcessingPositionConstraint()}`,
+    );
     expect(sql).toContain("ENGINE = ReplacingMergeTree(applied_at)");
     expect(sql).toContain("ORDER BY (operation_id, batch_id)");
   });

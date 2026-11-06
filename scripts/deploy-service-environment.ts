@@ -135,8 +135,13 @@ const METRIC_STREAM_ENVIRONMENT_KEYS = [
   "REDPANDA_BROKERS",
 ] as const;
 
+const METRIC_STREAM_NATIVE_ENVIRONMENT_KEYS = [
+  "PULSAR_SERVICE_URL",
+  "METRIC_STREAM_TRANSPORT_EPOCH",
+] as const;
+
 const METRIC_STREAM_ARCHIVE_ENVIRONMENT_KEYS = [
-  "REDPANDA_BROKERS",
+  ...METRIC_STREAM_NATIVE_ENVIRONMENT_KEYS,
   "METRIC_STREAM_R2_BUCKET",
   "R2_ENDPOINT",
   "R2_ACCESS_KEY_ID",
@@ -165,7 +170,8 @@ interface DeployServiceEnvironmentPolicy {
       | "METRIC_STREAM_LEGACY_TOPIC"
       | "METRIC_STREAM_LIVE_TOPIC"
       | "METRIC_STREAM_HISTORY_TOPIC";
-    group?: string;
+    /** Native Pulsar subscription identity; omitted for producer-only remaps. */
+    subscription?: string;
   };
 }
 
@@ -271,27 +277,27 @@ const DEPLOY_SERVICE_ENVIRONMENT_POLICIES: Record<
     ],
   },
   metricStreamClickhouseSink: {
-    allowedKeys: ["REDPANDA_BROKERS"],
-    requiredKeys: ["REDPANDA_BROKERS", "METRIC_STREAM_LEGACY_TOPIC"],
+    allowedKeys: METRIC_STREAM_NATIVE_ENVIRONMENT_KEYS,
+    requiredKeys: [...METRIC_STREAM_NATIVE_ENVIRONMENT_KEYS, "METRIC_STREAM_LEGACY_TOPIC"],
     metricStreamRoute: {
       topicKey: "METRIC_STREAM_LEGACY_TOPIC",
-      group: "metric-stream-clickhouse-sink",
+      subscription: "metric-stream-clickhouse-sink",
     },
   },
   metricStreamLiveClickhouseSink: {
-    allowedKeys: ["REDPANDA_BROKERS"],
-    requiredKeys: ["REDPANDA_BROKERS", "METRIC_STREAM_LIVE_TOPIC"],
+    allowedKeys: METRIC_STREAM_NATIVE_ENVIRONMENT_KEYS,
+    requiredKeys: [...METRIC_STREAM_NATIVE_ENVIRONMENT_KEYS, "METRIC_STREAM_LIVE_TOPIC"],
     metricStreamRoute: {
       topicKey: "METRIC_STREAM_LIVE_TOPIC",
-      group: "metric-stream-live-clickhouse-sink",
+      subscription: "metric-stream-live-clickhouse-sink",
     },
   },
   metricStreamHistoryClickhouseSink: {
-    allowedKeys: ["REDPANDA_BROKERS"],
-    requiredKeys: ["REDPANDA_BROKERS", "METRIC_STREAM_HISTORY_TOPIC"],
+    allowedKeys: METRIC_STREAM_NATIVE_ENVIRONMENT_KEYS,
+    requiredKeys: [...METRIC_STREAM_NATIVE_ENVIRONMENT_KEYS, "METRIC_STREAM_HISTORY_TOPIC"],
     metricStreamRoute: {
       topicKey: "METRIC_STREAM_HISTORY_TOPIC",
-      group: "metric-stream-history-clickhouse-sink",
+      subscription: "metric-stream-history-clickhouse-sink",
     },
   },
   metricStreamR2Archive: {
@@ -299,7 +305,7 @@ const DEPLOY_SERVICE_ENVIRONMENT_POLICIES: Record<
     requiredKeys: [...METRIC_STREAM_ARCHIVE_ENVIRONMENT_KEYS, "METRIC_STREAM_LEGACY_TOPIC"],
     metricStreamRoute: {
       topicKey: "METRIC_STREAM_LEGACY_TOPIC",
-      group: "metric-stream-r2-archive",
+      subscription: "metric-stream-r2-archive",
     },
   },
   metricStreamLiveR2Archive: {
@@ -307,7 +313,7 @@ const DEPLOY_SERVICE_ENVIRONMENT_POLICIES: Record<
     requiredKeys: [...METRIC_STREAM_ARCHIVE_ENVIRONMENT_KEYS, "METRIC_STREAM_LIVE_TOPIC"],
     metricStreamRoute: {
       topicKey: "METRIC_STREAM_LIVE_TOPIC",
-      group: "metric-stream-live-r2-archive",
+      subscription: "metric-stream-live-r2-archive",
     },
   },
   metricStreamHistoryR2Archive: {
@@ -315,7 +321,7 @@ const DEPLOY_SERVICE_ENVIRONMENT_POLICIES: Record<
     requiredKeys: [...METRIC_STREAM_ARCHIVE_ENVIRONMENT_KEYS, "METRIC_STREAM_HISTORY_TOPIC"],
     metricStreamRoute: {
       topicKey: "METRIC_STREAM_HISTORY_TOPIC",
-      group: "metric-stream-history-r2-archive",
+      subscription: "metric-stream-history-r2-archive",
     },
   },
 };
@@ -424,8 +430,14 @@ export function renderDeployServiceEnvironmentFiles(
     if (route) {
       const assignment = assignments.get(route.topicKey);
       if (!assignment) throw new Error(`Missing validated assignment: ${route.topicKey}`);
+      const topicValue = assignment.slice(route.topicKey.length + 1);
+      if (route.subscription && !topicValue.startsWith("persistent://")) {
+        throw new Error("METRIC_STREAM_TOPIC must name one concrete persistent Pulsar topic");
+      }
       lines.push(`METRIC_STREAM_TOPIC${assignment.slice(route.topicKey.length)}`);
-      if (route.group) lines.push(`METRIC_STREAM_CONSUMER_GROUP=${route.group}`);
+      if (route.subscription) {
+        lines.push(`METRIC_STREAM_SUBSCRIPTION=${route.subscription}`);
+      }
     }
     writeFileSync(paths[serviceName], lines.length === 0 ? "" : `${lines.join("\n")}\n`, {
       mode: 0o600,

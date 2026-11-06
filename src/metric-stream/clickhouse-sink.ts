@@ -227,12 +227,12 @@ async function tombstoneMetricStreamIds(
         FROM ${METRIC_STREAM_TABLE}
         WHERE id IN {row_ids:Array(UUID)}
         GROUP BY id
-      )
+      ) AS latest
       INNER JOIN (SELECT user_id AS generation_user,provider_id AS generation_provider,
           max(generation) AS current_generation FROM ${PROVIDER_DATA_GENERATION_TABLE}
           GROUP BY user_id,provider_id) AS policy
-        ON latest_row.2=policy.generation_user AND latest_row.5=policy.generation_provider
-      WHERE latest_row.14 = 0 AND latest_row.13 < policy.current_generation`,
+        ON latest.latest_row.2=policy.generation_user AND latest.latest_row.5=policy.generation_provider
+      WHERE latest.latest_row.14 = 0 AND latest.latest_row.13 < policy.current_generation`,
     query_params: {
       row_ids: rows.map((row) => row.id),
       ingested_ats: rows.map((row) => row.ingested_at),

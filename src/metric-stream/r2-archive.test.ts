@@ -397,8 +397,12 @@ describe("archive runtime ownership", () => {
     const destroy = vi.spyOn(archive.client, "destroy");
     await startMetricStreamR2ArchiveFromEnv();
     expect(trace).toEqual(["put", "ack"]);
+    expect(server.listen).toHaveBeenCalledWith(3001, "0.0.0.0");
     expect(native.subscribe).toHaveBeenCalledWith(
       expect.objectContaining({
+        topic: stream.topic,
+        subscription: "archive-fixture",
+        subscriptionType: "Exclusive",
         receiverQueueSize: 20,
         batchReceivePolicy: { maxNumMessages: 20, maxNumBytes: 8 * 1024 * 1024, timeoutMs: 100 },
       }),
