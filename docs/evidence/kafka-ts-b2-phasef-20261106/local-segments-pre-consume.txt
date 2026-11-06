@@ -1,0 +1,11 @@
+total 96
+drwxr-xr-x  2 appuser appuser     4096 Nov  6 22:20 .
+drwxrwxr-x 55 appuser root        4096 Nov  6 22:20 ..
+-rw-r--r--  1 appuser appuser       32 Nov  6 22:20 00000000000000000000.index.deleted
+-rw-r--r--  1 appuser appuser    66417 Nov  6 22:20 00000000000000000000.log.deleted
+-rw-r--r--  1 appuser appuser       24 Nov  6 22:20 00000000000000000000.timeindex.deleted
+-rw-r--r--  1 appuser appuser        0 Nov  6 22:20 00000000000000000064.log
+-rw-r--r--  1 appuser appuser       56 Nov  6 22:20 00000000000000000064.snapshot
+-rw-r--r--  1 appuser appuser 10485756 Nov  6 22:20 00000000000000000064.timeindex
+-rw-r--r--  1 appuser appuser        8 Nov  6 22:20 leader-epoch-checkpoint
+-rw-r--r--  1 appuser appuser       43 Nov  6 22:20 partition.metadata

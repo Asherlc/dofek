@@ -1,0 +1,26 @@
+{
+  "bucketName": "kafka-ts-b2-f-20261106",
+  "bucketId": "ffbbd40bf312bd2ea1130015",
+  "childKeyId": "004fb4b32de13050000000004",
+  "childKeyName": "kafka-ts-b2-f-20261106-phasef1-child",
+  "prefix": "kafka-ts-parity/b2/20261106-phasef1/",
+  "remoteLogSegmentId": "p8WWfQiJTRaJN3LNsu2dkA",
+  "topicId": "1J9Rouw5RKaKRs0n0qYXdw",
+  "topic": "tieredTopicB2F",
+  "partition": 0,
+  "startOffset": 0,
+  "endOffset": 63,
+  "segmentSizeInBytes": 66417,
+  "expected_object_keys": [
+    "kafka-ts-parity/b2/20261106-phasef1/tieredTopicB2F-1J9Rouw5RKaKRs0n0qYXdw/0/00000000000000000000-p8WWfQiJTRaJN3LNsu2dkA.log",
+    "kafka-ts-parity/b2/20261106-phasef1/tieredTopicB2F-1J9Rouw5RKaKRs0n0qYXdw/0/00000000000000000000-p8WWfQiJTRaJN3LNsu2dkA.indexes",
+    "kafka-ts-parity/b2/20261106-phasef1/tieredTopicB2F-1J9Rouw5RKaKRs0n0qYXdw/0/00000000000000000000-p8WWfQiJTRaJN3LNsu2dkA.rsm-manifest"
+  ],
+  "note": "Keys derived from RSM ObjectKeyFactory + copy metadata; Root must ListObjectVersions on exact prefix (all pages), delete all versions+delete markers, abort any MPUs under prefix, revoke child, delete bucket",
+  "upload_path": "PutObject expected for tiny objects \u2014 NO MPU claim",
+  "observed_D": "unknown",
+  "observed_D_reason": "no stock download byte counter exposed to Cursor without B2 metrics/class-B API",
+  "planning_D_mib": 1.0,
+  "phase": "F",
+  "result": "PASS"
+}

@@ -1,8 +1,9 @@
 # Kafka tiered storage — B2 / R2 S3 compatibility (stock only)
 
-**Status:** source/config assessment. **No** cloud allocation, writes, or object
-GETs until an **explicit user download exception**. First cloud attempt (when
-approved): **B2 Phase F only**. MPU and R2 are separate later runs.
+**Status:** B2 **Phase F PASS** recorded
+([`docs/evidence/kafka-ts-b2-phasef-20261106/`](evidence/kafka-ts-b2-phasef-20261106/)).
+**No** further cloud allocation / GET / MPU / R2 without a new review.
+MPU and R2 remain separate later runs.
 
 **Pins:** Apache Kafka **4.4.0** + Aiven RSM **[v1.2.0](https://github.com/Aiven-Open/tiered-storage-for-apache-kafka/releases/tag/v1.2.0)**
 (`s3-1.2.0.tgz` `sha256:1fd89dea…`, `core-1.2.0.tgz` `sha256:14fb636d…`; AWS SDK
@@ -23,8 +24,8 @@ ledger. Pulsar B2 IaC is a separate track. End-to-end remote consume
 
 | Backend | Stock-config-only? | Notes |
 |---|---|---|
-| **B2** | Plausible, unproven | Endpoint/region/path-style/creds/MPU knobs exist. Vendor claims checksum-header support since July 2025; live RSM Put/GetRange/DeleteObjects under SDK 2.57.8 still unknown. |
-| **R2** | At risk | Official Java example requires path-style **and** `chunkedEncodingEnabled(false)` ([R2 aws-sdk-java](https://developers.cloudflare.com/r2/examples/aws/aws-sdk-java/)). RSM has path-style only — **no** chunked-encoding knob. CRC32 `FULL_OBJECT` is ❌ on R2 ([S3 API compatibility](https://developers.cloudflare.com/r2/api/s3/api/)). Stock `WHEN_REQUIRED` env/JVM is **allowed proposed config**, not proof that chunked signing is disabled. |
+| **B2** | **Phase F PASS** (tiny only) | Live Kafka 4.4.0 + RSM 1.2.0 + SDK 2.57.8 against `us-west-004` with `WHEN_REQUIRED`, path-style, default chain, isolated client. **Not** MPU; **not** RSM delete/GC; **`observed_D` unknown**. |
+| **R2** | At risk (untested) | Official Java example requires path-style **and** `chunkedEncodingEnabled(false)` ([R2 aws-sdk-java](https://developers.cloudflare.com/r2/examples/aws/aws-sdk-java/)). RSM has path-style only — **no** chunked-encoding knob. CRC32 `FULL_OBJECT` is ❌ on R2 ([S3 API compatibility](https://developers.cloudflare.com/r2/api/s3/api/)). Stock `WHEN_REQUIRED` is **allowed proposed config**, not proof chunked signing is disabled. Tiny R2 Phase F may be proposed next — **not** approved/executed here. |
 
 Hard rule: released jars + stock plugin/env/JVM only. No custom plugin, SDK
 patch, or image.
@@ -264,13 +265,32 @@ add a maintained bootstrap script for this.
 
 ---
 
-## 9. Unknowns (remain until executed)
+## 9. B2 Phase F result (2026-11-06)
 
-1. B2 + Java SDK 2.57.8 under the Section 5 config on RSM Put/GetRange/DeleteObjects.
-2. Whether `WHEN_REQUIRED` alone satisfies R2 (later) without chunked-encoding off.
-3. Whether DeleteObjects needs `s3.legacy.md5.plugin.enabled=true`.
-4. Observed `K` and `D` under Kafka 4.4 remote read for Phase F.
-5. Path-style auto-detect vs forced `true` on current B2 endpoints.
+Evidence: [`docs/evidence/kafka-ts-b2-phasef-20261106/`](evidence/kafka-ts-b2-phasef-20261106/).
+
+| Item | Result |
+|---|---|
+| Verdict | **PHASE_F_PASS** |
+| Produce | 64 × 1024 **value** bytes (**65536**); console-producer file **65600** (= values + 64 newlines) — clarify vs “64 KiB”; **not** a hard budget |
+| Remote segment | offsets 0–63; `segmentSizeInBytes` **66417**; objects `.log`/`.indexes`/`.rsm-manifest` |
+| Local before consume | closed removed; active `…00064.log` only |
+| Consume digest | count 64; sha256 match |
+| Java isolation | broker 2048 MiB / heap 1 GiB; **all** admin/produce/consume in client 384 MiB / heap 256 MiB |
+| `observed_D` | **unknown** (no stock download meter); ~1 MiB was planning only |
+| MPU | **not claimed** |
+| Cloud cleanup | **operator** B2 native API verified 22:22:53Z (`ROOT_CLOUD_CLEANUP.json`) — **not** RSM `DeleteObjects` / physical GC proof ([Application Keys](https://www.backblaze.com/docs/cloud-storage-application-keys), [S3-Compatible API](https://www.backblaze.com/docs/cloud-storage-s3-compatible-api), [bucket versions](https://www.backblaze.com/docs/cloud-storage-s3-compatible-api-bucket-versions)) |
+| Compose teardown | **0** owned containers/volumes |
+
+**Next (recommend only — do not execute here):** tiny R2 Phase F under the same client-isolation + placeholder-overlay rules, after explicit review/download exception. Still blocked on RSM lacking `chunkedEncodingEnabled(false)`.
+
+## 10. Remaining unknowns
+
+1. B2 MPU (Phase M) under RSM 1.2.0 / SDK 2.57.8.
+2. Whether `WHEN_REQUIRED` alone satisfies R2 without chunked-encoding off.
+3. Whether RSM `DeleteObjects` needs `s3.legacy.md5.plugin.enabled=true` on B2/R2.
+4. Metered download bytes (`D`) / fetch count `K` for Phase F-class workloads.
+5. Path-style auto-detect vs forced `true` on current B2 endpoints (this run used forced `true`).
 
 ---
 
@@ -283,7 +303,9 @@ add a maintained bootstrap script for this.
 - [AWS data integrity](https://docs.aws.amazon.com/sdkref/latest/guide/feature-dataintegrity.html),
   [AWS retry / `AWS_MAX_ATTEMPTS`](https://docs.aws.amazon.com/sdkref/latest/guide/feature-retry-behavior.html)
 - [B2 Java V2](https://www.backblaze.com/docs/cloud-storage-use-the-aws-sdk-for-java-v2-with-backblaze-b2),
-  [B2 bucket versions](https://www.backblaze.com/docs/cloud-storage-s3-compatible-api-bucket-versions)
+  [B2 bucket versions](https://www.backblaze.com/docs/cloud-storage-s3-compatible-api-bucket-versions),
+  [B2 application keys](https://www.backblaze.com/docs/cloud-storage-application-keys),
+  [B2 S3-Compatible API](https://www.backblaze.com/docs/cloud-storage-s3-compatible-api)
 - [R2 Java example](https://developers.cloudflare.com/r2/examples/aws/aws-sdk-java/),
   [R2 checksums / S3 API](https://developers.cloudflare.com/r2/api/s3/api/),
   [R2 tokens](https://developers.cloudflare.com/r2/api/tokens/),

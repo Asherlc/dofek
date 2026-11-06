@@ -1,0 +1,77 @@
+{
+  "lab_id": "kafka-ts-b2-phasef-20261106",
+  "phase": "F",
+  "result": "PHASE_F_PASS",
+  "not_claimed": [
+    "MPU",
+    "PhaseM",
+    "R2",
+    "RSM_DeleteObjects_physical_GC",
+    "download_byte_meter",
+    "hard_download_cap",
+    "memory_qualification"
+  ],
+  "bucketName": "kafka-ts-b2-f-20261106",
+  "bucketId": "ffbbd40bf312bd2ea1130015",
+  "prefix": "kafka-ts-parity/b2/20261106-phasef1/",
+  "endpoint": "https://s3.us-west-004.backblazeb2.com",
+  "region": "us-west-004",
+  "produce": {
+    "messages": 64,
+    "value_bytes_each": 1024,
+    "value_bytes_total": 65536,
+    "producer_file_bytes": 65600,
+    "producer_file_bytes_note": "65600 = 64*1024 value bytes + 64 newline separators in console-producer input file; not a hard budget claim"
+  },
+  "segment": {
+    "remoteLogSegmentId": "p8WWfQiJTRaJN3LNsu2dkA",
+    "topicId": "1J9Rouw5RKaKRs0n0qYXdw",
+    "startOffset": 0,
+    "endOffset": 63,
+    "segmentSizeInBytes": 66417
+  },
+  "local_closed_removed_before_consume": true,
+  "local_active_only": "00000000000000000064.log",
+  "consume": {
+    "count": 64,
+    "expected_count": 64,
+    "offsets_assumed": "0..n-1 console-consumer order",
+    "sha256_offset_pipe_value": "a6818c55855297f2466d9d0967e2c97f6ebf6db61f7bd7c204d99bde6ecd5687",
+    "plan_sha256": "a6818c55855297f2466d9d0967e2c97f6ebf6db61f7bd7c204d99bde6ecd5687",
+    "match": true,
+    "first_prefix": "00000|ABCDEFGHIJ",
+    "last_prefix": "00063|ABCDEFGHIJ"
+  },
+  "observed_D": "unknown",
+  "planning_D_mib": 1.0,
+  "wall": {
+    "start_utc": "2026-11-06T22:19:48Z",
+    "end_utc": "2026-11-06T22:21:39Z"
+  },
+  "java_isolation": {
+    "broker_cgroup_mib": 2048,
+    "broker_heap": "-Xmx1G -Xms1G",
+    "client_cgroup_mib": 384,
+    "client_heap": "-Xms32m -Xmx256m",
+    "all_admin_produce_consume_in_client_container": true,
+    "docker_exec_java_into_broker": false
+  },
+  "observed_D_note": "No stock download byte counter available to the assertions lane; planning figure ~1MiB is not a hard cap and was not metered.",
+  "mpu": "not claimed (tiny PutObject path expected; not asserted)",
+  "rsm_delete_objects_gc": "not proven \u2014 operator B2 native cleanup only",
+  "operator_cloud_cleanup": {
+    "at": "2026-11-06T22:22:53.342Z",
+    "status": "CLEANUP_VERIFIED",
+    "artifact": "ROOT_CLOUD_CLEANUP.json",
+    "manualCleanup": true
+  },
+  "compose_teardown": {
+    "owned_containers": 0,
+    "owned_volumes": 0,
+    "method": "pnpm compose -- --project-suffix kafka-ts-b2-phasef -f \u2026/docker-compose.yml down --remove-orphans --volumes"
+  },
+  "cgroup_memory_peak_bytes": {
+    "kafka": 578150400,
+    "client": 126500864
+  }
+}

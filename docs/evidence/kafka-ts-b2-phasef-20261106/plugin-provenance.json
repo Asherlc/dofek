@@ -1,0 +1,15 @@
+{
+  "release_tag": "v1.2.0",
+  "release_url": "https://github.com/Aiven-Open/tiered-storage-for-apache-kafka/releases/tag/v1.2.0",
+  "verified_at_utc": "2026-11-06T22:10:53Z",
+  "assets": [
+    {"name": "core-1.2.0.tgz", "sha256": "14fb636d3a5c781ae9ae961012bf7b0881b09629859dbc784dc49356faeaa747"},
+    {"name": "s3-1.2.0.tgz", "sha256": "1fd89dea84988b857e546fcfa88504f5b4e45d7712e3eddeb506f11a394ef010"}
+  ],
+  "kafka_image": "apache/kafka:4.4.0",
+  "kafka_repo_digest": "apache/kafka@sha256:833b867a9585a141da455dc2b57431c65cbccb27f11c91f694444cca9f777e0f",
+  "layout": {
+    "core": "/tmp/kafka-ts-b2-phasef-20261106/plugins/core/core-1.2.0",
+    "s3": "/tmp/kafka-ts-b2-phasef-20261106/plugins/s3/s3-1.2.0"
+  }
+}
