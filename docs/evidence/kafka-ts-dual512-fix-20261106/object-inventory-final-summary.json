@@ -1,0 +1,18 @@
+{
+  "objects": 30,
+  "remote_log_segments": 10,
+  "log_sizes_bytes": [
+    33034680,
+    33034680,
+    33034680,
+    33034680,
+    2097440,
+    33034680,
+    33034680,
+    33034680,
+    33034680,
+    2097440
+  ],
+  "multi_part_eligible_gt_25MiB": 8,
+  "endpoint": "http://seaweed:9000"
+}

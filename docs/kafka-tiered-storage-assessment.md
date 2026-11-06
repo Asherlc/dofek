@@ -305,39 +305,72 @@ pagecache/mmap/chunk split during consume (`cgroup-sample-summary.json`).
 
 ### Root cause (scoped)
 
-**Primary:** colocating the digest client in the broker cgroup with inherited
-**1 GiB** `KAFKA_HEAP_OPTS` collides with the broker’s **1 GiB** heap inside
-**2048 MiB** during heavy remote read (cgroup OOM).
+**Primary (test violation, not a Kafka resource finding):** Root’s lab bounds
+already required a **separate tool ≤384 MiB**. Running
+`kafka-console-consumer` via `docker exec` **inside** the broker cgroup was an
+**avoidable fixture error**. That client **inherited** broker
+`KAFKA_HEAP_OPTS=-Xmx1G -Xms1G` ([console-consumer.sh](https://github.com/apache/kafka/blob/4.4.0/bin/kafka-console-consumer.sh)
+only defaults to `-Xmx512M` when unset), placing a second 1 GiB heap beside the
+broker in the same **2048 MiB** cgroup → cgroup OOM. **Do not** treat
+`kafka-ts-dual512-20261106` as evidence that Kafka TS cannot serve 256 MiB
+remote reads under 2 GiB.
 
-**Contributing:** 256 MiB remote earliest read vs ~5 MiB functional read
-(MemoryChunkCache / reader-pool / pagecache pressure scale with remote bytes).
+**Contributing pressure (still real, unmeasured under a correct fixture):**
+256 MiB remote earliest read vs ~5 MiB functional read.
 
 **Not proven (gap):** exact MiB attribution among mmap index cache, page
-cache, and chunk buffers (sampler gap).
+cache, and chunk buffers (sampler gap); **and** broker-only RSS under a
+correct out-of-cgroup client.
 
-### One minimum same-2 GiB retest (proposal only — no lab yet)
+### Same-2 GiB fixture-correctness retest — **PASS**
 
-| Keep unchanged | Change only this |
+Root ACK’d the retest. Packet:
+[`docs/evidence/kafka-ts-dual512-fix-20261106/`](evidence/kafka-ts-dual512-fix-20261106/)
+(`CORE_PROOF.json`).
+
+| Keep unchanged | Fixture correction applied |
 |---|---|
-| Kafka cgroup **2048 MiB**, heap **`-Xmx1G -Xms1G`**, stock consumer fetch, default RLM pools (10), chunk 4 MiB, MPU default | Run `kafka-console-consumer` **outside** the broker cgroup (tool container ≤384 MiB) with **explicit client** `KAFKA_HEAP_OPTS=-Xmx256M` (or `docker exec -e KAFKA_HEAP_OPTS=-Xmx256M`) |
+| Kafka **2048 MiB**, heap **`-Xmx1G -Xms1G`**, stock fetch, default RLM pools, chunk 4 MiB, MPU default, Seaweed 1024 MiB, same 2×256×512 KiB | **All** admin/producer/consumer JVMs in **separate client 384 MiB** with explicit `KAFKA_HEAP_OPTS=-Xms32m -Xmx256m`; single `kafka.Kafka` in broker cgroup (healthcheck `TopicCommand` disabled); clients sequenced |
 
-Does **not** raise cgroup, does **not** silently tune RLM/fetch “until pass”.
-Still not production qualification. **No allocation until Root ACKs.**
+| Stage | Result |
+|---|---|
+| Produce + remote tier + local closed removal | PASS (10 remote `.log`, 8× ~33 MiB multi-part-eligible; locals active-only `@256`) |
+| Earliest digest A (client 384 / heap 256) | PASS |
+| Broker restart + digest B match A | PASS |
+| Broker / client / seaweed cgroup OOM | **none** (`oom=0`) |
+
+**Lifetime peaks (MiB):** kafka **1628.5** / 2048; seaweed **808.1** / 1024;
+client **195.8** / 384. Kafka peak from produce/tier; digest-phase kafka peaks
+~1260 MiB with client isolated. Elapsed **~11 min** (≪ 45 min). No knob
+tuning, no RAM raise, no source patch. Owned compose `down --volumes` done
+(Docker slot released for B2).
+
+**Digest provenance (mandatory):** first `hash-a.json` was corrupted by
+`python3 … | tee hash-a.json` (preserved as `hash-a.malformed.raw`). Observed
+digests were **not** reconstructed from that print. Fresh consumes retained
+stdout bytes; `hash-a.json`/`hash-b.json` written only via `pathlib`; git
+packet keeps `stdout-manifest-*.json` (sha256 of stdout) because full stdout
+is ~128 MiB × 4.
+
+**Claim update:** under a correct fixture, this host **can** complete the same
+256 MiB remote earliest read + restart re-hash inside 2 GiB broker / 384 MiB
+client without OOM. The confounded dual512 FAIL must **not** be reused as a
+broker memory ceiling.
 
 ### Coordination note (B2 / R2 / cloud)
 
-Larger Kafka memory on the **current host is UNQUALIFIED** after this OOM.
-Any cloud/B2/R2 “tiny proof” must **not** be treated as production memory
-qualification for Kafka TS on this host.
+Host Kafka memory qualification for **larger-than-this** workloads remains
+open. Cloud/B2/R2 proofs are still not production memory qualification.
+Confounded dual512 OOM must not be cited as Kafka-broker inability.
 
 ## Conclusion
 
-Stock Kafka **4.4.0** + Aiven **v1.2.0** still shows a working **tier upload +
-local removal** path under 2048 MiB, and a **passed** small (~5 MiB) remote
-read. The D2 **256 MiB** earliest-read failed by **cgroup OOM** with a
-same-cgroup 1 GiB client heap inheritance as the primary identified cause.
-B2 compatibility remains unqualified. Next gated step: Root accept/reject the
-**one** same-2 GiB client-isolation retest — **no lab until then**.
+Stock Kafka **4.4.0** + Aiven **v1.2.0**: tier upload + local removal PASS;
+~5 MiB remote read PASS; **fixture-correct** 2×256×512 KiB (256 MiB) earliest
+remote digest + restart re-hash **PASS** under broker 2048 MiB / client 384 MiB.
+Prior dual512 Exit 137 was a **test violation** (consumer inside broker
+cgroup inheriting 1 GiB heap), not a Kafka resource finding. B2 compatibility
+remains unqualified.
 
 ## Primary links (by claim)
 

@@ -1,0 +1,10 @@
+{
+  "path": "/tmp/kafka-ts-dual512-fix-20261106/evidence/consume-topicB-b.stdout",
+  "bytes": 134220690,
+  "sha256": "2d9df08fb5edb2f21780cd79665a930467eec59bbf0104999d51f83eecbcf2a6",
+  "line_count": 256,
+  "head_line_prefix": "Offset:0|YQHHNEBSEPDNSEIFGAMSUJXKOLTXSPLGHDIOYZJFNIDSPWHZMKVJAXDBZFCOXYKYRJOGYKD",
+  "tail_line_prefix": "Offset:255|NWBZSQNTLLKWDUOJQUABZORSJLTZBYUOBWYQBAZDLYWXVVYZSXIGSFIRKWGKQFAQZYEOA",
+  "head_offset_field": "Offset:0",
+  "tail_offset_field": "Offset:255"
+}

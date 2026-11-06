@@ -1,0 +1,48 @@
+{
+  "label": "A-pre-restart-fresh",
+  "utc": "2026-11-06T22:13:28.193260+00:00",
+  "provenance": "Reason: prior hash-a.json corrupted by tee mixing progress+JSON (preserved as hash-a.malformed.raw).\nNo consume-*-a.stdout bytes were retained from that run; stderr-only is insufficient to recompute observed digest.\nAction: fresh sequential console-consumer from client service (384MiB, KAFKA_HEAP_OPTS=-Xms32m -Xmx256m); raw stdout bytes retained; hash-a.json written only via pathlib (never tee to same path).\nObserved digests derived solely from this-run stdout with grammar ^Offset:(\\d+)\\|(.*)$.\n",
+  "consumer_fetch_config": "stock defaults; no bump",
+  "topics": {
+    "topicA": {
+      "topic": "topicA",
+      "stdout_path": "/tmp/kafka-ts-dual512-fix-20261106/evidence/consume-topicA-a-fresh.stdout",
+      "stdout_bytes": 134220690,
+      "stderr_bytes": 212,
+      "parsed_count": 256,
+      "unparsed_lines": 0,
+      "expected": 256,
+      "first_offset": 0,
+      "last_offset": 255,
+      "strict_order_contiguous": true,
+      "sha256_offset_value": "84647a6947925f3ec9977f7b36da31a962bfa096134281ada00f6c3d5a19370b",
+      "sha256_values_ordered": "59b61da98fd89667dd90afcf166d3b597e2c943c0947bcb37b44e1b89a23053a",
+      "sha256_stdout_bytes": "2d9df08fb5edb2f21780cd79665a930467eec59bbf0104999d51f83eecbcf2a6",
+      "consumer_rc": 0,
+      "grammar": "^Offset:(\\d+)\\|(.*)$",
+      "client_heap_opts_injected": "-Xms32m -Xmx256m",
+      "client_jvm_cmdline_contains_heap": true,
+      "consumer_cgroup": "client-service-384MiB"
+    },
+    "topicB": {
+      "topic": "topicB",
+      "stdout_path": "/tmp/kafka-ts-dual512-fix-20261106/evidence/consume-topicB-a-fresh.stdout",
+      "stdout_bytes": 134220690,
+      "stderr_bytes": 212,
+      "parsed_count": 256,
+      "unparsed_lines": 0,
+      "expected": 256,
+      "first_offset": 0,
+      "last_offset": 255,
+      "strict_order_contiguous": true,
+      "sha256_offset_value": "84647a6947925f3ec9977f7b36da31a962bfa096134281ada00f6c3d5a19370b",
+      "sha256_values_ordered": "59b61da98fd89667dd90afcf166d3b597e2c943c0947bcb37b44e1b89a23053a",
+      "sha256_stdout_bytes": "2d9df08fb5edb2f21780cd79665a930467eec59bbf0104999d51f83eecbcf2a6",
+      "consumer_rc": 0,
+      "grammar": "^Offset:(\\d+)\\|(.*)$",
+      "client_heap_opts_injected": "-Xms32m -Xmx256m",
+      "client_jvm_cmdline_contains_heap": true,
+      "consumer_cgroup": "client-service-384MiB"
+    }
+  }
+}

@@ -1,0 +1,5 @@
+unknown flag: --no-healthcheck
+
+Usage:  docker update [OPTIONS] CONTAINER [CONTAINER...]
+
+Run 'docker update --help' for more information

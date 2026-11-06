@@ -1,0 +1,15 @@
+2026-11-06T22:10:37Z count=1 kafka.Kafka=1
+2026-11-06T22:10:39Z count=1 kafka.Kafka=1
+2026-11-06T22:10:41Z count=1 kafka.Kafka=1
+2026-11-06T22:10:44Z count=1 kafka.Kafka=1
+2026-11-06T22:10:46Z count=1 kafka.Kafka=1
+2026-11-06T22:10:48Z count=1 kafka.Kafka=1
+2026-11-06T22:10:50Z count=1 kafka.Kafka=1
+2026-11-06T22:10:52Z count=1 kafka.Kafka=1
+2026-11-06T22:10:55Z count=1 kafka.Kafka=1
+2026-11-06T22:10:57Z count=1 kafka.Kafka=1
+2026-11-06T22:10:59Z count=1 kafka.Kafka=1
+2026-11-06T22:11:01Z count=1 kafka.Kafka=1
+2026-11-06T22:11:03Z count=1 kafka.Kafka=1
+2026-11-06T22:11:06Z count=1 kafka.Kafka=1
+2026-11-06T22:11:08Z count=1 kafka.Kafka=1

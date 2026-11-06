@@ -1,0 +1,5 @@
+Full console-consumer stdout retained only on the lab host under
+/tmp/kafka-ts-dual512-fix-20261106/evidence/consume-*.stdout during the run
+(~128MiB × 4). Git packet stores sha256 manifests (stdout-manifest-*.json) and
+hash-a/hash-b JSON derived by parsing those bytes with grammar ^Offset:(\d+)\|(.*)$.
+Do not reconstruct observed digests from progress prints or prior-run SHAs.
