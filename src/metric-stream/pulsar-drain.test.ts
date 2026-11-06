@@ -269,6 +269,59 @@ describe("createPulsarDrainAdminFromUrls + captureAccountErasureNativeFenceProgr
 });
 
 describe("captureAccountErasureNativeFenceProgress", () => {
+  it("fails closed on signed int64 ledger coordinates outside the int64 range", async () => {
+    await expect(
+      captureAccountErasureNativeFenceProgress(
+        createMockAdmin({
+          lastMessageId: {
+            ledgerId: "9223372036854775808",
+            entryId: "0",
+            partitionIndex: -1,
+            batchIndex: -1,
+          },
+        }),
+        stream,
+      ),
+    ).rejects.toThrow();
+    await expect(
+      captureAccountErasureNativeFenceProgress(
+        createMockAdmin({
+          lastMessageId: {
+            ledgerId: "-9223372036854775809",
+            entryId: "0",
+            partitionIndex: -1,
+            batchIndex: -1,
+          },
+        }),
+        stream,
+      ),
+    ).rejects.toThrow();
+  });
+
+  it("fails closed on empty epoch/topic, non-int32 partition, or unanchored topic URIs", async () => {
+    const admin = createMockAdmin({
+      lastMessageId: { ledgerId: "1", entryId: "0", partitionIndex: -1, batchIndex: -1 },
+    });
+    await expect(
+      captureAccountErasureNativeFenceProgress(admin, { ...stream, epoch: "" }),
+    ).rejects.toThrow(/epoch and topic/);
+    await expect(
+      captureAccountErasureNativeFenceProgress(admin, { ...stream, topic: "" }),
+    ).rejects.toThrow(/epoch and topic/);
+    await expect(
+      captureAccountErasureNativeFenceProgress(admin, { ...stream, partition: -2 }),
+    ).rejects.toThrow(/partition must be an int32/);
+    await expect(
+      captureAccountErasureNativeFenceProgress(admin, { ...stream, partition: 2147483648 }),
+    ).rejects.toThrow(/partition must be an int32/);
+    await expect(
+      captureAccountErasureNativeFenceProgress(admin, {
+        ...stream,
+        topic: "prefix persistent://public/default/sensor",
+      }),
+    ).rejects.toThrow(/concrete persistent Pulsar topic/);
+  });
+
   it("passes the same owned AbortSignal to every admin call", async () => {
     const seen: AbortSignal[] = [];
     await captureAccountErasureNativeFenceProgress(

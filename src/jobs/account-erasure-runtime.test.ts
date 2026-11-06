@@ -420,6 +420,26 @@ describe("createAccountErasureRuntime", () => {
     try {
       const ingest = await runtime.phaseRunner.runPhase("ingest_fence", execution());
       expect(mocks.captureNativeFenceProgress).toHaveBeenCalledTimes(3);
+      expect(mocks.resolveNativeDrainStreams).toHaveBeenCalledWith(expect.anything(), {
+        epoch: "transport-epoch",
+        routes: [
+          {
+            topic: "persistent://public/default/legacy",
+            subscriptions: ["metric-stream-clickhouse-sink", "metric-stream-r2-archive"],
+          },
+          {
+            topic: "persistent://public/default/live",
+            subscriptions: ["metric-stream-live-clickhouse-sink", "metric-stream-live-r2-archive"],
+          },
+          {
+            topic: "persistent://public/default/history",
+            subscriptions: [
+              "metric-stream-history-clickhouse-sink",
+              "metric-stream-history-r2-archive",
+            ],
+          },
+        ],
+      });
       await expect(
         runtime.phaseRunner.runPhase(
           "consumer_drain",
@@ -427,6 +447,46 @@ describe("createAccountErasureRuntime", () => {
         ),
       ).resolves.toEqual({ drained: true });
       expect(mocks.assertSubscriptionsDrained).toHaveBeenCalledTimes(3);
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("pages ClickHouse fence identifiers and fences each page's operation values", async () => {
+    const pageOneValue = "40000000-0000-4000-8000-000000001001";
+    const pageTwoValue = "40000000-0000-4000-8000-000000001002";
+    mocks.readIdentifierPage
+      .mockResolvedValueOnce({
+        entries: [{ key: "a".repeat(64), value: pageOneValue }],
+        nextCursor: "cursor-page-1",
+      })
+      .mockResolvedValueOnce({
+        entries: [{ key: "b".repeat(64), value: pageTwoValue }],
+        nextCursor: null,
+      });
+    const runtime = await createAccountErasureRuntime(ownerDatabase, mockClickHouse(), {
+      close: vi.fn(async () => undefined),
+      purge: vi.fn(async () => undefined),
+    });
+    try {
+      await runtime.phaseRunner.runPhase("ingest_fence", execution());
+      expect(mocks.readIdentifierPage).toHaveBeenNthCalledWith(1, "operation", undefined);
+      expect(mocks.readIdentifierPage).toHaveBeenNthCalledWith(2, "operation", "cursor-page-1");
+      expect(mocks.fenceClickHouse).toHaveBeenNthCalledWith(1, expect.anything(), request.userId, [
+        pageOneValue,
+      ]);
+      expect(mocks.fenceClickHouse).toHaveBeenNthCalledWith(2, expect.anything(), request.userId, [
+        pageTwoValue,
+      ]);
+      expect(mocks.withOwner).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({
+          resourceId: "metric-stream-source",
+          intentId: `account-erasure:${request.id}:fence`,
+        }),
+        expect.any(Function),
+      );
     } finally {
       await runtime.close();
     }
