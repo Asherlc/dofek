@@ -115,6 +115,29 @@ describe("existing ClickHouse row mapping", () => {
     expect(row.point).toBe('{"type":"Point","coordinates":[-122.4,37.8]}');
   });
 
+  it("does not normalize truncated or unanchored EWKT point strings", () => {
+    const truncated = "SRID=4326;POINT(-122.4 37.8";
+    const unanchoredPrefix = "prefix SRID=4326;POINT(-122.4 37.8)";
+    const unanchoredSuffix = "SRID=4326;POINT(-122.4 37.8) trailing";
+
+    expect(
+      mapMetricStreamEventToClickHouseRow({ ...heartRateEvent, point: truncated }, ingestedAt)
+        .point,
+    ).toBe(truncated);
+    expect(
+      mapMetricStreamEventToClickHouseRow(
+        { ...heartRateEvent, point: unanchoredPrefix },
+        ingestedAt,
+      ).point,
+    ).toBe(unanchoredPrefix);
+    expect(
+      mapMetricStreamEventToClickHouseRow(
+        { ...heartRateEvent, point: unanchoredSuffix },
+        ingestedAt,
+      ).point,
+    ).toBe(unanchoredSuffix);
+  });
+
   it("maps omitted optional fields into null ClickHouse values", () => {
     const row = mapMetricStreamEventToClickHouseRow(
       {

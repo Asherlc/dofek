@@ -183,6 +183,43 @@ describe("MetricStreamProcessingPublisher", () => {
     expect(recordPublishedBatch).not.toHaveBeenCalled();
   });
 
+  it("rejects publish rows owned by a different user", async () => {
+    const { publisher, recordPublishedBatch, publishRows } = makePublisher();
+
+    await expect(
+      publisher.publishRows(
+        [{ ...metricStreamRow, userId: "00000000-0000-4000-8000-000000000099" }],
+        { operationRevision },
+      ),
+    ).rejects.toThrow(/must belong to the processing operation owner/);
+    expect(recordPublishedBatch).not.toHaveBeenCalled();
+    expect(publishRows).not.toHaveBeenCalled();
+  });
+
+  it("accepts publish rows when owner user id differs only by case", async () => {
+    const { publisher, publishRows } = makePublisher();
+
+    await publisher.publishRows(
+      [{ ...metricStreamRow, userId: "00000000-0000-4000-8000-000000000001".toUpperCase() }],
+      { operationRevision },
+    );
+
+    expect(publishRows).toHaveBeenCalledOnce();
+  });
+
+  it("rejects replace scope owned by a different user", async () => {
+    const { publisher, replaceRows } = makePublisher();
+
+    await expect(
+      publisher.replaceRows(
+        { userId: "00000000-0000-4000-8000-000000000099" },
+        [metricStreamRow],
+        operationRevision,
+      ),
+    ).rejects.toThrow(/replace scope must belong to the processing operation owner/);
+    expect(replaceRows).not.toHaveBeenCalled();
+  });
+
   it("correlates scoped delete-and-replace batches with the same operation", async () => {
     const { publisher, recordPublishedBatch, replaceRows } = makePublisher();
 

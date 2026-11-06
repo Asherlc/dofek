@@ -467,6 +467,29 @@ describe("createAccountErasurePhaseRunner", () => {
     );
   });
 
+  it("re-prepares identifiers only for clickhouse_verification final stage", async () => {
+    const deps = dependencies();
+    const runner = createAccountErasurePhaseRunner(deps);
+
+    await expect(runner.runPhase("clickhouse_initial", execution())).resolves.toEqual({
+      verified: false,
+    });
+    expect(deps.prepareIdentifiers).not.toHaveBeenCalled();
+    expect(deps.eraseClickHouse).toHaveBeenCalledWith(
+      expect.objectContaining({ stage: "initial", requestId: request.id }),
+    );
+
+    await expect(runner.runPhase("clickhouse_verification", execution())).resolves.toEqual({
+      verified: true,
+    });
+    expect(deps.prepareIdentifiers).toHaveBeenCalledWith(
+      expect.objectContaining({ stage: "final", requestId: request.id }),
+    );
+    expect(deps.eraseClickHouse).toHaveBeenCalledWith(
+      expect.objectContaining({ stage: "final", requestId: request.id }),
+    );
+  });
+
   it.each([
     ["missing user id", { ...request, userId: null }],
     ["missing encrypted snapshot", { ...request, encryptedRemoteSnapshot: null }],

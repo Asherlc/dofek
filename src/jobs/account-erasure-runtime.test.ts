@@ -552,7 +552,7 @@ describe("createAccountErasureRuntime", () => {
   });
 
   it("fails closed when stock physical maintenance ack is missing from phase_progress", async () => {
-    mocks.loadPhaseProgress.mockResolvedValueOnce(null);
+    mocks.loadPhaseProgress.mockResolvedValue(null);
     const runtime = await createAccountErasureRuntime(ownerDatabase, mockClickHouse(), {
       close: vi.fn(async () => undefined),
       purge: vi.fn(async () => undefined),
@@ -601,17 +601,18 @@ describe("createAccountErasureRuntime", () => {
   });
 
   it("rejects stock physical maintenance ack that does not cover ingest_fence.completed_at", async () => {
-    // Fence completed_at is intentionally after verifiedCutoffAt so ordering fails closed.
+    // Credible public boundary: fence noon, ack cutoff 10:00 (before fence) must fail closed.
     const fenceCompletedAt = new Date("2026-08-26T12:00:00.000Z");
-    mocks.loadCheckpointCompletedAt.mockResolvedValue(fenceCompletedAt);
-    mocks.loadPhaseProgress.mockResolvedValue({
-      kind: "stock_physical_maintenance_ack",
+    const uncoveredAck = {
+      kind: "stock_physical_maintenance_ack" as const,
       runId: "maintenance-runtime-fixture",
       operator: "runtime-fixture@example.test",
       verifiedCutoffAt: "2026-08-26T10:00:00.000Z",
       verifiedAt: "2026-08-26T11:00:00.000Z",
       runbookRevision: "docs/pulsar-remaining-work.md#physical",
-    });
+    };
+    mocks.loadCheckpointCompletedAt.mockResolvedValue(fenceCompletedAt);
+    mocks.loadPhaseProgress.mockResolvedValue(uncoveredAck);
     const runtime = await createAccountErasureRuntime(ownerDatabase, mockClickHouse(), {
       close: vi.fn(async () => undefined),
       purge: vi.fn(async () => undefined),
@@ -623,6 +624,14 @@ describe("createAccountErasureRuntime", () => {
           execution(retentionLoadCheckpointDetails, retainedRequest),
         ),
       ).rejects.toThrow(/cover durable ingest_fence/);
+      // Prove the runtime actually observed fence noon + uncovered 10:00 cutoff (call order + values).
+      expect(mocks.loadCheckpointCompletedAt.mock.invocationCallOrder[0]).toBeLessThan(
+        mocks.loadPhaseProgress.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+      );
+      await expect(mocks.loadCheckpointCompletedAt.mock.results[0]?.value).resolves.toEqual(
+        fenceCompletedAt,
+      );
+      await expect(mocks.loadPhaseProgress.mock.results[0]?.value).resolves.toEqual(uncoveredAck);
       expect(mocks.verifyBackupRetention).not.toHaveBeenCalled();
       expect(mocks.verifyPeerDbStagingRetention).not.toHaveBeenCalled();
     } finally {
