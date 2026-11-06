@@ -1,11 +1,12 @@
 # Kafka tiered storage — stock assessment (authorized lab bounds)
 
-**Status:** assessment + completed **small functional** local lab
-(`kafka-ts-lab-20261106`, CORE_PROOF_PASS). Evidence:
-[`docs/evidence/kafka-ts-lab-20261106/`](evidence/kafka-ts-lab-20261106/).
-**No** adoption/pivot. **No** RAM comparison to the Pulsar 256 MiB fixture.
-Next dual-topic lab is **planned only** (no allocation) pending a size-limit
-decision below.
+**Status:** small functional lab **PASS**; D2 dual-512 KiB comparison **FAIL**
+(cgroup OOM on earliest remote consume). Evidence:
+[`kafka-ts-lab-20261106`](evidence/kafka-ts-lab-20261106/),
+[`kafka-ts-dual512-20261106`](evidence/kafka-ts-dual512-20261106/) (+ `RCA.json`).
+**No** adoption/pivot. **No** automatic cgroup raise. Larger Kafka memory on
+the current host is **UNQUALIFIED** (cloud tiny proofs would not production-qualify
+it). **No** further lab until Root reviews the one same-2 GiB retest proposal.
 
 **Intended architecture under study:** Kafka-protocol **tiered hot buffer**
 (local segments + remote object store for closed segments) **plus the existing
@@ -236,78 +237,107 @@ authoritative ([cgroup v2 memory files](https://docs.kernel.org/admin-guide/cgro
 **Not claimed:** adoption, host fit, B2 compat (still unqualified; zero B2
 this lab), equivalence to Pulsar dual-128×1 MiB fixture.
 
-## Next lab plan (no allocation) — dual overlapping tier
+## D2 decision executed; dual-512 KiB lab FAIL + RCA
 
-**Intent (Root-requested, not started):** apples-to-apples **workload shape**
-vs Pulsar `minio-mem2g-4` — **two topics**, **128 distinct ~1 MiB messages
-each**, overlapping tier/upload — under **unchanged** Kafka **2048 MiB**
-cgroup + **1 GiB** heap, Seaweed **1024 MiB**, tool **≤384 MiB**, wall
-**≤45 min**, owned data **≤2 GiB**, preflight headroom **≥6 GiB**. Local
-stand-in only; **zero B2**. Still investigation-only.
+Root selected **D2** (same total bytes, smaller records; no size-limit bump).
+Authorized lab ran and **failed**. Full sanitized packet:
+[`docs/evidence/kafka-ts-dual512-20261106/`](evidence/kafka-ts-dual512-20261106/)
+(`CORE_PROOF.json`, `RCA.json`).
 
-### Stock size defaults vs 1 MiB records (decision required)
+### What passed vs failed
 
-| Config | Default | Source |
-|---|---:|---|
-| Broker `message.max.bytes` | **1048588** (1 MiB + **12** bytes) | [Broker configs 4.4](https://kafka.apache.org/44/configuration/broker-configs/) |
-| Broker `socket.request.max.bytes` | **104857600** (100 MiB) | same |
-| Producer `max.request.size` | **1048576** (exactly 1 MiB) | [Producer configs 4.4](https://kafka.apache.org/44/configuration/producer-configs/) |
+| Stage | Result |
+|---|---|
+| 2×256×512 KiB produce (stock `max.request.size` / `message.max.bytes`) | PASS |
+| Remote tier + local closed-segment removal | PASS (10 remote `.log`; locals active-only `@256`) |
+| Earliest digest | **FAIL** |
+| Restart + re-digest | NOT REACHED |
+| Automatic cgroup/heap raise | **Not done** |
 
-A **1048576-byte value** plus Kafka record-batch framing (batch header +
-per-record length/timestamp/key/headers overhead, typically **tens of bytes**)
-exceeds producer `max.request.size` (1048576) and can exceed broker
-`message.max.bytes` (1048588). Therefore **true 1 MiB values are not safe
-under stock producer/broker defaults** without a **lab-scoped** bump of
-`max.request.size` and topic `max.message.bytes` / broker `message.max.bytes`.
-That bump must **not** be silent and must **not** change production Swarm
-limits.
+### First fatal (exact)
 
-**Decision before allocation (pick one):**
+```text
+docker exec …/kafka-console-consumer.sh --topic topicA --from-beginning --max-messages 256
+→ docker inspect: Status=exited Exit=137 OOM=true Finished=2026-11-06T21:57:40Z
+→ broker log: 21:57:37Z console-consumer group join; 21:57:40Z death
+→ no java.lang.OutOfMemoryError in broker log tail (cgroup kill, not logged Java heap OOM)
+```
 
-| Option | Approach | Trade-off |
+### JVM / cgroup facts (released scripts)
+
+| Item | Evidence |
+|---|---|
+| One broker JVM | Official image `launch` → `kafka-server-start.sh` → `kafka.Kafka` |
+| Broker heap | `KAFKA_HEAP_OPTS=-Xmx1G -Xms1G` ([kafka-server-start.sh](https://github.com/apache/kafka/blob/4.4.0/bin/kafka-server-start.sh)) |
+| Explicit `MaxDirectMemorySize` | **Not set** (stock) |
+| Default perf opts | G1 + CDS `kafka.jsa` ([kafka-run-class.sh](https://github.com/apache/kafka/blob/4.4.0/bin/kafka-run-class.sh) / image `launch`) |
+| Digest client | `docker exec` **inside broker cgroup** |
+| Client heap | Inherits container `KAFKA_HEAP_OPTS` because [console-consumer.sh](https://github.com/apache/kafka/blob/4.4.0/bin/kafka-console-consumer.sh) only sets `-Xmx512M` when unset → **second 1 GiB heap** in the same 2048 MiB cgroup |
+
+### Plugin / RLM (configured vs default)
+
+| Knob | This lab | Notes |
 |---|---|---|
-| **D1** | Lab-only raise producer `max.request.size` + topic `max.message.bytes` (and broker `message.max.bytes` if needed) just enough for 128×1 MiB values × 2 topics | Closest message-shape match to Pulsar; **explicit lab limit bump** (not prod) |
-| **D2** | Keep **all** stock size defaults; match **total user bytes** (2 × 128 MiB = 256 MiB) with a smaller `record-size` that fits defaults (e.g. 512 KiB × 256/topic) | No size-limit bump; weaker per-message shape match |
+| `MemoryChunkCache` size | **64 MiB** | `readAllBytes()` into heap ([source](https://github.com/Aiven-Open/tiered-storage-for-apache-kafka/blob/v1.2.0/core/src/main/java/io/aiven/kafka/tieredstorage/fetch/cache/MemoryChunkCache.java)) |
+| Prefetch | **4 MiB** (functional lab used 1 MiB) | Still ≪ 256 MiB remote set |
+| `chunk.size` | **4 MiB** | Same as functional lab |
+| MPU part size | default **25 MiB** | Closed segments ~33 MiB → multi-part **eligible**; not an MPU stress proof |
+| `remote.log.reader.threads` | default **10** | Unchanged; not forced to Pulsar `2` |
+| `remote.log.reader.max.pending.tasks` | default **100** | Unchanged |
+| `remote.log.index.file.cache.total.size.bytes` | default **1 GiB** disk cache under `remote-log-index-cache` (mmap on open) | [TS configs](https://kafka.apache.org/44/configuration/tiered-storage-configs/); [RemoteIndexCache](https://github.com/apache/kafka/blob/4.4.0/storage/src/main/java/org/apache/kafka/storage/internals/log/RemoteIndexCache.java) |
 
-No allocation until Root picks **D1** or **D2**.
+Consumer fetch left at stock (`fetch.max.bytes=50 MiB`,
+`max.partition.fetch.bytes=1 MiB`); 512 KiB values fit — **no fetch bump**.
 
-### Plugin / RLM parallelism defaults (not fake equal MPU)
+### ~5 MiB functional vs 256 MiB read (no handwave)
 
-Documented defaults — do **not** assume parity with Pulsar `jclouds.mpu.parts.size=5 MiB`
-or `managedLedgerOffloadMaxThreads=2`:
+| | Functional PASS | D2 FAIL |
+|---|---|---|
+| User bytes | ~5 MiB | 256 MiB |
+| Record size | 1 KiB | 512 KiB |
+| Remote data at digest | small | all closed data remote |
+| Digest method | same `docker exec` consumer pattern | same pattern |
+| Observed | lifetime peak **809 MiB** | **OOM at consume start** after tier PASS |
 
-| Setting | Default | Notes |
-|---|---:|---|
-| Aiven `chunk.size` | **required** (demo/README uses **4 MiB**) | [Aiven configs](https://github.com/Aiven-Open/tiered-storage-for-apache-kafka/blob/v1.2.0/docs/configs.rst) |
-| Aiven `storage.s3.multipart.upload.part.size` | **26214400** (25 MiB) | Segments **&lt; 25 MiB** typically upload as **single-part** PUTs — first lab’s ~1 MiB segments were single-part |
-| Aiven `upload.rate.limit.bytes.per.second` | **null** (unlimited) | Optional throttle |
-| Kafka `remote.log.manager.copier.thread.pool.size` | **10** | [TS configs 4.4](https://kafka.apache.org/44/configuration/tiered-storage-configs/) |
-| Kafka `remote.log.manager.expiration.thread.pool.size` | **10** | same |
-| Kafka `remote.log.reader.threads` | **10** | same |
-| Kafka `remote.log.manager.task.interval.ms` | **30000** | Lab may lower for speed only if Root allows |
+Failure is tied to **earliest remote consume** (log timeline), not to upload.
+Sampler **stalled** after ready — **no invented peak breakdown** for
+pagecache/mmap/chunk split during consume (`cgroup-sample-summary.json`).
 
-Overlapping dual-topic tier exercises **copier pool concurrency across
-partitions/topics**, not “equal MPU part count” vs Pulsar.
+### Root cause (scoped)
 
-### Manifest sketch (after D1/D2)
+**Primary:** colocating the digest client in the broker cgroup with inherited
+**1 GiB** `KAFKA_HEAP_OPTS` collides with the broker’s **1 GiB** heap inside
+**2048 MiB** during heavy remote read (cgroup OOM).
 
-- Same stock images/plugin digests as `kafka-ts-lab-20261106`.
-- Topics A/B, `remote.storage.enable=true`, small `segment.bytes` to force rolls,
-  `local.retention.*` so closed locals delete after upload.
-- Overlapping produce + wait for dual remote inventory + local removal; dual
-  digests; broker restart; re-digest; cgroup lifetime peaks/events; cleanup.
-- Stop on first OOM/fatal; no automatic limit increase; no B2.
+**Contributing:** 256 MiB remote earliest read vs ~5 MiB functional read
+(MemoryChunkCache / reader-pool / pagecache pressure scale with remote bytes).
+
+**Not proven (gap):** exact MiB attribution among mmap index cache, page
+cache, and chunk buffers (sampler gap).
+
+### One minimum same-2 GiB retest (proposal only — no lab yet)
+
+| Keep unchanged | Change only this |
+|---|---|
+| Kafka cgroup **2048 MiB**, heap **`-Xmx1G -Xms1G`**, stock consumer fetch, default RLM pools (10), chunk 4 MiB, MPU default | Run `kafka-console-consumer` **outside** the broker cgroup (tool container ≤384 MiB) with **explicit client** `KAFKA_HEAP_OPTS=-Xmx256M` (or `docker exec -e KAFKA_HEAP_OPTS=-Xmx256M`) |
+
+Does **not** raise cgroup, does **not** silently tune RLM/fetch “until pass”.
+Still not production qualification. **No allocation until Root ACKs.**
+
+### Coordination note (B2 / R2 / cloud)
+
+Larger Kafka memory on the **current host is UNQUALIFIED** after this OOM.
+Any cloud/B2/R2 “tiny proof” must **not** be treated as production memory
+qualification for Kafka TS on this host.
 
 ## Conclusion
 
-Stock Kafka **4.4.0** + Aiven **v1.2.0** remains a **credible, off-the-shelf**
-candidate for a **tiered Kafka-protocol buffer** while **keeping the existing
-R2 JSONL archive**. The small functional lab **passed** under 2048 MiB Kafka
-cgroup with lifetime peaks well below limit; that is **not** a Pulsar RAM
-comparison or production qualification. B2 compatibility remains
-**unqualified**. Erasure must still cover tiered object versions. Next gated
-step: Root chooses **D1** or **D2** for the dual-128 overlapping lab — **no
-allocation** until then.
+Stock Kafka **4.4.0** + Aiven **v1.2.0** still shows a working **tier upload +
+local removal** path under 2048 MiB, and a **passed** small (~5 MiB) remote
+read. The D2 **256 MiB** earliest-read failed by **cgroup OOM** with a
+same-cgroup 1 GiB client heap inheritance as the primary identified cause.
+B2 compatibility remains unqualified. Next gated step: Root accept/reject the
+**one** same-2 GiB client-isolation retest — **no lab until then**.
 
 ## Primary links (by claim)
 

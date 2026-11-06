@@ -1,0 +1,29 @@
+2026-11-06T21:57:05.589084+00:00 remote_logs=10 keys=30 localA=['00000000000000000256.log'] localB=['00000000000000000256.log']
+{
+  "tier_ready": true,
+  "final": {
+    "utc": "2026-11-06T21:57:05.589084+00:00",
+    "localA": [
+      "00000000000000000256.log"
+    ],
+    "localB": [
+      "00000000000000000256.log"
+    ],
+    "remote_log_count": 10,
+    "remote_total_keys": 30,
+    "status": "running false 0"
+  },
+  "samples": 1,
+  "last": {
+    "utc": "2026-11-06T21:57:05.589084+00:00",
+    "localA": [
+      "00000000000000000256.log"
+    ],
+    "localB": [
+      "00000000000000000256.log"
+    ],
+    "remote_log_count": 10,
+    "remote_total_keys": 30,
+    "status": "running false 0"
+  }
+}

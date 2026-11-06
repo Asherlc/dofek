@@ -1,0 +1,19 @@
+/var/lib/kafka/data/topicA-0/:
+total 20
+drwxr-xr-x  2 appuser appuser     4096 Nov  6 21:56 .
+drwxrwxr-x 56 appuser root        4096 Nov  6 21:57 ..
+-rw-r--r--  1 appuser appuser        0 Nov  6 21:56 00000000000000000256.log
+-rw-r--r--  1 appuser appuser       56 Nov  6 21:56 00000000000000000256.snapshot
+-rw-r--r--  1 appuser appuser 10485756 Nov  6 21:56 00000000000000000256.timeindex
+-rw-r--r--  1 appuser appuser        8 Nov  6 21:56 leader-epoch-checkpoint
+-rw-r--r--  1 appuser appuser       43 Nov  6 21:56 partition.metadata
+
+/var/lib/kafka/data/topicB-0/:
+total 20
+drwxr-xr-x  2 appuser appuser     4096 Nov  6 21:56 .
+drwxrwxr-x 56 appuser root        4096 Nov  6 21:57 ..
+-rw-r--r--  1 appuser appuser        0 Nov  6 21:56 00000000000000000256.log
+-rw-r--r--  1 appuser appuser       56 Nov  6 21:56 00000000000000000256.snapshot
+-rw-r--r--  1 appuser appuser 10485756 Nov  6 21:56 00000000000000000256.timeindex
+-rw-r--r--  1 appuser appuser        8 Nov  6 21:56 leader-epoch-checkpoint
+-rw-r--r--  1 appuser appuser       43 Nov  6 21:56 partition.metadata

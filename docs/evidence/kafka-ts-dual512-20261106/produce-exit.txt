@@ -1,0 +1,1 @@
+produce_exit A=0 B=0
