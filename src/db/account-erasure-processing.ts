@@ -262,6 +262,7 @@ export async function renewAccountErasureLease(
         WHERE id = ${requestId}::uuid
           AND lease_owner = ${parsedLeaseOwner}
           AND status <> 'completed'
+          AND lease_expires_at > ${now.toISOString()}
         RETURNING id`,
   );
   if (rows.length !== 1) {
@@ -338,6 +339,7 @@ export async function saveAccountErasurePhaseProgress(
         WHERE id = ${requestId}::uuid
           AND lease_owner = ${leaseOwner}
           AND status <> 'completed'
+          AND lease_expires_at > now()
         RETURNING id`,
   );
   if (rows.length !== 1) {
