@@ -292,7 +292,7 @@ function classifyChanges(
       ),
     docker_pulsar: hasMatchingFile(
       changedFiles,
-      /^(?:deploy\/pulsar\/|\.github\/workflows\/build-pulsar-qualification\.yml$)/,
+      /^(?:deploy\/pulsar\/|\.github\/workflows\/pulsar-source-build\.yml$)/,
     ),
     docker_server: serverChange,
     e2e_web:

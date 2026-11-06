@@ -96,7 +96,7 @@ describe("CI change detector", () => {
   it.each([
     "deploy/pulsar/Dockerfile",
     "deploy/pulsar/repeatable-offload-payload.patch",
-    ".github/workflows/build-pulsar-qualification.yml",
+    ".github/workflows/pulsar-source-build.yml",
   ])("selects the Pulsar qualification image for its build input %s", (changedFile) => {
     expect(detectChangedAreas(changedFile).docker_pulsar).toBe(true);
   });

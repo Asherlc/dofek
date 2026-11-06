@@ -110,10 +110,17 @@ jobs:
   build-pulsar-qualification:
     name: Build Pulsar Qualification
     needs: detect-changes
-    if: needs.detect-changes.outputs.docker_pulsar == 'true'
+    # PR cold builds use standalone pulsar-source-build.yml path filters (avoid duplicate).
+    # Main push + docker_pulsar: one cold build with GHCR publish via workflow_call.
     # Callee uses only automatic GITHUB_TOKEN for ghcr.io login — no repo secrets.
     # https://docs.github.com/en/actions/using-workflows/reusing-workflows#using-inputs-and-secrets-in-a-reusable-workflow
-    uses: ./.github/workflows/build-pulsar-qualification.yml
+    if: >-
+      github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+      needs.detect-changes.outputs.docker_pulsar == 'true'
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/pulsar-source-build.yml
 
   # ── Storybook previews (PR only, depend on builds not tests) ────────────
 
