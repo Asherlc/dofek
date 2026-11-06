@@ -175,24 +175,29 @@ describe("Pulsar metric intake", () => {
     expect(fixture.consumer.close).not.toHaveBeenCalled();
   });
 
-  it("never marks ready when the initial pending descriptor fails validation", async () => {
-    const fixture = input();
-    const position = metricStreamPosition(
-      { epoch: fixture.options.epoch, topic, partition: 2 },
-      message(payload).getMessageId(),
-    );
-    fixture.options.loadPendingGroup.mockResolvedValue({
-      ...describeAnalyticsDeliveryGroup([position], 500),
-      memberCount: 501,
-    });
-    const markReady = vi.spyOn(fixture.options.readiness, "markReady");
-    await expect(
-      runPulsarMetricStreamConsumer({ ...fixture.options, handleEvents: vi.fn() }),
-    ).rejects.toThrow(/pending.*configured bounds/i);
-    expect(markReady).not.toHaveBeenCalled();
-    expect(fixture.options.readiness.getStatus()).toBe("unavailable");
-    expect(fixture.consumer.batchReceive).not.toHaveBeenCalled();
-  });
+  it.each([0, 501])(
+    "never marks ready when the initial pending descriptor memberCount is %s",
+    async (memberCount) => {
+      const fixture = input();
+      const position = metricStreamPosition(
+        { epoch: fixture.options.epoch, topic, partition: 2 },
+        message(payload).getMessageId(),
+      );
+      fixture.options.loadPendingGroup.mockResolvedValue({
+        ...describeAnalyticsDeliveryGroup([position], 500),
+        memberCount,
+      });
+      const markReady = vi.spyOn(fixture.options.readiness, "markReady");
+      await expect(
+        runPulsarMetricStreamConsumer({ ...fixture.options, handleEvents: vi.fn() }),
+      ).rejects.toThrow(
+        "Pending Pulsar group exceeds the configured bounds; restore its original configuration before replay",
+      );
+      expect(markReady).not.toHaveBeenCalled();
+      expect(fixture.options.readiness.getStatus()).toBe("unavailable");
+      expect(fixture.consumer.batchReceive).not.toHaveBeenCalled();
+    },
+  );
 
   it("marks unavailable before closing after pending-state validation fails", async () => {
     const fixture = input();
@@ -392,6 +397,7 @@ describe("Pulsar metric intake", () => {
     const fixture = input();
     const failure = new Error("native close failed");
     fixture.consumer.close.mockRejectedValue(failure);
+    const markUnavailable = vi.spyOn(fixture.options.readiness, "markUnavailable");
     fixture.consumer.batchReceive.mockImplementation(() => {
       fixture.controller.abort();
       return new Promise<Message[]>(() => {});
@@ -408,6 +414,10 @@ describe("Pulsar metric intake", () => {
     );
     expect(await Promise.race([outcome, firstTurn])).toBe(failure);
     expect(fixture.consumer.acknowledge).not.toHaveBeenCalled();
+    expect(markUnavailable).toHaveBeenCalled();
+    expect(captureException).toHaveBeenCalledWith(failure, {
+      tags: { metricStreamConsumer: "pulsar", metricStreamFailure: "close" },
+    });
   });
 
   it("surfaces an ACK failure and stops before receiving another delivery", async () => {
