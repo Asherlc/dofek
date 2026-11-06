@@ -94,6 +94,18 @@ output grammar), and
 [CmdTopics.java](https://github.com/apache/pulsar/blob/v5.0.1/pulsar-client-tools/src/main/java/org/apache/pulsar/admin/cli/CmdTopics.java)
 (create-subscription / unload / offload / delete).
 
+**Stock B2 alternative (separate lane; not a production pivot).** Parallel
+validation on `dull-baboon` at
+[`39143faa8`](https://github.com/Asherlc/dofek/blob/39143faa8/docs/pulsar-qualification.md#november-6-stock-offloader-passes-backblaze-b2)
+records that stock Pulsar 5.0.1 with the **unmodified** `aws-s3` NAR passed a
+small real Backblaze B2 fixture (201 synthetic payloads; native BK deletion;
+broker-restart remote read). That result does **not** retract the Cloudflare R2
+evidence above, does **not** claim the R2 source patch is required for every S3
+compatible store, and does **not** authorize Infisical/prod credential changes
+or a storage migration. Limits stated there remain: small fixture only — not
+large MPU, Oxia topology, outage, erasure, or production cutover. Further
+storage-provider scoping awaits the user.
+
 The historical, pre-PR [native evacuation ARM job](https://github.com/Asherlc/dofek/actions/runs/41871869660/job/126721886208)
 passed at commit 10735959f in 135.687 seconds, within its 300-second bound and
 without retries. It verified surviving payloads, replacement ensembles,
