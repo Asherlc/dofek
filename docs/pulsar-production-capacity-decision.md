@@ -16,7 +16,10 @@ Prior paper math:
 |---|---|
 | Local envelope `minio-mem2g-4` | QUALIFIED (fixture only) |
 | Production hard-limit fit on current host | **FAIL** |
-| Reclaim ≥8 GiB **without** sacrificing current requirements | **NO** (see reclaim section) |
+| Configured budget shortfall (Σ caps vs MemTotal) after Kafka+Pulsar | **≈5.5 GiB** (paper admission) |
+| Proven “physical simultaneous need” for whole host | **Not fully reconstructed** (lifetime peaks ≠ same-instant sum) |
+| CH 13 GiB rightsize from “~2 GiB RSS” | **Rejected** — lifetime cgroup peak ≈ limit; see peaks section |
+| Archive 1024→300 without proof | **Unsafe** — history peak ≈471 MiB, live ≈325 MiB |
 | Quitting Kafka/Redpanda | Already subtracted in final budget (**do not double-count**) |
 | ClickHouse **13 GiB** / Postgres caps | **Unchanged** (not reduced here) |
 | Runtime / `deploy/stack.yml` apply | **Blocked** pending user choice below |
@@ -306,7 +309,7 @@ RAM.
 | 1 | Stop non-stack `dofek-full-activity-resync-20261103-independent` | Operator resync leftover (3 d) | **256** (its MemLimit) | ~75 | Confirm job complete/abandoned; `docker stop` only — no volume prune. Rollback: recreate container if still needed |
 | 2 | Stop non-stack `dofek-clinical-restore-verify` + `quirky_spence` | Leftover verify / idle databasus | **0** guaranteed (unlimited) | ~29 + ~87 | RSS-only; stop after purpose check. Rollback: recreate |
 | 3 | Set `peerdb-minio-lifecycle` desired **0** if confirmed unused | Lifecycle helper; desired 1 but **0/1** | **128** | ~0 | Confirm no required lifecycle job; stack/oracle change. Rollback: replicas 1 |
-| 4 | Rightsize three R2 archives **1024→300** MiB **only with peak proof** | Durable archive (Connect) | **2172** | using ~52/87/131 | RSS≪limit but gzip/buffer spikes possible ([runbook](metric-stream-redpanda-r2-runbook.md)). Need historical cgroup peaks before durable cut. Rollback: restore 1024 |
+| 4 | Rightsize three R2 archives **1024→768** (then maybe 640) **after** bounded qual | Durable archive (Connect) | **768** (or 1152 at 640) | peaks ≈93/325/471 | **300 disproven**. Qual proposal in peaks section. Rollback: restore 1024 |
 | 5 | Cap unlimited `redis`/`traefik`/`collector`/`ota` | Ingress/cache/telemetry | **0** to capped sum | ~577 combined | Prevents steal under Pulsar; does not close deficit |
 | 6 | `web` 2→1 replica | HA edge | **500** | ~270×2 | Loses redundant web. Rollback: replicas 2 |
 | 7 | Trim PeerDB flow-worker / suite | CDC | up to **4304** suite | flow-worker ~134 / 2048 | **Not qualified**; sacrifices current CDC requirement ([cdc assessment](pulsar-cdc-assessment.md)) |
@@ -320,31 +323,128 @@ guaranteed if archive rightsize is approved with peaks — **still ≪ 8 GiB**
 **Even PeerDB suite + archive rightsize + leftovers** ≈ **6 860 MiB** — under
 8 GiB, and PeerDB retirement is not a current-requirement-preserving option.
 
-### Verdict on “free ≥8 GiB instead of resize”
+### Configured budget vs physical simultaneous need
 
-**No** — not as **guaranteed** capacity that preserves current requirements
-(PeerDB CDC, CH 13 GiB, PG caps, archive durability, web HA as deployed).
+| Metric | Meaning | This host |
+|---|---|---|
+| **Configured budget** | Σ (limit × desired replicas) for admission | Current 27 348 MiB; final Kafka+Pulsar **29 600 MiB** vs MemTotal **23 975 MiB** → **configured shortfall ≈5 625 MiB** |
+| **Instant RSS / `docker stats`** | One sample | Misleading alone (CH earlier sample ~2 GiB; cgroup **current** later ≈9.6 GiB) |
+| **Lifetime `memory.peak`** | High-water since cgroup create | Strong per-service evidence; **not** proof peaks were simultaneous |
+| **Sum of lifetime peaks** | Upper bound if worst cases coincided | Useful stress ceiling; overstates typical concurrent use |
 
-- Kafka quit: necessary for Pulsar path, **already in the 29 600 final**, does
-  not supply an extra 8 GiB.
-- Safe leftover + lifecycle reclaim: **≪ 1 GiB** guaranteed.
-- Archive rightsize: at most ~2.1 GiB with evidence — still insufficient alone.
-- Closing the gap on this host requires **resize/second node**, or an explicit
-  written sacrifice (PeerDB and/or CH/PG and/or accepted overcommit).
+Kafka retirement still **must not be double-counted**. Prefer reclaim before
+resize, but reclaim claims need peak proof — missing coverage ≠ proven fit.
+
+### Stock peak evidence (read-only 2026-11-06T21:32Z)
+
+Kernel cgroup v2
+([memory interface files](https://docs.kernel.org/admin-guide/cgroup-v2.html#memory-interface-files)).
+Axiom MCP **not authenticated** this session; Netdata desired **0** — no host
+time-series from those paths. Retained evidence used: live cgroup
+`memory.peak`/`memory.events`, ClickHouse `system.query_log` /
+`system.part_log` / server settings, Redis `INFO memory`.
+
+| Service | Limit MiB | `memory.current` MiB | `memory.peak` MiB | `memory.events max` | Note |
+|---|---:|---:|---:|---:|---|
+| `clickhouse` | 13 312 | ≈9 585 | **≈13 312** (≈limit) | **29 370** | Envelope **binding**; not idle-sized |
+| `db` (Postgres) | 2 048 | ≈1 896 | ≈2 051 | **3 119 064** | Peak at/over limit |
+| `redpanda` | 1 500 | ≈1 002 | ≈1 059 | 0 | |
+| `peerdb-flow-worker` | 2 048 | ≈212 | ≈1 761 | 0 | Little unused headroom |
+| `metric-stream-r2-archive` | 1 024 | ≈56 | ≈93 | 0 | Go Connect, not JVM |
+| `metric-stream-live-r2-archive` | 1 024 | ≈185 | ≈325 | 0 | |
+| `metric-stream-history-r2-archive` | 1 024 | ≈135 | ≈471 | 0 | Highest archive peak |
+| CH sinks (legacy/live) | 300 | ~117/125 | ≈143/177 | 0 | |
+| `redis` (unlimited) | — | ≈393 | **≈2 648** | 0 | `used_memory_peak_human` 2.79 G; **maxmemory 0** |
+
+### ClickHouse — why “~2 GiB observed” does not authorize a cut
+
+- Mounted profile
+  [`memory-limits-13g.xml`](../deploy/clickhouse/config.d/memory-limits-13g.xml)
+  sets `<max_server_memory_usage>13958643712</max_server_memory_usage>` matching
+  the 13 GiB Swarm limit ([deploy README](../deploy/README.md)).
+- Live server settings: `max_server_memory_usage_to_ram_ratio=0.9`,
+  `memory_worker_use_cgroup=1`, effective tracked cap ≈11.7 GiB when cgroup is
+  13 GiB. ClickHouse documents server memory settings under
+  [Server Settings](https://clickhouse.com/docs/operations/server-configuration-parameters/settings).
+- Absolute cache knobs remain large (e.g. `mark_cache_size` /
+  `primary_index_cache_size` / `index_mark_cache_size` each **5 GiB**).
+  **Lowering the container limit alone** without shrinking those (and the XML
+  cap) can still drive cgroup OOM under cache+query+merge pressure.
+- 14 d `system.query_log`: max `memory_usage` **≈9 029 MiB** (dbt Inserts
+  2026-11-02/03). `system.part_log` merge peaks **≈2 562 MiB**.
+- `QueryMemoryLimitExceeded` event count **3** (process lifetime counter).
+- Therefore: CH is a **proven near-full-envelope** service for configured
+  budget; reclaim-via-CH is **not** evidence-backed without a dedicated
+  workload qualification (and would be a requirements change).
+
+### Archives — evidence-backed rightsize range (not 300)
+
+Connect is a single Go process (`redpanda-connect run`); buffers from stock
+config: `partition_buffer_bytes: 16MB`, `max_yield_batch_bytes: 4MB`,
+`fetch_max_partition_bytes: 8MiB`, `max_in_flight: 8`, plus gzip compress
+([Connect runbook](metric-stream-redpanda-r2-runbook.md)).
+
+| Candidate durable limit (each of 3) | Headroom vs history peak 471 MiB | Configured reclaim (3×) | Status |
+|---|---:|---:|---|
+| **300 MiB** | **negative** (below live 325 and history 471) | 2 172 | **Unsafe — disproven by peaks** |
+| 512 MiB | ≈18 MiB | 1 536 | Insufficient headroom without soak |
+| **640 MiB** | ≈146 MiB | **1 152** | Candidate **only after** bounded qual |
+| **768 MiB** | ≈274 MiB | **768** | Prefer first candidate |
+| 896 MiB | ≈402 MiB | 384 | Conservative small reclaim |
+
+Smallest evidence-backed **discussion** range: **640–768 MiB** per archive,
+not 300. Still **≪ 5.5 GiB** configured shortfall even at 640 (−1 152 MiB).
+
+### Bounded qualification proposal (approval required; not run)
+
+No custom monitor, no unbounded synthetic load, no production cap mutation
+until this passes and is reviewed:
+
+1. **Target under test:** set disposable/lab-or-canary archive limit to
+   **768 MiB** first (or 640 if 768 passes and more reclaim is required).
+2. **Workload:** production-shaped only — keep normal live+legacy+history
+   Connect consumers for a fixed window (propose **24 h** wall, or until each
+   route archives ≥ N objects with lag remaining 0). No extra replay storm.
+3. **Pass criteria:** cgroup `memory.peak` &lt; limit − **64 MiB** guardband;
+   `memory.events` `max`/`oom`/`oom_kill` delta **0**; archive lag stays 0;
+   no Connect OOM restart.
+4. **Fail →** restore 1024 MiB; do not retry lower without new evidence.
+5. **CH / PG:** out of scope for this qual; do not lower.
+
+Optional follow-up (separate approval): authenticate Axiom and pull any
+existing container memory series; Netdata remains desired 0.
+
+### Reclaim vs configured shortfall (updated)
+
+| Lever | Configured MiB if approved | Blocks Pulsar paper fit alone? |
+|---|---:|---|
+| Kafka path retire | 2 100 (**already in final**) | No — already applied in 29 600 |
+| Leftovers + lifecycle | ≤384 | No |
+| Archives →768 / →640 after qual | 768 / 1 152 | No — shortfall remains ≈4.9 / ≈4.5 GiB |
+| Cap Redis to bound risk | 0 to Σcaps (adds a cap) | Needed for uncapped peak ~2.6 GiB honesty |
+| CH / PG cut | large | **Not evidence-backed**; requirements change |
+
+**Missing peak coverage** (Axiom/Netdata continuous host series; true
+same-instant stack sum) means we **cannot** claim the physical host “already
+fits” under Pulsar. **Proven cannot-rightsize-CH** from cgroup peak≈limit.
+**Proven cannot-archive-at-300**. Configured shortfall after best archive
+reclaim still needs another lever (resize/node, named sacrifice, or accepted
+overcommit).
 
 ## Exact remaining user decision
 
 Choose **one** before any stop/cap/Pulsar enable:
 
-1. **Accept reclaim limits** — apply only reviewed rank-1..3 (and 4 if peaks
-   prove safe) **and** still **resize or add a node** for the remaining
-   ~3–6 GiB+OS gap before Pulsar, or
-2. **Defer Pulsar** on this host (keep Kafka), or
-3. **Explicitly authorize** sacrificing a named current requirement (PeerDB
-   and/or CH/PG) or accepting hard-limit overcommit — this lane will not invent
-   that posture, or
-4. Proceed to **STOP-BEFORE-START Kafka retirement planning** as a **cutover
-   design** only (still blocked on capacity fit for the Pulsar add).
+1. **Approve bounded archive qualification** at **768 MiB** (then optionally
+   640) per proposal above — reclaim-first path, still expect remaining
+   configured shortfall afterward, or
+2. **Approve leftover stops only** (resync / idle non-stack / lifecycle→0) —
+   tiny configured reclaim, or
+3. **Defer Pulsar** / keep Kafka, or
+4. **Authorize a named** CH/PG/PeerDB sacrifice or written overcommit, or
+   resize/node **after** reclaim quals you approve, or
+5. **STOP-BEFORE-START Kafka cutover design only** (capacity still blocked for
+   Pulsar add).
 
 Until that choice: **no runtime hunk changes** from this lane.
 
@@ -355,6 +455,7 @@ Until that choice: **no runtime hunk changes** from this lane.
 | This document | Production capacity decision + reclaim plan + hunk manifesto |
 | Commit `4b381ad5e938` | Sanitized mem2g-4 lab evidence + qual section |
 | `docs/evidence/minio-mem2g-4-20261106/CORE_PROOF.json` | Lab peaks/events |
-| SSH census 2026-11-06T21:21Z / 21:22Z / 21:27–21:28Z | MemTotal, Swarm limits/replicas, uncapped RSS, RP lag, non-stack |
+| SSH census 2026-11-06T21:21Z / 21:22Z / 21:27–21:28Z / 21:32Z | MemTotal, Swarm limits, RP lag, cgroup peaks/events, CH logs |
 | `deploy/stack.oracle.yml` | Admin UIs desired-zero (excluded; no further reclaim) |
 | GitHub `deploy-web.yml` | `disabled_manually` hold |
+| Axiom / Netdata | **Gap this session** (Axiom needsAuth; Netdata replicas 0) |
