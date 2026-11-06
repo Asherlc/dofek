@@ -23,10 +23,10 @@ import { analyticsPosition } from "./test-helpers.ts";
 describe("native delivery work store", () => {
   let context: TestContext;
   const stream = {
-    transport: "pulsar",
+    transport: "kafka",
     epoch: "fixture-epoch",
-    topic: "persistent://public/default/fixture",
-    partition: -1,
+    topic: "metric-stream-live-v2",
+    partition: 0,
   } as const;
 
   beforeAll(async () => {

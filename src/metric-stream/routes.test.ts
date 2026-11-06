@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  assertWritableMetricStreamTopic,
   metricStreamRouteForSyncJob,
   metricStreamTopicForRoute,
   validateMetricStreamTopicConfiguration,
@@ -36,5 +37,12 @@ describe("metric stream routes", () => {
     ["METRIC_STREAM_HISTORY_TOPIC", { METRIC_STREAM_LIVE_TOPIC: "metric-stream-live" }],
   ])("rejects a missing %s during startup configuration validation", (key, env) => {
     expect(() => validateMetricStreamTopicConfiguration(env)).toThrow(`${key} is required`);
+  });
+
+  it("refuses retired v1 topic names for producers", () => {
+    for (const topic of ["metric-stream-v1", "metric-stream-live-v1", "metric-stream-history-v1"]) {
+      expect(() => assertWritableMetricStreamTopic(topic)).toThrow(/retired topic generation/);
+    }
+    expect(() => assertWritableMetricStreamTopic("metric-stream-live-v2")).not.toThrow();
   });
 });

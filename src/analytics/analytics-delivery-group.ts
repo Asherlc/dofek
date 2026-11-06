@@ -72,16 +72,7 @@ export function describeAnalyticsDeliveryGroup(
     if (nativeIdentities.has(nativeIdentity))
       throw new Error("Analytics delivery group contains a duplicate native message identity");
     nativeIdentities.add(nativeIdentity);
-    identities.push(
-      position.transport === "kafka"
-        ? [position.offset]
-        : [
-            position.delivery.major,
-            position.delivery.minor,
-            position.delivery.batch,
-            position.serializedMessageId,
-          ],
-    );
+    identities.push([position.offset]);
     previous = position;
   }
   return {

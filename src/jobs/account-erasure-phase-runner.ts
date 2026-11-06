@@ -1,12 +1,9 @@
 import { z } from "zod";
 import type { ArchiveErasureResult } from "../account-erasure/archive-erasure.ts";
+import type { AccountErasureRouteHighWatermark } from "../account-erasure/kafka-drain.ts";
 import type { PeerDbStagingRetentionResult } from "../account-erasure/peerdb-staging-retention.ts";
 import type { PeerDbStagingBoundary } from "../account-erasure/peerdb-staging-writer-barrier.ts";
 import type { AccountErasureProcessorProgress } from "../account-erasure/processor-erasure.ts";
-import {
-  requireStockPhysicalMaintenanceAck,
-  summarizePhysicalMaintenanceAcknowledged,
-} from "../account-erasure/pulsar-physical-maintenance-ack.ts";
 import type {
   AccountErasureProviderTokenPersistence,
   ProviderCredentialDisposition,
@@ -14,9 +11,9 @@ import type {
 } from "../account-erasure/remote-revocation.ts";
 import type { AccountErasureRemoteSnapshot } from "../account-erasure/remote-snapshot.ts";
 import {
-  type AccountErasureNativeIngestCheckpoint,
-  accountErasureNativeIngestCheckpointSchema,
-} from "../metric-stream/pulsar-drain.ts";
+  requireStockPhysicalMaintenanceAck,
+  summarizePhysicalMaintenanceAcknowledged,
+} from "../account-erasure/stock-physical-maintenance-ack.ts";
 import type { AccountErasurePhase } from "./process-account-erasure-job.ts";
 import type {
   AccountErasurePhaseExecution,
@@ -55,9 +52,16 @@ interface IdentifierPreparation extends IdentifierRequest {
 export interface AccountErasurePhaseRunnerDependencies {
   prepareIdentifiers(input: IdentifierPreparation): Promise<void>;
   assertIdentifiersReady(input: IdentifierPreparation): Promise<void>;
-  assertNativeConsumersDrained(checkpoint: AccountErasureNativeIngestCheckpoint): Promise<void>;
+  assertConsumersDrained(
+    highWatermarks: readonly AccountErasureRouteHighWatermark[],
+  ): Promise<void>;
   assertPeerDbDrained(input: IdentifierRequest, walLsn: string): Promise<void>;
-  captureNativeIngestCheckpoint(): Promise<AccountErasureNativeIngestCheckpoint>;
+  assertQuarantineExpired(
+    highWatermarks: readonly AccountErasureRouteHighWatermark[],
+  ): Promise<void>;
+  assertReplayExpired(highWatermarks: readonly AccountErasureRouteHighWatermark[]): Promise<void>;
+  captureHighWatermarks(): Promise<AccountErasureRouteHighWatermark[]>;
+  captureQuarantineHighWatermarks(): Promise<AccountErasureRouteHighWatermark[]>;
   capturePeerDbStagingBoundary(input: {
     loadProgress(): Promise<Record<string, unknown> | null>;
     requestId: string;
@@ -118,12 +122,25 @@ function requireIdentifyingRequest(
   return { encryptedSnapshot: encryptedRemoteSnapshot, userId };
 }
 
-async function loadNativeIngestCheckpoint(
+const highWatermarksCheckpointSchema = z.object({
+  highWatermarks: z.array(
+    z.object({
+      topic: z.string().min(1),
+      low: z.string().regex(/^\d+$/),
+      offset: z.string().regex(/^\d+$/),
+      partition: z.number().int().nonnegative(),
+    }),
+  ),
+});
+const quarantineHighWatermarksCheckpointSchema = z.object({
+  quarantineHighWatermarks: highWatermarksCheckpointSchema.shape.highWatermarks,
+});
+
+async function loadHighWatermarks(
   execution: AccountErasurePhaseExecution,
-): Promise<AccountErasureNativeIngestCheckpoint> {
-  return accountErasureNativeIngestCheckpointSchema.parse(
-    await execution.loadCheckpointDetails("ingest_fence"),
-  );
+): Promise<AccountErasureRouteHighWatermark[]> {
+  return highWatermarksCheckpointSchema.parse(await execution.loadCheckpointDetails("ingest_fence"))
+    .highWatermarks;
 }
 
 function archiveDetails(result: ArchiveErasureResult) {
@@ -191,7 +208,8 @@ export function createAccountErasurePhaseRunner(
       switch (phase) {
         case "ingest_fence": {
           await dependencies.fenceIngest(identityRequest(phase, execution));
-          return dependencies.captureNativeIngestCheckpoint();
+          const highWatermarks = await dependencies.captureHighWatermarks();
+          return { highWatermarks };
         }
         case "stripe_erasure": {
           const snapshot = await loadSnapshot(phase, execution);
@@ -217,15 +235,17 @@ export function createAccountErasurePhaseRunner(
           return { verified: phase === "work_verification" };
         }
         case "consumer_drain": {
-          const ingestCheckpoint = await loadNativeIngestCheckpoint(execution);
-          await dependencies.assertNativeConsumersDrained(ingestCheckpoint);
+          const highWatermarks = await loadHighWatermarks(execution);
+          await dependencies.assertConsumersDrained(highWatermarks);
+          const quarantineHighWatermarks = await dependencies.captureQuarantineHighWatermarks();
           await dependencies.prepareIdentifiers(identifierPreparation(phase, execution, "initial"));
-          return { drained: true };
+          return { drained: true, quarantineHighWatermarks };
         }
         case "consumer_drain_verification": {
-          const ingestCheckpoint = await loadNativeIngestCheckpoint(execution);
-          await dependencies.assertNativeConsumersDrained(ingestCheckpoint);
-          return { drained: true, verified: true };
+          const highWatermarks = await loadHighWatermarks(execution);
+          await dependencies.assertConsumersDrained(highWatermarks);
+          await dependencies.assertReplayExpired(highWatermarks);
+          return { drained: true, replayExpired: true, verified: true };
         }
         case "remote_revocation":
         case "remote_revocation_verification": {
@@ -361,6 +381,10 @@ export function createAccountErasurePhaseRunner(
               },
             ),
           );
+          const quarantineCheckpoint = quarantineHighWatermarksCheckpointSchema.parse(
+            await execution.loadCheckpointDetails("consumer_drain"),
+          );
+          await dependencies.assertQuarantineExpired(quarantineCheckpoint.quarantineHighWatermarks);
           const peerDbCheckpoint = peerDbDrainCheckpointSchema.parse(
             await execution.loadCheckpointDetails("peerdb_drain_verification"),
           );
@@ -375,6 +399,7 @@ export function createAccountErasurePhaseRunner(
             peerDbStagingRetention,
             physicalMaintenanceAcknowledged,
             processorRetention,
+            quarantineRetentionVerified: true,
             verified: true,
           };
         }

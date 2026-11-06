@@ -1,10 +1,11 @@
 import { z } from "zod";
 
 /**
- * Operator acknowledgement that stock Pulsar/BookKeeper maintenance (Q15 lifecycle
- * + complete inventories in the runbook) covers this request. Recorded under existing
+ * Operator acknowledgement that stock transport physical maintenance (runbook
+ * inventories / retention cutoffs) covers this request. Recorded under existing
  * `phase_progress.retention_verification` via existing admin/progress paths — not a
- * certificate framework and not automated host proof.
+ * certificate framework and not automated host proof. Kafka tiered-storage physical
+ * cleanup remains slice-2 qualification; keep this fail-closed contract until then.
  */
 export const stockPhysicalMaintenanceAckSchema = z.strictObject({
   kind: z.literal("stock_physical_maintenance_ack"),

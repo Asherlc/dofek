@@ -114,7 +114,7 @@ describe("R2 archive erasure against SeaweedFS S3", () => {
   });
 
   it("erases native-key payloads and controls while preserving exact foreign bytes and metadata", async () => {
-    const key = `metric-stream/v1/date=2026-11-05/hour=03/pulsar/epoch=e1/topic=${encodeURIComponent("persistent://public/default/sensor-partition-2")}/first=ff/last=00.jsonl.gz`;
+    const key = `metric-stream/v1/date=2026-11-05/hour=03/metric-stream-live-v2-0-0-0.jsonl.gz`;
     const operationId = "50000000-0000-4000-8000-000000001994";
     const owned = [
       metricEvent(deletingUserId, "30000000-0000-4000-8000-000000001994"),

@@ -1,113 +1,53 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
-  assertConcretePersistentPulsarTopic,
-  METRIC_STREAM_CONSUMER_ROUTES,
+  assertKafkaMetricStreamTopicName,
   resolveMetricStreamConsumerRoutes,
 } from "./consumer-routes.ts";
-import { type MetricStreamRoute, metricStreamTopicForRoute } from "./routes.ts";
 
-describe("METRIC_STREAM_CONSUMER_ROUTES", () => {
-  it("pins the three consumer routes to existing topic keys and renderer subscription names", () => {
-    expect(METRIC_STREAM_CONSUMER_ROUTES).toEqual([
-      {
-        id: "legacy",
-        topicKey: "METRIC_STREAM_LEGACY_TOPIC",
-        sinkSubscription: "metric-stream-clickhouse-sink",
-        archiveSubscription: "metric-stream-r2-archive",
-      },
-      {
-        id: "live",
-        topicKey: "METRIC_STREAM_LIVE_TOPIC",
-        sinkSubscription: "metric-stream-live-clickhouse-sink",
-        archiveSubscription: "metric-stream-live-r2-archive",
-      },
-      {
-        id: "history",
-        topicKey: "METRIC_STREAM_HISTORY_TOPIC",
-        sinkSubscription: "metric-stream-history-clickhouse-sink",
-        archiveSubscription: "metric-stream-history-r2-archive",
-      },
-    ]);
-  });
+const originalEnv = { ...process.env };
+
+afterEach(() => {
+  process.env = { ...originalEnv };
 });
 
-describe("assertConcretePersistentPulsarTopic", () => {
-  it("accepts a concrete persistent URI", () => {
-    expect(
-      assertConcretePersistentPulsarTopic("persistent://public/default/metric-stream-v1"),
-    ).toBe("persistent://public/default/metric-stream-v1");
+describe("assertKafkaMetricStreamTopicName", () => {
+  it("accepts nonempty Kafka topic names", () => {
+    expect(assertKafkaMetricStreamTopicName("metric-stream-live-v2")).toBe("metric-stream-live-v2");
   });
 
-  it("fails closed on non-persistent or malformed topics", () => {
-    expect(() => assertConcretePersistentPulsarTopic("metric-stream-v1")).toThrow(
-      /concrete persistent Pulsar topic/i,
+  it("rejects blank, whitespace, and Pulsar persistent URIs", () => {
+    expect(() => assertKafkaMetricStreamTopicName("")).toThrow(/nonempty Kafka topic/);
+    expect(() => assertKafkaMetricStreamTopicName("metric stream")).toThrow(/without whitespace/);
+    expect(() => assertKafkaMetricStreamTopicName("persistent://public/default/sensor")).toThrow(
+      /not a Pulsar persistent URI/,
     );
-    expect(() =>
-      assertConcretePersistentPulsarTopic("persistent://public/metric-stream-v1"),
-    ).toThrow(/concrete persistent Pulsar topic/i);
   });
 });
 
 describe("resolveMetricStreamConsumerRoutes", () => {
-  const env = {
-    METRIC_STREAM_LEGACY_TOPIC: "persistent://public/default/metric-stream-v1",
-    METRIC_STREAM_LIVE_TOPIC: "persistent://public/default/metric-stream-live-v1",
-    METRIC_STREAM_HISTORY_TOPIC: "persistent://public/default/metric-stream-history-v1",
-  };
+  it("resolves legacy, live, and history routes from env", () => {
+    const routes = resolveMetricStreamConsumerRoutes({
+      METRIC_STREAM_LEGACY_TOPIC: "metric-stream-v1",
+      METRIC_STREAM_LIVE_TOPIC: "metric-stream-live-v2",
+      METRIC_STREAM_HISTORY_TOPIC: "metric-stream-history-v2",
+    });
 
-  it("resolves topics and exact sink/archive subscriptions for all three routes", () => {
-    expect(resolveMetricStreamConsumerRoutes(env)).toEqual([
-      {
-        id: "legacy",
-        topicKey: "METRIC_STREAM_LEGACY_TOPIC",
-        topic: env.METRIC_STREAM_LEGACY_TOPIC,
-        sinkSubscription: "metric-stream-clickhouse-sink",
-        archiveSubscription: "metric-stream-r2-archive",
-        subscriptions: ["metric-stream-clickhouse-sink", "metric-stream-r2-archive"],
-      },
-      {
-        id: "live",
-        topicKey: "METRIC_STREAM_LIVE_TOPIC",
-        topic: env.METRIC_STREAM_LIVE_TOPIC,
-        sinkSubscription: "metric-stream-live-clickhouse-sink",
-        archiveSubscription: "metric-stream-live-r2-archive",
-        subscriptions: ["metric-stream-live-clickhouse-sink", "metric-stream-live-r2-archive"],
-      },
-      {
-        id: "history",
-        topicKey: "METRIC_STREAM_HISTORY_TOPIC",
-        topic: env.METRIC_STREAM_HISTORY_TOPIC,
-        sinkSubscription: "metric-stream-history-clickhouse-sink",
-        archiveSubscription: "metric-stream-history-r2-archive",
-        subscriptions: [
-          "metric-stream-history-clickhouse-sink",
-          "metric-stream-history-r2-archive",
-        ],
-      },
-    ]);
+    expect(routes.map((route) => route.id)).toEqual(["legacy", "live", "history"]);
+    expect(routes[0]).toMatchObject({
+      topic: "metric-stream-v1",
+      sinkSubscription: "metric-stream-clickhouse-sink",
+      archiveSubscription: "metric-stream-r2-archive",
+    });
+    expect(routes[1]?.topic).toBe("metric-stream-live-v2");
+    expect(routes[2]?.topic).toBe("metric-stream-history-v2");
   });
 
-  it("fails closed when a required topic env key is missing or not persistent", () => {
+  it("fails closed when any consumer topic env is missing", () => {
     expect(() =>
       resolveMetricStreamConsumerRoutes({
-        ...env,
-        METRIC_STREAM_LEGACY_TOPIC: undefined,
+        METRIC_STREAM_LEGACY_TOPIC: "metric-stream-v1",
+        METRIC_STREAM_LIVE_TOPIC: "metric-stream-live-v2",
       }),
-    ).toThrow(/METRIC_STREAM_LEGACY_TOPIC is required/);
-    expect(() =>
-      resolveMetricStreamConsumerRoutes({
-        ...env,
-        METRIC_STREAM_LIVE_TOPIC: "metric-stream-live-v1",
-      }),
-    ).toThrow(/concrete persistent Pulsar topic/i);
-  });
-});
-
-describe("producer MetricStreamRoute remains live|history only", () => {
-  it("does not invent a legacy producer route", () => {
-    const producerRoutes: MetricStreamRoute[] = ["live", "history"];
-    expect(producerRoutes).toEqual(["live", "history"]);
-    expect(() => metricStreamTopicForRoute("live", {})).toThrow(/METRIC_STREAM_LIVE_TOPIC/);
-    expect(() => metricStreamTopicForRoute("history", {})).toThrow(/METRIC_STREAM_HISTORY_TOPIC/);
+    ).toThrow(/METRIC_STREAM_HISTORY_TOPIC is required/);
   });
 });

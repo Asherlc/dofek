@@ -19,7 +19,7 @@ import { readMetricStreamArchiveLines } from "../metric-stream/archive-lines.ts"
 import {
   isMetricStreamBatchCompletedEvent,
   isMetricStreamDeletedEvent,
-  metricStreamRedpandaEventSchema,
+  metricStreamKafkaEventSchema,
 } from "../metric-stream/events.ts";
 import { parseMetricStreamArchiveObjectKey } from "../metric-stream/r2-replay.ts";
 import type { AccountErasureIdentifierStore } from "./identifier-store.ts";
@@ -286,7 +286,7 @@ async function belongsToAccount(
       `Malformed JSON in R2 archive object ${context.key} at line ${context.lineNumber}`,
     );
   }
-  const parsedEvent = metricStreamRedpandaEventSchema.safeParse(parsedJson);
+  const parsedEvent = metricStreamKafkaEventSchema.safeParse(parsedJson);
   if (!parsedEvent.success) {
     throw new Error(
       `Unsupported metric-stream event schema in ${context.key} at line ${context.lineNumber}`,

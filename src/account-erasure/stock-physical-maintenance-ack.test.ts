@@ -3,7 +3,7 @@ import {
   requireStockPhysicalMaintenanceAck,
   stockPhysicalMaintenanceAckSchema,
   summarizePhysicalMaintenanceAcknowledged,
-} from "./pulsar-physical-maintenance-ack.ts";
+} from "./stock-physical-maintenance-ack.ts";
 
 const fenceAt = new Date("2026-11-05T12:00:00.000Z");
 const cutoff = "2026-11-05T13:00:00.000Z";

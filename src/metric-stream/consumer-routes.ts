@@ -1,8 +1,7 @@
 /**
  * Canonical metric-stream CONSUMER route definitions shared by the deploy
  * environment renderer and account-erasure drain composition.
- * Neutral: topic env keys + exact subscription names only — no Pulsar SDK,
- * admin, offset, or proof logic.
+ * Neutral: topic env keys + exact consumer-group subscription names only.
  */
 
 export type MetricStreamConsumerRouteId = "legacy" | "live" | "history";
@@ -19,7 +18,7 @@ export interface MetricStreamConsumerRouteDefinition {
   archiveSubscription: string;
 }
 
-/** Exact sink/archive subscription names from the deploy service renderer. */
+/** Exact sink/archive consumer group names from the deploy service renderer. */
 export const METRIC_STREAM_CONSUMER_ROUTES: readonly MetricStreamConsumerRouteDefinition[] = [
   {
     id: "legacy",
@@ -41,12 +40,13 @@ export const METRIC_STREAM_CONSUMER_ROUTES: readonly MetricStreamConsumerRouteDe
   },
 ] as const;
 
-const PERSISTENT_TOPIC_PATTERN = /^persistent:\/\/[^/\s]+\/[^/\s]+\/\S+$/;
-
-export function assertConcretePersistentPulsarTopic(topic: string): string {
+export function assertKafkaMetricStreamTopicName(topic: string): string {
   const trimmed = topic.trim();
-  if (!PERSISTENT_TOPIC_PATTERN.test(trimmed) || trimmed.includes("\n") || trimmed.includes("\r")) {
-    throw new Error("METRIC_STREAM_TOPIC must name one concrete persistent Pulsar topic");
+  if (!trimmed || trimmed.includes("\n") || trimmed.includes("\r") || /\s/.test(trimmed)) {
+    throw new Error("METRIC_STREAM_TOPIC must be a nonempty Kafka topic name without whitespace");
+  }
+  if (trimmed.startsWith("persistent://")) {
+    throw new Error("METRIC_STREAM_TOPIC must be a Kafka topic name, not a Pulsar persistent URI");
   }
   return trimmed;
 }
@@ -62,8 +62,9 @@ export interface ResolvedMetricStreamConsumerRoute {
 }
 
 /**
- * Resolve the three consumer routes from env. Missing/blank topic keys or
- * non-persistent URIs fail closed. Does not invent subscription names.
+ * Resolve the three consumer routes from env. Missing/blank topic keys fail closed.
+ * Does not invent subscription names. Legacy v1 topic values remain valid for
+ * consume-only drain until retention; producers refuse those names separately.
  */
 export function resolveMetricStreamConsumerRoutes(
   env: NodeJS.ProcessEnv = process.env,
@@ -73,14 +74,14 @@ export function resolveMetricStreamConsumerRoutes(
     if (typeof raw !== "string" || raw.trim() === "") {
       throw new Error(`${route.topicKey} is required`);
     }
-    const topic = assertConcretePersistentPulsarTopic(raw);
+    const topic = assertKafkaMetricStreamTopicName(raw);
     return {
       id: route.id,
       topicKey: route.topicKey,
       topic,
       sinkSubscription: route.sinkSubscription,
       archiveSubscription: route.archiveSubscription,
-      subscriptions: [route.sinkSubscription, route.archiveSubscription],
+      subscriptions: [route.sinkSubscription, route.archiveSubscription] as const,
     };
   });
 }

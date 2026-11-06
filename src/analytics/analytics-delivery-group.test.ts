@@ -54,23 +54,13 @@ describe("analytics delivery group identity", () => {
     );
   });
 
-  it.each(["transport", "epoch", "topic", "partition"] as const)(
-    "rejectsMixedStreamMembership: %s",
-    (field) => {
-      const other: MetricStreamPosition =
-        field === "transport"
-          ? {
-              transport: "pulsar",
-              epoch: first.epoch,
-              topic: first.topic,
-              partition: first.partition,
-              delivery: { major: "1", minor: "2", batch: -1 },
-              serializedMessageId: Buffer.from("08011002", "hex").toString("base64"),
-            }
-          : { ...last, [field]: field === "partition" ? 1 : "other" };
-      expect(() => describeAnalyticsDeliveryGroup([first, other], 500)).toThrow(/stream/i);
-    },
-  );
+  it.each(["epoch", "topic", "partition"] as const)("rejectsMixedStreamMembership: %s", (field) => {
+    const other: MetricStreamPosition = {
+      ...last,
+      [field]: field === "partition" ? 1 : "other",
+    };
+    expect(() => describeAnalyticsDeliveryGroup([first, other], 500)).toThrow(/stream/i);
+  });
 
   it.each([
     { name: "duplicate", positions: [first, first] },
@@ -97,42 +87,6 @@ describe("analytics delivery group identity", () => {
     expect(original.last).toEqual(changed.last);
   });
 
-  it("preservesNativeIdsAndBatchedCoordinatesAcrossLedgerRollover", () => {
-    const beforeRollover = {
-      transport: "pulsar" as const,
-      epoch: "capture-one",
-      topic: "sensor",
-      partition: -1,
-      delivery: { major: "9007199254740993", minor: "9223372036854775806", batch: 4 },
-      serializedMessageId: Buffer.from("08011002", "hex").toString("base64"),
-    };
-    const afterRollover = {
-      ...beforeRollover,
-      delivery: { major: "9007199254740994", minor: "0", batch: 0 },
-      serializedMessageId: Buffer.from("08011003", "hex").toString("base64"),
-    };
-    const group = describeAnalyticsDeliveryGroup([beforeRollover, afterRollover], 500);
-    expect(group.first).toEqual(beforeRollover);
-    expect(group.last).toEqual(afterRollover);
-    const changedId = describeAnalyticsDeliveryGroup(
-      [
-        beforeRollover,
-        {
-          ...afterRollover,
-          serializedMessageId: Buffer.from("08011004", "hex").toString("base64"),
-        },
-      ],
-      500,
-    );
-    expect(group.positionsDigest).not.toBe(changedId.positionsDigest);
-    expect(
-      describeAnalyticsDeliveryGroup(
-        [{ ...beforeRollover, delivery: { ...beforeRollover.delivery, batch: 3 } }, afterRollover],
-        500,
-      ).positionsDigest,
-    ).not.toBe(group.positionsDigest);
-  });
-
   it("canonicalizesFieldOrderAndDoesNotRetainMutableInputObjects", () => {
     const input = { ...first };
     const group = describeAnalyticsDeliveryGroup([input, last], 500);
@@ -150,21 +104,10 @@ describe("analytics delivery group identity", () => {
     expect(group.first).toMatchObject({ offset: "9007199254740993" });
   });
 
-  it("rejectsOneNativeMessageClaimingTwoDifferentCoordinates", () => {
-    const position = {
-      transport: "pulsar" as const,
-      epoch: "capture-one",
-      topic: "sensor",
-      partition: -1,
-      delivery: { major: "1", minor: "2", batch: -1 },
-      serializedMessageId: Buffer.from("08011002", "hex").toString("base64"),
-    };
-    expect(() =>
-      describeAnalyticsDeliveryGroup(
-        [position, { ...position, delivery: { major: "1", minor: "3", batch: -1 } }],
-        500,
-      ),
-    ).toThrow(/identity|message|duplicate/i);
+  it("rejectsDuplicateOffsetsOnTheSameStream", () => {
+    expect(() => describeAnalyticsDeliveryGroup([first, { ...first }], 500)).toThrow(
+      /identity|duplicate|order/i,
+    );
   });
 
   it("rejectsMalformedPositionAndUnknownTransportFields", () => {

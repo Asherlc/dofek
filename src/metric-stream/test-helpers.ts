@@ -20,7 +20,7 @@ export const sourceEvent: MetricStreamEventV2 = {
 };
 export const sourcePosition = analyticsPosition(
   {
-    transport: "pulsar",
+    transport: "kafka",
     epoch: "epoch-1",
     topic: "persistent://public/default/sensor",
     partition: -1,
@@ -162,7 +162,7 @@ export async function createMetricStreamAnalyticsTestContext() {
       namespaces,
       cleanup,
       stream: {
-        transport: "pulsar" as const,
+        transport: "kafka" as const,
         epoch: randomUUID(),
         topic: `persistent://public/default/fixture-${randomUUID()}`,
         partition: -1,

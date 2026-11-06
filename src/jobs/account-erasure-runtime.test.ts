@@ -15,38 +15,18 @@ const mocks = vi.hoisted(() => ({
     ) => operation({ client }),
   ),
   assertPeerDbDrained: vi.fn(async () => undefined),
-  assertSubscriptionsDrained: vi.fn(async () => undefined),
-  captureNativeFenceProgress: vi.fn(
-    async (_admin: unknown, stream: { epoch: string; topic: string; partition: number }) => ({
-      fence: {
-        transport: "pulsar" as const,
-        state: "empty" as const,
-        epoch: stream.epoch,
-        topic: stream.topic,
-        partition: stream.partition,
-      },
-    }),
-  ),
-  resolveNativeDrainStreams: vi.fn(async () => [
-    {
-      epoch: "transport-epoch",
-      topic: "persistent://public/default/legacy",
-      partition: -1,
-      subscriptions: ["metric-stream-clickhouse-sink", "metric-stream-r2-archive"],
-    },
-    {
-      epoch: "transport-epoch",
-      topic: "persistent://public/default/live",
-      partition: -1,
-      subscriptions: ["metric-stream-live-clickhouse-sink", "metric-stream-live-r2-archive"],
-    },
-    {
-      epoch: "transport-epoch",
-      topic: "persistent://public/default/history",
-      partition: -1,
-      subscriptions: ["metric-stream-history-clickhouse-sink", "metric-stream-history-r2-archive"],
-    },
+  assertConsumersDrained: vi.fn(async () => undefined),
+  captureHighWatermarks: vi.fn(async (_admin: unknown, _topic: string) => [
+    { low: "0", offset: "42", partition: 0 },
   ]),
+  captureQuarantineHighWatermarks: vi.fn(async (_admin: unknown, _topic: string) => [
+    { low: "0", offset: "7", partition: 0 },
+  ]),
+  assertQuarantineExpired: vi.fn(async () => undefined),
+  assertReplayExpired: vi.fn(async () => undefined),
+  closeKafka: vi.fn(async () => undefined),
+  connectKafka: vi.fn(async () => undefined),
+
   capturePeerDbStagingBoundary: vi.fn(async () => ({
     cutoff: "2026-08-03T12:00:00.000Z",
     eTag: '"boundary-etag"',
@@ -221,16 +201,43 @@ vi.mock("../account-erasure/processor-retention.ts", () => ({
   verifyProcessorRetentionPolicies: mocks.verifyProcessorRetention,
 }));
 
-vi.mock("../metric-stream/pulsar-drain.ts", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../metric-stream/pulsar-drain.ts")>();
-  return {
-    ...actual,
-    assertAccountErasureSubscriptionsDrained: mocks.assertSubscriptionsDrained,
-    captureAccountErasureNativeFenceProgress: mocks.captureNativeFenceProgress,
-    createPulsarDrainAdminFromUrls: vi.fn(() => ({ name: "pulsar-admin" })),
-    resolveAccountErasureNativeDrainStreams: mocks.resolveNativeDrainStreams,
-  };
-});
+vi.mock("../account-erasure/kafka-drain.ts", () => ({
+  assertAccountErasureConsumersDrained: mocks.assertConsumersDrained,
+  assertAccountErasureQuarantineExpired: mocks.assertQuarantineExpired,
+  assertAccountErasureReplayExpired: mocks.assertReplayExpired,
+  captureAccountErasureHighWatermarks: mocks.captureHighWatermarks,
+  captureAccountErasureQuarantineHighWatermarks: mocks.captureQuarantineHighWatermarks,
+  createAccountErasureKafkaAdminFromEnv: vi.fn((env: NodeJS.ProcessEnv = process.env) => {
+    const brokers = env.KAFKA_BROKERS?.split(",")
+      .map((broker) => broker.trim())
+      .filter(Boolean);
+    if (!brokers?.length) {
+      throw new Error("KAFKA_BROKERS is required for account erasure");
+    }
+    return {
+      admin: { name: "kafka-admin" },
+      close: mocks.closeKafka,
+      connect: mocks.connectKafka,
+      routes: [
+        {
+          topic: "metric-stream-v1",
+          consumerGroups: ["metric-stream-clickhouse-sink", "metric-stream-r2-archive"],
+        },
+        {
+          topic: "metric-stream-live-v2",
+          consumerGroups: ["metric-stream-live-clickhouse-sink", "metric-stream-live-r2-archive"],
+        },
+        {
+          topic: "metric-stream-history-v2",
+          consumerGroups: [
+            "metric-stream-history-clickhouse-sink",
+            "metric-stream-history-r2-archive",
+          ],
+        },
+      ],
+    };
+  }),
+}));
 
 vi.mock("../metric-stream/consumer-routes.ts", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../metric-stream/consumer-routes.ts")>();
@@ -240,7 +247,7 @@ vi.mock("../metric-stream/consumer-routes.ts", async (importOriginal) => {
       {
         id: "legacy",
         topicKey: "METRIC_STREAM_LEGACY_TOPIC",
-        topic: "persistent://public/default/legacy",
+        topic: "metric-stream-v1",
         sinkSubscription: "metric-stream-clickhouse-sink",
         archiveSubscription: "metric-stream-r2-archive",
         subscriptions: ["metric-stream-clickhouse-sink", "metric-stream-r2-archive"],
@@ -248,7 +255,7 @@ vi.mock("../metric-stream/consumer-routes.ts", async (importOriginal) => {
       {
         id: "live",
         topicKey: "METRIC_STREAM_LIVE_TOPIC",
-        topic: "persistent://public/default/live",
+        topic: "metric-stream-live-v2",
         sinkSubscription: "metric-stream-live-clickhouse-sink",
         archiveSubscription: "metric-stream-live-r2-archive",
         subscriptions: ["metric-stream-live-clickhouse-sink", "metric-stream-live-r2-archive"],
@@ -256,7 +263,7 @@ vi.mock("../metric-stream/consumer-routes.ts", async (importOriginal) => {
       {
         id: "history",
         topicKey: "METRIC_STREAM_HISTORY_TOPIC",
-        topic: "persistent://public/default/history",
+        topic: "metric-stream-history-v2",
         sinkSubscription: "metric-stream-history-clickhouse-sink",
         archiveSubscription: "metric-stream-history-r2-archive",
         subscriptions: [
@@ -374,13 +381,22 @@ function orderedStockPhysicalMaintenanceAck(now: Date = new Date()) {
     verifiedAt: new Date(
       Math.min(now.getTime() - 60_000, fenceMs + 2 * 60 * 60 * 1_000),
     ).toISOString(),
-    runbookRevision: "docs/pulsar-remaining-work.md#physical",
+    runbookRevision: "docs/account-erasure.md#physical",
   };
 }
 
 async function retentionLoadCheckpointDetails(
   phase: Parameters<AccountErasurePhaseExecution["loadCheckpointDetails"]>[0],
 ) {
+  if (phase === "consumer_drain") {
+    return {
+      quarantineHighWatermarks: [
+        { topic: "metric-stream-v1", low: "0", offset: "7", partition: 0 },
+        { topic: "metric-stream-live-v2", low: "0", offset: "7", partition: 0 },
+        { topic: "metric-stream-history-v2", low: "0", offset: "7", partition: 0 },
+      ],
+    };
+  }
   if (phase === "peerdb_drain_verification") {
     return peerDbDrainCheckpoint;
   }
@@ -390,17 +406,16 @@ async function retentionLoadCheckpointDetails(
 describe("createAccountErasureRuntime", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    process.env.PULSAR_ADMIN_URL = "http://pulsar-admin.test";
-    process.env.METRIC_STREAM_TRANSPORT_EPOCH = "transport-epoch";
-    process.env.METRIC_STREAM_LEGACY_TOPIC = "persistent://public/default/legacy";
-    process.env.METRIC_STREAM_LIVE_TOPIC = "persistent://public/default/live";
-    process.env.METRIC_STREAM_HISTORY_TOPIC = "persistent://public/default/history";
+    process.env.KAFKA_BROKERS = "kafka.test:9092";
+    process.env.METRIC_STREAM_LEGACY_TOPIC = "metric-stream-v1";
+    process.env.METRIC_STREAM_LIVE_TOPIC = "metric-stream-live-v2";
+    process.env.METRIC_STREAM_HISTORY_TOPIC = "metric-stream-history-v2";
     mocks.r2Client.send.mockResolvedValue({ Contents: [], IsTruncated: false });
     mocks.loadCheckpointCompletedAt.mockResolvedValue(ingestFenceCompletedAt);
     mocks.loadPhaseProgress.mockResolvedValue(null);
   });
 
-  it("captures native ingest streams and drains with epoch-scoped route identity", async () => {
+  it("captures Kafka high-watermarks and drains consumer groups per route", async () => {
     mocks.decryptSnapshot.mockResolvedValue(snapshot);
     const database = {
       $client: ownerDatabase.$client,
@@ -418,35 +433,52 @@ describe("createAccountErasureRuntime", () => {
       purge: vi.fn(async () => undefined),
     });
     try {
-      const ingest = await runtime.phaseRunner.runPhase("ingest_fence", execution());
-      expect(mocks.captureNativeFenceProgress).toHaveBeenCalledTimes(3);
-      expect(mocks.resolveNativeDrainStreams).toHaveBeenCalledWith(expect.anything(), {
-        epoch: "transport-epoch",
-        routes: [
-          {
-            topic: "persistent://public/default/legacy",
-            subscriptions: ["metric-stream-clickhouse-sink", "metric-stream-r2-archive"],
-          },
-          {
-            topic: "persistent://public/default/live",
-            subscriptions: ["metric-stream-live-clickhouse-sink", "metric-stream-live-r2-archive"],
-          },
-          {
-            topic: "persistent://public/default/history",
-            subscriptions: [
-              "metric-stream-history-clickhouse-sink",
-              "metric-stream-history-r2-archive",
-            ],
-          },
-        ],
+      const topics = ["metric-stream-v1", "metric-stream-live-v2", "metric-stream-history-v2"];
+      const highWatermarks = topics.map((topic) => ({
+        topic,
+        low: "0",
+        offset: "42",
+        partition: 0,
+      }));
+      const quarantineHighWatermarks = topics.map((topic) => ({
+        topic,
+        low: "0",
+        offset: "7",
+        partition: 0,
+      }));
+
+      await expect(runtime.phaseRunner.runPhase("ingest_fence", execution())).resolves.toEqual({
+        highWatermarks,
       });
+      expect(mocks.connectKafka).toHaveBeenCalledOnce();
+      expect(mocks.captureHighWatermarks).toHaveBeenCalledTimes(3);
+
       await expect(
         runtime.phaseRunner.runPhase(
           "consumer_drain",
-          execution(async (phase) => (phase === "ingest_fence" ? ingest : null)),
+          execution(async (phase) => (phase === "ingest_fence" ? { highWatermarks } : null)),
         ),
-      ).resolves.toEqual({ drained: true });
-      expect(mocks.assertSubscriptionsDrained).toHaveBeenCalledTimes(3);
+      ).resolves.toEqual({
+        drained: true,
+        quarantineHighWatermarks,
+      });
+      expect(mocks.assertConsumersDrained).toHaveBeenCalledTimes(3);
+      expect(mocks.captureQuarantineHighWatermarks).toHaveBeenCalledTimes(3);
+      expect(mocks.assertConsumersDrained).toHaveBeenCalledWith(
+        { name: "kafka-admin" },
+        "metric-stream-v1",
+        [{ topic: "metric-stream-v1", low: "0", offset: "42", partition: 0 }],
+        ["metric-stream-clickhouse-sink", "metric-stream-r2-archive"],
+      );
+
+      await expect(
+        runtime.phaseRunner.runPhase(
+          "consumer_drain",
+          execution(async (phase) =>
+            phase === "ingest_fence" ? { highWatermarks: highWatermarks.slice(0, 2) } : null,
+          ),
+        ),
+      ).rejects.toThrow("Account erasure checkpoint is missing topic metric-stream-history-v2");
     } finally {
       await runtime.close();
     }
@@ -487,125 +519,6 @@ describe("createAccountErasureRuntime", () => {
         }),
         expect.any(Function),
       );
-    } finally {
-      await runtime.close();
-    }
-  });
-
-  it("rejects drain when checkpoint epoch differs from the current transport epoch", async () => {
-    const database = {
-      $client: ownerDatabase.$client,
-      execute: vi.fn(async () => []),
-      transaction: vi.fn(),
-    };
-    const clickhouse = {
-      exec: vi.fn<ClickHouseClient["exec"]>(),
-      command: vi.fn(async () => undefined),
-      insert: vi.fn(async () => undefined),
-      query: vi.fn(async () => ({ json: async () => [] })),
-    };
-    const runtime = await createAccountErasureRuntime(database, clickhouse, {
-      close: vi.fn(async () => undefined),
-      purge: vi.fn(async () => undefined),
-    });
-    try {
-      const stale = {
-        streams: [
-          {
-            fence: {
-              transport: "pulsar" as const,
-              state: "empty" as const,
-              epoch: "old-epoch",
-              topic: "persistent://public/default/history",
-              partition: -1,
-            },
-          },
-          {
-            fence: {
-              transport: "pulsar" as const,
-              state: "empty" as const,
-              epoch: "old-epoch",
-              topic: "persistent://public/default/legacy",
-              partition: -1,
-            },
-          },
-          {
-            fence: {
-              transport: "pulsar" as const,
-              state: "empty" as const,
-              epoch: "old-epoch",
-              topic: "persistent://public/default/live",
-              partition: -1,
-            },
-          },
-        ],
-      };
-      await expect(
-        runtime.phaseRunner.runPhase(
-          "consumer_drain",
-          execution(async (phase) => (phase === "ingest_fence" ? stale : null)),
-        ),
-      ).rejects.toThrow(/missing route for epoch old-epoch/);
-      expect(mocks.assertSubscriptionsDrained).not.toHaveBeenCalled();
-    } finally {
-      await runtime.close();
-    }
-  });
-
-  it("rejects same-count drain checkpoints whose stream set differs from resolved routes", async () => {
-    const database = {
-      $client: ownerDatabase.$client,
-      execute: vi.fn(async () => []),
-      transaction: vi.fn(),
-    };
-    const clickhouse = {
-      exec: vi.fn<ClickHouseClient["exec"]>(),
-      command: vi.fn(async () => undefined),
-      insert: vi.fn(async () => undefined),
-      query: vi.fn(async () => ({ json: async () => [] })),
-    };
-    const runtime = await createAccountErasureRuntime(database, clickhouse, {
-      close: vi.fn(async () => undefined),
-      purge: vi.fn(async () => undefined),
-    });
-    try {
-      const different = {
-        streams: [
-          {
-            fence: {
-              transport: "pulsar" as const,
-              state: "empty" as const,
-              epoch: "transport-epoch",
-              topic: "persistent://public/default/alpha",
-              partition: -1,
-            },
-          },
-          {
-            fence: {
-              transport: "pulsar" as const,
-              state: "empty" as const,
-              epoch: "transport-epoch",
-              topic: "persistent://public/default/beta",
-              partition: -1,
-            },
-          },
-          {
-            fence: {
-              transport: "pulsar" as const,
-              state: "empty" as const,
-              epoch: "transport-epoch",
-              topic: "persistent://public/default/gamma",
-              partition: -1,
-            },
-          },
-        ],
-      };
-      await expect(
-        runtime.phaseRunner.runPhase(
-          "consumer_drain",
-          execution(async (phase) => (phase === "ingest_fence" ? different : null)),
-        ),
-      ).rejects.toThrow(/missing route for epoch transport-epoch/);
     } finally {
       await runtime.close();
     }
@@ -669,7 +582,7 @@ describe("createAccountErasureRuntime", () => {
       operator: "runtime-fixture@example.test",
       verifiedCutoffAt: "2026-08-26T10:00:00.000Z",
       verifiedAt: "2026-08-26T11:00:00.000Z",
-      runbookRevision: "docs/pulsar-remaining-work.md#physical",
+      runbookRevision: "docs/account-erasure.md#physical",
     };
     mocks.loadCheckpointCompletedAt.mockResolvedValue(fenceCompletedAt);
     mocks.loadPhaseProgress.mockResolvedValue(uncoveredAck);
@@ -730,6 +643,7 @@ describe("createAccountErasureRuntime", () => {
           axiomRetentionDays: 30,
           sentryRetentionDays: 30,
         },
+        quarantineRetentionVerified: true,
         verified: true,
       });
       expect(mocks.verifyPeerDbStagingRetention).toHaveBeenCalledWith(
@@ -746,54 +660,23 @@ describe("createAccountErasureRuntime", () => {
     }
   });
 
-  it("rejects drain when ingest checkpoint stream count differs from resolved routes", async () => {
-    const runtime = await createAccountErasureRuntime(ownerDatabase, mockClickHouse(), {
-      close: vi.fn(async () => undefined),
-      purge: vi.fn(async () => undefined),
-    });
-    try {
-      const partial = {
-        streams: [
-          {
-            fence: {
-              transport: "pulsar" as const,
-              state: "empty" as const,
-              epoch: "transport-epoch",
-              topic: "persistent://public/default/legacy",
-              partition: -1,
-            },
-          },
-        ],
-      };
-      await expect(
-        runtime.phaseRunner.runPhase(
-          "consumer_drain",
-          execution(async (phase) => (phase === "ingest_fence" ? partial : null)),
-        ),
-      ).rejects.toThrow(/stream count 1 differs from resolved drain stream count 3/);
-      expect(mocks.assertSubscriptionsDrained).toHaveBeenCalledOnce();
-    } finally {
-      await runtime.close();
-    }
-  });
-
-  it("fails closed when required Pulsar admin configuration is missing", async () => {
-    delete process.env.PULSAR_ADMIN_URL;
+  it("fails closed when required KAFKA_BROKERS configuration is missing", async () => {
+    delete process.env.KAFKA_BROKERS;
     await expect(
       createAccountErasureRuntime(ownerDatabase, mockClickHouse(), {
         close: vi.fn(async () => undefined),
         purge: vi.fn(async () => undefined),
       }),
-    ).rejects.toThrow(/PULSAR_ADMIN_URL is required for account erasure/);
+    ).rejects.toThrow(/KAFKA_BROKERS is required for account erasure/);
   });
 
-  it("fails closed when required Pulsar admin configuration is blank", async () => {
-    process.env.PULSAR_ADMIN_URL = "   ";
+  it("fails closed when required KAFKA_BROKERS configuration is blank", async () => {
+    process.env.KAFKA_BROKERS = "   ";
     await expect(
       createAccountErasureRuntime(ownerDatabase, mockClickHouse(), {
         close: vi.fn(async () => undefined),
         purge: vi.fn(async () => undefined),
       }),
-    ).rejects.toThrow(/PULSAR_ADMIN_URL is required for account erasure/);
+    ).rejects.toThrow(/KAFKA_BROKERS is required for account erasure/);
   });
 });

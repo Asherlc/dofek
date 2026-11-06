@@ -334,7 +334,7 @@ describe("eraseMetricStreamArchive", () => {
 
   it.each([
     "metric-stream/v1/date=2026-07-26/hour=10/metric-stream-v1-0-10-11.jsonl.gz",
-    `metric-stream/v1/date=2026-11-05/hour=03/pulsar/epoch=e1/topic=${encodeURIComponent("persistent://public/default/sensor-partition-2")}/first=ff/last=00.jsonl.gz`,
+    `metric-stream/v1/date=2026-11-05/hour=03/metric-stream-live-v2-0-0-0.jsonl.gz`,
   ])("preserves CRLF, lone CR and final unterminated survivor bytes in %s", async (key) => {
     const storage = new MemoryArchiveStorage();
     const survivor = JSON.stringify(
@@ -544,7 +544,7 @@ describe("eraseMetricStreamArchive", () => {
 
   it("erases native-key rows and controls while preserving other-account bytes and provenance", async () => {
     const storage = new MemoryArchiveStorage();
-    const key = `metric-stream/v1/date=2026-11-05/hour=03/pulsar/epoch=e1/topic=${encodeURIComponent("persistent://public/default/sensor-partition-2")}/first=ff/last=00.jsonl.gz`;
+    const key = `metric-stream/v1/date=2026-11-05/hour=03/metric-stream-live-v2-0-0-0.jsonl.gz`;
     const operationId = "40000000-0000-4000-8000-000000001994";
     const preserved = `  ${JSON.stringify(metricEvent(otherUserId, "50000000-0000-4000-8000-000000001994"))} `;
     const owned = [

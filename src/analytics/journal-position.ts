@@ -24,5 +24,5 @@ export function assertPositionStream(position: MetricStreamPosition, stream: Ana
 }
 
 export function metricStreamPositionIdentity(position: MetricStreamPosition): string {
-  return position.transport === "pulsar" ? position.serializedMessageId : position.offset;
+  return position.offset;
 }

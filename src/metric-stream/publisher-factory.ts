@@ -1,21 +1,22 @@
-import type { MetricStreamEventPublisher } from "./publisher.ts";
 import {
-  closePulsarMetricStreamEventPublishers,
-  createPulsarMetricStreamEventPublisherForRoute,
-} from "./pulsar-producer.ts";
+  closeAllKafkaMetricStreamEventPublishers,
+  createKafkaMetricStreamEventPublisherForRoute,
+  getDefaultMetricStreamEventPublisher as getDefaultKafkaPublisher,
+} from "./kafka-producer.ts";
+import type { MetricStreamEventPublisher } from "./publisher.ts";
 import type { MetricStreamRoute } from "./routes.ts";
 
 export function getDefaultMetricStreamEventPublisher(): Promise<MetricStreamEventPublisher> {
-  return createMetricStreamEventPublisherForRoute("live");
+  return getDefaultKafkaPublisher();
 }
 
 export function createMetricStreamEventPublisherForRoute(
   route: MetricStreamRoute,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<MetricStreamEventPublisher> {
-  return createPulsarMetricStreamEventPublisherForRoute(route, env);
+  return createKafkaMetricStreamEventPublisherForRoute(route, env);
 }
 
 export function closeAllMetricStreamEventPublishers(): Promise<void> {
-  return closePulsarMetricStreamEventPublishers();
+  return closeAllKafkaMetricStreamEventPublishers();
 }

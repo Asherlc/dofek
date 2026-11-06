@@ -5,8 +5,8 @@ import {
   createMetricStreamEvent,
   type MetricStreamDeleteScopeInput,
   type MetricStreamRowInput,
+  metricStreamKafkaEventSchema,
   metricStreamProcessingContextSchema,
-  metricStreamRedpandaEventSchema,
 } from "./events.ts";
 
 const operationRevision = "1000000000000000";
@@ -196,7 +196,7 @@ describe("createMetricStreamDeletedEvent", () => {
 
   it("accepts version-one delete events during archive replay", () => {
     expect(
-      metricStreamRedpandaEventSchema.parse({
+      metricStreamKafkaEventSchema.parse({
         version: 1,
         eventType: "metric_stream_deleted",
         scope: { activityId: "20000000-0000-4000-8000-000000000001" },
@@ -211,7 +211,7 @@ describe("createMetricStreamDeletedEvent", () => {
   });
 
   it("rejects non-RFC UUIDs on version-two delete events", () => {
-    const result = metricStreamRedpandaEventSchema.safeParse({
+    const result = metricStreamKafkaEventSchema.safeParse({
       version: 2,
       eventType: "metric_stream_deleted",
       eventId: "12345678-1234-1234-1234-123456789abc",
@@ -251,7 +251,7 @@ describe("createMetricStreamBatchCompletedEvent", () => {
 
   it("still parses legacy ownerless v1 markers for history/eraser", () => {
     expect(
-      metricStreamRedpandaEventSchema.parse({
+      metricStreamKafkaEventSchema.parse({
         version: 1,
         eventType: "metric_stream_batch_completed",
         operationId: "30000000-0000-4000-8000-000000000001",

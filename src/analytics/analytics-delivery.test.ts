@@ -29,7 +29,7 @@ vi.mock("./analytics-query-owner.ts", () => ({
 }));
 const database = createDatabase("postgres://unit:unit@localhost/unit");
 afterAll(async () => database.$client.end());
-const stream = { transport: "pulsar" as const, epoch: "epoch", topic: "sensor", partition: -1 };
+const stream = { transport: "kafka" as const, epoch: "epoch", topic: "sensor", partition: 0 };
 const positions = [1n, 2n].map((entry) => analyticsPosition(stream, entry));
 const trace: string[] = [];
 const { owner } = sourceOwner();

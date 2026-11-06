@@ -1,11 +1,7 @@
-import Pulsar from "pulsar-client";
-import {
-  metricStreamPosition,
-  type PulsarMetricStreamPosition,
-} from "../metric-stream/transport-position.ts";
+import { Readable } from "node:stream";
+import type { createClient } from "@clickhouse/client";
+import type { MetricStreamPosition } from "../metric-stream/transport-position.ts";
 import type { AnalyticsStream } from "./journal-position.ts";
-
-const { MessageId } = Pulsar;
 
 export function completedExecResult(
   writtenRows: string,
@@ -29,28 +25,12 @@ export function completedExecResult(
   };
 }
 
-export function analyticsPosition(
-  stream: AnalyticsStream,
-  entry: bigint,
-): PulsarMetricStreamPosition {
-  const bytes = [8, 10, 16];
-  let remaining = entry;
-  while (remaining >= 128n) {
-    bytes.push(Number(remaining & 127n) | 128);
-    remaining >>= 7n;
-  }
-  bytes.push(Number(remaining));
-  if (stream.partition >= 0) {
-    bytes.push(24);
-    remaining = BigInt(stream.partition);
-    while (remaining >= 128n) {
-      bytes.push(Number(remaining & 127n) | 128);
-      remaining >>= 7n;
-    }
-    bytes.push(Number(remaining));
-  }
-  return metricStreamPosition(stream, MessageId.deserialize(Buffer.from(bytes)));
+export function analyticsPosition(stream: AnalyticsStream, entry: bigint): MetricStreamPosition {
+  return {
+    transport: "kafka",
+    epoch: stream.epoch,
+    topic: stream.topic,
+    partition: stream.partition,
+    offset: entry.toString(),
+  };
 }
-
-import { Readable } from "node:stream";
-import type { createClient } from "@clickhouse/client";

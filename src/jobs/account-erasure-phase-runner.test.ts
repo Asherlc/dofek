@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { AccountErasureRouteHighWatermark } from "../account-erasure/kafka-drain.ts";
 import type { AccountErasureRemoteSnapshot } from "../account-erasure/remote-snapshot.ts";
 import type { ClaimedAccountErasureRequest } from "../db/account-erasure-processing.ts";
-import { buildAccountErasureNativeIngestCheckpoint } from "../metric-stream/pulsar-drain.ts";
 import {
   type AccountErasurePhaseRunnerDependencies,
   createAccountErasurePhaseRunner,
@@ -48,18 +48,14 @@ const peerDbStagingBoundary = {
   ],
 };
 
-const fenceProgress = {
-  fence: {
-    transport: "pulsar" as const,
-    state: "message" as const,
-    epoch: "epoch-1",
-    topic: "persistent://public/default/sensor",
-    partition: -1,
-    delivery: { major: "20", minor: "1", batch: -1 },
+const highWatermarks: AccountErasureRouteHighWatermark[] = [
+  {
+    topic: "metric-stream-live-v2",
+    partition: 0,
+    low: "0",
+    offset: "42",
   },
-};
-
-const ingestCheckpoint = buildAccountErasureNativeIngestCheckpoint([fenceProgress]);
+];
 
 const stockAck = {
   kind: "stock_physical_maintenance_ack" as const,
@@ -67,16 +63,19 @@ const stockAck = {
   operator: "oncall@example.com",
   verifiedAt: "2026-08-26T11:00:00.000Z",
   verifiedCutoffAt: "2026-08-26T10:00:00.000Z",
-  runbookRevision: "docs/pulsar-remaining-work.md#physical",
+  runbookRevision: "docs/account-erasure.md#physical",
 };
 
 function dependencies(): AccountErasurePhaseRunnerDependencies {
   return {
     prepareIdentifiers: vi.fn().mockResolvedValue(undefined),
     assertIdentifiersReady: vi.fn().mockResolvedValue(undefined),
-    assertNativeConsumersDrained: vi.fn().mockResolvedValue(undefined),
+    assertConsumersDrained: vi.fn().mockResolvedValue(undefined),
+    assertQuarantineExpired: vi.fn().mockResolvedValue(undefined),
+    assertReplayExpired: vi.fn().mockResolvedValue(undefined),
+    captureQuarantineHighWatermarks: vi.fn().mockResolvedValue(highWatermarks),
     assertPeerDbDrained: vi.fn().mockResolvedValue(undefined),
-    captureNativeIngestCheckpoint: vi.fn().mockResolvedValue(ingestCheckpoint),
+    captureHighWatermarks: vi.fn().mockResolvedValue(highWatermarks),
     capturePeerDbStagingBoundary: vi.fn().mockResolvedValue(peerDbStagingBoundary),
     decryptSnapshot: vi.fn().mockResolvedValue(snapshot),
     eraseArchive: vi
@@ -139,7 +138,7 @@ describe("createAccountErasurePhaseRunner", () => {
   it("prepares complete initial identity closure after drain and before completing its checkpoint", async () => {
     const deps = dependencies();
     const run = execution({
-      loadCheckpointDetails: vi.fn().mockResolvedValue(ingestCheckpoint),
+      loadCheckpointDetails: vi.fn().mockResolvedValue({ highWatermarks }),
     });
     vi.mocked(deps.prepareIdentifiers).mockRejectedValueOnce(
       new Error("identity closure incomplete"),
@@ -147,7 +146,7 @@ describe("createAccountErasurePhaseRunner", () => {
     await expect(
       createAccountErasurePhaseRunner(deps).runPhase("consumer_drain", run),
     ).rejects.toThrow("identity closure incomplete");
-    expect(deps.assertNativeConsumersDrained).toHaveBeenCalledWith(ingestCheckpoint);
+    expect(deps.assertConsumersDrained).toHaveBeenCalledWith(highWatermarks);
     expect(deps.prepareIdentifiers).toHaveBeenCalledWith({
       requestId: request.id,
       userId: request.userId,
@@ -204,20 +203,23 @@ describe("createAccountErasurePhaseRunner", () => {
     const deps = dependencies();
     const runner = createAccountErasurePhaseRunner(deps);
     const run = execution({
-      loadCheckpointDetails: vi.fn().mockResolvedValue(ingestCheckpoint),
+      loadCheckpointDetails: vi.fn().mockResolvedValue({ highWatermarks }),
     });
 
-    await expect(runner.runPhase("ingest_fence", run)).resolves.toEqual(ingestCheckpoint);
-    await expect(runner.runPhase("consumer_drain", run)).resolves.toEqual({ drained: true });
+    await expect(runner.runPhase("ingest_fence", run)).resolves.toEqual({ highWatermarks });
+    await expect(runner.runPhase("consumer_drain", run)).resolves.toEqual({
+      drained: true,
+      quarantineHighWatermarks: highWatermarks,
+    });
 
     expect(deps.fenceIngest).toHaveBeenCalledWith({
       requestId: request.id,
       userId: request.userId,
       leaseOwner: "phase-fixture-worker",
     });
-    expect(deps.fenceIngest).toHaveBeenCalledBefore(vi.mocked(deps.captureNativeIngestCheckpoint));
+    expect(deps.fenceIngest).toHaveBeenCalledBefore(vi.mocked(deps.captureHighWatermarks));
     expect(run.loadCheckpointDetails).toHaveBeenCalledWith("ingest_fence");
-    expect(deps.assertNativeConsumersDrained).toHaveBeenCalledWith(ingestCheckpoint);
+    expect(deps.assertConsumersDrained).toHaveBeenCalledWith(highWatermarks);
   });
 
   it("resumes an initial archive sweep but restarts final verification from the beginning", async () => {
@@ -272,10 +274,10 @@ describe("createAccountErasurePhaseRunner", () => {
     await expect(
       runner.runPhase(
         "consumer_drain_verification",
-        execution({ loadCheckpointDetails: vi.fn(async () => ingestCheckpoint) }),
+        execution({ loadCheckpointDetails: vi.fn(async () => ({ highWatermarks })) }),
       ),
-    ).resolves.toEqual({ drained: true, verified: true });
-    expect(deps.assertNativeConsumersDrained).toHaveBeenCalledWith(ingestCheckpoint);
+    ).resolves.toEqual({ drained: true, replayExpired: true, verified: true });
+    expect(deps.assertConsumersDrained).toHaveBeenCalledWith(highWatermarks);
   });
 
   it("requires stock physical maintenance ack before existing retention checks", async () => {
@@ -290,10 +292,12 @@ describe("createAccountErasurePhaseRunner", () => {
     const retainedExecution = execution({
       loadCheckpointDetails: vi.fn(async (phase) =>
         phase === "ingest_fence"
-          ? ingestCheckpoint
-          : phase === "peerdb_drain_verification"
-            ? { stagingBoundary: peerDbStagingBoundary, verified: true }
-            : null,
+          ? { highWatermarks }
+          : phase === "consumer_drain"
+            ? { quarantineHighWatermarks: highWatermarks }
+            : phase === "peerdb_drain_verification"
+              ? { stagingBoundary: peerDbStagingBoundary, verified: true }
+              : null,
       ),
       request: retainedRequest,
     });
@@ -313,8 +317,9 @@ describe("createAccountErasurePhaseRunner", () => {
       physicalMaintenanceAcknowledged: {
         runId: "maintenance-2026-11-05",
         operator: "oncall@example.com",
-        runbookRevision: "docs/pulsar-remaining-work.md#physical",
+        runbookRevision: "docs/account-erasure.md#physical",
       },
+      quarantineRetentionVerified: true,
       verified: true,
     });
 
@@ -368,9 +373,11 @@ describe("createAccountErasurePhaseRunner", () => {
         "retention_verification",
         execution({
           loadCheckpointDetails: vi.fn(async (phase) =>
-            phase === "peerdb_drain_verification"
-              ? { stagingBoundary: peerDbStagingBoundary, verified: true }
-              : null,
+            phase === "consumer_drain"
+              ? { quarantineHighWatermarks: highWatermarks }
+              : phase === "peerdb_drain_verification"
+                ? { stagingBoundary: peerDbStagingBoundary, verified: true }
+                : null,
           ),
           request: retainedRequest,
         }),
@@ -395,9 +402,11 @@ describe("createAccountErasurePhaseRunner", () => {
         "retention_verification",
         execution({
           loadCheckpointDetails: vi.fn(async (phase) =>
-            phase === "peerdb_drain_verification"
-              ? { stagingBoundary: peerDbStagingBoundary, verified: true }
-              : null,
+            phase === "consumer_drain"
+              ? { quarantineHighWatermarks: highWatermarks }
+              : phase === "peerdb_drain_verification"
+                ? { stagingBoundary: peerDbStagingBoundary, verified: true }
+                : null,
           ),
           request: retainedRequest,
         }),
@@ -438,9 +447,9 @@ describe("createAccountErasurePhaseRunner", () => {
     await expect(
       runner.runPhase(
         "consumer_drain_verification",
-        execution({ loadCheckpointDetails: vi.fn(async () => ingestCheckpoint) }),
+        execution({ loadCheckpointDetails: vi.fn(async () => ({ highWatermarks })) }),
       ),
-    ).resolves.toEqual({ drained: true, verified: true });
+    ).resolves.toEqual({ drained: true, replayExpired: true, verified: true });
     await expect(runner.runPhase("remote_revocation_verification", execution())).resolves.toEqual({
       dispositions: [{ disposition: "remote_revoked", providerId: "strava" }],
       verified: true,
@@ -459,7 +468,7 @@ describe("createAccountErasurePhaseRunner", () => {
       ),
     ).resolves.toEqual({ processors: 2, verified: true });
 
-    expect(deps.assertNativeConsumersDrained).toHaveBeenCalledWith(ingestCheckpoint);
+    expect(deps.assertConsumersDrained).toHaveBeenCalledWith(highWatermarks);
     expect(deps.verifyProcessors).toHaveBeenCalledWith(
       snapshot,
       { posthogPersonUuids: [] },

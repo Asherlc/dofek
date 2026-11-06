@@ -175,7 +175,7 @@ export const metricStreamBatchCompletedEventV2Schema = metricStreamProcessingCon
   })
   .strict();
 
-export const metricStreamRedpandaEventSchema = z.union([
+export const metricStreamKafkaEventSchema = z.union([
   metricStreamDeletedEventV1Schema,
   metricStreamDeletedEventV2Schema,
   metricStreamDeletedEventV3Schema,
@@ -208,7 +208,7 @@ export type MetricStreamBatchCompletedEventV2 = z.infer<
 export type MetricStreamBatchCompletedEvent =
   | MetricStreamBatchCompletedEventV1
   | MetricStreamBatchCompletedEventV2;
-export type MetricStreamRedpandaEvent = z.infer<typeof metricStreamRedpandaEventSchema>;
+export type MetricStreamKafkaEvent = z.infer<typeof metricStreamKafkaEventSchema>;
 
 function formatUuidFromBytes(bytes: Uint8Array): string {
   const hex = Array.from(bytes, (byteValue) => byteValue.toString(16).padStart(2, "0")).join("");
@@ -349,13 +349,13 @@ export function createMetricStreamBatchCompletedEvent(
 }
 
 export function isMetricStreamDeletedEvent(
-  event: MetricStreamRedpandaEvent,
+  event: MetricStreamKafkaEvent,
 ): event is MetricStreamDeletedEvent {
   return "eventType" in event && event.eventType === METRIC_STREAM_DELETED_EVENT_TYPE;
 }
 
 export function isMetricStreamBatchCompletedEvent(
-  event: MetricStreamRedpandaEvent,
+  event: MetricStreamKafkaEvent,
 ): event is MetricStreamBatchCompletedEvent {
   return "eventType" in event && event.eventType === METRIC_STREAM_BATCH_COMPLETED_EVENT_TYPE;
 }

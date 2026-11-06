@@ -14,6 +14,14 @@ import {
   ACCOUNT_ERASURE_IDENTIFIER_PAGE_SIZE,
   AccountErasureIdentifierStore,
 } from "../account-erasure/identifier-store.ts";
+import {
+  assertAccountErasureConsumersDrained,
+  assertAccountErasureQuarantineExpired,
+  assertAccountErasureReplayExpired,
+  captureAccountErasureHighWatermarks,
+  captureAccountErasureQuarantineHighWatermarks,
+  createAccountErasureKafkaAdminFromEnv,
+} from "../account-erasure/kafka-drain.ts";
 import { assertPeerDbAccountErasureDrained } from "../account-erasure/peerdb-erasure.ts";
 import {
   createPeerDbStagingStorageFromEnv,
@@ -46,16 +54,6 @@ import {
 import type { ClickHouseClient } from "../db/clickhouse.ts";
 import { createPeerDbMirrorApiClientFromEnv } from "../db/clickhouse-cdc.ts";
 import type { Database } from "../db/index.ts";
-import { resolveMetricStreamConsumerRoutes } from "../metric-stream/consumer-routes.ts";
-import {
-  type AccountErasureNativeIngestCheckpoint,
-  assertAccountErasureSubscriptionsDrained,
-  buildAccountErasureNativeIngestCheckpoint,
-  captureAccountErasureNativeFenceProgress,
-  createPulsarDrainAdminFromUrls,
-  type PulsarDrainAdmin,
-  resolveAccountErasureNativeDrainStreams,
-} from "../metric-stream/pulsar-drain.ts";
 import { getAllProviders } from "../providers/index.ts";
 import { createR2Client, requiredR2EnvironmentVariable } from "../r2-storage.ts";
 import {
@@ -80,22 +78,6 @@ export interface AccountErasureRuntime {
 
 type AccountErasureRuntimeDatabase = Pick<Database, "execute" | "transaction" | "$client">;
 type AccountErasureRuntimeClickHouseClient = ClickHouseClient;
-
-function requiredEnvironment(name: string, env: NodeJS.ProcessEnv = process.env): string {
-  const value = env[name]?.trim();
-  if (!value) throw new Error(`${name} is required for account erasure`);
-  return value;
-}
-
-function createPulsarDrainAdminFromEnv(env: NodeJS.ProcessEnv = process.env): PulsarDrainAdmin {
-  return createPulsarDrainAdminFromUrls({
-    adminUrl: requiredEnvironment("PULSAR_ADMIN_URL", env),
-  });
-}
-
-function streamIdentityKey(stream: { epoch: string; topic: string; partition: number }): string {
-  return `${stream.epoch}:${stream.topic}:${stream.partition}`;
-}
 
 export async function createAccountErasureRuntime(
   database: AccountErasureRuntimeDatabase,
@@ -125,17 +107,9 @@ export async function createAccountErasureRuntime(
     });
     const processorConfig = accountErasureProcessorConfigFromEnv();
     const processorRetentionConfig = processorRetentionConfigFromEnv();
-    const pulsarAdmin = createPulsarDrainAdminFromEnv();
-    const epoch = requiredEnvironment("METRIC_STREAM_TRANSPORT_EPOCH");
-    const consumerRoutes = resolveMetricStreamConsumerRoutes();
-    const resolveDrainStreams = () =>
-      resolveAccountErasureNativeDrainStreams(pulsarAdmin, {
-        epoch,
-        routes: consumerRoutes.map((route) => ({
-          topic: route.topic,
-          subscriptions: route.subscriptions,
-        })),
-      });
+    const kafka = createAccountErasureKafkaAdminFromEnv();
+    startupCleanup.push(() => kafka.close());
+    await kafka.connect();
 
     const identifiers = (input: { requestId: string; leaseOwner: string }) =>
       new AccountErasureIdentifierStore(database, {
@@ -172,33 +146,16 @@ export async function createAccountErasureRuntime(
         if (!(await store.loadPhysicalProgress(input.stage)))
           throw new Error("Account erasure physical preparation is incomplete");
       },
-      assertNativeConsumersDrained: async (checkpoint) => {
-        const streams = await resolveDrainStreams();
-        const byKey = new Map(
-          streams.map((stream) => [streamIdentityKey(stream), stream] as const),
-        );
-        for (const progress of checkpoint.streams) {
-          const stream = byKey.get(
-            streamIdentityKey({
-              epoch: progress.fence.epoch,
-              topic: progress.fence.topic,
-              partition: progress.fence.partition,
-            }),
-          );
-          if (!stream) {
-            throw new Error(
-              `Account erasure drain is missing route for epoch ${progress.fence.epoch} ${progress.fence.topic} partition ${progress.fence.partition}`,
-            );
-          }
-          await assertAccountErasureSubscriptionsDrained(
-            pulsarAdmin,
-            progress.fence,
-            stream.subscriptions,
-          );
-        }
-        if (checkpoint.streams.length !== streams.length) {
-          throw new Error(
-            `Account erasure ingest checkpoint stream count ${checkpoint.streams.length} differs from resolved drain stream count ${streams.length}`,
+      assertConsumersDrained: async (highWatermarks) => {
+        for (const route of kafka.routes) {
+          const captured = highWatermarks.filter((entry) => entry.topic === route.topic);
+          if (captured.length === 0)
+            throw new Error(`Account erasure checkpoint is missing topic ${route.topic}`);
+          await assertAccountErasureConsumersDrained(
+            kafka.admin,
+            route.topic,
+            captured,
+            route.consumerGroups,
           );
         }
       },
@@ -207,20 +164,45 @@ export async function createAccountErasureRuntime(
           userId: input.userId,
           store: identifiers(input),
         }),
-      captureNativeIngestCheckpoint: async (): Promise<AccountErasureNativeIngestCheckpoint> => {
-        const streams = await resolveDrainStreams();
-        const progress = [];
-        for (const stream of streams) {
-          progress.push(
-            await captureAccountErasureNativeFenceProgress(pulsarAdmin, {
-              epoch: stream.epoch,
-              topic: stream.topic,
-              partition: stream.partition,
-            }),
-          );
+      assertQuarantineExpired: async (highWatermarks) => {
+        for (const route of kafka.routes) {
+          const captured = highWatermarks.filter((entry) => entry.topic === route.topic);
+          if (captured.length === 0)
+            throw new Error(`Account erasure checkpoint is missing topic ${route.topic}`);
+          await assertAccountErasureQuarantineExpired(kafka.admin, route.topic, captured);
         }
-        return buildAccountErasureNativeIngestCheckpoint(progress);
       },
+      assertReplayExpired: async (highWatermarks) => {
+        for (const route of kafka.routes) {
+          const captured = highWatermarks.filter((entry) => entry.topic === route.topic);
+          if (captured.length === 0)
+            throw new Error(`Account erasure checkpoint is missing topic ${route.topic}`);
+          await assertAccountErasureReplayExpired(kafka.admin, route.topic, captured);
+        }
+      },
+      captureHighWatermarks: async () =>
+        (
+          await Promise.all(
+            kafka.routes.map(async ({ topic }) =>
+              (
+                await captureAccountErasureHighWatermarks(kafka.admin, topic)
+              ).map((entry) => ({
+                ...entry,
+                topic,
+              })),
+            ),
+          )
+        ).flat(),
+      captureQuarantineHighWatermarks: async () =>
+        (
+          await Promise.all(
+            kafka.routes.map(async ({ topic }) =>
+              (
+                await captureAccountErasureQuarantineHighWatermarks(kafka.admin, topic)
+              ).map((entry) => ({ ...entry, topic })),
+            ),
+          )
+        ).flat(),
       capturePeerDbStagingBoundary: (input) =>
         capturePeerDbStagingBoundary(database, peerDbMirrorApi, peerDbStaging.storage, input),
       decryptSnapshot: decryptAccountErasureSnapshot,
@@ -325,7 +307,7 @@ export async function createAccountErasureRuntime(
     return {
       async close(): Promise<void> {
         try {
-          await workPurger.close();
+          await Promise.all([kafka.close(), workPurger.close()]);
         } finally {
           try {
             peerDbStaging.close();

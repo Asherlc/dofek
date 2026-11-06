@@ -45,7 +45,7 @@ function createRetentionPhaseRunner(now: Date) {
     operator: "integration-fixture@example.test",
     verifiedCutoffAt: new Date(now.getTime() - 2 * 60 * 60 * 1_000).toISOString(),
     verifiedAt: new Date(now.getTime() - 60 * 60 * 1_000).toISOString(),
-    runbookRevision: "docs/pulsar-remaining-work.md#physical",
+    runbookRevision: "docs/account-erasure.md#physical",
   };
   const verifyPeerDbStagingRetention = vi.fn(async () => ({
     lifecycleRetentionDays: 1,
@@ -56,9 +56,12 @@ function createRetentionPhaseRunner(now: Date) {
   const dependencies = {
     prepareIdentifiers: unexpectedDependency,
     assertIdentifiersReady: unexpectedDependency,
-    assertNativeConsumersDrained: unexpectedDependency,
+    assertConsumersDrained: unexpectedDependency,
+    assertQuarantineExpired: unexpectedDependency,
+    assertReplayExpired: unexpectedDependency,
+    captureQuarantineHighWatermarks: unexpectedDependency,
     assertPeerDbDrained: unexpectedDependency,
-    captureNativeIngestCheckpoint: unexpectedDependency,
+    captureHighWatermarks: unexpectedDependency,
     capturePeerDbStagingBoundary: unexpectedDependency,
     decryptSnapshot: unexpectedDependency,
     eraseArchive: unexpectedDependency,
