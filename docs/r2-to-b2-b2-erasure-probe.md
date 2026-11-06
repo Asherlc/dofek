@@ -5,7 +5,7 @@
 **SHA256:** `5fd159e002ecd97d97a6c23b2358fbcb1eed5b36ffe68f5824b675eef521ec44`  
 **Raw sanitized evidence:** [`docs/evidence/b2-erasure-probe-20261106t180758z/`](evidence/b2-erasure-probe-20261106t180758z/)
 
-Factual probe record only. Does not approve a migration design or CAS replacement.
+Factual B2 compatibility probe record only. Does **not** authorize an R2→B2 bucket migration, CAS replacement, or product cutover. Broader migration remains **deferred**; current Pulsar work adds B2 tiered offload elsewhere (PR #3231 / B7).
 
 No Object GET · no MPU · no retention · no R2/prod ops · no secret key material in artifacts · no probe rerun.
 

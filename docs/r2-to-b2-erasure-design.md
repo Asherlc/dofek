@@ -1,23 +1,23 @@
-# R2→B2 erasure portability design (**DRAFT**)
+# B2 compatibility / erasure-portability findings (**DRAFT**)
 
-> **DRAFT.** Alternatives **A** (version-lineage + lease) and **C** (Connect quiesce + listing settle) remain **REJECTED / unproven** — do not implement. No pointer-table, dual-backend, custom CAS, or audit-fence framework. No product/coordination code here.
+> **DRAFT — documentation only.** Not an imminent all-13 R2→B2 migration. Alternatives **A** / **C** remain **REJECTED / unproven**. No pointer-table, dual-backend, custom CAS, or audit framework. No product/coordination code here.
 
-**Branch:** `r2-to-b2` (PR [#3232](https://github.com/Asherlc/dofek/pull/3232))  
-**Region:** `us-west-004`  
-**Status:** draft docs only  
+**Branch:** `r2-to-b2` (PR [#3232](https://github.com/Asherlc/dofek/pull/3232) — document findings)  
+**Region context:** `us-west-004`  
 **Probe evidence:** [`docs/r2-to-b2-b2-erasure-probe.md`](r2-to-b2-b2-erasure-probe.md) · [`docs/evidence/b2-erasure-probe-20261106t180758z/`](evidence/b2-erasure-probe-20261106t180758z/)  
 **Frozen probe SHA256:** `5fd159e002ecd97d97a6c23b2358fbcb1eed5b36ffe68f5824b675eef521ec44`
 
-### User steering (archive exception — recorded direction)
+### Current plan vs historical migration intent
 
-| Surface | Direction | Notes |
-|---|---|---|
-| **Canonical JSONL metric archive** | **Stay on R2** | Retain existing Cloudflare dest CAS (`cf-copy-destination-if-match`). Removes **archive** dest-CAS portability from **this** migration PR’s blockers **if** archive remains R2. |
-| **Pulsar BookKeeper tiered / sealed-ledger offload** | **B2** (stock `aws-s3`) | Proven separately; **lives in the Pulsar PR / B7 stock Pulsar CI**, **not** this migration PR — no mixed Pulsar offload config here. Needs **separate** B2 endpoint/credentials when provisioned (design coordination only; no runtime/Infisical/prod in this PR). |
-| **Account-erasure restore ledger** | **Still R2 pending decision** | Do **not** assume ledger weaken or B2 placement approved. |
-| **Other R2 buckets** | **Constraints unchanged** | Probe IfNoneMatch / dest-CAS findings still apply wherever those contracts are required. Remaining partial migration scope is **not** assumed user-approved. |
+| Item | Status |
+|---|---|
+| **Original “migrate all ~13 R2 buckets to B2”** | **Historical / deferred** — **not** approved as imminent work; do not claim it in this PR |
+| **Current Pulsar plan** | **Add B2** only as stock `aws-s3` **tiered sealed BookKeeper ledger/offload** — owned by **Pulsar PR [#3231](https://github.com/Asherlc/dofek/pull/3231) / B7**; not configured in #3232 |
+| **Canonical JSONL metric archive** | **Unchanged on R2** — CF dest CAS retained |
+| **Account-erasure restore ledger** | **Unchanged on R2** — no B2 placement / weaken approved |
+| **Other R2 buckets** | **Deferred** — probe blockers still factual if revisited later; not silently approved |
 
-B2 offload objects (immutable UUID keys): native Delete **hides** prior versions — physical version cleanup / lifecycle qualification remains open; **no** erasure-complete claims for offload history.
+B2 offload (immutable UUID keys): native Delete **hides** prior versions — physical version cleanup / lifecycle qualification remains; **no** erasure-complete claims. No new bulk B2 download budget.
 
 Root: **Alt A rejected**; **Alt C unproven/invalid**; ledger Alt B = different threat contract (**no** equivalence); pointer/audit tables **not** approved.
 
@@ -136,17 +136,15 @@ B2 Put `IfNoneMatch` is **501**. A version+legal-hold sketch is **not** claimed 
 
 ---
 
-## 7. Open problems (post archive-on-R2 steering)
+## 7. Open problems (compatibility record)
 
 | Problem | Status |
 |---|---|
-| Metric-archive dest CAS on B2 | **Out of migration path** while archive stays R2 (CF dest CAS retained) |
-| Ledger create-once on B2 | **Still blocked / undecided** — ledger remains R2 pending decision; no weaken |
-| Other buckets needing atomic create/replace | Probe constraints **still apply**; remaining partial scope **not** assumed approved |
-| Pulsar B2 tiered offload | **Pulsar PR / B7** owns config; separate endpoints/credentials when provisioned; version hide vs physical cleanup qualification remains |
-| Alt A / Alt C / pointer-audit CAS substitutes | **Rejected / unproven / not approved** |
-
-Do **not** implement CAS-replacement coordination, dual-backend, or silent keep-R2 for undecided surfaces.
+| Metric-archive dest CAS on B2 | **N/A for current plan** — archive stays R2 |
+| Account-erasure ledger on B2 | **Not in current plan** — stays R2; IfNoneMatch findings preserved if revisited |
+| Broader R2→B2 bucket migration | **Deferred** |
+| Pulsar B2 tiered offload | **#3231 / B7** — separate endpoints/credentials when provisioned; version hide ≠ physical cleanup done |
+| Alt A / Alt C / pointer-audit | **Rejected / unproven / not approved** |
 
 ---
 
@@ -154,11 +152,9 @@ Do **not** implement CAS-replacement coordination, dual-backend, or silent keep-
 
 | Topic | Status |
 |---|---|
-| Metric archive on R2 (user steering) | **Recorded direction** — CF dest CAS kept; archive CAS portability not a migration blocker |
-| Pulsar BookKeeper offload on B2 | **Pulsar PR / B7**, not PR 3232 |
-| Restore ledger placement | **R2 pending decision** |
-| Remaining buckets / partial migrate | **Not assumed approved** |
-| All-version delete / retain-new | Probe-supported where B2 history applies; not a CAS substitute |
-| Alt A / Alt C | **REJECTED** / **UNPROVEN** |
-| Pointer/audit / custom CAS | **Not approved** |
-| Product / Infisical / copy / new probes | **Blocked** in this PR |
+| This PR (#3232) | **Document B2 compatibility findings** — draft, no product changes |
+| All-13 R2→B2 migration | **Deferred** (historical intent only) |
+| Add B2 Pulsar tiered offload | **#3231 / B7**, not here |
+| R2 archive + erasure ledger | **Unchanged** |
+| Alt A / Alt C / custom CAS frameworks | **REJECTED** / **not approved** |
+| Product / Infisical / copy / new probes / bulk download | **Out of scope** |
