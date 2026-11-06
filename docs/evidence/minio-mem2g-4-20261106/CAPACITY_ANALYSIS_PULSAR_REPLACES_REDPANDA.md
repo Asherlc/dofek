@@ -1,4 +1,10 @@
 # Capacity analysis — Pulsar REPLACES Redpanda (updated 2026-11-06T21:12:34Z)
+
+**Superseded for production decision math** by the fresh 2026-11-06 SSH census in
+[`docs/pulsar-production-capacity-decision.md`](../../pulsar-production-capacity-decision.md)
+(live desired replicas; Oracle-zeroed UIs excluded). This file remains the
+lab-era paper worksheet tied to mem2g-4 evidence.
+
 Source census: `/tmp/prod-host-memory-census.txt` (retained from prior read-only capture) + lab `/tmp/minio-mem2g-4` measured peaks.
 Host: MemTotal≈23.41 GiB (24550252 kB). **ClickHouse hard limit 13 GiB untouched. Postgres caps untouched.**
 

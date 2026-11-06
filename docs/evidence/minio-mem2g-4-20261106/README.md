@@ -57,11 +57,11 @@ before broker restart ([BookKeeper CLI](https://bookkeeper.apache.org/docs/refer
 
 ## Production budget (unresolved)
 
-Retained census math with bookie hard limit 2048 MiB: Pulsar add **4352 MiB**,
-retire Redpanda+3 sinks **2400 MiB**, net **+1952 MiB**; after limited-sum
-**~30.58 GiB** vs host **24 GiB**. ClickHouse **13 GiB** and Postgres caps
-**untouched**. Documented only — no deployment change in this packet.
-See `CAPACITY_ANALYSIS_PULSAR_REPLACES_REDPANDA.md`.
+Production decision (fresh SSH census, live desired replicas):
+[`docs/pulsar-production-capacity-decision.md`](../../pulsar-production-capacity-decision.md).
+Lab-era worksheet still in `CAPACITY_ANALYSIS_PULSAR_REPLACES_REDPANDA.md`.
+ClickHouse **13 GiB** and Postgres caps **untouched**. No deployment change
+in the lab packet.
 
 ## Files
 
