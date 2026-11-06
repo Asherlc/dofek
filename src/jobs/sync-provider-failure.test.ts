@@ -178,7 +178,11 @@ describe("sync-provider-failure", () => {
     });
     mockGetEnabledSyncProviders.mockReturnValue([provider]);
 
-    const job = createMockJob({ providerId: "example", userId: "user-1", sinceDays: 1 });
+    const job = createMockJob({
+      providerId: "example",
+      userId: "00000000-0000-4000-8000-000000000001",
+      sinceDays: 1,
+    });
     await runSyncJob(job, mockDb);
 
     expect(mockProviderQueueAdd).toHaveBeenCalledWith(
@@ -186,7 +190,7 @@ describe("sync-provider-failure", () => {
       {
         providerId: "example",
         processingOperationIds: { example: processingOperationId },
-        userId: "user-1",
+        userId: "00000000-0000-4000-8000-000000000001",
         requestedAtIso: "2026-06-02T12:00:00.000Z",
         sinceDays: 1,
         sinceIso: "2026-06-01T00:00:00.000Z",
@@ -220,7 +224,7 @@ describe("sync-provider-failure", () => {
       status: "error",
       errorMessage: "Example API rate limit exceeded (429): limited",
       durationMs: 0,
-      userId: "user-1",
+      userId: "00000000-0000-4000-8000-000000000001",
       origin: "unknown",
     });
 
@@ -259,7 +263,11 @@ describe("sync-provider-failure", () => {
     });
     mockGetEnabledSyncProviders.mockReturnValue([provider]);
 
-    const job = createMockJob({ providerId: "example", userId: "user-1", sinceDays: 7 });
+    const job = createMockJob({
+      providerId: "example",
+      userId: "00000000-0000-4000-8000-000000000001",
+      sinceDays: 7,
+    });
     await runSyncJob(job, mockDb);
 
     // The original run resolved a 7-day window ending at the end of the sync day.
@@ -282,7 +290,7 @@ describe("sync-provider-failure", () => {
         window: expectedWindow,
         options: expect.objectContaining({
           onProgress: expect.any(Function),
-          userId: "user-1",
+          userId: "00000000-0000-4000-8000-000000000001",
         }),
       }),
     );
@@ -351,14 +359,18 @@ describe("sync-provider-failure", () => {
     });
     mockGetEnabledSyncProviders.mockReturnValue([provider]);
 
-    const job = createMockJob({ providerId: "example", userId: "user-1", sinceDays: 1 });
+    const job = createMockJob({
+      providerId: "example",
+      userId: "00000000-0000-4000-8000-000000000001",
+      sinceDays: 1,
+    });
     await runSyncJob(job, mockDb);
 
     expect(mockProviderQueueAdd).toHaveBeenCalledWith(
       "sync",
       expect.objectContaining({
         providerId: "example",
-        userId: "user-1",
+        userId: "00000000-0000-4000-8000-000000000001",
         sinceIso: "2026-06-01T00:00:00.000Z",
         untilIso: "2026-06-02T23:59:59.999Z",
       }),
@@ -406,7 +418,7 @@ describe("sync-provider-failure", () => {
         status: "error",
         errorMessage: "API timeout",
         durationMs: expect.any(Number),
-        userId: "user-1",
+        userId: "00000000-0000-4000-8000-000000000001",
         origin: "unknown",
       }),
     );
