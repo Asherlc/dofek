@@ -177,6 +177,10 @@ const dotenv = [
   `METRIC_STREAM_LIVE_TOPIC=metric-stream-live-v1`,
   `METRIC_STREAM_HISTORY_TOPIC=metric-stream-history-v1`,
   `METRIC_STREAM_R2_BUCKET=dofek-metric-stream-archive`,
+  // Compose interpolates profiled archive services even when `compose:up` only
+  // starts db/clickhouse/redis/redpanda; keep stock placeholders so ${:?} passes.
+  `PULSAR_SERVICE_URL=pulsar://127.0.0.1:6650`,
+  `METRIC_STREAM_TRANSPORT_EPOCH=local-dev-transport-epoch`,
   "",
 ].join("\n");
 

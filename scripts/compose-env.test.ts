@@ -49,6 +49,10 @@ describe("compose-env", () => {
       expect(dotenv.METRIC_STREAM_LEGACY_TOPIC).toBe("metric-stream-v1");
       expect(dotenv.METRIC_STREAM_LIVE_TOPIC).toBe("metric-stream-live-v1");
       expect(dotenv.METRIC_STREAM_HISTORY_TOPIC).toBe("metric-stream-history-v1");
+      // Placeholders so Compose can interpolate metric-stream archive profile
+      // services that use ${VAR:?} even when those services are not started.
+      expect(dotenv.PULSAR_SERVICE_URL).toBe("pulsar://127.0.0.1:6650");
+      expect(dotenv.METRIC_STREAM_TRANSPORT_EPOCH).toBe("local-dev-transport-epoch");
       expect(dotenv.COMPOSE_FILE).toBe(join(realpathSync(cwd), "docker-compose.yml"));
       expect(dotenv.POSTGRES_PASSWORD).toBe(postgresFixtureValue);
       expect(dotenv.CLICKHOUSE_PASSWORD).toBe(clickHouseFixtureValue);
