@@ -485,7 +485,7 @@ describe("ClickHouse erasure ownership coverage", () => {
     await expect(
       inspectClickHouseAccountErasureCoverage(
         client([
-          physicalTable("analytics", "unknown_tinylog", [["value", "String"]], {
+          physicalTable("analytics", "unknown_storage_engine", [["value", "String"]], {
             engine: "TinyLog",
           }),
         ]),
@@ -540,7 +540,7 @@ describe("ClickHouse erasure shared system contracts", () => {
         client([
           physicalTable(
             "analytics",
-            "legacy_tinylog_metadata",
+            "legacy_engine_metadata",
             [["cutover_at", "DateTime64(9, 'UTC')"]],
             { engine: "TinyLog" },
           ),
