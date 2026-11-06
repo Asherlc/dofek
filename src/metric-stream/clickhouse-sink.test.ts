@@ -275,7 +275,6 @@ describe("native grouped ClickHouse applier", () => {
     const marker = createMetricStreamBatchCompletedEvent(
       {
         operationId: "00000000-0000-4000-8000-000000000003",
-        userId: sourceEvent.userId,
         batchId: "batch",
         datasetKeys: ["metric_stream"],
       },
@@ -575,7 +574,6 @@ describe("native grouped ClickHouse applier", () => {
     const marker = createMetricStreamBatchCompletedEvent(
       {
         operationId: "00000000-0000-4000-8000-000000000003",
-        userId: sourceEvent.userId,
         batchId: "batch",
         datasetKeys: ["metric_stream"],
       },
@@ -592,7 +590,6 @@ describe("native grouped ClickHouse applier", () => {
     const marker = createMetricStreamBatchCompletedEvent(
       {
         operationId: "00000000-0000-4000-8000-000000000003",
-        userId: sourceEvent.userId,
         batchId: "batch",
         datasetKeys: ["metric_stream"],
       },
@@ -623,7 +620,6 @@ describe("native grouped ClickHouse applier", () => {
     const marker = createMetricStreamBatchCompletedEvent(
       {
         operationId: "00000000-0000-4000-8000-000000000003",
-        userId: sourceEvent.userId,
         batchId: "batch",
         datasetKeys: ["metric_stream"],
       },
