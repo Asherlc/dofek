@@ -11,8 +11,8 @@
 # listAllBucketNames is intentionally omitted until Pulsar stock aws-s3 shows a ListBuckets
 # call against a bucket-scoped key; least-privilege key qualification remains UNQUALIFIED.
 #
-# Infisical auth/permission bootstrap (dedicated B2 IaC parent key, scoped CI write for
-# PULSAR_OFFLOAD_B2_* only): see docs/b2-pulsar-offload-iac.md.
+# Auth bootstrap (dedicated B2 IaC parent key → GH secrets; Infisical scoped CI write for
+# PULSAR_OFFLOAD_B2_* only): scripts/bootstrap-b2-pulsar-offload-iac.ts + docs/b2-pulsar-offload-iac.md.
 
 locals {
   # Same Infisical project as .infisical.json workspaceId (non-secret project id).

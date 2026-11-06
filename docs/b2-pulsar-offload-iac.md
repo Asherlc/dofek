@@ -8,72 +8,63 @@ continues to own the metric-stream archive and account-erasure ledger.
 | Concern | Mechanism | Source |
 | --- | --- | --- |
 | HCP Terraform workspace `dofek`/`dofek` | `execution_mode=local` (plan/apply on GHA runner; state in HCP) | HCP workspace attributes API |
-| B2 provider | Env `B2_APPLICATION_KEY_ID` / `B2_APPLICATION_KEY` on the runner | [Backblaze/b2 0.14.1](https://registry.terraform.io/providers/Backblaze/b2/0.14.1/docs) |
-| Infisical provider | GitHub OIDC: `INFISICAL_AUTH_METHOD=oidc`, `INFISICAL_MACHINE_IDENTITY_ID`, `INFISICAL_AUTH_JWT` minted **after** `terraform init`, immediately before `apply` | [Infisical provider](https://registry.terraform.io/providers/infisical/infisical/0.20.12/docs), [GitHub OIDC](https://infisical.com/docs/documentation/platform/identities/oidc-auth/github) |
-| Runtime secrets | `infisical_secret` resources write `PULSAR_OFFLOAD_B2_*` at `/` (existing dotenv export) | [`.github/templates/infisical-dotenv.tmpl`](../.github/templates/infisical-dotenv.tmpl) |
-| Secrets in state | Broker app key stays in encrypted HCP state; no sensitive TF outputs; JWT masked in GHA | — |
+| B2 provider | Env `B2_APPLICATION_KEY_ID` / `B2_APPLICATION_KEY` on the runner (dedicated IaC parent key) | [Backblaze/b2 0.14.1](https://registry.terraform.io/providers/Backblaze/b2/0.14.1/docs) |
+| Infisical provider | GitHub OIDC: JWT minted **after** `terraform init`, immediately before `apply` | [Infisical provider](https://registry.terraform.io/providers/infisical/infisical/0.20.12/docs), [GitHub OIDC](https://infisical.com/docs/documentation/platform/identities/oidc-auth/github) |
+| Runtime secrets | `infisical_secret` → `PULSAR_OFFLOAD_B2_*` at `/` | [dotenv template](../.github/templates/infisical-dotenv.tmpl) |
+| Infisical IAM (scoped write) | Versioned bootstrap script (idempotent API); CI stays `viewer` + custom role, never project admin | [`scripts/bootstrap-b2-pulsar-offload-iac.ts`](../scripts/bootstrap-b2-pulsar-offload-iac.ts) |
 
-Identity used by deploy Terraform: `46b66f72-0c77-4cfe-be1b-a43395e77be7` (`CI`), same default as
-[`load-infisical-secrets`](../.github/actions/load-infisical-secrets/action.yml).
+Identity: `46b66f72-0c77-4cfe-be1b-a43395e77be7` (`CI`).
+
+Why IAM is not in the CI Terraform apply: `CI` is stock `viewer` and must not gain
+broad project-admin. Role create/membership patch requires elevated Infisical auth.
+That one-time **authentication** exception is Root injecting credentials into the
+bootstrap script; the script performs all resource API calls (no dashboard). Re-run
+the same script to reconcile the role definition — not a dangling “later TF” TODO.
 
 ## Resources (TF)
 
 - Private bucket `dofek-pulsar-offload` (`prevent_destroy`)
 - Lifecycle: hide→delete 1d, unfinished MPU cancel 1d; no upload→hide; no Object Lock
-- Bucket-scoped broker key capabilities: `listFiles`, `readFiles`, `writeFiles`, `deleteFiles`, `readBuckets`
-- Infisical keys: `PULSAR_OFFLOAD_B2_BUCKET`, `PULSAR_OFFLOAD_B2_ENDPOINT`, `PULSAR_OFFLOAD_B2_REGION`, `PULSAR_OFFLOAD_B2_KEY_ID`, `PULSAR_OFFLOAD_B2_APP_KEY`
+- Bucket-scoped broker key: `listFiles`, `readFiles`, `writeFiles`, `deleteFiles`, `readBuckets`
+- Infisical: `PULSAR_OFFLOAD_B2_BUCKET|ENDPOINT|REGION|KEY_ID|APP_KEY`
 
-Broker stack wiring to those env names is a **separate** review once apply has created the secrets.
+Broker stack wiring: [b2-pulsar-offload-broker-stack-hunks.md](./b2-pulsar-offload-broker-stack-hunks.md)
+(separate commit after secrets exist).
 
-## Bootstrap (API only — no dashboard / key paste)
+## Root bootstrap packet (protected boundary)
 
-Blocked until an authorized operator runs these. Codex may create the **new** B2 IaC parent key
-via API; the existing Codex management key is never copied into CI, Infisical, or agent prompts.
+**Cursor never receives the Codex management key.** Root injects it privately and runs:
 
-### 1. Dedicated B2 IaC parent key → GitHub Actions secrets
-
-Create a **new** application key (account-scoped, not bucket-restricted) with capabilities needed
-to manage buckets and child keys (not the runtime broker key):
-
-- `listBuckets`, `readBuckets`, `writeBuckets`, `deleteBuckets`
-- `listKeys`, `writeKeys`, `deleteKeys`
-- `listFiles`, `readFiles`, `writeFiles`, `deleteFiles` (lifecycle / object admin as required by provider)
-- `readBucketLifecycleRules`, `writeBucketLifecycleRules` when using S3-compatible lifecycle APIs
-
-Native create: [b2_create_key](https://www.backblaze.com/apidocs/b2-create-key). Store **only** in
-repository secrets `B2_APPLICATION_KEY_ID` and `B2_APPLICATION_KEY` (GHA API / `gh secret set` with
-value on stdin). Never reuse or transfer the Codex management key.
-
-### 2. Infisical scoped write for `CI` (not whole `/`)
-
-Read-only proof (2026-11-06): `GET /api/v1/projects/54712f56-98a9-4531-9e97-0b588d2e5a88/identity-memberships`
-shows identity `46b66f72-…` name `CI` with stock role `viewer` only.
-
-`CI` cannot create project roles or rewrite memberships while it is viewer-only. Bootstrap
-(admin/user API, reviewed) must add a **custom role** limited to `PULSAR_OFFLOAD_B2_*` before
-Terraform can write secrets. Prefer `secretName` `$glob` over granting all of `/`:
-
-```http
-POST /api/v1/projects/54712f56-98a9-4531-9e97-0b588d2e5a88/roles
+```bash
+cd /Users/asherlc/.paseo/worktrees/3b2webx6/pulsar-foundation
+# Private injection only — do not echo / log / paste into chat:
+#   B2_MANAGEMENT_KEY_ID  = existing Codex-only management applicationKeyId
+#   B2_MANAGEMENT_KEY     = existing Codex-only management applicationKey
+# Infisical: use logged-in CLI session, or INFISICAL_TOKEN=<user/admin access token>
+B2_MANAGEMENT_KEY_ID='…' B2_MANAGEMENT_KEY='…' \
+  pnpm tsx scripts/bootstrap-b2-pulsar-offload-iac.ts
 ```
 
-Body (permissions_v2 shape per
-[project permissions](https://infisical.com/docs/internals/permissions/project-permissions)):
+### What the script does (audited)
 
-- slug: `gha-pulsar-offload-b2-secrets`
-- secrets actions: `describeSecret`, `readValue`, `create`, `edit`
-- conditions: `environment.$eq=prod`, `secretPath.$eq=/`, `secretName.$glob=PULSAR_OFFLOAD_B2_*`
+| Step | API / CLI | Scopes | Non-secret output |
+| --- | --- | --- | --- |
+| 1 | `b2_authorize_account` | management key | accountId (not printed as secret) |
+| 2 | `b2_list_keys` | `listKeys` | whether `dofek-terraform-b2-iac` exists |
+| 3 | `b2_create_key` (v4) or reuse | `writeKeys`; caps = list/read/write/delete Keys+Buckets+Files | `applicationKeyId` only |
+| 4 | `gh secret set B2_APPLICATION_KEY_ID` / `B2_APPLICATION_KEY` | repo Actions secrets | secret **names** confirmed via `gh secret list` |
+| 5 | Infisical `POST|PATCH …/roles` | project role admin | slug `gha-pulsar-offload-b2-secrets` |
+| 6 | Infisical `PATCH …/identity-memberships/{CI}` | membership admin | roles `viewer` + custom slug |
 
-Then attach that role **alongside** `viewer` on the `CI` identity membership (do not drop
-viewer). Keep secrets at `/` so the existing dotenv template continues to export them without a
-second folder.
+If the named B2 IaC key exists but GH secrets are missing: re-run with
+`FORCE_ROTATE_B2_IAC_KEY=1` (deletes that named key and recreates). Never recover a
+lost applicationKey from list APIs.
 
-### 3. Terraform reconcile (ongoing)
+### After bootstrap succeeds (still no apply until ACK)
 
-After GH secrets + scoped Infisical write exist, `deploy-terraform.yml` creates/updates the B2
-bucket, broker key, and Infisical secret values. No manual key paste from TF output.
+1. Confirm GH secret **names** `B2_APPLICATION_KEY_ID`, `B2_APPLICATION_KEY` exist.
+2. Confirm Infisical membership for `CI` includes `gha-pulsar-offload-b2-secrets`.
+3. Root ACK → `deploy-terraform.yml` apply creates bucket + broker key + Infisical secrets.
+4. Separate stack hunk commit per broker-stack-hunks doc.
 
-Optional follow-up (elevated Infisical identity required): import
-`infisical_project_role` + `infisical_project_identity` (`adopt_existing`) so Terraform owns the
-custom role definition. Until that identity exists, re-run the bootstrap role API to reconcile
-IAM; do not leave a production-code TODO for dashboard clicks.
+No production Terraform apply or Pulsar deploy from this packet alone.
