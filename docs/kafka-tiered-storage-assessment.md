@@ -1,9 +1,11 @@
 # Kafka tiered storage — stock assessment (authorized lab bounds)
 
-**Status:** assessment + **Root-authorized local investigation lab** bounds.
-**Durable repo change for this packet:** this document only (no runtime/stack
-config). Lab artifacts are disposable under a Compose project-suffix slot and
-must be cleaned up after the run.
+**Status:** assessment + completed **small functional** local lab
+(`kafka-ts-lab-20261106`, CORE_PROOF_PASS). Evidence:
+[`docs/evidence/kafka-ts-lab-20261106/`](evidence/kafka-ts-lab-20261106/).
+**No** adoption/pivot. **No** RAM comparison to the Pulsar 256 MiB fixture.
+Next dual-topic lab is **planned only** (no allocation) pending a size-limit
+decision below.
 
 **Intended architecture under study:** Kafka-protocol **tiered hot buffer**
 (local segments + remote object store for closed segments) **plus the existing
@@ -206,16 +208,106 @@ Kafka **4.4.0** + Aiven **v1.2.0** S3 plugin can tier and re-read against a
 If stock artifacts or the official runner cannot be obtained within these
 bounds: **stop**, record evidence, and do **not** invent a DIY harness.
 
+## November 6 local functional lab (`kafka-ts-lab-20261106`)
+
+**Result:** CORE_PROOF_PASS (scoped functional proof only). Sanitized evidence:
+[`docs/evidence/kafka-ts-lab-20261106/`](evidence/kafka-ts-lab-20261106/).
+
+| Pin | Value |
+|---|---|
+| Kafka | `apache/kafka:4.4.0` @ `sha256:833b867a9585a141da455dc2b57431c65cbccb27f11c91f694444cca9f777e0f` |
+| Plugin | Aiven [v1.2.0](https://github.com/Aiven-Open/tiered-storage-for-apache-kafka/releases/tag/v1.2.0) `core-1.2.0.tgz` `sha256:14fb636d3a5c781ae9ae961012bf7b0881b09629859dbc784dc49356faeaa747` + `s3-1.2.0.tgz` `sha256:1fd89dea84988b857e546fcfa88504f5b4e45d7712e3eddeb506f11a394ef010` |
+| Seaweed | `chrislusf/seaweedfs:4.48` @ `sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d` |
+| Tool | `amazon/aws-cli:2.38.2` @ `sha256:5d39fd52f236ed01c5c25fba66c9aebcfc6cbb88e7bb1b727c5fe1f150540597` |
+| Heap | `-Xmx1G -Xms1G` ([`kafka-server-start.sh` default](https://github.com/apache/kafka/blob/4.4.0/bin/kafka-server-start.sh)) |
+
+**Verification:** closed local segments removed before earliest remote digest;
+5000/5000 contiguous offsets; sha256
+`a1cc5c88bfe4f73c8a665027752d81cbd5c2f12f8ad504457ecb6ef405bde616` matched
+after broker restart; 15 stand-in objects; owned `compose down --volumes`
+cleanup.
+
+**Lifetime peaks (`memory.peak`):** kafka 809.2 / 2048 MiB; seaweed 107.1 /
+1024 MiB; tool 64.4 / 384 MiB; all `oom`/`oom_kill`/`max` = 0. Peak is a
+**lifetime** cgroup high-water mark (includes restart), not a Pulsar 256 MiB
+RAM comparison. Periodic sampler coverage was sparse; oneshot peak/events are
+authoritative ([cgroup v2 memory files](https://docs.kernel.org/admin-guide/cgroup-v2.html#memory-interface-files)).
+
+**Not claimed:** adoption, host fit, B2 compat (still unqualified; zero B2
+this lab), equivalence to Pulsar dual-128×1 MiB fixture.
+
+## Next lab plan (no allocation) — dual overlapping tier
+
+**Intent (Root-requested, not started):** apples-to-apples **workload shape**
+vs Pulsar `minio-mem2g-4` — **two topics**, **128 distinct ~1 MiB messages
+each**, overlapping tier/upload — under **unchanged** Kafka **2048 MiB**
+cgroup + **1 GiB** heap, Seaweed **1024 MiB**, tool **≤384 MiB**, wall
+**≤45 min**, owned data **≤2 GiB**, preflight headroom **≥6 GiB**. Local
+stand-in only; **zero B2**. Still investigation-only.
+
+### Stock size defaults vs 1 MiB records (decision required)
+
+| Config | Default | Source |
+|---|---:|---|
+| Broker `message.max.bytes` | **1048588** (1 MiB + **12** bytes) | [Broker configs 4.4](https://kafka.apache.org/44/configuration/broker-configs/) |
+| Broker `socket.request.max.bytes` | **104857600** (100 MiB) | same |
+| Producer `max.request.size` | **1048576** (exactly 1 MiB) | [Producer configs 4.4](https://kafka.apache.org/44/configuration/producer-configs/) |
+
+A **1048576-byte value** plus Kafka record-batch framing (batch header +
+per-record length/timestamp/key/headers overhead, typically **tens of bytes**)
+exceeds producer `max.request.size` (1048576) and can exceed broker
+`message.max.bytes` (1048588). Therefore **true 1 MiB values are not safe
+under stock producer/broker defaults** without a **lab-scoped** bump of
+`max.request.size` and topic `max.message.bytes` / broker `message.max.bytes`.
+That bump must **not** be silent and must **not** change production Swarm
+limits.
+
+**Decision before allocation (pick one):**
+
+| Option | Approach | Trade-off |
+|---|---|---|
+| **D1** | Lab-only raise producer `max.request.size` + topic `max.message.bytes` (and broker `message.max.bytes` if needed) just enough for 128×1 MiB values × 2 topics | Closest message-shape match to Pulsar; **explicit lab limit bump** (not prod) |
+| **D2** | Keep **all** stock size defaults; match **total user bytes** (2 × 128 MiB = 256 MiB) with a smaller `record-size` that fits defaults (e.g. 512 KiB × 256/topic) | No size-limit bump; weaker per-message shape match |
+
+No allocation until Root picks **D1** or **D2**.
+
+### Plugin / RLM parallelism defaults (not fake equal MPU)
+
+Documented defaults — do **not** assume parity with Pulsar `jclouds.mpu.parts.size=5 MiB`
+or `managedLedgerOffloadMaxThreads=2`:
+
+| Setting | Default | Notes |
+|---|---:|---|
+| Aiven `chunk.size` | **required** (demo/README uses **4 MiB**) | [Aiven configs](https://github.com/Aiven-Open/tiered-storage-for-apache-kafka/blob/v1.2.0/docs/configs.rst) |
+| Aiven `storage.s3.multipart.upload.part.size` | **26214400** (25 MiB) | Segments **&lt; 25 MiB** typically upload as **single-part** PUTs — first lab’s ~1 MiB segments were single-part |
+| Aiven `upload.rate.limit.bytes.per.second` | **null** (unlimited) | Optional throttle |
+| Kafka `remote.log.manager.copier.thread.pool.size` | **10** | [TS configs 4.4](https://kafka.apache.org/44/configuration/tiered-storage-configs/) |
+| Kafka `remote.log.manager.expiration.thread.pool.size` | **10** | same |
+| Kafka `remote.log.reader.threads` | **10** | same |
+| Kafka `remote.log.manager.task.interval.ms` | **30000** | Lab may lower for speed only if Root allows |
+
+Overlapping dual-topic tier exercises **copier pool concurrency across
+partitions/topics**, not “equal MPU part count” vs Pulsar.
+
+### Manifest sketch (after D1/D2)
+
+- Same stock images/plugin digests as `kafka-ts-lab-20261106`.
+- Topics A/B, `remote.storage.enable=true`, small `segment.bytes` to force rolls,
+  `local.retention.*` so closed locals delete after upload.
+- Overlapping produce + wait for dual remote inventory + local removal; dual
+  digests; broker restart; re-digest; cgroup lifetime peaks/events; cleanup.
+- Stop on first OOM/fatal; no automatic limit increase; no B2.
+
 ## Conclusion
 
 Stock Kafka **4.4.0** + Aiven **v1.2.0** remains a **credible, off-the-shelf**
 candidate for a **tiered Kafka-protocol buffer** while **keeping the existing
-R2 JSONL archive**. Capacity on the production host is **unmeasured** until
-this lab (and any later prod-facing measurement) reports peaks. Erasure must
-cover tiered object versions via retention + inventory/cleanup, not via a
-custom segment parser and not by “archive-primary” excuse. The authorized next
-step is the **single bounded local lab** above — investigation only, not
-adoption.
+R2 JSONL archive**. The small functional lab **passed** under 2048 MiB Kafka
+cgroup with lifetime peaks well below limit; that is **not** a Pulsar RAM
+comparison or production qualification. B2 compatibility remains
+**unqualified**. Erasure must still cover tiered object versions. Next gated
+step: Root chooses **D1** or **D2** for the dual-128 overlapping lab — **no
+allocation** until then.
 
 ## Primary links (by claim)
 
@@ -224,12 +316,16 @@ adoption.
 | KIP-405 | https://cwiki.apache.org/confluence/display/KAFKA/KIP-405%3A+Kafka+Tiered+Storage |
 | TS ops (4.4) | https://kafka.apache.org/44/operations/tiered-storage/ |
 | TS configs (4.4) | https://kafka.apache.org/44/configuration/tiered-storage-configs/ |
+| Broker configs (4.4) | https://kafka.apache.org/44/configuration/broker-configs/ |
+| Producer configs (4.4) | https://kafka.apache.org/44/configuration/producer-configs/ |
 | KRaft (4.4) | https://kafka.apache.org/44/operations/kraft/ |
 | Hardware (4.4) | https://kafka.apache.org/44/operations/hardware-and-os/ |
 | Aiven v1.2.0 release | https://github.com/Aiven-Open/tiered-storage-for-apache-kafka/releases/tag/v1.2.0 |
-| Aiven configs | https://github.com/Aiven-Open/tiered-storage-for-apache-kafka/blob/main/docs/configs.rst |
+| Aiven configs v1.2.0 | https://github.com/Aiven-Open/tiered-storage-for-apache-kafka/blob/v1.2.0/docs/configs.rst |
+| cgroup v2 memory.peak | https://docs.kernel.org/admin-guide/cgroup-v2.html#memory-interface-files |
 | B2 S3 API | https://www.backblaze.com/docs/cloud-storage-call-the-s3-compatible-api |
 | B2 versions | https://www.backblaze.com/docs/cloud-storage-file-versions |
+| Lab evidence | evidence/kafka-ts-lab-20261106/ |
 | Metric-stream runbook | metric-stream-redpanda-r2-runbook.md |
 | Account erasure | account-erasure-runbook.md |
 | OpenSSF Scorecard | https://scorecard.dev/ (plugin report missing this session) |

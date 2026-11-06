@@ -1,0 +1,56 @@
+{
+  "kafka": {
+    "container": "pulsar-foundation-kafka-ts-lab-kafka-1",
+    "limit_bytes": 2147483648,
+    "limit_mib": 2048.0,
+    "current_bytes": 615792640,
+    "peak_bytes": 848519168,
+    "peak_mib": 809.2,
+    "headroom_mib": 1238.8,
+    "events": {
+      "low": 0,
+      "high": 0,
+      "max": 0,
+      "oom": 0,
+      "oom_kill": 0,
+      "oom_group_kill": 0
+    },
+    "oom_or_oom_kill": false
+  },
+  "seaweed": {
+    "container": "pulsar-foundation-kafka-ts-lab-seaweed-1",
+    "limit_bytes": 1073741824,
+    "limit_mib": 1024.0,
+    "current_bytes": 110919680,
+    "peak_bytes": 112308224,
+    "peak_mib": 107.1,
+    "headroom_mib": 916.9,
+    "events": {
+      "low": 0,
+      "high": 0,
+      "max": 0,
+      "oom": 0,
+      "oom_kill": 0,
+      "oom_group_kill": 0
+    },
+    "oom_or_oom_kill": false
+  },
+  "tool": {
+    "container": "pulsar-foundation-kafka-ts-lab-tool-1",
+    "limit_bytes": 402653184,
+    "limit_mib": 384.0,
+    "current_bytes": 3633152,
+    "peak_bytes": 67497984,
+    "peak_mib": 64.4,
+    "headroom_mib": 319.6,
+    "events": {
+      "low": 0,
+      "high": 0,
+      "max": 0,
+      "oom": 0,
+      "oom_kill": 0,
+      "oom_group_kill": 0
+    },
+    "oom_or_oom_kill": false
+  }
+}
