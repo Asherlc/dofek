@@ -20,15 +20,12 @@ const MAX_GROUP_BYTES = 8 * 1024 * 1024;
 const MAX_PAYLOAD_BYTES = 900_000;
 
 function isCreateCollision(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "$metadata" in error &&
-    typeof error.$metadata === "object" &&
-    error.$metadata !== null &&
-    "httpStatusCode" in error.$metadata &&
-    error.$metadata.httpStatusCode === 412
-  );
+  if (typeof error !== "object" || error === null) return false;
+  if (!("$metadata" in error)) return false;
+  const metadata = error.$metadata;
+  if (typeof metadata !== "object" || metadata === null) return false;
+  if (!("httpStatusCode" in metadata)) return false;
+  return metadata.httpStatusCode === 412;
 }
 
 async function verifyCollision(

@@ -138,6 +138,31 @@ describe("native JSONL archive", () => {
     await expect(
       archiveMetricStreamDeliveries(archive.client, "archive", context(), archive.signal),
     ).rejects.toThrow();
+    const getCommand = archive.send.mock.calls[1]?.[0];
+    expect(getCommand).toBeInstanceOf(GetObjectCommand);
+    if (!(getCommand instanceof GetObjectCommand)) throw new Error("expected GetObjectCommand");
+    expect(getCommand.input).toEqual(
+      expect.objectContaining({ Bucket: "archive", Key: expect.stringContaining("metric-stream/") }),
+    );
+    expect(archive.send.mock.calls[1]?.[1]).toEqual({ abortSignal: archive.signal });
+  });
+
+  it.each([
+    null,
+    "upload failed",
+    {},
+    { $metadata: null },
+    { $metadata: 12 },
+    { $metadata: {} },
+    { $metadata: { httpStatusCode: 500 } },
+  ])("rethrows non-412 upload failures without reading collision content (%j)", async (failure) => {
+    const archive = fixture();
+    archive.send.mockRejectedValueOnce(failure);
+    await expect(
+      archiveMetricStreamDeliveries(archive.client, "archive", context(), archive.signal),
+    ).rejects.toBe(failure);
+    expect(archive.send).toHaveBeenCalledTimes(1);
+    expect(archive.send.mock.calls[0]?.[0]).toBeInstanceOf(PutObjectCommand);
   });
   it("preserves real serialized batch identity in both key endpoints", async () => {
     const archive = fixture(),
@@ -259,7 +284,16 @@ describe("native JSONL archive", () => {
     await expect(
       archiveMetricStreamDeliveries(archive.client, "archive", context(), archive.signal),
     ).resolves.toBeUndefined();
-    expect(archive.send.mock.calls[1]?.[0]).toBeInstanceOf(GetObjectCommand);
+    const getCommand = archive.send.mock.calls[1]?.[0];
+    expect(getCommand).toBeInstanceOf(GetObjectCommand);
+    if (!(getCommand instanceof GetObjectCommand)) throw new Error("expected GetObjectCommand");
+    expect(getCommand.input).toEqual(
+      expect.objectContaining({
+        Bucket: "archive",
+        Key: original.input.Key,
+      }),
+    );
+    expect(archive.send.mock.calls[1]?.[1]).toEqual({ abortSignal: archive.signal });
   });
   it.each([Buffer.from("different"), Buffer.alloc(10000), Buffer.alloc(0)])(
     "rejects nonidentical collision content without overwriting",

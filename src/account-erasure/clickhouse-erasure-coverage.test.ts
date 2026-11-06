@@ -1184,4 +1184,53 @@ describe("ClickHouse erasure inspection guards", () => {
       "Unclassified ClickHouse physical ownership domain",
     );
   });
+
+  it("accepts the inclusive 500-table / 1 MiB catalog budget and rejects only overage", async () => {
+    const owned = table("owned_rows", [["user_id", "UUID"]]);
+    await expect(
+      inspectClickHouseAccountErasureCoverage(client([owned], { tables: 500, bytes: 1024 * 1024 })),
+    ).resolves.toEqual([owned]);
+    await expect(
+      inspectClickHouseAccountErasureCoverage(client([owned], { tables: 501, bytes: 1024 })),
+    ).rejects.toThrow("500-table/1 MiB metadata budget");
+    await expect(
+      inspectClickHouseAccountErasureCoverage(
+        client([owned], { tables: 1, bytes: 1024 * 1024 + 1 }),
+      ),
+    ).rejects.toThrow("500-table/1 MiB metadata budget");
+  });
+
+  it("binds managed database names and disables query logging for catalog reads", async () => {
+    const owned = table("owned_rows", [["user_id", "UUID"]]);
+    const observed: Array<{
+      query_params?: Record<string, unknown>;
+      clickhouse_settings?: Record<string, unknown>;
+    }> = [];
+    let calls = 0;
+    const observingClient = {
+      query: async (options: {
+        query_params?: Record<string, unknown>;
+        clickhouse_settings?: Record<string, unknown>;
+      }) => {
+        observed.push(options);
+        return {
+          json: async () => (++calls === 1 ? [{ tables: 1, bytes: 1024 }] : [owned]),
+        };
+      },
+    };
+    await expect(inspectClickHouseAccountErasureCoverage(observingClient)).resolves.toEqual([
+      owned,
+    ]);
+    expect(observed).toHaveLength(2);
+    expect(observed).toEqual([
+      expect.objectContaining({
+        query_params: { managed_databases: [...PRODUCTION_MANAGED_DATABASES] },
+        clickhouse_settings: { log_queries: 0 },
+      }),
+      expect.objectContaining({
+        query_params: { managed_databases: [...PRODUCTION_MANAGED_DATABASES] },
+        clickhouse_settings: { log_queries: 0 },
+      }),
+    ]);
+  });
 });

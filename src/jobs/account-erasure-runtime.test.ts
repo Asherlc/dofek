@@ -55,6 +55,11 @@ const mocks = vi.hoisted(() => ({
   ),
   assertIdentifierClosure: vi.fn(async (_stage: "initial" | "final") => undefined),
   identifierStoreCreated: vi.fn(),
+  loadPhysicalProgress: vi.fn(async () => ({
+    step: "apply" as const,
+    afterIntentKey: null,
+    pending: null,
+  })),
   erasePostgres: vi.fn(async () => undefined),
   eraseProcessors: vi.fn(async () => ({ processor: "queued" })),
   eraseStripe: vi.fn(async () => ({
@@ -128,8 +133,8 @@ vi.mock("../account-erasure/identifier-store.ts", () => ({
     readPage(family: unknown, after?: string) {
       return mocks.readIdentifierPage(family, after);
     }
-    loadPhysicalProgress() {
-      return Promise.resolve({ step: "apply", afterIntentKey: null, pending: null });
+    loadPhysicalProgress(stage: "initial" | "final") {
+      return mocks.loadPhysicalProgress(stage);
     }
     assertClosureComplete(stage: "initial" | "final") {
       return mocks.assertIdentifierClosure(stage);
@@ -479,10 +484,11 @@ describe("createAccountErasureRuntime", () => {
         stage: "initial",
       },
     );
-    expect(mocks.identifierStoreCreated).toHaveBeenCalledWith(
-      database,
-      expect.objectContaining({ requestId: request.id, leaseOwner: "runtime-fixture-worker" }),
-    );
+    expect(mocks.identifierStoreCreated).toHaveBeenCalledWith(database, {
+      requestId: request.id,
+      leaseOwner: "runtime-fixture-worker",
+      pageSize: 500,
+    });
     expect(mocks.assertConsumersDrained).toHaveBeenCalledWith(
       { name: "redpanda-admin" },
       "metric-stream-v1",
@@ -599,9 +605,24 @@ describe("createAccountErasureRuntime", () => {
       }),
     );
 
+    expect(mocks.loadPhysicalProgress).toHaveBeenCalledWith("initial");
     await expect(runtime.phaseRunner.runPhase("postgres_erasure", execution())).resolves.toBeNull();
     expect(mocks.erasePostgres).toHaveBeenCalledWith(database, request.id, request.userId);
     expect(mocks.captureWalLsn).not.toHaveBeenCalled();
+    expect(mocks.identifierStoreCreated).toHaveBeenCalledWith(database, {
+      requestId: request.id,
+      leaseOwner: "runtime-fixture-worker",
+      pageSize: 500,
+    });
+    expect(mocks.withOwner).toHaveBeenCalledWith(
+      database,
+      clickHouseClient,
+      {
+        resourceId: "metric-stream-source",
+        intentId: `account-erasure:${request.id}:prepare-identities:initial`,
+      },
+      expect.any(Function),
+    );
 
     await runtime.phaseRunner.runPhase(
       "peerdb_drain_verification",
@@ -628,6 +649,35 @@ describe("createAccountErasureRuntime", () => {
     expect(mocks.closeRedpanda).toHaveBeenCalledOnce();
     expect(workPurger.close).toHaveBeenCalledOnce();
     expect(mocks.r2Client.destroy).toHaveBeenCalledOnce();
+  });
+
+  it("fails closed when physical identifier preparation is incomplete", async () => {
+    mocks.decryptSnapshot.mockResolvedValue(snapshot);
+    mocks.loadPhysicalProgress.mockResolvedValueOnce(null);
+    const database = {
+      $client: ownerDatabase.$client,
+      execute: vi.fn(async () => []),
+      transaction: vi.fn(),
+    };
+    const clickhouse = {
+      exec: vi.fn<ClickHouseClient["exec"]>(),
+      command: vi.fn(async () => undefined),
+      insert: vi.fn(async () => undefined),
+      query: vi.fn(async () => ({ json: async () => [] })),
+    };
+    const runtime = await createAccountErasureRuntime(database, clickhouse, {
+      close: vi.fn(async () => undefined),
+      purge: vi.fn(async () => undefined),
+    });
+    try {
+      await expect(runtime.phaseRunner.runPhase("postgres_erasure", execution())).rejects.toThrow(
+        "physical preparation is incomplete",
+      );
+      expect(mocks.loadPhysicalProgress).toHaveBeenCalledWith("initial");
+      expect(mocks.erasePostgres).not.toHaveBeenCalled();
+    } finally {
+      await runtime.close();
+    }
   });
 
   it("releases acquired resources when runtime startup fails", async () => {
