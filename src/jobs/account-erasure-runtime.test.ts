@@ -336,6 +336,57 @@ function execution(
   };
 }
 
+function mockClickHouse() {
+  return {
+    exec: vi.fn<ClickHouseClient["exec"]>(),
+    command: vi.fn(async () => undefined),
+    insert: vi.fn(async () => undefined),
+    query: vi.fn(async () => ({ json: async () => [] })),
+  };
+}
+
+const retainedRequest: ClaimedAccountErasureRequest = {
+  ...request,
+  encryptedRemoteSnapshot: null,
+  piiScrubbedAt: new Date("2026-08-03T12:00:00.000Z"),
+  userId: null,
+};
+
+const peerDbDrainCheckpoint = {
+  stagingBoundary: {
+    cutoff: "2026-08-03T12:00:00.000Z",
+    eTag: '"boundary-etag"',
+    key: "account-erasure-boundaries/10000000-0000-4000-8000-000000001994",
+    mirrors: [{ name: "dofek_fitness_raw_analytics", status: "STATUS_PAUSED" as const }],
+  },
+  verified: true,
+};
+
+const ingestFenceCompletedAt = new Date("2026-08-26T09:00:00.000Z");
+
+function orderedStockPhysicalMaintenanceAck(now: Date = new Date()) {
+  const fenceMs = ingestFenceCompletedAt.getTime();
+  return {
+    kind: "stock_physical_maintenance_ack" as const,
+    runId: "maintenance-runtime-fixture",
+    operator: "runtime-fixture@example.test",
+    verifiedCutoffAt: new Date(fenceMs + 60 * 60 * 1_000).toISOString(),
+    verifiedAt: new Date(
+      Math.min(now.getTime() - 60_000, fenceMs + 2 * 60 * 60 * 1_000),
+    ).toISOString(),
+    runbookRevision: "docs/pulsar-remaining-work.md#physical",
+  };
+}
+
+async function retentionLoadCheckpointDetails(
+  phase: Parameters<AccountErasurePhaseExecution["loadCheckpointDetails"]>[0],
+) {
+  if (phase === "peerdb_drain_verification") {
+    return peerDbDrainCheckpoint;
+  }
+  return null;
+}
+
 describe("createAccountErasureRuntime", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -345,7 +396,7 @@ describe("createAccountErasureRuntime", () => {
     process.env.METRIC_STREAM_LIVE_TOPIC = "persistent://public/default/live";
     process.env.METRIC_STREAM_HISTORY_TOPIC = "persistent://public/default/history";
     mocks.r2Client.send.mockResolvedValue({ Contents: [], IsTruncated: false });
-    mocks.loadCheckpointCompletedAt.mockResolvedValue(new Date("2026-08-26T09:00:00.000Z"));
+    mocks.loadCheckpointCompletedAt.mockResolvedValue(ingestFenceCompletedAt);
     mocks.loadPhaseProgress.mockResolvedValue(null);
   });
 
@@ -501,25 +552,8 @@ describe("createAccountErasureRuntime", () => {
   });
 
   it("fails closed when stock physical maintenance ack is missing from phase_progress", async () => {
-    const fenceProgress = {
-      fence: {
-        transport: "pulsar" as const,
-        state: "empty" as const,
-        epoch: "transport-epoch",
-        topic: "persistent://public/default/legacy",
-        partition: -1,
-      },
-    };
-    const ingest = { streams: [fenceProgress] };
-    mocks.loadCheckpointCompletedAt.mockResolvedValueOnce(new Date("2026-08-26T09:00:00.000Z"));
     mocks.loadPhaseProgress.mockResolvedValueOnce(null);
-    const clickhouse = {
-      exec: vi.fn<ClickHouseClient["exec"]>(),
-      command: vi.fn(async () => undefined),
-      insert: vi.fn(async () => undefined),
-      query: vi.fn(async () => ({ json: async () => [] })),
-    };
-    const runtime = await createAccountErasureRuntime(ownerDatabase, clickhouse, {
+    const runtime = await createAccountErasureRuntime(ownerDatabase, mockClickHouse(), {
       close: vi.fn(async () => undefined),
       purge: vi.fn(async () => undefined),
     });
@@ -527,12 +561,7 @@ describe("createAccountErasureRuntime", () => {
       await expect(
         runtime.phaseRunner.runPhase(
           "retention_verification",
-          execution(async (phase) => (phase === "ingest_fence" ? ingest : null), {
-            ...request,
-            encryptedRemoteSnapshot: null,
-            piiScrubbedAt: new Date("2026-08-03T12:00:00.000Z"),
-            userId: null,
-          }),
+          execution(retentionLoadCheckpointDetails, retainedRequest),
         ),
       ).rejects.toThrow(/missing from retention_verification|Stock physical/i);
       expect(mocks.loadCheckpointCompletedAt).toHaveBeenCalledWith(
@@ -548,5 +577,147 @@ describe("createAccountErasureRuntime", () => {
     } finally {
       await runtime.close();
     }
+  });
+
+  it("fails closed when durable ingest_fence.completed_at is missing", async () => {
+    mocks.loadCheckpointCompletedAt.mockResolvedValueOnce(null);
+    mocks.loadPhaseProgress.mockResolvedValueOnce(orderedStockPhysicalMaintenanceAck());
+    const runtime = await createAccountErasureRuntime(ownerDatabase, mockClickHouse(), {
+      close: vi.fn(async () => undefined),
+      purge: vi.fn(async () => undefined),
+    });
+    try {
+      await expect(
+        runtime.phaseRunner.runPhase(
+          "retention_verification",
+          execution(retentionLoadCheckpointDetails, retainedRequest),
+        ),
+      ).rejects.toThrow(/requires durable ingest_fence\.completed_at/);
+      expect(mocks.loadPhaseProgress).not.toHaveBeenCalled();
+      expect(mocks.verifyBackupRetention).not.toHaveBeenCalled();
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("rejects stock physical maintenance ack that does not cover ingest_fence.completed_at", async () => {
+    mocks.loadPhaseProgress.mockResolvedValueOnce({
+      ...orderedStockPhysicalMaintenanceAck(),
+      verifiedCutoffAt: "2026-08-26T08:00:00.000Z",
+      verifiedAt: "2026-08-26T08:30:00.000Z",
+    });
+    const runtime = await createAccountErasureRuntime(ownerDatabase, mockClickHouse(), {
+      close: vi.fn(async () => undefined),
+      purge: vi.fn(async () => undefined),
+    });
+    try {
+      await expect(
+        runtime.phaseRunner.runPhase(
+          "retention_verification",
+          execution(retentionLoadCheckpointDetails, retainedRequest),
+        ),
+      ).rejects.toThrow(/cover durable ingest_fence/);
+      expect(mocks.verifyBackupRetention).not.toHaveBeenCalled();
+      expect(mocks.verifyPeerDbStagingRetention).not.toHaveBeenCalled();
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("completes retention verification when ordered stock physical maintenance ack is present", async () => {
+    const ack = orderedStockPhysicalMaintenanceAck();
+    mocks.loadPhaseProgress.mockResolvedValueOnce(ack);
+    const runtime = await createAccountErasureRuntime(ownerDatabase, mockClickHouse(), {
+      close: vi.fn(async () => undefined),
+      purge: vi.fn(async () => undefined),
+    });
+    try {
+      await expect(
+        runtime.phaseRunner.runPhase(
+          "retention_verification",
+          execution(retentionLoadCheckpointDetails, retainedRequest),
+        ),
+      ).resolves.toEqual({
+        backupRetention: { deletedObjects: 2 },
+        peerDbStagingRetention: {
+          lifecycleRetentionDays: 1,
+          multipartUploadsInspected: 0,
+          objectsInspected: 2,
+          verified: true,
+        },
+        physicalMaintenanceAcknowledged: {
+          runId: ack.runId,
+          operator: ack.operator,
+          runbookRevision: ack.runbookRevision,
+        },
+        processorRetention: {
+          axiomRetentionDays: 30,
+          sentryRetentionDays: 30,
+        },
+        verified: true,
+      });
+      expect(mocks.verifyPeerDbStagingRetention).toHaveBeenCalledWith(
+        mocks.peerDbStagingStorage,
+        expect.objectContaining({
+          cutoff: new Date(peerDbDrainCheckpoint.stagingBoundary.cutoff),
+          now: expect.any(Date),
+        }),
+      );
+      expect(mocks.verifyBackupRetention).toHaveBeenCalled();
+      expect(mocks.verifyProcessorRetention).toHaveBeenCalled();
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("rejects drain when ingest checkpoint stream count differs from resolved routes", async () => {
+    const runtime = await createAccountErasureRuntime(ownerDatabase, mockClickHouse(), {
+      close: vi.fn(async () => undefined),
+      purge: vi.fn(async () => undefined),
+    });
+    try {
+      const partial = {
+        streams: [
+          {
+            fence: {
+              transport: "pulsar" as const,
+              state: "empty" as const,
+              epoch: "transport-epoch",
+              topic: "persistent://public/default/legacy",
+              partition: -1,
+            },
+          },
+        ],
+      };
+      await expect(
+        runtime.phaseRunner.runPhase(
+          "consumer_drain",
+          execution(async (phase) => (phase === "ingest_fence" ? partial : null)),
+        ),
+      ).rejects.toThrow(/stream count 1 differs from resolved drain stream count 3/);
+      expect(mocks.assertSubscriptionsDrained).toHaveBeenCalledOnce();
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("fails closed when required Pulsar admin configuration is missing", async () => {
+    delete process.env.PULSAR_ADMIN_URL;
+    await expect(
+      createAccountErasureRuntime(ownerDatabase, mockClickHouse(), {
+        close: vi.fn(async () => undefined),
+        purge: vi.fn(async () => undefined),
+      }),
+    ).rejects.toThrow(/PULSAR_ADMIN_URL is required for account erasure/);
+  });
+
+  it("fails closed when required Pulsar admin configuration is blank", async () => {
+    process.env.PULSAR_ADMIN_URL = "   ";
+    await expect(
+      createAccountErasureRuntime(ownerDatabase, mockClickHouse(), {
+        close: vi.fn(async () => undefined),
+        purge: vi.fn(async () => undefined),
+      }),
+    ).rejects.toThrow(/PULSAR_ADMIN_URL is required for account erasure/);
   });
 });
