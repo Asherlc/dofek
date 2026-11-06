@@ -332,6 +332,70 @@ describe("native grouped ClickHouse applier", () => {
     ).rejects.toThrow(/conflicting.*payload/i);
     expect(fixture.rows).toHaveLength(0);
   });
+  it.each([
+    ["omits a member", []],
+    ["duplicates a member index", [currentReadRow(), currentReadRow()]],
+    ["returns an out-of-range member index", [currentReadRow({ row_index: 1 })]],
+  ] as const)("rejects current-key guard responses that %s", async (_label, rows) => {
+    prepareFixture([]);
+    owner.client.query = async ({ query }) => ({
+      json: async () =>
+        JSON.parse(query.includes("AS incoming_nanos") ? JSON.stringify(rows) : "[]"),
+    });
+    await expect(
+      applyMetricStreamEventsToClickHouse(
+        owner.client,
+        [sourceEvent],
+        batchContext([sourceEvent]),
+        database,
+      ),
+    ).rejects.toThrow(/incomplete or duplicate membership/);
+    expect(fixture.rows).toHaveLength(0);
+    expect(fixture.commands).toHaveLength(0);
+  });
+  it("rejects current-key guard responses that share a full sorting key", async () => {
+    prepareFixture([]);
+    owner.client.query = async ({ query }) => ({
+      json: async () =>
+        JSON.parse(
+          query.includes("AS incoming_nanos")
+            ? JSON.stringify([currentReadRow({ key_count: "2", present: 0 })])
+            : "[]",
+        ),
+    });
+    await expect(
+      applyMetricStreamEventsToClickHouse(
+        owner.client,
+        [sourceEvent],
+        batchContext([sourceEvent]),
+        database,
+      ),
+    ).rejects.toThrow(/unique full sorting keys/);
+    expect(fixture.rows).toHaveLength(0);
+  });
+  it("requires a command-capable client before generation tombstones", async () => {
+    prepareFixture([
+      [],
+      [],
+      [
+        {
+          user_id: sourceEvent.userId,
+          provider_id: sourceEvent.providerId,
+          generation: sourceEvent.generation + 1,
+        },
+      ],
+    ]);
+    const { command: _command, ...queryOnly } = owner.client;
+    owner.client = queryOnly;
+    await expect(
+      applyMetricStreamEventsToClickHouse(
+        owner.client,
+        [sourceEvent],
+        batchContext([sourceEvent]),
+        database,
+      ),
+    ).rejects.toThrow(/command-capable/);
+  });
   it("skips an identical canonical Float32 and nullable payload at the same rank", async () => {
     prepareFixture([]);
     owner.client.query = async ({ query }) => ({
