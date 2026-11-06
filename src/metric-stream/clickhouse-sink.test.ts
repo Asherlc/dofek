@@ -385,8 +385,9 @@ describe("native grouped ClickHouse applier", () => {
         },
       ],
     ]);
-    const { command: _command, ...queryOnly } = owner.client;
-    owner.client = queryOnly;
+    // Runtime-only omission: ClickHouseClient types command as required, but the
+    // sink fences generation tombstones when command is absent at runtime.
+    Reflect.deleteProperty(owner.client, "command");
     await expect(
       applyMetricStreamEventsToClickHouse(
         owner.client,

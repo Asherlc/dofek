@@ -5,6 +5,12 @@ import { Client, type PoolClient } from "pg";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import type { ClickHouseClient } from "../db/clickhouse.ts";
 import { createDatabase } from "../db/index.ts";
+import { captureException } from "../lib/error-reporting.ts";
+import {
+  analyticsDeliveryGroupIngestionTimes,
+  analyticsDeliveryGroupIntentId,
+  describeAnalyticsDeliveryGroup,
+} from "./analytics-delivery-group.ts";
 import {
   withAnalyticsQueryOwner,
   withAnalyticsReceiptQueryOwner,
@@ -14,20 +20,55 @@ import { completedExecResult } from "./test-helpers.ts";
 vi.mock("../lib/error-reporting.ts", () => ({ captureException: vi.fn() }));
 const database = createDatabase("postgres://unit:unit@localhost/unit");
 afterAll(async () => database.$client.end());
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.mocked(captureException).mockClear();
+  vi.restoreAllMocks();
+});
 
-function fixture(previous?: { intentId: string | null; quiescent?: boolean; terminal?: boolean }) {
+const ingestedAt = "2026-11-04T00:00:00.000001Z";
+const kafkaFirst = {
+  transport: "kafka" as const,
+  epoch: "capture-one",
+  topic: "sensor",
+  partition: 0,
+  offset: "9007199254740993",
+};
+
+function fixture(previous?: {
+  intentId?: string | null;
+  quiescent?: boolean;
+  terminal?: boolean;
+  loseOwnerAfterAdmit?: boolean;
+  corruptRegistration?: boolean;
+}) {
   const registrations: string[] = [],
-    trace: string[] = [];
+    trace: string[] = [],
+    locks: string[] = [],
+    unlocks: string[] = [],
+    writeIntentClears: string[] = [],
+    sourceGroupClears: string[] = [],
+    quiesced: string[] = [],
+    reservations: string[] = [],
+    reuseProofs: number[] = [];
   let ownerId = "",
-    intentId: string | null = null;
+    intentId: string | null = null,
+    ownerVisible = true;
   const retired: string[] = [];
-  const session: PoolClient = Object.assign(new Client(), { release: vi.fn() });
+  const release = vi.fn();
+  const session: PoolClient = Object.assign(new Client(), { release });
   const fake = new Proxy(session, {
     get(target, key) {
       if (key === "query")
         return async (statement: string, values: unknown[] = []) => {
           const result = (rows: object[]) => ({ rowCount: rows.length, rows });
+          if (statement.includes("pg_advisory_lock")) {
+            locks.push(String(values[0]));
+            return result([]);
+          }
+          if (statement.includes("pg_advisory_unlock")) {
+            unlocks.push(String(values[0]));
+            return result([]);
+          }
           if (statement.startsWith("SELECT quiescent"))
             return result([
               {
@@ -39,11 +80,14 @@ function fixture(previous?: { intentId: string | null; quiescent?: boolean; term
           if (statement.includes("backend_pid=pg_backend_pid()")) {
             ownerId = String(values[1]);
             intentId = values.length > 2 ? String(values[2]) : (previous?.intentId ?? null);
-            return result([{ ingested_at: "2026-11-04T00:00:00.000001Z", intent_id: intentId }]);
+            if (previous?.loseOwnerAfterAdmit) ownerVisible = false;
+            return result([{ ingested_at: ingestedAt, intent_id: intentId }]);
           }
           if (/SET query_id=/.test(statement)) {
             registrations.push(String(values[2]));
             trace.push("register");
+            if (previous?.corruptRegistration)
+              return result([{ owner_id: "other", intent_id: intentId, query_id: values[2] }]);
             return result([{ owner_id: ownerId, intent_id: intentId, query_id: values[2] }]);
           }
           if (/SET query_terminal=true/.test(statement))
@@ -53,7 +97,33 @@ function fixture(previous?: { intentId: string | null; quiescent?: boolean; term
             intentId = null;
             return result([{ owner_id: ownerId, intent_id: null, query_id: values[3] }]);
           }
-          if (statement.startsWith("SELECT owner_id")) return result([{ owner_id: ownerId }]);
+          if (
+            statement.includes("group_positions_digest") &&
+            statement.includes("SET intent_id=NULL")
+          ) {
+            sourceGroupClears.push(String(values[2]));
+            intentId = null;
+            return result([]);
+          }
+          if (statement.includes("SET intent_id=NULL")) {
+            writeIntentClears.push(String(values[0]));
+            intentId = null;
+            return result([]);
+          }
+          if (statement.includes("SET quiescent=true")) {
+            quiesced.push(ownerId);
+            return result([]);
+          }
+          if (statement.includes("SET ingested_at=")) {
+            reservations.push(String(values[2]));
+            return result([{ owner_id: ownerId }]);
+          }
+          if (statement.includes("analytics_stream_state")) {
+            reuseProofs.push(1);
+            return result([{ owner_id: ownerId }]);
+          }
+          if (statement.startsWith("SELECT owner_id"))
+            return ownerVisible ? result([{ owner_id: ownerId }]) : result([]);
           return result([]);
         };
       const value = Reflect.get(target, key, target);
@@ -70,7 +140,22 @@ function fixture(previous?: { intentId: string | null; quiescent?: boolean; term
     query: async () => ({ json: async () => [] }),
     insert: async () => undefined,
   };
-  return { registrations, trace, input, client, retired };
+  return {
+    registrations,
+    trace,
+    input,
+    client,
+    retired,
+    locks,
+    unlocks,
+    writeIntentClears,
+    sourceGroupClears,
+    quiesced,
+    reservations,
+    reuseProofs,
+    release,
+    session: fake,
+  };
 }
 
 describe("analytics query owner input contracts", () => {
@@ -334,5 +419,187 @@ describe("analytics receipt recovery ownership", () => {
       ),
     ).rejects.toThrow("receipt incomplete");
     expect(context.retired).toEqual([]);
+  });
+});
+
+describe("analytics query owner release and fencing", () => {
+  it("admits write ownership then unlocks and releases a healthy session without destroy", async () => {
+    const context = fixture();
+    await withAnalyticsQueryOwner(database, context.client, context.input, async () => undefined);
+    expect(context.locks).toEqual([`dofek.analytics.query-owner:${context.input.resourceId}`]);
+    expect(context.unlocks).toEqual([`dofek.analytics.query-owner:${context.input.resourceId}`]);
+    expect(context.writeIntentClears).toEqual([context.input.resourceId]);
+    expect(context.quiesced).toHaveLength(1);
+    expect(context.release).toHaveBeenCalledWith(false);
+    expect(captureException).not.toHaveBeenCalled();
+  });
+
+  it("refuses a write while a different intent is already pending", async () => {
+    const context = fixture({ intentId: "pending-other" });
+    await expect(
+      withAnalyticsQueryOwner(database, context.client, context.input, async () => undefined),
+    ).rejects.toThrow(/pending intent pending-other/i);
+    expect(context.writeIntentClears).toEqual([]);
+    expect(context.quiesced).toEqual([]);
+    expect(context.unlocks).toEqual([`dofek.analytics.query-owner:${context.input.resourceId}`]);
+    expect(context.release).toHaveBeenCalledWith(false);
+  });
+
+  it("requires an insert-capable ClickHouse client for write ownership", async () => {
+    const context = fixture();
+    const client = { ...context.client, insert: undefined };
+    await expect(
+      withAnalyticsQueryOwner(database, client, context.input, async () => undefined),
+    ).rejects.toThrow(/insert-capable/i);
+    expect(context.writeIntentClears).toEqual([]);
+    expect(context.release).toHaveBeenCalledWith(false);
+  });
+
+  it("fails closed when registration proof does not match the admitted owner", async () => {
+    const context = fixture({ corruptRegistration: true });
+    await expect(
+      withAnalyticsQueryOwner(database, context.client, context.input, async (owner) => {
+        await owner.client.command({ query: "SELECT 1" });
+      }),
+    ).rejects.toThrow(/registration did not confirm/i);
+    expect(context.registrations).toHaveLength(1);
+    expect(context.writeIntentClears).toEqual([]);
+    expect(context.quiesced).toEqual([]);
+  });
+
+  it("rejects further work after the Postgres session reports an error", async () => {
+    const context = fixture();
+    await expect(
+      withAnalyticsQueryOwner(database, context.client, context.input, async (owner) => {
+        context.session.emit("error", new Error("session dropped"));
+        await expect(owner.assertActive()).rejects.toThrow(/lost its session/i);
+        await expect(owner.client.command({ query: "SELECT 1" })).rejects.toThrow(
+          /lost its session/i,
+        );
+      }),
+    ).rejects.toThrow(/lost its session/i);
+    expect(context.unlocks).toEqual([]);
+    expect(context.release).toHaveBeenCalledWith(true);
+    expect(captureException).toHaveBeenCalledWith(
+      expect.any(Error),
+      expect.objectContaining({ tags: { source: "analytics-query-owner-session" } }),
+    );
+  });
+
+  it("fails when the owner row is no longer active for this session", async () => {
+    const context = fixture({ loseOwnerAfterAdmit: true });
+    await expect(
+      withAnalyticsQueryOwner(database, context.client, context.input, async (owner) => {
+        await expect(owner.assertActive()).rejects.toThrow(/no longer active/i);
+      }),
+    ).rejects.toThrow(/no longer active/i);
+    // Release re-checks owner activity before unlock; a lost owner fences unlock and
+    // destroys the session instead of pretending the handoff completed.
+    expect(context.quiesced).toEqual([]);
+    expect(context.unlocks).toEqual([]);
+    expect(context.release).toHaveBeenCalledWith(true);
+  });
+
+  it("rejects returning while a ClickHouse request is still in flight", async () => {
+    const context = fixture();
+    let resolveCommand!: () => void;
+    const held = new Promise<void>((resolve) => {
+      resolveCommand = resolve;
+    });
+    const client: ClickHouseClient = {
+      ...context.client,
+      command: async () => held,
+    };
+    const pending = withAnalyticsQueryOwner(database, client, context.input, async (owner) => {
+      void owner.client.command({ query: "SELECT held" });
+      return undefined;
+    });
+    await vi.waitFor(() => expect(context.registrations).toHaveLength(1));
+    resolveCommand();
+    await expect(pending).rejects.toThrow(/returned before its request completed/i);
+    expect(context.writeIntentClears).toEqual([]);
+  });
+
+  it("clears a durable source-group intent after a terminal native write failure", async () => {
+    const group = describeAnalyticsDeliveryGroup([kafkaFirst], 500);
+    const intentId = analyticsDeliveryGroupIntentId(group);
+    const context = fixture();
+    const client: ClickHouseClient = {
+      ...context.client,
+      command: async () => {
+        throw new ClickHouseError({
+          message: "memory",
+          code: "241",
+          type: "MEMORY_LIMIT_EXCEEDED",
+        });
+      },
+    };
+    await expect(
+      withAnalyticsQueryOwner(
+        database,
+        client,
+        { resourceId: context.input.resourceId, intentId },
+        async (owner) => {
+          await owner.client.command({ query: "INSERT fixture" });
+        },
+      ),
+    ).rejects.toMatchObject({ code: "241" });
+    expect(context.sourceGroupClears).toEqual([intentId]);
+    expect(context.quiesced).toHaveLength(1);
+    expect(context.unlocks).toEqual([`dofek.analytics.query-owner:${context.input.resourceId}`]);
+    expect(context.release).toHaveBeenCalledWith(false);
+  });
+
+  it("reports owner orchestration failures with the owner capture tag", async () => {
+    const context = fixture({ intentId: "pending-other" });
+    await expect(
+      withAnalyticsQueryOwner(database, context.client, context.input, async () => undefined),
+    ).rejects.toThrow(/pending intent/i);
+    expect(captureException).toHaveBeenCalledWith(
+      expect.any(Error),
+      expect.objectContaining({ tags: { source: "analytics-query-owner" } }),
+    );
+  });
+});
+
+describe("analytics query owner high-water reservation", () => {
+  it("advances and reuses a durable ingestion reservation for the admitted intent", async () => {
+    const group = describeAnalyticsDeliveryGroup(
+      [kafkaFirst, { ...kafkaFirst, offset: "9007199254740994" }],
+      500,
+    );
+    const intentId = analyticsDeliveryGroupIntentId(group);
+    const context = fixture();
+    const through = analyticsDeliveryGroupIngestionTimes(ingestedAt, group.memberCount).at(-1);
+    expect(through).toBeTruthy();
+    await withAnalyticsQueryOwner(
+      database,
+      context.client,
+      { resourceId: context.input.resourceId, intentId },
+      async (owner) => {
+        expect(owner.ingestedAt).toBe(ingestedAt);
+        await expect(owner.reserveIngestionThrough("2020-01-01T00:00:00.000000Z")).rejects.toThrow(
+          /outside this owners bounded reservation/i,
+        );
+        await owner.reserveIngestionThrough(through!);
+        await owner.reuseIngestionReservation({
+          ...group,
+          ingestedAt,
+          intentId,
+        });
+        await expect(
+          owner.reuseIngestionReservation({
+            ...group,
+            ingestedAt,
+            intentId:
+              "source-group:0000000000000000000000000000000000000000000000000000000000000000",
+          }),
+        ).rejects.toThrow(/does not belong to this intent/i);
+      },
+    );
+    expect(context.reservations).toEqual([through]);
+    expect(context.reuseProofs).toEqual([1]);
+    expect(context.writeIntentClears).toEqual([context.input.resourceId]);
+    expect(context.release).toHaveBeenCalledWith(false);
   });
 });
