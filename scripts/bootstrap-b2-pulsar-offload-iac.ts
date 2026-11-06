@@ -45,7 +45,12 @@ export const B2_IAC_PARENT_CAPABILITIES = [
   "deleteFiles",
 ] as const;
 
-/** Infisical permissions_v2: only PULSAR_OFFLOAD_B2_* in prod at `/`. */
+/**
+ * Infisical project-role `permissions` body (API field name is `permissions`,
+ * shape matches permissions v2 conditions). Only PULSAR_OFFLOAD_B2_* in prod `/`.
+ * Source: POST /api/v1/projects/{projectId}/roles
+ * https://infisical.com/docs/api-reference/endpoints/project-roles/create
+ */
 export function buildOffloadSecretRolePermissions(): Array<{
   subject: "secrets";
   action: string[];
@@ -66,6 +71,53 @@ export function buildOffloadSecretRolePermissions(): Array<{
       },
     },
   ];
+}
+
+/** Non-secret Infisical role create/update body for Root review. */
+export function buildInfisicalRoleMutationBody(): {
+  slug: string;
+  name: string;
+  description: string;
+  permissions: ReturnType<typeof buildOffloadSecretRolePermissions>;
+} {
+  return {
+    slug: ROLE_SLUG,
+    name: ROLE_NAME,
+    description:
+      "Create/edit/read only PULSAR_OFFLOAD_B2_* secrets in prod at / for Terraform reconcile",
+    permissions: buildOffloadSecretRolePermissions(),
+  };
+}
+
+/** Non-secret membership PATCH body. Preserves viewer; adds scoped writer. */
+export function buildInfisicalMembershipPatchBody(): {
+  roles: Array<{ role: string }>;
+} {
+  return {
+    roles: [{ role: "viewer" }, { role: ROLE_SLUG }],
+  };
+}
+
+/** Non-secret packet for Root review before any API write. */
+export function buildBootstrapPacket(): Record<string, unknown> {
+  return {
+    b2IacKeyName: IAC_KEY_NAME,
+    b2IacParentCapabilities: [...B2_IAC_PARENT_CAPABILITIES],
+    b2CreateKeyApi: "POST {apiUrl}/b2api/v4/b2_create_key",
+    githubSecretsViaStdin: [GH_SECRET_KEY_ID, GH_SECRET_KEY],
+    githubSecretSetNote: "gh secret set NAME  (value on stdin; never --body)",
+    infisicalProjectId: PROJECT_ID,
+    infisicalCiIdentityId: CI_IDENTITY_ID,
+    infisicalRoleCreateApi: `POST ${INFISICAL_API}/v1/projects/${PROJECT_ID}/roles`,
+    infisicalRoleUpdateApi: `PATCH ${INFISICAL_API}/v1/projects/${PROJECT_ID}/roles/{roleId}`,
+    infisicalRoleBody: buildInfisicalRoleMutationBody(),
+    infisicalMembershipPatchApi: `PATCH ${INFISICAL_API}/v1/projects/${PROJECT_ID}/identity-memberships/${CI_IDENTITY_ID}`,
+    infisicalMembershipBody: buildInfisicalMembershipPatchBody(),
+    iamReconcile: "Re-run this script (idempotent). Role definition lives in this source file.",
+    credentialInjection:
+      "B2_MANAGEMENT_KEY_ID + B2_MANAGEMENT_KEY via env after read -s (not argv). Infisical: CLI session or INFISICAL_TOKEN env.",
+    doesNotRun: ["terraform apply", "pulsar deploy", "stack.yml edit"],
+  };
 }
 
 function requireEnv(name: string): string {
@@ -307,7 +359,8 @@ async function ensureInfisicalScopedRole(infisicalToken: string): Promise<{
     "Content-Type": "application/json",
     Accept: "application/json",
   };
-  const permissions = buildOffloadSecretRolePermissions();
+  const roleBody = buildInfisicalRoleMutationBody();
+  const membershipBody = buildInfisicalMembershipPatchBody();
 
   const rolesResponse = await httpJson(
     `${INFISICAL_API}/v1/projects/${PROJECT_ID}/roles`,
@@ -326,13 +379,7 @@ async function ensureInfisicalScopedRole(infisicalToken: string): Promise<{
       {
         method: "POST",
         headers,
-        body: JSON.stringify({
-          slug: ROLE_SLUG,
-          name: ROLE_NAME,
-          description:
-            "Create/edit/read only PULSAR_OFFLOAD_B2_* secrets in prod at / for Terraform reconcile",
-          permissions,
-        }),
+        body: JSON.stringify(roleBody),
       },
       [200, 201],
     );
@@ -345,10 +392,9 @@ async function ensureInfisicalScopedRole(infisicalToken: string): Promise<{
         method: "PATCH",
         headers,
         body: JSON.stringify({
-          name: ROLE_NAME,
-          description:
-            "Create/edit/read only PULSAR_OFFLOAD_B2_* secrets in prod at / for Terraform reconcile",
-          permissions,
+          name: roleBody.name,
+          description: roleBody.description,
+          permissions: roleBody.permissions,
         }),
       },
     );
@@ -361,9 +407,7 @@ async function ensureInfisicalScopedRole(infisicalToken: string): Promise<{
     {
       method: "PATCH",
       headers,
-      body: JSON.stringify({
-        roles: [{ role: "viewer" }, { role: ROLE_SLUG }],
-      }),
+      body: JSON.stringify(membershipBody),
     },
   );
 
@@ -374,7 +418,12 @@ async function ensureInfisicalScopedRole(infisicalToken: string): Promise<{
   return { roleSlug: ROLE_SLUG, roleCreated, roleUpdated, membershipRoles };
 }
 
-async function main(): Promise<void> {
+async function main(argv: string[]): Promise<void> {
+  if (argv.includes("--print-packet")) {
+    console.log(JSON.stringify(buildBootstrapPacket(), null, 2));
+    return;
+  }
+
   const managementKeyId = requireEnv("B2_MANAGEMENT_KEY_ID");
   const managementKey = requireEnv("B2_MANAGEMENT_KEY");
   const infisicalToken = getInfisicalToken();
@@ -396,9 +445,10 @@ async function main(): Promise<void> {
     infisicalRoleUpdated: infisical.roleUpdated,
     infisicalMembershipRoles: infisical.membershipRoles,
     next: [
-      "Review terraform plan for deploy/ (no apply until Root ACK)",
-      "After ACK: let deploy-terraform.yml apply create bucket + broker key + PULSAR_OFFLOAD_B2_* secrets",
-      "Broker stack hunks: docs/b2-pulsar-offload-broker-stack-hunks.md (separate commit after secrets exist)",
+      "Confirm GH secret names B2_APPLICATION_KEY_ID + B2_APPLICATION_KEY exist",
+      "Confirm CI membership includes gha-pulsar-offload-b2-secrets alongside viewer",
+      "Root ACK terraform plan/apply (held): creates bucket + broker key + PULSAR_OFFLOAD_B2_*",
+      "Separate broker stack hunk commit after secrets exist",
     ],
     note: "Management key was not written to GH/Infisical/stdout. Broker 5-cap key remains UNQUALIFIED for Pulsar aws-s3.",
   };
@@ -408,7 +458,7 @@ async function main(): Promise<void> {
 
 const scriptPath = process.argv[1] ? resolve(process.argv[1]) : undefined;
 if (scriptPath && import.meta.url === pathToFileURL(scriptPath).href) {
-  main().catch((error: unknown) => {
+  main(process.argv.slice(2)).catch((error: unknown) => {
     console.error("ERROR: bootstrap failed", error instanceof Error ? error.message : error);
     process.exit(1);
   });

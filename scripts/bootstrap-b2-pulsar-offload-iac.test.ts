@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   B2_IAC_PARENT_CAPABILITIES,
+  buildBootstrapPacket,
+  buildInfisicalMembershipPatchBody,
+  buildInfisicalRoleMutationBody,
   buildOffloadSecretRolePermissions,
 } from "./bootstrap-b2-pulsar-offload-iac.ts";
 
@@ -21,5 +24,19 @@ describe("bootstrap-b2-pulsar-offload-iac", () => {
       secretPath: { $eq: "/" },
       secretName: { $glob: "PULSAR_OFFLOAD_B2_*" },
     });
+  });
+
+  it("membership patch keeps viewer and adds scoped role slug", () => {
+    expect(buildInfisicalMembershipPatchBody()).toEqual({
+      roles: [{ role: "viewer" }, { role: "gha-pulsar-offload-b2-secrets" }],
+    });
+  });
+
+  it("print-packet payload has no secret fields", () => {
+    const packet = buildBootstrapPacket();
+    const serialized = JSON.stringify(packet);
+    expect(serialized).not.toMatch(/applicationKey[^I]/i);
+    expect(buildInfisicalRoleMutationBody().slug).toBe("gha-pulsar-offload-b2-secrets");
+    expect(packet.githubSecretsViaStdin).toEqual(["B2_APPLICATION_KEY_ID", "B2_APPLICATION_KEY"]);
   });
 });
