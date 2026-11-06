@@ -41,16 +41,17 @@ runtime secrets from Terraform apply.
 | `PULSAR_OFFLOAD_B2_KEY_ID` | TF broker application key id |
 | `PULSAR_OFFLOAD_B2_APP_KEY` | TF broker application key secret |
 
-Broker maps them to `managedLedgerOffload*` / `s3ManagedLedgerOffloadCredentialId|Secret`
-(see stack hunks). **Credential mode for production hunks:** explicit Infisical-backed
-id/secret env — not empty-static AWS default-chain lab mode. Never echo key id/secret
-into chat, workflow logs, `docker service inspect`, or compose dumps (`deploy-terraform.yml`
-already forbids printing TF/B2/Infisical credential material).
+Map non-secret bucket/endpoint/region into `s3ManagedLedgerOffload*` PREFIX.
+Map `KEY_ID`/`APP_KEY` → process env `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` with
+**empty** PREFIX CredentialId/Secret (stock AWS default chain; lab-proven). Do **not**
+put credentials in `PULSAR_PREFIX_s3ManagedLedgerOffloadCredential*` — `apply-config-from-env.py`
+writes those into `broker.conf`. Details: [broker stack hunks](./b2-pulsar-offload-broker-stack-hunks.md).
 
 ### Lifecycle experiment schedule (tiny-1 — metadata only)
 
 Artifacts: `/tmp/b2-lifecycle-tiny-1/` (`T0.json`, `CHECK_MATRIX.json`, `ownership.json`).
-Cursor asserts; Root (not archived b1) runs privileged B2 metadata APIs. Zero GetObject.
+Cursor asserts; **Root credential API only** (not archived b1). Zero GetObject / no
+Cursor B2 contact.
 
 | Gate | UTC | Class |
 | --- | --- | --- |
@@ -58,11 +59,10 @@ Cursor asserts; Root (not archived b1) runs privileged B2 metadata APIs. Zero Ge
 | Obs #1 | `~2026-11-06T19:32Z` | `OBSERVATION_ONLY` (done; inventory ≡ T0) |
 | ≥24h | `2026-11-07T18:49:03.649Z` | `OBSERVE_ELIGIBLE` — **next**; wait clock |
 | ≥48h | `2026-11-08T18:49:03.649Z` | `OBSERVATION_CHECKPOINT` |
-| Cleanup deadline | `2026-11-11T18:49:02.531Z` | Root cleanup if still unclean → Cursor verify zeros |
+| **Mandatory cleanup before** | **`2026-11-11T18:49:02.531Z`** | Root cleanup if unclean → Cursor verify zeros |
 
-Paseo heartbeat `eac63e16` (`b2-lifecycle-tiny-1 checkpoints`, cron `50 18 * * *` UTC,
-next `2026-11-07T18:50:00Z`, expires `2026-11-12`) recreates the missing cadence so
-checks fire before the Nov 11 deadline. Until ≥24h: **do not** request Root metadata.
+Heartbeat must fire **before** that cleanup instant (an 18:50 UTC daily cron is too late
+on Nov 11). Until ≥24h: **do not** request Root metadata.
 
 ## Why a custom bootstrap script is not needed
 
