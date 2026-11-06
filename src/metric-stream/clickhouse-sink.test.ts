@@ -205,6 +205,25 @@ describe("native grouped ClickHouse applier", () => {
       ingested_at: sourceIngestedAt,
       version: "9007199254740993",
     });
+    // Current-generation rows must not emit an empty generation-tombstone command.
+    expect(fixture.commands).toHaveLength(0);
+    const deleteScope = fixture.requests.find((request) =>
+      request.query.includes("row.row_index AS row_index"),
+    );
+    expect(deleteScope?.query_params).toEqual(
+      expect.objectContaining({
+        row_indexes: [0],
+        row_user_ids: [sourceEvent.userId],
+        provider_ids: [sourceEvent.providerId],
+        activity_ids: [null],
+        channels: [sourceEvent.channel],
+        external_ids: [null],
+        recorded_ats: ["2026-11-03T00:00:00.123456Z"],
+        versions: ["9007199254740993"],
+        user_ids: [sourceEvent.userId],
+        scope_provider_ids: [sourceEvent.providerId],
+      }),
+    );
   });
   it("skips committed account fences before raw insertion and validates only eligible rows", async () => {
     const erased = {

@@ -73,6 +73,28 @@ function fixture(previous?: { intentId: string | null; quiescent?: boolean; term
   return { registrations, trace, input, client, retired };
 }
 
+describe("analytics query owner input contracts", () => {
+  it.each([
+    [{ resourceId: "", intentId: randomUUID() }, /resourceId/i],
+    [{ resourceId: randomUUID(), intentId: "" }, /intentId/i],
+    [{ resourceId: "", intentId: "" }, /resourceId|intentId/i],
+  ] as const)("rejects blank write ownership input %#", async (input, pattern) => {
+    const context = fixture();
+    await expect(
+      withAnalyticsQueryOwner(database, context.client, input, async () => undefined),
+    ).rejects.toThrow(pattern);
+  });
+
+  it("rejects blank receipt ownership resource ids", async () => {
+    const context = fixture();
+    await expect(
+      withAnalyticsReceiptQueryOwner(database, context.client, { resourceId: "" }, async () => ({
+        completedIntentId: randomUUID(),
+      })),
+    ).rejects.toThrow(/resourceId/i);
+  });
+});
+
 describe("analytics query owner serial terminal invariant", () => {
   it("keeps streamed exec in flight until EOF and registers no successor early", async () => {
     const context = fixture();
