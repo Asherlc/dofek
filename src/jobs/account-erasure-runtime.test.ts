@@ -84,6 +84,9 @@ const mocks = vi.hoisted(() => ({
     pending: null,
   })),
   loadPhaseProgress: vi.fn(async (): Promise<Record<string, unknown> | null> => null),
+  loadCheckpointCompletedAt: vi.fn(
+    async (): Promise<Date | null> => new Date("2026-08-26T09:00:00.000Z"),
+  ),
   erasePostgres: vi.fn(async () => undefined),
   eraseProcessors: vi.fn(async () => ({ processor: "queued" })),
   eraseStripe: vi.fn(async () => ({
@@ -183,6 +186,7 @@ vi.mock("../db/account-erasure-processing.ts", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../db/account-erasure-processing.ts")>();
   return {
     ...actual,
+    loadAccountErasureCheckpointCompletedAt: mocks.loadCheckpointCompletedAt,
     loadAccountErasurePhaseProgress: mocks.loadPhaseProgress,
   };
 });
@@ -341,6 +345,7 @@ describe("createAccountErasureRuntime", () => {
     process.env.METRIC_STREAM_LIVE_TOPIC = "persistent://public/default/live";
     process.env.METRIC_STREAM_HISTORY_TOPIC = "persistent://public/default/history";
     mocks.r2Client.send.mockResolvedValue({ Contents: [], IsTruncated: false });
+    mocks.loadCheckpointCompletedAt.mockResolvedValue(new Date("2026-08-26T09:00:00.000Z"));
     mocks.loadPhaseProgress.mockResolvedValue(null);
   });
 
@@ -506,19 +511,15 @@ describe("createAccountErasureRuntime", () => {
       },
     };
     const ingest = { streams: [fenceProgress] };
+    mocks.loadCheckpointCompletedAt.mockResolvedValueOnce(new Date("2026-08-26T09:00:00.000Z"));
     mocks.loadPhaseProgress.mockResolvedValueOnce(null);
-    const database = {
-      $client: ownerDatabase.$client,
-      execute: vi.fn(async () => [{ completed_at: new Date("2026-08-26T09:00:00.000Z") }]),
-      transaction: vi.fn(),
-    };
     const clickhouse = {
       exec: vi.fn<ClickHouseClient["exec"]>(),
       command: vi.fn(async () => undefined),
       insert: vi.fn(async () => undefined),
       query: vi.fn(async () => ({ json: async () => [] })),
     };
-    const runtime = await createAccountErasureRuntime(database, clickhouse, {
+    const runtime = await createAccountErasureRuntime(ownerDatabase, clickhouse, {
       close: vi.fn(async () => undefined),
       purge: vi.fn(async () => undefined),
     });
@@ -534,8 +535,13 @@ describe("createAccountErasureRuntime", () => {
           }),
         ),
       ).rejects.toThrow(/missing from retention_verification|Stock physical/i);
+      expect(mocks.loadCheckpointCompletedAt).toHaveBeenCalledWith(
+        ownerDatabase,
+        request.id,
+        "ingest_fence",
+      );
       expect(mocks.loadPhaseProgress).toHaveBeenCalledWith(
-        database,
+        ownerDatabase,
         request.id,
         "retention_verification",
       );
