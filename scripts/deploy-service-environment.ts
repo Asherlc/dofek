@@ -1,6 +1,11 @@
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseEnv } from "node:util";
+import {
+  assertConcretePersistentPulsarTopic,
+  METRIC_STREAM_CONSUMER_ROUTES,
+  type MetricStreamConsumerRouteDefinition,
+} from "../src/metric-stream/consumer-routes.ts";
 
 const DEPLOY_SERVICE_NAMES = [
   "analyticsWorker",
@@ -162,14 +167,19 @@ const CDC_ENVIRONMENT_KEYS = [
   "POSTGRES_PASSWORD",
 ] as const;
 
+function consumerRoute(
+  id: MetricStreamConsumerRouteDefinition["id"],
+): MetricStreamConsumerRouteDefinition {
+  const route = METRIC_STREAM_CONSUMER_ROUTES.find((entry) => entry.id === id);
+  if (!route) throw new Error(`Unknown metric-stream consumer route: ${id}`);
+  return route;
+}
+
 interface DeployServiceEnvironmentPolicy {
   allowedKeys: readonly string[];
   requiredKeys: readonly string[];
   metricStreamRoute?: {
-    topicKey:
-      | "METRIC_STREAM_LEGACY_TOPIC"
-      | "METRIC_STREAM_LIVE_TOPIC"
-      | "METRIC_STREAM_HISTORY_TOPIC";
+    topicKey: MetricStreamConsumerRouteDefinition["topicKey"];
     /** Native Pulsar subscription identity; omitted for producer-only remaps. */
     subscription?: string;
   };
@@ -278,50 +288,50 @@ const DEPLOY_SERVICE_ENVIRONMENT_POLICIES: Record<
   },
   metricStreamClickhouseSink: {
     allowedKeys: METRIC_STREAM_NATIVE_ENVIRONMENT_KEYS,
-    requiredKeys: [...METRIC_STREAM_NATIVE_ENVIRONMENT_KEYS, "METRIC_STREAM_LEGACY_TOPIC"],
+    requiredKeys: [...METRIC_STREAM_NATIVE_ENVIRONMENT_KEYS, consumerRoute("legacy").topicKey],
     metricStreamRoute: {
-      topicKey: "METRIC_STREAM_LEGACY_TOPIC",
-      subscription: "metric-stream-clickhouse-sink",
+      topicKey: consumerRoute("legacy").topicKey,
+      subscription: consumerRoute("legacy").sinkSubscription,
     },
   },
   metricStreamLiveClickhouseSink: {
     allowedKeys: METRIC_STREAM_NATIVE_ENVIRONMENT_KEYS,
-    requiredKeys: [...METRIC_STREAM_NATIVE_ENVIRONMENT_KEYS, "METRIC_STREAM_LIVE_TOPIC"],
+    requiredKeys: [...METRIC_STREAM_NATIVE_ENVIRONMENT_KEYS, consumerRoute("live").topicKey],
     metricStreamRoute: {
-      topicKey: "METRIC_STREAM_LIVE_TOPIC",
-      subscription: "metric-stream-live-clickhouse-sink",
+      topicKey: consumerRoute("live").topicKey,
+      subscription: consumerRoute("live").sinkSubscription,
     },
   },
   metricStreamHistoryClickhouseSink: {
     allowedKeys: METRIC_STREAM_NATIVE_ENVIRONMENT_KEYS,
-    requiredKeys: [...METRIC_STREAM_NATIVE_ENVIRONMENT_KEYS, "METRIC_STREAM_HISTORY_TOPIC"],
+    requiredKeys: [...METRIC_STREAM_NATIVE_ENVIRONMENT_KEYS, consumerRoute("history").topicKey],
     metricStreamRoute: {
-      topicKey: "METRIC_STREAM_HISTORY_TOPIC",
-      subscription: "metric-stream-history-clickhouse-sink",
+      topicKey: consumerRoute("history").topicKey,
+      subscription: consumerRoute("history").sinkSubscription,
     },
   },
   metricStreamR2Archive: {
     allowedKeys: METRIC_STREAM_ARCHIVE_ENVIRONMENT_KEYS,
-    requiredKeys: [...METRIC_STREAM_ARCHIVE_ENVIRONMENT_KEYS, "METRIC_STREAM_LEGACY_TOPIC"],
+    requiredKeys: [...METRIC_STREAM_ARCHIVE_ENVIRONMENT_KEYS, consumerRoute("legacy").topicKey],
     metricStreamRoute: {
-      topicKey: "METRIC_STREAM_LEGACY_TOPIC",
-      subscription: "metric-stream-r2-archive",
+      topicKey: consumerRoute("legacy").topicKey,
+      subscription: consumerRoute("legacy").archiveSubscription,
     },
   },
   metricStreamLiveR2Archive: {
     allowedKeys: METRIC_STREAM_ARCHIVE_ENVIRONMENT_KEYS,
-    requiredKeys: [...METRIC_STREAM_ARCHIVE_ENVIRONMENT_KEYS, "METRIC_STREAM_LIVE_TOPIC"],
+    requiredKeys: [...METRIC_STREAM_ARCHIVE_ENVIRONMENT_KEYS, consumerRoute("live").topicKey],
     metricStreamRoute: {
-      topicKey: "METRIC_STREAM_LIVE_TOPIC",
-      subscription: "metric-stream-live-r2-archive",
+      topicKey: consumerRoute("live").topicKey,
+      subscription: consumerRoute("live").archiveSubscription,
     },
   },
   metricStreamHistoryR2Archive: {
     allowedKeys: METRIC_STREAM_ARCHIVE_ENVIRONMENT_KEYS,
-    requiredKeys: [...METRIC_STREAM_ARCHIVE_ENVIRONMENT_KEYS, "METRIC_STREAM_HISTORY_TOPIC"],
+    requiredKeys: [...METRIC_STREAM_ARCHIVE_ENVIRONMENT_KEYS, consumerRoute("history").topicKey],
     metricStreamRoute: {
-      topicKey: "METRIC_STREAM_HISTORY_TOPIC",
-      subscription: "metric-stream-history-r2-archive",
+      topicKey: consumerRoute("history").topicKey,
+      subscription: consumerRoute("history").archiveSubscription,
     },
   },
 };
@@ -431,12 +441,12 @@ export function renderDeployServiceEnvironmentFiles(
       const assignment = assignments.get(route.topicKey);
       if (!assignment) throw new Error(`Missing validated assignment: ${route.topicKey}`);
       const topicValue = assignment.slice(route.topicKey.length + 1);
-      if (route.subscription && !topicValue.startsWith("persistent://")) {
-        throw new Error("METRIC_STREAM_TOPIC must name one concrete persistent Pulsar topic");
-      }
-      lines.push(`METRIC_STREAM_TOPIC${assignment.slice(route.topicKey.length)}`);
       if (route.subscription) {
+        const topic = assertConcretePersistentPulsarTopic(topicValue);
+        lines.push(`METRIC_STREAM_TOPIC=${topic}`);
         lines.push(`METRIC_STREAM_SUBSCRIPTION=${route.subscription}`);
+      } else {
+        lines.push(`METRIC_STREAM_TOPIC${assignment.slice(route.topicKey.length)}`);
       }
     }
     writeFileSync(paths[serviceName], lines.length === 0 ? "" : `${lines.join("\n")}\n`, {
