@@ -570,8 +570,12 @@ describe("analytics query owner high-water reservation", () => {
     );
     const intentId = analyticsDeliveryGroupIntentId(group);
     const context = fixture();
-    const through = analyticsDeliveryGroupIngestionTimes(ingestedAt, group.memberCount).at(-1);
-    if (through === undefined) throw new Error("expected ingestion high-water reservation");
+    const groupThrough = analyticsDeliveryGroupIngestionTimes(ingestedAt, group.memberCount).at(-1);
+    const maximum = analyticsDeliveryGroupIngestionTimes(ingestedAt, 500).at(-1);
+    if (groupThrough === undefined || maximum === undefined)
+      throw new Error("expected ingestion high-water reservation");
+    const pastHighWater = analyticsDeliveryGroupIngestionTimes(maximum, 2).at(-1);
+    if (pastHighWater === undefined) throw new Error("expected past-high-water timestamp");
     await withAnalyticsQueryOwner(
       database,
       context.client,
@@ -581,7 +585,13 @@ describe("analytics query owner high-water reservation", () => {
         await expect(owner.reserveIngestionThrough("2020-01-01T00:00:00.000000Z")).rejects.toThrow(
           /outside this owners bounded reservation/i,
         );
-        await owner.reserveIngestionThrough(through);
+        // Exact base and exact 500-slot high-water remain inside the closed interval.
+        await owner.reserveIngestionThrough(ingestedAt);
+        await owner.reserveIngestionThrough(groupThrough);
+        await owner.reserveIngestionThrough(maximum);
+        await expect(owner.reserveIngestionThrough(pastHighWater)).rejects.toThrow(
+          /outside this owners bounded reservation/i,
+        );
         await owner.reuseIngestionReservation({
           ...group,
           ingestedAt,
@@ -597,7 +607,7 @@ describe("analytics query owner high-water reservation", () => {
         ).rejects.toThrow(/does not belong to this intent/i);
       },
     );
-    expect(context.reservations).toEqual([through]);
+    expect(context.reservations).toEqual([ingestedAt, groupThrough, maximum]);
     expect(context.reuseProofs).toEqual([1]);
     expect(context.writeIntentClears).toEqual([context.input.resourceId]);
     expect(context.release).toHaveBeenCalledWith(false);

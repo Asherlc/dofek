@@ -160,12 +160,15 @@ describe("ClickHouse erasure exported helpers", () => {
   it("parses identifier names for managed database options", () => {
     expect(identifierNameSchema.parse("postgres_fitness")).toBe("postgres_fitness");
     expect(identifierNameSchema.parse("a1_b2")).toBe("a1_b2");
+    expect(identifierNameSchema.parse("a")).toBe("a");
     expect(() => identifierNameSchema.parse("bad-name")).toThrow();
     expect(() => identifierNameSchema.parse("1starts_with_number")).toThrow();
     expect(() => identifierNameSchema.parse("")).toThrow();
     expect(() => identifierNameSchema.parse("has.period")).toThrow();
+    expect(() => identifierNameSchema.parse("valid_name!")).toThrow();
     expect(() => identifierNameSchema.parse("space inside")).toThrow();
     expect(() => identifierNameSchema.parse("123")).toThrow();
+    expect(() => identifierNameSchema.parse("9abc")).toThrow();
   });
 
   it("derives canonical base table names from dbt staging suffixes", () => {
@@ -882,6 +885,20 @@ describe("ClickHouse erasure domain ownership patterns", () => {
     ]);
   });
 
+  it("rejects non-UUID record-reference columns even on direct user-owned tables", async () => {
+    await expect(
+      inspectClickHouseAccountErasureCoverage(
+        client([
+          physicalTable("analytics", "metric_stream", [
+            ["user_id", "UUID"],
+            ["panel_id", "String"],
+            ["value", "String"],
+          ]),
+        ]),
+      ),
+    ).rejects.toThrow("Unsupported ClickHouse record ownership relation");
+  });
+
   it("classifies user profile tables by profile id even without user_id", async () => {
     const profile = physicalTable("postgres_fitness", "user_profile", [
       ["id", "UUID"],
@@ -890,6 +907,33 @@ describe("ClickHouse erasure domain ownership patterns", () => {
     await expect(inspectClickHouseAccountErasureCoverage(client([profile]))).resolves.toEqual([
       profile,
     ]);
+  });
+
+  it("rejects user profile tables whose profile id is not a UUID", async () => {
+    await expect(
+      inspectClickHouseAccountErasureCoverage(
+        client([
+          physicalTable("postgres_fitness", "user_profile", [
+            ["id", "String"],
+            ["name", "String"],
+          ]),
+        ]),
+      ),
+    ).rejects.toThrow("Unclassified ClickHouse physical ownership domain");
+  });
+
+  it("rejects processing flow markers whose id is not a non-null UUID", async () => {
+    await expect(
+      inspectClickHouseAccountErasureCoverage(
+        client([
+          physicalTable("postgres_fitness", "processing_flow_marker", [
+            ["id", "Nullable(UUID)"],
+            ["operation_id", "UUID"],
+            ["batch_key", "String"],
+          ]),
+        ]),
+      ),
+    ).rejects.toThrow("Unclassified ClickHouse UUID identity ownership domain");
   });
 
   it("classifies processing flow marker inventory tables by operation identifiers", async () => {
