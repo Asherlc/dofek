@@ -55,11 +55,19 @@ const mocks = vi.hoisted(() => ({
   ),
   assertIdentifierClosure: vi.fn(async (_stage: "initial" | "final") => undefined),
   identifierStoreCreated: vi.fn(),
-  loadPhysicalProgress: vi.fn(async () => ({
-    step: "apply" as const,
-    afterIntentKey: null,
-    pending: null,
-  })),
+  loadPhysicalProgress: vi.fn(
+    async (
+      _stage: "initial" | "final",
+    ): Promise<{
+      step: "apply";
+      afterIntentKey: null;
+      pending: null;
+    } | null> => ({
+      step: "apply",
+      afterIntentKey: null,
+      pending: null,
+    }),
+  ),
   erasePostgres: vi.fn(async () => undefined),
   eraseProcessors: vi.fn(async () => ({ processor: "queued" })),
   eraseStripe: vi.fn(async () => ({

@@ -142,7 +142,10 @@ describe("native JSONL archive", () => {
     expect(getCommand).toBeInstanceOf(GetObjectCommand);
     if (!(getCommand instanceof GetObjectCommand)) throw new Error("expected GetObjectCommand");
     expect(getCommand.input).toEqual(
-      expect.objectContaining({ Bucket: "archive", Key: expect.stringContaining("metric-stream/") }),
+      expect.objectContaining({
+        Bucket: "archive",
+        Key: expect.stringContaining("metric-stream/"),
+      }),
     );
     expect(archive.send.mock.calls[1]?.[1]).toEqual({ abortSignal: archive.signal });
   });
