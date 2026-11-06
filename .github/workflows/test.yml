@@ -783,12 +783,26 @@ jobs:
           --health-interval 2s
           --health-timeout 5s
           --health-retries 15
-      redpanda:
-        image: mirror.gcr.io/redpandadata/redpanda:v26.1.12
+      kafka:
+        image: apache/kafka:4.4.0@sha256:833b867a9585a141da455dc2b57431c65cbccb27f11c91f694444cca9f777e0f
+        env:
+          CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+          KAFKA_HEAP_OPTS: -Xmx1G -Xms1G
+          KAFKA_PROCESS_ROLES: broker,controller
+          KAFKA_NODE_ID: "1"
+          KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:29093
+          KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+          KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:29093
+          KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+          KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+          KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+          KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+          KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
         ports:
           - 9092:9092
         options: >-
-          --health-cmd "rpk cluster health | grep -q 'Healthy:.*true'"
+          --memory=2g
+          --health-cmd "bash -c 'exec 3<>/dev/tcp/127.0.0.1/9092'"
           --health-interval 2s
           --health-timeout 5s
           --health-retries 30
@@ -810,7 +824,7 @@ jobs:
     env:
       TEST_DATABASE_URL: postgres://test:test@localhost:5432/test
       CLICKHOUSE_URL: http://default:${{ github.run_id }}@localhost:8123
-      REDPANDA_BROKERS: localhost:9092
+      KAFKA_BROKERS: localhost:9092
       REDIS_URL: redis://localhost:6379
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -827,6 +841,23 @@ jobs:
           path: .build/fit-decoder/bin
       - name: Make FIT decoder executable
         run: chmod +x .build/fit-decoder/bin/dofek-fit-decoder
+      - name: Wait for Kafka API readiness (external client)
+        run: |
+          # Outside the broker service cgroup. Service health is TCP port-liveness only.
+          set -euo pipefail
+          image="apache/kafka:4.4.0@sha256:833b867a9585a141da455dc2b57431c65cbccb27f11c91f694444cca9f777e0f"
+          attempts=0
+          until docker run --rm --network host --memory=384m \
+            -e KAFKA_HEAP_OPTS="-Xms32m -Xmx256m" \
+            --entrypoint /opt/kafka/bin/kafka-broker-api-versions.sh \
+            "$image" --bootstrap-server localhost:9092 >/dev/null; do
+            attempts=$((attempts + 1))
+            if [ "$attempts" -ge 60 ]; then
+              echo "::error::Kafka API not ready on localhost:9092"
+              exit 1
+            fi
+            sleep 2
+          done
       - id: integration-tests
         run: pnpm exec vitest run --project integration --coverage --shard=${{ matrix.shard }}/4
         timeout-minutes: 12
@@ -957,100 +988,11 @@ jobs:
           path: integration-test-timings.json
           if-no-files-found: error
 
-  test-bookie-evacuation:
-    name: Native BookKeeper Evacuation
-    runs-on: ubuntu-24.04-arm
-    timeout-minutes: 10
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || '' }}
-          persist-credentials: false
-      - uses: ./.github/actions/setup-node-pnpm
-      - name: Select installed JDK compiler
-        run: |
-          test -n "$JAVA_HOME_25_X64"
-          test -x "$JAVA_HOME_25_X64/bin/javac"
-          echo "$JAVA_HOME_25_X64/bin" >> "$GITHUB_PATH"
-          "$JAVA_HOME_25_X64/bin/javac" -version
-      - name: Qualify native replacement without retries
-        run: pnpm exec vitest run --project=pulsar-integration src/metric-stream/bookie-evacuation.pulsar.integration.test.ts --retry=0
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: failure()
-        with:
-          name: native-bookie-evacuation-evidence
-          path: |
-            reports/bookie-evacuation/**/fixture/
-            reports/bookie-evacuation/**/*.stdout
-            reports/bookie-evacuation/**/*.stderr
-            reports/bookie-evacuation/**/*.json
-            reports/bookie-evacuation/**/*.txt
-          if-no-files-found: warn
-          retention-days: 7
 
-  test-native-sink:
-    name: Native Pulsar Sink
-    runs-on: ubuntu-24.04-arm
-    timeout-minutes: 10
-    permissions:
-      contents: read
-    services:
-      postgres:
-        image: timescale/timescaledb-ha:pg18.3-ts2.26.4-all
-        env:
-          POSTGRES_DB: test
-          POSTGRES_USER: test
-          POSTGRES_PASSWORD: test
-        ports:
-          - 5432:5432
-        options: >-
-          --memory=1g --cpus=1
-          --health-cmd "pg_isready -U test -d test"
-          --health-interval 2s
-          --health-timeout 5s
-          --health-retries 15
-      clickhouse:
-        image: clickhouse/clickhouse-server:26.10.2.103-alpine@sha256:d474afd5cd0abfb9fdc6e2ebbc82116324779b085f5c15a851aa91bec968291d
-        env:
-          CLICKHOUSE_DB: fitness
-          CLICKHOUSE_USER: default
-          CLICKHOUSE_PASSWORD: ${{ github.run_id }}
-        ports:
-          - 8123:8123
-        options: >-
-          --memory=4g --cpus=1
-          --health-cmd "clickhouse-client --password ${{ github.run_id }} --query 'SELECT 1'"
-          --health-interval 2s
-          --health-timeout 5s
-          --health-retries 30
-    env:
-      TEST_DATABASE_URL: postgres://test:test@localhost:5432/test
-      CLICKHOUSE_URL: http://default:${{ github.run_id }}@localhost:8123
-      PULSAR_TEST_SERVICE_URL: pulsar://localhost:6650
-      PULSAR_TEST_ADMIN_URL: http://localhost:8080
-      NODE_OPTIONS: --max-old-space-size=512
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || '' }}
-          persist-credentials: false
-      - uses: ./.github/actions/setup-node-pnpm
-      - name: Start bounded standalone broker
-        run: pnpm compose -- -f docker-compose.pulsar-test.yml up -d --wait --wait-timeout 180
-      - name: Verify native delivery, replay and controls
-        run: pnpm exec vitest run --project pulsar-integration --maxWorkers=1 --retry=0 --bail=1 src/metric-stream/native-sink.pulsar.integration.test.ts
-      - name: Capture native broker failure logs
-        if: failure()
-        run: pnpm compose -- -f docker-compose.pulsar-test.yml logs --no-color
-      - name: Remove owned broker resources
-        if: always()
-        run: pnpm compose -- -f docker-compose.pulsar-test.yml down --remove-orphans --volumes
 
   test-gate:
     name: Unit & Integration Tests
-    needs: [test-unit, test-fit-decoder, test-integration, test-peerdb-integration, test-bookie-evacuation, test-native-sink, coverage]
+    needs: [test-unit, test-fit-decoder, test-integration, test-peerdb-integration, coverage]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -1061,22 +1003,12 @@ jobs:
             "${{ needs.test-fit-decoder.result }}" \
             "${{ needs.test-integration.result }}" \
             "${{ needs.test-peerdb-integration.result }}" \
-            "${{ needs.test-bookie-evacuation.result }}" \
-            "${{ needs.test-native-sink.result }}" \
             "${{ needs.coverage.result }}"; do
             if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
               echo "A required job failed or was cancelled"
               exit 1
             fi
           done
-          if [ "${{ needs.test-bookie-evacuation.result }}" != "success" ]; then
-            echo "Required native BookKeeper qualification did not succeed"
-            exit 1
-          fi
-          if [ "${{ needs.test-native-sink.result }}" != "success" ]; then
-            echo "Required native Pulsar sink qualification did not succeed"
-            exit 1
-          fi
 
   # ── E2E ────────────────────────────────────────────────────────────────
 
@@ -1139,7 +1071,7 @@ jobs:
           build-args: DEPENDENCY_CACHE_BUST=${{ hashFiles('package.json', 'pnpm-lock.yaml', 'Dockerfile') }}
           cache-from: type=registry,ref=${{ steps.image-name.outputs.name }}:e2e-buildcache
       - name: Start e2e dependencies
-        run: docker compose -f docker-compose.e2e.yml up -d --wait --no-build db clickhouse redis account-erasure-minio redpanda pulsar-broker
+        run: docker compose -f docker-compose.e2e.yml up -d --wait --no-build db clickhouse redis account-erasure-minio kafka && docker compose -f docker-compose.e2e.yml up --no-build --exit-code-from kafka-ready kafka-ready
       - name: Run e2e migrations
         run: |
           docker compose -f docker-compose.e2e.yml up -d --no-build migrate
@@ -1159,7 +1091,7 @@ jobs:
       - run: pnpm e2e:web:run
       - name: Dump e2e service logs
         if: failure()
-        run: docker compose -f docker-compose.e2e.yml logs --no-color db clickhouse redis redpanda pulsar-broker migrate seed review-seed-clickhouse analytics server
+        run: docker compose -f docker-compose.e2e.yml logs --no-color db clickhouse redis kafka kafka-ready migrate seed review-seed-clickhouse analytics server
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:

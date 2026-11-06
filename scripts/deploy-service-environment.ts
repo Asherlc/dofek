@@ -2,10 +2,21 @@ import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseEnv } from "node:util";
 import {
-  assertConcretePersistentPulsarTopic,
   METRIC_STREAM_CONSUMER_ROUTES,
   type MetricStreamConsumerRouteDefinition,
 } from "../src/metric-stream/consumer-routes.ts";
+
+/** Reject empty/whitespace names and Pulsar persistent URIs. */
+function assertKafkaMetricStreamTopicName(topic: string): string {
+  const trimmed = topic.trim();
+  if (!trimmed || trimmed.includes("\n") || trimmed.includes("\r") || /\s/.test(trimmed)) {
+    throw new Error("METRIC_STREAM_TOPIC must be a nonempty Kafka topic name without whitespace");
+  }
+  if (trimmed.startsWith("persistent://")) {
+    throw new Error("METRIC_STREAM_TOPIC must be a Kafka topic name, not a Pulsar persistent URI");
+  }
+  return trimmed;
+}
 
 const DEPLOY_SERVICE_NAMES = [
   "analyticsWorker",
@@ -137,16 +148,17 @@ const APP_STORE_ENVIRONMENT_KEYS = [
 const METRIC_STREAM_ENVIRONMENT_KEYS = [
   "METRIC_STREAM_LIVE_TOPIC",
   "METRIC_STREAM_HISTORY_TOPIC",
-  "REDPANDA_BROKERS",
+  "KAFKA_BROKERS",
 ] as const;
 
-const METRIC_STREAM_NATIVE_ENVIRONMENT_KEYS = [
-  "PULSAR_SERVICE_URL",
+/** Sink/archive bootstrap — canonical `KAFKA_BROKERS` only (no REDPANDA_/PULSAR_ alias). */
+const METRIC_STREAM_BROKER_ENVIRONMENT_KEYS = [
+  "KAFKA_BROKERS",
   "METRIC_STREAM_TRANSPORT_EPOCH",
 ] as const;
 
 const METRIC_STREAM_ARCHIVE_ENVIRONMENT_KEYS = [
-  ...METRIC_STREAM_NATIVE_ENVIRONMENT_KEYS,
+  ...METRIC_STREAM_BROKER_ENVIRONMENT_KEYS,
   "METRIC_STREAM_R2_BUCKET",
   "R2_ENDPOINT",
   "R2_ACCESS_KEY_ID",
@@ -180,7 +192,7 @@ interface DeployServiceEnvironmentPolicy {
   requiredKeys: readonly string[];
   metricStreamRoute?: {
     topicKey: MetricStreamConsumerRouteDefinition["topicKey"];
-    /** Native Pulsar subscription identity; omitted for producer-only remaps. */
+    /** Consumer group identity; omitted for producer-only remaps. */
     subscription?: string;
   };
 }
@@ -287,24 +299,24 @@ const DEPLOY_SERVICE_ENVIRONMENT_POLICIES: Record<
     ],
   },
   metricStreamClickhouseSink: {
-    allowedKeys: METRIC_STREAM_NATIVE_ENVIRONMENT_KEYS,
-    requiredKeys: [...METRIC_STREAM_NATIVE_ENVIRONMENT_KEYS, consumerRoute("legacy").topicKey],
+    allowedKeys: METRIC_STREAM_BROKER_ENVIRONMENT_KEYS,
+    requiredKeys: [...METRIC_STREAM_BROKER_ENVIRONMENT_KEYS, consumerRoute("legacy").topicKey],
     metricStreamRoute: {
       topicKey: consumerRoute("legacy").topicKey,
       subscription: consumerRoute("legacy").sinkSubscription,
     },
   },
   metricStreamLiveClickhouseSink: {
-    allowedKeys: METRIC_STREAM_NATIVE_ENVIRONMENT_KEYS,
-    requiredKeys: [...METRIC_STREAM_NATIVE_ENVIRONMENT_KEYS, consumerRoute("live").topicKey],
+    allowedKeys: METRIC_STREAM_BROKER_ENVIRONMENT_KEYS,
+    requiredKeys: [...METRIC_STREAM_BROKER_ENVIRONMENT_KEYS, consumerRoute("live").topicKey],
     metricStreamRoute: {
       topicKey: consumerRoute("live").topicKey,
       subscription: consumerRoute("live").sinkSubscription,
     },
   },
   metricStreamHistoryClickhouseSink: {
-    allowedKeys: METRIC_STREAM_NATIVE_ENVIRONMENT_KEYS,
-    requiredKeys: [...METRIC_STREAM_NATIVE_ENVIRONMENT_KEYS, consumerRoute("history").topicKey],
+    allowedKeys: METRIC_STREAM_BROKER_ENVIRONMENT_KEYS,
+    requiredKeys: [...METRIC_STREAM_BROKER_ENVIRONMENT_KEYS, consumerRoute("history").topicKey],
     metricStreamRoute: {
       topicKey: consumerRoute("history").topicKey,
       subscription: consumerRoute("history").sinkSubscription,
@@ -442,9 +454,9 @@ export function renderDeployServiceEnvironmentFiles(
       if (!assignment) throw new Error(`Missing validated assignment: ${route.topicKey}`);
       const topicValue = assignment.slice(route.topicKey.length + 1);
       if (route.subscription) {
-        const topic = assertConcretePersistentPulsarTopic(topicValue);
+        const topic = assertKafkaMetricStreamTopicName(topicValue);
         lines.push(`METRIC_STREAM_TOPIC=${topic}`);
-        lines.push(`METRIC_STREAM_SUBSCRIPTION=${route.subscription}`);
+        lines.push(`METRIC_STREAM_CONSUMER_GROUP=${route.subscription}`);
       } else {
         lines.push(`METRIC_STREAM_TOPIC${assignment.slice(route.topicKey.length)}`);
       }

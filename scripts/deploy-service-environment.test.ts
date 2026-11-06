@@ -128,7 +128,7 @@ const WORKER_ONLY_ENVIRONMENT_KEYS = [
   "POSTHOG_API_HOST",
   "POSTHOG_PERSONAL_API_KEY",
   "POSTHOG_PROJECT_ID",
-  "REDPANDA_BROKERS",
+  "KAFKA_BROKERS",
   "SENTRY_API_HOST",
   "SENTRY_AUTH_TOKEN",
   "SENTRY_ORG",
@@ -137,7 +137,7 @@ const WORKER_ONLY_ENVIRONMENT_KEYS = [
 const METRIC_STREAM_ENVIRONMENT_KEYS = [
   "METRIC_STREAM_LIVE_TOPIC",
   "METRIC_STREAM_HISTORY_TOPIC",
-  "REDPANDA_BROKERS",
+  "KAFKA_BROKERS",
 ] as const;
 
 function makeTemporaryDirectory(): string {
@@ -160,11 +160,11 @@ function completeDeployEnvironment(): Record<string, string> {
     ...Object.fromEntries([...runtimeKeys].map((key) => [key, `${key.toLowerCase()}-value`])),
     CLOUDFLARE_API_TOKEN: "cloudflare-control-plane-token",
     OTA_PRIVATE_KEY_B64: "ota-private-key",
-    PULSAR_SERVICE_URL: "pulsar://pulsar-broker:6650",
+    KAFKA_BROKERS: "kafka:9092",
     METRIC_STREAM_TRANSPORT_EPOCH: "transport-epoch-fixture",
-    METRIC_STREAM_LEGACY_TOPIC: "persistent://public/default/metric-stream-v1",
-    METRIC_STREAM_LIVE_TOPIC: "persistent://public/default/metric-stream-live-v1",
-    METRIC_STREAM_HISTORY_TOPIC: "persistent://public/default/metric-stream-history-v1",
+    METRIC_STREAM_LEGACY_TOPIC: "metric-stream-v2",
+    METRIC_STREAM_LIVE_TOPIC: "metric-stream-live-v2",
+    METRIC_STREAM_HISTORY_TOPIC: "metric-stream-history-v2",
     METRIC_STREAM_R2_BUCKET: "dofek-metric-stream-archive",
   };
 }
@@ -200,11 +200,11 @@ describe("renderDeployServiceEnvironmentFiles", () => {
 
     expect(migrationWeb).toEqual({
       ...web,
-      METRIC_STREAM_TOPIC: "persistent://public/default/metric-stream-v1",
+      METRIC_STREAM_TOPIC: "metric-stream-v2",
     });
     expect(migrationWeb).toMatchObject({
-      METRIC_STREAM_LIVE_TOPIC: "persistent://public/default/metric-stream-live-v1",
-      METRIC_STREAM_HISTORY_TOPIC: "persistent://public/default/metric-stream-history-v1",
+      METRIC_STREAM_LIVE_TOPIC: "metric-stream-live-v2",
+      METRIC_STREAM_HISTORY_TOPIC: "metric-stream-history-v2",
     });
     expect(web).not.toHaveProperty("METRIC_STREAM_TOPIC");
     expect(web.MCP_OIDC_COOKIE_KEY).toBe("mcp_oidc_cookie_key-value");
@@ -217,14 +217,14 @@ describe("renderDeployServiceEnvironmentFiles", () => {
     expect(migrationWeb).not.toHaveProperty("METRIC_STREAM_SUBSCRIPTION");
   });
 
-  it("renders each native sink and archive with Pulsar identity and no Kafka consumer keys", () => {
+  it("renders each sink and archive with KAFKA_BROKERS and no REDPANDA_/PULSAR_ aliases", () => {
     const directory = makeTemporaryDirectory();
     const sourcePath = join(directory, "all.env");
     writeFileSync(
       sourcePath,
       dotenv({
         ...completeDeployEnvironment(),
-        METRIC_STREAM_TOPIC: "persistent://public/default/unassigned-topic",
+        METRIC_STREAM_TOPIC: "unassigned-topic",
         METRIC_STREAM_CONSUMER_GROUP: "unassigned-group",
         METRIC_STREAM_SUBSCRIPTION: "unassigned-subscription",
       }),
@@ -232,24 +232,21 @@ describe("renderDeployServiceEnvironmentFiles", () => {
     renderDeployServiceEnvironmentFiles(sourcePath, join(directory, "services"));
 
     for (const [service, topic] of [
-      ["metric-stream-clickhouse-sink", "persistent://public/default/metric-stream-v1"],
-      ["metric-stream-live-clickhouse-sink", "persistent://public/default/metric-stream-live-v1"],
-      [
-        "metric-stream-history-clickhouse-sink",
-        "persistent://public/default/metric-stream-history-v1",
-      ],
-      ["metric-stream-r2-archive", "persistent://public/default/metric-stream-v1"],
-      ["metric-stream-live-r2-archive", "persistent://public/default/metric-stream-live-v1"],
-      ["metric-stream-history-r2-archive", "persistent://public/default/metric-stream-history-v1"],
+      ["metric-stream-clickhouse-sink", "metric-stream-v2"],
+      ["metric-stream-live-clickhouse-sink", "metric-stream-live-v2"],
+      ["metric-stream-history-clickhouse-sink", "metric-stream-history-v2"],
+      ["metric-stream-r2-archive", "metric-stream-v2"],
+      ["metric-stream-live-r2-archive", "metric-stream-live-v2"],
+      ["metric-stream-history-r2-archive", "metric-stream-history-v2"],
     ] as const) {
       const environment = parseEnv(
         readFileSync(join(directory, "services", `${service}.env`), "utf8"),
       );
       expect(environment).toEqual({
-        PULSAR_SERVICE_URL: "pulsar://pulsar-broker:6650",
+        KAFKA_BROKERS: "kafka:9092",
         METRIC_STREAM_TRANSPORT_EPOCH: "transport-epoch-fixture",
         METRIC_STREAM_TOPIC: topic,
-        METRIC_STREAM_SUBSCRIPTION: service,
+        METRIC_STREAM_CONSUMER_GROUP: service,
         ...(service.endsWith("r2-archive")
           ? {
               METRIC_STREAM_R2_BUCKET: "dofek-metric-stream-archive",
@@ -260,7 +257,8 @@ describe("renderDeployServiceEnvironmentFiles", () => {
           : {}),
       });
       expect(environment).not.toHaveProperty("REDPANDA_BROKERS");
-      expect(environment).not.toHaveProperty("METRIC_STREAM_CONSUMER_GROUP");
+      expect(environment).not.toHaveProperty("PULSAR_SERVICE_URL");
+      expect(environment).not.toHaveProperty("METRIC_STREAM_SUBSCRIPTION");
     }
   });
 
@@ -269,14 +267,14 @@ describe("renderDeployServiceEnvironmentFiles", () => {
     "METRIC_STREAM_LIVE_TOPIC",
     "METRIC_STREAM_HISTORY_TOPIC",
     "METRIC_STREAM_R2_BUCKET",
-    "PULSAR_SERVICE_URL",
+    "KAFKA_BROKERS",
     "METRIC_STREAM_TRANSPORT_EPOCH",
   ])("rejects a missing %s even when a generic topic is supplied", (key) => {
     const directory = makeTemporaryDirectory();
     const sourcePath = join(directory, "all.env");
     const environment: Record<string, string> = {
       ...completeDeployEnvironment(),
-      METRIC_STREAM_TOPIC: "persistent://public/default/wrong-route",
+      METRIC_STREAM_TOPIC: "wrong-route",
     };
     delete environment[key];
     writeFileSync(sourcePath, dotenv(environment));
@@ -285,19 +283,19 @@ describe("renderDeployServiceEnvironmentFiles", () => {
     ).toThrow(`missing required keys: ${key}`);
   });
 
-  it("rejects a non-persistent native route topic", () => {
+  it("rejects a Pulsar persistent URI as a Kafka topic name", () => {
     const directory = makeTemporaryDirectory();
     const sourcePath = join(directory, "all.env");
     writeFileSync(
       sourcePath,
       dotenv({
         ...completeDeployEnvironment(),
-        METRIC_STREAM_LEGACY_TOPIC: "metric-stream-v1",
+        METRIC_STREAM_LEGACY_TOPIC: "persistent://public/default/metric-stream-v2",
       }),
     );
     expect(() =>
       renderDeployServiceEnvironmentFiles(sourcePath, join(directory, "services")),
-    ).toThrow("METRIC_STREAM_TOPIC must name one concrete persistent Pulsar topic");
+    ).toThrow("METRIC_STREAM_TOPIC must be a Kafka topic name, not a Pulsar persistent URI");
   });
 
   it("writes least-privilege service files without leaking control-plane secrets", () => {
@@ -331,8 +329,8 @@ describe("renderDeployServiceEnvironmentFiles", () => {
     expect(worker).not.toHaveProperty("OTA_PRIVATE_KEY_B64");
     for (const producer of [web, worker]) {
       expect(producer).toMatchObject({
-        METRIC_STREAM_LIVE_TOPIC: "persistent://public/default/metric-stream-live-v1",
-        METRIC_STREAM_HISTORY_TOPIC: "persistent://public/default/metric-stream-history-v1",
+        METRIC_STREAM_LIVE_TOPIC: "metric-stream-live-v2",
+        METRIC_STREAM_HISTORY_TOPIC: "metric-stream-history-v2",
       });
     }
 
@@ -444,13 +442,13 @@ describe("renderDeployServiceEnvironmentFiles", () => {
     const environment = completeDeployEnvironment();
     delete environment.METRIC_STREAM_LIVE_TOPIC;
     delete environment.METRIC_STREAM_HISTORY_TOPIC;
-    delete environment.REDPANDA_BROKERS;
+    delete environment.KAFKA_BROKERS;
     writeFileSync(sourcePath, dotenv(environment));
 
     expect(() =>
       renderDeployServiceEnvironmentFiles(sourcePath, join(directory, "services")),
     ).toThrow(
-      "web deploy environment is missing required keys: METRIC_STREAM_LIVE_TOPIC, METRIC_STREAM_HISTORY_TOPIC, REDPANDA_BROKERS",
+      "web deploy environment is missing required keys: METRIC_STREAM_LIVE_TOPIC, METRIC_STREAM_HISTORY_TOPIC, KAFKA_BROKERS",
     );
   });
 

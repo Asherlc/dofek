@@ -50,42 +50,60 @@ services:
       timeout: 5s
       retries: 15
 
-  redpanda:
-    image: docker.io/redpandadata/redpanda:v26.2.5@sha256:badca2d958f81da675c3055a9ecb6ebb590325582bcf16936148ffd65e96e920
-    command:
-      - redpanda
-      - start
-      - --smp=1
-      - --memory=1G
-      - --reserve-memory=0M
-      - --overprovisioned
-      - --node-id=0
-      - --check=false
-      - --kafka-addr=internal://0.0.0.0:9092
-      - --advertise-kafka-addr=internal://redpanda:9092
-      - --rpc-addr=0.0.0.0:33145
-      - --advertise-rpc-addr=redpanda:33145
+  # Stock Kafka for E2E (container-only listener on :29092). Topic generation v2.
+  # Broker TCP check is port-liveness only; e2e depends on kafka-ready for API readiness.
+  kafka:
+    image: apache/kafka:4.4.0@sha256:833b867a9585a141da455dc2b57431c65cbccb27f11c91f694444cca9f777e0f
+    mem_limit: 2048m
+    environment:
+      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
+      KAFKA_HEAP_OPTS: "-Xmx1G -Xms1G"
+      KAFKA_LOG_DIRS: "/var/lib/kafka/data"
+      KAFKA_PROCESS_ROLES: "broker,controller"
+      KAFKA_NODE_ID: "1"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:29093"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:29092"
+      KAFKA_LISTENERS: "CONTROLLER://:29093,PLAINTEXT://:29092"
+      KAFKA_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
     healthcheck:
-      test: ["CMD-SHELL", "rpk cluster health | grep -q 'Healthy:.*true'"]
+      # Port open only — not Kafka API ready. No operator JVM in this cgroup.
+      test:
+        [
+          "CMD-SHELL",
+          "bash -c 'exec 3<>/dev/tcp/127.0.0.1/29092'",
+        ]
       interval: 2s
       timeout: 5s
       retries: 30
-      start_period: 5s
+      start_period: 15s
 
-  # Standalone broker for web boot publisher only; not the production Oxia topology.
-  # https://pulsar.apache.org/docs/5.0.x/getting-started-docker/
-  pulsar-broker:
-    image: apachepulsar/pulsar:5.0.1@sha256:4507075d8c11b34629f3a0b41f48e3c659951e601538562ee0c088cd2c737ec0
-    mem_limit: 2g
+  kafka-ready:
+    image: apache/kafka:4.4.0@sha256:833b867a9585a141da455dc2b57431c65cbccb27f11c91f694444cca9f777e0f
+    restart: "no"
+    mem_limit: 384m
     environment:
-      PULSAR_MEM: -Xms256m -Xmx768m -XX:MaxDirectMemorySize=512m
-    command: ["bin/pulsar", "standalone", "--advertised-address", "pulsar-broker"]
-    healthcheck:
-      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8080/admin/v2/brokers/health"]
-      interval: 2s
-      timeout: 5s
-      retries: 45
-      start_period: 10s
+      KAFKA_HEAP_OPTS: "-Xms32m -Xmx256m"
+    entrypoint:
+      - /bin/bash
+      - -euc
+      - |
+        attempts=0
+        until /opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server kafka:29092 >/dev/null; do
+          attempts=$$((attempts + 1))
+          if [ "$$attempts" -ge 60 ]; then
+            echo "kafka API not ready on kafka:29092" >&2
+            exit 1
+          fi
+          sleep 1
+        done
+    depends_on:
+      kafka:
+        condition: service_started
 
   account-erasure-minio:
     # SeaweedFS S3 API stand-in; service hostname kept for R2_ENDPOINT wiring.
@@ -223,11 +241,10 @@ services:
       CLICKHOUSE_URL: http://default:health@clickhouse:8123
       CLICKHOUSE_PASSWORD: health
       REDIS_URL: redis://redis:6379
-      REDPANDA_BROKERS: redpanda:9092
-      PULSAR_SERVICE_URL: pulsar://pulsar-broker:6650
-      METRIC_STREAM_LEGACY_TOPIC: metric-stream-v1
-      METRIC_STREAM_LIVE_TOPIC: metric-stream-live-v1
-      METRIC_STREAM_HISTORY_TOPIC: metric-stream-history-v1
+      KAFKA_BROKERS: kafka:29092
+      METRIC_STREAM_LEGACY_TOPIC: metric-stream-v2
+      METRIC_STREAM_LIVE_TOPIC: metric-stream-live-v2
+      METRIC_STREAM_HISTORY_TOPIC: metric-stream-history-v2
       PORT: "3000"
       NODE_ENV: test
       PUBLIC_URL: http://localhost:3100
@@ -251,9 +268,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      redpanda:
-        condition: service_healthy
-      pulsar-broker:
+      kafka:
         condition: service_healthy
       account-erasure-minio:
         condition: service_healthy

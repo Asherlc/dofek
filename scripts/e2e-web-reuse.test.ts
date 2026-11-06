@@ -107,19 +107,19 @@ if (process.argv[2] === "wait") process.stdout.write("0\\n");
       const composeServices = composeCommands.map((command) => command.arguments.at(-1));
       expect(composeServices).toHaveLength(22);
       expect(composeServices).toEqual([
-        "redpanda",
+        "kafka",
         "migrate",
         "migrate",
         "analytics",
         "analytics",
         "server",
-        "redpanda",
+        "kafka",
         "migrate",
         "migrate",
         "analytics",
         "analytics",
         "server",
-        "redpanda",
+        "kafka",
         "migrate",
         "migrate",
         "seed",

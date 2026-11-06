@@ -137,11 +137,11 @@ const redisPort = await resolvePort({
   service: "redis",
   privatePort: "6379",
 });
-const redpandaPort = await resolvePort({
+const kafkaPort = await resolvePort({
   env: existingEnv,
-  key: "REDPANDA_PORT",
-  service: "redpanda",
-  privatePort: "19092",
+  key: "KAFKA_PORT",
+  service: "kafka",
+  privatePort: "9092",
 });
 const peerDbCdcPort = await resolvePort({
   env: existingEnv,
@@ -165,21 +165,20 @@ const dotenv = [
   `CLICKHOUSE_HTTP_PORT=${clickHouseHttpPort}`,
   `CLICKHOUSE_NATIVE_PORT=${clickHouseNativePort}`,
   `REDIS_PORT=${redisPort}`,
-  `REDPANDA_PORT=${redpandaPort}`,
+  `KAFKA_PORT=${kafkaPort}`,
   `PEERDB_CDC_HOST=127.0.0.1`,
   `PEERDB_CDC_PORT=${peerDbCdcPort}`,
   `PEERDB_UI_PORT=${peerDbUiPort}`,
   `DATABASE_URL=postgres://health:${postgresPasswordUrlEncoded}@127.0.0.1:${databasePort}/health`,
   `CLICKHOUSE_URL=http://default:${clickHousePasswordUrlEncoded}@127.0.0.1:${clickHouseHttpPort}`,
   `REDIS_URL=redis://127.0.0.1:${redisPort}`,
-  `REDPANDA_BROKERS=127.0.0.1:${redpandaPort}`,
-  `METRIC_STREAM_LEGACY_TOPIC=metric-stream-v1`,
-  `METRIC_STREAM_LIVE_TOPIC=metric-stream-live-v1`,
-  `METRIC_STREAM_HISTORY_TOPIC=metric-stream-history-v1`,
+  `KAFKA_BROKERS=127.0.0.1:${kafkaPort}`,
+  `METRIC_STREAM_LEGACY_TOPIC=metric-stream-v2`,
+  `METRIC_STREAM_LIVE_TOPIC=metric-stream-live-v2`,
+  `METRIC_STREAM_HISTORY_TOPIC=metric-stream-history-v2`,
   `METRIC_STREAM_R2_BUCKET=dofek-metric-stream-archive`,
   // Compose interpolates profiled archive services even when `compose:up` only
-  // starts db/clickhouse/redis/redpanda; keep stock placeholders so ${:?} passes.
-  `PULSAR_SERVICE_URL=pulsar://127.0.0.1:6650`,
+  // starts db/clickhouse/redis/kafka; keep stock placeholders so ${:?} passes.
   `METRIC_STREAM_TRANSPORT_EPOCH=local-dev-transport-epoch`,
   "",
 ].join("\n");
@@ -206,7 +205,7 @@ if (process.argv.includes("--up")) {
       "db",
       "clickhouse",
       "redis",
-      "redpanda",
+      "kafka",
     ],
     {
       cwd: workspaceDirectory,

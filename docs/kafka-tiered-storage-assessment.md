@@ -369,8 +369,111 @@ Stock Kafka **4.4.0** + Aiven **v1.2.0**: tier upload + local removal PASS;
 ~5 MiB remote read PASS; **fixture-correct** 2×256×512 KiB (256 MiB) earliest
 remote digest + restart re-hash **PASS** under broker 2048 MiB / client 384 MiB.
 Prior dual512 Exit 137 was a **test violation** (consumer inside broker
-cgroup inheriting 1 GiB heap), not a Kafka resource finding. B2 compatibility
-remains unqualified.
+cgroup inheriting 1 GiB heap), not a Kafka resource finding. B2/R2 Phase F
+packets remain historical evidence only — not production cutover authority.
+TS object-store **provider choice still pending** Root answer.
+
+## Current plan (Root conditional ACK — runtime-only)
+
+User pivot: scrap Pulsar; integrate stock Kafka 4.4.0 + released Aiven RSM
+1.2.0; **keep** existing R2 JSONL archive. **No production cutover** and **no
+new cloud test** in this wave.
+
+### Lane split
+
+| Lane | Owns | Does not own |
+|---|---|---|
+| **This (runtime)** | `docker-compose*.yml`, `deploy/kafka/**`, `deploy/stack.yml` broker/archive wiring, host plugin publish step in existing deploy workflow, active deploy README + runtime CI that starts those compose services | Any `src/**`, package.json deps, unit/integration test bodies |
+| **B7** | All src/package/test restoration and Pulsar file removal (incl. native integ / bookie), `KAFKA_BROKERS` rename across app/docs/tests, Infisical app env consumption, erasure deadlines for **Kafka TS cold objects** | Wholesale HEAD restore; DIY dual-write |
+| **87** | Pulsar B2 offload IaC teardown (coord) | R2 archive buckets |
+
+### Archive collision (critical)
+
+Connect object keys are
+`…/${topic}-${partition}-${first_offset}-${last_offset}.jsonl.gz`
+([`deploy/redpanda/metric-stream-r2-archive.connect.yml`](../deploy/redpanda/metric-stream-r2-archive.connect.yml)).
+A new Kafka cluster resets offsets to **0**. Reusing **v1** topic names would
+**overwrite** existing R2 archive objects for overlapping offset ranges.
+
+**Chosen stock-safe design (no DIY migration):** introduce a **new topic
+generation** with the same grammar:
+
+| Route | Retired (Redpanda / archive history) | Kafka generation (writers+sinks+archive) |
+|---|---|---|
+| legacy | `metric-stream-v1` | `metric-stream-v2` |
+| live | `metric-stream-live-v1` | `metric-stream-live-v2` |
+| history | `metric-stream-history-v1` | `metric-stream-history-v2` |
+
+Do **not** resume same-topic produce into the existing archive. Quarantine
+suffix grammar stays aligned (`*.quarantine.v1` → generation-matched names
+under B7). Exact cutover sequencing (drain Redpanda → switch producers to v2
+→ archive/sinks on `KAFKA_BROKERS`) is **documented only** until Root approves
+runtime cutover; B7 owns app/topic env defaults.
+
+### Env
+
+Canonical bootstrap: **`KAFKA_BROKERS`** replacing `REDPANDA_BROKERS` — **no
+alias/fallback**. Missing Infisical provision of `KAFKA_BROKERS` (and sink/archive
+env files) **blocks merge/deploy**. B7 lands app reads; runtime compose/stack/Connect
+emit `KAFKA_BROKERS` only.
+
+### Plugin provision (existing host + workflow)
+
+Pinned Aiven v1.2.0 assets (`core-1.2.0.tgz` /
+`s3-1.2.0.tgz` sha256 as in lab provenance). Publish with **curl + sha256 verify
++ exact archive roots (`core-1.2.0/`, `s3-1.2.0/`) + atomic version-pair `mv`** into
+`/mnt/dofek-data/kafka/plugins/1.2.0/{core,s3}` **if absent** on the existing prod
+host via the existing deploy workflow SSH step — **not** cloud-init-only, **not** a
+maintained installer CLI, **not** a custom broker image. Never `rm -rf` a version
+in use; never `find | head` for extract roots. Broker mounts the plugins tree **RO**.
+
+### Broker health / readiness
+
+No operator Java inside the broker cgroup. Broker healthchecks are **TCP
+port-liveness only**. Meaningful API readiness uses an **external**
+`kafka-broker-api-versions` client (`kafka-ready` compose service; deploy workflow
+wait on the stack network) before producers attach.
+
+### Prod RSM held
+
+Provider choice still pending. Production stack ships **no** RSM/TS env — no blank
+credential fallbacks, no TS-off-by-default flag. When TS is required, fail closed
+on contracted key names after lane-87 IaC alignment. Credentials use the AWS
+default chain (never static `KAFKA_RSM_CONFIG_STORAGE_AWS_*` secret configs). If R2
+is selected, include stock `AWS_*_CHECKSUM_*=WHEN_REQUIRED` from Phase F proof.
+
+### Listeners
+
+Local: internal `kafka:29092` + host `127.0.0.1:${KAFKA_PORT:-19092}`. E2E:
+`kafka:29092`. Prod: single `kafka:9092`. Do not advertise `kafka` hostname to
+host clients.
+
+### Qualification still required before TS in production
+
+| Gate | Bar |
+|---|---|
+| MPU | **Actual** multipart observations (UploadPart / CompleteMultipartUpload), not “segment > part size ⇒ eligible” alone |
+| Native delete / retention | Local removal + remote object lifecycle |
+| Failure + restart | Digest match with stdout provenance rules |
+| Backpressure | Lag without silent drop; fixture-correct client isolation |
+| Stable metadata | Survives restart |
+| Erasure | Topic retention **and** app-erasure cold-object deadlines include **Kafka TS** objects (B7), not only KafkaJS drain restore |
+
+### Runtime wave (conditional runtime-only scope)
+
+1. Provider-independent Kafka runtime config under `deploy/kafka/**` + compose/stack
+   (S3 endpoint/bucket via env; **no** B2/R2 hardcode).
+2. Remove Pulsar compose overlays and `deploy/pulsar/**`; preserve historical
+   evidence docs as history.
+3. Wire Connect/archive seed to `KAFKA_BROKERS`; default compose topics to **v2**.
+4. Stop. No stack deploy, no cutover, no new cloud allocation.
+
+**Status:** runtime Kafka broker/archive wiring is configuration-complete for this
+scope, but **RSM/tiered-storage production is not complete** and is **not
+rollout-ready** until the object-store provider is selected and lane-87 IaC +
+secrets land. **Do not merge/deploy** until Infisical `KAFKA_BROKERS` + topic env
+are provisioned and cutover is explicitly approved. MPU/retention/erasure gates
+above remain open.
 
 ## Primary links (by claim)
 

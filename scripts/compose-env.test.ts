@@ -46,12 +46,12 @@ describe("compose-env", () => {
       const dotenv = parseDotenv(output);
 
       expect(dotenv.COMPOSE_PROJECT_NAME).toBe(basename(cwd));
-      expect(dotenv.METRIC_STREAM_LEGACY_TOPIC).toBe("metric-stream-v1");
-      expect(dotenv.METRIC_STREAM_LIVE_TOPIC).toBe("metric-stream-live-v1");
-      expect(dotenv.METRIC_STREAM_HISTORY_TOPIC).toBe("metric-stream-history-v1");
+      expect(dotenv.METRIC_STREAM_LEGACY_TOPIC).toBe("metric-stream-v2");
+      expect(dotenv.METRIC_STREAM_LIVE_TOPIC).toBe("metric-stream-live-v2");
+      expect(dotenv.METRIC_STREAM_HISTORY_TOPIC).toBe("metric-stream-history-v2");
       // Placeholders so Compose can interpolate metric-stream archive profile
       // services that use ${VAR:?} even when those services are not started.
-      expect(dotenv.PULSAR_SERVICE_URL).toBe("pulsar://127.0.0.1:6650");
+      expect(dotenv.KAFKA_BROKERS).toMatch(/^127\.0\.0\.1:/);
       expect(dotenv.METRIC_STREAM_TRANSPORT_EPOCH).toBe("local-dev-transport-epoch");
       expect(dotenv.COMPOSE_FILE).toBe(join(realpathSync(cwd), "docker-compose.yml"));
       expect(dotenv.POSTGRES_PASSWORD).toBe(postgresFixtureValue);
@@ -129,7 +129,7 @@ describe("compose-env", () => {
             CLICKHOUSE_HTTP_PORT: "28123",
             CLICKHOUSE_NATIVE_PORT: "29000",
             REDIS_PORT: "26379",
-            REDPANDA_PORT: "29092",
+            KAFKA_PORT: "19092",
             PEERDB_CDC_PORT: "29900",
             PEERDB_UI_PORT: "23001",
           },

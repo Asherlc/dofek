@@ -76,3 +76,6 @@ coverage-integration-*/
 
 # Local activity data-integrity repair audit artifacts (may contain user data)
 activity-data-integrity-artifacts/
+
+# Kafka RSM released jars (version-pair extract; not committed)
+deploy/kafka/plugins/*/
