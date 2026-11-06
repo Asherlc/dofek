@@ -7,8 +7,11 @@ approved): **B2 Phase F only**. MPU and R2 are separate later runs.
 **Pins:** Apache Kafka **4.4.0** + Aiven RSM **[v1.2.0](https://github.com/Aiven-Open/tiered-storage-for-apache-kafka/releases/tag/v1.2.0)**
 (`s3-1.2.0.tgz` `sha256:1fd89dea…`, `core-1.2.0.tgz` `sha256:14fb636d…`; AWS SDK
 **2.57.8** from [`build.gradle`](https://github.com/Aiven-Open/tiered-storage-for-apache-kafka/blob/v1.2.0/build.gradle)).
-Local Seaweed lab PASS / Kafka peak **809 MiB** is **not** B2/R2 proof and is
-**not** a memory qualification for larger remote-consume workloads.
+Local Seaweed lab PASS / Kafka peak **809 MiB** is **not** B2/R2 proof.
+Larger remote-consume workloads remain **unqualified pending retest**. A prior
+~256 MiB lab OOM was **confounded** (console consumer ran inside the broker
+cgroup and inherited a second **1 GiB** heap beside the broker heap) — do
+**not** cite it as proven broker-budget failure.
 
 Tiered storage does **not** replace the existing R2 JSONL archive / erasure
 ledger. Pulsar B2 IaC is a separate track. End-to-end remote consume
@@ -124,8 +127,8 @@ claimed or enforced in software.
 
 | Phase | Goal | Payload | What it proves | What it does **not** prove |
 |---|---|---|---|---|
-| **F** Functional | Put path for small objects + GetRange + delete | **≤ 64 KiB** total produce (e.g. 64×1 KiB), one closed remote segment | Stock RSM against backend for tiny `.log`/`indexes`/`manifest` (expect **PutObject**, not MPU, while objects ≪ 5 MiB part min) | MPU / UploadPart; memory fit for larger remote consume |
-| **M** MPU qualification | Force multipart | One closed segment with `.log` **≥ 5 MiB** (RSM part-size minimum) | `CreateMultipartUpload` / `UploadPart` / `Complete` (+ Abort on failure) | Replaces Phase F; memory qualification |
+| **F** Functional | Put path for small objects + GetRange + delete | **≤ 64 KiB** total produce (e.g. 64×1 KiB), one closed remote segment | Stock RSM against backend for tiny `.log`/`indexes`/`manifest` (expect **PutObject**, not MPU, while objects ≪ 5 MiB part min) | MPU / UploadPart; larger-workload memory qualification |
+| **M** MPU qualification | Force multipart | One closed segment with `.log` **≥ 5 MiB** (RSM part-size minimum) | `CreateMultipartUpload` / `UploadPart` / `Complete` (+ Abort on failure) | Replaces Phase F; larger-workload memory qualification |
 
 Never claim MPU coverage from a ≤64 KiB payload. First approved cloud run =
 **B2 Phase F only**; Phase M and R2 are later, separate approvals.
@@ -159,10 +162,10 @@ AWS_RESPONSE_CHECKSUM_VALIDATION=WHEN_REQUIRED
 AWS_MAX_ATTEMPTS=1
 ```
 
-**Memory caveat:** an 8 MiB chunk cache on a **2 GiB** cgroup does **not**
-memory-qualify larger remote-consume cases (e.g. ~256 MiB segment working set
-can still pressure/OOM the broker). A tiny cloud Phase F PASS is functional
-compat evidence only — **not** a RAM/size qualification.
+**Memory caveat:** an 8 MiB `MemoryChunkCache` is **test configuration only**,
+not production sizing. A tiny cloud Phase F PASS is functional compat evidence
+only — **not** a RAM/size qualification. Larger workloads stay unqualified
+until retested with isolated clients (below).
 
 ---
 
@@ -172,11 +175,14 @@ compat evidence only — **not** a RAM/size qualification.
 
 | Limit | Proposal |
 |---|---|
-| Kafka cgroup memory | **2048 MiB** |
+| Kafka cgroup memory | **2048 MiB** (broker process only) |
 | Kafka heap | `-Xmx1G -Xms1G` |
+| **Client container** | **Separate** Compose service, cgroup **384 MiB**, explicit JVM heap **256 MiB** |
+| Client tools | All admin / producer / consumer CLIs run **only** in that client container |
+| Forbidden | `docker exec` (or equivalent) of any Java/Kafka tool **into** the broker cgroup |
 | Wall clock | Phase F **≤ 20 min**; manual stop + cleanup if download or errors overrun plan |
 | Owned volumes | Lab Compose volumes for broker/data **only**; tear down `--volumes` after |
-| Client | Finite `max.poll.records` (e.g. 50) + **single** consume-to-EOF then exit |
+| Client workload | Finite `max.poll.records` (e.g. 50) + **single** consume-to-EOF then exit |
 
 ### 6.2 Credential boundary (exact)
 
@@ -249,8 +255,10 @@ add a maintained bootstrap script for this.
 
    plus `rsm.config.s3.bucket.name`, `s3.endpoint.url`, `s3.region` for that
    bucket. Do **not** place child secrets in agent env/files.
-4. Produce ≤64 KiB; force one closed segment offload; delete local closed
-   segment; single finite consume; stop.
+4. From the **384 MiB client container** only (heap **256 MiB**): produce
+   ≤64 KiB; force one closed segment offload; delete local closed segment;
+   single finite consume; stop. Never run those Java tools inside the broker
+   cgroup.
 5. `finally`: `ListObjectVersions` (prefix, all pages) → delete versions +
    markers → revoke child → delete bucket → `compose down --volumes`.
 
