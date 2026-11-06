@@ -580,8 +580,8 @@ describe("createAccountErasureRuntime", () => {
   });
 
   it("fails closed when durable ingest_fence.completed_at is missing", async () => {
-    mocks.loadCheckpointCompletedAt.mockResolvedValueOnce(null);
-    mocks.loadPhaseProgress.mockResolvedValueOnce(orderedStockPhysicalMaintenanceAck());
+    mocks.loadCheckpointCompletedAt.mockResolvedValue(null);
+    mocks.loadPhaseProgress.mockResolvedValue(orderedStockPhysicalMaintenanceAck());
     const runtime = await createAccountErasureRuntime(ownerDatabase, mockClickHouse(), {
       close: vi.fn(async () => undefined),
       purge: vi.fn(async () => undefined),
@@ -601,10 +601,16 @@ describe("createAccountErasureRuntime", () => {
   });
 
   it("rejects stock physical maintenance ack that does not cover ingest_fence.completed_at", async () => {
-    mocks.loadPhaseProgress.mockResolvedValueOnce({
-      ...orderedStockPhysicalMaintenanceAck(),
-      verifiedCutoffAt: "2026-08-26T08:00:00.000Z",
-      verifiedAt: "2026-08-26T08:30:00.000Z",
+    // Fence completed_at is intentionally after verifiedCutoffAt so ordering fails closed.
+    const fenceCompletedAt = new Date("2026-08-26T12:00:00.000Z");
+    mocks.loadCheckpointCompletedAt.mockResolvedValue(fenceCompletedAt);
+    mocks.loadPhaseProgress.mockResolvedValue({
+      kind: "stock_physical_maintenance_ack",
+      runId: "maintenance-runtime-fixture",
+      operator: "runtime-fixture@example.test",
+      verifiedCutoffAt: "2026-08-26T10:00:00.000Z",
+      verifiedAt: "2026-08-26T11:00:00.000Z",
+      runbookRevision: "docs/pulsar-remaining-work.md#physical",
     });
     const runtime = await createAccountErasureRuntime(ownerDatabase, mockClickHouse(), {
       close: vi.fn(async () => undefined),
@@ -626,7 +632,8 @@ describe("createAccountErasureRuntime", () => {
 
   it("completes retention verification when ordered stock physical maintenance ack is present", async () => {
     const ack = orderedStockPhysicalMaintenanceAck();
-    mocks.loadPhaseProgress.mockResolvedValueOnce(ack);
+    mocks.loadCheckpointCompletedAt.mockResolvedValue(ingestFenceCompletedAt);
+    mocks.loadPhaseProgress.mockResolvedValue(ack);
     const runtime = await createAccountErasureRuntime(ownerDatabase, mockClickHouse(), {
       close: vi.fn(async () => undefined),
       purge: vi.fn(async () => undefined),
