@@ -37,6 +37,16 @@ function createRetentionPhaseRunner(now: Date) {
   const unexpectedDependency = async (): Promise<never> => {
     throw new Error("Unexpected identifying account-erasure dependency");
   };
+  // Retention runs after PII scrub: fence/ack loaders are requestId-scoped (non-identifying).
+  const ingestFenceCompletedAt = new Date(now.getTime() - 3 * 60 * 60 * 1_000);
+  const stockPhysicalMaintenanceAck = {
+    kind: "stock_physical_maintenance_ack" as const,
+    runId: "maintenance-request-to-completion",
+    operator: "integration-fixture@example.test",
+    verifiedCutoffAt: new Date(now.getTime() - 2 * 60 * 60 * 1_000).toISOString(),
+    verifiedAt: new Date(now.getTime() - 60 * 60 * 1_000).toISOString(),
+    runbookRevision: "docs/pulsar-remaining-work.md#physical",
+  };
   const verifyPeerDbStagingRetention = vi.fn(async () => ({
     lifecycleRetentionDays: 1,
     multipartUploadsInspected: 0,
@@ -57,8 +67,8 @@ function createRetentionPhaseRunner(now: Date) {
     eraseProcessors: unexpectedDependency,
     eraseStripe: unexpectedDependency,
     fenceIngest: unexpectedDependency,
-    loadIngestFenceCompletedAt: unexpectedDependency,
-    loadStockPhysicalMaintenanceAck: unexpectedDependency,
+    loadIngestFenceCompletedAt: vi.fn(async () => ingestFenceCompletedAt),
+    loadStockPhysicalMaintenanceAck: vi.fn(async () => stockPhysicalMaintenanceAck),
     now: () => now,
     purgeWork: unexpectedDependency,
     revokeRemote: unexpectedDependency,
@@ -68,6 +78,8 @@ function createRetentionPhaseRunner(now: Date) {
     verifyProcessors: unexpectedDependency,
   } satisfies AccountErasurePhaseRunnerDependencies;
   return {
+    loadIngestFenceCompletedAt: dependencies.loadIngestFenceCompletedAt,
+    loadStockPhysicalMaintenanceAck: dependencies.loadStockPhysicalMaintenanceAck,
     runner: createAccountErasurePhaseRunner(dependencies),
     verifyPeerDbStagingRetention,
   };
@@ -235,6 +247,12 @@ describe("processAccountErasureRequest request-to-completion (integration)", () 
     ).resolves.toEqual({ status: "completed" });
 
     expect(phaseRuns).toEqual(ACCOUNT_ERASURE_ACTIVE_PHASES);
+    expect(retention.loadIngestFenceCompletedAt).toHaveBeenCalledWith({
+      requestId: accepted.requestId,
+    });
+    expect(retention.loadStockPhysicalMaintenanceAck).toHaveBeenCalledWith({
+      requestId: accepted.requestId,
+    });
     expect(retention.verifyPeerDbStagingRetention).toHaveBeenCalledWith({
       cutoff: new Date(peerDbStagingBoundary.cutoff),
       now: retentionVerificationAt,
