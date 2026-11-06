@@ -1,0 +1,1 @@
+/var/lib/kafka/data/tieredTopicR2F-0/00000000000000000064.log

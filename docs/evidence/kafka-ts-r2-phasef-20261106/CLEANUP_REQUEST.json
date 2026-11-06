@@ -1,0 +1,25 @@
+{
+  "bucketName": "kafka-ts-r2-f-20261106",
+  "accountId": "8e5b2f62ffe8ebdd48e725d325a6d51e",
+  "prefix": "kafka-ts-parity/r2/20261106-phasef1/",
+  "remoteLogSegmentId": "9UVUq9clQNK2HctmRlPRsg",
+  "topicId": "qssvVphqSKmVcbl9m6d3Fw",
+  "topic": "tieredTopicR2F",
+  "partition": 0,
+  "startOffset": 0,
+  "endOffset": 63,
+  "segmentSizeInBytes": 66417,
+  "expected_object_keys": [
+    "kafka-ts-parity/r2/20261106-phasef1/tieredTopicR2F-qssvVphqSKmVcbl9m6d3Fw/0/00000000000000000000-9UVUq9clQNK2HctmRlPRsg.log",
+    "kafka-ts-parity/r2/20261106-phasef1/tieredTopicR2F-qssvVphqSKmVcbl9m6d3Fw/0/00000000000000000000-9UVUq9clQNK2HctmRlPRsg.indexes",
+    "kafka-ts-parity/r2/20261106-phasef1/tieredTopicR2F-qssvVphqSKmVcbl9m6d3Fw/0/00000000000000000000-9UVUq9clQNK2HctmRlPRsg.rsm-manifest"
+  ],
+  "note": "Keys derived from RSM ObjectKeyFactory + copy metadata; Root deletes current objects under exact prefix (all pages), abort MPU if any, delete empty bucket. No parent revoke. Session TTL expiry. Do not recreate same bucket name without review. Cursor has no R2 creds.",
+  "upload_path": "PutObject expected for tiny objects \u2014 NO MPU claim",
+  "observed_D": "unknown",
+  "planning_D_mib": 1.0,
+  "phase": "F",
+  "result": "PASS",
+  "runtime_stopped_by_cursor": true,
+  "cloud_cleanup_owner": "Root_parent_S3_in_memory"
+}

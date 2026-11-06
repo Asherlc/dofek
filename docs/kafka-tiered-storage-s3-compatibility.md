@@ -210,14 +210,21 @@ bucket; destroy lab volumes.
 - **Download:** plan **~1 MiB** for one finite consumer attempt; overrun
   possible → manual stop. Not a hard cap.
 
-### 6.4 R2 (later; operator admin only)
+### 6.4 R2 Phase F (operator admin only)
 
 - Bucket create/delete: Cloudflare API **Workers R2 Storage Write**
-  ([Create Bucket](https://developers.cloudflare.com/api/resources/r2/subresources/buckets/methods/create/)).
-- Object token: **Object Read & Write**, that bucket only
-  ([R2 tokens](https://developers.cloudflare.com/r2/api/tokens/)).
-- Never JSONL archive / erasure ledger buckets.
-- Same Phase F/M split when separately approved.
+  ([Create Bucket](https://developers.cloudflare.com/api/resources/r2/subresources/buckets/methods/create/),
+  [Delete Bucket](https://developers.cloudflare.com/api/resources/r2/subresources/buckets/methods/delete/)).
+- **Stock child path used:** disposable bucket +
+  [`POST /accounts/{id}/r2/temp-access-credentials`](https://developers.cloudflare.com/api/resources/r2/subresources/temporary_credentials/methods/create/)
+  (`permission=object-read-write`, exact prefix, TTL 3600) → inject
+  `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_SESSION_TOKEN` into
+  disposable broker only
+  ([temporary credentials](https://developers.cloudflare.com/r2/api/s3/temporary-credentials/)).
+- **Create Token / permission_groups** route: blocked this lab (HTTP 403 code
+  9109); **do not** broaden tokens. Custom JWT signer: **not** used.
+- Never JSONL archive / erasure ledger / other existing R2 buckets.
+- Same Phase F/M split; Phase M only under later separate approval.
 
 ---
 
@@ -282,15 +289,37 @@ Evidence: [`docs/evidence/kafka-ts-b2-phasef-20261106/`](evidence/kafka-ts-b2-ph
 | Cloud cleanup | **operator** B2 native API verified 22:22:53Z (`ROOT_CLOUD_CLEANUP.json`) — **not** RSM `DeleteObjects` / physical GC proof ([Application Keys](https://www.backblaze.com/docs/cloud-storage-application-keys), [S3-Compatible API](https://www.backblaze.com/docs/cloud-storage-s3-compatible-api), [bucket versions](https://www.backblaze.com/docs/cloud-storage-s3-compatible-api-bucket-versions)) |
 | Compose teardown | **0** owned containers/volumes |
 
-**Next (recommend only — do not execute here):** tiny R2 Phase F under the same client-isolation + placeholder-overlay rules, after explicit review/download exception. Still blocked on RSM lacking `chunkedEncodingEnabled(false)`.
+**Next (recommend only — do not execute here):** Phase **M** (MPU) on B2 and/or R2 under separate explicit approval. No further cloud traffic/repro until new scope.
 
 ## 10. Remaining unknowns
 
-1. B2 MPU (Phase M) under RSM 1.2.0 / SDK 2.57.8.
-2. Whether `WHEN_REQUIRED` alone satisfies R2 without chunked-encoding off.
-3. Whether RSM `DeleteObjects` needs `s3.legacy.md5.plugin.enabled=true` on B2/R2.
+1. B2 / R2 **MPU** (Phase M) under RSM 1.2.0 / SDK 2.57.8 — **not** proven by Phase F Put/GetRange.
+2. Whether larger R2 workloads still need `chunkedEncodingEnabled(false)` (Phase F tiny objects succeeded with stock `WHEN_REQUIRED` + path-style only; **no** SDK patch).
+3. Whether RSM `DeleteObjects` needs `s3.legacy.md5.plugin.enabled=true` on B2/R2 — operator native cleanup ≠ plugin Delete/GC proof.
 4. Metered download bytes (`D`) / fetch count `K` for Phase F-class workloads.
-5. Path-style auto-detect vs forced `true` on current B2 endpoints (this run used forced `true`).
+5. Path-style auto-detect vs forced `true` on current B2 endpoints (B2 Phase F used forced `true`; R2 Phase F used forced `true` + `region=auto`).
+6. Disaster recovery / production readiness — **out of scope** for Phase F.
+
+## 11. R2 Phase F result (2026-11-06)
+
+Evidence: [`docs/evidence/kafka-ts-r2-phasef-20261106/`](evidence/kafka-ts-r2-phasef-20261106/).
+
+| Item | Result |
+|---|---|
+| Verdict | **PHASE_F_PASS** |
+| Config | stock Kafka 4.4.0 + RSM 1.2.0; `AWS_*_CHECKSUM_*=WHEN_REQUIRED`; `s3.region=auto`; path-style=`true`; **no** SDK/plugin patch |
+| Produce | 64 × 1024 **value** bytes (**65536**); console-producer file **65600** (= values + 64 newlines) — **not** a hard budget |
+| Remote segment | offsets 0–63; `segmentSizeInBytes` **66417**; objects `.log` **66417** / `.indexes` **132** / `.rsm-manifest` **712** |
+| Local before consume | closed removed; active `…00064.log` only |
+| Consume digest | count 64; sha256 match |
+| Java isolation | broker 2048 MiB / heap 1 GiB; **all** admin/produce/consume in client 384 MiB / heap 256 MiB |
+| `observed_D` | **unknown** (no stock download meter); ~1 MiB was planning only |
+| MPU | **not claimed** |
+| Credential path | Create Token / `permission_groups` → **403 code 9109** (blocked; no broaden). Stock **temp-access-credentials** + CF create bucket → **success**. No custom JWT; no paid setup; parent never in broker. |
+| Cloud cleanup | **operator** parent S3 in-memory + CF DELETE verified 23:08Z (`ROOT_CLOUD_CLEANUP.json`) — **manual**, **not** RSM `DeleteObjects` / physical GC proof. Session has **no** revoke API (TTL); parent unchanged; do not recreate same bucket name before expiry without review. |
+| Compose teardown | **0** owned containers/volumes **before** cloud cleanup |
+
+**Clarify:** simple Put/GetRange PASS does **not** prove MPU, disaster recovery, or production readiness. No more cloud traffic/repro until a new approved scope.
 
 ---
 
@@ -309,4 +338,7 @@ Evidence: [`docs/evidence/kafka-ts-b2-phasef-20261106/`](evidence/kafka-ts-b2-ph
 - [R2 Java example](https://developers.cloudflare.com/r2/examples/aws/aws-sdk-java/),
   [R2 checksums / S3 API](https://developers.cloudflare.com/r2/api/s3/api/),
   [R2 tokens](https://developers.cloudflare.com/r2/api/tokens/),
-  [R2 Create Bucket API](https://developers.cloudflare.com/api/resources/r2/subresources/buckets/methods/create/)
+  [R2 temporary credentials](https://developers.cloudflare.com/r2/api/s3/temporary-credentials/),
+  [R2 temp-access-credentials API](https://developers.cloudflare.com/api/resources/r2/subresources/temporary_credentials/methods/create/),
+  [R2 Create Bucket API](https://developers.cloudflare.com/api/resources/r2/subresources/buckets/methods/create/),
+  [R2 Delete Bucket API](https://developers.cloudflare.com/api/resources/r2/subresources/buckets/methods/delete/)

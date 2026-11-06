@@ -1,0 +1,27 @@
+{
+  "at": "2026-11-06T23:08:00.602Z",
+  "bucket": "kafka-ts-r2-f-20261106",
+  "prefix": "kafka-ts-parity/r2/20261106-phasef1/",
+  "manualCleanup": true,
+  "sessionRevocation": "No revoke API; expires by 2026-11-07T00:05:35.083Z; parent unchanged",
+  "errors": [],
+  "before": [
+    {
+      "Key": "kafka-ts-parity/r2/20261106-phasef1/tieredTopicR2F-qssvVphqSKmVcbl9m6d3Fw/0/00000000000000000000-9UVUq9clQNK2HctmRlPRsg.indexes",
+      "Size": 132
+    },
+    {
+      "Key": "kafka-ts-parity/r2/20261106-phasef1/tieredTopicR2F-qssvVphqSKmVcbl9m6d3Fw/0/00000000000000000000-9UVUq9clQNK2HctmRlPRsg.log",
+      "Size": 66417
+    },
+    {
+      "Key": "kafka-ts-parity/r2/20261106-phasef1/tieredTopicR2F-qssvVphqSKmVcbl9m6d3Fw/0/00000000000000000000-9UVUq9clQNK2HctmRlPRsg.rsm-manifest",
+      "Size": 712
+    }
+  ],
+  "aborted": [],
+  "afterObjects": 0,
+  "afterUploads": 0,
+  "bucketGetStatus": 404,
+  "status": "CLEANUP_VERIFIED"
+}

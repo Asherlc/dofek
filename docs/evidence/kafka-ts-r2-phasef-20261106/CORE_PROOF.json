@@ -1,0 +1,92 @@
+{
+  "lab_id": "kafka-ts-r2-phasef-20261106",
+  "phase": "F",
+  "result": "PHASE_F_PASS",
+  "not_claimed": [
+    "MPU",
+    "PhaseM",
+    "B2",
+    "RSM_DeleteObjects_physical_GC",
+    "plugin_Delete_GC",
+    "disaster_recovery",
+    "production_readiness",
+    "download_byte_meter",
+    "hard_download_cap",
+    "memory_qualification",
+    "chunkedEncodingEnabled_false_required"
+  ],
+  "bucketName": "kafka-ts-r2-f-20261106",
+  "accountId": "8e5b2f62ffe8ebdd48e725d325a6d51e",
+  "prefix": "kafka-ts-parity/r2/20261106-phasef1/",
+  "endpoint": "https://8e5b2f62ffe8ebdd48e725d325a6d51e.r2.cloudflarestorage.com",
+  "region": "auto",
+  "path_style": true,
+  "checksum": "WHEN_REQUIRED",
+  "produce": {
+    "messages": 64,
+    "value_bytes_each": 1024,
+    "value_bytes_total": 65536,
+    "producer_file_bytes": 65600,
+    "producer_file_bytes_note": "65600 = 64*1024 value bytes + 64 newline separators in console-producer input file; not a hard budget claim"
+  },
+  "segment": {
+    "remoteLogSegmentId": "9UVUq9clQNK2HctmRlPRsg",
+    "topicId": "qssvVphqSKmVcbl9m6d3Fw",
+    "startOffset": 0,
+    "endOffset": 63,
+    "segmentSizeInBytes": 66417
+  },
+  "local_closed_removed_before_consume": true,
+  "local_active_only": "00000000000000000064.log",
+  "consume": {
+    "count": 64,
+    "expected_count": 64,
+    "offsets_assumed": "0..n-1 console-consumer order",
+    "sha256_offset_pipe_value": "a6818c55855297f2466d9d0967e2c97f6ebf6db61f7bd7c204d99bde6ecd5687",
+    "plan_sha256": "a6818c55855297f2466d9d0967e2c97f6ebf6db61f7bd7c204d99bde6ecd5687",
+    "match": true,
+    "first_prefix": "00000|ABCDEFGHIJ",
+    "last_prefix": "00063|ABCDEFGHIJ"
+  },
+  "observed_D": "unknown",
+  "observed_D_reason": "no stock download byte counter exposed to Cursor without R2 metrics API",
+  "planning_D_mib": 1.0,
+  "wall": {
+    "start_utc": "2026-11-06T23:06:15Z",
+    "end_utc": "2026-11-06T23:07:02Z"
+  },
+  "credential_mode": "temp_access_credentials_session",
+  "parent_in_broker": false,
+  "scope_note": "Simple PutObject path + GetRange/consume PASS under stock WHEN_REQUIRED + path-style=true does NOT prove MPU, disaster recovery, production readiness, or RSM DeleteObjects/physical GC.",
+  "credential_provision": {
+    "first_route": "POST /user/tokens + permission_groups",
+    "first_route_result": "BLOCKED \u2014 GET /user/tokens/permission_groups HTTP 403 code 9109 Unauthorized; zero writes; no token broaden",
+    "stock_route": "POST /accounts/{id}/r2/buckets then POST /accounts/{id}/r2/temp-access-credentials",
+    "stock_route_result": "SUCCESS \u2014 disposable bucket + object-read-write session TTL 3600 prefix-scoped; AWS_SESSION_TOKEN via default chain",
+    "custom_jwt_signer": false,
+    "paid_setup": false,
+    "parent_in_broker": false,
+    "session_revoke_api": "none \u2014 TTL expiry; parent unchanged; bucket deleted"
+  },
+  "stock_config": {
+    "AWS_REQUEST_CHECKSUM_CALCULATION": "WHEN_REQUIRED",
+    "AWS_RESPONSE_CHECKSUM_VALIDATION": "WHEN_REQUIRED",
+    "s3.region": "auto",
+    "s3.path.style.access.enabled": true,
+    "sdk_plugin_patch": false
+  },
+  "cloud_cleanup": {
+    "owner": "Root_parent_S3_in_memory",
+    "at": "2026-11-06T23:08:00.602Z",
+    "manual_not_plugin_Delete_GC": true,
+    "objects_before": {
+      "log": 66417,
+      "indexes": 132,
+      "manifest": 712
+    },
+    "mpu": 0,
+    "after_objects": 0,
+    "after_uploads": 0,
+    "bucket_delete": "CF DELETE success; GET 404 code 10006"
+  }
+}

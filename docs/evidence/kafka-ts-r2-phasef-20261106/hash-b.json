@@ -1,0 +1,10 @@
+{
+  "count": 64,
+  "expected_count": 64,
+  "offsets_assumed": "0..n-1 console-consumer order",
+  "sha256_offset_pipe_value": "a6818c55855297f2466d9d0967e2c97f6ebf6db61f7bd7c204d99bde6ecd5687",
+  "plan_sha256": "a6818c55855297f2466d9d0967e2c97f6ebf6db61f7bd7c204d99bde6ecd5687",
+  "match": true,
+  "first_prefix": "00000|ABCDEFGHIJ",
+  "last_prefix": "00063|ABCDEFGHIJ"
+}

@@ -1,0 +1,10 @@
+{
+  "bucket": "kafka-ts-r2-f-20261106",
+  "prefix": "kafka-ts-parity/r2/20261106-phasef1/",
+  "accountId": "8e5b2f62ffe8ebdd48e725d325a6d51e",
+  "createdAt": "2026-11-06T23:05:33.897Z",
+  "sessionTtlSeconds": 3600,
+  "bucketCreated": true,
+  "sessionMinted": true,
+  "expiresNoLaterThan": "2026-11-07T00:05:35.083Z"
+}

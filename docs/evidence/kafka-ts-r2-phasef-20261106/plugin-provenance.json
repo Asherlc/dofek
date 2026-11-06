@@ -1,0 +1,11 @@
+{
+  "core_tarball": "/tmp/core-1.2.0.tgz",
+  "core_sha256": "14fb636d3a5c781ae9ae961012bf7b0881b09629859dbc784dc49356faeaa747",
+  "s3_tarball": "/tmp/s3-1.2.0.tgz",
+  "s3_sha256": "1fd89dea84988b857e546fcfa88504f5b4e45d7712e3eddeb506f11a394ef010",
+  "rsm_version": "1.2.0",
+  "kafka_image": "apache/kafka:4.4.0@sha256:833b867a9585a141da455dc2b57431c65cbccb27f11c91f694444cca9f777e0f",
+  "sdk_patch": false,
+  "plugin_patch": false,
+  "stock_only": true
+}

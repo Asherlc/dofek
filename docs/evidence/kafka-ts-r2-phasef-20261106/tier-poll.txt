@@ -1,0 +1,4 @@
+poll=1 nlogs=1 copied=0 23:06:31
+poll=2 nlogs=2 copied=0 23:06:33
+poll=3 nlogs=2 copied=1 23:06:36
+poll=4 nlogs=1 copied=1 23:06:38
