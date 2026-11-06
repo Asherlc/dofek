@@ -14,6 +14,55 @@ HCP `dofek`/`dofek` is `execution_mode=local`. GHA supplies dedicated IaC parent
 `B2_APPLICATION_KEY_ID` / `B2_APPLICATION_KEY` and Infisical OIDC JWT after `terraform init`.
 
 Broker stack hunks (after secrets exist): [b2-pulsar-offload-broker-stack-hunks.md](./b2-pulsar-offload-broker-stack-hunks.md).
+Do **not** merge those hunks into dirty `deploy/stack.yml` until Infisical has the five
+runtime secrets from Terraform apply.
+
+## Readiness (committed TF / workflow / docs)
+
+| Item | Status |
+| --- | --- |
+| `deploy/b2-pulsar-offload.tf` bucket + 1d hide→delete / 1d MPU cancel + broker key + five `infisical_secret` | Committed; R2 archive/erasure stay in `storage.tf` only |
+| `deploy/main.tf` providers `Backblaze/b2` `0.14.1`, `infisical/infisical` `0.20.12`; empty `provider "b2"` / `provider "infisical"` (env/OIDC) | Committed |
+| `deploy/.terraform.lock.hcl` pins both providers | Committed |
+| `.github/workflows/deploy-terraform.yml` requires `B2_APPLICATION_KEY_ID`/`B2_APPLICATION_KEY`, OIDC JWT **after** `terraform init`, masks JWT, never prints plan/apply secret JSON | Committed; `actionlint` clean |
+| `terraform fmt -check` on `b2-pulsar-offload.tf` + `main.tf` | Pass (Terraform 1.10 container) |
+| Five runtime Infisical secrets | Exact contract below — TF ↔ stack hunks match |
+| Identity additional-privilege POST | **Blocked on user pivot approval** (packet ready; no write) |
+| B2 IaC parent → GH secrets | Packet ready; Root executes after approval; no Cursor write |
+| Production holds / Deploy Web disabled | Unchanged by this lane |
+
+### Five runtime secrets (stock aws-s3 broker)
+
+| Infisical key (`prod` `/`) | Source |
+| --- | --- |
+| `PULSAR_OFFLOAD_B2_BUCKET` | TF `b2_bucket.pulsar_offload.bucket_name` → `dofek-pulsar-offload` |
+| `PULSAR_OFFLOAD_B2_ENDPOINT` | TF local `https://s3.us-west-004.backblazeb2.com` |
+| `PULSAR_OFFLOAD_B2_REGION` | TF local `us-west-004` |
+| `PULSAR_OFFLOAD_B2_KEY_ID` | TF broker application key id |
+| `PULSAR_OFFLOAD_B2_APP_KEY` | TF broker application key secret |
+
+Broker maps them to `managedLedgerOffload*` / `s3ManagedLedgerOffloadCredentialId|Secret`
+(see stack hunks). **Credential mode for production hunks:** explicit Infisical-backed
+id/secret env — not empty-static AWS default-chain lab mode. Never echo key id/secret
+into chat, workflow logs, `docker service inspect`, or compose dumps (`deploy-terraform.yml`
+already forbids printing TF/B2/Infisical credential material).
+
+### Lifecycle experiment schedule (tiny-1 — metadata only)
+
+Artifacts: `/tmp/b2-lifecycle-tiny-1/` (`T0.json`, `CHECK_MATRIX.json`, `ownership.json`).
+Cursor asserts; Root (not archived b1) runs privileged B2 metadata APIs. Zero GetObject.
+
+| Gate | UTC | Class |
+| --- | --- | --- |
+| T0 | `2026-11-06T18:49:03.649Z` | seed assert (done) |
+| Obs #1 | `~2026-11-06T19:32Z` | `OBSERVATION_ONLY` (done; inventory ≡ T0) |
+| ≥24h | `2026-11-07T18:49:03.649Z` | `OBSERVE_ELIGIBLE` — **next**; wait clock |
+| ≥48h | `2026-11-08T18:49:03.649Z` | `OBSERVATION_CHECKPOINT` |
+| Cleanup deadline | `2026-11-11T18:49:02.531Z` | Root cleanup if still unclean → Cursor verify zeros |
+
+Paseo heartbeat `eac63e16` (`b2-lifecycle-tiny-1 checkpoints`, cron `50 18 * * *` UTC,
+next `2026-11-07T18:50:00Z`, expires `2026-11-12`) recreates the missing cadence so
+checks fire before the Nov 11 deadline. Until ≥24h: **do not** request Root metadata.
 
 ## Why a custom bootstrap script is not needed
 
@@ -256,11 +305,32 @@ jq -r '.applicationKey' <<<"${CREATE_KEY_JSON}" | gh secret set B2_APPLICATION_K
 unset CREATE_KEY_JSON
 ```
 
-## After B2/GH (1–2) and approved privilege grant
+## Root execute order (after user approvals — Cursor does not run)
 
-ACK → `deploy-terraform.yml` apply creates bucket, broker key, and Infisical secret
-values automatically. Lifecycle track idle until ≥24h. No Codex key transfer into
-CI/Cursor/prompts.
+1. **Approve** identity additional-privilege pivot → Root runs A preflight → B POST → C
+   readback (preserve `viewer`).
+2. **Approve** B2 IaC parent → Root runs B2 create-key (7 caps) → pipe to
+   `gh secret set` stdin (sections 1–2 above). Stop if key name exists.
+3. Root ACK → `deploy-terraform.yml` apply (bucket, broker key, five Infisical secrets).
+4. Only then review/merge [broker stack hunks](./b2-pulsar-offload-broker-stack-hunks.md)
+   into `deploy/stack.yml` (separate from dirty shared stack until that review).
+
+No Codex management key into CI/Cursor/prompts. Lifecycle ≥24h observation is independent
+of apply; wait the clock for that gate.
+
+## Exact Root metadata request (only when a lifecycle gate is due)
+
+Not due before `2026-11-07T18:49:03.649Z`. When due, Root returns sanitized JSON only
+(`objectBodyDownloads=0`; never GetObject; never archived b1):
+
+- Bucket `dofek-pulsar-b2-lc-20261106t184700z` / id `af1b54eb3312bd2ea1130015`
+- Prefix `lc/20261106t184700z/`
+- Endpoint `https://s3.us-west-004.backblazeb2.com` / region `us-west-004`
+- Ops: ListBucketLifecycleConfiguration (or native equivalent); ListObjectVersions
+  (paginate); HeadObject `live/keep`, `hide/victim`, `control/victim`;
+  ListMultipartUploads (paginate)
+- Return: `observedAt`, `rules[]`, `versions[]`, `deleteMarkers[]`, `heads[]`,
+  `unfinishedUploads[]`, `objectBodyDownloads=0`
 
 ## Historical (do not run) — custom role packet
 

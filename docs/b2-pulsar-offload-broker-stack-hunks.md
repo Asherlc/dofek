@@ -1,9 +1,15 @@
 # Future broker stack hunks (B2 offload)
 
-**Do not apply to the dirty `deploy/stack.yml` until:** Infisical already has
-`PULSAR_OFFLOAD_B2_*` from Terraform apply, and Root reviews this hunk in isolation.
+**Do not apply to the dirty `deploy/stack.yml` until:** Infisical already has all five
+`PULSAR_OFFLOAD_B2_*` secrets from Terraform apply, and Root reviews this hunk in
+isolation. Keep this file as the integration surface — do not casually edit shared
+dirty stack from the IaC lane.
 
 R2 archive / erasure ledger / other R2 env remain unchanged.
+
+When integrating, also export the same five keys from
+`.github/templates/infisical-dotenv.tmpl` (not done here) so Swarm `env_file` rendering
+receives them.
 
 ## Worker / shared env (near existing `PULSAR_OFFLOAD_R2_BUCKET`)
 
@@ -41,3 +47,9 @@ Runtime key caps (TF): `listFiles`, `readFiles`, `writeFiles`, `deleteFiles`, `r
 `listAllBucketNames` omitted until Pulsar stock aws-s3 proves a ListBuckets need.
 GetBucketLocation → `readBuckets` per Backblaze S3-compatible app-key docs; Pulsar
 qualification still **UNQUALIFIED**.
+
+**AWS credential mode:** these hunks set explicit
+`s3ManagedLedgerOffloadCredentialId` / `Secret` from Infisical. That is **not** the
+lab “AWS default chain with empty static id/secret” mode. Do not leave credential
+env empty in production; do not print or log the key id/secret (compose config,
+`docker service inspect`, CI echoes).
