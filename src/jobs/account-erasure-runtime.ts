@@ -30,14 +30,6 @@ import {
   processorRetentionConfigFromEnv,
   verifyProcessorRetentionPolicies,
 } from "../account-erasure/processor-retention.ts";
-import {
-  assertAccountErasureConsumersDrained,
-  assertAccountErasureQuarantineExpired,
-  assertAccountErasureReplayExpired,
-  captureAccountErasureHighWatermarks,
-  captureAccountErasureQuarantineHighWatermarks,
-  createAccountErasureRedpandaAdminFromEnv,
-} from "../account-erasure/redpanda-drain.ts";
 import { eraseStripeAccount, revokeRemoteAccounts } from "../account-erasure/remote-revocation.ts";
 import {
   type AccountErasureRemoteSnapshot,
@@ -47,9 +39,23 @@ import {
   ANALYTICS_PUBLICATION_RESOURCE,
   withAnalyticsQueryOwner,
 } from "../analytics/analytics-query-owner.ts";
+import {
+  loadAccountErasureCheckpointCompletedAt,
+  loadAccountErasurePhaseProgress,
+} from "../db/account-erasure-processing.ts";
 import type { ClickHouseClient } from "../db/clickhouse.ts";
 import { createPeerDbMirrorApiClientFromEnv } from "../db/clickhouse-cdc.ts";
 import type { Database } from "../db/index.ts";
+import { resolveMetricStreamConsumerRoutes } from "../metric-stream/consumer-routes.ts";
+import {
+  type AccountErasureNativeIngestCheckpoint,
+  assertAccountErasureSubscriptionsDrained,
+  buildAccountErasureNativeIngestCheckpoint,
+  captureAccountErasureNativeFenceProgress,
+  createPulsarDrainAdminFromUrls,
+  type PulsarDrainAdmin,
+  resolveAccountErasureNativeDrainStreams,
+} from "../metric-stream/pulsar-drain.ts";
 import { getAllProviders } from "../providers/index.ts";
 import { createR2Client, requiredR2EnvironmentVariable } from "../r2-storage.ts";
 import {
@@ -74,6 +80,22 @@ export interface AccountErasureRuntime {
 
 type AccountErasureRuntimeDatabase = Pick<Database, "execute" | "transaction" | "$client">;
 type AccountErasureRuntimeClickHouseClient = ClickHouseClient;
+
+function requiredEnvironment(name: string, env: NodeJS.ProcessEnv = process.env): string {
+  const value = env[name]?.trim();
+  if (!value) throw new Error(`${name} is required for account erasure`);
+  return value;
+}
+
+function createPulsarDrainAdminFromEnv(env: NodeJS.ProcessEnv = process.env): PulsarDrainAdmin {
+  return createPulsarDrainAdminFromUrls({
+    adminUrl: requiredEnvironment("PULSAR_ADMIN_URL", env),
+  });
+}
+
+function streamIdentityKey(stream: { epoch: string; topic: string; partition: number }): string {
+  return `${stream.epoch}:${stream.topic}:${stream.partition}`;
+}
 
 export async function createAccountErasureRuntime(
   database: AccountErasureRuntimeDatabase,
@@ -103,9 +125,17 @@ export async function createAccountErasureRuntime(
     });
     const processorConfig = accountErasureProcessorConfigFromEnv();
     const processorRetentionConfig = processorRetentionConfigFromEnv();
-    const redpanda = createAccountErasureRedpandaAdminFromEnv();
-    startupCleanup.push(() => redpanda.close());
-    await redpanda.connect();
+    const pulsarAdmin = createPulsarDrainAdminFromEnv();
+    const epoch = requiredEnvironment("METRIC_STREAM_TRANSPORT_EPOCH");
+    const consumerRoutes = resolveMetricStreamConsumerRoutes();
+    const resolveDrainStreams = () =>
+      resolveAccountErasureNativeDrainStreams(pulsarAdmin, {
+        epoch,
+        routes: consumerRoutes.map((route) => ({
+          topic: route.topic,
+          subscriptions: route.subscriptions,
+        })),
+      });
 
     const identifiers = (input: { requestId: string; leaseOwner: string }) =>
       new AccountErasureIdentifierStore(database, {
@@ -142,16 +172,33 @@ export async function createAccountErasureRuntime(
         if (!(await store.loadPhysicalProgress(input.stage)))
           throw new Error("Account erasure physical preparation is incomplete");
       },
-      assertConsumersDrained: async (highWatermarks) => {
-        for (const route of redpanda.routes) {
-          const captured = highWatermarks.filter((entry) => entry.topic === route.topic);
-          if (captured.length === 0)
-            throw new Error(`Account erasure checkpoint is missing topic ${route.topic}`);
-          await assertAccountErasureConsumersDrained(
-            redpanda.admin,
-            route.topic,
-            captured,
-            route.consumerGroups,
+      assertNativeConsumersDrained: async (checkpoint) => {
+        const streams = await resolveDrainStreams();
+        const byKey = new Map(
+          streams.map((stream) => [streamIdentityKey(stream), stream] as const),
+        );
+        for (const progress of checkpoint.streams) {
+          const stream = byKey.get(
+            streamIdentityKey({
+              epoch: progress.fence.epoch,
+              topic: progress.fence.topic,
+              partition: progress.fence.partition,
+            }),
+          );
+          if (!stream) {
+            throw new Error(
+              `Account erasure drain is missing route for epoch ${progress.fence.epoch} ${progress.fence.topic} partition ${progress.fence.partition}`,
+            );
+          }
+          await assertAccountErasureSubscriptionsDrained(
+            pulsarAdmin,
+            progress.fence,
+            stream.subscriptions,
+          );
+        }
+        if (checkpoint.streams.length !== streams.length) {
+          throw new Error(
+            `Account erasure ingest checkpoint stream count ${checkpoint.streams.length} differs from resolved drain stream count ${streams.length}`,
           );
         }
       },
@@ -160,44 +207,22 @@ export async function createAccountErasureRuntime(
           userId: input.userId,
           store: identifiers(input),
         }),
-      assertQuarantineExpired: async (highWatermarks) => {
-        for (const route of redpanda.routes) {
-          const captured = highWatermarks.filter((entry) => entry.topic === route.topic);
-          if (captured.length === 0)
-            throw new Error(`Account erasure checkpoint is missing topic ${route.topic}`);
-          await assertAccountErasureQuarantineExpired(redpanda.admin, route.topic, captured);
+      captureNativeIngestCheckpoint: async (): Promise<AccountErasureNativeIngestCheckpoint> => {
+        const streams = await resolveDrainStreams();
+        const progress = [];
+        for (const stream of streams) {
+          progress.push(
+            await captureAccountErasureNativeFenceProgress(pulsarAdmin, {
+              epoch: stream.epoch,
+              topic: stream.topic,
+              partition: stream.partition,
+            }),
+          );
         }
+        return buildAccountErasureNativeIngestCheckpoint(progress);
       },
-      assertReplayExpired: async (highWatermarks) => {
-        for (const route of redpanda.routes) {
-          const captured = highWatermarks.filter((entry) => entry.topic === route.topic);
-          if (captured.length === 0)
-            throw new Error(`Account erasure checkpoint is missing topic ${route.topic}`);
-          await assertAccountErasureReplayExpired(redpanda.admin, route.topic, captured);
-        }
-      },
-      captureHighWatermarks: async () =>
-        (
-          await Promise.all(
-            redpanda.routes.map(async ({ topic }) =>
-              (
-                await captureAccountErasureHighWatermarks(redpanda.admin, topic)
-              ).map((entry) => ({ ...entry, topic })),
-            ),
-          )
-        ).flat(),
       capturePeerDbStagingBoundary: (input) =>
         capturePeerDbStagingBoundary(database, peerDbMirrorApi, peerDbStaging.storage, input),
-      captureQuarantineHighWatermarks: async () =>
-        (
-          await Promise.all(
-            redpanda.routes.map(async ({ topic }) =>
-              (
-                await captureAccountErasureQuarantineHighWatermarks(redpanda.admin, topic)
-              ).map((entry) => ({ ...entry, topic })),
-            ),
-          )
-        ).flat(),
       decryptSnapshot: decryptAccountErasureSnapshot,
       eraseArchive: (input, options) =>
         eraseMetricStreamArchive(
@@ -252,6 +277,32 @@ export async function createAccountErasureRuntime(
             } while (cursor);
           },
         ),
+      loadIngestFenceCompletedAt: async ({ requestId }) => {
+        const completedAt = await loadAccountErasureCheckpointCompletedAt(
+          database,
+          requestId,
+          "ingest_fence",
+        );
+        if (completedAt === null) {
+          throw new Error(
+            "Account erasure retention verification requires durable ingest_fence.completed_at",
+          );
+        }
+        return completedAt;
+      },
+      loadStockPhysicalMaintenanceAck: async ({ requestId }) => {
+        const details = await loadAccountErasurePhaseProgress(
+          database,
+          requestId,
+          "retention_verification",
+        );
+        if (details === null) {
+          throw new Error(
+            "Stock physical maintenance acknowledgement is missing from retention_verification phase_progress",
+          );
+        }
+        return details;
+      },
       now: () => new Date(),
       purgeWork: (snapshot) => workPurger.purge(snapshot),
       revokeRemote: (snapshot, persistProviderCredentials) =>
@@ -274,7 +325,7 @@ export async function createAccountErasureRuntime(
     return {
       async close(): Promise<void> {
         try {
-          await Promise.all([redpanda.close(), workPurger.close()]);
+          await workPurger.close();
         } finally {
           try {
             peerDbStaging.close();

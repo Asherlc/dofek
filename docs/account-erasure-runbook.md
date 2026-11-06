@@ -108,10 +108,10 @@ status, checkpoint, and Sentry event.
 
 | Phase group | Persisted phases | Required evidence |
 |-------------|------------------|-------------------|
-| Immediate safety | `ingest_fence`, `stripe_erasure`, `work_purge`, `consumer_drain` | ClickHouse ingest is fenced; Stripe deletion finished; BullMQ/Redis/files/objects are quiescent; captured Redpanda offsets are consumed; the quarantine high-watermark boundary is captured only after both source consumer groups drain. Stripe's customer-delete behavior is documented at <https://docs.stripe.com/api/customers/delete>. |
+| Immediate safety | `ingest_fence`, `stripe_erasure`, `work_purge`, `consumer_drain` | ClickHouse ingest is fenced; Stripe deletion finished; BullMQ/Redis/files/objects are quiescent; native Pulsar `lastMessageId` fences are captured and subscription `markDelete` cursors have crossed them. Attributed metric-stream publishes are rejected by `fitness.lock_and_reject_account_erasure_write` from request creation ([`write-metric-stream.ts`](../src/metric-stream/write-metric-stream.ts), [`metric-stream-writer.ts`](../src/db/metric-stream-writer.ts)); archive upload holds the same advisory keys through PUT ([`account-erasure-delivery-fence.ts`](../src/db/account-erasure-delivery-fence.ts)). Stripe's customer-delete behavior is documented at <https://docs.stripe.com/api/customers/delete>. Pulsar documents message retention and expiry at <https://pulsar.apache.org/docs/4.0.x/cookbooks-retention-expiry/> — TTL alone never ACKs drain. |
 | Initial erasure | `remote_revocation`, `processor_erasure`, `postgres_erasure`, `clickhouse_initial`, `archive_initial` | Remote credentials are revoked or proven already absent; processor deletions are queued; attributable Postgres and ClickHouse data is removed; mixed-user R2 archives are conditionally rewritten. Cloudflare documents R2 conditional S3 writes at <https://developers.cloudflare.com/r2/api/s3/api/>. |
 | Replay verification | `work_verification`, `consumer_drain_verification`, `stripe_erasure_verification`, `remote_revocation_verification`, `processor_erasure_verification`, `postgres_profile_delete`, `peerdb_drain_verification`, `clickhouse_verification`, `archive_verification`, `request_pii_scrub` | No late work or replay can recreate data; Stripe and other remote processors re-acknowledge deletion; PeerDB has crossed the captured PostgreSQL WAL position; ClickHouse and R2 pass a second sweep; live request PII is removed. |
-| Retention verification | `retention_verification` | At day 29, every quarantine low watermark has crossed the persisted post-drain high watermark; the quarantine topic still has exact `delete`, seven-day, and 1-GiB retention bounds; Axiom and Sentry retention are at most 29 days; database backups are at most 21 days old and none from at or before the PII-scrub boundary remain. Redpanda documents that `cleanup.policy=delete` applies the `retention.ms` and `retention.bytes` limits at <https://docs.redpanda.com/streaming/current/reference/properties/topic-properties/>. |
+| Retention verification | `retention_verification` | At day 29: stock Pulsar/BookKeeper physical maintenance is operator-acknowledged under `phase_progress.retention_verification` (see [Stock physical maintenance acknowledgement](#stock-physical-maintenance-acknowledgement)); Axiom and Sentry retention are at most 29 days; database backups are at most 21 days old and none from at or before the PII-scrub boundary remain. TTL elapsed alone never satisfies the Pulsar physical gate. |
 
 The coordinator may execute independent phases in one group before reporting an
 aggregate failure. A later checkpoint in the same group does not make the
@@ -274,6 +274,165 @@ search by or paste raw email addresses, provider credentials, encrypted
 snapshots, `last_error`, checkpoint `details`, or status tokens into shared
 incident channels.
 
+## Stock physical maintenance acknowledgement
+
+Day-29 `retention_verification` requires an operator-recorded
+`stock_physical_maintenance_ack` in
+`fitness.account_erasure_request.phase_progress -> 'retention_verification'`.
+The worker reads that JSON only; it never invents the ack from TTL. There is no
+bulk CLI — use the existing production `psql` path against the live database
+(same tooling as [Monitor A Request](#monitor-a-request)). Do not run these
+statements from agent sandboxes; an on-call operator executes them.
+
+Operator attestation (not automation):
+
+- Complete stock Pulsar/BookKeeper maintenance for the attested cutoff using
+  existing administration tools only: namespace retention / message TTL /
+  `producer_request_hold` backlog policy checks, the Q15 lifecycle sequence, and
+  complete inventories documented in the Pulsar runbook. Apache documents
+  namespace retention and TTL under
+  [Message retention and expiry](https://pulsar.apache.org/docs/4.0.x/cookbooks-retention-expiry/).
+- `verifiedCutoffAt` is the latest instant the operator’s completed stock
+  Q15+inventory run covers. It must be ≥ durable `ingest_fence.completed_at`
+  (so the fence is inside the covered window) and ≤ `verifiedAt` ≤ `now()`.
+  Do **not** set the cutoff by copying the fence timestamp alone or by waiting
+  for TTL/message expiry — TTL never satisfies this gate.
+- Transport cutover itself remains a separate unapproved maintenance gate; see
+  [Native transport cutover gate](#native-transport-cutover-gate). Do not treat
+  a maintenance ack as cutover approval.
+- Do not overwrite an existing `stock_physical_maintenance_ack`. If a prior ack
+  was wrong, correct operationally outside this write (new request / explicit
+  incident handling) rather than silently replacing attestation.
+- An archive group timeout or process abort leaves remote PUT outcome ambiguous.
+  Abort does **not** prove the object was cancelled at the store. Treat that as
+  an incident: require a successful retry or object verification before recording
+  this ack. There is no durable uncertainty store — operator verification only.
+
+Transactional write + readback (substitute bracketed values). All eligibility
+checks are enforced in SQL under the row lock — prose alone is insufficient:
+
+```sql
+BEGIN;
+
+-- Bind operator-attested coverage and attestation times (timestamptz with offset).
+-- verified_cutoff_at = latest instant covered by completed stock Q15+inventories.
+-- verified_at = operator attestation time (usually now()).
+SELECT
+  request.id,
+  request.status,
+  request.current_phase,
+  request.lease_owner,
+  request.lease_expires_at,
+  request.pii_scrubbed_at,
+  request.phase_progress -> 'retention_verification' AS existing_ack,
+  fence.completed_at AS ingest_fence_completed_at,
+  scrub.completed_at AS request_pii_scrub_completed_at
+FROM fitness.account_erasure_request AS request
+LEFT JOIN fitness.account_erasure_checkpoint AS fence
+  ON fence.request_id = request.id AND fence.phase = 'ingest_fence'
+LEFT JOIN fitness.account_erasure_checkpoint AS scrub
+  ON scrub.request_id = request.id AND scrub.phase = 'request_pii_scrub'
+WHERE request.id = '<request UUID>'::uuid
+FOR UPDATE OF request;
+-- Expect status = waiting_retention and current_phase = processor_log_backup_retention.
+
+UPDATE fitness.account_erasure_request AS request
+SET
+  phase_progress = jsonb_set(
+    request.phase_progress,
+    '{retention_verification}',
+    jsonb_build_object(
+      'kind', 'stock_physical_maintenance_ack',
+      'runId', '<operator run id>',
+      'operator', '<operator identity>',
+      'verifiedAt', '<verified_at timestamptz with offset>'::text,
+      'verifiedCutoffAt', '<verified_cutoff_at timestamptz with offset>'::text,
+      'runbookRevision', '<docs/pulsar-remaining-work.md revision or commit>'
+    ),
+    true
+  ),
+  updated_at = now()
+FROM fitness.account_erasure_checkpoint AS fence
+JOIN fitness.account_erasure_checkpoint AS scrub
+  ON scrub.request_id = fence.request_id
+ AND scrub.phase = 'request_pii_scrub'
+WHERE request.id = '<request UUID>'::uuid
+  AND fence.request_id = request.id
+  AND fence.phase = 'ingest_fence'
+  AND request.status = 'waiting_retention'
+  -- markAccountErasureWaiting(..., 'retention') sets this phase label.
+  AND request.current_phase = 'processor_log_backup_retention'
+  AND request.pii_scrubbed_at IS NOT NULL
+  AND scrub.completed_at IS NOT NULL
+  AND (request.lease_expires_at IS NULL OR request.lease_expires_at <= now())
+  AND (
+    request.phase_progress -> 'retention_verification' IS NULL
+    OR request.phase_progress -> 'retention_verification' ->> 'kind'
+         IS DISTINCT FROM 'stock_physical_maintenance_ack'
+  )
+  AND fence.completed_at <= '<verified_cutoff_at timestamptz with offset>'::timestamptz
+  AND '<verified_cutoff_at timestamptz with offset>'::timestamptz
+        <= '<verified_at timestamptz with offset>'::timestamptz
+  AND '<verified_at timestamptz with offset>'::timestamptz <= now()
+RETURNING request.phase_progress -> 'retention_verification' AS recorded_ack;
+
+-- Expect exactly one returned row whose recorded_ack matches the attestation.
+-- Otherwise ROLLBACK. On success:
+COMMIT;
+```
+
+False-completion condition preserved: zero rows updated means the worker still
+sees a missing/invalid ack and cannot complete `retention_verification`. After a
+successful commit, allow the existing account-erasure worker to advance; it
+re-validates ordering against durable `ingest_fence.completed_at` and summarizes
+the ack into the phase checkpoint. Processor/backup checks are not a substitute
+for this attestation.
+
+## Native transport cutover gate
+
+One-time operator prerequisite before an **approved** native transport cutover.
+This is not steady-state deploy behavior, not a CLI, and not a workflow step.
+Cutover remains an unapproved maintenance gate until executed under a concrete
+approved cutover decision. Stock `psql` only (`ON_ERROR_STOP=1`); fail closed on
+any non-completed `fitness.account_erasure_request` row.
+
+```sql
+-- psql -v ON_ERROR_STOP=1
+BEGIN;
+
+DO $$
+DECLARE
+  open_count bigint;
+BEGIN
+  SELECT count(*) INTO open_count
+  FROM fitness.account_erasure_request
+  WHERE status <> 'completed';
+
+  IF open_count <> 0 THEN
+    RAISE EXCEPTION
+      'native transport cutover blocked: % non-completed account_erasure_request row(s)',
+      open_count;
+  END IF;
+END $$;
+
+-- Readback: expect open_count = 0.
+SELECT count(*) AS open_count
+FROM fitness.account_erasure_request
+WHERE status <> 'completed';
+
+COMMIT;
+```
+
+Interpretation:
+
+- Non-zero `open_count` or a raised exception blocks cutover. Resolve or complete
+  every open request first; do not bypass with a custom parser or helper.
+- Zero `open_count` after the `DO` block is the only stock pass signal for this
+  gate. Deploy/check callers may invoke the same SQL; they must not invent a
+  softer gate.
+- Passing this gate does not by itself ship cutover. Merge/deploy remains blocked
+  until the concrete approved cutover decision is recorded outside this section.
+
 ## Triage By Phase
 
 | Current phase | First evidence to collect | Canonical recovery |
@@ -281,7 +440,7 @@ incident channels.
 | `ingest_fence` | ClickHouse connectivity and fence-table writes; exact first fatal worker log | Restore ClickHouse connectivity or schema, then allow retry. Do not bypass the fence. |
 | `stripe_erasure` / verification | Stripe response status, exhaustive customer-list pagination, and the zero-change proof pass | Correct Stripe credentials or API access, then retry the same phase. Treat already-absent resources as idempotent success; never bypass a non-advancing cursor, page safety limit, or non-empty proof pass. |
 | `work_purge` / `work_verification` | BullMQ active jobs, Redis key/stream types, persisted job files, import/export objects | Stop the attributable active work or correct malformed managed state, then retry. Do not manually delete unrelated Redis keys. |
-| `consumer_drain` / verification | Captured source and quarantine partition offsets, current consumer offsets, and exact quarantine topic configuration | Restore the metric-stream consumers and quarantine writer, correct any topic-policy drift, and let the consumers cross the captured source high-water marks. Follow the Redpanda/R2 runbook if replay is involved. |
+| `consumer_drain` / verification | Native ingest checkpoint `streams[].fence` (`lastMessageId` or empty), subscription `markDeletePosition` cursors from broker internal stats, and subscription names owned by the request | Restore the metric-stream consumers (archive + analytics delivery), correct any topic/subscription drift, and let contiguous native ACK (`markDelete`) cross each captured fence. Do not treat message TTL / namespace retention expiry as drain completion — Pulsar documents retention separately from consumer acknowledgement at <https://pulsar.apache.org/docs/4.0.x/cookbooks-retention-expiry/>. |
 | `remote_revocation` / verification | Provider-specific disposition and first HTTP failure | Correct the provider credential or endpoint. Keep the encrypted snapshot until verification succeeds. |
 | `processor_erasure` / verification | Brevo process status, PostHog deletion status, and Zoho ticket deletion result | Restore processor API access and retry. Never discard a credential merely to advance the phase. |
 | `postgres_erasure` / `postgres_profile_delete` | PostgreSQL transaction error and exhaustive ownership assertion | Repair the schema/query cause and retry. Never issue broad ad-hoc deletes or clear `user_id` manually. |
@@ -289,7 +448,7 @@ incident channels.
 | `clickhouse_initial` / verification | Mutation status, failed part/reason, and attributable-row counts across the managed table allowlist | Fix the mutation/schema issue and wait for physical deletion. Do not treat an accepted mutation as completed. |
 | `archive_initial` / verification | R2 object key, conditional-write result, and persisted last-key progress | Resolve R2 access or concurrent-write conflicts and resume. The verifier performs another full sweep from the beginning. |
 | `request_pii_scrub` | Database transaction failure and remaining ownership assertion | Repair the direct cause. Do not manually remove the encrypted snapshot before all preceding verification completes. |
-| `retention_verification` | Quarantine topic configuration and low watermarks, Axiom/Sentry retention response, database-backup lifecycle, and objects at or before `pii_scrubbed_at` | Correct topic-policy drift, retention, or credentials; sweep expired backups; and retry. Never mark complete while any pre-boundary quarantine payload or other proof remains unavailable. |
+| `retention_verification` | Stock `phase_progress.retention_verification` ack present and ordered; Axiom/Sentry retention response; database-backup lifecycle; objects at or before `pii_scrubbed_at` | Record or correct the stock physical ack via [Stock physical maintenance acknowledgement](#stock-physical-maintenance-acknowledgement); correct processor/backup retention; retry. Never mark complete while the ack or other proof remains unavailable. |
 
 For ClickHouse mutations, use `system.mutations` to distinguish queued work from
 a physical failure:

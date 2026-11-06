@@ -275,6 +275,7 @@ describe("native grouped ClickHouse applier", () => {
     const marker = createMetricStreamBatchCompletedEvent(
       {
         operationId: "00000000-0000-4000-8000-000000000003",
+        userId: sourceEvent.userId,
         batchId: "batch",
         datasetKeys: ["metric_stream"],
       },
@@ -574,6 +575,7 @@ describe("native grouped ClickHouse applier", () => {
     const marker = createMetricStreamBatchCompletedEvent(
       {
         operationId: "00000000-0000-4000-8000-000000000003",
+        userId: sourceEvent.userId,
         batchId: "batch",
         datasetKeys: ["metric_stream"],
       },
@@ -590,6 +592,7 @@ describe("native grouped ClickHouse applier", () => {
     const marker = createMetricStreamBatchCompletedEvent(
       {
         operationId: "00000000-0000-4000-8000-000000000003",
+        userId: sourceEvent.userId,
         batchId: "batch",
         datasetKeys: ["metric_stream"],
       },
@@ -620,6 +623,7 @@ describe("native grouped ClickHouse applier", () => {
     const marker = createMetricStreamBatchCompletedEvent(
       {
         operationId: "00000000-0000-4000-8000-000000000003",
+        userId: sourceEvent.userId,
         batchId: "batch",
         datasetKeys: ["metric_stream"],
       },
@@ -654,6 +658,268 @@ describe("native grouped ClickHouse applier", () => {
       event_id: event.eventId,
       ingested_at: sourceIngestedAt,
     });
+  });
+  it("admits an exact 500-row current-key group with concrete guard membership", async () => {
+    const events = Array.from({ length: 500 }, (_unused, index) => ({
+      ...sourceEvent,
+      id: `10000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+    }));
+    // Fence + delete-scope tombstone scan + provider-generation read after insert.
+    prepareFixture([[], [], []]);
+    const query = owner.client.query;
+    let guardKeyCount = 0;
+    owner.client.query = async (request) => {
+      if (request.query.includes("AS incoming_nanos")) {
+        const keys = request.query_params?.keys;
+        if (!Array.isArray(keys)) throw new Error("Guard fixture requires bounded keys");
+        expect(keys).toHaveLength(500);
+        guardKeyCount = keys.length;
+        for (const key of keys) {
+          expect(key).toBeTruthy();
+        }
+      }
+      return query(request);
+    };
+    await expect(
+      applyMetricStreamEventsToClickHouse(owner.client, events, batchContext(events), database),
+    ).resolves.toBe(500);
+    expect(guardKeyCount).toBe(500);
+    expect(fixture.rows).toHaveLength(500);
+  });
+  it.each([
+    ["inf", Number.POSITIVE_INFINITY],
+    ["-inf", Number.NEGATIVE_INFINITY],
+  ] as const)(
+    "skips identical replay when the stored scalar encodes ClickHouse %s",
+    async (token, scalar) => {
+      prepareFixture([]);
+      const event = { ...sourceEvent, scalar };
+      const stored = currentReadRow({}, event);
+      const payload: typeof stored.payload = [...stored.payload];
+      payload[5] = token;
+      owner.client.query = async ({ query }) => ({
+        json: async () =>
+          JSON.parse(
+            query.includes("AS incoming_nanos")
+              ? JSON.stringify([currentReadRow({ payload }, event)])
+              : "[]",
+          ),
+      });
+      await expect(
+        applyMetricStreamEventsToClickHouse(owner.client, [event], batchContext([event]), database),
+      ).resolves.toBe(0);
+      expect(fixture.rows).toHaveLength(0);
+    },
+  );
+  it("rejects a finite scalar that disagrees with a stored ClickHouse inf encoding", async () => {
+    prepareFixture([]);
+    const stored = currentReadRow();
+    const payload: typeof stored.payload = [...stored.payload];
+    payload[5] = "inf";
+    owner.client.query = async ({ query }) => ({
+      json: async () =>
+        JSON.parse(
+          query.includes("AS incoming_nanos")
+            ? JSON.stringify([currentReadRow({ payload })])
+            : "[]",
+        ),
+    });
+    await expect(
+      applyMetricStreamEventsToClickHouse(
+        owner.client,
+        [sourceEvent],
+        batchContext([sourceEvent]),
+        database,
+      ),
+    ).rejects.toThrow(/conflicting.*payload/i);
+    expect(fixture.rows).toHaveLength(0);
+  });
+  it("rejects a vector length that disagrees with the stored current-key payload", async () => {
+    prepareFixture([]);
+    const event = { ...sourceEvent, scalar: null, vector: [1, 2] };
+    const stored = currentReadRow({}, event);
+    const payload: typeof stored.payload = [...stored.payload];
+    payload[6] = ["1"];
+    owner.client.query = async ({ query }) => ({
+      json: async () =>
+        JSON.parse(
+          query.includes("AS incoming_nanos")
+            ? JSON.stringify([currentReadRow({ payload }, event)])
+            : "[]",
+        ),
+    });
+    await expect(
+      applyMetricStreamEventsToClickHouse(owner.client, [event], batchContext([event]), database),
+    ).rejects.toThrow(/conflicting.*payload/i);
+    expect(fixture.rows).toHaveLength(0);
+  });
+  it("rejects delivery positions that are not strictly ordered", async () => {
+    const second = { ...sourceEvent, id: "10000000-0000-4000-8000-000000000002" };
+    const context = batchContext([sourceEvent, second]);
+    const earlier = context.positions[0];
+    const later = context.positions[1];
+    if (!earlier || !later) throw new Error("fixture requires two delivery positions");
+    context.positions = [later, earlier];
+    await expect(
+      applyMetricStreamEventsToClickHouse(owner.client, [sourceEvent, second], context, database),
+    ).rejects.toThrow(/strict native delivery order/);
+    expect(mocks.group).not.toHaveBeenCalled();
+  });
+  it("rejects a current-key guard payload with a non-decimal nanos field", async () => {
+    prepareFixture([]);
+    owner.client.query = async ({ query }) => ({
+      json: async () =>
+        JSON.parse(
+          query.includes("AS incoming_nanos")
+            ? JSON.stringify([currentReadRow({ incoming_nanos: "1x" })])
+            : "[]",
+        ),
+    });
+    await expect(
+      applyMetricStreamEventsToClickHouse(
+        owner.client,
+        [sourceEvent],
+        batchContext([sourceEvent]),
+        database,
+      ),
+    ).rejects.toThrow();
+    expect(fixture.rows).toHaveLength(0);
+  });
+  it("rejects a current-key guard payload with a non-decimal ingested nanos field", async () => {
+    prepareFixture([]);
+    owner.client.query = async ({ query }) => ({
+      json: async () =>
+        JSON.parse(
+          query.includes("AS incoming_nanos")
+            ? JSON.stringify([currentReadRow({ ingested_nanos: "2.5" })])
+            : "[]",
+        ),
+    });
+    await expect(
+      applyMetricStreamEventsToClickHouse(
+        owner.client,
+        [sourceEvent],
+        batchContext([sourceEvent]),
+        database,
+      ),
+    ).rejects.toThrow();
+    expect(fixture.rows).toHaveLength(0);
+  });
+  it("rejects a current-key guard payload with a non-decimal version field", async () => {
+    prepareFixture([]);
+    owner.client.query = async ({ query }) => ({
+      json: async () =>
+        JSON.parse(
+          query.includes("AS incoming_nanos")
+            ? JSON.stringify([currentReadRow({ version: "1e3" })])
+            : "[]",
+        ),
+    });
+    await expect(
+      applyMetricStreamEventsToClickHouse(
+        owner.client,
+        [sourceEvent],
+        batchContext([sourceEvent]),
+        database,
+      ),
+    ).rejects.toThrow();
+    expect(fixture.rows).toHaveLength(0);
+  });
+  it("rejects delivery positions whose topic does not match the batch stream", async () => {
+    const context = batchContext([sourceEvent]);
+    const position = context.positions[0];
+    if (!position) throw new Error("fixture requires a delivery position");
+    context.positions = [{ ...position, topic: "other.topic" }];
+    await expect(
+      applyMetricStreamEventsToClickHouse(owner.client, [sourceEvent], context, database),
+    ).rejects.toThrow(/positions.*align/i);
+    expect(mocks.group).not.toHaveBeenCalled();
+  });
+  it("rejects delivery positions whose partition does not match the batch stream", async () => {
+    const context = batchContext([sourceEvent]);
+    const position = context.positions[0];
+    if (!position) throw new Error("fixture requires a delivery position");
+    context.positions = [{ ...position, partition: 7 }];
+    await expect(
+      applyMetricStreamEventsToClickHouse(owner.client, [sourceEvent], context, database),
+    ).rejects.toThrow(/positions.*align/i);
+    expect(mocks.group).not.toHaveBeenCalled();
+  });
+  it("rejects equal adjacent delivery positions as non-increasing order", async () => {
+    const second = { ...sourceEvent, id: "10000000-0000-4000-8000-000000000002" };
+    const context = batchContext([sourceEvent, second]);
+    const position = context.positions[0];
+    if (!position) throw new Error("fixture requires a delivery position");
+    context.positions = [position, position];
+    await expect(
+      applyMetricStreamEventsToClickHouse(owner.client, [sourceEvent, second], context, database),
+    ).rejects.toThrow(/strict native delivery order/);
+    expect(mocks.group).not.toHaveBeenCalled();
+  });
+  it("rejects a finite scalar that disagrees with the stored current-key payload", async () => {
+    prepareFixture([]);
+    const stored = currentReadRow();
+    const payload: typeof stored.payload = [...stored.payload];
+    payload[5] = "2";
+    owner.client.query = async ({ query }) => ({
+      json: async () =>
+        JSON.parse(
+          query.includes("AS incoming_nanos")
+            ? JSON.stringify([currentReadRow({ payload })])
+            : "[]",
+        ),
+    });
+    await expect(
+      applyMetricStreamEventsToClickHouse(
+        owner.client,
+        [sourceEvent],
+        batchContext([sourceEvent]),
+        database,
+      ),
+    ).rejects.toThrow(/conflicting.*payload/i);
+    expect(fixture.rows).toHaveLength(0);
+  });
+  it("rejects a same-length vector whose element disagrees with the stored payload", async () => {
+    prepareFixture([]);
+    const event = { ...sourceEvent, scalar: null, vector: [1, 2] };
+    const stored = currentReadRow({}, event);
+    const payload: typeof stored.payload = [...stored.payload];
+    payload[6] = ["1", "3"];
+    owner.client.query = async ({ query }) => ({
+      json: async () =>
+        JSON.parse(
+          query.includes("AS incoming_nanos")
+            ? JSON.stringify([currentReadRow({ payload }, event)])
+            : "[]",
+        ),
+    });
+    await expect(
+      applyMetricStreamEventsToClickHouse(owner.client, [event], batchContext([event]), database),
+    ).rejects.toThrow(/conflicting.*payload/i);
+    expect(fixture.rows).toHaveLength(0);
+  });
+  it("rejects a null stored scalar when the incoming row carries a finite scalar", async () => {
+    prepareFixture([]);
+    const stored = currentReadRow();
+    const payload: typeof stored.payload = [...stored.payload];
+    payload[5] = null;
+    owner.client.query = async ({ query }) => ({
+      json: async () =>
+        JSON.parse(
+          query.includes("AS incoming_nanos")
+            ? JSON.stringify([currentReadRow({ payload })])
+            : "[]",
+        ),
+    });
+    await expect(
+      applyMetricStreamEventsToClickHouse(
+        owner.client,
+        [sourceEvent],
+        batchContext([sourceEvent]),
+        database,
+      ),
+    ).rejects.toThrow(/conflicting.*payload/i);
+    expect(fixture.rows).toHaveLength(0);
   });
 });
 

@@ -44,6 +44,7 @@ function makePublisher() {
   const recordPublishedBatch = vi.fn(async () => undefined);
   const publisher = new MetricStreamProcessingPublisher(delegate, {
     operationId: "30000000-0000-4000-8000-000000000001",
+    userId: "00000000-0000-4000-8000-000000000001",
     datasetKeys: ["recovery", "training"],
     recordPublishedBatch,
   });
@@ -62,6 +63,7 @@ describe("MetricStreamProcessingPublisher", () => {
       () =>
         new MetricStreamProcessingPublisher(delegate, {
           operationId: "30000000-0000-4000-8000-000000000001",
+          userId: "00000000-0000-4000-8000-000000000001",
           datasetKeys: [],
           recordPublishedBatch: vi.fn(async () => undefined),
         }),
@@ -83,6 +85,9 @@ describe("MetricStreamProcessingPublisher", () => {
     expect(sentMarkers[0]?.batchId).toBe(sentMarkers[1]?.batchId);
     expect(sentMarkers[2]?.batchId).not.toBe(sentMarkers[0]?.batchId);
     expect(recordPublishedBatch).toHaveBeenCalledTimes(3);
+    expect(sentMarkers[0]).toMatchObject({
+      userId: "00000000-0000-4000-8000-000000000001",
+    });
     expect(recordPublishedBatch).toHaveBeenNthCalledWith(1, {
       operationId: "30000000-0000-4000-8000-000000000001",
       batchId: sentMarkers[0]?.batchId,
@@ -110,6 +115,7 @@ describe("MetricStreamProcessingPublisher", () => {
       { publishRows },
       {
         operationId: "30000000-0000-4000-8000-000000000001",
+        userId: "00000000-0000-4000-8000-000000000001",
         datasetKeys: ["recovery"],
         recordPublishedBatch,
       },
@@ -137,6 +143,7 @@ describe("MetricStreamProcessingPublisher", () => {
       },
       {
         operationId: "30000000-0000-4000-8000-000000000001",
+        userId: "00000000-0000-4000-8000-000000000001",
         datasetKeys: ["recovery"],
         recordPublishedBatch: vi.fn(async () => undefined),
       },
@@ -157,6 +164,7 @@ describe("MetricStreamProcessingPublisher", () => {
         operationRevision,
         processing: {
           operationId: "30000000-0000-4000-8000-000000000002",
+          userId: "00000000-0000-4000-8000-000000000001",
           batchId: "existing-batch",
           datasetKeys: ["activity"],
         },
@@ -187,6 +195,7 @@ describe("MetricStreamProcessingPublisher", () => {
     const marker = replaceRows.mock.calls[0]?.[3];
     expect(marker).toMatchObject({
       operationId: "30000000-0000-4000-8000-000000000001",
+      userId: "00000000-0000-4000-8000-000000000001",
       datasetKeys: ["recovery", "training"],
     });
     expect(recordPublishedBatch).toHaveBeenCalledWith({
@@ -202,6 +211,7 @@ describe("MetricStreamProcessingPublisher", () => {
       { publishRows: vi.fn(async () => []) },
       {
         operationId: "30000000-0000-4000-8000-000000000001",
+        userId: "00000000-0000-4000-8000-000000000001",
         datasetKeys: ["activity"],
         recordPublishedBatch: vi.fn(async () => undefined),
       },

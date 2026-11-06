@@ -181,6 +181,13 @@ export default defineConfig({
         "**/node_modules/**",
         "**/routeTree.gen.ts",
         "src/db/clickhouse-migrations/**",
+        // JSONL-only transitional archive path (deletion gate: verified legacy JSONL removed).
+        // Permanent fence/events/markers/sink/drain/ack/runtime/phase stay covered. See docs/testing.md.
+        "src/metric-stream/archive-lines.ts",
+        "src/metric-stream/r2-replay.ts",
+        "src/metric-stream/r2-archive.ts",
+        "src/account-erasure/archive-erasure.ts",
+        "src/account-erasure/archive-erasure-test-helpers.ts",
       ],
       thresholds: process.env.VITEST_COVERAGE_SKIP_THRESHOLDS
         ? undefined

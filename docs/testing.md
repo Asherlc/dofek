@@ -185,6 +185,46 @@ integration shards instead of being counted as uncovered Docker-free mutants.
 Use `pnpm test:integration` for integration behavior and `pnpm test:mutation`
 for mutation quality; do not mix the two execution models.
 
+### Transitional JSONL archive code
+
+The temporary JSONL.gz metric-stream archive path exists only until every legacy JSONL
+archive object is converted to the permanent format and verified absent from production
+storage. While that migration is in progress, the modules below are excluded from
+mutation testing, aggregate/diff coverage quotas, and tests written solely to satisfy those
+gates. Integrity, erasure, and recovery checks that keep the migration safe to run still
+apply. Permanent metric-stream and account-erasure behavior (delivery fencing, events,
+owned markers, ClickHouse sink, drain, acknowledgements, consumer runtime, and erasure
+phase orchestration) stays fully gated; thresholds for that code are not lowered.
+
+Exempt paths:
+
+- `src/metric-stream/archive-lines.ts`
+- `src/metric-stream/r2-replay.ts`
+- `src/metric-stream/r2-archive.ts`
+- `src/account-erasure/archive-erasure.ts`
+- `src/account-erasure/archive-erasure-test-helpers.ts`
+
+Exclusions use the existing tool configuration surfaces only:
+
+- Stryker `mutate` negations in `stryker.ci.config.json` / `stryker.config.json`
+  ([Stryker mutate patterns](https://stryker-mutator.io/docs/stryker-js/configuration/#mutate-string))
+- Vitest `coverage.exclude` in `vitest.config.ts`
+  ([Vitest coverage exclude](https://vitest.dev/config/#coverage-exclude))
+- Mutation-prep path filters in `.github/workflows/test.yml` so these files do not create
+  Stryker shards
+- Matching `diff-cover --exclude` entries in the same workflow
+  ([diff-cover exclude/include](https://github.com/Bachmann1234/diff-cover#excludeinclude-paths))
+- Top-level Codecov `ignore:` in `codecov.yml` for the same paths so unit/integration
+  `carryforward: true` cannot keep stale history gating Vitest-omitted transitional files
+  ([Codecov ignoring paths](https://docs.codecov.com/docs/ignoring-paths);
+  validate via [`POST https://codecov.io/validate`](https://docs.codecov.com/docs/codecov-yaml#validate-your-repository-yaml)).
+  Project **93.5%** / patch **90%** targets stay unchanged.
+
+**Deletion milestone:** after legacy JSONL archives are fully converted, verified gone from
+production/storage, and these modules are deleted from the repository, remove the matching
+Stryker, Vitest coverage, mutation-prep, diff-cover, and Codecov `ignore` exclusions in the
+same change.
+
 For dbt first-build schema tests, execute the adapter's actual
 [`CREATE TABLE ... EMPTY AS` path](https://github.com/ClickHouse/dbt-clickhouse/blob/v1.10.3/dbt/include/clickhouse/macros/materializations/table.sql),
 then compare the created table's complete schema with the canonical table and

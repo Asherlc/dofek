@@ -221,7 +221,7 @@ export async function beginAnalyticsDeliveryGroup(
 }
 
 export async function completeAnalyticsDeliveryGroup(
-  transaction: Pick<Database, "execute">,
+  transaction: SchemaExecutionDatabase,
   input: {
     stream: AnalyticsStream;
     ownerId: string;

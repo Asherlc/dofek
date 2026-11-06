@@ -1,9 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { sql } from "drizzle-orm";
-import { z } from "zod";
+import { withAccountErasureDeliveryFence } from "../db/account-erasure-delivery-fence.ts";
 import type { ClickHouseClient } from "../db/clickhouse.ts";
 import type { Database } from "../db/index.ts";
-import { executeWithSchema } from "../db/typed-sql.ts";
 import type { MetricStreamPosition } from "../metric-stream/transport-position.ts";
 import { compareMetricStreamPositions } from "../metric-stream/transport-position.ts";
 import {
@@ -94,43 +92,22 @@ export async function coordinateAnalyticsDeliveryGroup(
       });
       if (state?.pendingGroup) await owner.reuseIngestionReservation(state.pendingGroup);
       else await owner.reserveIngestionThrough(through);
-      await journal.database.transaction(async (transaction) => {
-        const users = [
-          ...new Set(input.userIds.map((id) => z.uuid().parse(id).toLowerCase())),
-        ].sort();
-        for (const userId of users)
-          await transaction.execute(
-            sql`SELECT pg_advisory_xact_lock(hashtextextended(${userId}::text,0))`,
-          );
-        const fenced = users.length
-          ? await executeWithSchema(
-              transaction,
-              z.object({ user_id: z.uuid() }),
-              sql`SELECT candidate.user_id FROM unnest(ARRAY[${sql.join(
-                users.map((userId) => sql`${userId}::uuid`),
-                sql`, `,
-              )}]) AS candidate(user_id)
-            WHERE EXISTS (SELECT 1 FROM fitness.account_erasure_request AS request
-              WHERE (request.user_id=candidate.user_id AND request.status<>'completed')
-                OR request.write_fence_hash=encode(public.digest(candidate.user_id::text,'sha256'),'hex'))`,
-            )
-          : [];
-        await input.publish(
-          owner,
-          positions,
-          times,
-          new Set(fenced.map((row) => row.user_id.toLowerCase())),
-        );
-        await input.assertActive();
-        await owner.assertActive();
-        await completeAnalyticsDeliveryGroup(transaction, {
-          stream: group.stream,
-          ownerId,
-          positions,
-          maximum: input.maximum,
-        });
-        await input.assertActive();
-      });
+      await withAccountErasureDeliveryFence(
+        journal.database,
+        input.userIds,
+        async (fenced, connection) => {
+          await input.publish(owner, positions, times, fenced);
+          await input.assertActive();
+          await owner.assertActive();
+          await completeAnalyticsDeliveryGroup(connection, {
+            stream: group.stream,
+            ownerId,
+            positions,
+            maximum: input.maximum,
+          });
+          await input.assertActive();
+        },
+      );
       await input.assertActive();
     },
   );

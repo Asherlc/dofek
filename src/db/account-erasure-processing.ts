@@ -301,6 +301,28 @@ export async function loadAccountErasureCheckpointDetails(
   return rows[0]?.details ?? null;
 }
 
+const checkpointCompletedAtRowSchema = z.object({
+  completed_at: z.coerce.date(),
+});
+
+/** Durable phase completion time from existing checkpoint row (no duplicated date field). */
+export async function loadAccountErasureCheckpointCompletedAt(
+  database: Pick<Database, "execute">,
+  requestId: string,
+  phase: AccountErasurePhase,
+): Promise<Date | null> {
+  const rows = await executeWithSchema(
+    database,
+    checkpointCompletedAtRowSchema,
+    sql`SELECT completed_at
+        FROM fitness.account_erasure_checkpoint
+        WHERE request_id = ${requestId}::uuid
+          AND phase = ${phase}
+        LIMIT 1`,
+  );
+  return rows[0]?.completed_at ?? null;
+}
+
 export async function loadAccountErasurePhaseProgress(
   database: Pick<Database, "execute">,
   requestId: string,
@@ -578,10 +600,6 @@ export async function scrubAccountErasureRequestPii(
       sql`UPDATE fitness.account_erasure_checkpoint
           SET details =
             CASE
-              WHEN phase = 'consumer_drain' THEN jsonb_build_object(
-                'quarantineHighWatermarks',
-                details -> 'quarantineHighWatermarks'
-              )
               WHEN phase = 'peerdb_drain_verification' THEN jsonb_build_object(
                 'stagingBoundary',
                 jsonb_build_object(

@@ -141,6 +141,8 @@ export class SyncProcessingOperation {
             ),
             {
               operationId: processingOperation.id,
+              // Sync jobs are single-account; createProcessingOperation always stores job.data.userId.
+              userId: job.data.userId,
               datasetKeys: emittedMetricStreamDatasetKeys,
               recordPublishedBatch: (batch) => {
                 const transaction = currentMetricStreamWriteDatabase();

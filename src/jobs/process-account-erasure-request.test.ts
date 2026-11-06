@@ -390,20 +390,28 @@ describe("processAccountErasureRequest", () => {
     expect(accountErasureDatabaseMocks.completeAccountErasure).not.toHaveBeenCalled();
   });
 
-  it("recaptures a pre-route ingest fence before draining consumers", async () => {
+  it("recaptures a Kafka-era ingest fence before draining consumers", async () => {
     accountErasureDatabaseMocks.loadAccountErasureCheckpoints.mockResolvedValue(
       new Set(["ingest_fence", "consumer_drain"]),
     );
     accountErasureDatabaseMocks.loadAccountErasureCheckpointDetails.mockResolvedValue({
       highWatermarks: [{ low: "10", offset: "20", partition: 0 }],
     });
-    const routedHighWatermarks = [
-      { low: "10", offset: "20", partition: 0, topic: "metric-stream-legacy-v1" },
-      { low: "0", offset: "2", partition: 0, topic: "metric-stream-live-v1" },
-      { low: "0", offset: "1", partition: 0, topic: "metric-stream-history-v1" },
-    ];
+    const nativeIngest = {
+      streams: [
+        {
+          fence: {
+            transport: "pulsar",
+            state: "empty",
+            epoch: "epoch-1",
+            topic: "persistent://public/default/legacy",
+            partition: -1,
+          },
+        },
+      ],
+    };
     const runner = phaseRunner(async (phase) =>
-      phase === "ingest_fence" ? { highWatermarks: routedHighWatermarks } : null,
+      phase === "ingest_fence" ? nativeIngest : null,
     );
 
     await processAccountErasureRequest(
@@ -427,7 +435,7 @@ describe("processAccountErasureRequest", () => {
       request.id,
       "worker-1",
       "ingest_fence",
-      { highWatermarks: routedHighWatermarks },
+      nativeIngest,
     );
   });
 
@@ -436,7 +444,7 @@ describe("processAccountErasureRequest", () => {
       new Set(["ingest_fence"]),
     );
     accountErasureDatabaseMocks.loadAccountErasureCheckpointDetails.mockResolvedValue({
-      highWatermarks: [],
+      streams: [],
     });
     const runner = phaseRunner();
 
@@ -451,12 +459,22 @@ describe("processAccountErasureRequest", () => {
     expect(runner.runPhase).toHaveBeenCalledWith("ingest_fence", expect.anything());
   });
 
-  it("does not recapture an ingest fence that already names its route", async () => {
+  it("does not recapture a native ingest fence that already names its streams", async () => {
     accountErasureDatabaseMocks.loadAccountErasureCheckpoints.mockResolvedValue(
       new Set(["ingest_fence"]),
     );
     accountErasureDatabaseMocks.loadAccountErasureCheckpointDetails.mockResolvedValue({
-      highWatermarks: [{ low: "10", offset: "20", partition: 0, topic: "metric-stream-legacy-v1" }],
+      streams: [
+        {
+          fence: {
+            transport: "pulsar",
+            state: "empty",
+            epoch: "epoch-1",
+            topic: "persistent://public/default/legacy",
+            partition: -1,
+          },
+        },
+      ],
     });
     const runner = phaseRunner();
 
@@ -471,7 +489,7 @@ describe("processAccountErasureRequest", () => {
     expect(runner.runPhase).not.toHaveBeenCalledWith("ingest_fence", expect.anything());
   });
 
-  it("does not recapture a legacy fence after the user identifier is scrubbed", async () => {
+  it("does not recapture a transport fence after the user identifier is scrubbed", async () => {
     accountErasureDatabaseMocks.claimAccountErasureRequest.mockResolvedValue({
       ...request,
       userId: null,
@@ -497,7 +515,7 @@ describe("processAccountErasureRequest", () => {
     expect(runner.runPhase).not.toHaveBeenCalled();
   });
 
-  it("does not recapture a legacy fence after the encrypted snapshot is scrubbed", async () => {
+  it("does not recapture a transport fence after the encrypted snapshot is scrubbed", async () => {
     accountErasureDatabaseMocks.claimAccountErasureRequest.mockResolvedValue({
       ...request,
       encryptedRemoteSnapshot: null,

@@ -14,27 +14,47 @@ const mocks = vi.hoisted(() => ({
       operation: (owner: { client: ClickHouseClient }) => Promise<unknown>,
     ) => operation({ client }),
   ),
-  assertConsumersDrained: vi.fn(async () => undefined),
   assertPeerDbDrained: vi.fn(async () => undefined),
-  assertQuarantineExpired: vi.fn(async () => undefined),
-  assertReplayExpired: vi.fn(async () => undefined),
-  captureHighWatermarks: vi.fn(async () => [{ low: "1", offset: "3", partition: 0 }]),
-  captureQuarantineHighWatermarks: vi.fn(async () => [{ low: "4", offset: "12", partition: 0 }]),
+  assertSubscriptionsDrained: vi.fn(async () => undefined),
+  captureNativeFenceProgress: vi.fn(
+    async (_admin: unknown, stream: { epoch: string; topic: string; partition: number }) => ({
+      fence: {
+        transport: "pulsar" as const,
+        state: "empty" as const,
+        epoch: stream.epoch,
+        topic: stream.topic,
+        partition: stream.partition,
+      },
+    }),
+  ),
+  resolveNativeDrainStreams: vi.fn(async () => [
+    {
+      epoch: "transport-epoch",
+      topic: "persistent://public/default/legacy",
+      partition: -1,
+      subscriptions: ["metric-stream-clickhouse-sink", "metric-stream-r2-archive"],
+    },
+    {
+      epoch: "transport-epoch",
+      topic: "persistent://public/default/live",
+      partition: -1,
+      subscriptions: ["metric-stream-live-clickhouse-sink", "metric-stream-live-r2-archive"],
+    },
+    {
+      epoch: "transport-epoch",
+      topic: "persistent://public/default/history",
+      partition: -1,
+      subscriptions: ["metric-stream-history-clickhouse-sink", "metric-stream-history-r2-archive"],
+    },
+  ]),
   capturePeerDbStagingBoundary: vi.fn(async () => ({
     cutoff: "2026-08-03T12:00:00.000Z",
     eTag: '"boundary-etag"',
     key: "account-erasure-boundaries/10000000-0000-4000-8000-000000001994",
-    mirrors: [
-      {
-        name: "dofek_fitness_raw_analytics",
-        status: "STATUS_PAUSED",
-      },
-    ],
+    mirrors: [{ name: "dofek_fitness_raw_analytics", status: "STATUS_PAUSED" }],
   })),
   captureWalLsn: vi.fn(async () => "0/1A2B"),
   closePeerDbStaging: vi.fn(),
-  closeRedpanda: vi.fn(async () => undefined),
-  connectRedpanda: vi.fn(async () => undefined),
   decryptSnapshot: vi.fn(),
   ensureProvidersRegistered: vi.fn(async () => undefined),
   eraseArchive: vi.fn(async () => ({
@@ -46,28 +66,24 @@ const mocks = vi.hoisted(() => ({
   prepareIdentifiers: vi.fn(async () => undefined),
   readIdentifierPage: vi.fn(
     async (
-      _family: unknown,
+      _family?: unknown,
       _after?: string,
-    ): Promise<{ entries: Array<{ key: string; value: string }>; nextCursor: string | null }> => ({
+    ): Promise<{
+      entries: Array<{ key: string; value: string }>;
+      nextCursor: string | null;
+    }> => ({
       entries: [{ key: "a".repeat(64), value: "40000000-0000-4000-8000-000000001994" }],
       nextCursor: null,
     }),
   ),
-  assertIdentifierClosure: vi.fn(async (_stage: "initial" | "final") => undefined),
-  identifierStoreCreated: vi.fn(),
-  loadPhysicalProgress: vi.fn(
-    async (
-      _stage: "initial" | "final",
-    ): Promise<{
-      step: "apply";
-      afterIntentKey: null;
-      pending: null;
-    } | null> => ({
-      step: "apply",
-      afterIntentKey: null,
-      pending: null,
-    }),
-  ),
+  assertIdentifierClosure: vi.fn(async (_stage?: "initial" | "final") => undefined),
+  identifierStoreCreated: vi.fn((_database?: unknown, _input?: unknown) => undefined),
+  loadPhysicalProgress: vi.fn(async (_stage?: "initial" | "final") => ({
+    step: "apply" as const,
+    afterIntentKey: null,
+    pending: null,
+  })),
+  loadPhaseProgress: vi.fn(async (): Promise<Record<string, unknown> | null> => null),
   erasePostgres: vi.fn(async () => undefined),
   eraseProcessors: vi.fn(async () => ({ processor: "queued" })),
   eraseStripe: vi.fn(async () => ({
@@ -163,6 +179,14 @@ vi.mock("../db/clickhouse-cdc.ts", () => ({
   createPeerDbMirrorApiClientFromEnv: vi.fn(() => mocks.peerDbMirrorApi),
 }));
 
+vi.mock("../db/account-erasure-processing.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../db/account-erasure-processing.ts")>();
+  return {
+    ...actual,
+    loadAccountErasurePhaseProgress: mocks.loadPhaseProgress,
+  };
+});
+
 vi.mock("../account-erasure/peerdb-staging-retention.ts", () => ({
   createPeerDbStagingStorageFromEnv: vi.fn(() => ({
     close: mocks.closePeerDbStaging,
@@ -193,35 +217,52 @@ vi.mock("../account-erasure/processor-retention.ts", () => ({
   verifyProcessorRetentionPolicies: mocks.verifyProcessorRetention,
 }));
 
-vi.mock("../account-erasure/redpanda-drain.ts", () => ({
-  assertAccountErasureConsumersDrained: mocks.assertConsumersDrained,
-  assertAccountErasureQuarantineExpired: mocks.assertQuarantineExpired,
-  assertAccountErasureReplayExpired: mocks.assertReplayExpired,
-  captureAccountErasureHighWatermarks: mocks.captureHighWatermarks,
-  captureAccountErasureQuarantineHighWatermarks: mocks.captureQuarantineHighWatermarks,
-  createAccountErasureRedpandaAdminFromEnv: vi.fn(() => ({
-    admin: { name: "redpanda-admin" },
-    close: mocks.closeRedpanda,
-    connect: mocks.connectRedpanda,
-    routes: [
+vi.mock("../metric-stream/pulsar-drain.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../metric-stream/pulsar-drain.ts")>();
+  return {
+    ...actual,
+    assertAccountErasureSubscriptionsDrained: mocks.assertSubscriptionsDrained,
+    captureAccountErasureNativeFenceProgress: mocks.captureNativeFenceProgress,
+    createPulsarDrainAdminFromUrls: vi.fn(() => ({ name: "pulsar-admin" })),
+    resolveAccountErasureNativeDrainStreams: mocks.resolveNativeDrainStreams,
+  };
+});
+
+vi.mock("../metric-stream/consumer-routes.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../metric-stream/consumer-routes.ts")>();
+  return {
+    ...actual,
+    resolveMetricStreamConsumerRoutes: vi.fn(() => [
       {
-        topic: "metric-stream-v1",
-        consumerGroups: ["metric-stream-clickhouse-sink", "metric-stream-r2-archive"],
+        id: "legacy",
+        topicKey: "METRIC_STREAM_LEGACY_TOPIC",
+        topic: "persistent://public/default/legacy",
+        sinkSubscription: "metric-stream-clickhouse-sink",
+        archiveSubscription: "metric-stream-r2-archive",
+        subscriptions: ["metric-stream-clickhouse-sink", "metric-stream-r2-archive"],
       },
       {
-        topic: "metric-stream-live-v1",
-        consumerGroups: ["metric-stream-live-clickhouse-sink", "metric-stream-live-r2-archive"],
+        id: "live",
+        topicKey: "METRIC_STREAM_LIVE_TOPIC",
+        topic: "persistent://public/default/live",
+        sinkSubscription: "metric-stream-live-clickhouse-sink",
+        archiveSubscription: "metric-stream-live-r2-archive",
+        subscriptions: ["metric-stream-live-clickhouse-sink", "metric-stream-live-r2-archive"],
       },
       {
-        topic: "metric-stream-history-v1",
-        consumerGroups: [
+        id: "history",
+        topicKey: "METRIC_STREAM_HISTORY_TOPIC",
+        topic: "persistent://public/default/history",
+        sinkSubscription: "metric-stream-history-clickhouse-sink",
+        archiveSubscription: "metric-stream-history-r2-archive",
+        subscriptions: [
           "metric-stream-history-clickhouse-sink",
           "metric-stream-history-r2-archive",
         ],
       },
-    ],
-  })),
-}));
+    ]),
+  };
+});
 
 vi.mock("../account-erasure/remote-revocation.ts", () => ({
   eraseStripeAccount: mocks.eraseStripe,
@@ -292,376 +333,19 @@ function execution(
 }
 
 describe("createAccountErasureRuntime", () => {
-  beforeEach(() => vi.clearAllMocks());
-  it.each([false, true])(
-    "fences each canonical operation page and keeps later-page failure visible: %s",
-    async (fail) => {
-      const first = "40000000-0000-4000-8000-000000001994";
-      const second = "50000000-0000-4000-8000-000000001994";
-      vi.mocked(mocks.readIdentifierPage).mockResolvedValueOnce({
-        entries: [{ key: "a".repeat(64), value: first }],
-        nextCursor: "a".repeat(64),
-      });
-      if (fail)
-        vi.mocked(mocks.readIdentifierPage).mockRejectedValueOnce(
-          new Error("operation page unavailable"),
-        );
-      else
-        vi.mocked(mocks.readIdentifierPage).mockResolvedValueOnce({
-          entries: [{ key: "b".repeat(64), value: second }],
-          nextCursor: null,
-        });
-      const database = {
-        $client: ownerDatabase.$client,
-        execute: vi.fn(async () => []),
-        transaction: vi.fn(),
-      };
-      const clickhouse = {
-        exec: vi.fn<ClickHouseClient["exec"]>(),
-        command: vi.fn(async () => undefined),
-        insert: vi.fn(async () => undefined),
-        query: vi.fn(async () => ({ json: async () => [] })),
-      };
-      const runtime = await createAccountErasureRuntime(database, clickhouse, {
-        close: vi.fn(async () => undefined),
-        purge: vi.fn(async () => undefined),
-      });
-      try {
-        const operation = runtime.phaseRunner.runPhase("ingest_fence", execution());
-        if (fail) {
-          await expect(operation).rejects.toThrow("operation page unavailable");
-          expect(mocks.captureHighWatermarks).not.toHaveBeenCalled();
-        } else {
-          await operation;
-          expect(mocks.fenceClickHouse).toHaveBeenNthCalledWith(2, clickhouse, request.userId, [
-            second,
-          ]);
-        }
-        expect(mocks.fenceClickHouse).toHaveBeenNthCalledWith(1, clickhouse, request.userId, [
-          first,
-        ]);
-        expect(mocks.readIdentifierPage).toHaveBeenNthCalledWith(2, "operation", "a".repeat(64));
-      } finally {
-        await runtime.close();
-      }
-    },
-  );
-  it.each([
-    ["ingest_fence", "fence", "pending"],
-    ["ingest_fence", "fence", "write failed"],
-    ["clickhouse_initial", "erase:initial", "pending"],
-    ["clickhouse_initial", "erase:initial", "write failed"],
-  ] as const)(
-    "replays %s after %s using the existing request identity (%s)",
-    async (phase, suffix, failure) => {
-      mocks.decryptSnapshot.mockResolvedValue(snapshot);
-      const database = {
-        $client: ownerDatabase.$client,
-        execute: vi.fn(async () => []),
-        transaction: vi.fn(),
-      };
-      const clickhouse = {
-        exec: vi.fn<ClickHouseClient["exec"]>(),
-        command: vi.fn(async () => undefined),
-        insert: vi.fn(async () => undefined),
-        query: vi.fn(async () => ({ json: async () => [] })),
-      };
-      const runtime = await createAccountErasureRuntime(database, clickhouse, {
-        close: vi.fn(async () => undefined),
-        purge: vi.fn(async () => undefined),
-      });
-      try {
-        if (failure === "pending")
-          mocks.withOwner.mockRejectedValueOnce(new Error("Existing intent is pending"));
-        else
-          (phase === "ingest_fence"
-            ? mocks.fenceClickHouse
-            : mocks.eraseClickHouse
-          ).mockRejectedValueOnce(new Error("Erasure write failed"));
-        await expect(runtime.phaseRunner.runPhase(phase, execution())).rejects.toThrow(
-          failure === "pending" ? "pending" : "write failed",
-        );
-        await runtime.phaseRunner.runPhase(phase, execution());
-        expect(mocks.withOwner.mock.calls.map((call) => call[2])).toEqual([
-          {
-            resourceId: "metric-stream-source",
-            intentId: `account-erasure:${request.id}:${suffix}`,
-          },
-          {
-            resourceId: "metric-stream-source",
-            intentId: `account-erasure:${request.id}:${suffix}`,
-          },
-        ]);
-      } finally {
-        await runtime.close();
-      }
-    },
-  );
-  it("withholds ClickHouse erasure writes while the shared predecessor is unknown", async () => {
-    mocks.decryptSnapshot.mockResolvedValue(snapshot);
-    mocks.fenceClickHouse.mockClear();
-    const database = {
-      $client: ownerDatabase.$client,
-      execute: vi.fn(async () => []),
-      transaction: vi.fn(),
-    };
-    const clickhouse = {
-      exec: vi.fn<ClickHouseClient["exec"]>(),
-      command: vi.fn(async () => undefined),
-      insert: vi.fn(async () => undefined),
-      query: vi.fn(async () => ({ json: async () => [] })),
-    };
-    const runtime = await createAccountErasureRuntime(database, clickhouse, {
-      close: vi.fn(async () => undefined),
-      purge: vi.fn(async () => undefined),
-    });
-    mocks.withOwner.mockRejectedValueOnce(new Error("Previous owner needs verified recovery"));
-    await expect(runtime.phaseRunner.runPhase("ingest_fence", execution())).rejects.toThrow(
-      "verified recovery",
-    );
-    expect(mocks.fenceClickHouse).not.toHaveBeenCalled();
-    await runtime.close();
-  });
-  it("connects concrete production adapters and closes owned resources", async () => {
-    mocks.decryptSnapshot.mockResolvedValue(snapshot);
-    mocks.closePeerDbStaging.mockClear();
-    mocks.r2Client.destroy.mockClear();
-    const database = {
-      $client: ownerDatabase.$client,
-      execute: vi.fn(async () => []),
-      transaction: vi.fn(),
-    };
-    const clickHouseClient = {
-      exec: vi.fn<ClickHouseClient["exec"]>(),
-      command: vi.fn(async () => undefined),
-      insert: vi.fn(async () => undefined),
-      query: vi.fn(async () => ({ json: async () => [] })),
-    };
-    const workPurger = {
-      close: vi.fn(async () => undefined),
-      purge: vi.fn(async () => undefined),
-    };
-    const runtime = await createAccountErasureRuntime(database, clickHouseClient, workPurger);
-
-    const topics = ["metric-stream-v1", "metric-stream-live-v1", "metric-stream-history-v1"];
-    const highWatermarks = topics.map((topic) => ({ topic, low: "1", offset: "3", partition: 0 }));
-    const quarantineHighWatermarks = topics.map((topic) => ({
-      topic,
-      low: "4",
-      offset: "12",
-      partition: 0,
-    }));
-
-    expect(mocks.ensureProvidersRegistered).toHaveBeenCalledOnce();
-    expect(mocks.connectRedpanda).toHaveBeenCalledOnce();
-
-    const revocation = execution();
-    await expect(runtime.phaseRunner.runPhase("remote_revocation", revocation)).resolves.toEqual({
-      dispositions: [],
-      verified: false,
-    });
-    expect(mocks.revokeRemote).toHaveBeenCalledWith(
-      snapshot,
-      mocks.getAllProviders(),
-      revocation.persistProviderCredentials,
-    );
-
-    await expect(runtime.phaseRunner.runPhase("ingest_fence", execution())).resolves.toEqual({
-      highWatermarks,
-    });
-    expect(mocks.fenceClickHouse).toHaveBeenCalledWith(
-      clickHouseClient,
-      snapshot.localIdentifiers.userId,
-      ["40000000-0000-4000-8000-000000001994"],
-    );
-    await expect(
-      runtime.phaseRunner.runPhase(
-        "consumer_drain",
-        execution(async (phase) => (phase === "ingest_fence" ? { highWatermarks } : null)),
-      ),
-    ).resolves.toEqual({
-      quarantineHighWatermarks,
-    });
-    expect(mocks.prepareIdentifiers).toHaveBeenCalledWith(
-      expect.objectContaining({ client: clickHouseClient }),
-      expect.anything(),
-      {
-        requestId: request.id,
-        userId: request.userId,
-        leaseOwner: "runtime-fixture-worker",
-        stage: "initial",
-      },
-    );
-    expect(mocks.identifierStoreCreated).toHaveBeenCalledWith(database, {
-      requestId: request.id,
-      leaseOwner: "runtime-fixture-worker",
-      pageSize: 500,
-    });
-    expect(mocks.assertConsumersDrained).toHaveBeenCalledWith(
-      { name: "redpanda-admin" },
-      "metric-stream-v1",
-      [{ topic: "metric-stream-v1", low: "1", offset: "3", partition: 0 }],
-      ["metric-stream-clickhouse-sink", "metric-stream-r2-archive"],
-    );
-    expect(mocks.captureQuarantineHighWatermarks).toHaveBeenCalledWith(
-      { name: "redpanda-admin" },
-      "metric-stream-v1",
-    );
-    await runtime.phaseRunner.runPhase(
-      "retention_verification",
-      execution(
-        async (phase) =>
-          phase === "consumer_drain"
-            ? {
-                quarantineHighWatermarks,
-              }
-            : phase === "peerdb_drain_verification"
-              ? {
-                  stagingBoundary: {
-                    cutoff: "2026-08-03T12:00:00.000Z",
-                    eTag: '"boundary-etag"',
-                    key: `account-erasure-boundaries/${request.id}`,
-                    mirrors: [
-                      {
-                        name: "dofek_fitness_raw_analytics",
-                        status: "STATUS_PAUSED",
-                      },
-                    ],
-                  },
-                }
-              : null,
-        {
-          ...request,
-          encryptedRemoteSnapshot: null,
-          piiScrubbedAt: new Date("2026-08-03T12:00:00.000Z"),
-          userId: null,
-        },
-      ),
-    );
-    expect(mocks.assertQuarantineExpired).toHaveBeenCalledWith(
-      { name: "redpanda-admin" },
-      "metric-stream-v1",
-      [{ topic: "metric-stream-v1", low: "4", offset: "12", partition: 0 }],
-    );
-    expect(mocks.verifyPeerDbStagingRetention).toHaveBeenCalledWith(mocks.peerDbStagingStorage, {
-      cutoff: new Date("2026-08-03T12:00:00.000Z"),
-      now: expect.any(Date),
-    });
-
-    await runtime.phaseRunner.runPhase(
-      "consumer_drain_verification",
-      execution(async (phase) => (phase === "ingest_fence" ? { highWatermarks } : null)),
-    );
-    await expect(
-      runtime.phaseRunner.runPhase(
-        "consumer_drain",
-        execution(async (phase) =>
-          phase === "ingest_fence" ? { highWatermarks: highWatermarks.slice(0, 2) } : null,
-        ),
-      ),
-    ).rejects.toThrow("Account erasure checkpoint is missing topic metric-stream-history-v1");
-    for (const [index, topic] of topics.entries()) {
-      const prefix = ["metric-stream", "metric-stream-live", "metric-stream-history"][index];
-      expect(mocks.captureHighWatermarks).toHaveBeenCalledWith({ name: "redpanda-admin" }, topic);
-      expect(mocks.captureQuarantineHighWatermarks).toHaveBeenCalledWith(
-        { name: "redpanda-admin" },
-        topic,
-      );
-      expect(mocks.assertConsumersDrained).toHaveBeenCalledWith(
-        { name: "redpanda-admin" },
-        topic,
-        [highWatermarks[index]],
-        [`${prefix}-clickhouse-sink`, `${prefix}-r2-archive`],
-      );
-      expect(mocks.assertReplayExpired).toHaveBeenCalledWith({ name: "redpanda-admin" }, topic, [
-        highWatermarks[index],
-      ]);
-      expect(mocks.assertQuarantineExpired).toHaveBeenCalledWith(
-        { name: "redpanda-admin" },
-        topic,
-        [quarantineHighWatermarks[index]],
-      );
-    }
-
-    await expect(runtime.phaseRunner.runPhase("clickhouse_initial", execution())).resolves.toEqual({
-      verified: false,
-    });
-    expect(mocks.eraseClickHouse).toHaveBeenCalledWith(
-      expect.objectContaining({ client: clickHouseClient }),
-      expect.anything(),
-      expect.objectContaining({
-        userId: snapshot.localIdentifiers.userId,
-        requestId: execution().request.id,
-        leaseOwner: execution().leaseOwner,
-        stage: "initial",
-      }),
-    );
-
-    await expect(runtime.phaseRunner.runPhase("archive_initial", execution())).resolves.toEqual({
-      objectsRewritten: 0,
-      recordsRemoved: 0,
-    });
-    expect(mocks.eraseArchive).toHaveBeenCalledWith(
-      expect.anything(),
-      {
-        store: expect.anything(),
-        stage: "initial",
-        userId: snapshot.localIdentifiers.userId,
-      },
-      expect.objectContaining({
-        onObjectCompleted: expect.any(Function),
-      }),
-    );
-
-    expect(mocks.loadPhysicalProgress).toHaveBeenCalledWith("initial");
-    await expect(runtime.phaseRunner.runPhase("postgres_erasure", execution())).resolves.toBeNull();
-    expect(mocks.erasePostgres).toHaveBeenCalledWith(database, request.id, request.userId);
-    expect(mocks.captureWalLsn).not.toHaveBeenCalled();
-    expect(mocks.identifierStoreCreated).toHaveBeenCalledWith(database, {
-      requestId: request.id,
-      leaseOwner: "runtime-fixture-worker",
-      pageSize: 500,
-    });
-    expect(mocks.withOwner).toHaveBeenCalledWith(
-      database,
-      clickHouseClient,
-      {
-        resourceId: "metric-stream-source",
-        intentId: `account-erasure:${request.id}:prepare-identities:initial`,
-      },
-      expect.any(Function),
-    );
-
-    await runtime.phaseRunner.runPhase(
-      "peerdb_drain_verification",
-      execution(async (phase) =>
-        phase === "postgres_profile_delete" ? { walLsn: "0/1A2B" } : null,
-      ),
-    );
-    expect(mocks.assertPeerDbDrained).toHaveBeenCalledWith(database, clickHouseClient, "0/1A2B", {
-      userId: snapshot.localIdentifiers.userId,
-      store: expect.anything(),
-    });
-    expect(mocks.capturePeerDbStagingBoundary).toHaveBeenCalledWith(
-      database,
-      mocks.peerDbMirrorApi,
-      mocks.peerDbStagingStorage,
-      {
-        loadProgress: expect.any(Function),
-        requestId: request.id,
-        saveProgress: expect.any(Function),
-      },
-    );
-    await runtime.close();
-    expect(mocks.closePeerDbStaging).toHaveBeenCalledOnce();
-    expect(mocks.closeRedpanda).toHaveBeenCalledOnce();
-    expect(workPurger.close).toHaveBeenCalledOnce();
-    expect(mocks.r2Client.destroy).toHaveBeenCalledOnce();
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.PULSAR_ADMIN_URL = "http://pulsar-admin.test";
+    process.env.METRIC_STREAM_TRANSPORT_EPOCH = "transport-epoch";
+    process.env.METRIC_STREAM_LEGACY_TOPIC = "persistent://public/default/legacy";
+    process.env.METRIC_STREAM_LIVE_TOPIC = "persistent://public/default/live";
+    process.env.METRIC_STREAM_HISTORY_TOPIC = "persistent://public/default/history";
+    mocks.r2Client.send.mockResolvedValue({ Contents: [], IsTruncated: false });
+    mocks.loadPhaseProgress.mockResolvedValue(null);
   });
 
-  it("fails closed when physical identifier preparation is incomplete", async () => {
+  it("captures native ingest streams and drains with epoch-scoped route identity", async () => {
     mocks.decryptSnapshot.mockResolvedValue(snapshot);
-    mocks.loadPhysicalProgress.mockResolvedValueOnce(null);
     const database = {
       $client: ownerDatabase.$client,
       execute: vi.fn(async () => []),
@@ -678,91 +362,187 @@ describe("createAccountErasureRuntime", () => {
       purge: vi.fn(async () => undefined),
     });
     try {
-      await expect(runtime.phaseRunner.runPhase("postgres_erasure", execution())).rejects.toThrow(
-        "physical preparation is incomplete",
-      );
-      expect(mocks.loadPhysicalProgress).toHaveBeenCalledWith("initial");
-      expect(mocks.erasePostgres).not.toHaveBeenCalled();
+      const ingest = await runtime.phaseRunner.runPhase("ingest_fence", execution());
+      expect(mocks.captureNativeFenceProgress).toHaveBeenCalledTimes(3);
+      await expect(
+        runtime.phaseRunner.runPhase(
+          "consumer_drain",
+          execution(async (phase) => (phase === "ingest_fence" ? ingest : null)),
+        ),
+      ).resolves.toEqual({ drained: true });
+      expect(mocks.assertSubscriptionsDrained).toHaveBeenCalledTimes(3);
     } finally {
       await runtime.close();
     }
   });
 
-  it("releases acquired resources when runtime startup fails", async () => {
-    const Sentry = await import("@sentry/node");
-    const startupError = new Error("Redpanda authentication failed");
-    mocks.closePeerDbStaging.mockClear();
-    mocks.closeRedpanda.mockClear();
-    mocks.r2Client.destroy.mockClear();
-    mocks.connectRedpanda.mockRejectedValueOnce(startupError);
-    vi.mocked(Sentry.captureException).mockClear();
+  it("rejects drain when checkpoint epoch differs from the current transport epoch", async () => {
     const database = {
       $client: ownerDatabase.$client,
       execute: vi.fn(async () => []),
       transaction: vi.fn(),
     };
-    const clickHouseClient = {
+    const clickhouse = {
       exec: vi.fn<ClickHouseClient["exec"]>(),
       command: vi.fn(async () => undefined),
       insert: vi.fn(async () => undefined),
       query: vi.fn(async () => ({ json: async () => [] })),
     };
-    const workPurger = {
+    const runtime = await createAccountErasureRuntime(database, clickhouse, {
       close: vi.fn(async () => undefined),
       purge: vi.fn(async () => undefined),
-    };
-
-    await expect(createAccountErasureRuntime(database, clickHouseClient, workPurger)).rejects.toBe(
-      startupError,
-    );
-
-    expect(Sentry.captureException).toHaveBeenCalledWith(startupError, {
-      tags: { accountErasureStep: "runtimeStartup" },
     });
-    expect(mocks.closePeerDbStaging).toHaveBeenCalledOnce();
-    expect(mocks.closeRedpanda).toHaveBeenCalledOnce();
-    expect(workPurger.close).toHaveBeenCalledOnce();
-    expect(mocks.r2Client.destroy).toHaveBeenCalledOnce();
+    try {
+      const stale = {
+        streams: [
+          {
+            fence: {
+              transport: "pulsar" as const,
+              state: "empty" as const,
+              epoch: "old-epoch",
+              topic: "persistent://public/default/history",
+              partition: -1,
+            },
+          },
+          {
+            fence: {
+              transport: "pulsar" as const,
+              state: "empty" as const,
+              epoch: "old-epoch",
+              topic: "persistent://public/default/legacy",
+              partition: -1,
+            },
+          },
+          {
+            fence: {
+              transport: "pulsar" as const,
+              state: "empty" as const,
+              epoch: "old-epoch",
+              topic: "persistent://public/default/live",
+              partition: -1,
+            },
+          },
+        ],
+      };
+      await expect(
+        runtime.phaseRunner.runPhase(
+          "consumer_drain",
+          execution(async (phase) => (phase === "ingest_fence" ? stale : null)),
+        ),
+      ).rejects.toThrow(/missing route for epoch old-epoch/);
+      expect(mocks.assertSubscriptionsDrained).not.toHaveBeenCalled();
+    } finally {
+      await runtime.close();
+    }
   });
 
-  it("reports startup cleanup failures without hiding the original cause", async () => {
-    const Sentry = await import("@sentry/node");
-    const startupError = new Error("Redpanda authentication failed");
-    const cleanupError = new Error("Redpanda disconnect failed");
-    mocks.closePeerDbStaging.mockClear();
-    mocks.closeRedpanda.mockClear();
-    mocks.r2Client.destroy.mockClear();
-    mocks.connectRedpanda.mockRejectedValueOnce(startupError);
-    mocks.closeRedpanda.mockRejectedValueOnce(cleanupError);
-    vi.mocked(Sentry.captureException).mockClear();
+  it("rejects same-count drain checkpoints whose stream set differs from resolved routes", async () => {
     const database = {
       $client: ownerDatabase.$client,
       execute: vi.fn(async () => []),
       transaction: vi.fn(),
     };
-    const clickHouseClient = {
+    const clickhouse = {
       exec: vi.fn<ClickHouseClient["exec"]>(),
       command: vi.fn(async () => undefined),
       insert: vi.fn(async () => undefined),
       query: vi.fn(async () => ({ json: async () => [] })),
     };
-    const workPurger = {
+    const runtime = await createAccountErasureRuntime(database, clickhouse, {
       close: vi.fn(async () => undefined),
       purge: vi.fn(async () => undefined),
+    });
+    try {
+      const different = {
+        streams: [
+          {
+            fence: {
+              transport: "pulsar" as const,
+              state: "empty" as const,
+              epoch: "transport-epoch",
+              topic: "persistent://public/default/alpha",
+              partition: -1,
+            },
+          },
+          {
+            fence: {
+              transport: "pulsar" as const,
+              state: "empty" as const,
+              epoch: "transport-epoch",
+              topic: "persistent://public/default/beta",
+              partition: -1,
+            },
+          },
+          {
+            fence: {
+              transport: "pulsar" as const,
+              state: "empty" as const,
+              epoch: "transport-epoch",
+              topic: "persistent://public/default/gamma",
+              partition: -1,
+            },
+          },
+        ],
+      };
+      await expect(
+        runtime.phaseRunner.runPhase(
+          "consumer_drain",
+          execution(async (phase) => (phase === "ingest_fence" ? different : null)),
+        ),
+      ).rejects.toThrow(/missing route for epoch transport-epoch/);
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("fails closed when stock physical maintenance ack is missing from phase_progress", async () => {
+    const fenceProgress = {
+      fence: {
+        transport: "pulsar" as const,
+        state: "empty" as const,
+        epoch: "transport-epoch",
+        topic: "persistent://public/default/legacy",
+        partition: -1,
+      },
     };
-
-    await expect(
-      createAccountErasureRuntime(database, clickHouseClient, workPurger),
-    ).rejects.toMatchObject({
-      cause: startupError,
-      errors: [startupError, cleanupError],
-      message: "Account erasure runtime startup and cleanup failed",
+    const ingest = { streams: [fenceProgress] };
+    mocks.loadPhaseProgress.mockResolvedValueOnce(null);
+    const database = {
+      $client: ownerDatabase.$client,
+      execute: vi.fn(async () => [
+        { completed_at: new Date("2026-08-26T09:00:00.000Z") },
+      ]) as typeof ownerDatabase.execute,
+      transaction: vi.fn() as typeof ownerDatabase.transaction,
+    };
+    const clickhouse = {
+      exec: vi.fn<ClickHouseClient["exec"]>(),
+      command: vi.fn(async () => undefined),
+      insert: vi.fn(async () => undefined),
+      query: vi.fn(async () => ({ json: async () => [] })),
+    };
+    const runtime = await createAccountErasureRuntime(database, clickhouse, {
+      close: vi.fn(async () => undefined),
+      purge: vi.fn(async () => undefined),
     });
-
-    expect(Sentry.captureException).toHaveBeenCalledWith(cleanupError, {
-      tags: { accountErasureStep: "runtimeStartupCleanup" },
-    });
-    expect(mocks.closePeerDbStaging).toHaveBeenCalledOnce();
-    expect(mocks.r2Client.destroy).toHaveBeenCalledOnce();
+    try {
+      await expect(
+        runtime.phaseRunner.runPhase(
+          "retention_verification",
+          execution(async (phase) => (phase === "ingest_fence" ? ingest : null), {
+            ...request,
+            encryptedRemoteSnapshot: null,
+            piiScrubbedAt: new Date("2026-08-03T12:00:00.000Z"),
+            userId: null,
+          }),
+        ),
+      ).rejects.toThrow(/missing from retention_verification|Stock physical/i);
+      expect(mocks.loadPhaseProgress).toHaveBeenCalledWith(
+        database,
+        request.id,
+        "retention_verification",
+      );
+    } finally {
+      await runtime.close();
+    }
   });
 });

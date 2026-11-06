@@ -294,6 +294,7 @@ async function belongsToAccount(
   }
   const event = parsedEvent.data;
   if (isMetricStreamBatchCompletedEvent(event)) {
+    if ("userId" in event && event.userId === identifiers.userId) return true;
     return (await identifiers.store.findPresent("operation", [event.operationId])).length > 0;
   }
   if (isMetricStreamDeletedEvent(event)) {

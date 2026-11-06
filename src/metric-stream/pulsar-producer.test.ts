@@ -26,6 +26,7 @@ const row = {
 const operationRevision = "9007199254740993";
 const processing: MetricStreamProcessingContext = {
   operationId: "30000000-0000-4000-8000-000000000001",
+  userId: row.userId,
   batchId: "batch-1",
   datasetKeys: ["recovery"],
 };

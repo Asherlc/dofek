@@ -59,7 +59,17 @@ export interface AccountErasurePhaseExecution {
 }
 
 const routedIngestFenceSchema = z.object({
-  highWatermarks: z.array(z.object({ topic: z.string().min(1) })).min(1),
+  streams: z
+    .array(
+      z.object({
+        fence: z.object({
+          topic: z.string().min(1),
+          partition: z.number().int(),
+          transport: z.literal("pulsar"),
+        }),
+      }),
+    )
+    .min(1),
 });
 
 function hasRoutedIngestFence(checkpoint: Record<string, unknown> | null): boolean {

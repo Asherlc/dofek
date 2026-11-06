@@ -46,13 +46,10 @@ function createRetentionPhaseRunner(now: Date) {
   const dependencies = {
     prepareIdentifiers: unexpectedDependency,
     assertIdentifiersReady: unexpectedDependency,
-    assertConsumersDrained: unexpectedDependency,
+    assertNativeConsumersDrained: unexpectedDependency,
     assertPeerDbDrained: unexpectedDependency,
-    assertQuarantineExpired: vi.fn(async () => undefined),
-    assertReplayExpired: unexpectedDependency,
-    captureHighWatermarks: unexpectedDependency,
+    captureNativeIngestCheckpoint: unexpectedDependency,
     capturePeerDbStagingBoundary: unexpectedDependency,
-    captureQuarantineHighWatermarks: unexpectedDependency,
     decryptSnapshot: unexpectedDependency,
     eraseArchive: unexpectedDependency,
     eraseClickHouse: unexpectedDependency,
@@ -60,6 +57,8 @@ function createRetentionPhaseRunner(now: Date) {
     eraseProcessors: unexpectedDependency,
     eraseStripe: unexpectedDependency,
     fenceIngest: unexpectedDependency,
+    loadIngestFenceCompletedAt: unexpectedDependency,
+    loadStockPhysicalMaintenanceAck: unexpectedDependency,
     now: () => now,
     purgeWork: unexpectedDependency,
     revokeRemote: unexpectedDependency,
@@ -175,11 +174,7 @@ describe("processAccountErasureRequest request-to-completion (integration)", () 
           return execution.deleteProfile();
         }
         if (phase === "consumer_drain") {
-          return {
-            quarantineHighWatermarks: [
-              { topic: "metric-stream-v1", low: "4", offset: "12", partition: 0 },
-            ],
-          };
+          return { drained: true };
         }
         if (phase === "peerdb_drain_verification") {
           return { stagingBoundary: peerDbStagingBoundary, verified: true };

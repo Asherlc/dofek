@@ -119,8 +119,8 @@ describe("R2 archive erasure against SeaweedFS S3", () => {
     const owned = [
       metricEvent(deletingUserId, "30000000-0000-4000-8000-000000001994"),
       createMetricStreamDeletedEvent({ userId: deletingUserId }, "1"),
-      createMetricStreamBatchCompletedEvent(
-        { operationId, batchId: "batch-1994", datasetKeys: ["metric-stream"] },
+      createMetricStreamBatchCompletedEvent({
+        userId: deletingUserId, operationId, batchId: "batch-1994", datasetKeys: ["metric-stream"] },
         1,
       ),
     ].map((event) => JSON.stringify(event));

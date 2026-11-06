@@ -863,7 +863,7 @@ describe("account erasure persistence (integration)", () => {
             request_id, phase, details
           )
           VALUES
-            (${requestId}::uuid, 'consumer_drain', '{"quarantineHighWatermarks":[{"low":"4","offset":"12","partition":0}],"unexpected":"must-not-survive"}'::jsonb),
+            (${requestId}::uuid, 'consumer_drain', '{"drained":true,"unexpected":"must-not-survive"}'::jsonb),
             (${requestId}::uuid, 'work_verification', '{"path":"pii-like-path"}'::jsonb),
             (${requestId}::uuid, 'consumer_drain_verification', '{"offset":"123"}'::jsonb),
             (${requestId}::uuid, 'stripe_erasure_verification', '{"customer":"pii-like-customer"}'::jsonb),
@@ -899,9 +899,7 @@ describe("account erasure persistence (integration)", () => {
     expect(scrubbedRows).toEqual([
       {
         checkpoint_details: expect.objectContaining({
-          consumer_drain: {
-            quarantineHighWatermarks: [{ low: "4", offset: "12", partition: 0 }],
-          },
+          consumer_drain: null,
           processor_erasure: null,
           remote_revocation_verification: null,
           request_pii_scrub: null,

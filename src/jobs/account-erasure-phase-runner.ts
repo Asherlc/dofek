@@ -3,32 +3,25 @@ import type { ArchiveErasureResult } from "../account-erasure/archive-erasure.ts
 import type { PeerDbStagingRetentionResult } from "../account-erasure/peerdb-staging-retention.ts";
 import type { PeerDbStagingBoundary } from "../account-erasure/peerdb-staging-writer-barrier.ts";
 import type { AccountErasureProcessorProgress } from "../account-erasure/processor-erasure.ts";
-import type { AccountErasureRouteHighWatermark } from "../account-erasure/redpanda-drain.ts";
+import {
+  requireStockPhysicalMaintenanceAck,
+  summarizePhysicalMaintenanceAcknowledged,
+} from "../account-erasure/pulsar-physical-maintenance-ack.ts";
 import type {
   AccountErasureProviderTokenPersistence,
   ProviderCredentialDisposition,
   StripeAccountErasureResult,
 } from "../account-erasure/remote-revocation.ts";
 import type { AccountErasureRemoteSnapshot } from "../account-erasure/remote-snapshot.ts";
+import {
+  type AccountErasureNativeIngestCheckpoint,
+  accountErasureNativeIngestCheckpointSchema,
+} from "../metric-stream/pulsar-drain.ts";
 import type { AccountErasurePhase } from "./process-account-erasure-job.ts";
 import type {
   AccountErasurePhaseExecution,
   AccountErasurePhaseRunner,
 } from "./process-account-erasure-request.ts";
-
-const highWatermarksCheckpointSchema = z.object({
-  highWatermarks: z.array(
-    z.object({
-      topic: z.string().min(1),
-      low: z.string().regex(/^\d+$/),
-      offset: z.string().regex(/^\d+$/),
-      partition: z.number().int().nonnegative(),
-    }),
-  ),
-});
-const quarantineHighWatermarksCheckpointSchema = z.object({
-  quarantineHighWatermarks: highWatermarksCheckpointSchema.shape.highWatermarks,
-});
 
 const archiveProgressSchema = z.object({
   lastKey: z.string().min(1),
@@ -62,21 +55,14 @@ interface IdentifierPreparation extends IdentifierRequest {
 export interface AccountErasurePhaseRunnerDependencies {
   prepareIdentifiers(input: IdentifierPreparation): Promise<void>;
   assertIdentifiersReady(input: IdentifierPreparation): Promise<void>;
-  assertConsumersDrained(
-    highWatermarks: readonly AccountErasureRouteHighWatermark[],
-  ): Promise<void>;
+  assertNativeConsumersDrained(checkpoint: AccountErasureNativeIngestCheckpoint): Promise<void>;
   assertPeerDbDrained(input: IdentifierRequest, walLsn: string): Promise<void>;
-  assertQuarantineExpired(
-    highWatermarks: readonly AccountErasureRouteHighWatermark[],
-  ): Promise<void>;
-  assertReplayExpired(highWatermarks: readonly AccountErasureRouteHighWatermark[]): Promise<void>;
-  captureHighWatermarks(): Promise<AccountErasureRouteHighWatermark[]>;
+  captureNativeIngestCheckpoint(): Promise<AccountErasureNativeIngestCheckpoint>;
   capturePeerDbStagingBoundary(input: {
     loadProgress(): Promise<Record<string, unknown> | null>;
     requestId: string;
     saveProgress(progress: Record<string, unknown>): Promise<void>;
   }): Promise<PeerDbStagingBoundary>;
-  captureQuarantineHighWatermarks(): Promise<AccountErasureRouteHighWatermark[]>;
   decryptSnapshot(encryptedSnapshot: string, userId: string): Promise<AccountErasureRemoteSnapshot>;
   eraseArchive(
     input: IdentifierPreparation,
@@ -95,6 +81,8 @@ export interface AccountErasurePhaseRunnerDependencies {
   ): Promise<Record<string, unknown>>;
   eraseStripe(snapshot: AccountErasureRemoteSnapshot): Promise<StripeAccountErasureResult>;
   fenceIngest(input: IdentifierRequest): Promise<void>;
+  loadIngestFenceCompletedAt(input: { requestId: string }): Promise<Date>;
+  loadStockPhysicalMaintenanceAck(input: { requestId: string }): Promise<unknown>;
   now(): Date;
   purgeWork(snapshot: AccountErasureRemoteSnapshot): Promise<void>;
   revokeRemote(
@@ -130,13 +118,12 @@ function requireIdentifyingRequest(
   return { encryptedSnapshot: encryptedRemoteSnapshot, userId };
 }
 
-async function loadHighWatermarks(
+async function loadNativeIngestCheckpoint(
   execution: AccountErasurePhaseExecution,
-): Promise<AccountErasureRouteHighWatermark[]> {
-  const checkpoint = highWatermarksCheckpointSchema.parse(
+): Promise<AccountErasureNativeIngestCheckpoint> {
+  return accountErasureNativeIngestCheckpointSchema.parse(
     await execution.loadCheckpointDetails("ingest_fence"),
   );
-  return checkpoint.highWatermarks;
 }
 
 function archiveDetails(result: ArchiveErasureResult) {
@@ -204,8 +191,7 @@ export function createAccountErasurePhaseRunner(
       switch (phase) {
         case "ingest_fence": {
           await dependencies.fenceIngest(identityRequest(phase, execution));
-          const highWatermarks = await dependencies.captureHighWatermarks();
-          return { highWatermarks };
+          return dependencies.captureNativeIngestCheckpoint();
         }
         case "stripe_erasure": {
           const snapshot = await loadSnapshot(phase, execution);
@@ -231,17 +217,15 @@ export function createAccountErasurePhaseRunner(
           return { verified: phase === "work_verification" };
         }
         case "consumer_drain": {
-          const highWatermarks = await loadHighWatermarks(execution);
-          await dependencies.assertConsumersDrained(highWatermarks);
+          const ingestCheckpoint = await loadNativeIngestCheckpoint(execution);
+          await dependencies.assertNativeConsumersDrained(ingestCheckpoint);
           await dependencies.prepareIdentifiers(identifierPreparation(phase, execution, "initial"));
-          const quarantineHighWatermarks = await dependencies.captureQuarantineHighWatermarks();
-          return { quarantineHighWatermarks };
+          return { drained: true };
         }
         case "consumer_drain_verification": {
-          const highWatermarks = await loadHighWatermarks(execution);
-          await dependencies.assertConsumersDrained(highWatermarks);
-          await dependencies.assertReplayExpired(highWatermarks);
-          return { drained: true, replayExpired: true };
+          const ingestCheckpoint = await loadNativeIngestCheckpoint(execution);
+          await dependencies.assertNativeConsumersDrained(ingestCheckpoint);
+          return { drained: true, verified: true };
         }
         case "remote_revocation":
         case "remote_revocation_verification": {
@@ -365,10 +349,18 @@ export function createAccountErasurePhaseRunner(
             requestId: id,
             requestedAt,
           };
-          const quarantineCheckpoint = quarantineHighWatermarksCheckpointSchema.parse(
-            await execution.loadCheckpointDetails("consumer_drain"),
+          const ingestFenceCompletedAt = await dependencies.loadIngestFenceCompletedAt({
+            requestId: id,
+          });
+          const physicalMaintenanceAcknowledged = summarizePhysicalMaintenanceAcknowledged(
+            requireStockPhysicalMaintenanceAck(
+              await dependencies.loadStockPhysicalMaintenanceAck({ requestId: id }),
+              {
+                ingestFenceCompletedAt,
+                now: retentionInput.now,
+              },
+            ),
           );
-          await dependencies.assertQuarantineExpired(quarantineCheckpoint.quarantineHighWatermarks);
           const peerDbCheckpoint = peerDbDrainCheckpointSchema.parse(
             await execution.loadCheckpointDetails("peerdb_drain_verification"),
           );
@@ -381,8 +373,8 @@ export function createAccountErasurePhaseRunner(
           return {
             backupRetention,
             peerDbStagingRetention,
+            physicalMaintenanceAcknowledged,
             processorRetention,
-            quarantineRetentionVerified: true,
             verified: true,
           };
         }

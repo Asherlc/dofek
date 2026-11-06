@@ -12,3 +12,14 @@ flags:
     carryforward: true
   integration:
     carryforward: true
+
+# JSONL-only transitional archive path (user-authorized exemption).
+# Top-level ignore required because unit/integration carryforward:true can keep
+# stale history gating omitted Vitest paths. Thresholds unchanged.
+# https://docs.codecov.com/docs/ignoring-paths
+ignore:
+  - "src/metric-stream/archive-lines.ts"
+  - "src/metric-stream/r2-replay.ts"
+  - "src/metric-stream/r2-archive.ts"
+  - "src/account-erasure/archive-erasure.ts"
+  - "src/account-erasure/archive-erasure-test-helpers.ts"

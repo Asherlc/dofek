@@ -188,7 +188,17 @@ describe("eraseMetricStreamArchive", () => {
       const key = "metric-stream/v1/date=2026-07-26/hour=10/metric-stream-v1-0-27-28.jsonl.gz";
       const operationId = "40000000-0000-4000-8000-000000001994";
       const original = gzipSync(
-        `${JSON.stringify(createMetricStreamBatchCompletedEvent({ operationId, batchId: "pending-source", datasetKeys: ["metric-stream"] }, 1))}\n`,
+        `${JSON.stringify(
+          createMetricStreamBatchCompletedEvent(
+            {
+              userId: otherUserId,
+              operationId,
+              batchId: "pending-source",
+              datasetKeys: ["metric-stream"],
+            },
+            1,
+          ),
+        )}\n`,
       );
       class InterruptedArchive extends MemoryArchiveStorage {
         override async getObject(_key: string) {
@@ -288,7 +298,17 @@ describe("eraseMetricStreamArchive", () => {
       }),
     );
     const original = gzipSync(
-      `${JSON.stringify(createMetricStreamBatchCompletedEvent({ operationId, batchId: "bounded", datasetKeys: ["metric-stream"] }, 1))}\n${records.join("\n")}\n`,
+      `${JSON.stringify(
+        createMetricStreamBatchCompletedEvent(
+          {
+            userId: otherUserId,
+            operationId,
+            batchId: "bounded",
+            datasetKeys: ["metric-stream"],
+          },
+          1,
+        ),
+      )}\n${records.join("\n")}\n`,
     );
     storage.objects.set(key, original);
     const store = {
@@ -530,7 +550,12 @@ describe("eraseMetricStreamArchive", () => {
     const owned = [
       metricEvent(deletingUserId, "30000000-0000-4000-8000-000000001994"),
       createMetricStreamBatchCompletedEvent(
-        { operationId, batchId: "batch-1994", datasetKeys: ["metric-stream"] },
+        {
+          userId: deletingUserId,
+          operationId,
+          batchId: "batch-1994",
+          datasetKeys: ["metric-stream"],
+        },
         1,
       ),
       createMetricStreamDeletedEvent({ userId: deletingUserId }, "1"),
@@ -642,11 +667,17 @@ describe("eraseMetricStreamArchive", () => {
     const activityId = "30000000-0000-4000-8000-000000001994";
     const operationId = "40000000-0000-4000-8000-000000001994";
     const matchingBatch = createMetricStreamBatchCompletedEvent(
-      { batchId: "batch-1994", datasetKeys: ["metric-stream"], operationId },
+      {
+        userId: deletingUserId,
+        batchId: "batch-1994",
+        datasetKeys: ["metric-stream"],
+        operationId,
+      },
       1,
     );
     const otherBatch = createMetricStreamBatchCompletedEvent(
       {
+        userId: otherUserId,
         batchId: "other-batch-1994",
         datasetKeys: ["metric-stream"],
         operationId: "50000000-0000-4000-8000-000000001994",
@@ -688,6 +719,45 @@ describe("eraseMetricStreamArchive", () => {
 
     expect(gunzipSync(storage.objects.get(key) ?? Buffer.alloc(0)).toString("utf8")).toBe(
       `${JSON.stringify(otherBatch)}\n${JSON.stringify(otherDelete)}\n${JSON.stringify(nullActivity)}\n`,
+    );
+  });
+
+  it("removes v2 batch_completed by marker.userId without operation presence", async () => {
+    const storage = new MemoryArchiveStorage();
+    const key = "metric-stream/v1/date=2026-07-26/hour=10/metric-stream-v1-0-12-13.jsonl.gz";
+    const matchingBatch = createMetricStreamBatchCompletedEvent(
+      {
+        userId: deletingUserId,
+        batchId: "owner-match",
+        datasetKeys: ["metric-stream"],
+        operationId: "40000000-0000-4000-8000-000000001995",
+      },
+      1,
+    );
+    const otherBatch = createMetricStreamBatchCompletedEvent(
+      {
+        userId: otherUserId,
+        batchId: "other-owner",
+        datasetKeys: ["metric-stream"],
+        operationId: "50000000-0000-4000-8000-000000001995",
+      },
+      1,
+    );
+    storage.objects.set(
+      key,
+      gzipSync(`${JSON.stringify(matchingBatch)}\n${JSON.stringify(otherBatch)}\n`),
+    );
+
+    await expect(
+      eraseMetricStreamArchive(storage, {
+        stage: "initial" as const,
+        store: archiveIdentityFixture([], []),
+        userId: deletingUserId,
+      }),
+    ).resolves.toMatchObject({ recordsRemoved: 1, objectsRewritten: 1 });
+
+    expect(gunzipSync(storage.objects.get(key) ?? Buffer.alloc(0)).toString("utf8")).toBe(
+      `${JSON.stringify(otherBatch)}\n`,
     );
   });
 

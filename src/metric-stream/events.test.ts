@@ -223,10 +223,13 @@ describe("createMetricStreamDeletedEvent", () => {
 });
 
 describe("createMetricStreamBatchCompletedEvent", () => {
-  it("creates an operation-correlated marker with a stable partition key", () => {
+  const ownerUserId = "10000000-0000-4000-8000-000000000001";
+
+  it("creates a v2 operation-correlated marker with concrete account owner", () => {
     const marker = createMetricStreamBatchCompletedEvent(
       {
         operationId: "30000000-0000-4000-8000-000000000001",
+        userId: ownerUserId,
         batchId: "heart-rate-1",
         datasetKeys: ["recovery", "training"],
       },
@@ -234,9 +237,10 @@ describe("createMetricStreamBatchCompletedEvent", () => {
     );
 
     expect(marker).toEqual({
-      version: 1,
+      version: 2,
       eventType: "metric_stream_batch_completed",
       operationId: "30000000-0000-4000-8000-000000000001",
+      userId: ownerUserId,
       batchId: "heart-rate-1",
       datasetKeys: ["recovery", "training"],
       expectedEventCount: 2,
@@ -244,11 +248,26 @@ describe("createMetricStreamBatchCompletedEvent", () => {
     });
   });
 
-  it("rejects empty dataset manifests and zero-event markers", () => {
+  it("still parses legacy ownerless v1 markers for history/eraser", () => {
+    expect(
+      metricStreamRedpandaEventSchema.parse({
+        version: 1,
+        eventType: "metric_stream_batch_completed",
+        operationId: "30000000-0000-4000-8000-000000000001",
+        batchId: "heart-rate-1",
+        datasetKeys: ["recovery"],
+        expectedEventCount: 1,
+        partitionKey: "processing:30000000-0000-4000-8000-000000000001:heart-rate-1",
+      }),
+    ).toMatchObject({ version: 1 });
+  });
+
+  it("rejects empty dataset manifests, missing owner, and zero-event markers", () => {
     expect(() =>
       createMetricStreamBatchCompletedEvent(
         {
           operationId: "30000000-0000-4000-8000-000000000001",
+          userId: ownerUserId,
           batchId: "heart-rate-1",
           datasetKeys: [],
         },
@@ -262,8 +281,58 @@ describe("createMetricStreamBatchCompletedEvent", () => {
           operationId: "30000000-0000-4000-8000-000000000001",
           batchId: "heart-rate-1",
           datasetKeys: ["recovery"],
+        } as never,
+        1,
+      ),
+    ).toThrow();
+
+    expect(() =>
+      createMetricStreamBatchCompletedEvent(
+        {
+          operationId: "30000000-0000-4000-8000-000000000001",
+          userId: ownerUserId,
+          batchId: "heart-rate-1",
+          datasetKeys: ["recovery"],
         },
         0,
+      ),
+    ).toThrow();
+  });
+
+  it("accepts nil and non-RFC GUID owners on v2 markers while keeping operationId UUID-shaped", () => {
+    const nilOwner = "00000000-0000-0000-0000-000000000000";
+    const nonRfcOwner = "00000000-0000-0000-0000-000000000001";
+    expect(
+      createMetricStreamBatchCompletedEvent(
+        {
+          operationId: "30000000-0000-4000-8000-000000000001",
+          userId: nilOwner,
+          batchId: "nil-owner",
+          datasetKeys: ["recovery"],
+        },
+        1,
+      ).userId,
+    ).toBe(nilOwner);
+    expect(
+      createMetricStreamBatchCompletedEvent(
+        {
+          operationId: "30000000-0000-4000-8000-000000000001",
+          userId: nonRfcOwner,
+          batchId: "non-rfc-owner",
+          datasetKeys: ["recovery"],
+        },
+        1,
+      ).userId,
+    ).toBe(nonRfcOwner);
+    expect(() =>
+      createMetricStreamBatchCompletedEvent(
+        {
+          operationId: "00000000-0000-0000-0000-000000000001",
+          userId: ownerUserId,
+          batchId: "bad-operation",
+          datasetKeys: ["recovery"],
+        },
+        1,
       ),
     ).toThrow();
   });

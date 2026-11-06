@@ -305,7 +305,6 @@
     "drizzle-orm": "0.45.2",
     "impit": "0.14.7",
     "ioredis": "6.0.0",
-    "kafkajs": "2.2.4",
     "pg": "8.23.1",
     "pixelmatch": "8.0.0",
     "postgres": "3.4.8",

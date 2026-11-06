@@ -922,9 +922,18 @@ jobs:
         run: |
           pip install diff-cover
           pnpm exec nyc report --temp-dir final-coverage --reporter=lcov --report-dir diff-coverage-lcov
+          # Keep diff-cover coherent with Vitest coverage.exclude for JSONL-only
+          # transitional helpers (stock --exclude; thresholds unchanged). See docs/testing.md
+          # and https://github.com/Bachmann1234/diff-cover#excludeinclude-paths
           diff-cover diff-coverage-lcov/lcov.info \
             --compare-branch=origin/$BASE_REF \
             --fail-under=80 \
+            --exclude \
+              'src/metric-stream/archive-lines.ts' \
+              'src/metric-stream/r2-replay.ts' \
+              'src/metric-stream/r2-archive.ts' \
+              'src/account-erasure/archive-erasure.ts' \
+              'src/account-erasure/archive-erasure-test-helpers.ts' \
             --markdown-report diff-coverage.md || DIFF_FAILED=1
           if [ -f diff-coverage.md ]; then
             cat diff-coverage.md >> "$GITHUB_STEP_SUMMARY"
@@ -1269,6 +1278,10 @@ jobs:
             | { grep -v '\.test\.ts$' || true; } \
             | { grep -v '\.cy\.ts$' || true; } \
             | { grep -v 'test-helpers\.ts$' || true; } \
+            | { grep -v '^src/metric-stream/archive-lines\.ts$' || true; } \
+            | { grep -v '^src/metric-stream/r2-replay\.ts$' || true; } \
+            | { grep -v '^src/metric-stream/r2-archive\.ts$' || true; } \
+            | { grep -v '^src/account-erasure/archive-erasure\.ts$' || true; } \
             | { grep -v '^packages/server/src/routers/clickhouse-integration-test-' || true; } \
             | { grep -v '\.d\.ts$' || true; } \
             | { grep -v '\.gen\.ts$' || true; } \

@@ -135,10 +135,16 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
     idempotencyKey: "worker-running",
   });
   const metricDatasetKeys = processingDatasetKeysForOutputPath(datasetKeys, "metric_stream");
+  if (!processingOperation.userId) {
+    throw new Error(
+      "Metric-stream processing publisher requires a concrete processing operation owner",
+    );
+  }
   const metricStreamPublisher = new MetricStreamProcessingPublisher(
     createLazyDefaultMetricStreamEventPublisher(),
     {
       operationId: processingOperation.id,
+      userId: processingOperation.userId,
       datasetKeys: metricDatasetKeys,
       recordPublishedBatch: (batch) => {
         const transaction = currentMetricStreamWriteDatabase();
