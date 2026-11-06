@@ -1550,3 +1550,32 @@ removed 97 re-inspected stopped containers without volume deletion, pruned
 1.28 GB of rebuildable cache and reclaimed 7.742 GB of unused images. Running
 containers and database volumes were preserved. The native lifecycle fixture
 was not repeated and production was unchanged.
+
+### November 6 stock offloader passes Backblaze B2
+
+An isolated standalone Pulsar 5.0.1 fixture tested actual B2 in `us-west-004`
+using the unmodified `aws-s3` offloader and a fresh private test bucket.
+The [published offloader artifact](https://repo.maven.apache.org/maven2/org/apache/pulsar/tiered-storage-jcloud/5.0.1/)
+matched its published SHA-1, `846c41f977721da93a29b7c8f84675efbcb8ad87`.
+The broker used the repository's pinned stock image, an explicit B2 endpoint,
+5 MiB blocks and zero local-offload deletion lag. These are isolated fixture
+settings, not proposed production settings. Apache documents the
+[stock offloader configuration and manual offload commands](https://pulsar.apache.org/docs/5.0.x/tiered-storage-aws/).
+
+The packaged client published 201 identical synthetic messages, closing ledgers
+5, 6 and 7 across a broker restart. Manual offload completed successfully at
+16:52:26 UTC. A fresh subscription consumed all 201 matching payloads; native
+cleanup then deleted the three local BookKeeper ledgers at 16:52:58 UTC.
+After another broker restart, an independent earliest-position subscription
+again consumed all 201 matching payloads at 16:53:37 UTC. Broker logs explicitly
+opened all three ledgers through `aws-s3`; subsequent metadata lookups for each
+returned `BKNoSuchLedgerExistsOnMetadataServerException`. The concatenated
+payload SHA-256 was
+`e9af82710bfe6055ce748ad26316678422e684c8266d906f338dba0af920eaf2`.
+
+Cleanup removed all six B2 object versions (16,749 bytes), the empty test bucket,
+and the fixture's container and network. No production configuration, R2 data
+or retained workspace volumes changed. This establishes small-fixture upload
+and remote read compatibility without the R2 source patch. It does not qualify
+large multipart workloads, performance, outages, the production-shaped Oxia
+topology, account erasure or a production storage migration.
