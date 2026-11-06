@@ -571,7 +571,7 @@ describe("analytics query owner high-water reservation", () => {
     const intentId = analyticsDeliveryGroupIntentId(group);
     const context = fixture();
     const through = analyticsDeliveryGroupIngestionTimes(ingestedAt, group.memberCount).at(-1);
-    expect(through).toBeTruthy();
+    if (through === undefined) throw new Error("expected ingestion high-water reservation");
     await withAnalyticsQueryOwner(
       database,
       context.client,
@@ -581,7 +581,7 @@ describe("analytics query owner high-water reservation", () => {
         await expect(owner.reserveIngestionThrough("2020-01-01T00:00:00.000000Z")).rejects.toThrow(
           /outside this owners bounded reservation/i,
         );
-        await owner.reserveIngestionThrough(through!);
+        await owner.reserveIngestionThrough(through);
         await owner.reuseIngestionReservation({
           ...group,
           ingestedAt,
