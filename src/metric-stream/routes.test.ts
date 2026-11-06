@@ -45,4 +45,16 @@ describe("metric stream routes", () => {
     }
     expect(() => assertWritableMetricStreamTopic("metric-stream-live-v2")).not.toThrow();
   });
+
+  it("matches retired produce refuse by exact name only", () => {
+    for (const topic of [
+      "metric-stream-v10",
+      "metric-stream-v1-extra",
+      "prefix-metric-stream-v1",
+      "metric-stream-live-v2",
+      "metric-stream-history-v2",
+    ]) {
+      expect(() => assertWritableMetricStreamTopic(topic)).not.toThrow();
+    }
+  });
 });

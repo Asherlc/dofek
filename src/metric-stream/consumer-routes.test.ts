@@ -50,4 +50,13 @@ describe("resolveMetricStreamConsumerRoutes", () => {
       }),
     ).toThrow(/METRIC_STREAM_HISTORY_TOPIC is required/);
   });
+
+  it("allows retired v1 topic names on the legacy consume-only drain route", () => {
+    const routes = resolveMetricStreamConsumerRoutes({
+      METRIC_STREAM_LEGACY_TOPIC: "metric-stream-v1",
+      METRIC_STREAM_LIVE_TOPIC: "metric-stream-live-v2",
+      METRIC_STREAM_HISTORY_TOPIC: "metric-stream-history-v2",
+    });
+    expect(routes.find((route) => route.id === "legacy")?.topic).toBe("metric-stream-v1");
+  });
 });

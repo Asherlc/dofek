@@ -27,10 +27,10 @@ export interface KafkaProducerMessage {
 }
 
 /**
- * Max bytes per produce request. Kept under Kafka's 1 MiB default
- * `kafka_batch_max_bytes` (with headroom for keys + protocol framing) so a
- * single `producer.send` never trips "message larger than the max message size
- * the server will accept".
+ * Domain cap under the broker's typical 1 MiB message size limit
+ * (`message.max.bytes` broker-wide / `max.message.bytes` per topic; see
+ * Apache Kafka broker configs). Headroom leaves room for keys and framing.
+ * This is an application chunking bound — not a Redpanda-specific property.
  */
 const MAX_PRODUCE_REQUEST_BYTES = 900_000;
 
@@ -58,14 +58,14 @@ export class KafkaMetricStreamEventPublisher implements MetricStreamEventPublish
   }
 
   /**
-   * Send messages in chunks that each stay under the broker's max request size.
-   * One `producer.send` is one Kafka produce request, and Kafka rejects
-   * requests over `kafka_batch_max_bytes` (1 MiB default) with "message larger
-   * than the max message size the server will accept". High-rate sources (e.g.
-   * HealthKit IMU sample bursts) and the historical backfill can exceed that, so
-   * split into ordered sub-requests. Chunks preserve input order, so callers
-   * relying on ordering (e.g. a delete before its replacements on the same
-   * partition key) stay correct.
+   * Chunk large batches under {@link MAX_PRODUCE_REQUEST_BYTES} before calling
+   * KafkaJS `producer.send`. KafkaJS may further split a send by partition; this
+   * helper does not claim one `send` equals one wire ProduceRequest. Brokers
+   * reject oversized records against `message.max.bytes` /
+   * `max.message.bytes`. High-rate sources (e.g. HealthKit IMU bursts) and
+   * historical backfill can exceed the domain cap, so split into ordered
+   * sub-batches. Chunks preserve input order for callers that rely on ordering
+   * (e.g. a delete before its replacements on the same partition key).
    */
   async #sendChunked(messages: readonly KafkaProducerMessage[]): Promise<void> {
     let chunk: KafkaProducerMessage[] = [];

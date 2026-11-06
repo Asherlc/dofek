@@ -47,6 +47,20 @@ describe("account erasure Kafka drain", () => {
     ).toThrow("KAFKA_BROKERS is required for account erasure");
   });
 
+  it("fails worker startup when KAFKA_BROKERS is blank or separators only", () => {
+    const topics = {
+      METRIC_STREAM_LEGACY_TOPIC: "metric-stream-v1",
+      METRIC_STREAM_LIVE_TOPIC: "metric-stream-live-v2",
+      METRIC_STREAM_HISTORY_TOPIC: "metric-stream-history-v2",
+    };
+    expect(() =>
+      createAccountErasureKafkaAdminFromEnv({ ...topics, KAFKA_BROKERS: "   " }),
+    ).toThrow("KAFKA_BROKERS is required for account erasure");
+    expect(() =>
+      createAccountErasureKafkaAdminFromEnv({ ...topics, KAFKA_BROKERS: " , , " }),
+    ).toThrow("KAFKA_BROKERS is required for account erasure");
+  });
+
   it.each([
     "METRIC_STREAM_LEGACY_TOPIC",
     "METRIC_STREAM_LIVE_TOPIC",
