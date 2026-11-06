@@ -13,8 +13,9 @@
 #
 # One-time Root credential grant (B2 IaC parent → GH secrets; Infisical CI write for
 # PULSAR_OFFLOAD_B2_*): official HTTP + gh stdin only — docs/b2-pulsar-offload-iac.md
-# Custom project roles blocked on current Infisical plan (Enterprise RBAC); Infisical
-# write-grant path held pending approved alternative in that doc.
+# Custom project roles blocked (plan.rbac). Identity additional-privilege POST is not
+# plan.rbac-gated but requires project.isLegacyAdditionalPrivilegesEnabled; Infisical
+# write-grant held with no approved pivot.
 
 locals {
   # Same Infisical project as .infisical.json workspaceId (non-secret project id).

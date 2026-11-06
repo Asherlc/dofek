@@ -36,83 +36,61 @@ Root create-role call returned **HTTP 400**:
 > Failed to create custom role due to plan RBAC restriction. Upgrade to Infisical
 > Enterprise plan to create custom roles.
 
-This is an **account plan** restriction, not a payload/schema failure. Official docs:
-[custom roles are Enterprise](https://infisical.com/docs/documentation/platform/access-controls/role-based-access-controls);
-built-in roles (`admin` / `member` / `viewer` / `no-access`) remain on all plans.
+Causal match in Infisical source (`licenseService.getPlan` → `!plan?.rbac`): same message
+string. Official docs: [custom roles are Enterprise / Advanced-tier RBAC](https://infisical.com/docs/documentation/platform/access-controls/role-based-access-controls);
+pricing table lists **custom roles / multi-role / temporary access** as Advanced+, and
+**Access controls (RBAC/ABAC)** as Pro+ ([pricing](https://infisical.com/pricing)).
 
 **STOP:** do not retry role create payloads, do not assign custom role slugs, do not
-upgrade to Enterprise for this, do not broaden `CI` to `member`/`admin`.
-
-B2 parent key + GitHub Actions secret piping (sections below) are unaffected. Infisical
-secret *write* grant for `CI` is **held** until an approved alternative.
+upgrade plans for this, do not broaden `CI` to `member`/`admin`. No pivot approved.
 
 Constants (unchanged): project `54712f56-98a9-4531-9e97-0b588d2e5a88`, CI identity
 `46b66f72-0c77-4cfe-be1b-a43395e77be7`, key name `dofek-terraform-b2-iac`.
 
-## Read-only: stock scoped options on current plan (no writes)
+## Verified (read-only): `POST /api/v2/identity-project-additional-privilege`
 
-Investigated against Infisical platform docs / OpenAPI. No Cursor Infisical writes.
+Sources inspected (no POST / no probe / no write from Cursor):
 
-| Mechanism | Plan / docs | Fits “keep `viewer`, no broad grant, no paid upgrade”? |
-| --- | --- | --- |
-| Custom project role + attach | Enterprise (`plan.rbac`) — **blocked** (HTTP 400 above) | No |
-| Built-in `member` / `admin` on `CI` | All plans | No — project-wide secret write |
-| Built-in `no-access` + scoped grant | All plans | No — would change existing `viewer` membership |
-| Folder-level access (`Edit` on a folder) | [Paid Pro feature](https://infisical.com/docs/documentation/platform/access-controls/folder-rbac); not recursive; grant is folder-role not secret-name glob | No without paid upgrade; `/` folder Edit would also cover every root secret, not only `PULSAR_OFFLOAD_B2_*` |
-| Identity **additional privileges** (machine-identity API) | Documented stock alternative to creating a role ([additional privileges](https://infisical.com/docs/documentation/platform/access-controls/additional-privileges)); create/list OpenAPI under `/api/v2/identity-project-additional-privilege` ([create](https://infisical.com/docs/api-reference/endpoints/identity-specific-privilege/v2/create), [list](https://infisical.com/docs/api-reference/endpoints/identity-specific-privilege/v2/list)). Not gated by the custom-role `plan.rbac` check that produced the HTTP 400 | **Yes candidate** — layers scoped `secrets` permissions on the existing identity without a custom role and without changing the `viewer` role assignment |
+| Question | Evidence |
+| --- | --- |
+| Same `plan.rbac` gate as custom roles? | **No.** Create path is `backend/src/ee/routes/v2/identity-project-additional-privilege-router.ts` → `additionalPrivilege.createAdditionalPrivilege` → project factory guard. Neither the router nor `additional-privilege-service.ts` nor `project-additional-privilege-factory.ts` calls `licenseService.getPlan` / checks `plan.rbac`. The custom-role HTTP 400 string exists only on role create/update paths. |
+| Hard availability gate? | **Yes — project flag, not plan.rbac.** On create, if `!project.isLegacyAdditionalPrivilegesEnabled`, Infisical throws BadRequest: *Additional privileges are not available for project '{name}'. Use project roles or folder access controls instead.* (`project-additional-privilege-factory.ts` `onCreateAdditionalPrivilegesGuard`). |
+| Default / migration for that flag? | Schema default **`false`** (`projects.ts`). Migration `20260820120000_add-legacy-additional-privileges-enabled-to-project.ts` adds the column default false, then `UPDATE … SET "isLegacyAdditionalPrivilegesEnabled" = true` for **then-existing** rows only. Projects created afterward stay false unless changed. |
+| Permission schema? | Body `permissions` = `ProjectPermissionV2Schema.array()` (same CASL v2 schema as project roles), refined by `checkForInvalidPermissionCombination`. Supports `secrets` actions including `describeSecret` / `readValue` / `create` / `edit` and condition keys `environment` / `secretPath` / `secretName` with `$glob` ([create OpenAPI](https://infisical.com/docs/api-reference/endpoints/identity-specific-privilege/v2/create); [project permissions](https://infisical.com/docs/internals/permissions/project-permissions)). |
+| Auth applicability? | Route `onRequest: verifyAuth([AuthMode.JWT, AuthMode.IDENTITY_ACCESS_TOKEN])`. Handler forces `actorType: IDENTITY` and `actorId: body.identityId` — **machine-identity target only** on this v2 API (user privileges are UI-only per [additional privileges docs](https://infisical.com/docs/documentation/platform/access-controls/additional-privileges)). Grantor needs project permission to `Edit` on subject `identity` (plus privilege-boundary checks). |
+| Platform docs vs code? | Docs still describe additional privileges as the “without creating a new role” path. Code treats them as **legacy** and redirects disabled projects to **project roles** (blocked here) or **folder access** ([folder RBAC is Pro paid](https://infisical.com/docs/documentation/platform/access-controls/folder-rbac); folder roles are not secret-name glob and are not recursive). |
 
-Read-only preflight Root can run anytime (does not change state):
+### Feasibility on current plan (no pivot)
+
+Until Root confirms with a **read-only** project GET that
+`isLegacyAdditionalPrivilegesEnabled === true` for
+`54712f56-98a9-4531-9e97-0b588d2e5a88`, additional privileges are **not** a verified viable
+automated path. Flag is exposed on `SanitizedProjectSchema` (includes
+`isLegacyAdditionalPrivilegesEnabled`) via stock get-project responses.
+
+If that flag is **false**, Infisical’s own create error points only at custom roles
+(already plan-blocked) or folder access (paid Pro, no `PULSAR_OFFLOAD_B2_*` name glob on
+`/`). In that case there is **no** verified Infisical stock mechanism that preserves
+prefix scope on the current plan without a paid upgrade or a broad built-in role.
+
+**No pivot proposed for approval.** Do not POST additional privileges. Do not implement
+Root manual secret upsert. Do not change `viewer` or existing secrets.
+
+Optional Root read-only check (evidence only; not a grant):
 
 ```bash
-# Existing membership roles (expect viewer; leave unchanged)
 curl -fsS -H "Authorization: Bearer ${INFISICAL_TOKEN}" \
-  "https://app.infisical.com/api/v1/projects/54712f56-98a9-4531-9e97-0b588d2e5a88/memberships/identities/46b66f72-0c77-4cfe-be1b-a43395e77be7" \
-  | jq '.identityMembership.roles[] | (.customRoleSlug // .role)'
-
-# Any additional privileges already on CI
-curl -fsS -H "Authorization: Bearer ${INFISICAL_TOKEN}" \
-  "https://app.infisical.com/api/v2/identity-project-additional-privilege?identityId=46b66f72-0c77-4cfe-be1b-a43395e77be7&projectId=54712f56-98a9-4531-9e97-0b588d2e5a88" \
-  | jq '.privileges'
+  "https://app.infisical.com/api/v1/projects/54712f56-98a9-4531-9e97-0b588d2e5a88" \
+  | jq '{id: .project.id, isLegacyAdditionalPrivilegesEnabled: .project.isLegacyAdditionalPrivilegesEnabled}'
 ```
 
-No existing stock custom role or folder grant path satisfies scoped write on this plan
-without either Enterprise, Pro folder RBAC, or a broad built-in role.
-
-## Proposed alternative (awaiting user approval — not implemented)
-
-**Least machinery:** one Root `POST` to stock
-[`/api/v2/identity-project-additional-privilege`](https://infisical.com/docs/api-reference/endpoints/identity-specific-privilege/v2/create)
-granting `CI` the same secret actions previously intended for the custom role, while
-**keeping** project role `viewer` and leaving all existing secrets untouched:
-
-```json
-{
-  "identityId": "46b66f72-0c77-4cfe-be1b-a43395e77be7",
-  "projectId": "54712f56-98a9-4531-9e97-0b588d2e5a88",
-  "slug": "gha-pulsar-offload-b2-secrets",
-  "permissions": [
-    {
-      "subject": "secrets",
-      "action": ["describeSecret", "readValue", "create", "edit"],
-      "conditions": {
-        "environment": "prod",
-        "secretPath": "/",
-        "secretName": { "$glob": "PULSAR_OFFLOAD_B2_*" }
-      }
-    }
-  ]
-}
-```
-
-If that POST also returns a plan restriction, stop again and fall back to the next-least
-machinery option (still needs explicit approval): Root-held Infisical secret upsert after
-B2 Terraform apply (CI stays `viewer`; no Infisical write identity grant). Do **not**
-implement either path until approved.
+(Exact response envelope field path may be `.project` per get-by-id OpenAPI; adjust jq if
+the live payload nests differently — still read-only.)
 
 ## One-time Root steps still valid (B2 + GH only)
 
 No dashboard. No secret values in chat. No Cursor Infisical/GitHub secret writes.
-Do not run Terraform apply for Infisical secrets until the grant path is approved.
+Do not run Terraform apply for Infisical secrets until a feasible approved grant path exists.
 
 Root auth prerequisites (private): B2 management key able to create keys;
 `gh` authenticated to `Asherlc/dofek`.
@@ -165,7 +143,7 @@ jq -r '.applicationKey' <<<"${CREATE_KEY_JSON}" | gh secret set B2_APPLICATION_K
 unset CREATE_KEY_JSON
 ```
 
-## After B2/GH (1–2) and an approved Infisical grant
+## After B2/GH (1–2) and a future approved Infisical grant
 
 ACK → `deploy-terraform.yml` apply creates bucket, broker key, and Infisical secret
 values automatically. Lifecycle track idle until ≥24h. No Codex key transfer into
@@ -173,9 +151,6 @@ CI/Cursor/prompts.
 
 ## Historical (do not run) — custom role packet
 
-Superseded by the plan RBAC blocker. Kept only so reviewers see what was attempted:
-`POST /api/v1/projects/{projectId}/roles` with slug `gha-pulsar-offload-b2-secrets`, then
-`PATCH …/memberships/identities/{identityId}` preserving all roles. Official membership
-routes remain
+Superseded by the plan RBAC blocker. Official membership routes remain
 [`GET`/`PATCH /api/v1/projects/{projectId}/memberships/identities/{identityId}`](https://infisical.com/docs/api-reference/endpoints/project-identities-membership/get-by-id)
-(not legacy `…/identity-memberships/{id}`). Do not retry.
+(not legacy `…/identity-memberships/{id}`). Do not retry role create.
