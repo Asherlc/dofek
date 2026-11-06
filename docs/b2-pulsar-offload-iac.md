@@ -20,57 +20,102 @@ Broker stack hunks (after secrets exist): [b2-pulsar-offload-broker-stack-hunks.
 Application/resource setup is Terraform. The only thing Terraform cannot mint from
 nothing is the **first** B2 credential used to talk to the B2 provider, plus a
 **one-time** Infisical grant so machine identity `CI` can write `PULSAR_OFFLOAD_B2_*`
-(today `CI` is stock `viewer` only).
+(today `CI` is stock `viewer` only — leave that membership and all existing secrets
+unchanged until an approved Infisical path exists).
 
-Those are Root-held authenticated calls with the already-private Codex-local
-management key — official HTTP + `gh secret set` stdin. No maintained or ephemeral
-custom bootstrap tool.
+Those are Root-held authenticated calls — official HTTP + `gh secret set` stdin. No
+maintained or ephemeral custom bootstrap tool.
 
 `infisical_project_role` / `infisical_project_identity` are **not** in the CI Terraform
 apply path: CI cannot safely manage its own privilege without broader admin.
 
-## Schema / route proof (read before any write)
+## Blocker (recorded) — custom project roles unavailable on current plan
 
-Do **not** call legacy `…/identity-memberships/{id}`. Current Infisical OpenAPI for
-US/EU cloud is:
+Root create-role call returned **HTTP 400**:
 
-| Op | Official path | Source |
+> Failed to create custom role due to plan RBAC restriction. Upgrade to Infisical
+> Enterprise plan to create custom roles.
+
+This is an **account plan** restriction, not a payload/schema failure. Official docs:
+[custom roles are Enterprise](https://infisical.com/docs/documentation/platform/access-controls/role-based-access-controls);
+built-in roles (`admin` / `member` / `viewer` / `no-access`) remain on all plans.
+
+**STOP:** do not retry role create payloads, do not assign custom role slugs, do not
+upgrade to Enterprise for this, do not broaden `CI` to `member`/`admin`.
+
+B2 parent key + GitHub Actions secret piping (sections below) are unaffected. Infisical
+secret *write* grant for `CI` is **held** until an approved alternative.
+
+Constants (unchanged): project `54712f56-98a9-4531-9e97-0b588d2e5a88`, CI identity
+`46b66f72-0c77-4cfe-be1b-a43395e77be7`, key name `dofek-terraform-b2-iac`.
+
+## Read-only: stock scoped options on current plan (no writes)
+
+Investigated against Infisical platform docs / OpenAPI. No Cursor Infisical writes.
+
+| Mechanism | Plan / docs | Fits “keep `viewer`, no broad grant, no paid upgrade”? |
 | --- | --- | --- |
-| GET membership | `/api/v1/projects/{projectId}/memberships/identities/{identityId}` | [get by identity id](https://infisical.com/docs/api-reference/endpoints/project-identities-membership/get-by-id) |
-| PATCH membership | `/api/v1/projects/{projectId}/memberships/identities/{identityId}` | [update identity membership](https://infisical.com/docs/api-reference/endpoints/project-identities-membership/update-identity-membership) |
-| LIST roles | `/api/v1/projects/{projectId}/roles` | [list project roles](https://infisical.com/docs/api-reference/endpoints/project-roles/list) |
-| GET role by slug | `/api/v1/projects/{projectId}/roles/slug/{roleSlug}` | [get by slug](https://infisical.com/docs/api-reference/endpoints/project-roles/get-by-slug) |
-| POST role | `/api/v1/projects/{projectId}/roles` | [create project role](https://infisical.com/docs/api-reference/endpoints/project-roles/create) |
+| Custom project role + attach | Enterprise (`plan.rbac`) — **blocked** (HTTP 400 above) | No |
+| Built-in `member` / `admin` on `CI` | All plans | No — project-wide secret write |
+| Built-in `no-access` + scoped grant | All plans | No — would change existing `viewer` membership |
+| Folder-level access (`Edit` on a folder) | [Paid Pro feature](https://infisical.com/docs/documentation/platform/access-controls/folder-rbac); not recursive; grant is folder-role not secret-name glob | No without paid upgrade; `/` folder Edit would also cover every root secret, not only `PULSAR_OFFLOAD_B2_*` |
+| Identity **additional privileges** (machine-identity API) | Documented stock alternative to creating a role ([additional privileges](https://infisical.com/docs/documentation/platform/access-controls/additional-privileges)); create/list OpenAPI under `/api/v2/identity-project-additional-privilege` ([create](https://infisical.com/docs/api-reference/endpoints/identity-specific-privilege/v2/create), [list](https://infisical.com/docs/api-reference/endpoints/identity-specific-privilege/v2/list)). Not gated by the custom-role `plan.rbac` check that produced the HTTP 400 | **Yes candidate** — layers scoped `secrets` permissions on the existing identity without a custom role and without changing the `viewer` role assignment |
 
-Host for this project: `https://app.infisical.com` (same host CI uses for OIDC login).
-OpenAPI servers list `https://us.infisical.com` / `https://eu.infisical.com`; paths are
-identical.
+Read-only preflight Root can run anytime (does not change state):
 
-`secrets` actions `describeSecret`, `readValue`, `create`, `edit` are first-class enums
-in the create-role OpenAPI and in Infisical source
-[`ProjectPermissionSecretActions`](https://github.com/Infisical/infisical/blob/main/backend/src/ee/services/permission/project-permission.ts)
-(`DescribeSecret`, `ReadValue`, `Create`, `Edit`). `readValue` requires `describeSecret`
-([project permissions](https://infisical.com/docs/internals/permissions/project-permissions)).
+```bash
+# Existing membership roles (expect viewer; leave unchanged)
+curl -fsS -H "Authorization: Bearer ${INFISICAL_TOKEN}" \
+  "https://app.infisical.com/api/v1/projects/54712f56-98a9-4531-9e97-0b588d2e5a88/memberships/identities/46b66f72-0c77-4cfe-be1b-a43395e77be7" \
+  | jq '.identityMembership.roles[] | (.customRoleSlug // .role)'
 
-Condition keys `environment` / `secretPath` / `secretName` accept either a plain string
-(exact match) **or** an operator object. `$glob` is a documented operator
-([permissions overview](https://infisical.com/docs/internals/permissions/overview)) and is
-in create-role OpenAPI + source `SecretConditionV2Schema.secretName` (`$EQ` / `$NEQ` /
-`$IN` / `$GLOB`). Use plain strings for exact `prod` and `/`; use `$glob` only for the
-`PULSAR_OFFLOAD_B2_*` name prefix.
+# Any additional privileges already on CI
+curl -fsS -H "Authorization: Bearer ${INFISICAL_TOKEN}" \
+  "https://app.infisical.com/api/v2/identity-project-additional-privilege?identityId=46b66f72-0c77-4cfe-be1b-a43395e77be7&projectId=54712f56-98a9-4531-9e97-0b588d2e5a88" \
+  | jq '.privileges'
+```
 
-## One-time Root steps (stock primitives only — review before run)
+No existing stock custom role or folder grant path satisfies scoped write on this plan
+without either Enterprise, Pro folder RBAC, or a broad built-in role.
 
-No dashboard. No secret values in chat. Secrets stay in Root private process env / stdin
-pipes. Do not run until Root ACK of scopes below. No Terraform apply in this section.
-No Cursor Infisical/GitHub secret writes.
+## Proposed alternative (awaiting user approval — not implemented)
 
-Constants: project `54712f56-98a9-4531-9e97-0b588d2e5a88`, CI identity
-`46b66f72-0c77-4cfe-be1b-a43395e77be7`, key name `dofek-terraform-b2-iac`, role slug
-`gha-pulsar-offload-b2-secrets`.
+**Least machinery:** one Root `POST` to stock
+[`/api/v2/identity-project-additional-privilege`](https://infisical.com/docs/api-reference/endpoints/identity-specific-privilege/v2/create)
+granting `CI` the same secret actions previously intended for the custom role, while
+**keeping** project role `viewer` and leaving all existing secrets untouched:
 
-Root auth prerequisites (private): B2 management key able to create keys; Infisical
-Bearer with project role admin; `gh` authenticated to `Asherlc/dofek`.
+```json
+{
+  "identityId": "46b66f72-0c77-4cfe-be1b-a43395e77be7",
+  "projectId": "54712f56-98a9-4531-9e97-0b588d2e5a88",
+  "slug": "gha-pulsar-offload-b2-secrets",
+  "permissions": [
+    {
+      "subject": "secrets",
+      "action": ["describeSecret", "readValue", "create", "edit"],
+      "conditions": {
+        "environment": "prod",
+        "secretPath": "/",
+        "secretName": { "$glob": "PULSAR_OFFLOAD_B2_*" }
+      }
+    }
+  ]
+}
+```
+
+If that POST also returns a plan restriction, stop again and fall back to the next-least
+machinery option (still needs explicit approval): Root-held Infisical secret upsert after
+B2 Terraform apply (CI stays `viewer`; no Infisical write identity grant). Do **not**
+implement either path until approved.
+
+## One-time Root steps still valid (B2 + GH only)
+
+No dashboard. No secret values in chat. No Cursor Infisical/GitHub secret writes.
+Do not run Terraform apply for Infisical secrets until the grant path is approved.
+
+Root auth prerequisites (private): B2 management key able to create keys;
+`gh` authenticated to `Asherlc/dofek`.
 
 ### 1. B2 — create dedicated IaC parent key
 
@@ -108,24 +153,6 @@ CREATE_KEY_JSON=$(curl -fsS -X POST "${API_URL}/b2api/v4/b2_create_key" \
   }')
 ```
 
-Equivalent body:
-
-```json
-{
-  "accountId": "{accountId}",
-  "keyName": "dofek-terraform-b2-iac",
-  "capabilities": [
-    "listBuckets",
-    "readBuckets",
-    "writeBuckets",
-    "deleteBuckets",
-    "listKeys",
-    "writeKeys",
-    "deleteKeys"
-  ]
-}
-```
-
 ### 2. GitHub Actions secrets (API response → `gh` stdin — no human paste)
 
 `gh secret set` reads the secret value from stdin when `--body` is omitted
@@ -138,126 +165,17 @@ jq -r '.applicationKey' <<<"${CREATE_KEY_JSON}" | gh secret set B2_APPLICATION_K
 unset CREATE_KEY_JSON
 ```
 
-### 3. Infisical — read-only preflight (must succeed before any POST/PATCH)
-
-Set `INFISICAL_TOKEN` privately. Base:
-
-`INFISICAL_API=https://app.infisical.com/api/v1/projects/54712f56-98a9-4531-9e97-0b588d2e5a88`
-
-**3a. Membership metadata** ([get by identity id](https://infisical.com/docs/api-reference/endpoints/project-identities-membership/get-by-id)):
-
-```bash
-curl -fsS -H "Authorization: Bearer ${INFISICAL_TOKEN}" \
-  "${INFISICAL_API}/memberships/identities/46b66f72-0c77-4cfe-be1b-a43395e77be7" \
-  | tee /tmp/ci-membership.json >/dev/null
-```
-
-Collect every current role slug (preserve-all later):
-
-```bash
-jq -r '.identityMembership.roles[] | (.customRoleSlug // .role)' /tmp/ci-membership.json
-```
-
-Expect today’s membership to include `viewer`. If GET 404s on this path, **stop** — do not
-retry a legacy `identity-memberships` URL.
-
-**3b. Existing role permission shapes** ([list roles](https://infisical.com/docs/api-reference/endpoints/project-roles/list)):
-
-```bash
-curl -fsS -H "Authorization: Bearer ${INFISICAL_TOKEN}" \
-  "${INFISICAL_API}/roles" \
-  | tee /tmp/project-roles.json >/dev/null
-jq '.roles[] | {slug, permissions}' /tmp/project-roles.json
-```
-
-Confirm live `permissions[]` objects use `subject` / `action` / optional `conditions`
-matching the create OpenAPI before posting a new role.
-
-**3c. Target slug** ([get by slug](https://infisical.com/docs/api-reference/endpoints/project-roles/get-by-slug)):
-
-```bash
-curl -sS -o /tmp/gha-role.json -w '%{http_code}' -H "Authorization: Bearer ${INFISICAL_TOKEN}" \
-  "${INFISICAL_API}/roles/slug/gha-pulsar-offload-b2-secrets"
-```
-
-- `200` → skip step 4 (role exists); still run step 5 if membership lacks the slug.
-- `404` → proceed to step 4.
-- anything else → **stop**.
-
-### 4. Infisical — create narrow role (once; only after 3a–3c)
-
-[Create project role](https://infisical.com/docs/api-reference/endpoints/project-roles/create)
-
-```bash
-curl -fsS -X POST -H "Authorization: Bearer ${INFISICAL_TOKEN}" \
-  -H "Content-Type: application/json" \
-  "${INFISICAL_API}/roles" \
-  -d @- <<'EOF'
-{
-  "slug": "gha-pulsar-offload-b2-secrets",
-  "name": "GHA Pulsar offload B2 secrets",
-  "permissions": [
-    {
-      "subject": "secrets",
-      "action": ["describeSecret", "readValue", "create", "edit"],
-      "conditions": {
-        "environment": "prod",
-        "secretPath": "/",
-        "secretName": { "$glob": "PULSAR_OFFLOAD_B2_*" }
-      }
-    }
-  ]
-}
-EOF
-```
-
-Exact payload above is the final create body. Plain-string `environment` / `secretPath`
-are the documented exact-match form; `$glob` on `secretName` is the supported operator
-form for the prefix.
-
-### 5. Infisical — attach role; preserve every existing membership role
-
-Build PATCH body from the GET in 3a (every existing slug + new slug if missing):
-
-```bash
-jq -n --slurpfile membership /tmp/ci-membership.json '
-  ($membership[0].identityMembership.roles
-    | map({role: (.customRoleSlug // .role)}))
-  as $existing
-  | ($existing + [{role: "gha-pulsar-offload-b2-secrets"}]
-     | unique_by(.role))
-  | {roles: .}
-' | tee /tmp/ci-membership-patch.json >/dev/null
-```
-
-Example when GET returned only `viewer`:
-
-```json
-{
-  "roles": [
-    { "role": "viewer" },
-    { "role": "gha-pulsar-offload-b2-secrets" }
-  ]
-}
-```
-
-If GET returned more roles, the `jq` output must include every one — never replace with
-only viewer+new.
-
-[Update identity membership](https://infisical.com/docs/api-reference/endpoints/project-identities-membership/update-identity-membership):
-
-```bash
-curl -fsS -X PATCH -H "Authorization: Bearer ${INFISICAL_TOKEN}" \
-  -H "Content-Type: application/json" \
-  "${INFISICAL_API}/memberships/identities/46b66f72-0c77-4cfe-be1b-a43395e77be7" \
-  -d @/tmp/ci-membership-patch.json
-```
-
-Re-GET the same membership URL; confirm `viewer` (and any prior roles) remain alongside
-`gha-pulsar-offload-b2-secrets`.
-
-## After Root completes 1–5 (held)
+## After B2/GH (1–2) and an approved Infisical grant
 
 ACK → `deploy-terraform.yml` apply creates bucket, broker key, and Infisical secret
 values automatically. Lifecycle track idle until ≥24h. No Codex key transfer into
 CI/Cursor/prompts.
+
+## Historical (do not run) — custom role packet
+
+Superseded by the plan RBAC blocker. Kept only so reviewers see what was attempted:
+`POST /api/v1/projects/{projectId}/roles` with slug `gha-pulsar-offload-b2-secrets`, then
+`PATCH …/memberships/identities/{identityId}` preserving all roles. Official membership
+routes remain
+[`GET`/`PATCH /api/v1/projects/{projectId}/memberships/identities/{identityId}`](https://infisical.com/docs/api-reference/endpoints/project-identities-membership/get-by-id)
+(not legacy `…/identity-memberships/{id}`). Do not retry.

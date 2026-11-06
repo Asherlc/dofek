@@ -13,7 +13,8 @@
 #
 # One-time Root credential grant (B2 IaC parent → GH secrets; Infisical CI write for
 # PULSAR_OFFLOAD_B2_*): official HTTP + gh stdin only — docs/b2-pulsar-offload-iac.md
-# (membership GET/PATCH: /api/v1/projects/{id}/memberships/identities/{identityId}).
+# Custom project roles blocked on current Infisical plan (Enterprise RBAC); Infisical
+# write-grant path held pending approved alternative in that doc.
 
 locals {
   # Same Infisical project as .infisical.json workspaceId (non-secret project id).
