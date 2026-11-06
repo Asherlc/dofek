@@ -12,22 +12,87 @@ packaging, and distinguishes those artifacts from a normal Docker source build.
 The patch is maintained locally and is not a claim of stock R2 compatibility.
 
 The standalone [source-build workflow](../.github/workflows/pulsar-source-build.yml)
-now defines the repeatable Docker source-build regression: ARM, a verified 4 GiB
-memory and memory-plus-swap limit on the
+is the registered cold ARM Docker source-build and GHCR publish path: verified
+4 GiB memory and memory-plus-swap on the
 [container builder](https://docs.docker.com/build/builders/drivers/docker-container/),
-no imported host NAR and no cached build layers. The
+`--no-cache`, no imported host NAR. The
 [Dockerfile](../deploy/pulsar/Dockerfile) runs the affected upstream test class,
 both style checks and NAR packaging with retries disabled, then copies that NAR
-into the broker image. It runs independently of the existing Test Gate and does
-not run services, publish images or use R2 credentials. Commit-specific success
-must be established by its [workflow runs](https://github.com/Asherlc/dofek/actions/workflows/pulsar-source-build.yml);
-the [ARM source-build job](https://github.com/Asherlc/dofek/actions/runs/41993332932/job/127130525556)
-passed at commit `7f98465d7330c554d5f71364cab29aff325e0f0c`. That cold build
-compiled and packaged the NAR, ran both style checks, then executed the selected
-upstream tests in a separate RUN step under the same 4 GiB limit. The
+into the broker image. PR path filters cold-build with `--load` only;
+`workflow_dispatch` and main `workflow_call` push
+`ghcr.io/<repo-lower>-pulsar-qualification:5.0.1-r2` plus a commit-specific
+`sha-<GITHUB_SHA>` tag and write the OCI digest from buildx metadata (digest pin
+is the immutable reference; the SHA-named tag is not). It does not run Pulsar
+services or contact R2. Commit-specific success must be established by
+its [workflow runs](https://github.com/Asherlc/dofek/actions/workflows/pulsar-source-build.yml).
+The earlier [ARM source-build job](https://github.com/Asherlc/dofek/actions/runs/41993332932/job/127130525556)
+passed at commit `7f98465d7330c554d5f71364cab29aff325e0f0c` (compile/package/style/tests
+under the same 4 GiB limit; no publish). The
 [tested Dockerfile](https://github.com/Asherlc/dofek/blob/7f98465d7330c554d5f71364cab29aff325e0f0c/deploy/pulsar/Dockerfile)
 ends compiler/style process lifetimes before starting the test JVM; it changes
 no heap, worker, retry or test-selection settings.
+
+## November 6 published image pin and initial real-R2 functional lab
+
+**Publish (remote GHA only).** [Run 42252694136](https://github.com/Asherlc/dofek/actions/runs/42252694136)
+(`workflow_dispatch` on `pulsar-foundation`, commit
+[`eab7e32dfa9509e1e1e893560a10dbe288a09f80`](https://github.com/Asherlc/dofek/commit/eab7e32dfa9509e1e1e893560a10dbe288a09f80))
+completed SUCCESS in about 4m57s. Immutable pin:
+
+`ghcr.io/asherlc/dofek-pulsar-qualification:5.0.1-r2@sha256:d99e2776fcdac9268a0f2f78d014d879e86a0a547ab7829f9e3d2d70fa59b822`
+
+Independent `docker buildx imagetools inspect` confirmed OCI index digest
+`d99e2776…` with linux/arm64 child
+`sha256:6515ca137b78cb47bf62f3e9c756e3eb6a5c01f7ea830e47439860cd7a0e59db`
+(plus attestation manifest). Image source:
+[deploy/pulsar/Dockerfile](../deploy/pulsar/Dockerfile) +
+[repeatable-offload-payload.patch](../deploy/pulsar/repeatable-offload-payload.patch).
+No stack digest pin and no production deploy.
+
+**Initial functional R2 lab** (`--project-suffix r2-offload-gap-1`, temporary
+`/tmp` operator overlay only; no maintained Compose/CLI). Same published digest;
+private bucket `dofek-pulsar-qualification`; region `auto`; existing Infisical
+`R2_ENDPOINT` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` only (no new
+`PULSAR_OFFLOAD_*`). Broker command redirected stock
+`apply-config-from-env.py` stdout to `/dev/null` (stderr/exit kept). Separate
+lab-only tool container on the owned network (not CLI JVM inside broker/bookie
+cgroup). Broker 768 MiB / 1 CPU / `-Xmx256m`+192 MiB direct; bookie 768 MiB.
+Stock Pulsar CLI:
+
+1. `topics create-subscription -m earliest` before seed
+2. `pulsar-client produce --client-api V5 -f … -n 1000` (8192 ASCII bytes, no LF)
+3. `topics unload` then `topics offload -s 0` → **Offload was a success**
+4. Broker restart; new Earliest subscription; `consume --client-api V5 -p Earliest -n 1000`
+5. Unsubscribe both subs; `topics delete -f`; poll HEAD of captured keys until absent
+
+**Sanitized outcomes.** Data-bearing sealed ledger **5**; offload UUID
+`f5d9c5df-7203-46e6-9d4d-7b4add0c8fd0`; keys
+`{uuid}-ledger-5` and `{uuid}-ledger-5-index` (log-attributed, then HEAD).
+`stats-internal`: ledger 5 `offloaded=true`, 1000 entries, size 8239872. BookKeeper
+HTTP `/api/v1/ledger/list` lacked id `5` before remote consume (ids 1–4,7 only).
+Observed effective `jclouds.mpu.parts.size=5242880` from broker offload
+`getOverrides`. Consume: 1000 `----- got message -----` boundaries and 1000
+`content:` lines; LINE-CANONICAL SHA-256 of `(payload+LF)×1000`
+(`8193000` bytes) matched
+`87d5759ccd7e07b0267621aefd81b8606832c5ab0bbb12348d351d7d54d7b63c`. After topic
+delete, first HEAD poll reported both keys absent (`NATIVE_GC_KEYS_ABSENT`;
+deleteOffloaded path — not timed retention, not manual R2 delete). Cgroup
+`memory.peak` / `oom`: broker 707104768 / 0; bookie 716894208 / 0; tool
+302538752 / 0. Owned project `down --volumes --remove-orphans`; ephemeral
+`/tmp/r2-offload-gap-1.*` cleared; preserved container `580f1c69f82f` untouched.
+
+**Scope limits.** Functional upload, forced remote read after BK metadata
+disappearance + broker restart, and stock topic-delete object GC only. Does
+**not** qualify N=10k, storage-footprint `du`/hardBytes, outage/retry soak,
+sustained heap, oversized-entry later-block behavior, Swarm addressing, or
+production cutover. Stock CLI references (Apache Pulsar
+[v5.0.1](https://github.com/apache/pulsar/tree/v5.0.1)):
+[CmdProduce.java](https://github.com/apache/pulsar/blob/v5.0.1/pulsar-client-tools/src/main/java/org/apache/pulsar/client/cli/CmdProduce.java),
+[ConsumeV5.java](https://github.com/apache/pulsar/blob/v5.0.1/pulsar-client-tools/src/main/java/org/apache/pulsar/client/cli/ConsumeV5.java)
+(with [V5MessageSupport.java](https://github.com/apache/pulsar/blob/v5.0.1/pulsar-client-tools/src/main/java/org/apache/pulsar/client/cli/V5MessageSupport.java)
+output grammar), and
+[CmdTopics.java](https://github.com/apache/pulsar/blob/v5.0.1/pulsar-client-tools/src/main/java/org/apache/pulsar/admin/cli/CmdTopics.java)
+(create-subscription / unload / offload / delete).
 
 The historical, pre-PR [native evacuation ARM job](https://github.com/Asherlc/dofek/actions/runs/41871869660/job/126721886208)
 passed at commit 10735959f in 135.687 seconds, within its 300-second bound and
