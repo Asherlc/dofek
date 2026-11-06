@@ -1,16 +1,25 @@
 # R2→B2 erasure portability design (**DRAFT**)
 
-> **DRAFT — unaccepted.** Alternatives **A** (version-lineage + lease) and **C** (Connect quiesce + listing settle) are **REJECTED / unproven** and must not be implemented. No pointer-table, dual-backend, or audit-fence design is approved. All-B2 under current strong guarantees is **blocked** pending a user scope pivot from Root. No product/coordination code in this commit.
+> **DRAFT.** Alternatives **A** (version-lineage + lease) and **C** (Connect quiesce + listing settle) remain **REJECTED / unproven** — do not implement. No pointer-table, dual-backend, custom CAS, or audit-fence framework. No product/coordination code here.
 
-**Branch:** `r2-to-b2`  
-**Region:** `us-west-004` · migrate all **13** live R2 buckets · min custom code  
-**Status:** draft only — **no product / coordination implementation**  
-**Probe evidence (factual, separate):** [`docs/r2-to-b2-b2-erasure-probe.md`](r2-to-b2-b2-erasure-probe.md) · [`docs/evidence/b2-erasure-probe-20261106t180758z/`](evidence/b2-erasure-probe-20261106t180758z/)  
+**Branch:** `r2-to-b2` (PR [#3232](https://github.com/Asherlc/dofek/pull/3232))  
+**Region:** `us-west-004`  
+**Status:** draft docs only  
+**Probe evidence:** [`docs/r2-to-b2-b2-erasure-probe.md`](r2-to-b2-b2-erasure-probe.md) · [`docs/evidence/b2-erasure-probe-20261106t180758z/`](evidence/b2-erasure-probe-20261106t180758z/)  
 **Frozen probe SHA256:** `5fd159e002ecd97d97a6c23b2358fbcb1eed5b36ffe68f5824b675eef521ec44`
 
-User direction: **keep toward B2**; no silent keep-R2 or dual-backend; **no weakened guarantees**; no new cloud probes; no DIY CAS service/framework.
+### User steering (archive exception — recorded direction)
 
-Root review: **Alt A rejected** as a safe CAS replacement; **Alt C marked unproven / not a valid strategy**; do not recommend settle-loop or checkpoint-pin protocols; ledger Alt B is a **different threat contract** (no equivalence claim); do not treat logical read fences / pointer+audit tables as approved (physical late-write erasure remains unproven; substantial maintained machinery vs min-custom).
+| Surface | Direction | Notes |
+|---|---|---|
+| **Canonical JSONL metric archive** | **Stay on R2** | Retain existing Cloudflare dest CAS (`cf-copy-destination-if-match`). Removes **archive** dest-CAS portability from **this** migration PR’s blockers **if** archive remains R2. |
+| **Pulsar BookKeeper tiered / sealed-ledger offload** | **B2** (stock `aws-s3`) | Proven separately; **lives in the Pulsar PR / B7 stock Pulsar CI**, **not** this migration PR — no mixed Pulsar offload config here. Needs **separate** B2 endpoint/credentials when provisioned (design coordination only; no runtime/Infisical/prod in this PR). |
+| **Account-erasure restore ledger** | **Still R2 pending decision** | Do **not** assume ledger weaken or B2 placement approved. |
+| **Other R2 buckets** | **Constraints unchanged** | Probe IfNoneMatch / dest-CAS findings still apply wherever those contracts are required. Remaining partial migration scope is **not** assumed user-approved. |
+
+B2 offload objects (immutable UUID keys): native Delete **hides** prior versions — physical version cleanup / lifecycle qualification remains open; **no** erasure-complete claims for offload history.
+
+Root: **Alt A rejected**; **Alt C unproven/invalid**; ledger Alt B = different threat contract (**no** equivalence); pointer/audit tables **not** approved.
 
 ---
 
@@ -127,11 +136,17 @@ B2 Put `IfNoneMatch` is **501**. A version+legal-hold sketch is **not** claimed 
 
 ---
 
-## 7. Open problem (archive destination CAS on B2)
+## 7. Open problems (post archive-on-R2 steering)
 
-**Need:** a stock B2 mechanism (or Root-approved narrow caller contract) that **rejects** a commit when the destination object/version identity is no longer the one scanned — including against delayed Copies after verification — **or** an explicit Root/user **scope pivot** before any partial migration.
+| Problem | Status |
+|---|---|
+| Metric-archive dest CAS on B2 | **Out of migration path** while archive stays R2 (CF dest CAS retained) |
+| Ledger create-once on B2 | **Still blocked / undecided** — ledger remains R2 pending decision; no weaken |
+| Other buckets needing atomic create/replace | Probe constraints **still apply**; remaining partial scope **not** assumed approved |
+| Pulsar B2 tiered offload | **Pulsar PR / B7** owns config; separate endpoints/credentials when provisioned; version hide vs physical cleanup qualification remains |
+| Alt A / Alt C / pointer-audit CAS substitutes | **Rejected / unproven / not approved** |
 
-Until that exists: **All-B2 under current strong guarantees is blocked.** Do **not** implement a CAS-replacement coordination layer; do **not** ship Alt A/C; do **not** add pointer/audit tables, dual-backend, or silent keep-R2.
+Do **not** implement CAS-replacement coordination, dual-backend, or silent keep-R2 for undecided surfaces.
 
 ---
 
@@ -139,13 +154,11 @@ Until that exists: **All-B2 under current strong guarantees is blocked.** Do **n
 
 | Topic | Status |
 |---|---|
-| All-version delete / retain-new mechanics | Probe-supported; not a CAS substitute |
-| Remove CF dest header | Required if/when B2 archive lands |
-| Dest IfMatch / CF dest CAS | Unsupported / non-portable; **replacement open / blocked** |
-| Alt A lineage+lease | **REJECTED** |
-| Alt C settle/MPU quiet | **UNPROVEN / invalid** |
-| Ledger IfNoneMatch | Unsupported; Alt B sketch only, **no equivalence** |
-| Pointer/audit fence tables | **Not approved** (logical fence ≠ proven physical late-write erasure; min-custom) |
-| PG locks | Request serialization only |
-| Keep R2 / dual-backend / weaken | Not silent options; Root asks user for scope pivot |
-| Product / coordination code | **Blocked** |
+| Metric archive on R2 (user steering) | **Recorded direction** — CF dest CAS kept; archive CAS portability not a migration blocker |
+| Pulsar BookKeeper offload on B2 | **Pulsar PR / B7**, not PR 3232 |
+| Restore ledger placement | **R2 pending decision** |
+| Remaining buckets / partial migrate | **Not assumed approved** |
+| All-version delete / retain-new | Probe-supported where B2 history applies; not a CAS substitute |
+| Alt A / Alt C | **REJECTED** / **UNPROVEN** |
+| Pointer/audit / custom CAS | **Not approved** |
+| Product / Infisical / copy / new probes | **Blocked** in this PR |
