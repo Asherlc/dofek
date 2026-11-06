@@ -111,8 +111,9 @@ jobs:
     name: Build Pulsar Qualification
     needs: detect-changes
     if: needs.detect-changes.outputs.docker_pulsar == 'true'
+    # Callee uses only automatic GITHUB_TOKEN for ghcr.io login — no repo secrets.
+    # https://docs.github.com/en/actions/using-workflows/reusing-workflows#using-inputs-and-secrets-in-a-reusable-workflow
     uses: ./.github/workflows/build-pulsar-qualification.yml
-    secrets: inherit
 
   # ── Storybook previews (PR only, depend on builds not tests) ────────────
 
