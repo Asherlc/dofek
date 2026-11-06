@@ -1,29 +1,26 @@
 # Isolated Pulsar qualification
 
-This directory builds and configures a disposable Pulsar 5.0.1, BookKeeper and
-Oxia topology. It does not change the production stack or its transport.
-See [qualification and remaining gates](../../docs/pulsar-foundation-qualification.md).
+This directory holds Oxia coordinator config for a disposable Pulsar 5.0.1,
+BookKeeper and Oxia topology. It does not change the production stack or its
+transport. See [qualification and remaining gates](../../docs/pulsar-foundation-qualification.md).
 
-The broker Dockerfile builds checksum-pinned Apache source with a narrow
-[repeatable payload patch](repeatable-offload-payload.patch). Its bounded sealed
-ledger blocks and index can be reopened for signing and upload; native object
-layout is unchanged. The build runs the affected upstream test class and style
-checks with retries disabled. The standalone
-[source-build workflow](../../.github/workflows/pulsar-source-build.yml) checks
-that normal Docker source path on ARM with a verified 4 GiB builder limit,
-without importing a host-built NAR. Its [workflow runs](https://github.com/Asherlc/dofek/actions/workflows/pulsar-source-build.yml)
-provide commit-specific build evidence; the workflow definition alone is not a
-passing qualification result. The [ARM job at 7f98465d7](https://github.com/Asherlc/dofek/actions/runs/41993332932/job/127130525556)
-passed the cold build, both style checks, NAR packaging and selected upstream
-tests. Docker documents the builder's
-[memory and swap controls](https://docs.docker.com/build/builders/drivers/docker-container/).
+Qualification Compose uses the pinned official image
+`apachepulsar/pulsar:5.0.1@sha256:4507075d8c11b34629f3a0b41f48e3c659951e601538562ee0c088cd2c737ec0`
+with its bundled `tiered-storage-jcloud` NAR. There is no custom Dockerfile,
+source rebuild, or NAR mount. Local offload targets Compose MinIO via the stock
+`aws-s3` driver and legacy `s3ManagedLedgerOffload*` settings (64 MiB block
+baseline). Cloud object stores are out of band for this Compose profile.
+Apache documents the [Docker image](https://pulsar.apache.org/docs/5.0.x/deploy-docker/)
+and [tiered storage / offload](https://pulsar.apache.org/docs/5.0.x/tiered-storage-overview/).
+Production offload configuration is reviewed and Infisical-provisioned
+separately from this qualification directory.
+
+Historical custom-image / R2-patch publish path (superseded; immutable links
+only):
+[Dockerfile at 7f98465d7](https://github.com/Asherlc/dofek/blob/7f98465d7330c554d5f71364cab29aff325e0f0c/deploy/pulsar/Dockerfile),
+[repeatable-offload-payload.patch at eab7e32df](https://github.com/Asherlc/dofek/blob/eab7e32dfa9509e1e1e893560a10dbe288a09f80/deploy/pulsar/repeatable-offload-payload.patch),
+[pulsar-source-build.yml at eab7e32df](https://github.com/Asherlc/dofek/blob/eab7e32dfa9509e1e1e893560a10dbe288a09f80/.github/workflows/pulsar-source-build.yml).
 See the [pinned upstream offloader](https://github.com/apache/pulsar/blob/v5.0.1/tiered-storage/jcloud/src/main/java/org/apache/bookkeeper/mledger/offload/jcloud/impl/BlobStoreManagedLedgerOffloader.java).
-
-Build through the workspace wrapper:
-
-```bash
-pnpm compose -- -f docker-compose.yml -f docker-compose.pulsar.yml --profile pulsar build pulsar-broker
-```
 
 Before runtime, use a fresh isolated project with enough aggregate memory and disk.
 Oxia has separate persistent data-server and coordinator state, with separate
@@ -36,8 +33,9 @@ actions; production bootstrap is not implemented here.
 ### Metadata readiness before initialization
 
 Do not start the entire profile on an empty metadata store. First start only
-`pulsar-oxia` and `pulsar-oxia-coordinator`, using the wrapper and file chain
-above with a fresh `--project-suffix`. Keep that suffix for every command.
+`pulsar-oxia` and `pulsar-oxia-coordinator`, using the workspace Compose wrapper
+and `docker-compose.yml` + `docker-compose.pulsar.yml` with a fresh
+`--project-suffix`. Keep that suffix for every command.
 Starting a container is not proof that its metadata service is ready.
 
 Run the following native admin operations through

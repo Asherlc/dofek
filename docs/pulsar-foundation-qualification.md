@@ -4,33 +4,29 @@ This checkpoint adds isolated infrastructure and native storage tests only.
 Production remains unchanged. It does not include CDC replacement, analytics
 activation, publisher cutover, archive conversion or production configuration.
 
+**Active Compose path (stock).** Qualification Compose uses pinned
+`apachepulsar/pulsar:5.0.1@sha256:4507075d8c11b34629f3a0b41f48e3c659951e601538562ee0c088cd2c737ec0`
+with the bundled `tiered-storage-jcloud` NAR, driver `aws-s3`, legacy
+`s3ManagedLedgerOffload*` keys, 64 MiB blocks, and local MinIO only. Custom
+Dockerfile / repeatable patch / `pulsar-source-build` publish are **removed**
+from the tree; do not rebuild that path. Apache documents the
+[Docker image](https://pulsar.apache.org/docs/5.0.x/deploy-docker/) and
+[tiered storage / offload](https://pulsar.apache.org/docs/5.0.x/tiered-storage-overview/).
+Production offload endpoints and credentials are reviewed and Infisical-provisioned
+separately from Compose qualification.
+
+**Historical custom-image / R2 evidence (preserved, not the active target).**
 The repeatable-payload correction was tested against actual Cloudflare R2 using
 a separately scoped qualification bucket; the immutable
 [corrected native offloader record](https://github.com/Asherlc/dofek/blob/ee7350f79/docs/pulsar-qualification.md#corrected-native-offloader-evidence)
 records upload and remote reads, host source compilation, upstream tests and
-packaging, and distinguishes those artifacts from a normal Docker source build.
-The patch is maintained locally and is not a claim of stock R2 compatibility.
-
-The standalone [source-build workflow](../.github/workflows/pulsar-source-build.yml)
-is the registered cold ARM Docker source-build and GHCR publish path: verified
-4 GiB memory and memory-plus-swap on the
-[container builder](https://docs.docker.com/build/builders/drivers/docker-container/),
-`--no-cache`, no imported host NAR. The
-[Dockerfile](../deploy/pulsar/Dockerfile) runs the affected upstream test class,
-both style checks and NAR packaging with retries disabled, then copies that NAR
-into the broker image. PR path filters cold-build with `--load` only;
-`workflow_dispatch` and main `workflow_call` push
-`ghcr.io/<repo-lower>-pulsar-qualification:5.0.1-r2` plus a commit-specific
-`sha-<GITHUB_SHA>` tag and write the OCI digest from buildx metadata (digest pin
-is the immutable reference; the SHA-named tag is not). It does not run Pulsar
-services or contact R2. Commit-specific success must be established by
-its [workflow runs](https://github.com/Asherlc/dofek/actions/workflows/pulsar-source-build.yml).
-The earlier [ARM source-build job](https://github.com/Asherlc/dofek/actions/runs/41993332932/job/127130525556)
-passed at commit `7f98465d7330c554d5f71364cab29aff325e0f0c` (compile/package/style/tests
-under the same 4 GiB limit; no publish). The
-[tested Dockerfile](https://github.com/Asherlc/dofek/blob/7f98465d7330c554d5f71364cab29aff325e0f0c/deploy/pulsar/Dockerfile)
-ends compiler/style process lifetimes before starting the test JVM; it changes
-no heap, worker, retry or test-selection settings.
+packaging. Immutable tree links for the removed custom path:
+[Dockerfile](https://github.com/Asherlc/dofek/blob/7f98465d7330c554d5f71364cab29aff325e0f0c/deploy/pulsar/Dockerfile),
+[repeatable-offload-payload.patch](https://github.com/Asherlc/dofek/blob/eab7e32dfa9509e1e1e893560a10dbe288a09f80/deploy/pulsar/repeatable-offload-payload.patch),
+[pulsar-source-build.yml](https://github.com/Asherlc/dofek/blob/eab7e32dfa9509e1e1e893560a10dbe288a09f80/.github/workflows/pulsar-source-build.yml),
+[ARM source-build job](https://github.com/Asherlc/dofek/actions/runs/41993332932/job/127130525556),
+[publish run 42252694136](https://github.com/Asherlc/dofek/actions/runs/42252694136).
+That custom path is superseded by the stock Compose configuration above.
 
 ## November 6 published image pin and initial real-R2 functional lab
 
@@ -44,10 +40,11 @@ completed SUCCESS in about 4m57s. Immutable pin:
 Independent `docker buildx imagetools inspect` confirmed OCI index digest
 `d99e2776…` with linux/arm64 child
 `sha256:6515ca137b78cb47bf62f3e9c756e3eb6a5c01f7ea830e47439860cd7a0e59db`
-(plus attestation manifest). Image source:
-[deploy/pulsar/Dockerfile](../deploy/pulsar/Dockerfile) +
-[repeatable-offload-payload.patch](../deploy/pulsar/repeatable-offload-payload.patch).
-No stack digest pin and no production deploy.
+(plus attestation manifest). Image source at publish time (files since removed;
+immutable links):
+[Dockerfile](https://github.com/Asherlc/dofek/blob/eab7e32dfa9509e1e1e893560a10dbe288a09f80/deploy/pulsar/Dockerfile) +
+[repeatable-offload-payload.patch](https://github.com/Asherlc/dofek/blob/eab7e32dfa9509e1e1e893560a10dbe288a09f80/deploy/pulsar/repeatable-offload-payload.patch).
+No production deploy. Custom-image path superseded by stock official image.
 
 **Initial functional R2 lab** (`--project-suffix r2-offload-gap-1`, temporary
 `/tmp` operator overlay only; no maintained Compose/CLI). Same published digest;

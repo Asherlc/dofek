@@ -102,9 +102,8 @@ services:
         condition: service_completed_successfully
 
   pulsar-broker:
-    image: dofek-pulsar-qualification:5.0.1-r2
-    build:
-      context: ./deploy/pulsar
+    # Stock official image; bundled tiered-storage-jcloud NAR (no custom build/mount).
+    image: apachepulsar/pulsar:5.0.1@sha256:4507075d8c11b34629f3a0b41f48e3c659951e601538562ee0c088cd2c737ec0
     profiles: ["pulsar"]
     mem_limit: 768m
     cpus: 1
@@ -120,12 +119,13 @@ services:
       managedLedgerDefaultWriteQuorum: "1"
       managedLedgerDefaultAckQuorum: "1"
       managedLedgerCacheSizeMB: "32"
-      managedLedgerOffloadDriver: S3
-      jclouds.s3.signer-version: "4"
-      PULSAR_PREFIX_managedLedgerOffloadBucket: pulsar-qualification
-      PULSAR_PREFIX_managedLedgerOffloadServiceEndpoint: http://metric-stream-minio:9000
-      PULSAR_PREFIX_managedLedgerOffloadRegion: us-east-1
-      PULSAR_PREFIX_managedLedgerOffloadMaxBlockSizeInBytes: "5242880"
+      # Local Compose offload target remains MinIO (not cloud B2). Proven stock path:
+      # aws-s3 driver + legacy s3ManagedLedgerOffload* keys; 64 MiB block baseline.
+      managedLedgerOffloadDriver: aws-s3
+      PULSAR_PREFIX_s3ManagedLedgerOffloadBucket: pulsar-qualification
+      PULSAR_PREFIX_s3ManagedLedgerOffloadServiceEndpoint: http://metric-stream-minio:9000
+      PULSAR_PREFIX_s3ManagedLedgerOffloadRegion: us-east-1
+      PULSAR_PREFIX_s3ManagedLedgerOffloadMaxBlockSizeInBytes: "67108864"
       PULSAR_PREFIX_s3ManagedLedgerOffloadCredentialId: pulsarqualification
       PULSAR_PREFIX_s3ManagedLedgerOffloadCredentialSecret: pulsarqualification
       managedLedgerOffloadDeletionLagMs: "0"
