@@ -26,7 +26,7 @@ runtime secrets from Terraform apply.
 | `deploy/.terraform.lock.hcl` pins both providers | Committed |
 | `.github/workflows/deploy-terraform.yml` requires `B2_APPLICATION_KEY_ID`/`B2_APPLICATION_KEY`, OIDC JWT **after** `terraform init`, masks JWT, never prints plan/apply secret JSON | Committed; `actionlint` clean |
 | `terraform fmt -check` on `b2-pulsar-offload.tf` + `main.tf` | Pass (Terraform 1.10 container) |
-| Five runtime Infisical secrets | Exact contract below — TF ↔ stack hunks match |
+| Five runtime Infisical secrets | Exact contract below — TF ↔ Root-approved default-chain hunks |
 | Identity additional-privilege POST | **Blocked on user pivot approval** (packet ready; no write) |
 | B2 IaC parent → GH secrets | Packet ready; Root executes after approval; no Cursor write |
 | Production holds / Deploy Web disabled | Unchanged by this lane |
@@ -51,18 +51,23 @@ writes those into `broker.conf`. Details: [broker stack hunks](./b2-pulsar-offlo
 
 Artifacts: `/tmp/b2-lifecycle-tiny-1/` (`T0.json`, `CHECK_MATRIX.json`, `ownership.json`).
 Cursor asserts; **Root credential API only** (not archived b1). Zero GetObject / no
-Cursor B2 contact.
+Cursor B2 contact. **Qualification = actual absence** of attributed hide versions / MPU
+(with live/control positives intact) — **not** the clock alone.
 
 | Gate | UTC | Class |
 | --- | --- | --- |
 | T0 | `2026-11-06T18:49:03.649Z` | seed assert (done) |
 | Obs #1 | `~2026-11-06T19:32Z` | `OBSERVATION_ONLY` (done; inventory ≡ T0) |
-| ≥24h | `2026-11-07T18:49:03.649Z` | `OBSERVE_ELIGIBLE` — **next**; wait clock |
+| ≥24h eligibility | `2026-11-07T18:49:03.649Z` | `OBSERVE_ELIGIBLE` (observe effects; not require-gone) |
 | ≥48h | `2026-11-08T18:49:03.649Z` | `OBSERVATION_CHECKPOINT` |
-| **Mandatory cleanup before** | **`2026-11-11T18:49:02.531Z`** | Root cleanup if unclean → Cursor verify zeros |
+| **Mandatory cleanup before** | **`2026-11-11T18:49:02.531Z`** | Root cleanup **regardless of qualification** → Cursor verify zeros |
 
-Heartbeat must fire **before** that cleanup instant (an 18:50 UTC daily cron is too late
-on Nov 11). Until ≥24h: **do not** request Root metadata.
+Heartbeat `32cf25ac` (`b2-lifecycle-tiny-1 checkpoints`): cron `0 17 * * *` UTC, no
+`maxRuns`, `expiresAt` ~`2026-11-11T21:24Z` (bounds the five daily beats). Target agent
+`87f70c53-…`. **Nov 7 17:00 is still &lt;24h since T0 → `OBSERVATION_ONLY`** (inventory /
+Root metadata request allowed as observation; do not qualify from age). Nov 11 17:00 is
+mandatory cleanup kickoff **before** `18:49:02.531Z`. After cleanup verified: delete
+heartbeat `32cf25ac` (expiry alone is backup).
 
 ## Why a custom bootstrap script is not needed
 
