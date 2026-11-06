@@ -193,6 +193,12 @@ describe("native grouped ClickHouse applier", () => {
   it("sends a single row through the canonical grouped owner and durable raw timestamp", async () => {
     prepareFixture([[], [], []]);
     const context = batchContext([sourceEvent]);
+    const currentKeyRequests: Parameters<NonNullable<typeof owner.client.query>>[0][] = [];
+    const query = owner.client.query;
+    owner.client.query = async (request) => {
+      if (request.query.includes("AS incoming_nanos")) currentKeyRequests.push(request);
+      return query(request);
+    };
     expect(
       await applyMetricStreamEventsToClickHouse(owner.client, [sourceEvent], context, database),
     ).toBe(1);
@@ -224,6 +230,22 @@ describe("native grouped ClickHouse applier", () => {
         scope_provider_ids: [sourceEvent.providerId],
       }),
     );
+    // No outranking delete-scope revision → no tombstone insert path.
+    expect(mocks.insert).not.toHaveBeenCalled();
+    expect(currentKeyRequests).toHaveLength(1);
+    expect(currentKeyRequests[0]?.query_params).toEqual(
+      expect.objectContaining({
+        users: [sourceEvent.userId],
+        ingested_ats: [sourceIngestedAt],
+      }),
+    );
+    expect(currentKeyRequests[0]?.clickhouse_settings).toEqual(
+      expect.objectContaining({
+        max_result_rows: 500,
+        max_result_bytes: 32 * 1024 * 1024,
+        result_overflow_mode: "throw",
+      }),
+    );
   });
   it("skips committed account fences before raw insertion and validates only eligible rows", async () => {
     const erased = {
@@ -253,6 +275,7 @@ describe("native grouped ClickHouse applier", () => {
     const marker = createMetricStreamBatchCompletedEvent(
       {
         operationId: "00000000-0000-4000-8000-000000000003",
+        userId: sourceEvent.userId,
         batchId: "batch",
         datasetKeys: ["metric_stream"],
       },
@@ -290,6 +313,109 @@ describe("native grouped ClickHouse applier", () => {
       row_ids: [sourceEvent.id],
       ingested_ats: [sourceIngestedAt],
     });
+  });
+  it("writes a delete-scope tombstone when the scoped revision outranks the admitted row", async () => {
+    const scopedVersion = "9007199254740995";
+    prepareFixture([[], [{ row_index: 0, version: scopedVersion }], []]);
+    await expect(
+      applyMetricStreamEventsToClickHouse(
+        owner.client,
+        [sourceEvent],
+        batchContext([sourceEvent]),
+        database,
+      ),
+    ).resolves.toBe(1);
+    expect(fixture.rows).toHaveLength(1);
+    expect(mocks.insert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        values: [
+          expect.objectContaining({
+            id: sourceEvent.id,
+            is_deleted: 1,
+            version: scopedVersion,
+          }),
+        ],
+      }),
+    );
+  });
+  it("does not tombstone when the delete-scope revision does not outrank the admitted row", async () => {
+    prepareFixture([[], [{ row_index: 0, version: "9007199254740993" }], []]);
+    await expect(
+      applyMetricStreamEventsToClickHouse(
+        owner.client,
+        [sourceEvent],
+        batchContext([sourceEvent]),
+        database,
+      ),
+    ).resolves.toBe(1);
+    expect(fixture.rows).toHaveLength(1);
+    expect(mocks.insert).not.toHaveBeenCalled();
+  });
+  it("requires insert before writing delete-scope tombstones", async () => {
+    const scopedVersion = "9007199254740995";
+    prepareFixture([[], [{ row_index: 0, version: scopedVersion }], []]);
+    const originalExec = owner.client.exec.bind(owner.client);
+    owner.client.exec = async (request) => {
+      const result = await originalExec(request);
+      Reflect.deleteProperty(owner.client, "insert");
+      return result;
+    };
+    await expect(
+      applyMetricStreamEventsToClickHouse(
+        owner.client,
+        [sourceEvent],
+        batchContext([sourceEvent]),
+        database,
+      ),
+    ).rejects.toThrow(/tombstones require insert/);
+  });
+  it("requires a query-capable client before delete-scope tombstones", async () => {
+    prepareFixture([[], [], []]);
+    const originalExec = owner.client.exec.bind(owner.client);
+    owner.client.exec = async (request) => {
+      const result = await originalExec(request);
+      Reflect.deleteProperty(owner.client, "query");
+      return result;
+    };
+    await expect(
+      applyMetricStreamEventsToClickHouse(
+        owner.client,
+        [sourceEvent],
+        batchContext([sourceEvent]),
+        database,
+      ),
+    ).rejects.toThrow(/query-capable client/);
+  });
+  it("rejects delete-scope guard rows that omit a decimal version", async () => {
+    prepareFixture([[], [{ row_index: 0, version: "12a" }], []]);
+    await expect(
+      applyMetricStreamEventsToClickHouse(
+        owner.client,
+        [sourceEvent],
+        batchContext([sourceEvent]),
+        database,
+      ),
+    ).rejects.toThrow();
+    expect(mocks.insert).not.toHaveBeenCalled();
+  });
+  it("skips the current-key guard when every row is already fenced", async () => {
+    const erased = {
+      ...sourceEvent,
+      id: "00000000-0000-4000-8000-000000000099",
+      userId: "00000000-0000-4000-8000-000000000098",
+    };
+    prepareFixture([[{ user_hash: createHash("sha256").update(erased.userId).digest("hex") }]]);
+    const seen: string[] = [];
+    const query = owner.client.query;
+    owner.client.query = async (request) => {
+      seen.push(request.query);
+      return query(request);
+    };
+    await expect(
+      applyMetricStreamEventsToClickHouse(owner.client, [erased], batchContext([erased]), database),
+    ).resolves.toBe(0);
+    expect(seen.some((queryText) => queryText.includes("AS incoming_nanos"))).toBe(false);
+    expect(fixture.rows).toHaveLength(0);
   });
   it("skips older current-key replay without writing raw rows or applying its generation correction", async () => {
     prepareFixture([]);
@@ -449,6 +575,7 @@ describe("native grouped ClickHouse applier", () => {
     const marker = createMetricStreamBatchCompletedEvent(
       {
         operationId: "00000000-0000-4000-8000-000000000003",
+        userId: sourceEvent.userId,
         batchId: "batch",
         datasetKeys: ["metric_stream"],
       },
@@ -465,6 +592,7 @@ describe("native grouped ClickHouse applier", () => {
     const marker = createMetricStreamBatchCompletedEvent(
       {
         operationId: "00000000-0000-4000-8000-000000000003",
+        userId: sourceEvent.userId,
         batchId: "batch",
         datasetKeys: ["metric_stream"],
       },
@@ -495,6 +623,7 @@ describe("native grouped ClickHouse applier", () => {
     const marker = createMetricStreamBatchCompletedEvent(
       {
         operationId: "00000000-0000-4000-8000-000000000003",
+        userId: sourceEvent.userId,
         batchId: "batch",
         datasetKeys: ["metric_stream"],
       },

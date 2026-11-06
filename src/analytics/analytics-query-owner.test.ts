@@ -1,3 +1,4 @@
+// cspell:ignore xsource
 import { randomUUID } from "node:crypto";
 import { PassThrough, Readable } from "node:stream";
 import { ClickHouseError } from "@clickhouse/client";
