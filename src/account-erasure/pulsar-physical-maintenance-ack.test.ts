@@ -13,7 +13,7 @@ const now = new Date("2026-11-05T15:00:00.000Z");
 function ack(overrides: Record<string, unknown> = {}) {
   return stockPhysicalMaintenanceAckSchema.parse({
     kind: "stock_physical_maintenance_ack",
-    runId: "maint-2026-11-05",
+    runId: "maintenance-2026-11-05",
     operator: "oncall@example.com",
     verifiedAt,
     verifiedCutoffAt: cutoff,
@@ -29,7 +29,7 @@ describe("requireStockPhysicalMaintenanceAck", () => {
       now,
     });
     expect(summarizePhysicalMaintenanceAcknowledged(value)).toEqual({
-      runId: "maint-2026-11-05",
+      runId: "maintenance-2026-11-05",
       operator: "oncall@example.com",
       runbookRevision: "docs/pulsar-remaining-work.md#physical",
     });

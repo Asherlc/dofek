@@ -5,6 +5,7 @@ import {
   createMetricStreamEvent,
   type MetricStreamDeleteScopeInput,
   type MetricStreamRowInput,
+  metricStreamProcessingContextSchema,
   metricStreamRedpandaEventSchema,
 } from "./events.ts";
 
@@ -277,11 +278,12 @@ describe("createMetricStreamBatchCompletedEvent", () => {
 
     expect(() =>
       createMetricStreamBatchCompletedEvent(
-        {
+        // Missing required userId — force runtime schema rejection without a type assertion.
+        metricStreamProcessingContextSchema.parse({
           operationId: "30000000-0000-4000-8000-000000000001",
           batchId: "heart-rate-1",
           datasetKeys: ["recovery"],
-        } as never,
+        }),
         1,
       ),
     ).toThrow();

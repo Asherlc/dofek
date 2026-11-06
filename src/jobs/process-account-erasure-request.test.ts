@@ -410,9 +410,7 @@ describe("processAccountErasureRequest", () => {
         },
       ],
     };
-    const runner = phaseRunner(async (phase) =>
-      phase === "ingest_fence" ? nativeIngest : null,
-    );
+    const runner = phaseRunner(async (phase) => (phase === "ingest_fence" ? nativeIngest : null));
 
     await processAccountErasureRequest(
       database,

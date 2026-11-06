@@ -468,11 +468,11 @@ describe("native JSONL archive", () => {
     expect(archiveFixture.send.mock.calls[1]?.[0]).toBeInstanceOf(GetObjectCommand);
   });
 
-  it("accepts a preactivation mixed object after fencing by filtering retained lines under the held fence", async () => {
+  it("accepts a before-activation mixed object after fencing by filtering retained lines under the held fence", async () => {
     const open = rowEvent(openUserId, "10000000-0000-4000-8000-000000000001");
     const closed = rowEvent(fencedUserId, "10000000-0000-4000-8000-000000000002");
     const input = context([closed, open]);
-    const preactivation = gzipSync(
+    const beforeActivation = gzipSync(
       Buffer.concat([encodeEvent(closed), Buffer.from("\n"), encodeEvent(open), Buffer.from("\n")]),
     );
     const assertActive = vi.fn(async () => undefined);
@@ -480,8 +480,8 @@ describe("native JSONL archive", () => {
     archiveFixture.send
       .mockRejectedValueOnce({ $metadata: { httpStatusCode: 412 } })
       .mockImplementationOnce(async () => ({
-        Body: Readable.from([preactivation]),
-        ContentLength: preactivation.length,
+        Body: Readable.from([beforeActivation]),
+        ContentLength: beforeActivation.length,
       }));
     await expect(
       archive(archiveFixture, {

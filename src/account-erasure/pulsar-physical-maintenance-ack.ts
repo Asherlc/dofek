@@ -41,7 +41,7 @@ export function requireStockPhysicalMaintenanceAck(
   const fenceMs = options.ingestFenceCompletedAt.getTime();
   const nowMs = options.now.getTime();
   if (!Number.isFinite(cutoffMs) || !Number.isFinite(verifiedAtMs)) {
-    throw new Error("Stock physical maintenance ack timestamps must be valid datetimes");
+    throw new Error("Stock physical maintenance ack timestamps must be valid date-times");
   }
   if (!(cutoffMs >= fenceMs)) {
     throw new Error(

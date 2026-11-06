@@ -185,7 +185,7 @@ describe("native archive against the existing bounded SeaweedFS S3 fixture", () 
     );
   });
 
-  it("holds the shared delivery fence through PutObject so exclusive activation waits, and omits postfence rows", async () => {
+  it("holds the shared delivery fence through PutObject so exclusive activation waits, and omits after-fence rows", async () => {
     const putStarted = createTestBarrier();
     const finishPut = createTestBarrier();
     const originalSend = client.send.bind(client);
@@ -246,37 +246,37 @@ describe("native archive against the existing bounded SeaweedFS S3 fixture", () 
           now() + interval '30 days',
           'running'
         )`);
-      const postfence = batch(30n, [deletingUserId, otherUserId]);
+      const afterFenceBatch = batch(30n, [deletingUserId, otherUserId]);
       await archiveMetricStreamDeliveries(
         client,
         bucket,
-        postfence,
+        afterFenceBatch,
         postgres.db,
         new AbortController().signal,
       );
       const listing = await client.send(
         new ListObjectsV2Command({ Bucket: bucket, Prefix: "metric-stream/v1/" }),
       );
-      const originalFirst = postfence.positions[0];
+      const originalFirst = afterFenceBatch.positions[0];
       if (originalFirst?.transport !== "pulsar") throw new Error("Native position missing");
       const key = listing.Contents?.find((object) =>
         object.Key?.includes(
           `/first=${Buffer.from(originalFirst.serializedMessageId, "base64").toString("hex")}/`,
         ),
       )?.Key;
-      if (!key) throw new Error("Postfence archive object missing");
+      if (!key) throw new Error("After-fence archive object missing");
       const stored = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
-      if (!stored.Body) throw new Error("Postfence archive body missing");
+      if (!stored.Body) throw new Error("After-fence archive body missing");
       expect(gunzipSync(await stored.Body.transformToByteArray())).toEqual(
         Buffer.concat(
-          postfence.deliveries.slice(1).flatMap(({ data }) => [data, Buffer.from("\n")]),
+          afterFenceBatch.deliveries.slice(1).flatMap(({ data }) => [data, Buffer.from("\n")]),
         ),
       );
       expect(parseMetricStreamArchiveObjectKey(key)).toMatchObject({
         firstHex: Buffer.from(originalFirst.serializedMessageId, "base64").toString("hex"),
         lastHex: Buffer.from(
-          postfence.positions[1]?.transport === "pulsar"
-            ? postfence.positions[1].serializedMessageId
+          afterFenceBatch.positions[1]?.transport === "pulsar"
+            ? afterFenceBatch.positions[1].serializedMessageId
             : "",
           "base64",
         ).toString("hex"),

@@ -509,10 +509,8 @@ describe("createAccountErasureRuntime", () => {
     mocks.loadPhaseProgress.mockResolvedValueOnce(null);
     const database = {
       $client: ownerDatabase.$client,
-      execute: vi.fn(async () => [
-        { completed_at: new Date("2026-08-26T09:00:00.000Z") },
-      ]) as typeof ownerDatabase.execute,
-      transaction: vi.fn() as typeof ownerDatabase.transaction,
+      execute: vi.fn(async () => [{ completed_at: new Date("2026-08-26T09:00:00.000Z") }]),
+      transaction: vi.fn(),
     };
     const clickhouse = {
       exec: vi.fn<ClickHouseClient["exec"]>(),

@@ -181,7 +181,11 @@ describe("native capture + ACK-cursor drain on a disposable namespace", () => {
       });
       try {
         const held = [await consumer.receive(), await consumer.receive(), await consumer.receive()];
-        await consumer.acknowledge(held[2]!);
+        const thirdHeld = held[2];
+        if (thirdHeld === undefined) {
+          throw new Error("expected three held messages before acknowledge");
+        }
+        await consumer.acknowledge(thirdHeld);
         await expect(
           assertAccountErasureSubscriptionsDrained(admin, fence, [subscription]),
         ).rejects.toThrow(subscription);
@@ -283,5 +287,4 @@ describe("native capture + ACK-cursor drain on a disposable namespace", () => {
       ).resolves.toBeUndefined();
     });
   });
-
 });

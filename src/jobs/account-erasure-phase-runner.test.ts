@@ -63,7 +63,7 @@ const ingestCheckpoint = buildAccountErasureNativeIngestCheckpoint([fenceProgres
 
 const stockAck = {
   kind: "stock_physical_maintenance_ack" as const,
-  runId: "maint-2026-11-05",
+  runId: "maintenance-2026-11-05",
   operator: "oncall@example.com",
   verifiedAt: "2026-08-26T11:00:00.000Z",
   verifiedCutoffAt: "2026-08-26T10:00:00.000Z",
@@ -311,7 +311,7 @@ describe("createAccountErasurePhaseRunner", () => {
         verified: true,
       },
       physicalMaintenanceAcknowledged: {
-        runId: "maint-2026-11-05",
+        runId: "maintenance-2026-11-05",
         operator: "oncall@example.com",
         runbookRevision: "docs/pulsar-remaining-work.md#physical",
       },

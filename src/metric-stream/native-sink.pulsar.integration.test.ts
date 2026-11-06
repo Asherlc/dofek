@@ -154,8 +154,13 @@ describe("finite native broker to grouped sink", () => {
       },
       "100",
     );
-    const marker = createMetricStreamBatchCompletedEvent({
-      userId: "10000000-0000-4000-8000-000000000001", operationId: randomUUID(), batchId: randomUUID(), datasetKeys: ["metric_stream"] },
+    const marker = createMetricStreamBatchCompletedEvent(
+      {
+        userId: "10000000-0000-4000-8000-000000000001",
+        operationId: randomUUID(),
+        batchId: randomUUID(),
+        datasetKeys: ["metric_stream"],
+      },
       1,
     );
     const physicalCount = async () => {
