@@ -287,7 +287,9 @@ describe("process-sync-job", () => {
     await runSyncJob(createMockJob({ providerId: "test-provider" }), mockDb, controller.signal);
 
     expect(mockInvalidateAllUserQueries).toHaveBeenCalledOnce();
-    expect(mockInvalidateAllUserQueries).toHaveBeenCalledWith("user-1");
+    expect(mockInvalidateAllUserQueries).toHaveBeenCalledWith(
+      "00000000-0000-4000-8000-000000000001",
+    );
     expect(mockLogSync).toHaveBeenCalledWith(
       mockDb,
       expect.objectContaining({
@@ -449,7 +451,7 @@ describe("process-sync-job", () => {
     expect(syncWebhookEvent).toHaveBeenCalledWith(
       mockDb,
       webhookEvent,
-      expect.objectContaining({ userId: "user-1" }),
+      expect.objectContaining({ userId: "00000000-0000-4000-8000-000000000001" }),
     );
   });
 
@@ -514,9 +516,15 @@ describe("process-sync-job", () => {
     await runSyncJob(createMockJob({ providerId: "test-provider" }), mockDb);
 
     expect(mockEnqueueDebouncedPostSyncMaintenance).toHaveBeenCalledOnce();
-    expect(mockEnqueueDebouncedUserRefit).toHaveBeenCalledWith("user-1");
+    expect(mockEnqueueDebouncedUserRefit).toHaveBeenCalledWith(
+      "00000000-0000-4000-8000-000000000001",
+    );
     expect(mockCaptureException).not.toHaveBeenCalled();
-    expect(mockWithUserWriteFence).toHaveBeenCalledWith(mockDb, "user-1", expect.any(Function));
+    expect(mockWithUserWriteFence).toHaveBeenCalledWith(
+      mockDb,
+      "00000000-0000-4000-8000-000000000001",
+      expect.any(Function),
+    );
   });
 
   it("enqueues a continuation job and skips post-sync when sync returns continued", async () => {
@@ -552,7 +560,11 @@ describe("process-sync-job", () => {
     );
     expect(mockEnqueueDebouncedPostSyncMaintenance).not.toHaveBeenCalled();
     expect(mockEnqueueDebouncedUserRefit).not.toHaveBeenCalled();
-    expect(mockWithUserWriteFence).toHaveBeenCalledWith(mockDb, "user-1", expect.any(Function));
+    expect(mockWithUserWriteFence).toHaveBeenCalledWith(
+      mockDb,
+      "00000000-0000-4000-8000-000000000001",
+      expect.any(Function),
+    );
     expect(job.updateProgress).toHaveBeenCalledWith(
       expect.objectContaining({
         providers: { whoop: { status: "running", message: "4 synced so far" } },
@@ -607,7 +619,9 @@ describe("process-sync-job", () => {
     await runSyncJob(createMockJob({ providerId: "test-provider" }), mockDb);
 
     expect(mockEnqueueDebouncedPostSyncMaintenance).toHaveBeenCalledOnce();
-    expect(mockEnqueueDebouncedUserRefit).toHaveBeenCalledWith("user-1");
+    expect(mockEnqueueDebouncedUserRefit).toHaveBeenCalledWith(
+      "00000000-0000-4000-8000-000000000001",
+    );
     expect(mockLoggerError).toHaveBeenCalledWith(
       expect.stringContaining("Failed to enqueue global post-sync maintenance"),
     );
@@ -624,7 +638,9 @@ describe("process-sync-job", () => {
     await runSyncJob(createMockJob({ providerId: "test-provider" }), mockDb);
 
     expect(mockEnqueueDebouncedPostSyncMaintenance).toHaveBeenCalledOnce();
-    expect(mockEnqueueDebouncedUserRefit).toHaveBeenCalledWith("user-1");
+    expect(mockEnqueueDebouncedUserRefit).toHaveBeenCalledWith(
+      "00000000-0000-4000-8000-000000000001",
+    );
     expect(mockLoggerError).toHaveBeenCalledWith(
       expect.stringContaining("Failed to enqueue user refit"),
     );
