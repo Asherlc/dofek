@@ -1,0 +1,5 @@
+CURRENT=1172807680
+PEAK=1733775360
+MAX=2147483648
+EVENTS=low 0 high 0 max 0 oom 0 oom_kill 0 oom_group_kill 0
+ANON=590610432

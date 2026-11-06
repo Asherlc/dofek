@@ -1,0 +1,62 @@
+{
+  "broker": {
+    "events_raw": "low 0 high 0 max 0 oom 0 oom_kill 0 oom_group_kill 0",
+    "low": 0,
+    "high": 0,
+    "max": 0,
+    "oom": 0,
+    "oom_kill": 0,
+    "oom_group_kill": 0,
+    "PEAK": "647434240",
+    "CURRENT": "642326528",
+    "MAX": "2147483648"
+  },
+  "bookie": {
+    "events_raw": "low 0 high 0 max 0 oom 0 oom_kill 0 oom_group_kill 0",
+    "low": 0,
+    "high": 0,
+    "max": 0,
+    "oom": 0,
+    "oom_kill": 0,
+    "oom_group_kill": 0,
+    "PEAK": "792342528",
+    "CURRENT": "792301568",
+    "MAX": "2147483648"
+  },
+  "minio": {
+    "events_raw": "low 0 high 0 max 0 oom 0 oom_kill 0 oom_group_kill 0",
+    "low": 0,
+    "high": 0,
+    "max": 0,
+    "oom": 0,
+    "oom_kill": 0,
+    "oom_group_kill": 0,
+    "PEAK": "71573504",
+    "CURRENT": "56504320",
+    "MAX": "1073741824"
+  },
+  "oxia": {
+    "events_raw": "low 0 high 0 max 0 oom 0 oom_kill 0 oom_group_kill 0",
+    "low": 0,
+    "high": 0,
+    "max": 0,
+    "oom": 0,
+    "oom_kill": 0,
+    "oom_group_kill": 0,
+    "PEAK": "20852736",
+    "CURRENT": "20361216",
+    "MAX": "134217728"
+  },
+  "oxia-coord": {
+    "events_raw": "low 0 high 0 max 0 oom 0 oom_kill 0 oom_group_kill 0",
+    "low": 0,
+    "high": 0,
+    "max": 0,
+    "oom": 0,
+    "oom_kill": 0,
+    "oom_group_kill": 0,
+    "PEAK": "33955840",
+    "CURRENT": "19927040",
+    "MAX": "134217728"
+  }
+}

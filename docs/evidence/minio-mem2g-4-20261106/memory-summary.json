@@ -1,0 +1,158 @@
+{
+  "monitor": {
+    "broker": {
+      "samples": 63,
+      "limit": 2147483648,
+      "peak": 1274347520,
+      "headroom": 873136128,
+      "headroomMiB": 832.7,
+      "peak_eq_limit": false,
+      "baseline_max_events": 0,
+      "final_max_events": 0,
+      "max_events_delta": 0,
+      "monitor_max_delta_seen": 0,
+      "first_utc": "2026-11-06T21:08:16.593448000Z",
+      "last_utc": "2026-11-06T21:11:25.980587000Z",
+      "oneshot": {
+        "CURRENT": "791371776",
+        "PEAK": "824856576",
+        "MAX": "2147483648",
+        "EVENTS": "low 0 high 0 max 0 oom 0 oom_kill 0 oom_group_kill 0",
+        "ANON": "758128640"
+      }
+    },
+    "bookie": {
+      "samples": 63,
+      "limit": 2147483648,
+      "peak": 1733775360,
+      "headroom": 413708288,
+      "headroomMiB": 394.5,
+      "peak_eq_limit": false,
+      "baseline_max_events": 0,
+      "final_max_events": 0,
+      "max_events_delta": 0,
+      "monitor_max_delta_seen": 0,
+      "first_utc": "2026-11-06T21:08:16.785387000Z",
+      "last_utc": "2026-11-06T21:11:26.201394000Z",
+      "oneshot": {
+        "CURRENT": "1172807680",
+        "PEAK": "1733775360",
+        "MAX": "2147483648",
+        "EVENTS": "low 0 high 0 max 0 oom 0 oom_kill 0 oom_group_kill 0",
+        "ANON": "590610432"
+      }
+    },
+    "minio": {
+      "samples": 63,
+      "limit": 1073741824,
+      "peak": 736120832,
+      "headroom": 337620992,
+      "headroomMiB": 322.0,
+      "peak_eq_limit": false,
+      "baseline_max_events": 0,
+      "final_max_events": 0,
+      "max_events_delta": 0,
+      "monitor_max_delta_seen": 0,
+      "first_utc": "2026-11-06T21:08:16.960473000Z",
+      "last_utc": "2026-11-06T21:11:26.393958000Z",
+      "oneshot": {
+        "CURRENT": "522850304",
+        "PEAK": "736120832",
+        "MAX": "1073741824",
+        "EVENTS": "low 0 high 0 max 0 oom 0 oom_kill 0 oom_group_kill 0"
+      }
+    },
+    "oxia": {
+      "samples": 63,
+      "limit": 134217728,
+      "peak": 24784896,
+      "headroom": 109432832,
+      "headroomMiB": 104.4,
+      "peak_eq_limit": false,
+      "baseline_max_events": 0,
+      "final_max_events": 0,
+      "max_events_delta": 0,
+      "monitor_max_delta_seen": 0,
+      "first_utc": "2026-11-06T21:08:17.122786000Z",
+      "last_utc": "2026-11-06T21:11:26.577700000Z",
+      "oneshot": null
+    },
+    "oxia-coord": {
+      "samples": 63,
+      "limit": 134217728,
+      "peak": 35917824,
+      "headroom": 98299904,
+      "headroomMiB": 93.7,
+      "peak_eq_limit": false,
+      "baseline_max_events": 0,
+      "final_max_events": 0,
+      "max_events_delta": 0,
+      "monitor_max_delta_seen": 0,
+      "first_utc": "2026-11-06T21:08:17.292213000Z",
+      "last_utc": "2026-11-06T21:11:26.757843000Z",
+      "oneshot": null
+    }
+  },
+  "baseline": {
+    "broker": {
+      "events_raw": "low 0 high 0 max 0 oom 0 oom_kill 0 oom_group_kill 0",
+      "low": 0,
+      "high": 0,
+      "max": 0,
+      "oom": 0,
+      "oom_kill": 0,
+      "oom_group_kill": 0,
+      "PEAK": "647434240",
+      "CURRENT": "642326528",
+      "MAX": "2147483648"
+    },
+    "bookie": {
+      "events_raw": "low 0 high 0 max 0 oom 0 oom_kill 0 oom_group_kill 0",
+      "low": 0,
+      "high": 0,
+      "max": 0,
+      "oom": 0,
+      "oom_kill": 0,
+      "oom_group_kill": 0,
+      "PEAK": "792342528",
+      "CURRENT": "792301568",
+      "MAX": "2147483648"
+    },
+    "minio": {
+      "events_raw": "low 0 high 0 max 0 oom 0 oom_kill 0 oom_group_kill 0",
+      "low": 0,
+      "high": 0,
+      "max": 0,
+      "oom": 0,
+      "oom_kill": 0,
+      "oom_group_kill": 0,
+      "PEAK": "71573504",
+      "CURRENT": "56504320",
+      "MAX": "1073741824"
+    },
+    "oxia": {
+      "events_raw": "low 0 high 0 max 0 oom 0 oom_kill 0 oom_group_kill 0",
+      "low": 0,
+      "high": 0,
+      "max": 0,
+      "oom": 0,
+      "oom_kill": 0,
+      "oom_group_kill": 0,
+      "PEAK": "20852736",
+      "CURRENT": "20361216",
+      "MAX": "134217728"
+    },
+    "oxia-coord": {
+      "events_raw": "low 0 high 0 max 0 oom 0 oom_kill 0 oom_group_kill 0",
+      "low": 0,
+      "high": 0,
+      "max": 0,
+      "oom": 0,
+      "oom_kill": 0,
+      "oom_group_kill": 0,
+      "PEAK": "33955840",
+      "CURRENT": "19927040",
+      "MAX": "134217728"
+    }
+  }
+}

@@ -64,3 +64,35 @@ No ports are published. Use the packaged tools through the Compose wrapper.
 Replication factor one and restart tests do not prove recovery from disk loss.
 See [Apache deployment](https://pulsar.apache.org/docs/5.0.x/deploy-docker/) and
 [BookKeeper CLI](https://bookkeeper.apache.org/docs/reference/cli/).
+
+### Local memory-envelope lab notes (not production defaults)
+
+A disposable local dual-offload fixture (`minio-mem2g-4`, 2026-11-06) passed
+bounded integrity under ephemeral overrides only: broker/bookie cgroup
+**2048 MiB**; broker JVM `-Xms256m -Xmx768m -XX:MaxDirectMemorySize=768m`;
+bookie JVM `-Xms256m -Xmx512m -XX:MaxDirectMemorySize=512m`; Seaweed stand-in
+**1024 MiB** (Compose local-only). Stock 64 MiB blocks /
+`managedLedgerOffloadMaxThreads=2` per Apache
+[tiered storage / offload](https://pulsar.apache.org/docs/5.0.x/tiered-storage-overview/).
+Evidence:
+[docs/evidence/minio-mem2g-4-20261106/](../../docs/evidence/minio-mem2g-4-20261106/).
+Qualification narrative:
+[pulsar-foundation-qualification.md](../../docs/pulsar-foundation-qualification.md#november-6-local-stock-memory-envelope-lab-minio-mem2g-4).
+
+Operator reminders from that lab:
+
+1. Register Oxia dataserver + `pulsar` / `bookkeeper` namespaces before
+   `pulsar-init` using the [Oxia v0.18.0 admin commands](https://github.com/oxia-db/oxia/tree/v0.18.0/cmd/admin)
+   (steps above). Skipping this leaves the dataserver unassigned.
+2. After offload `SUCCESS` with `managedLedgerOffloadDeletionLagMs=0`, this lab
+   observed **~90–96 s** before BookKeeper dropped data ledger ids — poll
+   actual absence via [`listledgers`](https://bookkeeper.apache.org/docs/reference/cli/);
+   do not treat that lag as a general timing guarantee or assume delete is
+   synchronous with the admin status.
+3. If a cgroup sampler restarts mid-lab, treat continuous TSV as gapped; use
+   kernel cgroup v2 [`memory.peak` / `memory.events`](https://docs.kernel.org/admin-guide/cgroup-v2.html#memory-interface-files)
+   for lifetime high-water across the gap, and state the gap explicitly in
+   evidence.
+4. These overrides are **not** durable Compose/production defaults. Host named
+   hard-limit budget (~30.58 GiB vs 24 GiB with bookie 2048 MiB in the retained
+   census math) remains unresolved; do not cut ClickHouse/Postgres caps here.

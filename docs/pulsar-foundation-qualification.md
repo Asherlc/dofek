@@ -271,3 +271,56 @@ The historical runs above include the deferred receipt path. They do not qualify
 the reduced raw transport sink. Its current source requires fresh database and native
 broker qualification after review; no production deployment or hold restoration
 is authorized by these results.
+
+## November 6 local stock memory-envelope lab (`minio-mem2g-4`)
+
+Disposable local Compose lab only (SeaweedFS S3 stand-in). Stock
+`apachepulsar/pulsar:5.0.1` + bundled `tiered-storage-jcloud`, driver `aws-s3`,
+64 MiB blocks, `managedLedgerOffloadMaxThreads=2` (see Apache
+[tiered storage / offload](https://pulsar.apache.org/docs/5.0.x/tiered-storage-overview/)
+and the [Docker image](https://pulsar.apache.org/docs/5.0.x/deploy-docker/)).
+**No B2/R2 traffic.** No durable runtime/Compose memory commit in this packet.
+Sanitized evidence:
+[docs/evidence/minio-mem2g-4-20261106/](evidence/minio-mem2g-4-20261106/).
+
+**Envelope under test**
+
+| Role | cgroup | JVM |
+|---|---|---|
+| broker | 2048 MiB | `-Xms256m -Xmx768m -XX:MaxDirectMemorySize=768m` |
+| bookie | 2048 MiB | `-Xms256m -Xmx512m -XX:MaxDirectMemorySize=512m` |
+| Seaweed stand-in | 1024 MiB | n/a (local-only; not a production hard-limit line) |
+
+Bookie cgroup was raised from 1536 MiB after `minio-mem2g-3` hit `memory.peak`
+equal to the limit with `memory.events max>0` during broker restart. Bookie JVM
+stayed heap512/direct512 to isolate container headroom.
+
+**PASS (this fixture only).** 128 distinct 1 MiB messages × topics A/B; dual
+overlapping offload → both `SUCCESS`; native BK metadata for data ledgers
+absent after async delete; broker restart; full remote count/order/body
+SHA-256 match both topics. No OOM; no `memory.events` max/oom increments;
+lifetime peaks stayed strictly below limits (bookie ~1653/2048 MiB,
+broker ~1215/2048 MiB, Seaweed ~702/1024 MiB).
+
+**Async BK delete.** With `managedLedgerOffloadDeletionLagMs=0`, this lab
+observed ~90–96 s between `Offload succeed` (21:06:12Z) and “Deleted and
+invalidated offloaded ledger” (21:07:48Z). That lag is an observation, not a
+timing guarantee — poll BookKeeper `listledgers` until data ids are actually
+absent before restart/hash ([BookKeeper CLI](https://bookkeeper.apache.org/docs/reference/cli/)).
+
+**Memory capture bound (do not over-claim).** Continuous 2 s cgroup TSV
+**starts at 21:08:16Z** — after offload trigger **21:06:07Z**. Continuous
+rows cover broker restart + hash only. Upload coverage is the kernel cgroup
+v2 lifetime high-water files [`memory.peak` and `memory.events`](https://docs.kernel.org/admin-guide/cgroup-v2.html#memory-interface-files):
+the first post-gap sample already showed bookie peak `1733775360` and
+`max=0` (idle baseline bookie peak was ~755 MiB). See evidence
+`CORE_PROOF.json` → `memoryCapture`.
+
+**Not claimed.** Sustained load, outage/soak, B2 cloud offload, production
+cutover, or durable stack memory changes.
+
+**Production budget (unresolved; document only).** With bookie hard limit
+2048 MiB, Pulsar add sum **4352 MiB** vs Redpanda+3 CH-sink retire **2400 MiB**
+→ net **+1952 MiB**; after named limited-sum **~30.58 GiB** vs host **24 GiB**.
+ClickHouse **13 GiB** and Postgres caps are **not** reduced. Not production-fit
+approval. Capacity note in the evidence tree.
