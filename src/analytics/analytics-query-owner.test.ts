@@ -40,8 +40,14 @@ function fixture(previous?: {
   terminal?: boolean;
   loseOwnerAfterAdmit?: boolean;
   corruptRegistration?: boolean;
+  corruptCompletion?: boolean;
+  corruptRetirement?: boolean;
+  failLock?: boolean;
+  failReservation?: boolean;
+  failReuse?: boolean;
 }) {
   const registrations: string[] = [],
+    terminals: string[] = [],
     trace: string[] = [],
     locks: string[] = [],
     unlocks: string[] = [],
@@ -62,11 +68,12 @@ function fixture(previous?: {
         return async (statement: string, values: unknown[] = []) => {
           const result = (rows: object[]) => ({ rowCount: rows.length, rows });
           if (statement.includes("pg_advisory_lock")) {
+            if (previous?.failLock) throw new Error("advisory lock unavailable");
             locks.push(String(values[0]));
             return result([]);
           }
           if (statement.includes("pg_advisory_unlock")) {
-            unlocks.push(String(values[0]));
+            unlocks.push(String(values[0] ?? ""));
             return result([]);
           }
           if (statement.startsWith("SELECT quiescent"))
@@ -90,9 +97,15 @@ function fixture(previous?: {
               return result([{ owner_id: "other", intent_id: intentId, query_id: values[2] }]);
             return result([{ owner_id: ownerId, intent_id: intentId, query_id: values[2] }]);
           }
-          if (/SET query_terminal=true/.test(statement))
+          if (/SET query_terminal=true/.test(statement)) {
+            terminals.push(String(values[2]));
+            if (previous?.corruptCompletion)
+              return result([{ owner_id: "other", intent_id: intentId, query_id: values[2] }]);
             return result([{ owner_id: ownerId, intent_id: intentId, query_id: values[2] }]);
+          }
           if (statement.includes("SET intent_id=NULL") && statement.includes("RETURNING")) {
+            if (previous?.corruptRetirement)
+              return result([{ owner_id: ownerId, intent_id: "still-set", query_id: values[3] }]);
             retired.push(String(values[2]));
             intentId = null;
             return result([{ owner_id: ownerId, intent_id: null, query_id: values[3] }]);
@@ -116,10 +129,12 @@ function fixture(previous?: {
           }
           if (statement.includes("SET ingested_at=")) {
             reservations.push(String(values[2]));
+            if (previous?.failReservation) return result([]);
             return result([{ owner_id: ownerId }]);
           }
           if (statement.includes("analytics_stream_state")) {
             reuseProofs.push(1);
+            if (previous?.failReuse) return result([]);
             return result([{ owner_id: ownerId }]);
           }
           if (statement.startsWith("SELECT owner_id"))
@@ -142,6 +157,7 @@ function fixture(previous?: {
   };
   return {
     registrations,
+    terminals,
     trace,
     input,
     client,
@@ -611,5 +627,204 @@ describe("analytics query owner high-water reservation", () => {
     expect(context.reuseProofs).toEqual([1]);
     expect(context.writeIntentClears).toEqual([context.input.resourceId]);
     expect(context.release).toHaveBeenCalledWith(false);
+  });
+
+  it("fails closed when reservation or reuse proof loses the admitted owner", async () => {
+    const group = describeAnalyticsDeliveryGroup([kafkaFirst], 500);
+    const intentId = analyticsDeliveryGroupIntentId(group);
+    const lostReservation = fixture({ failReservation: true });
+    await expect(
+      withAnalyticsQueryOwner(
+        database,
+        lostReservation.client,
+        { resourceId: lostReservation.input.resourceId, intentId },
+        async (owner) => {
+          await owner.reserveIngestionThrough(ingestedAt);
+        },
+      ),
+    ).rejects.toThrow(/lost its owner or high-watermark/i);
+
+    const lostReuse = fixture({ failReuse: true });
+    await expect(
+      withAnalyticsQueryOwner(
+        database,
+        lostReuse.client,
+        { resourceId: lostReuse.input.resourceId, intentId },
+        async (owner) => {
+          await owner.reuseIngestionReservation({ ...group, ingestedAt, intentId });
+        },
+      ),
+    ).rejects.toThrow(/missing, changed or exceeds its high-watermark/i);
+  });
+
+  it("rejects reuse when the admitted intent id does not match the group digest identity", async () => {
+    const group = describeAnalyticsDeliveryGroup([kafkaFirst], 500);
+    const intentId = analyticsDeliveryGroupIntentId(group);
+    const context = fixture();
+    await withAnalyticsQueryOwner(
+      database,
+      context.client,
+      { resourceId: context.input.resourceId, intentId },
+      async (owner) => {
+        await expect(
+          owner.reuseIngestionReservation({
+            ...group,
+            positionsDigest: "0".repeat(64),
+            ingestedAt,
+            intentId,
+          }),
+        ).rejects.toThrow(/does not belong to this intent/i);
+      },
+    );
+    expect(context.reuseProofs).toEqual([]);
+  });
+});
+
+describe("analytics query owner serial registration and release boundaries", () => {
+  it("does not unlock when advisory lock acquisition fails before ownership", async () => {
+    const context = fixture({ failLock: true });
+    await expect(
+      withAnalyticsQueryOwner(database, context.client, context.input, async () => undefined),
+    ).rejects.toThrow(/advisory lock unavailable/i);
+    expect(context.locks).toEqual([]);
+    expect(context.unlocks).toEqual([]);
+    expect(context.quiesced).toEqual([]);
+    expect(context.release).toHaveBeenCalledWith(false);
+  });
+
+  it("replays the same pending intent without treating it as a foreign fence", async () => {
+    const intentId = randomUUID();
+    const context = fixture({ intentId });
+    await withAnalyticsQueryOwner(
+      database,
+      context.client,
+      { resourceId: context.input.resourceId, intentId },
+      async () => undefined,
+    );
+    expect(context.writeIntentClears).toEqual([context.input.resourceId]);
+    expect(context.quiesced).toHaveLength(1);
+    expect(context.release).toHaveBeenCalledWith(false);
+  });
+
+  it("marks only the final registered request terminal after serial successors", async () => {
+    const context = fixture();
+    await withAnalyticsQueryOwner(database, context.client, context.input, async (owner) => {
+      await owner.client.command({ query: "SELECT 1" });
+      await owner.client.command({ query: "SELECT 2" });
+    });
+    expect(context.registrations).toHaveLength(2);
+    expect(context.terminals).toEqual([context.registrations[1]]);
+    expect(context.writeIntentClears).toEqual([context.input.resourceId]);
+  });
+
+  it("skips completion marking when the owner never registered a request", async () => {
+    const context = fixture();
+    await withAnalyticsQueryOwner(database, context.client, context.input, async () => undefined);
+    expect(context.registrations).toEqual([]);
+    expect(context.terminals).toEqual([]);
+    expect(context.writeIntentClears).toEqual([context.input.resourceId]);
+  });
+
+  it("fails closed when completion proof does not match the admitted owner", async () => {
+    const context = fixture({ corruptCompletion: true });
+    await expect(
+      withAnalyticsQueryOwner(database, context.client, context.input, async (owner) => {
+        await owner.client.command({ query: "SELECT 1" });
+      }),
+    ).rejects.toThrow(/completion did not confirm/i);
+    expect(context.terminals).toHaveLength(1);
+    expect(context.writeIntentClears).toEqual([]);
+    expect(context.quiesced).toEqual([]);
+    expect(context.release).toHaveBeenCalledWith(true);
+  });
+
+  it("fails closed when completed-intent retirement proof is wrong", async () => {
+    const context = fixture({ intentId: "completed-A", corruptRetirement: true });
+    await expect(
+      withAnalyticsReceiptQueryOwner(
+        database,
+        context.client,
+        { resourceId: context.input.resourceId },
+        async (owner) => {
+          await owner.client.query({ query: "SELECT receipt proof", format: "JSONEachRow" });
+          return { completedIntentId: "completed-A" };
+        },
+      ),
+    ).rejects.toThrow(/retirement did not confirm/i);
+    expect(context.retired).toEqual([]);
+    expect(context.release).toHaveBeenCalledWith(true);
+  });
+
+  it("publishes through insert on the owned write client", async () => {
+    const context = fixture();
+    const inserts: string[] = [];
+    const client: ClickHouseClient = {
+      ...context.client,
+      insert: async (options) => {
+        inserts.push(String(options.query_id));
+      },
+    };
+    await withAnalyticsQueryOwner(database, client, context.input, async (owner) => {
+      const insert = owner.client.insert;
+      if (insert === undefined) throw new Error("owned write client must expose insert");
+      await insert({
+        table: "fixture",
+        values: [{ value: 1 }],
+        format: "JSONEachRow",
+      });
+    });
+    expect(inserts).toEqual([context.registrations[0]]);
+    expect(context.terminals).toEqual([context.registrations[0]]);
+  });
+
+  it("does not clear a non source-group intent after a terminal native write failure", async () => {
+    const context = fixture();
+    const client: ClickHouseClient = {
+      ...context.client,
+      command: async () => {
+        throw new ClickHouseError({
+          message: "memory",
+          code: "241",
+          type: "MEMORY_LIMIT_EXCEEDED",
+        });
+      },
+    };
+    await expect(
+      withAnalyticsQueryOwner(database, client, context.input, async (owner) => {
+        await owner.client.command({ query: "INSERT fixture" });
+      }),
+    ).rejects.toMatchObject({ code: "241" });
+    expect(context.sourceGroupClears).toEqual([]);
+    expect(context.writeIntentClears).toEqual([]);
+    expect(context.quiesced).toHaveLength(1);
+  });
+
+  it.each([
+    "source-group:not-a-digest",
+    `xsource-group:${"ab".repeat(32)}`,
+    `source-group:${"ab".repeat(32)}trailing`,
+  ])("does not clear a malformed source-group intent %s", async (intentId) => {
+    const context = fixture();
+    const client: ClickHouseClient = {
+      ...context.client,
+      command: async () => {
+        throw new ClickHouseError({
+          message: "memory",
+          code: "241",
+          type: "MEMORY_LIMIT_EXCEEDED",
+        });
+      },
+    };
+    await expect(
+      withAnalyticsQueryOwner(
+        database,
+        client,
+        { resourceId: context.input.resourceId, intentId },
+        async (owner) => {
+          await owner.client.command({ query: "INSERT fixture" });
+        },
+      ),
+    ).rejects.toMatchObject({ code: "241" });
+    expect(context.sourceGroupClears).toEqual([]);
   });
 });
