@@ -48,6 +48,29 @@ provider-priority-deduped activity samples; see its
 [repository contract](../packages/server/src/repositories/heart-rate-repository.ts).
 Derived rows are never synced back to Postgres.
 
+## Sample Identity — Approved Target Contract
+
+The approved identity rule (2026-11-07) permanently binds a metric-sample ID to
+one user, provider, and recorded timestamp. Changing any of those identity
+fields creates a new sample ID. Activity association and measurement values
+may change while retaining the ID.
+
+This is a target contract, not a claim that all historical data has been
+validated or that enforcement is complete. The [event constructor](../src/metric-stream/events.ts)
+derives generated IDs from identity fields but also accepts caller-supplied
+IDs; the [writer boundary](../src/db/metric-stream-writer.ts) and historical
+imports must be audited before changing that behavior. Timestamp
+canonicalization and precision are part of the compatibility review.
+
+Keep the existing global latest-version deletion checks until producer and
+historical compatibility are established and an implementation is reviewed.
+Do not assume immutable identity solely to narrow a query, rewrite retained
+IDs, or resume a paused consumer. This decision authorizes no production
+migration or data change. The [deletion implementation](../src/metric-stream/clickhouse-sink.ts)
+remains the current behavior; [ClickHouse replacement](https://clickhouse.com/docs/guides/replacing-merge-tree)
+uses the complete sorting key, which is not interchangeable with this sample
+identity rule.
+
 ## Local Development
 
 Start the backing services:
