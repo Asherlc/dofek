@@ -37,7 +37,21 @@ const describedTopicConfigSchema = z.object({
 });
 
 export type AccountErasureHighWatermark = z.infer<typeof highWatermarkSchema>;
-export type AccountErasureRouteHighWatermark = AccountErasureHighWatermark & { topic: string };
+
+export const accountErasureRouteHighWatermarkSchema = highWatermarkSchema.extend({
+  topic: z.string().min(1),
+});
+export type AccountErasureRouteHighWatermark = z.infer<
+  typeof accountErasureRouteHighWatermarkSchema
+>;
+
+/** Durable ingest_fence checkpoint written by the Kafka phase runner. */
+export const accountErasureIngestFenceCheckpointSchema = z.object({
+  highWatermarks: z.array(accountErasureRouteHighWatermarkSchema).min(1),
+});
+export type AccountErasureIngestFenceCheckpoint = z.infer<
+  typeof accountErasureIngestFenceCheckpointSchema
+>;
 
 interface KafkaOffsetAdmin {
   fetchOffsets(options: { groupId: string; topics: string[] }): Promise<

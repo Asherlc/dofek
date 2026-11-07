@@ -1,5 +1,5 @@
 import * as Sentry from "@sentry/node";
-import { z } from "zod";
+import { accountErasureIngestFenceCheckpointSchema } from "../account-erasure/kafka-drain.ts";
 import { updateAccountErasureProviderCredentials } from "../account-erasure/remote-snapshot.ts";
 import { AccountErasureSnapshotBudgetError } from "../account-erasure/snapshot-budget.ts";
 import type { TokenSet } from "../auth/oauth.ts";
@@ -58,22 +58,10 @@ export interface AccountErasurePhaseExecution {
   scrubPii(): Promise<void>;
 }
 
-const routedIngestFenceSchema = z.object({
-  streams: z
-    .array(
-      z.object({
-        fence: z.object({
-          topic: z.string().min(1),
-          partition: z.number().int(),
-          transport: z.literal("pulsar"),
-        }),
-      }),
-    )
-    .min(1),
-});
-
 function hasRoutedIngestFence(checkpoint: Record<string, unknown> | null): boolean {
-  return routedIngestFenceSchema.safeParse(checkpoint).success;
+  // Kafka steady-state only: { highWatermarks: [{ topic, low, offset, partition }, ...] }.
+  // Legacy Pulsar stream-fence rows are not treated as a durable routed fence.
+  return accountErasureIngestFenceCheckpointSchema.safeParse(checkpoint).success;
 }
 
 export interface AccountErasurePhaseRunner {

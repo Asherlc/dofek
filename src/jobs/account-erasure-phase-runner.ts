@@ -1,6 +1,9 @@
 import { z } from "zod";
 import type { ArchiveErasureResult } from "../account-erasure/archive-erasure.ts";
-import type { AccountErasureRouteHighWatermark } from "../account-erasure/kafka-drain.ts";
+import {
+  type AccountErasureRouteHighWatermark,
+  accountErasureIngestFenceCheckpointSchema,
+} from "../account-erasure/kafka-drain.ts";
 import type { PeerDbStagingRetentionResult } from "../account-erasure/peerdb-staging-retention.ts";
 import type { PeerDbStagingBoundary } from "../account-erasure/peerdb-staging-writer-barrier.ts";
 import type { AccountErasureProcessorProgress } from "../account-erasure/processor-erasure.ts";
@@ -122,25 +125,16 @@ function requireIdentifyingRequest(
   return { encryptedSnapshot: encryptedRemoteSnapshot, userId };
 }
 
-const highWatermarksCheckpointSchema = z.object({
-  highWatermarks: z.array(
-    z.object({
-      topic: z.string().min(1),
-      low: z.string().regex(/^\d+$/),
-      offset: z.string().regex(/^\d+$/),
-      partition: z.number().int().nonnegative(),
-    }),
-  ),
-});
 const quarantineHighWatermarksCheckpointSchema = z.object({
-  quarantineHighWatermarks: highWatermarksCheckpointSchema.shape.highWatermarks,
+  quarantineHighWatermarks: accountErasureIngestFenceCheckpointSchema.shape.highWatermarks,
 });
 
 async function loadHighWatermarks(
   execution: AccountErasurePhaseExecution,
 ): Promise<AccountErasureRouteHighWatermark[]> {
-  return highWatermarksCheckpointSchema.parse(await execution.loadCheckpointDetails("ingest_fence"))
-    .highWatermarks;
+  return accountErasureIngestFenceCheckpointSchema.parse(
+    await execution.loadCheckpointDetails("ingest_fence"),
+  ).highWatermarks;
 }
 
 function archiveDetails(result: ArchiveErasureResult) {

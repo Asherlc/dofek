@@ -390,27 +390,24 @@ describe("processAccountErasureRequest", () => {
     expect(accountErasureDatabaseMocks.completeAccountErasure).not.toHaveBeenCalled();
   });
 
-  it("recaptures a Kafka-era ingest fence before draining consumers", async () => {
-    accountErasureDatabaseMocks.loadAccountErasureCheckpoints.mockResolvedValue(
-      new Set(["ingest_fence", "consumer_drain"]),
-    );
-    accountErasureDatabaseMocks.loadAccountErasureCheckpointDetails.mockResolvedValue({
-      highWatermarks: [{ low: "10", offset: "20", partition: 0 }],
-    });
-    const nativeIngest = {
-      streams: [
+  it("preserves completed Kafka ingest_fence and consumer_drain on resume", async () => {
+    const kafkaIngestFence = {
+      highWatermarks: [
         {
-          fence: {
-            transport: "pulsar",
-            state: "empty",
-            epoch: "epoch-1",
-            topic: "persistent://public/default/legacy",
-            partition: -1,
-          },
+          topic: "metric-stream-live-v2",
+          low: "10",
+          offset: "20",
+          partition: 0,
         },
       ],
     };
-    const runner = phaseRunner(async (phase) => (phase === "ingest_fence" ? nativeIngest : null));
+    accountErasureDatabaseMocks.loadAccountErasureCheckpoints.mockResolvedValue(
+      new Set(["ingest_fence", "consumer_drain"]),
+    );
+    accountErasureDatabaseMocks.loadAccountErasureCheckpointDetails.mockResolvedValue(
+      kafkaIngestFence,
+    );
+    const runner = phaseRunner();
 
     await processAccountErasureRequest(
       database,
@@ -420,29 +417,52 @@ describe("processAccountErasureRequest", () => {
       new Date("2026-08-03T12:00:00.000Z"),
     );
 
-    expect(runner.runPhase).toHaveBeenCalledWith(
+    expect(runner.runPhase).not.toHaveBeenCalledWith("ingest_fence", expect.anything());
+    expect(runner.runPhase).not.toHaveBeenCalledWith("consumer_drain", expect.anything());
+    expect(accountErasureDatabaseMocks.loadAccountErasureCheckpointDetails).toHaveBeenCalledWith(
+      database,
+      request.id,
       "ingest_fence",
-      expect.objectContaining({ request: expect.objectContaining({ id: request.id }) }),
     );
-    expect(runner.runPhase).toHaveBeenCalledWith(
-      "consumer_drain",
-      expect.objectContaining({ request: expect.objectContaining({ id: request.id }) }),
+  });
+
+  it("recaptures when ingest_fence checkpoint is missing or empty", async () => {
+    accountErasureDatabaseMocks.loadAccountErasureCheckpoints.mockResolvedValue(
+      new Set(["ingest_fence", "consumer_drain"]),
     );
+    accountErasureDatabaseMocks.loadAccountErasureCheckpointDetails.mockResolvedValue({
+      highWatermarks: [],
+    });
+    const recaptured = {
+      highWatermarks: [{ topic: "metric-stream-live-v2", low: "0", offset: "42", partition: 0 }],
+    };
+    const runner = phaseRunner(async (phase) => (phase === "ingest_fence" ? recaptured : null));
+
+    await processAccountErasureRequest(
+      database,
+      request.id,
+      "worker-1",
+      runner,
+      new Date("2026-08-03T12:00:00.000Z"),
+    );
+
+    expect(runner.runPhase).toHaveBeenCalledWith("ingest_fence", expect.anything());
+    expect(runner.runPhase).toHaveBeenCalledWith("consumer_drain", expect.anything());
     expect(accountErasureDatabaseMocks.markAccountErasurePhaseCompleted).toHaveBeenCalledWith(
       database,
       request.id,
       "worker-1",
       "ingest_fence",
-      nativeIngest,
+      recaptured,
     );
   });
 
-  it("recaptures an empty ingest fence before draining consumers", async () => {
+  it("recaptures when ingest_fence checkpoint lacks topic on high watermarks", async () => {
     accountErasureDatabaseMocks.loadAccountErasureCheckpoints.mockResolvedValue(
-      new Set(["ingest_fence"]),
+      new Set(["ingest_fence", "consumer_drain"]),
     );
     accountErasureDatabaseMocks.loadAccountErasureCheckpointDetails.mockResolvedValue({
-      streams: [],
+      highWatermarks: [{ low: "10", offset: "20", partition: 0 }],
     });
     const runner = phaseRunner();
 
@@ -455,11 +475,12 @@ describe("processAccountErasureRequest", () => {
     );
 
     expect(runner.runPhase).toHaveBeenCalledWith("ingest_fence", expect.anything());
+    expect(runner.runPhase).toHaveBeenCalledWith("consumer_drain", expect.anything());
   });
 
-  it("does not recapture a native ingest fence that already names its streams", async () => {
+  it("recaptures legacy Pulsar stream-fence rows instead of treating them as durable", async () => {
     accountErasureDatabaseMocks.loadAccountErasureCheckpoints.mockResolvedValue(
-      new Set(["ingest_fence"]),
+      new Set(["ingest_fence", "consumer_drain"]),
     );
     accountErasureDatabaseMocks.loadAccountErasureCheckpointDetails.mockResolvedValue({
       streams: [
@@ -484,7 +505,8 @@ describe("processAccountErasureRequest", () => {
       new Date("2026-08-03T12:00:00.000Z"),
     );
 
-    expect(runner.runPhase).not.toHaveBeenCalledWith("ingest_fence", expect.anything());
+    expect(runner.runPhase).toHaveBeenCalledWith("ingest_fence", expect.anything());
+    expect(runner.runPhase).toHaveBeenCalledWith("consumer_drain", expect.anything());
   });
 
   it("does not recapture a transport fence after the user identifier is scrubbed", async () => {
