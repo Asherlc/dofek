@@ -1,0 +1,23 @@
+{
+  "at": "2026-11-07T04:49:02.023Z",
+  "run": "https://github.com/Asherlc/dofek/actions/runs/42339969701",
+  "appliedCommit": "5b82603412e9e85c7a86de45cebfd0bd5da64504",
+  "resources": {
+    "added": 8,
+    "changed": 0,
+    "destroyed": 2
+  },
+  "secretNames": [
+    "KAFKA_TIERED_STORAGE_BUCKET",
+    "KAFKA_TIERED_STORAGE_ENDPOINT",
+    "KAFKA_TIERED_STORAGE_REGION",
+    "KAFKA_TIERED_STORAGE_ACCESS_KEY_ID",
+    "KAFKA_TIERED_STORAGE_SECRET_ACCESS_KEY"
+  ],
+  "allNonempty": true,
+  "dedicatedChildHeadBucketStatus": 200,
+  "kafkaBucketObjects": 0,
+  "retiredPulsarBucketStatus": 404,
+  "bodyGETs": 0,
+  "productionCutover": false
+}

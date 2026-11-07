@@ -1,0 +1,11 @@
+{
+  "at": "2026-11-07T04:47:24.609Z",
+  "bucket": "dofek-pulsar-qualification",
+  "approvedObjects": 14,
+  "approvedBytes": 82640555,
+  "deletedObjects": 14,
+  "remainingObjects": 0,
+  "unfinishedMPUs": 0,
+  "bodyGETs": 0,
+  "bucketDeletion": "left to approved Terraform apply"
+}

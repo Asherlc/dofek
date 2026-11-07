@@ -2,7 +2,9 @@
 
 ## 2026-11-07 — Infisical→GH sync pruned GH-only `CLOUDFLARE_TERRAFORM_R2_API_TOKEN` (resolved via env ownership)
 
-- **Status:** Resolved (credential path). No Terraform apply yet.
+- **Status:** Resolved. Terraform provisioning **DONE** (plan+apply+Root
+  independent verify). Production cutover / topic values / old RP data-dir
+  deletion remain **unapproved**.
 - **Symptoms / user impact:** Root-dispatched Terraform **plan**
   ([run 42338058404](https://github.com/Asherlc/dofek/actions/runs/42338058404)
   on `e1c9fbdb5`) job **Terraform Plan** / `TF_OPERATION=plan` failed before
@@ -29,17 +31,43 @@
   `5b8260341`. Root MCP-rolled unused CF token `ac888…` (policies unchanged);
   new value via STDIN `gh secret set --env terraform` only — **env present,
   repo absent**; no Infisical copy; sync settings unchanged.
-- **Validation:** Plan-only
+- **Validation (plan):** Plan-only
   [run 42338890512](https://github.com/Asherlc/dofek/actions/runs/42338890512)
   on `5b8260341` — job **Terraform Plan**, `TF_OPERATION=plan`, **success**.
   Human plan summary: **Plan: 8 to add, 0 to change, 2 to destroy.** Creates
   Kafka TS bucket/lifecycle/account_token + five `infisical_secret.kafka_tiered_storage_*`;
   destroys orphaned `cloudflare_r2_bucket.pulsar_qualification` +
   `cloudflare_r2_bucket_lifecycle.pulsar_qualification_cleanup` (not in config).
-  No apply from this incident close.
-- **Remaining risk / follow-up:** Explicit `operation=apply` still requires
-  separate authorization (review destroy of `dofek-pulsar-qualification`).
-  Do not store managing token as a repo secret again.
+- **Pre-apply object cleanup (user-approved):** Root re-listed
+  `dofek-pulsar-qualification` (14 objects / 82,640,555 B; 0 MPU), deleted the
+  14 retired UUID-ledger/index lab objects, post-list 0 / 0 MPU / 0 body GET.
+  Sanitized receipt:
+  [pulsar-qualification-object-cleanup.json](evidence/kafka-infra-plan-review-20261107/pulsar-qualification-object-cleanup.json)
+  (`at=2026-11-07T04:47:24.609Z`).
+- **Validation (apply):** User-approved Root dispatch
+  [run 42339969701](https://github.com/Asherlc/dofek/actions/runs/42339969701)
+  `operation=apply`, `TF_OPERATION=apply`, head `ba7afbda4` (infra/workflow
+  equivalent to reviewed pin `5b8260341`). **No first fatal.** Job **Terraform
+  Apply** success. Exact summary:
+  `Apply complete! Resources: 8 added, 0 changed, 2 destroyed.` Matches plan;
+  no Modifying actions. Adds: `cloudflare_r2_bucket.kafka_ts_offload`,
+  `cloudflare_r2_bucket_lifecycle.kafka_ts_offload_abort_mpu`,
+  `cloudflare_account_token.kafka_ts_offload_object_rw`, five
+  `infisical_secret.kafka_tiered_storage_*`. Destroys: empty
+  `cloudflare_r2_bucket.pulsar_qualification` +
+  `cloudflare_r2_bucket_lifecycle.pulsar_qualification_cleanup`. See
+  [kafka-ts-r2-offload-iac.md](kafka-ts-r2-offload-iac.md).
+- **Root independent post-apply verify:** SUCCESS — same run `42339969701`,
+  pinned `5b8260341`, exact `8 added / 0 changed / 2 destroyed`. All five
+  Infisical `KAFKA_TIERED_STORAGE_*` names nonempty; dedicated child HEAD
+  `dofek-kafka-ts-offload` **200** / `ListObjects` **0**; retired
+  `dofek-pulsar-qualification` HEAD **404**; **0** body GET. Environment
+  secret names-only still present after apply. Receipt:
+  [apply-verification.json](evidence/kafka-infra-plan-review-20261107/apply-verification.json)
+  (`at=2026-11-07T04:49:02.023Z`).
+- **Remaining risk / follow-up:** Do not store managing token as a repo secret
+  again. Broker qualification, production cutover, topic-value changes, and old
+  Redpanda data-dir deletion remain **unapproved**.
 
 ## 2026-11-06 — Kafka TS R2 managing-token bootstrap blocked on DNS Write `is_selectable=false` (IAM resolved via R2 provider alias)
 

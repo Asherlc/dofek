@@ -4,17 +4,32 @@ Dedicated R2 bucket + long-lived Object RW account token for Apache Kafka 4.4 +
 Aiven RSM 1.2.0. Metric-stream JSONL archive and account-erasure ledger in
 [`deploy/storage.tf`](../deploy/storage.tf) stay untouched.
 
-**No TF apply / bucket create / key mint from this doc alone.** Resources are
-always declared. Infisical CI can write `KAFKA_TIERED_STORAGE_*` (privilege
-granted). Managing IAM bootstrap for the aliased R2 provider is complete
-(`CLOUDFLARE_TERRAFORM_R2_API_TOKEN` was set as a **repo** secret, then
+Resources are always declared. Infisical CI can write `KAFKA_TIERED_STORAGE_*`
+(privilege granted). Managing IAM bootstrap for the aliased R2 provider is
+complete (`CLOUDFLARE_TERRAFORM_R2_API_TOKEN` was set as a **repo** secret, then
 **pruned** by Infisical `dofek-github-sync` overwrite at ~2026-11-07T04:08Z —
 see [`production-incident-baseline.md`](production-incident-baseline.md)).
 **User-approved durable ownership:** store it only as an Actions **environment**
 secret on environment `terraform` (job `environment: terraform`); leave sync
 `disableSecretDeletion=false` and Traefik/repo `CLOUDFLARE_API_TOKEN` unchanged.
-Do **not** put the managing token in Infisical. Apply and Kafka TS
-qualification remain separate gates.
+Do **not** put the managing token in Infisical.
+
+**Terraform provisioning: DONE (2026-11-07).** User-approved Root
+`operation=apply` [run 42339969701](https://github.com/Asherlc/dofek/actions/runs/42339969701)
+completed with `Apply complete! Resources: 8 added, 0 changed, 2 destroyed`
+(same reviewed plan as [plan 42338890512](https://github.com/Asherlc/dofek/actions/runs/42338890512)
+on `5b8260341`; no Modifying / no extra actions). Created
+`dofek-kafka-ts-offload` + abort-MPU lifecycle + Object RW account token + five
+`KAFKA_TIERED_STORAGE_*` Infisical secrets; destroyed empty retired
+`dofek-pulsar-qualification` bucket + its lifecycle after Root deleted the 14
+approved lab objects (82,640,555 B) —
+[cleanup receipt](evidence/kafka-infra-plan-review-20261107/pulsar-qualification-object-cleanup.json).
+Root independent verify
+([apply-verification.json](evidence/kafka-infra-plan-review-20261107/apply-verification.json)):
+all five Infisical names nonempty; `dofek-kafka-ts-offload` HEAD 200 /
+ListObjects 0; retired bucket HEAD 404; 0 body GET; env managing-secret
+names-only still present. **Not approved:** production cutover, topic-value
+changes, old Redpanda data-dir deletion, broker qualification.
 
 ## Terraform owns
 
@@ -75,7 +90,7 @@ repository secret (sync overwrite will prune it). Child Kafka Object RW is
 minted by Terraform (`cloudflare_account_token`) and written to Infisical as
 `KAFKA_TIERED_STORAGE_*` — not the managing token’s value.
 
-### Managing token (IAM bootstrap resolved; GH env restore pending Root)
+### Managing token (IAM bootstrap resolved; env secret restored)
 
 | Field | Value |
 |---|---|
@@ -83,7 +98,7 @@ minted by Terraform (`cloudflare_account_token`) and written to Infisical as
 | Account | `8e5b2f62ffe8ebdd48e725d325a6d51e` |
 | Permissions | Account API Tokens Write + Workers R2 Storage Write (account scope only) |
 | GH secret | Environment secret `CLOUDFLARE_TERRAFORM_R2_API_TOKEN` on env `terraform` (repo-level copy pruned 2026-11-07T04:08Z) |
-| Create path | Root creates env `terraform` (no required reviewers) + MCP roll unused CF token → `gh secret set --env terraform` only |
+| Create path | Root created env `terraform` (no required reviewers) + MCP roll unused CF token → `gh secret set --env terraform` only; apply [42339969701](https://github.com/Asherlc/dofek/actions/runs/42339969701) used this path successfully |
 
 Optional bearer check (no secret in logs): `GET /accounts/{id}/tokens/{token_id}/permission_groups` → **200** with the two Write groups. List Tokens on the **default** GH/Infisical `CLOUDFLARE_API_TOKEN` still returns **403 / 9109** — expected; those tokens are not Account API Tokens–capable and must stay that way for Traefik.
 
@@ -123,15 +138,21 @@ Re-check:
 1. ~~IAM bootstrap (CF token + first repo GH set)~~ **done** then pruned —
    workflow job uses `environment: terraform` + fail-fast on
    `TF_VAR_cloudflare_terraform_r2_api_token`. Default repo
-   `CLOUDFLARE_API_TOKEN` retained for DNS/`storage.tf`. **Root:** create env
-   `terraform`, MCP-roll managing token, store **only** as env secret (sync
+   `CLOUDFLARE_API_TOKEN` retained for DNS/`storage.tf`. Root created env
+   `terraform`, MCP-rolled managing token, stored **only** as env secret (sync
    `disableSecretDeletion` stays false).
-2. `terraform plan` (manual `operation=plan`) then `terraform apply` via normal
-   deploy path (proves R2 Write + Account Tokens Write + Infisical write).
-   **Not claimed done by this doc.**
-3. Kafka TS qualification / broker cutover separate. Infisical
-   `KAFKA_CLUSTER_ID` / `KAFKA_BROKERS` **resolved** (do not regenerate). Topic
-   v2 cutover separate.
+2. ~~`terraform plan` then approved `terraform apply` + Root verify~~
+   **DONE** — plan
+   [42338890512](https://github.com/Asherlc/dofek/actions/runs/42338890512)
+   (`8/0/2`); apply
+   [42339969701](https://github.com/Asherlc/dofek/actions/runs/42339969701)
+   (`8 added, 0 changed, 2 destroyed`); receipts
+   [object cleanup](evidence/kafka-infra-plan-review-20261107/pulsar-qualification-object-cleanup.json)
+   +
+   [apply verification](evidence/kafka-infra-plan-review-20261107/apply-verification.json).
+3. Kafka TS qualification / broker cutover / topic values / old RP data-dir
+   deletion separate (**not** approved). Infisical `KAFKA_CLUSTER_ID` /
+   `KAFKA_BROKERS` **resolved** (do not regenerate).
 4. Infisical Traefik `CLOUDFLARE_API_TOKEN` stays. Do not merge R2 managing token
    into Infisical.
 
