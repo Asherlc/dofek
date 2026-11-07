@@ -225,43 +225,47 @@ vi.mock("../account-erasure/processor-retention.ts", () => ({
   verifyProcessorRetentionPolicies: mocks.verifyProcessorRetention,
 }));
 
-vi.mock("../account-erasure/kafka-drain.ts", () => ({
-  assertAccountErasureConsumersDrained: mocks.assertConsumersDrained,
-  assertAccountErasureQuarantineExpired: mocks.assertQuarantineExpired,
-  assertAccountErasureReplayExpired: mocks.assertReplayExpired,
-  captureAccountErasureHighWatermarks: mocks.captureHighWatermarks,
-  captureAccountErasureQuarantineHighWatermarks: mocks.captureQuarantineHighWatermarks,
-  createAccountErasureKafkaAdminFromEnv: vi.fn((env: NodeJS.ProcessEnv = process.env) => {
-    const brokers = env.KAFKA_BROKERS?.split(",")
-      .map((broker) => broker.trim())
-      .filter(Boolean);
-    if (!brokers?.length) {
-      throw new Error("KAFKA_BROKERS is required for account erasure");
-    }
-    return {
-      admin: { name: "kafka-admin" },
-      close: mocks.closeKafka,
-      connect: mocks.connectKafka,
-      routes: [
-        {
-          topic: "metric-stream-v1",
-          consumerGroups: ["metric-stream-clickhouse-sink", "metric-stream-r2-archive"],
-        },
-        {
-          topic: "metric-stream-live-v2",
-          consumerGroups: ["metric-stream-live-clickhouse-sink", "metric-stream-live-r2-archive"],
-        },
-        {
-          topic: "metric-stream-history-v2",
-          consumerGroups: [
-            "metric-stream-history-clickhouse-sink",
-            "metric-stream-history-r2-archive",
-          ],
-        },
-      ],
-    };
-  }),
-}));
+vi.mock("../account-erasure/kafka-drain.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../account-erasure/kafka-drain.ts")>();
+  return {
+    ...actual,
+    assertAccountErasureConsumersDrained: mocks.assertConsumersDrained,
+    assertAccountErasureQuarantineExpired: mocks.assertQuarantineExpired,
+    assertAccountErasureReplayExpired: mocks.assertReplayExpired,
+    captureAccountErasureHighWatermarks: mocks.captureHighWatermarks,
+    captureAccountErasureQuarantineHighWatermarks: mocks.captureQuarantineHighWatermarks,
+    createAccountErasureKafkaAdminFromEnv: vi.fn((env: NodeJS.ProcessEnv = process.env) => {
+      const brokers = env.KAFKA_BROKERS?.split(",")
+        .map((broker) => broker.trim())
+        .filter(Boolean);
+      if (!brokers?.length) {
+        throw new Error("KAFKA_BROKERS is required for account erasure");
+      }
+      return {
+        admin: { name: "kafka-admin" },
+        close: mocks.closeKafka,
+        connect: mocks.connectKafka,
+        routes: [
+          {
+            topic: "metric-stream-v1",
+            consumerGroups: ["metric-stream-clickhouse-sink", "metric-stream-r2-archive"],
+          },
+          {
+            topic: "metric-stream-live-v2",
+            consumerGroups: ["metric-stream-live-clickhouse-sink", "metric-stream-live-r2-archive"],
+          },
+          {
+            topic: "metric-stream-history-v2",
+            consumerGroups: [
+              "metric-stream-history-clickhouse-sink",
+              "metric-stream-history-r2-archive",
+            ],
+          },
+        ],
+      };
+    }),
+  };
+});
 
 vi.mock("../metric-stream/consumer-routes.ts", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../metric-stream/consumer-routes.ts")>();
