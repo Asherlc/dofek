@@ -1,0 +1,24 @@
+{
+  "VOV9OtiuTEqMhCaP0lh_eg": {
+    "latest": "DELETE_SEGMENT_FINISHED",
+    "history": [
+      "COPY_SEGMENT_STARTED",
+      "COPY_SEGMENT_FINISHED",
+      "DELETE_SEGMENT_STARTED",
+      "DELETE_SEGMENT_FINISHED"
+    ],
+    "had_COPY_FINISHED": true,
+    "had_DELETE_FINISHED": true
+  },
+  "hDIrv61wQqeJlNgxo4lFzA": {
+    "latest": "DELETE_SEGMENT_FINISHED",
+    "history": [
+      "COPY_SEGMENT_STARTED",
+      "COPY_SEGMENT_FINISHED",
+      "DELETE_SEGMENT_STARTED",
+      "DELETE_SEGMENT_FINISHED"
+    ],
+    "had_COPY_FINISHED": true,
+    "had_DELETE_FINISHED": true
+  }
+}

@@ -1,0 +1,2 @@
+PRODUCE_MAIN_EXIT=0
+6047500 /tmp/main.payload

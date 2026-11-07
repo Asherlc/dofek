@@ -1,0 +1,19 @@
+{
+  "at": "2026-11-07T04:29:37.168Z",
+  "bucket": "kafka-ts-r2-q-mpudel-20261107c",
+  "prefix": "kafka-ts-parity/r2/20261107c-q-mpudel/",
+  "preOperatorObjectCount": 0,
+  "preOperatorMultipartCount": 0,
+  "postDeleteInventoryFile": "ROOT_POST_DELETE_INVENTORY.json",
+  "operatorObjectDeletes": 0,
+  "operatorMultipartAborts": 0,
+  "bucketDeleteHTTP": 200,
+  "bucketGetHTTP": 404,
+  "ownedContainers": 0,
+  "ownedVolumes": 0,
+  "ownedNetworks": 0,
+  "objectBodyGETsByRoot": 0,
+  "parentRevoked": false,
+  "temporarySessionExpiresAt": "2026-11-07T05:18:48.287Z",
+  "mustNotRecreateBucket": true
+}

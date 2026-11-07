@@ -1,0 +1,2 @@
+pulsar-foundation-kafka-ts-r2-q-mpudel-c-client-1	Up 7 minutes
+pulsar-foundation-kafka-ts-r2-q-mpudel-c-kafka-1	Exited (143) 3 minutes ago

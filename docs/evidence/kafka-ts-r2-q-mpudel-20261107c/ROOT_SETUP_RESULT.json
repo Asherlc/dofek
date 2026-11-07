@@ -1,0 +1,21 @@
+{
+  "status": "Started",
+  "bucket": "kafka-ts-r2-q-mpudel-20261107c",
+  "prefix": "kafka-ts-parity/r2/20261107c-q-mpudel/",
+  "project": "pulsar-foundation-kafka-ts-r2-q-mpudel-c",
+  "mintedAt": "2026-11-07T04:18:48.287Z",
+  "expiresAt": "2026-11-07T05:18:48.287Z",
+  "hardStopAt": "2026-11-07T04:38:48.287Z",
+  "permission": "object-read-write",
+  "ttlSeconds": 3600,
+  "uploadBudgetBytes": 8388608,
+  "objectBodyGETBudget": 0,
+  "sourceHashes": {
+    "docker-compose.yml": "a5ecb5aaa08b8a81502c8ff912b12f5c710dd58353fb5317c2ac603148fa2738",
+    "docker-compose.credentials.placeholder.yml": "c34b04e4da8c8934c5318c4015a2a1f13d2a7ab9548c38fb31940c825bd8e5aa",
+    "BUDGETS.json": "8d7e08c93a3960948531a1ed31fd370cbaa974f6b00da5315af6075a3057b4f4"
+  },
+  "objectBodyDownloadsByRoot": 0,
+  "productionDeployment": false,
+  "childAccessKeyIdNamesOnly": "d9831c62b4ed20e32f34e80a0c5d8643"
+}

@@ -1,0 +1,29 @@
+{
+  "name": "ROOT_POST_DELETE_INVENTORY_REQUEST",
+  "utc": "2026-11-07T04:26:01Z",
+  "hard_stop_utc": "2026-11-07T04:38:48.287Z",
+  "phase": "RLMM_DECODE_COMPLETE \u2014 stock COPY/DELETE FINISHED both segments; request empty inventory then cleanup",
+  "rlmm": {
+    "VOV9OtiuTEqMhCaP0lh_eg": "DELETE_SEGMENT_FINISHED",
+    "hDIrv61wQqeJlNgxo4lFzA": "DELETE_SEGMENT_FINISHED",
+    "both_had_COPY_FINISHED": true,
+    "both_had_DELETE_FINISHED": true
+  },
+  "pre_retention_ref": {
+    "objects_total": null,
+    "bytes_total": null,
+    "main_etag": "\"ef47a5856cddcc7070ee5f0d2c39ea38-2\""
+  },
+  "root_actions_names_sizes_etags_only": [
+    "ListObjectsV2 under prefix kafka-ts-parity/r2/20261107c-q-mpudel/ (expect 0 keys)",
+    "ListMultipartUploads under same prefix (expect 0)",
+    "ZERO object-body GET / mutations"
+  ],
+  "then": "cleanup lab R2 prefix objects if any residual; ACK empty inventory so Cursor can compose down --volumes + CORE_PROOF",
+  "do_not": [
+    "reproduce",
+    "consume",
+    "download",
+    "object body GET"
+  ]
+}
