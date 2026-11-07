@@ -2,13 +2,15 @@
 
 ## 2026-11-07 — GitGuardian Generic High Entropy on Kafka `CLUSTER_ID` candidate (false positive)
 
-- **Status:** Root-verified **false positive**. No credential rotation. Candidate
-  evidence bytes left stable (no history rewrite / redaction-for-green). No broad
-  scanner ignore or repo-wide allowlist.
+- **Status:** **Closed as false positive.** Root authenticated GitGuardian MCP marked
+  incident `39779011` **IGNORED** reason `false_positive` (verified
+  `2026-11-07T05:23:16Z`). No credential rotation. Candidate evidence bytes left
+  stable (no history rewrite / redaction-for-green). No broad scanner ignore or
+  repo-wide allowlist.
 - **Check:** External [GitGuardian Security Checks](https://dashboard.gitguardian.com)
-  on PR [#3231](https://github.com/Asherlc/dofek/pull/3231) / head `723c2efb4`
-  — incident `39779011`, occurrence `310926305`, detector **Generic High Entropy
-  Secret**, status Triggered. In-repo `Test / Secret Scan` remained success.
+  on PR [#3231](https://github.com/Asherlc/dofek/pull/3231) — incident `39779011`,
+  occurrence `310926305`, detector **Generic High Entropy Secret**. In-repo
+  `Test / Secret Scan` remained success on the same heads.
 - **Location:** commit `ea27b5b13` —
   `docs/evidence/kafka-ts-r2-q-mpudel-20261107c/KAFKA_CLUSTER_ID.candidate.json`
   (and twin `.candidate.txt`); field `value_nonsecret` from stock
@@ -17,14 +19,23 @@
   an API secret ([Kafka 4.4 KRaft](https://kafka.apache.org/44/operations/kraft/)
   `kafka-storage.sh random-uuid` / format servers). GG high-entropy detector
   matched the id shape.
-- **Remediation path:** Root marks this **specific** incident false_positive in
-  authenticated GitGuardian UI per
-  [GG remediate overview](https://docs.gitguardian.com/internal-repositories-monitoring/remediate/overview).
-  Do not rotate Infisical
-  `KAFKA_CLUSTER_ID`, rewrite history, or add broad ignore rules for green CI.
+- **Remediation:** Specific-incident ignore only
+  ([GG remediate overview](https://docs.gitguardian.com/internal-repositories-monitoring/remediate/overview);
+  [incident statuses — Ignored](https://docs.gitguardian.com/internal-monitoring/detect/incident-statuses)).
+  Closed/ignored incidents are not raised on **new** GitHub check runs
+  ([GG GitHub PR checks](https://docs.gitguardian.com/secrets-detection/secrets-detection-in-sdlc/detect-secrets-in-real-time-in-github)).
+- **Stale PR check evidence:** Head `9257f24af` check-run `128312539438` still
+  showed conclusion failure / table status **Triggered** after the ignore (summary
+  still cited incident `39779011`). Stock GitHub
+  `POST .../check-runs/{id}/rerequest` and `.../check-suites/{id}/rerequest`
+  returned **404** for the GitGuardian app (cannot refresh from GitHub API).
+  Stock refresh: GG dashboard Perimeter → GitHub check runs → **Re-run** that
+  check ([2026-07-28 GG changelog](https://docs.gitguardian.com/releases/saas/2026/07/28/changelog)),
+  or any subsequent push that creates a new GG check run after ignore.
 - **Remaining risk / follow-up:** Other high-entropy evidence blobs may re-trigger
-  GG; triage each occurrence the same way (credential vs identifier) before any
-  ignore.
+  GG; triage each occurrence (credential vs identifier) before any ignore. Do not
+  treat a stale Triggered check-run body as a new open incident after dashboard
+  IGNORED.
 
 ## 2026-11-07 — Infisical→GH sync pruned GH-only `CLOUDFLARE_TERRAFORM_R2_API_TOKEN` (resolved via env ownership)
 
