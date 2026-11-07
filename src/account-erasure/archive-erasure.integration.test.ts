@@ -140,7 +140,7 @@ describe("R2 archive erasure against SeaweedFS S3", () => {
         Key: key,
         ContentEncoding: "x-gzip",
         ContentType: "application/vnd.dofek.metric-stream+jsonl",
-        Metadata: { "archive-generation": "7", "source-cluster": "pulsar-qualification" },
+        Metadata: { "archive-generation": "7", "source-cluster": "metric-stream-archive" },
       }),
     );
     const identifiers = {
@@ -156,7 +156,7 @@ describe("R2 archive erasure against SeaweedFS S3", () => {
     ).resolves.toMatchObject({
       ContentEncoding: "x-gzip",
       ContentType: "application/vnd.dofek.metric-stream+jsonl",
-      Metadata: { "archive-generation": "7", "source-cluster": "pulsar-qualification" },
+      Metadata: { "archive-generation": "7", "source-cluster": "metric-stream-archive" },
     });
     const object = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
     if (!object.Body) throw new Error("Rewritten archive has no body");

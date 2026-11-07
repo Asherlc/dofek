@@ -17,7 +17,7 @@ function ack(overrides: Record<string, unknown> = {}) {
     operator: "oncall@example.com",
     verifiedAt,
     verifiedCutoffAt: cutoff,
-    runbookRevision: "docs/pulsar-remaining-work.md#physical",
+    runbookRevision: "docs/account-erasure-runbook.md#stock-physical-maintenance-acknowledgement",
     ...overrides,
   });
 }
@@ -31,7 +31,7 @@ describe("requireStockPhysicalMaintenanceAck", () => {
     expect(summarizePhysicalMaintenanceAcknowledged(value)).toEqual({
       runId: "maintenance-2026-11-05",
       operator: "oncall@example.com",
-      runbookRevision: "docs/pulsar-remaining-work.md#physical",
+      runbookRevision: "docs/account-erasure-runbook.md#stock-physical-maintenance-acknowledgement",
     });
   });
 

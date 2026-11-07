@@ -26,7 +26,7 @@ export const analyticsQueryOwner = fitness.table("analytics_query_owner", {
 export const analyticsStreamState = fitness.table(
   "analytics_stream_state",
   {
-    transport: text("transport", { enum: ["pulsar", "kafka"] }).notNull(),
+    transport: text("transport", { enum: ["kafka"] }).notNull(),
     epoch: text("epoch").notNull(),
     topic: text("topic").notNull(),
     partition: bigint("partition", { mode: "number" }).notNull(),
