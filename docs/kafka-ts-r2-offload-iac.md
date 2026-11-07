@@ -42,7 +42,7 @@ cloudflare-go `url.Values.Encode()` QueryEscapes; do not pre-encode `%20`).
 | Infisical key | Owner | Notes |
 |---|---|---|
 | `KAFKA_TIERED_STORAGE_*` (×5) | This IaC | Broker AWS default chain + RSM non-secret bucket/endpoint/region |
-| `KAFKA_CLUSTER_ID` / `KAFKA_BROKERS` | Lane 87 + 3d | May provision later; before broker cutover |
+| `KAFKA_CLUSTER_ID` / `KAFKA_BROKERS` | Root operator Infisical (stock uuid + `kafka:9092`) | **Resolved** — names-only; do not regenerate; see [`kafka-infisical-bootstrap-keys.md`](kafka-infisical-bootstrap-keys.md) |
 | Infisical `CLOUDFLARE_API_TOKEN` | Traefik ACME only (`CF_DNS_API_TOKEN` in `deploy/stack.yml`) | **Unchanged** — DNS challenge only; **not** the TF R2 alias token |
 | Archive `R2_*` | Existing media/archive | **Do not reuse** for Kafka TS |
 
@@ -119,8 +119,9 @@ Re-check:
    `CLOUDFLARE_API_TOKEN` retained for DNS/`storage.tf`.
 2. `terraform apply` via normal deploy path (proves R2 Write + Account Tokens Write
    + Infisical write). **Not claimed done by this doc.**
-3. Kafka TS qualification / broker cutover separate (Lane 87 + 3d:
-   `KAFKA_CLUSTER_ID` / `KAFKA_BROKERS` when ready). Topic v2 cutover separate.
+3. Kafka TS qualification / broker cutover separate. Infisical
+   `KAFKA_CLUSTER_ID` / `KAFKA_BROKERS` **resolved** (do not regenerate). Topic
+   v2 cutover separate.
 4. Infisical Traefik `CLOUDFLARE_API_TOKEN` stays. Do not merge R2 managing token
    into Infisical.
 
