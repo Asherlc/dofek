@@ -63,16 +63,20 @@ recreate `20261107` / `20261107b`; no second cloud for metadata). Stock procedur
 [`docs/kafka-ts-rlmm-dump-procedure.md`](kafka-ts-rlmm-dump-procedure.md).
 
 1. Native retention delete window (RSM `About to delete` alone is **insufficient**).
-2. **Copy all** `__remote_log_metadata-*` partition dirs + rolled `*.log` **out**
-   under `$LAB/evidence/rlmm-logs/` **before** `compose down --volumes`.
+2. Wrapper `ps -q kafka` → shell-list **only** `__remote_log_metadata-*` dirs →
+   wrapper `stop kafka` (**volume retained**) → `docker cp` those metadata dirs
+   only into `$LAB/evidence/rlmm-logs/` (never whole `/var/lib/kafka/data`; no
+   raw `docker compose`). Full steps:
+   [`docs/kafka-ts-rlmm-dump-procedure.md`](kafka-ts-rlmm-dump-procedure.md).
 3. Separate tool container: **384 MiB** cgroup / `KAFKA_HEAP_OPTS=-Xms32m -Xmx256m`,
    readonly mount → `kafka-dump-log.sh --remote-log-metadata-decoder --files …`
-   per `.log` (no maintained parser).
+   per `.log` (decoder auto-enables print-data-log; no maintained parser;
+   portable `read` loops, not `mapfile`).
 4. Inspect stock stdout in log order: latest `state=` per segment id — need
    `COPY_SEGMENT_FINISHED` in history + latest `DELETE_SEGMENT_FINISHED` (or
    document unfinished gap; do not overclaim).
 5. Then Root inventory **0** objects + **0** MPU under prefix **before** operator
-   cleanup; DELETE bucket / `down --volumes`.
+   cleanup; DELETE bucket / wrapper `down --volumes`.
 
 ## Explicit non-goals
 
