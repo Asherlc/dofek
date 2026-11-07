@@ -1,13 +1,7 @@
 variable "cloudflare_api_token" {
-  description = "Cloudflare API token with Zone:Edit, DNS:Edit, and Workers R2 Storage:Edit. Enabling Kafka TS R2 also requires Account API Tokens Write for cloudflare_account_token (not User API Tokens)."
+  description = "Cloudflare API token with Zone:Edit, DNS:Edit, Workers R2 Storage:Edit, and Account API Tokens Write (for cloudflare_account_token Object RW mint — not User API Tokens). See docs/kafka-ts-r2-offload-iac.md."
   type        = string
   sensitive   = true
-}
-
-variable "enable_kafka_tiered_storage_r2" {
-  description = "When true, create dedicated dofek-kafka-ts-offload R2 bucket, Object RW account token, and KAFKA_TIERED_STORAGE_* Infisical secrets. Default false until Root confirms account-token auth + Infisical CI write privilege."
-  type        = bool
-  default     = false
 }
 
 variable "expo_app_id" {
