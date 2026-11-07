@@ -78,17 +78,20 @@ infrastructure has been retired.
 
 #### Reviewed plan before apply (stock workflow)
 
-The managing R2 credential is **GitHub-only**
-(`CLOUDFLARE_TERRAFORM_R2_API_TOKEN`); do not extract it for a workstation plan.
-Use the existing [Deploy Terraform](../.github/workflows/deploy-terraform.yml)
-workflow:
+The managing R2 credential is an **Actions environment secret** on environment
+`terraform` (`CLOUDFLARE_TERRAFORM_R2_API_TOKEN`) — **not** a repository secret
+and **not** in Infisical — so Infisical `dofek-github-sync` overwrite
+(`disableSecretDeletion=false`) cannot prune it. Default Traefik/DNS
+`CLOUDFLARE_API_TOKEN` remains the Infisical→repo sync-owned secret. Do not
+extract the R2 managing token for a workstation plan. Job uses stock
+`environment: terraform` ([Deploy Terraform](../.github/workflows/deploy-terraform.yml)).
 
 | Trigger | Behavior |
 |---|---|
 | `workflow_call` (deploy / deploy-web-environment) | **Apply** only — no `operation` input; `TF_OPERATION` falls back to `apply` (do not key off `github.event_name`; reusable workflows inherit the **caller** event — [GitHub reusable workflow `github` context](https://docs.github.com/en/actions/reference/workflows-and-actions/reusing-workflow-configurations#github-context)) |
 | `workflow_dispatch` | Input `operation`: `plan` (default) or `apply` |
 
-Readonly preview (no apply/deploy):
+Readonly preview (no apply/deploy) after Root proves the environment secret name:
 
 ```bash
 gh workflow run deploy-terraform.yml \

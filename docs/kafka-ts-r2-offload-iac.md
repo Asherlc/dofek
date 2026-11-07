@@ -7,11 +7,13 @@ Aiven RSM 1.2.0. Metric-stream JSONL archive and account-erasure ledger in
 **No TF apply / bucket create / key mint from this doc alone.** Resources are
 always declared. Infisical CI can write `KAFKA_TIERED_STORAGE_*` (privilege
 granted). Managing IAM bootstrap for the aliased R2 provider is complete
-(GitHub secret `CLOUDFLARE_TERRAFORM_R2_API_TOKEN` was set GH-only, then
-**pruned** by Infisical→GH overwrite sync at ~2026-11-07T04:08Z — see
-[`production-incident-baseline.md`](production-incident-baseline.md)
-2026-11-07 entry). Do **not** recreate until sync **Disable Secret Deletion**
-is on; do **not** put the managing token in Infisical. Apply and Kafka TS
+(`CLOUDFLARE_TERRAFORM_R2_API_TOKEN` was set as a **repo** secret, then
+**pruned** by Infisical `dofek-github-sync` overwrite at ~2026-11-07T04:08Z —
+see [`production-incident-baseline.md`](production-incident-baseline.md)).
+**User-approved durable ownership:** store it only as an Actions **environment**
+secret on environment `terraform` (job `environment: terraform`); leave sync
+`disableSecretDeletion=false` and Traefik/repo `CLOUDFLARE_API_TOKEN` unchanged.
+Do **not** put the managing token in Infisical. Apply and Kafka TS
 qualification remain separate gates.
 
 ## Terraform owns
@@ -62,26 +64,26 @@ drained topic-v2 cutover.
 Two GitHub Actions secrets feed two Cloudflare provider configurations in the
 same `deploy-terraform` job. Infisical Traefik runtime stays separate.
 
-| Secret | TF var / provider | Permissions | Used by |
-|---|---|---|---|
-| `CLOUDFLARE_API_TOKEN` | `var.cloudflare_api_token` → default `provider "cloudflare"` | Existing Zone/DNS (+ whatever already manages `storage.tf`) | `dns.tf`, `storage.tf`, other default-provider CF resources |
-| `CLOUDFLARE_TERRAFORM_R2_API_TOKEN` | `var.cloudflare_terraform_r2_api_token` → `provider "cloudflare" { alias = "r2" }` | **Account API Tokens Write** + **Workers R2 Storage Write** on account `8e5b2f62…` **only** — **no DNS / Zone** | Kafka TS resources in `kafka-ts-r2-offload.tf` that set `provider = cloudflare.r2` |
+| Secret | Ownership | TF var / provider | Permissions | Used by |
+|---|---|---|---|---|
+| `CLOUDFLARE_API_TOKEN` | Infisical→**repo** sync (`dofek-github-sync`) | `var.cloudflare_api_token` → default `provider "cloudflare"` | Existing Zone/DNS (+ `storage.tf`) | `dns.tf`, `storage.tf`, other default-provider CF resources |
+| `CLOUDFLARE_TERRAFORM_R2_API_TOKEN` | Actions env **`terraform`** only (not repo, not Infisical) | `var.cloudflare_terraform_r2_api_token` → `provider "cloudflare" { alias = "r2" }` | **Account API Tokens Write** + **Workers R2 Storage Write** on account `8e5b2f62…` **only** — **no DNS / Zone** | Kafka TS resources in `kafka-ts-r2-offload.tf` that set `provider = cloudflare.r2` |
 
 Do **not** widen the Traefik Infisical token with Account API Tokens Edit. Do **not**
-put the R2 managing token in Infisical or the broker. Child Kafka Object RW is
+put the R2 managing token in Infisical or the broker. Do **not** store it as a
+repository secret (sync overwrite will prune it). Child Kafka Object RW is
 minted by Terraform (`cloudflare_account_token`) and written to Infisical as
 `KAFKA_TIERED_STORAGE_*` — not the managing token’s value.
 
-### Managing token (created; IAM bootstrap resolved)
+### Managing token (IAM bootstrap resolved; GH env restore pending Root)
 
 | Field | Value |
 |---|---|
-| Name | `dofek-terraform-r2-manage` |
-| Token id (non-secret) | `ac888fe9c542f602fc419c29d28a64cc` |
+| Name | `dofek-terraform-r2-manage` (prior id `ac888…` unused; Root MCP rolls new value) |
 | Account | `8e5b2f62ffe8ebdd48e725d325a6d51e` |
 | Permissions | Account API Tokens Write + Workers R2 Storage Write (account scope only) |
-| GH secret | `CLOUDFLARE_TERRAFORM_R2_API_TOKEN` — **absent after 2026-11-07T04:08Z sync prune** (was names-only confirmed present post-bootstrap) |
-| Create path | Managed Cloudflare MCP (app-server `cloudflare-api`) + policy readback; value piped to `gh secret set` (stdin). Re-set only after Infisical GitHub sync **Disable Secret Deletion** |
+| GH secret | Environment secret `CLOUDFLARE_TERRAFORM_R2_API_TOKEN` on env `terraform` (repo-level copy pruned 2026-11-07T04:08Z) |
+| Create path | Root creates env `terraform` (no required reviewers) + MCP roll unused CF token → `gh secret set --env terraform` only |
 
 Optional bearer check (no secret in logs): `GET /accounts/{id}/tokens/{token_id}/permission_groups` → **200** with the two Write groups. List Tokens on the **default** GH/Infisical `CLOUDFLARE_API_TOKEN` still returns **403 / 9109** — expected; those tokens are not Account API Tokens–capable and must stay that way for Traefik.
 
@@ -118,11 +120,12 @@ Re-check:
 
 ## Enable sequence
 
-1. ~~IAM bootstrap (CF token + first GH set)~~ **done** — account token
-   `ac888…` exists; workflow wires `TF_VAR_cloudflare_terraform_r2_api_token`
-   (fail-fast if empty). Default `CLOUDFLARE_API_TOKEN` retained for
-   DNS/`storage.tf`. **GH secret currently absent** (sync prune) — restore only
-   after **Disable Secret Deletion** on `dofek-github-sync` (or equivalent).
+1. ~~IAM bootstrap (CF token + first repo GH set)~~ **done** then pruned —
+   workflow job uses `environment: terraform` + fail-fast on
+   `TF_VAR_cloudflare_terraform_r2_api_token`. Default repo
+   `CLOUDFLARE_API_TOKEN` retained for DNS/`storage.tf`. **Root:** create env
+   `terraform`, MCP-roll managing token, store **only** as env secret (sync
+   `disableSecretDeletion` stays false).
 2. `terraform plan` (manual `operation=plan`) then `terraform apply` via normal
    deploy path (proves R2 Write + Account Tokens Write + Infisical write).
    **Not claimed done by this doc.**

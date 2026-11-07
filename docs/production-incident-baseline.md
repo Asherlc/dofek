@@ -1,10 +1,12 @@
 # Production Incident Baseline
 
-## 2026-11-07 — Infisical→GH sync pruned GH-only `CLOUDFLARE_TERRAFORM_R2_API_TOKEN` (unresolved)
+## 2026-11-07 — Infisical→GH sync pruned GH-only `CLOUDFLARE_TERRAFORM_R2_API_TOKEN` (unresolved → env ownership)
 
-- **Status:** Unresolved. Do **not** recreate/rotate the managing token into GH
-  until sync deletion is disabled (or equivalent existing preserve option is
-  confirmed). Do **not** copy the R2 managing token into Infisical.
+- **Status:** Cause confirmed; durable ownership chosen. **Do not** enable sync
+  `disableSecretDeletion`. **Do not** copy the R2 managing token into Infisical.
+  User approved dedicated Actions environment `terraform` for the secret;
+  Root creates env + MCP-rolls unused CF token into **environment** secret only.
+  Code: `deploy-terraform.yml` job `environment: terraform`.
 - **Symptoms / user impact:** Root-dispatched Terraform **plan**
   ([run 42338058404](https://github.com/Asherlc/dofek/actions/runs/42338058404)
   on `e1c9fbdb5`) job **Terraform Plan** / `TF_OPERATION=plan` failed before
@@ -32,21 +34,16 @@
   [Secret Syncs overview](https://infisical.com/docs/integrations/secret-syncs/overview)).
   Same class as 2026-07-26 `ZEPP_RELEASE_TOKEN` prune. Repo has **no**
   in-tree sync config; behavior is the Infisical-hosted sync.
-- **Preserve path (existing stock option — implement before recreate):** On
-  sync `dofek-github-sync` (or current GitHub Actions sync for `Asherlc/dofek`),
-  enable **Disable Secret Deletion** (`disableSecretDeletion`) so Infisical
-  does not remove GH-managed secrets outside the Infisical source set. Docs:
-  “Enable this option if you intend to manage some secrets manually outside of
-  Infisical.” Optional complementary stock option: **Key Schema** so Infisical
-  only manages intended keys. Do **not** add the R2 managing token to Infisical
-  (stays GH-only / TF var). After disable-deletion is confirmed, Root MCP may
-  re-`gh secret set` the existing `ac888…` token value (or rotate later).
-- **Root private check (this lane did not call Infisical API):** Read sync
-  metadata for `initialSyncBehavior`, `disableSecretDeletion`, `keySchema`,
-  last sync time vs `2026-11-07T04:08:50Z`.
-- **Remaining risk / follow-up:** Any `gh secret set` of GH-only keys remains
-  unsafe until deletion is disabled. Plan/apply for Kafka TS remains blocked.
-  Cloud C / Q14A is a separate priority lane.
+- **Preserve path (user choice 2026-11-07):** Dedicated Actions environment
+  `terraform` + environment secret `CLOUDFLARE_TERRAFORM_R2_API_TOKEN` (not
+  repo-level). Keep Infisical sync overwrite / `disableSecretDeletion=false`
+  unchanged. Sync LIVE metadata (Root): id `7e9e1465-e2f4-4eb7-b271-2bfa122d0f89`
+  `dofek-github-sync`, `lastSynced` `2026-11-07T04:09:05.498Z`. Prior CF token
+  value unrecoverable — Root MCP rolls unused `ac888…` and stores the **new**
+  value only in the env secret. OIDC already permits `repo:Asherlc/dofek:*`
+  (no IAM broaden). No required reviewers on the env.
+- **Remaining risk / follow-up:** Plan/apply blocked until Root env+secret
+  names-proof, then re-dispatch `operation=plan`. Cloud C / Q14A separate.
 
 ## 2026-11-06 — Kafka TS R2 managing-token bootstrap blocked on DNS Write `is_selectable=false` (IAM resolved via R2 provider alias)
 

@@ -42,6 +42,11 @@ jobs:
     # default plan supplies plan when omitted.
     name: ${{ inputs.operation == 'plan' && 'Terraform Plan' || 'Terraform Apply' }}
     runs-on: ubuntu-latest
+    # Environment-scoped CLOUDFLARE_TERRAFORM_R2_API_TOKEN (not repo-level) so
+    # Infisical dofek-github-sync overwrite cannot prune it. No required
+    # reviewers. Default CLOUDFLARE_API_TOKEN stays a repo secret (sync-owned).
+    # https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-secrets#using-secrets-in-a-workflow
+    environment: terraform
     permissions:
       contents: read
       actions: read
