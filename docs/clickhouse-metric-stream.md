@@ -82,6 +82,44 @@ remains the current behavior; [ClickHouse replacement](https://clickhouse.com/do
 uses the complete sorting key, which is not interchangeable with this sample
 identity rule.
 
+### Historical compatibility audit before query changes
+
+New-publication enforcement does not certify old imports or unread events.
+Both the [historical migration](../src/db/clickhouse-migrations/custom-runs.ts)
+and the [catch-up import](../scripts/catch-up-clickhouse-metric-stream.ts)
+copy stored IDs; neither establishes a globally immutable identity. Wire
+versions also do not identify which constructor produced an ID. Do not infer
+compliance from a UUID's shape.
+
+Before proposing a production deletion change:
+
+1. Define the exact coverage: the incident's candidate IDs, all retained
+   ClickHouse IDs, unread broker events, and archived replay data are different
+   populations. A result for one does not certify the others.
+2. Prepare a stock read-only query that counts distinct
+   `(user_id, provider_id, recorded_at)` tuples per ID across **all physical
+   versions** in the audited population. Do not use `FINAL`, latest-row
+   aggregation, or an outer user/provider/time restriction that could hide
+   an older conflicting identity. Preserve recorded timestamp precision;
+   report sub-millisecond timestamps separately rather than truncating them.
+3. Inspect its [EXPLAIN plan](https://clickhouse.com/docs/sql-reference/statements/explain)
+   and table/part metadata before requesting a scan budget. A candidate-ID
+   filter or output `LIMIT` does not establish a bounded storage read. The
+   incident's existing ID lookup selected every outer granule.
+4. Run data queries only within an approved read/load budget and return
+   aggregate findings rather than sample identifiers. A timed-out, truncated,
+   sampled or partially covered audit is incomplete, not a clean result.
+   Archive-body reads and broker consumption need their own explicit scope;
+   offset and object metadata alone cannot establish row identity.
+5. Review conflicts, timestamp precision and remaining replay coverage before
+   changing the latest-version lookup. Keep historical wire parsing, retained
+   IDs and the current deletion checks unchanged until that decision. Do not
+   resume the paused history consumer based solely on a clean subset.
+
+This checklist authorizes no production scan, rehash, acknowledgement repair,
+offset change or deployment. Use stock SQL and existing operational workflows;
+it does not require a new identity registry or audit framework.
+
 ## Local Development
 
 Start the backing services:
