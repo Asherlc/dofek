@@ -85,7 +85,7 @@ workflow:
 
 | Trigger | Behavior |
 |---|---|
-| `workflow_call` (deploy / deploy-web-environment) | **Apply** only — API unchanged |
+| `workflow_call` (deploy / deploy-web-environment) | **Apply** only — no `operation` input; `TF_OPERATION` falls back to `apply` (do not key off `github.event_name`; reusable workflows inherit the **caller** event — [GitHub reusable workflow `github` context](https://docs.github.com/en/actions/reference/workflows-and-actions/reusing-workflow-configurations#github-context)) |
 | `workflow_dispatch` | Input `operation`: `plan` (default) or `apply` |
 
 Readonly preview (no apply/deploy):

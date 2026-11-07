@@ -36,7 +36,11 @@ concurrency:
 
 jobs:
   terraform:
-    name: ${{ github.event_name == 'workflow_dispatch' && inputs.operation == 'plan' && 'Terraform Plan' || 'Terraform Apply' }}
+    # github.event_name is the CALLER event inside reusable workflows — never
+    # 'workflow_call' (https://docs.github.com/en/actions/reference/workflows-and-actions/reusing-workflow-configurations#github-context).
+    # workflow_call declares no operation input → empty → apply. Dispatch choice
+    # default plan supplies plan when omitted.
+    name: ${{ inputs.operation == 'plan' && 'Terraform Plan' || 'Terraform Apply' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -44,8 +48,7 @@ jobs:
       id-token: write
     env:
       TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.terraform-plugin-cache
-      # workflow_call has no operation input — always apply. Manual default is plan.
-      TF_OPERATION: ${{ github.event_name == 'workflow_call' && 'apply' || (inputs.operation != '' && inputs.operation || 'plan') }}
+      TF_OPERATION: ${{ inputs.operation || 'apply' }}
     outputs:
       server_host: ${{ steps.tf_outputs.outputs.server_host }}
     steps:
