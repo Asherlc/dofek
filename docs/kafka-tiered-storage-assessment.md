@@ -468,12 +468,15 @@ host clients.
 3. Wire Connect/archive seed to `KAFKA_BROKERS`; default compose topics to **v2**.
 4. Stop. No stack deploy, no cutover, no new cloud allocation.
 
-**Status:** runtime Kafka broker/archive wiring is configuration-complete for this
-scope, but **RSM/tiered-storage production is not complete** and is **not
-rollout-ready** until the object-store provider is selected and lane-87 IaC +
-secrets land. **Do not merge/deploy** until Infisical `KAFKA_BROKERS` + topic env
-are provisioned and cutover is explicitly approved. MPU/retention/erasure gates
-above remain open.
+**Status:** User selected **R2** as Kafka TS backend. Runtime maps Infisical
+`KAFKA_TIERED_STORAGE_*` → AWS default chain + RSM S3 fields with RSM
+**enabled** (fail-closed; dual512-fix knobs). Dedicated bucket
+`dofek-kafka-ts-offload` is lane-87-owned; JSONL archive unchanged. **Do not
+merge/deploy** until Infisical `KAFKA_BROKERS` + `KAFKA_TIERED_STORAGE_*` +
+topics are provisioned and cutover is approved. MPU/delete/retention/failure
+gates: [`kafka-ts-r2-qualification-manifest.md`](kafka-ts-r2-qualification-manifest.md)
+(**one** Q-MPU+Q-DEL packet prepared for Root ACK; **not** executed; no cloud
+mutation until ACK).
 
 ## Primary links (by claim)
 
