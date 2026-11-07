@@ -270,6 +270,8 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      kafka-ready:
+        condition: service_completed_successfully
       account-erasure-minio:
         condition: service_healthy
     command: ["web"]

@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -16,6 +16,81 @@ function parseDotenv(output: string): Record<string, string> {
 }
 
 describe("compose-env", () => {
+  it.each([0, 17])("waits for the Kafka API and propagates readiness exit %i", (readyExitCode) => {
+    const cwd = mkdtempSync(join(tmpdir(), "compose-env-test-"));
+    const workspaceDirectory = realpathSync(cwd);
+    const binDirectory = join(cwd, "bin");
+    const commandLog = join(cwd, "docker-commands.jsonl");
+    mkdirSync(binDirectory);
+    writeFileSync(
+      join(binDirectory, "docker"),
+      `#!${process.execPath}
+const fs = require("node:fs");
+const args = process.argv.slice(2);
+if (args.includes("port")) process.exit(1);
+fs.appendFileSync(process.env.COMPOSE_TEST_COMMAND_LOG, JSON.stringify(args) + "\\n");
+process.exit(args.includes("run") ? Number(process.env.COMPOSE_TEST_READY_EXIT_CODE) : 0);
+`,
+      { mode: 0o755 },
+    );
+
+    try {
+      const start = () =>
+        execFileSync(
+          resolve("node_modules/.bin/tsx"),
+          [resolve("scripts/compose-env.ts"), "--up"],
+          {
+            cwd,
+            env: {
+              ...process.env,
+              PATH: `${binDirectory}:${process.env.PATH}`,
+              COMPOSE_TEST_COMMAND_LOG: commandLog,
+              COMPOSE_TEST_READY_EXIT_CODE: String(readyExitCode),
+            },
+            stdio: ["ignore", "pipe", "pipe"],
+          },
+        );
+      if (readyExitCode === 0) {
+        expect(start).not.toThrow();
+      } else {
+        expect(start).toThrow();
+      }
+
+      const composeArguments = [
+        "compose",
+        "--project-name",
+        basename(workspaceDirectory),
+        "--project-directory",
+        workspaceDirectory,
+        "--file",
+        join(workspaceDirectory, "docker-compose.yml"),
+        "--env-file",
+        join(workspaceDirectory, ".env.local"),
+      ];
+      const commands = readFileSync(commandLog, "utf8")
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line));
+      expect(commands).toEqual([
+        [
+          ...composeArguments,
+          "up",
+          "-d",
+          "--wait",
+          "--wait-timeout",
+          "180",
+          "db",
+          "clickhouse",
+          "redis",
+          "kafka",
+        ],
+        [...composeArguments, "run", "--rm", "--no-deps", "kafka-ready"],
+      ]);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   it("percent-encodes reserved characters in URL password components", () => {
     const cwd = mkdtempSync(join(tmpdir(), "compose-env-test-"));
     const postgresFixtureValue = "pg@pass:word/with?query#fragment";

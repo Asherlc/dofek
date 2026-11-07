@@ -309,7 +309,7 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
   - Pins the project name, project directory, default compose file, and child `PWD` to the physical workspace before forwarding arguments to Docker Compose.
   - Usage: `pnpm compose -- ps` or `pnpm compose -- --profile metric-stream up -d`.
   - Docker documents [Compose project-name isolation](https://docs.docker.com/compose/how-tos/project-name/) and the [`--project-directory` option](https://docs.docker.com/reference/cli/docker/compose/).
-- `compose-env.ts`: Generates workspace-specific ports and connection URLs in `.env.local`; `--up` also starts Postgres, ClickHouse, and Redis through the pinned Compose identity.
+- `compose-env.ts`: Generates workspace-specific ports and connection URLs in `.env.local`; `--up` starts Postgres, ClickHouse, Redis, and Kafka through the pinned Compose identity, then runs the stock Kafka API readiness helper. The helper uses [`docker compose run --rm --no-deps`](https://docs.docker.com/reference/cli/docker/compose/run/) so its completion does not stop the dependency stack; a failed readiness check fails startup.
 - `workspace-archive.ts`: Shared Paseo teardown and Conductor archive command.
   Runs the Compose wrapper with all profiles and `down --remove-orphans --volumes`
   for the workspace's default, E2E, and PeerDB integration projects. The default

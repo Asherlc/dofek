@@ -131,6 +131,12 @@ These commands start the current workspace's Postgres, ClickHouse, Redis, and
 Kafka services through `pnpm compose:up` and wait for their Compose health
 checks before Vitest starts. Docker documents the `--wait` health-gated startup
 behavior in its [Compose startup-order guide](https://docs.docker.com/compose/how-tos/startup-order/).
+The command then runs `kafka-ready` with stock `compose run --rm --no-deps`
+to verify the Kafka API without stopping the running dependencies. E2E CI uses
+the same sequence before its `server --no-deps` startup; ordinary E2E Compose
+startup waits for the `kafka-ready` service to complete successfully. Docker
+documents [one-off runs](https://docs.docker.com/reference/cli/docker/compose/run/)
+and [dependency conditions](https://docs.docker.com/reference/compose-file/services/#depends_on).
 The command loads `.env.local` and sets `TEST_DATABASE_URL` to the workspace
 Postgres URL. Kafka-protocol metric-stream integration
 tests receive the generated workspace-local `KAFKA_BROKERS` value so they

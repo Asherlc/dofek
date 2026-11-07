@@ -192,39 +192,36 @@ const dotenv = [
 
 if (process.argv.includes("--up")) {
   writeFileSync(composeEnvironmentPath, dotenv);
-  execFileSync(
-    "docker",
-    [
-      "compose",
-      "--project-name",
-      composeProjectName,
-      "--project-directory",
-      workspaceDirectory,
-      "--file",
-      composeFilePath,
-      "--env-file",
-      composeEnvironmentPath,
-      "up",
-      "-d",
-      "--wait",
-      "--wait-timeout",
-      "180",
-      "db",
-      "clickhouse",
-      "redis",
-      "kafka",
-    ],
-    {
-      cwd: workspaceDirectory,
-      env: {
-        ...process.env,
-        COMPOSE_FILE: composeFilePath,
-        COMPOSE_PROJECT_NAME: composeProjectName,
-        PWD: workspaceDirectory,
+  for (const command of [
+    ["up", "-d", "--wait", "--wait-timeout", "180", "db", "clickhouse", "redis", "kafka"],
+    ["run", "--rm", "--no-deps", "kafka-ready"],
+  ]) {
+    execFileSync(
+      "docker",
+      [
+        "compose",
+        "--project-name",
+        composeProjectName,
+        "--project-directory",
+        workspaceDirectory,
+        "--file",
+        composeFilePath,
+        "--env-file",
+        composeEnvironmentPath,
+        ...command,
+      ],
+      {
+        cwd: workspaceDirectory,
+        env: {
+          ...process.env,
+          COMPOSE_FILE: composeFilePath,
+          COMPOSE_PROJECT_NAME: composeProjectName,
+          PWD: workspaceDirectory,
+        },
+        stdio: "inherit",
       },
-      stdio: "inherit",
-    },
-  );
+    );
+  }
 } else if (process.argv.includes("--write")) {
   writeFileSync(composeEnvironmentPath, dotenv);
 } else {
