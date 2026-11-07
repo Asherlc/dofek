@@ -13,10 +13,12 @@ the exact section.
 
 ## Start Here
 
-- [pulsar-foundation-qualification.md](pulsar-foundation-qualification.md):
-  isolated Pulsar infrastructure, R2 payload correction and native storage tests;
-  production cutover remains separately gated.
 - [../README.md](../README.md): repository overview, local development, and the high-level architecture.
+- [../deploy/kafka/README.md](../deploy/kafka/README.md): stock Kafka 4.4 + RSM
+  runtime; [cutover+rollback review](../deploy/kafka/README.md#production-cutover--rollback-review-not-executed)
+  (not executed). Historical Pulsar lab notes remain under
+  [pulsar-foundation-qualification.md](pulsar-foundation-qualification.md) /
+  evidence — not current start-here authority.
 - [development-environment.md](development-environment.md): reproducible local
   and cloud tools, Dev Containers, CodeGraph, RTK, and initialization commands.
 - [../deploy/README.md](../deploy/README.md): production architecture, deploy flow, secrets, and debugging access.

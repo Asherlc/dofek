@@ -7,13 +7,19 @@ No custom broker image.
 Design authority: [`docs/kafka-tiered-storage-assessment.md`](../../docs/kafka-tiered-storage-assessment.md).
 IaC contract (bucket/token/Infisical): [`docs/kafka-ts-r2-offload-iac.md`](../../docs/kafka-ts-r2-offload-iac.md).
 
-**Not merge/deploy ready** until five `KAFKA_TIERED_STORAGE_*` keys (TF apply)
-and v2 topic cutover (drained) are done. `KAFKA_CLUSTER_ID` + `KAFKA_BROKERS`
-are **resolved** (Root-provisioned; see
+**Terraform provisioning: DONE** (apply
+[42339969701](https://github.com/Asherlc/dofek/actions/runs/42339969701);
+receipts under
+[`docs/evidence/kafka-infra-plan-review-20261107/`](../../docs/evidence/kafka-infra-plan-review-20261107/);
+docs close `c31048ccf`). `KAFKA_CLUSTER_ID` + `KAFKA_BROKERS` are **resolved**
+(Root-provisioned; see
 [`docs/kafka-infisical-bootstrap-keys.md`](../../docs/kafka-infisical-bootstrap-keys.md));
-do **not** regenerate the cluster id. `METRIC_STREAM_*` topic values unchanged
-by that bootstrap. RSM is the steady production configuration (enabled);
-there is no TS-off stopgap in stack.
+do **not** regenerate the cluster id. RSM is the steady production
+configuration (enabled); there is no TS-off stopgap in stack.
+
+**Production cutover / merge / topic-value edits / old Redpanda data-dir
+deletion: NOT APPROVED.** Review-only sequence below. Do not execute from this
+doc alone.
 
 ## Pins
 
@@ -164,23 +170,151 @@ Producers wait on external `kafka-broker-api-versions` (`kafka-ready` / deploy w
 Writers/sinks/archive use **v2** topic names so Connect keys cannot overwrite
 historical v1 R2 objects when offsets restart at 0.
 
-## Operator cutover — Redpanda hot-log retain (not executed here)
+## Production cutover + rollback review (NOT EXECUTED)
 
-Stopping Redpanda **stops retention GC** on `/mnt/dofek-data/redpanda` (or the
-compose volume). Those bytes do **not** age out after the process is down.
-Kafka TS / R2 offload proof does **not** cover old hot-log physical absence.
+Authority for this review: stock Swarm / Infisical / existing
+`deploy-web-stack` topic reconcile / freshness commands in
+[`docs/metric-stream-redpanda-r2-runbook.md`](../../docs/metric-stream-redpanda-r2-runbook.md).
+**No** dual-write, **no** custom bridge, **no** new validator or evidence
+protocol. Lane 87 supplies **readonly live baseline** (HWMs, lags, dir sizes,
+current Infisical topic **names**); this lane does **not** duplicate production
+SSH. Unknown measured gates → **fail closed** (do not invent limits).
 
-| Class | Operator requirement | Non-claims |
+### Status snapshot
+
+| Gate | State |
+|---|---|
+| TF / Infisical `KAFKA_TIERED_STORAGE_*` ×5 | **DONE** — [apply-verification.json](../../docs/evidence/kafka-infra-plan-review-20261107/apply-verification.json) |
+| Bucket `dofek-kafka-ts-offload` | **DONE** — HEAD 200, ListObjects 0 at verify |
+| Retired `dofek-pulsar-qualification` | **GONE** — HEAD 404 after approved cleanup+destroy |
+| `KAFKA_CLUSTER_ID` / `KAFKA_BROKERS` | **Resolved** — do not regenerate |
+| Distinct v2 `METRIC_STREAM_*` for **all** routes | **Pending approval** (secret value edits) |
+| Drain + cutover execution | **Not approved** |
+| `/mnt/dofek-data/redpanda` deletion | **Not approved** — retain |
+
+### Required approvals (before any step that mutates prod)
+
+| Decision | Who | Notes |
 |---|---|---|
-| Before stop | Reconcile JSONL archive + sink/consumer drain against Redpanda HWM so the archive holds the last intended offsets | Not dual-write; no custom bridge |
-| Pre–Kafka-write rollback | If Kafka has **not** accepted production writes, stock rollback can restore Redpanda listeners/`REDPANDA_BROKERS` with retained data dir (still subject to erasure deadlines) | Not an automatic flip |
-| Post–Kafka-write (v2) | New v2 topics have no automatic flipback to Redpanda; treat as forward-only unless Root approves a separate recovery plan | No DIY dual-write |
-| Retain hold | Keep the stopped Redpanda data directory until **measured** size/age bounds and erasure deadlines are known; if unknown, document an explicit retain hold — do **not** claim physical absence | Silent forever retention while claiming erasure is forbidden |
-| Exact old-data retirement | Deleting the Redpanda data directory (or equivalent host wipe) requires **separate explicit production deletion approval** after archive/drain evidence | **No retire execution** in this runtime wave |
+| A. Execute cutover window | User / Root | This review alone is insufficient |
+| B. Infisical `METRIC_STREAM_{LEGACY,LIVE,HISTORY}_TOPIC` → distinct **v2** names for **all** deployed sink+archive routes | User / Root | Irreversible for writers once Kafka accepts produce; assessment names: `metric-stream-v2` / `metric-stream-live-v2` / `metric-stream-history-v2` ([assessment](../../docs/kafka-tiered-storage-assessment.md)) |
+| C. Downtime / producer pause method | User / Root | Stock `docker service scale` of `dofek_web` / `dofek_worker` / `dofek_training-export-worker` (see [timescaledb pause pattern](../../docs/metric-stream-timescaledb-runbook.md)) **or** an already-approved hold — do not invent a new pause framework. Census: producers still `REDPANDA_BROKERS`-keyed; pause is a **separate explicit change** before STOP RP ([STOP-BEFORE-START](../../docs/pulsar-production-capacity-decision.md#stop-before-start-sequence-concrete-not-executed)) |
+| D. Accept post–Kafka-write forward-only boundary | User / Root | No automatic rollback/redeliver without separate dedup-proven recovery plan |
+| E. Explicit history-CH unread disposition | User / Root | Census: **18,836,612** unread with history CH sink **0/0**; R2 history archive lag 0 — do **not** claim CH catch-up; restore/replay decision per [pulsar-remaining-work](../../docs/pulsar-remaining-work.md) + capacity doc |
+| F. Later: delete `/mnt/dofek-data/redpanda` | User / Root | Separate from cutover; retain (**38 GiB** measured) |
+| G. Re-enable Deploy Web | User / Root | Census: `.github/workflows/deploy-web.yml` state **`disabled_manually`** |
 
-Erasure / physical-absence attestations must name **which** store was checked
-(Redpanda hot-log vs Kafka local vs Kafka TS R2 vs JSONL archive). Passing
-Kafka-TS remote delete labs does not retire Redpanda bytes.
+### Live baseline (Lane 87 exclusive census — 2026-11-07T05:08:43Z)
+
+Do **not** re-SSH for the same facts. Re-run stock commands immediately before
+any mutate. IaC Kafka R2 + five keys verified elsewhere — not re-audited here.
+
+| Fact | Census |
+|---|---|
+| Topics (1p/RF1) | Still **v1**: `metric-stream-v1`, `metric-stream-live-v1`, `metric-stream-history-v1` + matching `.quarantine.v1` |
+| Producers | web/worker: `REDPANDA_BROKERS` + topic keys; **no** `KAFKA_*` on web/worker |
+| Consumers | sinks/archives: `REDPANDA_BROKERS`; Kafka Swarm service **ABSENT**; `/mnt/dofek-data/kafka` **ABSENT** |
+| Lag PASS | live+legacy CH + all three archives **TOTAL-LAG 0** (Stable) |
+| Lag FAIL/GAP | `metric-stream-history-clickhouse-sink` Empty, replicas **0/0**, lag **18,836,612** (CURRENT 55609019 → LOG-END 74445631) |
+| HWM preserve | legacy `1619570368`; live `243195275` (log-start 194021919); history `74445631` |
+| RP datadir | `/mnt/dofek-data/redpanda` **du 38G**, owner `messagebus:messagebus` — **retain** |
+| Host | MemTotal ~23.4 GiB; MemAvailable ~14.4 GiB; `/mnt/dofek-data` 147G **77%** used |
+| Collector | 1/1; memory limit **unlimited** — capacity risk if Pulsar 4352 MiB add still considered; Kafka-only add is 2048 MiB |
+| CH freshness | `max(recorded_at)` ≈ **2092-10-22** — **unusable**; do not claim CH catch-up from it |
+| Archive object age | **Not checked** (no ListObjects / no body GET this census) — GAP |
+| Axiom | MCP **needsAuth** this session — rely on `docker service logs` + `rpk` until restored |
+| Deploy Web | workflow **disabled_manually** |
+
+**Blockers still open (fail closed):** approvals B/C/E/G; producer pause not done;
+history-CH disposition; usable CH freshness alternate; R2 newest-object age
+(names/LastModified only); uncapped collector acknowledged; Kafka not on host
+yet (expected until approved deploy).
+
+### Stock operator sequence (review only — do not run)
+
+Order is mandatory. **No dual-write** at any step (never `REDPANDA_BROKERS` and
+`KAFKA_BROKERS` producers together; never same-topic resume into archive).
+
+1. **Freeze baseline** — Use the Lane 87 census above; **re-record** HWMs/lags
+   with the stock commands in that census message immediately before mutate.
+   Confirm TF receipts still match
+   [apply-verification.json](../../docs/evidence/kafka-infra-plan-review-20261107/apply-verification.json).
+2. **Pause producer ingress** — After approval **C**, scale metric-stream
+   producers to 0 (or engage approved hold). Confirm no new publishes
+   (lag stable / HWM frozen). Downtime starts here for live Apple/sensor
+   metric-stream paths; PeerDB/CDC and non-metric-stream traffic are out of
+   this path but still share host RAM.
+3. **Drain old Redpanda** — Keep sinks+archives up. Prove live+legacy CH and
+   all three archives at **lag 0** (census already PASS — re-prove after pause).
+   History CH remains **GAP** unless approval **E** accepts unread-with-R2 or
+   restores the sink. Prefer `rpk group describe` + service logs; **do not**
+   use broken CH `max(recorded_at)` as freshness. Quarantine inspect only via
+   stock `rpk topic consume` if needed — no quarantine migrator.
+4. **Preserve offsets** — Record main+quarantine HWM and archive
+   first/last offset identity from the baseline. Do **not** delete Redpanda
+   data. Stopping Redpanda **stops retention GC** on `/mnt/dofek-data/redpanda`;
+   those bytes do **not** age out after the process is down.
+5. **Distinct v2 all routes** — After approval **B**, set Infisical
+   `METRIC_STREAM_*` to distinct v2 names for **legacy, live, and history**
+   (sink and archive must match per route). Quarantine names follow
+   `${main}.quarantine.v1`. Do **not** change `KAFKA_CLUSTER_ID`.
+6. **Deploy Kafka + Q13A disk policy** — Existing Deploy Web / stack path only:
+   publish plugins if absent, `chown 1000:1000` data dir, start `kafka`,
+   external client reconciles writable main+quarantine with
+   `remote.storage.enable=true`, B7 retention, Q13A
+   `segment.bytes=33554432` / `segment.ms=3600000` /
+   `local.retention.bytes=268435456` (async — **not** a hard local ceiling).
+   Bootstrap env is `KAFKA_BROKERS` only (no `REDPANDA_BROKERS` alias).
+7. **Point consumers / scale sinks** — Stock stack services already keyed off
+   renderer env; restore desired replicas for the three CH sinks + three
+   archives against Kafka. Confirm API readiness via external
+   `kafka-broker-api-versions` wait (not broker-cgroup JVM).
+8. **Enable producers** — Restore web/worker/(training-export) replicas or
+   release hold **only after** topic describe proves required configs and
+   consumers are attached. First production Kafka write crosses the rollback
+   boundary below.
+9. **Verify (stock)** — After enable, within the dual512-fix envelope
+   (broker cgroup **2048 MiB**):
+   - R2 **copy**: objects under `dofek-kafka-ts-offload` for closed segments
+     (ListObjects / lab-shaped keys only; no body GET required for presence).
+   - **Remote read**: consume after local segment eligibility (stock client).
+   - **Native GC**: RLMM / remote absence only with existing
+     [RLMM dump procedure](../../docs/kafka-ts-rlmm-dump-procedure.md) if
+     needed — do not claim prod GC from lab `20261107c` alone.
+   - **Memory/disk**: broker `memory.current`/`peak` under 2048 MiB; data-dir
+     growth vs Q13A planning envelope (~2.5–4 GiB when offload keeps up;
+     outage can grow toward retention envelope — **unknown hard stop** until
+     measured). JSONL archive bucket remains `dofek-metric-stream-archive`
+     (separate creds).
+
+### Rollback boundary
+
+| Phase | Allowed stock rollback | Forbidden claims |
+|---|---|---|
+| **Pre–Kafka-write** (pause+drain done; Kafka may be up; **no** prod produce yet) | Scale Redpanda + sinks back; restore prior Infisical topic names / `REDPANDA_BROKERS` if still the live producer bootstrap; leave Kafka unused | Not “automatic”; still subject to erasure deadlines on retained RP bytes |
+| **Post–Kafka-write** (any successful produce to v2 on Kafka) | **Forward-only** by default. Re-enable Redpanda only under a **separate** Root-approved recovery that names dedup/idempotency evidence for ClickHouse+archive (sinks are duplicate-tolerant for inserts, but that is **not** proof that a full redeliver is safe without a reviewed plan) | No automatic flipback; no DIY dual-write; no promised redeliver |
+| **Always** | Retain `/mnt/dofek-data/redpanda` (**38 GiB** census) until approval **F** | Kafka TS lab delete ≠ Redpanda physical absence |
+
+### Irreversible / downtime points
+
+| Point | Effect |
+|---|---|
+| Producer pause (step 2) | Metric-stream ingest downtime begins |
+| Infisical v2 rename (step 5) | Old v1 names must not receive new writes; archive objects stay generation-keyed |
+| First Kafka produce (step 8) | Enters post–Kafka-write forward-only class |
+| Scale Redpanda to 0 | Hot-log GC stops; retain data dir |
+| Delete RP data dir | **Not in this cutover** — separate approval **F** |
+| Deploy Web still disabled | Cutover deploy path needs approval **G** to re-enable workflow |
+
+### Non-goals (explicit)
+
+- No production cutover execution from this document.
+- No CI / `src` / test changes; no new cloud tests.
+- No custom migration state machine, pause framework, or bridge.
+- No claim that R2 JSONL replay is operator-ready (still unimplemented —
+  [Replay](../../docs/metric-stream-redpanda-r2-runbook.md#replay)).
+- Erasure / physical-absence attestations must name **which** store was checked
+  (Redpanda hot-log vs Kafka local vs Kafka TS R2 vs JSONL archive).
 
 ## Qualification
 

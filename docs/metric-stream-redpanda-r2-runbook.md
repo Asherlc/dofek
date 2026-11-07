@@ -432,6 +432,20 @@ If strain, activity load, or other metric-stream analytics go stale:
    to expire.
 5. Record the incident in `docs/production-incident-baseline.md`.
 
+## Kafka hot-log cutover (pointer only)
+
+Production cutover from Redpanda → stock Kafka 4.4 + RSM is **not executed**
+from this runbook. The concrete operator sequence, Lane 87 live census
+(2026-11-07T05:08:43Z), rollback boundary, and remaining approvals live in
+[`deploy/kafka/README.md`](../deploy/kafka/README.md#production-cutover--rollback-review-not-executed).
+Keep using this document for Redpanda freshness, quarantine inspect, and
+archive durability checks during any approved drain. Do **not** treat
+ClickHouse `max(recorded_at)` as freshness while it reports a nonsensical
+future timestamp (census FINDING). Terraform `KAFKA_TIERED_STORAGE_*`
+provisioning is **done**; topic-value edits, cutover execution, and
+`/mnt/dofek-data/redpanda` deletion (retain **38 GiB**) remain separately
+approved.
+
 ## References
 
 - Redpanda tiered storage self-managed docs:
