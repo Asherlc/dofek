@@ -1,25 +1,11 @@
 # This file is maintained automatically by "terraform init".
 # Manual edits may be lost in future updates.
 
-provider "registry.terraform.io/backblaze/b2" {
-  version     = "0.14.1"
-  constraints = "0.14.1"
-  hashes = [
-    "h1:/HHq6VZy+7bdFUv8+05v+xx8LaaqODtcX6vusgdHWWg=",
-    "h1:RLHHf+Kp24lemw+ml7Y+XglcXS/EGdMIz1Bpk73dcg8=",
-    "h1:h0NPIuEz6q/3hj/7/RWCwvj46XyD5Svyi3krPl/9TXc=",
-    "zh:0458855ccec54924c95fa69de342d9a56ea54898fce71a82918db3fa44f07d10",
-    "zh:9bbeb6d5addff2cf9600d08362ebe529d0ab8ced84c295c7b94726274e9aca73",
-    "zh:addddd90bf650f51e6574f0b65233d631a245778ddd1dfda9a1f3c5c9ec5a206",
-    "zh:af580eda712f1446bc8de1371a7a6cb4860ef3a2c0ef670e651f3c7b3fd4c308",
-    "zh:e7b712d9414d490c65a234c7d1e7c79ac50ee18b047e2644e59806de0ff68cc8",
-  ]
-}
-
 provider "registry.terraform.io/cloudflare/cloudflare" {
   version     = "5.19.0"
   constraints = "~> 5.0"
   hashes = [
+    "h1:18fPH+2UWukAmtbs+CzHjVys7l95jt2gCUs2N0fdfjM=",
     "h1:DfwnA214pLOZnVHnUzCqrDYb+mKbZjcfgYVYtDfMP/w=",
     "h1:d8B13MT3MP7H2a3H+DLqiyT8u8e7If47lMgzfcrU4t8=",
     "zh:1946c61d0aeffd3fed14cc55581f125d798fed14b0c1f9f765fecf46dbf4baff",
@@ -39,6 +25,7 @@ provider "registry.terraform.io/infisical/infisical" {
   constraints = "0.20.12"
   hashes = [
     "h1:4ymy5OZUBA2DfTnWyONHD+0Y2aFOH48zx+ZlQxKNlfQ=",
+    "h1:Pg20AvdKSx9uaaKJ0cdt5ReaCWXoBx2suJ6b0gB2wHk=",
     "h1:Z0pid7GCD7g3cqKYL10VddRSkn5/rS2hoSze3+ifoY4=",
     "h1:hQyJIrq4wjubVkFWA0fovHVNeJonppP0r5JV3YQv0NU=",
     "zh:064a4287382c98685b1ccf081663c0e5de37c46f275729ae9e0f1ba371cf7245",
