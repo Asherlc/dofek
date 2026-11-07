@@ -959,7 +959,7 @@ describe("processFitFileImportJob", () => {
 
   it("retains a job-owned downloaded FIT file for a retryable persistence failure", async () => {
     const filePath = await writeTempFit(createActivityFit());
-    const databaseError = new Error("Redpanda unavailable");
+    const databaseError = new Error("Kafka unavailable");
     mockUpsertProviderActivity.mockRejectedValueOnce(databaseError);
 
     await expect(

@@ -427,7 +427,7 @@ describe("StravaProvider.sync() (integration)", () => {
     }
   });
 
-  it("syncs activities with streams into activity and Redpanda metric stream events", async () => {
+  it("syncs activities with streams into activity and Kafka metric stream events", async () => {
     await saveTokens(ctx.db, "strava", {
       accessToken: "valid-token",
       refreshToken: "valid-refresh",

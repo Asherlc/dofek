@@ -10,13 +10,13 @@ import {
   MetricStreamProcessingPublisher,
 } from "./metric-stream-processing-publisher.ts";
 
-const redpandaProducerMocks = vi.hoisted(() => ({
+const kafkaProducerMocks = vi.hoisted(() => ({
   getDefaultMetricStreamEventPublisher: vi.fn(),
 }));
 
 vi.mock("../metric-stream/publisher-factory.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../metric-stream/publisher-factory.ts")>()),
-  getDefaultMetricStreamEventPublisher: redpandaProducerMocks.getDefaultMetricStreamEventPublisher,
+  getDefaultMetricStreamEventPublisher: kafkaProducerMocks.getDefaultMetricStreamEventPublisher,
 }));
 
 const operationRevision = "1000000000000000";
@@ -272,7 +272,7 @@ describe("createLazyDefaultMetricStreamEventPublisher", () => {
   it("lazily resolves one delegate and forwards publication methods", async () => {
     const publishRows = vi.fn(async () => []);
     const replaceRows = vi.fn(async () => ({ deleted: 0, rows: [] }));
-    redpandaProducerMocks.getDefaultMetricStreamEventPublisher.mockResolvedValue({
+    kafkaProducerMocks.getDefaultMetricStreamEventPublisher.mockResolvedValue({
       publishRows,
       replaceRows,
     });
@@ -284,13 +284,13 @@ describe("createLazyDefaultMetricStreamEventPublisher", () => {
       deleted: 0,
       rows: [],
     });
-    expect(redpandaProducerMocks.getDefaultMetricStreamEventPublisher).toHaveBeenCalledTimes(1);
+    expect(kafkaProducerMocks.getDefaultMetricStreamEventPublisher).toHaveBeenCalledTimes(1);
     expect(publishRows).toHaveBeenCalledWith([], { operationRevision });
     expect(replaceRows).toHaveBeenCalledWith(scope, [], operationRevision, undefined);
   });
 
   it("rejects replacement when the default delegate does not support it", async () => {
-    redpandaProducerMocks.getDefaultMetricStreamEventPublisher.mockResolvedValue({
+    kafkaProducerMocks.getDefaultMetricStreamEventPublisher.mockResolvedValue({
       publishRows: vi.fn(async () => []),
     });
     const publisher = createLazyDefaultMetricStreamEventPublisher();

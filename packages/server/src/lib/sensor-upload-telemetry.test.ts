@@ -64,7 +64,7 @@ describe("SensorUploadTelemetry", () => {
         event: "upload_published",
         batchId,
         publishedRowCount: 6,
-        boundary: "redpanda",
+        boundary: "kafka",
         elapsedMs: 123,
       }),
     );

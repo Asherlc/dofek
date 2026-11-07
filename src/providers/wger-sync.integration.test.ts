@@ -123,7 +123,7 @@ describe("WgerProvider.sync() (integration)", () => {
     if (ctx) await ctx.cleanup();
   });
 
-  it("syncs workout sessions into activity and weight entries into Redpanda metric stream events", async () => {
+  it("syncs workout sessions into activity and weight entries into Kafka metric stream events", async () => {
     await saveTokens(ctx.db, "wger", {
       accessToken: "valid-token",
       refreshToken: "valid-refresh",
@@ -206,7 +206,7 @@ describe("WgerProvider.sync() (integration)", () => {
       }),
     );
 
-    // Sync again — Redpanda appends raw events for each sync.
+    // Sync again — Kafka appends raw events for each sync.
     await provider.sync(
       new SyncRun({
         db: ctx.db,

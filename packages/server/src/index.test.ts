@@ -667,7 +667,7 @@ describe("main", () => {
   it("does not listen when the metric-stream producer cannot connect", async () => {
     vi.stubEnv("DATABASE_URL", "postgres://health:health@db:5432/health");
     vi.stubEnv("CLICKHOUSE_URL", "http://default:health@clickhouse:8123");
-    const brokerError = new Error("connect ECONNREFUSED redpanda:9092");
+    const brokerError = new Error("connect ECONNREFUSED kafka:9092");
     mockGetDefaultMetricStreamEventPublisher.mockRejectedValue(brokerError);
     const listen = vi.spyOn(express.application, "listen");
 

@@ -353,7 +353,7 @@ export class ProviderDetailRepository {
   readonly #userId: string;
   // ClickHouse query runner. Serves the read-models that have moved off
   // Postgres: body measurements (analytics.v_body_measurement) and the
-  // Redpanda-fed metric stream (ingest.metric_stream).
+  // Kafka-fed metric stream (ingest.metric_stream).
   readonly #clickHouse: BodyClickHouseStore | undefined;
 
   constructor(
@@ -684,7 +684,7 @@ export class ProviderDetailRepository {
   }
 
   /**
-   * Raw metric-stream rows for a provider, read from the Redpanda-fed ClickHouse
+   * Raw metric-stream rows for a provider, read from the Kafka-fed ClickHouse
    * mirror (Postgres `fitness.metric_stream` is retired). Version-deduplicated
    * via `row_number()` over `version` (avoids a full-table `FINAL` merge
    * on large continuous streams such as WHOOP heart rate); recorded_at formatted

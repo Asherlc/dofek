@@ -131,7 +131,7 @@ describe("whoopBleSyncRouter", () => {
             expect.objectContaining({
               stream: "sensorRecords",
               publishedRowCount: 1,
-              boundary: "redpanda",
+              boundary: "kafka",
             }),
           );
         } finally {
@@ -311,7 +311,7 @@ describe("whoopBleSyncRouter", () => {
         expect.objectContaining({
           ...attributes,
           publishedRowCount: 2,
-          boundary: "redpanda",
+          boundary: "kafka",
         }),
       );
     });
@@ -392,7 +392,7 @@ describe("whoopBleSyncRouter", () => {
       );
     });
 
-    it("publishes realtime data through Redpanda without inserting metric stream rows into Postgres", async () => {
+    it("publishes realtime data through Kafka without inserting metric stream rows into Postgres", async () => {
       const trpcCaller = caller(ctx);
 
       const result = await trpcCaller.pushRealtimeData({

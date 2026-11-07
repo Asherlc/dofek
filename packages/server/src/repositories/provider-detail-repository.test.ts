@@ -328,7 +328,7 @@ describe("ProviderDetailRepository", () => {
       await repo.getRecords("whoop", "metricStream", 10, 5);
 
       expect(query).toHaveBeenCalledTimes(1);
-      // Reads the deduped Redpanda-fed mirror, not Postgres.
+      // Reads the deduped Kafka-fed mirror, not Postgres.
       expect(query.mock.calls[0]?.[1]).toContain("FROM ingest.metric_stream");
       expect(query.mock.calls[0]?.[1]).toContain(
         "row_number() OVER (PARTITION BY id ORDER BY version DESC)",

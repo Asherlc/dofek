@@ -169,7 +169,7 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
     if (ctx) await ctx.cleanup();
   });
 
-  it("syncs trips into activity and Redpanda metric stream events", async () => {
+  it("syncs trips into activity and Kafka metric stream events", async () => {
     await saveTokens(ctx.db, "ride-with-gps", {
       accessToken: "valid-token",
       refreshToken: "valid-refresh",

@@ -1137,7 +1137,7 @@ describe("applyMetricStreamEventsToClickHouse", () => {
 });
 
 describe("runMetricStreamClickHouseSinkFromEnv", () => {
-  it("consumes Redpanda events and inserts them into ClickHouse", async () => {
+  it("consumes Kafka events and inserts them into ClickHouse", async () => {
     const client = {
       insert: vi.fn(async () => undefined),
       query: makeEmptyGenerationQuery(),

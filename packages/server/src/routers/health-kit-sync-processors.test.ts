@@ -160,7 +160,7 @@ describe("processMetricStream", () => {
     expect(publisher.publishRows).not.toHaveBeenCalled();
   });
 
-  it("publishes HealthKit metric stream samples through the Redpanda writer boundary", async () => {
+  it("publishes HealthKit metric stream samples through the Kafka writer boundary", async () => {
     const execute = vi.fn(async () => []);
     const publisher: MetricStreamEventPublisher = {
       publishRows: vi.fn(async () => []),
@@ -195,7 +195,7 @@ describe("processMetricStream", () => {
 });
 
 describe("processBodyMeasurements", () => {
-  it("publishes body measurement samples through Redpanda instead of inserting into Postgres", async () => {
+  it("publishes body measurement samples through Kafka instead of inserting into Postgres", async () => {
     const execute = vi.fn(async () => []);
     const publisher: MetricStreamEventPublisher = {
       publishRows: vi.fn(async () => []),

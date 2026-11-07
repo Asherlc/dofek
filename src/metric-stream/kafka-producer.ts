@@ -30,7 +30,7 @@ export interface KafkaProducerMessage {
  * Domain cap under the broker's typical 1 MiB message size limit
  * (`message.max.bytes` broker-wide / `max.message.bytes` per topic; see
  * Apache Kafka broker configs). Headroom leaves room for keys and framing.
- * This is an application chunking bound — not a Redpanda-specific property.
+ * This is an application chunking bound — not a broker-specific property.
  */
 const MAX_PRODUCE_REQUEST_BYTES = 900_000;
 

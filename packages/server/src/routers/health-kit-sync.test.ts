@@ -1104,7 +1104,7 @@ describe("healthKitSyncRouter", () => {
       const execute = vi.fn();
       // ensureProvider succeeds
       execute.mockResolvedValueOnce([]);
-      const failure = new Error("Metric stream Redpanda error");
+      const failure = new Error("Metric stream Kafka error");
       mockMetricStreamPublishRows.mockRejectedValueOnce(failure);
 
       const caller = createCaller({

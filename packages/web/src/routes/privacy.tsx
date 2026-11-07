@@ -90,7 +90,7 @@ function PrivacyPage() {
             <ul className="list-disc pl-6 space-y-1.5">
               <li>Account data and most health records are stored in PostgreSQL (TimescaleDB)</li>
               <li>
-                High-volume sensor records and derived analytics are stored in ClickHouse; Redpanda
+                High-volume sensor records and derived analytics are stored in ClickHouse; Kafka
                 buffers sensor events during ingestion
               </li>
               <li>

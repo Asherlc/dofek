@@ -49,7 +49,7 @@ export class HeartRateRepository {
   /**
    * Per-minute heart rate samples for a single day, grouped by source.
    *
-   * Reads the Redpanda-fed ClickHouse metric-stream mirror for
+   * Reads the Kafka-fed ClickHouse metric-stream mirror for
    * channel='heart_rate', downsampled to 1-minute bins (avg per bin). Rows are
    * version-deduplicated (`FINAL` + `is_deleted = 0`) but NOT collapsed
    * by provider priority, so every source is returned for overlay/comparison.

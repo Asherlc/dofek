@@ -159,7 +159,7 @@ describe("inertialMeasurementUnitSyncRouter", () => {
       await expect(upload).resolves.toEqual({ inserted: 1 });
       expect(logger.info).toHaveBeenCalledWith(
         "[sensor-upload] upload_published",
-        expect.objectContaining({ ...attributes, publishedRowCount: 1, boundary: "redpanda" }),
+        expect.objectContaining({ ...attributes, publishedRowCount: 1, boundary: "kafka" }),
       );
     });
 
@@ -257,7 +257,7 @@ describe("inertialMeasurementUnitSyncRouter", () => {
       );
     });
 
-    it("publishes samples through Redpanda without inserting metric stream rows into Postgres", async () => {
+    it("publishes samples through Kafka without inserting metric stream rows into Postgres", async () => {
       const execute = vi.fn(async () => []);
       const metricStreamPublisher = {
         publishRows: vi.fn(async (rows: readonly unknown[]) =>
@@ -697,7 +697,7 @@ describe("inertialMeasurementUnitSyncRouter", () => {
     });
 
     it("reports publish failures from the repository to Sentry", async () => {
-      const publishError = new Error("redpanda offline");
+      const publishError = new Error("kafka offline");
       const metricStreamPublisher = {
         publishRows: vi.fn().mockRejectedValue(publishError),
       };
@@ -714,7 +714,7 @@ describe("inertialMeasurementUnitSyncRouter", () => {
           deviceType: "whoop",
           samples: [makeSample()],
         }),
-      ).rejects.toThrow("redpanda offline");
+      ).rejects.toThrow("kafka offline");
 
       expect(captureException).toHaveBeenCalledWith(
         publishError,
@@ -722,7 +722,7 @@ describe("inertialMeasurementUnitSyncRouter", () => {
       );
       expect(mockSpan.setStatus).toHaveBeenCalledWith({
         code: 2,
-        message: "redpanda offline",
+        message: "kafka offline",
       });
       expect(mockSpan.recordException).toHaveBeenCalledTimes(2);
     });

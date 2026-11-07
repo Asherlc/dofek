@@ -72,7 +72,7 @@ export class SensorUploadTelemetry {
       event: "upload_published",
       ...this.#attributes,
       publishedRowCount,
-      boundary: publishedRowCount > 0 ? "redpanda" : "no_metric_rows",
+      boundary: publishedRowCount > 0 ? "kafka" : "no_metric_rows",
       elapsedMs: Date.now() - this.#startedAt,
     });
   }
