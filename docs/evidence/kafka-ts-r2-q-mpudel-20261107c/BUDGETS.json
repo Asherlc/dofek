@@ -6,6 +6,9 @@
     "kafka-ts-r2-q-mpudel-20261107b"
   ],
   "upload_cap_bytes": 8388608,
+  "planned_upload_bytes_credible": 6848512,
+  "planned_remote_objects_max": 6,
+  "upload_bound_kind": "planned_operator_stop_not_hard_network_meter",
   "object_body_GET": 0,
   "wall_seconds_max_after_mint": 1200,
   "part_size_bytes": 5242880,
@@ -29,23 +32,49 @@
     "main_value_bytes_max": 6291456,
     "quarantine_messages": 64,
     "quarantine_value_bytes_each": 1024,
-    "quarantine_producer_file_max": 65600,
-    "note": "Producer file bytes are inputs; remote upload budget is planned_object_upper_bounds.sum only"
+    "quarantine_producer_file_max": 65600
   },
-  "mpu_pass": "Root ListObjectsV2/HeadObject Key+Size+ETag on main .log BEFORE retention; ETag Cloudflare completed MPU hash-N with N>=2 (expect -2); Size==local closed .log",
+  "copy_freeze_after_etag": {
+    "appropriate": true,
+    "kafka_version": "4.4",
+    "docs": [
+      "https://kafka.apache.org/44/operations/tiered-storage/",
+      "https://kafka.apache.org/44/configuration/topic-configs/"
+    ],
+    "alter_both_topics": "remote.storage.enable=true,remote.log.copy.disable=true,local.retention.ms=-2,local.retention.bytes=-2",
+    "effect": "No further remote uploads; existing remote readable; expiration follows retention.ms/bytes so short retention GC still runs",
+    "local_retention_mapping": "Set local.retention.*=-2 as required by Kafka 4.4 docs when copy.disable=true"
+  },
+  "mpu_pass": "Root ListObjectsV2/HeadObject Key+Size+ETag on main .log BEFORE retention and BEFORE copy.disable; ETag Cloudflare hash-N N>=2 (expect -2); Size==local closed .log",
   "etag_source": "https://developers.cloudflare.com/r2/objects/upload-objects/",
-  "delete_pass": "After delete window: compose wrapper ps -q kafka; docker exec shell-list only __remote_log_metadata-*; wrapper stop kafka (volume retained); docker cp those metadata dirs only (never whole /var/lib/kafka/data); 384MiB/heap256 readonly kafka-dump-log.sh --remote-log-metadata-decoder (auto print-data-log) with portable read loops not mapfile; latest state= COPY_SEGMENT_FINISHED history + DELETE_SEGMENT_FINISHED (or document gap); then Root inventory 0 before cleanup. Procedure: docs/kafka-ts-rlmm-dump-procedure.md @ ea4a260b8",
+  "delete_pass": "After copy.disable+short retention: wrapper ps -q \u2192 list __remote_log_metadata-* only \u2192 stop kafka volume retained \u2192 docker cp metadata dirs only \u2192 384MiB/heap256 --remote-log-metadata-decoder portable read loops \u2192 latest state= COPY_SEGMENT_FINISHED history + DELETE_SEGMENT_FINISHED \u2192 Root inventory 0 before cleanup. docs/kafka-ts-rlmm-dump-procedure.md",
+  "rlmm_procedure": "docs/kafka-ts-rlmm-dump-procedure.md",
   "no_consume": true,
   "no_digest_rerun": true,
+  "no_second_cloud_for_metadata": true,
+  "no_custom_upload_accounting_framework": true,
   "cite_prior_consume_hash_separately": {
     "r2_phase_f": "docs/evidence/kafka-ts-r2-phasef-20261106/CORE_PROOF.json sha256_offset_pipe_value=a6818c55855297f2466d9d0967e2c97f6ebf6db61f7bd7c204d99bde6ecd5687",
     "local_dual512_fix": "docs/evidence/kafka-ts-dual512-fix-20261106/CORE_PROOF.json sha256_offset_value=84647a6947925f3ec9977f7b36da31a962bfa096134281ada00f6c3d5a19370b stdout_sha256=2d9df08fb5edb2f21780cd79665a930467eec59bbf0104999d51f83eecbcf2a6"
   },
-  "status": "BUDGET_REQUEST_ONLY \u2014 no allocation until user approves",
-  "rlmm_procedure": "docs/kafka-ts-rlmm-dump-procedure.md",
-  "no_second_cloud_for_metadata": true,
-  "rlmm_procedure_sha": "ea4a260b8",
-  "rlmm_copy_whole_datadir": false,
-  "rlmm_use_compose_wrapper_ps_q": true,
-  "rlmm_portable_read_loops": true
+  "infisical_bootstrap": "KAFKA_CLUSTER_ID+KAFKA_BROKERS resolved \u2014 no further writes from this packet",
+  "status": "Q14A_APPROVED \u2014 Root mint then Cursor execute after STARTED; Cursor must not mint",
+  "user_approval": "Q14A",
+  "planned_remote_objects": {
+    "count_max": 6,
+    "triples": [
+      [
+        "main.log",
+        "main.indexes",
+        "main.rsm-manifest"
+      ],
+      [
+        "quarantine.log",
+        "quarantine.indexes",
+        "quarantine.rsm-manifest"
+      ]
+    ],
+    "note": "Two topics \u00d7 three RSM object suffixes; copy.disable after ETag freezes further uploads"
+  },
+  "pre_retention_stop_checkpoint": "PRE_RETENTION_STOP_CHECKPOINT.json"
 }

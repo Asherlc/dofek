@@ -51,7 +51,7 @@ services:
       AWS_RESPONSE_CHECKSUM_VALIDATION: "WHEN_REQUIRED"
       AWS_MAX_ATTEMPTS: "1"
     volumes:
-      - kafka_ts_r2_q_mpudel_b_data:/var/lib/kafka/data
+      - kafka_ts_r2_q_mpudel_c_data:/var/lib/kafka/data
       - /Users/asherlc/.paseo/worktrees/3b2webx6/pulsar-foundation/deploy/kafka/plugins/1.2.0/core:/plugins/1.2.0/core:ro
       - /Users/asherlc/.paseo/worktrees/3b2webx6/pulsar-foundation/deploy/kafka/plugins/1.2.0/s3:/plugins/1.2.0/s3:ro
 
@@ -65,5 +65,5 @@ services:
     entrypoint: ["sleep", "infinity"]
 
 volumes:
-  kafka_ts_r2_q_mpudel_b_data:
+  kafka_ts_r2_q_mpudel_c_data:
     name: pulsar-foundation-kafka-ts-r2-q-mpudel-c-data
