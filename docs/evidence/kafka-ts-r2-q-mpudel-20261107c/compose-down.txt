@@ -1,0 +1,13 @@
+error while interpolating services.kafka.environment.AWS_SECRET_ACCESS_KEY: required variable KAFKA_TS_R2_CHILD_SECRET_ACCESS_KEY is missing a value: required
+ Container pulsar-foundation-kafka-ts-r2-q-mpudel-c-client-1 Stopping 
+ Container pulsar-foundation-kafka-ts-r2-q-mpudel-c-client-1 Stopped 
+ Container pulsar-foundation-kafka-ts-r2-q-mpudel-c-client-1 Removing 
+ Container pulsar-foundation-kafka-ts-r2-q-mpudel-c-client-1 Removed 
+ Container pulsar-foundation-kafka-ts-r2-q-mpudel-c-kafka-1 Stopping 
+ Container pulsar-foundation-kafka-ts-r2-q-mpudel-c-kafka-1 Stopped 
+ Container pulsar-foundation-kafka-ts-r2-q-mpudel-c-kafka-1 Removing 
+ Container pulsar-foundation-kafka-ts-r2-q-mpudel-c-kafka-1 Removed 
+ Volume pulsar-foundation-kafka-ts-r2-q-mpudel-c-data Removing 
+ Network pulsar-foundation-kafka-ts-r2-q-mpudel-c_default Removing 
+ Volume pulsar-foundation-kafka-ts-r2-q-mpudel-c-data Removed 
+ Network pulsar-foundation-kafka-ts-r2-q-mpudel-c_default Removed 
