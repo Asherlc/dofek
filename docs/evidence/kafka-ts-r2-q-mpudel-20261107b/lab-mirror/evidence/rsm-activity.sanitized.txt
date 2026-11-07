@@ -1,0 +1,72 @@
+	log.remote.copy.lag.bytes = -1
+	log.remote.copy.lag.ms = 0
+	remote.log.manager.copy.max.bytes.per.second = 9223372036854775807
+	remote.log.manager.copy.quota.window.num = 11
+	remote.log.manager.copy.quota.window.size.seconds = 1
+	remote.log.metadata.manager.class.name = org.apache.kafka.server.log.remote.metadata.storage.TopicBasedRemoteLogMetadataManager
+	log.remote.copy.lag.bytes = -1
+	log.remote.copy.lag.ms = 0
+	remote.log.manager.copy.max.bytes.per.second = 9223372036854775807
+	remote.log.manager.copy.quota.window.num = 11
+	remote.log.manager.copy.quota.window.size.seconds = 1
+	remote.log.metadata.manager.class.name = org.apache.kafka.server.log.remote.metadata.storage.TopicBasedRemoteLogMetadataManager
+	log.remote.copy.lag.bytes = -1
+	log.remote.copy.lag.ms = 0
+	remote.log.manager.copy.max.bytes.per.second = 9223372036854775807
+	remote.log.manager.copy.quota.window.num = 11
+	remote.log.manager.copy.quota.window.size.seconds = 1
+	remote.log.metadata.manager.class.name = org.apache.kafka.server.log.remote.metadata.storage.TopicBasedRemoteLogMetadataManager
+	storage.backend.class = class io.aiven.kafka.tieredstorage.storage.s3.S3Storage
+[2026-11-07 03:50:12,515] INFO S3StorageConfig values: 
+	s3.multipart.upload.part.size = 5242880
+[2026-11-07 03:50:12,998] INFO Successfully configured topic-based RLMM with config: TopicBasedRemoteLogMetadataManagerConfig{clientIdPrefix='__remote_log_metadata_client_1', metadataTopicPartitionsCount=50, consumeWaitMs=120000, metadataTopicRetentionMs=-1, metadataTopicReplicationFactor=1, metadataTopicMinIsr=1, initializationRetryMaxTimeoutMs=120000, initializationRetryIntervalMs=100, consumerProps={auto.offset.reset="earliest", bootstrap.servers=kafka:29092, client.id="__remote_log_metadata_client_1_consumer", enable.auto.commit=false, exclude.internal.topics=false, key.deserializer=org.apache.kafka.common.serialization.ByteArrayDeserializer, security.protocol="PLAINTEXT", value.deserializer=org.apache.kafka.common.serialization.ByteArrayDeserializer}, producerProps={acks="all", bootstrap.servers=kafka:29092, client.id="__remote_log_metadata_client_1_producer", enable.idempotence=true, key.serializer=org.apache.kafka.common.serialization.ByteArraySerializer, security.protocol="PLAINTEXT", value.serializer=org.apache.kafka.common.serialization.ByteArraySerializer}, adminProps={bootstrap.servers=kafka:29092, client.id="__remote_log_metadata_client_1_admin", security.protocol="PLAINTEXT"}} (org.apache.kafka.server.log.remote.metadata.storage.TopicBasedRemoteLogMetadataManager)
+	log.remote.copy.lag.bytes = -1
+	log.remote.copy.lag.ms = 0
+	remote.log.manager.copy.max.bytes.per.second = 9223372036854775807
+	remote.log.manager.copy.quota.window.num = 11
+	remote.log.manager.copy.quota.window.size.seconds = 1
+	remote.log.metadata.manager.class.name = org.apache.kafka.server.log.remote.metadata.storage.TopicBasedRemoteLogMetadataManager
+	log.remote.copy.lag.bytes = -1
+	log.remote.copy.lag.ms = 0
+	remote.log.manager.copy.max.bytes.per.second = 9223372036854775807
+	remote.log.manager.copy.quota.window.num = 11
+	remote.log.manager.copy.quota.window.size.seconds = 1
+	remote.log.metadata.manager.class.name = org.apache.kafka.server.log.remote.metadata.storage.TopicBasedRemoteLogMetadataManager
+[2026-11-07 03:50:13,231] INFO Initializing topic-based RLMM resources (org.apache.kafka.server.log.remote.metadata.storage.TopicBasedRemoteLogMetadataManager)
+[2026-11-07 03:50:13,325] INFO Topic __remote_log_metadata does not exist (org.apache.kafka.server.log.remote.metadata.storage.TopicBasedRemoteLogMetadataManager)
+[2026-11-07 03:50:13,380] INFO Topic __remote_log_metadata created. TopicId: WbPMI0r1T4CMeL1KdmKHEw, numPartitions: 50, replicationFactor: 1, config: [remote.storage.enable=false, min.insync.replicas=1, cleanup.policy=delete, retention.ms=-1] (org.apache.kafka.server.log.remote.metadata.storage.TopicBasedRemoteLogMetadataManager)
+[2026-11-07 03:50:13,609] INFO Initialized topic-based RLMM resources successfully (org.apache.kafka.server.log.remote.metadata.storage.TopicBasedRemoteLogMetadataManager)
+[2026-11-07 03:53:14,562] INFO [ReplicaFetcherManager on broker 1] Removed fetcher for partitions Set(tieredTopicR2QMpu-0) (kafka.server.ReplicaFetcherManager)
+[2026-11-07 03:53:14,567] INFO [LogLoader partition=tieredTopicR2QMpu-0, dir=/var/lib/kafka/data] Loading producer state till offset 0 (org.apache.kafka.storage.internals.log.UnifiedLog)
+[2026-11-07 03:53:14,568] INFO Created log for partition tieredTopicR2QMpu-0 in /var/lib/kafka/data/tieredTopicR2QMpu-0 with properties {local.retention.ms=86400000, remote.storage.enable=true, retention.ms=86400000, segment.bytes=6291456} (org.apache.kafka.storage.internals.log.LogManager)
+[2026-11-07 03:53:14,568] INFO [Partition tieredTopicR2QMpu-0 broker=1] No checkpointed highwatermark is found for partition tieredTopicR2QMpu-0 (kafka.cluster.Partition)
+[2026-11-07 03:53:14,568] INFO [Partition tieredTopicR2QMpu-0 broker=1] Log loaded for partition tieredTopicR2QMpu-0 with initial high watermark 0 (kafka.cluster.Partition)
+[2026-11-07 03:53:14,573] INFO Received leadership notifications with leader partitions [Nm2GNmFsTwmg1PUZuU9ekQ:tieredTopicR2QMpu-0] and follower partitions [] (org.apache.kafka.server.log.remote.metadata.storage.TopicBasedRemoteLogMetadataManager)
+[2026-11-07 03:53:14,574] INFO Updating assignments for partitions added: [Nm2GNmFsTwmg1PUZuU9ekQ:tieredTopicR2QMpu-0] and removed: [] (org.apache.kafka.server.log.remote.metadata.storage.ConsumerTask)
+[2026-11-07 03:53:14,576] INFO Created a new copy task: class org.apache.kafka.server.log.remote.storage.RemoteLogManager$RLMCopyTask[Nm2GNmFsTwmg1PUZuU9ekQ:tieredTopicR2QMpu-0] and getting scheduled (org.apache.kafka.server.log.remote.storage.RemoteLogManager)
+[2026-11-07 03:53:14,576] INFO Scheduling runnable class org.apache.kafka.server.log.remote.storage.RemoteLogManager$RLMCopyTask[Nm2GNmFsTwmg1PUZuU9ekQ:tieredTopicR2QMpu-0] with initial delay: 0, fixed delay: 2000 (org.apache.kafka.server.log.remote.storage.RemoteLogManager$RLMScheduledThreadPool)
+[2026-11-07 03:53:14,577] INFO Created a new expiration task: class org.apache.kafka.server.log.remote.storage.RemoteLogManager$RLMExpirationTask[Nm2GNmFsTwmg1PUZuU9ekQ:tieredTopicR2QMpu-0] and getting scheduled (org.apache.kafka.server.log.remote.storage.RemoteLogManager)
+[2026-11-07 03:53:14,577] INFO Scheduling runnable class org.apache.kafka.server.log.remote.storage.RemoteLogManager$RLMExpirationTask[Nm2GNmFsTwmg1PUZuU9ekQ:tieredTopicR2QMpu-0] with initial delay: 0, fixed delay: 2000 (org.apache.kafka.server.log.remote.storage.RemoteLogManager$RLMScheduledThreadPool)
+[2026-11-07 03:53:14,578] INFO [DynamicConfigPublisher broker id=1] Updating topic tieredTopicR2QMpu with new configuration : local.retention.ms -> 86400000,remote.storage.enable -> true,segment.bytes -> 6291456,retention.ms -> 86400000 (kafka.server.metadata.DynamicConfigPublisher)
+[2026-11-07 03:53:16,555] INFO [ReplicaFetcherManager on broker 1] Removed fetcher for partitions Set(tieredTopicR2QMpu.quarantine.v1-0) (kafka.server.ReplicaFetcherManager)
+[2026-11-07 03:53:16,557] INFO [LogLoader partition=tieredTopicR2QMpu.quarantine.v1-0, dir=/var/lib/kafka/data] Loading producer state till offset 0 (org.apache.kafka.storage.internals.log.UnifiedLog)
+[2026-11-07 03:53:16,557] INFO Created log for partition tieredTopicR2QMpu.quarantine.v1-0 in /var/lib/kafka/data/tieredTopicR2QMpu.quarantine.v1-0 with properties {local.retention.ms=86400000, remote.storage.enable=true, retention.ms=86400000, segment.bytes=1048576} (org.apache.kafka.storage.internals.log.LogManager)
+[2026-11-07 03:53:16,557] INFO [Partition tieredTopicR2QMpu.quarantine.v1-0 broker=1] No checkpointed highwatermark is found for partition tieredTopicR2QMpu.quarantine.v1-0 (kafka.cluster.Partition)
+[2026-11-07 03:53:16,557] INFO [Partition tieredTopicR2QMpu.quarantine.v1-0 broker=1] Log loaded for partition tieredTopicR2QMpu.quarantine.v1-0 with initial high watermark 0 (kafka.cluster.Partition)
+[2026-11-07 03:53:16,560] INFO Received leadership notifications with leader partitions [H_F1K1p2THSwI3DVCAZvdg:tieredTopicR2QMpu.quarantine.v1-0] and follower partitions [] (org.apache.kafka.server.log.remote.metadata.storage.TopicBasedRemoteLogMetadataManager)
+[2026-11-07 03:53:16,560] INFO Updating assignments for partitions added: [H_F1K1p2THSwI3DVCAZvdg:tieredTopicR2QMpu.quarantine.v1-0] and removed: [] (org.apache.kafka.server.log.remote.metadata.storage.ConsumerTask)
+[2026-11-07 03:53:16,560] INFO Created a new copy task: class org.apache.kafka.server.log.remote.storage.RemoteLogManager$RLMCopyTask[H_F1K1p2THSwI3DVCAZvdg:tieredTopicR2QMpu.quarantine.v1-0] and getting scheduled (org.apache.kafka.server.log.remote.storage.RemoteLogManager)
+[2026-11-07 03:53:16,560] INFO Scheduling runnable class org.apache.kafka.server.log.remote.storage.RemoteLogManager$RLMCopyTask[H_F1K1p2THSwI3DVCAZvdg:tieredTopicR2QMpu.quarantine.v1-0] with initial delay: 0, fixed delay: 2000 (org.apache.kafka.server.log.remote.storage.RemoteLogManager$RLMScheduledThreadPool)
+[2026-11-07 03:53:16,561] INFO Created a new expiration task: class org.apache.kafka.server.log.remote.storage.RemoteLogManager$RLMExpirationTask[H_F1K1p2THSwI3DVCAZvdg:tieredTopicR2QMpu.quarantine.v1-0] and getting scheduled (org.apache.kafka.server.log.remote.storage.RemoteLogManager)
+[2026-11-07 03:53:16,561] INFO Scheduling runnable class org.apache.kafka.server.log.remote.storage.RemoteLogManager$RLMExpirationTask[H_F1K1p2THSwI3DVCAZvdg:tieredTopicR2QMpu.quarantine.v1-0] with initial delay: 0, fixed delay: 2000 (org.apache.kafka.server.log.remote.storage.RemoteLogManager$RLMScheduledThreadPool)
+[2026-11-07 03:53:16,561] INFO [DynamicConfigPublisher broker id=1] Updating topic tieredTopicR2QMpu.quarantine.v1 with new configuration : local.retention.ms -> 86400000,remote.storage.enable -> true,segment.bytes -> 1048576,retention.ms -> 86400000 (kafka.server.metadata.DynamicConfigPublisher)
+[2026-11-07 03:53:16,579] INFO [RemoteLogManager=1 partition=Nm2GNmFsTwmg1PUZuU9ekQ:tieredTopicR2QMpu-0] Found the logStartOffset: 0 for partition: Nm2GNmFsTwmg1PUZuU9ekQ:tieredTopicR2QMpu-0 after becoming leader (org.apache.kafka.server.log.remote.storage.RemoteLogManager$RLMCopyTask)
+[2026-11-07 03:53:16,580] INFO [RemoteLogManager=1 partition=Nm2GNmFsTwmg1PUZuU9ekQ:tieredTopicR2QMpu-0] Found the highest copiedRemoteOffset: Optional[OffsetAndEpoch[offset=-1, epoch=-1]] for partition: Nm2GNmFsTwmg1PUZuU9ekQ:tieredTopicR2QMpu-0 after becoming leader (org.apache.kafka.server.log.remote.storage.RemoteLogManager$RLMCopyTask)
+[2026-11-07 03:53:18,561] INFO [RemoteLogManager=1 partition=H_F1K1p2THSwI3DVCAZvdg:tieredTopicR2QMpu.quarantine.v1-0] Found the logStartOffset: 0 for partition: H_F1K1p2THSwI3DVCAZvdg:tieredTopicR2QMpu.quarantine.v1-0 after becoming leader (org.apache.kafka.server.log.remote.storage.RemoteLogManager$RLMCopyTask)
+[2026-11-07 03:53:18,563] INFO [RemoteLogManager=1 partition=H_F1K1p2THSwI3DVCAZvdg:tieredTopicR2QMpu.quarantine.v1-0] Found the highest copiedRemoteOffset: Optional[OffsetAndEpoch[offset=-1, epoch=-1]] for partition: H_F1K1p2THSwI3DVCAZvdg:tieredTopicR2QMpu.quarantine.v1-0 after becoming leader (org.apache.kafka.server.log.remote.storage.RemoteLogManager$RLMCopyTask)
+[2026-11-07 03:53:35,100] INFO [LocalLog partition=tieredTopicR2QMpu-0, dir=/var/lib/kafka/data/tieredTopicR2QMpu-0] Rolled new log segment at offset 6060 in 5 ms. (org.apache.kafka.storage.internals.log.LocalLog)
+[2026-11-07 03:53:35,101] INFO [ProducerStateManager partition=tieredTopicR2QMpu-0] Wrote producer snapshot at offset 6060 with 1 producer ids in 1 ms. (org.apache.kafka.storage.internals.log.ProducerStateManager)
+[2026-11-07 03:53:36,589] INFO [RemoteLogManager=1 partition=Nm2GNmFsTwmg1PUZuU9ekQ:tieredTopicR2QMpu-0] Copying 00000000000000000000.log to remote storage. (org.apache.kafka.server.log.remote.storage.RemoteLogManager$RLMCopyTask)
+[2026-11-07 03:53:36,625] INFO Copying log segment data, metadata: RemoteLogSegmentMetadata{remoteLogSegmentId=RemoteLogSegmentId{topicIdPartition=Nm2GNmFsTwmg1PUZuU9ekQ:tieredTopicR2QMpu-0, id=151psq5jS7ivmpYWGQ8vvQ}, startOffset=0, endOffset=6059, brokerId=1, maxTimestampMs=1794023614297, eventTimestampMs=1794023616590, segmentLeaderEpochs={0=0}, segmentSizeInBytes=6284624, customMetadata=Optional.empty, state=COPY_SEGMENT_STARTED, txnIdxEmpty=true} (io.aiven.kafka.tieredstorage.RemoteStorageManager)
+[2026-11-07 03:54:03,396] INFO Copying log segment data completed successfully, metadata: RemoteLogSegmentMetadata{remoteLogSegmentId=RemoteLogSegmentId{topicIdPartition=Nm2GNmFsTwmg1PUZuU9ekQ:tieredTopicR2QMpu-0, id=151psq5jS7ivmpYWGQ8vvQ}, startOffset=0, endOffset=6059, brokerId=1, maxTimestampMs=1794023614297, eventTimestampMs=1794023616590, segmentLeaderEpochs={0=0}, segmentSizeInBytes=6284624, customMetadata=Optional.empty, state=COPY_SEGMENT_STARTED, txnIdxEmpty=true} (io.aiven.kafka.tieredstorage.RemoteStorageManager)
+[2026-11-07 03:54:03,463] INFO [RemoteLogManager=1 partition=Nm2GNmFsTwmg1PUZuU9ekQ:tieredTopicR2QMpu-0] Copied 00000000000000000000.log to remote storage with segment-id: RemoteLogSegmentId{topicIdPartition=Nm2GNmFsTwmg1PUZuU9ekQ:tieredTopicR2QMpu-0, id=151psq5jS7ivmpYWGQ8vvQ} (org.apache.kafka.server.log.remote.storage.RemoteLogManager$RLMCopyTask)

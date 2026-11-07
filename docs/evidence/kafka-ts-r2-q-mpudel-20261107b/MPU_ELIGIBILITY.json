@@ -1,0 +1,12 @@
+{
+  "part_size_configured": 5242880,
+  "main_closed_segment_bytes": 6284624,
+  "multipart_required_by_size_eligibility_only": true,
+  "rsm_copy_completed_main": true,
+  "rsm_copy_completed_quarantine": true,
+  "upload_part_observed": false,
+  "multipart_etag_observed": false,
+  "remote_object_sizes_observed": false,
+  "qualified_as_mpu": false,
+  "note": "Eligibility + RSM copy-success only. Do not treat as Q-MPU pass."
+}

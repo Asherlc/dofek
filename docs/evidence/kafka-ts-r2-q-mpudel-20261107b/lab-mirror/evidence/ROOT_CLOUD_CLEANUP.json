@@ -1,0 +1,19 @@
+{
+  "bucket": "kafka-ts-r2-q-mpudel-20261107b",
+  "prefix": "kafka-ts-parity/r2/20261107b-q-mpudel/",
+  "at": "2026-11-07T03:57:35.924Z",
+  "preOperatorObjectCount": 0,
+  "preOperatorObjectSizes": [],
+  "preOperatorMultipartCount": 0,
+  "operatorObjectDeletes": 0,
+  "operatorMultipartAborts": 0,
+  "postObjectCount": 0,
+  "postMultipartCount": 0,
+  "bucketDeleteHTTP": 200,
+  "bucketGetHTTP": 404,
+  "ownedContainers": 0,
+  "ownedVolumes": 0,
+  "objectBodyDownloadsByRoot": 0,
+  "parentRevoked": false,
+  "temporarySessionExpiresAt": "2026-11-07T04:50:06.257Z"
+}

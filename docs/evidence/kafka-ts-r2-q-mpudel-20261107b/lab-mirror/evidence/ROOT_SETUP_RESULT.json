@@ -1,0 +1,17 @@
+{
+  "status": "Started",
+  "bucket": "kafka-ts-r2-q-mpudel-20261107b",
+  "prefix": "kafka-ts-parity/r2/20261107b-q-mpudel/",
+  "mintedAt": "2026-11-07T03:50:06.257Z",
+  "expiresAt": "2026-11-07T04:50:06.257Z",
+  "hardStopAt": "2026-11-07T04:45:06.257Z",
+  "childAccessKeyId": "d9831c62b4ed20e32f34e80a0c5d8643",
+  "permission": "object-read-write",
+  "ttlSeconds": 3600,
+  "sourceHashes": {
+    "docker-compose.yml": "f3ebb4b203af09b55ae5aad0c366a8afde13b147d801f10bd6270cba66a9ebb3",
+    "docker-compose.credentials.placeholder.yml": "c34b04e4da8c8934c5318c4015a2a1f13d2a7ab9548c38fb31940c825bd8e5aa"
+  },
+  "objectBodyDownloadsByRoot": 0,
+  "productionChanges": false
+}

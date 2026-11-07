@@ -1,0 +1,9 @@
+{
+  "bucket": "kafka-ts-r2-q-mpudel-20261107b",
+  "prefix": "kafka-ts-parity/r2/20261107b-q-mpudel/",
+  "at": "2026-11-07T03:57:34.813Z",
+  "objectsBeforeOperatorCleanup": [],
+  "multipartBeforeOperatorCleanup": [],
+  "ownedContainers": 0,
+  "ownedVolumes": 0
+}

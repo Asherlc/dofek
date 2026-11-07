@@ -1,0 +1,100 @@
+{
+  "lab": "kafka-ts-r2-q-mpudel-20261107b",
+  "prefix": "kafka-ts-parity/r2/20261107b-q-mpudel/",
+  "childAccessKeyIdNamesOnly": "d9831c62b4ed20e32f34e80a0c5d8643",
+  "runtimeStoppedAt": "2026-11-07T03:56:49Z",
+  "rootCleanupVerifiedAt": "2026-11-07T03:57:35.924Z",
+  "A_MPU": {
+    "qualified": false,
+    "observed": {
+      "part_size_configured": 5242880,
+      "part_size_source": "evidence/rsm-activity.sanitized.txt (s3.multipart.upload.part.size = 5242880)",
+      "main_segmentSizeInBytes_in_copy_metadata": 6284624,
+      "main_local_closed_log_bytes": 6284624,
+      "main_local_log_source": "evidence/local-segments-main.txt",
+      "size_gt_part_size_eligibility": true,
+      "rsm_copy_completed_successfully_main": true,
+      "rsm_copy_completed_successfully_quarantine": true,
+      "copy_sources": [
+        "evidence/mpu-copy-sanitized.txt",
+        "evidence/q-copy.sanitized.txt"
+      ]
+    },
+    "not_observed": [
+      "CreateMultipartUpload log/API name",
+      "UploadPart log/API name or part count",
+      "CompleteMultipartUpload log/API name",
+      "provider multipart ETag (Cloudflare completed form hash-N / expected -2 for ~6.3MiB)",
+      "final remote object byte sizes (pre-cleanup ListObjects was empty)",
+      "in-flight ListMultipartUploads during copy",
+      "HeadObject / ListObjectsV2 Key+Size+ETag during object lifetime"
+    ],
+    "stock_etag_proof_source_if_observed": "https://developers.cloudflare.com/r2/objects/upload-objects/ (completed MPU ETag = hash- + partCount)",
+    "inferential_guarantee_cited": null,
+    "remaining_upload_budget_bytes": null,
+    "remaining_upload_budget_note": "Cannot compute exactly: prior authoritative ListObjects size sum never captured; known .log floor 7331069 understates prior upload",
+    "verdict": "NOT QUALIFIED — eligibility/config path + RSM copy-success only; no observed provider .log ETag-N or UploadPart proof. See A_MPU_ETAG_GAP.md"
+  },
+  "B_DEL": {
+    "qualified_physical_absence": true,
+    "qualified_rlmm_finished": false,
+    "observed": {
+      "about_to_delete_remote_main_segments": [
+        "151psq5jS7ivmpYWGQ8vvQ",
+        "Y8PxlT7CQpaORFl_iBmT4g"
+      ],
+      "about_to_delete_remote_quarantine_segments": [
+        "4idAHIsoQ2S1Y7b3wr9xnw",
+        "P6i48FwWQsGWstXxtpGphw"
+      ],
+      "about_to_delete_source": "evidence/delete-progress.sanitized.txt",
+      "pre_operator_ListObjectsV2_object_count": 0,
+      "pre_operator_list_MPU_count": 0,
+      "pre_operator_inventory_source": "evidence/ROOT_CLOUD_INVENTORY_BEFORE_CLEANUP.json",
+      "operator_object_deletes": 0,
+      "operator_multipart_aborts": 0,
+      "cleanup_source": "evidence/ROOT_CLOUD_CLEANUP.json"
+    },
+    "not_observed": [
+      "DELETE_SEGMENT_FINISHED log line",
+      "stock kafka-dump-log.sh --remote-log-metadata-decoder RLMM latest state"
+    ],
+    "verdict": "Physical absence under prefix OBSERVED before manual cleanup; About-to-delete ≠ FINISHED; RLMM finished state GAP"
+  },
+  "C_CONSUME": {
+    "qualified_count_exit": true,
+    "qualified_order": false,
+    "qualified_content_hash": false,
+    "observed": {
+      "consume_exit": 0,
+      "consume_line_count_reported": 6060,
+      "consume_out_path_reported": "/tmp/consume-main.out",
+      "consume_summary_source": "evidence/consume-main.log",
+      "produce_main_exit": 0,
+      "produce_payload_bytes_reported": 6355000,
+      "main_copy_metadata_offsets": "startOffset=0,endOffset=6059 (6060 records) in mpu-copy-sanitized.txt",
+      "extra_summary_lines_uninterpreted": ["20", "1025"]
+    },
+    "not_observed": [
+      "preserved /tmp/consume-main.out message bodies",
+      "monotonic key/offset order check",
+      "content hash of consumed payload vs produce input"
+    ],
+    "verdict": "Exit 0 and reported line count 6060 only; order/hash NOT proven (consume body artifact not preserved)"
+  },
+  "budget": {
+    "known_closed_log_bytes_sum": 7331069,
+    "max_upload_bytes": 16777216,
+    "under_budget_known_logs_only": true,
+    "authoritative_total_upload_bytes": null,
+    "note": "Pre-cleanup inventory empty — no Root object-size sum for actual upload total"
+  },
+  "cleanup": {
+    "bucketDeleteHTTP": 200,
+    "bucketGetHTTP": 404,
+    "ownedContainers": 0,
+    "ownedVolumes": 0,
+    "parentRevoked": false,
+    "bucket_must_not_recreate": true
+  }
+}
