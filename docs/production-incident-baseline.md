@@ -1,5 +1,31 @@
 # Production Incident Baseline
 
+## 2026-11-07 — GitGuardian Generic High Entropy on Kafka `CLUSTER_ID` candidate (false positive)
+
+- **Status:** Root-verified **false positive**. No credential rotation. Candidate
+  evidence bytes left stable (no history rewrite / redaction-for-green). No broad
+  scanner ignore or repo-wide allowlist.
+- **Check:** External [GitGuardian Security Checks](https://dashboard.gitguardian.com)
+  on PR [#3231](https://github.com/Asherlc/dofek/pull/3231) / head `723c2efb4`
+  — incident `39779011`, occurrence `310926305`, detector **Generic High Entropy
+  Secret**, status Triggered. In-repo `Test / Secret Scan` remained success.
+- **Location:** commit `ea27b5b13` —
+  `docs/evidence/kafka-ts-r2-q-mpudel-20261107c/KAFKA_CLUSTER_ID.candidate.json`
+  (and twin `.candidate.txt`); field `value_nonsecret` from stock
+  `kafka-storage.sh random-uuid` (`apache/kafka:4.4.0`).
+- **Root cause:** Stock Kafka KRaft cluster id is a public format identifier, not
+  an API secret ([Kafka 4.4 KRaft](https://kafka.apache.org/44/operations/kraft/)
+  `kafka-storage.sh random-uuid` / format servers). GG high-entropy detector
+  matched the id shape.
+- **Remediation path:** Root marks this **specific** incident false_positive in
+  authenticated GitGuardian UI per
+  [GG remediate overview](https://docs.gitguardian.com/internal-repositories-monitoring/remediate/overview).
+  Do not rotate Infisical
+  `KAFKA_CLUSTER_ID`, rewrite history, or add broad ignore rules for green CI.
+- **Remaining risk / follow-up:** Other high-entropy evidence blobs may re-trigger
+  GG; triage each occurrence the same way (credential vs identifier) before any
+  ignore.
+
 ## 2026-11-07 — Infisical→GH sync pruned GH-only `CLOUDFLARE_TERRAFORM_R2_API_TOKEN` (resolved via env ownership)
 
 - **Status:** Resolved. Terraform provisioning **DONE** (plan+apply+Root
