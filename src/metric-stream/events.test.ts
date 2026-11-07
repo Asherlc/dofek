@@ -56,7 +56,7 @@ describe("createMetricStreamEvent", () => {
     expect(createCurrentMetricStreamEvent({ ...row, generation: 1 }).id).not.toBe(first.id);
     expect(createCurrentMetricStreamEvent({ ...row, scalar: 15 }).id).toBe(first.id);
   });
-  it("derives a stable id from the metric stream natural key when no id is supplied", () => {
+  it("derives a stable id from the metric stream natural key", () => {
     const firstEvent = createCurrentMetricStreamEvent({
       ...baseMetricStreamRow,
       externalId: "hk:heart-rate-1",
@@ -89,13 +89,49 @@ describe("createMetricStreamEvent", () => {
     expect(firstGeneration.id).not.toBe(nextGeneration.id);
   });
 
-  it("preserves a caller-supplied id", () => {
-    const event = createCurrentMetricStreamEvent({
+  it("rejects caller-supplied identity at the publication boundary", () => {
+    const row = {
       ...baseMetricStreamRow,
+      externalId: "hk:heart-rate-1",
       id: "10000000-0000-4000-8000-000000000001",
-    });
+    };
 
-    expect(event.id).toBe("10000000-0000-4000-8000-000000000001");
+    expect(() => createCurrentMetricStreamEvent(row)).toThrow();
+  });
+
+  it.each([
+    { userId: "00000000-0000-0000-0000-000000000002" },
+    { providerId: "garmin" },
+    { recordedAt: "2026-06-06T19:00:00.001Z" },
+  ])("derives a new identity when immutable fields change: %j", (change) => {
+    const row = { ...baseMetricStreamRow, externalId: "hk:heart-rate-1" };
+    expect(createCurrentMetricStreamEvent({ ...row, ...change }).id).not.toBe(
+      createCurrentMetricStreamEvent(row).id,
+    );
+  });
+
+  it("retains identity across activity and measurement corrections", () => {
+    const row = { ...baseMetricStreamRow, externalId: "hk:heart-rate-1", scalar: 80 };
+    expect(
+      createCurrentMetricStreamEvent({
+        ...row,
+        activityId: "10000000-0000-4000-8000-000000000001",
+        scalar: 90,
+      }).id,
+    ).toBe(createCurrentMetricStreamEvent(row).id);
+  });
+
+  it.each([1, 2])("preserves historical wire identity and precision in v%i", (version) => {
+    const id = "10000000-0000-4000-8000-000000000001";
+    const recordedAt = "2026-06-06T19:00:00.123456Z";
+    const event = metricStreamKafkaEventSchema.parse({
+      ...baseMetricStreamRow,
+      version,
+      ...(version === 2 ? { operationRevision } : {}),
+      id,
+      recordedAt,
+    });
+    expect(event).toMatchObject({ id, recordedAt });
   });
 
   it("rejects invalid recordedAt timestamps", () => {
@@ -127,9 +163,9 @@ describe("createMetricStreamEvent", () => {
     expect(event.metadata).toEqual({ source: "test" });
   });
 
-  it("requires externalId when no explicit id is supplied", () => {
+  it("requires externalId", () => {
     expect(() => createCurrentMetricStreamEvent(baseMetricStreamRow)).toThrow(
-      "Metric stream rows without id must include externalId",
+      "Metric stream rows must include externalId",
     );
   });
 });

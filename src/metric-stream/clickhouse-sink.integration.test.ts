@@ -21,6 +21,7 @@ import {
   createMetricStreamEvent,
   type MetricStreamDeleteScopeInput,
   type MetricStreamRowInput,
+  metricStreamEventV2Schema,
 } from "./events.ts";
 
 const testUserId = randomUUID();
@@ -68,7 +69,14 @@ const zeppSamples = [
   ),
 );
 
-function createCurrentMetricStreamEvent(row: MetricStreamRowInput, revision = operationRevision) {
+function createCurrentMetricStreamEvent(
+  row: MetricStreamRowInput & { id?: string },
+  revision = operationRevision,
+) {
+  // Historical wire fixtures retain stored IDs, including moved-identity versions.
+  if (row.id !== undefined) {
+    return metricStreamEventV2Schema.parse({ ...row, version: 2, operationRevision: revision });
+  }
   return createMetricStreamEvent(row, revision);
 }
 
@@ -493,7 +501,7 @@ describe("metric stream ClickHouse sink (integration)", () => {
       externalId: "integration-cross-route-replacement",
       sourceType: "api",
       channel: "heart_rate",
-    } satisfies Omit<MetricStreamRowInput, "scalar">;
+    } satisfies Omit<MetricStreamRowInput, "scalar"> & { id: string };
     const scope = {
       userId: row.userId,
       providerId: row.providerId,

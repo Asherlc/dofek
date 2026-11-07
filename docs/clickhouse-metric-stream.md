@@ -55,12 +55,23 @@ one user, provider, and recorded timestamp. Changing any of those identity
 fields creates a new sample ID. Activity association and measurement values
 may change while retaining the ID.
 
-This is a target contract, not a claim that all historical data has been
-validated or that enforcement is complete. The [event constructor](../src/metric-stream/events.ts)
-derives generated IDs from identity fields but also accepts caller-supplied
-IDs; the [writer boundary](../src/db/metric-stream-writer.ts) and historical
-imports must be audited before changing that behavior. Timestamp
-canonicalization and precision are part of the compatibility review.
+New publications enforce this rule through the existing deterministic
+[event constructor](../src/metric-stream/events.ts): callers supply an external
+source identifier rather than an internal sample ID. The
+[writer boundary](../src/db/metric-stream-writer.ts) exposes the same contract.
+The hash namespace and existing channel, external-ID, generation and interval
+provenance discriminators are unchanged; the three immutable fields alone are
+not a unique sample key. New publication timestamps retain the existing
+millisecond normalization. Activity changes retain an ID only when the other
+hash inputs remain unchanged; some import paths include activity in their
+fallback external identifier.
+
+Historical compatibility is not established. The wire parsers still preserve
+stored IDs and timestamp precision; historical imports are not rehashed. The
+old [Postgres primary key](../drizzle/0009_metric_stream_id_not_null_primary_key.sql)
+was `(id, recorded_at)`, so its constraints do not establish immutable identity
+across all retained versions. Historical identity and timestamp precision
+still require an audit before deletion queries can rely on the new contract.
 
 Keep the existing global latest-version deletion checks until producer and
 historical compatibility are established and an implementation is reviewed.

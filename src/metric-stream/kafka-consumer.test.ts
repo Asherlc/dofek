@@ -67,7 +67,6 @@ vi.mock("../logger.ts", () => ({
 
 const event = createMetricStreamEvent(
   {
-    id: "10000000-0000-4000-8000-000000000001",
     recordedAt: "2026-06-06T19:00:00.000Z",
     userId: "00000000-0000-0000-0000-000000000001",
     providerId: "apple_health",

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { type Admin, ConfigResourceTypes, Kafka, logLevel, type Producer } from "kafkajs";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { createMetricStreamEvent } from "./events.ts";
+import { createMetricStreamEvent, metricStreamEventV2Schema } from "./events.ts";
 import { type MetricStreamConsumerLike, runMetricStreamEventConsumer } from "./kafka-consumer.ts";
 import {
   KafkaMetricStreamQuarantineWriter,
@@ -235,20 +235,19 @@ describe("metric-stream durable quarantine", () => {
       topic: sourceTopic,
     });
 
-    const validEvent = createMetricStreamEvent(
-      {
-        channel: "heart_rate",
-        deviceId: "Apple Watch",
-        externalId: "hk:heart-rate-1",
-        id: "10000000-0000-4000-8000-000000000001",
-        providerId: "apple_health",
-        recordedAt: "2026-06-06T19:00:00.000Z",
-        scalar: 72,
-        sourceType: "api",
-        userId: "00000000-0000-0000-0000-000000000001",
-      },
+    const validEvent = metricStreamEventV2Schema.parse({
+      version: 2,
       operationRevision,
-    );
+      channel: "heart_rate",
+      deviceId: "Apple Watch",
+      externalId: "hk:heart-rate-1",
+      id: "10000000-0000-4000-8000-000000000001",
+      providerId: "apple_health",
+      recordedAt: "2026-06-06T19:00:00.000Z",
+      scalar: 72,
+      sourceType: "api",
+      userId: "00000000-0000-0000-0000-000000000001",
+    });
     await producer.send({
       acks: -1,
       messages: [
