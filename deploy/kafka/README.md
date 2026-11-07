@@ -7,9 +7,13 @@ No custom broker image.
 Design authority: [`docs/kafka-tiered-storage-assessment.md`](../../docs/kafka-tiered-storage-assessment.md).
 IaC contract (bucket/token/Infisical): [`docs/kafka-ts-r2-offload-iac.md`](../../docs/kafka-ts-r2-offload-iac.md).
 
-**Not merge/deploy ready** until Infisical `KAFKA_BROKERS`, topic envs, and
-`KAFKA_TIERED_STORAGE_*` are provisioned (Root credential boundary). RSM is the
-steady production configuration (enabled); there is no TS-off stopgap in stack.
+**Not merge/deploy ready** until five `KAFKA_TIERED_STORAGE_*` keys (TF apply)
+and v2 topic cutover (drained) are done. `KAFKA_CLUSTER_ID` + `KAFKA_BROKERS`
+are **resolved** (Root-provisioned; see
+[`docs/kafka-infisical-bootstrap-keys.md`](../../docs/kafka-infisical-bootstrap-keys.md));
+do **not** regenerate the cluster id. `METRIC_STREAM_*` topic values unchanged
+by that bootstrap. RSM is the steady production configuration (enabled);
+there is no TS-off stopgap in stack.
 
 ## Pins
 
@@ -57,7 +61,11 @@ Stack/compose also set (declarative, dual512-fix PASS envelope
 **Never** set `KAFKA_RSM_CONFIG_STORAGE_AWS_*` static secret fields.
 **Never** reuse JSONL archive `R2_*` or erasure-ledger keys.
 
-`KAFKA_CLUSTER_ID` is stable (no regeneration on restart).
+`KAFKA_CLUSTER_ID` is stable (no regeneration on restart or apply). Operator
+bootstrap used stock `kafka-storage.sh random-uuid` in an external **384 MiB**
+tool container (`--memory=384m`, no broker JVM) and Infisical
+`secrets set --file /dev/stdin` via private pipe — see
+[`docs/kafka-infisical-bootstrap-keys.md`](../../docs/kafka-infisical-bootstrap-keys.md).
 
 ## Topic desired config (B7 + deploy stock CLI — no Infisical topic renames)
 

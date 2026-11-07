@@ -151,8 +151,11 @@ Seaweed ≠ this packet.
 **Present (do not change topic values):** `METRIC_STREAM_*` topic keys,
 `METRIC_STREAM_R2_BUCKET`, `R2_ACCESS_KEY_ID`, `R2_ENDPOINT`,
 `R2_SECRET_ACCESS_KEY`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, …
-**Missing (block merge/deploy; do not mint before TF apply):** `KAFKA_BROKERS`,
-`KAFKA_CLUSTER_ID`, `KAFKA_TIERED_STORAGE_{BUCKET,ENDPOINT,REGION,ACCESS_KEY_ID,SECRET_ACCESS_KEY}`.
+**Resolved (Root-provisioned; do not regenerate):** `KAFKA_BROKERS` (`kafka:9092`),
+`KAFKA_CLUSTER_ID` (stock-tool stable ID).
+**Still missing (block merge/deploy until TF apply + drained cutover):**
+`KAFKA_TIERED_STORAGE_{BUCKET,ENDPOINT,REGION,ACCESS_KEY_ID,SECRET_ACCESS_KEY}`
+plus v2 topic cutover (not CONFIG ONLY).
 
 ---
 

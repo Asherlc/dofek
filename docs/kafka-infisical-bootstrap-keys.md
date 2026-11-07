@@ -1,87 +1,55 @@
-# Infisical bootstrap — `KAFKA_CLUSTER_ID` + `KAFKA_BROKERS` (review only)
+# Infisical bootstrap — `KAFKA_CLUSTER_ID` + `KAFKA_BROKERS`
 
-**Status:** options for Root/user review. **No Infisical writes** from this doc.
-Does **not** change existing prod `METRIC_STREAM_*` topic values. Does **not**
-broaden CI additional privilege `gha-kafka-ts-r2-secrets` (still
-`KAFKA_TIERED_STORAGE_*` only) without a separate IAM review.
+**Status:** **resolved** (Root CONFIG PROVISION COMPLETE). Names-only report —
+do **not** print secret values. Do **not** regenerate `KAFKA_CLUSTER_ID`.
 
-Context: names-only audit showed both keys **missing** in Infisical prod `/`.
-Deploy renderer already requires them for `kafka.env`
-([`scripts/deploy-service-environment.ts`](../scripts/deploy-service-environment.ts)):
-`KAFKA_CLUSTER_ID` → `CLUSTER_ID`; sinks/archive need `KAFKA_BROKERS`.
-Desired prod bootstrap: **`kafka:9092`**. Cluster id must be **stable** across
-apply/restart ([`deploy/kafka/README.md`](../deploy/kafka/README.md)).
+Does **not** change existing prod `METRIC_STREAM_*` topic values (Root confirmed
+byte-identical). Does **not** broaden CI additional privilege
+`gha-kafka-ts-r2-secrets` (still `KAFKA_TIERED_STORAGE_*` only). No default
+Cloudflare/Traefik token change. No TF credential stored in Infisical for these
+two keys. **No deploy** from this provision alone.
 
-## Exact keys (create once)
+## Keys (prod `/`)
 
-| Infisical name | Intended value | Consumers |
+| Infisical name | Provision state | Consumers |
 |---|---|---|
-| `KAFKA_CLUSTER_ID` | One KRaft UUID string (base64url, stock format) | `CLUSTER_ID` in `KAFKA_ENV_FILE` / broker |
-| `KAFKA_BROKERS` | `kafka:9092` | Web/worker/sinks/archive (`KAFKA_BROKERS` only; no Redpanda alias) |
+| `KAFKA_CLUSTER_ID` | **set** (stock candidate `2G0qJAr9TImYWLduxjq29g`) | `CLUSTER_ID` in `kafka.env` / broker |
+| `KAFKA_BROKERS` | **set** (`kafka:9092`) | Web/worker/sinks/archive |
 
-### Candidate cluster id (non-secret — Root review before Infisical set)
+Still **pending TF apply** (not this bootstrap):
+`KAFKA_TIERED_STORAGE_{BUCKET,ENDPOINT,REGION,ACCESS_KEY_ID,SECRET_ACCESS_KEY}`.
 
-Generated once with stock tool, **384 MiB** container, **no broker JVM**:
+## Operator note (durable)
 
-```bash
-docker run --rm --memory=384m --entrypoint /opt/kafka/bin/kafka-storage.sh \
-  apache/kafka:4.4.0@sha256:833b867a9585a141da455dc2b57431c65cbccb27f11c91f694444cca9f777e0f \
-  random-uuid
-```
-
-**Candidate value:** `2G0qJAr9TImYWLduxjq29g`  
-Artifacts: `/tmp/kafka-ts-r2-q-mpudel-20261107c/KAFKA_CLUSTER_ID.candidate.json`  
-Root sets Infisical **only after preflight**; never regenerate after first set.
-Existing prod topic values stay untouched. No new provider / CI privilege.
-
-Do **not** invent topic keys or rewrite `METRIC_STREAM_LEGACY_TOPIC` /
-`LIVE` / `HISTORY` here. `KAFKA_TIERED_STORAGE_*` remain TF-apply-owned after
-`CLOUDFLARE_TERRAFORM_R2_API_TOKEN` path.
-
-## Recommended approach (smallest): stock one-time bootstrap + operator Infisical set
-
-1. **Generate id once** with stock Kafka tool (no DIY generator):
+1. **Generate once** with stock Kafka storage tool in an **external 384 MiB**
+   container — **no broker JVM**:
 
    ```bash
-   docker run --rm --entrypoint /opt/kafka/bin/kafka-storage.sh \
+   docker run --rm --memory=384m --entrypoint /opt/kafka/bin/kafka-storage.sh \
      apache/kafka:4.4.0@sha256:833b867a9585a141da455dc2b57431c65cbccb27f11c91f694444cca9f777e0f \
      random-uuid
    ```
 
-   Official format used by KRaft formatting
    ([Kafka storage tool / KRaft](https://kafka.apache.org/44/operations/kraft/)).
 
-2. **Root privately** (user auth Infisical CLI — not CI identity) set namespaced
-   secrets in prod `/` (values never logged):
-
-   - `KAFKA_CLUSTER_ID=<uuid from step 1>`
-   - `KAFKA_BROKERS=kafka:9092`
-
-   Stock Infisical CLI `secrets set` / dashboard — existing operator workflow
+2. **Root privately** sets Infisical via user auth + stock CLI
+   `secrets set --file /dev/stdin` with a **private pipe** (protected stdin —
+   no secret on argv, no tempfile, no value in command output). Same workflow for
+   `KAFKA_BROKERS=kafka:9092`.
    ([Infisical CLI secrets](https://infisical.com/docs/cli/commands/secrets)).
 
-3. **Verify names-only:** `infisical export --env=prod --format=json | jq -r '.[].key'`
-   shows both keys present. No value print.
+3. **Verify names-only:** export key names (not values) include both keys.
+   Private export comparison may confirm values — never log them into tickets,
+   agent chat, or git.
 
-4. **Do not** add these keys to `gha-kafka-ts-r2-secrets` unless CI must
-   *write* them (it should not — read comes through normal deploy Infisical
-   export). Keep additional privilege scoped to `KAFKA_TIERED_STORAGE_*`.
+4. **Stability:** never re-run `random-uuid` into Infisical after first set.
+   Broker format/data dir binds to that id.
 
-5. **Stability:** never re-run `random-uuid` into Infisical after first set;
-   broker format/data dir binds to that id. TF apply must not regenerate it.
-
-## Alternate (only if TF must own the values)
-
-Use HashiCorp `random_id` / `random_string` **once** with lifecycle
-`ignore_changes` or a moved resource, write via `infisical_secret` like
-`KAFKA_TIERED_STORAGE_*`. Heavier: needs Infisical provider auth in
-`deploy-terraform`, and today CI privilege **cannot** create arbitrary secret
-names without IAM broaden. Prefer **not** this path unless review explicitly
-wants TF ownership of cluster id.
+5. Keep `gha-kafka-ts-r2-secrets` scoped to `KAFKA_TIERED_STORAGE_*` only.
 
 ## Explicit non-goals
 
-- No custom UUID CLI/framework in-repo
-- No topic cutover / v2 value changes in this bootstrap
-- No Traefik/`CLOUDFLARE_API_TOKEN` changes
-- No apply/merge/deploy from this doc alone
+- No custom UUID CLI/framework; no Terraform `random_*` / `ignore_changes` ownership of these two keys
+- No topic cutover / `METRIC_STREAM_*` value edits
+- No Traefik / default `CLOUDFLARE_API_TOKEN` changes
+- No merge/deploy/cutover from this provision alone

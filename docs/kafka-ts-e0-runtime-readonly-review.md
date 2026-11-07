@@ -24,7 +24,7 @@ Reviewer: 87 (no edits to 3d paths). SHA
 
 ## Explicit non-findings (present / held elsewhere)
 
-- Infisical `KAFKA_CLUSTER_ID` + `KAFKA_BROKERS` missing → renderer/deploy **correctly** fail-closed; not an e0 code bug. Minimal provision: `docs/kafka-infisical-bootstrap-keys.md`.
+- Infisical `KAFKA_CLUSTER_ID` + `KAFKA_BROKERS` **resolved** (Root-provisioned; do not regenerate). Five `KAFKA_TIERED_STORAGE_*` + v2 topic cutover still pending — see `docs/kafka-infisical-bootstrap-keys.md`.
 - Prod stack has no `KAFKA_RSM_CONFIG_STORAGE_S3_MULTIPART_UPLOAD_PART_SIZE` (`deploy/stack.yml:370-385`) — default Aiven **25 MiB**; with Q13A 32 MiB segments still size-eligible for MPU. Not a requirement miss for e0.
 - No repeated cloud tests of this SHA from this review.
 

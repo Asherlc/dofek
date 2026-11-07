@@ -429,9 +429,10 @@ cutover section):
 ### Env
 
 Canonical bootstrap: **`KAFKA_BROKERS`** replacing `REDPANDA_BROKERS` — **no
-alias/fallback**. Missing Infisical provision of `KAFKA_BROKERS` (and sink/archive
-env files) **blocks merge/deploy**. B7 lands app reads; runtime compose/stack/Connect
-emit `KAFKA_BROKERS` only.
+alias/fallback**. Infisical `KAFKA_BROKERS` + `KAFKA_CLUSTER_ID` are **resolved**
+(names-only; do not regenerate). Missing sink/archive env files or the five
+`KAFKA_TIERED_STORAGE_*` keys still **blocks merge/deploy**. B7 lands app reads;
+runtime compose/stack/Connect emit `KAFKA_BROKERS` only.
 
 ### Plugin provision (existing host + workflow)
 
@@ -491,8 +492,10 @@ host clients.
 `KAFKA_TIERED_STORAGE_*` → AWS default chain + RSM S3 fields with RSM
 **enabled** (fail-closed; dual512-fix CORE_PROOF knobs in stack/compose).
 Dedicated bucket `dofek-kafka-ts-offload` is lane-87-owned; JSONL archive
-unchanged. **Do not merge/deploy** until Infisical `KAFKA_BROKERS` +
-`KAFKA_TIERED_STORAGE_*` + topics are provisioned and cutover is approved.
+unchanged. Infisical `KAFKA_BROKERS` + `KAFKA_CLUSTER_ID` are **resolved**
+(Root-provisioned; do not regenerate). **Do not merge/deploy** until the five
+`KAFKA_TIERED_STORAGE_*` keys (TF apply) and v2 topic cutover (drained) are
+done.
 Local Seaweed native retention/Delete is authorized under the manifesto;
 **cloud** R2 MPU/delete remains Root-budget gated. Cutover must retain the
 stopped Redpanda data directory until separate deletion approval — see
