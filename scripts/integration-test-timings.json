@@ -43,7 +43,7 @@
     "fileCount": 339,
     "uniqueIdentityCount": 339,
     "testCount": 2630,
-    "sumDurationMs": 1492346
+    "sumDurationMs": 1513105
   },
   "files": [
     {
@@ -1070,6 +1070,13 @@
     },
     {
       "project": "integration",
+      "file": "src/account-erasure/kafka-drain.integration.test.ts",
+      "durationMs": 360,
+      "testCount": 1,
+      "sourceJobId": 123594220982
+    },
+    {
+      "project": "integration",
       "file": "src/account-erasure/peerdb-staging-retention.integration.test.ts",
       "durationMs": 3929,
       "testCount": 2,
@@ -1102,13 +1109,6 @@
       "durationMs": 2027,
       "testCount": 2,
       "sourceJobId": 123594220978
-    },
-    {
-      "project": "integration",
-      "file": "src/account-erasure/redpanda-drain.integration.test.ts",
-      "durationMs": 351,
-      "testCount": 1,
-      "sourceJobId": 123594220982
     },
     {
       "project": "integration",
@@ -2078,8 +2078,8 @@
     },
     {
       "project": "integration",
-      "file": "src/metric-stream/redpanda-consumer.integration.test.ts",
-      "durationMs": 26546,
+      "file": "src/metric-stream/kafka-consumer.integration.test.ts",
+      "durationMs": 47296,
       "testCount": 3,
       "sourceJobId": 123594221080
     },
