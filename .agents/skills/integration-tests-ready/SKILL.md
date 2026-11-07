@@ -1,6 +1,6 @@
 ---
 name: integration-tests-ready
-description: Prepare and troubleshoot integration test runs in this repo. Use when running `pnpm test`, `pnpm test:changed`, the Vitest integration project, or specific `*.integration.test.ts` files, especially when failures mention Docker, generated service ports, Postgres, Redis, ClickHouse, Redpanda, Testcontainers, migrations, FIT decoding, or `setupTestDatabase`.
+description: Prepare and troubleshoot integration test runs in this repo. Use when running `pnpm test`, `pnpm test:changed`, the Vitest integration project, or specific `*.integration.test.ts` files, especially when failures mention Docker, generated service ports, Postgres, Redis, ClickHouse, Kafka, Testcontainers, migrations, FIT decoding, or `setupTestDatabase`.
 ---
 
 # Integration Tests Ready
@@ -11,8 +11,8 @@ description: Prepare and troubleshoot integration test runs in this repo. Use wh
 
 ```bash
 rtk pnpm compose:env --write
-rtk docker compose --env-file .env.local up -d --wait --wait-timeout 180 db clickhouse redis redpanda
-rtk docker compose --env-file .env.local ps db clickhouse redis redpanda
+rtk docker compose --env-file .env.local up -d --wait --wait-timeout 180 db clickhouse redis kafka
+rtk docker compose --env-file .env.local ps db clickhouse redis kafka
 ```
 
 1. Load those generated URLs before starting Vitest:
@@ -39,7 +39,7 @@ rtk docker ps
 ```
 1. Verify local backing services are up and healthy:
 ```bash
-rtk docker compose --env-file .env.local ps db clickhouse redis redpanda
+rtk docker compose --env-file .env.local ps db clickhouse redis kafka
 ```
 1. Confirm the test process loaded `.env.local`. A ClickHouse refusal at
    `localhost:8123` while Compose exposes a generated port is an environment
@@ -106,10 +106,11 @@ rtk docker compose -p "$e2e_project_name" -f docker-compose.e2e.yml down -v
 The failure branch captures container state and complete service logs before
 teardown. The success path also removes the exact isolated project.
 
-The E2E topology includes a health-checked Redpanda service and explicit
-metric-stream producer variables. Server startup connects the producer before
-opening the HTTP listener, and `activity-recording.cy.ts` verifies a recorded
-activity with sensor samples can be saved through the authenticated API.
+The E2E topology includes a health-checked Kafka service and explicit
+metric-stream producer variables (`KAFKA_BROKERS`). Server startup connects the
+producer before opening the HTTP listener, and `activity-recording.cy.ts`
+verifies a recorded activity with sensor samples can be saved through the
+authenticated API.
 
 ## Report Format
 

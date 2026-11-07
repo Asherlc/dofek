@@ -8,8 +8,9 @@ path were removed with the Postgres table drop. Do not reintroduce reads from
 Postgres `fitness.metric_stream`.
 
 ## Data Export Flow
-Use the Redpanda R2 archive or ClickHouse metric-stream data for any future ML
-training export implementation.
+Use the metric-stream R2 JSONL archive (Redpanda Connect →
+`dofek-metric-stream-archive`) or ClickHouse metric-stream data for any future
+ML training export implementation.
 
 ## Testing
 - **Contract Validation**: `tests/test_contract_validation.py` ensures the export schema matches the main application expectations.

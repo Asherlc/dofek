@@ -271,11 +271,19 @@ not only batch commits. KafkaJS exposes the batch high watermark and requires
 manual offset resolution before commit when `eachBatchAutoResolve` is disabled;
 see its [consumer documentation](https://kafka.js.org/docs/consuming#eachbatch).
 
-Check ClickHouse freshness:
+Check ClickHouse **ingestion** freshness (`ingested_at` is sink write time —
+usable when domain `recorded_at` is polluted; Lane 87 census FINDING):
 
 ```bash
 docker exec -i "$(docker ps --filter name=dofek_clickhouse -q | head -n1)" \
-  sh -lc 'clickhouse-client --password "$CLICKHOUSE_PASSWORD" --query "select max(recorded_at) from ingest.metric_stream"'
+  sh -lc 'clickhouse-client --password "$CLICKHOUSE_PASSWORD" --query "SELECT max(ingested_at) FROM ingest.metric_stream"'
+```
+
+Optional separate **domain-time** check (not drain proof; filter absurd futures):
+
+```bash
+docker exec -i "$(docker ps --filter name=dofek_clickhouse -q | head -n1)" \
+  sh -lc 'clickhouse-client --password "$CLICKHOUSE_PASSWORD" --query "SELECT max(recorded_at) FROM ingest.metric_stream WHERE is_deleted = 0 AND recorded_at <= now64(9)"'
 ```
 
 Check archive service logs for recent R2 write failures:
@@ -289,16 +297,20 @@ docker service logs --since 15m dofek_metric-stream-history-r2-archive
 The freshness checks must cover:
 
 - Live hot-log broker reachability (`dofek_redpanda` today).
-- Consumer lag for each legacy/live/history ClickHouse sink and archive group.
-- Newest R2 archive object age for each topic with recent traffic.
-- Newest `ingest.metric_stream.recorded_at` in ClickHouse.
+- **Consumer lag** for each legacy/live/history ClickHouse sink and archive
+  group — **this is the drain proof** (`rpk group describe`; lag 0 / offset=HWM).
+- Newest R2 archive object age for each topic with recent traffic
+  (ListObjects names/`LastModified` only; no body GET).
+- Newest `ingest.metric_stream.ingested_at` in ClickHouse (ingestion signal).
+- Future-filtered `recorded_at` only as a domain-time sanity check — **not**
+  catch-up proof by itself.
 - Newest dbt analytics rows that depend on metric stream, especially
   `analytics.daily_activity_load` and `analytics.daily_strain`.
 
-Do not declare a sink backlog resolved from service health alone. Prove that
-the committed offset reaches the topic head, publish a fresh post-drain message
-and observe it in `ingest.metric_stream`, then verify the affected activities
-hydrate with their expected sensor fields.
+Do not declare a sink backlog resolved from service health or CH timestamps
+alone. Prove with **lag**: committed offset reaches the topic head; then
+publish a fresh post-drain message and observe it via rising `ingested_at`,
+then verify the affected activities hydrate with their expected sensor fields.
 
 If the committed offset stays fixed and sink logs report `HTML Form Exception:
 Too many form fields`, inspect the adjacent deletion run. Each deletion scope
@@ -430,22 +442,30 @@ or the scoped replacement helpers.
 
 If strain, activity load, or other metric-stream analytics go stale:
 
-1. Check live hot-log sink lag and archive freshness (`rpk` / service logs).
-2. Check ClickHouse freshness with a **usable** signal (census FINDING: bare
-   `max(recorded_at)` can be nonsensical — do not treat a future timestamp as
-   catch-up proof):
+1. Check live hot-log **lag** and archive freshness (`rpk group describe` /
+   service logs) — lag is the drain/catch-up proof.
+2. Check ClickHouse **ingestion** freshness:
+
+   ```sql
+   SELECT max(ingested_at) FROM ingest.metric_stream;
+   ```
+
+   Optionally sanity-check domain time (not drain proof):
 
    ```sql
    SELECT max(recorded_at)
-   FROM ingest.metric_stream FINAL
-   WHERE is_deleted = 0;
+   FROM ingest.metric_stream
+   WHERE is_deleted = 0 AND recorded_at <= now64(9);
    ```
 
-3. If the broker and R2 are fresh but ClickHouse is stale, inspect the sink's
-   consumer lag and first fatal log line. If the required offsets remain in
-   the live hot log, fix the sink failure and let the same consumer group catch
-   up. If the offsets have expired, stop: bounded R2 replay automation is not
-   shipped, so an approved implementation is required before recovery.
+   Bare `max(recorded_at)` alone is **not** usable when futures appear (census
+   FINDING).
+3. If the broker and R2 are fresh but ClickHouse ingestion is stale, inspect
+   the sink's consumer lag and first fatal log line. If the required offsets
+   remain in the live hot log, fix the sink failure and let the same consumer
+   group catch up. If the offsets have expired, stop: bounded R2 replay
+   automation is not shipped, so an approved implementation is required before
+   recovery.
 4. If R2 is stale, treat it as a durability failure. Fix the archive service
    before relying on archive recovery or allowing the needed hot-log offsets
    to expire.
@@ -458,12 +478,12 @@ from this runbook. The concrete operator sequence, Lane 87 live census
 (2026-11-07T05:08:43Z), rollback boundary, and remaining approvals live in
 [`deploy/kafka/README.md`](../deploy/kafka/README.md#production-cutover--rollback-review-not-executed).
 Keep using this document for Redpanda freshness, quarantine inspect, and
-archive durability checks during any approved drain. Do **not** treat
-ClickHouse `max(recorded_at)` as freshness while it reports a nonsensical
-future timestamp (census FINDING). Terraform `KAFKA_TIERED_STORAGE_*`
-provisioning is **done**; topic-value edits, cutover execution, and
-`/mnt/dofek-data/redpanda` deletion (retain **38 GiB**) remain separately
-approved.
+archive durability checks during any approved drain. Prefer `rpk` lag for
+drain proof and `max(ingested_at)` for CH ingestion freshness; do **not** treat
+bare `max(recorded_at)` as catch-up proof (census FINDING). Terraform
+`KAFKA_TIERED_STORAGE_*` provisioning is **done**; topic-value edits, cutover
+execution, and `/mnt/dofek-data/redpanda` deletion (retain **38 GiB**) remain
+separately approved.
 
 ## References
 

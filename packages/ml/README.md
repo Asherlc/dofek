@@ -18,8 +18,9 @@ Machine Learning and data export pipeline for Dofek.
   - Stored in a directory structure defined by `JOB_FILES_DIR`.
 
 ## Usage
-Postgres `fitness.metric_stream` training export is retired. Use the Redpanda R2
-archive or ClickHouse metric-stream data for ML training datasets.
+Postgres `fitness.metric_stream` training export is retired. Use the metric-stream
+R2 JSONL archive (`dofek-metric-stream-archive`, written by Redpanda Connect) or
+ClickHouse metric-stream data for ML training datasets.
 
 The retired CLI entrypoint still reports the migration path clearly:
 ```bash

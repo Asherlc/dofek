@@ -201,7 +201,7 @@ SSH. Unknown measured gates → **fail closed** (do not invent limits).
 | B. Infisical `METRIC_STREAM_{LEGACY,LIVE,HISTORY}_TOPIC` → distinct **v2** names for **all** deployed sink+archive routes | User / Root | Irreversible for writers once Kafka accepts produce; assessment names: `metric-stream-v2` / `metric-stream-live-v2` / `metric-stream-history-v2` ([assessment](../../docs/kafka-tiered-storage-assessment.md)) |
 | C. Downtime / producer pause method | User / Root | Stock `docker service scale` of `dofek_web` / `dofek_worker` / `dofek_training-export-worker` (see [timescaledb pause pattern](../../docs/metric-stream-timescaledb-runbook.md)) **or** an already-approved hold — do not invent a new pause framework. Census: producers still `REDPANDA_BROKERS`-keyed; pause is a **separate explicit change** before STOP RP ([STOP-BEFORE-START](../../docs/pulsar-production-capacity-decision.md#stop-before-start-sequence-concrete-not-executed)) |
 | D. Accept post–Kafka-write forward-only boundary | User / Root | No automatic rollback/redeliver without separate dedup-proven recovery plan |
-| E. Explicit history-CH unread disposition | User / Root | Census: **18,836,612** unread with history CH sink **0/0**; R2 history archive lag 0 — do **not** claim CH catch-up; restore/replay decision per [pulsar-remaining-work](../../docs/pulsar-remaining-work.md) + capacity doc |
+| E. Explicit history-CH unread disposition | User / Root / 87 | Census: **18,836,612** unread; R2 history archive lag 0. User authorized 87 to **restore+monitor** history CH sink (scale=1); catch-up not claimed until post-scale `rpk` lag → 0 |
 | F. Later: delete `/mnt/dofek-data/redpanda` | User / Root | Separate from cutover; retain (**38 GiB** measured) |
 | G. Re-enable Deploy Web | User / Root | Census: `.github/workflows/deploy-web.yml` state **`disabled_manually`** |
 
@@ -216,12 +216,12 @@ any mutate. IaC Kafka R2 + five keys verified elsewhere — not re-audited here.
 | Producers | web/worker: `REDPANDA_BROKERS` + topic keys; **no** `KAFKA_*` on web/worker |
 | Consumers | sinks/archives: `REDPANDA_BROKERS`; Kafka Swarm service **ABSENT**; `/mnt/dofek-data/kafka` **ABSENT** |
 | Lag PASS | live+legacy CH + all three archives **TOTAL-LAG 0** (Stable) |
-| Lag FAIL/GAP | `metric-stream-history-clickhouse-sink` Empty, replicas **0/0**, lag **18,836,612** (CURRENT 55609019 → LOG-END 74445631) |
+| Lag FAIL/GAP | `metric-stream-history-clickhouse-sink` Empty, replicas **0/0**, lag **18,836,612** (CURRENT 55609019 → LOG-END 74445631). **87 update ~05:30Z:** still 0/0 pre-scale (CURRENT=LOG-START 55609019); user-authorized restore to scale=1 **in progress** after corrected preflight — await 87 post-scale lag |
 | HWM preserve | legacy `1619570368`; live `243195275` (log-start 194021919); history `74445631` |
 | RP datadir | `/mnt/dofek-data/redpanda` **du 38G**, owner `messagebus:messagebus` — **retain** |
 | Host | MemTotal ~23.4 GiB; MemAvailable ~14.4 GiB; `/mnt/dofek-data` 147G **77%** used |
 | Collector | 1/1; memory limit **unlimited** — capacity risk if Pulsar 4352 MiB add still considered; Kafka-only add is 2048 MiB |
-| CH freshness | `max(recorded_at)` ≈ **2092-10-22** — **unusable**; do not claim CH catch-up from it |
+| CH freshness | Bare `max(recorded_at)` ≈ **2092-10-22** — **unusable**; use `max(ingested_at)` + **lag** for drain/catch-up proof |
 | Archive object age | **Not checked** (no ListObjects / no body GET this census) — GAP |
 | Axiom | MCP **needsAuth** this session — rely on `docker service logs` + `rpk` until restored |
 | Deploy Web | workflow **disabled_manually** |
@@ -249,7 +249,7 @@ Order is mandatory. **No dual-write** at any step (never `REDPANDA_BROKERS` and
    all three archives at **lag 0** (census already PASS — re-prove after pause).
    History CH remains **GAP** unless approval **E** accepts unread-with-R2 or
    restores the sink. Prefer `rpk group describe` + service logs; **do not**
-   use broken CH `max(recorded_at)` as freshness. Quarantine inspect only via
+   use bare CH `max(recorded_at)` as freshness (prefer lag + `max(ingested_at)`). Quarantine inspect only via
    stock `rpk topic consume` if needed — no quarantine migrator.
 4. **Preserve offsets** — Record main+quarantine HWM and archive
    first/last offset identity from the baseline. Do **not** delete Redpanda

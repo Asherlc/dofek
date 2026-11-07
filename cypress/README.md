@@ -60,7 +60,7 @@ Cypress runs `cy.task()` handlers in the Node process rather than in the browser
 - Specs match `cypress/e2e/**/*.cy.ts`; `cypress/support/e2e.ts` is the support file.
 - Headless runs retry a failed test once; interactive runs do not retry. Cypress documents the two retry modes in its [test retries guide](https://docs.cypress.io/app/guides/test-retries).
 - Videos are disabled and the default command timeout is 10 seconds.
-- The isolated Compose stack health-gates database, ClickHouse, Redis, Redpanda, migrations, analytics setup, and server startup. Docker documents health-gated dependencies in its [startup-order guide](https://docs.docker.com/compose/how-tos/startup-order/).
+- The isolated Compose stack health-gates database, ClickHouse, Redis, Kafka, migrations, analytics setup, and server startup. Docker documents health-gated dependencies in its [startup-order guide](https://docs.docker.com/compose/how-tos/startup-order/).
 
 ## Running Tests
 
