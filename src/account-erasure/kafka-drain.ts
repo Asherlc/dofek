@@ -38,7 +38,7 @@ const describedTopicConfigSchema = z.object({
 
 export type AccountErasureHighWatermark = z.infer<typeof highWatermarkSchema>;
 
-export const accountErasureRouteHighWatermarkSchema = highWatermarkSchema.extend({
+const accountErasureRouteHighWatermarkSchema = highWatermarkSchema.extend({
   topic: z.string().min(1),
 });
 export type AccountErasureRouteHighWatermark = z.infer<
@@ -49,9 +49,6 @@ export type AccountErasureRouteHighWatermark = z.infer<
 export const accountErasureIngestFenceCheckpointSchema = z.object({
   highWatermarks: z.array(accountErasureRouteHighWatermarkSchema).min(1),
 });
-export type AccountErasureIngestFenceCheckpoint = z.infer<
-  typeof accountErasureIngestFenceCheckpointSchema
->;
 
 interface KafkaOffsetAdmin {
   fetchOffsets(options: { groupId: string; topics: string[] }): Promise<
