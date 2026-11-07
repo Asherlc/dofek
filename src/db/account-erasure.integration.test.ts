@@ -863,14 +863,33 @@ describe("account erasure persistence (integration)", () => {
             request_id, phase, details
           )
           VALUES
-            (${requestId}::uuid, 'consumer_drain', '{"drained":true,"unexpected":"must-not-survive"}'::jsonb),
+            (${requestId}::uuid, 'consumer_drain', ${JSON.stringify({
+              drained: true,
+              unexpected: "must-not-survive",
+              quarantineHighWatermarks: [
+                {
+                  topic: "metric-stream-live-v2",
+                  partition: 0,
+                  low: "0",
+                  offset: "42",
+                  userEmail: "must-not-survive@example.test",
+                },
+              ],
+            })}::jsonb),
             (${requestId}::uuid, 'work_verification', '{"path":"pii-like-path"}'::jsonb),
             (${requestId}::uuid, 'consumer_drain_verification', '{"offset":"123"}'::jsonb),
             (${requestId}::uuid, 'stripe_erasure_verification', '{"customer":"pii-like-customer"}'::jsonb),
             (${requestId}::uuid, 'remote_revocation_verification', '{"email":"pii@example.test"}'::jsonb),
             (${requestId}::uuid, 'processor_erasure_verification', '{"contact":"pii@example.test"}'::jsonb),
             (${requestId}::uuid, 'postgres_profile_delete', ${JSON.stringify({ userId: deletingUserId })}::jsonb),
-            (${requestId}::uuid, 'peerdb_drain_verification', '{"stage":"pii-like-stage"}'::jsonb),
+            (${requestId}::uuid, 'peerdb_drain_verification', ${JSON.stringify({
+              stagingBoundary: {
+                cutoff: "2026-08-02T00:00:00.000Z",
+                eTag: '"pii-like-etag"',
+                key: "pii-like-key",
+              },
+              verified: true,
+            })}::jsonb),
             (${requestId}::uuid, 'clickhouse_verification', '{"part":"pii-like-part"}'::jsonb),
             (${requestId}::uuid, 'archive_verification', '{"key":"pii-like-key"}'::jsonb)`,
     );
@@ -899,7 +918,22 @@ describe("account erasure persistence (integration)", () => {
     expect(scrubbedRows).toEqual([
       {
         checkpoint_details: expect.objectContaining({
-          consumer_drain: null,
+          // Retention still needs quarantine HWM / PeerDB cutoff; strip all other fields.
+          consumer_drain: {
+            quarantineHighWatermarks: [
+              {
+                topic: "metric-stream-live-v2",
+                partition: 0,
+                low: "0",
+                offset: "42",
+              },
+            ],
+          },
+          peerdb_drain_verification: {
+            stagingBoundary: {
+              cutoff: "2026-08-02T00:00:00.000Z",
+            },
+          },
           processor_erasure: null,
           remote_revocation_verification: null,
           request_pii_scrub: null,

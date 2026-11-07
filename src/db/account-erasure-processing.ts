@@ -596,6 +596,8 @@ export async function scrubAccountErasureRequestPii(
           VALUES (${requestId}::uuid, 'request_pii_scrub', NULL)
           ON CONFLICT (request_id, phase) DO UPDATE SET details = NULL`,
     );
+    // Retain only non-identifying fields retention_verification still needs after scrub.
+    // Topic/partition/offset watermarks and PeerDB staging cutoffs are not account PII.
     await transaction.execute(
       sql`UPDATE fitness.account_erasure_checkpoint
           SET details =
@@ -605,6 +607,26 @@ export async function scrubAccountErasureRequestPii(
                 jsonb_build_object(
                   'cutoff',
                   details #> '{stagingBoundary,cutoff}'
+                )
+              )
+              WHEN phase = 'consumer_drain' THEN jsonb_build_object(
+                'quarantineHighWatermarks',
+                COALESCE(
+                  (
+                    SELECT jsonb_agg(
+                      jsonb_build_object(
+                        'topic', watermark.element -> 'topic',
+                        'partition', watermark.element -> 'partition',
+                        'low', watermark.element -> 'low',
+                        'offset', watermark.element -> 'offset'
+                      )
+                      ORDER BY watermark.ordinality
+                    )
+                    FROM jsonb_array_elements(
+                      COALESCE(details -> 'quarantineHighWatermarks', '[]'::jsonb)
+                    ) WITH ORDINALITY AS watermark(element, ordinality)
+                  ),
+                  '[]'::jsonb
                 )
               )
               ELSE NULL

@@ -57,7 +57,8 @@ function createRetentionPhaseRunner(now: Date) {
     prepareIdentifiers: unexpectedDependency,
     assertIdentifiersReady: unexpectedDependency,
     assertConsumersDrained: unexpectedDependency,
-    assertQuarantineExpired: unexpectedDependency,
+    // Retention verification loads consumer_drain quarantine HWM and asserts expiry.
+    assertQuarantineExpired: vi.fn(async () => undefined),
     assertReplayExpired: unexpectedDependency,
     captureQuarantineHighWatermarks: unexpectedDependency,
     assertPeerDbDrained: unexpectedDependency,
@@ -160,9 +161,24 @@ describe("processAccountErasureRequest request-to-completion (integration)", () 
   });
 
   it("persists both waits, erases relational ownership, scrubs PII, and completes", async () => {
+    // Fresh user per attempt avoids active-erasure write fences from prior retries.
+    const completionUserId = crypto.randomUUID();
+    const completionEmail = `request-to-completion-${completionUserId}@example.test`;
+    await context.db.execute(
+      sql`INSERT INTO fitness.user_profile (id, name, email)
+          VALUES (
+            ${completionUserId}::uuid,
+            'End-to-end erasure',
+            ${completionEmail}
+          )`,
+    );
+    await context.db.execute(
+      sql`INSERT INTO fitness.user_settings (user_id, key, value)
+          VALUES (${completionUserId}::uuid, 'erasure-fixture', 'true'::jsonb)`,
+    );
     const accepted = await initiateAccountErasure(
       context.db,
-      userId,
+      completionUserId,
       async () => "encrypted-request-to-completion-snapshot",
       async () => {},
       { now: requestedAt },
@@ -182,17 +198,32 @@ describe("processAccountErasureRequest request-to-completion (integration)", () 
       ): Promise<Record<string, unknown> | null> {
         phaseRuns.push(phase);
         if (phase === "postgres_erasure") {
-          await erasePostgresAccount(context.db, execution.request.id, userId);
+          await erasePostgresAccount(context.db, execution.request.id, completionUserId);
           return null;
         }
         if (phase === "postgres_profile_delete") {
           return execution.deleteProfile();
         }
         if (phase === "consumer_drain") {
-          return { drained: true };
+          // Checkpoint shape required by retention_verification quarantine parse
+          // (Kafka HWM route inventory — log-start alone is not physical absence).
+          return {
+            drained: true,
+            quarantineHighWatermarks: [
+              {
+                topic: "metric-stream-live-v2",
+                partition: 0,
+                low: "0",
+                offset: "0",
+              },
+            ],
+          };
         }
         if (phase === "peerdb_drain_verification") {
-          return { stagingBoundary: peerDbStagingBoundary, verified: true };
+          return {
+            stagingBoundary: { cutoff: peerDbStagingBoundary.cutoff },
+            verified: true,
+          };
         }
         if (phase === "request_pii_scrub") {
           await execution.scrubPii();
@@ -225,6 +256,26 @@ describe("processAccountErasureRequest request-to-completion (integration)", () 
       }),
     );
     expect(phaseRuns).not.toContain("retention_verification");
+    expect(phaseRuns).toContain("consumer_drain");
+    const [consumerDrainCheckpoint] = await context.db.execute(
+      sql`SELECT details
+          FROM fitness.account_erasure_checkpoint
+          WHERE request_id = ${accepted.requestId}::uuid
+            AND phase = 'consumer_drain'`,
+    );
+    // After request_pii_scrub, only non-identifying retention inputs survive.
+    expect(consumerDrainCheckpoint).toEqual({
+      details: {
+        quarantineHighWatermarks: [
+          {
+            topic: "metric-stream-live-v2",
+            partition: 0,
+            low: "0",
+            offset: "0",
+          },
+        ],
+      },
+    });
     const [peerDbCheckpoint] = await context.db.execute(
       sql`SELECT details
           FROM fitness.account_erasure_checkpoint
@@ -280,12 +331,12 @@ describe("processAccountErasureRequest request-to-completion (integration)", () 
             EXISTS (
               SELECT 1
               FROM fitness.user_profile
-              WHERE id = ${userId}::uuid
+              WHERE id = ${completionUserId}::uuid
             ) AS profile_exists,
             EXISTS (
               SELECT 1
               FROM fitness.user_settings
-              WHERE user_id = ${userId}::uuid
+              WHERE user_id = ${completionUserId}::uuid
             ) AS settings_exist
           FROM fitness.account_erasure_request AS request
           JOIN fitness.account_erasure_outbox AS outbox
