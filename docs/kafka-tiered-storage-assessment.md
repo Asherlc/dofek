@@ -176,7 +176,8 @@ remains available — details deferred.
 
 | Component | Figure | Meaning |
 |---|---|---|
-| Current Redpanda Swarm limit | **1500 MiB** (`deploy/stack.yml`) | Today’s configured hot-log ceiling |
+| Current Redpanda Swarm limit | **1500 MiB** (live `dofek_redpanda`; **not** in checked-in `deploy/stack.yml`) | Today’s production hot-log ceiling until cutover |
+| Kafka stack/Compose target limit | **2048 MiB** (`deploy/stack.yml` / local Compose) | Post-cutover declared hot-log ceiling |
 | Pulsar mem2g-4 lab cgroups | **4352 MiB** (2048+2048+128+128) | Local lab envelope; separate track |
 | Kafka 4.4 hardware / KRaft prose | Large-host / ~5 GiB controller belief | **Not** a fit proof for this host |
 | This investigation lab | Kafka **2048 MiB** + Seaweed **1024 MiB** + tool **≤384 MiB** | Functional probe only — **no pass assumption**, not prod sizing |

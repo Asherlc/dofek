@@ -22,8 +22,9 @@ the exact section.
 - [development-environment.md](development-environment.md): reproducible local
   and cloud tools, Dev Containers, CodeGraph, RTK, and initialization commands.
 - [../deploy/README.md](../deploy/README.md): production architecture, deploy flow, secrets, and debugging access.
-- [clickhouse-metric-stream.md](clickhouse-metric-stream.md): Redpanda-fed
-  ClickHouse sensor storage and deduped analytics models.
+- [clickhouse-metric-stream.md](clickhouse-metric-stream.md): Kafka-protocol
+  metric-stream → ClickHouse sensor storage and deduped analytics models
+  (production today still on Redpanda until cutover).
 - [schema.md](schema.md): canonical database model and storage philosophy.
 - [altitude-provenance.md](altitude-provenance.md): what current providers reveal about altitude source, correction, and confidence.
 - [adding-a-provider.md](adding-a-provider.md): how to build or extend a provider.
@@ -116,12 +117,12 @@ Cross-provider reverse-engineering references:
 | [performance/loading-monitors.md](performance/loading-monitors.md) | Loading-performance monitor definitions and investigation links. |
 | [clickhouse-read-model-deploy-runbook.md](clickhouse-read-model-deploy-runbook.md) | Deploy failures around ClickHouse CDC, analytics read models, and hot fitness views. |
 | [clickhouse-cdc-health-runbook.md](clickhouse-cdc-health-runbook.md) | Preventing, diagnosing, and recovering PeerDB mapping, normalization, freshness, WAL, and lost-slot failures. |
-| [clickhouse-body-measurement-staleness-runbook.md](clickhouse-body-measurement-staleness-runbook.md) | Diagnosing body measurements across the Redpanda sink and ClickHouse analytics layers. |
+| [clickhouse-body-measurement-staleness-runbook.md](clickhouse-body-measurement-staleness-runbook.md) | Diagnosing body measurements across the metric-stream sink and ClickHouse analytics layers. |
 | [sleep-quality-backfill-runbook.md](sleep-quality-backfill-runbook.md) | Conservatively repairing historical sleep stage availability and sentinel-zero fields in bounded windows. |
 | [activity-data-integrity-repair-runbook.md](activity-data-integrity-repair-runbook.md) | Auditable repair and monotonic rollback for contradictory activity local time and false derived groups. |
-| [processing-status-runbook.md](processing-status-runbook.md) | Deploying and diagnosing provider/import processing across Postgres, Redpanda, PeerDB, ClickHouse, dbt, and cache refresh. |
+| [processing-status-runbook.md](processing-status-runbook.md) | Deploying and diagnosing provider/import processing across Postgres, the metric-stream broker, PeerDB, ClickHouse, dbt, and cache refresh. |
 | [account-erasure-runbook.md](account-erasure-runbook.md) | Operating durable account deletion across write fences, remote processors, Postgres, ClickHouse, R2, backups, clients, and restore reconciliation. |
-| [metric-stream-redpanda-r2-runbook.md](metric-stream-redpanda-r2-runbook.md) | Current Redpanda ingest and R2 archive health, plus the unimplemented bounded-replay gap. |
+| [metric-stream-redpanda-r2-runbook.md](metric-stream-redpanda-r2-runbook.md) | Production Redpanda drain/freshness + Redpanda Connect R2 archive; local/stack target is Kafka (cutover unapproved). |
 | [metric-stream-postgres-retirement.md](metric-stream-postgres-retirement.md) | Completed Postgres metric-stream retirement and current ownership boundaries. |
 | [provider-data-deletion-runbook.md](provider-data-deletion-runbook.md) | Generation-fenced provider deletion, transactional outbox delivery, BullMQ checkpoints, and ClickHouse tombstone verification. |
 | [clickhouse-activity-dedup-runbook.md](clickhouse-activity-dedup-runbook.md) | Keeping ClickHouse activity read models on canonical deduped activity IDs. |

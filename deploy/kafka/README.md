@@ -143,9 +143,10 @@ Host bind: `/mnt/dofek-data/kafka/data` owned **1000:1000** (`apache/kafka`
 | Local Seaweed (compose) | **1024 MiB** | lifetime peak **808.1 MiB** in CORE_PROOF — do not ship untested 512 MiB |
 | External client tools | **384 MiB**, heap `-Xms32m -Xmx256m` | CORE_PROOF |
 
-Prod memory budget: Kafka **2 GiB** replaces retired Redpanda **1500 MiB** hot-log
-**allocation** on the single-node host (not HA). Allocation replacement ≠
-automatic deletion of the old Redpanda data directory (see cutover below).
+Post-cutover memory budget: Kafka **2 GiB** is intended to replace the live
+Redpanda **1500 MiB** hot-log **allocation** on the single-node host (not HA).
+Production still runs Redpanda today. Allocation replacement ≠ automatic
+deletion of `/mnt/dofek-data/redpanda` (see cutover below).
 
 ## Listeners
 

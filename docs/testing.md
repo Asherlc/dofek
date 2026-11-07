@@ -128,11 +128,11 @@ pnpm test:coverage:all
 ```
 
 These commands start the current workspace's Postgres, ClickHouse, Redis, and
-Redpanda services through `pnpm compose:up` and wait for their Compose health
+Kafka services through `pnpm compose:up` and wait for their Compose health
 checks before Vitest starts. Docker documents the `--wait` health-gated startup
 behavior in its [Compose startup-order guide](https://docs.docker.com/compose/how-tos/startup-order/).
 The command loads `.env.local` and sets `TEST_DATABASE_URL` to the workspace
-Postgres URL. Redpanda-backed integration
+Postgres URL. Kafka-protocol metric-stream integration
 tests receive the generated workspace-local `KAFKA_BROKERS` value so they
 cannot connect to another workspace's broker. `setupTestDatabase()` fails
 immediately when the Postgres URL is absent; it never creates an unbounded
@@ -223,7 +223,7 @@ Sources:
 - Vitest test projects: https://vitest.dev/guide/projects
 - Vitest `--shard` option for splitting CI test runs: https://vitest.dev/guide/cli.html#shard
 - Stryker Vitest runner configuration: https://stryker-mutator.io/docs/stryker-js/vitest-runner/
-- Redpanda Kafka API compatibility: https://docs.redpanda.com/current/develop/kafka-clients/
+- Kafka client compatibility notes (Redpanda docs covering the Kafka API): https://docs.redpanda.com/current/develop/kafka-clients/
 
 ### S3 fixture allocation
 
@@ -403,11 +403,13 @@ fi
 pnpm compose -- --project-suffix e2e -f docker-compose.e2e.yml down -v
 ```
 
-The isolated topology includes Redpanda and explicit metric-stream producer
-configuration. Server startup connects the producer before opening the HTTP
-listener, and Compose waits for both broker health and `/readyz`; Docker
-documents health-gated dependency startup in its
+The isolated topology includes stock Kafka and explicit metric-stream producer
+configuration (`KAFKA_BROKERS`). Server startup connects the producer before
+opening the HTTP listener, and Compose waits for both broker health and
+`/readyz`; Docker documents health-gated dependency startup in its
 [startup-order guide](https://docs.docker.com/compose/how-tos/startup-order/).
+(Production today still uses Redpanda until approved cutover; E2E mirrors the
+local Kafka target, not the live Swarm broker.)
 
 Use the `e2e` suffix for startup, reuse, service inspection, logs, and teardown.
 Docker documents project-name isolation and precedence here:

@@ -7,7 +7,7 @@ revokes the user's sessions and activates database and identity write fences.
 The background coordinator then erases Dofek-controlled data, waits for the
 seven-day event-replay boundary, repeats the destructive checks, removes
 identifying fields from the request, verifies processor and backup retention,
-proves that pre-boundary Redpanda quarantine payloads are physically absent,
+proves that pre-boundary metric-stream quarantine payloads are physically absent,
 and reports completion no later than 30 days after the request.
 
 This runbook covers account erasure, not the narrower removal of one provider's
@@ -96,7 +96,7 @@ The public states are:
 |--------|---------|
 | `pending` | Confirmation committed, but no worker has claimed the request yet. |
 | `running` | A worker owns a renewable lease and is advancing phases. |
-| `waiting_replay` | Initial erasure passed; the coordinator is waiting for the seven-day Redpanda replay boundary. |
+| `waiting_replay` | Initial erasure passed; the coordinator is waiting for the seven-day metric-stream replay boundary. |
 | `waiting_retention` | Active data and request PII are gone; the coordinator is waiting for the final quarantine, processor, and backup retention checks. |
 | `failed` | A phase failed and is scheduled for automatic retry, or requires support if no retry time is present. The fences remain active. |
 | `completed` | Replay, active-store, quarantine, processor-retention, and backup-retention verification passed. |
@@ -128,7 +128,7 @@ production Infisical environment; never commit values to this repository.
 | Remote processors | `BREVO_API_KEY`, `POSTHOG_PERSONAL_API_KEY`, `POSTHOG_PROJECT_ID`, `ZOHO_DESK_CLIENT_ID`, `ZOHO_DESK_CLIENT_SECRET`, `ZOHO_DESK_REFRESH_TOKEN`, `ZOHO_DESK_ORG_ID`, `ZOHO_DESK_DEPARTMENT_ID`; optional `POSTHOG_API_HOST`, `ZOHO_DESK_DATA_CENTER` |
 | Retention proof | `AXIOM_API_TOKEN`, `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`; optional `AXIOM_LOG_DATASET`, `AXIOM_ORG_ID`, `SENTRY_API_HOST` |
 | Stripe and archive cleanup | Existing Stripe credentials, `DB_BACKUPS_R2_BUCKET`, `METRIC_STREAM_R2_BUCKET`, and the R2 credentials above |
-| Replay and CDC proof | `REDPANDA_BROKERS`, `METRIC_STREAM_TOPIC`, ClickHouse credentials, and the PeerDB/SeaweedFS staging stack configuration |
+| Replay and CDC proof | Live metric-stream bootstrap (`REDPANDA_BROKERS` on production today; `KAFKA_BROKERS` on local/stack target after cutover), `METRIC_STREAM_TOPIC`, ClickHouse credentials, and the PeerDB/SeaweedFS staging stack configuration |
 
 Credential requirements:
 
@@ -705,7 +705,7 @@ Also validate:
 - the account-erasure migration against a real PostgreSQL instance;
 - direct, transitive, and orphan erasure against real PostgreSQL and
   ClickHouse;
-- Redpanda high-watermark capture, consumer drain, and seven-day replay
+- Metric-stream hot-log high-watermark capture, consumer drain, and seven-day replay
   waiting;
 - real SeaweedFS S3 lifecycle, object, and multipart-upload inspection;
 - R2 archive conditional rewrite and backup sweep pagination;
