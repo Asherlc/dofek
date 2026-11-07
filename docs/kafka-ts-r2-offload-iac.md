@@ -48,20 +48,71 @@ Also on broker when TS enabled:
 Do **not** change prod Infisical `METRIC_STREAM_*` topic values until an approved
 drained topic-v2 cutover.
 
-## A. One-time Terraform managing token (operator)
+## A. One-time Terraform managing token
 
 Existing Infisical and GitHub `CLOUDFLARE_API_TOKEN` both lack Account API Tokens
 access (`GET /accounts/{id}/tokens` → **403 / 9109**). Do **not** widen those
 tokens (Traefik must not receive Account API Tokens Edit). Create a **dedicated**
 account-owned token and store it **only** in GitHub Actions as
-`CLOUDFLARE_TERRAFORM_API_TOKEN`.
+`CLOUDFLARE_TERRAFORM_API_TOKEN`. `deploy-terraform.yml` stays on the old GH secret
+name until that new secret exists (names-only proof), then switches with **no**
+fallback.
 
 Account-owned tokens support DNS, R2, and Zone/Domain Management
 ([compatibility matrix](https://developers.cloudflare.com/fundamentals/api/get-started/account-owned-tokens/)).
 Child Kafka Object RW is minted later by Terraform — not by this bootstrap token’s
 value in the broker.
 
-### Checklist (dashboard)
+Creation may use the Cloudflare dashboard **or** a managed Cloudflare MCP session
+(official app-server `cloudflare-api` OAuth: `whoami` / `docs` / `search` /
+`execute`) that can call
+[Create Token](https://developers.cloudflare.com/api/resources/accounts/subresources/tokens/methods/create/).
+Neither path is inherently unavailable; both are gated by the **caller’s** ability
+to select/grant the required permission groups (below).
+
+### Managed MCP / API: `is_selectable` restriction (observed)
+
+Live account permission catalog via managed MCP (no target token created yet):
+
+| Permission group | Id (catalog) | `is_selectable` | Notes |
+|---|---|---|---|
+| Account API Tokens Write | (resolved live) | **true** | Required to mint child tokens |
+| Workers R2 Storage Write | (resolved live) | **true** | R2 bucket/lifecycle/etc. |
+| Zone Write | (resolved live) | **true** | Zone manage for `dofek.fit` / `dofek.live` |
+| Zone Read | (resolved live) | **true** | `data.cloudflare_zone` for `asherlc.com` |
+| **DNS Write** | `4755a26eedb94da69e1066d98aa820be` | **false** | Needed for `cloudflare_dns_record` |
+| DNS Read | (catalog) | **true** | Insufficient for record CRUD |
+| Zone DNS Settings Write | (catalog) | **true** | Zone DNS **settings**, **not** record CRUD — **not** a substitute for DNS Write |
+
+Official meaning of `is_selectable`: whether **this caller** may select the group when
+creating a token; list endpoint documents it; create performs the authoritative
+check
+([List Permission Groups](https://developers.cloudflare.com/api/resources/accounts/subresources/tokens/subresources/permission_groups/methods/list/),
+[create-via-api — permission groups](https://developers.cloudflare.com/fundamentals/api/how-to/create-via-api/)).
+Account members may only grant a **subset of their own account permissions**
+([Account API tokens](https://developers.cloudflare.com/fundamentals/api/get-started/account-owned-tokens/)).
+
+So `DNS Write` `is_selectable=false` is a **caller membership** gap for the current
+OAuth/MCP identity — not “DNS Write unsupported on account tokens” (account DNS
+templates exist:
+[template URLs](https://developers.cloudflare.com/fundamentals/api/how-to/account-owned-token-template/)).
+
+**Supported correction (no scope broaden, no provider split):**
+
+1. Ensure the human behind the MCP OAuth (or dashboard session) has **DNS Write**
+   (Edit) on `dofek.fit`, `dofek.live`, and `asherlc.com` — Super Administrator or
+   an equivalent membership policy that includes DNS Write
+   ([member policies](https://developers.cloudflare.com/fundamentals/manage-members/policies/)).
+2. Re-authorize / refresh the managed MCP session so the catalog is re-listed.
+3. Confirm `DNS Write` (`4755a26e…` or current catalog id) shows `is_selectable=true`.
+4. Then create `dofek-terraform-manage` with the approved multi-policy body and
+   store via `gh secret set CLOUDFLARE_TERRAFORM_API_TOKEN` (stdin only).
+
+Do **not** substitute DNS Read or Zone DNS Settings Write for DNS Write. Do **not**
+reduce the TF token’s DNS requirement or split Cloudflare providers without
+explicit direction.
+
+### Checklist (permissions)
 
 Requires Super Administrator or API Token Provisioning
 ([Account API tokens](https://developers.cloudflare.com/fundamentals/api/get-started/account-owned-tokens/)).

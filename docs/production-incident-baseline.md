@@ -1,5 +1,14 @@
 # Production Incident Baseline
 
+## 2026-11-06 — Kafka TS R2 managing-token bootstrap blocked on DNS Write `is_selectable=false` (unresolved)
+
+- **Scope / impact:** Pre-apply IaC only. No production deploy, no TF apply, no new CF token, no GH secret write. Dedicated Terraform managing token `dofek-terraform-manage` → GH `CLOUDFLARE_TERRAFORM_API_TOKEN` not created yet. Traefik Infisical `CLOUDFLARE_API_TOKEN` unchanged. Workflow still references legacy GH `CLOUDFLARE_API_TOKEN`.
+- **Symptoms:** Managed Cloudflare MCP (official app-server `cloudflare-api` OAuth) can list account permission groups. Required groups Account API Tokens Write, Workers R2 Storage Write, Zone Write, Zone Read report `is_selectable=true`. **DNS Write** id `4755a26eedb94da69e1066d98aa820be` reports **`is_selectable=false`**. Other DNS-named groups: DNS Read selectable; Zone DNS Settings Write selectable but is settings-only, not DNS record CRUD.
+- **Evidence (sanitized):** Prior Infisical/GH generic `CLOUDFLARE_API_TOKEN` List Tokens → HTTP **403** / code **9109**. Managed MCP catalog readback as above; create not attempted. Docs: [List Permission Groups `is_selectable`](https://developers.cloudflare.com/api/resources/accounts/subresources/tokens/subresources/permission_groups/methods/list/), [create-via-api membership subset](https://developers.cloudflare.com/fundamentals/api/how-to/create-via-api/), [Account API tokens grant subset](https://developers.cloudflare.com/fundamentals/api/get-started/account-owned-tokens/).
+- **Root cause (current):** Caller membership behind the MCP OAuth session cannot select DNS Write when minting account-owned tokens — not an MCP-outage and not “account tokens cannot hold DNS Write.”
+- **Fix / mitigation:** Unresolved. Supported correction: elevate/reauth so the creating identity has DNS Write on the three zones, re-list until DNS Write is selectable, then create + `gh secret set CLOUDFLARE_TERRAFORM_API_TOKEN` (stdin). Do not substitute DNS Read / Zone DNS Settings Write; do not widen Traefik token; do not switch workflow until the new secret exists.
+- **Remaining risk / follow-up:** Until DNS Write is selectable and the dedicated secret exists, Kafka TS R2 `cloudflare_account_token` apply remains blocked. See [kafka-ts-r2-offload-iac.md](kafka-ts-r2-offload-iac.md).
+
 ## 2026-11-06 — Local SSH commit signing interruption (recovered; cause unconfirmed)
 
 - **Scope / impact:** Workstation only on `pulsar-foundation`. Blocked a selective CI commit of staged `src/metric-stream/clickhouse-sink.test.ts` (+133 public S0 unit lines). No production deploy. Branch HEAD remained `4ba0a0a6d`. Staged blob preserved; no unsigned/`--no-gpg-sign` bypass.
