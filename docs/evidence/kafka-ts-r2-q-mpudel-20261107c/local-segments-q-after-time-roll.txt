@@ -1,2 +1,0 @@
--rw-r--r-- 1 appuser appuser 107920 Nov  7 04:21 /var/lib/kafka/data/tieredTopicR2QMpu.quarantine.v1-0/00000000000000000000.log
--rw-r--r-- 1 appuser appuser     73 Nov  7 04:21 /var/lib/kafka/data/tieredTopicR2QMpu.quarantine.v1-0/00000000000000000104.log
