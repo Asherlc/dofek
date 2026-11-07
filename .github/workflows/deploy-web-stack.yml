@@ -784,6 +784,7 @@ jobs:
             printf '%s\n' "$describe"
             for required in \
               'remote.storage.enable=true' \
+              'cleanup.policy=delete' \
               'retention.ms=604800000' \
               'retention.bytes=1073741824' \
               'segment.bytes=33554432' \

@@ -20,7 +20,7 @@ Reviewer: 87 (no edits to 3d paths). SHA
 
 ## Actionable important findings (file:line only)
 
-1. `.github/workflows/deploy-web-stack.yml:785-791` — post-reconcile `grep` required list **omits** `cleanup.policy=delete` that create/alter set at `:771` / `:761`. Quarantine contract can pass describe-check without proving `cleanup.policy`.
+1. ~~`.github/workflows/deploy-web-stack.yml:785-791` — post-reconcile `grep` required list **omits** `cleanup.policy=delete`~~ — **fixed**: describe required list now includes `cleanup.policy=delete` (same create/alter set).
 
 ## Explicit non-findings (present / held elsewhere)
 
