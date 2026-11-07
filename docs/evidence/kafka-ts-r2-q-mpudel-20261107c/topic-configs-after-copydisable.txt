@@ -1,0 +1,10 @@
+Dynamic configs for topic tieredTopicR2QMpu are:
+  cleanup.policy=delete sensitive=false synonyms={DYNAMIC_TOPIC_CONFIG:cleanup.policy=delete, DEFAULT_CONFIG:log.cleanup.policy=delete}
+  local.retention.bytes=-2 sensitive=false synonyms={DYNAMIC_TOPIC_CONFIG:local.retention.bytes=-2, DEFAULT_CONFIG:log.local.retention.bytes=-2}
+  local.retention.ms=-2 sensitive=false synonyms={DYNAMIC_TOPIC_CONFIG:local.retention.ms=-2, DEFAULT_CONFIG:log.local.retention.ms=-2}
+  min.insync.replicas=1 sensitive=false synonyms={DYNAMIC_TOPIC_CONFIG:min.insync.replicas=1, DYNAMIC_DEFAULT_BROKER_CONFIG:min.insync.replicas=1, DEFAULT_CONFIG:min.insync.replicas=1}
+  remote.log.copy.disable=true sensitive=false synonyms={DYNAMIC_TOPIC_CONFIG:remote.log.copy.disable=true}
+  remote.storage.enable=true sensitive=false synonyms={DYNAMIC_TOPIC_CONFIG:remote.storage.enable=true}
+  retention.bytes=1048576 sensitive=false synonyms={DYNAMIC_TOPIC_CONFIG:retention.bytes=1048576, DEFAULT_CONFIG:log.retention.bytes=-1}
+  retention.ms=60000 sensitive=false synonyms={DYNAMIC_TOPIC_CONFIG:retention.ms=60000}
+  segment.bytes=5242880 sensitive=false synonyms={DYNAMIC_TOPIC_CONFIG:segment.bytes=5242880, DEFAULT_CONFIG:log.segment.bytes=1073741824}

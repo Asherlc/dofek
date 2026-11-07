@@ -32,6 +32,28 @@ day-29 verification. Original R2 archive conversion remains mandatory.
 Production retention settings and the existing safety holds have not changed.
 This policy does not authorize discarding broker data to reclaim migration space.
 
+### Kafka tiered-storage native remote delete (lab 20261107c)
+
+Lab Q14A `20261107c` closed the prior operational gap for **stock** Kafka 4.4 +
+Aiven RSM 1.2.0 remote segment GC on R2: after copy, apply
+`remote.log.copy.disable=true` with `local.retention.ms=-2` /
+`local.retention.bytes=-2`, then a short retention window so the broker’s
+native expiration path emits RLMM `DELETE_SEGMENT_FINISHED` and R2
+`ListObjectsV2` under the lab prefix reaches 0 without operator
+`DeleteObject`s. Evidence:
+[docs/evidence/kafka-ts-r2-q-mpudel-20261107c/CORE_PROOF.json](evidence/kafka-ts-r2-q-mpudel-20261107c/CORE_PROOF.json).
+Stock topic configs:
+[Kafka 4.4 tiered storage](https://kafka.apache.org/44/operations/tiered-storage/)
+and [topic configs](https://kafka.apache.org/44/configuration/topic-configs/).
+RSM delete builds `.log` / `.indexes` / `.rsm-manifest` keys and deletes them
+without a manifest body fetch
+([KafkaRemoteStorageManager v1.2.0](https://github.com/Aiven-Open/tiered-storage-for-apache-kafka/blob/v1.2.0/core/src/main/java/io/aiven/kafka/tieredstorage/KafkaRemoteStorageManager.java)).
+
+This lab proof does **not** replace the production 30-day erasure window, day-29
+verification, or existing `stock_physical_maintenance_ack` semantics. Do not
+mint a permanent new ack protocol. Prod physical absence for account erasure
+must still be observed under the live retention and fence schedule.
+
 The product contract follows Apple's in-app account-deletion requirement,
 Google Play's account-deletion policy, and the right-to-erasure framework in
 GDPR Article 17:
