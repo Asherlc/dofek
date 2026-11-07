@@ -34,12 +34,14 @@
   },
   "mpu_pass": "Root ListObjectsV2/HeadObject Key+Size+ETag on main .log BEFORE retention; ETag Cloudflare completed MPU hash-N with N>=2 (expect -2); Size==local closed .log",
   "etag_source": "https://developers.cloudflare.com/r2/objects/upload-objects/",
-  "delete_pass": "Native retention; capture ALL RLMM/RSM logs + stock kafka-dump-log.sh --remote-log-metadata-decoder for COPY_SEGMENT_FINISHED and DELETE_SEGMENT_FINISHED; Root inventory 0 before operator cleanup",
+  "delete_pass": "Native retention window (About-to-delete insufficient); copy ALL __remote_log_metadata-* + rolled *.log OUT before down --volumes; 384MiB/heap256 stock kafka-dump-log.sh --remote-log-metadata-decoder; latest state= per segment needs COPY_SEGMENT_FINISHED history + DELETE_SEGMENT_FINISHED (or document gap); then Root inventory 0 before cleanup. Procedure: docs/kafka-ts-rlmm-dump-procedure.md",
   "no_consume": true,
   "no_digest_rerun": true,
   "cite_prior_consume_hash_separately": {
     "r2_phase_f": "docs/evidence/kafka-ts-r2-phasef-20261106/CORE_PROOF.json sha256_offset_pipe_value=a6818c55855297f2466d9d0967e2c97f6ebf6db61f7bd7c204d99bde6ecd5687",
     "local_dual512_fix": "docs/evidence/kafka-ts-dual512-fix-20261106/CORE_PROOF.json sha256_offset_value=84647a6947925f3ec9977f7b36da31a962bfa096134281ada00f6c3d5a19370b stdout_sha256=2d9df08fb5edb2f21780cd79665a930467eec59bbf0104999d51f83eecbcf2a6"
   },
-  "status": "BUDGET_REQUEST_ONLY \u2014 no allocation until user approves"
+  "status": "BUDGET_REQUEST_ONLY \u2014 no allocation until user approves",
+  "rlmm_procedure": "docs/kafka-ts-rlmm-dump-procedure.md",
+  "no_second_cloud_for_metadata": true
 }

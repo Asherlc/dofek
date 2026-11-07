@@ -58,10 +58,21 @@ quarantine producer file ≤ 65 600. Upload accounting uses the object table o
 Cloudflare completed-MPU form [`hash-` + partCount](https://developers.cloudflare.com/r2/objects/upload-objects/)
 with **N≥2** (expect `-2`); Size equals local closed `.log`. No body GET.
 
-**B (delete + RLMM):** Native retention delete; capture **all** RLMM/RSM logs and
-stock `kafka-dump-log.sh --remote-log-metadata-decoder` showing latest
-`COPY_SEGMENT_FINISHED` and `DELETE_SEGMENT_FINISHED`; then Root inventory **0**
-objects + **0** MPU under prefix **before** operator cleanup; DELETE bucket.
+**B (delete + RLMM):** One capture sequence on **this** packet only (do **not**
+recreate `20261107` / `20261107b`; no second cloud for metadata). Stock procedure:
+[`docs/kafka-ts-rlmm-dump-procedure.md`](kafka-ts-rlmm-dump-procedure.md).
+
+1. Native retention delete window (RSM `About to delete` alone is **insufficient**).
+2. **Copy all** `__remote_log_metadata-*` partition dirs + rolled `*.log` **out**
+   under `$LAB/evidence/rlmm-logs/` **before** `compose down --volumes`.
+3. Separate tool container: **384 MiB** cgroup / `KAFKA_HEAP_OPTS=-Xms32m -Xmx256m`,
+   readonly mount → `kafka-dump-log.sh --remote-log-metadata-decoder --files …`
+   per `.log` (no maintained parser).
+4. Inspect stock stdout in log order: latest `state=` per segment id — need
+   `COPY_SEGMENT_FINISHED` in history + latest `DELETE_SEGMENT_FINISHED` (or
+   document unfinished gap; do not overclaim).
+5. Then Root inventory **0** objects + **0** MPU under prefix **before** operator
+   cleanup; DELETE bucket / `down --volumes`.
 
 ## Explicit non-goals
 
