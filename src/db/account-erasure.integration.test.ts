@@ -863,12 +863,25 @@ describe("account erasure persistence (integration)", () => {
             request_id, phase, details
           )
           VALUES
+            (${requestId}::uuid, 'ingest_fence', ${JSON.stringify({
+              unexpected: "must-not-survive",
+              highWatermarks: [
+                {
+                  topic: "metric-stream-live-v2",
+                  partition: 0,
+                  low: "0",
+                  offset: "100",
+                  userEmail: "must-not-survive@example.test",
+                },
+              ],
+            })}::jsonb),
             (${requestId}::uuid, 'consumer_drain', ${JSON.stringify({
               drained: true,
               unexpected: "must-not-survive",
               quarantineHighWatermarks: [
                 {
-                  topic: "metric-stream-live-v2",
+                  // Quarantine topic is source + .quarantine.v1 — not the main log name.
+                  topic: "metric-stream-live-v2.quarantine.v1",
                   partition: 0,
                   low: "0",
                   offset: "42",
@@ -918,11 +931,21 @@ describe("account erasure persistence (integration)", () => {
     expect(scrubbedRows).toEqual([
       {
         checkpoint_details: expect.objectContaining({
-          // Retention still needs quarantine HWM / PeerDB cutoff; strip all other fields.
+          // Post-scrub retention/TS absence needs main ingest HWM + quarantine HWM + PeerDB cutoff.
+          ingest_fence: {
+            highWatermarks: [
+              {
+                topic: "metric-stream-live-v2",
+                partition: 0,
+                low: "0",
+                offset: "100",
+              },
+            ],
+          },
           consumer_drain: {
             quarantineHighWatermarks: [
               {
-                topic: "metric-stream-live-v2",
+                topic: "metric-stream-live-v2.quarantine.v1",
                 partition: 0,
                 low: "0",
                 offset: "42",
