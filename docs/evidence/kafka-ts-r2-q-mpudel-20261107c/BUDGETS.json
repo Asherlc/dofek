@@ -34,7 +34,7 @@
   },
   "mpu_pass": "Root ListObjectsV2/HeadObject Key+Size+ETag on main .log BEFORE retention; ETag Cloudflare completed MPU hash-N with N>=2 (expect -2); Size==local closed .log",
   "etag_source": "https://developers.cloudflare.com/r2/objects/upload-objects/",
-  "delete_pass": "Native retention window (About-to-delete insufficient); copy ALL __remote_log_metadata-* + rolled *.log OUT before down --volumes; 384MiB/heap256 stock kafka-dump-log.sh --remote-log-metadata-decoder; latest state= per segment needs COPY_SEGMENT_FINISHED history + DELETE_SEGMENT_FINISHED (or document gap); then Root inventory 0 before cleanup. Procedure: docs/kafka-ts-rlmm-dump-procedure.md",
+  "delete_pass": "After delete window: compose wrapper ps -q kafka; docker exec shell-list only __remote_log_metadata-*; wrapper stop kafka (volume retained); docker cp those metadata dirs only (never whole /var/lib/kafka/data); 384MiB/heap256 readonly kafka-dump-log.sh --remote-log-metadata-decoder (auto print-data-log) with portable read loops not mapfile; latest state= COPY_SEGMENT_FINISHED history + DELETE_SEGMENT_FINISHED (or document gap); then Root inventory 0 before cleanup. Procedure: docs/kafka-ts-rlmm-dump-procedure.md @ ea4a260b8",
   "no_consume": true,
   "no_digest_rerun": true,
   "cite_prior_consume_hash_separately": {
@@ -43,5 +43,9 @@
   },
   "status": "BUDGET_REQUEST_ONLY \u2014 no allocation until user approves",
   "rlmm_procedure": "docs/kafka-ts-rlmm-dump-procedure.md",
-  "no_second_cloud_for_metadata": true
+  "no_second_cloud_for_metadata": true,
+  "rlmm_procedure_sha": "ea4a260b8",
+  "rlmm_copy_whole_datadir": false,
+  "rlmm_use_compose_wrapper_ps_q": true,
+  "rlmm_portable_read_loops": true
 }
