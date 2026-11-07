@@ -203,6 +203,7 @@ jobs:
             echo "WEB_ENV_FILE=$SERVICE_ENV_DIRECTORY/web.env"
             echo "WEB_PRE_MIGRATION_ENV_FILE=$SERVICE_ENV_DIRECTORY/web-pre-migration.env"
             echo "WORKER_ENV_FILE=$SERVICE_ENV_DIRECTORY/worker.env"
+            echo "KAFKA_ENV_FILE=$SERVICE_ENV_DIRECTORY/kafka.env"
             echo "METRIC_STREAM_CLICKHOUSE_SINK_ENV_FILE=$SERVICE_ENV_DIRECTORY/metric-stream-clickhouse-sink.env"
             echo "METRIC_STREAM_LIVE_CLICKHOUSE_SINK_ENV_FILE=$SERVICE_ENV_DIRECTORY/metric-stream-live-clickhouse-sink.env"
             echo "METRIC_STREAM_HISTORY_CLICKHOUSE_SINK_ENV_FILE=$SERVICE_ENV_DIRECTORY/metric-stream-history-clickhouse-sink.env"
@@ -515,6 +516,12 @@ jobs:
           # Retain /mnt/dofek-data/redpanda until metric-stream cutover drain completes.
           # Kafka uses a new tree; never format or reuse the Redpanda data dir.
           mkdir -p /mnt/dofek-data/kafka/data /mnt/dofek-data/kafka/plugins
+          # apache/kafka:4.4.0 runs as appuser (uid/gid 1000) — same stock pattern as
+          # postgres timescaledb-ha bind ownership (deploy/oracle-free/cloud-init.yml).
+          chown 1000:1000 /mnt/dofek-data/kafka/data
+          # Plugins are mounted RO; keep tree world-readable for appuser without
+          # rewriting immutable version pairs after publish.
+          chmod a+rX /mnt/dofek-data/kafka/plugins || true
           for path in /mnt/dofek-data/postgres /mnt/dofek-data/clickhouse /mnt/dofek-data/redpanda /mnt/dofek-data/kafka/data /mnt/dofek-data/kafka/plugins /mnt/dofek-data/databasus /mnt/dofek-data/cloudbeaver /mnt/dofek-data/redis /mnt/dofek-data/peerdb-catalog /mnt/dofek-data/peerdb-minio; do
             if [ ! -d "$path" ]; then
               echo "::error::Required host bind mount path is missing: $path"
@@ -545,6 +552,7 @@ jobs:
           versionPair="${pluginRoot}/${PLUGIN_VERSION}"
           mkdir -p "$pluginRoot"
           if [ -d "$versionPair/core" ] && [ -d "$versionPair/s3" ]; then
+            chmod -R a+rX "$versionPair"
             echo "Kafka RSM plugins already present at $versionPair (immutable; leaving in place)"
             exit 0
           fi
@@ -573,6 +581,8 @@ jobs:
           mv -T "$work/${PLUGIN_VERSION}" "$versionPair"
           test -d "$versionPair/core"
           test -d "$versionPair/s3"
+          # Readable by broker appuser (1000); do not chown away immutability markers.
+          chmod -R a+rX "$versionPair"
           echo "Kafka RSM plugins published at $versionPair"
           REMOTE
 
@@ -708,6 +718,115 @@ jobs:
             fi
             sleep 2
           done
+
+      - name: Ensure Kafka metric-stream topics (stock CLI, external client)
+        run: |
+          # B7 contract: 1 partition / RF1, retention.ms=604800000, retention.bytes=1073741824,
+          # remote.storage.enable=true for WRITE-generation topics + their .quarantine.v1.
+          # Reuses assertWritableMetricStreamTopic (src/metric-stream/routes.ts) — never create
+          # retired v1 names on the new cluster (archive offset collision). Consumer-routes still
+          # allow v1 for consume-only drain; do not change that assert.
+          # local.retention.* omitted until Progress Q12. No Infisical topic-name changes.
+          set -euo pipefail
+          image="apache/kafka:4.4.0@sha256:833b867a9585a141da455dc2b57431c65cbccb27f11c91f694444cca9f777e0f"
+          network="${STACK_NAME}_default"
+          kafka_cli() {
+            docker run --rm --network "$network" --memory=384m \
+              -e KAFKA_HEAP_OPTS="-Xms32m -Xmx256m" \
+              --entrypoint "$1" \
+              "$image" \
+              "${@:2}"
+          }
+          topic_from_env_file() {
+            local file="$1"
+            local value
+            value="$(grep -E '^METRIC_STREAM_TOPIC=' "$file" | head -n1 | cut -d= -f2-)"
+            value="${value%\"}"
+            value="${value#\"}"
+            value="${value%\'}"
+            value="${value#\'}"
+            if [ -z "$value" ]; then
+              echo "::error::METRIC_STREAM_TOPIC missing in $file"
+              exit 1
+            fi
+            printf '%s\n' "$value"
+          }
+          # Exact producer write guard — fail closed if topic is retired v1 generation.
+          assert_writable_topic() {
+            local topic="$1"
+            pnpm tsx -e 'import { assertWritableMetricStreamTopic } from "./src/metric-stream/routes.ts"; assertWritableMetricStreamTopic(process.argv[1]);' "$topic"
+          }
+          # Q13A CONFIG ONLY (not a production cutover ACK): dual512 segment.bytes +
+          # finite segment.ms + async local.retention.bytes; keep B7 overall retention.
+          TOPIC_CONFIG="remote.storage.enable=true,cleanup.policy=delete,retention.ms=604800000,retention.bytes=1073741824,segment.bytes=33554432,segment.ms=3600000,local.retention.bytes=268435456"
+          ensure_topic() {
+            local topic="$1"
+            kafka_cli /opt/kafka/bin/kafka-topics.sh \
+              --bootstrap-server kafka:9092 \
+              --create --if-not-exists \
+              --topic "$topic" \
+              --partitions 1 \
+              --replication-factor 1 \
+              --config remote.storage.enable=true \
+              --config cleanup.policy=delete \
+              --config retention.ms=604800000 \
+              --config retention.bytes=1073741824 \
+              --config segment.bytes=33554432 \
+              --config segment.ms=3600000 \
+              --config local.retention.bytes=268435456
+            kafka_cli /opt/kafka/bin/kafka-configs.sh \
+              --bootstrap-server kafka:9092 \
+              --entity-type topics --entity-name "$topic" \
+              --alter \
+              --add-config "$TOPIC_CONFIG"
+            describe="$(kafka_cli /opt/kafka/bin/kafka-topics.sh \
+              --bootstrap-server kafka:9092 --describe --topic "$topic")"
+            printf '%s\n' "$describe"
+            for required in \
+              'remote.storage.enable=true' \
+              'retention.ms=604800000' \
+              'retention.bytes=1073741824' \
+              'segment.bytes=33554432' \
+              'segment.ms=3600000' \
+              'local.retention.bytes=268435456'
+            do
+              printf '%s\n' "$describe" | grep -q "$required" || {
+                echo "::error::Topic $topic missing $required after reconcile"
+                exit 1
+              }
+            done
+          }
+          # New cluster = one KAFKA_BROKERS endpoint for every sink/archive. Skipping a
+          # retired v1 create while legacy readers still point at that endpoint is not
+          # drain-proof (hang/fail); old RP cannot be aliased. Pre-drain v1 consume on
+          # the OLD cluster remains allowed in consumer-routes source — this step is
+          # new-cluster bootstrap only: fail-fast every deployed main/archive route.
+          ensure_writable_main_and_quarantine() {
+            local route="$1"
+            local main="$2"
+            if ! assert_writable_topic "$main" 2>"$RUNNER_TEMP/writable-$route.err"; then
+              echo "::error::New-cluster deploy refuses route $route topic '$main' — retired write generation. Drain old Redpanda first, then set distinct v2 names for ALL METRIC_STREAM_* routes (including legacy placeholder) or explicitly retire the legacy sink/archive services. Do not change consumer-routes v1 allow (pre-drain on old brokers only). See assertWritableMetricStreamTopic."
+              cat "$RUNNER_TEMP/writable-$route.err" || true
+              exit 1
+            fi
+            ensure_topic "$main"
+            ensure_topic "${main}.quarantine.v1"
+          }
+          legacy="$(topic_from_env_file "$METRIC_STREAM_CLICKHOUSE_SINK_ENV_FILE")"
+          live="$(topic_from_env_file "$METRIC_STREAM_LIVE_CLICKHOUSE_SINK_ENV_FILE")"
+          history="$(topic_from_env_file "$METRIC_STREAM_HISTORY_CLICKHOUSE_SINK_ENV_FILE")"
+          # Also gate archive env files (same topic keys as sinks) so Connect cannot
+          # target a retired name on the new broker while create was skipped.
+          legacy_archive="$(topic_from_env_file "$METRIC_STREAM_R2_ARCHIVE_ENV_FILE")"
+          live_archive="$(topic_from_env_file "$METRIC_STREAM_LIVE_R2_ARCHIVE_ENV_FILE")"
+          history_archive="$(topic_from_env_file "$METRIC_STREAM_HISTORY_R2_ARCHIVE_ENV_FILE")"
+          if [ "$legacy" != "$legacy_archive" ] || [ "$live" != "$live_archive" ] || [ "$history" != "$history_archive" ]; then
+            echo "::error::Sink vs archive METRIC_STREAM_TOPIC mismatch on new cluster (legacy='$legacy'/'$legacy_archive' live='$live'/'$live_archive' history='$history'/'$history_archive')"
+            exit 1
+          fi
+          ensure_writable_main_and_quarantine legacy "$legacy"
+          ensure_writable_main_and_quarantine live "$live"
+          ensure_writable_main_and_quarantine history "$history"
 
       - name: Wait for PeerDB before migrations
         run: |

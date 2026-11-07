@@ -346,13 +346,13 @@ services:
           memory: 13G
 
   # Stock Apache Kafka 4.4.0 combined KRaft (single prod listener :9092).
-  # Tiered-storage / RSM fields are held until object-store provider + IaC contract
-  # land; do not ship blank credential fallbacks or TS-off feature flags here.
-  # See docs/kafka-tiered-storage-assessment.md and deploy/kafka/README.md.
+  # Static RSM/Aiven knobs here; kafka.env only renames Infisical
+  # KAFKA_CLUSTER_ID + KAFKA_TIERED_STORAGE_* (AWS default chain + S3 fields).
+  # JSONL archive stays on separate R2 bucket/creds. See deploy/kafka/README.md.
   kafka:
     image: apache/kafka:4.4.0@sha256:833b867a9585a141da455dc2b57431c65cbccb27f11c91f694444cca9f777e0f
+    env_file: ${KAFKA_ENV_FILE:?KAFKA_ENV_FILE is required}
     environment:
-      CLUSTER_ID: ${KAFKA_CLUSTER_ID:?KAFKA_CLUSTER_ID is required}
       KAFKA_HEAP_OPTS: "-Xmx1G -Xms1G"
       KAFKA_LOG_DIRS: "/var/lib/kafka/data"
       KAFKA_PROCESS_ROLES: "broker,controller"
@@ -367,10 +367,26 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      # dual512-fix PASS envelope (docs/evidence/kafka-ts-dual512-fix-20261106/CORE_PROOF.json)
+      KAFKA_REMOTE_LOG_STORAGE_SYSTEM_ENABLE: "true"
+      KAFKA_REMOTE_LOG_STORAGE_MANAGER_CLASS_PATH: "/plugins/1.2.0/core/*:/plugins/1.2.0/s3/*"
+      KAFKA_REMOTE_LOG_STORAGE_MANAGER_CLASS_NAME: "io.aiven.kafka.tieredstorage.RemoteStorageManager"
+      KAFKA_REMOTE_LOG_METADATA_MANAGER_CLASS_NAME: "org.apache.kafka.server.log.remote.metadata.storage.TopicBasedRemoteLogMetadataManager"
+      KAFKA_REMOTE_LOG_METADATA_MANAGER_LISTENER_NAME: "PLAINTEXT"
+      KAFKA_RLMM_CONFIG_REMOTE_LOG_METADATA_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_RLMM_CONFIG_REMOTE_LOG_METADATA_TOPIC_MIN_ISR: "1"
+      KAFKA_RSM_CONFIG_CHUNK_SIZE: "4194304"
+      KAFKA_RSM_CONFIG_FETCH_CHUNK_CACHE_CLASS: "io.aiven.kafka.tieredstorage.fetch.cache.MemoryChunkCache"
+      KAFKA_RSM_CONFIG_FETCH_CHUNK_CACHE_SIZE: "67108864"
+      KAFKA_RSM_CONFIG_FETCH_CHUNK_CACHE_PREFETCH_MAX_SIZE: "4194304"
+      KAFKA_RSM_CONFIG_STORAGE_BACKEND_CLASS: "io.aiven.kafka.tieredstorage.storage.s3.S3Storage"
+      KAFKA_RSM_CONFIG_STORAGE_S3_PATH_STYLE_ACCESS_ENABLED: "true"
+      AWS_REQUEST_CHECKSUM_CALCULATION: "WHEN_REQUIRED"
+      AWS_RESPONSE_CHECKSUM_VALIDATION: "WHEN_REQUIRED"
     volumes:
       # New Kafka data dir — do not reuse or format /mnt/dofek-data/redpanda.
       - /mnt/dofek-data/kafka/data:/var/lib/kafka/data
-      # Versioned RSM jars published by deploy workflow; unused until TS contract lands.
+      # Immutable plugin pair: /plugins/1.2.0/{core,s3} (deploy workflow publish).
       - /mnt/dofek-data/kafka/plugins:/plugins:ro
     healthcheck:
       # Port-liveness only. Deploy waits on an external kafka-broker-api-versions client
@@ -387,6 +403,7 @@ services:
     deploy:
       resources:
         limits:
+          # Replaces retired Redpanda 1500M hot-log budget on this single-node host.
           memory: 2048M
 
   metric-stream-clickhouse-sink: &metric-stream-clickhouse-sink

@@ -180,6 +180,13 @@ const dotenv = [
   // Compose interpolates profiled archive services even when `compose:up` only
   // starts db/clickhouse/redis/kafka; keep stock placeholders so ${:?} passes.
   `METRIC_STREAM_TRANSPORT_EPOCH=local-dev-transport-epoch`,
+  // Dedicated Kafka TS offload (not JSONL archive). Stable local cluster id.
+  `KAFKA_CLUSTER_ID=MkU3OEVBNTcwNTJENDM2Qk`,
+  `KAFKA_TIERED_STORAGE_BUCKET=dofek-kafka-ts-offload-local`,
+  `KAFKA_TIERED_STORAGE_ENDPOINT=http://kafka-tiered-storage-minio:9000`,
+  `KAFKA_TIERED_STORAGE_REGION=auto`,
+  `KAFKA_TIERED_STORAGE_ACCESS_KEY_ID=kafkats`,
+  `KAFKA_TIERED_STORAGE_SECRET_ACCESS_KEY=kafkatslocaldev`,
   "",
 ].join("\n");
 

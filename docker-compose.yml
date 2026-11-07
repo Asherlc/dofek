@@ -71,17 +71,60 @@ services:
       timeout: 3s
       retries: 5
 
+  # Dedicated local S3 for Kafka TS only (not metric-stream JSONL archive).
+  kafka-tiered-storage-minio:
+    image: chrislusf/seaweedfs:4.48@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d
+    restart: unless-stopped
+    # dual512-fix lifetime peak 808.1 MiB inside 1024 MiB cgroup
+    # (docs/evidence/kafka-ts-dual512-fix-20261106/CORE_PROOF.json).
+    mem_limit: 1024m
+    environment:
+      MINIO_ROOT_USER: ${KAFKA_TIERED_STORAGE_ACCESS_KEY_ID:?KAFKA_TIERED_STORAGE_ACCESS_KEY_ID is required}
+      MINIO_ROOT_PASSWORD: ${KAFKA_TIERED_STORAGE_SECRET_ACCESS_KEY:?KAFKA_TIERED_STORAGE_SECRET_ACCESS_KEY is required}
+      KAFKA_TIERED_STORAGE_BUCKET: ${KAFKA_TIERED_STORAGE_BUCKET:?KAFKA_TIERED_STORAGE_BUCKET is required}
+    volumes:
+      - kafka_tiered_storage_minio_data:/data
+    entrypoint:
+      - /bin/sh
+      - -euc
+      - |
+        printf '%s\n' "{\"identities\":[{\"name\":\"$$MINIO_ROOT_USER\",\"credentials\":[{\"accessKey\":\"$$MINIO_ROOT_USER\",\"secretKey\":\"$$MINIO_ROOT_PASSWORD\"}],\"actions\":[\"Admin\",\"Read\",\"Write\",\"List\",\"Tagging\"]}]}" > /tmp/s3.json
+        weed server -ip=kafka-tiered-storage-minio -dir=/data -s3 -s3.port=9000 -s3.ip.bind=0.0.0.0 -s3.config=/tmp/s3.json -s3.port.iceberg=0 -s3.port.lance=0 -master.volumeSizeLimitMB=512 -master.telemetry=false &
+        weed_pid=$$!
+        attempts=0
+        until wget -q -O /dev/null http://127.0.0.1:9333/cluster/status && wget -q -O /dev/null http://127.0.0.1:8888/; do
+          attempts=$$((attempts + 1))
+          if [ $$attempts -ge 90 ]; then
+            echo kafka-tiered-storage-minio not ready >&2
+            kill $$weed_pid 2>/dev/null || true
+            exit 1
+          fi
+          sleep 1
+        done
+        attempts=0
+        until printf 's3.bucket.create -name %s\n' "$$KAFKA_TIERED_STORAGE_BUCKET" | weed shell -master=localhost:9333; do
+          attempts=$$((attempts + 1))
+          if [ $$attempts -ge 30 ]; then
+            echo kafka-tiered-storage bucket create failed >&2
+            kill $$weed_pid 2>/dev/null || true
+            exit 1
+          fi
+          sleep 1
+        done
+        wait
+
   # Stock Apache Kafka 4.4.0 combined KRaft. See deploy/kafka/README.md.
   # Listeners: container clients use PLAINTEXT kafka:29092; host clients use
   # PLAINTEXT_HOST 127.0.0.1:${KAFKA_PORT:-19092} (maps to container :9092).
   # Prod stack keeps a separate single listener on :9092 — do not copy this dual map.
+  # Steady RSM on dedicated local S3 (KAFKA_TIERED_STORAGE_*); not the JSONL archive bucket.
   # Broker TCP check is port-liveness only; producers wait on kafka-ready (external client).
   kafka:
     image: apache/kafka:4.4.0@sha256:833b867a9585a141da455dc2b57431c65cbccb27f11c91f694444cca9f777e0f
     restart: unless-stopped
     mem_limit: 2048m
     environment:
-      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
+      CLUSTER_ID: ${KAFKA_CLUSTER_ID:?KAFKA_CLUSTER_ID is required}
       KAFKA_HEAP_OPTS: "-Xmx1G -Xms1G"
       KAFKA_LOG_DIRS: "/var/lib/kafka/data"
       KAFKA_PROCESS_ROLES: "broker,controller"
@@ -97,10 +140,36 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      # dual512-fix PASS RSM knobs (docs/evidence/kafka-ts-dual512-fix-20261106/CORE_PROOF.json;
+      # images_plugins_unchanged_from_D2 — same chunk/cache as that lab).
+      KAFKA_REMOTE_LOG_STORAGE_SYSTEM_ENABLE: "true"
+      KAFKA_REMOTE_LOG_STORAGE_MANAGER_CLASS_PATH: "/plugins/1.2.0/core/*:/plugins/1.2.0/s3/*"
+      KAFKA_REMOTE_LOG_STORAGE_MANAGER_CLASS_NAME: "io.aiven.kafka.tieredstorage.RemoteStorageManager"
+      KAFKA_REMOTE_LOG_METADATA_MANAGER_CLASS_NAME: "org.apache.kafka.server.log.remote.metadata.storage.TopicBasedRemoteLogMetadataManager"
+      KAFKA_REMOTE_LOG_METADATA_MANAGER_LISTENER_NAME: "PLAINTEXT"
+      KAFKA_RLMM_CONFIG_REMOTE_LOG_METADATA_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_RLMM_CONFIG_REMOTE_LOG_METADATA_TOPIC_MIN_ISR: "1"
+      KAFKA_RSM_CONFIG_CHUNK_SIZE: "4194304"
+      KAFKA_RSM_CONFIG_FETCH_CHUNK_CACHE_CLASS: "io.aiven.kafka.tieredstorage.fetch.cache.MemoryChunkCache"
+      KAFKA_RSM_CONFIG_FETCH_CHUNK_CACHE_SIZE: "67108864"
+      KAFKA_RSM_CONFIG_FETCH_CHUNK_CACHE_PREFETCH_MAX_SIZE: "4194304"
+      KAFKA_RSM_CONFIG_STORAGE_BACKEND_CLASS: "io.aiven.kafka.tieredstorage.storage.s3.S3Storage"
+      KAFKA_RSM_CONFIG_STORAGE_S3_ENDPOINT_URL: ${KAFKA_TIERED_STORAGE_ENDPOINT:?KAFKA_TIERED_STORAGE_ENDPOINT is required}
+      KAFKA_RSM_CONFIG_STORAGE_S3_BUCKET_NAME: ${KAFKA_TIERED_STORAGE_BUCKET:?KAFKA_TIERED_STORAGE_BUCKET is required}
+      KAFKA_RSM_CONFIG_STORAGE_S3_REGION: ${KAFKA_TIERED_STORAGE_REGION:?KAFKA_TIERED_STORAGE_REGION is required}
+      KAFKA_RSM_CONFIG_STORAGE_S3_PATH_STYLE_ACCESS_ENABLED: "true"
+      AWS_ACCESS_KEY_ID: ${KAFKA_TIERED_STORAGE_ACCESS_KEY_ID:?KAFKA_TIERED_STORAGE_ACCESS_KEY_ID is required}
+      AWS_SECRET_ACCESS_KEY: ${KAFKA_TIERED_STORAGE_SECRET_ACCESS_KEY:?KAFKA_TIERED_STORAGE_SECRET_ACCESS_KEY is required}
+      AWS_REQUEST_CHECKSUM_CALCULATION: "WHEN_REQUIRED"
+      AWS_RESPONSE_CHECKSUM_VALIDATION: "WHEN_REQUIRED"
     ports:
       - "127.0.0.1:${KAFKA_PORT:-19092}:9092"
     volumes:
       - kafka_data:/var/lib/kafka/data
+      - ./deploy/kafka/plugins:/plugins:ro
+    depends_on:
+      kafka-tiered-storage-minio:
+        condition: service_started
     healthcheck:
       # Port open only — not Kafka API ready. No operator JVM in this cgroup.
       test:
@@ -272,4 +341,5 @@ volumes:
   clickhouse_data:
   redis_data:
   kafka_data:
+  kafka_tiered_storage_minio_data:
   metric_stream_minio_data:

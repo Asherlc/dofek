@@ -133,7 +133,7 @@ checks before Vitest starts. Docker documents the `--wait` health-gated startup
 behavior in its [Compose startup-order guide](https://docs.docker.com/compose/how-tos/startup-order/).
 The command loads `.env.local` and sets `TEST_DATABASE_URL` to the workspace
 Postgres URL. Redpanda-backed integration
-tests receive the generated workspace-local `REDPANDA_BROKERS` value so they
+tests receive the generated workspace-local `KAFKA_BROKERS` value so they
 cannot connect to another workspace's broker. `setupTestDatabase()` fails
 immediately when the Postgres URL is absent; it never creates an unbounded
 generic Testcontainers instance. Within a Vitest process it creates one
@@ -151,8 +151,8 @@ pnpm exec vitest run --project=pulsar-integration src/metric-stream/bookie-evacu
 
 This [fixture](../src/metric-stream/bookie-evacuation.pulsar.integration.test.ts)
 requires a Linux Docker daemon with at least 2,816 MiB `MemAvailable` and a JDK.
-It starts its own isolated `docker-compose.bookie-evacuation.yml` topology;
-do not start `docker-compose.pulsar.yml` beforehand. The
+Pulsar/BookKeeper evacuation compose overlays were removed with the Kafka runtime pivot;
+B7 owns retiring related `src` tests. The
 [native CI job](../.github/workflows/test.yml) supplies the pinned tools.
 Vitest documents [explicit project selection](https://vitest.dev/guide/projects).
 

@@ -406,9 +406,25 @@ generation** with the same grammar:
 
 Do **not** resume same-topic produce into the existing archive. Quarantine
 suffix grammar stays aligned (`*.quarantine.v1` → generation-matched names
-under B7). Exact cutover sequencing (drain Redpanda → switch producers to v2
-→ archive/sinks on `KAFKA_BROKERS`) is **documented only** until Root approves
-runtime cutover; B7 owns app/topic env defaults.
+under B7). Exact cutover sequencing is **documented only** until Root approves
+runtime cutover; B7 owns app/topic env defaults. **No dual-write / custom
+bridge.** Operator cutover must also account for the **stopped Redpanda data
+directory** (see [`deploy/kafka/README.md`](../deploy/kafka/README.md)
+cutover section):
+
+1. **Archive + drain before stop** — reconcile JSONL archive and consumers to
+   Redpanda HWM; then stop Redpanda. A stopped broker **does not** run retention
+   GC on `/mnt/dofek-data/redpanda`.
+2. **Rollback classes** — **pre–Kafka-write**: stock restore of Redpanda
+   listeners / `REDPANDA_BROKERS` against the retained data dir may still be
+   possible. **post–Kafka-write (v2)**: no automatic flipback; forward-only
+   unless Root approves a separate recovery plan.
+3. **Retain hold** — keep measured size/age bounds (or an explicit unknown hold)
+   until erasure deadlines are satisfied. Do **not** claim physical absence
+   while old hot-log bytes remain.
+4. **Exact old-data retirement** — deleting the Redpanda data directory requires
+   **separate explicit production deletion approval**. Not part of this runtime
+   wave; not implied by Kafka TS / R2 GC labs.
 
 ### Env
 
@@ -434,13 +450,15 @@ port-liveness only**. Meaningful API readiness uses an **external**
 `kafka-broker-api-versions` client (`kafka-ready` compose service; deploy workflow
 wait on the stack network) before producers attach.
 
-### Prod RSM held
+### Prod RSM (R2 selected)
 
-Provider choice still pending. Production stack ships **no** RSM/TS env — no blank
-credential fallbacks, no TS-off-by-default flag. When TS is required, fail closed
-on contracted key names after lane-87 IaC alignment. Credentials use the AWS
-default chain (never static `KAFKA_RSM_CONFIG_STORAGE_AWS_*` secret configs). If R2
-is selected, include stock `AWS_*_CHECKSUM_*=WHEN_REQUIRED` from Phase F proof.
+User selected **R2**. Production stack declares steady RSM knobs in
+`deploy/stack.yml`; `kafka.env` only renames Infisical `KAFKA_CLUSTER_ID` +
+`KAFKA_TIERED_STORAGE_*` onto `CLUSTER_ID` / AWS default chain / RSM S3 fields
+(fail-closed; no blank credential fallbacks; no TS-off stopgap). Never static
+`KAFKA_RSM_CONFIG_STORAGE_AWS_*` secret configs. Include stock
+`AWS_*_CHECKSUM_*=WHEN_REQUIRED` from Phase F. Topic
+`remote.storage.enable=true` is topic config (B7), not a broker env invent.
 
 ### Listeners
 
@@ -455,9 +473,10 @@ host clients.
 | MPU | **Actual** multipart observations (UploadPart / CompleteMultipartUpload), not “segment > part size ⇒ eligible” alone |
 | Native delete / retention | Local removal + remote object lifecycle |
 | Failure + restart | Digest match with stdout provenance rules |
-| Backpressure | Lag without silent drop; fixture-correct client isolation |
+| Backpressure | Lag without silent drop; fixture-correct client isolation — **not** claimed solved by unset `local.retention` |
 | Stable metadata | Survives restart |
 | Erasure | Topic retention **and** app-erasure cold-object deadlines include **Kafka TS** objects (B7), not only KafkaJS drain restore |
+| Topic automation | Stock `kafka-topics.sh` / `kafka-configs.sh` in deploy external client: writable v2 main+quarantine for **all** legacy/live/history (+ archive match), `remote.storage.enable=true`, B7 retention 7 d/1 GiB (whichever first), 1p/RF1, Q13A `segment.bytes=32MiB` / `segment.ms=1h` / `local.retention.bytes=256MiB` (async, not hard ceiling). CONFIG ONLY — not cutover. Fail-fast retired v1 via `assertWritableMetricStreamTopic`. Host data dir `chown 1000:1000` (broker `appuser`). |
 
 ### Runtime wave (conditional runtime-only scope)
 
@@ -470,13 +489,14 @@ host clients.
 
 **Status:** User selected **R2** as Kafka TS backend. Runtime maps Infisical
 `KAFKA_TIERED_STORAGE_*` → AWS default chain + RSM S3 fields with RSM
-**enabled** (fail-closed; dual512-fix knobs). Dedicated bucket
-`dofek-kafka-ts-offload` is lane-87-owned; JSONL archive unchanged. **Do not
-merge/deploy** until Infisical `KAFKA_BROKERS` + `KAFKA_TIERED_STORAGE_*` +
-topics are provisioned and cutover is approved. MPU/delete/retention/failure
-gates: [`kafka-ts-r2-qualification-manifest.md`](kafka-ts-r2-qualification-manifest.md)
-(**one** Q-MPU+Q-DEL packet prepared for Root ACK; **not** executed; no cloud
-mutation until ACK).
+**enabled** (fail-closed; dual512-fix CORE_PROOF knobs in stack/compose).
+Dedicated bucket `dofek-kafka-ts-offload` is lane-87-owned; JSONL archive
+unchanged. **Do not merge/deploy** until Infisical `KAFKA_BROKERS` +
+`KAFKA_TIERED_STORAGE_*` + topics are provisioned and cutover is approved.
+Local Seaweed native retention/Delete is authorized under the manifesto;
+**cloud** R2 MPU/delete remains Root-budget gated. Cutover must retain the
+stopped Redpanda data directory until separate deletion approval — see
+[`deploy/kafka/README.md`](../deploy/kafka/README.md).
 
 ## Primary links (by claim)
 

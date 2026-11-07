@@ -166,6 +166,12 @@ function completeDeployEnvironment(): Record<string, string> {
     METRIC_STREAM_LIVE_TOPIC: "metric-stream-live-v2",
     METRIC_STREAM_HISTORY_TOPIC: "metric-stream-history-v2",
     METRIC_STREAM_R2_BUCKET: "dofek-metric-stream-archive",
+    KAFKA_CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk",
+    KAFKA_TIERED_STORAGE_BUCKET: "dofek-kafka-ts-offload",
+    KAFKA_TIERED_STORAGE_ENDPOINT: "https://example.r2.cloudflarestorage.com",
+    KAFKA_TIERED_STORAGE_REGION: "auto",
+    KAFKA_TIERED_STORAGE_ACCESS_KEY_ID: "kafka-ts-access-key-id",
+    KAFKA_TIERED_STORAGE_SECRET_ACCESS_KEY: "kafka-ts-secret-access-key",
   };
 }
 
@@ -260,6 +266,68 @@ describe("renderDeployServiceEnvironmentFiles", () => {
       expect(environment).not.toHaveProperty("PULSAR_SERVICE_URL");
       expect(environment).not.toHaveProperty("METRIC_STREAM_SUBSCRIPTION");
     }
+  });
+
+  it("renders kafka.env Infisical renames only (static RSM stays in stack/compose)", () => {
+    const directory = makeTemporaryDirectory();
+    const sourcePath = join(directory, "all.env");
+    writeFileSync(sourcePath, dotenv(completeDeployEnvironment()));
+    const paths = renderDeployServiceEnvironmentFiles(sourcePath, join(directory, "services"));
+    const kafkaEnvText = readFileSync(paths.kafka, "utf8");
+    const environment = parseEnv(kafkaEnvText);
+
+    expect(environment.CLUSTER_ID).toBe("MkU3OEVBNTcwNTJENDM2Qk");
+    expect(environment.AWS_ACCESS_KEY_ID).toBe("kafka-ts-access-key-id");
+    expect(environment.AWS_SECRET_ACCESS_KEY).toBe("kafka-ts-secret-access-key");
+    expect(environment.KAFKA_RSM_CONFIG_STORAGE_S3_BUCKET_NAME).toBe("dofek-kafka-ts-offload");
+    expect(environment.KAFKA_RSM_CONFIG_STORAGE_S3_ENDPOINT_URL).toBe(
+      "https://example.r2.cloudflarestorage.com",
+    );
+    expect(environment.KAFKA_RSM_CONFIG_STORAGE_S3_REGION).toBe("auto");
+    // Static Aiven/RSM knobs are declarative in stack.yml / compose, not kafka.env.
+    expect(environment).not.toHaveProperty("KAFKA_REMOTE_LOG_STORAGE_SYSTEM_ENABLE");
+    expect(environment).not.toHaveProperty("AWS_REQUEST_CHECKSUM_CALCULATION");
+    expect(environment).not.toHaveProperty("KAFKA_RSM_CONFIG_CHUNK_SIZE");
+    expect(environment).not.toHaveProperty("KAFKA_TOPIC_REMOTE_STORAGE_ENABLE_REQUIRED");
+    expect(environment).not.toHaveProperty("KAFKA_RSM_CONFIG_STORAGE_AWS_ACCESS_KEY_ID");
+    expect(environment).not.toHaveProperty("R2_ACCESS_KEY_ID");
+    expect(environment).not.toHaveProperty("KAFKA_TIERED_STORAGE_SECRET_ACCESS_KEY");
+  });
+
+  it("preserves Infisical dotenv quoting when renaming Kafka TS secrets into kafka.env", () => {
+    const directory = makeTemporaryDirectory();
+    const sourcePath = join(directory, "all.env");
+    const environment = completeDeployEnvironment();
+    // Quoted secret with shell-significant characters — Infisical may emit this form.
+    environment.KAFKA_TIERED_STORAGE_ACCESS_KEY_ID = `"id-with=equals"`;
+    environment.KAFKA_TIERED_STORAGE_SECRET_ACCESS_KEY = `'sec$ret"mixed'`;
+    writeFileSync(sourcePath, dotenv(environment));
+    const paths = renderDeployServiceEnvironmentFiles(sourcePath, join(directory, "services"));
+    const kafkaEnvText = readFileSync(paths.kafka, "utf8");
+
+    expect(kafkaEnvText).toContain(`AWS_ACCESS_KEY_ID="id-with=equals"`);
+    expect(kafkaEnvText).toContain(`AWS_SECRET_ACCESS_KEY='sec$ret"mixed'`);
+    const parsed = parseEnv(kafkaEnvText);
+    expect(parsed.AWS_ACCESS_KEY_ID).toBe("id-with=equals");
+    expect(parsed.AWS_SECRET_ACCESS_KEY).toBe(`sec$ret"mixed`);
+  });
+
+  it.each([
+    "KAFKA_CLUSTER_ID",
+    "KAFKA_TIERED_STORAGE_BUCKET",
+    "KAFKA_TIERED_STORAGE_ENDPOINT",
+    "KAFKA_TIERED_STORAGE_REGION",
+    "KAFKA_TIERED_STORAGE_ACCESS_KEY_ID",
+    "KAFKA_TIERED_STORAGE_SECRET_ACCESS_KEY",
+  ])("rejects a missing %s for the kafka broker env file", (key) => {
+    const directory = makeTemporaryDirectory();
+    const sourcePath = join(directory, "all.env");
+    const environment: Record<string, string> = { ...completeDeployEnvironment() };
+    delete environment[key];
+    writeFileSync(sourcePath, dotenv(environment));
+    expect(() =>
+      renderDeployServiceEnvironmentFiles(sourcePath, join(directory, "services")),
+    ).toThrow(new RegExp(key));
   });
 
   it.each([
@@ -519,6 +587,7 @@ describe("renderDeployServiceEnvironmentFiles", () => {
       web: "web.env",
       webPreMigration: "web-pre-migration.env",
       worker: "worker.env",
+      kafka: "kafka.env",
       metricStreamClickhouseSink: "metric-stream-clickhouse-sink.env",
       metricStreamLiveClickhouseSink: "metric-stream-live-clickhouse-sink.env",
       metricStreamHistoryClickhouseSink: "metric-stream-history-clickhouse-sink.env",
