@@ -164,16 +164,16 @@ describe("PeerDB account-erasure proof", () => {
   });
   it("fails closed when initial physical preparation is missing", async () => {
     const identifiers = store();
-    vi.mocked(identifiers.loadPhysicalProgress).mockResolvedValueOnce(null);
+    const database = { execute: vi.fn(async () => drainedSlotRows) };
+    vi.mocked(identifiers.loadPhysicalProgress).mockResolvedValue(null);
     await expect(
-      assertPeerDbAccountErasureDrained(
-        { execute: vi.fn(async () => drainedSlotRows) },
-        client(),
-        "0/100",
-        { userId, store: identifiers },
-      ),
-    ).rejects.toThrow("physical preparation is incomplete");
+      assertPeerDbAccountErasureDrained(database, client(), "0/100", {
+        userId,
+        store: identifiers,
+      }),
+    ).rejects.toThrow("Account erasure physical preparation is incomplete");
     expect(identifiers.assertClosureComplete).toHaveBeenCalledWith("initial");
     expect(identifiers.loadPhysicalProgress).toHaveBeenCalledWith("initial");
+    expect(database.execute).not.toHaveBeenCalled();
   });
 });

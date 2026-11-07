@@ -94,6 +94,8 @@ const mocks = vi.hoisted(() => ({
     sentryRetentionDays: 30,
   })),
   verifyProcessors: vi.fn(async () => ({ processor: "complete" })),
+  createPhaseRunner: null as null | ((dependencies: unknown) => unknown),
+  phaseRunnerShouldFail: false,
 }));
 
 vi.mock("../analytics/analytics-query-owner.ts", () => ({
@@ -102,6 +104,20 @@ vi.mock("../analytics/analytics-query-owner.ts", () => ({
 }));
 const ownerDatabase = createDatabase("postgres://unit:unit@localhost/unit");
 afterAll(async () => ownerDatabase.$client.end());
+
+vi.mock("./account-erasure-phase-runner.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./account-erasure-phase-runner.ts")>();
+  mocks.createPhaseRunner = actual.createAccountErasurePhaseRunner;
+  return {
+    ...actual,
+    createAccountErasurePhaseRunner: (dependencies: unknown) => {
+      if (mocks.phaseRunnerShouldFail) {
+        throw new Error("phase runner unavailable");
+      }
+      return mocks.createPhaseRunner?.(dependencies);
+    },
+  };
+});
 
 vi.mock("../r2-storage.ts", () => ({
   createR2Client: vi.fn(() => mocks.r2Client),
@@ -406,6 +422,7 @@ async function retentionLoadCheckpointDetails(
 describe("createAccountErasureRuntime", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.phaseRunnerShouldFail = false;
     process.env.KAFKA_BROKERS = "kafka.test:9092";
     process.env.METRIC_STREAM_LEGACY_TOPIC = "metric-stream-v1";
     process.env.METRIC_STREAM_LIVE_TOPIC = "metric-stream-live-v2";
@@ -470,6 +487,32 @@ describe("createAccountErasureRuntime", () => {
         [{ topic: "metric-stream-v1", low: "0", offset: "42", partition: 0 }],
         ["metric-stream-clickhouse-sink", "metric-stream-r2-archive"],
       );
+      expect(mocks.withOwner).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({
+          resourceId: "metric-stream-source",
+          intentId: `account-erasure:${request.id}:prepare-identities:initial`,
+        }),
+        expect.any(Function),
+      );
+      expect(mocks.prepareIdentifiers).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({
+          requestId: request.id,
+          leaseOwner: "runtime-fixture-worker",
+          stage: "initial",
+        }),
+      );
+      expect(mocks.identifierStoreCreated).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          requestId: request.id,
+          leaseOwner: "runtime-fixture-worker",
+          pageSize: 500,
+        }),
+      );
 
       await expect(
         runtime.phaseRunner.runPhase(
@@ -481,6 +524,103 @@ describe("createAccountErasureRuntime", () => {
       ).rejects.toThrow("Account erasure checkpoint is missing topic metric-stream-history-v2");
     } finally {
       await runtime.close();
+      expect(mocks.closeKafka).toHaveBeenCalledOnce();
+    }
+  });
+
+  it("prepares ClickHouse identifiers and drains PeerDB with staging boundary capture", async () => {
+    mocks.decryptSnapshot.mockResolvedValue(snapshot);
+    const workPurger = {
+      close: vi.fn(async () => undefined),
+      purge: vi.fn(async () => undefined),
+    };
+    const runtime = await createAccountErasureRuntime(ownerDatabase, mockClickHouse(), workPurger);
+    try {
+      await expect(
+        runtime.phaseRunner.runPhase(
+          "peerdb_drain_verification",
+          execution(async (phase) =>
+            phase === "postgres_profile_delete" ? { walLsn: "0/ABCD" } : null,
+          ),
+        ),
+      ).resolves.toEqual({
+        stagingBoundary: expect.objectContaining({
+          key: peerDbDrainCheckpoint.stagingBoundary.key,
+        }),
+        verified: true,
+      });
+      expect(mocks.assertIdentifierClosure).toHaveBeenCalledWith("initial");
+      expect(mocks.loadPhysicalProgress).toHaveBeenCalledWith("initial");
+      expect(mocks.assertPeerDbDrained).toHaveBeenCalledWith(
+        ownerDatabase,
+        expect.anything(),
+        "0/ABCD",
+        expect.objectContaining({
+          userId: request.userId,
+          store: expect.anything(),
+        }),
+      );
+      expect(mocks.capturePeerDbStagingBoundary).toHaveBeenCalledWith(
+        ownerDatabase,
+        mocks.peerDbMirrorApi,
+        mocks.peerDbStagingStorage,
+        expect.objectContaining({ requestId: request.id }),
+      );
+
+      await expect(
+        runtime.phaseRunner.runPhase("clickhouse_initial", execution()),
+      ).resolves.toEqual({ verified: false });
+      expect(mocks.withOwner).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({
+          resourceId: "metric-stream-source",
+          intentId: `account-erasure:${request.id}:erase:initial`,
+        }),
+        expect.any(Function),
+      );
+      expect(mocks.eraseClickHouse).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({
+          requestId: request.id,
+          leaseOwner: "runtime-fixture-worker",
+          stage: "initial",
+        }),
+      );
+
+      await expect(
+        runtime.phaseRunner.runPhase("archive_initial", execution()),
+      ).resolves.toMatchObject({ objectsRewritten: 0, recordsRemoved: 0 });
+      expect(mocks.eraseArchive).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          userId: request.userId,
+          stage: "initial",
+          store: expect.anything(),
+        }),
+        expect.objectContaining({ onObjectCompleted: expect.any(Function) }),
+      );
+    } finally {
+      await runtime.close();
+      expect(mocks.closeKafka).toHaveBeenCalledOnce();
+      expect(workPurger.close).toHaveBeenCalledOnce();
+    }
+  });
+
+  it("closes Kafka during startup cleanup when phase-runner wiring fails", async () => {
+    mocks.phaseRunnerShouldFail = true;
+    try {
+      await expect(
+        createAccountErasureRuntime(ownerDatabase, mockClickHouse(), {
+          close: vi.fn(async () => undefined),
+          purge: vi.fn(async () => undefined),
+        }),
+      ).rejects.toThrow("phase runner unavailable");
+      expect(mocks.connectKafka).toHaveBeenCalledOnce();
+      expect(mocks.closeKafka).toHaveBeenCalledOnce();
+    } finally {
+      mocks.phaseRunnerShouldFail = false;
     }
   });
 
@@ -519,6 +659,24 @@ describe("createAccountErasureRuntime", () => {
         }),
         expect.any(Function),
       );
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("fails closed when identifier physical preparation is incomplete", async () => {
+    mocks.loadPhysicalProgress.mockResolvedValueOnce(null);
+    const runtime = await createAccountErasureRuntime(ownerDatabase, mockClickHouse(), {
+      close: vi.fn(async () => undefined),
+      purge: vi.fn(async () => undefined),
+    });
+    try {
+      await expect(
+        runtime.phaseRunner.runPhase("clickhouse_initial", execution()),
+      ).rejects.toThrow("Account erasure physical preparation is incomplete");
+      expect(mocks.assertIdentifierClosure).toHaveBeenCalledWith("initial");
+      expect(mocks.loadPhysicalProgress).toHaveBeenCalledWith("initial");
+      expect(mocks.eraseClickHouse).not.toHaveBeenCalled();
     } finally {
       await runtime.close();
     }

@@ -264,6 +264,24 @@ function runImportJob(job: MockJob, db: SyncDatabase) {
 describe("processImportJob", () => {
   let tempFilePath: string;
 
+  it("fails closed when the processing operation has no concrete owner", async () => {
+    mockCreateProcessingOperation.mockResolvedValueOnce({
+      id: processingOperationId,
+      userId: null,
+      providerId: "apple_health",
+      kind: "file_import" as const,
+      externalCorrelationKey: "import-job-1",
+      datasetKeys: ["activity"],
+      createdAt: new Date("2026-06-02T12:00:00.000Z"),
+    });
+    const job = createMockJob({ filePath: tempFilePath });
+    await expect(runImportJob(job, mockDb)).rejects.toThrow(
+      "Metric-stream processing publisher requires a concrete processing operation owner",
+    );
+    expect(mockMetricStreamPublishRows).not.toHaveBeenCalled();
+    expect(mockImportAppleHealthFile).not.toHaveBeenCalled();
+  });
+
   it("reports and rethrows activity canonical commit failures without declaring import success", async () => {
     const error = new Error("Activity grouping failed");
     mockRecordRelationalCanonicalCommits.mockRejectedValueOnce(error);

@@ -3,6 +3,7 @@ import {
   assertWritableMetricStreamTopic,
   metricStreamRouteForSyncJob,
   metricStreamTopicForRoute,
+  RETIRED_METRIC_STREAM_TOPIC_NAMES,
   validateMetricStreamTopicConfiguration,
 } from "./routes.ts";
 
@@ -40,7 +41,10 @@ describe("metric stream routes", () => {
   });
 
   it("refuses retired v1 topic names for producers", () => {
-    for (const topic of ["metric-stream-v1", "metric-stream-live-v1", "metric-stream-history-v1"]) {
+    expect([...RETIRED_METRIC_STREAM_TOPIC_NAMES].sort()).toEqual(
+      ["metric-stream-history-v1", "metric-stream-live-v1", "metric-stream-v1"].sort(),
+    );
+    for (const topic of RETIRED_METRIC_STREAM_TOPIC_NAMES) {
       expect(() => assertWritableMetricStreamTopic(topic)).toThrow(/retired topic generation/);
     }
     expect(() => assertWritableMetricStreamTopic("metric-stream-live-v2")).not.toThrow();

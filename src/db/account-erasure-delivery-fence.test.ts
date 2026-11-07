@@ -5,8 +5,8 @@ import { createDatabase } from "./index.ts";
 const database = createDatabase("postgres://unit:unit@localhost/unit");
 afterAll(async () => database.$client.end());
 
-const userA = "00000000-0000-4000-8000-000000000002";
-const userB = "00000000-0000-4000-8000-000000000001";
+const userA = "00000000-0000-4000-8000-0000000000ab";
+const userB = "00000000-0000-4000-8000-0000000000cd";
 
 describe("withAccountErasureDeliveryFence", () => {
   const transaction = database;
@@ -43,20 +43,36 @@ describe("withAccountErasureDeliveryFence", () => {
       .mock.calls.slice(0, 2)
       .map(([query]) => query);
     expect(JSON.stringify(lockQueries[0])).toContain("pg_advisory_xact_lock_shared");
-    expect(JSON.stringify(lockQueries[0])).toContain(userB);
-    expect(JSON.stringify(lockQueries[1])).toContain(userA);
+    expect(JSON.stringify(lockQueries[0])).toContain(userA);
+    expect(JSON.stringify(lockQueries[1])).toContain(userB);
   });
 
   it("passes active/scrubbed fence rows to work as a lowercase set", async () => {
     vi.mocked(database.execute)
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([{ user_id: userB }]);
+      .mockResolvedValueOnce([{ user_id: userB.toUpperCase() }]);
     let fenced: ReadonlySet<string> = new Set();
-    await withAccountErasureDeliveryFence(database, [userA, userB], async (ids) => {
-      fenced = ids;
-    });
+    await withAccountErasureDeliveryFence(
+      database,
+      [userA.toUpperCase(), userB.toUpperCase()],
+      async (ids) => {
+        fenced = ids;
+      },
+    );
     expect(fenced).toEqual(new Set([userB]));
+    const fenceQuery = JSON.stringify(vi.mocked(database.execute).mock.calls[2]?.[0]);
+    expect(fenceQuery).toContain(userA);
+    expect(fenceQuery).toContain(userB);
+    expect(fenceQuery).not.toContain(userA.toUpperCase());
+    expect(fenceQuery).not.toContain(userB.toUpperCase());
+    const lockQueries = vi
+      .mocked(database.execute)
+      .mock.calls.slice(0, 2)
+      .map(([query]) => JSON.stringify(query));
+    expect(lockQueries[0]).toContain(userA);
+    expect(lockQueries[1]).toContain(userB);
+    expect(lockQueries.join("\n")).not.toContain(userA.toUpperCase());
   });
 
   it("still opens a transaction when there are no known user ids", async () => {

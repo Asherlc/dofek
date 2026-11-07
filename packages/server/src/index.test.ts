@@ -13,6 +13,7 @@ const mockQueue = {
   close: mockQueueClose,
 };
 const mockLoggerInfo = vi.fn();
+const mockLoggerError = vi.fn();
 const mockSentryCaptureException = vi.fn();
 const mockInitSentry = vi.fn();
 const mockGetDefaultMetricStreamEventPublisher = vi.fn();
@@ -157,7 +158,7 @@ vi.mock("./lib/sentry.ts", () => ({
 }));
 vi.mock("@sentry/node", () => ({ captureException: mockSentryCaptureException }));
 vi.mock("./logger.ts", () => ({
-  logger: { info: mockLoggerInfo, warn: vi.fn(), error: vi.fn() },
+  logger: { info: mockLoggerInfo, warn: vi.fn(), error: mockLoggerError },
 }));
 vi.mock("./mcp/route.ts", () => ({ createMcpRouter: vi.fn(() => express.Router()) }));
 vi.mock("../router.ts", () => ({ appRouter: {} }));
@@ -878,6 +879,7 @@ describe("createGracefulShutdownHandler", () => {
     closeCallback?.();
     await vi.advanceTimersByTimeAsync(0);
     expect(onExit).toHaveBeenCalledWith(0);
+    expect(mockLoggerInfo).toHaveBeenCalledWith("[server] Shutdown complete");
 
     onExit.mockClear();
     await vi.advanceTimersByTimeAsync(2000);
@@ -952,6 +954,10 @@ describe("createGracefulShutdownHandler", () => {
     closeCallback?.(new Error("close failed"));
 
     expect(onExit).toHaveBeenCalledWith(1);
+    expect(mockLoggerError).toHaveBeenCalledWith("[server] Error while closing server: close failed");
+    expect(mockSentryCaptureException).toHaveBeenCalledWith(expect.any(Error), {
+      tags: { context: "server-shutdown" },
+    });
   });
 
   it("ignores a second signal once a shutdown is already in progress", () => {
@@ -1034,9 +1040,11 @@ describe("createGracefulShutdownHandler", () => {
     finishFence();
     await vi.advanceTimersByTimeAsync(0);
     expect(onExit.mock.calls).toEqual([[1]]);
-    expect(mockSentryCaptureException).toHaveBeenCalledWith(
-      expect.any(AggregateError),
-      expect.any(Object),
+    expect(mockSentryCaptureException).toHaveBeenCalledWith(expect.any(AggregateError), {
+      tags: { context: "server-shutdown" },
+    });
+    expect(mockLoggerError).toHaveBeenCalledWith(
+      "[server] Could not close publisher or provider operation resources",
     );
     await vi.advanceTimersByTimeAsync(1000);
     expect(onExit.mock.calls).toEqual([[1]]);
