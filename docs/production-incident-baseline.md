@@ -1,5 +1,53 @@
 # Production Incident Baseline
 
+## 2026-11-07 — Infisical→GH sync pruned GH-only `CLOUDFLARE_TERRAFORM_R2_API_TOKEN` (unresolved)
+
+- **Status:** Unresolved. Do **not** recreate/rotate the managing token into GH
+  until sync deletion is disabled (or equivalent existing preserve option is
+  confirmed). Do **not** copy the R2 managing token into Infisical.
+- **Symptoms / user impact:** Root-dispatched Terraform **plan**
+  ([run 42338058404](https://github.com/Asherlc/dofek/actions/runs/42338058404)
+  on `e1c9fbdb5`) job **Terraform Plan** / `TF_OPERATION=plan` failed before
+  `terraform init` with exact fatal
+  `ERROR: missing required GitHub secret CLOUDFLARE_TERRAFORM_R2_API_TOKEN`.
+  No apply. Blocks reviewed plan for Kafka TS R2 IaC.
+- **Evidence (names/timestamps only):**
+  - Repo Actions secrets API: `CLOUDFLARE_TERRAFORM_R2_API_TOKEN` **count = 0**
+    (absent). `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` still present;
+    both `updated_at=2026-11-07T04:08:50Z`.
+  - **65** repository secrets share `updated_at` prefix `2026-11-07T04:08:`
+    (mass rewrite window); total repo secrets **93**. Same pattern as
+    2026-07-26 sync rewrite (`18:38:07Z`–`18:38:20Z` mass update).
+  - `KAFKA_BROKERS` / `KAFKA_CLUSTER_ID` `updated_at=2026-11-07T04:08:55Z`
+    (Root Infisical bootstrap of those two keys shortly before/within the
+    window) — consistent with Infisical auto-sync after source change.
+  - Prior IAM entry (2026-11-06) recorded GH-only `gh secret set
+    CLOUDFLARE_TERRAFORM_R2_API_TOKEN` (names-only confirmed then). Token id
+    `ac888fe9c542f602fc419c29d28a64cc` remains the CF account-owned managing
+    credential; only the GH secret copy is missing.
+- **Causal explanation (configured behavior, not a new framework):** Canonical
+  Infisical GitHub Secret Sync (`dofek-github-sync` in prior incidents) with
+  **Overwrite Destination Secrets** removes destination secrets not present in
+  Infisical ([GitHub sync options](https://infisical.com/docs/integrations/secret-syncs/github);
+  [Secret Syncs overview](https://infisical.com/docs/integrations/secret-syncs/overview)).
+  Same class as 2026-07-26 `ZEPP_RELEASE_TOKEN` prune. Repo has **no**
+  in-tree sync config; behavior is the Infisical-hosted sync.
+- **Preserve path (existing stock option — implement before recreate):** On
+  sync `dofek-github-sync` (or current GitHub Actions sync for `Asherlc/dofek`),
+  enable **Disable Secret Deletion** (`disableSecretDeletion`) so Infisical
+  does not remove GH-managed secrets outside the Infisical source set. Docs:
+  “Enable this option if you intend to manage some secrets manually outside of
+  Infisical.” Optional complementary stock option: **Key Schema** so Infisical
+  only manages intended keys. Do **not** add the R2 managing token to Infisical
+  (stays GH-only / TF var). After disable-deletion is confirmed, Root MCP may
+  re-`gh secret set` the existing `ac888…` token value (or rotate later).
+- **Root private check (this lane did not call Infisical API):** Read sync
+  metadata for `initialSyncBehavior`, `disableSecretDeletion`, `keySchema`,
+  last sync time vs `2026-11-07T04:08:50Z`.
+- **Remaining risk / follow-up:** Any `gh secret set` of GH-only keys remains
+  unsafe until deletion is disabled. Plan/apply for Kafka TS remains blocked.
+  Cloud C / Q14A is a separate priority lane.
+
 ## 2026-11-06 — Kafka TS R2 managing-token bootstrap blocked on DNS Write `is_selectable=false` (IAM resolved via R2 provider alias)
 
 - **Scope / impact:** Pre-apply IaC only. No production deploy, no TF apply, no new CF token, no GH secret write. Dedicated Terraform managing token `dofek-terraform-manage` → GH `CLOUDFLARE_TERRAFORM_API_TOKEN` not created yet. Traefik Infisical `CLOUDFLARE_API_TOKEN` unchanged. Workflow still references legacy GH `CLOUDFLARE_API_TOKEN`.

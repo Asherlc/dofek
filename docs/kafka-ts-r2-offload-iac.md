@@ -7,7 +7,11 @@ Aiven RSM 1.2.0. Metric-stream JSONL archive and account-erasure ledger in
 **No TF apply / bucket create / key mint from this doc alone.** Resources are
 always declared. Infisical CI can write `KAFKA_TIERED_STORAGE_*` (privilege
 granted). Managing IAM bootstrap for the aliased R2 provider is complete
-(GitHub secret `CLOUDFLARE_TERRAFORM_R2_API_TOKEN` exists). Apply and Kafka TS
+(GitHub secret `CLOUDFLARE_TERRAFORM_R2_API_TOKEN` was set GH-only, then
+**pruned** by Infisical→GH overwrite sync at ~2026-11-07T04:08Z — see
+[`production-incident-baseline.md`](production-incident-baseline.md)
+2026-11-07 entry). Do **not** recreate until sync **Disable Secret Deletion**
+is on; do **not** put the managing token in Infisical. Apply and Kafka TS
 qualification remain separate gates.
 
 ## Terraform owns
@@ -76,8 +80,8 @@ minted by Terraform (`cloudflare_account_token`) and written to Infisical as
 | Token id (non-secret) | `ac888fe9c542f602fc419c29d28a64cc` |
 | Account | `8e5b2f62ffe8ebdd48e725d325a6d51e` |
 | Permissions | Account API Tokens Write + Workers R2 Storage Write (account scope only) |
-| GH secret | `CLOUDFLARE_TERRAFORM_R2_API_TOKEN` (names-only confirmed present) |
-| Create path | Managed Cloudflare MCP (app-server `cloudflare-api`) + policy readback; value piped to `gh secret set` (stdin) |
+| GH secret | `CLOUDFLARE_TERRAFORM_R2_API_TOKEN` — **absent after 2026-11-07T04:08Z sync prune** (was names-only confirmed present post-bootstrap) |
+| Create path | Managed Cloudflare MCP (app-server `cloudflare-api`) + policy readback; value piped to `gh secret set` (stdin). Re-set only after Infisical GitHub sync **Disable Secret Deletion** |
 
 Optional bearer check (no secret in logs): `GET /accounts/{id}/tokens/{token_id}/permission_groups` → **200** with the two Write groups. List Tokens on the **default** GH/Infisical `CLOUDFLARE_API_TOKEN` still returns **403 / 9109** — expected; those tokens are not Account API Tokens–capable and must stay that way for Traefik.
 
@@ -114,11 +118,14 @@ Re-check:
 
 ## Enable sequence
 
-1. ~~IAM bootstrap~~ **done** — `CLOUDFLARE_TERRAFORM_R2_API_TOKEN` in GH; workflow wires
-   `TF_VAR_cloudflare_terraform_r2_api_token` (fail-fast if empty). Default
-   `CLOUDFLARE_API_TOKEN` retained for DNS/`storage.tf`.
-2. `terraform apply` via normal deploy path (proves R2 Write + Account Tokens Write
-   + Infisical write). **Not claimed done by this doc.**
+1. ~~IAM bootstrap (CF token + first GH set)~~ **done** — account token
+   `ac888…` exists; workflow wires `TF_VAR_cloudflare_terraform_r2_api_token`
+   (fail-fast if empty). Default `CLOUDFLARE_API_TOKEN` retained for
+   DNS/`storage.tf`. **GH secret currently absent** (sync prune) — restore only
+   after **Disable Secret Deletion** on `dofek-github-sync` (or equivalent).
+2. `terraform plan` (manual `operation=plan`) then `terraform apply` via normal
+   deploy path (proves R2 Write + Account Tokens Write + Infisical write).
+   **Not claimed done by this doc.**
 3. Kafka TS qualification / broker cutover separate. Infisical
    `KAFKA_CLUSTER_ID` / `KAFKA_BROKERS` **resolved** (do not regenerate). Topic
    v2 cutover separate.
