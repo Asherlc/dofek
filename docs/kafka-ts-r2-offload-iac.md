@@ -4,11 +4,12 @@ Dedicated R2 bucket + long-lived Object RW account token for Apache Kafka 4.4 +
 Aiven RSM 1.2.0. Metric-stream JSONL archive and account-erasure ledger in
 [`deploy/storage.tf`](../deploy/storage.tf) stay untouched.
 
-**No TF apply / bucket create / key mint / deploy / Infisical grant from this
-doc alone.** Resources are always declared (no enable-flag). Hold
-`deploy-terraform` apply until Cloudflare Account API Tokens Write is available
-on the **managing** Terraform credential and the Infisical CI privilege below
-is granted.
+**No TF apply / bucket create / key mint / deploy from this doc alone.**
+Resources are always declared (no enable-flag). Infisical CI additional
+privilege for `KAFKA_TIERED_STORAGE_*` is **granted** (see §B). Hold
+`deploy-terraform` apply until the **managing** Terraform Cloudflare credential
+(GitHub `CLOUDFLARE_API_TOKEN`) is proven to have Account API Tokens
+Read/Write — still unverified.
 
 ## Terraform owns
 
@@ -141,21 +142,58 @@ Use only after proving the **managing** TF credential (likely GH `CLOUDFLARE_API
 
 Forbidden: DIY JWT signer, temp-cred renewal service, runtime parent fallback, extracting MCP OAuth, inventing a second cloud credential framework.
 
-## B. Infisical CI write for `KAFKA_TIERED_STORAGE_*` (grant pending review)
+## B. Infisical CI write for `KAFKA_TIERED_STORAGE_*` — **granted**
 
-| Item | Value |
+User approved **only** this new Kafka Infisical prefix grant. Root executed stock
+[`POST /api/v2/identity-project-additional-privilege`](https://infisical.com/docs/api-reference/endpoints/identity-specific-privilege/v2/create)
+**SUCCESS**. No role PATCH. No further grant writes.
+
+| Field | Value |
 |---|---|
-| CI identity | `46b66f72-0c77-4cfe-be1b-a43395e77be7` (stock `viewer`) |
+| Privilege id | `9f804f06-05e2-45e8-b8b6-2b794c101b32` |
+| Slug | `gha-kafka-ts-r2-secrets` |
+| Temporary | `false` (permanent) |
+| Subject | `secrets` |
+| Actions | `describeSecret`, `readValue`, `create`, `edit` |
+| Conditions | `environment=prod`, `secretPath=/`, `secretName.$glob=KAFKA_TIERED_STORAGE_*`, `inverted=false` |
+| CI identity | `46b66f72-0c77-4cfe-be1b-a43395e77be7` |
 | Project id | `54712f56-98a9-4531-9e97-0b588d2e5a88` |
-| Custom project roles | **Blocked** (`plan.rbac` / Enterprise) — do not retry |
-| Pulsar privilege slug `gha-pulsar-offload-b2-secrets` | **Obsolete** — never POST |
-| Needed slug | `gha-kafka-ts-r2-secrets` |
-| Create API | [`POST /api/v2/identity-project-additional-privilege`](https://infisical.com/docs/api-reference/endpoints/identity-specific-privilege/v2/create) |
-| Grant | Operator only after approval of the exact body below — no POST from this lane yet |
+| Membership roles | still **only** `viewer` (unchanged) |
 
-Preserve `viewer` membership; do not PATCH roles for this grant.
+Verified by semantic GET readback
+([Find by ID](https://infisical.com/docs/api-reference/endpoints/identity-specific-privilege/v2/find-by-id)
+`GET /api/v2/identity-project-additional-privilege/9f804f06-05e2-45e8-b8b6-2b794c101b32`).
+Initial key-order JSON mismatch was a verification artifact only — grant was
+correct; no retry/additional write.
 
-### Exact create body (do not POST until approved)
+Platform citation: additional privileges layer scoped permissions on a machine
+identity **on top of** its roles without replacing them —
+[Additional privileges](https://infisical.com/docs/documentation/platform/access-controls/additional-privileges).
+`deploy-terraform` already authenticates the Infisical provider with GitHub OIDC
+against this same identity (`INFISICAL_MACHINE_IDENTITY_ID=46b66f72-…`). Per that
+doc, the identity’s effective permissions include role + additional privilege.
+**Do not claim Infisical secret write is runtime-proven** until a successful
+`terraform apply` creates the `KAFKA_TIERED_STORAGE_*` secrets; grant presence ≠
+apply success.
+
+### Readonly re-check paths
+
+```bash
+# List
+curl -fsS -H "Authorization: Bearer ${INFISICAL_TOKEN}" \
+  "${INFISICAL_API_V2}/identity-project-additional-privilege?identityId=46b66f72-0c77-4cfe-be1b-a43395e77be7&projectId=54712f56-98a9-4531-9e97-0b588d2e5a88" \
+  | jq '.privileges[] | select(.slug=="gha-kafka-ts-r2-secrets") | {id, slug, isTemporary}'
+
+# Get by id (canonical)
+curl -fsS -H "Authorization: Bearer ${INFISICAL_TOKEN}" \
+  "${INFISICAL_API_V2}/identity-project-additional-privilege/9f804f06-05e2-45e8-b8b6-2b794c101b32" \
+  | jq '.privilege | {id, slug, isTemporary, permissions}'
+```
+
+([List](https://infisical.com/docs/api-reference/endpoints/identity-specific-privilege/v2/list),
+[Find by ID](https://infisical.com/docs/api-reference/endpoints/identity-specific-privilege/v2/find-by-id)).
+
+Create body retained for audit (already POSTed — do not re-POST):
 
 ```json
 {
@@ -177,46 +215,59 @@ Preserve `viewer` membership; do not PATCH roles for this grant.
 }
 ```
 
-### Readonly list / get paths (review before/after)
+## C. Next: readonly CF managing-auth check (proposal — not executed)
 
-Base: `${INFISICAL_API_V2}` = `https://app.infisical.com/api/v2` (or org host).
+**Goal:** Prove whether GitHub Actions secret `CLOUDFLARE_API_TOKEN` (the Terraform
+managing credential) can list account-owned tokens — without printing secret
+values, without merging diagnostic-only code, without blind GH rotation, without
+MCP OAuth extraction. Root uses existing auth sources only.
 
-**List privileges for CI identity in project**
-([List](https://infisical.com/docs/api-reference/endpoints/identity-specific-privilege/v2/list)):
+**Readonly probe** ([List Tokens](https://developers.cloudflare.com/api/resources/accounts/subresources/tokens/methods/list/)):
 
-```bash
-curl -fsS -H "Authorization: Bearer ${INFISICAL_TOKEN}" \
-  "${INFISICAL_API_V2}/identity-project-additional-privilege?identityId=46b66f72-0c77-4cfe-be1b-a43395e77be7&projectId=54712f56-98a9-4531-9e97-0b588d2e5a88" \
-  | jq '.privileges'
-```
+`GET https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/tokens`
 
-**Get by id** after create
-([Find by ID](https://infisical.com/docs/api-reference/endpoints/identity-specific-privilege/v2/find-by-id)):
+Optional second call (same auth class):
+`GET …/accounts/${CLOUDFLARE_ACCOUNT_ID}/tokens/permission_groups`
+with plain query `name=Workers R2 Storage Bucket Item Write` /
+`scope=com.cloudflare.edge.r2.bucket` (client will QueryEscape).
 
-```bash
-curl -fsS -H "Authorization: Bearer ${INFISICAL_TOKEN}" \
-  "${INFISICAL_API_V2}/identity-project-additional-privilege/${PRIVILEGE_ID}" \
-  | jq '.privilege | {id, slug, isTemporary, permissions}'
-```
+**How to run once (no maintained diagnostic artifact):**
 
-**Get by slug** (needs project **slug**, not id)
-([Find by slug](https://infisical.com/docs/api-reference/endpoints/identity-specific-privilege/v2/find-by-slug)):
+1. Throwaway branch + disposable `workflow_dispatch` job that injects only
+   `secrets.CLOUDFLARE_API_TOKEN` and `secrets.CLOUDFLARE_ACCOUNT_ID` (same names
+   as [`deploy-terraform.yml`](../.github/workflows/deploy-terraform.yml)).
+2. `curl` the List Tokens URL; log **only**
+   `success`, HTTP status, and `errors[].{code,message}` (and optionally
+   `result|length` if `success=true`). Never echo the Bearer, never dump token
+   `id`/`name`/`value` fields.
+3. Delete the branch / do not merge the job into steady-state workflows.
 
-```bash
-curl -fsS -H "Authorization: Bearer ${INFISICAL_TOKEN}" \
-  "${INFISICAL_API_V2}/identity-project-additional-privilege/slug/gha-kafka-ts-r2-secrets?identityId=46b66f72-0c77-4cfe-be1b-a43395e77be7&projectSlug=${INFISICAL_PROJECT_SLUG}" \
-  | jq '.privilege | {id, slug, isTemporary, permissions}'
-```
+**Interpretation:**
 
-Assert: slug `gha-kafka-ts-r2-secrets`, `isTemporary=false`, glob `KAFKA_TIERED_STORAGE_*`, actions only `describeSecret`/`readValue`/`create`/`edit`; membership still `viewer`.
+| Result | Meaning | Next |
+|---|---|---|
+| **200** / `success=true` | GH managing token has Account API Tokens **Read or Write** | Data-source refresh likely OK; **Write** for create still only proven at apply |
+| **403** / `9109` | Same gap as Infisical `CLOUDFLARE_API_TOKEN` | One-time dashboard Account API Tokens Edit bootstrap (§A); update the store(s) that fail — **do not** blind-rotate GH if identity vs Infisical is unknown |
+| Other | Stop; report status + error code only | No apply |
 
-## Enable sequence (after gates)
+Infisical `CLOUDFLARE_API_TOKEN` already failed this probe (**403/9109**). That
+does **not** decide GH. Do not rotate GH until this check (or an equivalent
+operator dashboard inspection of the managing token’s permissions by name)
+completes.
 
-1. Prove whether GH `CLOUDFLARE_API_TOKEN` equals Infisical `CLOUDFLARE_API_TOKEN` (or separately whether GH/TF can `GET /accounts/{id}/tokens`). Upgrade managing auth only if that probe fails.
-2. Approve + POST Infisical packet `gha-kafka-ts-r2-secrets`; verify list/get.
-3. Normal `deploy-terraform` / `terraform apply` creates always-declared Kafka TS resources.
-4. Lane 87 + 3d provision `KAFKA_CLUSTER_ID` / `KAFKA_BROKERS` when ready (can be later); wire broker dotenv. **Do not** rewrite prod `METRIC_STREAM_*` topic values until approved drained topic-v2 cutover.
-5. No recreate of lab disposable bucket names; no touch of lifecycle tiny-1 B2 fixture (Nov11 cleanup still owned).
+## Enable sequence (remaining)
+
+1. Execute §C readonly GH CF authority check (or operator dashboard equivalent).
+2. If 403: one-time stock Account API Tokens Edit bootstrap for the **proven**
+   managing store(s); re-run §C — no blind GH rotate.
+3. After list **200**: `deploy-terraform` / `terraform apply` creates
+   always-declared Kafka TS resources (first apply also proves Infisical write +
+   CF Account Tokens Write).
+4. Lane 87 + 3d provision `KAFKA_CLUSTER_ID` / `KAFKA_BROKERS` when ready (can be
+   later). **Do not** rewrite prod `METRIC_STREAM_*` topic values until approved
+   drained topic-v2 cutover.
+5. Prod holds unchanged otherwise; no touch of lifecycle tiny-1 B2 fixture
+   (Nov11 cleanup still owned).
 
 ## Retired
 

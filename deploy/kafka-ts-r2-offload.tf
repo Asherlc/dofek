@@ -2,8 +2,8 @@
 # Distinct from metric-stream archive and account-erasure ledger in storage.tf.
 #
 # Always declared (steady-state). Hold deploy-terraform apply until managing CF
-# auth has Account API Tokens Write and Infisical CI can write
-# KAFKA_TIERED_STORAGE_* — see docs/kafka-ts-r2-offload-iac.md.
+# auth has Account API Tokens Write — see docs/kafka-ts-r2-offload-iac.md.
+# Infisical CI additional privilege gha-kafka-ts-r2-secrets is already granted.
 #
 # Stock paths only — no custom JWT signer, no temp-credential renewal service,
 # no runtime parent fallback.
