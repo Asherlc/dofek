@@ -1,11 +1,10 @@
-# Root launch packet — R2 Q-MPU+Q-DEL (`20261107`) — readonly
+# Root launch packet — R2 Q-MPU+Q-DEL (`20261107`)
 
-**Docs only.** No allocate / mint / List / mutate until **user** cloud-budget
-ACK on [`kafka-ts-r2-qualification-manifest.md`](kafka-ts-r2-qualification-manifest.md).
+**Execute only after user Q11A** (granted). Companion:
+[`kafka-ts-r2-qualification-manifest.md`](kafka-ts-r2-qualification-manifest.md).
 
-Mirrors Phase F ops shape
-(`/tmp/kafka-ts-r2-phasef-20261106/ROOT_OPS_PACKET.md`) with corrected identity
-and `storage.s3` env keys.
+Frozen lab (credential-free): `/tmp/kafka-ts-r2-q-mpudel-20261107/` — standalone;
+does **not** require Phase F `/tmp` paths.
 
 ## Exact identity
 
@@ -14,54 +13,53 @@ and `storage.s3` env keys.
 - Prefix: `kafka-ts-parity/r2/20261107-q-mpudel/`
 - TTL: `3600`
 - Wall after mint: **≤ 55 min**
-- Total upload bound: **≤ 16 MiB** (both topics + metadata + part bodies)
+- Total upload bound: **≤ 16 MiB**
+- Read planning: ~10 MiB (**not** a hard cap); `observed_D` unknown
 
-## Credentials (Root-only; names)
+## Credentials (Root private memory only)
 
 ```text
-CF_API_TOKEN          # Bearer = Infisical CLOUDFLARE_API_TOKEN class (Workers R2 Storage Write for create+mint)
-R2_ACCESS_KEY_ID      # parentAccessKeyId only (archive key ID); secret Root-only for mint/cleanup
+CF_API_TOKEN          # Bearer = CLOUDFLARE_API_TOKEN class (Workers R2 Storage Write)
+R2_ACCESS_KEY_ID      # parentAccessKeyId only; secret Root-only for mint/cleanup
 ```
 
-Broker child only after mint: `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` /
-`AWS_SESSION_TOKEN`. Never parent/Bearer in broker.
+Broker child only: `KAFKA_TS_R2_CHILD_*` → `AWS_*` via placeholder overlay.
+**Parent never in broker.** No retained secret files / dotenv.
 
-## Create + mint (after user budget ACK only)
+### Mint hygiene (mandatory)
+
+Capture create/mint JSON into a **private operator process variable** (or
+memory-only tool). **Do not** print `secretAccessKey` / `sessionToken` /
+`Authorization` headers to terminal logs, chat, or evidence. Return to Cursor
+**names-only**: bucket, prefix, TTL expiry, child `accessKeyId`.
+
+There is **no stock child temp-credential revoke API**. Parent R2 key
+revocation **exists** but is **forbidden** for this lab (would hit the unrelated
+prod archive parent). Cleanup = stop broker → delete objects/MPUs under prefix →
+DELETE bucket → TTL expiry of child session.
+
+## Official API shape (standalone)
 
 ```bash
-# Create
-curl -sS -X POST   "https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/r2/buckets"   -H "Authorization: Bearer ${CF_API_TOKEN}"   -H "Content-Type: application/json"   -d '{"name":"kafka-ts-r2-q-mpudel-20261107"}'
+# Create (names only in logs)
+curl -sS -X POST   "https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/r2/buckets"   -H "Authorization: Bearer ${CF_API_TOKEN}"   -H "Content-Type: application/json"   -d '{"name":"kafka-ts-r2-q-mpudel-20261107"}'   -o /dev/null -w '%{http_code}\n'
 
-# Mint
-curl -sS -X POST   "https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/r2/temp-access-credentials"   -H "Authorization: Bearer ${CF_API_TOKEN}"   -H "Content-Type: application/json"   -d '{
-    "bucket": "kafka-ts-r2-q-mpudel-20261107",
-    "parentAccessKeyId": "'"${R2_ACCESS_KEY_ID}"'",
-    "permission": "object-read-write",
-    "ttlSeconds": 3600,
-    "prefixes": ["kafka-ts-parity/r2/20261107-q-mpudel/"]
-  }'
+# Mint — capture body privately; never tee secrets
+# MINT_JSON="$(curl -sS -X POST .../temp-access-credentials ...)"
+# Then map fields in-memory to KAFKA_TS_R2_CHILD_* for compose up only.
 ```
 
-Return to Cursor: bucket, prefix, TTL expiry, child **accessKeyId only** (no
-secrets).
+Official:
+[temp credentials](https://developers.cloudflare.com/r2/api/s3/temporary-credentials/),
+[create](https://developers.cloudflare.com/api/resources/r2/subresources/temporary_credentials/methods/create/),
+[Create Bucket](https://developers.cloudflare.com/api/resources/r2/subresources/buckets/methods/create/).
 
-## Broker env keys (must include STORAGE)
+## Broker env keys (`STORAGE` required)
 
-```text
-KAFKA_RSM_CONFIG_STORAGE_BACKEND_CLASS=io.aiven.kafka.tieredstorage.storage.s3.S3Storage
-KAFKA_RSM_CONFIG_STORAGE_S3_BUCKET_NAME=kafka-ts-r2-q-mpudel-20261107
-KAFKA_RSM_CONFIG_STORAGE_S3_ENDPOINT_URL=https://${ACCOUNT_ID}.r2.cloudflarestorage.com
-KAFKA_RSM_CONFIG_STORAGE_S3_REGION=auto
-KAFKA_RSM_CONFIG_STORAGE_S3_PATH_STYLE_ACCESS_ENABLED=true
-KAFKA_RSM_CONFIG_STORAGE_S3_MULTIPART_UPLOAD_PART_SIZE=5242880
-KAFKA_RSM_CONFIG_KEY_PREFIX=kafka-ts-parity/r2/20261107-q-mpudel/
-AWS_REQUEST_CHECKSUM_CALCULATION=WHEN_REQUIRED
-AWS_RESPONSE_CHECKSUM_VALIDATION=WHEN_REQUIRED
-```
+See frozen `docker-compose.yml` — `KAFKA_RSM_CONFIG_STORAGE_S3_*` including
+`MULTIPART_UPLOAD_PART_SIZE=5242880`. Wrong `KAFKA_RSM_CONFIG_S3_*` (no
+`STORAGE`) is ignored.
 
-Do **not** set `KAFKA_RSM_CONFIG_S3_*` (missing `STORAGE`) — ignored for part size.
+## Launch argv
 
-## Cleanup
-
-Stop compose → ListObjectsV2 / list-MPU under prefix → DeleteObjects / abort
-**quiesced** MPUs only → DELETE bucket → GET 404. No parent revoke API.
+Authoritative: `/tmp/kafka-ts-r2-q-mpudel-20261107/ROOT_LAUNCH_ARGV.json`.
