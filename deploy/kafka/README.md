@@ -201,7 +201,7 @@ SSH. Unknown measured gates → **fail closed** (do not invent limits).
 | B. Infisical `METRIC_STREAM_{LEGACY,LIVE,HISTORY}_TOPIC` → distinct **v2** names for **all** deployed sink+archive routes | User / Root | Irreversible for writers once Kafka accepts produce; assessment names: `metric-stream-v2` / `metric-stream-live-v2` / `metric-stream-history-v2` ([assessment](../../docs/kafka-tiered-storage-assessment.md)) |
 | C. Downtime / producer pause method | User / Root | Stock `docker service scale` of `dofek_web` / `dofek_worker` / `dofek_training-export-worker` (see [timescaledb pause pattern](../../docs/metric-stream-timescaledb-runbook.md)) **or** an already-approved hold — do not invent a new pause framework. Census: producers still `REDPANDA_BROKERS`-keyed; pause is a **separate explicit change** before STOP RP ([STOP-BEFORE-START](../../docs/pulsar-production-capacity-decision.md#stop-before-start-sequence-concrete-not-executed)) |
 | D. Accept post–Kafka-write forward-only boundary | User / Root | No automatic rollback/redeliver without separate dedup-proven recovery plan |
-| E. Explicit history-CH unread disposition | User / Root / 87 | History CH sink restored **1/1** Stable (~05:32Z); lag still **~18.8M** and draining (not 0 yet). R2 history archive lag 0. Catch-up **not** claimed until `rpk` lag → 0 |
+| E. Explicit history-CH unread disposition | User / Root / 87 | History CH sink **1/1** draining (87 scale task done). Lag still **~18.8M** (not 0). R2 history archive lag 0. Catch-up **not** claimed until `rpk` lag → 0; 87 continues bounded monitoring |
 | F. Later: delete `/mnt/dofek-data/redpanda` | User / Root | Separate from cutover; retain (**38 GiB** measured) |
 | G. Re-enable Deploy Web | User / Root | Census: `.github/workflows/deploy-web.yml` state **`disabled_manually`** |
 
@@ -216,7 +216,7 @@ any mutate. IaC Kafka R2 + five keys verified elsewhere — not re-audited here.
 | Producers | web/worker: `REDPANDA_BROKERS` + topic keys; **no** `KAFKA_*` on web/worker |
 | Consumers | sinks/archives: `REDPANDA_BROKERS`; Kafka Swarm service **ABSENT**; `/mnt/dofek-data/kafka` **ABSENT** |
 | Lag PASS | live+legacy CH + all three archives **TOTAL-LAG 0** (Stable) |
-| Lag FAIL/GAP (draining) | `metric-stream-history-clickhouse-sink` **1/1** Stable (~05:32Z); CURRENT **55629686** (was 55609019); LOG-START **55609019**; TOTAL-LAG **18,815,945** (was 18,836,612); live/legacy lag **0**; no OOR. Catch-up not claimed until lag → 0 |
+| Lag FAIL/GAP (draining) | `metric-stream-history-clickhouse-sink` **1/1** Stable; @05:34:02Z CURRENT **55,656,064** (from 55,609,019); LOG-START **55,609,019**; TOTAL-LAG **18,789,567**; live/legacy lag **0**; OOR **0**. Catch-up not claimed until lag → 0 |
 | HWM preserve | legacy `1619570368`; live `243195275` (log-start 194021919); history `74445631` |
 | RP datadir | `/mnt/dofek-data/redpanda` **du 38G**, owner `messagebus:messagebus` — **retain** |
 | Host | MemTotal ~23.4 GiB; MemAvailable ~14.4 GiB; `/mnt/dofek-data` 147G **77%** used |
