@@ -19,6 +19,21 @@ apply/restart ([`deploy/kafka/README.md`](../deploy/kafka/README.md)).
 | `KAFKA_CLUSTER_ID` | One KRaft UUID string (base64url, stock format) | `CLUSTER_ID` in `KAFKA_ENV_FILE` / broker |
 | `KAFKA_BROKERS` | `kafka:9092` | Web/worker/sinks/archive (`KAFKA_BROKERS` only; no Redpanda alias) |
 
+### Candidate cluster id (non-secret — Root review before Infisical set)
+
+Generated once with stock tool, **384 MiB** container, **no broker JVM**:
+
+```bash
+docker run --rm --memory=384m --entrypoint /opt/kafka/bin/kafka-storage.sh \
+  apache/kafka:4.4.0@sha256:833b867a9585a141da455dc2b57431c65cbccb27f11c91f694444cca9f777e0f \
+  random-uuid
+```
+
+**Candidate value:** `2G0qJAr9TImYWLduxjq29g`  
+Artifacts: `/tmp/kafka-ts-r2-q-mpudel-20261107c/KAFKA_CLUSTER_ID.candidate.json`  
+Root sets Infisical **only after preflight**; never regenerate after first set.
+Existing prod topic values stay untouched. No new provider / CI privilege.
+
 Do **not** invent topic keys or rewrite `METRIC_STREAM_LEGACY_TOPIC` /
 `LIVE` / `HISTORY` here. `KAFKA_TIERED_STORAGE_*` remain TF-apply-owned after
 `CLOUDFLARE_TERRAFORM_R2_API_TOKEN` path.

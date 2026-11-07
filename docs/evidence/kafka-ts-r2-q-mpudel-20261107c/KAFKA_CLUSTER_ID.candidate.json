@@ -1,0 +1,13 @@
+{
+  "infisical_key": "KAFKA_CLUSTER_ID",
+  "value_nonsecret": "2G0qJAr9TImYWLduxjq29g",
+  "generator": "docker run --rm --memory=384m --entrypoint /opt/kafka/bin/kafka-storage.sh apache/kafka:4.4.0@sha256:833b867a9585a141da455dc2b57431c65cbccb27f11c91f694444cca9f777e0f random-uuid",
+  "broker_jvm": false,
+  "status": "CANDIDATE for Root review \u2014 Infisical set only after preflight; never regenerate after set",
+  "also_set": {
+    "KAFKA_BROKERS": "kafka:9092"
+  },
+  "topics_untouched": true,
+  "no_ci_iam_broaden": true,
+  "bootstrap_doc": "docs/kafka-infisical-bootstrap-keys.md"
+}

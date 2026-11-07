@@ -1,0 +1,69 @@
+# Ephemeral R2 Q-MPU+Q-DEL retry 20261107c — NOT durable prod. Credential-free base.
+# Root launches kafka with credentials placeholder + in-memory child env only.
+# Operator PATH must include /usr/local/bin (docker) — wrapper spawnSync docker ENOENT otherwise.
+name: pulsar-foundation-kafka-ts-r2-q-mpudel-c
+
+services:
+  kafka:
+    image: apache/kafka:4.4.0@sha256:833b867a9585a141da455dc2b57431c65cbccb27f11c91f694444cca9f777e0f
+    mem_limit: 2048m
+    environment:
+      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
+      KAFKA_HEAP_OPTS: "-Xmx1G -Xms1G"
+      KAFKA_LOG_DIRS: "/var/lib/kafka/data"
+      KAFKA_PROCESS_ROLES: "broker,controller"
+      KAFKA_NODE_ID: "1"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:29093"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT"
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT_HOST://kafka:9092,PLAINTEXT://kafka:29092"
+      KAFKA_LISTENERS: "CONTROLLER://:29093,PLAINTEXT_HOST://:9092,PLAINTEXT://:29092"
+      KAFKA_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_OFFSETS_TOPIC_NUM_PARTITIONS: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS: "1000"
+      KAFKA_REMOTE_LOG_STORAGE_SYSTEM_ENABLE: "true"
+      KAFKA_REMOTE_LOG_MANAGER_TASK_INTERVAL_MS: "2000"
+      KAFKA_REMOTE_LOG_METADATA_MANAGER_CLASS_NAME: "org.apache.kafka.server.log.remote.metadata.storage.TopicBasedRemoteLogMetadataManager"
+      KAFKA_REMOTE_LOG_METADATA_MANAGER_LISTENER_NAME: "PLAINTEXT"
+      KAFKA_RLMM_CONFIG_REMOTE_LOG_METADATA_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_RLMM_CONFIG_REMOTE_LOG_METADATA_TOPIC_MIN_ISR: "1"
+      KAFKA_REMOTE_LOG_STORAGE_MANAGER_CLASS_PATH: "/plugins/1.2.0/core/*:/plugins/1.2.0/s3/*"
+      KAFKA_REMOTE_LOG_STORAGE_MANAGER_CLASS_NAME: "io.aiven.kafka.tieredstorage.RemoteStorageManager"
+      KAFKA_RSM_CONFIG_CHUNK_SIZE: "4194304"
+      KAFKA_RSM_CONFIG_FETCH_CHUNK_CACHE_CLASS: "io.aiven.kafka.tieredstorage.fetch.cache.MemoryChunkCache"
+      KAFKA_RSM_CONFIG_FETCH_CHUNK_CACHE_SIZE: "8388608"
+      KAFKA_RSM_CONFIG_FETCH_CHUNK_CACHE_PREFETCH_MAX_SIZE: "0"
+      KAFKA_RSM_CONFIG_KEY_PREFIX: "kafka-ts-parity/r2/20261107c-q-mpudel/"
+      KAFKA_RSM_CONFIG_STORAGE_BACKEND_CLASS: "io.aiven.kafka.tieredstorage.storage.s3.S3Storage"
+      KAFKA_RSM_CONFIG_STORAGE_S3_ENDPOINT_URL: "https://${R2_ACCOUNT_ID:?required}.r2.cloudflarestorage.com"
+      KAFKA_RSM_CONFIG_STORAGE_S3_BUCKET_NAME: "kafka-ts-r2-q-mpudel-20261107c"
+      KAFKA_RSM_CONFIG_STORAGE_S3_REGION: "auto"
+      KAFKA_RSM_CONFIG_STORAGE_S3_PATH_STYLE_ACCESS_ENABLED: "true"
+      KAFKA_RSM_CONFIG_STORAGE_S3_MULTIPART_UPLOAD_PART_SIZE: "5242880"
+      KAFKA_RSM_CONFIG_STORAGE_AWS_CHECKSUM_CHECK_ENABLED: "false"
+      KAFKA_RSM_CONFIG_STORAGE_S3_LEGACY_MD5_PLUGIN_ENABLED: "false"
+      AWS_REQUEST_CHECKSUM_CALCULATION: "WHEN_REQUIRED"
+      AWS_RESPONSE_CHECKSUM_VALIDATION: "WHEN_REQUIRED"
+      AWS_MAX_ATTEMPTS: "1"
+    volumes:
+      - kafka_ts_r2_q_mpudel_b_data:/var/lib/kafka/data
+      - /Users/asherlc/.paseo/worktrees/3b2webx6/pulsar-foundation/deploy/kafka/plugins/1.2.0/core:/plugins/1.2.0/core:ro
+      - /Users/asherlc/.paseo/worktrees/3b2webx6/pulsar-foundation/deploy/kafka/plugins/1.2.0/s3:/plugins/1.2.0/s3:ro
+
+  client:
+    image: apache/kafka:4.4.0@sha256:833b867a9585a141da455dc2b57431c65cbccb27f11c91f694444cca9f777e0f
+    mem_limit: 384m
+    depends_on:
+      - kafka
+    environment:
+      KAFKA_HEAP_OPTS: "-Xms32m -Xmx256m"
+    entrypoint: ["sleep", "infinity"]
+
+volumes:
+  kafka_ts_r2_q_mpudel_b_data:
+    name: pulsar-foundation-kafka-ts-r2-q-mpudel-c-data

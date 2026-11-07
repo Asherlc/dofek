@@ -1,0 +1,45 @@
+{
+  "bucket": "kafka-ts-r2-q-mpudel-20261107c",
+  "prefix": "kafka-ts-parity/r2/20261107c-q-mpudel/",
+  "do_not_recreate": [
+    "kafka-ts-r2-q-mpudel-20261107",
+    "kafka-ts-r2-q-mpudel-20261107b"
+  ],
+  "upload_cap_bytes": 8388608,
+  "object_body_GET": 0,
+  "wall_seconds_max_after_mint": 1200,
+  "part_size_bytes": 5242880,
+  "main_closed_log_bytes": {
+    "min_strictly_gt_part_size": 5242881,
+    "target_min": 5500000,
+    "max": 6291456,
+    "expected_mpu_parts_at_max": 2
+  },
+  "planned_object_upper_bounds_bytes": {
+    "main.log": 6291456,
+    "main.indexes": 262144,
+    "main.rsm-manifest": 65536,
+    "quarantine.log": 131072,
+    "quarantine.indexes": 65536,
+    "quarantine.rsm-manifest": 32768,
+    "sum": 6848512,
+    "margin_under_cap": 1540096
+  },
+  "produce_input_upper_bounds_bytes": {
+    "main_value_bytes_max": 6291456,
+    "quarantine_messages": 64,
+    "quarantine_value_bytes_each": 1024,
+    "quarantine_producer_file_max": 65600,
+    "note": "Producer file bytes are inputs; remote upload budget is planned_object_upper_bounds.sum only"
+  },
+  "mpu_pass": "Root ListObjectsV2/HeadObject Key+Size+ETag on main .log BEFORE retention; ETag Cloudflare completed MPU hash-N with N>=2 (expect -2); Size==local closed .log",
+  "etag_source": "https://developers.cloudflare.com/r2/objects/upload-objects/",
+  "delete_pass": "Native retention; capture ALL RLMM/RSM logs + stock kafka-dump-log.sh --remote-log-metadata-decoder for COPY_SEGMENT_FINISHED and DELETE_SEGMENT_FINISHED; Root inventory 0 before operator cleanup",
+  "no_consume": true,
+  "no_digest_rerun": true,
+  "cite_prior_consume_hash_separately": {
+    "r2_phase_f": "docs/evidence/kafka-ts-r2-phasef-20261106/CORE_PROOF.json sha256_offset_pipe_value=a6818c55855297f2466d9d0967e2c97f6ebf6db61f7bd7c204d99bde6ecd5687",
+    "local_dual512_fix": "docs/evidence/kafka-ts-dual512-fix-20261106/CORE_PROOF.json sha256_offset_value=84647a6947925f3ec9977f7b36da31a962bfa096134281ada00f6c3d5a19370b stdout_sha256=2d9df08fb5edb2f21780cd79665a930467eec59bbf0104999d51f83eecbcf2a6"
+  },
+  "status": "BUDGET_REQUEST_ONLY \u2014 no allocation until user approves"
+}
