@@ -1,0 +1,12 @@
+{
+  "bucket": "kafka-ts-r2-q-mpudel-20261107",
+  "at": "2026-11-07T03:46:36.832Z",
+  "launchFailedBeforeOwnedRuntime": true,
+  "objectCount": 0,
+  "multipartUploadCount": 0,
+  "deleteHTTP": 200,
+  "postDeleteHTTP": 404,
+  "ownedContainers": 0,
+  "temporaryCredentialRevocation": "No child revoke API; expires at original TTL. Do not recreate this bucket under the active session.",
+  "objectBodyDownloads": 0
+}

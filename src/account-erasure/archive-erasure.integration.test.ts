@@ -14,6 +14,7 @@ import {
   createMetricStreamDeletedEvent,
 } from "../metric-stream/events.ts";
 import { eraseMetricStreamArchive, R2MetricStreamArchiveStorage } from "./archive-erasure.ts";
+import { archiveIdentityFixture } from "./archive-erasure-test-helpers.ts";
 import { createSeaweedFsS3Container } from "./test-helpers.ts";
 
 const bucket = "metric-archive";
@@ -87,8 +88,8 @@ describe("R2 archive erasure against SeaweedFS S3", () => {
 
     await expect(
       eraseMetricStreamArchive(new R2MetricStreamArchiveStorage(client, bucket), {
-        activityIds: new Set(),
-        operationIds: new Set(),
+        stage: "initial" as const,
+        store: archiveIdentityFixture([], []),
         userId: deletingUserId,
       }),
     ).resolves.toEqual({
@@ -113,13 +114,18 @@ describe("R2 archive erasure against SeaweedFS S3", () => {
   });
 
   it("erases native-key payloads and controls while preserving exact foreign bytes and metadata", async () => {
-    const key = `metric-stream/v1/date=2026-11-05/hour=03/pulsar/epoch=e1/topic=${encodeURIComponent("persistent://public/default/sensor-partition-2")}/first=ff/last=00.jsonl.gz`;
+    const key = `metric-stream/v1/date=2026-11-05/hour=03/metric-stream-live-v2-0-0-0.jsonl.gz`;
     const operationId = "50000000-0000-4000-8000-000000001994";
     const owned = [
       metricEvent(deletingUserId, "30000000-0000-4000-8000-000000001994"),
       createMetricStreamDeletedEvent({ userId: deletingUserId }, "1"),
       createMetricStreamBatchCompletedEvent(
-        { operationId, batchId: "batch-1994", datasetKeys: ["metric-stream"] },
+        {
+          userId: deletingUserId,
+          operationId,
+          batchId: "batch-1994",
+          datasetKeys: ["metric-stream"],
+        },
         1,
       ),
     ].map((event) => JSON.stringify(event));
@@ -134,12 +140,12 @@ describe("R2 archive erasure against SeaweedFS S3", () => {
         Key: key,
         ContentEncoding: "x-gzip",
         ContentType: "application/vnd.dofek.metric-stream+jsonl",
-        Metadata: { "archive-generation": "7", "source-cluster": "pulsar-qualification" },
+        Metadata: { "archive-generation": "7", "source-cluster": "metric-stream-archive" },
       }),
     );
     const identifiers = {
-      activityIds: new Set<string>(),
-      operationIds: new Set([operationId]),
+      stage: "initial" as const,
+      store: archiveIdentityFixture([], [operationId]),
       userId: deletingUserId,
     };
     await expect(
@@ -150,7 +156,7 @@ describe("R2 archive erasure against SeaweedFS S3", () => {
     ).resolves.toMatchObject({
       ContentEncoding: "x-gzip",
       ContentType: "application/vnd.dofek.metric-stream+jsonl",
-      Metadata: { "archive-generation": "7", "source-cluster": "pulsar-qualification" },
+      Metadata: { "archive-generation": "7", "source-cluster": "metric-stream-archive" },
     });
     const object = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
     if (!object.Body) throw new Error("Rewritten archive has no body");
@@ -177,8 +183,8 @@ describe("R2 archive erasure against SeaweedFS S3", () => {
         const operation = eraseMetricStreamArchive(
           new R2MetricStreamArchiveStorage(client, bucket),
           {
-            activityIds: new Set(),
-            operationIds: new Set(),
+            stage: "initial" as const,
+            store: archiveIdentityFixture([], []),
             userId: deletingUserId,
           },
           {
@@ -218,8 +224,8 @@ describe("R2 archive erasure against SeaweedFS S3", () => {
         eraseMetricStreamArchive(
           new R2MetricStreamArchiveStorage(client, bucket),
           {
-            activityIds: new Set(),
-            operationIds: new Set(),
+            stage: "initial" as const,
+            store: archiveIdentityFixture([], []),
             userId: deletingUserId,
           },
           {
@@ -261,8 +267,8 @@ describe("R2 archive erasure against SeaweedFS S3", () => {
         eraseMetricStreamArchive(
           new ConcurrentArchiveStorage(client, bucket),
           {
-            activityIds: new Set(),
-            operationIds: new Set(),
+            stage: "initial" as const,
+            store: archiveIdentityFixture([], []),
             userId: deletingUserId,
           },
           {

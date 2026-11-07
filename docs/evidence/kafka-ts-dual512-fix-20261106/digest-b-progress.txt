@@ -1,0 +1,5 @@
+starting topicA
+topicA parsed 256 match_a True
+starting topicB
+topicB parsed 256 match_a True
+OK

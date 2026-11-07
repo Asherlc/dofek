@@ -1,0 +1,51 @@
+{
+  "label": "B-post-restart",
+  "utc": "2026-11-06T22:14:37.103447+00:00",
+  "consumer_fetch_config": "stock defaults; no bump",
+  "topics": {
+    "topicA": {
+      "topic": "topicA",
+      "stdout_path": "/tmp/kafka-ts-dual512-fix-20261106/evidence/consume-topicA-b.stdout",
+      "stdout_bytes": 134220690,
+      "stderr_bytes": 212,
+      "parsed_count": 256,
+      "unparsed_lines": 0,
+      "expected": 256,
+      "first_offset": 0,
+      "last_offset": 255,
+      "strict_order_contiguous": true,
+      "sha256_offset_value": "84647a6947925f3ec9977f7b36da31a962bfa096134281ada00f6c3d5a19370b",
+      "sha256_values_ordered": "59b61da98fd89667dd90afcf166d3b597e2c943c0947bcb37b44e1b89a23053a",
+      "sha256_stdout_bytes": "2d9df08fb5edb2f21780cd79665a930467eec59bbf0104999d51f83eecbcf2a6",
+      "consumer_rc": 0,
+      "grammar": "^Offset:(\\d+)\\|(.*)$",
+      "client_heap_opts_injected": "-Xms32m -Xmx256m",
+      "client_jvm_cmdline_contains_heap": true,
+      "consumer_cgroup": "client-service-384MiB",
+      "matches_hash_a_this_run": true,
+      "hash_a_source": "hash-a.json derived from consume-*-a-fresh.stdout this lab"
+    },
+    "topicB": {
+      "topic": "topicB",
+      "stdout_path": "/tmp/kafka-ts-dual512-fix-20261106/evidence/consume-topicB-b.stdout",
+      "stdout_bytes": 134220690,
+      "stderr_bytes": 212,
+      "parsed_count": 256,
+      "unparsed_lines": 0,
+      "expected": 256,
+      "first_offset": 0,
+      "last_offset": 255,
+      "strict_order_contiguous": true,
+      "sha256_offset_value": "84647a6947925f3ec9977f7b36da31a962bfa096134281ada00f6c3d5a19370b",
+      "sha256_values_ordered": "59b61da98fd89667dd90afcf166d3b597e2c943c0947bcb37b44e1b89a23053a",
+      "sha256_stdout_bytes": "2d9df08fb5edb2f21780cd79665a930467eec59bbf0104999d51f83eecbcf2a6",
+      "consumer_rc": 0,
+      "grammar": "^Offset:(\\d+)\\|(.*)$",
+      "client_heap_opts_injected": "-Xms32m -Xmx256m",
+      "client_jvm_cmdline_contains_heap": true,
+      "consumer_cgroup": "client-service-384MiB",
+      "matches_hash_a_this_run": true,
+      "hash_a_source": "hash-a.json derived from consume-*-a-fresh.stdout this lab"
+    }
+  }
+}

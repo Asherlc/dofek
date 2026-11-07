@@ -1,0 +1,358 @@
+{
+  "verdict": "QUALIFIED",
+  "lab": "minio-mem2g-4",
+  "test": "ACK_disposable_bookie_cgroup_2GiB_jvm_unchanged",
+  "wallStartUtc": "2026-11-06T20:52:11Z",
+  "wallEndUtc": "2026-11-06T21:12:32Z",
+  "reasonPrimary": "Bookie cgroup-only raise 1.5\u21922GiB (JVM Xmx512/direct512 unchanged) cleared prior peak==limit/max-event failure. Bookie peak 1733775360 / 2147483648 headroom 394.5 MiB; max_events delta=0; dual stock-64MiB offload SUCCESS; BK 5/7 absent after async delete; broker restart; full hash match both topics.",
+  "observedHeadroom": {
+    "broker": {
+      "peakBytes": 1274347520,
+      "limitBytes": 2147483648,
+      "headroomMiB": 832.7
+    },
+    "bookie": {
+      "peakBytes": 1733775360,
+      "limitBytes": 2147483648,
+      "headroomMiB": 394.5
+    },
+    "minio": {
+      "peakBytes": 736120832,
+      "limitBytes": 1073741824,
+      "headroomMiB": 322.0
+    }
+  },
+  "configApplied": {
+    "brokerMemLimitBytes": 2147483648,
+    "bookieMemLimitBytes": 2147483648,
+    "minioMemLimitBytes": 1073741824,
+    "PULSAR_MEM": "-Xms256m -Xmx768m -XX:MaxDirectMemorySize=768m",
+    "BOOKIE_MEM": "-Xms256m -Xmx512m -XX:MaxDirectMemorySize=512m",
+    "managedLedgerOffloadMaxThreads": 2,
+    "s3ManagedLedgerOffloadMaxBlockSizeInBytes": 67108864,
+    "messageId": "next-empty 9:0 / 10:0"
+  },
+  "gates": {
+    "R-1_mem_preflight": {
+      "pass": true,
+      "detail": "MemAvailable:   13969940 kB"
+    },
+    "R-2_mpu64": {
+      "pass": true,
+      "detail": "stock 64MiB MPU"
+    },
+    "R-3_messageid_next_empty": {
+      "pass": true,
+      "detail": "a=9:0 b=10:0 HTTP 204"
+    },
+    "R-4_no_oom": {
+      "pass": true,
+      "detail": "oom_files=False"
+    },
+    "R-5_no_peak_eq_limit": {
+      "pass": true,
+      "detail": {
+        "broker": {
+          "peak": 1274347520,
+          "limit": 2147483648
+        },
+        "bookie": {
+          "peak": 1733775360,
+          "limit": 2147483648
+        },
+        "minio": {
+          "peak": 736120832,
+          "limit": 1073741824
+        }
+      }
+    },
+    "R-6_no_max_increment": {
+      "pass": true,
+      "detail": {
+        "broker": {
+          "baseline": 0,
+          "final": 0,
+          "delta": 0
+        },
+        "bookie": {
+          "baseline": 0,
+          "final": 0,
+          "delta": 0
+        },
+        "minio": {
+          "baseline": 0,
+          "final": 0,
+          "delta": 0
+        }
+      }
+    },
+    "R-7_offload_success": {
+      "pass": true,
+      "detail": "both SUCCESS"
+    },
+    "R-8_bk_absent_full_hash": {
+      "pass": true,
+      "detail": "bk=True hashA=True hashB=True"
+    },
+    "R-9_bookie_jvm_unchanged": {
+      "pass": true,
+      "detail": "-Xms256m -Xmx512m -XX:MaxDirectMemorySize=512m"
+    },
+    "R-10_only_bookie_cgroup_bump": {
+      "pass": true,
+      "detail": "bookie mem_limit 1536\u21922048; JVM heap512/direct512 unchanged; broker 2GiB; Seaweed 1GiB"
+    },
+    "R-11_volumes": {
+      "pass": true,
+      "detail": "0.677 GiB"
+    },
+    "R-7_monitor_through_workload": {
+      "pass": true,
+      "detail": "BOUNDED: continuous TSV starts 21:08:16 (after offload 21:06:07). Upload covered by persistent memory.peak/events (first continuous sample already at lifetime peaks; max_events \u0394=0 vs idle baseline). Continuous rows cover restart+hash only."
+    }
+  },
+  "memory": {
+    "baseline_events": {
+      "broker": {
+        "events_raw": "low 0 high 0 max 0 oom 0 oom_kill 0 oom_group_kill 0",
+        "low": 0,
+        "high": 0,
+        "max": 0,
+        "oom": 0,
+        "oom_kill": 0,
+        "oom_group_kill": 0,
+        "PEAK": "647434240",
+        "CURRENT": "642326528",
+        "MAX": "2147483648"
+      },
+      "bookie": {
+        "events_raw": "low 0 high 0 max 0 oom 0 oom_kill 0 oom_group_kill 0",
+        "low": 0,
+        "high": 0,
+        "max": 0,
+        "oom": 0,
+        "oom_kill": 0,
+        "oom_group_kill": 0,
+        "PEAK": "792342528",
+        "CURRENT": "792301568",
+        "MAX": "2147483648"
+      },
+      "minio": {
+        "events_raw": "low 0 high 0 max 0 oom 0 oom_kill 0 oom_group_kill 0",
+        "low": 0,
+        "high": 0,
+        "max": 0,
+        "oom": 0,
+        "oom_kill": 0,
+        "oom_group_kill": 0,
+        "PEAK": "71573504",
+        "CURRENT": "56504320",
+        "MAX": "1073741824"
+      },
+      "oxia": {
+        "events_raw": "low 0 high 0 max 0 oom 0 oom_kill 0 oom_group_kill 0",
+        "low": 0,
+        "high": 0,
+        "max": 0,
+        "oom": 0,
+        "oom_kill": 0,
+        "oom_group_kill": 0,
+        "PEAK": "20852736",
+        "CURRENT": "20361216",
+        "MAX": "134217728"
+      },
+      "oxia-coord": {
+        "events_raw": "low 0 high 0 max 0 oom 0 oom_kill 0 oom_group_kill 0",
+        "low": 0,
+        "high": 0,
+        "max": 0,
+        "oom": 0,
+        "oom_kill": 0,
+        "oom_group_kill": 0,
+        "PEAK": "33955840",
+        "CURRENT": "19927040",
+        "MAX": "134217728"
+      }
+    },
+    "monitor": {
+      "broker": {
+        "samples": 63,
+        "limit": 2147483648,
+        "peak": 1274347520,
+        "headroom": 873136128,
+        "headroomMiB": 832.7,
+        "peak_eq_limit": false,
+        "baseline_max_events": 0,
+        "final_max_events": 0,
+        "max_events_delta": 0,
+        "monitor_max_delta_seen": 0,
+        "first_utc": "2026-11-06T21:08:16.593448000Z",
+        "last_utc": "2026-11-06T21:11:25.980587000Z",
+        "oneshot": {
+          "CURRENT": "791371776",
+          "PEAK": "824856576",
+          "MAX": "2147483648",
+          "EVENTS": "low 0 high 0 max 0 oom 0 oom_kill 0 oom_group_kill 0",
+          "ANON": "758128640"
+        }
+      },
+      "bookie": {
+        "samples": 63,
+        "limit": 2147483648,
+        "peak": 1733775360,
+        "headroom": 413708288,
+        "headroomMiB": 394.5,
+        "peak_eq_limit": false,
+        "baseline_max_events": 0,
+        "final_max_events": 0,
+        "max_events_delta": 0,
+        "monitor_max_delta_seen": 0,
+        "first_utc": "2026-11-06T21:08:16.785387000Z",
+        "last_utc": "2026-11-06T21:11:26.201394000Z",
+        "oneshot": {
+          "CURRENT": "1172807680",
+          "PEAK": "1733775360",
+          "MAX": "2147483648",
+          "EVENTS": "low 0 high 0 max 0 oom 0 oom_kill 0 oom_group_kill 0",
+          "ANON": "590610432"
+        }
+      },
+      "minio": {
+        "samples": 63,
+        "limit": 1073741824,
+        "peak": 736120832,
+        "headroom": 337620992,
+        "headroomMiB": 322.0,
+        "peak_eq_limit": false,
+        "baseline_max_events": 0,
+        "final_max_events": 0,
+        "max_events_delta": 0,
+        "monitor_max_delta_seen": 0,
+        "first_utc": "2026-11-06T21:08:16.960473000Z",
+        "last_utc": "2026-11-06T21:11:26.393958000Z",
+        "oneshot": {
+          "CURRENT": "522850304",
+          "PEAK": "736120832",
+          "MAX": "1073741824",
+          "EVENTS": "low 0 high 0 max 0 oom 0 oom_kill 0 oom_group_kill 0"
+        }
+      },
+      "oxia": {
+        "samples": 63,
+        "limit": 134217728,
+        "peak": 24784896,
+        "headroom": 109432832,
+        "headroomMiB": 104.4,
+        "peak_eq_limit": false,
+        "baseline_max_events": 0,
+        "final_max_events": 0,
+        "max_events_delta": 0,
+        "monitor_max_delta_seen": 0,
+        "first_utc": "2026-11-06T21:08:17.122786000Z",
+        "last_utc": "2026-11-06T21:11:26.577700000Z",
+        "oneshot": null
+      },
+      "oxia-coord": {
+        "samples": 63,
+        "limit": 134217728,
+        "peak": 35917824,
+        "headroom": 98299904,
+        "headroomMiB": 93.7,
+        "peak_eq_limit": false,
+        "baseline_max_events": 0,
+        "final_max_events": 0,
+        "max_events_delta": 0,
+        "monitor_max_delta_seen": 0,
+        "first_utc": "2026-11-06T21:08:17.292213000Z",
+        "last_utc": "2026-11-06T21:11:26.757843000Z",
+        "oneshot": null
+      }
+    },
+    "peak_eq_seen_in_tsv": false,
+    "max_inc_seen_in_tsv": false,
+    "tripwire_files": {
+      "oom": false,
+      "peak_eq": false,
+      "max_inc": false
+    }
+  },
+  "integrity": {
+    "bkAbsentPostRestart": {
+      "present": [
+        3,
+        4,
+        9,
+        10,
+        11,
+        12
+      ],
+      "wantAbsent": [
+        5,
+        7
+      ],
+      "absent": true
+    },
+    "hashA": {
+      "count": 128,
+      "lastOrd": 127,
+      "digest": "ab43c825aecf81897bbd7ba71c4b0250e890cf246e614a3e1cfe13c3046f15b5",
+      "expected": "ab43c825aecf81897bbd7ba71c4b0250e890cf246e614a3e1cfe13c3046f15b5",
+      "match": true,
+      "bad": null
+    },
+    "hashB": {
+      "count": 128,
+      "lastOrd": 127,
+      "digest": "30d5f384a0c2f329ca6520a4b68f41e87b117c6683f2014136b6e9637f33527c",
+      "expected": "30d5f384a0c2f329ca6520a4b68f41e87b117c6683f2014136b6e9637f33527c",
+      "match": true,
+      "bad": null
+    },
+    "brokerRestart": {
+      "start": "2026-11-06T21:08:19Z",
+      "done": "2026-11-06T21:08:34Z"
+    }
+  },
+  "evidence": {
+    "overlapLog": "START b 2026-11-06T21:06:07.466304460Z\nSTART a 2026-11-06T21:06:07.468499543Z\nHTTP a 204 2026-11-06T21:06:07.498474335Z\nHTTP b 204 2026-11-06T21:06:07.501962335Z\nWAIT_EXIT a=0 b=0 2026-11-06T21:06:07.505609627Z\n",
+    "offloadStatusA": "{\"status\":\"SUCCESS\",\"lastError\":\"\",\"firstUnoffloadedMessage\":{\"ledgerId\":9,\"entryId\":0,\"partitionIndex\":-1,\"batchIndex\":-1,\"batchSize\":0}}",
+    "offloadStatusB": "{\"status\":\"SUCCESS\",\"lastError\":\"\",\"firstUnoffloadedMessage\":{\"ledgerId\":10,\"entryId\":0,\"partitionIndex\":-1,\"batchIndex\":-1,\"batchSize\":0}}",
+    "ownedVolumesGiB": 0.677,
+    "bkDeleteNote": "deletionLagMs=0 delete completed ~96s after Offload succeed (async); listledgers cleared 5/7 before restart"
+  },
+  "durableConfigProposal": {
+    "status": "NOT_COMMITTED",
+    "reason": "docs/evidence only; no compose/runtime durable hunk"
+  },
+  "productionFit": "NOT_APPROVED \u2014 unresolved host hard-limit overcommit; observed headroom only",
+  "memoryCapture": {
+    "continuousSampler": {
+      "firstSampleUtc": "2026-11-06T21:08:16.593448000Z",
+      "lastSampleUtc": "2026-11-06T21:11:26.757843000Z",
+      "covers": "broker-restart + remote hash only",
+      "doesNotCover": "produce and dual offload upload window starting 2026-11-06T21:06:07Z",
+      "gapReason": "monitor TSV was reset when the sampler process was restarted before broker restart; no continuous 2s rows exist for 21:06\u201321:08"
+    },
+    "lifetimeCgroupHighWater": {
+      "source": "kernel memory.peak + memory.events (persist across sampler gaps until container recreate)",
+      "preRestartFirstContinuousSample": {
+        "utc": "2026-11-06T21:08:16Z",
+        "note": "first post-gap sample already shows bookie peak=1733775360 and events max=0 \u2014 these counters include the earlier offload upload",
+        "broker_peak": 1274347520,
+        "bookie_peak": 1733775360,
+        "minio_peak": 736120832,
+        "events_max_all_roles": 0
+      },
+      "idleBaselineApproxUtc": "2026-11-06T21:01:00Z",
+      "idleBaselineBookiePeak": 792342528,
+      "postHashOneshot": {
+        "broker_peak": 824856576,
+        "bookie_peak": 1733775360,
+        "minio_peak": 736120832,
+        "events": "max=0 oom_kill=0 all roles"
+      }
+    },
+    "claimBound": "Do NOT claim continuous 2s sampling through offload. Lifetime peak/events high-water marks cover upload; continuous TSV covered restart+hash only and is not retained as durable raw evidence.",
+    "kernelSource": "https://docs.kernel.org/admin-guide/cgroup-v2.html#memory-interface-files"
+  }
+}

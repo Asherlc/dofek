@@ -1,0 +1,67 @@
+{
+  "result": "CORE_PROOF_FAIL_OOM_ON_EARLIEST_REMOTE_CONSUME",
+  "first_fatal": {
+    "command": "docker exec pulsar-foundation-kafka-ts-dual512-kafka-1 /opt/kafka/bin/kafka-console-consumer.sh ... --topic topicA --from-beginning --max-messages 256",
+    "docker_inspect": "Status=exited Exit=137 OOM=true Finished=2026-11-06T21:57:40Z",
+    "log_timeline": "2026-11-06T21:57:37Z consumer joins console-consumer-* group; 21:57:40Z cgroup OOM kill. No java.lang.OutOfMemoryError in broker log tail."
+  },
+  "jvm": {
+    "broker_one_process": "kafka.Kafka via official image launch \u2192 kafka-server-start.sh",
+    "broker_heap_flags": "-Xmx1G -Xms1G (KAFKA_HEAP_OPTS; official kafka-server-start.sh default)",
+    "broker_directmemory_explicit": false,
+    "broker_jvm_performance_opts_default": "-server -XX:+UseG1GC -XX:MaxGCPauseMillis=20 -XX:InitiatingHeapOccupancyPercent=35 -XX:+ExplicitGCInvokesConcurrent -XX:MaxInlineLevel=15 plus -XX:SharedArchiveFile=/opt/kafka/kafka.jsa",
+    "citations": [
+      "https://github.com/apache/kafka/blob/4.4.0/bin/kafka-server-start.sh",
+      "https://github.com/apache/kafka/blob/4.4.0/bin/kafka-run-class.sh"
+    ]
+  },
+  "oom_class": "cgroup OOM (docker OOMKilled=true, exit 137) \u2014 not a logged Java heap OOM",
+  "same_cgroup_second_jvm": {
+    "fact": "kafka-console-consumer.sh was run via docker exec inside the broker container",
+    "heap_inheritance": "Container env KAFKA_HEAP_OPTS=-Xmx1G -Xms1G; console-consumer.sh only sets -Xmx512M when KAFKA_HEAP_OPTS is empty, so the client inherited 1GiB heap",
+    "citation": "https://github.com/apache/kafka/blob/4.4.0/bin/kafka-console-consumer.sh",
+    "cgroup_math": "broker 1GiB heap + client 1GiB heap in 2048MiB cgroup leaves ~0 headroom for native/pagecache/metaspace before remote-read pressure"
+  },
+  "plugin_cache_configured": {
+    "fetch.chunk.cache.class": "io.aiven.kafka.tieredstorage.fetch.cache.MemoryChunkCache",
+    "fetch.chunk.cache.size_bytes": 67108864,
+    "fetch.chunk.cache.prefetch.max.size_bytes": 4194304,
+    "chunk.size_bytes": 4194304,
+    "s3.multipart.upload.part.size": "unset \u2192 default 26214400",
+    "MemoryChunkCache_behavior": "cacheChunk() uses InputStream.readAllBytes() into heap byte[]",
+    "citation": "https://github.com/Aiven-Open/tiered-storage-for-apache-kafka/blob/v1.2.0/core/src/main/java/io/aiven/kafka/tieredstorage/fetch/cache/MemoryChunkCache.java"
+  },
+  "kafka_remote_index_cache": {
+    "remote.log.index.file.cache.total.size.bytes_default": 1073741824,
+    "storage": "on-disk under $log.dirs/remote-log-index-cache; indexes opened via mmap (unload note in source)",
+    "citation_config": "https://kafka.apache.org/44/configuration/tiered-storage-configs/",
+    "citation_source": "https://github.com/apache/kafka/blob/4.4.0/storage/src/main/java/org/apache/kafka/storage/internals/log/RemoteIndexCache.java",
+    "lab_unset": true
+  },
+  "rlm_pools": {
+    "remote.log.reader.threads_default": 10,
+    "remote.log.reader.max.pending.tasks_default": 100,
+    "remote.log.manager.copier.thread.pool.size_default": 10,
+    "lab": "left at defaults; not forced to Pulsar threads=2",
+    "not_changed_in_proposal": "do not silently change reader/copier pools or consumer fetch"
+  },
+  "workload_delta_vs_5mib_functional": {
+    "functional_lab": "5000\u00d71KiB \u2248 5MiB user bytes; small remote segments; digest via same docker-exec pattern but light remote read; lifetime peak sampled 809MiB",
+    "dual512_lab": "2\u00d7256\u00d7512KiB = 256MiB user bytes all remote at digest time; ~33MiB closed segments; OOM at earliest consume",
+    "not_handwave": "Failure correlated with earliest remote consume start (log) + cgroup OOM; upload/local-removal had already succeeded"
+  },
+  "sampler_gap": {
+    "fact": "2s sampler stalled after ready phase; no continuous peak through produce/tier/consume",
+    "rule": "Do not invent peak allocation breakdown; state gap explicit"
+  },
+  "root_cause_summary": "Primary: digest client JVM colocated in broker cgroup inherited 1GiB KAFKA_HEAP_OPTS, colliding with broker 1GiB heap inside 2048MiB cgroup during heavy remote read. Contributing: 256MiB remote earliest read vs ~5MiB functional lab. Not proven without samples: exact pagecache/mmap/chunk MiB split.",
+  "one_minimum_same_2gib_retest_proposal": {
+    "broker_cgroup_mib": 2048,
+    "broker_heap": "-Xmx1G -Xms1G unchanged",
+    "consumer_fetch": "stock unchanged",
+    "rlm_pools": "defaults unchanged",
+    "change": "Run console-consumer outside broker cgroup (tool container mem_limit 384m) with explicit client-only KAFKA_HEAP_OPTS=-Xmx256M (stock script default when unset is -Xmx512M; pin 256M to fit tool cgroup), OR docker exec -e KAFKA_HEAP_OPTS=-Xmx256M",
+    "why": "Removes same-cgroup dual-1GiB-heap collision identified by script+env evidence; does not raise cgroup; does not tune RLM/fetch to pass",
+    "still_not_prod_qual": true
+  }
+}

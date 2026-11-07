@@ -181,6 +181,7 @@ Implementation-level backlog. Checked items are complete; unchecked are open.
 - [x] Continuous aggregates for long-range trends (daily + weekly caggs on metric_stream with auto-refresh policies)
 
 ### Infrastructure
+- [ ] Revisit metric-stream storage and archive architecture to reduce maintained code and operational complexity. Define the required recovery window and whether a separate long-lived raw archive is necessary; evaluate retention and object layout that simplify per-user deletion without restoring erased data during replay. Separate broker provisioning, batching, retries, and maintenance from application-specific ingestion and deletion rules, preferring mainstream clients and stock platform capabilities. Compare simpler designs against the current system before choosing changes, preserving durability, serving needs, and deletion guarantees. Start with the [metric-stream storage architecture](clickhouse-metric-stream.md), [archive and replay runbook](metric-stream-redpanda-r2-runbook.md), and [account-erasure runbook](account-erasure-runbook.md).
 - [x] Winston structured logging with ring buffer transport for UI system logs
 - [x] OTel Collector sidecar shipping app logs + Docker container logs to Axiom
 - [x] Infisical secrets management (migrated from SOPS + Age)

@@ -81,7 +81,7 @@ overrides:
   react-dom: 19.3.0
   "router>path-to-regexp": 8.4.2
   shell-quote: 1.12.0
-  tar: 7.5.20
+  tar: 7.5.22
   "test-exclude@<8.0.0": 8.0.0
   "@sentry/cli>undici": 6.29.1
   "undici@>=6.0.0 <6.29.1": 6.29.1
@@ -120,6 +120,7 @@ allowBuilds:
   msw: true
   nx: false
   protobufjs: false
+  pulsar-client: true
   sharp: true
   ssh2: false
 

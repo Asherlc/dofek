@@ -1,15 +1,27 @@
-# Metric Stream Redpanda and R2 Runbook
+# Metric Stream broker and R2 Runbook
 
-Use this for Redpanda ingest, ClickHouse sink, and R2 archive operations, plus
-planning a bounded replay implementation. HealthKit quantity metric-stream
-samples and provider metric-stream samples publish through Redpanda first.
-Postgres no longer stores the metric stream.
+> **Current vs target (2026-11-07):** **Production today** still publishes and
+> consumes through Swarm **Redpanda** (`dofek_redpanda`, `REDPANDA_BROKERS`,
+> v1 topics) — see Lane 87 census in
+> [`deploy/kafka/README.md`](../deploy/kafka/README.md#live-baseline-lane-87-exclusive-census--2026-11-07t050843z).
+> **Local Compose / checked-in `deploy/stack.yml`** target the **Apache Kafka
+> 4.4** service and `KAFKA_BROKERS` (no compose `redpanda` service). JSONL
+> archive remains **[Redpanda Connect](https://docs.redpanda.com/redpanda-connect/)**
+> (`redpanda` input name is the product identifier — do not rename for branding).
+> Cutover is **not** executed; existing Deploy Web is **not** a safe cutover
+> sequencer.
+
+Use this for production Redpanda drain/freshness, ClickHouse sink, and R2
+archive operations, plus planning a bounded replay implementation. HealthKit
+quantity metric-stream samples and provider metric-stream samples publish
+through the live Kafka-protocol broker first (production: Redpanda). Postgres
+no longer stores the metric stream.
 
 ## Purpose
 
 Metric-stream is high-volume sensor data. It is intentionally not stored in
-Postgres; Redpanda is the hot ingest log, R2 is the durable archive, and
-ClickHouse is the analytics serving copy.
+Postgres; the Kafka-protocol hot ingest log buffers it, R2 is the durable
+archive, and ClickHouse is the analytics serving copy.
 
 The current archive path is:
 
@@ -25,7 +37,7 @@ R2 is the long-term archive for metric-stream events, and ClickHouse is the
 analytics serving copy. A checked-in R2-to-ClickHouse replay command does not
 yet exist, so the archive is not currently an operator-ready recovery path.
 Metric-stream samples are no longer written back into `fitness.metric_stream` from
-Redpanda. Historical Postgres rows were archived to R2 before the Postgres table
+the hot log. Historical Postgres rows were archived to R2 before the Postgres table
 was retired. Postgres remains canonical for users, providers, activities,
 tokens, settings, food, and other app state.
 
@@ -33,24 +45,25 @@ tokens, settings, food, and other app state.
 
 - Live and historical ingestion use separate topics; the legacy topic remains
   assigned to its existing consumers. See the [deployment renderer](../scripts/deploy-service-environment.ts)
-  for the required route contract.
+  for the required route contract (renderer target keys use `KAFKA_BROKERS`).
 - `dofek-metric-stream-archive` is the long-term replay archive in Cloudflare R2.
 - The R2 metric-stream archive must not have lifecycle deletion rules.
-- Redpanda local retention is a buffering and operations setting, not the
-  long-term source of truth.
+- Hot-log local retention is a buffering and operations setting, not the
+  long-term source of truth. Production Redpanda retention still applies until
+  cutover; Kafka TS (dedicated R2) is the post-cutover cold path — see
+  [`deploy/kafka/README.md`](../deploy/kafka/README.md).
 - Postgres remains canonical for users, providers, activities, tokens, settings,
   food, and other app state. This runbook only changes metric-stream samples.
-- If Redpanda self-managed tiered storage is later enabled, verify the license
-  first. Redpanda documents self-managed tiered storage as Enterprise-gated.
 
 ## Required Services
 
 | Service | Purpose |
 | --- | --- |
-| `redpanda` | Kafka-compatible hot ingest log. |
-| `metric-stream-clickhouse-sink` / `metric-stream-r2-archive` | Legacy consumers of `METRIC_STREAM_LEGACY_TOPIC` (`metric-stream-v1`). |
-| `metric-stream-live-clickhouse-sink` / `metric-stream-live-r2-archive` | Live consumers of `METRIC_STREAM_LIVE_TOPIC` (`metric-stream-live-v1`). |
-| `metric-stream-history-clickhouse-sink` / `metric-stream-history-r2-archive` | History consumers of `METRIC_STREAM_HISTORY_TOPIC` (`metric-stream-history-v1`). |
+| Production: `dofek_redpanda` | Live Kafka-compatible hot ingest log (**today**). |
+| Local / stack target: `kafka` | Apache Kafka 4.4 in Compose / `deploy/stack.yml` (**not** cut over in prod). |
+| `metric-stream-clickhouse-sink` / `metric-stream-r2-archive` | Legacy consumers of `METRIC_STREAM_LEGACY_TOPIC` (`metric-stream-v1` in prod today). |
+| `metric-stream-live-clickhouse-sink` / `metric-stream-live-r2-archive` | Live consumers of `METRIC_STREAM_LIVE_TOPIC` (`metric-stream-live-v1` in prod today). |
+| `metric-stream-history-clickhouse-sink` / `metric-stream-history-r2-archive` | History consumers of `METRIC_STREAM_HISTORY_TOPIC` (`metric-stream-history-v1` in prod today). |
 | `analytics-worker` | Rebuilds dbt-owned ClickHouse analytics read models from ClickHouse source tables. |
 
 Each sink writes non-IMU rows to `ingest.metric_stream`; each archive writes
@@ -69,8 +82,9 @@ Store these in Infisical before enabling the services:
 
 | Secret | Example | Notes |
 | --- | --- | --- |
-| `REDPANDA_BROKERS` | `redpanda:9092` | Comma-separated broker list. |
-| `METRIC_STREAM_LEGACY_TOPIC` | `metric-stream-v1` | Existing topic assigned only to legacy consumers. |
+| `REDPANDA_BROKERS` | `redpanda:9092` | **Production today** (web/worker/sinks/archives per census). |
+| `KAFKA_BROKERS` | `kafka:9092` / `kafka:29092` | **Local Compose + post-cutover stack renderer** ([Apache Kafka listeners](https://kafka.apache.org/documentation/#listenerconfigs)); no `REDPANDA_` alias in the renderer. |
+| `METRIC_STREAM_LEGACY_TOPIC` | `metric-stream-v1` | Existing topic assigned only to legacy consumers (v2 names required before Kafka-target deploy). |
 | `METRIC_STREAM_LIVE_TOPIC` | `metric-stream-live-v1` | Live producer/consumer route. |
 | `METRIC_STREAM_HISTORY_TOPIC` | `metric-stream-history-v1` | History producer/consumer route. |
 | `METRIC_STREAM_R2_BUCKET` | `dofek-metric-stream-archive` | Dedicated archive bucket. |
@@ -126,7 +140,7 @@ Delete events use the same topic with
 `eventType: "metric_stream_deleted"`. They carry a bounded `scope` such as an
 `activityId` or `{ userId, providerId, recordedAtStart }`, plus a `partitionKey`.
 Replacement writers must publish the delete event and replacement row events on
-that same partition key so Redpanda preserves delete-before-insert order.
+that same partition key so the broker preserves delete-before-insert order.
 
 The ClickHouse sink applies delete events by inserting newer matching
 `ingest.metric_stream` rows with `is_deleted = 1` before inserting replacement
@@ -224,7 +238,9 @@ as incident evidence and let the configured bounds expire it. Redpanda's
 
 ## Freshness Checks
 
-Run concrete freshness checks from the production host:
+Run concrete freshness checks from the production host (**stock Redpanda
+commands while `dofek_redpanda` is the live broker** — re-record before any
+mutate; do not invent a parallel Kafka drain path for today's production):
 
 ```bash
 docker service ps dofek_redpanda --no-trunc
@@ -255,11 +271,19 @@ not only batch commits. KafkaJS exposes the batch high watermark and requires
 manual offset resolution before commit when `eachBatchAutoResolve` is disabled;
 see its [consumer documentation](https://kafka.js.org/docs/consuming#eachbatch).
 
-Check ClickHouse freshness:
+Check ClickHouse **ingestion** freshness (`ingested_at` is sink write time —
+usable when domain `recorded_at` is polluted; Lane 87 census FINDING):
 
 ```bash
 docker exec -i "$(docker ps --filter name=dofek_clickhouse -q | head -n1)" \
-  sh -lc 'clickhouse-client --password "$CLICKHOUSE_PASSWORD" --query "select max(recorded_at) from ingest.metric_stream"'
+  sh -lc 'clickhouse-client --password "$CLICKHOUSE_PASSWORD" --query "SELECT max(ingested_at) FROM ingest.metric_stream"'
+```
+
+Optional separate **domain-time** check (not drain proof; filter absurd futures):
+
+```bash
+docker exec -i "$(docker ps --filter name=dofek_clickhouse -q | head -n1)" \
+  sh -lc 'clickhouse-client --password "$CLICKHOUSE_PASSWORD" --query "SELECT max(recorded_at) FROM ingest.metric_stream WHERE is_deleted = 0 AND recorded_at <= now64(9)"'
 ```
 
 Check archive service logs for recent R2 write failures:
@@ -272,17 +296,21 @@ docker service logs --since 15m dofek_metric-stream-history-r2-archive
 
 The freshness checks must cover:
 
-- Redpanda broker reachability.
-- Consumer lag for each legacy/live/history ClickHouse sink and archive group.
-- Newest R2 archive object age for each topic with recent traffic.
-- Newest `ingest.metric_stream.recorded_at` in ClickHouse.
+- Live hot-log broker reachability (`dofek_redpanda` today).
+- **Consumer lag** for each legacy/live/history ClickHouse sink and archive
+  group — **this is the drain proof** (`rpk group describe`; lag 0 / offset=HWM).
+- Newest R2 archive object age for each topic with recent traffic
+  (ListObjects names/`LastModified` only; no body GET).
+- Newest `ingest.metric_stream.ingested_at` in ClickHouse (ingestion signal).
+- Future-filtered `recorded_at` only as a domain-time sanity check — **not**
+  catch-up proof by itself.
 - Newest dbt analytics rows that depend on metric stream, especially
   `analytics.daily_activity_load` and `analytics.daily_strain`.
 
-Do not declare a sink backlog resolved from service health alone. Prove that
-the committed offset reaches the topic head, publish a fresh post-drain message
-and observe it in `ingest.metric_stream`, then verify the affected activities
-hydrate with their expected sensor fields.
+Do not declare a sink backlog resolved from service health or CH timestamps
+alone. Prove with **lag**: committed offset reaches the topic head; then
+publish a fresh post-drain message and observe it via rising `ingested_at`,
+then verify the affected activities hydrate with their expected sensor fields.
 
 If the committed offset stays fixed and sink logs report `HTML Form Exception:
 Too many form fields`, inspect the adjacent deletion run. Each deletion scope
@@ -312,8 +340,8 @@ three ClickHouse sinks until migrations and CDC readiness pass; see the
 [deployment procedure](../deploy/README.md#production-secrets).
 
 Treat R2 archive staleness as a production durability incident. Writers are
-already Redpanda-first; restore the archive before deploying writer changes or
-allowing required Redpanda offsets to expire.
+already broker-first; restore the archive before deploying writer changes or
+allowing required hot-log offsets to expire.
 
 ## External-ID deletion projection
 
@@ -394,12 +422,13 @@ do not invoke bare `dbt build`.
 
 ## Durability Invariants
 
-Production writers are already Redpanda-first. Keep these invariants true:
+Production writers are already broker-first (today: Redpanda). Keep these
+invariants true:
 
-1. `redpanda` is healthy.
+1. The live hot-log Swarm service is healthy (`dofek_redpanda` until cutover).
 2. ClickHouse sink can insert duplicate events idempotently.
 3. Redpanda Connect archive writes fresh R2 objects.
-4. Recent Redpanda-sourced ClickHouse rows match the corresponding R2 archive
+4. Recent broker-sourced ClickHouse rows match the corresponding R2 archive
    rows over a bounded recent window when validating replay behavior.
 
 Bounded R2 replay automation remains an explicit recovery gap. Do not describe
@@ -413,24 +442,48 @@ or the scoped replacement helpers.
 
 If strain, activity load, or other metric-stream analytics go stale:
 
-1. Check Redpanda sink lag and archive freshness.
-2. Check ClickHouse freshness:
+1. Check live hot-log **lag** and archive freshness (`rpk group describe` /
+   service logs) — lag is the drain/catch-up proof.
+2. Check ClickHouse **ingestion** freshness:
+
+   ```sql
+   SELECT max(ingested_at) FROM ingest.metric_stream;
+   ```
+
+   Optionally sanity-check domain time (not drain proof):
 
    ```sql
    SELECT max(recorded_at)
-   FROM ingest.metric_stream FINAL
-   WHERE is_deleted = 0;
+   FROM ingest.metric_stream
+   WHERE is_deleted = 0 AND recorded_at <= now64(9);
    ```
 
-3. If Redpanda and R2 are fresh but ClickHouse is stale, inspect the sink's
-   consumer lag and first fatal log line. If the required offsets remain in
-   Redpanda, fix the sink failure and let the same consumer group catch up.
-   If the offsets have expired, stop: bounded R2 replay automation is not
-   shipped, so an approved implementation is required before recovery.
+   Bare `max(recorded_at)` alone is **not** usable when futures appear (census
+   FINDING).
+3. If the broker and R2 are fresh but ClickHouse ingestion is stale, inspect
+   the sink's consumer lag and first fatal log line. If the required offsets
+   remain in the live hot log, fix the sink failure and let the same consumer
+   group catch up. If the offsets have expired, stop: bounded R2 replay
+   automation is not shipped, so an approved implementation is required before
+   recovery.
 4. If R2 is stale, treat it as a durability failure. Fix the archive service
-   before relying on archive recovery or allowing the needed Redpanda offsets
+   before relying on archive recovery or allowing the needed hot-log offsets
    to expire.
 5. Record the incident in `docs/production-incident-baseline.md`.
+
+## Kafka hot-log cutover (pointer only)
+
+Production cutover from Redpanda → stock Kafka 4.4 + RSM is **not executed**
+from this runbook. The concrete operator sequence, Lane 87 live census
+(2026-11-07T05:08:43Z), rollback boundary, and remaining approvals live in
+[`deploy/kafka/README.md`](../deploy/kafka/README.md#production-cutover--rollback-review-not-executed).
+Keep using this document for Redpanda freshness, quarantine inspect, and
+archive durability checks during any approved drain. Prefer `rpk` lag for
+drain proof and `max(ingested_at)` for CH ingestion freshness; do **not** treat
+bare `max(recorded_at)` as catch-up proof (census FINDING). Terraform
+`KAFKA_TIERED_STORAGE_*` provisioning is **done**; topic-value edits, cutover
+execution, and `/mnt/dofek-data/redpanda` deletion (retain **38 GiB**) remain
+separately approved.
 
 ## References
 

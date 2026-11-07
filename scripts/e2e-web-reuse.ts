@@ -58,7 +58,7 @@ dockerCompose([
   "clickhouse",
   "redis",
   "account-erasure-minio",
-  "redpanda",
+  "kafka",
 ]);
 runOneShotService("migrate");
 if (isFocusedReviewStackRun) {

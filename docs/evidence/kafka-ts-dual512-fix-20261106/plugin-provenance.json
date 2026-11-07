@@ -1,0 +1,16 @@
+{
+  "release": "v1.2.0",
+  "assets": [
+    {
+      "name": "core-1.2.0.tgz",
+      "sha256": "14fb636d3a5c781ae9ae961012bf7b0881b09629859dbc784dc49356faeaa747",
+      "size": 87298997
+    },
+    {
+      "name": "s3-1.2.0.tgz",
+      "sha256": "1fd89dea84988b857e546fcfa88504f5b4e45d7712e3eddeb506f11a394ef010",
+      "size": 15757644
+    }
+  ],
+  "verified_at": "2026-11-06T22:05:10.226296+00:00"
+}

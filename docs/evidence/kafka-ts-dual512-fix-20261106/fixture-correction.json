@@ -1,0 +1,11 @@
+{
+  "prior_lab": "kafka-ts-dual512-20261106",
+  "prior_error": "admin/producer/consumer JVMs via docker exec inside broker cgroup inherited KAFKA_HEAP_OPTS=1GiB \u2014 test violation of required separate tool\u2264384MiB; NOT a Kafka resource finding",
+  "correction": "All Kafka client JVMs in separate client service mem_limit 384m with explicit KAFKA_HEAP_OPTS=-Xms32m -Xmx256m; broker env not inherited by clients",
+  "broker_unchanged": {
+    "cgroup_mib": 2048,
+    "heap": "-Xmx1G -Xms1G",
+    "plugin_cache_rlm_fetch": "same as D2"
+  },
+  "workload_unchanged": "2 topics \u00d7 256 \u00d7 512KiB = 256MiB"
+}

@@ -1,0 +1,2 @@
+/var/lib/kafka/data/topicA-0/00000000000000000256.log
+/var/lib/kafka/data/topicB-0/00000000000000000256.log

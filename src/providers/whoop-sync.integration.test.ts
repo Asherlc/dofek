@@ -710,7 +710,7 @@ describe("WhoopProvider.sync() (integration)", () => {
     expect(ride.canonicalType).toBe("cycling");
   });
 
-  it("syncs HR stream into Redpanda metric stream events", async () => {
+  it("syncs HR stream into Kafka metric stream events", async () => {
     const hrValues = fakeHrValues(50, new Date("2026-03-01T10:00:00Z").getTime());
     server.use(...whoopHandlers([], { hrValues }));
     const provider = new WhoopProvider();

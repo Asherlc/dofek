@@ -172,6 +172,13 @@ ORDER BY (user_id, provider_id, activity_id, channel, external_id_set, external_
 SETTINGS allow_nullable_key = 1`;
 }
 
+export function metricStreamProcessingPositionConstraint(): string {
+  // Kafka steady-state only. marker_epoch / marker_message_id remain nullable columns
+  // from historical 0111 but must stay null; Pulsar marker rows were never a production writer.
+  return `(marker_transport = 'kafka' AND isNotNull(marker_offset)
+    AND isNull(marker_epoch) AND isNull(marker_message_id))`;
+}
+
 export function buildMetricStreamProcessingAcknowledgementTableSql(): string {
   return `CREATE TABLE IF NOT EXISTS ${METRIC_STREAM_PROCESSING_ACKNOWLEDGEMENT_TABLE} (
   operation_id UUID,
@@ -180,8 +187,12 @@ export function buildMetricStreamProcessingAcknowledgementTableSql(): string {
   expected_event_count UInt64,
   topic String,
   topic_partition Int32,
-  marker_offset UInt64,
-  applied_at DateTime64(9) DEFAULT now64(9)
+  marker_offset Nullable(UInt64),
+  marker_transport Enum8('kafka' = 1) DEFAULT 'kafka',
+  marker_epoch Nullable(String),
+  marker_message_id Nullable(String),
+  applied_at DateTime64(9) DEFAULT now64(9),
+  CONSTRAINT valid_marker_position CHECK ${metricStreamProcessingPositionConstraint()}
 )
 ENGINE = ReplacingMergeTree(applied_at)
 ORDER BY (operation_id, batch_id)`;

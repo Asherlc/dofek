@@ -14,6 +14,14 @@ import {
   encryptCredentialValue,
 } from "../security/credential-encryption.ts";
 
+import {
+  ACCOUNT_ERASURE_SNAPSHOT_LIMITS,
+  AccountErasureSnapshotBudgetError,
+  assertAccountErasureSnapshotEncryptedBytes,
+  assertAccountErasureSnapshotSourceBudget,
+  snapshotBudgetMessage,
+} from "./snapshot-budget.ts";
+
 const providerConnectionRowSchema = z.object({ provider_id: z.string().min(1) });
 const webhookRowSchema = z.object({
   provider_id: z.string().min(1),
@@ -31,7 +39,6 @@ const identityCredentialRowSchema = z.object({
   revocation_refresh_token: z.string().min(1).nullable(),
 });
 const processorEmailRowSchema = z.object({ email: z.string().email() });
-const idRowSchema = z.object({ id: z.uuid() });
 const fileUploadRowSchema = z.object({
   id: z.uuid(),
   import_job_id: z.string().nullable(),
@@ -69,94 +76,201 @@ export class ProviderRevocationPrerequisiteError extends Error {
   }
 }
 
-export const accountErasureRemoteSnapshotSchema = z.object({
-  authIdentities: z.array(
-    z.object({
-      authProvider: z.string().min(1),
-      email: z.string().email().nullable(),
-      providerAccountId: z.string().min(1),
-    }),
-  ),
-  appleCredentials: z.array(
-    z.object({
-      accessToken: z.string().min(1),
-      clientId: z.string().min(1),
-      providerAccountId: z.string().min(1),
-      refreshToken: z.string().min(1).nullable(),
-    }),
-  ),
-  externalEffects: z.array(
-    z.discriminatedUnion("system", [
+export const accountErasureRemoteSnapshotSchema = z
+  .object({
+    authIdentities: z.array(
       z.object({
-        contactEmail: z.null(),
-        externalId: z.string().min(1),
-        resourceType: z.literal("customer"),
-        system: z.literal("stripe"),
-      }),
-      z.object({
-        contactEmail: z.string().email(),
-        externalId: z.string().min(1),
-        resourceType: z.literal("ticket"),
-        system: z.literal("zoho_desk"),
-      }),
-    ]),
-  ),
-  processorEmails: z.array(z.string().email()),
-  posthogDistinctId: z.string().trim().min(1).max(200),
-  localIdentifiers: z.object({
-    activityIds: z.array(z.uuid()),
-    exportObjects: z.array(
-      z.object({
-        exportId: z.uuid(),
-        objectKey: z.string().min(1).nullable(),
+        authProvider: z.string().min(1),
+        email: z.string().email().nullable(),
+        providerAccountId: z.string().min(1),
       }),
     ),
-    fileUploads: z.array(
-      z.object({
-        importJobId: z.string().nullable(),
-        multipartUploadId: z.string().min(1).nullable(),
-        objectKey: z.string().min(1),
-        uploadId: z.uuid(),
-      }),
-    ),
-    processingOperationIds: z.array(z.uuid()),
-    sessionIds: z.array(z.string().min(1)),
-    sleepSessionIds: z.array(z.uuid()),
-    userId: z.uuid(),
-  }),
-  providerConnections: z.array(
-    z.discriminatedUnion("disposition", [
-      z.object({
-        disposition: z.literal("no_remote_authorization"),
-        providerId: z.string().min(1),
-      }),
+    appleCredentials: z.array(
       z.object({
         accessToken: z.string().min(1),
-        authorizationId: z.uuid().optional(),
-        disposition: z.literal("revocation_credentials"),
-        expiresAt: z.iso.datetime(),
-        providerAccountId: z.string().min(1).optional(),
-        providerId: z.string().min(1),
+        clientId: z.string().min(1),
+        providerAccountId: z.string().min(1),
         refreshToken: z.string().min(1).nullable(),
-        scopes: z.string().nullable(),
       }),
-    ]),
-  ),
-  stripe: z
-    .object({
-      customerId: z.string().min(1).nullable(),
-      subscriptionId: z.string().min(1).nullable(),
-    })
-    .nullable(),
-  webhooks: z.array(
-    z.object({
-      providerId: z.string().min(1),
-      subscriptionExternalId: z.string().min(1),
+    ),
+    externalEffects: z.array(
+      z.discriminatedUnion("system", [
+        z.object({
+          contactEmail: z.null(),
+          externalId: z.string().min(1),
+          resourceType: z.literal("customer"),
+          system: z.literal("stripe"),
+        }),
+        z.object({
+          contactEmail: z.string().email(),
+          externalId: z.string().min(1),
+          resourceType: z.literal("ticket"),
+          system: z.literal("zoho_desk"),
+        }),
+      ]),
+    ),
+    processorEmails: z.array(z.string().email()),
+    posthogDistinctId: z.string().trim().min(1).max(200),
+    localIdentifiers: z.object({
+      exportObjects: z.array(
+        z.object({
+          exportId: z.uuid(),
+          objectKey: z.string().min(1).nullable(),
+        }),
+      ),
+      fileUploads: z.array(
+        z.object({
+          importJobId: z.string().nullable(),
+          multipartUploadId: z.string().min(1).nullable(),
+          objectKey: z.string().min(1),
+          uploadId: z.uuid(),
+        }),
+      ),
+      sessionIds: z.array(z.string().min(1)),
+      userId: z.uuid(),
     }),
-  ),
-});
+    providerConnections: z.array(
+      z.discriminatedUnion("disposition", [
+        z.object({
+          disposition: z.literal("no_remote_authorization"),
+          providerId: z.string().min(1),
+        }),
+        z.object({
+          accessToken: z.string().min(1),
+          authorizationId: z.uuid().optional(),
+          disposition: z.literal("revocation_credentials"),
+          expiresAt: z.iso.datetime(),
+          providerAccountId: z.string().min(1).optional(),
+          providerId: z.string().min(1),
+          refreshToken: z.string().min(1).nullable(),
+          scopes: z.string().nullable(),
+        }),
+      ]),
+    ),
+    stripe: z
+      .object({
+        customerId: z.string().min(1).nullable(),
+        subscriptionId: z.string().min(1).nullable(),
+      })
+      .nullable(),
+    webhooks: z.array(
+      z.object({
+        providerId: z.string().min(1),
+        subscriptionExternalId: z.string().min(1),
+      }),
+    ),
+  })
+  .superRefine((snapshot, context) => {
+    for (const [name, value] of Object.entries(snapshot)) {
+      if (Array.isArray(value) && value.length > ACCOUNT_ERASURE_SNAPSHOT_LIMITS.arrayEntries) {
+        context.addIssue({
+          code: "custom",
+          path: [name],
+          message: snapshotBudgetMessage(
+            `${ACCOUNT_ERASURE_SNAPSHOT_LIMITS.arrayEntries}-entry ${name}`,
+          ),
+        });
+        return;
+      }
+    }
+    const credentialValues: Array<string | null | undefined> = snapshot.appleCredentials.flatMap(
+      (credential) => [credential.accessToken, credential.refreshToken],
+    );
+    for (const connection of snapshot.providerConnections) {
+      if (connection.disposition === "revocation_credentials") {
+        credentialValues.push(
+          connection.accessToken,
+          connection.refreshToken,
+          connection.providerAccountId,
+        );
+      }
+    }
+    let credentialBytes = 0;
+    for (const value of credentialValues) {
+      if (value == null) continue;
+      const bytes = Buffer.byteLength(value, "utf8");
+      if (bytes > ACCOUNT_ERASURE_SNAPSHOT_LIMITS.credentialItemBytes) {
+        context.addIssue({
+          code: "custom",
+          message: snapshotBudgetMessage("64 KiB decoded credential item"),
+        });
+        return;
+      }
+      credentialBytes += bytes;
+    }
+    if (credentialBytes > ACCOUNT_ERASURE_SNAPSHOT_LIMITS.credentialBytes) {
+      context.addIssue({
+        code: "custom",
+        message: snapshotBudgetMessage("512 KiB decoded credential"),
+      });
+      return;
+    }
+    const localLists = {
+      exportObjects: snapshot.localIdentifiers.exportObjects,
+      fileUploads: snapshot.localIdentifiers.fileUploads,
+      sessionIds: snapshot.localIdentifiers.sessionIds,
+    };
+    let localListBytes = 0;
+    for (const [name, entries] of Object.entries(localLists)) {
+      if (entries.length > ACCOUNT_ERASURE_SNAPSHOT_LIMITS.arrayEntries) {
+        context.addIssue({
+          code: "custom",
+          path: ["localIdentifiers", name],
+          message: snapshotBudgetMessage(
+            `${ACCOUNT_ERASURE_SNAPSHOT_LIMITS.arrayEntries}-entry ${name}`,
+          ),
+        });
+        return;
+      }
+      for (const entry of entries) {
+        if (
+          Buffer.byteLength(JSON.stringify(entry), "utf8") >
+          ACCOUNT_ERASURE_SNAPSHOT_LIMITS.localItemBytes
+        ) {
+          context.addIssue({
+            code: "custom",
+            path: ["localIdentifiers", name],
+            message: snapshotBudgetMessage(`4 KiB ${name} item`),
+          });
+          return;
+        }
+      }
+      localListBytes += Buffer.byteLength(JSON.stringify(entries), "utf8");
+    }
+    if (localListBytes > ACCOUNT_ERASURE_SNAPSHOT_LIMITS.localListBytes) {
+      context.addIssue({
+        code: "custom",
+        path: ["localIdentifiers"],
+        message: snapshotBudgetMessage("64 KiB combined local-list"),
+      });
+      return;
+    }
+    if (
+      Buffer.byteLength(JSON.stringify(snapshot), "utf8") >
+      ACCOUNT_ERASURE_SNAPSHOT_LIMITS.plaintextBytes
+    ) {
+      context.addIssue({ code: "custom", message: snapshotBudgetMessage("1 MiB encoded size") });
+    }
+  });
 
 export type AccountErasureRemoteSnapshot = z.infer<typeof accountErasureRemoteSnapshotSchema>;
+
+function parseSnapshot(value: unknown): AccountErasureRemoteSnapshot {
+  const parsed = accountErasureRemoteSnapshotSchema.safeParse(value);
+  if (parsed.success) return parsed.data;
+  const budgetIssue = parsed.error.issues.find((issue) =>
+    issue.message.startsWith("Account deletion snapshot exceeds"),
+  );
+  if (budgetIssue) throw new AccountErasureSnapshotBudgetError(budgetIssue.message);
+  throw parsed.error;
+}
+
+async function encryptSnapshot(value: unknown, userId: string): Promise<string> {
+  const plaintext = JSON.stringify(parseSnapshot(value));
+  const encrypted = await encryptCredentialValue(plaintext, snapshotEncryptionContext(userId));
+  assertAccountErasureSnapshotEncryptedBytes(Buffer.byteLength(encrypted, "utf8"));
+  return encrypted;
+}
 
 function snapshotEncryptionContext(userId: string) {
   return {
@@ -179,16 +293,22 @@ export async function updateAccountErasureProviderCredentials(
       transaction,
       z.object({
         user_id: z.uuid(),
-        encrypted_remote_snapshot: z.string().min(1),
+        encrypted_remote_snapshot: z.string().nullable(),
+        encrypted_snapshot_bytes: z.coerce.number().int().nonnegative(),
       }),
-      sql`SELECT user_id, encrypted_remote_snapshot
+      sql`SELECT user_id,octet_length(encrypted_remote_snapshot) AS encrypted_snapshot_bytes,
+        CASE WHEN octet_length(encrypted_remote_snapshot)<=${ACCOUNT_ERASURE_SNAPSHOT_LIMITS.encryptedBytes}
+          THEN encrypted_remote_snapshot ELSE NULL END AS encrypted_remote_snapshot
       FROM fitness.account_erasure_request
       WHERE id = ${requestId}::uuid AND lease_owner = ${leaseOwner}
         AND lease_expires_at > now() AND status <> 'completed'
-        AND user_id IS NOT NULL AND pii_scrubbed_at IS NULL
+        AND user_id IS NOT NULL AND pii_scrubbed_at IS NULL AND encrypted_remote_snapshot IS NOT NULL
       FOR UPDATE`,
     );
     if (!request) throw new Error("Account erasure credential update lost its request lease");
+    assertAccountErasureSnapshotEncryptedBytes(request.encrypted_snapshot_bytes);
+    if (request.encrypted_remote_snapshot === null)
+      throw new Error("Account erasure request does not retain a snapshot");
     const snapshot = await decryptAccountErasureSnapshot(
       request.encrypted_remote_snapshot,
       request.user_id,
@@ -204,10 +324,7 @@ export async function updateAccountErasureProviderCredentials(
       return { ...connection, ...tokens, expiresAt: tokens.expiresAt.toISOString() };
     });
     if (!found) throw new Error(`Account erasure has no revocation credentials for ${providerId}`);
-    const encrypted = await encryptCredentialValue(
-      JSON.stringify(accountErasureRemoteSnapshotSchema.parse(snapshot)),
-      snapshotEncryptionContext(request.user_id),
-    );
+    const encrypted = await encryptSnapshot(snapshot, request.user_id);
     await transaction.execute(sql`UPDATE fitness.account_erasure_request
       SET encrypted_remote_snapshot = ${encrypted}, updated_at = now()
       WHERE id = ${requestId}::uuid`);
@@ -406,15 +523,13 @@ export async function createEncryptedAccountErasureSnapshot(
   userId: string,
   providers: readonly Provider[] = getAllProviders(),
 ): Promise<string> {
+  await assertAccountErasureSnapshotSourceBudget(database, userId);
   const [
     providerConnections,
     webhooks,
     billingRows,
     appleCredentials,
     processorEmailRows,
-    activityRows,
-    sleepSessionRows,
-    processingOperationRows,
     fileUploadRows,
     dataExportRows,
     externalEffects,
@@ -463,24 +578,6 @@ export async function createEncryptedAccountErasureSnapshot(
     ),
     executeWithSchema(
       database,
-      idRowSchema,
-      sql`SELECT id FROM fitness.activity WHERE user_id = ${userId}::uuid ORDER BY id`,
-    ),
-    executeWithSchema(
-      database,
-      idRowSchema,
-      sql`SELECT id FROM fitness.sleep_session WHERE user_id = ${userId}::uuid ORDER BY id`,
-    ),
-    executeWithSchema(
-      database,
-      idRowSchema,
-      sql`SELECT id
-            FROM fitness.processing_operation
-            WHERE user_id = ${userId}::uuid
-            ORDER BY id`,
-    ),
-    executeWithSchema(
-      database,
       fileUploadRowSchema,
       sql`SELECT
               id,
@@ -519,7 +616,7 @@ export async function createEncryptedAccountErasureSnapshot(
   ]);
 
   const billing = billingRows[0];
-  const snapshot = accountErasureRemoteSnapshotSchema.parse({
+  const snapshot: AccountErasureRemoteSnapshot = {
     appleCredentials,
     authIdentities: authIdentityRows.map((row) => ({
       authProvider: row.auth_provider,
@@ -528,7 +625,6 @@ export async function createEncryptedAccountErasureSnapshot(
     })),
     externalEffects,
     localIdentifiers: {
-      activityIds: activityRows.map((row) => row.id),
       exportObjects: dataExportRows.map((row) => ({
         exportId: row.id,
         objectKey: row.object_key,
@@ -539,9 +635,7 @@ export async function createEncryptedAccountErasureSnapshot(
         objectKey: row.object_key,
         uploadId: row.id,
       })),
-      processingOperationIds: processingOperationRows.map((row) => row.id),
       sessionIds: sessionRows.map((row) => row.id),
-      sleepSessionIds: sleepSessionRows.map((row) => row.id),
       userId,
     },
     processorEmails: processorEmailRows.map((row) => row.email),
@@ -557,17 +651,21 @@ export async function createEncryptedAccountErasureSnapshot(
       providerId: webhook.provider_id,
       subscriptionExternalId: webhook.subscription_external_id,
     })),
-  });
-  return encryptCredentialValue(JSON.stringify(snapshot), snapshotEncryptionContext(userId));
+  };
+  return encryptSnapshot(snapshot, userId);
 }
 
 export async function decryptAccountErasureSnapshot(
   encryptedSnapshot: string,
   userId: string,
 ): Promise<AccountErasureRemoteSnapshot> {
+  assertAccountErasureSnapshotEncryptedBytes(Buffer.byteLength(encryptedSnapshot, "utf8"));
   const plaintext = await decryptCredentialValue(
     encryptedSnapshot,
     snapshotEncryptionContext(userId),
   );
-  return accountErasureRemoteSnapshotSchema.parse(JSON.parse(plaintext));
+  if (Buffer.byteLength(plaintext, "utf8") > ACCOUNT_ERASURE_SNAPSHOT_LIMITS.plaintextBytes) {
+    throw new AccountErasureSnapshotBudgetError(snapshotBudgetMessage("1 MiB encoded size"));
+  }
+  return parseSnapshot(JSON.parse(plaintext));
 }

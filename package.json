@@ -25,6 +25,7 @@
     "./export": "./src/export.ts",
     "./activity-export": "./src/activity-export/index.ts",
     "./account-erasure/remote-snapshot": "./src/account-erasure/remote-snapshot.ts",
+    "./account-erasure/snapshot-budget": "./src/account-erasure/snapshot-budget.ts",
     "./account-erasure/restore-reconciliation": "./src/account-erasure/restore-reconciliation.ts",
     "./account-erasure/stripe-acceptance": "./src/account-erasure/stripe-acceptance.ts",
     "./account-erasure/postgres-erasure": "./src/account-erasure/postgres-erasure.ts",

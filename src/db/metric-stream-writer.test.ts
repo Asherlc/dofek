@@ -30,7 +30,7 @@ const mockReplaceRows = vi.fn(
   }),
 );
 
-vi.mock("../metric-stream/redpanda-producer.ts", () => ({
+vi.mock("../metric-stream/publisher-factory.ts", () => ({
   getDefaultMetricStreamEventPublisher: vi.fn(async () => ({
     publishRows: mockPublishRows,
     replaceRows: mockReplaceRows,
@@ -243,7 +243,7 @@ describe("sourceRowToMetricStream", () => {
 // ── writeMetricStreamBatch ─────────────────────────────────
 
 describe("writeMetricStreamBatch", () => {
-  it("publishes fanned-out provider rows to Redpanda without inserting into Postgres", async () => {
+  it("publishes fanned-out provider rows to Kafka without inserting into Postgres", async () => {
     const execute = vi
       .fn()
       .mockResolvedValueOnce([])
@@ -339,7 +339,7 @@ describe("writeMetricStreamBatch", () => {
 // ── replaceMetricStreamBatch ───────────────────────────────
 
 describe("replaceMetricStreamBatch", () => {
-  it("publishes a scoped Redpanda replacement instead of deleting directly from Postgres", async () => {
+  it("publishes a scoped Kafka replacement instead of deleting directly from Postgres", async () => {
     const execute = vi
       .fn()
       .mockResolvedValueOnce([])

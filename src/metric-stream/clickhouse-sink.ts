@@ -19,17 +19,17 @@ import {
 import {
   isMetricStreamBatchCompletedEvent,
   isMetricStreamDeletedEvent,
-  type MetricStreamBatchCompletedEventV1,
+  type MetricStreamBatchCompletedEvent,
   type MetricStreamDeletedEventV3,
   type MetricStreamDeleteScope,
-  type MetricStreamRedpandaEvent,
+  type MetricStreamKafkaEvent,
   type MetricStreamRowEvent,
 } from "./events.ts";
 import {
   createKafkaMetricStreamConsumerFromEnv,
   type MetricStreamConsumerBatchContext,
   runMetricStreamEventConsumer,
-} from "./redpanda-consumer.ts";
+} from "./kafka-consumer.ts";
 
 export interface ClickHouseMetricStreamInsertClient {
   command?(options: {
@@ -717,7 +717,7 @@ export async function markMetricStreamScopeDeletedInClickHouse(
 
 export async function applyMetricStreamEventsToClickHouse(
   client: ClickHouseMetricStreamInsertClient,
-  events: readonly MetricStreamRedpandaEvent[],
+  events: readonly MetricStreamKafkaEvent[],
   context?: MetricStreamConsumerBatchContext,
 ): Promise<number> {
   let inserted = 0;
@@ -758,7 +758,7 @@ export async function applyMetricStreamEventsToClickHouse(
   };
 
   const acknowledgeProcessingBatch = async (
-    event: MetricStreamBatchCompletedEventV1,
+    event: MetricStreamBatchCompletedEvent,
     eventIndex: number,
   ): Promise<void> => {
     if (!context) {

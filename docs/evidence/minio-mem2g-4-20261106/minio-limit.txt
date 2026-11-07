@@ -1,0 +1,1 @@
+minio Memory=1073741824

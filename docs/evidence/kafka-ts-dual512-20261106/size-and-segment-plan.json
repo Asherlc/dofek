@@ -1,0 +1,23 @@
+{
+  "mode": "D2",
+  "workload": "2 topics \u00d7 256 \u00d7 512KiB values = 128MiB/topic = 256MiB total user bytes",
+  "compare_to_pulsar_fixture": "Pulsar minio-mem2g-4 used 2\u00d7128\u00d71MiB (=256MiB total). Same TOTAL bytes; different per-message size (512KiB vs 1MiB). Not a pure A/B memory claim.",
+  "stock_limits_unchanged": {
+    "message.max.bytes": 1048588,
+    "max.request.size": 1048576,
+    "socket.request.max.bytes": 104857600,
+    "consumer_fetch.max.bytes": 52428800,
+    "consumer_max.partition.fetch.bytes": 1048576,
+    "consumer_note": "512KiB value < 1MiB max.partition.fetch.bytes; no consumer fetch bump required or applied"
+  },
+  "segment_bytes": 33554432,
+  "segment_rationale": "32MiB > stock Aiven s3.multipart.upload.part.size default 25MiB so closed segments can use multi-part upload (not 1MiB-segment MPU proof). Still within 2GiB cgroup / 1GiB heap without a memory drill.",
+  "plugin": {
+    "chunk.size": 4194304,
+    "s3.multipart.upload.part.size_default": 26214400,
+    "remote.log.manager.copier.thread.pool.size_default": 10,
+    "remote.log.manager.expiration.thread.pool.size_default": 10,
+    "remote.log.reader.threads_default": 10,
+    "note": "RLM pools left at Kafka defaults (10); not forced to Pulsar managedLedgerOffloadMaxThreads=2"
+  }
+}

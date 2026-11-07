@@ -12,8 +12,8 @@ infrastructure has been retired.
 - **Compute**: Production runs on an OCI Ampere A1 ARM64 host provisioned by `deploy/oracle-free/` and addressed through the `ORACLE_SERVER_HOST` GitHub Actions variable. The server runs `dockerd` initialized as a single-node swarm manager and has no deploy scripts or secrets on disk.
 - **Storage**:
   - **PostgreSQL**: Managed via TimescaleDB with PostGIS enabled for geospatial metric data.
-  - **ClickHouse**: Runs in the swarm as the stored analytics read-model service for heavy activity stream reads. The raw `metric_stream` copy is populated by the Redpanda ClickHouse sink for Redpanda-first sources and remains compatible with tracked ClickHouse migrations and chunk-range backfills. See [docs/clickhouse-metric-stream.md](../docs/clickhouse-metric-stream.md).
-  - **Redpanda**: Runs internally in the swarm as the hot ingest log for high-volume `metric_stream` events. Separate legacy, live, and history ClickHouse sink services consume their designated topics, and matching Redpanda Connect services archive them to R2; see the [route contract](../docs/metric-stream-redpanda-r2-runbook.md#required-services).
+  - **ClickHouse**: Runs in the swarm as the stored analytics read-model service for heavy activity stream reads. The raw `metric_stream` copy is populated by the metric-stream ClickHouse sink (Kafka-protocol consumer) and remains compatible with tracked ClickHouse migrations and chunk-range backfills. See [docs/clickhouse-metric-stream.md](../docs/clickhouse-metric-stream.md).
+  - **Hot metric-stream log:** **Production today** still runs Swarm `dofek_redpanda` with `REDPANDA_BROKERS` (census 2026-11-07). **Checked-in `deploy/stack.yml` / local Compose target** is stock Apache Kafka 4.4.0 (combined KRaft) + Aiven RSM 1.2.0 on dedicated R2 offload — **not yet cut over**. See [`deploy/kafka/README.md`](kafka/README.md) (incl. [cutover+rollback review](kafka/README.md#production-cutover--rollback-review-not-executed); existing Deploy Web path is **not** a safe cutover sequencer). [Redpanda Connect](https://docs.redpanda.com/redpanda-connect/) still archives JSONL to `dofek-metric-stream-archive` (separate creds; Connect `redpanda` input name is the product identifier). **TF `KAFKA_TIERED_STORAGE_*` provisioning DONE**; **cutover / merge / v2 topic-value edits / RP data-dir deletion still unapproved** (`KAFKA_BROKERS` + `KAFKA_CLUSTER_ID` Root-provisioned for the Kafka target; do not regenerate).
   - **PeerDB**: Runs internally in the swarm as the Postgres-to-ClickHouse CDC service for lower-volume raw fitness tables into `postgres_fitness.*`.
   - **Volume**: Production uses the OCI data volume mounted at `/mnt/dofek-data`.
   - **DB data path**: The `db` service bind-mounts Postgres data to `/mnt/dofek-data/postgres`.
@@ -72,6 +72,38 @@ infrastructure has been retired.
   the provider supports it or remove and recreate it in a controlled apply;
   creating the same R2 custom domain twice returns Cloudflare error `10052`
   (`Domain already in use`).
+- `kafka-ts-r2-offload.tf`: Dedicated Kafka TS R2 bucket + Infisical
+  `KAFKA_TIERED_STORAGE_*` writes via aliased `provider.cloudflare.r2`. See
+  [`docs/kafka-ts-r2-offload-iac.md`](../docs/kafka-ts-r2-offload-iac.md).
+
+#### Reviewed plan before apply (stock workflow)
+
+The managing R2 credential is an **Actions environment secret** on environment
+`terraform` (`CLOUDFLARE_TERRAFORM_R2_API_TOKEN`) — **not** a repository secret
+and **not** in Infisical — so Infisical `dofek-github-sync` overwrite
+(`disableSecretDeletion=false`) cannot prune it. Default Traefik/DNS
+`CLOUDFLARE_API_TOKEN` remains the Infisical→repo sync-owned secret. Do not
+extract the R2 managing token for a workstation plan. Job uses stock
+`environment: terraform` ([Deploy Terraform](../.github/workflows/deploy-terraform.yml)).
+
+| Trigger | Behavior |
+|---|---|
+| `workflow_call` (deploy / deploy-web-environment) | **Apply** only — no `operation` input; `TF_OPERATION` falls back to `apply` (do not key off `github.event_name`; reusable workflows inherit the **caller** event — [GitHub reusable workflow `github` context](https://docs.github.com/en/actions/reference/workflows-and-actions/reusing-workflow-configurations#github-context)) |
+| `workflow_dispatch` | Input `operation`: `plan` (default) or `apply` |
+
+Readonly preview (no apply/deploy) after Root proves the environment secret name:
+
+```bash
+gh workflow run deploy-terraform.yml \
+  --ref pulsar-foundation \
+  -f operation=plan
+# Optional pin: -f commit_sha=<sha>
+```
+
+Review the Actions job **Terraform Plan** human `terraform plan` log only.
+Sensitive values stay `(sensitive value)`. Do **not** upload plan JSON/`-out`
+artifacts; do **not** print secret values. After review, a separate explicit
+`operation=apply` dispatch (or normal deploy `workflow_call`) applies.
 
 ### Server Configuration (`server/`)
 
@@ -114,8 +146,9 @@ infrastructure has been retired.
   scheduled retry. A reconciliation failure never changes CDC state.
 - Netdata has a 768 MiB container memory limit and a checked-in `deploy/netdata/netdata.conf` that bounds dbengine retention to two tiers: one day of per-second data capped at 96 MiB and seven days of per-minute data capped at 128 MiB. The stack mounts this file as a Docker Swarm config, so changing it must also rotate the config key in `deploy/stack.yml` (for example `netdata_db_limits_v2`).
 - PeerDB uses an internal catalog Postgres service, Temporal, worker services, and a private SeaweedFS S3 staging bucket (service hostname `peerdb-minio`). Its persistent catalog and staging data live under `/mnt/dofek-data/peerdb-catalog` and `/mnt/dofek-data/peerdb-minio`. The catalog uses the PostgreSQL 18 image layout: mount the host directory at `/var/lib/postgresql`, not `/var/lib/postgresql/data`, so the image can manage its versioned data directory. Production mirrors use 100,000-row CDC batches and single-worker 100,000-row initial snapshot partitions so PeerDB can stay inside its fixed memory limits at the cost of slower catch-up.
-- Redpanda stores hot `metric_stream` ingest data under `/mnt/dofek-data/redpanda` (a bind mount on the large data disk — a default named volume lands on the small root disk and fills during a metric-stream backfill). Redpanda local retention is not the long-term source of truth; Redpanda Connect writes the `metric-stream-v1` topic to the `dofek-metric-stream-archive` R2 bucket for canonical replay. The ClickHouse sink and R2 archive services must be healthy before any metric-stream writer change is considered deployed safely.
-- The historical Postgres `fitness.metric_stream` hypertable has been retired; metric-stream durability is Redpanda plus the R2 archive, and ClickHouse is the serving copy. The `cdc-health` service alerts on remaining PeerDB slot lag at 16 GiB and fails the check at 32 GiB so operators have headroom before Postgres reaches the 64 GiB per-slot WAL cap.
+- **Production today:** Swarm still runs Redpanda (~1500 MiB limit; datadir `/mnt/dofek-data/redpanda`, retain **38 GiB** until approved deletion). Kafka Swarm service / `/mnt/dofek-data/kafka` are **absent** until cutover deploy.
+- **Stack/Compose target (not live cutover):** Kafka (2 GiB cgroup, heap 1 GiB) under `/mnt/dofek-data/kafka/data` is declared in `deploy/stack.yml` / local Compose as the post-cutover hot log (allocation intended to replace the RP hot-log budget on this single-node host — not HA). Do not format or reuse the Redpanda data directory for Kafka. [Redpanda Connect](https://docs.redpanda.com/redpanda-connect/) archives JSONL to `dofek-metric-stream-archive`; Kafka TS uses dedicated `dofek-kafka-ts-offload` with Infisical `KAFKA_TIERED_STORAGE_*` (fail-closed). Deploy topic ensure (stock CLI, CONFIG ONLY until cutover) sets Q13A/B7 topic knobs for writable v2 main+quarantine. Host data dir `chown 1000:1000` (`appuser`); RSM jars `/mnt/dofek-data/kafka/plugins/1.2.0/{core,s3}`. Missing Infisical `KAFKA_BROKERS` / `KAFKA_TIERED_STORAGE_*` / distinct v2 topic names blocks a Kafka-target merge/deploy.
+- The historical Postgres `fitness.metric_stream` hypertable has been retired; metric-stream durability is the live Kafka-protocol broker (production: Redpanda) plus the R2 archive, and ClickHouse is the serving copy. The `cdc-health` service alerts on remaining PeerDB slot lag at 16 GiB and fails the check at 32 GiB so operators have headroom before Postgres reaches the 64 GiB per-slot WAL cap.
 - The Oracle override scales Portainer, CloudBeaver, pgAdmin, PeerDB UI, and
   Netdata to zero. Databasus remains at one replica because it owns the backup
   schedule; its base-stack route is active for backup operations.
@@ -507,7 +540,7 @@ occurred; retain the pending record when the evidence is inconclusive.
         Notifications V2 for each. Apple otherwise sends sandbox notifications
         to the production URL when no sandbox URL is present:
         [enter server URLs for App Store Server Notifications](https://developer.apple.com/help/app-store-connect/configure-in-app-purchase-settings/enter-server-urls-for-app-store-server-notifications).
-      - Must include `REDPANDA_BROKERS`, `METRIC_STREAM_LEGACY_TOPIC`,
+      - Must include `KAFKA_BROKERS`, `METRIC_STREAM_LEGACY_TOPIC`,
         `METRIC_STREAM_LIVE_TOPIC`, and `METRIC_STREAM_HISTORY_TOPIC`. Web and
         worker producers receive only the live/history route keys. The renderer
         maps each sink/archive's designated route key to its internal

@@ -1,0 +1,42 @@
+{
+  "lab": "kafka-ts-r2-q-mpudel-20261107b",
+  "prefix": "kafka-ts-parity/r2/20261107b-q-mpudel/",
+  "childAccessKeyId": "d9831c62b4ed20e32f34e80a0c5d8643",
+  "A_MPU": {
+    "part_size": 5242880,
+    "main_segment_bytes": 6284624,
+    "multipart_size_eligible": true,
+    "copy_completed": true,
+    "sdk_multipart_api_names_in_info_logs": false,
+    "pass_bar_note": "Need Root ListObjects .log size + optional list-MPU history; size>partSize + copy success observed"
+  },
+  "B_DEL": {
+    "main_about_to_delete_remote": true,
+    "quarantine_about_to_delete_remote": true,
+    "segment_ids": [
+      "151psq5jS7ivmpYWGQ8vvQ",
+      "Y8PxlT7CQpaORFl_iBmT4g",
+      "4idAHIsoQ2S1Y7b3wr9xnw",
+      "P6i48FwWQsGWstXxtpGphw"
+    ],
+    "DELETE_SEGMENT_FINISHED_log_observed": false,
+    "pass_bar_note": "Native retention triggered remote delete for main+quarantine; Root ListObjectsV2 empty under both TopicId prefixes required to close"
+  },
+  "C_CONSUME": {
+    "max_messages": 6060,
+    "lines": 6060,
+    "exit": 0,
+    "pass": true
+  },
+  "budget": {
+    "known_log_bytes": 7331069,
+    "max": 16777216,
+    "under_known": true
+  },
+  "request_root_now": [
+    "ListObjectsV2 under prefix (names+sizes only) before/after if possible \u2014 expect 0 after native delete quiesce",
+    "list-MPU under prefix expect 0",
+    "Cloud cleanup DELETE bucket after Cursor down",
+    "Do not recreate 20261107"
+  ]
+}

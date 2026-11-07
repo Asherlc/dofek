@@ -19,7 +19,7 @@ vi.mock("dofek/lib/error-reporting", () => ({ captureException: mocks.captureExc
 vi.mock("../../../../src/metric-stream/write-metric-stream.ts", () => ({
   writeMetricStreamRows: mocks.write,
 }));
-vi.mock("../../../../src/metric-stream/redpanda-producer.ts", () => ({
+vi.mock("../../../../src/metric-stream/publisher-factory.ts", () => ({
   getDefaultMetricStreamEventPublisher: mocks.defaultPublisher,
 }));
 

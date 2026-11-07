@@ -1,3 +1,4 @@
+import { inspectClickHouseAccountErasureCoverage } from "../account-erasure/clickhouse-erasure-coverage.ts";
 import { logger } from "../logger.ts";
 import type { ClickHouseCommandClient } from "./clickhouse.ts";
 import { clickHouseMigrations } from "./clickhouse-migrations/registry.ts";
@@ -66,5 +67,6 @@ ORDER BY id`,
     appliedCount += 1;
   }
 
+  await inspectClickHouseAccountErasureCoverage({ query: client.query.bind(client) });
   return appliedCount;
 }

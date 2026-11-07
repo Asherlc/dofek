@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { z } from "zod";
 import {
   createMetricStreamDeletePartitionKey,
   createMetricStreamEvent,
@@ -11,7 +12,7 @@ import type {
   MetricStreamPublishOptions,
   MetricStreamReplacementPublishResult,
 } from "../metric-stream/publisher.ts";
-import { getDefaultMetricStreamEventPublisher } from "../metric-stream/redpanda-producer.ts";
+import { getDefaultMetricStreamEventPublisher } from "../metric-stream/publisher-factory.ts";
 import type { ProcessingDatasetKey } from "./dataset-contracts.ts";
 
 export interface MetricStreamPublishedBatch {
@@ -23,6 +24,8 @@ export interface MetricStreamPublishedBatch {
 
 export interface MetricStreamProcessingPublisherOptions {
   operationId: string;
+  /** Concrete account owner from fitness.processing_operation.user_id (required). */
+  userId: string;
   datasetKeys: readonly ProcessingDatasetKey[];
   recordPublishedBatch(batch: MetricStreamPublishedBatch): Promise<void>;
 }
@@ -49,6 +52,7 @@ function metricStreamBatchId(
 export class MetricStreamProcessingPublisher implements MetricStreamEventPublisher {
   readonly #delegate: MetricStreamEventPublisher;
   readonly #operationId: string;
+  readonly #userId: string;
   readonly #datasetKeys: ProcessingDatasetKey[];
   readonly #recordPublishedBatch: (batch: MetricStreamPublishedBatch) => Promise<void>;
   #recordedBatchCount = 0;
@@ -62,7 +66,8 @@ export class MetricStreamProcessingPublisher implements MetricStreamEventPublish
       throw new Error("Metric-stream processing publisher requires at least one dataset");
     }
     this.#delegate = delegate;
-    this.#operationId = options.operationId;
+    this.#operationId = z.uuid().parse(options.operationId);
+    this.#userId = z.guid().parse(options.userId);
     this.#datasetKeys = [...options.datasetKeys];
     this.#recordPublishedBatch = options.recordPublishedBatch;
   }
@@ -70,9 +75,20 @@ export class MetricStreamProcessingPublisher implements MetricStreamEventPublish
   #processingContext(batchId: string): MetricStreamProcessingContext {
     return {
       operationId: this.#operationId,
+      userId: this.#userId,
       batchId,
       datasetKeys: this.#datasetKeys,
     };
+  }
+
+  #assertRowsOwnedByOperation(rows: readonly MetricStreamRowInput[]): void {
+    for (const row of rows) {
+      if (row.userId.toLowerCase() !== this.#userId.toLowerCase()) {
+        throw new Error(
+          "Metric-stream processing batch rows must belong to the processing operation owner",
+        );
+      }
+    }
   }
 
   async #record(batchId: string, expectedEventCount: number): Promise<void> {
@@ -100,6 +116,7 @@ export class MetricStreamProcessingPublisher implements MetricStreamEventPublish
     if (rows.length === 0) {
       return this.#delegate.publishRows(rows, options);
     }
+    this.#assertRowsOwnedByOperation(rows);
     const batchId = metricStreamBatchId(
       this.#operationId,
       options.operationRevision,
@@ -122,6 +139,12 @@ export class MetricStreamProcessingPublisher implements MetricStreamEventPublish
   ): Promise<MetricStreamReplacementPublishResult> {
     if (!this.#delegate.replaceRows) {
       throw new Error("Metric stream publisher does not support scoped replacement");
+    }
+    this.#assertRowsOwnedByOperation(rows);
+    if (scope.userId && scope.userId.toLowerCase() !== this.#userId.toLowerCase()) {
+      throw new Error(
+        "Metric-stream processing replace scope must belong to the processing operation owner",
+      );
     }
     const batchId = metricStreamBatchId(
       this.#operationId,

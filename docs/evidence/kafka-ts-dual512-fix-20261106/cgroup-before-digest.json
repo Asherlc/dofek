@@ -1,0 +1,38 @@
+{
+  "kafka": {
+    "current_mib": 1351.0,
+    "peak_mib": 1628.5,
+    "events": {
+      "low": 0,
+      "high": 0,
+      "max": 0,
+      "oom": 0,
+      "oom_kill": 0,
+      "oom_group_kill": 0
+    }
+  },
+  "client": {
+    "current_mib": 2.2,
+    "peak_mib": 195.8,
+    "events": {
+      "low": 0,
+      "high": 0,
+      "max": 0,
+      "oom": 0,
+      "oom_kill": 0,
+      "oom_group_kill": 0
+    }
+  },
+  "seaweed": {
+    "current_mib": 778.8,
+    "peak_mib": 808.1,
+    "events": {
+      "low": 0,
+      "high": 0,
+      "max": 0,
+      "oom": 0,
+      "oom_kill": 0,
+      "oom_group_kill": 0
+    }
+  }
+}

@@ -476,7 +476,7 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
       }),
     );
 
-    // Redpanda is an append log, so both sync attempts publish their raw events.
+    // Kafka is an append log, so both sync attempts publish their raw events.
     const activityRows = await ctx.db
       .select()
       .from(activity)

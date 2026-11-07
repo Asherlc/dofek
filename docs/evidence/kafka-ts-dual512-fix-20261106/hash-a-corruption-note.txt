@@ -1,0 +1,3 @@
+hash-a.json was overwritten by `python3 … | tee hash-a.json`, mixing progress prints/control chars with JSON.
+Maladaptive: reconstructing observed digest from prior-run stdout SHA is forbidden.
+Preserved as hash-a.malformed.raw; observed digests come only from fresh consume stdout files this run.

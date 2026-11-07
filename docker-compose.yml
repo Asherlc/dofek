@@ -33,7 +33,7 @@ services:
       retries: 10
 
   clickhouse:
-    image: clickhouse/clickhouse-server:26.9.19-alpine
+    image: clickhouse/clickhouse-server:26.10.2.103-alpine@sha256:d474afd5cd0abfb9fdc6e2ebbc82116324779b085f5c15a851aa91bec968291d
     restart: unless-stopped
     mem_limit: 1536m
     environment:
@@ -71,35 +71,140 @@ services:
       timeout: 3s
       retries: 5
 
-  redpanda:
-    image: redpandadata/redpanda:v26.2.5
+  # Dedicated local S3 for Kafka TS only (not metric-stream JSONL archive).
+  kafka-tiered-storage-minio:
+    image: chrislusf/seaweedfs:4.48@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d
     restart: unless-stopped
-    command:
-      - redpanda
-      - start
-      - --smp=1
-      - --memory=1G
-      - --reserve-memory=0M
-      - --overprovisioned
-      - --node-id=0
-      - --check=false
-      # NOTE: cluster properties like kafka_batch_max_bytes are NOT valid
-      # `rpk redpanda start` flags — adding e.g. --kafka-batch-max-bytes here
-      # crash-loops the broker. Set them via `rpk cluster config set` instead.
-      - --kafka-addr=internal://0.0.0.0:9092,external://0.0.0.0:19092
-      - --advertise-kafka-addr=internal://redpanda:9092,external://127.0.0.1:${REDPANDA_PORT:-19092}
-      - --rpc-addr=0.0.0.0:33145
-      - --advertise-rpc-addr=redpanda:33145
-    ports:
-      - "127.0.0.1:${REDPANDA_PORT:-19092}:19092"
+    # dual512-fix lifetime peak 808.1 MiB inside 1024 MiB cgroup
+    # (docs/evidence/kafka-ts-dual512-fix-20261106/CORE_PROOF.json).
+    mem_limit: 1024m
+    environment:
+      MINIO_ROOT_USER: ${KAFKA_TIERED_STORAGE_ACCESS_KEY_ID:?KAFKA_TIERED_STORAGE_ACCESS_KEY_ID is required}
+      MINIO_ROOT_PASSWORD: ${KAFKA_TIERED_STORAGE_SECRET_ACCESS_KEY:?KAFKA_TIERED_STORAGE_SECRET_ACCESS_KEY is required}
+      KAFKA_TIERED_STORAGE_BUCKET: ${KAFKA_TIERED_STORAGE_BUCKET:?KAFKA_TIERED_STORAGE_BUCKET is required}
     volumes:
-      - redpanda_data:/var/lib/redpanda/data
+      - kafka_tiered_storage_minio_data:/data
+    entrypoint:
+      - /bin/sh
+      - -euc
+      - |
+        printf '%s\n' "{\"identities\":[{\"name\":\"$$MINIO_ROOT_USER\",\"credentials\":[{\"accessKey\":\"$$MINIO_ROOT_USER\",\"secretKey\":\"$$MINIO_ROOT_PASSWORD\"}],\"actions\":[\"Admin\",\"Read\",\"Write\",\"List\",\"Tagging\"]}]}" > /tmp/s3.json
+        weed server -ip=kafka-tiered-storage-minio -dir=/data -s3 -s3.port=9000 -s3.ip.bind=0.0.0.0 -s3.config=/tmp/s3.json -s3.port.iceberg=0 -s3.port.lance=0 -master.volumeSizeLimitMB=512 -master.telemetry=false &
+        weed_pid=$$!
+        attempts=0
+        until wget -q -O /dev/null http://127.0.0.1:9333/cluster/status && wget -q -O /dev/null http://127.0.0.1:8888/; do
+          attempts=$$((attempts + 1))
+          if [ $$attempts -ge 90 ]; then
+            echo kafka-tiered-storage-minio not ready >&2
+            kill $$weed_pid 2>/dev/null || true
+            exit 1
+          fi
+          sleep 1
+        done
+        attempts=0
+        until printf 's3.bucket.create -name %s\n' "$$KAFKA_TIERED_STORAGE_BUCKET" | weed shell -master=localhost:9333; do
+          attempts=$$((attempts + 1))
+          if [ $$attempts -ge 30 ]; then
+            echo kafka-tiered-storage bucket create failed >&2
+            kill $$weed_pid 2>/dev/null || true
+            exit 1
+          fi
+          sleep 1
+        done
+        wait
+
+  # Stock Apache Kafka 4.4.0 combined KRaft. See deploy/kafka/README.md.
+  # Listeners: container clients use PLAINTEXT kafka:29092; host clients use
+  # PLAINTEXT_HOST 127.0.0.1:${KAFKA_PORT:-19092} (maps to container :9092).
+  # Prod stack keeps a separate single listener on :9092 — do not copy this dual map.
+  # Steady RSM on dedicated local S3 (KAFKA_TIERED_STORAGE_*); not the JSONL archive bucket.
+  # Broker TCP check is port-liveness only; producers wait on kafka-ready (external client).
+  kafka:
+    image: apache/kafka:4.4.0@sha256:833b867a9585a141da455dc2b57431c65cbccb27f11c91f694444cca9f777e0f
+    restart: unless-stopped
+    mem_limit: 2048m
+    environment:
+      CLUSTER_ID: ${KAFKA_CLUSTER_ID:?KAFKA_CLUSTER_ID is required}
+      KAFKA_HEAP_OPTS: "-Xmx1G -Xms1G"
+      KAFKA_LOG_DIRS: "/var/lib/kafka/data"
+      KAFKA_PROCESS_ROLES: "broker,controller"
+      KAFKA_NODE_ID: "1"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:29093"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT"
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:29092,PLAINTEXT_HOST://127.0.0.1:${KAFKA_PORT:-19092}"
+      KAFKA_LISTENERS: "CONTROLLER://:29093,PLAINTEXT://:29092,PLAINTEXT_HOST://:9092"
+      KAFKA_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      # dual512-fix PASS RSM knobs (docs/evidence/kafka-ts-dual512-fix-20261106/CORE_PROOF.json;
+      # images_plugins_unchanged_from_D2 — same chunk/cache as that lab).
+      KAFKA_REMOTE_LOG_STORAGE_SYSTEM_ENABLE: "true"
+      KAFKA_REMOTE_LOG_STORAGE_MANAGER_CLASS_PATH: "/plugins/1.2.0/core/*:/plugins/1.2.0/s3/*"
+      KAFKA_REMOTE_LOG_STORAGE_MANAGER_CLASS_NAME: "io.aiven.kafka.tieredstorage.RemoteStorageManager"
+      KAFKA_REMOTE_LOG_METADATA_MANAGER_CLASS_NAME: "org.apache.kafka.server.log.remote.metadata.storage.TopicBasedRemoteLogMetadataManager"
+      KAFKA_REMOTE_LOG_METADATA_MANAGER_LISTENER_NAME: "PLAINTEXT"
+      KAFKA_RLMM_CONFIG_REMOTE_LOG_METADATA_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_RLMM_CONFIG_REMOTE_LOG_METADATA_TOPIC_MIN_ISR: "1"
+      KAFKA_RSM_CONFIG_CHUNK_SIZE: "4194304"
+      KAFKA_RSM_CONFIG_FETCH_CHUNK_CACHE_CLASS: "io.aiven.kafka.tieredstorage.fetch.cache.MemoryChunkCache"
+      KAFKA_RSM_CONFIG_FETCH_CHUNK_CACHE_SIZE: "67108864"
+      KAFKA_RSM_CONFIG_FETCH_CHUNK_CACHE_PREFETCH_MAX_SIZE: "4194304"
+      KAFKA_RSM_CONFIG_STORAGE_BACKEND_CLASS: "io.aiven.kafka.tieredstorage.storage.s3.S3Storage"
+      KAFKA_RSM_CONFIG_STORAGE_S3_ENDPOINT_URL: ${KAFKA_TIERED_STORAGE_ENDPOINT:?KAFKA_TIERED_STORAGE_ENDPOINT is required}
+      KAFKA_RSM_CONFIG_STORAGE_S3_BUCKET_NAME: ${KAFKA_TIERED_STORAGE_BUCKET:?KAFKA_TIERED_STORAGE_BUCKET is required}
+      KAFKA_RSM_CONFIG_STORAGE_S3_REGION: ${KAFKA_TIERED_STORAGE_REGION:?KAFKA_TIERED_STORAGE_REGION is required}
+      KAFKA_RSM_CONFIG_STORAGE_S3_PATH_STYLE_ACCESS_ENABLED: "true"
+      AWS_ACCESS_KEY_ID: ${KAFKA_TIERED_STORAGE_ACCESS_KEY_ID:?KAFKA_TIERED_STORAGE_ACCESS_KEY_ID is required}
+      AWS_SECRET_ACCESS_KEY: ${KAFKA_TIERED_STORAGE_SECRET_ACCESS_KEY:?KAFKA_TIERED_STORAGE_SECRET_ACCESS_KEY is required}
+      AWS_REQUEST_CHECKSUM_CALCULATION: "WHEN_REQUIRED"
+      AWS_RESPONSE_CHECKSUM_VALIDATION: "WHEN_REQUIRED"
+    ports:
+      - "127.0.0.1:${KAFKA_PORT:-19092}:9092"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+      - ./deploy/kafka/plugins:/plugins:ro
+    depends_on:
+      kafka-tiered-storage-minio:
+        condition: service_started
     healthcheck:
-      test: ["CMD-SHELL", "rpk cluster health | grep -q 'Healthy:.*true'"]
+      # Port open only — not Kafka API ready. No operator JVM in this cgroup.
+      test:
+        [
+          "CMD-SHELL",
+          "bash -c 'exec 3<>/dev/tcp/127.0.0.1/9092'",
+        ]
       interval: 10s
-      timeout: 10s
+      timeout: 5s
       retries: 12
       start_period: 60s
+
+  # External readiness (Java outside the broker cgroup). Producers/sinks depend on this.
+  kafka-ready:
+    image: apache/kafka:4.4.0@sha256:833b867a9585a141da455dc2b57431c65cbccb27f11c91f694444cca9f777e0f
+    restart: "no"
+    mem_limit: 384m
+    environment:
+      KAFKA_HEAP_OPTS: "-Xms32m -Xmx256m"
+    entrypoint:
+      - /bin/bash
+      - -euc
+      - |
+        attempts=0
+        until /opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server kafka:29092 >/dev/null; do
+          attempts=$$((attempts + 1))
+          if [ "$$attempts" -ge 60 ]; then
+            echo "kafka API not ready on kafka:29092" >&2
+            exit 1
+          fi
+          sleep 1
+        done
+    depends_on:
+      kafka:
+        condition: service_started
 
   metric-stream-minio:
     # SeaweedFS S3 API stand-in; service hostname kept for R2_ENDPOINT wiring.
@@ -158,27 +263,27 @@ services:
     environment: &metric-stream-clickhouse-sink-environment
       NODE_ENV: production
       CLICKHOUSE_URL: http://default:${CLICKHOUSE_PASSWORD:-health}@clickhouse:8123
-      REDPANDA_BROKERS: redpanda:9092
-      METRIC_STREAM_TOPIC: ${METRIC_STREAM_LEGACY_TOPIC:-metric-stream-v1}
+      KAFKA_BROKERS: kafka:29092
+      METRIC_STREAM_TOPIC: ${METRIC_STREAM_LEGACY_TOPIC:-metric-stream-v2}
       METRIC_STREAM_CONSUMER_GROUP: metric-stream-clickhouse-sink
     depends_on:
       clickhouse:
         condition: service_healthy
-      redpanda:
-        condition: service_healthy
+      kafka-ready:
+        condition: service_completed_successfully
 
   metric-stream-live-clickhouse-sink:
     <<: *metric-stream-clickhouse-sink
     environment:
       <<: *metric-stream-clickhouse-sink-environment
-      METRIC_STREAM_TOPIC: ${METRIC_STREAM_LIVE_TOPIC:-metric-stream-live-v1}
+      METRIC_STREAM_TOPIC: ${METRIC_STREAM_LIVE_TOPIC:-metric-stream-live-v2}
       METRIC_STREAM_CONSUMER_GROUP: metric-stream-live-clickhouse-sink
 
   metric-stream-history-clickhouse-sink:
     <<: *metric-stream-clickhouse-sink
     environment:
       <<: *metric-stream-clickhouse-sink-environment
-      METRIC_STREAM_TOPIC: ${METRIC_STREAM_HISTORY_TOPIC:-metric-stream-history-v1}
+      METRIC_STREAM_TOPIC: ${METRIC_STREAM_HISTORY_TOPIC:-metric-stream-history-v2}
       METRIC_STREAM_CONSUMER_GROUP: metric-stream-history-clickhouse-sink
 
   metric-stream-r2-archive: &metric-stream-r2-archive
@@ -187,8 +292,8 @@ services:
     restart: unless-stopped
     command: ["run", "/connect/metric-stream-r2-archive.connect.yml"]
     environment: &metric-stream-r2-archive-environment
-      REDPANDA_BROKERS: redpanda:9092
-      METRIC_STREAM_TOPIC: ${METRIC_STREAM_LEGACY_TOPIC:-metric-stream-v1}
+      KAFKA_BROKERS: kafka:29092
+      METRIC_STREAM_TOPIC: ${METRIC_STREAM_LEGACY_TOPIC:-metric-stream-v2}
       METRIC_STREAM_CONSUMER_GROUP: metric-stream-r2-archive
       METRIC_STREAM_R2_BUCKET: ${METRIC_STREAM_R2_BUCKET:-dofek-metric-stream-archive}
       R2_ENDPOINT: http://metric-stream-minio:9000
@@ -197,8 +302,8 @@ services:
     volumes:
       - ./deploy/redpanda/metric-stream-r2-archive.connect.yml:/connect/metric-stream-r2-archive.connect.yml:ro
     depends_on:
-      redpanda:
-        condition: service_healthy
+      kafka-ready:
+        condition: service_completed_successfully
       metric-stream-minio:
         condition: service_started
 
@@ -206,14 +311,14 @@ services:
     <<: *metric-stream-r2-archive
     environment:
       <<: *metric-stream-r2-archive-environment
-      METRIC_STREAM_TOPIC: ${METRIC_STREAM_LIVE_TOPIC:-metric-stream-live-v1}
+      METRIC_STREAM_TOPIC: ${METRIC_STREAM_LIVE_TOPIC:-metric-stream-live-v2}
       METRIC_STREAM_CONSUMER_GROUP: metric-stream-live-r2-archive
 
   metric-stream-history-r2-archive:
     <<: *metric-stream-r2-archive
     environment:
       <<: *metric-stream-r2-archive-environment
-      METRIC_STREAM_TOPIC: ${METRIC_STREAM_HISTORY_TOPIC:-metric-stream-history-v1}
+      METRIC_STREAM_TOPIC: ${METRIC_STREAM_HISTORY_TOPIC:-metric-stream-history-v2}
       METRIC_STREAM_CONSUMER_GROUP: metric-stream-history-r2-archive
 
   collector:
@@ -235,5 +340,6 @@ volumes:
   db_data:
   clickhouse_data:
   redis_data:
-  redpanda_data:
+  kafka_data:
+  kafka_tiered_storage_minio_data:
   metric_stream_minio_data:

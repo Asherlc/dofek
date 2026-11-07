@@ -1,0 +1,36 @@
+{
+  "phase": "RLMM_DECODE_COMPLETE",
+  "utc": "2026-11-07T04:25:46Z",
+  "dump_start_utc": "2026-11-07T04:24:23Z",
+  "dump_done_utc": "2026-11-07T04:25:28Z",
+  "dump_all_bytes": 10016,
+  "dump_failures": false,
+  "segments": {
+    "VOV9OtiuTEqMhCaP0lh_eg": {
+      "latest": "DELETE_SEGMENT_FINISHED",
+      "history": [
+        "COPY_SEGMENT_STARTED",
+        "COPY_SEGMENT_FINISHED",
+        "DELETE_SEGMENT_STARTED",
+        "DELETE_SEGMENT_FINISHED"
+      ],
+      "had_COPY_FINISHED": true,
+      "had_DELETE_FINISHED": true
+    },
+    "hDIrv61wQqeJlNgxo4lFzA": {
+      "latest": "DELETE_SEGMENT_FINISHED",
+      "history": [
+        "COPY_SEGMENT_STARTED",
+        "COPY_SEGMENT_FINISHED",
+        "DELETE_SEGMENT_STARTED",
+        "DELETE_SEGMENT_FINISHED"
+      ],
+      "had_COPY_FINISHED": true,
+      "had_DELETE_FINISHED": true
+    }
+  },
+  "both_had_COPY_FINISHED": true,
+  "both_had_DELETE_FINISHED": true,
+  "request_to_root": "POST_DELETE inventory ListObjectsV2 + list-MPU must be 0; then cleanup; Cursor will compose down --volumes + CORE_PROOF. No body GET/consume.",
+  "hard_stop_utc": "2026-11-07T04:38:48.287Z"
+}

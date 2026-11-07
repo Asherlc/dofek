@@ -1,0 +1,14 @@
+{
+  "lab_id": "kafka-ts-dual512-20261106",
+  "mode": "D2",
+  "result": "CORE_PROOF_FAIL_OOM_ON_EARLIEST_REMOTE_CONSUME",
+  "oom_killed": true,
+  "exit_code": 137,
+  "tier_upload_local_removal": "PASS",
+  "earliest_digest": "FAIL",
+  "broker_restart_digest": "NOT_REACHED",
+  "no_automatic_limit_raise": true,
+  "rca_file": "RCA.json",
+  "larger_kafka_memory_on_current_host": "UNQUALIFIED",
+  "cloud_tiny_proof_would_not_production_qual": true
+}

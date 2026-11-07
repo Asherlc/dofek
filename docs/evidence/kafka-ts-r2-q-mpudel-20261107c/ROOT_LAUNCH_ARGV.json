@@ -1,0 +1,92 @@
+{
+  "cwd": "/Users/asherlc/.paseo/worktrees/3b2webx6/pulsar-foundation",
+  "pnpm_absolute": "/Users/asherlc/.local/share/mise/shims/pnpm",
+  "pnpm_version_expected": "11.17.0",
+  "wrapper": "pnpm compose \u2192 tsx scripts/compose-command.ts (repo stock)",
+  "operator_path_requirement": "Must include /usr/local/bin so spawnSync('docker') succeeds",
+  "project_suffix": "kafka-ts-r2-q-mpudel-c",
+  "effective_compose_project_name": "pulsar-foundation-kafka-ts-r2-q-mpudel-c",
+  "lab_dir": "/tmp/kafka-ts-r2-q-mpudel-20261107c",
+  "bucket": "kafka-ts-r2-q-mpudel-20261107c",
+  "prefix": "kafka-ts-parity/r2/20261107c-q-mpudel/",
+  "do_not_recreate": [
+    "kafka-ts-r2-q-mpudel-20261107",
+    "kafka-ts-r2-q-mpudel-20261107b"
+  ],
+  "required_nonsecret_process_env": [
+    "R2_ACCOUNT_ID"
+  ],
+  "required_process_env_names_for_broker_up_only": [
+    "KAFKA_TS_R2_CHILD_ACCESS_KEY_ID",
+    "KAFKA_TS_R2_CHILD_SECRET_ACCESS_KEY",
+    "KAFKA_TS_R2_CHILD_SESSION_TOKEN"
+  ],
+  "file_sha256": {
+    "docker-compose.yml": "a5ecb5aaa08b8a81502c8ff912b12f5c710dd58353fb5317c2ac603148fa2738",
+    "docker-compose.credentials.placeholder.yml": "c34b04e4da8c8934c5318c4015a2a1f13d2a7ab9548c38fb31940c825bd8e5aa",
+    "plugin-provenance.json": "62936a0998f72d1aaedd1dd68b16f1523faf2013ca0789cd822f50e7f68658f9",
+    "NAMES.json": "4099e2c684816797624d240df38793b9c4fbd9399971f53ec8f5afa9aac057b8",
+    "BUDGETS.json": "8d7e08c93a3960948531a1ed31fd370cbaa974f6b00da5315af6075a3057b4f4"
+  },
+  "root_broker_up_argv": [
+    "/Users/asherlc/.local/share/mise/shims/pnpm",
+    "compose",
+    "--",
+    "--project-suffix",
+    "kafka-ts-r2-q-mpudel-c",
+    "-f",
+    "/tmp/kafka-ts-r2-q-mpudel-20261107c/docker-compose.yml",
+    "-f",
+    "/tmp/kafka-ts-r2-q-mpudel-20261107c/docker-compose.credentials.placeholder.yml",
+    "up",
+    "-d",
+    "--no-deps",
+    "--no-build",
+    "--pull",
+    "never",
+    "kafka"
+  ],
+  "base_config_argv_no_secrets": [
+    "/Users/asherlc/.local/share/mise/shims/pnpm",
+    "compose",
+    "--",
+    "--project-suffix",
+    "kafka-ts-r2-q-mpudel-c",
+    "-f",
+    "/tmp/kafka-ts-r2-q-mpudel-20261107c/docker-compose.yml",
+    "config"
+  ],
+  "cursor_client_up_argv_later_no_creds_overlay": [
+    "/Users/asherlc/.local/share/mise/shims/pnpm",
+    "compose",
+    "--",
+    "--project-suffix",
+    "kafka-ts-r2-q-mpudel-c",
+    "-f",
+    "/tmp/kafka-ts-r2-q-mpudel-20261107c/docker-compose.yml",
+    "up",
+    "-d",
+    "--no-deps",
+    "--no-build",
+    "--pull",
+    "never",
+    "client"
+  ],
+  "down_argv_finally": [
+    "/Users/asherlc/.local/share/mise/shims/pnpm",
+    "compose",
+    "--",
+    "--project-suffix",
+    "kafka-ts-r2-q-mpudel-c",
+    "-f",
+    "/tmp/kafka-ts-r2-q-mpudel-20261107c/docker-compose.yml",
+    "down",
+    "--volumes",
+    "--remove-orphans"
+  ],
+  "rlmm_procedure": "docs/kafka-ts-rlmm-dump-procedure.md",
+  "rlmm_procedure_ref": "ea4a260b8",
+  "cursor_must_not_mint": true,
+  "execute_after_root_started": true,
+  "user_approval": "Q14A"
+}

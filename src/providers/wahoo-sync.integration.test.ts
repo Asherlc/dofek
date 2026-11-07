@@ -307,7 +307,7 @@ describe("WahooProvider.sync() (integration)", () => {
     });
   });
 
-  it("downloads FIT files and publishes Redpanda metric stream events", async () => {
+  it("downloads FIT files and publishes Kafka metric stream events", async () => {
     await saveTokens(ctx.db, "wahoo", {
       accessToken: "valid-token",
       refreshToken: "valid-refresh",

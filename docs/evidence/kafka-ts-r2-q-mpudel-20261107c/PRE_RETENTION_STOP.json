@@ -1,0 +1,40 @@
+{
+  "status": "PRE_RETENTION_STOP",
+  "at": "2026-11-07T04:21:49Z",
+  "hardStopAt": "2026-11-07T04:38:48.287Z",
+  "bucket": "kafka-ts-r2-q-mpudel-20261107c",
+  "prefix": "kafka-ts-parity/r2/20261107c-q-mpudel/",
+  "objectBodyGET": 0,
+  "copy_completed": {
+    "main": {
+      "topicId": "6LIGpxtsTYWK4E2mpRqLVw",
+      "segmentId": "VOV9OtiuTEqMhCaP0lh_eg",
+      "segmentSizeInBytes": 6118734,
+      "startOffset": 0,
+      "endOffset": 5899,
+      "local_log": "00000000000000000000.log",
+      "part_size": 5242880,
+      "size_gt_part": true,
+      "expected_etag_suffix": "-2"
+    },
+    "quarantine": {
+      "topicId": "zMGvPsWVTgqJA6qsyltMxQ",
+      "segmentId": "hDIrv61wQqeJlNgxo4lFzA",
+      "segmentSizeInBytes": 107920,
+      "startOffset": 0,
+      "endOffset": 103
+    }
+  },
+  "not_yet_done": [
+    "remote.log.copy.disable",
+    "short retention alter",
+    "RLMM dump",
+    "consume"
+  ],
+  "request_root_now": [
+    "ListObjectsV2 under prefix \u2014 Key, Size, ETag only (0 body GET)",
+    "HeadObject on main remote .log key \u2014 Size + ETag (expect Cloudflare hash-N N>=2 / -2)",
+    "ListMultipartUploads under prefix \u2014 expect 0",
+    "Reply names/sizes/ETags only; Cursor waits then applies copy.disable+retention"
+  ]
+}

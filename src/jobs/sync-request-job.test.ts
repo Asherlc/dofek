@@ -9,7 +9,7 @@ registerSyncRequestQueryResolver("whoop", resolveWhoopSyncRequestQuery);
 
 describe("enqueueSyncJobWithRequestDedup", () => {
   const jobData: SyncJobData = {
-    userId: "user-1",
+    userId: "00000000-0000-4000-8000-000000000001",
     providerId: "whoop",
     sinceDays: 7,
   };
@@ -231,13 +231,13 @@ describe("enqueueSyncJobWithRequestDedup", () => {
     const result = await enqueueSyncJobWithRequestDedup(
       "strava",
       {
-        userId: "user-1",
+        userId: "00000000-0000-4000-8000-000000000001",
         providerId: "strava",
         sinceIso: "1970-01-01T00:00:00.000Z",
         untilIso: "2026-07-29T17:00:01.000Z",
         targetRefreshWindow: { type: "full" },
       },
-      { deduplication: { id: "sync:full:strava:user-1" } },
+      { deduplication: { id: "sync:full:strava:00000000-0000-4000-8000-000000000001" } },
       addJob,
       getJob,
     );
@@ -246,8 +246,8 @@ describe("enqueueSyncJobWithRequestDedup", () => {
       "sync",
       expect.anything(),
       expect.objectContaining({
-        jobId: expect.stringMatching(/^sync-req-strava-user-1-/),
-        deduplication: { id: "sync:full:strava:user-1" },
+        jobId: expect.stringMatching(/^sync-req-strava-00000000-0000-4000-8000-000000000001-/),
+        deduplication: { id: "sync:full:strava:00000000-0000-4000-8000-000000000001" },
       }),
     );
     expect(result).toBe(existingJob);
@@ -263,10 +263,10 @@ describe("enqueueSyncJobWithRequestDedup", () => {
     },
     {
       name: "request job ID is absent",
-      jobOptions: { deduplication: { id: "sync:full:whoop:user-1" } },
+      jobOptions: { deduplication: { id: "sync:full:whoop:00000000-0000-4000-8000-000000000001" } },
       returnedJobId: "different-job-id",
       jobData: {
-        userId: "user-1",
+        userId: "00000000-0000-4000-8000-000000000001",
         providerId: "whoop",
         checkpoint: {
           runId: "run-1",
@@ -282,13 +282,13 @@ describe("enqueueSyncJobWithRequestDedup", () => {
     },
     {
       name: "BullMQ returns no job ID",
-      jobOptions: { deduplication: { id: "sync:full:whoop:user-1" } },
+      jobOptions: { deduplication: { id: "sync:full:whoop:00000000-0000-4000-8000-000000000001" } },
       returnedJobId: undefined,
       jobData,
     },
     {
       name: "BullMQ returns the requested job ID",
-      jobOptions: { deduplication: { id: "sync:full:whoop:user-1" } },
+      jobOptions: { deduplication: { id: "sync:full:whoop:00000000-0000-4000-8000-000000000001" } },
       returnedJobId: "requested-job-id",
       jobData,
     },

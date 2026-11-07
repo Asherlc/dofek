@@ -1,0 +1,26 @@
+{
+  "name": "PRE_RETENTION_STOP_CHECKPOINT",
+  "when": "After RSM copy success for main (and quarantine) closed segments; BEFORE short retention alter; BEFORE remote.log.copy.disable",
+  "root_actions_names_sizes_etags_only": [
+    "ListObjectsV2 under prefix kafka-ts-parity/r2/20261107c-q-mpudel/ (Key, Size, ETag)",
+    "HeadObject on main remote .log key (Size, ETag) \u2014 prefer this for ETag certainty",
+    "ListMultipartUploads under prefix (expect 0 completed orphans)"
+  ],
+  "mpu_pass_bar": {
+    "main_log_etag": "Cloudflare completed MPU form hash-N with N>=2 (expect -2)",
+    "etag_source": "https://developers.cloudflare.com/r2/objects/upload-objects/",
+    "size_equals_local_closed_log": true,
+    "object_body_GET": 0
+  },
+  "cursor_resume_after_root_ack": [
+    "Stock kafka-configs.sh on main+quarantine: remote.storage.enable=true,remote.log.copy.disable=true,local.retention.ms=-2,local.retention.bytes=-2",
+    "Then short retention.ms/local window for native remote GC",
+    "RLMM metadata-only dump per docs/kafka-ts-rlmm-dump-procedure.md",
+    "Root inventory 0 before cleanup"
+  ],
+  "copy_disable_docs": [
+    "https://kafka.apache.org/44/operations/tiered-storage/",
+    "https://kafka.apache.org/44/configuration/topic-configs/"
+  ],
+  "planned_upload_after_freeze": "No further remote uploads; bound remains initial \u22646 objects / \u22646848512 bytes under 8388608 cap (planned operator bound, not hard network meter)"
+}

@@ -1,0 +1,2 @@
+pulsar-foundation-kafka-ts-r2-phasef-kafka-1 552.6MiB / 2GiB
+pulsar-foundation-kafka-ts-r2-phasef-client-1 1.27MiB / 384MiB

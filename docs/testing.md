@@ -128,33 +128,22 @@ pnpm test:coverage:all
 ```
 
 These commands start the current workspace's Postgres, ClickHouse, Redis, and
-Redpanda services through `pnpm compose:up` and wait for their Compose health
+Kafka services through `pnpm compose:up` and wait for their Compose health
 checks before Vitest starts. Docker documents the `--wait` health-gated startup
 behavior in its [Compose startup-order guide](https://docs.docker.com/compose/how-tos/startup-order/).
+The command then runs `kafka-ready` with stock `compose run --rm --no-deps`
+to verify the Kafka API without stopping the running dependencies. E2E CI uses
+the same sequence before its `server --no-deps` startup; ordinary E2E Compose
+startup waits for the `kafka-ready` service to complete successfully. Docker
+documents [one-off runs](https://docs.docker.com/reference/cli/docker/compose/run/)
+and [dependency conditions](https://docs.docker.com/reference/compose-file/services/#depends_on).
 The command loads `.env.local` and sets `TEST_DATABASE_URL` to the workspace
-Postgres URL. Redpanda-backed integration
-tests receive the generated workspace-local `REDPANDA_BROKERS` value so they
+Postgres URL. Kafka-protocol metric-stream integration
+tests receive the generated workspace-local `KAFKA_BROKERS` value so they
 cannot connect to another workspace's broker. `setupTestDatabase()` fails
 immediately when the Postgres URL is absent; it never creates an unbounded
 generic Testcontainers instance. Within a Vitest process it creates one
 migrated template database and clones an isolated database for each test file.
-
-### Native Pulsar qualification
-
-The `:all` commands select the unit, mobile and integration projects; they do
-not include `pulsar-integration`. See the [test command implementation](../scripts/run-tests.ts)
-and [Vitest project configuration](../vitest.config.ts). Run the native tier explicitly:
-
-```bash
-pnpm exec vitest run --project=pulsar-integration src/metric-stream/bookie-evacuation.pulsar.integration.test.ts
-```
-
-This [fixture](../src/metric-stream/bookie-evacuation.pulsar.integration.test.ts)
-requires a Linux Docker daemon with at least 2,816 MiB `MemAvailable` and a JDK.
-It starts its own isolated `docker-compose.bookie-evacuation.yml` topology;
-do not start `docker-compose.pulsar.yml` beforehand. The
-[native CI job](../.github/workflows/test.yml) supplies the pinned tools.
-Vitest documents [explicit project selection](https://vitest.dev/guide/projects).
 
 ### PeerDB CDC integration
 
@@ -185,6 +174,46 @@ integration shards instead of being counted as uncovered Docker-free mutants.
 Use `pnpm test:integration` for integration behavior and `pnpm test:mutation`
 for mutation quality; do not mix the two execution models.
 
+### Transitional JSONL archive code
+
+The temporary JSONL.gz metric-stream archive path exists only until every legacy JSONL
+archive object is converted to the permanent format and verified absent from production
+storage. While that migration is in progress, the modules below are excluded from
+mutation testing, aggregate/diff coverage quotas, and tests written solely to satisfy those
+gates. Integrity, erasure, and recovery checks that keep the migration safe to run still
+apply. Permanent metric-stream and account-erasure behavior (delivery fencing, events,
+owned markers, ClickHouse sink, drain, acknowledgements, consumer runtime, and erasure
+phase orchestration) stays fully gated; thresholds for that code are not lowered.
+
+Exempt paths:
+
+- `src/metric-stream/archive-lines.ts`
+- `src/metric-stream/r2-replay.ts`
+- `src/metric-stream/r2-archive.ts`
+- `src/account-erasure/archive-erasure.ts`
+- `src/account-erasure/archive-erasure-test-helpers.ts`
+
+Exclusions use the existing tool configuration surfaces only:
+
+- Stryker `mutate` negations in `stryker.ci.config.json` / `stryker.config.json`
+  ([Stryker mutate patterns](https://stryker-mutator.io/docs/stryker-js/configuration/#mutate-string))
+- Vitest `coverage.exclude` in `vitest.config.ts`
+  ([Vitest coverage exclude](https://vitest.dev/config/#coverage-exclude))
+- Mutation-prep path filters in `.github/workflows/test.yml` so these files do not create
+  Stryker shards
+- Matching `diff-cover --exclude` entries in the same workflow
+  ([diff-cover exclude/include](https://github.com/Bachmann1234/diff-cover#excludeinclude-paths))
+- Top-level Codecov `ignore:` in `codecov.yml` for the same paths so unit/integration
+  `carryforward: true` cannot keep stale history gating Vitest-omitted transitional files
+  ([Codecov ignoring paths](https://docs.codecov.com/docs/ignoring-paths);
+  validate via [`POST https://codecov.io/validate`](https://docs.codecov.com/docs/codecov-yaml#validate-your-repository-yaml)).
+  Project **93.5%** / patch **90%** targets stay unchanged.
+
+**Deletion milestone:** after legacy JSONL archives are fully converted, verified gone from
+production/storage, and these modules are deleted from the repository, remove the matching
+Stryker, Vitest coverage, mutation-prep, diff-cover, and Codecov `ignore` exclusions in the
+same change.
+
 For dbt first-build schema tests, execute the adapter's actual
 [`CREATE TABLE ... EMPTY AS` path](https://github.com/ClickHouse/dbt-clickhouse/blob/v1.10.3/dbt/include/clickhouse/macros/materializations/table.sql),
 then compare the created table's complete schema with the canonical table and
@@ -200,7 +229,7 @@ Sources:
 - Vitest test projects: https://vitest.dev/guide/projects
 - Vitest `--shard` option for splitting CI test runs: https://vitest.dev/guide/cli.html#shard
 - Stryker Vitest runner configuration: https://stryker-mutator.io/docs/stryker-js/vitest-runner/
-- Redpanda Kafka API compatibility: https://docs.redpanda.com/current/develop/kafka-clients/
+- Kafka client compatibility notes (Redpanda docs covering the Kafka API): https://docs.redpanda.com/current/develop/kafka-clients/
 
 ### S3 fixture allocation
 
@@ -380,11 +409,13 @@ fi
 pnpm compose -- --project-suffix e2e -f docker-compose.e2e.yml down -v
 ```
 
-The isolated topology includes Redpanda and explicit metric-stream producer
-configuration. Server startup connects the producer before opening the HTTP
-listener, and Compose waits for both broker health and `/readyz`; Docker
-documents health-gated dependency startup in its
+The isolated topology includes stock Kafka and explicit metric-stream producer
+configuration (`KAFKA_BROKERS`). Server startup connects the producer before
+opening the HTTP listener, and Compose waits for both broker health and
+`/readyz`; Docker documents health-gated dependency startup in its
 [startup-order guide](https://docs.docker.com/compose/how-tos/startup-order/).
+(Production today still uses Redpanda until approved cutover; E2E mirrors the
+local Kafka target, not the live Swarm broker.)
 
 Use the `e2e` suffix for startup, reuse, service inspection, logs, and teardown.
 Docker documents project-name isolation and precedence here:

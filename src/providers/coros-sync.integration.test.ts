@@ -216,7 +216,7 @@ describe("CorosProvider.sync() (integration)", () => {
     expect(ride.canonicalType).toBe("cycling");
   });
 
-  it("publishes FIT samples through scoped Redpanda replacement", async () => {
+  it("publishes FIT samples through scoped Kafka replacement", async () => {
     await saveTokens(ctx.db, "coros", {
       accessToken: "valid-token",
       refreshToken: "valid-refresh",

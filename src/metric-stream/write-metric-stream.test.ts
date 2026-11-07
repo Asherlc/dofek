@@ -48,7 +48,7 @@ describe("writeMetricStreamRows", () => {
     expect(publisher.publishRows).not.toHaveBeenCalled();
   });
 
-  it("publishes rows through the supplied Redpanda publisher", async () => {
+  it("publishes rows through the supplied Kafka publisher", async () => {
     const publisher = makePublisher();
     const database = makeDatabase([
       {

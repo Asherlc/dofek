@@ -1,0 +1,128 @@
+{
+  "lab_id": "kafka-ts-2048-20261106",
+  "purpose": "local investigation only \u2014 NOT adoption, pivot, Pulsar-equivalence, or production qualification",
+  "result": "CORE_PROOF_PASS",
+  "wall_clock": {
+    "start_utc": "2026-11-06T21:47:16Z",
+    "end_utc": "2026-11-06T21:49:38Z"
+  },
+  "artifacts": {
+    "kafka_image": "apache/kafka:4.4.0",
+    "kafka_repo_digest": "apache/kafka@sha256:833b867a9585a141da455dc2b57431c65cbccb27f11c91f694444cca9f777e0f",
+    "seaweed_image": "chrislusf/seaweedfs:4.48",
+    "seaweed_repo_digest": "chrislusf/seaweedfs@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d",
+    "tool_image": "amazon/aws-cli:2.38.2",
+    "tool_repo_digest": "amazon/aws-cli@sha256:5d39fd52f236ed01c5c25fba66c9aebcfc6cbb88e7bb1b727c5fe1f150540597",
+    "plugin_release": "https://github.com/Aiven-Open/tiered-storage-for-apache-kafka/releases/tag/v1.2.0",
+    "plugin_assets": [
+      {
+        "name": "core-1.2.0.tgz",
+        "size": 87298997,
+        "sha256": "14fb636d3a5c781ae9ae961012bf7b0881b09629859dbc784dc49356faeaa747",
+        "url": "https://github.com/Aiven-Open/tiered-storage-for-apache-kafka/releases/download/v1.2.0/core-1.2.0.tgz"
+      },
+      {
+        "name": "s3-1.2.0.tgz",
+        "size": 15757644,
+        "sha256": "1fd89dea84988b857e546fcfa88504f5b4e45d7712e3eddeb506f11a394ef010",
+        "url": "https://github.com/Aiven-Open/tiered-storage-for-apache-kafka/releases/download/v1.2.0/s3-1.2.0.tgz"
+      }
+    ]
+  },
+  "bounds": {
+    "kafka_cgroup_mib": 2048,
+    "kafka_heap": "KAFKA_HEAP_OPTS=-Xmx1G -Xms1G (official kafka-server-start.sh default)",
+    "seaweed_cgroup_mib": 1024,
+    "tool_cgroup_mib": 384,
+    "workload": "5000 distinct 1KiB messages",
+    "cloud_b2_traffic": 0,
+    "compose_project": "pulsar-foundation-kafka-ts-lab",
+    "image": "apache/kafka:4.4.0",
+    "plugin": "Aiven core-1.2.0 + s3-1.2.0 released artifacts (checksum-verified)"
+  },
+  "preflight": {
+    "free_plus_inactive_mib": 28537.7,
+    "headroom_ok_ge_6gib": true,
+    "disk_free_gib": 97.0
+  },
+  "verification": {
+    "local_closed_segments_removed_before_earliest_hash": true,
+    "local_active_only_prehash": "00000000000000005000.log (0-byte active) \u2014 closed 0/1005/2010/3015/4020 absent locally",
+    "remote_object_count": 15,
+    "remote_segment_base_offsets": [
+      0,
+      1005,
+      2010,
+      3015,
+      4020
+    ],
+    "consume_count": 5000,
+    "offsets": "0..4999 contiguous",
+    "sha256_offset_value": "a1cc5c88bfe4f73c8a665027752d81cbd5c2f12f8ad504457ecb6ef405bde616",
+    "hash_match_after_broker_restart": true
+  },
+  "cgroup_lifetime_peak": {
+    "kafka": {
+      "peak_mib": 809.2,
+      "limit_mib": 2048.0,
+      "headroom_mib": 1238.8,
+      "events": {
+        "low": 0,
+        "high": 0,
+        "max": 0,
+        "oom": 0,
+        "oom_kill": 0,
+        "oom_group_kill": 0
+      }
+    },
+    "seaweed": {
+      "peak_mib": 107.1,
+      "limit_mib": 1024.0,
+      "headroom_mib": 916.9,
+      "events": {
+        "low": 0,
+        "high": 0,
+        "max": 0,
+        "oom": 0,
+        "oom_kill": 0,
+        "oom_group_kill": 0
+      }
+    },
+    "tool": {
+      "peak_mib": 64.4,
+      "limit_mib": 384.0,
+      "headroom_mib": 319.6,
+      "events": {
+        "low": 0,
+        "high": 0,
+        "max": 0,
+        "oom": 0,
+        "oom_kill": 0,
+        "oom_group_kill": 0
+      }
+    }
+  },
+  "cgroup_peak_meaning": "Linux cgroup v2 memory.peak is a lifetime high-water mark for the container cgroup, including across in-place docker restart of the same container id; it is not a per-phase RSS sample and not comparable to Pulsar 256MiB fixture RAM.",
+  "monitor_coverage": {
+    "sampler_interval_s_intended": 5,
+    "sampler_line_count": 6,
+    "sampler_first_utc": "2026-11-06T21:47:48Z",
+    "sampler_last_utc": "2026-11-06T21:47:54Z",
+    "coverage_note": "Periodic 5s sampler produced few lines and did not reliably span restart; lifetime cgroup memory.peak/events from final oneshot remain authoritative for the whole container lifetime including restart.",
+    "kernel_docs": "https://docs.kernel.org/admin-guide/cgroup-v2.html#memory-interface-files"
+  },
+  "cleanup": {
+    "compose_down_volumes": true,
+    "owned_containers_remaining": 0,
+    "owned_volumes_remaining": 0,
+    "cleanup_done_utc": "2026-11-06T21:50:18Z"
+  },
+  "explicit_non_claims": [
+    "not equivalent to Pulsar 256MiB load",
+    "not production qualification",
+    "not host-fit proof for Swarm",
+    "no history claim / no adoption",
+    "no RAM comparison claim vs Pulsar 256MiB fixture",
+    "B2 compatibility unqualified; zero B2 traffic this lab"
+  ]
+}

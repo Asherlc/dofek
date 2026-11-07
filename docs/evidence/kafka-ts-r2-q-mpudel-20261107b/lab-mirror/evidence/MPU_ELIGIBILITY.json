@@ -1,0 +1,8 @@
+{
+  "part_size_configured": 5242880,
+  "main_closed_segment_bytes": 6284624,
+  "multipart_required_by_size": true,
+  "copy_completed_main": true,
+  "create_multipart_log_line_observed": false,
+  "note": "RSM INFO logs copy success; SDK multipart API names not at INFO. segmentSize > part size + copy success is eligibility+completion; request Root ListObjects sizes for physical proof."
+}

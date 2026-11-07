@@ -1,0 +1,8 @@
+total 20
+drwxr-xr-x  2 appuser appuser     4096 Nov  6 21:48 .
+drwxrwxr-x 55 appuser root        4096 Nov  6 21:48 ..
+-rw-r--r--  1 appuser appuser        0 Nov  6 21:48 00000000000000005000.log
+-rw-r--r--  1 appuser appuser       56 Nov  6 21:48 00000000000000005000.snapshot
+-rw-r--r--  1 appuser appuser 10485756 Nov  6 21:48 00000000000000005000.timeindex
+-rw-r--r--  1 appuser appuser        8 Nov  6 21:48 leader-epoch-checkpoint
+-rw-r--r--  1 appuser appuser       43 Nov  6 21:48 partition.metadata

@@ -1,0 +1,16 @@
+{
+  "total_upload_bytes_max": 16777216,
+  "upload_bytes_consumed": 0,
+  "read_planning_bytes": 10485760,
+  "read_hard_cap": false,
+  "wall_seconds_max_after_mint": 3300,
+  "session_ttl_seconds": 3600,
+  "mpu_part_size_bytes": 5242880,
+  "main_segment_log_bytes_min": 5242880,
+  "main_segment_log_bytes_max": 8388608,
+  "quarantine_produce": {"messages": 64, "value_bytes_each": 1024},
+  "multipart_upload_claim": true,
+  "native_delete_claim": true,
+  "finite_one_consume": true,
+  "same_approved_q11a_budget": true
+}

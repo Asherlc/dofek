@@ -520,7 +520,7 @@ describe("sync-processing-operation", () => {
       mockDb,
       expect.objectContaining({
         externalCorrelationKey:
-          "user-1:garmin:2026-06-01T00:00:00.000Z:2026-06-02T23:59:59.999Z:1759795200000:garmin",
+          "00000000-0000-4000-8000-000000000001:garmin:2026-06-01T00:00:00.000Z:2026-06-02T23:59:59.999Z:1759795200000:garmin",
       }),
     );
   });
@@ -534,7 +534,8 @@ describe("sync-processing-operation", () => {
     expect(mockCreateProcessingOperation).toHaveBeenCalledWith(
       mockDb,
       expect.objectContaining({
-        externalCorrelationKey: "user-1:garmin:days:30:open:1759795200000:garmin",
+        externalCorrelationKey:
+          "00000000-0000-4000-8000-000000000001:garmin:days:30:open:1759795200000:garmin",
       }),
     );
   });

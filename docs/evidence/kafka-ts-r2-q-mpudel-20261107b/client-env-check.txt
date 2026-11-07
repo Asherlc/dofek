@@ -1,0 +1,1 @@
+NO_AWS_ENV_OK

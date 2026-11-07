@@ -1,0 +1,5 @@
+$ tsx scripts/compose-command.ts -- --project-suffix kafka-ts-r2-q-mpudel-c -f /tmp/kafka-ts-r2-q-mpudel-20261107c/docker-compose.yml up -d --no-deps --no-build --pull never client
+ Container pulsar-foundation-kafka-ts-r2-q-mpudel-c-client-1 Creating 
+ Container pulsar-foundation-kafka-ts-r2-q-mpudel-c-client-1 Created 
+ Container pulsar-foundation-kafka-ts-r2-q-mpudel-c-client-1 Starting 
+ Container pulsar-foundation-kafka-ts-r2-q-mpudel-c-client-1 Started 

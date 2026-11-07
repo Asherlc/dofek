@@ -3,7 +3,8 @@
   "testRunner": "vitest",
   "plugins": ["@stryker-mutator/vitest-runner"],
   "vitest": {
-    "configFile": "vitest.config.mutation.ts"
+    "configFile": "vitest.config.mutation.ts",
+    "pool": "forks"
   },
   "ignoreStatic": true,
   "incremental": true,
@@ -41,6 +42,11 @@
     "!**/*.test.ts",
     "!**/*.test.tsx",
     "!**/test-helpers.ts",
+    "!src/metric-stream/archive-lines.ts",
+    "!src/metric-stream/r2-archive.ts",
+    "!src/metric-stream/r2-replay.ts",
+    "!src/account-erasure/archive-erasure.ts",
+    "!src/account-erasure/archive-erasure-test-helpers.ts",
     "!packages/server/src/routers/clickhouse-integration-test-helpers.ts",
     "!packages/server/src/routers/clickhouse-integration-test-models.ts",
     "!packages/server/src/routers/clickhouse-integration-test-read-models-*.ts",

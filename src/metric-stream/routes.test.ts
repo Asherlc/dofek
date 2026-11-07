@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  assertWritableMetricStreamTopic,
   metricStreamRouteForSyncJob,
   metricStreamTopicForRoute,
+  RETIRED_METRIC_STREAM_TOPIC_NAMES,
   validateMetricStreamTopicConfiguration,
 } from "./routes.ts";
 
@@ -36,5 +38,27 @@ describe("metric stream routes", () => {
     ["METRIC_STREAM_HISTORY_TOPIC", { METRIC_STREAM_LIVE_TOPIC: "metric-stream-live" }],
   ])("rejects a missing %s during startup configuration validation", (key, env) => {
     expect(() => validateMetricStreamTopicConfiguration(env)).toThrow(`${key} is required`);
+  });
+
+  it("refuses retired v1 topic names for producers", () => {
+    expect([...RETIRED_METRIC_STREAM_TOPIC_NAMES].sort()).toEqual(
+      ["metric-stream-history-v1", "metric-stream-live-v1", "metric-stream-v1"].sort(),
+    );
+    for (const topic of RETIRED_METRIC_STREAM_TOPIC_NAMES) {
+      expect(() => assertWritableMetricStreamTopic(topic)).toThrow(/retired topic generation/);
+    }
+    expect(() => assertWritableMetricStreamTopic("metric-stream-live-v2")).not.toThrow();
+  });
+
+  it("matches retired produce refuse by exact name only", () => {
+    for (const topic of [
+      "metric-stream-v10",
+      "metric-stream-v1-extra",
+      "prefix-metric-stream-v1",
+      "metric-stream-live-v2",
+      "metric-stream-history-v2",
+    ]) {
+      expect(() => assertWritableMetricStreamTopic(topic)).not.toThrow();
+    }
   });
 });

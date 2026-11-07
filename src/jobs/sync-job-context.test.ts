@@ -294,7 +294,7 @@ describe("sync-job-context", () => {
         window: expectedWindow,
         options: expect.objectContaining({
           onProgress: expect.any(Function),
-          userId: "user-1",
+          userId: "00000000-0000-4000-8000-000000000001",
         }),
       }),
     );
@@ -319,7 +319,7 @@ describe("sync-job-context", () => {
         }),
         options: expect.objectContaining({
           onProgress: expect.any(Function),
-          userId: "user-1",
+          userId: "00000000-0000-4000-8000-000000000001",
         }),
       }),
     );
@@ -353,7 +353,7 @@ describe("sync-job-context", () => {
     expect(job.updateData).toHaveBeenCalledWith({
       providerId: "garmin",
       processingOperationIds: { garmin: processingOperationId },
-      userId: "user-1",
+      userId: "00000000-0000-4000-8000-000000000001",
       checkpoint: savedCheckpoint,
     });
     expect(job.data.checkpoint).toEqual(savedCheckpoint);
@@ -374,7 +374,7 @@ describe("sync-job-context", () => {
         window: SyncWindow.full(now),
         options: expect.objectContaining({
           onProgress: expect.any(Function),
-          userId: "user-1",
+          userId: "00000000-0000-4000-8000-000000000001",
         }),
       }),
     );

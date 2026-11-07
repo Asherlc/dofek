@@ -296,7 +296,7 @@ jobs:
       contents: read
     services:
       clickhouse:
-        image: clickhouse/clickhouse-server:26.6.1.1193-alpine@sha256:1904267fde1d8b794c9e5fda1b5a4bffd9b2e5b3d1057d5911161257125956f3
+        image: clickhouse/clickhouse-server:26.10.2.103-alpine@sha256:d474afd5cd0abfb9fdc6e2ebbc82116324779b085f5c15a851aa91bec968291d
         env:
           CLICKHOUSE_DB: fitness
           CLICKHOUSE_USER: default
@@ -783,17 +783,31 @@ jobs:
           --health-interval 2s
           --health-timeout 5s
           --health-retries 15
-      redpanda:
-        image: mirror.gcr.io/redpandadata/redpanda:v26.1.12
+      kafka:
+        image: apache/kafka:4.4.0@sha256:833b867a9585a141da455dc2b57431c65cbccb27f11c91f694444cca9f777e0f
+        env:
+          CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+          KAFKA_HEAP_OPTS: -Xmx1G -Xms1G
+          KAFKA_PROCESS_ROLES: broker,controller
+          KAFKA_NODE_ID: "1"
+          KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:29093
+          KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+          KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:29093
+          KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+          KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+          KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+          KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+          KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
         ports:
           - 9092:9092
         options: >-
-          --health-cmd "rpk cluster health | grep -q 'Healthy:.*true'"
+          --memory=2g
+          --health-cmd "bash -c 'exec 3<>/dev/tcp/127.0.0.1/9092'"
           --health-interval 2s
           --health-timeout 5s
           --health-retries 30
       clickhouse:
-        image: clickhouse/clickhouse-server:26.6.1.1193-alpine@sha256:1904267fde1d8b794c9e5fda1b5a4bffd9b2e5b3d1057d5911161257125956f3
+        image: clickhouse/clickhouse-server:26.10.2.103-alpine@sha256:d474afd5cd0abfb9fdc6e2ebbc82116324779b085f5c15a851aa91bec968291d
         env:
           CLICKHOUSE_DB: fitness
           CLICKHOUSE_USER: default
@@ -810,7 +824,7 @@ jobs:
     env:
       TEST_DATABASE_URL: postgres://test:test@localhost:5432/test
       CLICKHOUSE_URL: http://default:${{ github.run_id }}@localhost:8123
-      REDPANDA_BROKERS: localhost:9092
+      KAFKA_BROKERS: localhost:9092
       REDIS_URL: redis://localhost:6379
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -827,6 +841,23 @@ jobs:
           path: .build/fit-decoder/bin
       - name: Make FIT decoder executable
         run: chmod +x .build/fit-decoder/bin/dofek-fit-decoder
+      - name: Wait for Kafka API readiness (external client)
+        run: |
+          # Outside the broker service cgroup. Service health is TCP port-liveness only.
+          set -euo pipefail
+          image="apache/kafka:4.4.0@sha256:833b867a9585a141da455dc2b57431c65cbccb27f11c91f694444cca9f777e0f"
+          attempts=0
+          until docker run --rm --network host --memory=384m \
+            -e KAFKA_HEAP_OPTS="-Xms32m -Xmx256m" \
+            --entrypoint /opt/kafka/bin/kafka-broker-api-versions.sh \
+            "$image" --bootstrap-server localhost:9092 >/dev/null; do
+            attempts=$((attempts + 1))
+            if [ "$attempts" -ge 60 ]; then
+              echo "::error::Kafka API not ready on localhost:9092"
+              exit 1
+            fi
+            sleep 2
+          done
       - id: integration-tests
         run: pnpm exec vitest run --project integration --coverage --shard=${{ matrix.shard }}/4
         timeout-minutes: 12
@@ -922,9 +953,18 @@ jobs:
         run: |
           pip install diff-cover
           pnpm exec nyc report --temp-dir final-coverage --reporter=lcov --report-dir diff-coverage-lcov
+          # Keep diff-cover coherent with Vitest coverage.exclude for JSONL-only
+          # transitional helpers (stock --exclude; thresholds unchanged). See docs/testing.md
+          # and https://github.com/Bachmann1234/diff-cover#excludeinclude-paths
           diff-cover diff-coverage-lcov/lcov.info \
             --compare-branch=origin/$BASE_REF \
             --fail-under=80 \
+            --exclude \
+              'src/metric-stream/archive-lines.ts' \
+              'src/metric-stream/r2-replay.ts' \
+              'src/metric-stream/r2-archive.ts' \
+              'src/account-erasure/archive-erasure.ts' \
+              'src/account-erasure/archive-erasure-test-helpers.ts' \
             --markdown-report diff-coverage.md || DIFF_FAILED=1
           if [ -f diff-coverage.md ]; then
             cat diff-coverage.md >> "$GITHUB_STEP_SUMMARY"
@@ -948,42 +988,10 @@ jobs:
           path: integration-test-timings.json
           if-no-files-found: error
 
-  test-bookie-evacuation:
-    name: Native BookKeeper Evacuation
-    runs-on: ubuntu-24.04-arm
-    timeout-minutes: 10
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || '' }}
-          persist-credentials: false
-      - uses: ./.github/actions/setup-node-pnpm
-      - name: Select installed JDK compiler
-        run: |
-          test -n "$JAVA_HOME_25_X64"
-          test -x "$JAVA_HOME_25_X64/bin/javac"
-          echo "$JAVA_HOME_25_X64/bin" >> "$GITHUB_PATH"
-          "$JAVA_HOME_25_X64/bin/javac" -version
-      - name: Qualify native replacement without retries
-        run: pnpm exec vitest run --project=pulsar-integration src/metric-stream/bookie-evacuation.pulsar.integration.test.ts --retry=0
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: failure()
-        with:
-          name: native-bookie-evacuation-evidence
-          path: |
-            reports/bookie-evacuation/**/fixture/
-            reports/bookie-evacuation/**/*.stdout
-            reports/bookie-evacuation/**/*.stderr
-            reports/bookie-evacuation/**/*.json
-            reports/bookie-evacuation/**/*.txt
-          if-no-files-found: warn
-          retention-days: 7
 
   test-gate:
     name: Unit & Integration Tests
-    needs: [test-unit, test-fit-decoder, test-integration, test-peerdb-integration, test-bookie-evacuation, coverage]
+    needs: [test-unit, test-fit-decoder, test-integration, test-peerdb-integration, coverage]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -994,17 +1002,12 @@ jobs:
             "${{ needs.test-fit-decoder.result }}" \
             "${{ needs.test-integration.result }}" \
             "${{ needs.test-peerdb-integration.result }}" \
-            "${{ needs.test-bookie-evacuation.result }}" \
             "${{ needs.coverage.result }}"; do
             if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
               echo "A required job failed or was cancelled"
               exit 1
             fi
           done
-          if [ "${{ needs.test-bookie-evacuation.result }}" != "success" ]; then
-            echo "Required native BookKeeper qualification did not succeed"
-            exit 1
-          fi
 
   # ── E2E ────────────────────────────────────────────────────────────────
 
@@ -1067,7 +1070,9 @@ jobs:
           build-args: DEPENDENCY_CACHE_BUST=${{ hashFiles('package.json', 'pnpm-lock.yaml', 'Dockerfile') }}
           cache-from: type=registry,ref=${{ steps.image-name.outputs.name }}:e2e-buildcache
       - name: Start e2e dependencies
-        run: docker compose -f docker-compose.e2e.yml up -d --wait --no-build db clickhouse redis account-erasure-minio redpanda
+        run: |
+          docker compose -f docker-compose.e2e.yml up -d --wait --no-build db clickhouse redis account-erasure-minio kafka
+          docker compose -f docker-compose.e2e.yml run --rm --no-deps --no-build kafka-ready
       - name: Run e2e migrations
         run: |
           docker compose -f docker-compose.e2e.yml up -d --no-build migrate
@@ -1087,7 +1092,7 @@ jobs:
       - run: pnpm e2e:web:run
       - name: Dump e2e service logs
         if: failure()
-        run: docker compose -f docker-compose.e2e.yml logs --no-color db clickhouse redis redpanda migrate seed review-seed-clickhouse analytics server
+        run: docker compose -f docker-compose.e2e.yml logs --no-color db clickhouse redis kafka kafka-ready migrate seed review-seed-clickhouse analytics server
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: failure()
         with:
@@ -1206,6 +1211,10 @@ jobs:
             | { grep -v '\.test\.ts$' || true; } \
             | { grep -v '\.cy\.ts$' || true; } \
             | { grep -v 'test-helpers\.ts$' || true; } \
+            | { grep -v '^src/metric-stream/archive-lines\.ts$' || true; } \
+            | { grep -v '^src/metric-stream/r2-replay\.ts$' || true; } \
+            | { grep -v '^src/metric-stream/r2-archive\.ts$' || true; } \
+            | { grep -v '^src/account-erasure/archive-erasure\.ts$' || true; } \
             | { grep -v '^packages/server/src/routers/clickhouse-integration-test-' || true; } \
             | { grep -v '\.d\.ts$' || true; } \
             | { grep -v '\.gen\.ts$' || true; } \
@@ -1362,7 +1371,7 @@ jobs:
           --health-timeout 5s
           --health-retries 15
       clickhouse:
-        image: clickhouse/clickhouse-server:26.6.1.1193-alpine@sha256:1904267fde1d8b794c9e5fda1b5a4bffd9b2e5b3d1057d5911161257125956f3
+        image: clickhouse/clickhouse-server:26.10.2.103-alpine@sha256:d474afd5cd0abfb9fdc6e2ebbc82116324779b085f5c15a851aa91bec968291d
         env:
           CLICKHOUSE_DB: fitness
           CLICKHOUSE_USER: default

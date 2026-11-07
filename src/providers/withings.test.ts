@@ -35,7 +35,7 @@ const { mockMetricStreamPublishRows, publishedMetricStreamBatches } = vi.hoisted
   publishedMetricStreamBatches: [],
 }));
 
-vi.mock("../metric-stream/redpanda-producer.ts", () => ({
+vi.mock("../metric-stream/publisher-factory.ts", () => ({
   getDefaultMetricStreamEventPublisher: async () => ({
     publishRows: mockMetricStreamPublishRows,
   }),
@@ -467,7 +467,7 @@ describe("WithingsProvider.sync() — unit tests", () => {
         },
       ],
     });
-    mockMetricStreamPublishRows.mockRejectedValueOnce(new Error("Redpanda publish failed"));
+    mockMetricStreamPublishRows.mockRejectedValueOnce(new Error("Kafka publish failed"));
 
     const mockFetch: typeof globalThis.fetch = async (): Promise<Response> => {
       return Response.json({
@@ -493,7 +493,7 @@ describe("WithingsProvider.sync() — unit tests", () => {
     );
     expect(result.recordsSynced).toBe(0);
     expect(result.errors.length).toBeGreaterThan(0);
-    expect(result.errors[0]?.message).toContain("Redpanda publish failed");
+    expect(result.errors[0]?.message).toContain("Kafka publish failed");
   });
 
   it("catches non-auth API error in outer withSyncLog catch", async () => {

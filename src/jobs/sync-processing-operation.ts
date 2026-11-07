@@ -1,5 +1,5 @@
 import type { SyncDatabase } from "../db/index.ts";
-import { createKafkaMetricStreamEventPublisherForRoute } from "../metric-stream/redpanda-producer.ts";
+import { createMetricStreamEventPublisherForRoute } from "../metric-stream/publisher-factory.ts";
 import { metricStreamRouteForSyncJob } from "../metric-stream/routes.ts";
 import { currentMetricStreamWriteDatabase } from "../metric-stream/write-fence-context.ts";
 import {
@@ -135,12 +135,14 @@ export class SyncProcessingOperation {
       emittedMetricStreamDatasetKeys.length > 0
         ? new MetricStreamProcessingPublisher(
             createLazyMetricStreamEventPublisher(() =>
-              createKafkaMetricStreamEventPublisherForRoute(
+              createMetricStreamEventPublisherForRoute(
                 metricStreamRouteForSyncJob(job.data.targetRefreshWindow),
               ),
             ),
             {
               operationId: processingOperation.id,
+              // Sync jobs are single-account; createProcessingOperation always stores job.data.userId.
+              userId: job.data.userId,
               datasetKeys: emittedMetricStreamDatasetKeys,
               recordPublishedBatch: (batch) => {
                 const transaction = currentMetricStreamWriteDatabase();

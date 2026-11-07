@@ -1,0 +1,11 @@
+Error while executing config command with args '--bootstrap-server kafka:29092 --entity-type topics --entity-name tieredTopicR2QMpu.quarantine.v1 --alter --add-config segment.bytes=32768'
+java.util.concurrent.ExecutionException: org.apache.kafka.common.errors.InvalidConfigurationException: Invalid value 32768 for configuration segment.bytes: Value must be at least 1048576
+	at java.base/java.util.concurrent.CompletableFuture.wrapInExecutionException(Unknown Source)
+	at java.base/java.util.concurrent.CompletableFuture.reportGet(Unknown Source)
+	at java.base/java.util.concurrent.CompletableFuture.get(Unknown Source)
+	at org.apache.kafka.common.internals.KafkaFutureImpl.get(KafkaFutureImpl.java:173)
+	at org.apache.kafka.tools.ConfigCommand.alterResourceConfig(ConfigCommand.java:611)
+	at org.apache.kafka.tools.ConfigCommand.alterConfig(ConfigCommand.java:259)
+	at org.apache.kafka.tools.ConfigCommand.processCommand(ConfigCommand.java:218)
+	at org.apache.kafka.tools.ConfigCommand.main(ConfigCommand.java:140)
+Caused by: org.apache.kafka.common.errors.InvalidConfigurationException: Invalid value 32768 for configuration segment.bytes: Value must be at least 1048576

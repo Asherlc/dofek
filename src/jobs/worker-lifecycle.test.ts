@@ -1,5 +1,12 @@
 import "./worker-test/test-helpers.ts";
+import { EventEmitter } from "node:events";
 import { describe, expect, it, vi } from "vitest";
+
+const closePublishers = vi.hoisted(() => vi.fn(async (): Promise<void> => undefined));
+vi.mock("../metric-stream/publisher-factory.ts", () => ({
+  closeAllMetricStreamEventPublishers: closePublishers,
+}));
+
 import { createWorkerLifecycle } from "./worker-lifecycle.ts";
 import { createWorkerQueues } from "./worker-queues.ts";
 import {
@@ -25,7 +32,7 @@ const lifecycle = createWorkerLifecycle(lifecycleDependencies);
 lifecycle.registerProcessHandlers();
 describe("worker lifecycle", () => {
   it.each(["SIGTERM", "SIGINT"] as const)("registers graceful shutdown for %s", (signal) => {
-    expect(process.listeners(signal)).toContain(lifecycle.shutdown);
+    expect(process.listeners(signal).at(-1)).toBeTypeOf("function");
   });
 
   it("unhandledRejection handler reports to Sentry and logs", async () => {
@@ -56,16 +63,17 @@ describe("worker lifecycle", () => {
     mockCloseGarminProgress.mockImplementation(async () => {
       shutdownOrder.push("Garmin progress");
     });
+    closePublishers.mockImplementation(async () => {
+      shutdownOrder.push("publishers");
+    });
     const signalHandler = process.listeners("SIGTERM").at(-1);
     if (!signalHandler) {
       throw new Error("SIGTERM handler was not registered");
     }
 
-    const shutdownResult: unknown = Reflect.apply(signalHandler, process, []);
-    if (!(shutdownResult instanceof Promise)) {
-      throw new Error("SIGTERM handler did not return its shutdown promise");
-    }
-    await expect(shutdownResult).rejects.toThrow("process.exit called unexpectedly in test");
+    exitSpy.mockImplementationOnce(vi.fn<typeof process.exit>());
+    Reflect.apply(signalHandler, process, []);
+    await vi.waitFor(() => expect(exitSpy).toHaveBeenCalledWith(0));
 
     expect(mockReadinessClose).toHaveBeenCalledOnce();
     expect(mockCloseGarminProgress).toHaveBeenCalledOnce();
@@ -81,6 +89,7 @@ describe("worker lifecycle", () => {
     expect(shutdownOrder).toEqual([
       "refresh waiters",
       ...Array.from({ length: EXPECTED_WORKER_COUNT }, () => "worker"),
+      "publishers",
       "Garmin progress",
     ]);
   });
@@ -127,4 +136,77 @@ describe("worker lifecycle", () => {
     expect(hoisted.mockDatabase.$client.end).toHaveBeenCalledTimes(databaseCloseCount);
     expect(exitSpy).toHaveBeenCalledTimes(exitCount);
   });
+
+  it("does not close publishers until all workers finish, then waits before closing pools", async () => {
+    const drainLifecycle = createWorkerLifecycle(lifecycleDependencies);
+    let finishWorker = () => {};
+    let finishPublishers = () => {};
+    const worker = new Promise<void>((resolve) => {
+      finishWorker = resolve;
+    });
+    const publishers = new Promise<void>((resolve) => {
+      finishPublishers = resolve;
+    });
+    mockClose.mockImplementationOnce(() => worker);
+    closePublishers.mockClear().mockImplementationOnce(() => publishers);
+    const poolCloses = mockCloseAccountErasureWorkLockPool.mock.calls.length;
+    const outcome = expect(drainLifecycle.shutdown()).rejects.toThrow(
+      "process.exit called unexpectedly in test",
+    );
+    await vi.waitFor(() => expect(mockClose).toHaveBeenCalled());
+    expect(closePublishers).not.toHaveBeenCalled();
+    finishWorker();
+    await vi.waitFor(() => expect(closePublishers).toHaveBeenCalledOnce());
+    expect(mockCloseAccountErasureWorkLockPool).toHaveBeenCalledTimes(poolCloses);
+    finishPublishers();
+    await outcome;
+  });
+
+  it("propagates publisher cleanup failure without success exit", async () => {
+    const drainLifecycle = createWorkerLifecycle(lifecycleDependencies);
+    const error = new Error("publisher cleanup failed");
+    closePublishers.mockRejectedValueOnce(error);
+    const exits = exitSpy.mock.calls.length;
+    await expect(drainLifecycle.shutdown()).rejects.toBe(error);
+    expect(exitSpy).toHaveBeenCalledTimes(exits);
+  });
+
+  it.each(["SIGTERM", "SIGINT"] as const)(
+    "exits nonzero when publisher cleanup fails through registered %s dispatch",
+    async (signal) => {
+      const signals = new EventEmitter();
+      const unhandled: unknown[] = [];
+      const registration = vi.spyOn(process, "on").mockImplementation((event, listener) => {
+        signals.on(event, (...args: unknown[]) => {
+          const result: unknown = Reflect.apply(listener, process, args);
+          if (result instanceof Promise)
+            void result.then(undefined, (error) => {
+              unhandled.push(error);
+            });
+        });
+        return process;
+      });
+      try {
+        createWorkerLifecycle(lifecycleDependencies).registerProcessHandlers();
+      } finally {
+        registration.mockRestore();
+      }
+      const Sentry = await import("@sentry/node");
+      const { logger } = await import("../logger.ts");
+      const error = new Error("publisher signal cleanup failed");
+      closePublishers.mockRejectedValueOnce(error);
+      exitSpy.mockClear().mockImplementationOnce(vi.fn<typeof process.exit>());
+      signals.emit(signal);
+      await vi.waitFor(() => expect(exitSpy).toHaveBeenCalledWith(1));
+      expect(exitSpy.mock.calls).toEqual([[1]]);
+      expect(Sentry.captureException).toHaveBeenCalledWith(
+        error,
+        expect.objectContaining({ tags: { context: "worker-shutdown" } }),
+      );
+      expect(logger.error).toHaveBeenCalledWith(
+        "[worker] Graceful shutdown failed; exiting with failure",
+      );
+      expect(unhandled).toEqual([]);
+    },
+  );
 });

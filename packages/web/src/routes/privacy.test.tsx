@@ -17,7 +17,7 @@ describe("PrivacyPage", () => {
     expect(screen.getByText("Last updated: September 2, 2026")).toBeInTheDocument();
     expect(screen.getByText(/PostgreSQL \(TimescaleDB\)/)).toBeInTheDocument();
     expect(screen.getByText(/ClickHouse/)).toBeInTheDocument();
-    expect(screen.getByText(/Redpanda/)).toBeInTheDocument();
+    expect(screen.getByText(/Kafka/)).toBeInTheDocument();
     expect(screen.getByText(/Cloudflare R2/)).toBeInTheDocument();
     expect(screen.getByText(/Redis/)).toBeInTheDocument();
     expect(screen.queryByText(/All data is stored in .*PostgreSQL/)).not.toBeInTheDocument();

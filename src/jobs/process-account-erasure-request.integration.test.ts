@@ -37,6 +37,16 @@ function createRetentionPhaseRunner(now: Date) {
   const unexpectedDependency = async (): Promise<never> => {
     throw new Error("Unexpected identifying account-erasure dependency");
   };
+  // Retention runs after PII scrub: fence/ack loaders are requestId-scoped (non-identifying).
+  const ingestFenceCompletedAt = new Date(now.getTime() - 3 * 60 * 60 * 1_000);
+  const stockPhysicalMaintenanceAck = {
+    kind: "stock_physical_maintenance_ack" as const,
+    runId: "maintenance-request-to-completion",
+    operator: "integration-fixture@example.test",
+    verifiedCutoffAt: new Date(now.getTime() - 2 * 60 * 60 * 1_000).toISOString(),
+    verifiedAt: new Date(now.getTime() - 60 * 60 * 1_000).toISOString(),
+    runbookRevision: "docs/account-erasure.md#physical",
+  };
   const verifyPeerDbStagingRetention = vi.fn(async () => ({
     lifecycleRetentionDays: 1,
     multipartUploadsInspected: 0,
@@ -44,13 +54,16 @@ function createRetentionPhaseRunner(now: Date) {
     verified: true as const,
   }));
   const dependencies = {
+    prepareIdentifiers: unexpectedDependency,
+    assertIdentifiersReady: unexpectedDependency,
     assertConsumersDrained: unexpectedDependency,
-    assertPeerDbDrained: unexpectedDependency,
+    // Retention verification loads consumer_drain quarantine HWM and asserts expiry.
     assertQuarantineExpired: vi.fn(async () => undefined),
     assertReplayExpired: unexpectedDependency,
+    captureQuarantineHighWatermarks: unexpectedDependency,
+    assertPeerDbDrained: unexpectedDependency,
     captureHighWatermarks: unexpectedDependency,
     capturePeerDbStagingBoundary: unexpectedDependency,
-    captureQuarantineHighWatermarks: unexpectedDependency,
     decryptSnapshot: unexpectedDependency,
     eraseArchive: unexpectedDependency,
     eraseClickHouse: unexpectedDependency,
@@ -58,6 +71,8 @@ function createRetentionPhaseRunner(now: Date) {
     eraseProcessors: unexpectedDependency,
     eraseStripe: unexpectedDependency,
     fenceIngest: unexpectedDependency,
+    loadIngestFenceCompletedAt: vi.fn(async () => ingestFenceCompletedAt),
+    loadStockPhysicalMaintenanceAck: vi.fn(async () => stockPhysicalMaintenanceAck),
     now: () => now,
     purgeWork: unexpectedDependency,
     revokeRemote: unexpectedDependency,
@@ -67,6 +82,8 @@ function createRetentionPhaseRunner(now: Date) {
     verifyProcessors: unexpectedDependency,
   } satisfies AccountErasurePhaseRunnerDependencies;
   return {
+    loadIngestFenceCompletedAt: dependencies.loadIngestFenceCompletedAt,
+    loadStockPhysicalMaintenanceAck: dependencies.loadStockPhysicalMaintenanceAck,
     runner: createAccountErasurePhaseRunner(dependencies),
     verifyPeerDbStagingRetention,
   };
@@ -95,10 +112,73 @@ describe("processAccountErasureRequest request-to-completion (integration)", () 
     await context?.cleanup();
   });
 
-  it("persists both waits, erases relational ownership, scrubs PII, and completes", async () => {
+  it("persists actionable failure and releases the lease when retained snapshot admission fails", async () => {
+    const budgetUserId = "8a000000-0000-4000-8000-000000001994";
+    const now = new Date();
+    await context.db.execute(sql`INSERT INTO fitness.user_profile(id,name)
+      VALUES (${budgetUserId}::uuid,'Snapshot admission fixture')`);
     const accepted = await initiateAccountErasure(
       context.db,
-      userId,
+      budgetUserId,
+      async () => "bounded-fixture-snapshot",
+      async () => undefined,
+      { now },
+    );
+    // Simulate retained-data corruption after the canonical capture/encryption checks.
+    await context.db.execute(sql`UPDATE fitness.account_erasure_request
+      SET encrypted_remote_snapshot=${`enc:v1:${"A".repeat(2 * 1024 * 1024)}`}
+      WHERE id=${accepted.requestId}::uuid`);
+    const runPhase = vi.fn(async () => null);
+    await expect(
+      processAccountErasureRequest(
+        context.db,
+        accepted.requestId,
+        "snapshot-admission-worker",
+        { runPhase },
+        now,
+      ),
+    ).rejects.toThrow(/Account deletion snapshot exceeds.*limit.*Contact support/);
+    expect(runPhase).not.toHaveBeenCalled();
+    const rows =
+      await context.db.execute(sql`SELECT status,last_error,failure_count::integer AS failure_count,
+      lease_owner,lease_expires_at,retry_at IS NOT NULL AS retry_scheduled
+      FROM fitness.account_erasure_request WHERE id=${accepted.requestId}::uuid`);
+    expect(rows).toEqual([
+      expect.objectContaining({
+        status: "failed",
+        last_error: expect.stringMatching(
+          /Account deletion snapshot exceeds.*limit.*Contact support/,
+        ),
+        failure_count: 1,
+        lease_owner: null,
+        lease_expires_at: null,
+        retry_scheduled: true,
+      }),
+    ]);
+    await expect(findAccountErasureStatus(context.db, accepted.statusToken, now)).resolves.toEqual(
+      expect.objectContaining({ status: "failed", message: expect.any(String) }),
+    );
+  });
+
+  it("persists both waits, erases relational ownership, scrubs PII, and completes", async () => {
+    // Fresh user per attempt avoids active-erasure write fences from prior retries.
+    const completionUserId = crypto.randomUUID();
+    const completionEmail = `request-to-completion-${completionUserId}@example.test`;
+    await context.db.execute(
+      sql`INSERT INTO fitness.user_profile (id, name, email)
+          VALUES (
+            ${completionUserId}::uuid,
+            'End-to-end erasure',
+            ${completionEmail}
+          )`,
+    );
+    await context.db.execute(
+      sql`INSERT INTO fitness.user_settings (user_id, key, value)
+          VALUES (${completionUserId}::uuid, 'erasure-fixture', 'true'::jsonb)`,
+    );
+    const accepted = await initiateAccountErasure(
+      context.db,
+      completionUserId,
       async () => "encrypted-request-to-completion-snapshot",
       async () => {},
       { now: requestedAt },
@@ -118,21 +198,32 @@ describe("processAccountErasureRequest request-to-completion (integration)", () 
       ): Promise<Record<string, unknown> | null> {
         phaseRuns.push(phase);
         if (phase === "postgres_erasure") {
-          await erasePostgresAccount(context.db, execution.request.id, userId);
+          await erasePostgresAccount(context.db, execution.request.id, completionUserId);
           return null;
         }
         if (phase === "postgres_profile_delete") {
           return execution.deleteProfile();
         }
         if (phase === "consumer_drain") {
+          // Checkpoint shape required by retention_verification quarantine parse
+          // (Kafka HWM route inventory — log-start alone is not physical absence).
           return {
+            drained: true,
             quarantineHighWatermarks: [
-              { topic: "metric-stream-v1", low: "4", offset: "12", partition: 0 },
+              {
+                topic: "metric-stream-live-v2",
+                partition: 0,
+                low: "0",
+                offset: "0",
+              },
             ],
           };
         }
         if (phase === "peerdb_drain_verification") {
-          return { stagingBoundary: peerDbStagingBoundary, verified: true };
+          return {
+            stagingBoundary: { cutoff: peerDbStagingBoundary.cutoff },
+            verified: true,
+          };
         }
         if (phase === "request_pii_scrub") {
           await execution.scrubPii();
@@ -165,6 +256,26 @@ describe("processAccountErasureRequest request-to-completion (integration)", () 
       }),
     );
     expect(phaseRuns).not.toContain("retention_verification");
+    expect(phaseRuns).toContain("consumer_drain");
+    const [consumerDrainCheckpoint] = await context.db.execute(
+      sql`SELECT details
+          FROM fitness.account_erasure_checkpoint
+          WHERE request_id = ${accepted.requestId}::uuid
+            AND phase = 'consumer_drain'`,
+    );
+    // After request_pii_scrub, only non-identifying retention inputs survive.
+    expect(consumerDrainCheckpoint).toEqual({
+      details: {
+        quarantineHighWatermarks: [
+          {
+            topic: "metric-stream-live-v2",
+            partition: 0,
+            low: "0",
+            offset: "0",
+          },
+        ],
+      },
+    });
     const [peerDbCheckpoint] = await context.db.execute(
       sql`SELECT details
           FROM fitness.account_erasure_checkpoint
@@ -190,6 +301,12 @@ describe("processAccountErasureRequest request-to-completion (integration)", () 
     ).resolves.toEqual({ status: "completed" });
 
     expect(phaseRuns).toEqual(ACCOUNT_ERASURE_ACTIVE_PHASES);
+    expect(retention.loadIngestFenceCompletedAt).toHaveBeenCalledWith({
+      requestId: accepted.requestId,
+    });
+    expect(retention.loadStockPhysicalMaintenanceAck).toHaveBeenCalledWith({
+      requestId: accepted.requestId,
+    });
     expect(retention.verifyPeerDbStagingRetention).toHaveBeenCalledWith({
       cutoff: new Date(peerDbStagingBoundary.cutoff),
       now: retentionVerificationAt,
@@ -214,12 +331,12 @@ describe("processAccountErasureRequest request-to-completion (integration)", () 
             EXISTS (
               SELECT 1
               FROM fitness.user_profile
-              WHERE id = ${userId}::uuid
+              WHERE id = ${completionUserId}::uuid
             ) AS profile_exists,
             EXISTS (
               SELECT 1
               FROM fitness.user_settings
-              WHERE user_id = ${userId}::uuid
+              WHERE user_id = ${completionUserId}::uuid
             ) AS settings_exist
           FROM fitness.account_erasure_request AS request
           JOIN fitness.account_erasure_outbox AS outbox

@@ -1,0 +1,36 @@
+{
+  "at": "2026-11-06T22:22:53.342Z",
+  "bucketName": "kafka-ts-b2-f-20261106",
+  "bucketId": "ffbbd40bf312bd2ea1130015",
+  "keyId": "004fb4b32de13050000000004",
+  "manualCleanup": true,
+  "priorAttempt": "v3 delete-key rejected v4-created key; corrected to official v4 endpoint",
+  "errors": [],
+  "childRevoked": true,
+  "before": [
+    {
+      "fileName": "kafka-ts-parity/b2/20261106-phasef1/tieredTopicB2F-1J9Rouw5RKaKRs0n0qYXdw/0/00000000000000000000-p8WWfQiJTRaJN3LNsu2dkA.indexes",
+      "fileId": "4_zffbbd40bf312bd2ea1130015_f102431e1a854125a_d20261106_m222058_c004_v0402006_t0018_u01794003658182",
+      "action": "upload",
+      "size": 120
+    },
+    {
+      "fileName": "kafka-ts-parity/b2/20261106-phasef1/tieredTopicB2F-1J9Rouw5RKaKRs0n0qYXdw/0/00000000000000000000-p8WWfQiJTRaJN3LNsu2dkA.log",
+      "fileId": "4_zffbbd40bf312bd2ea1130015_f1191469e792f11d2_d20261106_m222057_c004_v0402012_t0018_u01794003657964",
+      "action": "upload",
+      "size": 66417
+    },
+    {
+      "fileName": "kafka-ts-parity/b2/20261106-phasef1/tieredTopicB2F-1J9Rouw5RKaKRs0n0qYXdw/0/00000000000000000000-p8WWfQiJTRaJN3LNsu2dkA.rsm-manifest",
+      "fileId": "4_zffbbd40bf312bd2ea1130015_f1132e2bca4749b78_d20261106_m222058_c004_v0402038_t0004_u01794003658434",
+      "action": "upload",
+      "size": 712
+    }
+  ],
+  "aborted": [],
+  "afterVersions": 0,
+  "afterUploads": 0,
+  "remainingBuckets": 0,
+  "remainingKeys": 0,
+  "status": "CLEANUP_VERIFIED"
+}

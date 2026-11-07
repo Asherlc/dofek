@@ -1,0 +1,13 @@
+# Ephemeral lab-only — NOT for prod/durable commit
+# User-approved: raise ONLY disposable bookie mem_limit 1536MiB→2048MiB; BOOKIE_MEM heap512/direct512 unchanged
+services:
+  metric-stream-minio:
+    mem_limit: 1024m
+  pulsar-broker:
+    mem_limit: 2048m
+    environment:
+      PULSAR_MEM: -Xms256m -Xmx768m -XX:MaxDirectMemorySize=768m
+  pulsar-bookie:
+    mem_limit: 2048m
+    environment:
+      BOOKIE_MEM: -Xms256m -Xmx512m -XX:MaxDirectMemorySize=512m

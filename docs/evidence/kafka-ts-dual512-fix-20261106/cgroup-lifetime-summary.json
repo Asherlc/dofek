@@ -1,0 +1,63 @@
+{
+  "method": "max(peak_mib) across all retained cgroup snapshots + TSV; peaks reset on container recreate so pre-recreate after-produce must be included",
+  "roles": {
+    "client": {
+      "lifetime_peak_mib": 195.8,
+      "oom_or_kill_seen": 0
+    },
+    "kafka": {
+      "lifetime_peak_mib": 1628.5,
+      "oom_or_kill_seen": 0
+    },
+    "seaweed": {
+      "lifetime_peak_mib": 808.1,
+      "oom_or_kill_seen": 0
+    }
+  },
+  "after_produce_peaks_mib": {
+    "kafka": 1628.5,
+    "seaweed": 730.5,
+    "client": 195.8
+  },
+  "after_digest_b_peaks_mib": {
+    "kafka": {
+      "current_mib": 1237.9,
+      "peak_mib": 1263.7,
+      "events": {
+        "low": 0,
+        "high": 0,
+        "max": 0,
+        "oom": 0,
+        "oom_kill": 0,
+        "oom_group_kill": 0
+      },
+      "oom": false
+    },
+    "seaweed": {
+      "current_mib": 632.4,
+      "peak_mib": 808.1,
+      "events": {
+        "low": 0,
+        "high": 0,
+        "max": 0,
+        "oom": 0,
+        "oom_kill": 0,
+        "oom_group_kill": 0
+      },
+      "oom": false
+    },
+    "client": {
+      "current_mib": 2.4,
+      "peak_mib": 195.8,
+      "events": {
+        "low": 0,
+        "high": 0,
+        "max": 0,
+        "oom": 0,
+        "oom_kill": 0,
+        "oom_group_kill": 0
+      },
+      "oom": false
+    }
+  }
+}

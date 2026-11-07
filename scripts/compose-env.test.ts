@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -16,6 +16,81 @@ function parseDotenv(output: string): Record<string, string> {
 }
 
 describe("compose-env", () => {
+  it.each([0, 17])("waits for the Kafka API and propagates readiness exit %i", (readyExitCode) => {
+    const cwd = mkdtempSync(join(tmpdir(), "compose-env-test-"));
+    const workspaceDirectory = realpathSync(cwd);
+    const binDirectory = join(cwd, "bin");
+    const commandLog = join(cwd, "docker-commands.jsonl");
+    mkdirSync(binDirectory);
+    writeFileSync(
+      join(binDirectory, "docker"),
+      `#!${process.execPath}
+const fs = require("node:fs");
+const args = process.argv.slice(2);
+if (args.includes("port")) process.exit(1);
+fs.appendFileSync(process.env.COMPOSE_TEST_COMMAND_LOG, JSON.stringify(args) + "\\n");
+process.exit(args.includes("run") ? Number(process.env.COMPOSE_TEST_READY_EXIT_CODE) : 0);
+`,
+      { mode: 0o755 },
+    );
+
+    try {
+      const start = () =>
+        execFileSync(
+          resolve("node_modules/.bin/tsx"),
+          [resolve("scripts/compose-env.ts"), "--up"],
+          {
+            cwd,
+            env: {
+              ...process.env,
+              PATH: `${binDirectory}:${process.env.PATH}`,
+              COMPOSE_TEST_COMMAND_LOG: commandLog,
+              COMPOSE_TEST_READY_EXIT_CODE: String(readyExitCode),
+            },
+            stdio: ["ignore", "pipe", "pipe"],
+          },
+        );
+      if (readyExitCode === 0) {
+        expect(start).not.toThrow();
+      } else {
+        expect(start).toThrow();
+      }
+
+      const composeArguments = [
+        "compose",
+        "--project-name",
+        basename(workspaceDirectory),
+        "--project-directory",
+        workspaceDirectory,
+        "--file",
+        join(workspaceDirectory, "docker-compose.yml"),
+        "--env-file",
+        join(workspaceDirectory, ".env.local"),
+      ];
+      const commands = readFileSync(commandLog, "utf8")
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line));
+      expect(commands).toEqual([
+        [
+          ...composeArguments,
+          "up",
+          "-d",
+          "--wait",
+          "--wait-timeout",
+          "180",
+          "db",
+          "clickhouse",
+          "redis",
+          "kafka",
+        ],
+        [...composeArguments, "run", "--rm", "--no-deps", "kafka-ready"],
+      ]);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   it("percent-encodes reserved characters in URL password components", () => {
     const cwd = mkdtempSync(join(tmpdir(), "compose-env-test-"));
     const postgresFixtureValue = "pg@pass:word/with?query#fragment";
@@ -46,9 +121,13 @@ describe("compose-env", () => {
       const dotenv = parseDotenv(output);
 
       expect(dotenv.COMPOSE_PROJECT_NAME).toBe(basename(cwd));
-      expect(dotenv.METRIC_STREAM_LEGACY_TOPIC).toBe("metric-stream-v1");
-      expect(dotenv.METRIC_STREAM_LIVE_TOPIC).toBe("metric-stream-live-v1");
-      expect(dotenv.METRIC_STREAM_HISTORY_TOPIC).toBe("metric-stream-history-v1");
+      expect(dotenv.METRIC_STREAM_LEGACY_TOPIC).toBe("metric-stream-v2");
+      expect(dotenv.METRIC_STREAM_LIVE_TOPIC).toBe("metric-stream-live-v2");
+      expect(dotenv.METRIC_STREAM_HISTORY_TOPIC).toBe("metric-stream-history-v2");
+      // Placeholders so Compose can interpolate metric-stream archive profile
+      // services that use ${VAR:?} even when those services are not started.
+      expect(dotenv.KAFKA_BROKERS).toMatch(/^127\.0\.0\.1:/);
+      expect(dotenv.METRIC_STREAM_TRANSPORT_EPOCH).toBe("local-dev-transport-epoch");
       expect(dotenv.COMPOSE_FILE).toBe(join(realpathSync(cwd), "docker-compose.yml"));
       expect(dotenv.POSTGRES_PASSWORD).toBe(postgresFixtureValue);
       expect(dotenv.CLICKHOUSE_PASSWORD).toBe(clickHouseFixtureValue);
@@ -125,7 +204,7 @@ describe("compose-env", () => {
             CLICKHOUSE_HTTP_PORT: "28123",
             CLICKHOUSE_NATIVE_PORT: "29000",
             REDIS_PORT: "26379",
-            REDPANDA_PORT: "29092",
+            KAFKA_PORT: "19092",
             PEERDB_CDC_PORT: "29900",
             PEERDB_UI_PORT: "23001",
           },

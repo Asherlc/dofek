@@ -1,0 +1,10 @@
+STATUS=READY_FOR_ROOT_RETRY_20261107b
+LAB=/tmp/kafka-ts-r2-q-mpudel-20261107b
+BUCKET=kafka-ts-r2-q-mpudel-20261107b
+PREFIX=kafka-ts-parity/r2/20261107b-q-mpudel/
+PRIOR=20261107 cleaned (List0/MPU0/DELETE200/GET404); do not recreate
+OPERATOR_PATH_MUST_INCLUDE=/usr/local/bin
+FIRST_FATAL=Error: spawnSync docker ENOENT (compose-command.ts:39)
+REPO_PATCH=none (not a wrapper defect)
+BUDGET_UPLOAD_REMAINING_MIB=16
+SLOT=still held by T03/87 for this retry — tell 3d

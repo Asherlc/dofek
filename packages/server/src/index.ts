@@ -38,7 +38,10 @@ import {
 } from "../../../src/account-erasure/restore-ledger.ts";
 import { reconcileAccountErasureRestoreIntents } from "../../../src/account-erasure/restore-reconciliation.ts";
 import type { MetricStreamEventPublisher } from "../../../src/metric-stream/publisher.ts";
-import { getDefaultMetricStreamEventPublisher } from "../../../src/metric-stream/redpanda-producer.ts";
+import {
+  closeAllMetricStreamEventPublishers,
+  getDefaultMetricStreamEventPublisher,
+} from "../../../src/metric-stream/publisher-factory.ts";
 import { isAdmin } from "./auth/admin.ts";
 import { getSessionIdFromRequest } from "./auth/cookies.ts";
 import { validateSession } from "./auth/session.ts";
@@ -124,31 +127,45 @@ export function createGracefulShutdownHandler(
     options.markShuttingDown();
     logger.info(`[server] Received ${signal}, draining before shutdown`);
 
+    let terminal = false;
+    const finish = (code: number) => {
+      if (terminal) return;
+      terminal = true;
+      clearTimeout(forceExitTimer);
+      exit(code);
+    };
     const forceExitTimer = setTimeout(() => {
       logger.error("[server] Graceful shutdown timed out, forcing exit");
-      exit(1);
+      finish(1);
     }, drainDelayMs + forceExitAfterMs);
     forceExitTimer.unref();
 
     const closeTimer = setTimeout(() => {
       options.server.close((err) => {
-        clearTimeout(forceExitTimer);
         if (err) {
           logger.error(`[server] Error while closing server: ${err.message}`);
-          exit(1);
+          captureException(err, { tags: { context: "server-shutdown" } });
+          finish(1);
           return;
         }
-        void closeProviderOperationFencePool().then(
-          () => {
+        void Promise.allSettled([
+          closeAllMetricStreamEventPublishers(),
+          closeProviderOperationFencePool(),
+        ]).then((outcomes) => {
+          const failures = outcomes.flatMap((outcome) =>
+            outcome.status === "rejected" ? [outcome.reason] : [],
+          );
+          if (failures.length) {
+            captureException(new AggregateError(failures, "Server resource shutdown failed"), {
+              tags: { context: "server-shutdown" },
+            });
+            logger.error("[server] Could not close publisher or provider operation resources");
+            finish(1);
+          } else {
             logger.info("[server] Shutdown complete");
-            exit(0);
-          },
-          (error: unknown) => {
-            captureException(error, { tags: { context: "provider-operation-lock-shutdown" } });
-            logger.error("[server] Could not close provider operation locks");
-            exit(1);
-          },
-        );
+            finish(0);
+          }
+        });
       });
     }, drainDelayMs);
     closeTimer.unref();

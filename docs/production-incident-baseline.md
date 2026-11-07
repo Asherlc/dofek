@@ -1,5 +1,175 @@
 # Production Incident Baseline
 
+## 2026-11-07 — GitGuardian Generic High Entropy on Kafka `CLUSTER_ID` candidate (false positive)
+
+- **Status:** **Closed as false positive.** Root authenticated GitGuardian MCP marked
+  incident `39779011` **IGNORED** reason `false_positive` (verified
+  `2026-11-07T05:23:16Z`). No credential rotation. Candidate evidence bytes left
+  stable (no history rewrite / redaction-for-green). No broad scanner ignore or
+  repo-wide allowlist.
+- **Check:** External [GitGuardian Security Checks](https://dashboard.gitguardian.com)
+  on PR [#3231](https://github.com/Asherlc/dofek/pull/3231) — incident `39779011`,
+  occurrence `310926305`, detector **Generic High Entropy Secret**. In-repo
+  `Test / Secret Scan` remained success on the same heads.
+- **Location:** commit `ea27b5b13` —
+  `docs/evidence/kafka-ts-r2-q-mpudel-20261107c/KAFKA_CLUSTER_ID.candidate.json`
+  (and twin `.candidate.txt`); field `value_nonsecret` from stock
+  `kafka-storage.sh random-uuid` (`apache/kafka:4.4.0`).
+- **Root cause:** Stock Kafka KRaft cluster id is a public format identifier, not
+  an API secret ([Kafka 4.4 KRaft](https://kafka.apache.org/44/operations/kraft/)
+  `kafka-storage.sh random-uuid` / format servers). GG high-entropy detector
+  matched the id shape.
+- **Remediation:** Specific-incident ignore only
+  ([GG remediate overview](https://docs.gitguardian.com/internal-repositories-monitoring/remediate/overview);
+  [incident statuses — Ignored](https://docs.gitguardian.com/internal-monitoring/detect/incident-statuses)).
+  Closed/ignored incidents are not raised on **new** GitHub check runs
+  ([GG GitHub PR checks](https://docs.gitguardian.com/secrets-detection/secrets-detection-in-sdlc/detect-secrets-in-real-time-in-github)).
+- **Stale PR check evidence:** Head `9257f24af` check-run `128312539438` still
+  showed conclusion failure / table status **Triggered** after the ignore (summary
+  still cited incident `39779011`). Stock GitHub
+  `POST .../check-runs/{id}/rerequest` and `.../check-suites/{id}/rerequest`
+  returned **404** for the GitGuardian app (cannot refresh from GitHub API).
+  Stock refresh: GG dashboard Perimeter → GitHub check runs → **Re-run** that
+  check ([2026-07-28 GG changelog](https://docs.gitguardian.com/releases/saas/2026/07/28/changelog)),
+  or any subsequent push that creates a new GG check run after ignore.
+- **Remaining risk / follow-up:** Other high-entropy evidence blobs may re-trigger
+  GG; triage each occurrence (credential vs identifier) before any ignore. Do not
+  treat a stale Triggered check-run body as a new open incident after dashboard
+  IGNORED.
+
+## 2026-11-07 — Infisical→GH sync pruned GH-only `CLOUDFLARE_TERRAFORM_R2_API_TOKEN` (resolved via env ownership)
+
+- **Status:** Resolved. Terraform provisioning **DONE** (plan+apply+Root
+  independent verify). Production cutover / topic values / old RP data-dir
+  deletion remain **unapproved**.
+- **Symptoms / user impact:** Root-dispatched Terraform **plan**
+  ([run 42338058404](https://github.com/Asherlc/dofek/actions/runs/42338058404)
+  on `e1c9fbdb5`) job **Terraform Plan** / `TF_OPERATION=plan` failed before
+  `terraform init` with exact fatal
+  `ERROR: missing required GitHub secret CLOUDFLARE_TERRAFORM_R2_API_TOKEN`.
+- **Evidence (names/timestamps only):**
+  - Repo Actions secrets API: `CLOUDFLARE_TERRAFORM_R2_API_TOKEN` **count = 0**
+    after prune; `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` remained
+    (`updated_at=2026-11-07T04:08:50Z`).
+  - **65** repository secrets share `updated_at` prefix `2026-11-07T04:08:`
+    (mass rewrite); total **93**. Same class as 2026-07-26 sync rewrite.
+  - `KAFKA_BROKERS` / `KAFKA_CLUSTER_ID` `updated_at=2026-11-07T04:08:55Z`
+    (Infisical bootstrap) → auto-sync.
+  - Sync LIVE (Root): id `7e9e1465-e2f4-4eb7-b271-2bfa122d0f89`
+    `dofek-github-sync`, `initialSyncBehavior=overwrite-destination`,
+    `disableSecretDeletion=false`, `lastSynced=2026-11-07T04:09:05.498Z`.
+- **Root cause:** Infisical GitHub Secret Sync overwrite removed the
+  repo-level GH-only managing token not present in Infisical
+  ([GitHub sync](https://infisical.com/docs/integrations/secret-syncs/github);
+  [overview](https://infisical.com/docs/integrations/secret-syncs/overview)).
+  Same class as 2026-07-26 `ZEPP_RELEASE_TOKEN`.
+- **Direct fix (minimal stock):** User chose dedicated Actions environment
+  `terraform` (no required reviewers). Job `environment: terraform` on
+  `5b8260341`. Root MCP-rolled unused CF token `ac888…` (policies unchanged);
+  new value via STDIN `gh secret set --env terraform` only — **env present,
+  repo absent**; no Infisical copy; sync settings unchanged.
+- **Validation (plan):** Plan-only
+  [run 42338890512](https://github.com/Asherlc/dofek/actions/runs/42338890512)
+  on `5b8260341` — job **Terraform Plan**, `TF_OPERATION=plan`, **success**.
+  Human plan summary: **Plan: 8 to add, 0 to change, 2 to destroy.** Creates
+  Kafka TS bucket/lifecycle/account_token + five `infisical_secret.kafka_tiered_storage_*`;
+  destroys orphaned `cloudflare_r2_bucket.pulsar_qualification` +
+  `cloudflare_r2_bucket_lifecycle.pulsar_qualification_cleanup` (not in config).
+- **Pre-apply object cleanup (user-approved):** Root re-listed
+  `dofek-pulsar-qualification` (14 objects / 82,640,555 B; 0 MPU), deleted the
+  14 retired UUID-ledger/index lab objects, post-list 0 / 0 MPU / 0 body GET.
+  Sanitized receipt:
+  [pulsar-qualification-object-cleanup.json](evidence/kafka-infra-plan-review-20261107/pulsar-qualification-object-cleanup.json)
+  (`at=2026-11-07T04:47:24.609Z`).
+- **Validation (apply):** User-approved Root dispatch
+  [run 42339969701](https://github.com/Asherlc/dofek/actions/runs/42339969701)
+  `operation=apply`, `TF_OPERATION=apply`, head `ba7afbda4` (infra/workflow
+  equivalent to reviewed pin `5b8260341`). **No first fatal.** Job **Terraform
+  Apply** success. Exact summary:
+  `Apply complete! Resources: 8 added, 0 changed, 2 destroyed.` Matches plan;
+  no Modifying actions. Adds: `cloudflare_r2_bucket.kafka_ts_offload`,
+  `cloudflare_r2_bucket_lifecycle.kafka_ts_offload_abort_mpu`,
+  `cloudflare_account_token.kafka_ts_offload_object_rw`, five
+  `infisical_secret.kafka_tiered_storage_*`. Destroys: empty
+  `cloudflare_r2_bucket.pulsar_qualification` +
+  `cloudflare_r2_bucket_lifecycle.pulsar_qualification_cleanup`. See
+  [kafka-ts-r2-offload-iac.md](kafka-ts-r2-offload-iac.md).
+- **Root independent post-apply verify:** SUCCESS — same run `42339969701`,
+  pinned `5b8260341`, exact `8 added / 0 changed / 2 destroyed`. All five
+  Infisical `KAFKA_TIERED_STORAGE_*` names nonempty; dedicated child HEAD
+  `dofek-kafka-ts-offload` **200** / `ListObjects` **0**; retired
+  `dofek-pulsar-qualification` HEAD **404**; **0** body GET. Environment
+  secret names-only still present after apply. Receipt:
+  [apply-verification.json](evidence/kafka-infra-plan-review-20261107/apply-verification.json)
+  (`at=2026-11-07T04:49:02.023Z`).
+- **Remaining risk / follow-up:** Do not store managing token as a repo secret
+  again. Broker qualification, production cutover, topic-value changes, and old
+  Redpanda data-dir deletion remain **unapproved**.
+
+## 2026-11-06 — Kafka TS R2 managing-token bootstrap blocked on DNS Write `is_selectable=false` (IAM resolved via R2 provider alias)
+
+- **Scope / impact:** Pre-apply IaC only. No production deploy, no TF apply, no new CF token, no GH secret write. Dedicated Terraform managing token `dofek-terraform-manage` → GH `CLOUDFLARE_TERRAFORM_API_TOKEN` not created yet. Traefik Infisical `CLOUDFLARE_API_TOKEN` unchanged. Workflow still references legacy GH `CLOUDFLARE_API_TOKEN`.
+- **Symptoms:** Managed Cloudflare MCP (official app-server `cloudflare-api` OAuth) can list account permission groups. Required groups Account API Tokens Write, Workers R2 Storage Write, Zone Write, Zone Read report `is_selectable=true`. **DNS Write** id `4755a26eedb94da69e1066d98aa820be` reports **`is_selectable=false`**. Other DNS-named groups: DNS Read selectable; Zone DNS Settings Write selectable but is settings-only, not DNS record CRUD.
+- **Evidence (sanitized):** Prior Infisical/GH generic `CLOUDFLARE_API_TOKEN` List Tokens → HTTP **403** / code **9109**. Managed MCP catalog readback as above; create not attempted. Docs: [List Permission Groups `is_selectable`](https://developers.cloudflare.com/api/resources/accounts/subresources/tokens/subresources/permission_groups/methods/list/), [create-via-api membership subset](https://developers.cloudflare.com/fundamentals/api/how-to/create-via-api/), [Account API tokens grant subset](https://developers.cloudflare.com/fundamentals/api/get-started/account-owned-tokens/).
+- **Root cause (current):** Caller membership behind the MCP OAuth session cannot select DNS Write when minting account-owned tokens — not an MCP-outage and not “account tokens cannot hold DNS Write.”
+- **Fix / mitigation (initial):** Unresolved DNS-elevate path for a single full managing token (`CLOUDFLARE_TERRAFORM_API_TOKEN` including DNS Write).
+- **Resolution (2026-11-06, IAM bootstrap):** User-approved durable split — keep default GH `CLOUDFLARE_API_TOKEN` for DNS/existing TF; add stock `provider "cloudflare" { alias = "r2" }` for Kafka TS only. Root created account-owned `dofek-terraform-r2-manage` id `ac888fe9c542f602fc419c29d28a64cc` with **Account API Tokens Write** + **Workers R2 Storage Write** on account `8e5b2f62…` only (no DNS/Zone); managed MCP create + permission_groups GET **200**; value piped to `gh secret set CLOUDFLARE_TERRAFORM_R2_API_TOKEN` (names-only confirmed). Workflow wires `TF_VAR_cloudflare_terraform_r2_api_token` with fail-fast. Traefik Infisical token unchanged. **DNS elevation not required.** Alias does not isolate the CI job/state — same `deploy-terraform` apply. See [kafka-ts-r2-offload-iac.md](kafka-ts-r2-offload-iac.md).
+- **Remaining risk / follow-up:** IAM bootstrap **resolved**. Terraform apply (bucket/child token/Infisical write) and Kafka TS qualification remain **separate unproven gates** — not claimed complete by this entry.
+
+## 2026-11-06 — Local SSH commit signing interruption (recovered; cause unconfirmed)
+
+- **Scope / impact:** Workstation only on `pulsar-foundation`. Blocked a selective CI commit of staged `src/metric-stream/clickhouse-sink.test.ts` (+133 public S0 unit lines). No production deploy. Branch HEAD remained `4ba0a0a6d`. Staged blob preserved; no unsigned/`--no-gpg-sign` bypass.
+- **Exact failing command:** `git commit` (signed) of the staged sink-test file only.
+- **First fatal lines (two attempts, no further retries):**
+  1. `error: 1Password: failed to fill whole buffer` then `fatal: failed to write commit object`
+  2. `error: 1Password: agent returned an error` then `fatal: failed to write commit object`
+- **Read-only signing config (no keys/emails/secrets printed):** `gpg.format=ssh`, `commit.gpgsign=true`, `user.signingkey` set, `gpg.ssh.program=/Applications/1Password.app/Contents/MacOS/op-ssh-sign` — all from the operator global gitconfig. `1Password.app` present and running (v8.12.42 processes observed). `op` CLI present (2.28.0). `SSH_AUTH_SOCK` is set to an existing socket whose path is **not** a 1Password agent path; commit signing still routes through `op-ssh-sign` directly, so sock path alone does not prove the failure mode.
+- **Classification:** Unresolved. Two fatals do **not** distinguish operator-locked vault vs `op-ssh-sign`/agent bug. Supported next step is operator open/unlock of 1Password, then one re-attempt of the same staged commit — not config mutation, not unsigned bypass.
+- **Annotation (2026-11-06):** Signing resumed after user unlock and signed `0a90f52b6` (and later `eab7e32df`); exact prior failure mechanism not isolated.
+- **Related runtime (independent):** After Docker Desktop engine returned, `docker info` reported server `29.6.2` / `overlay2`; named volumes retained; `pulsar-foundation-db-1` healthy with `pnpm compose -- port db 5432` → `127.0.0.1:55000` for B7’s narrow PG+SeaweedFS slot.
+
+## 2026-11-05 — storage-footprint-1 setup UNQUALIFIED (broker image unavailable)
+
+- **Scope / impact:** Local Compose lab only (`--project-suffix storage-footprint-1` on Foundation). No production deploy, no publish workload, no hardBytes. Measurement **not completed**. STOP / no rerun until main publishes the broker artifact.
+- **Exact failing command:**
+  `pnpm compose -- --project-suffix storage-footprint-1 -f docker-compose.yml -f docker-compose.pulsar.yml --profile pulsar -f /tmp/storage-footprint-1-broker-accel.yml up -d --build --wait --wait-timeout 300 pulsar-broker`
+- **First fatal line:**
+  `failed to solve: Get "https://archive.apache.org/dist/pulsar/pulsar-5.0.1/apache-pulsar-5.0.1-src.tar.gz": net/http: TLS handshake timeout`
+  (BuildKit step `#9 ERROR` on `ADD` of that URL from `deploy/pulsar/Dockerfile`.)
+- **Image / tag evidence (same session, retained):** required local tag `dofek-pulsar-qualification:5.0.1-r2` → `image_missing`. Local pulsar-related images present: `apachepulsar/pulsar:5.0.1` (`edaea58dd082`), `dofek-pulsar-addon-preflight:20261105` only. Subsequent availability check (not a rebuild): `docker pull ghcr.io/asherlc/dofek-pulsar-qualification:5.0.1-r2` → `Error response from daemon: manifest unknown` / `PULL_FATAL`.
+- **Why the qualified topology failed here:** stock `apachepulsar/pulsar:5.0.1` path (Oxia namespaces, init, metaformat, bookie) came up; the compose broker service pins `image: dofek-pulsar-qualification:5.0.1-r2` with local `build: ./deploy/pulsar` (S3 offloader). That artifact was neither local nor on GHCR, so the offload-capable broker half of the qualified topology could not start. Lab stopped at first setup fatal; no retries/builds/setting changes afterward.
+- **MinIO bucket loop:** ad-hoc lab operator `until … s3.bucket.create -name pulsar-qualification …; do sleep 1; done` hung because weed returned `error: bucket pulsar-qualification already exists` (non-zero). Bucket already existed from the **existing** compose fixture (`metric-stream-minio` creates `$METRIC_STREAM_R2_BUCKET`; pulsar overlay sets that to `pulsar-qualification`) — not new committed operator code. Loop was SIGTERM'd; not the broker first fatal.
+- **Cleanup / preservation / grant release:** identity-checked `pulsar-foundation-storage-footprint-1_*` then `down --volumes --remove-orphans` → `CLEANUP_OK`, `leftover_containers=0 leftover_volumes=0`. Preserved `580f1c69f82f` → `preserved=/dull-baboon-pulsar-consumer-broker-1 running`. `RUNTIME_SLOT_RELEASED_TO_87f70` at `2026-11-05T23:15:34Z`; sole-runtime ACK received.
+- **Pre-offload footprint truthfully measured in this lab:** **none** (no broker → no publish → no journal/ledger/broker/`du` integers). Prior read-only standalone `580f1c69f82f` `/pulsar/data` ≈ 265,535,488 B remains non-qualifying for hardBytes. Host census envelope 16,333,307,904 B post-reserve is not a footprint measurement.
+- **Safe fix proposed at incident time, superseded below:** run/land then-existing `.github/workflows/build-pulsar-qualification.yml` so `ghcr.io/<repo-lower>-pulsar-qualification:5.0.1-r2` exists with digest; digest-pin for stack/lab; fail closed if image absent before starting Oxia/bookie; lab pulls published image (no workstation `--build` against archive.apache.org). Treat weed “already exists” as success if any bucket check remains. That workflow file was later removed; do not run it now — see subsequent resolutions for the registered publish path and actual digest.
+- **Resolution (2026-11-06, path only — artifact still unpublished):** Publish consolidated into registered [`.github/workflows/pulsar-source-build.yml`](../.github/workflows/pulsar-source-build.yml) (one ARM job; `workflow_dispatch` / main `workflow_call` push; PR `--load` only). Duplicate `.github/workflows/build-pulsar-qualification.yml` removed. GHCR `5.0.1-r2` still absent until that workflow runs successfully; no stack digest pin yet.
+- **Resolution (2026-11-06, artifact available):** [Run 42252694136](https://github.com/Asherlc/dofek/actions/runs/42252694136) published
+  `ghcr.io/asherlc/dofek-pulsar-qualification:5.0.1-r2@sha256:d99e2776fcdac9268a0f2f78d014d879e86a0a547ab7829f9e3d2d70fa59b822`
+  (linux/arm64 child `sha256:6515ca137b78cb47bf62f3e9c756e3eb6a5c01f7ea830e47439860cd7a0e59db`) from commit `eab7e32df`. **storage-footprint-1 measurement remains UNQUALIFIED** — this entry’s `du`/hardBytes work was never completed; publishing the image does not convert the prior setup failure into a footprint result. No stack pin. Re-grant a fresh footprint lab separately if needed.
+- **Follow-on (2026-11-06, initial R2 functional lab — not footprint):** Owned suffix `r2-offload-gap-1` against bucket `dofek-pulsar-qualification` using the published digest passed upload, BK metadata disappearance for sealed ledger 5, broker-restart remote Earliest read (1000×8192 LINE-CANONICAL match), and native object absence after stock topic delete. See [pulsar-foundation-qualification.md](pulsar-foundation-qualification.md#november-6-published-image-pin-and-initial-real-r2-functional-lab). Scope excludes outage/soak/oversized-entry and footprint `du`.
+
+## 2026-11-05 — Raw replay qualification exposes equal-version replacement and parameter limits
+
+- **Impact and evidence:** Local transport-release qualification only; no production deployment. The retained-history replay test returned scalar 70 instead of the newer live scalar 90 after `FINAL` and a forced merge. The [raw table](../src/metric-stream/clickhouse-table.ts) uses `ReplacingMergeTree(version)`; equal versions follow insertion order, as documented by [ClickHouse](https://clickhouse.com/docs/engines/table-engines/mergetree-family/replacingmergetree). Reserved ingestion times alone therefore do not prove stable winners.
+- **Correction under qualification:** Compare incoming rows against current full sorting keys under the serialized publication owner; retain newer winners, skip identical replay and reject equal-time payload conflicts. The causal case and six boundary cases passed against real Postgres and ClickHouse. This is a latent raw-sink risk found by source review and reproduction, not evidence that production data has already been affected.
+- **Additional first failures:** The PG fence query initially passed a JavaScript array as a scalar UUID parameter; an explicit typed SQL array fixed the real `22P02` failure. The guard initially serialized Int64 tuple versions as quoted text; the SDK's supported bigint serializer fixed the native parse error. The full 500-row run then failed with `Poco::Exception ... HTML Form Exception: Field value too long` because its payload-bearing multipart parameter exceeded the native field limit. [Multipart does not remove that per-value limit](https://github.com/ClickHouse/clickhouse-js/blob/main/packages/client-node/CHANGELOG.md).
+- **Remaining work:** Refine the guard to send sorting keys only, bound returned winners and stream admitted payloads through the existing SDK insert. The full 500-row, replay, erasure and native-broker suites must pass before release. No timeout, server-size limit or retry was increased; all production holds remain.
+
+## 2026-11-05 — Native addon crashes mutation workers; erasure coverage rejects the acknowledgement table
+
+- **Impact and first failures:** [CI run 42106860779](https://github.com/Asherlc/dofek/actions/runs/42106860779) passed native sink integration and migration lint, but mutation workers exited with `SIGSEGV`, `SIGABRT` or `SIGILL` during their initial run. Web E2E migration separately failed with `metric_stream_delete_acknowledgement.command_id violates its column contract`. No production deployment occurred.
+- **Crash diagnosis and fix:** Twenty local worker-thread load/unload controls passed without Pulsar; loading `pulsar-client` then terminated Node 26.7.0 with signal 11. Twenty separate child processes loading the same addon passed. Stryker's [runner defaults to threads and overrides Vitest's pool](https://stryker-mutator.io/docs/stryker-js/vitest-runner/); configure its supported `vitest.pool: forks` explicitly, matching the existing Vitest configuration and the [documented native-addon isolation guidance](https://vitest.dev/config/pool). No retries, exclusions or score thresholds change.
+- **Schema diagnosis and fix:** The erasure classifier expected nine CDC command columns absent from the canonical acknowledgement builder. Its strict contract now matches the actual `event_id` and `applied_at` columns. Extra or mistyped columns still fail closed. All 20 coverage unit tests passed; E2E requalification remains required.
+- **Remaining gates:** A separate physical-erasure mutation shard has missing unit coverage and surviving mutants; process isolation does not address that failure. Full mutation and E2E checks remain required before release.
+
+## 2026-11-05 — Pulsar dependency installation blocks PR checks
+
+- **Impact and evidence:** [PR #3231](https://github.com/Asherlc/dofek/pull/3231) failed dependency installation in [CI run 42099939657](https://github.com/Asherlc/dofek/actions/runs/42099939657). The first failure was a native SDK binary GET from `archive.apache.org` with an empty fetch-error reason; the subsequent `pulsar/c/message.h` compile error was the source-build fallback. The underlying runner network error remains unknown. Production deployment remains disabled.
+- **Approved fix:** Use the SDK's supported binary-host environment setting with [Apache Downloads](https://downloads.apache.org/pulsar/pulsar-client-node/pulsar-client-node-1.18.0/). Configure the variable explicitly in CI, Docker and mise: [pnpm 11 no longer exports configuration as lifecycle environment variables](https://pnpm.io/scripts). No download retry, TLS change or source-build workaround is added.
+- **Security:** Override `tar` to 7.5.22, addressing [SNYK-JS-TAR-18319500](https://security.snyk.io/vuln/SNYK-JS-TAR-18319500), introduced through the native SDK's installer.
+- **Validation and remaining risk:** The official Linux glibc x64 archive matched Apache's SHA-512 checksum. The frozen local install passed, using existing native artifacts; this does not qualify a fresh SDK download. A fresh CI installation and all required checks must pass before release.
+- **CI follow-up:** Dependency setup passed in [run 42106013896](https://github.com/Asherlc/dofek/actions/runs/42106013896). Migration lint then rejected three new integer declarations under the repository's [bigint policy](https://squawkhq.com/docs/prefer-bigint-over-int). The migration and Drizzle types now use bigint; the work-store query explicitly returns its database-bounded 1–500 member count as an integer. The unchanged real-engine pending-membership test first failed on the bigint string result, then all five work-store integration tests passed after the mapping fix. Both migration policy and Squawk passed; required CI remains pending.
+
 ## 2026-11-01 — Climbing activity card displays a cardio icon
 
 - **Symptoms / impact:** [Activity 2590bf35](https://dofek.fit/activity/2590bf35-bfea-4b57-ac9c-5c9ad96ff617) displays the lightning/cardio icon beside its Kaya climbing title.
@@ -35651,3 +35821,61 @@ additional strict-whitespace assertions. The sanitized
 [line-size measurement record](pulsar-foundation-qualification.md#november-5-retained-archive-line-size-measurement)
 is now retained with its source ranges and explicit sampling limits. These
 were pre-merge corrections; no production deployment occurred.
+
+## 2026-11-05 — Native sink qualification caught an unsupported streaming call
+
+- **Impact:** Local release qualification only; no production Pulsar deployment or data loss. The first finite native one-row test returned an inserted count of one and advanced receipts/frontier, but its raw-row query returned no rows. The command used the integration project with one worker, `--retry=0 --bail=1` and `-t "finite native"`; later cases stopped and the owned test databases were cleaned up.
+- **Confirmed cause:** The repository's inherited `command(values)` interface did not match `@clickhouse/client` 1.23.1. Its packaged `dist/common/client.js` forwards streamed values through `exec()`, not `command()`. The unit fake consumed the unsupported argument and hid the mismatch. See the [published client artifact](https://registry.npmjs.org/@clickhouse/client/-/client-1.23.1.tgz) and [JavaScript client API](https://clickhouse.com/docs/integrations/javascript#exec-method).
+- **Correction and validation:** The grouped writer now uses stock `exec(values)` with `wait_end_of_query=1` and consumes the full response to EOF under the query owner before committing receipts or advancing the frontier. A `written_rows` lower bound catches an undercount; equality is invalid because materialized views add writes to the summary. Prepared recovery manifests remain pending on failure. Official client signatures now constrain the fakes. The full real Postgres/ClickHouse sink file passes all 19 cases, including exact raw rows for groups of one and 500, replay, deletes, markers and acknowledgement ordering; focused unit tests cover interrupted responses and summary failures. No timeout, retry or resource limit was raised. See the [client completion settings](https://clickhouse.com/docs/integrations/javascript#clickhouse-settings).
+- **Additional test defects:** Real-engine reproduction confirmed that a display alias `toString(id) AS id` shadowed the native UUID predicate and returned an empty result. The read query now selects the native column and orders explicitly by its string representation where the assertion expects string order. An obsolete 350-control coalescing test was replaced with exact per-control receipts and versions matching the native consumer contract. The four-control diagnostic took about 1.40 seconds and 134 ClickHouse calls; it does not qualify a large provider deletion.
+- **Subsequent qualification and remaining gates:** Independent source review found no critical or important issue, and both finite real-broker composition cases passed. Current-path throughput remains open; the earlier DULL figure does not qualify this client path. Carry control-burst drain time into the whole-host soak, alongside the physical storage, erasure and deployment gates. Automatic deployment and all production holds remain unchanged.
+
+## 2026-11-05 — Erasure handoff and local test qualification remain unresolved
+
+- **Impact:** Local R1 release qualification only. Production transport, paused
+  deployment and all four holds are unchanged.
+- **Confirmed erasure handoff defect:** A real Postgres/ClickHouse test persisted
+  a complete pending group descriptor and its ingestion reservation, then observed
+  a fully consumed native server error. Admission of the erasure writer failed
+  with `has pending intent ...; replay that intent before admitting another delivery`.
+  The [owner](../src/analytics/analytics-query-owner.ts) retains a failed write's
+  intent even after it is known terminal. A journal that is physically full could
+  therefore prevent erasure from acquiring the writer. This test qualifies the
+  known-terminal error boundary, not physical EDQUOT enforcement.
+- **Related proof dependency:** Erasure removes personal journal/effect-receipt
+  rows that [delivery replay](../src/analytics/analytics-delivery.ts) currently
+  re-verifies. The correction must preserve structural recovery evidence while
+  physically removing identifying columns, retain original membership and time
+  reservations, and keep unknown request outcomes blocked. Streaming delete
+  effects come from current raw rows matching a scope; they cannot all be
+  reconstructed from the native message after erasure. No protocol correction
+  has been implemented or qualified. Safe journal retirement remains R2 work.
+- **Partial correction qualified:** Source-group intent release now requires a
+  complete persisted descriptor, its full reservation below the retained HWM and
+  the existing positive terminal/session guards. Explicit reservation reuse checks
+  exact descriptor identity and performs no HWM update. Five real database cases
+  and 80 focused unit cases pass; independent review found no critical or important
+  issue. Unknown outcomes, missing descriptors and unreserved slots remain
+  blocked. This fixes writer handoff and time reuse only; receipt redaction and
+  replay after erasure remain unresolved.
+- **Unresolved test-runner event:** A combined unit/mobile run stopped after
+  3,819 passing cases because the reporter's child fixture had not emitted
+  `hook.start` by its existing ten-second deadline. Its original error incorrectly
+  claimed pipes had not closed without observing closure. The test diagnostic now
+  records safe lifecycle states, marker presence, byte counts and event names.
+  One isolated run passed in 931 ms; that does not establish the broad-run cause.
+  The instrumented broad reproduction passed 23,889 tests, including this case
+  before the owner changes; it does not establish the original cause or qualify
+  the final tree. No timeout, retry, assertion or production reporter behavior
+  was changed.
+
+## 2026-11-07 — History sink drain paused after scope-deletion timeout (unresolved)
+
+- **Approved read-only production plan investigation:** `EXPLAIN` on the recorded query's SELECT body selects all 25 outer parts / 24,625 granules through `by_provider_generation`, with primary-key condition `true`; the inner user/activity candidate lookup selects only 36 of 24,653 granules. Actions show an ID runtime filter in outer PREWHERE, but it does not prune the selected granules. Metadata confirms the selected covering projection exists on all 25 active parts (201,300,346 physical rows), so missing materialization of that projection is not the cause. Existing projection keys do not lead with ID. Only plans and metadata were queried, with no deletion replay, raw-data scan, setting change or restart. A stock ID-leading lightweight projection is a possible next local experiment, not a qualified fix or approved production change; ClickHouse documents its key-and-row-offset storage in [projections](https://clickhouse.com/docs/concepts/features/projections/projections).
+- **Local qualification outcome:** The user-approved early candidate-ID `PREWHERE` experiment did not qualify. On a 16,384-row fixture, ClickHouse 26.6.1.1193 read 24,576 rows / 732,145 bytes for the baseline versus 32,768 rows / 880,401 bytes for the candidate; 26.10.2.103 similarly increased reads from 24,576 rows / 742,738 bytes to 32,768 rows / 891,282 bytes. Both baseline plans already build an ID runtime join filter; the candidate adds another candidate scan. Millisecond timing differences on this fixture do not establish production benefit. Unit tests passed (47); the 26.10 integration suite passed (19) and all six added semantic cases passed; 26.6 passed 20 of 21 cases, with the existing 350-scope acknowledgement case exceeding its unchanged 30-second timeout. No candidate was committed or deployed, and no timeout was increased. Next investigation requires the production plan and projection evidence before another optimization is selected; see ClickHouse's [EXPLAIN reference](https://clickhouse.com/docs/sql-reference/statements/explain).
+- **Symptoms / impact:** During the approved history ClickHouse sink drain, the sink timed out at 15:59:04.170 UTC on partition 0, offset `70578630`. At 16:00 UTC, the remaining history lag was 3,867,001; host load reached 12.14 and live sink/archive lag was temporarily nonzero. The history checkpoint remained above the retained log start (`55609019`), with high watermark `74445631`. Affected historical serving data remains incomplete; this was not a Kafka cutover.
+- **Instrumentation / first fatal:** Axiom tools were unavailable, so investigation followed the [loading-performance runbook](performance/loading-performance-runbook.md) using bounded Swarm logs and ClickHouse `system.query_log`. `docker service logs --since 6m dofek_metric-stream-history-clickhouse-sink` recorded `[2026-11-07T15:59:04.170Z][ERROR][@clickhouse/client][Connection] Command: HTTP request error`, caused by `Error: Timeout error`; KafkaJS then reported `Error when calling eachBatch` at offset `70578630`.
+- **Causal evidence:** Query `19eb5a76-94ff-41b3-97e3-3cc249ea2aa8` was the sink's [scope-deletion INSERT SELECT](../src/metric-stream/clickhouse-sink.ts), starting at 15:57:04 and completing at 16:00:35 after 211,768 ms. It read 204,914,382 rows / 17,943,979,240 bytes. The scoped candidate subquery filters user/activity, but the outer latest-version read joins candidate IDs without equivalent scan pruning. Retry `2ea3d47c-80dd-48d2-931d-7d63ba60dda2` overlapped the original from 15:59:05, reading another 204,857,038 rows. Ten queries in this family read approximately 1.64 billion rows during the incident window; other observed query families were below one second, with no competing slow dbt query found. CPU reached the existing ClickHouse 1.5-CPU allocation. The relative contribution of merging and CPU throttling to the spike remains unqualified.
+- **Approved mitigation / validation:** The monitor used the user's preauthorized history-only rollback, scaling `dofek_metric-stream-history-clickhouse-sink=0`. Independent service and container checks confirmed `0/0` with no history task running; heartbeat `bed16b70` was deleted. After the stop, observed load fell to 6.58, live/archive lag cleared, and no active ClickHouse queries remained. A final 16:03:53 UTC check found load 3.05, no active queries, all other groups at zero lag, and history still stopped. Live ClickHouse is 26.6.1.1193; the running app revision is `f02798b72a144d137a0bd06ca111ad23f0c2c800`. Both deletion queries finished with exception code zero and wrote 21,706 rows each; this does not establish that the subsequent deletion acknowledgement completed. No timeout, retry, retention, optimizer, or resource setting was changed.
+- **Remaining risk / follow-up:** Keep the incident open and history sink stopped until the query correction and restart direction are reviewed. Qualify a bounded query against real ClickHouse fixtures, preserving latest-version behavior when a record moves outside an old scope; a filter-only rewrite is not automatically correct. Recheck retained offsets before any restart. No acknowledgement, offset reset, or resume was performed as part of mitigation. The [provider-deletion runbook](provider-data-deletion-runbook.md) describes a separate bounded deletion path and must not be treated as proof that this historical scope query is bounded.
+- **Retrospective:** Existing query logs and the preapproved stop condition made the failure diagnosable and contained its load. The monitor's own Cursor quota interruption required transfer to a Codex child earlier in the drain. Proposed runbook improvement: record the deletion query family, rows read, in-flight retry overlap, and offset-retention margin as explicit drain checks. Reuse the loading-performance runbook and `check-logs` workflow for similar incidents.

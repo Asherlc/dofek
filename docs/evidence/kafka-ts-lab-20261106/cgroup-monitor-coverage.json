@@ -1,0 +1,8 @@
+{
+  "sampler_interval_s_intended": 5,
+  "sampler_line_count": 6,
+  "sampler_first_utc": "2026-11-06T21:47:48Z",
+  "sampler_last_utc": "2026-11-06T21:47:54Z",
+  "coverage_note": "Periodic 5s sampler produced few lines and did not reliably span restart; lifetime cgroup memory.peak/events from final oneshot remain authoritative for the whole container lifetime including restart.",
+  "kernel_docs": "https://docs.kernel.org/admin-guide/cgroup-v2.html#memory-interface-files"
+}

@@ -5,7 +5,8 @@ import {
   createMetricStreamEvent,
   type MetricStreamDeleteScopeInput,
   type MetricStreamRowInput,
-  metricStreamRedpandaEventSchema,
+  metricStreamKafkaEventSchema,
+  metricStreamProcessingContextSchema,
 } from "./events.ts";
 
 const operationRevision = "1000000000000000";
@@ -195,7 +196,7 @@ describe("createMetricStreamDeletedEvent", () => {
 
   it("accepts version-one delete events during archive replay", () => {
     expect(
-      metricStreamRedpandaEventSchema.parse({
+      metricStreamKafkaEventSchema.parse({
         version: 1,
         eventType: "metric_stream_deleted",
         scope: { activityId: "20000000-0000-4000-8000-000000000001" },
@@ -210,7 +211,7 @@ describe("createMetricStreamDeletedEvent", () => {
   });
 
   it("rejects non-RFC UUIDs on version-two delete events", () => {
-    const result = metricStreamRedpandaEventSchema.safeParse({
+    const result = metricStreamKafkaEventSchema.safeParse({
       version: 2,
       eventType: "metric_stream_deleted",
       eventId: "12345678-1234-1234-1234-123456789abc",
@@ -223,10 +224,13 @@ describe("createMetricStreamDeletedEvent", () => {
 });
 
 describe("createMetricStreamBatchCompletedEvent", () => {
-  it("creates an operation-correlated marker with a stable partition key", () => {
+  const ownerUserId = "10000000-0000-4000-8000-000000000001";
+
+  it("creates a v2 operation-correlated marker with concrete account owner", () => {
     const marker = createMetricStreamBatchCompletedEvent(
       {
         operationId: "30000000-0000-4000-8000-000000000001",
+        userId: ownerUserId,
         batchId: "heart-rate-1",
         datasetKeys: ["recovery", "training"],
       },
@@ -234,9 +238,10 @@ describe("createMetricStreamBatchCompletedEvent", () => {
     );
 
     expect(marker).toEqual({
-      version: 1,
+      version: 2,
       eventType: "metric_stream_batch_completed",
       operationId: "30000000-0000-4000-8000-000000000001",
+      userId: ownerUserId,
       batchId: "heart-rate-1",
       datasetKeys: ["recovery", "training"],
       expectedEventCount: 2,
@@ -244,11 +249,26 @@ describe("createMetricStreamBatchCompletedEvent", () => {
     });
   });
 
-  it("rejects empty dataset manifests and zero-event markers", () => {
+  it("still parses legacy ownerless v1 markers for history/eraser", () => {
+    expect(
+      metricStreamKafkaEventSchema.parse({
+        version: 1,
+        eventType: "metric_stream_batch_completed",
+        operationId: "30000000-0000-4000-8000-000000000001",
+        batchId: "heart-rate-1",
+        datasetKeys: ["recovery"],
+        expectedEventCount: 1,
+        partitionKey: "processing:30000000-0000-4000-8000-000000000001:heart-rate-1",
+      }),
+    ).toMatchObject({ version: 1 });
+  });
+
+  it("rejects empty dataset manifests, missing owner, and zero-event markers", () => {
     expect(() =>
       createMetricStreamBatchCompletedEvent(
         {
           operationId: "30000000-0000-4000-8000-000000000001",
+          userId: ownerUserId,
           batchId: "heart-rate-1",
           datasetKeys: [],
         },
@@ -258,12 +278,63 @@ describe("createMetricStreamBatchCompletedEvent", () => {
 
     expect(() =>
       createMetricStreamBatchCompletedEvent(
+        // Missing required userId — force runtime schema rejection without a type assertion.
+        metricStreamProcessingContextSchema.parse({
+          operationId: "30000000-0000-4000-8000-000000000001",
+          batchId: "heart-rate-1",
+          datasetKeys: ["recovery"],
+        }),
+        1,
+      ),
+    ).toThrow();
+
+    expect(() =>
+      createMetricStreamBatchCompletedEvent(
         {
           operationId: "30000000-0000-4000-8000-000000000001",
+          userId: ownerUserId,
           batchId: "heart-rate-1",
           datasetKeys: ["recovery"],
         },
         0,
+      ),
+    ).toThrow();
+  });
+
+  it("accepts nil and non-RFC GUID owners on v2 markers while keeping operationId UUID-shaped", () => {
+    const nilOwner = "00000000-0000-0000-0000-000000000000";
+    const nonRfcOwner = "00000000-0000-0000-0000-000000000001";
+    expect(
+      createMetricStreamBatchCompletedEvent(
+        {
+          operationId: "30000000-0000-4000-8000-000000000001",
+          userId: nilOwner,
+          batchId: "nil-owner",
+          datasetKeys: ["recovery"],
+        },
+        1,
+      ).userId,
+    ).toBe(nilOwner);
+    expect(
+      createMetricStreamBatchCompletedEvent(
+        {
+          operationId: "30000000-0000-4000-8000-000000000001",
+          userId: nonRfcOwner,
+          batchId: "non-rfc-owner",
+          datasetKeys: ["recovery"],
+        },
+        1,
+      ).userId,
+    ).toBe(nonRfcOwner);
+    expect(() =>
+      createMetricStreamBatchCompletedEvent(
+        {
+          operationId: "00000000-0000-0000-0000-000000000001",
+          userId: ownerUserId,
+          batchId: "bad-operation",
+          datasetKeys: ["recovery"],
+        },
+        1,
       ),
     ).toThrow();
   });

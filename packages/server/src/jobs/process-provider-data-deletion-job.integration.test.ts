@@ -10,6 +10,7 @@ import {
 import type { ProviderDataDeletionJobData } from "../../../../src/jobs/queues.ts";
 import { applyMetricStreamEventsToClickHouse } from "../../../../src/metric-stream/clickhouse-sink.ts";
 import { createMetricStreamEvent } from "../../../../src/metric-stream/events.ts";
+import { createMetricStreamAnalyticsTestContext } from "../../../../src/metric-stream/test-helpers.ts";
 import {
   createClickHouseTestActivitySensorStore,
   getClickHouseTestClient,
@@ -193,56 +194,6 @@ describe("processProviderDataDeletionJob ClickHouse integration", () => {
     ]);
     expect(enqueueAnalyticsRefresh).toHaveBeenCalledWith(userId, "garmin", eventId);
     expect(markCompleted).toHaveBeenCalledWith(eventId);
-  });
-
-  it("tombstones a stale event when the generation fence advances during insertion", async () => {
-    const clickHouseClient = getClickHouseTestClient(testContext);
-    const insert = clickHouseClient.insert;
-    if (!insert) {
-      throw new Error("ClickHouse integration test client does not support inserts");
-    }
-    const staleEvent = createMetricStreamEvent(
-      {
-        channel: "heart_rate",
-        externalId: "late-event",
-        generation: 0,
-        providerId: "race-provider",
-        recordedAt: "2026-07-18T12:30:00.000Z",
-        scalar: 142,
-        sourceType: "integration-test",
-        userId,
-      },
-      operationRevision,
-    );
-
-    const applied = await applyMetricStreamEventsToClickHouse(
-      {
-        command: (options) => clickHouseClient.command(options),
-        query: (options) => clickHouseClient.query(options),
-        insert: async (options) => {
-          const result = await insert(options);
-          await clickHouseClient.command({
-            query: `INSERT INTO ingest.provider_data_generation (
-                user_id, provider_id, generation, updated_at
-              ) VALUES ({user_id:UUID}, {provider_id:String}, 1, now64(9))`,
-            query_params: { provider_id: staleEvent.providerId, user_id: staleEvent.userId },
-          });
-          return result;
-        },
-      },
-      [staleEvent],
-    );
-
-    expect(applied).toBe(0);
-    const result = await clickHouseClient.query<{ id: string; is_deleted: number }>({
-      query: `SELECT id, argMax(is_deleted, tuple(version, ingested_at)) AS is_deleted
-        FROM ingest.metric_stream
-        WHERE id = {id:UUID}
-        GROUP BY id`,
-      query_params: { id: staleEvent.id },
-      format: "JSONEachRow",
-    });
-    await expect(result.json()).resolves.toEqual([{ id: staleEvent.id, is_deleted: 1 }]);
   });
 
   it("keeps each tombstone insert bounded to its selected generation and ID keys", async () => {
@@ -516,5 +467,61 @@ describe("processProviderDataDeletionJob ClickHouse integration", () => {
 
     expect(queryLogRows).toHaveLength(1);
     expect(queryLogRows[0]?.read_rows).toBeLessThanOrEqual(16_384);
+  });
+});
+
+describe("applyMetricStreamEventsToClickHouse generation fence race", () => {
+  it("tombstones a stale event when the generation fence advances during insertion", async () => {
+    const sink = await createMetricStreamAnalyticsTestContext();
+    try {
+      const insert = sink.client.insert;
+      const staleEvent = createMetricStreamEvent(
+        {
+          channel: "heart_rate",
+          externalId: "late-event",
+          generation: 0,
+          providerId: "race-provider",
+          recordedAt: "2026-07-18T12:30:00.000Z",
+          scalar: 142,
+          sourceType: "integration-test",
+          userId,
+        },
+        operationRevision,
+      );
+
+      const applied = await applyMetricStreamEventsToClickHouse(
+        {
+          ...sink.client,
+          // Sink writes rows via insert(); advance the generation fence after
+          // that write so the post-insert generation check tombs the stale row.
+          insert: async (options) => {
+            const result = await insert(options);
+            if (options.table.endsWith(".metric_stream")) {
+              await sink.client.command({
+                query: `INSERT INTO ingest.provider_data_generation (
+                    user_id, provider_id, generation, updated_at
+                  ) VALUES ({user_id:UUID}, {provider_id:String}, 1, now64(9))`,
+                query_params: { provider_id: staleEvent.providerId, user_id: staleEvent.userId },
+              });
+            }
+            return result;
+          },
+        },
+        [staleEvent],
+      );
+
+      expect(applied).toBe(0);
+      const result = await sink.client.query<{ id: string; is_deleted: number }>({
+        query: `SELECT id, argMax(is_deleted, tuple(version, ingested_at)) AS is_deleted
+          FROM ingest.metric_stream
+          WHERE id = {id:UUID}
+          GROUP BY id`,
+        query_params: { id: staleEvent.id },
+        format: "JSONEachRow",
+      });
+      await expect(result.json()).resolves.toEqual([{ id: staleEvent.id, is_deleted: 1 }]);
+    } finally {
+      await sink.cleanup();
+    }
   });
 });

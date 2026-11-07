@@ -1,0 +1,42 @@
+{
+  "row_count": 15,
+  "by_role": {
+    "kafka": {
+      "samples": 5,
+      "first_utc": "2026-11-06T21:56:10Z",
+      "last_utc": "2026-11-06T21:56:19Z",
+      "max_observed_peak_mib": 689.4,
+      "max_observed_current_mib": 533.3,
+      "any_oom": false,
+      "phases": [
+        "bootstrap",
+        "ready"
+      ]
+    },
+    "seaweed": {
+      "samples": 5,
+      "first_utc": "2026-11-06T21:56:10Z",
+      "last_utc": "2026-11-06T21:56:19Z",
+      "max_observed_peak_mib": 80.6,
+      "max_observed_current_mib": 48.4,
+      "any_oom": false,
+      "phases": [
+        "bootstrap",
+        "ready"
+      ]
+    },
+    "tool": {
+      "samples": 5,
+      "first_utc": "2026-11-06T21:56:10Z",
+      "last_utc": "2026-11-06T21:56:19Z",
+      "max_observed_peak_mib": 5.1,
+      "max_observed_current_mib": 2.1,
+      "any_oom": false,
+      "phases": [
+        "bootstrap",
+        "ready"
+      ]
+    }
+  },
+  "note": "Sampler appears to have stalled before produce/digest; docker inspect OOM=true at death is authoritative for kafka OOM during earliest remote consume"
+}

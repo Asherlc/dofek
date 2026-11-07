@@ -1,0 +1,17 @@
+{
+  "bucket": "kafka-ts-r2-q-mpudel-20261107b",
+  "prefix": "kafka-ts-parity/r2/20261107b-q-mpudel/",
+  "accountId": "8e5b2f62ffe8ebdd48e725d325a6d51e",
+  "main_topic": "tieredTopicR2QMpu",
+  "quarantine_topic": "tieredTopicR2QMpu.quarantine.v1",
+  "project_suffix": "kafka-ts-r2-q-mpudel-b",
+  "compose_project_name": "pulsar-foundation-kafka-ts-r2-q-mpudel-b",
+  "ttl_seconds": 3600,
+  "wall_max_minutes_after_mint": 55,
+  "total_upload_bound_mib": 16,
+  "upload_bytes_used_prior_attempt": 0,
+  "read_planning_mib": 10,
+  "read_hard_cap": false,
+  "prior_bucket_retired": "kafka-ts-r2-q-mpudel-20261107",
+  "prior_fatal": "spawnSync docker ENOENT (operator PATH omitted /usr/local/bin)"
+}

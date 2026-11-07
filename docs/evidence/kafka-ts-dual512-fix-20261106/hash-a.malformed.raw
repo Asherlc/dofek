@@ -1,0 +1,47 @@
+{
+  "label": "A-pre-restart",
+  "utc": "2026-11-06T22:10:37.712530+00:00",
+  "note": "Fixture-correct: consumer in clien{
+  "ok": true,
+  "A": "84647a6947925f3ec9977f7b36da31a962bfa096134281ada00f6c3d5a19370b",
+  "B": "84647a6947925f3ec9977f7b36da31a962bfa096134281ada00f6c3d5a19370b"
+}
+s": {
+    "topicA": {
+      "topic": "topicA",
+      "parsed_count": 256,
+      "expected": 256,
+      "first_offset": 0,
+      "last_offset": 255,
+      "strict_order_contiguous": true,
+      "sha256_offset_value": "84647a6947925f3ec9977f7b36da31a962bfa096134281ada00f6c3d5a19370b",
+      "sha256_values_ordered": "59b61da98fd89667dd90afcf166d3b597e2c943c0947bcb37b44e1b89a23053a",
+      "consumer_rc": 0,
+      "parse_fail_lines": 0,
+      "stderr_tail": [
+        "The consumer rebalance protocol (KIP-848) is production-ready! Set group.protocol=consumer to try it out. See https://kafka.apache.org/documentation/#consumer_rebalance_protocol",
+        "Processed a total of 256 messages"
+      ],
+      "client_heap_opts": "-Xms32m -Xmx256m",
+      "consumer_host": "client-service-outside-broker-cgroup"
+    },
+    "topicB": {
+      "topic": "topicB",
+      "parsed_count": 256,
+      "expected": 256,
+      "first_offset": 0,
+      "last_offset": 255,
+      "strict_order_contiguous": true,
+      "sha256_offset_value": "84647a6947925f3ec9977f7b36da31a962bfa096134281ada00f6c3d5a19370b",
+      "sha256_values_ordered": "59b61da98fd89667dd90afcf166d3b597e2c943c0947bcb37b44e1b89a23053a",
+      "consumer_rc": 0,
+      "parse_fail_lines": 0,
+      "stderr_tail": [
+        "The consumer rebalance protocol (KIP-848) is production-ready! Set group.protocol=consumer to try it out. See https://kafka.apache.org/documentation/#consumer_rebalance_protocol",
+        "Processed a total of 256 messages"
+      ],
+      "client_heap_opts": "-Xms32m -Xmx256m",
+      "consumer_host": "client-service-outside-broker-cgroup"
+    }
+  }
+}

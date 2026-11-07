@@ -1,7 +1,7 @@
 input:
   redpanda:
     seed_brokers:
-      - ${REDPANDA_BROKERS}
+      - ${KAFKA_BROKERS}
     topics:
       - ${METRIC_STREAM_TOPIC}
     consumer_group: ${METRIC_STREAM_CONSUMER_GROUP}

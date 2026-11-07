@@ -1,0 +1,17 @@
+{
+  "pulsar-foundation-kafka-ts-dual512-fix-kafka-1": {
+    "current": 0,
+    "peak": 0,
+    "events": null
+  },
+  "pulsar-foundation-kafka-ts-dual512-fix-seaweed-1": {
+    "current": 0,
+    "peak": 0,
+    "events": null
+  },
+  "pulsar-foundation-kafka-ts-dual512-fix-client-1": {
+    "current": 0,
+    "peak": 0,
+    "events": null
+  }
+}

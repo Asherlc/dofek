@@ -38,7 +38,7 @@ API and import providers ──> sync/import workers ──> Postgres (fitness.*
                                   │                       │
                                   │                       └─ PeerDB CDC
                                   │                              │
-High-volume sensor samples ──────┴─> Redpanda ────────────────> ClickHouse
+High-volume sensor samples ──────┴─> Kafka-protocol log ──────> ClickHouse
                                         │                         │
                                         └─> Cloudflare R2 archive │
                                                                   │
@@ -48,9 +48,13 @@ High-volume sensor samples ──────┴─> Redpanda ──────
 ```
 
 - Postgres owns relational application state and lower-volume raw health data.
-- High-volume `metric_stream` events bypass Postgres. Redpanda is the hot ingest
-  log, Cloudflare R2 is the durable archive, and ClickHouse is the
-  serving copy.
+- High-volume `metric_stream` events bypass Postgres. The hot ingest log is a
+  Kafka-protocol broker: **local Compose / checked-in `deploy/stack.yml` target
+  Apache Kafka 4.4**; **production today still runs Redpanda** (`REDPANDA_BROKERS`)
+  until an approved cutover
+  ([cutover review](deploy/kafka/README.md#production-cutover--rollback-review-not-executed)).
+  Cloudflare R2 is the durable JSONL archive (via [Redpanda Connect](https://docs.redpanda.com/redpanda-connect/components/inputs/redpanda/));
+  ClickHouse is the serving copy.
 - PeerDB mirrors lower-volume `fitness.*` tables into `postgres_fitness.*` in
   ClickHouse.
 - Incremental dbt models under `analytics/models/` produce expensive derived
@@ -90,7 +94,7 @@ mise run cloud:init
 ```
 
 `mise run cloud:init` installs workspace dependencies, initializes CodeGraph,
-verifies RTK, starts Postgres, ClickHouse, Redis, and Redpanda on
+verifies RTK, starts Postgres, ClickHouse, Redis, and Kafka on
 workspace-specific local ports and writes those ports to `.env.local`.
 It then loads the checked-in environment plus Infisical secrets,
 applies Postgres migrations, and applies ClickHouse migrations.

@@ -1,0 +1,12 @@
+{
+  "main.payload": {
+    "path": "/tmp/kafka-ts-r2-q-mpudel-20261107c/evidence/main.payload",
+    "bytes": 6047500,
+    "sha256": "44c723c5a64f32c7fe48eb1b52747e6c30d5f4188ad6b35d7bbb8cf3cb350d54"
+  },
+  "q.payload": {
+    "path": "/tmp/kafka-ts-r2-q-mpudel-20261107c/evidence/q.payload",
+    "bytes": 65600,
+    "sha256": "552fb1701dba0682c2d5594818713ec940aad93090f32f0643548e7d73295895"
+  }
+}

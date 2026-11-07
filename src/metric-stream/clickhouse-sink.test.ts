@@ -22,7 +22,7 @@ import {
   type MetricStreamDeleteScopeInput,
   type MetricStreamEventV1,
 } from "./events.ts";
-import type { RunMetricStreamEventConsumerOptions } from "./redpanda-consumer.ts";
+import type { RunMetricStreamEventConsumerOptions } from "./kafka-consumer.ts";
 
 const captureException = vi.hoisted(() => vi.fn());
 
@@ -94,7 +94,7 @@ afterEach(() => {
   captureException.mockClear();
   vi.doUnmock("../db/clickhouse.ts");
   vi.doUnmock("./consumer-readiness.ts");
-  vi.doUnmock("./redpanda-consumer.ts");
+  vi.doUnmock("./kafka-consumer.ts");
   vi.resetModules();
 });
 
@@ -391,6 +391,7 @@ describe("applyMetricStreamEventsToClickHouse", () => {
         operationId: "30000000-0000-4000-8000-000000000001",
         batchId: "heart-rate-1",
         datasetKeys: ["recovery"],
+        userId: "00000000-0000-0000-0000-000000000001",
       },
       1,
     );
@@ -435,6 +436,7 @@ describe("applyMetricStreamEventsToClickHouse", () => {
         operationId: "30000000-0000-4000-8000-000000000001",
         batchId: "heart-rate-1",
         datasetKeys: ["recovery"],
+        userId: "00000000-0000-0000-0000-000000000001",
       },
       1,
     );
@@ -456,6 +458,7 @@ describe("applyMetricStreamEventsToClickHouse", () => {
         operationId: "30000000-0000-4000-8000-000000000001",
         batchId: "heart-rate-1",
         datasetKeys: ["recovery"],
+        userId: "00000000-0000-0000-0000-000000000001",
       },
       1,
     );
@@ -483,6 +486,7 @@ describe("applyMetricStreamEventsToClickHouse", () => {
         operationId: "30000000-0000-4000-8000-000000000001",
         batchId: "heart-rate-1",
         datasetKeys: ["recovery"],
+        userId: "00000000-0000-0000-0000-000000000001",
       },
       1,
     );
@@ -507,6 +511,7 @@ describe("applyMetricStreamEventsToClickHouse", () => {
         operationId: "30000000-0000-4000-8000-000000000001",
         batchId: "heart-rate-1",
         datasetKeys: ["recovery"],
+        userId: "00000000-0000-0000-0000-000000000001",
       },
       1,
     );
@@ -1132,7 +1137,7 @@ describe("applyMetricStreamEventsToClickHouse", () => {
 });
 
 describe("runMetricStreamClickHouseSinkFromEnv", () => {
-  it("consumes Redpanda events and inserts them into ClickHouse", async () => {
+  it("consumes Kafka events and inserts them into ClickHouse", async () => {
     const client = {
       insert: vi.fn(async () => undefined),
       query: makeEmptyGenerationQuery(),
@@ -1158,7 +1163,7 @@ describe("runMetricStreamClickHouseSinkFromEnv", () => {
     vi.doMock("../db/clickhouse.ts", () => ({
       createClickHouseClientFromEnv: vi.fn(() => client),
     }));
-    vi.doMock("./redpanda-consumer.ts", () => ({
+    vi.doMock("./kafka-consumer.ts", () => ({
       createKafkaMetricStreamConsumerFromEnv,
       runMetricStreamEventConsumer,
     }));
@@ -1193,7 +1198,7 @@ describe("runMetricStreamClickHouseSinkFromEnv", () => {
     vi.doMock("../db/clickhouse.ts", () => ({
       createClickHouseClientFromEnv: vi.fn(() => ({})),
     }));
-    vi.doMock("./redpanda-consumer.ts", () => ({
+    vi.doMock("./kafka-consumer.ts", () => ({
       createKafkaMetricStreamConsumerFromEnv: vi.fn(),
       runMetricStreamEventConsumer: vi.fn(),
     }));
@@ -1209,7 +1214,7 @@ describe("runMetricStreamClickHouseSinkFromEnv", () => {
     vi.doMock("../db/clickhouse.ts", () => ({
       createClickHouseClientFromEnv: vi.fn(() => ({ insert: vi.fn(async () => undefined) })),
     }));
-    vi.doMock("./redpanda-consumer.ts", () => ({
+    vi.doMock("./kafka-consumer.ts", () => ({
       createKafkaMetricStreamConsumerFromEnv: vi.fn(() => ({
         consumer: {
           connect: vi.fn(async () => undefined),
@@ -1256,7 +1261,7 @@ describe("runMetricStreamClickHouseSinkFromEnv", () => {
       MetricStreamConsumerReadiness: class MetricStreamConsumerReadiness {},
       createMetricStreamConsumerReadinessServer,
     }));
-    vi.doMock("./redpanda-consumer.ts", () => ({
+    vi.doMock("./kafka-consumer.ts", () => ({
       createKafkaMetricStreamConsumerFromEnv: vi.fn(() => ({
         consumer,
         quarantine: {
@@ -1301,7 +1306,7 @@ describe("runMetricStreamClickHouseSinkFromEnv", () => {
       MetricStreamConsumerReadiness: class MetricStreamConsumerReadiness {},
       createMetricStreamConsumerReadinessServer: vi.fn(() => readinessServer),
     }));
-    vi.doMock("./redpanda-consumer.ts", () => ({
+    vi.doMock("./kafka-consumer.ts", () => ({
       createKafkaMetricStreamConsumerFromEnv: vi.fn(() => ({
         consumer: {
           connect: vi.fn(async () => undefined),

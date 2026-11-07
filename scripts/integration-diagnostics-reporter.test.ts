@@ -157,25 +157,60 @@ export default defineConfig({ test: { reporters: [new ObservedReporter()], proje
           { cwd: process.cwd(), detached: true, stdio: ["ignore", "pipe", "pipe"] },
         );
         let text = "";
-        let stderr = "";
+        let stdoutBytes = 0;
+        let stderrBytes = 0;
+        let spawned = false;
+        let exited = false;
+        let closed = false;
+        let exitCode: number | null = null;
+        let exitSignal: NodeJS.Signals | null = null;
+        child.on("spawn", () => {
+          spawned = true;
+        });
+        child.on("exit", (code, signal) => {
+          exited = true;
+          exitCode = code;
+          exitSignal = signal;
+        });
         child.stderr.on("data", (chunk: Buffer) => {
-          stderr += chunk.toString();
+          stderrBytes += chunk.length;
         });
         const timer = setTimeout(() => {
+          const diagnostics = {
+            markerExists: existsSync(marker),
+            spawned,
+            exited,
+            closed,
+            exitCode,
+            exitSignal,
+            stdoutBytes,
+            stderrBytes,
+            events: [
+              ...new Set(
+                [
+                  ...text.matchAll(
+                    /"event":"((?:module|suite|case|hook)\.(?:queued|collected|start|end|failed))"/g,
+                  ),
+                ].map((match) => match[1]),
+              ),
+            ],
+          };
           if (child.pid) process.kill(-child.pid, "SIGKILL");
           reject(
             new Error(
-              `Runner pipes did not close; hook observed: ${text.includes('"event":"hook.start"')}; stderr empty: ${stderr.length === 0}`,
+              `Child runner did not finish by hard-stop deadline: ${JSON.stringify(diagnostics)}`,
             ),
           );
         }, 10_000);
         child.stdout.on("data", (chunk: Buffer) => {
+          stdoutBytes += chunk.length;
           text += chunk.toString();
           if (text.includes('"event":"hook.start"') && child.pid)
             process.kill(-child.pid, "SIGKILL");
         });
         child.on("error", reject);
         child.on("close", () => {
+          closed = true;
           clearTimeout(timer);
           resolve(text);
         });

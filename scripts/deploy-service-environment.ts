@@ -1,6 +1,45 @@
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseEnv } from "node:util";
+import {
+  METRIC_STREAM_CONSUMER_ROUTES,
+  type MetricStreamConsumerRouteDefinition,
+} from "../src/metric-stream/consumer-routes.ts";
+
+/** Lane-87 Infisical contract for dedicated Kafka TS offload (not JSONL archive R2_*). */
+const KAFKA_TIERED_STORAGE_INFISICAL_KEYS = [
+  "KAFKA_TIERED_STORAGE_BUCKET",
+  "KAFKA_TIERED_STORAGE_ENDPOINT",
+  "KAFKA_TIERED_STORAGE_REGION",
+  "KAFKA_TIERED_STORAGE_ACCESS_KEY_ID",
+  "KAFKA_TIERED_STORAGE_SECRET_ACCESS_KEY",
+] as const;
+
+/**
+ * Infisical → broker env renames for kafka.env only. Static RSM/Aiven knobs live in
+ * deploy/stack.yml and docker-compose.yml. Values keep Infisical dotenv quoting
+ * (same raw-assignment slice as metric-stream topic remaps).
+ */
+const KAFKA_BROKER_ENV_RENAMES: ReadonlyArray<readonly [string, string]> = [
+  ["KAFKA_CLUSTER_ID", "CLUSTER_ID"],
+  ["KAFKA_TIERED_STORAGE_BUCKET", "KAFKA_RSM_CONFIG_STORAGE_S3_BUCKET_NAME"],
+  ["KAFKA_TIERED_STORAGE_ENDPOINT", "KAFKA_RSM_CONFIG_STORAGE_S3_ENDPOINT_URL"],
+  ["KAFKA_TIERED_STORAGE_REGION", "KAFKA_RSM_CONFIG_STORAGE_S3_REGION"],
+  ["KAFKA_TIERED_STORAGE_ACCESS_KEY_ID", "AWS_ACCESS_KEY_ID"],
+  ["KAFKA_TIERED_STORAGE_SECRET_ACCESS_KEY", "AWS_SECRET_ACCESS_KEY"],
+];
+
+/** Reject empty/whitespace names and Pulsar persistent URIs. */
+function assertKafkaMetricStreamTopicName(topic: string): string {
+  const trimmed = topic.trim();
+  if (!trimmed || trimmed.includes("\n") || trimmed.includes("\r") || /\s/.test(trimmed)) {
+    throw new Error("METRIC_STREAM_TOPIC must be a nonempty Kafka topic name without whitespace");
+  }
+  if (trimmed.startsWith("persistent://")) {
+    throw new Error("METRIC_STREAM_TOPIC must be a Kafka topic name, not a Pulsar persistent URI");
+  }
+  return trimmed;
+}
 
 const DEPLOY_SERVICE_NAMES = [
   "analyticsWorker",
@@ -12,6 +51,7 @@ const DEPLOY_SERVICE_NAMES = [
   "web",
   "webPreMigration",
   "worker",
+  "kafka",
   "metricStreamClickhouseSink",
   "metricStreamLiveClickhouseSink",
   "metricStreamHistoryClickhouseSink",
@@ -32,6 +72,7 @@ export const DEPLOY_SERVICE_ENVIRONMENT_FILE_NAMES = {
   web: "web.env",
   webPreMigration: "web-pre-migration.env",
   worker: "worker.env",
+  kafka: "kafka.env",
   metricStreamClickhouseSink: "metric-stream-clickhouse-sink.env",
   metricStreamLiveClickhouseSink: "metric-stream-live-clickhouse-sink.env",
   metricStreamHistoryClickhouseSink: "metric-stream-history-clickhouse-sink.env",
@@ -132,11 +173,17 @@ const APP_STORE_ENVIRONMENT_KEYS = [
 const METRIC_STREAM_ENVIRONMENT_KEYS = [
   "METRIC_STREAM_LIVE_TOPIC",
   "METRIC_STREAM_HISTORY_TOPIC",
-  "REDPANDA_BROKERS",
+  "KAFKA_BROKERS",
+] as const;
+
+/** Sink/archive bootstrap — canonical `KAFKA_BROKERS` only (no REDPANDA_/PULSAR_ alias). */
+const METRIC_STREAM_BROKER_ENVIRONMENT_KEYS = [
+  "KAFKA_BROKERS",
+  "METRIC_STREAM_TRANSPORT_EPOCH",
 ] as const;
 
 const METRIC_STREAM_ARCHIVE_ENVIRONMENT_KEYS = [
-  "REDPANDA_BROKERS",
+  ...METRIC_STREAM_BROKER_ENVIRONMENT_KEYS,
   "METRIC_STREAM_R2_BUCKET",
   "R2_ENDPOINT",
   "R2_ACCESS_KEY_ID",
@@ -157,15 +204,21 @@ const CDC_ENVIRONMENT_KEYS = [
   "POSTGRES_PASSWORD",
 ] as const;
 
+function consumerRoute(
+  id: MetricStreamConsumerRouteDefinition["id"],
+): MetricStreamConsumerRouteDefinition {
+  const route = METRIC_STREAM_CONSUMER_ROUTES.find((entry) => entry.id === id);
+  if (!route) throw new Error(`Unknown metric-stream consumer route: ${id}`);
+  return route;
+}
+
 interface DeployServiceEnvironmentPolicy {
   allowedKeys: readonly string[];
   requiredKeys: readonly string[];
   metricStreamRoute?: {
-    topicKey:
-      | "METRIC_STREAM_LEGACY_TOPIC"
-      | "METRIC_STREAM_LIVE_TOPIC"
-      | "METRIC_STREAM_HISTORY_TOPIC";
-    group?: string;
+    topicKey: MetricStreamConsumerRouteDefinition["topicKey"];
+    /** Consumer group identity; omitted for producer-only remaps. */
+    subscription?: string;
   };
 }
 
@@ -270,52 +323,58 @@ const DEPLOY_SERVICE_ENVIRONMENT_POLICIES: Record<
       "SENTRY_ORG",
     ],
   },
+  // Dedicated R2 offload keys (lane 87) → AWS default chain + RSM non-secret S3 fields.
+  // JSONL archive R2_* keys are never accepted here.
+  kafka: {
+    allowedKeys: ["KAFKA_CLUSTER_ID", ...KAFKA_TIERED_STORAGE_INFISICAL_KEYS],
+    requiredKeys: ["KAFKA_CLUSTER_ID", ...KAFKA_TIERED_STORAGE_INFISICAL_KEYS],
+  },
   metricStreamClickhouseSink: {
-    allowedKeys: ["REDPANDA_BROKERS"],
-    requiredKeys: ["REDPANDA_BROKERS", "METRIC_STREAM_LEGACY_TOPIC"],
+    allowedKeys: METRIC_STREAM_BROKER_ENVIRONMENT_KEYS,
+    requiredKeys: [...METRIC_STREAM_BROKER_ENVIRONMENT_KEYS, consumerRoute("legacy").topicKey],
     metricStreamRoute: {
-      topicKey: "METRIC_STREAM_LEGACY_TOPIC",
-      group: "metric-stream-clickhouse-sink",
+      topicKey: consumerRoute("legacy").topicKey,
+      subscription: consumerRoute("legacy").sinkSubscription,
     },
   },
   metricStreamLiveClickhouseSink: {
-    allowedKeys: ["REDPANDA_BROKERS"],
-    requiredKeys: ["REDPANDA_BROKERS", "METRIC_STREAM_LIVE_TOPIC"],
+    allowedKeys: METRIC_STREAM_BROKER_ENVIRONMENT_KEYS,
+    requiredKeys: [...METRIC_STREAM_BROKER_ENVIRONMENT_KEYS, consumerRoute("live").topicKey],
     metricStreamRoute: {
-      topicKey: "METRIC_STREAM_LIVE_TOPIC",
-      group: "metric-stream-live-clickhouse-sink",
+      topicKey: consumerRoute("live").topicKey,
+      subscription: consumerRoute("live").sinkSubscription,
     },
   },
   metricStreamHistoryClickhouseSink: {
-    allowedKeys: ["REDPANDA_BROKERS"],
-    requiredKeys: ["REDPANDA_BROKERS", "METRIC_STREAM_HISTORY_TOPIC"],
+    allowedKeys: METRIC_STREAM_BROKER_ENVIRONMENT_KEYS,
+    requiredKeys: [...METRIC_STREAM_BROKER_ENVIRONMENT_KEYS, consumerRoute("history").topicKey],
     metricStreamRoute: {
-      topicKey: "METRIC_STREAM_HISTORY_TOPIC",
-      group: "metric-stream-history-clickhouse-sink",
+      topicKey: consumerRoute("history").topicKey,
+      subscription: consumerRoute("history").sinkSubscription,
     },
   },
   metricStreamR2Archive: {
     allowedKeys: METRIC_STREAM_ARCHIVE_ENVIRONMENT_KEYS,
-    requiredKeys: [...METRIC_STREAM_ARCHIVE_ENVIRONMENT_KEYS, "METRIC_STREAM_LEGACY_TOPIC"],
+    requiredKeys: [...METRIC_STREAM_ARCHIVE_ENVIRONMENT_KEYS, consumerRoute("legacy").topicKey],
     metricStreamRoute: {
-      topicKey: "METRIC_STREAM_LEGACY_TOPIC",
-      group: "metric-stream-r2-archive",
+      topicKey: consumerRoute("legacy").topicKey,
+      subscription: consumerRoute("legacy").archiveSubscription,
     },
   },
   metricStreamLiveR2Archive: {
     allowedKeys: METRIC_STREAM_ARCHIVE_ENVIRONMENT_KEYS,
-    requiredKeys: [...METRIC_STREAM_ARCHIVE_ENVIRONMENT_KEYS, "METRIC_STREAM_LIVE_TOPIC"],
+    requiredKeys: [...METRIC_STREAM_ARCHIVE_ENVIRONMENT_KEYS, consumerRoute("live").topicKey],
     metricStreamRoute: {
-      topicKey: "METRIC_STREAM_LIVE_TOPIC",
-      group: "metric-stream-live-r2-archive",
+      topicKey: consumerRoute("live").topicKey,
+      subscription: consumerRoute("live").archiveSubscription,
     },
   },
   metricStreamHistoryR2Archive: {
     allowedKeys: METRIC_STREAM_ARCHIVE_ENVIRONMENT_KEYS,
-    requiredKeys: [...METRIC_STREAM_ARCHIVE_ENVIRONMENT_KEYS, "METRIC_STREAM_HISTORY_TOPIC"],
+    requiredKeys: [...METRIC_STREAM_ARCHIVE_ENVIRONMENT_KEYS, consumerRoute("history").topicKey],
     metricStreamRoute: {
-      topicKey: "METRIC_STREAM_HISTORY_TOPIC",
-      group: "metric-stream-history-r2-archive",
+      topicKey: consumerRoute("history").topicKey,
+      subscription: consumerRoute("history").archiveSubscription,
     },
   },
 };
@@ -330,6 +389,7 @@ export interface DeployServiceEnvironmentPaths {
   web: string;
   webPreMigration: string;
   worker: string;
+  kafka: string;
   metricStreamClickhouseSink: string;
   metricStreamLiveClickhouseSink: string;
   metricStreamHistoryClickhouseSink: string;
@@ -365,6 +425,7 @@ function resolvePaths(outputDirectory: string): DeployServiceEnvironmentPaths {
     web: join(outputDirectory, DEPLOY_SERVICE_ENVIRONMENT_FILE_NAMES.web),
     webPreMigration: join(outputDirectory, DEPLOY_SERVICE_ENVIRONMENT_FILE_NAMES.webPreMigration),
     worker: join(outputDirectory, DEPLOY_SERVICE_ENVIRONMENT_FILE_NAMES.worker),
+    kafka: join(outputDirectory, DEPLOY_SERVICE_ENVIRONMENT_FILE_NAMES.kafka),
     metricStreamClickhouseSink: join(
       outputDirectory,
       DEPLOY_SERVICE_ENVIRONMENT_FILE_NAMES.metricStreamClickhouseSink,
@@ -416,16 +477,31 @@ export function renderDeployServiceEnvironmentFiles(
   const paths = resolvePaths(outputDirectory);
 
   for (const serviceName of DEPLOY_SERVICE_NAMES) {
-    const lines = DEPLOY_SERVICE_ENVIRONMENT_POLICIES[serviceName].allowedKeys.flatMap((key) => {
-      const assignment = assignments.get(key);
-      return assignment === undefined ? [] : [assignment];
-    });
-    const route = DEPLOY_SERVICE_ENVIRONMENT_POLICIES[serviceName].metricStreamRoute;
-    if (route) {
-      const assignment = assignments.get(route.topicKey);
-      if (!assignment) throw new Error(`Missing validated assignment: ${route.topicKey}`);
-      lines.push(`METRIC_STREAM_TOPIC${assignment.slice(route.topicKey.length)}`);
-      if (route.group) lines.push(`METRIC_STREAM_CONSUMER_GROUP=${route.group}`);
+    let lines: string[];
+    if (serviceName === "kafka") {
+      lines = KAFKA_BROKER_ENV_RENAMES.map(([fromKey, toKey]) => {
+        const assignment = assignments.get(fromKey);
+        if (!assignment) throw new Error(`Missing validated assignment: ${fromKey}`);
+        return `${toKey}${assignment.slice(fromKey.length)}`;
+      });
+    } else {
+      lines = DEPLOY_SERVICE_ENVIRONMENT_POLICIES[serviceName].allowedKeys.flatMap((key) => {
+        const assignment = assignments.get(key);
+        return assignment === undefined ? [] : [assignment];
+      });
+      const route = DEPLOY_SERVICE_ENVIRONMENT_POLICIES[serviceName].metricStreamRoute;
+      if (route) {
+        const assignment = assignments.get(route.topicKey);
+        if (!assignment) throw new Error(`Missing validated assignment: ${route.topicKey}`);
+        const topicValue = assignment.slice(route.topicKey.length + 1);
+        if (route.subscription) {
+          const topic = assertKafkaMetricStreamTopicName(topicValue);
+          lines.push(`METRIC_STREAM_TOPIC=${topic}`);
+          lines.push(`METRIC_STREAM_CONSUMER_GROUP=${route.subscription}`);
+        } else {
+          lines.push(`METRIC_STREAM_TOPIC${assignment.slice(route.topicKey.length)}`);
+        }
+      }
     }
     writeFileSync(paths[serviceName], lines.length === 0 ? "" : `${lines.join("\n")}\n`, {
       mode: 0o600,

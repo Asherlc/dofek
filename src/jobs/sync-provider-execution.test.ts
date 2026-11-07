@@ -77,7 +77,11 @@ describe("sync-provider-execution", () => {
       { registerWebhook: vi.fn(), syncWebhookEvent },
     );
     mockGetEnabledSyncProviders.mockReturnValue([provider]);
-    const job = createMockJob({ providerId: "strava", userId: "user-1", sinceDays: 1 });
+    const job = createMockJob({
+      providerId: "strava",
+      userId: "00000000-0000-4000-8000-000000000001",
+      sinceDays: 1,
+    });
     Object.assign(job.data, { webhookEvent: event });
 
     await runSyncJob(job, mockDb);
@@ -85,7 +89,10 @@ describe("sync-provider-execution", () => {
     expect(syncWebhookEvent).toHaveBeenCalledWith(
       mockDb,
       event,
-      expect.objectContaining({ userId: "user-1", metricStreamPublisher: expect.anything() }),
+      expect.objectContaining({
+        userId: "00000000-0000-4000-8000-000000000001",
+        metricStreamPublisher: expect.anything(),
+      }),
     );
     expect(sync).not.toHaveBeenCalled();
     expect(mockRecordRelationalCanonicalCommits).toHaveBeenCalledWith(
@@ -109,7 +116,11 @@ describe("sync-provider-execution", () => {
       }),
     });
     mockGetEnabledSyncProviders.mockReturnValue([provider]);
-    const job = createMockJob({ providerId: "strava", userId: "user-1", sinceDays: 1 });
+    const job = createMockJob({
+      providerId: "strava",
+      userId: "00000000-0000-4000-8000-000000000001",
+      sinceDays: 1,
+    });
     Object.assign(job.data, { webhookEvent: event });
 
     await runSyncJob(job, mockDb);
@@ -130,7 +141,10 @@ describe("sync-provider-execution", () => {
       })),
     });
     mockGetEnabledSyncProviders.mockReturnValue([provider]);
-    const job = createMockJob({ providerId: "garmin", userId: "user-1" });
+    const job = createMockJob({
+      providerId: "garmin",
+      userId: "00000000-0000-4000-8000-000000000001",
+    });
     const event: WebhookEvent = {
       ownerExternalId: "owner",
       eventType: "update",
@@ -152,7 +166,10 @@ describe("sync-provider-execution", () => {
       syncWebhookEvent: vi.fn().mockRejectedValue(failure),
     });
     mockGetEnabledSyncProviders.mockReturnValue([provider]);
-    const job = createMockJob({ providerId: "garmin", userId: "user-1" });
+    const job = createMockJob({
+      providerId: "garmin",
+      userId: "00000000-0000-4000-8000-000000000001",
+    });
     Object.assign(job.data, {
       webhookEvent: { ownerExternalId: "owner", eventType: "update", objectType: "activityFiles" },
     });
@@ -175,7 +192,10 @@ describe("sync-provider-execution", () => {
       }),
     });
     mockGetEnabledSyncProviders.mockReturnValue([provider]);
-    const job = createMockJob({ providerId: "garmin", userId: "user-1" });
+    const job = createMockJob({
+      providerId: "garmin",
+      userId: "00000000-0000-4000-8000-000000000001",
+    });
     Object.assign(job.data, {
       webhookEvent: { ownerExternalId: "owner", eventType: "update", objectType: "activities" },
     });
@@ -197,7 +217,10 @@ describe("sync-provider-execution", () => {
     });
     mockGetEnabledSyncProviders.mockReturnValue([provider]);
 
-    await runSyncJob(createMockJob({ providerId: "strava", userId: "user-1" }), mockDb);
+    await runSyncJob(
+      createMockJob({ providerId: "strava", userId: "00000000-0000-4000-8000-000000000001" }),
+      mockDb,
+    );
 
     expect(sync).toHaveBeenCalledOnce();
     expect(syncWebhookEvent).not.toHaveBeenCalled();
@@ -219,7 +242,10 @@ describe("sync-provider-execution", () => {
     const syncWebhookEvent = vi.fn();
     const provider = Object.assign(createMockProvider({ sync }), { syncWebhookEvent });
     mockGetEnabledSyncProviders.mockReturnValue([provider]);
-    const job = createMockJob({ providerId: "test-provider", userId: "user-1" });
+    const job = createMockJob({
+      providerId: "test-provider",
+      userId: "00000000-0000-4000-8000-000000000001",
+    });
     Object.assign(job.data, { webhookEvent: event });
 
     await runSyncJob(job, mockDb);
@@ -249,7 +275,11 @@ describe("sync-provider-execution", () => {
       }),
     });
     mockGetEnabledSyncProviders.mockReturnValue([provider]);
-    const job = createMockJob({ providerId: "strava", userId: "user-1", sinceDays: 1 });
+    const job = createMockJob({
+      providerId: "strava",
+      userId: "00000000-0000-4000-8000-000000000001",
+      sinceDays: 1,
+    });
     Object.assign(job.data, { webhookEvent: event });
 
     await runSyncJob(job, mockDb);
@@ -276,7 +306,9 @@ describe("sync-provider-execution", () => {
     await runSyncJob(createMockJob({ providerId: "whoop" }), mockDb);
 
     expect(mockInvalidateAllUserQueries).toHaveBeenCalledOnce();
-    expect(mockInvalidateAllUserQueries).toHaveBeenCalledWith("user-1");
+    expect(mockInvalidateAllUserQueries).toHaveBeenCalledWith(
+      "00000000-0000-4000-8000-000000000001",
+    );
   });
 
   it("does not invalidate queries when a sync writes no records", async () => {
@@ -367,10 +399,14 @@ describe("sync-provider-execution", () => {
         scope: "provider",
         retryAfterSeconds: 600,
       }),
-      "user-1",
+      "00000000-0000-4000-8000-000000000001",
     );
 
-    const job = createMockJob({ providerId: "garmin", userId: "user-1", sinceDays: 1 });
+    const job = createMockJob({
+      providerId: "garmin",
+      userId: "00000000-0000-4000-8000-000000000001",
+      sinceDays: 1,
+    });
     await runSyncJob(job, mockDb);
 
     expect(provider.sync).not.toHaveBeenCalled();
@@ -378,7 +414,7 @@ describe("sync-provider-execution", () => {
       "sync",
       expect.objectContaining({
         providerId: "garmin",
-        userId: "user-1",
+        userId: "00000000-0000-4000-8000-000000000001",
         sinceIso: "2026-06-01T00:00:00.000Z",
         untilIso: "2026-06-02T23:59:59.999Z",
       }),
@@ -422,13 +458,21 @@ describe("sync-provider-execution", () => {
         scope: "provider",
         retryAfterSeconds: 600,
       }),
-      "user-1",
+      "00000000-0000-4000-8000-000000000001",
     );
 
-    const job = createMockJob({ providerId: "garmin", userId: "user-1", sinceDays: 1 });
+    const job = createMockJob({
+      providerId: "garmin",
+      userId: "00000000-0000-4000-8000-000000000001",
+      sinceDays: 1,
+    });
     await runSyncJob(job, mockDb);
 
-    expect(mockLoadTokens).toHaveBeenCalledWith(mockDb, "garmin", "user-1");
+    expect(mockLoadTokens).toHaveBeenCalledWith(
+      mockDb,
+      "garmin",
+      "00000000-0000-4000-8000-000000000001",
+    );
     expect(provider.sync).not.toHaveBeenCalled();
     expect(mockProviderQueueAdd).not.toHaveBeenCalled();
     expect(job.updateProgress).toHaveBeenCalledWith({
@@ -471,7 +515,10 @@ describe("sync-provider-execution", () => {
     const provider = createMockProvider({ id: "test", name: "Test" });
     mockGetEnabledSyncProviders.mockReturnValue([provider]);
 
-    await runSyncJob(createMockJob({ userId: "user-1", origin: "scheduled" }), mockDb);
+    await runSyncJob(
+      createMockJob({ userId: "00000000-0000-4000-8000-000000000001", origin: "scheduled" }),
+      mockDb,
+    );
 
     expect(mockLogSync).toHaveBeenCalledWith(
       mockDb,
@@ -481,7 +528,7 @@ describe("sync-provider-execution", () => {
         status: "success",
         recordCount: 5,
         errorMessage: undefined,
-        userId: "user-1",
+        userId: "00000000-0000-4000-8000-000000000001",
         origin: "scheduled",
       }),
     );
@@ -522,7 +569,7 @@ describe("sync-provider-execution", () => {
         providerId: "partial",
         status: "error",
         errorMessage: "bad record 1; bad record 2",
-        userId: "user-1",
+        userId: "00000000-0000-4000-8000-000000000001",
       }),
     );
 
@@ -679,7 +726,7 @@ describe("sync-provider-execution", () => {
       "test",
       "Test Provider",
       undefined,
-      "user-1",
+      "00000000-0000-4000-8000-000000000001",
     );
   });
 
@@ -696,7 +743,7 @@ describe("sync-provider-execution", () => {
         scope: "provider",
         retryAfterSeconds: 600,
       }),
-      "user-1",
+      "00000000-0000-4000-8000-000000000001",
     );
     let releaseFence!: () => void;
     let markFenceEntered!: () => void;
@@ -842,7 +889,11 @@ describe("sync-provider-execution", () => {
     await runSyncJob(createMockJob(), mockDb);
 
     expect(provider.sync).toHaveBeenCalledOnce();
-    expect(mockLoadTokens).toHaveBeenCalledWith(mockDb, "strava", "user-1");
+    expect(mockLoadTokens).toHaveBeenCalledWith(
+      mockDb,
+      "strava",
+      "00000000-0000-4000-8000-000000000001",
+    );
   });
 
   it("skips unconnected providers but syncs connected ones", async () => {

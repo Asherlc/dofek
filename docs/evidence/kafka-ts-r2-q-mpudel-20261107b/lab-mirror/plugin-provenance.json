@@ -1,0 +1,19 @@
+{
+  "rsm_version": "1.2.0",
+  "kafka_image": "apache/kafka:4.4.0@sha256:833b867a9585a141da455dc2b57431c65cbccb27f11c91f694444cca9f777e0f",
+  "core_plugin_dir": "/Users/asherlc/.paseo/worktrees/3b2webx6/pulsar-foundation/deploy/kafka/plugins/1.2.0/core",
+  "s3_plugin_dir": "/Users/asherlc/.paseo/worktrees/3b2webx6/pulsar-foundation/deploy/kafka/plugins/1.2.0/s3",
+  "core_jar_count": 122,
+  "s3_jar_count": 51,
+  "core_tree_sha256": "3aa988fea95f4a8aa748e688e857e16129e6d9463cc16441c2dfb834caa30154",
+  "s3_tree_sha256": "0f9d5e68eb676c46b2e7ef02f6afd6f37d2fff7927d8f4d4c4fc36ace69c9f81",
+  "core_tarball_sha256_expected": "14fb636d3a5c781ae9ae961012bf7b0881b09629859dbc784dc49356faeaa747",
+  "s3_tarball_sha256_expected": "1fd89dea84988b857e546fcfa88504f5b4e45d7712e3eddeb506f11a394ef010",
+  "classpath": "/plugins/1.2.0/core/*:/plugins/1.2.0/s3/*",
+  "sdk_patch": false,
+  "plugin_patch": false,
+  "stock_only": true,
+  "binds_repo_plugins": true,
+  "retry_identity": "20261107b",
+  "prior_attempt": "20261107 spawnSync docker ENOENT; bucket cleaned"
+}

@@ -1,0 +1,2 @@
+Topic: tieredTopicR2QMpu.quarantine.v1	TopicId: zMGvPsWVTgqJA6qsyltMxQ	PartitionCount: 1	ReplicationFactor: 1	Configs: remote.storage.enable=true,min.insync.replicas=1,local.retention.ms=86400000,cleanup.policy=delete,segment.bytes=1048576,retention.ms=86400000
+	Topic: tieredTopicR2QMpu.quarantine.v1	Partition: 0	Leader: 1	Replicas: 1	Isr: 1	Elr: 	LastKnownElr: 

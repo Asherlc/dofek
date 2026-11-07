@@ -177,7 +177,7 @@ describe("SuuntoProvider.sync() (integration)", () => {
     expect(running.canonicalType).toBe("running");
   });
 
-  it("publishes FIT samples through scoped Redpanda replacement", async () => {
+  it("publishes FIT samples through scoped Kafka replacement", async () => {
     await saveTokens(ctx.db, "suunto", {
       accessToken: "valid-token",
       refreshToken: "valid-refresh",

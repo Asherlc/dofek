@@ -1,0 +1,35 @@
+[2026-11-07 03:50:11,816] INFO [raft-expiration-reaper]: Starting (org.apache.kafka.raft.TimingWheelExpirationService$ExpiredOperationReaper)
+[2026-11-07 03:50:11,988] INFO [ExpirationReaper-1-AlterAcls]: Starting (org.apache.kafka.server.purgatory.DelayedOperationPurgatory$ExpiredOperationReaper)
+	producer.id.expiration.check.interval.ms = 600000
+	producer.id.expiration.ms = 86400000
+	remote.log.manager.expiration.thread.pool.size = 10
+	transactional.id.expiration.ms = 604800000
+	producer.id.expiration.check.interval.ms = 600000
+	producer.id.expiration.ms = 86400000
+	remote.log.manager.expiration.thread.pool.size = 10
+	transactional.id.expiration.ms = 604800000
+	producer.id.expiration.check.interval.ms = 600000
+	producer.id.expiration.ms = 86400000
+	remote.log.manager.expiration.thread.pool.size = 10
+	transactional.id.expiration.ms = 604800000
+	iceberg.catalog.cache.expiration.ms = 600000
+[2026-11-07 03:50:13,053] INFO [ExpirationReaper-1-Produce]: Starting (org.apache.kafka.server.purgatory.DelayedOperationPurgatory$ExpiredOperationReaper)
+[2026-11-07 03:50:13,053] INFO [ExpirationReaper-1-Fetch]: Starting (org.apache.kafka.server.purgatory.DelayedOperationPurgatory$ExpiredOperationReaper)
+[2026-11-07 03:50:13,055] INFO [ExpirationReaper-1-DeleteRecords]: Starting (org.apache.kafka.server.purgatory.DelayedOperationPurgatory$ExpiredOperationReaper)
+[2026-11-07 03:50:13,057] INFO [ExpirationReaper-1-RemoteListOffsets]: Starting (org.apache.kafka.server.purgatory.DelayedOperationPurgatory$ExpiredOperationReaper)
+[2026-11-07 03:50:13,057] INFO [ExpirationReaper-1-RemoteFetch]: Starting (org.apache.kafka.server.purgatory.DelayedOperationPurgatory$ExpiredOperationReaper)
+[2026-11-07 03:50:13,058] INFO [ExpirationReaper-1-ShareFetch]: Starting (org.apache.kafka.server.purgatory.DelayedOperationPurgatory$ExpiredOperationReaper)
+[2026-11-07 03:50:13,102] INFO [ExpirationReaper-1-AlterAcls]: Starting (org.apache.kafka.server.purgatory.DelayedOperationPurgatory$ExpiredOperationReaper)
+	producer.id.expiration.check.interval.ms = 600000
+	producer.id.expiration.ms = 86400000
+	remote.log.manager.expiration.thread.pool.size = 10
+	transactional.id.expiration.ms = 604800000
+	producer.id.expiration.check.interval.ms = 600000
+	producer.id.expiration.ms = 86400000
+	remote.log.manager.expiration.thread.pool.size = 10
+	transactional.id.expiration.ms = 604800000
+[2026-11-07 03:53:14,577] INFO Created a new expiration task: class org.apache.kafka.server.log.remote.storage.RemoteLogManager$RLMExpirationTask[Nm2GNmFsTwmg1PUZuU9ekQ:tieredTopicR2QMpu-0] and getting scheduled (org.apache.kafka.server.log.remote.storage.RemoteLogManager)
+[2026-11-07 03:53:14,577] INFO Scheduling runnable class org.apache.kafka.server.log.remote.storage.RemoteLogManager$RLMExpirationTask[Nm2GNmFsTwmg1PUZuU9ekQ:tieredTopicR2QMpu-0] with initial delay: 0, fixed delay: 2000 (org.apache.kafka.server.log.remote.storage.RemoteLogManager$RLMScheduledThreadPool)
+[2026-11-07 03:53:16,561] INFO Created a new expiration task: class org.apache.kafka.server.log.remote.storage.RemoteLogManager$RLMExpirationTask[H_F1K1p2THSwI3DVCAZvdg:tieredTopicR2QMpu.quarantine.v1-0] and getting scheduled (org.apache.kafka.server.log.remote.storage.RemoteLogManager)
+[2026-11-07 03:53:16,561] INFO Scheduling runnable class org.apache.kafka.server.log.remote.storage.RemoteLogManager$RLMExpirationTask[H_F1K1p2THSwI3DVCAZvdg:tieredTopicR2QMpu.quarantine.v1-0] with initial delay: 0, fixed delay: 2000 (org.apache.kafka.server.log.remote.storage.RemoteLogManager$RLMScheduledThreadPool)
+[2026-11-07 03:55:40,689] INFO [RemoteLogManager=1 partition=Nm2GNmFsTwmg1PUZuU9ekQ:tieredTopicR2QMpu-0] About to delete remote log segment RemoteLogSegmentId{topicIdPartition=Nm2GNmFsTwmg1PUZuU9ekQ:tieredTopicR2QMpu-0, id=151psq5jS7ivmpYWGQ8vvQ} due to retention time 60000ms breach based on the largest record timestamp in the segment (org.apache.kafka.server.log.remote.storage.RemoteLogManager$RLMExpirationTask)

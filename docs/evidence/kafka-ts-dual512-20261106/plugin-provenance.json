@@ -1,0 +1,18 @@
+{
+  "release_tag": "v1.2.0",
+  "published_at": "2026-11-06T11:18:29Z",
+  "release_url": "https://github.com/Aiven-Open/tiered-storage-for-apache-kafka/releases/tag/v1.2.0",
+  "verified_at": "2026-11-06T21:55:28.742208+00:00",
+  "assets": [
+    {
+      "name": "core-1.2.0.tgz",
+      "size": 87298997,
+      "sha256": "14fb636d3a5c781ae9ae961012bf7b0881b09629859dbc784dc49356faeaa747"
+    },
+    {
+      "name": "s3-1.2.0.tgz",
+      "size": 15757644,
+      "sha256": "1fd89dea84988b857e546fcfa88504f5b4e45d7712e3eddeb506f11a394ef010"
+    }
+  ]
+}

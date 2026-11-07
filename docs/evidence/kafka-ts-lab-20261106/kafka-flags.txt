@@ -1,0 +1,4 @@
+-Xmx1G
+-Xms1G
+-XX:SharedArchiveFile=/opt/kafka/kafka.jsa
+kafka.Kafka

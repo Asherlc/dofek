@@ -7,7 +7,7 @@ import { z } from "zod";
 import { SOURCE_TYPE_API } from "../../../../src/db/sensor-channels.ts";
 import type { MetricStreamRowInput } from "../../../../src/metric-stream/events.ts";
 import type { MetricStreamEventPublisher } from "../../../../src/metric-stream/publisher.ts";
-import { getDefaultMetricStreamEventPublisher } from "../../../../src/metric-stream/redpanda-producer.ts";
+import { getDefaultMetricStreamEventPublisher } from "../../../../src/metric-stream/publisher-factory.ts";
 import { writeMetricStreamRows } from "../../../../src/metric-stream/write-metric-stream.ts";
 import { validateCompanionToken } from "../companion/token-repository.ts";
 

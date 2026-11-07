@@ -1,22 +1,22 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  KafkaMetricStreamEventPublisher,
-  type KafkaProducerLike,
-  type KafkaProducerSendInput,
-} from "../metric-stream/redpanda-producer.ts";
+  createMetricStreamDeletedEvent,
+  createMetricStreamEvent,
+} from "../metric-stream/events.ts";
+import type { MetricStreamEventPublisher } from "../metric-stream/publisher.ts";
 import {
   createLazyDefaultMetricStreamEventPublisher,
   createLazyMetricStreamEventPublisher,
   MetricStreamProcessingPublisher,
 } from "./metric-stream-processing-publisher.ts";
 
-const redpandaProducerMocks = vi.hoisted(() => ({
+const kafkaProducerMocks = vi.hoisted(() => ({
   getDefaultMetricStreamEventPublisher: vi.fn(),
 }));
 
-vi.mock("../metric-stream/redpanda-producer.ts", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../metric-stream/redpanda-producer.ts")>()),
-  getDefaultMetricStreamEventPublisher: redpandaProducerMocks.getDefaultMetricStreamEventPublisher,
+vi.mock("../metric-stream/publisher-factory.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../metric-stream/publisher-factory.ts")>()),
+  getDefaultMetricStreamEventPublisher: kafkaProducerMocks.getDefaultMetricStreamEventPublisher,
 }));
 
 const operationRevision = "1000000000000000";
@@ -31,20 +31,24 @@ const metricStreamRow = {
 };
 
 function makePublisher() {
-  const send = vi.fn(async (_input: KafkaProducerSendInput) => undefined);
-  const producer: KafkaProducerLike = {
-    connect: vi.fn(async () => undefined),
-    disconnect: vi.fn(async () => undefined),
-    send,
-  };
-  const delegate = new KafkaMetricStreamEventPublisher(producer, "metric-stream-v1");
+  const publishRows = vi.fn<MetricStreamEventPublisher["publishRows"]>(async (rows, options) =>
+    rows.map((row) => createMetricStreamEvent(row, options.operationRevision)),
+  );
+  const replaceRows = vi.fn<NonNullable<MetricStreamEventPublisher["replaceRows"]>>(
+    async (scope, rows, revision) => ({
+      deleted: createMetricStreamDeletedEvent(scope, revision),
+      rows: rows.map((row) => createMetricStreamEvent(row, revision)),
+    }),
+  );
+  const delegate: MetricStreamEventPublisher = { publishRows, replaceRows };
   const recordPublishedBatch = vi.fn(async () => undefined);
   const publisher = new MetricStreamProcessingPublisher(delegate, {
     operationId: "30000000-0000-4000-8000-000000000001",
+    userId: "00000000-0000-4000-8000-000000000001",
     datasetKeys: ["recovery", "training"],
     recordPublishedBatch,
   });
-  return { publisher, recordPublishedBatch, send };
+  return { publisher, recordPublishedBatch, publishRows, replaceRows };
 }
 
 describe("MetricStreamProcessingPublisher", () => {
@@ -59,6 +63,7 @@ describe("MetricStreamProcessingPublisher", () => {
       () =>
         new MetricStreamProcessingPublisher(delegate, {
           operationId: "30000000-0000-4000-8000-000000000001",
+          userId: "00000000-0000-4000-8000-000000000001",
           datasetKeys: [],
           recordPublishedBatch: vi.fn(async () => undefined),
         }),
@@ -66,7 +71,7 @@ describe("MetricStreamProcessingPublisher", () => {
   });
 
   it("uses a deterministic batch id and records broker-acknowledged publication evidence", async () => {
-    const { publisher, recordPublishedBatch, send } = makePublisher();
+    const { publisher, recordPublishedBatch, publishRows } = makePublisher();
 
     expect(publisher.hasPublishedBatches).toBe(false);
     await publisher.publishRows([metricStreamRow], { operationRevision });
@@ -76,12 +81,13 @@ describe("MetricStreamProcessingPublisher", () => {
     });
     expect(publisher.hasPublishedBatches).toBe(true);
 
-    const sentMarkers = send.mock.calls.map((call) =>
-      JSON.parse(call[0].messages.at(-1)?.value ?? "{}"),
-    );
+    const sentMarkers = publishRows.mock.calls.map(([_rows, options]) => options.processing);
     expect(sentMarkers[0]?.batchId).toBe(sentMarkers[1]?.batchId);
     expect(sentMarkers[2]?.batchId).not.toBe(sentMarkers[0]?.batchId);
     expect(recordPublishedBatch).toHaveBeenCalledTimes(3);
+    expect(sentMarkers[0]).toMatchObject({
+      userId: "00000000-0000-4000-8000-000000000001",
+    });
     expect(recordPublishedBatch).toHaveBeenNthCalledWith(1, {
       operationId: "30000000-0000-4000-8000-000000000001",
       batchId: sentMarkers[0]?.batchId,
@@ -109,6 +115,7 @@ describe("MetricStreamProcessingPublisher", () => {
       { publishRows },
       {
         operationId: "30000000-0000-4000-8000-000000000001",
+        userId: "00000000-0000-4000-8000-000000000001",
         datasetKeys: ["recovery"],
         recordPublishedBatch,
       },
@@ -136,6 +143,7 @@ describe("MetricStreamProcessingPublisher", () => {
       },
       {
         operationId: "30000000-0000-4000-8000-000000000001",
+        userId: "00000000-0000-4000-8000-000000000001",
         datasetKeys: ["recovery"],
         recordPublishedBatch: vi.fn(async () => undefined),
       },
@@ -156,6 +164,7 @@ describe("MetricStreamProcessingPublisher", () => {
         operationRevision,
         processing: {
           operationId: "30000000-0000-4000-8000-000000000002",
+          userId: "00000000-0000-4000-8000-000000000001",
           batchId: "existing-batch",
           datasetKeys: ["activity"],
         },
@@ -165,17 +174,54 @@ describe("MetricStreamProcessingPublisher", () => {
   });
 
   it("does not record a batch when no metric events were emitted", async () => {
-    const { publisher, recordPublishedBatch, send } = makePublisher();
+    const { publisher, recordPublishedBatch, publishRows } = makePublisher();
 
     await expect(publisher.publishRows([], { operationRevision })).resolves.toEqual([]);
 
     expect(publisher.hasPublishedBatches).toBe(false);
-    expect(send).not.toHaveBeenCalled();
+    expect(publishRows).toHaveBeenCalledWith([], { operationRevision });
     expect(recordPublishedBatch).not.toHaveBeenCalled();
   });
 
+  it("rejects publish rows owned by a different user", async () => {
+    const { publisher, recordPublishedBatch, publishRows } = makePublisher();
+
+    await expect(
+      publisher.publishRows(
+        [{ ...metricStreamRow, userId: "00000000-0000-4000-8000-000000000099" }],
+        { operationRevision },
+      ),
+    ).rejects.toThrow(/must belong to the processing operation owner/);
+    expect(recordPublishedBatch).not.toHaveBeenCalled();
+    expect(publishRows).not.toHaveBeenCalled();
+  });
+
+  it("accepts publish rows when owner user id differs only by case", async () => {
+    const { publisher, publishRows } = makePublisher();
+
+    await publisher.publishRows(
+      [{ ...metricStreamRow, userId: "00000000-0000-4000-8000-000000000001".toUpperCase() }],
+      { operationRevision },
+    );
+
+    expect(publishRows).toHaveBeenCalledOnce();
+  });
+
+  it("rejects replace scope owned by a different user", async () => {
+    const { publisher, replaceRows } = makePublisher();
+
+    await expect(
+      publisher.replaceRows(
+        { userId: "00000000-0000-4000-8000-000000000099" },
+        [metricStreamRow],
+        operationRevision,
+      ),
+    ).rejects.toThrow(/replace scope must belong to the processing operation owner/);
+    expect(replaceRows).not.toHaveBeenCalled();
+  });
+
   it("correlates scoped delete-and-replace batches with the same operation", async () => {
-    const { publisher, recordPublishedBatch, send } = makePublisher();
+    const { publisher, recordPublishedBatch, replaceRows } = makePublisher();
 
     await publisher.replaceRows(
       { activityId: "20000000-0000-4000-8000-000000000001" },
@@ -183,16 +229,15 @@ describe("MetricStreamProcessingPublisher", () => {
       operationRevision,
     );
 
-    const marker = JSON.parse(send.mock.calls[0]?.[0].messages.at(-1)?.value ?? "{}");
+    const marker = replaceRows.mock.calls[0]?.[3];
     expect(marker).toMatchObject({
-      eventType: "metric_stream_batch_completed",
       operationId: "30000000-0000-4000-8000-000000000001",
+      userId: "00000000-0000-4000-8000-000000000001",
       datasetKeys: ["recovery", "training"],
-      expectedEventCount: 2,
     });
     expect(recordPublishedBatch).toHaveBeenCalledWith({
       operationId: "30000000-0000-4000-8000-000000000001",
-      batchId: marker.batchId,
+      batchId: marker?.batchId,
       datasetKeys: ["recovery", "training"],
       expectedEventCount: 2,
     });
@@ -203,6 +248,7 @@ describe("MetricStreamProcessingPublisher", () => {
       { publishRows: vi.fn(async () => []) },
       {
         operationId: "30000000-0000-4000-8000-000000000001",
+        userId: "00000000-0000-4000-8000-000000000001",
         datasetKeys: ["activity"],
         recordPublishedBatch: vi.fn(async () => undefined),
       },
@@ -226,7 +272,7 @@ describe("createLazyDefaultMetricStreamEventPublisher", () => {
   it("lazily resolves one delegate and forwards publication methods", async () => {
     const publishRows = vi.fn(async () => []);
     const replaceRows = vi.fn(async () => ({ deleted: 0, rows: [] }));
-    redpandaProducerMocks.getDefaultMetricStreamEventPublisher.mockResolvedValue({
+    kafkaProducerMocks.getDefaultMetricStreamEventPublisher.mockResolvedValue({
       publishRows,
       replaceRows,
     });
@@ -238,13 +284,13 @@ describe("createLazyDefaultMetricStreamEventPublisher", () => {
       deleted: 0,
       rows: [],
     });
-    expect(redpandaProducerMocks.getDefaultMetricStreamEventPublisher).toHaveBeenCalledTimes(1);
+    expect(kafkaProducerMocks.getDefaultMetricStreamEventPublisher).toHaveBeenCalledTimes(1);
     expect(publishRows).toHaveBeenCalledWith([], { operationRevision });
     expect(replaceRows).toHaveBeenCalledWith(scope, [], operationRevision, undefined);
   });
 
   it("rejects replacement when the default delegate does not support it", async () => {
-    redpandaProducerMocks.getDefaultMetricStreamEventPublisher.mockResolvedValue({
+    kafkaProducerMocks.getDefaultMetricStreamEventPublisher.mockResolvedValue({
       publishRows: vi.fn(async () => []),
     });
     const publisher = createLazyDefaultMetricStreamEventPublisher();

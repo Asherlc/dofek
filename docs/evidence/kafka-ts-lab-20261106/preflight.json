@@ -1,0 +1,11 @@
+{
+  "free_plus_inactive_mib": 28537.7,
+  "headroom_ok_ge_6gib": true,
+  "disk_free_gib": 97.0,
+  "owned_data_cap_mib": 2048,
+  "alloc_plan_mib": {
+    "kafka": 2048,
+    "seaweed": 1024,
+    "tool": 384
+  }
+}

@@ -1,24 +1,32 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   mockBuildAuthorizationUrl,
+  mockCaptureException,
   mockDbExecute,
   mockEnsureProvider,
   mockEnsureProvidersRegistered,
   mockExecFile,
   mockGetAllProviders,
+  mockGetEnabledSyncProviders,
   mockImportAppleHealthFile,
   mockLoggerError,
   mockLoggerInfo,
   mockRunMetricStreamClickHouseSinkFromEnv,
   mockSaveTokens,
   mockWaitForAuthCode,
+  mockWaitUntilFinished,
 } from "./cli-test/test-helpers.ts";
+
+const closePublishers = vi.hoisted(() => vi.fn(async (): Promise<void> => undefined));
+vi.mock("./metric-stream/publisher-factory.ts", () => ({
+  closeAllMetricStreamEventPublishers: closePublishers,
+}));
 
 // Prevent main()'s auto-call from exiting the process (same pattern as worker.test.ts)
 function noOpExit(): never {
   throw new Error("process.exit called in test");
 }
-vi.spyOn(process, "exit").mockImplementation(noOpExit);
+const processExit = vi.spyOn(process, "exit").mockImplementation(noOpExit);
 
 // Set argv to a non-matching command so main()'s auto-call is a no-op.
 // main() will throw via noOpExit — suppress that unhandled rejection.
@@ -732,6 +740,8 @@ describe("main", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    closePublishers.mockReset().mockResolvedValue(undefined);
+    mockWaitUntilFinished.mockReset().mockResolvedValue(undefined);
   });
 
   it("runs the ClickHouse metric stream sink command", async () => {
@@ -741,5 +751,84 @@ describe("main", () => {
 
     expect(mockRunMetricStreamClickHouseSinkFromEnv).toHaveBeenCalledOnce();
     process.argv = savedArgvForMain;
+  });
+
+  it.each(["sync", "import"])(
+    "awaits publisher cleanup before successful %s process exit",
+    async (command) => {
+      mockGetEnabledSyncProviders.mockReturnValue([]);
+      mockImportAppleHealthFile.mockResolvedValue({ recordsSynced: 1, errors: [], duration: 1 });
+      let finish = () => {};
+      const pending = new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      closePublishers.mockImplementationOnce(() => pending);
+      process.argv = ["node", "index.ts", command, "apple-health", "/fixture.zip"];
+      const outcome = main().catch((error: unknown) => error);
+      try {
+        await vi.waitFor(() => expect(closePublishers).toHaveBeenCalledOnce());
+        expect(processExit).not.toHaveBeenCalled();
+        finish();
+        await outcome;
+        expect(processExit.mock.calls).toEqual([[0]]);
+      } finally {
+        finish();
+        await outcome;
+        process.argv = savedArgvForMain;
+      }
+    },
+  );
+
+  it.each(["sync", "import"])(
+    "preserves terminal %s failure after publisher cleanup",
+    async (command) => {
+      mockGetEnabledSyncProviders.mockReturnValue([{ id: "strava" }]);
+      mockWaitUntilFinished.mockRejectedValue(new Error("terminal sync failure"));
+      mockImportAppleHealthFile.mockResolvedValue({
+        recordsSynced: 0,
+        errors: [new Error("import failed")],
+        duration: 1,
+      });
+      process.argv = ["node", "index.ts", command, "apple-health", "/fixture.zip"];
+      try {
+        await expect(main()).rejects.toThrow("process.exit called in test");
+        expect(closePublishers).toHaveBeenCalledOnce();
+        expect(processExit.mock.calls).toEqual([[1]]);
+      } finally {
+        process.argv = savedArgvForMain;
+      }
+    },
+  );
+
+  it("reports command and cleanup failures and exits once with failure", async () => {
+    const commandError = new Error("import command failed");
+    const cleanupError = new Error("publisher cleanup failed");
+    mockImportAppleHealthFile.mockRejectedValueOnce(commandError);
+    closePublishers.mockRejectedValueOnce(cleanupError);
+    process.argv = ["node", "index.ts", "import", "apple-health", "/fixture.zip"];
+    try {
+      await expect(main()).rejects.toThrow("process.exit called in test");
+      expect(processExit.mock.calls).toEqual([[1]]);
+      expect(mockCaptureException).toHaveBeenCalledWith(commandError, {
+        tags: { phase: "cli-command" },
+      });
+      expect(mockCaptureException).toHaveBeenCalledWith(cleanupError, {
+        tags: { phase: "cli-publisher-shutdown" },
+      });
+    } finally {
+      process.argv = savedArgvForMain;
+    }
+  });
+
+  it("turns otherwise-successful import into nonzero exit when publisher cleanup fails", async () => {
+    mockImportAppleHealthFile.mockResolvedValue({ recordsSynced: 1, errors: [], duration: 1 });
+    closePublishers.mockRejectedValueOnce(new Error("publisher cleanup failed"));
+    process.argv = ["node", "index.ts", "import", "apple-health", "/fixture.zip"];
+    try {
+      await expect(main()).rejects.toThrow("process.exit called in test");
+      expect(processExit.mock.calls).toEqual([[1]]);
+    } finally {
+      process.argv = savedArgvForMain;
+    }
   });
 });

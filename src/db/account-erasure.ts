@@ -1,6 +1,7 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { captureAccountErasurePostgresIdentifiers } from "../account-erasure/identifier-store.ts";
 import {
   type AccountErasureExternalIdentity,
   type AccountErasureUserIdentity,
@@ -9,6 +10,7 @@ import {
   createAccountErasureUserIdentity,
 } from "../account-erasure/identity.ts";
 import type { AccountErasureRestoreIntent } from "../account-erasure/restore-ledger.ts";
+import { assertAccountErasureSnapshotSourceBudget } from "../account-erasure/snapshot-budget.ts";
 import { lockAccountErasureActivation } from "./account-erasure-locks.ts";
 import type { Database, TransactionDatabase } from "./index.ts";
 import {
@@ -307,6 +309,7 @@ async function loadAccountErasureExternalIdentities(
   transaction: TransactionDatabase,
   userId: string,
 ): Promise<AccountErasureExternalIdentity[]> {
+  await assertAccountErasureSnapshotSourceBudget(transaction, userId);
   const authIdentities = await executeWithSchema(
     transaction,
     authIdentityRowSchema,
@@ -466,6 +469,7 @@ async function activateAccountErasureInTransaction(
           ${options.recoveredFromRestore ? acceptedAt.toISOString() : null}
         )`,
   );
+  await captureAccountErasurePostgresIdentifiers(transaction, { requestId, userId });
   await transaction.execute(
     sql`INSERT INTO fitness.account_erasure_outbox (request_id)
         VALUES (${requestId}::uuid)`,

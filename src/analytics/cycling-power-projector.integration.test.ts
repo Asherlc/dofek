@@ -35,6 +35,7 @@ describe("cycling power projector", () => {
   const insert = real.insert;
   if (!insert) throw new Error("Test client requires insert support");
   const client = {
+    exec: (options) => real.exec({ ...options, query: rewrite(options.query) }),
     command: (options) => real.command({ ...options, query: rewrite(options.query) }),
     query: (options) => real.query({ ...options, query: rewrite(options.query) }),
     insert: (options) => insert.call(real, { ...options, table: rewrite(options.table) }),

@@ -154,7 +154,7 @@ describe("sync job window adapter", () => {
 
   it("syncWindowFromJobData reuses persisted ISO timestamps", () => {
     const window = syncWindowFromJobData({
-      userId: "user-1",
+      userId: "00000000-0000-4000-8000-000000000001",
       sinceIso: "2026-06-10T00:00:00.000Z",
       untilIso: "2026-06-17T23:59:59.999Z",
     });
@@ -165,7 +165,7 @@ describe("sync job window adapter", () => {
 
   it("syncWindowFromJobData anchors relative windows to the persisted request time", () => {
     const window = syncWindowFromJobData({
-      userId: "user-1",
+      userId: "00000000-0000-4000-8000-000000000001",
       requestedAtIso: "2026-06-18T15:00:00.000Z",
       sinceDays: 7,
     });
@@ -178,7 +178,7 @@ describe("sync job window adapter", () => {
     expect(() =>
       syncWindowFromJobData(
         {
-          userId: "user-1",
+          userId: "00000000-0000-4000-8000-000000000001",
           requestedAtIso: "not-a-date",
           sinceDays: 7,
         },
@@ -190,7 +190,7 @@ describe("sync job window adapter", () => {
   it("syncWindowFromJobData reuses persisted open-ended since timestamps", () => {
     const window = syncWindowFromJobData(
       {
-        userId: "user-1",
+        userId: "00000000-0000-4000-8000-000000000001",
         sinceIso: "2026-06-10T00:00:00.000Z",
       },
       now,
@@ -204,7 +204,7 @@ describe("sync job window adapter", () => {
   it("syncWindowFromJobData preserves full kind for an open-ended persisted window", () => {
     const window = syncWindowFromJobData(
       {
-        userId: "user-1",
+        userId: "00000000-0000-4000-8000-000000000001",
         sinceIso: "1970-01-01T00:00:00.000Z",
         targetRefreshWindow: { type: "full" },
       },
@@ -217,9 +217,12 @@ describe("sync job window adapter", () => {
   });
 
   it("syncWindowFromJobData rejects invalid persisted since timestamps", () => {
-    expect(() => syncWindowFromJobData({ userId: "user-1", sinceIso: "not-a-date" }, now)).toThrow(
-      "Invalid sync job sinceIso: not-a-date",
-    );
+    expect(() =>
+      syncWindowFromJobData(
+        { userId: "00000000-0000-4000-8000-000000000001", sinceIso: "not-a-date" },
+        now,
+      ),
+    ).toThrow("Invalid sync job sinceIso: not-a-date");
   });
 
   it("syncWindowToJobData round-trips trigger input fields", () => {
@@ -261,7 +264,9 @@ describe("sync job window adapter", () => {
       untilIso: "2026-06-18T15:00:00.000Z",
       targetRefreshWindow: { type: "full" },
     });
-    expect(syncWindowFromJobData({ userId: "user-1", ...jobData }).kind).toBe("full");
+    expect(
+      syncWindowFromJobData({ userId: "00000000-0000-4000-8000-000000000001", ...jobData }).kind,
+    ).toBe("full");
   });
 
   it("syncWindowToJobData encodes custom ranges", () => {
@@ -290,7 +295,10 @@ describe("sync job window adapter", () => {
       sinceIso: "1970-01-01T00:00:00.000Z",
       untilIso: "1970-01-05T23:59:59.999Z",
     });
-    const restoredWindow = syncWindowFromJobData({ userId: "user-1", ...jobData });
+    const restoredWindow = syncWindowFromJobData({
+      userId: "00000000-0000-4000-8000-000000000001",
+      ...jobData,
+    });
     expect(restoredWindow.kind).toBe("bounded");
     expect(restoredWindow.sinceIso).toBe("1970-01-01T00:00:00.000Z");
     expect(restoredWindow.untilIso).toBe("1970-01-05T23:59:59.999Z");

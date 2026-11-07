@@ -5,7 +5,7 @@ import { invalidateAllUserQueries } from "dofek/lib/cache";
 import { captureException } from "dofek/lib/error-reporting";
 import { healthKitPushTotal, healthKitRecordsTotal } from "dofek/sync-metrics";
 import { z } from "zod";
-import { getDefaultMetricStreamEventPublisher } from "../../../../src/metric-stream/redpanda-producer.ts";
+import { getDefaultMetricStreamEventPublisher } from "../../../../src/metric-stream/publisher-factory.ts";
 import { timestampStringSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 import { processRunningStepSamples } from "../repositories/health-kit-running-steps-repository.ts";

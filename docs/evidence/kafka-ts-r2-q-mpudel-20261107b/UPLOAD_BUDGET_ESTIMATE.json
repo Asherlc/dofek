@@ -1,0 +1,9 @@
+{
+  "main_log_bytes": 6284624,
+  "quarantine_log_bytes": 1046445,
+  "indexes_manifests_unknown_extra": true,
+  "sum_known_log_bytes": 7331069,
+  "budget_max": 16777216,
+  "under_budget_known_logs": true,
+  "note": "Known closed .log sizes only; Root ListObjects sizes are authoritative for total upload."
+}

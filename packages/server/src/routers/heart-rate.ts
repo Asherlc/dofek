@@ -14,7 +14,7 @@ export type { HeartRateSourceSeries };
 export const heartRateRouter = router({
   /**
    * Per-minute heart rate samples for a single day, grouped by source, read
-   * from the Redpanda-fed ClickHouse metric-stream mirror.
+   * from the Kafka-fed ClickHouse metric-stream mirror.
    */
   dailyBySource: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
     .input(dateInputSchema)

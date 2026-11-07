@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 
 POSTGRES_METRIC_STREAM_EXPORT_RETIRED_MESSAGE = (
     "Postgres metric_stream training export has been retired because "
-    "fitness.metric_stream was removed from Postgres. Use the Redpanda R2 "
+    "fitness.metric_stream was removed from Postgres. Use the metric-stream R2 "
     "archive or ClickHouse metric-stream data for training exports."
 )
 

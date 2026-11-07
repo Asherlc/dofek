@@ -107,7 +107,7 @@ const mockMetricStreamPublishRows = vi.fn(
   async (rows: readonly MetricStreamRowInput[], options: MetricStreamPublishOptions) =>
     rows.map((row) => createMetricStreamEvent(row, options.operationRevision)),
 );
-vi.mock("../metric-stream/redpanda-producer.ts", () => ({
+vi.mock("../metric-stream/publisher-factory.ts", () => ({
   getDefaultMetricStreamEventPublisher: vi.fn(async () => ({
     publishRows: mockMetricStreamPublishRows,
   })),
@@ -239,7 +239,7 @@ function createMockJob(overrides: Partial<ImportJobData> = {}): MockJob {
     data: {
       filePath: "/tmp/test-upload.zip",
       since: "2024-01-01T00:00:00.000Z",
-      userId: "user-1",
+      userId: "00000000-0000-4000-8000-000000000001",
       importType: "apple-health",
       ...overrides,
     },
@@ -263,6 +263,24 @@ function runImportJob(job: MockJob, db: SyncDatabase) {
 }
 describe("processImportJob", () => {
   let tempFilePath: string;
+
+  it("fails closed when the processing operation has no concrete owner", async () => {
+    mockCreateProcessingOperation.mockResolvedValueOnce({
+      id: processingOperationId,
+      userId: null,
+      providerId: "apple_health",
+      kind: "file_import" as const,
+      externalCorrelationKey: "import-job-1",
+      datasetKeys: ["activity"],
+      createdAt: new Date("2026-06-02T12:00:00.000Z"),
+    });
+    const job = createMockJob({ filePath: tempFilePath });
+    await expect(runImportJob(job, mockDb)).rejects.toThrow(
+      "Metric-stream processing publisher requires a concrete processing operation owner",
+    );
+    expect(mockMetricStreamPublishRows).not.toHaveBeenCalled();
+    expect(mockImportAppleHealthFile).not.toHaveBeenCalled();
+  });
 
   it("reports and rethrows activity canonical commit failures without declaring import success", async () => {
     const error = new Error("Activity grouping failed");
@@ -347,7 +365,10 @@ describe("processImportJob", () => {
 
       await runImportJob(job, mockDb);
 
-      expect(mockLoadUserHomeTimezone).toHaveBeenCalledWith(mockDb, "user-1");
+      expect(mockLoadUserHomeTimezone).toHaveBeenCalledWith(
+        mockDb,
+        "00000000-0000-4000-8000-000000000001",
+      );
     });
 
     it("runs imports with an explicit null ingest timezone when no home timezone is persisted", async () => {
@@ -362,7 +383,10 @@ describe("processImportJob", () => {
         mockDb,
       );
 
-      expect(mockLoadUserHomeTimezone).toHaveBeenCalledWith(mockDb, "user-1");
+      expect(mockLoadUserHomeTimezone).toHaveBeenCalledWith(
+        mockDb,
+        "00000000-0000-4000-8000-000000000001",
+      );
     });
 
     it("records the import lifecycle and correlates emitted metric batches", async () => {
@@ -702,7 +726,7 @@ describe("processImportJob", () => {
       expect(mockImportStrongCsv).toHaveBeenCalledWith(
         mockDb,
         "Date,Exercise,Reps\n2024-01-01,Squat,10",
-        "user-1",
+        "00000000-0000-4000-8000-000000000001",
         "lbs",
         "America/Los_Angeles",
       );
@@ -719,7 +743,7 @@ describe("processImportJob", () => {
       expect(mockImportStrongCsv).toHaveBeenCalledWith(
         mockDb,
         "csv data",
-        "user-1",
+        "00000000-0000-4000-8000-000000000001",
         undefined,
         undefined,
       );
@@ -814,7 +838,7 @@ describe("processImportJob", () => {
       expect(mockImportCronometerCsv).toHaveBeenCalledWith(
         mockDb,
         "Day,Food Name,Amount\n2024-01-01,Rice,100g",
-        "user-1",
+        "00000000-0000-4000-8000-000000000001",
       );
     });
     it("logs sync and completion message on success", async () => {
@@ -874,7 +898,7 @@ describe("processImportJob", () => {
         expect(importer).toHaveBeenCalledWith(
           mockDb,
           importType === "crimpd" ? tempFilePath : "climbing export data",
-          "user-1",
+          "00000000-0000-4000-8000-000000000001",
         );
         expect(mockLogSync).toHaveBeenCalledWith(
           mockDb,
@@ -927,7 +951,7 @@ describe("processImportJob", () => {
       expect(mockImportKayaExportFile).toHaveBeenCalledWith(
         mockDb,
         expect.stringContaining("Touchstone Pacific Pipe"),
-        "user-1",
+        "00000000-0000-4000-8000-000000000001",
       );
       expect(mockCreateProcessingOperation).toHaveBeenCalledWith(
         mockDb,
@@ -1011,7 +1035,11 @@ describe("processImportJob", () => {
       const job = createMockJob({ filePath: tempFilePath, importType: "zos-app" });
       await runImportJob(job, mockDb);
 
-      expect(mockImportZosAppBin).toHaveBeenCalledWith(mockDb, binContent, "user-1");
+      expect(mockImportZosAppBin).toHaveBeenCalledWith(
+        mockDb,
+        binContent,
+        "00000000-0000-4000-8000-000000000001",
+      );
     });
     it("logs sync and completion message on success", async () => {
       await writeFile(tempFilePath, Buffer.from([0x00]));
@@ -1116,8 +1144,14 @@ describe("processImportJob", () => {
       );
       expect(mockUnlink).toHaveBeenCalledWith(tempFilePath);
       expect(mockEnqueueDebouncedPostSyncMaintenance).toHaveBeenCalledOnce();
-      expect(mockEnqueueDebouncedUserRefit).toHaveBeenCalledWith("user-1");
-      expect(mockWithUserWriteFence).toHaveBeenCalledWith(mockDb, "user-1", expect.any(Function));
+      expect(mockEnqueueDebouncedUserRefit).toHaveBeenCalledWith(
+        "00000000-0000-4000-8000-000000000001",
+      );
+      expect(mockWithUserWriteFence).toHaveBeenCalledWith(
+        mockDb,
+        "00000000-0000-4000-8000-000000000001",
+        expect.any(Function),
+      );
     });
     it("retains the upload and skips terminal side effects while waiting for children", async () => {
       const job = createMockJob({ filePath: tempFilePath, importType: "garmin-dump" });
@@ -1173,7 +1207,9 @@ describe("processImportJob", () => {
       );
       expect(mockUnlink).toHaveBeenCalledWith(tempFilePath);
       expect(mockEnqueueDebouncedPostSyncMaintenance).toHaveBeenCalledOnce();
-      expect(mockEnqueueDebouncedUserRefit).toHaveBeenCalledWith("user-1");
+      expect(mockEnqueueDebouncedUserRefit).toHaveBeenCalledWith(
+        "00000000-0000-4000-8000-000000000001",
+      );
     });
 
     it("does not convert a terminal import failure into success when erasure starts afterward", async () => {
@@ -1232,7 +1268,7 @@ describe("processImportJob", () => {
         {
           filePath: tempFilePath,
           originalPath: "uploaded.fit",
-          userId: "user-1",
+          userId: "00000000-0000-4000-8000-000000000001",
           providerId: "fit-file",
           sourceName: "FIT File",
         },
@@ -1244,7 +1280,7 @@ describe("processImportJob", () => {
         "fit-file",
         "FIT File",
         undefined,
-        "user-1",
+        "00000000-0000-4000-8000-000000000001",
       );
       expect(mockLogSync).toHaveBeenCalledWith(
         mockDb,
@@ -1253,11 +1289,13 @@ describe("processImportJob", () => {
           dataType: "import",
           status: "success",
           recordCount: 1,
-          userId: "user-1",
+          userId: "00000000-0000-4000-8000-000000000001",
         }),
       );
       expect(mockEnqueueDebouncedPostSyncMaintenance).toHaveBeenCalledOnce();
-      expect(mockEnqueueDebouncedUserRefit).toHaveBeenCalledWith("user-1");
+      expect(mockEnqueueDebouncedUserRefit).toHaveBeenCalledWith(
+        "00000000-0000-4000-8000-000000000001",
+      );
     });
     it("forwards FIT progress and logs decoder errors", async () => {
       mockImportFitFile.mockImplementationOnce(
@@ -1350,7 +1388,9 @@ describe("processImportJob", () => {
         errorMessage: "The file could not be imported. Check the file and try again.",
         idempotencyKey: "worker-failed",
       });
-      expect(mockInvalidateAllUserQueries).toHaveBeenCalledWith("user-1");
+      expect(mockInvalidateAllUserQueries).toHaveBeenCalledWith(
+        "00000000-0000-4000-8000-000000000001",
+      );
     });
     it("turns an invalid Apple Health archive into an unrecoverable import failure", async () => {
       const message =
@@ -1595,7 +1635,9 @@ describe("processImportJob", () => {
       await runImportJob(job, mockDb);
 
       expect(mockEnqueueDebouncedPostSyncMaintenance).toHaveBeenCalledOnce();
-      expect(mockEnqueueDebouncedUserRefit).toHaveBeenCalledWith("user-1");
+      expect(mockEnqueueDebouncedUserRefit).toHaveBeenCalledWith(
+        "00000000-0000-4000-8000-000000000001",
+      );
     });
     it("reports scheduling progress during post-import enqueue", async () => {
       const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
@@ -1611,7 +1653,9 @@ describe("processImportJob", () => {
       await runImportJob(job, mockDb);
 
       expect(mockEnqueueDebouncedPostSyncMaintenance).toHaveBeenCalledOnce();
-      expect(mockEnqueueDebouncedUserRefit).toHaveBeenCalledWith("user-1");
+      expect(mockEnqueueDebouncedUserRefit).toHaveBeenCalledWith(
+        "00000000-0000-4000-8000-000000000001",
+      );
       expect(mockLoggerError).toHaveBeenCalledWith(
         expect.stringContaining("Failed to enqueue global post-import maintenance"),
       );
@@ -1624,7 +1668,9 @@ describe("processImportJob", () => {
       const job = createMockJob({ filePath: tempFilePath, importType: "apple-health" });
       await runImportJob(job, mockDb);
       expect(mockEnqueueDebouncedPostSyncMaintenance).toHaveBeenCalledOnce();
-      expect(mockEnqueueDebouncedUserRefit).toHaveBeenCalledWith("user-1");
+      expect(mockEnqueueDebouncedUserRefit).toHaveBeenCalledWith(
+        "00000000-0000-4000-8000-000000000001",
+      );
       expect(mockLoggerError).toHaveBeenCalledWith(
         expect.stringContaining("Failed to enqueue post-import user refit"),
       );

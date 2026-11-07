@@ -88,6 +88,7 @@ export async function handleSyncCommand(args: string[]): Promise<number> {
   );
   const queueEvents = new QueueEvents(SYNC_QUEUE, { connection });
 
+  let exitCode = 0;
   try {
     const results = await Promise.allSettled(jobs.map((job) => job.waitUntilFinished(queueEvents)));
     const failed = results.find((result) => result.status === "rejected");
@@ -95,16 +96,26 @@ export async function handleSyncCommand(args: string[]): Promise<number> {
       throw failed.reason;
     }
     logger.info("[sync] Done.");
-    return 0;
   } catch (err) {
     captureException(err, { tags: { phase: "cli-sync" } });
     logger.error(`[sync] Failed: ${err}`);
-    return 1;
-  } finally {
-    await worker.close();
-    await fitFileImportWorker.close();
-    await queueEvents.close();
-    await queue.close();
-    await accountErasureWorkLockPool.close();
+    exitCode = 1;
   }
+  const workers = await Promise.allSettled([worker.close(), fitFileImportWorker.close()]);
+  const resources = await Promise.allSettled([
+    queueEvents.close(),
+    queue.close(),
+    accountErasureWorkLockPool.close(),
+  ]);
+  const failures = [...workers, ...resources].flatMap((outcome) =>
+    outcome.status === "rejected" ? [outcome.reason] : [],
+  );
+  if (failures.length) {
+    captureException(new AggregateError(failures, "CLI sync cleanup failed"), {
+      tags: { phase: "cli-sync-cleanup" },
+    });
+    logger.error("[sync] Resource cleanup failed");
+    exitCode = 1;
+  }
+  return exitCode;
 }

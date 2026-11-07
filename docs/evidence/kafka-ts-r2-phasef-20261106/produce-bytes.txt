@@ -1,0 +1,1 @@
+   65600 /tmp/kafka-ts-r2-phasef-20261106/evidence/produce-payloads.txt

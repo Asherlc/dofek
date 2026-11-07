@@ -55,7 +55,7 @@ vi.mock("@sentry/node", () => ({
   captureException: mockSentryCaptureException,
 }));
 
-vi.mock("../../../../src/metric-stream/redpanda-producer.ts", () => ({
+vi.mock("../../../../src/metric-stream/publisher-factory.ts", () => ({
   getDefaultMetricStreamEventPublisher: async () => ({
     publishRows: mockMetricStreamPublishRows,
   }),
@@ -1104,7 +1104,7 @@ describe("healthKitSyncRouter", () => {
       const execute = vi.fn();
       // ensureProvider succeeds
       execute.mockResolvedValueOnce([]);
-      const failure = new Error("Metric stream Redpanda error");
+      const failure = new Error("Metric stream Kafka error");
       mockMetricStreamPublishRows.mockRejectedValueOnce(failure);
 
       const caller = createCaller({

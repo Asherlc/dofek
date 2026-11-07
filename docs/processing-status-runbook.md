@@ -15,7 +15,7 @@ Relational data and metric-stream data are independent:
 | Output actually emitted | Canonical evidence | ClickHouse arrival evidence |
 | --- | --- | --- |
 | Postgres relational rows | A Postgres processing marker written after the provider/import write completes, with the current WAL location | The exact operation/dataset/batch marker exists in the destination table assigned to that flow: `postgres_fitness.processing_flow_marker` for the fitness mirror or `postgres_fitness.processing_flow_marker_provider_inventory` for the provider-inventory mirror |
-| Redpanda metric batch | A stable batch ID and expected event count recorded after broker publication | The exact operation/batch receipt with the same count exists in `ingest.metric_stream_processing_acknowledgement` |
+| Metric-stream broker batch | A stable batch ID and expected event count recorded after Kafka-protocol broker publication | The exact operation/batch receipt with the same count exists in `ingest.metric_stream_processing_acknowledgement` |
 | No rows for a path | No output-manifest row | The path is skipped and cannot block readiness |
 
 The relational marker is a causal fence, not a second copy of the provider
@@ -28,9 +28,10 @@ ClickHouse ([PeerDB Postgres-to-ClickHouse CDC](https://docs.peerdb.io/mirror/cd
 The exact marker in the destination, rather than an unrelated maximum domain
 timestamp, proves that the relevant replication flow crossed the fence.
 
-Metric rows remain on the direct Redpanda-to-ClickHouse path. The producer puts
-each batch-completed marker in the same topic partition as the batch. Kafka
-guarantees write/read order within a topic partition, not across partitions
+Metric rows remain on the direct broker-to-ClickHouse path (production today:
+Redpanda; local/stack target: Kafka). The producer puts each batch-completed
+marker in the same topic partition as the batch. Kafka-protocol brokers
+guarantee write/read order within a topic partition, not across partitions
 ([Apache Kafka introduction](https://kafka.apache.org/documentation/)). The sink
 writes the ClickHouse receipt only after applying the preceding metric events.
 The Postgres `processing_queue_outbox` contains reconciliation work identifiers

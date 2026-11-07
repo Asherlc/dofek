@@ -137,11 +137,11 @@ const redisPort = await resolvePort({
   service: "redis",
   privatePort: "6379",
 });
-const redpandaPort = await resolvePort({
+const kafkaPort = await resolvePort({
   env: existingEnv,
-  key: "REDPANDA_PORT",
-  service: "redpanda",
-  privatePort: "19092",
+  key: "KAFKA_PORT",
+  service: "kafka",
+  privatePort: "9092",
 });
 const peerDbCdcPort = await resolvePort({
   env: existingEnv,
@@ -165,56 +165,63 @@ const dotenv = [
   `CLICKHOUSE_HTTP_PORT=${clickHouseHttpPort}`,
   `CLICKHOUSE_NATIVE_PORT=${clickHouseNativePort}`,
   `REDIS_PORT=${redisPort}`,
-  `REDPANDA_PORT=${redpandaPort}`,
+  `KAFKA_PORT=${kafkaPort}`,
   `PEERDB_CDC_HOST=127.0.0.1`,
   `PEERDB_CDC_PORT=${peerDbCdcPort}`,
   `PEERDB_UI_PORT=${peerDbUiPort}`,
   `DATABASE_URL=postgres://health:${postgresPasswordUrlEncoded}@127.0.0.1:${databasePort}/health`,
   `CLICKHOUSE_URL=http://default:${clickHousePasswordUrlEncoded}@127.0.0.1:${clickHouseHttpPort}`,
   `REDIS_URL=redis://127.0.0.1:${redisPort}`,
-  `REDPANDA_BROKERS=127.0.0.1:${redpandaPort}`,
-  `METRIC_STREAM_LEGACY_TOPIC=metric-stream-v1`,
-  `METRIC_STREAM_LIVE_TOPIC=metric-stream-live-v1`,
-  `METRIC_STREAM_HISTORY_TOPIC=metric-stream-history-v1`,
+  `KAFKA_BROKERS=127.0.0.1:${kafkaPort}`,
+  `METRIC_STREAM_LEGACY_TOPIC=metric-stream-v2`,
+  `METRIC_STREAM_LIVE_TOPIC=metric-stream-live-v2`,
+  `METRIC_STREAM_HISTORY_TOPIC=metric-stream-history-v2`,
   `METRIC_STREAM_R2_BUCKET=dofek-metric-stream-archive`,
+  // Compose interpolates profiled archive services even when `compose:up` only
+  // starts db/clickhouse/redis/kafka; keep stock placeholders so ${:?} passes.
+  `METRIC_STREAM_TRANSPORT_EPOCH=local-dev-transport-epoch`,
+  // Dedicated Kafka TS offload (not JSONL archive). Stable local cluster id.
+  `KAFKA_CLUSTER_ID=MkU3OEVBNTcwNTJENDM2Qk`,
+  `KAFKA_TIERED_STORAGE_BUCKET=dofek-kafka-ts-offload-local`,
+  `KAFKA_TIERED_STORAGE_ENDPOINT=http://kafka-tiered-storage-minio:9000`,
+  `KAFKA_TIERED_STORAGE_REGION=auto`,
+  `KAFKA_TIERED_STORAGE_ACCESS_KEY_ID=kafkats`,
+  `KAFKA_TIERED_STORAGE_SECRET_ACCESS_KEY=kafkatslocaldev`,
   "",
 ].join("\n");
 
 if (process.argv.includes("--up")) {
   writeFileSync(composeEnvironmentPath, dotenv);
-  execFileSync(
-    "docker",
-    [
-      "compose",
-      "--project-name",
-      composeProjectName,
-      "--project-directory",
-      workspaceDirectory,
-      "--file",
-      composeFilePath,
-      "--env-file",
-      composeEnvironmentPath,
-      "up",
-      "-d",
-      "--wait",
-      "--wait-timeout",
-      "180",
-      "db",
-      "clickhouse",
-      "redis",
-      "redpanda",
-    ],
-    {
-      cwd: workspaceDirectory,
-      env: {
-        ...process.env,
-        COMPOSE_FILE: composeFilePath,
-        COMPOSE_PROJECT_NAME: composeProjectName,
-        PWD: workspaceDirectory,
+  for (const command of [
+    ["up", "-d", "--wait", "--wait-timeout", "180", "db", "clickhouse", "redis", "kafka"],
+    ["run", "--rm", "--no-deps", "kafka-ready"],
+  ]) {
+    execFileSync(
+      "docker",
+      [
+        "compose",
+        "--project-name",
+        composeProjectName,
+        "--project-directory",
+        workspaceDirectory,
+        "--file",
+        composeFilePath,
+        "--env-file",
+        composeEnvironmentPath,
+        ...command,
+      ],
+      {
+        cwd: workspaceDirectory,
+        env: {
+          ...process.env,
+          COMPOSE_FILE: composeFilePath,
+          COMPOSE_PROJECT_NAME: composeProjectName,
+          PWD: workspaceDirectory,
+        },
+        stdio: "inherit",
       },
-      stdio: "inherit",
-    },
-  );
+    );
+  }
 } else if (process.argv.includes("--write")) {
   writeFileSync(composeEnvironmentPath, dotenv);
 } else {

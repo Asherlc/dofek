@@ -1,14 +1,16 @@
 # ClickHouse Metric Stream Projection
 
-`metric_stream` samples publish to Redpanda first. Redpanda Connect archives the
-topic to Cloudflare R2 for long-term replay, and
+`metric_stream` samples publish to a Kafka-protocol hot log first (**local /
+checked-in stack target: Apache Kafka**; **production today: Redpanda** until
+approved cutover). [Redpanda Connect](https://docs.redpanda.com/redpanda-connect/)
+archives the topic to Cloudflare R2 for long-term replay, and
 `metric-stream-clickhouse-sink` writes the analytics copy into
 `ingest.metric_stream`. Postgres is no longer the normal forward
 ingestion path for metric-stream samples, and PeerDB does not mirror
 `fitness.metric_stream`.
 
 ```text
-Redpanda metric-stream-v1
+Kafka-protocol topic (e.g. metric-stream-*-v1 today in prod)
         |                         |
         | R2 archive              | ClickHouse sink
         v                         v
@@ -209,7 +211,7 @@ ClickHouse migrations create and update the databases and read models:
 - `ingest.metric_stream`: a ClickHouse-native `ReplacingMergeTree` copy of the
   raw metric stream populated by `metric-stream-clickhouse-sink`. Historical
   rows may still have been backfilled from Postgres, but new forward rows come
-  from Redpanda events. Its `version` and `is_deleted` columns encode replacement
+  from metric-stream broker events. Its `version` and `is_deleted` columns encode replacement
   order and logical deletion so current-state queries can select the latest live
   row. Its `by_provider_current_state` aggregate projection computes the same
   latest-row state in advance at provider-record grain for exact inventory counts
@@ -254,7 +256,7 @@ ClickHouse migrations create and update the databases and read models:
   and has no `activity_id`; activity reads join samples to activities by time
   window.
 - `analytics.deduped_location`: a normal view over
-  `ingest.metric_stream` location rows. The Redpanda ClickHouse sink
+  `ingest.metric_stream` location rows. The metric-stream ClickHouse sink
   converts EWKT point payloads into ClickHouse point-compatible values.
 - `analytics.activity_summary`: a normal view over `analytics.deduped_sensor`,
   `analytics.deduped_location`, and `analytics.v_activity`.
@@ -434,7 +436,7 @@ downstream provider-inventory freshness before declaring the rollout complete.
 
 ### Deletion protocol
 
-New metric-stream deletions are version 2 Redpanda events with a unique event
+New metric-stream deletions are version 2 broker events with a unique event
 ID. The ClickHouse sink first filters `ingest.metric_stream` to the deletion
 scope, selects the latest version of each matching ID, inserts a newer
 `is_deleted = 1` version, and then writes the event ID to

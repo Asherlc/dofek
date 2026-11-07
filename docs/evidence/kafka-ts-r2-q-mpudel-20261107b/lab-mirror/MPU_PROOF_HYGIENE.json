@@ -1,0 +1,12 @@
+{
+  "allowed": [
+    "Sanitized Kafka/RSM broker log lines naming CreateMultipartUpload / UploadPart / CompleteMultipartUpload (redact Authorization, AWS_*, session tokens)",
+    "Stock kafka-dump-log.sh --remote-log-metadata-decoder metadata (no payload bodies)",
+    "Root ListObjectsV2 / list-MPU counts under lab prefix (names/sizes only)"
+  ],
+  "forbidden": [
+    "AWS SDK full HTTP wire logging",
+    "Logging Authorization Bearer, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN, child secretAccessKey",
+    "Parent credentials in broker env"
+  ]
+}

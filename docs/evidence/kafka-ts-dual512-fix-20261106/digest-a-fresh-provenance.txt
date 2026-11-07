@@ -1,0 +1,4 @@
+Reason: prior hash-a.json corrupted by tee mixing progress+JSON (preserved as hash-a.malformed.raw).
+No consume-*-a.stdout bytes were retained from that run; stderr-only is insufficient to recompute observed digest.
+Action: fresh sequential console-consumer from client service (384MiB, KAFKA_HEAP_OPTS=-Xms32m -Xmx256m); raw stdout bytes retained; hash-a.json written only via pathlib (never tee to same path).
+Observed digests derived solely from this-run stdout with grammar ^Offset:(\d+)\|(.*)$.

@@ -1,0 +1,86 @@
+{
+  "lab": "kafka-ts-dual512-fix-20261106",
+  "result": "PASS",
+  "correction": "Prior dual512 FAIL was test violation (consumer inside broker cgroup inheriting 1GiB heap), not Kafka resource finding. This retest: all clients in separate 384MiB service with KAFKA_HEAP_OPTS=-Xms32m -Xmx256m; single broker kafka.Kafka verified; healthcheck TopicCommand removed from broker cgroup.",
+  "hash_a_corruption": "tee to hash-a.json mixed progress+JSON; preserved as hash-a.malformed.raw; observed digests from fresh consume-*-a-fresh.stdout only (not reconstructed from prior stdout print).",
+  "bounds": {
+    "broker_cgroup_mib": 2048,
+    "broker_heap": "1GiB",
+    "seaweed_cgroup_mib": 1024,
+    "client_cgroup_mib": 384,
+    "client_heap": "-Xms32m -Xmx256m",
+    "workload": "2 topics \u00d7 256 \u00d7 512KiB = 256MiB",
+    "knob_tuning": "none",
+    "elapsed_sec": 631
+  },
+  "local_removal_before_digest": true,
+  "earliest_digest_a": "PASS",
+  "broker_restart_digest_b": "PASS",
+  "hashes_match": true,
+  "sha256_offset_value": {
+    "topicA": "84647a6947925f3ec9977f7b36da31a962bfa096134281ada00f6c3d5a19370b",
+    "topicB": "84647a6947925f3ec9977f7b36da31a962bfa096134281ada00f6c3d5a19370b"
+  },
+  "stdout_sources": {
+    "A": {
+      "topicA": "/tmp/kafka-ts-dual512-fix-20261106/evidence/consume-topicA-a-fresh.stdout",
+      "topicB": "/tmp/kafka-ts-dual512-fix-20261106/evidence/consume-topicB-a-fresh.stdout"
+    },
+    "B": {
+      "topicA": "/tmp/kafka-ts-dual512-fix-20261106/evidence/consume-topicA-b.stdout",
+      "topicB": "/tmp/kafka-ts-dual512-fix-20261106/evidence/consume-topicB-b.stdout"
+    }
+  },
+  "stdout_sha256": {
+    "A": {
+      "topicA": "2d9df08fb5edb2f21780cd79665a930467eec59bbf0104999d51f83eecbcf2a6",
+      "topicB": "2d9df08fb5edb2f21780cd79665a930467eec59bbf0104999d51f83eecbcf2a6"
+    },
+    "B": {
+      "topicA": "2d9df08fb5edb2f21780cd79665a930467eec59bbf0104999d51f83eecbcf2a6",
+      "topicB": "2d9df08fb5edb2f21780cd79665a930467eec59bbf0104999d51f83eecbcf2a6"
+    }
+  },
+  "cgroup_lifetime_peaks_mib": {
+    "client": 195.8,
+    "kafka": 1628.5,
+    "seaweed": 808.1
+  },
+  "oom": {
+    "client": 0,
+    "kafka": 0,
+    "seaweed": 0
+  },
+  "broker_oom": false,
+  "images_plugins_unchanged_from_D2": true,
+  "remote_log_segments": 10,
+  "local_active_only_logs": [
+    "topicA-0/00000000000000000256.log",
+    "topicB-0/00000000000000000256.log"
+  ],
+  "object_inventory": {
+    "objects": 30,
+    "remote_log_segments": 10,
+    "log_sizes_bytes": [
+      33034680,
+      33034680,
+      33034680,
+      33034680,
+      2097440,
+      33034680,
+      33034680,
+      33034680,
+      33034680,
+      2097440
+    ],
+    "multi_part_eligible_gt_25MiB": 8,
+    "endpoint": "http://seaweed:9000"
+  },
+  "stdout_manifests": [
+    "stdout-manifest-topicA-a-fresh.json",
+    "stdout-manifest-topicB-a-fresh.json",
+    "stdout-manifest-topicA-b.json",
+    "stdout-manifest-topicB-b.json"
+  ],
+  "note_stdout_not_in_git": "Full consume-*.stdout retained under /tmp lab evidence during run (128MiB each); git packet keeps sha256 manifests + hash JSON derived by parsing those bytes. Full stdout not copied into docs/ to avoid bloating the repo."
+}

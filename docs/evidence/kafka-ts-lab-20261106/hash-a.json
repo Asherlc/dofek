@@ -1,0 +1,11 @@
+{
+  "label": "A-pre-restart",
+  "line_count": 5001,
+  "parsed_count": 5000,
+  "first_offset": 0,
+  "last_offset": 4999,
+  "contiguous_from_zero": true,
+  "strict_order_contiguous": true,
+  "sha256_offset_value": "a1cc5c88bfe4f73c8a665027752d81cbd5c2f12f8ad504457ecb6ef405bde616",
+  "payload_bodies": "omitted"
+}

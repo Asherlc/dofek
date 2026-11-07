@@ -1,0 +1,5 @@
+starting topicA
+topicA parsed 256 stdout_bytes 134220690 sha 84647a6947925f3e
+starting topicB
+topicB parsed 256 stdout_bytes 134220690 sha 84647a6947925f3e
+OK

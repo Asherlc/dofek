@@ -1,0 +1,50 @@
+	remote.log.metadata.manager.class.name = org.apache.kafka.server.log.remote.metadata.storage.TopicBasedRemoteLogMetadataManager
+	remote.log.storage.manager.class.path = /plugins/1.2.0/core/*:/plugins/1.2.0/s3/*
+	remote.log.storage.manager.impl.prefix = rsm.config.
+	errors.deadletterqueue.auto.create.topics.enable = false
+	errors.deadletterqueue.topic.name.prefix = dlq.
+	errors.deadletterqueue.auto.create.topics.enable = false
+	errors.deadletterqueue.topic.name.prefix = dlq.
+	remote.log.metadata.manager.class.name = org.apache.kafka.server.log.remote.metadata.storage.TopicBasedRemoteLogMetadataManager
+	remote.log.storage.manager.class.path = /plugins/1.2.0/core/*:/plugins/1.2.0/s3/*
+	remote.log.storage.manager.impl.prefix = rsm.config.
+	errors.deadletterqueue.auto.create.topics.enable = false
+	errors.deadletterqueue.topic.name.prefix = dlq.
+	errors.deadletterqueue.auto.create.topics.enable = false
+	errors.deadletterqueue.topic.name.prefix = dlq.
+	remote.log.metadata.manager.class.name = org.apache.kafka.server.log.remote.metadata.storage.TopicBasedRemoteLogMetadataManager
+	remote.log.storage.manager.class.path = /plugins/1.2.0/core/*:/plugins/1.2.0/s3/*
+	remote.log.storage.manager.impl.prefix = rsm.config.
+	storage.backend.class = class io.aiven.kafka.tieredstorage.storage.s3.S3Storage
+[2026-11-07 03:50:12,515] INFO S3StorageConfig values: 
+	s3.api.call.attempt.timeout = null
+	s3.api.call.timeout = null
+	s3.bucket.name = kafka-ts-r2-q-mpudel-20261107b
+	s3.endpoint.url = https://8e5b2f62ffe8ebdd48e725d325a6d51e.r2.cloudflarestorage.com
+	s3.legacy.md5.plugin.enabled = false
+	s3.multipart.upload.part.size = 5242880
+	s3.path.style.access.enabled = true
+	s3.region = auto
+	s3.storage.class = STANDARD
+[2026-11-07 03:50:12,998] INFO Successfully configured topic-based RLMM with config: TopicBasedRemoteLogMetadataManagerConfig{clientIdPrefix='__remote_log_metadata_client_1', metadataTopicPartitionsCount=50, consumeWaitMs=120000, metadataTopicRetentionMs=-1, metadataTopicReplicationFactor=1, metadataTopicMinIsr=1, initializationRetryMaxTimeoutMs=120000, initializationRetryIntervalMs=100, consumerProps={auto.offset.reset="earliest", bootstrap.servers=kafka:29092, client.id="__remote_log_metadata_client_1_consumer", enable.auto.commit=false, exclude.internal.topics=false, key.deserializer=org.apache.kafka.common.serialization.ByteArrayDeserializer, security.protocol="PLAINTEXT", value.deserializer=org.apache.kafka.common.serialization.ByteArrayDeserializer}, producerProps={acks="all", bootstrap.servers=kafka:29092, client.id="__remote_log_metadata_client_1_producer", enable.idempotence=true, key.serializer=org.apache.kafka.common.serialization.ByteArraySerializer, security.protocol="PLAINTEXT", value.serializer=org.apache.kafka.common.serialization.ByteArraySerializer}, adminProps={bootstrap.servers=kafka:29092, client.id="__remote_log_metadata_client_1_admin", security.protocol="PLAINTEXT"}} (org.apache.kafka.server.log.remote.metadata.storage.TopicBasedRemoteLogMetadataManager)
+	errors.deadletterqueue.auto.create.topics.enable = false
+	errors.deadletterqueue.topic.name.prefix = dlq.
+	errors.deadletterqueue.auto.create.topics.enable = false
+	errors.deadletterqueue.topic.name.prefix = dlq.
+	remote.log.metadata.manager.class.name = org.apache.kafka.server.log.remote.metadata.storage.TopicBasedRemoteLogMetadataManager
+	remote.log.storage.manager.class.path = /plugins/1.2.0/core/*:/plugins/1.2.0/s3/*
+	remote.log.storage.manager.impl.prefix = rsm.config.
+	errors.deadletterqueue.auto.create.topics.enable = false
+	errors.deadletterqueue.topic.name.prefix = dlq.
+	remote.log.metadata.manager.class.name = org.apache.kafka.server.log.remote.metadata.storage.TopicBasedRemoteLogMetadataManager
+	remote.log.storage.manager.class.path = /plugins/1.2.0/core/*:/plugins/1.2.0/s3/*
+	remote.log.storage.manager.impl.prefix = rsm.config.
+[2026-11-07 03:50:13,229] INFO [BrokerServer id=1] Waiting for all of the SocketServer Acceptors to be started (kafka.server.BrokerServer)
+[2026-11-07 03:50:13,229] INFO [BrokerServer id=1] Finished waiting for all of the SocketServer Acceptors to be started (kafka.server.BrokerServer)
+[2026-11-07 03:50:13,230] INFO [BrokerServer id=1] Transition from STARTING to STARTED (kafka.server.BrokerServer)
+[2026-11-07 03:50:13,231] INFO Initializing topic-based RLMM resources (org.apache.kafka.server.log.remote.metadata.storage.TopicBasedRemoteLogMetadataManager)
+[2026-11-07 03:50:13,234] INFO [KafkaRaftServer nodeId=1] Kafka Server started (kafka.server.KafkaRaftServer)
+[2026-11-07 03:50:13,325] INFO Topic __remote_log_metadata does not exist (org.apache.kafka.server.log.remote.metadata.storage.TopicBasedRemoteLogMetadataManager)
+[2026-11-07 03:50:13,380] INFO Topic __remote_log_metadata created. TopicId: WbPMI0r1T4CMeL1KdmKHEw, numPartitions: 50, replicationFactor: 1, config: [remote.storage.enable=false, min.insync.replicas=1, cleanup.policy=delete, retention.ms=-1] (org.apache.kafka.server.log.remote.metadata.storage.TopicBasedRemoteLogMetadataManager)
+[2026-11-07 03:50:13,593] INFO RLMM Consumer task thread is started (org.apache.kafka.server.log.remote.metadata.storage.ConsumerManager)
+[2026-11-07 03:50:13,609] INFO Initialized topic-based RLMM resources successfully (org.apache.kafka.server.log.remote.metadata.storage.TopicBasedRemoteLogMetadataManager)

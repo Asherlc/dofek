@@ -114,7 +114,7 @@ describe("worker queues", () => {
 
     await invokeProcessor(
       "sync-strava",
-      { providerId: "strava", userId: "user-1" },
+      { providerId: "strava", userId: "00000000-0000-4000-8000-000000000001" },
       undefined,
       undefined,
       signal,
@@ -130,7 +130,7 @@ describe("worker queues", () => {
 
     await invokeProcessor(
       "sync-queue",
-      { providerId: "wahoo", userId: "user-1" },
+      { providerId: "wahoo", userId: "00000000-0000-4000-8000-000000000001" },
       undefined,
       undefined,
       signal,
@@ -150,11 +150,15 @@ describe("worker queues", () => {
     );
     for (const queue of ["sync-strava", "sync-queue"]) {
       vi.mocked(runQueuedUserWorkUnlessAccountErasing).mockClear();
-      await invokeProcessor(queue, { providerId: "strava", userId: "user-1", origin });
+      await invokeProcessor(queue, {
+        providerId: "strava",
+        userId: "00000000-0000-4000-8000-000000000001",
+        origin,
+      });
       expect(runQueuedUserWorkUnlessAccountErasing).toHaveBeenCalledWith(
         dependencies.accountErasureWorkLockPool,
         mockDatabase,
-        "user-1",
+        "00000000-0000-4000-8000-000000000001",
         expect.any(String),
         expect.any(Function),
         "strava",
@@ -167,14 +171,18 @@ describe("worker queues", () => {
     const { processSyncJob } = await import("./process-sync-job.ts");
     const error = new WaitingChildrenError();
     vi.mocked(processSyncJob).mockRejectedValueOnce(error);
-    await expect(invokeProcessor("sync-queue", { userId: "user-1" })).rejects.toBe(error);
+    await expect(
+      invokeProcessor("sync-queue", { userId: "00000000-0000-4000-8000-000000000001" }),
+    ).rejects.toBe(error);
   });
 
   it("propagates ordinary coordinator failures to BullMQ", async () => {
     const { processSyncJob } = await import("./process-sync-job.ts");
     const error = new Error("Provider dispatch failed");
     vi.mocked(processSyncJob).mockRejectedValueOnce(error);
-    await expect(invokeProcessor("sync-queue", { userId: "user-1" })).rejects.toBe(error);
+    await expect(
+      invokeProcessor("sync-queue", { userId: "00000000-0000-4000-8000-000000000001" }),
+    ).rejects.toBe(error);
   });
 
   it("import processor delegates to processFileUploadImportJob", async () => {
@@ -204,11 +212,15 @@ describe("worker queues", () => {
       const { runQueuedUserWorkUnlessAccountErasing } = await import(
         "./account-erasure-work-guard.ts"
       );
-      await invokeProcessor("import-queue", { uploadId: "upload-1", userId: "user-1", importType });
+      await invokeProcessor("import-queue", {
+        uploadId: "upload-1",
+        userId: "00000000-0000-4000-8000-000000000001",
+        importType,
+      });
       expect(runQueuedUserWorkUnlessAccountErasing).toHaveBeenLastCalledWith(
         dependencies.accountErasureWorkLockPool,
         mockDatabase,
-        "user-1",
+        "00000000-0000-4000-8000-000000000001",
         "file import",
         expect.any(Function),
         importType,
@@ -223,7 +235,7 @@ describe("worker queues", () => {
         "./account-erasure-work-guard.ts"
       );
       await invokeProcessor("fit-file-import-queue", {
-        userId: "user-1",
+        userId: "00000000-0000-4000-8000-000000000001",
         providerId,
         filePath: "/tmp/activity.fit",
         originalPath: "activity.fit",
@@ -231,7 +243,7 @@ describe("worker queues", () => {
       expect(runQueuedUserWorkUnlessAccountErasing).toHaveBeenLastCalledWith(
         dependencies.accountErasureWorkLockPool,
         mockDatabase,
-        "user-1",
+        "00000000-0000-4000-8000-000000000001",
         "FIT file import",
         expect.any(Function),
         providerId,
@@ -489,7 +501,7 @@ describe("worker queues", () => {
 
     await invokeProcessor("activity-delete-analytics-queue", {
       type: "activity-delete-analytics-refresh",
-      userId: "user-1",
+      userId: "00000000-0000-4000-8000-000000000001",
       activityIds: ["00000000-0000-0000-0000-000000000001"],
     });
 

@@ -159,8 +159,8 @@ export const mockCreateMetricStreamEventPublisherForRoute = vi.fn(async () => ({
   publishRows: mockMetricStreamPublishRows,
   replaceRows: mockMetricStreamReplaceRows,
 }));
-vi.mock("../../metric-stream/redpanda-producer.ts", () => ({
-  createKafkaMetricStreamEventPublisherForRoute: mockCreateMetricStreamEventPublisherForRoute,
+vi.mock("../../metric-stream/publisher-factory.ts", () => ({
+  createMetricStreamEventPublisherForRoute: mockCreateMetricStreamEventPublisherForRoute,
 }));
 
 // Mock dependencies — the mock functions are accessed via module-level refs
@@ -370,7 +370,7 @@ export function createMockJob(
     getDependencies: vi.fn<(...args: unknown[]) => unknown>().mockResolvedValue({}),
     moveToWaitingChildren: vi.fn<(...args: unknown[]) => unknown>().mockResolvedValue(false),
     opts: { attempts: 288 },
-    data: { userId: "user-1", ...data },
+    data: { userId: "00000000-0000-4000-8000-000000000001", ...data },
     updateProgress: vi.fn<(...args: unknown[]) => unknown>().mockResolvedValue(undefined),
     updateData: vi.fn<(...args: unknown[]) => unknown>(),
   };
