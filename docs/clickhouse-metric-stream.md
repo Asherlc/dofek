@@ -55,7 +55,7 @@ one user, provider, and recorded timestamp. Changing any of those identity
 fields creates a new sample ID. Activity association and measurement values
 may change while retaining the ID.
 
-New publications enforce this rule through the existing deterministic
+The checked-in new-publication path enforces this rule through the existing deterministic
 [event constructor](../src/metric-stream/events.ts): callers supply an external
 source identifier rather than an internal sample ID. The
 [writer boundary](../src/db/metric-stream-writer.ts) exposes the same contract.
@@ -72,6 +72,12 @@ old [Postgres primary key](../drizzle/0009_metric_stream_id_not_null_primary_key
 was `(id, recorded_at)`, so its constraints do not establish immutable identity
 across all retained versions. Historical identity and timestamp precision
 still require an audit before deletion queries can rely on the new contract.
+
+The approved 2026-11-07 incident-scope audit checked 43,406 candidate IDs across
+130,218 retained physical versions, finding no conflicting immutable tuples
+and no sub-millisecond timestamps. This is scoped evidence, not certification
+of unread broker events, archive replay or all historical IDs; see the
+[audit result and limits](production-incident-baseline.md#2026-11-07--historical-sample-identity-audit-preflight-incident-unresolved).
 
 Keep the existing global latest-version deletion checks until producer and
 historical compatibility are established and an implementation is reviewed.
