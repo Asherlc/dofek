@@ -1,5 +1,11 @@
 variable "cloudflare_api_token" {
-  description = "Cloudflare API token for the Terraform Cloudflare provider (Zone/DNS/R2 as already used). cloudflare_account_token mint additionally needs Account API Tokens Write — see docs/kafka-ts-r2-offload-iac.md."
+  description = "Cloudflare API token for the default Terraform Cloudflare provider (Zone/DNS and existing storage.tf R2). Not used for Kafka TS account_token mint."
+  type        = string
+  sensitive   = true
+}
+
+variable "cloudflare_terraform_r2_api_token" {
+  description = "Account-owned token for provider.cloudflare.r2 (Kafka TS R2 bucket/lifecycle + cloudflare_account_token mint). Permissions: Account API Tokens Write + Workers R2 Storage Write only — no DNS/Zone. GH secret CLOUDFLARE_TERRAFORM_R2_API_TOKEN; distinct from Infisical Traefik CLOUDFLARE_API_TOKEN. See docs/kafka-ts-r2-offload-iac.md."
   type        = string
   sensitive   = true
 }

@@ -1,9 +1,11 @@
 # Dedicated Cloudflare R2 bucket + long-lived Object RW key for Kafka tiered storage.
 # Distinct from metric-stream archive and account-erasure ledger in storage.tf.
 #
-# Always declared (steady-state). Hold deploy-terraform apply until managing CF
-# auth has Account API Tokens Write — see docs/kafka-ts-r2-offload-iac.md.
+# Always declared (steady-state). Cloudflare resources use provider = cloudflare.r2
+# (GH CLOUDFLARE_TERRAFORM_R2_API_TOKEN: Account API Tokens Write + Workers R2
+# Storage Write). Default cloudflare provider / storage.tf / Infisical unchanged.
 # Infisical CI additional privilege gha-kafka-ts-r2-secrets is already granted.
+# See docs/kafka-ts-r2-offload-iac.md.
 #
 # Stock paths only — no custom JWT signer, no temp-credential renewal service,
 # no runtime parent fallback.
@@ -33,12 +35,14 @@ locals {
 #   https://github.com/cloudflare/terraform-provider-cloudflare/blob/v5.19.0/internal/services/account_api_token_permission_groups/list_data_source_model.go
 #   https://github.com/cloudflare/cloudflare-go/blob/main/accounts/tokenpermissiongroup.go
 data "cloudflare_account_api_token_permission_groups_list" "r2_bucket_item_write" {
+  provider   = cloudflare.r2
   account_id = var.cloudflare_account_id
   name       = "Workers R2 Storage Bucket Item Write"
   scope      = "com.cloudflare.edge.r2.bucket"
 }
 
 resource "cloudflare_r2_bucket" "kafka_ts_offload" {
+  provider   = cloudflare.r2
   account_id = var.cloudflare_account_id
   name       = local.kafka_ts_r2_bucket_name
 
@@ -49,6 +53,7 @@ resource "cloudflare_r2_bucket" "kafka_ts_offload" {
 
 # Incomplete MPU cleanup only — do not age-delete live tiered-storage objects.
 resource "cloudflare_r2_bucket_lifecycle" "kafka_ts_offload_abort_mpu" {
+  provider    = cloudflare.r2
   account_id  = var.cloudflare_account_id
   bucket_name = cloudflare_r2_bucket.kafka_ts_offload.name
 
@@ -70,6 +75,7 @@ resource "cloudflare_r2_bucket_lifecycle" "kafka_ts_offload_abort_mpu" {
 # Long-lived dedicated Object RW account token scoped to the Kafka TS bucket only.
 # Managing provider token must have Account API Tokens Write (not User API Tokens).
 resource "cloudflare_account_token" "kafka_ts_offload_object_rw" {
+  provider   = cloudflare.r2
   account_id = var.cloudflare_account_id
   name       = "dofek-kafka-ts-offload-object-rw"
 

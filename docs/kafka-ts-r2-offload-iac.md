@@ -6,28 +6,33 @@ Aiven RSM 1.2.0. Metric-stream JSONL archive and account-erasure ledger in
 
 **No TF apply / bucket create / key mint from this doc alone.** Resources are
 always declared. Infisical CI can write `KAFKA_TIERED_STORAGE_*` (privilege
-granted). Hold apply until GitHub secret **`CLOUDFLARE_TERRAFORM_API_TOKEN`**
-exists and `deploy-terraform.yml` is switched to it (workflow change waits on
-names-only proof that the secret is present).
+granted). Managing IAM bootstrap for the aliased R2 provider is complete
+(GitHub secret `CLOUDFLARE_TERRAFORM_R2_API_TOKEN` exists). Apply and Kafka TS
+qualification remain separate gates.
 
 ## Terraform owns
 
 | Resource | Notes |
 |---|---|
-| `cloudflare_r2_bucket.kafka_ts_offload` | Name `dofek-kafka-ts-offload`; `prevent_destroy`; no Object Lock |
-| `cloudflare_r2_bucket_lifecycle.kafka_ts_offload_abort_mpu` | Abort incomplete MPU after 1d only — **no** live object age expiry (Kafka/RSM GC) |
-| `cloudflare_account_token.kafka_ts_offload_object_rw` | Bucket-scoped **Workers R2 Storage Bucket Item Write** |
-| `infisical_secret` ×5 | `KAFKA_TIERED_STORAGE_{BUCKET,ENDPOINT,REGION,ACCESS_KEY_ID,SECRET_ACCESS_KEY}` at `prod` `/` |
+| `cloudflare_r2_bucket.kafka_ts_offload` | Name `dofek-kafka-ts-offload`; `prevent_destroy`; no Object Lock; `provider = cloudflare.r2` |
+| `cloudflare_r2_bucket_lifecycle.kafka_ts_offload_abort_mpu` | Abort incomplete MPU after 1d only — **no** live object age expiry (Kafka/RSM GC); `provider = cloudflare.r2` |
+| `cloudflare_account_token.kafka_ts_offload_object_rw` | Bucket-scoped **Workers R2 Storage Bucket Item Write**; `provider = cloudflare.r2` |
+| `data.cloudflare_account_api_token_permission_groups_list.r2_bucket_item_write` | Live PG id resolve; `provider = cloudflare.r2` |
+| `infisical_secret` ×5 | `KAFKA_TIERED_STORAGE_{BUCKET,ENDPOINT,REGION,ACCESS_KEY_ID,SECRET_ACCESS_KEY}` at `prod` `/` (default Infisical provider) |
 
-Providers: existing `cloudflare` `~> 5.0` + `infisical` `0.20.12`.
+Providers: default `cloudflare` `~> 5.0` (DNS + existing `storage.tf`), aliased
+`cloudflare.r2` (Kafka TS R2 + child token mint only), `infisical` `0.20.12`.
+Stock [provider alias](https://developer.hashicorp.com/terraform/language/providers/configuration#alias-multiple-provider-configurations)
+— same Cloudflare provider source, second configuration. An alias selects
+credentials per resource; it does **not** isolate jobs, runners, or state
+(same `deploy-terraform` apply / HCP workspace).
 
 Sources:
 [account_token](https://registry.terraform.io/providers/cloudflare/cloudflare/5.19.0/docs/resources/account_token),
 [account_api_token_permission_groups_list](https://registry.terraform.io/providers/cloudflare/cloudflare/5.19.0/docs/data-sources/account_api_token_permission_groups_list),
 [Create Token API](https://developers.cloudflare.com/api/resources/accounts/subresources/tokens/methods/create/),
 [Account API tokens](https://developers.cloudflare.com/fundamentals/api/get-started/account-owned-tokens/),
-[R2 tokens / S3 mapping](https://developers.cloudflare.com/r2/api/tokens/),
-[API token template URLs](https://developers.cloudflare.com/fundamentals/api/how-to/account-owned-token-template/).
+[R2 tokens / S3 mapping](https://developers.cloudflare.com/r2/api/tokens/).
 
 Permission-group `name` / `scope` in Terraform are **plain** strings (provider →
 cloudflare-go `url.Values.Encode()` QueryEscapes; do not pre-encode `%20`).
@@ -38,7 +43,7 @@ cloudflare-go `url.Values.Encode()` QueryEscapes; do not pre-encode `%20`).
 |---|---|---|
 | `KAFKA_TIERED_STORAGE_*` (×5) | This IaC | Broker AWS default chain + RSM non-secret bucket/endpoint/region |
 | `KAFKA_CLUSTER_ID` / `KAFKA_BROKERS` | Lane 87 + 3d | May provision later; before broker cutover |
-| Infisical `CLOUDFLARE_API_TOKEN` | Traefik ACME only (`CF_DNS_API_TOKEN` in `deploy/stack.yml`) | **Unchanged** — DNS challenge only |
+| Infisical `CLOUDFLARE_API_TOKEN` | Traefik ACME only (`CF_DNS_API_TOKEN` in `deploy/stack.yml`) | **Unchanged** — DNS challenge only; **not** the TF R2 alias token |
 | Archive `R2_*` | Existing media/archive | **Do not reuse** for Kafka TS |
 
 Also on broker when TS enabled:
@@ -48,125 +53,45 @@ Also on broker when TS enabled:
 Do **not** change prod Infisical `METRIC_STREAM_*` topic values until an approved
 drained topic-v2 cutover.
 
-## A. One-time Terraform managing token
+## A. Terraform credentials (durable split)
 
-Existing Infisical and GitHub `CLOUDFLARE_API_TOKEN` both lack Account API Tokens
-access (`GET /accounts/{id}/tokens` → **403 / 9109**). Do **not** widen those
-tokens (Traefik must not receive Account API Tokens Edit). Create a **dedicated**
-account-owned token and store it **only** in GitHub Actions as
-`CLOUDFLARE_TERRAFORM_API_TOKEN`. `deploy-terraform.yml` stays on the old GH secret
-name until that new secret exists (names-only proof), then switches with **no**
-fallback.
+Two GitHub Actions secrets feed two Cloudflare provider configurations in the
+same `deploy-terraform` job. Infisical Traefik runtime stays separate.
 
-Account-owned tokens support DNS, R2, and Zone/Domain Management
-([compatibility matrix](https://developers.cloudflare.com/fundamentals/api/get-started/account-owned-tokens/)).
-Child Kafka Object RW is minted later by Terraform — not by this bootstrap token’s
-value in the broker.
-
-Creation may use the Cloudflare dashboard **or** a managed Cloudflare MCP session
-(official app-server `cloudflare-api` OAuth: `whoami` / `docs` / `search` /
-`execute`) that can call
-[Create Token](https://developers.cloudflare.com/api/resources/accounts/subresources/tokens/methods/create/).
-Neither path is inherently unavailable; both are gated by the **caller’s** ability
-to select/grant the required permission groups (below).
-
-### Managed MCP / API: `is_selectable` restriction (observed)
-
-Live account permission catalog via managed MCP (no target token created yet):
-
-| Permission group | Id (catalog) | `is_selectable` | Notes |
+| Secret | TF var / provider | Permissions | Used by |
 |---|---|---|---|
-| Account API Tokens Write | (resolved live) | **true** | Required to mint child tokens |
-| Workers R2 Storage Write | (resolved live) | **true** | R2 bucket/lifecycle/etc. |
-| Zone Write | (resolved live) | **true** | Zone manage for `dofek.fit` / `dofek.live` |
-| Zone Read | (resolved live) | **true** | `data.cloudflare_zone` for `asherlc.com` |
-| **DNS Write** | `4755a26eedb94da69e1066d98aa820be` | **false** | Needed for `cloudflare_dns_record` |
-| DNS Read | (catalog) | **true** | Insufficient for record CRUD |
-| Zone DNS Settings Write | (catalog) | **true** | Zone DNS **settings**, **not** record CRUD — **not** a substitute for DNS Write |
+| `CLOUDFLARE_API_TOKEN` | `var.cloudflare_api_token` → default `provider "cloudflare"` | Existing Zone/DNS (+ whatever already manages `storage.tf`) | `dns.tf`, `storage.tf`, other default-provider CF resources |
+| `CLOUDFLARE_TERRAFORM_R2_API_TOKEN` | `var.cloudflare_terraform_r2_api_token` → `provider "cloudflare" { alias = "r2" }` | **Account API Tokens Write** + **Workers R2 Storage Write** on account `8e5b2f62…` **only** — **no DNS / Zone** | Kafka TS resources in `kafka-ts-r2-offload.tf` that set `provider = cloudflare.r2` |
 
-Official meaning of `is_selectable`: whether **this caller** may select the group when
-creating a token; list endpoint documents it; create performs the authoritative
-check
-([List Permission Groups](https://developers.cloudflare.com/api/resources/accounts/subresources/tokens/subresources/permission_groups/methods/list/),
-[create-via-api — permission groups](https://developers.cloudflare.com/fundamentals/api/how-to/create-via-api/)).
-Account members may only grant a **subset of their own account permissions**
-([Account API tokens](https://developers.cloudflare.com/fundamentals/api/get-started/account-owned-tokens/)).
+Do **not** widen the Traefik Infisical token with Account API Tokens Edit. Do **not**
+put the R2 managing token in Infisical or the broker. Child Kafka Object RW is
+minted by Terraform (`cloudflare_account_token`) and written to Infisical as
+`KAFKA_TIERED_STORAGE_*` — not the managing token’s value.
 
-So `DNS Write` `is_selectable=false` is a **caller membership** gap for the current
-OAuth/MCP identity — not “DNS Write unsupported on account tokens” (account DNS
-templates exist:
-[template URLs](https://developers.cloudflare.com/fundamentals/api/how-to/account-owned-token-template/)).
+### Managing token (created; IAM bootstrap resolved)
 
-**Supported correction (no scope broaden, no provider split):**
-
-1. Ensure the human behind the MCP OAuth (or dashboard session) has **DNS Write**
-   (Edit) on `dofek.fit`, `dofek.live`, and `asherlc.com` — Super Administrator or
-   an equivalent membership policy that includes DNS Write
-   ([member policies](https://developers.cloudflare.com/fundamentals/manage-members/policies/)).
-2. Re-authorize / refresh the managed MCP session so the catalog is re-listed.
-3. Confirm `DNS Write` (`4755a26e…` or current catalog id) shows `is_selectable=true`.
-4. Then create `dofek-terraform-manage` with the approved multi-policy body and
-   store via `gh secret set CLOUDFLARE_TERRAFORM_API_TOKEN` (stdin only).
-
-Do **not** substitute DNS Read or Zone DNS Settings Write for DNS Write. Do **not**
-reduce the TF token’s DNS requirement or split Cloudflare providers without
-explicit direction.
-
-### Checklist (permissions)
-
-Requires Super Administrator or API Token Provisioning
-([Account API tokens](https://developers.cloudflare.com/fundamentals/api/get-started/account-owned-tokens/)).
-
-1. Open **Manage account → Account API Tokens → Create Token** (or the prefill URL below).
-2. Name: `dofek-terraform-manage`.
-3. Permissions:
-
-| Permission (UI) | Scope |
+| Field | Value |
 |---|---|
-| Account → **Account API Tokens** → Edit | This account |
-| Account → **Workers R2 Storage** → Edit | This account |
-| Zone → **Zone** → Edit | **Only** `dofek.fit`, `dofek.live` |
-| Zone → **Zone** → Read | **`asherlc.com`** (for `data.cloudflare_zone.asherlc_com` name filter; DNS Edit alone does not list zones) |
-| Zone → **DNS** → Edit | `dofek.fit`, `dofek.live`, `asherlc.com` |
+| Name | `dofek-terraform-r2-manage` |
+| Token id (non-secret) | `ac888fe9c542f602fc419c29d28a64cc` |
+| Account | `8e5b2f62ffe8ebdd48e725d325a6d51e` |
+| Permissions | Account API Tokens Write + Workers R2 Storage Write (account scope only) |
+| GH secret | `CLOUDFLARE_TERRAFORM_R2_API_TOKEN` (names-only confirmed present) |
+| Create path | Managed Cloudflare MCP (app-server `cloudflare-api`) + policy readback; value piped to `gh secret set` (stdin) |
 
-Zones (committed import ids): `dofek.fit` `a744a251…`, `dofek.live` `04dc9fc0…`,
-`asherlc.com` `17402b9a…`; account `8e5b2f62…` (`deploy/imports.tf`).
+Optional bearer check (no secret in logs): `GET /accounts/{id}/tokens/{token_id}/permission_groups` → **200** with the two Write groups. List Tokens on the **default** GH/Infisical `CLOUDFLARE_API_TOKEN` still returns **403 / 9109** — expected; those tokens are not Account API Tokens–capable and must stay that way for Traefik.
 
-4. Create token → copy secret once.
-5. Add GitHub Actions secret **`CLOUDFLARE_TERRAFORM_API_TOKEN`**:
-   [New repository secret](https://github.com/Asherlc/dofek/settings/secrets/actions/new)
-   (or `gh secret set CLOUDFLARE_TERRAFORM_API_TOKEN` via stdin — never paste into
-   chat/logs).
-6. Optional verify with that bearer only: `GET /accounts/{id}/tokens` → **200**
-   means Read **or** Write; Write for create is proven only at apply.
-7. Leave Infisical `CLOUDFLARE_API_TOKEN` (Traefik) untouched. Leave old GitHub
-   `CLOUDFLARE_API_TOKEN` until the workflow points at the new secret, then retire
-   after an unused-name audit.
+### Why not one full managing token (DNS + R2)
 
-### Prefill URL (permissions only — not a secret)
-
-Official account-token template form
-([template URLs](https://developers.cloudflare.com/fundamentals/api/how-to/account-owned-token-template/)):
-
-https://dash.cloudflare.com/?to=/:account/api-tokens&permissionGroupKeys=%5B%7B%22key%22%3A%22account_api_tokens%22%2C%22type%22%3A%22edit%22%7D%2C%7B%22key%22%3A%22workers_r2%22%2C%22type%22%3A%22edit%22%7D%2C%7B%22key%22%3A%22zone%22%2C%22type%22%3A%22edit%22%7D%2C%7B%22key%22%3A%22zone%22%2C%22type%22%3A%22read%22%7D%2C%7B%22key%22%3A%22dns%22%2C%22type%22%3A%22edit%22%7D%5D&name=dofek-terraform-manage
-
-Prefills permission **keys** only. Zone include-lists are set in the form after open
-(account-token templates do **not** take `zoneId` query params).
-
-### UI zone include vs minimal policy
-
-Account-token template docs: resource scoping is configured **in the create form**,
-not in the URL. The dashboard commonly uses **one shared Zone Resources include
-list** for all zone-scoped permissions on that token. If so, including all three
-zones for DNS while needing Zone Edit only on two can **also** grant Zone Edit on
-`asherlc.com` — broader than the table above.
-
-**Minimal precise grant** (separate policies / resource maps) is available via the
-[Create Token API](https://developers.cloudflare.com/api/resources/accounts/subresources/tokens/methods/create/)
-with multiple `policies` entries (Zone Edit → fit/live only; Zone Read →
-asherlc.com only; DNS Edit → all three; account perms → account). Prefer that if
-the UI cannot split zone includes per permission. Do not invent a second provider
-or custom CLI for this.
+A prior path tried a single Terraform token that also needed **DNS Write**. Managed
+MCP catalog for the creating caller showed DNS Write id
+`4755a26eedb94da69e1066d98aa820be` with `is_selectable=false` (caller membership
+subset — [create-via-api](https://developers.cloudflare.com/fundamentals/api/how-to/create-via-api/),
+[Account API tokens](https://developers.cloudflare.com/fundamentals/api/get-started/account-owned-tokens/)).
+**DNS elevation is not required** for the durable approach: keep the existing
+default Cloudflare credential for DNS/existing resources; use the R2-only
+aliased credential for Kafka TS. Zone DNS Settings Write is **not** a DNS record
+CRUD substitute and is irrelevant to this split.
 
 ## B. Infisical CI — `KAFKA_TIERED_STORAGE_*` granted
 
@@ -182,25 +107,26 @@ or custom CLI for this.
 
 [Additional privileges](https://infisical.com/docs/documentation/platform/access-controls/additional-privileges)
 layer on roles. OIDC in `deploy-terraform` uses this identity. Grant ≠ apply
-success until secrets are written.
+success until secrets are written by apply.
 
 Re-check:
 `GET /api/v2/identity-project-additional-privilege/9f804f06-05e2-45e8-b8b6-2b794c101b32`
 
 ## Enable sequence
 
-1. Operator completes §A (CF create → GH `CLOUDFLARE_TERRAFORM_API_TOKEN`).
-2. Names-only proof secret exists → then switch
-   [`deploy-terraform.yml`](../.github/workflows/deploy-terraform.yml) to
-   `secrets.CLOUDFLARE_TERRAFORM_API_TOKEN` (**no** fallback to
-   `CLOUDFLARE_API_TOKEN`).
-3. `terraform apply` via normal deploy path (proves CF Write + Infisical write).
-4. Lane 87 + 3d: `KAFKA_CLUSTER_ID` / `KAFKA_BROKERS` when ready. Topic v2 cutover
-   separate.
-5. Retire unused GitHub `CLOUDFLARE_API_TOKEN` after audit. Infisical Traefik token
-   stays.
+1. ~~IAM bootstrap~~ **done** — `CLOUDFLARE_TERRAFORM_R2_API_TOKEN` in GH; workflow wires
+   `TF_VAR_cloudflare_terraform_r2_api_token` (fail-fast if empty). Default
+   `CLOUDFLARE_API_TOKEN` retained for DNS/`storage.tf`.
+2. `terraform apply` via normal deploy path (proves R2 Write + Account Tokens Write
+   + Infisical write). **Not claimed done by this doc.**
+3. Kafka TS qualification / broker cutover separate (Lane 87 + 3d:
+   `KAFKA_CLUSTER_ID` / `KAFKA_BROKERS` when ready). Topic v2 cutover separate.
+4. Infisical Traefik `CLOUDFLARE_API_TOKEN` stays. Do not merge R2 managing token
+   into Infisical.
 
 ## Retired
 
 - `enable_kafka_tiered_storage_r2` / count gates
 - Unapplied Pulsar B2 IaC / Backblaze provider
+- Single full-scope `CLOUDFLARE_TERRAFORM_API_TOKEN` / DNS-elevate bootstrap as the
+  required path for Kafka TS (superseded by aliased R2 credential)

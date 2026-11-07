@@ -59,14 +59,16 @@ jobs:
         working-directory: deploy
         env:
           TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          TF_VAR_cloudflare_terraform_r2_api_token: ${{ secrets.CLOUDFLARE_TERRAFORM_R2_API_TOKEN }}
           TF_VAR_cloudflare_account_id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           TF_VAR_oracle_server_host: ${{ vars.ORACLE_SERVER_HOST }}
           # Infisical OIDC machine identity (same default as load-infisical-secrets).
-          # Kafka TS R2 secrets: docs/kafka-ts-r2-offload-iac.md.
+          # Kafka TS R2: docs/kafka-ts-r2-offload-iac.md (provider.cloudflare.r2).
           INFISICAL_MACHINE_IDENTITY_ID: 46b66f72-0c77-4cfe-be1b-a43395e77be7
         run: |
           set -euo pipefail
           test -n "$TF_VAR_cloudflare_api_token" || { echo "ERROR: missing required GitHub secret CLOUDFLARE_API_TOKEN" >&2; exit 1; }
+          test -n "$TF_VAR_cloudflare_terraform_r2_api_token" || { echo "ERROR: missing required GitHub secret CLOUDFLARE_TERRAFORM_R2_API_TOKEN" >&2; exit 1; }
           test -n "$TF_VAR_oracle_server_host" || { echo "ERROR: missing required GitHub variable ORACLE_SERVER_HOST" >&2; exit 1; }
           test -n "$EXPO_APP_ID" || { echo "ERROR: EXPO_APP_ID is required" >&2; exit 1; }
           export TF_VAR_expo_app_id="$EXPO_APP_ID"

@@ -24,6 +24,15 @@ provider "cloudflare" {
   api_token = var.cloudflare_api_token
 }
 
+# Kafka TS R2 + account_token mint only. Stock alias — no second Cloudflare
+# provider source. Token: GH CLOUDFLARE_TERRAFORM_R2_API_TOKEN (R2 Storage Write +
+# Account API Tokens Write; no DNS/Zone). Default provider keeps DNS/storage.
+# https://developer.hashicorp.com/terraform/language/providers/configuration#alias-multiple-provider-configurations
+provider "cloudflare" {
+  alias     = "r2"
+  api_token = var.cloudflare_terraform_r2_api_token
+}
+
 # Auth: Infisical OIDC via INFISICAL_AUTH_METHOD=oidc, INFISICAL_MACHINE_IDENTITY_ID,
 # INFISICAL_AUTH_JWT (GitHub Actions OIDC JWT minted immediately before apply).
 # GitHub OIDC: https://infisical.com/docs/documentation/platform/identities/oidc-auth/github
