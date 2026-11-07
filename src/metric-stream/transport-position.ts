@@ -5,7 +5,7 @@ const nativeCoordinateSchema = z
   .regex(/^(0|[1-9]\d*)$/)
   .refine((value) => BigInt(value) <= 9223372036854775807n);
 
-export const kafkaMetricStreamPositionSchema = z.strictObject({
+export const metricStreamPositionSchema = z.strictObject({
   transport: z.literal("kafka"),
   epoch: z.string().min(1),
   topic: z.string().min(1),
@@ -13,8 +13,7 @@ export const kafkaMetricStreamPositionSchema = z.strictObject({
   offset: nativeCoordinateSchema,
 });
 
-export const metricStreamPositionSchema = kafkaMetricStreamPositionSchema;
-export type MetricStreamPosition = z.infer<typeof kafkaMetricStreamPositionSchema>;
+export type MetricStreamPosition = z.infer<typeof metricStreamPositionSchema>;
 
 export function compareMetricStreamPositions(
   left: MetricStreamPosition,

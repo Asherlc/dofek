@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   compareMetricStreamPositions,
-  kafkaMetricStreamPositionSchema,
   type MetricStreamPosition,
+  metricStreamPositionSchema,
 } from "./transport-position.ts";
 
 const base: MetricStreamPosition = {
@@ -13,17 +13,17 @@ const base: MetricStreamPosition = {
   offset: "10",
 };
 
-describe("kafkaMetricStreamPositionSchema", () => {
+describe("metricStreamPositionSchema", () => {
   it("accepts kafka offset positions", () => {
-    expect(kafkaMetricStreamPositionSchema.parse(base)).toEqual(base);
+    expect(metricStreamPositionSchema.parse(base)).toEqual(base);
   });
 
-  it("rejects pulsar delivery coordinates", () => {
+  it("rejects non-kafka transport coordinates", () => {
     expect(() =>
-      kafkaMetricStreamPositionSchema.parse({
+      metricStreamPositionSchema.parse({
         transport: "pulsar",
         epoch: "epoch-1",
-        topic: "persistent://public/default/sensor",
+        topic: "legacy-topic",
         partition: -1,
         delivery: { major: "1", minor: "0", batch: -1 },
       }),
@@ -31,8 +31,8 @@ describe("kafkaMetricStreamPositionSchema", () => {
   });
 
   it("rejects negative offsets and partitions", () => {
-    expect(() => kafkaMetricStreamPositionSchema.parse({ ...base, offset: "-1" })).toThrow();
-    expect(() => kafkaMetricStreamPositionSchema.parse({ ...base, partition: -1 })).toThrow();
+    expect(() => metricStreamPositionSchema.parse({ ...base, offset: "-1" })).toThrow();
+    expect(() => metricStreamPositionSchema.parse({ ...base, partition: -1 })).toThrow();
   });
 });
 

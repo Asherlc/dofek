@@ -1,32 +1,10 @@
 import type { AnalyticsQueryOwner } from "../analytics/analytics-query-owner.ts";
-import { analyticsPosition, completedExecResult } from "../analytics/test-helpers.ts";
+import { completedExecResult } from "../analytics/test-helpers.ts";
 import { type ClickHouseClient, createClickHouseClientFromEnv } from "../db/clickhouse.ts";
 import { buildMetricStreamSinkSchemaStatements } from "../db/clickhouse-metric-stream-bootstrap.ts";
 import { setupTestDatabase } from "../db/test-helpers.ts";
 import { captureException } from "../lib/error-reporting.ts";
-import type { MetricStreamEventV2 } from "./events.ts";
 
-export const sourceEvent: MetricStreamEventV2 = {
-  version: 2,
-  operationRevision: "4503599627370496",
-  id: "10000000-0000-4000-8000-000000000001",
-  userId: "00000000-0000-4000-8000-000000000001",
-  providerId: "fixture",
-  generation: 1,
-  recordedAt: "2026-11-03T00:00:00.123456Z",
-  sourceType: "sensor",
-  channel: "heart_rate",
-  scalar: 72,
-};
-export const sourcePosition = analyticsPosition(
-  {
-    transport: "kafka",
-    epoch: "epoch-1",
-    topic: "persistent://public/default/sensor",
-    partition: -1,
-  },
-  1n,
-);
 export const sourceIngestedAt = "2026-11-03T01:00:00.123456Z";
 
 export function sourceOwner(queryRows: readonly (readonly object[])[] = []) {

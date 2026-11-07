@@ -79,9 +79,12 @@ describe("parseMetricStreamArchiveObjectKey", () => {
   );
 
   it("rejects never-deployed Pulsar-native archive key grammar", () => {
+    const namespace = "public";
+    const tenant = "default";
+    const legacyTopic = encodeURIComponent(`persistent://${namespace}/${tenant}/sensor`);
     expect(() =>
       parseMetricStreamArchiveObjectKey(
-        "metric-stream/v1/date=2026-11-05/hour=03/pulsar/epoch=e1/topic=persistent%3A%2F%2Fpublic%2Fdefault%2Fsensor/first=ff/last=00.jsonl.gz",
+        `metric-stream/v1/date=2026-11-05/hour=03/pulsar/epoch=e1/topic=${legacyTopic}/first=ff/last=00.jsonl.gz`,
       ),
     ).toThrow("Invalid metric-stream archive key");
   });
