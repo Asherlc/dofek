@@ -86,15 +86,21 @@ Two **distinct** Root-only credentials (never in broker):
 
 ## Resource identity (exact)
 
+**Retry `20261107b`:** prior bucket `kafka-ts-r2-q-mpudel-20261107` was created then
+cleaned after launch `spawnSync docker ENOENT` (0 uploads). Do not recreate it.
+Same Q11A budget; upload consumed **0**.
+
+## Resource identity (exact)
+
 | Field | Value |
 |---|---|
-| Bucket | `kafka-ts-r2-q-mpudel-20261107` |
-| Prefix | `kafka-ts-parity/r2/20261107-q-mpudel/` |
+| Bucket | `kafka-ts-r2-q-mpudel-20261107b` |
+| Prefix | `kafka-ts-parity/r2/20261107b-q-mpudel/` |
 | Account | `8e5b2f62ffe8ebdd48e725d325a6d51e` |
 | Session TTL | **3600** s from mint |
 | Wall clock | **≤ 55 min after mint** (must finish or abort before TTL) |
 | **Total upload bound** | **≤ 16 MiB** summed across main+quarantine remote `.log`/`.indexes`/`.rsm-manifest` **and** multipart part attempt bodies (operator stop if exceeded) |
-| Evidence dir | `docs/evidence/kafka-ts-r2-q-mpudel-20261107/` (sanitized) |
+| Evidence dir | `docs/evidence/kafka-ts-r2-q-mpudel-20261107b/` (sanitized) |
 
 Do **not** reuse `kafka-ts-r2-f-20261106` or `dofek-kafka-ts-offload`.
 
