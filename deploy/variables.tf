@@ -1,5 +1,5 @@
 variable "cloudflare_api_token" {
-  description = "Cloudflare API token with Zone:Edit, DNS:Edit, Workers R2 Storage:Edit, and Account API Tokens Write (for cloudflare_account_token Object RW mint — not User API Tokens). See docs/kafka-ts-r2-offload-iac.md."
+  description = "Cloudflare API token for the Terraform Cloudflare provider (Zone/DNS/R2 as already used). cloudflare_account_token mint additionally needs Account API Tokens Write — see docs/kafka-ts-r2-offload-iac.md."
   type        = string
   sensitive   = true
 }

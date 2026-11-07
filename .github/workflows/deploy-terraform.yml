@@ -61,10 +61,8 @@ jobs:
           TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           TF_VAR_cloudflare_account_id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           TF_VAR_oracle_server_host: ${{ vars.ORACLE_SERVER_HOST }}
-          # Kafka TS R2 Infisical writes use OIDC (always-declared resources).
-          # Existing GitHub OIDC machine identity (same default as load-infisical-secrets).
-          # Do not run apply until Root CF Account API Tokens Write + Infisical
-          # gha-kafka-ts-r2-secrets privilege ACK (docs/kafka-ts-r2-offload-iac.md).
+          # Infisical OIDC machine identity (same default as load-infisical-secrets).
+          # Kafka TS R2 secrets: docs/kafka-ts-r2-offload-iac.md.
           INFISICAL_MACHINE_IDENTITY_ID: 46b66f72-0c77-4cfe-be1b-a43395e77be7
         run: |
           set -euo pipefail

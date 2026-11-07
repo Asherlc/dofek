@@ -1,9 +1,9 @@
 # Dedicated Cloudflare R2 bucket + long-lived Object RW key for Kafka tiered storage.
 # Distinct from metric-stream archive and account-erasure ledger in storage.tf.
 #
-# Always declared (steady-state). Do not TF apply / mint keys until Root has
-# managing CF auth with Account API Tokens Write + Infisical CI write privilege
-# (docs/kafka-ts-r2-offload-iac.md). No enable-flag / count gate.
+# Always declared (steady-state). Hold deploy-terraform apply until managing CF
+# auth has Account API Tokens Write and Infisical CI can write
+# KAFKA_TIERED_STORAGE_* — see docs/kafka-ts-r2-offload-iac.md.
 #
 # Stock paths only — no custom JWT signer, no temp-credential renewal service,
 # no runtime parent fallback.
@@ -25,11 +25,16 @@ locals {
 }
 
 # Resolve live permission-group id (requires Account API Tokens Read on managing token).
-# Candidate name: Workers R2 Storage Bucket Item Write; scope com.cloudflare.edge.r2.bucket.
-# Known catalog id (confirm live): 2efd5506f9c8494dacb1fa10a3e7d5b6
+# name/scope: plain strings. Provider 5.19 passes them through to cloudflare-go
+# TokenPermissionGroupListParams.URLQuery() → url.Values.Encode() (QueryEscape).
+# Pre-encoding ("%20") double-encodes to %2520. Schema text saying "URL-encoded"
+# is OpenAPI-generated; runtime encoding is the client Encode path above.
+# Primary sources:
+#   https://github.com/cloudflare/terraform-provider-cloudflare/blob/v5.19.0/internal/services/account_api_token_permission_groups/list_data_source_model.go
+#   https://github.com/cloudflare/cloudflare-go/blob/main/accounts/tokenpermissiongroup.go
 data "cloudflare_account_api_token_permission_groups_list" "r2_bucket_item_write" {
   account_id = var.cloudflare_account_id
-  name       = "Workers%20R2%20Storage%20Bucket%20Item%20Write"
+  name       = "Workers R2 Storage Bucket Item Write"
   scope      = "com.cloudflare.edge.r2.bucket"
 }
 
