@@ -72,6 +72,35 @@ infrastructure has been retired.
   the provider supports it or remove and recreate it in a controlled apply;
   creating the same R2 custom domain twice returns Cloudflare error `10052`
   (`Domain already in use`).
+- `kafka-ts-r2-offload.tf`: Dedicated Kafka TS R2 bucket + Infisical
+  `KAFKA_TIERED_STORAGE_*` writes via aliased `provider.cloudflare.r2`. See
+  [`docs/kafka-ts-r2-offload-iac.md`](../docs/kafka-ts-r2-offload-iac.md).
+
+#### Reviewed plan before apply (stock workflow)
+
+The managing R2 credential is **GitHub-only**
+(`CLOUDFLARE_TERRAFORM_R2_API_TOKEN`); do not extract it for a workstation plan.
+Use the existing [Deploy Terraform](../.github/workflows/deploy-terraform.yml)
+workflow:
+
+| Trigger | Behavior |
+|---|---|
+| `workflow_call` (deploy / deploy-web-environment) | **Apply** only — API unchanged |
+| `workflow_dispatch` | Input `operation`: `plan` (default) or `apply` |
+
+Readonly preview (no apply/deploy):
+
+```bash
+gh workflow run deploy-terraform.yml \
+  --ref pulsar-foundation \
+  -f operation=plan
+# Optional pin: -f commit_sha=<sha>
+```
+
+Review the Actions job **Terraform Plan** human `terraform plan` log only.
+Sensitive values stay `(sensitive value)`. Do **not** upload plan JSON/`-out`
+artifacts; do **not** print secret values. After review, a separate explicit
+`operation=apply` dispatch (or normal deploy `workflow_call`) applies.
 
 ### Server Configuration (`server/`)
 

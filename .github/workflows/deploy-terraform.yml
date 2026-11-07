@@ -18,9 +18,17 @@ on:
   workflow_dispatch:
     inputs:
       commit_sha:
-        description: "Commit SHA to deploy (defaults to workflow ref HEAD)"
+        description: "Commit SHA to check out (defaults to workflow ref HEAD)"
         required: false
         type: string
+      operation:
+        description: "plan = readonly human terraform plan (default); apply = terraform apply -auto-approve"
+        required: false
+        type: choice
+        options:
+          - plan
+          - apply
+        default: plan
 
 concurrency:
   group: deploy-terraform
@@ -28,7 +36,7 @@ concurrency:
 
 jobs:
   terraform:
-    name: Terraform Apply
+    name: ${{ github.event_name == 'workflow_dispatch' && inputs.operation == 'plan' && 'Terraform Plan' || 'Terraform Apply' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -36,6 +44,8 @@ jobs:
       id-token: write
     env:
       TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.terraform-plugin-cache
+      # workflow_call has no operation input — always apply. Manual default is plan.
+      TF_OPERATION: ${{ github.event_name == 'workflow_call' && 'apply' || (inputs.operation != '' && inputs.operation || 'plan') }}
     outputs:
       server_host: ${{ steps.tf_outputs.outputs.server_host }}
     steps:
@@ -55,7 +65,7 @@ jobs:
           path: ${{ env.TF_PLUGIN_CACHE_DIR }}
           key: terraform-provider-v1-${{ runner.os }}-${{ hashFiles('deploy/.terraform.lock.hcl') }}
           restore-keys: terraform-provider-v1-${{ runner.os }}-
-      - name: Terraform Apply
+      - name: Terraform ${{ env.TF_OPERATION == 'plan' && 'Plan' || 'Apply' }}
         working-directory: deploy
         env:
           TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -73,12 +83,20 @@ jobs:
           test -n "$EXPO_APP_ID" || { echo "ERROR: EXPO_APP_ID is required" >&2; exit 1; }
           export TF_VAR_expo_app_id="$EXPO_APP_ID"
 
+          case "$TF_OPERATION" in
+            plan|apply) ;;
+            *)
+              echo "ERROR: TF_OPERATION must be plan or apply (got: ${TF_OPERATION:-})" >&2
+              exit 1
+              ;;
+          esac
+
           # -lock-timeout: HCP Terraform briefly holds the workspace lock during init/state ops.
           # When init is followed immediately by apply, apply can race the init lock release
           # (or collide with a stale lock from a prior failed run). Waiting up to 5 minutes
           # is benign in CI and avoids spurious "workspace already locked" failures.
           # Init/plugin download can exceed GitHub OIDC JWT lifetime (~5m), so mint the JWT
-          # only after init succeeds and immediately before apply.
+          # only after init succeeds and immediately before plan/apply.
           mkdir -p "$TF_PLUGIN_CACHE_DIR"
           terraform init -lock-timeout=5m
 
@@ -96,8 +114,16 @@ jobs:
           export INFISICAL_AUTH_JWT="$oidc_jwt"
 
           # Never print plan/apply JSON, TF secret values, or Infisical credentials.
-          # No sensitive terraform outputs are declared for this path.
-          terraform apply -auto-approve -lock-timeout=5m
+          # No -json / -out / plan artifacts. No sensitive terraform outputs on this path.
+          # Plain `terraform plan` (no -detailed-exitcode) exits 0 when a diff exists.
+          case "$TF_OPERATION" in
+            plan)
+              terraform plan -lock-timeout=5m
+              ;;
+            apply)
+              terraform apply -auto-approve -lock-timeout=5m
+              ;;
+          esac
 
       - name: Terraform Outputs
         id: tf_outputs
