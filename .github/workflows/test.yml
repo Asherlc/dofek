@@ -1072,7 +1072,7 @@ jobs:
       - name: Start e2e dependencies
         run: |
           docker compose -f docker-compose.e2e.yml up -d --wait --no-build db clickhouse redis account-erasure-minio kafka
-          docker compose -f docker-compose.e2e.yml run --rm --no-deps --no-build kafka-ready
+          docker compose -f docker-compose.e2e.yml run --rm --no-deps kafka-ready
       - name: Run e2e migrations
         run: |
           docker compose -f docker-compose.e2e.yml up -d --no-build migrate
