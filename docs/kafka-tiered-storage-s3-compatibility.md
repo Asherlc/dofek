@@ -146,10 +146,13 @@ rsm.config.fetch.chunk.cache.size=8388608
 rsm.config.fetch.chunk.cache.prefetch.max.size=0
 # S3 backend
 rsm.config.storage.backend.class=io.aiven.kafka.tieredstorage.storage.s3.S3Storage
-rsm.config.s3.path.style.access.enabled=true
-rsm.config.s3.multipart.upload.part.size=5242880
-rsm.config.aws.checksum.check.enabled=false
-rsm.config.s3.legacy.md5.plugin.enabled=false
+rsm.config.storage.s3.path.style.access.enabled=true
+rsm.config.storage.s3.multipart.upload.part.size=5242880
+rsm.config.storage.aws.checksum.check.enabled=false
+rsm.config.storage.s3.legacy.md5.plugin.enabled=false
+# Pass-through: RemoteStorageManagerConfig STORAGE_PREFIX "storage." → S3StorageConfig
+# raw keys s3.*; wrong rsm.config.s3.* (no storage.) is ignored (part size stays 25MiB).
+# Compose/Kafka Docker: KAFKA_RSM_CONFIG_STORAGE_S3_* (Phase F + deploy/stack.yml).
 ```
 
 Plus B2 endpoint/region/bucket. Prefer **default credential chain** from
@@ -261,7 +264,7 @@ add a maintained bootstrap script for this.
    AWS_MAX_ATTEMPTS=1
    ```
 
-   plus `rsm.config.s3.bucket.name`, `s3.endpoint.url`, `s3.region` for that
+   plus `rsm.config.storage.s3.bucket.name`, `rsm.config.storage.s3.endpoint.url`, `rsm.config.storage.s3.region` for that
    bucket. Do **not** place child secrets in agent env/files.
 4. From the **384 MiB client container** only (heap **256 MiB**): produce
    ≤64 KiB; force one closed segment offload; delete local closed segment;
