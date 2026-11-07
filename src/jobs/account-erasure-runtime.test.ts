@@ -58,11 +58,19 @@ const mocks = vi.hoisted(() => ({
   ),
   assertIdentifierClosure: vi.fn(async (_stage?: "initial" | "final") => undefined),
   identifierStoreCreated: vi.fn((_database?: unknown, _input?: unknown) => undefined),
-  loadPhysicalProgress: vi.fn(async (_stage?: "initial" | "final") => ({
-    step: "apply" as const,
-    afterIntentKey: null,
-    pending: null,
-  })),
+  loadPhysicalProgress: vi.fn(
+    async (
+      _stage?: "initial" | "final",
+    ): Promise<{
+      step: "apply";
+      afterIntentKey: null;
+      pending: null;
+    } | null> => ({
+      step: "apply",
+      afterIntentKey: null,
+      pending: null,
+    }),
+  ),
   loadPhaseProgress: vi.fn(async (): Promise<Record<string, unknown> | null> => null),
   loadCheckpointCompletedAt: vi.fn(
     async (): Promise<Date | null> => new Date("2026-08-26T09:00:00.000Z"),
@@ -94,7 +102,6 @@ const mocks = vi.hoisted(() => ({
     sentryRetentionDays: 30,
   })),
   verifyProcessors: vi.fn(async () => ({ processor: "complete" })),
-  createPhaseRunner: null as null | ((dependencies: unknown) => unknown),
   phaseRunnerShouldFail: false,
 }));
 
@@ -107,14 +114,15 @@ afterAll(async () => ownerDatabase.$client.end());
 
 vi.mock("./account-erasure-phase-runner.ts", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./account-erasure-phase-runner.ts")>();
-  mocks.createPhaseRunner = actual.createAccountErasurePhaseRunner;
   return {
     ...actual,
-    createAccountErasurePhaseRunner: (dependencies: unknown) => {
+    createAccountErasurePhaseRunner: (
+      dependencies: Parameters<typeof actual.createAccountErasurePhaseRunner>[0],
+    ) => {
       if (mocks.phaseRunnerShouldFail) {
         throw new Error("phase runner unavailable");
       }
-      return mocks.createPhaseRunner?.(dependencies);
+      return actual.createAccountErasurePhaseRunner(dependencies);
     },
   };
 });
@@ -671,9 +679,9 @@ describe("createAccountErasureRuntime", () => {
       purge: vi.fn(async () => undefined),
     });
     try {
-      await expect(
-        runtime.phaseRunner.runPhase("clickhouse_initial", execution()),
-      ).rejects.toThrow("Account erasure physical preparation is incomplete");
+      await expect(runtime.phaseRunner.runPhase("clickhouse_initial", execution())).rejects.toThrow(
+        "Account erasure physical preparation is incomplete",
+      );
       expect(mocks.assertIdentifierClosure).toHaveBeenCalledWith("initial");
       expect(mocks.loadPhysicalProgress).toHaveBeenCalledWith("initial");
       expect(mocks.eraseClickHouse).not.toHaveBeenCalled();

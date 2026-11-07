@@ -954,7 +954,9 @@ describe("createGracefulShutdownHandler", () => {
     closeCallback?.(new Error("close failed"));
 
     expect(onExit).toHaveBeenCalledWith(1);
-    expect(mockLoggerError).toHaveBeenCalledWith("[server] Error while closing server: close failed");
+    expect(mockLoggerError).toHaveBeenCalledWith(
+      "[server] Error while closing server: close failed",
+    );
     expect(mockSentryCaptureException).toHaveBeenCalledWith(expect.any(Error), {
       tags: { context: "server-shutdown" },
     });
