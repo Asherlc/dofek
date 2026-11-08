@@ -539,6 +539,8 @@ jobs:
           set -euo pipefail
           # Retain /mnt/dofek-data/redpanda until metric-stream cutover drain completes.
           # Kafka uses a new tree; never format or reuse the Redpanda data dir.
+          test -d /mnt/dofek-data/kafka/plugins/1.2.0/core
+          test -d /mnt/dofek-data/kafka/plugins/1.2.0/s3
           mkdir -p /mnt/dofek-data/kafka-broker/data
           # apache/kafka:4.4.0 runs as appuser (uid/gid 1000) — same stock pattern as
           # postgres timescaledb-ha bind ownership (deploy/oracle-free/cloud-init.yml).

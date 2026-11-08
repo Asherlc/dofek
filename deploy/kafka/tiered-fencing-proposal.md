@@ -1,8 +1,8 @@
 # Tiered-storage deletion fencing proposal
 
-Status: **Withdrawn. Aiven itself is subsequently rejected under the user's
-no-niche-dependencies requirement.** See the [current platform decision](README.md).
-Historical Astra/Opus proposal; not implemented.
+Status: **Custom fencing proposal not selected; historical reference only.**
+The user selected upstream Aiven after the adoption discussion. See the
+[current tiered-storage layer](README.md). No plugin fork is implemented.
 On November 8 the user accepted the specific unknown-outcome upload risk below.
 That risk acceptance was not approval of the plugin's adoption/support profile.
 The hot-log release alternative stays withdrawn.
@@ -18,9 +18,9 @@ R2 explicitly permits this [in-flight-write ordering](https://developers.cloudfl
 Its frequency has not been established and no such production incident was
 observed here. Do not describe observed absence as a guarantee against this
 accepted late commit.
-The user subsequently clarified “Fine by me” after being told such an orphan
-could persist indefinitely. Neither that accepted exception nor the historical
-stock-path recommendation below overrides the later rejection of Aiven.
+The user clarified “Fine by me” after being told such an orphan could persist
+indefinitely, then selected upstream Aiven. Keep ordinary deletion checks; do not
+implement the stronger protocol below under that selection.
 
 The preceding recommendation was to keep the stock plugin and qualify native terminal deletion plus complete
 generation-scoped object/multipart enumeration and local/retired-data checks

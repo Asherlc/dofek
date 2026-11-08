@@ -2,6 +2,22 @@ import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseEnv } from "node:util";
 
+const KAFKA_TIERED_STORAGE_KEYS = [
+  "KAFKA_TIERED_STORAGE_BUCKET",
+  "KAFKA_TIERED_STORAGE_ENDPOINT",
+  "KAFKA_TIERED_STORAGE_REGION",
+  "KAFKA_TIERED_STORAGE_ACCESS_KEY_ID",
+  "KAFKA_TIERED_STORAGE_SECRET_ACCESS_KEY",
+] as const;
+const KAFKA_BROKER_ENV_RENAMES = new Map<string, string>([
+  ["KAFKA_CLUSTER_ID", "CLUSTER_ID"],
+  ["KAFKA_TIERED_STORAGE_BUCKET", "KAFKA_RSM_CONFIG_STORAGE_S3_BUCKET_NAME"],
+  ["KAFKA_TIERED_STORAGE_ENDPOINT", "KAFKA_RSM_CONFIG_STORAGE_S3_ENDPOINT_URL"],
+  ["KAFKA_TIERED_STORAGE_REGION", "KAFKA_RSM_CONFIG_STORAGE_S3_REGION"],
+  ["KAFKA_TIERED_STORAGE_ACCESS_KEY_ID", "AWS_ACCESS_KEY_ID"],
+  ["KAFKA_TIERED_STORAGE_SECRET_ACCESS_KEY", "AWS_SECRET_ACCESS_KEY"],
+]);
+
 const DEPLOY_SERVICE_NAMES = [
   "analyticsWorker",
   "cdcHealth",
@@ -205,8 +221,8 @@ const DEPLOY_SERVICE_ENVIRONMENT_POLICIES: Record<
   DeployServiceEnvironmentPolicy
 > = {
   kafka: {
-    allowedKeys: ["KAFKA_CLUSTER_ID"],
-    requiredKeys: ["KAFKA_CLUSTER_ID"],
+    allowedKeys: ["KAFKA_CLUSTER_ID", ...KAFKA_TIERED_STORAGE_KEYS],
+    requiredKeys: ["KAFKA_CLUSTER_ID", ...KAFKA_TIERED_STORAGE_KEYS],
   },
   analyticsWorker: {
     allowedKeys: ["CLICKHOUSE_PASSWORD", "SENTRY_DSN", "SENTRY_DSN_unencrypted"],
@@ -245,6 +261,8 @@ const DEPLOY_SERVICE_ENVIRONMENT_POLICIES: Record<
   },
   worker: {
     allowedKeys: [
+      "KAFKA_CLUSTER_ID",
+      ...KAFKA_TIERED_STORAGE_KEYS,
       "METRIC_STREAM_LEGACY_TOPIC",
       ...APPLICATION_ENVIRONMENT_KEYS,
       "AXIOM_API_TOKEN",
@@ -264,6 +282,8 @@ const DEPLOY_SERVICE_ENVIRONMENT_POLICIES: Record<
       "SENTRY_ORG",
     ],
     requiredKeys: [
+      "KAFKA_CLUSTER_ID",
+      ...KAFKA_TIERED_STORAGE_KEYS,
       "METRIC_STREAM_LEGACY_TOPIC",
       ...COMMON_APPLICATION_REQUIRED_KEYS,
       "AXIOM_API_TOKEN",
@@ -426,9 +446,15 @@ export function renderDeployServiceEnvironmentFiles(
   for (const serviceName of DEPLOY_SERVICE_NAMES) {
     const lines = DEPLOY_SERVICE_ENVIRONMENT_POLICIES[serviceName].allowedKeys.flatMap((key) => {
       const assignment = assignments.get(key);
-      const targetKey = serviceName === "kafka" ? "CLUSTER_ID" : key;
+      const targetKey = serviceName === "kafka" ? KAFKA_BROKER_ENV_RENAMES.get(key) : key;
+      if (!targetKey) throw new Error(`Missing Kafka environment mapping: ${key}`);
       return assignment === undefined ? [] : [`${targetKey}${assignment.slice(key.length)}`];
     });
+    if (serviceName === "kafka") {
+      lines.push(
+        `KAFKA_RSM_CONFIG_KEY_PREFIX=${JSON.stringify(`${environment.KAFKA_CLUSTER_ID}/`)}`,
+      );
+    }
     const route = DEPLOY_SERVICE_ENVIRONMENT_POLICIES[serviceName].metricStreamRoute;
     if (route) {
       const assignment = assignments.get(route.topicKey);

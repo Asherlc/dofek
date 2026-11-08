@@ -2,6 +2,7 @@ import { lstat, readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import kafkaJs, { type Admin } from "kafkajs";
 import { z } from "zod";
+import type { KafkaRemoteStorage } from "./kafka-remote-storage.ts";
 import type { AccountErasureRouteHighWatermark } from "./redpanda-drain.ts";
 
 const uuid = z.string().regex(/^[A-Za-z0-9_-]{22}$/);
@@ -51,7 +52,7 @@ const describedConfigs = z.object({
 interface StoragePaths {
   directory: string;
   brokerDirectory: string;
-  retiredDirectory: string;
+  retiredDirectories: readonly string[];
   topics: readonly string[];
 }
 
@@ -68,13 +69,19 @@ function properties(contents: string): Map<string, string> {
   return entries;
 }
 
-/** Filesystem removal for the pinned single-broker, single-log-directory hot log. */
+/** Native local and tiered removal for the pinned single broker/log directory. */
 export class KafkaLogStorage {
   readonly #admin: StorageAdmin;
   readonly #paths: StoragePaths;
-  constructor(admin: StorageAdmin, paths: StoragePaths) {
+  readonly #remote: Pick<KafkaRemoteStorage, "assertExpired">;
+  constructor(
+    admin: StorageAdmin,
+    paths: StoragePaths,
+    remote: Pick<KafkaRemoteStorage, "assertExpired">,
+  ) {
     this.#admin = admin;
     this.#paths = paths;
+    this.#remote = remote;
   }
 
   async #context(): Promise<string> {
@@ -91,7 +98,12 @@ export class KafkaLogStorage {
           {
             type: kafkaJs.ConfigResourceTypes.BROKER,
             name: String(broker.nodeId),
-            configNames: ["log.dirs", "remote.log.storage.system.enable"],
+            configNames: [
+              "log.dirs",
+              "remote.log.storage.system.enable",
+              "remote.log.storage.manager.class.name",
+              "remote.log.metadata.manager.class.name",
+            ],
           },
         ],
       }),
@@ -108,10 +120,17 @@ export class KafkaLogStorage {
     );
     if (values.get("log.dirs") !== this.#paths.brokerDirectory)
       throw new Error("Kafka log.dirs does not match the qualified storage mount");
-    if (values.get("remote.log.storage.system.enable") !== "false")
+    if (values.get("remote.log.storage.system.enable") !== "true")
       throw new Error(
-        "Kafka remote.log.storage.system.enable must be false for native filesystem erasure",
+        "Kafka remote.log.storage.system.enable must be true for qualified tiered erasure",
       );
+    if (
+      values.get("remote.log.storage.manager.class.name") !==
+        "io.aiven.kafka.tieredstorage.RemoteStorageManager" ||
+      values.get("remote.log.metadata.manager.class.name") !==
+        "org.apache.kafka.server.log.remote.metadata.storage.TopicBasedRemoteLogMetadataManager"
+    )
+      throw new Error("Kafka erasure requires the qualified stock plugin and metadata manager");
     if (!(await lstat(this.#paths.directory)).isDirectory())
       throw new Error("Kafka storage mount must be a directory");
     const native = properties(
@@ -178,12 +197,16 @@ export class KafkaLogStorage {
 
   async assertExpired(boundaries: readonly AccountErasureRouteHighWatermark[]): Promise<void> {
     const clusterId = await this.#context();
-    if (!(await lstat(this.#paths.retiredDirectory)).isDirectory())
-      throw new Error("Retired broker storage mount must be a directory");
-    if ((await readdir(this.#paths.retiredDirectory)).length !== 0)
-      throw new Error(
-        "Retired broker data remains; account erasure cannot complete before approved retirement",
-      );
+    if (this.#paths.retiredDirectories.length === 0)
+      throw new Error("Retired broker storage roots are required");
+    for (const directory of this.#paths.retiredDirectories) {
+      if (!(await lstat(directory)).isDirectory())
+        throw new Error("Retired broker storage mount must be a directory");
+      if ((await readdir(directory)).length !== 0)
+        throw new Error(
+          "Retired broker data remains; account erasure cannot complete before approved retirement",
+        );
+    }
     if (boundaries.length === 0)
       throw new Error("Kafka erasure generation checkpoints are missing");
     if (
@@ -230,6 +253,28 @@ export class KafkaLogStorage {
       }
       if ((await this.#generation(boundary.topic, boundary.partition)) !== boundary.topicId)
         throw new Error("Kafka topic generation changed during storage verification");
+    }
+    const segments = await this.#remote.assertExpired(boundaries);
+    const cache = join(this.#paths.directory, "remote-log-index-cache");
+    if (!(await lstat(cache)).isDirectory())
+      throw new Error("Kafka remote index cache mount is invalid");
+    for (const file of await readdir(cache, { withFileTypes: true })) {
+      const name = /^(\d+)_([A-Za-z0-9_-]{22})\.(?:index|timeindex|txnindex)(?:\.deleted)?$/.exec(
+        file.name,
+      );
+      const segment = name?.[2] ? segments.get(name[2]) : undefined;
+      const boundary = boundaries.find(
+        (entry) => entry.topic === segment?.topic && entry.topicId === segment?.topicId,
+      );
+      if (
+        !file.isFile() ||
+        !name?.[1] ||
+        !segment ||
+        !boundary ||
+        BigInt(name[1]) !== BigInt(segment.startOffset) ||
+        BigInt(segment.startOffset) < BigInt(boundary.offset)
+      )
+        throw new Error("Kafka retains covered or unknown remote index cache files");
     }
     if ((await this.#context()) !== clusterId)
       throw new Error("Kafka cluster generation changed during storage verification");

@@ -50,6 +50,7 @@ const mocks = vi.hoisted(() => ({
     destroy: vi.fn(),
     send: vi.fn(),
   },
+  brokerR2Client: { destroy: vi.fn(), send: vi.fn() },
   verifyBackupRetention: vi.fn(async () => ({ deletedObjects: 2 })),
   verifyPeerDbStagingRetention: vi.fn(async () => ({
     lifecycleRetentionDays: 1,
@@ -77,8 +78,10 @@ vi.mock("../account-erasure/kafka-log-storage.ts", () => ({
 }));
 
 vi.mock("../r2-storage.ts", () => ({
-  createR2Client: vi.fn(() => mocks.r2Client),
-  requiredR2EnvironmentVariable: vi.fn((name: string) => `${name.toLowerCase()}-bucket`),
+  createR2Client: vi.fn((config?: unknown) => (config ? mocks.brokerR2Client : mocks.r2Client)),
+  requiredR2EnvironmentVariable: vi.fn((name: string) =>
+    name === "KAFKA_TIERED_STORAGE_REGION" ? "auto" : `${name.toLowerCase()}-bucket`,
+  ),
 }));
 
 vi.mock("@sentry/node", () => ({
@@ -275,7 +278,10 @@ describe("createAccountErasureRuntime", () => {
       {
         directory: "/var/lib/dofek/kafka-data",
         brokerDirectory: "/var/lib/kafka/data",
-        retiredDirectory: "/var/lib/dofek/retired-broker-data",
+        retiredDirectories: [
+          "/var/lib/dofek/retired-broker-data",
+          "/var/lib/dofek/aborted-kafka-data",
+        ],
         topics: topics.flatMap((topic) => [topic, `${topic}.quarantine.v1`]),
       },
     );
@@ -469,6 +475,7 @@ describe("createAccountErasureRuntime", () => {
     expect(mocks.closeRedpanda).toHaveBeenCalledOnce();
     expect(workPurger.close).toHaveBeenCalledOnce();
     expect(mocks.r2Client.destroy).toHaveBeenCalledOnce();
+    expect(mocks.brokerR2Client.destroy).toHaveBeenCalledOnce();
   });
 
   it("releases acquired resources when runtime startup fails", async () => {

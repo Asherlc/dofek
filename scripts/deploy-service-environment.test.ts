@@ -114,6 +114,12 @@ const CDC_ENVIRONMENT_KEYS = [
 ] as const;
 
 const WORKER_ONLY_ENVIRONMENT_KEYS = [
+  "KAFKA_CLUSTER_ID",
+  "KAFKA_TIERED_STORAGE_BUCKET",
+  "KAFKA_TIERED_STORAGE_ENDPOINT",
+  "KAFKA_TIERED_STORAGE_REGION",
+  "KAFKA_TIERED_STORAGE_ACCESS_KEY_ID",
+  "KAFKA_TIERED_STORAGE_SECRET_ACCESS_KEY",
   "METRIC_STREAM_LEGACY_TOPIC",
   "AXIOM_API_TOKEN",
   "AXIOM_LOG_DATASET",
@@ -186,14 +192,24 @@ afterEach(() => {
 });
 
 describe("renderDeployServiceEnvironmentFiles", () => {
-  it("renders the hot-log broker cluster identity", () => {
+  it("renders stock tiered credentials and one cluster-derived prefix for broker and worker", () => {
     const directory = makeTemporaryDirectory();
     const sourcePath = join(directory, "all.env");
     writeFileSync(sourcePath, dotenv(completeDeployEnvironment()));
     const paths = renderDeployServiceEnvironmentFiles(sourcePath, join(directory, "services"));
     expect(parseEnv(readFileSync(paths.kafka, "utf8"))).toEqual({
       CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk",
+      KAFKA_RSM_CONFIG_STORAGE_S3_BUCKET_NAME: "dofek-kafka-ts-offload",
+      KAFKA_RSM_CONFIG_STORAGE_S3_ENDPOINT_URL: "https://example.r2.cloudflarestorage.com",
+      KAFKA_RSM_CONFIG_STORAGE_S3_REGION: "auto",
+      AWS_ACCESS_KEY_ID: "kafka-ts-access-key-id",
+      AWS_SECRET_ACCESS_KEY: "kafka-ts-secret-access-key",
+      KAFKA_RSM_CONFIG_KEY_PREFIX: "MkU3OEVBNTcwNTJENDM2Qk/",
     });
+    const worker = parseEnv(readFileSync(paths.worker, "utf8"));
+    expect(worker.KAFKA_CLUSTER_ID).toBe("MkU3OEVBNTcwNTJENDM2Qk");
+    expect(worker.KAFKA_TIERED_STORAGE_BUCKET).toBe("dofek-kafka-ts-offload");
+    expect(worker.KAFKA_TIERED_STORAGE_SECRET_ACCESS_KEY).toBe("kafka-ts-secret-access-key");
   });
 
   it("preserves dotenv quoting when renaming the broker cluster identity", () => {
