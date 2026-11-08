@@ -1,7 +1,7 @@
 # Kafka tiered-storage layer
 
-Status: **runtime extracted and native/image qualification passed; CI follow-up
-in progress; not merge/activation ready**.
+Status: **native/image qualification and CI at `7be7d1547` passed; main/parent
+integration checks in progress; not merge/activation ready**.
 The user selected upstream Aiven and explicitly requested separate broker and
 tiered-storage workspaces. This branch is stacked on `kafka-broker-migration`
 ([PR #3233](https://github.com/Asherlc/dofek/pull/3233)); its runtime changes depend
@@ -81,3 +81,23 @@ deploy its local-only configuration. Retention/capacity, old-data disposition,
 current-head CI and explicit six-field erasure scrub integration remain
 gates. No production/cloud mutation, credential edit, data removal, merge,
 deployment or new strategy is approved by the source split.
+
+## Main synchronization and packet checkpoint
+
+Main `afa8b6e46` adds the separately reviewed history/sample-identity repair.
+Parent merge `eba115371` resolved only an append conflict in the incident log,
+preserving both sets of records. Child synchronization has the same sole conflict;
+no runtime hunk needed manual resolution. Parent's 134 focused tests and child's
+232 focused tests passed, with root/server/web typechecks. The seven tiered
+runtime receipt files still match the pinned `e19b92001` image; other main changes
+are not retroactively included in that image.
+
+The [canonical tiered packet](../../deploy/kafka/tiered-cutover-packet.md) replaces
+hot-only command text with provenance links and records the remaining source
+landing decision. Eight shell blocks passed syntax checks; intercepted Docker
+arguments matched all 29 canonical broker environment values, shared backend/
+prefix and worker mounts/entrypoint. Those checks invoked no Docker engine.
+
+Review checkpoint: keep the pinned image qualification separate from merged-head
+CI and any subsequent full-app image. The stock complete-graph landing proposal
+is recorded for approval only; PR bases, triggers and production are unchanged.

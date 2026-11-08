@@ -77,7 +77,9 @@ before production approval. Both PRs' automatic deployment dependencies require
 one reviewed release sequence; no merge/cutover order is approved by this split.
 The normal workflow requires Kafka already active; it is not the first cutover.
 
-Retention policy, measured capacity/headroom, old-data disposition, worker-image
+The pinned worker's [actual phase and remote-read/restart evidence](../../docs/evidence/kafka-tiered-child-20261108/README.md)
+is complete for the isolated fixture. Production consumed configuration, retention
+policy, measured capacity/headroom, old-data disposition, full application release
 qualification and cross-branch scrub integration remain gates. RF1/asynchronous
 offload cannot guarantee zero data loss after irreversible loss of the only disk;
 local retention is not a hard disk ceiling while offload is failing. The JSONL

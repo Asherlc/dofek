@@ -90,7 +90,7 @@ jobs:
           images: ${{ steps.tag.outputs.image }}
           tags: |
             type=sha,value=${{ github.sha }}
-            type=raw,value=latest
+            type=raw,value=latest,enable={{is_default_branch}}
       - name: Compute web asset base URL
         id: web-assets
         env:
@@ -154,7 +154,7 @@ jobs:
           images: ${{ steps.tag.outputs.image }}
           tags: |
             type=sha,value=${{ github.sha }}
-            type=raw,value=latest
+            type=raw,value=latest,enable={{is_default_branch}}
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: packages/ml

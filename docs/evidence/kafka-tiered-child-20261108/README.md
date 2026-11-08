@@ -83,3 +83,19 @@ The owned fixture is removed with the workspace Compose wrapper and
 `down --remove-orphans --volumes`; other workspaces' resources are preserved.
 Temporary scripts and full diagnostic logs remain under `/tmp/kafka-tiered-child`
 on the operator workstation; they are not a new maintained CLI or release path.
+
+## Integration/packet follow-up
+
+After the main synchronization, all seven receipt runtime files remained
+unchanged; the merged checkout also includes main's separate history/sample-
+identity repair outside those files. This does not change the image's revision.
+Parent 134-test and child 232-test focused unit checks, plus all three
+package typechecks, passed. Merged-head CI remains separate from the green
+[97-job pre-sync CI](https://github.com/Asherlc/dofek/actions/runs/42532677882).
+
+The canonical packet's eight shell blocks passed Bash syntax checks. A temporary
+fixture intercepted only its broker/worker Docker commands, compared all 29
+canonical broker settings and both backend/prefix contracts, checked read-only
+mounts/entrypoint, and preserved a synthetic credential containing dollar/quote
+characters literally. It made no Docker-engine call and is not deployment proof.
+No maintained parser, validator or operational tool was added.

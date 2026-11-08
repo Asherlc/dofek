@@ -593,16 +593,22 @@ async function markMetricStreamDeleteCommandsInClickHouse(
       isBatch ? `_${index}` : "",
     ),
   );
+  // IDs bind user/provider/time. Resolve every version of each identity tuple
+  // before rechecking mutable deletion-scope fields on its complete latest row.
+  // Candidate discovery can still scan broadly for scopes without leading keys;
+  // tuple membership avoids a second global scan, not every possible scope scan.
   const scopedCandidates = candidatePredicates
     .map(
-      (conditions, index) => `SELECT candidate_row.id AS id, toUInt16(${index}) AS scope_index
+      (conditions) => `SELECT candidate_row.id AS id, candidate_row.user_id AS user_id,
+            candidate_row.provider_id AS provider_id, candidate_row.recorded_at AS recorded_at
           FROM ${METRIC_STREAM_TABLE} AS candidate_row
           WHERE ${conditions.join(" AND ")}
-          GROUP BY candidate_row.id`,
+          GROUP BY candidate_row.id, candidate_row.user_id,
+            candidate_row.provider_id, candidate_row.recorded_at`,
     )
     .join("\n          UNION ALL\n          ");
-  const correlatedLatestPredicates = latestPredicates
-    .map((conditions, index) => `(scope_index = ${index} AND ${conditions.join(" AND ")})`)
+  const latestScopePredicate = latestPredicates
+    .map((conditions) => `(${conditions.join(" AND ")})`)
     .join(" OR ");
 
   if (operationRevision) {
@@ -648,11 +654,8 @@ async function markMetricStreamDeleteCommandsInClickHouse(
         ${replacementVersionExpression} AS version,
         latest_row.13 AS generation
       FROM (
-        SELECT DISTINCT id, latest_row
-        FROM (
         SELECT
           metric_stream_row.id AS id,
-          candidate_scope.scope_index AS scope_index,
           argMax(
             tuple(
               metric_stream_row.activity_id,
@@ -674,14 +677,16 @@ async function markMetricStreamDeleteCommandsInClickHouse(
             tuple(metric_stream_row.version, metric_stream_row.ingested_at)
           ) AS latest_row
         FROM ${METRIC_STREAM_TABLE} AS metric_stream_row
-        INNER JOIN (
-          ${scopedCandidates}
-        ) AS candidate_scope ON candidate_scope.id = metric_stream_row.id
-        GROUP BY metric_stream_row.id, candidate_scope.scope_index
-        )
-        WHERE ${correlatedLatestPredicates}
+        WHERE (metric_stream_row.id, metric_stream_row.user_id,
+            metric_stream_row.provider_id, metric_stream_row.recorded_at) IN (
+            SELECT id, user_id, provider_id, recorded_at FROM (
+              ${scopedCandidates}
+            )
+          )
+        GROUP BY metric_stream_row.id
       )
-      WHERE latest_row.14 = 0
+      WHERE (${latestScopePredicate})
+        AND latest_row.14 = 0
         AND lower(hex(SHA256(toString(latest_row.2)))) NOT IN (
           SELECT user_hash
           FROM ${ACCOUNT_ERASURE_FENCE_TABLE} FINAL
