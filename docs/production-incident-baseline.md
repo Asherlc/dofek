@@ -35749,3 +35749,13 @@ only the fixture image currently under test. Docker documents local resource
 - **Next time:** Qualify adoption, support, licensing and object-store fit before
   implementation; use Docker's documented [isolated networks](https://docs.docker.com/compose/how-tos/networking/)
   and [scoped cleanup](https://docs.docker.com/reference/cli/docker/compose/down/).
+
+### 2026-11-08 — tiered-layer CI spelling vocabulary
+
+CI `42529586807`, job `128880819367` (`Test / Spell Check`) failed its normal
+`pnpm exec cspell --no-progress` command first at
+`src/account-erasure/kafka-log-storage.test.ts:52:32 - Unknown word (aiven)`.
+The pinned Java package namespace (`aiven`, `tieredstorage`) and the native
+zero/one UUID fixture were missing from the existing dictionary. Register those
+exact proper terms in `cspell.json`; keep source and test spelling checks enabled.
+No runtime behavior, timeout, retry or production configuration changed.
