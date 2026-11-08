@@ -1,8 +1,11 @@
 # Kafka protocol qualification — November 8, 2026
 
-**Current status: stock tiered storage is required; the specific late-upload
-residual risk is accepted. Coherent runtime/configuration and ordinary deletion
-qualification remain required before release.** See the
+**Current status: Aiven is rejected as insufficiently established for the user's
+requirements. Implementation stopped; no candidate is ready for release.** The
+stock-Aiven work was withdrawn; see the [current platform decision](README.md).
+The earlier specific late-upload residual risk was accepted, including the
+possibility of indefinite orphan retention, but does not override this rejection.
+See the
 [accepted exception](tiered-fencing-proposal.md#accepted-exception-and-intended-stock-path).
 Earlier sections are chronological evidence, including the now-withdrawn hot-log
 alternative; they do not describe a deploy-ready current configuration.

@@ -35727,3 +35727,25 @@ only the fixture image currently under test. Docker documents local resource
   structural checkpoint results fixed the fixture; the same real Postgres/Redis
   integration test passed locally without waits or production changes. Later
   duplicate-email/identity errors were test retries after that initial failure.
+
+### 2026-11-08 — local stock-tiered qualification withdrawn
+
+- **Scope/impact:** Disposable synthetic Kafka/S3 fixture only; no production
+  changes or shared service/database-volume removal.
+- **First failures:** Compose `up -d` failed with `all predefined address pools
+  have been fully subnetted`; Kafka then failed before JVM startup with
+  `mkdir: cannot create directory .../logs: No space left on device`.
+- **Evidence/root cause:** Shared Docker overlay was 100% full (78.4 GiB filesystem),
+  with 39% inode use. Builder prune recovered 0 B; inspected unused-image pruning
+  recovered 1.142 GB, including the unused prior review worker image. Running
+  services were preserved. An explicit owned fixture subnet and RAM-backed data/
+  JVM-log mounts allowed bounded native-codec checks, not disk-durability proof.
+- **Validation/limit:** Pinned Kafka's stock formatter agreed with two structural
+  record vectors; focused adapter/wiring tests passed. Full lifecycle/image
+  qualification was not completed. The user rejected Aiven's adoption/support
+  profile; all unfinished runtime changes were withdrawn. The owned Compose
+  project was removed with `down --remove-orphans --volumes`, then zero owned
+  containers/networks were verified. Shared Docker disk pressure remains unresolved.
+- **Next time:** Qualify adoption, support, licensing and object-store fit before
+  implementation; use Docker's documented [isolated networks](https://docs.docker.com/compose/how-tos/networking/)
+  and [scoped cleanup](https://docs.docker.com/reference/cli/docker/compose/down/).

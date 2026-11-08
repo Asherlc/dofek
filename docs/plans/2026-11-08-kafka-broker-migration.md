@@ -1,5 +1,12 @@
 # Kafka broker migration
 
+**Latest status: blocked on selection of an established tiered-storage platform.**
+The user rejected the Aiven dependency under the no-niche-dependencies constraint.
+Unfinished Aiven implementation was withdrawn. Earlier risk acceptance below
+does not authorize continuing it. See the [supported Kafka alternative and
+license/backend decision](../../deploy/kafka/README.md). No platform pivot,
+purchase, merge or production action is approved.
+
 Status: **blocked; Kafka WITH tiered storage is required**. The user rejected
 hot-log-only as the release direction. Current remote-disabled source/worker
 artifacts remain for review, not deployment; their successful tests do not

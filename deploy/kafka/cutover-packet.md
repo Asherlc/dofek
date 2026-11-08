@@ -1,5 +1,10 @@
 # Broker-only cutover qualification packet
 
+**Superseding stop gate: Aiven is rejected under the no-niche-dependencies
+requirement.** The earlier accepted residual is not platform approval. See the
+[current platform decision](README.md); no candidate or commands here are ready
+for activation.
+
 Status: **withdrawn hot-log alternative; blocked for merge and activation**.
 Kafka WITH tiered storage is the user's required objective. Commands and release
 assumptions below are retained review artifacts, not a tiered cutover packet.

@@ -1,8 +1,10 @@
 # Tiered-storage deletion fencing proposal
 
-Status: **Not selected. Historical Astra/Opus proposal; not implemented.**
+Status: **Withdrawn. Aiven itself is subsequently rejected under the user's
+no-niche-dependencies requirement.** See the [current platform decision](README.md).
+Historical Astra/Opus proposal; not implemented.
 On November 8 the user accepted the specific unknown-outcome upload risk below.
-The intended candidate uses stock Kafka/Aiven tiering, without this custom patch.
+That risk acceptance was not approval of the plugin's adoption/support profile.
 The hot-log release alternative stays withdrawn.
 
 ## Accepted exception and intended stock path
@@ -16,8 +18,11 @@ R2 explicitly permits this [in-flight-write ordering](https://developers.cloudfl
 Its frequency has not been established and no such production incident was
 observed here. Do not describe observed absence as a guarantee against this
 accepted late commit.
+The user subsequently clarified “Fine by me” after being told such an orphan
+could persist indefinitely. Neither that accepted exception nor the historical
+stock-path recommendation below overrides the later rejection of Aiven.
 
-Keep the stock plugin and qualify native terminal deletion plus complete
+The preceding recommendation was to keep the stock plugin and qualify native terminal deletion plus complete
 generation-scoped object/multipart enumeration and local/retired-data checks
 through the existing worker retention hook. Stock Aiven already includes
 [failed-copy orphan cleanup](https://github.com/Aiven-Open/tiered-storage-for-apache-kafka/pull/590).

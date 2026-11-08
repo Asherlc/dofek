@@ -1,5 +1,9 @@
 # Broker-only operator proposal
 
+**Aiven direction also withdrawn:** the user requires an established supported
+dependency. See the [current platform decision](README.md); the accepted late-PUT
+residual did not approve the plugin's adoption/support profile.
+
 **Withdrawn: hot-log-only does not meet the required tiered-storage objective.**
 Do not execute these commands. They preserve the rejected alternative for review;
 they are not a tiered-storage operator packet or an approved production action.

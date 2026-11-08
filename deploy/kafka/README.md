@@ -1,5 +1,21 @@
 # Kafka broker candidate
 
+**Current decision: Aiven is rejected under the user's no-niche-dependencies
+requirement. Stop this implementation.** The earlier late-upload risk acceptance
+did not approve the plugin's adoption/support profile. The unfinished stock-Aiven
+changes were withdrawn; the checked-in hot-log alternative remains withdrawn too.
+No current candidate is approved for merge or activation.
+
+The established packaged Kafka alternative identified is Confluent's own
+[Tiered Storage](https://docs.confluent.io/platform/current/clusters/tiered-storage.html),
+which requires an [enterprise license](https://docs.confluent.io/platform/current/installation/license.html).
+Its supported object-store list does not include R2. This is a concrete license
+and backend decision, not authorization to replace the broker distribution or
+buy services. Apache Kafka itself does not ship an out-of-the-box production
+[RemoteStorageManager](https://kafka.apache.org/43/operations/tiered-storage/).
+Select an established, supported platform and confirm licensing/backend fit
+before further implementation. The sections below preserve prior investigation.
+
 **Blocked: Kafka WITH tiered storage is the required objective.** The user
 explicitly rejected advancing hot-log-only as the migration solution. The
 checked-in tree still reflects that withdrawn alternative; its remote-disabled
@@ -7,9 +23,8 @@ broker and local-only worker guard are not a deployable tiered candidate. Do not
 merge or activate it. Preserve its evidence, managed R2 resources and old data.
 See the [bounded tiered review](qualification.md#tiered-storage-required-quiescence-review).
 The user subsequently [accepted the narrow late-upload risk](tiered-fencing-proposal.md#accepted-exception-and-intended-stock-path).
-Resume stock Kafka/Aiven tiered qualification; the custom write-fencing proposal
-is not selected. The current remote-disabled tree still requires correction and
-qualification before it represents that candidate.
+That earlier direction is superseded by the rejection above; the custom
+write-fencing proposal is also not selected.
 
 This branch extracts the broker candidate from frozen
 [PR #3231](https://github.com/Asherlc/dofek/pull/3231), commit `ed26f38b8`.
