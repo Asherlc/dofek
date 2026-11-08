@@ -154,3 +154,8 @@ and implementing the retired-Redpanda completion hold. This changes the approved
 storage strategy and has not been implemented. It does not waive local broker
 file erasure, archive erasure, capacity qualification or separate production
 retirement approval.
+
+The user subsequently authorized offline qualification of that alternative with
+“continue”. The [hot-log-only observation](hot-log-qualification.md) reproduced
+the remaining local logical/physical deletion gap and observed stock cleanup.
+It does not qualify production activation or change the checked-in tiered broker.
