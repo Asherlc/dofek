@@ -43,8 +43,14 @@ render of those two files verified the following effective bindings:
 | Broker data | `/mnt/dofek-data/kafka-hot-log/data` → `/var/lib/kafka/data` |
 | Worker data view | Same host source → `/var/lib/dofek/kafka-data:ro` |
 | Retired Redpanda hold | Original `/mnt/dofek-data/redpanda` → `/var/lib/dofek/retired-broker-data:ro` |
-| Worker image | Must be replaced with the digest-pinned review build before approval |
+| Worker image | `ghcr.io/asherlc/dofek@sha256:a498aaa503db452480fdd43a71cc8799aa2564eea30a070e0296a08effc48620` (review candidate only) |
 | ClickHouse | Unchanged `26.6.1.1193-alpine` |
+
+The [review build](https://github.com/Asherlc/dofek/actions/runs/42506782417)
+succeeded for source `cd9c4eb28d186a2fab9af2ac2e91864c32f38477`.
+Registry inspection matched that OCI revision and the digest above; its executable
+platform is Linux/arm64. This verifies artifact identity, not a production rollout
+or a completed worker-image runtime qualification.
 
 The fresh hot-log path avoids reusing the stopped tiered broker's configuration
 and generation. Leave `/mnt/dofek-data/kafka/data` and any existing plugins
