@@ -135,6 +135,50 @@ The [scrub regression](../../src/db/account-erasure.integration.test.ts) and
 [runtime wiring tests](../../src/jobs/account-erasure-runtime.test.ts) describe
 the required integration contract. Sequencing that combination remains open.
 
+### Recommended order for approval
+
+This is a proposal, not authorization to perform the steps. It uses the existing
+Swarm/Kafka tools and leaves automation unchanged.
+
+1. **Offline:** accept the explicit six topic names and source byte-policy
+   proposal, complete measured capacity/headroom review, and approve the retained
+   Redpanda hold/retirement boundary. Preserve the aborted Kafka tree and its
+   recorded no-application-write exclusion; unknown contrary history blocks that
+   exclusion. Resolve the erasure scrub projection only if combining that PR;
+   the standalone Kafka worker does not require importing its broader redesign.
+2. **Before production approval:** freeze the broker-only mutation packet to
+   the Kafka digest, worker digest, each existing application/Connect digest,
+   host paths, six group/topic assignments and exact service task templates.
+   Refresh metadata and the old-generation request preflight. Approval must
+   identify the ingress pause, old-consumer drain, worker launch, first-write
+   boundary, observation interval and recovery authority. No secret values or
+   historical archive bodies belong in the packet.
+3. **Production approval required:** perform that broker-only operator cutover
+   while this PR remains open, using the pinned review artifacts and stock tools,
+   following the ordered boundaries below. Keep the repaired history image and
+   all other existing images individually pinned; only the narrow worker changes.
+   No full-stack workflow, Terraform apply or old-data retirement is part of this
+   cutover. Before the first Kafka write, reversal requires the stated empty-write
+   proof; afterward preserve both logs and use separately reviewed forward recovery.
+4. **Separate release qualification and approval required:** qualify the normal
+   application release that will follow merge. The [base stack](../stack.yml)
+   shares `APP_IMAGE` across web, worker and all ClickHouse sinks, and the
+   [normal deployment](../../.github/workflows/deploy-web-stack.yml) verifies that
+   shared release. It cannot preserve the broker packet's separate history image
+   pin. The later release must contain the qualified history repair, reconcile
+   any combined erasure scrub fields, and review its Terraform/app/schema effects
+   as that release's own scope. Broker protocol checks are insufficient for this.
+5. **Merge approval required:** merge only when Kafka is already active and that
+   subsequent automatic application release is qualified and authorized. Observe
+   the existing main-CI → Terraform → stack deployment path. Do not disable its
+   trigger, add a bypass flag, or treat merge as an inert source-only action.
+
+The smallest sequencing decision is approval of **broker-only cutover before
+merge, then a separately qualified normal application release**. That decision
+alone would not authorize production steps, accept the byte-policy change,
+establish capacity, or authorize old-data deletion. Until those concrete gates
+are closed, the PR remains ready for review rather than ready to merge.
+
 ## Stop gates
 
 1. **Qualified worker and configuration:** require the new worker image, matching
