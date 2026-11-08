@@ -228,10 +228,24 @@ IaC Kafka R2 + five keys were verified separately and are not re-audited here.
 | Axiom | MCP **needsAuth** this session — rely on `docker service logs` + `rpk` until restored |
 | Deploy Web | workflow **disabled_manually** |
 
-**Blockers still open (fail closed):** approvals B/C/E/G; producer pause not done;
-history-CH disposition; usable CH freshness alternate; R2 newest-object age
-(names/LastModified only); uncapped collector acknowledged; Kafka not on host
-yet (expected until approved deploy).
+**Remaining cutover gates:** approvals A/B/C/D/G; producer pause and final
+post-pause drain; R2 newest-object age (names/LastModified only); capacity
+review including the uncapped collector; and a reviewed deployment sequence
+that keeps producers and consumers stopped until Kafka and its topics are ready.
+Decision E is complete; do not repeat the historical identity audits or backlog
+recovery. Kafka is not on the host yet, as expected before approval.
+
+**Do not dispatch the full-stack workflow for this cutover.** Its
+[dependency-stack step](../../.github/workflows/deploy-web-stack.yml) applies
+the pre-migration app image, its rolling path waits for web at two replicas
+before topic reconciliation, and later stack deployment uses `--prune`.
+An initial manual scale-to-zero alone does not preserve the pause across those
+steps. The cutover procedure must preserve that pause explicitly and stop the
+old archive consumers before changing brokers. Docker documents that
+[`stack deploy`](https://docs.docker.com/reference/cli/docker/stack/deploy/)
+reconciles the supplied service specification and that `--prune` removes
+services no longer referenced. Re-enabling Deploy Web is a separate decision
+after the transition, not a prerequisite for running an unsafe sequence.
 
 ### Stock operator sequence (review only — do not run)
 
@@ -249,19 +263,24 @@ Order is mandatory. **No dual-write** at any step (never `REDPANDA_BROKERS` and
    this path but still share host RAM.
 3. **Drain old Redpanda** — Keep sinks+archives up. Prove live+legacy CH and
    all three archives at **lag 0** (census already PASS — re-prove after pause).
-   History CH remains **GAP** unless approval **E** accepts unread-with-R2 or
-   restores the sink. Prefer `rpk group describe` + service logs; **do not**
+   History CH recovery is complete; verify its zero lag again after the pause
+   alongside the other groups. Prefer `rpk group describe` + service logs; **do not**
    use bare CH `max(recorded_at)` as freshness (prefer lag + `max(ingested_at)`). Quarantine inspect only via
    stock `rpk topic consume` if needed — no quarantine migrator.
 4. **Preserve offsets** — Record main+quarantine HWM and archive
    first/last offset identity from the baseline. Do **not** delete Redpanda
    data. Stopping Redpanda **stops retention GC** on `/mnt/dofek-data/redpanda`;
    those bytes do **not** age out after the process is down.
-5. **Distinct v2 all routes** — After approval **B**, set Infisical
+5. **Stop old consumers, then select distinct v2 routes** — After the drain,
+   stop all three ClickHouse sinks and all three archive services. Confirm
+   zero running tasks before stopping Redpanda, retaining its data directory.
+   After approval **B**, set Infisical
    `METRIC_STREAM_*` to distinct v2 names for **legacy, live, and history**
    (sink and archive must match per route). Quarantine names follow
    `${main}.quarantine.v1`. Do **not** change `KAFKA_CLUSTER_ID`.
-6. **Deploy Kafka + Q13A disk policy** — Existing Deploy Web / stack path only:
+6. **Deploy Kafka + Q13A disk policy** — A separately reviewed stock operator
+   sequence is required; the full-stack workflow above is not approved for this
+   transition. Keep all producers and consumers stopped throughout bootstrap:
    publish plugins if absent, `chown 1000:1000` data dir, start `kafka`,
    external client reconciles writable main+quarantine with
    `remote.storage.enable=true`, B7 retention, Q13A
@@ -307,7 +326,7 @@ Order is mandatory. **No dual-write** at any step (never `REDPANDA_BROKERS` and
 | First Kafka produce (step 8) | Enters post–Kafka-write forward-only class |
 | Scale Redpanda to 0 | Hot-log GC stops; retain data dir |
 | Delete RP data dir | **Not in this cutover** — separate approval **F** |
-| Deploy Web still disabled | Cutover deploy path needs approval **G** to re-enable workflow |
+| Deploy Web still disabled | Keep disabled during cutover; approval **G** governs later re-enabling |
 
 ### Non-goals (explicit)
 
