@@ -3,9 +3,10 @@
 Status: **blocked; Kafka WITH tiered storage is required**. The user rejected
 hot-log-only as the release direction. Current remote-disabled source/worker
 artifacts remain for review, not deployment; their successful tests do not
-qualify tiered activation. The [stock erasure/quiescence proof boundary](../../deploy/kafka/qualification.md#tiered-storage-required-quiescence-review)
-must close before a coherent tiered implementation can proceed. No runtime
-reversion, workflow change or production action is authorized by this status.
+qualify tiered activation. The user [accepted the specific late-upload risk](../../deploy/kafka/tiered-fencing-proposal.md#accepted-exception-and-intended-stock-path),
+allowing stock Kafka/Aiven tiered candidate work without the proposed plugin fork.
+Native deletion, object/multipart/local/retired-data verification remains required.
+No production action is authorized by this decision.
 This is one of two independent efforts requested on November 8. The other is
 account-erasure hardening. Both start at main commit
 `2752451fb4a7404e5d887d32341595a42a673dcd`; neither is stacked on the other.

@@ -6,6 +6,10 @@ assumptions below are retained review artifacts, not a tiered cutover packet.
 The current tree is hot-log-only and the worker guard rejects remote storage;
 passing checks do not qualify that tree for the required migration. See the
 [tiered proof boundary](qualification.md#tiered-storage-required-quiescence-review).
+The user has since [accepted the specific late-upload residual](tiered-fencing-proposal.md#accepted-exception-and-intended-stock-path).
+The custom fencing plugin is not selected; stock tiered runtime/configuration and
+ordinary deletion verification still need qualification. This acceptance does
+not make the hot-log commands below suitable for activation.
 Capacity/policy, merge sequencing and retirement gates below must close before final mutation
 commands and a maintenance window are approved. Do not reuse the aborted combined
 release packet. See [the aborted attempt](https://github.com/Asherlc/dofek/blob/ed26f38b8/docs/evidence/kafka-cutover-attempt-20261108/README.md).

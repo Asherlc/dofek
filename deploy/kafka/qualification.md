@@ -1,7 +1,9 @@
 # Kafka protocol qualification — November 8, 2026
 
-**Current status: tiered storage is required; activation and implementation are
-blocked on the [stock quiescence/write-fence boundary](#tiered-storage-required-quiescence-review).**
+**Current status: stock tiered storage is required; the specific late-upload
+residual risk is accepted. Coherent runtime/configuration and ordinary deletion
+qualification remain required before release.** See the
+[accepted exception](tiered-fencing-proposal.md#accepted-exception-and-intended-stock-path).
 Earlier sections are chronological evidence, including the now-withdrawn hot-log
 alternative; they do not describe a deploy-ready current configuration.
 
@@ -229,4 +231,14 @@ still represents the withdrawn hot-log alternative. The actual caller remains
 `retention_verification → assertBrokerStorageExpired`; no new production query,
 credential change, cloud experiment, runtime implementation or infrastructure
 was performed during the committee review. Do not enable tiering with the
-current local-only guard or weaken the erasure contract to bypass this gate.
+current local-only guard. The subsequent decision below supersedes the earlier
+requirement for a custom write fence.
+
+### Subsequent user decision: stock tiering with narrow risk acceptance
+
+The user accepted the specific late unknown-outcome upload after deletion/final
+verification; see the [exact decision and scope](tiered-fencing-proposal.md#accepted-exception-and-intended-stock-path).
+The custom plugin proposal is not selected. Normal native deletion, object and
+multipart enumeration, native local removal, generation checks and retained
+Redpanda holds remain required. This is an explicit exception to strict finality,
+not evidence that ambiguous uploads are settled. No production action is approved.

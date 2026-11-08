@@ -4,6 +4,9 @@
 Do not execute these commands. They preserve the rejected alternative for review;
 they are not a tiered-storage operator packet or an approved production action.
 See the [current blocker](qualification.md#tiered-storage-required-quiescence-review).
+The [narrow late-upload risk is now accepted](tiered-fencing-proposal.md#accepted-exception-and-intended-stock-path);
+stock tiered candidate work resumes without a custom plugin. These historical
+hot-log commands remain withdrawn until replaced by a qualified tiered packet.
 
 **Review only. No production command below is authorized by approval of the
 release order.** Read the [cutover packet](cutover-packet.md) first. This proposal

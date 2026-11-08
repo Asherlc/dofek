@@ -1,10 +1,33 @@
 # Tiered-storage deletion fencing proposal
 
-Status: **Astra/Opus committee recommendation for approval and bounded offline
-qualification. Not implemented or production-qualified.** Kafka with tiered
-storage remains mandatory. The hot-log release alternative stays withdrawn.
+Status: **Not selected. Historical Astra/Opus proposal; not implemented.**
+On November 8 the user accepted the specific unknown-outcome upload risk below.
+The intended candidate uses stock Kafka/Aiven tiering, without this custom patch.
+The hot-log release alternative stays withdrawn.
 
-## Decision and why custom code is necessary
+## Accepted exception and intended stock path
+
+After the concrete scenario was explained, the user said: “This seems niche
+enough that I’m ok with the risk.” This accepts an earlier unknown-outcome remote
+upload committing after deletion and the final erasure check. It does not waive
+ordinary deletion, complete object/multipart checks, local file removal,
+generation binding, retained Redpanda checks, or other account-erasure gates.
+R2 explicitly permits this [in-flight-write ordering](https://developers.cloudflare.com/r2/reference/consistency/#negative-reads-and-in-flight-writes).
+Its frequency has not been established and no such production incident was
+observed here. Do not describe observed absence as a guarantee against this
+accepted late commit.
+
+Keep the stock plugin and qualify native terminal deletion plus complete
+generation-scoped object/multipart enumeration and local/retired-data checks
+through the existing worker retention hook. Stock Aiven already includes
+[failed-copy orphan cleanup](https://github.com/Aiven-Open/tiered-storage-for-apache-kafka/pull/590).
+Do not require permanent empty objects, conditional-only uploads or a plugin
+fork. This decision authorizes offline candidate work, not activation, cloud
+experiments, credentials, data removal, merge or deployment.
+
+The remaining sections preserve the unselected stronger protocol for reference.
+
+## Historical proposal and stronger finality requirement
 
 Keep Kafka stock. Qualify a narrow change to the pinned Aiven S3 module instead
 of weakening account erasure, adding whole-broker shutdown machinery, or holding
