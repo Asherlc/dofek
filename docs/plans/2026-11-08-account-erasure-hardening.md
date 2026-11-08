@@ -32,6 +32,25 @@ this effort does not repeat them.
   branch. Migration 0179 and required request-store schema belong to this effort;
   transport acknowledgement migration 0178 and Kafka marker changes do not
   automatically belong here. Resolve any actual shared dependency before release.
+- [ ] Extract the required shared analytics ownership dependency explicitly.
+  [Source migration 0178](https://github.com/Asherlc/dofek/blob/ed26f38b8/drizzle/0178_native_metric_stream_delivery.sql)
+  creates `fitness.analytics_query_owner` and `fitness.analytics_stream_state`;
+  these are not merely transport acknowledgements. The
+  [erasure runtime](https://github.com/Asherlc/dofek/blob/ed26f38b8/src/jobs/account-erasure-runtime.ts)
+  uses `withAnalyticsQueryOwner` for identity preparation, fencing and deletion.
+  [The owner module](https://github.com/Asherlc/dofek/blob/ed26f38b8/src/analytics/analytics-query-owner.ts)
+  imports delivery-group helpers and consults stream-state reservations when
+  releasing terminal dirty source intents. Assign the required schema and
+  `analytics-query-owner`, `analytics-delivery-group`, `analytics-delivery` and
+  `analytics-work-store` dependencies together with their actual publication
+  writer callers; erasure-only locking cannot coordinate writers that bypass it.
+  Carry their focused tests, erasure runtime tests and real-engine ownership/
+  erasure tests, adapting writer integration to current Redpanda routes. Review
+  [delivery callers](https://github.com/Asherlc/dofek/blob/ed26f38b8/src/analytics/analytics-delivery.ts)
+  and [work-store integration tests](https://github.com/Asherlc/dofek/blob/ed26f38b8/src/analytics/analytics-work-store.integration.test.ts)
+  as explicit extraction dependencies. Classify transport acknowledgement,
+  Kafka marker and delivery-position changes separately; neither omit 0178
+  wholesale nor import its entire migration/journal as an erasure prerequisite.
 - [ ] Carry the corrected catalog payload accounting from `cb6c6810d`, keeping
   the 500-table/1 MiB limits and complete catalog/column scope. Reuse the qualified
   regression fixtures and payload evidence where the extracted code is identical.
