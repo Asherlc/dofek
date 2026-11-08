@@ -85,3 +85,33 @@ drop; stop on changed state. A new cutover still requires separate approval.
 [Exact-source CI](https://github.com/Asherlc/dofek/actions/runs/42458473396) was
 running without observed failed jobs when this receipt was recorded. Historical
 metric-ID audits remain complete and do not need to be repeated.
+
+## Q18 cleanup and next blocker
+
+Q18 (`Y`) approved only the exact empty probe cleanup and another unchanged
+inspection. At **2026-11-08T14:07:00Z**, the operator rechecked its MergeTree
+engine, sole `test String` column, zero metadata rows/bytes, zero active queries
+referencing the table and an exact zero row count. Stock `DROP TABLE … SYNC`
+removed only that table; a system-catalog lookup verified absence. No permanent
+exception or application-source change was introduced.
+
+The inspector then failed closed at
+`analytics.activity_effort_identity.canonical_activity_id`, reporting that the
+column is not mapped to an ownership relation. The
+[model source](../../../analytics/models/read_models/activity_effort_identity.sql)
+derives this field from `deduped_activity_members.activity_id` and retains
+`user_id`. The existing typed relation declaration recognizes `canonical_id`
+and `activity_id` but omits `canonical_activity_id`. This is a real relation
+mapping gap; deleting or exempting the personal-data model is not a solution.
+
+The proposed follow-up is an offline audit of current model identity aliases,
+minimal additions to existing typed mappings, and real-engine erasure regression
+tests before another image/inspection. Q18 explicitly stops at this further
+blocker; no fix or new cutover has been performed. Production remains Redpanda
+1/1, Kafka 0/0, web 2/2 and worker 1/1 at the post-cleanup service census.
+
+[CI 42458970793](https://github.com/Asherlc/dofek/actions/runs/42458970793)
+passed on documentation head `fea940d4aa40d96a32afc1e3b7909fa4f3196175`.
+Its only differences from the built runtime are this qualification documentation
+and the incident baseline. The prior exact-source CI was cancelled by that push;
+do not describe it as a completed passing run.
