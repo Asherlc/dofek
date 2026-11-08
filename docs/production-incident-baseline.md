@@ -35696,3 +35696,27 @@ only the fixture image currently under test. Docker documents local resource
   starting an isolated native fixture. Reuse the repository's integration setup
   workflow and the [native qualification](../deploy/kafka/hot-log-qualification.md);
   do not convert a fixture reconnect error into production retry machinery.
+
+### 2026-11-08 — Kafka review CI and packaged retention qualification
+
+- **Impact:** Review-only failures; no production change or user impact.
+- **Evidence:** [Runtime CI](https://github.com/Asherlc/dofek/actions/runs/42507133544)
+  first failed CSpell on native `timeindex`/`txnindex` terms and synthetic UUIDs;
+  mobile typecheck reported `redpanda-drain.ts(247,11): TS7006` because the mobile
+  environment type admitted implicit-any broker callbacks. Mutation jobs exposed
+  missing runtime mount/topic assertions and insufficient checkpoint/native
+  metadata boundary tests. Aggregate failures follow these underlying jobs.
+- **Fix:** Add the native terms to the existing dictionary, simplify synthetic
+  UUIDs, type the environment input as string-or-undefined, and exercise the
+  concrete safety contracts. Keep runtime behavior and gate thresholds unchanged.
+- **Validation:** Focused units, mobile typecheck and 13 real Postgres scrub tests
+  passed. The [packaged-image receipt](../deploy/kafka/worker-image-proof.json)
+  verifies actual retention-phase rejection/acceptance through native cleanup and
+  the retained Redpanda hold. Complete CI settlement remains required.
+- **Fixture correction:** An initial direct Vitest invocation omitted
+  `TEST_DATABASE_URL`; exporting the existing generated `DATABASE_URL` under that
+  test key resolved the setup failure. No production credentials were used.
+- **Next time:** Use the stock integration launcher, verify packaged phase
+  behavior as well as artifact identity, and include generation/mount contracts
+  in the first focused test pass. Retention policy, capacity, old-data retirement
+  and coordinated erasure scrub integration remain explicit activation gates.

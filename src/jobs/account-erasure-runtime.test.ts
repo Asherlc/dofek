@@ -4,6 +4,7 @@ import type { ClaimedAccountErasureRequest } from "../db/account-erasure-process
 import type { AccountErasurePhaseExecution } from "./process-account-erasure-request.ts";
 
 const mocks = vi.hoisted(() => ({
+  configureBrokerStorage: vi.fn(),
   assertBrokerStorageExpired: vi.fn(async () => undefined),
   assertConsumersDrained: vi.fn(async () => undefined),
   assertPeerDbDrained: vi.fn(async () => undefined),
@@ -65,6 +66,9 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("../account-erasure/kafka-log-storage.ts", () => ({
   KafkaLogStorage: class {
+    constructor(admin: unknown, paths: unknown) {
+      mocks.configureBrokerStorage(admin, paths);
+    }
     assertExpired = mocks.assertBrokerStorageExpired;
     capture(_topic: string, captureOffsets: () => Promise<unknown[]>) {
       return captureOffsets();
@@ -266,6 +270,15 @@ describe("createAccountErasureRuntime", () => {
     const runtime = await createAccountErasureRuntime(database, clickHouseClient, workPurger);
 
     const topics = ["metric-stream-v1", "metric-stream-live-v1", "metric-stream-history-v1"];
+    expect(mocks.configureBrokerStorage).toHaveBeenCalledWith(
+      { name: "redpanda-admin" },
+      {
+        directory: "/var/lib/dofek/kafka-data",
+        brokerDirectory: "/var/lib/kafka/data",
+        retiredDirectory: "/var/lib/dofek/retired-broker-data",
+        topics: topics.flatMap((topic) => [topic, `${topic}.quarantine.v1`]),
+      },
+    );
     const highWatermarks = topics.map((topic) => ({ topic, low: "1", offset: "3", partition: 0 }));
     const quarantineHighWatermarks = topics.map((topic) => ({
       topic,

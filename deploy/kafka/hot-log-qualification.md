@@ -156,3 +156,34 @@ Docker reported no rebuildable build cache. Stock unused-image cleanup reclaimed
 images; no running container or database volume was removed. The same broker
 then started without retry/timeout configuration changes. This local prerequisite
 failure is separate from the logical/physical expiry observation above.
+
+## Packaged worker phase qualification
+
+The [pinned-image receipt](worker-image-proof.json) records source
+`cd9c4eb28d186a2fab9af2ac2e91864c32f38477` executing the packaged
+`retention_verification` phase and `KafkaLogStorage` against six synthetic source
+and quarantine topics. The phase rejected logical-only expiry, retained topic
+generations across broker restart with a fresh client, and accepted only after
+stock native cleanup (78,208 ms observed after restart, not the complete retention
+interval). A retained Redpanda entry then blocked the same phase. The broker
+cleanup settings were unchanged and the worker's matching storage mounts were
+read-only. Production Node flags and telemetry preloads were used.
+
+This qualifies the broker guard through the production phase, with unrelated
+archive/backup/processor gates supplied by fixture stand-ins; it does not claim a
+complete queue-driven worker boot or qualify those independent gates. The
+instrumentation emitted `TimeoutNegativeWarning`; assertions completed without a
+runtime workaround. The owned fixture container/network were removed. No
+production state was changed. See the [review build](https://github.com/Asherlc/dofek/actions/runs/42506782417)
+for artifact provenance and the [native lifecycle sources](https://github.com/apache/kafka/blob/4.4.0/storage/src/main/java/org/apache/kafka/storage/internals/log/LocalLog.java)
+for the cleanup implementation.
+
+Follow-up review checks passed: 56 native-storage tests, 25 drain/schema tests,
+three runtime-wiring tests, mobile typecheck, root typecheck and 13 real Postgres
+scrub tests. Focused stock Stryker runs scored 100% for the runtime constructor
+and checkpoint-schema ranges (14 killed), and 83.92% for the complete native
+adapter (240 killed, 39 survived, seven uncovered). The latter clears the existing
+75% gate; it does not establish complete mutation coverage. No thresholds or
+exclusions changed. The only subsequent production-source change narrows the
+factory environment's TypeScript input type; it changes no executable logic in
+the pinned image. CI must still settle on the pushed review head.

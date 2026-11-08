@@ -749,7 +749,7 @@ describe("account erasure persistence (integration)", () => {
             request_id, phase, details
           )
           VALUES
-            (${requestId}::uuid, 'ingest_fence', '{"highWatermarks":[{"topic":"metric-stream-v1","partition":0,"low":"0","offset":"10","topicId":"dI2O6HVWQkuC7XgSy7cJ3w","clusterId":"MkU3OEVBNTcwNTJENDM2Qk","userId":"must-not-survive"}],"secret":"must-not-survive"}'::jsonb),
+            (${requestId}::uuid, 'ingest_fence', '{"highWatermarks":[{"topic":"metric-stream-v1","partition":0,"low":"0","offset":"10","topicId":"dI2O6HVWQkuC7XgSy7cJ3w","clusterId":"0000000000000000000000","userId":"must-not-survive"}],"secret":"must-not-survive"}'::jsonb),
             (${requestId}::uuid, 'consumer_drain', '{"quarantineHighWatermarks":[{"topic":"metric-stream-v1","low":"4","offset":"12","partition":0}],"unexpected":"must-not-survive"}'::jsonb),
             (${requestId}::uuid, 'work_verification', '{"path":"pii-like-path"}'::jsonb),
             (${requestId}::uuid, 'consumer_drain_verification', '{"offset":"123"}'::jsonb),
@@ -794,7 +794,7 @@ describe("account erasure persistence (integration)", () => {
                 low: "0",
                 offset: "10",
                 topicId: "dI2O6HVWQkuC7XgSy7cJ3w",
-                clusterId: "MkU3OEVBNTcwNTJENDM2Qk",
+                clusterId: "0000000000000000000000",
               },
             ],
           },

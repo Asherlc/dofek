@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { KafkaLogStorage } from "./kafka-log-storage.ts";
 
 const topicId = "dI2O6HVWQkuC7XgSy7cJ3w";
-const clusterId = "MkU3OEVBNTcwNTJENDM2Qk";
+const clusterId = "0000000000000000000000";
 const directories: string[] = [];
 const offsets = [{ partition: 0, low: "100", high: "200", offset: "200" }];
 
@@ -72,8 +72,129 @@ afterEach(async () => {
 
 describe("Kafka native log erasure", () => {
   it("binds offsets to the native cluster and topic generation", async () => {
-    const { boundaries } = await fixture();
+    const { boundaries, admin } = await fixture();
     expect(boundaries).toEqual([{ ...offsets[0], clusterId, topicId }]);
+    expect(admin.describeConfigs).toHaveBeenCalledWith({
+      includeSynonyms: false,
+      resources: [
+        { type: 4, name: "1", configNames: ["log.dirs", "remote.log.storage.system.enable"] },
+      ],
+    });
+    expect(admin.fetchTopicMetadata).toHaveBeenCalledWith({ topics: ["samples"] });
+  });
+
+  it("accepts native comments, whitespace and leader metadata", async () => {
+    const { storage, logs, partition, boundaries } = await fixture();
+    await writeFile(
+      join(logs, "meta.properties"),
+      `  # native metadata\n \n version = 1 \ncluster.id : ${clusterId}\nnode.id=1\n`,
+    );
+    await writeFile(join(partition, "leader-epoch-checkpoint"), "0\n1\n0 0\n");
+    await expect(
+      storage.assertExpired([{ ...boundaries[0], topic: "samples", offset: "100" }]),
+    ).resolves.toBeUndefined();
+  });
+
+  it.each([
+    "invalid prefix version=1",
+    "version=1 trailing",
+    "version=1\nversion=1",
+    "=invalid",
+    "version=",
+  ])("rejects malformed or duplicate properties: %s", async (line) => {
+    const { storage, logs } = await fixture();
+    await writeFile(
+      join(logs, "meta.properties"),
+      `version=1\ncluster.id=${clusterId}\nnode.id=1\n${line}\n`,
+    );
+    await expect(storage.capture("samples", async () => offsets)).rejects.toThrow(
+      "Malformed Kafka native metadata",
+    );
+  });
+
+  it.each([{ resourceName: "other" }, { resourceType: 2 }, { errorCode: 5 }])(
+    "rejects missing or failed broker config identity: %j",
+    async (change) => {
+      const { storage, admin } = await fixture();
+      const result = await admin.describeConfigs();
+      Object.assign(result.resources[0] ?? {}, change);
+      admin.describeConfigs.mockResolvedValue(result);
+      await expect(storage.capture("samples", async () => offsets)).rejects.toThrow(
+        "configuration",
+      );
+    },
+  );
+
+  it("rejects an invalid cluster UUID before native comparison", async () => {
+    const { storage, admin, logs } = await fixture();
+    const response = await admin.describeCluster();
+    response.clusterId = "invalid";
+    admin.describeCluster.mockResolvedValue(response);
+    await writeFile(join(logs, "meta.properties"), "version=1\ncluster.id=invalid\nnode.id=1\n");
+    await expect(storage.capture("samples", async () => offsets)).rejects.toThrow();
+  });
+
+  it.each([
+    { captured: [] },
+    { captured: [{ partition: 1, low: "0", offset: "1" }] },
+    { captured: [...offsets, ...offsets] },
+  ])("rejects unqualified captured partition sets: %j", async ({ captured }) => {
+    const { storage } = await fixture();
+    await expect(storage.capture("samples", async () => captured)).rejects.toThrow("partition set");
+  });
+
+  it.each(["clusterId", "topicId"] as const)("rejects a mismatched checkpoint %s", async (key) => {
+    const { storage, boundaries } = await fixture();
+    await expect(
+      storage.assertExpired([
+        { ...boundaries[0], topic: "samples", offset: "100", [key]: "a".repeat(22) },
+      ]),
+    ).rejects.toThrow("generation");
+    const boundary = {
+      topic: "samples",
+      partition: 0,
+      low: "0",
+      offset: "100",
+      ...(key === "clusterId" ? { topicId } : { clusterId }),
+    };
+    await expect(storage.assertExpired([boundary])).rejects.toThrow("generation");
+  });
+
+  it.each(["prefix00000000000000000100.log", "00000000000000000100.log.extra"])(
+    "rejects a misleading segment filename %s",
+    async (name) => {
+      const { storage, partition, boundaries } = await fixture();
+      await writeFile(join(partition, name), "unknown bytes");
+      await expect(
+        storage.assertExpired([{ ...boundaries[0], topic: "samples", offset: "100" }]),
+      ).rejects.toThrow("Unknown Kafka partition file");
+    },
+  );
+
+  it("rejects directory entries inside the partition", async () => {
+    const { storage, partition, boundaries } = await fixture();
+    await mkdir(join(partition, "unknown"));
+    await expect(
+      storage.assertExpired([{ ...boundaries[0], topic: "samples", offset: "100" }]),
+    ).rejects.toThrow("file type");
+  });
+
+  it("rejects incomplete or duplicated multi-topic checkpoints", async () => {
+    const { admin, logs, retired, boundaries } = await fixture();
+    const storage = new KafkaLogStorage(admin, {
+      directory: logs,
+      brokerDirectory: "/var/lib/kafka/data",
+      retiredDirectory: retired,
+      topics: ["samples", "other"],
+    });
+    const boundary = { ...boundaries[0], topic: "samples", offset: "100" };
+    for (const entries of [
+      [boundary],
+      [boundary, boundary],
+      [boundary, { ...boundary, topic: "wrong" }],
+    ]) {
+      await expect(storage.assertExpired(entries)).rejects.toThrow("checkpoints");
+    }
   });
 
   it.each([

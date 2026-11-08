@@ -234,7 +234,7 @@ export interface AccountErasureRedpandaAdmin {
 }
 
 export function createAccountErasureRedpandaAdminFromEnv(
-  env: NodeJS.ProcessEnv = process.env,
+  env: Record<string, string | undefined> = process.env,
 ): AccountErasureRedpandaAdmin {
   const routes = (["LEGACY", "LIVE", "HISTORY"] as const).map((route) => {
     const key = `METRIC_STREAM_${route}_TOPIC`;

@@ -49,8 +49,12 @@ render of those two files verified the following effective bindings:
 The [review build](https://github.com/Asherlc/dofek/actions/runs/42506782417)
 succeeded for source `cd9c4eb28d186a2fab9af2ac2e91864c32f38477`.
 Registry inspection matched that OCI revision and the digest above; its executable
-platform is Linux/arm64. This verifies artifact identity, not a production rollout
-or a completed worker-image runtime qualification.
+platform is Linux/arm64. The [image runtime receipt](worker-image-proof.json)
+records the packaged production retention phase rejecting logical-only expiry,
+preserving six topic generations across restart, accepting native removal, and
+rejecting a retained Redpanda entry. It used the production Node flags and telemetry
+preloads with read-only storage mounts. Unrelated retention gates were test
+stand-ins: this is not a complete queue-driven worker boot or production rollout.
 
 The fresh hot-log path avoids reusing the stopped tiered broker's configuration
 and generation. Leave `/mnt/dofek-data/kafka/data` and any existing plugins
