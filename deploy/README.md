@@ -492,6 +492,12 @@ a visible release blocker until this reconciliation is complete. Absence from
 App Store Connect while processing is uncertain does not establish that no upload
 occurred; retain the pending record when the evidence is inconclusive.
 
+Manual **Build Docker** runs on a feature branch publish a commit-derived image
+tag without advancing `latest`. Only the default branch advances `latest`,
+using the Docker metadata action's stock
+[`is_default_branch` tag condition](https://github.com/docker/metadata-action#is_default_branch).
+Building an image does not authorize a production deployment.
+
 1. **Build**: GitHub Actions builds the `server` image for every `main` push and pushes it to GHCR with the commit-derived tag (`<tag>`). A successful main CI completion requests deployment; when its slot starts, `Deploy Web` selects the latest passing main push and resolves that tag to the immutable image it deploys. The web build inside the image uses `VITE_ASSET_BASE_URL=https://assets.dofek.fit/web/<tag>/`, so Vite-generated JavaScript and CSS references point at immutable R2-backed CDN assets instead of the Express origin; Vite's `base` option controls the public base path for built assets: https://vite.dev/config/shared-options.html#base. `<tag>` is the image tag used consistently for both the GHCR image and the web asset prefix. See GitHub's `workflow_run` event documentation for the trigger behavior: https://docs.github.com/en/actions/reference/events-that-trigger-workflows#workflow_run. The `ml` image is built only when ML image inputs change.
    Automatic deploys check out the selected CI run's full commit SHA for both
    Terraform and stack configuration. GitHub documents that a

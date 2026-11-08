@@ -129,12 +129,12 @@ This checklist authorizes no production scan, rehash, acknowledgement repair,
 offset change or deployment. Use stock SQL and existing operational workflows;
 it does not require a new identity registry or audit framework.
 
-### Remaining deletion-scope coverage preflight — proposed, not executed
+### Deletion-scope coverage preflight — completed for the frozen backlog
 
 The prior identity-only export omitted deletion scopes and its private inputs
 were removed. It therefore cannot establish which other retained IDs the
-backlog's 248 deletions may affect. The next proposed read is narrower than a
-storage audit:
+backlog's 248 deletions may affect. The following bounded read was completed after the user instructed the
+read-only investigation to continue; its comparison result is recorded below:
 
 1. Verify that history partition 0 still retains the frozen interval
    `[70578630, 74445631)`. Stop if its start is no longer retained or broker
@@ -156,7 +156,7 @@ storage audit:
    comparison would require. No candidate data query or full storage scan is
    included in this preflight; propose its separate budget after the plan.
 
-This is a proposed authorization boundary, not permission to execute. It
+This dated preflight is not permission to rerun or expand the audit. It
 includes no topic edits, acknowledgements, offset commits, persistent tables,
 deployment or history-consumer resume. A clean scoped result would not certify
 unrelated IDs, archive replay or future writes. Use existing stock commands
@@ -239,11 +239,48 @@ boundaries are covered by real-engine tests. The prior provider-move fixture
 now exercises activity movement because retaining an ID across a provider
 change is outside the approved contract. Historical wire parsing is unchanged.
 
-This implementation is not deployed. Adequate historical deletion-candidate
-coverage remains required before recovery approval. The two-engine million-row
+This implementation is not deployed. The frozen backlog now has both incoming-row
+and deletion-candidate identity coverage, as recorded below; deployment and
+consumer recovery remain separate operator actions. The two-engine million-row
 experiment above is evidence for its dated SQL; the executable tests qualify
 the final statement on both versions without establishing that every deletion
 scope has bounded reads.
+
+### Frozen backlog deletion-candidate identity audit — passed
+
+The 2026-11-08 follow-up covered every offset in the same frozen history range:
+**3,867,001 records**, including **248 valid v3 deletions**, all scoped by user
+and activity. Those scopes named one account and 248 activities. Their
+candidate population was compared across all retained physical versions,
+without `FINAL` or an outer ownership/time restriction.
+
+The result was **7,732,978 distinct IDs and exactly 7,732,978 distinct
+`(id, user_id, provider_id, recorded_at)` tuples across 19,540,887 physical
+versions**. Equality of these exact cardinalities establishes one immutable
+identity per candidate ID; it is not a sampled or approximate count.
+ClickHouse provides the stock [exact distinct aggregate](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/uniqexact).
+The successful query took **75.087 seconds**, read **226,989,012 rows /
+5,366,716,746 bytes**, and peaked at **1,508,899,199 tracked memory bytes**,
+within its single-thread, 2 GiB memory, 120-second, 300-million-row and 12 GiB
+read caps. [Aggregate receipt and diagnostic limits](evidence/metric-stream-deletion-scope-audit-20261108/summary.json)
+and [executed SQL](evidence/metric-stream-deletion-scope-audit-20261108/query.sql)
+record the result. Earlier grouped attempts exceeded memory/time bounds and
+are explicitly excluded; no partial result was treated as clean.
+
+The committed deletion SELECT's plan for the first frozen deletion selected
+**7,383 of 24,478 potential granules**, using the existing covering projection.
+That is plan evidence of pruning, not measured deletion duration or proof that
+every backlog deletion will fit the client deadline. The SELECT's candidate
+planning itself read 303,357 rows; EXPLAIN with an `IN` subquery must not be
+assumed to perform only metadata reads. No deletion statement was executed.
+
+Together with the incoming-row audit below, this closes the targeted identity
+compatibility gap for the frozen backlog and its currently retained deletion
+candidates. It does not certify unrelated IDs, archive replay, future writes,
+complete event payloads or processing acknowledgements. At the post-audit
+check the history sink remained **0/0**, at offset **70578630**, with lag
+**3,867,001** and its checkpoint retained. No deployment, acknowledgement
+repair, offset change or consumer resume occurred.
 
 ### Unread-history row identity audit — frozen snapshot
 
