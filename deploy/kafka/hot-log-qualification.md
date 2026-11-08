@@ -63,8 +63,9 @@ A hot-log-only release requires:
 - The previously approved retained-Redpanda completion hold and a separately
   approved retirement procedure. A stopped broker does not perform retention.
 - Continued JSONL archive erasure and archive-key collision protection. The
-  durable JSONL archive is not a transparent Kafka remote-segment fetch path;
-  recovery outside broker retention needs the existing explicit archive replay.
+  retained JSONL archive is not a transparent Kafka remote-segment fetch path.
+  [Bounded replay is not shipped](../../docs/metric-stream-redpanda-r2-runbook.md#replay);
+  recovery outside broker retention remains an unqualified operator capability.
 - A local disk budget and operational margin. At the previously proposed one
   partition and 1 GiB per source/quarantine topic, six topics imply a 6 GiB
   configured retention target, before segment overshoot, delayed deletion,

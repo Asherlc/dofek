@@ -3,8 +3,10 @@
 **Review only. No production command below is authorized by approval of the
 release order.** Read the [cutover packet](cutover-packet.md) first. This proposal
 uses existing Docker/Kafka commands, not the normal stack/Terraform workflow.
-The three fresh source names in that packet and the proposed 1 GiB/seven-day
-policy still require acceptance and measured capacity review.
+The three fresh source names and exact shorter source retention policy still
+require acceptance and measured capacity review. The [durability assessment](replay-capacity-options.md)
+supersedes treating 1 GiB/source as a selected target; archive recovery is not
+operator-ready and RF1 has no independent broker copy.
 
 ## Observed service contract
 
@@ -116,10 +118,12 @@ docker run --rm --network dofek_default --memory 384m \
 ```
 
 Create each explicitly accepted source and quarantine topic with one partition,
-RF1, `cleanup.policy=delete`, `retention.ms=604800000`, proposed
-`retention.bytes=1073741824` and `remote.storage.enable=false`, using stock
+RF1, `cleanup.policy=delete` and `remote.storage.enable=false`, using stock
 `kafka-topics.sh --create`. Do not use `--if-not-exists` to accept a pre-existing
 identity. Describe every created topic/config and record native topic UUIDs.
+Source retention values must come from the measured, accepted shorter-window
+proposal. Quarantine keeps its existing `retention.ms=604800000` and
+`retention.bytes=1073741824` contract; do not shorten that policy here.
 Creation or unexpected prior existence is a stop point until the identity is
 reviewed. See [Kafka topic configuration](https://kafka.apache.org/44/configuration/topic-configs/).
 
@@ -130,10 +134,12 @@ docker run --rm --network dofek_default --memory 384m \
   -e KAFKA_HEAP_OPTS='-Xms32m -Xmx256m' \
   --entrypoint /opt/kafka/bin/kafka-topics.sh \
   apache/kafka:4.4.0@sha256:833b867a9585a141da455dc2b57431c65cbccb27f11c91f694444cca9f777e0f \
-  --bootstrap-server kafka:9092 --create --topic "$accepted_topic" \
+  --bootstrap-server kafka:9092 --create --topic "${accepted_topic:?Reviewed topic required}" \
   --partitions 1 --replication-factor 1 \
-  --config cleanup.policy=delete --config retention.ms=604800000 \
-  --config retention.bytes=1073741824 --config remote.storage.enable=false
+  --config cleanup.policy=delete \
+  --config "retention.ms=${accepted_retention_ms:?Reviewed retention time required}" \
+  --config "retention.bytes=${accepted_retention_bytes:?Reviewed byte limit required}" \
+  --config remote.storage.enable=false
 ```
 
 ## Paused application updates

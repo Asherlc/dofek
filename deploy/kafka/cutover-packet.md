@@ -210,18 +210,24 @@ Read-only metadata on November 8 reported `/mnt/dofek-data` size
 (about 36.9 GiB). This snapshot includes retained old trees. It is not a measured
 ingest peak or a reservation against database growth.
 
-| Route | Observed Redpanda byte retention | Time retention | Proposed hot-log byte target |
+| Route | Observed Redpanda byte retention | Time retention | Earlier unselected source-cap illustration |
 |---|---:|---:|---:|
 | Legacy | 40 GiB | 7 days | 1 GiB |
 | Live | Unlimited by bytes | 7 days | 1 GiB |
 | History | Unlimited by bytes | 7 days | 1 GiB |
 
-Quarantine uses the existing 1 GiB/seven-day policy. The six proposed targets
-sum to 6 GiB before segment overshoot, indexes, metadata and delayed cleanup.
-**The proposed source byte limits change the current replay policy.** They need
+Quarantine uses the existing 1 GiB/seven-day policy. The earlier six-cap
+illustration sums to 6 GiB before segment overshoot, indexes, metadata and delayed cleanup.
+**The earlier source byte limits illustrate a change to the current replay policy;
+they are not selected.** The user accepts shortening retention to fit disk in
+planning, with durability taking priority over speed. Exact limits still need
 explicit policy acceptance and measured burst/headroom review; current free space
-does not prove a safe outage window. The existing JSONL archive is durable but
-requires explicit replay outside broker retention. No topic policy has been
+does not prove a safe outage window. The existing JSONL archive is retained, but
+the [canonical runbook](../../docs/metric-stream-redpanda-r2-runbook.md#replay)
+says bounded replay is not shipped; recovery outside broker retention is not
+demonstrated. See the [window/durability assessment](replay-capacity-options.md)
+for 6/24/72-hour comparison targets, evidence gaps and the proposed aggregate
+observation. None is yet a measured feasible window. No topic policy has been
 changed. Kafka documents [retention](https://kafka.apache.org/44/configuration/topic-configs/).
 
 Proposed fresh namespace (generated for this review, not yet applied):

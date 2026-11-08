@@ -29,8 +29,9 @@ Changing the endpoint is an explicitly approved activation action, not a
 variable-name migration. The Connect v5 config, existing application image
 contracts, Postgres journals and ClickHouse 26.6 are retained.
 
-The existing JSONL archive remains the durable archive; it does not provide
-transparent Kafka remote reads. See the [archive configuration](../redpanda/metric-stream-r2-archive.connect.yml)
+The existing JSONL archive is retained; it does not provide transparent Kafka
+remote reads or a demonstrated operator restore. The [canonical replay runbook](../../docs/metric-stream-redpanda-r2-runbook.md#replay)
+states that bounded replay is not shipped. See the [archive configuration](../redpanda/metric-stream-r2-archive.connect.yml)
 and [qualification limits](hot-log-qualification.md). Already-managed tiered R2
 resources and Infisical bindings remain declared in
 [`../kafka-ts-r2-offload.tf`](../kafka-ts-r2-offload.tf), pending separate
