@@ -58,8 +58,30 @@ Shared services and database volumes were preserved.
 
 ## Release gate
 
-The new image must pass the existing read-only coverage inspection against the
-live catalog before another maintenance proposal. This receipt does not claim
-that production ownership coverage passed, that full CI completed, or that a
-new image has been deployed. Historical metric-ID audits remain complete and
-do not need to be repeated.
+The [review-image build](https://github.com/Asherlc/dofek/actions/runs/42458515073)
+passed for source `cb6c6810deb8abfe3cebb74f5d1603af3f399973`. Published image:
+`ghcr.io/asherlc/dofek@sha256:54e475a010854f7cf78ff5d102a78c3347c93320dae8258ff44603cb21c2f9c2`.
+Its ARM64 manifest is
+`sha256:105e5c0102b875cb1c110a43f96a2effb386b6fb6c3ac4aa58dd39a2d9b12e77`;
+registry revision and `SENTRY_RELEASE` match that source.
+
+At 07:26 UTC the new image's public inspector passed the production size gate,
+then failed closed on the unclassified physical table
+`analytics.__dbt_exchange_test_0_43766ed9821e11f1837d02420a000126`.
+Read-only system metadata at 07:27 UTC reported a MergeTree with one `test String`
+column, zero rows, zero bytes, and metadata last modified on July 17. No data-table
+scan, migration, table deletion or serving-service update was performed.
+
+That name and schema match the adapter's atomic-exchange capability probe. The
+[pinned dbt-clickhouse 1.10.3 source](https://github.com/ClickHouse/dbt-clickhouse/blob/v1.10.3/dbt/adapters/clickhouse/dbclient.py#L247-L282)
+creates two such tables and attempts to drop them in `finally`. This supports
+identifying a leftover probe; it does not establish the historical cleanup
+failure's cause. No table-name exemption or weakened ownership rule was added.
+
+Production ownership coverage remains **blocked**. A narrowly approved operator
+cleanup of this exact empty probe, followed by the unchanged inspector, is the
+proposed next step. Recheck its schema/emptiness and active use before any approved
+drop; stop on changed state. A new cutover still requires separate approval.
+[Exact-source CI](https://github.com/Asherlc/dofek/actions/runs/42458473396) was
+running without observed failed jobs when this receipt was recorded. Historical
+metric-ID audits remain complete and do not need to be repeated.
