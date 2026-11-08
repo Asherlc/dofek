@@ -1,0 +1,62 @@
+[
+  {
+    "name": "dofek_web",
+    "taskTemplateUnchanged": true,
+    "replicasRestored": true
+  },
+  {
+    "name": "dofek_worker",
+    "taskTemplateUnchanged": true,
+    "replicasRestored": true
+  },
+  {
+    "name": "dofek_analytics-worker",
+    "taskTemplateUnchanged": true,
+    "replicasRestored": true
+  },
+  {
+    "name": "dofek_cdc-health",
+    "taskTemplateUnchanged": true,
+    "replicasRestored": true
+  },
+  {
+    "name": "dofek_processing-reconciliation",
+    "taskTemplateUnchanged": true,
+    "replicasRestored": true
+  },
+  {
+    "name": "dofek_metric-stream-clickhouse-sink",
+    "taskTemplateUnchanged": true,
+    "replicasRestored": true
+  },
+  {
+    "name": "dofek_metric-stream-live-clickhouse-sink",
+    "taskTemplateUnchanged": true,
+    "replicasRestored": true
+  },
+  {
+    "name": "dofek_metric-stream-history-clickhouse-sink",
+    "taskTemplateUnchanged": true,
+    "replicasRestored": true
+  },
+  {
+    "name": "dofek_metric-stream-r2-archive",
+    "taskTemplateUnchanged": true,
+    "replicasRestored": true
+  },
+  {
+    "name": "dofek_metric-stream-live-r2-archive",
+    "taskTemplateUnchanged": true,
+    "replicasRestored": true
+  },
+  {
+    "name": "dofek_metric-stream-history-r2-archive",
+    "taskTemplateUnchanged": true,
+    "replicasRestored": true
+  },
+  {
+    "name": "dofek_redpanda",
+    "taskTemplateUnchanged": true,
+    "replicasRestored": true
+  }
+]

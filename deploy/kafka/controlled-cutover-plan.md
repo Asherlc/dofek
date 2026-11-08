@@ -1,6 +1,12 @@
 # Controlled Kafka cutover proposal
 
-Status: **preparation only; not approved for production execution**.
+Status: **Q16 approved; attempt blocked and production recovered to Redpanda**.
+CDC preparation rejected the production metadata before application migrations,
+updates or Kafka application writes. See the
+[recovery receipt](../../docs/evidence/kafka-cutover-attempt-20261108/README.md).
+Do not retry the original image until the catalog guard is corrected and a new
+release is qualified. The sequence below records the reviewed operation, not a
+new execution authorization.
 This replaces the unsafe full-stack transition described in the
 [cutover review](README.md#production-cutover--rollback-review-not-executed).
 Use a one-time operator session with stock Docker, Kafka, Infisical and the
@@ -47,6 +53,14 @@ The separate [native transport gate](../../docs/account-erasure-runbook.md#nativ
 also requires zero open requests.
 
 ## Before requesting execution approval
+
+Run the release image's existing read-only
+[`inspectClickHouseAccountErasureCoverage`](../../src/account-erasure/clickhouse-erasure-coverage.ts)
+against the production catalog **before pausing ingress**. Require complete
+coverage within its existing metadata bounds. The CDC `prepare` command is not
+a read-only substitute: it runs pre-CDC migrations before this inspection.
+Any coverage or budget failure blocks the maintenance window until a corrected
+image is qualified; do not increase limits or skip tables to make it pass.
 
 Preparation receipt: the private proposed v2 environment passed the existing
 service-environment renderer. Required credentials were present. Comparing key

@@ -1,0 +1,108 @@
+{
+  "status": "blocked_before_application_writes_recovered_to_redpanda",
+  "authorization": "Q16 A (Y)",
+  "applicationSource": "9a16c806fc0ebe587c5d4e6665ac888f87beefa2",
+  "applicationImage": "ghcr.io/asherlc/dofek@sha256:d8ca75d14b4da18057f3cf43d34889adf3d65c4927caccee69a8cee34e8120a1",
+  "writerPauseStartedAt": "2026-11-08T05:49:07Z",
+  "recoveryVerifiedAt": "2026-11-08T06:17:52Z",
+  "publicRootHttpStatus": 200,
+  "publicHealthzHttpStatus": 200,
+  "productionBroker": "Redpanda",
+  "redpandaReplicas": "1/1",
+  "kafkaReplicas": "0/0",
+  "webReplicas": "2/2",
+  "workerReplicas": "1/1",
+  "originalServiceSpecificationsCompared": 12,
+  "allTaskTemplatesUnchanged": true,
+  "allReplicaTargetsRestored": true,
+  "newKafkaTopicLatestOffsets": {
+    "metric-stream-v2": 0,
+    "metric-stream-live-v2": 0,
+    "metric-stream-history-v2": 0,
+    "metric-stream-v2.quarantine.v1": 0,
+    "metric-stream-live-v2.quarantine.v1": 0,
+    "metric-stream-history-v2.quarantine.v1": 0
+  },
+  "newPostgresMigrationRunnerStarted": false,
+  "newClickHouseMarkerMigrationsApplied": 0,
+  "consumerGroups": [
+    {
+      "name": "metric-stream-clickhouse-sink",
+      "state": "Stable",
+      "lag": 0,
+      "topic": "metric-stream-v1",
+      "partition": 0,
+      "offset": 1619570368,
+      "low": 1619570368,
+      "hwm": 1619570368
+    },
+    {
+      "name": "metric-stream-live-clickhouse-sink",
+      "state": "Stable",
+      "lag": 0,
+      "topic": "metric-stream-live-v1",
+      "partition": 0,
+      "offset": 245787043,
+      "low": 197305300,
+      "hwm": 245787043
+    },
+    {
+      "name": "metric-stream-history-clickhouse-sink",
+      "state": "Stable",
+      "lag": 0,
+      "topic": "metric-stream-history-v1",
+      "partition": 0,
+      "offset": 74445631,
+      "low": 55609019,
+      "hwm": 74445631
+    },
+    {
+      "name": "metric-stream-r2-archive",
+      "state": "Stable",
+      "lag": 0,
+      "topic": "metric-stream-v1",
+      "partition": 0,
+      "offset": 1619570368,
+      "low": 1619570368,
+      "hwm": 1619570368
+    },
+    {
+      "name": "metric-stream-live-r2-archive",
+      "state": "Stable",
+      "lag": 0,
+      "topic": "metric-stream-live-v1",
+      "partition": 0,
+      "offset": 245787043,
+      "low": 197305300,
+      "hwm": 245787043
+    },
+    {
+      "name": "metric-stream-history-r2-archive",
+      "state": "Stable",
+      "lag": 0,
+      "topic": "metric-stream-history-v1",
+      "partition": 0,
+      "offset": 74445631,
+      "low": 55609019,
+      "hwm": 74445631
+    }
+  ],
+  "blocker": {
+    "stage": "peerdb-cdc-contract prepare",
+    "message": "ClickHouse account erasure catalog exceeds its 500-table/1 MiB metadata budget; contact support before retrying",
+    "managedTables": 214,
+    "managedColumns": 3043,
+    "estimatedBytes": 1221082,
+    "limitBytes": 1048576,
+    "encodedColumnPairsBytes": 98023,
+    "tableEncodingBoundBytes": 80950,
+    "encodingMeasurementsAreNotAFullResponseMeasurement": true
+  },
+  "durableHostFixes": [
+    "f50908504: sudo for host directory/plugin bootstrap",
+    "919bed696: native Kafka hostname for startup self-resolution"
+  ],
+  "privateArtifactsRemoved": true,
+  "ownedCanaryVolumeRemoved": true,
+  "executionHeartbeatDeleted": "212316e6"
+}

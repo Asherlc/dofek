@@ -183,14 +183,21 @@ SSH. Unknown measured gates → **fail closed** (do not invent limits).
 
 ### Status snapshot
 
+**Latest operation:** Q16 approved the maintenance cutover, but CDC preparation
+failed its catalog-size guard. Pre-write recovery completed at
+2026-11-08T06:17:52Z: Redpanda 1/1, Kafka 0/0, web 2/2, worker 1/1 and all six old
+consumer groups at zero lag. Global topic values were restored to v1; both data
+directories remain. [Receipt and blocking gate](../../docs/evidence/kafka-cutover-attempt-20261108/README.md).
+The original image must not be retried without a qualified catalog fix.
+
 | Gate | State |
 |---|---|
 | TF / Infisical `KAFKA_TIERED_STORAGE_*` ×5 | **DONE** — [apply-verification.json](../../docs/evidence/kafka-infra-plan-review-20261107/apply-verification.json) |
 | Bucket `dofek-kafka-ts-offload` | **DONE** — HEAD 200, ListObjects 0 at verify |
 | Retired `dofek-pulsar-qualification` | **GONE** — HEAD 404 after approved cleanup+destroy |
 | `KAFKA_CLUSTER_ID` / `KAFKA_BROKERS` | **Resolved** — do not regenerate |
-| Distinct v2 `METRIC_STREAM_*` for **all** routes | **Pending approval** (secret value edits) |
-| Drain + cutover execution | **Not approved** |
+| Distinct v2 `METRIC_STREAM_*` for **all** routes | Q16 approved; applied then restored to v1 during pre-write recovery |
+| Drain + cutover execution | Q16 attempt blocked by catalog guard; production restored; new qualified artifact required |
 | `/mnt/dofek-data/redpanda` deletion | **Not approved** — retain |
 
 ### Required approvals (before any step that mutates prod)
@@ -233,7 +240,8 @@ post-pause drain; R2 newest-object age (names/LastModified only); capacity
 review including the uncapped collector; and a reviewed deployment sequence
 that keeps producers and consumers stopped until Kafka and its topics are ready.
 Decision E is complete; do not repeat the historical identity audits or backlog
-recovery. Kafka is not on the host yet, as expected before approval.
+recovery. Kafka is now deployed at zero replicas after the Q16 pre-write recovery;
+its empty application topics and data directory are retained.
 
 **Do not dispatch the full-stack workflow for this cutover.** Its
 [dependency-stack step](../../.github/workflows/deploy-web-stack.yml) applies

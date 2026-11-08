@@ -51,7 +51,7 @@ High-volume sensor samples ──────┴─> Kafka-protocol log ──�
 - High-volume `metric_stream` events bypass Postgres. The hot ingest log is a
   Kafka-protocol broker: **local Compose / checked-in `deploy/stack.yml` target
   Apache Kafka 4.4**; **production today still runs Redpanda** (`REDPANDA_BROKERS`)
-  until an approved cutover
+  until a successful cutover
   ([cutover review](deploy/kafka/README.md#production-cutover--rollback-review-not-executed)).
   Cloudflare R2 is the durable JSONL archive (via [Redpanda Connect](https://docs.redpanda.com/redpanda-connect/components/inputs/redpanda/));
   ClickHouse is the serving copy.
