@@ -1,117 +1,56 @@
-# Kafka broker candidate
+# Kafka broker migration
 
-**Current decision: Aiven is rejected under the user's no-niche-dependencies
-requirement. Stop this implementation.** The earlier late-upload risk acceptance
-did not approve the plugin's adoption/support profile. The unfinished stock-Aiven
-changes were withdrawn; the checked-in hot-log alternative remains withdrawn too.
-No current candidate is approved for merge or activation.
+This workspace/PR owns the **broker migration layer**. The separate
+[`kafka-tiered-storage` workspace/branch](https://github.com/Asherlc/dofek/tree/kafka-tiered-storage)
+owns upstream Aiven/R2 activation, remote deletion verification and tiered
+qualification. That branch is stacked on this one so it reuses the existing
+broker integration and structural checkpoints without duplicating them.
 
-The established packaged Kafka alternative identified is Confluent's own
-[Tiered Storage](https://docs.confluent.io/platform/current/clusters/tiered-storage.html),
-which requires an [enterprise license](https://docs.confluent.io/platform/current/installation/license.html).
-Its supported object-store list does not include R2. This is a concrete license
-and backend decision, not authorization to replace the broker distribution or
-buy services. Apache Kafka itself does not ship an out-of-the-box production
-[RemoteStorageManager](https://kafka.apache.org/43/operations/tiered-storage/).
-Select an established, supported platform and confirm licensing/backend fit
-before further implementation. The sections below preserve prior investigation.
+**Source split only: no standalone hot-log production activation or merge order
+is approved.** The user's final objective remains Kafka WITH upstream Aiven
+tiered storage. The accepted late-upload/orphan residual belongs to that separate
+tiered-storage candidate. Neither source layer is currently activation-ready.
 
-**Blocked: Kafka WITH tiered storage is the required objective.** The user
-explicitly rejected advancing hot-log-only as the migration solution. The
-checked-in tree still reflects that withdrawn alternative; its remote-disabled
-broker and local-only worker guard are not a deployable tiered candidate. Do not
-merge or activate it. Preserve its evidence, managed R2 resources and old data.
-See the [bounded tiered review](qualification.md#tiered-storage-required-quiescence-review).
-The user subsequently [accepted the narrow late-upload risk](tiered-fencing-proposal.md#accepted-exception-and-intended-stock-path).
-That earlier direction is superseded by the rejection above; the custom
-write-fencing proposal is also not selected.
+## This layer
 
-This branch extracts the broker candidate from frozen
-[PR #3231](https://github.com/Asherlc/dofek/pull/3231), commit `ed26f38b8`.
-It does not authorize or perform activation. Production remains on Redpanda.
+- Pinned stock Kafka 4.4.0 broker, native `hostname: kafka`, single broker/log
+  directory and existing protocol-compatible application images.
+- Existing `REDPANDA_BROKERS` contracts for applications/Connect; separately
+  repaired history image keeps `KAFKA_BROKERS`. No application transport overhaul,
+  migrations 0178/0179, erasure redesign or ClickHouse upgrade.
+- Structural cluster/topic-generation checkpoints and the native local-file/
+  retained-Redpanda completion guard. The tiered layer extends this same hook;
+  the local-only guard does not certify remote deletion.
+- API/topic readiness, environment rendering and reviewed broker-only release
+  boundaries. Operator JVMs run outside the broker cgroup.
 
-## Current tree: withdrawn hot-log alternative
+The fresh host source is `/mnt/dofek-data/kafka-broker/data`, mounted as
+`/var/lib/kafka/data` in Kafka and read-only at `/var/lib/dofek/kafka-data` in the
+worker. The tiered layer uses this same source, not another Kafka data tree.
+No production directory is created, reused, moved, formatted or removed here.
+Original Redpanda `/mnt/dofek-data/redpanda` and aborted Kafka
+`/mnt/dofek-data/kafka/data` remain preserved.
 
-The canonical broker stanza in `../stack.yml` uses stock Apache Kafka 4.4.0 as
-a hot log, with remote storage explicitly disabled. There is no alternate overlay
-to remember and no RSM plugin or credential in the broker service. The normal
-deployment applies this same base configuration. See the
-[Kafka release](https://kafka.apache.org/blog/2026/10/22/apache-kafka-4.4.0-release-announcement/)
-and [broker configuration](https://kafka.apache.org/44/configuration/broker-configs/).
+The base broker configuration has remote storage disabled because the plugin
+and remote verifier belong to the dependent tiered layer. This is a review
+boundary, not selection of hot-log-only as the production solution. See
+[Kafka's tiered-storage configuration](https://kafka.apache.org/44/operations/tiered-storage/).
 
-The candidate uses the fresh host path `/mnt/dofek-data/kafka-hot-log/data`,
-mounted at `/var/lib/kafka/data` in the broker and read-only at
-`/var/lib/dofek/kafka-data` in the worker. It does not reuse, move or delete the
-aborted tiered broker tree at `/mnt/dofek-data/kafka/data`. The native
-`hostname: kafka` is retained; operator JVMs run outside the broker memory limit.
+Already-managed R2/Terraform declarations remain here solely to preserve applied
+resources. Removing them to make the file split look cleaner could schedule
+destruction of existing buckets, credentials or bindings. No Terraform apply or
+decommission is authorized; see [Terraform resource lifecycle](https://developer.hashicorp.com/terraform/language/meta-arguments/lifecycle).
 
-`scripts/deploy-service-environment.ts` renders a private `kafka.env` from
-`KAFKA_CLUSTER_ID` only, renamed to the stock image's `CLUSTER_ID`. Existing
-applications, legacy/live ClickHouse sinks and Connect archives retain
-`REDPANDA_BROKERS`. The separately repaired history image already requires
-`KAFKA_BROKERS`; preserve its contract too. See the actual-image
-[qualification record](qualification.md).
-Changing the endpoint is an explicitly approved activation action, not a
-variable-name migration. The Connect v5 config, existing application image
-contracts, Postgres journals and ClickHouse 26.6 are retained.
+## Review and release boundary
 
-The existing JSONL archive is retained; it does not provide transparent Kafka
-remote reads or a demonstrated operator restore. The [canonical replay runbook](../../docs/metric-stream-redpanda-r2-runbook.md#replay)
-states that bounded replay is not shipped. See the [archive configuration](../redpanda/metric-stream-r2-archive.connect.yml)
-and [qualification limits](hot-log-qualification.md). Already-managed tiered R2
-resources and Infisical bindings remain declared in
-[`../kafka-ts-r2-offload.tf`](../kafka-ts-r2-offload.tf), pending separate
-decommission approval. This branch must not schedule their destruction; see
-[Terraform lifecycle protection](https://developer.hashicorp.com/terraform/language/meta-arguments/lifecycle#prevent_destroy).
+Historical protocol/native proofs and image pins remain in
+[qualification.md](qualification.md). Their passes do not transfer to the new
+tiered runtime. Earlier combined tiering/fencing documents are historical context;
+current remote implementation and qualification are owned by the dependent branch.
 
-## Activation prerequisites
-
-The old offset check is insufficient for physical file removal. The narrow
-worker release adds the [native storage guard](../../src/account-erasure/kafka-log-storage.ts)
-to actual retention completion, verifies structural cluster/topic generations,
-and blocks while any entry remains in the read-only original Redpanda root.
-See the [native proof and its limits](hot-log-qualification.md). The unresolved
-tiered-copy fencing guarantee is avoided by the canonical hot-log configuration,
-not asserted to have been solved.
-
-Normal application deployment now requires an already active Kafka service and
-rejects an active Redpanda service before deployment mutations. It verifies
-broker API readiness and the three configured source topics and quarantine
-topics before the normal application release. It does not perform initial
-topic creation, change offsets, or choose a new topic generation.
-
-Before activation, a fresh broker-only packet must resolve and record:
-
-1. The digest-pinned narrow worker image, native mount checks and old-generation
-   request preflight. Missing historical generation fields remain fail-closed.
-2. Current immutable image references for each service, including the separately
-   repaired history sink; do not collapse these into one `APP_IMAGE`.
-3. Writer pause/drain boundaries and all six consumer/archive routes, their
-   source topics and committed offsets on the old cluster.
-4. Explicit new-cluster topic identity and archive-key collision prevention.
-   Kafka cluster offsets restart independently; do not reuse archive identities
-   without proving they cannot overwrite old objects.
-5. Explicit hot-log topic creation/configuration, disk capacity and retention
-   policy margin. Six 1 GiB targets are not a hard disk ceiling.
-6. Reversal before the first Kafka write, forward recovery after it, retained
-   Redpanda data, and final image/route/lag evidence.
-
-Use stock [Swarm service operations](https://docs.docker.com/reference/cli/docker/service/update/)
-for a separately approved broker-only cutover. Do not use the full-stack
-application release, pruning, old cutover scripts, or old maintenance approval
-for that first activation. The [cutover packet](cutover-packet.md) records current
-digests and ordered boundaries. Its stop gates must be closed before final
-production mutation commands are reviewed.
-
-## Evidence ownership
-
-The frozen source's [plugin provenance](https://github.com/Asherlc/dofek/blob/ed26f38b8/docs/evidence/kafka-ts-lab-20261106/plugin-provenance.json),
-[dual512 qualification](https://github.com/Asherlc/dofek/blob/ed26f38b8/docs/evidence/kafka-ts-dual512-fix-20261106/CORE_PROOF.json),
-and [aborted cutover receipt](https://github.com/Asherlc/dofek/blob/ed26f38b8/docs/evidence/kafka-cutover-attempt-20261108/README.md)
-remain historical records. Reuse only evidence for identical inputs. These
-records do not qualify unchanged deployed clients against this extracted tree.
-
-History-sink identity fixes, general CI/development documentation and retired
-Pulsar cleanup are separate residual work. Application Kafka naming changes,
-native publisher changes and migration 0178 transport acknowledgements are
-deferred rather than required by the Kafka protocol transition.
+The [cutover packet](cutover-packet.md) and [operator proposal](operator-proposal.md)
+are review material. Main-branch CI can trigger application deployment, so the
+two source layers need a coordinated merge/release sequence: merging a local-only
+parent after tiered activation must not re-disable remote storage. No automation
+change, merge, deployment, pause, topic mutation, credential edit, old-data
+retirement or cloud experiment is authorized by this split.

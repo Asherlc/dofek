@@ -539,11 +539,11 @@ jobs:
           set -euo pipefail
           # Retain /mnt/dofek-data/redpanda until metric-stream cutover drain completes.
           # Kafka uses a new tree; never format or reuse the Redpanda data dir.
-          mkdir -p /mnt/dofek-data/kafka-hot-log/data
+          mkdir -p /mnt/dofek-data/kafka-broker/data
           # apache/kafka:4.4.0 runs as appuser (uid/gid 1000) — same stock pattern as
           # postgres timescaledb-ha bind ownership (deploy/oracle-free/cloud-init.yml).
-          chown 1000:1000 /mnt/dofek-data/kafka-hot-log/data
-          for path in /mnt/dofek-data/postgres /mnt/dofek-data/clickhouse /mnt/dofek-data/redpanda /mnt/dofek-data/kafka-hot-log/data /mnt/dofek-data/databasus /mnt/dofek-data/cloudbeaver /mnt/dofek-data/redis /mnt/dofek-data/peerdb-catalog /mnt/dofek-data/peerdb-minio; do
+          chown 1000:1000 /mnt/dofek-data/kafka-broker/data
+          for path in /mnt/dofek-data/postgres /mnt/dofek-data/clickhouse /mnt/dofek-data/redpanda /mnt/dofek-data/kafka-broker/data /mnt/dofek-data/databasus /mnt/dofek-data/cloudbeaver /mnt/dofek-data/redis /mnt/dofek-data/peerdb-catalog /mnt/dofek-data/peerdb-minio; do
             if [ ! -d "$path" ]; then
               echo "::error::Required host bind mount path is missing: $path"
               exit 1

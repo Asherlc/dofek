@@ -1,10 +1,11 @@
 # Kafka protocol qualification — November 8, 2026
 
-**Current status: Aiven is rejected as insufficiently established for the user's
-requirements. Implementation stopped; no candidate is ready for release.** The
-stock-Aiven work was withdrawn; see the [current platform decision](README.md).
-The earlier specific late-upload residual risk was accepted, including the
-possibility of indefinite orphan retention, but does not override this rejection.
+**Current scope: broker migration layer; upstream Aiven tiering is selected and
+owned by the separate dependent `kafka-tiered-storage` branch.** See
+[the current split and release gates](README.md). The dated sections below
+preserve combined investigation. Local/protocol qualification does not transfer
+to the new tiered runtime. The accepted late-upload residual includes indefinite
+orphan retention; no production action is approved.
 See the
 [accepted exception](tiered-fencing-proposal.md#accepted-exception-and-intended-stock-path).
 Earlier sections are chronological evidence, including the now-withdrawn hot-log

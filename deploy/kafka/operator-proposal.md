@@ -1,24 +1,12 @@
 # Broker-only operator proposal
 
-**Aiven direction also withdrawn:** the user requires an established supported
-dependency. See the [current platform decision](README.md); the accepted late-PUT
-residual did not approve the plugin's adoption/support profile.
-
-**Withdrawn: hot-log-only does not meet the required tiered-storage objective.**
-Do not execute these commands. They preserve the rejected alternative for review;
-they are not a tiered-storage operator packet or an approved production action.
-See the [current blocker](qualification.md#tiered-storage-required-quiescence-review).
-The [narrow late-upload risk is now accepted](tiered-fencing-proposal.md#accepted-exception-and-intended-stock-path);
-stock tiered candidate work resumes without a custom plugin. These historical
-hot-log commands remain withdrawn until replaced by a qualified tiered packet.
-
-**Review only. No production command below is authorized by approval of the
-release order.** Read the [cutover packet](cutover-packet.md) first. This proposal
-uses existing Docker/Kafka commands, not the normal stack/Terraform workflow.
-The three fresh source names and exact shorter source retention policy still
-require acceptance and measured capacity review. The [durability assessment](replay-capacity-options.md)
-supersedes treating 1 GiB/source as a selected target; archive recovery is not
-operator-ready and RF1 has no independent broker copy.
+**Review only; do not execute.** This workspace owns the broker migration layer;
+upstream Aiven tiering and remote erasure qualification belong to the dependent
+workspace. See [the split and coordinated release gate](README.md) and
+[cutover packet](cutover-packet.md). No standalone hot-log activation is approved.
+These historical commands require a refreshed combined release sequence, actual
+image/configuration proof, retention/capacity review and old-data disposition.
+No production mutation, merge, pause, credential edit or retirement is approved.
 
 ## Observed service contract
 
@@ -70,7 +58,7 @@ Keep replicas at zero while replacing the stopped Kafka service's specification.
 Preserve its current `CLUSTER_ID`; do not print it, reformat an existing tree or
 reuse the old data directory. Production host directory creation/chown is an
 explicit mutation requiring approval. The intended fresh directory is
-`/mnt/dofek-data/kafka-hot-log/data`, owned by 1000:1000.
+`/mnt/dofek-data/kafka-broker/data`, owned by 1000:1000.
 
 The existing service has precisely the old data and plugin mounts. After
 reviewing its frozen specification, these stock Bash/jq/Docker commands replace
@@ -91,7 +79,7 @@ docker service update dofek_kafka \
   "${remove_environment[@]}" \
   --image apache/kafka:4.4.0@sha256:833b867a9585a141da455dc2b57431c65cbccb27f11c91f694444cca9f777e0f \
   --mount-rm /plugins --mount-rm /var/lib/kafka/data \
-  --mount-add type=bind,source=/mnt/dofek-data/kafka-hot-log/data,target=/var/lib/kafka/data \
+  --mount-add type=bind,source=/mnt/dofek-data/kafka-broker/data,target=/var/lib/kafka/data \
   --env-add KAFKA_HEAP_OPTS='-Xmx1G -Xms1G' \
   --env-add KAFKA_LOG_DIRS=/var/lib/kafka/data \
   --env-add KAFKA_PROCESS_ROLES=broker,controller \
@@ -180,7 +168,7 @@ environment/secrets and job-files volume retained. Proposed additional flags:
 docker service update dofek_worker \
   --replicas 0 \
   --image ghcr.io/asherlc/dofek@sha256:a498aaa503db452480fdd43a71cc8799aa2564eea30a070e0296a08effc48620 \
-  --mount-add type=bind,source=/mnt/dofek-data/kafka-hot-log/data,target=/var/lib/dofek/kafka-data,readonly \
+  --mount-add type=bind,source=/mnt/dofek-data/kafka-broker/data,target=/var/lib/dofek/kafka-data,readonly \
   --mount-add type=bind,source=/mnt/dofek-data/redpanda,target=/var/lib/dofek/retired-broker-data,readonly \
   --entrypoint node \
   --args '--env-file=.env --experimental-strip-types --enable-source-maps --disable-warning=ExperimentalWarning --import ./src/opentelemetry-hook.mjs --import ./src/instrumentation.ts src/jobs/worker.ts'

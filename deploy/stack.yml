@@ -133,7 +133,7 @@ services:
       ACCOUNT_ERASURE_LEDGER_R2_BUCKET: dofek-account-erasure-ledger
     volumes:
       - job_files:/app/job-files
-      - /mnt/dofek-data/kafka-hot-log/data:/var/lib/dofek/kafka-data:ro
+      - /mnt/dofek-data/kafka-broker/data:/var/lib/dofek/kafka-data:ro
       - /mnt/dofek-data/redpanda:/var/lib/dofek/retired-broker-data:ro
     healthcheck:
       test:
@@ -347,7 +347,7 @@ services:
           cpus: "1.5"
           memory: 13G
 
-  # Canonical hot-log-only Kafka; JSONL archive remains independent.
+  # Broker migration layer; the dependent tiered-storage branch adds RSM.
   kafka:
     image: apache/kafka:4.4.0@sha256:833b867a9585a141da455dc2b57431c65cbccb27f11c91f694444cca9f777e0f
     # Self-advertised name must resolve before Swarm marks the broker ready.
@@ -371,7 +371,7 @@ services:
       KAFKA_REMOTE_LOG_STORAGE_SYSTEM_ENABLE: "false"
     volumes:
       # Fresh hot log; retain the aborted tiered broker tree separately.
-      - /mnt/dofek-data/kafka-hot-log/data:/var/lib/kafka/data
+      - /mnt/dofek-data/kafka-broker/data:/var/lib/kafka/data
     healthcheck:
       # Port-liveness only. Deploy waits on an external kafka-broker-api-versions client
       # before producers attach. Never run operator JVMs inside this cgroup.

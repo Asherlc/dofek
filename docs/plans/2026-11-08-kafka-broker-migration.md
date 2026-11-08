@@ -1,11 +1,14 @@
 # Kafka broker migration
 
-**Latest status: blocked on selection of an established tiered-storage platform.**
-The user rejected the Aiven dependency under the no-niche-dependencies constraint.
-Unfinished Aiven implementation was withdrawn. Earlier risk acceptance below
-does not authorize continuing it. See the [supported Kafka alternative and
-license/backend decision](../../deploy/kafka/README.md). No platform pivot,
-purchase, merge or production action is approved.
+**Latest scope: broker migration only; tiered storage is a separate workspace.**
+The user selected upstream Aiven, then requested this further source split.
+The `kafka-tiered-storage` branch is stacked on this branch and owns plugin/R2
+configuration, remote erasure checks and qualification. This layer owns protocol
+transition, existing image contracts, structural checkpoints and native local/
+retired-Redpanda checks. See the [current boundaries](../../deploy/kafka/README.md).
+No standalone hot-log activation, merge, purchase or production action is approved.
+The remaining dated text preserves earlier combined investigation, not ownership
+of the new tiered implementation.
 
 Status: **blocked; Kafka WITH tiered storage is required**. The user rejected
 hot-log-only as the release direction. Current remote-disabled source/worker

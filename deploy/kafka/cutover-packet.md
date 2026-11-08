@@ -1,23 +1,11 @@
 # Broker-only cutover qualification packet
 
-**Superseding stop gate: Aiven is rejected under the no-niche-dependencies
-requirement.** The earlier accepted residual is not platform approval. See the
-[current platform decision](README.md); no candidate or commands here are ready
-for activation.
-
-Status: **withdrawn hot-log alternative; blocked for merge and activation**.
-Kafka WITH tiered storage is the user's required objective. Commands and release
-assumptions below are retained review artifacts, not a tiered cutover packet.
-The current tree is hot-log-only and the worker guard rejects remote storage;
-passing checks do not qualify that tree for the required migration. See the
-[tiered proof boundary](qualification.md#tiered-storage-required-quiescence-review).
-The user has since [accepted the specific late-upload residual](tiered-fencing-proposal.md#accepted-exception-and-intended-stock-path).
-The custom fencing plugin is not selected; stock tiered runtime/configuration and
-ordinary deletion verification still need qualification. This acceptance does
-not make the hot-log commands below suitable for activation.
-Capacity/policy, merge sequencing and retirement gates below must close before final mutation
-commands and a maintenance window are approved. Do not reuse the aborted combined
-release packet. See [the aborted attempt](https://github.com/Asherlc/dofek/blob/ed26f38b8/docs/evidence/kafka-cutover-attempt-20261108/README.md).
+**Review only: broker migration layer, with tiered storage in the dependent workspace.**
+The user selected upstream Aiven and requested separate workspaces. See the
+[current ownership and release gates](README.md). The final objective remains
+Kafka WITH tiering; no standalone hot-log activation, merge or production action
+is approved. Historical commands below must be reconciled with the tiered packet
+and actual image/configuration qualification before a maintenance window.
 
 ## Pinned application contract
 
@@ -53,7 +41,7 @@ render of those two files verified the following effective bindings:
 |---|---|
 | Kafka image | `apache/kafka:4.4.0@sha256:833b867a9585a141da455dc2b57431c65cbccb27f11c91f694444cca9f777e0f` |
 | Remote storage | `KAFKA_REMOTE_LOG_STORAGE_SYSTEM_ENABLE=false`; no plugin mount or credentials |
-| Broker data | `/mnt/dofek-data/kafka-hot-log/data` → `/var/lib/kafka/data` |
+| Broker data | `/mnt/dofek-data/kafka-broker/data` → `/var/lib/kafka/data` |
 | Worker data view | Same host source → `/var/lib/dofek/kafka-data:ro` |
 | Retired Redpanda hold | Original `/mnt/dofek-data/redpanda` → `/var/lib/dofek/retired-broker-data:ro` |
 | Worker image | `ghcr.io/asherlc/dofek@sha256:a498aaa503db452480fdd43a71cc8799aa2564eea30a070e0296a08effc48620` (review candidate only) |
