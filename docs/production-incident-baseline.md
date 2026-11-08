@@ -35952,7 +35952,7 @@ were pre-merge corrections; no production deployment occurred.
 
 - **Failure / evidence:** In [CI run 42448935720](https://github.com/Asherlc/dofek/actions/runs/42448935720), job `Test / SwiftLint`, step `Install SwiftLint`, command `brew install swiftlint` failed before lint execution. The first fatal download error was `curl: (6) Could not resolve host: ghcr.io` while fetching the SwiftLint 0.65.1 bottle. The aggregate lint job then failed because its prerequisite failed.
 - **Cause / impact:** Runner DNS could not resolve the registry hostname. This is a tool-installation failure, not an observed Swift source violation. The docs-only head remains blocked; the deployed history image's exact-source CI had already passed and production recovery remains complete.
-- **Disposition:** Unresolved for this run. No source workaround, timeout, retry loop or disabled gate was added. A subsequent successful installation and actual lint execution are required before claiming this check passed.
+- **Disposition:** The original run was later cancelled by the next documentation push. In [subsequent run 42450059560](https://github.com/Asherlc/dofek/actions/runs/42450059560), `Test / SwiftLint` completed successfully without a source workaround, timeout, retry loop or disabled gate. The full subsequent run was still in progress when this receipt was written; its successful leaf check does not establish full release readiness.
 - **Retrospective:** Inspect the individual failed job through the Actions job-log API when the parent run is still executing. Reuse the existing CI diagnosis workflow; no additional framework or skill is needed.
 
 ## 2026-11-08 — History recovery complete; two healthy zero-lag checks

@@ -249,6 +249,11 @@ after the transition, not a prerequisite for running an unsafe sequence.
 
 ### Stock operator sequence (review only — do not run)
 
+The [controlled cutover proposal](controlled-cutover-plan.md) records the
+replacement procedure under preparation, the qualified application image,
+migration prerequisites and actual producer census. It is not execution
+approval; its private command packet and release checks must be complete first.
+
 Order is mandatory. **No dual-write** at any step (never `REDPANDA_BROKERS` and
 `KAFKA_BROKERS` producers together; never same-topic resume into archive).
 
