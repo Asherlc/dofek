@@ -35696,3 +35696,21 @@ mutation score93.04%(401 killed,28 survived,2 uncovered), TypeScript and Biome
 pass. This follow-up changes no production behavior or mutation gates.
 Remote CI confirmation is pending. Patch coverage passed when integration
 uploads arrived; its earlier partial-report failure needed no configuration fix.
+
+### Integration shard runtime follow-up
+
+[Integration shard1](https://github.com/Asherlc/dofek/actions/runs/42504180651/job/128803672202)
+hit the existing12-minute step deadline without an assertion failure. Structured
+module timings showed274s in activity-integrity repair and224s in ClickHouse
+erasure, including154s in the400k/800k resource case. The resource fixture issued
+separate HTTP absence queries per captured part. It now checks the same exact
+table/part-hash pairs in existing bounded pages, preserving both system.parts
+and projection_parts access, min(_state), metadata-zero and survivor assertions.
+The two bound string arrays use stock arrayZip, avoiding custom tuple serialization.
+
+Larger seed inserts were rejected by the existing128MiB query cap; original10k
+seed batches were retained. No timeout, memory cap, row count or production code
+changed. Final focused case on exact26.6.1.1193 passed in109.7s with retry=0;
+TypeScript and Biome passed. This local result is not a same-runner performance
+comparison or proof that the whole remote shard fits its deadline; new CI must
+confirm that. No unrelated activity-integrity repair changes were made.

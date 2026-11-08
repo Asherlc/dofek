@@ -459,25 +459,32 @@ describe("ClickHouse account erasure (integration)", () => {
           let cursor: string | undefined;
           do {
             const page = await store.readPhysicalPage("physical_part", stage, cursor);
-            for (const entry of page.entries)
+            if (page.entries.length > 0) {
+              const parts = page.entries.map((entry) => [
+                entry.value[2],
+                createHash("sha256").update(Buffer.from(entry.value[4], "base64")).digest("hex"),
+              ]);
               for (const [systemTable, column] of [
                 ["parts", "name"],
                 ["projection_parts", "parent_name"],
-              ] as const)
-                expect(
-                  await queryCount(
-                    client,
-                    `SELECT count() AS count,min(_state) AS state FROM (SELECT database,table,${column},_state FROM system.${systemTable})
-                WHERE database={database:String} AND table={table:String} AND lower(hex(SHA256(${column})))={part_hash:String}`,
-                    {
-                      database,
-                      table: entry.value[2],
-                      part_hash: createHash("sha256")
-                        .update(Buffer.from(entry.value[4], "base64"))
-                        .digest("hex"),
-                    },
-                  ),
-                ).toBe(0);
+              ] as const) {
+                const result = await client.query({
+                  query: `SELECT count() AS count,min(_state) AS state FROM (SELECT database,table,${column},_state FROM system.${systemTable})
+                    WHERE database={database:String}
+                    AND (table,lower(hex(SHA256(${column})))) IN (
+                      SELECT arrayJoin(arrayZip({part_tables:Array(String)},{part_hashes:Array(String)}))
+                    )`,
+                  query_params: {
+                    database,
+                    part_tables: parts.map(([table]) => table),
+                    part_hashes: parts.map(([, hash]) => hash),
+                  },
+                  use_multipart_params: true,
+                  format: "JSONEachRow",
+                });
+                expect(countRowsSchema.parse(await result.json())[0].count).toBe(0);
+              }
+            }
             cursor = page.nextCursor ?? undefined;
           } while (cursor);
           for (const table of [
