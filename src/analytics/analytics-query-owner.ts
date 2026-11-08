@@ -478,7 +478,9 @@ async function withOwnedQueries<T>(
       if (!outcome || "value" in outcome) outcome = { error };
     } finally {
       session.removeListener("error", onError);
-      session.release(connectionError !== null || releaseFailed);
+      // A client-side timeout does not cancel a queued backend lock request.
+      // Discard a session whose acquisition never completed, even before admit.
+      session.release(!locked || connectionError !== null || releaseFailed);
     }
   }
   if (!outcome) throw new Error("Analytics query owner did not produce an outcome");

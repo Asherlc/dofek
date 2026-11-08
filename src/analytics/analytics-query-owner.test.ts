@@ -690,7 +690,7 @@ describe("analytics query owner serial registration and release boundaries", () 
     expect(context.locks).toEqual([]);
     expect(context.unlocks).toEqual([]);
     expect(context.quiesced).toEqual([]);
-    expect(context.release).toHaveBeenCalledWith(false);
+    expect(context.release).toHaveBeenCalledWith(true);
   });
 
   it("replays the same pending intent without treating it as a foreign fence", async () => {

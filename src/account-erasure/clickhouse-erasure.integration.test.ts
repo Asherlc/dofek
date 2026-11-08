@@ -23,6 +23,7 @@ import {
 } from "../metric-stream/clickhouse-table.ts";
 import {
   type ClickHouseAccountErasureOptions,
+  clickHouseAccountErasurePredicates,
   eraseClickHouseAccount as executeAccountErasure,
   prepareClickHouseAccountErasure,
   prepareClickHouseAccountErasureIdentifiers,
@@ -859,13 +860,14 @@ describe("ClickHouse account erasure (integration)", () => {
     }
   }, 120000);
 
-  it("honors explicit nullable ownership before a colliding user_profile identity", async () => {
+  it("honors explicit nullable ownership and captures ClickHouse-only operation roots", async () => {
     const postgres = await setupTestDatabase();
     const database = databaseName("account_erasure_profile_owner");
     const userId = randomUUID();
     const otherUserId = randomUUID();
     const ownedActivity = randomUUID();
     const excludedActivity = randomUUID();
+    const operationId = randomUUID();
     const leaseOwner = "profile-owner-fixture";
     await createDatabase(client, database);
     try {
@@ -887,6 +889,13 @@ describe("ClickHouse account erasure (integration)", () => {
       await client.command({
         query: `CREATE TABLE ${database}.user_profile (id UUID,user_id Nullable(UUID),activity_id UUID) ENGINE=MergeTree ORDER BY id`,
         clickhouse_settings: { log_queries: 0 },
+      });
+      await client.command({
+        query: `CREATE TABLE ${database}.processing_operation (id UUID,user_id UUID) ENGINE=MergeTree ORDER BY id`,
+      });
+      await client.command({
+        query: `INSERT INTO ${database}.processing_operation VALUES ({operation:UUID},{user:UUID})`,
+        query_params: { operation: operationId, user: userId },
       });
       await client.command({
         query: `INSERT INTO ${database}.user_profile VALUES
@@ -920,11 +929,52 @@ describe("ClickHouse account erasure (integration)", () => {
         ownedActivity,
       ]);
       await expect(store.assertClosureComplete("initial")).resolves.toBeUndefined();
+      expect(await store.findPresent("operation", [operationId])).toEqual([operationId]);
     } finally {
       await dropDatabase(client, database);
       await postgres.cleanup();
     }
   }, 120000);
+
+  it("deletes UUID-owned rows using uppercase request identifiers", async () => {
+    const database = databaseName("account_erasure_uuid_case");
+    const userId = "ABCDEFAB-1234-4567-89AB-ABCDEFABCDEF";
+    await createDatabase(client, database);
+    try {
+      await client.command({
+        query: `CREATE TABLE ${database}.owned_rows (user_id UUID) ENGINE=MergeTree ORDER BY user_id`,
+      });
+      await client.command({
+        query: `INSERT INTO ${database}.owned_rows VALUES ({user:UUID})`,
+        query_params: { user: userId },
+      });
+      const [table] = await inspectClickHouseAccountErasureCoverage(client, {
+        managedDatabases: [database],
+      });
+      if (!table) throw new Error("Missing fixture table");
+      for await (const predicate of clickHouseAccountErasurePredicates(table, userId, {
+        readPage: async () => ({ entries: [], nextCursor: null }),
+      })) {
+        expect(
+          await queryCount(
+            client,
+            `SELECT count() AS count FROM ${database}.owned_rows WHERE ${predicate.sql}`,
+            predicate.queryParameters,
+          ),
+        ).toBe(1);
+        await client.command({
+          query: `ALTER TABLE ${database}.owned_rows DELETE WHERE ${predicate.mutationSql}`,
+          query_params: predicate.mutationQueryParameters,
+          clickhouse_settings: { mutations_sync: "2" },
+        });
+      }
+      expect(await queryCount(client, `SELECT count() AS count FROM ${database}.owned_rows`)).toBe(
+        0,
+      );
+    } finally {
+      await dropDatabase(client, database);
+    }
+  });
 
   it("typed ownership coverage accepts the current production bootstrap schemas", async () => {
     await inspectClickHouseAccountErasureCoverage(client);

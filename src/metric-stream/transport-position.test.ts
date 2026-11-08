@@ -21,11 +21,8 @@ describe("metricStreamPositionSchema", () => {
   it("rejects non-kafka transport coordinates", () => {
     expect(() =>
       metricStreamPositionSchema.parse({
+        ...base,
         transport: "pulsar",
-        epoch: "epoch-1",
-        topic: "legacy-topic",
-        partition: -1,
-        delivery: { major: "1", minor: "0", batch: -1 },
       }),
     ).toThrow();
   });
@@ -41,6 +38,8 @@ describe("compareMetricStreamPositions", () => {
     expect(compareMetricStreamPositions(base, { ...base, offset: "11" })).toBe(-1);
     expect(compareMetricStreamPositions({ ...base, offset: "11" }, base)).toBe(1);
     expect(compareMetricStreamPositions(base, { ...base })).toBe(0);
+    expect(compareMetricStreamPositions({ ...base, offset: "9" }, base)).toBe(-1);
+    expect(compareMetricStreamPositions(base, { ...base, offset: "9" })).toBe(1);
   });
 
   it("fails closed across epoch, topic, or partition mismatches", () => {

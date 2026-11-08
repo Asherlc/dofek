@@ -658,7 +658,7 @@ describe("eraseMetricStreamArchive", () => {
     expect(storage.objects.get(key)).toEqual(original);
   });
 
-  it("removes matching batch, delete, user, and activity events", async () => {
+  it("preserves explicit foreign owners despite retained activity aliases", async () => {
     const storage = new MemoryArchiveStorage();
     const key = "metric-stream/v1/date=2026-07-26/hour=10/metric-stream-v1-0-12-12.jsonl.gz";
     const activityId = "30000000-0000-4000-8000-000000001994";
@@ -681,6 +681,10 @@ describe("eraseMetricStreamArchive", () => {
     );
     const matchingDelete = createMetricStreamDeletedEvent({ activityId }, "1");
     const matchingAccountDelete = createMetricStreamDeletedEvent({ userId: deletingUserId }, "1");
+    const foreignAccountDelete = createMetricStreamDeletedEvent(
+      { userId: otherUserId, activityId },
+      "1",
+    );
     const otherDelete = createMetricStreamDeletedEvent(
       {
         activityId: "60000000-0000-4000-8000-000000001994",
@@ -696,6 +700,7 @@ describe("eraseMetricStreamArchive", () => {
       otherBatch,
       matchingDelete,
       matchingAccountDelete,
+      foreignAccountDelete,
       otherDelete,
       matchingActivity,
       nullActivity,
@@ -710,10 +715,10 @@ describe("eraseMetricStreamArchive", () => {
         store: archiveIdentityFixture([activityId], [operationId]),
         userId: deletingUserId,
       }),
-    ).resolves.toMatchObject({ recordsRemoved: 4, objectsRewritten: 1 });
+    ).resolves.toMatchObject({ recordsRemoved: 3, objectsRewritten: 1 });
 
     expect(gunzipSync(storage.objects.get(key) ?? Buffer.alloc(0)).toString("utf8")).toBe(
-      `${JSON.stringify(otherBatch)}\n${JSON.stringify(otherDelete)}\n${JSON.stringify(nullActivity)}\n`,
+      `${JSON.stringify(otherBatch)}\n${JSON.stringify(foreignAccountDelete)}\n${JSON.stringify(otherDelete)}\n${JSON.stringify(matchingActivity)}\n${JSON.stringify(nullActivity)}\n`,
     );
   });
 

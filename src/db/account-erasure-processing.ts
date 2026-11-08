@@ -242,7 +242,6 @@ export async function renewAccountErasureLease(
   requestId: string,
   leaseOwner: string,
   leaseDurationMs: number,
-  now = new Date(),
 ): Promise<void> {
   const parsedLeaseOwner = z.string().min(1).max(200).parse(leaseOwner);
   const parsedLeaseDurationMs = z
@@ -251,19 +250,23 @@ export async function renewAccountErasureLease(
     .min(30_000)
     .max(24 * 60 * 60 * 1_000)
     .parse(leaseDurationMs);
-  const leaseExpiresAt = new Date(now.getTime() + parsedLeaseDurationMs);
   const rows = await executeWithSchema(
     database,
     idRowSchema,
-    sql`UPDATE fitness.account_erasure_request
+    sql`WITH locked AS MATERIALIZED (
+          SELECT id,lease_owner,status,lease_expires_at
+          FROM fitness.account_erasure_request WHERE id=${requestId}::uuid FOR UPDATE
+        )
+        UPDATE fitness.account_erasure_request AS request
         SET
-          lease_expires_at = ${leaseExpiresAt.toISOString()},
-          updated_at = ${now.toISOString()}
-        WHERE id = ${requestId}::uuid
-          AND lease_owner = ${parsedLeaseOwner}
-          AND status <> 'completed'
-          AND lease_expires_at > ${now.toISOString()}
-        RETURNING id`,
+          lease_expires_at = clock_timestamp() + ${parsedLeaseDurationMs} * interval '1 millisecond',
+          updated_at = clock_timestamp()
+        FROM locked
+        WHERE request.id = locked.id
+          AND locked.lease_owner = ${parsedLeaseOwner}
+          AND locked.status <> 'completed'
+          AND locked.lease_expires_at > clock_timestamp()
+        RETURNING request.id`,
   );
   if (rows.length !== 1) {
     throw new Error("Account erasure lease is no longer owned");

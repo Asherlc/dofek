@@ -37,15 +37,19 @@ describe("account erasure Redpanda drain", () => {
     ).toThrow("METRIC_STREAM_LEGACY_TOPIC is required for account erasure");
   });
 
-  it("fails worker startup when Redpanda brokers are missing", () => {
-    expect(() =>
-      createAccountErasureRedpandaAdminFromEnv({
-        METRIC_STREAM_LEGACY_TOPIC: "metric-stream-v1",
-        METRIC_STREAM_LIVE_TOPIC: "metric-stream-live-v1",
-        METRIC_STREAM_HISTORY_TOPIC: "metric-stream-history-v1",
-      }),
-    ).toThrow("REDPANDA_BROKERS is required for account erasure");
-  });
+  it.each([undefined, "   "])(
+    "fails worker startup when Redpanda brokers are empty: %s",
+    (brokers) => {
+      expect(() =>
+        createAccountErasureRedpandaAdminFromEnv({
+          METRIC_STREAM_LEGACY_TOPIC: "metric-stream-v1",
+          METRIC_STREAM_LIVE_TOPIC: "metric-stream-live-v1",
+          METRIC_STREAM_HISTORY_TOPIC: "metric-stream-history-v1",
+          REDPANDA_BROKERS: brokers,
+        }),
+      ).toThrow("REDPANDA_BROKERS is required for account erasure");
+    },
+  );
 
   it.each([
     "METRIC_STREAM_LEGACY_TOPIC",

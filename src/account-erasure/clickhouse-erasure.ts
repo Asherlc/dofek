@@ -152,6 +152,9 @@ function tableIdentityFamilies(table: PhysicalTable): UuidIdentifierFamily[] {
   if (canonicalName === "sleep_session") {
     families.push("sleepIds");
   }
+  if (canonicalName === "processing_operation") {
+    families.push("operationIds");
+  }
   return families;
 }
 
@@ -185,7 +188,7 @@ function userPredicate(table: PhysicalTable, userId: string): BoundedPredicate {
     sql: `${column}={erasure_user_id:UUID}`,
     queryParameters: { erasure_user_id: userId },
     mutationSql: `lower(hex(SHA256(toString(${column}))))={erasure_user_hash:String}`,
-    mutationQueryParameters: { erasure_user_hash: hashIdentifier(userId) },
+    mutationQueryParameters: { erasure_user_hash: hashIdentifier(userId.toLowerCase()) },
   };
 }
 function boundedRelationPredicate(

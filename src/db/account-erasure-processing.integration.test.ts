@@ -113,16 +113,20 @@ describe("account erasure active lease contract", () => {
       leaseExpiresAt: new Date(Date.now() + 60_000),
     });
     const before = await context.db.execute(sql`
-      SELECT lease_expires_at FROM fitness.account_erasure_request WHERE id = ${requestId}::uuid`);
+      SELECT lease_expires_at,clock_timestamp() AS observed_now FROM fitness.account_erasure_request WHERE id = ${requestId}::uuid`);
     const previousExpiry = new Date(String(before[0]?.lease_expires_at));
 
-    const now = new Date();
-    await renewAccountErasureLease(context.db, requestId, leaseOwner, 60_000, now);
+    await renewAccountErasureLease(context.db, requestId, leaseOwner, 60_000);
 
     const after = await context.db.execute(sql`
-      SELECT lease_expires_at FROM fitness.account_erasure_request WHERE id = ${requestId}::uuid`);
+      SELECT lease_expires_at,clock_timestamp() AS observed_now FROM fitness.account_erasure_request WHERE id = ${requestId}::uuid`);
     const nextExpiry = new Date(String(after[0]?.lease_expires_at));
-    expect(nextExpiry.getTime()).toBe(now.getTime() + 60_000);
+    expect(nextExpiry.getTime()).toBeGreaterThanOrEqual(
+      new Date(String(before[0]?.observed_now)).getTime() + 60_000,
+    );
+    expect(nextExpiry.getTime()).toBeLessThanOrEqual(
+      new Date(String(after[0]?.observed_now)).getTime() + 60_000,
+    );
     expect(nextExpiry.getTime()).toBeGreaterThan(previousExpiry.getTime());
   });
 
@@ -132,10 +136,8 @@ describe("account erasure active lease contract", () => {
       leaseOwner,
       leaseExpiresAt: new Date(Date.now() - 1_000),
     });
-    const now = new Date();
-
     await expect(
-      renewAccountErasureLease(context.db, requestId, leaseOwner, 60_000, now),
+      renewAccountErasureLease(context.db, requestId, leaseOwner, 60_000),
     ).rejects.toThrow("Account erasure lease is no longer owned");
 
     const after = await context.db.execute(sql`
@@ -143,6 +145,31 @@ describe("account erasure active lease contract", () => {
       FROM fitness.account_erasure_request
       WHERE id = ${requestId}::uuid`);
     expect(after[0]?.still_expired).toBe(true);
+  });
+
+  it("rejects renewal when the lease expires while waiting for its row lock", async () => {
+    const leaseOwner = `lease-renew-wait-${randomUUID()}`;
+    const requestId = await insertRunningRequest({
+      leaseOwner,
+      leaseExpiresAt: new Date(Date.now() + 1000),
+    });
+    const locker = await context.db.$client.connect();
+    try {
+      await locker.query("BEGIN");
+      await locker.query("SELECT id FROM fitness.account_erasure_request WHERE id=$1 FOR UPDATE", [
+        requestId,
+      ]);
+      const renewal = renewAccountErasureLease(context.db, requestId, leaseOwner, 60000).then(
+        () => null,
+        (error: unknown) => error,
+      );
+      await locker.query("SELECT pg_sleep(1.1)");
+      await locker.query("COMMIT");
+      expect(await renewal).toMatchObject({ message: "Account erasure lease is no longer owned" });
+    } finally {
+      await locker.query("ROLLBACK");
+      locker.release();
+    }
   });
 
   it("rejects renewing a lease owned by another worker", async () => {
@@ -153,7 +180,7 @@ describe("account erasure active lease contract", () => {
     });
 
     await expect(
-      renewAccountErasureLease(context.db, requestId, "other-lease-owner", 60_000, new Date()),
+      renewAccountErasureLease(context.db, requestId, "other-lease-owner", 60_000),
     ).rejects.toThrow("Account erasure lease is no longer owned");
   });
 });
