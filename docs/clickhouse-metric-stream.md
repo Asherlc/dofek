@@ -70,13 +70,15 @@ Historical compatibility is not established. The wire parsers still preserve
 stored IDs and timestamp precision; historical imports are not rehashed. The
 old [Postgres primary key](../drizzle/0009_metric_stream_id_not_null_primary_key.sql)
 was `(id, recorded_at)`, so its constraints do not establish immutable identity
-across all retained versions. Historical identity and timestamp precision
-still require an audit before deletion queries can rely on the new contract.
+across all retained versions. Broader historical identity and timestamp
+coverage remain unestablished; the scoped audit results below do not certify
+every retained ID.
 
 The approved 2026-11-07 incident-scope audit checked 43,406 candidate IDs across
 130,218 retained physical versions, finding no conflicting immutable tuples
-and no sub-millisecond timestamps. This is scoped evidence, not certification
-of unread broker events, archive replay or all historical IDs; see the
+and no sub-millisecond timestamps. That first audit covered retained incident
+IDs; the subsequent frozen unread-row audit is recorded below. Neither
+certifies archive replay or all historical IDs; see the
 [audit result and limits](production-incident-baseline.md#2026-11-07--historical-sample-identity-audit-preflight-incident-unresolved).
 
 Keep the existing global latest-version deletion checks until producer and
@@ -174,10 +176,56 @@ read guarantee for every scope. The fixture assigns activities to contiguous
 source-time ranges; scattered-time and unconstrained scopes can behave
 differently. The 113-ID case reflects the earlier written-row/granule proxy,
 not a scaled replay of the 43,406 IDs discovered by the retained-data audit;
-the matrix also tests much larger candidate sets. Unread broker events,
-archives and other historical IDs remain
-uncertified. The experiment changed no production source, queried no
+the matrix also tests much larger candidate sets. This local experiment did
+not certify unread broker events, archives or other historical IDs. It
+changed no production source, queried no
 production data, and removed its isolated databases/containers/networks/volumes.
+
+### Unread-history row identity audit — frozen snapshot
+
+On 2026-11-08 UTC, the approved read-only audit covered history partition 0
+offsets **[70578630, 74445631)**: **3,867,001 distinct offsets**, with no gaps,
+duplicates or out-of-range records. The stock
+[rpk reader](https://docs.redpanda.com/current/reference/rpk/rpk-topic/rpk-topic-consume/)
+used committed reads and direct partition assignment without a consumer group.
+Only identity/type/offset fields were retained; measurement values were removed
+before transfer. The compressed snapshot was **112,346,109 bytes** and completed
+in approximately **98 seconds**, within the 15-minute / 1 GiB export budget.
+
+The snapshot contained **3,866,505 row events**, **248 deletion events** and
+**248 processing markers**. There were no malformed/unknown records, invalid
+identity fields, timestamps beyond six fractional digits, or sub-millisecond
+row timestamps in this population. This checks projected identity/type fields,
+not the complete event payload schema or processing outcome.
+
+Local analysis found **3,866,489 distinct IDs**, each bound to one immutable
+tuple. Sixteen additional row events shared those tuples; measurement values
+were not retained, so this is not a claim of identical payloads. After that
+local check, one production comparison used stock
+[external query data](https://clickhouse.com/docs/reference/engines/table-engines/special/external-data)
+and tuple membership against all retained physical versions of matching IDs,
+with no `FINAL`, latest-row aggregation or outer ownership/time restriction.
+It found **0 conflicts across 11,807,909 matching retained versions**.
+
+Query-log verification recorded **58,041 ms**, **209,021,415 rows /
+4,228,279,393 bytes read** and **919,351,317 bytes tracked peak memory**, with
+exception code 0. This stayed within the approved one-thread / 1 GiB memory /
+120-second / 210-million-row / 12-GiB-read limits. There was one source export
+and one production comparison, with no automatic retries. The
+[aggregate evidence](evidence/metric-stream-history-identity-audit-20261107/summary.json)
+and [executed comparison SQL](evidence/metric-stream-history-identity-audit-20261107/retained-comparison.sql)
+contain no sample identifiers. Private input files and all isolated local test
+resources were removed. History remained `0/0` with its checkpoint unchanged;
+other consumer groups had zero lag in the post-audit check.
+
+This establishes observed identity consistency for the frozen incoming row IDs
+and their matching retained versions. It does **not** establish consistency for
+unrelated retained IDs, old archive bodies or later writes. Deletion predicates
+were not retained in the projection, so retained IDs affected by those deletions
+but absent from the incoming row-ID set are not certified by this audit.
+Deletion acknowledgements and processing completeness were not checked. No
+deployment, offset edit, acknowledgement repair or consumer resume follows from
+this result; the broader historical-coverage and recovery decisions remain held.
 
 ## Local Development
 
