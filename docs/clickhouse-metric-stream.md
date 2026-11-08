@@ -81,12 +81,13 @@ IDs; the subsequent frozen unread-row audit is recorded below. Neither
 certifies archive replay or all historical IDs; see the
 [audit result and limits](production-incident-baseline.md#2026-11-07--historical-sample-identity-audit-preflight-incident-unresolved).
 
-Keep the existing global latest-version deletion checks until producer and
-historical compatibility are established and an implementation is reviewed.
-Do not assume immutable identity solely to narrow a query, rewrite retained
-IDs, or resume a paused consumer. This decision authorizes no production
-migration or data change. The [deletion implementation](../src/metric-stream/clickhouse-sink.ts)
-remains the current behavior; [ClickHouse replacement](https://clickhouse.com/docs/guides/replacing-merge-tree)
+The checked-in [deletion implementation](../src/metric-stream/clickhouse-sink.ts)
+now resolves versions by the approved immutable identity tuple. Production
+still uses the older global latest-ID lookup. Deployment and consumer recovery
+remain held pending historical/deletion-scope coverage and production-version
+validation; do not rewrite retained IDs or resume a paused consumer from a
+clean subset alone. This code-only change authorizes no production migration
+or data change; [ClickHouse replacement](https://clickhouse.com/docs/guides/replacing-merge-tree)
 uses the complete sorting key, which is not interchangeable with this sample
 identity rule.
 
@@ -154,7 +155,7 @@ version/ingestion ordering, tombstones, erasure fences, replay and physical
 erasure. Exact ranking-tuple ties permit an arbitrary single winner; the test
 does not assert identical winners across different query plans. Immutable
 user/provider/timestamp moves are outside the candidate's supported contract;
-the existing historical production regressions remain unchanged.
+these dated lookup tests did not change production regressions.
 
 Each engine also completed **64 result-checked measurements** over 1,048,576
 rows with all six existing projections, hashed IDs and fixed timestamps.
@@ -180,6 +181,34 @@ the matrix also tests much larger candidate sets. This local experiment did
 not certify unread broker events, archives or other historical IDs. It
 changed no production source, queried no
 production data, and removed its isolated databases/containers/networks/volumes.
+
+### Checked-in deletion lookup — code only
+
+The sink uses native tuple membership on `(id, user_id, provider_id,
+recorded_at)`, then the unchanged full-row `argMax` ranked by
+`(version, ingested_at)` and latest-scope predicates. The dated experiment above also included additional
+static immutable-field predicates; the implementation omits that redundant
+predicate-building logic. It adds no projection, registry or infrastructure.
+Scope persistence, revision guards, tombstone versions and acknowledgement
+after the successful insert remain unchanged; see the
+[implementation and executable regressions](../src/metric-stream/clickhouse-sink.integration.test.ts).
+Native [tuple membership](https://clickhouse.com/docs/reference/statements/in)
+retains the stored timestamp precision rather than round-tripping through JavaScript.
+
+The actual public deletion path is tested on ClickHouse 26.10 with a
+65,536-row fixture: it must delete the 4,096 matching identities, retain the
+other rows and read fewer than half the fixture rows. Mutable activity,
+channel and external-ID moves remain supported; scalar corrections, native
+microsecond timestamps, ingestion-time ordering, mixed scopes and chunk
+boundaries are covered by real-engine tests. The prior provider-move fixture
+now exercises activity movement because retaining an ID across a provider
+change is outside the approved contract. Historical wire parsing is unchanged.
+
+This implementation is not deployed. The final tuple-only statement still
+needs validation on production's 26.6 version and adequate historical coverage
+before recovery approval. The two-engine experiment above is evidence for
+its dated SQL, not a claim that this exact statement was benchmarked on both
+versions or that every deletion scope has bounded reads.
 
 ### Unread-history row identity audit — frozen snapshot
 
@@ -617,7 +646,8 @@ downstream provider-inventory freshness before declaring the rollout complete.
 
 New metric-stream deletions are version 3 broker events with a unique event
 ID and operation revision. The ClickHouse sink discovers candidate IDs through
-the deletion scope, resolves their global latest versions, rechecks the scope,
+the deletion scope, resolves latest versions within their immutable identity
+tuples, rechecks the scope,
 and inserts a newer
 `is_deleted = 1` version, and then writes the event ID to
 `ingest.metric_stream_delete_acknowledgement`. The provider deletion worker
