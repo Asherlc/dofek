@@ -111,8 +111,10 @@ not full service boot, R2 delivery or physical remote erasure.
 
 The [cutover packet](../../deploy/kafka/cutover-packet.md) now records immutable
 service images, all six route boundaries and pre/post-write recovery classes.
-It remains non-executable: unchanged-worker physical erasure is not established,
-and exact topic identities and retirement authorization remain unresolved.
+It remains non-executable: the unchanged worker cannot provide the required
+storage guard, and the new worker must be released coherently with Kafka.
+Acceptance of the proposed topic identities/policy and retirement authorization
+remain unresolved.
 
 ## Qualified hot-log candidate
 
@@ -140,6 +142,19 @@ passed. [Native receipt](../../deploy/kafka/native-storage-proof.json) records
 rejection before cleanup, generation preservation across restart and success only
 after native removal. No production change was made.
 
-Release review must still bind a worker image digest, accept the explicit source
-topic byte-policy change, review burst capacity and approve data retirement and a
-maintenance packet. Native filesystem removal is not a forensic overwrite claim.
+The packet now pins the worker image and records its packaged retention-phase
+qualification. [CI](https://github.com/Asherlc/dofek/actions/runs/42508916991) passed
+on `5dd8ad9c758f478ff894f33c41a956b058513c5c`: 94 successful jobs and eight skipped.
+Release review must still accept the explicit source topic identities/byte-policy
+change, review burst capacity, approve data retirement and the maintenance packet,
+and coordinate preservation of the six structural fields when combining the
+erasure PR. Native filesystem removal is not a forensic overwrite claim.
+
+Review checkpoint: the [automatic production workflow](../../.github/workflows/deploy-web.yml)
+follows successful main CI. Its [environment pipeline](../../.github/workflows/deploy-web-environment.yml)
+runs Terraform before the stack's active-Kafka preflight. Therefore merge timing
+requires explicit release coordination while production remains on Redpanda;
+branch CI success alone does not make merge safe. The [packet](../../deploy/kafka/cutover-packet.md)
+now records this gate, pins source comparisons to the built image revision and
+replaces stale tiered-plugin/credential bootstrap text with canonical hot-log
+instructions. No runtime strategy or production state changed in this review.

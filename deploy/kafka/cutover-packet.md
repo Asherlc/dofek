@@ -2,7 +2,7 @@
 
 Status: **offline review candidate; not approved for activation**. The canonical
 stack is now hot-log-only and the narrow worker guard has local qualification.
-Image, capacity/policy and retirement gates below must close before final mutation
+Capacity/policy, merge sequencing and retirement gates below must close before final mutation
 commands and a maintenance window are approved. Do not reuse the aborted combined
 release packet. See [the aborted attempt](https://github.com/Asherlc/dofek/blob/ed26f38b8/docs/evidence/kafka-cutover-attempt-20261108/README.md).
 
@@ -71,12 +71,13 @@ Already-managed R2/Terraform/Infisical resources remain declared and untouched.
 The image will include both this branch's narrow guard and the already-merged
 main baseline `2752451fb4a7404e5d887d32341595a42a673dcd`, rather than a literal
 binary patch to deployed `f02798b72a144d137a0bd06ca111ad23f0c2c800`.
-Use ordinary read-only source comparisons against the review image's source SHA:
+Use ordinary read-only source comparisons against the review image's source SHA,
+not the changing review branch head:
 
 ```sh
-git diff --name-only f02798b72a144d137a0bd06ca111ad23f0c2c800 HEAD
-git diff f02798b72a144d137a0bd06ca111ad23f0c2c800 HEAD -- src/jobs src/account-erasure src/metric-stream src/processing src/providers src/db
-git diff f02798b72a144d137a0bd06ca111ad23f0c2c800 HEAD -- drizzle/meta/_journal.json src/db/clickhouse-migrations/registry.ts
+git diff --name-only f02798b72a144d137a0bd06ca111ad23f0c2c800 cd9c4eb28d186a2fab9af2ac2e91864c32f38477
+git diff f02798b72a144d137a0bd06ca111ad23f0c2c800 cd9c4eb28d186a2fab9af2ac2e91864c32f38477 -- src/jobs src/account-erasure src/metric-stream src/processing src/providers src/db
+git diff f02798b72a144d137a0bd06ca111ad23f0c2c800 cd9c4eb28d186a2fab9af2ac2e91864c32f38477 -- drizzle/meta/_journal.json src/db/clickhouse-migrations/registry.ts
 ```
 
 The worker entrypoint runs `src/db/run-migrate.ts`, then `src/jobs/worker.ts`.
@@ -97,6 +98,42 @@ and historical documentation are not additional production worker commands.
 Review the source diff and the bounded archive-reader evidence already recorded
 in [the baseline qualification](../../docs/pulsar-foundation-qualification.md);
 do not repeat historical archive downloads or identity scans.
+
+The [successful CI run](https://github.com/Asherlc/dofek/actions/runs/42508916991)
+qualifies review head `5dd8ad9c758f478ff894f33c41a956b058513c5c` (94 successful jobs,
+eight skipped). Its later changes are tests, documentation and an environment
+input type annotation; the pinned image still has the source revision above.
+Keep those identities distinct when reviewing the artifact.
+
+## Merge and release sequencing
+
+Green CI does not establish safe merge timing. The repository's
+[Deploy Web trigger](../../.github/workflows/deploy-web.yml) follows successful
+main CI. Its [production pipeline](../../.github/workflows/deploy-web-environment.yml)
+runs Terraform before the [stack preflight](../../.github/workflows/deploy-web-stack.yml)
+requires an already active Kafka broker and rejects active Redpanda. Merging while
+Redpanda remains active would start that pipeline and then block application
+deployment after the infrastructure stage. Approve the merge/cutover sequence
+before merging; do not disable workflows or assume a green branch is inert.
+
+The new worker is a Kafka-specific release. It requires the native Kafka mount
+and generation metadata, so it is not qualified to replace the current Redpanda
+worker in advance. Finish old-generation erasure requests on the old worker,
+then stop it with the other writers during the approved pause. Bind the new
+worker image, both read-only mounts and all three source-topic settings together
+before resuming it on Kafka. Keep web and every sink/archive separately pinned.
+The worker entrypoint runs the existing migration launcher; matching journals
+do not authorize a migration operation in this broker-only release. Its exact
+launch command belongs in the separately reviewed mutation packet.
+
+Combining the account-erasure hardening PR also requires an explicit merge of
+the six structural checkpoint fields (`topic`, `partition`, `low`, `offset`,
+`clusterId`, `topicId`) into that branch's request-store scrub projection. A
+wholesale scrub/runtime replacement can discard the captured generation.
+Kafka owns the guard; the other PR must not add a duplicate implementation.
+The [scrub regression](../../src/db/account-erasure.integration.test.ts) and
+[runtime wiring tests](../../src/jobs/account-erasure-runtime.test.ts) describe
+the required integration contract. Sequencing that combination remains open.
 
 ## Stop gates
 
@@ -168,8 +205,10 @@ not a new deployment CLI or the full-stack application workflow.
    for the three ClickHouse sink groups and three matching R2 archive groups.
    Use the existing legacy/live/history service-to-topic contract, not inferred
    defaults. Record all six groups individually.
-2. Prepare the isolated Kafka service with its dedicated data directory,
-   checksum-qualified plugin directory and dedicated R2 credentials. Keep every
+2. Prepare the isolated hot-log Kafka service with its fresh dedicated data
+   directory and canonical remote-storage-disabled specification. No RSM plugin,
+   plugin directory or broker R2 credentials are part of this candidate. Preserve
+   existing managed R2 resources and the old Kafka/Redpanda trees. Keep every
    application endpoint pointed at Redpanda. Verify Kafka API readiness with an
    external JVM and create the explicitly reviewed source/quarantine topics.
    Record topic IDs, partition counts, RF and full retention configuration.
@@ -182,11 +221,13 @@ not a new deployment CLI or the full-stack application workflow.
    and data tree. Verify actual tasks have stopped, not just desired replicas.
    Do not prune the stack or run application/schema migrations.
 5. Apply the reviewed endpoint/topic changes to the existing image of each
-   consumer service. Start and verify all six routes on Kafka. Keep writers
+   consumer service. Bind the narrow worker release and matching read-only mounts
+   while it remains stopped. Start and verify all six consumer routes on Kafka. Keep writers
    paused until readiness, topic identity, group assignment and archive output
    boundaries match the approved packet.
 6. Record the **first Kafka application write** as a distinct recovery boundary.
-   Resume the same writer images with the reviewed endpoint/topic settings.
+   Resume the existing web image and the separately reviewed new worker image
+   with their reviewed endpoint/topic settings; do not replace other images.
    Verify all six consumers, persisted archive objects, application readiness,
    Kafka/R2 errors and resource limits under the bounded agreed observation.
 
