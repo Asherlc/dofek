@@ -1,22 +1,16 @@
 import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ACCOUNT_ERASURE_FENCE_TABLE,
   ACCOUNT_ERASURE_OPERATION_FENCE_TABLE,
 } from "../metric-stream/clickhouse-table.ts";
-import {
-  baseTableName,
-  clickHouseErasureSchemaDigest,
-  columnTypes,
-  hasUuidScalarColumn,
-  identifierColumns,
-  identifierNameSchema,
-  inspectClickHouseAccountErasureCoverage,
-  isUserProfileTable,
-  type PhysicalTable,
-  PRODUCTION_MANAGED_DATABASES,
-  qualifiedTable,
-} from "./clickhouse-erasure-coverage.ts";
+import type { PhysicalTable } from "./clickhouse-erasure-coverage.ts";
+
+let coverage: typeof import("./clickhouse-erasure-coverage.ts");
+beforeEach(async () => {
+  vi.resetModules();
+  coverage = await import("./clickhouse-erasure-coverage.ts");
+});
 
 type ColumnDefinition = readonly [string, string];
 
@@ -60,6 +54,60 @@ const schemaDriftCases = [
 ] satisfies readonly (readonly [string, readonly ColumnDefinition[], string])[];
 
 const stagingSchemaDriftCases = [
+  [
+    "staging omits record identity",
+    [["user_id", "UUID"]],
+    [
+      ["user_id", "UUID"],
+      ["id", "UUID"],
+    ],
+  ],
+  [
+    "canonical omits record identity",
+    [
+      ["user_id", "UUID"],
+      ["id", "UUID"],
+    ],
+    [["user_id", "UUID"]],
+  ],
+  [
+    "staging changes record identity type",
+    [
+      ["user_id", "UUID"],
+      ["id", "String"],
+    ],
+    [
+      ["user_id", "UUID"],
+      ["id", "UUID"],
+    ],
+  ],
+  [
+    "staging omits measurement reference",
+    [["user_id", "UUID"]],
+    [
+      ["user_id", "UUID"],
+      ["measurement_id", "UUID"],
+    ],
+  ],
+  [
+    "canonical omits measurement reference",
+    [
+      ["user_id", "UUID"],
+      ["measurement_id", "UUID"],
+    ],
+    [["user_id", "UUID"]],
+  ],
+  [
+    "staging changes nullable measurement reference",
+    [
+      ["user_id", "UUID"],
+      ["measurement_id", "UUID"],
+    ],
+    [
+      ["user_id", "UUID"],
+      ["measurement_id", "Nullable(UUID)"],
+    ],
+  ],
   ["group ownership family changes", [["group_id", "UUID"]], [["group_id", "String"]]],
   [
     "staging omits source activity",
@@ -150,25 +198,31 @@ const providerPriorityColumns = [
 
 describe("ClickHouse erasure exported helpers", () => {
   it("formats qualified table names with backticks", () => {
-    expect(qualifiedTable("analytics", "daily_recovery")).toBe("`analytics`.`daily_recovery`");
+    expect(coverage.qualifiedTable("analytics", "daily_recovery")).toBe(
+      "`analytics`.`daily_recovery`",
+    );
   });
 
   it("exposes production managed databases", () => {
-    expect(PRODUCTION_MANAGED_DATABASES).toEqual(["analytics", "ingest", "postgres_fitness"]);
+    expect(coverage.PRODUCTION_MANAGED_DATABASES).toEqual([
+      "analytics",
+      "ingest",
+      "postgres_fitness",
+    ]);
   });
 
   it("parses identifier names for managed database options", () => {
-    expect(identifierNameSchema.parse("postgres_fitness")).toBe("postgres_fitness");
-    expect(identifierNameSchema.parse("a1_b2")).toBe("a1_b2");
-    expect(identifierNameSchema.parse("a")).toBe("a");
-    expect(() => identifierNameSchema.parse("bad-name")).toThrow();
-    expect(() => identifierNameSchema.parse("1starts_with_number")).toThrow();
-    expect(() => identifierNameSchema.parse("")).toThrow();
-    expect(() => identifierNameSchema.parse("has.period")).toThrow();
-    expect(() => identifierNameSchema.parse("valid_name!")).toThrow();
-    expect(() => identifierNameSchema.parse("space inside")).toThrow();
-    expect(() => identifierNameSchema.parse("123")).toThrow();
-    expect(() => identifierNameSchema.parse("9abc")).toThrow();
+    expect(coverage.identifierNameSchema.parse("postgres_fitness")).toBe("postgres_fitness");
+    expect(coverage.identifierNameSchema.parse("a1_b2")).toBe("a1_b2");
+    expect(coverage.identifierNameSchema.parse("a")).toBe("a");
+    expect(() => coverage.identifierNameSchema.parse("bad-name")).toThrow();
+    expect(() => coverage.identifierNameSchema.parse("1starts_with_number")).toThrow();
+    expect(() => coverage.identifierNameSchema.parse("")).toThrow();
+    expect(() => coverage.identifierNameSchema.parse("has.period")).toThrow();
+    expect(() => coverage.identifierNameSchema.parse("valid_name!")).toThrow();
+    expect(() => coverage.identifierNameSchema.parse("space inside")).toThrow();
+    expect(() => coverage.identifierNameSchema.parse("123")).toThrow();
+    expect(() => coverage.identifierNameSchema.parse("9abc")).toThrow();
   });
 
   it("derives canonical base table names from dbt staging suffixes", () => {
@@ -176,10 +230,10 @@ describe("ClickHouse erasure exported helpers", () => {
     const staging = physicalTable("analytics", `rows__dbt_new_data_${invocation}`, [
       ["user_id", "UUID"],
     ]);
-    expect(baseTableName(staging)).toBe("rows");
-    expect(baseTableName(table("plain_name", [["user_id", "UUID"]]))).toBe("plain_name");
+    expect(coverage.baseTableName(staging)).toBe("rows");
+    expect(coverage.baseTableName(table("plain_name", [["user_id", "UUID"]]))).toBe("plain_name");
     expect(
-      baseTableName(
+      coverage.baseTableName(
         physicalTable("analytics", `__dbt_new_data_${invocation}`, [["user_id", "UUID"]]),
       ),
     ).toBe(`__dbt_new_data_${invocation}`);
@@ -190,13 +244,13 @@ describe("ClickHouse erasure exported helpers", () => {
       ["id", "UUID"],
       ["user_id", "Nullable(UUID)"],
     ]);
-    const types = columnTypes(profile);
+    const types = coverage.columnTypes(profile);
     expect(types.get("id")).toBe("UUID");
-    expect(hasUuidScalarColumn(profile, "id")).toBe(true);
-    expect(hasUuidScalarColumn(profile, "user_id")).toBe(true);
-    expect(hasUuidScalarColumn(profile, "missing")).toBe(false);
-    expect(isUserProfileTable(profile)).toBe(true);
-    expect(isUserProfileTable(table("activity", [["user_id", "UUID"]]))).toBe(false);
+    expect(coverage.hasUuidScalarColumn(profile, "id")).toBe(true);
+    expect(coverage.hasUuidScalarColumn(profile, "user_id")).toBe(true);
+    expect(coverage.hasUuidScalarColumn(profile, "missing")).toBe(false);
+    expect(coverage.isUserProfileTable(profile)).toBe(true);
+    expect(coverage.isUserProfileTable(table("activity", [["user_id", "UUID"]]))).toBe(false);
   });
 
   it("sorts table metadata lexicographically inside digests", () => {
@@ -206,8 +260,8 @@ describe("ClickHouse erasure exported helpers", () => {
     const beta = physicalTable("analytics", "zzz_table", [["user_id", "UUID"]], {
       uuid: "00000000-0000-0000-0000-000000000002",
     });
-    expect(clickHouseErasureSchemaDigest([alpha, beta])).toBe(
-      clickHouseErasureSchemaDigest([beta, alpha]),
+    expect(coverage.clickHouseErasureSchemaDigest([alpha, beta])).toBe(
+      coverage.clickHouseErasureSchemaDigest([beta, alpha]),
     );
   });
 
@@ -222,7 +276,7 @@ describe("ClickHouse erasure exported helpers", () => {
       ],
       { uuid: tableUuid },
     );
-    expect(clickHouseErasureSchemaDigest([duplicateColumns])).toBe(
+    expect(coverage.clickHouseErasureSchemaDigest([duplicateColumns])).toBe(
       "73da7fa1dd792cfe686cb8d0a67f45fa23191cefd52889bbfb32eae18c9b7505",
     );
   });
@@ -247,7 +301,9 @@ describe("ClickHouse erasure exported helpers", () => {
       ],
       { uuid: tableUuid },
     );
-    expect(clickHouseErasureSchemaDigest([zThenA])).toBe(clickHouseErasureSchemaDigest([aThenZ]));
+    expect(coverage.clickHouseErasureSchemaDigest([zThenA])).toBe(
+      coverage.clickHouseErasureSchemaDigest([aThenZ]),
+    );
   });
 
   it("hashes physical schemas deterministically", () => {
@@ -271,13 +327,15 @@ describe("ClickHouse erasure exported helpers", () => {
       { uuid: tableUuid },
     );
     const sibling = physicalTable("analytics", "other_rows", [["user_id", "UUID"]]);
-    expect(clickHouseErasureSchemaDigest([left])).toHaveLength(64);
-    expect(clickHouseErasureSchemaDigest([left])).toBe(clickHouseErasureSchemaDigest([right]));
-    expect(clickHouseErasureSchemaDigest([left, sibling])).toBe(
-      clickHouseErasureSchemaDigest([sibling, left]),
+    expect(coverage.clickHouseErasureSchemaDigest([left])).toHaveLength(64);
+    expect(coverage.clickHouseErasureSchemaDigest([left])).toBe(
+      coverage.clickHouseErasureSchemaDigest([right]),
     );
-    expect(clickHouseErasureSchemaDigest([left, sibling])).not.toBe(
-      clickHouseErasureSchemaDigest([left]),
+    expect(coverage.clickHouseErasureSchemaDigest([left, sibling])).toBe(
+      coverage.clickHouseErasureSchemaDigest([sibling, left]),
+    );
+    expect(coverage.clickHouseErasureSchemaDigest([left, sibling])).not.toBe(
+      coverage.clickHouseErasureSchemaDigest([left]),
     );
   });
 });
@@ -292,7 +350,7 @@ describe("ClickHouse erasure identifier column families", () => {
       ["sleep_id", "UUID"],
       ["operation_id", "UUID"],
     ]);
-    expect(identifierColumns(rows)).toEqual([
+    expect(coverage.identifierColumns(rows)).toEqual([
       ["activity_id", { cardinality: "scalar", family: "activityIds", valueType: "uuid" }],
       ["member_activity_ids", { cardinality: "array", family: "activityIds", valueType: "uuid" }],
       ["group_id", { cardinality: "scalar", family: "activityIds", valueType: "uuid" }],
@@ -306,13 +364,63 @@ describe("ClickHouse erasure identifier column families", () => {
       ["user_id", "UUID"],
       ["group_id", "String"],
     ]);
-    expect(identifierColumns(rows)).toEqual([
+    expect(coverage.identifierColumns(rows)).toEqual([
       ["group_id", { cardinality: "scalar", family: "stringRelationIds", valueType: "string" }],
     ]);
   });
 });
 
 describe("ClickHouse erasure ownership coverage", () => {
+  it.each(["source_owner_record_id", "source_owner_r_id"])(
+    "rejects an unmapped compound ownership column %s even with a direct owner",
+    async (columnName) => {
+      await expect(
+        coverage.inspectClickHouseAccountErasureCoverage(
+          client([
+            table("personal_rows", [
+              ["user_id", "UUID"],
+              [columnName, "String"],
+            ]),
+          ]),
+        ),
+      ).rejects.toThrow(`${columnName} is not mapped`);
+    },
+  );
+
+  it("does not impose the PostgreSQL provider contract on analytics provider rows", async () => {
+    const rows = table("provider", [
+      ["user_id", "UUID"],
+      ["value", "String"],
+    ]);
+    await expect(coverage.inspectClickHouseAccountErasureCoverage(client([rows]))).resolves.toEqual(
+      [rows],
+    );
+  });
+
+  it("accepts nullable record references with a direct UUID owner", async () => {
+    const rows = table("measurements", [
+      ["user_id", "UUID"],
+      ["measurement_id", "Nullable(UUID)"],
+    ]);
+    await expect(coverage.inspectClickHouseAccountErasureCoverage(client([rows]))).resolves.toEqual(
+      [rows],
+    );
+  });
+
+  it("allows staging payload changes when ownership columns match", async () => {
+    const canonical = table("activity_rows", [
+      ["user_id", "UUID"],
+      ["value", "String"],
+    ]);
+    const staging = table(`activity_rows__dbt_new_data_${randomUUID().replaceAll("-", "_")}`, [
+      ["user_id", "UUID"],
+      ["value", "UInt32"],
+    ]);
+    await expect(
+      coverage.inspectClickHouseAccountErasureCoverage(client([canonical, staging])),
+    ).resolves.toEqual([canonical, staging]);
+  });
+
   it("classifies deletion acknowledgements as structural metadata", async () => {
     const canonical = {
       ...table("metric_stream_delete_acknowledgement", [
@@ -321,12 +429,14 @@ describe("ClickHouse erasure ownership coverage", () => {
       ]),
       database: "ingest",
     };
-    await expect(inspectClickHouseAccountErasureCoverage(client([canonical]))).resolves.toEqual([]);
+    await expect(
+      coverage.inspectClickHouseAccountErasureCoverage(client([canonical])),
+    ).resolves.toEqual([]);
   });
 
   it("rejects deletion acknowledgements outside the ingest database", async () => {
     await expect(
-      inspectClickHouseAccountErasureCoverage(
+      coverage.inspectClickHouseAccountErasureCoverage(
         client([
           table("metric_stream_delete_acknowledgement", [
             ["event_id", "UUID"],
@@ -339,7 +449,7 @@ describe("ClickHouse erasure ownership coverage", () => {
 
   it("rejects a target without a physical UUID binding", async () => {
     await expect(
-      inspectClickHouseAccountErasureCoverage(
+      coverage.inspectClickHouseAccountErasureCoverage(
         client([
           { ...table("rows", [["user_id", "UUID"]]), uuid: "00000000-0000-0000-0000-000000000000" },
         ]),
@@ -349,9 +459,9 @@ describe("ClickHouse erasure ownership coverage", () => {
 
   it("returns personal tables with direct user ownership", async () => {
     const owned = table("rows", [["user_id", "UUID"]]);
-    await expect(inspectClickHouseAccountErasureCoverage(client([owned]))).resolves.toEqual([
-      owned,
-    ]);
+    await expect(
+      coverage.inspectClickHouseAccountErasureCoverage(client([owned])),
+    ).resolves.toEqual([owned]);
   });
 
   it("returns ingest merge-tree tables as personal erasure targets", async () => {
@@ -359,14 +469,14 @@ describe("ClickHouse erasure ownership coverage", () => {
       ["user_id", "UUID"],
       ["activity_id", "UUID"],
     ]);
-    await expect(inspectClickHouseAccountErasureCoverage(client([metricStream]))).resolves.toEqual([
-      metricStream,
-    ]);
+    await expect(
+      coverage.inspectClickHouseAccountErasureCoverage(client([metricStream])),
+    ).resolves.toEqual([metricStream]);
   });
 
   it.each(schemaDriftCases)("rejects unsupported ownership %s", async (_label, columns, error) => {
     await expect(
-      inspectClickHouseAccountErasureCoverage(client([table("rows", columns)])),
+      coverage.inspectClickHouseAccountErasureCoverage(client([table("rows", columns)])),
     ).rejects.toThrow(error);
   });
 
@@ -374,7 +484,7 @@ describe("ClickHouse erasure ownership coverage", () => {
     "rejects mismatched staging ownership: %s",
     async (_label, canonical, staging) => {
       await expect(
-        inspectClickHouseAccountErasureCoverage(
+        coverage.inspectClickHouseAccountErasureCoverage(
           client([
             table("rows", canonical),
             table(`rows__dbt_new_data_${randomUUID().replaceAll("-", "_")}`, staging),
@@ -392,7 +502,7 @@ describe("ClickHouse erasure ownership coverage", () => {
     const canonical = table("rows", columns);
     const staging = table(dbtStagingName("rows"), columns);
     await expect(
-      inspectClickHouseAccountErasureCoverage(client([canonical, staging])),
+      coverage.inspectClickHouseAccountErasureCoverage(client([canonical, staging])),
     ).resolves.toEqual([canonical, staging]);
   });
 
@@ -407,7 +517,7 @@ describe("ClickHouse erasure ownership coverage", () => {
       ["metric_stream_id", "Nullable(UUID)"],
     ]);
     await expect(
-      inspectClickHouseAccountErasureCoverage(client([canonical, staging])),
+      coverage.inspectClickHouseAccountErasureCoverage(client([canonical, staging])),
     ).rejects.toThrow("staging schema mismatch");
   });
 
@@ -415,7 +525,7 @@ describe("ClickHouse erasure ownership coverage", () => {
     const canonical = table("rows", [["user_id", "UUID"]]);
     const staging = table(dbtStagingName("rows"), [["user_id", "Nullable(UUID)"]]);
     await expect(
-      inspectClickHouseAccountErasureCoverage(client([canonical, staging])),
+      coverage.inspectClickHouseAccountErasureCoverage(client([canonical, staging])),
     ).rejects.toThrow("staging schema mismatch");
   });
 
@@ -429,7 +539,7 @@ describe("ClickHouse erasure ownership coverage", () => {
       ["operation_id", "UUID"],
     ]);
     await expect(
-      inspectClickHouseAccountErasureCoverage(client([canonical, staging])),
+      coverage.inspectClickHouseAccountErasureCoverage(client([canonical, staging])),
     ).rejects.toThrow("staging schema mismatch");
   });
 
@@ -442,7 +552,7 @@ describe("ClickHouse erasure ownership coverage", () => {
       ["operation_id", "UUID"],
     ]);
     await expect(
-      inspectClickHouseAccountErasureCoverage(client([canonical, staging])),
+      coverage.inspectClickHouseAccountErasureCoverage(client([canonical, staging])),
     ).rejects.toThrow("staging schema mismatch");
   });
 
@@ -456,13 +566,13 @@ describe("ClickHouse erasure ownership coverage", () => {
       ["name", "String"],
     ]);
     await expect(
-      inspectClickHouseAccountErasureCoverage(client([canonical, staging])),
+      coverage.inspectClickHouseAccountErasureCoverage(client([canonical, staging])),
     ).rejects.toThrow("staging schema mismatch");
   });
 
   it("rejects unsafe dbt staging table names without a canonical UUID suffix", async () => {
     await expect(
-      inspectClickHouseAccountErasureCoverage(
+      coverage.inspectClickHouseAccountErasureCoverage(
         client([table("rows__dbt_new_data_not_a_valid_uuid", [["user_id", "UUID"]])]),
       ),
     ).rejects.toThrow("Unsafe ClickHouse dbt staging table name");
@@ -470,7 +580,7 @@ describe("ClickHouse erasure ownership coverage", () => {
 
   it("rejects orphan dbt staging tables without a canonical match", async () => {
     await expect(
-      inspectClickHouseAccountErasureCoverage(
+      coverage.inspectClickHouseAccountErasureCoverage(
         client([table(dbtStagingName("missing_canonical"), [["user_id", "UUID"]])]),
       ),
     ).rejects.toThrow("orphan ClickHouse dbt staging table");
@@ -478,7 +588,7 @@ describe("ClickHouse erasure ownership coverage", () => {
 
   it("rejects catalog metadata that exceeds the managed-table budget", async () => {
     await expect(
-      inspectClickHouseAccountErasureCoverage(
+      coverage.inspectClickHouseAccountErasureCoverage(
         client([table("rows", [["user_id", "UUID"]])], { tables: 501, bytes: 1024 }),
       ),
     ).rejects.toThrow("metadata budget");
@@ -486,7 +596,7 @@ describe("ClickHouse erasure ownership coverage", () => {
 
   it("rejects unsupported storage engines except known non-personal cutover tables", async () => {
     await expect(
-      inspectClickHouseAccountErasureCoverage(
+      coverage.inspectClickHouseAccountErasureCoverage(
         client([
           physicalTable("analytics", "unknown_storage_engine", [["value", "String"]], {
             engine: "TinyLog",
@@ -503,9 +613,9 @@ describe("ClickHouse erasure shared system contracts", () => {
       ["id", "String"],
       ["applied_at", "DateTime"],
     ]);
-    await expect(inspectClickHouseAccountErasureCoverage(client([migrations]))).resolves.toEqual(
-      [],
-    );
+    await expect(
+      coverage.inspectClickHouseAccountErasureCoverage(client([migrations])),
+    ).resolves.toEqual([]);
   });
 
   it("rejects drift in analytics schema migrations", async () => {
@@ -513,9 +623,9 @@ describe("ClickHouse erasure shared system contracts", () => {
       ["id", "String"],
       ["applied_at", "DateTime64(9)"],
     ]);
-    await expect(inspectClickHouseAccountErasureCoverage(client([migrations]))).rejects.toThrow(
-      "column contract",
-    );
+    await expect(
+      coverage.inspectClickHouseAccountErasureCoverage(client([migrations])),
+    ).rejects.toThrow("column contract");
   });
 
   it("accepts sleep heart rate cutover TinyLog tables as known non-personal metadata", async () => {
@@ -525,21 +635,23 @@ describe("ClickHouse erasure shared system contracts", () => {
       [["cutover_at", "DateTime64(9, 'UTC')"]],
       { engine: "TinyLog" },
     );
-    await expect(inspectClickHouseAccountErasureCoverage(client([cutover]))).resolves.toEqual([]);
+    await expect(
+      coverage.inspectClickHouseAccountErasureCoverage(client([cutover])),
+    ).resolves.toEqual([]);
   });
 
   it("rejects unknown TinyLog tables that are not the sleep heart rate cutover metadata table", async () => {
     const unknownTinyLog = physicalTable("analytics", "legacy_metadata", [["value", "String"]], {
       engine: "TinyLog",
     });
-    await expect(inspectClickHouseAccountErasureCoverage(client([unknownTinyLog]))).rejects.toThrow(
-      "Unsupported ClickHouse physical storage engine",
-    );
+    await expect(
+      coverage.inspectClickHouseAccountErasureCoverage(client([unknownTinyLog])),
+    ).rejects.toThrow("Unsupported ClickHouse physical storage engine");
   });
 
   it("rejects analytics TinyLog tables that are not the sleep heart rate cutover metadata table", async () => {
     await expect(
-      inspectClickHouseAccountErasureCoverage(
+      coverage.inspectClickHouseAccountErasureCoverage(
         client([
           physicalTable(
             "analytics",
@@ -554,7 +666,7 @@ describe("ClickHouse erasure shared system contracts", () => {
 
   it("rejects sleep heart rate cutover tables on unsupported non-TinyLog engines", async () => {
     await expect(
-      inspectClickHouseAccountErasureCoverage(
+      coverage.inspectClickHouseAccountErasureCoverage(
         client([
           physicalTable(
             "analytics",
@@ -625,9 +737,9 @@ describe("ClickHouse erasure shared system contracts", () => {
   ] as const)(
     "rejects sleep heart rate cutover tables with %s",
     async (_label, cutover, message) => {
-      await expect(inspectClickHouseAccountErasureCoverage(client([cutover]))).rejects.toThrow(
-        message,
-      );
+      await expect(
+        coverage.inspectClickHouseAccountErasureCoverage(client([cutover])),
+      ).rejects.toThrow(message);
     },
   );
 
@@ -635,7 +747,9 @@ describe("ClickHouse erasure shared system contracts", () => {
     const cutover = sharedSystemTable("analytics.sleep_heart_rate_cutover", [
       ["cutover_at", "DateTime64(9,  \n'UTC')"],
     ]);
-    await expect(inspectClickHouseAccountErasureCoverage(client([cutover]))).resolves.toEqual([]);
+    await expect(
+      coverage.inspectClickHouseAccountErasureCoverage(client([cutover])),
+    ).resolves.toEqual([]);
   });
 
   it("accepts postgres_fitness provider priority mirrors with peerdb metadata columns", async () => {
@@ -643,7 +757,9 @@ describe("ClickHouse erasure shared system contracts", () => {
       "postgres_fitness.provider_priority",
       providerPriorityColumns,
     );
-    await expect(inspectClickHouseAccountErasureCoverage(client([priority]))).resolves.toEqual([]);
+    await expect(
+      coverage.inspectClickHouseAccountErasureCoverage(client([priority])),
+    ).resolves.toEqual([]);
   });
 
   it("normalizes whitespace when validating nullable provider priority columns", async () => {
@@ -658,7 +774,9 @@ describe("ClickHouse erasure shared system contracts", () => {
       ["_peerdb_is_deleted", "Int8"],
       ["_peerdb_version", "Int64"],
     ]);
-    await expect(inspectClickHouseAccountErasureCoverage(client([priority]))).resolves.toEqual([]);
+    await expect(
+      coverage.inspectClickHouseAccountErasureCoverage(client([priority])),
+    ).resolves.toEqual([]);
   });
 
   it("accepts postgres_fitness provider field priority mirrors", async () => {
@@ -668,9 +786,9 @@ describe("ClickHouse erasure shared system contracts", () => {
       ["priority", "Int64"],
       ...peerDbColumnDefinitions,
     ]);
-    await expect(inspectClickHouseAccountErasureCoverage(client([fieldPriority]))).resolves.toEqual(
-      [],
-    );
+    await expect(
+      coverage.inspectClickHouseAccountErasureCoverage(client([fieldPriority])),
+    ).resolves.toEqual([]);
   });
 
   it("accepts postgres_fitness device priority mirrors", async () => {
@@ -685,7 +803,7 @@ describe("ClickHouse erasure shared system contracts", () => {
       ...peerDbColumnDefinitions,
     ]);
     await expect(
-      inspectClickHouseAccountErasureCoverage(client([devicePriority])),
+      coverage.inspectClickHouseAccountErasureCoverage(client([devicePriority])),
     ).resolves.toEqual([]);
   });
 
@@ -704,7 +822,7 @@ describe("ClickHouse erasure shared system contracts", () => {
       ...peerDbColumnDefinitions,
     ]);
     await expect(
-      inspectClickHouseAccountErasureCoverage(
+      coverage.inspectClickHouseAccountErasureCoverage(
         client([sensorProviderPriority, sensorDevicePriority]),
       ),
     ).resolves.toEqual([]);
@@ -757,7 +875,9 @@ describe("ClickHouse erasure shared system contracts", () => {
     "rejects shared system table %s when required column %s is missing",
     async (qualified, columns, missingColumn) => {
       await expect(
-        inspectClickHouseAccountErasureCoverage(client([sharedSystemTable(qualified, columns)])),
+        coverage.inspectClickHouseAccountErasureCoverage(
+          client([sharedSystemTable(qualified, columns)]),
+        ),
       ).rejects.toThrow(`${missingColumn} violates its column contract`);
     },
   );
@@ -772,7 +892,7 @@ describe("ClickHouse erasure shared system contracts", () => {
       ...peerDbColumnDefinitions,
     ]);
     await expect(
-      inspectClickHouseAccountErasureCoverage(client([providerCatalog])),
+      coverage.inspectClickHouseAccountErasureCoverage(client([providerCatalog])),
     ).resolves.toEqual([providerCatalog]);
   });
 });
@@ -783,7 +903,9 @@ describe("ClickHouse erasure fence tables", () => {
       ["user_hash", "FixedString(64)"],
       ["erased_at", "DateTime64(9)"],
     ]);
-    await expect(inspectClickHouseAccountErasureCoverage(client([userFence]))).resolves.toEqual([]);
+    await expect(
+      coverage.inspectClickHouseAccountErasureCoverage(client([userFence])),
+    ).resolves.toEqual([]);
   });
 
   it("accepts exact ingest operation fence contracts without classifying them as personal data", async () => {
@@ -792,7 +914,7 @@ describe("ClickHouse erasure fence tables", () => {
       ["erased_at", "DateTime64(9)"],
     ]);
     await expect(
-      inspectClickHouseAccountErasureCoverage(client([operationFence])),
+      coverage.inspectClickHouseAccountErasureCoverage(client([operationFence])),
     ).resolves.toEqual([]);
   });
 
@@ -802,9 +924,9 @@ describe("ClickHouse erasure fence tables", () => {
       ["erased_at", "DateTime64(9)"],
       ["email", "String"],
     ]);
-    await expect(inspectClickHouseAccountErasureCoverage(client([userFence]))).rejects.toThrow(
-      "column contract",
-    );
+    await expect(
+      coverage.inspectClickHouseAccountErasureCoverage(client([userFence])),
+    ).rejects.toThrow("column contract");
   });
 
   it("rejects personal columns added to operation fence tables", async () => {
@@ -813,16 +935,18 @@ describe("ClickHouse erasure fence tables", () => {
       ["erased_at", "DateTime64(9)"],
       ["notes", "String"],
     ]);
-    await expect(inspectClickHouseAccountErasureCoverage(client([operationFence]))).rejects.toThrow(
-      "column contract",
-    );
+    await expect(
+      coverage.inspectClickHouseAccountErasureCoverage(client([operationFence])),
+    ).rejects.toThrow("column contract");
   });
 
   it.each(["sleep_heart_rate_cutover", "schema_migrations", "input_queue"])(
     "rejects personal columns on shared system table name: %s",
     async (name) => {
       await expect(
-        inspectClickHouseAccountErasureCoverage(client([table(name, [["email", "String"]])])),
+        coverage.inspectClickHouseAccountErasureCoverage(
+          client([table(name, [["email", "String"]])]),
+        ),
       ).rejects.toThrow();
     },
   );
@@ -835,14 +959,14 @@ describe("ClickHouse erasure domain ownership patterns", () => {
       ["session_id", "UUID"],
       ["value", "String"],
     ]);
-    await expect(inspectClickHouseAccountErasureCoverage(client([sleepStage]))).resolves.toEqual([
-      sleepStage,
-    ]);
+    await expect(
+      coverage.inspectClickHouseAccountErasureCoverage(client([sleepStage])),
+    ).resolves.toEqual([sleepStage]);
   });
 
   it("rejects processing flow markers that omit the parent operation identifier", async () => {
     await expect(
-      inspectClickHouseAccountErasureCoverage(
+      coverage.inspectClickHouseAccountErasureCoverage(
         client([
           physicalTable("postgres_fitness", "processing_flow_marker", [
             ["id", "UUID"],
@@ -859,9 +983,9 @@ describe("ClickHouse erasure domain ownership patterns", () => {
       ["operation_id", "UUID"],
       ["batch_key", "String"],
     ]);
-    await expect(inspectClickHouseAccountErasureCoverage(client([marker]))).resolves.toEqual([
-      marker,
-    ]);
+    await expect(
+      coverage.inspectClickHouseAccountErasureCoverage(client([marker])),
+    ).resolves.toEqual([marker]);
   });
 
   it("requires UUID record-reference columns to sit on direct user-owned tables", async () => {
@@ -870,7 +994,7 @@ describe("ClickHouse erasure domain ownership patterns", () => {
       ["value", "String"],
     ]);
     await expect(
-      inspectClickHouseAccountErasureCoverage(client([invalidReference])),
+      coverage.inspectClickHouseAccountErasureCoverage(client([invalidReference])),
     ).rejects.toThrow("Unsupported ClickHouse record ownership relation");
   });
 
@@ -880,14 +1004,14 @@ describe("ClickHouse erasure domain ownership patterns", () => {
       ["metric_stream_id", "UUID"],
       ["value", "String"],
     ]);
-    await expect(inspectClickHouseAccountErasureCoverage(client([metricStream]))).resolves.toEqual([
-      metricStream,
-    ]);
+    await expect(
+      coverage.inspectClickHouseAccountErasureCoverage(client([metricStream])),
+    ).resolves.toEqual([metricStream]);
   });
 
   it("rejects non-UUID record-reference columns even on direct user-owned tables", async () => {
     await expect(
-      inspectClickHouseAccountErasureCoverage(
+      coverage.inspectClickHouseAccountErasureCoverage(
         client([
           physicalTable("analytics", "metric_stream", [
             ["user_id", "UUID"],
@@ -904,14 +1028,14 @@ describe("ClickHouse erasure domain ownership patterns", () => {
       ["id", "UUID"],
       ["name", "String"],
     ]);
-    await expect(inspectClickHouseAccountErasureCoverage(client([profile]))).resolves.toEqual([
-      profile,
-    ]);
+    await expect(
+      coverage.inspectClickHouseAccountErasureCoverage(client([profile])),
+    ).resolves.toEqual([profile]);
   });
 
   it("rejects user profile tables whose profile id is not a UUID", async () => {
     await expect(
-      inspectClickHouseAccountErasureCoverage(
+      coverage.inspectClickHouseAccountErasureCoverage(
         client([
           physicalTable("postgres_fitness", "user_profile", [
             ["id", "String"],
@@ -924,7 +1048,7 @@ describe("ClickHouse erasure domain ownership patterns", () => {
 
   it("rejects processing flow markers whose id is not a non-null UUID", async () => {
     await expect(
-      inspectClickHouseAccountErasureCoverage(
+      coverage.inspectClickHouseAccountErasureCoverage(
         client([
           physicalTable("postgres_fitness", "processing_flow_marker", [
             ["id", "Nullable(UUID)"],
@@ -946,9 +1070,9 @@ describe("ClickHouse erasure domain ownership patterns", () => {
         ["provider_id", "String"],
       ],
     );
-    await expect(inspectClickHouseAccountErasureCoverage(client([inventory]))).resolves.toEqual([
-      inventory,
-    ]);
+    await expect(
+      coverage.inspectClickHouseAccountErasureCoverage(client([inventory])),
+    ).resolves.toEqual([inventory]);
   });
 
   it("classifies processing flow marker sensor priority tables by operation identifiers", async () => {
@@ -962,13 +1086,13 @@ describe("ClickHouse erasure domain ownership patterns", () => {
       ],
     );
     await expect(
-      inspectClickHouseAccountErasureCoverage(client([sensorPriority])),
+      coverage.inspectClickHouseAccountErasureCoverage(client([sensorPriority])),
     ).resolves.toEqual([sensorPriority]);
   });
 
   it("rejects sleep stage tables that omit the parent session identifier", async () => {
     await expect(
-      inspectClickHouseAccountErasureCoverage(
+      coverage.inspectClickHouseAccountErasureCoverage(
         client([
           physicalTable("postgres_fitness", "sleep_stage", [
             ["id", "UUID"],
@@ -981,7 +1105,7 @@ describe("ClickHouse erasure domain ownership patterns", () => {
 
   it("rejects sleep stage tables whose parent session identifier is not a UUID", async () => {
     await expect(
-      inspectClickHouseAccountErasureCoverage(
+      coverage.inspectClickHouseAccountErasureCoverage(
         client([
           physicalTable("postgres_fitness", "sleep_stage", [
             ["id", "UUID"],
@@ -999,9 +1123,9 @@ describe("ClickHouse erasure domain ownership patterns", () => {
       ["provider_food_id", "String"],
       ["external_id", "String"],
     ]);
-    await expect(inspectClickHouseAccountErasureCoverage(client([catalog]))).resolves.toEqual([
-      catalog,
-    ]);
+    await expect(
+      coverage.inspectClickHouseAccountErasureCoverage(client([catalog])),
+    ).resolves.toEqual([catalog]);
   });
 });
 
@@ -1038,7 +1162,7 @@ describe("ClickHouse erasure identifier catalog", () => {
         [columnName, columnType],
       ]);
       await expect(
-        inspectClickHouseAccountErasureCoverage(client([relationOnly])),
+        coverage.inspectClickHouseAccountErasureCoverage(client([relationOnly])),
       ).resolves.toEqual([relationOnly]);
     },
   );
@@ -1048,7 +1172,7 @@ describe("ClickHouse erasure identifier catalog", () => {
       ["user_id", "UUID"],
       [columnName, columnType],
     ]);
-    expect(identifierColumns(rows)).toEqual([
+    expect(coverage.identifierColumns(rows)).toEqual([
       [
         columnName,
         {
@@ -1067,12 +1191,14 @@ describe("ClickHouse erasure identifier catalog", () => {
       ["group_id", "LowCardinality(String)"],
       ["member_activity_ids", "Array(Nullable(UUID))"],
     ]);
-    expect(identifierColumns(rows)).toEqual([
+    expect(coverage.identifierColumns(rows)).toEqual([
       ["activity_id", { cardinality: "scalar", family: "activityIds", valueType: "uuid" }],
       ["group_id", { cardinality: "scalar", family: "stringRelationIds", valueType: "string" }],
       ["member_activity_ids", { cardinality: "array", family: "activityIds", valueType: "uuid" }],
     ]);
-    await expect(inspectClickHouseAccountErasureCoverage(client([rows]))).resolves.toEqual([rows]);
+    await expect(coverage.inspectClickHouseAccountErasureCoverage(client([rows]))).resolves.toEqual(
+      [rows],
+    );
   });
 });
 
@@ -1090,13 +1216,15 @@ describe("ClickHouse erasure ownership heuristics", () => {
     ["legacy_account_id", "UUID"],
   ] as const)("rejects unmapped ownership column %s", async (columnName, columnType) => {
     await expect(
-      inspectClickHouseAccountErasureCoverage(client([table("rows", [[columnName, columnType]])])),
+      coverage.inspectClickHouseAccountErasureCoverage(
+        client([table("rows", [[columnName, columnType]])]),
+      ),
     ).rejects.toThrow("not mapped to an ownership relation");
   });
 
   it("does not treat non-ownership identifier suffixes as probable ownership columns", async () => {
     await expect(
-      inspectClickHouseAccountErasureCoverage(
+      coverage.inspectClickHouseAccountErasureCoverage(
         client([table("rows", [["account_id_suffix", "String"]])]),
       ),
     ).rejects.toThrow("Unclassified ClickHouse physical ownership domain");
@@ -1116,13 +1244,15 @@ describe("ClickHouse erasure ownership heuristics", () => {
     "raw",
   ] as const)("rejects strong personal column %s without ownership", async (columnName) => {
     await expect(
-      inspectClickHouseAccountErasureCoverage(client([table("rows", [[columnName, "String"]])])),
+      coverage.inspectClickHouseAccountErasureCoverage(
+        client([table("rows", [[columnName, "String"]])]),
+      ),
     ).rejects.toThrow("without an ownership relation");
   });
 
   it("rejects unclassified tables that only expose a bare UUID id", async () => {
     await expect(
-      inspectClickHouseAccountErasureCoverage(
+      coverage.inspectClickHouseAccountErasureCoverage(
         client([table("mystery_identity", [["id", "UUID"]])]),
       ),
     ).rejects.toThrow("Unclassified ClickHouse UUID identity ownership domain");
@@ -1130,7 +1260,7 @@ describe("ClickHouse erasure ownership heuristics", () => {
 
   it("rejects tables with no ownership signals at all", async () => {
     await expect(
-      inspectClickHouseAccountErasureCoverage(
+      coverage.inspectClickHouseAccountErasureCoverage(
         client([table("reference_only", [["provider_id", "String"]])]),
       ),
     ).rejects.toThrow("Unclassified ClickHouse physical ownership domain");
@@ -1140,7 +1270,7 @@ describe("ClickHouse erasure ownership heuristics", () => {
 describe("ClickHouse erasure inspection guards", () => {
   it("rejects invalid managed database names in inspection options", async () => {
     await expect(
-      inspectClickHouseAccountErasureCoverage(client([]), {
+      coverage.inspectClickHouseAccountErasureCoverage(client([]), {
         managedDatabases: ["not-a-valid-database"],
       }),
     ).rejects.toThrow();
@@ -1148,7 +1278,7 @@ describe("ClickHouse erasure inspection guards", () => {
 
   it("requires direct UUID ownership for record-reference columns", async () => {
     await expect(
-      inspectClickHouseAccountErasureCoverage(
+      coverage.inspectClickHouseAccountErasureCoverage(
         client([
           physicalTable("analytics", "metric_stream", [
             ["user_id", "Nullable(UUID)"],
@@ -1161,7 +1291,7 @@ describe("ClickHouse erasure inspection guards", () => {
 
   it("rejects catalog metadata that exceeds the byte budget", async () => {
     await expect(
-      inspectClickHouseAccountErasureCoverage(
+      coverage.inspectClickHouseAccountErasureCoverage(
         client([table("rows", [["user_id", "UUID"]])], {
           tables: 1,
           bytes: 1024 * 1024 + 1,
@@ -1175,16 +1305,16 @@ describe("ClickHouse erasure inspection guards", () => {
     const view = physicalTable("analytics", "owned_view", [["user_id", "UUID"]], {
       engine: "MaterializedView",
     });
-    await expect(inspectClickHouseAccountErasureCoverage(client([owned, view]))).resolves.toEqual([
-      owned,
-    ]);
+    await expect(
+      coverage.inspectClickHouseAccountErasureCoverage(client([owned, view])),
+    ).resolves.toEqual([owned]);
   });
 
   it("rejects shared system tables that omit required contract columns", async () => {
     const migrations = sharedSystemTable("analytics.schema_migrations", [["id", "String"]]);
-    await expect(inspectClickHouseAccountErasureCoverage(client([migrations]))).rejects.toThrow(
-      "column contract",
-    );
+    await expect(
+      coverage.inspectClickHouseAccountErasureCoverage(client([migrations])),
+    ).rejects.toThrow("column contract");
   });
 
   it("rejects fence tables whose hash columns drift from the contract", async () => {
@@ -1192,9 +1322,9 @@ describe("ClickHouse erasure inspection guards", () => {
       ["user_hash", "FixedString(32)"],
       ["erased_at", "DateTime64(9)"],
     ]);
-    await expect(inspectClickHouseAccountErasureCoverage(client([userFence]))).rejects.toThrow(
-      "column contract",
-    );
+    await expect(
+      coverage.inspectClickHouseAccountErasureCoverage(client([userFence])),
+    ).rejects.toThrow("column contract");
   });
 
   it("rejects provider priority mirrors with drifted peerdb metadata types", async () => {
@@ -1204,9 +1334,9 @@ describe("ClickHouse erasure inspection guards", () => {
       ["_peerdb_is_deleted", "Int8"],
       ["_peerdb_version", "Int64"],
     ]);
-    await expect(inspectClickHouseAccountErasureCoverage(client([priority]))).rejects.toThrow(
-      "column contract",
-    );
+    await expect(
+      coverage.inspectClickHouseAccountErasureCoverage(client([priority])),
+    ).rejects.toThrow("column contract");
   });
 
   it("rejects catalog rows that fail physical table schema validation", async () => {
@@ -1220,7 +1350,9 @@ describe("ClickHouse erasure inspection guards", () => {
         },
       }),
     };
-    await expect(inspectClickHouseAccountErasureCoverage(malformedClient)).rejects.toThrow();
+    await expect(
+      coverage.inspectClickHouseAccountErasureCoverage(malformedClient),
+    ).rejects.toThrow();
   });
 
   it("does not treat fence tables on non-ingest databases as protected metadata", async () => {
@@ -1228,21 +1360,25 @@ describe("ClickHouse erasure inspection guards", () => {
       ["user_hash", "FixedString(64)"],
       ["erased_at", "DateTime64(9)"],
     ]);
-    await expect(inspectClickHouseAccountErasureCoverage(client([fenceShaped]))).rejects.toThrow(
-      "Unclassified ClickHouse physical ownership domain",
-    );
+    await expect(
+      coverage.inspectClickHouseAccountErasureCoverage(client([fenceShaped])),
+    ).rejects.toThrow("Unclassified ClickHouse physical ownership domain");
   });
 
   it("accepts the inclusive 500-table / 1 MiB catalog budget and rejects only overage", async () => {
     const owned = table("owned_rows", [["user_id", "UUID"]]);
     await expect(
-      inspectClickHouseAccountErasureCoverage(client([owned], { tables: 500, bytes: 1024 * 1024 })),
+      coverage.inspectClickHouseAccountErasureCoverage(
+        client([owned], { tables: 500, bytes: 1024 * 1024 }),
+      ),
     ).resolves.toEqual([owned]);
     await expect(
-      inspectClickHouseAccountErasureCoverage(client([owned], { tables: 501, bytes: 1024 })),
+      coverage.inspectClickHouseAccountErasureCoverage(
+        client([owned], { tables: 501, bytes: 1024 }),
+      ),
     ).rejects.toThrow("500-table/1 MiB metadata budget");
     await expect(
-      inspectClickHouseAccountErasureCoverage(
+      coverage.inspectClickHouseAccountErasureCoverage(
         client([owned], { tables: 1, bytes: 1024 * 1024 + 1 }),
       ),
     ).rejects.toThrow("500-table/1 MiB metadata budget");
@@ -1266,17 +1402,17 @@ describe("ClickHouse erasure inspection guards", () => {
         };
       },
     };
-    await expect(inspectClickHouseAccountErasureCoverage(observingClient)).resolves.toEqual([
-      owned,
-    ]);
+    await expect(
+      coverage.inspectClickHouseAccountErasureCoverage(observingClient),
+    ).resolves.toEqual([owned]);
     expect(observed).toHaveLength(2);
     expect(observed).toEqual([
       expect.objectContaining({
-        query_params: { managed_databases: [...PRODUCTION_MANAGED_DATABASES] },
+        query_params: { managed_databases: [...coverage.PRODUCTION_MANAGED_DATABASES] },
         clickhouse_settings: { log_queries: 0 },
       }),
       expect.objectContaining({
-        query_params: { managed_databases: [...PRODUCTION_MANAGED_DATABASES] },
+        query_params: { managed_databases: [...coverage.PRODUCTION_MANAGED_DATABASES] },
         clickhouse_settings: { log_queries: 0 },
       }),
     ]);

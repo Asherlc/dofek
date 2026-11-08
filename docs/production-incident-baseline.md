@@ -35682,3 +35682,17 @@ reporting assertions, and reused existing position comparison validation.
 Focused verification:46 unit tests passed;12 mutants killed(100%);Knip passed
 with the same non-secret config fixtures as CI. Remote rerun remains pending.
 No resilience settings, thresholds or exemptions changed.
+
+### Catalog mutation execution follow-up
+
+[Catalog shard0](https://github.com/Asherlc/dofek/actions/runs/42494073092/job/128773280097)
+failed at74.71% despite passing ordinary catalog tests. Module-initialized
+catalog/schema declarations were not being exercised under active per-test
+mutation selection. Tests now use stock Vitest module reset and import in
+beforeEach; unchanged assertions then raised the score to90.02%. Added focused
+staging identity/reference, direct nullable-reference, provider database scope
+and compound ownership-name cases. Final local result:180 catalog tests pass,
+mutation score93.04%(401 killed,28 survived,2 uncovered), TypeScript and Biome
+pass. This follow-up changes no production behavior or mutation gates.
+Remote CI confirmation is pending. Patch coverage passed when integration
+uploads arrived; its earlier partial-report failure needed no configuration fix.
