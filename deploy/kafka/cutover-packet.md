@@ -1,7 +1,11 @@
 # Broker-only cutover qualification packet
 
-Status: **offline review candidate; not approved for activation**. The canonical
-stack is now hot-log-only and the narrow worker guard has local qualification.
+Status: **withdrawn hot-log alternative; blocked for merge and activation**.
+Kafka WITH tiered storage is the user's required objective. Commands and release
+assumptions below are retained review artifacts, not a tiered cutover packet.
+The current tree is hot-log-only and the worker guard rejects remote storage;
+passing checks do not qualify that tree for the required migration. See the
+[tiered proof boundary](qualification.md#tiered-storage-required-quiescence-review).
 Capacity/policy, merge sequencing and retirement gates below must close before final mutation
 commands and a maintenance window are approved. Do not reuse the aborted combined
 release packet. See [the aborted attempt](https://github.com/Asherlc/dofek/blob/ed26f38b8/docs/evidence/kafka-cutover-attempt-20261108/README.md).

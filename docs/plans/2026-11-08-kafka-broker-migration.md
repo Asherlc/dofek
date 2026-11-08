@@ -1,7 +1,11 @@
 # Kafka broker migration
 
-Status: canonical hot-log broker and narrow worker guard qualified offline;
-review image, retention/capacity policy and production activation remain separate gates.
+Status: **blocked; Kafka WITH tiered storage is required**. The user rejected
+hot-log-only as the release direction. Current remote-disabled source/worker
+artifacts remain for review, not deployment; their successful tests do not
+qualify tiered activation. The [stock erasure/quiescence proof boundary](../../deploy/kafka/qualification.md#tiered-storage-required-quiescence-review)
+must close before a coherent tiered implementation can proceed. No runtime
+reversion, workflow change or production action is authorized by this status.
 This is one of two independent efforts requested on November 8. The other is
 account-erasure hardening. Both start at main commit
 `2752451fb4a7404e5d887d32341595a42a673dcd`; neither is stacked on the other.

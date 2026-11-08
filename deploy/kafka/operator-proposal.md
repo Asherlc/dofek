@@ -1,5 +1,10 @@
 # Broker-only operator proposal
 
+**Withdrawn: hot-log-only does not meet the required tiered-storage objective.**
+Do not execute these commands. They preserve the rejected alternative for review;
+they are not a tiered-storage operator packet or an approved production action.
+See the [current blocker](qualification.md#tiered-storage-required-quiescence-review).
+
 **Review only. No production command below is authorized by approval of the
 release order.** Read the [cutover packet](cutover-packet.md) first. This proposal
 uses existing Docker/Kafka commands, not the normal stack/Terraform workflow.

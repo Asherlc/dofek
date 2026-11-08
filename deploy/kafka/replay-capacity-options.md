@@ -1,5 +1,10 @@
 # Replay window and durability assessment
 
+**Withdrawn as a release direction.** The user requires Kafka tiered storage;
+hot-log-only window sizing does not solve that objective. This evidence/gap
+analysis remains historical context. Do not advance its observation or retention
+proposal as the migration solution. See the [tiered blocker](qualification.md#tiered-storage-required-quiescence-review).
+
 Planning direction: durability takes priority over speed. The user permits
 shortening retention to fit disk; no exact window, byte cap or production change
 is approved. The former 1 GiB/source proposal is a candidate to evaluate, not an

@@ -1,5 +1,10 @@
 # Kafka protocol qualification — November 8, 2026
 
+**Current status: tiered storage is required; activation and implementation are
+blocked on the [stock quiescence/write-fence boundary](#tiered-storage-required-quiescence-review).**
+Earlier sections are chronological evidence, including the now-withdrawn hot-log
+alternative; they do not describe a deploy-ready current configuration.
+
 This record qualifies bounded protocol paths, not production activation or
 remote physical erasure. No production service, offset, topic, secret or archive
 was modified. Image observations are in [the packet](cutover-packet.md).
@@ -159,3 +164,75 @@ The user subsequently authorized offline qualification of that alternative with
 “continue”. The [hot-log-only observation](hot-log-qualification.md) reproduced
 the remaining local logical/physical deletion gap and observed stock cleanup.
 It does not qualify production activation or change the checked-in tiered broker.
+## Tiered storage required: quiescence review
+
+The user's clarified objective is Kafka **with tiered storage**, for disk
+pressure and durable recovery coverage. Hot-log-only is withdrawn as the release
+direction. The current remote-disabled tree and local-only verifier remain
+unshippable artifacts, not a tiered implementation. Nothing was deployed and no
+managed R2 resource or old data was removed.
+
+### Documented boundary and remaining uncertainty
+
+Kafka's [topic configuration](https://kafka.apache.org/44/configuration/topic-configs/#remote.log.copy.disable)
+offers `remote.log.copy.disable` to stop further copying and make tiered data
+read-only. That configuration is not documented as an acknowledgement that all
+previously admitted storage operations have finished. Its effect on retention
+also requires review before proposing any maintenance action.
+
+The pinned [remote-log manager](https://github.com/apache/kafka/blob/4.4.0/storage/src/main/java/org/apache/kafka/server/log/remote/storage/RemoteLogManager.java)
+publishes terminal deletion metadata after the plugin's delete returns. During
+close it cancels tasks and closes its copy/expiration pools; its helper then logs
+shutdown completion. The underlying [executor shutdown helper](https://github.com/apache/kafka/blob/4.4.0/clients/src/main/java/org/apache/kafka/common/utils/internals/ThreadUtils.java)
+can time out, cancel tasks and log that termination failed without throwing.
+Thus successful shutdown logging is not a strict successful-join result.
+
+Aiven's pinned [upload implementation](https://github.com/Aiven-Open/tiered-storage-for-apache-kafka/blob/v1.2.0/storage/s3/src/main/java/io/aiven/kafka/tieredstorage/storage/s3/S3UploadOutputStream.java)
+uses synchronous PUT/multipart completion calls without a Kafka epoch condition.
+Its [storage close](https://github.com/Aiven-Open/tiered-storage-for-apache-kafka/blob/v1.2.0/storage/s3/src/main/java/io/aiven/kafka/tieredstorage/storage/s3/S3Storage.java)
+closes the SDK client; it does not expose a storage-service acknowledgement that
+all earlier ambiguous writes are fenced. [R2 consistency](https://developers.cloudflare.com/r2/reference/consistency/)
+makes completed writes/deletes and listings observable, while its
+[supported S3 operations](https://developers.cloudflare.com/r2/api/s3/api/)
+include multipart listing/abort. Neither inspected contract supplies a barrier
+for an earlier single PUT whose outcome became unknown at interruption/crash.
+
+The precise unproven case is whether such an operation can commit after a later
+delete/listing. This is a missing established guarantee, **not a demonstrated
+Kafka/R2 race in production or proof that a correct stock solution is
+impossible**. Multipart absence does not enumerate single PUTs; terminal Kafka
+metadata does not enumerate all possible orphan objects. Pausing producers alone
+also leaves already admitted RSM work. No amount of waiting chosen without a
+documented bound proves that the uncertain operation is settled.
+
+### One smallest tiered-compatible proposal for alignment
+
+Retain native Kafka tiering and its retention lifecycle. Use the existing final
+worker retention phase as a fail-closed gate, and investigate **operator-controlled
+quiescent final verification** as the smallest availability tradeoff, rather
+than replacing tiering or introducing a permanent coordinator. A candidate
+success path would need all of the following together: generation-bound account
+checkpoints; native terminal deletion for the covered segments; exhaustive
+namespace/orphan and multipart absence; local/retired-broker checks; and a stock,
+documented boundary proving every old writer/copy operation completed or cannot
+commit later. Resume must not re-admit expired segments.
+
+This proposal is **not yet supported for implementation**: stock cancellation,
+shutdown status and point-in-time listing do not establish that last boundary
+under the inspected crash/timeout semantics. On uncertain evidence the existing
+worker must remain incomplete; do not add a bare listing success path, sleep,
+manual acknowledgement, certificate, feature flag or new receipt framework.
+
+The actual caller is `retention_verification`, through the existing required
+`assertBrokerStorageExpired` dependency. A whole-broker quiescent boundary on
+this single-broker topology affects every producer/consumer and requires
+maintenance or delayed account completion. That availability/product tradeoff
+needs approval before building or scheduling it. Even that approval would not
+close the missing technical guarantee or authorize production actions.
+
+Next technical evidence must identify a stock terminal/quiescence or write-fence
+contract spanning ambiguous S3 operations and broker restart, including orphan
+scope. If it cannot be established, implementation stays blocked on this exact
+requirement; do not pivot away from tiered storage. No new production query,
+credential change, cloud experiment, runtime implementation or infrastructure
+was performed in this bounded source review.

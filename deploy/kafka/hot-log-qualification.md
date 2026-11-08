@@ -1,6 +1,9 @@
 # Hot-log-only Kafka qualification
 
-Status: **offline investigation; production activation remains blocked**.
+Status: **rejected release alternative; evidence retained only**. Kafka WITH
+tiered storage is the required objective. These local results do not satisfy
+that objective or qualify the current tree for merge/activation. See the
+[tiered review](qualification.md#tiered-storage-required-quiescence-review).
 Following the stock tiered-storage proof gap in [qualification.md](qualification.md),
 the user's November 8 “continue” was treated as approval to qualify the proposed
 hot-log-only alternative. The separately approved narrow worker safety release

@@ -1,10 +1,17 @@
 # Kafka broker candidate
 
+**Blocked: Kafka WITH tiered storage is the required objective.** The user
+explicitly rejected advancing hot-log-only as the migration solution. The
+checked-in tree still reflects that withdrawn alternative; its remote-disabled
+broker and local-only worker guard are not a deployable tiered candidate. Do not
+merge or activate it. Preserve its evidence, managed R2 resources and old data.
+See the [bounded tiered review](qualification.md#tiered-storage-required-quiescence-review).
+
 This branch extracts the broker candidate from frozen
 [PR #3231](https://github.com/Asherlc/dofek/pull/3231), commit `ed26f38b8`.
 It does not authorize or perform activation. Production remains on Redpanda.
 
-## Runtime contract
+## Current tree: withdrawn hot-log alternative
 
 The canonical broker stanza in `../stack.yml` uses stock Apache Kafka 4.4.0 as
 a hot log, with remote storage explicitly disabled. There is no alternate overlay
