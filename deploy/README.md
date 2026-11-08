@@ -2,6 +2,11 @@
 
 Infrastructure-as-code and deployment configuration for Dofek.
 
+The [Kafka broker candidate](kafka/README.md) replaces the broker stanza for the
+planned migration. Activation remains blocked on its documented safety and
+qualification prerequisites; the production topology described below remains
+Redpanda until a separately approved broker-only cutover.
+
 ## Architecture
 
 Dofek production is deployed as a **single-node Docker Swarm** stack on an

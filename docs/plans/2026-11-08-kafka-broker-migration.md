@@ -1,6 +1,6 @@
 # Kafka broker migration
 
-Status: extraction plan; this branch does not yet contain the runtime migration.
+Status: broker runtime candidate extracted; activation qualification remains open.
 This is one of two independent efforts requested on November 8. The other is
 account-erasure hardening. Both start at main commit
 `2752451fb4a7404e5d887d32341595a42a673dcd`; neither is stacked on the other.
@@ -21,12 +21,12 @@ artifact digests may be reused only for matching unchanged inputs.
 
 ## Extraction and validation
 
-- [ ] Extract only broker infrastructure and necessary transport compatibility
+- [x] Extract only broker infrastructure and necessary transport compatibility
   changes from PR #3231. Primary paths: `deploy/stack.yml`, the broker bootstrap
   portions of `.github/workflows/deploy-web-stack.yml`, required environment
   rendering in `scripts/deploy-service-environment.ts`, and the dedicated R2
   Terraform resources. Do not copy the full application workflow or source tree.
-- [ ] Keep ClickHouse at production 26.6 and preserve Postgres, PeerDB, analytics,
+- [x] Keep ClickHouse at production 26.6 and preserve Postgres, PeerDB, analytics,
   unrelated services and application migration journals. Do not import the new
   catalog guard, identifier stores, snapshot redesign, migrations 0178/0179,
   analytics work coordination or the application-wide Kafka naming refactor.
@@ -67,3 +67,32 @@ Existing application images must work unchanged; the six consumer/archive routes
 must remain consistent; remote retention must preserve existing erasure guarantees;
 full-stack automation must not upgrade databases or prune the retained broker;
 the first successful Kafka write must be treated as a distinct recovery boundary.
+
+## Extraction review record
+
+The candidate retains `REDPANDA_BROKERS` for existing application and Connect
+images. Only the new broker gets `kafka.env`; no application naming refactor,
+native publisher overhaul, transport acknowledgement migration, archive config
+version bump, or ClickHouse upgrade is included. Source ownership and remaining
+qualification requirements are recorded in [the broker guide](../../deploy/kafka/README.md).
+
+Review checkpoint: the frozen full-stack topic bootstrap depended on the new
+application route/epoch model. It was not copied. Normal application deployment
+instead requires an already activated broker and existing source/quarantine
+topics; first activation must use a separately qualified broker-only packet.
+This keeps the normal release from silently creating a new transport generation.
+
+Review checkpoint: current replay-expiry verification compares low offsets and
+does not prove physical remote erasure. Resolving that compatibility is a real
+activation prerequisite, without importing the unrelated erasure redesign.
+See [Kafka's remote deletion design](https://cwiki.apache.org/confluence/display/KAFKA/KIP-405%3A+Kafka+Tiered+Storage).
+
+Local verification: 27 focused environment-rendering tests passed, including
+eight tests first observed failing before broker rendering was extracted.
+Root TypeScript typecheck, Biome for both changed TypeScript files, Terraform
+1.16.6 initialization/validation/formatting, Docker stack configuration rendering
+with non-secret placeholders, and the repository's Actionlint mode passed.
+Standalone Actionlint with ShellCheck also reports existing quoting diagnostics
+in unchanged workflow scripts; the added bootstrap quoting diagnostics were fixed.
+No current-image real-engine qualification, full-suite pass, production plan/apply,
+application build or activation is claimed.
