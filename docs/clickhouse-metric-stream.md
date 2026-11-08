@@ -126,6 +126,59 @@ This checklist authorizes no production scan, rehash, acknowledgement repair,
 offset change or deployment. Use stock SQL and existing operational workflows;
 it does not require a new identity registry or audit framework.
 
+### Local identity-local deletion qualification — not deployed
+
+The 2026-11-07 local qualification tested an identity-local lookup against the
+unchanged global latest-ID lookup on ClickHouse **26.6.1.1193** and
+**26.10.2.103**. The candidate discovers `(id, user_id, provider_id, recorded_at)`
+tuples from the union of deletion scopes, resolves the full latest row across
+versions of those tuples, then reapplies the original scope and erasure
+predicates. Only immutable user/provider/time conjuncts may restrict the
+version scan. A scope branch without such a conjunct remains unrestricted;
+activity, channel and external-ID predicates stay after latest resolution.
+The [frozen single-scope SELECT](evidence/metric-stream-identity-local-20261107/candidate-select.sql)
+illustrates the lookup only, not an approved production operation.
+
+This uses stock [tuple `IN`](https://clickhouse.com/docs/reference/statements/in)
+and existing [primary indexes](https://clickhouse.com/docs/guides/clickhouse/data-modelling/sparse-primary-indexes).
+No projection, storage model, optimizer hint or application-side ID paging
+was added. The existing full-row `argMax` and tombstone version expression
+were retained; scope persistence and acknowledgement sequencing were not
+changed or claimed as qualified by these lookup tests.
+
+Both engines passed **19 real-engine lookup checks**, including mutable-field
+moves before/after merges, nullable/overlapping scopes, cross-activity moves,
+version/ingestion ordering, tombstones, erasure fences, replay and physical
+erasure. Exact ranking-tuple ties permit an arbitrary single winner; the test
+does not assert identical winners across different query plans. Immutable
+user/provider/timestamp moves are outside the candidate's supported contract;
+the existing historical production regressions remain unchanged.
+
+Each engine also completed **64 result-checked measurements** over 1,048,576
+rows with all six existing projections, hashed IDs and fixed timestamps.
+The matrix covered 1/64/113/8,192 candidate IDs, two parts and one merged part,
+and target users owning 12.5% or 75% of the rows, with alternating query order.
+For the 113-ID comparison case, total candidate-plus-resolution reads were:
+
+| Engine | Current rows read | Candidate rows read | Candidate/current bytes |
+| --- | ---: | ---: | ---: |
+| 26.6.1.1193 | 1,056,769–1,064,961 | 32,769–57,345 | 10.0–22.3% |
+| 26.10.2.103 | 1,056,769–1,064,961 | 32,769–40,961 | 8.5–17.9% |
+
+The 26.6 plans selected 3–5 of 128 probe granules. On 26.10, merged parts
+selected 3–4 of 128; the two-part plans applied staged pruning of 64/128 then
+3/64 granules. The
+[paired measurements and limitations](evidence/metric-stream-identity-local-20261107/summary.json)
+support a local qualification, not a production latency forecast or a bounded
+read guarantee for every scope. The fixture assigns activities to contiguous
+source-time ranges; scattered-time and unconstrained scopes can behave
+differently. The 113-ID case reflects the earlier written-row/granule proxy,
+not a scaled replay of the 43,406 IDs discovered by the retained-data audit;
+the matrix also tests much larger candidate sets. Unread broker events,
+archives and other historical IDs remain
+uncertified. The experiment changed no production source, queried no
+production data, and removed its isolated databases/containers/networks/volumes.
+
 ## Local Development
 
 Start the backing services:
@@ -514,14 +567,15 @@ downstream provider-inventory freshness before declaring the rollout complete.
 
 ### Deletion protocol
 
-New metric-stream deletions are version 2 broker events with a unique event
-ID. The ClickHouse sink first filters `ingest.metric_stream` to the deletion
-scope, selects the latest version of each matching ID, inserts a newer
+New metric-stream deletions are version 3 broker events with a unique event
+ID and operation revision. The ClickHouse sink discovers candidate IDs through
+the deletion scope, resolves their global latest versions, rechecks the scope,
+and inserts a newer
 `is_deleted = 1` version, and then writes the event ID to
 `ingest.metric_stream_delete_acknowledgement`. The provider deletion worker
 waits for that acknowledgement before rebuilding dbt models and invalidating
 the user's analytics cache; it does not scan the full raw table to infer that
-the event was applied. Archived version 1 deletion events remain replayable,
+the event was applied. Archived version 1 deletion events remain available for replay,
 but do not have acknowledgement IDs.
 
 The native-table backfill is resumable within a successful migration attempt,
