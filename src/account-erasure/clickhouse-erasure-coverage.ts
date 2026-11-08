@@ -377,9 +377,13 @@ async function listManagedTables(
   managedDatabases: readonly string[],
 ): Promise<PhysicalTable[]> {
   // Bound catalog payload before groupArray materializes column metadata.
+  // JSON-encode variable strings, including escapes, plus each pair separator.
+  // 256 bytes per table covers fixed JSON keys, delimiters and a 64-bit age.
   const budget = await client.query({
-    query: `SELECT count() AS tables,(SELECT coalesce(sum(6*(length(name)+length(type))+256),0)
-      FROM system.columns WHERE database IN {managed_databases:Array(String)}) AS bytes
+    query: `SELECT count() AS tables,
+      coalesce(sum(length(toJSONString(tuple(database,name,engine,toString(uuid))))+256),0)
+        + (SELECT coalesce(sum(length(toJSONString(tuple(name,type)))+1),0)
+          FROM system.columns WHERE database IN {managed_databases:Array(String)}) AS bytes
       FROM system.tables WHERE database IN {managed_databases:Array(String)}`,
     query_params: { managed_databases: managedDatabases },
     format: "JSONEachRow",

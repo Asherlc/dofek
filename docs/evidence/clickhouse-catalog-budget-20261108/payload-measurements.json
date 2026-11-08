@@ -1,0 +1,42 @@
+{
+  "engines": [
+    {
+      "version": "26.6.1.1193",
+      "measurements": [
+        {
+          "kind": "many_columns",
+          "tables": 40,
+          "columns": 3240,
+          "estimatedBytes": 88830,
+          "actualBodyBytes": 81390
+        },
+        {
+          "kind": "escaped_types",
+          "tables": 2,
+          "columns": 130,
+          "estimatedBytes": 98168,
+          "actualBodyBytes": 97796
+        }
+      ]
+    },
+    {
+      "version": "26.10.2.103",
+      "measurements": [
+        {
+          "kind": "many_columns",
+          "tables": 40,
+          "columns": 3240,
+          "estimatedBytes": 88830,
+          "actualBodyBytes": 81430
+        },
+        {
+          "kind": "escaped_types",
+          "tables": 2,
+          "columns": 130,
+          "estimatedBytes": 98168,
+          "actualBodyBytes": 97794
+        }
+      ]
+    }
+  ]
+}
