@@ -129,6 +129,39 @@ This checklist authorizes no production scan, rehash, acknowledgement repair,
 offset change or deployment. Use stock SQL and existing operational workflows;
 it does not require a new identity registry or audit framework.
 
+### Remaining deletion-scope coverage preflight — proposed, not executed
+
+The prior identity-only export omitted deletion scopes and its private inputs
+were removed. It therefore cannot establish which other retained IDs the
+backlog's 248 deletions may affect. The next proposed read is narrower than a
+storage audit:
+
+1. Verify that history partition 0 still retains the frozen interval
+   `[70578630, 74445631)`. Stop if its start is no longer retained or broker
+   metadata differs from the reviewed interval.
+2. Read that interval once with stock `rpk`, committed isolation and explicit
+   partition/offsets, without a consumer group. Immediately project each
+   record to offset/type; retain scope, event version, event ID and operation
+   revision only for deletion records. Do not store row payloads or read R2
+   archive bodies. Redpanda documents the stock
+   [consume command](https://docs.redpanda.com/current/reference/rpk/rpk-topic/rpk-topic-consume/).
+3. Bound the read to 15 minutes and 1 GiB compressed private output, with
+   complete local verification of 3,867,001 distinct offsets, exact endpoints,
+   known types and expected 248 deletions. Any invalid, missing, duplicate,
+   truncated or unexpected result is incomplete, never a clean audit. Retain
+   identifiers privately only for the authorized coverage investigation;
+   publish aggregate counts and remove private inputs when finished.
+4. Inspect distinct scope shapes, then obtain `EXPLAIN` for candidate selection
+   only. Report what population and read work a subsequent all-version identity
+   comparison would require. No candidate data query or full storage scan is
+   included in this preflight; propose its separate budget after the plan.
+
+This is a proposed authorization boundary, not permission to execute. It
+includes no topic edits, acknowledgements, offset commits, persistent tables,
+deployment or history-consumer resume. A clean scoped result would not certify
+unrelated IDs, archive replay or future writes. Use existing stock commands
+and SQL, without a new repository audit tool or runtime validation service.
+
 ### Local identity-local deletion qualification — not deployed
 
 The 2026-11-07 local qualification tested an identity-local lookup against the
@@ -195,20 +228,22 @@ after the successful insert remain unchanged; see the
 Native [tuple membership](https://clickhouse.com/docs/reference/statements/in)
 retains the stored timestamp precision rather than round-tripping through JavaScript.
 
-The actual public deletion path is tested on ClickHouse 26.10 with a
-65,536-row fixture: it must delete the 4,096 matching identities, retain the
-other rows and read fewer than half the fixture rows. Mutable activity,
-channel and external-ID moves remain supported; scalar corrections, native
+The actual public deletion path passed all 20 integration tests without retries
+on ClickHouse **26.6.1.1193** and **26.10.2.103**, using the committed
+tuple-only implementation. Its 65,536-row regression fixture deleted the
+4,096 matching identities, retained the other rows and read 20,480 rows on each version (the old query read 77,824).
+See the [implementation verification](evidence/metric-stream-identity-local-20261107/implementation-verification.json).
+Mutable activity, channel and external-ID moves remain supported; scalar corrections, native
 microsecond timestamps, ingestion-time ordering, mixed scopes and chunk
 boundaries are covered by real-engine tests. The prior provider-move fixture
 now exercises activity movement because retaining an ID across a provider
 change is outside the approved contract. Historical wire parsing is unchanged.
 
-This implementation is not deployed. The final tuple-only statement still
-needs validation on production's 26.6 version and adequate historical coverage
-before recovery approval. The two-engine experiment above is evidence for
-its dated SQL, not a claim that this exact statement was benchmarked on both
-versions or that every deletion scope has bounded reads.
+This implementation is not deployed. Adequate historical deletion-candidate
+coverage remains required before recovery approval. The two-engine million-row
+experiment above is evidence for its dated SQL; the executable tests qualify
+the final statement on both versions without establishing that every deletion
+scope has bounded reads.
 
 ### Unread-history row identity audit — frozen snapshot
 
