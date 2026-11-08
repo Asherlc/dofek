@@ -15,7 +15,10 @@ and [Aiven plugin](https://github.com/Aiven-Open/tiered-storage-for-apache-kafka
 
 `scripts/deploy-service-environment.ts` renders a private `kafka.env` from
 `KAFKA_CLUSTER_ID` and the five `KAFKA_TIERED_STORAGE_*` keys. Existing
-applications, ClickHouse sinks and Connect archives retain `REDPANDA_BROKERS`.
+applications, legacy/live ClickHouse sinks and Connect archives retain
+`REDPANDA_BROKERS`. The separately repaired history image already requires
+`KAFKA_BROKERS`; preserve its contract too. See the actual-image
+[qualification record](qualification.md).
 Changing the endpoint is an explicitly approved activation action, not a
 variable-name migration. The Connect v5 config, existing application image
 contracts, Postgres journals and ClickHouse 26.6 are retained.
@@ -61,8 +64,9 @@ Before activation, a fresh broker-only packet must resolve and record:
 Use stock [Swarm service operations](https://docs.docker.com/reference/cli/docker/service/update/)
 for a separately approved broker-only cutover. Do not use the full-stack
 application release, pruning, old cutover scripts, or old maintenance approval
-for that first activation. This document is a qualification checklist, not an
-executable cutover packet.
+for that first activation. The [cutover packet](cutover-packet.md) records current
+digests and ordered boundaries. Its stop gates must be closed before final
+production mutation commands are reviewed.
 
 ## Evidence ownership
 

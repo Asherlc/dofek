@@ -35651,3 +35651,19 @@ additional strict-whitespace assertions. The sanitized
 [line-size measurement record](pulsar-foundation-qualification.md#november-5-retained-archive-line-size-measurement)
 is now retained with its source ranges and explicit sampling limits. These
 were pre-merge corrections; no production deployment occurred.
+
+## 2026-11-08 — Local Kafka qualification Docker disk pressure
+
+Production impact: none. An isolated protocol broker failed during formatting
+with `/tmp/kafka-logs: No space left on device`. Docker VM inspection showed
+79 GiB capacity, 73–75 GiB used and 0–1.5 GiB available during image pulls.
+Build-cache cleanup reclaimed zero bytes. No other workspace's running container
+or named database volume was removed. The disposable broker used a bounded tmpfs
+log directory; this changes only the local fixture. Four broker integration tests,
+both current-image factory smoke checks and three Connect pipeline checks passed.
+Owned test containers/network were removed; the completed old-image fixture was
+removed locally to recover space. Shared disk pressure remains a workstation risk.
+Next time, check VM free space before pulling both application images and retain
+only the fixture image currently under test. Docker documents local resource
+[pruning](https://docs.docker.com/engine/manage-resources/pruning/) and
+[tmpfs mounts](https://docs.docker.com/engine/storage/tmpfs/).

@@ -71,7 +71,9 @@ the first successful Kafka write must be treated as a distinct recovery boundary
 ## Extraction review record
 
 The candidate retains `REDPANDA_BROKERS` for existing application and Connect
-images. Only the new broker gets `kafka.env`; no application naming refactor,
+images. Actual-image inspection found that the separately repaired history sink
+already uses `KAFKA_BROKERS`; preserve that specific service contract too.
+Only the new broker gets `kafka.env`; no application naming refactor,
 native publisher overhaul, transport acknowledgement migration, archive config
 version bump, or ClickHouse upgrade is included. Source ownership and remaining
 qualification requirements are recorded in [the broker guide](../../deploy/kafka/README.md).
@@ -96,3 +98,17 @@ Standalone Actionlint with ShellCheck also reports existing quoting diagnostics
 in unchanged workflow scripts; the added bootstrap quoting diagnostics were fixed.
 No current-image real-engine qualification, full-suite pass, production plan/apply,
 application build or activation is claimed.
+
+Further qualification: the four existing broker integration tests passed on
+stock Kafka 4.4.0. Both deployed application digests passed direct factory
+payload checks using their respective broker-variable contracts. All three
+deployed Connect routes preserved synthetic records through the original gzip
+pipeline and committed offsets, with local file output replacing S3. See
+[the qualification record](../../deploy/kafka/qualification.md) for fixture,
+scope and cleanup details. This establishes bounded protocol compatibility,
+not full service boot, R2 delivery or physical remote erasure.
+
+The [cutover packet](../../deploy/kafka/cutover-packet.md) now records immutable
+service images, all six route boundaries and pre/post-write recovery classes.
+It remains non-executable: unchanged-worker physical erasure is not established,
+and exact topic identities and retirement authorization remain unresolved.
