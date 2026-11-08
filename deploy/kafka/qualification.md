@@ -197,42 +197,36 @@ makes completed writes/deletes and listings observable, while its
 include multipart listing/abort. Neither inspected contract supplies a barrier
 for an earlier single PUT whose outcome became unknown at interruption/crash.
 
-The precise unproven case is whether such an operation can commit after a later
-delete/listing. This is a missing established guarantee, **not a demonstrated
-Kafka/R2 race in production or proof that a correct stock solution is
-impossible**. Multipart absence does not enumerate single PUTs; terminal Kafka
+R2 now [explicitly documents](https://developers.cloudflare.com/r2/reference/consistency/#negative-reads-and-in-flight-writes)
+that an earlier unknown-outcome PUT can commit after a negative read. This is a
+contract-permitted failure sequence, **not a reproduced production incident**.
+Multipart absence does not enumerate in-flight single PUTs; terminal Kafka
 metadata does not enumerate all possible orphan objects. Pausing producers alone
 also leaves already admitted RSM work. No amount of waiting chosen without a
 documented bound proves that the uncertain operation is settled.
 
-### One smallest tiered-compatible proposal for alignment
+### Committee convergence: one tiered-compatible proposal
 
-Retain native Kafka tiering and its retention lifecycle. Use the existing final
-worker retention phase as a fail-closed gate, and investigate **operator-controlled
-quiescent final verification** as the smallest availability tradeoff, rather
-than replacing tiering or introducing a permanent coordinator. A candidate
-success path would need all of the following together: generation-bound account
-checkpoints; native terminal deletion for the covered segments; exhaustive
-namespace/orphan and multipart absence; local/retired-broker checks; and a stock,
-documented boundary proving every old writer/copy operation completed or cannot
-commit later. Resume must not re-admit expired segments.
+The user-requested Astra/Opus review rejected whole-broker shutdown as a solution:
+it does not settle a request already admitted by R2. Kafka's ordinary concurrent
+copy/expiry protection and stock metadata-history decoder are useful; cache
+eviction does not erase historical terminal events. A no-retry/durable-history
+gate could support safe completion on clean histories, but one ambiguous failed
+copy would permanently block subsequent erasures in that generation. Observed
+absence with resurrection risk would weaken the existing contract, not solve it.
 
-This proposal is **not yet supported for implementation**: stock cancellation,
-shutdown status and point-in-time listing do not establish that last boundary
-under the inspected crash/timeout semantics. On uncertain evidence the existing
-worker must remain incomplete; do not add a bare listing success path, sleep,
-manual acknowledgement, certificate, feature flag or new receipt framework.
+Both advisors instead recommend qualifying a [narrow Aiven S3 write-fencing
+change](tiered-fencing-proposal.md): conditional single PUTs, deletion as
+acknowledged permanent empty objects at all three native keys, durable admission,
+and positive verification of every expected fence in the existing worker gate.
+Kafka remains stock, SDK retries remain enabled, and no new coordinator or
+receipt service is required. Enforced rejection before multipart initiation and
+a proven object-size/memory envelope are mandatory.
 
-The actual caller is `retention_verification`, through the existing required
-`assertBrokerStorageExpired` dependency. A whole-broker quiescent boundary on
-this single-broker topology affects every producer/consumer and requires
-maintenance or delayed account completion. That availability/product tradeoff
-needs approval before building or scheduling it. Even that approval would not
-close the missing technical guarantee or authorize production actions.
-
-Next technical evidence must identify a stock terminal/quiescence or write-fence
-contract spanning ambiguous S3 operations and broker restart, including orphan
-scope. If it cannot be established, implementation stays blocked on this exact
-requirement; do not pivot away from tiered storage. No new production query,
+That is a new plugin strategy requiring approval and bounded offline
+qualification; it is not implemented or production-proven. The current tree
+still represents the withdrawn hot-log alternative. The actual caller remains
+`retention_verification → assertBrokerStorageExpired`; no new production query,
 credential change, cloud experiment, runtime implementation or infrastructure
-was performed in this bounded source review.
+was performed during the committee review. Do not enable tiering with the
+current local-only guard or weaken the erasure contract to bypass this gate.

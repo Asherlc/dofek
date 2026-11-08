@@ -6,6 +6,8 @@ checked-in tree still reflects that withdrawn alternative; its remote-disabled
 broker and local-only worker guard are not a deployable tiered candidate. Do not
 merge or activate it. Preserve its evidence, managed R2 resources and old data.
 See the [bounded tiered review](qualification.md#tiered-storage-required-quiescence-review).
+The Astra/Opus committee recommends the [narrow write-fencing proposal](tiered-fencing-proposal.md)
+for approval and offline qualification; no plugin/runtime change is implemented.
 
 This branch extracts the broker candidate from frozen
 [PR #3231](https://github.com/Asherlc/dofek/pull/3231), commit `ed26f38b8`.
