@@ -35720,3 +35720,10 @@ only the fixture image currently under test. Docker documents local resource
   behavior as well as artifact identity, and include generation/mount contracts
   in the first focused test pass. Retention policy, capacity, old-data retirement
   and coordinated erasure scrub integration remain explicit activation gates.
+- **Worker integration follow-up:** Shard 2 then failed the BullMQ outbox fixture
+  at PII scrub with `Invalid input: expected object, received null`. Its fake
+  phase runner returned null for both source and quarantine checkpoints, so the
+  production scrub correctly refused incomplete evidence. Supplying realistic
+  structural checkpoint results fixed the fixture; the same real Postgres/Redis
+  integration test passed locally without waits or production changes. Later
+  duplicate-email/identity errors were test retries after that initial failure.
