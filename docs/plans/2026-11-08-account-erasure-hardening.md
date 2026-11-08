@@ -1,6 +1,7 @@
 # Account-erasure hardening
 
-Status: extraction plan; this branch does not yet contain the runtime changes.
+Status: runtime extraction in review; blocked and not merge-ready. The extracted
+candidate has its own checks; source-branch qualification does not transfer.
 This is one of two independent efforts requested on November 8. The other is
 the Kafka broker migration. Both start at main commit
 `2752451fb4a7404e5d887d32341595a42a673dcd`; neither is stacked on the other.
@@ -94,3 +95,23 @@ The persisted alias set must match real model lineage; relation capture must dri
 actual erasure rather than only satisfy startup; nullable/direct ownership must
 preserve unrelated users; snapshot/request-store migrations must remain compatible;
 the release must keep Redpanda and existing topic routes unchanged.
+
+## Extraction checkpoint
+
+The candidate includes bounded request-owned identifiers, snapshot admission,
+ClickHouse catalog/physical deletion, PeerDB identity paging and request/runtime
+integration. It retains Redpanda configuration, routes and native marker v1.
+Migration 0178 contains only the required analytics ownership/state schema;
+0179 retains its identifying-request cutover guard. Their journal entries are
+selected individually. No Kafka acknowledgement migration is extracted.
+
+The source's unused `analytics-delivery`/`analytics-work-store` coordinator and
+delivery-fence modules are omitted: no publication caller uses them in the frozen
+source. Required query-owner/group/position helpers remain dependencies of the
+erasure implementation. The Kafka tiered-storage manual maintenance
+acknowledgement gate is omitted; current Redpanda automatic retention checks remain.
+
+The Q19 typed alias fix covers persisted `canonical_activity_id` in effort/route
+identity models and `evidence_activity_id` in cycling read models. Temporary
+group/stale/prior CTE aliases are not new physical-column declarations. See the
+[extraction evidence and remaining writer-safety gate](../evidence/erasure-extraction-20261108/README.md).

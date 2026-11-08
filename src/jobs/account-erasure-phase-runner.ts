@@ -3,7 +3,10 @@ import type { ArchiveErasureResult } from "../account-erasure/archive-erasure.ts
 import type { PeerDbStagingRetentionResult } from "../account-erasure/peerdb-staging-retention.ts";
 import type { PeerDbStagingBoundary } from "../account-erasure/peerdb-staging-writer-barrier.ts";
 import type { AccountErasureProcessorProgress } from "../account-erasure/processor-erasure.ts";
-import type { AccountErasureRouteHighWatermark } from "../account-erasure/redpanda-drain.ts";
+import {
+  type AccountErasureRouteHighWatermark,
+  accountErasureIngestFenceCheckpointSchema,
+} from "../account-erasure/redpanda-drain.ts";
 import type {
   AccountErasureProviderTokenPersistence,
   ProviderCredentialDisposition,
@@ -15,20 +18,6 @@ import type {
   AccountErasurePhaseExecution,
   AccountErasurePhaseRunner,
 } from "./process-account-erasure-request.ts";
-
-const highWatermarksCheckpointSchema = z.object({
-  highWatermarks: z.array(
-    z.object({
-      topic: z.string().min(1),
-      low: z.string().regex(/^\d+$/),
-      offset: z.string().regex(/^\d+$/),
-      partition: z.number().int().nonnegative(),
-    }),
-  ),
-});
-const quarantineHighWatermarksCheckpointSchema = z.object({
-  quarantineHighWatermarks: highWatermarksCheckpointSchema.shape.highWatermarks,
-});
 
 const archiveProgressSchema = z.object({
   lastKey: z.string().min(1),
@@ -50,28 +39,39 @@ interface ArchiveSweepOptions {
   startAfter?: string;
 }
 
+interface IdentifierRequest {
+  requestId: string;
+  userId: string;
+  leaseOwner: string;
+}
+interface IdentifierPreparation extends IdentifierRequest {
+  stage: "initial" | "final";
+}
+
 export interface AccountErasurePhaseRunnerDependencies {
+  prepareIdentifiers(input: IdentifierPreparation): Promise<void>;
+  assertIdentifiersReady(input: IdentifierPreparation): Promise<void>;
   assertConsumersDrained(
     highWatermarks: readonly AccountErasureRouteHighWatermark[],
   ): Promise<void>;
-  assertPeerDbDrained(snapshot: AccountErasureRemoteSnapshot, walLsn: string): Promise<void>;
+  assertPeerDbDrained(input: IdentifierRequest, walLsn: string): Promise<void>;
   assertQuarantineExpired(
     highWatermarks: readonly AccountErasureRouteHighWatermark[],
   ): Promise<void>;
   assertReplayExpired(highWatermarks: readonly AccountErasureRouteHighWatermark[]): Promise<void>;
   captureHighWatermarks(): Promise<AccountErasureRouteHighWatermark[]>;
+  captureQuarantineHighWatermarks(): Promise<AccountErasureRouteHighWatermark[]>;
   capturePeerDbStagingBoundary(input: {
     loadProgress(): Promise<Record<string, unknown> | null>;
     requestId: string;
     saveProgress(progress: Record<string, unknown>): Promise<void>;
   }): Promise<PeerDbStagingBoundary>;
-  captureQuarantineHighWatermarks(): Promise<AccountErasureRouteHighWatermark[]>;
   decryptSnapshot(encryptedSnapshot: string, userId: string): Promise<AccountErasureRemoteSnapshot>;
   eraseArchive(
-    snapshot: AccountErasureRemoteSnapshot,
+    input: IdentifierPreparation,
     options: ArchiveSweepOptions,
   ): Promise<ArchiveErasureResult>;
-  eraseClickHouse(snapshot: AccountErasureRemoteSnapshot): Promise<void>;
+  eraseClickHouse(input: IdentifierPreparation): Promise<void>;
   erasePostgres(requestId: string, userId: string): Promise<void>;
   eraseProcessors(
     snapshot: AccountErasureRemoteSnapshot,
@@ -83,7 +83,7 @@ export interface AccountErasurePhaseRunnerDependencies {
     progress: AccountErasureProcessorProgress,
   ): Promise<Record<string, unknown>>;
   eraseStripe(snapshot: AccountErasureRemoteSnapshot): Promise<StripeAccountErasureResult>;
-  fenceIngest(snapshot: AccountErasureRemoteSnapshot): Promise<void>;
+  fenceIngest(input: IdentifierRequest): Promise<void>;
   now(): Date;
   purgeWork(snapshot: AccountErasureRemoteSnapshot): Promise<void>;
   revokeRemote(
@@ -119,13 +119,16 @@ function requireIdentifyingRequest(
   return { encryptedSnapshot: encryptedRemoteSnapshot, userId };
 }
 
+const quarantineHighWatermarksCheckpointSchema = z.object({
+  quarantineHighWatermarks: accountErasureIngestFenceCheckpointSchema.shape.highWatermarks,
+});
+
 async function loadHighWatermarks(
   execution: AccountErasurePhaseExecution,
 ): Promise<AccountErasureRouteHighWatermark[]> {
-  const checkpoint = highWatermarksCheckpointSchema.parse(
+  return accountErasureIngestFenceCheckpointSchema.parse(
     await execution.loadCheckpointDetails("ingest_fence"),
-  );
-  return checkpoint.highWatermarks;
+  ).highWatermarks;
 }
 
 function archiveDetails(result: ArchiveErasureResult) {
@@ -161,6 +164,30 @@ export function createAccountErasurePhaseRunner(
     return dependencies.decryptSnapshot(identifying.encryptedSnapshot, identifying.userId);
   };
 
+  const identifierPreparation = (
+    phase: AccountErasurePhase,
+    execution: AccountErasurePhaseExecution,
+    stage: "initial" | "final",
+  ): IdentifierPreparation => ({
+    requestId: execution.request.id,
+    userId: requireIdentifyingRequest(phase, execution).userId,
+    leaseOwner: execution.leaseOwner,
+    stage,
+  });
+  const assertReady = (
+    phase: AccountErasurePhase,
+    execution: AccountErasurePhaseExecution,
+    stage: "initial" | "final",
+  ) => dependencies.assertIdentifiersReady(identifierPreparation(phase, execution, stage));
+  const identityRequest = (
+    phase: AccountErasurePhase,
+    execution: AccountErasurePhaseExecution,
+  ): IdentifierRequest => ({
+    requestId: execution.request.id,
+    userId: requireIdentifyingRequest(phase, execution).userId,
+    leaseOwner: execution.leaseOwner,
+  });
+
   return {
     async runPhase(
       phase: AccountErasurePhase,
@@ -168,8 +195,7 @@ export function createAccountErasurePhaseRunner(
     ): Promise<Record<string, unknown> | null> {
       switch (phase) {
         case "ingest_fence": {
-          const snapshot = await loadSnapshot(phase, execution);
-          await dependencies.fenceIngest(snapshot);
+          await dependencies.fenceIngest(identityRequest(phase, execution));
           const highWatermarks = await dependencies.captureHighWatermarks();
           return { highWatermarks };
         }
@@ -200,16 +226,18 @@ export function createAccountErasurePhaseRunner(
           const highWatermarks = await loadHighWatermarks(execution);
           await dependencies.assertConsumersDrained(highWatermarks);
           const quarantineHighWatermarks = await dependencies.captureQuarantineHighWatermarks();
-          return { quarantineHighWatermarks };
+          await dependencies.prepareIdentifiers(identifierPreparation(phase, execution, "initial"));
+          return { drained: true, quarantineHighWatermarks };
         }
         case "consumer_drain_verification": {
           const highWatermarks = await loadHighWatermarks(execution);
           await dependencies.assertConsumersDrained(highWatermarks);
           await dependencies.assertReplayExpired(highWatermarks);
-          return { drained: true, replayExpired: true };
+          return { drained: true, replayExpired: true, verified: true };
         }
         case "remote_revocation":
         case "remote_revocation_verification": {
+          await assertReady(phase, execution, "initial");
           const snapshot = await loadSnapshot(phase, execution);
           const dispositions = await dependencies.revokeRemote(
             snapshot,
@@ -221,10 +249,12 @@ export function createAccountErasurePhaseRunner(
           };
         }
         case "processor_erasure": {
+          await assertReady(phase, execution, "initial");
           const snapshot = await loadSnapshot(phase, execution);
           return dependencies.eraseProcessors(snapshot, await loadProcessorProgress(execution));
         }
         case "processor_erasure_verification": {
+          await assertReady(phase, execution, "initial");
           const snapshot = await loadSnapshot(phase, execution);
           const initialCheckpoint = await execution.loadCheckpointDetails("processor_erasure");
           return {
@@ -237,35 +267,46 @@ export function createAccountErasurePhaseRunner(
           };
         }
         case "postgres_erasure": {
+          await assertReady(phase, execution, "initial");
           const identifying = requireIdentifyingRequest(phase, execution);
           await dependencies.erasePostgres(execution.request.id, identifying.userId);
           return null;
         }
         case "clickhouse_initial":
         case "clickhouse_verification": {
-          const snapshot = await loadSnapshot(phase, execution);
-          await dependencies.eraseClickHouse(snapshot);
+          const stage = phase === "clickhouse_verification" ? "final" : "initial";
+          if (stage === "final")
+            await dependencies.prepareIdentifiers(identifierPreparation(phase, execution, stage));
+          await assertReady(phase, execution, stage);
+          await dependencies.eraseClickHouse(identifierPreparation(phase, execution, stage));
           return { verified: phase === "clickhouse_verification" };
         }
         case "archive_initial": {
-          const snapshot = await loadSnapshot(phase, execution);
+          await assertReady(phase, execution, "initial");
           const progress = archiveProgressSchema.nullable().parse(await execution.loadProgress());
-          const result = await dependencies.eraseArchive(snapshot, {
-            ...(progress ? { startAfter: progress.lastKey } : {}),
-            onObjectCompleted: (lastKey) => execution.saveProgress({ lastKey }),
-          });
+          const result = await dependencies.eraseArchive(
+            identifierPreparation(phase, execution, "initial"),
+            {
+              ...(progress ? { startAfter: progress.lastKey } : {}),
+              onObjectCompleted: (lastKey) => execution.saveProgress({ lastKey }),
+            },
+          );
           return archiveDetails(result);
         }
         case "postgres_profile_delete": {
+          await assertReady(phase, execution, "initial");
           requireIdentifyingRequest(phase, execution);
           return execution.deleteProfile();
         }
         case "peerdb_drain_verification": {
-          const snapshot = await loadSnapshot(phase, execution);
+          await assertReady(phase, execution, "initial");
           const checkpoint = postProfileDeleteCheckpointSchema.parse(
             await execution.loadCheckpointDetails("postgres_profile_delete"),
           );
-          await dependencies.assertPeerDbDrained(snapshot, checkpoint.walLsn);
+          await dependencies.assertPeerDbDrained(
+            identityRequest(phase, execution),
+            checkpoint.walLsn,
+          );
           const stagingBoundary = await dependencies.capturePeerDbStagingBoundary({
             loadProgress: execution.loadProgress,
             requestId: execution.request.id,
@@ -274,13 +315,19 @@ export function createAccountErasurePhaseRunner(
           return { stagingBoundary, verified: true };
         }
         case "archive_verification": {
-          const snapshot = await loadSnapshot(phase, execution);
-          const cleanup = await dependencies.eraseArchive(snapshot, {
-            startAfter: undefined,
-          });
-          const verification = await dependencies.eraseArchive(snapshot, {
-            startAfter: undefined,
-          });
+          await assertReady(phase, execution, "final");
+          const cleanup = await dependencies.eraseArchive(
+            identifierPreparation(phase, execution, "final"),
+            {
+              startAfter: undefined,
+            },
+          );
+          const verification = await dependencies.eraseArchive(
+            identifierPreparation(phase, execution, "final"),
+            {
+              startAfter: undefined,
+            },
+          );
           if (verification.recordsRemoved !== 0) {
             throw new Error(
               "R2 archive account-erasure verification observed new attributable records",
@@ -293,6 +340,7 @@ export function createAccountErasurePhaseRunner(
           };
         }
         case "request_pii_scrub":
+          await assertReady(phase, execution, "final");
           await execution.scrubPii();
           return null;
         case "retention_verification": {

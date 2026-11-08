@@ -3,6 +3,10 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { captureAccountErasurePostgresWalLsn } from "../account-erasure/peerdb-erasure.ts";
 import { assertPostgresAccountErasureComplete } from "../account-erasure/postgres-erasure.ts";
+import {
+  ACCOUNT_ERASURE_SNAPSHOT_LIMITS,
+  assertAccountErasureSnapshotEncryptedBytes,
+} from "../account-erasure/snapshot-budget.ts";
 import type { AccountErasurePhase } from "../jobs/process-account-erasure-job.ts";
 import type { Database } from "./index.ts";
 import { executeWithSchema, timestampStringSchema } from "./typed-sql.ts";
@@ -17,6 +21,7 @@ const checkpointDetailsRowSchema = z.object({
 const claimedRequestRowSchema = z.object({
   completion_deadline: timestampStringSchema,
   encrypted_remote_snapshot: z.string().min(1).nullable(),
+  encrypted_snapshot_bytes: z.coerce.number().int().nonnegative(),
   id: z.uuid(),
   pii_scrubbed_at: timestampStringSchema.nullable(),
   requested_at: timestampStringSchema,
@@ -207,13 +212,16 @@ export async function claimAccountErasureRequest(
           user_id,
           user_hash,
           user_hash_key_id,
-          encrypted_remote_snapshot,
+          coalesce(octet_length(encrypted_remote_snapshot),0) AS encrypted_snapshot_bytes,
+          CASE WHEN octet_length(encrypted_remote_snapshot)<=${ACCOUNT_ERASURE_SNAPSHOT_LIMITS.encryptedBytes}
+            THEN encrypted_remote_snapshot ELSE NULL END AS encrypted_remote_snapshot,
           pii_scrubbed_at,
           requested_at,
           replay_retained_until,
           completion_deadline`,
   );
   const row = rows[0];
+  if (row) assertAccountErasureSnapshotEncryptedBytes(row.encrypted_snapshot_bytes);
   return row
     ? {
         completionDeadline: new Date(row.completion_deadline),
@@ -254,6 +262,7 @@ export async function renewAccountErasureLease(
         WHERE id = ${requestId}::uuid
           AND lease_owner = ${parsedLeaseOwner}
           AND status <> 'completed'
+          AND lease_expires_at > ${now.toISOString()}
         RETURNING id`,
   );
   if (rows.length !== 1) {
@@ -330,6 +339,7 @@ export async function saveAccountErasurePhaseProgress(
         WHERE id = ${requestId}::uuid
           AND lease_owner = ${leaseOwner}
           AND status <> 'completed'
+          AND lease_expires_at > now()
         RETURNING id`,
   );
   if (rows.length !== 1) {
@@ -553,25 +563,69 @@ export async function scrubAccountErasureRequestPii(
     }
 
     await transaction.execute(
+      sql`DELETE FROM fitness.account_erasure_identifier
+          WHERE request_id = ${requestId}::uuid`,
+    );
+
+    await transaction.execute(
       sql`INSERT INTO fitness.account_erasure_checkpoint (
             request_id, phase, details
           )
           VALUES (${requestId}::uuid, 'request_pii_scrub', NULL)
           ON CONFLICT (request_id, phase) DO UPDATE SET details = NULL`,
     );
+    // Retain only non-identifying fields retention verification still need after scrub.
+    // Main ingest highWatermarks and quarantine HWM are {topic,partition,low,offset} only —
+    // not account PII. Nested identifiers must not survive. PeerDB cutoff unchanged.
     await transaction.execute(
       sql`UPDATE fitness.account_erasure_checkpoint
           SET details =
             CASE
-              WHEN phase = 'consumer_drain' THEN jsonb_build_object(
-                'quarantineHighWatermarks',
-                details -> 'quarantineHighWatermarks'
-              )
               WHEN phase = 'peerdb_drain_verification' THEN jsonb_build_object(
                 'stagingBoundary',
                 jsonb_build_object(
                   'cutoff',
                   details #> '{stagingBoundary,cutoff}'
+                )
+              )
+              WHEN phase = 'ingest_fence' THEN jsonb_build_object(
+                'highWatermarks',
+                COALESCE(
+                  (
+                    SELECT jsonb_agg(
+                      jsonb_build_object(
+                        'topic', watermark.element -> 'topic',
+                        'partition', watermark.element -> 'partition',
+                        'low', watermark.element -> 'low',
+                        'offset', watermark.element -> 'offset'
+                      )
+                      ORDER BY watermark.ordinality
+                    )
+                    FROM jsonb_array_elements(
+                      COALESCE(details -> 'highWatermarks', '[]'::jsonb)
+                    ) WITH ORDINALITY AS watermark(element, ordinality)
+                  ),
+                  '[]'::jsonb
+                )
+              )
+              WHEN phase = 'consumer_drain' THEN jsonb_build_object(
+                'quarantineHighWatermarks',
+                COALESCE(
+                  (
+                    SELECT jsonb_agg(
+                      jsonb_build_object(
+                        'topic', watermark.element -> 'topic',
+                        'partition', watermark.element -> 'partition',
+                        'low', watermark.element -> 'low',
+                        'offset', watermark.element -> 'offset'
+                      )
+                      ORDER BY watermark.ordinality
+                    )
+                    FROM jsonb_array_elements(
+                      COALESCE(details -> 'quarantineHighWatermarks', '[]'::jsonb)
+                    ) WITH ORDINALITY AS watermark(element, ordinality)
+                  ),
+                  '[]'::jsonb
                 )
               )
               ELSE NULL

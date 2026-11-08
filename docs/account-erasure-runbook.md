@@ -1,5 +1,24 @@
 # Account Erasure Runbook
 
+## Pending hardening candidate
+
+The [independent extraction](plans/2026-11-08-account-erasure-hardening.md) is
+**not merge-ready**. Its [executable publication-race evidence](evidence/erasure-extraction-20261108/README.md)
+shows why passing catalog and isolated erasure tests do not establish exclusion
+of concurrent writers. Production release procedures below do not authorize
+deploying this candidate.
+
+The candidate stores activity/sleep/operation and physical-deletion identifiers
+in encrypted, request-owned pages using the [identifier store](../src/account-erasure/identifier-store.ts),
+with [snapshot admission budgets](../src/account-erasure/snapshot-budget.ts).
+[Migration 0179](../drizzle/0179_account_erasure_identifiers.sql) fails closed
+on identifying/unconverted requests; request producers and old workers must
+remain quiescent through an independently approved cutover. Do not clear request
+identifiers to bypass this guard. No cutover or quiescence is authorized here.
+The [request processing transaction](../src/db/account-erasure-processing.ts)
+deletes retained identifiers when request PII is scrubbed. See PostgreSQL's
+[transaction guarantees](https://www.postgresql.org/docs/current/tutorial-transactions.html).
+
 <!-- cspell:ignore peerdbbucket -->
 
 Account erasure is a durable, fail-closed workflow. Confirmation immediately

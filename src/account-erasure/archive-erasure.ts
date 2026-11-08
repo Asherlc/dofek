@@ -22,6 +22,8 @@ import {
   metricStreamRedpandaEventSchema,
 } from "../metric-stream/events.ts";
 import { parseMetricStreamArchiveObjectKey } from "../metric-stream/r2-replay.ts";
+import type { AccountErasureIdentifierStore } from "./identifier-store.ts";
+import type { AccountErasurePhysicalStage } from "./retained-state.ts";
 
 const ARCHIVE_PREFIX = "metric-stream/v1/";
 const MAX_ARCHIVE_LIST_PAGES = 10_000;
@@ -245,8 +247,11 @@ export class R2MetricStreamArchiveStorage implements MetricStreamArchiveStorage 
 }
 
 export interface ArchiveErasureIdentifiers {
-  activityIds: ReadonlySet<string>;
-  operationIds: ReadonlySet<string>;
+  store: Pick<
+    AccountErasureIdentifierStore,
+    "findPresent" | "assertClosureComplete" | "loadPhysicalProgress"
+  >;
+  stage: AccountErasurePhysicalStage;
   userId: string;
 }
 
@@ -260,11 +265,11 @@ function isBlankArchiveLine(line: Buffer): boolean {
   return line.length === 0 || (line.length === 1 && line[0] === 0x0d);
 }
 
-function belongsToAccount(
+async function belongsToAccount(
   payload: Buffer,
   identifiers: ArchiveErasureIdentifiers,
   context: { key: string; lineNumber: number },
-): boolean {
+): Promise<boolean> {
   let line: string;
   try {
     line = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(payload);
@@ -289,19 +294,20 @@ function belongsToAccount(
   }
   const event = parsedEvent.data;
   if (isMetricStreamBatchCompletedEvent(event)) {
-    return identifiers.operationIds.has(event.operationId);
+    return (await identifiers.store.findPresent("operation", [event.operationId])).length > 0;
   }
   if (isMetricStreamDeletedEvent(event)) {
     return (
       event.scope.userId === identifiers.userId ||
-      (event.scope.activityId !== undefined && identifiers.activityIds.has(event.scope.activityId))
+      (event.scope.activityId !== undefined &&
+        (await identifiers.store.findPresent("activity", [event.scope.activityId])).length > 0)
     );
   }
   return (
     event.userId === identifiers.userId ||
     (event.activityId !== null &&
       event.activityId !== undefined &&
-      identifiers.activityIds.has(event.activityId))
+      (await identifiers.store.findPresent("activity", [event.activityId])).length > 0)
   );
 }
 
@@ -366,7 +372,10 @@ async function countMatchingArchiveRecords(
       source,
       MAX_ARCHIVE_LINE_PAYLOAD_BYTES,
     )) {
-      if (!isBlankArchiveLine(line) && belongsToAccount(line, identifiers, { key, lineNumber })) {
+      if (
+        !isBlankArchiveLine(line) &&
+        (await belongsToAccount(line, identifiers, { key, lineNumber }))
+      ) {
         matches += 1;
       }
     }
@@ -418,7 +427,7 @@ async function rewriteArchiveObject(
       terminated,
     } of readMetricStreamArchiveLines(gunzip, MAX_ARCHIVE_LINE_PAYLOAD_BYTES)) {
       if (isBlankArchiveLine(line)) continue;
-      if (belongsToAccount(line, identifiers, { key, lineNumber })) {
+      if (await belongsToAccount(line, identifiers, { key, lineNumber })) {
         removed += 1;
       } else {
         await writeLine(gzip, line, terminated);
@@ -485,15 +494,23 @@ export async function eraseMetricStreamArchive(
     startAfter?: string;
   } = {},
 ): Promise<ArchiveErasureResult> {
-  let lastKey: string | null = null;
-  let objectsRewritten = 0;
-  let recordsRemoved = 0;
-  for await (const key of storage.listObjectKeys(options.startAfter)) {
-    const removed = await rewriteArchiveObject(storage, key, identifiers);
-    if (removed > 0) objectsRewritten += 1;
-    recordsRemoved += removed;
-    lastKey = key;
-    await options.onObjectCompleted?.(key);
+  try {
+    await identifiers.store.assertClosureComplete(identifiers.stage);
+    if (!(await identifiers.store.loadPhysicalProgress(identifiers.stage)))
+      throw new Error("Account erasure physical preparation is incomplete");
+    let lastKey: string | null = null;
+    let objectsRewritten = 0;
+    let recordsRemoved = 0;
+    for await (const key of storage.listObjectKeys(options.startAfter)) {
+      const removed = await rewriteArchiveObject(storage, key, identifiers);
+      if (removed > 0) objectsRewritten += 1;
+      recordsRemoved += removed;
+      lastKey = key;
+      await options.onObjectCompleted?.(key);
+    }
+    return { lastKey, objectsRewritten, recordsRemoved };
+  } catch (error: unknown) {
+    Sentry.captureException(error, { tags: { accountErasureStep: "eraseArchive" } });
+    throw error;
   }
-  return { lastKey, objectsRewritten, recordsRemoved };
 }

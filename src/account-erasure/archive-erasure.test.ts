@@ -1,14 +1,19 @@
-import { randomBytes } from "node:crypto";
-import { Readable } from "node:stream";
+import { randomBytes, randomUUID } from "node:crypto";
+import { PassThrough, Readable } from "node:stream";
 import { gunzipSync, gzipSync } from "node:zlib";
 import { S3Client } from "@aws-sdk/client-s3";
+import * as Sentry from "@sentry/node";
 import { describe, expect, it, vi } from "vitest";
+
 import {
   createMetricStreamBatchCompletedEvent,
   createMetricStreamDeletedEvent,
 } from "../metric-stream/events.ts";
 import type { MetricStreamArchiveObject, MetricStreamArchiveStorage } from "./archive-erasure.ts";
 import { eraseMetricStreamArchive, R2MetricStreamArchiveStorage } from "./archive-erasure.ts";
+import { archiveIdentityFixture } from "./archive-erasure-test-helpers.ts";
+
+vi.mock("@sentry/node", () => ({ captureException: vi.fn() }));
 
 const deletingUserId = "10000000-0000-4000-8000-000000001994";
 const otherUserId = "20000000-0000-4000-8000-000000001994";
@@ -142,9 +147,192 @@ function metricEvent(userId: string, id: string): Record<string, unknown> {
 }
 
 describe("eraseMetricStreamArchive", () => {
+  it.each(["closure", "physical"] as const)(
+    "requires completed retained identity preparation: %s",
+    async (missing) => {
+      const storage = new MemoryArchiveStorage();
+      const listing = vi.spyOn(storage, "listObjectKeys");
+      const store = {
+        ...archiveIdentityFixture(),
+        assertClosureComplete: async () => {
+          if (missing === "closure") throw new Error("Retained closure is incomplete");
+        },
+        loadPhysicalProgress: async () => null,
+      };
+      await expect(
+        eraseMetricStreamArchive(storage, { userId: deletingUserId, stage: "initial", store }),
+      ).rejects.toThrow(
+        missing === "closure"
+          ? "Retained closure is incomplete"
+          : "physical preparation is incomplete",
+      );
+      expect(listing).not.toHaveBeenCalled();
+    },
+  );
+  it.each(["source", "gzip"] as const)(
+    "observes a %s failure while canonical membership is pending without an unhandled rejection",
+    async (failure) => {
+      let release: () => void = () => {
+        throw new Error("Missing membership release");
+      };
+      let notify: () => void = () => {
+        throw new Error("Missing membership notification");
+      };
+      const pending = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const started = new Promise<void>((resolve) => {
+        notify = resolve;
+      });
+      const body = new PassThrough();
+      const key = "metric-stream/v1/date=2026-07-26/hour=10/metric-stream-v1-0-27-28.jsonl.gz";
+      const operationId = "40000000-0000-4000-8000-000000001994";
+      const original = gzipSync(
+        `${JSON.stringify(
+          createMetricStreamBatchCompletedEvent(
+            {
+              operationId,
+              batchId: "pending-source",
+              datasetKeys: ["metric-stream"],
+            },
+            1,
+          ),
+        )}\n`,
+      );
+      class InterruptedArchive extends MemoryArchiveStorage {
+        override async getObject(_key: string) {
+          queueMicrotask(() => body.write(original));
+          return { body, etag: '"original-etag"', metadata: {} };
+        }
+      }
+      const storage = new InterruptedArchive();
+      storage.objects.set(key, original);
+      const store = {
+        ...archiveIdentityFixture(),
+        findPresent: async (_family: unknown, values: readonly string[]) => {
+          notify();
+          await pending;
+          return [...values];
+        },
+      };
+      const unhandled: unknown[] = [];
+      const observe = (error: unknown) => {
+        unhandled.push(error);
+      };
+      process.on("unhandledRejection", observe);
+      const outcome = eraseMetricStreamArchive(storage, {
+        userId: deletingUserId,
+        stage: "initial",
+        store,
+      }).then(
+        (result) => ({ result }),
+        (error: unknown) => ({ error }),
+      );
+      try {
+        await started;
+        if (failure === "source") body.destroy(new Error("archive source interrupted"));
+        else body.end(Buffer.from([255, 255, 255]));
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        release();
+        const result = await outcome;
+        expect(unhandled).toEqual([]);
+        if (!("error" in result)) throw new Error("Archive failure was not propagated");
+        expect(result.error).toBeInstanceOf(Error);
+        expect(Sentry.captureException).toHaveBeenCalledWith(
+          result.error,
+          expect.objectContaining({ tags: { accountErasureStep: "eraseArchive" } }),
+        );
+        expect(storage.objects.get(key)).toEqual(original);
+        expect(storage.completedExpectedEtags).toEqual([]);
+        expect(storage.uploads.size).toBe(0);
+      } finally {
+        release();
+        body.destroy();
+        await outcome;
+        process.off("unhandledRejection", observe);
+      }
+    },
+  );
+
+  it("propagates delayed canonical membership backpressure to the compressed source", async () => {
+    let pulled = 0;
+    let release: () => void = () => {
+      throw new Error("Missing release");
+    };
+    let notify: () => void = () => {
+      throw new Error("Missing notify");
+    };
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const started = new Promise<void>((resolve) => {
+      notify = resolve;
+    });
+    class StreamingStorage extends MemoryArchiveStorage {
+      override async getObject(key: string) {
+        const stored = this.objects.get(key);
+        if (!stored) throw new Error("Missing streaming fixture");
+        const bytes = stored;
+        this.getCounts.set(key, (this.getCounts.get(key) ?? 0) + 1);
+        async function* source() {
+          for (let offset = 0; offset < bytes.length; offset += 1024) {
+            pulled += 1;
+            yield bytes.subarray(offset, offset + 1024);
+          }
+        }
+        return {
+          body: Readable.from(source(), { objectMode: false, highWaterMark: 1024 }),
+          etag: '"original-etag"',
+          metadata: {},
+        };
+      }
+    }
+    const storage = new StreamingStorage();
+    const key = "metric-stream/v1/date=2026-07-26/hour=10/metric-stream-v1-0-25-26.jsonl.gz";
+    const operationId = "40000000-0000-4000-8000-000000001994";
+    const records = Array.from({ length: 1200 }, () =>
+      JSON.stringify({
+        ...metricEvent(otherUserId, randomUUID()),
+        metadata: { payload: randomBytes(512).toString("base64") },
+      }),
+    );
+    const original = gzipSync(
+      `${JSON.stringify(
+        createMetricStreamBatchCompletedEvent(
+          {
+            operationId,
+            batchId: "bounded",
+            datasetKeys: ["metric-stream"],
+          },
+          1,
+        ),
+      )}\n${records.join("\n")}\n`,
+    );
+    storage.objects.set(key, original);
+    const store = {
+      ...archiveIdentityFixture(),
+      findPresent: async (_family: unknown, values: readonly string[]) => {
+        notify();
+        await pending;
+        return values.filter((value) => value === operationId);
+      },
+    };
+    const operation = eraseMetricStreamArchive(storage, {
+      userId: deletingUserId,
+      stage: "initial",
+      store,
+    });
+    await started;
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(pulled).toBeLessThan(Math.ceil(original.length / 1024));
+    expect(storage.completedExpectedEtags).toEqual([]);
+    release();
+    await expect(operation).resolves.toMatchObject({ recordsRemoved: 1 });
+  });
+
   it.each([
     "metric-stream/v1/date=2026-07-26/hour=10/metric-stream-v1-0-10-11.jsonl.gz",
-    `metric-stream/v1/date=2026-11-05/hour=03/pulsar/epoch=e1/topic=${encodeURIComponent("persistent://public/default/sensor-partition-2")}/first=ff/last=00.jsonl.gz`,
+    `metric-stream/v1/date=2026-11-05/hour=03/metric-stream-live-v2-0-0-0.jsonl.gz`,
   ])("preserves CRLF, lone CR and final unterminated survivor bytes in %s", async (key) => {
     const storage = new MemoryArchiveStorage();
     const survivor = JSON.stringify(
@@ -160,8 +348,8 @@ describe("eraseMetricStreamArchive", () => {
 
     await expect(
       eraseMetricStreamArchive(storage, {
-        activityIds: new Set(),
-        operationIds: new Set(),
+        stage: "initial" as const,
+        store: archiveIdentityFixture([], []),
         userId: deletingUserId,
       }),
     ).resolves.toMatchObject({ objectsRewritten: 1, recordsRemoved: 1 });
@@ -185,8 +373,8 @@ describe("eraseMetricStreamArchive", () => {
       const operation = eraseMetricStreamArchive(
         storage,
         {
-          activityIds: new Set(),
-          operationIds: new Set(),
+          stage: "initial" as const,
+          store: archiveIdentityFixture([], []),
           userId: deletingUserId,
         },
         { onObjectCompleted: completed },
@@ -223,8 +411,8 @@ describe("eraseMetricStreamArchive", () => {
       eraseMetricStreamArchive(
         storage,
         {
-          activityIds: new Set(),
-          operationIds: new Set(),
+          stage: "initial" as const,
+          store: archiveIdentityFixture([], []),
           userId: deletingUserId,
         },
         { onObjectCompleted: completed },
@@ -256,8 +444,8 @@ describe("eraseMetricStreamArchive", () => {
       eraseMetricStreamArchive(
         storage,
         {
-          activityIds: new Set(),
-          operationIds: new Set(),
+          stage: "initial" as const,
+          store: archiveIdentityFixture([], []),
           userId: deletingUserId,
         },
         { onObjectCompleted: completed },
@@ -293,8 +481,8 @@ describe("eraseMetricStreamArchive", () => {
         eraseMetricStreamArchive(
           storage,
           {
-            activityIds: new Set(),
-            operationIds: new Set(),
+            stage: "initial" as const,
+            store: archiveIdentityFixture([], []),
             userId: deletingUserId,
           },
           { onObjectCompleted: completed },
@@ -338,8 +526,8 @@ describe("eraseMetricStreamArchive", () => {
         eraseMetricStreamArchive(
           storage,
           {
-            activityIds: new Set(),
-            operationIds: new Set(),
+            stage: "initial" as const,
+            store: archiveIdentityFixture([], []),
             userId: deletingUserId,
           },
           { onObjectCompleted: completed },
@@ -354,13 +542,17 @@ describe("eraseMetricStreamArchive", () => {
 
   it("erases native-key rows and controls while preserving other-account bytes and provenance", async () => {
     const storage = new MemoryArchiveStorage();
-    const key = `metric-stream/v1/date=2026-11-05/hour=03/pulsar/epoch=e1/topic=${encodeURIComponent("persistent://public/default/sensor-partition-2")}/first=ff/last=00.jsonl.gz`;
+    const key = `metric-stream/v1/date=2026-11-05/hour=03/metric-stream-live-v2-0-0-0.jsonl.gz`;
     const operationId = "40000000-0000-4000-8000-000000001994";
     const preserved = `  ${JSON.stringify(metricEvent(otherUserId, "50000000-0000-4000-8000-000000001994"))} `;
     const owned = [
       metricEvent(deletingUserId, "30000000-0000-4000-8000-000000001994"),
       createMetricStreamBatchCompletedEvent(
-        { operationId, batchId: "batch-1994", datasetKeys: ["metric-stream"] },
+        {
+          operationId,
+          batchId: "batch-1994",
+          datasetKeys: ["metric-stream"],
+        },
         1,
       ),
       createMetricStreamDeletedEvent({ userId: deletingUserId }, "1"),
@@ -371,8 +563,8 @@ describe("eraseMetricStreamArchive", () => {
     );
     const identifiers = {
       userId: deletingUserId,
-      activityIds: new Set<string>(),
-      operationIds: new Set([operationId]),
+      stage: "initial" as const,
+      store: archiveIdentityFixture([], [operationId]),
     };
     await expect(eraseMetricStreamArchive(storage, identifiers)).resolves.toEqual({
       lastKey: key,
@@ -401,7 +593,11 @@ describe("eraseMetricStreamArchive", () => {
     await expect(
       eraseMetricStreamArchive(
         storage,
-        { userId: deletingUserId, activityIds: new Set(), operationIds: new Set() },
+        {
+          userId: deletingUserId,
+          stage: "initial" as const,
+          store: archiveIdentityFixture([], []),
+        },
         {
           onObjectCompleted: async (objectKey) => {
             completed.push(objectKey);
@@ -426,8 +622,8 @@ describe("eraseMetricStreamArchive", () => {
     );
 
     const result = await eraseMetricStreamArchive(storage, {
-      activityIds: new Set(),
-      operationIds: new Set(),
+      stage: "initial" as const,
+      store: archiveIdentityFixture([], []),
       userId: deletingUserId,
     });
 
@@ -452,8 +648,8 @@ describe("eraseMetricStreamArchive", () => {
     storage.objects.set(key, original);
 
     await eraseMetricStreamArchive(storage, {
-      activityIds: new Set(),
-      operationIds: new Set(),
+      stage: "initial" as const,
+      store: archiveIdentityFixture([], []),
       userId: deletingUserId,
     });
 
@@ -468,7 +664,11 @@ describe("eraseMetricStreamArchive", () => {
     const activityId = "30000000-0000-4000-8000-000000001994";
     const operationId = "40000000-0000-4000-8000-000000001994";
     const matchingBatch = createMetricStreamBatchCompletedEvent(
-      { batchId: "batch-1994", datasetKeys: ["metric-stream"], operationId },
+      {
+        batchId: "batch-1994",
+        datasetKeys: ["metric-stream"],
+        operationId,
+      },
       1,
     );
     const otherBatch = createMetricStreamBatchCompletedEvent(
@@ -506,8 +706,8 @@ describe("eraseMetricStreamArchive", () => {
 
     await expect(
       eraseMetricStreamArchive(storage, {
-        activityIds: new Set([activityId]),
-        operationIds: new Set([operationId]),
+        stage: "initial" as const,
+        store: archiveIdentityFixture([activityId], [operationId]),
         userId: deletingUserId,
       }),
     ).resolves.toMatchObject({ recordsRemoved: 4, objectsRewritten: 1 });
@@ -527,8 +727,8 @@ describe("eraseMetricStreamArchive", () => {
       eraseMetricStreamArchive(
         storage,
         {
-          activityIds: new Set(),
-          operationIds: new Set(),
+          stage: "initial" as const,
+          store: archiveIdentityFixture([], []),
           userId: deletingUserId,
         },
         { onObjectCompleted: completed },
@@ -552,8 +752,8 @@ describe("eraseMetricStreamArchive", () => {
 
     await expect(
       eraseMetricStreamArchive(storage, {
-        activityIds: new Set(),
-        operationIds: new Set(),
+        stage: "initial" as const,
+        store: archiveIdentityFixture([], []),
         userId: deletingUserId,
       }),
     ).resolves.toMatchObject({ recordsRemoved: 1, objectsRewritten: 1 });
@@ -584,8 +784,8 @@ describe("eraseMetricStreamArchive", () => {
 
     await expect(
       eraseMetricStreamArchive(storage, {
-        activityIds: new Set(),
-        operationIds: new Set(),
+        stage: "initial" as const,
+        store: archiveIdentityFixture([], []),
         userId: deletingUserId,
       }),
     ).rejects.toThrow("part upload failed");
@@ -613,8 +813,8 @@ describe("eraseMetricStreamArchive", () => {
 
     await expect(
       eraseMetricStreamArchive(storage, {
-        activityIds: new Set(),
-        operationIds: new Set(),
+        stage: "initial" as const,
+        store: archiveIdentityFixture([], []),
         userId: deletingUserId,
       }),
     ).rejects.toThrow("multipart completion failed");
@@ -650,8 +850,8 @@ describe("eraseMetricStreamArchive", () => {
 
     await expect(
       eraseMetricStreamArchive(storage, {
-        activityIds: new Set(),
-        operationIds: new Set(),
+        stage: "initial" as const,
+        store: archiveIdentityFixture([], []),
         userId: deletingUserId,
       }),
     ).rejects.toSatisfy(
@@ -682,8 +882,8 @@ describe("eraseMetricStreamArchive", () => {
 
     await expect(
       eraseMetricStreamArchive(storage, {
-        activityIds: new Set(),
-        operationIds: new Set(),
+        stage: "initial" as const,
+        store: archiveIdentityFixture([], []),
         userId: deletingUserId,
       }),
     ).rejects.toThrow("changed during account erasure rewrite");
@@ -697,8 +897,8 @@ describe("eraseMetricStreamArchive", () => {
 
     await expect(
       eraseMetricStreamArchive(storage, {
-        activityIds: new Set(),
-        operationIds: new Set(),
+        stage: "initial" as const,
+        store: archiveIdentityFixture([], []),
         userId: deletingUserId,
       }),
     ).rejects.toThrow(`Malformed JSON in R2 archive object ${key} at line 1`);
@@ -722,8 +922,8 @@ describe("eraseMetricStreamArchive", () => {
 
     await expect(
       eraseMetricStreamArchive(storage, {
-        activityIds: new Set(),
-        operationIds: new Set(),
+        stage: "initial" as const,
+        store: archiveIdentityFixture([], []),
         userId: deletingUserId,
       }),
     ).rejects.toThrow(`Unsupported metric-stream event schema in ${key} at line 1`);
@@ -754,8 +954,8 @@ describe("eraseMetricStreamArchive", () => {
 
     await expect(
       eraseMetricStreamArchive(storage, {
-        activityIds: new Set(),
-        operationIds: new Set(),
+        stage: "initial" as const,
+        store: archiveIdentityFixture([], []),
         userId: deletingUserId,
       }),
     ).rejects.toThrow("changed during account erasure scan");
@@ -782,8 +982,8 @@ describe("eraseMetricStreamArchive", () => {
     );
 
     await eraseMetricStreamArchive(storage, {
-      activityIds: new Set(),
-      operationIds: new Set(),
+      stage: "initial" as const,
+      store: archiveIdentityFixture([], []),
       userId: deletingUserId,
     });
 

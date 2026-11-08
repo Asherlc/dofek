@@ -37,9 +37,20 @@ const describedTopicConfigSchema = z.object({
 });
 
 export type AccountErasureHighWatermark = z.infer<typeof highWatermarkSchema>;
-export type AccountErasureRouteHighWatermark = AccountErasureHighWatermark & { topic: string };
 
-interface RedpandaOffsetAdmin {
+const accountErasureRouteHighWatermarkSchema = highWatermarkSchema.extend({
+  topic: z.string().min(1),
+});
+export type AccountErasureRouteHighWatermark = z.infer<
+  typeof accountErasureRouteHighWatermarkSchema
+>;
+
+/** Durable ingest_fence checkpoint written by the Kafka phase runner. */
+export const accountErasureIngestFenceCheckpointSchema = z.object({
+  highWatermarks: z.array(accountErasureRouteHighWatermarkSchema).min(1),
+});
+
+interface KafkaOffsetAdmin {
   fetchOffsets(options: { groupId: string; topics: string[] }): Promise<
     Array<{
       partitions: Array<{ offset: string; partition: number }>;
@@ -51,7 +62,7 @@ interface RedpandaOffsetAdmin {
   ): Promise<Array<{ high: string; low: string; offset: string; partition: number }>>;
 }
 
-export interface RedpandaAdmin extends RedpandaOffsetAdmin {
+export interface RedpandaAdmin extends KafkaOffsetAdmin {
   describeConfigs(options: {
     includeSynonyms: boolean;
     resources: Array<{
@@ -110,7 +121,7 @@ async function assertQuarantineTopicConfiguration(
 }
 
 export async function captureAccountErasureHighWatermarks(
-  admin: Pick<RedpandaOffsetAdmin, "fetchTopicOffsets">,
+  admin: Pick<KafkaOffsetAdmin, "fetchTopicOffsets">,
   topic: string,
 ): Promise<AccountErasureHighWatermark[]> {
   return z
@@ -133,7 +144,7 @@ export async function captureAccountErasureQuarantineHighWatermarks(
 }
 
 export async function assertAccountErasureConsumersDrained(
-  admin: Pick<RedpandaOffsetAdmin, "fetchOffsets">,
+  admin: Pick<KafkaOffsetAdmin, "fetchOffsets">,
   topic: string,
   highWatermarks: readonly AccountErasureHighWatermark[],
   consumerGroups: readonly string[] = ACCOUNT_ERASURE_CONSUMER_GROUPS,
@@ -168,7 +179,7 @@ export async function assertAccountErasureConsumersDrained(
 }
 
 export async function assertAccountErasureReplayExpired(
-  admin: Pick<RedpandaOffsetAdmin, "fetchTopicOffsets">,
+  admin: Pick<KafkaOffsetAdmin, "fetchTopicOffsets">,
   topic: string,
   highWatermarks: readonly AccountErasureHighWatermark[],
 ): Promise<void> {

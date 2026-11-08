@@ -1,0 +1,50 @@
+diff --git a/src/metric-stream/clickhouse-sink.integration.test.ts b/src/metric-stream/clickhouse-sink.integration.test.ts
+index b2daaf7ce..db17358e6 100644
+--- a/src/metric-stream/clickhouse-sink.integration.test.ts
++++ b/src/metric-stream/clickhouse-sink.integration.test.ts
+@@ -1 +1 @@
+-import { randomUUID } from "node:crypto";
++import { createHash, randomUUID } from "node:crypto";
+@@ -14,0 +15 @@ import {
++  ACCOUNT_ERASURE_FENCE_TABLE,
+@@ -131,0 +133,40 @@ describe("metric stream ClickHouse sink (integration)", () => {
++  it("does not republish a row admitted before account erasure fences and deletes it", async () => {
++    const userId = randomUUID();
++    const userHash = createHash("sha256").update(userId).digest("hex");
++    const event = createCurrentMetricStreamEvent({
++      userId, providerId: "withings", externalId: "erasure-race",
++      recordedAt: "2026-06-07T14:36:12.000Z", sourceType: "api", channel: "body_weight", scalar: 80,
++    });
++    if (!client.insert) throw new Error("Integration fixture requires insert support");
++    const insert = client.insert.bind(client);
++    let activated = false;
++    const racingClient: ClickHouseMetricStreamInsertClient = {
++      command: client.command.bind(client), query: client.query.bind(client),
++      insert: async (options) => {
++        if (!activated) {
++          activated = true;
++          await client.command({
++            query: `INSERT INTO ${ACCOUNT_ERASURE_FENCE_TABLE} (user_hash,erased_at) VALUES ({hash:FixedString(64)},now64(9))`,
++            query_params: { hash: userHash },
++          });
++          await client.command({
++            query: `ALTER TABLE ${METRIC_STREAM_TABLE} DELETE WHERE user_id={userId:UUID}`,
++            query_params: { userId }, clickhouse_settings: { mutations_sync: "2" },
++          });
++        }
++        return insert(options);
++      },
++    };
++    try {
++      await applyMetricStreamEventsToClickHouse(racingClient, [event]);
++      const result = await client.query<{count: string}>({
++        query: `SELECT count() AS count FROM ${METRIC_STREAM_TABLE} FINAL WHERE user_id={userId:UUID}`,
++        query_params: { userId }, format: "JSONEachRow",
++      });
++      expect(Number((await result.json())[0]?.count)).toBe(0);
++    } finally {
++      await client.command({query: `ALTER TABLE ${METRIC_STREAM_TABLE} DELETE WHERE user_id={userId:UUID}`,query_params:{userId},clickhouse_settings:{mutations_sync:"2"}});
++      await client.command({query: `ALTER TABLE ${ACCOUNT_ERASURE_FENCE_TABLE} DELETE WHERE user_hash={hash:FixedString(64)}`,query_params:{hash:userHash},clickhouse_settings:{mutations_sync:"2"}});
++    }
++  });
++

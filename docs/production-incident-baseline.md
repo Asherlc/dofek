@@ -35651,3 +35651,21 @@ additional strict-whitespace assertions. The sanitized
 [line-size measurement record](pulsar-foundation-qualification.md#november-5-retained-archive-line-size-measurement)
 is now retained with its source ranges and explicit sampling limits. These
 were pre-merge corrections; no production deployment occurred.
+
+## 2026-11-08 — erasure extraction publication race (unresolved)
+
+Offline candidate review reproduced a real sink check-to-write race: the sink
+passed its fence read, then republished one row after fence activation and a
+synchronous deletion. No production data or services were changed; potential
+impact is loss of physical-erasure guarantees under concurrent publication.
+The cause is the missing shared admission/completion boundary between the raw
+sink and erasure. The deterministic diagnostic, exact failure, passing alias
+checks and proposed existing-owner integration are retained in the
+[extraction evidence](evidence/erasure-extraction-20261108/README.md).
+No durable race fix is implemented; the candidate remains blocked pending writer
+integration alignment and acceptance tests.
+
+Local qualification also encountered Redpanda async-I/O exhaustion and Docker
+network address-pool exhaustion. Focused PG/ClickHouse fixtures used healthy
+workspace services; the ephemeral exact-version lab reused that workspace network.
+No resilience tuning was added. Broker-dependent qualification remains outstanding.
