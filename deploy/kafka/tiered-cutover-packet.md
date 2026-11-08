@@ -109,6 +109,12 @@ Use an approved operator context on the intended Swarm. Save full inspect output
 only in a private operator directory (`umask 077`); it contains credentials.
 Record original specs/replicas/images and consumed routing. Verify instrumentation
 and six group positions against their own source high watermarks.
+Freeze the coordinated release window too: no queued/running application or
+infrastructure release may overlap, and no unrelated main landing/release may
+apply older routing/configuration before the complete tiered graph is installed.
+Confirm this with the release coordinator before each write boundary; unknown
+release state is a no-go. Keep automation enabled; this is a reviewed scheduling
+constraint, not a workflow bypass or a new deploy mechanism.
 
 Prepare broker/worker environments with the existing canonical export/renderer:
 
@@ -408,6 +414,10 @@ effects, scrub combination and canonical worker entrypoint restoration separatel
 remote-disabled configuration could deploy automatically and turn tiering off.
 Racing the child merge against parent CI is unsafe. Do not disable automation,
 add flags or silently change workflow strategy.
+Until the complete graph reaches main, its [older stack](https://github.com/Asherlc/dofek/blob/afa8b6e46/deploy/stack.yml)
+can also reapply Redpanda routing through an unrelated automatic release. The
+coordinated no-overlap window above therefore spans preparation, cutover and
+source landing, not just the two Kafka PR merge events.
 
 One stock landing proposal for explicit review is to retarget the complete child
 graph to main after both layers and the full application release are qualified,
