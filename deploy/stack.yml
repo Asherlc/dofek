@@ -351,6 +351,8 @@ services:
   # JSONL archive stays on separate R2 bucket/creds. See deploy/kafka/README.md.
   kafka:
     image: apache/kafka:4.4.0@sha256:833b867a9585a141da455dc2b57431c65cbccb27f11c91f694444cca9f777e0f
+    # Self-advertised name must resolve before Swarm marks the broker ready.
+    hostname: kafka
     env_file: ${KAFKA_ENV_FILE:?KAFKA_ENV_FILE is required}
     environment:
       KAFKA_HEAP_OPTS: "-Xmx1G -Xms1G"
