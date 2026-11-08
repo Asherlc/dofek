@@ -69,3 +69,34 @@ Protocol compatibility is supported; unchanged-worker erasure compatibility is
 not established. A narrow safety release and retirement procedure need an agreed
 design before activation. The unrelated snapshot/catalog/identifier redesign
 does not by itself close this gap.
+
+## Coordinated ownership
+
+The account-erasure agent confirmed at PR #3234 commit `d48352b3c` that its
+[`assertAccountErasureReplayExpired`](https://github.com/Asherlc/dofek/blob/d48352b3c/src/account-erasure/redpanda-drain.ts)
+still compares offsets and its quarantine verifier delegates to the same check.
+The [runtime callers](https://github.com/Asherlc/dofek/blob/d48352b3c/src/jobs/account-erasure-runtime.ts)
+and [retention phase](https://github.com/Asherlc/dofek/blob/d48352b3c/src/jobs/account-erasure-phase-runner.ts)
+do not verify broker remote objects or retained Redpanda files. Its ClickHouse
+physical-erasure work does not provide either broker safeguard.
+
+Kafka PR #3233 is the single owner of these two safeguards. The erasure branch
+will preserve a small explicit runtime/retention dependency when combining the
+changes; it will not implement a duplicate helper. No broader snapshot, catalog,
+identifier, checkpoint or writer-race redesign transfers to this branch.
+The intended retention call uses the existing ingest-fence and quarantine
+checkpoints; the scrubbed representation retains only topic, partition, low and
+offset. No implementation is claimed by this ownership agreement.
+
+The stock proof boundary remains unresolved. Aiven's
+[key factory](https://github.com/Aiven-Open/tiered-storage-for-apache-kafka/blob/v1.2.0/core/src/main/java/io/aiven/kafka/tieredstorage/ObjectKeyFactory.java)
+encodes topic UUID, partition and segment start offset. R2 supports strongly
+consistent [object listing](https://developers.cloudflare.com/r2/reference/consistency/)
+and [multipart listing](https://developers.cloudflare.com/r2/api/s3/api/).
+But listing absence does not establish that an admitted copy cannot later
+recreate an object. Kafka's
+[remote-log manager](https://github.com/apache/kafka/blob/4.4.0/storage/src/main/java/org/apache/kafka/server/log/remote/storage/RemoteLogManager.java)
+advances the log start offset before initiating remote deletion; it separately
+tracks copy-in-progress and deletion lifecycle states. A safe success path must
+establish the terminal deletion/generation boundary as well as physical absence.
+Neither agent will label an offset, log message, or bare listing a substitute.
