@@ -1,0 +1,69 @@
+# Kafka broker migration
+
+Status: extraction plan; this branch does not yet contain the runtime migration.
+This is one of two independent efforts requested on November 8. The other is
+account-erasure hardening. Both start at main commit
+`2752451fb4a7404e5d887d32341595a42a673dcd`; neither is stacked on the other.
+
+## Goal and boundary
+
+Replace the production Redpanda broker with stock Apache Kafka without requiring
+the account-erasure redesign or an unrelated application release. Keep the
+already deployed application and archive images wherever protocol compatibility
+allows. Existing deletion guarantees remain requirements, not permission to
+certify remote erasure from consumer offsets.
+
+The combined [PR #3231](https://github.com/Asherlc/dofek/pull/3231), frozen at
+`ed26f38b8`, is reference material, not this branch's base or release candidate.
+Its [cutover attempt receipt](https://github.com/Asherlc/dofek/blob/ed26f38b8/docs/evidence/kafka-cutover-attempt-20261108/README.md)
+records the abort and recovery. Its source code, lab results and qualified
+artifact digests may be reused only for matching unchanged inputs.
+
+## Extraction and validation
+
+- [ ] Extract only broker infrastructure and necessary transport compatibility
+  changes from PR #3231. Primary paths: `deploy/stack.yml`, the broker bootstrap
+  portions of `.github/workflows/deploy-web-stack.yml`, required environment
+  rendering in `scripts/deploy-service-environment.ts`, and the dedicated R2
+  Terraform resources. Do not copy the full application workflow or source tree.
+- [ ] Keep ClickHouse at production 26.6 and preserve Postgres, PeerDB, analytics,
+  unrelated services and application migration journals. Do not import the new
+  catalog guard, identifier stores, snapshot redesign, migrations 0178/0179,
+  analytics work coordination or the application-wide Kafka naming refactor.
+- [ ] Verify the existing KafkaJS clients and Connect archives against stock
+  Kafka using their current configuration contract. Trace any necessary change
+  to an actual incompatibility. Broker migration must not silently trigger a
+  new application image, topic epoch, schema migration or account-erasure release.
+- [ ] Review existing broker-retention and account-erasure assumptions against
+  tiered storage. Preserve fail-closed semantics. Any indispensable broker-specific
+  safety change belongs here; do not pull in the unrelated erasure redesign to
+  satisfy it. Record a real dependency if independent activation is impossible.
+- [ ] Validate declarative configuration with native tooling and test changed
+  client behavior with focused real-engine tests. Reuse relevant stock Kafka/R2
+  qualification evidence rather than repeat historical identity scans or cloud
+  experiments. An image/source/layout change invalidates only affected evidence.
+- [ ] Prepare a broker-only operator packet that captures current images and
+  offsets, pauses and drains writers, preserves old data, verifies all six
+  consumers, and distinguishes pre-write reversal from post-write forward recovery.
+  Do not use full-stack deployment or prune for the first cutover.
+
+Use stock [Swarm service updates](https://docs.docker.com/reference/cli/docker/service/update/)
+and [stack deployment](https://docs.docker.com/reference/cli/docker/stack/deploy/).
+Kafka's [tiered-storage documentation](https://kafka.apache.org/44/operations/tiered-storage/)
+defines broker remote-storage behavior; application erasure must not infer remote
+physical deletion from log offsets alone.
+
+## Release contract
+
+This PR must be reviewable without the erasure PR. No production mutation follows
+from creating this workspace or PR. Request a fresh, concrete maintenance approval
+only after the broker-only candidate and rollback boundaries are qualified.
+Redpanda remains running; the Kafka service remains stopped. Never delete the
+retired Redpanda tree or resume a previous cutover script under old approval.
+
+## Review focus
+
+Existing application images must work unchanged; the six consumer/archive routes
+must remain consistent; remote retention must preserve existing erasure guarantees;
+full-stack automation must not upgrade databases or prune the retained broker;
+the first successful Kafka write must be treated as a distinct recovery boundary.
