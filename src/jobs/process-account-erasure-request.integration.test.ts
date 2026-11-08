@@ -133,9 +133,7 @@ describe("processAccountErasureRequest request-to-completion (integration)", () 
     expect(rows).toEqual([
       expect.objectContaining({
         status: "failed",
-        last_error: expect.stringMatching(
-          /Account deletion snapshot exceeds.*limit.*Contact support/,
-        ),
+        last_error: "Account deletion snapshot requires support assistance",
         failure_count: 1,
         lease_owner: null,
         lease_expires_at: null,
@@ -143,7 +141,10 @@ describe("processAccountErasureRequest request-to-completion (integration)", () 
       }),
     ]);
     await expect(findAccountErasureStatus(context.db, accepted.statusToken, now)).resolves.toEqual(
-      expect.objectContaining({ status: "failed", message: expect.any(String) }),
+      expect.objectContaining({
+        status: "failed",
+        message: "Account deletion needs support assistance. Contact support with this request ID.",
+      }),
     );
   });
 
