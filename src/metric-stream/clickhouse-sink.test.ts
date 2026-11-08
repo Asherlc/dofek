@@ -809,7 +809,7 @@ describe("applyMetricStreamEventsToClickHouse", () => {
     expect(firstCommandQuery(command)).toContain(
       "candidate_row.external_id = {external_id_0:String}",
     );
-    expect(firstCommandQuery(command)).toContain("scope_index = 0 AND latest_row.2");
+    expect(firstCommandQuery(command)).toContain("latest_row.2 = {user_id_0:UUID}");
     expect(firstCommandQuery(command)).toContain("latest_row.6 = {external_id_0:String}");
     expect(firstCommandQuery(command)).toContain(
       "candidate_row.external_id = {external_id_1:String}",
