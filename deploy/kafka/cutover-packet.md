@@ -173,9 +173,11 @@ Swarm/Kafka tools and leaves automation unchanged.
    the existing main-CI → Terraform → stack deployment path. Do not disable its
    trigger, add a bypass flag, or treat merge as an inert source-only action.
 
-The smallest sequencing decision is approval of **broker-only cutover before
-merge, then a separately qualified normal application release**. That decision
-alone would not authorize production steps, accept the byte-policy change,
+Q2 approved **broker-only cutover before merge, then a separately qualified
+normal application release** as the planning order (user answer: “Y”). The
+[operator proposal](operator-proposal.md) records the stock command shapes and
+remaining execution preconditions. That decision does not authorize production
+steps, accept the byte-policy change,
 establish capacity, or authorize old-data deletion. Until those concrete gates
 are closed, the PR remains ready for review rather than ready to merge.
 
