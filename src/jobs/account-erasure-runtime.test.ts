@@ -1,10 +1,14 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { KafkaRemoteStorage } from "../account-erasure/kafka-remote-storage.ts";
 import type { AccountErasureRemoteSnapshot } from "../account-erasure/remote-snapshot.ts";
 import type { ClaimedAccountErasureRequest } from "../db/account-erasure-processing.ts";
 import type { AccountErasurePhaseExecution } from "./process-account-erasure-request.ts";
 
 const mocks = vi.hoisted(() => ({
   configureBrokerStorage: vi.fn(),
+  configureRemoteHistory: vi.fn(),
+  assertNativeDeleted: vi.fn(async (_boundaries: readonly unknown[]) => new Map()),
+  metadataConsumer: { name: "native metadata consumer" },
   assertBrokerStorageExpired: vi.fn(async () => undefined),
   assertConsumersDrained: vi.fn(async () => undefined),
   assertPeerDbDrained: vi.fn(async () => undefined),
@@ -67,8 +71,8 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("../account-erasure/kafka-log-storage.ts", () => ({
   KafkaLogStorage: class {
-    constructor(admin: unknown, paths: unknown) {
-      mocks.configureBrokerStorage(admin, paths);
+    constructor(admin: unknown, paths: unknown, remote: unknown) {
+      mocks.configureBrokerStorage(admin, paths, remote);
     }
     assertExpired = mocks.assertBrokerStorageExpired;
     capture(_topic: string, captureOffsets: () => Promise<unknown[]>) {
@@ -77,10 +81,23 @@ vi.mock("../account-erasure/kafka-log-storage.ts", () => ({
   },
 }));
 
+vi.mock("../account-erasure/kafka-remote-history.ts", () => ({
+  KafkaRemoteHistory: class {
+    constructor(admin: unknown, consumer: unknown) {
+      mocks.configureRemoteHistory(admin, consumer);
+    }
+    assertDeleted = mocks.assertNativeDeleted;
+  },
+}));
+
 vi.mock("../r2-storage.ts", () => ({
   createR2Client: vi.fn((config?: unknown) => (config ? mocks.brokerR2Client : mocks.r2Client)),
   requiredR2EnvironmentVariable: vi.fn((name: string) =>
-    name === "KAFKA_TIERED_STORAGE_REGION" ? "auto" : `${name.toLowerCase()}-bucket`,
+    name === "KAFKA_TIERED_STORAGE_REGION"
+      ? "auto"
+      : name === "KAFKA_CLUSTER_ID"
+        ? "0000000000000000000000"
+        : `${name.toLowerCase()}-bucket`,
   ),
 }));
 
@@ -162,6 +179,7 @@ vi.mock("../account-erasure/redpanda-drain.ts", async () => ({
     admin: { name: "redpanda-admin" },
     close: mocks.closeRedpanda,
     connect: mocks.connectRedpanda,
+    createMetadataConsumer: () => mocks.metadataConsumer,
     routes: [
       {
         topic: "metric-stream-v1",
@@ -252,7 +270,88 @@ function execution(
   };
 }
 
+function runtimeInputs() {
+  return {
+    database: { execute: vi.fn(async () => []), transaction: vi.fn() },
+    clickHouseClient: {
+      command: vi.fn(async () => undefined),
+      insert: vi.fn(async () => undefined),
+      query: vi.fn(async () => ({ json: async () => [] })),
+    },
+    workPurger: { close: vi.fn(async () => undefined), purge: vi.fn(async () => undefined) },
+  };
+}
+
 describe("createAccountErasureRuntime", () => {
+  beforeEach(() => vi.clearAllMocks());
+  it("connects the remote verifier to the dedicated client, native history and consumer factory", async () => {
+    const { createR2Client } = await import("../r2-storage.ts");
+    vi.mocked(createR2Client).mockClear();
+    mocks.assertNativeDeleted.mockClear();
+    const inputs = runtimeInputs();
+    const runtime = await createAccountErasureRuntime(
+      inputs.database,
+      inputs.clickHouseClient,
+      inputs.workPurger,
+    );
+    try {
+      expect(createR2Client).toHaveBeenCalledWith({
+        accessKeyId: "kafka_tiered_storage_access_key_id-bucket",
+        secretAccessKey: "kafka_tiered_storage_secret_access_key-bucket",
+        endpoint: "kafka_tiered_storage_endpoint-bucket",
+      });
+      const factory = mocks.configureRemoteHistory.mock.lastCall?.[1];
+      expect(factory).toBeTypeOf("function");
+      if (typeof factory !== "function") throw new Error("missing metadata consumer factory");
+      expect(factory()).toBe(mocks.metadataConsumer);
+      const remote = mocks.configureBrokerStorage.mock.lastCall?.[2];
+      if (!(remote instanceof KafkaRemoteStorage))
+        throw new Error("missing remote storage dependency");
+      mocks.brokerR2Client.send.mockResolvedValue({ IsTruncated: false });
+      const boundaries = ["metric-stream-v1", "metric-stream-live-v1", "metric-stream-history-v1"]
+        .flatMap((topic) => [topic, `${topic}.quarantine.v1`])
+        .map((topic) => ({
+          topic,
+          clusterId: "0000000000000000000000",
+          topicId: "dI2O6HVWQkuC7XgSy7cJ3w",
+          partition: 0,
+          low: "0",
+          offset: "0",
+        }));
+      await expect(remote.assertExpired(boundaries)).resolves.toEqual(new Map());
+      expect(mocks.assertNativeDeleted).toHaveBeenCalledWith(boundaries);
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("rejects an unsupported R2 region and closes acquired resources", async () => {
+    const { requiredR2EnvironmentVariable } = await import("../r2-storage.ts");
+    const inputs = runtimeInputs();
+    await vi.mocked(requiredR2EnvironmentVariable).withImplementation(
+      (name) =>
+        name === "KAFKA_TIERED_STORAGE_REGION" ? "us-east-1" : `${name.toLowerCase()}-bucket`,
+      async () => {
+        await expect(
+          createAccountErasureRuntime(inputs.database, inputs.clickHouseClient, inputs.workPurger),
+        ).rejects.toThrow("REGION must be auto");
+      },
+    );
+    expect(inputs.workPurger.close).toHaveBeenCalledOnce();
+  });
+
+  it("closes the dedicated broker client when later native adapter startup fails", async () => {
+    const inputs = runtimeInputs();
+    mocks.brokerR2Client.destroy.mockClear();
+    const error = new Error("native storage mount unavailable");
+    mocks.configureBrokerStorage.mockImplementationOnce(() => {
+      throw error;
+    });
+    await expect(
+      createAccountErasureRuntime(inputs.database, inputs.clickHouseClient, inputs.workPurger),
+    ).rejects.toBe(error);
+    expect(mocks.brokerR2Client.destroy).toHaveBeenCalledOnce();
+  });
   it("connects concrete production adapters and closes owned resources", async () => {
     mocks.decryptSnapshot.mockResolvedValue(snapshot);
     mocks.closePeerDbStaging.mockClear();
@@ -284,6 +383,7 @@ describe("createAccountErasureRuntime", () => {
         ],
         topics: topics.flatMap((topic) => [topic, `${topic}.quarantine.v1`]),
       },
+      expect.any(KafkaRemoteStorage),
     );
     const highWatermarks = topics.map((topic) => ({ topic, low: "1", offset: "3", partition: 0 }));
     const quarantineHighWatermarks = topics.map((topic) => ({

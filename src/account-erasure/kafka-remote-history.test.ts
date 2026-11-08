@@ -83,13 +83,69 @@ function fixture(
 
 describe("native Kafka deletion history", () => {
   it("requires terminal deletion for every covered attempt and closes the consumer", async () => {
-    const { reader, disconnect } = fixture([start, update(1), update(2), update(3)]);
+    const { reader, disconnect, consumer } = fixture([start, update(1), update(2), update(3)]);
     const result = await reader.assertDeleted([boundary]);
     expect(result.get("AAAAAAAAAAAAAAAAAAAAAQ")).toMatchObject({
       topic: "samples",
       startOffset: "0",
     });
     expect(disconnect).toHaveBeenCalledOnce();
+    expect(consumer.subscribe).toHaveBeenCalledWith({
+      topic: "__remote_log_metadata",
+      fromBeginning: true,
+    });
+    expect(consumer.run).toHaveBeenCalledWith(
+      expect.objectContaining({ autoCommit: false, eachBatchAutoResolve: false }),
+    );
+  });
+  it.each([
+    [{ partition: 0, low: "0", high: "x1", offset: "1" }],
+    [{ partition: 0, low: "0", high: "1x", offset: "1" }],
+    [{ partition: -1, low: "0", high: "1", offset: "1" }],
+    [
+      { partition: 0, low: "0", high: "0", offset: "0" },
+      { partition: 0, low: "0", high: "0", offset: "0" },
+    ],
+  ])("rejects invalid captured history cuts %j", async (...cuts) => {
+    const { reader, admin } = fixture([]);
+    admin.fetchTopicOffsets.mockResolvedValue(cuts);
+    await expect(reader.assertDeleted([boundary])).rejects.toThrow("Incomplete");
+  });
+  it("requires native partitions even when no segment has been admitted", async () => {
+    const { reader, admin } = fixture([]);
+    admin.fetchTopicOffsets.mockResolvedValue([]);
+    await expect(reader.assertDeleted([boundary])).rejects.toThrow("Missing");
+  });
+  it("accepts an empty complete native history without opening a consumer", async () => {
+    const { reader, consumer } = fixture([]);
+    await expect(reader.assertDeleted([boundary])).resolves.toEqual(new Map());
+    expect(consumer.connect).not.toHaveBeenCalled();
+  });
+  it("ignores duplicate delivered offsets and records beyond the captured cut", async () => {
+    const { reader, admin } = fixture([start, start, update(2), update(3), null], "0", 0, [
+      "0",
+      "0",
+      "1",
+      "2",
+      "3",
+    ]);
+    admin.fetchTopicOffsets.mockResolvedValue([{ partition: 0, low: "0", high: "3", offset: "3" }]);
+    await expect(reader.assertDeleted([boundary])).resolves.toBeInstanceOf(Map);
+  });
+  it("accepts repeated native state records and multi-digit history positions", async () => {
+    await expect(
+      fixture([
+        start,
+        ...Array.from({ length: 10 }, () => update(1)),
+        update(2),
+        update(3),
+      ]).reader.assertDeleted([boundary]),
+    ).resolves.toBeInstanceOf(Map);
+  });
+  it("rejects duplicate segment admissions", async () => {
+    await expect(fixture([start, start]).reader.assertDeleted([boundary])).rejects.toThrow(
+      "Duplicate",
+    );
   });
   it.each([[start], [start, update(1)], [start, update(2)]])(
     "blocks unfinished native copies/deletes",

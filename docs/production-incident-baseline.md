@@ -35759,3 +35759,29 @@ The pinned Java package namespace (`aiven`, `tieredstorage`) and the native
 zero/one UUID fixture were missing from the existing dictionary. Register those
 exact proper terms in `cspell.json`; keep source and test spelling checks enabled.
 No runtime behavior, timeout, retry or production configuration changed.
+
+### 2026-11-08 — tiered-layer verifier test gaps and local lint prerequisite
+
+- **CI symptom/root cause:** Run `42530085576` failed stock Stryker shards at
+  native storage 46.38%, history 73.53%, remote storage 70.49%, runtime 40% and
+  metadata-consumer factory 0%. Tests omitted positive newer-cache paths,
+  malformed history cuts, complete listing pagination and actual constructor/
+  factory wiring. Add focused behavioral cases; preserve the existing 75% gate,
+  stock runner and production implementations.
+- **Validation:** Bounded stock-runner mutation checks passed: native local
+  storage 82.08%, history 84.71%, remote storage 81.15%, changed runtime and
+  metadata-consumer factory 100%. The native changed-line subset also passed
+  before the final additional cache-mismatch/plugin cases. No gate exemption,
+  production refactor or longer timeout was needed.
+- **Local prerequisite:** `pnpm lint` completed its source/policy checks, then
+  `lint:analytics-sql` failed first with `FailedToConnectError` / connection
+  refused at `127.0.0.1:8123`. This child has no local ClickHouse dependency
+  running. No SQL changed; do not treat this as a source-lint pass or start
+  unrelated heavy database work under the scoped qualification request. Full
+  analytics lint remains for CI with its normal dependencies.
+- **Impact:** Review-branch CI/local qualification only; production unaffected.
+  Root/server/web typechecks and 177 focused tests passed. Native fixture/image
+  qualification is separately recorded in the [child receipt](evidence/kafka-tiered-child-20261108/README.md).
+- **Follow-up:** Keep fixture checks tied to the actual accepted path, and use
+  the documented [test dependency setup](testing.md#integration-dependencies)
+  before full database-dependent lint. No extra retry, timeout or ignore added.

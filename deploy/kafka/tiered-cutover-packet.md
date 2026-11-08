@@ -27,19 +27,27 @@ and [S3/R2 API support](https://developers.cloudflare.com/r2/api/s3/api/).
 
 ## Required before an activation proposal
 
-1. Record exact new worker source/image digest and actual production entry-path
-   proof. The old hot-log worker digest is historical and does not qualify the
-   added native-history/S3 code. Complete CI for this branch's actual head.
+1. Use the [child qualification receipt](../../docs/evidence/kafka-tiered-child-20261108/README.md):
+   worker source `e19b9200196c698e1d159597fc359d384d3a9a8e`, immutable image
+   `ghcr.io/asherlc/dofek@sha256:a0d8861a791fec7d043237b44158f38c57b35c17f79e0bcd1a3cf1a021f2979c`.
+   Its actual retention phase and remote-only read passed in the isolated native
+   fixture. The old hot-log image is historical. Complete CI for the actual head;
+   test/docs-only follow-ups do not require rebuilding identical runtime source.
 2. Verify the effective broker/worker endpoint, bucket, prefix and credential
    scope using existing secret-safe tooling. Kafka Admin redacts RSM inputs;
    terminal metadata alone does not establish that both processes inspect the
    same backend. No new credential/store edits are made by this offline work.
-3. Qualify local cleanup, native metadata history, full object/multipart listing,
-   preserved remote reads and restart against the exact pinned runtime. Preserve
-   fail-closed behavior for incomplete legacy checkpoints and unsupported layouts.
+3. Local cleanup, native history across all 50 partitions, full object/multipart
+   listing, remote-only reads and broker restart passed in the child fixture.
+   Synthetic orphan/MPU/retired-root entries held the actual phase. This is local
+   S3-compatible evidence, not an R2-cloud or power-loss test. Preserve fail-closed
+   behavior for incomplete legacy checkpoints and unsupported layouts.
 4. Resolve actual retention/local-cache policy and measured capacity/headroom.
    Offload failure can grow local usage beyond local retention targets; RF1 and
    asynchronous upload do not guarantee survival of irreversible only-disk loss.
+   Qualify native metadata-history size/read time against the existing reader's
+   64-MiB/100,000-segment/30-second envelope; exceeding it holds completion rather
+   than accepting a partial history. No production measurement is implied here.
 5. Review old-data disposition separately. Original RP and aborted Kafka bytes
    are not assumed empty, excluded, moved or deleted. Their holds must remain
    until a separately approved retirement action satisfies the reviewed scope.

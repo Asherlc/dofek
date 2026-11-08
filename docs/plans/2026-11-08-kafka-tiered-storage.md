@@ -1,6 +1,7 @@
 # Kafka tiered-storage layer
 
-Status: **runtime extraction in progress; not merge/activation ready**.
+Status: **runtime extracted and native/image qualification passed; CI follow-up
+in progress; not merge/activation ready**.
 The user selected upstream Aiven and explicitly requested separate broker and
 tiered-storage workspaces. This branch is stacked on `kafka-broker-migration`
 ([PR #3233](https://github.com/Asherlc/dofek/pull/3233)); its runtime changes depend
@@ -54,9 +55,11 @@ explicit worker memory/time bounds and scans a captured cut of every partition.
    objects remained. Captured boundary was 200 on all six topics. This is a
    native lifecycle observation, not a power-loss/R2-cloud/forensic guarantee.
    The fixture was stopped and removed before workspace transfer.
-3. Finish native record parity, preserved remote reads/restart and actual pinned
-   worker-image retention-phase qualification. Prior hot-log worker proof is not
-   proof for these new modules. Keep qualification receipts reviewable.
+3. Child-owned native cleanup, remote-only reads/restart and pinned worker-image
+   retention-phase qualification passed. See the [exact source/image, chronological
+   receipt and limits](../evidence/kafka-tiered-child-20261108/README.md).
+   The actual native reader consumed all 50 partitions. Formatter parity reused
+   the identical pinned decoder's two stock vectors, not an unrelated image proof.
 4. Run appropriate source checks/CI and complete the tiered operator packet.
    Do not silently merge or activate either layer independently.
 
@@ -75,6 +78,6 @@ Retain current application/Connect `REDPANDA_BROKERS`, repaired history
 
 Merge/release sequencing needs explicit coordination because parent main CI can
 deploy its local-only configuration. Retention/capacity, old-data disposition,
-new worker-image proof and explicit six-field erasure scrub integration remain
+current-head CI and explicit six-field erasure scrub integration remain
 gates. No production/cloud mutation, credential edit, data removal, merge,
 deployment or new strategy is approved by the source split.

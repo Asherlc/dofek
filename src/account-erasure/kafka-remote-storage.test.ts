@@ -129,4 +129,29 @@ describe("stock tiered object verification", () => {
       fixture().storage.assertExpired([{ ...boundary, clusterId: "AAAAAAAAAAAAAAAAAAAAAQ" }]),
     ).rejects.toThrow("prefix");
   });
+  it("accepts a complete empty S3 listing with omitted arrays", async () => {
+    const { storage, send } = fixture();
+    send.mockResolvedValue({ IsTruncated: false });
+    await expect(storage.assertExpired([boundary])).resolves.toEqual(new Map());
+  });
+  it("rejects repeated or incomplete multipart cursors", async () => {
+    for (const page of [
+      { IsTruncated: true },
+      { IsTruncated: true, NextKeyMarker: "key" },
+      { IsTruncated: true, NextKeyMarker: "key", NextUploadIdMarker: "upload" },
+    ]) {
+      const { storage, send } = fixture();
+      send.mockResolvedValueOnce({ IsTruncated: false }).mockResolvedValue(page);
+      await expect(storage.assertExpired([boundary])).rejects.toThrow("multipart pagination");
+    }
+  });
+  it.each([
+    ["", "prefix/"],
+    ["bucket", "prefix"],
+    ["bucket", "/prefix/"],
+  ])("rejects an unqualified bucket/prefix pair", (bucket, prefix) => {
+    expect(
+      () => new KafkaRemoteStorage({ send: vi.fn() }, bucket, prefix, async () => new Map()),
+    ).toThrow("required");
+  });
 });

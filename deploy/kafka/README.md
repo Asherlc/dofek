@@ -73,8 +73,8 @@ explicitly preserve the broker hook and all six structural checkpoint fields.
 
 The [cutover packet](cutover-packet.md) and [operator proposal](operator-proposal.md)
 must bind actual images, effective configuration and fresh topic/archive identity
-before production approval. The agreed planning order is broker-only activation
-before merge, followed by a separately qualified normal application release.
+before production approval. Both PRs' automatic deployment dependencies require
+one reviewed release sequence; no merge/cutover order is approved by this split.
 The normal workflow requires Kafka already active; it is not the first cutover.
 
 Retention policy, measured capacity/headroom, old-data disposition, worker-image

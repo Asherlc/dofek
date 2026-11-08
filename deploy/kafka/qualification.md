@@ -9,6 +9,9 @@ See the
 [accepted exception](tiered-fencing-proposal.md#accepted-exception-and-intended-stock-path).
 Earlier sections are chronological evidence, including the now-withdrawn hot-log
 alternative; they do not describe a deploy-ready current configuration.
+The separate tiered child now has [native remote-read/restart and pinned worker
+phase evidence](../../docs/evidence/kafka-tiered-child-20261108/README.md), including
+its actual configuration comparison and explicit local-fixture limits.
 
 This record qualifies bounded protocol paths, not production activation or
 remote physical erasure. No production service, offset, topic, secret or archive
