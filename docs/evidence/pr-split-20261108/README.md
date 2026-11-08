@@ -26,3 +26,13 @@ The handoff recorded RED: the old query read 77,824 rows against a required boun
 ## Retrospective
 
 The pre-existing failing regression and explicit sibling ownership kept the runtime diff small. Separating historical receipts from current instructions required the most review. For the next split, record path and hunk ownership before implementation and retain one immutable source revision. Suggested documentation improvement: add that sentence to the PR splitting guidance. Reuse `integration-tests-ready` and `verification-before-completion`; no custom validator or new skill is needed.
+
+## Review follow-up
+
+The [Sourcery review](https://github.com/Asherlc/dofek/pull/3235#pullrequestreview-5818332363) identified unconditional `latest` entries in the ML and deploy workflows; those now use the same default-branch guard. The identity integration scenarios are separated from the lifecycle suite to keep both below 1,000 lines.
+
+The immutable tuple is an explicit precondition, backed by the frozen [incoming identity audit](../metric-stream-history-identity-audit-20261107/summary.json) and [retained deletion-candidate audit](../metric-stream-deletion-scope-audit-20261108/summary.json). Arbitrary historical movement between user/provider/time tuples is outside that contract. Wire parsers retain IDs for replay; they do not establish that such movement is supported. Mutable activity/channel/external ID corrections remain covered by executable regressions.
+
+For a same-revision batch, deletion means the latest row matches any supplied scope. Every latest row satisfying a scope also satisfies that scope's candidate predicate, so losing the candidate-scope index does not introduce an extra deletion under the immutable identity contract. Retaining a historical candidate association would not change that set.
+
+Activity-only candidate discovery can still scan broadly. This change removes the second global version scan; it does not promise bounded reads for all supported scopes. Requiring user IDs would break the existing activity-only contract, and adding a new stored access path without workload evidence would exceed the approved minimal fix. The code now states this limitation beside candidate discovery. No timeout, optimizer tuning, migration or scope restriction was added.

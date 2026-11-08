@@ -595,6 +595,8 @@ async function markMetricStreamDeleteCommandsInClickHouse(
   );
   // IDs bind user/provider/time. Resolve every version of each identity tuple
   // before rechecking mutable deletion-scope fields on its complete latest row.
+  // Candidate discovery can still scan broadly for scopes without leading keys;
+  // tuple membership avoids a second global scan, not every possible scope scan.
   const scopedCandidates = candidatePredicates
     .map(
       (conditions) => `SELECT candidate_row.id AS id, candidate_row.user_id AS user_id,
