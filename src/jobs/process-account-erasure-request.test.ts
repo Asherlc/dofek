@@ -132,6 +132,29 @@ describe("processAccountErasureRequest", () => {
     );
   });
 
+  it("retains both causes and reports a failed snapshot-admission retry-state write", async () => {
+    const admission = new AccountErasureSnapshotBudgetError("snapshot budget exceeded");
+    const persistence = new Error("retry state unavailable");
+    accountErasureDatabaseMocks.claimAccountErasureRequest.mockRejectedValueOnce(admission);
+    accountErasureDatabaseMocks.markAccountErasureFailed.mockRejectedValueOnce(persistence);
+    const result = processAccountErasureRequest(database, request.id, "worker-1", phaseRunner());
+    await expect(result).rejects.toMatchObject({
+      name: "AggregateError",
+      errors: [admission, persistence],
+      cause: admission,
+    });
+    expect(sentryMocks.captureException).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "Account erasure phase failed" }),
+      {
+        tags: {
+          accountErasurePhase: "retry_state",
+          errorName: "Error",
+          source: "account-erasure-request",
+        },
+      },
+    );
+  });
+
   it("reports an unrelated claim failure without trying to repair an unowned request", async () => {
     const error = new Error("private database detail");
     accountErasureDatabaseMocks.claimAccountErasureRequest.mockRejectedValueOnce(error);

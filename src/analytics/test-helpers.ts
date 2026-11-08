@@ -1,7 +1,5 @@
 import { Readable } from "node:stream";
 import type { createClient } from "@clickhouse/client";
-import type { MetricStreamPosition } from "../metric-stream/transport-position.ts";
-import type { AnalyticsStream } from "./journal-position.ts";
 
 export function completedExecResult(
   writtenRows: string,
@@ -22,15 +20,5 @@ export function completedExecResult(
       result_bytes: "0",
       elapsed_ns: "0",
     },
-  };
-}
-
-export function analyticsPosition(stream: AnalyticsStream, entry: bigint): MetricStreamPosition {
-  return {
-    transport: "kafka",
-    epoch: stream.epoch,
-    topic: stream.topic,
-    partition: stream.partition,
-    offset: entry.toString(),
   };
 }

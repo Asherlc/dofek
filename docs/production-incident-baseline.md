@@ -35669,3 +35669,16 @@ Local qualification also encountered Redpanda async-I/O exhaustion and Docker
 network address-pool exhaustion. Focused PG/ClickHouse fixtures used healthy
 workspace services; the ephemeral exact-version lab reused that workspace network.
 No resilience tuning was added. Broker-dependent qualification remains outstanding.
+
+### Erasure extraction CI follow-up
+
+[CI42493248424](https://github.com/Asherlc/dofek/actions/runs/42493248424)
+failed Knip on unused analyticsPosition, unit/mutation dry runs on
+0038 mutations_sync string-versus-number expectations, and mutation shards on
+uncovered snapshot-admission retry persistence plus redundant stream validation.
+These were extraction regressions; no production impact. Removed the unused
+helper, matched tests to the typed SDK setting, added AggregateError/cause/error
+reporting assertions, and reused existing position comparison validation.
+Focused verification:46 unit tests passed;12 mutants killed(100%);Knip passed
+with the same non-secret config fixtures as CI. Remote rerun remains pending.
+No resilience settings, thresholds or exemptions changed.
