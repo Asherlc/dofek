@@ -100,3 +100,57 @@ advances the log start offset before initiating remote deletion; it separately
 tracks copy-in-progress and deletion lifecycle states. A safe success path must
 establish the terminal deletion/generation boundary as well as physical absence.
 Neither agent will label an offset, log message, or bare listing a substitute.
+
+## Bounded stock-capability review: activation remains blocked
+
+The November 8 source review reached the following conclusion; this is not a
+claim that a zombie upload was reproduced in production or an R2 experiment.
+
+- Kafka 4.4's [remote-log manager](https://github.com/apache/kafka/blob/4.4.0/storage/src/main/java/org/apache/kafka/server/log/remote/storage/RemoteLogManager.java)
+  registers copy-start metadata before calling the storage plugin and copy-finish
+  metadata afterward. Its cleaner skips an in-process copy known to that manager.
+  It advances log start offsets before deleting remote segments, publishes
+  delete-start before the plugin call and delete-finish only after it returns.
+- Kafka exposes segment state through the Java
+  [topic-based metadata manager](https://github.com/apache/kafka/blob/4.4.0/storage/src/main/java/org/apache/kafka/server/log/remote/metadata/storage/TopicBasedRemoteLogMetadataManager.java).
+  The stock [metadata formatter test](https://github.com/apache/kafka/blob/4.4.0/storage/src/test/java/org/apache/kafka/server/log/remote/metadata/storage/RemoteLogMetadataFormatterTest.java)
+  demonstrates decoding `__remote_log_metadata` with
+  `RemoteLogMetadataSerde.RemoteLogMetadataFormatter`. The
+  [live cache](https://github.com/apache/kafka/blob/4.4.0/storage/src/main/java/org/apache/kafka/server/log/remote/metadata/storage/RemoteLogMetadataCache.java)
+  removes terminally deleted segments, so an empty live list is not a complete
+  historical record of copy admissions and completed deletions.
+- Aiven 1.2's [storage manager](https://github.com/Aiven-Open/tiered-storage-for-apache-kafka/blob/v1.2.0/core/src/main/java/io/aiven/kafka/tieredstorage/KafkaRemoteStorageManager.java)
+  uploads log, indexes and manifest; error cleanup of orphan objects is best
+  effort. Its [S3 backend](https://github.com/Aiven-Open/tiered-storage-for-apache-kafka/blob/v1.2.0/storage/s3/src/main/java/io/aiven/kafka/tieredstorage/storage/s3/S3Storage.java)
+  checks per-object deletion errors. Its
+  [upload stream](https://github.com/Aiven-Open/tiered-storage-for-apache-kafka/blob/v1.2.0/storage/s3/src/main/java/io/aiven/kafka/tieredstorage/storage/s3/S3UploadOutputStream.java)
+  performs synchronous single PUT or multipart completion/abort. These calls
+  contain no Kafka leader-epoch condition that fences an admitted storage write.
+- Kafka task cancellation sets a cancellation flag and interrupts its future;
+  the inspected manager does not obtain an object-store acknowledgement that
+  every previously admitted write has been fenced. Consequently, cancellation,
+  broker restart, or a new leader's delete-finish state does not by itself prove
+  that an old admitted storage operation cannot later recreate an object. This
+  is a missing success guarantee in the inspected path, not a demonstrated
+  production failure. Multipart listing also does not enumerate single PUTs.
+- Topic UUID is necessary structural checkpoint data for identifying a recreated
+  topic correctly. It could extend the existing checkpoint JSON without a new
+  receipt/store. However, the deployed
+  [KafkaJS metadata implementation](https://github.com/tulios/kafkajs/blob/v2.2.4/src/protocol/requests/metadata/index.js)
+  supports versions 0–6, before topic UUID metadata. A UUID-capable stock client
+  or stock Kafka tooling would be needed; capturing UUID still does not supply
+  the missing storage-write fence.
+
+Thus terminal segment metadata plus complete object/multipart listings can
+describe observed deletion, but the inspected stock interfaces do not establish
+the required admitted-copy/generation fence for lasting physical absence under
+crash/restart. Untracked/orphan objects require actual namespace inspection too;
+metadata state alone cannot exclude them. No bare-listing success path, manual
+certificate, feature flag or custom coordinator has been implemented.
+
+The one smallest alternative proposed for user strategy alignment is stock Kafka
+as a hot log **without tiered storage**, retaining the existing JSONL archive
+and implementing the retired-Redpanda completion hold. This changes the approved
+storage strategy and has not been implemented. It does not waive local broker
+file erasure, archive erasure, capacity qualification or separate production
+retirement approval.
