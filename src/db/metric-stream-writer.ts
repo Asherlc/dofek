@@ -19,7 +19,6 @@ import { getTokenUserId } from "./token-user-context.ts";
 import type { Database } from "./typed-sql.ts";
 
 export interface MetricStreamInsert {
-  id?: string;
   recordedAt: Date;
   userId?: string;
   providerId: string;
