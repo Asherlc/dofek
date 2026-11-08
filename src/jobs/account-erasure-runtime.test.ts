@@ -4,6 +4,7 @@ import type { ClaimedAccountErasureRequest } from "../db/account-erasure-process
 import type { AccountErasurePhaseExecution } from "./process-account-erasure-request.ts";
 
 const mocks = vi.hoisted(() => ({
+  assertBrokerStorageExpired: vi.fn(async () => undefined),
   assertConsumersDrained: vi.fn(async () => undefined),
   assertPeerDbDrained: vi.fn(async () => undefined),
   assertQuarantineExpired: vi.fn(async () => undefined),
@@ -60,6 +61,15 @@ const mocks = vi.hoisted(() => ({
     sentryRetentionDays: 30,
   })),
   verifyProcessors: vi.fn(async () => ({ processor: "complete" })),
+}));
+
+vi.mock("../account-erasure/kafka-log-storage.ts", () => ({
+  KafkaLogStorage: class {
+    assertExpired = mocks.assertBrokerStorageExpired;
+    capture(_topic: string, captureOffsets: () => Promise<unknown[]>) {
+      return captureOffsets();
+    }
+  },
 }));
 
 vi.mock("../r2-storage.ts", () => ({
@@ -132,7 +142,10 @@ vi.mock("../account-erasure/processor-retention.ts", () => ({
   verifyProcessorRetentionPolicies: mocks.verifyProcessorRetention,
 }));
 
-vi.mock("../account-erasure/redpanda-drain.ts", () => ({
+vi.mock("../account-erasure/redpanda-drain.ts", async () => ({
+  ...(await vi.importActual<typeof import("../account-erasure/redpanda-drain.ts")>(
+    "../account-erasure/redpanda-drain.ts",
+  )),
   assertAccountErasureConsumersDrained: mocks.assertConsumersDrained,
   assertAccountErasureQuarantineExpired: mocks.assertQuarantineExpired,
   assertAccountErasureReplayExpired: mocks.assertReplayExpired,
@@ -309,21 +322,23 @@ describe("createAccountErasureRuntime", () => {
             ? {
                 quarantineHighWatermarks,
               }
-            : phase === "peerdb_drain_verification"
-              ? {
-                  stagingBoundary: {
-                    cutoff: "2026-08-03T12:00:00.000Z",
-                    eTag: '"boundary-etag"',
-                    key: `account-erasure-boundaries/${request.id}`,
-                    mirrors: [
-                      {
-                        name: "dofek_fitness_raw_analytics",
-                        status: "STATUS_PAUSED",
-                      },
-                    ],
-                  },
-                }
-              : null,
+            : phase === "ingest_fence"
+              ? { highWatermarks }
+              : phase === "peerdb_drain_verification"
+                ? {
+                    stagingBoundary: {
+                      cutoff: "2026-08-03T12:00:00.000Z",
+                      eTag: '"boundary-etag"',
+                      key: `account-erasure-boundaries/${request.id}`,
+                      mirrors: [
+                        {
+                          name: "dofek_fitness_raw_analytics",
+                          status: "STATUS_PAUSED",
+                        },
+                      ],
+                    },
+                  }
+                : null,
         {
           ...request,
           encryptedRemoteSnapshot: null,
@@ -337,6 +352,13 @@ describe("createAccountErasureRuntime", () => {
       "metric-stream-v1",
       [{ topic: "metric-stream-v1", low: "4", offset: "12", partition: 0 }],
     );
+    expect(mocks.assertBrokerStorageExpired).toHaveBeenCalledWith([
+      ...highWatermarks,
+      ...quarantineHighWatermarks.map((entry) => ({
+        ...entry,
+        topic: `${entry.topic}.quarantine.v1`,
+      })),
+    ]);
     expect(mocks.verifyPeerDbStagingRetention).toHaveBeenCalledWith(mocks.peerDbStagingStorage, {
       cutoff: new Date("2026-08-03T12:00:00.000Z"),
       now: expect.any(Date),

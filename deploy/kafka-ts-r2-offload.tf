@@ -1,3 +1,7 @@
+# Existing managed R2 resources retained pending separate decommission approval.
+# The canonical hot-log broker does not use these resources or credentials.
+# Do not remove this declaration or schedule destruction as part of broker cutover.
+# https://developer.hashicorp.com/terraform/language/meta-arguments/lifecycle#prevent_destroy
 # Dedicated Cloudflare R2 bucket + long-lived Object RW key for Kafka tiered storage.
 # Distinct from metric-stream archive and account-erasure ledger in storage.tf.
 #

@@ -3,9 +3,11 @@
 Status: **offline investigation; production activation remains blocked**.
 Following the stock tiered-storage proof gap in [qualification.md](qualification.md),
 the user's November 8 “continue” was treated as approval to qualify the proposed
-hot-log-only alternative. It was not approval for deployment, application changes,
-retirement of production data, or a cloud experiment. The checked-in broker
-candidate still enables tiered storage; this record does not silently change it.
+hot-log-only alternative. The separately approved narrow worker safety release
+is included. Neither approval authorizes deployment, retirement of production
+data or a cloud experiment. After qualification, the offline review candidate
+explicitly promotes hot-log mode into the canonical base stack; no mode overlay
+or toggle is required by normal deployment.
 
 ## Observed local storage lifecycle
 
@@ -52,12 +54,12 @@ additional fixture isolates logical expiry versus physical local deletion. It
 is not a durability benchmark, a full-service boot, a disk-capacity qualification,
 or a complete worker erasure implementation.
 
-A hot-log-only release still requires:
+A hot-log-only release requires:
 
-- A narrow worker check of physical local storage, covering retained/deleting
+- The narrow worker check of physical local storage below covers retained/deleting
   segment files and topic generations, rather than a sleep after offset expiry.
-  Unknown/missing storage evidence must block completion. Verify file-handle
-  closure and crash/restart behavior before treating path absence as sufficient.
+  Unknown/missing storage evidence blocks completion. Its qualified scope is the
+  pinned native lifecycle described below.
 - The previously approved retained-Redpanda completion hold and a separately
   approved retirement procedure. A stopped broker does not perform retention.
 - Continued JSONL archive erasure and archive-key collision protection. The
@@ -70,9 +72,80 @@ A hot-log-only release still requires:
   a measured retention window under production ingest.
 
 The tradeoff is removal of the unresolved live remote-copy fencing problem in
-exchange for more local disk use and bounded broker replay. No runtime verifier,
-new tracking framework, receipt store, feature flag or relaxed erasure guarantee
-has been added by this qualification.
+exchange for more local disk use and bounded broker replay.
+
+## Narrow worker safeguard
+
+[`KafkaLogStorage`](../../src/account-erasure/kafka-log-storage.ts) is called by
+the actual worker's final retention phase. It checks the active broker's metadata
+and configuration: one broker/controller, one in-sync replica and partition per
+topic, exactly the mounted log directory, and remote storage disabled. Missing,
+malformed, unsupported or mismatched evidence blocks completion.
+
+The adapter binds captured offsets to native cluster/node metadata and the
+`partition.metadata` topic UUID before and after capture. Cluster/topic IDs remain
+structural fields in the existing checkpoint JSON. The PII scrub projects only
+topic, partition, low/next offsets and these UUIDs, bounded to three source and
+three quarantine boundaries. It strips other fields, including fields inside
+each array entry. Old checkpoints without generation evidence fail closed;
+the release must finish old-generation requests before cutover rather than
+infer missing identity or rewrite a completed boundary.
+
+Final retention checks all six configured topics. Any old log, index, snapshot,
+deleted/cleaned/swap file, extra partition, future/deleting/stray replica directory,
+unknown related file or symlink blocks success. Native metadata and generation
+are checked again after inspection. The worker never reads record payloads.
+
+The worker also mounts the existing canonical `/mnt/dofek-data/redpanda` root
+read-only. **Any entry or read error blocks completion.** This uses the original
+tree in place; there is no new empty staging directory, move operation, flag or
+manual acknowledgement that could bypass the hold. Redpanda must be stopped and
+the original root preserved until separately approved retirement. Do not move
+the old tree outside this watched root.
+
+### Scope of the native proof
+
+Kafka's pinned [LocalLog deletion path](https://github.com/apache/kafka/blob/4.4.0/storage/src/main/java/org/apache/kafka/storage/internals/log/LocalLog.java)
+renames segment files with a deletion suffix and schedules native deletion.
+[`LogSegment`](https://github.com/apache/kafka/blob/4.4.0/storage/src/main/java/org/apache/kafka/storage/internals/log/LogSegment.java)
+deletes its log and indexes.
+[`FileRecords`](https://github.com/apache/kafka/blob/4.4.0/clients/src/main/java/org/apache/kafka/common/record/internal/FileRecords.java)
+closes the shared channel before unlinking; slices share that channel.
+[`AbstractIndex`](https://github.com/apache/kafka/blob/4.4.0/storage/src/main/java/org/apache/kafka/storage/internals/log/AbstractIndex.java)
+closes/unmaps before deletion. Kafka suppresses channel-close exceptions, so the
+Linux/JDK scope matters: the [OpenJDK close path](https://github.com/openjdk/jdk/blob/jdk-25%2B36/src/java.base/share/classes/sun/nio/ch/FileChannelImpl.java)
+waits for registered channel operations before closing the descriptor, and
+[Linux close](https://man7.org/linux/man-pages/man2/close.2.html) releases the
+descriptor even when reporting ordinary close errors. This is native broker
+filesystem lifecycle removal, not forensic overwrite, RAM/cache erasure,
+arbitrary external file-handle inspection or a guarantee about copied backups.
+Existing archive, backup and processor erasure gates remain independent.
+
+### Actual adapter qualification
+
+The [synthetic receipt](native-storage-proof.json) records the production adapter
+rejecting old files immediately after logical expiry. A stock broker restart
+preserved the checkpoint's topic UUID; a fresh worker-style admin still observed
+retained bytes. The adapter accepted only after native cleanup removed them.
+No cleanup interval, deletion delay or production timeout was changed. The
+reported 7,829 ms is the final resumed observation interval, not total retention.
+
+The initial restart harness tried to reconnect the same explicitly disconnected
+KafkaJS admin object and failed with `write after end`. It was replaced with a
+fresh worker-style admin while continuing the same broker and checkpoint. This
+was a fixture correction, not a production retry layer. A temporary Compose
+network also required an explicit unused subnet because Docker's default pools
+were exhausted; other workspaces' resources were not pruned.
+
+Focused filesystem, phase, runtime and broker-renderer tests passed (82 tests).
+The configured `pnpm test --maxWorkers=2` run passed 23,788 tests across 1,457
+files before the final cluster-ID-only renderer simplification and additional
+negative storage fixtures; the affected focused tests were rerun afterward.
+The Postgres
+regression first failed because the old scrub discarded generation evidence;
+its 13-test suite passed after bounded structural projection. The two existing
+request-to-completion/crash-recovery integration tests also passed after their
+fixtures supplied real ingest/drain checkpoint shapes.
 
 ## Workstation prerequisite
 

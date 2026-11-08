@@ -133,6 +133,8 @@ services:
       ACCOUNT_ERASURE_LEDGER_R2_BUCKET: dofek-account-erasure-ledger
     volumes:
       - job_files:/app/job-files
+      - /mnt/dofek-data/kafka-hot-log/data:/var/lib/dofek/kafka-data:ro
+      - /mnt/dofek-data/redpanda:/var/lib/dofek/retired-broker-data:ro
     healthcheck:
       test:
         [
@@ -345,10 +347,7 @@ services:
           cpus: "1.5"
           memory: 13G
 
-  # Stock Apache Kafka 4.4.0 combined KRaft (single prod listener :9092).
-  # Static RSM/Aiven knobs here; kafka.env only renames Infisical
-  # KAFKA_CLUSTER_ID + KAFKA_TIERED_STORAGE_* (AWS default chain + S3 fields).
-  # JSONL archive stays on separate R2 bucket/creds. See deploy/kafka/README.md.
+  # Canonical hot-log-only Kafka; JSONL archive remains independent.
   kafka:
     image: apache/kafka:4.4.0@sha256:833b867a9585a141da455dc2b57431c65cbccb27f11c91f694444cca9f777e0f
     # Self-advertised name must resolve before Swarm marks the broker ready.
@@ -369,27 +368,10 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
-      # Qualified dual512 settings; historical evidence linked in deploy/kafka/README.md.
-      KAFKA_REMOTE_LOG_STORAGE_SYSTEM_ENABLE: "true"
-      KAFKA_REMOTE_LOG_STORAGE_MANAGER_CLASS_PATH: "/plugins/1.2.0/core/*:/plugins/1.2.0/s3/*"
-      KAFKA_REMOTE_LOG_STORAGE_MANAGER_CLASS_NAME: "io.aiven.kafka.tieredstorage.RemoteStorageManager"
-      KAFKA_REMOTE_LOG_METADATA_MANAGER_CLASS_NAME: "org.apache.kafka.server.log.remote.metadata.storage.TopicBasedRemoteLogMetadataManager"
-      KAFKA_REMOTE_LOG_METADATA_MANAGER_LISTENER_NAME: "PLAINTEXT"
-      KAFKA_RLMM_CONFIG_REMOTE_LOG_METADATA_TOPIC_REPLICATION_FACTOR: "1"
-      KAFKA_RLMM_CONFIG_REMOTE_LOG_METADATA_TOPIC_MIN_ISR: "1"
-      KAFKA_RSM_CONFIG_CHUNK_SIZE: "4194304"
-      KAFKA_RSM_CONFIG_FETCH_CHUNK_CACHE_CLASS: "io.aiven.kafka.tieredstorage.fetch.cache.MemoryChunkCache"
-      KAFKA_RSM_CONFIG_FETCH_CHUNK_CACHE_SIZE: "67108864"
-      KAFKA_RSM_CONFIG_FETCH_CHUNK_CACHE_PREFETCH_MAX_SIZE: "4194304"
-      KAFKA_RSM_CONFIG_STORAGE_BACKEND_CLASS: "io.aiven.kafka.tieredstorage.storage.s3.S3Storage"
-      KAFKA_RSM_CONFIG_STORAGE_S3_PATH_STYLE_ACCESS_ENABLED: "true"
-      AWS_REQUEST_CHECKSUM_CALCULATION: "WHEN_REQUIRED"
-      AWS_RESPONSE_CHECKSUM_VALIDATION: "WHEN_REQUIRED"
+      KAFKA_REMOTE_LOG_STORAGE_SYSTEM_ENABLE: "false"
     volumes:
-      # New Kafka data dir — do not reuse or format /mnt/dofek-data/redpanda.
-      - /mnt/dofek-data/kafka/data:/var/lib/kafka/data
-      # Immutable plugin pair: /plugins/1.2.0/{core,s3} (deploy workflow publish).
-      - /mnt/dofek-data/kafka/plugins:/plugins:ro
+      # Fresh hot log; retain the aborted tiered broker tree separately.
+      - /mnt/dofek-data/kafka-hot-log/data:/var/lib/kafka/data
     healthcheck:
       # Port-liveness only. Deploy waits on an external kafka-broker-api-versions client
       # before producers attach. Never run operator JVMs inside this cgroup.

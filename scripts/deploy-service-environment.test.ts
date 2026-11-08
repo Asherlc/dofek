@@ -186,66 +186,35 @@ afterEach(() => {
 });
 
 describe("renderDeployServiceEnvironmentFiles", () => {
-  it("renders kafka.env Infisical renames only (static RSM stays in stack/compose)", () => {
+  it("renders the hot-log broker cluster identity", () => {
     const directory = makeTemporaryDirectory();
     const sourcePath = join(directory, "all.env");
     writeFileSync(sourcePath, dotenv(completeDeployEnvironment()));
     const paths = renderDeployServiceEnvironmentFiles(sourcePath, join(directory, "services"));
-    const kafkaEnvText = readFileSync(paths.kafka, "utf8");
-    const environment = parseEnv(kafkaEnvText);
-
-    expect(environment.CLUSTER_ID).toBe("MkU3OEVBNTcwNTJENDM2Qk");
-    expect(environment.AWS_ACCESS_KEY_ID).toBe("kafka-ts-access-key-id");
-    expect(environment.AWS_SECRET_ACCESS_KEY).toBe("kafka-ts-secret-access-key");
-    expect(environment.KAFKA_RSM_CONFIG_STORAGE_S3_BUCKET_NAME).toBe("dofek-kafka-ts-offload");
-    expect(environment.KAFKA_RSM_CONFIG_STORAGE_S3_ENDPOINT_URL).toBe(
-      "https://example.r2.cloudflarestorage.com",
-    );
-    expect(environment.KAFKA_RSM_CONFIG_STORAGE_S3_REGION).toBe("auto");
-    // Static Aiven/RSM knobs are declarative in stack.yml / compose, not kafka.env.
-    expect(environment).not.toHaveProperty("KAFKA_REMOTE_LOG_STORAGE_SYSTEM_ENABLE");
-    expect(environment).not.toHaveProperty("AWS_REQUEST_CHECKSUM_CALCULATION");
-    expect(environment).not.toHaveProperty("KAFKA_RSM_CONFIG_CHUNK_SIZE");
-    expect(environment).not.toHaveProperty("KAFKA_TOPIC_REMOTE_STORAGE_ENABLE_REQUIRED");
-    expect(environment).not.toHaveProperty("KAFKA_RSM_CONFIG_STORAGE_AWS_ACCESS_KEY_ID");
-    expect(environment).not.toHaveProperty("R2_ACCESS_KEY_ID");
-    expect(environment).not.toHaveProperty("KAFKA_TIERED_STORAGE_SECRET_ACCESS_KEY");
+    expect(parseEnv(readFileSync(paths.kafka, "utf8"))).toEqual({
+      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk",
+    });
   });
 
-  it("preserves Infisical dotenv quoting when renaming Kafka TS secrets into kafka.env", () => {
+  it("preserves dotenv quoting when renaming the broker cluster identity", () => {
     const directory = makeTemporaryDirectory();
     const sourcePath = join(directory, "all.env");
     const environment = completeDeployEnvironment();
-    // Quoted secret with shell-significant characters — Infisical may emit this form.
-    environment.KAFKA_TIERED_STORAGE_ACCESS_KEY_ID = `"id-with=equals"`;
-    environment.KAFKA_TIERED_STORAGE_SECRET_ACCESS_KEY = `'sec$ret"mixed'`;
+    environment.KAFKA_CLUSTER_ID = JSON.stringify("quoted-cluster-id");
     writeFileSync(sourcePath, dotenv(environment));
     const paths = renderDeployServiceEnvironmentFiles(sourcePath, join(directory, "services"));
-    const kafkaEnvText = readFileSync(paths.kafka, "utf8");
-
-    expect(kafkaEnvText).toContain(`AWS_ACCESS_KEY_ID="id-with=equals"`);
-    expect(kafkaEnvText).toContain(`AWS_SECRET_ACCESS_KEY='sec$ret"mixed'`);
-    const parsed = parseEnv(kafkaEnvText);
-    expect(parsed.AWS_ACCESS_KEY_ID).toBe("id-with=equals");
-    expect(parsed.AWS_SECRET_ACCESS_KEY).toBe(`sec$ret"mixed`);
+    expect(parseEnv(readFileSync(paths.kafka, "utf8")).CLUSTER_ID).toBe("quoted-cluster-id");
   });
 
-  it.each([
-    "KAFKA_CLUSTER_ID",
-    "KAFKA_TIERED_STORAGE_BUCKET",
-    "KAFKA_TIERED_STORAGE_ENDPOINT",
-    "KAFKA_TIERED_STORAGE_REGION",
-    "KAFKA_TIERED_STORAGE_ACCESS_KEY_ID",
-    "KAFKA_TIERED_STORAGE_SECRET_ACCESS_KEY",
-  ])("rejects a missing %s for the kafka broker env file", (key) => {
+  it("rejects a missing Kafka cluster identity", () => {
     const directory = makeTemporaryDirectory();
     const sourcePath = join(directory, "all.env");
-    const environment: Record<string, string> = { ...completeDeployEnvironment() };
-    delete environment[key];
+    const environment = completeDeployEnvironment();
+    delete environment.KAFKA_CLUSTER_ID;
     writeFileSync(sourcePath, dotenv(environment));
     expect(() =>
       renderDeployServiceEnvironmentFiles(sourcePath, join(directory, "services")),
-    ).toThrow(new RegExp(key));
+    ).toThrow("KAFKA_CLUSTER_ID");
   });
 
   it("gives only the migration-phase web artifact the explicit legacy producer topic", () => {

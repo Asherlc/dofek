@@ -539,77 +539,17 @@ jobs:
           set -euo pipefail
           # Retain /mnt/dofek-data/redpanda until metric-stream cutover drain completes.
           # Kafka uses a new tree; never format or reuse the Redpanda data dir.
-          mkdir -p /mnt/dofek-data/kafka/data /mnt/dofek-data/kafka/plugins
+          mkdir -p /mnt/dofek-data/kafka-hot-log/data
           # apache/kafka:4.4.0 runs as appuser (uid/gid 1000) — same stock pattern as
           # postgres timescaledb-ha bind ownership (deploy/oracle-free/cloud-init.yml).
-          chown 1000:1000 /mnt/dofek-data/kafka/data
-          # Plugins are mounted RO; keep tree world-readable for appuser without
-          # rewriting immutable version pairs after publish.
-          chmod a+rX /mnt/dofek-data/kafka/plugins
-          for path in /mnt/dofek-data/postgres /mnt/dofek-data/clickhouse /mnt/dofek-data/redpanda /mnt/dofek-data/kafka/data /mnt/dofek-data/kafka/plugins /mnt/dofek-data/databasus /mnt/dofek-data/cloudbeaver /mnt/dofek-data/redis /mnt/dofek-data/peerdb-catalog /mnt/dofek-data/peerdb-minio; do
+          chown 1000:1000 /mnt/dofek-data/kafka-hot-log/data
+          for path in /mnt/dofek-data/postgres /mnt/dofek-data/clickhouse /mnt/dofek-data/redpanda /mnt/dofek-data/kafka-hot-log/data /mnt/dofek-data/databasus /mnt/dofek-data/cloudbeaver /mnt/dofek-data/redis /mnt/dofek-data/peerdb-catalog /mnt/dofek-data/peerdb-minio; do
             if [ ! -d "$path" ]; then
               echo "::error::Required host bind mount path is missing: $path"
               exit 1
             fi
           done
           REMOTE
-
-      - name: Provision Kafka RSM plugins on existing host
-        run: |
-          server_host="${DOCKER_HOST#"ssh://${SSH_USER}@"}"
-          if [ -z "$server_host" ] || [ "$server_host" = "$DOCKER_HOST" ]; then
-            echo "::error::Unable to derive SSH host from DOCKER_HOST"
-            exit 1
-          fi
-
-          # Stock curl + sha256 + atomic directory rename. No installer CLI / custom image.
-          # Pins: frozen ed26f38b8 plugin provenance linked in deploy/kafka/README.md
-          # Layout: /mnt/dofek-data/kafka/plugins/1.2.0/{core,s3} — publish once if absent.
-          ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10 "${SSH_USER}@${server_host}" 'sudo -n bash -se' <<'REMOTE'
-          set -euo pipefail
-          PLUGIN_VERSION="1.2.0"
-          CORE_SHA="14fb636d3a5c781ae9ae961012bf7b0881b09629859dbc784dc49356faeaa747"
-          S3_SHA="1fd89dea84988b857e546fcfa88504f5b4e45d7712e3eddeb506f11a394ef010"
-          CORE_URL="https://github.com/Aiven-Open/tiered-storage-for-apache-kafka/releases/download/v${PLUGIN_VERSION}/core-${PLUGIN_VERSION}.tgz"
-          S3_URL="https://github.com/Aiven-Open/tiered-storage-for-apache-kafka/releases/download/v${PLUGIN_VERSION}/s3-${PLUGIN_VERSION}.tgz"
-          pluginRoot="/mnt/dofek-data/kafka/plugins"
-          versionPair="${pluginRoot}/${PLUGIN_VERSION}"
-          mkdir -p "$pluginRoot"
-          if [ -d "$versionPair/core" ] && [ -d "$versionPair/s3" ]; then
-            chmod -R a+rX "$versionPair"
-            echo "Kafka RSM plugins already present at $versionPair (immutable; leaving in place)"
-            exit 0
-          fi
-          if [ -e "$versionPair" ]; then
-            echo "::error::Partial plugin tree at $versionPair; refuse to overwrite or remove"
-            exit 1
-          fi
-          work="$(mktemp -d ${pluginRoot}/.provision.XXXXXX)"
-          cleanup() { rm -rf "$work"; }
-          trap cleanup EXIT
-          curl -fsSL "$CORE_URL" -o "$work/core-${PLUGIN_VERSION}.tgz"
-          curl -fsSL "$S3_URL" -o "$work/s3-${PLUGIN_VERSION}.tgz"
-          echo "$CORE_SHA  $work/core-${PLUGIN_VERSION}.tgz" | sha256sum -c -
-          echo "$S3_SHA  $work/s3-${PLUGIN_VERSION}.tgz" | sha256sum -c -
-          tar -xzf "$work/core-${PLUGIN_VERSION}.tgz" -C "$work"
-          tar -xzf "$work/s3-${PLUGIN_VERSION}.tgz" -C "$work"
-          # Exact release roots — no find/head.
-          test -d "$work/core-${PLUGIN_VERSION}"
-          test -d "$work/s3-${PLUGIN_VERSION}"
-          mkdir -p "$work/${PLUGIN_VERSION}"
-          mv "$work/core-${PLUGIN_VERSION}" "$work/${PLUGIN_VERSION}/core"
-          mv "$work/s3-${PLUGIN_VERSION}" "$work/${PLUGIN_VERSION}/s3"
-          # Atomic publish: dest must not exist (checked above). mv -T refuses
-          # nesting into an existing directory if a race created one.
-          # Deploy workflow concurrency serializes this step; no extra lock framework.
-          mv -T "$work/${PLUGIN_VERSION}" "$versionPair"
-          test -d "$versionPair/core"
-          test -d "$versionPair/s3"
-          # Readable by broker appuser (1000); do not chown away immutability markers.
-          chmod -R a+rX "$versionPair"
-          echo "Kafka RSM plugins published at $versionPair"
-          REMOTE
-
 
       - name: Wait for Kafka API readiness (external client)
         run: |

@@ -35673,3 +35673,26 @@ only the fixture image currently under test. Docker documents local resource
 - **Observation:** On isolated Kafka 4.4.0 with remote storage explicitly disabled, deleting synthetic records advanced the low offset to 100 while an 814,387-byte old segment remained. Its log and index files were observed absent about 217 seconds later under unchanged stock cleanup settings; the newer segment remained. Offset advancement alone is therefore not adequate physical local deletion evidence. [Qualification and limits](../deploy/kafka/hot-log-qualification.md).
 - **Local prerequisite / correction:** Initial launch failed before JVM startup because Docker's filesystem was full. Build cache reclaimed zero bytes; stock unused-image cleanup recovered 2.239 GB, preserving running containers and database volumes. The same broker started afterward. The initial observation window was shorter than stock cleanup scheduling; continued observation, rather than a runtime delay change, captured removal.
 - **Remaining work / retrospective:** Hot-log-only Kafka still needs physical local-storage and generation verification, a retained-Redpanda completion hold, archive-erasure continuity and disk-budget qualification. No successful worker verifier or activation readiness is claimed. Reuse native lifecycle evidence and small domain checks; do not replace physical evidence with a longer sleep or new certificate framework.
+
+### 2026-11-08 follow-up — native worker guard qualification
+
+- **Impact:** No production mutation or user impact. The actual worker adapter
+  rejected synthetic files after logical expiry, retained its structural topic
+  identity across broker restart and accepted only after stock native removal.
+  The [receipt](../deploy/kafka/native-storage-proof.json) preserves the first
+  harness correction: reusing an explicitly disconnected KafkaJS admin failed
+  with `write after end`; a fresh worker-style admin continued the same broker.
+- **Local infrastructure:** The owned Compose fixture initially failed with
+  `all predefined address pools have been fully subnetted`. Inspection showed
+  Docker's default pools allocated. The disposable fixture used an explicitly
+  unused subnet; no global Docker settings or other workspaces were changed.
+  Its container and network were removed afterward.
+- **Validation / remaining risk:** 23,788 configured unit tests passed; affected
+  focused tests and real Postgres scrub/request tests passed. The canonical
+  candidate is hot-log-only and retains the original Redpanda root read-only as
+  a completion hold. Production activation, byte-retention policy, burst margin,
+  review image and separate old-data retirement approval remain gates.
+- **Next-time guidance:** Check Docker address-pool and disk prerequisites before
+  starting an isolated native fixture. Reuse the repository's integration setup
+  workflow and the [native qualification](../deploy/kafka/hot-log-qualification.md);
+  do not convert a fixture reconnect error into production retry machinery.

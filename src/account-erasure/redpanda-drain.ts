@@ -1,4 +1,4 @@
-import kafkaJs, { type ConfigResourceTypes } from "kafkajs";
+import kafkaJs, { type Admin, type ConfigResourceTypes } from "kafkajs";
 import { z } from "zod";
 import {
   METRIC_STREAM_QUARANTINE_TOPIC_CONFIG,
@@ -37,7 +37,20 @@ const describedTopicConfigSchema = z.object({
 });
 
 export type AccountErasureHighWatermark = z.infer<typeof highWatermarkSchema>;
-export type AccountErasureRouteHighWatermark = AccountErasureHighWatermark & { topic: string };
+export const accountErasureRouteHighWatermarkSchema = highWatermarkSchema.extend({
+  topic: z.string().min(1).max(249),
+  clusterId: z
+    .string()
+    .regex(/^[A-Za-z0-9_-]{22}$/)
+    .optional(),
+  topicId: z
+    .string()
+    .regex(/^[A-Za-z0-9_-]{22}$/)
+    .optional(),
+});
+export type AccountErasureRouteHighWatermark = z.infer<
+  typeof accountErasureRouteHighWatermarkSchema
+>;
 
 interface RedpandaOffsetAdmin {
   fetchOffsets(options: { groupId: string; topics: string[] }): Promise<
@@ -214,7 +227,7 @@ export async function assertAccountErasureQuarantineExpired(
 }
 
 export interface AccountErasureRedpandaAdmin {
-  admin: RedpandaAdmin;
+  admin: RedpandaAdmin & Pick<Admin, "describeCluster" | "fetchTopicMetadata">;
   close(): Promise<void>;
   connect(): Promise<void>;
   routes: Array<{ topic: string; consumerGroups: readonly string[] }>;

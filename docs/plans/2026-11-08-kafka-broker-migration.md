@@ -1,6 +1,7 @@
 # Kafka broker migration
 
-Status: broker runtime candidate extracted; activation qualification remains open.
+Status: canonical hot-log broker and narrow worker guard qualified offline;
+review image, retention/capacity policy and production activation remain separate gates.
 This is one of two independent efforts requested on November 8. The other is
 account-erasure hardening. Both start at main commit
 `2752451fb4a7404e5d887d32341595a42a673dcd`; neither is stacked on the other.
@@ -112,3 +113,33 @@ The [cutover packet](../../deploy/kafka/cutover-packet.md) now records immutable
 service images, all six route boundaries and pre/post-write recovery classes.
 It remains non-executable: unchanged-worker physical erasure is not established,
 and exact topic identities and retirement authorization remain unresolved.
+
+## Qualified hot-log candidate
+
+After approval to qualify the hot-log alternative, native source review and an
+actual adapter fixture established the scoped filesystem lifecycle check. The
+canonical base now disables remote storage and uses fresh
+`/mnt/dofek-data/kafka-hot-log/data`; the worker sees that same source read-only
+and the original Redpanda root in place. No overlay, RSM installer, plugin mount
+or broker object-store credential remains. Already-managed R2 resources remain
+declared pending separate decommission approval. See
+[the qualification](../../deploy/kafka/hot-log-qualification.md).
+
+The worker binds captured offsets to structural cluster/topic UUIDs and invokes
+the native storage guard in real final retention. The bounded PII scrub preserves
+only those native fields with topic/partition/offsets. Existing checkpoints
+without them fail closed; no fallback acknowledgement or new tracking store exists.
+The unrelated erasure redesign remains outside this branch.
+
+Verification: the configured full `pnpm test` run passed 23,788 tests before the
+last renderer simplification; 82 affected tests passed afterward. The 13-test
+Postgres scrub suite first reproduced lost generation evidence, then passed;
+the two request/crash-recovery integration tests passed. Typecheck, changed-file
+Biome, Actionlint in repository mode and canonical base-plus-Oracle stack render
+passed. [Native receipt](../../deploy/kafka/native-storage-proof.json) records
+rejection before cleanup, generation preservation across restart and success only
+after native removal. No production change was made.
+
+Release review must still bind a worker image digest, accept the explicit source
+topic byte-policy change, review burst capacity and approve data retirement and a
+maintenance packet. Native filesystem removal is not a forensic overwrite claim.

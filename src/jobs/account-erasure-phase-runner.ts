@@ -3,13 +3,17 @@ import type { ArchiveErasureResult } from "../account-erasure/archive-erasure.ts
 import type { PeerDbStagingRetentionResult } from "../account-erasure/peerdb-staging-retention.ts";
 import type { PeerDbStagingBoundary } from "../account-erasure/peerdb-staging-writer-barrier.ts";
 import type { AccountErasureProcessorProgress } from "../account-erasure/processor-erasure.ts";
-import type { AccountErasureRouteHighWatermark } from "../account-erasure/redpanda-drain.ts";
+import {
+  type AccountErasureRouteHighWatermark,
+  accountErasureRouteHighWatermarkSchema,
+} from "../account-erasure/redpanda-drain.ts";
 import type {
   AccountErasureProviderTokenPersistence,
   ProviderCredentialDisposition,
   StripeAccountErasureResult,
 } from "../account-erasure/remote-revocation.ts";
 import type { AccountErasureRemoteSnapshot } from "../account-erasure/remote-snapshot.ts";
+import { metricStreamQuarantineTopic } from "../metric-stream/redpanda-quarantine.ts";
 import type { AccountErasurePhase } from "./process-account-erasure-job.ts";
 import type {
   AccountErasurePhaseExecution,
@@ -17,14 +21,7 @@ import type {
 } from "./process-account-erasure-request.ts";
 
 const highWatermarksCheckpointSchema = z.object({
-  highWatermarks: z.array(
-    z.object({
-      topic: z.string().min(1),
-      low: z.string().regex(/^\d+$/),
-      offset: z.string().regex(/^\d+$/),
-      partition: z.number().int().nonnegative(),
-    }),
-  ),
+  highWatermarks: z.array(accountErasureRouteHighWatermarkSchema).min(1).max(3),
 });
 const quarantineHighWatermarksCheckpointSchema = z.object({
   quarantineHighWatermarks: highWatermarksCheckpointSchema.shape.highWatermarks,
@@ -51,6 +48,9 @@ interface ArchiveSweepOptions {
 }
 
 export interface AccountErasurePhaseRunnerDependencies {
+  assertBrokerStorageExpired(
+    highWatermarks: readonly AccountErasureRouteHighWatermark[],
+  ): Promise<void>;
   assertConsumersDrained(
     highWatermarks: readonly AccountErasureRouteHighWatermark[],
   ): Promise<void>;
@@ -313,6 +313,16 @@ export function createAccountErasurePhaseRunner(
             await execution.loadCheckpointDetails("consumer_drain"),
           );
           await dependencies.assertQuarantineExpired(quarantineCheckpoint.quarantineHighWatermarks);
+          const ingestCheckpoint = highWatermarksCheckpointSchema.parse(
+            await execution.loadCheckpointDetails("ingest_fence"),
+          );
+          await dependencies.assertBrokerStorageExpired([
+            ...ingestCheckpoint.highWatermarks,
+            ...quarantineCheckpoint.quarantineHighWatermarks.map((entry) => ({
+              ...entry,
+              topic: metricStreamQuarantineTopic(entry.topic),
+            })),
+          ]);
           const peerDbCheckpoint = peerDbDrainCheckpointSchema.parse(
             await execution.loadCheckpointDetails("peerdb_drain_verification"),
           );
