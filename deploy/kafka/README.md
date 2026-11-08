@@ -201,14 +201,16 @@ SSH. Unknown measured gates → **fail closed** (do not invent limits).
 | B. Infisical `METRIC_STREAM_{LEGACY,LIVE,HISTORY}_TOPIC` → distinct **v2** names for **all** deployed sink+archive routes | User / Root | Irreversible for writers once Kafka accepts produce; assessment names: `metric-stream-v2` / `metric-stream-live-v2` / `metric-stream-history-v2` ([assessment](../../docs/kafka-tiered-storage-assessment.md)) |
 | C. Downtime / producer pause method | User / Root | Stock `docker service scale` of `dofek_web` / `dofek_worker` / `dofek_training-export-worker` (see [timescaledb pause pattern](../../docs/metric-stream-timescaledb-runbook.md)) **or** an already-approved hold — do not invent a new pause framework. Census: producers still `REDPANDA_BROKERS`-keyed; pause is a **separate explicit change** before STOP RP ([STOP-BEFORE-START](../../docs/pulsar-production-capacity-decision.md#stop-before-start-sequence-concrete-not-executed)) |
 | D. Accept post–Kafka-write forward-only boundary | User / Root | No automatic rollback/redeliver without separate dedup-proven recovery plan |
-| E. Explicit history-CH unread disposition | User / Root / 87 | History CH sink **1/1** draining (87 scale task done). Lag still **~18.8M** (not 0). R2 history archive lag 0. Catch-up **not** claimed until `rpk` lag → 0; 87 continues bounded monitoring |
+| E. Explicit history-CH unread disposition | User / Root | History CH sink **0/0**, held after the deletion timeout. At **2026-11-08T00:38Z**, CURRENT `70578630`, LOG-START `55609019`, HWM `74445631`, lag **3,867,001**; history archive and all other groups lag 0. Identity-local SQL qualified locally; unread-event compatibility and recovery approval remain outstanding. See the [incident and audit record](../../docs/production-incident-baseline.md#2026-11-07--historical-sample-identity-audit-preflight-incident-unresolved). |
 | F. Later: delete `/mnt/dofek-data/redpanda` | User / Root | Separate from cutover; retain (**38 GiB** measured) |
 | G. Re-enable Deploy Web | User / Root | Census: `.github/workflows/deploy-web.yml` state **`disabled_manually`** |
 
-### Live baseline (Lane 87 exclusive census — 2026-11-07T05:08:43Z)
+### Historical baseline (2026-11-07T05:08:43Z, with the early drain sample)
 
-Do **not** re-SSH for the same facts. Re-run stock commands immediately before
-any mutate. IaC Kafka R2 + five keys verified elsewhere — not re-audited here.
+This census predates the deletion-timeout safety stop. Decision E above and
+the incident record describe the later hold; the older draining figures below
+are historical evidence. Re-run stock commands immediately before any mutation.
+IaC Kafka R2 + five keys were verified separately and are not re-audited here.
 
 | Fact | Census |
 |---|---|
