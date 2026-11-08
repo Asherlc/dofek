@@ -49,7 +49,7 @@ outstanding; passing focused checks do not remove the publication safety gate.
 
 [publication-race.patch](publication-race.patch) retains an intentionally failing
 diagnostic against the actual sink integration suite; it is not installed in the
-normal passing suite. Apply with stock `git apply --unidiff-zero` to reproduce, then run:
+normal passing suite. Apply with stock `git apply` to reproduce, then run:
 
 ```sh
 pnpm exec vitest run --project integration src/metric-stream/clickhouse-sink.integration.test.ts -t 'does not republish' --retry=0
@@ -61,7 +61,12 @@ The diagnostic completed the real fence SELECT, activated the real account fence
 and completed synchronous `ALTER TABLE DELETE` immediately before the actual
 sink insertion. It failed at the final assertion: **expected 0 rows, received 1**.
 The original run used the repository's default two retries and failed each time.
-All temporary rows and fences were removed in `finally`.
+All temporary rows and fences were removed in `finally`. The review follow-up
+rebased the diagnostic patch context onto the current test file and added an
+unfenced control. With retries disabled, that control remained queryable (1 row)
+before the target assertion still failed (expected 0, received 1). This helper
+diagnostic is historical evidence, not qualification of the production
+`handleEvents` admission boundary.
 
 The causal path is
 [`applyMetricStreamEventsToClickHouse`](../../../src/metric-stream/clickhouse-sink.ts):
@@ -81,7 +86,9 @@ to actual publication callers; do not add another coordinator framework.
   through the same durable publication resource used by erasure. Hold account
   delivery guards through fence membership, insert/delete effects and terminal
   completion. Recheck the account fence after admission; keep source offsets
-  unchanged until completion. The diagnostic must then prove no resurrection.
+  unchanged until completion. Production-path acceptance tests must prove no
+  resurrection through `handleEvents`; the direct-helper diagnostic can still
+  fail when callers provide the protection.
 - Keep erasure identity preparation, ingest fence and physical delete under that
   same resource. Do not release ownership just because a PostgreSQL session ends.
   The existing query-owner module tracks ClickHouse query IDs and terminal state;
@@ -123,3 +130,81 @@ The separate 26.10 lab could not allocate another Docker network (`all predefine
 address pools have been fully subnetted`), so its temporary Compose definition
 used the already-owned workspace network. No production or other workspace
 resources were modified; no retry/timeout changes were made to repository code.
+
+## Review verification and remaining decisions
+
+The successful [58d9c75d5 CI run](https://github.com/Asherlc/dofek/actions/runs/42507552488)
+completed all checks, including the unchanged integration deadline. The retained
+[catalog report](catalog-ci-report.txt) independently confirms 180 catalog tests
+and 93.04% mutation score; these links supersede the earlier failing CI job as
+evidence for those counts. They do not remove the writer-safety gate.
+
+Review fixes use the SDK's stock `ResultSet` stream parser for owned commands;
+[ClickHouse's HTTP documentation](https://clickhouse.com/docs/interfaces/http#http-response-codes-caveats)
+explains why HTTP 200 alone cannot prove success. The unused owned `exec` API
+is removed rather than returning consumed bytes or adding a result replay buffer.
+The native SDK HTTP-200/exception-body regression failed before the fix and passed
+after it. Real PostgreSQL reservation cleanup covers one valid descriptor, none,
+an insufficient high-watermark and multiple eligible descriptors.
+
+### Smallest proposed safety follow-up (approval required)
+
+Use the existing `ANALYTICS_PUBLICATION_RESOURCE` row and owner module, without
+new tables, receipts or a parallel coordinator:
+
+1. In [sink `handleEvents`](../../../src/metric-stream/clickhouse-sink.ts), acquire
+   publication ownership before fence membership and retain it through all actual
+   insert/delete commands and their consumed terminal responses. Keep acknowledgement
+   after completion. Replacements must acquire the same ownership before drain can advance.
+2. In [`runAnalyticsBuildFromEnvironment`](../../../scripts/run-analytics-build.ts),
+   cover the complete build, including the spawned dbt child and
+   [`projectCyclingPower`](../../../src/analytics/cycling-power-projector.ts).
+   Normal workers and direct script invocations must use this same entry boundary.
+   Direct exported projector callers also need the boundary at publication.
+3. Retain the same owner across erasure preparation, fence publication and physical
+   verification in the [runtime](../../../src/jobs/account-erasure-runtime.ts).
+   The raw PostgreSQL advisory lock is only mutual exclusion while its session lives.
+   Extend the existing durable owner to retain non-quiescent state for the dbt child;
+   its current generic callback cleanup would otherwise release an unregistered child.
+   Retire only after qualified synchronous adapter completion. A parent crash,
+   abnormal child exit or uncertain remote request must keep the existing owner
+   blocked; do not infer termination from an absent session/process or auto-clear it.
+
+Acceptance: real production entrypoints with delayed fence/read/write, consumer
+replacement, parent/child termination and outstanding remote requests; prove
+erasure cannot certify/scrub while any admitted executor can publish, and prove
+unrelated owners survive. Qualify successful dbt adapter completion and crash
+retention explicitly before claiming coverage. This is mandatory safety work,
+not optional tracing. Tradeoff: conservative blocked recovery after uncertain
+execution; automatic dbt crash recovery is not proved or proposed as a new framework.
+
+Other review findings need a bounded decision before implementation:
+
+- **Physical admission recovery:** [the physical flow](../../../src/account-erasure/clickhouse-physical-erasure.ts)
+  durably admits before dispatch. A crash in that gap leaves no mutation evidence,
+  so retries fail closed. Proposed minimum: replay the exact frozen DELETE only
+  after existing ownership proves the former executor/requests terminated, while
+  preserving all captured parts, schema binding and mutation lineage. Acceptance
+  must cover before-dispatch crash, in-flight ambiguity, completed response loss
+  and inactive/projection-part retention. Never treat missing evidence as success.
+- **Legacy route-less checkpoints:** [0179](../../../drizzle/0179_account_erasure_identifiers.sql)
+  currently admits scrubbed unfinished requests although their old quarantine
+  checkpoints may lack topic attribution. That attribution cannot be reconstructed
+  from an ambiguous array safely. Proposed minimum: block cutover on all unfinished
+  legacy requests and complete them with their original worker first. This changes
+  release timing and requires alignment; no offsets or checkpoints are guessed.
+- **Credential master-key rotation:** [retained keys](../../../src/account-erasure/identifier-store.ts)
+  are derived from the master key and appear in cursor/proof state, not just
+  ciphertext. The [existing rotation contract](../../credential-encryption.md)
+  already requires a data migration. Proposed minimum: prohibit master-key rotation
+  while any retained erasure request exists; drain and purge through normal
+  completion first. Supporting in-place rotation would instead require an atomic
+  re-key of identities, encryption contexts and dependent cursor/physical state.
+  Neither a partial ciphertext-only rotation nor a new keyring framework is implemented.
+
+The review follow-up passed 146 focused units, 13 real-database boundary/status
+cases, root TypeScript and changed-file Biome checks. The revised diagnostic's
+unfenced control passed before its expected target-row failure. A further full
+physical crash/cleanup case was attempted after adding the bounded native-exec
+fixture, but PostgreSQL setup ran out of disk before the test body; no local pass
+is claimed for that attempt. Latest-head CI must qualify that path.

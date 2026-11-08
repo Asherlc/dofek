@@ -10,7 +10,10 @@ import {
   createAccountErasureUserIdentity,
 } from "../account-erasure/identity.ts";
 import type { AccountErasureRestoreIntent } from "../account-erasure/restore-ledger.ts";
-import { assertAccountErasureSnapshotSourceBudget } from "../account-erasure/snapshot-budget.ts";
+import {
+  ACCOUNT_ERASURE_SNAPSHOT_SUPPORT_REQUIRED,
+  assertAccountErasureSnapshotSourceBudget,
+} from "../account-erasure/snapshot-budget.ts";
 import { lockAccountErasureActivation } from "./account-erasure-locks.ts";
 import type { Database, TransactionDatabase } from "./index.ts";
 import {
@@ -844,7 +847,7 @@ export async function findAccountErasureStatus(
         ? "Account deletion completed after its 30-day deadline. Support was alerted to the delay."
         : "Account deletion missed its 30-day deadline. Deletion remains active and automatic retries are continuing; support has been alerted."
       : row.status === "failed"
-        ? row.retry_at
+        ? row.retry_at && row.last_error !== ACCOUNT_ERASURE_SNAPSHOT_SUPPORT_REQUIRED
           ? "Account deletion is still in progress. We are retrying it automatically."
           : "Account deletion needs support assistance. Contact support with this request ID."
         : null,

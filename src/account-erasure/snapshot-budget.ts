@@ -3,6 +3,9 @@ import { z } from "zod";
 import type { TransactionDatabase } from "../db/index.ts";
 import { executeWithSchema } from "../db/typed-sql.ts";
 
+export const ACCOUNT_ERASURE_SNAPSHOT_SUPPORT_REQUIRED =
+  "Account deletion snapshot requires support assistance";
+
 export const ACCOUNT_ERASURE_SNAPSHOT_LIMITS = {
   arrayEntries: 128,
   localItemBytes: 4 * 1024,

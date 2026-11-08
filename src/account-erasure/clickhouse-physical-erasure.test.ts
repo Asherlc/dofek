@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AnalyticsQueryOwner } from "../analytics/analytics-query-owner.ts";
 import type { ClickHouseClient } from "../db/clickhouse.ts";
-import { unexpectedClickHouseExec } from "../db/clickhouse-test-helpers.ts";
 import type { Database } from "../db/index.ts";
 import {
   assertNoClickHouseDetachedParts,
@@ -193,7 +192,7 @@ function fixture(answers = successAnswers()) {
     return { json: async () => JSON.parse(JSON.stringify(next.rows)) };
   });
   const owner: Pick<AnalyticsQueryOwner, "client" | "assertActive"> = {
-    client: { command, query, exec: unexpectedClickHouseExec },
+    client: { command, query },
     assertActive: vi.fn(async () => {
       trace.push("active");
     }),

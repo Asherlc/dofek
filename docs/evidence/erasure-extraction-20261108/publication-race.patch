@@ -1,19 +1,36 @@
 diff --git a/src/metric-stream/clickhouse-sink.integration.test.ts b/src/metric-stream/clickhouse-sink.integration.test.ts
-index b2daaf7ce..db17358e6 100644
+index b48c5601a..5b2755b86 100644
 --- a/src/metric-stream/clickhouse-sink.integration.test.ts
 +++ b/src/metric-stream/clickhouse-sink.integration.test.ts
-@@ -1 +1 @@
+@@ -1,4 +1,4 @@
 -import { randomUUID } from "node:crypto";
 +import { createHash, randomUUID } from "node:crypto";
-@@ -14,0 +15 @@ import {
+ import { afterAll, beforeAll, describe, expect, it } from "vitest";
+ import { z } from "zod";
+ import { type ClickHouseClient, createClickHouseClientFromEnv } from "../db/clickhouse.ts";
+@@ -12,6 +12,7 @@ import {
+   markMetricStreamScopesDeletedInClickHouse,
+ } from "./clickhouse-sink.ts";
+ import {
 +  ACCOUNT_ERASURE_FENCE_TABLE,
-@@ -131,0 +133,40 @@ describe("metric stream ClickHouse sink (integration)", () => {
+   METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE,
+   METRIC_STREAM_DELETE_SCOPE_TABLE,
+   METRIC_STREAM_TABLE,
+@@ -137,6 +138,53 @@ describe("metric stream ClickHouse sink (integration)", () => {
+     await client.close?.();
+   });
+
 +  it("does not republish a row admitted before account erasure fences and deletes it", async () => {
 +    const userId = randomUUID();
++    const controlUserId = randomUUID();
 +    const userHash = createHash("sha256").update(userId).digest("hex");
 +    const event = createCurrentMetricStreamEvent({
 +      userId, providerId: "withings", externalId: "erasure-race",
 +      recordedAt: "2026-06-07T14:36:12.000Z", sourceType: "api", channel: "body_weight", scalar: 80,
++    });
++    const controlEvent = createCurrentMetricStreamEvent({
++      userId: controlUserId, providerId: "withings", externalId: "erasure-race-control",
++      recordedAt: "2026-06-07T14:36:12.000Z", sourceType: "api", channel: "body_weight", scalar: 70,
 +    });
 +    if (!client.insert) throw new Error("Integration fixture requires insert support");
 +    const insert = client.insert.bind(client);
@@ -36,15 +53,20 @@ index b2daaf7ce..db17358e6 100644
 +      },
 +    };
 +    try {
-+      await applyMetricStreamEventsToClickHouse(racingClient, [event]);
-+      const result = await client.query<{count: string}>({
-+        query: `SELECT count() AS count FROM ${METRIC_STREAM_TABLE} FINAL WHERE user_id={userId:UUID}`,
-+        query_params: { userId }, format: "JSONEachRow",
++      await applyMetricStreamEventsToClickHouse(racingClient, [event, controlEvent]);
++      const result = await client.query<{target: string; control: string}>({
++        query: `SELECT countIf(user_id={userId:UUID}) AS target,countIf(user_id={controlUserId:UUID}) AS control FROM ${METRIC_STREAM_TABLE} FINAL`,
++        query_params: { userId, controlUserId }, format: "JSONEachRow",
 +      });
-+      expect(Number((await result.json())[0]?.count)).toBe(0);
++      const [counts] = await result.json();
++      expect(Number(counts?.control)).toBe(1);
++      expect(Number(counts?.target)).toBe(0);
 +    } finally {
-+      await client.command({query: `ALTER TABLE ${METRIC_STREAM_TABLE} DELETE WHERE user_id={userId:UUID}`,query_params:{userId},clickhouse_settings:{mutations_sync:"2"}});
++      await client.command({query: `ALTER TABLE ${METRIC_STREAM_TABLE} DELETE WHERE user_id IN {users:Array(UUID)}`,query_params:{users:[userId,controlUserId]},clickhouse_settings:{mutations_sync:"2"}});
 +      await client.command({query: `ALTER TABLE ${ACCOUNT_ERASURE_FENCE_TABLE} DELETE WHERE user_hash={hash:FixedString(64)}`,query_params:{hash:userHash},clickhouse_settings:{mutations_sync:"2"}});
 +    }
 +  });
 +
+   it("retains Zepp vectors and units, distinct same-millisecond records, and deduplicated retries", async () => {
+     await applyMetricStreamEventsToClickHouse(client, zeppSamples);
+     await applyMetricStreamEventsToClickHouse(client, zeppSamples);

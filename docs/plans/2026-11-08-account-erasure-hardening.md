@@ -30,7 +30,7 @@ this effort does not repeat them.
   transports or unrelated provider/ingress refactors.
 - [ ] Classify migrations individually. Preserve existing request identifiers
   and fail-closed guards; do not copy a whole migration journal from the mixed
-  branch. Migration 0179 and required request-store schema belong to this effort;
+  branch. [Migration 0179](../../drizzle/0179_account_erasure_identifiers.sql) and required request-store schema belong to this effort;
   transport acknowledgement migration 0178 and Kafka marker changes do not
   automatically belong here. Resolve any actual shared dependency before release.
 - [ ] Extract the required shared analytics ownership dependency explicitly.
@@ -53,9 +53,9 @@ this effort does not repeat them.
   Kafka marker and delivery-position changes separately; neither omit 0178
   wholesale nor import its entire migration/journal as an erasure prerequisite.
 - [ ] Carry the corrected catalog payload accounting from `cb6c6810d`, keeping
-  the 500-table/1 MiB limits and complete catalog/column scope. Reuse the qualified
+  the [500-table/1 MiB limits and complete catalog/column scope](../../src/account-erasure/clickhouse-erasure-coverage.ts). Reuse the qualified
   regression fixtures and payload evidence where the extracted code is identical.
-- [ ] Finish the approved Q19 source audit of current model identity aliases.
+- [ ] Finish the source audit of current model identity aliases.
   `activity_effort_identity.canonical_activity_id` derives from a real activity
   ID and is absent from the typed mapping. Check persisted `evidence_activity_id`
   in cycling models too. Distinguish persisted columns from temporary CTE aliases.
@@ -80,10 +80,11 @@ mapping gap. New unknown blockers must be diagnosed, not hidden by larger limits
 
 ## Release contract
 
-Q19 authorized the offline mapping audit/fix, qualification and a read-only image
-inspection. It did not authorize application deployment, schema migration, service
-pauses, Kafka activation or further production table cleanup. The Q18 empty probe
-was already removed and verified; do not repeat that action.
+This plan is limited to offline mapping audit/fix and qualification. Production
+deployment, migration, service pauses, Kafka activation and table cleanup require
+separate explicit approval. Completed source cleanup is recorded in the
+[source qualification receipt](https://github.com/Asherlc/dofek/blob/ed26f38b8/docs/evidence/clickhouse-catalog-budget-20261108/README.md);
+no cleanup belongs to this extraction.
 
 This PR must be reviewable while retaining Redpanda. Prepare its own application
 image, migration and recovery proposal after qualification, separate from the
@@ -111,7 +112,7 @@ source. Required query-owner/group/position helpers remain dependencies of the
 erasure implementation. The Kafka tiered-storage manual maintenance
 acknowledgement gate is omitted; current Redpanda automatic retention checks remain.
 
-The Q19 typed alias fix covers persisted `canonical_activity_id` in effort/route
+The [typed alias fix](../../src/account-erasure/clickhouse-erasure-coverage.ts) covers persisted `canonical_activity_id` in effort/route
 identity models and `evidence_activity_id` in cycling read models. Temporary
 group/stale/prior CTE aliases are not new physical-column declarations. See the
 [extraction evidence and remaining writer-safety gate](../evidence/erasure-extraction-20261108/README.md).

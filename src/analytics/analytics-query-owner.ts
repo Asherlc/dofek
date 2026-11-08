@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { ClickHouseError } from "@clickhouse/client";
+import { ClickHouseError, ResultSet } from "@clickhouse/client";
 import { z } from "zod";
 import type { ClickHouseClient } from "../db/clickhouse.ts";
 import type { Database } from "../db/index.ts";
@@ -13,7 +13,7 @@ import {
 export const ANALYTICS_PUBLICATION_RESOURCE = "metric-stream-source";
 
 export interface AnalyticsQueryOwner {
-  client: ClickHouseClient;
+  client: Omit<ClickHouseClient, "exec">;
   ingestedAt: string;
   reserveIngestionThrough(through: string): Promise<void>;
   reuseIngestionReservation(group: PersistedAnalyticsDeliveryGroup): Promise<void>;
@@ -283,8 +283,8 @@ async function withOwnedQueries<T>(
     const insert = clickhouse.insert?.bind(clickhouse);
     if (input.mode === "write" && !insert)
       throw new Error("Analytics query ownership requires an insert-capable client");
-    const client: ClickHouseClient = {
-      exec: (options) =>
+    const client: AnalyticsQueryOwner["client"] = {
+      command: (options) =>
         execute(
           (queryId) =>
             clickhouse.exec({
@@ -297,18 +297,19 @@ async function withOwnedQueries<T>(
               },
             }),
           async (result) => {
-            for await (const _chunk of result.stream) {
-              // EOF, not HTTP headers or close, is the owned request boundary.
+            // The SDK command API discards response bytes. Its stock ResultSet
+            // parser detects late exception tags even after successful HTTP headers.
+            const response = new ResultSet(
+              result.stream,
+              "TabSeparated",
+              result.query_id,
+              captureException,
+              result.response_headers,
+            );
+            for await (const _rows of response.stream()) {
+              // EOF, not headers, is the owned command's terminal boundary.
             }
           },
-        ),
-      command: (options) =>
-        execute((queryId) =>
-          clickhouse.command({
-            ...options,
-            query_id: queryId,
-            clickhouse_settings: { ...options.clickhouse_settings, async_insert: 0 },
-          }),
         ),
       insert: insert
         ? (options) =>

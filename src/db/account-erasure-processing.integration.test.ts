@@ -1,7 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { findAccountErasureStatus } from "./account-erasure.ts";
 import {
+  markAccountErasureFailed,
   renewAccountErasureLease,
   saveAccountErasurePhaseProgress,
 } from "./account-erasure-processing.ts";
@@ -128,6 +130,25 @@ describe("account erasure active lease contract", () => {
       new Date(String(after[0]?.observed_now)).getTime() + 60_000,
     );
     expect(nextExpiry.getTime()).toBeGreaterThan(previousExpiry.getTime());
+  });
+
+  it("shows support-required snapshot status without exposing stored diagnostic text", async () => {
+    const leaseOwner = `lease-snapshot-${randomUUID()}`;
+    const requestId = await insertRunningRequest({
+      leaseOwner,
+      leaseExpiresAt: new Date(Date.now() + 60000),
+    });
+    await markAccountErasureFailed(
+      context.db,
+      requestId,
+      leaseOwner,
+      "Account deletion snapshot requires support assistance",
+    );
+    const status = await findAccountErasureStatus(context.db, requestId);
+    expect(status?.message).toBe(
+      "Account deletion needs support assistance. Contact support with this request ID.",
+    );
+    expect(status).not.toHaveProperty("lastError");
   });
 
   it("rejects renewing an expired lease instead of resurrecting it", async () => {

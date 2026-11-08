@@ -1,7 +1,10 @@
 import * as Sentry from "@sentry/node";
 import { accountErasureIngestFenceCheckpointSchema } from "../account-erasure/redpanda-drain.ts";
 import { updateAccountErasureProviderCredentials } from "../account-erasure/remote-snapshot.ts";
-import { AccountErasureSnapshotBudgetError } from "../account-erasure/snapshot-budget.ts";
+import {
+  ACCOUNT_ERASURE_SNAPSHOT_SUPPORT_REQUIRED,
+  AccountErasureSnapshotBudgetError,
+} from "../account-erasure/snapshot-budget.ts";
 import type { TokenSet } from "../auth/oauth.ts";
 import {
   type ClaimedAccountErasureRequest,
@@ -142,7 +145,12 @@ export async function processAccountErasureRequest(
     // This typed refusal happens only after claim committed our request lease.
     if (error instanceof AccountErasureSnapshotBudgetError) {
       try {
-        await markAccountErasureFailed(database, requestId, leaseOwner, error.message);
+        await markAccountErasureFailed(
+          database,
+          requestId,
+          leaseOwner,
+          ACCOUNT_ERASURE_SNAPSHOT_SUPPORT_REQUIRED,
+        );
       } catch (persistenceError: unknown) {
         reportAccountErasureFailure("retry_state", persistenceError);
         throw new AggregateError(

@@ -187,6 +187,14 @@ describe("ClickHouse account erasure (integration)", () => {
   const queryMemoryLimitBytes = 128 * 1024 * 1024;
   const client: ClickHouseClient = {
     ...engine,
+    exec: (options) =>
+      engine.exec({
+        ...options,
+        clickhouse_settings: {
+          ...options.clickhouse_settings,
+          max_memory_usage: String(queryMemoryLimitBytes),
+        },
+      }),
     query: (options) =>
       engine.query({
         ...options,

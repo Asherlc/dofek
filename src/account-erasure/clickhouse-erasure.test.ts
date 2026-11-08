@@ -2,7 +2,6 @@ import { createHash } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AnalyticsQueryOwner } from "../analytics/analytics-query-owner.ts";
 import type { ClickHouseClient } from "../db/clickhouse.ts";
-import { unexpectedClickHouseExec } from "../db/clickhouse-test-helpers.ts";
 import {
   type ClickHouseAccountErasureStore,
   clickHouseAccountErasurePredicates,
@@ -114,7 +113,7 @@ function createOwner(
   });
   const owner: Pick<AnalyticsQueryOwner, "client" | "assertActive"> = {
     assertActive,
-    client: { command, insert, query, exec: unexpectedClickHouseExec },
+    client: { command, insert, query },
   };
   return owner;
 }
@@ -329,7 +328,11 @@ describe("clickHouseAccountErasurePredicates", () => {
     expect(predicates).toEqual([expect.objectContaining({ binding: "user" })]);
   });
 
-  it("captures activity id families when the table owns a scalar id", async () => {
+  it.each([
+    ["activity", "activity"],
+    ["sleep_session", "sleep"],
+    ["processing_operation", "operation"],
+  ] as const)("captures the %s scalar root in its %s family", async (name, family) => {
     const store = createStore({
       readPage: vi.fn(async () => ({
         entries: [{ key: "e".repeat(64), value: activityId }],
@@ -338,7 +341,7 @@ describe("clickHouseAccountErasurePredicates", () => {
     });
     const predicates = await collectPredicates(
       physicalTable({
-        name: "activity",
+        name,
         columns: [
           ["user_id", "Nullable(UUID)"],
           ["id", "UUID"],
@@ -352,7 +355,7 @@ describe("clickHouseAccountErasurePredicates", () => {
         (predicate) =>
           Array.isArray(predicate.binding) &&
           predicate.binding[0] === "id" &&
-          predicate.binding[1] === "activity",
+          predicate.binding[1] === family,
       ),
     ).toBe(true);
   });

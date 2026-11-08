@@ -1,7 +1,9 @@
 // cspell:ignore xsource
 import { randomUUID } from "node:crypto";
 import { PassThrough, Readable } from "node:stream";
-import { ClickHouseError } from "@clickhouse/client";
+import { ClickHouseError, createClient } from "@clickhouse/client";
+import { HttpResponse, http } from "msw";
+import { setupServer } from "msw/node";
 import { Client, type PoolClient } from "pg";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import type { ClickHouseClient } from "../db/clickhouse.ts";
@@ -149,10 +151,11 @@ function fixture(previous?: {
   vi.spyOn(database.$client, "connect").mockImplementation(async () => fake);
   const input = { resourceId: randomUUID(), intentId: randomUUID() };
   const client: ClickHouseClient = {
-    exec: async () => completedExecResult("0"),
-    command: async () => {
+    exec: async () => {
       trace.push("native-command");
+      return completedExecResult("0");
     },
+    command: async () => undefined,
     query: async () => ({ json: async () => [] }),
     insert: async () => undefined,
   };
@@ -198,7 +201,35 @@ describe("analytics query owner input contracts", () => {
 });
 
 describe("analytics query owner serial terminal invariant", () => {
-  it("keeps streamed exec in flight until EOF and registers no successor early", async () => {
+  it("rejects a tagged HTTP 200 command error instead of retiring the intent", async () => {
+    const context = fixture();
+    const tag = "0123456789abcdef";
+    const message = "Code: 395. DB::Exception: late failure (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO)";
+    const server = setupServer(
+      http.post(
+        "http://clickhouse.invalid/",
+        () =>
+          new HttpResponse(
+            `\r\n__exception__\r\n${tag}\r\n${message}\r\n${Buffer.byteLength(message)} ${tag}\r\n__exception__\r\n`,
+            { headers: { "x-clickhouse-exception-tag": tag } },
+          ),
+      ),
+    );
+    server.listen();
+    const nativeClient = createClient({ url: "http://clickhouse.invalid" });
+    try {
+      await expect(
+        withAnalyticsQueryOwner(database, nativeClient, context.input, async (owner) => {
+          await owner.client.command({ query: "INSERT INTO fence VALUES ('hash')" });
+        }),
+      ).rejects.toThrow(/late failure/);
+      expect(context.writeIntentClears).toEqual([]);
+    } finally {
+      await nativeClient.close();
+      server.close();
+    }
+  });
+  it("keeps streamed command in flight until EOF and registers no successor early", async () => {
     const context = fixture();
     const response = new PassThrough();
     let reachedExec!: () => void;
@@ -208,6 +239,7 @@ describe("analytics query owner serial terminal invariant", () => {
     const client: ClickHouseClient = {
       ...context.client,
       exec: async (options) => {
+        if (context.registrations.length > 1) return completedExecResult("2");
         expect(options.query_id).toBe(context.registrations[0]);
         expect(options.clickhouse_settings).toMatchObject({
           wait_end_of_query: 1,
@@ -218,9 +250,8 @@ describe("analytics query owner serial terminal invariant", () => {
       },
     };
     await withAnalyticsQueryOwner(database, client, context.input, async (owner) => {
-      const pending = owner.client.exec({
+      const pending = owner.client.command({
         query: "INSERT fixture FORMAT JSONEachRow",
-        values: Readable.from(['{"value":1}\n']),
       });
       await reached;
       await expect(owner.client.command({ query: "SELECT successor" })).rejects.toThrow(
@@ -259,9 +290,9 @@ describe("analytics query owner serial terminal invariant", () => {
       };
       await expect(
         withAnalyticsQueryOwner(database, client, context.input, async (owner) => {
-          await expect(
-            owner.client.exec({ query: "INSERT fixture", values: Readable.from([]) }),
-          ).rejects.toThrow(kind === "premature-close" ? /premature close/i : /response failed/);
+          await expect(owner.client.command({ query: "INSERT fixture" })).rejects.toThrow(
+            kind === "premature-close" ? /premature close/i : /response failed/,
+          );
           await expect(owner.client.command({ query: "SELECT successor" })).rejects.toThrow(
             /verified recovery/i,
           );
@@ -271,11 +302,14 @@ describe("analytics query owner serial terminal invariant", () => {
     },
   );
 
-  it("permits a successor after exec rejects with a consumed native error response", async () => {
+  it("permits a successor after command rejects with a consumed native error response", async () => {
     const context = fixture();
+    let rejected = false;
     const client: ClickHouseClient = {
       ...context.client,
       exec: async () => {
+        if (rejected) return completedExecResult("2");
+        rejected = true;
         throw new ClickHouseError({
           message: "memory",
           code: "241",
@@ -284,9 +318,9 @@ describe("analytics query owner serial terminal invariant", () => {
       },
     };
     await withAnalyticsQueryOwner(database, client, context.input, async (owner) => {
-      await expect(
-        owner.client.exec({ query: "INSERT fixture", values: Readable.from([]) }),
-      ).rejects.toMatchObject({ code: "241" });
+      await expect(owner.client.command({ query: "INSERT fixture" })).rejects.toMatchObject({
+        code: "241",
+      });
       await owner.client.command({ query: "SELECT successor" });
     });
     expect(context.registrations).toHaveLength(2);
@@ -337,7 +371,7 @@ describe("analytics query owner serial terminal invariant", () => {
     let rejected = false;
     const client: ClickHouseClient = {
       ...context.client,
-      command: async () => {
+      exec: async () => {
         if (!rejected) {
           rejected = true;
           context.trace.push("native-error");
@@ -348,6 +382,7 @@ describe("analytics query owner serial terminal invariant", () => {
           });
         }
         context.trace.push("native-command");
+        return completedExecResult("0");
       },
     };
     await withAnalyticsQueryOwner(database, client, context.input, async (owner) => {
@@ -362,7 +397,7 @@ describe("analytics query owner serial terminal invariant", () => {
     const context = fixture();
     const client: ClickHouseClient = {
       ...context.client,
-      command: async () => {
+      exec: async () => {
         throw new Error("socket lost");
       },
     };
@@ -525,7 +560,10 @@ describe("analytics query owner release and fencing", () => {
     });
     const client: ClickHouseClient = {
       ...context.client,
-      command: async () => held,
+      exec: async () => {
+        await held;
+        return completedExecResult("0");
+      },
     };
     const pending = withAnalyticsQueryOwner(database, client, context.input, async (owner) => {
       void owner.client.command({ query: "SELECT held" });
@@ -543,7 +581,7 @@ describe("analytics query owner release and fencing", () => {
     const context = fixture();
     const client: ClickHouseClient = {
       ...context.client,
-      command: async () => {
+      exec: async () => {
         throw new ClickHouseError({
           message: "memory",
           code: "241",
@@ -782,7 +820,7 @@ describe("analytics query owner serial registration and release boundaries", () 
     const context = fixture();
     const client: ClickHouseClient = {
       ...context.client,
-      command: async () => {
+      exec: async () => {
         throw new ClickHouseError({
           message: "memory",
           code: "241",
@@ -808,7 +846,7 @@ describe("analytics query owner serial registration and release boundaries", () 
     const context = fixture();
     const client: ClickHouseClient = {
       ...context.client,
-      command: async () => {
+      exec: async () => {
         throw new ClickHouseError({
           message: "memory",
           code: "241",

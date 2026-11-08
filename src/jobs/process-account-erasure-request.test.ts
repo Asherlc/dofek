@@ -118,7 +118,7 @@ describe("processAccountErasureRequest", () => {
       database,
       request.id,
       "worker-1",
-      error.message,
+      "Account deletion snapshot requires support assistance",
     );
     expect(sentryMocks.captureException).toHaveBeenCalledWith(
       expect.objectContaining({ message: "Account erasure phase failed" }),
