@@ -131,8 +131,8 @@ describe("request-owned account erasure identifiers", () => {
     await context.db.execute(sql`INSERT INTO fitness.provider(id,name)
       VALUES ('identifier-parent-fixture','Identifier parent fixture') ON CONFLICT DO NOTHING`);
     const activity = Array.from({ length: count }, () => randomUUID());
-    const sleep = Array.from({ length: count }, () => randomUUID());
-    const operation = Array.from({ length: count }, () => randomUUID());
+    const sleep: string[] = Array.from({ length: count }, () => randomUUID());
+    const operation: string[] = Array.from({ length: count }, () => randomUUID());
     await context.db.execute(sql`INSERT INTO fitness.activity
       (id,user_id,provider_id,external_id,canonical_type,provider_type,started_at)
       VALUES ${sql.join(

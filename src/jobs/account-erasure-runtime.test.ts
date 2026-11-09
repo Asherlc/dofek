@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
     async (
       _database: unknown,
       client: ClickHouseClient,
-      _input: unknown,
+      _input: { resourceId: string; intentId: string },
       operation: (owner: { client: ClickHouseClient }) => Promise<unknown>,
     ) => operation({ client }),
   ),
@@ -496,7 +496,7 @@ describe("createAccountErasureRuntime", () => {
         expect.anything(),
         expect.objectContaining({
           resourceId: "metric-stream-source",
-          intentId: `account-erasure:${request.id}:prepare-identities:initial`,
+          intentId: `account-erasure:${request.id}`,
         }),
         expect.any(Function),
       );
@@ -579,7 +579,7 @@ describe("createAccountErasureRuntime", () => {
         expect.anything(),
         expect.objectContaining({
           resourceId: "metric-stream-source",
-          intentId: `account-erasure:${request.id}:erase:initial`,
+          intentId: `account-erasure:${request.id}`,
         }),
         expect.any(Function),
       );
@@ -659,7 +659,7 @@ describe("createAccountErasureRuntime", () => {
         expect.anything(),
         expect.objectContaining({
           resourceId: "metric-stream-source",
-          intentId: `account-erasure:${request.id}:fence`,
+          intentId: `account-erasure:${request.id}`,
         }),
         expect.any(Function),
       );
@@ -683,6 +683,42 @@ describe("createAccountErasureRuntime", () => {
       expect(mocks.eraseClickHouse).not.toHaveBeenCalled();
     } finally {
       await runtime.close();
+    }
+  });
+
+  it("reuses the failed final erasure intent when retrying its preparation", async () => {
+    mocks.decryptSnapshot.mockResolvedValue(snapshot);
+    let pendingIntent: string | null = null;
+    mocks.withOwner.mockImplementation(async (_database, client, input, operation) => {
+      const { intentId } = input;
+      if (pendingIntent !== null && pendingIntent !== intentId)
+        throw new Error("pending intent mismatch");
+      pendingIntent = intentId;
+      const result = await operation({ client });
+      pendingIntent = null;
+      return result;
+    });
+    mocks.eraseClickHouse.mockRejectedValueOnce(new Error("terminal erasure failure"));
+    const runtime = await createAccountErasureRuntime(ownerDatabase, mockClickHouse(), {
+      close: vi.fn(async () => undefined),
+      purge: vi.fn(async () => undefined),
+    });
+    try {
+      await expect(
+        runtime.phaseRunner.runPhase("clickhouse_verification", execution()),
+      ).rejects.toThrow("terminal erasure failure");
+      expect(pendingIntent).toBe(`account-erasure:${request.id}`);
+      await expect(
+        runtime.phaseRunner.runPhase("clickhouse_verification", execution()),
+      ).resolves.toEqual({ verified: true });
+      expect(pendingIntent).toBeNull();
+      expect(mocks.prepareIdentifiers).toHaveBeenCalledTimes(2);
+      expect(mocks.eraseClickHouse).toHaveBeenCalledTimes(2);
+    } finally {
+      await runtime.close();
+      mocks.withOwner.mockImplementation(async (_database, client, _input, operation) =>
+        operation({ client }),
+      );
     }
   });
 

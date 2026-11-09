@@ -433,8 +433,17 @@ export async function executeClickHousePhysicalErasure(
       expectedAfterKey: progress.afterIntentKey,
       intentKey: entry.key,
     });
-    if (!progress.pending?.admitted) {
-      if (!(await residue(owner, resolved))) {
+    // The caller's durable publication owner must already have admitted this
+    // executor. Missing native evidence alone never establishes safe takeover.
+    const replay =
+      progress.pending?.admitted &&
+      !(await count(
+        owner.client,
+        "SELECT count() AS count FROM system.mutations WHERE database={database:String} AND table={table:String} AND position(command,{marker:String})>0",
+        { ...tableParameters(resolved.intent), marker: entry.key },
+      ));
+    if (!progress.pending?.admitted || replay) {
+      if (!replay && !(await residue(owner, resolved))) {
         await store.finishPhysicalIntent(stage, entry.key);
         continue;
       }
@@ -442,7 +451,7 @@ export async function executeClickHousePhysicalErasure(
       await owner.client.command({ query: "SYSTEM FLUSH LOGS", clickhouse_settings: settings });
       await completeLineage(owner, store, stage, options.maximumPasses);
       await owner.assertActive();
-      if (await store.admitPhysicalIntent(stage, entry.key)) {
+      if (replay || (await store.admitPhysicalIntent(stage, entry.key))) {
         await owner.client.command({
           query: `ALTER TABLE ${tableSql(entry.value)} DELETE WHERE (${resolved.predicate.mutationSql}) AND '${entry.key}'='${entry.key}'`,
           query_params: resolved.predicate.mutationQueryParameters,

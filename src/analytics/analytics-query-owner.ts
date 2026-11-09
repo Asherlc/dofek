@@ -18,6 +18,7 @@ export interface AnalyticsQueryOwner {
   reserveIngestionThrough(through: string): Promise<void>;
   reuseIngestionReservation(group: PersistedAnalyticsDeliveryGroup): Promise<void>;
   assertActive(): Promise<void>;
+  runSynchronousDbt(operation: () => Promise<number>): Promise<number>;
 }
 
 export interface AnalyticsReceiptQueryOwner {
@@ -123,7 +124,7 @@ async function withOwnedQueries<T>(
 
   function assertRequestRow(
     result: { rowCount: number | null; rows: unknown[] },
-    queryId: string,
+    queryId: string | null,
     boundary: "registration" | "completion",
   ) {
     const proof = z
@@ -141,13 +142,13 @@ async function withOwnedQueries<T>(
       );
   }
 
-  async function markRequestTerminal(queryId: string) {
+  async function markRequestTerminal(queryId: string | null) {
     assertSessionConnected();
     // Lost completion proof must block release even when PG committed it.
     queryTerminal = false;
     const result = await session.query(
       `UPDATE fitness.analytics_query_owner SET query_terminal=true
-       WHERE resource_id=$1 AND owner_id=$2 AND query_id=$3
+       WHERE resource_id=$1 AND owner_id=$2 AND query_id IS NOT DISTINCT FROM $3
          AND intent_id IS NOT DISTINCT FROM $4 AND NOT quiescent AND NOT query_terminal
        RETURNING owner_id,intent_id,query_id`,
       [input.resourceId, ownerId, queryId, admittedIntentId],
@@ -155,6 +156,49 @@ async function withOwnedQueries<T>(
     assertRequestRow(result, queryId, "completion");
     assertSessionConnected();
     queryTerminal = true;
+  }
+
+  async function registerRequest(queryId: string | null) {
+    // NULL registers a dbt child, not a fictitious remote ClickHouse query ID.
+    queryTerminal = false;
+    const registration = await session.query(
+      `UPDATE fitness.analytics_query_owner SET query_id=$3,query_terminal=false
+       WHERE resource_id=$1 AND owner_id=$2 AND NOT quiescent
+         AND intent_id IS NOT DISTINCT FROM $4
+         AND ${acknowledgedQueryId === null ? "query_id IS NULL AND query_terminal" : "query_id=$5 AND NOT query_terminal"}
+       RETURNING owner_id,intent_id,query_id`,
+      acknowledgedQueryId === null
+        ? [input.resourceId, ownerId, queryId, admittedIntentId]
+        : [input.resourceId, ownerId, queryId, admittedIntentId, acknowledgedQueryId],
+    );
+    assertRequestRow(registration, queryId, "registration");
+    assertSessionActive();
+    acknowledgedQueryId = queryId;
+  }
+
+  async function runSynchronousDbt(operation: () => Promise<number>): Promise<number> {
+    if (inFlight) throw new Error("Analytics query owner requires serial requests");
+    assertSessionActive();
+    assertKnownRequestOutcome();
+    const pending = (async () => {
+      await registerRequest(null);
+      const exitCode = await operation();
+      assertSessionActive();
+      if (exitCode !== 0)
+        throw new Error(
+          "Analytics dbt child did not complete successfully; verified recovery is required",
+        );
+      // Only callers qualified for synchronous dbt responses and artifacts may
+      // report success. Rejections/signals leave durable non-terminal admission.
+      await markRequestTerminal(null);
+      return exitCode;
+    })();
+    inFlight = pending;
+    try {
+      return await pending;
+    } finally {
+      inFlight = null;
+    }
   }
 
   async function retireCompletedIntent() {
@@ -195,21 +239,7 @@ async function withOwnedQueries<T>(
 
     const pending = (async () => {
       const queryId = randomUUID();
-      // A committed registration with a lost PG response is uncertain too.
-      queryTerminal = false;
-      const registration = await session.query(
-        `UPDATE fitness.analytics_query_owner SET query_id=$3,query_terminal=false
-         WHERE resource_id=$1 AND owner_id=$2 AND NOT quiescent
-           AND intent_id IS NOT DISTINCT FROM $4
-           AND ${acknowledgedQueryId === null ? "query_id IS NULL AND query_terminal" : "query_id=$5 AND NOT query_terminal"}
-         RETURNING owner_id,intent_id,query_id`,
-        acknowledgedQueryId === null
-          ? [input.resourceId, ownerId, queryId, admittedIntentId]
-          : [input.resourceId, ownerId, queryId, admittedIntentId, acknowledgedQueryId],
-      );
-      assertRequestRow(registration, queryId, "registration");
-      assertSessionActive();
-      acknowledgedQueryId = queryId;
+      await registerRequest(queryId);
       let value: R;
       try {
         value = await dispatch(queryId);
@@ -339,6 +369,7 @@ async function withOwnedQueries<T>(
       client,
       ingestedAt,
       assertActive,
+      runSynchronousDbt,
       reserveIngestionThrough: async (through) => {
         assertSessionActive();
         z.iso.datetime({ precision: 6 }).parse(through);

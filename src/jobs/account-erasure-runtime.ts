@@ -127,7 +127,7 @@ export async function createAccountErasureRuntime(
           clickHouseClient,
           {
             resourceId: ANALYTICS_PUBLICATION_RESOURCE,
-            intentId: `account-erasure:${input.requestId}:prepare-identities:${input.stage}`,
+            intentId: `account-erasure:${input.requestId}`,
           },
           (owner) =>
             prepareClickHouseAccountErasure(
@@ -224,7 +224,7 @@ export async function createAccountErasureRuntime(
           clickHouseClient,
           {
             resourceId: ANALYTICS_PUBLICATION_RESOURCE,
-            intentId: `account-erasure:${input.requestId}:erase:${input.stage}`,
+            intentId: `account-erasure:${input.requestId}`,
           },
           (owner) =>
             eraseClickHouseAccount(
@@ -249,7 +249,7 @@ export async function createAccountErasureRuntime(
           clickHouseClient,
           {
             resourceId: ANALYTICS_PUBLICATION_RESOURCE,
-            intentId: `account-erasure:${input.requestId}:fence`,
+            intentId: `account-erasure:${input.requestId}`,
           },
           async (owner) => {
             const store = identifiers(input);

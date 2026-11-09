@@ -239,6 +239,28 @@ function fixture(answers = successAnswers()) {
 }
 
 describe("executeClickHousePhysicalErasure orchestration", () => {
+  it("replays an admitted frozen DELETE with no native evidence under its qualified owner", async () => {
+    const answers = successAnswers();
+    answers.splice(1, 1, countAnswer("prior-admission-marker"));
+    const state = fixture(answers);
+    state.setProgress({
+      step: "apply",
+      afterIntentKey: null,
+      pending: { intentKey, admitted: true, mutationKey: null },
+    });
+    await state.execute();
+    expect(state.answers).toEqual([]);
+    expect(state.command).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: expect.stringContaining(
+          `DELETE WHERE (${predicate.mutationSql}) AND '${intentKey}'='${intentKey}'`,
+        ),
+        query_params: predicate.mutationQueryParameters,
+      }),
+    );
+    expect(state.admit).not.toHaveBeenCalled();
+    expect(state.append).toHaveBeenCalledWith("physical_part", stage, expect.any(Array));
+  });
   it("persists retained proof before mutation and global completion before metadata cleanup", async () => {
     const state = fixture();
     await state.execute();
@@ -279,6 +301,7 @@ describe("executeClickHousePhysicalErasure orchestration", () => {
   it("recovers an already admitted pending intent without submitting another deletion", async () => {
     const answers = successAnswers();
     answers.splice(1, 7);
+    answers.splice(1, 0, countAnswer("prior-admission-marker", 1));
     const state = fixture(answers);
     state.setProgress({
       step: "apply",

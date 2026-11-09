@@ -1983,6 +1983,97 @@ describe("ClickHouse account erasure (integration)", () => {
     }
   }, 120000);
 
+  it.each(["admission", "terminal response"] as const)(
+    "resumes the frozen physical plan after failure at %s",
+    async (boundary) => {
+      const database = databaseName("account_erasure_admission");
+      const userId = randomUUID();
+      let failed = false;
+      class CrashStore extends AccountErasureIdentifierStore {
+        override async admitPhysicalIntent(stage: "initial" | "final", intentKey: string) {
+          const admitted = await super.admitPhysicalIntent(stage, intentKey);
+          if (boundary === "admission" && !failed) {
+            failed = true;
+            throw new Error("fixture after admission");
+          }
+          return admitted;
+        }
+        override async finishPhysicalIntent(stage: "initial" | "final", intentKey: string) {
+          if (boundary === "terminal response" && !failed) {
+            failed = true;
+            throw new Error("fixture after terminal response");
+          }
+          return super.finishPhysicalIntent(stage, intentKey);
+        }
+      }
+      await createDatabase(client, database);
+      try {
+        await client.command({
+          query: `CREATE TABLE ${database}.account_rows (user_id UUID,value String)
+          ENGINE=MergeTree ORDER BY user_id SETTINGS old_parts_lifetime=1,cleanup_delay_period=1,
+          cleanup_delay_period_random_add=0,max_cleanup_delay_period=1`,
+          clickhouse_settings: { log_queries: 0 },
+        });
+        await client.insert?.({
+          table: `${database}.account_rows`,
+          format: "JSONEachRow",
+          values: [
+            { user_id: userId, value: "delete" },
+            { user_id: randomUUID(), value: "keep" },
+          ],
+        });
+        const fixture = await physicalFixture(userId, CrashStore);
+        const options = {
+          managedDatabases: [database],
+          physicalPartPollIntervalMilliseconds: 25,
+          physicalPartWaitTimeoutMilliseconds: 45000,
+        };
+        await fixture.run((owner) =>
+          prepareClickHouseAccountErasure(owner, fixture.store, fixture.input, options),
+        );
+        const frozen = (await fixture.store.readPhysicalPage("physical_intent", "initial")).entries;
+        await expect(
+          fixture.run((owner) =>
+            executeAccountErasure(owner, fixture.store, fixture.input, options),
+          ),
+        ).rejects.toThrow(`fixture after ${boundary}`);
+        const originalParts = (await fixture.store.readPhysicalPage("physical_part", "initial"))
+          .entries;
+        expect(originalParts.length).toBeGreaterThan(0);
+        expect(await fixture.store.loadPhysicalProgress("initial")).toMatchObject({
+          step: "apply",
+          pending: { admitted: true },
+        });
+        const state =
+          await physicalPostgres.db.execute(sql`SELECT quiescent,query_terminal,intent_id
+          FROM fitness.analytics_query_owner WHERE resource_id=${`physical-fixture:${fixture.requestId}`}`);
+        expect(state).toEqual([
+          { quiescent: true, query_terminal: true, intent_id: fixture.requestId },
+        ]);
+        const recovered = new AccountErasureIdentifierStore(physicalPostgres.db, {
+          requestId: fixture.requestId,
+          leaseOwner: fixture.leaseOwner,
+          pageSize: 500,
+        });
+        await fixture.run((owner) =>
+          executeAccountErasure(owner, recovered, fixture.input, options),
+        );
+        expect(await recovered.loadPhysicalProgress("initial")).toEqual({ step: "complete" });
+        expect((await recovered.readPhysicalPage("physical_intent", "initial")).entries).toEqual(
+          frozen,
+        );
+        expect((await recovered.readPhysicalPage("physical_part", "initial")).entries).toEqual(
+          expect.arrayContaining(originalParts),
+        );
+        expect(await tableValues(client, database, "account_rows")).toEqual(["keep"]);
+      } finally {
+        await cleanFences(client, userId, []);
+        await dropDatabase(client, database);
+      }
+    },
+    120000,
+  );
+
   it.each(["before KILL", "after KILL"] as const)(
     "resumes durable physical cleanup after a crash %s",
     async (boundary) => {

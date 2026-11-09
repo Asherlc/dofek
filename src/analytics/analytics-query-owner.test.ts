@@ -179,6 +179,119 @@ function fixture(previous?: {
 }
 
 describe("analytics query owner input contracts", () => {
+  it("registers and completes a synchronous child without inventing a remote query ID", async () => {
+    const context = fixture();
+    await withAnalyticsQueryOwner(database, context.client, context.input, async (owner) => {
+      await owner.client.command({ query: "SELECT before" });
+      expect(
+        await owner.runSynchronousDbt(async () => {
+          expect(context.registrations.at(-1)).toBe("null");
+          context.trace.push("spawn");
+          await expect(owner.client.command({ query: "SELECT overlap" })).rejects.toThrow("serial");
+          await expect(owner.runSynchronousDbt(async () => 0)).rejects.toThrow("serial");
+          return 0;
+        }),
+      ).toBe(0);
+      await owner.client.command({ query: "SELECT after" });
+    });
+    expect(context.trace).toEqual([
+      "register",
+      "native-command",
+      "register",
+      "spawn",
+      "register",
+      "native-command",
+    ]);
+    expect(context.terminals[0]).toBe("null");
+    expect(context.quiesced).toHaveLength(1);
+  });
+
+  it.each(["nonzero", "error", "session"])(
+    "retains an uncertain child barrier on %s",
+    async (mode) => {
+      const context = fixture();
+      await expect(
+        withAnalyticsQueryOwner(database, context.client, context.input, async (owner) => {
+          await owner.runSynchronousDbt(async () => {
+            if (mode === "error") throw new Error("child failed");
+            if (mode === "session") context.session.emit("error", new Error("session lost"));
+            return mode === "nonzero" ? 1 : 0;
+          });
+        }),
+      ).rejects.toThrow();
+      expect(context.registrations).toEqual(["null"]);
+      expect(context.terminals).toEqual([]);
+      expect(context.quiesced).toEqual([]);
+      expect(context.writeIntentClears).toEqual([]);
+    },
+  );
+
+  it("rejects another child after a caught uncertain child failure", async () => {
+    const context = fixture();
+    await expect(
+      withAnalyticsQueryOwner(database, context.client, context.input, async (owner) => {
+        await expect(
+          owner.runSynchronousDbt(async () => {
+            throw new Error("child failed");
+          }),
+        ).rejects.toThrow("child failed");
+        await expect(owner.runSynchronousDbt(async () => 0)).rejects.toThrow(
+          "unknown request outcome",
+        );
+      }),
+    ).rejects.toThrow("unknown request outcome");
+    expect(context.registrations).toEqual(["null"]);
+    expect(context.quiesced).toEqual([]);
+  });
+
+  it("rejects a child retained beyond the owner callback", async () => {
+    const context = fixture();
+    let run: () => Promise<number> = async () => {
+      throw new Error("fixture not entered");
+    };
+    const spawn = vi.fn(async () => 0);
+    await withAnalyticsQueryOwner(database, context.client, context.input, async (owner) => {
+      run = () => owner.runSynchronousDbt(spawn);
+    });
+    await expect(run()).rejects.toThrow("closed");
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
+  it("retains non-terminal admission when the callback returns with a child outstanding", async () => {
+    const context = fixture();
+    let finish!: () => void;
+    const held = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    let child: Promise<unknown> | undefined;
+    const active = withAnalyticsQueryOwner(
+      database,
+      context.client,
+      context.input,
+      async (owner) => {
+        child = owner
+          .runSynchronousDbt(async () => {
+            await held;
+            return 0;
+          })
+          .then(
+            () => null,
+            (error: unknown) => error,
+          );
+      },
+    ).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    await vi.waitFor(() => expect(context.registrations).toEqual(["null"]));
+    finish();
+    expect(await active).toMatchObject({
+      message: expect.stringMatching(/returned before|closed/),
+    });
+    await child;
+    expect(context.terminals).toEqual([]);
+    expect(context.quiesced).toEqual([]);
+  });
   it.each([
     [{ resourceId: "", intentId: randomUUID() }, /resourceId/i],
     [{ resourceId: randomUUID(), intentId: "" }, /intentId/i],
