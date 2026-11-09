@@ -9,6 +9,7 @@ import {
 import { z } from "zod";
 import type { ClickHouseClient } from "../db/clickhouse.ts";
 import { ACCOUNT_ERASURE_FENCE_TABLE } from "../metric-stream/clickhouse-table.ts";
+import type { AnalyticsQueryOwner } from "./analytics-query-owner.ts";
 
 const NP_ALGORITHM_VERSION = "elapsed-power-full-30s-v1";
 const ACTIVITY_BATCH_SIZE = 100;
@@ -99,7 +100,7 @@ function refreshVersion(): string {
 }
 
 async function rows<TSchema extends z.ZodType>(
-  client: ClickHouseClient,
+  client: Pick<ClickHouseClient, "query">,
   schema: TSchema,
   query: string,
   queryParams: Record<string, unknown>,
@@ -115,10 +116,12 @@ async function rows<TSchema extends z.ZodType>(
 
 /** Incrementally compute native activity NP, then atomically replay ready users. */
 export async function projectCyclingPower(
-  client: ClickHouseClient,
+  owner: Pick<AnalyticsQueryOwner, "client" | "assertActive">,
   policy: CyclingPowerPolicy,
   asOf: Date = new Date(),
 ): Promise<CyclingPowerProjectionResult> {
+  await owner.assertActive();
+  const client = owner.client;
   if (!Number.isFinite(asOf.getTime()))
     throw new Error("Cycling power projection requires a valid date");
   const coverage = policy.coveragePolicy;

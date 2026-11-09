@@ -8,6 +8,18 @@ shows why passing catalog and isolated erasure tests do not establish exclusion
 of concurrent writers. Production release procedures below do not authorize
 deploying this candidate.
 
+Writable analytics must use the [normal build](../scripts/run-analytics-build.ts),
+[local build](../scripts/run-local-analytics-build.ts), or
+[bounded repair CLI](../scripts/repair-activity-data-integrity.ts). These acquire
+the existing publication owner before source reads/builds and retain its child
+admission until the pinned adapter and fresh artifacts establish completion.
+Direct privileged dbt/SQL execution bypasses that cooperative boundary and is
+excluded during an erasure release; do not use it as recovery. A failed child,
+lost executor or unknown remote outcome requires verified recovery and must not
+be cleared merely because its PG lock is available. See the
+[approved safety contract](plans/2026-11-09-erasure-safety-decisions.md#exact-publication-boundary)
+and [PostgreSQL session-lock semantics](https://www.postgresql.org/docs/current/explicit-locking.html#ADVISORY-LOCKS).
+
 The candidate stores activity/sleep/operation and physical-deletion identifiers
 in encrypted, request-owned pages using the [identifier store](../src/account-erasure/identifier-store.ts),
 with [snapshot admission budgets](../src/account-erasure/snapshot-budget.ts).

@@ -110,6 +110,36 @@ remain required; actual dbt/cycling writers remain the next implementation task.
 
 ## Approved safety work — implementation incomplete
 
+The current analytics implementation routes normal and local builds through the
+same publication owner and requires an owner for cycling projection. The bounded
+repair API now requires its existing rebuild dependency; the canonical repair
+CLI supplies the owned builder for both repair and rollback. There is no raw
+default builder or nested publication lock. Existing model selections and
+100-activity cadence pages remain intact. The
+[owned build helper](../../../src/analytics/dbt-build.ts) keeps child admission
+non-terminal through fresh manifest/run-results validation, using the existing
+artifact parser. A nonzero child still reaches existing failure reporting while
+the durable publication barrier remains blocked.
+
+The locked dbt-clickhouse 1.10.3 / clickhouse-connect 1.4.1 path is qualified by
+[actual native dbt tests](../../../src/analytics/dbt-build.integration.test.ts).
+Stock [profile settings](https://clickhouse.com/docs/integrations/dbt/features-and-configurations)
+enforce synchronous inserts, buffered HTTP commands and synchronous mutations.
+The [pinned adapter](https://github.com/ClickHouse/dbt-clickhouse/blob/v1.10.3/dbt/adapters/clickhouse/httpclient.py)
+delegates commands to the pinned driver's consumed response path. Progress
+headers remain enabled by that driver; an attempted profile override did not
+disable them and was removed. Tests verify the actual settings in created rows,
+an execution-time error, successful child/artifact completion before replacement
+admission, and retention of the barrier after a failed child. HTTP error behavior
+must be qualified rather than inferred from status alone; see the
+[ClickHouse HTTP caveats](https://clickhouse.com/docs/interfaces/http#http-response-codes-caveats).
+
+Current local exact-26.6 results are 122 affected units, two actual normal/local
+entrypoint admission cases, 13 owned cycling cases, and five combined native
+dbt/owner/bounded-build cases. The full repair/rollback matrix, exact 26.10,
+current-main synchronization and final exact-head CI remain gates. These counts
+do not claim a full production-model build or production execution.
+
 One proposed strategy is to extend the existing publication ownership boundary
 to actual publication callers; do not add another coordinator framework.
 

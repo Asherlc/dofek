@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { parse, stringify } from "yaml";
 import { z } from "zod";
+import type { AnalyticsQueryOwner } from "../analytics/analytics-query-owner.ts";
+import { runOwnedDbtBuild } from "../analytics/dbt-build.ts";
 import {
   readActivityIntegrityCadenceVersions,
   resolveActivityIntegrityCadenceScope,
@@ -41,10 +43,12 @@ export interface ActivityIntegrityDbtBuildInput extends ActivityIntegrityScopeIn
 export async function runActivityIntegrityDbtBuild(
   input: ActivityIntegrityDbtBuildInput,
   clickHouse: ActivityIntegrityClickHouseClient,
+  owner: Pick<AnalyticsQueryOwner, "assertActive" | "runSynchronousDbt">,
 ): Promise<void> {
   if (!(input.eventTimeStart < input.eventTimeEnd)) {
     throw new Error("activity integrity dbt build requires valid increasing event-time bounds");
   }
+  await owner.assertActive();
   const before = await resolveActivityIntegrityCadenceScope(clickHouse, input);
   const project = await mkdtemp(join(tmpdir(), "activity-integrity-dbt-"));
   try {
@@ -73,7 +77,7 @@ export async function runActivityIntegrityDbtBuild(
         ),
         { mode: 0o600 },
       );
-      await runDbtPhase(input, project, models);
+      await runDbtPhase(input, project, models, owner);
     };
     // Retain old aliases before upstream can replace their member mappings.
     await build(before.activityIds, UPSTREAM_MODELS);
@@ -132,42 +136,49 @@ async function runDbtPhase(
   input: ActivityIntegrityDbtBuildInput,
   project: string,
   models: readonly string[],
+  owner: Pick<AnalyticsQueryOwner, "runSynchronousDbt">,
 ): Promise<void> {
-  const exitCode = await new Promise<number>((resolveExit, reject) => {
-    const child = spawn(
-      "uv",
-      [
-        "run",
-        "--project",
-        "analytics",
-        "dbt",
-        "build",
-        "--project-dir",
-        project,
-        "--profiles-dir",
-        "analytics",
-        "--threads",
-        "1",
-        "--event-time-start",
-        input.eventTimeStart.toISOString().slice(0, 19),
-        "--event-time-end",
-        input.eventTimeEnd.toISOString().slice(0, 19),
-        "--select",
-        models.join(" "),
-      ],
-      {
-        cwd: process.cwd(),
-        env: {
-          ...process.env,
-          DBT_TARGET: process.env.DBT_TARGET ?? "dev",
-          UV_PROJECT_ENVIRONMENT: process.env.UV_PROJECT_ENVIRONMENT ?? "../.venv-analytics",
-        },
-        stdio: "inherit",
-      },
-    );
-    child.once("error", reject);
-    child.once("close", (code) => resolveExit(code ?? 1));
-  });
+  const exitCode = await runOwnedDbtBuild(
+    owner,
+    join(project, "target"),
+    models,
+    () =>
+      new Promise<number>((resolveExit, reject) => {
+        const child = spawn(
+          "uv",
+          [
+            "run",
+            "--project",
+            "analytics",
+            "dbt",
+            "build",
+            "--project-dir",
+            project,
+            "--profiles-dir",
+            "analytics",
+            "--threads",
+            "1",
+            "--event-time-start",
+            input.eventTimeStart.toISOString().slice(0, 19),
+            "--event-time-end",
+            input.eventTimeEnd.toISOString().slice(0, 19),
+            "--select",
+            models.join(" "),
+          ],
+          {
+            cwd: process.cwd(),
+            env: {
+              ...process.env,
+              DBT_TARGET: process.env.DBT_TARGET ?? "dev",
+              UV_PROJECT_ENVIRONMENT: process.env.UV_PROJECT_ENVIRONMENT ?? "../.venv-analytics",
+            },
+            stdio: "inherit",
+          },
+        );
+        child.once("error", reject);
+        child.once("close", (code) => resolveExit(code ?? 1));
+      }),
+  );
   if (exitCode !== 0)
     throw new Error(`bounded activity integrity dbt build failed with exit code ${exitCode}`);
 }
