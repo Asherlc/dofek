@@ -57,11 +57,9 @@ export function ClimbingLogEntrySources({
                   target="_blank"
                   rel="noopener noreferrer"
                   aria-label={`Climb on ${label}`}
-                  className="group inline-flex items-center gap-1.5 align-middle font-medium text-muted hover:text-accent"
+                  className="inline-flex items-center gap-1 border-b border-accent/40 pb-0.5 align-middle font-medium text-muted hover:border-accent hover:text-accent"
                 >
-                  <span className="underline decoration-accent/40 decoration-1 underline-offset-4 group-hover:decoration-accent">
-                    Climb
-                  </span>
+                  Climb
                   <ProviderLogo provider={tickSource.providerId} size={14} />
                 </a>
               ) : (
@@ -80,11 +78,9 @@ export function ClimbingLogEntrySources({
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label={`${name} route on ${providerSourceLabel(link.providerId)}`}
-                className="group inline-flex items-center gap-1.5 font-medium text-muted hover:text-accent"
+                className="inline-flex items-center gap-1 border-b border-accent/40 pb-0.5 font-medium text-muted hover:border-accent hover:text-accent"
               >
-                <span className="underline decoration-accent/40 decoration-1 underline-offset-4 group-hover:decoration-accent">
-                  Route
-                </span>
+                Route
                 <ProviderLogo provider={link.providerId} size={14} />
               </a>
             </li>

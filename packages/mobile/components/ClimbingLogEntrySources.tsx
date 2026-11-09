@@ -111,14 +111,19 @@ const styles = StyleSheet.create({
   name: { color: colors.text, fontSize: 14, fontWeight: "500" },
   source: { color: colors.textSecondary, fontSize: 12 },
   link: { color: colors.accent, textDecorationLine: "underline" },
-  sourceLink: { flexDirection: "row", alignItems: "center", gap: 6 },
+  sourceLink: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingBottom: 2,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.textTertiary,
+  },
   sourceLinkText: {
     color: colors.textSecondary,
     fontSize: 12,
     fontWeight: "500",
     lineHeight: 18,
-    textDecorationLine: "underline",
-    textDecorationColor: colors.textTertiary,
   },
   links: { flexDirection: "row", flexWrap: "wrap", columnGap: 12, rowGap: 8 },
 });
