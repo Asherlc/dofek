@@ -12,6 +12,42 @@ import {
 } from "./redpanda-drain.ts";
 
 describe("account erasure Redpanda drain", () => {
+  it.each([1, 2, 3])("retains all %i captured routes in the ingest checkpoint", async (count) => {
+    vi.resetModules();
+    const { accountErasureIngestFenceCheckpointSchema } = await import("./redpanda-drain.ts");
+    const highWatermarks = Array.from({ length: count }, (_, index) => ({
+      topic: `metric-stream-${index}`,
+      partition: 0,
+      low: "10",
+      offset: "20",
+      clusterId: "a".repeat(22),
+      topicId: "b".repeat(22),
+    }));
+    expect(
+      accountErasureIngestFenceCheckpointSchema.parse({ highWatermarks, userEmail: "private" }),
+    ).toEqual({ highWatermarks });
+  });
+
+  it.each([0, 4])("rejects an ingest checkpoint with %i routes", async (count) => {
+    vi.resetModules();
+    const { accountErasureIngestFenceCheckpointSchema } = await import("./redpanda-drain.ts");
+    const highWatermarks = Array.from({ length: count }, (_, index) => ({
+      topic: `metric-stream-${index}`,
+      partition: 0,
+      low: "10",
+      offset: "20",
+    }));
+    expect(accountErasureIngestFenceCheckpointSchema.safeParse({ highWatermarks }).success).toBe(
+      false,
+    );
+  });
+
+  it("rejects an ingest checkpoint without captured routes", async () => {
+    vi.resetModules();
+    const { accountErasureIngestFenceCheckpointSchema } = await import("./redpanda-drain.ts");
+    expect(accountErasureIngestFenceCheckpointSchema.safeParse({}).success).toBe(false);
+  });
+
   it("preserves bounded structural broker generation in durable checkpoints", async () => {
     vi.resetModules();
     const { accountErasureRouteHighWatermarkSchema } = await import("./redpanda-drain.ts");

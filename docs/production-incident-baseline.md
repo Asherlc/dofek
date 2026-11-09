@@ -35940,3 +35940,26 @@ tests retain the required main broker guard. New exact-head CI remains required.
 The quarantine correction remains independently reviewable in
 [PR 3237](https://github.com/Asherlc/dofek/pull/3237), outside this main revision.
 No production changes, strategy expansion, branch switch or rebase occurred.
+
+## 2026-11-09 — Erasure ingest-checkpoint mutation coverage after main sync
+
+- **Symptoms/impact:** [PR3234 CI, Stryker shard 12](https://github.com/Asherlc/dofek/actions/runs/42642295284/job/129248940697)
+  failed on head `b6ee9263e`; no production impact. The failing command was
+  `pnpm exec stryker run stryker.ci.config.json --mutate "$MUTATE_FILES"`.
+  Its first fatal line was `Final mutation score 0.00 under breaking threshold 75`.
+- **Root cause/fix:** all three ingest-fence checkpoint schema mutants survived:
+  removing the object shape, replacing the three-route maximum with a minimum,
+  and replacing the one-route minimum with a maximum. Existing drain tests did
+  not directly verify this enclosing schema. Added six cases through its public
+  parser: exact structural preservation for one, two and three routes, rejection
+  of zero/four routes and rejection of a missing route array. Each test reloads
+  the module before exercising its initialized declaration, using the existing
+  [Vitest module-reset pattern](https://vitest.dev/api/vi.html#vi-resetmodules).
+- **Validation:** the exact failing mutation selection passed locally with all
+  three mutants killed, zero survivors and 100% score. All 32 drain unit tests,
+  root TypeScript and changed-file Biome passed. No runtime code, mutation gate,
+  retry, timeout or limit changed. New-head remote CI remains required.
+- **Follow-up:** retain direct boundary/preservation assertions when shared
+  checkpoint schemas change; use the existing CI-fix workflow to inspect actual
+  surviving mutants. The separate publication/recovery safety decisions remain
+  unresolved and this test fix does not make the PR merge-ready.
