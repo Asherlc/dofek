@@ -35842,14 +35842,25 @@ No runtime behavior, timeout, retry or production configuration changed.
   source still declares that gate. No first fatal error line or causal
   explanation for the missing job has been established; do not infer success
   from the passing parent gate. Browser inspection was unavailable on this host.
-- **Mitigation / follow-up:** Preserve branch protection and the existing
-  disabled automatic-deployment workflow. At diagnosis, no bypass, synthetic
-  status, gate change or blind rerun was applied. After being told about the
-  missing gate, the user explicitly requested source merge. That authorizes
-  the source-merge exception, not a claim that CI scheduling is repaired or
-  production activation is qualified. The investigation remains unresolved;
-  stock index-cache cleanup remains a separate activation blocker. GitHub
-  documents the distinct [administrator merge option](https://cli.github.com/manual/gh_pr_merge).
+- **Subsequent evidence:** In [run 42673842606, Mutation Testing / Check results](https://github.com/Asherlc/dofek/actions/runs/42673842606/job/129353372401),
+  the first fatal line is `Selected TypeScript mutation work did not succeed`.
+  The expanded command shows `needs.mutation.result` as `abandoned`; only
+  Stryker shards 3–5 have completed job records. The gate correctly rejects
+  incomplete selected work. The same workflow previously reported the gate
+  successfully in [run 42639292427](https://github.com/Asherlc/dofek/actions/runs/42639292427/job/129242950664).
+- **Provider incident:** GitHub's [Actions and Checks API incident](https://stspg.io/7yw63xl9ztrv)
+  reports a major Actions outage, under investigation from 18:12 UTC, with
+  elevated Actions/Checks errors confirmed at 18:24 UTC. The abandoned jobs
+  coincide with that outage; the provider has not published its internal root
+  cause or confirmed this individual run's assignment failure.
+- **Mitigation / follow-up:** The user requested merge; both normal and
+  administrator merge were rejected by the required-check ruleset. The user
+  then declined a ruleset exception. No protection or bypass-actor setting
+  was changed. Preserve the disabled deployment workflow and strict mutation
+  gate; after provider recovery, rerun unfinished work and merge normally only
+  when all required statuses pass. Do not treat rerunning as a source-code fix.
+  Production remains unchanged, and stock index-cache cleanup remains a
+  separate activation blocker.
 
 ## 2026-11-08 — History recovery complete; two healthy zero-lag checks
 
