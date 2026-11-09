@@ -86,20 +86,16 @@ describe("cycling power projector", () => {
     version = 100,
     watts = 250,
     canonicalType = "cycling",
-    startedAt = "2026-10-31 10:00:00",
+    activityDate = "2026-10-31",
   ) {
-    const endedAt = new Date(Date.parse(`${startedAt.replace(" ", "T")}Z`) + 60_000)
-      .toISOString()
-      .slice(0, 19)
-      .replace("T", " ");
     await client.insert({
       table: "analytics.activity_summary_rows",
       format: "JSONEachRow",
       values: ids.map((id) => ({
         user_id: userId,
         activity_id: id,
-        started_at: startedAt,
-        ended_at: endedAt,
+        started_at: `${activityDate} 10:00:00`,
+        ended_at: `${activityDate} 10:01:00`,
         canonical_type: canonicalType,
         power_sample_count: 60,
         refresh_version: version,
@@ -113,7 +109,7 @@ describe("cycling power projector", () => {
         Array.from({ length: 60 }, (_, second) => ({
           user_id: userId,
           activity_id: id,
-          recorded_at: `${startedAt.slice(0, 17)}${String(second).padStart(2, "0")}`,
+          recorded_at: `${activityDate} 10:00:${String(second).padStart(2, "0")}`,
           channel: "power",
           scalar: watts,
           refresh_version: version,
@@ -173,8 +169,8 @@ describe("cycling power projector", () => {
     const userId = randomUUID();
     const earlyId = randomUUID();
     const latestId = randomUUID();
-    await seed(userId, [earlyId], 100, 200, "cycling", "2009-01-01 10:00:00");
-    await seed(userId, [latestId], 100, 250, "cycling", "2026-10-31 10:00:00");
+    await seed(userId, [earlyId], 100, 200, "cycling", "2009-01-01");
+    await seed(userId, [latestId], 100, 250, "cycling", "2026-10-31");
     const firstDay = Math.floor(Date.parse("2009-01-01T10:00:00Z") / 1000 / 86_400);
     const finalDay = Math.floor(asOf.getTime() / 1000 / 86_400);
     expect(await projectCyclingPower(client, policy, asOf)).toMatchObject({
@@ -209,10 +205,13 @@ describe("cycling power projector", () => {
     expect(published[0]?.event_count).toBe(finalDay - firstDay + 1 + 2);
     expect(published[0]?.evidence_bytes).toBeGreaterThan(131_072);
     expect(published[0]?.latest_evidence_id).toBe(latestId);
-    expect(published[0]?.latest_threshold).toBeCloseTo(201.6393442623, 6);
-    expect(published[0]?.latest_intensity).toBeCloseTo(250 / 201.6393442623, 6);
+    const expectedThreshold = 201.6393442623;
+    const expectedIntensityFactor = 250 / expectedThreshold;
+    expect(published[0]?.latest_threshold).toBeCloseTo(expectedThreshold, 6);
+    expect(published[0]?.latest_intensity).toBeCloseTo(expectedIntensityFactor, 6);
+    // Training stress is elapsed hours × intensity factor squared × 100 for this 60-second ride.
     expect(published[0]?.latest_stress).toBeCloseTo(
-      (250 ** 2 * 60) / (36 * 201.6393442623 ** 2),
+      (60 / 3600) * expectedIntensityFactor ** 2 * 100,
       6,
     );
   });
