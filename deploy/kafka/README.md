@@ -14,6 +14,9 @@ observation; Kafka is now live. That completed approval does not authorize a
 repeat cutover or the broader shared application release. The separate tiered candidate is phase 2; its accepted
 late-upload/orphan residual does not weaken phase-1 checks.
 
+The [shared application release proposal](shared-release.md) records the reviewed
+image, deployment effects and remaining decisions before merging this PR.
+
 ## This layer
 
 - Pinned stock Kafka 4.4.0 broker, native `hostname: kafka`, single broker/log

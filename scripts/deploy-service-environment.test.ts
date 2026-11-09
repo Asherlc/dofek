@@ -158,7 +158,7 @@ function completeDeployEnvironment(): Record<string, string> {
   ]);
   return {
     ...Object.fromEntries([...runtimeKeys].map((key) => [key, `${key.toLowerCase()}-value`])),
-    KAFKA_CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk",
+    KAFKA_CLUSTER_ID: "0000000000000000000000",
     KAFKA_TIERED_STORAGE_BUCKET: "dofek-kafka-ts-offload",
     KAFKA_TIERED_STORAGE_ENDPOINT: "https://example.r2.cloudflarestorage.com",
     KAFKA_TIERED_STORAGE_REGION: "auto",
@@ -192,19 +192,33 @@ describe("renderDeployServiceEnvironmentFiles", () => {
     writeFileSync(sourcePath, dotenv(completeDeployEnvironment()));
     const paths = renderDeployServiceEnvironmentFiles(sourcePath, join(directory, "services"));
     expect(parseEnv(readFileSync(paths.kafka, "utf8"))).toEqual({
-      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk",
+      CLUSTER_ID: "0000000000000000000000",
     });
   });
 
-  it("preserves dotenv quoting when renaming the broker cluster identity", () => {
+  it.each(['"', "'"])("renders a %s-quoted cluster identity for Docker env_file", (quote) => {
     const directory = makeTemporaryDirectory();
     const sourcePath = join(directory, "all.env");
     const environment = completeDeployEnvironment();
-    environment.KAFKA_CLUSTER_ID = JSON.stringify("quoted-cluster-id");
+    environment.KAFKA_CLUSTER_ID = `${quote}0000000000000000000000${quote}`;
     writeFileSync(sourcePath, dotenv(environment));
     const paths = renderDeployServiceEnvironmentFiles(sourcePath, join(directory, "services"));
-    expect(parseEnv(readFileSync(paths.kafka, "utf8")).CLUSTER_ID).toBe("quoted-cluster-id");
+    expect(readFileSync(paths.kafka, "utf8")).toBe("CLUSTER_ID=0000000000000000000000\n");
   });
+
+  it.each(["invalid cluster id", '"line\\nbreak"', "invalid$id"])(
+    "rejects an invalid native Kafka cluster identity: %s",
+    (clusterId) => {
+      const directory = makeTemporaryDirectory();
+      const sourcePath = join(directory, "all.env");
+      const environment = completeDeployEnvironment();
+      environment.KAFKA_CLUSTER_ID = clusterId;
+      writeFileSync(sourcePath, dotenv(environment));
+      expect(() =>
+        renderDeployServiceEnvironmentFiles(sourcePath, join(directory, "services")),
+      ).toThrow("KAFKA_CLUSTER_ID must be a 22-character Kafka UUID");
+    },
+  );
 
   it("rejects a missing Kafka cluster identity", () => {
     const directory = makeTemporaryDirectory();
