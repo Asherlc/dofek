@@ -1,6 +1,6 @@
 # Phase 1: deploy Kafka before tiered storage
 
-**Concrete approval proposal; not executed.** The user explicitly chose Kafka
+**Approved Q4/A by the user's “Y”; execution is recorded [separately](phase1-execution.md).** The user explicitly chose Kafka
 first, then tiered storage as a separate release. This supersedes the earlier
 requirement for tiering at first activation. PR #3233 is phase 1; PR #3236 remains
 stacked on it for phase 2. No full-child retarget/combined landing is needed.

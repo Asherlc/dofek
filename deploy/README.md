@@ -2,10 +2,12 @@
 
 Infrastructure-as-code and deployment configuration for Dofek.
 
-The [Kafka broker candidate](kafka/README.md) replaces the broker stanza for the
-planned migration. Activation remains blocked on its documented safety and
-qualification prerequisites; the production topology described below remains
-Redpanda until a separately approved broker-only cutover.
+The approved Kafka-only phase-1 cutover is recorded in the
+[execution receipt](kafka/phase1-execution.md). Kafka now serves the hot ingest
+log; the old Redpanda data remains retained in place. Existing service and
+environment names retain their legacy Redpanda spelling. Tiered storage is a
+separate phase-2 release; shared application deployment and old-data retirement
+retain their own review boundaries.
 
 ## Architecture
 
@@ -18,7 +20,7 @@ infrastructure has been retired.
 - **Storage**:
   - **PostgreSQL**: Managed via TimescaleDB with PostGIS enabled for geospatial metric data.
   - **ClickHouse**: Runs in the swarm as the stored analytics read-model service for heavy activity stream reads. The raw `metric_stream` copy is populated by the Redpanda ClickHouse sink for Redpanda-first sources and remains compatible with tracked ClickHouse migrations and chunk-range backfills. See [docs/clickhouse-metric-stream.md](../docs/clickhouse-metric-stream.md).
-  - **Redpanda**: Runs internally in the swarm as the hot ingest log for high-volume `metric_stream` events. Separate legacy, live, and history ClickHouse sink services consume their designated topics, and matching Redpanda Connect services archive them to R2; see the [route contract](../docs/metric-stream-redpanda-r2-runbook.md#required-services).
+  - **Kafka**: Runs internally in the swarm as the hot ingest log for high-volume `metric_stream` events. Separate legacy, live, and history ClickHouse sink services consume their designated topics, and matching Redpanda Connect services archive them to R2. Use the current [phase-1 route/command record](kafka/operator-proposal.md); the [legacy route contract](../docs/metric-stream-redpanda-r2-runbook.md#required-services) explains the retained service names.
   - **PeerDB**: Runs internally in the swarm as the Postgres-to-ClickHouse CDC service for lower-volume raw fitness tables into `postgres_fitness.*`.
   - **Volume**: Production uses the OCI data volume mounted at `/mnt/dofek-data`.
   - **DB data path**: The `db` service bind-mounts Postgres data to `/mnt/dofek-data/postgres`.

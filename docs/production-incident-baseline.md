@@ -35757,3 +35757,40 @@ only the fixture image currently under test. Docker documents local resource
 - **Observed shared health / limits:** No fatal consumer, offset-range or deletion-timeout error was observed in the bounded log samples, and sampled matching ingest INSERT windows reported zero exceptions. The largest matching INSERT duration seen in those windows was **37,870 ms**; these shared-table observations are not a matched benchmark for the original incident query. Brief new live-input backlogs cleared without intervention. Final load was **0.35/0.77/1.62** and the data filesystem had approximately **31 GiB available**. An optional query-text profile across the full recovery window failed its 256 MiB diagnostic cap while reading a large merged `system.query_log` column; it was not retried or used as proof. That operator SELECT failure was not an ingest INSERT failure and did not affect the recovery checks.
 - **Closure / remaining work:** The history catch-up incident is resolved for this retained backlog. The consumer is left running at one replica; the recovery heartbeat was deleted after the second healthy zero sample. Existing rollback provenance remains recorded. Kafka cutover, old broker-data deletion, archive replay and the broader storage-design review remain separate work; consumer offsets do not establish physical erasure or independent domain processing completeness. No application timeout/retry knob remains from this repair.
 - **Retrospective / useful next context:** Real-engine tests on both ClickHouse versions, scoped historical identity proofs and a single digest-pinned consumer update were sufficient. Stock broker-group inspection plus system metadata provided follow-through without a new monitoring framework. The existing runbook now records two healthy zero-lag observations as the completion boundary and keeps it separate from Kafka cutover. For similar incidents, reuse the existing integration-test preparation and production-log investigation workflows, and budget EXPLAIN/set materialization and query-log text reads before treating them as cheap metadata operations; no new skill is needed.
+
+## 2026-11-09 — Kafka phase-1 mount preparation and operator failure propagation
+
+- **Scope/impact:** The approved Kafka-only cutover was still preparing an isolated
+  broker while application traffic remained on Redpanda. No application routes or
+  topics had changed at this failure; the fresh persistent directory remained empty.
+- **Exact failing operation:** A stopped `docker service update dofek_kafka` combined
+  removal and addition of `/var/lib/kafka/data`. Inspection returned `Mounts: null`.
+  The prerequisite verifier failed with `TypeError: Cannot read properties of
+  undefined (reading 'length')`. Its outer shell did not propagate failure and
+  continued to scale Kafka to one, so the broker briefly started without the bind.
+  An earlier operator assertion also expected eighteen environment keys incorrectly;
+  canonical comparison established fifteen settings plus preserved `CLUSTER_ID`.
+  That assertion required a verification correction, not a production config change.
+- **Root cause/direct fix:** Same-target mount operations were combined and the
+  outer operator command did not explicitly stop on failed validation. Kafka was
+  returned to zero; actual task exit, unchanged old service specs and the empty
+  fresh directory were checked. A separate stopped-service `--mount-add` installed
+  the intended bind. Independently checked prerequisite commands then passed before
+  start. No data cleanup, relaxed gate, retry or timeout change was used.
+- **Validation:** Canonical fifteen broker settings plus preserved cluster ID and
+  exact native data mount passed; Kafka became healthy and its external Admin API
+  responded. Six fresh topics had the approved policy and zero application offsets.
+  The new worker's two distinct read-only mounts were separately checked against
+  the original mount list and actual running container. See the
+  [phase-1 execution receipt](../deploy/kafka/phase1-execution.md).
+- **Other observation:** Three drained old ClickHouse sinks exited 137 during native
+  service stop. Their final committed offsets already matched source boundaries;
+  all restarted healthy with the original image pins. Stop lifecycle remains an
+  operational limitation, not a demonstrated record-loss incident.
+- **Follow-up/context:** The stock command record now separates mount removal/addition
+  and requires effective-spec inspection. Execution must propagate every prerequisite
+  failure to the outer mutation boundary; merely setting `-e` in a subprocess is
+  insufficient. Reuse the production-log and executing-plans workflows; no new
+  framework or runtime resilience setting is needed. Docker documents
+  [service updates](https://docs.docker.com/reference/cli/docker/service/update/)
+  and [task states](https://docs.docker.com/engine/swarm/how-swarm-mode-works/swarm-task-states/).

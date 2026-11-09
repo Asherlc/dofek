@@ -1,5 +1,10 @@
 # Broker-only cutover qualification packet
 
+**Execution status:** Q4/A approved the narrow phase-1 operation. Consult the
+[execution receipt](phase1-execution.md) for live outcome and the recorded
+first-write authority; this packet does not authorize a repeat, merge or tiered
+release. Earlier preflight/proposal wording below records the reviewed sequence.
+
 **Phase 1 review packet: Kafka first, tiered storage later.** The user's latest
 explicit order supersedes the earlier requirement for tiering at first activation.
 Use the [concrete phase-1 approval bundle](phase1-approval.md) and its new read-only
@@ -45,7 +50,7 @@ render of those two files verified the following effective bindings:
 | Broker data | `/mnt/dofek-data/kafka-broker/data` → `/var/lib/kafka/data` |
 | Worker data view | Same host source → `/var/lib/dofek/kafka-data:ro` |
 | Retired Redpanda hold | Original `/mnt/dofek-data/redpanda` → `/var/lib/dofek/retired-broker-data:ro` |
-| Worker image | `ghcr.io/asherlc/dofek@sha256:a498aaa503db452480fdd43a71cc8799aa2564eea30a070e0296a08effc48620` (review candidate only) |
+| Worker image | `ghcr.io/asherlc/dofek@sha256:a498aaa503db452480fdd43a71cc8799aa2564eea30a070e0296a08effc48620` (narrow phase-1 worker) |
 | ClickHouse | Unchanged `26.6.1.1193-alpine` |
 
 The [review build](https://github.com/Asherlc/dofek/actions/runs/42506782417)
@@ -161,7 +166,8 @@ Swarm/Kafka tools and leaves automation unchanged.
    all other existing images individually pinned; only the narrow worker changes.
    No full-stack workflow, Terraform apply or old-data retirement is part of this
    cutover. Before the first Kafka write, reversal requires the stated empty-write
-   proof; afterward preserve both logs and use separately reviewed forward recovery.
+   proof; afterward preserve both logs and execute the forward plan approved before
+   first-write authority, escalating beyond its explicit restoration scope.
 4. **Separate release qualification and approval required:** qualify the normal
    application release that will follow merge. The [base stack](../stack.yml)
    shares `APP_IMAGE` across web, worker and all ClickHouse sinks, and the
@@ -182,6 +188,10 @@ remaining execution preconditions. That decision does not authorize production
 steps, accept the byte-policy change,
 establish capacity, or authorize old-data deletion. Until those concrete gates
 are closed, the PR remains ready for review rather than ready to merge.
+
+The later Q4/A approval binds the [exact phase-1 operation](phase1-approval.md),
+including policy, reserve monitoring, recovery and retained-RP erasure hold.
+It does not authorize the broader shared release or old-data deletion.
 
 ## Stop gates
 
@@ -294,7 +304,8 @@ all six original routes before reopening ingress. Do not infer reversal safety
 from a failed deployment step alone.
 
 After the first Kafka application write, stop writers and preserve both logs.
-Use a separately reviewed forward-recovery plan. Do not flip back, reset offsets,
+Use the forward-recovery plan frozen and approved before first-write authority.
+If that plan is missing, writers must not be released. Do not flip back, reset offsets,
 manually acknowledge messages, replay archives or delete either data tree.
 
 Document exact symptoms, first fatal log line, user impact, recovery boundary,

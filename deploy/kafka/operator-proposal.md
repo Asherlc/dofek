@@ -1,6 +1,8 @@
 # Broker-only operator proposal
 
-**Phase 1 proposal; do not execute without the [single approval bundle](phase1-approval.md).**
+**Phase 1 command record.** The user approved the [single approval bundle](phase1-approval.md)
+with “Y” (Q4/A) on November 9 UTC. See the [execution receipt](phase1-execution.md)
+for actual state; these commands are not permission to repeat the cutover.
 The user now explicitly requests Kafka first, then tiered storage. These stock
 commands prepare the Kafka-only phase with its qualified local-storage worker.
 Tiering belongs to the separate phase-2 PR. Freeze the proposed 4-GiB source /
@@ -63,7 +65,10 @@ explicit mutation requiring approval. The intended fresh directory is
 The existing service has precisely the old data and plugin mounts. After
 reviewing its frozen specification, these stock Bash/jq/Docker commands replace
 the service environment with the [canonical broker stanza](../stack.yml), keeping
-the existing cluster ID private. They remain unexecuted production proposals:
+the existing cluster ID private. Remove the old data mount in the first stopped
+update, then add the replacement in a separate stopped update. The first execution
+observed `Mounts: null` when removal and addition targeted the same path in one
+command; inspect the final specification before any start:
 
 ```sh
 set -euo pipefail
@@ -80,7 +85,6 @@ docker service update dofek_kafka \
   "${remove_environment[@]}" \
   --image apache/kafka:4.4.0@sha256:833b867a9585a141da455dc2b57431c65cbccb27f11c91f694444cca9f777e0f \
   --mount-rm /plugins --mount-rm /var/lib/kafka/data \
-  --mount-add type=bind,source=/mnt/dofek-data/kafka-broker/data,target=/var/lib/kafka/data \
   --env-add KAFKA_HEAP_OPTS='-Xmx1G -Xms1G' \
   --env-add KAFKA_LOG_DIRS=/var/lib/kafka/data \
   --env-add KAFKA_PROCESS_ROLES=broker,controller \
@@ -97,6 +101,9 @@ docker service update dofek_kafka \
   --env-add KAFKA_AUTO_CREATE_TOPICS_ENABLE=false \
   --env-add KAFKA_REMOTE_LOG_STORAGE_SYSTEM_ENABLE=false \
   --limit-memory 2048M
+docker service update dofek_kafka --replicas 0 \
+  --mount-add type=bind,source=/mnt/dofek-data/kafka-broker/data,target=/var/lib/kafka/data
+docker service inspect dofek_kafka --format '{{json .Spec.TaskTemplate.ContainerSpec.Mounts}}'
 ```
 
 **All old environment assignments except `CLUSTER_ID` are removed and replaced
@@ -211,8 +218,10 @@ only with explicit first-write authority. Record that write boundary and verify
 archive output identity/delivery, consumer progress, errors and resource use for
 the agreed observation interval. No synthetic production write is authorized by
 this proposal. Before the first application write, restore saved original
-templates only after the packet's zero-new-write proof. After any application
-write, stop writers, preserve both logs and obtain forward-recovery direction.
+templates only after the packet's zero-new-write proof. After first-write
+authority, execute the already approved stop/preserve/forward plan in the
+[approval bundle](phase1-approval.md#recovery-and-old-data-boundary-approved-before-first-writes).
+Missing forward-recovery prerequisites block writer release.
 
 Retained Redpanda data continues to block final erasure completion. There is no
 delete/move command in this cutover. Retirement needs its own approved operator
@@ -220,10 +229,9 @@ packet accounting for rollback and existing archive/backup gates.
 
 ## Remaining decision bundle
 
-The release order is approved for planning (Q2). Execution still needs: accepted
-topic names and reduced source byte policy; measured burst/delayed-cleanup and
-database-growth headroom; the erasure-completion hold and retirement boundary;
-old-request preflight; exact pause/drain/observation/recovery authority; approved
-service/configuration convergence; and a separately qualified full application
-release before merge. If combining the erasure PR, preserve all six structural
-checkpoint fields explicitly. No one of these approvals implies the others.
+Q4/A approved this narrow operation with the exact topic names/policy, conservative
+reserve monitoring despite unavailable peak history, old-data erasure hold and
+frozen recovery boundaries. The [execution receipt](phase1-execution.md) records
+its outcome. A broader shared application release/merge, tiering and data
+retirement remain separate. If combining the erasure PR, preserve all six
+structural checkpoint fields explicitly.
