@@ -16,6 +16,9 @@ late-upload/orphan residual does not weaken phase-1 checks.
 
 The [shared application release proposal](shared-release.md) records the reviewed
 image, deployment effects and remaining decisions before merging this PR.
+That release is now recorded in the [execution receipt](shared-release-execution.md):
+the workflow and live health checks passed, with a separately documented open
+quarantine topic-configuration defect. Tiered activation remains separate.
 
 ## This layer
 
