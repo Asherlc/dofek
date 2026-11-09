@@ -69,7 +69,15 @@ Activity details show attached climbing logs and same-day attachment suggestions
 for climbing activities. Cards group under Area headings and show the
 published display grade, concise attempt counts, pitch labels, and server-derived
 rock labels through the [shared grouping helper](../training/src/climbing-log-groups.ts)
-and [card](src/pages/activity-detail/components/ClimbingLogEntryCard.tsx).
+and [card](src/pages/activity-detail/components/ClimbingLogEntryCard.tsx). Each
+Area heading renders the complete recorded root-to-leaf lineage, emphasizing the
+final area, and keeps long paths on one focusable line with
+[CSS horizontal overflow](https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/overflow-x).
+The activity panel and breakdown use named, focusable scroll sections, following
+[MDN's keyboard-scrolling guidance](https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/overflow#accessibility).
+Those two files have an approved exception for Biome's
+[`noNoninteractiveTabindex`](https://biomejs.dev/linter/rules/no-noninteractive-tabindex/javascript/)
+rule; all other rules remain enabled.
 The activity [climbing panel](src/pages/activity-detail/components/ActivityClimbingPanel.tsx)
 uses a single-column list grouped by Area beside its shared map; other log
 collections retain the responsive [breakdown](src/pages/activity-detail/components/ClimbingLogEntryBreakdown.tsx).
