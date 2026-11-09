@@ -86,6 +86,7 @@ describe("cycling power projector", () => {
     version = 100,
     watts = 250,
     canonicalType = "cycling",
+    activityDate = "2026-10-31",
   ) {
     await client.insert({
       table: "analytics.activity_summary_rows",
@@ -93,8 +94,8 @@ describe("cycling power projector", () => {
       values: ids.map((id) => ({
         user_id: userId,
         activity_id: id,
-        started_at: "2026-10-31 10:00:00",
-        ended_at: "2026-10-31 10:01:00",
+        started_at: `${activityDate} 10:00:00`,
+        ended_at: `${activityDate} 10:01:00`,
         canonical_type: canonicalType,
         power_sample_count: 60,
         refresh_version: version,
@@ -108,7 +109,7 @@ describe("cycling power projector", () => {
         Array.from({ length: 60 }, (_, second) => ({
           user_id: userId,
           activity_id: id,
-          recorded_at: `2026-10-31 10:00:${String(second).padStart(2, "0")}`,
+          recorded_at: `${activityDate} 10:00:${String(second).padStart(2, "0")}`,
           channel: "power",
           scalar: watts,
           refresh_version: version,
@@ -164,49 +165,55 @@ describe("cycling power projector", () => {
     });
   });
 
-  it("publishes long cycling histories beyond the HTTP parameter field limit", async () => {
+  it("publishes long daily histories with complete evidence and scores", async () => {
     const userId = randomUUID();
-    const activityId = randomUUID();
-    await seed(userId, [activityId]);
-    await client.insert({
-      table: "analytics.activity_summary_rows",
-      format: "JSONEachRow",
-      values: [
-        {
-          user_id: userId,
-          activity_id: activityId,
-          started_at: "2010-01-01 10:00:00",
-          ended_at: "2010-01-01 10:01:00",
-          canonical_type: "cycling",
-          power_sample_count: 0,
-          refresh_version: 200,
-          is_deleted: 0,
-        },
-      ],
-    });
-    await expect(projectCyclingPower(client, policy, asOf)).resolves.toMatchObject({
+    const earlyId = randomUUID();
+    const latestId = randomUUID();
+    await seed(userId, [earlyId], 100, 200, "cycling", "2009-01-01");
+    await seed(userId, [latestId], 100, 250, "cycling", "2026-10-31");
+    const firstDay = Math.floor(Date.parse("2009-01-01T10:00:00Z") / 1000 / 86_400);
+    const finalDay = Math.floor(asOf.getTime() / 1000 / 86_400);
+    expect(await projectCyclingPower(client, policy, asOf)).toMatchObject({
       pendingActivities: 0,
       pendingUsers: 0,
       projectedUsers: 1,
     });
-    const result = await client.query<{
-      event_count: number;
-      evidence_bytes: number;
-      evidence_id: string;
-      threshold: number;
-    }>({
-      query: `SELECT length(events) AS event_count,
-        length(toJSONString(arrayMap(event -> event.6, events))) AS evidence_bytes,
-        events[-1].6 AS evidence_id, events[-1].3 AS threshold
-        FROM analytics.cycling_power_history_rows FINAL WHERE user_id={userId:UUID}`,
-      format: "JSONEachRow",
-      query_params: { userId },
-    });
-    const [history] = await result.json();
-    expect(history?.event_count).toBeGreaterThan(6000);
-    expect(history?.evidence_bytes).toBeGreaterThan(131072);
-    expect(history?.evidence_id).toBe(activityId);
-    expect(history?.threshold).toBeCloseTo(201.6393442623, 6);
+    const published = await client
+      .query<{
+        as_of_day: string;
+        event_count: number;
+        evidence_bytes: number;
+        latest_evidence_id: string | null;
+        latest_threshold: number | null;
+        latest_intensity: number | null;
+        latest_stress: number | null;
+      }>({
+        query: `SELECT toString(as_of_day) AS as_of_day,
+          length(events) AS event_count,
+          length(toJSONString(arrayMap(event -> tupleElement(event, 6), events))) AS evidence_bytes,
+          tupleElement(arrayFirst(event -> tupleElement(event, 2) = {latestId:String}, events), 6) AS latest_evidence_id,
+          tupleElement(arrayFirst(event -> tupleElement(event, 2) = {latestId:String}, events), 3) AS latest_threshold,
+          tupleElement(arrayFirst(event -> tupleElement(event, 2) = {latestId:String}, events), 4) AS latest_intensity,
+          tupleElement(arrayFirst(event -> tupleElement(event, 2) = {latestId:String}, events), 5) AS latest_stress
+          FROM analytics.cycling_power_history_rows FINAL WHERE user_id={userId:UUID}`,
+        format: "JSONEachRow",
+        query_params: { userId, latestId },
+      })
+      .then((result) => result.json());
+    expect(published).toHaveLength(1);
+    expect(published[0]?.as_of_day).toBe("2026-11-01");
+    expect(published[0]?.event_count).toBe(finalDay - firstDay + 1 + 2);
+    expect(published[0]?.evidence_bytes).toBeGreaterThan(131_072);
+    expect(published[0]?.latest_evidence_id).toBe(latestId);
+    const expectedThreshold = 201.6393442623;
+    const expectedIntensityFactor = 250 / expectedThreshold;
+    expect(published[0]?.latest_threshold).toBeCloseTo(expectedThreshold, 6);
+    expect(published[0]?.latest_intensity).toBeCloseTo(expectedIntensityFactor, 6);
+    // Training stress is elapsed hours × intensity factor squared × 100 for this 60-second ride.
+    expect(published[0]?.latest_stress).toBeCloseTo(
+      (60 / 3600) * expectedIntensityFactor ** 2 * 100,
+      6,
+    );
   });
 
   it("converges across the 32-user bound again after daily rollover", async () => {
