@@ -21,12 +21,13 @@ describe("ClimbingLogEntrySources", () => {
     );
     const climb = screen.getByRole("link", { name: `Climb on ${label}` });
     const route = screen.getByRole("link", { name: `Swiss Cheese route on ${label}` });
-    expect(climb).toHaveTextContent(/^Climb$/);
-    expect(route).toHaveTextContent(/^Route$/);
+    expect(climb).toHaveTextContent(/^Climb\s*↗$/);
+    expect(route).toHaveTextContent(/^Route\s*↗$/);
     expect(climb).toHaveAttribute("href", "https://example.com/ticks");
     expect(route).toHaveAttribute("href", "https://example.com/route");
     for (const link of [climb, route]) {
       expect(link.querySelector("img")).toHaveAttribute("src", `/logos/${providerId}.${extension}`);
+      expect(link.querySelector('[aria-hidden="true"]:last-child')).toHaveTextContent("↗");
     }
   });
   it.each(["Mountain Project, OpenBeta", "OpenBeta"])(

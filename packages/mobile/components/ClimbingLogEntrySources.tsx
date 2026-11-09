@@ -60,48 +60,64 @@ export function ClimbingLogEntrySources({
             {name}
           </Text>
         ))}
-      {visibleSources.length > 0 && (
-        <View style={styles.links}>
-          {visibleSources.map(({ label, tickSource }) =>
-            tickSource ? (
+      <View style={styles.links}>
+        {visibleSources.length > 0 && (
+          <View style={styles.links}>
+            {visibleSources.map(({ label, tickSource }) =>
+              tickSource ? (
+                <Pressable
+                  key={label}
+                  accessibilityRole="link"
+                  accessibilityLabel={`Climb on ${label}`}
+                  style={styles.sourceLink}
+                  onPress={() => {
+                    void openSource(tickSource.url);
+                  }}
+                >
+                  <Text style={styles.sourceLinkText}>Climb</Text>
+                  <ProviderLogo provider={tickSource.providerId} serverUrl={SERVER_URL} size={14} />
+                  <Text
+                    style={styles.linkCue}
+                    accessibilityElementsHidden
+                    importantForAccessibility="no"
+                  >
+                    ↗
+                  </Text>
+                </Pressable>
+              ) : (
+                <Text key={label} style={styles.source}>
+                  {label}
+                </Text>
+              ),
+            )}
+          </View>
+        )}
+        {routeLinks.length > 0 && (
+          <View style={styles.links}>
+            {routeLinks.map((link) => (
               <Pressable
-                key={label}
+                key={`${link.providerId}:${link.url}`}
                 accessibilityRole="link"
-                accessibilityLabel={`Climb on ${label}`}
+                accessibilityLabel={`${name} route on ${providerSourceLabel(link.providerId)}`}
                 style={styles.sourceLink}
                 onPress={() => {
-                  void openSource(tickSource.url);
+                  void openSource(link.url);
                 }}
               >
-                <Text style={styles.sourceLinkText}>Climb</Text>
-                <ProviderLogo provider={tickSource.providerId} serverUrl={SERVER_URL} size={14} />
+                <Text style={styles.sourceLinkText}>Route</Text>
+                <ProviderLogo provider={link.providerId} serverUrl={SERVER_URL} size={14} />
+                <Text
+                  style={styles.linkCue}
+                  accessibilityElementsHidden
+                  importantForAccessibility="no"
+                >
+                  ↗
+                </Text>
               </Pressable>
-            ) : (
-              <Text key={label} style={styles.source}>
-                {label}
-              </Text>
-            ),
-          )}
-        </View>
-      )}
-      {routeLinks.length > 0 && (
-        <View style={styles.links}>
-          {routeLinks.map((link) => (
-            <Pressable
-              key={`${link.providerId}:${link.url}`}
-              accessibilityRole="link"
-              accessibilityLabel={`${name} route on ${providerSourceLabel(link.providerId)}`}
-              style={styles.sourceLink}
-              onPress={() => {
-                void openSource(link.url);
-              }}
-            >
-              <Text style={styles.sourceLinkText}>Route</Text>
-              <ProviderLogo provider={link.providerId} serverUrl={SERVER_URL} size={14} />
-            </Pressable>
-          ))}
-        </View>
-      )}
+            ))}
+          </View>
+        )}
+      </View>
     </View>
   );
 }
@@ -114,10 +130,11 @@ const styles = StyleSheet.create({
   sourceLink: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    paddingBottom: 2,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.textTertiary,
+    gap: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: colors.accentSubtle,
   },
   sourceLinkText: {
     color: colors.textSecondary,
@@ -125,5 +142,6 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     lineHeight: 18,
   },
-  links: { flexDirection: "row", flexWrap: "wrap", columnGap: 12, rowGap: 8 },
+  linkCue: { color: colors.textTertiary, fontSize: 12 },
+  links: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 8 },
 });

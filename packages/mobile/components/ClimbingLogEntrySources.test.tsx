@@ -46,8 +46,8 @@ describe("ClimbingLogEntrySources", () => {
     );
     const climb = screen.getByRole("link", { name: `Climb on ${label}` });
     const route = screen.getByRole("link", { name: `Swiss Cheese route on ${label}` });
-    expect(climb.textContent).toBe("Climb");
-    expect(route.textContent).toBe("Route");
+    expect(climb.textContent).toBe("Climb↗");
+    expect(route.textContent).toBe("Route↗");
     expect(climb.querySelector("Image, SvgUri")).toBeTruthy();
     expect(route.querySelector("Image, SvgUri")).toBeTruthy();
     fireEvent.click(climb);

@@ -46,47 +46,54 @@ export function ClimbingLogEntrySources({
             name
           ))}
       </h4>
-      {visibleSources.length > 0 && (
-        <p className="text-xs text-dim">
-          {visibleSources.map(({ label, tickSource }, index) => (
-            <span key={label}>
-              {index > 0 && ", "}
-              {tickSource ? (
+      <div className="flex flex-wrap items-center gap-2">
+        {visibleSources.length > 0 && (
+          <p className="flex flex-wrap items-center gap-2 text-xs text-dim">
+            {visibleSources.map(({ label, tickSource }) => (
+              <span key={label}>
+                {tickSource ? (
+                  <a
+                    href={tickSource.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={`Climb on ${label}`}
+                    className="inline-flex items-center gap-1.5 rounded-md bg-accent/8 px-2 py-1 align-middle font-medium text-muted hover:bg-accent/15 hover:text-accent"
+                  >
+                    Climb
+                    <ProviderLogo provider={tickSource.providerId} size={14} />
+                    <span aria-hidden="true" className="text-dim">
+                      ↗
+                    </span>
+                  </a>
+                ) : (
+                  label
+                )}
+              </span>
+            ))}
+          </p>
+        )}
+        {routeLinks.length > 0 && (
+          <ul className="flex flex-wrap gap-2 text-xs">
+            {routeLinks.map((link) => (
+              <li key={`${link.providerId}:${link.url}`}>
                 <a
-                  href={tickSource.url}
+                  href={link.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  aria-label={`Climb on ${label}`}
-                  className="inline-flex items-center gap-1 border-b border-accent/40 pb-0.5 align-middle font-medium text-muted hover:border-accent hover:text-accent"
+                  aria-label={`${name} route on ${providerSourceLabel(link.providerId)}`}
+                  className="inline-flex items-center gap-1.5 rounded-md bg-accent/8 px-2 py-1 font-medium text-muted hover:bg-accent/15 hover:text-accent"
                 >
-                  Climb
-                  <ProviderLogo provider={tickSource.providerId} size={14} />
+                  Route
+                  <ProviderLogo provider={link.providerId} size={14} />
+                  <span aria-hidden="true" className="text-dim">
+                    ↗
+                  </span>
                 </a>
-              ) : (
-                label
-              )}
-            </span>
-          ))}
-        </p>
-      )}
-      {routeLinks.length > 0 && (
-        <ul className="flex flex-wrap gap-x-3 gap-y-1 text-xs">
-          {routeLinks.map((link) => (
-            <li key={`${link.providerId}:${link.url}`}>
-              <a
-                href={link.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label={`${name} route on ${providerSourceLabel(link.providerId)}`}
-                className="inline-flex items-center gap-1 border-b border-accent/40 pb-0.5 font-medium text-muted hover:border-accent hover:text-accent"
-              >
-                Route
-                <ProviderLogo provider={link.providerId} size={14} />
-              </a>
-            </li>
-          ))}
-        </ul>
-      )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </div>
   );
 }
