@@ -36077,6 +36077,15 @@ No runtime behavior, timeout, retry or production configuration changed.
   first broad unit run's three outdated query-source/order assertions were
   updated; the subsequent full run was green. Production remains unresolved
   pending the preparation and release gates above.
+## 2026-11-09 — Server CD waits behind TestFlight publication
+
+- **Symptoms / impact:** At approximately 21:29 UTC, [automatic handoff 42696468845](https://github.com/Asherlc/dofek/actions/runs/42696468845/job/129430296562) remained in `Dispatch and watch the selected release workflow`. Its [child Deploy run 42696714405](https://github.com/Asherlc/dofek/actions/runs/42696714405) was `pending` with no jobs, while a newer automatic handoff was also pending. This was a queue blockage, with no fatal command or error line in the observed jobs.
+- **Evidence / cause:** [Earlier release 42691969726](https://github.com/Asherlc/dofek/actions/runs/42691969726) completed its server stack at 20:49:15 UTC and OTA at 20:52:37 UTC, but its [TestFlight upload 129449289736](https://github.com/Asherlc/dofek/actions/runs/42691969726/job/129449289736) remained `queued`, requiring `macos-latest` with no runner assigned. That historical workflow holds `deploy-web-production` for the entire release, including mobile jobs; the new child requires the same group. GitHub documents that another run in the same [workflow concurrency group remains pending](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency). Both releases selected `e620cdbd07b9588a97dc0825d5569ec93229ad18`, so the pending child would deploy the same server revision again. The underlying runner-allocation delay was not diagnosed.
+- **Change history:** [#3185](https://github.com/Asherlc/dofek/pull/3185) restored mobile jobs inside the server workflow's lock. [#3245](https://github.com/Asherlc/dofek/pull/3245) added a separate handoff, immutable release tag, dispatch, and watcher to address the workflow/release revision mismatch documented above; it did not separate mobile completion from production serialization.
+- **Status / follow-up:** Unresolved; no runs were cancelled, deployments dispatched, or workflow behavior changed during diagnosis. Proposed direction awaiting user alignment: direct server CD with independent automatic mobile publication, preserving deployment gates and consistent workflow/source/image revisions. Next time use gh-fix-ci and inspect every unfinished job in the lock-owning run. Proposed runbook addition: explicitly identify the production lock owner and distinguish successful server rollout from pending mobile distribution before rerunning a release.
+- **Observed progression:** The earlier run completed successfully at 21:42 UTC and the pending child entered `in_progress` at 21:43 UTC without operator intervention. This cleared that queue blockage; it did not change the workflow-wide locking behavior.
+- **Approved durable fix prepared:** The user approved restoring direct server CD with independent automatic mobile publication. Deploy Web now calls the existing environment workflow directly, and only the server jobs in Deploy Web and Deploy own `deploy-web-production`. Mobile publication still depends on the successful server's verified source SHA, under the existing mobile locks. Automatic eligibility requires successful main-push CI at the caller's SHA, keeping workflows, source and immutable image aligned; superseded completions skip instead of selecting an older ancestor. The custom selector, release-tag creation, dispatch watcher and their obsolete tests are removed. See the [deployment procedure](../deploy/README.md#flow-diagram), GitHub's [job concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency), and [workflow_run revision semantics](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_run).
+- **Validation / remaining risk:** All 118 retained deployment/image/TestFlight tests, changed-workflow actionlint with shellcheck, repository-wide CI actionlint (`-shellcheck=`), source-policy lint, root/server/web typechecks, and canonical spelling passed locally. The full Docker-free unit/mobile run passed 1,460 files and 23,939 tests, with the existing two files/19 tests skipped. Independent review found no functional issues; its two stale runbook statements about mobile lock ownership were corrected. The direct flow has not been merged or exercised in production. No retry, timeout, sleep or weakened deployment gate was added; existing bounded production-readiness waits remain unchanged. A busy main branch waits for its current commit to pass CI, so a superseded green ancestor is no longer an automatic release candidate.
 
 ## 2026-11-09 — theCrag region canonical URLs reject catalogue enrichment
 
@@ -36119,10 +36128,13 @@ No runtime behavior, timeout, retry or production configuration changed.
   [package access control](https://docs.github.com/en/packages/learn-github-packages/configuring-a-packages-access-control-and-visibility).
 - **Remaining / next time:** The daily target is not initialized and the PR is
   unmerged. Do not bypass the security check or release the reader early. A
-  proposed switch to the existing one-shot dbt runtime awaits direction; the
-  same registry denial must also be corrected for required CI. Browser settings
+  proposed switch to the existing one-shot dbt runtime was withdrawn; preparation
+  retains the candidate-image strategy. The same registry denial must also be
+  corrected for required CI. Browser settings
   inspection was unavailable because computer-use could not bind an app window.
-  No cache deletion, permission change, gate suppression or speculative rerun
-  was performed. Use gh-fix-ci and the cutover runbook next time; add an
+  A diagnostic rerun with debug logging reproduced the E2E cache denial; this
+  was not a fix. Authenticated owner ranged GETs returned HTTP 206 for both
+  original failing blobs. No cache deletion, permission change or gate
+  suppression was performed. Use gh-fix-ci and the cutover runbook next time; add an
   authenticated cache-blob read to registry diagnostics before treating a
   layer-download failure as cache corruption.
