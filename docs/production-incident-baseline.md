@@ -35991,6 +35991,18 @@ The focused corrected integration case was attempted but PostgreSQL failed to cr
   [service updates](https://docs.docker.com/reference/cli/docker/service/update/)
   and [task states](https://docs.docker.com/engine/swarm/how-swarm-mode-works/swarm-task-states/).
 
+## 2026-11-09 — Climbing-link PR validation encounters local Docker address-pool exhaustion
+
+- **Symptoms/impact:** Local validation only; no production impact. After `pnpm compose:env --write`, `pnpm compose -- up -d --wait clickhouse` failed at network creation with `all predefined address pools have been fully subnetted`.
+- **Root cause/evidence:** Docker could not allocate the workspace's default network; ClickHouse never started. This was a workstation prerequisite failure.
+- **Status/follow-up:** Unresolved locally. No other workspace networks, containers, or volumes were removed, and no runtime retry or network configuration was changed. SQL lint requires a working isolated ClickHouse prerequisite; the [CI lint job](../.github/workflows/test.yml) supplies its own service.
+
+## 2026-11-09 — Automatic production deployment re-enabled
+
+- **Symptoms/root cause:** GitHub reported the [Deploy Web workflow](../.github/workflows/deploy-web.yml) as `disabled_manually`, blocking its automatic release path after successful main CI. The original disabling actor and reason remain unknown.
+- **Fix/authorization:** At the user's explicit request, ran `gh workflow enable deploy-web.yml --repo Asherlc/dofek`. No deployment was manually dispatched and no runtime resilience settings were changed.
+- **Validation/follow-up:** The workflow read-back returned `active`; the complete repository workflow inventory reported 37 active workflows and none disabled. This verifies workflow enablement, not a completed production rollout. Follow the [deployment verification runbook](../deploy/README.md#checking-the-latest-production-deployment) to confirm the next release. For future intentional disablements, record the reason and restoration owner.
+
 ## 2026-11-09 — Read-only Terraform review checkout input
 
 - **Impact:** No production resource change. The plan-only review job
