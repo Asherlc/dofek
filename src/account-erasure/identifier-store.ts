@@ -973,22 +973,32 @@ export async function captureAccountErasurePostgresIdentifiers(
     { family: "sleep", table: sql`fitness.sleep_session`, column: sql`id` },
     { family: "operation", table: sql`fitness.processing_operation`, column: sql`id` },
   ] as const;
-  for (const source of sources) {
+  for (const family of ["activity", "sleep", "operation"] as const) {
+    const identifiers = sql.join(
+      sources
+        .filter((source) => source.family === family)
+        .map(
+          (source) => sql`
+      SELECT ${source.column} AS id FROM ${source.table}
+      WHERE user_id=${userId}::uuid AND ${source.column} IS NOT NULL`,
+        ),
+      sql` UNION `,
+    );
     let after: string | undefined;
     while (true) {
       const rows = await executeWithSchema(
         transaction,
         z.object({ id: identifierSchema }),
-        sql`SELECT ${source.column} AS id FROM ${source.table}
-          WHERE user_id=${userId}::uuid AND ${source.column} IS NOT NULL
-            ${after === undefined ? sql`` : sql`AND ${source.column}>${after}::uuid`}
-          ORDER BY ${source.column} LIMIT ${ACCOUNT_ERASURE_IDENTIFIER_PAGE_SIZE}`,
+        sql`WITH identifiers AS (${identifiers})
+          SELECT id FROM identifiers
+          ${after === undefined ? sql`` : sql`WHERE id>${after}::uuid`}
+          ORDER BY id LIMIT ${ACCOUNT_ERASURE_IDENTIFIER_PAGE_SIZE}`,
       );
       if (rows.length === 0) break;
       await appendIdentifierValues(
         transaction,
         requestId,
-        source.family,
+        family,
         rows.map((row) => row.id),
       );
       if (rows.length < ACCOUNT_ERASURE_IDENTIFIER_PAGE_SIZE) break;

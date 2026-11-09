@@ -1325,6 +1325,66 @@ describe("request-owned account erasure identifiers", () => {
     }
   });
 
+  test("captures overlapping parent roots once per family without retaining another owner's roots", async () => {
+    let expected: Awaited<ReturnType<typeof seedParents>> | undefined;
+    const alias = randomUUID();
+    const request = await createRequest(async (userId) => {
+      expected = await seedParents(userId, 3);
+      const shared = expected.activity[0];
+      if (!shared) throw new Error("Missing shared fixture root");
+      const groups = await context.db.execute(
+        sql`SELECT id FROM fitness.activity_group WHERE user_id=${userId}::uuid LIMIT 1`,
+      );
+      await context.db.execute(sql`INSERT INTO fitness.activity_group_alias(alias_id,group_id,user_id,reason)
+        VALUES (${alias}::uuid,${groups[0]?.id}::uuid,${userId}::uuid,'merge')`);
+      await context.db.execute(sql`INSERT INTO fitness.processing_operation(id,user_id,kind,dataset_keys)
+        VALUES (${shared}::uuid,${userId}::uuid,'provider_sync',ARRAY['activity'])`);
+      await context.db.execute(sql`INSERT INTO fitness.sleep_session(id,user_id,provider_id,started_at)
+        VALUES (${shared}::uuid,${userId}::uuid,'identifier-parent-fixture',now())`);
+      expected.activity.push(alias);
+      expected.operation.push(shared);
+      expected.sleep.push(shared);
+    }, false);
+    const other = await createRequest(async (userId) => {
+      await seedParents(userId, 1);
+    }, false);
+    await context.db.execute(
+      sql`CREATE TABLE fitness.identifier_capture_attempt (family text,identity_key text)`,
+    );
+    await context.db.execute(sql`CREATE FUNCTION fitness.record_identifier_capture_attempt() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN INSERT INTO fitness.identifier_capture_attempt VALUES(NEW.family,NEW.identity_key); RETURN NEW; END $$`);
+    await context.db.execute(sql`CREATE TRIGGER record_identifier_capture_attempt BEFORE INSERT ON fitness.account_erasure_identifier
+      FOR EACH ROW EXECUTE FUNCTION fitness.record_identifier_capture_attempt()`);
+    try {
+      await context.db.transaction((tx) => captureAccountErasurePostgresIdentifiers(tx, request));
+      const store = new AccountErasureIdentifierStore(context.db, { ...request, pageSize: 2 });
+      for (const family of families) {
+        const rows =
+          await context.db.execute(sql`SELECT count(*)::integer AS attempts,count(DISTINCT identity_key)::integer AS distinct_keys
+          FROM fitness.identifier_capture_attempt WHERE family=${family}`);
+        expect(rows).toEqual([
+          { attempts: expected?.[family].length, distinct_keys: expected?.[family].length },
+        ]);
+        const values: string[] = [];
+        let cursor: string | undefined;
+        do {
+          const page = await store.readPage(family, cursor);
+          values.push(...page.entries.map((entry) => entry.value));
+          if (page.nextCursor && cursor) expect(page.nextCursor > cursor).toBe(true);
+          cursor = page.nextCursor ?? undefined;
+        } while (cursor);
+        expect(values.sort()).toEqual(expected?.[family].slice().sort());
+        expect(await storedRows(other.requestId, family)).toEqual([]);
+      }
+    } finally {
+      await context.db.execute(
+        sql`DROP TRIGGER record_identifier_capture_attempt ON fitness.account_erasure_identifier`,
+      );
+      await context.db.execute(sql`DROP FUNCTION fitness.record_identifier_capture_attempt()`);
+      await context.db.execute(sql`DROP TABLE fitness.identifier_capture_attempt`);
+    }
+  });
+
   test("rolls back parent pages and the capture seal when activation rolls back", async () => {
     const request = await createRequest(async (userId) => {
       await seedParents(userId, 1);
