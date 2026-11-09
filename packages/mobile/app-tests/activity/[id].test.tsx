@@ -2278,7 +2278,7 @@ describe("ActivityDetailScreen", () => {
       name: "Swiss Cheese route on mountain-project",
     }))
       fireEvent.click(link);
-    for (const link of screen.getAllByRole("link", { name: "mountain-project" }))
+    for (const link of screen.getAllByRole("link", { name: "Climb on mountain-project" }))
       fireEvent.click(link);
     expect(Linking.openURL).toHaveBeenCalledWith(
       "https://www.mountainproject.com/route/105734732/swiss-cheese",

@@ -284,5 +284,5 @@ it.each([
   render(<ClimbingLogEntryCard entry={entry} onSelect={vi.fn()} />);
   expect(
     screen.getByRole("link", { name: `Corner ${label.toLowerCase()} on Mountain Project` }),
-  ).toHaveTextContent(`${label} on Mountain Project`);
+  ).toHaveTextContent(label);
 });

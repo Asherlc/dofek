@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { Alert, Linking } from "react-native";
+import { Alert, Linking, Pressable, Text } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { captureException } from "../lib/telemetry";
 import { ClimbingLogEntrySources } from "./ClimbingLogEntrySources";
@@ -25,6 +25,37 @@ const links = [
 ];
 describe("ClimbingLogEntrySources", () => {
   beforeEach(() => vi.clearAllMocks());
+  it.each([
+    ["mountain-project", "Mountain Project"],
+    ["openbeta", "OpenBeta"],
+  ])("labels selectable climb links for %s", (providerId, label) => {
+    render(
+      <ClimbingLogEntrySources
+        climbKind="route"
+        name="Swiss Cheese"
+        sourceName={label}
+        titleControl={
+          <Pressable accessibilityRole="button">
+            <Text>Swiss Cheese</Text>
+          </Pressable>
+        }
+        links={[
+          { providerId, kind: "ticks", url: "https://example.com/ticks" },
+          { providerId, kind: "route", url: "https://example.com/route" },
+        ]}
+      />,
+    );
+    const climb = screen.getByRole("link", { name: `Climb on ${label}` });
+    const route = screen.getByRole("link", { name: `Swiss Cheese route on ${label}` });
+    expect(climb.textContent).toBe("Climb↗");
+    expect(route.textContent).toBe("Route↗");
+    expect(climb.querySelector("Image, SvgUri")).toBeTruthy();
+    expect(route.querySelector("Image, SvgUri")).toBeTruthy();
+    fireEvent.click(climb);
+    fireEvent.click(route);
+    expect(Linking.openURL).toHaveBeenNthCalledWith(1, "https://example.com/ticks");
+    expect(Linking.openURL).toHaveBeenNthCalledWith(2, "https://example.com/route");
+  });
   it.each(["Mountain Project, OpenBeta", "OpenBeta"])(
     "opens each provider name's tick history with attribution %s",
     (sourceName) => {
@@ -39,8 +70,8 @@ describe("ClimbingLogEntrySources", () => {
       expect(screen.getAllByRole("link")).toHaveLength(4);
       for (const label of [
         "Swiss Cheese on Mountain Project",
-        "Mountain Project",
-        "OpenBeta",
+        "Climb on Mountain Project",
+        "Climb on OpenBeta",
         "Swiss Cheese route on OpenBeta",
       ]) {
         fireEvent.click(screen.getByRole("link", { name: label }));
@@ -62,7 +93,7 @@ describe("ClimbingLogEntrySources", () => {
         links={links.filter((link) => link.providerId === "openbeta")}
       />,
     );
-    fireEvent.click(screen.getByRole("link", { name: "OpenBeta" }));
+    fireEvent.click(screen.getByRole("link", { name: "Climb on OpenBeta" }));
     expect(Linking.openURL).toHaveBeenCalledWith(links[2]?.url);
   });
   it("reports an opening failure and shows the reason", async () => {
@@ -76,7 +107,7 @@ describe("ClimbingLogEntrySources", () => {
         links={links}
       />,
     );
-    fireEvent.click(screen.getByRole("link", { name: "Mountain Project" }));
+    fireEvent.click(screen.getByRole("link", { name: "Climb on Mountain Project" }));
     await waitFor(() =>
       expect(captureException).toHaveBeenCalledWith(error, {
         source: "open-external-url",
@@ -98,8 +129,8 @@ describe("ClimbingLogEntrySources", () => {
       />,
     );
     expect(screen.getByText("Swiss Cheese")).toBeTruthy();
-    expect(screen.getByText("OpenBeta")).toBeTruthy();
-    fireEvent.click(screen.getByRole("link", { name: "OpenBeta" }));
+    expect(screen.getByText("Climb")).toBeTruthy();
+    fireEvent.click(screen.getByRole("link", { name: "Climb on OpenBeta" }));
     expect(Linking.openURL).toHaveBeenCalledWith(links[2]?.url);
   });
   it("preserves an unlinked source beside a different provider's tick history", () => {
@@ -113,7 +144,7 @@ describe("ClimbingLogEntrySources", () => {
     );
     expect(screen.getByText("Kaya")).toBeTruthy();
     expect(screen.queryByRole("link", { name: "Kaya" })).toBeNull();
-    fireEvent.click(screen.getByRole("link", { name: "OpenBeta" }));
+    fireEvent.click(screen.getByRole("link", { name: "Climb on OpenBeta" }));
     expect(Linking.openURL).toHaveBeenCalledWith(links[2]?.url);
   });
   it("keeps mixed attribution readable when one provider has no tick history", () => {
@@ -125,7 +156,7 @@ describe("ClimbingLogEntrySources", () => {
         links={links.filter((link) => link.providerId === "mountain-project")}
       />,
     );
-    fireEvent.click(screen.getByRole("link", { name: "Mountain Project" }));
+    fireEvent.click(screen.getByRole("link", { name: "Climb on Mountain Project" }));
     expect(Linking.openURL).toHaveBeenCalledWith(links[3]?.url);
     expect(screen.getByText("Kaya")).toBeTruthy();
     expect(screen.queryByRole("link", { name: "Kaya" })).toBeNull();
@@ -156,6 +187,6 @@ describe("ClimbingLogEntrySources", () => {
     );
     expect(screen.getByRole("link", { name: "Swiss Cheese on Mountain Project" })).toBeTruthy();
     expect(screen.getByText("Mountain Project")).toBeTruthy();
-    expect(screen.queryByRole("link", { name: "Mountain Project" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Climb on Mountain Project" })).toBeNull();
   });
 });

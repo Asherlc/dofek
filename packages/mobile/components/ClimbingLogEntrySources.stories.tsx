@@ -72,6 +72,7 @@ export const TickHistoryOnly: Story = {
 
 export const WithSelection: Story = {
   args: {
+    ...RouteWithTickHistory.args,
     titleControl: (
       <Pressable accessibilityRole="button">
         <Text>Swiss Cheese</Text>
