@@ -297,7 +297,8 @@ async function belongsToAccount(
     return (await identifiers.store.findPresent("operation", [event.operationId])).length > 0;
   }
   if (isMetricStreamDeletedEvent(event)) {
-    if (event.scope.userId !== undefined) return event.scope.userId === identifiers.userId;
+    if (event.scope.userId !== undefined)
+      return event.scope.userId.toLowerCase() === identifiers.userId.toLowerCase();
     return (
       event.scope.activityId !== undefined &&
       (await identifiers.store.findPresent("activity", [event.scope.activityId])).length > 0
@@ -305,7 +306,7 @@ async function belongsToAccount(
   }
   // Every sample has an explicit owner. Alias closure cannot override it, and
   // unrelated samples need no identifier-store transaction during archive scans.
-  return event.userId === identifiers.userId;
+  return event.userId.toLowerCase() === identifiers.userId.toLowerCase();
 }
 
 function toBuffer(chunk: unknown): Buffer {

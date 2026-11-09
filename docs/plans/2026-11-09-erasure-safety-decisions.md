@@ -1,12 +1,15 @@
 # Erasure safety decision package
 
-Status: proposed implementation direction, awaiting approval. This document
+Status: approved for offline implementation followed by normal PR merge. The
+user selected “Implement the safety plan, then merge (Recommended).” This document
 resolves the choices in the [six retained review threads](https://github.com/Asherlc/dofek/pull/3234#discussion_r4507302091);
 it does not assert that their fixes exist or authorize a production action.
 Reviewed against erasure head `1f0cdddb5` containing main `6fe1d4fbd`.
 The later main synchronization includes [PR3237](https://github.com/Asherlc/dofek/pull/3237)
 at `d4e7a34e4`; its shared quarantine validation does not change these proposed
-writer, recovery or key decisions.
+writer, recovery or key decisions. The
+[execution plan](../superpowers/plans/2026-11-09-erasure-safety-implementation.md)
+tracks the approved work; approval does not assert that its fixes already exist.
 
 ## Recommended decisions
 

@@ -1,3 +1,4 @@
+import { EventEmitter, once } from "node:events";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AccountErasureRouteHighWatermark } from "../account-erasure/redpanda-drain.ts";
 import type { AccountErasureRemoteSnapshot } from "../account-erasure/remote-snapshot.ts";
@@ -212,6 +213,27 @@ describe("createAccountErasurePhaseRunner", () => {
     expect(deps.assertConsumersDrained).toHaveBeenCalledWith(highWatermarks);
   });
 
+  it("captures quarantine only after the serving consumers finish draining", async () => {
+    const deps = dependencies();
+    const barrier = new EventEmitter();
+    const started = once(barrier, "started");
+    const drained = once(barrier, "drained");
+    vi.mocked(deps.assertConsumersDrained).mockImplementationOnce(async () => {
+      barrier.emit("started");
+      await drained;
+    });
+    const runner = createAccountErasurePhaseRunner(deps);
+    const pending = runner.runPhase(
+      "consumer_drain",
+      execution({ loadCheckpointDetails: vi.fn().mockResolvedValue({ highWatermarks }) }),
+    );
+    await started;
+    expect(deps.captureQuarantineHighWatermarks).not.toHaveBeenCalled();
+    barrier.emit("drained");
+    await expect(pending).resolves.toMatchObject({ quarantineHighWatermarks: highWatermarks });
+    expect(deps.captureQuarantineHighWatermarks).toHaveBeenCalledOnce();
+  });
+
   it("resumes an initial archive sweep but restarts final verification from the beginning", async () => {
     const deps = dependencies();
     vi.mocked(deps.eraseArchive)
@@ -243,6 +265,11 @@ describe("createAccountErasurePhaseRunner", () => {
     await expect(runner.runPhase("archive_initial", run)).resolves.toMatchObject({
       recordsRemoved: 4,
     });
+    expect(deps.eraseArchive).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ stage: "initial" }),
+      expect.objectContaining({ startAfter: "metric-stream/v1/2026/07/part-1.jsonl.gz" }),
+    );
     expect(run.saveProgress).toHaveBeenCalledWith({
       lastKey: "metric-stream/v1/2026/07/part-2.jsonl.gz",
     });

@@ -35959,6 +35959,11 @@ No production changes, strategy expansion, branch switch or rebase occurred.
   three mutants killed, zero survivors and 100% score. All 32 drain unit tests,
   root TypeScript and changed-file Biome passed. No runtime code, mutation gate,
   retry, timeout or limit changed. New-head remote CI remains required.
+  Subsequent [Stryker shard 12](https://github.com/Asherlc/dofek/actions/runs/42645413658/job/129259102244)
+  on source `118da53313fd5bb7e1a98ee43ce2806fc950757c` independently killed all
+  three checkpoint mutants at 100%. Its logged selection includes
+  `src/account-erasure/redpanda-drain.ts:40-45`; this successful immutable run
+  supplies the durable result and revision missing from the original failure link.
 - **Follow-up:** retain direct boundary/preservation assertions when shared
   checkpoint schemas change; use the existing CI-fix workflow to inspect actual
   surviving mutants. The separate publication/recovery safety decisions remain
@@ -35974,6 +35979,39 @@ schema and six regression cases. The shared quarantine/drain unit selection
 passed all 52 tests; TypeScript, Biome and diagnostic patch applicability passed.
 No runtime strategy expansion, production action, branch switch or rebase was
 performed. The newly merged head still requires remote CI qualification.
+
+## 2026-11-09 — Erasure review and local test-disk recovery
+
+- **Review evidence:** two new archive fixtures failed before the fix: an
+  uppercase archived owner or request UUID left both target records untouched
+  (`expected recordsRemoved: 2`, received `0`). The
+  [archive comparison](../src/account-erasure/archive-erasure.ts) now normalizes
+  both UUIDs while preserving explicit foreign ownership, including overlapping
+  activity aliases. Focused archive/phase suites passed 70 tests and all 13
+  changed-line archive mutants were killed locally; remote qualification of this
+  new change remains required. The phase suite also restores drain-before-capture
+  and initial archive-cursor assertions; the real-engine wrapper forwards SDK close.
+- **Local infrastructure failure:** the focused real-engine fixture could not
+  enter its body because PostgreSQL `CREATE DATABASE` failed with `No space left
+  on device`. Docker Desktop's local 80 GiB filesystem had no available space;
+  all images/containers were in use and build cache was empty. No test or timeout
+  was weakened. Removing two exact completed, idle integration templates without
+  `FORCE` recovered 55,364,990 database bytes but did not restore sufficient capacity.
+- **Cleanup scope:** the user requested cleanup instead of resizing. The owner
+  confirmed five old `pulsar-foundation` labs were completed and disposable.
+  Verified exact Compose project/cwd/service labels, stopped them through that
+  physical workspace's existing wrapper, rechecked `running=false`, then removed
+  only those five containers without volume removal. Docker documents
+  [Compose stop](https://docs.docker.com/reference/cli/docker/compose/stop/) and
+  [container removal/volume options](https://docs.docker.com/reference/cli/docker/compose/rm/).
+  All five named volumes remained present, the frozen checkout's before/after
+  status was identical, and local filesystem availability rose to 2,764,066,816
+  bytes. No unrelated workspace, active/unknown lab, named volume, Docker disk
+  limit, production resource or key was changed. The database fixture was then
+  restarted; its result is reported separately rather than inferred from free space.
+- **Next time:** use the existing PR-review/CI-debugging workflows and keep exact
+  schema/owner boundary cases. Confirm completed lab ownership before stopping
+  running local containers; a missing host PID or large layer alone is not proof.
 
 ## 2026-11-09 — Kafka shared release succeeds; quarantine override reset remains open
 

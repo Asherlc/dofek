@@ -722,6 +722,47 @@ describe("eraseMetricStreamArchive", () => {
     );
   });
 
+  it.each([
+    { label: "archive", archiveUppercase: true, requestUppercase: false },
+    { label: "request", archiveUppercase: false, requestUppercase: true },
+  ])("normalizes the $label UUID while preserving explicit foreign owners", async (input) => {
+    const storage = new MemoryArchiveStorage();
+    const key = "metric-stream/v1/date=2026-07-26/hour=10/metric-stream-v1-0-12-12.jsonl.gz";
+    const target = "a1000000-abcd-4abc-8abc-000000001994";
+    const foreign = "b2000000-abcd-4abc-8abc-000000001994".toUpperCase();
+    const archivedTarget = input.archiveUppercase ? target.toUpperCase() : target;
+    const activityId = "30000000-0000-4000-8000-000000001994";
+    const targetSample = metricEvent(archivedTarget, randomUUID());
+    const targetDelete = createMetricStreamDeletedEvent({ userId: archivedTarget }, "1");
+    const foreignSample = { ...metricEvent(foreign, randomUUID()), activityId };
+    const foreignDelete = createMetricStreamDeletedEvent({ userId: foreign, activityId }, "1");
+    storage.objects.set(
+      key,
+      gzipSync(
+        [targetSample, targetDelete, foreignSample, foreignDelete]
+          .map((event) => `${JSON.stringify(event)}\n`)
+          .join(""),
+      ),
+    );
+    const identifiers = {
+      userId: input.requestUppercase ? target.toUpperCase() : target,
+      stage: "initial" as const,
+      store: archiveIdentityFixture([activityId], []),
+    };
+
+    await expect(eraseMetricStreamArchive(storage, identifiers)).resolves.toMatchObject({
+      recordsRemoved: 2,
+      objectsRewritten: 1,
+    });
+    expect(gunzipSync(storage.objects.get(key) ?? Buffer.alloc(0)).toString("utf8")).toBe(
+      `${JSON.stringify(foreignSample)}\n${JSON.stringify(foreignDelete)}\n`,
+    );
+    await expect(eraseMetricStreamArchive(storage, identifiers)).resolves.toMatchObject({
+      recordsRemoved: 0,
+      objectsRewritten: 0,
+    });
+  });
+
   it.each([" ", "\t"])("rejects a %j line without a JSON record", async (payload) => {
     const storage = new MemoryArchiveStorage();
     const key = "metric-stream/v1/date=2026-07-26/hour=10/metric-stream-v1-0-16-16.jsonl.gz";
