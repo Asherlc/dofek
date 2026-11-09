@@ -6,10 +6,13 @@ The broker migration remains in its own workspace. This layer owns upstream
 Aiven/R2 configuration, remote deletion verification and tiered qualification;
 it extends the existing broker guard rather than duplicating it.
 
-**Offline review candidate, not approved for merge or activation.** The user
-selected upstream Aiven after reviewing adoption and commercial alternatives.
-Kafka WITH tiered storage remains the objective. There is no plugin fork or
-hot-log-only deployment mode. Production remains on Redpanda.
+**Phase 2: tiered storage after Kafka deployment.** The user's latest explicit
+order is Kafka first through PR #3233, then this separately approved tiered
+release. Use the [live parent phase-1 proposal](https://github.com/Asherlc/dofek/blob/kafka-broker-migration/deploy/kafka/phase1-approval.md)
+for Kafka-only execution scope. Upstream Aiven remains selected for phase 2;
+there is no plugin fork. This phase must preserve the phase-1 data, cluster/topic
+generations, offsets and archive identities. Existing fresh-tiered fixture proof
+does not alone qualify enabling tiering on an existing phase-1 broker.
 
 ## Intended configuration
 

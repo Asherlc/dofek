@@ -1,4 +1,15 @@
-# Kafka with tiered storage: release proposal
+# Phase 2 reference: tiered storage after Kafka
+
+**Superseded as a combined first-cutover execution proposal.** The user now
+explicitly requests Kafka first, then tiered storage. Phase 1 uses the [live
+parent proposal](https://github.com/Asherlc/dofek/blob/kafka-broker-migration/deploy/kafka/phase1-approval.md).
+PR #3236 is stacked on the parent again; the complete-child retarget proposal
+below is withdrawn. Phase 2 requires a separate reviewed stock transition from
+the same existing Kafka data/topic UUIDs: enable remote storage coherently and
+switch to the tiered worker, without creating a second topic generation.
+Do not execute the fresh-bootstrap/create-topic commands below on phase 1's
+existing broker. They remain qualification/provenance references, not current
+phase-2 mutation instructions. No tiered activation is authorized here.
 
 **Canonical review packet; no command below is authorized for execution.**
 This combines broker PR #3233 and tiered PR #3236 as production dependencies,
