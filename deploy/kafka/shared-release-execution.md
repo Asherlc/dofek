@@ -97,7 +97,7 @@ show explicit 128 MiB segments and remote=false on all six topics. The
 [current configs](../../docs/evidence/kafka-shared-production-release-20261109/topic-policy-after-release.json)
 show only quarantines reverting those two values to defaults.
 
-The existing [quarantine writer](../../src/metric-stream/redpanda-quarantine.ts)
+The [released quarantine writer](https://github.com/Asherlc/dofek/blob/6fe1d4fbd479cc1ed9be874538e2b7dc3c1b1551/src/metric-stream/redpanda-quarantine.ts)
 calls legacy `alterConfigs` on every connection with only cleanup policy,
 retention time and retention bytes. That API replaces the topic's override set;
 omitted settings revert to defaults. This is the behavior documented by
@@ -111,8 +111,10 @@ The current retention byte/time limits and native erasure checks remain in
 place. Nevertheless, **do not report the packet's all-six 128 MiB policy as
 verified**, and do not activate tiering while startup can discard independently
 configured remote-storage settings. Merely restoring the settings once would
-not fix the next reconnect. A durable fix and its release scope still require
-alignment; no new client/codec/framework or silent policy acceptance is implied.
+not fix the next reconnect. The user subsequently approved the narrow
+DescribeConfigs validation fix, now locally qualified in the
+[correction proposal](quarantine-config-correction.md). Its production release
+and topic correction have not been executed or authorized by that fix request.
 
 ## Retrospective and next step
 
