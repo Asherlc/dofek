@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { once } from "node:events";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -203,4 +204,118 @@ describe("pinned dbt publication completion", () => {
       ),
     ).rejects.toThrow("verified recovery");
   }, 120000);
+
+  it("retains the durable barrier when the executor dies during a real dbt write", async () => {
+    const resourceId = `dbt-parent-loss:${randomUUID()}`;
+    await writeFile(
+      join(project, "models", "owned_rows.sql"),
+      `{{ config(materialized='table',engine='MergeTree()',order_by='n') }} SELECT number AS n,sleepEachRow(0.002) AS erasure_parent_loss_marker FROM numbers(1000)`,
+    );
+    const script = `
+      import {spawn} from 'node:child_process';
+      import {createDatabaseFromEnv} from './src/db/index.ts';
+      import {createClickHouseClientFromEnv} from './src/db/clickhouse.ts';
+      import {withAnalyticsQueryOwner} from './src/analytics/analytics-query-owner.ts';
+      import {runOwnedDbtBuild} from './src/analytics/dbt-build.ts';
+      const {project,resourceId}=JSON.parse(process.argv[1]);
+      const db=createDatabaseFromEnv(),client=createClickHouseClientFromEnv();
+      try {
+        await withAnalyticsQueryOwner(db,client,{resourceId,intentId:'parent-loss'},
+          owner=>runOwnedDbtBuild(owner,project+'/target','all',()=>new Promise((resolve,reject)=>{
+            const child=spawn('uv',['run','--frozen','--project','analytics','dbt','build','--project-dir',project,'--profiles-dir','analytics','--target','dev','--threads','1','--target-path',project+'/target','--select','owned_rows'],{stdio:'ignore',env:process.env});
+            child.once('spawn',()=>process.send({dbtPid:child.pid}));
+            child.once('error',reject); child.once('close',code=>resolve(code??1));
+          })));
+      } finally {await client.close();await db.$client.end();}
+    `;
+    const parent = spawn(
+      process.execPath,
+      [
+        "--import",
+        "tsx",
+        "--input-type=module",
+        "-e",
+        script,
+        JSON.stringify({ project, resourceId }),
+      ],
+      {
+        env: {
+          ...process.env,
+          DATABASE_URL: context.connectionString,
+          DBT_CLICKHOUSE_SCHEMA: database,
+          UV_PROJECT_ENVIRONMENT: "../.venv-analytics",
+        },
+        stdio: ["ignore", "ignore", "ignore", "ipc"],
+      },
+    );
+    const exited = once(parent, "exit");
+    let dbtPid: number | undefined;
+    let dbtFinished = false;
+    const terminateDbt = () => {
+      if (dbtPid === undefined || dbtFinished) return;
+      try {
+        process.kill(dbtPid, "SIGTERM");
+      } catch (error) {
+        if (!(error instanceof Error && "code" in error && error.code === "ESRCH")) throw error;
+      }
+    };
+    parent.on("message", (message) => {
+      if (
+        typeof message === "object" &&
+        message !== null &&
+        "dbtPid" in message &&
+        typeof message.dbtPid === "number"
+      )
+        dbtPid = message.dbtPid;
+    });
+    try {
+      await vi.waitFor(
+        async () => {
+          expect(dbtPid).toBeTypeOf("number");
+          const rows = await (
+            await client.query({
+              query:
+                "SELECT query_id FROM system.processes WHERE query LIKE '%erasure_parent_loss_marker%' AND query NOT LIKE '%system.processes%'",
+              format: "JSONEachRow",
+            })
+          ).json();
+          expect(rows.length).toBeGreaterThan(0);
+        },
+        { timeout: 20000, interval: 25 },
+      );
+      parent.kill("SIGTERM");
+      await exited;
+      await expect(
+        withAnalyticsQueryOwner(
+          context.db,
+          client,
+          { resourceId, intentId: "replacement" },
+          async () => undefined,
+        ),
+      ).rejects.toThrow("verified recovery");
+      expect(
+        await context.db.execute(
+          sql`SELECT quiescent,query_terminal FROM fitness.analytics_query_owner WHERE resource_id=${resourceId}`,
+        ),
+      ).toEqual([{ quiescent: false, query_terminal: false }]);
+      const pid = dbtPid;
+      if (pid === undefined) throw new Error("Missing admitted dbt process");
+      await vi.waitFor(
+        () => {
+          try {
+            process.kill(pid, 0);
+            throw new Error("Owned dbt child is still finishing");
+          } catch (error) {
+            if (!(error instanceof Error && "code" in error && error.code === "ESRCH")) throw error;
+          }
+        },
+        { timeout: 20000 },
+      );
+      dbtFinished = true;
+    } finally {
+      if (parent.exitCode === null && parent.signalCode === null) parent.kill("SIGTERM");
+      await exited;
+      terminateDbt();
+    }
+  }, 60000);
 });
