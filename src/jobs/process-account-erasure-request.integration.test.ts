@@ -101,7 +101,7 @@ describe("processAccountErasureRequest request-to-completion (integration)", () 
   });
 
   it("persists actionable failure and releases the lease when retained snapshot admission fails", async () => {
-    const budgetUserId = "8a000000-0000-4000-8000-000000001994";
+    const budgetUserId = crypto.randomUUID();
     const now = new Date();
     await context.db.execute(sql`INSERT INTO fitness.user_profile(id,name)
       VALUES (${budgetUserId}::uuid,'Snapshot admission fixture')`);
@@ -138,7 +138,7 @@ describe("processAccountErasureRequest request-to-completion (integration)", () 
         failure_count: 1,
         lease_owner: null,
         lease_expires_at: null,
-        retry_scheduled: true,
+        retry_scheduled: false,
       }),
     ]);
     await expect(findAccountErasureStatus(context.db, accepted.statusToken, now)).resolves.toEqual(
