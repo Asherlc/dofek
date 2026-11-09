@@ -57,10 +57,6 @@ class AwsEncryptionSdkCredentialEncryptionProvider implements CredentialEncrypti
   }
 
   async decryptValue(value: string, context: CredentialEncryptionContext): Promise<string> {
-    if (!isEncryptedCredentialValue(value)) {
-      return value;
-    }
-
     const encryptedBytes = Buffer.from(value.slice(encryptedValuePrefix.length), "base64");
     const { plaintext, messageHeader } = await decrypt(this.#keyring, encryptedBytes);
     verifyEncryptionContext(messageHeader.encryptionContext, context);
