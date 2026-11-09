@@ -33,8 +33,45 @@ it("groups located canonical logs by area and highlights repeated occurrences ac
   expect(cards[1]).toHaveTextContent("Corner");
   expect(cards[2]).toHaveTextContent("Indoor");
   expect(cards[1]).toHaveAttribute("aria-current", "true");
-  expect(screen.getByRole("heading", { name: "Wall" })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "Area: Wall" })).toBeInTheDocument();
   expect(screen.getAllByRole("region", { name: "Climbing locations" })).toHaveLength(2);
+});
+
+it("renders the complete recorded area path in a focusable scroll region", () => {
+  const climb = climbingClimbFixture();
+  const baseArea = climb.areaPath[0];
+  if (!baseArea) throw new Error("Expected an area fixture");
+  climb.areaPath = [
+    { ...baseArea, id: "california", name: "California", parentAreaId: null },
+    {
+      ...baseArea,
+      id: "sf-bay",
+      name: "San Francisco Bay Area",
+      parentAreaId: "california",
+    },
+    { ...baseArea, id: "east-bay", name: "East Bay Area", parentAreaId: "sf-bay" },
+    { ...baseArea, id: "berkeley", name: "Berkeley", parentAreaId: "east-bay" },
+    {
+      ...baseArea,
+      id: "cragmont",
+      name: "Cragmont Park",
+      parentAreaId: "berkeley",
+    },
+    {
+      ...baseArea,
+      id: "northeast-face",
+      name: "Northeast Face",
+      parentAreaId: "cragmont",
+    },
+  ];
+  const fullPath =
+    "California › San Francisco Bay Area › East Bay Area › Berkeley › Cragmont Park › Northeast Face";
+  render(<ClimbingLogEntryBreakdown entries={[climbingLogEntryFixture({ climb })]} />);
+  const heading = screen.getByRole("heading", { name: `Area: ${fullPath}` });
+  expect(heading).toHaveTextContent(fullPath);
+  const areaRegion = screen.getByRole("region", { name: `Area: ${fullPath}` });
+  expect(areaRegion).toHaveAttribute("tabindex", "0");
+  expect(areaRegion).toContainElement(heading);
 });
 
 it("keeps separate area groups and each attachment's original occurrence number", () => {
@@ -105,7 +142,9 @@ it("groups a shared area across providers while preserving both source records a
       onAttach={onAttach}
     />,
   );
-  expect(screen.getAllByRole("heading", { name: "Green Phantom Rock" })).toHaveLength(1);
+  expect(
+    screen.getAllByRole("heading", { name: "Area: Donner Summit › Green Phantom Rock" }),
+  ).toHaveLength(1);
   const area = within(screen.getByRole("list", { name: "Green Phantom Rock climbs" }));
   expect(area.getByRole("link", { name: "Road Kill on Mountain Project" })).toHaveAttribute(
     "href",

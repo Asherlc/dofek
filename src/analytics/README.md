@@ -42,3 +42,10 @@ Both observation and history writes use the existing account-erasure fence insid
 `INSERT … SELECT`, and fenced accounts are excluded from dirty-user selection.
 The [race fixtures](cycling-power-projector.integration.test.ts) activate erasure
 between source reads and each persistence boundary.
+
+History publication sends its event tuples as JSONEachRow request-body data
+through ClickHouse's [`input()` table function](https://clickhouse.com/docs/sql-reference/table-functions/input),
+keeping only compact metadata in HTTP query parameters. This preserves the
+fenced `INSERT … SELECT` while avoiding the per-field HTTP parameter limit;
+the [long-history regression](cycling-power-projector.integration.test.ts)
+round-trips evidence larger than 128 KiB.

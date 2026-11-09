@@ -357,14 +357,20 @@ jobs:
           ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10 "${SSH_USER}@${server_host}" 'sudo -n bash -se' <<'REMOTE'
           set -euo pipefail
           # Broker activation owns provisioning; application deploys only validate.
+          test -d /mnt/dofek-data/kafka/plugins/1.2.0/core
+          test -d /mnt/dofek-data/kafka/plugins/1.2.0/s3
           mountpoint -q /mnt/dofek-data || { echo "::error::Required data filesystem is not mounted"; exit 1; }
-          for path in /mnt/dofek-data/postgres /mnt/dofek-data/clickhouse /mnt/dofek-data/redpanda /mnt/dofek-data/kafka-broker/data /mnt/dofek-data/databasus /mnt/dofek-data/cloudbeaver /mnt/dofek-data/redis /mnt/dofek-data/peerdb-catalog /mnt/dofek-data/peerdb-minio; do
+          for path in /mnt/dofek-data/postgres /mnt/dofek-data/clickhouse /mnt/dofek-data/redpanda /mnt/dofek-data/kafka-broker/data /mnt/dofek-data/kafka/data /mnt/dofek-data/databasus /mnt/dofek-data/cloudbeaver /mnt/dofek-data/redis /mnt/dofek-data/peerdb-catalog /mnt/dofek-data/peerdb-minio; do
             if [ ! -d "$path" ]; then
               echo "::error::Required host bind mount path is missing: $path"
               exit 1
             fi
           done
           REMOTE
+
+          ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10 "${SSH_USER}@${server_host}" \
+            'cd /mnt/dofek-data/kafka/plugins && sha256sum --check --strict -' \
+            < deploy/kafka/plugin-sha256.txt
 
       - name: Wait for Kafka API readiness (external client)
         run: &kafka_api_readiness |
@@ -658,6 +664,51 @@ jobs:
 
       - name: Verify Kafka after dependency stack apply
         run: *kafka_api_readiness
+
+      - name: Verify Kafka tiered backend before migrations
+        run: &kafka_backend_verification |
+          set -euo pipefail
+          backend_directory="$(mktemp -d "$RUNNER_TEMP/kafka-backend.XXXXXX")"
+          trap 'rm -rf "$backend_directory"' EXIT
+          broker_task="$(docker service ps --no-trunc --filter desired-state=running --format '{{.ID}}' "${STACK_NAME}_kafka")"
+          if [ -z "$broker_task" ] || [[ "$broker_task" == *$'\n'* ]]; then
+            echo "::error::Expected one running Kafka task for backend verification"
+            exit 1
+          fi
+          broker_container="$(docker inspect --format '{{.Status.ContainerStatus.ContainerID}}' "$broker_task")"
+          docker cp "${broker_container}:/opt/kafka/config/server.properties" "$backend_directory/server.properties"
+          docker inspect --format '{{json .Config.Env}}' "$broker_container" > "$backend_directory/broker.json"
+          docker service inspect "${STACK_NAME}_worker" --format '{{json .Spec.TaskTemplate.ContainerSpec.Env}}' > "$backend_directory/worker.json"
+          node --input-type=module - "$backend_directory" <<'NODE'
+          import { readFileSync } from 'node:fs';
+          import { parseEnv } from 'node:util';
+          const directory = process.argv[2];
+          const expected = parseEnv(readFileSync(process.env.WORKER_ENV_FILE, 'utf8'));
+          const assignments = (file) => new Map(JSON.parse(readFileSync(`${directory}/${file}`, 'utf8')).map((line) => {
+            const separator = line.indexOf('=');
+            return [line.slice(0, separator), line.slice(separator + 1)];
+          }));
+          const broker = assignments('broker.json');
+          const worker = assignments('worker.json');
+          for (const key of ['KAFKA_CLUSTER_ID', 'KAFKA_TIERED_STORAGE_BUCKET', 'KAFKA_TIERED_STORAGE_ENDPOINT', 'KAFKA_TIERED_STORAGE_REGION', 'KAFKA_TIERED_STORAGE_ACCESS_KEY_ID', 'KAFKA_TIERED_STORAGE_SECRET_ACCESS_KEY']) {
+            if (!expected[key] || worker.get(key) !== expected[key]) throw new Error(`Kafka worker backend mismatch: ${key}`);
+          }
+          for (const [brokerKey, workerKey] of [['CLUSTER_ID', 'KAFKA_CLUSTER_ID'], ['AWS_ACCESS_KEY_ID', 'KAFKA_TIERED_STORAGE_ACCESS_KEY_ID'], ['AWS_SECRET_ACCESS_KEY', 'KAFKA_TIERED_STORAGE_SECRET_ACCESS_KEY']]) {
+            if (broker.get(brokerKey) !== worker.get(workerKey)) throw new Error(`Kafka broker backend mismatch: ${brokerKey}`);
+          }
+          const properties = readFileSync(`${directory}/server.properties`, 'utf8').split(/\r?\n/);
+          for (const [key, value] of [
+            ['rsm.config.storage.backend.class', 'io.aiven.kafka.tieredstorage.storage.s3.S3Storage'],
+            ['rsm.config.storage.s3.bucket.name', worker.get('KAFKA_TIERED_STORAGE_BUCKET')],
+            ['rsm.config.storage.s3.endpoint.url', worker.get('KAFKA_TIERED_STORAGE_ENDPOINT')],
+            ['rsm.config.storage.s3.region', worker.get('KAFKA_TIERED_STORAGE_REGION')],
+            ['rsm.config.key.prefix', `${worker.get('KAFKA_CLUSTER_ID')}/`],
+          ]) {
+            const matches = properties.filter((line) => line.startsWith(`${key}=`));
+            if (matches.length !== 1 || matches[0] !== `${key}=${value}`) throw new Error(`Kafka consumed backend mismatch: ${key}`);
+          }
+          console.log('Kafka broker and worker tiered backend match');
+          NODE
 
       - name: Wait for pre-migration web convergence
         if: steps.migration_deployment.outputs.mode == 'rolling'
@@ -982,6 +1033,9 @@ jobs:
 
       - name: Verify Kafka after requested-image stack apply
         run: *kafka_api_readiness
+
+      - name: Verify Kafka tiered backend after requested-image stack apply
+        run: *kafka_backend_verification
 
       - name: Wait for Postgres writable after stack deploy
         run: |

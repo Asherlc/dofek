@@ -20,9 +20,9 @@ R2 explicitly permits this [in-flight-write ordering](https://developers.cloudfl
 Its frequency has not been established and no such production incident was
 observed here. Do not describe observed absence as a guarantee against this
 accepted late commit.
-The user subsequently clarified “Fine by me” after being told such an orphan
-could persist indefinitely. Neither that accepted exception nor the historical
-stock-path recommendation below overrides the later rejection of Aiven.
+The user clarified “Fine by me” after being told such an orphan could persist
+indefinitely, then selected upstream Aiven. Keep ordinary deletion checks; do not
+implement the stronger protocol below under that selection.
 
 The preceding recommendation was to keep the stock plugin and qualify native terminal deletion plus complete
 generation-scoped object/multipart enumeration and local/retired-data checks

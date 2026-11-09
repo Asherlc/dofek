@@ -41,6 +41,7 @@ export function ClimbingLogEntryDetails({ entry }: { entry: ClimbingLogEntryDeta
   return (
     <View style={styles.container}>
       <ClimbingLogEntrySources
+        climbKind={climb?.kind ?? null}
         name={climbingLogEntryName(entry)}
         sourceName={entry.sourceName}
         links={entry.sourceLinks}

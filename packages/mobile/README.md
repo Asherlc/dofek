@@ -105,7 +105,10 @@ Activity details show climbing logs and same-day attachment suggestions for
 climbing activities. Cards group under Area headings and show published
 display grades, concise attempt counts, pitch labels, and server-derived rock labels
 through the [shared grouping helper](../training/src/climbing-log-groups.ts) and
-[card](components/ClimbingLogEntryCard.tsx). Provider records
+[card](components/ClimbingLogEntryCard.tsx). Each Area heading renders the complete
+recorded root-to-leaf lineage, emphasizing the final area, and keeps long paths on
+one line in a [horizontal ScrollView](https://reactnative.dev/docs/scrollview#horizontal).
+Provider records
 use server columns and filters, fetch the selected log's complete graph, and
 retain cached rows during refresh errors. Their
 [detail viewer](components/ClimbingLogEntryDetails.tsx) shows source links,
@@ -672,7 +675,8 @@ Source-map and release correlation:
 
 The activities screen leads with the shared rounded-outline activity icon.
 The [Lineage disclosure](components/ActivitySourceDisclosure.tsx) sits after the
-activity content and map, inside the same card. It shows an explicit Original
+activity content and map and opens the same scrollable [Modal](https://reactnative.dev/docs/modal)
+overlay as the detail header. It shows an explicit Original
 heading and labeled Shared to branches. When an Original is known, one divider
 and Other heading groups all additional recordings. Unresolved origins show
 Original unknown above the available recordings. The

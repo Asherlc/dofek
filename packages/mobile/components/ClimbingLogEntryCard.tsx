@@ -100,6 +100,7 @@ export function ClimbingLogEntryCard({
                 </Pressable>
               ) : undefined
             }
+            climbKind={entry.climb?.kind ?? null}
             name={name}
             sourceName={entry.sourceName}
             links={entry.sourceLinks}

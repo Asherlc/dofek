@@ -1,4 +1,5 @@
-import kafkaJs, { type Admin } from "kafkajs";
+import { randomUUID } from "node:crypto";
+import kafkaJs, { type Admin, type Consumer } from "kafkajs";
 import { z } from "zod";
 import {
   assertQuarantineTopicConfiguration,
@@ -166,6 +167,7 @@ export interface AccountErasureRedpandaAdmin {
   admin: RedpandaAdmin & Pick<Admin, "describeCluster" | "fetchTopicMetadata">;
   close(): Promise<void>;
   connect(): Promise<void>;
+  createMetadataConsumer(): Consumer;
   routes: Array<{ topic: string; consumerGroups: readonly string[] }>;
 }
 
@@ -185,14 +187,20 @@ export function createAccountErasureRedpandaAdminFromEnv(
   if (!brokers || brokers.length === 0) {
     throw new Error("REDPANDA_BROKERS is required for account erasure");
   }
-  const admin = new kafkaJs.Kafka({
+  const kafka = new kafkaJs.Kafka({
     brokers,
     clientId: "dofek-account-erasure",
-  }).admin();
+  });
+  const admin = kafka.admin();
   return {
     admin,
     close: () => admin.disconnect(),
     connect: () => admin.connect(),
+    createMetadataConsumer: () =>
+      kafka.consumer({
+        groupId: `dofek-account-erasure-storage-${randomUUID()}`,
+        maxBytes: 1024 * 1024,
+      }),
     routes,
   };
 }

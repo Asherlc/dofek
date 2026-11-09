@@ -85,15 +85,16 @@ export const OverlappingSources: Story = {
     entries: ["mountain-project", "openbeta"].map((providerId, index) => {
       const id = `30000000-0000-4000-8000-00000000000${index + 1}`;
       const areaId = `40000000-0000-4000-8000-00000000000${index + 1}`;
-      const regionId = `50000000-0000-4000-8000-00000000000${index + 1}`;
       const climb = climbingClimbFixture(providerId);
       climb.id = `60000000-0000-4000-8000-00000000000${index + 1}`;
       climb.name = index === 0 ? "Swiss Cheese" : "Left Arete";
       climb.areaId = areaId;
-      climb.areaPath = climb.areaPath.flatMap((area) => [
-        { ...area, id: regionId, name: "Donner Summit", parentAreaId: null },
-        { ...area, id: areaId, name: "Green Phantom Rock", parentAreaId: regionId },
-      ]);
+      climb.areaPath = climb.areaPath.map((area) => ({
+        ...area,
+        id: areaId,
+        name: "Green Phantom Rock",
+        parentAreaId: null,
+      }));
       return climbingLogEntryFixture({
         id,
         providerId,
@@ -118,7 +119,9 @@ export const OverlappingSources: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(canvas.getAllByRole("heading", { name: "Green Phantom Rock" })).toHaveLength(1);
+    await expect(canvas.getAllByRole("heading", { name: "Area: Green Phantom Rock" })).toHaveLength(
+      1,
+    );
     await expect(canvas.getByLabelText("Swiss Cheese on Mountain Project")).toBeVisible();
     await expect(canvas.getByLabelText("Left Arete on OpenBeta")).toBeVisible();
   },
@@ -237,8 +240,8 @@ export const SingleClimbWall: Story = {
         await expect(secondBounds.left).toBe(firstBounds.left);
       }
     });
-    await expect(canvas.getByRole("heading", { name: "Wreckage Wall" })).toBeVisible();
-    await expect(canvas.getByRole("heading", { name: "Memorial Wall" })).toBeVisible();
+    await expect(canvas.getByRole("heading", { name: "Area: Wreckage Wall" })).toBeVisible();
+    await expect(canvas.getByRole("heading", { name: "Area: Memorial Wall" })).toBeVisible();
   },
 };
 const areaBlockEntries = [
@@ -372,7 +375,7 @@ export const LongAreaName: Story = {
   decorators: SingleClimbWall.decorators,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    const heading = canvas.getByRole("heading", { name: longAreaName });
+    const heading = canvas.getByRole("heading", { name: `Area: ${longAreaName}` });
     const card = canvas.getByLabelText("Climbing entry: Hunger Pains");
     await expect(card.getBoundingClientRect().top).toBeGreaterThan(
       heading.getBoundingClientRect().bottom,

@@ -7,6 +7,7 @@ const meta = {
   component: ClimbingLogEntrySources,
   args: {
     name: "Swiss Cheese",
+    climbKind: "route",
     sourceName: "Mountain Project",
     links: [
       {
@@ -91,4 +92,8 @@ export const WithSelection: Story = {
       </button>
     ),
   },
+};
+
+export const BoulderProblem: Story = {
+  args: { ...WithSelection.args, climbKind: "boulder" },
 };

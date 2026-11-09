@@ -17,6 +17,7 @@ async function fixture(topic = "samples") {
   const partition = join(logs, `${topic}-0`);
   await mkdir(partition, { recursive: true });
   await mkdir(retired);
+  await mkdir(join(logs, "remote-log-index-cache"));
   await writeFile(join(logs, "meta.properties"), `version=1\ncluster.id=${clusterId}\nnode.id=1\n`);
   await writeFile(join(partition, "partition.metadata"), `version: 0\ntopic_id: ${topicId}\n`);
   await writeFile(join(partition, "00000000000000000100.log"), "newer records");
@@ -45,23 +46,41 @@ async function fixture(topic = "samples") {
           resourceName: "1",
           configEntries: [
             { configName: "log.dirs", configValue: "/var/lib/kafka/data" },
-            { configName: "remote.log.storage.system.enable", configValue: "false" },
+            { configName: "remote.log.storage.system.enable", configValue: "true" },
+            {
+              configName: "remote.log.storage.manager.class.name",
+              configValue: "io.aiven.kafka.tieredstorage.RemoteStorageManager",
+            },
+            {
+              configName: "remote.log.metadata.manager.class.name",
+              configValue:
+                "org.apache.kafka.server.log.remote.metadata.storage.TopicBasedRemoteLogMetadataManager",
+            },
           ],
         },
       ],
     })),
   };
-  const storage = new KafkaLogStorage(admin, {
-    directory: logs,
-    brokerDirectory: "/var/lib/kafka/data",
-    retiredDirectory: retired,
-    topics: [topic],
-  });
+  const remote = {
+    assertExpired: vi.fn(
+      async () => new Map<string, { topic: string; topicId: string; startOffset: string }>(),
+    ),
+  };
+  const storage = new KafkaLogStorage(
+    admin,
+    {
+      directory: logs,
+      brokerDirectory: "/var/lib/kafka/data",
+      retiredDirectories: [retired],
+      topics: [topic],
+    },
+    remote,
+  );
   const boundaries = await storage.capture(topic, async () => offsets);
   const boundary = boundaries[0];
   if (!boundary) throw new Error("missing fixture boundary");
   const retained: [typeof boundary] = [boundary];
-  return { admin, storage, logs, partition, retired, boundaries: retained };
+  return { admin, storage, remote, logs, partition, retired, boundaries: retained };
 }
 
 afterEach(async () => {
@@ -71,6 +90,134 @@ afterEach(async () => {
 });
 
 describe("Kafka native log erasure", () => {
+  it("rejects a topic recreated during remote verification", async () => {
+    const { storage, remote, partition, boundaries } = await fixture();
+    remote.assertExpired.mockImplementation(async () => {
+      await writeFile(
+        join(partition, "partition.metadata"),
+        `version: 0\ntopic_id: ${clusterId}\n`,
+      );
+      return new Map();
+    });
+    await expect(
+      storage.assertExpired([{ ...boundaries[0], topic: "samples", offset: "100" }]),
+    ).rejects.toThrow("topic generation");
+  });
+  it.each(["remote.log.storage.manager.class.name", "remote.log.metadata.manager.class.name"])(
+    "rejects an unqualified remote plugin: %s",
+    async (key) => {
+      const { admin, storage } = await fixture();
+      const response = await admin.describeConfigs();
+      const entry = response.resources[0]?.configEntries.find((entry) => entry.configName === key);
+      if (!entry) throw new Error("missing fixture plugin");
+      entry.configValue = "other.Plugin";
+      admin.describeConfigs.mockResolvedValue(response);
+      await expect(storage.capture("samples", async () => offsets)).rejects.toThrow("plugin");
+    },
+  );
+  it("requires the native remote cache root to remain a directory", async () => {
+    const { storage, logs, boundaries } = await fixture();
+    const cache = join(logs, "remote-log-index-cache");
+    await rm(cache, { recursive: true });
+    await writeFile(cache, "unexpected file");
+    await expect(
+      storage.assertExpired([{ ...boundaries[0], topic: "samples", offset: "100" }]),
+    ).rejects.toThrow("cache mount is invalid");
+  });
+  it("cannot complete when native tiered deletion or R2 verification fails", async () => {
+    const { storage, remote, boundaries } = await fixture();
+    remote.assertExpired.mockRejectedValue(new Error("R2 retains covered object"));
+    await expect(
+      storage.assertExpired([{ ...boundaries[0], topic: "samples", offset: "100" }]),
+    ).rejects.toThrow("retains covered object");
+  });
+
+  it("blocks covered or unknown remote index cache files", async () => {
+    const { storage, remote, logs, boundaries } = await fixture();
+    const file = join(logs, "remote-log-index-cache", "0_AAAAAAAAAAAAAAAAAAAAAQ.index");
+    await writeFile(file, "offset index");
+    const cut = [{ ...boundaries[0], topic: "samples", offset: "100" }];
+    await expect(storage.assertExpired(cut)).rejects.toThrow("remote index");
+    remote.assertExpired.mockResolvedValue(
+      new Map([["AAAAAAAAAAAAAAAAAAAAAQ", { topic: "samples", topicId, startOffset: "0" }]]),
+    );
+    await expect(storage.assertExpired(cut)).rejects.toThrow("remote index");
+    await rm(file);
+    await expect(storage.assertExpired(cut)).resolves.toBeUndefined();
+  });
+  it.each(["index", "timeindex", "txnindex", "index.deleted"])(
+    "allows a generation-bound unexpired remote cache %s",
+    async (suffix) => {
+      const { storage, remote, logs, boundaries } = await fixture();
+      remote.assertExpired.mockResolvedValue(
+        new Map([["AAAAAAAAAAAAAAAAAAAAAQ", { topic: "samples", topicId, startOffset: "100" }]]),
+      );
+      await writeFile(
+        join(logs, "remote-log-index-cache", `100_AAAAAAAAAAAAAAAAAAAAAQ.${suffix}`),
+        "newer offset index",
+      );
+      await expect(
+        storage.assertExpired([{ ...boundaries[0], topic: "samples", offset: "100" }]),
+      ).resolves.toBeUndefined();
+    },
+  );
+  it.each([
+    {
+      name: "100_AAAAAAAAAAAAAAAAAAAAAQ.index",
+      segment: { topic: "samples", topicId, startOffset: "101" },
+    },
+    {
+      name: "100_AAAAAAAAAAAAAAAAAAAAAQ.index",
+      segment: { topic: "other", topicId, startOffset: "100" },
+    },
+    {
+      name: "100_AAAAAAAAAAAAAAAAAAAAAQ.index",
+      segment: { topic: "samples", topicId: clusterId, startOffset: "100" },
+    },
+    {
+      name: "prefix100_AAAAAAAAAAAAAAAAAAAAAQ.index",
+      segment: { topic: "samples", topicId, startOffset: "100" },
+    },
+    {
+      name: "100_AAAAAAAAAAAAAAAAAAAAAQ.index.extra",
+      segment: { topic: "samples", topicId, startOffset: "100" },
+    },
+  ])("blocks mismatched remote cache evidence: $name $segment", async ({ name, segment }) => {
+    const { storage, remote, logs, boundaries } = await fixture();
+    remote.assertExpired.mockResolvedValue(new Map([["AAAAAAAAAAAAAAAAAAAAAQ", segment]]));
+    await writeFile(join(logs, "remote-log-index-cache", name), "index");
+    await expect(
+      storage.assertExpired([{ ...boundaries[0], topic: "samples", offset: "100" }]),
+    ).rejects.toThrow("remote index");
+  });
+  it("rejects a directory masquerading as a valid remote index", async () => {
+    const { storage, remote, logs, boundaries } = await fixture();
+    remote.assertExpired.mockResolvedValue(
+      new Map([["AAAAAAAAAAAAAAAAAAAAAQ", { topic: "samples", topicId, startOffset: "100" }]]),
+    );
+    await mkdir(join(logs, "remote-log-index-cache", "100_AAAAAAAAAAAAAAAAAAAAAQ.index"));
+    await expect(
+      storage.assertExpired([{ ...boundaries[0], topic: "samples", offset: "100" }]),
+    ).rejects.toThrow("remote index");
+  });
+  it("requires every retired root, including the aborted Kafka tree, to be empty", async () => {
+    const { admin, remote, logs, retired, boundaries } = await fixture();
+    const aborted = join(retired, "..", "aborted");
+    await mkdir(aborted);
+    const paths = { directory: logs, brokerDirectory: "/var/lib/kafka/data", topics: ["samples"] };
+    const cut = [{ ...boundaries[0], topic: "samples", offset: "100" }];
+    await expect(
+      new KafkaLogStorage(admin, { ...paths, retiredDirectories: [] }, remote).assertExpired(cut),
+    ).rejects.toThrow("roots are required");
+    const storage = new KafkaLogStorage(
+      admin,
+      { ...paths, retiredDirectories: [retired, aborted] },
+      remote,
+    );
+    await expect(storage.assertExpired(cut)).resolves.toBeUndefined();
+    await writeFile(join(aborted, "payload"), "retained bytes");
+    await expect(storage.assertExpired(cut)).rejects.toThrow("Retired broker");
+  });
   it("captures and verifies a valid dot-prefixed Kafka topic", async () => {
     const { storage, boundaries } = await fixture(".samples");
     expect(boundaries).toEqual([{ ...offsets[0], clusterId, topicId }]);
@@ -92,7 +239,16 @@ describe("Kafka native log erasure", () => {
     expect(admin.describeConfigs).toHaveBeenCalledWith({
       includeSynonyms: false,
       resources: [
-        { type: 4, name: "1", configNames: ["log.dirs", "remote.log.storage.system.enable"] },
+        {
+          type: 4,
+          name: "1",
+          configNames: [
+            "log.dirs",
+            "remote.log.storage.system.enable",
+            "remote.log.storage.manager.class.name",
+            "remote.log.metadata.manager.class.name",
+          ],
+        },
       ],
     });
     expect(admin.fetchTopicMetadata).toHaveBeenCalledWith({ topics: ["samples"] });
@@ -195,13 +351,17 @@ describe("Kafka native log erasure", () => {
   });
 
   it("rejects incomplete or duplicated multi-topic checkpoints", async () => {
-    const { admin, logs, retired, boundaries } = await fixture();
-    const storage = new KafkaLogStorage(admin, {
-      directory: logs,
-      brokerDirectory: "/var/lib/kafka/data",
-      retiredDirectory: retired,
-      topics: ["samples", "other"],
-    });
+    const { admin, logs, retired, boundaries, remote } = await fixture();
+    const storage = new KafkaLogStorage(
+      admin,
+      {
+        directory: logs,
+        brokerDirectory: "/var/lib/kafka/data",
+        retiredDirectories: [retired],
+        topics: ["samples", "other"],
+      },
+      remote,
+    );
     const boundary = { ...boundaries[0], topic: "samples", offset: "100" };
     for (const entries of [
       [boundary],
@@ -314,7 +474,7 @@ describe("Kafka native log erasure", () => {
       if (!resource) throw new Error("missing fixture resource");
       const entry = resource.configEntries.find((entry) => entry.configName === key);
       if (!entry) throw new Error("missing fixture key");
-      entry.configValue = key === "log.dirs" ? "/var/lib/kafka/data,/other" : "true";
+      entry.configValue = key === "log.dirs" ? "/var/lib/kafka/data,/other" : "false";
       admin.describeConfigs.mockResolvedValue(response);
       await expect(
         storage.assertExpired([{ ...boundaries[0], topic: "samples", offset: "100" }]),

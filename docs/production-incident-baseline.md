@@ -35826,6 +35826,105 @@ only the fixture image currently under test. Docker documents local resource
   production tiering. The historical 78.4-GiB/39%-inode/1.142-GB figures above
   remain reported exploratory observations, not a capacity guarantee.
 
+### 2026-11-08 — tiered-layer CI spelling vocabulary
+
+[CI run 42529586807, Spell Check job](https://github.com/Asherlc/dofek/actions/runs/42529586807/job/128880819367) failed its normal
+`pnpm exec cspell --no-progress` command first at
+`src/account-erasure/kafka-log-storage.test.ts:52:32 - Unknown word (aiven)`.
+The pinned Java package namespace (`aiven`, `tieredstorage`) and the native
+zero/one UUID fixture were missing from the existing dictionary. Register those
+exact proper terms in `cspell.json`; keep source and test spelling checks enabled.
+No runtime behavior, timeout, retry or production configuration changed.
+
+### 2026-11-08 — tiered-layer verifier test gaps and local lint prerequisite
+
+- **CI symptom/root cause:** [Run 42530085576](https://github.com/Asherlc/dofek/actions/runs/42530085576) failed stock Stryker shards at
+  native storage 46.38%, history 73.53%, remote storage 70.49%, runtime 40% and
+  metadata-consumer factory 0%. Tests omitted positive newer-cache paths,
+  malformed history cuts, complete listing pagination and actual constructor/
+  factory wiring. Add focused behavioral cases; preserve the existing 75% gate,
+  stock runner and production implementations.
+- **Validation:** The subsequent [CI run 42532677882](https://github.com/Asherlc/dofek/actions/runs/42532677882)
+  passed all six stock Stryker shards. Earlier local percentages were reported
+  without a retained report and are not independent evidence. No gate exemption,
+  production refactor or longer timeout was needed.
+- **Local prerequisite:** `pnpm lint` completed its source/policy checks, then
+  `lint:analytics-sql` failed first with `FailedToConnectError` / connection
+  refused at `127.0.0.1:8123`. This child has no local ClickHouse dependency
+  running. No SQL changed; do not treat this as a source-lint pass or start
+  unrelated heavy database work under the scoped qualification request. Full
+  analytics lint remains for CI with its normal dependencies.
+- **Impact:** Review-branch CI/local qualification only; production unaffected.
+  Root/server/web typechecks and 177 focused tests passed. Native fixture/image
+  qualification is separately recorded in the [child receipt](evidence/kafka-tiered-child-20261108/README.md).
+- **Follow-up:** Keep fixture checks tied to the actual accepted path, and use
+  the documented [test dependency setup](testing.md#integration-dependencies)
+  before full database-dependent lint. No extra retry, timeout or ignore added.
+
+### 2026-11-09 — Tiered transition review and local capacity interruption
+
+- **Scope / impact:** PR #3236 review and isolated synthetic Kafka qualification;
+  production unchanged. GitHub's automatic deployment workflow remained manually
+  disabled; see the [readiness observation](evidence/kafka-tiered-transition-20261109/release-readiness.json).
+- **Observed activation blocker:** Existing remote-disabled topic generations
+  survived tiering, native eviction, remote reads and restart. Terminal remote
+  deletion did not remove six covered disk index-cache files from those reads;
+  the actual retention phase correctly rejected them. A qualified stock cache
+  cleanup policy remains required before activation. Clearing only that stopped
+  synthetic fixture's cache establishes the positive guard branch, not an
+  automatic or production cleanup guarantee. The [timestamped receipt](evidence/kafka-tiered-transition-20261109/transition.json)
+  records actual phase rejection/recovery for orphan objects, multipart uploads
+  and both distinct retained roots. See the pinned [Kafka cache source](https://github.com/apache/kafka/blob/4.4.0/storage/src/main/java/org/apache/kafka/storage/internals/log/RemoteIndexCache.java).
+- **Local lint interruption / cause:** `CLICKHOUSE_URL=<workspace> pnpm lint`
+  reached analytics SQL, then failed first with ClickHouse Code 75,
+  `errno: 28, strerror: No space left on device`, with 0 B available on the
+  78.44 GiB Docker filesystem. Docker inspection showed 30.41 GB of container
+  writable layers, 32.26 GB of volumes and no build cache. This workspace's
+  ClickHouse data was only 83.1 MiB; deleting its data was not justified.
+- **Recovery / validation:** Build-cache pruning reclaimed 0 B. Concurrent
+  external cleanup restored space; pruning unused images reclaimed another
+  846.9 MB under standing approval. No running container or database volume was
+  removed by this task. The identical full lint command then passed without
+  an added wait, retry, ignore or timeout. All 23,939 unit/mobile tests and
+  root/server/web typechecks passed; [source hashes and check results](evidence/kafka-tiered-transition-20261109/source.json)
+  identify the reviewed runtime. Production exact-image, R2, capacity,
+  quiescence and cache-cleanup gates remain open.
+
+### 2026-11-09 — Tiered review CI completes jobs but omits required mutation gate
+
+- **Status / impact:** Unresolved; source merge blocked, production unchanged.
+  [CI run 42669386790](https://github.com/Asherlc/dofek/actions/runs/42669386790)
+  for `2d5a39afe` finished with overall `failure`, although all reported jobs
+  succeeded or were skipped, including all six Stryker shards, four integration
+  shards, coverage and CI Gate. PR checks reported 107 successes, seven skips
+  and one neutral external review, with no failed check result.
+- **Evidence / unknown cause:** `gh run view 42669386790 --log-failed` returned
+  no failed-step logs. Complete job and check-run enumeration contained no
+  `Test / Mutation Testing` result; the main branch rules require that exact
+  context, and GitHub reports the PR merge state as `BLOCKED`. The workflow
+  source still declares that gate. No first fatal error line or causal
+  explanation for the missing job has been established; do not infer success
+  from the passing parent gate. Browser inspection was unavailable on this host.
+- **Subsequent evidence:** In [run 42673842606, Mutation Testing / Check results](https://github.com/Asherlc/dofek/actions/runs/42673842606/job/129353372401),
+  the first fatal line is `Selected TypeScript mutation work did not succeed`.
+  The expanded command shows `needs.mutation.result` as `abandoned`; only
+  Stryker shards 3–5 have completed job records. The gate correctly rejects
+  incomplete selected work. The same workflow previously reported the gate
+  successfully in [run 42639292427](https://github.com/Asherlc/dofek/actions/runs/42639292427/job/129242950664).
+- **Provider incident:** GitHub's [Actions and Checks API incident](https://stspg.io/7yw63xl9ztrv)
+  reports a major Actions outage, under investigation from 18:12 UTC, with
+  elevated Actions/Checks errors confirmed at 18:24 UTC. The abandoned jobs
+  coincide with that outage; the provider has not published its internal root
+  cause or confirmed this individual run's assignment failure.
+- **Mitigation / follow-up:** The user requested merge; both normal and
+  administrator merge were rejected by the required-check ruleset. The user
+  then declined a ruleset exception. No protection or bypass-actor setting
+  was changed. Preserve the disabled deployment workflow and strict mutation
+  gate; after provider recovery, rerun unfinished work and merge normally only
+  when all required statuses pass. Do not treat rerunning as a source-code fix.
+  Production remains unchanged, and stock index-cache cleanup remains a
+  separate activation blocker.
+
 ## 2026-11-08 — History recovery complete; two healthy zero-lag checks
 
 - **Root cause / direct fix:** Scoped deletion's global latest-ID lookup selected unrelated versions across the table, leading to a 212-second statement, the 120-second client timeout and an overlapping retry. The approved immutable sample identity allowed the repaired sink to resolve versions through native `(id,user_id,provider_id,recorded_at)` membership, retaining full latest-row resolution, mutable-scope checks, fences, revision semantics and normal acknowledgements. No new index, storage model, queue framework or runtime resilience setting was needed.
@@ -36100,3 +36199,31 @@ The real [pinned-dbt fixture](../src/analytics/dbt-build.integration.test.ts) ob
 Local proof so far:122 affected units, two real entrypoint admission cases,13 owned cycling cases, and five combined native adapter/child/bounded cases on exact26.6 passed with retry0. Full repair/rollback qualification, exact26.10, current-main integration and exact-head CI remain open at this checkpoint. A diff review caught an overwritten existing dbt unit file before commit; its original suite was restored and the regression added alongside it. Root TypeScript, Biome and diff checks pass.
 
 The bounded test first failed CH243 in activity_location_sample because the local Docker VM reached zero free space. Completed-resource cleanup removed only the inspected own stopped default ClickHouse container (named volume retained), the prior exact lab's unused anonymous volume, an unused cached SeaweedFS image, the completed own Kafka fixture, and six generated templates tied to finished recorded test processes. Each template had connections disabled, zero sessions and no live matching host PID, and used stock DROP DATABASE without FORCE. No named database volume, sibling running service, Docker sizing, production resource, timeout or retry was changed. Space remains constrained and subject to other local work; passing subsequent focused checks does not qualify a disk-failed run. Preserve completed-fixture teardown and use the existing integration-readiness workflow for future capacity failures.
+
+## 2026-11-09 — Local lint prerequisite blocked by orphaned Docker networks
+
+- **Symptoms/impact:** In the `tall-kiwi` development workspace, `pnpm compose -- up -d --wait clickhouse` failed before creating its network with `all predefined address pools have been fully subnetted`. Local SQL lint setup was blocked; production was unaffected.
+- **Evidence/root cause:** Docker listed 31 bridge networks, including seven `dull-baboon-lifecycle-*` test networks with zero attached containers. These consumed the available default address pools.
+- **Direct fix/validation:** After inspecting the network, removed only the empty `dull-baboon-lifecycle-0eec117e-fd07-44b7-a8f8-f62fa87a8b0a_default` network. The unchanged workspace Compose command succeeded and ClickHouse reported healthy. No running container, database volume, retry, timeout, or repository network setting changed. Docker documents [network removal and its active-container guard](https://docs.docker.com/reference/cli/docker/network/rm/).
+- **Remaining/next time:** Other unused networks remain and may exhaust pools again. Add an inspected-unused-test-network recovery note to the testing guide in a separate documentation change; reuse the systematic-debugging skill to distinguish network-pool exhaustion from disk pressure before cleanup.
+
+## 2026-11-09 — Activity analytics blocked by globally paused queue
+
+- **Symptoms / impact:** User reported no newly processed activities since November 2. At approximately 17:35 UTC, Postgres and its ClickHouse activity mirror contained WHOOP/Peloton activities through November 9 UTC, while `max(refreshed_at)` in `analytics.activity_summary_rows` was `2026-11-03 02:26:28.067853249` (November 2 Pacific).
+- **Evidence / cause:** `redis-cli HGETALL bull:analytics-refresh:meta` returned `paused=1`, with 418 waiting jobs and no active jobs. All three replication slots were active/reserved and CDC checks passed. Analytics worker logs showed repeated readiness startup messages without builds; readiness returned `currentStep=null`, `lastSuccessAt=null`. No fatal build line was present: the global queue pause prevented builds from starting. The pause origin and timestamp remain unknown. BullMQ documents [global queue pause behavior](https://docs.bullmq.io/guide/workers/pausing-queues).
+- **Approved direct recovery:** User approved resuming and verifying. At approximately 17:37 UTC, invoked the existing `createAnalyticsRefreshQueue()` factory and stock `Queue.resume()` inside the production analytics container. Readback changed from paused true to false, with one active and 417 waiting jobs. The initial command used unavailable `tsx` and failed before mutation; the successful command used the image native Node TypeScript runtime and existing module hook.
+- **Validation / remaining risk:** dbt started at 17:38 UTC; its first five models completed successfully before sensor microbatch processing began. Full build, query-cache warming, summary freshness, and backlog completion remain under observation. No application code, retries, timeouts, or health thresholds changed.
+- **Next time:** Use the check-logs and diagnose-cdc skills, compare raw/mirror/summary timestamps, and inspect queue pause state before restarting workers. Proposed processing runbook improvement: include `Queue.isPaused()` and queue counts in initial analytics diagnostics, and record operator/intent whenever pausing production queues.
+- **Observed recovery / second blocker:** The first resumed build was interrupted at 17:42 UTC by the old process startup health deadline (health logs showed repeated HTTP 503; task exit 137, not OOM). Stock BullMQ stalled-job recovery reassigned it. The next main dbt build passed all 41 models at 18:00:06 UTC with zero errors/warnings. Summary freshness advanced to `2026-11-09 17:58:29.405022999`, covering 22 activities since November 3 UTC through `2026-11-09 00:42:49` UTC. However, the complete cycle failed at 18:01:07 UTC during cycling-power history publication: `HTML Form Exception: Field value too long`, query ID `45a37c94-61ea-40cc-a3a2-642a72223bf3`. Completion recording and cache warming remain unverified; recovery is partial.
+- **Confirmed downstream cause / proposed fix:** An operator read-only projector probe stopped before every command and printed only parameter sizes: `cycling_power_history_rows` publication had 7,483 events and an `evidenceIds` JSON size of 162,740 bytes. Live `system.settings` showed `http_max_field_value_size=131072`. An independent synthetic probe with 7,500 UUID strings reproduced the parameter error; the same data passed through `input()` and JSONEachRow into the non-persistent `null()` table function. No app tables were written by these probes. Proposed durable fix: send history arrays as input-format body data in the existing fenced INSERT SELECT, preserving atomic history publication and erasure checks. The existing client supports custom INSERT statements through [command](https://clickhouse.com/docs/integrations/language-clients/js/index#command-method); ClickHouse documents [input()](https://clickhouse.com/docs/sql-reference/table-functions/input). No limit increase is required. Await implementation alignment and add a real-engine regression fixture above 128 KiB before implementation.
+- **Additional unresolved observation:** All 22 recent summary rows had null sample counts even though `analytics.activity_sensor_sample` contained 45,029 samples since November 3 UTC and samples through November 9. Do not classify all sensor processing as recovered from summary freshness alone; diagnose this mismatch separately.
+- **Durable fix prepared:** History publication now supplies event tuples as JSONEachRow body data through `input()` while retaining the same atomic `INSERT … SELECT` and erasure fence. The long-history regression first reproduced the HTTP field error, then passed with over 6,000 history events and more than 128 KiB of evidence IDs. All 14 projector integration tests passed, including corrections, deletions, empty histories, and both erasure races. This fixes shared server processing for both clients; no client behavior or infrastructure limits changed. Production deployment and a complete successful production cycle remain outstanding.
+- **Local validation prerequisite:** The workspace ClickHouse startup failed with `all predefined address pools have been fully subnetted`. Inspected all live network subnets and used an operator-only Compose override with the unused `192.168.241.0/24` subnet for this workspace; no shared resources or checked-in network settings changed.
+- **Final local validation:** `pnpm test --run` passed 1,457 files and 23,852 tests (2 files / 19 tests skipped by existing suite configuration); `pnpm typecheck`, `pnpm lint`, changed-file CSpell, and `git diff --check` passed. SQLFluff retained existing large-file skips. Independent diff review found no actionable issues in tuple order/types, erasure filtering, atomic publication, or query logging. Next time, use the integration-tests-ready skill and retain a long-history fixture; propose adding queue pause/readback and operator intent to the processing runbook rather than introducing another recovery tool.
+
+## 2026-11-09 — GitHub Actions internal error blocks activity fix merge
+
+- **Symptoms / impact:** PR #3239 could not merge because required checks were absent, despite a successful CI Gate. The [initial CI run](https://github.com/Asherlc/dofek/actions/runs/42672082442) failed before reusable test jobs started; the gate alone was not evidence of passing CI.
+- **Evidence / cause:** GitHub workflow annotation: `Internal server error. Correlation ID: 373fd8dc-095f-4952-898e-12b11da05856`. No failing repository command or test log existed for the missing jobs. The exact internal GitHub cause is unknown.
+- **Recovery / status:** Marked the PR ready and requested an unchanged workflow rerun. Required checks and merge remain pending. No bypass, admin merge, timeout, retry policy, or workflow change was introduced.
+- **Next time:** Use the ship-pr and gh-fix-ci skills; inspect the workflow-level annotations and required-check list whenever CI Gate passes but required jobs are absent. Proposed runbook improvement: distinguish workflow startup errors from repository command failures before editing CI.

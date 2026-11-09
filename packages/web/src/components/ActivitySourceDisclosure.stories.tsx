@@ -39,7 +39,9 @@ export const RecognizedWatchModels: Story = {
     await userEvent.click(
       canvas.getByRole("button", { name: "Apple Watch Series 7 (GPS + Cellular, 45mm) Lineage" }),
     );
-    await expect(canvas.getByText("Garmin Forerunner 955")).toBeVisible();
+    await expect(
+      within(canvasElement.ownerDocument.body).getByText("Garmin Forerunner 955"),
+    ).toBeVisible();
   },
 };
 export const WithRecordingDevice: Story = {
@@ -73,7 +75,10 @@ export const Expanded: Story = {
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
     await userEvent.click(canvas.getByRole("button", { name: "Garmin Connect Lineage" }));
-    await expect(canvas.getAllByText("Apple Health")).toHaveLength(2);
+    const flyout = within(canvasElement.ownerDocument.body).getByRole("dialog", {
+      name: "Lineage",
+    });
+    await expect(within(flyout).getAllByText("Apple Health")).toHaveLength(2);
   },
 };
 export const StrongViaAppleHealth: Story = { args: { tree: strongSourceTree } };
@@ -89,9 +94,13 @@ export const KeyboardDisclosure: Story = {
     trigger.focus();
     await userEvent.keyboard("{Enter}");
     await expect(trigger).toHaveAttribute("aria-expanded", "true");
-    await expect(trigger).toHaveFocus();
-    await userEvent.keyboard(" ");
+    const flyout = within(canvasElement.ownerDocument.body).getByRole("dialog", {
+      name: "Lineage",
+    });
+    await expect(within(flyout).getByRole("button", { name: "Close lineage" })).toHaveFocus();
+    await userEvent.keyboard("{Escape}");
     await expect(trigger).toHaveAttribute("aria-expanded", "false");
+    await expect(trigger).toHaveFocus();
   },
 };
 
@@ -101,11 +110,12 @@ export const LongSourceLabels: Story = {
     const canvas = within(canvasElement);
     const trigger = canvas.getByRole("button", { name: /RecordingDeviceWithAnUnbrokenLongName/ });
     await userEvent.click(trigger);
-    const disclosure = trigger.parentElement;
-    if (!disclosure) throw new Error("Missing source disclosure");
-    const bounds = disclosure.getBoundingClientRect();
-    const textElements = canvas.getAllByText(/WithAnUnbrokenLong|WithoutWordBreaks/);
-    await expect(textElements).toHaveLength(7);
+    const flyout = within(canvasElement.ownerDocument.body).getByRole("dialog", {
+      name: "Lineage",
+    });
+    const bounds = flyout.getBoundingClientRect();
+    const textElements = within(flyout).getAllByText(/WithAnUnbrokenLong|WithoutWordBreaks/);
+    await expect(textElements).toHaveLength(6);
     for (const element of textElements) {
       const textBounds = element.getBoundingClientRect();
       await expect(textBounds.right).toBeLessThanOrEqual(bounds.right);

@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import kafkaJs from "kafkajs";
 import { describe, expect, it, vi } from "vitest";
 import {
   assertAccountErasureConsumersDrained,
@@ -164,6 +165,31 @@ describe("account erasure Redpanda drain", () => {
         ],
       },
     ]);
+  });
+
+  it("creates independent bounded metadata consumers with the real client API", () => {
+    const consumer = vi.spyOn(kafkaJs.Kafka.prototype, "consumer");
+    try {
+      const connection = createAccountErasureRedpandaAdminFromEnv({
+        METRIC_STREAM_LEGACY_TOPIC: "legacy",
+        METRIC_STREAM_LIVE_TOPIC: "live",
+        METRIC_STREAM_HISTORY_TOPIC: "history",
+        REDPANDA_BROKERS: "broker:9092",
+      });
+      const first = connection.createMetadataConsumer();
+      const second = connection.createMetadataConsumer();
+      expect(first.run).toBeTypeOf("function");
+      expect(first).not.toBe(second);
+      const options = consumer.mock.calls.map(([options]) => options);
+      expect(options).toHaveLength(2);
+      expect(new Set(options.map((options) => options.groupId)).size).toBe(2);
+      for (const option of options) {
+        expect(option.groupId).toMatch(/^dofek-account-erasure-storage-/);
+        expect(option.maxBytes).toBe(1_048_576);
+      }
+    } finally {
+      consumer.mockRestore();
+    }
   });
 
   it("captures each topic partition high watermark in order", async () => {
