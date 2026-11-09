@@ -35661,6 +35661,10 @@ Build-cache cleanup reclaimed zero bytes. No other workspace's running container
 or named database volume was removed. The disposable broker used a bounded tmpfs
 log directory; this changes only the local fixture. Four broker integration tests,
 both current-image factory smoke checks and three Connect pipeline checks passed.
+Their methods, image-specific broker keys and limits are recorded in the
+[protocol qualification record](../deploy/kafka/qualification.md); retained
+historical test counts are in the
+[console excerpts](evidence/kafka-review-qualification-20261109/retained-test-summaries.txt).
 Owned test containers/network were removed; the completed old-image fixture was
 removed locally to recover space. Shared disk pressure remains a workstation risk.
 Next time, check VM free space before pulling both application images and retain
@@ -35740,8 +35744,12 @@ only the fixture image currently under test. Docker documents local resource
   recovered 1.142 GB, including the unused prior review worker image. Running
   services were preserved. An explicit owned fixture subnet and RAM-backed data/
   JVM-log mounts allowed bounded native-codec checks, not disk-durability proof.
-- **Validation/limit:** Pinned Kafka's stock formatter agreed with two structural
-  record vectors; focused adapter/wiring tests passed. Full lifecycle/image
+- **Validation/limit:** The exploratory operator note reported stock-formatter
+  agreement on two structural vectors and focused adapter/wiring passes. Raw
+  output for those particular formatter/disk observations was not retained;
+  those reports are not independently verifiable release evidence. Retained
+  later test summaries are [published separately](evidence/kafka-review-qualification-20261109/retained-test-summaries.txt)
+  without transferring their passes to this discarded prototype. Full lifecycle/image
   qualification was not completed. The user rejected Aiven's adoption/support
   profile; all unfinished runtime changes were withdrawn. The owned Compose
   project was removed with `down --remove-orphans --volumes`, then zero owned
@@ -35749,6 +35757,11 @@ only the fixture image currently under test. Docker documents local resource
 - **Next time:** Qualify adoption, support, licensing and object-store fit before
   implementation; use Docker's documented [isolated networks](https://docs.docker.com/compose/how-tos/networking/)
   and [scoped cleanup](https://docs.docker.com/reference/cli/docker/compose/down/).
+- **Later, separate evidence:** The subsequently selected stock-Aiven child has
+  its own [packaged phase/remote-read/restart receipt](https://github.com/Asherlc/dofek/blob/4cae5d78f0bd8f947dddfc251073862a83f43079/docs/evidence/kafka-tiered-child-20261108/README.md).
+  It does not retroactively qualify the withdrawn attempt or establish current
+  production tiering. The historical 78.4-GiB/39%-inode/1.142-GB figures above
+  remain reported exploratory observations, not a capacity guarantee.
 
 ## 2026-11-08 — History recovery complete; two healthy zero-lag checks
 
@@ -35794,3 +35807,21 @@ only the fixture image currently under test. Docker documents local resource
   framework or runtime resilience setting is needed. Docker documents
   [service updates](https://docs.docker.com/reference/cli/docker/service/update/)
   and [task states](https://docs.docker.com/engine/swarm/how-swarm-mode-works/swarm-task-states/).
+
+## 2026-11-09 — Read-only Terraform review checkout input
+
+- **Impact:** No production resource change. The plan-only review job
+  [42549524115](https://github.com/Asherlc/dofek/actions/runs/42549524115) failed
+  during checkout, before Terraform or credential-provider calls.
+- **Root cause:** The operator supplied abbreviated `8a9c8de03` as `commit_sha`.
+  Checkout fetched `refs/heads/8a9c8de03*` and `refs/tags/8a9c8de03*`, found no
+  matching branch/tag, and reported `The process '/usr/bin/git' failed with exit
+  code 1`. The subsequent missing local action was downstream of that failure.
+- **Direct fix/validation:** Supply full
+  `8a9c8de03c910a36f2f7dac397317e992324bf6e`. Corrected stock plan-only run
+  [42549866789](https://github.com/Asherlc/dofek/actions/runs/42549866789) passed
+  and reported no infrastructure changes. No apply, retry setting or timeout
+  adjustment was used. See the [review evidence](evidence/kafka-review-qualification-20261109/README.md).
+- **Next time:** Resolve and pass the full immutable commit SHA for workflow
+  checkout inputs. Keep checkout failures separate from Terraform failures and
+  use the existing root-cause-first CI investigation workflow.

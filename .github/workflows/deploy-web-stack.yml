@@ -322,6 +322,124 @@ jobs:
           process.exit(result.status ?? 1);
           NODE
 
+      - name: Require an already activated Kafka broker
+        run: |
+          set -euo pipefail
+          # Normal application deployments cannot perform the first broker cutover.
+          services="$(docker service ls --format "{{.Name}}")"
+          running_redpanda="$(docker ps --filter "label=com.docker.swarm.service.name=${STACK_NAME}_redpanda" --filter status=running --quiet)"
+          if [ -n "$running_redpanda" ]; then
+            echo "::error::Redpanda tasks are still running; broker-only cutover must finish before application deployment"
+            exit 1
+          fi
+          if printf "%s\n" "$services" | grep -Fxq "${STACK_NAME}_redpanda"; then
+            replicas="$(docker service inspect "${STACK_NAME}_redpanda" --format "{{.Spec.Mode.Replicated.Replicas}}")"
+            if [ "$replicas" != "0" ]; then
+              echo "::error::Redpanda is active; complete the separately qualified broker-only cutover before application deployment. See deploy/kafka/README.md."
+              exit 1
+            fi
+          fi
+          docker service inspect "${STACK_NAME}_kafka" >/dev/null
+          replicas="$(docker service inspect "${STACK_NAME}_kafka" --format "{{.Spec.Mode.Replicated.Replicas}}")"
+          if [ "$replicas" != "1" ]; then
+            echo "::error::Kafka must already be activated with one replica before application deployment"
+            exit 1
+          fi
+
+      - name: Validate host bind mount paths
+        run: |
+          server_host="${DOCKER_HOST#"ssh://${SSH_USER}@"}"
+          if [ -z "$server_host" ] || [ "$server_host" = "$DOCKER_HOST" ]; then
+            echo "::error::Unable to derive SSH host from DOCKER_HOST"
+            exit 1
+          fi
+
+          ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10 "${SSH_USER}@${server_host}" 'sudo -n bash -se' <<'REMOTE'
+          set -euo pipefail
+          # Broker activation owns provisioning; application deploys only validate.
+          mountpoint -q /mnt/dofek-data || { echo "::error::Required data filesystem is not mounted"; exit 1; }
+          for path in /mnt/dofek-data/postgres /mnt/dofek-data/clickhouse /mnt/dofek-data/redpanda /mnt/dofek-data/kafka-broker/data /mnt/dofek-data/databasus /mnt/dofek-data/cloudbeaver /mnt/dofek-data/redis /mnt/dofek-data/peerdb-catalog /mnt/dofek-data/peerdb-minio; do
+            if [ ! -d "$path" ]; then
+              echo "::error::Required host bind mount path is missing: $path"
+              exit 1
+            fi
+          done
+          REMOTE
+
+      - name: Wait for Kafka API readiness (external client)
+        run: &kafka_api_readiness |
+          # Outside the broker cgroup. Broker TCP health is port-liveness only.
+          set -euo pipefail
+          image="apache/kafka:4.4.0@sha256:833b867a9585a141da455dc2b57431c65cbccb27f11c91f694444cca9f777e0f"
+          network="${STACK_NAME}_default"
+          attempts=0
+          while true; do
+            broker_image="$(docker service inspect "${STACK_NAME}_kafka" --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}')"
+            update_state="$(docker service inspect "${STACK_NAME}_kafka" --format '{{if .UpdateStatus}}{{.UpdateStatus.State}}{{end}}')"
+            replicas="$(docker service ls --filter "name=${STACK_NAME}_kafka" --format '{{.Replicas}}')"
+            if [ "${broker_image##*@}" != "${image##*@}" ]; then
+              echo "::error::Kafka does not use the qualified broker image"
+              exit 1
+            fi
+            case "$update_state" in
+              paused|rollback_*)
+                echo "::error::Kafka rollout did not complete: $update_state"
+                exit 1
+                ;;
+            esac
+            if [ "$replicas" = "1/1" ] && { [ -z "$update_state" ] || [ "$update_state" = completed ]; } && \
+              docker run --rm --network "$network" --memory=384m \
+                -e KAFKA_HEAP_OPTS="-Xms32m -Xmx256m" \
+                --entrypoint /opt/kafka/bin/kafka-broker-api-versions.sh \
+                "$image" --bootstrap-server kafka:9092 >/dev/null; then
+              break
+            fi
+            attempts=$((attempts + 1))
+            if [ "$attempts" -ge 60 ]; then
+              echo "::error::Kafka API not ready on kafka:9092"
+              exit 1
+            fi
+            sleep 2
+          done
+
+      - name: Verify Kafka metric-stream topics
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+          import { parseEnv } from 'node:util';
+          for (const key of [
+            'WEB_ENV_FILE', 'WORKER_ENV_FILE',
+            'METRIC_STREAM_CLICKHOUSE_SINK_ENV_FILE', 'METRIC_STREAM_LIVE_CLICKHOUSE_SINK_ENV_FILE',
+            'METRIC_STREAM_HISTORY_CLICKHOUSE_SINK_ENV_FILE', 'METRIC_STREAM_R2_ARCHIVE_ENV_FILE',
+            'METRIC_STREAM_LIVE_R2_ARCHIVE_ENV_FILE', 'METRIC_STREAM_HISTORY_R2_ARCHIVE_ENV_FILE',
+          ]) {
+            const environment = parseEnv(readFileSync(process.env[key], 'utf8'));
+            if (environment.REDPANDA_BROKERS !== 'kafka:9092') {
+              throw new Error(`${key}: REDPANDA_BROKERS must target the activated kafka:9092 broker`);
+            }
+          }
+          NODE
+          image="apache/kafka:4.4.0@sha256:833b867a9585a141da455dc2b57431c65cbccb27f11c91f694444cca9f777e0f"
+          available_topics="$(docker run --rm --network "${STACK_NAME}_default" --memory=384m \
+            -e KAFKA_HEAP_OPTS="-Xms32m -Xmx256m" \
+            --entrypoint /opt/kafka/bin/kafka-topics.sh "$image" \
+            --bootstrap-server kafka:9092 --list)"
+          for file in "$METRIC_STREAM_CLICKHOUSE_SINK_ENV_FILE" "$METRIC_STREAM_LIVE_CLICKHOUSE_SINK_ENV_FILE" "$METRIC_STREAM_HISTORY_CLICKHOUSE_SINK_ENV_FILE"; do
+            topic="$(node --input-type=module -e 'import {readFileSync} from "node:fs"; import {parseEnv} from "node:util"; const topic=parseEnv(readFileSync(process.argv[1],"utf8")).METRIC_STREAM_TOPIC; if (!topic) throw new Error("METRIC_STREAM_TOPIC is required"); process.stdout.write(topic);' "$file")"
+            for name in "$topic" "${topic}.quarantine.v1"; do
+              if ! printf "%s\n" "$available_topics" | grep -Fx -- "$name" >/dev/null; then
+                echo "::error::Required Kafka topic is missing: $name"
+                exit 1
+              fi
+              docker run --rm --network "${STACK_NAME}_default" --memory=384m \
+                -e KAFKA_HEAP_OPTS="-Xms32m -Xmx256m" \
+                --entrypoint /opt/kafka/bin/kafka-topics.sh "$image" \
+                --bootstrap-server kafka:9092 --describe --topic "$name"
+            done
+          done
+
+
       - name: Create Apple private key Swarm secret
         run: |
           set -euo pipefail
@@ -350,35 +468,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GHCR_TOKEN }}
 
-      - name: Require an already activated Kafka broker
-        run: |
-          set -euo pipefail
-          # Normal application deployments cannot perform the first broker cutover.
-          services="$(docker service ls --format "{{.Name}}")"
-          running_redpanda="$(docker ps --filter "label=com.docker.swarm.service.name=${STACK_NAME}_redpanda" --filter status=running --quiet)"
-          if [ -n "$running_redpanda" ]; then
-            echo "::error::Redpanda tasks are still running; broker-only cutover must finish before application deployment"
-            exit 1
-          fi
-          if printf "%s\n" "$services" | grep -Fxq "${STACK_NAME}_redpanda"; then
-            replicas="$(docker service inspect "${STACK_NAME}_redpanda" --format "{{.Spec.Mode.Replicated.Replicas}}")"
-            if [ "$replicas" != "0" ]; then
-              echo "::error::Redpanda is active; complete the separately qualified broker-only cutover before application deployment. See deploy/kafka/README.md."
-              exit 1
-            fi
-          fi
-          docker service inspect "${STACK_NAME}_kafka" >/dev/null
-          replicas="$(docker service inspect "${STACK_NAME}_kafka" --format "{{.Spec.Mode.Replicated.Replicas}}")"
-          if [ "$replicas" != "1" ]; then
-            echo "::error::Kafka must already be activated with one replica before application deployment"
-            exit 1
-          fi
-
       - name: Reclaim Docker root disk before pull
         run: |
           set -euo pipefail
 
-          server_host="${DOCKER_HOST#ssh://${SSH_USER}@}"
+          server_host="${DOCKER_HOST#"ssh://${SSH_USER}@"}"
           if [ -z "$server_host" ] || [ "$server_host" = "$DOCKER_HOST" ]; then
             echo "::error::Unable to derive SSH host from DOCKER_HOST"
             exit 1
@@ -420,7 +514,7 @@ jobs:
           pnpm tsx scripts/resolve-deploy-image.ts \
             "ghcr.io/asherlc/dofek:${IMAGE_TAG}" "$(git rev-parse HEAD)" "${STACK_NAME}_web"
 
-          server_host="${DOCKER_HOST#ssh://${SSH_USER}@}"
+          server_host="${DOCKER_HOST#"ssh://${SSH_USER}@"}"
           if [ -z "$server_host" ] || [ "$server_host" = "$DOCKER_HOST" ]; then
             echo "::error::Unable to derive SSH host from DOCKER_HOST"
             exit 1
@@ -454,10 +548,12 @@ jobs:
         env:
           APP_IMAGE: ${{ steps.pull_images.outputs.image_ref }}
         run: |
+          stack_file_flags=()
+          read -r -a stack_file_flags <<< "$STACK_FILE_FLAGS"
           node "$RUNNER_TEMP/run-with-dotenv-env.mjs" \
-            env APP_IMAGE="$APP_IMAGE" docker stack config $STACK_FILE_FLAGS >/dev/null
+            env APP_IMAGE="$APP_IMAGE" docker stack config "${stack_file_flags[@]}" >/dev/null
           node "$RUNNER_TEMP/run-with-dotenv-env.mjs" \
-            env APP_IMAGE="$APP_IMAGE" docker stack config $STACK_FILE_FLAGS -c deploy/stack.cdc-quiesce.yml >/dev/null
+            env APP_IMAGE="$APP_IMAGE" docker stack config "${stack_file_flags[@]}" -c deploy/stack.cdc-quiesce.yml >/dev/null
 
       - name: Upload web assets to R2
         env:
@@ -527,78 +623,6 @@ jobs:
           --bucket "$DB_BACKUPS_R2_BUCKET"
           --retention-days 21
 
-      - name: Validate host bind mount paths
-        run: |
-          server_host="${DOCKER_HOST#"ssh://${SSH_USER}@"}"
-          if [ -z "$server_host" ] || [ "$server_host" = "$DOCKER_HOST" ]; then
-            echo "::error::Unable to derive SSH host from DOCKER_HOST"
-            exit 1
-          fi
-
-          ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10 "${SSH_USER}@${server_host}" 'sudo -n bash -se' <<'REMOTE'
-          set -euo pipefail
-          # Retain /mnt/dofek-data/redpanda until metric-stream cutover drain completes.
-          # Kafka uses a new tree; never format or reuse the Redpanda data dir.
-          mkdir -p /mnt/dofek-data/kafka-broker/data
-          # apache/kafka:4.4.0 runs as appuser (uid/gid 1000) — same stock pattern as
-          # postgres timescaledb-ha bind ownership (deploy/oracle-free/cloud-init.yml).
-          chown 1000:1000 /mnt/dofek-data/kafka-broker/data
-          for path in /mnt/dofek-data/postgres /mnt/dofek-data/clickhouse /mnt/dofek-data/redpanda /mnt/dofek-data/kafka-broker/data /mnt/dofek-data/databasus /mnt/dofek-data/cloudbeaver /mnt/dofek-data/redis /mnt/dofek-data/peerdb-catalog /mnt/dofek-data/peerdb-minio; do
-            if [ ! -d "$path" ]; then
-              echo "::error::Required host bind mount path is missing: $path"
-              exit 1
-            fi
-          done
-          REMOTE
-
-      - name: Wait for Kafka API readiness (external client)
-        run: |
-          # Outside the broker cgroup. Broker TCP health is port-liveness only.
-          set -euo pipefail
-          image="apache/kafka:4.4.0@sha256:833b867a9585a141da455dc2b57431c65cbccb27f11c91f694444cca9f777e0f"
-          network="${STACK_NAME}_default"
-          attempts=0
-          until docker run --rm --network "$network" --memory=384m \
-            -e KAFKA_HEAP_OPTS="-Xms32m -Xmx256m" \
-            --entrypoint /opt/kafka/bin/kafka-broker-api-versions.sh \
-            "$image" --bootstrap-server kafka:9092 >/dev/null; do
-            attempts=$((attempts + 1))
-            if [ "$attempts" -ge 60 ]; then
-              echo "::error::Kafka API not ready on kafka:9092"
-              exit 1
-            fi
-            sleep 2
-          done
-
-      - name: Verify Kafka metric-stream topics
-        run: |
-          set -euo pipefail
-          node --input-type=module <<'NODE'
-          import { readFileSync } from 'node:fs';
-          import { parseEnv } from 'node:util';
-          for (const key of [
-            'WEB_ENV_FILE', 'WORKER_ENV_FILE',
-            'METRIC_STREAM_CLICKHOUSE_SINK_ENV_FILE', 'METRIC_STREAM_LIVE_CLICKHOUSE_SINK_ENV_FILE',
-            'METRIC_STREAM_HISTORY_CLICKHOUSE_SINK_ENV_FILE', 'METRIC_STREAM_R2_ARCHIVE_ENV_FILE',
-            'METRIC_STREAM_LIVE_R2_ARCHIVE_ENV_FILE', 'METRIC_STREAM_HISTORY_R2_ARCHIVE_ENV_FILE',
-          ]) {
-            const environment = parseEnv(readFileSync(process.env[key], 'utf8'));
-            if (environment.REDPANDA_BROKERS !== 'kafka:9092') {
-              throw new Error(`${key}: REDPANDA_BROKERS must target the activated kafka:9092 broker`);
-            }
-          }
-          NODE
-          image="apache/kafka:4.4.0@sha256:833b867a9585a141da455dc2b57431c65cbccb27f11c91f694444cca9f777e0f"
-          for file in "$METRIC_STREAM_CLICKHOUSE_SINK_ENV_FILE" "$METRIC_STREAM_LIVE_CLICKHOUSE_SINK_ENV_FILE" "$METRIC_STREAM_HISTORY_CLICKHOUSE_SINK_ENV_FILE"; do
-            topic="$(node --input-type=module -e 'import {readFileSync} from "node:fs"; import {parseEnv} from "node:util"; const topic=parseEnv(readFileSync(process.argv[1],"utf8")).METRIC_STREAM_TOPIC; if (!topic) throw new Error("METRIC_STREAM_TOPIC is required"); process.stdout.write(topic);' "$file")"
-            for name in "$topic" "${topic}.quarantine.v1"; do
-              docker run --rm --network "${STACK_NAME}_default" --memory=384m \
-                -e KAFKA_HEAP_OPTS="-Xms32m -Xmx256m" \
-                --entrypoint /opt/kafka/bin/kafka-topics.sh "$image" \
-                --bootstrap-server kafka:9092 --describe --topic "$name"
-            done
-          done
-
       - name: Select migration deployment mode from image histories
         id: migration_deployment
         env:
@@ -614,9 +638,11 @@ jobs:
           MIGRATION_DEPLOYMENT_MODE: ${{ steps.migration_deployment.outputs.mode }}
           MIGRATION_MAINTENANCE_BOUNDARY: ${{ steps.migration_deployment.outputs.maintenance_boundary }}
         run: |
-          maintenance_flags=""
+          stack_file_flags=()
+          read -r -a stack_file_flags <<< "$STACK_FILE_FLAGS"
+          maintenance_flags=()
           if [ "$MIGRATION_DEPLOYMENT_MODE" = "maintenance" ]; then
-            maintenance_flags="-c deploy/stack.maintenance.yml"
+            maintenance_flags=(-c deploy/stack.maintenance.yml)
           fi
 
           echo "Applying dependency changes with app image ${APP_IMAGE} before migrations (${MIGRATION_DEPLOYMENT_MODE})."
@@ -624,11 +650,14 @@ jobs:
             node "$RUNNER_TEMP/run-with-dotenv-env.mjs" \
             env APP_IMAGE="$APP_IMAGE" WEB_ENV_FILE="$WEB_PRE_MIGRATION_ENV_FILE" \
               MIGRATION_MAINTENANCE_BOUNDARY="$MIGRATION_MAINTENANCE_BOUNDARY" \
-            docker stack deploy $STACK_FILE_FLAGS \
+            docker stack deploy "${stack_file_flags[@]}" \
               -c deploy/stack.cdc-quiesce.yml \
               -c deploy/stack.migration-quiesce.yml \
-              $maintenance_flags \
+              "${maintenance_flags[@]}" \
               --with-registry-auth --detach=true "$STACK_NAME"
+
+      - name: Verify Kafka after dependency stack apply
+        run: *kafka_api_readiness
 
       - name: Wait for pre-migration web convergence
         if: steps.migration_deployment.outputs.mode == 'rolling'
@@ -836,8 +865,10 @@ jobs:
           MIGRATION_DEPLOYMENT_MODE: ${{ steps.migration_deployment.outputs.mode }}
         run: |
           echo "web_convergence_failed=false" >> "$GITHUB_OUTPUT"
+          stack_file_flags=()
+          read -r -a stack_file_flags <<< "$STACK_FILE_FLAGS"
           set +e
-          timeout 35m node "$RUNNER_TEMP/run-with-dotenv-env.mjs" env APP_IMAGE="$APP_IMAGE" docker stack deploy $STACK_FILE_FLAGS -c deploy/stack.cdc-quiesce.yml --with-registry-auth --prune --detach=true "$STACK_NAME"
+          timeout 35m node "$RUNNER_TEMP/run-with-dotenv-env.mjs" env APP_IMAGE="$APP_IMAGE" docker stack deploy "${stack_file_flags[@]}" -c deploy/stack.cdc-quiesce.yml --with-registry-auth --prune --detach=true "$STACK_NAME"
           status=$?
           set -e
           if [ "$status" -eq 124 ]; then
@@ -848,7 +879,7 @@ jobs:
           fi
 
           wait_deadline_seconds=$((SECONDS + 2100))
-          for service in web worker cdc-health analytics-worker metric-stream-clickhouse-sink metric-stream-live-clickhouse-sink metric-stream-history-clickhouse-sink metric-stream-r2-archive metric-stream-live-r2-archive metric-stream-history-r2-archive processing-reconciliation clickhouse databasus; do
+          for service in kafka web worker cdc-health analytics-worker metric-stream-clickhouse-sink metric-stream-live-clickhouse-sink metric-stream-history-clickhouse-sink metric-stream-r2-archive metric-stream-live-r2-archive metric-stream-history-r2-archive processing-reconciliation clickhouse databasus; do
             service_name="${STACK_NAME}_${service}"
             while true; do
               update_state="$(
@@ -948,6 +979,9 @@ jobs:
               sleep 10
             done
           done
+
+      - name: Verify Kafka after requested-image stack apply
+        run: *kafka_api_readiness
 
       - name: Wait for Postgres writable after stack deploy
         run: |
@@ -1145,6 +1179,9 @@ jobs:
             "${APP_IMAGE}" \
             -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; export CLICKHOUSE_URL="http://default:${CLICKHOUSE_PASSWORD_ENCODED}@clickhouse:8123"; exec ./entrypoint.sh peerdb-cdc-contract verify /run/dofek-peerdb-cdc/artifact.json'
 
+      - name: Verify Kafka before restoring consumers
+        run: *kafka_api_readiness
+
       - name: Deploy and verify remaining services
         id: deploy_stack_full
         if: success() && steps.deploy_stack_quiesced.conclusion == 'success' && steps.configure_clickhouse_cdc.conclusion == 'success' && steps.verify_peerdb_cdc_contract.conclusion == 'success'
@@ -1185,7 +1222,7 @@ jobs:
           expected_ota_image="$(pnpm tsx scripts/stack-service-image.ts deploy/stack.yml ota)"
           wait_deadline_seconds=$((SECONDS + 1200))
           stability_window_seconds=60
-          for service in ota analytics-worker metric-stream-clickhouse-sink metric-stream-live-clickhouse-sink metric-stream-history-clickhouse-sink metric-stream-r2-archive metric-stream-live-r2-archive metric-stream-history-r2-archive processing-reconciliation; do
+          for service in kafka ota analytics-worker metric-stream-clickhouse-sink metric-stream-live-clickhouse-sink metric-stream-history-clickhouse-sink metric-stream-r2-archive metric-stream-live-r2-archive metric-stream-history-r2-archive processing-reconciliation; do
             service_name="${STACK_NAME}_${service}"
             stable_task_id=""
             stable_since_seconds=0
@@ -1287,6 +1324,9 @@ jobs:
             fi
             pnpm tsx scripts/verify-deploy-image.ts "$APP_IMAGE" "${STACK_NAME}_${service}"
           done
+
+      - name: Verify Kafka after full stack apply
+        run: *kafka_api_readiness
 
       - name: Remove unused Apple private key Swarm secrets
         if: steps.deploy_stack_full.outcome == 'success'

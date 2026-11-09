@@ -8,9 +8,10 @@ broker integration and structural checkpoints without duplicating them.
 
 **Release order selected: Kafka first, tiered storage second.** The latest user
 instruction makes this Kafka-only layer phase 1. Review the [single concrete
-phase-1 proposal](phase1-approval.md), with fresh read-only readiness evidence,
-byte policy, pause, monitoring and recovery scope. Production changes require
-that proposal's approval. The separate tiered candidate is phase 2; its accepted
+phase-1 approval](phase1-approval.md) and [completed execution receipt](phase1-execution.md).
+Q4/A authorized the exact policy, pause, routes, first-write/recovery boundary and
+observation; Kafka is now live. That completed approval does not authorize a
+repeat cutover or the broader shared application release. The separate tiered candidate is phase 2; its accepted
 late-upload/orphan residual does not weaken phase-1 checks.
 
 ## This layer
@@ -29,13 +30,14 @@ late-upload/orphan residual does not weaken phase-1 checks.
 The fresh host source is `/mnt/dofek-data/kafka-broker/data`, mounted as
 `/var/lib/kafka/data` in Kafka and read-only at `/var/lib/dofek/kafka-data` in the
 worker. The tiered layer uses this same source, not another Kafka data tree.
-No production directory is created, reused, moved, formatted or removed here.
+The approved phase-1 operation created that fresh directory; normal application
+deployment now only validates existing paths and the mounted data filesystem.
 Original Redpanda `/mnt/dofek-data/redpanda` and aborted Kafka
 `/mnt/dofek-data/kafka/data` remain preserved.
 
 The base broker configuration has remote storage disabled because the plugin
-and remote verifier belong to the dependent tiered layer. This is a review
-boundary, not selection of hot-log-only as the production solution. See
+and remote verifier belong to the dependent tiered layer. This is the selected
+first stage, not the final storage architecture. See
 [Kafka's tiered-storage configuration](https://kafka.apache.org/44/operations/tiered-storage/).
 
 Already-managed R2/Terraform declarations remain here solely to preserve applied
@@ -50,9 +52,9 @@ Historical protocol/native proofs and image pins remain in
 tiered runtime. Earlier combined tiering/fencing documents are historical context;
 current remote implementation and qualification are owned by the dependent branch.
 
-The [cutover packet](cutover-packet.md) and [operator proposal](operator-proposal.md)
-are review material. Main-branch CI can trigger application deployment, so the
+The [cutover packet](cutover-packet.md) and [operator command record](operator-proposal.md)
+retain the executed first-stage boundaries. Main-branch CI can trigger application deployment, so the
 two source layers need a coordinated merge/release sequence: merging a local-only
 parent after tiered activation must not re-disable remote storage. No automation
 change, merge, deployment, pause, topic mutation, credential edit, old-data
-retirement or cloud experiment is authorized by this split.
+retirement or cloud experiment is authorized by the source split alone.

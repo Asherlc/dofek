@@ -1,11 +1,13 @@
 # Tiered-storage deletion fencing proposal
 
-Status: **Withdrawn. Aiven itself is subsequently rejected under the user's
-no-niche-dependencies requirement.** See the [current platform decision](README.md).
-Historical Astra/Opus proposal; not implemented.
+Status: **Historical, unselected custom-plugin proposal; not implemented.**
+The user later selected stock upstream Aiven and split tiering into
+[PR #3236](https://github.com/Asherlc/dofek/pull/3236). See the
+[current release sequence](README.md); phase 1 is already live on Kafka.
 On November 8 the user accepted the specific unknown-outcome upload risk below.
-That risk acceptance was not approval of the plugin's adoption/support profile.
-The hot-log release alternative stays withdrawn.
+The earlier adoption objection and hot-log-only alternative were superseded by
+the explicit Kafka-first, tiering-second release order. The custom fencing patch
+was not selected under that order.
 
 ## Accepted exception and intended stock path
 
@@ -153,9 +155,10 @@ service contract. Any later R2-specific test requires separate explicit approval
 no cloud experiment, production read/write, credential change or data removal is
 authorized here.
 
-## Costs and unresolved release gates
+## Historical patch costs and release gates
 
-Approval is needed for maintaining/pinning a plugin patch and retaining permanent
+This section describes the unselected patch, not a current approval request.
+That proposal would have required approval for maintaining/pinning a plugin patch and retaining permanent
 empty structural objects. Their native history and listing costs grow; measure
 that overhead. Oversize rejection can stall offload and grow local storage, so
 observability and a qualified object envelope are required.
@@ -168,6 +171,6 @@ retention is not a hard disk ceiling during offload failure; any hard storage
 boundary requires accepting write unavailability, not dropping uncopied data.
 No quota, new infrastructure, retention value or deployment is selected here.
 
-The requested next approval is **the narrow plugin patch and bounded offline
-qualification**, not a production release, weaker erasure guarantee, crypto
-erasure substitute, or automatic merge.
+No plugin-patch approval is currently requested. The selected stock Aiven work
+and its qualification belong to PR #3236; this historical protocol is not its
+implementation or release authorization.

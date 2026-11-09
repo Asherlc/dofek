@@ -72,10 +72,13 @@ command; inspect the final specification before any start:
 
 ```sh
 set -euo pipefail
-old_kafka_keys="$(
+if ! old_kafka_keys="$(
   docker service inspect dofek_kafka |
     jq -er '.[0].Spec.TaskTemplate.ContainerSpec.Env[] | split("=")[0] | select(. != "CLUSTER_ID")'
-)"
+)"; then
+  echo "Kafka environment inspection failed; stopped service was not updated" >&2
+  exit 1
+fi
 remove_environment=()
 while IFS= read -r key; do
   remove_environment+=(--env-rm "$key")
@@ -226,6 +229,33 @@ Missing forward-recovery prerequisites block writer release.
 Retained Redpanda data continues to block final erasure completion. There is no
 delete/move command in this cutover. Retirement needs its own approved operator
 packet accounting for rollback and existing archive/backup gates.
+
+## Kafka quarantine inspection
+
+Use a one-shot administrative client on the existing overlay after Redpanda is
+stopped. This uses the already-qualified Redpanda image solely for its `rpk`
+client; it starts no broker and mounts no broker data. The native
+[topic describe command](https://docs.redpanda.com/current/reference/rpk/rpk-topic/rpk-topic-describe/)
+accepts explicit topic names without a regex and reports offsets without reading
+record values:
+
+```sh
+set -euo pipefail
+legacy=metric-stream-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3
+live=metric-stream-live-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3
+history=metric-stream-history-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3
+docker run --rm --network dofek_default --memory 256m --entrypoint rpk \
+  redpandadata/redpanda:v26.1.9@sha256:8cb52078690728e2b3d1507fc84eda4c07d4d59bd8fa241e9b1cc7eb7de096c9 \
+  -X brokers=kafka:9092 topic describe \
+  "$legacy.quarantine.v1" "$live.quarantine.v1" "$history.quarantine.v1" \
+  --format json | jq '[.[] | {topic: .summary.name, partitions: [.partitions[] | {partition, log_start_offset, high_watermark}]}]'
+```
+
+The [completed phase-1 receipt](phase1-execution.md) records all three quarantine
+high watermarks at zero. A later nonzero boundary requires diagnosis; it is not
+permission to reset offsets, acknowledge, redrive or delete anything. Obtain a
+separately bounded inspection scope before reading sensitive record bodies.
+Zero offsets do not establish physical erasure.
 
 ## Remaining decision bundle
 

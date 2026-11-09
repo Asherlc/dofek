@@ -193,6 +193,21 @@ The later Q4/A approval binds the [exact phase-1 operation](phase1-approval.md),
 including policy, reserve monitoring, recovery and retained-RP erasure hold.
 It does not authorize the broader shared release or old-data deletion.
 
+The current phase-1 history image `d8ca75d...` consumes `KAFKA_BROKERS` and remains
+pinned until that shared release. The merged #3235 repair retains the normal
+Redpanda-named producer/consumer interface: the replacement shared image consumes
+`REDPANDA_BROKERS`, including its history sink. Verify that image's actual source
+and renderer together; do not copy the old pinned image's key onto a different
+image or add a dual-key fallback. See the
+[normal consumer configuration](../../src/metric-stream/redpanda-consumer.ts)
+and [per-service renderer](../../scripts/deploy-service-environment.ts).
+The repair's existing real-ClickHouse evidence remains in
+[the history recovery receipt](../../docs/evidence/history-clickhouse-recovery-20261108/README.md).
+
+Read-only Kafka quarantine metadata uses the
+[explicit current-topic procedure](operator-proposal.md#kafka-quarantine-inspection),
+which works while Redpanda is stopped and reads no event bodies.
+
 ## Stop gates
 
 1. **Qualified worker and configuration:** require the new worker image, matching
@@ -212,7 +227,9 @@ It does not authorize the broader shared release or old-data deletion.
    prove another existing configuration prevents collisions. No implicit topic
    generation or application transport-epoch migration is authorized.
 4. **Current-image qualification:** producer, sink and archive paths must pass
-   against stock Kafka with the existing `REDPANDA_BROKERS` contract. A local
+   against stock Kafka with each actual image's existing key: `REDPANDA_BROKERS`
+   for older web/worker, legacy/live sinks and Connect, and `KAFKA_BROKERS` for
+   the pinned repaired-history image. A local
    protocol-only test does not qualify R2 tiered retention or a full service boot.
 
 ## Capacity and proposed topic policy
