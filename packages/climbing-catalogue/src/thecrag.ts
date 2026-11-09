@@ -118,8 +118,29 @@ function parseArea(
 ): Pick<CatalogueLocation, "coordinates" | "context"> {
   const $ = load(html);
   const canonical = $('link[rel="canonical"]');
-  const identity =
+  let identity =
     canonical.length === 1 ? areaUrl(canonical.attr("href") ?? "", routeId(expected)) : null;
+  if (!identity && canonical.length === 1) {
+    // Regions use named canonical paths; the page and its final breadcrumb prove the native ID.
+    const href = canonical.attr("href") ?? "";
+    const url = URL.canParse(href, ORIGIN) ? new URL(href, ORIGIN) : null;
+    const self = $("a.crumb__a").last();
+    const selfHref = self.attr("href") ?? "";
+    if (
+      url?.origin === ORIGIN &&
+      !url.username &&
+      !url.password &&
+      !url.search &&
+      !url.hash &&
+      url.pathname.startsWith("/en/climbing/") &&
+      !/\/(?:area|route)\//.test(url.pathname) &&
+      $("body").attr("data-nid") === routeId(expected) &&
+      self.attr("data-nid") === routeId(expected) &&
+      URL.canParse(selfHref, ORIGIN) &&
+      new URL(selfHref, ORIGIN).href === url.href
+    )
+      identity = url;
+  }
   if (!identity)
     throw new Error(
       "theCrag catalogue parent area identity is unavailable or invalid. Retry later.",
@@ -192,7 +213,8 @@ function parseArea(
       !url.search &&
       !url.hash &&
       url.pathname.endsWith("/routes") &&
-      areaUrl(url.pathname.slice(0, -7), routeId(identity)) &&
+      (url.pathname === `${identity.pathname.replace(/\/$/, "")}/routes` ||
+        areaUrl(url.pathname.slice(0, -7), routeId(expected))) &&
       match
     ) {
       context.statistics.push({
