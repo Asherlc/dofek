@@ -192,7 +192,7 @@ function fixture(answers = successAnswers()) {
     return { json: async () => JSON.parse(JSON.stringify(next.rows)) };
   });
   const owner: Pick<AnalyticsQueryOwner, "client" | "assertActive"> = {
-    client: { command, query },
+    client: { command, query, insert: vi.fn(async () => undefined) },
     assertActive: vi.fn(async () => {
       trace.push("active");
     }),

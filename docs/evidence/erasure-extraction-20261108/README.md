@@ -76,16 +76,39 @@ before the target assertion still failed (expected 0, received 1). This helper
 diagnostic is historical evidence, not qualification of the production
 `handleEvents` admission boundary.
 
-The causal path is
+The causal path in the frozen source and before the production admission fix was
 [`applyMetricStreamEventsToClickHouse`](../../../src/metric-stream/clickhouse-sink.ts):
 `filterEventsByAccountErasureFence` reads before
-`insertMetricStreamEventsIntoClickHouse` writes. The sink has no shared ownership
+`insertMetricStreamEventsIntoClickHouse` writes. That sink had no shared ownership
 boundary with the [erasure runtime](../../../src/jobs/account-erasure-runtime.ts).
 The frozen source also has no publication caller of its new delivery coordinator.
 The existing [refresh queue](../../../src/analytics-refresh-queue.ts) serializes
 refresh jobs, while erasure and the raw sink run separately.
 
-## Proposed safety work — requires alignment
+## Production sink admission — local qualification
+
+The [production sink entrypoint](../../../src/metric-stream/clickhouse-sink.ts)
+now admits the actual consumer callback through the existing publication owner
+before fence membership. Its owned client performs the batch's insert, delete
+and acknowledgement requests; the existing consumer advances offsets only after
+the callback succeeds. Kafka heartbeats continue while admission waits. The
+intent is bound to topic, partition and first valid offset, so resegmented replay
+of the same uncommitted start retains its intent. Uncertain prior requests still
+require verified recovery; this change does not clear them automatically.
+
+The [real production-process regression](../../../src/metric-stream/clickhouse-sink-publication.integration.test.ts)
+uses native Kafka, PostgreSQL and an isolated ClickHouse instance matching the
+configured engine's exact version. It uses stock
+[Testcontainers lifecycle isolation](https://node.testcontainers.org/features/containers/)
+and the checked-in 1536 MiB container/128 MiB query guardrails. Network-level MSW
+holds the first real fence response, without changing SQL or mocking modules.
+The pre-fix sink completed erasure and then resurrected the target: **expected 0,
+received 1**. With admission, exact **26.6.1.1193** passes physical erasure,
+unrelated-owner survival, no early offsets/processing acknowledgement, and actual
+consumer replacement behind a held owner. Exact 26.10 and final candidate CI
+remain required; actual dbt/cycling writers remain the next implementation task.
+
+## Approved safety work — implementation incomplete
 
 One proposed strategy is to extend the existing publication ownership boundary
 to actual publication callers; do not add another coordinator framework.

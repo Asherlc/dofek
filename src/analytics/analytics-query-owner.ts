@@ -12,13 +12,19 @@ import {
 
 export const ANALYTICS_PUBLICATION_RESOURCE = "metric-stream-source";
 
-export interface AnalyticsQueryOwner {
+interface QueryOwner {
   client: Omit<ClickHouseClient, "exec">;
   ingestedAt: string;
   reserveIngestionThrough(through: string): Promise<void>;
   reuseIngestionReservation(group: PersistedAnalyticsDeliveryGroup): Promise<void>;
   assertActive(): Promise<void>;
   runSynchronousDbt(operation: () => Promise<number>): Promise<number>;
+}
+
+export interface AnalyticsQueryOwner extends Omit<QueryOwner, "client"> {
+  client: Omit<ClickHouseClient, "exec" | "insert"> & {
+    insert: NonNullable<ClickHouseClient["insert"]>;
+  };
 }
 
 export interface AnalyticsReceiptQueryOwner {
@@ -43,7 +49,11 @@ export async function withAnalyticsQueryOwner<T>(
   operation: (owner: AnalyticsQueryOwner) => Promise<T>,
 ): Promise<T> {
   z.object({ resourceId: z.string().min(1), intentId: z.string().min(1) }).parse(input);
-  return withOwnedQueries(database, clickhouse, { ...input, mode: "write" }, operation);
+  return withOwnedQueries(database, clickhouse, { ...input, mode: "write" }, (owner) => {
+    if (!owner.client.insert)
+      throw new Error("Analytics query ownership requires an insert-capable client");
+    return operation({ ...owner, client: { ...owner.client, insert: owner.client.insert } });
+  });
 }
 
 /** Verify completed receipts read-only; retire only their exact admitted intent.
@@ -65,7 +75,7 @@ async function withOwnedQueries<T>(
   database: Pick<Database, "$client">,
   clickhouse: ClickHouseClient,
   input: { resourceId: string } & ({ mode: "write"; intentId: string } | { mode: "receipt" }),
-  operation: (owner: AnalyticsQueryOwner) => Promise<T>,
+  operation: (owner: QueryOwner) => Promise<T>,
 ): Promise<T> {
   const session = await database.$client.connect();
   const ownerId = randomUUID();
@@ -311,9 +321,7 @@ async function withOwnedQueries<T>(
       .parse(admittedRow.rows[0]);
     admittedIntentId = intentId;
     const insert = clickhouse.insert?.bind(clickhouse);
-    if (input.mode === "write" && !insert)
-      throw new Error("Analytics query ownership requires an insert-capable client");
-    const client: AnalyticsQueryOwner["client"] = {
+    const client: QueryOwner["client"] = {
       command: (options) =>
         execute(
           (queryId) =>
