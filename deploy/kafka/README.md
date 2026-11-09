@@ -1,15 +1,18 @@
 # Kafka tiered-storage candidate
 
-This is the **tiered-storage layer**, stacked on
+This is the **tiered-storage layer**, following the merged
 [Kafka migration PR #3233](https://github.com/Asherlc/dofek/pull/3233).
-The broker migration remains in its own workspace. This layer owns upstream
+This layer owns upstream
 Aiven/R2 configuration, remote deletion verification and tiered qualification;
 it extends the existing broker guard rather than duplicating it.
 
 **Phase 2: tiered storage after Kafka deployment.** The user's latest explicit
 order is Kafka first through PR #3233, then this separately approved tiered
-release. Use the [live parent phase-1 proposal](https://github.com/Asherlc/dofek/blob/kafka-broker-migration/deploy/kafka/phase1-approval.md)
-for Kafka-only execution scope. Upstream Aiven remains selected for phase 2;
+release. The [phase-1 approval](phase1-approval.md) and
+[completed execution receipt](phase1-execution.md) record the Kafka-only scope;
+Kafka is now live. That approval does not authorize a repeat cutover or tiered
+activation. The [shared application release proposal](shared-release.md) records
+its separate image and deployment boundaries. Upstream Aiven remains selected for phase 2;
 there is no plugin fork. This phase must preserve the phase-1 data, cluster/topic
 generations, offsets and archive identities. Existing fresh-tiered fixture proof
 does not alone qualify enabling tiering on an existing phase-1 broker.
@@ -23,9 +26,12 @@ and original `hostname: kafka` fix. Operator JVMs run outside the broker cgroup.
 See [Kafka tiering](https://kafka.apache.org/44/operations/tiered-storage/) and
 the [Aiven release](https://github.com/Aiven-Open/tiered-storage-for-apache-kafka/releases/tag/v1.2.0).
 
-The fresh host data path is `/mnt/dofek-data/kafka-broker/data`, mounted at
+The existing phase-1 host data path is `/mnt/dofek-data/kafka-broker/data`, mounted at
 `/var/lib/kafka/data` in Kafka and read-only at `/var/lib/dofek/kafka-data` in the
 worker. Plugins remain read-only at `/mnt/dofek-data/kafka/plugins/1.2.0/{core,s3}`.
+The phase-1 operation provisioned the data directory; normal deployments only
+validate existing paths and the mounted data filesystem. See the
+[execution receipt](phase1-execution.md).
 Keep original Redpanda `/mnt/dofek-data/redpanda` and aborted Kafka
 `/mnt/dofek-data/kafka/data` in place; the worker holds completion while either
 read-only retired root has any entry. No tree is moved, reused, formatted or
@@ -74,10 +80,12 @@ the narrowly changed worker as a separately qualified image; the historical
 hot-log worker image does not qualify this runtime. Combining PR #3234 must
 explicitly preserve the broker hook and all six structural checkpoint fields.
 
-The [cutover packet](cutover-packet.md) and [operator proposal](operator-proposal.md)
-must bind actual images, effective configuration and fresh topic/archive identity
-before production approval. Both PRs' automatic deployment dependencies require
-one reviewed release sequence; no merge/cutover order is approved by this split.
+The [cutover packet](cutover-packet.md) and [operator command record](operator-proposal.md)
+retain the executed phase-1 boundaries. The [phase-2 reference](tiered-cutover-packet.md)
+requires a separately reviewed transition preserving the existing data and
+cluster/topic identities; its historical fresh-bootstrap commands are not
+phase-2 instructions. Main-branch CI can trigger application deployment, so
+tiered source landing and activation require one reviewed release sequence.
 The normal workflow requires Kafka already active; it is not the first cutover.
 
 The pinned worker's [actual phase and remote-read/restart evidence](../../docs/evidence/kafka-tiered-child-20261108/README.md)

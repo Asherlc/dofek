@@ -1,16 +1,25 @@
 # Kafka broker migration
 
+**Current status, November 9 UTC:** Kafka-only phase 1 was explicitly approved
+as Q4/A and completed its production cutover and thirty-minute observation.
+The [execution receipt](../../deploy/kafka/phase1-execution.md) records exact
+images, all six old/new route boundaries, topic identities and preserved data.
+The shared application release/merge is being qualified separately; tiering is
+the later PR #3236 release on these same Kafka generations. Earlier investigation
+and approval text below is historical, not a current execution instruction.
+
 **Latest scope: broker migration only; tiered storage is a separate workspace.**
 The user selected upstream Aiven, then requested this further source split.
 The `kafka-tiered-storage` branch is stacked on this branch and owns plugin/R2
 configuration, remote erasure checks and qualification. This layer owns protocol
 transition, existing image contracts, structural checkpoints and native local/
 retired-Redpanda checks. See the [current boundaries](../../deploy/kafka/README.md).
-No standalone hot-log activation, merge, purchase or production action is approved.
+The original split did not itself approve activation; Q4/A subsequently approved
+the explicit Kafka-first operation recorded above.
 The remaining dated text preserves earlier combined investigation, not ownership
 of the new tiered implementation.
 
-Status: **blocked; Kafka WITH tiered storage is required**. The user rejected
+Historical strategy checkpoint: **Kafka WITH tiered storage required**. The user rejected
 hot-log-only as the release direction. Current remote-disabled source/worker
 artifacts remain for review, not deployment; their successful tests do not
 qualify tiered activation. The user [accepted the specific late-upload risk](../../deploy/kafka/tiered-fencing-proposal.md#accepted-exception-and-intended-stock-path),
@@ -124,23 +133,25 @@ pipeline and committed offsets, with local file output replacing S3. See
 scope and cleanup details. This establishes bounded protocol compatibility,
 not full service boot, R2 delivery or physical remote erasure.
 
-The [cutover packet](../../deploy/kafka/cutover-packet.md) now records immutable
-service images, all six route boundaries and pre/post-write recovery classes.
-It remains non-executable: the unchanged worker cannot provide the required
+At this earlier checkpoint the [cutover packet](../../deploy/kafka/cutover-packet.md)
+recorded image/route contracts and recovery classes; actual final offset capture
+was still pending. It was non-executable: the unchanged worker could not provide the required
 storage guard, and the new worker must be released coherently with Kafka.
 Acceptance of the proposed topic identities/policy and retirement authorization
 remain unresolved.
 
-## Qualified hot-log candidate
+## Historical qualified hot-log alternative
 
 After approval to qualify the hot-log alternative, native source review and an
 actual adapter fixture established the scoped filesystem lifecycle check. The
-canonical base now disables remote storage and uses fresh
+then-candidate base disabled remote storage and used fresh
 `/mnt/dofek-data/kafka-hot-log/data`; the worker sees that same source read-only
 and the original Redpanda root in place. No overlay, RSM installer, plugin mount
 or broker object-store credential remains. Already-managed R2 resources remain
 declared pending separate decommission approval. See
-[the qualification](../../deploy/kafka/hot-log-qualification.md).
+[the qualification](../../deploy/kafka/hot-log-qualification.md). That earlier
+alternative was withdrawn. The later approved first stage uses the canonical
+`/mnt/dofek-data/kafka-broker/data` source described in the current receipt.
 
 The worker binds captured offsets to structural cluster/topic UUIDs and invokes
 the native storage guard in real final retention. The bounded PII scrub preserves
@@ -148,14 +159,17 @@ only those native fields with topic/partition/offsets. Existing checkpoints
 without them fail closed; no fallback acknowledgement or new tracking store exists.
 The unrelated erasure redesign remains outside this branch.
 
-Verification: the configured full `pnpm test` run passed 23,788 tests before the
+Historical verification: the configured full `pnpm test` run passed 23,788 tests before the
 last renderer simplification; 82 affected tests passed afterward. The 13-test
 Postgres scrub suite first reproduced lost generation evidence, then passed;
 the two request/crash-recovery integration tests passed. Typecheck, changed-file
 Biome, Actionlint in repository mode and canonical base-plus-Oracle stack render
 passed. [Native receipt](../../deploy/kafka/native-storage-proof.json) records
 rejection before cleanup, generation preservation across restart and success only
-after native removal. No production change was made.
+after native removal. [Retained console excerpts](../evidence/kafka-review-qualification-20261109/retained-test-summaries.txt)
+include the full-run count, the earlier failing scrub check and its thirteen-test
+passing recheck. Those logs do not embed source SHAs and do not qualify a later
+image. No production change was made at that historical checkpoint.
 
 The packet now pins the worker image and records its packaged retention-phase
 qualification. [CI](https://github.com/Asherlc/dofek/actions/runs/42508916991) passed

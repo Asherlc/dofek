@@ -9,12 +9,12 @@ const clusterId = "0000000000000000000000";
 const directories: string[] = [];
 const offsets = [{ partition: 0, low: "100", high: "200", offset: "200" }];
 
-async function fixture() {
+async function fixture(topic = "samples") {
   const root = await mkdtemp(join(tmpdir(), "kafka-erasure-"));
   directories.push(root);
   const logs = join(root, "logs");
   const retired = join(root, "retired");
-  const partition = join(logs, "samples-0");
+  const partition = join(logs, `${topic}-0`);
   await mkdir(partition, { recursive: true });
   await mkdir(retired);
   await mkdir(join(logs, "remote-log-index-cache"));
@@ -25,7 +25,7 @@ async function fixture() {
     fetchTopicMetadata: vi.fn(async () => ({
       topics: [
         {
-          name: "samples",
+          name: topic,
           partitions: [
             { partitionId: 0, partitionErrorCode: 0, replicas: [1], isr: [1], leader: 1 },
           ],
@@ -72,11 +72,11 @@ async function fixture() {
       directory: logs,
       brokerDirectory: "/var/lib/kafka/data",
       retiredDirectories: [retired],
-      topics: ["samples"],
+      topics: [topic],
     },
     remote,
   );
-  const boundaries = await storage.capture("samples", async () => offsets);
+  const boundaries = await storage.capture(topic, async () => offsets);
   const boundary = boundaries[0];
   if (!boundary) throw new Error("missing fixture boundary");
   const retained: [typeof boundary] = [boundary];
@@ -205,6 +205,21 @@ describe("Kafka native log erasure", () => {
     await writeFile(join(aborted, "payload"), "retained bytes");
     await expect(storage.assertExpired(cut)).rejects.toThrow("Retired broker");
   });
+  it("captures and verifies a valid dot-prefixed Kafka topic", async () => {
+    const { storage, boundaries } = await fixture(".samples");
+    expect(boundaries).toEqual([{ ...offsets[0], clusterId, topicId }]);
+    await expect(
+      storage.assertExpired([{ ...boundaries[0], topic: ".samples", offset: "100" }]),
+    ).resolves.toBeUndefined();
+  });
+
+  it.each([".", ".."])('rejects reserved Kafka topic name "%s"', async (topic) => {
+    const { storage } = await fixture();
+    await expect(storage.capture(topic, async () => offsets)).rejects.toMatchObject({
+      name: "ZodError",
+    });
+  });
+
   it("binds offsets to the native cluster and topic generation", async () => {
     const { boundaries, admin } = await fixture();
     expect(boundaries).toEqual([{ ...offsets[0], clusterId, topicId }]);

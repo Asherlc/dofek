@@ -30,7 +30,9 @@ locals {
   kafka_ts_r2_bucket_resource = "com.cloudflare.edge.r2.bucket.${var.cloudflare_account_id}_default_${local.kafka_ts_r2_bucket_name}"
 }
 
-# Resolve live permission-group id (requires Account API Tokens Read on managing token).
+# Permission-group listing accepts Account API Tokens Write OR Read. The managing
+# token already needs Write to create the account token below.
+# https://developers.cloudflare.com/api/resources/accounts/subresources/tokens/subresources/permission_groups/methods/get/
 # name/scope: plain strings. Provider 5.19 passes them through to cloudflare-go
 # TokenPermissionGroupListParams.URLQuery() → url.Values.Encode() (QueryEscape).
 # Pre-encoding ("%20") double-encodes to %2520. Schema text saying "URL-encoded"
@@ -78,6 +80,8 @@ resource "cloudflare_r2_bucket_lifecycle" "kafka_ts_offload_abort_mpu" {
 
 # Long-lived dedicated Object RW account token scoped to the Kafka TS bucket only.
 # Managing provider token must have Account API Tokens Write (not User API Tokens).
+# Bucket Item Write includes object read/write/list; an extra Read grant is redundant.
+# https://developers.cloudflare.com/r2/api/tokens/#permission-groups
 resource "cloudflare_account_token" "kafka_ts_offload_object_rw" {
   provider   = cloudflare.r2
   account_id = var.cloudflare_account_id

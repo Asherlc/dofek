@@ -16,6 +16,28 @@ const mocks = vi.hoisted(() => ({
   assertReplayExpired: vi.fn(async () => undefined),
   captureHighWatermarks: vi.fn(async () => [{ low: "1", offset: "3", partition: 0 }]),
   captureQuarantineHighWatermarks: vi.fn(async () => [{ low: "4", offset: "12", partition: 0 }]),
+  captureBrokerStorage: vi.fn(
+    async (
+      topic: string,
+      captureOffsets: () => Promise<Array<{ low: string; offset: string; partition: number }>>,
+    ) => {
+      const generations: Record<string, string> = {
+        "metric-stream-v1": "AAAAAAAAAAAAAAAAAAAAAA",
+        "metric-stream-live-v1": "BBBBBBBBBBBBBBBBBBBBBB",
+        "metric-stream-history-v1": "CCCCCCCCCCCCCCCCCCCCCC",
+        "metric-stream-v1.quarantine.v1": "aaaaaaaaaaaaaaaaaaaaaa",
+        "metric-stream-live-v1.quarantine.v1": "bbbbbbbbbbbbbbbbbbbbbb",
+        "metric-stream-history-v1.quarantine.v1": "cccccccccccccccccccccc",
+      };
+      const topicId = generations[topic];
+      if (!topicId) throw new Error(`Unexpected capture topic: ${topic}`);
+      return (await captureOffsets()).map((entry) => ({
+        ...entry,
+        clusterId: "0000000000000000000000",
+        topicId,
+      }));
+    },
+  ),
   capturePeerDbStagingBoundary: vi.fn(async () => ({
     cutoff: "2026-08-03T12:00:00.000Z",
     eTag: '"boundary-etag"',
@@ -75,9 +97,7 @@ vi.mock("../account-erasure/kafka-log-storage.ts", () => ({
       mocks.configureBrokerStorage(admin, paths, remote);
     }
     assertExpired = mocks.assertBrokerStorageExpired;
-    capture(_topic: string, captureOffsets: () => Promise<unknown[]>) {
-      return captureOffsets();
-    }
+    capture = mocks.captureBrokerStorage;
   },
 }));
 
@@ -385,12 +405,25 @@ describe("createAccountErasureRuntime", () => {
       },
       expect.any(KafkaRemoteStorage),
     );
-    const highWatermarks = topics.map((topic) => ({ topic, low: "1", offset: "3", partition: 0 }));
-    const quarantineHighWatermarks = topics.map((topic) => ({
+    const highWatermarks = topics.map((topic, index) => ({
+      topic,
+      low: "1",
+      offset: "3",
+      partition: 0,
+      clusterId: "0000000000000000000000",
+      topicId: ["AAAAAAAAAAAAAAAAAAAAAA", "BBBBBBBBBBBBBBBBBBBBBB", "CCCCCCCCCCCCCCCCCCCCCC"][
+        index
+      ],
+    }));
+    const quarantineHighWatermarks = topics.map((topic, index) => ({
       topic,
       low: "4",
       offset: "12",
       partition: 0,
+      clusterId: "0000000000000000000000",
+      topicId: ["aaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbb", "cccccccccccccccccccccc"][
+        index
+      ],
     }));
 
     expect(mocks.ensureProvidersRegistered).toHaveBeenCalledOnce();
@@ -426,7 +459,7 @@ describe("createAccountErasureRuntime", () => {
     expect(mocks.assertConsumersDrained).toHaveBeenCalledWith(
       { name: "redpanda-admin" },
       "metric-stream-v1",
-      [{ topic: "metric-stream-v1", low: "1", offset: "3", partition: 0 }],
+      [highWatermarks[0]],
       ["metric-stream-clickhouse-sink", "metric-stream-r2-archive"],
     );
     expect(mocks.captureQuarantineHighWatermarks).toHaveBeenCalledWith(
@@ -469,7 +502,7 @@ describe("createAccountErasureRuntime", () => {
     expect(mocks.assertQuarantineExpired).toHaveBeenCalledWith(
       { name: "redpanda-admin" },
       "metric-stream-v1",
-      [{ topic: "metric-stream-v1", low: "4", offset: "12", partition: 0 }],
+      [quarantineHighWatermarks[0]],
     );
     expect(mocks.assertBrokerStorageExpired).toHaveBeenCalledWith([
       ...highWatermarks,
@@ -497,6 +530,11 @@ describe("createAccountErasureRuntime", () => {
     ).rejects.toThrow("Account erasure checkpoint is missing topic metric-stream-history-v1");
     for (const [index, topic] of topics.entries()) {
       const prefix = ["metric-stream", "metric-stream-live", "metric-stream-history"][index];
+      expect(mocks.captureBrokerStorage).toHaveBeenCalledWith(topic, expect.any(Function));
+      expect(mocks.captureBrokerStorage).toHaveBeenCalledWith(
+        `${topic}.quarantine.v1`,
+        expect.any(Function),
+      );
       expect(mocks.captureHighWatermarks).toHaveBeenCalledWith({ name: "redpanda-admin" }, topic);
       expect(mocks.captureQuarantineHighWatermarks).toHaveBeenCalledWith(
         { name: "redpanda-admin" },

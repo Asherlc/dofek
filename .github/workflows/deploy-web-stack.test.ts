@@ -239,6 +239,7 @@ esac
       serializeScenario(scenarios.processingReconciliation ?? [STABLE_OBSERVATION]),
     );
     for (const serviceName of [
+      "dofek_kafka",
       "dofek_metric-stream-live-clickhouse-sink",
       "dofek_metric-stream-history-clickhouse-sink",
       "dofek_metric-stream-r2-archive",
@@ -323,6 +324,7 @@ function runDeployQuiesced(
     writeFileSync(pnpmPath, "#!/usr/bin/env bash\n[ \"$1\" = tsx ] && [ \"$2\" = scripts/verify-deploy-image.ts ]\n");
     chmodSync(pnpmPath, 0o755);
     const defaultServiceNames = [
+      "dofek_kafka",
       "dofek_web",
       "dofek_worker",
       "dofek_cdc-health",
@@ -685,6 +687,18 @@ ${workflowRunScript(step)}
     expect(result.githubOutput).not.toContain("web_convergence_failed=true");
   });
 
+  it("keeps a paused Kafka update fatal before continuing the release", () => {
+    const result = runDeployQuiesced([STABLE_OBSERVATION], {
+      serviceObservations: {
+        dofek_kafka: [{ ...STABLE_OBSERVATION, updateState: "paused" }],
+      },
+    });
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain("dofek_kafka update is paused");
+    expect(result.githubOutput).not.toContain("web_convergence_failed=true");
+  });
+
   it("quiesces the migration-running worker before the dependency stack apply", () => {
     const stepStart = workflowText.indexOf(
       "      - name: Apply dependency stack before migrations",
@@ -815,10 +829,10 @@ ${workflowRunScript(step)}
 
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain(
-      "[70s] dofek_analytics-worker task changed from replaced-task to replacement-task; resetting stability window",
+      "[130s] dofek_analytics-worker task changed from replaced-task to replacement-task; resetting stability window",
     );
     expect(result.stdout).toContain(
-      "[130s] dofek_analytics-worker task replacement-task has remained converged for 60s",
+      "[190s] dofek_analytics-worker task replacement-task has remained converged for 60s",
     );
   });
 
@@ -834,10 +848,10 @@ ${workflowRunScript(step)}
 
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain(
-      "[70s] dofek_analytics-worker lost convergence; resetting stability window for task stable-task",
+      "[130s] dofek_analytics-worker lost convergence; resetting stability window for task stable-task",
     );
     expect(result.stdout).toContain(
-      "[140s] dofek_analytics-worker task stable-task has remained converged for 60s",
+      "[200s] dofek_analytics-worker task stable-task has remained converged for 60s",
     );
   });
 
@@ -864,7 +878,7 @@ ${workflowRunScript(step)}
         analyticsWorker: [{ replicas: "0/1", taskId: "starting-task", updateState: "updating" }],
         metricStreamClickhouseSink: [STABLE_OBSERVATION],
       },
-      { sleepSeconds: 1200 },
+      { sleepSeconds: 60 },
     );
 
     expect(result.status).toBe(124);

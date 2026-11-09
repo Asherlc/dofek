@@ -10,7 +10,8 @@ const topicName = z
   .string()
   .min(1)
   .max(249)
-  .regex(/^[A-Za-z0-9_-][A-Za-z0-9._-]*$/);
+  .regex(/^[A-Za-z0-9._-]+$/)
+  .refine((name) => name !== "." && name !== "..");
 const offset = z.string().regex(/^\d+$/);
 const boundarySchema = z.object({
   topic: topicName,

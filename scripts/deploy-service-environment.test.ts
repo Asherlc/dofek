@@ -164,7 +164,7 @@ function completeDeployEnvironment(): Record<string, string> {
   ]);
   return {
     ...Object.fromEntries([...runtimeKeys].map((key) => [key, `${key.toLowerCase()}-value`])),
-    KAFKA_CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk",
+    KAFKA_CLUSTER_ID: "0000000000000000000000",
     KAFKA_TIERED_STORAGE_BUCKET: "dofek-kafka-ts-offload",
     KAFKA_TIERED_STORAGE_ENDPOINT: "https://example.r2.cloudflarestorage.com",
     KAFKA_TIERED_STORAGE_REGION: "auto",
@@ -198,29 +198,48 @@ describe("renderDeployServiceEnvironmentFiles", () => {
     writeFileSync(sourcePath, dotenv(completeDeployEnvironment()));
     const paths = renderDeployServiceEnvironmentFiles(sourcePath, join(directory, "services"));
     expect(parseEnv(readFileSync(paths.kafka, "utf8"))).toEqual({
-      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk",
+      CLUSTER_ID: "0000000000000000000000",
       KAFKA_RSM_CONFIG_STORAGE_S3_BUCKET_NAME: "dofek-kafka-ts-offload",
       KAFKA_RSM_CONFIG_STORAGE_S3_ENDPOINT_URL: "https://example.r2.cloudflarestorage.com",
       KAFKA_RSM_CONFIG_STORAGE_S3_REGION: "auto",
       AWS_ACCESS_KEY_ID: "kafka-ts-access-key-id",
       AWS_SECRET_ACCESS_KEY: "kafka-ts-secret-access-key",
-      KAFKA_RSM_CONFIG_KEY_PREFIX: "MkU3OEVBNTcwNTJENDM2Qk/",
+      KAFKA_RSM_CONFIG_KEY_PREFIX: "0000000000000000000000/",
     });
     const worker = parseEnv(readFileSync(paths.worker, "utf8"));
-    expect(worker.KAFKA_CLUSTER_ID).toBe("MkU3OEVBNTcwNTJENDM2Qk");
+    expect(worker.KAFKA_CLUSTER_ID).toBe("0000000000000000000000");
     expect(worker.KAFKA_TIERED_STORAGE_BUCKET).toBe("dofek-kafka-ts-offload");
     expect(worker.KAFKA_TIERED_STORAGE_SECRET_ACCESS_KEY).toBe("kafka-ts-secret-access-key");
   });
 
-  it("preserves dotenv quoting when renaming the broker cluster identity", () => {
+  it.each(['"', "'"])("renders a %s-quoted cluster identity for Docker env_file", (quote) => {
     const directory = makeTemporaryDirectory();
     const sourcePath = join(directory, "all.env");
     const environment = completeDeployEnvironment();
-    environment.KAFKA_CLUSTER_ID = JSON.stringify("quoted-cluster-id");
+    environment.KAFKA_CLUSTER_ID = `${quote}0000000000000000000000${quote}`;
     writeFileSync(sourcePath, dotenv(environment));
     const paths = renderDeployServiceEnvironmentFiles(sourcePath, join(directory, "services"));
-    expect(parseEnv(readFileSync(paths.kafka, "utf8")).CLUSTER_ID).toBe("quoted-cluster-id");
+    const brokerLines = readFileSync(paths.kafka, "utf8").trimEnd().split("\n");
+    expect(brokerLines).toContain("CLUSTER_ID=0000000000000000000000");
+    expect(brokerLines).toContain("KAFKA_RSM_CONFIG_KEY_PREFIX=0000000000000000000000/");
+    expect(readFileSync(paths.worker, "utf8").trimEnd().split("\n")).toContain(
+      "KAFKA_CLUSTER_ID=0000000000000000000000",
+    );
   });
+
+  it.each(["invalid cluster id", '"line\\nbreak"', "invalid$id"])(
+    "rejects an invalid native Kafka cluster identity: %s",
+    (clusterId) => {
+      const directory = makeTemporaryDirectory();
+      const sourcePath = join(directory, "all.env");
+      const environment = completeDeployEnvironment();
+      environment.KAFKA_CLUSTER_ID = clusterId;
+      writeFileSync(sourcePath, dotenv(environment));
+      expect(() =>
+        renderDeployServiceEnvironmentFiles(sourcePath, join(directory, "services")),
+      ).toThrow("KAFKA_CLUSTER_ID must be a 22-character Kafka UUID");
+    },
+  );
 
   it("rejects a missing Kafka cluster identity", () => {
     const directory = makeTemporaryDirectory();

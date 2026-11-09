@@ -439,21 +439,27 @@ export function renderDeployServiceEnvironmentFiles(
     }
   }
 
+  if (!/^[A-Za-z0-9_-]{22}$/.test(environment.KAFKA_CLUSTER_ID ?? "")) {
+    throw new Error("KAFKA_CLUSTER_ID must be a 22-character Kafka UUID");
+  }
+
   mkdirSync(outputDirectory, { mode: 0o700, recursive: true });
   chmodSync(outputDirectory, 0o700);
   const paths = resolvePaths(outputDirectory);
 
   for (const serviceName of DEPLOY_SERVICE_NAMES) {
     const lines = DEPLOY_SERVICE_ENVIRONMENT_POLICIES[serviceName].allowedKeys.flatMap((key) => {
+      if (key === "KAFKA_CLUSTER_ID") {
+        const targetKey = serviceName === "kafka" ? "CLUSTER_ID" : key;
+        return [`${targetKey}=${environment.KAFKA_CLUSTER_ID}`];
+      }
       const assignment = assignments.get(key);
       const targetKey = serviceName === "kafka" ? KAFKA_BROKER_ENV_RENAMES.get(key) : key;
       if (!targetKey) throw new Error(`Missing Kafka environment mapping: ${key}`);
       return assignment === undefined ? [] : [`${targetKey}${assignment.slice(key.length)}`];
     });
     if (serviceName === "kafka") {
-      lines.push(
-        `KAFKA_RSM_CONFIG_KEY_PREFIX=${JSON.stringify(`${environment.KAFKA_CLUSTER_ID}/`)}`,
-      );
+      lines.push(`KAFKA_RSM_CONFIG_KEY_PREFIX=${environment.KAFKA_CLUSTER_ID}/`);
     }
     const route = DEPLOY_SERVICE_ENVIRONMENT_POLICIES[serviceName].metricStreamRoute;
     if (route) {
