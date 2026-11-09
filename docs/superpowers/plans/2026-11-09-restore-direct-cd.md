@@ -51,9 +51,10 @@
 - [x] Record the durable fix, validation and remaining production rollout limitation in the incident baseline.
 - [x] Run the Docker-free unit/mobile suite, typecheck, actionlint, canonical source spelling and diff checks. Expected: all pass; report any external prerequisite failure explicitly.
 - [x] Obtain a fresh whole-diff review using the Architect profile; resolve important findings while preserving the approved approach.
-- [ ] Commit and push the final changes automatically; open a reviewable PR and monitor its checks without merging or dispatching production.
+- [x] Commit and push the final changes automatically; open a reviewable PR and monitor its checks without merging or dispatching production.
 
 ## Working Notes
 
 - Design checkpoint: user approved the simpler flow before implementation; no additional approval is needed for routine edits or validation.
 - Review checkpoints: inspect Task 1's real diff before documentation; review the complete final diff independently before claiming completion.
+- Local checks passed and the independent review's two stale documentation statements were corrected. [PR #3249](https://github.com/Asherlc/dofek/pull/3249) contains the implementation; CI is monitored separately and production execution requires merge.
