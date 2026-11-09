@@ -133,6 +133,8 @@ services:
       ACCOUNT_ERASURE_LEDGER_R2_BUCKET: dofek-account-erasure-ledger
     volumes:
       - job_files:/app/job-files
+      - /mnt/dofek-data/kafka-broker/data:/var/lib/dofek/kafka-data:ro
+      - /mnt/dofek-data/redpanda:/var/lib/dofek/retired-broker-data:ro
     healthcheck:
       test:
         [
@@ -345,38 +347,48 @@ services:
           cpus: "1.5"
           memory: 13G
 
-  redpanda:
-    image: redpandadata/redpanda:v26.1.9
-    command:
-      - redpanda
-      - start
-      - --smp=1
-      - --memory=1G
-      - --reserve-memory=0M
-      - --overprovisioned
-      - --node-id=0
-      - --check=false
-      # NOTE: cluster properties like kafka_batch_max_bytes are NOT valid
-      # `rpk redpanda start` flags — adding e.g. --kafka-batch-max-bytes here
-      # crash-loops the broker. Set them via `rpk cluster config set` instead.
-      - --kafka-addr=internal://0.0.0.0:9092
-      - --advertise-kafka-addr=internal://redpanda:9092
-      - --rpc-addr=0.0.0.0:33145
-      - --advertise-rpc-addr=redpanda:33145
+  # Broker migration layer; the dependent tiered-storage branch adds RSM.
+  kafka:
+    image: apache/kafka:4.4.0@sha256:833b867a9585a141da455dc2b57431c65cbccb27f11c91f694444cca9f777e0f
+    # Self-advertised name must resolve before Swarm marks the broker ready.
+    hostname: kafka
+    env_file: ${KAFKA_ENV_FILE:?KAFKA_ENV_FILE is required}
+    environment:
+      KAFKA_HEAP_OPTS: "-Xmx1G -Xms1G"
+      KAFKA_LOG_DIRS: "/var/lib/kafka/data"
+      KAFKA_PROCESS_ROLES: "broker,controller"
+      KAFKA_NODE_ID: "1"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:29093"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:9092"
+      KAFKA_LISTENERS: "CONTROLLER://:29093,PLAINTEXT://:9092"
+      KAFKA_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_REMOTE_LOG_STORAGE_SYSTEM_ENABLE: "false"
     volumes:
-      # Bind to the large /mnt/dofek-data disk, NOT a default named volume (which
-      # lands on the small root disk and fills during a metric-stream backfill).
-      - /mnt/dofek-data/redpanda:/var/lib/redpanda/data
+      # Fresh hot log; retain the aborted tiered broker tree separately.
+      - /mnt/dofek-data/kafka-broker/data:/var/lib/kafka/data
     healthcheck:
-      test: ["CMD-SHELL", "rpk cluster health | grep -q 'Healthy:.*true'"]
+      # Port-liveness only. Deploy waits on an external kafka-broker-api-versions client
+      # before producers attach. Never run operator JVMs inside this cgroup.
+      test:
+        [
+          "CMD-SHELL",
+          "bash -c 'exec 3<>/dev/tcp/127.0.0.1/9092'",
+        ]
       interval: 10s
-      timeout: 10s
+      timeout: 5s
       retries: 12
       start_period: 60s
     deploy:
       resources:
         limits:
-          memory: 1500M
+          # Replaces retired Redpanda 1500M hot-log budget on this single-node host.
+          memory: 2048M
 
   metric-stream-clickhouse-sink: &metric-stream-clickhouse-sink
     image: ${APP_IMAGE:?APP_IMAGE must be the resolved immutable deployment image}

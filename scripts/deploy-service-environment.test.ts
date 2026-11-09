@@ -158,6 +158,12 @@ function completeDeployEnvironment(): Record<string, string> {
   ]);
   return {
     ...Object.fromEntries([...runtimeKeys].map((key) => [key, `${key.toLowerCase()}-value`])),
+    KAFKA_CLUSTER_ID: "0000000000000000000000",
+    KAFKA_TIERED_STORAGE_BUCKET: "dofek-kafka-ts-offload",
+    KAFKA_TIERED_STORAGE_ENDPOINT: "https://example.r2.cloudflarestorage.com",
+    KAFKA_TIERED_STORAGE_REGION: "auto",
+    KAFKA_TIERED_STORAGE_ACCESS_KEY_ID: "kafka-ts-access-key-id",
+    KAFKA_TIERED_STORAGE_SECRET_ACCESS_KEY: "kafka-ts-secret-access-key",
     CLOUDFLARE_API_TOKEN: "cloudflare-control-plane-token",
     OTA_PRIVATE_KEY_B64: "ota-private-key",
     METRIC_STREAM_LEGACY_TOPIC: "metric-stream-v1",
@@ -180,6 +186,51 @@ afterEach(() => {
 });
 
 describe("renderDeployServiceEnvironmentFiles", () => {
+  it("renders the hot-log broker cluster identity", () => {
+    const directory = makeTemporaryDirectory();
+    const sourcePath = join(directory, "all.env");
+    writeFileSync(sourcePath, dotenv(completeDeployEnvironment()));
+    const paths = renderDeployServiceEnvironmentFiles(sourcePath, join(directory, "services"));
+    expect(parseEnv(readFileSync(paths.kafka, "utf8"))).toEqual({
+      CLUSTER_ID: "0000000000000000000000",
+    });
+  });
+
+  it.each(['"', "'"])("renders a %s-quoted cluster identity for Docker env_file", (quote) => {
+    const directory = makeTemporaryDirectory();
+    const sourcePath = join(directory, "all.env");
+    const environment = completeDeployEnvironment();
+    environment.KAFKA_CLUSTER_ID = `${quote}0000000000000000000000${quote}`;
+    writeFileSync(sourcePath, dotenv(environment));
+    const paths = renderDeployServiceEnvironmentFiles(sourcePath, join(directory, "services"));
+    expect(readFileSync(paths.kafka, "utf8")).toBe("CLUSTER_ID=0000000000000000000000\n");
+  });
+
+  it.each(["invalid cluster id", '"line\\nbreak"', "invalid$id"])(
+    "rejects an invalid native Kafka cluster identity: %s",
+    (clusterId) => {
+      const directory = makeTemporaryDirectory();
+      const sourcePath = join(directory, "all.env");
+      const environment = completeDeployEnvironment();
+      environment.KAFKA_CLUSTER_ID = clusterId;
+      writeFileSync(sourcePath, dotenv(environment));
+      expect(() =>
+        renderDeployServiceEnvironmentFiles(sourcePath, join(directory, "services")),
+      ).toThrow("KAFKA_CLUSTER_ID must be a 22-character Kafka UUID");
+    },
+  );
+
+  it("rejects a missing Kafka cluster identity", () => {
+    const directory = makeTemporaryDirectory();
+    const sourcePath = join(directory, "all.env");
+    const environment = completeDeployEnvironment();
+    delete environment.KAFKA_CLUSTER_ID;
+    writeFileSync(sourcePath, dotenv(environment));
+    expect(() =>
+      renderDeployServiceEnvironmentFiles(sourcePath, join(directory, "services")),
+    ).toThrow("KAFKA_CLUSTER_ID");
+  });
+
   it("gives only the migration-phase web artifact the explicit legacy producer topic", () => {
     const directory = makeTemporaryDirectory();
     const sourcePath = join(directory, "all.env");
@@ -491,6 +542,7 @@ describe("renderDeployServiceEnvironmentFiles", () => {
       web: "web.env",
       webPreMigration: "web-pre-migration.env",
       worker: "worker.env",
+      kafka: "kafka.env",
       metricStreamClickhouseSink: "metric-stream-clickhouse-sink.env",
       metricStreamLiveClickhouseSink: "metric-stream-live-clickhouse-sink.env",
       metricStreamHistoryClickhouseSink: "metric-stream-history-clickhouse-sink.env",

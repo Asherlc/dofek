@@ -52,6 +52,7 @@ const peerDbStagingBoundary = {
 
 function dependencies(): AccountErasurePhaseRunnerDependencies {
   return {
+    assertBrokerStorageExpired: vi.fn().mockResolvedValue(undefined),
     assertConsumersDrained: vi.fn().mockResolvedValue(undefined),
     assertPeerDbDrained: vi.fn().mockResolvedValue(undefined),
     assertQuarantineExpired: vi.fn().mockResolvedValue(undefined),
@@ -410,9 +411,15 @@ describe("createAccountErasurePhaseRunner", () => {
                 { topic: "metric-stream-v1", low: "4", offset: "12", partition: 0 },
               ],
             }
-          : phase === "peerdb_drain_verification"
-            ? { stagingBoundary: peerDbStagingBoundary, verified: true }
-            : null,
+          : phase === "ingest_fence"
+            ? {
+                highWatermarks: [
+                  { topic: "metric-stream-v1", low: "0", offset: "3", partition: 0 },
+                ],
+              }
+            : phase === "peerdb_drain_verification"
+              ? { stagingBoundary: peerDbStagingBoundary, verified: true }
+              : null,
       ),
       request: retainedRequest,
     });
@@ -460,6 +467,62 @@ describe("createAccountErasurePhaseRunner", () => {
     expect(JSON.stringify(vi.mocked(deps.verifyBackupRetention).mock.calls)).not.toContain(
       request.userId,
     );
+  });
+
+  it("blocks final completion when logically expired broker bytes still exist", async () => {
+    const deps = dependencies();
+    const failure = new Error("Kafka retains segment before erasure boundary");
+    vi.mocked(deps.assertBrokerStorageExpired).mockRejectedValue(failure);
+    const runner = createAccountErasurePhaseRunner(deps);
+    const run = execution({
+      request: {
+        ...request,
+        encryptedRemoteSnapshot: null,
+        userId: null,
+        piiScrubbedAt: new Date(),
+      },
+      loadCheckpointDetails: vi.fn(async (phase) =>
+        phase === "ingest_fence"
+          ? {
+              highWatermarks: [
+                {
+                  topic: "metric-stream-v1",
+                  partition: 0,
+                  low: "0",
+                  offset: "10",
+                  clusterId: "0000000000000000000000",
+                  topicId: "dI2O6HVWQkuC7XgSy7cJ3w",
+                },
+              ],
+            }
+          : {
+              quarantineHighWatermarks: [
+                {
+                  topic: "metric-stream-v1",
+                  partition: 0,
+                  low: "0",
+                  offset: "5",
+                  clusterId: "0000000000000000000000",
+                  topicId: "aaaaaaaaaaaaaaaaaaaaaa",
+                },
+              ],
+            },
+      ),
+    });
+    await expect(runner.runPhase("retention_verification", run)).rejects.toThrow(failure);
+    expect(deps.assertBrokerStorageExpired).toHaveBeenCalledWith([
+      expect.objectContaining({
+        topic: "metric-stream-v1",
+        offset: "10",
+        topicId: "dI2O6HVWQkuC7XgSy7cJ3w",
+      }),
+      expect.objectContaining({
+        topic: "metric-stream-v1.quarantine.v1",
+        offset: "5",
+        topicId: "aaaaaaaaaaaaaaaaaaaaaa",
+      }),
+    ]);
+    expect(deps.verifyBackupRetention).not.toHaveBeenCalled();
   });
 
   it("blocks final completion while a pre-boundary quarantine payload remains", async () => {

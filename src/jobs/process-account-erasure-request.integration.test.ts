@@ -46,6 +46,7 @@ function createRetentionPhaseRunner(now: Date) {
   const dependencies = {
     assertConsumersDrained: unexpectedDependency,
     assertPeerDbDrained: unexpectedDependency,
+    assertBrokerStorageExpired: vi.fn(async () => undefined),
     assertQuarantineExpired: vi.fn(async () => undefined),
     assertReplayExpired: unexpectedDependency,
     captureHighWatermarks: unexpectedDependency,
@@ -124,6 +125,10 @@ describe("processAccountErasureRequest request-to-completion (integration)", () 
         if (phase === "postgres_profile_delete") {
           return execution.deleteProfile();
         }
+        if (phase === "ingest_fence")
+          return {
+            highWatermarks: [{ topic: "metric-stream-v1", low: "0", offset: "3", partition: 0 }],
+          };
         if (phase === "consumer_drain") {
           return {
             quarantineHighWatermarks: [
@@ -274,6 +279,16 @@ describe("processAccountErasureRequest request-to-completion (integration)", () 
         phase: AccountErasurePhase,
         execution: AccountErasurePhaseExecution,
       ): Promise<Record<string, unknown> | null> {
+        if (phase === "ingest_fence")
+          return {
+            highWatermarks: [{ topic: "metric-stream-v1", low: "0", offset: "3", partition: 0 }],
+          };
+        if (phase === "consumer_drain")
+          return {
+            quarantineHighWatermarks: [
+              { topic: "metric-stream-v1", low: "0", offset: "3", partition: 0 },
+            ],
+          };
         if (phase === "postgres_erasure") {
           await erasePostgresAccount(context.db, execution.request.id, crashUserId);
           return null;

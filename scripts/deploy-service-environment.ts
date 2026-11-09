@@ -12,6 +12,7 @@ const DEPLOY_SERVICE_NAMES = [
   "web",
   "webPreMigration",
   "worker",
+  "kafka",
   "metricStreamClickhouseSink",
   "metricStreamLiveClickhouseSink",
   "metricStreamHistoryClickhouseSink",
@@ -32,6 +33,7 @@ export const DEPLOY_SERVICE_ENVIRONMENT_FILE_NAMES = {
   web: "web.env",
   webPreMigration: "web-pre-migration.env",
   worker: "worker.env",
+  kafka: "kafka.env",
   metricStreamClickhouseSink: "metric-stream-clickhouse-sink.env",
   metricStreamLiveClickhouseSink: "metric-stream-live-clickhouse-sink.env",
   metricStreamHistoryClickhouseSink: "metric-stream-history-clickhouse-sink.env",
@@ -202,6 +204,10 @@ const DEPLOY_SERVICE_ENVIRONMENT_POLICIES: Record<
   DeployServiceName,
   DeployServiceEnvironmentPolicy
 > = {
+  kafka: {
+    allowedKeys: ["KAFKA_CLUSTER_ID"],
+    requiredKeys: ["KAFKA_CLUSTER_ID"],
+  },
   analyticsWorker: {
     allowedKeys: ["CLICKHOUSE_PASSWORD", "SENTRY_DSN", "SENTRY_DSN_unencrypted"],
     requiredKeys: ["CLICKHOUSE_PASSWORD"],
@@ -321,6 +327,7 @@ const DEPLOY_SERVICE_ENVIRONMENT_POLICIES: Record<
 };
 
 export interface DeployServiceEnvironmentPaths {
+  kafka: string;
   analyticsWorker: string;
   cdcHealth: string;
   cdcOperations: string;
@@ -353,6 +360,7 @@ function readRawAssignments(source: string): ReadonlyMap<string, string> {
 
 function resolvePaths(outputDirectory: string): DeployServiceEnvironmentPaths {
   return {
+    kafka: join(outputDirectory, DEPLOY_SERVICE_ENVIRONMENT_FILE_NAMES.kafka),
     analyticsWorker: join(outputDirectory, DEPLOY_SERVICE_ENVIRONMENT_FILE_NAMES.analyticsWorker),
     cdcHealth: join(outputDirectory, DEPLOY_SERVICE_ENVIRONMENT_FILE_NAMES.cdcHealth),
     cdcOperations: join(outputDirectory, DEPLOY_SERVICE_ENVIRONMENT_FILE_NAMES.cdcOperations),
@@ -411,12 +419,17 @@ export function renderDeployServiceEnvironmentFiles(
     }
   }
 
+  if (!/^[A-Za-z0-9_-]{22}$/.test(environment.KAFKA_CLUSTER_ID ?? "")) {
+    throw new Error("KAFKA_CLUSTER_ID must be a 22-character Kafka UUID");
+  }
+
   mkdirSync(outputDirectory, { mode: 0o700, recursive: true });
   chmodSync(outputDirectory, 0o700);
   const paths = resolvePaths(outputDirectory);
 
   for (const serviceName of DEPLOY_SERVICE_NAMES) {
     const lines = DEPLOY_SERVICE_ENVIRONMENT_POLICIES[serviceName].allowedKeys.flatMap((key) => {
+      if (serviceName === "kafka") return [`CLUSTER_ID=${environment.KAFKA_CLUSTER_ID}`];
       const assignment = assignments.get(key);
       return assignment === undefined ? [] : [assignment];
     });

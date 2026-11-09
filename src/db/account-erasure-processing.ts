@@ -3,6 +3,7 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { captureAccountErasurePostgresWalLsn } from "../account-erasure/peerdb-erasure.ts";
 import { assertPostgresAccountErasureComplete } from "../account-erasure/postgres-erasure.ts";
+import { accountErasureRouteHighWatermarkSchema } from "../account-erasure/redpanda-drain.ts";
 import type { AccountErasurePhase } from "../jobs/process-account-erasure-job.ts";
 import type { Database } from "./index.ts";
 import { executeWithSchema, timestampStringSchema } from "./typed-sql.ts";
@@ -552,6 +553,25 @@ export async function scrubAccountErasureRequestPii(
       throw new Error("Account erasure cannot scrub request PII before deleting the user profile");
     }
 
+    const brokerCheckpoints = await executeWithSchema(
+      transaction,
+      checkpointDetailsRowSchema.extend({ phase: z.enum(["ingest_fence", "consumer_drain"]) }),
+      sql`SELECT phase, details FROM fitness.account_erasure_checkpoint
+          WHERE request_id = ${requestId}::uuid
+            AND phase IN ('ingest_fence', 'consumer_drain')
+          FOR UPDATE`,
+    );
+    for (const checkpoint of brokerCheckpoints) {
+      const key =
+        checkpoint.phase === "ingest_fence" ? "highWatermarks" : "quarantineHighWatermarks";
+      const structural = z
+        .object({ [key]: z.array(accountErasureRouteHighWatermarkSchema).min(1).max(3) })
+        .parse(checkpoint.details);
+      await transaction.execute(sql`UPDATE fitness.account_erasure_checkpoint
+          SET details = ${JSON.stringify(structural)}::jsonb
+          WHERE request_id = ${requestId}::uuid AND phase = ${checkpoint.phase}`);
+    }
+
     await transaction.execute(
       sql`INSERT INTO fitness.account_erasure_checkpoint (
             request_id, phase, details
@@ -563,10 +583,7 @@ export async function scrubAccountErasureRequestPii(
       sql`UPDATE fitness.account_erasure_checkpoint
           SET details =
             CASE
-              WHEN phase = 'consumer_drain' THEN jsonb_build_object(
-                'quarantineHighWatermarks',
-                details -> 'quarantineHighWatermarks'
-              )
+              WHEN phase IN ('ingest_fence', 'consumer_drain') THEN details
               WHEN phase = 'peerdb_drain_verification' THEN jsonb_build_object(
                 'stagingBoundary',
                 jsonb_build_object(
