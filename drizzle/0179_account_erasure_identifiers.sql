@@ -1,3 +1,4 @@
+-- dofek: deployment-mode=maintenance
 -- Old request producers and workers must remain quiesced through runtime cutover.
 LOCK TABLE fitness.account_erasure_request IN SHARE ROW EXCLUSIVE MODE;
 --> statement-breakpoint

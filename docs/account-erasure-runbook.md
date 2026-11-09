@@ -30,6 +30,19 @@ their original worker; do not reconstruct routes or rewrite checkpoint JSON.
 Request producers and old workers must
 remain quiescent through an independently approved cutover. Do not clear request
 identifiers to bypass this guard. No cutover or quiescence is authorized here.
+
+0179 carries the existing maintenance deployment marker. The canonical workflow
+therefore stops old web request producers and workers before migration and keeps
+them stopped until the requested image can replace them. This requires a planned
+web availability interruption. An earlier empty-request check is insufficient:
+the old producer does not populate the new identifier capture and can otherwise
+create a request after the migration guard releases its lock. Use the existing
+[deployment-mode selector](../scripts/migration-deployment.ts),
+[maintenance overlay](../deploy/stack.maintenance.yml) and
+[release workflow](../.github/workflows/deploy-web-stack.yml); do not remove the
+marker or substitute manual service changes. The migration's locked guard still
+refuses unfinished or identifying legacy requests.
+
 The [request processing transaction](../src/db/account-erasure-processing.ts)
 deletes retained identifiers when request PII is scrubbed. See PostgreSQL's
 [transaction guarantees](https://www.postgresql.org/docs/current/tutorial-transactions.html).
