@@ -16,13 +16,21 @@ late-upload/orphan residual does not weaken phase-1 checks.
 
 The [shared application release proposal](shared-release.md) records the reviewed
 image, deployment effects and remaining decisions before merging this PR.
+That release is now recorded in the [execution receipt](shared-release-execution.md):
+the workflow and live health checks passed, with a separately documented open
+quarantine topic-configuration defect. Tiered activation remains separate.
+The [quarantine correction proposal](quarantine-config-correction.md) contains
+the qualified startup fix and the separate, unexecuted production correction.
 
 ## This layer
 
 - Pinned stock Kafka 4.4.0 broker, native `hostname: kafka`, single broker/log
   directory and existing protocol-compatible application images.
-- Existing `REDPANDA_BROKERS` contracts for applications/Connect; separately
-  repaired history image keeps `KAFKA_BROKERS`. No application transport overhaul,
+- Existing `REDPANDA_BROKERS` contracts for applications/Connect. The old phase-1
+  history image used `KAFKA_BROKERS`; the completed shared release uses
+  `REDPANDA_BROKERS` for the repaired sink too, as recorded in the
+  [actual service receipt](../../docs/evidence/kafka-shared-production-release-20261109/contracts.json).
+  No application transport overhaul,
   migrations 0178/0179, erasure redesign or ClickHouse upgrade.
 - Structural cluster/topic-generation checkpoints and the native local-file/
   retained-Redpanda completion guard. The tiered layer extends this same hook;

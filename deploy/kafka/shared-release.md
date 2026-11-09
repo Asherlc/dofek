@@ -1,5 +1,11 @@
 # Shared application release after the Kafka cutover
 
+**Historical approval proposal:** user Q5/A approved these release and policy
+choices. The shared release completed; see the
+[execution receipt](shared-release-execution.md) for the actual artifact, stock
+manual-dispatch path, production checks and unresolved quarantine configuration
+discrepancy. The original assessment below is preserved as its review boundary.
+
 Kafka phase 1 is complete; this is the **separate normal application release
 proposal**, not permission to repeat the cutover. The [execution receipt](phase1-execution.md)
 records the approved topic policies, preserved old data, image contracts and
