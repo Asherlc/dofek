@@ -28,7 +28,14 @@ describe("ClimbingLogEntrySources", () => {
   it.each(["Mountain Project, OpenBeta", "OpenBeta"])(
     "opens each provider name's tick history with attribution %s",
     (sourceName) => {
-      render(<ClimbingLogEntrySources name="Swiss Cheese" sourceName={sourceName} links={links} />);
+      render(
+        <ClimbingLogEntrySources
+          climbKind={null}
+          name="Swiss Cheese"
+          sourceName={sourceName}
+          links={links}
+        />,
+      );
       expect(screen.getAllByRole("link")).toHaveLength(4);
       for (const label of [
         "Swiss Cheese on Mountain Project",
@@ -49,6 +56,7 @@ describe("ClimbingLogEntrySources", () => {
   it("links a single provider's attribution to its tick history", () => {
     render(
       <ClimbingLogEntrySources
+        climbKind={null}
         name="Swiss Cheese"
         sourceName="OpenBeta"
         links={links.filter((link) => link.providerId === "openbeta")}
@@ -61,7 +69,12 @@ describe("ClimbingLogEntrySources", () => {
     const error = new Error("No browser available");
     vi.mocked(Linking.openURL).mockRejectedValueOnce(error);
     render(
-      <ClimbingLogEntrySources name="Swiss Cheese" sourceName="Mountain Project" links={links} />,
+      <ClimbingLogEntrySources
+        climbKind={null}
+        name="Swiss Cheese"
+        sourceName="Mountain Project"
+        links={links}
+      />,
     );
     fireEvent.click(screen.getByRole("link", { name: "Mountain Project" }));
     await waitFor(() =>
@@ -78,6 +91,7 @@ describe("ClimbingLogEntrySources", () => {
   it("opens the provider's tick history when no route is available", () => {
     render(
       <ClimbingLogEntrySources
+        climbKind={null}
         name="Swiss Cheese"
         sourceName={null}
         links={links.filter((link) => link.kind === "ticks" && link.providerId === "openbeta")}
@@ -91,6 +105,7 @@ describe("ClimbingLogEntrySources", () => {
   it("preserves an unlinked source beside a different provider's tick history", () => {
     render(
       <ClimbingLogEntrySources
+        climbKind={null}
         name="Swiss Cheese"
         sourceName="Kaya"
         links={links.filter((link) => link.providerId === "openbeta")}
@@ -104,6 +119,7 @@ describe("ClimbingLogEntrySources", () => {
   it("keeps mixed attribution readable when one provider has no tick history", () => {
     render(
       <ClimbingLogEntrySources
+        climbKind={null}
         name="Swiss Cheese"
         sourceName="Mountain Project, Kaya"
         links={links.filter((link) => link.providerId === "mountain-project")}
@@ -115,7 +131,14 @@ describe("ClimbingLogEntrySources", () => {
     expect(screen.queryByRole("link", { name: "Kaya" })).toBeNull();
   });
   it("keeps an entry without verified destinations readable", () => {
-    render(<ClimbingLogEntrySources name="Imported route" sourceName="Kaya" links={[]} />);
+    render(
+      <ClimbingLogEntrySources
+        climbKind={null}
+        name="Imported route"
+        sourceName="Kaya"
+        links={[]}
+      />,
+    );
     expect(screen.getByText("Imported route")).toBeTruthy();
     expect(screen.getByText("Kaya")).toBeTruthy();
     expect(screen.queryByRole("link")).toBeNull();
@@ -123,6 +146,7 @@ describe("ClimbingLogEntrySources", () => {
   it("keeps provider provenance as text when only a route destination is known", () => {
     render(
       <ClimbingLogEntrySources
+        climbKind={null}
         name="Swiss Cheese"
         sourceName="Mountain Project"
         links={links.filter(
