@@ -15,12 +15,13 @@ describe("groupClimbingLogEntriesByArea", () => {
     expect(groups).toEqual([
       {
         area: north,
+        areaPath: [parent, north],
         entries: [
           { entry: first, entryNumber: 1 },
           { entry: third, entryNumber: 3 },
         ],
       },
-      { area: south, entries: [{ entry: second, entryNumber: 2 }] },
+      { area: south, areaPath: [parent, south], entries: [{ entry: second, entryNumber: 2 }] },
     ]);
     expect(groups[0]?.entries[0]?.entry.id).toBe("first");
   });
@@ -37,13 +38,18 @@ describe("groupClimbingLogEntriesByArea", () => {
       [
         {
           area: null,
+          areaPath: [],
           entries: [
             { entry: unknownClimb, entryNumber: 1 },
             { entry: unknownArea, entryNumber: 3 },
             { entry: unknownClimb, entryNumber: 4 },
           ],
         },
-        { area: known.climb.areaPath[0], entries: [{ entry: known, entryNumber: 2 }] },
+        {
+          area: known.climb.areaPath[0],
+          areaPath: known.climb.areaPath,
+          entries: [{ entry: known, entryNumber: 2 }],
+        },
       ],
     );
     expect(groupClimbingLogEntriesByArea([])).toEqual([]);
@@ -66,13 +72,14 @@ describe("groupClimbingLogEntriesByArea", () => {
     expect(groupClimbingLogEntriesByArea([first, indoor, other, repeat])).toEqual([
       {
         area: mountainProjectPath[1],
+        areaPath: mountainProjectPath,
         entries: [
           { entry: first, entryNumber: 1 },
           { entry: other, entryNumber: 3 },
           { entry: repeat, entryNumber: 4 },
         ],
       },
-      { area: null, entries: [{ entry: indoor, entryNumber: 2 }] },
+      { area: null, areaPath: [], entries: [{ entry: indoor, entryNumber: 2 }] },
     ]);
   });
 
@@ -94,8 +101,16 @@ describe("groupClimbingLogEntriesByArea", () => {
       },
     };
     expect(groupClimbingLogEntriesByArea([first, second])).toEqual([
-      { area: first.climb.areaPath[1], entries: [{ entry: first, entryNumber: 1 }] },
-      { area: second.climb.areaPath[1], entries: [{ entry: second, entryNumber: 2 }] },
+      {
+        area: first.climb.areaPath[1],
+        areaPath: first.climb.areaPath,
+        entries: [{ entry: first, entryNumber: 1 }],
+      },
+      {
+        area: second.climb.areaPath[1],
+        areaPath: second.climb.areaPath,
+        entries: [{ entry: second, entryNumber: 2 }],
+      },
     ]);
   });
 
@@ -136,9 +151,29 @@ describe("groupClimbingLogEntriesByArea", () => {
       expect(groupClimbingLogEntriesByArea(ordered)).toEqual(
         ordered.map((entry, index) => ({
           area: entry.climb.areaPath[1],
+          areaPath: entry.climb.areaPath,
           entries: [{ entry, entryNumber: index + 1 }],
         })),
       );
     },
   );
+
+  it("retains the first recorded complete path for a grouped leaf identity", () => {
+    const northParent = { id: "north", name: "North Canyon", providerId: "openbeta" };
+    const southParent = { id: "south", name: "South Canyon", providerId: "openbeta" };
+    const wall = { id: "wall", name: "Wall", providerId: "openbeta" };
+    const first = { id: "first", climb: { areaPath: [northParent, wall] } };
+    const second = { id: "second", climb: { areaPath: [southParent, wall] } };
+
+    expect(groupClimbingLogEntriesByArea([first, second])).toEqual([
+      {
+        area: wall,
+        areaPath: [northParent, wall],
+        entries: [
+          { entry: first, entryNumber: 1 },
+          { entry: second, entryNumber: 2 },
+        ],
+      },
+    ]);
+  });
 });
