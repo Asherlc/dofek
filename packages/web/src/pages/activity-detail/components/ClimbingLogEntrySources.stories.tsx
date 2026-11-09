@@ -52,11 +52,11 @@ export const MultipleSources: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(canvas.getByRole("link", { name: "Mountain Project" })).toHaveAttribute(
+    await expect(canvas.getByRole("link", { name: "Climb on Mountain Project" })).toHaveAttribute(
       "href",
       "https://www.mountainproject.com/user/110186720/ticks/ticks",
     );
-    await expect(canvas.getByRole("link", { name: "OpenBeta" })).toHaveAttribute(
+    await expect(canvas.getByRole("link", { name: "Climb on OpenBeta" })).toHaveAttribute(
       "href",
       "https://openbeta.io/u/thickles/ticks",
     );
@@ -85,6 +85,7 @@ export const TickHistoryOnly: Story = {
 
 export const WithSelection: Story = {
   args: {
+    ...RouteWithTickHistory.args,
     titleControl: (
       <button type="button" aria-pressed="false">
         Swiss Cheese

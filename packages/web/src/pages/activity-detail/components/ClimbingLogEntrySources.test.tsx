@@ -4,6 +4,31 @@ import { describe, expect, it } from "vitest";
 import { ClimbingLogEntrySources } from "./ClimbingLogEntrySources.tsx";
 
 describe("ClimbingLogEntrySources", () => {
+  it.each([
+    ["mountain-project", "Mountain Project", "png"],
+    ["openbeta", "OpenBeta", "svg"],
+  ])("labels selectable climb links with the %s logo", (providerId, label, extension) => {
+    render(
+      <ClimbingLogEntrySources
+        name="Swiss Cheese"
+        sourceName={label}
+        titleControl={<button type="button">Swiss Cheese</button>}
+        links={[
+          { providerId, kind: "ticks", url: "https://example.com/ticks" },
+          { providerId, kind: "route", url: "https://example.com/route" },
+        ]}
+      />,
+    );
+    const climb = screen.getByRole("link", { name: `Climb on ${label}` });
+    const route = screen.getByRole("link", { name: `Swiss Cheese route on ${label}` });
+    expect(climb).toHaveTextContent(/^Climb$/);
+    expect(route).toHaveTextContent(/^Route$/);
+    expect(climb).toHaveAttribute("href", "https://example.com/ticks");
+    expect(route).toHaveAttribute("href", "https://example.com/route");
+    for (const link of [climb, route]) {
+      expect(link.querySelector("img")).toHaveAttribute("src", `/logos/${providerId}.${extension}`);
+    }
+  });
   it.each(["Mountain Project, OpenBeta", "OpenBeta"])(
     "links each provider name to its tick history with attribution %s",
     (sourceName) => {
@@ -34,11 +59,11 @@ describe("ClimbingLogEntrySources", () => {
       expect(
         screen.getByRole("link", { name: "Swiss Cheese on Mountain Project" }).getAttribute("href"),
       ).toBe("https://www.mountainproject.com/route/105734732/swiss-cheese");
-      expect(screen.getByRole("link", { name: "Mountain Project" })).toHaveAttribute(
+      expect(screen.getByRole("link", { name: "Climb on Mountain Project" })).toHaveAttribute(
         "href",
         "https://www.mountainproject.com/user/110186720/ticks/ticks",
       );
-      expect(screen.getByRole("link", { name: "OpenBeta" })).toHaveAttribute(
+      expect(screen.getByRole("link", { name: "Climb on OpenBeta" })).toHaveAttribute(
         "href",
         "https://openbeta.io/u/thickles/ticks",
       );
@@ -63,7 +88,7 @@ describe("ClimbingLogEntrySources", () => {
     expect(screen.getByRole("link", { name: "Road Kill on OpenBeta" })).toHaveTextContent(
       "Road Kill",
     );
-    expect(screen.getByRole("link", { name: "OpenBeta" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Climb on OpenBeta" })).toHaveAttribute(
       "href",
       "https://openbeta.io/u/thickles/ticks",
     );
@@ -79,8 +104,8 @@ describe("ClimbingLogEntrySources", () => {
       />,
     );
     expect(screen.getByText("Road Kill")).toBeTruthy();
-    expect(screen.getByText("OpenBeta")).toBeTruthy();
-    expect(screen.getByRole("link", { name: "OpenBeta" })).toHaveAttribute(
+    expect(screen.getByText("Climb")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Climb on OpenBeta" })).toHaveAttribute(
       "href",
       "https://openbeta.io/u/thickles/ticks",
     );
@@ -98,7 +123,7 @@ describe("ClimbingLogEntrySources", () => {
     );
     expect(screen.getByText("Kaya")).toBeTruthy();
     expect(screen.queryByRole("link", { name: "Kaya" })).toBeNull();
-    expect(screen.getByRole("link", { name: "OpenBeta" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Climb on OpenBeta" })).toHaveAttribute(
       "href",
       "https://openbeta.io/u/thickles/ticks",
     );
@@ -122,11 +147,11 @@ describe("ClimbingLogEntrySources", () => {
         ]}
       />,
     );
-    expect(screen.getByRole("link", { name: "Mountain Project" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Climb on Mountain Project" })).toHaveAttribute(
       "href",
       "https://www.mountainproject.com/user/110186720/ticks/ticks",
     );
-    expect(screen.getByRole("paragraph")).toHaveTextContent("Mountain Project, Kaya");
+    expect(screen.getByRole("paragraph")).toHaveTextContent("Kaya");
     expect(screen.queryByRole("link", { name: "Kaya" })).toBeNull();
   });
   it("keeps an entry without verified destinations readable", () => {
@@ -154,6 +179,6 @@ describe("ClimbingLogEntrySources", () => {
       "https://www.mountainproject.com/route/105734732/swiss-cheese",
     );
     expect(screen.getByText("Mountain Project")).toBeTruthy();
-    expect(screen.queryByRole("link", { name: "Mountain Project" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Climb on Mountain Project" })).toBeNull();
   });
 });

@@ -2,6 +2,7 @@ import { providerSourceLabel } from "@dofek/providers/providers";
 import type { ClimbingSourceLink } from "@dofek/training/climbing-context";
 import { selectClimbingSources } from "@dofek/training/climbing-sources";
 import type { ReactElement } from "react";
+import { ProviderLogo } from "../../../components/ProviderLogo.tsx";
 
 export function ClimbingLogEntrySources({
   name,
@@ -55,9 +56,10 @@ export function ClimbingLogEntrySources({
                   href={tickSource.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-accent underline hover:no-underline"
+                  aria-label={`Climb on ${label}`}
+                  className="inline-flex items-center gap-1 align-middle text-accent underline hover:no-underline"
                 >
-                  {label}
+                  Climb <ProviderLogo provider={tickSource.providerId} size={14} />
                 </a>
               ) : (
                 label
@@ -75,9 +77,9 @@ export function ClimbingLogEntrySources({
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label={`${name} route on ${providerSourceLabel(link.providerId)}`}
-                className="text-accent underline hover:no-underline"
+                className="inline-flex items-center gap-1 text-accent underline hover:no-underline"
               >
-                Route on {providerSourceLabel(link.providerId)}
+                Route <ProviderLogo provider={link.providerId} size={14} />
               </a>
             </li>
           ))}

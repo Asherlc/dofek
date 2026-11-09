@@ -4,7 +4,9 @@ import { selectClimbingSources } from "@dofek/training/climbing-sources";
 import type { ReactElement } from "react";
 import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import { openExternalUrl } from "../lib/open-external-url";
+import { SERVER_URL } from "../lib/server";
 import { colors } from "../theme";
+import { ProviderLogo } from "./ProviderLogo";
 
 export function ClimbingLogEntrySources({
   name,
@@ -65,12 +67,14 @@ export function ClimbingLogEntrySources({
               <Pressable
                 key={label}
                 accessibilityRole="link"
-                accessibilityLabel={label}
+                accessibilityLabel={`Climb on ${label}`}
+                style={styles.sourceLink}
                 onPress={() => {
                   void openSource(tickSource.url);
                 }}
               >
-                <Text style={[styles.source, styles.link]}>{label}</Text>
+                <Text style={[styles.source, styles.link]}>Climb</Text>
+                <ProviderLogo provider={tickSource.providerId} serverUrl={SERVER_URL} size={14} />
               </Pressable>
             ) : (
               <Text key={label} style={styles.source}>
@@ -87,13 +91,13 @@ export function ClimbingLogEntrySources({
               key={`${link.providerId}:${link.url}`}
               accessibilityRole="link"
               accessibilityLabel={`${name} route on ${providerSourceLabel(link.providerId)}`}
+              style={styles.sourceLink}
               onPress={() => {
                 void openSource(link.url);
               }}
             >
-              <Text style={[styles.source, styles.link]}>
-                Route on {providerSourceLabel(link.providerId)}
-              </Text>
+              <Text style={[styles.source, styles.link]}>Route</Text>
+              <ProviderLogo provider={link.providerId} serverUrl={SERVER_URL} size={14} />
             </Pressable>
           ))}
         </View>
@@ -107,5 +111,6 @@ const styles = StyleSheet.create({
   name: { color: colors.text, fontSize: 14, fontWeight: "500" },
   source: { color: colors.textSecondary, fontSize: 12 },
   link: { color: colors.accent, textDecorationLine: "underline" },
+  sourceLink: { flexDirection: "row", alignItems: "center", gap: 4 },
   links: { flexDirection: "row", flexWrap: "wrap", columnGap: 12, rowGap: 8 },
 });

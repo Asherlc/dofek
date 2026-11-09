@@ -62,7 +62,7 @@ describe("ClimbingLogEntryCard", () => {
     expect(climb.getAttribute("aria-selected")).toBe("true");
     climb.focus();
     expect(document.activeElement).toBe(climb);
-    const source = screen.getByRole("link", { name: "Mountain Project" });
+    const source = screen.getByRole("link", { name: "Climb on Mountain Project" });
     source.focus();
     expect(document.activeElement).toBe(source);
     fireEvent.click(screen.getByRole("button", { name: "Attach Swiss Cheese to this activity" }));
@@ -143,7 +143,7 @@ describe("ClimbingLogEntryCard", () => {
   it("preserves source links, climbing context and recorded attempt summary", () => {
     render(<ClimbingLogEntryCard entry={climbingLogFixture} />);
     expect(screen.getByRole("link", { name: "Swiss Cheese on Mountain Project" })).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Mountain Project" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Climb on Mountain Project" })).toBeTruthy();
     expect(screen.getByText("5.4")).toBeTruthy();
     expect(screen.getByText("Sent")).toBeTruthy();
     expect(screen.getByText("Sent").parentElement?.style.borderRadius).toBe("999px");
@@ -238,7 +238,7 @@ describe("ClimbingLogEntryCard", () => {
       <ClimbingLogEntryCard entry={climbingLogFixture} location={exactClimbingLocation} />,
     );
     expect(container.querySelector("nativemap")).toBeNull();
-    const wrapper = container.querySelector('[style*="overflow: hidden"]')?.firstElementChild;
+    const wrapper = container.querySelector('[pointer-events="none"]');
     if (!wrapper) throw new Error("Expected the compact map layout wrapper");
     fireEvent(wrapper, new CustomEvent("layout", { detail: { width: 280, height: 140 } }));
     const preview = await screen.findByTestId("compact-route-preview");

@@ -125,17 +125,17 @@ describe("ProviderLogo", () => {
   describe("letter fallback", () => {
     it("renders a styled letter for providers without a logo", () => {
       const { getByText } = render(
-        <ProviderLogo provider="mountain-project" serverUrl="https://example.com" />,
+        <ProviderLogo provider="dofek" serverUrl="https://example.com" />,
       );
-      expect(getByText("M")).toBeTruthy();
+      expect(getByText("D")).toBeTruthy();
     });
 
     it("uses the brand color when available", () => {
       const { getByText } = render(
-        <ProviderLogo provider="mountain-project" serverUrl="https://example.com" />,
+        <ProviderLogo provider="dofek" serverUrl="https://example.com" />,
       );
-      const letter = getByText("M");
-      expect(letter.parentElement?.getAttribute("style")).toContain("rgb(31, 90, 136)");
+      const letter = getByText("D");
+      expect(letter.parentElement?.getAttribute("style")).toContain("rgb(74, 157, 142)");
     });
 
     it("shows '?' for an empty string provider", () => {
