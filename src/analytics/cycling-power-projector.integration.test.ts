@@ -164,6 +164,51 @@ describe("cycling power projector", () => {
     });
   });
 
+  it("publishes long cycling histories beyond the HTTP parameter field limit", async () => {
+    const userId = randomUUID();
+    const activityId = randomUUID();
+    await seed(userId, [activityId]);
+    await client.insert({
+      table: "analytics.activity_summary_rows",
+      format: "JSONEachRow",
+      values: [
+        {
+          user_id: userId,
+          activity_id: activityId,
+          started_at: "2010-01-01 10:00:00",
+          ended_at: "2010-01-01 10:01:00",
+          canonical_type: "cycling",
+          power_sample_count: 0,
+          refresh_version: 200,
+          is_deleted: 0,
+        },
+      ],
+    });
+    await expect(projectCyclingPower(client, policy, asOf)).resolves.toMatchObject({
+      pendingActivities: 0,
+      pendingUsers: 0,
+      projectedUsers: 1,
+    });
+    const result = await client.query<{
+      event_count: number;
+      evidence_bytes: number;
+      evidence_id: string;
+      threshold: number;
+    }>({
+      query: `SELECT length(events) AS event_count,
+        length(toJSONString(arrayMap(event -> event.6, events))) AS evidence_bytes,
+        events[-1].6 AS evidence_id, events[-1].3 AS threshold
+        FROM analytics.cycling_power_history_rows FINAL WHERE user_id={userId:UUID}`,
+      format: "JSONEachRow",
+      query_params: { userId },
+    });
+    const [history] = await result.json();
+    expect(history?.event_count).toBeGreaterThan(6000);
+    expect(history?.evidence_bytes).toBeGreaterThan(131072);
+    expect(history?.evidence_id).toBe(activityId);
+    expect(history?.threshold).toBeCloseTo(201.6393442623, 6);
+  });
+
   it("converges across the 32-user bound again after daily rollover", async () => {
     await client.insert({
       table: "analytics.activity_summary_rows",
