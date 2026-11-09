@@ -13,6 +13,42 @@ import {
 } from "./redpanda-drain.ts";
 
 describe("account erasure Redpanda drain", () => {
+  it.each([1, 2, 3])("retains all %i captured routes in the ingest checkpoint", async (count) => {
+    vi.resetModules();
+    const { accountErasureIngestFenceCheckpointSchema } = await import("./redpanda-drain.ts");
+    const highWatermarks = Array.from({ length: count }, (_, index) => ({
+      topic: `metric-stream-${index}`,
+      partition: 0,
+      low: "10",
+      offset: "20",
+      clusterId: "a".repeat(22),
+      topicId: "b".repeat(22),
+    }));
+    expect(
+      accountErasureIngestFenceCheckpointSchema.parse({ highWatermarks, userEmail: "private" }),
+    ).toEqual({ highWatermarks });
+  });
+
+  it.each([0, 4])("rejects an ingest checkpoint with %i routes", async (count) => {
+    vi.resetModules();
+    const { accountErasureIngestFenceCheckpointSchema } = await import("./redpanda-drain.ts");
+    const highWatermarks = Array.from({ length: count }, (_, index) => ({
+      topic: `metric-stream-${index}`,
+      partition: 0,
+      low: "10",
+      offset: "20",
+    }));
+    expect(accountErasureIngestFenceCheckpointSchema.safeParse({ highWatermarks }).success).toBe(
+      false,
+    );
+  });
+
+  it("rejects an ingest checkpoint without captured routes", async () => {
+    vi.resetModules();
+    const { accountErasureIngestFenceCheckpointSchema } = await import("./redpanda-drain.ts");
+    expect(accountErasureIngestFenceCheckpointSchema.safeParse({}).success).toBe(false);
+  });
+
   it("preserves bounded structural broker generation in durable checkpoints", async () => {
     vi.resetModules();
     const { accountErasureRouteHighWatermarkSchema } = await import("./redpanda-drain.ts");
@@ -76,15 +112,19 @@ describe("account erasure Redpanda drain", () => {
     ).toThrow("METRIC_STREAM_LEGACY_TOPIC is required for account erasure");
   });
 
-  it("fails worker startup when Redpanda brokers are missing", () => {
-    expect(() =>
-      createAccountErasureRedpandaAdminFromEnv({
-        METRIC_STREAM_LEGACY_TOPIC: "metric-stream-v1",
-        METRIC_STREAM_LIVE_TOPIC: "metric-stream-live-v1",
-        METRIC_STREAM_HISTORY_TOPIC: "metric-stream-history-v1",
-      }),
-    ).toThrow("REDPANDA_BROKERS is required for account erasure");
-  });
+  it.each([undefined, "   "])(
+    "fails worker startup when Redpanda brokers are empty: %s",
+    (brokers) => {
+      expect(() =>
+        createAccountErasureRedpandaAdminFromEnv({
+          METRIC_STREAM_LEGACY_TOPIC: "metric-stream-v1",
+          METRIC_STREAM_LIVE_TOPIC: "metric-stream-live-v1",
+          METRIC_STREAM_HISTORY_TOPIC: "metric-stream-history-v1",
+          REDPANDA_BROKERS: brokers,
+        }),
+      ).toThrow("REDPANDA_BROKERS is required for account erasure");
+    },
+  );
 
   it.each([
     "METRIC_STREAM_LEGACY_TOPIC",

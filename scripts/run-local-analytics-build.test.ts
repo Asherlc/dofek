@@ -11,12 +11,39 @@ vi.mock("../src/lib/error-reporting.ts", () => ({
 vi.mock("../src/db/clickhouse.ts", () => ({
   createClickHouseClientFromEnv: vi.fn(),
 }));
+vi.mock("../src/analytics/dbt-build.ts", () => ({
+  runOwnedDbtBuild: async (
+    _owner: unknown,
+    _directory: string,
+    _models: unknown,
+    run: () => Promise<number>,
+  ) => run(),
+}));
 
 afterEach(() => {
   vi.clearAllMocks();
 });
 
 describe("runLocalAnalyticsBuild", () => {
+  it("checks owned admission before reading source bounds", async () => {
+    const failure = new Error("Owner closed");
+    const query = vi.fn();
+    const owner = {
+      client: { query },
+      assertActive: vi.fn(async () => {
+        throw failure;
+      }),
+      runSynchronousDbt: vi.fn(),
+    };
+    await expect(
+      runLocalAnalyticsBuild({
+        owner,
+        artifactDirectory: "/tmp/local-owner-fixture",
+        runDbt: vi.fn(),
+      }),
+    ).rejects.toBe(failure);
+    expect(query).not.toHaveBeenCalled();
+  });
   it("reports unexpected direct-entrypoint failures before rethrowing", async () => {
     const originalScriptPath = process.argv[1];
     const scriptPath = fileURLToPath(new URL("./run-local-analytics-build.ts", import.meta.url));
@@ -49,7 +76,12 @@ describe("runLocalAnalyticsBuild", () => {
 
     await expect(
       runLocalAnalyticsBuild({
-        clickHouse,
+        owner: {
+          client: clickHouse,
+          assertActive: vi.fn(async () => undefined),
+          runSynchronousDbt: vi.fn(),
+        },
+        artifactDirectory: "/tmp/local-owner-fixture",
         now: new Date("2026-07-24T12:34:56.000Z"),
         runDbt,
       }),
@@ -65,6 +97,8 @@ describe("runLocalAnalyticsBuild", () => {
       "analytics",
       "--profiles-dir",
       "analytics",
+      "--target-path",
+      "/tmp/local-owner-fixture",
       "--vars",
       '{"sensor_scalar_sample_begin":"2025-02-03","deduped_sensor_begin":"2025-02-03","activity_sensor_sample_begin":"2025-02-03"}',
     ]);
@@ -79,7 +113,12 @@ describe("runLocalAnalyticsBuild", () => {
 
     await expect(
       runLocalAnalyticsBuild({
-        clickHouse,
+        owner: {
+          client: clickHouse,
+          assertActive: vi.fn(async () => undefined),
+          runSynchronousDbt: vi.fn(),
+        },
+        artifactDirectory: "/tmp/local-owner-fixture",
         now: new Date("2026-07-24T12:34:56.000Z"),
         runDbt: async () => 2,
       }),

@@ -1,6 +1,7 @@
 import { describe, expect, it, type Mock, vi } from "vitest";
 import { backfillActivityOverviewAvailability } from "./activity-overview-availability-backfill.ts";
 import type { ClickHouseClient } from "./clickhouse.ts";
+import { unexpectedClickHouseExec } from "./clickhouse-test-helpers.ts";
 
 const RANGE = {
   start: new Date("2026-03-01T00:00:00Z"),
@@ -8,7 +9,7 @@ const RANGE = {
 };
 
 function createMockClickHouseClient(query: Mock, command: Mock): ClickHouseClient {
-  return { command, query };
+  return { command, query, exec: vi.fn(unexpectedClickHouseExec) };
 }
 
 function createClient(counts: readonly number[]): {

@@ -45,6 +45,19 @@ key additionally requires rederiving persisted `food_entry.source_account_key`
 and dependent Ziva `external_id` values; otherwise later syncs would use a new
 source identity.
 
+Retained account-erasure identifiers additionally bind their lookup hashes,
+cursors and physical proof to the original master key and resolved keyring
+names. The [request-owned store](../src/account-erasure/identifier-store.ts)
+persists that binding atomically with initial capture and rejects missing or
+changed configuration before retained access or progress, even for an empty
+lookup. Restoring the original configuration permits resumption; ciphertext-only
+re-encryption does not re-key hashes or cursors. Drain all identifying erasure
+requests and retained identifiers with their original key before rotation,
+keeping original request producers and workers quiescent through the transition.
+There is no in-place retained-state re-key or second keyring. Normal erasure PII
+scrub removes the binding. See the [erasure cutover and rotation policy](account-erasure-runbook.md#pending-hardening-candidate)
+and [real PostgreSQL regressions](../src/account-erasure/identifier-store.integration.test.ts).
+
 ## Storage Contract
 
 Encrypted strings use the `enc:v1:` prefix. Encryption authenticates:
