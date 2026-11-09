@@ -1,0 +1,167 @@
+{
+  "at": "2026-11-09T05:26:45Z",
+  "freeBytes": 43250290688,
+  "rootFreeBytes": 11459469312,
+  "kafkaAllocatedBytes": 204738560,
+  "nativeSourceLogBytes": 201659324,
+  "totalLag": 0,
+  "services": [
+    {
+      "name": "dofek_kafka",
+      "running": 1,
+      "healthy": true
+    },
+    {
+      "name": "dofek_web",
+      "running": 2,
+      "healthy": true
+    },
+    {
+      "name": "dofek_worker",
+      "running": 1,
+      "healthy": true
+    },
+    {
+      "name": "dofek_metric-stream-clickhouse-sink",
+      "running": 1,
+      "healthy": true
+    },
+    {
+      "name": "dofek_metric-stream-live-clickhouse-sink",
+      "running": 1,
+      "healthy": true
+    },
+    {
+      "name": "dofek_metric-stream-history-clickhouse-sink",
+      "running": 1,
+      "healthy": true
+    },
+    {
+      "name": "dofek_metric-stream-r2-archive",
+      "running": 1,
+      "healthy": true
+    },
+    {
+      "name": "dofek_metric-stream-live-r2-archive",
+      "running": 1,
+      "healthy": true
+    },
+    {
+      "name": "dofek_metric-stream-history-r2-archive",
+      "running": 1,
+      "healthy": true
+    }
+  ],
+  "archives": [
+    {
+      "name": "dofek_metric-stream-r2-archive",
+      "outputSent": 0,
+      "errors": 0,
+      "ready": true
+    },
+    {
+      "name": "dofek_metric-stream-live-r2-archive",
+      "outputSent": 0,
+      "errors": 0,
+      "ready": true
+    },
+    {
+      "name": "dofek_metric-stream-history-r2-archive",
+      "outputSent": 0,
+      "errors": 0,
+      "ready": true
+    }
+  ],
+  "groups": [
+    {
+      "group_name": "metric-stream-clickhouse-sink",
+      "state": "Stable",
+      "members": 1,
+      "total_lag": 0,
+      "partitions": [
+        {
+          "topic": "metric-stream-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3",
+          "partition": 0,
+          "current_offset": -1,
+          "log_end_offset": 0,
+          "lag": 0
+        }
+      ]
+    },
+    {
+      "group_name": "metric-stream-history-clickhouse-sink",
+      "state": "Stable",
+      "members": 1,
+      "total_lag": 0,
+      "partitions": [
+        {
+          "topic": "metric-stream-history-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3",
+          "partition": 0,
+          "current_offset": -1,
+          "log_end_offset": 0,
+          "lag": 0
+        }
+      ]
+    },
+    {
+      "group_name": "metric-stream-history-r2-archive",
+      "state": "Stable",
+      "members": 1,
+      "total_lag": 0,
+      "partitions": [
+        {
+          "topic": "metric-stream-history-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3",
+          "partition": 0,
+          "current_offset": -1,
+          "log_end_offset": 0,
+          "lag": 0
+        }
+      ]
+    },
+    {
+      "group_name": "metric-stream-live-clickhouse-sink",
+      "state": "Stable",
+      "members": 1,
+      "total_lag": 0,
+      "partitions": [
+        {
+          "topic": "metric-stream-live-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3",
+          "partition": 0,
+          "current_offset": 364902,
+          "log_end_offset": 364902,
+          "lag": 0
+        }
+      ]
+    },
+    {
+      "group_name": "metric-stream-live-r2-archive",
+      "state": "Stable",
+      "members": 1,
+      "total_lag": 0,
+      "partitions": [
+        {
+          "topic": "metric-stream-live-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3",
+          "partition": 0,
+          "current_offset": 364902,
+          "log_end_offset": 364902,
+          "lag": 0
+        }
+      ]
+    },
+    {
+      "group_name": "metric-stream-r2-archive",
+      "state": "Stable",
+      "members": 1,
+      "total_lag": 0,
+      "partitions": [
+        {
+          "topic": "metric-stream-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3",
+          "partition": 0,
+          "current_offset": -1,
+          "log_end_offset": 0,
+          "lag": 0
+        }
+      ]
+    }
+  ]
+}

@@ -4,6 +4,9 @@ Status: proposed implementation direction, awaiting approval. This document
 resolves the choices in the [six retained review threads](https://github.com/Asherlc/dofek/pull/3234#discussion_r4507302091);
 it does not assert that their fixes exist or authorize a production action.
 Reviewed against erasure head `1f0cdddb5` containing main `6fe1d4fbd`.
+The later main synchronization includes [PR3237](https://github.com/Asherlc/dofek/pull/3237)
+at `d4e7a34e4`; its shared quarantine validation does not change these proposed
+writer, recovery or key decisions.
 
 ## Recommended decisions
 
@@ -154,8 +157,9 @@ where database behavior matters. Add focused tests to existing suites:
 Use exact 26.6 and 26.10 qualifications one engine at a time for new engine-sensitive
 behavior, then current-head CI. Passing unit tests or the helper diagnostic alone
 does not satisfy these gates. Keep PR3234 not merge-ready until the mandatory
-writer and recovery tests pass. Keep Kafka quarantine PR3237 and tiered-storage
-PR3236 separate; main's inherited broker guard is not their final qualification.
+writer and recovery tests pass. Quarantine PR3237 is now inherited from main;
+keep tiered-storage PR3236 separate. Main's inherited broker guard is not final
+tiered-storage qualification.
 
 ## Implementation order and review checkpoints
 
