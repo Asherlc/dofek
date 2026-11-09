@@ -29,7 +29,7 @@ export function ClimbingLogEntrySources({
       )
     : sources;
   return (
-    <div className="min-w-0 space-y-0.5 break-words">
+    <div className="min-w-0 space-y-1.5 break-words">
       <h4 className="text-sm font-medium text-foreground">
         {titleControl ??
           (primaryRoute ? (
@@ -57,9 +57,12 @@ export function ClimbingLogEntrySources({
                   target="_blank"
                   rel="noopener noreferrer"
                   aria-label={`Climb on ${label}`}
-                  className="inline-flex items-center gap-1 align-middle text-accent underline hover:no-underline"
+                  className="group inline-flex items-center gap-1.5 align-middle font-medium text-muted hover:text-accent"
                 >
-                  Climb <ProviderLogo provider={tickSource.providerId} size={14} />
+                  <span className="underline decoration-accent/40 decoration-1 underline-offset-4 group-hover:decoration-accent">
+                    Climb
+                  </span>
+                  <ProviderLogo provider={tickSource.providerId} size={14} />
                 </a>
               ) : (
                 label
@@ -77,9 +80,12 @@ export function ClimbingLogEntrySources({
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label={`${name} route on ${providerSourceLabel(link.providerId)}`}
-                className="inline-flex items-center gap-1 text-accent underline hover:no-underline"
+                className="group inline-flex items-center gap-1.5 font-medium text-muted hover:text-accent"
               >
-                Route <ProviderLogo provider={link.providerId} size={14} />
+                <span className="underline decoration-accent/40 decoration-1 underline-offset-4 group-hover:decoration-accent">
+                  Route
+                </span>
+                <ProviderLogo provider={link.providerId} size={14} />
               </a>
             </li>
           ))}

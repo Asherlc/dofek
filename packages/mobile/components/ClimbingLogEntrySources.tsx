@@ -73,7 +73,7 @@ export function ClimbingLogEntrySources({
                   void openSource(tickSource.url);
                 }}
               >
-                <Text style={[styles.source, styles.link]}>Climb</Text>
+                <Text style={styles.sourceLinkText}>Climb</Text>
                 <ProviderLogo provider={tickSource.providerId} serverUrl={SERVER_URL} size={14} />
               </Pressable>
             ) : (
@@ -96,7 +96,7 @@ export function ClimbingLogEntrySources({
                 void openSource(link.url);
               }}
             >
-              <Text style={[styles.source, styles.link]}>Route</Text>
+              <Text style={styles.sourceLinkText}>Route</Text>
               <ProviderLogo provider={link.providerId} serverUrl={SERVER_URL} size={14} />
             </Pressable>
           ))}
@@ -107,10 +107,18 @@ export function ClimbingLogEntrySources({
 }
 
 const styles = StyleSheet.create({
-  container: { gap: 3 },
+  container: { gap: 6 },
   name: { color: colors.text, fontSize: 14, fontWeight: "500" },
   source: { color: colors.textSecondary, fontSize: 12 },
   link: { color: colors.accent, textDecorationLine: "underline" },
-  sourceLink: { flexDirection: "row", alignItems: "center", gap: 4 },
+  sourceLink: { flexDirection: "row", alignItems: "center", gap: 6 },
+  sourceLinkText: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "500",
+    lineHeight: 18,
+    textDecorationLine: "underline",
+    textDecorationColor: colors.textTertiary,
+  },
   links: { flexDirection: "row", flexWrap: "wrap", columnGap: 12, rowGap: 8 },
 });
