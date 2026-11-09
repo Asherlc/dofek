@@ -2,13 +2,14 @@
 
 Read [README.md](./README.md) before changing broker wiring or activation notes.
 
-- This workspace owns tiered storage only and is stacked on `kafka-broker-migration`.
-  Reuse the parent protocol integration, image contracts and structural checkpoints.
+- This workspace owns tiered storage after the merged Kafka migration.
+  Reuse the existing protocol integration, image contracts and structural checkpoints.
   Keep the common `/mnt/dofek-data/kafka-broker/data` host source; no data-tree move.
   See [README.md](./README.md).
 
-- Preserve existing application and Connect `REDPANDA_BROKERS` contracts and the
-  repaired history image's existing `KAFKA_BROKERS` contract.
+- Preserve all current application and Connect `REDPANDA_BROKERS` contracts;
+  see the [completed shared release](shared-release-execution.md). The old
+  phase-1 history image's `KAFKA_BROKERS` contract is historical.
 - Kafka WITH upstream Aiven tiered storage is the selected direction. Keep the
   single canonical broker/worker configuration coherent; no hot-log fallback or
   custom fencing plugin. See the accepted residual and release gates in

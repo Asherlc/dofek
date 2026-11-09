@@ -19,9 +19,12 @@ function fixture(
   uploads: Array<{ Key?: string; UploadId?: string }> = [],
 ) {
   const send = vi.fn(
-    async (command: {
-      constructor: { name: string };
-    }): Promise<Partial<ListObjectsV2CommandOutput & ListMultipartUploadsCommandOutput>> =>
+    async (
+      command: {
+        constructor: { name: string };
+      },
+      _options?: unknown,
+    ): Promise<Partial<ListObjectsV2CommandOutput & ListMultipartUploadsCommandOutput>> =>
       command.constructor.name === "ListObjectsV2Command"
         ? { Contents: objects, IsTruncated: false }
         : { Uploads: uploads, IsTruncated: false },
@@ -32,6 +35,50 @@ function fixture(
 }
 
 describe("stock tiered object verification", () => {
+  it.each(["ListObjectsV2Command", "ListMultipartUploadsCommand"])(
+    "aborts a stalled %s and fails verification",
+    async (commandName) => {
+      const { storage, send } = fixture();
+      const controller = new AbortController();
+      const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(controller.signal);
+      send.mockImplementation(async (command, options) => {
+        if (command.constructor.name !== commandName) return { IsTruncated: false };
+        if (
+          !options ||
+          typeof options !== "object" ||
+          !("abortSignal" in options) ||
+          !(options.abortSignal instanceof AbortSignal)
+        )
+          throw new Error("missing request abort signal");
+        const signal = options.abortSignal;
+        return new Promise((_resolve, reject) => {
+          signal.addEventListener("abort", () => reject(new Error("listing aborted")), {
+            once: true,
+          });
+        });
+      });
+      try {
+        let failure: unknown;
+        const result = storage.assertExpired([boundary]).then(
+          () => {
+            throw new Error("stalled listing unexpectedly passed");
+          },
+          (error: unknown) => {
+            failure = error;
+          },
+        );
+        await vi.waitFor(() =>
+          expect(send).toHaveBeenCalledTimes(commandName === "ListObjectsV2Command" ? 1 : 2),
+        );
+        expect(timeout).toHaveBeenCalledWith(30_000);
+        controller.abort();
+        await result;
+        expect(failure).toMatchObject({ message: "listing aborted" });
+      } finally {
+        timeout.mockRestore();
+      }
+    },
+  );
   it("checks objects and multipart uploads after native terminal deletion", async () => {
     const { storage, send, history } = fixture();
     await expect(storage.assertExpired([boundary])).resolves.toEqual(new Map());
@@ -118,6 +165,24 @@ describe("stock tiered object verification", () => {
     send.mockResolvedValueOnce({ Uploads: [pending], IsTruncated: false });
     await expect(storage.assertExpired([boundary])).rejects.toThrow("retains");
     expect(send).toHaveBeenCalledTimes(4);
+  });
+  it("rejects a retained object on the second object page", async () => {
+    const { storage, send } = fixture();
+    send.mockResolvedValueOnce({
+      Contents: [],
+      IsTruncated: true,
+      NextContinuationToken: "second",
+    });
+    send.mockResolvedValueOnce({
+      Contents: [
+        {
+          Key: `0000000000000000000000/samples-${boundary.topicId}/0/00000000000000000000-AAAAAAAAAAAAAAAAAAAAAQ.log`,
+        },
+      ],
+      IsTruncated: false,
+    });
+    await expect(storage.assertExpired([boundary])).rejects.toThrow("retains");
+    expect(send).toHaveBeenCalledTimes(2);
   });
   it("rejects a repeated object continuation token", async () => {
     const { storage, send } = fixture();

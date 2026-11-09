@@ -35765,7 +35765,7 @@ only the fixture image currently under test. Docker documents local resource
 
 ### 2026-11-08 — tiered-layer CI spelling vocabulary
 
-CI `42529586807`, job `128880819367` (`Test / Spell Check`) failed its normal
+[CI run 42529586807, Spell Check job](https://github.com/Asherlc/dofek/actions/runs/42529586807/job/128880819367) failed its normal
 `pnpm exec cspell --no-progress` command first at
 `src/account-erasure/kafka-log-storage.test.ts:52:32 - Unknown word (aiven)`.
 The pinned Java package namespace (`aiven`, `tieredstorage`) and the native
@@ -35775,16 +35775,15 @@ No runtime behavior, timeout, retry or production configuration changed.
 
 ### 2026-11-08 — tiered-layer verifier test gaps and local lint prerequisite
 
-- **CI symptom/root cause:** Run `42530085576` failed stock Stryker shards at
+- **CI symptom/root cause:** [Run 42530085576](https://github.com/Asherlc/dofek/actions/runs/42530085576) failed stock Stryker shards at
   native storage 46.38%, history 73.53%, remote storage 70.49%, runtime 40% and
   metadata-consumer factory 0%. Tests omitted positive newer-cache paths,
   malformed history cuts, complete listing pagination and actual constructor/
   factory wiring. Add focused behavioral cases; preserve the existing 75% gate,
   stock runner and production implementations.
-- **Validation:** Bounded stock-runner mutation checks passed: native local
-  storage 82.08%, history 84.71%, remote storage 81.15%, changed runtime and
-  metadata-consumer factory 100%. The native changed-line subset also passed
-  before the final additional cache-mismatch/plugin cases. No gate exemption,
+- **Validation:** The subsequent [CI run 42532677882](https://github.com/Asherlc/dofek/actions/runs/42532677882)
+  passed all six stock Stryker shards. Earlier local percentages were reported
+  without a retained report and are not independent evidence. No gate exemption,
   production refactor or longer timeout was needed.
 - **Local prerequisite:** `pnpm lint` completed its source/policy checks, then
   `lint:analytics-sql` failed first with `FailedToConnectError` / connection
@@ -35798,6 +35797,35 @@ No runtime behavior, timeout, retry or production configuration changed.
 - **Follow-up:** Keep fixture checks tied to the actual accepted path, and use
   the documented [test dependency setup](testing.md#integration-dependencies)
   before full database-dependent lint. No extra retry, timeout or ignore added.
+
+### 2026-11-09 — Tiered transition review and local capacity interruption
+
+- **Scope / impact:** PR #3236 review and isolated synthetic Kafka qualification;
+  production unchanged. GitHub's automatic deployment workflow remained manually
+  disabled; see the [readiness observation](evidence/kafka-tiered-transition-20261109/release-readiness.json).
+- **Observed activation blocker:** Existing remote-disabled topic generations
+  survived tiering, native eviction, remote reads and restart. Terminal remote
+  deletion did not remove six covered disk index-cache files from those reads;
+  the actual retention phase correctly rejected them. A qualified stock cache
+  cleanup policy remains required before activation. Clearing only that stopped
+  synthetic fixture's cache establishes the positive guard branch, not an
+  automatic or production cleanup guarantee. The [timestamped receipt](evidence/kafka-tiered-transition-20261109/transition.json)
+  records actual phase rejection/recovery for orphan objects, multipart uploads
+  and both distinct retained roots. See the pinned [Kafka cache source](https://github.com/apache/kafka/blob/4.4.0/storage/src/main/java/org/apache/kafka/storage/internals/log/RemoteIndexCache.java).
+- **Local lint interruption / cause:** `CLICKHOUSE_URL=<workspace> pnpm lint`
+  reached analytics SQL, then failed first with ClickHouse Code 75,
+  `errno: 28, strerror: No space left on device`, with 0 B available on the
+  78.44 GiB Docker filesystem. Docker inspection showed 30.41 GB of container
+  writable layers, 32.26 GB of volumes and no build cache. This workspace's
+  ClickHouse data was only 83.1 MiB; deleting its data was not justified.
+- **Recovery / validation:** Build-cache pruning reclaimed 0 B. Concurrent
+  external cleanup restored space; pruning unused images reclaimed another
+  846.9 MB under standing approval. No running container or database volume was
+  removed by this task. The identical full lint command then passed without
+  an added wait, retry, ignore or timeout. All 23,939 unit/mobile tests and
+  root/server/web typechecks passed; [source hashes and check results](evidence/kafka-tiered-transition-20261109/source.json)
+  identify the reviewed runtime. Production exact-image, R2, capacity,
+  quiescence and cache-cleanup gates remain open.
 
 ## 2026-11-08 — History recovery complete; two healthy zero-lag checks
 
@@ -35869,3 +35897,26 @@ No runtime behavior, timeout, retry or production configuration changed.
 - **CI first fatal/root cause:** [3350 CI, Unit Tests](https://github.com/Asherlc/dofek/actions/runs/42554758638/job/128958158467) reported `scenarios/dofek_kafka: No such file or directory` in the executable deployment-workflow test. Adding Kafka to production convergence checks required the test's mocked service inventory to include it. Both fixture lists now include Kafka, clock expectations include its existing 60-second stability check, and a paused-Kafka scenario fails the release. All 43 workflow tests plus 26 renderer tests passed locally. No production waits, retries, gates or timeout values were weakened.
 - **Bootstrap correction/limit:** the future OCI-host template now creates the canonical Kafka directory with UID/GID 1000 only after checking the data filesystem is mounted. Terraform formatting/validation and both template branches' YAML/shell parsing passed offline. This OCI `user_data` change was not planned/applied against the live instance and can require instance replacement on a future OCI apply. The separately successful Cloudflare No-changes plan does not qualify it; normal app deployment does not apply the OCI root.
 - **Remaining risk/follow-up:** exact new-head CI must settle; Terraform credential sourcing and internal-overlay authentication remain explicit review decisions. [Shared release proposal](../deploy/kafka/shared-release.md) records image/source distinctions and the broader automatic-release effects. Keep real-loader qualification for renamed structural fields and update executable workflow mocks whenever a required service is added.
+
+
+## 2026-11-09 — Kafka shared release succeeds; quarantine override reset remains open
+
+- **Release/impact:** user Q5/A approved #3233 merge plus the normal shared application release and the two named policy decisions. Merge6fe1d4fbd mainCI42562370508 passed90jobs; exact app digest9dec51d5… was verified. The automatic handoff did not start: `gh api repos/Asherlc/dofek/actions/workflows/deploy-web.yml` reported `disabled_manually`. Reason/owner/date remain unknown. The setting was not changed. Existing stock `deploy.yml`, targetweb/image_tagsha-6fe1d4f, completed this one approved release through canonical gates; optional forced mobile distribution was skipped. No new workflow, retry or manual Swarm deployment bypass was introduced.
+- **Validation:** [release42564567850](https://github.com/Asherlc/dofek/actions/runs/42564567850) succeeded at05:25:58UTC; Cloudflare Terraform0added/0changed/0destroyed, no OCIapply. Actual8shared service digests, worker normal entrypoint and RO mounts, unchanged Kafka configuration, all6topic/cluster generations, retained old roots and actual released-worker erasure hold passed read-only checks. At05:34:39UTC all10requiredtaskshealthy,6Stablegroupszero lag, archivesready/0errors, livearchive output_sent13 anddatafree43,099,762,688B; publicappHTTP200. See [execution receipt](../deploy/kafka/shared-release-execution.md) and [sanitized evidence](evidence/kafka-shared-production-release-20261109/summary.json).
+- **First failing policy check/root cause:** post-release DescribeConfigs assertion expected `segment.bytes=134217728` but saw `1073741824`. All3source topics retain explicit128MiB; all3quarantines show default1GiB. Retention time/byte limits remain correct. Frozen before-client metadata shows explicit128MiB onall6. Existing `KafkaMetricStreamQuarantineWriter.connect` calls legacy AlterConfigs with only3retention/cleanup entries, replacing the full override set and resetting omitted segment/remote settings. That source file is unchanged from f02798b72, so the behavior predates this shared-image change. [Kafka KIP339](https://cwiki.apache.org/confluence/spaces/KAFKA/pages/87298616/KIP-339%2BCreate%2Ba%2Bnew%2BIncrementalAlterConfigs%2BAPI) documents replacement/lost-update semantics.
+- **Unresolved/follow-up:** no policy write, startup patch, offset reset, data retirement or workaround was performed after discovery. Current apphealth and erasure fail-closed behavior pass, but full selected topic-policy qualification remains incomplete. Fix destructive startup configuration ownership before tiered activation; do not claim that a one-time segment correction survives reconnect. Implementation/release alignment remains pending. Add post-client/reconnect config checks and a workflow-state preflight to future release qualification; follow the [CI debugging runbook](ci-debugging.md) rather than weakening gates.
+
+## 2026-11-09 — Quarantine config reset reproduced and fixed offline
+
+- **Cause/impact:** following the shared-release discrepancy above, an isolated Kafka4.4 regression proved that the released writer's legacy replacement AlterConfigs resets explicit128MiB segments to1GiB defaults and removes the explicit remote=false override. Three deliberately invalid required policies were silently rewritten. No production config update, second release, payload scan or data retirement was performed during this fix.
+- **Direct fix:** startup retains normal missing-topic creation and validates the existing three exact cleanup/retention guarantees using supported KafkaJS DescribeConfigs. It refuses incomplete, wrong, null or duplicate evidence, disconnects admin on failure and starts the producer only after validation. The erasure paths share the same validator. This avoids both full replacement and a racing read-modify-write; see [Kafka KIP339](https://cwiki.apache.org/confluence/spaces/KAFKA/pages/87298616/KIP-339%2BCreate%2Ba%2Bnew%2BIncrementalAlterConfigs%2BAPI).
+- **Validation/limits:** native regression RED4fail/1pass toGREEN5/5, consumer+erasure integration9/9, units66/66, quarantine mutation [69/69 killed](evidence/kafka-quarantine-config-fix-20261109/stryker.txt), root/server/web typechecks and source-policy lint passed. The stock incremental correction preserved a disposable topic ID and survived actual fixed-client reconnect. Local analytics lint initially hit Docker ENOSPC; after stopping/removing only this workspace's completed disposable DB/Redis containers and preserving named volumes, the same SQL command passed. Local Redpanda still could not reserve shared AIO capacity and was not claimed as qualified. No retries/timeouts/gates or shared host limits were altered. All unrelated running containers/database volumes were preserved; stock unused-image cleanup also recovered2.021GB before shared disk pressure returned.
+- **Remaining:** CI, then separate approval and execution of the fixed-image release/policy correction, must complete before claiming production resolution. Keep tiering off and retain the original RP completion hold. The [reviewable correction order](../deploy/kafka/quarantine-config-correction.md) requires fixed clients before restoring the two lost topic overrides. Future qualification should compare selected configs after clients start/reconnect; use a failing reproduction and pinned-broker integration checks rather than adding a new repair framework.
+
+## 2026-11-09 — Topic-policy restoration becomes deployment-owned
+
+- **Status/impact:** the startup fix merged in [#3237](https://github.com/Asherlc/dofek/pull/3237); exact main CI [42643872631](https://github.com/Asherlc/dofek/actions/runs/42643872631) passed. It has not been deployed. The user requested infrastructure ownership instead of the proposed manual correction; no production topic write, restart or second release occurred during this follow-up.
+- **Direct fix:** the existing web-stack workflow consumes one [role policy](../deploy/kafka/topic-policy.json), uses stock incremental SET operations after old sink tasks exit, and verifies explicit values before restoring consumers and again after startup. Unrelated overrides remain intact; the application validates its existing safety guarantees without rewriting policy. See [Kafka's implementation](https://github.com/apache/kafka/blob/4.4.0/tools/src/main/java/org/apache/kafka/tools/ConfigCommand.java#L558-L564) and the [current release proposal](../deploy/kafka/quarantine-config-correction.md).
+- **Validation:** 47 executable workflow tests passed. The [isolated native receipt](evidence/kafka-topic-policy-20261109/native.json) proves six-topic convergence, fixed-writer connect/reconnect, unchanged topic IDs/offsets, unrelated compression preservation, and rejection of both wrong values and inherited defaults. Native CLI ran in Docker; identical verifier logic ran on host Node/KafkaJS with the fixture endpoint. Packaged-image execution was not repeated because Docker had only 872 MiB free; that limitation is explicit rather than transferred from earlier runtime proof.
+- **Local prerequisite failure:** full lint's SQL phase initially reported `Connection refused` at `127.0.0.1:8123` because the workspace environment was absent. After generating it, `pnpm compose -- up -d --wait clickhouse` exposed `all predefined address pools have been fully subnetted`. A temporary local Compose IPAM override started only the owned ClickHouse fixture; the same SQL lint command then passed. Source-policy lint, three typechecks, actionlint and normal source spellcheck also passed. No shared running containers or named database volumes were removed, and no repository network settings, retries or timeouts changed.
+- **Remaining/next time:** current-head CI and a separately approved exact-image normal release must complete before production resolution. Retain old data and the RP completion hold. Keep policy ownership and pre/post-start readback in the deployment runbook; use native config behavior and executable workflow tests when investigating another override reset, rather than adding a separate repair tool.

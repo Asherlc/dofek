@@ -1,11 +1,18 @@
 # Kafka tiered-storage layer
 
-Status: **native/image qualification and CI at `7be7d1547` passed; main/parent
-integration checks in progress; not merge/activation ready**.
+Status: **November 9 review fixes and main integration pass local checks;
+new branch CI pending. Production activation remains blocked**.
 The user selected upstream Aiven and explicitly requested separate broker and
-tiered-storage workspaces. This branch is stacked on `kafka-broker-migration`
-([PR #3233](https://github.com/Asherlc/dofek/pull/3233)); its runtime changes depend
-on that layer's protocol integration, native local guard and structural fields.
+tiered-storage workspaces. The Kafka migration
+([PR #3233](https://github.com/Asherlc/dofek/pull/3233)) is merged; reuse its
+protocol integration, native local guard and structural fields.
+
+The [November 9 review checkpoint](../evidence/kafka-tiered-transition-20261109/README.md)
+records existing-data transition, remote reads/restart, actual workspace phase
+tests, full local checks and a fresh independent review. Source landing relies
+on the unchanged automatic-deployment hold. Stock index-cache cleanup, exact
+release image and production backend/capacity/quiescence qualification remain
+activation gates; synthetic cache removal does not close them.
 
 ## Owned changes
 

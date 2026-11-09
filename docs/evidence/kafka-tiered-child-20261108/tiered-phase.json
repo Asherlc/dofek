@@ -281,5 +281,10 @@
     }
   ],
   "packagedSource": "e19b9200196c698e1d159597fc359d384d3a9a8e",
-  "packagedRuntimeHashMatched": true
+  "packagedRuntimeHashMatched": true,
+  "evidenceLimits": {
+    "retentionRuntime": "Passing retention invocations are not individually tagged with workspace/image identity.",
+    "retiredRoots": "The two historical root-negative observations do not identify their tested paths.",
+    "postRemovalRecovery": "No separate passing post-removal observation was retained."
+  }
 }

@@ -47,13 +47,15 @@ observations:
    and digest. Retention passed again with populated native remote-index cache.
 4. The immutable worker image ran as UID/GID 1000 with a 512-MiB limit, production
    Node preloads/strip-types flags, and read-only broker/retired roots. Its actual
-   production retention phase and imported native/RLMM/S3 implementations passed,
-   and its remote-only read matched the same digest. This did not invoke the
+   remote-only read matched the same digest. The receipt records a passing
+   retention phase at 22:43:18 UTC but does not tag that invocation with its
+   runtime identity; it is not independent packaged-retention proof. This did not invoke the
    migration launcher, start HTTP, boot every worker queue or run a whole erasure.
 5. Through the same actual phase, a synthetic covered orphan object, unfinished
    MPU, file in the original-RP fixture root, and file in the aborted-Kafka fixture
-   root each blocked completion. Removing only those owned synthetic artifacts
-   restored success.
+   root were reported to block completion. The retained observations do not name
+   the two tested paths or record a success after removal, so distinct-root and
+   post-removal recovery proof are unverified in this historical receipt.
 
 The temporary fixture injected only unrelated backup, processor and PeerDB gates
 as successful stubs. Their `verified` fields in the raw receipt do **not** qualify
@@ -64,10 +66,11 @@ topics/backend directly rather than exporting production secrets.
 
 ## Configuration boundary and limits
 
-[Configuration comparison](configuration.json) checked all 29 canonical broker
-environment keys, the three explicit local-listener overrides, 30 actual generated
-server properties, and canonical renderer broker/worker endpoint, bucket, region,
-credential and derived-prefix equality. It used synthetic inputs only. Production
+[Configuration comparison](configuration.json) reports 29 inline canonical broker
+environment keys, the three explicit local-listener overrides, 30 generated
+server properties, and a separate synthetic renderer-equality check. It does not
+retain the actual key comparison or independently establish equality of every
+consumed env-file backend setting. It used synthetic inputs only. Production
 consumed configuration/credential scope still needs secret-safe release checking;
 Admin redaction does not establish backend equality.
 

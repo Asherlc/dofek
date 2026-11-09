@@ -277,6 +277,10 @@ export class KafkaLogStorage {
       )
         throw new Error("Kafka retains covered or unknown remote index cache files");
     }
+    for (const boundary of boundaries) {
+      if ((await this.#generation(boundary.topic, boundary.partition)) !== boundary.topicId)
+        throw new Error("Kafka topic generation changed during remote storage verification");
+    }
     if ((await this.#context()) !== clusterId)
       throw new Error("Kafka cluster generation changed during storage verification");
   }

@@ -192,6 +192,17 @@ afterEach(() => {
 });
 
 describe("renderDeployServiceEnvironmentFiles", () => {
+  it.each(["us-east-1", "AUTO"])("rejects an unqualified tiered region: %s", (region) => {
+    const directory = makeTemporaryDirectory();
+    const sourcePath = join(directory, "all.env");
+    writeFileSync(
+      sourcePath,
+      dotenv({ ...completeDeployEnvironment(), KAFKA_TIERED_STORAGE_REGION: region }),
+    );
+    expect(() =>
+      renderDeployServiceEnvironmentFiles(sourcePath, join(directory, "services")),
+    ).toThrow("KAFKA_TIERED_STORAGE_REGION must be auto");
+  });
   it("renders stock tiered credentials and one cluster-derived prefix for broker and worker", () => {
     const directory = makeTemporaryDirectory();
     const sourcePath = join(directory, "all.env");

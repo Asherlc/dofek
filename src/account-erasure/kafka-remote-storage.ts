@@ -67,6 +67,7 @@ export class KafkaRemoteStorage {
           Prefix: this.#prefix,
           ContinuationToken: token,
         }),
+        { abortSignal: AbortSignal.timeout(30_000) },
       );
       if (typeof page.IsTruncated !== "boolean")
         throw new Error("Incomplete Kafka tiered object pagination");
@@ -88,6 +89,7 @@ export class KafkaRemoteStorage {
           KeyMarker: keyMarker,
           UploadIdMarker: uploadIdMarker,
         }),
+        { abortSignal: AbortSignal.timeout(30_000) },
       );
       if (typeof page.IsTruncated !== "boolean")
         throw new Error("Incomplete Kafka tiered multipart pagination");

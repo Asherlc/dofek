@@ -82,6 +82,53 @@ function fixture(
 }
 
 describe("native Kafka deletion history", () => {
+  it("bounds a stalled metadata cut request without opening a consumer", async () => {
+    const { reader, admin, consumer } = fixture([start]);
+    admin.fetchTopicOffsets.mockImplementation(() => new Promise(() => {}));
+    vi.useFakeTimers();
+    try {
+      let failure: unknown;
+      const result = reader.assertDeleted([boundary]).then(
+        () => {
+          throw new Error("stalled cut unexpectedly passed");
+        },
+        (error: unknown) => {
+          failure = error;
+        },
+      );
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(failure).toMatchObject({ message: "Kafka native metadata history read timed out" });
+      await result;
+      expect(consumer.connect).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it.each(["connect", "subscribe", "run", "disconnect"] as const)(
+    "bounds stalled consumer %s by the read deadline",
+    async (method) => {
+      const { reader, consumer } = fixture([start, update(2), update(3)]);
+      vi.mocked(consumer[method]).mockImplementation(() => new Promise(() => {}));
+      vi.useFakeTimers();
+      try {
+        let failure: unknown;
+        const result = reader.assertDeleted([boundary]).then(
+          () => {
+            throw new Error("stalled read unexpectedly passed");
+          },
+          (error: unknown) => {
+            failure = error;
+          },
+        );
+        await vi.advanceTimersByTimeAsync(30_000);
+        expect(failure).toBeInstanceOf(Error);
+        expect(failure).toMatchObject({ message: "Kafka native metadata history read timed out" });
+        await result;
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
   it("requires terminal deletion for every covered attempt and closes the consumer", async () => {
     const { reader, disconnect, consumer } = fixture([start, update(1), update(2), update(3)]);
     const result = await reader.assertDeleted([boundary]);

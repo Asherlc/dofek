@@ -90,6 +90,19 @@ afterEach(async () => {
 });
 
 describe("Kafka native log erasure", () => {
+  it("rejects a topic recreated during remote verification", async () => {
+    const { storage, remote, partition, boundaries } = await fixture();
+    remote.assertExpired.mockImplementation(async () => {
+      await writeFile(
+        join(partition, "partition.metadata"),
+        `version: 0\ntopic_id: ${clusterId}\n`,
+      );
+      return new Map();
+    });
+    await expect(
+      storage.assertExpired([{ ...boundaries[0], topic: "samples", offset: "100" }]),
+    ).rejects.toThrow("topic generation");
+  });
   it.each(["remote.log.storage.manager.class.name", "remote.log.metadata.manager.class.name"])(
     "rejects an unqualified remote plugin: %s",
     async (key) => {

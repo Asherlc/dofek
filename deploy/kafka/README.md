@@ -14,8 +14,19 @@ Kafka is now live. That approval does not authorize a repeat cutover or tiered
 activation. The [shared application release proposal](shared-release.md) records
 its separate image and deployment boundaries. Upstream Aiven remains selected for phase 2;
 there is no plugin fork. This phase must preserve the phase-1 data, cluster/topic
-generations, offsets and archive identities. Existing fresh-tiered fixture proof
-does not alone qualify enabling tiering on an existing phase-1 broker.
+generations, offsets and archive identities. The [existing-broker local transition](../../docs/evidence/kafka-tiered-transition-20261109/README.md)
+qualifies that path with synthetic data; the exact release image and production
+activation still require separate qualification.
+
+The [shared application release proposal](shared-release.md) records the reviewed
+image, deployment effects and remaining decisions before merging this PR.
+That release is now recorded in the [execution receipt](shared-release-execution.md):
+the workflow and live health checks passed, with a separately documented open
+quarantine topic-configuration defect. Tiered activation remains separate.
+The [deploy-owned topic policy](quarantine-config-correction.md) describes the
+merged startup fix and the infrastructure follow-up: selected settings live in
+[`topic-policy.json`](topic-policy.json), with incremental reconciliation and
+readback before and after consumer startup. That follow-up is not deployed.
 
 ## Intended configuration
 
@@ -74,8 +85,10 @@ The [stronger custom fencing proposal](tiered-fencing-proposal.md) is not select
 
 ## Release gates
 
-Preserve existing application/Connect `REDPANDA_BROKERS`, the repaired history
-image's `KAFKA_BROKERS`, all current consumer routes and ClickHouse 26.6. Release
+Preserve the completed shared release's `REDPANDA_BROKERS` contract for all
+application and Connect services, all current consumer routes and ClickHouse 26.6.
+The old phase-1 history image used `KAFKA_BROKERS`; see the
+[current service receipt](../../docs/evidence/kafka-shared-production-release-20261109/contracts.json). Release
 the narrowly changed worker as a separately qualified image; the historical
 hot-log worker image does not qualify this runtime. Combining PR #3234 must
 explicitly preserve the broker hook and all six structural checkpoint fields.
@@ -88,8 +101,9 @@ phase-2 instructions. Main-branch CI can trigger application deployment, so
 tiered source landing and activation require one reviewed release sequence.
 The normal workflow requires Kafka already active; it is not the first cutover.
 
-The pinned worker's [actual phase and remote-read/restart evidence](../../docs/evidence/kafka-tiered-child-20261108/README.md)
-is complete for the isolated fixture. Production consumed configuration, retention
+The historical [packaged remote-read/restart evidence](../../docs/evidence/kafka-tiered-child-20261108/README.md)
+and current [workspace retention-phase evidence](../../docs/evidence/kafka-tiered-transition-20261109/README.md)
+have distinct attribution and limits. Production consumed configuration, retention
 policy, measured capacity/headroom, old-data disposition, full application release
 qualification and cross-branch scrub integration remain gates. RF1/asynchronous
 offload cannot guarantee zero data loss after irreversible loss of the only disk;
@@ -97,3 +111,9 @@ local retention is not a hard disk ceiling while offload is failing. The JSONL
 archive is retained, but [operator-ready replay is not shipped](../../docs/metric-stream-redpanda-r2-runbook.md#replay).
 No production changes, credential edits, retirement or cloud experiments are
 authorized by this offline candidate.
+
+The [existing-broker transition](../../docs/evidence/kafka-tiered-transition-20261109/README.md)
+also observed covered index-cache files surviving terminal remote deletion.
+The erasure guard correctly blocks. A qualified stock cache-cleanup policy is
+an activation blocker; source landing under the deployment hold does not resolve
+it. See the [phase-2 packet](tiered-cutover-packet.md#qualification-recovery-and-limits).

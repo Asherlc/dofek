@@ -442,6 +442,9 @@ export function renderDeployServiceEnvironmentFiles(
   if (!/^[A-Za-z0-9_-]{22}$/.test(environment.KAFKA_CLUSTER_ID ?? "")) {
     throw new Error("KAFKA_CLUSTER_ID must be a 22-character Kafka UUID");
   }
+  if (environment.KAFKA_TIERED_STORAGE_REGION !== "auto") {
+    throw new Error("KAFKA_TIERED_STORAGE_REGION must be auto for the qualified R2 endpoint");
+  }
 
   mkdirSync(outputDirectory, { mode: 0o700, recursive: true });
   chmodSync(outputDirectory, 0o700);
