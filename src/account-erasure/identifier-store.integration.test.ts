@@ -198,6 +198,58 @@ describe("request-owned account erasure identifiers", () => {
     );
   }
 
+  test.each(["read", "append"] as const)(
+    "rejects identifier %s when its lease expires while waiting for the request lock",
+    async (operation) => {
+      const request = await createRequest();
+      await context.db.transaction((transaction) =>
+        captureAccountErasurePostgresIdentifiers(transaction, request),
+      );
+      const store = new AccountErasureIdentifierStore(context.db, { ...request, pageSize: 500 });
+      const locker = await context.db.$client.connect();
+      let committed = false;
+      try {
+        await locker.query("BEGIN");
+        await locker.query(
+          "SELECT id FROM fitness.account_erasure_request WHERE id=$1 FOR UPDATE",
+          [request.requestId],
+        );
+        await locker.query(
+          "UPDATE fitness.account_erasure_request SET lease_expires_at=clock_timestamp()+interval '1 minute' WHERE id=$1",
+          [request.requestId],
+        );
+        const pending = (
+          operation === "read"
+            ? store.findPresent("activity", [])
+            : store.append("activity", [randomUUID()])
+        ).then(
+          () => null,
+          (error: unknown) => error,
+        );
+        await vi.waitFor(async () => expect(await hasDatabaseLockWaiter(context.db)).toBe(true));
+        const active = await locker.query(
+          "SELECT lease_expires_at>clock_timestamp() AS active FROM fitness.account_erasure_request WHERE id=$1",
+          [request.requestId],
+        );
+        expect(active.rows).toEqual([{ active: true }]);
+        await locker.query(
+          "UPDATE fitness.account_erasure_request SET lease_expires_at=clock_timestamp()-interval '1 microsecond' WHERE id=$1",
+          [request.requestId],
+        );
+        await locker.query("COMMIT");
+        committed = true;
+        expect(await pending).toMatchObject({
+          message:
+            "Account erasure request does not retain identifying state or its current worker lease",
+        });
+      } finally {
+        if (!committed) await locker.query("ROLLBACK");
+        locker.release();
+      }
+      expect(await storedRows(request.requestId, "activity")).toHaveLength(0);
+    },
+  );
+
   test("cannot retain identifiers without their deletion request", async () => {
     await expect(
       context.db.execute(sql`INSERT INTO fitness.account_erasure_identifier

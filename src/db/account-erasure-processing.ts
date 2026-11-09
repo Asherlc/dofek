@@ -6,6 +6,7 @@ import { assertPostgresAccountErasureComplete } from "../account-erasure/postgre
 import { accountErasureRouteHighWatermarkSchema } from "../account-erasure/redpanda-drain.ts";
 import {
   ACCOUNT_ERASURE_SNAPSHOT_LIMITS,
+  ACCOUNT_ERASURE_SNAPSHOT_SUPPORT_REQUIRED,
   assertAccountErasureSnapshotEncryptedBytes,
 } from "../account-erasure/snapshot-budget.ts";
 import type { AccountErasurePhase } from "../jobs/process-account-erasure-job.ts";
@@ -83,6 +84,7 @@ export async function listPendingAccountErasureRequests(
         FROM fitness.account_erasure_outbox AS outbox
         JOIN fitness.account_erasure_request AS request ON request.id = outbox.request_id
         WHERE request.status <> 'completed'
+          AND request.last_error IS DISTINCT FROM ${ACCOUNT_ERASURE_SNAPSHOT_SUPPORT_REQUIRED}
           AND (
             request.user_id IS NOT NULL
             OR request.pii_scrubbed_at IS NOT NULL
@@ -149,6 +151,7 @@ export async function markOverdueAccountErasureRequests(
           updated_at = ${now.toISOString()}
         WHERE status <> 'completed'
           AND completion_deadline <= ${now.toISOString()}
+          AND last_error IS DISTINCT FROM ${ACCOUNT_ERASURE_SNAPSHOT_SUPPORT_REQUIRED}
           AND last_error IS DISTINCT FROM
             'Account erasure exceeded its 30-day completion deadline; deletion continues'
         RETURNING id`,
@@ -184,6 +187,7 @@ export async function claimAccountErasureRequest(
           updated_at = ${now.toISOString()}
         WHERE id = ${requestId}::uuid
           AND status <> 'completed'
+          AND last_error IS DISTINCT FROM ${ACCOUNT_ERASURE_SNAPSHOT_SUPPORT_REQUIRED}
           AND (
             (
               user_id IS NOT NULL
@@ -331,7 +335,11 @@ export async function saveAccountErasurePhaseProgress(
   const rows = await executeWithSchema(
     database,
     idRowSchema,
-    sql`UPDATE fitness.account_erasure_request
+    sql`WITH locked AS MATERIALIZED (
+          SELECT id,lease_owner,lease_expires_at,status
+          FROM fitness.account_erasure_request WHERE id=${requestId}::uuid FOR UPDATE
+        )
+        UPDATE fitness.account_erasure_request AS request
         SET
           phase_progress = jsonb_set(
             phase_progress,
@@ -340,11 +348,12 @@ export async function saveAccountErasurePhaseProgress(
             true
           ),
           updated_at = now()
-        WHERE id = ${requestId}::uuid
-          AND lease_owner = ${leaseOwner}
-          AND status <> 'completed'
-          AND lease_expires_at > now()
-        RETURNING id`,
+        FROM locked
+        WHERE request.id=locked.id
+          AND locked.lease_owner = ${leaseOwner}
+          AND locked.status <> 'completed'
+          AND locked.lease_expires_at > clock_timestamp()
+        RETURNING request.id`,
   );
   if (rows.length !== 1) {
     throw new Error("Account erasure lease was lost while saving phase progress");
@@ -445,7 +454,8 @@ export async function markAccountErasureFailed(
           status = 'failed',
           failure_count = failure_count + 1,
           last_error = ${failure},
-          retry_at = ${retryAt.toISOString()},
+          retry_at = CASE WHEN ${failure}=${ACCOUNT_ERASURE_SNAPSHOT_SUPPORT_REQUIRED}
+            THEN NULL ELSE ${retryAt.toISOString()}::timestamptz END,
           lease_owner = NULL,
           lease_expires_at = NULL,
           updated_at = ${now.toISOString()}

@@ -842,15 +842,20 @@ export async function findAccountErasureStatus(
     currentPhase: row.current_phase,
     deadlineMissed,
     id: row.id,
-    message: deadlineMissed
-      ? row.status === "completed"
-        ? "Account deletion completed after its 30-day deadline. Support was alerted to the delay."
-        : "Account deletion missed its 30-day deadline. Deletion remains active and automatic retries are continuing; support has been alerted."
-      : row.status === "failed"
-        ? row.retry_at && row.last_error !== ACCOUNT_ERASURE_SNAPSHOT_SUPPORT_REQUIRED
-          ? "Account deletion is still in progress. We are retrying it automatically."
+    message:
+      row.status !== "completed" && row.last_error === ACCOUNT_ERASURE_SNAPSHOT_SUPPORT_REQUIRED
+        ? deadlineMissed
+          ? "Account deletion missed its 30-day deadline and needs support assistance. Contact support with this request ID."
           : "Account deletion needs support assistance. Contact support with this request ID."
-        : null,
+        : deadlineMissed
+          ? row.status === "completed"
+            ? "Account deletion completed after its 30-day deadline. Support was alerted to the delay."
+            : "Account deletion missed its 30-day deadline. Deletion remains active and automatic retries are continuing; support has been alerted."
+          : row.status === "failed"
+            ? row.retry_at
+              ? "Account deletion is still in progress. We are retrying it automatically."
+              : "Account deletion needs support assistance. Contact support with this request ID."
+            : null,
     replayRetainedUntil: row.replay_retained_until,
     requestedAt: row.requested_at,
     retentionUntil: row.completion_deadline,

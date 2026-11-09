@@ -221,11 +221,16 @@ export class AccountErasureIdentifierStore {
     const requests = await executeWithSchema(
       transaction,
       z.object({ id: z.uuid() }),
-      sql`SELECT id FROM fitness.account_erasure_request
-        WHERE id=${this.#requestId}::uuid AND status<>'completed'
-          AND user_id IS NOT NULL AND encrypted_remote_snapshot IS NOT NULL
+      sql`WITH locked AS MATERIALIZED (
+          SELECT id,status,user_id,pii_scrubbed_at,lease_owner,lease_expires_at,
+            encrypted_remote_snapshot IS NOT NULL AS retained_snapshot
+          FROM fitness.account_erasure_request WHERE id=${this.#requestId}::uuid
+          ${write ? sql`FOR UPDATE` : sql`FOR SHARE`}
+        )
+        SELECT id FROM locked WHERE status<>'completed'
+          AND user_id IS NOT NULL AND retained_snapshot
           AND pii_scrubbed_at IS NULL
-          AND lease_owner=${this.#leaseOwner} AND lease_expires_at>now() ${write ? sql`FOR UPDATE` : sql`FOR SHARE`}`,
+          AND lease_owner=${this.#leaseOwner} AND lease_expires_at>clock_timestamp()`,
     );
     if (requests.length !== 1) {
       throw new Error(

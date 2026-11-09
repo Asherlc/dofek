@@ -36013,6 +36013,34 @@ performed. The newly merged head still requires remote CI qualification.
   schema/owner boundary cases. Confirm completed lab ownership before stopping
   running local containers; a missing host PID or large layer alone is not proof.
 
+## 2026-11-09 — Erasure post-lock lease and support-retry review fixes
+
+The real PostgreSQL regressions confirmed that phase-progress updates and
+identifier reads/appends could wait past expiry and still succeed because
+`now()` retained the transaction-start timestamp. They now acquire the request
+row lock before checking `clock_timestamp()`. The renewal regression also proves
+the lease is active after the operation begins waiting, then explicitly expires
+it under the held lock; it no longer depends on setup finishing within one second.
+See the [lease cases](../src/db/account-erasure-processing.integration.test.ts)
+and [identifier-store cases](../src/account-erasure/identifier-store.integration.test.ts).
+
+Additional database regressions failed when a support-required snapshot was
+redispatched or claimed, and when overdue processing erased its actionable
+reason. Persistence now gives that failure no retry date, preserves the reason
+through overdue updates, and excludes it from automatic dispatch/claim until
+support repairs the snapshot and clears the hold. Public status retains the
+contact-support remedy after the deadline. Ordinary transient failures and
+explicitly repaired requests remain eligible. No snapshot limit increased and
+no identifying diagnostic text is exposed.
+
+Validation passed 80 real-PG cases across the three affected suites, 34 focused
+unit cases, all 13 status-message mutants, root TypeScript and changed-file Biome.
+These are offline checks; the new commit still requires exact-head CI. No
+production request, secret, migration, offset or resource was changed. The
+approved writer/recovery/key work continues separately. Future reviews should
+use the existing PR-comment workflow and observe actual database lock waits
+before asserting a post-lock deadline boundary.
+
 ## 2026-11-09 — Kafka shared release succeeds; quarantine override reset remains open
 
 - **Release/impact:** user Q5/A approved #3233 merge plus the normal shared application release and the two named policy decisions. Merge6fe1d4fbd mainCI42562370508 passed90jobs; exact app digest9dec51d5… was verified. The automatic handoff did not start: `gh api repos/Asherlc/dofek/actions/workflows/deploy-web.yml` reported `disabled_manually`. Reason/owner/date remain unknown. The setting was not changed. Existing stock `deploy.yml`, targetweb/image_tagsha-6fe1d4f, completed this one approved release through canonical gates; optional forced mobile distribution was skipped. No new workflow, retry or manual Swarm deployment bypass was introduced.

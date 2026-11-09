@@ -101,6 +101,15 @@ The public states are:
 | `failed` | A phase failed and is scheduled for automatic retry, or requires support if no retry time is present. The fences remain active. |
 | `completed` | Replay, active-store, quarantine, processor-retention, and backup-retention verification passed. |
 
+A retained snapshot marked as requiring support is excluded from automatic
+dispatch and worker claims, including already queued work. Passing the deadline
+does not overwrite that reason or replace the contact-support remedy with a
+promise of automatic retries. Support must repair the underlying snapshot within
+the unchanged budgets and explicitly clear the hold before processing resumes;
+clearing the reason alone does not repair an oversized snapshot. These boundaries
+are exercised by the [real PostgreSQL lease/status tests](../src/db/account-erasure-processing.integration.test.ts).
+No automated snapshot-repair or production key-change procedure is implied.
+
 ## Phase Map
 
 The subsequently withdrawn Kafka/Aiven proposal recorded one explicitly accepted
