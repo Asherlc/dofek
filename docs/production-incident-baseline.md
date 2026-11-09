@@ -36097,7 +36097,7 @@ No runtime behavior, timeout, retry or production configuration changed.
 - **Local PR validation prerequisite:** `pnpm lint` passed source-policy checks but SQLFluff failed with `Connection refused` at the default ClickHouse port. The workspace ClickHouse container was healthy; its assigned port had not been written to `.env.local`. Ran the documented `pnpm compose:env --write` to generate that local configuration before rerunning SQL lint. No checked-in database settings, timeouts, or lint gates changed; see the [workspace setup procedure](../README.md#development).
 - **Retrospective / next time:** Existing Sentry frames and worker job IDs made the failing public lookup reproducible; upstream region identity required inspection of the live HTML. Use the Sentry, check-logs, systematic-debugging, and test-driven-development skills for similar failures. Proposed runbook wording: record the requested URL, HTTP status, canonical URL, page native ID, and final breadcrumb ID before changing an HTML identity validator; distinguish a parser rejection from a later transport failure.
 
-## 2026-11-09 — Overview preparation completes projection; GHCR blocks merge
+## 2026-11-09 — Overview production preparation and registry interruption
 
 - **Authorization / impact:** The user requested merging [PR #3247](https://github.com/Asherlc/dofek/pull/3247)
   and explicitly approved production preparation first. Resolved the incident-log
@@ -36126,15 +36126,29 @@ No runtime behavior, timeout, retry or production configuration changed.
   identity is denied remains unconfirmed; package-level Actions access needs
   inspection. GitHub distinguishes workflow-token scope from package access:
   [package access control](https://docs.github.com/en/packages/learn-github-packages/configuring-a-packages-access-control-and-visibility).
-- **Remaining / next time:** The daily target is not initialized and the PR is
-  unmerged. Do not bypass the security check or release the reader early. A
-  proposed switch to the existing one-shot dbt runtime was withdrawn; preparation
-  retains the candidate-image strategy. The same registry denial must also be
-  corrected for required CI. Browser settings
-  inspection was unavailable because computer-use could not bind an app window.
-  A diagnostic rerun with debug logging reproduced the E2E cache denial; this
-  was not a fix. Authenticated owner ranged GETs returned HTTP 206 for both
-  original failing blobs. No cache deletion, permission change or gate
-  suppression was performed. Use gh-fix-ci and the cutover runbook next time; add an
-  authenticated cache-blob read to registry diagnostics before treating a
-  layer-download failure as cache corruption.
+- **Registry progression:** A diagnostic rerun reproduced the E2E cache denial,
+  but its ARM job published the candidate successfully. Verified image digest
+  `sha256:6868f66fa12170efd7e24973eb6cce88e7ec7da2a2bf64ce96122357a9fbeb35`
+  and revision `f82d4ce44fcef0a7a593493bb65e6452c5883f22` before production use.
+  The user confirmed the repository already had Write or Admin package Actions
+  access. Authenticated owner ranged GETs returned HTTP 206 for both original
+  failing blobs. The fresh [image scan](https://github.com/Asherlc/dofek/actions/runs/42712045284)
+  passed without a permission change, cache deletion or gate suppression. The
+  denial's underlying cause remains unconfirmed; the rerun was not a fix.
+- **Preparation evidence:** Applied the schema-only `0111_daily_health_sensor`
+  statements and ran the candidate's dbt project in a separate one-shot
+  container, with one dbt thread and 32 source days per invocation. A bounded
+  raw-key comparison found 45 Apple Health oxygen days from April 23 through
+  July 30 missing from the pre-existing day markers. Bootstrapped those keys
+  through an explicit operator insert; the repeated comparison found zero
+  missing markers across 137 oxygen days and four WHOOP receipt days. The source
+  marker set then contained 4,474 days. Early production model queries completed
+  within 1.6 seconds; even batches containing temperature samples remained below
+  155 MiB of query memory. No resource-limit or timeout change was required.
+- **Cutover / next time:** The reader remains gated on zero missing and dirty
+  source days, followed by normal CI and deployment; see the [cutover procedure](clickhouse-read-model-deploy-runbook.md#overview-oxygen-and-temperature-cutover)
+  and the PR's preparation evidence. The proposed alternative dbt runtime was
+  withdrawn and the candidate-image strategy retained. Use gh-fix-ci and the
+  cutover runbook next time. Proposed improvement: explicitly compare bounded
+  raw health day keys with invalidation markers before trusting source-to-target
+  freshness; a zero dirty-day result alone cannot reveal missing source markers.
