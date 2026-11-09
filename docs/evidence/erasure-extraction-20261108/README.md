@@ -1,5 +1,12 @@
 # Erasure extraction checkpoint — not merge-ready
 
+The [2026-11-09 safety decision package](../../plans/2026-11-09-erasure-safety-decisions.md)
+turns the remaining choices below into one reviewable implementation direction
+against the branch synchronized with main. It adds the concrete local-build and
+bounded-repair writer callers and key-binding enforcement to the earlier
+proposal. It remains a proposal; these fixes and their acceptance tests are not
+claimed complete.
+
 This is offline candidate evidence, not a production release approval. No
 production deployment, migration, pause, acknowledgement or historical identity
 scan was performed. Source reference: `ed26f38b8`; base: `2752451fb4`.
