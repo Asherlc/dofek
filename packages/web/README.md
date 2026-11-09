@@ -164,7 +164,7 @@ pnpm test                        # Run repo-wide Vitest suites from the repo roo
 ```
 
 Activity cards lead with the shared rounded-outline activity icon. A Lineage control
-below the content and map expands inside the same card to show explicitly
+below the content and map opens an anchored flyout to show explicitly
 labeled Original and Shared to branches. Separate copies from the same provider remain distinct, while
 unconnected records appear as other matching sources. Dofek remains implicit.
 See [ActivityCardContent](src/components/ActivityCardContent.tsx) and
@@ -182,9 +182,9 @@ Both clients render the [shared source-tree contract](../providers-meta/src/acti
 from the [server projection](../server/src/models/activity-source-tree.ts).
 Retained origin evidence establishes links between source records; membership
 and metric priorities do not. Recording-app/device metadata can identify an
-earlier source without claiming its record is available. The inline button
-follows the [WAI disclosure pattern](https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/)
-and stays independent of activity navigation and selection.
+earlier source without claiming its record is available. The card button reuses
+the same [Radix Popover](https://www.radix-ui.com/primitives/docs/components/popover)
+as the detail header and stays independent of activity navigation and selection.
 
 ## Activity metric sources
 
