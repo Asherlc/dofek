@@ -240,7 +240,9 @@ and deployment workflows:
 
 ```text
 CI (main) -> build dofek (+ dofek-ml for local ML tooling)
-         -> deploy-web production check (dofek app image tag must exist)
+         -> deploy-web selects latest passing main release under deploy-web-handoff
+         -> create or verify deploy-<full-SHA> tag; dispatch Deploy at that tag
+         -> Deploy acquires deploy-web-production (parent watches its result)
          -> deploy-terraform (shared prerequisite)
          -> deploy-web-stack
               -> export and validate Infisical dotenv via OIDC
@@ -263,14 +265,15 @@ CI (main) -> build dofek (+ dofek-ml for local ML tooling)
 ```
 
 Production web deployments are serialized and never cancel an in-progress
-deployment. Automatic and manual triggers share the same production concurrency
-group, using GitHub's default single pending run. New requests replace pending
+deployment. Deploy releases and manual Deploy Web requests share the production
+concurrency group; automatic handoffs serialize separately while watching their
+child release. Both groups use GitHub's default single pending run. New requests replace pending
 work while the active deployment finishes. A rollout intentionally quiesces
 `analytics-worker`,
 all three metric-stream ClickHouse sinks, and `processing-reconciliation` before
 migrations and restores all five only after the final stack converges, so a
 newer run must wait rather than interrupt that state transition. After acquiring
-the deployment slot, automatic runs fetch the current `main` branch with full
+the handoff slot, automatic runs fetch the current `main` branch with full
 history, walk its first-parent commits newest first, and check the CI workflow's
 successful runs for each exact `head_sha`. The first passing commit is selected;
 the triggering commit bounds the search so an API response cannot roll a release
@@ -300,17 +303,23 @@ resolved `APP_IMAGE`, and inspect the production job's actual conclusion in the
 
 ### Checking the Latest Production Deployment
 
-Start with the parent [Deploy Web workflow](../.github/workflows/deploy-web.yml),
-which calls the environment and stack workflows. Listing only
-`deploy-web-stack.yml` runs can return old standalone runs and miss deployments
-inside parent runs. GitHub describes how called jobs appear in the caller's run
-in its [reusable workflow documentation](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows).
+Start with the parent [Deploy Web workflow](../.github/workflows/deploy-web.yml).
+For automatic releases, its handoff job summary links the actual
+[Deploy run](../.github/workflows/deploy.yml) dispatched at the selected
+successful CI commit's `deploy-<full-SHA>` tag. The handoff waits with
+[`gh run watch --exit-status`](https://cli.github.com/manual/gh_run_watch), so a
+failed child release fails the parent. Inspect the server stack job in that
+child run. Manual Deploy Web requests still call the environment and stack
+workflows directly. Listing only `deploy-web-stack.yml` runs can miss called
+jobs; see GitHub's [reusable workflow documentation](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows).
 
 ```bash
 gh api repos/Asherlc/dofek/actions/workflows/deploy-web.yml \
   --jq '{name, state, updated_at, html_url}'
 gh run list --repo Asherlc/dofek --workflow deploy-web.yml --limit 10
 gh run view RUN_ID --repo Asherlc/dofek --json jobs
+# For an automatic handoff, inspect the Deploy run linked in its summary.
+gh run view CHILD_RUN_ID --repo Asherlc/dofek --json jobs
 ```
 
 If passing main CI runs have no subsequent deployment, check the workflow's
@@ -337,7 +346,8 @@ ssh dofek-server 'docker ps -q --filter label=com.docker.swarm.service.name=dofe
 Container start times and service update times are supporting evidence, not proof
 of a completed deployment: tasks can restart and service specifications can
 change independently. Correlate the live revision and digest with the parent
-run's selected release and server stack job. Report the server job's completion
+run's selected release and the child Deploy run's server stack job. Report the
+server job's completion
 time separately from container start times, OTA publication, signed iOS upload,
 and the overall run conclusion. Automatic `Deploy Web` runs also publish matching
 mobile releases after the server succeeds; manual mobile releases use the
@@ -347,8 +357,14 @@ and Docker's [service inspect](https://docs.docker.com/reference/cli/docker/serv
 and [container inspect](https://docs.docker.com/reference/cli/docker/container/inspect/)
 references.
 
-Automatic `Deploy Web` runs publish mobile OTA updates and check whether a signed
-iOS build is needed after a successful server rollout. Manually dispatched
+Automatic `Deploy Web` runs hand off to the existing Deploy workflow's `all`
+target, which publishes matching mobile updates after a successful server
+rollout. Automatic handoffs use `GITHUB_TOKEN`; the iOS detector keeps native-change
+detection for dispatches by `github-actions[bot]`, while human dispatches retain
+forced signed builds. Historical release refs retain their own workflow behavior.
+See the [iOS detector](../.github/workflows/deploy-ios.yml) and
+[GitHub's workflow-trigger authentication rules](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow#triggering-a-workflow-from-a-workflow).
+Manually dispatched
 `Deploy Web` runs deploy only the server. Explicit mobile releases remain available
 through the [Deploy workflow](../.github/workflows/deploy.yml) with target `ota`,
 `ios`, or `all`. Both release paths complete the matching server
@@ -387,7 +403,8 @@ For a manual mobile release, dispatch **Deploy** (`deploy.yml`) with target `ota
 or `ios` from the desired source ref. Without an `image_tag`, the workflow builds
 and deploys that commit's server image before publishing the selected mobile
 release. Target `all` publishes both mobile releases after the server. When
-reusing an existing `image_tag`, select its matching source ref in the dispatch:
+reusing an existing `image_tag`, select a branch or release tag pointing to its
+matching source commit in the dispatch:
 the immutable image's `SENTRY_RELEASE` must equal the checked-out source commit,
 or deployment fails before migrations. The OTA, signed iOS, and stack workflows
 are reusable only. For a server-only manual rollout, dispatch **Deploy** with
@@ -467,16 +484,28 @@ App Store Connect while processing is uncertain does not establish that no uploa
 occurred; retain the pending record when the evidence is inconclusive.
 
 1. **Build**: GitHub Actions builds the `server` image for every `main` push and pushes it to GHCR with the commit-derived tag (`<tag>`). A successful main CI completion requests deployment; when its slot starts, `Deploy Web` selects the latest passing main push and resolves that tag to the immutable image it deploys. The web build inside the image uses `VITE_ASSET_BASE_URL=https://assets.dofek.fit/web/<tag>/`, so Vite-generated JavaScript and CSS references point at immutable R2-backed CDN assets instead of the Express origin; Vite's `base` option controls the public base path for built assets: https://vite.dev/config/shared-options.html#base. `<tag>` is the image tag used consistently for both the GHCR image and the web asset prefix. See GitHub's `workflow_run` event documentation for the trigger behavior: https://docs.github.com/en/actions/reference/events-that-trigger-workflows#workflow_run. The `ml` image is built only when ML image inputs change.
-   Automatic deploys check out the selected CI run's full commit SHA for both
-   Terraform and stack configuration. GitHub documents that a
-   `workflow_run` workflow's `GITHUB_SHA` is the last commit on the default
-   branch rather than necessarily the selected release's commit, so using
-   the selected run's `head_sha` as the deploy commit keeps image code,
-   healthchecks, entrypoints, and stack configuration from different revisions
-   from being mixed:
-   <https://docs.github.com/en/actions/reference/events-that-trigger-workflows#workflow_run>.
-   Manual image-tag deploys must dispatch the workflow with `--ref` set to the
-   full source commit for that image. After pulling the app image, the workflow
+   Automatic deploys create or reuse a lightweight `deploy-<full-SHA>` tag for
+   the selected CI commit, then dispatch the existing `deploy.yml` at that tag,
+   passing that release's image tag. The handoff verifies the tag's commit and
+   fails if it points elsewhere; it never moves or deletes release tags.
+   Only the handoff job needs `contents: write` to create tags using
+   [GitHub's reference API](https://docs.github.com/en/rest/git/refs#create-a-reference).
+   Dispatch requires a branch or tag rather than a bare SHA; see the
+   [workflow dispatch API](https://docs.github.com/en/rest/actions/workflows#create-a-workflow-dispatch-event).
+   This aligns the executing
+   workflows as well as Terraform, stack configuration, and image code.
+   Checking out the selected source inside a newer workflow is insufficient:
+   local reusable workflows come from the caller's commit, regardless of the
+   checked-out source. GitHub documents both
+   [workflow_run's default-branch SHA](https://docs.github.com/en/actions/reference/events-that-trigger-workflows#workflow_run)
+   and [local reusable workflow revision selection](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows#calling-a-reusable-workflow).
+   The automatic handoff serializes in `deploy-web-handoff`; the child Deploy
+   run owns `deploy-web-production` through mobile publication, avoiding a
+   parent waiting on a child blocked by its own concurrency group. See
+   [GitHub workflow concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).
+   Manual image-tag deploys must dispatch the workflow with `--ref` set to a
+   branch or release tag pointing to the source commit for that image. After
+   pulling the app image, the workflow
    compares its full `SENTRY_RELEASE` with the checked-out Git commit and fails
    before asset upload, migrations, or stack deployment when they differ.
 2. **Terraform apply** (if infra changed): updates Cloudflare-managed production DNS and storage. `ORACLE_SERVER_HOST` is required for production DNS and deploy targeting.
