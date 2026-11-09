@@ -36087,3 +36087,42 @@ No runtime behavior, timeout, retry or production configuration changed.
 - **Remaining risk / status:** Not deployed. Live replay now passes all five named ancestors through East Bay, then fails separately with HTTP 302 on [Indian Rock](https://www.thecrag.com/en/climbing/united-states/california/san-francisco/east-bay-area/area/16450411), redirecting to `swamp.processing.thecrag.com`. The full refresh remains unresolved; this change does not follow that cross-origin redirect. Other provider errors in nearby worker logs are outside this parser fix.
 - **Local PR validation prerequisite:** `pnpm lint` passed source-policy checks but SQLFluff failed with `Connection refused` at the default ClickHouse port. The workspace ClickHouse container was healthy; its assigned port had not been written to `.env.local`. Ran the documented `pnpm compose:env --write` to generate that local configuration before rerunning SQL lint. No checked-in database settings, timeouts, or lint gates changed; see the [workspace setup procedure](../README.md#development).
 - **Retrospective / next time:** Existing Sentry frames and worker job IDs made the failing public lookup reproducible; upstream region identity required inspection of the live HTML. Use the Sentry, check-logs, systematic-debugging, and test-driven-development skills for similar failures. Proposed runbook wording: record the requested URL, HTTP status, canonical URL, page native ID, and final breadcrumb ID before changing an HTML identity validator; distinguish a parser rejection from a later transport failure.
+
+## 2026-11-09 — Overview preparation completes projection; GHCR blocks merge
+
+- **Authorization / impact:** The user requested merging [PR #3247](https://github.com/Asherlc/dofek/pull/3247)
+  and explicitly approved production preparation first. Resolved the incident-log
+  append conflict with main while preserving both entries, and pushed merge
+  commit `f82d4ce44fcef0a7a593493bb65e6452c5883f22`. The focused 60-unit-test
+  run passed. The existing app release was not changed.
+- **Completed preparation:** Capacity checks found 38 GiB free on the data disk,
+  11 missing projection parts, 205,304,078 raw rows and no unfinished raw-table
+  mutations. The existing projection occupied 1.34 GiB for 60,814,634 rows.
+  Submitted the approved `MATERIALIZE PROJECTION by_user_channel_recorded_at`
+  through the remote Docker API. Mutation `mutation_1534403.txt` completed with
+  `is_done=1`, `parts_to_do=0` and an empty failure reason; all 25 active parts
+  then had the projection. A representative normal candidate-key `EXPLAIN`
+  selected `by_user_channel_recorded_at` and 71 of 13,893 granules. No index
+  forcing, resource-limit change, timeout or retry was added. Follow the
+  [existing projection gate](clickhouse-metric-stream.md#daily-heart-rate-source-access).
+- **Build / CI failure:** [Build-only run 42709096011](https://github.com/Asherlc/dofek/actions/runs/42709096011)
+  failed in `Docker Build & Push` at `COPY --from=dbt-tools` while fetching cached
+  blob `7555782f800dafbb2acfb199b71fcc01e5178eb233aaad8c039318bbeba1c25d`.
+  First fatal: `403 Forbidden` and `denied: permission_denied: read_package`.
+  The refreshed [required image-scan job](https://github.com/Asherlc/dofek/actions/runs/42709091838/job/129474109967)
+  failed before scanning at a different cached blob with the same denial.
+  The workflow job declared `packages: write`; the private package is linked
+  to `Asherlc/dofek`. An authenticated owner probe read the manifest and both
+  failing blobs with HTTP 200, so those blobs exist. The reason the Actions
+  identity is denied remains unconfirmed; package-level Actions access needs
+  inspection. GitHub distinguishes workflow-token scope from package access:
+  [package access control](https://docs.github.com/en/packages/learn-github-packages/configuring-a-packages-access-control-and-visibility).
+- **Remaining / next time:** The daily target is not initialized and the PR is
+  unmerged. Do not bypass the security check or release the reader early. A
+  proposed switch to the existing one-shot dbt runtime awaits direction; the
+  same registry denial must also be corrected for required CI. Browser settings
+  inspection was unavailable because computer-use could not bind an app window.
+  No cache deletion, permission change, gate suppression or speculative rerun
+  was performed. Use gh-fix-ci and the cutover runbook next time; add an
+  authenticated cache-blob read to registry diagnostics before treating a
+  layer-download failure as cache corruption.
