@@ -1,3 +1,5 @@
+import { SQL } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
 import { listAccountErasurePostgresIdentifierPages } from "./postgres-identifier-capture.ts";
 
@@ -30,6 +32,23 @@ describe("listAccountErasurePostgresIdentifierPages", () => {
       { family: "operation", identifiers: [id(0)] },
     ]);
     expect(execute).toHaveBeenCalledTimes(4);
+    const queries = execute.mock.calls.map(([query]) => {
+      if (!(query instanceof SQL)) throw new Error("Expected a typed root query");
+      return new PgDialect().sqlToQuery(query);
+    });
+    // Static SQL admission policy; the companion real-PG suite executes the
+    // ownership, UNION deduplication and keyset behavior against seeded rows.
+    expect(queries.map((query) => query.params)).toEqual([
+      [...Array(6).fill(userId), 500],
+      [...Array(6).fill(userId), id(499), 500],
+      [userId, 500],
+      [userId, 500],
+    ]);
+    expect(queries[0]?.sql).toContain("fitness.activity_group_alias");
+    expect(queries[1]?.sql).toContain("WHERE id>");
+    expect(queries[0]?.sql).not.toContain("WHERE id>");
+    expect(queries[2]?.sql).toContain("fitness.sleep_session");
+    expect(queries[3]?.sql).toContain("fitness.processing_operation");
   });
 
   it("finishes empty families without yielding empty encryption pages", async () => {
