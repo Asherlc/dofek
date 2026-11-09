@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   decryptCredentialValue,
   deriveCredentialIdentifier,
+  deriveCredentialKeyringIdentifier,
   encryptCredentialValue,
   isEncryptedCredentialValue,
 } from "./credential-encryption.ts";
@@ -113,5 +114,37 @@ describe("credential encryption", () => {
     });
 
     expect(boundaryShifted).not.toBe(first);
+  });
+
+  it("binds retained state to the resolved keyring configuration without changing credential identifiers", () => {
+    const context = {
+      tableName: "fitness.account_erasure_checkpoint",
+      columnName: "key_binding",
+      scopeId: "request-a",
+    };
+    vi.stubEnv("CREDENTIAL_ENCRYPTION_KEY_BASE64", Buffer.alloc(32, 7).toString("base64"));
+    vi.stubEnv("CREDENTIAL_ENCRYPTION_KEY_NAME", undefined);
+    vi.stubEnv("CREDENTIAL_ENCRYPTION_KEY_NAMESPACE", undefined);
+    const binding = deriveCredentialKeyringIdentifier(context);
+    const identifier = deriveCredentialIdentifier("value", context);
+    expect(binding).toMatch(/^[a-f0-9]{64}$/);
+    vi.stubEnv("CREDENTIAL_ENCRYPTION_KEY_NAME", "provider-credentials");
+    vi.stubEnv("CREDENTIAL_ENCRYPTION_KEY_NAMESPACE", "dofek");
+    expect(deriveCredentialKeyringIdentifier(context)).toBe(binding);
+    expect(deriveCredentialKeyringIdentifier({ ...context, scopeId: "request-b" })).not.toBe(
+      binding,
+    );
+    for (const [name, value] of [
+      ["CREDENTIAL_ENCRYPTION_KEY_NAME", "changed"],
+      ["CREDENTIAL_ENCRYPTION_KEY_NAMESPACE", "changed"],
+    ] as const) {
+      vi.stubEnv(name, value);
+      expect(deriveCredentialKeyringIdentifier(context)).not.toBe(binding);
+      expect(deriveCredentialIdentifier("value", context)).toBe(identifier);
+      vi.stubEnv("CREDENTIAL_ENCRYPTION_KEY_NAME", "provider-credentials");
+      vi.stubEnv("CREDENTIAL_ENCRYPTION_KEY_NAMESPACE", "dofek");
+    }
+    vi.stubEnv("CREDENTIAL_ENCRYPTION_KEY_BASE64", Buffer.alloc(32, 9).toString("base64"));
+    expect(deriveCredentialKeyringIdentifier(context)).not.toBe(binding);
   });
 });

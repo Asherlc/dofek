@@ -10,7 +10,8 @@ DECLARE
 BEGIN
   SELECT
     count(*) FILTER (
-      WHERE user_id IS NOT NULL
+      WHERE status <> 'completed'
+        OR user_id IS NOT NULL
         OR encrypted_remote_snapshot IS NOT NULL
         OR pii_scrubbed_at IS NULL
     ),
@@ -24,7 +25,7 @@ BEGIN
     RAISE EXCEPTION USING
       ERRCODE = '55000',
       MESSAGE = format(
-        'Account erasure identifier cutover blocked: %s identifying or unconverted request(s) (user_ids=%s, retained_snapshots=%s, unscrubbed=%s). Keep request producers and old workers quiesced; choose a recovery plan before retrying migration 0179. No request data was converted.',
+        'Account erasure identifier cutover blocked: %s unfinished, identifying or unconverted request(s) (user_ids=%s, retained_snapshots=%s, unscrubbed=%s). Keep request producers and old workers quiesced; drain unfinished requests with their original workers before retrying migration 0179. No request data was converted; unresolved recovery requires an approved plan.',
         identifying_count, user_id_count, snapshot_count, unscrubbed_count
       );
   END IF;

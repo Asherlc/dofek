@@ -12,12 +12,29 @@ The candidate stores activity/sleep/operation and physical-deletion identifiers
 in encrypted, request-owned pages using the [identifier store](../src/account-erasure/identifier-store.ts),
 with [snapshot admission budgets](../src/account-erasure/snapshot-budget.ts).
 [Migration 0179](../drizzle/0179_account_erasure_identifiers.sql) fails closed
-on identifying/unconverted requests; request producers and old workers must
+on every unfinished or identifying/unconverted request, including already
+scrubbed unfinished requests with legacy route-less checkpoints. Drain them with
+their original worker; do not reconstruct routes or rewrite checkpoint JSON.
+Request producers and old workers must
 remain quiescent through an independently approved cutover. Do not clear request
 identifiers to bypass this guard. No cutover or quiescence is authorized here.
 The [request processing transaction](../src/db/account-erasure-processing.ts)
 deletes retained identifiers when request PII is scrubbed. See PostgreSQL's
 [transaction guarantees](https://www.postgresql.org/docs/current/tutorial-transactions.html).
+
+Initial parent capture atomically retains a request-scoped binding to the
+credential master key and resolved key namespace/name in its existing checkpoint.
+The [store](../src/account-erasure/identifier-store.ts) checks that binding under
+the request lock before retained reads, writes, physical progress or capture
+reentry, including empty lookups. Missing or changed configuration stops work;
+restore the original configuration to resume. Normal PII scrub removes the
+binding with the other identifying checkpoint details. This does not re-key
+retained identifiers or permit mixed-key workers. Before a future rotation,
+drain all identifying requests and retained identifiers using the original key,
+then keep original producers/workers quiescent across the transition. No key
+change or production drain is authorized by this candidate. See the
+[credential rotation contract](credential-encryption.md#required-configuration)
+and [database regressions](../src/account-erasure/identifier-store.integration.test.ts).
 
 <!-- cspell:ignore peerdbbucket -->
 

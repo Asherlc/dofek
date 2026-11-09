@@ -5,6 +5,7 @@ import { executeWithSchema } from "../db/typed-sql.ts";
 import {
   decryptCredentialValue,
   deriveCredentialIdentifier,
+  deriveCredentialKeyringIdentifier,
   encryptCredentialValue,
 } from "../security/credential-encryption.ts";
 
@@ -40,6 +41,26 @@ export const ACCOUNT_ERASURE_IDENTIFIER_BYTE_LIMITS = {
 // Auxiliary proof of the initial PG capture, not an executable phase or a
 // mirrored row count. Later CH closure may add bindings to the same families.
 const postgresCaptureCheckpoint = "postgres_identifier_capture";
+const captureBindingSchema = z.object({ key_binding: z.string().nullable() });
+
+function captureKeyBinding(requestId: string): string {
+  return deriveCredentialKeyringIdentifier({
+    tableName: "fitness.account_erasure_checkpoint",
+    columnName: "key_binding",
+    scopeId: requestId,
+  });
+}
+
+function assertCaptureBinding(
+  requestId: string,
+  row: z.infer<typeof captureBindingSchema> | undefined,
+) {
+  if (!row) throw new Error("PostgreSQL parent identifier capture is incomplete");
+  if (row.key_binding !== captureKeyBinding(requestId))
+    throw new Error(
+      "Account erasure retained key configuration changed. Restore the original key configuration before retrying.",
+    );
+}
 const rowSchema = z.object({
   identity_key: cursorSchema,
   encrypted_identifier: z.string().startsWith("enc:v1:"),
@@ -237,6 +258,7 @@ export class AccountErasureIdentifierStore {
         "Account erasure request does not retain identifying state or its current worker lease",
       );
     }
+    await this.#assertPostgresCapture(transaction);
   }
 
   async #decode(family: RetainedFamily, row: z.infer<typeof rowSchema>): Promise<string> {
@@ -256,13 +278,12 @@ export class AccountErasureIdentifierStore {
   async #assertPostgresCapture(transaction: TransactionDatabase): Promise<void> {
     const rows = await executeWithSchema(
       transaction,
-      z.object({ complete: z.boolean() }),
-      sql`SELECT EXISTS (
-      SELECT 1 FROM fitness.account_erasure_checkpoint
+      captureBindingSchema,
+      sql`SELECT details->>'keyBinding' AS key_binding FROM fitness.account_erasure_checkpoint
       WHERE request_id=${this.#requestId}::uuid AND phase=${postgresCaptureCheckpoint}
-    ) AS complete`,
+    `,
     );
-    if (!rows[0]?.complete) throw new Error("PostgreSQL parent identifier capture is incomplete");
+    assertCaptureBinding(this.#requestId, rows[0]);
   }
 
   async #closureState(transaction: TransactionDatabase) {
@@ -280,7 +301,6 @@ export class AccountErasureIdentifierStore {
   async beginClosure(stage: "initial" | "final"): Promise<boolean> {
     return this.#database.transaction(async (transaction) => {
       await this.#assertRetainedRequest(transaction, true);
-      await this.#assertPostgresCapture(transaction);
       const state = await this.#closureState(transaction);
       if (stage === "initial") {
         if (state.has("clickhouse_identity_closure_final_open"))
@@ -320,7 +340,6 @@ export class AccountErasureIdentifierStore {
   async sealClosure(stage: "initial" | "final"): Promise<void> {
     await this.#database.transaction(async (transaction) => {
       await this.#assertRetainedRequest(transaction, true);
-      await this.#assertPostgresCapture(transaction);
       const state = await this.#closureState(transaction);
       if (stage === "final" && !state.has("clickhouse_identity_closure_final_open"))
         throw new Error("Final identity closure is not open");
@@ -369,7 +388,6 @@ export class AccountErasureIdentifierStore {
     }
     return this.#database.transaction(async (transaction) => {
       await this.#assertRetainedRequest(transaction, false);
-      await this.#assertPostgresCapture(transaction);
       const limit = this.#pageCount(family);
       const rows = await this.#boundedRows(
         transaction,
@@ -403,7 +421,6 @@ export class AccountErasureIdentifierStore {
   ): Promise<void> {
     physicalStageSchema.parse(stage);
     await this.#assertRetainedRequest(transaction, write);
-    await this.#assertPostgresCapture(transaction);
     const state = await this.#closureState(transaction);
     if (stage === "initial" && state.has("clickhouse_identity_closure_final_open"))
       throw new Error("Initial physical stage was reopened for final verification");
@@ -899,7 +916,6 @@ export class AccountErasureIdentifierStore {
     const values = this.#identifiers(family, identifiers);
     return this.#database.transaction(async (transaction) => {
       await this.#assertRetainedRequest(transaction, false);
-      await this.#assertPostgresCapture(transaction);
       if (values.length === 0) return [];
       const keys = values.map(
         (identifier) => sql`${identifierKey(this.#requestId, family, identifier)}`,
@@ -925,11 +941,8 @@ export async function captureAccountErasurePostgresIdentifiers(
   const userId = identifierSchema.parse(input.userId);
   const requests = await executeWithSchema(
     transaction,
-    z.object({ captured: z.boolean() }),
-    sql`SELECT EXISTS (
-      SELECT 1 FROM fitness.account_erasure_checkpoint
-      WHERE request_id=${requestId}::uuid AND phase=${postgresCaptureCheckpoint}
-    ) AS captured
+    z.object({ id: z.uuid() }),
+    sql`SELECT id
     FROM fitness.account_erasure_request
     WHERE id=${requestId}::uuid AND user_id=${userId}::uuid
       AND status<>'completed' AND encrypted_remote_snapshot IS NOT NULL
@@ -938,7 +951,17 @@ export async function captureAccountErasurePostgresIdentifiers(
   const request = requests[0];
   if (!request)
     throw new Error("Account erasure request does not own the supplied PostgreSQL capture");
-  if (request.captured) return;
+  const captured = await executeWithSchema(
+    transaction,
+    captureBindingSchema,
+    sql`SELECT details->>'keyBinding' AS key_binding FROM fitness.account_erasure_checkpoint
+      WHERE request_id=${requestId}::uuid AND phase=${postgresCaptureCheckpoint}`,
+  );
+  if (captured.length) {
+    assertCaptureBinding(requestId, captured[0]);
+    return;
+  }
+  const keyBinding = captureKeyBinding(requestId);
 
   const sources = [
     { family: "activity", table: sql`fitness.activity`, column: sql`id` },
@@ -972,6 +995,6 @@ export async function captureAccountErasurePostgresIdentifiers(
       after = rows.at(-1)?.id;
     }
   }
-  await transaction.execute(sql`INSERT INTO fitness.account_erasure_checkpoint(request_id,phase)
-    VALUES (${requestId}::uuid,${postgresCaptureCheckpoint}) ON CONFLICT DO NOTHING`);
+  await transaction.execute(sql`INSERT INTO fitness.account_erasure_checkpoint(request_id,phase,details)
+    VALUES (${requestId}::uuid,${postgresCaptureCheckpoint},${JSON.stringify({ keyBinding })}::jsonb)`);
 }

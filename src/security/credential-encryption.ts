@@ -99,10 +99,16 @@ function buildProviderFromEnvironment(): CredentialEncryptionProvider {
   const unencryptedMasterKey = credentialMasterKeyFromEnvironment();
 
   return new AwsEncryptionSdkCredentialEncryptionProvider({
-    keyName: process.env.CREDENTIAL_ENCRYPTION_KEY_NAME ?? "provider-credentials",
-    keyNamespace: process.env.CREDENTIAL_ENCRYPTION_KEY_NAMESPACE ?? "dofek",
+    ...credentialKeyringNames(),
     unencryptedMasterKey,
   });
+}
+
+function credentialKeyringNames() {
+  return {
+    keyName: process.env.CREDENTIAL_ENCRYPTION_KEY_NAME ?? "provider-credentials",
+    keyNamespace: process.env.CREDENTIAL_ENCRYPTION_KEY_NAMESPACE ?? "dofek",
+  };
 }
 
 function credentialMasterKeyFromEnvironment(): Uint8Array {
@@ -155,6 +161,12 @@ export function deriveCredentialIdentifier(
       32,
     ),
   ).toString("hex");
+}
+
+/** Binds retained state to both the secret master key and resolved wrapping-key names. */
+export function deriveCredentialKeyringIdentifier(context: CredentialEncryptionContext): string {
+  const { keyName, keyNamespace } = credentialKeyringNames();
+  return deriveCredentialIdentifier(JSON.stringify([keyNamespace, keyName]), context);
 }
 
 export async function encryptCredentialValue(

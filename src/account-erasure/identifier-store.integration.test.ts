@@ -1,7 +1,9 @@
+import { execFile } from "node:child_process";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import { sql } from "drizzle-orm";
 import { escapeLiteral } from "pg";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
@@ -57,7 +59,10 @@ describe("request-owned account erasure identifiers", () => {
     await context?.cleanup();
   });
 
-  async function createRequest(seedBeforeFence?: (userId: string) => Promise<void>) {
+  async function createRequest(
+    seedBeforeFence?: (userId: string) => Promise<void>,
+    capture = true,
+  ) {
     const requestId = randomUUID();
     const userId = randomUUID();
     const leaseOwner = randomUUID();
@@ -73,7 +78,10 @@ describe("request-owned account erasure identifiers", () => {
       VALUES (${requestId}::uuid,${userId}::uuid,${digest(requestId)},'test-v1',
         ${digest(userId)},${digest(statusToken)},'retained-snapshot',
         now()+interval '7 days',now()+interval '30 days',${leaseOwner},now()+interval '5 minutes')`);
-    return { requestId, userId, leaseOwner, statusToken };
+    const request = { requestId, userId, leaseOwner, statusToken };
+    if (capture)
+      await context.db.transaction((tx) => captureAccountErasurePostgresIdentifiers(tx, request));
+    return request;
   }
 
   async function physicalFixture() {
@@ -197,6 +205,128 @@ describe("request-owned account erasure identifiers", () => {
       WHERE request_id=${requestId}::uuid AND family=${family} ORDER BY identity_key COLLATE "C"`,
     );
   }
+
+  test.each([
+    ["CREDENTIAL_ENCRYPTION_KEY_BASE64", Buffer.alloc(32, 91).toString("base64")],
+    ["CREDENTIAL_ENCRYPTION_KEY_NAMESPACE", "different-erasure-namespace"],
+    ["CREDENTIAL_ENCRYPTION_KEY_NAME", "different-erasure-key"],
+  ])("refuses retained access and capture reentry after changing %s", async (name, value) => {
+    const fixture = await physicalFixture();
+    await fixture.store.appendPhysical("physical_intent", "initial", [fixture.intent]);
+    await fixture.store.sealPhysicalPlan("initial", "a".repeat(64));
+    await saveAccountErasurePhaseProgress(
+      context.db,
+      fixture.requestId,
+      fixture.leaseOwner,
+      "archive_initial",
+      { lastKey: "retained-cursor" },
+    );
+    const before = await context.db.execute(sql`SELECT
+      (SELECT jsonb_agg(to_jsonb(i) ORDER BY family,identity_key) FROM fitness.account_erasure_identifier i
+        WHERE request_id=${fixture.requestId}::uuid) AS identifiers,
+      (SELECT jsonb_agg(to_jsonb(c) ORDER BY phase) FROM fitness.account_erasure_checkpoint c
+        WHERE request_id=${fixture.requestId}::uuid) AS checkpoints,
+      phase_progress FROM fitness.account_erasure_request WHERE id=${fixture.requestId}::uuid`);
+    vi.stubEnv(name, value);
+    try {
+      for (const operation of [
+        () => fixture.store.findPresent("activity", []),
+        () => fixture.store.append("activity", []),
+        () => fixture.store.readPhysicalPage("physical_intent", "initial"),
+        () => fixture.store.assertClosureComplete("initial"),
+        () => context.db.transaction((tx) => captureAccountErasurePostgresIdentifiers(tx, fixture)),
+      ])
+        await expect(operation()).rejects.toThrow("key configuration changed");
+    } finally {
+      vi.unstubAllEnvs();
+    }
+    const after = await context.db.execute(sql`SELECT
+      (SELECT jsonb_agg(to_jsonb(i) ORDER BY family,identity_key) FROM fitness.account_erasure_identifier i
+        WHERE request_id=${fixture.requestId}::uuid) AS identifiers,
+      (SELECT jsonb_agg(to_jsonb(c) ORDER BY phase) FROM fitness.account_erasure_checkpoint c
+        WHERE request_id=${fixture.requestId}::uuid) AS checkpoints,
+      phase_progress FROM fitness.account_erasure_request WHERE id=${fixture.requestId}::uuid`);
+    expect(after).toEqual(before);
+    await expect(
+      fixture.store.readPhysicalPage("physical_intent", "initial"),
+    ).resolves.toMatchObject({
+      entries: [{ value: fixture.intent }],
+    });
+    await expect(
+      context.db.transaction((tx) => captureAccountErasurePostgresIdentifiers(tx, fixture)),
+    ).resolves.toBeUndefined();
+  });
+
+  test("rejects a missing retained key binding before an empty membership lookup", async () => {
+    const fixture = await physicalFixture();
+    await context.db.execute(sql`UPDATE fitness.account_erasure_checkpoint SET details=NULL
+      WHERE request_id=${fixture.requestId}::uuid AND phase='postgres_identifier_capture'`);
+    await expect(fixture.store.findPresent("activity", [])).rejects.toThrow(
+      "key configuration changed",
+    );
+  });
+
+  test.each(["lookup", "capture"])(
+    "rejects concurrent different-key %s after initial capture commits",
+    async (operation) => {
+      const request = await createRequest(undefined, false);
+      const captured = createTestBarrier();
+      const release = createTestBarrier();
+      const initialCapture = context.db.transaction(async (transaction) => {
+        await captureAccountErasurePostgresIdentifiers(transaction, request);
+        captured.resolve();
+        await release.promise;
+      });
+      await captured.promise;
+      const script = `
+      import {createDatabase} from './src/db/index.ts';
+      import {AccountErasureIdentifierStore,captureAccountErasurePostgresIdentifiers} from './src/account-erasure/identifier-store.ts';
+      const db=createDatabase(process.env.TEST_DATABASE_URL);
+      const request=JSON.parse(process.argv[1]);
+      try {
+        if(process.argv[2]==='capture') await db.transaction(tx=>captureAccountErasurePostgresIdentifiers(tx,request));
+        else await new AccountErasureIdentifierStore(db,request).findPresent('activity',[]);
+        console.log('unexpected admission');
+      } catch(error) { console.log(error.message); }
+      finally { await db.$client.end(); }
+    `;
+      const worker = promisify(execFile)(
+        process.execPath,
+        [
+          "--import",
+          "tsx",
+          "--input-type=module",
+          "-e",
+          script,
+          JSON.stringify({
+            requestId: request.requestId,
+            userId: request.userId,
+            leaseOwner: request.leaseOwner,
+            pageSize: 500,
+          }),
+          operation,
+        ],
+        {
+          env: {
+            ...process.env,
+            TEST_DATABASE_URL: context.connectionString,
+            CREDENTIAL_ENCRYPTION_KEY_BASE64: Buffer.alloc(32, 92).toString("base64"),
+          },
+        },
+      );
+      try {
+        await vi.waitFor(async () => expect(await hasDatabaseLockWaiter(context.db)).toBe(true), {
+          timeout: 10000,
+        });
+      } finally {
+        release.resolve();
+        await initialCapture;
+      }
+      expect((await worker).stdout).toContain("key configuration changed");
+      const store = new AccountErasureIdentifierStore(context.db, { ...request, pageSize: 500 });
+      await expect(store.findPresent("activity", [])).resolves.toEqual([]);
+    },
+  );
 
   test.each(["read", "append"] as const)(
     "rejects identifier %s when its lease expires while waiting for the request lock",
@@ -1046,6 +1176,10 @@ describe("request-owned account erasure identifiers", () => {
     );
     for (const family of families)
       expect(await storedRows(request.requestId, family)).toHaveLength(0);
+    const capture = await context.db.execute(
+      sql`SELECT details FROM fitness.account_erasure_checkpoint WHERE request_id=${request.requestId}::uuid AND phase='postgres_identifier_capture'`,
+    );
+    expect(capture).toEqual([{ details: null }]);
     expect((await otherStore.readPage("activity")).entries.map((entry) => entry.value)).toEqual([
       id,
     ]);
@@ -1074,14 +1208,16 @@ describe("request-owned account erasure identifiers", () => {
   });
 
   test("requires a complete PostgreSQL capture before paging or membership reads", async () => {
-    const request = await createRequest();
+    const request = await createRequest(undefined, false);
     const store = new AccountErasureIdentifierStore(context.db, {
       requestId: request.requestId,
       leaseOwner: request.leaseOwner,
       pageSize: 2,
     });
     const id = randomUUID();
-    await store.append("activity", [id]);
+    await expect(store.append("activity", [id])).rejects.toThrow(
+      "PostgreSQL parent identifier capture is incomplete",
+    );
     await expect(store.readPage("activity")).rejects.toThrow(
       "PostgreSQL parent identifier capture is incomplete",
     );
@@ -1091,6 +1227,7 @@ describe("request-owned account erasure identifiers", () => {
     await context.db.transaction((transaction) =>
       captureAccountErasurePostgresIdentifiers(transaction, request),
     );
+    await store.append("activity", [id]);
     expect((await store.readPage("activity")).entries.map((entry) => entry.value)).toEqual([id]);
     const laterBinding = randomUUID();
     await store.append("activity", [laterBinding]);
@@ -1148,7 +1285,7 @@ describe("request-owned account erasure identifiers", () => {
     });
     const other = await createRequest(async (userId) => {
       await seedParents(userId, 1);
-    });
+    }, false);
     await context.db.transaction((transaction) =>
       captureAccountErasurePostgresIdentifiers(transaction, request),
     );
@@ -1191,7 +1328,7 @@ describe("request-owned account erasure identifiers", () => {
   test("rolls back parent pages and the capture seal when activation rolls back", async () => {
     const request = await createRequest(async (userId) => {
       await seedParents(userId, 1);
-    });
+    }, false);
     await expect(
       context.db.transaction(async (transaction) => {
         await captureAccountErasurePostgresIdentifiers(transaction, request);
@@ -1220,7 +1357,7 @@ describe("request-owned account erasure identifiers", () => {
   test("does not seal or retain a partial parent capture when a later family write fails", async () => {
     const request = await createRequest(async (userId) => {
       await seedParents(userId, 1);
-    });
+    }, false);
     await context.db.execute(sql`ALTER TABLE fitness.account_erasure_identifier
       ADD CONSTRAINT identifier_fixture_capture_failure CHECK (
         request_id<>${sql.raw(escapeLiteral(request.requestId))}::uuid OR family<>'sleep')`);
@@ -1250,7 +1387,7 @@ describe("request-owned account erasure identifiers", () => {
   });
 
   test("seals an empty capture without changing public deletion status", async () => {
-    const request = await createRequest();
+    const request = await createRequest(undefined, false);
     const before = await findAccountErasureStatus(context.db, request.statusToken);
     await context.db.transaction((transaction) =>
       captureAccountErasurePostgresIdentifiers(transaction, request),
@@ -1266,7 +1403,7 @@ describe("request-owned account erasure identifiers", () => {
   });
 
   test("rejects a parent capture for a different account", async () => {
-    const request = await createRequest();
+    const request = await createRequest(undefined, false);
     const other = await createRequest();
     await expect(
       context.db.transaction((transaction) =>
@@ -1317,15 +1454,16 @@ describe("identifier storage migration cutover", () => {
     userId: string | null;
     snapshot: string | null;
     scrubbed: boolean;
+    completed?: boolean;
   }) {
     const id = randomUUID();
     const hash = createHash("sha256").update(id).digest("hex");
     return sql`INSERT INTO fitness.account_erasure_request
       (id,user_id,user_hash,user_hash_key_id,write_fence_hash,status_token_hash,
-        encrypted_remote_snapshot,replay_retained_until,completion_deadline,pii_scrubbed_at)
+        encrypted_remote_snapshot,replay_retained_until,completion_deadline,pii_scrubbed_at,status)
       VALUES (${id}::uuid,${input.userId}::uuid,${hash},'test-v1',${hash},${hash},
         ${input.snapshot},now()+interval '7 days',now()+interval '30 days',
-        ${input.scrubbed ? sql`now()` : sql`NULL`})`;
+        ${input.scrubbed ? sql`now()` : sql`NULL`},${input.completed ? "completed" : "running"})`;
   }
 
   async function retainedState() {
@@ -1350,6 +1488,7 @@ describe("identifier storage migration cutover", () => {
     { userId: randomUUID(), snapshot: null, scrubbed: true },
     { userId: null, snapshot: "legacy-retained-ciphertext", scrubbed: true },
     { userId: null, snapshot: null, scrubbed: false },
+    { userId: null, snapshot: null, scrubbed: true },
   ])(
     "refuses identifying or unconverted request state without changing rows or installing schema: %j",
     async (input) => {
@@ -1368,8 +1507,10 @@ describe("identifier storage migration cutover", () => {
     },
   );
 
-  test("keeps already scrubbed pseudonymous requests unchanged", async () => {
-    await context.db.execute(insertRequest({ userId: null, snapshot: null, scrubbed: true }));
+  test("keeps completed and scrubbed pseudonymous requests unchanged", async () => {
+    await context.db.execute(
+      insertRequest({ userId: null, snapshot: null, scrubbed: true, completed: true }),
+    );
     const before = await retainedState();
     await expect(runMigrations(context.connectionString, migrationsDirectory)).resolves.toBe(1);
     expect((await retainedState())[0]?.requests).toEqual(before[0]?.requests);
