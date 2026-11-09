@@ -6,10 +6,12 @@ owns upstream Aiven/R2 activation, remote deletion verification and tiered
 qualification. That branch is stacked on this one so it reuses the existing
 broker integration and structural checkpoints without duplicating them.
 
-**Source split only: no standalone hot-log production activation or merge order
-is approved.** The user's final objective remains Kafka WITH upstream Aiven
-tiered storage. The accepted late-upload/orphan residual belongs to that separate
-tiered-storage candidate. Neither source layer is currently activation-ready.
+**Release order selected: Kafka first, tiered storage second.** The latest user
+instruction makes this Kafka-only layer phase 1. Review the [single concrete
+phase-1 proposal](phase1-approval.md), with fresh read-only readiness evidence,
+byte policy, pause, monitoring and recovery scope. Production changes require
+that proposal's approval. The separate tiered candidate is phase 2; its accepted
+late-upload/orphan residual does not weaken phase-1 checks.
 
 ## This layer
 

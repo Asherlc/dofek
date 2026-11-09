@@ -1,12 +1,12 @@
 # Broker-only operator proposal
 
-**Review only; do not execute.** This workspace owns the broker migration layer;
-upstream Aiven tiering and remote erasure qualification belong to the dependent
-workspace. See [the split and coordinated release gate](README.md) and
-[cutover packet](cutover-packet.md). No standalone hot-log activation is approved.
-These historical commands require a refreshed combined release sequence, actual
-image/configuration proof, retention/capacity review and old-data disposition.
-No production mutation, merge, pause, credential edit or retirement is approved.
+**Phase 1 proposal; do not execute without the [single approval bundle](phase1-approval.md).**
+The user now explicitly requests Kafka first, then tiered storage. These stock
+commands prepare the Kafka-only phase with its qualified local-storage worker.
+Tiering belongs to the separate phase-2 PR. Freeze the proposed 4-GiB source /
+existing 1-GiB quarantine byte policy, 128-MiB segments, 20-GiB reserve and
+pause/recovery/monitoring scope from the bundle before execution. No data
+retirement or automatic full application release is implied.
 
 ## Observed service contract
 
@@ -66,14 +66,15 @@ the service environment with the [canonical broker stanza](../stack.yml), keepin
 the existing cluster ID private. They remain unexecuted production proposals:
 
 ```sh
-mapfile -t old_kafka_keys < <(
+set -euo pipefail
+old_kafka_keys="$(
   docker service inspect dofek_kafka |
-    jq -r '.[0].Spec.TaskTemplate.ContainerSpec.Env[] | split("=")[0] | select(. != "CLUSTER_ID")'
-)
+    jq -er '.[0].Spec.TaskTemplate.ContainerSpec.Env[] | split("=")[0] | select(. != "CLUSTER_ID")'
+)"
 remove_environment=()
-for key in "${old_kafka_keys[@]}"; do
+while IFS= read -r key; do
   remove_environment+=(--env-rm "$key")
-done
+done <<< "$old_kafka_keys"
 docker service update dofek_kafka \
   --replicas 0 --hostname kafka \
   "${remove_environment[@]}" \
@@ -130,6 +131,18 @@ reviewed. See [Kafka topic configuration](https://kafka.apache.org/44/configurat
 The creation command uses an explicitly accepted topic from the packet:
 
 ```sh
+set -euo pipefail
+accepted_legacy_topic=metric-stream-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3
+accepted_live_topic=metric-stream-live-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3
+accepted_history_topic=metric-stream-history-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3
+for accepted_topic in \
+  "$accepted_legacy_topic" "$accepted_live_topic" "$accepted_history_topic" \
+  "$accepted_legacy_topic.quarantine.v1" "$accepted_live_topic.quarantine.v1" "$accepted_history_topic.quarantine.v1"; do
+case "$accepted_topic" in
+  *.quarantine.v1) accepted_retention_bytes=1073741824 ;;
+  *) accepted_retention_bytes=4294967296 ;;
+esac
+accepted_retention_ms=604800000
 docker run --rm --network dofek_default --memory 384m \
   -e KAFKA_HEAP_OPTS='-Xms32m -Xmx256m' \
   --entrypoint /opt/kafka/bin/kafka-topics.sh \
@@ -139,7 +152,9 @@ docker run --rm --network dofek_default --memory 384m \
   --config cleanup.policy=delete \
   --config "retention.ms=${accepted_retention_ms:?Reviewed retention time required}" \
   --config "retention.bytes=${accepted_retention_bytes:?Reviewed byte limit required}" \
+  --config segment.bytes=134217728 \
   --config remote.storage.enable=false
+done
 ```
 
 ## Paused application updates

@@ -1,11 +1,12 @@
 # Broker-only cutover qualification packet
 
-**Review only: broker migration layer, with tiered storage in the dependent workspace.**
-The user selected upstream Aiven and requested separate workspaces. See the
-[current ownership and release gates](README.md). The final objective remains
-Kafka WITH tiering; no standalone hot-log activation, merge or production action
-is approved. Historical commands below must be reconciled with the tiered packet
-and actual image/configuration qualification before a maintenance window.
+**Phase 1 review packet: Kafka first, tiered storage later.** The user's latest
+explicit order supersedes the earlier requirement for tiering at first activation.
+Use the [concrete phase-1 approval bundle](phase1-approval.md) and its new read-only
+readiness evidence/policy proposal. Tiering is a separate phase-2 release in
+PR #3236. No production mutation or merge is authorized by this document alone.
+The command shapes below apply to the Kafka-only phase, with the proposed byte
+policy, monitoring and recovery boundaries bound by that approval bundle.
 
 ## Pinned application contract
 
