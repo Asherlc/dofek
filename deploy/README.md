@@ -710,6 +710,14 @@ occurred; retain the pending record when the evidence is inconclusive.
        mirror's assigned destination before consumers can resume. See the
        [checked-in CDC setup](../src/db/clickhouse-cdc.ts) and
        [contract deployment](../src/db/peerdb/mirror-deployment.ts).
+       Before restoring consumers, reconcile the six existing Kafka topics from
+       [`kafka/topic-policy.json`](kafka/topic-policy.json). The workflow uses
+       stock incremental SET operations, preserving unrelated overrides, then
+       reads back each selected value and its explicit topic-config source.
+       This runs only after old sink tasks have exited and the requested image
+       and CDC prerequisites have passed. See the [policy ownership and
+       qualification](kafka/quarantine-config-correction.md) and
+       [Kafka's incremental implementation](https://github.com/apache/kafka/blob/4.4.0/tools/src/main/java/org/apache/kafka/tools/ConfigCommand.java#L558-L564).
    15. Run the final `docker stack deploy -c deploy/stack.yml ...` to restore
        `analytics-worker`, all three metric-stream ClickHouse sinks, and
        `processing-reconciliation` only when every post-quiesce readiness step
@@ -719,7 +727,8 @@ occurred; retain the pending record when the evidence is inconclusive.
        each of the five services and the three metric-stream R2 archive services
        must keep the same Swarm task at `1/1` continuously for 60 seconds. The
        [workflow](../.github/workflows/deploy-web-stack.yml) checks all eight
-       services serially; a replacement task or any
+       services serially, then verifies the selected Kafka policy again to
+       detect startup code clearing overrides; a replacement task or any
        replica loss restarts the stability window. Swarm creates a new task when
        a task crashes, so a transient `1/1` sample is not deployment convergence
        ([Docker Swarm tasks and scheduling](https://docs.docker.com/engine/swarm/how-swarm-mode-works/services/#tasks-and-scheduling)).
