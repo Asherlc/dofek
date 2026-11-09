@@ -35827,6 +35827,30 @@ No runtime behavior, timeout, retry or production configuration changed.
   identify the reviewed runtime. Production exact-image, R2, capacity,
   quiescence and cache-cleanup gates remain open.
 
+### 2026-11-09 — Tiered review CI completes jobs but omits required mutation gate
+
+- **Status / impact:** Unresolved; source merge blocked, production unchanged.
+  [CI run 42669386790](https://github.com/Asherlc/dofek/actions/runs/42669386790)
+  for `2d5a39afe` finished with overall `failure`, although all reported jobs
+  succeeded or were skipped, including all six Stryker shards, four integration
+  shards, coverage and CI Gate. PR checks reported 107 successes, seven skips
+  and one neutral external review, with no failed check result.
+- **Evidence / unknown cause:** `gh run view 42669386790 --log-failed` returned
+  no failed-step logs. Complete job and check-run enumeration contained no
+  `Test / Mutation Testing` result; the main branch rules require that exact
+  context, and GitHub reports the PR merge state as `BLOCKED`. The workflow
+  source still declares that gate. No first fatal error line or causal
+  explanation for the missing job has been established; do not infer success
+  from the passing parent gate. Browser inspection was unavailable on this host.
+- **Mitigation / follow-up:** Preserve branch protection and the existing
+  disabled automatic-deployment workflow. At diagnosis, no bypass, synthetic
+  status, gate change or blind rerun was applied. After being told about the
+  missing gate, the user explicitly requested source merge. That authorizes
+  the source-merge exception, not a claim that CI scheduling is repaired or
+  production activation is qualified. The investigation remains unresolved;
+  stock index-cache cleanup remains a separate activation blocker. GitHub
+  documents the distinct [administrator merge option](https://cli.github.com/manual/gh_pr_merge).
+
 ## 2026-11-08 — History recovery complete; two healthy zero-lag checks
 
 - **Root cause / direct fix:** Scoped deletion's global latest-ID lookup selected unrelated versions across the table, leading to a 212-second statement, the 120-second client timeout and an overlapping retry. The approved immutable sample identity allowed the repaired sink to resolve versions through native `(id,user_id,provider_id,recorded_at)` membership, retaining full latest-row resolution, mutable-scope checks, fences, revision semantics and normal acknowledgements. No new index, storage model, queue framework or runtime resilience setting was needed.
