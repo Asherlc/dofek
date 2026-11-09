@@ -211,21 +211,6 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
   has zero desired replicas and all actual tasks are terminal, including web in
   maintenance mode. It allows the existing worker drain contract to finish;
   see [Swarm task states](https://docs.docker.com/engine/swarm/how-swarm-mode-works/swarm-task-states/).
-- `select-web-deploy.ts`: Selects the latest successful main-push CI release
-  after the production deployment concurrency slot is acquired. Walks the fetched
-  `origin/main` first-parent history newest first, checking successful CI by
-  `head_sha` until it finds a passing commit, bounded by the triggering commit.
-  Reads the API's `workflow_runs` array; an empty array means that commit has no
-  matching successful run.
-  Requires full main history and rejects a response for another commit, branch,
-  event, or conclusion; see [`git rev-list`](https://git-scm.com/docs/git-rev-list)
-  and the [workflow-run filters](https://docs.github.com/en/rest/actions/workflow-runs#list-workflow-runs-for-a-workflow).
-  Manual requests retain their explicit image tag. Unsuccessful CI triggers cancel their own
-  deployment request and never return a successful step result. The workflow
-  supplies the standard GitHub event, output, summary, repository, and run-ID
-  environment variables; see the [workflow-run API](https://docs.github.com/en/rest/actions/workflow-runs)
-  and [GitHub default environment variables](https://docs.github.com/en/actions/reference/workflows-and-actions/variables#default-environment-variables).
-  - Usage: `pnpm tsx scripts/select-web-deploy.ts` in `Deploy Web`.
 - `testflight-deployment.ts`: Detects signed iOS native changes against the
   latest successful upload receipt, prepares a pending intent immediately before
   Xcode upload, and finalizes that same deployment after upload succeeds. Uses one GitHub deployment
@@ -256,8 +241,8 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
   using the REST response's [global node ID](https://docs.github.com/en/graphql/guides/using-global-node-ids),
   preserves `INACTIVE` reconciliation, and completes an already `SUCCESS` receipt
   without another status write. The history read and intent creation are separate
-  API operations; publisher attempts rely on the caller's `deploy-web-production`
-  and reusable `deploy-ios` [concurrency serialization](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency),
+  API operations; publisher attempts rely on reusable `deploy-ios`
+  [concurrency serialization](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency),
   rather than an atomic API lock.
   Rerun only a failed receipt job to finalize the original
   successful upload without reuploading; the workflow retains those original outputs.

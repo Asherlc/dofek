@@ -33,10 +33,6 @@ on:
 env:
   REGISTRY: ghcr.io
 
-concurrency:
-  group: ${{ (inputs.target == 'web-stack' || inputs.target == 'web' || inputs.target == 'ota' || inputs.target == 'ios' || inputs.target == 'all') && 'deploy-web-production' || format('deploy-{0}-{1}', inputs.target, github.run_id) }}
-  cancel-in-progress: false
-
 jobs:
   terraform:
     name: Deploy Infra
@@ -168,6 +164,9 @@ jobs:
   web-stack:
     name: Deploy Web Stack
     needs: [terraform, docker, docker_ml]
+    concurrency:
+      group: deploy-web-production
+      cancel-in-progress: false
     if: ${{ !cancelled() && (needs.terraform.result == 'success' || needs.terraform.result == 'skipped') && (needs.docker.result == 'success' || needs.docker.result == 'skipped') && (needs.docker_ml.result == 'success' || needs.docker_ml.result == 'skipped') && vars.ORACLE_SERVER_HOST != '' && (inputs.target == 'web-stack' || inputs.target == 'web' || inputs.target == 'ota' || inputs.target == 'ios' || inputs.target == 'all') }}
     permissions:
       actions: read
