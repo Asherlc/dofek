@@ -186,14 +186,16 @@ describe("cycling power projector", () => {
       .query<{
         as_of_day: string;
         event_count: number;
-        evidence_count: number;
+        evidence_bytes: number;
+        latest_evidence_id: string | null;
         latest_threshold: number | null;
         latest_intensity: number | null;
         latest_stress: number | null;
       }>({
         query: `SELECT toString(as_of_day) AS as_of_day,
           length(events) AS event_count,
-          arrayCount(event -> tupleElement(event, 6) IS NOT NULL, events) AS evidence_count,
+          length(toJSONString(arrayMap(event -> tupleElement(event, 6), events))) AS evidence_bytes,
+          tupleElement(arrayFirst(event -> tupleElement(event, 2) = {latestId:String}, events), 6) AS latest_evidence_id,
           tupleElement(arrayFirst(event -> tupleElement(event, 2) = {latestId:String}, events), 3) AS latest_threshold,
           tupleElement(arrayFirst(event -> tupleElement(event, 2) = {latestId:String}, events), 4) AS latest_intensity,
           tupleElement(arrayFirst(event -> tupleElement(event, 2) = {latestId:String}, events), 5) AS latest_stress
@@ -205,7 +207,8 @@ describe("cycling power projector", () => {
     expect(published).toHaveLength(1);
     expect(published[0]?.as_of_day).toBe("2026-11-01");
     expect(published[0]?.event_count).toBe(finalDay - firstDay + 1 + 2);
-    expect((published[0]?.evidence_count ?? 0) * 36).toBeGreaterThan(131_072);
+    expect(published[0]?.evidence_bytes).toBeGreaterThan(131_072);
+    expect(published[0]?.latest_evidence_id).toBe(latestId);
     expect(published[0]?.latest_threshold).toBeCloseTo(201.6393442623, 6);
     expect(published[0]?.latest_intensity).toBeCloseTo(250 / 201.6393442623, 6);
     expect(published[0]?.latest_stress).toBeCloseTo(

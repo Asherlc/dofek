@@ -10,6 +10,8 @@ import {
 } from "../account-erasure/clickhouse-erasure.ts";
 import { R2DatabaseBackupStorage } from "../account-erasure/database-backup-storage.ts";
 import { KafkaLogStorage } from "../account-erasure/kafka-log-storage.ts";
+import { KafkaRemoteHistory } from "../account-erasure/kafka-remote-history.ts";
+import { KafkaRemoteStorage } from "../account-erasure/kafka-remote-storage.ts";
 import { assertPeerDbAccountErasureDrained } from "../account-erasure/peerdb-erasure.ts";
 import {
   createPeerDbStagingStorageFromEnv,
@@ -99,12 +101,36 @@ export async function createAccountErasureRuntime(
     const redpanda = createAccountErasureRedpandaAdminFromEnv();
     startupCleanup.push(() => redpanda.close());
     await redpanda.connect();
-    const brokerStorage = new KafkaLogStorage(redpanda.admin, {
-      directory: "/var/lib/dofek/kafka-data",
-      brokerDirectory: "/var/lib/kafka/data",
-      retiredDirectory: "/var/lib/dofek/retired-broker-data",
-      topics: redpanda.routes.flatMap(({ topic }) => [topic, metricStreamQuarantineTopic(topic)]),
+    if (requiredR2EnvironmentVariable("KAFKA_TIERED_STORAGE_REGION") !== "auto")
+      throw new Error("KAFKA_TIERED_STORAGE_REGION must be auto for the qualified R2 endpoint");
+    const brokerR2Client = createR2Client({
+      accessKeyId: requiredR2EnvironmentVariable("KAFKA_TIERED_STORAGE_ACCESS_KEY_ID"),
+      secretAccessKey: requiredR2EnvironmentVariable("KAFKA_TIERED_STORAGE_SECRET_ACCESS_KEY"),
+      endpoint: requiredR2EnvironmentVariable("KAFKA_TIERED_STORAGE_ENDPOINT"),
     });
+    startupCleanup.push(async () => brokerR2Client.destroy());
+    const remoteHistory = new KafkaRemoteHistory(redpanda.admin, () =>
+      redpanda.createMetadataConsumer(),
+    );
+    const remoteStorage = new KafkaRemoteStorage(
+      brokerR2Client,
+      requiredR2EnvironmentVariable("KAFKA_TIERED_STORAGE_BUCKET"),
+      `${requiredR2EnvironmentVariable("KAFKA_CLUSTER_ID")}/`,
+      (boundaries) => remoteHistory.assertDeleted(boundaries),
+    );
+    const brokerStorage = new KafkaLogStorage(
+      redpanda.admin,
+      {
+        directory: "/var/lib/dofek/kafka-data",
+        brokerDirectory: "/var/lib/kafka/data",
+        retiredDirectories: [
+          "/var/lib/dofek/retired-broker-data",
+          "/var/lib/dofek/aborted-kafka-data",
+        ],
+        topics: redpanda.routes.flatMap(({ topic }) => [topic, metricStreamQuarantineTopic(topic)]),
+      },
+      remoteStorage,
+    );
 
     const identifiers = (snapshot: AccountErasureRemoteSnapshot) => ({
       activityIds: snapshot.localIdentifiers.activityIds,
@@ -226,6 +252,7 @@ export async function createAccountErasureRuntime(
           try {
             peerDbStaging.close();
           } finally {
+            brokerR2Client.destroy();
             r2Client.destroy();
           }
         }

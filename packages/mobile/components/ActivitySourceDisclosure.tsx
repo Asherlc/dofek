@@ -151,7 +151,7 @@ export function ActivitySourceDisclosure({
         accessibilityLabel={primary ? `Lineage: ${primary.label}` : "Lineage"}
         accessibilityHint={open ? "Hide activity lineage" : "Show activity lineage"}
         accessibilityState={{ expanded: open }}
-        aria-haspopup={heading ? "dialog" : undefined}
+        aria-haspopup="dialog"
         aria-expanded={open}
         aria-controls={contentId}
         onPress={() => setOpen((expanded) => !expanded)}
@@ -186,47 +186,38 @@ export function ActivitySourceDisclosure({
         </View>
       ) : null}
       {open ? (
-        heading ? (
-          <Modal visible transparent animationType="fade" onRequestClose={() => setOpen(false)}>
-            <View style={styles.overlay}>
-              <Pressable
-                style={StyleSheet.absoluteFill}
-                accessibilityRole="button"
-                accessibilityLabel="Dismiss lineage"
-                onPress={() => setOpen(false)}
-              />
-              <View
-                id={contentId}
-                style={styles.dialog}
-                role="dialog"
-                accessibilityLabel="Lineage"
-                accessibilityViewIsModal
-              >
-                <View style={styles.dialogHeader}>
-                  <Text style={styles.dialogTitle} accessibilityRole="header">
-                    Lineage
-                  </Text>
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel="Close lineage"
-                    onPress={() => setOpen(false)}
-                    style={styles.closeButton}
-                  >
-                    <Text style={styles.controlLabel}>Close</Text>
-                  </Pressable>
-                </View>
-                <ScrollView>{details}</ScrollView>
+        <Modal visible transparent animationType="fade" onRequestClose={() => setOpen(false)}>
+          <View style={styles.overlay}>
+            <Pressable
+              style={StyleSheet.absoluteFill}
+              accessibilityRole="button"
+              accessibilityLabel="Dismiss lineage"
+              onPress={() => setOpen(false)}
+            />
+            <View
+              id={contentId}
+              style={styles.dialog}
+              role="dialog"
+              accessibilityLabel="Lineage"
+              accessibilityViewIsModal
+            >
+              <View style={styles.dialogHeader}>
+                <Text style={styles.dialogTitle} accessibilityRole="header">
+                  Lineage
+                </Text>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Close lineage"
+                  onPress={() => setOpen(false)}
+                  style={styles.closeButton}
+                >
+                  <Text style={styles.controlLabel}>Close</Text>
+                </Pressable>
               </View>
+              <ScrollView>{details}</ScrollView>
             </View>
-          </Modal>
-        ) : (
-          <View id={contentId} style={styles.details}>
-            <Text style={styles.dialogTitle} accessibilityRole="header">
-              Lineage
-            </Text>
-            {details}
           </View>
-        )
+        </Modal>
       ) : null}
     </View>
   );
@@ -271,7 +262,6 @@ const styles = StyleSheet.create({
   controlLabel: { color: colors.textSecondary, fontSize: 12 },
   chevron: { color: colors.textSecondary, fontSize: 16 },
   label: { color: colors.text, fontSize: 13, fontWeight: "600", flexShrink: 1 },
-  details: { paddingHorizontal: spacing.md, paddingBottom: spacing.md },
   description: { color: colors.textSecondary, fontSize: 12, lineHeight: 18 },
   nodeRow: { flexDirection: "row", alignItems: "flex-start", gap: spacing.sm },
   nodeContent: { flex: 1, minWidth: 0, gap: 2 },

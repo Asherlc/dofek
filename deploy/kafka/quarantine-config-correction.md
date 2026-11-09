@@ -17,9 +17,11 @@ three existing source topics and their three quarantine topics:
 | retention.ms | 604800000 (seven days) | 604800000 (seven days) |
 | retention.bytes | 4294967296 (4 GiB) | 1073741824 (1 GiB) |
 | segment.bytes | 134217728 (128 MiB) | 134217728 (128 MiB) |
-| remote.storage.enable | false | false |
+| remote.storage.enable | true | true |
 
-These are the already selected phase-1 values, not a new retention policy. Byte
+The tiered layer changes only `remote.storage.enable` to true, coherently with
+the broker configuration. Other values preserve the selected phase-1 policy.
+See the [phase-2 release packet](tiered-cutover-packet.md). Byte
 limits remain retention targets rather than hard disk caps, and seven days is
 a time ceiling rather than a guaranteed replay window under the byte limits. See
 [Kafka topic configuration](https://kafka.apache.org/44/configuration/topic-configs/).
@@ -58,11 +60,10 @@ The JSON policy is the single deployment input for mutation and verification.
 There is no new operator CLI, service, credential, Infisical key or persistent
 tracking store. The generated six-topic input is temporary runner data.
 
-The tiered-storage branch must consume this workflow and update this same
-policy definition for its separately reviewed phase-2 configuration. It must
-not maintain a second policy loop or reapply this phase-1 remote=false target
-after tiering is activated. Existing tiered-backend and erasure-verifier gates
-remain prerequisites for that later release.
+The tiered-storage layer consumes this same workflow and policy definition.
+Do not reapply the historical phase-1 remote=false policy after activation.
+The [tiered-backend and erasure-verifier gates](tiered-cutover-packet.md) remain
+prerequisites for the separately approved phase-2 release.
 
 ## Qualification and limits
 

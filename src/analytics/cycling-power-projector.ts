@@ -298,32 +298,29 @@ export async function projectCyclingPower(
     )
       continue;
     const publicationVersion = refreshVersion();
-    const historyEvents = JSON.stringify({
-      events: history.map((point) => [
-        point.atSeconds,
-        point.id,
-        point.thresholdWatts,
-        point.intensityFactor,
-        point.trainingStressScore,
-        point.evidence?.id ?? null,
-        point.evidence?.atSeconds ?? 0,
-        point.evidence?.effort.durationSeconds ?? 0,
-        point.evidence?.effort.watts ?? 0,
-      ]),
-    });
     await client.command({
       query: `INSERT INTO analytics.cycling_power_history_rows
         (user_id,source_refresh_version,as_of_day,model_version,refresh_version,refreshed_at,events)
         SELECT {userId:UUID},{sourceVersion:UInt64},toDate({asOfDay:String}),{modelVersion:String},
-          {refreshVersion:UInt64},parseDateTime64BestEffort({refreshedAt:String},6),events
-        FROM input('events Array(Tuple(
-          event_at Float64,activity_id Nullable(String),eftp Nullable(Float64),
-          intensity_factor Nullable(Float64),power_tss Nullable(Float64),
-          evidence_activity_id Nullable(String),evidence_at Float64,
-          evidence_duration_seconds Float64,evidence_power Float64))')
+          {refreshVersion:UInt64},parseDateTime64BestEffort({refreshedAt:String},6),
+          events
+        FROM input('events Array(Tuple(Float64, Nullable(String), Nullable(Float64),
+          Nullable(Float64), Nullable(Float64), Nullable(String), Float64, Float64, Float64))')
         WHERE ${accountIsWritable}
         FORMAT JSONEachRow
-        ${historyEvents}`,
+        ${JSON.stringify({
+          events: history.map((point) => [
+            point.atSeconds,
+            point.id,
+            point.thresholdWatts,
+            point.intensityFactor,
+            point.trainingStressScore,
+            point.evidence?.id ?? null,
+            point.evidence?.atSeconds ?? 0,
+            point.evidence?.effort.durationSeconds ?? 0,
+            point.evidence?.effort.watts ?? 0,
+          ]),
+        })}`,
       query_params: {
         userId: user.user_id,
         sourceVersion: user.source_refresh_version,
@@ -332,10 +329,7 @@ export async function projectCyclingPower(
         refreshVersion: publicationVersion,
         refreshedAt: asOf.toISOString(),
       },
-      clickhouse_settings: {
-        log_queries: 0,
-        input_format_json_named_tuples_as_objects: 0,
-      },
+      clickhouse_settings: { log_queries: 0 },
     });
     publishedVersions.set(user.user_id, publicationVersion);
   }
