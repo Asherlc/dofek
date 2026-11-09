@@ -35993,3 +35993,64 @@ No runtime behavior, timeout, retry or production configuration changed.
 - **Review found a dispatch prerequisite:** A live probe of the existing Terraform workflow with `operation=plan` and the selected full SHA returned `HTTP 422: No ref found for: c35c32bedba7096395d568e6c09cc86fd02f79b0`; no workflow started. Bare-SHA dispatch is unsupported, despite the local mock accepting it. GitHub documents branch/tag dispatch refs in the [dispatch API](https://docs.github.com/en/rest/actions/workflows#create-a-workflow-dispatch-event). The user then approved release tags. Created `deploy-c35c32bedba7096395d568e6c09cc86fd02f79b0` at the selected commit and dispatched the same plan-only workflow through it: [run 42690480352](https://github.com/Asherlc/dofek/actions/runs/42690480352) succeeded with the exact expected `headSha` and tag `headBranch`. No infrastructure apply or application release was requested by this probe.
 - **Local validation prerequisite:** Full `pnpm lint` passed source-policy checks but SQL lint failed to connect to its ClickHouse fixture. The fixture's first fatal line was `No space left on device ["/var/lib/clickhouse/preprocessed_configs"]`; Docker reported 0 available bytes, no build cache, and no unused images. The new workspace container was removed while preserving its named volume and every other workspace's running containers/volumes. No lint gate, database setting, or Docker capacity limit was changed. Remote CI must validate SQL lint in a healthy environment; this local prerequisite failure is not a deployment regression.
 - **Next time / proposed improvement:** Use gh-fix-ci and systematic debugging, compare the executing reusable workflow SHA with the selected checkout and image SHA before editing infrastructure, and follow the child Deploy link when checking rollout status. The deployment runbook now explains that distinction; consider adding the same three-revision comparison to the CI debugging runbook.
+
+## 2026-11-09 — Overview oxygen and temperature raw scans time out
+
+- **Symptoms / impact:** The web Overview retained the Key Relationship spinner
+  and Health Monitor skeletons while its resting-heart-rate history was visible.
+  Both clients share the affected daily-metric and insight API queries.
+- **Evidence / root cause:** Axiom logs at `20:34:49.601Z` recorded
+  `dailyMetrics.trends` taking 116,327 ms and `insights.compute` taking 120,094 ms,
+  followed by `[trpc] insights.compute: Timeout error.` Trace
+  `5e5a619e72a43f2b670e259c643d0ee0` identifies the affected batch.
+  Read-only `system.query_log` inspection found raw oxygen/WHOOP-frame CTEs:
+  query `84dea529-efae-475d-a742-b4ee61dfed16` read 139,391,002 rows in
+  115,838 ms; `cbef7b6d-87c9-48bb-afd6-1531e03a5ce2` read 200,531,166 rows
+  and ended with `NETWORK_ERROR` / broken pipe after 195,521 ms. The request
+  path performed raw-event scans and frame decoding instead of reading compact
+  derived inputs. Logs were available; no instrumentation change was needed.
+- **Prepared direct fix:** The user approved incremental dbt processing.
+  [`daily_health_sensor`](../analytics/models/read_models/daily_health_sensor.sql)
+  retains typed decoded measurements in bounded source-day batches; shared API
+  reads preserve caller timezones, source priorities, delayed offload dates and
+  replay deduplication. A schema-only migration creates the target. A regression
+  first observed 100,063 rows read with 100,000 unrelated sensor rows, then passed
+  a less-than-50,000-row bound using the existing projection for candidate keys
+  and native `FINAL` for their complete replacement keys. No timeout, retry,
+  fallback, new service or dependency was added. See the
+  [executable tests](../packages/server/src/repositories/daily-health-sensor.integration.test.ts).
+- **Unresolved production prerequisites:** Read-only production checks found
+  4,429 source-day keys and 11 of 27 active raw parts without
+  `by_user_channel_recorded_at`. Those parts held 144,489,444 of 205,214,452 raw
+  rows; total raw-table bytes were 36.40 GiB. Capacity readback showed 39 GiB
+  free on the data disk, ClickHouse using 3.487 GiB of its 13 GiB limit, and no
+  unfinished raw-table mutations. No production writes, materialization, backfill
+  or deployment were performed. Follow the
+  [cutover gate](clickhouse-read-model-deploy-runbook.md#overview-oxygen-and-temperature-cutover)
+  before API rollout: capacity-reviewed projection preparation, historical marker
+  coverage, bounded model initialization, zero missing/dirty days and uncached
+  request verification. dbt success alone does not prove a bounded backlog is
+  empty; processing banners remain insufficient freshness evidence.
+- **Local prerequisite limitations:** The integration wrapper's Redpanda startup
+  failed with `Could not setup Async I/O` because the shared Docker VM exhausted
+  its 65,536 AIO-event capacity. The required Postgres/ClickHouse/Redis services
+  were healthy, so database-only tests ran in the explicit integration project
+  with workspace URLs. The broader router-SQL fixture separately exceeded its
+  1.25 GiB ClickHouse profile while building the existing activity-origin join,
+  before reaching the selected assertions. Neither shared resource limits nor
+  application settings were changed; the focused shared health-model fixture
+  executed successfully.
+- **Next time:** The loading runbook and check-logs skill quickly located the
+  failing procedures; real-engine tests exposed the raw-read cost and fixture
+  dependencies. Use integration-tests-ready for local prerequisites. The deploy
+  runbook now requires schema creation, projection coverage and backlog checks
+  for this serving-table cutover; apply that same checklist to future serving
+  models rather than adding another recovery tool.
+- **Final local verification:** `pnpm test` passed 1,462 files and 23,966 tests,
+  with two files / 19 tests skipped by existing configuration. The four focused
+  real-engine suites passed 26 tests, including native dbt initial/incremental
+  builds, shared fixture creation, and assigned/null activity replacement keys.
+  `pnpm lint`, root/server/web typechecks and `git diff --check` passed. The
+  first broad unit run's three outdated query-source/order assertions were
+  updated; the subsequent full run was green. Production remains unresolved
+  pending the preparation and release gates above.

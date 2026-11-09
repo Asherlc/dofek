@@ -1,4 +1,5 @@
 import { buildActivitySensorSummaryRowsTableSql } from "../../../../src/db/clickhouse-activity-sensor-summary.ts";
+import { createMigration as createHealthSensorMigration } from "../../../../src/db/clickhouse-migrations/0111_daily_health_sensor.ts";
 
 export interface IsolatedClickHouseDatabases {
   analytics: string;
@@ -39,6 +40,7 @@ export const clickHouseMigrationAnalyticsViewNames = [
   "analytics.activity_trend_daily",
 ] as const;
 export const analyticsBuildOrder = [
+  "analytics.daily_health_sensor",
   "analytics.v_activity",
   "analytics.v_activity_members",
   "analytics.v_sleep",
@@ -68,6 +70,11 @@ export const analyticsBuildOrder = [
 ] as const;
 
 export function buildTestAnalyticsTableStatement(viewName: string): string {
+  if (viewName.endsWith(".daily_health_sensor")) {
+    return createHealthSensorMigration()
+      .statements.join("\n")
+      .replaceAll("analytics.daily_health_sensor", viewName);
+  }
   const columnDefinitionsByViewName: Record<string, string> = {
     v_activity: `id UUID,
 provider_id String,

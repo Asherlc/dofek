@@ -127,6 +127,7 @@ describe("production analytics read-model build", () => {
       "sleep_heart_rate_sample",
       "resting_heart_rate_sleep_window",
       "daily_sleep",
+      "daily_health_sensor",
       "daily_recovery_inputs",
       "daily_recovery",
       "daily_activity_load",
