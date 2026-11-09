@@ -36,7 +36,8 @@ required policy must be corrected explicitly before their consumer can start.
   including reconnect, unchanged operator overrides and missing-topic creation.
 - The actual consumer/quarantine/erasure integration set passed nine tests on
   that broker. The focused unit set passed 66 tests. Focused quarantine mutation
-  testing killed all 69 counted mutants, with the existing threshold unchanged.
+  testing killed all 69 counted mutants, with the existing threshold unchanged;
+  see the [primary Stryker output](../../docs/evidence/kafka-quarantine-config-fix-20261109/stryker.txt).
 - The stock `kafka-configs.sh --alter --add-config` payload below was exercised
   on a disposable topic. Native metadata showed its original topic ID unchanged,
   segment size corrected from 1 GiB to 128 MiB, and the other selected policy
@@ -62,6 +63,12 @@ remote override. See [the pinned Redpanda create handler](https://github.com/red
    merge revision and immutable digest; do not reuse the deployed `6fe` image or
    the earlier `3350` review image. Use the existing stock web-release dispatcher
    with its normal gates; leave the disabled automatic-workflow setting alone.
+   **Before dispatch**, read the current policy for all three quarantine topics:
+   each must have `cleanup.policy=delete`, `retention.ms=604800000` and
+   `retention.bytes=1073741824`, with complete topic identity/config evidence.
+   The fixed sinks intentionally refuse startup on drift. If any required value
+   differs or cannot be verified, stop and obtain approval for its correction
+   before releasing; the later two-override update does not repair these values.
 2. Complete that release before the topic correction. Verify the three
    ClickHouse sinks are running the fixed image and every old consumer task has
    exited. Verify the normal worker entrypoint and read-only Kafka/retained-RP
@@ -74,6 +81,16 @@ remote override. See [the pinned Redpanda create handler](https://github.com/red
    cleanup policy, source topics, topic IDs, routes and offsets are not changed.
    Run operator JVMs outside the broker cgroup, using the existing Q4 command
    shape and pinned image. Each failed command must stop the outer operation.
+   Immediately before applying it, take a fresh read of each topic's ID,
+   selected config values and config sources, and compare it with the
+   [recorded post-release audit](../../docs/evidence/kafka-shared-production-release-20261109/topic-policy-after-release.json).
+   This procedure expects the recorded default 1 GiB segment size and default
+   remote=false on each quarantine, plus the unchanged required policy. Any
+   drift, including a newer operator segment override, stops this procedure
+   pending a revised reviewed correction; do not overwrite it with this older
+   proposal. One responsible release operator coordinates the topic-change
+   window from this read through final verification, with no concurrent topic
+   configuration edits. Kafka's incremental update is not a compare-and-set.
 
 ```bash
 # Approved operator session on dofek-server, after the fixed release is verified.
@@ -100,7 +117,10 @@ It does not repartition/recreate topics or delete broker data.
 4. Read back all six topic identities and selected settings through the existing
    metadata observer. Quarantines must retain delete/seven-day/1 GiB retention
    plus explicit 128 MiB segments and remote=false; sources retain their
-   existing 4 GiB policy. Record consumer convergence, lag, archive errors and
+   existing 4 GiB policy. Compare against the fresh pre-update snapshot and the
+   coordinated approved delta: topic IDs and every unrelated setting must be
+   unchanged. An unexpected newer setting is drift, not permission to accept the
+   older proposal's value. Record consumer convergence, lag, archive errors and
    reserve. Any requested reconnect qualification belongs to this reviewed
    release operation; do not add an unapproved extra restart just to test it.
    The isolated connect/reconnect proof is already complete.
@@ -115,5 +135,6 @@ It does not repartition/recreate topics or delete broker data.
 The regression reproduced the exact config-source and segment-size changes;
 sharing the existing validator avoided a second policy implementation. Health
 and zero lag alone did not detect configuration loss. Add the post-client
-override comparison to future release reviews, and use the existing debugging,
-TDD and integration-test workflows for similar failures.
+override comparison to future release reviews. Reproduce similar failures with
+a failing test and verify the correction against the pinned broker, following
+the [testing guide](../../docs/testing.md).
