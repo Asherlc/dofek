@@ -1,7 +1,12 @@
 import { createHash } from "node:crypto";
 import type { Server } from "node:http";
 import { z } from "zod";
+import {
+  ANALYTICS_PUBLICATION_RESOURCE,
+  withAnalyticsQueryOwner,
+} from "../analytics/analytics-query-owner.ts";
 import { type ClickHouseClient, createClickHouseClientFromEnv } from "../db/clickhouse.ts";
+import { createDatabaseFromEnv } from "../db/index.ts";
 import { captureException } from "../lib/error-reporting.ts";
 import {
   ACCOUNT_ERASURE_FENCE_TABLE,
@@ -914,15 +919,38 @@ export async function runMetricStreamClickHouseSinkFromEnv(
   if (!consumer.observeGroupLifecycle) {
     throw new Error("ClickHouse metric-stream sink requires Kafka group lifecycle events");
   }
-  await runMetricStreamEventConsumer({
-    consumer,
-    quarantine,
-    topic,
-    lifecycleListener: readiness,
-    handleEvents: async (events, context) => {
-      await applyMetricStreamEventsToClickHouse(client, events, context);
-    },
-  });
+  const database = createDatabaseFromEnv();
+  try {
+    await runMetricStreamEventConsumer({
+      consumer,
+      quarantine,
+      topic,
+      lifecycleListener: readiness,
+      handleEvents: async (events, context) => {
+        const firstOffset = context.eventOffsets[0];
+        if (firstOffset === undefined)
+          throw new Error("ClickHouse metric-stream sink is missing its first Kafka offset");
+        const intentId = `metric-stream:${createHash("sha256")
+          .update(JSON.stringify([context.topic, context.partition, firstOffset]))
+          .digest("hex")}`;
+        await keepMetricStreamHeartbeatAlive(context, () =>
+          withAnalyticsQueryOwner(
+            database,
+            client,
+            { resourceId: ANALYTICS_PUBLICATION_RESOURCE, intentId },
+            async (owner) => {
+              await applyMetricStreamEventsToClickHouse(owner.client, events, context);
+            },
+          ),
+        );
+      },
+    });
+  } catch (error) {
+    captureException(error, { tags: { source: "metric-stream-sink-startup" } });
+    await database.$client.end();
+    await client.close?.();
+    throw error;
+  }
 }
 
 export async function startMetricStreamClickHouseSinkFromEnv(): Promise<void> {

@@ -1,4 +1,6 @@
+import { EventEmitter, once } from "node:events";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { AccountErasureRouteHighWatermark } from "../account-erasure/redpanda-drain.ts";
 import type { AccountErasureRemoteSnapshot } from "../account-erasure/remote-snapshot.ts";
 import type { ClaimedAccountErasureRequest } from "../db/account-erasure-processing.ts";
 import {
@@ -24,12 +26,9 @@ const snapshot: AccountErasureRemoteSnapshot = {
   authIdentities: [],
   externalEffects: [],
   localIdentifiers: {
-    activityIds: ["30000000-0000-4000-8000-000000001994"],
     exportObjects: [],
     fileUploads: [],
-    processingOperationIds: ["40000000-0000-4000-8000-000000001994"],
     sessionIds: [],
-    sleepSessionIds: [],
     userId: request.userId ?? "missing-user",
   },
   posthogDistinctId: request.userId ?? "missing-user",
@@ -50,19 +49,26 @@ const peerDbStagingBoundary = {
   ],
 };
 
+const highWatermarks: AccountErasureRouteHighWatermark[] = [
+  {
+    topic: "metric-stream-live-v2",
+    partition: 0,
+    low: "0",
+    offset: "42",
+  },
+];
+
 function dependencies(): AccountErasurePhaseRunnerDependencies {
   return {
     assertBrokerStorageExpired: vi.fn().mockResolvedValue(undefined),
+    prepareIdentifiers: vi.fn().mockResolvedValue(undefined),
+    assertIdentifiersReady: vi.fn().mockResolvedValue(undefined),
     assertConsumersDrained: vi.fn().mockResolvedValue(undefined),
-    assertPeerDbDrained: vi.fn().mockResolvedValue(undefined),
     assertQuarantineExpired: vi.fn().mockResolvedValue(undefined),
     assertReplayExpired: vi.fn().mockResolvedValue(undefined),
-    captureHighWatermarks: vi
-      .fn()
-      .mockResolvedValue([{ topic: "metric-stream-v1", low: "10", offset: "20", partition: 0 }]),
-    captureQuarantineHighWatermarks: vi
-      .fn()
-      .mockResolvedValue([{ topic: "metric-stream-v1", low: "4", offset: "12", partition: 0 }]),
+    captureQuarantineHighWatermarks: vi.fn().mockResolvedValue(highWatermarks),
+    assertPeerDbDrained: vi.fn().mockResolvedValue(undefined),
+    captureHighWatermarks: vi.fn().mockResolvedValue(highWatermarks),
     capturePeerDbStagingBoundary: vi.fn().mockResolvedValue(peerDbStagingBoundary),
     decryptSnapshot: vi.fn().mockResolvedValue(snapshot),
     eraseArchive: vi
@@ -103,6 +109,7 @@ function execution(
   overrides: Partial<AccountErasurePhaseExecution> = {},
 ): AccountErasurePhaseExecution {
   return {
+    leaseOwner: "phase-fixture-worker",
     deleteProfile: vi.fn().mockResolvedValue({ walLsn: "0/1A2B" }),
     loadCheckpointDetails: vi.fn().mockResolvedValue(null),
     loadProgress: vi.fn().mockResolvedValue(null),
@@ -119,6 +126,51 @@ beforeEach(() => {
 });
 
 describe("createAccountErasurePhaseRunner", () => {
+  it("prepares complete initial identity closure after drain and before completing its checkpoint", async () => {
+    const deps = dependencies();
+    const run = execution({
+      loadCheckpointDetails: vi.fn().mockResolvedValue({ highWatermarks }),
+    });
+    vi.mocked(deps.prepareIdentifiers).mockRejectedValueOnce(
+      new Error("identity closure incomplete"),
+    );
+    await expect(
+      createAccountErasurePhaseRunner(deps).runPhase("consumer_drain", run),
+    ).rejects.toThrow("identity closure incomplete");
+    expect(deps.assertConsumersDrained).toHaveBeenCalledWith(highWatermarks);
+    expect(deps.prepareIdentifiers).toHaveBeenCalledWith({
+      requestId: request.id,
+      userId: request.userId,
+      leaseOwner: "phase-fixture-worker",
+      stage: "initial",
+    });
+  });
+
+  it.each([
+    "remote_revocation",
+    "processor_erasure",
+    "postgres_erasure",
+    "clickhouse_initial",
+    "archive_initial",
+    "postgres_profile_delete",
+    "archive_verification",
+  ] as const)("refuses %s effects without its durable identity closure proof", async (phase) => {
+    const deps = dependencies();
+    vi.mocked(deps.assertIdentifiersReady).mockRejectedValueOnce(
+      new Error("identity closure incomplete"),
+    );
+    const run = execution();
+    await expect(createAccountErasurePhaseRunner(deps).runPhase(phase, run)).rejects.toThrow(
+      "identity closure incomplete",
+    );
+    expect(deps.erasePostgres).not.toHaveBeenCalled();
+    expect(deps.eraseClickHouse).not.toHaveBeenCalled();
+    expect(deps.eraseArchive).not.toHaveBeenCalled();
+    expect(deps.eraseProcessors).not.toHaveBeenCalled();
+    expect(deps.revokeRemote).not.toHaveBeenCalled();
+    expect(run.deleteProfile).not.toHaveBeenCalled();
+  });
+
   it("saves refreshed remote credentials before propagating a deletion failure", async () => {
     const deps = dependencies();
     const run = execution();
@@ -137,33 +189,49 @@ describe("createAccountErasurePhaseRunner", () => {
     ).rejects.toThrow("registration deletion failed");
     expect(run.persistProviderCredentials).toHaveBeenCalledWith("garmin", tokens);
   });
-  it("captures the ingest boundary before draining consumers", async () => {
+
+  it("captures the native ingest boundary before draining consumers", async () => {
     const deps = dependencies();
     const runner = createAccountErasurePhaseRunner(deps);
     const run = execution({
-      loadCheckpointDetails: vi.fn().mockResolvedValue({
-        highWatermarks: [{ topic: "metric-stream-v1", low: "10", offset: "20", partition: 0 }],
-      }),
+      loadCheckpointDetails: vi.fn().mockResolvedValue({ highWatermarks }),
     });
 
-    await expect(runner.runPhase("ingest_fence", run)).resolves.toEqual({
-      highWatermarks: [{ topic: "metric-stream-v1", low: "10", offset: "20", partition: 0 }],
-    });
+    await expect(runner.runPhase("ingest_fence", run)).resolves.toEqual({ highWatermarks });
     await expect(runner.runPhase("consumer_drain", run)).resolves.toEqual({
-      quarantineHighWatermarks: [
-        { topic: "metric-stream-v1", low: "4", offset: "12", partition: 0 },
-      ],
+      drained: true,
+      quarantineHighWatermarks: highWatermarks,
     });
 
-    expect(deps.fenceIngest).toHaveBeenCalledWith(snapshot);
+    expect(deps.fenceIngest).toHaveBeenCalledWith({
+      requestId: request.id,
+      userId: request.userId,
+      leaseOwner: "phase-fixture-worker",
+    });
     expect(deps.fenceIngest).toHaveBeenCalledBefore(vi.mocked(deps.captureHighWatermarks));
     expect(run.loadCheckpointDetails).toHaveBeenCalledWith("ingest_fence");
-    expect(deps.assertConsumersDrained).toHaveBeenCalledWith([
-      { topic: "metric-stream-v1", low: "10", offset: "20", partition: 0 },
-    ]);
-    expect(deps.assertConsumersDrained).toHaveBeenCalledBefore(
-      vi.mocked(deps.captureQuarantineHighWatermarks),
+    expect(deps.assertConsumersDrained).toHaveBeenCalledWith(highWatermarks);
+  });
+
+  it("captures quarantine only after the serving consumers finish draining", async () => {
+    const deps = dependencies();
+    const barrier = new EventEmitter();
+    const started = once(barrier, "started");
+    const drained = once(barrier, "drained");
+    vi.mocked(deps.assertConsumersDrained).mockImplementationOnce(async () => {
+      barrier.emit("started");
+      await drained;
+    });
+    const runner = createAccountErasurePhaseRunner(deps);
+    const pending = runner.runPhase(
+      "consumer_drain",
+      execution({ loadCheckpointDetails: vi.fn().mockResolvedValue({ highWatermarks }) }),
     );
+    await started;
+    expect(deps.captureQuarantineHighWatermarks).not.toHaveBeenCalled();
+    barrier.emit("drained");
+    await expect(pending).resolves.toMatchObject({ quarantineHighWatermarks: highWatermarks });
+    expect(deps.captureQuarantineHighWatermarks).toHaveBeenCalledOnce();
   });
 
   it("resumes an initial archive sweep but restarts final verification from the beginning", async () => {
@@ -199,15 +267,12 @@ describe("createAccountErasurePhaseRunner", () => {
     });
     expect(deps.eraseArchive).toHaveBeenNthCalledWith(
       1,
-      snapshot,
-      expect.objectContaining({
-        startAfter: "metric-stream/v1/2026/07/part-1.jsonl.gz",
-      }),
+      expect.objectContaining({ stage: "initial" }),
+      expect.objectContaining({ startAfter: "metric-stream/v1/2026/07/part-1.jsonl.gz" }),
     );
     expect(run.saveProgress).toHaveBeenCalledWith({
       lastKey: "metric-stream/v1/2026/07/part-2.jsonl.gz",
     });
-
     await expect(runner.runPhase("archive_verification", run)).resolves.toEqual({
       objectsRewritten: 1,
       recordsRemoved: 1,
@@ -215,14 +280,71 @@ describe("createAccountErasurePhaseRunner", () => {
     });
     expect(deps.eraseArchive).toHaveBeenNthCalledWith(
       2,
-      snapshot,
+      expect.objectContaining({ stage: "final" }),
       expect.objectContaining({ startAfter: undefined }),
     );
-    expect(deps.eraseArchive).toHaveBeenNthCalledWith(
-      3,
-      snapshot,
-      expect.objectContaining({ startAfter: undefined }),
+  });
+
+  it("re-asserts native drain during consumer_drain_verification", async () => {
+    const deps = dependencies();
+    const runner = createAccountErasurePhaseRunner(deps);
+    await expect(
+      runner.runPhase(
+        "consumer_drain_verification",
+        execution({ loadCheckpointDetails: vi.fn(async () => ({ highWatermarks })) }),
+      ),
+    ).resolves.toEqual({ drained: true, replayExpired: true, verified: true });
+    expect(deps.assertConsumersDrained).toHaveBeenCalledWith(highWatermarks);
+  });
+
+  it("verifies broker storage before completing retention checks", async () => {
+    const deps = dependencies();
+    const retainedRequest: ClaimedAccountErasureRequest = {
+      ...request,
+      encryptedRemoteSnapshot: null,
+      piiScrubbedAt: new Date("2026-08-03T12:00:00.000Z"),
+      userId: null,
+    };
+    const runner = createAccountErasurePhaseRunner(deps);
+    const retainedExecution = execution({
+      loadCheckpointDetails: vi.fn(async (phase) =>
+        phase === "ingest_fence"
+          ? { highWatermarks }
+          : phase === "consumer_drain"
+            ? { quarantineHighWatermarks: highWatermarks }
+            : phase === "peerdb_drain_verification"
+              ? { stagingBoundary: peerDbStagingBoundary, verified: true }
+              : null,
+      ),
+      request: retainedRequest,
+    });
+
+    await expect(runner.runPhase("retention_verification", retainedExecution)).resolves.toEqual({
+      backupRetention: { deletedObjects: 3 },
+      processorRetention: {
+        axiomRetentionDays: 30,
+        sentryRetentionVerified: true,
+      },
+      peerDbStagingRetention: {
+        lifecycleRetentionDays: 1,
+        multipartUploadsInspected: 0,
+        objectsInspected: 2,
+        verified: true,
+      },
+      quarantineRetentionVerified: true,
+      verified: true,
+    });
+
+    expect(deps.verifyBackupRetention).toHaveBeenCalled();
+    expect(deps.assertBrokerStorageExpired).toHaveBeenCalledWith([
+      ...highWatermarks,
+      ...highWatermarks.map((entry) => ({ ...entry, topic: `${entry.topic}.quarantine.v1` })),
+    ]);
+    expect(deps.assertBrokerStorageExpired).toHaveBeenCalledBefore(
+      vi.mocked(deps.verifyBackupRetention),
     );
+    expect(deps.verifyProcessorRetention).toHaveBeenCalled();
+    expect(deps.verifyPeerDbStagingRetention).toHaveBeenCalled();
   });
 
   it("persists PostHog deletion targets through lease-owned phase progress", async () => {
@@ -250,225 +372,112 @@ describe("createAccountErasurePhaseRunner", () => {
     });
   });
 
-  it("executes the PII scrub through the lease-owned request operation", async () => {
+  it("fails closed when an identifying phase receives a scrubbed request", async () => {
     const deps = dependencies();
-    const run = execution();
     const runner = createAccountErasurePhaseRunner(deps);
 
-    await expect(runner.runPhase("request_pii_scrub", run)).resolves.toBeNull();
-
-    expect(run.scrubPii).toHaveBeenCalledOnce();
-    expect(deps.decryptSnapshot).not.toHaveBeenCalled();
+    await expect(
+      runner.runPhase(
+        "postgres_erasure",
+        execution({
+          request: {
+            ...request,
+            encryptedRemoteSnapshot: null,
+            piiScrubbedAt: new Date("2026-08-03T12:00:00.000Z"),
+            userId: null,
+          },
+        }),
+      ),
+    ).rejects.toThrow(
+      "Identifying account-erasure phase postgres_erasure requires live request PII",
+    );
   });
 
-  it("checkpoints a post-profile-delete WAL boundary and requires PeerDB to reach it", async () => {
+  it("executes every verification-only phase and records its proof", async () => {
     const deps = dependencies();
-    const run = execution({
-      loadCheckpointDetails: vi.fn(async (phase) =>
-        phase === "postgres_profile_delete" ? { walLsn: "0/1A2B" } : null,
-      ),
-    });
     const runner = createAccountErasurePhaseRunner(deps);
 
-    await expect(runner.runPhase("postgres_erasure", run)).resolves.toBeNull();
-    await expect(runner.runPhase("postgres_profile_delete", run)).resolves.toEqual({
-      walLsn: "0/1A2B",
-    });
-    await expect(runner.runPhase("peerdb_drain_verification", run)).resolves.toEqual({
-      stagingBoundary: peerDbStagingBoundary,
+    await expect(runner.runPhase("work_purge", execution())).resolves.toEqual({ verified: false });
+    await expect(runner.runPhase("work_verification", execution())).resolves.toEqual({
       verified: true,
     });
-
-    expect(run.deleteProfile).toHaveBeenCalledOnce();
-    expect(run.loadCheckpointDetails).toHaveBeenCalledWith("postgres_profile_delete");
-    expect(deps.assertPeerDbDrained).toHaveBeenCalledWith(snapshot, "0/1A2B");
-    expect(deps.assertPeerDbDrained).toHaveBeenCalledBefore(
-      vi.mocked(deps.capturePeerDbStagingBoundary),
-    );
-    expect(deps.capturePeerDbStagingBoundary).toHaveBeenCalledWith({
-      loadProgress: run.loadProgress,
-      requestId: request.id,
-      saveProgress: run.saveProgress,
-    });
-    expect(deps.verifyPeerDbStagingRetention).not.toHaveBeenCalled();
-  });
-
-  it("fails closed instead of falling back to the pre-profile WAL checkpoint", async () => {
-    const deps = dependencies();
-    const run = execution({
-      loadCheckpointDetails: vi.fn(async (phase) =>
-        phase === "postgres_erasure" ? { walLsn: "0/1A2B" } : null,
+    await expect(
+      runner.runPhase(
+        "consumer_drain_verification",
+        execution({ loadCheckpointDetails: vi.fn(async () => ({ highWatermarks })) }),
       ),
+    ).resolves.toEqual({ drained: true, replayExpired: true, verified: true });
+    await expect(runner.runPhase("remote_revocation_verification", execution())).resolves.toEqual({
+      dispositions: [{ disposition: "remote_revoked", providerId: "strava" }],
+      verified: true,
     });
-    const runner = createAccountErasurePhaseRunner(deps);
+    await expect(runner.runPhase("clickhouse_verification", execution())).resolves.toEqual({
+      verified: true,
+    });
+    await expect(
+      runner.runPhase(
+        "processor_erasure_verification",
+        execution({
+          loadCheckpointDetails: vi.fn(async (phase) =>
+            phase === "processor_erasure" ? { posthogPersonUuids: [] } : null,
+          ),
+        }),
+      ),
+    ).resolves.toEqual({ processors: 2, verified: true });
 
-    await expect(runner.runPhase("peerdb_drain_verification", run)).rejects.toThrow();
-
-    expect(run.loadCheckpointDetails).toHaveBeenCalledWith("postgres_profile_delete");
-    expect(deps.assertPeerDbDrained).not.toHaveBeenCalled();
-    expect(deps.capturePeerDbStagingBoundary).not.toHaveBeenCalled();
+    expect(deps.assertConsumersDrained).toHaveBeenCalledWith(highWatermarks);
+    expect(deps.verifyProcessors).toHaveBeenCalledWith(
+      snapshot,
+      { posthogPersonUuids: [] },
+      expect.anything(),
+    );
   });
 
-  it("does not retain a decrypted snapshot between phase invocations", async () => {
+  it("re-prepares identifiers only for clickhouse_verification final stage", async () => {
     const deps = dependencies();
     const runner = createAccountErasurePhaseRunner(deps);
-    const run = execution();
 
-    await runner.runPhase("stripe_erasure", run);
-    await runner.runPhase("remote_revocation", run);
-
-    expect(deps.decryptSnapshot).toHaveBeenCalledTimes(2);
-  });
-
-  it("checkpoints one explicit disposition per provider connection", async () => {
-    const deps = dependencies();
-    vi.mocked(deps.revokeRemote).mockResolvedValue([
-      {
-        disposition: "no_remote_authorization",
-        providerId: "strong-csv",
-      },
-      {
-        disposition: "remote_revoked",
-        providerId: "strava",
-      },
-    ]);
-    const runner = createAccountErasurePhaseRunner(deps);
-
-    await expect(runner.runPhase("remote_revocation", execution())).resolves.toEqual({
-      dispositions: [
-        {
-          disposition: "no_remote_authorization",
-          providerId: "strong-csv",
-        },
-        {
-          disposition: "remote_revoked",
-          providerId: "strava",
-        },
-      ],
+    await expect(runner.runPhase("clickhouse_initial", execution())).resolves.toEqual({
       verified: false,
     });
-  });
+    expect(deps.prepareIdentifiers).not.toHaveBeenCalled();
+    expect(deps.eraseClickHouse).toHaveBeenCalledWith(
+      expect.objectContaining({ stage: "initial", requestId: request.id }),
+    );
 
-  it("rechecks Stripe after replay retention and records verification", async () => {
-    const deps = dependencies();
-    vi.mocked(deps.eraseStripe)
-      .mockResolvedValueOnce({
-        customersDeleted: 1,
-        subscriptionsCanceled: 0,
-      })
-      .mockResolvedValueOnce({
-        customersDeleted: 0,
-        subscriptionsCanceled: 0,
-      });
-    const runner = createAccountErasurePhaseRunner(deps);
-    const run = execution();
-
-    await expect(runner.runPhase("stripe_erasure_verification", run)).resolves.toEqual({
-      customersDeleted: 1,
-      subscriptionsCanceled: 0,
+    await expect(runner.runPhase("clickhouse_verification", execution())).resolves.toEqual({
       verified: true,
     });
-
-    expect(deps.decryptSnapshot).toHaveBeenCalledOnce();
-    expect(deps.eraseStripe).toHaveBeenCalledTimes(2);
-    expect(deps.eraseStripe).toHaveBeenNthCalledWith(1, snapshot);
-    expect(deps.eraseStripe).toHaveBeenNthCalledWith(2, snapshot);
-  });
-
-  it("fails Stripe verification when the exhaustive proof pass still finds remote state", async () => {
-    const deps = dependencies();
-    vi.mocked(deps.eraseStripe)
-      .mockResolvedValueOnce({
-        customersDeleted: 1,
-        subscriptionsCanceled: 0,
-      })
-      .mockResolvedValueOnce({
-        customersDeleted: 1,
-        subscriptionsCanceled: 0,
-      });
-    const runner = createAccountErasurePhaseRunner(deps);
-
-    await expect(runner.runPhase("stripe_erasure_verification", execution())).rejects.toThrow(
-      "Stripe account erasure verification found new remote state",
+    expect(deps.prepareIdentifiers).toHaveBeenCalledWith(
+      expect.objectContaining({ stage: "final", requestId: request.id }),
+    );
+    expect(deps.eraseClickHouse).toHaveBeenCalledWith(
+      expect.objectContaining({ stage: "final", requestId: request.id }),
     );
   });
 
-  it("runs retention-only work without decrypting or passing a raw user identifier", async () => {
-    const deps = dependencies();
-    const retainedRequest: ClaimedAccountErasureRequest = {
-      ...request,
-      encryptedRemoteSnapshot: null,
-      piiScrubbedAt: new Date("2026-08-03T12:00:00.000Z"),
-      userId: null,
-    };
-    const runner = createAccountErasurePhaseRunner(deps);
+  it.each([
+    ["missing user id", { ...request, userId: null }],
+    ["missing encrypted snapshot", { ...request, encryptedRemoteSnapshot: null }],
+    ["already scrubbed", { ...request, piiScrubbedAt: new Date() }],
+  ])("rejects an identifying phase with %s", async (_label, invalidRequest) => {
+    const runner = createAccountErasurePhaseRunner(dependencies());
 
-    const retainedExecution = execution({
-      loadCheckpointDetails: vi.fn(async (phase) =>
-        phase === "consumer_drain"
-          ? {
-              quarantineHighWatermarks: [
-                { topic: "metric-stream-v1", low: "4", offset: "12", partition: 0 },
-              ],
-            }
-          : phase === "ingest_fence"
-            ? {
-                highWatermarks: [
-                  { topic: "metric-stream-v1", low: "0", offset: "3", partition: 0 },
-                ],
-              }
-            : phase === "peerdb_drain_verification"
-              ? { stagingBoundary: peerDbStagingBoundary, verified: true }
-              : null,
+    await expect(
+      runner.runPhase("stripe_erasure", execution({ request: invalidRequest })),
+    ).rejects.toThrow("Identifying account-erasure phase stripe_erasure requires live request PII");
+  });
+
+  it("requires a pseudonymous request for retention verification", async () => {
+    const runner = createAccountErasurePhaseRunner(dependencies());
+
+    await expect(
+      runner.runPhase(
+        "retention_verification",
+        execution({ request: { ...request, encryptedRemoteSnapshot: null, piiScrubbedAt: null } }),
       ),
-      request: retainedRequest,
-    });
-
-    await expect(runner.runPhase("retention_verification", retainedExecution)).resolves.toEqual({
-      backupRetention: { deletedObjects: 3 },
-      processorRetention: {
-        axiomRetentionDays: 30,
-        sentryRetentionVerified: true,
-      },
-      peerDbStagingRetention: {
-        lifecycleRetentionDays: 1,
-        multipartUploadsInspected: 0,
-        objectsInspected: 2,
-        verified: true,
-      },
-      quarantineRetentionVerified: true,
-      verified: true,
-    });
-
-    expect(deps.decryptSnapshot).not.toHaveBeenCalled();
-    expect(retainedExecution.loadCheckpointDetails).toHaveBeenCalledWith("consumer_drain");
-    expect(retainedExecution.loadCheckpointDetails).toHaveBeenCalledWith(
-      "peerdb_drain_verification",
-    );
-    expect(deps.assertQuarantineExpired).toHaveBeenCalledWith([
-      { topic: "metric-stream-v1", low: "4", offset: "12", partition: 0 },
-    ]);
-    expect(deps.verifyBackupRetention).toHaveBeenCalledWith({
-      now: new Date("2026-08-26T12:00:00.000Z"),
-      piiScrubbedAt: retainedRequest.piiScrubbedAt,
-      requestId: retainedRequest.id,
-      requestedAt: retainedRequest.requestedAt,
-    });
-    expect(deps.verifyProcessorRetention).toHaveBeenCalledWith({
-      now: new Date("2026-08-26T12:00:00.000Z"),
-      piiScrubbedAt: retainedRequest.piiScrubbedAt,
-      requestId: retainedRequest.id,
-      requestedAt: retainedRequest.requestedAt,
-    });
-    expect(deps.verifyPeerDbStagingRetention).toHaveBeenCalledWith({
-      cutoff: new Date(peerDbStagingBoundary.cutoff),
-      now: new Date("2026-08-26T12:00:00.000Z"),
-    });
-    expect(JSON.stringify(vi.mocked(deps.verifyBackupRetention).mock.calls)).not.toContain(
-      request.userId,
-    );
+    ).rejects.toThrow("Account-erasure retention verification requires a pseudonymous request");
   });
-
   it("blocks final completion when logically expired broker bytes still exist", async () => {
     const deps = dependencies();
     const failure = new Error("Kafka retains segment before erasure boundary");
@@ -523,126 +532,5 @@ describe("createAccountErasurePhaseRunner", () => {
       }),
     ]);
     expect(deps.verifyBackupRetention).not.toHaveBeenCalled();
-  });
-
-  it("blocks final completion while a pre-boundary quarantine payload remains", async () => {
-    const deps = dependencies();
-    const retainedRequest: ClaimedAccountErasureRequest = {
-      ...request,
-      encryptedRemoteSnapshot: null,
-      piiScrubbedAt: new Date("2026-08-03T12:00:00.000Z"),
-      userId: null,
-    };
-    const quarantineError = new Error("Account erasure quarantine data remains in partition(s): 0");
-    vi.mocked(deps.assertQuarantineExpired).mockRejectedValue(quarantineError);
-    const runner = createAccountErasurePhaseRunner(deps);
-
-    await expect(
-      runner.runPhase(
-        "retention_verification",
-        execution({
-          loadCheckpointDetails: vi.fn(async (phase) =>
-            phase === "consumer_drain"
-              ? {
-                  quarantineHighWatermarks: [
-                    { topic: "metric-stream-v1", low: "4", offset: "12", partition: 0 },
-                  ],
-                }
-              : null,
-          ),
-          request: retainedRequest,
-        }),
-      ),
-    ).rejects.toBe(quarantineError);
-
-    expect(deps.verifyProcessorRetention).not.toHaveBeenCalled();
-    expect(deps.verifyBackupRetention).not.toHaveBeenCalled();
-  });
-
-  it("fails closed when an identifying phase receives a scrubbed request", async () => {
-    const deps = dependencies();
-    const runner = createAccountErasurePhaseRunner(deps);
-
-    await expect(
-      runner.runPhase(
-        "postgres_erasure",
-        execution({
-          request: {
-            ...request,
-            encryptedRemoteSnapshot: null,
-            piiScrubbedAt: new Date("2026-08-03T12:00:00.000Z"),
-            userId: null,
-          },
-        }),
-      ),
-    ).rejects.toThrow(
-      "Identifying account-erasure phase postgres_erasure requires live request PII",
-    );
-  });
-
-  it("executes every verification-only phase and records its proof", async () => {
-    const deps = dependencies();
-    const runner = createAccountErasurePhaseRunner(deps);
-    const ingestCheckpoint = {
-      highWatermarks: [{ topic: "metric-stream-v1", low: "10", offset: "20", partition: 0 }],
-    };
-
-    await expect(runner.runPhase("work_purge", execution())).resolves.toEqual({ verified: false });
-    await expect(runner.runPhase("work_verification", execution())).resolves.toEqual({
-      verified: true,
-    });
-    await expect(
-      runner.runPhase(
-        "consumer_drain_verification",
-        execution({ loadCheckpointDetails: vi.fn(async () => ingestCheckpoint) }),
-      ),
-    ).resolves.toEqual({ drained: true, replayExpired: true });
-    await expect(runner.runPhase("remote_revocation_verification", execution())).resolves.toEqual({
-      dispositions: [{ disposition: "remote_revoked", providerId: "strava" }],
-      verified: true,
-    });
-    await expect(runner.runPhase("clickhouse_verification", execution())).resolves.toEqual({
-      verified: true,
-    });
-    await expect(
-      runner.runPhase(
-        "processor_erasure_verification",
-        execution({
-          loadCheckpointDetails: vi.fn(async (phase) =>
-            phase === "processor_erasure" ? { posthogPersonUuids: [] } : null,
-          ),
-        }),
-      ),
-    ).resolves.toEqual({ processors: 2, verified: true });
-
-    expect(deps.assertReplayExpired).toHaveBeenCalledWith(ingestCheckpoint.highWatermarks);
-    expect(deps.verifyProcessors).toHaveBeenCalledWith(
-      snapshot,
-      { posthogPersonUuids: [] },
-      expect.anything(),
-    );
-  });
-
-  it.each([
-    ["missing user id", { ...request, userId: null }],
-    ["missing encrypted snapshot", { ...request, encryptedRemoteSnapshot: null }],
-    ["already scrubbed", { ...request, piiScrubbedAt: new Date() }],
-  ])("rejects an identifying phase with %s", async (_label, invalidRequest) => {
-    const runner = createAccountErasurePhaseRunner(dependencies());
-
-    await expect(
-      runner.runPhase("stripe_erasure", execution({ request: invalidRequest })),
-    ).rejects.toThrow("Identifying account-erasure phase stripe_erasure requires live request PII");
-  });
-
-  it("requires a pseudonymous request for retention verification", async () => {
-    const runner = createAccountErasurePhaseRunner(dependencies());
-
-    await expect(
-      runner.runPhase(
-        "retention_verification",
-        execution({ request: { ...request, encryptedRemoteSnapshot: null, piiScrubbedAt: null } }),
-      ),
-    ).rejects.toThrow("Account-erasure retention verification requires a pseudonymous request");
   });
 });

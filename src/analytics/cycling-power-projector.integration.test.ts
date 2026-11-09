@@ -2,8 +2,13 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { type ClickHouseClient, createClickHouseClientFromEnv } from "../db/clickhouse.ts";
 import { cyclingPowerSchemaStatements } from "../db/cycling-power-schema.ts";
+import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { buildAccountErasureFenceTableSql } from "../metric-stream/clickhouse-table.ts";
-import { projectCyclingPower } from "./cycling-power-projector.ts";
+import {
+  ANALYTICS_PUBLICATION_RESOURCE,
+  withAnalyticsQueryOwner,
+} from "./analytics-query-owner.ts";
+import { projectCyclingPower as projectOwnedCyclingPower } from "./cycling-power-projector.ts";
 
 const policy = {
   coveragePolicy: {
@@ -26,6 +31,7 @@ const policy = {
 };
 
 describe("cycling power projector", () => {
+  let context: TestContext;
   const real = createClickHouseClientFromEnv();
   const database = `cycling_projector_${randomUUID().replaceAll("-", "")}`;
   const rewrite = (query: string) =>
@@ -35,12 +41,26 @@ describe("cycling power projector", () => {
   const insert = real.insert;
   if (!insert) throw new Error("Test client requires insert support");
   const client = {
+    exec: (options) => real.exec({ ...options, query: rewrite(options.query) }),
     command: (options) => real.command({ ...options, query: rewrite(options.query) }),
     query: (options) => real.query({ ...options, query: rewrite(options.query) }),
     insert: (options) => insert.call(real, { ...options, table: rewrite(options.table) }),
   } satisfies ClickHouseClient;
   const asOf = new Date("2026-11-01T12:00:00Z");
+  function projectCyclingPower(
+    target: ClickHouseClient,
+    projectionPolicy: Parameters<typeof projectOwnedCyclingPower>[1],
+    at: Date,
+  ) {
+    return withAnalyticsQueryOwner(
+      context.db,
+      target,
+      { resourceId: ANALYTICS_PUBLICATION_RESOURCE, intentId: `cycling-fixture:${database}` },
+      (owner) => projectOwnedCyclingPower(owner, projectionPolicy, at),
+    );
+  }
   beforeAll(async () => {
+    context = await setupTestDatabase();
     await real.command({ query: `CREATE DATABASE ${database}` });
     await client.command({ query: buildAccountErasureFenceTableSql() });
     for (const statement of cyclingPowerSchemaStatements())
@@ -78,6 +98,7 @@ describe("cycling power projector", () => {
   afterAll(async () => {
     await real.command({ query: `DROP DATABASE IF EXISTS ${database} SYNC` });
     await real.close?.();
+    await context?.cleanup();
   });
 
   async function seed(
@@ -146,10 +167,10 @@ describe("cycling power projector", () => {
           nativeReads += 1;
         return client.query(options);
       },
-      command: (options) => {
+      exec: (options) => {
         if (options.query.startsWith("INSERT INTO analytics.cycling_power_observation_rows"))
           observationWrites += 1;
-        return client.command(options);
+        return client.exec(options);
       },
     };
     expect(await projectCyclingPower(measuredClient, policy, asOf)).toMatchObject({
@@ -478,9 +499,9 @@ describe("cycling power projector", () => {
         });
       const racingClient = {
         ...client,
-        command: async (options: Parameters<typeof client.command>[0]) => {
+        exec: async (options: Parameters<typeof client.exec>[0]) => {
           if (options.query.startsWith(`INSERT INTO analytics.${table}`)) await fence();
-          return client.command(options);
+          return client.exec(options);
         },
         insert: async (options: Parameters<typeof client.insert>[0]) => {
           if (options.table === `analytics.${table}`) await fence();

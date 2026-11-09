@@ -79,7 +79,7 @@ describe("0061_provider_current_state_projection", () => {
     await client.command({
       query: `ALTER TABLE ${table}
         MATERIALIZE PROJECTION ${METRIC_STREAM_PROVIDER_CURRENT_STATE_PROJECTION}`,
-      clickhouse_settings: { mutations_sync: 2 },
+      clickhouse_settings: { mutations_sync: "2" },
     });
 
     const countResult = await client.query({

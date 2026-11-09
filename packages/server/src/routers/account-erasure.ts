@@ -5,6 +5,7 @@ import {
   createEncryptedAccountErasureSnapshot,
   ProviderRevocationPrerequisiteError,
 } from "dofek/account-erasure/remote-snapshot";
+import { AccountErasureSnapshotBudgetError } from "dofek/account-erasure/snapshot-budget";
 import { eraseStripeForAcceptedAccountErasure } from "dofek/account-erasure/stripe-acceptance";
 import {
   AccountErasurePreparationUnavailableError,
@@ -69,7 +70,8 @@ export const accountErasureRouter = router({
         }
         if (
           error instanceof AppleRevocationCredentialMissingError ||
-          error instanceof ProviderRevocationPrerequisiteError
+          error instanceof ProviderRevocationPrerequisiteError ||
+          error instanceof AccountErasureSnapshotBudgetError
         ) {
           throw new TRPCError({
             code: "PRECONDITION_FAILED",
