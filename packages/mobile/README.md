@@ -672,7 +672,8 @@ Source-map and release correlation:
 
 The activities screen leads with the shared rounded-outline activity icon.
 The [Lineage disclosure](components/ActivitySourceDisclosure.tsx) sits after the
-activity content and map, inside the same card. It shows an explicit Original
+activity content and map and opens the same scrollable [Modal](https://reactnative.dev/docs/modal)
+overlay as the detail header. It shows an explicit Original
 heading and labeled Shared to branches. When an Original is known, one divider
 and Other heading groups all additional recordings. Unresolved origins show
 Original unknown above the available recordings. The
