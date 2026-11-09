@@ -16,10 +16,10 @@ it("scrolls the climb list to the selected row using its measured position", () 
   const scrollTo = vi.fn();
   const scrollView = vi
     .spyOn(Native, "ScrollView")
-    .mockImplementation(({ children, ref, onLayout }) => {
+    .mockImplementation(({ children, ref, onLayout, accessibilityLabel }) => {
       useImperativeHandle<unknown, { scrollTo: typeof scrollTo }>(ref, () => ({ scrollTo }));
       return (
-        <Native.View accessibilityLabel="Climb list" onLayout={onLayout}>
+        <Native.View accessibilityLabel={accessibilityLabel} onLayout={onLayout}>
           {children}
         </Native.View>
       );
@@ -152,6 +152,49 @@ it("keeps entries without GPS selectable", () => {
   expect(
     screen.getByRole("button", { name: "Select entry 2, Indoor" }).getAttribute("aria-selected"),
   ).toBe("true");
+});
+
+it("renders the complete recorded area path in a horizontal heading and preserves missing areas", () => {
+  const climb = climbingLogFixture.climb;
+  const baseArea = climb?.areaPath[0];
+  if (!climb || !baseArea) throw new Error("Expected a climb fixture");
+  const areaPath = [
+    { ...baseArea, id: "california", name: "California", parentAreaId: null },
+    {
+      ...baseArea,
+      id: "sf-bay",
+      name: "San Francisco Bay Area",
+      parentAreaId: "california",
+    },
+    { ...baseArea, id: "east-bay", name: "East Bay Area", parentAreaId: "sf-bay" },
+    { ...baseArea, id: "berkeley", name: "Berkeley", parentAreaId: "east-bay" },
+    {
+      ...baseArea,
+      id: "grizzly-peak",
+      name: "Grizzly Peak Boulders",
+      parentAreaId: "berkeley",
+    },
+    {
+      ...baseArea,
+      id: "main-rock",
+      name: "Main Rock (aka Scary Boulder)",
+      parentAreaId: "grizzly-peak",
+    },
+  ];
+  const fullPath =
+    "California › San Francisco Bay Area › East Bay Area › Berkeley › Grizzly Peak Boulders › Main Rock (aka Scary Boulder)";
+  render(
+    <ActivityClimbingPanel
+      entries={[
+        { ...climbingLogFixture, climb: { ...climb, areaPath } },
+        { ...climbingLogFixture, id: "indoor", climb: null, title: "Indoor" },
+      ]}
+      locations={{}}
+    />,
+  );
+  const heading = screen.getByRole("header", { name: `Area: ${fullPath}` });
+  expect(heading.textContent).toBe(fullPath);
+  expect(screen.getByRole("header", { name: "Other climbs" })).toBeTruthy();
 });
 
 it("maps unattached suggestions and retains their independent Attach state", () => {

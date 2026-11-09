@@ -31,6 +31,21 @@ const storyEntries = climbingMapLogs.map((entry, index) => ({
           })),
         },
 }));
+const rootArea = firstClimb.areaPath[0];
+if (!rootArea) throw new Error("Expected area fixture");
+const longAreaPath = [
+  "California",
+  "San Francisco Bay Area",
+  "East Bay Area",
+  "Berkeley",
+  "Grizzly Peak Boulders",
+  "Main Rock (aka Scary Boulder)",
+].map((name, index) => ({
+  ...rootArea,
+  id: `long-area-${index}`,
+  name,
+  parentAreaId: index === 0 ? null : `long-area-${index - 1}`,
+}));
 const meta = {
   title: "Activity/Climbing layout",
   component: ActivityClimbingPanel,
@@ -81,6 +96,17 @@ export const Narrow: Story = {
       </div>
     ),
   ],
+};
+export const NarrowLongAreaPath: Story = {
+  decorators: Narrow.decorators,
+  args: {
+    entries: [
+      {
+        ...first,
+        climb: { ...firstClimb, name: "Swiss Cheese", areaPath: longAreaPath },
+      },
+    ],
+  },
 };
 export const WithRecordedRoute: Story = {
   args: {

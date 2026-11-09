@@ -35907,6 +35907,18 @@ No runtime behavior, timeout, retry or production configuration changed.
   [service updates](https://docs.docker.com/reference/cli/docker/service/update/)
   and [task states](https://docs.docker.com/engine/swarm/how-swarm-mode-works/swarm-task-states/).
 
+## 2026-11-09 — Climbing-link PR validation encounters local Docker address-pool exhaustion
+
+- **Symptoms/impact:** Local validation only; no production impact. After `pnpm compose:env --write`, `pnpm compose -- up -d --wait clickhouse` failed at network creation with `all predefined address pools have been fully subnetted`.
+- **Root cause/evidence:** Docker could not allocate the workspace's default network; ClickHouse never started. This was a workstation prerequisite failure.
+- **Status/follow-up:** Unresolved locally. No other workspace networks, containers, or volumes were removed, and no runtime retry or network configuration was changed. SQL lint requires a working isolated ClickHouse prerequisite; the [CI lint job](../.github/workflows/test.yml) supplies its own service.
+
+## 2026-11-09 — Automatic production deployment re-enabled
+
+- **Symptoms/root cause:** GitHub reported the [Deploy Web workflow](../.github/workflows/deploy-web.yml) as `disabled_manually`, blocking its automatic release path after successful main CI. The original disabling actor and reason remain unknown.
+- **Fix/authorization:** At the user's explicit request, ran `gh workflow enable deploy-web.yml --repo Asherlc/dofek`. No deployment was manually dispatched and no runtime resilience settings were changed.
+- **Validation/follow-up:** The workflow read-back returned `active`; the complete repository workflow inventory reported 37 active workflows and none disabled. This verifies workflow enablement, not a completed production rollout. Follow the [deployment verification runbook](../deploy/README.md#checking-the-latest-production-deployment) to confirm the next release. For future intentional disablements, record the reason and restoration owner.
+
 ## 2026-11-09 — Read-only Terraform review checkout input
 
 - **Impact:** No production resource change. The plan-only review job
@@ -35956,17 +35968,12 @@ No runtime behavior, timeout, retry or production configuration changed.
 - **Local prerequisite failure:** full lint's SQL phase initially reported `Connection refused` at `127.0.0.1:8123` because the workspace environment was absent. After generating it, `pnpm compose -- up -d --wait clickhouse` exposed `all predefined address pools have been fully subnetted`. A temporary local Compose IPAM override started only the owned ClickHouse fixture; the same SQL lint command then passed. Source-policy lint, three typechecks, actionlint and normal source spellcheck also passed. No shared running containers or named database volumes were removed, and no repository network settings, retries or timeouts changed.
 - **Remaining/next time:** current-head CI and a separately approved exact-image normal release must complete before production resolution. Retain old data and the RP completion hold. Keep policy ownership and pre/post-start readback in the deployment runbook; use native config behavior and executable workflow tests when investigating another override reset, rather than adding a separate repair tool.
 
-## 2026-11-09 — Climbing-link PR validation encounters local Docker address-pool exhaustion
+## 2026-11-09 — Local lint prerequisite blocked by orphaned Docker networks
 
-- **Symptoms/impact:** Local validation only; no production impact. After `pnpm compose:env --write`, `pnpm compose -- up -d --wait clickhouse` failed at network creation with `all predefined address pools have been fully subnetted`.
-- **Root cause/evidence:** Docker could not allocate the workspace's default network; ClickHouse never started. This reproduces the workstation prerequisite failure recorded above, rather than a climbing-link application failure.
-- **Status/follow-up:** Unresolved locally. No other workspace networks, containers, or volumes were removed, and no runtime retry or network configuration was changed. SQL lint requires a working isolated ClickHouse prerequisite; the [CI lint job](../.github/workflows/test.yml) supplies its own service.
-
-## 2026-11-09 — Automatic production deployment re-enabled
-
-- **Symptoms/root cause:** GitHub reported the [Deploy Web workflow](../.github/workflows/deploy-web.yml) as `disabled_manually`, blocking its automatic release path after successful main CI. The original disabling actor and reason remain unknown.
-- **Fix/authorization:** At the user's explicit request, ran `gh workflow enable deploy-web.yml --repo Asherlc/dofek`. No deployment was manually dispatched and no runtime resilience settings were changed.
-- **Validation/follow-up:** The workflow read-back returned `active`; the complete repository workflow inventory reported 37 active workflows and none disabled. This verifies workflow enablement, not a completed production rollout. Follow the [deployment verification runbook](../deploy/README.md#checking-the-latest-production-deployment) to confirm the next release. For future intentional disablements, record the reason and restoration owner.
+- **Symptoms/impact:** In the `tall-kiwi` development workspace, `pnpm compose -- up -d --wait clickhouse` failed before creating its network with `all predefined address pools have been fully subnetted`. Local SQL lint setup was blocked; production was unaffected.
+- **Evidence/root cause:** Docker listed 31 bridge networks, including seven `dull-baboon-lifecycle-*` test networks with zero attached containers. These consumed the available default address pools.
+- **Direct fix/validation:** After inspecting the network, removed only the empty `dull-baboon-lifecycle-0eec117e-fd07-44b7-a8f8-f62fa87a8b0a_default` network. The unchanged workspace Compose command succeeded and ClickHouse reported healthy. No running container, database volume, retry, timeout, or repository network setting changed. Docker documents [network removal and its active-container guard](https://docs.docker.com/reference/cli/docker/network/rm/).
+- **Remaining/next time:** Other unused networks remain and may exhaust pools again. Add an inspected-unused-test-network recovery note to the testing guide in a separate documentation change; reuse the systematic-debugging skill to distinguish network-pool exhaustion from disk pressure before cleanup.
 
 ## 2026-11-09 — Activity analytics blocked by globally paused queue
 

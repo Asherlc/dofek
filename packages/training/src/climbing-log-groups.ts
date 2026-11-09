@@ -8,6 +8,7 @@ export function groupClimbingLogEntriesByArea<
   entries: readonly T[],
 ): Array<{
   area: Pick<Area, "id" | "name"> | null;
+  areaPath: readonly SourceArea[];
   entries: Array<{ entry: T; entryNumber: number }>;
 }> {
   const pathsByArea = new Map<string, string>();
@@ -27,7 +28,11 @@ export function groupClimbingLogEntriesByArea<
   }
   const groups = new Map<
     string | null,
-    { area: Pick<Area, "id" | "name"> | null; entries: Array<{ entry: T; entryNumber: number }> }
+    {
+      area: Pick<Area, "id" | "name"> | null;
+      areaPath: readonly SourceArea[];
+      entries: Array<{ entry: T; entryNumber: number }>;
+    }
   >();
   entries.forEach((entry, index) => {
     const area = entry.climb?.areaPath.at(-1) ?? null;
@@ -39,7 +44,7 @@ export function groupClimbingLogEntriesByArea<
       : null;
     let group = groups.get(key);
     if (!group) {
-      group = { area, entries: [] };
+      group = { area, areaPath: entry.climb?.areaPath ?? [], entries: [] };
       groups.set(key, group);
     }
     group.entries.push({ entry, entryNumber: index + 1 });
