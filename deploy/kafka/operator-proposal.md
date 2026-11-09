@@ -1,5 +1,8 @@
 # Broker-only operator proposal
 
+For the separate phase-2 review, see the [tiered-storage reference](tiered-cutover-packet.md).
+It does not authorize tiered activation or repeating the phase-1 commands below.
+
 **Phase 1 command record.** The user approved the [single approval bundle](phase1-approval.md)
 with “Y” (Q4/A) on November 9 UTC. See the [execution receipt](phase1-execution.md)
 for actual state; these commands are not permission to repeat the cutover.

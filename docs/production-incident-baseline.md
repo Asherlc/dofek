@@ -35763,6 +35763,105 @@ only the fixture image currently under test. Docker documents local resource
   production tiering. The historical 78.4-GiB/39%-inode/1.142-GB figures above
   remain reported exploratory observations, not a capacity guarantee.
 
+### 2026-11-08 — tiered-layer CI spelling vocabulary
+
+[CI run 42529586807, Spell Check job](https://github.com/Asherlc/dofek/actions/runs/42529586807/job/128880819367) failed its normal
+`pnpm exec cspell --no-progress` command first at
+`src/account-erasure/kafka-log-storage.test.ts:52:32 - Unknown word (aiven)`.
+The pinned Java package namespace (`aiven`, `tieredstorage`) and the native
+zero/one UUID fixture were missing from the existing dictionary. Register those
+exact proper terms in `cspell.json`; keep source and test spelling checks enabled.
+No runtime behavior, timeout, retry or production configuration changed.
+
+### 2026-11-08 — tiered-layer verifier test gaps and local lint prerequisite
+
+- **CI symptom/root cause:** [Run 42530085576](https://github.com/Asherlc/dofek/actions/runs/42530085576) failed stock Stryker shards at
+  native storage 46.38%, history 73.53%, remote storage 70.49%, runtime 40% and
+  metadata-consumer factory 0%. Tests omitted positive newer-cache paths,
+  malformed history cuts, complete listing pagination and actual constructor/
+  factory wiring. Add focused behavioral cases; preserve the existing 75% gate,
+  stock runner and production implementations.
+- **Validation:** The subsequent [CI run 42532677882](https://github.com/Asherlc/dofek/actions/runs/42532677882)
+  passed all six stock Stryker shards. Earlier local percentages were reported
+  without a retained report and are not independent evidence. No gate exemption,
+  production refactor or longer timeout was needed.
+- **Local prerequisite:** `pnpm lint` completed its source/policy checks, then
+  `lint:analytics-sql` failed first with `FailedToConnectError` / connection
+  refused at `127.0.0.1:8123`. This child has no local ClickHouse dependency
+  running. No SQL changed; do not treat this as a source-lint pass or start
+  unrelated heavy database work under the scoped qualification request. Full
+  analytics lint remains for CI with its normal dependencies.
+- **Impact:** Review-branch CI/local qualification only; production unaffected.
+  Root/server/web typechecks and 177 focused tests passed. Native fixture/image
+  qualification is separately recorded in the [child receipt](evidence/kafka-tiered-child-20261108/README.md).
+- **Follow-up:** Keep fixture checks tied to the actual accepted path, and use
+  the documented [test dependency setup](testing.md#integration-dependencies)
+  before full database-dependent lint. No extra retry, timeout or ignore added.
+
+### 2026-11-09 — Tiered transition review and local capacity interruption
+
+- **Scope / impact:** PR #3236 review and isolated synthetic Kafka qualification;
+  production unchanged. GitHub's automatic deployment workflow remained manually
+  disabled; see the [readiness observation](evidence/kafka-tiered-transition-20261109/release-readiness.json).
+- **Observed activation blocker:** Existing remote-disabled topic generations
+  survived tiering, native eviction, remote reads and restart. Terminal remote
+  deletion did not remove six covered disk index-cache files from those reads;
+  the actual retention phase correctly rejected them. A qualified stock cache
+  cleanup policy remains required before activation. Clearing only that stopped
+  synthetic fixture's cache establishes the positive guard branch, not an
+  automatic or production cleanup guarantee. The [timestamped receipt](evidence/kafka-tiered-transition-20261109/transition.json)
+  records actual phase rejection/recovery for orphan objects, multipart uploads
+  and both distinct retained roots. See the pinned [Kafka cache source](https://github.com/apache/kafka/blob/4.4.0/storage/src/main/java/org/apache/kafka/storage/internals/log/RemoteIndexCache.java).
+- **Local lint interruption / cause:** `CLICKHOUSE_URL=<workspace> pnpm lint`
+  reached analytics SQL, then failed first with ClickHouse Code 75,
+  `errno: 28, strerror: No space left on device`, with 0 B available on the
+  78.44 GiB Docker filesystem. Docker inspection showed 30.41 GB of container
+  writable layers, 32.26 GB of volumes and no build cache. This workspace's
+  ClickHouse data was only 83.1 MiB; deleting its data was not justified.
+- **Recovery / validation:** Build-cache pruning reclaimed 0 B. Concurrent
+  external cleanup restored space; pruning unused images reclaimed another
+  846.9 MB under standing approval. No running container or database volume was
+  removed by this task. The identical full lint command then passed without
+  an added wait, retry, ignore or timeout. All 23,939 unit/mobile tests and
+  root/server/web typechecks passed; [source hashes and check results](evidence/kafka-tiered-transition-20261109/source.json)
+  identify the reviewed runtime. Production exact-image, R2, capacity,
+  quiescence and cache-cleanup gates remain open.
+
+### 2026-11-09 — Tiered review CI completes jobs but omits required mutation gate
+
+- **Status / impact:** Unresolved; source merge blocked, production unchanged.
+  [CI run 42669386790](https://github.com/Asherlc/dofek/actions/runs/42669386790)
+  for `2d5a39afe` finished with overall `failure`, although all reported jobs
+  succeeded or were skipped, including all six Stryker shards, four integration
+  shards, coverage and CI Gate. PR checks reported 107 successes, seven skips
+  and one neutral external review, with no failed check result.
+- **Evidence / unknown cause:** `gh run view 42669386790 --log-failed` returned
+  no failed-step logs. Complete job and check-run enumeration contained no
+  `Test / Mutation Testing` result; the main branch rules require that exact
+  context, and GitHub reports the PR merge state as `BLOCKED`. The workflow
+  source still declares that gate. No first fatal error line or causal
+  explanation for the missing job has been established; do not infer success
+  from the passing parent gate. Browser inspection was unavailable on this host.
+- **Subsequent evidence:** In [run 42673842606, Mutation Testing / Check results](https://github.com/Asherlc/dofek/actions/runs/42673842606/job/129353372401),
+  the first fatal line is `Selected TypeScript mutation work did not succeed`.
+  The expanded command shows `needs.mutation.result` as `abandoned`; only
+  Stryker shards 3–5 have completed job records. The gate correctly rejects
+  incomplete selected work. The same workflow previously reported the gate
+  successfully in [run 42639292427](https://github.com/Asherlc/dofek/actions/runs/42639292427/job/129242950664).
+- **Provider incident:** GitHub's [Actions and Checks API incident](https://stspg.io/7yw63xl9ztrv)
+  reports a major Actions outage, under investigation from 18:12 UTC, with
+  elevated Actions/Checks errors confirmed at 18:24 UTC. The abandoned jobs
+  coincide with that outage; the provider has not published its internal root
+  cause or confirmed this individual run's assignment failure.
+- **Mitigation / follow-up:** The user requested merge; both normal and
+  administrator merge were rejected by the required-check ruleset. The user
+  then declined a ruleset exception. No protection or bypass-actor setting
+  was changed. Preserve the disabled deployment workflow and strict mutation
+  gate; after provider recovery, rerun unfinished work and merge normally only
+  when all required statuses pass. Do not treat rerunning as a source-code fix.
+  Production remains unchanged, and stock index-cache cleanup remains a
+  separate activation blocker.
+
 ## 2026-11-08 — History recovery complete; two healthy zero-lag checks
 
 - **Root cause / direct fix:** Scoped deletion's global latest-ID lookup selected unrelated versions across the table, leading to a 212-second statement, the 120-second client timeout and an overlapping retry. The approved immutable sample identity allowed the repaired sink to resolve versions through native `(id,user_id,provider_id,recorded_at)` membership, retaining full latest-row resolution, mutable-scope checks, fences, revision semantics and normal acknowledgements. No new index, storage model, queue framework or runtime resilience setting was needed.

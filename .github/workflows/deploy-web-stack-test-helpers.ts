@@ -4,6 +4,53 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { z } from "zod";
 
+export function runKafkaBackendFixture(script: string, drift = "") {
+  const directory = mkdtempSync(join(tmpdir(), "deploy-kafka-backend-"));
+  try {
+    const worker = {
+      KAFKA_CLUSTER_ID: "0000000000000000000000",
+      KAFKA_TIERED_STORAGE_BUCKET: "fixture-bucket",
+      KAFKA_TIERED_STORAGE_ENDPOINT: "https://fixture.r2.cloudflarestorage.com",
+      KAFKA_TIERED_STORAGE_REGION: "auto",
+      KAFKA_TIERED_STORAGE_ACCESS_KEY_ID: "fixture-key",
+      KAFKA_TIERED_STORAGE_SECRET_ACCESS_KEY: "fixture-secret",
+    };
+    const properties = {
+      "rsm.config.storage.backend.class": "io.aiven.kafka.tieredstorage.storage.s3.S3Storage",
+      "rsm.config.storage.s3.bucket.name": drift === "bucket" ? "wrong-bucket" : worker.KAFKA_TIERED_STORAGE_BUCKET,
+      "rsm.config.storage.s3.endpoint.url": worker.KAFKA_TIERED_STORAGE_ENDPOINT,
+      "rsm.config.storage.s3.region": worker.KAFKA_TIERED_STORAGE_REGION,
+      "rsm.config.key.prefix": drift === "prefix" ? "wrong-prefix/" : `${worker.KAFKA_CLUSTER_ID}/`,
+    };
+    const workerFile = join(directory, "worker.env");
+    writeFileSync(workerFile, Object.entries(worker).map(([key, value]) => `${key}=${value}`).join("\n"));
+    writeFileSync(join(directory, "properties"), Object.entries(properties).map(([key, value]) => `${key}=${value}`).join("\n"));
+    writeFileSync(join(directory, "worker.json"), JSON.stringify(Object.entries({ ...worker, ...(drift === "worker" ? { KAFKA_TIERED_STORAGE_BUCKET: "wrong-worker" } : {}) }).map(([key, value]) => `${key}=${value}`)));
+    writeFileSync(join(directory, "broker.json"), JSON.stringify([
+      `CLUSTER_ID=${worker.KAFKA_CLUSTER_ID}`,
+      `AWS_ACCESS_KEY_ID=${worker.KAFKA_TIERED_STORAGE_ACCESS_KEY_ID}`,
+      `AWS_SECRET_ACCESS_KEY=${drift === "credential" ? "wrong-secret" : worker.KAFKA_TIERED_STORAGE_SECRET_ACCESS_KEY}`,
+    ]));
+    const docker = join(directory, "docker");
+    writeFileSync(docker, `#!/usr/bin/env node
+const fs = require('node:fs');
+const path = require('node:path');
+const args = process.argv.slice(2);
+if (args[0] === 'service' && args[1] === 'ps') console.log('task-id');
+else if (args[0] === 'service' && args[1] === 'inspect') process.stdout.write(fs.readFileSync(path.join(process.env.FIXTURE_ROOT, 'worker.json')));
+else if (args[0] === 'inspect' && args.includes('task-id')) console.log('container-id');
+else if (args[0] === 'inspect') process.stdout.write(fs.readFileSync(path.join(process.env.FIXTURE_ROOT, 'broker.json')));
+else if (args[0] === 'cp') fs.copyFileSync(path.join(process.env.FIXTURE_ROOT, 'properties'), args[2]);
+else process.exit(65);
+`);
+    chmodSync(docker, 0o755);
+    return spawnSync("bash", ["-e", "-o", "pipefail", "-c", script], {
+      cwd: directory, encoding: "utf8", timeout: 30_000,
+      env: { ...process.env, PATH: `${directory}:${process.env.PATH}`, FIXTURE_ROOT: directory, RUNNER_TEMP: directory, WORKER_ENV_FILE: workerFile, STACK_NAME: "fixture" },
+    });
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+}
+
 export function runTopicPolicyFixture(script: string, fail: "alter" | "verify" | "" = "", routes: readonly string[] = ["source", "live", "history"]) {
   const directory = mkdtempSync(join(tmpdir(), "deploy-topic-policy-"));
   const trace = join(directory, "docker-calls.jsonl");
@@ -149,4 +196,3 @@ fi
 
 exit 1
 `;
-
