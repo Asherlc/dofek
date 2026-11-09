@@ -171,7 +171,7 @@ it("synchronizes row hover/focus, selection and repeated map choices without res
 
 it("retains unlocated entries and honest source scope in a single map layout", async () => {
   render(<ActivityClimbingPanel entries={climbingMapLogs} locations={climbingMapLocations} />);
-  expect(screen.getByRole("heading", { name: "Wall" })).toBeVisible();
+  expect(screen.getByRole("heading", { name: "Area: Wall" })).toBeVisible();
   expect(screen.getByRole("heading", { name: "Other climbs" })).toBeVisible();
   await screen.findByRole("button", { name: /Area location: Goat Rock · OpenBeta/ });
   expect(screen.getByText("No recorded location")).toBeVisible();
@@ -222,4 +222,51 @@ it("keeps the focused climb highlighted when the pointer leaves its row", async 
   expect(dot).toHaveAttribute("data-highlighted", "true");
   fireEvent.blur(control);
   expect(dot).toHaveAttribute("data-highlighted", "false");
+});
+
+it("renders the complete recorded area path in a focusable scroll region and preserves missing areas", () => {
+  const entry = climbingMapLogs[0];
+  const climb = entry?.climb;
+  const baseArea = climb?.areaPath[0];
+  if (!entry || !climb || !baseArea) throw new Error("Expected a climb fixture");
+  const areaPath = [
+    { ...baseArea, id: "california", name: "California", parentAreaId: null },
+    {
+      ...baseArea,
+      id: "sf-bay",
+      name: "San Francisco Bay Area",
+      parentAreaId: "california",
+    },
+    { ...baseArea, id: "east-bay", name: "East Bay Area", parentAreaId: "sf-bay" },
+    { ...baseArea, id: "berkeley", name: "Berkeley", parentAreaId: "east-bay" },
+    {
+      ...baseArea,
+      id: "grizzly-peak",
+      name: "Grizzly Peak Boulders",
+      parentAreaId: "berkeley",
+    },
+    {
+      ...baseArea,
+      id: "main-rock",
+      name: "Main Rock (aka Scary Boulder)",
+      parentAreaId: "grizzly-peak",
+    },
+  ];
+  const fullPath =
+    "California › San Francisco Bay Area › East Bay Area › Berkeley › Grizzly Peak Boulders › Main Rock (aka Scary Boulder)";
+  render(
+    <ActivityClimbingPanel
+      entries={[
+        { ...entry, climb: { ...climb, areaPath } },
+        { ...entry, id: "indoor", climb: null, title: "Indoor" },
+      ]}
+      locations={{}}
+    />,
+  );
+  const heading = screen.getByRole("heading", { name: `Area: ${fullPath}` });
+  expect(heading).toHaveTextContent(fullPath);
+  const areaRegion = screen.getByRole("region", { name: `Area: ${fullPath}` });
+  expect(areaRegion).toHaveAttribute("tabindex", "0");
+  expect(areaRegion).toContainElement(heading);
+  expect(screen.getByRole("heading", { name: "Other climbs" })).toBeVisible();
 });
