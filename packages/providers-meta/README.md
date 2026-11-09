@@ -42,6 +42,10 @@ Metadata and statistics for data providers.
 - [`providerLogoType` and `providerLogoId`](src/providers.ts) resolve provider icons from the [provider catalog](src/provider-catalog.ts).
 - [`BRAND_COLORS`](src/provider-catalog.ts) provides fallback colors for providers without dedicated logos (e.g., `dofek` uses `#4A9D8E`).
 
+The climbing source links reuse these icons. The Mountain Project icon comes
+from its [official touch icon](https://www.mountainproject.com/img/climb/favicons/favicon-180.png);
+the OpenBeta quickdraw mark comes from its [official site's header](https://openbeta.io/).
+
 ### Garmin recording-device thumbnails
 
 The [Garmin model lookup](src/garmin-devices.ts) supplies product thumbnails for
