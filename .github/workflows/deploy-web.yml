@@ -26,39 +26,20 @@ permissions:
   packages: read
   id-token: write
 
-concurrency:
-  # Automatic handoffs wait for Deploy, which owns deploy-web-production.
-  group: ${{ github.event_name == 'workflow_dispatch' && 'deploy-web-production' || github.event.workflow_run.conclusion == 'success' && 'deploy-web-handoff' || format('deploy-web-ineligible-{0}', github.run_id) }}
-  cancel-in-progress: false
-
 jobs:
-  resolve:
-    name: Select Production Release
-    runs-on: ubuntu-24.04-arm
-    permissions:
-      contents: read
-      actions: write
-    outputs:
-      image_tag: ${{ steps.select.outputs.image_tag }}
-      commit_sha: ${{ steps.select.outputs.commit_sha }}
-      ci_run_id: ${{ steps.select.outputs.ci_run_id }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.event_name == 'workflow_run' && 'main' || github.sha }}
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: ./.github/actions/setup-node-pnpm
-      - name: Select latest successful release or cancel an ineligible request
-        id: select
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: pnpm tsx scripts/select-web-deploy.ts
-
   production:
     name: Deploy Web Production
-    needs: resolve
-    if: github.event_name == 'workflow_dispatch'
+    # workflow_run uses main's workflow definitions. Deploy only when that
+    # exact commit passed push CI, keeping workflows, source and image aligned.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.head_sha == github.sha)
+    concurrency:
+      group: deploy-web-production
+      cancel-in-progress: false
     permissions:
       contents: read
       actions: read
@@ -69,45 +50,33 @@ jobs:
       environment_name: production
       ssh_user: ubuntu
       stack_override: deploy/stack.oracle.yml
-      image_tag: ${{ needs.resolve.outputs.image_tag }}
-      automatic_commit_sha: ${{ needs.resolve.outputs.commit_sha }}
-      ci_run_id: ${{ needs.resolve.outputs.ci_run_id }}
+      image_tag: ${{ github.event_name == 'workflow_dispatch' && inputs.image_tag || '' }}
+      automatic_commit_sha: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || '' }}
+      ci_run_id: ${{ github.event_name == 'workflow_run' && format('{0}', github.event.workflow_run.id) || '' }}
       public_url: https://dofek.fit
       web_host_rule: "Host(`dofek.asherlc.com`) || Host(`dofek.fit`) || Host(`www.dofek.fit`) || Host(`dofek.live`) || Host(`www.dofek.live`)"
     secrets: inherit
 
-  automatic:
-    name: Deploy Selected Production Release
-    needs: resolve
-    if: github.event_name == 'workflow_run'
-    runs-on: ubuntu-24.04-arm
+  ota:
+    name: Deploy Matching OTA
+    needs: production
+    if: ${{ !cancelled() && github.event_name == 'workflow_run' && needs.production.result == 'success' }}
+    uses: ./.github/workflows/deploy-ota.yml
+    with:
+      commit_sha: ${{ needs.production.outputs.commit_sha }}
+      dispatching_run_id: ${{ github.run_id }}
+
+  ios:
+    name: Deploy Matching iOS
+    needs: production
+    if: ${{ !cancelled() && github.event_name == 'workflow_run' && needs.production.result == 'success' }}
     permissions:
-      actions: write
-      contents: write
-    steps:
-      - name: Dispatch and watch the selected release workflow
-        env:
-          GH_TOKEN: ${{ github.token }}
-          COMMIT_SHA: ${{ needs.resolve.outputs.commit_sha }}
-          IMAGE_TAG: ${{ needs.resolve.outputs.image_tag }}
-        run: |
-          release_tag="deploy-$COMMIT_SHA"
-          tag_sha=$(gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/$release_tag" \
-            --jq ".[] | select(.ref == \"refs/tags/$release_tag\") | .object.sha")
-          if [ -z "$tag_sha" ]; then
-            tag_sha=$(gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
-              -f "ref=refs/tags/$release_tag" -f "sha=$COMMIT_SHA" --jq '.object.sha')
-          fi
-          if [ "$tag_sha" != "$COMMIT_SHA" ]; then
-            echo "::error::Release tag $release_tag does not point to selected commit $COMMIT_SHA"
-            exit 1
-          fi
-          run_id=$(gh api --method POST "repos/$GITHUB_REPOSITORY/actions/workflows/deploy.yml/dispatches" \
-            -f "ref=$release_tag" -f 'inputs[target]=all' -f "inputs[image_tag]=$IMAGE_TAG" \
-            -F return_run_details=true --jq '.workflow_run_id')
-          if [[ ! "$run_id" =~ ^[1-9][0-9]*$ ]]; then
-            echo "::error::Deployment dispatch did not return a valid run ID"
-            exit 1
-          fi
-          echo "Production release: [$COMMIT_SHA]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$run_id)." >> "$GITHUB_STEP_SUMMARY"
-          gh run watch "$run_id" --repo "$GITHUB_REPOSITORY" --exit-status
+      contents: read
+      actions: read
+      id-token: write
+      deployments: write
+    uses: ./.github/workflows/deploy-ios.yml
+    with:
+      commit_sha: ${{ needs.production.outputs.commit_sha }}
+      ci_run_id: ${{ format('{0}', github.event.workflow_run.id) }}
+      dispatching_run_id: ${{ github.run_id }}
