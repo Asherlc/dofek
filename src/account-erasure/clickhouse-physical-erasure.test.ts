@@ -214,6 +214,7 @@ function fixture(answers = successAnswers()) {
     answers,
     load,
     readPage,
+    retained,
     readEntry,
     append,
     start,
@@ -239,6 +240,37 @@ function fixture(answers = successAnswers()) {
 }
 
 describe("executeClickHousePhysicalErasure orchestration", () => {
+  it("checks a retained page with two exact-identity queries", async () => {
+    const state = fixture(successAnswers().slice(18, 22));
+    state.setProgress({ step: "physical" });
+    state.retained.part.push({
+      key: "d".repeat(64),
+      value: [
+        stage,
+        "analytics",
+        "other_rows",
+        uuid,
+        Buffer.from("second_part").toString("base64"),
+      ],
+    });
+    await state.execute();
+    const queries = state.query.mock.calls
+      .map(([input]) => input)
+      .filter((input) => input.query.includes("min(_state)"));
+    expect(queries).toHaveLength(2);
+    for (const query of queries) {
+      expect(query.query_params).toEqual({
+        databases: ["ingest", "analytics"],
+        tables: ["metric_stream", "other_rows"],
+        part_hashes: [
+          expect.stringMatching(/^[a-f0-9]{64}$/),
+          expect.stringMatching(/^[a-f0-9]{64}$/),
+        ],
+      });
+      expect(query.query).toContain("arrayZip");
+    }
+  });
+
   it("replays an admitted frozen DELETE with no native evidence under its qualified owner", async () => {
     const answers = successAnswers();
     answers.splice(1, 1, countAnswer("prior-admission-marker"));

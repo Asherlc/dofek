@@ -36086,7 +36086,7 @@ performed. The newly merged head still requires remote CI qualification.
   (`expected recordsRemoved: 2`, received `0`). The
   [archive comparison](../src/account-erasure/archive-erasure.ts) now normalizes
   both UUIDs while preserving explicit foreign ownership, including overlapping
-  activity aliases. Focused archive/phase suites passed 70 tests and all 13
+  activity aliases. [Retained local output excerpts](evidence/erasure-extraction-20261108/archive-local-report.txt) report that focused archive/phase suites passed 70 tests and all 13
   changed-line archive mutants were killed locally; remote qualification of this
   new change remains required. The phase suite also restores drain-before-capture
   and initial archive-cursor assertions; the real-engine wrapper forwards SDK close.
@@ -36096,7 +36096,7 @@ performed. The newly merged head still requires remote CI qualification.
   all images/containers were in use and build cache was empty. No test or timeout
   was weakened. Removing two exact completed, idle integration templates without
   `FORCE` recovered 55,364,990 database bytes but did not restore sufficient capacity.
-- **Cleanup scope:** the user requested cleanup instead of resizing. The owner
+- **Cleanup scope (contemporaneous agent report; raw Docker/PostgreSQL stdout was not retained, so these historical state/byte claims cannot be independently verified from checked-in artifacts):** the user requested cleanup instead of resizing. The owner
   confirmed five old `pulsar-foundation` labs were completed and disposable.
   Verified exact Compose project/cwd/service labels, stopped them through that
   physical workspace's existing wrapper, rechecked `running=false`, then removed
@@ -36227,3 +36227,11 @@ The bounded test first failed CH243 in activity_location_sample because the loca
 - **Evidence / cause:** GitHub workflow annotation: `Internal server error. Correlation ID: 373fd8dc-095f-4952-898e-12b11da05856`. No failing repository command or test log existed for the missing jobs. The exact internal GitHub cause is unknown.
 - **Recovery / status:** Marked the PR ready and requested an unchanged workflow rerun. Required checks and merge remain pending. No bypass, admin merge, timeout, retry policy, or workflow change was introduced.
 - **Next time:** Use the ship-pr and gh-fix-ci skills; inspect the workflow-level annotations and required-check list whenever CI Gate passes but required jobs are absent. Proposed runbook improvement: distinguish workflow startup errors from repository command failures before editing CI.
+
+## 2026-11-09 — Final erasure review boundaries
+
+The [physical progress update](../src/account-erasure/identifier-store.ts) used transaction-start `now()` after descriptor cleanup. A deterministic [real PostgreSQL regression](../src/account-erasure/identifier-store.integration.test.ts) expired the lease during deletion: the original code committed, while the fixed `clock_timestamp()` predicate rejected and rolled back both deletion and cursor. All58store/database cases passed20.28s with retry0. PostgreSQL documents [transaction versus wall-clock timestamps](https://www.postgresql.org/docs/current/functions-datetime.html#FUNCTIONS-DATETIME-CURRENT). Root paging now has a separate production-consumed module, preserving the exact stock UNION, per-owner predicates and500-item keyset bound; the store is under1000lines.
+
+Physical retention polling now uses exact database/table/hash tuple membership via stock arrayZip, two system-table queries per bounded page, retaining min(_state), projection parents and inactive files. The public orchestration regression failed before batching and all58units plus four exact26.6 native recovery/projection/absence cases passed afterward. A separate exploratory collision fixture used STOP MERGES and blocked its own mutation; its hold was released and the fixture removed. That manually unblocked run is not qualification. No production setting, test gate, timeout, retry, or budget changed. [ClickHouse documents arrayZip](https://clickhouse.com/docs/sql-reference/functions/array-functions#arrayZip).
+
+Startup cleanup coverage again verifies the original cause, AggregateError and both Sentry captures. Main e620cdbd0 was merged into the branch with both incident histories and all owner plus tiered-runtime tests preserved;45focused units, TypeScript and formatting passed. New current-head CI and exact26.10 qualification remain gates. Next time, retain bounded command transcripts with local operational claims and avoid suppressing mutation execution when constructing physical-proof fixtures.

@@ -10,6 +10,11 @@ import {
 } from "../security/credential-encryption.ts";
 
 import {
+  listAccountErasurePostgresIdentifierPages,
+  ACCOUNT_ERASURE_IDENTIFIER_PAGE_SIZE as POSTGRES_IDENTIFIER_PAGE_SIZE,
+} from "./postgres-identifier-capture.ts";
+
+import {
   type AccountErasurePhysicalIntent,
   type AccountErasurePhysicalMutation,
   type AccountErasurePhysicalPart,
@@ -32,7 +37,8 @@ import {
 } from "./retained-state.ts";
 
 const tableName = "fitness.account_erasure_identifier";
-export const ACCOUNT_ERASURE_IDENTIFIER_PAGE_SIZE = 500;
+
+export const ACCOUNT_ERASURE_IDENTIFIER_PAGE_SIZE = POSTGRES_IDENTIFIER_PAGE_SIZE;
 export const ACCOUNT_ERASURE_IDENTIFIER_BYTE_LIMITS = {
   stringItem: 4 * 1024,
   decodedPage: 256 * 1024,
@@ -486,7 +492,7 @@ export class AccountErasureIdentifierStore {
     // encrypted descriptor; both writes remain in this request-locked transaction.
     const rows = await transaction.execute(sql`UPDATE fitness.account_erasure_request
       SET phase_progress=jsonb_set(phase_progress,ARRAY[${phase}],${JSON.stringify(next)}::jsonb,true),updated_at=now()
-      WHERE id=${this.#requestId}::uuid AND lease_owner=${this.#leaseOwner} AND lease_expires_at>now() AND status<>'completed'
+      WHERE id=${this.#requestId}::uuid AND lease_owner=${this.#leaseOwner} AND lease_expires_at>clock_timestamp() AND status<>'completed'
         AND (phase_progress->${phase}) IS NOT DISTINCT FROM ${previous === null ? null : JSON.stringify(previous)}::jsonb
       RETURNING id`);
     if (rows.length !== 1)
@@ -753,11 +759,7 @@ export class AccountErasureIdentifierStore {
     await this.#database.transaction(async (transaction) => {
       await this.#assertPhysicalAccess(transaction, stage, true);
       const progress = await this.#preparedPhysicalProgress(transaction, stage);
-      if (
-        !(await this.#physicalPlanPrepared(transaction, stage)) ||
-        progress?.step !== "apply" ||
-        progress.afterIntentKey !== input.expectedAfterKey
-      )
+      if (progress.step !== "apply" || progress.afterIntentKey !== input.expectedAfterKey)
         throw new Error("Physical apply cursor changed or preparation is incomplete");
       if (progress.pending) {
         if (progress.pending.intentKey === input.intentKey) return;
@@ -963,47 +965,8 @@ export async function captureAccountErasurePostgresIdentifiers(
   }
   const keyBinding = captureKeyBinding(requestId);
 
-  const sources = [
-    { family: "activity", table: sql`fitness.activity`, column: sql`id` },
-    { family: "activity", table: sql`fitness.activity`, column: sql`group_id` },
-    { family: "activity", table: sql`fitness.activity_group`, column: sql`id` },
-    { family: "activity", table: sql`fitness.activity_group`, column: sql`anchor_activity_id` },
-    { family: "activity", table: sql`fitness.activity_group_alias`, column: sql`alias_id` },
-    { family: "activity", table: sql`fitness.activity_group_alias`, column: sql`group_id` },
-    { family: "sleep", table: sql`fitness.sleep_session`, column: sql`id` },
-    { family: "operation", table: sql`fitness.processing_operation`, column: sql`id` },
-  ] as const;
-  for (const family of ["activity", "sleep", "operation"] as const) {
-    const identifiers = sql.join(
-      sources
-        .filter((source) => source.family === family)
-        .map(
-          (source) => sql`
-      SELECT ${source.column} AS id FROM ${source.table}
-      WHERE user_id=${userId}::uuid AND ${source.column} IS NOT NULL`,
-        ),
-      sql` UNION `,
-    );
-    let after: string | undefined;
-    while (true) {
-      const rows = await executeWithSchema(
-        transaction,
-        z.object({ id: identifierSchema }),
-        sql`WITH identifiers AS (${identifiers})
-          SELECT id FROM identifiers
-          ${after === undefined ? sql`` : sql`WHERE id>${after}::uuid`}
-          ORDER BY id LIMIT ${ACCOUNT_ERASURE_IDENTIFIER_PAGE_SIZE}`,
-      );
-      if (rows.length === 0) break;
-      await appendIdentifierValues(
-        transaction,
-        requestId,
-        family,
-        rows.map((row) => row.id),
-      );
-      if (rows.length < ACCOUNT_ERASURE_IDENTIFIER_PAGE_SIZE) break;
-      after = rows.at(-1)?.id;
-    }
+  for await (const page of listAccountErasurePostgresIdentifierPages(transaction, userId)) {
+    await appendIdentifierValues(transaction, requestId, page.family, page.identifiers);
   }
   await transaction.execute(sql`INSERT INTO fitness.account_erasure_checkpoint(request_id,phase,details)
     VALUES (${requestId}::uuid,${postgresCaptureCheckpoint},${JSON.stringify({ keyBinding })}::jsonb)`);

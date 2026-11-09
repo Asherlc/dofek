@@ -728,6 +728,30 @@ describe("createAccountErasureRuntime", () => {
     }
   });
 
+  it("preserves the startup cause and reports cleanup failures", async () => {
+    const Sentry = await import("@sentry/node");
+    const cleanupError = new Error("Kafka cleanup unavailable");
+    mocks.phaseRunnerShouldFail = true;
+    mocks.closeKafka.mockRejectedValueOnce(cleanupError);
+    const result = await createAccountErasureRuntime(ownerDatabase, mockClickHouse(), {
+      close: vi.fn(async () => undefined),
+      purge: vi.fn(async () => undefined),
+    }).catch((error: unknown) => error);
+    expect(result).toBeInstanceOf(AggregateError);
+    if (!(result instanceof AggregateError)) throw new Error("Missing aggregate error");
+    expect(result.cause).toMatchObject({ message: "phase runner unavailable" });
+    expect(result.errors).toEqual([
+      expect.objectContaining({ message: "phase runner unavailable" }),
+      cleanupError,
+    ]);
+    expect(Sentry.captureException).toHaveBeenCalledWith(result.cause, {
+      tags: { accountErasureStep: "runtimeStartup" },
+    });
+    expect(Sentry.captureException).toHaveBeenCalledWith(cleanupError, {
+      tags: { accountErasureStep: "runtimeStartupCleanup" },
+    });
+  });
+
   it("pages ClickHouse fence identifiers and fences each page's operation values", async () => {
     const pageOneValue = "40000000-0000-4000-8000-000000001001";
     const pageTwoValue = "40000000-0000-4000-8000-000000001002";

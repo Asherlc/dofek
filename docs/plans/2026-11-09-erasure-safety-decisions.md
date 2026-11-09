@@ -1,7 +1,7 @@
 # Erasure safety decision package
 
 Status: approved for offline implementation followed by normal PR merge. The
-user selected “Implement the safety plan, then merge (Recommended).” This document
+[recorded user response](https://github.com/Asherlc/dofek/pull/3234#issuecomment-6750862874) selected “Implement the safety plan, then merge (Recommended).” The linked comment is an agent transcription of the task conversation. This document
 resolves the choices in the [six retained review threads](https://github.com/Asherlc/dofek/pull/3234#discussion_r4507302091);
 it does not assert that their fixes exist or authorize a production action.
 Reviewed against erasure head `1f0cdddb5` containing main `6fe1d4fbd`.

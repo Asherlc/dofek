@@ -183,7 +183,7 @@ async function completeLineage(
     let cursor: string | undefined;
     do {
       const page = await store.readPhysicalPage("physical_part", stage, cursor);
-      // A metadata page is at most64 records. Grouping it never grows with the account.
+      // A metadata page is at most 64 records. Grouping it never grows with the account.
       const tables = new Map<string, typeof page.entries>();
       for (const entry of page.entries) {
         const key = JSON.stringify(entry.value.slice(1, 4));
@@ -374,19 +374,22 @@ async function retainedParts(
   let cursor: string | undefined;
   do {
     const page = await store.readPhysicalPage("physical_part", stage, cursor);
-    for (const entry of page.entries) {
-      const [, database, table, , value] = entry.value;
-      const parameters = { database, table, part_hash: hashBytes(Buffer.from(value, "base64")) };
+    if (page.entries.length) {
+      const parameters = {
+        databases: page.entries.map(({ value }) => value[1]),
+        tables: page.entries.map(({ value }) => value[2]),
+        part_hashes: page.entries.map(({ value }) => hashBytes(Buffer.from(value[4], "base64"))),
+      };
       for (const [systemTable, column] of [
         ["parts", "name"],
         ["projection_parts", "parent_name"],
       ] as const) {
-        // min(_state) keeps the virtual column in the innermost storage read even
-        // under projection pruning. No active-state filter may hide Deleting files.
+        // Keep _state in the storage read; inactive/Deleting files count too.
         const result = await owner.client.query({
           query: `SELECT count() AS count,min(_state) AS state FROM (
           SELECT database,table,${column},_state FROM system.${systemTable})
-          WHERE database={database:String} AND table={table:String} AND lower(hex(SHA256(${column})))={part_hash:String}`,
+          WHERE (database,table,lower(hex(SHA256(${column})))) IN
+            arrayZip({databases:Array(String)},{tables:Array(String)},{part_hashes:Array(String)})`,
           query_params: parameters,
           format: "JSONEachRow",
           clickhouse_settings: settings,

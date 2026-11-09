@@ -86,9 +86,6 @@ describe("request-owned account erasure identifiers", () => {
 
   async function physicalFixture() {
     const request = await createRequest();
-    await context.db.transaction((transaction) =>
-      captureAccountErasurePostgresIdentifiers(transaction, request),
-    );
     const store = new AccountErasureIdentifierStore(context.db, {
       requestId: request.requestId,
       leaseOwner: request.leaseOwner,
@@ -182,7 +179,6 @@ describe("request-owned account erasure identifiers", () => {
   });
   test("reads exactly the frozen identity interval for a physical predicate", async () => {
     const request = await createRequest();
-    await context.db.transaction((tx) => captureAccountErasurePostgresIdentifiers(tx, request));
     const store = new AccountErasureIdentifierStore(context.db, { ...request, pageSize: 500 });
     await store.append(
       "activity",
@@ -332,9 +328,6 @@ describe("request-owned account erasure identifiers", () => {
     "rejects identifier %s when its lease expires while waiting for the request lock",
     async (operation) => {
       const request = await createRequest();
-      await context.db.transaction((transaction) =>
-        captureAccountErasurePostgresIdentifiers(transaction, request),
-      );
       const store = new AccountErasureIdentifierStore(context.db, { ...request, pageSize: 500 });
       const locker = await context.db.$client.connect();
       let committed = false;
@@ -406,9 +399,6 @@ describe("request-owned account erasure identifiers", () => {
     expect(await store.append("group_string", values.slice(0, 2))).toBe(false);
     await store.append("group_string", values.slice(2));
     await store.append("activity", [id]);
-    await context.db.transaction((transaction) =>
-      captureAccountErasurePostgresIdentifiers(transaction, request),
-    );
     const first = await store.readPage("group_string");
     const second = await store.readPage("group_string", first.nextCursor ?? undefined);
     expect(first.entries).toHaveLength(2);
@@ -444,9 +434,6 @@ describe("request-owned account erasure identifiers", () => {
     await expect(
       store.append("group_string", [...values, Buffer.alloc(4096, 90).toString("base64")]),
     ).rejects.toThrow(/identifier.*page/);
-    await context.db.transaction((transaction) =>
-      captureAccountErasurePostgresIdentifiers(transaction, request),
-    );
     const actual: string[] = [];
     let cursor: string | undefined;
     do {
@@ -472,9 +459,6 @@ describe("request-owned account erasure identifiers", () => {
       pageSize: 500,
     });
     await store.append("activity", [randomUUID()]);
-    await context.db.transaction((transaction) =>
-      captureAccountErasurePostgresIdentifiers(transaction, request),
-    );
     await context.db.execute(sql`UPDATE fitness.account_erasure_request SET lease_owner='next-worker'
       WHERE id=${request.requestId}::uuid`);
     await expect(store.append("activity", [randomUUID()])).rejects.toThrow(/lease/);
@@ -482,16 +466,13 @@ describe("request-owned account erasure identifiers", () => {
     await expect(store.findPresent("activity", [randomUUID()])).rejects.toThrow(/lease/);
   });
 
-  test("seals closure independently of PG capture and gates final reopening on completed initial erasure and PeerDB proof", async () => {
+  test("requires separate ClickHouse closure and gates final reopening on completed initial erasure and PeerDB proof", async () => {
     const request = await createRequest();
     const store = new AccountErasureIdentifierStore(context.db, {
       requestId: request.requestId,
       leaseOwner: request.leaseOwner,
       pageSize: 500,
     });
-    await context.db.transaction((transaction) =>
-      captureAccountErasurePostgresIdentifiers(transaction, request),
-    );
     await expect(store.assertClosureComplete("initial")).rejects.toThrow(/closure.*incomplete/);
     expect(await store.beginClosure("initial")).toBe(true);
     await store.append("activity", [randomUUID()]);
@@ -735,6 +716,41 @@ describe("request-owned account erasure identifiers", () => {
     }
   });
 
+  test("rolls back descriptor retirement when the lease expires inside its transaction", async () => {
+    const fixture = await appliedPhysicalFixture();
+    await fixture.store.markPhysicalComplete("initial");
+    const [entry] = (await fixture.store.readPhysicalPage("physical_mutation", "initial")).entries;
+    if (!entry) throw new Error("Missing mutation fixture");
+    await context.db.execute(sql`CREATE FUNCTION fitness.expire_physical_cleanup_fixture() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        UPDATE fitness.account_erasure_request
+        SET lease_expires_at=transaction_timestamp()+interval '1 microsecond'
+        WHERE id=OLD.request_id;
+        RETURN OLD;
+      END $$`);
+    await context.db.execute(sql`CREATE TRIGGER expire_physical_cleanup_fixture BEFORE DELETE
+      ON fitness.account_erasure_identifier FOR EACH ROW
+      WHEN (OLD.request_id=${sql.raw(escapeLiteral(fixture.requestId))}::uuid AND OLD.family='physical_mutation')
+      EXECUTE FUNCTION fitness.expire_physical_cleanup_fixture()`);
+    try {
+      await expect(
+        fixture.store.retirePhysicalMutation("initial", { key: entry.key, expectedAfterKey: null }),
+      ).rejects.toThrow(/lease/);
+      expect(
+        await fixture.store.readPhysicalEntry("physical_mutation", "initial", entry.key),
+      ).not.toBeNull();
+      expect(await fixture.store.loadPhysicalProgress("initial")).toEqual({
+        step: "cleanup",
+        afterMutationKey: null,
+      });
+    } finally {
+      await context.db.execute(
+        sql`DROP TRIGGER expire_physical_cleanup_fixture ON fitness.account_erasure_identifier`,
+      );
+      await context.db.execute(sql`DROP FUNCTION fitness.expire_physical_cleanup_fixture()`);
+    }
+  });
+
   test("rolls back the physical plan seal with its initial progress and rejects stale workers", async () => {
     const fixture = await physicalFixture();
     await fixture.store.appendPhysical("physical_intent", "initial", [fixture.intent]);
@@ -867,12 +883,6 @@ describe("request-owned account erasure identifiers", () => {
     await firstStore.append("activity", [shared, exclusive]);
     await firstStore.append("sleep", [shared]);
     await secondStore.append("activity", [shared]);
-    await context.db.transaction((transaction) =>
-      captureAccountErasurePostgresIdentifiers(transaction, first),
-    );
-    await context.db.transaction((transaction) =>
-      captureAccountErasurePostgresIdentifiers(transaction, second),
-    );
     expect(await firstStore.findPresent("activity", [shared, exclusive])).toEqual(
       expect.arrayContaining([shared, exclusive]),
     );
@@ -905,9 +915,6 @@ describe("request-owned account erasure identifiers", () => {
       await store.append(family, identifiers.slice(0, 2));
       await store.append(family, identifiers.slice(2, 4));
       await store.append(family, identifiers.slice(4));
-      await context.db.transaction((transaction) =>
-        captureAccountErasurePostgresIdentifiers(transaction, request),
-      );
       const first = await store.readPage(family);
       const second = await store.readPage(family, first.nextCursor ?? undefined);
       const third = await store.readPage(family, second.nextCursor ?? undefined);
@@ -956,9 +963,6 @@ describe("request-owned account erasure identifiers", () => {
     await store.append("operation", [id, id]);
     const before = await storedRows(request.requestId, "operation");
     await store.append("operation", [id.toUpperCase()]);
-    await context.db.transaction((transaction) =>
-      captureAccountErasurePostgresIdentifiers(transaction, request),
-    );
     expect(await storedRows(request.requestId, "operation")).toEqual(before);
     expect(await store.findPresent("operation", [id.toUpperCase(), randomUUID()])).toEqual([id]);
     expect(await store.readPage("operation")).toEqual({
@@ -979,9 +983,6 @@ describe("request-owned account erasure identifiers", () => {
     await expect(store.findPresent("activity", ids)).rejects.toThrow();
     expect(await storedRows(request.requestId, "activity")).toHaveLength(0);
     await store.append("activity", []);
-    await context.db.transaction((transaction) =>
-      captureAccountErasurePostgresIdentifiers(transaction, request),
-    );
     expect(await store.findPresent("activity", [])).toEqual([]);
     await expect(store.readPage("activity", "invalid-cursor")).rejects.toThrow();
   });
@@ -1009,12 +1010,6 @@ describe("request-owned account erasure identifiers", () => {
       await firstStore.append("activity", [sourceId]);
       const [source] = await storedRows(first.requestId, "activity");
       await targetStore.append(targetFamily, [targetId]);
-      await context.db.transaction((transaction) =>
-        captureAccountErasurePostgresIdentifiers(transaction, first),
-      );
-      await context.db.transaction((transaction) =>
-        captureAccountErasurePostgresIdentifiers(transaction, second),
-      );
       const target = (await storedRows(targetRequest, targetFamily)).find(
         (row) => boundary !== "item" || row.identity_key !== source?.identity_key,
       );
@@ -1031,7 +1026,7 @@ describe("request-owned account erasure identifiers", () => {
     },
   );
 
-  test("rolls back captured pages with their activation transaction", async () => {
+  test("rolls back appended pages with their transaction", async () => {
     const request = await createRequest();
     await expect(
       context.db.transaction(async (transaction) => {
@@ -1049,9 +1044,6 @@ describe("request-owned account erasure identifiers", () => {
       leaseOwner: request.leaseOwner,
       pageSize: 2,
     });
-    await context.db.transaction((transaction) =>
-      captureAccountErasurePostgresIdentifiers(transaction, request),
-    );
     expect(await store.readPage("activity")).toEqual({ entries: [], nextCursor: null });
   });
 
@@ -1064,9 +1056,6 @@ describe("request-owned account erasure identifiers", () => {
     });
     const original = randomUUID();
     await store.append("activity", [original]);
-    await context.db.transaction((transaction) =>
-      captureAccountErasurePostgresIdentifiers(transaction, request),
-    );
     const [stored] = await storedRows(request.requestId, "activity");
     const encrypted = await encryptCredentialValue(randomUUID(), {
       tableName: "fitness.account_erasure_identifier",
@@ -1131,12 +1120,6 @@ describe("request-owned account erasure identifiers", () => {
     const id = randomUUID();
     for (const family of families) await store.append(family, [id]);
     await otherStore.append("activity", [id]);
-    await context.db.transaction((transaction) =>
-      captureAccountErasurePostgresIdentifiers(transaction, request),
-    );
-    await context.db.transaction((transaction) =>
-      captureAccountErasurePostgresIdentifiers(transaction, other),
-    );
     await expect(assertPostgresAccountErasureCoverage(context.db)).resolves.toBeUndefined();
     await erasePostgresAccount(context.db, request.requestId, request.userId);
     expect((await store.readPage("activity")).entries.map((entry) => entry.value)).toEqual([id]);

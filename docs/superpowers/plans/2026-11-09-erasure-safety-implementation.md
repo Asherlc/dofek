@@ -1,9 +1,5 @@
 # Erasure Safety Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans
-> to implement this plan task-by-task. The user approved implementation followed
-> by merge; continue inline in the existing isolated workspace.
-
 **Goal:** Close the account-erasure publication, recovery, cutover and key-binding
 gaps, address current review findings, verify the candidate, then merge PR3234.
 
@@ -16,7 +12,7 @@ request and frozen deletion without discarding retained proof.
 Vitest and the existing GitHub CI workflows.
 
 **Spec:** [Approved decision package](../../plans/2026-11-09-erasure-safety-decisions.md).
-User approval: “Implement the safety plan, then merge (Recommended).”
+[Recorded user decision](https://github.com/Asherlc/dofek/pull/3234#issuecomment-6750862874): “Implement the safety plan, then merge (Recommended).” This is an agent transcription of the task response, not an independent GitHub review approval.
 
 ## Global Constraints
 

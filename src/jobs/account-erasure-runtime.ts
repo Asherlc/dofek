@@ -155,23 +155,10 @@ export async function createAccountErasureRuntime(
             resourceId: ANALYTICS_PUBLICATION_RESOURCE,
             intentId: `account-erasure:${input.requestId}`,
           },
-          (owner) =>
-            prepareClickHouseAccountErasure(
-              owner,
-              new AccountErasureIdentifierStore(database, {
-                requestId: input.requestId,
-                leaseOwner: input.leaseOwner,
-                pageSize: ACCOUNT_ERASURE_IDENTIFIER_PAGE_SIZE,
-              }),
-              input,
-            ),
+          (owner) => prepareClickHouseAccountErasure(owner, identifiers(input), input),
         ),
       assertIdentifiersReady: async (input) => {
-        const store = new AccountErasureIdentifierStore(database, {
-          requestId: input.requestId,
-          leaseOwner: input.leaseOwner,
-          pageSize: ACCOUNT_ERASURE_IDENTIFIER_PAGE_SIZE,
-        });
+        const store = identifiers(input);
         await store.assertClosureComplete(input.stage);
         if (!(await store.loadPhysicalProgress(input.stage)))
           throw new Error("Account erasure physical preparation is incomplete");
@@ -252,16 +239,7 @@ export async function createAccountErasureRuntime(
             resourceId: ANALYTICS_PUBLICATION_RESOURCE,
             intentId: `account-erasure:${input.requestId}`,
           },
-          (owner) =>
-            eraseClickHouseAccount(
-              owner,
-              new AccountErasureIdentifierStore(database, {
-                requestId: input.requestId,
-                leaseOwner: input.leaseOwner,
-                pageSize: ACCOUNT_ERASURE_IDENTIFIER_PAGE_SIZE,
-              }),
-              input,
-            ),
+          (owner) => eraseClickHouseAccount(owner, identifiers(input), input),
         ),
       erasePostgres: (requestId, userId) => erasePostgresAccount(database, requestId, userId),
       eraseProcessors: (snapshot, progress) =>
