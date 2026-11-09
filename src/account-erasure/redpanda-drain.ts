@@ -1,7 +1,8 @@
-import kafkaJs, { type Admin, type ConfigResourceTypes } from "kafkajs";
+import kafkaJs, { type Admin } from "kafkajs";
 import { z } from "zod";
 import {
-  METRIC_STREAM_QUARANTINE_TOPIC_CONFIG,
+  assertQuarantineTopicConfiguration,
+  type KafkaQuarantineConfigAdmin,
   metricStreamQuarantineTopic,
 } from "../metric-stream/redpanda-quarantine.ts";
 
@@ -19,23 +20,6 @@ const highWatermarkSchema = z.object({
 const topicOffsetSchema = highWatermarkSchema.extend({
   high: offsetSchema,
 });
-const describedTopicConfigSchema = z.object({
-  resources: z.array(
-    z.object({
-      configEntries: z.array(
-        z.object({
-          configName: z.string(),
-          configValue: z.string(),
-        }),
-      ),
-      errorCode: z.number().int(),
-      errorMessage: z.string().nullable(),
-      resourceName: z.string(),
-      resourceType: z.number().int(),
-    }),
-  ),
-});
-
 export type AccountErasureHighWatermark = z.infer<typeof highWatermarkSchema>;
 export const accountErasureRouteHighWatermarkSchema = highWatermarkSchema.extend({
   topic: z.string().min(1).max(249),
@@ -64,63 +48,7 @@ interface RedpandaOffsetAdmin {
   ): Promise<Array<{ high: string; low: string; offset: string; partition: number }>>;
 }
 
-export interface RedpandaAdmin extends RedpandaOffsetAdmin {
-  describeConfigs(options: {
-    includeSynonyms: boolean;
-    resources: Array<{
-      configNames: string[];
-      name: string;
-      type: ConfigResourceTypes;
-    }>;
-  }): Promise<unknown>;
-}
-
-async function assertQuarantineTopicConfiguration(
-  admin: RedpandaAdmin,
-  sourceTopic: string,
-): Promise<string> {
-  const quarantineTopic = metricStreamQuarantineTopic(sourceTopic);
-  const expectedConfig = new Map(
-    METRIC_STREAM_QUARANTINE_TOPIC_CONFIG.map((entry) => [entry.name, entry.value]),
-  );
-  const response = describedTopicConfigSchema.parse(
-    await admin.describeConfigs({
-      includeSynonyms: false,
-      resources: [
-        {
-          configNames: [...expectedConfig.keys()],
-          name: quarantineTopic,
-          type: kafkaJs.ConfigResourceTypes.TOPIC,
-        },
-      ],
-    }),
-  );
-  const resource = response.resources.find(
-    (entry) =>
-      entry.resourceName === quarantineTopic &&
-      entry.resourceType === kafkaJs.ConfigResourceTypes.TOPIC,
-  );
-  if (!resource) {
-    throw new Error(`Account erasure could not verify quarantine topic ${quarantineTopic}`);
-  }
-  if (resource.errorCode !== 0) {
-    throw new Error(
-      `Account erasure could not verify quarantine topic ${quarantineTopic}: ${resource.errorMessage ?? `broker error ${resource.errorCode}`}`,
-    );
-  }
-  const actualConfig = new Map(
-    resource.configEntries.map((entry) => [entry.configName, entry.configValue]),
-  );
-  for (const [name, expectedValue] of expectedConfig) {
-    const actualValue = actualConfig.get(name);
-    if (actualValue !== expectedValue) {
-      throw new Error(
-        `Account erasure quarantine topic ${name} must be ${expectedValue}; found ${actualValue ?? "missing"}`,
-      );
-    }
-  }
-  return quarantineTopic;
-}
+export interface RedpandaAdmin extends RedpandaOffsetAdmin, KafkaQuarantineConfigAdmin {}
 
 export async function captureAccountErasureHighWatermarks(
   admin: Pick<RedpandaOffsetAdmin, "fetchTopicOffsets">,
@@ -141,7 +69,8 @@ export async function captureAccountErasureQuarantineHighWatermarks(
   admin: RedpandaAdmin,
   sourceTopic: string,
 ): Promise<AccountErasureHighWatermark[]> {
-  const quarantineTopic = await assertQuarantineTopicConfiguration(admin, sourceTopic);
+  const quarantineTopic = metricStreamQuarantineTopic(sourceTopic);
+  await assertQuarantineTopicConfiguration(admin, quarantineTopic);
   return captureAccountErasureHighWatermarks(admin, quarantineTopic);
 }
 
@@ -215,7 +144,8 @@ export async function assertAccountErasureQuarantineExpired(
   sourceTopic: string,
   highWatermarks: readonly AccountErasureHighWatermark[],
 ): Promise<void> {
-  const quarantineTopic = await assertQuarantineTopicConfiguration(admin, sourceTopic);
+  const quarantineTopic = metricStreamQuarantineTopic(sourceTopic);
+  await assertQuarantineTopicConfiguration(admin, quarantineTopic);
   try {
     await assertAccountErasureReplayExpired(admin, quarantineTopic, highWatermarks);
   } catch (error: unknown) {
