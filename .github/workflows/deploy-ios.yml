@@ -57,7 +57,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           FORCE=()
-          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] && [ "$GITHUB_ACTOR" != "github-actions[bot]" ]; then
             FORCE=(--force)
           fi
           SHOULD_DEPLOY=$(pnpm tsx scripts/testflight-deployment-cli.ts detect "$GITHUB_REPOSITORY" "$SHA" "${FORCE[@]}")
