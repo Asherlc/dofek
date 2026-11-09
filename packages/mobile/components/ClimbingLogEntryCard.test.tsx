@@ -287,3 +287,26 @@ it.each(["Onsight", "Flash"] as const)(
     expect(screen.queryByText(/Attempts:|completed/i)).toBeNull();
   },
 );
+
+it.each([
+  { kind: "boulder" as const, label: "Problem" },
+  { kind: "route" as const, label: "Route" },
+  { kind: null, label: "Route" },
+])("labels source links as $label for climb kind $kind", ({ kind, label }) => {
+  const entry = {
+    ...climbingLogFixture,
+    climb: { ...climbingClimbFixture("mountain-project"), name: "Corner", kind },
+    sourceLinks: [
+      {
+        providerId: "mountain-project",
+        kind: "route" as const,
+        url: "https://www.mountainproject.com/route/1/corner",
+      },
+    ],
+  };
+  render(<ClimbingLogEntryCard entry={entry} onSelect={vi.fn()} />);
+  expect(
+    screen.getByRole("link", { name: `Corner ${label.toLowerCase()} on Mountain Project` })
+      .textContent,
+  ).toContain(label);
+});

@@ -1,20 +1,24 @@
 import { providerSourceLabel } from "@dofek/providers/providers";
 import type { ClimbingSourceLink } from "@dofek/training/climbing-context";
+import type { ClimbKind } from "@dofek/training/climbing-log";
 import { selectClimbingSources } from "@dofek/training/climbing-sources";
 import type { ReactElement } from "react";
 import { ProviderLogo } from "../../../components/ProviderLogo.tsx";
 
 export function ClimbingLogEntrySources({
   name,
+  climbKind,
   sourceName,
   links,
   titleControl,
 }: {
   titleControl?: ReactElement;
   name: string;
+  climbKind: ClimbKind | null;
   sourceName: string | null;
   links: ClimbingSourceLink[];
 }) {
+  const climbLabel = climbKind === "boulder" ? "Problem" : "Route";
   const { primaryRoute, additionalRoutes, sources } = selectClimbingSources(
     sourceName,
     links,
@@ -80,10 +84,10 @@ export function ClimbingLogEntrySources({
                   href={link.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  aria-label={`${name} route on ${providerSourceLabel(link.providerId)}`}
+                  aria-label={`${name} ${climbLabel.toLowerCase()} on ${providerSourceLabel(link.providerId)}`}
                   className="inline-flex items-center gap-1.5 rounded-md bg-accent/8 px-2 py-1 font-medium text-muted hover:bg-accent/15 hover:text-accent"
                 >
-                  Route
+                  {climbLabel}
                   <ProviderLogo provider={link.providerId} size={14} />
                   <span aria-hidden="true" className="text-dim">
                     ↗

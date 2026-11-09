@@ -40,6 +40,7 @@ export function ClimbingLogEntryDetails({ entry }: { entry: ClimbingLogEntryDeta
   return (
     <section className="space-y-4 text-sm" aria-label="Climbing log details">
       <ClimbingLogEntrySources
+        climbKind={climb?.kind ?? null}
         name={climbingLogEntryName(entry)}
         sourceName={entry.sourceName}
         links={entry.sourceLinks}

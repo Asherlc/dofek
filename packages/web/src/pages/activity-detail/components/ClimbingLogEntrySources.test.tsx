@@ -10,6 +10,7 @@ describe("ClimbingLogEntrySources", () => {
   ])("labels selectable climb links with the %s logo", (providerId, label, extension) => {
     render(
       <ClimbingLogEntrySources
+        climbKind="route"
         name="Swiss Cheese"
         sourceName={label}
         titleControl={<button type="button">Swiss Cheese</button>}
@@ -35,6 +36,7 @@ describe("ClimbingLogEntrySources", () => {
     (sourceName) => {
       render(
         <ClimbingLogEntrySources
+          climbKind={null}
           name="Swiss Cheese"
           sourceName={sourceName}
           links={[
@@ -78,6 +80,7 @@ describe("ClimbingLogEntrySources", () => {
   it("links the climb name to the route and provider name to tick history", () => {
     render(
       <ClimbingLogEntrySources
+        climbKind={null}
         name="Road Kill"
         sourceName="OpenBeta"
         links={[
@@ -97,6 +100,7 @@ describe("ClimbingLogEntrySources", () => {
   it("links the provider's tick history when no route is available", () => {
     render(
       <ClimbingLogEntrySources
+        climbKind={null}
         name="Road Kill"
         sourceName={null}
         links={[
@@ -114,6 +118,7 @@ describe("ClimbingLogEntrySources", () => {
   it("preserves an unlinked source beside a different provider's tick history", () => {
     render(
       <ClimbingLogEntrySources
+        climbKind={null}
         name="Road Kill"
         sourceName="Kaya"
         links={[
@@ -132,6 +137,7 @@ describe("ClimbingLogEntrySources", () => {
   it("keeps mixed attribution readable when one provider has no tick history", () => {
     render(
       <ClimbingLogEntrySources
+        climbKind={null}
         name="Swiss Cheese"
         sourceName="Mountain Project, Kaya"
         links={[
@@ -156,7 +162,14 @@ describe("ClimbingLogEntrySources", () => {
     expect(screen.queryByRole("link", { name: "Kaya" })).toBeNull();
   });
   it("keeps an entry without verified destinations readable", () => {
-    render(<ClimbingLogEntrySources name="Imported route" sourceName="Kaya" links={[]} />);
+    render(
+      <ClimbingLogEntrySources
+        climbKind={null}
+        name="Imported route"
+        sourceName="Kaya"
+        links={[]}
+      />,
+    );
     expect(screen.getByText("Imported route")).toBeTruthy();
     expect(screen.getByText("Kaya")).toBeTruthy();
     expect(screen.queryByRole("link")).toBeNull();
@@ -164,6 +177,7 @@ describe("ClimbingLogEntrySources", () => {
   it("keeps the provider as text when only a route destination is known", () => {
     render(
       <ClimbingLogEntrySources
+        climbKind={null}
         name="Swiss Cheese"
         sourceName="Mountain Project"
         links={[

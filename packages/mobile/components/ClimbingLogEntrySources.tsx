@@ -1,5 +1,6 @@
 import { providerSourceLabel } from "@dofek/providers/providers";
 import type { ClimbingSourceLink } from "@dofek/training/climbing-context";
+import type { ClimbKind } from "@dofek/training/climbing-log";
 import { selectClimbingSources } from "@dofek/training/climbing-sources";
 import type { ReactElement } from "react";
 import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
@@ -10,6 +11,7 @@ import { ProviderLogo } from "./ProviderLogo";
 
 export function ClimbingLogEntrySources({
   name,
+  climbKind,
   sourceName,
   links,
   selected,
@@ -17,10 +19,12 @@ export function ClimbingLogEntrySources({
 }: {
   titleControl?: ReactElement;
   name: string;
+  climbKind: ClimbKind | null;
   sourceName: string | null;
   links: ClimbingSourceLink[];
   selected?: boolean;
 }) {
+  const climbLabel = climbKind === "boulder" ? "Problem" : "Route";
   const { primaryRoute, additionalRoutes, sources } = selectClimbingSources(
     sourceName,
     links,
@@ -98,13 +102,13 @@ export function ClimbingLogEntrySources({
               <Pressable
                 key={`${link.providerId}:${link.url}`}
                 accessibilityRole="link"
-                accessibilityLabel={`${name} route on ${providerSourceLabel(link.providerId)}`}
+                accessibilityLabel={`${name} ${climbLabel.toLowerCase()} on ${providerSourceLabel(link.providerId)}`}
                 style={styles.sourceLink}
                 onPress={() => {
                   void openSource(link.url);
                 }}
               >
-                <Text style={styles.sourceLinkText}>Route</Text>
+                <Text style={styles.sourceLinkText}>{climbLabel}</Text>
                 <ProviderLogo provider={link.providerId} serverUrl={SERVER_URL} size={14} />
                 <Text
                   style={styles.linkCue}
