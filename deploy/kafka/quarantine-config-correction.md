@@ -1,140 +1,111 @@
-# Quarantine configuration correction
+# Deploy-owned Kafka topic policy
 
-**Proposal only. The fix request authorizes implementation and qualification,
-not another production release or topic update.** Kafka remains the live broker;
-tiered storage is a separate release. The [completed shared release](shared-release-execution.md)
-records the live discrepancy and its original before/after metadata.
+**Offline infrastructure candidate; not deployed.** The quarantine startup fix
+merged in [#3237](https://github.com/Asherlc/dofek/pull/3237). This follow-up moves
+policy reconciliation into the existing deployment workflow. It replaces the
+[earlier manual correction proposal](https://github.com/Asherlc/dofek/blob/d4e7a34e49f4e91f57a7b76dbb2735a944b4e224/deploy/kafka/quarantine-config-correction.md);
+no SSH-only repair is required by the intended release path.
 
-## Cause and durable fix
+## Canonical policy and owner
 
-The old quarantine writer sends three entries to legacy `AlterConfigs` on every
-connection. That API replaces the complete override set, clearing independently
-configured segment and remote-storage settings. A read-modify-write replacement
-would also risk lost concurrent updates; see [Kafka KIP-339](https://cwiki.apache.org/confluence/spaces/KAFKA/pages/87298616/KIP-339%2BCreate%2Ba%2Bnew%2BIncrementalAlterConfigs%2BAPI).
+[`topic-policy.json`](topic-policy.json) is the infrastructure definition for the
+three existing source topics and their three quarantine topics:
 
-The [fixed writer](../../src/metric-stream/redpanda-quarantine.ts) keeps the
-existing create-if-missing operation and uses the existing KafkaJS
-[`DescribeConfigs`](https://kafka.js.org/docs/admin#describe-configs) API to verify
-exactly `cleanup.policy=delete`, `retention.ms=604800000`, and
-`retention.bytes=1073741824`. It refuses startup on drift, missing/null/duplicate
-entries, a broker error, or an incomplete/wrong topic resource. It disconnects
-the admin before starting the producer, including on validation failure.
-The erasure capture/expiry paths reuse this same validator; their retention
-contract and native/retained-Redpanda completion gates remain in place.
+| Setting | Source | Quarantine |
+| --- | --- | --- |
+| cleanup.policy | delete | delete |
+| retention.ms | 604800000 (seven days) | 604800000 (seven days) |
+| retention.bytes | 4294967296 (4 GiB) | 1073741824 (1 GiB) |
+| segment.bytes | 134217728 (128 MiB) | 134217728 (128 MiB) |
+| remote.storage.enable | false | false |
 
-Segment size, compression and remote-storage settings stay operator-owned.
-There is no new SDK, protocol implementation, CLI, environment variable or
-configuration repair during application startup. Existing topics with a bad
-required policy must be corrected explicitly before their consumer can start.
+These are the already selected phase-1 values, not a new retention policy. Byte
+limits remain retention targets rather than hard disk caps, and seven days is
+a time ceiling rather than a guaranteed replay window under the byte limits. See
+[Kafka topic configuration](https://kafka.apache.org/44/configuration/topic-configs/).
+The application separately enforces its existing exact quarantine safety
+requirements; it does not rewrite operator settings during startup.
 
-## Qualification
+The workflow takes topic names from the existing rendered sink environments.
+It retains the existing missing-topic and broker-route checks and rejects
+aliased routes before mutation. It does not create replacement topics, reset
+offsets, rewrite routing or change the archive namespace.
 
-- On isolated pinned Kafka 4.4.0, the new regression initially failed four of
-  five cases: connecting reset explicit 128 MiB segments to the default 1 GiB
-  and cleared the explicit remote=false override; all three bad required
-  policies were silently rewritten. The same five cases pass with the fix,
-  including reconnect, unchanged operator overrides and missing-topic creation.
-- The actual consumer/quarantine/erasure integration set passed nine tests on
-  that broker. The focused unit set passed 66 tests. Focused quarantine mutation
-  testing killed all 69 counted mutants, with the existing threshold unchanged;
-  see the [primary Stryker output](../../docs/evidence/kafka-quarantine-config-fix-20261109/stryker.txt).
-- The stock `kafka-configs.sh --alter --add-config` payload below was exercised
-  on a disposable topic. Native metadata showed its original topic ID unchanged,
-  segment size corrected from 1 GiB to 128 MiB, and the other selected policy
-  unchanged. The actual fixed writer then connected and reconnected without
-  changing the configuration. No production topic was touched.
-- Root/server/web typechecks and full `pnpm lint` passed, including analytics
-  SQL.
-  The SQL phase initially hit Docker-disk ENOSPC; removing only this workspace's
-  completed disposable DB/Redis containers (preserving named volumes) freed the
-  needed space. The same SQL command then passed. Local Redpanda startup remains
-  blocked by the shared VM's exhausted asynchronous-I/O capacity; that failure
-  was not bypassed or called a pass. Native Kafka qualification succeeded; CI
-  still supplies the normal Redpanda check.
+## Normal deployment sequence
 
-The permanent integration test also runs against the repository's Redpanda CI
-fixture. Redpanda ignores the Kafka-only remote-storage key, so its test compares
-supported operator overrides; the Kafka run additionally checks the explicit
-remote override. See [the pinned Redpanda create handler](https://github.com/redpanda-data/redpanda/blob/v26.1.12/src/v/kafka/server/handlers/create_topics.cc#L302-L320).
+The existing [web-stack workflow](../../.github/workflows/deploy-web-stack.yml):
 
-## Proposed execution order — requires release approval
+1. Verifies Kafka and existing topic routes through the normal preflight.
+2. Applies its normal quiesce overlays and waits for old processing tasks to
+   exit before migrations. The requested image contains the fixed quarantine
+   writer. Existing image/source, migration and CDC gates stay in place.
+3. Before restoring consumers, applies the selected policy to all six topics
+   using the pinned Kafka operator container outside the broker cgroup.
+   `kafka-configs.sh --alter --add-config` performs incremental SET operations;
+   unspecified overrides are preserved. This is the stock
+   [Kafka 4.4 implementation](https://github.com/apache/kafka/blob/4.4.0/tools/src/main/java/org/apache/kafka/tools/ConfigCommand.java#L558-L564),
+   not legacy full replacement or an application startup repair.
+4. Uses the existing KafkaJS Admin API in the requested application image to
+   read back all six exact topic resources. Every selected key must have the
+   declared value and explicit topic-config source. Missing, duplicate,
+   mismatched or errored evidence fails the release before consumer restoration.
+5. Restores the requested consumers through the existing stack rollout and
+   stability checks, then performs the same policy readback again. This catches
+   startup code that clears overrides after reconciliation. A mismatch fails
+   the release; there is no warning-and-continue or automatic repair loop.
 
-1. Review/merge the focused fix and qualify its exact main image. Freeze the
-   merge revision and immutable digest; do not reuse the deployed `6fe` image or
-   the earlier `3350` review image. Use the existing stock web-release dispatcher
-   with its normal gates; leave the disabled automatic-workflow setting alone.
-   **Before dispatch**, read the current policy for all three quarantine topics:
-   each must have `cleanup.policy=delete`, `retention.ms=604800000` and
-   `retention.bytes=1073741824`, with complete topic identity/config evidence.
-   The fixed sinks intentionally refuse startup on drift. If any required value
-   differs or cannot be verified, stop and obtain approval for its correction
-   before releasing; the later two-override update does not repair these values.
-2. Complete that release before the topic correction. Verify the three
-   ClickHouse sinks are running the fixed image and every old consumer task has
-   exited. Verify the normal worker entrypoint and read-only Kafka/retained-RP
-   mounts, all six cluster/topic-generation checkpoints, remote=false, consumer
-   health/lag and the existing 20 GiB free-space reserve. Unexpected routes,
-   identities, old running clients or missing prerequisites stop the operation.
-   A config-only repair while old clients can reconnect is insufficient.
-3. The approved correction would incrementally set only the two lost overrides
-   on the existing three quarantine topics below. Retention byte/time values,
-   cleanup policy, source topics, topic IDs, routes and offsets are not changed.
-   Run operator JVMs outside the broker cgroup, using the existing Q4 command
-   shape and pinned image. Each failed command must stop the outer operation.
-   Immediately before applying it, take a fresh read of each topic's ID,
-   selected config values and config sources, and compare it with the
-   [recorded post-release audit](../../docs/evidence/kafka-shared-production-release-20261109/topic-policy-after-release.json).
-   This procedure expects the recorded default 1 GiB segment size and default
-   remote=false on each quarantine, plus the unchanged required policy. Any
-   drift, including a newer operator segment override, stops this procedure
-   pending a revised reviewed correction; do not overwrite it with this older
-   proposal. One responsible release operator coordinates the topic-change
-   window from this read through final verification, with no concurrent topic
-   configuration edits. Kafka's incremental update is not a compare-and-set.
+The JSON policy is the single deployment input for mutation and verification.
+There is no new operator CLI, service, credential, Infisical key or persistent
+tracking store. The generated six-topic input is temporary runner data.
 
-```bash
-# Approved operator session on dofek-server, after the fixed release is verified.
-for quarantine_topic in \
-  metric-stream-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3.quarantine.v1 \
-  metric-stream-live-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3.quarantine.v1 \
-  metric-stream-history-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3.quarantine.v1; do
-  if ! docker run --rm --network dofek_default --memory 384m \
-    -e KAFKA_HEAP_OPTS='-Xms32m -Xmx256m' \
-    --entrypoint /opt/kafka/bin/kafka-configs.sh \
-    apache/kafka:4.4.0@sha256:833b867a9585a141da455dc2b57431c65cbccb27f11c91f694444cca9f777e0f \
-    --bootstrap-server kafka:9092 --entity-type topics \
-    --entity-name "$quarantine_topic" --alter \
-    --add-config segment.bytes=134217728,remote.storage.enable=false; then
-    exit 1
-  fi
-done
-```
+The tiered-storage branch must consume this workflow and update this same
+policy definition for its separately reviewed phase-2 configuration. It must
+not maintain a second policy loop or reapply this phase-1 remote=false target
+after tiering is activated. Existing tiered-backend and erasure-verifier gates
+remain prerequisites for that later release.
 
-This is the stock incremental update, not legacy full replacement; see
-[Kafka's topic configuration procedure](https://kafka.apache.org/44/operations/basic-kafka-operations/).
-It does not repartition/recreate topics or delete broker data.
+## Qualification and limits
 
-4. Read back all six topic identities and selected settings through the existing
-   metadata observer. Quarantines must retain delete/seven-day/1 GiB retention
-   plus explicit 128 MiB segments and remote=false; sources retain their
-   existing 4 GiB policy. Compare against the fresh pre-update snapshot and the
-   coordinated approved delta: topic IDs and every unrelated setting must be
-   unchanged. An unexpected newer setting is drift, not permission to accept the
-   older proposal's value. Record consumer convergence, lag, archive errors and
-   reserve. Any requested reconnect qualification belongs to this reviewed
-   release operation; do not add an unapproved extra restart just to test it.
-   The isolated connect/reconnect proof is already complete.
-5. Preserve old Redpanda and aborted Kafka directories, the erasure completion
-   hold and the already frozen stop/preserve/forward recovery plan. Kafka has
-   application writes: there is no old-Redpanda cutback. Tiering, retirement,
-   credentials, OCI and the separate erasure-scrub combination remain outside
-   this correction.
+- Executable workflow tests cover all six route/role updates, the requested
+  verifier image, failure propagation, both readback calls, and rejection of
+  aliased routes before any update. Existing rollout tests remain in the same
+  suite; the existing Docker double was extracted into a test helper to keep
+  the test file below the repository's 1,000-line limit.
+- The [native Kafka receipt](../../docs/evidence/kafka-topic-policy-20261109/native.json)
+  records stock incremental convergence on six synthetic topics, matching
+  readback, fixed-writer connect/reconnect, unchanged topic IDs and offsets,
+  and preservation of an unrelated compression override.
+- Actual readback rejects both an
+  [incorrect value](../../docs/evidence/kafka-topic-policy-20261109/value-drift.log)
+  and an [inherited default](../../docs/evidence/kafka-topic-policy-20261109/default-source.log)
+  whose value happens to match. Reconciliation repairs selected-key drift.
+- The native CLI ran in an isolated Docker fixture. The identical verifier
+  logic ran on host Node 26/KafkaJS 2.2.4 with only the broker endpoint changed to
+  the fixture address. Local Docker had only 872 MiB free, insufficient to pull
+  the application image safely; this is not a claim of fresh packaged-image
+  qualification. Production remains unchanged.
+- The original runtime fix separately passed 66 units, nine native Kafka
+  integrations, three typechecks and full lint, and its
+  [primary mutation report](../../docs/evidence/kafka-quarantine-config-fix-20261109/stryker.txt)
+  records all 69 counted mutants killed. Those results are provenance, not a
+  substitute for this workflow's tests and current-head CI.
 
-## Retrospective
+## Concrete release proposal
 
-The regression reproduced the exact config-source and segment-size changes;
-sharing the existing validator avoided a second policy implementation. Health
-and zero lag alone did not detect configuration loss. Add the post-client
-override comparison to future release reviews. Reproduce similar failures with
-a failing test and verify the correction against the pinned broker, following
-the [testing guide](../../docs/testing.md).
+After this infrastructure follow-up is reviewed, merged and green, qualify the
+image built from that exact new main revision. Do not deploy the earlier d4e
+image using a newer checkout: the stock resolver requires matching source and
+immutable image identity. Use the existing normal web-release dispatcher and
+leave the manually disabled automatic-workflow setting unchanged.
+
+Before production approval, inspect fresh topic identity/config, service and
+reserve metadata against the selected policy and review the actual delta. The
+normal release then performs the reconciliation and readbacks above; there is
+no separate manual topic-update step. Keep the existing 20 GiB reserve,
+stop/preserve/forward recovery boundary, original Redpanda/aborted Kafka data,
+retained-RP erasure-completion hold and independent archive/backup checks.
+
+This source change does not authorize deployment, topic writes, OCI apply,
+credential edits, tiering activation, offset resets or old-data retirement.
+The normal shared-app/Cloudflare release remains a separately approved
+production operation. No new Terraform resources or applies are introduced.

@@ -1182,6 +1182,89 @@ jobs:
       - name: Verify Kafka before restoring consumers
         run: *kafka_api_readiness
 
+      - name: Converge Kafka metric-stream topic policy
+        if: success() && steps.deploy_stack_quiesced.conclusion == 'success' && steps.configure_clickhouse_cdc.conclusion == 'success' && steps.verify_peerdb_cdc_contract.conclusion == 'success'
+        run: |
+          set -euo pipefail
+          # Old sink tasks have exited at migration quiescence. The requested
+          # image contains the validating writer; consumers remain stopped here.
+          commands="$(node --input-type=module <<'NODE'
+          import { readFileSync, writeFileSync } from 'node:fs';
+          import { parseEnv } from 'node:util';
+          const policy = JSON.parse(readFileSync('deploy/kafka/topic-policy.json', 'utf8'));
+          const required = ['cleanup.policy', 'retention.ms', 'retention.bytes', 'segment.bytes', 'remote.storage.enable'];
+          for (const role of ['source', 'quarantine']) {
+            for (const key of required) {
+              if (typeof policy[role]?.[key] !== 'string' || !policy[role][key]) {
+                throw new Error(`Kafka ${role} policy is missing ${key}`);
+              }
+            }
+          }
+          const targets = [
+            'METRIC_STREAM_CLICKHOUSE_SINK_ENV_FILE',
+            'METRIC_STREAM_LIVE_CLICKHOUSE_SINK_ENV_FILE',
+            'METRIC_STREAM_HISTORY_CLICKHOUSE_SINK_ENV_FILE',
+          ].flatMap((key) => {
+            const environment = parseEnv(readFileSync(process.env[key], 'utf8'));
+            const topic = environment.METRIC_STREAM_TOPIC;
+            if (!topic || environment.REDPANDA_BROKERS !== 'kafka:9092') {
+              throw new Error(`${key}: Kafka topic and kafka:9092 broker are required`);
+            }
+            return [{ topic, config: policy.source }, { topic: `${topic}.quarantine.v1`, config: policy.quarantine }];
+          });
+          if (new Set(targets.map(({ topic }) => topic)).size !== targets.length) {
+            throw new Error('Kafka metric-stream topic routes must be distinct');
+          }
+          const commands = targets.map(({ topic, config }) => `${topic}\t${Object.entries(config).map(([key, value]) => `${key}=${value}`).join(',')}`);
+          writeFileSync(`${process.env.RUNNER_TEMP}/kafka-topic-policy-targets.json`, JSON.stringify(targets));
+          process.stdout.write(commands.join('\n'));
+          NODE
+          )" || exit "$?"
+          image="apache/kafka:4.4.0@sha256:833b867a9585a141da455dc2b57431c65cbccb27f11c91f694444cca9f777e0f"
+          while IFS=$'\t' read -r topic configuration; do
+            docker run --rm --network "${STACK_NAME}_default" --memory=384m \
+              -e KAFKA_HEAP_OPTS="-Xms32m -Xmx256m" \
+              --entrypoint /opt/kafka/bin/kafka-configs.sh "$image" \
+              --bootstrap-server kafka:9092 --entity-type topics --entity-name "$topic" \
+              --alter --add-config "$configuration" || exit "$?"
+          done <<< "$commands"
+
+      - name: Verify Kafka metric-stream topic policy
+        if: success() && steps.deploy_stack_quiesced.conclusion == 'success' && steps.configure_clickhouse_cdc.conclusion == 'success' && steps.verify_peerdb_cdc_contract.conclusion == 'success'
+        env:
+          APP_IMAGE: ${{ steps.pull_images.outputs.image_ref }}
+        run: &verify_kafka_topic_policy |
+          set -euo pipefail
+          targets="$(cat "$RUNNER_TEMP/kafka-topic-policy-targets.json")" || exit "$?"
+          docker run --rm -i --network "${STACK_NAME}_default" --memory=384m \
+            --entrypoint node "${APP_IMAGE:?APP_IMAGE is required}" \
+            --input-type=module - "$targets" <<'NODE' || exit "$?"
+          import kafkaJs from 'kafkajs';
+          const targets = JSON.parse(process.argv[2]);
+          const admin = new kafkaJs.Kafka({ brokers: ['kafka:9092'], clientId: 'dofek-deploy-topic-policy' }).admin();
+          await admin.connect();
+          try {
+            const { resources } = await admin.describeConfigs({
+              includeSynonyms: false,
+              resources: targets.map(({ topic, config }) => ({ type: kafkaJs.ConfigResourceTypes.TOPIC, name: topic, configNames: Object.keys(config) })),
+            });
+            if (resources.length !== targets.length) throw new Error('Incomplete Kafka topic-policy readback');
+            for (const { topic, config } of targets) {
+              const matches = resources.filter((resource) => resource.resourceName === topic && resource.resourceType === kafkaJs.ConfigResourceTypes.TOPIC);
+              if (matches.length !== 1 || matches[0].errorCode !== 0) throw new Error(`Cannot verify Kafka policy for ${topic}`);
+              for (const [key, expected] of Object.entries(config)) {
+                const entries = matches[0].configEntries.filter((entry) => entry.configName === key);
+                if (entries.length !== 1 || entries[0].configValue !== expected || entries[0].configSource !== kafkaJs.ConfigSource.TOPIC_CONFIG) {
+                  throw new Error(`${topic}: ${key} must be explicitly configured as ${expected}; found ${entries[0]?.configValue ?? 'missing'} (source ${entries[0]?.configSource ?? 'missing'})`);
+                }
+              }
+            }
+            console.log(`Verified selected policy on ${targets.length} Kafka topics`);
+          } finally {
+            await admin.disconnect();
+          }
+          NODE
+
       - name: Deploy and verify remaining services
         id: deploy_stack_full
         if: success() && steps.deploy_stack_quiesced.conclusion == 'success' && steps.configure_clickhouse_cdc.conclusion == 'success' && steps.verify_peerdb_cdc_contract.conclusion == 'success'
@@ -1328,6 +1411,12 @@ jobs:
       - name: Verify Kafka after full stack apply
         run: *kafka_api_readiness
 
+      - name: Verify Kafka topic policy after consumer startup
+        if: success() && steps.deploy_stack_full.conclusion == 'success'
+        env:
+          APP_IMAGE: ${{ steps.pull_images.outputs.image_ref }}
+        run: *verify_kafka_topic_policy
+
       - name: Remove unused Apple private key Swarm secrets
         if: steps.deploy_stack_full.outcome == 'success'
         run: |
@@ -1384,7 +1473,7 @@ jobs:
       - name: Report quiesced processing services
         if: failure() && steps.deploy_stack_quiesced.conclusion == 'success' && steps.deploy_stack_full.conclusion == 'skipped'
         run: |
-          message="analytics-worker, all three metric-stream ClickHouse sinks, and processing-reconciliation remain quiesced because a post-quiesce prerequisite failed. Resolve the failed readiness or CDC setup step, then rerun the deployment."
+          message="analytics-worker, all three metric-stream ClickHouse sinks, and processing-reconciliation remain quiesced because a post-quiesce prerequisite failed. Resolve the failed readiness, CDC setup, or topic-policy convergence/verification step, then rerun the deployment."
           if [ "${{ steps.deploy_stack_quiesced.outputs.web_convergence_failed }}" = "true" ]; then
             message="$message The web service rolled back or reverted to its previous image; its prior Swarm configuration remains in place."
           fi

@@ -19,8 +19,10 @@ image, deployment effects and remaining decisions before merging this PR.
 That release is now recorded in the [execution receipt](shared-release-execution.md):
 the workflow and live health checks passed, with a separately documented open
 quarantine topic-configuration defect. Tiered activation remains separate.
-The [quarantine correction proposal](quarantine-config-correction.md) contains
-the qualified startup fix and the separate, unexecuted production correction.
+The [deploy-owned topic policy](quarantine-config-correction.md) describes the
+merged startup fix and the infrastructure follow-up: selected settings live in
+[`topic-policy.json`](topic-policy.json), with incremental reconciliation and
+readback before and after consumer startup. That follow-up is not deployed.
 
 ## This layer
 
