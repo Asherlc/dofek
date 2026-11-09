@@ -1247,6 +1247,20 @@
       "when": 1793716200000,
       "tag": "0177_remove_daily_score_parameters",
       "breakpoints": true
+    },
+    {
+      "idx": 178,
+      "version": "7",
+      "when": 1793899500000,
+      "tag": "0178_native_metric_stream_delivery",
+      "breakpoints": true
+    },
+    {
+      "idx": 179,
+      "version": "7",
+      "when": 1793899501000,
+      "tag": "0179_account_erasure_identifiers",
+      "breakpoints": true
     }
   ]
 }

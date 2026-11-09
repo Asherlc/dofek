@@ -64,7 +64,7 @@ async function backfillNullSyncedAt(client: ClickHouseCommandClient): Promise<vo
   await client.command({
     query:
       "ALTER TABLE analytics.body_measurement_sample UPDATE _peerdb_synced_at = recorded_at WHERE _peerdb_synced_at IS NULL",
-    clickhouse_settings: { mutations_sync: 2 },
+    clickhouse_settings: { mutations_sync: "2" },
   });
 }
 

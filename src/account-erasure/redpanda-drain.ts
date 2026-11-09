@@ -22,6 +22,7 @@ const topicOffsetSchema = highWatermarkSchema.extend({
   high: offsetSchema,
 });
 export type AccountErasureHighWatermark = z.infer<typeof highWatermarkSchema>;
+
 export const accountErasureRouteHighWatermarkSchema = highWatermarkSchema.extend({
   topic: z.string().min(1).max(249),
   clusterId: z
@@ -37,7 +38,12 @@ export type AccountErasureRouteHighWatermark = z.infer<
   typeof accountErasureRouteHighWatermarkSchema
 >;
 
-interface RedpandaOffsetAdmin {
+/** Durable ingest_fence checkpoint written by the Kafka phase runner. */
+export const accountErasureIngestFenceCheckpointSchema = z.object({
+  highWatermarks: z.array(accountErasureRouteHighWatermarkSchema).min(1).max(3),
+});
+
+interface KafkaOffsetAdmin {
   fetchOffsets(options: { groupId: string; topics: string[] }): Promise<
     Array<{
       partitions: Array<{ offset: string; partition: number }>;
@@ -49,10 +55,10 @@ interface RedpandaOffsetAdmin {
   ): Promise<Array<{ high: string; low: string; offset: string; partition: number }>>;
 }
 
-export interface RedpandaAdmin extends RedpandaOffsetAdmin, KafkaQuarantineConfigAdmin {}
+export interface RedpandaAdmin extends KafkaOffsetAdmin, KafkaQuarantineConfigAdmin {}
 
 export async function captureAccountErasureHighWatermarks(
-  admin: Pick<RedpandaOffsetAdmin, "fetchTopicOffsets">,
+  admin: Pick<KafkaOffsetAdmin, "fetchTopicOffsets">,
   topic: string,
 ): Promise<AccountErasureHighWatermark[]> {
   return z
@@ -76,7 +82,7 @@ export async function captureAccountErasureQuarantineHighWatermarks(
 }
 
 export async function assertAccountErasureConsumersDrained(
-  admin: Pick<RedpandaOffsetAdmin, "fetchOffsets">,
+  admin: Pick<KafkaOffsetAdmin, "fetchOffsets">,
   topic: string,
   highWatermarks: readonly AccountErasureHighWatermark[],
   consumerGroups: readonly string[] = ACCOUNT_ERASURE_CONSUMER_GROUPS,
@@ -111,7 +117,7 @@ export async function assertAccountErasureConsumersDrained(
 }
 
 export async function assertAccountErasureReplayExpired(
-  admin: Pick<RedpandaOffsetAdmin, "fetchTopicOffsets">,
+  admin: Pick<KafkaOffsetAdmin, "fetchTopicOffsets">,
   topic: string,
   highWatermarks: readonly AccountErasureHighWatermark[],
 ): Promise<void> {

@@ -35663,6 +35663,69 @@ additional strict-whitespace assertions. The sanitized
 is now retained with its source ranges and explicit sampling limits. These
 were pre-merge corrections; no production deployment occurred.
 
+## 2026-11-08 — erasure extraction publication race (unresolved)
+
+Offline candidate review reproduced a real sink check-to-write race: the sink
+passed its fence read, then republished one row after fence activation and a
+synchronous deletion. No production data or services were changed; potential
+impact is loss of physical-erasure guarantees under concurrent publication.
+The cause is the missing shared admission/completion boundary between the raw
+sink and erasure. The deterministic diagnostic, exact failure, passing alias
+checks and proposed existing-owner integration are retained in the
+[extraction evidence](evidence/erasure-extraction-20261108/README.md).
+No durable race fix is implemented; the candidate remains blocked pending writer
+integration alignment and acceptance tests.
+
+Local qualification also encountered Redpanda async-I/O exhaustion and Docker
+network address-pool exhaustion. Focused PG/ClickHouse fixtures used healthy
+workspace services; the ephemeral exact-version lab reused that workspace network.
+No resilience tuning was added. Broker-dependent qualification remains outstanding.
+
+### Erasure extraction CI follow-up
+
+[CI42493248424](https://github.com/Asherlc/dofek/actions/runs/42493248424)
+failed Knip on unused analyticsPosition, unit/mutation dry runs on
+0038 mutations_sync string-versus-number expectations, and mutation shards on
+uncovered snapshot-admission retry persistence plus redundant stream validation.
+These were extraction regressions; no production impact. Removed the unused
+helper, matched tests to the typed SDK setting, added AggregateError/cause/error
+reporting assertions, and reused existing position comparison validation.
+Focused verification:46 unit tests passed;12 mutants killed(100%);Knip passed
+with the same non-secret config fixtures as CI. Remote rerun remains pending.
+No resilience settings, thresholds or exemptions changed.
+
+### Catalog mutation execution follow-up
+
+[Catalog shard0](https://github.com/Asherlc/dofek/actions/runs/42494073092/job/128773280097)
+failed at74.71% despite passing ordinary catalog tests. Module-initialized
+catalog/schema declarations were not being exercised under active per-test
+mutation selection. Tests now use stock Vitest module reset and import in
+beforeEach; unchanged assertions then raised the score to90.02%. Added focused
+staging identity/reference, direct nullable-reference, provider database scope
+and compound ownership-name cases. Final local result:180 catalog tests pass,
+mutation score93.04%(401 killed,28 survived,2 uncovered), TypeScript and Biome
+pass. This follow-up changes no production behavior or mutation gates.
+Remote CI confirmation is pending. Patch coverage passed when integration
+uploads arrived; its earlier partial-report failure needed no configuration fix.
+
+### Integration shard runtime follow-up
+
+[Integration shard1](https://github.com/Asherlc/dofek/actions/runs/42504180651/job/128803672202)
+hit the existing12-minute step deadline without an assertion failure. Structured
+module timings showed274s in activity-integrity repair and224s in ClickHouse
+erasure, including154s in the400k/800k resource case. The resource fixture issued
+separate HTTP absence queries per captured part. It now checks the same exact
+table/part-hash pairs in existing bounded pages, preserving both system.parts
+and projection_parts access, min(_state), metadata-zero and survivor assertions.
+The two bound string arrays use stock arrayZip, avoiding custom tuple serialization.
+
+Larger seed inserts were rejected by the existing128MiB query cap; original10k
+seed batches were retained. No timeout, memory cap, row count or production code
+changed. Final focused case on exact26.6.1.1193 passed in109.7s with retry=0;
+TypeScript and Biome passed. This local result is not a same-runner performance
+comparison or proof that the whole remote shard fits its deadline; new CI must
+confirm that. No unrelated activity-integrity repair changes were made.
+
 ## 2026-11-08 — Local Kafka qualification Docker disk pressure
 
 Production impact: none. An isolated protocol broker failed during formatting
@@ -35881,6 +35944,27 @@ No runtime behavior, timeout, retry or production configuration changed.
 - **Closure / remaining work:** The history catch-up incident is resolved for this retained backlog. The consumer is left running at one replica; the recovery heartbeat was deleted after the second healthy zero sample. Existing rollback provenance remains recorded. Kafka cutover, old broker-data deletion, archive replay and the broader storage-design review remain separate work; consumer offsets do not establish physical erasure or independent domain processing completeness. No application timeout/retry knob remains from this repair.
 - **Retrospective / useful next context:** Real-engine tests on both ClickHouse versions, scoped historical identity proofs and a single digest-pinned consumer update were sufficient. Stock broker-group inspection plus system metadata provided follow-through without a new monitoring framework. The existing runbook now records two healthy zero-lag observations as the completion boundary and keeps it separate from Kafka cutover. For similar incidents, reuse the existing integration-test preparation and production-log investigation workflows, and budget EXPLAIN/set materialization and query-log text reads before treating them as cheap metadata operations; no new skill is needed.
 
+
+## 2026-11-08 — Account-erasure PR review regressions (offline)
+
+Review of [PR 3234](https://github.com/Asherlc/dofek/pull/3234) reproduced uppercase UUID mutation mismatches, missing ClickHouse-only processing-operation roots and lease renewal after expiry while blocked on a row lock. Archive matching also allowed retained aliases to override explicit foreign owners; failed advisory-lock acquisition returned a potentially still-queued session to the pool. These are candidate defects; no production action was taken.
+
+The fixes normalize UUID mutation hashes, capture operation roots, preserve explicit archive ownership, evaluate lease expiry using the database clock after locking, and discard failed-lock sessions. [Real-engine regressions](../src/account-erasure/clickhouse-erasure.integration.test.ts) and [lease tests](../src/db/account-erasure-processing.integration.test.ts) reproduced the failures first and then passed (2 ClickHouse cases, 7 PostgreSQL cases, retries disabled); 135 focused unit tests and TypeScript/Biome checks passed. Local setup initially failed with PostgreSQL `No space left on device`; standing-approved unused-image cleanup reclaimed 1.926 GB, with no volume deletion. The separate [publication race](evidence/erasure-extraction-20261108/README.md#proven-publication-race) remains unresolved; this candidate is not merge-ready.
+
+
+### Review evidence clarification
+
+The [retained successful-CI catalog report](evidence/erasure-extraction-20261108/catalog-ci-report.txt) confirms the earlier 180-test / 93.04% counts. The previous failing job link records diagnosis, not successful qualification. Review follow-up also reproduced and fixed the owned-command HTTP-200 late-error acceptance using the stock SDK response parser. Further local checks temporarily hit disk exhaustion again; ordinary teardown removed 18 disconnected workspace test-template databases whose host processes had exited. No running container, named volume or other workspace was removed. Remaining [review decisions](evidence/erasure-extraction-20261108/README.md#smallest-proposed-safety-follow-up-approval-required) stay explicit and unresolved.
+
+
+## 2026-11-08 — Erasure review CI assertion drift and stale shard weights
+
+[Run 42517922029](https://github.com/Asherlc/dofek/actions/runs/42517922029/job/128846119737) on `0105eb093` failed its integration shard. The first failed case was the [snapshot-admission integration assertion](../src/jobs/process-account-erasure-request.integration.test.ts): it still expected detailed snapshot-error text after the worker intentionally switched to a sanitized support-required reason. The final fatal log was `The action 'Run pnpm exec vitest run --project integration --coverage --shard=1/4' has timed out after 12 minutes.` Other three integration shards, all mutation shards, unit/lint, web E2E and iOS passed; this was candidate CI, with no production impact or action.
+
+Timing evidence showed the expanded erasure module took 227 seconds versus its old committed 16.519-second weight, sharing shard 1 with a 268-second integrity-repair module. Updated the assertion to the fixed safe reason and exact public support message. Refreshed [the measured baseline](../scripts/integration-test-timings.json) through the existing [documented merge tool](testing.md#duration-balanced-integration-shards), using all four successful timing artifacts from run `42507552488`, attempt 1, source `58d9c75d5`, Vitest 5.0.5. No weights were hand-picked; sequencer, limits, retries and test coverage remain unchanged. The source artifacts contain 358 complete successful file results; current discovery adds one estimated owner integration file. The stock sequencer probe verified a unique exact union of all 359 current files and placed the two heavy modules on separate shards (about 457 seconds of measured work per bin). Existing timing-tool tests passed 52 cases, root TypeScript and changed-test Biome passed.
+
+The focused corrected integration case was attempted but PostgreSQL failed to create its test database with `No space left on device`, before any assertion. It is not claimed to pass locally. Remaining risk: new exact-head CI must verify the corrected assertion and unchanged 12-minute deadline; publication-safety/design blockers remain open. Scoped CI timing artifacts were the only downloads; no production event/archive bodies were accessed.
+
 ## 2026-11-09 — Kafka phase-1 mount preparation and operator failure propagation
 
 - **Scope/impact:** The approved Kafka-only cutover was still preparing an isolated
@@ -35957,6 +36041,128 @@ No runtime behavior, timeout, retry or production configuration changed.
 - **Remaining risk/follow-up:** exact new-head CI must settle; Terraform credential sourcing and internal-overlay authentication remain explicit review decisions. [Shared release proposal](../deploy/kafka/shared-release.md) records image/source distinctions and the broader automatic-release effects. Keep real-loader qualification for renamed structural fields and update executable workflow mocks whenever a required service is added.
 
 
+## 2026-11-09 — Erasure branch synchronization with merged Kafka main (offline)
+
+The user requested current main before assessing the quarantine handoff. [Main
+6fe1d4fbd](https://github.com/Asherlc/dofek/commit/6fe1d4fbd479cc1ed9be874538e2b7dc3c1b1551)
+introduced broker-storage checks overlapping the independent erasure redesign.
+Nine files had text conflicts; both incident append histories were retained.
+Reconciled the shared checkpoint schema/capture/scrub and required retention
+dependency without replacing newer erasure identifiers, snapshot guards,
+post-lock lease renewal or ownership callbacks.
+
+The first targeted database run found two request-completion fixtures with null
+legacy ingest/drain checkpoint details; main's structural validation correctly
+rejected them. Adapted those test phases to emit the same required route/generation
+checkpoints as production. Validation passed 142 focused units, 76 targeted
+database cases across focused runs, TypeScript and changed-file Biome. The
+[PostgreSQL scrub regression](../src/db/account-erasure.integration.test.ts) checks
+generation preservation and removal of extra identifying fields; runtime/phase
+tests retain the required main broker guard. New exact-head CI remains required.
+The quarantine correction remains independently reviewable in
+[PR 3237](https://github.com/Asherlc/dofek/pull/3237), outside this main revision.
+No production changes, strategy expansion, branch switch or rebase occurred.
+
+## 2026-11-09 — Erasure ingest-checkpoint mutation coverage after main sync
+
+- **Symptoms/impact:** [PR3234 CI, Stryker shard 12](https://github.com/Asherlc/dofek/actions/runs/42642295284/job/129248940697)
+  failed on head `b6ee9263e`; no production impact. The failing command was
+  `pnpm exec stryker run stryker.ci.config.json --mutate "$MUTATE_FILES"`.
+  Its first fatal line was `Final mutation score 0.00 under breaking threshold 75`.
+- **Root cause/fix:** all three ingest-fence checkpoint schema mutants survived:
+  removing the object shape, replacing the three-route maximum with a minimum,
+  and replacing the one-route minimum with a maximum. Existing drain tests did
+  not directly verify this enclosing schema. Added six cases through its public
+  parser: exact structural preservation for one, two and three routes, rejection
+  of zero/four routes and rejection of a missing route array. Each test reloads
+  the module before exercising its initialized declaration, using the existing
+  [Vitest module-reset pattern](https://vitest.dev/api/vi.html#vi-resetmodules).
+- **Validation:** the exact failing mutation selection passed locally with all
+  three mutants killed, zero survivors and 100% score. All 32 drain unit tests,
+  root TypeScript and changed-file Biome passed. No runtime code, mutation gate,
+  retry, timeout or limit changed. New-head remote CI remains required.
+  Subsequent [Stryker shard 12](https://github.com/Asherlc/dofek/actions/runs/42645413658/job/129259102244)
+  on source `118da53313fd5bb7e1a98ee43ce2806fc950757c` independently killed all
+  three checkpoint mutants at 100%. Its logged selection includes
+  `src/account-erasure/redpanda-drain.ts:40-45`; this successful immutable run
+  supplies the durable result and revision missing from the original failure link.
+- **Follow-up:** retain direct boundary/preservation assertions when shared
+  checkpoint schemas change; use the existing CI-fix workflow to inspect actual
+  surviving mutants. The separate publication/recovery safety decisions remain
+  unresolved and this test fix does not make the PR merge-ready.
+
+The subsequent `76d2af828` push could not start the normal PR test merge because
+[main d4e7a34e4](https://github.com/Asherlc/dofek/commit/d4e7a34e49f4e91f57a7b76dbb2735a944b4e224)
+had merged PR3237 meanwhile. GitHub reported `CONFLICTING`. A stock merge-tree
+assessment found only the incident append and the shared erasure-admin interface
+block. Synchronized main in the existing branch, retained both append histories,
+adopted main's shared quarantine validator/interface and kept the bounded ingest
+schema and six regression cases. The shared quarantine/drain unit selection
+passed all 52 tests; TypeScript, Biome and diagnostic patch applicability passed.
+No runtime strategy expansion, production action, branch switch or rebase was
+performed. The newly merged head still requires remote CI qualification.
+
+## 2026-11-09 — Erasure review and local test-disk recovery
+
+- **Review evidence:** two new archive fixtures failed before the fix: an
+  uppercase archived owner or request UUID left both target records untouched
+  (`expected recordsRemoved: 2`, received `0`). The
+  [archive comparison](../src/account-erasure/archive-erasure.ts) now normalizes
+  both UUIDs while preserving explicit foreign ownership, including overlapping
+  activity aliases. [Retained local output excerpts](evidence/erasure-extraction-20261108/archive-local-report.txt) report that focused archive/phase suites passed 70 tests and all 13
+  changed-line archive mutants were killed locally; remote qualification of this
+  new change remains required. The phase suite also restores drain-before-capture
+  and initial archive-cursor assertions; the real-engine wrapper forwards SDK close.
+- **Local infrastructure failure:** the focused real-engine fixture could not
+  enter its body because PostgreSQL `CREATE DATABASE` failed with `No space left
+  on device`. Docker Desktop's local 80 GiB filesystem had no available space;
+  all images/containers were in use and build cache was empty. No test or timeout
+  was weakened. Removing two exact completed, idle integration templates without
+  `FORCE` recovered 55,364,990 database bytes but did not restore sufficient capacity.
+- **Cleanup scope (contemporaneous agent report; raw Docker/PostgreSQL stdout was not retained, so these historical state/byte claims cannot be independently verified from checked-in artifacts):** the user requested cleanup instead of resizing. The owner
+  confirmed five old `pulsar-foundation` labs were completed and disposable.
+  Verified exact Compose project/cwd/service labels, stopped them through that
+  physical workspace's existing wrapper, rechecked `running=false`, then removed
+  only those five containers without volume removal. Docker documents
+  [Compose stop](https://docs.docker.com/reference/cli/docker/compose/stop/) and
+  [container removal/volume options](https://docs.docker.com/reference/cli/docker/compose/rm/).
+  All five named volumes remained present, the frozen checkout's before/after
+  status was identical, and local filesystem availability rose to 2,764,066,816
+  bytes. No unrelated workspace, active/unknown lab, named volume, Docker disk
+  limit, production resource or key was changed. The database fixture was then
+  restarted; its result is reported separately rather than inferred from free space.
+- **Next time:** use the existing PR-review/CI-debugging workflows and keep exact
+  schema/owner boundary cases. Confirm completed lab ownership before stopping
+  running local containers; a missing host PID or large layer alone is not proof.
+
+## 2026-11-09 — Erasure post-lock lease and support-retry review fixes
+
+The real PostgreSQL regressions confirmed that phase-progress updates and
+identifier reads/appends could wait past expiry and still succeed because
+`now()` retained the transaction-start timestamp. They now acquire the request
+row lock before checking `clock_timestamp()`. The renewal regression also proves
+the lease is active after the operation begins waiting, then explicitly expires
+it under the held lock; it no longer depends on setup finishing within one second.
+See the [lease cases](../src/db/account-erasure-processing.integration.test.ts)
+and [identifier-store cases](../src/account-erasure/identifier-store.integration.test.ts).
+
+Additional database regressions failed when a support-required snapshot was
+redispatched or claimed, and when overdue processing erased its actionable
+reason. Persistence now gives that failure no retry date, preserves the reason
+through overdue updates, and excludes it from automatic dispatch/claim until
+support repairs the snapshot and clears the hold. Public status retains the
+contact-support remedy after the deadline. Ordinary transient failures and
+explicitly repaired requests remain eligible. No snapshot limit increased and
+no identifying diagnostic text is exposed.
+
+Validation passed 80 real-PG cases across the three affected suites, 34 focused
+unit cases, all 13 status-message mutants, root TypeScript and changed-file Biome.
+These are offline checks; the new commit still requires exact-head CI. No
+production request, secret, migration, offset or resource was changed. The
+approved writer/recovery/key work continues separately. Future reviews should
+use the existing PR-comment workflow and observe actual database lock waits
+before asserting a post-lock deadline boundary.
+
 ## 2026-11-09 — Kafka shared release succeeds; quarantine override reset remains open
 
 - **Release/impact:** user Q5/A approved #3233 merge plus the normal shared application release and the two named policy decisions. Merge6fe1d4fbd mainCI42562370508 passed90jobs; exact app digest9dec51d5… was verified. The automatic handoff did not start: `gh api repos/Asherlc/dofek/actions/workflows/deploy-web.yml` reported `disabled_manually`. Reason/owner/date remain unknown. The setting was not changed. Existing stock `deploy.yml`, targetweb/image_tagsha-6fe1d4f, completed this one approved release through canonical gates; optional forced mobile distribution was skipped. No new workflow, retry or manual Swarm deployment bypass was introduced.
@@ -35971,6 +36177,24 @@ No runtime behavior, timeout, retry or production configuration changed.
 - **Validation/limits:** native regression RED4fail/1pass toGREEN5/5, consumer+erasure integration9/9, units66/66, quarantine mutation [69/69 killed](evidence/kafka-quarantine-config-fix-20261109/stryker.txt), root/server/web typechecks and source-policy lint passed. The stock incremental correction preserved a disposable topic ID and survived actual fixed-client reconnect. Local analytics lint initially hit Docker ENOSPC; after stopping/removing only this workspace's completed disposable DB/Redis containers and preserving named volumes, the same SQL command passed. Local Redpanda still could not reserve shared AIO capacity and was not claimed as qualified. No retries/timeouts/gates or shared host limits were altered. All unrelated running containers/database volumes were preserved; stock unused-image cleanup also recovered2.021GB before shared disk pressure returned.
 - **Remaining:** CI, then separate approval and execution of the fixed-image release/policy correction, must complete before claiming production resolution. Keep tiering off and retain the original RP completion hold. The [reviewable correction order](../deploy/kafka/quarantine-config-correction.md) requires fixed clients before restoring the two lost topic overrides. Future qualification should compare selected configs after clients start/reconnect; use a failing reproduction and pinned-broker integration checks rather than adding a new repair framework.
 
+## 2026-11-09 — Retained erasure key and legacy cutover safeguards
+
+Offline review regressions proved that changed credential configurations could admit empty retained-identity lookups and that migration 0179 accepted a scrubbed unfinished legacy request. A lookup miss under a new key could be mistaken for absence, while a route-less legacy request cannot satisfy the new execution contract. No production request or key was changed.
+
+The [identifier store](../src/account-erasure/identifier-store.ts) now atomically retains a request-scoped key-configuration binding in its existing capture checkpoint, validates it after the request lock for all retained access and capture reentry, and removes it through normal PII scrub. The original configuration resumes; mixed-key workers fail closed. The [0179 guard](../drizzle/0179_account_erasure_identifiers.sql) now also rejects every unfinished request under its existing table lock. Drain with the original worker and retain the original key through a separately approved cutover; no checkpoint reconstruction, partial re-key or second keyring was added. See the [rotation contract](credential-encryption.md) and [real PostgreSQL regressions](../src/account-erasure/identifier-store.integration.test.ts).
+
+Validation passed the full 55-case store/cutover suite before strengthening its concurrency test into two separate-process initial-capture cases; both strengthened cases passed, as did 18 affected account-persistence cases, seven credential units, TypeScript and Biome. Exact-head CI remains required. The preceding pushed head 539b3a1db [run 42671508202](https://github.com/Asherlc/dofek/actions/runs/42671508202) failed at workflow startup before tests ran; API checks expose only five skipped jobs with no fatal log or annotation. The cause is unresolved, so it is not labeled a platform outage and no retry, workflow or gate change was made. Continue the approved remaining safety work and inspect the next naturally triggered exact-head run.
+
+Follow-up qualification: full credential mutation exposed missing API coverage for encryption idempotence, context verification and invalid key configuration. Added those public behavior cases and removed the redundant private plaintext guard, whose only caller already handles plaintext; 15 credential units and 42 owner units passed. The final combined store run reached 55/56 but its 501-parent case hit the unchanged30-second test limit (33.1s versus14.2s in the earlier passing run). A single sequential run is assessing whether this persists; host snapshots show substantial concurrent worker and sibling ClickHouse CPU load, which is correlation rather than a proven implementation cause. No test limit was changed, shared service stopped or unknown resource removed. Remaining database/mutation qualification is explicitly open.
+
+Focused capture diagnosis identified redundant encryption before ON CONFLICT: activity/group/anchor/alias sources produced 14 insert attempts for seven distinct fixture roots. Temporary page timings showed repeated 500-item activity encryption pages; all diagnostic logging was removed. The [capture](../src/account-erasure/identifier-store.ts) now uses PostgreSQL UNION within each existing identifier family before ordered keyset paging and encryption. All typed per-owner predicates and the exact500-item page cap remain; families are never combined. The [real regression](../src/account-erasure/identifier-store.integration.test.ts) failed14-versus7 attempts before the fix and passed afterward, preserving exact identifier sets, cross-family shared UUIDs, foreign-owner isolation and stable pagination. The focused 501-parent case also passed in8.2s under the unchanged30s limit. These results prove duplicate-work removal; they do not claim host load caused every prior timeout or replace final sequential qualification.
+
+## 2026-11-09 — Durable child ownership and physical retry work in progress
+
+The approved safety implementation extends the [existing owner](../src/analytics/analytics-query-owner.ts) to register a synchronous dbt child as non-terminal before spawn, using its existing row with no synthetic remote query ID. Abnormal exit, lost session, callback return with outstanding work and actual executor termination retain the barrier. Erasure preparation, fence and application use one request intent so a terminal failure can retry its preparation. Frozen physical replay retains original parts and predicates and still requires safely admitted publication ownership; absent native metadata alone does not prove safe takeover. Actual sink/dbt writer wiring and exact-version qualification are still pending, so this is not a completed safety claim.
+
+Validation passed115 owner/runtime/physical units and the12 owner database cases across a combined11-pass run plus the corrected session-loss case. That fixture required the native integer PID argument to pg_terminate_backend (the owner column is BIGINT); it now verifies termination occurred. TypeScript/Biome passed. The new physical regression could not yet establish its intended RED: the reused local26.9.19 engine failed with total-memory code241 at1.16GiB over its unchanged1.15GiB server limit, despite the128MiB per-query cap. Read-only inspection found no other active queries or merges, resident memory864MB, jemalloc resident780MB/allocated386MB and945 system-log parts. Only the verified owned test ClickHouse container was restarted, preserving its named volume, image and limits. No memory/timeout/retry knob, shared service or production state was changed. The actual physical RED/GREEN and exact26.6/26.10 matrix remain required; do not treat the memory failure as proof of the desired regression.
+
 ## 2026-11-09 — Topic-policy restoration becomes deployment-owned
 
 - **Status/impact:** the startup fix merged in [#3237](https://github.com/Asherlc/dofek/pull/3237); exact main CI [42643872631](https://github.com/Asherlc/dofek/actions/runs/42643872631) passed. It has not been deployed. The user requested infrastructure ownership instead of the proposed manual correction; no production topic write, restart or second release occurred during this follow-up.
@@ -35978,6 +36202,26 @@ No runtime behavior, timeout, retry or production configuration changed.
 - **Validation:** 47 executable workflow tests passed. The [isolated native receipt](evidence/kafka-topic-policy-20261109/native.json) proves six-topic convergence, fixed-writer connect/reconnect, unchanged topic IDs/offsets, unrelated compression preservation, and rejection of both wrong values and inherited defaults. Native CLI ran in Docker; identical verifier logic ran on host Node/KafkaJS with the fixture endpoint. Packaged-image execution was not repeated because Docker had only 872 MiB free; that limitation is explicit rather than transferred from earlier runtime proof.
 - **Local prerequisite failure:** full lint's SQL phase initially reported `Connection refused` at `127.0.0.1:8123` because the workspace environment was absent. After generating it, `pnpm compose -- up -d --wait clickhouse` exposed `all predefined address pools have been fully subnetted`. A temporary local Compose IPAM override started only the owned ClickHouse fixture; the same SQL lint command then passed. Source-policy lint, three typechecks, actionlint and normal source spellcheck also passed. No shared running containers or named database volumes were removed, and no repository network settings, retries or timeouts changed.
 - **Remaining/next time:** current-head CI and a separately approved exact-image normal release must complete before production resolution. Retain old data and the RP completion hold. Keep policy ownership and pre/post-start readback in the deployment runbook; use native config behavior and executable workflow tests when investigating another override reset, rather than adding a separate repair tool.
+
+## 2026-11-09 — Support-held snapshot expectation corrected after safety changes
+
+[CI42677269270 integration2](https://github.com/Asherlc/dofek/actions/runs/42677269270/job/129363492499) first failed in the request-to-completion snapshot-admission case: retry_scheduled expectedtrue, actualfalse. The approved support hold intentionally removes automatic retries, so the stale test contradicted the new policy. Subsequent existing retries reused its fixedUUID and produced secondary duplicate-fixture failures. The [test](../src/jobs/process-account-erasure-request.integration.test.ts) now expectsfalse and creates a fresh fixture UUID per attempt; the real PostgreSQL case passes with retry0, including the sanitized support message, failure count and released lease. No runtime, test retry/timeout, budget, gate or production state changed.
+
+The preceding ownership/recovery checkpoint has now passed all14 combined database cases on exact ClickHouse26.6.1.1193 with the unchanged128MiB query cap, including frozen replay after durable admission and failure after a terminal response. A disposable engine with the same checked-in guardrails avoided the prefilled26.9 lab's total-memory failure; that older named volume remains preserved. Exact26.10, actual sink/dbt caller qualification and final exact-headCI remain open. Future request-level assertions should reflect the same support-hold policy as dispatch/claim tests; use the existing CI and integration-test readiness workflows rather than changing retries or limits.
+
+## 2026-11-09 — Actual sink publication admission and isolated race proof
+
+The [production consumer regression](../src/metric-stream/clickhouse-sink-publication.integration.test.ts) reproduced the previously diagnosed race through native Kafka and the real environment entrypoint: after a delayed fence response and completed account erasure, the old callback republished one target row (expected0, actual1). The [sink](../src/metric-stream/clickhouse-sink.ts) now acquires the existing durable publication owner before fence membership and uses its owned client through batch effects and terminal responses. Existing heartbeats remain active while admission waits; offset/processing acknowledgement ordering is unchanged. A stable topic/partition/first-valid-offset intent supports resegmented replay; uncertain outcomes remain blocked for verified recovery.
+
+The candidate passed the actual callback/replacement test on exact26.6.1.1193, including physical target erasure, unrelated-user survival and no offset advancement while the replacement waits.155 affected units and root TypeScript also passed. Initial fixture attempts failed all-state proof on inactive remnants from earlier completed lab runs, not on the target assertion. Stock [Testcontainers](https://node.testcontainers.org/features/containers/) now isolates that test's ClickHouse storage while matching the configured engine version and existing1536MiB/128MiB guardrails; teardown removes only its own disposable container. No proof, timeout, retry or production setting was weakened. Exact26.10, actual dbt/cycling writers and final exact-head CI remain required. Next time, isolate a whole-table physical-proof fixture at container scope instead of sharing prior tests' inactive parts; the existing integration-readiness and root-cause CI workflows remain appropriate.
+
+## 2026-11-09 — Owned analytics builds and local capacity qualification
+
+The real [pinned-dbt fixture](../src/analytics/dbt-build.integration.test.ts) observed async_insert1 and unbuffered commands before the change. Stock [dbt profile settings](https://clickhouse.com/docs/integrations/dbt/features-and-configurations) now enforce synchronous inserts, buffered responses and synchronous mutations. The actual driver still enables progress headers; an ineffective override was removed, and its real execution-error/failed-artifact behavior was tested. Normal/local entrypoints and the bounded repair CLI now admit publication through the existing owner; cycling requires that owner. The [shared build helper](../src/analytics/dbt-build.ts) validates both fresh artifacts before child completion, while failed children remain blocked. No additional owner table, automatic recovery or tracking framework was introduced.
+
+Local proof so far:122 affected units, two real entrypoint admission cases,13 owned cycling cases, and five combined native adapter/child/bounded cases on exact26.6 passed with retry0. Full repair/rollback qualification, exact26.10, current-main integration and exact-head CI remain open at this checkpoint. A diff review caught an overwritten existing dbt unit file before commit; its original suite was restored and the regression added alongside it. Root TypeScript, Biome and diff checks pass.
+
+The bounded test first failed CH243 in activity_location_sample because the local Docker VM reached zero free space. Completed-resource cleanup removed only the inspected own stopped default ClickHouse container (named volume retained), the prior exact lab's unused anonymous volume, an unused cached SeaweedFS image, the completed own Kafka fixture, and six generated templates tied to finished recorded test processes. Each template had connections disabled, zero sessions and no live matching host PID, and used stock DROP DATABASE without FORCE. No named database volume, sibling running service, Docker sizing, production resource, timeout or retry was changed. Space remains constrained and subject to other local work; passing subsequent focused checks does not qualify a disk-failed run. Preserve completed-fixture teardown and use the existing integration-readiness workflow for future capacity failures.
 
 ## 2026-11-09 — Local lint prerequisite blocked by orphaned Docker networks
 
@@ -36007,6 +36251,14 @@ No runtime behavior, timeout, retry or production configuration changed.
 - **Recovery / status:** Marked the PR ready and requested an unchanged workflow rerun. Required checks and merge remain pending. No bypass, admin merge, timeout, retry policy, or workflow change was introduced.
 - **Next time:** Use the ship-pr and gh-fix-ci skills; inspect the workflow-level annotations and required-check list whenever CI Gate passes but required jobs are absent. Proposed runbook improvement: distinguish workflow startup errors from repository command failures before editing CI.
 
+## 2026-11-09 — Final erasure review boundaries
+
+The [physical progress update](../src/account-erasure/identifier-store.ts) used transaction-start `now()` after descriptor cleanup. A deterministic [real PostgreSQL regression](../src/account-erasure/identifier-store.integration.test.ts) expired the lease during deletion: the original code committed, while the fixed `clock_timestamp()` predicate rejected and rolled back both deletion and cursor. All58store/database cases passed20.28s with retry0. PostgreSQL documents [transaction versus wall-clock timestamps](https://www.postgresql.org/docs/current/functions-datetime.html#FUNCTIONS-DATETIME-CURRENT). Root paging now has a separate production-consumed module, preserving the exact stock UNION, per-owner predicates and500-item keyset bound; the store is under1000lines.
+
+Physical retention polling now uses exact database/table/hash tuple membership via stock arrayZip, two system-table queries per bounded page, retaining min(_state), projection parents and inactive files. The public orchestration regression failed before batching and all58units plus four exact26.6 native recovery/projection/absence cases passed afterward. A separate exploratory collision fixture used STOP MERGES and blocked its own mutation; its hold was released and the fixture removed. That manually unblocked run is not qualification. No production setting, test gate, timeout, retry, or budget changed. [ClickHouse documents arrayZip](https://clickhouse.com/docs/sql-reference/functions/array-functions#arrayZip).
+
+Startup cleanup coverage again verifies the original cause, AggregateError and both Sentry captures. Main e620cdbd0 was merged into the branch with both incident histories and all owner plus tiered-runtime tests preserved;45focused units, TypeScript and formatting passed. New current-head CI and exact26.10 qualification remain gates. Next time, retain bounded command transcripts with local operational claims and avoid suppressing mutation execution when constructing physical-proof fixtures.
+
 ## 2026-11-09 — Automatic deploy mixes workflow and release revisions
 
 - **Symptoms / impact:** [Deploy Web run 42687120147](https://github.com/Asherlc/dofek/actions/runs/42687120147) failed in `Validate host bind mount paths`. Terraform succeeded; the failure preceded image pulls, migrations, and application rollout, leaving the selected release undeployed.
@@ -36016,6 +36268,28 @@ No runtime behavior, timeout, retry or production configuration changed.
 - **Review found a dispatch prerequisite:** A live probe of the existing Terraform workflow with `operation=plan` and the selected full SHA returned `HTTP 422: No ref found for: c35c32bedba7096395d568e6c09cc86fd02f79b0`; no workflow started. Bare-SHA dispatch is unsupported, despite the local mock accepting it. GitHub documents branch/tag dispatch refs in the [dispatch API](https://docs.github.com/en/rest/actions/workflows#create-a-workflow-dispatch-event). The user then approved release tags. Created `deploy-c35c32bedba7096395d568e6c09cc86fd02f79b0` at the selected commit and dispatched the same plan-only workflow through it: [run 42690480352](https://github.com/Asherlc/dofek/actions/runs/42690480352) succeeded with the exact expected `headSha` and tag `headBranch`. No infrastructure apply or application release was requested by this probe.
 - **Local validation prerequisite:** Full `pnpm lint` passed source-policy checks but SQL lint failed to connect to its ClickHouse fixture. The fixture's first fatal line was `No space left on device ["/var/lib/clickhouse/preprocessed_configs"]`; Docker reported 0 available bytes, no build cache, and no unused images. The new workspace container was removed while preserving its named volume and every other workspace's running containers/volumes. No lint gate, database setting, or Docker capacity limit was changed. Remote CI must validate SQL lint in a healthy environment; this local prerequisite failure is not a deployment regression.
 - **Next time / proposed improvement:** Use gh-fix-ci and systematic debugging, compare the executing reusable workflow SHA with the selected checkout and image SHA before editing infrastructure, and follow the child Deploy link when checking rollout status. The deployment runbook now explains that distinction; consider adding the same three-revision comparison to the CI debugging runbook.
+
+## 2026-11-09 — Transport-coordinate mutation qualification
+
+[Exact-head CI42696134964, Stryker10](https://github.com/Asherlc/dofek/actions/runs/42696134964/job/129429607659) failed at “Final mutation score63.16 under breaking threshold75”:24killed/14survived. The failures were in the permanent [transport-position schema/comparator](../src/metric-stream/transport-position.ts), not the native erasure run. Tests lacked malformed/canonical/max-coordinate boundaries and invalid comparator inputs; statically imported module-initialized schemas also needed re-evaluation under each active mutant. The [test](../src/metric-stream/transport-position.test.ts) now uses stock [Vitest resetModules](https://vitest.dev/api/vi.html#vi-resetmodules) with dynamic import and covers those public boundaries. All25units and root TypeScript pass; sequential local CI-config mutation verification then passed97.37% (37killed,1equivalent survivor,0uncovered). The remaining < versus <= mutant cannot change behavior because the earlier equality branch already returned0. No exclusion was added; the database matrix finished before mutation started. No production code, gate, test timeout or retry changed.
+
+The separate sequential26.10.2.103 qualification completed35actualwriter/owner/entrypoint cases,40erasure cases and5repair/rollback cases (220.81s/248.57s/343.20s), all with retry0. The erasure suite retains400k/800krows, fullcatalog/ownership checks, frozen recovery, projection/all-state part proof and survivor assertions. These local results qualify their actual runtime source; the next exact-head CI must still pass. Next time, combine real-engine semantics with module-initialization-aware mutation tests; do not paper over either with larger limits.
+
+## 2026-11-09 — Erasure cutover requires the existing maintenance mode
+
+Final release review found that0179's documented producer quiescence was not selected by deployment metadata. Against the current-main migration journal, the stock [selector](../scripts/migration-deployment.ts) returned rolling for0178/0179. The [old producer](https://github.com/Asherlc/dofek/blob/85e3ce64c/src/db/account-erasure.ts) lacks the new capture callback. A rolling release would leave that producer able to create an uncaptured request after0179's guard transaction; the existing realPG incomplete-capture test demonstrates that the post-migration schema admits such a row and the new store rejects its missing capture. The empty production preflight does not close this later admission window.
+
+The minimum fix is the existing first-line maintenance marker on [0179](../drizzle/0179_account_erasure_identifiers.sql), not a new trigger or coordinator. Repeating the same stock classification now returns maintenance. The [canonical workflow](../.github/workflows/deploy-web-stack.yml) then applies its existing web/worker quiesce overlays through migration and requested-image convergence.33selector units,10focused realPG capture/cutover cases, migration policy and diff checks passed. SQL statements and runtime code are unchanged; the80native engine cases need no unchanged rerun. A web maintenance window requires explicit release alignment before merge. No production service was stopped or changed by this finding. Next time, verify the actual release-mode classification with the legacy producer contract, rather than relying on an empty preflight or a migration comment.
+
+## 2026-11-09 — Server CD waits behind TestFlight publication
+
+- **Symptoms / impact:** At approximately 21:29 UTC, [automatic handoff 42696468845](https://github.com/Asherlc/dofek/actions/runs/42696468845/job/129430296562) remained in `Dispatch and watch the selected release workflow`. Its [child Deploy run 42696714405](https://github.com/Asherlc/dofek/actions/runs/42696714405) was `pending` with no jobs, while a newer automatic handoff was also pending. This was a queue blockage, with no fatal command or error line in the observed jobs.
+- **Evidence / cause:** [Earlier release 42691969726](https://github.com/Asherlc/dofek/actions/runs/42691969726) completed its server stack at 20:49:15 UTC and OTA at 20:52:37 UTC, but its [TestFlight upload 129449289736](https://github.com/Asherlc/dofek/actions/runs/42691969726/job/129449289736) remained `queued`, requiring `macos-latest` with no runner assigned. That historical workflow holds `deploy-web-production` for the entire release, including mobile jobs; the new child requires the same group. GitHub documents that another run in the same [workflow concurrency group remains pending](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency). Both releases selected `e620cdbd07b9588a97dc0825d5569ec93229ad18`, so the pending child would deploy the same server revision again. The underlying runner-allocation delay was not diagnosed.
+- **Change history:** [#3185](https://github.com/Asherlc/dofek/pull/3185) restored mobile jobs inside the server workflow's lock. [#3245](https://github.com/Asherlc/dofek/pull/3245) added a separate handoff, immutable release tag, dispatch, and watcher to address the workflow/release revision mismatch documented above; it did not separate mobile completion from production serialization.
+- **Status / follow-up:** Unresolved; no runs were cancelled, deployments dispatched, or workflow behavior changed during diagnosis. Proposed direction awaiting user alignment: direct server CD with independent automatic mobile publication, preserving deployment gates and consistent workflow/source/image revisions. Next time use gh-fix-ci and inspect every unfinished job in the lock-owning run. Proposed runbook addition: explicitly identify the production lock owner and distinguish successful server rollout from pending mobile distribution before rerunning a release.
+- **Observed progression:** The earlier run completed successfully at 21:42 UTC and the pending child entered `in_progress` at 21:43 UTC without operator intervention. This cleared that queue blockage; it did not change the workflow-wide locking behavior.
+- **Approved durable fix prepared:** The user approved restoring direct server CD with independent automatic mobile publication. Deploy Web now calls the existing environment workflow directly, and only the server jobs in Deploy Web and Deploy own `deploy-web-production`. Mobile publication still depends on the successful server's verified source SHA, under the existing mobile locks. Automatic eligibility requires successful main-push CI at the caller's SHA, keeping workflows, source and immutable image aligned; superseded completions skip instead of selecting an older ancestor. The custom selector, release-tag creation, dispatch watcher and their obsolete tests are removed. See the [deployment procedure](../deploy/README.md#flow-diagram), GitHub's [job concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency), and [workflow_run revision semantics](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_run).
+- **Validation / remaining risk:** All 118 retained deployment/image/TestFlight tests, changed-workflow actionlint with shellcheck, repository-wide CI actionlint (`-shellcheck=`), source-policy lint, root/server/web typechecks, and canonical spelling passed locally. The full Docker-free unit/mobile run passed 1,460 files and 23,939 tests, with the existing two files/19 tests skipped. Independent review found no functional issues; its two stale runbook statements about mobile lock ownership were corrected. The direct flow has not been merged or exercised in production. No retry, timeout, sleep or weakened deployment gate was added; existing bounded production-readiness waits remain unchanged. A busy main branch waits for its current commit to pass CI, so a superseded green ancestor is no longer an automatic release candidate.
 
 ## 2026-11-09 — Overview oxygen and temperature raw scans time out
 
@@ -36077,25 +36351,6 @@ No runtime behavior, timeout, retry or production configuration changed.
   first broad unit run's three outdated query-source/order assertions were
   updated; the subsequent full run was green. Production remains unresolved
   pending the preparation and release gates above.
-## 2026-11-09 — Server CD waits behind TestFlight publication
-
-- **Symptoms / impact:** At approximately 21:29 UTC, [automatic handoff 42696468845](https://github.com/Asherlc/dofek/actions/runs/42696468845/job/129430296562) remained in `Dispatch and watch the selected release workflow`. Its [child Deploy run 42696714405](https://github.com/Asherlc/dofek/actions/runs/42696714405) was `pending` with no jobs, while a newer automatic handoff was also pending. This was a queue blockage, with no fatal command or error line in the observed jobs.
-- **Evidence / cause:** [Earlier release 42691969726](https://github.com/Asherlc/dofek/actions/runs/42691969726) completed its server stack at 20:49:15 UTC and OTA at 20:52:37 UTC, but its [TestFlight upload 129449289736](https://github.com/Asherlc/dofek/actions/runs/42691969726/job/129449289736) remained `queued`, requiring `macos-latest` with no runner assigned. That historical workflow holds `deploy-web-production` for the entire release, including mobile jobs; the new child requires the same group. GitHub documents that another run in the same [workflow concurrency group remains pending](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency). Both releases selected `e620cdbd07b9588a97dc0825d5569ec93229ad18`, so the pending child would deploy the same server revision again. The underlying runner-allocation delay was not diagnosed.
-- **Change history:** [#3185](https://github.com/Asherlc/dofek/pull/3185) restored mobile jobs inside the server workflow's lock. [#3245](https://github.com/Asherlc/dofek/pull/3245) added a separate handoff, immutable release tag, dispatch, and watcher to address the workflow/release revision mismatch documented above; it did not separate mobile completion from production serialization.
-- **Status / follow-up:** Unresolved; no runs were cancelled, deployments dispatched, or workflow behavior changed during diagnosis. Proposed direction awaiting user alignment: direct server CD with independent automatic mobile publication, preserving deployment gates and consistent workflow/source/image revisions. Next time use gh-fix-ci and inspect every unfinished job in the lock-owning run. Proposed runbook addition: explicitly identify the production lock owner and distinguish successful server rollout from pending mobile distribution before rerunning a release.
-- **Observed progression:** The earlier run completed successfully at 21:42 UTC and the pending child entered `in_progress` at 21:43 UTC without operator intervention. This cleared that queue blockage; it did not change the workflow-wide locking behavior.
-- **Approved durable fix prepared:** The user approved restoring direct server CD with independent automatic mobile publication. Deploy Web now calls the existing environment workflow directly, and only the server jobs in Deploy Web and Deploy own `deploy-web-production`. Mobile publication still depends on the successful server's verified source SHA, under the existing mobile locks. Automatic eligibility requires successful main-push CI at the caller's SHA, keeping workflows, source and immutable image aligned; superseded completions skip instead of selecting an older ancestor. The custom selector, release-tag creation, dispatch watcher and their obsolete tests are removed. See the [deployment procedure](../deploy/README.md#flow-diagram), GitHub's [job concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency), and [workflow_run revision semantics](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_run).
-- **Validation / remaining risk:** All 118 retained deployment/image/TestFlight tests, changed-workflow actionlint with shellcheck, repository-wide CI actionlint (`-shellcheck=`), source-policy lint, root/server/web typechecks, and canonical spelling passed locally. The full Docker-free unit/mobile run passed 1,460 files and 23,939 tests, with the existing two files/19 tests skipped. Independent review found no functional issues; its two stale runbook statements about mobile lock ownership were corrected. The direct flow has not been merged or exercised in production. No retry, timeout, sleep or weakened deployment gate was added; existing bounded production-readiness waits remain unchanged. A busy main branch waits for its current commit to pass CI, so a superseded green ancestor is no longer an automatic release candidate.
-
-## 2026-11-09 — theCrag region canonical URLs reject catalogue enrichment
-
-- **Symptoms / impact:** [DOFEK-SERVER-81](https://east-bay-software.sentry.io/issues/7837837263/) recorded one production occurrence at 20:35:02 UTC on release `646ae3ea8ca235d2668d9b3d617465c9348cd909`. The background catalogue refresh for Pegboard failed; the shared server caches an error for both clients, while the worker remains running.
-- **Failing operation / first fatal:** `TheCragCatalogueAdapter.search()` reached `parseArea()` while hydrating route ancestors and threw `theCrag catalogue parent area identity is unavailable or invalid. Retry later.` Worker logs at 20:35:02.780 UTC confirm the failed job. A read-only local replay through the existing public transport reproduced the same error.
-- **Confirmed root cause:** The parser required every canonical area URL to end in `/area/<native-id>`. The [North America area request](https://www.thecrag.com/en/climbing/world/area/11737675) returns HTTP 200 with canonical URL `/en/climbing/north-america`; its body and final breadcrumb both declare native ID `11737675`. This valid region response was rejected before any local crag context could be returned.
-- **Approved direct fix / validation:** Accept named canonical area paths only when the page and final breadcrumb IDs match the requested native ID and the breadcrumb URL matches the canonical URL. Preserve same-origin, credential, query, fragment, numeric-identity, and route-page checks. Retain literal route totals linked to the verified canonical area. The reduced live-page regression failed with the original error before implementation; the complete catalogue suite then passed 593 tests, and package typechecking passed. No timeout, retry, or redirect policy changed; no resilience knob was added.
-- **Remaining risk / status:** Not deployed. Live replay now passes all five named ancestors through East Bay, then fails separately with HTTP 302 on [Indian Rock](https://www.thecrag.com/en/climbing/united-states/california/san-francisco/east-bay-area/area/16450411), redirecting to `swamp.processing.thecrag.com`. The full refresh remains unresolved; this change does not follow that cross-origin redirect. Other provider errors in nearby worker logs are outside this parser fix.
-- **Local PR validation prerequisite:** `pnpm lint` passed source-policy checks but SQLFluff failed with `Connection refused` at the default ClickHouse port. The workspace ClickHouse container was healthy; its assigned port had not been written to `.env.local`. Ran the documented `pnpm compose:env --write` to generate that local configuration before rerunning SQL lint. No checked-in database settings, timeouts, or lint gates changed; see the [workspace setup procedure](../README.md#development).
-- **Retrospective / next time:** Existing Sentry frames and worker job IDs made the failing public lookup reproducible; upstream region identity required inspection of the live HTML. Use the Sentry, check-logs, systematic-debugging, and test-driven-development skills for similar failures. Proposed runbook wording: record the requested URL, HTTP status, canonical URL, page native ID, and final breadcrumb ID before changing an HTML identity validator; distinguish a parser rejection from a later transport failure.
 
 ## 2026-11-09 — Overview production preparation and registry interruption
 
@@ -36142,13 +36397,26 @@ No runtime behavior, timeout, retry or production configuration changed.
   July 30 missing from the pre-existing day markers. Bootstrapped those keys
   through an explicit operator insert; the repeated comparison found zero
   missing markers across 137 oxygen days and four WHOOP receipt days. The source
-  marker set then contained 4,474 days. Early production model queries completed
-  within 1.6 seconds; even batches containing temperature samples remained below
-  155 MiB of query memory. No resource-limit or timeout change was required.
-- **Cutover / next time:** The reader remains gated on zero missing and dirty
-  source days, followed by normal CI and deployment; see the [cutover procedure](clickhouse-read-model-deploy-runbook.md#overview-oxygen-and-temperature-cutover)
+  marker set then contained 4,474 days. All 140 bounded invocations succeeded;
+  the final target contained 240,898 typed samples with zero missing and dirty
+  days. Model queries peaked at 2.115 seconds, 907,671 rows read and 186 MiB of
+  query memory. A representative outer `FINAL` selected 48 of 25,130 granules
+  through all five replacement-key columns; a typed-serving smoke query took
+  51 ms. No resource-limit or timeout change was required.
+- **Cutover / next time:** Production preparation passed; normal CI and
+  deployment remain required for reader cutover. See the [cutover procedure](clickhouse-read-model-deploy-runbook.md#overview-oxygen-and-temperature-cutover)
   and the PR's preparation evidence. The proposed alternative dbt runtime was
   withdrawn and the candidate-image strategy retained. Use gh-fix-ci and the
   cutover runbook next time. Proposed improvement: explicitly compare bounded
   raw health day keys with invalidation markers before trusting source-to-target
   freshness; a zero dirty-day result alone cannot reveal missing source markers.
+
+## 2026-11-09 — theCrag region canonical URLs reject catalogue enrichment
+
+- **Symptoms / impact:** [DOFEK-SERVER-81](https://east-bay-software.sentry.io/issues/7837837263/) recorded one production occurrence at 20:35:02 UTC on release `646ae3ea8ca235d2668d9b3d617465c9348cd909`. The background catalogue refresh for Pegboard failed; the shared server caches an error for both clients, while the worker remains running.
+- **Failing operation / first fatal:** `TheCragCatalogueAdapter.search()` reached `parseArea()` while hydrating route ancestors and threw `theCrag catalogue parent area identity is unavailable or invalid. Retry later.` Worker logs at 20:35:02.780 UTC confirm the failed job. A read-only local replay through the existing public transport reproduced the same error.
+- **Confirmed root cause:** The parser required every canonical area URL to end in `/area/<native-id>`. The [North America area request](https://www.thecrag.com/en/climbing/world/area/11737675) returns HTTP 200 with canonical URL `/en/climbing/north-america`; its body and final breadcrumb both declare native ID `11737675`. This valid region response was rejected before any local crag context could be returned.
+- **Approved direct fix / validation:** Accept named canonical area paths only when the page and final breadcrumb IDs match the requested native ID and the breadcrumb URL matches the canonical URL. Preserve same-origin, credential, query, fragment, numeric-identity, and route-page checks. Retain literal route totals linked to the verified canonical area. The reduced live-page regression failed with the original error before implementation; the complete catalogue suite then passed 593 tests, and package typechecking passed. No timeout, retry, or redirect policy changed; no resilience knob was added.
+- **Remaining risk / status:** Not deployed. Live replay now passes all five named ancestors through East Bay, then fails separately with HTTP 302 on [Indian Rock](https://www.thecrag.com/en/climbing/united-states/california/san-francisco/east-bay-area/area/16450411), redirecting to `swamp.processing.thecrag.com`. The full refresh remains unresolved; this change does not follow that cross-origin redirect. Other provider errors in nearby worker logs are outside this parser fix.
+- **Local PR validation prerequisite:** `pnpm lint` passed source-policy checks but SQLFluff failed with `Connection refused` at the default ClickHouse port. The workspace ClickHouse container was healthy; its assigned port had not been written to `.env.local`. Ran the documented `pnpm compose:env --write` to generate that local configuration before rerunning SQL lint. No checked-in database settings, timeouts, or lint gates changed; see the [workspace setup procedure](../README.md#development).
+- **Retrospective / next time:** Existing Sentry frames and worker job IDs made the failing public lookup reproducible; upstream region identity required inspection of the live HTML. Use the Sentry, check-logs, systematic-debugging, and test-driven-development skills for similar failures. Proposed runbook wording: record the requested URL, HTTP status, canonical URL, page native ID, and final breadcrumb ID before changing an HTML identity validator; distinguish a parser rejection from a later transport failure.

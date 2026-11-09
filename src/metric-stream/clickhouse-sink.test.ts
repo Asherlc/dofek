@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { EventEmitter } from "node:events";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   applyMetricStreamEventsToClickHouse,
   insertMetricStreamEventsIntoClickHouse,
@@ -93,6 +93,8 @@ afterEach(() => {
   vi.useRealTimers();
   captureException.mockClear();
   vi.doUnmock("../db/clickhouse.ts");
+  vi.doUnmock("../db/index.ts");
+  vi.doUnmock("../analytics/analytics-query-owner.ts");
   vi.doUnmock("./consumer-readiness.ts");
   vi.doUnmock("./redpanda-consumer.ts");
   vi.resetModules();
@@ -1132,6 +1134,93 @@ describe("applyMetricStreamEventsToClickHouse", () => {
 });
 
 describe("runMetricStreamClickHouseSinkFromEnv", () => {
+  beforeEach(() => {
+    vi.doMock("../db/index.ts", () => ({
+      createDatabaseFromEnv: () => ({ $client: { end: vi.fn(async () => undefined) } }),
+    }));
+    vi.doMock("../analytics/analytics-query-owner.ts", () => ({
+      ANALYTICS_PUBLICATION_RESOURCE: "metric-stream-source",
+      withAnalyticsQueryOwner: async (
+        _database: unknown,
+        client: unknown,
+        _input: unknown,
+        operation: (owner: { client: unknown }) => Promise<unknown>,
+      ) => operation({ client }),
+    }));
+  });
+  it("admits publication before batch effects and keeps heartbeats active while waiting", async () => {
+    vi.resetModules();
+    vi.useFakeTimers();
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const raw = {
+      insert: vi.fn(async () => undefined),
+      query: makeEmptyGenerationQuery(),
+      close: vi.fn(async () => undefined),
+    };
+    const owned = { insert: vi.fn(async () => undefined), query: makeEmptyGenerationQuery() };
+    const database = { $client: { end: vi.fn(async () => undefined) } };
+    const withOwner = vi.fn(
+      async (
+        _database: unknown,
+        _client: unknown,
+        _input: { resourceId: string; intentId: string },
+        operation: (owner: { client: typeof owned }) => Promise<unknown>,
+      ) => {
+        await held;
+        return operation({ client: owned });
+      },
+    );
+    const runConsumer = vi.fn(async (_options: RunMetricStreamEventConsumerOptions) => undefined);
+    vi.doMock("../db/clickhouse.ts", () => ({ createClickHouseClientFromEnv: () => raw }));
+    vi.doMock("../db/index.ts", () => ({ createDatabaseFromEnv: () => database }));
+    vi.doMock("../analytics/analytics-query-owner.ts", () => ({
+      ANALYTICS_PUBLICATION_RESOURCE: "metric-stream-source",
+      withAnalyticsQueryOwner: withOwner,
+    }));
+    vi.doMock("./redpanda-consumer.ts", () => ({
+      createKafkaMetricStreamConsumerFromEnv: () => ({
+        consumer: { observeGroupLifecycle: vi.fn() },
+        quarantine: {},
+        topic: "metric-stream-v1",
+      }),
+      runMetricStreamEventConsumer: runConsumer,
+    }));
+    const { runMetricStreamClickHouseSinkFromEnv } = await import("./clickhouse-sink.ts");
+    await runMetricStreamClickHouseSinkFromEnv(new MetricStreamConsumerReadiness());
+    const options = runConsumer.mock.calls[0]?.[0];
+    if (!options) throw new Error("Missing actual sink callback");
+    const context = {
+      topic: "metric-stream-v1",
+      partition: 0,
+      eventOffsets: ["42"],
+      heartbeat: vi.fn(async () => undefined),
+    };
+    const pending = options.handleEvents([heartRateEvent], context);
+    try {
+      expect(withOwner).toHaveBeenCalledOnce();
+      expect(owned.insert).not.toHaveBeenCalled();
+      expect(raw.insert).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(context.heartbeat).toHaveBeenCalled();
+    } finally {
+      release();
+      await pending;
+    }
+    expect(owned.insert).toHaveBeenCalledOnce();
+    expect(raw.insert).not.toHaveBeenCalled();
+    expect(database.$client.end).not.toHaveBeenCalled();
+    expect(raw.close).not.toHaveBeenCalled();
+    await options.handleEvents([heartRateEvent, imuEvent], {
+      ...context,
+      eventOffsets: ["42", "43"],
+    });
+    expect(withOwner.mock.calls[1]?.[2].intentId).toBe(withOwner.mock.calls[0]?.[2].intentId);
+    await options.handleEvents([heartRateEvent], { ...context, eventOffsets: ["43"] });
+    expect(withOwner.mock.calls[2]?.[2].intentId).not.toBe(withOwner.mock.calls[0]?.[2].intentId);
+  });
   it("consumes Redpanda events and inserts them into ClickHouse", async () => {
     const client = {
       insert: vi.fn(async () => undefined),
@@ -1203,6 +1292,32 @@ describe("runMetricStreamClickHouseSinkFromEnv", () => {
     await expect(
       runMetricStreamClickHouseSinkFromEnv(new MetricStreamConsumerReadiness()),
     ).rejects.toThrow("ClickHouse metric-stream sink requires an insert-capable client");
+  });
+
+  it("closes its database and ClickHouse client when consumer startup fails", async () => {
+    const failure = new Error("Consumer startup failed");
+    const end = vi.fn(async () => undefined),
+      close = vi.fn(async () => undefined);
+    vi.doMock("../db/index.ts", () => ({ createDatabaseFromEnv: () => ({ $client: { end } }) }));
+    vi.doMock("../db/clickhouse.ts", () => ({
+      createClickHouseClientFromEnv: () => ({ insert: vi.fn(), close }),
+    }));
+    vi.doMock("./redpanda-consumer.ts", () => ({
+      createKafkaMetricStreamConsumerFromEnv: () => ({
+        consumer: { observeGroupLifecycle: vi.fn() },
+        quarantine: {},
+        topic: "metric-stream-v1",
+      }),
+      runMetricStreamEventConsumer: vi.fn(async () => {
+        throw failure;
+      }),
+    }));
+    const { runMetricStreamClickHouseSinkFromEnv } = await import("./clickhouse-sink.ts");
+    await expect(
+      runMetricStreamClickHouseSinkFromEnv(new MetricStreamConsumerReadiness()),
+    ).rejects.toBe(failure);
+    expect(end).toHaveBeenCalledOnce();
+    expect(close).toHaveBeenCalledOnce();
   });
 
   it("requires Kafka group lifecycle events for the readiness check", async () => {

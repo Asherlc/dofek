@@ -63,5 +63,9 @@ to select complete replacement keys before `FINAL`; the raw-read test failed
 at 100,063 rows and then passed below 50,000. Shared fixtures execute the
 canonical schema/model, and schema-only migration 0111 plus the
 [cutover gate](../../clickhouse-read-model-deploy-runbook.md#overview-oxygen-and-temperature-cutover)
-address initialization. Production preparation remains outstanding. Processing
-success is deliberately not claimed as proof of an empty bounded backlog.
+address initialization. The user approved production preparation and merging.
+Projection materialization completed, 45 missing historical health day markers
+were bootstrapped, and 140 bounded model invocations initialized 4,474 days.
+The source-to-target check returned zero missing and dirty days; the serving
+smoke query took 51 ms. See [PR preparation evidence](https://github.com/Asherlc/dofek/pull/3247).
+Processing success alone is deliberately not claimed as proof of an empty backlog.

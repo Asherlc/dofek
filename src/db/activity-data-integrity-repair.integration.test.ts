@@ -7,12 +7,16 @@ import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
+  ANALYTICS_PUBLICATION_RESOURCE,
+  withAnalyticsQueryOwner,
+} from "../analytics/analytics-query-owner.ts";
+import {
   failSecondCadenceBatch,
   mirrorRunningLocalTime,
   runningRevisionFixture,
 } from "./activity-data-integrity-cadence-test-helpers.ts";
 import { queryClickHouseRows } from "./activity-data-integrity-clickhouse.ts";
-import { runActivityIntegrityDbtBuild } from "./activity-data-integrity-dbt.ts";
+import { runActivityIntegrityDbtBuild as runOwnedActivityIntegrityDbtBuild } from "./activity-data-integrity-dbt.ts";
 import {
   activityIntegrityFixtureIds,
   bootstrapActivityIntegrityIdentityModels,
@@ -23,9 +27,10 @@ import {
 } from "./activity-data-integrity-dbt-test-helpers.ts";
 import {
   type ActivityIntegrityClickHouseClient,
-  repairActivityDataIntegrity,
-  rollbackActivityDataIntegrity,
+  repairActivityDataIntegrity as repairActivityDataIntegrityActual,
+  rollbackActivityDataIntegrity as rollbackActivityDataIntegrityActual,
 } from "./activity-data-integrity-repair.ts";
+import { createClickHouseClientFromEnv } from "./clickhouse.ts";
 import { TEST_USER_ID } from "./schema/core.ts";
 import { setupTestDatabase, type TestContext } from "./test-helpers.ts";
 import { ensureProvider } from "./tokens.ts";
@@ -56,13 +61,10 @@ describe("activity data integrity repair", () => {
   let client: NativeClickHouseClient;
   let scopedClient: ActivityIntegrityClickHouseClient;
   let artifactDirectory: string;
+  const publicationClient = createClickHouseClientFromEnv();
   const database = `activity_integrity_${randomBytes(6).toString("hex")}`;
 
   beforeAll(async () => {
-    context = await setupTestDatabase();
-    await ensureProvider(context.db, "wahoo", "Wahoo");
-    await ensureProvider(context.db, "peloton", "Peloton");
-    await ensureProvider(context.db, "apple_health", "Apple Health");
     const clickHouseUrl = process.env.CLICKHOUSE_URL?.trim();
     if (!clickHouseUrl)
       throw new Error("CLICKHOUSE_URL is required for activity repair integration tests");
@@ -73,6 +75,11 @@ describe("activity data integrity repair", () => {
   }, 300_000);
 
   beforeEach(async ({ onTestFailed }) => {
+    await context?.cleanup();
+    context = await setupTestDatabase();
+    await ensureProvider(context.db, "wahoo", "Wahoo");
+    await ensureProvider(context.db, "peloton", "Peloton");
+    await ensureProvider(context.db, "apple_health", "Apple Health");
     onTestFailed(({ task }) => {
       process.stderr.write(
         `${JSON.stringify({
@@ -103,7 +110,44 @@ describe("activity data integrity repair", () => {
     }
     if (artifactDirectory) await rm(artifactDirectory, { recursive: true, force: true });
     await context?.cleanup();
+    await publicationClient.close?.();
   }, 120_000);
+
+  function runActivityIntegrityDbtBuild(
+    input: Parameters<typeof runOwnedActivityIntegrityDbtBuild>[0],
+    target: ActivityIntegrityClickHouseClient,
+  ) {
+    return withAnalyticsQueryOwner(
+      context.db,
+      publicationClient,
+      { resourceId: ANALYTICS_PUBLICATION_RESOURCE, intentId: "activity-integrity-build" },
+      (owner) => runOwnedActivityIntegrityDbtBuild(input, target, owner),
+    );
+  }
+  function repairActivityDataIntegrity(
+    db: Parameters<typeof repairActivityDataIntegrityActual>[0],
+    target: ActivityIntegrityClickHouseClient,
+    options: Parameters<typeof repairActivityDataIntegrityActual>[2],
+    dependencies: Partial<Parameters<typeof repairActivityDataIntegrityActual>[3]> = {},
+  ) {
+    return repairActivityDataIntegrityActual(db, target, options, {
+      ...dependencies,
+      rebuildReadModels:
+        dependencies.rebuildReadModels ?? ((input) => runActivityIntegrityDbtBuild(input, target)),
+    });
+  }
+  function rollbackActivityDataIntegrity(
+    db: Parameters<typeof rollbackActivityDataIntegrityActual>[0],
+    target: ActivityIntegrityClickHouseClient,
+    path: string,
+    dependencies: Partial<Parameters<typeof rollbackActivityDataIntegrityActual>[3]> = {},
+  ) {
+    return rollbackActivityDataIntegrityActual(db, target, path, {
+      ...dependencies,
+      rebuildReadModels:
+        dependencies.rebuildReadModels ?? ((input) => runActivityIntegrityDbtBuild(input, target)),
+    });
+  }
 
   it("reads ClickHouse UTC timestamps with an explicit zone and preserves fractional seconds", async () => {
     const rows = await queryClickHouseRows(
@@ -117,8 +161,8 @@ describe("activity data integrity repair", () => {
     expect(new Date(rows[0]?.started_at ?? "").toISOString()).toBe("2026-09-01T23:30:00.123Z");
   });
 
-  it.each(["repair", "rollback"] as const)(
-    "keeps %s journal state on a second cadence batch failure and completes all101 on rollback",
+  it.each(["repair", "rollback", "success"] as const)(
+    "preserves bounded cadence and durable recovery for %s",
     async (failureStage) => {
       await seedProductionDbtFixture(client, database);
       configureDbtEnvironment(database);
@@ -232,6 +276,17 @@ describe("activity data integrity repair", () => {
           "rollback_committed",
         );
       }
+      if (failureStage === "success") {
+        await rollbackActivityDataIntegrity(context.db, scopedClient, artifactPath, dependencies);
+        await expect(activityIntegrityJournalPhase(context, runId)).resolves.toBe("rolled_back");
+        expect(
+          (await snapshot("activity_step_cadence_rows")).map((row) => row.avg_cadence),
+        ).toEqual(Array(101).fill(200));
+        expect((await snapshot("activity_summary_rows")).map((row) => row.avg_cadence)).toEqual(
+          Array(101).fill(200),
+        );
+        return;
+      }
       const partial = await snapshot("activity_step_cadence_rows");
       const beforeVersions = new Map(
         cadenceBefore.map((row) => [row.activity_id, BigInt(row.refresh_version)]),
@@ -250,13 +305,16 @@ describe("activity data integrity repair", () => {
       user_id UUID,provider_id String,recorded_date Date,changed_at SimpleAggregateFunction(max,DateTime64(9,'UTC'))
     ) ENGINE=AggregatingMergeTree ORDER BY (user_id,provider_id,recorded_date)`,
       });
-      await rollbackActivityDataIntegrity(context.db, scopedClient, artifactPath, dependencies);
-      await expect(activityIntegrityJournalPhase(context, runId)).resolves.toBe("rolled_back");
-      expect((await snapshot("activity_step_cadence_rows")).map((row) => row.avg_cadence)).toEqual(
-        Array(101).fill(failureStage === "repair" ? 180 : 200),
-      );
-      expect((await snapshot("activity_summary_rows")).map((row) => row.avg_cadence)).toEqual(
-        Array(101).fill(failureStage === "repair" ? 180 : 200),
+      await expect(
+        rollbackActivityDataIntegrity(context.db, scopedClient, artifactPath, dependencies),
+      ).rejects.toThrow("verified recovery");
+      expect(
+        await context.db.execute(
+          sql`SELECT quiescent,query_terminal FROM fitness.analytics_query_owner WHERE resource_id=${ANALYTICS_PUBLICATION_RESOURCE}`,
+        ),
+      ).toEqual([{ quiescent: false, query_terminal: false }]);
+      await expect(activityIntegrityJournalPhase(context, runId)).resolves.toBe(
+        "rollback_committed",
       );
     },
     300_000,

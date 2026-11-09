@@ -16,6 +16,7 @@ vi.mock("../logger.ts", () => ({
 import { logger } from "../logger.ts";
 import { createClickHouseClientFromEnv } from "./clickhouse.ts";
 import { runClickHouseMigrations } from "./clickhouse-migrations.ts";
+import { unexpectedClickHouseExec } from "./clickhouse-test-helpers.ts";
 import { runMigrations } from "./migrate.ts";
 import { main } from "./run-migrate.ts";
 
@@ -31,8 +32,9 @@ describe("run-migrate main()", () => {
   const clickHouseClient: {
     command: CallableVitestMock;
     query: CallableVitestMock;
-    close?: CallableVitestMock;
-  } = { command: vi.fn(), query: vi.fn(), close: vi.fn() };
+    exec: typeof unexpectedClickHouseExec;
+    close: CallableVitestMock;
+  } = { command: vi.fn(), query: vi.fn(), exec: unexpectedClickHouseExec, close: vi.fn() };
 
   beforeEach(() => {
     mockRunMigrations.mockReset();
@@ -105,19 +107,6 @@ describe("run-migrate main()", () => {
     expect(clickHouseClient.close).toHaveBeenCalled();
     expect(mockLogger.info).toHaveBeenCalledWith(
       expect.stringContaining("ClickHouse migrations complete — 1 migration(s) applied"),
-    );
-  });
-
-  it("does not require close() on the ClickHouse client", async () => {
-    process.env.DATABASE_URL = "postgres://test:test@localhost:5432/test";
-    clickHouseClient.close = undefined;
-    mockRunMigrations.mockResolvedValue(1);
-    mockCreateClickHouseClientFromEnv.mockReturnValue(clickHouseClient);
-
-    await expect(main()).resolves.toBeUndefined();
-    expect(mockRunClickHouseMigrations).toHaveBeenCalledWith(
-      clickHouseClient,
-      "postgres://test:test@localhost:5432/test",
     );
   });
 

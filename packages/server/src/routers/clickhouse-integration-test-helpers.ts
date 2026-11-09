@@ -422,6 +422,11 @@ function createIsolatedClickHouseClient(
 ): ClickHouseClient {
   const precomputedAnalyticsSelectByName = new Map<string, string>();
   return {
+    exec: (options) =>
+      client.exec({
+        ...options,
+        query: rewriteClickHouseDatabaseNames(options.query, databases),
+      }),
     command: async (options) => {
       const queries = rewriteClickHouseTestCommand(
         options.query,

@@ -1,5 +1,6 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { withAnalyticsQueryOwner } from "../src/analytics/analytics-query-owner.ts";
 import { createClickHouseClientFromEnv } from "../src/db/clickhouse.ts";
 import { createDatabaseFromEnv } from "../src/db/index.ts";
 import { AnalyticsBuildError } from "./analytics-build-error.ts";
@@ -18,6 +19,10 @@ vi.mock("../src/db/clickhouse.ts", () => ({
 }));
 vi.mock("../src/db/index.ts", () => ({
   createDatabaseFromEnv: vi.fn(),
+}));
+vi.mock("../src/analytics/analytics-query-owner.ts", () => ({
+  ANALYTICS_PUBLICATION_RESOURCE: "metric-stream-source",
+  withAnalyticsQueryOwner: vi.fn(),
 }));
 
 const TEST_MICROBATCH_BOUNDS = {
@@ -69,6 +74,29 @@ beforeEach(() => {
 });
 
 describe("runAnalyticsBuild", () => {
+  it("acquires publication before reading pending work or source bounds", async () => {
+    const admission = new Error("Publication admission held");
+    const end = vi.fn(async () => undefined),
+      close = vi.fn(async () => undefined);
+    const execute = vi.fn(async () => []),
+      query = vi.fn(async () => ({ json: async () => [] }));
+    vi.mocked(mkdtemp).mockResolvedValue("/tmp/dofek-dbt-test");
+    vi.mocked(rm).mockResolvedValue(undefined);
+    vi.mocked(createDatabaseFromEnv).mockReturnValue({ $client: { end }, execute });
+    vi.mocked(createClickHouseClientFromEnv).mockReturnValue({ query, close });
+    vi.mocked(withAnalyticsQueryOwner).mockRejectedValue(admission);
+    await expect(runAnalyticsBuildFromEnvironment()).rejects.toBe(admission);
+    expect(withAnalyticsQueryOwner).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      { resourceId: "metric-stream-source", intentId: "analytics-build" },
+      expect.any(Function),
+    );
+    expect(execute).not.toHaveBeenCalled();
+    expect(query).not.toHaveBeenCalled();
+    expect(end).toHaveBeenCalledOnce();
+    expect(close).toHaveBeenCalledOnce();
+  });
   it("builds threshold-dependent models after projection and records both phases together", async () => {
     const order: string[] = [];
     let phase = 0;
