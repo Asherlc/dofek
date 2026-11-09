@@ -59,6 +59,7 @@ const highWatermarks: AccountErasureRouteHighWatermark[] = [
 
 function dependencies(): AccountErasurePhaseRunnerDependencies {
   return {
+    assertBrokerStorageExpired: vi.fn().mockResolvedValue(undefined),
     prepareIdentifiers: vi.fn().mockResolvedValue(undefined),
     assertIdentifiersReady: vi.fn().mockResolvedValue(undefined),
     assertConsumersDrained: vi.fn().mockResolvedValue(undefined),
@@ -269,7 +270,7 @@ describe("createAccountErasurePhaseRunner", () => {
     expect(deps.assertConsumersDrained).toHaveBeenCalledWith(highWatermarks);
   });
 
-  it("requires stock physical maintenance ack before existing retention checks", async () => {
+  it("verifies broker storage before completing retention checks", async () => {
     const deps = dependencies();
     const retainedRequest: ClaimedAccountErasureRequest = {
       ...request,
@@ -308,6 +309,13 @@ describe("createAccountErasurePhaseRunner", () => {
     });
 
     expect(deps.verifyBackupRetention).toHaveBeenCalled();
+    expect(deps.assertBrokerStorageExpired).toHaveBeenCalledWith([
+      ...highWatermarks,
+      ...highWatermarks.map((entry) => ({ ...entry, topic: `${entry.topic}.quarantine.v1` })),
+    ]);
+    expect(deps.assertBrokerStorageExpired).toHaveBeenCalledBefore(
+      vi.mocked(deps.verifyBackupRetention),
+    );
     expect(deps.verifyProcessorRetention).toHaveBeenCalled();
     expect(deps.verifyPeerDbStagingRetention).toHaveBeenCalled();
   });
@@ -442,5 +450,60 @@ describe("createAccountErasurePhaseRunner", () => {
         execution({ request: { ...request, encryptedRemoteSnapshot: null, piiScrubbedAt: null } }),
       ),
     ).rejects.toThrow("Account-erasure retention verification requires a pseudonymous request");
+  });
+  it("blocks final completion when logically expired broker bytes still exist", async () => {
+    const deps = dependencies();
+    const failure = new Error("Kafka retains segment before erasure boundary");
+    vi.mocked(deps.assertBrokerStorageExpired).mockRejectedValue(failure);
+    const runner = createAccountErasurePhaseRunner(deps);
+    const run = execution({
+      request: {
+        ...request,
+        encryptedRemoteSnapshot: null,
+        userId: null,
+        piiScrubbedAt: new Date(),
+      },
+      loadCheckpointDetails: vi.fn(async (phase) =>
+        phase === "ingest_fence"
+          ? {
+              highWatermarks: [
+                {
+                  topic: "metric-stream-v1",
+                  partition: 0,
+                  low: "0",
+                  offset: "10",
+                  clusterId: "0000000000000000000000",
+                  topicId: "dI2O6HVWQkuC7XgSy7cJ3w",
+                },
+              ],
+            }
+          : {
+              quarantineHighWatermarks: [
+                {
+                  topic: "metric-stream-v1",
+                  partition: 0,
+                  low: "0",
+                  offset: "5",
+                  clusterId: "0000000000000000000000",
+                  topicId: "aaaaaaaaaaaaaaaaaaaaaa",
+                },
+              ],
+            },
+      ),
+    });
+    await expect(runner.runPhase("retention_verification", run)).rejects.toThrow(failure);
+    expect(deps.assertBrokerStorageExpired).toHaveBeenCalledWith([
+      expect.objectContaining({
+        topic: "metric-stream-v1",
+        offset: "10",
+        topicId: "dI2O6HVWQkuC7XgSy7cJ3w",
+      }),
+      expect.objectContaining({
+        topic: "metric-stream-v1.quarantine.v1",
+        offset: "5",
+        topicId: "aaaaaaaaaaaaaaaaaaaaaa",
+      }),
+    ]);
+    expect(deps.verifyBackupRetention).not.toHaveBeenCalled();
   });
 });

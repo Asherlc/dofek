@@ -103,6 +103,15 @@ The public states are:
 
 ## Phase Map
 
+The subsequently withdrawn Kafka/Aiven proposal recorded one explicitly accepted
+exception: an earlier unknown-outcome remote upload may commit after deletion
+and final verification. This is not an observed production incident or a general
+waiver of deletion checks. See the [migration decision and verification scope](../deploy/kafka/tiered-fencing-proposal.md#accepted-exception-and-intended-stock-path)
+and [R2's in-flight-write contract](https://developers.cloudflare.com/r2/reference/consistency/#negative-reads-and-in-flight-writes).
+The user later rejected that plugin; this historical exception does not approve
+a release or change current production behavior. Other late-work/replay
+prevention requirements below remain in force.
+
 The persisted phase names are deliberately stable so operators can correlate a
 status, checkpoint, and Sentry event.
 

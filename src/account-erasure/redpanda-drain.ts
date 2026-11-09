@@ -1,4 +1,4 @@
-import kafkaJs, { type ConfigResourceTypes } from "kafkajs";
+import kafkaJs, { type Admin, type ConfigResourceTypes } from "kafkajs";
 import { z } from "zod";
 import {
   METRIC_STREAM_QUARANTINE_TOPIC_CONFIG,
@@ -38,8 +38,16 @@ const describedTopicConfigSchema = z.object({
 
 export type AccountErasureHighWatermark = z.infer<typeof highWatermarkSchema>;
 
-const accountErasureRouteHighWatermarkSchema = highWatermarkSchema.extend({
-  topic: z.string().min(1),
+export const accountErasureRouteHighWatermarkSchema = highWatermarkSchema.extend({
+  topic: z.string().min(1).max(249),
+  clusterId: z
+    .string()
+    .regex(/^[A-Za-z0-9_-]{22}$/)
+    .optional(),
+  topicId: z
+    .string()
+    .regex(/^[A-Za-z0-9_-]{22}$/)
+    .optional(),
 });
 export type AccountErasureRouteHighWatermark = z.infer<
   typeof accountErasureRouteHighWatermarkSchema
@@ -47,7 +55,7 @@ export type AccountErasureRouteHighWatermark = z.infer<
 
 /** Durable ingest_fence checkpoint written by the Kafka phase runner. */
 export const accountErasureIngestFenceCheckpointSchema = z.object({
-  highWatermarks: z.array(accountErasureRouteHighWatermarkSchema).min(1),
+  highWatermarks: z.array(accountErasureRouteHighWatermarkSchema).min(1).max(3),
 });
 
 interface KafkaOffsetAdmin {
@@ -225,14 +233,14 @@ export async function assertAccountErasureQuarantineExpired(
 }
 
 export interface AccountErasureRedpandaAdmin {
-  admin: RedpandaAdmin;
+  admin: RedpandaAdmin & Pick<Admin, "describeCluster" | "fetchTopicMetadata">;
   close(): Promise<void>;
   connect(): Promise<void>;
   routes: Array<{ topic: string; consumerGroups: readonly string[] }>;
 }
 
 export function createAccountErasureRedpandaAdminFromEnv(
-  env: NodeJS.ProcessEnv = process.env,
+  env: Record<string, string | undefined> = process.env,
 ): AccountErasureRedpandaAdmin {
   const routes = (["LEGACY", "LIVE", "HISTORY"] as const).map((route) => {
     const key = `METRIC_STREAM_${route}_TOPIC`;

@@ -116,3 +116,20 @@ The [typed alias fix](../../src/account-erasure/clickhouse-erasure-coverage.ts) 
 identity models and `evidence_activity_id` in cycling read models. Temporary
 group/stale/prior CTE aliases are not new physical-column declarations. See the
 [extraction evidence and remaining writer-safety gate](../evidence/erasure-extraction-20261108/README.md).
+
+## Main synchronization — 2026-11-09
+
+The branch now incorporates [main 6fe1d4fbd](https://github.com/Asherlc/dofek/commit/6fe1d4fbd479cc1ed9be874538e2b7dc3c1b1551),
+which merged the independent Kafka migration. The original Redpanda-only boundary
+describes the initial extraction; further hardening now follows the broker
+interfaces already on main. This merge preserves main's broker storage gate and
+cluster/topic generation capture alongside the newer identifier-store, snapshot,
+lease and physical-progress logic. Scrubbed checkpoints retain only bounded
+topic/partition/low/offset/clusterId/topicId fields, stripping unrelated data.
+
+The separate [quarantine correction PR 3237](https://github.com/Asherlc/dofek/pull/3237)
+is not part of that main revision, so its dependency remains relevant. It stays
+owned by the Kafka follow-up; this synchronization does not cherry-pick it or the
+[tiered-storage PR 3236](https://github.com/Asherlc/dofek/pull/3236). The six open
+safety/design review threads remain blocking. No production action is authorized
+by this branch synchronization.

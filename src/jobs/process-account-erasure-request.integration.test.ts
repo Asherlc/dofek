@@ -45,6 +45,7 @@ function createRetentionPhaseRunner(now: Date) {
     verified: true as const,
   }));
   const dependencies = {
+    assertBrokerStorageExpired: vi.fn(async () => undefined),
     prepareIdentifiers: unexpectedDependency,
     assertIdentifiersReady: unexpectedDependency,
     assertConsumersDrained: unexpectedDependency,
@@ -185,6 +186,19 @@ describe("processAccountErasureRequest request-to-completion (integration)", () 
         execution: AccountErasurePhaseExecution,
       ): Promise<Record<string, unknown> | null> {
         phaseRuns.push(phase);
+        if (phase === "ingest_fence")
+          return {
+            highWatermarks: [
+              {
+                topic: "metric-stream-live-v2",
+                low: "0",
+                offset: "0",
+                partition: 0,
+                clusterId: "0000000000000000000000",
+                topicId: "dI2O6HVWQkuC7XgSy7cJ3w",
+              },
+            ],
+          };
         if (phase === "postgres_erasure") {
           await erasePostgresAccount(context.db, execution.request.id, completionUserId);
           return null;
@@ -373,6 +387,32 @@ describe("processAccountErasureRequest request-to-completion (integration)", () 
         phase: AccountErasurePhase,
         execution: AccountErasurePhaseExecution,
       ): Promise<Record<string, unknown> | null> {
+        if (phase === "ingest_fence")
+          return {
+            highWatermarks: [
+              {
+                topic: "metric-stream-live-v2",
+                low: "0",
+                offset: "0",
+                partition: 0,
+                clusterId: "0000000000000000000000",
+                topicId: "dI2O6HVWQkuC7XgSy7cJ3w",
+              },
+            ],
+          };
+        if (phase === "consumer_drain")
+          return {
+            quarantineHighWatermarks: [
+              {
+                topic: "metric-stream-live-v2",
+                low: "0",
+                offset: "0",
+                partition: 0,
+                clusterId: "0000000000000000000000",
+                topicId: "aaaaaaaaaaaaaaaaaaaaaa",
+              },
+            ],
+          };
         if (phase === "postgres_erasure") {
           await erasePostgresAccount(context.db, execution.request.id, crashUserId);
           return null;

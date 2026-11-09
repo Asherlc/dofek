@@ -12,6 +12,44 @@ import {
 } from "./redpanda-drain.ts";
 
 describe("account erasure Redpanda drain", () => {
+  it("preserves bounded structural broker generation in durable checkpoints", async () => {
+    vi.resetModules();
+    const { accountErasureRouteHighWatermarkSchema } = await import("./redpanda-drain.ts");
+    const checkpoint = {
+      topic: "metric-stream-v1",
+      partition: 0,
+      low: "10",
+      offset: "20",
+      clusterId: `${"Aa0_-".repeat(4)}Aa`,
+      topicId: `${"Zz9_-".repeat(4)}Zz`,
+    };
+    expect(accountErasureRouteHighWatermarkSchema.parse(checkpoint)).toEqual(checkpoint);
+    expect(
+      accountErasureRouteHighWatermarkSchema.safeParse({ ...checkpoint, topic: "a".repeat(249) })
+        .success,
+    ).toBe(true);
+    for (const topic of ["", "a".repeat(250)]) {
+      expect(
+        accountErasureRouteHighWatermarkSchema.safeParse({ ...checkpoint, topic }).success,
+      ).toBe(false);
+    }
+    for (const key of ["clusterId", "topicId"] as const) {
+      for (const value of [
+        "",
+        "a",
+        "a".repeat(21),
+        "a".repeat(23),
+        `!${"a".repeat(22)}`,
+        `${"a".repeat(22)}!`,
+        "!".repeat(22),
+      ]) {
+        expect(
+          accountErasureRouteHighWatermarkSchema.safeParse({ ...checkpoint, [key]: value }).success,
+        ).toBe(false);
+      }
+    }
+  });
+
   it("loads under Node's native ESM runtime", () => {
     const moduleUrl = pathToFileURL(join(process.cwd(), "src/account-erasure/redpanda-drain.ts"));
     const result = spawnSync(

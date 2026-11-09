@@ -1,0 +1,462 @@
+{
+  "recordedAt": "2026-11-09T02:06:54.567Z",
+  "authorization": {
+    "question": "Q4",
+    "answer": "A",
+    "userWords": "Y",
+    "scope": "Kafka-only phase1; retained-data erasure hold; exact policy/routes/first-write/recovery/observation bundle"
+  },
+  "firstWriteAuthority": {
+    "enteredAt": "2026-11-09T01:32:22.662Z",
+    "approval": "Q4 A; user Y",
+    "scope": "Phase1 Kafka-only; all six application topics including consumer quarantine writes",
+    "recovery": "Frozen recovery.md; forward stop/preserve after this authority; no Redpanda cutback"
+  },
+  "observation": {
+    "baselineAt": "2026-11-09T01:35:05Z",
+    "scheduledFirstAt": "2026-11-09T01:36:39Z",
+    "completedAt": "2026-11-09T02:05:39Z",
+    "elapsedSeconds": 1834,
+    "scheduledChecks": 30,
+    "totalSamples": 31,
+    "allPassed": true,
+    "minFreeBytes": 43532427264,
+    "finalFreeBytes": 43608772608,
+    "finalRootFreeBytes": 7667101696,
+    "finalKafkaAllocatedBytes": 49680384,
+    "finalNativeSourceLogBytes": 48533832,
+    "maxObservedLag": 0,
+    "archiveErrors": 0,
+    "stopConditionsTriggered": false,
+    "automaticMonitoringRemaining": false
+  },
+  "topics": [
+    {
+      "topic": "metric-stream-live-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3",
+      "partition": 0,
+      "topicId": "1l5JWr_kQuev6W4sXJVnoQ",
+      "replicas": 1,
+      "retentionMs": 604800000,
+      "retentionBytes": 4294967296,
+      "segmentBytes": 134217728,
+      "remoteStorage": false,
+      "low": 0,
+      "high": 87797
+    },
+    {
+      "topic": "metric-stream-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3.quarantine.v1",
+      "partition": 0,
+      "topicId": "mSnsZJCxSM6niGse_DnxIA",
+      "replicas": 1,
+      "retentionMs": 604800000,
+      "retentionBytes": 1073741824,
+      "segmentBytes": 1073741824,
+      "remoteStorage": false,
+      "low": 0,
+      "high": 0
+    },
+    {
+      "topic": "metric-stream-history-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3.quarantine.v1",
+      "partition": 0,
+      "topicId": "wwLo8M2_SX2iKO9B37OABg",
+      "replicas": 1,
+      "retentionMs": 604800000,
+      "retentionBytes": 1073741824,
+      "segmentBytes": 1073741824,
+      "remoteStorage": false,
+      "low": 0,
+      "high": 0
+    },
+    {
+      "topic": "metric-stream-live-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3.quarantine.v1",
+      "partition": 0,
+      "topicId": "h4zo9KroShCxcxMvLsvcDQ",
+      "replicas": 1,
+      "retentionMs": 604800000,
+      "retentionBytes": 1073741824,
+      "segmentBytes": 1073741824,
+      "remoteStorage": false,
+      "low": 0,
+      "high": 0
+    },
+    {
+      "topic": "metric-stream-history-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3",
+      "partition": 0,
+      "topicId": "P7MsnYU4RimPZIkPJ6MQRw",
+      "replicas": 1,
+      "retentionMs": 604800000,
+      "retentionBytes": 4294967296,
+      "segmentBytes": 134217728,
+      "remoteStorage": false,
+      "low": 0,
+      "high": 0
+    },
+    {
+      "topic": "metric-stream-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3",
+      "partition": 0,
+      "topicId": "N26OuOYjRFi7XjlEaiKG_g",
+      "replicas": 1,
+      "retentionMs": 604800000,
+      "retentionBytes": 4294967296,
+      "segmentBytes": 134217728,
+      "remoteStorage": false,
+      "low": 0,
+      "high": 0
+    }
+  ],
+  "finalGroups": [
+    {
+      "group_name": "metric-stream-clickhouse-sink",
+      "state": "Stable",
+      "members": 1,
+      "total_lag": 0,
+      "partitions": [
+        {
+          "topic": "metric-stream-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3",
+          "partition": 0,
+          "current_offset": -1,
+          "log_end_offset": 0,
+          "lag": 0
+        }
+      ]
+    },
+    {
+      "group_name": "metric-stream-history-clickhouse-sink",
+      "state": "Stable",
+      "members": 1,
+      "total_lag": 0,
+      "partitions": [
+        {
+          "topic": "metric-stream-history-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3",
+          "partition": 0,
+          "current_offset": -1,
+          "log_end_offset": 0,
+          "lag": 0
+        }
+      ]
+    },
+    {
+      "group_name": "metric-stream-history-r2-archive",
+      "state": "Stable",
+      "members": 1,
+      "total_lag": 0,
+      "partitions": [
+        {
+          "topic": "metric-stream-history-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3",
+          "partition": 0,
+          "current_offset": -1,
+          "log_end_offset": 0,
+          "lag": 0
+        }
+      ]
+    },
+    {
+      "group_name": "metric-stream-live-clickhouse-sink",
+      "state": "Stable",
+      "members": 1,
+      "total_lag": 0,
+      "partitions": [
+        {
+          "topic": "metric-stream-live-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3",
+          "partition": 0,
+          "current_offset": 87797,
+          "log_end_offset": 87797,
+          "lag": 0
+        }
+      ]
+    },
+    {
+      "group_name": "metric-stream-live-r2-archive",
+      "state": "Stable",
+      "members": 1,
+      "total_lag": 0,
+      "partitions": [
+        {
+          "topic": "metric-stream-live-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3",
+          "partition": 0,
+          "current_offset": 87797,
+          "log_end_offset": 87797,
+          "lag": 0
+        }
+      ]
+    },
+    {
+      "group_name": "metric-stream-r2-archive",
+      "state": "Stable",
+      "members": 1,
+      "total_lag": 0,
+      "partitions": [
+        {
+          "topic": "metric-stream-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3",
+          "partition": 0,
+          "current_offset": -1,
+          "log_end_offset": 0,
+          "lag": 0
+        }
+      ]
+    }
+  ],
+  "oldFinalGroups": [
+    {
+      "group_name": "metric-stream-clickhouse-sink",
+      "state": "Stable",
+      "members": 1,
+      "total_lag": 0,
+      "partitions": [
+        {
+          "topic": "metric-stream-v1",
+          "partition": 0,
+          "current_offset": 1619570368,
+          "log_start_offset": 1619570368,
+          "log_end_offset": 1619570368,
+          "lag": 0
+        }
+      ]
+    },
+    {
+      "group_name": "metric-stream-history-clickhouse-sink",
+      "state": "Stable",
+      "members": 1,
+      "total_lag": 0,
+      "partitions": [
+        {
+          "topic": "metric-stream-history-v1",
+          "partition": 0,
+          "current_offset": 74445631,
+          "log_start_offset": 55609019,
+          "log_end_offset": 74445631,
+          "lag": 0
+        }
+      ]
+    },
+    {
+      "group_name": "metric-stream-history-r2-archive",
+      "state": "Stable",
+      "members": 1,
+      "total_lag": 0,
+      "partitions": [
+        {
+          "topic": "metric-stream-history-v1",
+          "partition": 0,
+          "current_offset": 74445631,
+          "log_start_offset": 55609019,
+          "log_end_offset": 74445631,
+          "lag": 0
+        }
+      ]
+    },
+    {
+      "group_name": "metric-stream-live-clickhouse-sink",
+      "state": "Stable",
+      "members": 1,
+      "total_lag": 0,
+      "partitions": [
+        {
+          "topic": "metric-stream-live-v1",
+          "partition": 0,
+          "current_offset": 247794777,
+          "log_start_offset": 212186947,
+          "log_end_offset": 247794777,
+          "lag": 0
+        }
+      ]
+    },
+    {
+      "group_name": "metric-stream-live-r2-archive",
+      "state": "Stable",
+      "members": 1,
+      "total_lag": 0,
+      "partitions": [
+        {
+          "topic": "metric-stream-live-v1",
+          "partition": 0,
+          "current_offset": 247794777,
+          "log_start_offset": 212186947,
+          "log_end_offset": 247794777,
+          "lag": 0
+        }
+      ]
+    },
+    {
+      "group_name": "metric-stream-r2-archive",
+      "state": "Stable",
+      "members": 1,
+      "total_lag": 0,
+      "partitions": [
+        {
+          "topic": "metric-stream-v1",
+          "partition": 0,
+          "current_offset": 1619570368,
+          "log_start_offset": 1619570368,
+          "log_end_offset": 1619570368,
+          "lag": 0
+        }
+      ]
+    }
+  ],
+  "taskRuntime": [
+    {
+      "service": "dofek_kafka",
+      "startedAt": "2026-11-09T01:27:27.948265458Z",
+      "restarts": 0,
+      "status": "running",
+      "health": "healthy"
+    },
+    {
+      "service": "dofek_web",
+      "startedAt": "2026-11-09T01:33:46.852294393Z",
+      "restarts": 0,
+      "status": "running",
+      "health": "healthy"
+    },
+    {
+      "service": "dofek_web",
+      "startedAt": "2026-11-09T01:33:46.855355156Z",
+      "restarts": 0,
+      "status": "running",
+      "health": "healthy"
+    },
+    {
+      "service": "dofek_worker",
+      "startedAt": "2026-11-09T01:33:46.845593586Z",
+      "restarts": 0,
+      "status": "running",
+      "health": "healthy"
+    },
+    {
+      "service": "dofek_metric-stream-clickhouse-sink",
+      "startedAt": "2026-11-09T01:32:32.607471599Z",
+      "restarts": 0,
+      "status": "running",
+      "health": "healthy"
+    },
+    {
+      "service": "dofek_metric-stream-live-clickhouse-sink",
+      "startedAt": "2026-11-09T01:32:32.600022951Z",
+      "restarts": 0,
+      "status": "running",
+      "health": "healthy"
+    },
+    {
+      "service": "dofek_metric-stream-history-clickhouse-sink",
+      "startedAt": "2026-11-09T01:32:32.606741078Z",
+      "restarts": 0,
+      "status": "running",
+      "health": "healthy"
+    },
+    {
+      "service": "dofek_metric-stream-r2-archive",
+      "startedAt": "2026-11-09T01:32:32.268355258Z",
+      "restarts": 0,
+      "status": "running",
+      "health": "not-configured"
+    },
+    {
+      "service": "dofek_metric-stream-live-r2-archive",
+      "startedAt": "2026-11-09T01:32:32.253525203Z",
+      "restarts": 0,
+      "status": "running",
+      "health": "not-configured"
+    },
+    {
+      "service": "dofek_metric-stream-history-r2-archive",
+      "startedAt": "2026-11-09T01:32:32.286401356Z",
+      "restarts": 0,
+      "status": "running",
+      "health": "not-configured"
+    }
+  ],
+  "services": [
+    {
+      "name": "dofek_kafka",
+      "replicas": 1,
+      "image": "apache/kafka:4.4.0@sha256:833b867a9585a141da455dc2b57431c65cbccb27f11c91f694444cca9f777e0f"
+    },
+    {
+      "name": "dofek_redpanda",
+      "replicas": 0,
+      "image": "redpandadata/redpanda:v26.1.9@sha256:8cb52078690728e2b3d1507fc84eda4c07d4d59bd8fa241e9b1cc7eb7de096c9"
+    },
+    {
+      "name": "dofek_web",
+      "replicas": 2,
+      "image": "ghcr.io/asherlc/dofek@sha256:b5676e5616082a09184397f0ea328b28e9d1320c4124cbafaf4f0578899e2d84"
+    },
+    {
+      "name": "dofek_worker",
+      "replicas": 1,
+      "image": "ghcr.io/asherlc/dofek@sha256:a498aaa503db452480fdd43a71cc8799aa2564eea30a070e0296a08effc48620"
+    },
+    {
+      "name": "dofek_metric-stream-clickhouse-sink",
+      "replicas": 1,
+      "image": "ghcr.io/asherlc/dofek@sha256:b5676e5616082a09184397f0ea328b28e9d1320c4124cbafaf4f0578899e2d84"
+    },
+    {
+      "name": "dofek_metric-stream-live-clickhouse-sink",
+      "replicas": 1,
+      "image": "ghcr.io/asherlc/dofek@sha256:b5676e5616082a09184397f0ea328b28e9d1320c4124cbafaf4f0578899e2d84"
+    },
+    {
+      "name": "dofek_metric-stream-history-clickhouse-sink",
+      "replicas": 1,
+      "image": "ghcr.io/asherlc/dofek@sha256:d8ca75d14b4da18057f3cf43d34889adf3d65c4927caccee69a8cee34e8120a1"
+    },
+    {
+      "name": "dofek_metric-stream-r2-archive",
+      "replicas": 1,
+      "image": "docker.redpanda.com/redpandadata/connect:4.99.0@sha256:0e1fb0a8c14d8752e3bb56a317ebe0867bdb61873fe2bb3cfcb64f9139589989"
+    },
+    {
+      "name": "dofek_metric-stream-live-r2-archive",
+      "replicas": 1,
+      "image": "docker.redpanda.com/redpandadata/connect:4.99.0@sha256:0e1fb0a8c14d8752e3bb56a317ebe0867bdb61873fe2bb3cfcb64f9139589989"
+    },
+    {
+      "name": "dofek_metric-stream-history-r2-archive",
+      "replicas": 1,
+      "image": "docker.redpanda.com/redpandadata/connect:4.99.0@sha256:0e1fb0a8c14d8752e3bb56a317ebe0867bdb61873fe2bb3cfcb64f9139589989"
+    },
+    {
+      "name": "dofek_analytics-worker",
+      "replicas": 1,
+      "image": "ghcr.io/asherlc/dofek@sha256:b5676e5616082a09184397f0ea328b28e9d1320c4124cbafaf4f0578899e2d84"
+    },
+    {
+      "name": "dofek_processing-reconciliation",
+      "replicas": 1,
+      "image": "ghcr.io/asherlc/dofek@sha256:b5676e5616082a09184397f0ea328b28e9d1320c4124cbafaf4f0578899e2d84"
+    }
+  ],
+  "routing": {
+    "updatedExistingKeys": [
+      "REDPANDA_BROKERS",
+      "METRIC_STREAM_LEGACY_TOPIC",
+      "METRIC_STREAM_LIVE_TOPIC",
+      "METRIC_STREAM_HISTORY_TOPIC"
+    ],
+    "privateReadbackMatched": true,
+    "secretValuesPublished": false
+  },
+  "erasureRequests": {
+    "beforePause": {
+      "total": 0,
+      "incomplete": 0,
+      "overdue": 0
+    },
+    "afterWindow": {
+      "total": 0,
+      "incomplete": 0,
+      "overdue": 0
+    },
+    "retainedRedpandaCompletionHold": true
+  },
+  "evidenceLimits": [
+    "No synthetic production load or historical body/identity scans",
+    "No measured peak/backfill-rate or guaranteed replay duration",
+    "Offsets, native source-log bytes, allocation and free space are distinct",
+    "No host/disk-failure or full archive-restore qualification from this observation",
+    "Quiet legacy/history topics were connected but received no records in this window",
+    "Tiered storage/shared application release/merge/retirement not executed"
+  ]
+}

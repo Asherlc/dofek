@@ -871,6 +871,8 @@ describe("account erasure persistence (integration)", () => {
                   partition: 0,
                   low: "0",
                   offset: "100",
+                  clusterId: "0000000000000000000000",
+                  topicId: "dI2O6HVWQkuC7XgSy7cJ3w",
                   userEmail: "must-not-survive@example.test",
                 },
               ],
@@ -880,11 +882,13 @@ describe("account erasure persistence (integration)", () => {
               unexpected: "must-not-survive",
               quarantineHighWatermarks: [
                 {
-                  // Quarantine topic is source + .quarantine.v1 — not the main log name.
-                  topic: "metric-stream-live-v2.quarantine.v1",
+                  // Checkpoints identify the source route; retention derives its quarantine name.
+                  topic: "metric-stream-live-v2",
                   partition: 0,
                   low: "0",
                   offset: "42",
+                  clusterId: "0000000000000000000000",
+                  topicId: "aaaaaaaaaaaaaaaaaaaaaa",
                   userEmail: "must-not-survive@example.test",
                 },
               ],
@@ -939,16 +943,20 @@ describe("account erasure persistence (integration)", () => {
                 partition: 0,
                 low: "0",
                 offset: "100",
+                clusterId: "0000000000000000000000",
+                topicId: "dI2O6HVWQkuC7XgSy7cJ3w",
               },
             ],
           },
           consumer_drain: {
             quarantineHighWatermarks: [
               {
-                topic: "metric-stream-live-v2.quarantine.v1",
+                topic: "metric-stream-live-v2",
                 partition: 0,
                 low: "0",
                 offset: "42",
+                clusterId: "0000000000000000000000",
+                topicId: "aaaaaaaaaaaaaaaaaaaaaa",
               },
             ],
           },

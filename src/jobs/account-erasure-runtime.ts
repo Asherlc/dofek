@@ -14,6 +14,7 @@ import {
   ACCOUNT_ERASURE_IDENTIFIER_PAGE_SIZE,
   AccountErasureIdentifierStore,
 } from "../account-erasure/identifier-store.ts";
+import { KafkaLogStorage } from "../account-erasure/kafka-log-storage.ts";
 import { assertPeerDbAccountErasureDrained } from "../account-erasure/peerdb-erasure.ts";
 import {
   createPeerDbStagingStorageFromEnv,
@@ -50,6 +51,7 @@ import {
 import type { ClickHouseClient } from "../db/clickhouse.ts";
 import { createPeerDbMirrorApiClientFromEnv } from "../db/clickhouse-cdc.ts";
 import type { Database } from "../db/index.ts";
+import { metricStreamQuarantineTopic } from "../metric-stream/redpanda-quarantine.ts";
 import { getAllProviders } from "../providers/index.ts";
 import { createR2Client, requiredR2EnvironmentVariable } from "../r2-storage.ts";
 import {
@@ -106,6 +108,12 @@ export async function createAccountErasureRuntime(
     const redpanda = createAccountErasureRedpandaAdminFromEnv();
     startupCleanup.push(() => redpanda.close());
     await redpanda.connect();
+    const brokerStorage = new KafkaLogStorage(redpanda.admin, {
+      directory: "/var/lib/dofek/kafka-data",
+      brokerDirectory: "/var/lib/kafka/data",
+      retiredDirectory: "/var/lib/dofek/retired-broker-data",
+      topics: redpanda.routes.flatMap(({ topic }) => [topic, metricStreamQuarantineTopic(topic)]),
+    });
 
     const identifiers = (input: { requestId: string; leaseOwner: string }) =>
       new AccountErasureIdentifierStore(database, {
@@ -142,6 +150,7 @@ export async function createAccountErasureRuntime(
         if (!(await store.loadPhysicalProgress(input.stage)))
           throw new Error("Account erasure physical preparation is incomplete");
       },
+      assertBrokerStorageExpired: (boundaries) => brokerStorage.assertExpired(boundaries),
       assertConsumersDrained: async (highWatermarks) => {
         for (const route of redpanda.routes) {
           const captured = highWatermarks.filter((entry) => entry.topic === route.topic);
@@ -181,11 +190,10 @@ export async function createAccountErasureRuntime(
           await Promise.all(
             redpanda.routes.map(async ({ topic }) =>
               (
-                await captureAccountErasureHighWatermarks(redpanda.admin, topic)
-              ).map((entry) => ({
-                ...entry,
-                topic,
-              })),
+                await brokerStorage.capture(topic, () =>
+                  captureAccountErasureHighWatermarks(redpanda.admin, topic),
+                )
+              ).map((entry) => ({ ...entry, topic })),
             ),
           )
         ).flat(),
@@ -194,7 +202,9 @@ export async function createAccountErasureRuntime(
           await Promise.all(
             redpanda.routes.map(async ({ topic }) =>
               (
-                await captureAccountErasureQuarantineHighWatermarks(redpanda.admin, topic)
+                await brokerStorage.capture(metricStreamQuarantineTopic(topic), () =>
+                  captureAccountErasureQuarantineHighWatermarks(redpanda.admin, topic),
+                )
               ).map((entry) => ({ ...entry, topic })),
             ),
           )

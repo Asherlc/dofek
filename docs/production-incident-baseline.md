@@ -35715,6 +35715,117 @@ TypeScript and Biome passed. This local result is not a same-runner performance
 comparison or proof that the whole remote shard fits its deadline; new CI must
 confirm that. No unrelated activity-integrity repair changes were made.
 
+## 2026-11-08 — Local Kafka qualification Docker disk pressure
+
+Production impact: none. An isolated protocol broker failed during formatting
+with `/tmp/kafka-logs: No space left on device`. Docker VM inspection showed
+79 GiB capacity, 73–75 GiB used and 0–1.5 GiB available during image pulls.
+Build-cache cleanup reclaimed zero bytes. No other workspace's running container
+or named database volume was removed. The disposable broker used a bounded tmpfs
+log directory; this changes only the local fixture. Four broker integration tests,
+both current-image factory smoke checks and three Connect pipeline checks passed.
+Their methods, image-specific broker keys and limits are recorded in the
+[protocol qualification record](../deploy/kafka/qualification.md); retained
+historical test counts are in the
+[console excerpts](evidence/kafka-review-qualification-20261109/retained-test-summaries.txt).
+Owned test containers/network were removed; the completed old-image fixture was
+removed locally to recover space. Shared disk pressure remains a workstation risk.
+Next time, check VM free space before pulling both application images and retain
+only the fixture image currently under test. Docker documents local resource
+[pruning](https://docs.docker.com/engine/manage-resources/pruning/) and
+[tmpfs mounts](https://docs.docker.com/engine/storage/tmpfs/).
+## 2026-11-08 — Hot-log-only Kafka offline storage qualification
+
+- **Reason / boundary:** The stock tiered-storage review could not establish a lasting physical-absence guarantee against previously admitted remote copies. The user's “continue” authorized offline qualification of hot-log-only Kafka with the existing JSONL archive. No production change or cloud experiment was performed.
+- **Observation:** On isolated Kafka 4.4.0 with remote storage explicitly disabled, deleting synthetic records advanced the low offset to 100 while an 814,387-byte old segment remained. Its log and index files were observed absent about 217 seconds later under unchanged stock cleanup settings; the newer segment remained. Offset advancement alone is therefore not adequate physical local deletion evidence. [Qualification and limits](../deploy/kafka/hot-log-qualification.md).
+- **Local prerequisite / correction:** Initial launch failed before JVM startup because Docker's filesystem was full. Build cache reclaimed zero bytes; stock unused-image cleanup recovered 2.239 GB, preserving running containers and database volumes. The same broker started afterward. The initial observation window was shorter than stock cleanup scheduling; continued observation, rather than a runtime delay change, captured removal.
+- **Remaining work / retrospective:** Hot-log-only Kafka still needs physical local-storage and generation verification, a retained-Redpanda completion hold, archive-erasure continuity and disk-budget qualification. No successful worker verifier or activation readiness is claimed. Reuse native lifecycle evidence and small domain checks; do not replace physical evidence with a longer sleep or new certificate framework.
+
+### 2026-11-08 follow-up — native worker guard qualification
+
+- **Impact:** No production mutation or user impact. The actual worker adapter
+  rejected synthetic files after logical expiry, retained its structural topic
+  identity across broker restart and accepted only after stock native removal.
+  The [receipt](../deploy/kafka/native-storage-proof.json) preserves the first
+  harness correction: reusing an explicitly disconnected KafkaJS admin failed
+  with `write after end`; a fresh worker-style admin continued the same broker.
+- **Local infrastructure:** The owned Compose fixture initially failed with
+  `all predefined address pools have been fully subnetted`. Inspection showed
+  Docker's default pools allocated. The disposable fixture used an explicitly
+  unused subnet; no global Docker settings or other workspaces were changed.
+  Its container and network were removed afterward.
+- **Validation / remaining risk:** 23,788 configured unit tests passed; affected
+  focused tests and real Postgres scrub/request tests passed. The canonical
+  candidate is hot-log-only and retains the original Redpanda root read-only as
+  a completion hold. Production activation, byte-retention policy, burst margin,
+  review image and separate old-data retirement approval remain gates.
+- **Next-time guidance:** Check Docker address-pool and disk prerequisites before
+  starting an isolated native fixture. Reuse the repository's integration setup
+  workflow and the [native qualification](../deploy/kafka/hot-log-qualification.md);
+  do not convert a fixture reconnect error into production retry machinery.
+
+### 2026-11-08 — Kafka review CI and packaged retention qualification
+
+- **Impact:** Review-only failures; no production change or user impact.
+- **Evidence:** [Runtime CI](https://github.com/Asherlc/dofek/actions/runs/42507133544)
+  first failed CSpell on native `timeindex`/`txnindex` terms and synthetic UUIDs;
+  mobile typecheck reported `redpanda-drain.ts(247,11): TS7006` because the mobile
+  environment type admitted implicit-any broker callbacks. Mutation jobs exposed
+  missing runtime mount/topic assertions and insufficient checkpoint/native
+  metadata boundary tests. Aggregate failures follow these underlying jobs.
+- **Fix:** Add the native terms to the existing dictionary, simplify synthetic
+  UUIDs, type the environment input as string-or-undefined, and exercise the
+  concrete safety contracts. Keep runtime behavior and gate thresholds unchanged.
+- **Validation:** Focused units, mobile typecheck and 13 real Postgres scrub tests
+  passed. The [packaged-image receipt](../deploy/kafka/worker-image-proof.json)
+  verifies actual retention-phase rejection/acceptance through native cleanup and
+  the retained Redpanda hold. Complete CI settlement remains required.
+- **Fixture correction:** An initial direct Vitest invocation omitted
+  `TEST_DATABASE_URL`; exporting the existing generated `DATABASE_URL` under that
+  test key resolved the setup failure. No production credentials were used.
+- **Next time:** Use the stock integration launcher, verify packaged phase
+  behavior as well as artifact identity, and include generation/mount contracts
+  in the first focused test pass. Retention policy, capacity, old-data retirement
+  and coordinated erasure scrub integration remain explicit activation gates.
+- **Worker integration follow-up:** Shard 2 then failed the BullMQ outbox fixture
+  at PII scrub with `Invalid input: expected object, received null`. Its fake
+  phase runner returned null for both source and quarantine checkpoints, so the
+  production scrub correctly refused incomplete evidence. Supplying realistic
+  structural checkpoint results fixed the fixture; the same real Postgres/Redis
+  integration test passed locally without waits or production changes. Later
+  duplicate-email/identity errors were test retries after that initial failure.
+
+### 2026-11-08 — local stock-tiered qualification withdrawn
+
+- **Scope/impact:** Disposable synthetic Kafka/S3 fixture only; no production
+  changes or shared service/database-volume removal.
+- **First failures:** Compose `up -d` failed with `all predefined address pools
+  have been fully subnetted`; Kafka then failed before JVM startup with
+  `mkdir: cannot create directory .../logs: No space left on device`.
+- **Evidence/root cause:** Shared Docker overlay was 100% full (78.4 GiB filesystem),
+  with 39% inode use. Builder prune recovered 0 B; inspected unused-image pruning
+  recovered 1.142 GB, including the unused prior review worker image. Running
+  services were preserved. An explicit owned fixture subnet and RAM-backed data/
+  JVM-log mounts allowed bounded native-codec checks, not disk-durability proof.
+- **Validation/limit:** The exploratory operator note reported stock-formatter
+  agreement on two structural vectors and focused adapter/wiring passes. Raw
+  output for those particular formatter/disk observations was not retained;
+  those reports are not independently verifiable release evidence. Retained
+  later test summaries are [published separately](evidence/kafka-review-qualification-20261109/retained-test-summaries.txt)
+  without transferring their passes to this discarded prototype. Full lifecycle/image
+  qualification was not completed. The user rejected Aiven's adoption/support
+  profile; all unfinished runtime changes were withdrawn. The owned Compose
+  project was removed with `down --remove-orphans --volumes`, then zero owned
+  containers/networks were verified. Shared Docker disk pressure remains unresolved.
+- **Next time:** Qualify adoption, support, licensing and object-store fit before
+  implementation; use Docker's documented [isolated networks](https://docs.docker.com/compose/how-tos/networking/)
+  and [scoped cleanup](https://docs.docker.com/reference/cli/docker/compose/down/).
+- **Later, separate evidence:** The subsequently selected stock-Aiven child has
+  its own [packaged phase/remote-read/restart receipt](https://github.com/Asherlc/dofek/blob/4cae5d78f0bd8f947dddfc251073862a83f43079/docs/evidence/kafka-tiered-child-20261108/README.md).
+  It does not retroactively qualify the withdrawn attempt or establish current
+  production tiering. The historical 78.4-GiB/39%-inode/1.142-GB figures above
+  remain reported exploratory observations, not a capacity guarantee.
+
 ## 2026-11-08 — History recovery complete; two healthy zero-lag checks
 
 - **Root cause / direct fix:** Scoped deletion's global latest-ID lookup selected unrelated versions across the table, leading to a 212-second statement, the 120-second client timeout and an overlapping retry. The approved immutable sample identity allowed the repaired sink to resolve versions through native `(id,user_id,provider_id,recorded_at)` membership, retaining full latest-row resolution, mutable-scope checks, fences, revision semantics and normal acknowledgements. No new index, storage model, queue framework or runtime resilience setting was needed.
@@ -35743,3 +35854,89 @@ The [retained successful-CI catalog report](evidence/erasure-extraction-20261108
 Timing evidence showed the expanded erasure module took 227 seconds versus its old committed 16.519-second weight, sharing shard 1 with a 268-second integrity-repair module. Updated the assertion to the fixed safe reason and exact public support message. Refreshed [the measured baseline](../scripts/integration-test-timings.json) through the existing [documented merge tool](testing.md#duration-balanced-integration-shards), using all four successful timing artifacts from run `42507552488`, attempt 1, source `58d9c75d5`, Vitest 5.0.5. No weights were hand-picked; sequencer, limits, retries and test coverage remain unchanged. The source artifacts contain 358 complete successful file results; current discovery adds one estimated owner integration file. The stock sequencer probe verified a unique exact union of all 359 current files and placed the two heavy modules on separate shards (about 457 seconds of measured work per bin). Existing timing-tool tests passed 52 cases, root TypeScript and changed-test Biome passed.
 
 The focused corrected integration case was attempted but PostgreSQL failed to create its test database with `No space left on device`, before any assertion. It is not claimed to pass locally. Remaining risk: new exact-head CI must verify the corrected assertion and unchanged 12-minute deadline; publication-safety/design blockers remain open. Scoped CI timing artifacts were the only downloads; no production event/archive bodies were accessed.
+
+## 2026-11-09 — Kafka phase-1 mount preparation and operator failure propagation
+
+- **Scope/impact:** The approved Kafka-only cutover was still preparing an isolated
+  broker while application traffic remained on Redpanda. No application routes or
+  topics had changed at this failure; the fresh persistent directory remained empty.
+- **Exact failing operation:** A stopped `docker service update dofek_kafka` combined
+  removal and addition of `/var/lib/kafka/data`. Inspection returned `Mounts: null`.
+  The prerequisite verifier failed with `TypeError: Cannot read properties of
+  undefined (reading 'length')`. Its outer shell did not propagate failure and
+  continued to scale Kafka to one, so the broker briefly started without the bind.
+  An earlier operator assertion also expected eighteen environment keys incorrectly;
+  canonical comparison established fifteen settings plus preserved `CLUSTER_ID`.
+  That assertion required a verification correction, not a production config change.
+- **Root cause/direct fix:** Same-target mount operations were combined and the
+  outer operator command did not explicitly stop on failed validation. Kafka was
+  returned to zero; actual task exit, unchanged old service specs and the empty
+  fresh directory were checked. A separate stopped-service `--mount-add` installed
+  the intended bind. Independently checked prerequisite commands then passed before
+  start. No data cleanup, relaxed gate, retry or timeout change was used.
+- **Validation:** Canonical fifteen broker settings plus preserved cluster ID and
+  exact native data mount passed; Kafka became healthy and its external Admin API
+  responded. Six fresh topics had the approved policy and zero application offsets.
+  The new worker's two distinct read-only mounts were separately checked against
+  the original mount list and actual running container. See the
+  [phase-1 execution receipt](../deploy/kafka/phase1-execution.md).
+- **Other observation:** Three drained old ClickHouse sinks exited 137 during native
+  service stop. Their final committed offsets already matched source boundaries;
+  all restarted healthy with the original image pins. Stop lifecycle remains an
+  operational limitation, not a demonstrated record-loss incident.
+- **Follow-up/context:** The stock command record now separates mount removal/addition
+  and requires effective-spec inspection. Execution must propagate every prerequisite
+  failure to the outer mutation boundary; merely setting `-e` in a subprocess is
+  insufficient. Reuse the production-log and executing-plans workflows; no new
+  framework or runtime resilience setting is needed. Docker documents
+  [service updates](https://docs.docker.com/reference/cli/docker/service/update/)
+  and [task states](https://docs.docker.com/engine/swarm/how-swarm-mode-works/swarm-task-states/).
+
+## 2026-11-09 — Read-only Terraform review checkout input
+
+- **Impact:** No production resource change. The plan-only review job
+  [42549524115](https://github.com/Asherlc/dofek/actions/runs/42549524115) failed
+  during checkout, before Terraform or credential-provider calls.
+- **Root cause:** The operator supplied abbreviated `8a9c8de03` as `commit_sha`.
+  Checkout fetched `refs/heads/8a9c8de03*` and `refs/tags/8a9c8de03*`, found no
+  matching branch/tag, and reported `The process '/usr/bin/git' failed with exit
+  code 1`. The subsequent missing local action was downstream of that failure.
+- **Direct fix/validation:** Supply full
+  `8a9c8de03c910a36f2f7dac397317e992324bf6e`. Corrected stock plan-only run
+  [42549866789](https://github.com/Asherlc/dofek/actions/runs/42549866789) passed
+  and reported no infrastructure changes. No apply, retry setting or timeout
+  adjustment was used. See the [review evidence](evidence/kafka-review-qualification-20261109/README.md).
+- **Next time:** Resolve and pass the full immutable commit SHA for workflow
+  checkout inputs. Keep checkout failures separate from Terraform failures and
+  use the existing root-cause-first CI investigation workflow.
+
+
+## 2026-11-09 — Kafka shared-release qualification catches renderer and CI fixture defects
+
+- **Symptoms/impact:** offline merge-readiness qualification, no additional production change. Real `docker stack config` retained quote characters in the Kafka `CLUSTER_ID` emitted by the raw dotenv assignment rename; Node `parseEnv` unit assertions had stripped those characters and missed the mismatch. Five regression cases failed first. The renderer now validates the structural 22-character Kafka identity and writes its parsed value without dotenv quotes; all 26 renderer cases and the actual Docker loader passed. See [Docker's loader](https://github.com/docker/cli/blob/master/cli/compose/loader/loader.go), [maintainer explanation](https://github.com/docker/cli/issues/3630) and [qualification receipt](evidence/kafka-shared-release-20261109/summary.json).
+- **CI first fatal/root cause:** [3350 CI, Unit Tests](https://github.com/Asherlc/dofek/actions/runs/42554758638/job/128958158467) reported `scenarios/dofek_kafka: No such file or directory` in the executable deployment-workflow test. Adding Kafka to production convergence checks required the test's mocked service inventory to include it. Both fixture lists now include Kafka, clock expectations include its existing 60-second stability check, and a paused-Kafka scenario fails the release. All 43 workflow tests plus 26 renderer tests passed locally. No production waits, retries, gates or timeout values were weakened.
+- **Bootstrap correction/limit:** the future OCI-host template now creates the canonical Kafka directory with UID/GID 1000 only after checking the data filesystem is mounted. Terraform formatting/validation and both template branches' YAML/shell parsing passed offline. This OCI `user_data` change was not planned/applied against the live instance and can require instance replacement on a future OCI apply. The separately successful Cloudflare No-changes plan does not qualify it; normal app deployment does not apply the OCI root.
+- **Remaining risk/follow-up:** exact new-head CI must settle; Terraform credential sourcing and internal-overlay authentication remain explicit review decisions. [Shared release proposal](../deploy/kafka/shared-release.md) records image/source distinctions and the broader automatic-release effects. Keep real-loader qualification for renamed structural fields and update executable workflow mocks whenever a required service is added.
+
+
+## 2026-11-09 — Erasure branch synchronization with merged Kafka main (offline)
+
+The user requested current main before assessing the quarantine handoff. [Main
+6fe1d4fbd](https://github.com/Asherlc/dofek/commit/6fe1d4fbd479cc1ed9be874538e2b7dc3c1b1551)
+introduced broker-storage checks overlapping the independent erasure redesign.
+Nine files had text conflicts; both incident append histories were retained.
+Reconciled the shared checkpoint schema/capture/scrub and required retention
+dependency without replacing newer erasure identifiers, snapshot guards,
+post-lock lease renewal or ownership callbacks.
+
+The first targeted database run found two request-completion fixtures with null
+legacy ingest/drain checkpoint details; main's structural validation correctly
+rejected them. Adapted those test phases to emit the same required route/generation
+checkpoints as production. Validation passed 142 focused units, 76 targeted
+database cases across focused runs, TypeScript and changed-file Biome. The
+[PostgreSQL scrub regression](../src/db/account-erasure.integration.test.ts) checks
+generation preservation and removal of extra identifying fields; runtime/phase
+tests retain the required main broker guard. New exact-head CI remains required.
+The quarantine correction remains independently reviewable in
+[PR 3237](https://github.com/Asherlc/dofek/pull/3237), outside this main revision.
+No production changes, strategy expansion, branch switch or rebase occurred.

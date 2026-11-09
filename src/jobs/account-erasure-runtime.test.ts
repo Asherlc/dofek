@@ -6,6 +6,8 @@ import { createDatabase } from "../db/index.ts";
 import type { AccountErasurePhaseExecution } from "./process-account-erasure-request.ts";
 
 const mocks = vi.hoisted(() => ({
+  configureBrokerStorage: vi.fn(),
+  assertBrokerStorageExpired: vi.fn(async () => undefined),
   withOwner: vi.fn(
     async (
       _database: unknown,
@@ -27,6 +29,28 @@ const mocks = vi.hoisted(() => ({
   closeKafka: vi.fn(async () => undefined),
   connectKafka: vi.fn(async () => undefined),
 
+  captureBrokerStorage: vi.fn(
+    async (
+      topic: string,
+      captureOffsets: () => Promise<Array<{ low: string; offset: string; partition: number }>>,
+    ) => {
+      const generations: Record<string, string> = {
+        "metric-stream-v1": "AAAAAAAAAAAAAAAAAAAAAA",
+        "metric-stream-live-v2": "BBBBBBBBBBBBBBBBBBBBBB",
+        "metric-stream-history-v2": "CCCCCCCCCCCCCCCCCCCCCC",
+        "metric-stream-v1.quarantine.v1": "aaaaaaaaaaaaaaaaaaaaaa",
+        "metric-stream-live-v2.quarantine.v1": "bbbbbbbbbbbbbbbbbbbbbb",
+        "metric-stream-history-v2.quarantine.v1": "cccccccccccccccccccccc",
+      };
+      const topicId = generations[topic];
+      if (!topicId) throw new Error(`Unexpected capture topic: ${topic}`);
+      return (await captureOffsets()).map((entry) => ({
+        ...entry,
+        clusterId: "0000000000000000000000",
+        topicId,
+      }));
+    },
+  ),
   capturePeerDbStagingBoundary: vi.fn(async () => ({
     cutoff: "2026-08-03T12:00:00.000Z",
     eTag: '"boundary-etag"',
@@ -99,6 +123,16 @@ const mocks = vi.hoisted(() => ({
   })),
   verifyProcessors: vi.fn(async () => ({ processor: "complete" })),
   phaseRunnerShouldFail: false,
+}));
+
+vi.mock("../account-erasure/kafka-log-storage.ts", () => ({
+  KafkaLogStorage: class {
+    constructor(admin: unknown, paths: unknown) {
+      mocks.configureBrokerStorage(admin, paths);
+    }
+    assertExpired = mocks.assertBrokerStorageExpired;
+    capture = mocks.captureBrokerStorage;
+  },
 }));
 
 vi.mock("../analytics/analytics-query-owner.ts", () => ({
@@ -360,6 +394,14 @@ async function retentionLoadCheckpointDetails(
       ],
     };
   }
+  if (phase === "ingest_fence")
+    return {
+      highWatermarks: [
+        { topic: "metric-stream-v1", low: "0", offset: "42", partition: 0 },
+        { topic: "metric-stream-live-v2", low: "0", offset: "42", partition: 0 },
+        { topic: "metric-stream-history-v2", low: "0", offset: "42", partition: 0 },
+      ],
+    };
   if (phase === "peerdb_drain_verification") {
     return peerDbDrainCheckpoint;
   }
@@ -396,22 +438,39 @@ describe("createAccountErasureRuntime", () => {
     });
     try {
       const topics = ["metric-stream-v1", "metric-stream-live-v2", "metric-stream-history-v2"];
-      const highWatermarks = topics.map((topic) => ({
+      const highWatermarks = topics.map((topic, index) => ({
         topic,
         low: "0",
         offset: "42",
         partition: 0,
+        clusterId: "0000000000000000000000",
+        topicId: ["AAAAAAAAAAAAAAAAAAAAAA", "BBBBBBBBBBBBBBBBBBBBBB", "CCCCCCCCCCCCCCCCCCCCCC"][
+          index
+        ],
       }));
-      const quarantineHighWatermarks = topics.map((topic) => ({
+      const quarantineHighWatermarks = topics.map((topic, index) => ({
         topic,
         low: "0",
         offset: "7",
         partition: 0,
+        clusterId: "0000000000000000000000",
+        topicId: ["aaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbb", "cccccccccccccccccccccc"][
+          index
+        ],
       }));
 
       await expect(runtime.phaseRunner.runPhase("ingest_fence", execution())).resolves.toEqual({
         highWatermarks,
       });
+      expect(mocks.configureBrokerStorage).toHaveBeenCalledWith(
+        { name: "kafka-admin" },
+        {
+          directory: "/var/lib/dofek/kafka-data",
+          brokerDirectory: "/var/lib/kafka/data",
+          retiredDirectory: "/var/lib/dofek/retired-broker-data",
+          topics: topics.flatMap((topic) => [topic, `${topic}.quarantine.v1`]),
+        },
+      );
       expect(mocks.connectKafka).toHaveBeenCalledOnce();
       expect(mocks.captureHighWatermarks).toHaveBeenCalledTimes(3);
 
@@ -429,7 +488,7 @@ describe("createAccountErasureRuntime", () => {
       expect(mocks.assertConsumersDrained).toHaveBeenCalledWith(
         { name: "kafka-admin" },
         "metric-stream-v1",
-        [{ topic: "metric-stream-v1", low: "0", offset: "42", partition: 0 }],
+        [highWatermarks[0]],
         ["metric-stream-clickhouse-sink", "metric-stream-r2-archive"],
       );
       expect(mocks.withOwner).toHaveBeenCalledWith(
@@ -627,7 +686,7 @@ describe("createAccountErasureRuntime", () => {
     }
   });
 
-  it("completes Redpanda retention verification after its existing retention checks", async () => {
+  it("completes retention verification after broker storage and existing retention checks", async () => {
     const runtime = await createAccountErasureRuntime(ownerDatabase, mockClickHouse(), {
       close: vi.fn(async () => undefined),
       purge: vi.fn(async () => undefined),
@@ -659,6 +718,17 @@ describe("createAccountErasureRuntime", () => {
           cutoff: new Date(peerDbDrainCheckpoint.stagingBoundary.cutoff),
           now: expect.any(Date),
         }),
+      );
+      expect(mocks.assertBrokerStorageExpired).toHaveBeenCalledWith([
+        ...["metric-stream-v1", "metric-stream-live-v2", "metric-stream-history-v2"].map(
+          (topic) => ({ topic, low: "0", offset: "42", partition: 0 }),
+        ),
+        ...["metric-stream-v1", "metric-stream-live-v2", "metric-stream-history-v2"].map(
+          (topic) => ({ topic: `${topic}.quarantine.v1`, low: "0", offset: "7", partition: 0 }),
+        ),
+      ]);
+      expect(mocks.assertBrokerStorageExpired).toHaveBeenCalledBefore(
+        vi.mocked(mocks.verifyBackupRetention),
       );
       expect(mocks.verifyBackupRetention).toHaveBeenCalled();
       expect(mocks.verifyProcessorRetention).toHaveBeenCalled();

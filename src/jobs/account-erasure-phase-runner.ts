@@ -13,6 +13,7 @@ import type {
   StripeAccountErasureResult,
 } from "../account-erasure/remote-revocation.ts";
 import type { AccountErasureRemoteSnapshot } from "../account-erasure/remote-snapshot.ts";
+import { metricStreamQuarantineTopic } from "../metric-stream/redpanda-quarantine.ts";
 import type { AccountErasurePhase } from "./process-account-erasure-job.ts";
 import type {
   AccountErasurePhaseExecution,
@@ -51,6 +52,9 @@ interface IdentifierPreparation extends IdentifierRequest {
 export interface AccountErasurePhaseRunnerDependencies {
   prepareIdentifiers(input: IdentifierPreparation): Promise<void>;
   assertIdentifiersReady(input: IdentifierPreparation): Promise<void>;
+  assertBrokerStorageExpired(
+    highWatermarks: readonly AccountErasureRouteHighWatermark[],
+  ): Promise<void>;
   assertConsumersDrained(
     highWatermarks: readonly AccountErasureRouteHighWatermark[],
   ): Promise<void>;
@@ -361,6 +365,16 @@ export function createAccountErasurePhaseRunner(
             await execution.loadCheckpointDetails("consumer_drain"),
           );
           await dependencies.assertQuarantineExpired(quarantineCheckpoint.quarantineHighWatermarks);
+          const ingestCheckpoint = accountErasureIngestFenceCheckpointSchema.parse(
+            await execution.loadCheckpointDetails("ingest_fence"),
+          );
+          await dependencies.assertBrokerStorageExpired([
+            ...ingestCheckpoint.highWatermarks,
+            ...quarantineCheckpoint.quarantineHighWatermarks.map((entry) => ({
+              ...entry,
+              topic: metricStreamQuarantineTopic(entry.topic),
+            })),
+          ]);
           const peerDbCheckpoint = peerDbDrainCheckpointSchema.parse(
             await execution.loadCheckpointDetails("peerdb_drain_verification"),
           );
