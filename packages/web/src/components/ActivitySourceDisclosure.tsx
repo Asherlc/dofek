@@ -6,7 +6,7 @@ import {
   activitySourceNodePresentation,
 } from "@dofek/providers/activity-source-tree";
 import * as Popover from "@radix-ui/react-popover";
-import { type ReactNode, useId, useRef, useState } from "react";
+import { type ReactNode, useState } from "react";
 import { AttributionIcon } from "./ActivityMetricSourcePicker.tsx";
 import { ProviderLogo } from "./ProviderLogo.tsx";
 import { QueryStatePanel } from "./QueryStatePanel.tsx";
@@ -31,8 +31,6 @@ export function ActivitySourceDisclosure({
   onRetryHardware,
 }: Props) {
   const [expanded, setExpanded] = useState(false);
-  const contentId = useId();
-  const triggerRef = useRef<HTMLButtonElement>(null);
   const { primary, otherSources } = activitySourceTreeWithHardware(
     tree,
     hardware ?? EMPTY_HARDWARE,
@@ -43,11 +41,7 @@ export function ActivitySourceDisclosure({
   const trigger = (
     <button
       type="button"
-      ref={triggerRef}
       aria-label={primary ? `${primary.label} Lineage` : "Lineage"}
-      aria-expanded={expanded}
-      aria-controls={contentId}
-      onClick={heading ? undefined : () => setExpanded((current) => !current)}
       className={
         heading
           ? "flex min-h-8 max-w-64 items-center gap-2 rounded px-2 text-left hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-accent"
@@ -89,17 +83,13 @@ export function ActivitySourceDisclosure({
       ) : null}
       <div className="mb-4 flex items-center justify-between gap-3">
         <h2 className="text-base font-semibold">Lineage</h2>
-        <button
+        <Popover.Close
           type="button"
           aria-label="Close lineage"
-          onClick={() => {
-            setExpanded(false);
-            triggerRef.current?.focus();
-          }}
           className="flex size-8 items-center justify-center rounded text-muted hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-accent"
         >
           <span aria-hidden="true">×</span>
-        </button>
+        </Popover.Close>
       </div>
       {primary ? (
         <section aria-label="Original">
@@ -139,7 +129,7 @@ export function ActivitySourceDisclosure({
         }
       >
         {heading}
-        {heading ? <Popover.Trigger asChild>{trigger}</Popover.Trigger> : trigger}
+        <Popover.Trigger asChild>{trigger}</Popover.Trigger>
         {hardwareError ? (
           <div className="col-span-full">
             <QueryStatePanel
@@ -150,24 +140,17 @@ export function ActivitySourceDisclosure({
             />
           </div>
         ) : null}
-        {heading ? (
-          <Popover.Portal>
-            <Popover.Content
-              id={contentId}
-              aria-label="Lineage"
-              align="end"
-              sideOffset={6}
-              collisionPadding={16}
-              className="z-50 w-96 max-w-[calc(100vw-2rem)] max-h-[var(--radix-popover-content-available-height)] overflow-y-auto rounded-xl border border-border bg-surface-solid pt-4 text-sm text-foreground shadow-xl"
-            >
-              {details}
-            </Popover.Content>
-          </Popover.Portal>
-        ) : (
-          <div id={contentId} hidden={!expanded}>
-            {expanded ? details : null}
-          </div>
-        )}
+        <Popover.Portal>
+          <Popover.Content
+            aria-label="Lineage"
+            align="end"
+            sideOffset={6}
+            collisionPadding={16}
+            className="z-50 w-96 max-w-[calc(100vw-2rem)] max-h-[var(--radix-popover-content-available-height)] overflow-y-auto rounded-xl border border-border bg-surface-solid pt-4 text-sm text-foreground shadow-xl"
+          >
+            {details}
+          </Popover.Content>
+        </Popover.Portal>
       </div>
     </Popover.Root>
   );

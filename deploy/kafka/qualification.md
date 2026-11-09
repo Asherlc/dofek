@@ -1,15 +1,19 @@
 # Kafka protocol qualification — November 8, 2026
 
-**Current scope: broker migration layer; upstream Aiven tiering is selected and
-owned by the separate dependent `kafka-tiered-storage` branch.** See
-[the current split and release gates](README.md). The dated sections below
-preserve combined investigation. Local/protocol qualification does not transfer
-to the new tiered runtime. The accepted late-upload residual includes indefinite
-orphan retention; no production action is approved.
+**Current status: the user selected upstream Aiven; the stock-tiered candidate
+is being qualified offline. No merge or activation approval.** See the
+[current intended configuration](README.md).
+The specific late-upload residual risk is accepted, including the possibility
+of indefinite orphan retention.
 See the
 [accepted exception](tiered-fencing-proposal.md#accepted-exception-and-intended-stock-path).
 Earlier sections are chronological evidence, including the now-withdrawn hot-log
 alternative; they do not describe a deploy-ready current configuration.
+The separate tiered child has [historical packaged remote-read/restart evidence](../../docs/evidence/kafka-tiered-child-20261108/README.md)
+with explicitly limited retention/configuration attribution. The subsequent
+[existing-broker transition](../../docs/evidence/kafka-tiered-transition-20261109/README.md)
+records current workspace phase tests and an unresolved stock index-cache
+cleanup activation blocker.
 
 This record qualifies bounded protocol paths, not production activation or
 remote physical erasure. No production service, offset, topic, secret or archive

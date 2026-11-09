@@ -1,5 +1,8 @@
 # Broker-only cutover qualification packet
 
+Phase 2 is tracked separately in the [tiered-storage reference](tiered-cutover-packet.md).
+Its historical combined first-cutover commands do not replace this phase-1 record.
+
 **Execution status:** Q4/A approved the narrow phase-1 operation. Consult the
 [execution receipt](phase1-execution.md) for live outcome and the recorded
 first-write authority; this packet does not authorize a repeat, merge or tiered

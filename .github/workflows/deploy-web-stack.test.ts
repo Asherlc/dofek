@@ -1,4 +1,4 @@
-import { MOCK_DOCKER, runTopicPolicyFixture } from "./deploy-web-stack-test-helpers.ts";
+import { MOCK_DOCKER, runKafkaBackendFixture, runTopicPolicyFixture } from "./deploy-web-stack-test-helpers.ts";
 import { deployTestDigest, deployTestOldImage, deployTestRepository, runDeployImageFixture } from "../../scripts/deploy-image-test-helpers.ts";
 import { spawnSync } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -11,6 +11,15 @@ import { z } from "zod";
 const workflowText = readFileSync(".github/workflows/deploy-web-stack.yml", "utf8");
 const otaImage = `${deployTestRepository}-ota@${deployTestDigest}`;
 
+describe("consumed Kafka tiered backend", () => {
+  it.each(["", "bucket", "prefix", "credential", "worker"])("checks actual broker and worker scope: %s", (drift) => {
+    const result = runKafkaBackendFixture(workflowRunScript("Verify Kafka tiered backend before migrations"), drift);
+    expect(result.status === 0, result.stderr).toBe(drift === "");
+    expect(result.stdout + result.stderr).not.toContain("fixture-secret");
+    if (!drift) expect(result.stdout).toContain("Kafka broker and worker tiered backend match");
+  });
+});
+
 describe("deploy-owned Kafka topic policy", () => {
   function policyScript() {
     return ["Converge Kafka metric-stream topic policy", "Verify Kafka metric-stream topic policy", "Verify Kafka topic policy after consumer startup"]
@@ -22,12 +31,12 @@ describe("deploy-owned Kafka topic policy", () => {
     expect(result.status, result.stderr).toBe(0);
     const updates = result.calls.filter((call) => call.includes("--alter"));
     expect(updates.map((call) => [call[call.indexOf("--entity-name") + 1], call[call.indexOf("--add-config") + 1]])).toEqual([
-      ["source", "cleanup.policy=delete,retention.ms=604800000,retention.bytes=4294967296,segment.bytes=134217728,remote.storage.enable=false"],
-      ["source.quarantine.v1", "cleanup.policy=delete,retention.ms=604800000,retention.bytes=1073741824,segment.bytes=134217728,remote.storage.enable=false"],
-      ["live", "cleanup.policy=delete,retention.ms=604800000,retention.bytes=4294967296,segment.bytes=134217728,remote.storage.enable=false"],
-      ["live.quarantine.v1", "cleanup.policy=delete,retention.ms=604800000,retention.bytes=1073741824,segment.bytes=134217728,remote.storage.enable=false"],
-      ["history", "cleanup.policy=delete,retention.ms=604800000,retention.bytes=4294967296,segment.bytes=134217728,remote.storage.enable=false"],
-      ["history.quarantine.v1", "cleanup.policy=delete,retention.ms=604800000,retention.bytes=1073741824,segment.bytes=134217728,remote.storage.enable=false"],
+      ["source", "cleanup.policy=delete,retention.ms=604800000,retention.bytes=4294967296,segment.bytes=134217728,remote.storage.enable=true"],
+      ["source.quarantine.v1", "cleanup.policy=delete,retention.ms=604800000,retention.bytes=1073741824,segment.bytes=134217728,remote.storage.enable=true"],
+      ["live", "cleanup.policy=delete,retention.ms=604800000,retention.bytes=4294967296,segment.bytes=134217728,remote.storage.enable=true"],
+      ["live.quarantine.v1", "cleanup.policy=delete,retention.ms=604800000,retention.bytes=1073741824,segment.bytes=134217728,remote.storage.enable=true"],
+      ["history", "cleanup.policy=delete,retention.ms=604800000,retention.bytes=4294967296,segment.bytes=134217728,remote.storage.enable=true"],
+      ["history.quarantine.v1", "cleanup.policy=delete,retention.ms=604800000,retention.bytes=1073741824,segment.bytes=134217728,remote.storage.enable=true"],
     ]);
     for (const update of updates) {
       expect(update).toContain("/opt/kafka/bin/kafka-configs.sh");

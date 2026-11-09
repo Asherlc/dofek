@@ -1,0 +1,356 @@
+{
+  "startedAt": "2026-11-09T17:36:05.602Z",
+  "productionActions": false,
+  "observations": [
+    {
+      "at": "2026-11-09T17:36:06.226Z",
+      "check": "seeded existing remote-disabled Kafka",
+      "records": 1200,
+      "identity": {
+        "clusterId": "rQFPVtGwOJGVs9e68AjZ_w",
+        "topics": {
+          "review-legacy": "version: 0\ntopic_id: m0LMHvDKQgupdroGFMllZA",
+          "review-legacy.quarantine.v1": "version: 0\ntopic_id: SIaCXbe1Tfe6j0fGxoohEw",
+          "review-live": "version: 0\ntopic_id: KBZwY_Y0S66X_cei43fRfA",
+          "review-live.quarantine.v1": "version: 0\ntopic_id: 1ETLPzl0QmmFALv3k7lXDQ",
+          "review-history": "version: 0\ntopic_id: MC2ReR5pRbu7Uik39Z7nLQ",
+          "review-history.quarantine.v1": "version: 0\ntopic_id: ZwI_JBB5TJCq3lcN7rA0Dw"
+        }
+      },
+      "offsets": {
+        "review-legacy": [
+          {
+            "partition": 0,
+            "offset": "200",
+            "high": "200",
+            "low": "0"
+          }
+        ],
+        "review-legacy.quarantine.v1": [
+          {
+            "partition": 0,
+            "offset": "200",
+            "high": "200",
+            "low": "0"
+          }
+        ],
+        "review-live": [
+          {
+            "partition": 0,
+            "offset": "200",
+            "high": "200",
+            "low": "0"
+          }
+        ],
+        "review-live.quarantine.v1": [
+          {
+            "partition": 0,
+            "offset": "200",
+            "high": "200",
+            "low": "0"
+          }
+        ],
+        "review-history": [
+          {
+            "partition": 0,
+            "offset": "200",
+            "high": "200",
+            "low": "0"
+          }
+        ],
+        "review-history.quarantine.v1": [
+          {
+            "partition": 0,
+            "offset": "200",
+            "high": "200",
+            "low": "0"
+          }
+        ]
+      }
+    },
+    {
+      "at": "2026-11-09T17:37:40.850Z",
+      "check": "enabled tiering on existing topic generations",
+      "identity": {
+        "clusterId": "rQFPVtGwOJGVs9e68AjZ_w",
+        "topics": {
+          "review-legacy": "version: 0\ntopic_id: m0LMHvDKQgupdroGFMllZA",
+          "review-legacy.quarantine.v1": "version: 0\ntopic_id: SIaCXbe1Tfe6j0fGxoohEw",
+          "review-live": "version: 0\ntopic_id: KBZwY_Y0S66X_cei43fRfA",
+          "review-live.quarantine.v1": "version: 0\ntopic_id: 1ETLPzl0QmmFALv3k7lXDQ",
+          "review-history": "version: 0\ntopic_id: MC2ReR5pRbu7Uik39Z7nLQ",
+          "review-history.quarantine.v1": "version: 0\ntopic_id: ZwI_JBB5TJCq3lcN7rA0Dw"
+        }
+      },
+      "offsets": {
+        "review-legacy": [
+          {
+            "partition": 0,
+            "offset": "200",
+            "high": "200",
+            "low": "0"
+          }
+        ],
+        "review-legacy.quarantine.v1": [
+          {
+            "partition": 0,
+            "offset": "200",
+            "high": "200",
+            "low": "0"
+          }
+        ],
+        "review-live": [
+          {
+            "partition": 0,
+            "offset": "200",
+            "high": "200",
+            "low": "0"
+          }
+        ],
+        "review-live.quarantine.v1": [
+          {
+            "partition": 0,
+            "offset": "200",
+            "high": "200",
+            "low": "0"
+          }
+        ],
+        "review-history": [
+          {
+            "partition": 0,
+            "offset": "200",
+            "high": "200",
+            "low": "0"
+          }
+        ],
+        "review-history.quarantine.v1": [
+          {
+            "partition": 0,
+            "offset": "200",
+            "high": "200",
+            "low": "0"
+          }
+        ]
+      },
+      "fixtureOnlyOverrides": {
+        "segment.bytes": "1048576",
+        "local.retention.bytes": "1"
+      }
+    },
+    {
+      "at": "2026-11-09T17:43:30.013Z",
+      "check": "pre-transition records read remotely after native file cleanup",
+      "count": 200,
+      "sha256": "356989403fa9f71122fda8be926b4597b8dd2c10bea318e8d1e6a83867ffebed"
+    },
+    {
+      "at": "2026-11-09T17:46:37.562Z",
+      "check": "remote read after broker restart retained original generations",
+      "count": 200,
+      "sha256": "356989403fa9f71122fda8be926b4597b8dd2c10bea318e8d1e6a83867ffebed"
+    },
+    {
+      "at": "2026-11-09T17:52:25.132Z",
+      "check": "actual phase blocked on covered cache after terminal remote deletion",
+      "error": "Kafka retains covered or unknown remote index cache files",
+      "files": [
+        "0_i80byoC8QGOQOqk7RdQfBA.index",
+        "0_i80byoC8QGOQOqk7RdQfBA.timeindex",
+        "0_i80byoC8QGOQOqk7RdQfBA.txnindex",
+        "100_Nu2lLMtbQWG_k8ITvY9Plg.index",
+        "100_Nu2lLMtbQWG_k8ITvY9Plg.timeindex",
+        "100_Nu2lLMtbQWG_k8ITvY9Plg.txnindex"
+      ],
+      "automaticCacheCleanupQualified": false
+    },
+    {
+      "at": "2026-11-09T17:52:25.134Z",
+      "check": "operator removed only six synthetic cache files while fixture broker stopped",
+      "directory": "/tmp/kafka-tiered-review-PxpIrN/logs/remote-log-index-cache",
+      "files": [
+        "0_i80byoC8QGOQOqk7RdQfBA.index",
+        "0_i80byoC8QGOQOqk7RdQfBA.timeindex",
+        "0_i80byoC8QGOQOqk7RdQfBA.txnindex",
+        "100_Nu2lLMtbQWG_k8ITvY9Plg.index",
+        "100_Nu2lLMtbQWG_k8ITvY9Plg.timeindex",
+        "100_Nu2lLMtbQWG_k8ITvY9Plg.txnindex"
+      ],
+      "productionProcedure": false
+    },
+    {
+      "at": "2026-11-09T17:52:57.489Z",
+      "check": "current workspace actual retention phase passed",
+      "unrelatedGatesStubbed": [
+        "backup",
+        "processor",
+        "PeerDB"
+      ],
+      "identity": {
+        "clusterId": "rQFPVtGwOJGVs9e68AjZ_w",
+        "topics": {
+          "review-legacy": "version: 0\ntopic_id: m0LMHvDKQgupdroGFMllZA",
+          "review-legacy.quarantine.v1": "version: 0\ntopic_id: SIaCXbe1Tfe6j0fGxoohEw",
+          "review-live": "version: 0\ntopic_id: KBZwY_Y0S66X_cei43fRfA",
+          "review-live.quarantine.v1": "version: 0\ntopic_id: 1ETLPzl0QmmFALv3k7lXDQ",
+          "review-history": "version: 0\ntopic_id: MC2ReR5pRbu7Uik39Z7nLQ",
+          "review-history.quarantine.v1": "version: 0\ntopic_id: ZwI_JBB5TJCq3lcN7rA0Dw"
+        }
+      }
+    },
+    {
+      "at": "2026-11-09T17:53:00.634Z",
+      "check": "covered orphan blocks actual phase"
+    },
+    {
+      "at": "2026-11-09T17:53:03.800Z",
+      "check": "actual phase recovered after orphan removal"
+    },
+    {
+      "at": "2026-11-09T17:53:06.922Z",
+      "check": "covered multipart upload blocks actual phase"
+    },
+    {
+      "at": "2026-11-09T17:53:10.060Z",
+      "check": "actual phase recovered after multipart abort"
+    },
+    {
+      "at": "2026-11-09T17:53:10.081Z",
+      "check": "retired root blocks actual phase",
+      "directory": "/tmp/kafka-tiered-review-PxpIrN/retired-rp"
+    },
+    {
+      "at": "2026-11-09T17:53:13.207Z",
+      "check": "actual phase recovered after retained fixture removal",
+      "directory": "/tmp/kafka-tiered-review-PxpIrN/retired-rp"
+    },
+    {
+      "at": "2026-11-09T17:53:13.229Z",
+      "check": "retired root blocks actual phase",
+      "directory": "/tmp/kafka-tiered-review-PxpIrN/aborted-kafka"
+    },
+    {
+      "at": "2026-11-09T17:53:16.370Z",
+      "check": "actual phase recovered after retained fixture removal",
+      "directory": "/tmp/kafka-tiered-review-PxpIrN/aborted-kafka"
+    }
+  ],
+  "before": {
+    "identity": {
+      "clusterId": "rQFPVtGwOJGVs9e68AjZ_w",
+      "topics": {
+        "review-legacy": "version: 0\ntopic_id: m0LMHvDKQgupdroGFMllZA",
+        "review-legacy.quarantine.v1": "version: 0\ntopic_id: SIaCXbe1Tfe6j0fGxoohEw",
+        "review-live": "version: 0\ntopic_id: KBZwY_Y0S66X_cei43fRfA",
+        "review-live.quarantine.v1": "version: 0\ntopic_id: 1ETLPzl0QmmFALv3k7lXDQ",
+        "review-history": "version: 0\ntopic_id: MC2ReR5pRbu7Uik39Z7nLQ",
+        "review-history.quarantine.v1": "version: 0\ntopic_id: ZwI_JBB5TJCq3lcN7rA0Dw"
+      }
+    },
+    "offsets": {
+      "review-legacy": [
+        {
+          "partition": 0,
+          "offset": "200",
+          "high": "200",
+          "low": "0"
+        }
+      ],
+      "review-legacy.quarantine.v1": [
+        {
+          "partition": 0,
+          "offset": "200",
+          "high": "200",
+          "low": "0"
+        }
+      ],
+      "review-live": [
+        {
+          "partition": 0,
+          "offset": "200",
+          "high": "200",
+          "low": "0"
+        }
+      ],
+      "review-live.quarantine.v1": [
+        {
+          "partition": 0,
+          "offset": "200",
+          "high": "200",
+          "low": "0"
+        }
+      ],
+      "review-history": [
+        {
+          "partition": 0,
+          "offset": "200",
+          "high": "200",
+          "low": "0"
+        }
+      ],
+      "review-history.quarantine.v1": [
+        {
+          "partition": 0,
+          "offset": "200",
+          "high": "200",
+          "low": "0"
+        }
+      ]
+    }
+  },
+  "boundaries": [
+    {
+      "partition": 0,
+      "offset": "200",
+      "high": "400",
+      "low": "200",
+      "clusterId": "rQFPVtGwOJGVs9e68AjZ_w",
+      "topicId": "m0LMHvDKQgupdroGFMllZA",
+      "topic": "review-legacy"
+    },
+    {
+      "partition": 0,
+      "offset": "200",
+      "high": "400",
+      "low": "200",
+      "clusterId": "rQFPVtGwOJGVs9e68AjZ_w",
+      "topicId": "SIaCXbe1Tfe6j0fGxoohEw",
+      "topic": "review-legacy.quarantine.v1"
+    },
+    {
+      "partition": 0,
+      "offset": "200",
+      "high": "400",
+      "low": "200",
+      "clusterId": "rQFPVtGwOJGVs9e68AjZ_w",
+      "topicId": "KBZwY_Y0S66X_cei43fRfA",
+      "topic": "review-live"
+    },
+    {
+      "partition": 0,
+      "offset": "200",
+      "high": "400",
+      "low": "200",
+      "clusterId": "rQFPVtGwOJGVs9e68AjZ_w",
+      "topicId": "1ETLPzl0QmmFALv3k7lXDQ",
+      "topic": "review-live.quarantine.v1"
+    },
+    {
+      "partition": 0,
+      "offset": "200",
+      "high": "400",
+      "low": "200",
+      "clusterId": "rQFPVtGwOJGVs9e68AjZ_w",
+      "topicId": "MC2ReR5pRbu7Uik39Z7nLQ",
+      "topic": "review-history"
+    },
+    {
+      "partition": 0,
+      "offset": "200",
+      "high": "400",
+      "low": "200",
+      "clusterId": "rQFPVtGwOJGVs9e68AjZ_w",
+      "topicId": "ZwI_JBB5TJCq3lcN7rA0Dw",
+      "topic": "review-history.quarantine.v1"
+    }
+  ]
+}

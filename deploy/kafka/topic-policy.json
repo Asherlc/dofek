@@ -4,13 +4,13 @@
     "retention.ms": "604800000",
     "retention.bytes": "4294967296",
     "segment.bytes": "134217728",
-    "remote.storage.enable": "false"
+    "remote.storage.enable": "true"
   },
   "quarantine": {
     "cleanup.policy": "delete",
     "retention.ms": "604800000",
     "retention.bytes": "1073741824",
     "segment.bytes": "134217728",
-    "remote.storage.enable": "false"
+    "remote.storage.enable": "true"
   }
 }
