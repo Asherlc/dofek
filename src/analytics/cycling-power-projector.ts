@@ -303,11 +303,24 @@ export async function projectCyclingPower(
         (user_id,source_refresh_version,as_of_day,model_version,refresh_version,refreshed_at,events)
         SELECT {userId:UUID},{sourceVersion:UInt64},toDate({asOfDay:String}),{modelVersion:String},
           {refreshVersion:UInt64},parseDateTime64BestEffort({refreshedAt:String},6),
-          arrayZip({eventTimes:Array(Float64)},{activityIds:Array(Nullable(String))},{thresholds:Array(Nullable(Float64))},
-            {intensities:Array(Nullable(Float64))},{stresses:Array(Nullable(Float64))},
-            {evidenceIds:Array(Nullable(String))},{evidenceTimes:Array(Float64)},{evidenceDurations:Array(Float64)},
-            {evidencePowers:Array(Float64)})
-        WHERE ${accountIsWritable}`,
+          events
+        FROM input('events Array(Tuple(Float64, Nullable(String), Nullable(Float64),
+          Nullable(Float64), Nullable(Float64), Nullable(String), Float64, Float64, Float64))')
+        WHERE ${accountIsWritable}
+        FORMAT JSONEachRow
+        ${JSON.stringify({
+          events: history.map((point) => [
+            point.atSeconds,
+            point.id,
+            point.thresholdWatts,
+            point.intensityFactor,
+            point.trainingStressScore,
+            point.evidence?.id ?? null,
+            point.evidence?.atSeconds ?? 0,
+            point.evidence?.effort.durationSeconds ?? 0,
+            point.evidence?.effort.watts ?? 0,
+          ]),
+        })}`,
       query_params: {
         userId: user.user_id,
         sourceVersion: user.source_refresh_version,
@@ -315,15 +328,6 @@ export async function projectCyclingPower(
         modelVersion: policy.modelVersion,
         refreshVersion: publicationVersion,
         refreshedAt: asOf.toISOString(),
-        eventTimes: history.map((point) => point.atSeconds),
-        activityIds: history.map((point) => point.id),
-        thresholds: history.map((point) => point.thresholdWatts),
-        intensities: history.map((point) => point.intensityFactor),
-        stresses: history.map((point) => point.trainingStressScore),
-        evidenceIds: history.map((point) => point.evidence?.id ?? null),
-        evidenceTimes: history.map((point) => point.evidence?.atSeconds ?? 0),
-        evidenceDurations: history.map((point) => point.evidence?.effort.durationSeconds ?? 0),
-        evidencePowers: history.map((point) => point.evidence?.effort.watts ?? 0),
       },
       clickhouse_settings: { log_queries: 0 },
     });
