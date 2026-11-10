@@ -12,6 +12,7 @@ import {
 } from "./activity-metric-sources-repository.ts";
 
 const window = {
+  providerType: null,
   activityId: "22222222-2222-2222-2222-222222222222",
   userId: "11111111-1111-1111-1111-111111111111",
   startedAt: "2026-10-20T12:00:00.000Z",
@@ -1131,6 +1132,7 @@ describe("BLE peripheral label lookup", () => {
     );
     const result = await getActivityMetricSources(store, window);
     expect(store.query.mock.calls[1]?.[2]).toEqual({
+      isPointOnly: false,
       userId: window.userId,
       windowStartedAt: window.startedAt,
       windowEndedAt: window.endedAt,

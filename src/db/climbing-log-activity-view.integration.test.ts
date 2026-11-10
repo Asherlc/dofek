@@ -65,6 +65,56 @@ describe("derived climbing log source sessions", () => {
     WHERE observation.user_id = ${ownerId}::uuid ORDER BY observation.recorded_at, point.external_id`,
     );
 
+  it("keeps measured workout bounds when point observations surround the recording", async () => {
+    await write([{ time: "2026-11-10T00:59:00Z" }, { time: "2026-11-10T02:01:00Z" }]);
+    const groupId = randomUUID();
+    await context.db.execute(sql`INSERT INTO fitness.activity_group (id, user_id)
+      VALUES (${groupId}, ${userId})`);
+    await context.db.execute(sql`UPDATE fitness.activity SET group_id = ${groupId}
+      WHERE user_id = ${userId}`);
+    await context.db.execute(sql`INSERT INTO fitness.provider (id, name)
+      VALUES ('whoop', 'WHOOP') ON CONFLICT DO NOTHING`);
+    await context.db.execute(sql`INSERT INTO fitness.activity
+      (user_id, provider_id, external_id, canonical_type, provider_type, started_at, ended_at, group_id)
+      VALUES (${userId}, 'whoop', 'recording', 'climbing', 'climbing',
+        '2026-11-10T01:00:00Z', '2026-11-10T02:00:00Z', ${groupId})`);
+    const rows = await executeWithSchema(
+      context.db,
+      z.object({
+        started_at: z.coerce.date(),
+        ended_at: z.coerce.date().nullable(),
+        provider_type: z.string().nullable(),
+        source_providers: z.array(z.string()),
+        member_activity_ids: z.array(z.string()),
+      }),
+      sql`SELECT * FROM fitness.v_activity WHERE id = ${groupId}`,
+    );
+    expect(rows).toEqual([
+      expect.objectContaining({
+        started_at: new Date("2026-11-10T01:00:00Z"),
+        ended_at: new Date("2026-11-10T02:00:00Z"),
+        provider_type: "climbing",
+        source_providers: ["kilter", "whoop"],
+      }),
+    ]);
+    expect(rows[0]?.member_activity_ids).toHaveLength(3);
+    expect(new Set(rows[0]?.member_activity_ids).size).toBe(3);
+    expect(await sessions()).toHaveLength(2);
+  });
+
+  it("leaves standalone point duration unknown", async () => {
+    await write([{ time: "2026-11-10T01:00:00Z" }]);
+    const rows = await executeWithSchema(
+      context.db,
+      z.object({
+        started_at: z.coerce.date(),
+        ended_at: z.coerce.date().nullable(),
+      }),
+      sql`SELECT * FROM fitness.v_activity WHERE user_id = ${userId}`,
+    );
+    expect(rows).toEqual([{ started_at: new Date("2026-11-10T01:00:00Z"), ended_at: null }]);
+  });
+
   it.each([
     { label: "incident logs 4m33s apart", times: ["01:48:51.544", "01:53:24.245"], groups: [0, 0] },
     { label: "an exact ten-minute gap", times: ["01:00:00", "01:10:00"], groups: [0, 1] },

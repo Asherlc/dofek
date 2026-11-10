@@ -120,6 +120,7 @@ export const powerZoneRowSchema = z.object({
 });
 
 export const activitySensorWindowRowSchema = z.object({
+  provider_type: z.string().nullable(),
   id: z.string(),
   user_id: z.string(),
   started_at: timestampStringSchema,

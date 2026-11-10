@@ -61,6 +61,44 @@ describe("deduped_activities read model", () => {
     }
   });
 
+  it.each([false, true])("uses only recording bounds when point-only is %s", async (pointOnly) => {
+    const activeClient = requireClient(client);
+    await seedSpecificActivityTypeFixture(activeClient, targetSchema, "climbing", "climbing");
+    await activeClient.command({ query: `TRUNCATE TABLE ${targetSchema}.deduped_sensor` });
+    await activeClient.command({
+      query: `ALTER TABLE ${targetSchema}.activity_source_records UPDATE
+      provider_id = if(activity_id = toUUID('${activityId}'), 'kilter', 'whoop'),
+      provider_type = if(activity_id = toUUID('${activityId}') OR ${pointOnly ? 1 : 0}, 'climbing_log', 'climbing'),
+      started_at = if(activity_id = toUUID('${activityId}'), toDateTime64('2026-07-05 15:59:00',6,'UTC'), started_at),
+      ended_at = if(activity_id = toUUID('${activityId}') OR ${pointOnly ? 1 : 0}, NULL, ended_at)
+      WHERE 1 SETTINGS mutations_sync = 2`,
+    });
+    const result = await activeClient.query({
+      query: renderDedupedActivitiesSelectSql(targetSchema),
+      format: "JSONEachRow",
+    });
+    const rows = z
+      .array(
+        z.object({
+          started_at: z.string(),
+          ended_at: z.string().nullable(),
+          provider_type: z.string(),
+          source_providers: z.array(z.string()),
+          member_activity_ids: z.array(z.string()),
+        }),
+      )
+      .parse(await result.json());
+    expect(rows).toEqual([
+      {
+        started_at: pointOnly ? "2026-07-05 15:59:00.000000" : "2026-07-05 16:00:00.000000",
+        ended_at: pointOnly ? null : "2026-07-05 17:00:00.000000",
+        provider_type: pointOnly ? "climbing_log" : "climbing",
+        source_providers: ["kilter", "whoop"],
+        member_activity_ids: [activityId, linkedActivityId],
+      },
+    ]);
+  });
+
   it.each(["Afternoon run", " Afternoon run ", null, "", "   "])(
     "uses primary title %s independently of representative fields",
     async (primaryTitle) => {

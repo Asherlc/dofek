@@ -253,6 +253,7 @@ best_per_group AS (
   INNER JOIN ranked AS r ON fg.activity_id = r.id
   ORDER BY
     fg.group_id ASC,
+    (r.provider_type IS NOT DISTINCT FROM 'climbing_log') ASC,
     r.complete_working_set_count DESC,
     r.set_count DESC,
     r.exercise_count DESC,
@@ -296,8 +297,11 @@ best_context_per_group AS (
 group_bounds AS (
   SELECT
     fg.group_id,
-    MIN(r.started_at) AS started_at,
-    MAX(r.ended_at) AS ended_at
+    COALESCE(
+      MIN(r.started_at) FILTER (WHERE r.provider_type IS DISTINCT FROM 'climbing_log'),
+      MIN(r.started_at)
+    ) AS started_at,
+    MAX(r.ended_at) FILTER (WHERE r.provider_type IS DISTINCT FROM 'climbing_log') AS ended_at
   FROM final_groups AS fg
   INNER JOIN ranked AS r ON fg.activity_id = r.id
   GROUP BY fg.group_id

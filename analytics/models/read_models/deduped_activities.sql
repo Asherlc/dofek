@@ -111,6 +111,7 @@ sensor_bearing_members AS (
         ON ranked.user_id = samples.user_id
         AND ranked.activity_id = samples.source_activity_id
     WHERE samples.is_deleted = 0
+        AND coalesce(ranked.provider_type, '') != 'climbing_log'
         AND samples.recorded_at >= ranked.started_at
         AND samples.recorded_at <= greatest(
             coalesce(ranked.ended_at, ranked.started_at + INTERVAL 12 HOUR),
@@ -190,6 +191,7 @@ best AS (
             row_number() OVER (
                 PARTITION BY ranked.group_id
                 ORDER BY
+                    coalesce(ranked.provider_type, '') = 'climbing_log' ASC,
                     sensor_sample_count > 0 DESC,
                     sensor_sample_count DESC,
                     has_elevation DESC,
@@ -265,6 +267,7 @@ merged AS (
                     toString(ranked.activity_id)
                 ),
                 ranked.provider_type IS NOT null
+                AND (ranked.provider_type != 'climbing_log' OR best.provider_type = 'climbing_log')
                 AND trim(BOTH ' ' FROM ranked.provider_type) != ''
                 AND (
                     ranked.canonical_type = best.canonical_type
@@ -276,8 +279,11 @@ merged AS (
             ''
         ) AS provider_type,
         any(best.modality) AS modality,
-        minIf(ranked.started_at, ranked.activity_id IS NOT null) AS started_at,
-        maxIf(ranked.ended_at, ranked.activity_id IS NOT null) AS ended_at,
+        coalesce(
+            minOrNullIf(ranked.started_at, ranked.activity_id IS NOT NULL AND coalesce(ranked.provider_type, '') != 'climbing_log'),
+            minIf(ranked.started_at, ranked.activity_id IS NOT NULL)
+        ) AS started_at,
+        maxOrNullIf(ranked.ended_at, ranked.activity_id IS NOT null AND coalesce(ranked.provider_type, '') != 'climbing_log') AS ended_at,
         any(best.source_name) AS source_name,
         argMinIf(
             ranked.name,

@@ -1442,6 +1442,7 @@ describe("ActivityRepository", () => {
           user_id: "user-1",
           started_at: "2024-01-15T10:00:00.000Z",
           ended_at: "2024-01-15T11:00:00.000Z",
+          provider_type: null,
           member_activity_ids: ["canonical-id", "member-id"],
         },
       ]);
@@ -1451,6 +1452,7 @@ describe("ActivityRepository", () => {
         userId: "user-1",
         startedAt: "2024-01-15T10:00:00.000Z",
         endedAt: "2024-01-15T11:00:00.000Z",
+        providerType: null,
         memberActivityIds: ["canonical-id", "member-id"],
       });
       const resolutionQuery = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);
@@ -1477,6 +1479,7 @@ describe("ActivityRepository", () => {
           user_id: "user-1",
           started_at: "2024-01-15T10:00:00.000Z",
           ended_at: "2024-01-15T11:00:00.000Z",
+          provider_type: null,
           member_activity_ids: ["activity-id"],
         },
       ]);
@@ -1494,6 +1497,7 @@ describe("ActivityRepository", () => {
           user_id: "user-1",
           started_at: "2024-01-15T10:00:00.000Z",
           ended_at: "2024-01-15T11:00:00.000Z",
+          provider_type: null,
           member_activity_ids: ["activity-id", "source-activity-id"],
         },
       ]);
@@ -1507,6 +1511,7 @@ describe("ActivityRepository", () => {
           userId: "user-1",
           startedAt: "2024-01-15T10:00:00.000Z",
           endedAt: "2024-01-15T11:00:00.000Z",
+          providerType: null,
           memberActivityIds: ["activity-id", "source-activity-id"],
         },
         500,
@@ -1520,6 +1525,7 @@ describe("ActivityRepository", () => {
           user_id: "user-1",
           started_at: "2024-01-15T10:00:00.000Z",
           ended_at: "2024-01-15T11:00:00.000Z",
+          provider_type: null,
           member_activity_ids: ["member-id"],
         },
       ]);
@@ -1552,6 +1558,7 @@ describe("ActivityRepository", () => {
       user_id: "user-1",
       started_at: "2024-01-15T10:00:00.000Z",
       ended_at: "2024-01-15T11:00:00.000Z",
+      provider_type: null,
       member_activity_ids: ["member-id"],
       primary_activity_id: null,
       primary_provider_id: null,
@@ -1566,6 +1573,7 @@ describe("ActivityRepository", () => {
       userId: row.user_id,
       startedAt: row.started_at,
       endedAt: row.ended_at,
+      providerType: null,
       memberActivityIds: row.member_activity_ids,
     };
 
@@ -1620,6 +1628,7 @@ describe("ActivityRepository", () => {
           userId: window.userId,
           windowStartedAt: window.startedAt,
           windowEndedAt: window.endedAt,
+          isPointOnly: false,
           memberActivityIds: window.memberActivityIds,
         },
       );
@@ -1649,6 +1658,7 @@ describe("ActivityRepository", () => {
         const { repo, sensorStore } = makeRepositoryWithSensorStore([
           {
             ...row,
+            provider_type: null,
             member_activity_ids: [whoopId, pelotonId],
             primary_activity_id: state === "unresolved" ? null : whoopId,
             primary_provider_id: state === "unresolved" ? null : "whoop",
@@ -1724,6 +1734,7 @@ describe("ActivityRepository", () => {
         expect.any(String),
         expect.objectContaining({
           userId: "user-1",
+          isPointOnly: false,
           memberActivityIds: ["member-id"],
           heartRateSourceId: "whoop",
         }),
@@ -1758,6 +1769,7 @@ describe("ActivityRepository", () => {
           user_id: "user-1",
           started_at: "2024-01-15T10:00:00.000Z",
           ended_at: "2024-01-15T11:00:00.000Z",
+          provider_type: null,
           member_activity_ids: ["activity-id"],
         },
       ]);
@@ -1799,6 +1811,7 @@ describe("ActivityRepository", () => {
           user_id: "user-1",
           started_at: "2024-01-15T10:00:00.000Z",
           ended_at: "2024-01-15T11:00:00.000Z",
+          provider_type: null,
           member_activity_ids: ["activity-id"],
         },
       ]);
@@ -1810,6 +1823,7 @@ describe("ActivityRepository", () => {
         userId: "user-1",
         startedAt: "2024-01-15T10:00:00.000Z",
         endedAt: "2024-01-15T11:00:00.000Z",
+        providerType: null,
         memberActivityIds: ["activity-id"],
       });
     });
@@ -1834,6 +1848,7 @@ describe("ActivityRepository", () => {
           user_id: "user-1",
           started_at: "2024-01-15T10:00:00.000Z",
           ended_at: "2024-01-15T11:00:00.000Z",
+          provider_type: null,
           member_activity_ids: ["activity-id"],
         },
       ]);
@@ -1867,6 +1882,7 @@ describe("ActivityRepository", () => {
           user_id: "user-1",
           started_at: "2024-01-15T10:00:00.000Z",
           ended_at: "2024-01-15T11:00:00.000Z",
+          provider_type: null,
           member_activity_ids: ["activity-id"],
         },
       ]);
@@ -1879,6 +1895,7 @@ describe("ActivityRepository", () => {
           userId: "user-1",
           startedAt: "2024-01-15T10:00:00.000Z",
           endedAt: "2024-01-15T11:00:00.000Z",
+          providerType: null,
           memberActivityIds: ["activity-id"],
         },
         275,

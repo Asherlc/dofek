@@ -862,7 +862,8 @@ export class ActivityRepository extends BaseRepository {
             a.user_id,
             a.started_at::text AS started_at,
             a.ended_at::text AS ended_at,
-            a.member_activity_ids
+            a.member_activity_ids,
+            a.provider_type
           FROM fitness.v_activity a
           WHERE a.id = ${resolution.resolved_group_id}::uuid
             AND a.user_id = ${this.userId}
@@ -876,6 +877,7 @@ export class ActivityRepository extends BaseRepository {
       startedAt: row.started_at,
       endedAt: row.ended_at,
       memberActivityIds: row.member_activity_ids,
+      providerType: row.provider_type,
     };
   }
 
