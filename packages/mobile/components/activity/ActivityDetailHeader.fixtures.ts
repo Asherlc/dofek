@@ -8,6 +8,7 @@ export const detailHeaderActivity: ComponentProps<typeof ActivityDetailHeader>["
   primaryActivityType: null,
   displayedDate: "2026-04-14",
   startedAt: "2026-04-14T10:00:00.000Z",
+  climbingLogSessions: [],
   localTimeContext: {
     timezone: "America/Los_Angeles",
     startUtcOffsetMinutes: -420,

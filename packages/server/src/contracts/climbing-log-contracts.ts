@@ -18,6 +18,17 @@ import type { ClimbingMapLocation } from "@dofek/training/climbing-map";
 import { climbingTagSchema } from "@dofek/training/climbing-tags";
 import { z } from "zod";
 
+import { timestampStringSchema } from "../lib/typed-sql.ts";
+
+export const climbingLogActivitySessionSchema = z.strictObject({
+  id: z.guid(),
+  providerId: z.string(),
+  memberActivityIds: z.array(z.guid()),
+  firstLoggedAt: timestampStringSchema,
+  lastLoggedAt: timestampStringSchema,
+});
+export type ClimbingLogActivitySession = z.infer<typeof climbingLogActivitySessionSchema>;
+
 export const climbingMapLocationSchema = z.strictObject({
   coordinates: gpsCoordinatesSchema,
   scope: z.enum(["climb", "area"]),

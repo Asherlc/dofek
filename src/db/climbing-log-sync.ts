@@ -11,6 +11,7 @@ import {
 } from "@dofek/training/climbing-log";
 import { and, asc, eq, ne, sql } from "drizzle-orm";
 import { z } from "zod";
+import { persistClimbingLogActivityObservation } from "./climbing-log-activity.ts";
 import type { SyncDatabase, TransactionDatabase } from "./index.ts";
 import {
   area,
@@ -106,6 +107,10 @@ const sourceAttemptCountSchema = z
   .refine((count) => count.scope === "pitch" || count.pitch === undefined, {
     message: "A whole-climb count cannot identify a pitch.",
   });
+const sourceActivityObservationSchema = z.strictObject({
+  recordedAt: z.iso.datetime({ offset: true }),
+  gymExternalId: z.string().trim().min(1).nullable().optional(),
+});
 const sourceLogSchema = climbingLogEntrySchema
   .pick({
     externalId: true,
@@ -128,6 +133,7 @@ const sourceLogSchema = climbingLogEntrySchema
     areas: z.array(sourceAreaSchema).readonly().optional(),
     reportedAttemptCounts: z.array(sourceAttemptCountSchema).readonly().optional(),
     attempts: z.array(sourceAttemptSchema).readonly(),
+    activityObservation: sourceActivityObservationSchema.optional(),
   })
   .superRefine((entry, context) => {
     for (const [index, count] of (entry.reportedAttemptCounts ?? []).entries()) {
@@ -925,6 +931,7 @@ export async function persistClimbingLogEntries(
         attempts: _attempts,
         reportedAttemptCounts: _counts,
         reportedGrades,
+        activityObservation: _activityObservation,
         ...facts
       } = source;
       const id = known?.id ?? randomUUID();
@@ -934,7 +941,22 @@ export async function persistClimbingLogEntries(
         for (const node of prior) oldAreas.add(node.id);
         areaId = await resolveAreas(tx, scope, areas, prior);
       }
-      const changes = { ...facts, areaId, climbId: definition?.id ?? null, providerAbsentAt: null };
+      const activityId = await persistClimbingLogActivityObservation(tx, {
+        ...scope,
+        source,
+        activityId: source.activityObservation
+          ? (known?.activityId ?? source.activityId ?? null)
+          : source.activityId === undefined
+            ? (known?.activityId ?? null)
+            : source.activityId,
+      });
+      const changes = {
+        ...facts,
+        areaId,
+        activityId,
+        climbId: definition?.id ?? null,
+        providerAbsentAt: null,
+      };
       if (known) await tx.update(climbingLogEntry).set(changes).where(eq(climbingLogEntry.id, id));
       else await tx.insert(climbingLogEntry).values({ id, ...scope, ...changes });
       await replaceLogGrades(tx, id, reportedGrades);

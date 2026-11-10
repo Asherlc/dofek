@@ -13,7 +13,7 @@ and importer tests beside each [provider](../src/providers/README.md).
 
 | Source | Connection | Imported facts and limitations |
 | --- | --- | --- |
-| Kilter Board | Current account email/password | Native log IDs, dates, names, physical board identity/name, recorded gym and available coordinates, board angle, attempts, explicit completion and available grade/rating facts. Uses the current Kilter backend, independently of the retired Aurora Kilter service. |
+| Kilter Board | Current account email/password | Native log IDs and logging timestamps, names, physical board identity/name, recorded gym and available coordinates, board angle, attempts, explicit completion and available grade/rating facts. Uses the current Kilter backend, independently of the retired Aurora Kilter service. |
 | Tension Board | Aurora username/password | Separate native ascent/bid records, dates, angle, notes, explicit outcomes and available named ascent styles. |
 | Grasshopper, Decoy, So iLL, Touchstone Board, Aurora Board | Each board's Aurora username/password | The same upstream protocol, with independent accounts, provider attribution, and host configuration. |
 | Crimpd | Account email/password, or original logbook ZIP | Recorded workouts, climbing sets, board/angle/grade/notes, exact available tries and ascent flags, plus supported nonclimbing set facts. |
@@ -55,6 +55,19 @@ labels remain unknown when they are absent from the user feed; Dofek does not
 download the full proprietary climb catalogue merely to fill them in. See the
 [account writer](../src/lib/climbing-board-account.ts) and
 [upstream delta mapping](https://github.com/boardsesh/boardsesh/blob/740844766aeff5bb5adc4536a13d34456cd00b4d/packages/aurora-sync/src/sync/apply-user-logbook.ts).
+
+Activity details show each projected Kilter source session as its own logged
+climb window. The server supplies the session bounds and measured activity
+duration; clients only format the local times and duration. A standalone
+point-only log keeps its logged timestamp and an unavailable duration. See the
+[activity detail projection](../packages/server/src/models/activity.ts),
+[web rendering](../packages/web/src/pages/ActivityDetailPage.tsx), and
+[mobile rendering](../packages/mobile/components/activity/ActivityDetailHeader.tsx).
+
+Source-session grouping uses normalized millisecond observation timestamps,
+while the [Kilter importer](../src/lib/kilter-board-client.ts) retains the
+native timestamp string in raw provenance and the [activity writer](../src/db/climbing-log-activity.ts)
+persists the normalized observation time.
 
 Kilter resolves logged `wallUuid` and `gymUuid` references using a disposable,
 read-only mirror of its board/gym directory through the

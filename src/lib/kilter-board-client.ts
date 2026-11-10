@@ -215,7 +215,11 @@ export class KilterBoardClient implements ClimbingBoardClient {
       };
       return {
         externalId: `kilter:log:${log.logUuid}`,
-        climbedOn: new Date(log.createdAt).toISOString().slice(0, 10),
+        climbedOn: null,
+        activityObservation: {
+          recordedAt: log.createdAt,
+          gymExternalId: log.gymUuid?.trim() || null,
+        },
         discipline: "rock_climbing",
         sourceName: "Kilter Board",
         board: { name: wall?.name || "Kilter Board", externalId: log.wallUuid || null },

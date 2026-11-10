@@ -72,6 +72,48 @@ const fullRow: ActivityRow = {
 };
 
 describe("Activity", () => {
+  it("projects rounded measured duration and keeps an unknown end null", () => {
+    expect(
+      new Activity(
+        {
+          ...fullRow,
+          started_at: "2026-03-01T10:00:00.490Z",
+          ended_at: "2026-03-01T11:30:27.410Z",
+        },
+        mockLookup,
+      ).toDetail().durationMin,
+    ).toBe(90.4);
+    expect(
+      new Activity({ ...fullRow, ended_at: null }, mockLookup).toDetail().durationMin,
+    ).toBeNull();
+  });
+
+  it("exposes logged-climb windows without replacing raw source links or workout bounds", () => {
+    const sessions = [
+      {
+        id: "p1",
+        providerId: "kilter",
+        memberActivityIds: ["p1", "p2"],
+        firstLoggedAt: "2026-11-10T01:00:00Z",
+        lastLoggedAt: "2026-11-10T01:04:00Z",
+      },
+    ];
+    const row = {
+      ...fullRow,
+      source_external_ids: ["p1", "p2"].map((id) => ({
+        providerId: "kilter",
+        memberActivityId: id,
+        externalId: id,
+      })),
+    };
+    const detail = new Activity(row, mockLookup).toDetail(sessions);
+    expect(detail.climbingLogSessions).toEqual(sessions);
+    expect(detail.sourceLinks).toHaveLength(2);
+    expect(detail.sourceTree.otherSources).toHaveLength(1);
+    expect(detail.sourceDecision).toBeNull();
+    expect(detail.endedAt).toBe(fullRow.ended_at);
+  });
+
   it("exposes the primary source type separately from the representative classification", () => {
     const row = {
       ...fullRow,
@@ -444,6 +486,7 @@ describe("Activity", () => {
       const detail = activity.toDetail();
 
       expect(detail).toEqual({
+        climbingLogSessions: [],
         id: "abc-123",
         displayedDate: "2026-03-01",
         activityType: "cycling",
@@ -452,6 +495,7 @@ describe("Activity", () => {
         modality: null,
         startedAt: "2026-03-01T10:00:00+00:00",
         endedAt: "2026-03-01T11:30:00+00:00",
+        durationMin: 90,
         localTimeContext: {
           timezone: null,
           startUtcOffsetMinutes: null,

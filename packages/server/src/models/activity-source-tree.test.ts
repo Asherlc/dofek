@@ -33,6 +33,47 @@ function edge(
   };
 }
 describe("buildActivitySourceTree", () => {
+  it("collapses observations per source session while preserving primary placement and evidence endpoints", () => {
+    const sessions = [
+      {
+        id: "p1",
+        providerId: "kilter",
+        memberActivityIds: ["p1", "p2"],
+        firstLoggedAt: "2026-11-10T01:00:00Z",
+        lastLoggedAt: "2026-11-10T01:04:00Z",
+      },
+      {
+        id: "p3",
+        providerId: "kilter",
+        memberActivityIds: ["p3"],
+        firstLoggedAt: "2026-11-10T01:05:00Z",
+        lastLoggedAt: "2026-11-10T01:05:00Z",
+      },
+    ];
+    const links = [
+      link("p1", "kilter"),
+      link("p2", "kilter"),
+      link("p3", "kilter"),
+      link("w", "whoop"),
+      link("copy"),
+    ];
+    const original = structuredClone(links);
+    const tree = buildActivitySourceTree(
+      { ...origin, memberActivityId: "p2", providerId: "kilter" },
+      links,
+      [edge("p2", "copy"), edge("p1", "p2")],
+      sessions,
+    );
+    expect(tree.primary).toMatchObject({
+      id: "p1",
+      providerId: "kilter",
+      url: null,
+      children: [{ id: "copy" }],
+    });
+    expect(tree.otherSources.map((node) => node.id)).toEqual(["p3", "w"]);
+    expect(links).toEqual(original);
+  });
+
   it("uses a readable Garmin model label while preserving source identity", () => {
     const tree = buildActivitySourceTree(
       { ...origin, providerId: "garmin", sourceName: "fr955" },
