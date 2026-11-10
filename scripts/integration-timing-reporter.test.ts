@@ -18,7 +18,7 @@ import { runIntegrationTimingCommand } from "./update-integration-test-timings.t
 
 const roots: string[] = [];
 const contexts: Vitest[] = [];
-function required<T>(value: T | undefined): T {
+function required<FixtureValue>(value: FixtureValue | undefined): FixtureValue {
   if (value === undefined) throw new Error("Missing fixture value");
   return value;
 }
@@ -53,9 +53,9 @@ function rootFixture() {
     JSON.stringify({
       schemaVersion: 1,
       provenance,
-      files: [0, 1, 2, 3, 4].map((i) => ({
+      files: [0, 1, 2, 3, 4].map((fileIndex) => ({
         project: "integration",
-        file: `src/${i}.integration.test.ts`,
+        file: `src/${fileIndex}.integration.test.ts`,
         durationMs: 10,
       })),
     }),
@@ -70,8 +70,10 @@ async function fixture() {
     { server: { middlewareMode: true } },
   );
   contexts.push(context);
-  const specs = [0, 1, 2, 3, 4].map((i) =>
-    context.getRootProject().createSpecification(join(root, `src/${i}.integration.test.ts`)),
+  const specs = [0, 1, 2, 3, 4].map((fileIndex) =>
+    context
+      .getRootProject()
+      .createSpecification(join(root, `src/${fileIndex}.integration.test.ts`)),
   );
   const reporter = new IntegrationTimingReporter();
   reporter.onInit(context);
@@ -168,9 +170,9 @@ describe("integration timing reporter", () => {
 function runnerFixture(index: number, body = "expect(1).toBe(1)") {
   const root = rootFixture();
   symlinkSync(resolve("node_modules"), join(root, "node_modules"), "dir");
-  for (const i of [0, 1, 2, 3, 4])
+  for (const fileIndex of [0, 1, 2, 3, 4])
     writeFileSync(
-      join(root, `src/${i}.integration.test.ts`),
+      join(root, `src/${fileIndex}.integration.test.ts`),
       `import { test, expect } from 'vitest'; test('kept', () => { ${body} }); test('other', () => expect(2).toBe(2));`,
     );
   writeFileSync(
