@@ -46,8 +46,6 @@ import {
   buildTestDailyBodyMeasurementSelectSql,
   buildTestDailyHealthSensorSelectSql,
   buildTestDailySleepSelectSql,
-  buildTestHealthspanActivityZoneMinutesSelectSql,
-  buildTestHealthspanReadModelSelectSql,
   buildTestRecoveryReadModelSelectSql,
   buildTestStrainReadModelSelectSql,
 } from "./clickhouse-integration-test-read-models-b.ts";
@@ -720,16 +718,6 @@ ${buildTestBodyMeasurementSelectSql(defaultTestDatabases)}`,
     query: `CREATE VIEW IF NOT EXISTS analytics.daily_body_measurement
 AS
 ${buildTestDailyBodyMeasurementSelectSql(defaultTestDatabases)}`,
-  });
-  await client.command({
-    query: `CREATE VIEW IF NOT EXISTS analytics.healthspan_activity_zone_minutes
-AS
-${buildTestHealthspanActivityZoneMinutesSelectSql(defaultTestDatabases)}`,
-  });
-  await client.command({
-    query: `CREATE VIEW IF NOT EXISTS analytics.weekly_healthspan
-AS
-${buildTestHealthspanReadModelSelectSql(defaultTestDatabases)}`,
   });
   await client.command({ query: buildActivityVo2MaxEstimateTableSql() });
 

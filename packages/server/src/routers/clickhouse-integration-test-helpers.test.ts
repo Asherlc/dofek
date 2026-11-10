@@ -260,20 +260,6 @@ describe("clickhouse integration test helpers", () => {
           command.includes(".v_body_measurement"),
       ),
     ).toBe(true);
-    expect(
-      setupCommands.some(
-        (command) =>
-          command.includes("CREATE TABLE IF NOT EXISTS analytics_test_") &&
-          command.includes(".healthspan_activity_zone_minutes"),
-      ),
-    ).toBe(true);
-    expect(
-      setupCommands.some(
-        (command) =>
-          command.includes("CREATE TABLE IF NOT EXISTS analytics_test_") &&
-          command.includes(".weekly_healthspan"),
-      ),
-    ).toBe(true);
 
     clickHouseMocks.command.mockClear();
 
@@ -553,23 +539,6 @@ describe("clickhouse integration test helpers", () => {
           command.includes("INSERT INTO analytics_test_") &&
           command.includes(".daily_strain") &&
           command.includes(".daily_activity_load"),
-      ),
-    ).toBe(true);
-    expect(
-      commands.some(
-        (command) =>
-          command.includes("INSERT INTO analytics_test_") &&
-          command.includes(".healthspan_activity_zone_minutes") &&
-          command.includes(".activity_sensor_sample"),
-      ),
-    ).toBe(true);
-    expect(
-      commands.some(
-        (command) =>
-          command.includes("INSERT INTO analytics_test_") &&
-          command.includes(".weekly_healthspan") &&
-          command.includes(".v_daily_metrics") &&
-          command.includes("daily_body_measurement FINAL"),
       ),
     ).toBe(true);
     expect(
