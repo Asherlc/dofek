@@ -569,6 +569,47 @@ test stores. The test helper isolates ClickHouse databases per test database, cr
 the current ClickHouse schema/read models directly, syncs the seeded Postgres fixtures,
 and drops the isolated databases during test cleanup.
 
+Fixture build commands use `max_threads=1`, matching the bounded dbt build
+policy in the [analytics models](../analytics/README.md). Their temporary
+join/aggregation buffers must not scale with the developer machine's core
+count inside the small local ClickHouse profile. Read queries keep their
+caller-supplied settings. ClickHouse documents the relationship between
+[query parallelism and per-thread buffers](https://clickhouse.com/resources/engineering/clickhouse-query-optimisation-definitive-guide).
+
+Sensor fixtures use the ClickHouse client's
+[`insert` API with `JSONEachRow`](https://clickhouse.com/integrations/nodejs)
+instead of constructing SQL `VALUES` expressions for every sample. This follows
+the production metric-stream sink's bulk-insert path and avoids parsing large
+SQL expressions during fixture setup.
+
+The local [ClickHouse memory profile](../deploy/clickhouse/config.d/memory-limits.xml)
+allows vertical merges for small `system.metric_log` parts. This table has
+thousands of columns; merging them together can exhaust the local ceiling even
+when the test query itself is small. Vertical merges trade throughput for lower
+memory use; see ClickHouse's
+[`vertical_merge_algorithm_min_rows_to_activate` setting](https://clickhouse.com/docs/reference/settings/merge-tree-settings/vertical-merge#vertical_merge_algorithm_min_rows_to_activate).
+The profile retains metrics logging and the existing memory ceiling.
+
+For an existing local volume, apply the table setting **before restarting**
+ClickHouse with the new profile:
+
+```bash
+pnpm compose -- exec -T clickhouse clickhouse-client --max_query_size 1048576 \
+  --query 'ALTER TABLE system.metric_log MODIFY SETTING vertical_merge_algorithm_min_rows_to_activate = 0'
+```
+
+If ClickHouse has already restarted, inspect `SHOW TABLES FROM system LIKE
+'metric_log%'` and apply the same `ALTER` to each retained `metric_log_N` table.
+Changing the configured engine settings can rotate the old table rather than
+alter it; see [ClickHouse's log-table preparation](https://github.com/ClickHouse/ClickHouse/blob/26.9/src/Interpreters/SystemLog.cpp#L788-L901).
+
+The command's metadata-size allowance accommodates this unusually wide table;
+it does not change the server's runtime query or memory limits. ClickHouse
+documents [system-log table settings](https://clickhouse.com/docs/operations/server-configuration-parameters/settings#metric_log)
+and [`max_query_size`](https://clickhouse.com/docs/operations/settings/settings#max_query_size).
+When diagnosing another ceiling failure, compare `system.processes` with
+`system.merges` and `system.part_log` before attributing it to the foreground query.
+
 Do not make router integration setup call the tracked production ClickHouse migration
 runner. Historical one-off migrations and backfills should not be replayed by broad
 test suites; tests should validate application behavior against the current schema.
