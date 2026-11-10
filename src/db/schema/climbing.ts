@@ -196,6 +196,7 @@ export const climbingLogEntry = fitness.table(
       .references(() => provider.id),
     externalId: text("external_id"),
     climbId: uuid("climb_id"),
+    areaId: uuid("area_id"),
     activityId: uuid("activity_id"),
     climbedOn: date("climbed_on"),
     discipline: climbingDisciplineEnum("discipline"),
@@ -210,6 +211,11 @@ export const climbingLogEntry = fitness.table(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
+    foreignKey({
+      name: "climbing_log_entry_area_owner_provider_fk",
+      columns: [table.userId, table.providerId, table.areaId],
+      foreignColumns: [area.userId, area.providerId, area.id],
+    }),
     foreignKey({
       name: "climbing_log_entry_climb_owner_provider_fk",
       columns: [table.userId, table.providerId, table.climbId],
@@ -231,6 +237,7 @@ export const climbingLogEntry = fitness.table(
       .where(sql`${table.externalId} IS NOT NULL`),
     index("climbing_log_entry_activity_idx").on(table.activityId),
     index("climbing_log_entry_climb_idx").on(table.climbId),
+    index("climbing_log_entry_area_idx").on(table.areaId),
     index("climbing_log_entry_source_date_idx").on(table.userId, table.providerId, table.climbedOn),
     check(
       "climbing_log_entry_external_id_nonempty",

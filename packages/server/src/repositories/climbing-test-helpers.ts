@@ -42,6 +42,8 @@ export function climbingLogDatabaseFixture(detail: ClimbingLogEntryDetail) {
   return {
     log: climbingLogEntrySchema.strip().parse(detail),
     climb: detail.climb,
+    areaPath: detail.areaPath ?? detail.climb?.areaPath ?? [],
+    logAreaId: detail.areaPath?.at(-1)?.id ?? null,
     freeSend: detail.freeSend,
     attempts: detail.attempts.map((attempt) => climbingAttemptSchema.strip().parse(attempt)),
   };

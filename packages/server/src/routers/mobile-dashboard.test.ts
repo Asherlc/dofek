@@ -410,22 +410,6 @@ function emptyRecoveryTabResult(): import("../services/mobile-recovery-tab.ts").
       projectionLine: [],
     },
     healthStatus: [],
-    healthspan: {
-      healthspanScore: null,
-      yearsDelta: null,
-      availability: {
-        status: "insufficient_data",
-        availableMetricCount: 0,
-        requiredMetricCount: 3,
-        missingMetricLabels: [],
-        summary: "0 of 3 required Healthspan metrics are available.",
-        nextCondition:
-          "The score becomes available after 3 more supported metrics sync successfully.",
-      },
-      metrics: [],
-      history: [],
-      trend: null,
-    },
   };
 }
 
@@ -600,22 +584,6 @@ describe("mobileDashboard.recovery", () => {
         projectionLine: [],
       },
       healthStatus: [],
-      healthspan: {
-        healthspanScore: null,
-        yearsDelta: null,
-        availability: {
-          status: "insufficient_data",
-          availableMetricCount: 0,
-          requiredMetricCount: 3,
-          missingMetricLabels: [],
-          summary: "0 of 3 required Healthspan metrics are available.",
-          nextCondition:
-            "The score becomes available after 3 more supported metrics sync successfully.",
-        },
-        metrics: [],
-        history: [],
-        trend: null,
-      },
     });
 
     const caller = createCaller({
@@ -682,22 +650,6 @@ describe("mobileDashboard.recovery", () => {
         projectionLine: [],
       },
       healthStatus: [],
-      healthspan: {
-        healthspanScore: null,
-        yearsDelta: null,
-        availability: {
-          status: "insufficient_data",
-          availableMetricCount: 0,
-          requiredMetricCount: 3,
-          missingMetricLabels: [],
-          summary: "0 of 3 required Healthspan metrics are available.",
-          nextCondition:
-            "The score becomes available after 3 more supported metrics sync successfully.",
-        },
-        metrics: [],
-        history: [],
-        trend: null,
-      },
     });
 
     const caller = createCaller({

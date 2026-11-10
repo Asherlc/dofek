@@ -371,18 +371,18 @@ only after fresh Axiom or recorded incident evidence names a request-time
 ClickHouse bottleneck, and the model should materialize the domain/grain needed
 by that route instead of becoming a generic `_summary`, `_aggregate`, or
 `_read_model` table.
-`daily_recovery`, `daily_strain`, `daily_sleep`, and
-`weekly_healthspan` are the named dashboard serving models. They build on compact ingredient
-models such as `daily_recovery_inputs`, `daily_activity_load`, and
-`healthspan_activity_zone_minutes` so dashboard, recovery, stress,
-sleep, and healthspan routes do not recompute broad windows at request
+`daily_recovery`, `daily_strain`, and `daily_sleep` are the named dashboard
+serving models. They build on compact ingredient models such as
+`daily_recovery_inputs` and `daily_activity_load` so dashboard, recovery, stress,
+and sleep routes do not recompute broad windows at request
 time. `provider_stats` materializes provider record counts for the sync
 provider inventory route so the API does not compute all-provider counts on
 request.
-`daily_recovery_inputs`, `daily_activity_load`, and
-`healthspan_activity_zone_minutes` are compact serving models over daily
+`daily_recovery_inputs` and `daily_activity_load` are compact serving models over daily
 metrics, sleep, activity summaries, and bounded activity samples for dashboard,
-recovery, stress, sleep, and healthspan routes.
+recovery, stress, and sleep routes. Healthspan scoring and its derived models
+are retired; [migration 0112](../src/db/clickhouse-migrations/0112_remove_healthspan.ts)
+drops their stored tables while preserving source measurements.
 
 ## Cycling power-duration semantics and refresh
 
@@ -419,7 +419,7 @@ Cycling FTP, normalized power, intensity factor and power stress have one
 [application projector](../src/analytics/README.md) supplies versioned empirical
 reference data, source selection and ClickHouse persistence. No manual cycling
 FTP setting is used. NP observation freshness and complete-user history
-publication prevent mixed input revisions; affected healthspan models run after
+publication prevent mixed input revisions; threshold and activity-power models run after
 the projection stage. See the [implementation design](../docs/superpowers/specs/2026-11-01-computed-cycling-eftp-design.md).
 
 Heart-rate-derived TSS is retired. The daily endurance-load and dependent weekly
@@ -487,8 +487,7 @@ Production `DBT_SAFE_MODELS` currently selects `sensor_scalar_sample`,
 `activity_aerobic_efficiency`, `activity_polarization_zones`,
 `activity_power_curve`, `activity_pace_curve`, `activity_heart_rate_distribution`,
 `cycling_activity`, `daily_cycling`, `provider_stats`,
-`daily_activity_load`, `daily_strain`, `healthspan_activity_zone_minutes`,
-and `weekly_healthspan`. `activity_pace_curve` reads canonical `deduped_sensor FINAL`
+`daily_activity_load`, and `daily_strain`. `activity_pace_curve` reads canonical `deduped_sensor FINAL`
 speed samples within each canonical activity's inclusive temporal window, using
 the exact effective end (`ended_at`, or start plus twelve hours). Eligible types
 are cycling, running, swimming, walking and hiking; only positive live speeds
@@ -640,8 +639,8 @@ and `max_threads=1` to keep the offline aggregate work out of web/API requests.
 `activity_vo2max_estimate` also uses dirty activity/user keys and
 `max_threads=1`; it materializes reusable per-activity VO2 max estimates, not
 final API responses. `daily_recovery`, `daily_strain`,
-`daily_sleep`, and `weekly_healthspan` are the final route-facing dashboard models; the
-lower-level recovery, activity-load, and zone-minute models remain internal
+and `daily_sleep` are the final route-facing dashboard models; the
+lower-level recovery and activity-load models remain internal
 ingredients. `provider_stats` remains the route-facing provider inventory model
 so request paths do not recompute provider counts from raw source tables.
 

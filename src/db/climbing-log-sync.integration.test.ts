@@ -4,6 +4,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { persistClimbingLogEntries, type SourceClimbingLogEntry } from "./climbing-log-sync.ts";
 import {
+  CLIMBING_SYNC_OTHER_USER_ID,
   clearClimbingLogSyncTestContext,
   createClimbingLogSyncTestContext,
   CLIMBING_SYNC_PROVIDER_ID as providerId,
@@ -46,6 +47,97 @@ describe("atomic climbing log synchronization", () => {
       .where(eq(climbingAttempt.climbingLogEntryId, logEntryId))
       .orderBy(asc(climbingAttempt.id));
   }
+  it("preserves log-specific gyms for one shared board problem", async () => {
+    const problem = {
+      externalId: "board-problem",
+      name: "Shared problem",
+      kind: "boulder" as const,
+      areas: [{ externalId: "catalogue-area", name: "Catalogue area" }],
+    };
+    await write([
+      {
+        externalId: "visit-a",
+        climb: problem,
+        areas: [
+          { externalId: "gym-a", name: "Gym A", coordinates: { latitude: 0, longitude: -120 } },
+        ],
+        attempts: [],
+      },
+      {
+        externalId: "visit-b",
+        climb: problem,
+        areas: [
+          { externalId: "gym-b", name: "Gym B", coordinates: { latitude: 10, longitude: -121 } },
+        ],
+        attempts: [],
+      },
+    ]);
+    expect(await context.db.select().from(climb)).toHaveLength(1);
+    const rows = await executeWithSchema(
+      context.db,
+      z.object({
+        external_id: z.string(),
+        area_path: z.array(z.object({ name: z.string() })),
+        climb_area_path: z.array(z.object({ name: z.string() })),
+      }),
+      sql`SELECT external_id, area_path, climb_area_path FROM fitness.v_climbing_log_entry ORDER BY external_id`,
+    );
+    expect(rows).toEqual([
+      {
+        external_id: "visit-a",
+        area_path: [{ name: "Gym A" }],
+        climb_area_path: [{ name: "Catalogue area" }],
+      },
+      {
+        external_id: "visit-b",
+        area_path: [{ name: "Gym B" }],
+        climb_area_path: [{ name: "Catalogue area" }],
+      },
+    ]);
+  });
+
+  it("preserves omitted log locations, clears explicit locations and protects areas referenced by another log", async () => {
+    const gym = { externalId: "gym", name: "Shared gym" };
+    await write([
+      { externalId: "one", areas: [gym], attempts: [] },
+      { externalId: "two", areas: [gym], attempts: [] },
+    ]);
+    await write([{ externalId: "one", attempts: [] }]);
+    expect(await context.db.select().from(area)).toHaveLength(1);
+    expect(
+      await executeWithSchema(
+        context.db,
+        projectionSchema.pick({ area_path: true }),
+        sql`SELECT area_path FROM fitness.v_climbing_log_entry WHERE external_id='one'`,
+      ),
+    ).toEqual([{ area_path: [{ name: "Shared gym" }] }]);
+    await write([{ externalId: "one", areas: [], attempts: [] }]);
+    expect(await context.db.select().from(area)).toHaveLength(1);
+    expect(
+      await executeWithSchema(
+        context.db,
+        projectionSchema.pick({ area_path: true }),
+        sql`SELECT area_path FROM fitness.v_climbing_log_entry WHERE external_id='one'`,
+      ),
+    ).toEqual([{ area_path: [] }]);
+    await write([
+      { externalId: "two", areas: [{ externalId: "new", name: "New gym" }], attempts: [] },
+    ]);
+    expect(await context.db.select({ name: area.name }).from(area)).toEqual([{ name: "New gym" }]);
+    expect(
+      await executeWithSchema(
+        context.db,
+        projectionSchema.pick({ area_path: true }),
+        sql`SELECT area_path FROM fitness.v_climbing_log_entry WHERE external_id='two'`,
+      ),
+    ).toEqual([{ area_path: [{ name: "New gym" }] }]);
+    await expect(
+      context.db.execute(sql`
+      UPDATE fitness.climbing_log_entry SET user_id=${CLIMBING_SYNC_OTHER_USER_ID}::uuid
+      WHERE user_id=${TEST_USER_ID}::uuid AND provider_id=${providerId} AND external_id='two'
+    `),
+    ).rejects.toThrow();
+  });
   it("preserves a source occurrence with unknown attempts without counting a try", async () => {
     const result = await write([
       {

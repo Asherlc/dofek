@@ -2,6 +2,19 @@ import { describe, expect, it } from "vitest";
 import { groupClimbingLogEntriesByArea } from "./climbing-log-groups.ts";
 
 describe("groupClimbingLogEntriesByArea", () => {
+  it("groups repeat board problems by the gym recorded on each log", () => {
+    const climb = { areaPath: [] };
+    const gymA = { id: "a", name: "Gym A", providerId: "kilter" };
+    const gymB = { id: "b", name: "Gym B", providerId: "kilter" };
+    const entries = [
+      { climb, areaPath: [gymA] },
+      { climb, areaPath: [gymB] },
+      { climb, areaPath: [gymA] },
+    ];
+    const groups = groupClimbingLogEntriesByArea(entries);
+    expect(groups.map((group) => group.area?.name)).toEqual(["Gym A", "Gym B"]);
+    expect(groups.map((group) => group.entries.length)).toEqual([2, 1]);
+  });
   it("groups by the closest area identity in first-seen order while preserving original entry numbers", () => {
     const parent = { id: "parent", name: "Gym", providerId: "mountain-project" };
     const north = { id: "north", name: "Wall", providerId: "mountain-project" };

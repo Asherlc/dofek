@@ -43,8 +43,6 @@ export const PRODUCTION_DBT_MODELS = [
   "daily_activity_load",
   "daily_strain",
   "daily_body_measurement",
-  "healthspan_activity_zone_minutes",
-  "weekly_healthspan",
 ] as const;
 
 export type ProductionDbtModel = (typeof PRODUCTION_DBT_MODELS)[number];
@@ -52,8 +50,6 @@ export type ProductionDbtModel = (typeof PRODUCTION_DBT_MODELS)[number];
 export const CYCLING_POWER_DOWNSTREAM_DBT_MODELS = [
   "cycling_threshold_history",
   "cycling_activity_power_metrics",
-  "healthspan_activity_zone_minutes",
-  "weekly_healthspan",
 ] as const satisfies readonly ProductionDbtModel[];
 
 export const PROCESSING_DATASET_KEYS = [
@@ -273,15 +269,13 @@ export const DATASET_CONTRACTS = [
       "activity_heart_rate_distribution",
       "activity_sensor_processing_coverage",
       "activity_sensor_key_verification",
-      "healthspan_activity_zone_minutes",
-      "weekly_healthspan",
     ],
-    cacheQueryFamilies: ["training", "healthspan", "durationCurves"],
+    cacheQueryFamilies: ["training", "durationCurves"],
     providerIds: ["*"],
     dataTypes: ["activity", "daily_metrics", "metric_stream"],
     freshnessTargetMs: FIFTEEN_MINUTES_MS,
-    webConsumers: ["training", "healthspan"],
-    mobileConsumers: ["training", "healthspan"],
+    webConsumers: ["training"],
+    mobileConsumers: ["training"],
   },
   {
     key: "body",

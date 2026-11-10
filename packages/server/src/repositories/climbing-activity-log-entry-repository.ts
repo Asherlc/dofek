@@ -4,6 +4,7 @@ import {
   DEFAULT_CLIMBING_GRADE_PREFERENCE,
 } from "@dofek/training/climbing-grades";
 import {
+  areaSchema,
   type ClimbingAttempt,
   climbingAttemptSchema,
   climbingLogEntrySchema,
@@ -36,6 +37,8 @@ const databaseRowSchema = z.object({
     providerAbsentAt: timestampStringSchema.nullable(),
   }),
   climb: climbingLogClimbDetailSchema.nullable(),
+  areaPath: z.array(areaSchema),
+  logAreaId: z.guid().nullable(),
   freeSend: z.boolean().nullable(),
   attempts: z.array(
     z
@@ -60,9 +63,10 @@ function climbingDetailRaw(
 
 function mapLocation(
   climb: ClimbingLogEntryDetail["climb"],
+  areaPath: z.infer<typeof areaSchema>[],
+  logAreaId: string | null,
 ): ClimbingLogEntryDetail["mapLocation"] {
-  if (!climb) return null;
-  if (climb.coordinates)
+  if (logAreaId === null && climb?.coordinates)
     return {
       coordinates: climb.coordinates,
       scope: "climb",
@@ -70,7 +74,7 @@ function mapLocation(
       providerId: climb.providerId,
       name: climb.name,
     };
-  const area = climb.areaPath
+  const area = areaPath
     .slice()
     .reverse()
     .find((area) => area.coordinates !== null);
@@ -411,11 +415,12 @@ export class ClimbingActivityLogEntryRepository extends BaseRepository {
         'externalId',catalogue.external_id,'name',catalogue.name,'kind',catalogue.kind,'areaId',catalogue.area_id,
         'publishedGrades',entry.published_grades,'setting',entry.setting,'routeProtection',catalogue.route_protection,
         'coordinates',CASE WHEN catalogue.coordinates IS NOT NULL THEN jsonb_build_object('latitude',catalogue.coordinates[1],'longitude',catalogue.coordinates[0]) END,
-        'areaPath',entry.area_path,'pitches',COALESCE((SELECT jsonb_agg(jsonb_build_object(
+        'areaPath',entry.climb_area_path,'pitches',COALESCE((SELECT jsonb_agg(jsonb_build_object(
           'id',pitch.id,'climbId',pitch.climb_id,'externalId',pitch.external_id,'number',pitch.number,'name',pitch.name,
           'publishedGrades',COALESCE((SELECT jsonb_agg(jsonb_build_object('value',component.value,'system',component.system) ORDER BY component.position) FROM fitness.pitch_grade AS component WHERE component.pitch_id=pitch.id),'[]'::jsonb)
         ) ORDER BY pitch.number NULLS LAST,pitch.id) FROM fitness.pitch AS pitch WHERE pitch.climb_id=catalogue.id),'[]'::jsonb)
       ) END AS climb,
+      entry.area_path AS "areaPath", entry.log_area_id AS "logAreaId",
       entry.free_send AS "freeSend",
       COALESCE((SELECT jsonb_agg(jsonb_build_object(
         'id',attempt.id,'climbingLogEntryId',attempt.climbing_log_entry_id,'scope',attempt.scope,'pitchId',attempt.pitch_id,
@@ -462,7 +467,8 @@ export class ClimbingActivityLogEntryRepository extends BaseRepository {
         ...row.log,
         raw: climbingDetailRaw(row.log),
         climb: row.climb,
-        mapLocation: mapLocation(row.climb),
+        areaPath: row.areaPath,
+        mapLocation: mapLocation(row.climb, row.areaPath, row.logAreaId),
         photoLogEntryId:
           row.log.providerId === "kaya" && row.log.externalId?.startsWith("kaya:ascent:")
             ? row.log.id

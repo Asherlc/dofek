@@ -50,6 +50,52 @@ describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
       { externalId: "pitch-one", number: 1, publishedGrades: [{ value: "5.8", system: "yds" }] },
     ],
   } as const;
+  it("serves a log-specific gym ahead of shared climb geometry without changing the shared climb facts", async () => {
+    const source = {
+      ...route,
+      coordinates: { latitude: 40, longitude: 10 },
+      areas: [{ externalId: "source-area", name: "Source area" }],
+    };
+    const first = await write({
+      externalId: "gym-log",
+      climb: source,
+      areas: [
+        { externalId: "gym-a", name: "Gym A", coordinates: { latitude: 0, longitude: -120 } },
+      ],
+      attempts: [],
+    });
+    expect(first.areaPath?.map((area) => area.name)).toEqual(["Gym A"]);
+    expect(first.climb?.areaPath.map((area) => area.name)).toEqual(["Source area"]);
+    expect(first.climb?.coordinates).toEqual({ latitude: 40, longitude: 10 });
+    expect(first.mapLocation).toMatchObject({
+      scope: "area",
+      name: "Gym A",
+      coordinates: { latitude: 0, longitude: -120 },
+    });
+    const second = await write({
+      externalId: "gym-log-b",
+      climb: source,
+      areas: [{ externalId: "gym-b", name: "Gym B", coordinates: null }],
+      attempts: [],
+    });
+    expect(second.climb?.id).toBe(first.climb?.id);
+    expect(second.areaPath?.map((area) => area.name)).toEqual(["Gym B"]);
+    expect(second.mapLocation).toBeNull();
+  });
+  it("serves recorded locations even when the log has no named climb", async () => {
+    const detail = await write({
+      externalId: "gym-only",
+      areas: [{ externalId: "gym", name: "Gym", coordinates: { latitude: 1, longitude: 2 } }],
+      attempts: [],
+    });
+    expect(detail.climb).toBeNull();
+    expect(detail.areaPath?.map((area) => area.name)).toEqual(["Gym"]);
+    expect(detail.mapLocation).toMatchObject({
+      scope: "area",
+      name: "Gym",
+      coordinates: { latitude: 1, longitude: 2 },
+    });
+  });
   it.each([
     { sends: 1, nextDay: false },
     { sends: 2, nextDay: false },

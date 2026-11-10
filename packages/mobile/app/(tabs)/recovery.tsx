@@ -7,15 +7,9 @@ import {
   formatNumber,
   formatSpO2,
 } from "@dofek/format/format";
-import { formatHealthspanTrendContext } from "@dofek/format/healthspan-context";
 import { formatMeasurementText } from "@dofek/format/units";
 import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
-import {
-  trendDirection as computeTrend,
-  scoreColor,
-  scoreLabel,
-  trendColor,
-} from "@dofek/scoring/scoring";
+import { trendDirection as computeTrend } from "@dofek/scoring/scoring";
 import { useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
@@ -117,8 +111,6 @@ export default function RecoveryScreen() {
   const latestBodyFat = bodyFatData.at(-1) ?? null;
   const weightPrediction = recoveryData?.weightPrediction;
   const bodyFatPrediction = recoveryData?.bodyFatPrediction;
-
-  const healthspan = recoveryData?.healthspan;
 
   const latestSteps =
     dailyMetricsData.length > 0 ? dailyMetricsData[dailyMetricsData.length - 1] : null;
@@ -396,56 +388,6 @@ export default function RecoveryScreen() {
             />
           )}
 
-          {/* Healthspan Score */}
-          {healthspan != null && healthspan.availability.status === "insufficient_data" ? (
-            <Card title="Healthspan Score">
-              <Text style={styles.healthspanAvailabilitySummary}>
-                {healthspan.availability.summary}
-              </Text>
-              {healthspan.availability.nextCondition != null ? (
-                <Text style={styles.healthspanAvailabilityDetail}>
-                  {healthspan.availability.nextCondition}
-                </Text>
-              ) : null}
-              {healthspan.availability.missingMetricLabels.length > 0 ? (
-                <Text style={styles.healthspanAvailabilityDetail}>
-                  Missing supported metrics:{" "}
-                  {healthspan.availability.missingMetricLabels.join(", ")}
-                </Text>
-              ) : null}
-            </Card>
-          ) : healthspan != null &&
-            healthspan.healthspanScore != null &&
-            healthspan.metrics.length > 0 ? (
-            <Card title="Healthspan Score">
-              <View style={styles.healthspanRow}>
-                <Text
-                  style={[
-                    styles.healthspanScore,
-                    { color: scoreColor(healthspan.healthspanScore) },
-                  ]}
-                >
-                  {healthspan.healthspanScore}
-                </Text>
-                <View style={styles.healthspanMeta}>
-                  <Text
-                    style={[
-                      styles.healthspanStatus,
-                      { color: scoreColor(healthspan.healthspanScore) },
-                    ]}
-                  >
-                    {scoreLabel(healthspan.healthspanScore)}
-                  </Text>
-                  {healthspan.trend != null && (
-                    <Text style={[styles.healthspanTrend, { color: trendColor(healthspan.trend) }]}>
-                      {formatHealthspanTrendContext(healthspan.trend)}
-                    </Text>
-                  )}
-                </View>
-              </View>
-            </Card>
-          ) : null}
-
           {(latestWeight != null || latestBodyFat != null) && (
             <Card>
               <View style={styles.trendHeader}>
@@ -717,38 +659,6 @@ const styles = StyleSheet.create({
   weeklyLabel: {
     fontSize: 10,
     color: colors.textTertiary,
-  },
-  healthspanRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 16,
-  },
-  healthspanScore: {
-    fontSize: 48,
-    fontWeight: "700",
-    fontVariant: ["tabular-nums"],
-  },
-  healthspanMeta: {
-    gap: 4,
-  },
-  healthspanStatus: {
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  healthspanTrend: {
-    fontSize: 13,
-    fontWeight: "500",
-  },
-  healthspanAvailabilitySummary: {
-    color: colors.text,
-    fontSize: 14,
-    fontWeight: "600",
-    lineHeight: 20,
-  },
-  healthspanAvailabilityDetail: {
-    color: colors.textSecondary,
-    fontSize: 12,
-    lineHeight: 18,
   },
   weightRow: {
     flexDirection: "row",
