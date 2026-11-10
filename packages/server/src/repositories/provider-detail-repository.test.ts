@@ -373,6 +373,7 @@ describe("ProviderDetailRepository", () => {
       const { repo } = makeRepository([climbingLogDatabaseFixture(log)]);
       expect(await repo.getRecordDetail("openbeta", "climbingLogEntries", log.id)).toEqual({
         ...log,
+        areaPath: climb.areaPath,
         tags: [],
         chartAnnotations: [],
       });

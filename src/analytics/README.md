@@ -29,7 +29,7 @@ numerical package continues rejecting invalid direct inputs. The
 verifies that invalid coverage produces unavailable NP without failing the build.
 
 [`run-analytics-build.ts`](../../scripts/run-analytics-build.ts) runs this stage
-after successful dbt input builds, then builds threshold-dependent healthspan
+after successful dbt input builds, then builds threshold and activity-power
 models before recording the combined processing result.
 Outstanding projection work prevents processing success and cache warming.
 Deletion and recomputation jobs await the same serialized analytics writer via

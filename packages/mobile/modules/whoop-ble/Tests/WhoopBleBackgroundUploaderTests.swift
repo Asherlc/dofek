@@ -1,32 +1,59 @@
 import XCTest
 @testable import WhoopBLE
 
-private final class Transport: WhoopUploadTransport {
-    var onCompletion: ((String, Int?, Data, URL?, Error?) -> Void)?
-    var onFinishEvents: (() -> Void)?
-    var tasks: [String] = []
-    var requests: [(URLRequest, URL, String)] = []
-    var reconciliationCount = 0
-    var delayCancellation = false
-    var delayedCancellations: [() -> Void] = []
-    var cancellations: [String] = []
-    func allTasks(_ completion: @escaping ([String]) -> Void) { reconciliationCount += 1; completion(tasks) }
-    func start(request: URLRequest, file: URL, identity: String) {
-        tasks.append(identity); requests.append((request, file, identity))
-    }
-    func cancel(identity: String) {
-        cancellations.append(identity)
-        let cancel = { self.tasks.removeAll { $0 == identity } }
-        if delayCancellation { delayedCancellations.append(cancel) } else { cancel() }
-    }
-    func complete(_ index: Int, status: Int = 200, body: String = "{\"result\":{\"data\":{\"inserted\":0}}}") {
-        let task = requests[index]
-        tasks.removeAll { $0 == task.2 }
-        onCompletion?(task.2, status, Data(body.utf8), task.0.url, nil)
+final class WhoopBleBackgroundUploaderTests: XCTestCase {
+    private let rows: [[String: Any]] = [["timestamp": "2026-10-28T00:00:01.000Z", "heartRateBpm": 70]]
+
+    func testDisableReportsQueueWaitBeforeBlockedCleanupAndThenPurgesStorage() throws {
+        let (uploader, store, transport) = try setup()
+        try uploader.append(deviceId: "a", samplesByStream: [.realtime: rows])
+        try uploader.flush()
+        try settle(uploader)
+        let body = try XCTUnwrap(transport.requests.first?.1)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: body.path))
+        let occupied = expectation(description: "Uploader queue held in reconciliation")
+        let waiting = expectation(description: "Cleanup reports waiting before acquiring queue")
+        let flushed = expectation(description: "Flush returns")
+        let cleaned = expectation(description: "Cleanup returns")
+        let release = DispatchSemaphore(value: 0)
+        let stages = CleanupStageRecorder()
+        transport.beforeAllTasks = {
+            transport.beforeAllTasks = nil
+            occupied.fulfill()
+            release.wait()
+        }
+        defer { release.signal() }
+        DispatchQueue.global().async {
+            do { try uploader.flush() } catch { XCTFail("Unexpected flush error: \(error)") }
+            flushed.fulfill()
+        }
+        wait(for: [occupied], timeout: 5)
+        DispatchQueue.global().async {
+            do {
+                try uploader.disable { stage in
+                    stages.append(stage)
+                    if stage == "uploader_queue_wait" { waiting.fulfill() }
+                }
+            } catch { XCTFail("Unexpected cleanup error: \(error)") }
+            cleaned.fulfill()
+        }
+        wait(for: [waiting], timeout: 5)
+        XCTAssertEqual(stages.snapshot, ["uploader_queue_wait"])
+        XCTAssertEqual(try store.queuedCount(stream: .realtime), 1)
+        release.signal()
+        wait(for: [flushed, cleaned], timeout: 5)
+        try settle(uploader)
+        XCTAssertEqual(stages.snapshot, [
+            "uploader_queue_wait", "uploader_cancel_tasks", "uploader_store_purge", "uploader_remove_bodies"
+        ])
+        XCTAssertNil(try store.binding)
+        XCTAssertEqual(try store.queuedCount(stream: .realtime), 0)
+        XCTAssertTrue(try store.pendingBatches().isEmpty)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: body.path))
     }
 }
 
-final class WhoopBleBackgroundUploaderTests: XCTestCase {
+extension WhoopBleBackgroundUploaderTests {
     func testSensorUploadUsesOwnRouteAndAcknowledgesWhileRealtimeFails() throws {
         let (uploader, store, transport) = try setup()
         try uploader.append(deviceId: "a", samplesByStream: [.realtime: rows])
@@ -53,17 +80,16 @@ final class WhoopBleBackgroundUploaderTests: XCTestCase {
     private func setup(
         reportError: @escaping (Error) -> Void = { _ in },
         now: @escaping () -> Date = Date.init
-    ) throws -> (WhoopBleBackgroundUploader, WhoopBleSampleStore, Transport) {
+    ) throws -> (WhoopBleBackgroundUploader, WhoopBleSampleStore, TestWhoopUploadTransport) {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         addTeardownBlock { try FileManager.default.removeItem(at: directory) }
         let store = try WhoopBleSampleStore(directory: directory)
-        let transport = Transport()
+        let transport = TestWhoopUploadTransport()
         let uploader = try WhoopBleBackgroundUploader(
             store: store, directory: directory.appendingPathComponent("bodies"), transport: transport, reportError: reportError, now: now)
         try uploader.configure(userId: "alice", serverURL: "https://example.com", token: "secret", headers: [:])
         return (uploader, store, transport)
     }
-    private let rows: [[String: Any]] = [["timestamp": "2026-10-28T00:00:01.000Z", "heartRateBpm": 70]]
     private func settle(_ uploader: WhoopBleBackgroundUploader) throws {
         // Reconciliation and delegate work return to the serial queue.
         for _ in 0..<4 { _ = try uploader.diagnostics() }
@@ -160,7 +186,7 @@ final class WhoopBleBackgroundUploaderTests: XCTestCase {
         try store.append(deviceId: "a", samplesByStream: [.realtime: rows])
         let batch = try XCTUnwrap(store.reserve(stream: .realtime))
         let identity = batch.generation + "." + batch.id
-        let transport = Transport()
+        let transport = TestWhoopUploadTransport()
         transport.tasks = [identity]
         let bodies = directory.appendingPathComponent("bodies")
         try FileManager.default.createDirectory(at: bodies, withIntermediateDirectories: true)
@@ -195,7 +221,7 @@ final class WhoopBleBackgroundUploaderTests: XCTestCase {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         addTeardownBlock { try FileManager.default.removeItem(at: directory) }
         let store = try WhoopBleSampleStore(directory: directory)
-        let transport = Transport()
+        let transport = TestWhoopUploadTransport()
         var clock = Date(timeIntervalSince1970: 1_800_000_000)
         let uploader = try WhoopBleBackgroundUploader(
             store: store, directory: directory.appendingPathComponent("bodies"), transport: transport,
@@ -259,7 +285,7 @@ final class WhoopBleBackgroundUploaderTests: XCTestCase {
         try store.append(deviceId: "a", samplesByStream: [.realtime: rows])
         let batch = try XCTUnwrap(store.reserve(stream: .realtime))
         let identity = batch.generation + "." + batch.id
-        let transport = Transport()
+        let transport = TestWhoopUploadTransport()
         transport.tasks = [identity]
         let uploader = try WhoopBleBackgroundUploader(
             store: store, directory: directory.appendingPathComponent("bodies"), transport: transport, reportError: { _ in })

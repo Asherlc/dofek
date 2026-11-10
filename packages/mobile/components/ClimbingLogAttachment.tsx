@@ -29,7 +29,7 @@ export function ClimbingLogAttachment({
         utils.climbing.locationMap.invalidate(),
         utils.climbing.activityLogEntries.invalidate({
           activityId: input.activityId,
-          responseVersion: 3,
+          responseVersion: 4,
         }),
         utils.climbing.unattachedClimbingLogEntries.invalidate(),
         utils.climbing.sessionSummary.invalidate(),

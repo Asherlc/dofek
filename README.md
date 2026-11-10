@@ -57,7 +57,7 @@ High-volume sensor samples ──────┴─> Redpanda ──────
   analytics outside request paths. The serialized analytics worker also calls
   the pure [`@dofek/cycling-power`](packages/cycling-power/README.md) algorithms
   through its [bounded projector](src/analytics/README.md); dbt inputs precede
-  projection and dependent healthspan models follow it. Derived sensor analytics
+  projection and dependent threshold/activity-power models follow it. Derived sensor analytics
   are never written back to Postgres.
 - Express and tRPC serve both clients. BullMQ workers use Redis for scheduled
   syncs, imports, exports, post-sync work, and analytics cleanup.

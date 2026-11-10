@@ -627,25 +627,3 @@ SELECT
 FROM with_windows
 CROSS JOIN refresh_clock`;
 }
-
-function renderHealthspanModel(model: string, databases: IsolatedClickHouseDatabases): string {
-  return renderDbtModelSql(readModelSql(model), { isIncremental: false })
-    .replace(/{{ ref\('([^']+)'\) }}/g, `${databases.analytics}.$1`)
-    .replace(
-      /{{ source\('([^']+)', '([^']+)'\) }}/g,
-      (_match, schema: string, name: string) =>
-        `${schema === "postgres_fitness" ? databases.postgresFitness : databases.analytics}.${name}`,
-    );
-}
-
-export function buildTestHealthspanReadModelSelectSql(
-  databases: IsolatedClickHouseDatabases,
-): string {
-  return renderHealthspanModel("weekly_healthspan.sql", databases);
-}
-
-export function buildTestHealthspanActivityZoneMinutesSelectSql(
-  databases: IsolatedClickHouseDatabases,
-): string {
-  return renderHealthspanModel("healthspan_activity_zone_minutes.sql", databases);
-}

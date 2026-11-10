@@ -211,3 +211,5 @@ minimumReleaseAgeExclude:
   - '@expo/modules-macros-linux-arm64@0.27.1'
   - '@expo/modules-macros-linux-x64@0.27.1'
   - expo-modules-test-core@58.0.5
+  - '@powersync/common@1.58.0'
+  - '@powersync/node@0.19.6'

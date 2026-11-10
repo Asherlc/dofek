@@ -52,7 +52,7 @@ export class ClimbingCatalogueService {
   }
 
   async markFailed(seed: CatalogueSeed, error: unknown): Promise<void> {
-    const failures = error instanceof CatalogueSearchError ? error.errors : [error];
+    const failures: unknown[] = error instanceof CatalogueSearchError ? error.errors : [error];
     const providerFailures = failures.flatMap((failure) =>
       failure instanceof ProviderRateLimitError ||
       failure instanceof ProviderServiceUnavailableError

@@ -137,24 +137,6 @@ describe("activity sensor consumers before background merges", () => {
       ],
     },
     {
-      model: "healthspan_activity_zone_minutes",
-      columns: "aerobic_minutes, high_intensity_minutes, is_deleted",
-      expected: [
-        {
-          activity_id: cyclingId,
-          aerobic_minutes: 301 / 60,
-          high_intensity_minutes: 0,
-          is_deleted: 0,
-        },
-        {
-          activity_id: runningId,
-          aerobic_minutes: 301 / 60,
-          high_intensity_minutes: 0,
-          is_deleted: 0,
-        },
-      ],
-    },
-    {
       model: "activity_vo2max_estimate",
       columns: "method, round(vo2max, 1) AS vo2max, is_deleted",
       expected: [

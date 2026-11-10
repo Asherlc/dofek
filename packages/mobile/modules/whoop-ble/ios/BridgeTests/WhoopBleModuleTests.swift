@@ -45,7 +45,9 @@ final class WhoopBleModuleTests: XCTestCase {
 
         let records = logs.snapshot
         XCTAssertEqual(records.map { $0.attributes["stage"]?.value as? String }, [
-            "ble_suspend", "disconnect", "uploader_bootstrap", "uploader_disable", "completed"
+            "ble_suspend", "disconnect", "uploader_bootstrap", "uploader_disable",
+            "uploader_queue_wait", "uploader_cancel_tasks", "uploader_store_purge",
+            "uploader_remove_bodies", "completed"
         ])
         let operationId = try XCTUnwrap(records.first?.attributes["operationId"]?.value as? String)
         XCTAssertNotNil(UUID(uuidString: operationId))
@@ -95,7 +97,7 @@ final class WhoopBleModuleTests: XCTestCase {
         }
         let failure = try XCTUnwrap(logs.snapshot.last)
         XCTAssertEqual(failure.attributes["stage"]?.value as? String, "failed")
-        XCTAssertEqual(failure.attributes["failedStage"]?.value as? String, "uploader_disable")
+        XCTAssertEqual(failure.attributes["failedStage"]?.value as? String, "uploader_remove_bodies")
         XCTAssertEqual(failure.level, .error)
     }
 
