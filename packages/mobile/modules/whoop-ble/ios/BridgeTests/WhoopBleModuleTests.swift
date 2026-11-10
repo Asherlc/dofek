@@ -8,15 +8,17 @@ final class WhoopBleModuleTests: XCTestCase {
     func testCleanupLogsReachNativeSdkWhileJavaScriptWaitsForBleQueue() async throws {
         let logs = CleanupLogRecorder()
         let entered = expectation(description: "Native cleanup entry while JavaScript is blocked")
-        SentrySDK.start { options in
-            options.dsn = "https://key@sentry.example/123"
-            options.beforeSendLog = { log in
-                guard log.attributes["operation"]?.value as? String == "disableUploads" else { return nil }
-                logs.append(log)
-                if log.attributes["stage"]?.value as? String == "ble_suspend" {
-                    entered.fulfill()
+        await MainActor.run {
+            SentrySDK.start { options in
+                options.dsn = "https://key@sentry.example/123"
+                options.beforeSendLog = { log in
+                    guard log.attributes["operation"]?.value as? String == "disableUploads" else { return nil }
+                    logs.append(log)
+                    if log.attributes["stage"]?.value as? String == "ble_suspend" {
+                        entered.fulfill()
+                    }
+                    return nil
                 }
-                return nil
             }
         }
         defer { SentrySDK.close() }
@@ -62,12 +64,14 @@ final class WhoopBleModuleTests: XCTestCase {
 
     func testCleanupFailureLogsTheStageAndStillThrows() async throws {
         let logs = CleanupLogRecorder()
-        SentrySDK.start { options in
-            options.dsn = "https://key@sentry.example/123"
-            options.beforeSend = { _ in nil }
-            options.beforeSendLog = { log in
-                if log.attributes["operation"]?.value as? String == "disableUploads" { logs.append(log) }
-                return nil
+        await MainActor.run {
+            SentrySDK.start { options in
+                options.dsn = "https://key@sentry.example/123"
+                options.beforeSend = { _ in nil }
+                options.beforeSendLog = { log in
+                    if log.attributes["operation"]?.value as? String == "disableUploads" { logs.append(log) }
+                    return nil
+                }
             }
         }
         defer { SentrySDK.close() }
