@@ -268,7 +268,7 @@ public class WhoopBleModule: Module {
                 recordStage("uploader_bootstrap")
                 let uploader = try self.uploader
                 recordStage("uploader_disable")
-                try uploader.disable()
+                try uploader.disable(onStage: recordStage)
                 recordStage("completed")
             } catch {
                 SentrySDK.logger.error("WHOOP cleanup failed", attributes: [
