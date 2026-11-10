@@ -8,7 +8,7 @@ import {
   formatClimbingGradeComponents,
 } from "@dofek/format/climbing-log";
 import { providerLabel } from "@dofek/providers/providers";
-import { climbingLogEntryName } from "@dofek/training/climbing-log";
+import { climbingLogEntryAreaPath, climbingLogEntryName } from "@dofek/training/climbing-log";
 import { climbingTagGroups } from "@dofek/training/climbing-tag-presentation";
 import type { ClimbingLogEntryDetail } from "../../../server/src/contracts/climbing-log-contracts.ts";
 import { ClimbingLogEntrySources } from "../pages/activity-detail/components/ClimbingLogEntrySources.tsx";
@@ -32,7 +32,7 @@ function Fields({ values }: { values: Array<{ label: string; value: string }> })
 
 export function ClimbingLogEntryDetails({ entry }: { entry: ClimbingLogEntryDetail }) {
   const climb = entry.climb;
-  const path = formatClimbingLocationPath(climb?.areaPath ?? []);
+  const path = formatClimbingLocationPath(climbingLogEntryAreaPath(entry));
   const angle = formatClimbingWallAngle(entry.wallAngle);
   const holds = formatClimbingHoldTypes(entry.holdTypes);
   const tagGroups = climbingTagGroups(entry.tags ?? [], entry.holdTypes);

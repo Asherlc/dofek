@@ -3,15 +3,17 @@
 Access research checked **2026-11-01**. The implementations use the existing
 [provider connections](adding-a-provider.md), [climbing graph](climbing-context.md),
 and durable file uploads on web and iOS. Contract tests and PostgreSQL fixtures
-verify the implementation; authenticated requests to real board accounts have
-not been smoke-tested. See the [board account tests](../src/lib/climbing-board-account.integration.test.ts)
+verify the implementation. Kilter logbook and board-directory reads were
+verified with a connected account on **2026-11-09**; other board account
+protocols have not been smoke-tested. See the [Kilter reader](../src/lib/kilter-board-client.ts),
+[directory reader](../src/lib/kilter-board-directory.ts), and [board account tests](../src/lib/climbing-board-account.integration.test.ts)
 and importer tests beside each [provider](../src/providers/README.md).
 
 ## Available connections
 
 | Source | Connection | Imported facts and limitations |
 | --- | --- | --- |
-| Kilter Board | Current account email/password | Native log IDs, dates, names, board angle, attempts, explicit completion and available grade/rating facts. Uses the current Kilter backend, independently of the retired Aurora Kilter service. |
+| Kilter Board | Current account email/password | Native log IDs and logging timestamps, names, physical board identity/name, recorded gym and available coordinates, board angle, attempts, explicit completion and available grade/rating facts. Uses the current Kilter backend, independently of the retired Aurora Kilter service. |
 | Tension Board | Aurora username/password | Separate native ascent/bid records, dates, angle, notes, explicit outcomes and available named ascent styles. |
 | Grasshopper, Decoy, So iLL, Touchstone Board, Aurora Board | Each board's Aurora username/password | The same upstream protocol, with independent accounts, provider attribution, and host configuration. |
 | Crimpd | Account email/password, or original logbook ZIP | Recorded workouts, climbing sets, board/angle/grade/notes, exact available tries and ascent flags, plus supported nonclimbing set facts. |
@@ -61,10 +63,34 @@ point-only log keeps its logged timestamp and an unavailable duration. See the
 [activity detail projection](../packages/server/src/models/activity.ts),
 [web rendering](../packages/web/src/pages/ActivityDetailPage.tsx), and
 [mobile rendering](../packages/mobile/components/activity/ActivityDetailHeader.tsx).
+
 Source-session grouping uses normalized millisecond observation timestamps,
 while the [Kilter importer](../src/lib/kilter-board-client.ts) retains the
 native timestamp string in raw provenance and the [activity writer](../src/db/climbing-log-activity.ts)
 persists the normalized observation time.
+
+Kilter resolves logged `wallUuid` and `gymUuid` references using a disposable,
+read-only mirror of its board/gym directory through the
+[official PowerSync Node SDK](https://github.com/powersync-ja/powersync-js/tree/main/packages/node).
+The authenticated service advertised `global_gyms` as its directory stream;
+the [reader](../src/lib/kilter-board-directory.ts) subscribes to that stream
+without downloading the unrelated climb catalogue. The source field mapping
+also appears in [Hangtime's client](https://github.com/Stevie-Ray/hangtime-climbing-boards/blob/main/api/kilter.client.ts).
+Gym names and known coordinates belong to each log's Area reference, so a
+single shared problem can be logged at multiple gyms without changing its
+Climb location. Missing records remain unknown; conflicting logged and board
+gym identities fail with an actionable error. A failed directory read prevents
+authoritative reconciliation. Normal successful syncs enrich existing log
+occurrences in place; see the [source mapping](../src/lib/kilter-board-client.ts)
+and [PostgreSQL regressions](../src/db/climbing-log-sync.integration.test.ts).
+
+The current web and iOS clients request climbing detail response version 4,
+which includes each log's effective `areaPath`. Earlier response versions omit
+that field for strict installed clients. Details, grouping and maps use the
+log's recorded location before shared Climb location; the shared Climb retains
+its own geometry. See the [response contract](../packages/server/src/contracts/climbing-log-contracts.ts),
+[location projection](../packages/server/src/repositories/climbing-activity-log-entry-repository.ts)
+and [shared path selection](../packages/training/src/climbing-log.ts).
 
 Anonymous attempts expanded from a count do not inherit the named attempt's
 completion. Without native per-attempt IDs or distinguishing facts, anonymous

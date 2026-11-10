@@ -130,6 +130,7 @@ const sourceLogSchema = climbingLogEntrySchema
   .extend({
     externalId: climbingLogEntrySchema.shape.externalId.unwrap(),
     climb: sourceClimbWithPitchesSchema.nullable().optional(),
+    areas: z.array(sourceAreaSchema).readonly().optional(),
     reportedAttemptCounts: z.array(sourceAttemptCountSchema).readonly().optional(),
     attempts: z.array(sourceAttemptSchema).readonly(),
     activityObservation: sourceActivityObservationSchema.optional(),
@@ -877,6 +878,7 @@ async function removeSupersededObjects(
     await tx.execute(sql`
     DELETE FROM fitness.area AS obsolete WHERE obsolete.id = ${id}::uuid
     AND NOT EXISTS (SELECT 1 FROM fitness.climb AS climb WHERE climb.area_id = obsolete.id)
+    AND NOT EXISTS (SELECT 1 FROM fitness.climbing_log_entry AS entry WHERE entry.area_id = obsolete.id)
     AND NOT EXISTS (SELECT 1 FROM fitness.area AS child WHERE child.parent_area_id = obsolete.id)
   `);
 }
@@ -925,6 +927,7 @@ export async function persistClimbingLogEntries(
         definition = await resolveClimb(tx, scope, source.climb, associated, oldAreas);
       const {
         climb: _climb,
+        areas,
         attempts: _attempts,
         reportedAttemptCounts: _counts,
         reportedGrades,
@@ -932,6 +935,12 @@ export async function persistClimbingLogEntries(
         ...facts
       } = source;
       const id = known?.id ?? randomUUID();
+      let areaId = known?.areaId ?? null;
+      if (areas !== undefined) {
+        const prior = await areaChain(tx, areaId);
+        for (const node of prior) oldAreas.add(node.id);
+        areaId = await resolveAreas(tx, scope, areas, prior);
+      }
       const activityId = await persistClimbingLogActivityObservation(tx, {
         ...scope,
         source,
@@ -943,6 +952,7 @@ export async function persistClimbingLogEntries(
       });
       const changes = {
         ...facts,
+        areaId,
         activityId,
         climbId: definition?.id ?? null,
         providerAbsentAt: null,

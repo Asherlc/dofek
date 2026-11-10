@@ -28,6 +28,14 @@ describe("versioned climbing detail responses", () => {
     expect(climbingLogActivitySessionSchema.safeParse({}).success).toBe(false);
   });
 
+  it("preserves log-specific location in V4 while projecting the strict V3 payload", () => {
+    const original = climbingLogEntryFixture();
+    const entry = { ...original, areaPath: climbingClimbFixture().areaPath };
+    expect(
+      decodeClimbingLogEntryDetailResponse(serializeClimbingLogEntryDetailResponse(entry, 4)),
+    ).toEqual(entry);
+    expect(serializeClimbingLogEntryDetailResponse(entry, 3)).toEqual(original);
+  });
   it("retains attributed recorded tags in V3 without changing stored log traits", () => {
     const tags = [
       {

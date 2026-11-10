@@ -51,6 +51,7 @@ export const climbingPitchResultSchema = z.strictObject({
   displayGrade: z.string().nullable(),
 });
 export const climbingLogEntryDetailSchema = climbingLogEntrySchema.extend({
+  areaPath: z.array(areaSchema).optional(),
   photoLogEntryId: z.guid().nullable(),
   climb: climbingLogClimbDetailSchema.nullable(),
   mapLocation: climbingMapLocationSchema.nullable(),
@@ -69,7 +70,7 @@ export type ClimbingLogEntryDetail = z.infer<typeof climbingLogEntryDetailSchema
 export type ClimbingPitchResult = z.infer<typeof climbingPitchResultSchema>;
 
 export const legacyClimbingLogEntryDetailSchema = climbingLogEntryDetailSchema
-  .omit({ holdTypes: true, tags: true })
+  .omit({ holdTypes: true, tags: true, areaPath: true })
   .extend(climbingLogTraitsV1Schema.shape);
 export const climbingLogEntryDetailResponseSchema = z.union([
   climbingLogEntryDetailSchema,
@@ -81,8 +82,10 @@ export function serializeClimbingLogEntryDetailResponse(
   entry: ClimbingLogEntryDetail,
   version: ClimbingResponseVersion,
 ): z.infer<typeof climbingLogEntryDetailResponseSchema> {
-  if (version === 3) return entry;
-  const { tags: _tags, ...withoutTags } = entry;
+  if (version === 4) return entry;
+  const { areaPath: _areaPath, ...previous } = entry;
+  if (version === 3) return previous;
+  const { tags: _tags, ...withoutTags } = previous;
   if (version === 2) return withoutTags;
   const { holdTypes: _holdTypes, ...rest } = withoutTags;
   return { ...rest, ...toClimbingLogTraitsV1(entry) };

@@ -953,11 +953,11 @@ describe("ActivityDetailScreen", () => {
     render(React.createElement(ActivityDetailScreen));
     expect(getQueryEnabledFlag(mockClimbingEntriesQuery.mock.calls[0]?.[1])).toBe(true);
     expect(mockClimbingEntriesQuery).toHaveBeenCalledWith(
-      { activityId: baseCyclingActivity.id, responseVersion: 3 },
+      { activityId: baseCyclingActivity.id, responseVersion: 4 },
       expect.objectContaining({ enabled: true, select: decodeClimbingLogEntriesResponse }),
     );
     expect(mockEntrySuggestionsQuery).toHaveBeenCalledWith(
-      { activityId: baseCyclingActivity.id, responseVersion: 3 },
+      { activityId: baseCyclingActivity.id, responseVersion: 4 },
       expect.objectContaining({ enabled: true, select: decodeClimbingLogEntriesResponse }),
     );
     expect(screen.getByText("Summit outing")).toBeTruthy();
@@ -1463,11 +1463,11 @@ describe("ActivityDetailScreen", () => {
     await waitFor(() => {
       expect(mockClimbingEntriesInvalidate).toHaveBeenCalledWith({
         activityId: baseCyclingActivity.id,
-        responseVersion: 3,
+        responseVersion: 4,
       });
       expect(mockEntrySuggestionsInvalidate).toHaveBeenCalledWith({
         activityId: baseCyclingActivity.id,
-        responseVersion: 3,
+        responseVersion: 4,
       });
       expect(mockActivityImagesInvalidate).toHaveBeenCalledWith({ id: baseCyclingActivity.id });
       expect(mockClimbingSessionSummaryInvalidate).toHaveBeenCalledWith();
@@ -1579,7 +1579,7 @@ describe("ActivityDetailScreen", () => {
     await waitFor(() => {
       expect(mockClimbingEntriesInvalidate).toHaveBeenCalledWith({
         activityId: baseCyclingActivity.id,
-        responseVersion: 3,
+        responseVersion: 4,
       });
     });
   });

@@ -5,6 +5,7 @@ import type { TokenSet } from "../auth/oauth.ts";
 import type { SourceClimbingAttempt, SourceClimbingLogEntry } from "../db/climbing-log-sync.ts";
 import { ProviderAuthError } from "../providers/auth-errors.ts";
 import type { BoardLogbook, ClimbingBoardClient } from "./climbing-board-account.ts";
+import { KilterBoardDirectory } from "./kilter-board-directory.ts";
 
 const baseUrl = "https://portal.kiltergrips.com";
 const tokenUrl = "https://idp.kiltergrips.com/realms/kilter/protocol/openid-connect/token";
@@ -34,8 +35,8 @@ const logSchema = z
     topped: z.boolean().nullable().optional(),
     flashed: z.boolean().nullable().optional(),
     currentDifficultyId: z.number().int().nullable().optional(),
-    wallUuid: z.string().nullable().optional(),
-    gymUuid: z.string().nullable().optional(),
+    wallUuid: z.string().trim().nullable().optional(),
+    gymUuid: z.string().trim().nullable().optional(),
     climbRating: z
       .object({
         angle: z.number(),
@@ -70,8 +71,13 @@ function gradeComponents(grade: z.infer<typeof gradeSchema> | undefined): GradeC
 /** Current Kilter logbook protocol. Raw log occurrences are never grouped into sessions. */
 export class KilterBoardClient implements ClimbingBoardClient {
   readonly #fetchFn: typeof fetch;
-  constructor(fetchFn: typeof fetch = globalThis.fetch) {
+  readonly #directory: Pick<KilterBoardDirectory, "fetch">;
+  constructor(
+    fetchFn: typeof fetch = globalThis.fetch,
+    directory: Pick<KilterBoardDirectory, "fetch"> = new KilterBoardDirectory(fetchFn),
+  ) {
     this.#fetchFn = fetchFn;
+    this.#directory = directory;
   }
 
   async #tokens(
@@ -125,17 +131,18 @@ export class KilterBoardClient implements ClimbingBoardClient {
     signal?: AbortSignal,
   ): Promise<BoardLogbook> {
     let current = tokens;
-    const refresh = async () => {
+    let refreshed = false;
+    const refresh = async (refreshSignal = signal) => {
       if (!current.refreshToken) throw reconnect("requires a refreshable authorization");
       current = await this.#tokens(
         new URLSearchParams({ grant_type: "refresh_token", refresh_token: current.refreshToken }),
         current,
-        signal,
+        refreshSignal,
       );
       // Commit a rotated credential before any further requests can fail.
       await persistTokens(current);
+      refreshed = true;
     };
-    let refreshed = false;
     if (current.expiresAt.getTime() <= Date.now()) {
       await refresh();
       refreshed = true;
@@ -168,7 +175,36 @@ export class KilterBoardClient implements ClimbingBoardClient {
       throw new Error(`Kilter Board grade request failed (HTTP ${gradeResponse.status}).`);
     const grades = z.array(gradeSchema).parse(await gradeResponse.json());
     const byId = new Map(grades.map((grade) => [grade.difficultyGradeId, grade]));
+    let directory: Awaited<ReturnType<KilterBoardDirectory["fetch"]>> = { walls: [], gyms: [] };
+    if (logs.some(({ log }) => log.wallUuid || log.gymUuid)) {
+      for (const _attempt of [0, 1]) {
+        try {
+          directory = await this.#directory.fetch(async (directorySignal) => {
+            if (current.expiresAt.getTime() <= Date.now()) await refresh(directorySignal);
+            return { token: current.accessToken, expiresAt: current.expiresAt };
+          }, signal);
+          break;
+        } catch (error) {
+          const rejected =
+            error instanceof Error &&
+            "status" in error &&
+            [401, 403].includes(Number(error.status));
+          if (!rejected) throw error;
+          if (refreshed) throw reconnect("directory authorization expired or was rejected");
+          await refresh();
+        }
+      }
+    }
+    const walls = new Map(directory.walls.map((wall) => [wall.wall_uuid, wall]));
+    const gyms = new Map(directory.gyms.map((gym) => [gym.gym_uuid, gym]));
     const entries: SourceClimbingLogEntry[] = logs.map(({ log, raw }) => {
+      const wall = log.wallUuid ? walls.get(log.wallUuid) : undefined;
+      if (log.gymUuid && wall?.gym_uuid && log.gymUuid !== wall.gym_uuid)
+        throw new Error(
+          `Kilter Board log ${log.logUuid} has conflicting gym identities. Check its board selection in Kilter and sync again.`,
+        );
+      const gymId = log.gymUuid || wall?.gym_uuid;
+      const gym = gymId ? gyms.get(gymId) : undefined;
       const rating =
         log.angle != null && log.climbRating?.angle === log.angle ? log.climbRating : null;
       const difficulty = rating?.difficultyGradeId ?? log.currentDifficultyId;
@@ -186,7 +222,19 @@ export class KilterBoardClient implements ClimbingBoardClient {
         },
         discipline: "rock_climbing",
         sourceName: "Kilter Board",
-        board: { name: "Kilter Board", externalId: log.wallUuid || null },
+        board: { name: wall?.name || "Kilter Board", externalId: log.wallUuid || null },
+        areas: gym?.name
+          ? [
+              {
+                externalId: gym.gym_uuid,
+                name: gym.name,
+                coordinates:
+                  gym.latitude != null && gym.longitude != null
+                    ? { latitude: gym.latitude, longitude: gym.longitude }
+                    : null,
+              },
+            ]
+          : [],
         ...(log.angle == null ? {} : { wallAngle: { value: log.angle, unit: "degrees" } }),
         notes: rating?.comment?.trim() ? rating.comment : null,
         reportedGrades: gradeComponents(difficulty == null ? undefined : byId.get(difficulty)),

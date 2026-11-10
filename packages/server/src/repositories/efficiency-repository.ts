@@ -250,10 +250,11 @@ export class EfficiencyRepository extends BaseRepository {
       };
     }
 
+    // Shared CTEs keep metadata joins and sample windows from expanding per consumer.
     const rows = await this.#sensorStore.query(
       efficiencyRowSchema,
       `WITH ${restingHeartRateClickHouseCte({ includeWindowStart: !range.isAll() })},
-      activity_meta AS (
+      activity_meta AS MATERIALIZED (
         SELECT
           asum.activity_id AS id,
           asum.user_id AS user_id,
@@ -277,7 +278,7 @@ export class EfficiencyRepository extends BaseRepository {
           ${clickHouseAccessPredicate(this.accessWindow, "asum.started_at")}
           AND up.max_hr IS NOT NULL
       ),
-      heart_rate_samples AS (
+      heart_rate_samples AS MATERIALIZED (
         SELECT
           am.id AS id,
           am.user_id AS user_id,
@@ -311,7 +312,7 @@ export class EfficiencyRepository extends BaseRepository {
           AND heart_rate < resting_hr + (max_hr - resting_hr) * {b2:Float64}
         ORDER BY user_id, id, recorded_at
       ),
-      power_observations AS (
+      power_observations AS MATERIALIZED (
         SELECT
           am.id AS id,
           am.user_id AS user_id,
@@ -327,7 +328,7 @@ export class EfficiencyRepository extends BaseRepository {
         WHERE 1 = 1
           ${powerSampleLowerBoundPredicate}
       ),
-      power_samples AS (
+      power_samples AS MATERIALIZED (
         SELECT id, user_id, recorded_at, scalar,
           leadInFrame(recorded_at, 1, recorded_at + INTERVAL 10 SECOND) OVER (
             PARTITION BY user_id, id ORDER BY recorded_at
@@ -385,7 +386,8 @@ export class EfficiencyRepository extends BaseRepository {
       WHERE paired_seconds > 0
       GROUP BY id
       HAVING sum(paired_seconds) >= 300
-      ORDER BY any(started_at)`,
+      ORDER BY any(started_at)
+      SETTINGS enable_materialized_cte = 1`,
       {
         userId: this.userId,
         timezone: this.timezone,

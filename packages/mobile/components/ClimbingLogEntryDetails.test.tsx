@@ -8,6 +8,22 @@ import {
 } from "../../server/src/repositories/climbing-test-helpers.ts";
 import { ClimbingLogEntryDetails } from "./ClimbingLogEntryDetails";
 
+it("renders the board and visited gym instead of the shared problem location", () => {
+  const climb = climbingClimbFixture();
+  const location = climb.areaPath[0];
+  if (!location) throw new Error("Expected fixture location");
+  const gym = { ...location, name: "Visited gym" };
+  const entry = climbingLogEntryFixture({
+    climb,
+    board: { name: "Original 12 x 12", externalId: "wall" },
+    areaPath: [gym],
+  });
+  render(<ClimbingLogEntryDetails entry={entry} />);
+  expect(screen.getByText("Board: Original 12 x 12")).toBeTruthy();
+  expect(screen.getByText("Visited gym")).toBeTruthy();
+  expect(screen.queryByText("Wall")).toBeNull();
+});
+
 it("shows Mountain Project facts without numbering an unrecorded attempt", () => {
   const log = climbingLogEntryFixture({
     providerId: "mountain-project",

@@ -144,11 +144,11 @@ export function ActivityDetailPage() {
     { enabled: isClimbingActivity, placeholderData: activityQueryPlaceholder(id) },
   );
   const climbingEntries = trpc.climbing.activityLogEntries.useQuery(
-    { activityId: id, responseVersion: 3 },
+    { activityId: id, responseVersion: 4 },
     { enabled: isClimbingActivity, select: decodeClimbingLogEntriesResponse },
   );
   const entrySuggestions = trpc.climbing.unattachedClimbingLogEntries.useQuery(
-    { activityId: id, responseVersion: 3 },
+    { activityId: id, responseVersion: 4 },
     { enabled: isClimbingActivity, select: decodeClimbingLogEntriesResponse },
   );
   const climbingEntriesLoading = climbingEntries.isLoading && !climbingEntries.data;
@@ -187,7 +187,7 @@ export function ActivityDetailPage() {
         trpcUtils.activity.images.invalidate({ id: input.activityId }),
         trpcUtils.climbing.activityLogEntries.invalidate({
           activityId: input.activityId,
-          responseVersion: 3,
+          responseVersion: 4,
         }),
         trpcUtils.climbing.sessionSummary.invalidate(),
         trpcUtils.climbing.gradeProgressionV2.invalidate(),
@@ -195,7 +195,7 @@ export function ActivityDetailPage() {
         trpcUtils.climbing.strengths.invalidate(),
         trpcUtils.climbing.unattachedClimbingLogEntries.invalidate({
           activityId: input.activityId,
-          responseVersion: 3,
+          responseVersion: 4,
         }),
       ]);
     },

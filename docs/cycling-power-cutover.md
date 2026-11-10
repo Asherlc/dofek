@@ -25,7 +25,8 @@ at this maintenance boundary
 [ClickHouse migration 0108](../src/db/clickhouse-migrations/0108_computed_cycling_power.ts)
 creates versioned NP observations and per-user histories before exposing their
 serving views. It removes the three obsolete stored SQL NP columns, drops the
-profile mirror FTP column, and makes healthspan minute values nullable. The old
+profile mirror FTP column, and originally made Healthspan minute values nullable.
+Healthspan is now retired by [migration 0112](../src/db/clickhouse-migrations/0112_remove_healthspan.ts). The old
 ten-slot daily cycling cache is recreated with the nine-slot current schema;
 raw observations are retained. Current-shape reapplication preserves rows.
 The [executable migration fixtures](../src/db/clickhouse-migrations/0108_computed_cycling_power.integration.test.ts)
@@ -41,7 +42,7 @@ copy former computed NP, or overwrite Postgres profiles with sensor analytics.
 The serialized analytics refresh builds canonical dbt inputs, refreshes at most
 100 changed activity observations, and reconstructs compact histories for at most
 32 ready users per pass. Pending work prevents processing success and cache
-warming. Healthspan activity/week models run only after projection completes.
+warming. Threshold-history and activity-power models run only after projection completes.
 Deletion/recomputation jobs await that same serialized writer. Native work is
 limited to changed inputs; clock-only advancement reuses NP.
 
@@ -72,7 +73,7 @@ Matching whole-ride and full-span interval windows must retain identical missing
 power barriers and use the same resampler/NP calculation. A completed activity
 imported before its end time must become eligible later the same UTC day without
 requiring another source mutation. Corrections/deletions must replay later
-thresholds and update affected healthspan weeks outside the normal lookback.
+thresholds and update affected cycling power metrics.
 
 ## Queue lifecycle
 
