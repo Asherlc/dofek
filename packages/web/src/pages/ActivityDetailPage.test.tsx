@@ -70,6 +70,7 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 const mockActivity: ActivityDetail & { displayedDate?: string } = {
+  climbingLogSessions: [],
   id: "test-123",
   displayedDate: "2026-03-18",
   notes: null,

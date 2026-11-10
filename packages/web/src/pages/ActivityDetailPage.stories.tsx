@@ -13,6 +13,7 @@ import { ActivityHeader } from "./ActivityDetailPage.tsx";
 // ── ActivityHeader ──────────────────────────────────────────
 
 const baseActivity: ActivityDetail = {
+  climbingLogSessions: [],
   id: "abc-123",
   activityType: "cycling",
   primaryActivityType: null,

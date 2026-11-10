@@ -4,6 +4,7 @@ import {
 } from "@dofek/provider-http/rate-limit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
+import * as climbingSnapshots from "../db/climbing-log-snapshot.ts";
 import type { ClimbingLogSyncInput } from "../db/climbing-log-sync.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { SyncRun } from "./sync-run.ts";
@@ -607,6 +608,7 @@ describe("OpenBetaProvider", () => {
     );
   });
   it("reconciles an explicitly empty public tick list", async () => {
+    const snapshot = vi.spyOn(climbingSnapshots, "persistClimbingLogSnapshot");
     const { db } = makeDb();
     const provider = new OpenBetaProvider(
       vi.fn().mockResolvedValue(graphqlResponse({ userTicks: [] })),
@@ -615,7 +617,11 @@ describe("OpenBetaProvider", () => {
     const result = await provider.sync(makeRun(db));
 
     expect(result).toMatchObject({ provider: "openbeta", recordsSynced: 0, errors: [] });
-    expect(db.execute).toHaveBeenCalledTimes(1);
+    expect(snapshot).toHaveBeenCalledExactlyOnceWith(db, {
+      userId: USER_ID,
+      providerId: "openbeta",
+      entries: [],
+    });
   });
   it("reports that OpenBeta is always configured and exposes manual profile auth", () => {
     const provider = new OpenBetaProvider(vi.fn());

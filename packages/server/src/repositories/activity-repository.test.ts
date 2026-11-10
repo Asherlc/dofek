@@ -127,6 +127,7 @@ describe("ActivityRepository", () => {
   function makeRepository(rows: Record<string, unknown>[] = []) {
     const execute = vi.fn().mockImplementation((query) => {
       const compiledQuery = dialect.sqlToQuery(query);
+      if (compiledQuery.sql.includes("fitness.v_climbing_log_activity")) return Promise.resolve([]);
       if (compiledQuery.sql.includes("identity_candidates")) {
         const requestedId = compiledQuery.params[0];
         const resolvedGroupId = typeof rows[0]?.id === "string" ? rows[0].id : null;
@@ -152,6 +153,7 @@ describe("ActivityRepository", () => {
   function makeRepositoryWithSensorStore(postgresRows: Record<string, unknown>[] = []) {
     const execute = vi.fn().mockImplementation((query) => {
       const compiledQuery = dialect.sqlToQuery(query);
+      if (compiledQuery.sql.includes("fitness.v_climbing_log_activity")) return Promise.resolve([]);
       if (compiledQuery.sql.includes("activity_device_observation")) return Promise.resolve([]);
       if (compiledQuery.sql.includes("identity_candidates")) {
         const requestedId = compiledQuery.params.find(

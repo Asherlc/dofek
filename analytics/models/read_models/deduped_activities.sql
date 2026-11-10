@@ -75,6 +75,7 @@ absent_activity AS (
     SELECT *
     FROM {{ source('postgres_fitness', 'activity') }} FINAL
     WHERE _peerdb_is_deleted = 0
+        AND coalesce(provider_type, '') != 'climbing_log'
         AND coalesce(deleted_at, toDateTime64(0, 6, 'UTC')) = toDateTime64(0, 6, 'UTC')
         AND coalesce(provider_absent_at, toDateTime64(0, 6, 'UTC')) != toDateTime64(0, 6, 'UTC')
         AND id NOT IN (

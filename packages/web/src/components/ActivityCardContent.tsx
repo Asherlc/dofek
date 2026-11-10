@@ -34,7 +34,7 @@ export interface ActivityCardData {
   modality: string | null;
   startedAt: string;
   localTimeContext: RecordLocalTimeContext;
-  durationMin: number;
+  durationMin: number | null;
   source: {
     origin: ActivityOrigin;
     tree: ActivitySourceTree;

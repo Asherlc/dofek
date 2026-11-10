@@ -2,6 +2,7 @@ import type { ActivityDataState } from "@dofek/format/activity-data-state";
 import type { RecordLocalTimeContext } from "@dofek/format/record-local-time";
 import type { ActivityOriginEvidence } from "@dofek/providers/activity-origin";
 import type { ActivitySourceTree } from "@dofek/providers/activity-source-tree";
+import type { ClimbingLogActivitySession } from "../contracts/climbing-log-contracts.ts";
 import { activityMeasurementState } from "../services/activity-data-state.ts";
 import { type ActivityOriginColumns, activityOriginFromColumns } from "./activity-origin.ts";
 import type { ActivitySource } from "./activity-source.ts";
@@ -26,6 +27,7 @@ export type {
 };
 
 export interface ActivityDetail {
+  climbingLogSessions: ClimbingLogActivitySession[];
   id: string;
   displayedDate: string;
   resolvedFrom?: string;
@@ -244,7 +246,7 @@ export class Activity {
   }
 
   /** Serialize to the ActivityDetail shape consumed by API clients. */
-  toDetail(): ActivityDetail {
+  toDetail(climbingLogSessions: ClimbingLogActivitySession[] = []): ActivityDetail {
     const sourceLinks = this.sourceLinks;
     const origin = activityOriginFromColumns(this.#row);
     return {
@@ -265,8 +267,19 @@ export class Activity {
       subsource: this.subsource,
       sourceProviders: this.sourceProviders,
       sourceLinks,
-      sourceTree: buildActivitySourceTree(origin, sourceLinks, this.#row.origin_evidence),
-      sourceDecision: buildActivitySourceDecision(origin, sourceLinks, this.#lookupProvider),
+      climbingLogSessions,
+      sourceTree: buildActivitySourceTree(
+        origin,
+        sourceLinks,
+        this.#row.origin_evidence,
+        climbingLogSessions,
+      ),
+      sourceDecision: buildActivitySourceDecision(
+        origin,
+        sourceLinks,
+        this.#lookupProvider,
+        climbingLogSessions,
+      ),
       avgHr: this.avgHr,
       avgHrState: activityMeasurementState("Average heart rate", this.avgHr),
       maxHr: this.maxHr,

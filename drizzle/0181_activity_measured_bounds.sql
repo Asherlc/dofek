@@ -108,6 +108,7 @@ tombstoned AS (
   FROM fitness.activity AS a
   WHERE
     a.provider_absent_at IS NOT null
+    AND a.provider_type <> 'climbing_log'
     AND a.deleted_at IS null
     AND a.external_id IS NOT null
     AND a.external_id <> ''

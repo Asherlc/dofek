@@ -21,6 +21,31 @@ const links: SourceLink[] = ["garmin", "strava"].map((providerId) => ({
   providerAbsentAt: null,
 }));
 describe("provenance-based source attribution", () => {
+  it("counts source sessions rather than raw observations for list and detail decisions", () => {
+    const sourceLinks = ["p1", "p2", "p3"].map((id) => ({
+      ...links[0],
+      memberActivityId: id,
+      externalId: id,
+      providerId: "kilter",
+    }));
+    const sessions = [
+      {
+        id: "p1",
+        providerId: "kilter",
+        memberActivityIds: ["p1", "p2"],
+        firstLoggedAt: "2026-11-10T01:00:00Z",
+        lastLoggedAt: "2026-11-10T01:04:00Z",
+      },
+    ];
+    expect(buildActivitySourceDecision(origin, sourceLinks, undefined, sessions)?.sourceCount).toBe(
+      2,
+    );
+    expect(buildActivityListSource(origin, sourceLinks, undefined, [], sessions)).toMatchObject({
+      sourceCount: 2,
+      overlapSummary: "2 matched source records",
+    });
+  });
+
   it("explains the actual closest available record independently of field providers", () => {
     expect(buildActivitySourceDecision(origin, links)).toEqual({
       origin,

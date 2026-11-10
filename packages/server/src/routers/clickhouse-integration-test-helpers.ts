@@ -565,6 +565,13 @@ export async function createClickHouseTestActivitySensorStore(
   return createClickHouseTestStore(testContext, syncClickHouseTestActivitySensorStoreWithClient);
 }
 
+/** Reader fixtures populate final tables directly and do not rebuild source models. */
+export async function createClickHouseTestActivitySensorReaderStore(
+  testContext: ClickHouseSyncTestContext,
+): Promise<ActivitySensorStore> {
+  return createClickHouseTestStore(testContext, async () => {});
+}
+
 export async function createClickHouseTestActivityPowerCurveStore(
   testContext: ClickHouseSyncTestContext,
 ): Promise<ActivitySensorStore> {

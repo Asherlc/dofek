@@ -230,6 +230,11 @@ describe("formatDurationHoursMinutes", () => {
 });
 
 describe("formatDurationMinutes", () => {
+  it("keeps an unknown duration distinct from zero", () => {
+    expect(formatDurationMinutes(null)).toBe("--");
+    expect(formatDurationMinutes(0)).toBe("0m");
+  });
+
   it("formats minutes only when < 60", () => {
     expect(formatDurationMinutes(45)).toBe("45m");
   });

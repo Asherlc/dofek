@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import {
-  createClickHouseTestActivitySensorStore,
+  createClickHouseTestActivitySensorReaderStore,
   executeClickHouseTestCommand,
 } from "../routers/clickhouse-integration-test-helpers.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
@@ -48,7 +48,7 @@ describe("ClickHouseActivitySensorStore read-model lifecycle rows", () => {
 
   beforeAll(async () => {
     testContext = await setupTestDatabase();
-    sensorStore = await createClickHouseTestActivitySensorStore(testContext);
+    sensorStore = await createClickHouseTestActivitySensorReaderStore(testContext);
   });
 
   afterAll(async () => {

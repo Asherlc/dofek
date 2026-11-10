@@ -13,8 +13,10 @@ import { recordedClimbingTags } from "dofek/climbing-tags";
 import { type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
+  type ClimbingLogActivitySession,
   type ClimbingLogEntryDetail,
   type ClimbingPitchResult,
+  climbingLogActivitySessionSchema,
   climbingLogClimbDetailSchema,
   climbingLogEntryDetailSchema,
 } from "../contracts/climbing-log-contracts.ts";
@@ -304,6 +306,37 @@ export class ClimbingActivityLogEntryRepository extends BaseRepository {
         )})`,
       )
     ).map((log) => new ClimbingActivityLogEntry(log));
+  }
+  async getActivityLogSessions(
+    activityIds: readonly string[],
+  ): Promise<Map<string, ClimbingLogActivitySession[]>> {
+    if (!activityIds.length) return new Map();
+    const rows = await this.query(
+      climbingLogActivitySessionSchema.extend({ activityId: z.guid() }),
+      sql`SELECT grouped.id AS "activityId", observation.session_id AS id,
+        observation.provider_id AS "providerId",
+        array_agg(observation.activity_id ORDER BY observation.recorded_at, point.external_id) AS "memberActivityIds",
+        MIN(observation.recorded_at) AS "firstLoggedAt", MAX(observation.recorded_at) AS "lastLoggedAt"
+      FROM fitness.v_activity AS grouped
+      JOIN fitness.v_climbing_log_activity AS observation
+        ON observation.user_id = grouped.user_id AND observation.activity_id = ANY(grouped.member_activity_ids)
+      JOIN fitness.activity AS point ON point.id = observation.activity_id AND point.user_id = observation.user_id
+      WHERE grouped.user_id = ${this.userId}::uuid
+        AND grouped.id IN (${sql.join(
+          activityIds.map((id) => sql`${id}::uuid`),
+          sql`, `,
+        )})
+        ${this.dateAccessPredicate(postgresActivityCalendarDate(sql`grouped`, this.timezone))}
+      GROUP BY grouped.id, observation.provider_id, observation.session_id
+      ORDER BY grouped.id, MIN(observation.recorded_at), observation.session_id`,
+    );
+    const sessions = new Map<string, ClimbingLogActivitySession[]>();
+    for (const { activityId, ...session } of rows) {
+      const group = sessions.get(activityId) ?? [];
+      group.push(session);
+      sessions.set(activityId, group);
+    }
+    return sessions;
   }
   async getActivityMapLocations(
     activityIds: readonly string[],

@@ -160,7 +160,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
             ON metrics.user_id = activity.user_id AND metrics.activity_id = activity.activity_id
           WHERE activity.user_id = {userId:UUID}
             AND activity.is_deleted = 0
-            AND activity.ended_at IS NOT NULL
+            AND (activity.ended_at IS NOT NULL OR activity.provider_type = 'climbing_log')
             AND ${activityDate} >= toDate({windowStart:String})
             ${activityTypeFilter}
           ORDER BY activity.started_at DESC`,
@@ -186,20 +186,27 @@ export class ActivitiesCalendarRepository extends BaseRepository {
     const sourceActivityIds = filteredActivityRows
       .filter((row) => row.centroid_lat == null || row.centroid_lng == null)
       .map((row) => row.id);
-    const [routePreviewByActivityId, sourceLocationsByActivityId] = await Promise.all([
-      getActivityRoutePreviews(this.#sensorStore, this.userId, locationActivityIds),
-      sourceActivityIds.length
-        ? loadClimbingGradePreference(this.db, this.userId).then((preference) =>
-            new ClimbingActivityLogEntryRepository(
-              this.db,
-              this.userId,
-              this.timezone,
-              this.accessWindow,
-              preference,
-            ).getActivityMapLocations(sourceActivityIds),
-          )
-        : Promise.resolve(new Map<string, ClimbingMapLocation[]>()),
-    ]);
+    const [routePreviewByActivityId, sourceLocationsByActivityId, sourceSessionsByActivityId] =
+      await Promise.all([
+        getActivityRoutePreviews(this.#sensorStore, this.userId, locationActivityIds),
+        sourceActivityIds.length
+          ? loadClimbingGradePreference(this.db, this.userId).then((preference) =>
+              new ClimbingActivityLogEntryRepository(
+                this.db,
+                this.userId,
+                this.timezone,
+                this.accessWindow,
+                preference,
+              ).getActivityMapLocations(sourceActivityIds),
+            )
+          : Promise.resolve(new Map<string, ClimbingMapLocation[]>()),
+        new ClimbingActivityLogEntryRepository(
+          this.db,
+          this.userId,
+          this.timezone,
+          this.accessWindow,
+        ).getActivityLogSessions(filteredActivityRows.map((row) => row.id)),
+      ]);
 
     const mapReadinessByActivityId = await getActivityMapReadiness(
       this.#sensorStore,
@@ -223,6 +230,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
         routePreview: routePreviewByActivityId.get(row.id),
         sourceLocations: sourceLocationsByActivityId.get(row.id),
         mapReadiness: mapReadinessByActivityId.get(row.id),
+        climbingLogSessions: sourceSessionsByActivityId.get(row.id),
       });
 
       const bucket = dayMap.get(row.local_date) ?? [];

@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
+import { reconcileActivityGroups } from "./activity-group-reconciliation.ts";
+import { persistClimbingLogSnapshot } from "./climbing-log-snapshot.ts";
 import { persistClimbingLogEntries } from "./climbing-log-sync.ts";
 import { setupTestDatabase, type TestContext } from "./test-helpers.ts";
 import { executeWithSchema } from "./typed-sql.ts";
@@ -64,6 +66,55 @@ describe("derived climbing log source sessions", () => {
     JOIN fitness.activity AS point ON point.id = observation.activity_id
     WHERE observation.user_id = ${ownerId}::uuid ORDER BY observation.recorded_at, point.external_id`,
     );
+
+  it("keeps an active measured group visible when a point disappears and restores its stable identity", async () => {
+    await context.db.execute(
+      sql`INSERT INTO fitness.provider(id,name) VALUES('whoop','WHOOP') ON CONFLICT DO NOTHING`,
+    );
+    const recordedId = randomUUID();
+    await context.db.execute(sql`INSERT INTO fitness.activity(id,user_id,provider_id,external_id,canonical_type,provider_type,started_at,ended_at)
+      VALUES(${recordedId},${userId},'whoop','recording','climbing','climbing','2026-11-10T01:00:00Z','2026-11-10T02:00:00Z')`);
+    const entries = ["01:10:00", "01:14:00"].map((time, index) => ({
+      externalId: `log:${index}`,
+      activityObservation: { recordedAt: `2026-11-10T${time}Z` },
+      attempts: [{ scope: "climb" as const, sourceCompleted: true }],
+    }));
+    const snapshot = async (selected: typeof entries) => {
+      await persistClimbingLogSnapshot(context.db, { userId, providerId, entries: selected });
+      await context.db.transaction((tx) => reconcileActivityGroups(tx, userId));
+    };
+    const visible = () =>
+      executeWithSchema(
+        context.db,
+        z.object({
+          id: z.guid(),
+          started_at: z.coerce.date(),
+          ended_at: z.coerce.date().nullable(),
+        }),
+        sql`SELECT * FROM fitness.v_activity WHERE user_id=${userId}`,
+      );
+    await snapshot(entries);
+    const before = await visible();
+    expect(before).toHaveLength(1);
+    const originalLogs = await context.db.execute(
+      sql`SELECT id FROM fitness.climbing_log_entry WHERE user_id=${userId} ORDER BY id`,
+    );
+    await snapshot(entries.slice(1));
+    expect(await visible()).toEqual(before);
+    expect(await sessions()).toHaveLength(1);
+    await snapshot(entries);
+    expect(await visible()).toEqual(before);
+    expect(await sessions()).toHaveLength(2);
+    expect(
+      await context.db.execute(
+        sql`SELECT id FROM fitness.climbing_log_entry WHERE user_id=${userId} ORDER BY id`,
+      ),
+    ).toEqual(originalLogs);
+    expect(before[0]).toMatchObject({
+      started_at: new Date("2026-11-10T01:00:00Z"),
+      ended_at: new Date("2026-11-10T02:00:00Z"),
+    });
+  });
 
   it("keeps measured workout bounds when point observations surround the recording", async () => {
     await write([{ time: "2026-11-10T00:59:00Z" }, { time: "2026-11-10T02:01:00Z" }]);

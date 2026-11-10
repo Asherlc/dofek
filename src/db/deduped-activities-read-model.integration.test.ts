@@ -61,6 +61,44 @@ describe("deduped_activities read model", () => {
     }
   });
 
+  it.each(["climbing_log", "climbing"])(
+    "keeps recorded deletion policy separate from absent %s points",
+    async (providerType) => {
+      const activeClient = requireClient(client);
+      await seedSpecificActivityTypeFixture(activeClient, targetSchema, "climbing", "climbing");
+      await activeClient.command({
+        query: `ALTER TABLE ${targetSchema}.activity_source_records UPDATE is_deleted=1 WHERE activity_id='${activityId}' SETTINGS mutations_sync=2`,
+      });
+      await activeClient.insert({
+        table: `${targetSchema}.source_activity`,
+        format: "JSONEachRow",
+        values: [
+          {
+            id: activityId,
+            user_id: testUserId,
+            provider_id: "kilter",
+            provider_type: providerType,
+            external_id: "log:one",
+            provider_absent_at: "2026-07-06 00:00:00",
+            created_at: "2026-07-05 15:00:00",
+          },
+        ],
+      });
+      const result = await activeClient.query({
+        query: renderDedupedActivitiesSelectSql(targetSchema),
+        format: "JSONEachRow",
+      });
+      const rows = z
+        .array(z.object({ activity_id: z.string(), ended_at: z.string().nullable() }))
+        .parse(await result.json());
+      expect(rows).toEqual(
+        providerType === "climbing_log"
+          ? [{ activity_id: groupId, ended_at: "2026-07-05 17:00:00.000000" }]
+          : [],
+      );
+    },
+  );
+
   it.each([false, true])("uses only recording bounds when point-only is %s", async (pointOnly) => {
     const activeClient = requireClient(client);
     await seedSpecificActivityTypeFixture(activeClient, targetSchema, "climbing", "climbing");
