@@ -11,6 +11,7 @@ import {
 } from "@dofek/training/climbing-log";
 import { and, asc, eq, ne, sql } from "drizzle-orm";
 import { z } from "zod";
+import { persistClimbingLogActivityObservation } from "./climbing-log-activity.ts";
 import type { SyncDatabase, TransactionDatabase } from "./index.ts";
 import {
   area,
@@ -931,7 +932,21 @@ export async function persistClimbingLogEntries(
         ...facts
       } = source;
       const id = known?.id ?? randomUUID();
-      const changes = { ...facts, climbId: definition?.id ?? null, providerAbsentAt: null };
+      const activityId = await persistClimbingLogActivityObservation(tx, {
+        ...scope,
+        source,
+        activityId: source.activityObservation
+          ? (known?.activityId ?? source.activityId ?? null)
+          : source.activityId === undefined
+            ? (known?.activityId ?? null)
+            : source.activityId,
+      });
+      const changes = {
+        ...facts,
+        activityId,
+        climbId: definition?.id ?? null,
+        providerAbsentAt: null,
+      };
       if (known) await tx.update(climbingLogEntry).set(changes).where(eq(climbingLogEntry.id, id));
       else await tx.insert(climbingLogEntry).values({ id, ...scope, ...changes });
       await replaceLogGrades(tx, id, reportedGrades);
