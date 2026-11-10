@@ -103,13 +103,13 @@ function makeDataPathStats() {
 }
 
 describe("WhoopBle native bridge", () => {
-  it("reports a blocked sensor-record upload without losing capture diagnostics", () => {
+  it("reports a blocked sensor-record upload without losing capture diagnostics", async () => {
     const stats = makeDataPathStats();
-    nativeModule.getDataPathStats.mockReturnValue({
+    nativeModule.getDataPathStats.mockResolvedValue({
       ...stats,
       buffers: { ...stats.buffers, blockedUploadStreams: ["sensorRecords"] },
     });
-    expect(getDataPathStats().buffers.blockedUploadStreams).toEqual(["sensorRecords"]);
+    expect((await getDataPathStats()).buffers.blockedUploadStreams).toEqual(["sensorRecords"]);
   });
   beforeEach(() => {
     nativeModule.addListener.mockReset();
@@ -117,14 +117,14 @@ describe("WhoopBle native bridge", () => {
     nativeModule.getDeviceSummary.mockReset();
   });
 
-  it("preserves validated capture diagnostics and durable queue metadata", () => {
+  it("preserves validated capture diagnostics and durable queue metadata", async () => {
     const stats = makeDataPathStats();
-    nativeModule.getDataPathStats.mockReturnValue(stats);
+    nativeModule.getDataPathStats.mockResolvedValue(stats);
 
-    expect(getDataPathStats()).toEqual(stats);
+    await expect(getDataPathStats()).resolves.toEqual(stats);
   });
 
-  it("accepts unavailable device and capture dates as null", () => {
+  it("accepts unavailable device and capture dates as null", async () => {
     const stats = {
       ...makeDataPathStats(),
       lastKnownDeviceId: null,
@@ -138,9 +138,9 @@ describe("WhoopBle native bridge", () => {
         ...makeBufferCheckpoint(),
       },
     };
-    nativeModule.getDataPathStats.mockReturnValue(stats);
+    nativeModule.getDataPathStats.mockResolvedValue(stats);
 
-    expect(getDataPathStats()).toEqual(stats);
+    await expect(getDataPathStats()).resolves.toEqual(stats);
   });
 
   it.each([
@@ -172,12 +172,12 @@ describe("WhoopBle native bridge", () => {
         ],
       },
     })),
-  ])("rejects malformed native connection journal $field", ({ field, value }) => {
-    nativeModule.getDataPathStats.mockReturnValue({
+  ])("rejects malformed native connection journal $field", async ({ field, value }) => {
+    nativeModule.getDataPathStats.mockResolvedValue({
       ...makeDataPathStats(),
       connectionDiagnostics: value,
     });
-    expect(() => getDataPathStats()).toThrow(String(field));
+    await expect(getDataPathStats()).rejects.toThrow(String(field));
   });
 
   it.each([
@@ -185,10 +185,10 @@ describe("WhoopBle native bridge", () => {
     { field: "isNotifying", invalid: { isNotifying: "true" } },
     { field: "lastDataNotificationAt", invalid: { lastDataNotificationAt: "yesterday" } },
     { field: "totalSamplesExtracted", invalid: { totalSamplesExtracted: -1 } },
-  ])("rejects malformed native capture field $field", ({ field, invalid }) => {
-    nativeModule.getDataPathStats.mockReturnValue({ ...makeDataPathStats(), ...invalid });
+  ])("rejects malformed native capture field $field", async ({ field, invalid }) => {
+    nativeModule.getDataPathStats.mockResolvedValue({ ...makeDataPathStats(), ...invalid });
 
-    expect(() => getDataPathStats()).toThrow(field);
+    await expect(getDataPathStats()).rejects.toThrow(field);
   });
 
   it.each([
@@ -202,9 +202,9 @@ describe("WhoopBle native bridge", () => {
       field: "confirmedCount",
       invalid: { realtime: { ...makeBufferStreamDiagnostics(), confirmedCount: 0.5 } },
     },
-  ])("rejects malformed current buffer checkpoint field $field", ({ field, invalid }) => {
+  ])("rejects malformed current buffer checkpoint field $field", async ({ field, invalid }) => {
     const stats = makeDataPathStats();
-    nativeModule.getDataPathStats.mockReturnValue({
+    nativeModule.getDataPathStats.mockResolvedValue({
       ...stats,
       buffers: {
         activeUploadCount: 0,
@@ -215,13 +215,13 @@ describe("WhoopBle native bridge", () => {
       },
     });
 
-    expect(() => getDataPathStats()).toThrow(field);
+    await expect(getDataPathStats()).rejects.toThrow(field);
   });
 
-  it("rejects malformed native summaries", () => {
-    nativeModule.getDeviceSummary.mockReturnValue({ connectionState: "ready" });
+  it("rejects malformed native summaries", async () => {
+    nativeModule.getDeviceSummary.mockResolvedValue({ connectionState: "ready" });
 
-    expect(() => getDeviceSummary()).toThrow(/id/);
+    await expect(getDeviceSummary()).rejects.toThrow(/id/);
   });
 
   it("rejects malformed native device-state events", () => {
@@ -239,7 +239,7 @@ describe("WhoopBle native bridge", () => {
 });
 
 describe("native upload ownership", () => {
-  it("configures, flushes, and synchronously disables native uploads", async () => {
+  it("awaits configuring, flushing, and disabling native uploads", async () => {
     const bridge = await import("./index");
     const context = {
       userId: "user",
@@ -247,18 +247,18 @@ describe("native upload ownership", () => {
       serverURL: "https://example.com",
       headers: { "x-app-version": "1" },
     };
-    bridge.configureUpload(context);
-    bridge.flushUploads();
-    bridge.disableUploads();
+    await bridge.configureUpload(context);
+    await bridge.flushUploads();
+    await bridge.disableUploads();
     expect(nativeModule.configureUpload).toHaveBeenCalledWith(context);
     expect(nativeModule.flushUploads).toHaveBeenCalledOnce();
     expect(nativeModule.disableUploads).toHaveBeenCalledOnce();
   });
-  it("propagates native disable failure synchronously", async () => {
+  it("rejects with the native disable failure", async () => {
     const bridge = await import("./index");
     nativeModule.disableUploads.mockImplementationOnce(() => {
       throw new Error("queue unavailable");
     });
-    expect(() => bridge.disableUploads()).toThrow("queue unavailable");
+    await expect(bridge.disableUploads()).rejects.toThrow("queue unavailable");
   });
 });

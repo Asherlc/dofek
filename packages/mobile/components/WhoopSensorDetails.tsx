@@ -94,7 +94,7 @@ export function WhoopSensorPanel() {
     const refresh = async () => {
       try {
         const native = await import("../modules/whoop-ble");
-        const stats = native.getDataPathStats();
+        const stats = await native.getDataPathStats();
         if (!disposed) {
           setLocalCapture(stats.buffers.sensorRecords);
           setCaptureError(null);

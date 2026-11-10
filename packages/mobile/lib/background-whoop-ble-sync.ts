@@ -18,16 +18,22 @@ interface WhoopBleSyncSession {
 }
 let currentSession: WhoopBleSyncSession | null = null;
 
-function captureSnapshot(
+async function captureSnapshot(
   session: WhoopBleSyncSession,
   trigger: WhoopSyncTrigger,
   appState = AppState.currentState ?? "unknown",
-): void {
+): Promise<void> {
   if (!session.active) return;
   try {
-    session.diagnostics.snapshot(session.deps.getDataPathStats(), trigger, appState);
+    const stats = await session.deps.getDataPathStats();
+    if (!session.active) return;
+    session.diagnostics.snapshot(stats, trigger, appState);
   } catch (error: unknown) {
-    captureException(error, { source: "whoop-ble-capture-diagnostics", trigger });
+    captureException(error, {
+      source: "whoop-ble-capture-diagnostics",
+      trigger,
+      ...(session.active ? {} : { retiredLifetime: true }),
+    });
   }
 }
 function foreground(): boolean {
@@ -40,7 +46,6 @@ export async function initBackgroundWhoopBleSync(
   deps: WhoopBleSyncDeps,
 ): Promise<void> {
   teardownBackgroundWhoopBleSync();
-  deps.configureUpload(context);
   const session: WhoopBleSyncSession = {
     deps,
     diagnostics: new WhoopBleDiagnostics(),
@@ -51,30 +56,35 @@ export async function initBackgroundWhoopBleSync(
   };
   currentSession = session;
   try {
+    await deps.configureUpload(context);
+    if (!session.active) return;
     session.captureErrorSubscription = deps.addCaptureErrorListener(({ message }) => {
       if (!session.active) return;
       captureException(new Error(message), { source: "whoop-ble-native-capture" });
       Alert.alert("WHOOP capture stopped", message);
     });
-    captureSnapshot(session, "initial");
+    void captureSnapshot(session, "initial");
     session.connectionStateSubscription = deps.addConnectionStateListener((event) => {
       if (!session.active) return;
       if (event.state === "connected") session.connected = true;
       else if (event.state === "disconnected") session.connected = false;
-      captureSnapshot(session, "connection");
+      void captureSnapshot(session, "connection");
     });
-    session.appStateSubscription = AppState.addEventListener("change", (state) => {
+    session.appStateSubscription = AppState.addEventListener("change", async (state) => {
       if (!session.active) return;
-      captureSnapshot(session, "app_state", state);
+      void captureSnapshot(session, "app_state", state);
       if (state !== "active") return;
       try {
-        deps.flushUploads();
+        await deps.flushUploads();
       } catch (error: unknown) {
-        captureException(error, { source: "whoop-ble-foreground-flush" });
+        captureException(error, {
+          source: "whoop-ble-foreground-flush",
+          ...(session.active ? {} : { retiredLifetime: true }),
+        });
       }
-      if (session.syncing) return;
+      if (!session.active || session.syncing) return;
       session.syncing = true;
-      syncOnForeground(session, foreground)
+      await syncOnForeground(session, foreground)
         .catch((error: unknown) => {
           captureException(error, {
             source: "whoop-ble-foreground-sync",
@@ -85,8 +95,8 @@ export async function initBackgroundWhoopBleSync(
           session.syncing = false;
         });
     });
-    deps.flushUploads();
-    if (!foreground()) return;
+    await deps.flushUploads();
+    if (!session.active || !foreground()) return;
     session.syncing = true;
     try {
       await syncOnForeground(session, foreground);
@@ -96,7 +106,7 @@ export async function initBackgroundWhoopBleSync(
       session.syncing = false;
     }
   } catch (error: unknown) {
-    teardownBackgroundWhoopBleSync();
+    if (currentSession === session) teardownBackgroundWhoopBleSync();
     throw error;
   }
 }
@@ -105,8 +115,8 @@ export async function initBackgroundWhoopBleSync(
 export async function syncWhoopBle(): Promise<void> {
   const session = currentSession;
   if (!session?.active) return;
-  captureSnapshot(session, "background");
-  session.deps.flushUploads();
+  void captureSnapshot(session, "background");
+  await session.deps.flushUploads();
 }
 
 async function syncOnForeground(
@@ -195,7 +205,6 @@ export function teardownBackgroundWhoopBleSync(): void {
   const session = currentSession;
   if (!session) return;
   currentSession = null;
-  captureSnapshot(session, "teardown");
   session.active = false;
   session.captureErrorSubscription?.remove();
   session.appStateSubscription?.remove();

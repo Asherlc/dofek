@@ -5,22 +5,10 @@ import XCTest
 @testable import ExpoWhoopBle
 
 final class WhoopBleModuleTests: XCTestCase {
-    func testCleanupLogsReachNativeSdkWhileJavaScriptWaitsForBleQueue() async throws {
+    func testCleanupLeavesJavaScriptResponsiveWhileWaitingForBleQueue() async throws {
         let logs = CleanupLogRecorder()
-        let entered = expectation(description: "Native cleanup entry while JavaScript is blocked")
-        await MainActor.run {
-            SentrySDK.start { options in
-                options.dsn = "https://key@sentry.example/123"
-                options.beforeSendLog = { log in
-                    guard log.attributes["operation"]?.value as? String == "disableUploads" else { return nil }
-                    logs.append(log)
-                    if log.attributes["stage"]?.value as? String == "ble_suspend" {
-                        entered.fulfill()
-                    }
-                    return nil
-                }
-            }
-        }
+        let entered = expectation(description: "Native cleanup entry while BLE queue is occupied")
+        await logs.start(entry: entered)
         defer { SentrySDK.close() }
         let (context, module) = try makeModule()
         let runtime = try context.runtime
@@ -33,15 +21,41 @@ final class WhoopBleModuleTests: XCTestCase {
         defer { release.signal() }
         await fulfillment(of: [blocked], timeout: 5)
 
+        let returned = expectation(description: "Native bridge returns before cleanup completes")
         let cleanup = Task {
             try await runtime.execute {
-                _ = try runtime.eval("expo.modules.WhoopBle.disableUploads()")
+                _ = try runtime.eval("""
+                    globalThis.cleanupFinished = false;
+                    globalThis.cleanupPromise = Promise.resolve(expo.modules.WhoopBle.disableUploads()).then(() => {
+                        globalThis.cleanupFinished = true;
+                        return 'cleanup-completed';
+                    });
+                    globalThis.summaryPromise = Promise.resolve(expo.modules.WhoopBle.getDeviceSummary());
+                    """)
             }
+            returned.fulfill()
         }
         await fulfillment(of: [entered], timeout: 5)
         XCTAssertEqual(logs.snapshot.map { $0.attributes["stage"]?.value as? String }, ["ble_suspend"])
+        let response = await XCTWaiter.fulfillment(of: [returned], timeout: 5)
+        XCTAssertEqual(response, .completed)
+        guard response == .completed else {
+            release.signal()
+            try await cleanup.value
+            return
+        }
+        try await runtime.execute {
+            XCTAssertEqual(try runtime.eval("1 + 1").asInt(), 2)
+            XCTAssertFalse(try runtime.eval("globalThis.cleanupFinished").asBool())
+        }
         release.signal()
         try await cleanup.value
+        let completed = try await runtime.evalAsync("globalThis.cleanupPromise").ref()
+        let result = try await runtime.execute { try completed.take().asString() }
+        XCTAssertEqual(result, "cleanup-completed")
+        let summary = try await runtime.evalAsync("globalThis.summaryPromise.then(value => value.imuBufferedSamples)").ref()
+        let count = try await runtime.execute { try summary.take().asInt() }
+        XCTAssertEqual(count, 0)
 
         let records = logs.snapshot
         XCTAssertEqual(records.map { $0.attributes["stage"]?.value as? String }, [
@@ -91,10 +105,8 @@ final class WhoopBleModuleTests: XCTestCase {
             XCTAssertNoThrow(try FileManager.default.moveItem(at: backup, to: directory))
         }
         try Data().write(to: directory)
-        let runtime = try context.runtime
-        try await runtime.execute {
-            XCTAssertThrowsError(try runtime.eval("expo.modules.WhoopBle.disableUploads(); true").asBool())
-        }
+        let rejection = try await outcome("disableUploads()", in: context)
+        XCTAssertNotEqual(rejection, "unexpected success")
         let failure = try XCTUnwrap(logs.snapshot.last)
         XCTAssertEqual(failure.attributes["stage"]?.value as? String, "failed")
         XCTAssertEqual(failure.attributes["failedStage"]?.value as? String, "uploader_remove_bodies")
@@ -122,14 +134,14 @@ final class WhoopBleModuleTests: XCTestCase {
         let (context, module) = try makeModule()
         module.failCapture(captureError)
         let runtime = try context.runtime
-        try await runtime.execute {
-            _ = try runtime.eval("""
+        let configured = try await runtime.evalAsync("""
                 expo.modules.WhoopBle.configureUpload({
                     userId: 'bridge-test-account', serverURL: 'https://example.com',
                     token: 'test-session', headers: {}
-                });
-                """)
-        }
+                }).then(() => 'configured');
+                """).ref()
+        let configuration = try await runtime.execute { try configured.take().asString() }
+        XCTAssertEqual(configuration, "configured")
         defer { XCTAssertNoThrow(try module.uploader.disable()) }
 
         let rejection = try await outcome("connect('invalid-peripheral-id')", in: context)

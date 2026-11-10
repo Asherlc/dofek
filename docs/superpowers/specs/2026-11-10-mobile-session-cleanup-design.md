@@ -26,4 +26,4 @@ This is native-specific work. Shared server behavior and the web client do not u
 - Existing auth, WHOOP, ownership and account-erasure tests pass, along with repository lint/typechecks and relevant Swift checks.
 - Review the actual diff, push, release through the canonical workflow, then verify online startup on the affected iPhone. Keep the current hang issue open until that succeeds.
 
-Status: proposed, awaiting operator agreement before implementation.
+Status: approved by the operator on 2026-11-10; implementation and verification in progress.

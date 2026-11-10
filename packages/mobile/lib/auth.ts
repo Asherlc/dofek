@@ -154,24 +154,25 @@ export async function getSavedSessionUser(token: string): Promise<AuthUser | nul
 /** Clear the session token (logout). */
 export async function clearSessionToken(): Promise<void> {
   invalidateSessionPersistence();
-  // The Promise executor runs synchronously, revoking native ownership before
-  // any credential operation can await, while retaining a failure for reporting.
+  // Start native cleanup immediately and reserve persistence ordering before yielding.
+  // Adopting its Promise keeps later session writes behind completed native cleanup.
   const nativeCleanup = Promise.allSettled([
     new Promise<void>((resolve) => {
-      disableUploads();
-      resolve();
+      resolve(disableUploads());
     }),
   ]);
-  const credentialCleanup = await serializeSessionPersistence(async () => {
+  const cleanupResults = await serializeSessionPersistence(async () => {
+    const nativeResults = await nativeCleanup;
     cachedSessionToken = null;
-    return Promise.allSettled([
+    const credentialResults = await Promise.allSettled([
       deleteSecureStoreItem(SESSION_TOKEN_KEY),
       SecureStore.deleteItemAsync(SESSION_USER_KEY),
       deleteSecureStoreItem(SESSION_OWNER_NONCE_KEY),
     ]);
+    return [...nativeResults, ...credentialResults];
   });
   cachedSessionToken = null;
-  const failures = [...(await nativeCleanup), ...credentialCleanup]
+  const failures = cleanupResults
     .filter((result) => result.status === "rejected")
     .map((result) => result.reason);
   if (failures.length > 0) {

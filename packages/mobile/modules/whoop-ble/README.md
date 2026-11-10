@@ -67,12 +67,12 @@ import {
 } from "@dofek/whoop-ble";
 
 // Supply the authenticated account and its current session from your app.
-configureUpload({ userId, serverURL, token: sessionToken, headers: {} });
+await configureUpload({ userId, serverURL, token: sessionToken, headers: {} });
 const device = await findWhoop();
 if (device) {
   await connect(device.id);
   await startRealtimeHr();
-  flushUploads();
+  await flushUploads();
 }
 ```
 
@@ -82,6 +82,14 @@ stream controls, orientation events, and reconnect support. The native
 store. The [uploader](ios/WhoopBleBackgroundUploader.swift) removes reserved
 rows only after a valid server acknowledgment; failures retain the rows.
 SQLite provides [atomic commits](https://sqlite.org/isolation.html).
+
+`configureUpload()`, `flushUploads()`, `disableUploads()`, `getDataPathStats()` and `getDeviceSummary()`
+return Promises. They use Expo's stock
+[`AsyncFunction`](https://docs.expo.dev/modules/module-api/#asyncfunction)
+to keep queue waits and disk work off the JavaScript thread. Await configuration
+before starting capture and await disable before completing session cleanup.
+Disable resolves only after the existing native purge and body removal return;
+failures reject. This does not change synchronous sample persistence.
 
 Automatic reconnection keeps the Core Bluetooth connection request pending
 while the strap is unavailable. Service discovery and notification subscription
@@ -163,7 +171,7 @@ through capture diagnostics or Sentry before releasing
 the OS completion. This follows Apple's guidance to avoid immediate main-thread
 file I/O: [file-system performance](https://developer.apple.com/documentation/foundation/improving-performance-and-stability-when-accessing-the-file-system).
 
-`getDataPathStats().connectionDiagnostics` exposes the latest 64 native
+`(await getDataPathStats()).connectionDiagnostics` exposes the latest 64 native
 connection events and a cumulative `overflowCount` for older events removed
 from that bounded history. The [native connection journal](ios/WhoopBleConnectionDiagnostics.swift)
 retains metadata in UserDefaults before JavaScript reporting: stable event IDs,
