@@ -258,6 +258,13 @@ describe("formatDurationMinutes", () => {
   it("rounds fractional minutes", () => {
     expect(formatDurationMinutes(90.7)).toBe("1h 31m");
   });
+
+  it.each([
+    [59.9, "1h 0m"],
+    [119.9, "2h 0m"],
+  ])("carries rounded minutes into the next hour for %s", (minutes, expected) => {
+    expect(formatDurationMinutes(minutes)).toBe(expected);
+  });
 });
 
 describe("formatDurationRange", () => {

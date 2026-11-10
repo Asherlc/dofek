@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { View } from "react-native";
-import { expect, within } from "storybook/test";
+import { expect, waitFor, within } from "storybook/test";
 import {
   garminActivitySourceHardware,
   garminActivitySourceTree,
@@ -157,7 +157,10 @@ export const ConnectedKilterGymSession: Story = {
     ).toBeVisible();
     await expect(canvas.getByText("Kilter Board · Logged climbs · 6:03 PM")).toBeVisible();
     await userEvent.click(await canvas.findByRole("button", { name: "Lineage: Kaya" }));
-    await expect(canvas.getByText("Kilter Board")).toBeVisible();
+    await waitFor(async () => {
+      await expect(canvas.getAllByText("Kilter Board")).toHaveLength(2);
+      await expect(canvas.getByText("WHOOP")).toBeVisible();
+    });
   },
 };
 
@@ -200,7 +203,7 @@ export const StandaloneKilterSession: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement.ownerDocument.body);
-    await expect(canvas.getByText("Kilter Board · Logged climbs · 9:48 AM")).toBeVisible();
+    await expect(canvas.getByText("Kilter Board · Logged climbs · 5:48 PM")).toBeVisible();
   },
 };
 export const RecordingDeviceExpanded: Story = {

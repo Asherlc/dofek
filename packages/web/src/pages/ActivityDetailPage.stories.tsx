@@ -241,8 +241,9 @@ export const ConnectedKilterGymSession: HeaderStory = {
     ).toBeVisible();
     await expect(canvas.getByText("Kilter Board · Logged climbs · 6:03 PM")).toBeVisible();
     await expect(canvas.getByText("55m")).toBeVisible();
-    await userEvent.click(await canvas.findByRole("button", { name: "Lineage: Kaya" }));
-    await expect(canvas.getByText("Kilter Board")).toBeVisible();
+    await userEvent.click(await canvas.findByRole("button", { name: "Kaya Lineage" }));
+    await expect(canvas.getAllByText("Kilter Board")).toHaveLength(2);
+    await expect(canvas.getByText("WHOOP")).toBeVisible();
   },
 };
 
@@ -302,7 +303,7 @@ export const StandaloneKilterSession: HeaderStory = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement.ownerDocument.body);
-    await expect(canvas.getByText("Kilter Board · Logged climbs · 9:48 AM")).toBeVisible();
+    await expect(canvas.getByText("Kilter Board · Logged climbs · 5:48 PM")).toBeVisible();
     await expect(canvas.getByText("Duration")).toBeVisible();
     await expect(canvas.getByText("Unavailable")).toBeVisible();
   },
@@ -314,6 +315,7 @@ export const IndoorCycling: HeaderStory = {
       ...baseActivity,
       name: "45 min Power Zone Ride",
       modality: "indoor",
+      durationMin: 45,
       endedAt: "2026-03-31T08:45:00Z",
       totalDistance: 0,
       elevationGain: null,
