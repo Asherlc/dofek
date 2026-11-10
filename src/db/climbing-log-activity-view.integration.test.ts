@@ -47,7 +47,7 @@ describe("derived climbing log source sessions", () => {
       })),
     });
   }
-  const sessions = () =>
+  const sessions = (ownerId = userId) =>
     executeWithSchema(
       context.db,
       z.object({
@@ -62,7 +62,7 @@ describe("derived climbing log source sessions", () => {
       }),
       sql`SELECT observation.* FROM fitness.v_climbing_log_activity AS observation
     JOIN fitness.activity AS point ON point.id = observation.activity_id
-    WHERE observation.user_id = ${userId}::uuid ORDER BY observation.recorded_at, point.external_id`,
+    WHERE observation.user_id = ${ownerId}::uuid ORDER BY observation.recorded_at, point.external_id`,
     );
 
   it.each([
@@ -223,6 +223,38 @@ describe("derived climbing log source sessions", () => {
     const rows = await sessions();
     expect(rows).toHaveLength(2);
     expect(rows.every((row) => row.session_id === rows[0]?.activity_id)).toBe(true);
+  });
+
+  it("keeps each owner's sessions independent for the same provider and native log IDs", async () => {
+    const otherUserId = randomUUID();
+    await context.db.execute(
+      sql`INSERT INTO fitness.user_profile (id, name) VALUES (${otherUserId}, 'Other climber')`,
+    );
+    await write([
+      { time: "2026-11-10T01:00:00Z", board: "A", gym: "1" },
+      { time: "2026-11-10T01:01:00Z", board: "A", gym: "1" },
+    ]);
+    await write(
+      [
+        { time: "2026-11-10T01:00:00Z", board: "B", gym: "2" },
+        { time: "2026-11-10T01:01:00Z", board: "C", gym: "2" },
+      ],
+      otherUserId,
+    );
+    const own = await sessions();
+    const other = await sessions(otherUserId);
+    expect(own).toHaveLength(2);
+    expect(other).toHaveLength(2);
+    expect(own.every((row) => row.user_id === userId && row.provider_id === providerId)).toBe(true);
+    expect(
+      other.every((row) => row.user_id === otherUserId && row.provider_id === providerId),
+    ).toBe(true);
+    expect(own.map((row) => row.session_id)).toEqual([own[0]?.activity_id, own[0]?.activity_id]);
+    expect(other.map((row) => row.session_id)).toEqual([
+      other[0]?.activity_id,
+      other[1]?.activity_id,
+    ]);
+    expect(new Set([...own, ...other].map((row) => row.activity_id)).size).toBe(4);
   });
 
   it("partitions source sessions by owner and provider", async () => {
