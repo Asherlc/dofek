@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
   "provenance": {
-    "sourceSha": "58d9c75d5d7d1e3e6c3bb523c32524fed68e72b5",
+    "sourceSha": "4d6f586fedc2374d35723a0914929df3af6cbe1f",
     "repository": "Asherlc/dofek",
-    "runId": 42507552488,
+    "runId": 42758981507,
     "runAttempt": 1,
     "vitestVersion": "5.0.5",
     "source": "Successful complete four-shard Vitest public cache results (whole-suite durations)",
     "job": "test-integration",
-    "baselineSha256": "12fe57e55ad0362ce73c9aafa93561df8abca21d39049ea9e741bb896c195ebc",
+    "baselineSha256": "eb40e9438b335e1d41ed540e1741f4c25cdfa3732f89548c02055a867fbd0510",
     "inventory": [
       "integration:analytics/models/read_models/activity_aerobic_efficiency.integration.test.ts",
       "integration:analytics/models/read_models/activity_duplicate_groups.integration.test.ts",
@@ -70,6 +70,7 @@
       "integration:packages/server/src/repositories/cycling-power-curve-repository.integration.test.ts",
       "integration:packages/server/src/repositories/cycling-threshold-repository.integration.test.ts",
       "integration:packages/server/src/repositories/cycling-training-metrics-repository.integration.test.ts",
+      "integration:packages/server/src/repositories/daily-health-sensor.integration.test.ts",
       "integration:packages/server/src/repositories/daily-metrics-repository.integration.test.ts",
       "integration:packages/server/src/repositories/developer-client-repository.integration.test.ts",
       "integration:packages/server/src/repositories/efficiency-repository.integration.test.ts",
@@ -151,6 +152,7 @@
       "integration:packages/server/src/services/daily-recovery-read-model.integration.test.ts",
       "integration:packages/server/src/services/food-record-service.integration.test.ts",
       "integration:packages/web/src/lib/timeRange-policy.integration.test.ts",
+      "integration:scripts/analytics-publication.integration.test.ts",
       "integration:scripts/backfill-exercise-provenance.integration.test.ts",
       "integration:scripts/backfill-hang-ten-workouts.integration.test.ts",
       "integration:scripts/backfill-provider-connections.integration.test.ts",
@@ -178,7 +180,9 @@
       "integration:src/account-erasure/stripe-acceptance.integration.test.ts",
       "integration:src/activity-images/storage.integration.test.ts",
       "integration:src/analytics-refresh-queue.integration.test.ts",
+      "integration:src/analytics/analytics-query-owner.integration.test.ts",
       "integration:src/analytics/cycling-power-projector.integration.test.ts",
+      "integration:src/analytics/dbt-build.integration.test.ts",
       "integration:src/db/account-erasure-processing.integration.test.ts",
       "integration:src/db/account-erasure.integration.test.ts",
       "integration:src/db/activity-data-integrity-cadence-scope.integration.test.ts",
@@ -316,9 +320,12 @@
       "integration:src/jobs/provider-artifact-erasure.integration.test.ts",
       "integration:src/lib/cache.integration.test.ts",
       "integration:src/lib/climbing-board-account.integration.test.ts",
+      "integration:src/lib/provider-adaptive-rate-limit.integration.test.ts",
       "integration:src/metric-stream/clickhouse-sink-identity.integration.test.ts",
+      "integration:src/metric-stream/clickhouse-sink-publication.integration.test.ts",
       "integration:src/metric-stream/clickhouse-sink.integration.test.ts",
       "integration:src/metric-stream/redpanda-consumer.integration.test.ts",
+      "integration:src/metric-stream/redpanda-quarantine.integration.test.ts",
       "integration:src/processing/analytics-microbatch-bounds.integration.test.ts",
       "integration:src/processing/analytics-processing.integration.test.ts",
       "integration:src/processing/processing-event-store.integration.test.ts",
@@ -372,12 +379,12 @@
     "shards": [
       {
         "schemaVersion": 2,
-        "assignmentId": "e22791a5-952a-4be7-8f7b-2ffb336ad968",
-        "assignedAt": 1794161105102,
+        "assignmentId": "8f5e4047-1cfa-473d-8265-9970894ac6e6",
+        "assignedAt": 1794287654240,
         "provenance": {
-          "sourceSha": "58d9c75d5d7d1e3e6c3bb523c32524fed68e72b5",
+          "sourceSha": "4d6f586fedc2374d35723a0914929df3af6cbe1f",
           "repository": "Asherlc/dofek",
-          "runId": 42507552488,
+          "runId": 42758981507,
           "runAttempt": 1,
           "vitestVersion": "5.0.5",
           "source": "Vitest integration serial forks with coverage",
@@ -446,6 +453,7 @@
           "integration:packages/server/src/repositories/cycling-power-curve-repository.integration.test.ts",
           "integration:packages/server/src/repositories/cycling-threshold-repository.integration.test.ts",
           "integration:packages/server/src/repositories/cycling-training-metrics-repository.integration.test.ts",
+          "integration:packages/server/src/repositories/daily-health-sensor.integration.test.ts",
           "integration:packages/server/src/repositories/daily-metrics-repository.integration.test.ts",
           "integration:packages/server/src/repositories/developer-client-repository.integration.test.ts",
           "integration:packages/server/src/repositories/efficiency-repository.integration.test.ts",
@@ -527,6 +535,7 @@
           "integration:packages/server/src/services/daily-recovery-read-model.integration.test.ts",
           "integration:packages/server/src/services/food-record-service.integration.test.ts",
           "integration:packages/web/src/lib/timeRange-policy.integration.test.ts",
+          "integration:scripts/analytics-publication.integration.test.ts",
           "integration:scripts/backfill-exercise-provenance.integration.test.ts",
           "integration:scripts/backfill-hang-ten-workouts.integration.test.ts",
           "integration:scripts/backfill-provider-connections.integration.test.ts",
@@ -554,7 +563,9 @@
           "integration:src/account-erasure/stripe-acceptance.integration.test.ts",
           "integration:src/activity-images/storage.integration.test.ts",
           "integration:src/analytics-refresh-queue.integration.test.ts",
+          "integration:src/analytics/analytics-query-owner.integration.test.ts",
           "integration:src/analytics/cycling-power-projector.integration.test.ts",
+          "integration:src/analytics/dbt-build.integration.test.ts",
           "integration:src/db/account-erasure-processing.integration.test.ts",
           "integration:src/db/account-erasure.integration.test.ts",
           "integration:src/db/activity-data-integrity-cadence-scope.integration.test.ts",
@@ -692,9 +703,12 @@
           "integration:src/jobs/provider-artifact-erasure.integration.test.ts",
           "integration:src/lib/cache.integration.test.ts",
           "integration:src/lib/climbing-board-account.integration.test.ts",
+          "integration:src/lib/provider-adaptive-rate-limit.integration.test.ts",
           "integration:src/metric-stream/clickhouse-sink-identity.integration.test.ts",
+          "integration:src/metric-stream/clickhouse-sink-publication.integration.test.ts",
           "integration:src/metric-stream/clickhouse-sink.integration.test.ts",
           "integration:src/metric-stream/redpanda-consumer.integration.test.ts",
+          "integration:src/metric-stream/redpanda-quarantine.integration.test.ts",
           "integration:src/processing/analytics-microbatch-bounds.integration.test.ts",
           "integration:src/processing/analytics-processing.integration.test.ts",
           "integration:src/processing/processing-event-store.integration.test.ts",
@@ -746,150 +760,136 @@
           "integration:src/zoho-desk.integration.test.ts"
         ],
         "selected": [
-          "integration:analytics/models/read_models/activity_aerobic_efficiency.integration.test.ts",
-          "integration:analytics/models/read_models/activity_duplicate_matches.integration.test.ts",
           "integration:analytics/models/read_models/activity_sensor_key_verification.integration.test.ts",
-          "integration:analytics/models/read_models/activity_source_records.integration.test.ts",
-          "integration:packages/server/src/auth/password-credential.integration.test.ts",
-          "integration:packages/server/src/mcp/activity-details-stable-groups.integration.test.ts",
-          "integration:packages/server/src/mcp/day-nutrition-output.integration.test.ts",
-          "integration:packages/server/src/mcp/token-repository.integration.test.ts",
-          "integration:packages/server/src/repositories/activity-hardware-labels.integration.test.ts",
-          "integration:packages/server/src/repositories/activity-map-state.integration.test.ts",
-          "integration:packages/server/src/repositories/activity-repository.integration.test.ts",
-          "integration:packages/server/src/repositories/activity-route-repository.integration.test.ts",
+          "integration:analytics/models/read_models/activity_sensor_processing_coverage-compatibility.integration.test.ts",
+          "integration:packages/server/src/auth/providers.integration.test.ts",
+          "integration:packages/server/src/mcp/oidc.integration.test.ts",
+          "integration:packages/server/src/mcp/sdk-write-rediscovery.integration.test.ts",
+          "integration:packages/server/src/repositories/activity-images-repository.integration.test.ts",
+          "integration:packages/server/src/repositories/activity-sensor-provenance.integration.test.ts",
+          "integration:packages/server/src/repositories/body-measurement-read-model.integration.test.ts",
           "integration:packages/server/src/repositories/body-measurement-sample.integration.test.ts",
-          "integration:packages/server/src/repositories/clickhouse-activity-sensor-store-lifecycle.integration.test.ts",
-          "integration:packages/server/src/repositories/climbing-strengths-repository.integration.test.ts",
-          "integration:packages/server/src/repositories/cycling-advanced-repository.integration.test.ts",
-          "integration:packages/server/src/repositories/cycling-analytics-repository.integration.test.ts",
-          "integration:packages/server/src/repositories/cycling-power-curve-repository.integration.test.ts",
-          "integration:packages/server/src/repositories/developer-client-repository.integration.test.ts",
+          "integration:packages/server/src/repositories/body-repository.integration.test.ts",
+          "integration:packages/server/src/repositories/food-record-repository.integration.test.ts",
           "integration:packages/server/src/repositories/health-kit-running-steps-repository.integration.test.ts",
-          "integration:packages/server/src/repositories/kaya-sync.integration.test.ts",
-          "integration:packages/server/src/repositories/strength-progression-repository.integration.test.ts",
+          "integration:packages/server/src/repositories/nutrition-analytics-source-breakdown.integration.test.ts",
+          "integration:packages/server/src/repositories/performance-comparison-repository.integration.test.ts",
+          "integration:packages/server/src/repositories/processing-repository.integration.test.ts",
+          "integration:packages/server/src/repositories/provider-climbing-log-records.integration.test.ts",
+          "integration:packages/server/src/repositories/provider-detail-repository.integration.test.ts",
+          "integration:packages/server/src/repositories/push-provider-repository.integration.test.ts",
+          "integration:packages/server/src/repositories/repeated-efforts-repository.integration.test.ts",
+          "integration:packages/server/src/repositories/route-equivalence.integration.test.ts",
+          "integration:packages/server/src/repositories/running-repository.integration.test.ts",
           "integration:packages/server/src/repositories/strength-repository.integration.test.ts",
-          "integration:packages/server/src/repositories/training-repository.integration.test.ts",
-          "integration:packages/server/src/routers/activity-dedup.integration.test.ts",
-          "integration:packages/server/src/routers/activity-power-curve-read-model.integration.test.ts",
-          "integration:packages/server/src/routers/activity-power-curve-test-helpers.integration.test.ts",
-          "integration:packages/server/src/routers/clickhouse-integration-test-read-models-b.integration.test.ts",
-          "integration:packages/server/src/routers/health-kit-sync-processors.integration.test.ts",
-          "integration:packages/server/src/routers/nutrition-analytics-data.integration.test.ts",
-          "integration:packages/server/src/routers/support.integration.test.ts",
-          "integration:packages/server/src/services/daily-recovery-read-model.integration.test.ts",
-          "integration:scripts/backfill-provider-connections.integration.test.ts",
+          "integration:packages/server/src/repositories/webhook-subscription-repository.integration.test.ts",
+          "integration:packages/server/src/routers/activity-title.integration.test.ts",
+          "integration:packages/server/src/routers/cycling-activity-read-model.integration.test.ts",
+          "integration:packages/server/src/routers/efficiency.integration.test.ts",
+          "integration:packages/server/src/routers/provider-detail.integration.test.ts",
+          "integration:packages/server/src/routers/router-data.integration.test.ts",
+          "integration:packages/server/src/routers/router-logic.integration.test.ts",
+          "integration:packages/server/src/routers/sleep-consistency-across-endpoints.integration.test.ts",
+          "integration:packages/server/src/routers/sleep.integration.test.ts",
+          "integration:packages/server/src/routers/whoop-auth.integration.test.ts",
+          "integration:packages/server/src/routes/auth/data-provider-callback.integration.test.ts",
           "integration:scripts/seed/core.integration.test.ts",
           "integration:scripts/seed/verification.integration.test.ts",
-          "integration:src/account-erasure/archive-erasure.integration.test.ts",
-          "integration:src/account-erasure/clickhouse-erasure.integration.test.ts",
-          "integration:src/account-erasure/database-backup-storage.integration.test.ts",
-          "integration:src/account-erasure/peerdb-staging-retention.integration.test.ts",
-          "integration:src/account-erasure/processor-retention.integration.test.ts",
-          "integration:src/account-erasure/redis-erasure.integration.test.ts",
+          "integration:src/account-erasure/postgres-erasure.integration.test.ts",
           "integration:src/account-erasure/redpanda-drain.integration.test.ts",
-          "integration:src/account-erasure/remote-snapshot-rotation.integration.test.ts",
-          "integration:src/analytics/cycling-power-projector.integration.test.ts",
+          "integration:src/analytics-refresh-queue.integration.test.ts",
           "integration:src/db/activity-data-integrity-repair.integration.test.ts",
-          "integration:src/db/activity-effort-identity-read-model.integration.test.ts",
-          "integration:src/db/activity-origin.integration.test.ts",
-          "integration:src/db/activity-overlap-plan.integration.test.ts",
-          "integration:src/db/activity-perceived-exertion.integration.test.ts",
-          "integration:src/db/activity-power-curve-read-model.integration.test.ts",
-          "integration:src/db/activity-sensor-summary-power-sample-rate.integration.test.ts",
+          "integration:src/db/activity-sensor-sample-append.integration.test.ts",
           "integration:src/db/activity-sensor-summary-watermark.integration.test.ts",
           "integration:src/db/activity-type-classification.integration.test.ts",
-          "integration:src/db/clickhouse-migrations/0069_canonical_activity_types.integration.test.ts",
-          "integration:src/db/clickhouse-migrations/0073_activity_sensor_summary_source_version.integration.test.ts",
+          "integration:src/db/activity-vo2max-stable-groups.integration.test.ts",
+          "integration:src/db/apple-health-workout-revisions.integration.test.ts",
+          "integration:src/db/clickhouse-cdc-health.integration.test.ts",
+          "integration:src/db/clickhouse-migrations/0060_heart_rate_day_change.integration.test.ts",
+          "integration:src/db/clickhouse-migrations/0068_provider_metric_stream_daily_counts.integration.test.ts",
           "integration:src/db/clickhouse-migrations/0074_metric_stream_external_id_projection.integration.test.ts",
-          "integration:src/db/clickhouse-migrations/0087_complete_peerdb_raw_schema.integration.test.ts",
-          "integration:src/db/clickhouse-migrations/0098_heart_rate_source_access.integration.test.ts",
-          "integration:src/db/clickhouse-migrations/0104_activity_origin.integration.test.ts",
-          "integration:src/db/climbing-log-area-sync.integration.test.ts",
-          "integration:src/db/climbing-log-session-sync.integration.test.ts",
+          "integration:src/db/clickhouse-migrations/0078_sensor_provider_priority_type.integration.test.ts",
+          "integration:src/db/clickhouse-migrations/0089_activity_lifecycle_nullable.integration.test.ts",
+          "integration:src/db/clickhouse-migrations/0099_activity_sensor_day_versions.integration.test.ts",
+          "integration:src/db/clickhouse-migrations/0106_activity_primary_type.integration.test.ts",
+          "integration:src/db/climbing-attempt-result.integration.test.ts",
+          "integration:src/db/climbing-log-snapshot.integration.test.ts",
           "integration:src/db/climbing-route-method.integration.test.ts",
           "integration:src/db/clinical-record-migration.integration.test.ts",
-          "integration:src/db/cycling-power-schema.integration.test.ts",
-          "integration:src/db/data-export.integration.test.ts",
-          "integration:src/db/hangboard-activity-type-migration.integration.test.ts",
-          "integration:src/db/mountain-project-tick-migration.integration.test.ts",
-          "integration:src/db/provider-activity-absence.integration.test.ts",
+          "integration:src/db/daily-activity-load-read-model.integration.test.ts",
+          "integration:src/db/daily-body-measurement-read-model.integration.test.ts",
+          "integration:src/db/metric-stream-location-point-migration.integration.test.ts",
+          "integration:src/db/processing-alert-dismissals.integration.test.ts",
+          "integration:src/db/provider-data-deletion.integration.test.ts",
           "integration:src/db/provider-operation-fence.integration.test.ts",
+          "integration:src/db/record-modifications.integration.test.ts",
+          "integration:src/db/seed-dev-db.integration.test.ts",
+          "integration:src/db/stable-activity-groups-migration.integration.test.ts",
           "integration:src/db/sync-log.integration.test.ts",
           "integration:src/db/tagged-query-client.integration.test.ts",
-          "integration:src/jobs/account-erasure-worker.integration.test.ts",
-          "integration:src/jobs/process-account-erasure-request.integration.test.ts",
-          "integration:src/lib/climbing-board-account.integration.test.ts",
+          "integration:src/db/tracking-mcp-scope-migration.integration.test.ts",
+          "integration:src/db/user-external-effect.integration.test.ts",
+          "integration:src/jobs/account-erasure-work-guard.integration.test.ts",
+          "integration:src/metric-stream/clickhouse-sink-publication.integration.test.ts",
           "integration:src/metric-stream/redpanda-consumer.integration.test.ts",
-          "integration:src/providers/cronometer-csv-sync.integration.test.ts",
-          "integration:src/providers/cycling-analytics-sync.integration.test.ts",
+          "integration:src/processing/analytics-microbatch-bounds.integration.test.ts",
+          "integration:src/processing/analytics-processing.integration.test.ts",
+          "integration:src/providers/apple-health/import.integration.test.ts",
+          "integration:src/providers/bodyspec-sync.integration.test.ts",
+          "integration:src/providers/concept2-sync.integration.test.ts",
+          "integration:src/providers/eight-a/provider.integration.test.ts",
           "integration:src/providers/eight-sleep-sync.integration.test.ts",
-          "integration:src/providers/kaya/import.integration.test.ts",
+          "integration:src/providers/fatsecret/provider-sync.integration.test.ts",
+          "integration:src/providers/mapmyfitness-sync.integration.test.ts",
           "integration:src/providers/moonboard/provider.integration.test.ts",
-          "integration:src/providers/mountain-project-sync.integration.test.ts",
+          "integration:src/providers/openbeta-sync.integration.test.ts",
           "integration:src/providers/oura-sync.integration.test.ts",
           "integration:src/providers/peloton-sync.integration.test.ts",
-          "integration:src/providers/ride-with-gps-sync.integration.test.ts",
-          "integration:src/providers/strong-csv-sync.integration.test.ts",
-          "integration:src/providers/suunto-sync.integration.test.ts",
-          "integration:src/providers/wahoo-sync.integration.test.ts",
-          "integration:src/zoho-desk.integration.test.ts"
+          "integration:src/providers/trainerroad-sync.integration.test.ts",
+          "integration:src/providers/ultrahuman-sync.integration.test.ts",
+          "integration:src/providers/xert-sync.integration.test.ts",
+          "integration:src/providers/ziva/nutrition-writer.integration.test.ts",
+          "integration:src/providers/zwift-sync.integration.test.ts"
         ],
         "estimated": [
-          "integration:analytics/models/read_models/activity_aerobic_efficiency.integration.test.ts",
-          "integration:analytics/models/read_models/healthspan_activity_zone_minutes.integration.test.ts",
-          "integration:packages/server/src/repositories/activity-route-preview.integration.test.ts",
-          "integration:packages/server/src/repositories/cycling-advanced-repository.integration.test.ts",
-          "integration:packages/server/src/repositories/pmc-repository.integration.test.ts",
-          "integration:packages/server/src/repositories/whoop-sensor-repository.integration.test.ts",
-          "integration:packages/server/src/routers/activity-power-curve-test-helpers.integration.test.ts",
-          "integration:src/account-erasure/clickhouse-erasure-coverage.integration.test.ts",
-          "integration:src/account-erasure/identifier-store.integration.test.ts",
-          "integration:src/account-erasure/peerdb-mirrored-rows.integration.test.ts",
-          "integration:src/analytics/cycling-power-projector.integration.test.ts",
-          "integration:src/db/account-erasure-processing.integration.test.ts",
-          "integration:src/db/activity-summary-power-serving.integration.test.ts",
-          "integration:src/db/clickhouse-migrations/0108_computed_cycling_power.integration.test.ts",
-          "integration:src/db/cycling-power-schema.integration.test.ts",
-          "integration:src/db/daily-cycling.integration.test.ts",
-          "integration:src/db/heart-rate-tss-parameter-cleanup.integration.test.ts",
-          "integration:src/jobs/process-activity-delete-analytics-job.integration.test.ts",
-          "integration:src/lib/climbing-board-account.integration.test.ts",
-          "integration:src/metric-stream/clickhouse-sink-identity.integration.test.ts",
-          "integration:src/providers/crimpd/provider.integration.test.ts",
-          "integration:src/providers/eight-a/provider.integration.test.ts",
-          "integration:src/providers/moonboard/provider.integration.test.ts"
+          "integration:packages/server/src/repositories/daily-health-sensor.integration.test.ts",
+          "integration:scripts/analytics-publication.integration.test.ts",
+          "integration:src/analytics/analytics-query-owner.integration.test.ts",
+          "integration:src/analytics/dbt-build.integration.test.ts",
+          "integration:src/lib/provider-adaptive-rate-limit.integration.test.ts",
+          "integration:src/metric-stream/clickhouse-sink-publication.integration.test.ts",
+          "integration:src/metric-stream/redpanda-quarantine.integration.test.ts"
         ],
-        "baselineSha256": "12fe57e55ad0362ce73c9aafa93561df8abca21d39049ea9e741bb896c195ebc",
+        "baselineSha256": "eb40e9438b335e1d41ed540e1741f4c25cdfa3732f89548c02055a867fbd0510",
         "cacheEnabled": true,
         "cacheExistedBefore": false,
         "bins": [
           {
-            "durationMs": 369962,
-            "fileCount": 88
-          },
-          {
-            "durationMs": 369961,
+            "durationMs": 457925.33095250063,
             "fileCount": 90
           },
           {
-            "durationMs": 369962,
-            "fileCount": 90
+            "durationMs": 457929.275645,
+            "fileCount": 91
           },
           {
-            "durationMs": 369966,
-            "fileCount": 90
+            "durationMs": 457929.1051879997,
+            "fileCount": 92
+          },
+          {
+            "durationMs": 457931.8977579996,
+            "fileCount": 92
           }
         ]
       },
       {
         "schemaVersion": 2,
-        "assignmentId": "4e525f8c-dd88-47fd-a369-1a051134ac48",
-        "assignedAt": 1794161113802,
+        "assignmentId": "584f1e60-540e-435f-94f4-b0db05364130",
+        "assignedAt": 1794287758099,
         "provenance": {
-          "sourceSha": "58d9c75d5d7d1e3e6c3bb523c32524fed68e72b5",
+          "sourceSha": "4d6f586fedc2374d35723a0914929df3af6cbe1f",
           "repository": "Asherlc/dofek",
-          "runId": 42507552488,
+          "runId": 42758981507,
           "runAttempt": 1,
           "vitestVersion": "5.0.5",
           "source": "Vitest integration serial forks with coverage",
@@ -958,6 +958,7 @@
           "integration:packages/server/src/repositories/cycling-power-curve-repository.integration.test.ts",
           "integration:packages/server/src/repositories/cycling-threshold-repository.integration.test.ts",
           "integration:packages/server/src/repositories/cycling-training-metrics-repository.integration.test.ts",
+          "integration:packages/server/src/repositories/daily-health-sensor.integration.test.ts",
           "integration:packages/server/src/repositories/daily-metrics-repository.integration.test.ts",
           "integration:packages/server/src/repositories/developer-client-repository.integration.test.ts",
           "integration:packages/server/src/repositories/efficiency-repository.integration.test.ts",
@@ -1039,6 +1040,7 @@
           "integration:packages/server/src/services/daily-recovery-read-model.integration.test.ts",
           "integration:packages/server/src/services/food-record-service.integration.test.ts",
           "integration:packages/web/src/lib/timeRange-policy.integration.test.ts",
+          "integration:scripts/analytics-publication.integration.test.ts",
           "integration:scripts/backfill-exercise-provenance.integration.test.ts",
           "integration:scripts/backfill-hang-ten-workouts.integration.test.ts",
           "integration:scripts/backfill-provider-connections.integration.test.ts",
@@ -1066,7 +1068,9 @@
           "integration:src/account-erasure/stripe-acceptance.integration.test.ts",
           "integration:src/activity-images/storage.integration.test.ts",
           "integration:src/analytics-refresh-queue.integration.test.ts",
+          "integration:src/analytics/analytics-query-owner.integration.test.ts",
           "integration:src/analytics/cycling-power-projector.integration.test.ts",
+          "integration:src/analytics/dbt-build.integration.test.ts",
           "integration:src/db/account-erasure-processing.integration.test.ts",
           "integration:src/db/account-erasure.integration.test.ts",
           "integration:src/db/activity-data-integrity-cadence-scope.integration.test.ts",
@@ -1204,9 +1208,12 @@
           "integration:src/jobs/provider-artifact-erasure.integration.test.ts",
           "integration:src/lib/cache.integration.test.ts",
           "integration:src/lib/climbing-board-account.integration.test.ts",
+          "integration:src/lib/provider-adaptive-rate-limit.integration.test.ts",
           "integration:src/metric-stream/clickhouse-sink-identity.integration.test.ts",
+          "integration:src/metric-stream/clickhouse-sink-publication.integration.test.ts",
           "integration:src/metric-stream/clickhouse-sink.integration.test.ts",
           "integration:src/metric-stream/redpanda-consumer.integration.test.ts",
+          "integration:src/metric-stream/redpanda-quarantine.integration.test.ts",
           "integration:src/processing/analytics-microbatch-bounds.integration.test.ts",
           "integration:src/processing/analytics-processing.integration.test.ts",
           "integration:src/processing/processing-event-store.integration.test.ts",
@@ -1258,152 +1265,137 @@
           "integration:src/zoho-desk.integration.test.ts"
         ],
         "selected": [
-          "integration:analytics/models/read_models/activity_sensor_processing_coverage-tooling.integration.test.ts",
-          "integration:packages/server/src/auth/account-linking.integration.test.ts",
-          "integration:packages/server/src/auth/providers.integration.test.ts",
-          "integration:packages/server/src/export.integration.test.ts",
-          "integration:packages/server/src/repositories/activity-images-repository.integration.test.ts",
+          "integration:analytics/models/read_models/activity_duplicate_groups.integration.test.ts",
+          "integration:analytics/models/read_models/activity_sensor_processing_coverage.integration.test.ts",
+          "integration:analytics/models/read_models/activity_source_records.integration.test.ts",
+          "integration:packages/server/src/auth/identity-credential-revocation.integration.test.ts",
+          "integration:packages/server/src/auth/password-reset.integration.test.ts",
+          "integration:packages/server/src/clinical-records/repository.integration.test.ts",
+          "integration:packages/server/src/repositories/activities-calendar-repository.integration.test.ts",
+          "integration:packages/server/src/repositories/activity-hardware-labels.integration.test.ts",
+          "integration:packages/server/src/repositories/activity-hardware-repository.integration.test.ts",
           "integration:packages/server/src/repositories/activity-local-date.integration.test.ts",
-          "integration:packages/server/src/repositories/activity-visibility-consistency.integration.test.ts",
+          "integration:packages/server/src/repositories/activity-metric-sources-repository.integration.test.ts",
           "integration:packages/server/src/repositories/billing-repository.integration.test.ts",
-          "integration:packages/server/src/repositories/body-measurement-read-model.integration.test.ts",
+          "integration:packages/server/src/repositories/clickhouse-activity-sensor-store-lifecycle.integration.test.ts",
           "integration:packages/server/src/repositories/climbing-progression-repository.integration.test.ts",
+          "integration:packages/server/src/repositories/climbing-repository.integration.test.ts",
+          "integration:packages/server/src/repositories/climbing-strengths-repository.integration.test.ts",
           "integration:packages/server/src/repositories/correlation-repository.integration.test.ts",
+          "integration:packages/server/src/repositories/cycling-analytics-repository.integration.test.ts",
+          "integration:packages/server/src/repositories/cycling-threshold-repository.integration.test.ts",
+          "integration:packages/server/src/repositories/daily-health-sensor.integration.test.ts",
           "integration:packages/server/src/repositories/daily-metrics-repository.integration.test.ts",
           "integration:packages/server/src/repositories/efficiency-repository.integration.test.ts",
-          "integration:packages/server/src/repositories/finger-loading-progression-repository.integration.test.ts",
-          "integration:packages/server/src/repositories/heart-rate-repository.integration.test.ts",
-          "integration:packages/server/src/repositories/hiking-repository.integration.test.ts",
-          "integration:packages/server/src/repositories/hiking-route-projection.integration.test.ts",
-          "integration:packages/server/src/repositories/pmc-repository.integration.test.ts",
-          "integration:packages/server/src/repositories/processing-repository.integration.test.ts",
-          "integration:packages/server/src/repositories/provider-climbing-log-records.integration.test.ts",
-          "integration:packages/server/src/repositories/provider-detail-repository.integration.test.ts",
-          "integration:packages/server/src/repositories/running-repository.integration.test.ts",
-          "integration:packages/server/src/repositories/training-load-repository.integration.test.ts",
-          "integration:packages/server/src/routers/climbing.integration.test.ts",
-          "integration:packages/server/src/routers/credential-reconnect.integration.test.ts",
-          "integration:packages/server/src/routers/mobile-dashboard.integration.test.ts",
-          "integration:packages/server/src/routers/router-data.integration.test.ts",
-          "integration:packages/server/src/routers/router-logic.integration.test.ts",
-          "integration:packages/server/src/routers/router-sql.integration.test.ts",
-          "integration:packages/server/src/routers/sleep-heart-rate-sample-read-model.integration.test.ts",
+          "integration:packages/server/src/repositories/hang-ten-import.integration.test.ts",
+          "integration:packages/server/src/repositories/hangboarding-repository.integration.test.ts",
+          "integration:packages/server/src/repositories/kaya-sync.integration.test.ts",
+          "integration:packages/server/src/repositories/nutrition-canonical.integration.test.ts",
+          "integration:packages/server/src/repositories/provider-metric-stream-daily.integration.test.ts",
+          "integration:packages/server/src/repositories/provider-stats-read-model.integration.test.ts",
+          "integration:packages/server/src/routers/activity-power-curve-eligibility.integration.test.ts",
+          "integration:packages/server/src/routers/activity-power-curve-test-helpers.integration.test.ts",
+          "integration:packages/server/src/routers/cycling-advanced-vertical-ascent.integration.test.ts",
           "integration:packages/server/src/routers/sync.integration.test.ts",
-          "integration:packages/server/src/routes/developer-clients.integration.test.ts",
+          "integration:packages/server/src/routers/trends-data.integration.test.ts",
+          "integration:scripts/backfill-provider-connections.integration.test.ts",
           "integration:src/account-erasure/clickhouse-erasure-coverage.integration.test.ts",
-          "integration:src/account-erasure/remote-revocation.integration.test.ts",
+          "integration:src/account-erasure/clickhouse-erasure.integration.test.ts",
+          "integration:src/account-erasure/identifier-store.integration.test.ts",
+          "integration:src/account-erasure/processor-retention.integration.test.ts",
+          "integration:src/account-erasure/remote-snapshot-rotation.integration.test.ts",
           "integration:src/account-erasure/remote-snapshot.integration.test.ts",
-          "integration:src/activity-images/storage.integration.test.ts",
-          "integration:src/db/account-erasure-processing.integration.test.ts",
-          "integration:src/db/account-erasure.integration.test.ts",
+          "integration:src/account-erasure/restore-reconciliation.integration.test.ts",
+          "integration:src/analytics/cycling-power-projector.integration.test.ts",
+          "integration:src/analytics/dbt-build.integration.test.ts",
           "integration:src/db/activity-data-integrity-cadence-scope.integration.test.ts",
-          "integration:src/db/activity-device-observations.integration.test.ts",
-          "integration:src/db/activity-intervals.integration.test.ts",
+          "integration:src/db/activity-group-payload-union.integration.test.ts",
+          "integration:src/db/activity-images.integration.test.ts",
           "integration:src/db/activity-location-bounded-microbatch.integration.test.ts",
-          "integration:src/db/activity-refresh-scope.integration.test.ts",
-          "integration:src/db/activity-route-identity-read-model.integration.test.ts",
-          "integration:src/db/activity-summary-canonical-ids.integration.test.ts",
-          "integration:src/db/clickhouse-cdc-health.integration.test.ts",
+          "integration:src/db/activity-origin.integration.test.ts",
+          "integration:src/db/activity-overlap-plan.integration.test.ts",
+          "integration:src/db/activity-sensor-sample-read-model.integration.test.ts",
+          "integration:src/db/activity-summary-power-serving.integration.test.ts",
+          "integration:src/db/clickhouse-migrations/0055_provider_connection_catalog.integration.test.ts",
+          "integration:src/db/clickhouse-migrations/0059_provider_change_state.integration.test.ts",
+          "integration:src/db/clickhouse-migrations/0069_canonical_activity_types.integration.test.ts",
           "integration:src/db/clickhouse-migrations/0072_canonical_clinical_records.integration.test.ts",
-          "integration:src/db/clickhouse-migrations/0079_stable_activity_group_id.integration.test.ts",
-          "integration:src/db/clickhouse-migrations/0081_stable_activity_read_views.integration.test.ts",
+          "integration:src/db/clickhouse-migrations/0076_activity_sensor_provenance.integration.test.ts",
           "integration:src/db/clickhouse-migrations/0083_activity_location_source_refresh.integration.test.ts",
           "integration:src/db/clickhouse-migrations/0086_activity_location_member_change.integration.test.ts",
-          "integration:src/db/clickhouse-migrations/0091_metric_stream_freshness_index.integration.test.ts",
-          "integration:src/db/clickhouse-migrations/0093_refresh_daily_metrics_view.integration.test.ts",
-          "integration:src/db/clickhouse-migrations/0094_sensor_scalar_sample_lightweight_refresh_projection.integration.test.ts",
           "integration:src/db/clickhouse-migrations/0095_food_entry_source_account_key.integration.test.ts",
-          "integration:src/db/clickhouse-migrations/0106_activity_primary_type.integration.test.ts",
-          "integration:src/db/climbing-attempt-result.integration.test.ts",
-          "integration:src/db/climbing-log-model-conversion.integration.test.ts",
-          "integration:src/db/climbing-log-model.integration.test.ts",
-          "integration:src/db/climbing-log-snapshot.integration.test.ts",
-          "integration:src/db/climbing-route-method-migration.integration.test.ts",
-          "integration:src/db/daily-activity-load-read-model.integration.test.ts",
-          "integration:src/db/daily-body-measurement-read-model.integration.test.ts",
-          "integration:src/db/daily-cycling.integration.test.ts",
-          "integration:src/db/daily-sleep-read-model.integration.test.ts",
-          "integration:src/db/file-upload.integration.test.ts",
+          "integration:src/db/clickhouse-migrations/0104_activity_origin.integration.test.ts",
+          "integration:src/db/climbing-log-area-sync.integration.test.ts",
+          "integration:src/db/climbing-log-session-sync.integration.test.ts",
+          "integration:src/db/daily-metrics-schema.integration.test.ts",
+          "integration:src/db/db.integration.test.ts",
+          "integration:src/db/deduped-sensor-read-model.integration.test.ts",
+          "integration:src/db/hangboard-activity-type-migration.integration.test.ts",
           "integration:src/db/index.integration.test.ts",
+          "integration:src/db/metric-stream-replica-identity.integration.test.ts",
           "integration:src/db/peerdb/mirror-schema-validator.integration.test.ts",
-          "integration:src/db/provider-data-deletion.integration.test.ts",
-          "integration:src/db/tracking-mcp-scope-migration.integration.test.ts",
+          "integration:src/db/record-local-time-context.integration.test.ts",
           "integration:src/db/zepp-activity-priority.integration.test.ts",
-          "integration:src/export.integration.test.ts",
-          "integration:src/jobs/process-activity-image-job.integration.test.ts",
-          "integration:src/jobs/process-garmin-dump-import-job.integration.test.ts",
-          "integration:src/jobs/provider-artifact-erasure.integration.test.ts",
+          "integration:src/jobs/account-erasure-worker.integration.test.ts",
+          "integration:src/jobs/bullmq-stall.integration.test.ts",
+          "integration:src/jobs/process-account-erasure-request.integration.test.ts",
+          "integration:src/jobs/process-activity-delete-analytics-job.integration.test.ts",
           "integration:src/metric-stream/clickhouse-sink-identity.integration.test.ts",
-          "integration:src/processing/processing-event-store.integration.test.ts",
-          "integration:src/processing/processing-reconciler.integration.test.ts",
-          "integration:src/providers/bodyspec-sync.integration.test.ts",
-          "integration:src/providers/concept2-sync.integration.test.ts",
+          "integration:src/metric-stream/clickhouse-sink.integration.test.ts",
+          "integration:src/provider-artifact-storage.integration.test.ts",
+          "integration:src/providers/coros-sync.integration.test.ts",
+          "integration:src/providers/cronometer-csv-sync.integration.test.ts",
           "integration:src/providers/garmin/activities.integration.test.ts",
-          "integration:src/providers/garmin/authorization.integration.test.ts",
+          "integration:src/providers/garmin/health.integration.test.ts",
+          "integration:src/providers/kaya-sync.integration.test.ts",
           "integration:src/providers/komoot-sync.integration.test.ts",
+          "integration:src/providers/mountain-project-sync.integration.test.ts",
           "integration:src/providers/peloton-sync-ext.integration.test.ts",
-          "integration:src/providers/strava-sync.integration.test.ts",
-          "integration:src/providers/thecrag-sync.integration.test.ts",
-          "integration:src/providers/wger-sync.integration.test.ts",
+          "integration:src/providers/ride-with-gps-sync.integration.test.ts",
+          "integration:src/providers/strong-csv-sync.integration.test.ts",
+          "integration:src/providers/wahoo-sync.integration.test.ts",
           "integration:src/providers/whoop-sync.integration.test.ts",
-          "integration:src/providers/xert-sync.integration.test.ts",
-          "integration:src/providers/ziva/provider-sync.integration.test.ts"
+          "integration:src/providers/withings-sync.integration.test.ts"
         ],
         "estimated": [
-          "integration:analytics/models/read_models/activity_aerobic_efficiency.integration.test.ts",
-          "integration:analytics/models/read_models/healthspan_activity_zone_minutes.integration.test.ts",
-          "integration:packages/server/src/repositories/activity-route-preview.integration.test.ts",
-          "integration:packages/server/src/repositories/cycling-advanced-repository.integration.test.ts",
-          "integration:packages/server/src/repositories/pmc-repository.integration.test.ts",
-          "integration:packages/server/src/repositories/whoop-sensor-repository.integration.test.ts",
-          "integration:packages/server/src/routers/activity-power-curve-test-helpers.integration.test.ts",
-          "integration:src/account-erasure/clickhouse-erasure-coverage.integration.test.ts",
-          "integration:src/account-erasure/identifier-store.integration.test.ts",
-          "integration:src/account-erasure/peerdb-mirrored-rows.integration.test.ts",
-          "integration:src/analytics/cycling-power-projector.integration.test.ts",
-          "integration:src/db/account-erasure-processing.integration.test.ts",
-          "integration:src/db/activity-summary-power-serving.integration.test.ts",
-          "integration:src/db/clickhouse-migrations/0108_computed_cycling_power.integration.test.ts",
-          "integration:src/db/cycling-power-schema.integration.test.ts",
-          "integration:src/db/daily-cycling.integration.test.ts",
-          "integration:src/db/heart-rate-tss-parameter-cleanup.integration.test.ts",
-          "integration:src/jobs/process-activity-delete-analytics-job.integration.test.ts",
-          "integration:src/lib/climbing-board-account.integration.test.ts",
-          "integration:src/metric-stream/clickhouse-sink-identity.integration.test.ts",
-          "integration:src/providers/crimpd/provider.integration.test.ts",
-          "integration:src/providers/eight-a/provider.integration.test.ts",
-          "integration:src/providers/moonboard/provider.integration.test.ts"
+          "integration:packages/server/src/repositories/daily-health-sensor.integration.test.ts",
+          "integration:scripts/analytics-publication.integration.test.ts",
+          "integration:src/analytics/analytics-query-owner.integration.test.ts",
+          "integration:src/analytics/dbt-build.integration.test.ts",
+          "integration:src/lib/provider-adaptive-rate-limit.integration.test.ts",
+          "integration:src/metric-stream/clickhouse-sink-publication.integration.test.ts",
+          "integration:src/metric-stream/redpanda-quarantine.integration.test.ts"
         ],
-        "baselineSha256": "12fe57e55ad0362ce73c9aafa93561df8abca21d39049ea9e741bb896c195ebc",
+        "baselineSha256": "eb40e9438b335e1d41ed540e1741f4c25cdfa3732f89548c02055a867fbd0510",
         "cacheEnabled": true,
         "cacheExistedBefore": false,
         "bins": [
           {
-            "durationMs": 369962,
-            "fileCount": 88
-          },
-          {
-            "durationMs": 369961,
+            "durationMs": 457925.33095250063,
             "fileCount": 90
           },
           {
-            "durationMs": 369962,
-            "fileCount": 90
+            "durationMs": 457929.275645,
+            "fileCount": 91
           },
           {
-            "durationMs": 369966,
-            "fileCount": 90
+            "durationMs": 457929.1051879997,
+            "fileCount": 92
+          },
+          {
+            "durationMs": 457931.8977579996,
+            "fileCount": 92
           }
         ]
       },
       {
         "schemaVersion": 2,
-        "assignmentId": "d3e7cbcb-8b28-4dbc-9d20-e49b029dd716",
-        "assignedAt": 1794161175233,
+        "assignmentId": "ac4da25e-bf7a-4630-9fef-60eaab59dfbf",
+        "assignedAt": 1794287774281,
         "provenance": {
-          "sourceSha": "58d9c75d5d7d1e3e6c3bb523c32524fed68e72b5",
+          "sourceSha": "4d6f586fedc2374d35723a0914929df3af6cbe1f",
           "repository": "Asherlc/dofek",
-          "runId": 42507552488,
+          "runId": 42758981507,
           "runAttempt": 1,
           "vitestVersion": "5.0.5",
           "source": "Vitest integration serial forks with coverage",
@@ -1472,6 +1464,7 @@
           "integration:packages/server/src/repositories/cycling-power-curve-repository.integration.test.ts",
           "integration:packages/server/src/repositories/cycling-threshold-repository.integration.test.ts",
           "integration:packages/server/src/repositories/cycling-training-metrics-repository.integration.test.ts",
+          "integration:packages/server/src/repositories/daily-health-sensor.integration.test.ts",
           "integration:packages/server/src/repositories/daily-metrics-repository.integration.test.ts",
           "integration:packages/server/src/repositories/developer-client-repository.integration.test.ts",
           "integration:packages/server/src/repositories/efficiency-repository.integration.test.ts",
@@ -1553,6 +1546,7 @@
           "integration:packages/server/src/services/daily-recovery-read-model.integration.test.ts",
           "integration:packages/server/src/services/food-record-service.integration.test.ts",
           "integration:packages/web/src/lib/timeRange-policy.integration.test.ts",
+          "integration:scripts/analytics-publication.integration.test.ts",
           "integration:scripts/backfill-exercise-provenance.integration.test.ts",
           "integration:scripts/backfill-hang-ten-workouts.integration.test.ts",
           "integration:scripts/backfill-provider-connections.integration.test.ts",
@@ -1580,7 +1574,9 @@
           "integration:src/account-erasure/stripe-acceptance.integration.test.ts",
           "integration:src/activity-images/storage.integration.test.ts",
           "integration:src/analytics-refresh-queue.integration.test.ts",
+          "integration:src/analytics/analytics-query-owner.integration.test.ts",
           "integration:src/analytics/cycling-power-projector.integration.test.ts",
+          "integration:src/analytics/dbt-build.integration.test.ts",
           "integration:src/db/account-erasure-processing.integration.test.ts",
           "integration:src/db/account-erasure.integration.test.ts",
           "integration:src/db/activity-data-integrity-cadence-scope.integration.test.ts",
@@ -1718,9 +1714,12 @@
           "integration:src/jobs/provider-artifact-erasure.integration.test.ts",
           "integration:src/lib/cache.integration.test.ts",
           "integration:src/lib/climbing-board-account.integration.test.ts",
+          "integration:src/lib/provider-adaptive-rate-limit.integration.test.ts",
           "integration:src/metric-stream/clickhouse-sink-identity.integration.test.ts",
+          "integration:src/metric-stream/clickhouse-sink-publication.integration.test.ts",
           "integration:src/metric-stream/clickhouse-sink.integration.test.ts",
           "integration:src/metric-stream/redpanda-consumer.integration.test.ts",
+          "integration:src/metric-stream/redpanda-quarantine.integration.test.ts",
           "integration:src/processing/analytics-microbatch-bounds.integration.test.ts",
           "integration:src/processing/analytics-processing.integration.test.ts",
           "integration:src/processing/processing-event-store.integration.test.ts",
@@ -1772,152 +1771,138 @@
           "integration:src/zoho-desk.integration.test.ts"
         ],
         "selected": [
-          "integration:analytics/models/read_models/activity_sensor_processing_coverage.integration.test.ts",
-          "integration:packages/server/src/auth/identity-credential-revocation.integration.test.ts",
-          "integration:packages/server/src/clinical-records/repository.integration.test.ts",
-          "integration:packages/server/src/index.integration.test.ts",
+          "integration:analytics/models/read_models/activity_heart_rate_distribution.integration.test.ts",
+          "integration:analytics/models/read_models/activity_sensor_processing_coverage-tooling.integration.test.ts",
+          "integration:analytics/models/read_models/healthspan_activity_zone_minutes.integration.test.ts",
+          "integration:packages/server/src/auth/account-linking.integration.test.ts",
+          "integration:packages/server/src/auth/password-credential.integration.test.ts",
+          "integration:packages/server/src/companion/token-repository.integration.test.ts",
           "integration:packages/server/src/jobs/process-provider-data-deletion-job.integration.test.ts",
-          "integration:packages/server/src/mcp/oidc.integration.test.ts",
-          "integration:packages/server/src/mcp/sdk-write-rediscovery.integration.test.ts",
-          "integration:packages/server/src/repositories/activities-calendar-repository.integration.test.ts",
-          "integration:packages/server/src/repositories/activity-metric-sources-repository.integration.test.ts",
-          "integration:packages/server/src/repositories/activity-route-preview.integration.test.ts",
-          "integration:packages/server/src/repositories/activity-sensor-provenance.integration.test.ts",
-          "integration:packages/server/src/repositories/analytical-training-load-repository.integration.test.ts",
+          "integration:packages/server/src/mcp/activity-details-stable-groups.integration.test.ts",
+          "integration:packages/server/src/mcp/day-nutrition-output.integration.test.ts",
+          "integration:packages/server/src/repositories/activity-repository.integration.test.ts",
+          "integration:packages/server/src/repositories/activity-route-repository.integration.test.ts",
           "integration:packages/server/src/repositories/climbing-activity-log-entry-repository.integration.test.ts",
           "integration:packages/server/src/repositories/climbing-images-repository.integration.test.ts",
-          "integration:packages/server/src/repositories/climbing-log-entry-associator.integration.test.ts",
-          "integration:packages/server/src/repositories/climbing-repository.integration.test.ts",
-          "integration:packages/server/src/repositories/cycling-performance-repository.integration.test.ts",
-          "integration:packages/server/src/repositories/hang-ten-import.integration.test.ts",
-          "integration:packages/server/src/repositories/hangboarding-repository.integration.test.ts",
-          "integration:packages/server/src/repositories/nutrition-analytics-source-breakdown.integration.test.ts",
+          "integration:packages/server/src/repositories/cycling-advanced-repository.integration.test.ts",
+          "integration:packages/server/src/repositories/cycling-power-curve-repository.integration.test.ts",
+          "integration:packages/server/src/repositories/cycling-training-metrics-repository.integration.test.ts",
+          "integration:packages/server/src/repositories/developer-client-repository.integration.test.ts",
+          "integration:packages/server/src/repositories/heart-rate-repository.integration.test.ts",
+          "integration:packages/server/src/repositories/hiking-repository.integration.test.ts",
+          "integration:packages/server/src/repositories/hiking-route-projection.integration.test.ts",
           "integration:packages/server/src/repositories/nutrition-source-key.integration.test.ts",
           "integration:packages/server/src/repositories/processing-sync-recovery.integration.test.ts",
-          "integration:packages/server/src/repositories/provider-metric-stream-daily.integration.test.ts",
-          "integration:packages/server/src/repositories/provider-stats-read-model.integration.test.ts",
-          "integration:packages/server/src/repositories/push-provider-repository.integration.test.ts",
-          "integration:packages/server/src/repositories/webhook-subscription-repository.integration.test.ts",
+          "integration:packages/server/src/repositories/strength-progression-repository.integration.test.ts",
+          "integration:packages/server/src/repositories/sync-repository.integration.test.ts",
           "integration:packages/server/src/repositories/whoop-sensor-repository.integration.test.ts",
-          "integration:packages/server/src/routers/activity-power-curve-eligibility.integration.test.ts",
+          "integration:packages/server/src/routers/activity-dedup.integration.test.ts",
+          "integration:packages/server/src/routers/activity-power-curve-read-model.integration.test.ts",
           "integration:packages/server/src/routers/activity.integration.test.ts",
-          "integration:packages/server/src/routers/cycling-advanced-vertical-ascent.integration.test.ts",
+          "integration:packages/server/src/routers/clickhouse-integration-test-read-models-b.integration.test.ts",
+          "integration:packages/server/src/routers/climbing.integration.test.ts",
+          "integration:packages/server/src/routers/credential-reconnect.integration.test.ts",
           "integration:packages/server/src/routers/daily-metrics.integration.test.ts",
-          "integration:packages/server/src/routers/efficiency.integration.test.ts",
-          "integration:packages/server/src/routers/health-kit-sync.integration.test.ts",
-          "integration:packages/server/src/routers/healthspan.integration.test.ts",
-          "integration:packages/server/src/routers/provider-detail.integration.test.ts",
-          "integration:packages/server/src/routers/router.integration.test.ts",
-          "integration:packages/server/src/routers/sleep.integration.test.ts",
+          "integration:packages/server/src/routers/nutrition-analytics-data.integration.test.ts",
+          "integration:packages/server/src/routers/predictions.integration.test.ts",
+          "integration:packages/server/src/routers/settings.integration.test.ts",
+          "integration:packages/server/src/routers/sleep-heart-rate-sample-read-model.integration.test.ts",
+          "integration:packages/server/src/routers/sleep-heart-rate-window-read-model.integration.test.ts",
+          "integration:packages/server/src/routers/support.integration.test.ts",
           "integration:packages/server/src/routers/sync-request-job.integration.test.ts",
-          "integration:packages/server/src/routers/trends-data.integration.test.ts",
-          "integration:packages/server/src/routers/whoop-auth.integration.test.ts",
-          "integration:packages/server/src/routes/external-write-api.integration.test.ts",
+          "integration:packages/server/src/routes/ingest-zos-health.integration.test.ts",
+          "integration:packages/server/src/services/daily-recovery-read-model.integration.test.ts",
           "integration:packages/server/src/services/food-record-service.integration.test.ts",
-          "integration:packages/web/src/lib/timeRange-policy.integration.test.ts",
           "integration:scripts/backfill-hang-ten-workouts.integration.test.ts",
           "integration:scripts/seed-openai-reviewer-demo.integration.test.ts",
+          "integration:scripts/seed-review-clickhouse.integration.test.ts",
+          "integration:src/account-erasure/database-backup-storage.integration.test.ts",
           "integration:src/account-erasure/peerdb-mirrored-rows.integration.test.ts",
-          "integration:src/account-erasure/processor-erasure.integration.test.ts",
-          "integration:src/account-erasure/stripe-acceptance.integration.test.ts",
+          "integration:src/account-erasure/remote-revocation.integration.test.ts",
+          "integration:src/activity-images/storage.integration.test.ts",
+          "integration:src/analytics/analytics-query-owner.integration.test.ts",
+          "integration:src/db/account-erasure-processing.integration.test.ts",
+          "integration:src/db/activity-data-integrity-dbt.integration.test.ts",
+          "integration:src/db/activity-device-observations.integration.test.ts",
           "integration:src/db/activity-field-priority-dbt.integration.test.ts",
-          "integration:src/db/activity-field-priority-read-model.integration.test.ts",
-          "integration:src/db/activity-field-priority.integration.test.ts",
-          "integration:src/db/activity-group-payload-union.integration.test.ts",
-          "integration:src/db/activity-group-reconciliation.integration.test.ts",
-          "integration:src/db/activity-images.integration.test.ts",
+          "integration:src/db/activity-intervals.integration.test.ts",
           "integration:src/db/activity-payload-dbt-microbatch.integration.test.ts",
-          "integration:src/db/activity-sensor-sample-read-model.integration.test.ts",
-          "integration:src/db/apple-health-workout-revisions.integration.test.ts",
-          "integration:src/db/clickhouse-migrations/0061_provider_current_state_projection.integration.test.ts",
-          "integration:src/db/clickhouse-migrations/0068_provider_metric_stream_daily_counts.integration.test.ts",
-          "integration:src/db/clickhouse-migrations/0076_activity_sensor_provenance.integration.test.ts",
-          "integration:src/db/clickhouse-migrations/0077_activity_power_curve_evidence.integration.test.ts",
-          "integration:src/db/clickhouse-migrations/0078_sensor_provider_priority_type.integration.test.ts",
-          "integration:src/db/clickhouse-migrations/0089_activity_lifecycle_nullable.integration.test.ts",
+          "integration:src/db/activity-power-curve-read-model.integration.test.ts",
+          "integration:src/db/activity-sensor-summary-power-sample-rate.integration.test.ts",
+          "integration:src/db/clickhouse-deduped-sensor.integration.test.ts",
+          "integration:src/db/clickhouse-migrations/0067_repair_local_time_column_order.integration.test.ts",
+          "integration:src/db/clickhouse-migrations/0071_repair_canonical_activity_type_reads.integration.test.ts",
+          "integration:src/db/clickhouse-migrations/0079_stable_activity_group_id.integration.test.ts",
+          "integration:src/db/clickhouse-migrations/0081_stable_activity_read_views.integration.test.ts",
+          "integration:src/db/clickhouse-migrations/0084_activity_location_source_refresh_default.integration.test.ts",
           "integration:src/db/clickhouse-migrations/0092_sensor_scalar_sample_refresh_projection.integration.test.ts",
-          "integration:src/db/clickhouse-migrations/0099_activity_sensor_day_versions.integration.test.ts",
-          "integration:src/db/clickhouse-migrations/0108_computed_cycling_power.integration.test.ts",
-          "integration:src/db/climbing-catalogue-seed.integration.test.ts",
-          "integration:src/db/climbing-log-sync.integration.test.ts",
+          "integration:src/db/clickhouse-migrations/0094_sensor_scalar_sample_lightweight_refresh_projection.integration.test.ts",
+          "integration:src/db/clickhouse-migrations/0098_heart_rate_source_access.integration.test.ts",
+          "integration:src/db/clickhouse-migrations/0101_activity_end_time_nullability.integration.test.ts",
+          "integration:src/db/climbing-context-migration.integration.test.ts",
+          "integration:src/db/climbing-traits.integration.test.ts",
+          "integration:src/db/daily-cycling.integration.test.ts",
+          "integration:src/db/deduped-activities-read-model.integration.test.ts",
           "integration:src/db/effort-equivalence-groups.integration.test.ts",
-          "integration:src/db/garmin-official-authorization-migration.integration.test.ts",
+          "integration:src/db/file-upload.integration.test.ts",
           "integration:src/db/hang-ten-activity-priority.integration.test.ts",
-          "integration:src/db/metric-stream-location-point-migration.integration.test.ts",
-          "integration:src/db/migrate.integration.test.ts",
-          "integration:src/db/processing-alert-dismissals.integration.test.ts",
           "integration:src/db/provider-activity-sync.integration.test.ts",
-          "integration:src/db/provider-issue-notification.integration.test.ts",
-          "integration:src/db/record-local-time-context.integration.test.ts",
-          "integration:src/db/seed-dev-db.integration.test.ts",
-          "integration:src/jobs/process-activity-delete-analytics-job.integration.test.ts",
-          "integration:src/metric-stream/clickhouse-sink.integration.test.ts",
-          "integration:src/providers/coros-sync.integration.test.ts",
-          "integration:src/providers/decathlon-sync.integration.test.ts",
-          "integration:src/providers/eight-a/provider.integration.test.ts",
-          "integration:src/providers/fatsecret/provider-sync.integration.test.ts",
-          "integration:src/providers/mapmyfitness-sync.integration.test.ts",
-          "integration:src/providers/openbeta-sync.integration.test.ts",
-          "integration:src/providers/polar-sync.integration.test.ts",
-          "integration:src/providers/ultrahuman-sync.integration.test.ts",
-          "integration:src/providers/withings-sync.integration.test.ts",
-          "integration:src/providers/ziva/nutrition-writer.integration.test.ts"
+          "integration:src/db/tokens.integration.test.ts",
+          "integration:src/db/unattached-climbing-log-entry.integration.test.ts",
+          "integration:src/email.integration.test.ts",
+          "integration:src/jobs/process-activity-image-backfill-job.integration.test.ts",
+          "integration:src/jobs/process-activity-image-job.integration.test.ts",
+          "integration:src/jobs/process-fit-file-import-job.integration.test.ts",
+          "integration:src/jobs/process-garmin-dump-import-job.integration.test.ts",
+          "integration:src/jobs/provider-artifact-erasure.integration.test.ts",
+          "integration:src/lib/climbing-board-account.integration.test.ts",
+          "integration:src/metric-stream/redpanda-quarantine.integration.test.ts",
+          "integration:src/providers/apple-health/db-insertion.integration.test.ts",
+          "integration:src/providers/apple-health/sync.integration.test.ts",
+          "integration:src/providers/fitbit-sync.integration.test.ts",
+          "integration:src/providers/strava-sync.integration.test.ts",
+          "integration:src/providers/suunto-sync.integration.test.ts",
+          "integration:src/providers/wger-sync.integration.test.ts"
         ],
         "estimated": [
-          "integration:analytics/models/read_models/activity_aerobic_efficiency.integration.test.ts",
-          "integration:analytics/models/read_models/healthspan_activity_zone_minutes.integration.test.ts",
-          "integration:packages/server/src/repositories/activity-route-preview.integration.test.ts",
-          "integration:packages/server/src/repositories/cycling-advanced-repository.integration.test.ts",
-          "integration:packages/server/src/repositories/pmc-repository.integration.test.ts",
-          "integration:packages/server/src/repositories/whoop-sensor-repository.integration.test.ts",
-          "integration:packages/server/src/routers/activity-power-curve-test-helpers.integration.test.ts",
-          "integration:src/account-erasure/clickhouse-erasure-coverage.integration.test.ts",
-          "integration:src/account-erasure/identifier-store.integration.test.ts",
-          "integration:src/account-erasure/peerdb-mirrored-rows.integration.test.ts",
-          "integration:src/analytics/cycling-power-projector.integration.test.ts",
-          "integration:src/db/account-erasure-processing.integration.test.ts",
-          "integration:src/db/activity-summary-power-serving.integration.test.ts",
-          "integration:src/db/clickhouse-migrations/0108_computed_cycling_power.integration.test.ts",
-          "integration:src/db/cycling-power-schema.integration.test.ts",
-          "integration:src/db/daily-cycling.integration.test.ts",
-          "integration:src/db/heart-rate-tss-parameter-cleanup.integration.test.ts",
-          "integration:src/jobs/process-activity-delete-analytics-job.integration.test.ts",
-          "integration:src/lib/climbing-board-account.integration.test.ts",
-          "integration:src/metric-stream/clickhouse-sink-identity.integration.test.ts",
-          "integration:src/providers/crimpd/provider.integration.test.ts",
-          "integration:src/providers/eight-a/provider.integration.test.ts",
-          "integration:src/providers/moonboard/provider.integration.test.ts"
+          "integration:packages/server/src/repositories/daily-health-sensor.integration.test.ts",
+          "integration:scripts/analytics-publication.integration.test.ts",
+          "integration:src/analytics/analytics-query-owner.integration.test.ts",
+          "integration:src/analytics/dbt-build.integration.test.ts",
+          "integration:src/lib/provider-adaptive-rate-limit.integration.test.ts",
+          "integration:src/metric-stream/clickhouse-sink-publication.integration.test.ts",
+          "integration:src/metric-stream/redpanda-quarantine.integration.test.ts"
         ],
-        "baselineSha256": "12fe57e55ad0362ce73c9aafa93561df8abca21d39049ea9e741bb896c195ebc",
+        "baselineSha256": "eb40e9438b335e1d41ed540e1741f4c25cdfa3732f89548c02055a867fbd0510",
         "cacheEnabled": true,
         "cacheExistedBefore": false,
         "bins": [
           {
-            "durationMs": 369962,
-            "fileCount": 88
-          },
-          {
-            "durationMs": 369961,
+            "durationMs": 457925.33095250063,
             "fileCount": 90
           },
           {
-            "durationMs": 369962,
-            "fileCount": 90
+            "durationMs": 457929.275645,
+            "fileCount": 91
           },
           {
-            "durationMs": 369966,
-            "fileCount": 90
+            "durationMs": 457929.1051879997,
+            "fileCount": 92
+          },
+          {
+            "durationMs": 457931.8977579996,
+            "fileCount": 92
           }
         ]
       },
       {
         "schemaVersion": 2,
-        "assignmentId": "d7fe2b2a-8d0e-4aef-8e4f-6ea5be4100d2",
-        "assignedAt": 1794161136019,
+        "assignmentId": "e2b44755-9d27-40c1-ab8c-0661b0b305b4",
+        "assignedAt": 1794287713365,
         "provenance": {
-          "sourceSha": "58d9c75d5d7d1e3e6c3bb523c32524fed68e72b5",
+          "sourceSha": "4d6f586fedc2374d35723a0914929df3af6cbe1f",
           "repository": "Asherlc/dofek",
-          "runId": 42507552488,
+          "runId": 42758981507,
           "runAttempt": 1,
           "vitestVersion": "5.0.5",
           "source": "Vitest integration serial forks with coverage",
@@ -1986,6 +1971,7 @@
           "integration:packages/server/src/repositories/cycling-power-curve-repository.integration.test.ts",
           "integration:packages/server/src/repositories/cycling-threshold-repository.integration.test.ts",
           "integration:packages/server/src/repositories/cycling-training-metrics-repository.integration.test.ts",
+          "integration:packages/server/src/repositories/daily-health-sensor.integration.test.ts",
           "integration:packages/server/src/repositories/daily-metrics-repository.integration.test.ts",
           "integration:packages/server/src/repositories/developer-client-repository.integration.test.ts",
           "integration:packages/server/src/repositories/efficiency-repository.integration.test.ts",
@@ -2067,6 +2053,7 @@
           "integration:packages/server/src/services/daily-recovery-read-model.integration.test.ts",
           "integration:packages/server/src/services/food-record-service.integration.test.ts",
           "integration:packages/web/src/lib/timeRange-policy.integration.test.ts",
+          "integration:scripts/analytics-publication.integration.test.ts",
           "integration:scripts/backfill-exercise-provenance.integration.test.ts",
           "integration:scripts/backfill-hang-ten-workouts.integration.test.ts",
           "integration:scripts/backfill-provider-connections.integration.test.ts",
@@ -2094,7 +2081,9 @@
           "integration:src/account-erasure/stripe-acceptance.integration.test.ts",
           "integration:src/activity-images/storage.integration.test.ts",
           "integration:src/analytics-refresh-queue.integration.test.ts",
+          "integration:src/analytics/analytics-query-owner.integration.test.ts",
           "integration:src/analytics/cycling-power-projector.integration.test.ts",
+          "integration:src/analytics/dbt-build.integration.test.ts",
           "integration:src/db/account-erasure-processing.integration.test.ts",
           "integration:src/db/account-erasure.integration.test.ts",
           "integration:src/db/activity-data-integrity-cadence-scope.integration.test.ts",
@@ -2232,9 +2221,12 @@
           "integration:src/jobs/provider-artifact-erasure.integration.test.ts",
           "integration:src/lib/cache.integration.test.ts",
           "integration:src/lib/climbing-board-account.integration.test.ts",
+          "integration:src/lib/provider-adaptive-rate-limit.integration.test.ts",
           "integration:src/metric-stream/clickhouse-sink-identity.integration.test.ts",
+          "integration:src/metric-stream/clickhouse-sink-publication.integration.test.ts",
           "integration:src/metric-stream/clickhouse-sink.integration.test.ts",
           "integration:src/metric-stream/redpanda-consumer.integration.test.ts",
+          "integration:src/metric-stream/redpanda-quarantine.integration.test.ts",
           "integration:src/processing/analytics-microbatch-bounds.integration.test.ts",
           "integration:src/processing/analytics-processing.integration.test.ts",
           "integration:src/processing/processing-event-store.integration.test.ts",
@@ -2286,141 +2278,127 @@
           "integration:src/zoho-desk.integration.test.ts"
         ],
         "selected": [
-          "integration:analytics/models/read_models/activity_duplicate_groups.integration.test.ts",
-          "integration:analytics/models/read_models/activity_heart_rate_distribution.integration.test.ts",
+          "integration:analytics/models/read_models/activity_aerobic_efficiency.integration.test.ts",
+          "integration:analytics/models/read_models/activity_duplicate_matches.integration.test.ts",
           "integration:analytics/models/read_models/activity_pace_curve.integration.test.ts",
           "integration:analytics/models/read_models/activity_sensor_dirty_keys.integration.test.ts",
-          "integration:analytics/models/read_models/activity_sensor_processing_coverage-compatibility.integration.test.ts",
           "integration:analytics/models/read_models/activity_step_cadence_rows.integration.test.ts",
-          "integration:analytics/models/read_models/healthspan_activity_zone_minutes.integration.test.ts",
-          "integration:packages/server/src/auth/password-reset.integration.test.ts",
           "integration:packages/server/src/auth/session.integration.test.ts",
-          "integration:packages/server/src/companion/token-repository.integration.test.ts",
-          "integration:packages/server/src/repositories/activity-hardware-repository.integration.test.ts",
-          "integration:packages/server/src/repositories/body-repository.integration.test.ts",
-          "integration:packages/server/src/repositories/cycling-threshold-repository.integration.test.ts",
-          "integration:packages/server/src/repositories/cycling-training-metrics-repository.integration.test.ts",
-          "integration:packages/server/src/repositories/food-record-repository.integration.test.ts",
-          "integration:packages/server/src/repositories/nutrition-canonical.integration.test.ts",
-          "integration:packages/server/src/repositories/performance-comparison-repository.integration.test.ts",
+          "integration:packages/server/src/export.integration.test.ts",
+          "integration:packages/server/src/index.integration.test.ts",
+          "integration:packages/server/src/mcp/token-repository.integration.test.ts",
+          "integration:packages/server/src/repositories/activity-map-state.integration.test.ts",
+          "integration:packages/server/src/repositories/activity-route-preview.integration.test.ts",
+          "integration:packages/server/src/repositories/activity-visibility-consistency.integration.test.ts",
+          "integration:packages/server/src/repositories/analytical-training-load-repository.integration.test.ts",
+          "integration:packages/server/src/repositories/climbing-log-entry-associator.integration.test.ts",
+          "integration:packages/server/src/repositories/cycling-performance-repository.integration.test.ts",
+          "integration:packages/server/src/repositories/finger-loading-progression-repository.integration.test.ts",
+          "integration:packages/server/src/repositories/pmc-repository.integration.test.ts",
           "integration:packages/server/src/repositories/recovery-activity-exposure-repository.integration.test.ts",
           "integration:packages/server/src/repositories/recovery-training-series-repository.integration.test.ts",
-          "integration:packages/server/src/repositories/repeated-efforts-repository.integration.test.ts",
-          "integration:packages/server/src/repositories/route-equivalence.integration.test.ts",
           "integration:packages/server/src/repositories/sport-volume-repository.integration.test.ts",
-          "integration:packages/server/src/repositories/sync-repository.integration.test.ts",
+          "integration:packages/server/src/repositories/training-load-repository.integration.test.ts",
+          "integration:packages/server/src/repositories/training-repository.integration.test.ts",
           "integration:packages/server/src/routers/account-erasure.integration.test.ts",
           "integration:packages/server/src/routers/activity-sensor-summary-read-model.integration.test.ts",
-          "integration:packages/server/src/routers/activity-title.integration.test.ts",
-          "integration:packages/server/src/routers/cycling-activity-read-model.integration.test.ts",
           "integration:packages/server/src/routers/duration-curves-data.integration.test.ts",
-          "integration:packages/server/src/routers/predictions.integration.test.ts",
-          "integration:packages/server/src/routers/settings.integration.test.ts",
-          "integration:packages/server/src/routers/sleep-consistency-across-endpoints.integration.test.ts",
-          "integration:packages/server/src/routers/sleep-heart-rate-window-read-model.integration.test.ts",
-          "integration:packages/server/src/routes/auth/data-provider-callback.integration.test.ts",
-          "integration:packages/server/src/routes/ingest-zos-health.integration.test.ts",
+          "integration:packages/server/src/routers/health-kit-sync-processors.integration.test.ts",
+          "integration:packages/server/src/routers/health-kit-sync.integration.test.ts",
+          "integration:packages/server/src/routers/healthspan.integration.test.ts",
+          "integration:packages/server/src/routers/mobile-dashboard.integration.test.ts",
+          "integration:packages/server/src/routers/router-sql.integration.test.ts",
+          "integration:packages/server/src/routers/router.integration.test.ts",
+          "integration:packages/server/src/routes/developer-clients.integration.test.ts",
+          "integration:packages/server/src/routes/external-write-api.integration.test.ts",
+          "integration:packages/web/src/lib/timeRange-policy.integration.test.ts",
+          "integration:scripts/analytics-publication.integration.test.ts",
           "integration:scripts/backfill-exercise-provenance.integration.test.ts",
-          "integration:scripts/seed-review-clickhouse.integration.test.ts",
           "integration:scripts/seed/body-health.integration.test.ts",
-          "integration:src/account-erasure/identifier-store.integration.test.ts",
-          "integration:src/account-erasure/postgres-erasure.integration.test.ts",
-          "integration:src/account-erasure/restore-reconciliation.integration.test.ts",
-          "integration:src/analytics-refresh-queue.integration.test.ts",
-          "integration:src/db/activity-data-integrity-dbt.integration.test.ts",
+          "integration:src/account-erasure/archive-erasure.integration.test.ts",
+          "integration:src/account-erasure/peerdb-staging-retention.integration.test.ts",
+          "integration:src/account-erasure/processor-erasure.integration.test.ts",
+          "integration:src/account-erasure/redis-erasure.integration.test.ts",
+          "integration:src/account-erasure/stripe-acceptance.integration.test.ts",
+          "integration:src/db/account-erasure.integration.test.ts",
+          "integration:src/db/activity-effort-identity-read-model.integration.test.ts",
+          "integration:src/db/activity-field-priority-read-model.integration.test.ts",
+          "integration:src/db/activity-field-priority.integration.test.ts",
+          "integration:src/db/activity-group-reconciliation.integration.test.ts",
           "integration:src/db/activity-origin-read-model.integration.test.ts",
+          "integration:src/db/activity-perceived-exertion.integration.test.ts",
+          "integration:src/db/activity-refresh-scope.integration.test.ts",
+          "integration:src/db/activity-route-identity-read-model.integration.test.ts",
           "integration:src/db/activity-sensor-consumers.integration.test.ts",
-          "integration:src/db/activity-sensor-sample-append.integration.test.ts",
-          "integration:src/db/activity-summary-power-serving.integration.test.ts",
-          "integration:src/db/activity-vo2max-stable-groups.integration.test.ts",
+          "integration:src/db/activity-summary-canonical-ids.integration.test.ts",
           "integration:src/db/canonical-activity-types-migration.integration.test.ts",
-          "integration:src/db/clickhouse-deduped-sensor.integration.test.ts",
-          "integration:src/db/clickhouse-migrations/0055_provider_connection_catalog.integration.test.ts",
-          "integration:src/db/clickhouse-migrations/0059_provider_change_state.integration.test.ts",
-          "integration:src/db/clickhouse-migrations/0060_heart_rate_day_change.integration.test.ts",
-          "integration:src/db/clickhouse-migrations/0067_repair_local_time_column_order.integration.test.ts",
-          "integration:src/db/clickhouse-migrations/0071_repair_canonical_activity_type_reads.integration.test.ts",
-          "integration:src/db/clickhouse-migrations/0084_activity_location_source_refresh_default.integration.test.ts",
-          "integration:src/db/clickhouse-migrations/0101_activity_end_time_nullability.integration.test.ts",
-          "integration:src/db/climbing-context-migration.integration.test.ts",
+          "integration:src/db/clickhouse-migrations/0061_provider_current_state_projection.integration.test.ts",
+          "integration:src/db/clickhouse-migrations/0073_activity_sensor_summary_source_version.integration.test.ts",
+          "integration:src/db/clickhouse-migrations/0077_activity_power_curve_evidence.integration.test.ts",
+          "integration:src/db/clickhouse-migrations/0087_complete_peerdb_raw_schema.integration.test.ts",
+          "integration:src/db/clickhouse-migrations/0091_metric_stream_freshness_index.integration.test.ts",
+          "integration:src/db/clickhouse-migrations/0093_refresh_daily_metrics_view.integration.test.ts",
+          "integration:src/db/clickhouse-migrations/0108_computed_cycling_power.integration.test.ts",
+          "integration:src/db/climbing-catalogue-seed.integration.test.ts",
+          "integration:src/db/climbing-log-model-conversion.integration.test.ts",
+          "integration:src/db/climbing-log-model.integration.test.ts",
+          "integration:src/db/climbing-log-sync.integration.test.ts",
           "integration:src/db/climbing-migration-order.integration.test.ts",
-          "integration:src/db/climbing-traits.integration.test.ts",
-          "integration:src/db/daily-metrics-schema.integration.test.ts",
-          "integration:src/db/db.integration.test.ts",
-          "integration:src/db/deduped-activities-read-model.integration.test.ts",
-          "integration:src/db/deduped-sensor-read-model.integration.test.ts",
+          "integration:src/db/climbing-route-method-migration.integration.test.ts",
+          "integration:src/db/cycling-power-schema.integration.test.ts",
+          "integration:src/db/daily-sleep-read-model.integration.test.ts",
+          "integration:src/db/data-export.integration.test.ts",
           "integration:src/db/food-record-modifications.integration.test.ts",
+          "integration:src/db/garmin-official-authorization-migration.integration.test.ts",
           "integration:src/db/heart-rate-tss-parameter-cleanup.integration.test.ts",
-          "integration:src/db/metric-stream-replica-identity.integration.test.ts",
-          "integration:src/db/record-modifications.integration.test.ts",
+          "integration:src/db/migrate.integration.test.ts",
+          "integration:src/db/mountain-project-tick-migration.integration.test.ts",
+          "integration:src/db/provider-activity-absence.integration.test.ts",
+          "integration:src/db/provider-issue-notification.integration.test.ts",
           "integration:src/db/sleep-quality-backfill.integration.test.ts",
-          "integration:src/db/stable-activity-groups-migration.integration.test.ts",
-          "integration:src/db/tokens.integration.test.ts",
-          "integration:src/db/unattached-climbing-log-entry.integration.test.ts",
-          "integration:src/db/user-external-effect.integration.test.ts",
-          "integration:src/email.integration.test.ts",
-          "integration:src/jobs/account-erasure-work-guard.integration.test.ts",
-          "integration:src/jobs/bullmq-stall.integration.test.ts",
-          "integration:src/jobs/process-activity-image-backfill-job.integration.test.ts",
-          "integration:src/jobs/process-fit-file-import-job.integration.test.ts",
+          "integration:src/export.integration.test.ts",
           "integration:src/lib/cache.integration.test.ts",
-          "integration:src/processing/analytics-microbatch-bounds.integration.test.ts",
-          "integration:src/processing/analytics-processing.integration.test.ts",
-          "integration:src/provider-artifact-storage.integration.test.ts",
-          "integration:src/providers/apple-health/db-insertion.integration.test.ts",
-          "integration:src/providers/apple-health/import.integration.test.ts",
-          "integration:src/providers/apple-health/sync.integration.test.ts",
+          "integration:src/lib/provider-adaptive-rate-limit.integration.test.ts",
+          "integration:src/processing/processing-event-store.integration.test.ts",
+          "integration:src/processing/processing-reconciler.integration.test.ts",
           "integration:src/providers/crimpd/provider.integration.test.ts",
-          "integration:src/providers/fitbit-sync.integration.test.ts",
-          "integration:src/providers/garmin/health.integration.test.ts",
-          "integration:src/providers/kaya-sync.integration.test.ts",
-          "integration:src/providers/trainerroad-sync.integration.test.ts",
-          "integration:src/providers/zwift-sync.integration.test.ts"
+          "integration:src/providers/cycling-analytics-sync.integration.test.ts",
+          "integration:src/providers/decathlon-sync.integration.test.ts",
+          "integration:src/providers/garmin/authorization.integration.test.ts",
+          "integration:src/providers/kaya/import.integration.test.ts",
+          "integration:src/providers/polar-sync.integration.test.ts",
+          "integration:src/providers/thecrag-sync.integration.test.ts",
+          "integration:src/providers/ziva/provider-sync.integration.test.ts",
+          "integration:src/zoho-desk.integration.test.ts"
         ],
         "estimated": [
-          "integration:analytics/models/read_models/activity_aerobic_efficiency.integration.test.ts",
-          "integration:analytics/models/read_models/healthspan_activity_zone_minutes.integration.test.ts",
-          "integration:packages/server/src/repositories/activity-route-preview.integration.test.ts",
-          "integration:packages/server/src/repositories/cycling-advanced-repository.integration.test.ts",
-          "integration:packages/server/src/repositories/pmc-repository.integration.test.ts",
-          "integration:packages/server/src/repositories/whoop-sensor-repository.integration.test.ts",
-          "integration:packages/server/src/routers/activity-power-curve-test-helpers.integration.test.ts",
-          "integration:src/account-erasure/clickhouse-erasure-coverage.integration.test.ts",
-          "integration:src/account-erasure/identifier-store.integration.test.ts",
-          "integration:src/account-erasure/peerdb-mirrored-rows.integration.test.ts",
-          "integration:src/analytics/cycling-power-projector.integration.test.ts",
-          "integration:src/db/account-erasure-processing.integration.test.ts",
-          "integration:src/db/activity-summary-power-serving.integration.test.ts",
-          "integration:src/db/clickhouse-migrations/0108_computed_cycling_power.integration.test.ts",
-          "integration:src/db/cycling-power-schema.integration.test.ts",
-          "integration:src/db/daily-cycling.integration.test.ts",
-          "integration:src/db/heart-rate-tss-parameter-cleanup.integration.test.ts",
-          "integration:src/jobs/process-activity-delete-analytics-job.integration.test.ts",
-          "integration:src/lib/climbing-board-account.integration.test.ts",
-          "integration:src/metric-stream/clickhouse-sink-identity.integration.test.ts",
-          "integration:src/providers/crimpd/provider.integration.test.ts",
-          "integration:src/providers/eight-a/provider.integration.test.ts",
-          "integration:src/providers/moonboard/provider.integration.test.ts"
+          "integration:packages/server/src/repositories/daily-health-sensor.integration.test.ts",
+          "integration:scripts/analytics-publication.integration.test.ts",
+          "integration:src/analytics/analytics-query-owner.integration.test.ts",
+          "integration:src/analytics/dbt-build.integration.test.ts",
+          "integration:src/lib/provider-adaptive-rate-limit.integration.test.ts",
+          "integration:src/metric-stream/clickhouse-sink-publication.integration.test.ts",
+          "integration:src/metric-stream/redpanda-quarantine.integration.test.ts"
         ],
-        "baselineSha256": "12fe57e55ad0362ce73c9aafa93561df8abca21d39049ea9e741bb896c195ebc",
+        "baselineSha256": "eb40e9438b335e1d41ed540e1741f4c25cdfa3732f89548c02055a867fbd0510",
         "cacheEnabled": true,
         "cacheExistedBefore": false,
         "bins": [
           {
-            "durationMs": 369962,
-            "fileCount": 88
-          },
-          {
-            "durationMs": 369961,
+            "durationMs": 457925.33095250063,
             "fileCount": 90
           },
           {
-            "durationMs": 369962,
-            "fileCount": 90
+            "durationMs": 457929.275645,
+            "fileCount": 91
           },
           {
-            "durationMs": 369966,
-            "fileCount": 90
+            "durationMs": 457929.1051879997,
+            "fileCount": 92
+          },
+          {
+            "durationMs": 457931.8977579996,
+            "fileCount": 92
           }
         ]
       }
@@ -2430,1792 +2408,1827 @@
     {
       "project": "integration",
       "file": "analytics/models/read_models/activity_aerobic_efficiency.integration.test.ts",
-      "durationMs": 8292.908442999993
+      "durationMs": 8512.183681000024
     },
     {
       "project": "integration",
       "file": "analytics/models/read_models/activity_duplicate_groups.integration.test.ts",
-      "durationMs": 673.46031699999
+      "durationMs": 617.6116480000783
     },
     {
       "project": "integration",
       "file": "analytics/models/read_models/activity_duplicate_matches.integration.test.ts",
-      "durationMs": 338.19925899995724
+      "durationMs": 772.1186760000419
     },
     {
       "project": "integration",
       "file": "analytics/models/read_models/activity_heart_rate_distribution.integration.test.ts",
-      "durationMs": 12133.514954999991
+      "durationMs": 16564.486115999985
     },
     {
       "project": "integration",
       "file": "analytics/models/read_models/activity_pace_curve.integration.test.ts",
-      "durationMs": 26108.39272199999
+      "durationMs": 28221.09229099995
     },
     {
       "project": "integration",
       "file": "analytics/models/read_models/activity_sensor_dirty_keys.integration.test.ts",
-      "durationMs": 26846.776448999997
+      "durationMs": 28584.540395999997
     },
     {
       "project": "integration",
       "file": "analytics/models/read_models/activity_sensor_key_verification.integration.test.ts",
-      "durationMs": 14861.738911000022
+      "durationMs": 13618.532834000012
     },
     {
       "project": "integration",
       "file": "analytics/models/read_models/activity_sensor_processing_coverage-compatibility.integration.test.ts",
-      "durationMs": 6356.896557
+      "durationMs": 5500.6551919999765
     },
     {
       "project": "integration",
       "file": "analytics/models/read_models/activity_sensor_processing_coverage-tooling.integration.test.ts",
-      "durationMs": 23156.006299
+      "durationMs": 27568.404770000023
     },
     {
       "project": "integration",
       "file": "analytics/models/read_models/activity_sensor_processing_coverage.integration.test.ts",
-      "durationMs": 56271.350097999995
+      "durationMs": 72704.196069
     },
     {
       "project": "integration",
       "file": "analytics/models/read_models/activity_source_records.integration.test.ts",
-      "durationMs": 3268.703948999988
+      "durationMs": 4014.2768800000194
     },
     {
       "project": "integration",
       "file": "analytics/models/read_models/activity_step_cadence_rows.integration.test.ts",
-      "durationMs": 86294.63169099999
+      "durationMs": 96999.816463
     },
     {
       "project": "integration",
       "file": "analytics/models/read_models/healthspan_activity_zone_minutes.integration.test.ts",
-      "durationMs": 4528.906096999999
+      "durationMs": 6134.43807600002
     },
     {
       "project": "integration",
       "file": "packages/server/src/auth/account-linking.integration.test.ts",
-      "durationMs": 409.01151499999105
+      "durationMs": 464.32588399999077
     },
     {
       "project": "integration",
       "file": "packages/server/src/auth/identity-credential-revocation.integration.test.ts",
-      "durationMs": 11.692757999990135
+      "durationMs": 18.727341999998316
     },
     {
       "project": "integration",
       "file": "packages/server/src/auth/password-credential.integration.test.ts",
-      "durationMs": 769.7562840000028
+      "durationMs": 1076.8790409999783
     },
     {
       "project": "integration",
       "file": "packages/server/src/auth/password-reset.integration.test.ts",
-      "durationMs": 1255.9065389999887
+      "durationMs": 1656.4079420000198
     },
     {
       "project": "integration",
       "file": "packages/server/src/auth/providers.integration.test.ts",
-      "durationMs": 30.29358900000807
+      "durationMs": 26.563935999991372
     },
     {
       "project": "integration",
       "file": "packages/server/src/auth/session.integration.test.ts",
-      "durationMs": 252.15223499998683
+      "durationMs": 284.88320899999235
     },
     {
       "project": "integration",
       "file": "packages/server/src/clinical-records/repository.integration.test.ts",
-      "durationMs": 373.6198330000043
+      "durationMs": 310.3970060000429
     },
     {
       "project": "integration",
       "file": "packages/server/src/companion/token-repository.integration.test.ts",
-      "durationMs": 400.4480979999644
+      "durationMs": 400.17101299995556
     },
     {
       "project": "integration",
       "file": "packages/server/src/export.integration.test.ts",
-      "durationMs": 276.9576759999618
+      "durationMs": 818.2921429999988
     },
     {
       "project": "integration",
       "file": "packages/server/src/index.integration.test.ts",
-      "durationMs": 801.7480649999925
+      "durationMs": 454.3103300000075
     },
     {
       "project": "integration",
       "file": "packages/server/src/jobs/process-provider-data-deletion-job.integration.test.ts",
-      "durationMs": 6141.449441999954
+      "durationMs": 5869.29640500003
     },
     {
       "project": "integration",
       "file": "packages/server/src/mcp/activity-details-stable-groups.integration.test.ts",
-      "durationMs": 8860.367912999995
+      "durationMs": 13241.327350000036
     },
     {
       "project": "integration",
       "file": "packages/server/src/mcp/day-nutrition-output.integration.test.ts",
-      "durationMs": 513.2709540000651
+      "durationMs": 659.9361910000443
     },
     {
       "project": "integration",
       "file": "packages/server/src/mcp/oidc.integration.test.ts",
-      "durationMs": 505.96532199997455
+      "durationMs": 452.1475049999426
     },
     {
       "project": "integration",
       "file": "packages/server/src/mcp/sdk-write-rediscovery.integration.test.ts",
-      "durationMs": 3523.4862600000342
+      "durationMs": 2703.554958999972
     },
     {
       "project": "integration",
       "file": "packages/server/src/mcp/token-repository.integration.test.ts",
-      "durationMs": 313.7017029999988
+      "durationMs": 306.7385570000042
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/activities-calendar-repository.integration.test.ts",
-      "durationMs": 2659.8028199999826
+      "durationMs": 2778.317081999965
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/activity-hardware-labels.integration.test.ts",
-      "durationMs": 314.9814789999509
+      "durationMs": 304.6190910000587
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/activity-hardware-repository.integration.test.ts",
-      "durationMs": 313.84251600003336
+      "durationMs": 382.0807349999668
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/activity-images-repository.integration.test.ts",
-      "durationMs": 626.3240910000168
+      "durationMs": 487.1838540000026
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/activity-local-date.integration.test.ts",
-      "durationMs": 258.33497000002535
+      "durationMs": 250.15159699996002
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/activity-map-state.integration.test.ts",
-      "durationMs": 1154.6844399999827
+      "durationMs": 1571.6153160000104
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/activity-metric-sources-repository.integration.test.ts",
-      "durationMs": 1215.493025999982
+      "durationMs": 1392.8299789999728
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/activity-repository.integration.test.ts",
-      "durationMs": 1216.354950000008
+      "durationMs": 1426.9786520000198
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/activity-route-preview.integration.test.ts",
-      "durationMs": 37.30701399996178
+      "durationMs": 84.5222589999903
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/activity-route-repository.integration.test.ts",
-      "durationMs": 252.74253899999894
+      "durationMs": 289.05503299995326
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/activity-sensor-provenance.integration.test.ts",
-      "durationMs": 9605.174638999975
+      "durationMs": 6820.3745630000485
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/activity-visibility-consistency.integration.test.ts",
-      "durationMs": 9238.338744999986
+      "durationMs": 11497.101968000003
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/analytical-training-load-repository.integration.test.ts",
-      "durationMs": 936.6131310000201
+      "durationMs": 1126.7840299999807
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/billing-repository.integration.test.ts",
-      "durationMs": 277.6010510000051
+      "durationMs": 282.5750770000159
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/body-measurement-read-model.integration.test.ts",
-      "durationMs": 5029.407082000049
+      "durationMs": 3517.732048999984
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/body-measurement-sample.integration.test.ts",
-      "durationMs": 3165.826720000012
+      "durationMs": 3162.982512000017
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/body-repository.integration.test.ts",
-      "durationMs": 10822.186096999969
+      "durationMs": 8071.5150249999715
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/clickhouse-activity-sensor-store-lifecycle.integration.test.ts",
-      "durationMs": 3339.7665909999632
+      "durationMs": 5418.495019999915
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/climbing-activity-log-entry-repository.integration.test.ts",
-      "durationMs": 2400.477650999994
+      "durationMs": 2029.1187009999994
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/climbing-images-repository.integration.test.ts",
-      "durationMs": 425.51362699997844
+      "durationMs": 421.55192700005136
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/climbing-log-entry-associator.integration.test.ts",
-      "durationMs": 751.9646400000202
+      "durationMs": 697.7417510000523
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/climbing-progression-repository.integration.test.ts",
-      "durationMs": 778.9416490000149
+      "durationMs": 1061.2507350000087
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/climbing-repository.integration.test.ts",
-      "durationMs": 4332.5777000000235
+      "durationMs": 4151.9583240000065
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/climbing-strengths-repository.integration.test.ts",
-      "durationMs": 989.1102360000368
+      "durationMs": 1558.720352000033
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/correlation-repository.integration.test.ts",
-      "durationMs": 4489.743903999974
+      "durationMs": 5312.966910999967
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/cycling-advanced-repository.integration.test.ts",
-      "durationMs": 1065.0329790000105
+      "durationMs": 1264.7869279999286
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/cycling-analytics-repository.integration.test.ts",
-      "durationMs": 608.8015969999833
+      "durationMs": 768.4562979999464
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/cycling-performance-repository.integration.test.ts",
-      "durationMs": 388.0359329999774
+      "durationMs": 246.53996100003133
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/cycling-power-curve-repository.integration.test.ts",
-      "durationMs": 707.0332209999906
+      "durationMs": 763.985932999989
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/cycling-threshold-repository.integration.test.ts",
-      "durationMs": 303.47225299995625
+      "durationMs": 385.2774460000219
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/cycling-training-metrics-repository.integration.test.ts",
-      "durationMs": 737.0296729999827
+      "durationMs": 956.2635519999894
+    },
+    {
+      "project": "integration",
+      "file": "packages/server/src/repositories/daily-health-sensor.integration.test.ts",
+      "durationMs": 8476.43603500002
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/daily-metrics-repository.integration.test.ts",
-      "durationMs": 3861.1696650000085
+      "durationMs": 6351.450798999984
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/developer-client-repository.integration.test.ts",
-      "durationMs": 323.8375999999698
+      "durationMs": 396.1971209999756
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/efficiency-repository.integration.test.ts",
-      "durationMs": 7143.611842000042
+      "durationMs": 8784.648738999967
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/finger-loading-progression-repository.integration.test.ts",
-      "durationMs": 371.41926900000544
+      "durationMs": 386.5885709999711
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/food-record-repository.integration.test.ts",
-      "durationMs": 669.140980999975
+      "durationMs": 581.293524000037
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/hang-ten-import.integration.test.ts",
-      "durationMs": 495.1693339999765
+      "durationMs": 499.11413799994625
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/hangboarding-repository.integration.test.ts",
-      "durationMs": 521.3181849999819
+      "durationMs": 605.3129049999989
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/health-kit-running-steps-repository.integration.test.ts",
-      "durationMs": 376.5882860000129
+      "durationMs": 352.14486900001066
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/heart-rate-repository.integration.test.ts",
-      "durationMs": 656.4816949999658
+      "durationMs": 848.3155469999765
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/hiking-repository.integration.test.ts",
-      "durationMs": 2369.7252360000275
+      "durationMs": 2303.1876799999736
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/hiking-route-projection.integration.test.ts",
-      "durationMs": 1361.4562429999933
+      "durationMs": 1674.5262459999649
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/kaya-sync.integration.test.ts",
-      "durationMs": 730.4406779999845
+      "durationMs": 919.5516580000403
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/nutrition-analytics-source-breakdown.integration.test.ts",
-      "durationMs": 479.61255899997195
+      "durationMs": 404.53169100004015
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/nutrition-canonical.integration.test.ts",
-      "durationMs": 2338.427900999988
+      "durationMs": 3381.750370999973
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/nutrition-source-key.integration.test.ts",
-      "durationMs": 641.2322370000184
+      "durationMs": 492.987056999933
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/performance-comparison-repository.integration.test.ts",
-      "durationMs": 2573.57128
+      "durationMs": 2219.4015059999947
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/pmc-repository.integration.test.ts",
-      "durationMs": 444.69901599996956
+      "durationMs": 459.8882900000317
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/processing-repository.integration.test.ts",
-      "durationMs": 318.8486549999798
+      "durationMs": 281.6209149999777
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/processing-sync-recovery.integration.test.ts",
-      "durationMs": 361.4526220000116
+      "durationMs": 351.1249779999489
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/provider-climbing-log-records.integration.test.ts",
-      "durationMs": 439.4931370000122
+      "durationMs": 384.1259859999991
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/provider-detail-repository.integration.test.ts",
-      "durationMs": 893.3604760000017
+      "durationMs": 729.7119979999843
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/provider-metric-stream-daily.integration.test.ts",
-      "durationMs": 1273.8903159999754
+      "durationMs": 1405.532620999962
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/provider-stats-read-model.integration.test.ts",
-      "durationMs": 1512.1350889999885
+      "durationMs": 1504.413910000003
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/push-provider-repository.integration.test.ts",
-      "durationMs": 239.30360799998743
+      "durationMs": 245.9154199999757
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/recovery-activity-exposure-repository.integration.test.ts",
-      "durationMs": 290.7795219999971
+      "durationMs": 333.0647529999842
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/recovery-training-series-repository.integration.test.ts",
-      "durationMs": 426.5625080000027
+      "durationMs": 446.5060870000161
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/repeated-efforts-repository.integration.test.ts",
-      "durationMs": 700.5806819999998
+      "durationMs": 575.8432990000001
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/route-equivalence.integration.test.ts",
-      "durationMs": 1662.8017040000414
+      "durationMs": 1292.3144240000402
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/running-repository.integration.test.ts",
-      "durationMs": 850.4813240000221
+      "durationMs": 812.5785780000151
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/sport-volume-repository.integration.test.ts",
-      "durationMs": 364.7283920000191
+      "durationMs": 364.8538220000337
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/strength-progression-repository.integration.test.ts",
-      "durationMs": 287.2617479999899
+      "durationMs": 318.43880100001115
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/strength-repository.integration.test.ts",
-      "durationMs": 1274.0278370000306
+      "durationMs": 1078.7969440000015
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/sync-repository.integration.test.ts",
-      "durationMs": 942.9923199999903
+      "durationMs": 1901.3040920000058
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/training-load-repository.integration.test.ts",
-      "durationMs": 9736.904039999994
+      "durationMs": 9446.414218000078
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/training-repository.integration.test.ts",
-      "durationMs": 356.1746480000438
+      "durationMs": 489.10620599996764
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/webhook-subscription-repository.integration.test.ts",
-      "durationMs": 280.4520359999733
+      "durationMs": 256.8008709999849
     },
     {
       "project": "integration",
       "file": "packages/server/src/repositories/whoop-sensor-repository.integration.test.ts",
-      "durationMs": 207.26967099995818
+      "durationMs": 290.2915890000295
     },
     {
       "project": "integration",
       "file": "packages/server/src/routers/account-erasure.integration.test.ts",
-      "durationMs": 551.6019420000084
+      "durationMs": 704.1198319999967
     },
     {
       "project": "integration",
       "file": "packages/server/src/routers/activity-dedup.integration.test.ts",
-      "durationMs": 1517.2229039999947
+      "durationMs": 2283.882248
     },
     {
       "project": "integration",
       "file": "packages/server/src/routers/activity-power-curve-eligibility.integration.test.ts",
-      "durationMs": 132.6192409999785
+      "durationMs": 159.1478880000068
     },
     {
       "project": "integration",
       "file": "packages/server/src/routers/activity-power-curve-read-model.integration.test.ts",
-      "durationMs": 25850.986161999987
+      "durationMs": 39969.42183499999
     },
     {
       "project": "integration",
       "file": "packages/server/src/routers/activity-power-curve-test-helpers.integration.test.ts",
-      "durationMs": 407.18980700010434
+      "durationMs": 673.1129020000808
     },
     {
       "project": "integration",
       "file": "packages/server/src/routers/activity-sensor-summary-read-model.integration.test.ts",
-      "durationMs": 681.59545600001
+      "durationMs": 934.211602000054
     },
     {
       "project": "integration",
       "file": "packages/server/src/routers/activity-title.integration.test.ts",
-      "durationMs": 626.1547920000157
+      "durationMs": 460.57698600000003
     },
     {
       "project": "integration",
       "file": "packages/server/src/routers/activity.integration.test.ts",
-      "durationMs": 847.6185869999463
+      "durationMs": 778.0433269999921
     },
     {
       "project": "integration",
       "file": "packages/server/src/routers/clickhouse-integration-test-read-models-b.integration.test.ts",
-      "durationMs": 29.856030999915674
+      "durationMs": 193.32334700005595
     },
     {
       "project": "integration",
       "file": "packages/server/src/routers/climbing.integration.test.ts",
-      "durationMs": 1446.7040169999818
+      "durationMs": 1596.4726110000047
     },
     {
       "project": "integration",
       "file": "packages/server/src/routers/credential-reconnect.integration.test.ts",
-      "durationMs": 5368.69368799997
+      "durationMs": 5384.358383000013
     },
     {
       "project": "integration",
       "file": "packages/server/src/routers/cycling-activity-read-model.integration.test.ts",
-      "durationMs": 62.99536500003887
+      "durationMs": 45.23642700002529
     },
     {
       "project": "integration",
       "file": "packages/server/src/routers/cycling-advanced-vertical-ascent.integration.test.ts",
-      "durationMs": 10123.199771000014
+      "durationMs": 14464.191448000027
     },
     {
       "project": "integration",
       "file": "packages/server/src/routers/daily-metrics.integration.test.ts",
-      "durationMs": 532.8071829999681
+      "durationMs": 528.101633000013
     },
     {
       "project": "integration",
       "file": "packages/server/src/routers/duration-curves-data.integration.test.ts",
-      "durationMs": 280.9560659999843
+      "durationMs": 503.68826800002716
     },
     {
       "project": "integration",
       "file": "packages/server/src/routers/efficiency.integration.test.ts",
-      "durationMs": 351.4511310000089
+      "durationMs": 266.09525000001304
     },
     {
       "project": "integration",
       "file": "packages/server/src/routers/health-kit-sync-processors.integration.test.ts",
-      "durationMs": 300.7701459999662
+      "durationMs": 337.14048799994634
     },
     {
       "project": "integration",
       "file": "packages/server/src/routers/health-kit-sync.integration.test.ts",
-      "durationMs": 846.8877189999985
+      "durationMs": 794.3743060000052
     },
     {
       "project": "integration",
       "file": "packages/server/src/routers/healthspan.integration.test.ts",
-      "durationMs": 13137.316611999995
+      "durationMs": 13496.601073999947
     },
     {
       "project": "integration",
       "file": "packages/server/src/routers/mobile-dashboard.integration.test.ts",
-      "durationMs": 4010.804589999956
+      "durationMs": 4005.7877909999806
     },
     {
       "project": "integration",
       "file": "packages/server/src/routers/nutrition-analytics-data.integration.test.ts",
-      "durationMs": 6174.918925000005
+      "durationMs": 9787.21295700001
     },
     {
       "project": "integration",
       "file": "packages/server/src/routers/predictions.integration.test.ts",
-      "durationMs": 9455.295454999985
+      "durationMs": 13370.117515999998
     },
     {
       "project": "integration",
       "file": "packages/server/src/routers/provider-detail.integration.test.ts",
-      "durationMs": 486.82935999997426
+      "durationMs": 332.3074459999916
     },
     {
       "project": "integration",
       "file": "packages/server/src/routers/router-data.integration.test.ts",
-      "durationMs": 40593.864041999994
+      "durationMs": 34116.888003
     },
     {
       "project": "integration",
       "file": "packages/server/src/routers/router-logic.integration.test.ts",
-      "durationMs": 26055.967010000008
+      "durationMs": 23464.026997
     },
     {
       "project": "integration",
       "file": "packages/server/src/routers/router-sql.integration.test.ts",
-      "durationMs": 5586.763625000021
+      "durationMs": 6361.684878
     },
     {
       "project": "integration",
       "file": "packages/server/src/routers/router.integration.test.ts",
-      "durationMs": 34533.928508
+      "durationMs": 32272.620762000002
     },
     {
       "project": "integration",
       "file": "packages/server/src/routers/settings.integration.test.ts",
-      "durationMs": 458.8527319999994
+      "durationMs": 513.967101999966
     },
     {
       "project": "integration",
       "file": "packages/server/src/routers/sleep-consistency-across-endpoints.integration.test.ts",
-      "durationMs": 3638.0103510000044
+      "durationMs": 2997.97640699998
     },
     {
       "project": "integration",
       "file": "packages/server/src/routers/sleep-heart-rate-sample-read-model.integration.test.ts",
-      "durationMs": 823.6769019999774
+      "durationMs": 725.4378630000283
     },
     {
       "project": "integration",
       "file": "packages/server/src/routers/sleep-heart-rate-window-read-model.integration.test.ts",
-      "durationMs": 1152.515520999994
+      "durationMs": 1518.5580710000359
     },
     {
       "project": "integration",
       "file": "packages/server/src/routers/sleep.integration.test.ts",
-      "durationMs": 20194.288224000018
+      "durationMs": 14684.821020999982
     },
     {
       "project": "integration",
       "file": "packages/server/src/routers/support.integration.test.ts",
-      "durationMs": 306.2053840000299
+      "durationMs": 347.11773100000573
     },
     {
       "project": "integration",
       "file": "packages/server/src/routers/sync-request-job.integration.test.ts",
-      "durationMs": 132.43089299998246
+      "durationMs": 161.02561200002674
     },
     {
       "project": "integration",
       "file": "packages/server/src/routers/sync.integration.test.ts",
-      "durationMs": 521.9445220000343
+      "durationMs": 502.9759409999242
     },
     {
       "project": "integration",
       "file": "packages/server/src/routers/trends-data.integration.test.ts",
-      "durationMs": 9085.67716999998
+      "durationMs": 12158.872426999966
     },
     {
       "project": "integration",
       "file": "packages/server/src/routers/whoop-auth.integration.test.ts",
-      "durationMs": 412.8606260000379
+      "durationMs": 331.5835209999932
     },
     {
       "project": "integration",
       "file": "packages/server/src/routes/auth/data-provider-callback.integration.test.ts",
-      "durationMs": 2180.405903000006
+      "durationMs": 888.3553880000254
     },
     {
       "project": "integration",
       "file": "packages/server/src/routes/developer-clients.integration.test.ts",
-      "durationMs": 606.1335470000049
+      "durationMs": 486.3886460000067
     },
     {
       "project": "integration",
       "file": "packages/server/src/routes/external-write-api.integration.test.ts",
-      "durationMs": 2832.813936000006
+      "durationMs": 2634.435504000001
     },
     {
       "project": "integration",
       "file": "packages/server/src/routes/ingest-zos-health.integration.test.ts",
-      "durationMs": 647.094176999999
+      "durationMs": 3525.273919
     },
     {
       "project": "integration",
       "file": "packages/server/src/services/daily-recovery-read-model.integration.test.ts",
-      "durationMs": 920.2454119999893
+      "durationMs": 1269.3797539999941
     },
     {
       "project": "integration",
       "file": "packages/server/src/services/food-record-service.integration.test.ts",
-      "durationMs": 3285.154905000003
+      "durationMs": 3708.4175880000003
     },
     {
       "project": "integration",
       "file": "packages/web/src/lib/timeRange-policy.integration.test.ts",
-      "durationMs": 396.0190280000097
+      "durationMs": 387.2750319999177
+    },
+    {
+      "project": "integration",
+      "file": "scripts/analytics-publication.integration.test.ts",
+      "durationMs": 3085.5086550000124
     },
     {
       "project": "integration",
       "file": "scripts/backfill-exercise-provenance.integration.test.ts",
-      "durationMs": 409.7656979999738
+      "durationMs": 438.8904779999866
     },
     {
       "project": "integration",
       "file": "scripts/backfill-hang-ten-workouts.integration.test.ts",
-      "durationMs": 281.74998299998697
+      "durationMs": 249.40001800004393
     },
     {
       "project": "integration",
       "file": "scripts/backfill-provider-connections.integration.test.ts",
-      "durationMs": 331.1390699999174
+      "durationMs": 380.6109689999139
     },
     {
       "project": "integration",
       "file": "scripts/seed-openai-reviewer-demo.integration.test.ts",
-      "durationMs": 560.3864489999833
+      "durationMs": 290.1379210000159
     },
     {
       "project": "integration",
       "file": "scripts/seed-review-clickhouse.integration.test.ts",
-      "durationMs": 720.2665719999932
+      "durationMs": 876.4781410000287
     },
     {
       "project": "integration",
       "file": "scripts/seed/body-health.integration.test.ts",
-      "durationMs": 317.28946599998744
+      "durationMs": 728.6466929999879
     },
     {
       "project": "integration",
       "file": "scripts/seed/core.integration.test.ts",
-      "durationMs": 334.0916150000412
+      "durationMs": 316.24456999998074
     },
     {
       "project": "integration",
       "file": "scripts/seed/verification.integration.test.ts",
-      "durationMs": 357.883834999986
+      "durationMs": 325.4836720000021
     },
     {
       "project": "integration",
       "file": "src/account-erasure/archive-erasure.integration.test.ts",
-      "durationMs": 13393.615061000048
+      "durationMs": 13896.502529000049
     },
     {
       "project": "integration",
       "file": "src/account-erasure/clickhouse-erasure-coverage.integration.test.ts",
-      "durationMs": 687.1111750000273
+      "durationMs": 579.9995750000235
     },
     {
       "project": "integration",
       "file": "src/account-erasure/clickhouse-erasure.integration.test.ts",
-      "durationMs": 163932.10100300002
+      "durationMs": 231515.88715999998
     },
     {
       "project": "integration",
       "file": "src/account-erasure/database-backup-storage.integration.test.ts",
-      "durationMs": 14349.828688999987
+      "durationMs": 26221.72455199994
     },
     {
       "project": "integration",
       "file": "src/account-erasure/identifier-store.integration.test.ts",
-      "durationMs": 25993.292294
+      "durationMs": 38414.30200899998
     },
     {
       "project": "integration",
       "file": "src/account-erasure/peerdb-mirrored-rows.integration.test.ts",
-      "durationMs": 31125.86247500003
+      "durationMs": 41729.42405800003
     },
     {
       "project": "integration",
       "file": "src/account-erasure/peerdb-staging-retention.integration.test.ts",
-      "durationMs": 3634.331629000022
+      "durationMs": 4026.1231130000087
     },
     {
       "project": "integration",
       "file": "src/account-erasure/postgres-erasure.integration.test.ts",
-      "durationMs": 526.6814470000099
+      "durationMs": 504.76608899998246
     },
     {
       "project": "integration",
       "file": "src/account-erasure/processor-erasure.integration.test.ts",
-      "durationMs": 119.7440250000218
+      "durationMs": 113.07812799999374
     },
     {
       "project": "integration",
       "file": "src/account-erasure/processor-retention.integration.test.ts",
-      "durationMs": 19.640983000048436
+      "durationMs": 29.127796999993734
     },
     {
       "project": "integration",
       "file": "src/account-erasure/redis-erasure.integration.test.ts",
-      "durationMs": 2029.5874049999984
+      "durationMs": 2036.6704819999868
     },
     {
       "project": "integration",
       "file": "src/account-erasure/redpanda-drain.integration.test.ts",
-      "durationMs": 324.67090100003406
+      "durationMs": 325.12270499998704
     },
     {
       "project": "integration",
       "file": "src/account-erasure/remote-revocation.integration.test.ts",
-      "durationMs": 59.08325200001127
+      "durationMs": 150.00796599994646
     },
     {
       "project": "integration",
       "file": "src/account-erasure/remote-snapshot-rotation.integration.test.ts",
-      "durationMs": 380.63790999999037
+      "durationMs": 454.4486129999859
     },
     {
       "project": "integration",
       "file": "src/account-erasure/remote-snapshot.integration.test.ts",
-      "durationMs": 995.1521420000063
+      "durationMs": 1116.4073820000049
     },
     {
       "project": "integration",
       "file": "src/account-erasure/restore-reconciliation.integration.test.ts",
-      "durationMs": 369.9269959999947
+      "durationMs": 351.1229699999094
     },
     {
       "project": "integration",
       "file": "src/account-erasure/stripe-acceptance.integration.test.ts",
-      "durationMs": 517.222574000014
+      "durationMs": 696.3084399999934
     },
     {
       "project": "integration",
       "file": "src/activity-images/storage.integration.test.ts",
-      "durationMs": 3904.4077760000364
+      "durationMs": 3826.569635999971
     },
     {
       "project": "integration",
       "file": "src/analytics-refresh-queue.integration.test.ts",
-      "durationMs": 78.78831600002013
+      "durationMs": 54.20443300000625
+    },
+    {
+      "project": "integration",
+      "file": "src/analytics/analytics-query-owner.integration.test.ts",
+      "durationMs": 2493.527080000029
     },
     {
       "project": "integration",
       "file": "src/analytics/cycling-power-projector.integration.test.ts",
-      "durationMs": 19013.693476999993
+      "durationMs": 30426.006278999965
+    },
+    {
+      "project": "integration",
+      "file": "src/analytics/dbt-build.integration.test.ts",
+      "durationMs": 24579.31031599996
     },
     {
       "project": "integration",
       "file": "src/db/account-erasure-processing.integration.test.ts",
-      "durationMs": 271.9752640000079
+      "durationMs": 353.3442560000112
     },
     {
       "project": "integration",
       "file": "src/db/account-erasure.integration.test.ts",
-      "durationMs": 774.5591270000004
+      "durationMs": 1032.5697500000024
     },
     {
       "project": "integration",
       "file": "src/db/activity-data-integrity-cadence-scope.integration.test.ts",
-      "durationMs": 755.1443919999874
+      "durationMs": 796.7816589999711
     },
     {
       "project": "integration",
       "file": "src/db/activity-data-integrity-dbt.integration.test.ts",
-      "durationMs": 73309.073363
+      "durationMs": 101777.70641599997
     },
     {
       "project": "integration",
       "file": "src/db/activity-data-integrity-repair.integration.test.ts",
-      "durationMs": 182077.86283000003
+      "durationMs": 190927.046112
     },
     {
       "project": "integration",
       "file": "src/db/activity-device-observations.integration.test.ts",
-      "durationMs": 413.5730110000004
+      "durationMs": 405.3892909999704
     },
     {
       "project": "integration",
       "file": "src/db/activity-effort-identity-read-model.integration.test.ts",
-      "durationMs": 2312.599916999985
+      "durationMs": 2563.9634540000116
     },
     {
       "project": "integration",
       "file": "src/db/activity-field-priority-dbt.integration.test.ts",
-      "durationMs": 16977.579322999984
+      "durationMs": 20307.958358000003
     },
     {
       "project": "integration",
       "file": "src/db/activity-field-priority-read-model.integration.test.ts",
-      "durationMs": 3037.624769999995
+      "durationMs": 2942.7884000000195
     },
     {
       "project": "integration",
       "file": "src/db/activity-field-priority.integration.test.ts",
-      "durationMs": 533.6335519999848
+      "durationMs": 889.1720499999938
     },
     {
       "project": "integration",
       "file": "src/db/activity-group-payload-union.integration.test.ts",
-      "durationMs": 29039.611128999997
+      "durationMs": 31494.00847999996
     },
     {
       "project": "integration",
       "file": "src/db/activity-group-reconciliation.integration.test.ts",
-      "durationMs": 564.9041389999911
+      "durationMs": 1128.9587600000086
     },
     {
       "project": "integration",
       "file": "src/db/activity-images.integration.test.ts",
-      "durationMs": 839.5113729999866
+      "durationMs": 840.9062289999565
     },
     {
       "project": "integration",
       "file": "src/db/activity-intervals.integration.test.ts",
-      "durationMs": 339.4204000000027
+      "durationMs": 338.49310100008734
     },
     {
       "project": "integration",
       "file": "src/db/activity-location-bounded-microbatch.integration.test.ts",
-      "durationMs": 23013.421808000014
+      "durationMs": 31213.065569999977
     },
     {
       "project": "integration",
       "file": "src/db/activity-origin-read-model.integration.test.ts",
-      "durationMs": 5067.655939999968
+      "durationMs": 5532.5832049999735
     },
     {
       "project": "integration",
       "file": "src/db/activity-origin.integration.test.ts",
-      "durationMs": 1584.0076660000486
+      "durationMs": 1777.1014480000013
     },
     {
       "project": "integration",
       "file": "src/db/activity-overlap-plan.integration.test.ts",
-      "durationMs": 255.69626599992625
+      "durationMs": 295.12014700006694
     },
     {
       "project": "integration",
       "file": "src/db/activity-payload-dbt-microbatch.integration.test.ts",
-      "durationMs": 116233.13140100002
+      "durationMs": 138304.901455
     },
     {
       "project": "integration",
       "file": "src/db/activity-perceived-exertion.integration.test.ts",
-      "durationMs": 237.2299809999531
+      "durationMs": 286.4428889999399
     },
     {
       "project": "integration",
       "file": "src/db/activity-power-curve-read-model.integration.test.ts",
-      "durationMs": 307.4550879999879
+      "durationMs": 474.21727900003316
     },
     {
       "project": "integration",
       "file": "src/db/activity-refresh-scope.integration.test.ts",
-      "durationMs": 100492.45636699998
+      "durationMs": 116784.89416199998
     },
     {
       "project": "integration",
       "file": "src/db/activity-route-identity-read-model.integration.test.ts",
-      "durationMs": 25810.054833999995
+      "durationMs": 28028.73567199998
     },
     {
       "project": "integration",
       "file": "src/db/activity-sensor-consumers.integration.test.ts",
-      "durationMs": 850.7722400000202
+      "durationMs": 1116.346985000011
     },
     {
       "project": "integration",
       "file": "src/db/activity-sensor-sample-append.integration.test.ts",
-      "durationMs": 12866.075170999975
+      "durationMs": 9739.16012700001
     },
     {
       "project": "integration",
       "file": "src/db/activity-sensor-sample-read-model.integration.test.ts",
-      "durationMs": 595.6240640000324
+      "durationMs": 557.1550010000356
     },
     {
       "project": "integration",
       "file": "src/db/activity-sensor-summary-power-sample-rate.integration.test.ts",
-      "durationMs": 10.834871000028215
+      "durationMs": 14.093868999974802
     },
     {
       "project": "integration",
       "file": "src/db/activity-sensor-summary-watermark.integration.test.ts",
-      "durationMs": 6003.590764000022
+      "durationMs": 6437.665145999985
     },
     {
       "project": "integration",
       "file": "src/db/activity-summary-canonical-ids.integration.test.ts",
-      "durationMs": 3341.634856000004
+      "durationMs": 3369.17803499999
     },
     {
       "project": "integration",
       "file": "src/db/activity-summary-power-serving.integration.test.ts",
-      "durationMs": 282.741817000031
+      "durationMs": 313.3948000000091
     },
     {
       "project": "integration",
       "file": "src/db/activity-type-classification.integration.test.ts",
-      "durationMs": 259.91340099996887
+      "durationMs": 225.60173100000247
     },
     {
       "project": "integration",
       "file": "src/db/activity-vo2max-stable-groups.integration.test.ts",
-      "durationMs": 2281.1778610000038
+      "durationMs": 1774.017502999981
     },
     {
       "project": "integration",
       "file": "src/db/apple-health-workout-revisions.integration.test.ts",
-      "durationMs": 717.2731110000168
+      "durationMs": 296.2876459999825
     },
     {
       "project": "integration",
       "file": "src/db/canonical-activity-types-migration.integration.test.ts",
-      "durationMs": 4445.022339999996
+      "durationMs": 6355.053584000001
     },
     {
       "project": "integration",
       "file": "src/db/clickhouse-cdc-health.integration.test.ts",
-      "durationMs": 127.63836800004356
+      "durationMs": 98.90668600000208
     },
     {
       "project": "integration",
       "file": "src/db/clickhouse-deduped-sensor.integration.test.ts",
-      "durationMs": 3551.6638260000036
+      "durationMs": 3660.2535219999845
     },
     {
       "project": "integration",
       "file": "src/db/clickhouse-migrations/0055_provider_connection_catalog.integration.test.ts",
-      "durationMs": 106.4981470000348
+      "durationMs": 265.8301190000493
     },
     {
       "project": "integration",
       "file": "src/db/clickhouse-migrations/0059_provider_change_state.integration.test.ts",
-      "durationMs": 391.96899199998006
+      "durationMs": 622.2886890000664
     },
     {
       "project": "integration",
       "file": "src/db/clickhouse-migrations/0060_heart_rate_day_change.integration.test.ts",
-      "durationMs": 146.5034380000434
+      "durationMs": 114.20701800001552
     },
     {
       "project": "integration",
       "file": "src/db/clickhouse-migrations/0061_provider_current_state_projection.integration.test.ts",
-      "durationMs": 228.5600540000014
+      "durationMs": 173.87254100001883
     },
     {
       "project": "integration",
       "file": "src/db/clickhouse-migrations/0067_repair_local_time_column_order.integration.test.ts",
-      "durationMs": 220.57423600001493
+      "durationMs": 152.78263099998003
     },
     {
       "project": "integration",
       "file": "src/db/clickhouse-migrations/0068_provider_metric_stream_daily_counts.integration.test.ts",
-      "durationMs": 360.5595930000418
+      "durationMs": 319.07341300003463
     },
     {
       "project": "integration",
       "file": "src/db/clickhouse-migrations/0069_canonical_activity_types.integration.test.ts",
-      "durationMs": 360.1590429999633
+      "durationMs": 307.8409329999704
     },
     {
       "project": "integration",
       "file": "src/db/clickhouse-migrations/0071_repair_canonical_activity_type_reads.integration.test.ts",
-      "durationMs": 501.91374700004235
+      "durationMs": 523.2731609999901
     },
     {
       "project": "integration",
       "file": "src/db/clickhouse-migrations/0072_canonical_clinical_records.integration.test.ts",
-      "durationMs": 216.47974800004158
+      "durationMs": 212.34585100004915
     },
     {
       "project": "integration",
       "file": "src/db/clickhouse-migrations/0073_activity_sensor_summary_source_version.integration.test.ts",
-      "durationMs": 192.18098299996927
+      "durationMs": 141.6812149999896
     },
     {
       "project": "integration",
       "file": "src/db/clickhouse-migrations/0074_metric_stream_external_id_projection.integration.test.ts",
-      "durationMs": 97.53188999998383
+      "durationMs": 40.27198500005761
     },
     {
       "project": "integration",
       "file": "src/db/clickhouse-migrations/0076_activity_sensor_provenance.integration.test.ts",
-      "durationMs": 63.603426999994554
+      "durationMs": 85.82411599997431
     },
     {
       "project": "integration",
       "file": "src/db/clickhouse-migrations/0077_activity_power_curve_evidence.integration.test.ts",
-      "durationMs": 28.059030000003986
+      "durationMs": 47.844412000034936
     },
     {
       "project": "integration",
       "file": "src/db/clickhouse-migrations/0078_sensor_provider_priority_type.integration.test.ts",
-      "durationMs": 49.61816400004318
+      "durationMs": 48.37606500001857
     },
     {
       "project": "integration",
       "file": "src/db/clickhouse-migrations/0079_stable_activity_group_id.integration.test.ts",
-      "durationMs": 99.36526599997887
+      "durationMs": 75.03286899998784
     },
     {
       "project": "integration",
       "file": "src/db/clickhouse-migrations/0081_stable_activity_read_views.integration.test.ts",
-      "durationMs": 602.0675449999981
+      "durationMs": 884.8587919999845
     },
     {
       "project": "integration",
       "file": "src/db/clickhouse-migrations/0083_activity_location_source_refresh.integration.test.ts",
-      "durationMs": 66.73556900001131
+      "durationMs": 70.76361299993005
     },
     {
       "project": "integration",
       "file": "src/db/clickhouse-migrations/0084_activity_location_source_refresh_default.integration.test.ts",
-      "durationMs": 83.78137899999274
+      "durationMs": 66.75230399996508
     },
     {
       "project": "integration",
       "file": "src/db/clickhouse-migrations/0086_activity_location_member_change.integration.test.ts",
-      "durationMs": 148.73695599997882
+      "durationMs": 139.8251970000565
     },
     {
       "project": "integration",
       "file": "src/db/clickhouse-migrations/0087_complete_peerdb_raw_schema.integration.test.ts",
-      "durationMs": 42.58938100002706
+      "durationMs": 73.2309940000996
     },
     {
       "project": "integration",
       "file": "src/db/clickhouse-migrations/0089_activity_lifecycle_nullable.integration.test.ts",
-      "durationMs": 28.945079000026453
+      "durationMs": 27.6523140000063
     },
     {
       "project": "integration",
       "file": "src/db/clickhouse-migrations/0091_metric_stream_freshness_index.integration.test.ts",
-      "durationMs": 62.21200500003761
+      "durationMs": 42.15769900009036
     },
     {
       "project": "integration",
       "file": "src/db/clickhouse-migrations/0092_sensor_scalar_sample_refresh_projection.integration.test.ts",
-      "durationMs": 827.7763830000185
+      "durationMs": 703.2852500000736
     },
     {
       "project": "integration",
       "file": "src/db/clickhouse-migrations/0093_refresh_daily_metrics_view.integration.test.ts",
-      "durationMs": 97.09963099996094
+      "durationMs": 69.92643899994437
     },
     {
       "project": "integration",
       "file": "src/db/clickhouse-migrations/0094_sensor_scalar_sample_lightweight_refresh_projection.integration.test.ts",
-      "durationMs": 397.5963810000103
+      "durationMs": 543.9838740000268
     },
     {
       "project": "integration",
       "file": "src/db/clickhouse-migrations/0095_food_entry_source_account_key.integration.test.ts",
-      "durationMs": 34.871507000003476
+      "durationMs": 43.61697199998889
     },
     {
       "project": "integration",
       "file": "src/db/clickhouse-migrations/0098_heart_rate_source_access.integration.test.ts",
-      "durationMs": 173.31727400003
+      "durationMs": 150.5960339999292
     },
     {
       "project": "integration",
       "file": "src/db/clickhouse-migrations/0099_activity_sensor_day_versions.integration.test.ts",
-      "durationMs": 168.38895400002366
+      "durationMs": 105.45609399996465
     },
     {
       "project": "integration",
       "file": "src/db/clickhouse-migrations/0101_activity_end_time_nullability.integration.test.ts",
-      "durationMs": 249.97879799996736
+      "durationMs": 247.7823319999734
     },
     {
       "project": "integration",
       "file": "src/db/clickhouse-migrations/0104_activity_origin.integration.test.ts",
-      "durationMs": 149.08376000006683
+      "durationMs": 244.0111849999521
     },
     {
       "project": "integration",
       "file": "src/db/clickhouse-migrations/0106_activity_primary_type.integration.test.ts",
-      "durationMs": 211.99953500000993
+      "durationMs": 109.6000280000153
     },
     {
       "project": "integration",
       "file": "src/db/clickhouse-migrations/0108_computed_cycling_power.integration.test.ts",
-      "durationMs": 1473.1717380000046
+      "durationMs": 2615.954246999987
     },
     {
       "project": "integration",
       "file": "src/db/climbing-attempt-result.integration.test.ts",
-      "durationMs": 5377.3194680000015
+      "durationMs": 4623.470108999987
     },
     {
       "project": "integration",
       "file": "src/db/climbing-catalogue-seed.integration.test.ts",
-      "durationMs": 507.61951899999985
+      "durationMs": 754.844019000011
     },
     {
       "project": "integration",
       "file": "src/db/climbing-context-migration.integration.test.ts",
-      "durationMs": 378.93020599999
+      "durationMs": 442.0449190000072
     },
     {
       "project": "integration",
       "file": "src/db/climbing-log-area-sync.integration.test.ts",
-      "durationMs": 432.1363040000433
+      "durationMs": 578.5361799999373
     },
     {
       "project": "integration",
       "file": "src/db/climbing-log-model-conversion.integration.test.ts",
-      "durationMs": 15752.44505499999
+      "durationMs": 20052.56932499999
     },
     {
       "project": "integration",
       "file": "src/db/climbing-log-model.integration.test.ts",
-      "durationMs": 718.8247569999658
+      "durationMs": 1483.8084720000043
     },
     {
       "project": "integration",
       "file": "src/db/climbing-log-session-sync.integration.test.ts",
-      "durationMs": 339.56177099992055
+      "durationMs": 441.5931489999639
     },
     {
       "project": "integration",
       "file": "src/db/climbing-log-snapshot.integration.test.ts",
-      "durationMs": 415.5077450000099
+      "durationMs": 328.9851369999815
     },
     {
       "project": "integration",
       "file": "src/db/climbing-log-sync.integration.test.ts",
-      "durationMs": 2559.3217250000016
+      "durationMs": 2893.9361970000027
     },
     {
       "project": "integration",
       "file": "src/db/climbing-migration-order.integration.test.ts",
-      "durationMs": 1226.0774589999928
+      "durationMs": 1384.5987409999943
     },
     {
       "project": "integration",
       "file": "src/db/climbing-route-method-migration.integration.test.ts",
-      "durationMs": 415.90900300000794
+      "durationMs": 513.6773350000149
     },
     {
       "project": "integration",
       "file": "src/db/climbing-route-method.integration.test.ts",
-      "durationMs": 430.7921070000157
+      "durationMs": 416.3651649999665
     },
     {
       "project": "integration",
       "file": "src/db/climbing-traits.integration.test.ts",
-      "durationMs": 136.86366199998884
+      "durationMs": 153.90612699999474
     },
     {
       "project": "integration",
       "file": "src/db/clinical-record-migration.integration.test.ts",
-      "durationMs": 585.4766270000255
+      "durationMs": 569.2355390000157
     },
     {
       "project": "integration",
       "file": "src/db/cycling-power-schema.integration.test.ts",
-      "durationMs": 3272.616130999988
+      "durationMs": 4091.7343190000392
     },
     {
       "project": "integration",
       "file": "src/db/daily-activity-load-read-model.integration.test.ts",
-      "durationMs": 960.0609379999805
+      "durationMs": 672.3357110000215
     },
     {
       "project": "integration",
       "file": "src/db/daily-body-measurement-read-model.integration.test.ts",
-      "durationMs": 1187.479331999988
+      "durationMs": 1202.893790000002
     },
     {
       "project": "integration",
       "file": "src/db/daily-cycling.integration.test.ts",
-      "durationMs": 54.43602299998747
+      "durationMs": 59.63723300001584
     },
     {
       "project": "integration",
       "file": "src/db/daily-metrics-schema.integration.test.ts",
-      "durationMs": 238.50477999995928
+      "durationMs": 238.94211300008465
     },
     {
       "project": "integration",
       "file": "src/db/daily-sleep-read-model.integration.test.ts",
-      "durationMs": 675.207774999988
+      "durationMs": 781.8380030000117
     },
     {
       "project": "integration",
       "file": "src/db/data-export.integration.test.ts",
-      "durationMs": 206.32480000006035
+      "durationMs": 320.3813680000021
     },
     {
       "project": "integration",
       "file": "src/db/db.integration.test.ts",
-      "durationMs": 541.8154119999963
+      "durationMs": 699.943357000011
     },
     {
       "project": "integration",
       "file": "src/db/deduped-activities-read-model.integration.test.ts",
-      "durationMs": 28645.319669999997
+      "durationMs": 34114.46790799999
     },
     {
       "project": "integration",
       "file": "src/db/deduped-sensor-read-model.integration.test.ts",
-      "durationMs": 57.28562099998817
+      "durationMs": 105.42611500003841
     },
     {
       "project": "integration",
       "file": "src/db/effort-equivalence-groups.integration.test.ts",
-      "durationMs": 374.1918810000061
+      "durationMs": 384.25408099999186
     },
     {
       "project": "integration",
       "file": "src/db/file-upload.integration.test.ts",
-      "durationMs": 357.8790230000159
+      "durationMs": 414.8606859999709
     },
     {
       "project": "integration",
       "file": "src/db/food-record-modifications.integration.test.ts",
-      "durationMs": 565.428344999993
+      "durationMs": 819.3450880000019
     },
     {
       "project": "integration",
       "file": "src/db/garmin-official-authorization-migration.integration.test.ts",
-      "durationMs": 322.6984560000128
+      "durationMs": 397.3338789999834
     },
     {
       "project": "integration",
       "file": "src/db/hang-ten-activity-priority.integration.test.ts",
-      "durationMs": 277.30805699998746
+      "durationMs": 273.60739300004207
     },
     {
       "project": "integration",
       "file": "src/db/hangboard-activity-type-migration.integration.test.ts",
-      "durationMs": 229.28628100000788
+      "durationMs": 233.8806859999895
     },
     {
       "project": "integration",
       "file": "src/db/heart-rate-tss-parameter-cleanup.integration.test.ts",
-      "durationMs": 270.38798299996415
+      "durationMs": 393.70786600001156
     },
     {
       "project": "integration",
       "file": "src/db/index.integration.test.ts",
-      "durationMs": 276.22627699997975
+      "durationMs": 263.87677500001155
     },
     {
       "project": "integration",
       "file": "src/db/metric-stream-location-point-migration.integration.test.ts",
-      "durationMs": 3333.277740999998
+      "durationMs": 2742.166160999972
     },
     {
       "project": "integration",
       "file": "src/db/metric-stream-replica-identity.integration.test.ts",
-      "durationMs": 479.2394370000111
+      "durationMs": 574.9713650000049
     },
     {
       "project": "integration",
       "file": "src/db/migrate.integration.test.ts",
-      "durationMs": 10254.57819499998
+      "durationMs": 7304.846783999994
     },
     {
       "project": "integration",
       "file": "src/db/mountain-project-tick-migration.integration.test.ts",
-      "durationMs": 133.79786699998658
+      "durationMs": 330.39562399999704
     },
     {
       "project": "integration",
       "file": "src/db/peerdb/mirror-schema-validator.integration.test.ts",
-      "durationMs": 556.6350719999755
+      "durationMs": 473.013176000095
     },
     {
       "project": "integration",
       "file": "src/db/processing-alert-dismissals.integration.test.ts",
-      "durationMs": 395.8133749999688
+      "durationMs": 268.20357299997704
     },
     {
       "project": "integration",
       "file": "src/db/provider-activity-absence.integration.test.ts",
-      "durationMs": 349.8427919999813
+      "durationMs": 451.5288019999862
     },
     {
       "project": "integration",
       "file": "src/db/provider-activity-sync.integration.test.ts",
-      "durationMs": 509.7958440000075
+      "durationMs": 242.61546499992255
     },
     {
       "project": "integration",
       "file": "src/db/provider-data-deletion.integration.test.ts",
-      "durationMs": 271.9373300000443
+      "durationMs": 226.57892699999502
     },
     {
       "project": "integration",
       "file": "src/db/provider-issue-notification.integration.test.ts",
-      "durationMs": 1420.2657129999716
+      "durationMs": 1456.1169130000053
     },
     {
       "project": "integration",
       "file": "src/db/provider-operation-fence.integration.test.ts",
-      "durationMs": 304.0929060000926
+      "durationMs": 257.8687899999786
     },
     {
       "project": "integration",
       "file": "src/db/record-local-time-context.integration.test.ts",
-      "durationMs": 419.8876009999658
+      "durationMs": 334.0848119999864
     },
     {
       "project": "integration",
       "file": "src/db/record-modifications.integration.test.ts",
-      "durationMs": 1054.7113219999883
+      "durationMs": 862.4216789999919
     },
     {
       "project": "integration",
       "file": "src/db/seed-dev-db.integration.test.ts",
-      "durationMs": 19159.878526000015
+      "durationMs": 11856.664751000004
     },
     {
       "project": "integration",
       "file": "src/db/sleep-quality-backfill.integration.test.ts",
-      "durationMs": 268.51284299994586
+      "durationMs": 288.6386519999942
     },
     {
       "project": "integration",
       "file": "src/db/stable-activity-groups-migration.integration.test.ts",
-      "durationMs": 761.5000489999657
+      "durationMs": 588.5487059999723
     },
     {
       "project": "integration",
       "file": "src/db/sync-log.integration.test.ts",
-      "durationMs": 310.8230410000542
+      "durationMs": 316.77097399998456
     },
     {
       "project": "integration",
       "file": "src/db/tagged-query-client.integration.test.ts",
-      "durationMs": 229.1700749999145
+      "durationMs": 255.9203260000213
     },
     {
       "project": "integration",
       "file": "src/db/tokens.integration.test.ts",
-      "durationMs": 2198.1502610000025
+      "durationMs": 683.1423880000366
     },
     {
       "project": "integration",
       "file": "src/db/tracking-mcp-scope-migration.integration.test.ts",
-      "durationMs": 365.77322500001173
+      "durationMs": 245.13341100001708
     },
     {
       "project": "integration",
       "file": "src/db/unattached-climbing-log-entry.integration.test.ts",
-      "durationMs": 261.3890000000247
+      "durationMs": 253.6186400000006
     },
     {
       "project": "integration",
       "file": "src/db/user-external-effect.integration.test.ts",
-      "durationMs": 276.45833299995866
+      "durationMs": 244.12642200000118
     },
     {
       "project": "integration",
       "file": "src/db/zepp-activity-priority.integration.test.ts",
-      "durationMs": 340.34143999998923
+      "durationMs": 336.982742000022
     },
     {
       "project": "integration",
       "file": "src/email.integration.test.ts",
-      "durationMs": 17.598302999977022
+      "durationMs": 21.961590999970213
     },
     {
       "project": "integration",
       "file": "src/export.integration.test.ts",
-      "durationMs": 360.3071769999806
+      "durationMs": 354.4513520000037
     },
     {
       "project": "integration",
       "file": "src/jobs/account-erasure-work-guard.integration.test.ts",
-      "durationMs": 547.5952509999915
+      "durationMs": 497.7761360000004
     },
     {
       "project": "integration",
       "file": "src/jobs/account-erasure-worker.integration.test.ts",
-      "durationMs": 405.67563700000755
+      "durationMs": 588.4578939999919
     },
     {
       "project": "integration",
       "file": "src/jobs/bullmq-stall.integration.test.ts",
-      "durationMs": 10042.158027000027
+      "durationMs": 10060.127399999998
     },
     {
       "project": "integration",
       "file": "src/jobs/process-account-erasure-request.integration.test.ts",
-      "durationMs": 653.1963229999528
+      "durationMs": 873.4138410000014
     },
     {
       "project": "integration",
       "file": "src/jobs/process-activity-delete-analytics-job.integration.test.ts",
-      "durationMs": 281.82958299998427
+      "durationMs": 290.39425400004257
     },
     {
       "project": "integration",
       "file": "src/jobs/process-activity-image-backfill-job.integration.test.ts",
-      "durationMs": 454.5435559999896
+      "durationMs": 508.200691999984
     },
     {
       "project": "integration",
       "file": "src/jobs/process-activity-image-job.integration.test.ts",
-      "durationMs": 11704.843214000051
+      "durationMs": 4220.315931000048
     },
     {
       "project": "integration",
       "file": "src/jobs/process-fit-file-import-job.integration.test.ts",
-      "durationMs": 2800.86782699998
+      "durationMs": 4460.983609999996
     },
     {
       "project": "integration",
       "file": "src/jobs/process-garmin-dump-import-job.integration.test.ts",
-      "durationMs": 367.2665220000199
+      "durationMs": 517.8833539999905
     },
     {
       "project": "integration",
       "file": "src/jobs/provider-artifact-erasure.integration.test.ts",
-      "durationMs": 549.5536319999956
+      "durationMs": 551.5227949999971
     },
     {
       "project": "integration",
       "file": "src/lib/cache.integration.test.ts",
-      "durationMs": 6.952928000013344
+      "durationMs": 6.822630999959074
     },
     {
       "project": "integration",
       "file": "src/lib/climbing-board-account.integration.test.ts",
-      "durationMs": 1663.568155999994
+      "durationMs": 2685.226767999993
+    },
+    {
+      "project": "integration",
+      "file": "src/lib/provider-adaptive-rate-limit.integration.test.ts",
+      "durationMs": 4813.758725999971
     },
     {
       "project": "integration",
       "file": "src/metric-stream/clickhouse-sink-identity.integration.test.ts",
-      "durationMs": 1873.1838940000162
+      "durationMs": 2049.654360000044
+    },
+    {
+      "project": "integration",
+      "file": "src/metric-stream/clickhouse-sink-publication.integration.test.ts",
+      "durationMs": 71348.32284799998
     },
     {
       "project": "integration",
       "file": "src/metric-stream/clickhouse-sink.integration.test.ts",
-      "durationMs": 12025.244571000003
+      "durationMs": 12206.119701999996
     },
     {
       "project": "integration",
       "file": "src/metric-stream/redpanda-consumer.integration.test.ts",
-      "durationMs": 26512.911863000016
+      "durationMs": 26351.151031000016
+    },
+    {
+      "project": "integration",
+      "file": "src/metric-stream/redpanda-quarantine.integration.test.ts",
+      "durationMs": 1615.8722919999855
     },
     {
       "project": "integration",
       "file": "src/processing/analytics-microbatch-bounds.integration.test.ts",
-      "durationMs": 8973.343481999997
+      "durationMs": 7507.809170999972
     },
     {
       "project": "integration",
       "file": "src/processing/analytics-processing.integration.test.ts",
-      "durationMs": 290.2334920000285
+      "durationMs": 248.59660699998494
     },
     {
       "project": "integration",
       "file": "src/processing/processing-event-store.integration.test.ts",
-      "durationMs": 466.4348239999963
+      "durationMs": 614.5391119999695
     },
     {
       "project": "integration",
       "file": "src/processing/processing-reconciler.integration.test.ts",
-      "durationMs": 862.3543499999796
+      "durationMs": 938.0827440000139
     },
     {
       "project": "integration",
       "file": "src/provider-artifact-storage.integration.test.ts",
-      "durationMs": 848.2373500000103
+      "durationMs": 1305.6028909999877
     },
     {
       "project": "integration",
       "file": "src/providers/apple-health/db-insertion.integration.test.ts",
-      "durationMs": 346.14306000000215
+      "durationMs": 370.6974049999844
     },
     {
       "project": "integration",
       "file": "src/providers/apple-health/import.integration.test.ts",
-      "durationMs": 1683.4369960000004
+      "durationMs": 1613.432643
     },
     {
       "project": "integration",
       "file": "src/providers/apple-health/sync.integration.test.ts",
-      "durationMs": 320.577197000006
+      "durationMs": 305.4594389999984
     },
     {
       "project": "integration",
       "file": "src/providers/bodyspec-sync.integration.test.ts",
-      "durationMs": 1455.3299819999957
+      "durationMs": 1266.378854999959
     },
     {
       "project": "integration",
       "file": "src/providers/concept2-sync.integration.test.ts",
-      "durationMs": 746.6899050000065
+      "durationMs": 640.8719529999653
     },
     {
       "project": "integration",
       "file": "src/providers/coros-sync.integration.test.ts",
-      "durationMs": 2104.763200000045
+      "durationMs": 2690.747307999991
     },
     {
       "project": "integration",
       "file": "src/providers/crimpd/provider.integration.test.ts",
-      "durationMs": 1647.2903859999788
+      "durationMs": 1912.4820090000285
     },
     {
       "project": "integration",
       "file": "src/providers/cronometer-csv-sync.integration.test.ts",
-      "durationMs": 774.8940079999738
+      "durationMs": 1560.3624019999988
     },
     {
       "project": "integration",
       "file": "src/providers/cycling-analytics-sync.integration.test.ts",
-      "durationMs": 635.9328770000138
+      "durationMs": 943.1210609999835
     },
     {
       "project": "integration",
       "file": "src/providers/decathlon-sync.integration.test.ts",
-      "durationMs": 498.9501889999956
+      "durationMs": 837.4531940000015
     },
     {
       "project": "integration",
       "file": "src/providers/eight-a/provider.integration.test.ts",
-      "durationMs": 2752.9525959999883
+      "durationMs": 3313.30803700001
     },
     {
       "project": "integration",
       "file": "src/providers/eight-sleep-sync.integration.test.ts",
-      "durationMs": 520.0363090000465
+      "durationMs": 498.2415570000303
     },
     {
       "project": "integration",
       "file": "src/providers/fatsecret/provider-sync.integration.test.ts",
-      "durationMs": 4215.818637999997
+      "durationMs": 2831.1019320000196
     },
     {
       "project": "integration",
       "file": "src/providers/fitbit-sync.integration.test.ts",
-      "durationMs": 3193.964617999998
+      "durationMs": 3764.642223999981
     },
     {
       "project": "integration",
       "file": "src/providers/garmin/activities.integration.test.ts",
-      "durationMs": 3457.8842140000197
+      "durationMs": 6236.799258999992
     },
     {
       "project": "integration",
       "file": "src/providers/garmin/authorization.integration.test.ts",
-      "durationMs": 655.722723999992
+      "durationMs": 794.96897300001
     },
     {
       "project": "integration",
       "file": "src/providers/garmin/health.integration.test.ts",
-      "durationMs": 357.6683449999837
+      "durationMs": 392.48254900000757
     },
     {
       "project": "integration",
       "file": "src/providers/kaya-sync.integration.test.ts",
-      "durationMs": 2583.4668370000145
+      "durationMs": 3473.973103999975
     },
     {
       "project": "integration",
       "file": "src/providers/kaya/import.integration.test.ts",
-      "durationMs": 400.43510200001765
+      "durationMs": 698.8582729999907
     },
     {
       "project": "integration",
       "file": "src/providers/komoot-sync.integration.test.ts",
-      "durationMs": 917.7217250000103
+      "durationMs": 1239.934242999996
     },
     {
       "project": "integration",
       "file": "src/providers/mapmyfitness-sync.integration.test.ts",
-      "durationMs": 1269.0821659999783
+      "durationMs": 792.8891109999968
     },
     {
       "project": "integration",
       "file": "src/providers/moonboard/provider.integration.test.ts",
-      "durationMs": 254.2971569999354
+      "durationMs": 278.75786000001244
     },
     {
       "project": "integration",
       "file": "src/providers/mountain-project-sync.integration.test.ts",
-      "durationMs": 5155.891946999996
+      "durationMs": 8371.568832000019
     },
     {
       "project": "integration",
       "file": "src/providers/openbeta-sync.integration.test.ts",
-      "durationMs": 1513.266625999997
+      "durationMs": 833.1260790000088
     },
     {
       "project": "integration",
       "file": "src/providers/oura-sync.integration.test.ts",
-      "durationMs": 822.1765430000378
+      "durationMs": 814.8221410000115
     },
     {
       "project": "integration",
       "file": "src/providers/peloton-sync-ext.integration.test.ts",
-      "durationMs": 626.8022199999978
+      "durationMs": 712.3509740000009
     },
     {
       "project": "integration",
       "file": "src/providers/peloton-sync.integration.test.ts",
-      "durationMs": 603.5332210000488
+      "durationMs": 592.0285230000154
     },
     {
       "project": "integration",
       "file": "src/providers/polar-sync.integration.test.ts",
-      "durationMs": 1127.6300170000177
+      "durationMs": 1168.5834009999817
     },
     {
       "project": "integration",
       "file": "src/providers/ride-with-gps-sync.integration.test.ts",
-      "durationMs": 1405.6703260000213
+      "durationMs": 2277.025426999957
     },
     {
       "project": "integration",
       "file": "src/providers/strava-sync.integration.test.ts",
-      "durationMs": 4410.582517000003
+      "durationMs": 4918.343716999982
     },
     {
       "project": "integration",
       "file": "src/providers/strong-csv-sync.integration.test.ts",
-      "durationMs": 427.38816800003406
+      "durationMs": 633.0049319999525
     },
     {
       "project": "integration",
       "file": "src/providers/suunto-sync.integration.test.ts",
-      "durationMs": 1704.1849330000114
+      "durationMs": 2725.823563999962
     },
     {
       "project": "integration",
       "file": "src/providers/thecrag-sync.integration.test.ts",
-      "durationMs": 1901.1293080000032
+      "durationMs": 3092.0967819999787
     },
     {
       "project": "integration",
       "file": "src/providers/trainerroad-sync.integration.test.ts",
-      "durationMs": 378.02670200000284
+      "durationMs": 337.01292199996533
     },
     {
       "project": "integration",
       "file": "src/providers/ultrahuman-sync.integration.test.ts",
-      "durationMs": 644.3243820000207
+      "durationMs": 353.4393670000136
     },
     {
       "project": "integration",
       "file": "src/providers/wahoo-sync.integration.test.ts",
-      "durationMs": 5685.092827000015
+      "durationMs": 11852.86486500001
     },
     {
       "project": "integration",
       "file": "src/providers/wger-sync.integration.test.ts",
-      "durationMs": 574.6244379999989
+      "durationMs": 662.6830740000005
     },
     {
       "project": "integration",
       "file": "src/providers/whoop-sync.integration.test.ts",
-      "durationMs": 13137.496887999994
+      "durationMs": 19620.832842000003
     },
     {
       "project": "integration",
       "file": "src/providers/withings-sync.integration.test.ts",
-      "durationMs": 508.54564900003606
+      "durationMs": 567.0841349999537
     },
     {
       "project": "integration",
       "file": "src/providers/xert-sync.integration.test.ts",
-      "durationMs": 557.1202550000162
+      "durationMs": 404.78515399998287
     },
     {
       "project": "integration",
       "file": "src/providers/ziva/nutrition-writer.integration.test.ts",
-      "durationMs": 399.28846700000577
+      "durationMs": 351.57081400003517
     },
     {
       "project": "integration",
       "file": "src/providers/ziva/provider-sync.integration.test.ts",
-      "durationMs": 1330.6033590000006
+      "durationMs": 1753.4684600000037
     },
     {
       "project": "integration",
       "file": "src/providers/zwift-sync.integration.test.ts",
-      "durationMs": 840.7336749999959
+      "durationMs": 686.567802000005
     },
     {
       "project": "integration",
       "file": "src/zoho-desk.integration.test.ts",
-      "durationMs": 80.49225100001786
+      "durationMs": 81.91504500003066
     }
   ]
 }
