@@ -1261,6 +1261,13 @@
       "when": 1793899501000,
       "tag": "0179_account_erasure_identifiers",
       "breakpoints": true
+    },
+    {
+      "idx": 180,
+      "version": "7",
+      "when": 1794289571569,
+      "tag": "0180_climbing_log_activity",
+      "breakpoints": true
     }
   ]
 }
