@@ -93,7 +93,9 @@ The existing SDK identity/consent behavior still applies.
 
 Mobile also records informational logs and breadcrumbs. The existing background
 sync policy counts known timeouts and lost connections as `background_transport`;
-it includes WHOOP IMU/realtime uploads. This does not promise subsequent delivery.
+it includes WHOOP IMU/realtime uploads and Apple Health sync-status uploads
+(`apple-health-sync-log`). The [classifier](../packages/mobile/lib/health-kit-errors.ts)
+keeps parsing, schema and storage failures reportable. This does not promise subsequent delivery.
 Inspect retained buffers and sync progress when investigating sustained failure.
 Query the existing log destination using its [map-field contract](axiom-observability-runbook.md):
 

@@ -169,6 +169,23 @@ describe("fetchCurrentUser", () => {
     await expect(fetchCurrentUser("https://srv", "tok")).rejects.toThrow("network");
   });
 
+  it.each([404, 503])(
+    "preserves a non-JSON HTTP %s without reporting a JSON parse failure",
+    async (status) => {
+      vi.mocked(fetch).mockResolvedValueOnce(
+        new Response("404 page not found", {
+          status,
+          headers: { "content-type": "text/plain" },
+        }),
+      );
+
+      await expect(fetchCurrentUser("https://srv", "tok")).rejects.toThrow(
+        `Auth bootstrap failed: ${status}`,
+      );
+      expect(mockCaptureException).not.toHaveBeenCalled();
+    },
+  );
+
   it("throws when response has wrong shape", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(
       new Response(JSON.stringify({ wrong: "shape" }), {
@@ -1119,6 +1136,37 @@ describe("native upload signout boundary", () => {
     vi.mocked(storage.getItemAsync).mockReset().mockResolvedValue(null);
     resetSessionTokenCacheForTests();
   });
+  it("keeps credential cleanup and a later session write behind pending native cleanup", async () => {
+    const native = await import("../modules/whoop-ble");
+    const storage = await import("expo-secure-store");
+    let finish!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    vi.mocked(native.disableUploads).mockImplementationOnce(() => pending);
+    vi.mocked(storage.setItemAsync).mockReset().mockResolvedValue(undefined);
+    const clearing = clearSessionToken();
+    const saving = saveSessionToken("replacement-session");
+    try {
+      await Promise.resolve();
+      expect(storage.deleteItemAsync).not.toHaveBeenCalled();
+      expect(storage.setItemAsync).not.toHaveBeenCalled();
+    } finally {
+      finish();
+      await clearing;
+      await saving;
+    }
+    expect(storage.deleteItemAsync).toHaveBeenCalledWith("dofek_session_token");
+    expect(storage.setItemAsync).toHaveBeenCalledWith(
+      "dofek_session_token",
+      "replacement-session",
+      expect.anything(),
+    );
+    expect(vi.mocked(storage.setItemAsync).mock.invocationCallOrder[0]).toBeGreaterThan(
+      vi.mocked(storage.deleteItemAsync).mock.invocationCallOrder.at(-1) ?? 0,
+    );
+    await expect(getSessionToken()).resolves.toBe("replacement-session");
+  });
   it("deletes persisted credentials even when native disable fails", async () => {
     const native = await import("../modules/whoop-ble");
     const storage = await import("expo-secure-store");
@@ -1132,9 +1180,9 @@ describe("native upload signout boundary", () => {
     vi.mocked(storage.deleteItemAsync).mockImplementation(async (key) => {
       persisted.delete(key);
     });
-    vi.mocked(native.disableUploads).mockImplementationOnce(() => {
-      throw new Error("Native queue could not be purged");
-    });
+    vi.mocked(native.disableUploads).mockRejectedValueOnce(
+      new Error("Native queue could not be purged"),
+    );
     await expect(clearSessionToken()).rejects.toThrow("Native queue could not be purged");
     expect(persisted.size).toBe(0);
     expect(mockCaptureException).toHaveBeenCalledOnce();
@@ -1150,9 +1198,7 @@ describe("native upload signout boundary", () => {
     vi.clearAllMocks();
     const nativeFailure = new Error("Native queue could not be purged");
     const credentialFailure = new Error("Keychain unavailable");
-    vi.mocked(native.disableUploads).mockImplementationOnce(() => {
-      throw nativeFailure;
-    });
+    vi.mocked(native.disableUploads).mockRejectedValueOnce(nativeFailure);
     vi.mocked(storage.deleteItemAsync).mockImplementation(async (key) => {
       if (key === "dofek_session_token") throw credentialFailure;
     });
