@@ -4,7 +4,7 @@ import {
   formatActivityMetric,
   groupActivityMetrics,
 } from "@dofek/format/activity-data-state";
-import { formatDurationRange, formatDurationSeconds, formatNumber } from "@dofek/format/format";
+import { formatDurationMinutes, formatDurationSeconds, formatNumber } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { processingPollInterval } from "@dofek/providers/processing-status";
@@ -89,7 +89,7 @@ function StatsGrid({ stats }: { stats: StatItem[] }) {
           <View
             key={stat.label}
             style={statsStyles.card}
-            accessible={isUnavailable}
+            accessible={isUnavailable || accessibleLabel !== undefined}
             accessibilityLabel={accessibleLabel}
           >
             <Text style={statsStyles.label}>
@@ -638,12 +638,11 @@ export default function ActivityDetailScreen() {
   // Build stats array
   const stats: StatItem[] = [];
 
-  if (activity.startedAt && activity.endedAt) {
-    stats.push({
-      label: "Duration",
-      value: formatDurationRange(activity.startedAt, activity.endedAt),
-    });
-  }
+  stats.push({
+    label: "Duration",
+    value:
+      activity.durationMin === null ? "Unavailable" : formatDurationMinutes(activity.durationMin),
+  });
   if (!(isCycling && isIndoorCyclingModality(activity.modality))) {
     stats.push(
       formatActivityMetric(

@@ -115,7 +115,7 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
 
 - `integration-test-sequencer.ts`: Uses Vitest's public
   [BaseSequencer extension](https://v4.vitest.dev/config/sequence) to balance the
-  existing four integration shards from one committed measured baseline.
+  existing five integration shards from one committed measured baseline.
   Discovery and original specifications remain authoritative. New files use
   the positive-duration median; estimates and all allocations are recorded in
   `reports/integration-sharding/<index>-of-<count>/assignment.json`.
@@ -124,16 +124,16 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
   after the run ends. It requires successful complete current-run results for
   exactly the assigned files.
 - `update-integration-test-timings.ts`: Validates the reporter-owned artifacts
-  and combines exactly four coherent shard exports. It does not parse Vitest's
+  and combines exactly five coherent shard exports. It does not parse Vitest's
   internal cache files; the [public reporter API](https://vitest.dev/api/advanced/reporters)
   supplies completed modules.
   Allocation never consumes independently restored caches. Invalid refresh input
   preserves the existing baseline.
   - CI export, after tests pass:
-    `pnpm tsx scripts/update-integration-test-timings.ts export reports/integration-sharding/1-of-4`
-  - Reviewed refresh from four downloaded directories from one successful run
+    `pnpm tsx scripts/update-integration-test-timings.ts export reports/integration-sharding/1-of-5`
+  - Reviewed refresh from five downloaded directories from one successful run
     attempt:
-    `pnpm tsx scripts/update-integration-test-timings.ts merge scripts/integration-test-timings.json <shard1-directory> <shard2-directory> <shard3-directory> <shard4-directory>`
+    `pnpm tsx scripts/update-integration-test-timings.ts merge scripts/integration-test-timings.json <shard1-directory> <shard2-directory> <shard3-directory> <shard4-directory> <shard5-directory>`
   - See [duration-balanced integration shards](../docs/testing.md#duration-balanced-integration-shards)
     for freshness, provenance, timing limitations and allocation verification.
 - `run-swift-mutation.ts`: Runs the pinned MutantKit tool for changed compiled

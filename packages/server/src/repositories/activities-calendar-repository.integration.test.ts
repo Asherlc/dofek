@@ -630,3 +630,117 @@ describe("Activities list cycling modality", () => {
     );
   });
 });
+
+describe("Point-only activity calendar visibility", () => {
+  let context: TestContext;
+  let sensorStore: ClickHouseActivitySensorStore;
+  let pointGroupId: string;
+  beforeAll(async () => {
+    context = await setupTestDatabase();
+    await ensureProvider(context.db, "kilter", "Kilter Board", undefined, userId);
+    await persistClimbingLogEntries(context.db, {
+      userId,
+      providerId: "kilter",
+      entries: [
+        {
+          externalId: "single-point",
+          activityObservation: { recordedAt: "2026-11-10T01:00:00Z" },
+          attempts: [],
+        },
+      ],
+    });
+    const [unfinished] = await context.db
+      .insert(activity)
+      .values({
+        userId,
+        providerId: "kilter",
+        externalId: "unfinished",
+        canonicalType: "cycling",
+        providerType: "cycling",
+        startedAt: new Date("2026-11-10T03:00:00Z"),
+      })
+      .returning();
+    const points = await context.db
+      .select()
+      .from(activity)
+      .where(sql`user_id=${userId} AND provider_type='climbing_log'`);
+    const point = points[0];
+    if (!point || !unfinished) throw new Error("Expected point and unfinished recording");
+    pointGroupId = point.groupId;
+    sensorStore = await createCalendarFixture(context, [point, unfinished]);
+  });
+  afterAll(async () => {
+    await context?.cleanup();
+  });
+  it("shows one point with unknown duration across calendar, page and overview without exposing unfinished recordings", async () => {
+    const input = { weeks: 1, endDate: "2026-11-10" };
+    const repository = new ActivitiesCalendarRepository(context.db, userId, "UTC", sensorStore);
+    const days = await repository.getWeekList(input);
+    expect(
+      days.flatMap((day) =>
+        day.activities.map((entry) => ({
+          id: entry.id,
+          durationMin: entry.durationMin,
+          endedAt: entry.endedAt,
+          sourceCount: entry.source.sourceCount,
+        })),
+      ),
+    ).toEqual([{ id: pointGroupId, durationMin: null, endedAt: null, sourceCount: 1 }]);
+    const page = await repository.getPage({ ...input, page: 0, pageSize: 10 });
+    expect(page.totalCount).toBe(1);
+    expect(page.days).toEqual(days);
+    const overview = await new ActivityOverviewRepository(
+      context.db,
+      userId,
+      "UTC",
+      sensorStore,
+    ).getActivityOverview(input);
+    expect(overview).toMatchObject({
+      activityCount: 1,
+      totalMinutes: 0,
+      activityTypes: ["climbing"],
+    });
+  });
+});
+
+describe("Calendar measured duration precision", () => {
+  let context: TestContext;
+  let sensorStore: ClickHouseActivitySensorStore;
+  let measuredActivityId: string;
+
+  beforeAll(async () => {
+    context = await setupTestDatabase();
+    await ensureProvider(context.db, "wahoo", "Wahoo", undefined, userId);
+    const [measuredActivity] = await context.db
+      .insert(activity)
+      .values({
+        userId,
+        providerId: "wahoo",
+        externalId: "fractional-second-duration",
+        canonicalType: "cycling",
+        providerType: "cycling",
+        startedAt: new Date("2026-03-01T10:00:00.490Z"),
+        endedAt: new Date("2026-03-01T11:30:27.410Z"),
+      })
+      .returning();
+    if (!measuredActivity) throw new Error("Expected the measured-duration fixture activity");
+    measuredActivityId = measuredActivity.groupId;
+    sensorStore = await createCalendarFixture(context, [measuredActivity]);
+  });
+
+  afterAll(async () => {
+    await context?.cleanup();
+  });
+
+  it("matches server detail duration at sub-second boundaries", async () => {
+    const days = await new ActivitiesCalendarRepository(
+      context.db,
+      userId,
+      "UTC",
+      sensorStore,
+    ).getWeekList({ weeks: 1, endDate: "2026-03-01" });
+    const entry = days.flatMap((day) => day.activities).find(({ id }) => id === measuredActivityId);
+
+    expect(entry?.durationMin).toBe(90.4);
+  });
+});

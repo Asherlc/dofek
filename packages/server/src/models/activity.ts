@@ -2,6 +2,7 @@ import type { ActivityDataState } from "@dofek/format/activity-data-state";
 import type { RecordLocalTimeContext } from "@dofek/format/record-local-time";
 import type { ActivityOriginEvidence } from "@dofek/providers/activity-origin";
 import type { ActivitySourceTree } from "@dofek/providers/activity-source-tree";
+import type { ClimbingLogActivitySession } from "../contracts/climbing-log-contracts.ts";
 import { activityMeasurementState } from "../services/activity-data-state.ts";
 import { type ActivityOriginColumns, activityOriginFromColumns } from "./activity-origin.ts";
 import type { ActivitySource } from "./activity-source.ts";
@@ -26,6 +27,7 @@ export type {
 };
 
 export interface ActivityDetail {
+  climbingLogSessions: ClimbingLogActivitySession[];
   id: string;
   displayedDate: string;
   resolvedFrom?: string;
@@ -35,6 +37,7 @@ export interface ActivityDetail {
   modality: string | null;
   startedAt: string;
   endedAt: string | null;
+  durationMin: number | null;
   name: string | null;
   notes: string | null;
   perceivedExertion: number | null;
@@ -154,6 +157,15 @@ export class Activity {
     return this.#row.ended_at ? String(this.#row.ended_at) : null;
   }
 
+  get durationMin(): number | null {
+    const endedAt = this.endedAt;
+    return endedAt === null
+      ? null
+      : Math.round(
+          ((new Date(endedAt).getTime() - new Date(this.startedAt).getTime()) / 60_000) * 10,
+        ) / 10;
+  }
+
   get name(): string | null {
     return this.#row.name ? String(this.#row.name) : null;
   }
@@ -244,7 +256,7 @@ export class Activity {
   }
 
   /** Serialize to the ActivityDetail shape consumed by API clients. */
-  toDetail(): ActivityDetail {
+  toDetail(climbingLogSessions: ClimbingLogActivitySession[] = []): ActivityDetail {
     const sourceLinks = this.sourceLinks;
     const origin = activityOriginFromColumns(this.#row);
     return {
@@ -257,6 +269,7 @@ export class Activity {
       modality: this.modality,
       startedAt: this.startedAt,
       endedAt: this.endedAt,
+      durationMin: this.durationMin,
       name: this.name,
       notes: this.notes,
       perceivedExertion: this.perceivedExertion,
@@ -265,8 +278,19 @@ export class Activity {
       subsource: this.subsource,
       sourceProviders: this.sourceProviders,
       sourceLinks,
-      sourceTree: buildActivitySourceTree(origin, sourceLinks, this.#row.origin_evidence),
-      sourceDecision: buildActivitySourceDecision(origin, sourceLinks, this.#lookupProvider),
+      climbingLogSessions,
+      sourceTree: buildActivitySourceTree(
+        origin,
+        sourceLinks,
+        this.#row.origin_evidence,
+        climbingLogSessions,
+      ),
+      sourceDecision: buildActivitySourceDecision(
+        origin,
+        sourceLinks,
+        this.#lookupProvider,
+        climbingLogSessions,
+      ),
       avgHr: this.avgHr,
       avgHrState: activityMeasurementState("Average heart rate", this.avgHr),
       maxHr: this.maxHr,

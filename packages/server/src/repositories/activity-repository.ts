@@ -44,6 +44,7 @@ import type { ActivitySensorQueryStore, ActivitySensorWindow } from "./activity-
 export type { ActivitySensorQueryOptions, ActivitySensorWindow } from "./activity-sensor-types.ts";
 
 import { ActivityVisibilityRepository } from "./activity-visibility-repository.ts";
+import { ClimbingActivityLogEntryRepository } from "./climbing-activity-log-entry-repository.ts";
 
 type ActivityListItem = Record<string, unknown> & {
   location: ActivityLocation | null;
@@ -798,6 +799,12 @@ export class ActivityRepository extends BaseRepository {
       FROM fitness.v_activity WHERE id = ${window.activityId}::uuid AND user_id = ${this.userId}::uuid`,
     );
     if (!ancestry) throw activityNotFoundError();
+    const sessions = await new ClimbingActivityLogEntryRepository(
+      this.db,
+      this.userId,
+      this.timezone,
+      this.accessWindow,
+    ).getActivityLogSessions([window.activityId]);
     const sourceTree = buildActivitySourceTree(
       activityOriginFromColumns(ancestry),
       ActivitySourceAttribution.fromEntries(
@@ -805,6 +812,7 @@ export class ActivityRepository extends BaseRepository {
         ancestry.absent_source_external_ids,
       ).toSourceLinks(() => undefined),
       ancestry.origin_evidence,
+      sessions.get(window.activityId) ?? [],
     );
     return getActivityMetricSources(store, window, hardware, sourceTree);
   }
@@ -862,7 +870,8 @@ export class ActivityRepository extends BaseRepository {
             a.user_id,
             a.started_at::text AS started_at,
             a.ended_at::text AS ended_at,
-            a.member_activity_ids
+            a.member_activity_ids,
+            a.provider_type
           FROM fitness.v_activity a
           WHERE a.id = ${resolution.resolved_group_id}::uuid
             AND a.user_id = ${this.userId}
@@ -876,6 +885,7 @@ export class ActivityRepository extends BaseRepository {
       startedAt: row.started_at,
       endedAt: row.ended_at,
       memberActivityIds: row.member_activity_ids,
+      providerType: row.provider_type,
     };
   }
 

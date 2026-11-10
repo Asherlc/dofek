@@ -2,6 +2,7 @@ import { eq, sql } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
+import { activity } from "../db/schema/activity.ts";
 import { area, climb, climbingAttempt, climbingLogEntry } from "../db/schema/climbing.ts";
 import { TEST_USER_ID as userId } from "../db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
@@ -111,6 +112,7 @@ describe("board account canonical persistence", () => {
   afterEach(async () => {
     server.resetHandlers();
     await context.db.delete(climbingLogEntry);
+    await context.db.delete(activity);
     await context.db.delete(climb);
     await context.db.update(area).set({ parentAreaId: null });
     await context.db.delete(area);
@@ -153,9 +155,9 @@ describe("board account canonical persistence", () => {
     expect(before).toEqual([
       expect.objectContaining({
         externalId: "kilter:log:one",
-        activityId: null,
+        activityId: expect.any(String),
         raw: kilterLog,
-        climbedOn: "2026-10-01",
+        climbedOn: null,
       }),
     ]);
     expect(attempts).toHaveLength(3);

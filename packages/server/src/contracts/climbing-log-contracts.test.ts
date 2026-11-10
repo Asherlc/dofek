@@ -13,6 +13,21 @@ import {
 } from "./climbing-log-contracts.ts";
 
 describe("versioned climbing detail responses", () => {
+  it("parses required source-session fields at the runtime contract boundary", async () => {
+    vi.resetModules();
+    const { climbingLogActivitySessionSchema } = await import("./climbing-log-contracts.ts");
+    const session = {
+      id: "30000000-0000-4000-8000-000000000001",
+      providerId: "kilter",
+      memberActivityIds: ["40000000-0000-4000-8000-000000000001"],
+      firstLoggedAt: "2026-11-09T18:00:00.000Z",
+      lastLoggedAt: "2026-11-09T18:04:00.000Z",
+    };
+
+    expect(climbingLogActivitySessionSchema.parse(session)).toEqual(session);
+    expect(climbingLogActivitySessionSchema.safeParse({}).success).toBe(false);
+  });
+
   it("preserves log-specific location in V4 while projecting the strict V3 payload", () => {
     const original = climbingLogEntryFixture();
     const entry = { ...original, areaPath: climbingClimbFixture().areaPath };
