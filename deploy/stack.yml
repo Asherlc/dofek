@@ -412,6 +412,7 @@ services:
     env_file: ${METRIC_STREAM_CLICKHOUSE_SINK_ENV_FILE:?METRIC_STREAM_CLICKHOUSE_SINK_ENV_FILE is required}
     environment: &metric-stream-clickhouse-sink-environment
       NODE_ENV: production
+      DATABASE_URL: postgres://health:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/health
       CLICKHOUSE_URL: http://default:${CLICKHOUSE_PASSWORD_ENCODED:?CLICKHOUSE_PASSWORD_ENCODED is required}@clickhouse:8123
       OTEL_SERVICE_NAME: dofek-metric-stream-clickhouse-sink
       OTEL_RESOURCE_ATTRIBUTES: deployment.environment=${DEPLOY_ENVIRONMENT:-production}
