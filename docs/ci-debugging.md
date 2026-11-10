@@ -80,6 +80,8 @@ complete report passes. The [repository configuration](../codecov.yml) uses
 Codecov's [`after_n_builds: 5`](https://docs.codecov.com/docs/notifications#preventing-notifications-until-after-n-builds)
 to wait for those reports before sending status notifications. Keep this count
 aligned with the workflow's coverage uploads when changing the shard matrix.
+Both upload steps enable [`fail_ci_if_error`](https://github.com/codecov/codecov-action/blob/303a32d7a59b442fa8d48b6a1cc6825c09c847a5/action.yml#L51-L54)
+so an upload error fails its job instead of leaving a missing report unnoticed.
 
 ## Deploy Rollout Healthcheck Failures
 
