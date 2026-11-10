@@ -46,6 +46,33 @@ The climbing source links reuse these icons. The Mountain Project icon comes
 from its [official touch icon](https://www.mountainproject.com/img/climb/favicons/favicon-180.png);
 the OpenBeta quickdraw mark comes from its [official site's header](https://openbeta.io/).
 
+Bundled provider icons live in [`packages/web/src/public/logos`](../web/src/public/logos/),
+served to both clients through the existing logo renderer. The additional brand
+assets use official app artwork or site icons:
+
+| Asset | Official source |
+| --- | --- |
+| Kilter | [Kilter Board app](https://apps.apple.com/us/app/id6755110303) |
+| Tension | [Tension Board 2 app](https://apps.apple.com/us/app/id1488028660) |
+| Grasshopper | [Grasshopper Board app](https://apps.apple.com/us/app/id1507596418) |
+| Decoy | [Decoy Board app](https://apps.apple.com/us/app/id1539249879) |
+| So iLL | [So iLL Board app](https://apps.apple.com/us/app/id1358056082) |
+| Touchstone | [Touchstone Board app](https://apps.apple.com/ag/app/id1494642775) |
+| Aurora | [Aurora Board app](https://apps.apple.com/us/app/id1219531784) |
+| Crimpd | [Crimpd app](https://apps.apple.com/us/app/id1252333138) |
+| 8a.nu / Vertical-Life | [Vertical-Life Climbing app](https://apps.apple.com/us/app/id710386774) |
+| MoonBoard | [Moon Board app](https://apps.apple.com/us/app/id6446842142) |
+| theCrag | [Site touch icon](https://static.thecrag.com/cids/images/logo-114-1.1.1.png) |
+| Ziva | [Site touch icon](https://ziva.fit/apple-touch-icon.png) |
+| GitHub | [GitHub mark](https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png) |
+| Slack | [Slack icon](https://a.slack-edge.com/80588/marketing/img/icons/icon_slack_hash_colored.png) |
+| Intervals.icu | [Site logo](https://www.intervals.icu/_astro/intervals-logo-round.B4Qne2Qz.svg) |
+
+Cycling Analytics and Apple Health IDs reuse their existing asset through the
+[catalog's `logo.id` field](src/provider-catalog.ts). Generic sources and unknown
+providers retain the initial fallback. The **Brand/ProviderLogo → All Providers**
+stories in both clients show the catalog for visual review.
+
 ### Garmin recording-device thumbnails
 
 The [Garmin model lookup](src/garmin-devices.ts) supplies product thumbnails for
