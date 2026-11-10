@@ -184,10 +184,25 @@ jobs:
       dispatching_run_id: ${{ github.run_id }}
     secrets: inherit
 
-  ios:
-    name: Deploy iOS
+  ios-archive:
+    name: Build iOS Release
+    # Manual image tags may resolve to a different source than github.sha.
     needs: web-stack
     if: ${{ !cancelled() && needs.web-stack.result == 'success' && (inputs.target == 'ios' || inputs.target == 'all') }}
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+      deployments: read
+    uses: ./.github/workflows/build-ios-release.yml
+    with:
+      commit_sha: ${{ needs.web-stack.outputs.commit_sha }}
+      dispatching_run_id: ${{ github.run_id }}
+
+  ios:
+    name: Deploy iOS
+    needs: [web-stack, ios-archive]
+    if: ${{ !cancelled() && needs.web-stack.result == 'success' && needs.ios-archive.result == 'success' && needs.ios-archive.outputs.artifact_id != '' && (inputs.target == 'ios' || inputs.target == 'all') }}
     permissions:
       actions: read
       contents: read
@@ -196,7 +211,9 @@ jobs:
     uses: ./.github/workflows/deploy-ios.yml
     with:
       commit_sha: ${{ needs.web-stack.outputs.commit_sha }}
-      dispatching_run_id: ${{ github.run_id }}
+      archive_commit_sha: ${{ needs.ios-archive.outputs.commit_sha }}
+      build_number: ${{ needs.ios-archive.outputs.build_number }}
+      artifact_id: ${{ needs.ios-archive.outputs.artifact_id }}
 
   ota:
     name: Deploy OTA

@@ -1,4 +1,4 @@
-name: Deploy Web
+name: Release Production
 
 on:
   workflow_run:
@@ -27,6 +27,25 @@ permissions:
   id-token: write
 
 jobs:
+  ios-archive:
+    name: Build Matching iOS
+    # Build the same eligible release as production without waiting for rollout.
+    if: >-
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_sha == github.sha
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+      deployments: read
+    uses: ./.github/workflows/build-ios-release.yml
+    with:
+      commit_sha: ${{ github.event.workflow_run.head_sha }}
+      dispatching_run_id: ${{ github.run_id }}
+
   production:
     name: Deploy Web Production
     # workflow_run uses main's workflow definitions. Deploy only when that
@@ -67,9 +86,9 @@ jobs:
       dispatching_run_id: ${{ github.run_id }}
 
   ios:
-    name: Deploy Matching iOS
-    needs: production
-    if: ${{ !cancelled() && github.event_name == 'workflow_run' && needs.production.result == 'success' }}
+    name: Publish Matching iOS
+    needs: [production, ios-archive]
+    if: ${{ !cancelled() && github.event_name == 'workflow_run' && needs.production.result == 'success' && needs.ios-archive.result == 'success' && needs.ios-archive.outputs.artifact_id != '' }}
     permissions:
       contents: read
       actions: read
@@ -78,5 +97,7 @@ jobs:
     uses: ./.github/workflows/deploy-ios.yml
     with:
       commit_sha: ${{ needs.production.outputs.commit_sha }}
+      archive_commit_sha: ${{ needs.ios-archive.outputs.commit_sha }}
+      build_number: ${{ needs.ios-archive.outputs.build_number }}
+      artifact_id: ${{ needs.ios-archive.outputs.artifact_id }}
       ci_run_id: ${{ format('{0}', github.event.workflow_run.id) }}
-      dispatching_run_id: ${{ github.run_id }}
