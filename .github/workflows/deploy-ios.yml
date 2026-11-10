@@ -7,12 +7,20 @@ on:
         description: "Actual deployed server source SHA to publish"
         required: true
         type: string
+      archive_commit_sha:
+        description: "Source SHA checked out for the signed archive"
+        required: true
+        type: string
+      build_number:
+        description: "Signed archive build number"
+        required: true
+        type: string
+      artifact_id:
+        description: "Signed archive artifact ID from this workflow run"
+        required: true
+        type: string
       ci_run_id:
         description: "CI run ID to include in deploy summary (optional)"
-        required: false
-        type: string
-      dispatching_run_id:
-        description: "Run ID of the workflow run that dispatched this workflow"
         required: false
         type: string
 
@@ -26,176 +34,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  check:
-    name: Deploy Check
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      actions: read
-      deployments: read
-    outputs:
-      should_deploy: ${{ steps.detect.outputs.should_deploy }}
-    steps:
-      - name: Validate deployed source commit
-        env:
-          COMMIT_SHA: ${{ inputs.commit_sha }}
-        run: |
-          if [[ ! "$COMMIT_SHA" =~ ^[a-f0-9]{40}$ ]]; then
-            echo "::error::commit_sha must be the full source SHA verified by the successful server rollout"
-            exit 1
-          fi
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          ref: ${{ github.workflow_sha }}
-          fetch-depth: 0
-      - uses: ./.github/actions/setup-node-pnpm
-      - name: Detect iOS native changes
-        id: detect
-        env:
-          SHA: ${{ inputs.commit_sha }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          FORCE=()
-          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] && [ "$GITHUB_ACTOR" != "github-actions[bot]" ]; then
-            FORCE=(--force)
-          fi
-          SHOULD_DEPLOY=$(pnpm tsx scripts/testflight-deployment-cli.ts detect "$GITHUB_REPOSITORY" "$SHA" "${FORCE[@]}")
-          echo "should_deploy=$SHOULD_DEPLOY" >> "$GITHUB_OUTPUT"
-      - uses: ./.github/actions/append-dispatcher-run-summary
-        if: always()
-        with:
-          dispatching_run_id: ${{ inputs.dispatching_run_id }}
-
-  archive:
-    name: Archive signed iOS app
-    needs: [check]
-    if: needs.check.outputs.should_deploy == 'true'
-    runs-on: macos-latest
-    timeout-minutes: 30
-    permissions:
-      contents: read
-      actions: read
-      id-token: write
-    outputs:
-      commit_sha: ${{ steps.checked-out-sha.outputs.sha }}
-      build_number: ${{ steps.build-number.outputs.value }}
-      artifact_id: ${{ steps.signed-archive.outputs.artifact-id }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          ref: ${{ inputs.commit_sha }}
-      - name: Resolve checked-out commit SHA
-        id: checked-out-sha
-        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-      - uses: ./.github/actions/setup-node-pnpm
-      - uses: ./.github/actions/load-infisical-secrets
-        with:
-          keys: |
-            APP_STORE_CONNECT_KEY_ID
-            APP_STORE_CONNECT_ISSUER_ID
-            APP_STORE_CONNECT_KEY_BASE64
-            IOS_DISTRIBUTION_CERT_BASE64
-            IOS_DISTRIBUTION_CERT_PASSWORD
-            SENTRY_AUTH_TOKEN
-            EXPO_APP_ID
-            EXPO_PUBLIC_SENTRY_DSN
-            EXPO_PUBLIC_OTEL_ENDPOINT
-            EXPO_PUBLIC_OTEL_HEADERS
-      - name: Validate mobile runtime env
-        run: |
-          if [ -z "${EXPO_PUBLIC_SENTRY_DSN:-}" ]; then
-            echo "::error::Missing EXPO_PUBLIC_SENTRY_DSN secret required by packages/mobile/lib/telemetry.ts"
-            exit 1
-          fi
-          if [ -z "${EXPO_PUBLIC_OTEL_ENDPOINT:-}" ]; then
-            echo "::error::Missing EXPO_PUBLIC_OTEL_ENDPOINT secret required by packages/mobile/lib/telemetry.ts"
-            exit 1
-          fi
-          if [ -z "${SENTRY_AUTH_TOKEN:-}" ]; then
-            echo "::error::Missing SENTRY_AUTH_TOKEN secret required for mobile sourcemap upload"
-            exit 1
-          fi
-      - name: Generate native project
-        # Install pods once, in the explicit step below.
-        working-directory: packages/mobile
-        run: pnpm expo prebuild --clean --platform ios --no-install
-      - name: Install CocoaPods dependencies
-        run: cd packages/mobile/ios && pod install
-      - name: Set build number
-        id: build-number
-        run: |
-          cd packages/mobile/ios
-          BUILD_NUMBER=$(date -u +%s)
-          agvtool new-version -all "$BUILD_NUMBER"
-          echo "value=$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
-          echo "Build number: $BUILD_NUMBER"
-      - name: Setup code signing
-        run: |
-          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
-          KEYCHAIN_PASSWORD=$(uuidgen)
-          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          echo -n "$IOS_DISTRIBUTION_CERT_BASE64" | base64 --decode > "$RUNNER_TEMP/dist-cert.p12"
-          security import "$RUNNER_TEMP/dist-cert.p12" -P "$IOS_DISTRIBUTION_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
-          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security list-keychain -d user -s "$KEYCHAIN_PATH"
-      - name: Setup App Store Connect API key
-        run: |
-          mkdir -p ~/private_keys
-          echo -n "$APP_STORE_CONNECT_KEY_BASE64" | base64 --decode > "$HOME/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8"
-      - uses: ./.github/actions/setup-ccache
-        with:
-          cache-key-prefix: ccache-ios
-      - name: Archive (Release, signed)
-        env:
-          SENTRY_RELEASE: ${{ steps.checked-out-sha.outputs.sha }}
-          SENTRY_DIST: ${{ steps.build-number.outputs.value }}
-          EXPO_PUBLIC_SENTRY_RELEASE: ${{ steps.checked-out-sha.outputs.sha }}
-          EXPO_PUBLIC_SENTRY_DIST: ${{ steps.build-number.outputs.value }}
-        run: |
-          set -o pipefail
-          TEAM_ID=$(/usr/libexec/PlistBuddy -c "Print :teamID" packages/mobile/build/ExportOptions.plist)
-          xcodebuild archive \
-            -workspace packages/mobile/ios/Dofek.xcworkspace \
-            -scheme Dofek \
-            -configuration Release \
-            -archivePath "$RUNNER_TEMP/Dofek.xcarchive" \
-            -destination 'generic/platform=iOS' \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath "$HOME/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8" \
-            -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
-            -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID" \
-            DEVELOPMENT_TEAM="$TEAM_ID" \
-            COMPILER_INDEX_STORE_ENABLE=NO \
-            EXCLUDED_SOURCE_FILE_NAMES='*.test.swift' \
-            C_COMPILER_LAUNCHER="$(command -v ccache)" \
-            CXX_COMPILER_LAUNCHER="$(command -v ccache)" \
-            CLANG_ENABLE_EXPLICIT_MODULES_WITH_COMPILER_LAUNCHER=YES \
-            2>&1 | tail -40
-      - name: Package signed archive
-        run: tar -cf "$RUNNER_TEMP/testflight-signed-archive.tar" -C "$RUNNER_TEMP" Dofek.xcarchive
-      - name: Upload signed archive
-        id: signed-archive
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: testflight-signed-archive-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/testflight-signed-archive.tar
-          compression-level: 0
-          if-no-files-found: error
-          retention-days: 7
-      - name: Show ccache stats
-        if: always()
-        run: ccache --show-stats
-      - name: Cleanup keychain
-        if: always()
-        run: security delete-keychain "$RUNNER_TEMP/app-signing.keychain-db" || true
-
   deploy:
     name: Upload to TestFlight
-    needs: [archive]
     runs-on: macos-latest
     timeout-minutes: 30
     permissions:
@@ -204,16 +44,29 @@ jobs:
       id-token: write
       deployments: write
     outputs:
-      commit_sha: ${{ needs.archive.outputs.commit_sha }}
-      build_number: ${{ needs.archive.outputs.build_number }}
+      commit_sha: ${{ inputs.archive_commit_sha }}
+      build_number: ${{ inputs.build_number }}
       upload_succeeded: ${{ steps.upload.outcome == 'success' }}
       deployment_id: ${{ steps.intent.outputs.deployment_id }}
       upload_run_url: ${{ steps.intent.outputs.upload_run_url }}
     steps:
+      - name: Validate archive matches deployed source
+        env:
+          COMMIT_SHA: ${{ inputs.commit_sha }}
+          ARCHIVE_COMMIT_SHA: ${{ inputs.archive_commit_sha }}
+        run: |
+          if [[ ! "$COMMIT_SHA" =~ ^[a-f0-9]{40}$ ]] || [[ ! "$ARCHIVE_COMMIT_SHA" =~ ^[a-f0-9]{40}$ ]]; then
+            echo "::error::commit_sha and archive_commit_sha must be full source SHAs"
+            exit 1
+          fi
+          if [[ "$COMMIT_SHA" != "$ARCHIVE_COMMIT_SHA" ]]; then
+            echo "::error::Signed iOS archive source $ARCHIVE_COMMIT_SHA does not match deployed server source $COMMIT_SHA"
+            exit 1
+          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          ref: ${{ needs.archive.outputs.commit_sha }}
+          ref: ${{ inputs.archive_commit_sha }}
       - uses: ./.github/actions/setup-node-pnpm
       - uses: ./.github/actions/load-infisical-secrets
         with:
@@ -226,7 +79,7 @@ jobs:
       - name: Download signed archive
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          artifact-ids: ${{ needs.archive.outputs.artifact_id }}
+          artifact-ids: ${{ inputs.artifact_id }}
           path: ${{ runner.temp }}
       - name: Unpack signed archive
         run: tar -xf "$RUNNER_TEMP/testflight-signed-archive.tar" -C "$RUNNER_TEMP"
@@ -259,8 +112,8 @@ jobs:
         id: intent
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          COMMIT_SHA: ${{ needs.archive.outputs.commit_sha }}
-          BUILD_NUMBER: ${{ needs.archive.outputs.build_number }}
+          COMMIT_SHA: ${{ inputs.archive_commit_sha }}
+          BUILD_NUMBER: ${{ inputs.build_number }}
         run: |
           UPLOAD_RUN_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT"
           DEPLOYMENT_ID=$(pnpm tsx .release-tools/scripts/testflight-deployment-cli.ts prepare "$GITHUB_REPOSITORY" "$COMMIT_SHA" "$BUILD_NUMBER" "$UPLOAD_RUN_URL")
@@ -280,8 +133,8 @@ jobs:
       - name: Write job summary
         if: success()
         env:
-          BUILD_NUMBER: ${{ needs.archive.outputs.build_number }}
-          COMMIT_SHA: ${{ needs.archive.outputs.commit_sha }}
+          BUILD_NUMBER: ${{ inputs.build_number }}
+          COMMIT_SHA: ${{ inputs.archive_commit_sha }}
           CI_RUN_ID: ${{ inputs.ci_run_id }}
         run: |
           VERSION=$(/usr/libexec/PlistBuddy -c "Print :ApplicationProperties:CFBundleShortVersionString" "$RUNNER_TEMP/Dofek.xcarchive/Info.plist")

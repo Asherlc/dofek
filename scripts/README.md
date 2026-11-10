@@ -216,9 +216,11 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
   Xcode upload, and finalizes that same deployment after upload succeeds. Uses one GitHub deployment
   history with environment `testflight` and task `testflight-upload`, independent
   of the caller workflow's commit or job name. Empty successful history requires
-  a first build; API or malformed-history failures stop the release. A newer
-  unresolved intent blocks publication, including `--force`, and is rechecked
-  inside every uploader attempt. Failed/cancelled uploads stay unresolved because
+  a first build; API or malformed-history failures stop the release. Read-only
+  build detection skips unresolved intents to find the last successful receipt
+  without sharing the publisher lock. A newer unresolved intent still blocks
+  publication, including `--force`, and is checked inside every uploader attempt.
+  Failed/cancelled uploads stay unresolved because
   Apple may already have accepted the binary. Only a confirmed success or an
   operator's `INACTIVE` reconciliation clears that guard; mark an intent inactive
   only after verifying Apple has no upload or that the upload command never began.

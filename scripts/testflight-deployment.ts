@@ -57,7 +57,7 @@ export function requiresTestFlightUpload(
 ): boolean {
   const normalizedSha = commitShaSchema.parse(commitSha);
   execFileSync("git", ["cat-file", "-e", `${normalizedSha}^{commit}`], { stdio: "inherit" });
-  const baseline = findLastTestFlightUpload(repository);
+  const baseline = findLastTestFlightUpload(repository, "build");
   if (force) return true;
   if (baseline === null) return true;
   if (baseline === normalizedSha) return false;
@@ -83,7 +83,7 @@ function githubApi(arguments_: string[], body?: unknown): unknown {
 }
 
 /** Successful upload receipts are independent of the workflow that called the publisher. */
-function findLastTestFlightUpload(repository: string): string | null {
+function findLastTestFlightUpload(repository: string, purpose: "build" | "publish"): string | null {
   const [owner, name] = z
     .tuple([z.string().min(1), z.string().min(1)])
     .parse(repository.split("/"));
@@ -101,6 +101,8 @@ function findLastTestFlightUpload(repository: string): string | null {
       const state = deployment.latestStatus?.state;
       if (state === "INACTIVE") continue;
       if (state === "SUCCESS") return deployment.commitOid;
+      // Building is read-only; admission to upload remains strict below.
+      if (purpose === "build") continue;
       throw new Error(
         `Unresolved TestFlight upload deployment ${deployment.databaseId} (${deployment.commitOid}, ${state ?? "no status"}). Check the original upload run and App Store Connect before retrying publication.`,
       );
@@ -150,7 +152,7 @@ function verifyUploadDeployment(
 
 /**
  * Rechecks ambiguity inside every uploader attempt, immediately before upload.
- * Caller contract: deploy-web-production and deploy-ios serialize attempts;
+ * Caller contract: deploy-ios serializes publisher attempts through finalization;
  * this history read and intent creation are separate, non-atomic API operations.
  */
 export function prepareTestFlightUpload(
@@ -160,7 +162,7 @@ export function prepareTestFlightUpload(
   runUrl: string,
 ): number {
   const normalizedSha = validateUploadEvidence(commitSha, buildNumber, runUrl);
-  findLastTestFlightUpload(repository);
+  findLastTestFlightUpload(repository, "publish");
   const deployment = verifyUploadDeployment(
     githubApi(["--method", "POST", `repos/${repository}/deployments`, "--input", "-"], {
       ref: normalizedSha,
