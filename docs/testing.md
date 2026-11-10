@@ -176,7 +176,7 @@ On startup or test failure, the runner prints container status and service logs
 before teardown, preserving evidence from failed initialization services; see
 [Compose logs](https://docs.docker.com/reference/cli/docker/compose/logs/).
 
-The Vitest projects remain separate in CI: unit, mobile, four database integration
+The Vitest projects remain separate in CI: unit, mobile, five database integration
 shards, and the PeerDB CDC integration tier are invoked explicitly. Stryker uses the Docker-free mutation config and
 must not collect `*.integration.test.ts` files. CI mutation discovery therefore
 only sends changed TypeScript files with a colocated `.test.ts` or `.test.tsx`
@@ -222,7 +222,7 @@ and the [reproduced allocation incident](production-incident-baseline.md#2026-10
 
 ### Duration-balanced integration shards
 
-The four integration jobs use one committed measured baseline,
+The five integration jobs use one committed measured baseline,
 [`scripts/integration-test-timings.json`](../scripts/integration-test-timings.json).
 The [sequencer](../scripts/integration-test-sequencer.ts) allocates discovered
 files by descending duration to the least-loaded shard, with stable path and
@@ -249,11 +249,11 @@ overhead remain outside that estimate. See Vitest's
 and [reporter API](https://vitest.dev/api/advanced/reporters).
 
 After a complete successful CI run, download `integration-timings-1` through
-`integration-timings-4` from the same run attempt into four separate directories.
+`integration-timings-5` from the same run attempt into five separate directories.
 Refresh and review the committed baseline with:
 
 ```bash
-pnpm tsx scripts/update-integration-test-timings.ts merge scripts/integration-test-timings.json <shard1-directory> <shard2-directory> <shard3-directory> <shard4-directory>
+pnpm tsx scripts/update-integration-test-timings.ts merge scripts/integration-test-timings.json <shard1-directory> <shard2-directory> <shard3-directory> <shard4-directory> <shard5-directory>
 ```
 
 The command requires coherent revision, run, attempt, runtime, baseline and
@@ -267,7 +267,7 @@ and [CI wiring](../.github/workflows/test.yml).
 
 For Vitest 4.1.11, `list --filesOnly --shard` bypasses the sequencer and reports
 the full inventory; it does not prove shard membership. Verify allocation through
-actual runtime assignment manifests and their four-way union. A lightweight
+actual runtime assignment manifests and their five-way union. A lightweight
 operator probe may use public `createVitest`, discovered specifications and the
 configured sequencer without collecting database suites; see Vitest's
 [files-only listing path](https://github.com/vitest-dev/vitest/blob/v4.1.11/packages/vitest/src/node/cli/cli-api.ts)

@@ -750,7 +750,7 @@ jobs:
           path: .build/fit-decoder/bin/dofek-fit-decoder
 
   test-integration:
-    name: Integration Tests (${{ matrix.shard }}/4)
+    name: Integration Tests (${{ matrix.shard }}/5)
     needs: test-fit-decoder
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -760,7 +760,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5]
     services:
       postgres:
         image: timescale/timescaledb-ha:pg18.3-ts2.26.4-all
@@ -829,7 +829,7 @@ jobs:
       - name: Make FIT decoder executable
         run: chmod +x .build/fit-decoder/bin/dofek-fit-decoder
       - id: integration-tests
-        run: pnpm exec vitest run --project integration --coverage --shard=${{ matrix.shard }}/4
+        run: pnpm exec vitest run --project integration --coverage --shard=${{ matrix.shard }}/5
         timeout-minutes: 12
         env:
           VITEST_COVERAGE_SKIP_THRESHOLDS: "true"
@@ -855,12 +855,12 @@ jobs:
           name: coverage-integration-${{ matrix.shard }}
           path: coverage/
       - name: Export fresh integration timings
-        run: pnpm tsx scripts/update-integration-test-timings.ts export reports/integration-sharding/${{ matrix.shard }}-of-4
+        run: pnpm tsx scripts/update-integration-test-timings.ts export reports/integration-sharding/${{ matrix.shard }}-of-5
       - name: Upload integration timings
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: integration-timings-${{ matrix.shard }}
-          path: reports/integration-sharding/${{ matrix.shard }}-of-4/
+          path: reports/integration-sharding/${{ matrix.shard }}-of-5/
           if-no-files-found: error
 
   test-peerdb-integration:
@@ -943,6 +943,7 @@ jobs:
           pnpm tsx scripts/update-integration-test-timings.ts merge integration-test-timings.json
           integration-timings/integration-timings-1 integration-timings/integration-timings-2
           integration-timings/integration-timings-3 integration-timings/integration-timings-4
+          integration-timings/integration-timings-5
       - name: Upload complete integration timing refresh
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
