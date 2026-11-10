@@ -85,6 +85,8 @@ export class KilterBoardDirectory {
         }),
         database: {
           dbFilename: join(directory, "directory.db"),
+          // Directory reads are serial; extra SDK threads duplicate telemetry preloads.
+          readWorkerCount: 1,
           implementation: { type: "node:sqlite" },
         },
       });
