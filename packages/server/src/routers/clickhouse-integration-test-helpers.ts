@@ -44,6 +44,7 @@ import {
   buildTestBodyMeasurementSelectSql,
   buildTestDailyActivityLoadSelectSql,
   buildTestDailyBodyMeasurementSelectSql,
+  buildTestDailyHealthSensorSelectSql,
   buildTestDailySleepSelectSql,
   buildTestHealthspanActivityZoneMinutesSelectSql,
   buildTestHealthspanReadModelSelectSql,
@@ -684,6 +685,11 @@ ${buildTestHikingActivitySelectSql(defaultTestDatabases)}`,
     query: `CREATE VIEW IF NOT EXISTS analytics.daily_recovery_inputs
 AS
 ${buildTestDailyRecoveryInputsSelectSql(defaultTestDatabases)}`,
+  });
+  await client.command({
+    query: `CREATE VIEW IF NOT EXISTS analytics.daily_health_sensor
+AS
+${buildTestDailyHealthSensorSelectSql(defaultTestDatabases)}`,
   });
   await client.command({
     query: `CREATE VIEW IF NOT EXISTS analytics.daily_sleep

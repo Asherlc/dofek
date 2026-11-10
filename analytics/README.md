@@ -1,5 +1,15 @@
 # ClickHouse Analytics Models
 
+Overview oxygen and WHOOP temperature use the incremental
+[`daily_health_sensor`](models/read_models/daily_health_sensor.sql) model. It
+rebuilds at most 32 changed user/provider/receipt-day keys per invocation using
+existing day markers and indexed raw replacement-key lookup. Typed measurement
+timestamps preserve caller timezone grouping and delayed offload dates without
+request-time raw-frame decoding. The [cutover procedure](../docs/clickhouse-read-model-deploy-runbook.md#overview-oxygen-and-temperature-cutover)
+requires schema preparation, projection coverage and backlog initialization
+before API release. See [dbt incremental models](https://docs.getdbt.com/docs/build/incremental-models)
+and [ClickHouse projections](https://clickhouse.com/docs/data-modeling/projections).
+
 This directory is a dbt project. Files under `analytics/models/` are not imported by
 TypeScript directly; dbt discovers them by path and runs them as models.
 

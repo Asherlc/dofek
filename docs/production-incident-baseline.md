@@ -36291,6 +36291,126 @@ The minimum fix is the existing first-line maintenance marker on [0179](../drizz
 - **Approved durable fix prepared:** The user approved restoring direct server CD with independent automatic mobile publication. Deploy Web now calls the existing environment workflow directly, and only the server jobs in Deploy Web and Deploy own `deploy-web-production`. Mobile publication still depends on the successful server's verified source SHA, under the existing mobile locks. Automatic eligibility requires successful main-push CI at the caller's SHA, keeping workflows, source and immutable image aligned; superseded completions skip instead of selecting an older ancestor. The custom selector, release-tag creation, dispatch watcher and their obsolete tests are removed. See the [deployment procedure](../deploy/README.md#flow-diagram), GitHub's [job concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency), and [workflow_run revision semantics](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_run).
 - **Validation / remaining risk:** All 118 retained deployment/image/TestFlight tests, changed-workflow actionlint with shellcheck, repository-wide CI actionlint (`-shellcheck=`), source-policy lint, root/server/web typechecks, and canonical spelling passed locally. The full Docker-free unit/mobile run passed 1,460 files and 23,939 tests, with the existing two files/19 tests skipped. Independent review found no functional issues; its two stale runbook statements about mobile lock ownership were corrected. The direct flow has not been merged or exercised in production. No retry, timeout, sleep or weakened deployment gate was added; existing bounded production-readiness waits remain unchanged. A busy main branch waits for its current commit to pass CI, so a superseded green ancestor is no longer an automatic release candidate.
 
+## 2026-11-09 — Overview oxygen and temperature raw scans time out
+
+- **Symptoms / impact:** The web Overview retained the Key Relationship spinner
+  and Health Monitor skeletons while its resting-heart-rate history was visible.
+  Both clients share the affected daily-metric and insight API queries.
+- **Evidence / root cause:** Axiom logs at `20:34:49.601Z` recorded
+  `dailyMetrics.trends` taking 116,327 ms and `insights.compute` taking 120,094 ms,
+  followed by `[trpc] insights.compute: Timeout error.` Trace
+  `5e5a619e72a43f2b670e259c643d0ee0` identifies the affected batch.
+  Read-only `system.query_log` inspection found raw oxygen/WHOOP-frame CTEs:
+  query `84dea529-efae-475d-a742-b4ee61dfed16` read 139,391,002 rows in
+  115,838 ms; `cbef7b6d-87c9-48bb-afd6-1531e03a5ce2` read 200,531,166 rows
+  and ended with `NETWORK_ERROR` / broken pipe after 195,521 ms. The request
+  path performed raw-event scans and frame decoding instead of reading compact
+  derived inputs. Logs were available; no instrumentation change was needed.
+- **Prepared direct fix:** The user approved incremental dbt processing.
+  [`daily_health_sensor`](../analytics/models/read_models/daily_health_sensor.sql)
+  retains typed decoded measurements in bounded source-day batches; shared API
+  reads preserve caller timezones, source priorities, delayed offload dates and
+  replay deduplication. A schema-only migration creates the target. A regression
+  first observed 100,063 rows read with 100,000 unrelated sensor rows, then passed
+  a less-than-50,000-row bound using the existing projection for candidate keys
+  and native `FINAL` for their complete replacement keys. No timeout, retry,
+  fallback, new service or dependency was added. See the
+  [executable tests](../packages/server/src/repositories/daily-health-sensor.integration.test.ts).
+- **Unresolved production prerequisites:** Read-only production checks found
+  4,429 source-day keys and 11 of 27 active raw parts without
+  `by_user_channel_recorded_at`. Those parts held 144,489,444 of 205,214,452 raw
+  rows; total raw-table bytes were 36.40 GiB. Capacity readback showed 39 GiB
+  free on the data disk, ClickHouse using 3.487 GiB of its 13 GiB limit, and no
+  unfinished raw-table mutations. No production writes, materialization, backfill
+  or deployment were performed. Follow the
+  [cutover gate](clickhouse-read-model-deploy-runbook.md#overview-oxygen-and-temperature-cutover)
+  before API rollout: capacity-reviewed projection preparation, historical marker
+  coverage, bounded model initialization, zero missing/dirty days and uncached
+  request verification. dbt success alone does not prove a bounded backlog is
+  empty; processing banners remain insufficient freshness evidence.
+- **Local prerequisite limitations:** The integration wrapper's Redpanda startup
+  failed with `Could not setup Async I/O` because the shared Docker VM exhausted
+  its 65,536 AIO-event capacity. The required Postgres/ClickHouse/Redis services
+  were healthy, so database-only tests ran in the explicit integration project
+  with workspace URLs. The broader router-SQL fixture separately exceeded its
+  1.25 GiB ClickHouse profile while building the existing activity-origin join,
+  before reaching the selected assertions. Neither shared resource limits nor
+  application settings were changed; the focused shared health-model fixture
+  executed successfully.
+- **Next time:** The loading runbook and check-logs skill quickly located the
+  failing procedures; real-engine tests exposed the raw-read cost and fixture
+  dependencies. Use integration-tests-ready for local prerequisites. The deploy
+  runbook now requires schema creation, projection coverage and backlog checks
+  for this serving-table cutover; apply that same checklist to future serving
+  models rather than adding another recovery tool.
+- **Final local verification:** `pnpm test` passed 1,462 files and 23,966 tests,
+  with two files / 19 tests skipped by existing configuration. The four focused
+  real-engine suites passed 26 tests, including native dbt initial/incremental
+  builds, shared fixture creation, and assigned/null activity replacement keys.
+  `pnpm lint`, root/server/web typechecks and `git diff --check` passed. The
+  first broad unit run's three outdated query-source/order assertions were
+  updated; the subsequent full run was green. Production remains unresolved
+  pending the preparation and release gates above.
+
+## 2026-11-09 — Overview production preparation and registry interruption
+
+- **Authorization / impact:** The user requested merging [PR #3247](https://github.com/Asherlc/dofek/pull/3247)
+  and explicitly approved production preparation first. Resolved the incident-log
+  append conflict with main while preserving both entries, and pushed merge
+  commit `f82d4ce44fcef0a7a593493bb65e6452c5883f22`. The focused 60-unit-test
+  run passed. The existing app release was not changed.
+- **Completed preparation:** Capacity checks found 38 GiB free on the data disk,
+  11 missing projection parts, 205,304,078 raw rows and no unfinished raw-table
+  mutations. The existing projection occupied 1.34 GiB for 60,814,634 rows.
+  Submitted the approved `MATERIALIZE PROJECTION by_user_channel_recorded_at`
+  through the remote Docker API. Mutation `mutation_1534403.txt` completed with
+  `is_done=1`, `parts_to_do=0` and an empty failure reason; all 25 active parts
+  then had the projection. A representative normal candidate-key `EXPLAIN`
+  selected `by_user_channel_recorded_at` and 71 of 13,893 granules. No index
+  forcing, resource-limit change, timeout or retry was added. Follow the
+  [existing projection gate](clickhouse-metric-stream.md#daily-heart-rate-source-access).
+- **Build / CI failure:** [Build-only run 42709096011](https://github.com/Asherlc/dofek/actions/runs/42709096011)
+  failed in `Docker Build & Push` at `COPY --from=dbt-tools` while fetching cached
+  blob `7555782f800dafbb2acfb199b71fcc01e5178eb233aaad8c039318bbeba1c25d`.
+  First fatal: `403 Forbidden` and `denied: permission_denied: read_package`.
+  The refreshed [required image-scan job](https://github.com/Asherlc/dofek/actions/runs/42709091838/job/129474109967)
+  failed before scanning at a different cached blob with the same denial.
+  The workflow job declared `packages: write`; the private package is linked
+  to `Asherlc/dofek`. An authenticated owner probe read the manifest and both
+  failing blobs with HTTP 200, so those blobs exist. The reason the Actions
+  identity is denied remains unconfirmed; package-level Actions access needs
+  inspection. GitHub distinguishes workflow-token scope from package access:
+  [package access control](https://docs.github.com/en/packages/learn-github-packages/configuring-a-packages-access-control-and-visibility).
+- **Registry progression:** A diagnostic rerun reproduced the E2E cache denial,
+  but its ARM job published the candidate successfully. Verified image digest
+  `sha256:6868f66fa12170efd7e24973eb6cce88e7ec7da2a2bf64ce96122357a9fbeb35`
+  and revision `f82d4ce44fcef0a7a593493bb65e6452c5883f22` before production use.
+  The user confirmed the repository already had Write or Admin package Actions
+  access. Authenticated owner ranged GETs returned HTTP 206 for both original
+  failing blobs. The fresh [image scan](https://github.com/Asherlc/dofek/actions/runs/42712045284)
+  passed without a permission change, cache deletion or gate suppression. The
+  denial's underlying cause remains unconfirmed; the rerun was not a fix.
+- **Preparation evidence:** Applied the schema-only `0111_daily_health_sensor`
+  statements and ran the candidate's dbt project in a separate one-shot
+  container, with one dbt thread and 32 source days per invocation. A bounded
+  raw-key comparison found 45 Apple Health oxygen days from April 23 through
+  July 30 missing from the pre-existing day markers. Bootstrapped those keys
+  through an explicit operator insert; the repeated comparison found zero
+  missing markers across 137 oxygen days and four WHOOP receipt days. The source
+  marker set then contained 4,474 days. All 140 bounded invocations succeeded;
+  the final target contained 240,898 typed samples with zero missing and dirty
+  days. Model queries peaked at 2.115 seconds, 907,671 rows read and 186 MiB of
+  query memory. A representative outer `FINAL` selected 48 of 25,130 granules
+  through all five replacement-key columns; a typed-serving smoke query took
+  51 ms. No resource-limit or timeout change was required.
+- **Cutover / next time:** Production preparation passed; normal CI and
+  deployment remain required for reader cutover. See the [cutover procedure](clickhouse-read-model-deploy-runbook.md#overview-oxygen-and-temperature-cutover)
+  and the PR's preparation evidence. The proposed alternative dbt runtime was
+  withdrawn and the candidate-image strategy retained. Use gh-fix-ci and the
+  cutover runbook next time. Proposed improvement: explicitly compare bounded
+  raw health day keys with invalidation markers before trusting source-to-target
+  freshness; a zero dirty-day result alone cannot reveal missing source markers.
+
 ## 2026-11-09 — theCrag region canonical URLs reject catalogue enrichment
 
 - **Symptoms / impact:** [DOFEK-SERVER-81](https://east-bay-software.sentry.io/issues/7837837263/) recorded one production occurrence at 20:35:02 UTC on release `646ae3ea8ca235d2668d9b3d617465c9348cd909`. The background catalogue refresh for Pegboard failed; the shared server caches an error for both clients, while the worker remains running.
