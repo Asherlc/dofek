@@ -248,7 +248,9 @@ and deployment workflows:
 
 ```text
 CI (main) -> build dofek (+ dofek-ml for local ML tooling)
-         -> deploy-web requires successful push CI at its own main workflow SHA
+         -> Release Production requires successful push CI at its own main workflow SHA
+            |-> build-ios-release: native-change check -> signed iOS archive artifact
+            |   (runs alongside the production job below)
          -> production job acquires deploy-web-production
          -> deploy-terraform (shared prerequisite)
          -> deploy-web-stack
@@ -270,11 +272,12 @@ CI (main) -> build dofek (+ dofek-ml for local ML tooling)
               -> final deploy restores analytics-worker, all metric-stream ClickHouse sinks, and processing-reconciliation
               -> verify backup freshness and record Sentry release
          -> production job releases deploy-web-production
-         -> matching OTA and iOS publication under independent mobile locks
+         -> matching OTA publication under deploy-ota
+         -> matching TestFlight upload under deploy-ios, once the signed archive also succeeds
 ```
 
 Production web deployments are serialized and never cancel an in-progress
-deployment. The server jobs in Deploy and Deploy Web share the
+deployment. The server jobs in Deploy and Release Production share the
 `deploy-web-production` concurrency group. The lock ends when the server job
 finishes; OTA and TestFlight publication use their existing `deploy-ota` and
 `deploy-ios` groups. A queued or slow mobile job cannot hold the production
@@ -287,7 +290,7 @@ newer job must wait rather than interrupt that state transition. GitHub document
 [job-level concurrency and pending-job replacement](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).
 
 Automatic releases require successful push CI on `main` whose `head_sha` equals
-the Deploy Web workflow's `github.sha`. GitHub runs `workflow_run` workflows
+the Release Production workflow's `github.sha`. GitHub runs `workflow_run` workflows
 from the default branch and resolves local reusable workflows from their caller's
 commit. This equality keeps the executing workflows, checked-out source, and
 immutable application image aligned without release tags or another dispatched
@@ -305,15 +308,15 @@ resolved `APP_IMAGE`, and inspect the production job's actual conclusion in the
 
 ### Checking the Latest Production Deployment
 
-Start with the [Deploy Web workflow](../.github/workflows/deploy-web.yml).
+Start with the [Release Production workflow](../.github/workflows/deploy-web.yml).
 Automatic and manual requests call the environment and stack workflows directly.
 Inspect `Deploy Web Production / Deploy Web Stack / Deploy Web Stack` in that
-same run. `Deploy Matching OTA` and `Deploy Matching iOS` report mobile
+same run. `Deploy Matching OTA` and `Publish Matching iOS` report mobile
 publication separately and do not retain the server's production lock. Listing
 only `deploy-web-stack.yml` runs can miss called
 jobs; see GitHub's [reusable workflow documentation](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows).
 
-If the server job is pending, inspect unfinished jobs in other Deploy Web and
+If the server job is pending, inspect unfinished jobs in other Release Production and
 Deploy runs before rerunning it. Historical workflow versions can retain the
 production lock through mobile publication; changing main does not alter those
 already-started workflows. Compare the lock groups in each run's source revision
@@ -350,29 +353,43 @@ ssh dofek-server 'docker ps -q --filter label=com.docker.swarm.service.name=dofe
 Container start times and service update times are supporting evidence, not proof
 of a completed deployment: tasks can restart and service specifications can
 change independently. Correlate the live revision and digest with the
-Deploy Web run's source commit and server stack job. Report the
+Release Production run's source commit and server stack job. Report the
 server job's completion
 time separately from container start times, OTA publication, signed iOS upload,
-and the overall run conclusion. Automatic `Deploy Web` runs also publish matching
+and the overall run conclusion. Automatic `Release Production` runs also publish matching
 mobile releases after the server succeeds; manual mobile releases use the
 separate [Deploy workflow](../.github/workflows/deploy.yml).
-See the [web deployment jobs](../.github/workflows/deploy-web.yml)
+See the [production release jobs](../.github/workflows/deploy-web.yml)
 and Docker's [service inspect](https://docs.docker.com/reference/cli/docker/service/inspect/)
 and [container inspect](https://docs.docker.com/reference/cli/docker/container/inspect/)
 references.
 
-Automatic `Deploy Web` runs call the existing OTA and iOS reusable workflows
-after a successful server rollout. The iOS detector compares native changes with
-the last successful TestFlight upload; human dispatches retain forced signed
-builds. See the [iOS detector](../.github/workflows/deploy-ios.yml) and
-[GitHub job dependencies](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#jobsjob_idneeds).
+Automatic `Release Production` runs start the signed iOS build alongside the
+server rollout. The [release builder](../.github/workflows/build-ios-release.yml)
+compares native changes with the last successful TestFlight upload and returns
+the signed archive's artifact ID, source SHA and build number. Build detection
+uses the last successful receipt, skipping unresolved intents without taking the
+publication lock. Only the publisher enters `deploy-ios` and checks unresolved
+intents immediately before upload; a build cannot replace a pending publisher.
+GitHub documents [pending-job replacement in concurrency groups](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).
+A skipped native
+build produces no artifact and skips TestFlight publication. The
+[iOS publisher](../.github/workflows/deploy-ios.yml) waits for both the archive
+and successful server rollout, then rejects a source SHA mismatch before upload
+setup. OTA publication waits only for the server. These branches use GitHub's
+[job dependencies](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#jobsjob_idneeds),
+[reusable workflow outputs](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows#using-outputs-from-a-reusable-workflow)
+and [artifact IDs](https://github.com/actions/download-artifact#download-artifacts-by-id).
 Manually dispatched
-`Deploy Web` runs deploy only the server. Explicit mobile releases remain available
+`Release Production` runs deploy only the server. Explicit mobile releases remain available
 through the [Deploy workflow](../.github/workflows/deploy.yml) with target `ota`,
 `ios`, or `all`. Both release paths complete the matching server
 rollout before publishing and pass the server image's validated
-`SENTRY_RELEASE` commit to the selected reusable mobile publishers. Each publisher
-checks out that exact commit. A failed or cancelled server rollout prevents
+`SENTRY_RELEASE` commit to the selected reusable mobile publishers. Manual iOS
+releases also build after the rollout so an explicit image tag supplies the
+verified source rather than assuming the dispatch commit; human dispatches
+retain forced signed builds. Each publisher checks out that exact commit.
+A failed or cancelled server rollout prevents
 publishing. GitHub documents reusable workflow
 [outputs](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows#using-outputs-from-a-reusable-workflow)
 and job [dependencies](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#jobsjob_idneeds).
@@ -486,7 +503,7 @@ a visible release blocker until this reconciliation is complete. Absence from
 App Store Connect while processing is uncertain does not establish that no upload
 occurred; retain the pending record when the evidence is inconclusive.
 
-1. **Build**: GitHub Actions builds the `server` image for every `main` push and pushes it to GHCR with the commit-derived tag (`<tag>`). Successful main-push CI requests direct deployment only when its source matches the Deploy Web workflow's SHA; superseded CI completions wait for the current main commit to pass. The matching image tag resolves to an immutable digest before rollout. The web build inside the image uses `VITE_ASSET_BASE_URL=https://assets.dofek.fit/web/<tag>/`, so Vite-generated JavaScript and CSS references point at immutable R2-backed CDN assets instead of the Express origin; Vite's `base` option controls the public base path for built assets: https://vite.dev/config/shared-options.html#base. `<tag>` is the image tag used consistently for both the GHCR image and the web asset prefix. See GitHub's [workflow_run revision semantics](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_run). The `ml` image is built only when ML image inputs change.
+1. **Build**: GitHub Actions builds the `server` image for every `main` push and pushes it to GHCR with the commit-derived tag (`<tag>`). Successful main-push CI requests direct deployment only when its source matches the Release Production workflow's SHA; superseded CI completions wait for the current main commit to pass. The matching image tag resolves to an immutable digest before rollout. The web build inside the image uses `VITE_ASSET_BASE_URL=https://assets.dofek.fit/web/<tag>/`, so Vite-generated JavaScript and CSS references point at immutable R2-backed CDN assets instead of the Express origin; Vite's `base` option controls the public base path for built assets: https://vite.dev/config/shared-options.html#base. `<tag>` is the image tag used consistently for both the GHCR image and the web asset prefix. See GitHub's [workflow_run revision semantics](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_run). The `ml` image is built only when ML image inputs change.
    The production job calls the existing environment workflow directly and holds
    `deploy-web-production` until the server rollout completes. Matching mobile
    publication then runs under separate locks. Local reusable workflows resolve

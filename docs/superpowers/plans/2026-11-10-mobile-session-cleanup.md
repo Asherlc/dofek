@@ -38,5 +38,5 @@
 - [x] Run real Swift store/uploader tests and a representative backlog cleanup qualification. Verify rows, reservations and retired identities are removed, generation changes, cutoff protection remains, and cleanup returns. The unchanged store completes the synthetic 3.47-million-row backlog; no deletion strategy change is needed.
 - [x] Run the app-hosted Expo bridge suite through `pnpm --dir packages/mobile test:ios:bridge` after the documented prebuild. No Metro/HTTP server is needed. Observe the native regression fail before the bridge fix and pass afterward; rerun the generated Xcode test scheme for the review correction.
 - [x] Update API usage documentation with the Expo AsyncFunction citation and record measured validation/remaining device risk.
-- [ ] Run full lint, root/server/web/mobile typechecks, relevant tests, spelling and diff checks. Independent reviewer checks the actual branch diff and evidence. Commit and push all completed work.
+- [x] Run full lint, root/server/web/mobile typechecks, relevant tests, spelling and diff checks. Independent reviewer checks the actual branch diff and evidence. Commit and push all completed work (`44cff4f39`).
 - [ ] Release through canonical CI/deploy and verify online startup on the affected iPhone. Keep the current freeze open until it succeeds.
