@@ -85,6 +85,41 @@ describe("ProviderLogo", () => {
   });
 
   describe("image logos", () => {
+    it.each([
+      ["kilter", "kilter.png"],
+      ["tension", "tension.png"],
+      ["grasshopper", "grasshopper.png"],
+      ["decoy", "decoy.png"],
+      ["soill", "soill.png"],
+      ["touchstone", "touchstone.png"],
+      ["aurora-board", "aurora-board.png"],
+      ["crimpd", "crimpd.png"],
+      ["eight-a", "eight-a.png"],
+      ["moonboard", "moonboard.png"],
+      ["thecrag", "thecrag.png"],
+      ["ziva", "ziva.png"],
+      ["github", "github.png"],
+      ["slack", "slack.png"],
+      ["cycling-analytics", "cycling_analytics.png"],
+      ["apple-health", "apple_health.png"],
+    ])("renders the bundled PNG brand icon for %s", (provider, asset) => {
+      const { container } = render(
+        <ProviderLogo provider={provider} serverUrl="https://example.com" />,
+      );
+      expect(container.querySelector("Image")?.getAttribute("data-source-uri")).toBe(
+        `https://example.com/logos/${asset}`,
+      );
+    });
+
+    it.each(["intervals.icu"])("renders the bundled SVG brand icon for %s", (provider) => {
+      const { container } = render(
+        <ProviderLogo provider={provider} serverUrl="https://example.com" />,
+      );
+      expect(container.querySelector("SvgUri")?.getAttribute("uri")).toBe(
+        `https://example.com/logos/${provider}.svg`,
+      );
+    });
+
     it("renders an Image for providers with PNG logos", () => {
       const { container } = render(
         <ProviderLogo provider="wahoo" serverUrl="https://example.com" />,
