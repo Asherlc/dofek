@@ -73,3 +73,9 @@ The changed diff adds no session-grouping logic, client metric arithmetic, new q
 ## Retrospective
 
 The brief, CodeGraph location checks, and RED logs made the core implementation direct. Review of rendered stories caught two requirements that source-only checks would miss: the exact provider label and irrelevant inherited ride facts. For similar work, include representative provider labels and visible unknown-state text in acceptance criteria, and inspect both platforms' story DOM. The existing `superpowers:test-driven-development` and `write-tests` skills fit this work; no new skill is needed. A small Task 3 brief clarification to require provider-catalog labels and a no-unrelated-metrics climbing fixture would reduce later fixture corrections.
+
+## Follow-up merge
+
+- Merged fetched `origin/main` (`55f61edad`) into the Task 3 feature branch with ordinary `git merge`; merge commit: `7b5a89604942e7f99583501d4b8b572cae8442f2`.
+- The only conflict was `docs/production-incident-baseline.md`. Kept the Kilter incident and local validation updates from this branch, plus the separate Codecov partial-coverage, analytics publication owner, and integration-shard timing incidents from `origin/main`; removed only conflict markers.
+- `rtk git diff --cached --check` passed before the merge commit. No tests, broad lint, ClickHouse work, or servers were run for this documentation conflict; lead owns final checks on the merged tree.
