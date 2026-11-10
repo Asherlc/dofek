@@ -137,10 +137,16 @@ changed_body_weeks AS (
 ),
 
 changed_zone_weeks AS (
-    SELECT DISTINCT user_id, toMonday(toDate(started_at)) AS week_start
+    SELECT DISTINCT
+        user_id,
+        toMonday(toDate(started_at)) AS week_start
     FROM {{ ref('healthspan_activity_zone_minutes') }} FINAL
     WHERE refreshed_at > (SELECT last_refreshed_at FROM target_state)
-        AND started_at IS NOT NULL
+        AND started_at IS NOT null
+),
+
+changed_zone_users AS (
+    SELECT DISTINCT user_id FROM changed_zone_weeks
 ),
 
 previous_zone_user_weeks AS (
@@ -148,7 +154,7 @@ previous_zone_user_weeks AS (
         previous.user_id AS user_id,
         previous.week_start AS week_start
     FROM {{ this }} AS previous FINAL
-    INNER JOIN (SELECT DISTINCT user_id FROM changed_zone_weeks) AS changed
+    INNER JOIN changed_zone_users AS changed
         ON changed.user_id = previous.user_id
 ),
 {% endif %}
@@ -211,10 +217,14 @@ week_keys_to_materialize AS (
         changed_sleep_weeks.week_start AS week_start
     FROM changed_sleep_weeks
     UNION DISTINCT
-    SELECT changed_zone_weeks.user_id AS user_id, changed_zone_weeks.week_start AS week_start
+    SELECT
+        changed_zone_weeks.user_id AS user_id,
+        changed_zone_weeks.week_start AS week_start
     FROM changed_zone_weeks
     UNION DISTINCT
-    SELECT previous_zone_user_weeks.user_id AS user_id, previous_zone_user_weeks.week_start AS week_start
+    SELECT
+        previous_zone_user_weeks.user_id AS user_id,
+        previous_zone_user_weeks.week_start AS week_start
     FROM previous_zone_user_weeks
     {% endif %}
 ),

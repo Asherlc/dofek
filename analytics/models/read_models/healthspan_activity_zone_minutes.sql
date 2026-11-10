@@ -65,7 +65,11 @@ ended_at
 FROM activity_bounds
     {% if is_incremental() %}
     UNION DISTINCT
-    SELECT previous.activity_id, previous.user_id, previous.started_at, previous.ended_at
+    SELECT
+        previous.activity_id,
+        previous.user_id,
+        previous.started_at,
+        previous.ended_at
     FROM {{ this }} AS previous FINAL
     LEFT JOIN activity_source_bounds AS bounds
         ON bounds.user_id = previous.user_id AND bounds.activity_id = previous.activity_id
