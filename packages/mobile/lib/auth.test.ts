@@ -169,6 +169,23 @@ describe("fetchCurrentUser", () => {
     await expect(fetchCurrentUser("https://srv", "tok")).rejects.toThrow("network");
   });
 
+  it.each([404, 503])(
+    "preserves a non-JSON HTTP %s without reporting a JSON parse failure",
+    async (status) => {
+      vi.mocked(fetch).mockResolvedValueOnce(
+        new Response("404 page not found", {
+          status,
+          headers: { "content-type": "text/plain" },
+        }),
+      );
+
+      await expect(fetchCurrentUser("https://srv", "tok")).rejects.toThrow(
+        `Auth bootstrap failed: ${status}`,
+      );
+      expect(mockCaptureException).not.toHaveBeenCalled();
+    },
+  );
+
   it("throws when response has wrong shape", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(
       new Response(JSON.stringify({ wrong: "shape" }), {

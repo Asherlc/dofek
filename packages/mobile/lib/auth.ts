@@ -230,10 +230,12 @@ export async function fetchCurrentUser(serverUrl: string, token: string): Promis
   });
   if (res.status === 401 || res.status === 403) return null;
   if (!res.ok) {
-    const data: unknown = await res.json().catch((error: unknown) => {
-      captureException(error, { source: "auth-bootstrap-error-json" });
-      return null;
-    });
+    const data: unknown = res.headers.get("content-type")?.includes("application/json")
+      ? await res.json().catch((error: unknown) => {
+          captureException(error, { source: "auth-bootstrap-error-json" });
+          return null;
+        })
+      : null;
     const parsed = ErrorResponseSchema.safeParse(data);
     throw new Error(
       parsed.success ? parsed.data.error : `Auth bootstrap failed: ${res.status} ${res.statusText}`,
