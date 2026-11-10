@@ -1180,9 +1180,9 @@ describe("native upload signout boundary", () => {
     vi.mocked(storage.deleteItemAsync).mockImplementation(async (key) => {
       persisted.delete(key);
     });
-    vi.mocked(native.disableUploads).mockImplementationOnce(() => {
-      throw new Error("Native queue could not be purged");
-    });
+    vi.mocked(native.disableUploads).mockRejectedValueOnce(
+      new Error("Native queue could not be purged"),
+    );
     await expect(clearSessionToken()).rejects.toThrow("Native queue could not be purged");
     expect(persisted.size).toBe(0);
     expect(mockCaptureException).toHaveBeenCalledOnce();

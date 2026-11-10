@@ -96,7 +96,7 @@ export async function initBackgroundWhoopBleSync(
         });
     });
     await deps.flushUploads();
-    if (!session.active || !foreground()) return;
+    if (!session.active || !foreground() || session.syncing) return;
     session.syncing = true;
     try {
       await syncOnForeground(session, foreground);

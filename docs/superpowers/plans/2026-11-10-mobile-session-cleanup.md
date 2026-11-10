@@ -1,5 +1,7 @@
 # Responsive session cleanup implementation plan
 
+**Status:** Implementation validated; release and affected-device acceptance are in progress.
+
 > **For agentic workers:** Use superpowers:executing-plans inline, with TDD and independent final review.
 
 **Goal:** Prevent rejected-session native cleanup from blocking JavaScript while preserving account isolation and completed deletion.

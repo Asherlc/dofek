@@ -100,6 +100,14 @@ infrastructure has been retired.
   [consumer drain](../src/analytics-refresh-queue.ts),
   [quiescence gate](../scripts/wait-migration-quiescence.ts), and Docker's
   [stop-grace behavior](https://docs.docker.com/reference/compose-file/services/#stop_grace_period).
+  A grace-period change protects newly created tasks; it does not change an
+  existing task's immutable specification. Before the first rollout, establish
+  that the old task has no active build, or complete a controlled drain before
+  replacing it. Inspect the replacement task's `Spec.ContainerSpec.StopGracePeriod`
+  and require `1800000000000` nanoseconds before admitting a recovered build.
+  Keep abandoned ownership blocked until executor and request termination are
+  verified. See SwarmKit's [task model](https://github.com/moby/swarmkit/blob/master/design/task_model.md)
+  and the [verified recovery record](../docs/incidents/2026-11-10-sentry-remediation.md#analytics-recovery-and-prevention).
 - The worker healthcheck calls the worker process's loopback-only `/readyz` endpoint on port 3001. That endpoint verifies every existing BullMQ Worker's running state and Redis clients; the healthcheck must not start a second Node runtime or construct fresh queue clients inside the worker's 512 MiB cgroup. See the [Docker healthcheck reference](https://docs.docker.com/reference/compose-file/services/#healthcheck) and [BullMQ Worker API](https://api.docs.bullmq.io/classes/v5.Worker.html).
 - The `default` overlay network is declared `attachable: true` so CI can run one-shot migration containers on it from a remote Docker context.
 - The `db` service has a 2 GiB container memory limit to prevent one PostgreSQL workload from exhausting the single-node host. If it hits that limit, treat it as a query/workload incident rather than increasing the cap by default.

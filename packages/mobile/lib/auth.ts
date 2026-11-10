@@ -156,11 +156,7 @@ export async function clearSessionToken(): Promise<void> {
   invalidateSessionPersistence();
   // Start native cleanup immediately and reserve persistence ordering before yielding.
   // Adopting its Promise keeps later session writes behind completed native cleanup.
-  const nativeCleanup = Promise.allSettled([
-    new Promise<void>((resolve) => {
-      resolve(disableUploads());
-    }),
-  ]);
+  const nativeCleanup = Promise.allSettled([disableUploads()]);
   const cleanupResults = await serializeSessionPersistence(async () => {
     const nativeResults = await nativeCleanup;
     cachedSessionToken = null;

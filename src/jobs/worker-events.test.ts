@@ -55,9 +55,14 @@ describe("worker events", () => {
     });
   });
 
-  it.each([false, true])(
-    "reports an automatically removed failure without writing to its deleted job (unrecoverable=%s)",
-    async (unrecoverable) => {
+  it.each([
+    { unrecoverable: false, attempts: 1 },
+    { unrecoverable: true, attempts: 3 },
+    { unrecoverable: false, attempts: undefined },
+    { unrecoverable: false, attempts: 0 },
+  ])(
+    "reports an automatically removed failure without writing to its deleted job (unrecoverable=$unrecoverable, attempts=$attempts)",
+    async ({ unrecoverable, attempts }) => {
       const Sentry = await import("@sentry/node");
       const { UnrecoverableError } = await import("bullmq");
       const { logger } = await import("../logger.ts");
@@ -72,7 +77,7 @@ describe("worker events", () => {
         {
           id: "removed-catalogue-job",
           attemptsMade: 1,
-          opts: { removeOnFail: true, attempts: unrecoverable ? 3 : 1 },
+          opts: { removeOnFail: true, attempts },
         },
         error,
       );
