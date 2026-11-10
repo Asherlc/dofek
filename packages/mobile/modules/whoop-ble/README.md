@@ -123,6 +123,16 @@ tasks; account erasure also retains its monotonic device cutoff. Queue files and
 transport bodies are excluded from backups and use locked-device-accessible
 [iOS file protection](https://developer.apple.com/documentation/foundation/fileprotectiontype/completeuntilfirstuserauthentication).
 
+For stalled session cleanup, query Sentry's `dofek-mobile` logs with
+`operation:disableUploads` and group by `operationId`. The
+[native bridge](ios/WhoopBleModule.swift) records entry to `ble_suspend`,
+`disconnect`, `uploader_bootstrap`, and `uploader_disable`, followed by
+`completed` or `failed` with `failedStage`. `durationMs` is elapsed time since
+cleanup began; a stage entry alone does not establish completion. These use
+the installed SDK's [native structured logger](https://docs.sentry.io/platforms/apple/guides/ios/logs/),
+independent of JavaScript log-export timers. Attributes contain no credentials
+or sample payloads. Native changes require a new iOS build.
+
 The [native uploader](ios/WhoopBleBackgroundUploader.swift) uses independent
 500-sample batches for IMU and realtime streams. Sensor-record batches contain
 at most 16 records and 262,144 encoded bytes, following the

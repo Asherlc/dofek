@@ -1,7 +1,19 @@
 @testable import ExpoModulesCore
 import ExpoModulesTestCore
+import RNSentry
 import XCTest
 @testable import ExpoWhoopBle
+
+final class CleanupLogRecorder {
+    private let lock = NSLock()
+    private var records: [SentryLog] = []
+
+    func append(_ log: SentryLog) {
+        lock.withLock { records.append(log) }
+    }
+
+    var snapshot: [SentryLog] { lock.withLock { records } }
+}
 
 var captureError: NSError {
     NSError(domain: "CaptureTest", code: 1, userInfo: [
