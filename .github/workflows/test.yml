@@ -1426,7 +1426,7 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
       - uses: ./.github/actions/setup-node-pnpm
-      - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
+      - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
         with:
           version: 2026.10.23
           install_args: github:juntaki/mutantkit
@@ -1470,7 +1470,7 @@ jobs:
             packages/mobile/targets/*/.build
           key: swift-mutation-build-v3-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/mobile/modules/*/Package.swift', 'packages/mobile/targets/*/Package.swift') }}
           restore-keys: swift-mutation-build-v3-${{ runner.os }}-${{ runner.arch }}-
-      - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
+      - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
         with:
           version: 2026.10.23
           install_args: github:juntaki/mutantkit
@@ -1520,7 +1520,7 @@ jobs:
           path: reports/swift-mutation/
           merge-multiple: true
       - name: Install pinned MutantKit
-        uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
+        uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
         with:
           version: 2026.10.23
           install_args: github:juntaki/mutantkit
