@@ -542,6 +542,7 @@ entity "climbing_log_entry" {
   provider_id : text <<FK>>
   external_id : text
   climb_id : uuid <<FK>>
+  area_id : uuid <<FK>>
   activity_id : uuid <<FK>>
   climbed_on : date
   discipline : climbing_discipline
@@ -1347,6 +1348,7 @@ pitch ||--o{ climbing_attempt
 climbing_attempt ||--o{ climbing_attempt
 user_profile ||--o{ climbing_log_entry
 provider ||--o{ climbing_log_entry
+area ||--o{ climbing_log_entry
 climb ||--o{ climbing_log_entry
 activity ||--o{ climbing_log_entry
 climbing_log_entry ||--o{ climbing_log_entry_grade

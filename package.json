@@ -297,6 +297,7 @@
     "@opentelemetry/semantic-conventions": "1.43.0",
     "@opentelemetry/winston-transport": "0.31.0",
     "@posthog/ai": "8.8.0",
+    "@powersync/node": "0.19.6",
     "@sentry/node": "10.45.0",
     "ai": "7.0.142",
     "archiver": "8.0.0",

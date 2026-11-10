@@ -2500,11 +2500,11 @@ describe("ActivityDetailPage", () => {
       renderWithUnits(<ActivityDetailPage />);
       expect(getQueryEnabledFlag(mockClimbingEntriesUseQuery.mock.calls[0]?.[1])).toBe(true);
       expect(mockClimbingEntriesUseQuery).toHaveBeenCalledWith(
-        { activityId: "test-123", responseVersion: 3 },
+        { activityId: "test-123", responseVersion: 4 },
         expect.objectContaining({ enabled: true, select: decodeClimbingLogEntriesResponse }),
       );
       expect(mockEntrySuggestionsUseQuery).toHaveBeenCalledWith(
-        { activityId: "test-123", responseVersion: 3 },
+        { activityId: "test-123", responseVersion: 4 },
         expect.objectContaining({ enabled: true, select: decodeClimbingLogEntriesResponse }),
       );
       expect(screen.getByText("Summit outing")).toBeInTheDocument();
@@ -2763,12 +2763,12 @@ describe("ActivityDetailPage", () => {
       await waitFor(() => {
         expect(mockClimbingEntriesInvalidate).toHaveBeenCalledWith({
           activityId: "test-123",
-          responseVersion: 3,
+          responseVersion: 4,
         });
         expect(mockActivityImagesInvalidate).toHaveBeenCalledWith({ id: "test-123" });
         expect(mockEntrySuggestionsInvalidate).toHaveBeenCalledWith({
           activityId: "test-123",
-          responseVersion: 3,
+          responseVersion: 4,
         });
         expect(mockClimbingSessionSummaryInvalidate).toHaveBeenCalledWith();
         expect(mockClimbingGradeProgressionInvalidate).toHaveBeenCalledWith();
@@ -2871,7 +2871,7 @@ describe("ActivityDetailPage", () => {
         await waitFor(() =>
           expect(mockClimbingEntriesInvalidate).toHaveBeenCalledWith({
             activityId: "test-123",
-            responseVersion: 3,
+            responseVersion: 4,
           }),
         );
         Object.assign(mockActivity, originalActivity);

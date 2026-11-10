@@ -1,9 +1,9 @@
-import type { Area } from "./climbing-log.ts";
+import { type Area, climbingLogEntryAreaPath } from "./climbing-log.ts";
 
 type SourceArea = Pick<Area, "id" | "name" | "providerId">;
 
 export function groupClimbingLogEntriesByArea<
-  T extends { climb: { areaPath: readonly SourceArea[] } | null },
+  T extends { climb: { areaPath: readonly SourceArea[] } | null; areaPath?: readonly SourceArea[] },
 >(
   entries: readonly T[],
 ): Array<{
@@ -15,10 +15,12 @@ export function groupClimbingLogEntriesByArea<
   const providersByPath = new Map<string, Set<string>>();
   const ambiguousPaths = new Set<string>();
   for (const entry of entries) {
-    const area = entry.climb?.areaPath.at(-1);
+    const area = climbingLogEntryAreaPath(entry).at(-1);
     if (!area || pathsByArea.has(area.id)) continue;
     const path = JSON.stringify(
-      entry.climb?.areaPath.map(({ name }) => name.trim().replace(/\s+/g, " ").toLowerCase()),
+      climbingLogEntryAreaPath(entry).map(({ name }) =>
+        name.trim().replace(/\s+/g, " ").toLowerCase(),
+      ),
     );
     pathsByArea.set(area.id, path);
     const providers = providersByPath.get(path) ?? new Set<string>();
@@ -35,7 +37,7 @@ export function groupClimbingLogEntriesByArea<
     }
   >();
   entries.forEach((entry, index) => {
-    const area = entry.climb?.areaPath.at(-1) ?? null;
+    const area = climbingLogEntryAreaPath(entry).at(-1) ?? null;
     const path = area ? pathsByArea.get(area.id) : undefined;
     const key = area
       ? path !== undefined && !ambiguousPaths.has(path)
@@ -44,7 +46,7 @@ export function groupClimbingLogEntriesByArea<
       : null;
     let group = groups.get(key);
     if (!group) {
-      group = { area, areaPath: entry.climb?.areaPath ?? [], entries: [] };
+      group = { area, areaPath: climbingLogEntryAreaPath(entry), entries: [] };
       groups.set(key, group);
     }
     group.entries.push({ entry, entryNumber: index + 1 });
