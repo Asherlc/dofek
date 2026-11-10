@@ -55,7 +55,7 @@ function rateLimitError(options: {
   });
 }
 
-function createMockRedisAdaptiveStore(options?: { conflictCount?: number }) {
+function createMockRedisAdaptiveStore() {
   const values = new Map<string, string>();
   const setCalls: Array<{
     key: string;
@@ -73,7 +73,6 @@ function createMockRedisAdaptiveStore(options?: { conflictCount?: number }) {
       const value = String(args[3]);
       const millisecondsToExpire = Number(args[4]);
       updateAttempts++;
-      if (updateAttempts <= (options?.conflictCount ?? 0)) return 0;
       if ((values.get(key) ?? null) !== (exists === "0" ? null : previous)) return 0;
       setCalls.push({ key, value, mode: "PX", millisecondsToExpire });
       values.set(key, value);
@@ -604,15 +603,24 @@ describe("RedisAdaptiveRateLimitStore", () => {
     expect(saved.requestCount).toBe(1);
   });
 
-  it("retries admission when compare-and-set reports a conflict", async () => {
-    const mock = createMockRedisAdaptiveStore({ conflictCount: 1 });
+  it("reloads competing state when compare-and-set reports a conflict", async () => {
+    const competing = JSON.stringify({
+      ...createInitialAdaptiveState("whoop", "provider", null),
+      requestCount: 5,
+    });
+    const client = {
+      get: vi.fn().mockResolvedValueOnce(null).mockResolvedValue(competing),
+      eval: vi.fn().mockResolvedValueOnce(0).mockResolvedValue(1),
+    };
+    const store = new RedisAdaptiveRateLimitStore(async () => client);
 
-    await mock.store.awaitAdmission("whoop", "provider", null);
+    await store.awaitAdmission("whoop", "provider", null);
 
-    expect(mock.updateAttempts).toBe(2);
-    expect(
-      JSON.parse(mock.values.get("provider-adaptive-rate:whoop:provider") ?? "{}").requestCount,
-    ).toBe(1);
+    expect(client.eval).toHaveBeenCalledTimes(2);
+    expect(client.eval.mock.calls[1]?.[4]).toBe(competing);
+    const saved = client.eval.mock.calls[1]?.[5];
+    if (typeof saved !== "string") throw new Error("Expected serialized adaptive state");
+    expect(JSON.parse(saved).requestCount).toBe(6);
   });
 
   it("completes atomic Strava admission after the quota pacing interval elapses", async () => {

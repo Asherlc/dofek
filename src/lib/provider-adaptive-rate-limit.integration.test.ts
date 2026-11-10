@@ -50,8 +50,15 @@ describe("Redis adaptive admission concurrency", () => {
       const redis = await getSharedRedisConnection().client;
       const state = parseAdaptiveRateState(await redis.get(key));
       expect(state?.requestCount).toBe(4);
-      // Existing pacing decreases 100ms per admission: 900 + 800 + 700ms.
-      expect(Math.max(...admittedAt) - Math.min(...admittedAt)).toBeGreaterThanOrEqual(2_350);
+      // Existing pacing is 900/800/700ms, allowing 50ms of timing variation per gap.
+      admittedAt.sort((a, b) => a - b);
+      for (const [index, minimumGap] of [850, 750, 650].entries()) {
+        const earlier = admittedAt[index];
+        const later = admittedAt[index + 1];
+        if (earlier === undefined || later === undefined)
+          throw new Error("Expected four completed admissions");
+        expect(later - earlier).toBeGreaterThanOrEqual(minimumGap);
+      }
       expect(await redis.eval("return redis.call('PTTL', KEYS[1])", 1, key)).toBeGreaterThan(0);
     },
   );
