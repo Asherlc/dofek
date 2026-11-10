@@ -27,7 +27,7 @@ const uuid = z.uuid();
 const metadata = z.object({
   lat: z.number().finite().min(-90).max(90).nullish(),
   lng: z.number().finite().min(-180).max(180).nullish(),
-  mp_id: z.string().regex(/^\d+$/).nullish(),
+  mp_id: z.union([z.string().regex(/^\d+$/), z.literal("")]).nullish(),
 });
 const labels = new Map([
   ["trad", ["Trad", "trad"]],

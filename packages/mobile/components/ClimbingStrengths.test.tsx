@@ -326,16 +326,29 @@ it("expands source hierarchies with provider links and inherited area labels", a
     "climbing-strengths-source",
   );
 });
-it("keeps contributing climbs visible alongside enrichment errors", () => {
+it("groups duplicate metadata errors behind one disclosure while keeping climbs visible", () => {
   render(
     <ClimbingStrengths
       data={{
         ...climbingStrengthsComparisonFixture,
         enrichmentPending: true,
-        enrichmentErrors: ["Reconnect Kaya and retry."],
+        enrichmentErrors: [
+          "Reconnect Kaya and retry.",
+          "OpenBeta is unavailable. Retry later.",
+          "Reconnect Kaya and retry.",
+        ],
       }}
     />,
   );
-  expect(screen.getByText("Reconnect Kaya and retry.")).toBeTruthy();
+  expect(screen.getAllByText("Catalogue metadata incomplete")).toHaveLength(1);
+  expect(screen.queryByText("Reconnect Kaya and retry.")).toBeNull();
+  const details = screen.getByRole("button", { name: "Provider details" });
+  expect(details.getAttribute("aria-expanded")).toBe("false");
+  fireEvent.click(details);
+  expect(details.getAttribute("aria-expanded")).toBe("true");
+  expect(screen.getAllByText("Reconnect Kaya and retry.")).toHaveLength(1);
+  expect(screen.getByText("OpenBeta is unavailable. Retry later.")).toBeTruthy();
+  fireEvent.click(details);
+  expect(screen.queryByText("Reconnect Kaya and retry.")).toBeNull();
   expect(screen.getByText("Quiet Feet")).toBeTruthy();
 });

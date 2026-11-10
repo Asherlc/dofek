@@ -339,6 +339,34 @@ describe("ClimbingCatalogueService", () => {
     });
     expect(search).not.toHaveBeenCalled();
   });
+
+  it("caches fresh partial sources with error status for one day and reports the original failure", async () => {
+    const cache = new MemoryCacheStore();
+    const failure = new Error("OpenBeta API service unavailable (502). Try again later.");
+    const service = new ClimbingCatalogueService(cache, [
+      { providerId: "thecrag", search: async () => ({ candidates: [candidate], complete: true }) },
+      {
+        providerId: "openbeta",
+        search: async () => {
+          throw failure;
+        },
+      },
+    ]);
+    await expect(service.refresh(seed)).rejects.toBeInstanceOf(AggregateError);
+    const retained = await service.read(seed);
+    expect(retained).toMatchObject({
+      status: "error",
+      fetchedAt: "2026-10-27T12:00:00.000Z",
+      expiresAt: "2026-10-28T12:00:00.000Z",
+      error: expect.stringContaining("502"),
+      sources: [{ providerId: "thecrag", matches: [{ candidate }] }],
+    });
+    expect(captureException).toHaveBeenCalledWith(expect.objectContaining({ errors: [failure] }), {
+      tags: { phase: "climbing-catalogue-refresh" },
+    });
+    vi.advanceTimersByTime(86400000);
+    expect((await service.read(seed)).status).toBe("missing");
+  });
   it("reports a rejected refresh request without leaving the cache pending", async () => {
     const { service } = setup();
     await service.markFailed(seed, new Error("Catalogue refresh could not be queued."));
@@ -683,11 +711,11 @@ describe("ClimbingCatalogueService", () => {
     vi.advanceTimersByTime(2 * 86400000);
     const error = new Error("theCrag is unavailable. Retry later.");
     search.mockRejectedValue(error);
-    await expect(service.refresh(seed)).rejects.toBe(error);
-    const retained = { ...successful, status: "error", error: error.message };
+    await expect(service.refresh(seed)).rejects.toMatchObject({ errors: [error] });
+    const retained = { ...successful, status: "error", error: `thecrag: ${error.message}` };
     expect(await service.read(seed)).toEqual(retained);
     expect(set).toHaveBeenLastCalledWith(expect.any(String), retained, 5 * 86400000);
-    expect(captureException).toHaveBeenCalledWith(error, {
+    expect(captureException).toHaveBeenCalledWith(expect.objectContaining({ errors: [error] }), {
       tags: { phase: "climbing-catalogue-refresh" },
     });
     vi.advanceTimersByTime(5 * 86400000);

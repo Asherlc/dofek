@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { ClimbingCatalogueSearch } from "@dofek/climbing-catalogue";
+import { CatalogueSearchError, ClimbingCatalogueSearch } from "@dofek/climbing-catalogue";
 import type { ClimbingCatalogueAdapter } from "@dofek/climbing-catalogue/contracts";
 import {
   type CatalogueSeed,
@@ -22,7 +22,7 @@ const missing: ClimbingCatalogueContext = {
 export function catalogueSeedCacheKey(seed: CatalogueSeed): string {
   const { logEntryId: _logEntryId, ...source } = catalogueSeedSchema.parse(seed);
   const fingerprint = createHash("sha256").update(JSON.stringify(source)).digest("hex");
-  return `${seed.userId}:climbing.catalogueContext:v4:${fingerprint}`;
+  return `${seed.userId}:climbing.catalogueContext:v5:${fingerprint}`;
 }
 
 /** Disposable source context. It never writes facts, matches, or winners to the database. */
@@ -50,14 +50,17 @@ export class ClimbingCatalogueService {
   async markFailed(seed: CatalogueSeed, error: unknown): Promise<void> {
     captureException(error, { tags: { phase: "climbing-catalogue-refresh" } });
     const previous = await this.read(seed);
+    const partialSources =
+      error instanceof CatalogueSearchError && error.sources.length > 0 ? error.sources : null;
     const expiresAt =
-      previous.fetchedAt && previous.expiresAt
+      !partialSources && previous.fetchedAt && previous.expiresAt
         ? previous.expiresAt
         : new Date(Date.now() + DAY).toISOString();
     await this.cache.set(
       catalogueSeedCacheKey(seed),
       {
         ...previous,
+        ...(partialSources ? { sources: partialSources, fetchedAt: new Date().toISOString() } : {}),
         status: "error",
         expiresAt,
         error:

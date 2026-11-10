@@ -445,7 +445,10 @@ describe("OpenBetaProvider", () => {
     });
   });
   it.each([
-    [() => new Response("", { status: 500 }), "openbeta API service unavailable (500): "],
+    [
+      () => new Response("", { status: 500 }),
+      "openbeta API service unavailable (500). Try again later.",
+    ],
     [
       () => jsonResponse({ data: null, errors: [{ message: "profile lookup denied" }] }),
       "OpenBeta API returned an error: profile lookup denied",

@@ -1132,6 +1132,29 @@ it("retains hydrated native-climb MP identity references", async () => {
   ]);
 });
 
+it("accepts an absent MP reference encoded as an empty string on climbs and parent areas", async () => {
+  const result = await lookup({
+    metadata: { mp_id: "" },
+    parent: { ...climb().parent, metadata: { lat: 37.89, lng: -122.26, mp_id: "" } },
+  });
+  expect(result.candidates[0]).toMatchObject({
+    externalId: id,
+    locations: expect.arrayContaining([
+      expect.objectContaining({
+        externalId: areaId,
+        context: expect.objectContaining({ url: `https://openbeta.io/area/${areaId}` }),
+      }),
+    ]),
+  });
+  expect(result.candidates[0]?.references).toBeUndefined();
+});
+
+it("rejects a malformed nonempty MP identity reference", async () => {
+  await expect(lookup({ metadata: { mp_id: "not-a-provider-id" } })).rejects.toThrow(
+    /unavailable or invalid/,
+  );
+});
+
 it("hydrates parent prose and overlapping distributions only as area context", async () => {
   const fetchFn = client([
     { data: { climb: climb() } },

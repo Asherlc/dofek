@@ -49,6 +49,8 @@ export function ClimbingStrengths({
 }) {
   const [view, setView] = useState<ClimbingStrengthsTab>("radar");
   const [selectedBreakdown, setBreakdown] = useState<string | null>(null);
+  const [errorDetailsExpanded, setErrorDetailsExpanded] = useState(false);
+  const enrichmentErrors = [...new Set(data?.enrichmentErrors)];
   const panels = [...(data?.panels ?? []), ...(data?.tagPanels ?? [])];
   const options = climbingStrengthsBreakdownOptions(panels);
   const breakdown = options.some((option) => option.key === selectedBreakdown)
@@ -75,9 +77,32 @@ export function ClimbingStrengths({
           Updating catalogue metadata…
         </Text>
       ) : null}
-      {data?.enrichmentErrors?.map((message) => (
-        <QueryStatePanel key={message} variant="error" message={message} minHeight={80} />
-      ))}
+      {enrichmentErrors.length > 0 ? (
+        <View style={styles.metadataWarning}>
+          <Text accessibilityLiveRegion="polite" style={styles.text}>
+            Catalogue metadata incomplete
+          </Text>
+          <Text style={styles.meta}>Recorded results remain available.</Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Provider details"
+            aria-expanded={errorDetailsExpanded}
+            onPress={() => setErrorDetailsExpanded(!errorDetailsExpanded)}
+            style={styles.chip}
+          >
+            <Text style={styles.link}>
+              {errorDetailsExpanded ? "Hide provider details" : "Provider details"}
+            </Text>
+          </Pressable>
+          {errorDetailsExpanded
+            ? enrichmentErrors.map((message) => (
+                <Text key={message} style={styles.meta}>
+                  {message}
+                </Text>
+              ))
+            : null}
+        </View>
+      ) : null}
       {error && <QueryStatePanel variant="error" message={error.message} minHeight={80} />}
       {data != null || !loading ? (
         <>
@@ -316,6 +341,13 @@ function ClimbingStrengthsExampleSources({ example }: { example: ClimbingStrengt
   );
 }
 const styles = StyleSheet.create({
+  metadataWarning: {
+    padding: spacing.sm,
+    gap: spacing.xs,
+    borderWidth: 1,
+    borderColor: colors.surfaceSecondary,
+    borderRadius: radius.md,
+  },
   card: {
     backgroundColor: colors.surface,
     borderRadius: radius.xl,

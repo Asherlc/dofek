@@ -43,8 +43,13 @@ for (const source of sources) {
 The native provider is queried first when the seed has an external ID. Its
 current name, aliases, references, and locations inform subsequent discovery;
 the original seed is unchanged. Provider results validate before matching.
-An unsuccessful provider request rejects the search: callers own error reporting,
-user messages, caching, scheduling, and retry policy.
+An unsuccessful provider request rejects with `CatalogueSearchError`, an
+[`AggregateError`](https://tc39.es/ecma262/multipage/control-abstraction-objects.html#sec-aggregate-error-objects)
+whose `errors` retains the original failures, whose `sources` retains successful
+source results, and whose message has one display line per failed provider.
+A failed native lookup leaves other discovery on the original
+seed; it is not requested twice. Callers own error reporting, user messages,
+caching, scheduling, and retry policy; see the [search implementation](src/search.ts).
 
 All seed fields shown above are required; `externalId`, `sourceUrl`, `name`,
 `kind`, and `setting` may be null. Optional `aliases` and `references` carry
