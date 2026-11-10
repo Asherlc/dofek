@@ -106,6 +106,10 @@ const sourceAttemptCountSchema = z
   .refine((count) => count.scope === "pitch" || count.pitch === undefined, {
     message: "A whole-climb count cannot identify a pitch.",
   });
+const sourceActivityObservationSchema = z.strictObject({
+  recordedAt: z.iso.datetime({ offset: true }),
+  gymExternalId: z.string().trim().min(1).nullable().optional(),
+});
 const sourceLogSchema = climbingLogEntrySchema
   .pick({
     externalId: true,
@@ -127,6 +131,7 @@ const sourceLogSchema = climbingLogEntrySchema
     climb: sourceClimbWithPitchesSchema.nullable().optional(),
     reportedAttemptCounts: z.array(sourceAttemptCountSchema).readonly().optional(),
     attempts: z.array(sourceAttemptSchema).readonly(),
+    activityObservation: sourceActivityObservationSchema.optional(),
   })
   .superRefine((entry, context) => {
     for (const [index, count] of (entry.reportedAttemptCounts ?? []).entries()) {
@@ -922,6 +927,7 @@ export async function persistClimbingLogEntries(
         attempts: _attempts,
         reportedAttemptCounts: _counts,
         reportedGrades,
+        activityObservation: _activityObservation,
         ...facts
       } = source;
       const id = known?.id ?? randomUUID();

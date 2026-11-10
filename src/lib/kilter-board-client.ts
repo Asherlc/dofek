@@ -35,6 +35,7 @@ const logSchema = z
     flashed: z.boolean().nullable().optional(),
     currentDifficultyId: z.number().int().nullable().optional(),
     wallUuid: z.string().nullable().optional(),
+    gymUuid: z.string().nullable().optional(),
     climbRating: z
       .object({
         angle: z.number(),
@@ -178,7 +179,11 @@ export class KilterBoardClient implements ClimbingBoardClient {
       };
       return {
         externalId: `kilter:log:${log.logUuid}`,
-        climbedOn: new Date(log.createdAt).toISOString().slice(0, 10),
+        climbedOn: null,
+        activityObservation: {
+          recordedAt: log.createdAt,
+          gymExternalId: log.gymUuid?.trim() || null,
+        },
         discipline: "rock_climbing",
         sourceName: "Kilter Board",
         board: { name: "Kilter Board", externalId: log.wallUuid || null },

@@ -85,7 +85,8 @@ describe("KilterBoardClient", () => {
     expect(result.entries).toHaveLength(1);
     expect(result.entries[0]).toMatchObject({
       externalId: "kilter:log:normalized-log",
-      climbedOn: "2026-10-01",
+      climbedOn: null,
+      activityObservation: { recordedAt: "2026-10-02T00:30:00+02:00", gymExternalId: null },
       wallAngle: { value: 40, unit: "degrees" },
       climb: { externalId: "normalized-climb" },
       notes: "Personal rating",
@@ -268,7 +269,8 @@ describe("KilterBoardClient", () => {
       [{ difficultyGradeId: 0, vScale: "unrecognized", fontScale: " " }],
     ).fetchLogbook(tokens, vi.fn());
     expect(result.entries[0]).toMatchObject({
-      climbedOn: "2026-10-01",
+      climbedOn: null,
+      activityObservation: { recordedAt: "2026-10-02T00:30:00+02:00", gymExternalId: null },
       discipline: "rock_climbing",
       sourceName: "Kilter Board",
       board: { name: "Kilter Board", externalId: "wall" },
@@ -300,6 +302,29 @@ describe("KilterBoardClient", () => {
     expect(result.entries[0]?.notes).toBeNull();
   });
 
+  it("maps a native gym identity and preserves the original offset/microsecond instant", async () => {
+    const source = {
+      ...log,
+      gymUuid: " gym-1 ",
+      createdAt: "2026-11-10T01:48:51.544160Z",
+    };
+    const result = await client([source]).fetchLogbook(tokens, vi.fn());
+    expect(result.entries[0]?.activityObservation).toEqual({
+      recordedAt: "2026-11-10T01:48:51.544160Z",
+      gymExternalId: "gym-1",
+    });
+    expect(result.entries[0]?.climbedOn).toBeNull();
+    expect(result.entries[0]?.raw).toEqual(source);
+  });
+
+  it("treats a blank native gym identity as unknown", async () => {
+    const result = await client([{ ...log, gymUuid: "  " }]).fetchLogbook(tokens, vi.fn());
+    expect(result.entries[0]?.activityObservation).toEqual({
+      recordedAt: log.createdAt,
+      gymExternalId: null,
+    });
+  });
+
   it("ignores blank matching rating comments and retains unknown catalog grades", async () => {
     const result = await client(
       [{ ...log, climbRating: { angle: 40, comment: " " } }],
@@ -322,7 +347,8 @@ describe("KilterBoardClient", () => {
     expect(result.entries).toEqual([
       expect.objectContaining({
         externalId: "kilter:log:log-one",
-        climbedOn: "2026-10-01",
+        climbedOn: null,
+        activityObservation: { recordedAt: log.createdAt, gymExternalId: null },
         raw: source,
         wallAngle: { value: 40, unit: "degrees" },
         reportedGrades: [
