@@ -1,5 +1,9 @@
 import type { CatalogueCandidate } from "@dofek/climbing-catalogue/contracts";
 import { MountainProjectCatalogueAdapter } from "@dofek/climbing-catalogue/mountain-project";
+import {
+  ProviderRateLimitError,
+  ProviderServiceUnavailableError,
+} from "@dofek/provider-http/rate-limit";
 import type { CatalogueSeed } from "@dofek/training/climbing-catalogue";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ClimbingCatalogueService } from "./climbing-catalogue.ts";
@@ -56,6 +60,52 @@ const candidate: CatalogueCandidate = {
 };
 
 describe("ClimbingCatalogueService", () => {
+  it.each([
+    { ErrorType: ProviderRateLimitError, statusCode: 429 },
+    { ErrorType: ProviderServiceUnavailableError, statusCode: 502 },
+  ])(
+    "reports safe HTTP $statusCode metadata separately from upstream content",
+    async ({ ErrorType, statusCode }) => {
+      const failure = new ErrorType({
+        message: `OpenBeta is unavailable (${statusCode}). Retry later.`,
+        providerId: "openbeta",
+        statusCode,
+        responseBody: "🔒private-token=secret",
+        scope: "user",
+        userId: "private-user",
+        retryAfterSeconds: 30,
+      });
+      const service = new ClimbingCatalogueService(new MemoryCacheStore(), [
+        {
+          providerId: "openbeta",
+          search: async () => {
+            throw failure;
+          },
+        },
+      ]);
+      await expect(service.refresh(seed)).rejects.toMatchObject({ errors: [failure] });
+      const context = {
+        tags: { phase: "climbing-catalogue-refresh" },
+        extra: {
+          providerFailures: [
+            {
+              providerId: "openbeta",
+              statusCode,
+              scope: "user",
+              retryAfterSeconds: 30,
+              responseBodyBytes: 24,
+            },
+          ],
+        },
+      };
+      expect(captureException).toHaveBeenCalledWith(
+        expect.objectContaining({ errors: [failure] }),
+        context,
+      );
+      await service.markFailed(seed, failure);
+      expect(captureException).toHaveBeenLastCalledWith(failure, context);
+    },
+  );
   it("retains unnamed native source information without inventing discovery names", async () => {
     const { KayaCatalogueAdapter } = await import("@dofek/climbing-catalogue/kaya");
     const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(

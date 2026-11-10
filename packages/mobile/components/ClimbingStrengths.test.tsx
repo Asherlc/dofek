@@ -346,9 +346,11 @@ it("groups duplicate metadata errors behind one disclosure while keeping climbs 
   expect(details.getAttribute("aria-expanded")).toBe("false");
   fireEvent.click(details);
   expect(details.getAttribute("aria-expanded")).toBe("true");
+  expect(screen.getByRole("button", { name: "Hide provider details" })).toBe(details);
   expect(screen.getAllByText("Reconnect Kaya and retry.")).toHaveLength(1);
   expect(screen.getByText("OpenBeta is unavailable. Retry later.")).toBeTruthy();
   fireEvent.click(details);
+  expect(screen.getByRole("button", { name: "Provider details" })).toBe(details);
   expect(screen.queryByText("Reconnect Kaya and retry.")).toBeNull();
   expect(screen.getByText("Quiet Feet")).toBeTruthy();
 });

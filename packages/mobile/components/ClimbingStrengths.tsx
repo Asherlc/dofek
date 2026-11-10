@@ -85,7 +85,6 @@ export function ClimbingStrengths({
           <Text style={styles.meta}>Recorded results remain available.</Text>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Provider details"
             aria-expanded={errorDetailsExpanded}
             onPress={() => setErrorDetailsExpanded(!errorDetailsExpanded)}
             style={styles.chip}
