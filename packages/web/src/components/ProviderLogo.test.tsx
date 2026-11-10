@@ -77,6 +77,29 @@ describe("ProviderLogo", () => {
   });
 
   describe("image logos", () => {
+    it.each([
+      ["kilter", "kilter.png"],
+      ["tension", "tension.png"],
+      ["grasshopper", "grasshopper.png"],
+      ["decoy", "decoy.png"],
+      ["soill", "soill.png"],
+      ["touchstone", "touchstone.png"],
+      ["aurora-board", "aurora-board.png"],
+      ["crimpd", "crimpd.png"],
+      ["eight-a", "eight-a.png"],
+      ["moonboard", "moonboard.png"],
+      ["thecrag", "thecrag.png"],
+      ["ziva", "ziva.png"],
+      ["github", "github.png"],
+      ["slack", "slack.png"],
+      ["intervals.icu", "intervals.icu.svg"],
+      ["cycling-analytics", "cycling_analytics.png"],
+      ["apple-health", "apple_health.png"],
+    ])("renders the bundled brand icon for %s", (provider, asset) => {
+      const { container } = render(<ProviderLogo provider={provider} />);
+      expect(queryImg(container).getAttribute("src")).toBe(`/logos/${asset}`);
+    });
+
     it("renders an SVG img for providers with SVG logos", () => {
       const { container } = render(<ProviderLogo provider="strava" />);
       const img = queryImg(container);

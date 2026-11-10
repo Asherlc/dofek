@@ -123,6 +123,23 @@ tasks; account erasure also retains its monotonic device cutoff. Queue files and
 transport bodies are excluded from backups and use locked-device-accessible
 [iOS file protection](https://developer.apple.com/documentation/foundation/fileprotectiontype/completeuntilfirstuserauthentication).
 
+For stalled session cleanup, query Sentry's `dofek-mobile` logs with
+`operation:disableUploads` and group by `operationId`. The
+[native bridge](ios/WhoopBleModule.swift) records entry to `ble_suspend`,
+`disconnect`, `uploader_bootstrap`, and `uploader_disable`, followed by
+`completed` or `failed` with `failedStage`. Inside `uploader_disable`,
+`uploader_queue_wait` records entry before waiting for the uploader's serial queue;
+`uploader_cancel_tasks` records entry after acquiring it, before requesting transfer
+cancellation and reading reserved identities. `uploader_store_purge` precedes the
+SQLite purge, and `uploader_remove_bodies` precedes file cleanup. These stages
+share the original operation ID and elapsed clock; the next entry establishes
+that the preceding operation returned. `durationMs` is elapsed time since
+cleanup began; a stage entry alone does not establish completion or confirm that
+an asynchronously requested transfer cancellation has finished. These use
+the installed SDK's [native structured logger](https://docs.sentry.io/platforms/apple/guides/ios/logs/),
+independent of JavaScript log-export timers. Attributes contain no credentials
+or sample payloads. Native changes require a new iOS build.
+
 The [native uploader](ios/WhoopBleBackgroundUploader.swift) uses independent
 500-sample batches for IMU and realtime streams. Sensor-record batches contain
 at most 16 records and 262,144 encoded bytes, following the
@@ -204,10 +221,14 @@ On macOS with Xcode and an installed iPhone Simulator runtime, run from
 `packages/mobile`:
 
 ```sh
-EXPO_PUBLIC_SENTRY_DSN=https://public-key@sentry.example/project-id pnpm prebuild --no-install
+EXPO_APP_ID=00000000-0000-4000-8000-000000000000 \
+EXPO_PUBLIC_SENTRY_DSN=https://public-key@sentry.example/project-id \
+  pnpm prebuild --no-install
 pnpm test:ios:bridge
 ```
 
+The fixture app ID satisfies the [app configuration requirement](../../app.config.js)
+for this isolated bridge-test host; release builds must use the real app ID.
 The public DSN placeholder follows the app's
 [local simulator setup](../../README.md#signed-release-simulator-audit).
 The bridge suite runs the real Expo registration and JavaScript promise path in

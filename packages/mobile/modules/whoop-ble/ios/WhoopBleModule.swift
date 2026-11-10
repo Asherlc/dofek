@@ -246,12 +246,36 @@ public class WhoopBleModule: Module {
         }
 
         Function("disableUploads") {
+            let operationId = UUID().uuidString
+            let startedAt = ProcessInfo.processInfo.systemUptime
+            var stage = "ble_suspend"
+            func recordStage(_ nextStage: String) {
+                stage = nextStage
+                SentrySDK.logger.info("WHOOP cleanup stage", attributes: [
+                    "operation": "disableUploads", "operationId": operationId, "stage": stage,
+                    "durationMs": (ProcessInfo.processInfo.systemUptime - startedAt) * 1_000
+                ])
+            }
+
+            recordStage("ble_suspend")
             self.connectionManager.syncOnBleQueue {
                 self.captureSuspended = true
                 self.watchdog.stop()
             }
+            recordStage("disconnect")
             self.connectionManager.disconnect()
-            do { try self.uploader.disable() } catch {
+            do {
+                recordStage("uploader_bootstrap")
+                let uploader = try self.uploader
+                recordStage("uploader_disable")
+                try uploader.disable(onStage: recordStage)
+                recordStage("completed")
+            } catch {
+                SentrySDK.logger.error("WHOOP cleanup failed", attributes: [
+                    "operation": "disableUploads", "operationId": operationId,
+                    "stage": "failed", "failedStage": stage,
+                    "durationMs": (ProcessInfo.processInfo.systemUptime - startedAt) * 1_000
+                ])
                 SentrySDK.capture(error: error)
                 throw error
             }
