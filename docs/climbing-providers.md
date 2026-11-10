@@ -61,6 +61,10 @@ point-only log keeps its logged timestamp and an unavailable duration. See the
 [activity detail projection](../packages/server/src/models/activity.ts),
 [web rendering](../packages/web/src/pages/ActivityDetailPage.tsx), and
 [mobile rendering](../packages/mobile/components/activity/ActivityDetailHeader.tsx).
+Source-session grouping uses normalized millisecond observation timestamps,
+while the [Kilter importer](../src/lib/kilter-board-client.ts) retains the
+native timestamp string in raw provenance and the [activity writer](../src/db/climbing-log-activity.ts)
+persists the normalized observation time.
 
 Anonymous attempts expanded from a count do not inherit the named attempt's
 completion. Without native per-attempt IDs or distinguishing facts, anonymous

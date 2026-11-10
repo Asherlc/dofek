@@ -716,7 +716,7 @@ describe("Calendar measured duration precision", () => {
       .values({
         userId,
         providerId: "wahoo",
-        externalId: "subsecond-duration",
+        externalId: "fractional-second-duration",
         canonicalType: "cycling",
         providerType: "cycling",
         startedAt: new Date("2026-03-01T10:00:00.490Z"),

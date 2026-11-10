@@ -1,5 +1,4 @@
 import { and, eq, sql } from "drizzle-orm";
-import type { SourceClimbingLogEntry } from "./climbing-log-sync.ts";
 import { loadUserHomeTimezone } from "./home-timezone.ts";
 import type { SyncDatabase } from "./index.ts";
 import { markProviderActivityPresent } from "./provider-activity-absence.ts";
@@ -12,7 +11,14 @@ export async function persistClimbingLogActivityObservation(
   input: {
     userId: string;
     providerId: string;
-    source: SourceClimbingLogEntry;
+    source: {
+      externalId: string;
+      sourceName?: string | null;
+      activityObservation?: {
+        recordedAt: string;
+        gymExternalId?: string | null;
+      };
+    };
     activityId: string | null;
   },
 ): Promise<string | null> {
