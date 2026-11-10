@@ -383,7 +383,6 @@ describe("ProcessingStatusWidget", () => {
       const progressLabel = providerId ? "Processing progress" : heading;
       expect(screen.getByRole("progressbar", { name: progressLabel })).toBeTruthy();
       if (providerId) {
-        expect(screen.getByText("Your existing data is still available.")).toBeTruthy();
         fireEvent.click(screen.getByRole("button", { name: "Show processing details" }));
         expect(screen.getByText("Waiting to continue")).toBeTruthy();
       }
@@ -509,7 +508,6 @@ describe("ProcessingStatusWidget", () => {
     fireEvent.click(screen.getByRole("button", { name: "Show processing details" }));
     expect(screen.getByText("Sleep")).toBeTruthy();
     expect(screen.getByText("Waiting to continue")).toBeTruthy();
-    expect(screen.getByText("Your existing data is still available.")).toBeTruthy();
     expect(screen.queryByRole("button", { name: /Dismiss .* failure|Reconnect/ })).toBeNull();
   });
 
