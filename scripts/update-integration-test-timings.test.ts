@@ -45,7 +45,7 @@ function fixture() {
     GITHUB_RUN_ID: "123",
     GITHUB_RUN_ATTEMPT: "2",
   };
-  const inventory = [0, 1, 2, 3].map((i) => `integration:src/${i}.integration.test.ts`);
+  const inventory = [0, 1, 2, 3, 4].map((i) => `integration:src/${i}.integration.test.ts`);
   const directories = inventory.map((key, i) => {
     const directory = join(root, String(i));
     mkdirSync(directory);
@@ -58,7 +58,7 @@ function fixture() {
         assignedAt: 1100,
         provenance,
         index: i + 1,
-        count: 4,
+        count: 5,
         inventory,
         selected: [key],
         baselineSha256: "b".repeat(64),
@@ -75,7 +75,7 @@ function fixture() {
         assignmentId,
         provenance,
         index: i + 1,
-        count: 4,
+        count: 5,
         baselineSha256: "b".repeat(64),
         runStartedAt: 1100,
         runFinishedAt: 1200,
@@ -116,19 +116,19 @@ describe("integration whole-suite timing export and refresh", () => {
       }),
     ).not.toThrow();
   });
-  it("exports exact fresh result caches and deterministically refreshes all four complete shards", () => {
+  it("exports exact fresh result caches and deterministically refreshes all five complete shards", () => {
     const setup = fixture();
     setup.exportAll();
     setup.merge();
     const data = JSON.parse(readFileSync(setup.output, "utf8"));
     expect(data.files.map((row: { durationMs: number }) => row.durationMs)).toEqual([
-      10, 11, 12, 13,
+      10, 11, 12, 13, 14,
     ]);
     expect(data.files.map((row: { file: string }) => `integration:${row.file}`)).toEqual(
       setup.inventory,
     );
     expect(data.provenance.sourceSha).toBe(setup.provenance.sourceSha);
-    expect(data.provenance.shards).toHaveLength(4);
+    expect(data.provenance.shards).toHaveLength(5);
     const first = readFileSync(setup.output, "utf8");
     setup.directories.reverse();
     setup.merge();
