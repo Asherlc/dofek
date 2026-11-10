@@ -35,7 +35,7 @@ describe("KilterBoardClient", () => {
   const snapshot = {
     walls: [
       { wall_uuid: "wall-a", name: "Original 12 x 12", gym_uuid: "gym-a" },
-      { wall_uuid: "wall-b", name: "Homewall", gym_uuid: "gym-b" },
+      { wall_uuid: "wall-b", name: "Home wall", gym_uuid: "gym-b" },
     ],
     gyms: [
       { gym_uuid: "gym-a", name: "Gym A", latitude: 0, longitude: -120 },
@@ -65,7 +65,7 @@ describe("KilterBoardClient", () => {
         raw: source[0],
       },
       {
-        board: { name: "Homewall", externalId: "wall-b" },
+        board: { name: "Home wall", externalId: "wall-b" },
         areas: [{ externalId: "gym-b", name: "Gym B", coordinates: null }],
         climb: { externalId: "problem" },
         raw: source[1],
@@ -87,7 +87,7 @@ describe("KilterBoardClient", () => {
       areas: [{ name: "Gym A" }],
     });
   });
-  it("does not invent a gym for unknown IDs or a homewall", async () => {
+  it("does not invent a gym for unknown IDs or a home wall", async () => {
     const result = await directoryClient(
       [
         { ...log, wallUuid: "missing" },

@@ -1,7 +1,9 @@
 ALTER TABLE fitness.climbing_log_entry ADD COLUMN area_id uuid;
 --> statement-breakpoint
 ALTER TABLE fitness.climbing_log_entry ADD CONSTRAINT climbing_log_entry_area_owner_provider_fk
-FOREIGN KEY (user_id, provider_id, area_id) REFERENCES fitness.area (user_id, provider_id, id);
+FOREIGN KEY (user_id, provider_id, area_id) REFERENCES fitness.area (user_id, provider_id, id) NOT VALID;
+--> statement-breakpoint
+ALTER TABLE fitness.climbing_log_entry VALIDATE CONSTRAINT climbing_log_entry_area_owner_provider_fk;
 --> statement-breakpoint
 CREATE INDEX climbing_log_entry_area_idx ON fitness.climbing_log_entry (area_id);
 --> statement-breakpoint
