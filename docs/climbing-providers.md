@@ -54,6 +54,14 @@ download the full proprietary climb catalogue merely to fill them in. See the
 [account writer](../src/lib/climbing-board-account.ts) and
 [upstream delta mapping](https://github.com/boardsesh/boardsesh/blob/740844766aeff5bb5adc4536a13d34456cd00b4d/packages/aurora-sync/src/sync/apply-user-logbook.ts).
 
+Activity details show each projected Kilter source session as its own logged
+climb window. The server supplies the session bounds and measured activity
+duration; clients only format the local times and duration. A standalone
+point-only log keeps its logged timestamp and an unavailable duration. See the
+[activity detail projection](../packages/server/src/models/activity.ts),
+[web rendering](../packages/web/src/pages/ActivityDetailPage.tsx), and
+[mobile rendering](../packages/mobile/components/activity/ActivityDetailHeader.tsx).
+
 Anonymous attempts expanded from a count do not inherit the named attempt's
 completion. Without native per-attempt IDs or distinguishing facts, anonymous
 siblings remain interchangeable when their last descriptive fact is cleared;

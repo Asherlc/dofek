@@ -131,7 +131,9 @@ export function ActivityCardContent({
               <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-muted">
                 <span>
                   {localStartTime === "--" ? "Local time unavailable" : localStartTime} ·{" "}
-                  {formatDurationMinutes(activity.durationMin)}
+                  {activity.durationMin === null
+                    ? "Duration unavailable"
+                    : formatDurationMinutes(activity.durationMin)}
                 </span>
               </div>
             </div>

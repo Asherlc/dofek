@@ -77,6 +77,132 @@ export const RemovedSource: Story = {
 export const RecordingDeviceCollapsed: Story = {
   args: { hardware: garminActivitySourceHardware },
 };
+
+export const ConnectedKilterGymSession: Story = {
+  args: {
+    activity: {
+      ...detailHeaderActivity,
+      name: "Gym session",
+      activityType: "climbing",
+      displayedDate: "2026-11-09",
+      startedAt: "2026-11-10T01:30:00.000Z",
+      localTimeContext: {
+        timezone: "America/Los_Angeles",
+        startUtcOffsetMinutes: -480,
+        endUtcOffsetMinutes: -480,
+        source: "provider_timezone",
+      },
+      sourceTree: {
+        primary: {
+          id: "kaya-climb-1",
+          providerId: "kaya",
+          sourceName: null,
+          label: "Kaya",
+          description: null,
+          url: null,
+          children: [],
+        },
+        otherSources: [
+          {
+            id: "whoop-climbing",
+            providerId: "whoop",
+            sourceName: null,
+            label: "WHOOP",
+            description: null,
+            url: null,
+            children: [],
+          },
+          {
+            id: "kilter-session-1",
+            providerId: "kilter",
+            sourceName: null,
+            label: "Kilter Board",
+            description: null,
+            url: null,
+            children: [],
+          },
+          {
+            id: "kilter-session-2",
+            providerId: "kilter",
+            sourceName: null,
+            label: "Kilter Board",
+            description: null,
+            url: null,
+            children: [],
+          },
+        ],
+      },
+      climbingLogSessions: [
+        {
+          id: "kilter-session-1",
+          providerId: "kilter",
+          memberActivityIds: ["kilter-log-1", "kilter-log-2"],
+          firstLoggedAt: "2026-11-10T01:40:00.000Z",
+          lastLoggedAt: "2026-11-10T01:44:33.000Z",
+        },
+        {
+          id: "kilter-session-2",
+          providerId: "kilter",
+          memberActivityIds: ["kilter-log-3"],
+          firstLoggedAt: "2026-11-10T02:03:00.000Z",
+          lastLoggedAt: "2026-11-10T02:03:00.000Z",
+        },
+      ],
+    },
+  },
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement.ownerDocument.body);
+    await expect(
+      canvas.getByText("Kilter Board · Logged climbs · 5:40 PM – 5:44 PM"),
+    ).toBeVisible();
+    await expect(canvas.getByText("Kilter Board · Logged climbs · 6:03 PM")).toBeVisible();
+    await userEvent.click(await canvas.findByRole("button", { name: "Lineage: Kaya" }));
+    await expect(canvas.getByText("Kilter Board")).toBeVisible();
+  },
+};
+
+export const StandaloneKilterSession: Story = {
+  args: {
+    activity: {
+      ...detailHeaderActivity,
+      name: "Kilter climbing",
+      activityType: "climbing",
+      displayedDate: "2026-11-09",
+      startedAt: "2026-11-10T01:48:51.544Z",
+      localTimeContext: {
+        timezone: "America/Los_Angeles",
+        startUtcOffsetMinutes: -480,
+        endUtcOffsetMinutes: -480,
+        source: "provider_timezone",
+      },
+      sourceTree: {
+        primary: {
+          id: "kilter-standalone-session",
+          providerId: "kilter",
+          sourceName: null,
+          label: "Kilter Board",
+          description: null,
+          url: null,
+          children: [],
+        },
+        otherSources: [],
+      },
+      climbingLogSessions: [
+        {
+          id: "kilter-standalone-session",
+          providerId: "kilter",
+          memberActivityIds: ["kilter-standalone-log"],
+          firstLoggedAt: "2026-11-10T01:48:51.544Z",
+          lastLoggedAt: "2026-11-10T01:48:51.544Z",
+        },
+      ],
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement.ownerDocument.body);
+    await expect(canvas.getByText("Kilter Board · Logged climbs · 9:48 AM")).toBeVisible();
+  },
+};
 export const RecordingDeviceExpanded: Story = {
   args: { hardware: garminActivitySourceHardware },
   play: async ({ canvasElement, userEvent }) => {

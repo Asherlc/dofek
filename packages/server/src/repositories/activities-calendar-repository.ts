@@ -134,7 +134,7 @@ export class ActivitiesCalendarRepository extends BaseRepository {
             activity.start_utc_offset_minutes AS start_utc_offset_minutes,
             activity.end_utc_offset_minutes AS end_utc_offset_minutes,
             activity.local_time_source AS local_time_source,
-            dateDiff('second', activity.started_at, activity.ended_at) / 60.0 AS duration_min,
+            dateDiff('millisecond', activity.started_at, activity.ended_at) / 60000.0 AS duration_min,
             asum.avg_hr AS avg_hr,
             asum.max_hr AS max_hr,
             asum.avg_power AS avg_power,

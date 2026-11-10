@@ -37,6 +37,7 @@ export interface ActivityDetail {
   modality: string | null;
   startedAt: string;
   endedAt: string | null;
+  durationMin: number | null;
   name: string | null;
   notes: string | null;
   perceivedExertion: number | null;
@@ -156,6 +157,15 @@ export class Activity {
     return this.#row.ended_at ? String(this.#row.ended_at) : null;
   }
 
+  get durationMin(): number | null {
+    const endedAt = this.endedAt;
+    return endedAt === null
+      ? null
+      : Math.round(
+          ((new Date(endedAt).getTime() - new Date(this.startedAt).getTime()) / 60_000) * 10,
+        ) / 10;
+  }
+
   get name(): string | null {
     return this.#row.name ? String(this.#row.name) : null;
   }
@@ -259,6 +269,7 @@ export class Activity {
       modality: this.modality,
       startedAt: this.startedAt,
       endedAt: this.endedAt,
+      durationMin: this.durationMin,
       name: this.name,
       notes: this.notes,
       perceivedExertion: this.perceivedExertion,

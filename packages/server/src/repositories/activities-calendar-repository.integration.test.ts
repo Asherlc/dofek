@@ -702,3 +702,45 @@ describe("Point-only activity calendar visibility", () => {
     });
   });
 });
+
+describe("Calendar measured duration precision", () => {
+  let context: TestContext;
+  let sensorStore: ClickHouseActivitySensorStore;
+  let measuredActivityId: string;
+
+  beforeAll(async () => {
+    context = await setupTestDatabase();
+    await ensureProvider(context.db, "wahoo", "Wahoo", undefined, userId);
+    const [measuredActivity] = await context.db
+      .insert(activity)
+      .values({
+        userId,
+        providerId: "wahoo",
+        externalId: "subsecond-duration",
+        canonicalType: "cycling",
+        providerType: "cycling",
+        startedAt: new Date("2026-03-01T10:00:00.490Z"),
+        endedAt: new Date("2026-03-01T11:30:27.410Z"),
+      })
+      .returning();
+    if (!measuredActivity) throw new Error("Expected the measured-duration fixture activity");
+    measuredActivityId = measuredActivity.groupId;
+    sensorStore = await createCalendarFixture(context, [measuredActivity]);
+  });
+
+  afterAll(async () => {
+    await context?.cleanup();
+  });
+
+  it("matches server detail duration at sub-second boundaries", async () => {
+    const days = await new ActivitiesCalendarRepository(
+      context.db,
+      userId,
+      "UTC",
+      sensorStore,
+    ).getWeekList({ weeks: 1, endDate: "2026-03-01" });
+    const entry = days.flatMap((day) => day.activities).find(({ id }) => id === measuredActivityId);
+
+    expect(entry?.durationMin).toBe(90.4);
+  });
+});

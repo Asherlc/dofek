@@ -72,6 +72,22 @@ const fullRow: ActivityRow = {
 };
 
 describe("Activity", () => {
+  it("projects rounded measured duration and keeps an unknown end null", () => {
+    expect(
+      new Activity(
+        {
+          ...fullRow,
+          started_at: "2026-03-01T10:00:00.490Z",
+          ended_at: "2026-03-01T11:30:27.410Z",
+        },
+        mockLookup,
+      ).toDetail().durationMin,
+    ).toBe(90.4);
+    expect(
+      new Activity({ ...fullRow, ended_at: null }, mockLookup).toDetail().durationMin,
+    ).toBeNull();
+  });
+
   it("exposes logged-climb windows without replacing raw source links or workout bounds", () => {
     const sessions = [
       {
@@ -479,6 +495,7 @@ describe("Activity", () => {
         modality: null,
         startedAt: "2026-03-01T10:00:00+00:00",
         endedAt: "2026-03-01T11:30:00+00:00",
+        durationMin: 90,
         localTimeContext: {
           timezone: null,
           startUtcOffsetMinutes: null,
