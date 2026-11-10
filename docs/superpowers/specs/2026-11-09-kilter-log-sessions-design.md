@@ -1,6 +1,6 @@
 # Kilter log sessions
 
-Status: revised after user clarification; implementation remains paused.
+Status: revised behavior approved; implementation in progress.
 
 ## Intent and chosen approach
 
@@ -64,6 +64,10 @@ No threshold settings screen or manual session editor is included.
   session bounds as raw application facts. Stock SQL
   [window functions](https://www.postgresql.org/docs/current/functions-window.html)
   can compare successive observations without a new service or dependency.
+- Raw per-log point activity members are permitted; derived Kilter session rows
+  and bounds remain unpersisted. Existing activity-group identities represent
+  the connected user-visible session. This preserves raw-only application
+  storage while reusing the existing grouping and alias machinery.
 - Use existing API, cache and analytics paths. Ensure list, detail, search,
   pagination and climbing summaries resolve the same sessions, including after
   new logs arrive or source logs are retired/restored. Do not count any climb
