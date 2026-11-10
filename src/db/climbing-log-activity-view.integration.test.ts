@@ -105,6 +105,49 @@ describe("derived climbing log source sessions", () => {
     },
   );
 
+  it.each([
+    {
+      label: "gym change resets unknown board",
+      first: { board: "A", gym: "1" },
+      second: { gym: "2" },
+      third: { board: "B", gym: "2" },
+    },
+    {
+      label: "board change resets unknown gym",
+      first: { board: "A", gym: "1" },
+      second: { board: "B" },
+      third: { board: "B", gym: "2" },
+    },
+  ])("starts only two sessions when $label", async ({ first, second, third }) => {
+    await write([
+      { time: "2026-11-10T01:00:00Z", ...first },
+      { time: "2026-11-10T01:01:00Z", ...second },
+      { time: "2026-11-10T01:02:00Z", ...third },
+    ]);
+    const rows = await sessions();
+    expect(rows.map((row) => row.session_id)).toEqual([
+      rows[0]?.activity_id,
+      rows[1]?.activity_id,
+      rows[1]?.activity_id,
+    ]);
+  });
+
+  it("uses accepted boundaries when known identities alternate with unknown observations", async () => {
+    await write([
+      { time: "2026-11-10T01:00:00Z", board: "A", gym: "1" },
+      { time: "2026-11-10T01:01:00Z", gym: "2" },
+      { time: "2026-11-10T01:02:00Z", board: "B" },
+      { time: "2026-11-10T01:03:00Z", gym: "1" },
+    ]);
+    const rows = await sessions();
+    expect(rows.map((row) => row.session_id)).toEqual([
+      rows[0]?.activity_id,
+      rows[1]?.activity_id,
+      rows[1]?.activity_id,
+      rows[3]?.activity_id,
+    ]);
+  });
+
   it.each(["board", "gym"] as const)(
     "does not carry %s evidence across a ten-minute gap",
     async (field) => {
