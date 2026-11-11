@@ -41,6 +41,7 @@ const databaseRowSchema = z.object({
   climb: climbingLogClimbDetailSchema.nullable(),
   areaPath: z.array(areaSchema),
   logAreaId: z.guid().nullable(),
+  areaGroupId: z.guid().nullable(),
   freeSend: z.boolean().nullable(),
   attempts: z.array(
     z
@@ -454,6 +455,7 @@ export class ClimbingActivityLogEntryRepository extends BaseRepository {
         ) ORDER BY pitch.number NULLS LAST,pitch.id) FROM fitness.pitch AS pitch WHERE pitch.climb_id=catalogue.id),'[]'::jsonb)
       ) END AS climb,
       entry.area_path AS "areaPath", entry.log_area_id AS "logAreaId",
+      location.group_id AS "areaGroupId",
       entry.free_send AS "freeSend",
       COALESCE((SELECT jsonb_agg(jsonb_build_object(
         'id',attempt.id,'climbingLogEntryId',attempt.climbing_log_entry_id,'scope',attempt.scope,'pitchId',attempt.pitch_id,
@@ -466,6 +468,8 @@ export class ClimbingActivityLogEntryRepository extends BaseRepository {
       ) ORDER BY attempt.attempt_index NULLS LAST,attempt.created_at,attempt.id) FROM fitness.v_climbing_attempt AS attempt WHERE attempt.climbing_log_entry_id=entry.id),'[]'::jsonb) AS attempts
       FROM fitness.v_climbing_log_entry AS entry
       LEFT JOIN fitness.climb AS catalogue ON catalogue.id=entry.climb_id
+      LEFT JOIN fitness.area AS location ON location.id=COALESCE(entry.log_area_id,catalogue.area_id)
+        AND location.user_id=entry.user_id
       LEFT JOIN fitness.activity AS attached ON attached.id=entry.activity_id AND attached.user_id=entry.user_id
       LEFT JOIN fitness.v_activity AS grouped ON grouped.user_id=entry.user_id AND attached.id=ANY(grouped.member_activity_ids)
       WHERE entry.user_id=${this.userId}::uuid AND ${predicate} ${eligibility}
@@ -501,6 +505,7 @@ export class ClimbingActivityLogEntryRepository extends BaseRepository {
         raw: climbingDetailRaw(row.log),
         climb: row.climb,
         areaPath: row.areaPath,
+        areaGroupId: row.areaGroupId,
         mapLocation: mapLocation(row.climb, row.areaPath, row.logAreaId),
         photoLogEntryId:
           row.log.providerId === "kaya" && row.log.externalId?.startsWith("kaya:ascent:")
