@@ -112,6 +112,7 @@ describe("ActivityRepository", () => {
             primary_provider_id: null,
             primary_source_name: null,
             origin_candidate_member_ids: [],
+            fit_recovery_error: false,
             start_utc_offset_minutes: null,
             end_utc_offset_minutes: null,
             local_time_source: "unknown",
@@ -1181,6 +1182,7 @@ describe("ActivityRepository", () => {
               elevation_gain_m: null,
               elevation_loss_m: null,
               sample_count: null,
+              fit_recovery_error: false,
               provider_absent_at: "2024-01-16T08:00:00.000Z",
             },
           ]);

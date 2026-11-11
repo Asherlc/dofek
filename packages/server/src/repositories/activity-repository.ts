@@ -536,6 +536,15 @@ export class ActivityRepository extends BaseRepository {
             a.source_external_ids,
             a.absent_source_external_ids,
             a.member_activity_ids,
+            EXISTS (
+              SELECT 1
+              FROM fitness.activity member
+              WHERE member.id = ANY(a.member_activity_ids)
+                AND member.user_id = a.user_id
+                AND member.deleted_at IS NULL
+                AND member.provider_absent_at IS NULL
+                AND member.fit_recovery_error IS NOT NULL
+            ) AS fit_recovery_error,
             NULL::double precision AS avg_hr,
             NULL::smallint AS max_hr,
             NULL::double precision AS avg_power,
@@ -617,6 +626,7 @@ export class ActivityRepository extends BaseRepository {
               ELSE NULL
             END AS absent_source_external_ids,
             ARRAY[a.id]::uuid[] AS member_activity_ids,
+            false AS fit_recovery_error,
             NULL::double precision AS avg_hr,
             NULL::smallint AS max_hr,
             NULL::double precision AS avg_power,

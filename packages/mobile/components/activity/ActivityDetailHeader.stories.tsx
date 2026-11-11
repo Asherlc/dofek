@@ -28,6 +28,19 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const BranchingSourcesCollapsed: Story = {};
+export const FitRecoveryWarning: Story = {
+  args: {
+    activity: {
+      ...detailHeaderActivity,
+      fitRecoveryWarning:
+        "Some activity data could not be recovered from the original file. The available data was imported; this activity may be incomplete.",
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement.ownerDocument.body);
+    await expect(canvas.getByRole("alert")).toBeVisible();
+  },
+};
 export const BranchingSourcesExpanded: Story = {
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement.ownerDocument.body);
