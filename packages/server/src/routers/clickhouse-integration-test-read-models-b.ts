@@ -1,6 +1,24 @@
 import { readModelSql, renderDbtModelSql } from "../../../../src/db/read-model-sql-test-helpers.ts";
 import type { IsolatedClickHouseDatabases } from "./clickhouse-integration-test-models.ts";
 
+export function buildTestDailyHealthSensorSelectSql(
+  databases: IsolatedClickHouseDatabases,
+): string {
+  return renderDbtModelSql(readModelSql("daily_health_sensor.sql"), { isIncremental: false })
+    .replaceAll("{{ health_sensor_day_batch_size }}", "32")
+    .replaceAll(
+      "{{ source('ingest', 'metric_stream_current') }}",
+      `${databases.ingest}.metric_stream`,
+    )
+    .replaceAll(
+      "{{ source('analytics', 'metric_stream_day_change') }}",
+      `(SELECT user_id, provider_id,
+      toDate(recorded_at) AS recorded_date, max(ingested_at) AS changed_at
+      FROM ${databases.ingest}.metric_stream GROUP BY user_id, provider_id, recorded_date)`,
+    )
+    .concat(" SETTINGS transform_null_in=1, enable_materialized_cte=1");
+}
+
 export function buildTestBodyMeasurementSelectSql(databases: IsolatedClickHouseDatabases): string {
   return `WITH body_measurement_samples AS (
   SELECT
@@ -608,26 +626,4 @@ SELECT
   refresh_clock.refreshed_at AS refreshed_at
 FROM with_windows
 CROSS JOIN refresh_clock`;
-}
-
-function renderHealthspanModel(model: string, databases: IsolatedClickHouseDatabases): string {
-  return renderDbtModelSql(readModelSql(model), { isIncremental: false })
-    .replace(/{{ ref\('([^']+)'\) }}/g, `${databases.analytics}.$1`)
-    .replace(
-      /{{ source\('([^']+)', '([^']+)'\) }}/g,
-      (_match, schema: string, name: string) =>
-        `${schema === "postgres_fitness" ? databases.postgresFitness : databases.analytics}.${name}`,
-    );
-}
-
-export function buildTestHealthspanReadModelSelectSql(
-  databases: IsolatedClickHouseDatabases,
-): string {
-  return renderHealthspanModel("weekly_healthspan.sql", databases);
-}
-
-export function buildTestHealthspanActivityZoneMinutesSelectSql(
-  databases: IsolatedClickHouseDatabases,
-): string {
-  return renderHealthspanModel("healthspan_activity_zone_minutes.sql", databases);
 }

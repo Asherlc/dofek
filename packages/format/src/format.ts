@@ -55,9 +55,11 @@ export function formatDurationHoursMinutes(minutes: number): string {
 }
 
 /** Format a duration in minutes as "Xh Ym" */
-export function formatDurationMinutes(minutes: number): string {
-  const hours = Math.floor(minutes / 60);
-  const mins = Math.round(minutes % 60);
+export function formatDurationMinutes(minutes: number | null): string {
+  if (minutes === null) return "--";
+  const totalMinutes = Math.round(minutes);
+  const hours = Math.floor(totalMinutes / 60);
+  const mins = totalMinutes % 60;
   if (hours === 0) return `${mins}m`;
   return `${hours}h ${mins}m`;
 }

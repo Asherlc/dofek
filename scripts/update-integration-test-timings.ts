@@ -133,11 +133,11 @@ function sameKeys(actual: string[], expected: string[], label: string): void {
     JSON.stringify([...actual].sort()) !== JSON.stringify([...expected].sort())
   )
     throw new Error(
-      `${label}: duplicate, missing or foreign integration keys; rerun all four successful shards`,
+      `${label}: duplicate, missing or foreign integration keys; rerun all five successful shards`,
     );
 }
 function checkAssignment(assignment: Assignment, environment: NodeJS.ProcessEnv): void {
-  if (assignment.count !== 4) throw new Error("Timing refresh requires exactly four shards");
+  if (assignment.count !== 5) throw new Error("Timing refresh requires exactly five shards");
   if (assignment.cacheExistedBefore || !assignment.cacheEnabled)
     throw new Error("Timing cache is stale/preexisting or disabled; rerun on a fresh CI runner");
   const provenance = assignment.provenance;
@@ -190,7 +190,7 @@ export function checkIntegrationTimingResults(value: unknown, assignment: Assign
   return cache;
 }
 
-/** Export one fresh successful shard, or merge all four exports into a reviewable baseline. */
+/** Export one fresh successful shard, or merge all five exports into a reviewable baseline. */
 export function runIntegrationTimingCommand(
   args: string[],
   environment: NodeJS.ProcessEnv = process.env,
@@ -198,7 +198,7 @@ export function runIntegrationTimingCommand(
   const [command, target, ...directories] = args;
   if (!target || (command !== "export" && command !== "merge"))
     throw new Error(
-      "Usage: pnpm tsx scripts/update-integration-test-timings.ts export <shard-directory> | merge <output.json> <four shard-directories>",
+      "Usage: pnpm tsx scripts/update-integration-test-timings.ts export <shard-directory> | merge <output.json> <five shard-directories>",
     );
   if (command === "export") {
     if (directories.length) throw new Error("Export accepts exactly one shard directory");
@@ -217,8 +217,8 @@ export function runIntegrationTimingCommand(
     writeFileSync(join(target, "results.json"), `${JSON.stringify(cache, null, 2)}\n`);
     return;
   }
-  if (directories.length !== 4)
-    throw new Error("Timing refresh requires all four shard directories");
+  if (directories.length !== 5)
+    throw new Error("Timing refresh requires all five shard directories");
   const shards = directories
     .map((directory) => {
       const assignment = timingAssignmentSchema.parse(readJson(join(directory, "assignment.json")));
@@ -230,9 +230,9 @@ export function runIntegrationTimingCommand(
     })
     .sort((a, b) => a.assignment.index - b.assignment.index);
   const first = shards[0]?.assignment;
-  if (!first) throw new Error("Timing refresh requires all four shards");
+  if (!first) throw new Error("Timing refresh requires all five shards");
   const indices = shards.map((shard) => shard.assignment.index);
-  if (JSON.stringify(indices) !== "[1,2,3,4]")
+  if (JSON.stringify(indices) !== "[1,2,3,4,5]")
     throw new Error("Missing or duplicate integration shard");
   for (const { assignment } of shards) {
     if (
@@ -246,13 +246,13 @@ export function runIntegrationTimingCommand(
   sameKeys(
     rows.map(([key]) => key),
     first.inventory,
-    "Complete four-shard union",
+    "Complete five-shard union",
   );
   const baseline = timingBaselineSchema.parse({
     schemaVersion: 1,
     provenance: {
       ...first.provenance,
-      source: "Successful complete four-shard Vitest public cache results (whole-suite durations)",
+      source: "Successful complete five-shard Vitest public cache results (whole-suite durations)",
       baselineSha256: first.baselineSha256,
       inventory: first.inventory,
       shards: shards.map(({ assignment }) => assignment),

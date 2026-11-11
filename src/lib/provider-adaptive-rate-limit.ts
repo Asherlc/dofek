@@ -27,18 +27,22 @@ import {
   tryClaimSyncStepAdmission,
 } from "./sync-step-admission-context.ts";
 
-interface RedisMulti {
-  set: (key: string, value: string, mode: "PX", millisecondsToExpire: number) => RedisMulti;
-  exec: () => Promise<unknown[] | null>;
+interface RedisClient {
+  get: (key: string) => Promise<string | null>;
+  eval: (script: string, numberOfKeys: number, ...args: (string | number)[]) => Promise<unknown>;
 }
 
-interface RedisClient {
-  set: (key: string, value: string, mode: "PX", millisecondsToExpire: number) => Promise<unknown>;
-  get: (key: string) => Promise<string | null>;
-  watch?: (key: string) => Promise<unknown>;
-  unwatch?: () => Promise<unknown>;
-  multi?: () => RedisMulti;
-}
+// WATCH belongs to the connection, so concurrent callers must compare and write
+// in one Redis operation. Keep pacing calculations in the shared TypeScript code.
+const COMPARE_AND_SET_ADAPTIVE_STATE = `
+local current = redis.call('GET', KEYS[1])
+if (ARGV[1] == '0' and current ~= false) or
+   (ARGV[1] == '1' and current ~= ARGV[2]) then
+  return 0
+end
+redis.call('SET', KEYS[1], ARGV[3], 'PX', ARGV[4])
+return 1
+`;
 
 type LoadOrCreate = (
   providerId: string,
@@ -112,70 +116,13 @@ function loadAdaptiveStateFromRedis(
   );
 }
 
-async function awaitAdmissionAtomically(
-  redisClient: RedisClient,
-  providerId: string,
-  scope: ProviderRateLimitScope,
-  userId: string | null,
-): Promise<void> {
-  const key = adaptiveRateLimitStorageKey(providerId, scope, userId);
-  const watch = redisClient.watch;
-  const multi = redisClient.multi;
-  if (!watch || !multi) {
-    throw new Error("Redis client does not support atomic admission");
-  }
-
-  while (true) {
-    const planningMs = Date.now();
-    const planningState = loadAdaptiveStateFromRedis(
-      await redisClient.get(key),
-      providerId,
-      scope,
-      userId,
-      planningMs,
-    );
-    await sleep(admissionDelayMs(planningState, planningMs));
-
-    while (true) {
-      await watch(key);
-      const claimMs = Date.now();
-      const claimState = loadAdaptiveStateFromRedis(
-        await redisClient.get(key),
-        providerId,
-        scope,
-        userId,
-        claimMs,
-      );
-      const remainingDelay = admissionDelayMs(claimState, claimMs);
-      if (remainingDelay > 0) {
-        await redisClient.unwatch?.();
-        await sleep(remainingDelay);
-        break;
-      }
-
-      const nextState = recordAdaptiveRequest(claimState, claimMs);
-      const execResult = await multi()
-        .set(key, serializeAdaptiveRateState(nextState), "PX", ADAPTIVE_RATE_WINDOW_MS * 4)
-        .exec();
-      if (execResult) {
-        return;
-      }
-    }
-  }
-}
-
-async function recordSuccessWithStore(
-  loadOrCreate: LoadOrCreate,
-  save: SaveState,
-  providerId: string,
-  scope: ProviderRateLimitScope,
-  userId: string | null,
+function recordAdaptiveSuccess(
+  state: ProviderAdaptiveRateState,
   responseHeaders?: Headers,
-): Promise<void> {
-  const state = await loadOrCreate(providerId, scope, userId);
+): ProviderAdaptiveRateState {
   const nowMs = Date.now();
   let next = slideAdaptiveWindow(state, nowMs);
-  if (providerId === "strava" && responseHeaders) {
+  if (state.providerId === "strava" && responseHeaders) {
     const quota = parseStravaRateLimitHeaders(responseHeaders);
     if (quota) {
       next = applyStravaQuota(next, quota);
@@ -184,7 +131,7 @@ async function recordSuccessWithStore(
       }
     }
   }
-  await save(next);
+  return next;
 }
 
 async function recordRateLimitWithStore(
@@ -271,13 +218,8 @@ export class InMemoryAdaptiveRateLimitStore implements AdaptiveRateLimitStore {
     userId: string | null,
     responseHeaders?: Headers,
   ): Promise<void> {
-    await recordSuccessWithStore(
-      this.#loadOrCreate.bind(this),
-      this.#save.bind(this),
-      providerId,
-      scope,
-      userId,
-      responseHeaders,
+    await this.#save(
+      recordAdaptiveSuccess(await this.#loadOrCreate(providerId, scope, userId), responseHeaders),
     );
   }
 
@@ -294,22 +236,8 @@ async function getSharedRedisClient(): Promise<RedisClient> {
   const connection = getSharedRedisConnection();
   const redisClient = await connection.client;
   return {
-    set: async (key, value, mode, millisecondsToExpire) =>
-      redisClient.set(key, value, mode, millisecondsToExpire),
     get: async (key) => redisClient.get(key),
-    watch: async (key) => redisClient.watch(key),
-    unwatch: async () => redisClient.unwatch(),
-    multi: () => {
-      const transaction = redisClient.multi();
-      const chain: RedisMulti = {
-        set: (key, value, mode, millisecondsToExpire) => {
-          transaction.set(key, value, mode, millisecondsToExpire);
-          return chain;
-        },
-        exec: async () => transaction.exec(),
-      };
-      return chain;
-    },
+    eval: async (script, numberOfKeys, ...args) => redisClient.eval(script, numberOfKeys, ...args),
   };
 }
 
@@ -332,15 +260,31 @@ export class RedisAdaptiveRateLimitStore implements AdaptiveRateLimitStore {
     return createInitialAdaptiveState(providerId, scope, userId);
   }
 
-  async #save(state: ProviderAdaptiveRateState): Promise<void> {
-    const key = adaptiveRateLimitStorageKey(state.providerId, state.scope, state.userId);
+  async #updateState(
+    providerId: string,
+    scope: ProviderRateLimitScope,
+    userId: string | null,
+    update: (
+      state: ProviderAdaptiveRateState,
+    ) => ProviderAdaptiveRateState | Promise<ProviderAdaptiveRateState>,
+  ): Promise<void> {
+    const key = adaptiveRateLimitStorageKey(providerId, scope, userId);
     const redisClient = await this.#getRedisClient();
-    await redisClient.set(
-      key,
-      serializeAdaptiveRateState(state),
-      "PX",
-      ADAPTIVE_RATE_WINDOW_MS * 4,
-    );
+    while (true) {
+      const raw = await redisClient.get(key);
+      const state = loadAdaptiveStateFromRedis(raw, providerId, scope, userId, Date.now());
+      const next = await update(state);
+      const saved = await redisClient.eval(
+        COMPARE_AND_SET_ADAPTIVE_STATE,
+        1,
+        key,
+        raw === null ? "0" : "1",
+        raw ?? "",
+        serializeAdaptiveRateState(next),
+        ADAPTIVE_RATE_WINDOW_MS * 4,
+      );
+      if (saved === 1) return;
+    }
   }
 
   async awaitAdmission(
@@ -348,40 +292,18 @@ export class RedisAdaptiveRateLimitStore implements AdaptiveRateLimitStore {
     scope: ProviderRateLimitScope,
     userId: string | null,
   ): Promise<void> {
-    if (shouldUseSyncStepThrottleOnly(providerId)) {
-      await awaitThrottleWithStore(
-        this.#loadOrCreate.bind(this),
-        this.#save.bind(this),
-        providerId,
-        scope,
-        userId,
-      );
-      return;
-    }
-
-    if (shouldClaimSyncStepBudget(providerId) && !tryClaimSyncStepAdmission()) {
-      await awaitThrottleWithStore(
-        this.#loadOrCreate.bind(this),
-        this.#save.bind(this),
-        providerId,
-        scope,
-        userId,
-      );
-      return;
-    }
-
-    const redisClient = await this.#getRedisClient();
-    if (redisClient.watch && redisClient.multi) {
-      await awaitAdmissionAtomically(redisClient, providerId, scope, userId);
-      return;
-    }
-    await awaitAdmissionWithStore(
-      this.#loadOrCreate.bind(this),
-      this.#save.bind(this),
-      providerId,
-      scope,
-      userId,
-    );
+    const throttleOnly =
+      shouldUseSyncStepThrottleOnly(providerId) ||
+      (shouldClaimSyncStepBudget(providerId) && !tryClaimSyncStepAdmission());
+    await this.#updateState(providerId, scope, userId, async (state) => {
+      const delay = throttleOnly
+        ? throttleDelayMs(state, Date.now())
+        : admissionDelayMs(state, Date.now());
+      await sleep(delay);
+      return throttleOnly
+        ? recordAdaptiveThrottleTouch(state, Date.now())
+        : recordAdaptiveRequest(state, Date.now());
+    });
   }
 
   async recordSuccess(
@@ -390,18 +312,18 @@ export class RedisAdaptiveRateLimitStore implements AdaptiveRateLimitStore {
     userId: string | null,
     responseHeaders?: Headers,
   ): Promise<void> {
-    await recordSuccessWithStore(
-      this.#loadOrCreate.bind(this),
-      this.#save.bind(this),
-      providerId,
-      scope,
-      userId,
-      responseHeaders,
+    await this.#updateState(providerId, scope, userId, (state) =>
+      recordAdaptiveSuccess(state, responseHeaders),
     );
   }
 
   async recordRateLimit(error: ProviderRateLimitError): Promise<void> {
-    await recordRateLimitWithStore(this.#loadOrCreate.bind(this), this.#save.bind(this), error);
+    await this.#updateState(
+      error.providerId,
+      error.scope,
+      error.scope === "user" ? error.userId : null,
+      (state) => recordAdaptiveRateLimit(state, error.retryAfterSeconds),
+    );
   }
 
   async getLearnedCooldownSeconds(providerId: string): Promise<number | null> {

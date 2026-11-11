@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { MetricStreamEventPublisher } from "../../../../src/metric-stream/redpanda-producer.ts";
+import type { MetricStreamEventPublisher } from "../../../../src/metric-stream/publisher.ts";
 import {
   appleHealthWorkoutExternalId,
   processBodyMeasurements,

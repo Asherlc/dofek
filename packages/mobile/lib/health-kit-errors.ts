@@ -44,6 +44,7 @@ function isBackgroundSyncSource(source: string | undefined): boolean {
     source === "bg-accel-sync" ||
     source === "whoop-ble-imu-upload" ||
     source === "whoop-ble-realtime-upload" ||
+    source === "apple-health-sync-log" ||
     (source?.startsWith("health-kit-") ?? false)
   );
 }

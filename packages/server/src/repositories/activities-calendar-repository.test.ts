@@ -17,6 +17,40 @@ import { ProviderAbsentActivitiesCalendarRepository } from "./provider-absent-ac
 const dialect = new PgDialect();
 
 describe("ActivitiesCalendarRepository", () => {
+  it("loads source-session attribution once for all returned groups", async () => {
+    const row = makeActivityRow({
+      id: "group",
+      ended_at: null,
+      duration_min: null,
+      source_external_ids: [
+        { providerId: "kilter", externalId: "log1", memberActivityId: "p1" },
+        { providerId: "kilter", externalId: "log2", memberActivityId: "p2" },
+      ],
+    });
+    const session = {
+      id: "p1",
+      providerId: "kilter",
+      memberActivityIds: ["p1", "p2"],
+      firstLoggedAt: "2026-11-10T01:00:00Z",
+      lastLoggedAt: "2026-11-10T01:04:00Z",
+    };
+    const sessions = vi
+      .spyOn(ClimbingActivityLogEntryRepository.prototype, "getActivityLogSessions")
+      .mockResolvedValue(new Map([["group", [session]]]));
+    const repository = new ActivitiesCalendarRepository(
+      makeDatabase(),
+      "user-1",
+      "UTC",
+      makeSensorStore([[row], []]),
+    );
+    const days = await repository.getWeekList({ weeks: 1, endDate: "2026-11-10" });
+    expect(sessions).toHaveBeenCalledExactlyOnceWith(["group"]);
+    expect(days[0]?.activities[0]).toMatchObject({
+      durationMin: null,
+      source: { sourceCount: 1, overlapSummary: null, tree: { otherSources: [{ id: "p1" }] } },
+    });
+  });
+
   afterEach(() => vi.restoreAllMocks());
 
   it("orders page boundaries by local date, start time, then stable activity identity", async () => {

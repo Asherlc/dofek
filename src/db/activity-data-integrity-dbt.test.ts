@@ -17,13 +17,28 @@ import { z } from "zod";
 import type { ActivityIntegrityClickHouseClient } from "./activity-data-integrity-clickhouse.ts";
 import {
   type ActivityIntegrityDbtBuildInput,
-  runActivityIntegrityDbtBuild,
+  runActivityIntegrityDbtBuild as runOwnedActivityIntegrityDbtBuild,
 } from "./activity-data-integrity-dbt.ts";
 
 vi.mock("node:child_process", async () => ({
   ...(await vi.importActual<typeof import("node:child_process")>("node:child_process")),
   spawn: vi.fn(),
 }));
+vi.mock("../analytics/dbt-build.ts", () => ({
+  runOwnedDbtBuild: async (
+    _owner: unknown,
+    _directory: string,
+    _models: unknown,
+    run: () => Promise<number>,
+  ) => run(),
+}));
+const fixtureOwner = { assertActive: vi.fn(async () => undefined), runSynchronousDbt: vi.fn() };
+function runActivityIntegrityDbtBuild(
+  input: ActivityIntegrityDbtBuildInput,
+  client: ActivityIntegrityClickHouseClient,
+) {
+  return runOwnedActivityIntegrityDbtBuild(input, client, fixtureOwner);
+}
 const id = (index: number) => `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`;
 const input: ActivityIntegrityDbtBuildInput = {
   userId: id(99999),
@@ -146,6 +161,23 @@ function fixture(keys: readonly string[] = [id(1)]) {
 }
 
 describe("runActivityIntegrityDbtBuild", () => {
+  it("checks required ownership before reading expanded source scope", async () => {
+    const error = new Error("Publication owner closed");
+    const query = vi.fn();
+    await expect(
+      runOwnedActivityIntegrityDbtBuild(
+        input,
+        { query },
+        {
+          assertActive: async () => {
+            throw error;
+          },
+          runSynchronousDbt: vi.fn(),
+        },
+      ),
+    ).rejects.toBe(error);
+    expect(query).not.toHaveBeenCalled();
+  });
   afterEach(() => {
     vi.unstubAllEnvs();
     vi.clearAllMocks();

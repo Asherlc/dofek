@@ -46,6 +46,7 @@ export function ClimbingStrengths({
 }) {
   const [view, setView] = useState<ClimbingStrengthsTab>("radar");
   const [selectedBreakdown, setBreakdown] = useState<string | null>(null);
+  const enrichmentErrors = [...new Set(data?.enrichmentErrors)];
   const panels = [...(data?.panels ?? []), ...(data?.tagPanels ?? [])];
   const options = climbingStrengthsBreakdownOptions(panels);
   const breakdown = options.some((option) => option.key === selectedBreakdown)
@@ -91,9 +92,25 @@ export function ClimbingStrengths({
           Updating catalogue metadata…
         </p>
       ) : null}
-      {data?.enrichmentErrors?.map((message) => (
-        <QueryStatePanel key={message} variant="error" message={message} />
-      ))}
+      {enrichmentErrors.length > 0 ? (
+        <section
+          aria-label="Catalogue metadata"
+          className="rounded-lg border border-border p-3 text-sm"
+        >
+          <p className="font-medium">Catalogue metadata incomplete</p>
+          <p className="text-muted">Recorded results remain available.</p>
+          <details className="mt-2">
+            <summary className="cursor-pointer">Provider details</summary>
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-muted">
+              {enrichmentErrors.map((message) => (
+                <li key={message} className="whitespace-pre-line">
+                  {message}
+                </li>
+              ))}
+            </ul>
+          </details>
+        </section>
+      ) : null}
       <fieldset aria-label="Strengths view" className="flex gap-6 border-b border-border">
         {CLIMBING_STRENGTHS_TABS.map((tab) => (
           <button

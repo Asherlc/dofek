@@ -4,7 +4,7 @@ import {
   disableCollectionNotifications,
   enableCollectionNotifications,
 } from "../modules/background-refresh";
-import { captureException } from "./telemetry";
+import { captureException, logger } from "./telemetry";
 
 /** Undefined preserves native monitoring until session and collection readiness are known. */
 export function useCollectionNotifications(enabled: boolean | undefined): void {
@@ -24,6 +24,11 @@ export function useCollectionNotifications(enabled: boolean | undefined): void {
       try {
         const granted = await enableCollectionNotifications(requestPermission);
         if (!active || attempt !== enableAttempt) return;
+        logger.info("collection-notifications", "Native collection notification check completed", {
+          event: "collection_notifications_enable_completed",
+          requestPermission,
+          granted,
+        });
         if (granted) {
           denialExplained.current = false;
         } else if (

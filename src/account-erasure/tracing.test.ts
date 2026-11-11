@@ -52,12 +52,9 @@ it("keeps processor erasure URLs out of exported spans without disabling ordinar
       authIdentities: [],
       externalEffects: [],
       localIdentifiers: {
-        activityIds: [],
         exportObjects: [],
         fileUploads: [],
-        processingOperationIds: [],
         sessionIds: [],
-        sleepSessionIds: [],
         userId: "10000000-0000-4000-8000-000000001994",
       },
       posthogDistinctId: "10000000-0000-4000-8000-000000001994",

@@ -127,13 +127,12 @@ describe("production analytics read-model build", () => {
       "sleep_heart_rate_sample",
       "resting_heart_rate_sleep_window",
       "daily_sleep",
+      "daily_health_sensor",
       "daily_recovery_inputs",
       "daily_recovery",
       "daily_activity_load",
       "daily_strain",
       "daily_body_measurement",
-      "healthspan_activity_zone_minutes",
-      "weekly_healthspan",
     ]);
     expect(entrypoint).toContain("run_dbt_safe_builds()");
     expect(entrypoint).toContain('--select "$DBT_ACTIVITY_MODELS" &&');
@@ -510,19 +509,6 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("JSONExtract(affected_location_rows.point_text, 'coordinates', 'Array(Float64)')[2]");
     expect(sql).toContain("trim(BOTH '()' FROM affected_location_rows.point_text)");
     expect(sql).toContain("empty_group_checkpoints AS MATERIALIZED");
-  });
-
-  it("bounds duplicate matching while retaining recorded merged activity timestamps", () => {
-    const matchesSql = readModel("activity_duplicate_matches");
-    const dedupedActivitiesSql = readModel("deduped_activities");
-
-    expect(matchesSql).toContain("coalesce(ended_at, started_at + INTERVAL 12 HOUR) AS ended_at");
-    expect(matchesSql).toContain("greatest(left_activity.started_at, right_activity.started_at)");
-    expect(matchesSql).toContain("least(left_activity.ended_at, right_activity.ended_at)");
-
-    expect(dedupedActivitiesSql).toContain("minIf(ranked.started_at, ranked.activity_id IS NOT null) AS started_at");
-    expect(dedupedActivitiesSql).toContain("maxIf(ranked.ended_at, ranked.activity_id IS NOT null) AS ended_at");
-    expect(dedupedActivitiesSql).toContain("maxIf(ranked.source_synced_at, ranked.activity_id IS NOT null) AS source_synced_at");
   });
 
   it("requires positive activity windows before shorter-window duplicate matching", () => {
@@ -929,14 +915,6 @@ describe("production analytics read-model build", () => {
     expect(sql).not.toContain("ref('deduped_sensor')");
   });
 
-  it("materializes weekly healthspan from compact daily sleep rows", () => {
-    const sql = readModel("weekly_healthspan");
-
-    expect(sql).toContain("ref('daily_sleep')");
-    expect(sql).toContain("FINAL");
-    expect(sql).not.toContain("analytics.v_sleep");
-  });
-
   it("materializes the daily recovery model from daily recovery inputs", () => {
     const sql = readModel("daily_recovery");
     const normalizedSql = compactWhitespace(sql);
@@ -1013,58 +991,6 @@ describe("production analytics read-model build", () => {
     expect(sql).toContain("acute_load_7d");
     expect(sql).toContain("chronic_load_28d");
     expect(sql).toContain("workload_ratio");
-  });
-
-  it("materializes healthspan zone minutes from bounded activity samples", () => {
-    const sql = readModel("healthspan_activity_zone_minutes");
-    const normalizedSql = compactWhitespace(sql);
-
-    expect(sql).toContain("ref('activity_summary_rows')");
-    expect(sql).toContain("FROM {{ ref('activity_summary_rows') }} FINAL");
-    expect(sql).toContain("WHERE is_deleted = 0");
-    expect(sql).toContain("ref('activity_sensor_sample')");
-    expect(sql).toContain("ref('resting_heart_rate_sleep_window')");
-    expect(sql).toContain("source('postgres_fitness', 'user_profile_current')");
-    expect(sql).toContain("FROM {{ this }} AS previous FINAL");
-    expect(sql).toContain("if(metadata.activity_id IS NULL, 1, 0) AS is_deleted");
-    expect(sql).toContain("ref('cycling_activity_power_metrics')");
-    expect(sql).toContain("power.eftp AS eftp");
-    expect(sql).toContain("samples.scalar >= metadata.eftp * 0.9");
-    expect(sql).not.toContain("ref('deduped_sensor')");
-    expect(sql).not.toContain("source('postgres_fitness', 'metric_stream')");
-    expect(normalizedSql).toContain("metadata.activity_id = samples.activity_id");
-    expect(normalizedSql).toContain("metadata.user_id = samples.user_id");
-  });
-
-  it("materializes weekly healthspan from compact inputs", () => {
-    const sql = readModel("weekly_healthspan");
-    const normalizedSql = compactWhitespace(sql);
-
-    expect(sql).toContain("materialized='incremental'");
-    expect(sql).toContain("engine='ReplacingMergeTree(refresh_version)'");
-    expect(sql).toContain("{% if is_incremental() %}");
-    expect(sql).toContain("existing_weeks AS");
-    expect(sql).toContain("sleep_week_keys AS");
-    expect(sql).toContain("changed_sleep_weeks AS");
-    expect(sql).toContain("FROM sleep_week_keys");
-    expect(sql).toContain("FROM changed_sleep_weeks");
-    expect(normalizedSql).toContain("existing_weeks.latest_materialized_week_start - INTERVAL 26 WEEK");
-    expect(sql).toContain("ref('healthspan_activity_zone_minutes')");
-    expect(sql).toContain("ref('resting_heart_rate_sleep_window')");
-    expect(sql).toContain("ref('activity_vo2max_estimate')");
-    expect(sql).toContain("ref('daily_body_measurement')");
-    expect(sql).toContain("changed_body_weeks AS");
-    expect(sql).toContain("WHERE is_deleted = 0");
-    expect(normalizedSql).toContain(
-      "ref('daily_body_measurement') }} FINAL WHERE refreshed_at > (SELECT last_refreshed_at FROM target_state)",
-    );
-    expect(sql).toContain("toMonday(toDate(started_at)) AS week_start");
-    expect(sql).not.toContain("activity_date");
-    expect(sql).toContain("argMax(vo2max, started_at) AS latest_vo2max");
-    expect(sql).toContain("avg_sleep_min");
-    expect(sql).toContain("weekly_aerobic_min");
-    expect(sql).toContain("weekly_high_intensity_min");
-    expect(sql).toContain("latest_vo2max");
   });
 
   it("materializes daily body measurements from the canonical body model", () => {

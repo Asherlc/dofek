@@ -21,6 +21,7 @@ export function makeDatabase(
   sourceEntries: ClimbingLogEntryDetail[] = [],
 ) {
   function sourceQueryRows(query: string): TestDatabaseRow[] | null {
+    if (query.includes("fitness.v_climbing_log_activity")) return [];
     if (query.includes("FROM fitness.user_settings")) return [];
     if (query.includes('AS "activityId"'))
       return sourceEntries.map((entry) => ({

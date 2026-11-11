@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import kafkaJs from "kafkajs";
 import { describe, expect, it, vi } from "vitest";
 import {
   assertAccountErasureConsumersDrained,
@@ -12,6 +13,80 @@ import {
 } from "./redpanda-drain.ts";
 
 describe("account erasure Redpanda drain", () => {
+  it.each([1, 2, 3])("retains all %i captured routes in the ingest checkpoint", async (count) => {
+    vi.resetModules();
+    const { accountErasureIngestFenceCheckpointSchema } = await import("./redpanda-drain.ts");
+    const highWatermarks = Array.from({ length: count }, (_, index) => ({
+      topic: `metric-stream-${index}`,
+      partition: 0,
+      low: "10",
+      offset: "20",
+      clusterId: "a".repeat(22),
+      topicId: "b".repeat(22),
+    }));
+    expect(
+      accountErasureIngestFenceCheckpointSchema.parse({ highWatermarks, userEmail: "private" }),
+    ).toEqual({ highWatermarks });
+  });
+
+  it.each([0, 4])("rejects an ingest checkpoint with %i routes", async (count) => {
+    vi.resetModules();
+    const { accountErasureIngestFenceCheckpointSchema } = await import("./redpanda-drain.ts");
+    const highWatermarks = Array.from({ length: count }, (_, index) => ({
+      topic: `metric-stream-${index}`,
+      partition: 0,
+      low: "10",
+      offset: "20",
+    }));
+    expect(accountErasureIngestFenceCheckpointSchema.safeParse({ highWatermarks }).success).toBe(
+      false,
+    );
+  });
+
+  it("rejects an ingest checkpoint without captured routes", async () => {
+    vi.resetModules();
+    const { accountErasureIngestFenceCheckpointSchema } = await import("./redpanda-drain.ts");
+    expect(accountErasureIngestFenceCheckpointSchema.safeParse({}).success).toBe(false);
+  });
+
+  it("preserves bounded structural broker generation in durable checkpoints", async () => {
+    vi.resetModules();
+    const { accountErasureRouteHighWatermarkSchema } = await import("./redpanda-drain.ts");
+    const checkpoint = {
+      topic: "metric-stream-v1",
+      partition: 0,
+      low: "10",
+      offset: "20",
+      clusterId: `${"Aa0_-".repeat(4)}Aa`,
+      topicId: `${"Zz9_-".repeat(4)}Zz`,
+    };
+    expect(accountErasureRouteHighWatermarkSchema.parse(checkpoint)).toEqual(checkpoint);
+    expect(
+      accountErasureRouteHighWatermarkSchema.safeParse({ ...checkpoint, topic: "a".repeat(249) })
+        .success,
+    ).toBe(true);
+    for (const topic of ["", "a".repeat(250)]) {
+      expect(
+        accountErasureRouteHighWatermarkSchema.safeParse({ ...checkpoint, topic }).success,
+      ).toBe(false);
+    }
+    for (const key of ["clusterId", "topicId"] as const) {
+      for (const value of [
+        "",
+        "a",
+        "a".repeat(21),
+        "a".repeat(23),
+        `!${"a".repeat(22)}`,
+        `${"a".repeat(22)}!`,
+        "!".repeat(22),
+      ]) {
+        expect(
+          accountErasureRouteHighWatermarkSchema.safeParse({ ...checkpoint, [key]: value }).success,
+        ).toBe(false);
+      }
+    }
+  });
+
   it("loads under Node's native ESM runtime", () => {
     const moduleUrl = pathToFileURL(join(process.cwd(), "src/account-erasure/redpanda-drain.ts"));
     const result = spawnSync(
@@ -37,15 +112,19 @@ describe("account erasure Redpanda drain", () => {
     ).toThrow("METRIC_STREAM_LEGACY_TOPIC is required for account erasure");
   });
 
-  it("fails worker startup when Redpanda brokers are missing", () => {
-    expect(() =>
-      createAccountErasureRedpandaAdminFromEnv({
-        METRIC_STREAM_LEGACY_TOPIC: "metric-stream-v1",
-        METRIC_STREAM_LIVE_TOPIC: "metric-stream-live-v1",
-        METRIC_STREAM_HISTORY_TOPIC: "metric-stream-history-v1",
-      }),
-    ).toThrow("REDPANDA_BROKERS is required for account erasure");
-  });
+  it.each([undefined, "   "])(
+    "fails worker startup when Redpanda brokers are empty: %s",
+    (brokers) => {
+      expect(() =>
+        createAccountErasureRedpandaAdminFromEnv({
+          METRIC_STREAM_LEGACY_TOPIC: "metric-stream-v1",
+          METRIC_STREAM_LIVE_TOPIC: "metric-stream-live-v1",
+          METRIC_STREAM_HISTORY_TOPIC: "metric-stream-history-v1",
+          REDPANDA_BROKERS: brokers,
+        }),
+      ).toThrow("REDPANDA_BROKERS is required for account erasure");
+    },
+  );
 
   it.each([
     "METRIC_STREAM_LEGACY_TOPIC",
@@ -86,6 +165,31 @@ describe("account erasure Redpanda drain", () => {
         ],
       },
     ]);
+  });
+
+  it("creates independent bounded metadata consumers with the real client API", () => {
+    const consumer = vi.spyOn(kafkaJs.Kafka.prototype, "consumer");
+    try {
+      const connection = createAccountErasureRedpandaAdminFromEnv({
+        METRIC_STREAM_LEGACY_TOPIC: "legacy",
+        METRIC_STREAM_LIVE_TOPIC: "live",
+        METRIC_STREAM_HISTORY_TOPIC: "history",
+        REDPANDA_BROKERS: "broker:9092",
+      });
+      const first = connection.createMetadataConsumer();
+      const second = connection.createMetadataConsumer();
+      expect(first.run).toBeTypeOf("function");
+      expect(first).not.toBe(second);
+      const options = consumer.mock.calls.map(([options]) => options);
+      expect(options).toHaveLength(2);
+      expect(new Set(options.map((options) => options.groupId)).size).toBe(2);
+      for (const option of options) {
+        expect(option.groupId).toMatch(/^dofek-account-erasure-storage-/);
+        expect(option.maxBytes).toBe(1_048_576);
+      }
+    } finally {
+      consumer.mockRestore();
+    }
   });
 
   it("captures each topic partition high watermark in order", async () => {

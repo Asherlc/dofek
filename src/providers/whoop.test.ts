@@ -1608,7 +1608,8 @@ describe("WhoopProvider.sync() — orchestrated checkpoint flow", () => {
       recordsSynced: 0,
       errors: [
         expect.objectContaining({
-          message: "whoop API service unavailable (500): developer error",
+          message: "whoop API service unavailable (500). Try again later.",
+          cause: expect.objectContaining({ responseBody: "developer error" }),
         }),
       ],
       duration: 0,

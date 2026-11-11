@@ -75,7 +75,8 @@ changed_raw_activity AS (
         activity.group_id AS activity_id,
         activity.user_id,
         activity.started_at,
-        coalesce(activity.ended_at, activity.started_at + INTERVAL 12 HOUR) AS ended_at
+        if(coalesce(activity.provider_type, '') = 'climbing_log', activity.started_at,
+            coalesce(activity.ended_at, activity.started_at + INTERVAL 12 HOUR)) AS ended_at
     FROM {{ source('postgres_fitness', 'activity') }} AS activity
     CROSS JOIN target_state
     WHERE NOT target_state.is_empty

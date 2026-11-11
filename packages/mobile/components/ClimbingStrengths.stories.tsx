@@ -248,11 +248,14 @@ export const EnrichmentPending: Story = {
   args: { data: { ...areaMetadataFixture, enrichmentPending: true } },
 };
 export const EnrichmentError: Story = {
+  parameters: { layout: "fullscreen" },
   args: {
     data: {
       ...areaMetadataFixture,
       enrichmentErrors: [
         "Kaya catalogue request failed; sync or reconnect Kaya and retry catalogue enrichment.",
+        "openbeta API service unavailable (502). Try again later.",
+        "openbeta API service unavailable (502). Try again later.",
       ],
     },
   },

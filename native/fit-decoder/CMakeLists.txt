@@ -48,6 +48,14 @@ if(BUILD_TESTING)
       -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/VerifyProtocol.cmake
   )
   add_test(
+    NAME fit-decoder-recovery
+    COMMAND
+      ${CMAKE_COMMAND}
+      -DDECODER=$<TARGET_FILE:dofek-fit-decoder>
+      -DFIXTURE_WRITER=$<TARGET_FILE:fit-decoder-hardware-fixture>
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/VerifyRecovery.cmake
+  )
+  add_test(
     NAME fit-decoder-integer-precision
     COMMAND fit-decoder-field-json-test
   )

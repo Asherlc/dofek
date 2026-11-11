@@ -8,7 +8,7 @@ import {
   createMetricStreamEvent,
   type MetricStreamEventV2,
 } from "../../../../src/metric-stream/events.ts";
-import type { MetricStreamEventPublisher } from "../../../../src/metric-stream/redpanda-producer.ts";
+import type { MetricStreamEventPublisher } from "../../../../src/metric-stream/publisher.ts";
 import { upsertHealthKitWorkouts } from "../routers/health-kit-sync-processors.ts";
 import type { RunningStepSample, WorkoutSample } from "../routers/health-kit-sync-schemas.ts";
 import { processRunningStepSamples } from "./health-kit-running-steps-repository.ts";
