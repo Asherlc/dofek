@@ -56,6 +56,7 @@ packageExtensionsChecksum: sha256-fO9HymUlYWgNyVUBC8JSVNfpJ2K38bLEkAHKjI8IzCk=
 patchedDependencies:
   '@expo/plist@0.0.18': 36c34cedabd346f4ff3d0f855e931a3e36710b099d24c10f29b46a00e5ff1288
   '@expo/plist@0.10.1': 7cb0ce8ff97efbf09577aea33e81b939c5d9ad3ebbd4e341e14ac814df27eaae
+  '@expo/plist@0.10.2': 7cb0ce8ff97efbf09577aea33e81b939c5d9ad3ebbd4e341e14ac814df27eaae
   '@sentry/react-native@8.29.0': 841d21b82ef377e46ce5eb7f949b18ac2787d4c7d798166650ad72fbeb0dfdec
   '@tanstack/router-generator@1.167.17': f24dcd17a9abccd1e74ddd985157f7b39802ee695d3d04adeeafdd4ec21dd715
   '@tanstack/router-generator@1.167.18': f24dcd17a9abccd1e74ddd985157f7b39802ee695d3d04adeeafdd4ec21dd715
@@ -3349,6 +3350,14 @@ packages:
     resolution: {integrity: sha512-DDS5R67iz2SJwncbpcUMHtnsq31dSfllhaEncKxGlK0/ewgc2CaXUCkDA2AumfT7ubnSXiPkU9Gn8v2xCrvj+A==}
     peerDependencies:
       typescript: ^5.0.0 || ^5.0.0-0
+    peerDependenciesMeta:
+      typescript:
+        optional: true
+
+  '@expo/require-utils@58.0.5':
+    resolution: {integrity: sha512-14dGubYUBmJjK9aqVSGnwSDs9uaxfzvtqJugtMCEWyuTa/eIvToUbzUwpKCSek6S/hYSEYcgds23vDJhXSBpbQ==}
+    peerDependencies:
+      typescript: ^5.0.0 || ^5.0.0-0 || ^6.0.0 || ^7.0.0
     peerDependenciesMeta:
       typescript:
         optional: true
@@ -20515,7 +20524,7 @@ snapshots:
       '@expo/osascript': 2.8.1
       '@expo/package-manager': 1.14.2
       '@expo/platforms': 58.0.1
-      '@expo/plist': 0.10.2
+      '@expo/plist': 0.10.2(patch_hash=7cb0ce8ff97efbf09577aea33e81b939c5d9ad3ebbd4e341e14ac814df27eaae)
       '@expo/prebuild-config': 58.0.20(supports-color@11.0.0)(typescript@6.0.3)
       '@expo/require-utils': 58.0.6(supports-color@11.0.0)(typescript@6.0.3)
       '@expo/router-server': 58.0.22(@expo/metro-runtime@58.0.17)(expo-constants@58.0.16)(expo-font@58.0.12)(expo-router@58.0.31)(expo-server@58.1.0)(expo@58.0.24)(react-dom@19.3.0)(react@19.3.0)(supports-color@11.0.0)
@@ -20607,7 +20616,7 @@ snapshots:
     dependencies:
       '@expo/config-types': 58.0.3
       '@expo/json-file': 11.2.1
-      '@expo/plist': 0.10.2
+      '@expo/plist': 0.10.2(patch_hash=7cb0ce8ff97efbf09577aea33e81b939c5d9ad3ebbd4e341e14ac814df27eaae)
       '@expo/require-utils': 58.0.6(supports-color@11.0.0)(typescript@6.0.3)
       '@expo/sdk-runtime-versions': 1.0.1
       chalk: 4.1.2
@@ -20772,7 +20781,7 @@ snapshots:
 
   '@expo/image-utils@0.12.5(supports-color@11.0.0)(typescript@6.0.3)':
     dependencies:
-      '@expo/require-utils': 58.0.6(supports-color@11.0.0)(typescript@6.0.3)
+      '@expo/require-utils': 58.0.5(supports-color@11.0.0)(typescript@6.0.3)
       '@expo/spawn-async': 1.8.0
       chalk: 4.1.2
       getenv: 2.0.0
@@ -21011,7 +21020,7 @@ snapshots:
       base64-js: 1.5.1
       xmlbuilder: 15.1.1
 
-  '@expo/plist@0.10.2':
+  '@expo/plist@0.10.2(patch_hash=7cb0ce8ff97efbf09577aea33e81b939c5d9ad3ebbd4e341e14ac814df27eaae)':
     dependencies:
       '@xmldom/xmldom': 0.9.12
       xmlbuilder: 15.1.1
@@ -21062,6 +21071,16 @@ snapshots:
       - typescript
 
   '@expo/require-utils@55.0.8(supports-color@11.0.0)(typescript@6.0.3)':
+    dependencies:
+      '@babel/code-frame': 7.29.7
+      '@babel/core': 7.29.7(supports-color@11.0.0)
+      '@babel/plugin-transform-modules-commonjs': 7.29.7(@babel/core@7.29.7)(supports-color@11.0.0)
+    optionalDependencies:
+      typescript: 6.0.3
+    transitivePeerDependencies:
+      - supports-color
+
+  '@expo/require-utils@58.0.5(supports-color@11.0.0)(typescript@6.0.3)':
     dependencies:
       '@babel/code-frame': 7.29.7
       '@babel/core': 7.29.7(supports-color@11.0.0)
@@ -31057,7 +31076,7 @@ snapshots:
     dependencies:
       '@expo/config-plugins': 58.0.13(supports-color@11.0.0)(typescript@6.0.3)
       '@expo/config-types': 58.0.3
-      '@expo/plist': 0.10.2
+      '@expo/plist': 0.10.2(patch_hash=7cb0ce8ff97efbf09577aea33e81b939c5d9ad3ebbd4e341e14ac814df27eaae)
       expo: 58.0.24(@babel/core@7.29.7)(@expo/dom-webview@58.0.2)(@expo/metro-runtime@58.0.17)(expo-router@58.0.31)(react-dom@19.3.0)(react-native-web@0.21.4)(react-native-worklets@0.13.0)(react-native@0.88.1)(react@19.3.0)(supports-color@11.0.0)(typescript@6.0.3)
       react: 19.3.0
       react-native: 0.88.1(patch_hash=c0ff9e0fcf80e735c03aa7925f5d6094c6beb680cc41e39f0857caedb443d60d)(@babel/core@7.29.7)(@react-native/metro-config@0.88.1)(@types/react@19.3.0)(react@19.3.0)(supports-color@11.0.0)
@@ -31099,7 +31118,7 @@ snapshots:
     dependencies:
       '@expo/code-signing-certificates': 0.0.7
       '@expo/env': 2.6.0(supports-color@11.0.0)
-      '@expo/plist': 0.10.2
+      '@expo/plist': 0.10.2(patch_hash=7cb0ce8ff97efbf09577aea33e81b939c5d9ad3ebbd4e341e14ac814df27eaae)
       '@expo/spawn-async': 1.8.0
       '@react-native/asset-utils': 0.88.1
       arg: 4.1.3

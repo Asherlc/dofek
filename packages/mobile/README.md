@@ -479,6 +479,11 @@ Validate SDK-managed versions with
 [dependency validation guidance](https://docs.expo.dev/more/expo-cli/#configuring-dependency-validation).
 The native dependency set also includes ExpoNetwork, the pnpm patch to
 `expo-apple-authentication@58.0.3`, and [MapLibre Native](https://maplibre.org/maplibre-react-native/docs/setup/expo/).
+The [plist patch](../../patches/@expo__plist@0.10.2.patch) retains leading-whitespace
+normalization and passes the explicit XML media type required by the pinned
+parser's [`parseFromString`](https://github.com/xmldom/xmldom/blob/0.9.12/lib/dom-parser.js)
+API; the same fix remains applied to older plist versions still used by other
+config plugins.
 
 Runtime 1.12 retains the HealthKit authorization-not-determined classification
 introduced in 1.10, with the stable code consumed by anchored sync. A type awaiting authorization leaves
