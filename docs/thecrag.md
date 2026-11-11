@@ -8,6 +8,14 @@ The API is account-scoped and read-only, includes public and private ascent
 notes, and is intended for third-party dashboards without a separate commercial
 agreement, according to that reference.
 
+This official personal API remains the only theCrag source used for climbing
+data. Automated public-page catalogue enrichment has been removed: the site
+policy prohibits screen scraping for programmatic access, the general API guide
+requires a legal agreement, and the personal logbook API is scoped to its owner's
+ascents rather than general catalogue discovery. See the [usage policy](https://www.thecrag.com/en/terms),
+[API integration guide](https://www.thecrag.com/en/article/extend), and
+[personal logbook API](https://www.thecrag.com/en/article/logbookreadapi).
+
 ## Connect and reconnect
 
 In Data Sources, choose **theCrag**, open the linked instructions, create a key
@@ -96,10 +104,11 @@ to verify an owner-managed upstream revocation.
 
 ## Informational catalogue
 
-The separate [catalogue reader](../packages/climbing-catalogue/src/thecrag.ts) still
-provides disposable public route context; it is not used by logbook sync. Its
-public HTTP client remains necessary for those lookups. See the
-[catalogue contract](climbing-trait-coverage.md#informational-catalogue-cache).
+Automated public-page catalogue enrichment has been removed. Historical
+observations about route tags and the old reader are retained in the
+[trait coverage inventory](climbing-trait-coverage.md), but they do not describe
+current imported catalogue context. The supported scope and access references
+are summarized above.
 
 ## Public read path
 
