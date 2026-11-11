@@ -196,6 +196,39 @@ describe("account erasure router (integration)", () => {
     expect(result.error.data.code).toBe("BAD_REQUEST");
   });
 
+  it("returns the actionable snapshot budget error before activating deletion", async () => {
+    const extraSessions = Array.from(
+      { length: 128 },
+      (_, index) => `snapshot-budget-session-${index}`,
+    );
+    await context.db.execute(sql`INSERT INTO fitness.session(id,user_id,expires_at)
+      VALUES ${sql.join(
+        extraSessions.map(
+          (id) => sql`(${id},${accountErasureUserId}::uuid,now()+interval '1 day')`,
+        ),
+        sql`, `,
+      )}`);
+    try {
+      const prepared = await mutate("accountErasure.prepare", { confirmation: "DELETE" });
+      const result = await publicMutation("accountErasure.confirm", {
+        preparationToken: prepared.result.data.preparationToken,
+      });
+      expect(result.error.data.code).toBe("PRECONDITION_FAILED");
+      expect(result.error.message).toMatch(
+        /Account deletion snapshot exceeds.*limit.*Contact support/,
+      );
+      const rows = await context.db.execute(sql`SELECT count(*)::integer AS requests
+        FROM fitness.account_erasure_request WHERE user_id=${accountErasureUserId}::uuid`);
+      expect(rows).toEqual([expect.objectContaining({ requests: 0 })]);
+    } finally {
+      await context.db.execute(sql`DELETE FROM fitness.session WHERE user_id=${accountErasureUserId}::uuid
+        AND id IN (${sql.join(
+          extraSessions.map((id) => sql`${id}`),
+          sql`, `,
+        )})`);
+    }
+  });
+
   it("returns an actionable precondition error before activating an unsafe provider request", async () => {
     const prepared = await mutateWithSession(
       "accountErasure.prepare",

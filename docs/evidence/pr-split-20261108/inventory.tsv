@@ -1,0 +1,729 @@
+change	path	review_bucket	incorporation_status
+M	.agents/skills/integration-tests-ready/SKILL.md	shared-docs-and-guidance	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	.github/workflows/build-docker.yml	shared-build-ci-and-development	extracted-scoped-hunks; remaining transport redesign retired
+M	.github/workflows/deploy-terraform.yml	broker-infrastructure-and-operations	owned-by-Kafka-PR3233; historical proposals retained at source where superseded
+M	.github/workflows/deploy-web-stack.yml	shared-build-ci-and-development	Kafka-PR3233 owns broker/env readiness hunks; other transport cleanup deferred
+D	.github/workflows/pulsar-source-build.yml	retired-pulsar-work	retired Pulsar experiment; no deletion/implementation imported into independent fixes
+M	.github/workflows/test.yml	shared-build-ci-and-development	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	.gitignore	shared-build-ci-and-development	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	AGENTS.md	shared-docs-and-guidance	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	Dockerfile	shared-build-ci-and-development	retired Pulsar binary mirror prerequisite; current KafkaJS clients do not need it
+M	README.md	shared-docs-and-guidance	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	codecov.yml	shared-build-ci-and-development	deferred transitional coverage exemptions and transport/test topology changes; unchanged gates retained
+M	cspell.json	shared-build-ci-and-development	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	cypress/README.md	shared-docs-and-guidance	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	deploy/.terraform.lock.hcl	broker-infrastructure-and-operations	owned-by-Kafka-PR3233; historical proposals retained at source where superseded
+M	deploy/README.md	broker-infrastructure-and-operations	owned-by-Kafka-PR3233; historical proposals retained at source where superseded
+A	deploy/kafka-ts-r2-offload.tf	broker-infrastructure-and-operations	owned-by-Kafka-PR3233; historical proposals retained at source where superseded
+A	deploy/kafka/AGENTS.md	broker-infrastructure-and-operations	owned-by-Kafka-PR3233; historical proposals retained at source where superseded
+A	deploy/kafka/CLAUDE.md	broker-infrastructure-and-operations	owned-by-Kafka-PR3233; historical proposals retained at source where superseded
+A	deploy/kafka/GEMINI.md	broker-infrastructure-and-operations	owned-by-Kafka-PR3233; historical proposals retained at source where superseded
+A	deploy/kafka/README.md	broker-infrastructure-and-operations	owned-by-Kafka-PR3233; historical proposals retained at source where superseded
+A	deploy/kafka/controlled-cutover-plan.md	broker-infrastructure-and-operations	owned-by-Kafka-PR3233; historical proposals retained at source where superseded
+A	deploy/kafka/plugins/README.md	broker-infrastructure-and-operations	owned-by-Kafka-PR3233; historical proposals retained at source where superseded
+M	deploy/main.tf	broker-infrastructure-and-operations	owned-by-Kafka-PR3233; historical proposals retained at source where superseded
+D	deploy/pulsar/AGENTS.md	retired-pulsar-work	retired Pulsar experiment; no deletion/implementation imported into independent fixes
+D	deploy/pulsar/CLAUDE.md	retired-pulsar-work	retired Pulsar experiment; no deletion/implementation imported into independent fixes
+D	deploy/pulsar/Dockerfile	retired-pulsar-work	retired Pulsar experiment; no deletion/implementation imported into independent fixes
+D	deploy/pulsar/GEMINI.md	retired-pulsar-work	retired Pulsar experiment; no deletion/implementation imported into independent fixes
+D	deploy/pulsar/README.md	retired-pulsar-work	retired Pulsar experiment; no deletion/implementation imported into independent fixes
+D	deploy/pulsar/oxia-coordinator.yml	retired-pulsar-work	retired Pulsar experiment; no deletion/implementation imported into independent fixes
+D	deploy/pulsar/repeatable-offload-payload.patch	retired-pulsar-work	retired Pulsar experiment; no deletion/implementation imported into independent fixes
+M	deploy/redpanda/metric-stream-r2-archive.connect.yml	broker-infrastructure-and-operations	owned-by-Kafka-PR3233; historical proposals retained at source where superseded
+M	deploy/stack.yml	broker-infrastructure-and-operations	owned-by-Kafka-PR3233; historical proposals retained at source where superseded
+M	deploy/variables.tf	broker-infrastructure-and-operations	owned-by-Kafka-PR3233; historical proposals retained at source where superseded
+D	docker-compose.bookie-evacuation.yml	retired-pulsar-work	retired Pulsar experiment; no deletion/implementation imported into independent fixes
+M	docker-compose.e2e.yml	broker-infrastructure-and-operations	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+D	docker-compose.pulsar.yml	retired-pulsar-work	retired Pulsar experiment; no deletion/implementation imported into independent fixes
+M	docker-compose.yml	broker-infrastructure-and-operations	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	docs/README.md	shared-docs-and-guidance	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+A	docs/_draft-kafka-ts-physical-absence-runbook.md	broker-infrastructure-and-operations	owned-by-Kafka-PR3233; historical proposals retained at source where superseded
+M	docs/account-erasure-runbook.md	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+M	docs/clickhouse-metric-stream.md	shared-docs-and-guidance	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+A	docs/evidence/clickhouse-catalog-budget-20261108/README.md	historical-evidence	owned-by-erasure-PR3234
+A	docs/evidence/clickhouse-catalog-budget-20261108/payload-measurements.json	historical-evidence	owned-by-erasure-PR3234
+A	docs/evidence/history-clickhouse-recovery-20261108/README.md	historical-evidence	curated-copy
+A	docs/evidence/history-clickhouse-recovery-20261108/progress.jsonl	historical-evidence	curated-copy
+A	docs/evidence/history-clickhouse-recovery-20261108/summary.json	historical-evidence	curated-copy
+A	docs/evidence/kafka-cutover-attempt-20261108/README.md	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-cutover-attempt-20261108/service-spec-comparison.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-cutover-attempt-20261108/summary.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-infra-plan-review-20261107/apply-verification.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-infra-plan-review-20261107/pulsar-qualification-object-cleanup.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-b2-phasef-20261106/CLEANUP_REQUEST.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-b2-phasef-20261106/CORE_PROOF.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-b2-phasef-20261106/CORE_PROOF.sha256	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-b2-phasef-20261106/README.md	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-b2-phasef-20261106/ROOT_CLOUD_CLEANUP.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-b2-phasef-20261106/ROOT_OWNERSHIP.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-b2-phasef-20261106/client-memory.peak	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-b2-phasef-20261106/consume-done.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-b2-phasef-20261106/consume-exit.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-b2-phasef-20261106/consume-start.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-b2-phasef-20261106/copy-lines-final.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-b2-phasef-20261106/docker-zero-confirm.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-b2-phasef-20261106/hash-b.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-b2-phasef-20261106/hash-plan.sha256	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-b2-phasef-20261106/kafka-memory.peak	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-b2-phasef-20261106/lab-end.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-b2-phasef-20261106/lab-start.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-b2-phasef-20261106/local-logs-pre-consume.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-b2-phasef-20261106/local-segments-pre-consume.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-b2-phasef-20261106/logdir.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-b2-phasef-20261106/plugin-provenance.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-b2-phasef-20261106/post-teardown-ps.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-b2-phasef-20261106/post-teardown-volumes.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-b2-phasef-20261106/produce-bytes.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-b2-phasef-20261106/produce-done.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-b2-phasef-20261106/produce-exit.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-b2-phasef-20261106/produce-start.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-b2-phasef-20261106/ready.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-b2-phasef-20261106/teardown-zero-check.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-b2-phasef-20261106/tier-poll.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-b2-phasef-20261106/tier-ready.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-b2-phasef-20261106/topic-create.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-20261106/CORE_PROOF.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-20261106/CORE_PROOF.sha256	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-20261106/RCA.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-20261106/README.md	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-20261106/cgroup-baseline.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-20261106/cgroup-sample-summary.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-20261106/cleanup-ps.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-20261106/cleanup-volumes.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-20261106/kafka-death-inspect.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-20261106/kafka-death-logs-tail.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-20261106/kafka-flags.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-20261106/lab-cleanup-done.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-20261106/lab-end.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-20261106/lab-start.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-20261106/local-segments-post-produce.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-20261106/object-inventory-final.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-20261106/plugin-provenance.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-20261106/produce-A.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-20261106/produce-B.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-20261106/produce-done.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-20261106/produce-exit.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-20261106/produce-start.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-20261106/segment-sizes-from-logs.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-20261106/size-and-segment-plan.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-20261106/tier-wait.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-20261106/topic-create.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/CORE_PROOF.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/CORE_PROOF.sha256	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/README.md	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/STDOUT_NOT_IN_GIT.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/broker-heap-flags.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/broker-jvm-after-healthcheck-off.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/broker-jvm-after-restart-for-b.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/broker-jvm-after-restart.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/broker-jvm-before-digest.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/broker-jvm-before.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/broker-jvm-digest-a-start.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/broker-jvm-during-digest-a-extra.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/broker-jvm-during-digest-a-fresh.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/broker-jvm-during-digest-a.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/broker-jvm-during-digest-b.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/broker-jvm-during-produce.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/broker-jvm-mid-topicA-a-fresh.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/broker-jvm-mid-topicA-b.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/broker-jvm-mid-topicA.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/broker-jvm-mid-topicB-a-fresh.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/broker-jvm-mid-topicB-b.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/broker-jvm-mid-topicB.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/broker-jvm-pre-digest2.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/broker-jvm-pre-fresh-digest.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/cgroup-after-digest-a-fresh.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/cgroup-after-digest-a.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/cgroup-after-digest-b.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/cgroup-after-produce.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/cgroup-before-digest-a.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/cgroup-before-digest.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/cgroup-lifetime-summary.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/cgroup-sample.tsv	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/client-heap-env.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/client-jvm-digest-a-start.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/client-jvm-during-topicA-a-fresh.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/client-jvm-during-topicA-b.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/client-jvm-during-topicA.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/client-jvm-during-topicB-a-fresh.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/client-jvm-during-topicB-b.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/client-jvm-during-topicB.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/consume-topicA-a-fresh.stderr	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/consume-topicA-a.stderr	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/consume-topicA-a.stdout.wc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/consume-topicA-b.stderr	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/consume-topicB-a-fresh.stderr	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/consume-topicB-a.stderr	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/consume-topicB-a.stdout.wc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/consume-topicB-b.stderr	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/digest-a-done.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/digest-a-fresh-done.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/digest-a-fresh-progress.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/digest-a-fresh-provenance.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/digest-a-fresh-start.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/digest-a-start.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/digest-b-done.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/digest-b-progress.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/digest-b-start.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/fixture-correction.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/hash-a-corruption-note.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/hash-a.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/hash-a.malformed.raw	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/hash-a.ok.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/hash-b.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/hash-b.ok.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/healthcheck-disabled.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/healthcheck-note.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/kafka-healthcheck-status.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/kafka-state-after-produce.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/kafka-state-during-digest-a-fresh.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/kafka-state-during-digest-a.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/kafka-state-during-digest-b.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/lab-end.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/lab-start.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/local-logs-pre-digest-a.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/local-segments-post-restart.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/local-segments-pre-digest-b.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/local-segments-prehash.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/object-inventory-final-summary.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/object-inventory-final.stderr	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/object-inventory-final.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/object-inventory-prehash.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/owned-cleanup.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/phase.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/plugin-provenance.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/post-cleanup-ps.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/produce-A.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/produce-B.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/produce-done.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/produce-start.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/restart-done.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/restart-for-b-done.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/restart-for-b-ready.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/restart-for-b-start.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/restart-for-b.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/restart-ready.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/restart-start.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/restart.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/seaweed-inventory-pre-digest-a.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/seaweed-shell-bucket-list.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/stdout-manifest-topicA-a-fresh.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/stdout-manifest-topicA-b.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/stdout-manifest-topicB-a-fresh.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/stdout-manifest-topicB-b.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/tier-wait-samples.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/tier-wait.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-dual512-fix-20261106/topic-create.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-lab-20261106/CORE_PROOF.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-lab-20261106/CORE_PROOF.sha256	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-lab-20261106/README.md	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-lab-20261106/broker-restart-done.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-lab-20261106/broker-restart-start.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-lab-20261106/cgroup-final.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-lab-20261106/cgroup-monitor-coverage.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-lab-20261106/hash-a.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-lab-20261106/hash-b.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-lab-20261106/kafka-flags.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-lab-20261106/lab-cleanup-done.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-lab-20261106/lab-end-core.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-lab-20261106/lab-start.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-lab-20261106/local-tieredTopic-final.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-lab-20261106/local-tieredTopic-prehash.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-lab-20261106/object-inventory-final.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-lab-20261106/plugin-provenance.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-lab-20261106/preflight.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-lab-20261106/produce.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-lab-20261106/topic-create.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-phasef-20261106/CLEANUP_REQUEST.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-phasef-20261106/CORE_PROOF.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-phasef-20261106/CORE_PROOF.sha256	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-phasef-20261106/README.md	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-phasef-20261106/ROOT_CLOUD_CLEANUP.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-phasef-20261106/ROOT_OWNERSHIP.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-phasef-20261106/ROOT_SETUP_RESULT.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-phasef-20261106/consume-done.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-phasef-20261106/consume-exit.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-phasef-20261106/consume-start.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-phasef-20261106/copy-lines-final.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-phasef-20261106/docker-zero-confirm.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-phasef-20261106/hash-b.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-phasef-20261106/hash-plan.sha256	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-phasef-20261106/lab-end.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-phasef-20261106/lab-start.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-phasef-20261106/local-logs-pre-consume.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-phasef-20261106/local-segments-pre-consume.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-phasef-20261106/logdir.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-phasef-20261106/mem-sample.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-phasef-20261106/plugin-provenance.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-phasef-20261106/produce-bytes.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-phasef-20261106/produce-done.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-phasef-20261106/produce-exit.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-phasef-20261106/produce-start.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-phasef-20261106/ready.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-phasef-20261106/teardown-zero-check.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-phasef-20261106/tier-poll.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-phasef-20261106/tier-ready.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-phasef-20261106/topic-create.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-phasef-20261106/upload-meta.sanitized.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107/README.md	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107/ROOT_FAILED_SETUP_CLEANUP.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/A_MPU_ETAG_GAP.md	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/CORE_PROOF.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/MPU_ELIGIBILITY.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/README.md	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/ROOT_ALLOCATION.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/ROOT_CLOUD_CLEANUP.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/ROOT_CLOUD_INVENTORY_BEFORE_CLEANUP.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/ROOT_FAILED_SETUP_CLEANUP.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/ROOT_SETUP_RESULT.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/UPLOAD_BUDGET_ESTIMATE.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/client-env-check.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/consume-done.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/consume-start.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/copy-poll-start.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/copy-poll.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/delete-activity.sanitized.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/delete-both.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/delete-complete-signal.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/delete-done-hit.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/delete-done-lines.sanitized.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/delete-hit.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/delete-progress.sanitized.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/delete-wait-end.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/kafka-boot.sanitized.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/lab-mirror/BUDGETS.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/lab-mirror/MPU_PROOF_HYGIENE.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/lab-mirror/NAMES.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/lab-mirror/PREP_STATUS.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/lab-mirror/ROOT_LAUNCH_ARGV.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/lab-mirror/docker-compose.yml	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/lab-mirror/evidence/CORE_PROOF.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/lab-mirror/evidence/MPU_ELIGIBILITY.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/lab-mirror/evidence/ROOT_ALLOCATION.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/lab-mirror/evidence/ROOT_CLOUD_CLEANUP.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/lab-mirror/evidence/ROOT_CLOUD_INVENTORY_BEFORE_CLEANUP.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/lab-mirror/evidence/ROOT_FAILED_SETUP_CLEANUP.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/lab-mirror/evidence/ROOT_SETUP_RESULT.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/lab-mirror/evidence/UPLOAD_BUDGET_ESTIMATE.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/lab-mirror/evidence/api-versions.err	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/lab-mirror/evidence/client-env-check.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/lab-mirror/evidence/consume-done.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/lab-mirror/evidence/consume-start.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/lab-mirror/evidence/copy-poll-start.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/lab-mirror/evidence/copy-poll.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/lab-mirror/evidence/delete-activity.sanitized.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/lab-mirror/evidence/delete-both.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/lab-mirror/evidence/delete-complete-signal.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/lab-mirror/evidence/delete-done-hit.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/lab-mirror/evidence/delete-done-lines.sanitized.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/lab-mirror/evidence/delete-hit.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/lab-mirror/evidence/delete-progress.sanitized.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/lab-mirror/evidence/delete-wait-end.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/lab-mirror/evidence/kafka-boot.sanitized.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/lab-mirror/evidence/local-after-delete-wait.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/lab-mirror/evidence/local-segments-after-retention.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/lab-mirror/evidence/local-segments-main.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/lab-mirror/evidence/local-segments-q.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/lab-mirror/evidence/mpu-copy-sanitized.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/lab-mirror/evidence/pre-stop.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/lab-mirror/evidence/produce-main-done.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/lab-mirror/evidence/produce-main-start.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/lab-mirror/evidence/produce-q-done.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/lab-mirror/evidence/produce-q-start.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/lab-mirror/evidence/q-copy-hit.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/lab-mirror/evidence/q-copy.sanitized.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/lab-mirror/evidence/ready.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/lab-mirror/evidence/ready.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/lab-mirror/evidence/retention-alter.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/lab-mirror/evidence/retention-apply.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/lab-mirror/evidence/retention-wait-done.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/lab-mirror/evidence/rsm-activity.sanitized.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/lab-mirror/evidence/runtime-stopped.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/lab-mirror/evidence/test-start.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/lab-mirror/evidence/topic-create-main.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/lab-mirror/evidence/topic-create-q.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/lab-mirror/evidence/topic-describe-main.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/lab-mirror/evidence/topic-describe-q.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/lab-mirror/evidence/topics-create-start.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/lab-mirror/plugin-provenance.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/local-after-delete-wait.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/local-segments-after-retention.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/local-segments-main.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/local-segments-q.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/mpu-copy-sanitized.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/pre-stop.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/produce-main-done.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/produce-main-start.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/produce-q-done.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/produce-q-start.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/q-copy-hit.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/q-copy.sanitized.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/ready.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/ready.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/retention-alter.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/retention-apply.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/retention-wait-done.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/rsm-activity.sanitized.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/runtime-stopped.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/test-start.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/topic-create-main.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/topic-create-q.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/topic-describe-main.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/topic-describe-q.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107b/topics-create-start.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/BUDGETS.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/COMPOSE_DOWN_RESULT.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/CORE_PROOF.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/CORE_PROOF.md	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/FILE_HASHES.sha256	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/KAFKA_CLUSTER_ID.candidate.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/KAFKA_CLUSTER_ID.candidate.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/NAMES.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/PRE_RETENTION_STOP.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/PRE_RETENTION_STOP.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/PRE_RETENTION_STOP_CHECKPOINT.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/README.md	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/RLMM_DECODE_COMPLETE.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/ROOT_ALLOCATION.public.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/ROOT_CLOUD_CLEANUP.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/ROOT_LAUNCH_ARGV.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/ROOT_POST_DELETE_INVENTORY.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/ROOT_POST_DELETE_INVENTORY_REQUEST.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/ROOT_PRE_RETENTION_METADATA.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/ROOT_SETUP_RESULT.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/client-up.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/compose-down-done.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/compose-down-retry.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/compose-down-start.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/compose-down.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/copy-main-hit.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/copy-poll-end.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/copy-poll-start.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/copydisable-alter.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/copydisable-done.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/copydisable-start.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/delete-about-both.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/delete-progress.sanitized.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/delete-wait-end.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/docker-compose.credentials.placeholder.yml	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/docker-compose.yml	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/kafka-stopped.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/local-produce-payload-hashes.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/local-segments-after-produce.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/local-segments-after-roll.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/local-segments-copy-poll.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/local-segments-q-after-time-roll.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/mpu-copy-sanitized.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/plugin-provenance.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/post-compose-down-containers.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/post-compose-down-networks.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/post-compose-down-volumes.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/pre-compose-down-containers.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/pre-compose-down-volumes.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/produce-main-done.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/produce-main-start.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/produce-main.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/produce-q-done.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/produce-q-start.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/produce-q.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/ready.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/ready.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/retention-alter.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/retention-apply.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/rlmm-capture-start.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/rlmm-logs/broker-id.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/rlmm-logs/dump-done.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/rlmm-logs/dump-start.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/rlmm-logs/grep-copy-finished.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/rlmm-logs/grep-delete-finished.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/rlmm-logs/grep-segment-ids.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/rlmm-logs/latest-state-per-segment.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/rlmm-logs/rlmm-dump-all.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/rlmm-logs/rlmm-log-files.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/rlmm-logs/rlmm-partition-dirs.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/segment-alter-main.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/segment-alter-q.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/segment-ms-q.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/test-start.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/topic-configs-after-copydisable.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/topic-configs-at-stop.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/topic-create-main.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/topic-create-q.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/topic-describe-main.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/topic-describe-q.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/kafka-ts-r2-q-mpudel-20261107c/topics-create-start.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/metric-stream-deletion-scope-audit-20261108/query.sql	historical-evidence	curated-copy
+A	docs/evidence/metric-stream-deletion-scope-audit-20261108/summary.json	historical-evidence	curated-copy
+A	docs/evidence/metric-stream-history-identity-audit-20261107/retained-comparison.sql	historical-evidence	curated-copy
+A	docs/evidence/metric-stream-history-identity-audit-20261107/summary.json	historical-evidence	curated-copy
+A	docs/evidence/metric-stream-identity-local-20261107/candidate-select.sql	historical-evidence	curated-copy
+A	docs/evidence/metric-stream-identity-local-20261107/implementation-verification.json	historical-evidence	curated-copy
+A	docs/evidence/metric-stream-identity-local-20261107/summary.json	historical-evidence	curated-copy
+A	docs/evidence/minio-mem2g-4-20261106/CAPACITY_ANALYSIS_PULSAR_REPLACES_REDPANDA.md	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/minio-mem2g-4-20261106/CORE_PROOF.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/minio-mem2g-4-20261106/CORE_PROOF.sha256	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/minio-mem2g-4-20261106/README.md	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/minio-mem2g-4-20261106/bk-absent-check.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/minio-mem2g-4-20261106/bk-absent-post-restart.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/minio-mem2g-4-20261106/bookie-flags.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/minio-mem2g-4-20261106/bookie-limit.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/minio-mem2g-4-20261106/broker-flags.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/minio-mem2g-4-20261106/broker-limit.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/minio-mem2g-4-20261106/broker-restart-done.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/minio-mem2g-4-20261106/broker-restart-start.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/minio-mem2g-4-20261106/cgroup-baseline-events.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/minio-mem2g-4-20261106/cgroup-oneshot-bookie.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/minio-mem2g-4-20261106/cgroup-oneshot-broker.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/minio-mem2g-4-20261106/cgroup-oneshot-minio.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/minio-mem2g-4-20261106/hash-done.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/minio-mem2g-4-20261106/hash-result-a.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/minio-mem2g-4-20261106/hash-result-b.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/minio-mem2g-4-20261106/lab.override.yml	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/minio-mem2g-4-20261106/memory-summary.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/minio-mem2g-4-20261106/minio-limit.txt	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/minio-mem2g-4-20261106/offload-msgid-a.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/minio-mem2g-4-20261106/offload-msgid-b.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/minio-mem2g-4-20261106/offload-overlap.log	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/minio-mem2g-4-20261106/offload-status-a-final.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/minio-mem2g-4-20261106/offload-status-b-final.json	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/minio-mem2g-4-20261106/offload-trigger-start.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/minio-mem2g-4-20261106/wall-end.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/evidence/minio-mem2g-4-20261106/wall-start.utc	historical-evidence	retained-at-immutable-source; historical experiment, not active instructions
+A	docs/kafka-infisical-bootstrap-keys.md	broker-infrastructure-and-operations	owned-by-Kafka-PR3233; historical proposals retained at source where superseded
+A	docs/kafka-tiered-storage-assessment.md	broker-infrastructure-and-operations	owned-by-Kafka-PR3233; historical proposals retained at source where superseded
+A	docs/kafka-tiered-storage-s3-compatibility.md	broker-infrastructure-and-operations	owned-by-Kafka-PR3233; historical proposals retained at source where superseded
+A	docs/kafka-ts-e0-runtime-readonly-review.md	broker-infrastructure-and-operations	owned-by-Kafka-PR3233; historical proposals retained at source where superseded
+A	docs/kafka-ts-r2-offload-iac.md	broker-infrastructure-and-operations	owned-by-Kafka-PR3233; historical proposals retained at source where superseded
+A	docs/kafka-ts-r2-q-mpudel-20261107-launch.md	broker-infrastructure-and-operations	owned-by-Kafka-PR3233; historical proposals retained at source where superseded
+A	docs/kafka-ts-r2-q-mpudel-20261107c-budget-request.md	broker-infrastructure-and-operations	owned-by-Kafka-PR3233; historical proposals retained at source where superseded
+A	docs/kafka-ts-r2-qualification-manifest.md	broker-infrastructure-and-operations	owned-by-Kafka-PR3233; historical proposals retained at source where superseded
+A	docs/kafka-ts-rlmm-dump-procedure.md	broker-infrastructure-and-operations	owned-by-Kafka-PR3233; historical proposals retained at source where superseded
+M	docs/metric-stream-redpanda-r2-runbook.md	shared-docs-and-guidance	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	docs/processing-status-runbook.md	shared-docs-and-guidance	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	docs/production-incident-baseline.md	mixed-incident-history	curated history recovery entry here; full historical chronology retained at immutable source
+M	docs/pulsar-foundation-qualification.md	retired-pulsar-work	retired Pulsar experiment; no deletion/implementation imported into independent fixes
+A	docs/pulsar-production-capacity-decision.md	retired-pulsar-work	retired Pulsar experiment; no deletion/implementation imported into independent fixes
+A	docs/pulsar-remaining-work.md	retired-pulsar-work	retired Pulsar experiment; no deletion/implementation imported into independent fixes
+M	docs/roadmap.md	shared-docs-and-guidance	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	docs/schema.md	shared-docs-and-guidance	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	docs/testing.md	shared-docs-and-guidance	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+A	drizzle/0178_native_metric_stream_delivery.sql	shared-schema-hunks	owned-by-erasure-PR3234; select required writer/schema/test hunks
+A	drizzle/0179_account_erasure_identifiers.sql	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+M	drizzle/meta/_journal.json	shared-schema-hunks	owned-by-erasure-PR3234; select required writer/schema/test hunks
+M	package.json	shared-build-ci-and-development	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	packages/ml/AGENTS.md	shared-docs-and-guidance	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	packages/ml/README.md	shared-docs-and-guidance	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	packages/ml/src/dofek_ml/export.py	shared-docs-and-guidance	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	packages/server/src/index.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	packages/server/src/index.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	packages/server/src/jobs/process-provider-data-deletion-job.integration.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	packages/server/src/lib/sensor-upload-telemetry.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	packages/server/src/lib/sensor-upload-telemetry.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	packages/server/src/repositories/ble-heart-rate-sync-repository.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	packages/server/src/repositories/health-kit-sync-repository.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	packages/server/src/repositories/heart-rate-repository.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	packages/server/src/repositories/inertial-measurement-unit-sync-repository.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	packages/server/src/repositories/provider-detail-repository.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	packages/server/src/repositories/provider-detail-repository.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	packages/server/src/repositories/watch-altitude-sync-repository.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	packages/server/src/repositories/whoop-ble-sync-repository.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	packages/server/src/routers/account-erasure.integration.test.ts	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+M	packages/server/src/routers/account-erasure.ts	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+M	packages/server/src/routers/clickhouse-integration-test-helpers.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	packages/server/src/routers/health-kit-sync-processors.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	packages/server/src/routers/health-kit-sync-processors.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	packages/server/src/routers/health-kit-sync.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	packages/server/src/routers/health-kit-sync.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	packages/server/src/routers/heart-rate.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	packages/server/src/routers/inertial-measurement-unit-sync.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	packages/server/src/routers/whoop-ble-sync.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	packages/server/src/routes/ingest-zos-health.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	packages/server/src/routes/ingest-zos-imu.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	packages/server/src/routes/ingest-zos-imu.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	packages/web/src/routes/privacy.test.tsx	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+M	packages/web/src/routes/privacy.tsx	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+M	pnpm-lock.yaml	shared-build-ci-and-development	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	pnpm-workspace.yaml	shared-build-ci-and-development	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	scripts/README.md	shared-docs-and-guidance	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	scripts/compose-env.test.ts	shared-build-ci-and-development	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	scripts/compose-env.ts	shared-build-ci-and-development	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	scripts/deploy-service-environment.test.ts	shared-build-ci-and-development	Kafka-PR3233 owns broker/env readiness hunks; other transport cleanup deferred
+M	scripts/deploy-service-environment.ts	shared-build-ci-and-development	Kafka-PR3233 owns broker/env readiness hunks; other transport cleanup deferred
+M	scripts/e2e-web-reuse.test.ts	shared-build-ci-and-development	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	scripts/e2e-web-reuse.ts	shared-build-ci-and-development	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	scripts/integration-diagnostics-reporter.test.ts	shared-build-ci-and-development	deferred diagnostic-only experiment; no runtime fix required
+M	scripts/integration-test-timings.json	shared-build-ci-and-development	deferred diagnostic-only experiment; no runtime fix required
+M	scripts/run-tests.test.ts	shared-build-ci-and-development	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	scripts/run-tests.ts	shared-build-ci-and-development	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+A	src/account-erasure/archive-erasure-test-helpers.ts	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+M	src/account-erasure/archive-erasure.integration.test.ts	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+M	src/account-erasure/archive-erasure.test.ts	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+M	src/account-erasure/archive-erasure.ts	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+A	src/account-erasure/clickhouse-erasure-coverage.integration.test.ts	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+A	src/account-erasure/clickhouse-erasure-coverage.test.ts	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+A	src/account-erasure/clickhouse-erasure-coverage.ts	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+M	src/account-erasure/clickhouse-erasure.integration.test.ts	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+M	src/account-erasure/clickhouse-erasure.test.ts	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+M	src/account-erasure/clickhouse-erasure.ts	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+A	src/account-erasure/clickhouse-identifier-pages.ts	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+M	src/account-erasure/clickhouse-physical-erasure.test.ts	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+M	src/account-erasure/clickhouse-physical-erasure.ts	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+A	src/account-erasure/identifier-store.integration.test.ts	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+A	src/account-erasure/identifier-store.ts	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+A	src/account-erasure/kafka-drain.integration.test.ts	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+A	src/account-erasure/kafka-drain.test.ts	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+A	src/account-erasure/kafka-drain.ts	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+M	src/account-erasure/peerdb-erasure.test.ts	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+M	src/account-erasure/peerdb-erasure.ts	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+A	src/account-erasure/peerdb-mirrored-rows.integration.test.ts	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+A	src/account-erasure/peerdb-mirrored-rows.ts	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+M	src/account-erasure/postgres-erasure.ts	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+M	src/account-erasure/processor-erasure.integration.test.ts	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+M	src/account-erasure/processor-erasure.test.ts	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+M	src/account-erasure/redis-erasure-runtime.test.ts	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+D	src/account-erasure/redpanda-drain.integration.test.ts	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+D	src/account-erasure/redpanda-drain.test.ts	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+D	src/account-erasure/redpanda-drain.ts	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+M	src/account-erasure/remote-revocation.integration.test.ts	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+M	src/account-erasure/remote-revocation.test.ts	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+M	src/account-erasure/remote-snapshot-rotation.integration.test.ts	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+M	src/account-erasure/remote-snapshot.integration.test.ts	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+A	src/account-erasure/remote-snapshot.test.ts	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+M	src/account-erasure/remote-snapshot.ts	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+A	src/account-erasure/retained-state.ts	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+A	src/account-erasure/snapshot-budget.ts	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+A	src/account-erasure/stock-physical-maintenance-ack.test.ts	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+A	src/account-erasure/stock-physical-maintenance-ack.ts	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+M	src/account-erasure/tracing.test.ts	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+M	src/analytics/activity-read-model-build.test.ts	analytics-coordination-and-support	owned-by-erasure-PR3234; select required writer/schema/test hunks
+A	src/analytics/analytics-delivery-group.test.ts	analytics-coordination-and-support	owned-by-erasure-PR3234; select required writer/schema/test hunks
+A	src/analytics/analytics-delivery-group.ts	analytics-coordination-and-support	owned-by-erasure-PR3234; select required writer/schema/test hunks
+A	src/analytics/analytics-delivery.test.ts	analytics-coordination-and-support	owned-by-erasure-PR3234; select required writer/schema/test hunks
+A	src/analytics/analytics-delivery.ts	analytics-coordination-and-support	owned-by-erasure-PR3234; select required writer/schema/test hunks
+A	src/analytics/analytics-query-owner.test.ts	analytics-coordination-and-support	owned-by-erasure-PR3234; select required writer/schema/test hunks
+A	src/analytics/analytics-query-owner.ts	analytics-coordination-and-support	owned-by-erasure-PR3234; select required writer/schema/test hunks
+A	src/analytics/analytics-work-store.integration.test.ts	analytics-coordination-and-support	owned-by-erasure-PR3234; select required writer/schema/test hunks
+A	src/analytics/analytics-work-store.ts	analytics-coordination-and-support	owned-by-erasure-PR3234; select required writer/schema/test hunks
+M	src/analytics/cycling-power-projector.integration.test.ts	analytics-coordination-and-support	owned-by-erasure-PR3234; select required writer/schema/test hunks
+A	src/analytics/journal-position.test.ts	analytics-coordination-and-support	owned-by-erasure-PR3234; select required writer/schema/test hunks
+A	src/analytics/journal-position.ts	analytics-coordination-and-support	owned-by-erasure-PR3234; select required writer/schema/test hunks
+A	src/analytics/test-helpers.ts	analytics-coordination-and-support	owned-by-erasure-PR3234; select required writer/schema/test hunks
+M	src/cli-sync.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/cli-sync.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/db/README.md	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+A	src/db/account-erasure-delivery-fence.integration.test.ts	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+A	src/db/account-erasure-delivery-fence.test.ts	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+A	src/db/account-erasure-delivery-fence.ts	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+A	src/db/account-erasure-processing.integration.test.ts	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+M	src/db/account-erasure-processing.ts	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+M	src/db/account-erasure.integration.test.ts	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+M	src/db/account-erasure.ts	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+M	src/db/activity-overview-availability-backfill.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/db/body-measurement-sample.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/db/clickhouse-metric-stream-bootstrap.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/db/clickhouse-migrations.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/db/clickhouse-migrations.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/db/clickhouse-migrations/0038_body_measurement_sample_synced_at_non_nullable.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/db/clickhouse-migrations/0038_body_measurement_sample_synced_at_non_nullable.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/db/clickhouse-migrations/0061_provider_current_state_projection.integration.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/db/clickhouse-migrations/0073_activity_sensor_summary_source_version.integration.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/db/clickhouse-migrations/0074_metric_stream_external_id_projection.integration.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/db/clickhouse-migrations/0108_computed_cycling_power.integration.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+A	src/db/clickhouse-migrations/0111_native_processing_acknowledgement.ts	shared-schema-hunks	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+A	src/db/clickhouse-migrations/0112_kafka_only_processing_acknowledgement_markers.test.ts	shared-schema-hunks	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+A	src/db/clickhouse-migrations/0112_kafka_only_processing_acknowledgement_markers.ts	shared-schema-hunks	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/db/clickhouse-migrations/registry.test.ts	shared-schema-hunks	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/db/clickhouse-migrations/registry.ts	shared-schema-hunks	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+A	src/db/clickhouse-test-helpers.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/db/clickhouse.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/db/drizzle-schema.ts	shared-schema-hunks	owned-by-erasure-PR3234; select required writer/schema/test hunks
+M	src/db/metric-stream-writer.test.ts	history-sink-and-sample-identity	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/db/metric-stream-writer.ts	history-sink-and-sample-identity	extracted-scoped-hunks; remaining transport redesign retired
+M	src/db/run-migrate.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/db/run-migrate.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/db/schema/account.ts	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+A	src/db/schema/analytics-work.ts	analytics-coordination-and-support	owned-by-erasure-PR3234; select required writer/schema/test hunks
+M	src/index.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/index.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/jobs/account-erasure-phase-runner.test.ts	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+M	src/jobs/account-erasure-phase-runner.ts	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+M	src/jobs/account-erasure-runtime.test.ts	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+M	src/jobs/account-erasure-runtime.ts	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+M	src/jobs/account-erasure-work-purger.test.ts	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+M	src/jobs/process-account-erasure-request.integration.test.ts	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+M	src/jobs/process-account-erasure-request.test.ts	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+M	src/jobs/process-account-erasure-request.ts	erasure-and-related-tests	owned-by-erasure-PR3234; select required writer/schema/test hunks
+M	src/jobs/process-fit-file-import-job.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/jobs/process-import-job.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/jobs/process-import-job.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/jobs/process-sync-job.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/jobs/sync-job-context.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/jobs/sync-processing-operation.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/jobs/sync-processing-operation.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/jobs/sync-provider-execution.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/jobs/sync-provider-failure.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/jobs/sync-request-job.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/jobs/sync-test/test-helpers.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/jobs/sync-window.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/jobs/worker-lifecycle.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/jobs/worker-lifecycle.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/jobs/worker-queues.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+D	src/metric-stream/BookieEvacuationFixture.java	retired-pulsar-work	retired Pulsar experiment; no deletion/implementation imported into independent fixes
+D	src/metric-stream/bookie-evacuation.pulsar.integration.test.ts	retired-pulsar-work	retired Pulsar experiment; no deletion/implementation imported into independent fixes
+A	src/metric-stream/clickhouse-row.test.ts	history-sink-and-sample-identity	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+A	src/metric-stream/clickhouse-row.ts	history-sink-and-sample-identity	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/metric-stream/clickhouse-sink.integration.test.ts	history-sink-and-sample-identity	extracted-scoped-hunks; remaining transport redesign retired
+M	src/metric-stream/clickhouse-sink.test.ts	history-sink-and-sample-identity	extracted-scoped-hunks; remaining transport redesign retired
+M	src/metric-stream/clickhouse-sink.ts	history-sink-and-sample-identity	extracted-scoped-hunks; remaining transport redesign retired
+M	src/metric-stream/clickhouse-table.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/metric-stream/clickhouse-table.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+A	src/metric-stream/consumer-routes.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+A	src/metric-stream/consumer-routes.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/metric-stream/events.test.ts	history-sink-and-sample-identity	extracted-scoped-hunks; remaining transport redesign retired
+M	src/metric-stream/events.ts	history-sink-and-sample-identity	extracted-scoped-hunks; remaining transport redesign retired
+A	src/metric-stream/kafka-consumer.integration.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+A	src/metric-stream/kafka-consumer.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+A	src/metric-stream/kafka-consumer.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+A	src/metric-stream/kafka-producer.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+A	src/metric-stream/kafka-producer.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+A	src/metric-stream/kafka-quarantine.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+A	src/metric-stream/kafka-quarantine.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+A	src/metric-stream/publisher-factory.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+A	src/metric-stream/publisher-factory.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/metric-stream/r2-replay.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/metric-stream/r2-replay.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+D	src/metric-stream/redpanda-consumer.integration.test.ts	application-runtime-and-test-support	extracted-scoped-hunks; remaining transport redesign retired
+D	src/metric-stream/redpanda-consumer.test.ts	application-runtime-and-test-support	extracted-scoped-hunks; remaining transport redesign retired
+D	src/metric-stream/redpanda-consumer.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+D	src/metric-stream/redpanda-producer.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+D	src/metric-stream/redpanda-producer.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+D	src/metric-stream/redpanda-quarantine.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+D	src/metric-stream/redpanda-quarantine.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/metric-stream/routes.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/metric-stream/routes.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+A	src/metric-stream/test-helpers.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+A	src/metric-stream/transport-position.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+A	src/metric-stream/transport-position.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/metric-stream/write-metric-stream.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/processing/metric-stream-processing-publisher.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/processing/metric-stream-processing-publisher.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/providers/apple-health/db-insertion.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/providers/apple-health/import.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/providers/coros-sync.integration.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/providers/fitbit/provider.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/providers/oura.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/providers/peloton-sync-ext.integration.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/providers/peloton.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/providers/ride-with-gps-ext.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/providers/ride-with-gps-sync.integration.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/providers/strava-sync.integration.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/providers/strava/provider.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/providers/suunto-sync.integration.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/providers/wahoo-sync.integration.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/providers/wger-sync.integration.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/providers/whoop-sync.integration.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/providers/whoop.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	src/providers/withings.test.ts	application-runtime-and-test-support	deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained
+M	stryker.ci.config.json	shared-build-ci-and-development	deferred transitional coverage exemptions and transport/test topology changes; unchanged gates retained
+M	stryker.config.json	shared-build-ci-and-development	deferred transitional coverage exemptions and transport/test topology changes; unchanged gates retained
+M	vitest.config.ts	shared-build-ci-and-development	deferred transitional coverage exemptions and transport/test topology changes; unchanged gates retained

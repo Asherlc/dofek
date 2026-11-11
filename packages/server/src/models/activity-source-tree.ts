@@ -7,15 +7,42 @@ import type {
 } from "@dofek/providers/activity-source-tree";
 import { deviceDisplayName } from "@dofek/providers/device-names";
 import { providerLabel } from "@dofek/providers/providers";
+import type { ClimbingLogActivitySession } from "../contracts/climbing-log-contracts.ts";
 import type { SourceLink } from "./activity-source-attribution.ts";
+
+/** Display projection only; callers retain the original member links as provenance. */
+export function projectActivitySourceLinks(
+  sourceLinks: readonly SourceLink[],
+  sessions: readonly ClimbingLogActivitySession[],
+): SourceLink[] {
+  const sessionByMember = new Map(
+    sessions.flatMap((session) => session.memberActivityIds.map((id) => [id, session] as const)),
+  );
+  const projected = new Map<string, SourceLink>();
+  for (const link of sourceLinks) {
+    const session = link.memberActivityId ? sessionByMember.get(link.memberActivityId) : undefined;
+    const id =
+      session?.id ??
+      link.memberActivityId ??
+      JSON.stringify([link.providerId, link.externalId, link.subsource]);
+    if (!projected.has(id))
+      projected.set(id, session ? { ...link, memberActivityId: session.id, url: null } : link);
+  }
+  return [...projected.values()];
+}
 
 /** Held-copy ancestry comes only from explicit member-to-member origin evidence. */
 export function buildActivitySourceTree(
   origin: ActivityOrigin,
   sourceLinks: SourceLink[],
   evidence: ActivityOriginEvidence[],
+  sessions: readonly ClimbingLogActivitySession[] = [],
 ): ActivitySourceTree {
-  const links = [...sourceLinks].sort(
+  const sessionByMember = new Map(
+    sessions.flatMap((session) => session.memberActivityIds.map((id) => [id, session.id] as const)),
+  );
+  const displayedId = (id: string) => sessionByMember.get(id) ?? id;
+  const links = projectActivitySourceLinks(sourceLinks, sessions).sort(
     (left, right) =>
       left.providerId.localeCompare(right.providerId) ||
       (left.memberActivityId ?? left.externalId).localeCompare(
@@ -30,8 +57,9 @@ export function buildActivitySourceTree(
   );
   const parents = new Map<string, Set<string>>();
   for (const edge of evidence) {
-    const upstream = edge.upstreamMemberActivityId;
-    const downstream = edge.downstreamMemberActivityId;
+    const upstream = displayedId(edge.upstreamMemberActivityId);
+    const downstream = displayedId(edge.downstreamMemberActivityId);
+    if (upstream === downstream) continue;
     if (!sources.has(upstream) || !sources.has(downstream)) continue;
     const candidates = parents.get(downstream) ?? new Set<string>();
     candidates.add(upstream);
@@ -64,8 +92,8 @@ export function buildActivitySourceTree(
   }
 
   const primaryId =
-    origin.status === "resolved" && !cyclic.has(origin.memberActivityId)
-      ? origin.memberActivityId
+    origin.status === "resolved" && !cyclic.has(displayedId(origin.memberActivityId))
+      ? displayedId(origin.memberActivityId)
       : null;
   function project(id: string, source: SourceLink): ActivitySourceTreeNode {
     const removal = source.providerAbsentAt

@@ -191,6 +191,40 @@ export const accountErasureCheckpoint = fitness.table(
   (table) => [primaryKey({ columns: [table.requestId, table.phase] })],
 );
 
+export const accountErasureIdentifier = fitness.table(
+  "account_erasure_identifier",
+  {
+    requestId: uuid("request_id")
+      .notNull()
+      .references(() => accountErasureRequest.id, { onDelete: "cascade" }),
+    family: text("family", {
+      enum: [
+        "activity",
+        "sleep",
+        "operation",
+        "group_string",
+        "physical_intent",
+        "physical_part",
+        "physical_mutation",
+      ],
+    }).notNull(),
+    identityKey: text("identity_key").notNull(),
+    encryptedIdentifier: text("encrypted_identifier").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.requestId, table.family, table.identityKey] }),
+    check(
+      "account_erasure_identifier_family",
+      sql`${table.family} IN ('activity','sleep','operation','group_string','physical_intent','physical_part','physical_mutation')`,
+    ),
+    check("account_erasure_identifier_key", sql`${table.identityKey} ~ '^[a-f0-9]{64}$'`),
+    check(
+      "account_erasure_identifier_encrypted",
+      sql`${table.encryptedIdentifier} LIKE 'enc:v1:%'`,
+    ),
+  ],
+);
+
 export const accountErasureIdentityFence = fitness.table(
   "account_erasure_identity_fence",
   {

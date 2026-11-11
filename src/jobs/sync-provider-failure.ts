@@ -79,7 +79,7 @@ export function providerSyncFailureEvent(
                 ? failure
                 : null,
           ),
-          `${providerName} data could not be processed. Your existing data is still available.`,
+          `${providerName} data could not be processed.`,
         ).slice(0, 500)
       : `${providerName} could not be synced. Try the sync again later.`,
   };

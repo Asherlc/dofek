@@ -1426,7 +1426,7 @@ describe("StravaProvider.unregisterWebhook", () => {
     };
     const provider = new StravaProvider(mockFetch);
     await expect(provider.unregisterWebhook("42")).rejects.toThrow(
-      "strava API service unavailable (500): Server Error",
+      "strava API service unavailable (500). Try again later.",
     );
   });
 });

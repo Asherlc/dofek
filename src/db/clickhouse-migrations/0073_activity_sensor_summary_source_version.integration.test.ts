@@ -62,7 +62,7 @@ describe("0073_activity_sensor_summary_source_version", () => {
     await client.command({
       query: `ALTER TABLE ${database}.activity_sensor_sample
         MATERIALIZE PROJECTION by_activity_source_refresh_version`,
-      clickhouse_settings: { mutations_sync: 2 },
+      clickhouse_settings: { mutations_sync: "2" },
     });
 
     const result = await client.query({
@@ -91,7 +91,7 @@ describe("0073_activity_sensor_summary_source_version", () => {
       query: `DELETE FROM ${database}.activity_sensor_sample
         WHERE activity_id = {firstActivityId:UUID}`,
       query_params: { firstActivityId },
-      clickhouse_settings: { lightweight_deletes_sync: 2 },
+      clickhouse_settings: { lightweight_deletes_sync: "2" },
     });
 
     const afterDelete = await client.query({

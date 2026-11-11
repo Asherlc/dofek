@@ -86,7 +86,7 @@ function formatActivityAccessibilityLabel(
     activityType: string;
     primaryActivityType: string | null;
     modality: string | null;
-    durationMin: number;
+    durationMin: number | null;
     localTimeContext: RecordLocalTimeContext;
     name: string | null;
     startedAt: string;
