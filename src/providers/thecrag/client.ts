@@ -19,6 +19,11 @@ const pageSchema = z.object({
     perPage: integer.pipe(z.number().positive()),
   }),
 });
+const logbookAccessDenialSchema = z.object({
+  error: z.literal(
+    "You have insufficient access for the api endpoint '/api/logbook/ascents', minimum level logbook",
+  ),
+});
 
 export class TheCragClient {
   readonly #fetch: typeof fetch;
@@ -58,11 +63,22 @@ export class TheCragClient {
         "theCrag",
         "The logbook API returned 401. Check your key in theCrag Settings > API Keys and reconnect.",
       );
-    if (response.status === 400 || response.status === 403)
-      throw new ProviderAuthError(
-        "authorization_failed",
-        `theCrag denied logbook access (${response.status}). Check your API key, active supporter status and weekly usage budget in theCrag Settings > API Keys.`,
-      );
+    if (response.status === 400 || response.status === 403) {
+      let message = `theCrag denied logbook access (${response.status}). Check your API key, active supporter status and weekly usage budget in theCrag Settings > API Keys.`;
+      if (response.headers.get("content-type")?.includes("application/json")) {
+        try {
+          const body: unknown = await response.json();
+          if (logbookAccessDenialSchema.safeParse(body).success)
+            message = `theCrag requires logbook access for this key (${response.status}). Check the key's access in theCrag Settings > API Keys.`;
+        } catch {
+          options.signal?.throwIfAborted();
+          captureException(new Error("theCrag returned invalid access-error JSON."), {
+            tags: { provider: "thecrag", phase: "logbook_response" },
+          });
+        }
+      }
+      throw new ProviderAuthError("authorization_failed", message);
+    }
     if (response.status === 429)
       throw new Error(
         "theCrag limited logbook access (429). Check your weekly usage budget in theCrag Settings > API Keys and try again when access is available.",
