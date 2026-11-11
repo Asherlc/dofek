@@ -38,6 +38,30 @@ receivers:
       - type: filter
         expr: 'body matches "severity(_local)?: .NOTICE." or body matches "routine: .exec_stmt_raise."'
 
+  # Capacity of the data volume that holds Postgres, ClickHouse, Kafka, PeerDB,
+  # backups and archives. The collector mounts that path read-only at the same
+  # path, so the strict mount-point filter matches the host path without a
+  # chrooted root_path. The default inode metric is disabled; the usage metric
+  # records the free/reserved/used states, where free is the space available to
+  # unprivileged users and reserved is total minus used minus that free space.
+  hostmetrics/filesystem:
+    collection_interval: 30s
+    scrapers:
+      filesystem:
+        # A same-path bind mount shares its underlying device with other mounts
+        # on the host, and the default `include_virtual_filesystems: false` skips
+        # duplicate-device mounts, so /mnt/dofek-data would emit nothing. The
+        # strict mount-point filter below still limits collection to that path.
+        include_virtual_filesystems: true
+        include_mount_points:
+          mount_points: [/mnt/dofek-data]
+          match_type: strict
+        metrics:
+          system.filesystem.usage:
+            enabled: true
+          system.filesystem.inodes.usage:
+            enabled: false
+
 processors:
   batch:
     timeout: 5s
@@ -67,6 +91,13 @@ processors:
     attributes:
       - key: source
         value: docker
+        action: upsert
+
+  # Host capacity is a separate signal from application telemetry.
+  resource/host:
+    attributes:
+      - key: service.name
+        value: dofek-host
         action: upsert
 
   # OTLP scalar log attributes become separate Axiom fields. Keep metadata in
@@ -107,6 +138,20 @@ exporters:
       enabled: true
       num_consumers: 4
       queue_size: 5000
+  # Host capacity uses its own native metrics dataset. Axiom requires a Metrics
+  # dataset for the metrics signal and a distinct header from logs/traces.
+  otlphttp/host-metrics:
+    endpoint: https://api.axiom.co
+    headers:
+      authorization: "Bearer ${env:AXIOM_API_TOKEN}"
+      x-axiom-metrics-dataset: dofek-host-metrics
+    retry_on_failure:
+      enabled: true
+      max_elapsed_time: 300s
+    sending_queue:
+      enabled: true
+      num_consumers: 4
+      queue_size: 5000
 
 service:
   extensions: [health_check]
@@ -123,3 +168,8 @@ service:
       receivers: [filelog]
       processors: [filter/drop-app-console-logs, resource/docker, probabilistic_sampler/docker-logs, transform/log-attributes, batch]
       exporters: [otlphttp/logs]
+    # Scoped to host metrics; application OTLP metrics do not use this pipeline.
+    metrics/host:
+      receivers: [hostmetrics/filesystem]
+      processors: [resource/host, batch]
+      exporters: [otlphttp/host-metrics]

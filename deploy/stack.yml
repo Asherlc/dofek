@@ -30,6 +30,32 @@ services:
       - --certificatesresolvers.le.acme.dnschallenge.delaybeforecheck=10
       - --certificatesresolvers.le.acme.email=asherlc@asherlc.com
       - --certificatesresolvers.le.acme.storage=/letsencrypt/acme.json
+      # Server-error access logs only. Field and header defaults are dropped so
+      # no request path, query, client identity or header reaches the exporter:
+      # RequestPath includes URL.RawQuery. The pinned 3.6 image (3.6.25) can
+      # drop query parameters, but earlier 3.6 patches cannot, so the path field
+      # is omitted entirely. Sentry keeps the failing operation endpoint.
+      - --accesslog=true
+      - --accesslog.format=json
+      - --accesslog.filters.statuscodes=500-599
+      - --accesslog.fields.defaultmode=drop
+      - --accesslog.fields.headers.defaultmode=drop
+      - --accesslog.fields.names.StartUTC=keep
+      - --accesslog.fields.names.Duration=keep
+      - --accesslog.fields.names.OriginDuration=keep
+      - --accesslog.fields.names.RouterName=keep
+      - --accesslog.fields.names.ServiceName=keep
+      - --accesslog.fields.names.ServiceAddr=keep
+      - --accesslog.fields.names.RequestMethod=keep
+      - --accesslog.fields.names.OriginStatus=keep
+      - --accesslog.fields.names.DownstreamStatus=keep
+      - --accesslog.fields.names.TraceId=keep
+      - --accesslog.fields.names.SpanId=keep
+      # Native OTLP export reuses the unsampled logs/app pipeline. Setting it
+      # makes Traefik discard the duplicate stdout access log line.
+      - --experimental.otlplogs=true
+      - --accesslog.otlp.http.endpoint=http://collector:4318/v1/logs
+      - --accesslog.otlp.servicename=traefik
     environment:
       CF_DNS_API_TOKEN: ${CLOUDFLARE_API_TOKEN:?CLOUDFLARE_API_TOKEN is required}
     ports:
@@ -789,8 +815,16 @@ services:
     env_file: ${COLLECTOR_ENV_FILE:?COLLECTOR_ENV_FILE is required}
     volumes:
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      # Capacity of the single data volume. Mounted read-only at the same path
+      # so the hostmetrics mount-point filter matches the host path unchanged.
+      # A native bind fails its task when the source is absent, and the deploy
+      # workflow checks `mountpoint -q /mnt/dofek-data` before applying.
+      - type: bind
+        source: /mnt/dofek-data
+        target: /mnt/dofek-data
+        read_only: true
     configs:
-      - source: otel_collector_config_v3
+      - source: otel_collector_config_v4
         target: /etc/otelcol-contrib/config.yaml
 
   ota:
@@ -896,7 +930,7 @@ configs:
   # Swarm config objects are immutable: when otel-collector-config.yaml changes,
   # bump this key's version suffix (e.g. _v2) so a new config object is created
   # and the collector rolls onto it — same convention as netdata_db_limits_v2.
-  otel_collector_config_v3:
+  otel_collector_config_v4:
     file: ./otel-collector-config.yaml
   # Swarm config objects are immutable: when metric-stream-r2-archive.connect.yml
   # changes, bump this key's version suffix so a new config object is created and
