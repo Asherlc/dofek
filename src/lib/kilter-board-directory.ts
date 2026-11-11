@@ -43,8 +43,21 @@ const gymsSchema = z
     (rows) => new Set(rows.map((row) => row.gym_uuid)).size === rows.length,
     "Kilter Board directory returned duplicate gym identities.",
   );
+const logsSchema = z
+  .array(
+    z.object({
+      log_uuid: identity,
+      climb_uuid: identity,
+      angle: z.number().min(-90).max(90).nullable(),
+      attempts: z.number().int().nonnegative().nullable(),
+    }),
+  )
+  .refine(
+    (rows) => new Set(rows.map((row) => row.log_uuid)).size === rows.length,
+    "Kilter Board app sync returned duplicate log identities.",
+  );
 
-/** Read the source-owned directory without retaining a second application store. */
+/** Read the source-owned directory and log counts without retaining another store. */
 export class KilterBoardDirectory {
   readonly #fetchFn: typeof fetch;
 
@@ -82,6 +95,12 @@ export class KilterBoardDirectory {
             longitude: column.real,
           }),
           walls: new Table({ wall_uuid: column.text, name: column.text, gym_uuid: column.text }),
+          logs: new Table({
+            log_uuid: column.text,
+            climb_uuid: column.text,
+            angle: column.real,
+            attempts: column.integer,
+          }),
         }),
         database: {
           dbFilename: join(directory, "directory.db"),
@@ -114,11 +133,12 @@ export class KilterBoardDirectory {
                 // This disposable mirror never writes to the upstream database.
                 uploadData: async () => undefined,
               },
-              { includeDefaultStreams: false },
+              { includeDefaultStreams: true },
             ),
             cancellation,
           ]);
           await Promise.race([subscription.waitForFirstSync(bounded), cancellation]);
+          await Promise.race([db.waitForFirstSync({ signal: bounded }), cancellation]);
           bounded.throwIfAborted();
           const walls = wallsSchema.parse(
             await db.getAll(
@@ -131,7 +151,13 @@ export class KilterBoardDirectory {
             ),
           );
           bounded.throwIfAborted();
-          return { walls, gyms };
+          const logs = logsSchema.parse(
+            await db.getAll(
+              "SELECT log_uuid, climb_uuid, angle, attempts FROM logs ORDER BY log_uuid",
+            ),
+          );
+          bounded.throwIfAborted();
+          return { walls, gyms, logs };
         } finally {
           dispose();
         }

@@ -2,6 +2,81 @@ import { describe, expect, it } from "vitest";
 import { groupClimbingLogEntriesByArea } from "./climbing-log-groups.ts";
 
 describe("groupClimbingLogEntriesByArea", () => {
+  it("groups explicitly linked source areas across different names and preserves entry order", () => {
+    const kaya = {
+      id: "kaya-log",
+      areaGroupId: "confirmed-gym",
+      climb: {
+        areaPath: [
+          { id: "kaya-gym", providerId: "kaya", name: "Touchstone Great Western Power Company" },
+        ],
+      },
+    };
+    const elsewhere = {
+      id: "other-log",
+      climb: { areaPath: [{ id: "other-gym", providerId: "kaya", name: "Another gym" }] },
+    };
+    const kilterArea = {
+      id: "kilter-gym",
+      providerId: "kilter",
+      name: "Great Western Power Company",
+    };
+    const kilter = {
+      id: "kilter-log",
+      areaGroupId: "confirmed-gym",
+      climb: { areaPath: [] },
+      areaPath: [kilterArea],
+    };
+    for (const name of ["Great Western Power Company", "Renamed gym"]) {
+      const renamed = { ...kilter, areaPath: [{ ...kilterArea, name }] };
+      const groups = groupClimbingLogEntriesByArea([kaya, elsewhere, renamed]);
+      expect(groups).toEqual([
+        {
+          area: kaya.climb.areaPath[0],
+          areaPath: kaya.climb.areaPath,
+          entries: [
+            { entry: kaya, entryNumber: 1 },
+            { entry: renamed, entryNumber: 3 },
+          ],
+        },
+        {
+          area: elsewhere.climb.areaPath[0],
+          areaPath: elsewhere.climb.areaPath,
+          entries: [{ entry: elsewhere, entryNumber: 2 }],
+        },
+      ]);
+    }
+  });
+
+  it.each([
+    ["linked-a", "unmapped", "linked-b"],
+    ["linked-b", "linked-a", "unmapped"],
+    ["unmapped", "linked-b", "linked-a"],
+  ])(
+    "keeps distinct explicit groups separate from an unmapped same-name area (%s, %s, %s)",
+    (...order) => {
+      const entries = order.map((id) => ({
+        id,
+        areaGroupId: id === "unmapped" ? null : id,
+        climb: { areaPath: [{ id, name: "Gym", providerId: id }] },
+      }));
+      expect(
+        groupClimbingLogEntriesByArea(entries).map((group) =>
+          group.entries.map(({ entry }) => entry.id),
+        ),
+      ).toEqual(order.map((id) => [id]));
+    },
+  );
+
+  it("lets an explicit mapping override same-provider name ambiguity", () => {
+    const entries = ["old-id", "new-id"].map((id) => ({
+      areaGroupId: "confirmed-gym",
+      climb: { areaPath: [{ id, name: "Gym", providerId: "kaya" }] },
+    }));
+    expect(groupClimbingLogEntriesByArea(entries)).toHaveLength(1);
+    expect(groupClimbingLogEntriesByArea(entries)[0]?.entries).toHaveLength(2);
+  });
+
   it("groups repeat board problems by the gym recorded on each log", () => {
     const climb = { areaPath: [] };
     const gymA = { id: "a", name: "Gym A", providerId: "kilter" };

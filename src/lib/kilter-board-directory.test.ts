@@ -10,6 +10,7 @@ const sdk = vi.hoisted(() => {
   const dispose = vi.fn();
   const database = {
     connect: vi.fn(),
+    waitForFirstSync: vi.fn(),
     syncStream: vi.fn(() => ({ subscribe })),
     registerListener: vi.fn<
       (listener: {
@@ -41,6 +42,7 @@ import { KilterBoardDirectory } from "./kilter-board-directory.ts";
 
 const wall = { wall_uuid: "wall", name: "Main board", gym_uuid: "gym" };
 const gym = { gym_uuid: "gym", name: "Climbing gym", latitude: 0, longitude: -122.1 };
+const nativeLog = { log_uuid: "native-log", climb_uuid: "problem", angle: 45, attempts: 3 };
 const credentials = async () => ({ token: "access", expiresAt: new Date("2099-01-01") });
 const mirror = () => dirname(sdk.create.mock.calls[0]?.[0].database.dbFilename ?? "missing");
 
@@ -59,17 +61,63 @@ beforeEach(() => {
   sdk.database.close.mockResolvedValue(undefined);
   sdk.subscription.waitForFirstSync.mockResolvedValue(undefined);
   sdk.database.getAll.mockImplementation(async (query) =>
-    query.includes("FROM walls") ? [wall] : [gym],
+    query.includes("FROM logs") ? [nativeLog] : query.includes("FROM walls") ? [wall] : [gym],
   );
 });
 afterEach(() => vi.restoreAllMocks());
 
 describe("KilterBoardDirectory", () => {
+  it("does not read counts before the user's initial app sync completes", async () => {
+    const sync = deferred<void>();
+    sdk.database.waitForFirstSync.mockReturnValueOnce(sync.promise);
+    const completion = new KilterBoardDirectory().fetch(credentials);
+    try {
+      await vi.waitFor(() => expect(sdk.database.waitForFirstSync).toHaveBeenCalledOnce());
+      expect(sdk.database.getAll).not.toHaveBeenCalled();
+    } finally {
+      sync.resolve();
+      await completion;
+    }
+  });
+  it.each(
+    [
+      [{ ...nativeLog, attempts: -1 }],
+      [{ ...nativeLog, attempts: 1.5 }],
+      [{ ...nativeLog, log_uuid: "" }],
+      [{ ...nativeLog, climb_uuid: "" }],
+      [nativeLog, nativeLog],
+    ].map((logs) => ({ logs })),
+  )("rejects invalid app-sync log facts: %j", async ({ logs }) => {
+    sdk.database.getAll.mockImplementation(async (query) =>
+      query.includes("FROM logs") ? logs : query.includes("FROM walls") ? [wall] : [gym],
+    );
+    await expect(new KilterBoardDirectory().fetch(credentials)).rejects.toThrow();
+    expect(sdk.database.close).toHaveBeenCalledOnce();
+    expect(existsSync(mirror())).toBe(false);
+  });
+  it("waits for user log sync and retains the native attempt count", async () => {
+    const log = { log_uuid: "native-log", climb_uuid: "problem", angle: 45, attempts: 3 };
+    sdk.database.getAll.mockImplementation(async (query) =>
+      query.includes("FROM logs")
+        ? [nativeLog]
+        : query.includes("FROM walls")
+          ? [wall]
+          : query.includes("FROM logs")
+            ? [log]
+            : [gym],
+    );
+    const result = await new KilterBoardDirectory().fetch(credentials);
+    expect(result).toMatchObject({ logs: [log] });
+    expect(sdk.database.connect.mock.calls[0]?.[1]).toMatchObject({ includeDefaultStreams: true });
+    expect(sdk.database.waitForFirstSync).toHaveBeenCalledOnce();
+  });
+
   it("reads the board/gym subscription, renews credentials through the caller and removes its mirror", async () => {
     const transport = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ ok: true }));
     expect(await new KilterBoardDirectory(transport).fetch(credentials)).toEqual({
       walls: [wall],
       gyms: [gym],
+      logs: [nativeLog],
     });
     const network = sdk.create.mock.calls[0]?.[0].remoteOptions.fetchImplementation;
     const sdkAbort = new AbortController();
@@ -78,7 +126,7 @@ describe("KilterBoardDirectory", () => {
     expect(transport.mock.calls[0]?.[1]?.signal?.aborted).toBe(true);
     expect(sdk.database.syncStream).toHaveBeenCalledWith("global_gyms");
     const [connector, options] = sdk.database.connect.mock.calls[0] ?? [];
-    expect(options).toMatchObject({ includeDefaultStreams: false });
+    expect(options).toMatchObject({ includeDefaultStreams: true });
     expect(await connector.fetchCredentials()).toEqual({
       endpoint: "https://sync1.kiltergrips.com",
       ...(await credentials()),
@@ -93,17 +141,19 @@ describe("KilterBoardDirectory", () => {
     vi.resetModules();
     const { KilterBoardDirectory: FreshDirectory } = await import("./kilter-board-directory.ts");
     sdk.database.getAll.mockImplementation(async (query) =>
-      query.includes("FROM walls")
-        ? [
-            { wall_uuid: " wall-a ", name: " Main board ", gym_uuid: " gym-a " },
-            { wall_uuid: "wall-b", name: null, gym_uuid: "gym-b" },
-            { wall_uuid: "wall-c" },
-          ]
-        : [
-            { gym_uuid: " gym-a ", name: " Gym A ", latitude: -90, longitude: 180 },
-            { gym_uuid: "gym-b", name: "Gym B", latitude: 90, longitude: -180 },
-            { gym_uuid: "gym-c", name: " " },
-          ],
+      query.includes("FROM logs")
+        ? [nativeLog]
+        : query.includes("FROM walls")
+          ? [
+              { wall_uuid: " wall-a ", name: " Main board ", gym_uuid: " gym-a " },
+              { wall_uuid: "wall-b", name: null, gym_uuid: "gym-b" },
+              { wall_uuid: "wall-c" },
+            ]
+          : [
+              { gym_uuid: " gym-a ", name: " Gym A ", latitude: -90, longitude: 180 },
+              { gym_uuid: "gym-b", name: "Gym B", latitude: 90, longitude: -180 },
+              { gym_uuid: "gym-c", name: " " },
+            ],
     );
     expect(await new FreshDirectory().fetch(credentials)).toEqual({
       walls: [
@@ -116,6 +166,7 @@ describe("KilterBoardDirectory", () => {
         { gym_uuid: "gym-b", name: "Gym B", latitude: 90, longitude: -180 },
         { gym_uuid: "gym-c", name: null, latitude: null, longitude: null },
       ],
+      logs: [nativeLog],
     });
   });
 
@@ -140,6 +191,15 @@ describe("KilterBoardDirectory", () => {
             { name: "wall_uuid", type: "TEXT" },
             { name: "name", type: "TEXT" },
             { name: "gym_uuid", type: "TEXT" },
+          ],
+        },
+        {
+          name: "logs",
+          columns: [
+            { name: "log_uuid", type: "TEXT" },
+            { name: "climb_uuid", type: "TEXT" },
+            { name: "angle", type: "REAL" },
+            { name: "attempts", type: "INTEGER" },
           ],
         },
       ],
@@ -174,7 +234,10 @@ describe("KilterBoardDirectory", () => {
         expect(signal?.reason).toBe(failure);
         sync.resolve();
         if (source === "caller") expect(await completion).toEqual({ error: failure });
-        else expect(await completion).toEqual({ value: { walls: [wall], gyms: [gym] } });
+        else
+          expect(await completion).toEqual({
+            value: { walls: [wall], gyms: [gym], logs: [nativeLog] },
+          });
       } finally {
         sync.resolve();
         await completion;
@@ -207,6 +270,7 @@ describe("KilterBoardDirectory", () => {
     expect(await new KilterBoardDirectory().fetch(credentials)).toEqual({
       walls: [wall],
       gyms: [gym],
+      logs: [nativeLog],
     });
     expect(sdk.dispose).toHaveBeenCalledOnce();
   });
@@ -265,18 +329,22 @@ describe("KilterBoardDirectory", () => {
     expect(await new KilterBoardDirectory().fetch(credentials)).toEqual({
       walls: [wall],
       gyms: [gym],
+      logs: [nativeLog],
     });
   });
 
   it("preserves unknown names, home wall gym associations and incomplete coordinates", async () => {
     sdk.database.getAll.mockImplementation(async (query) =>
-      query.includes("FROM walls")
-        ? [{ wall_uuid: "wall", name: " ", gym_uuid: null }]
-        : [{ gym_uuid: "gym", name: null, latitude: null, longitude: null }],
+      query.includes("FROM logs")
+        ? [nativeLog]
+        : query.includes("FROM walls")
+          ? [{ wall_uuid: "wall", name: " ", gym_uuid: null }]
+          : [{ gym_uuid: "gym", name: null, latitude: null, longitude: null }],
     );
     expect(await new KilterBoardDirectory().fetch(credentials)).toEqual({
       walls: [{ wall_uuid: "wall", name: null, gym_uuid: null }],
       gyms: [{ gym_uuid: "gym", name: null, latitude: null, longitude: null }],
+      logs: [nativeLog],
     });
   });
 
@@ -286,7 +354,7 @@ describe("KilterBoardDirectory", () => {
     { walls: [{ ...wall, wall_uuid: "" }] },
   ])("rejects malformed or ambiguous wall identities and cleans up (%j)", async ({ walls }) => {
     sdk.database.getAll.mockImplementation(async (query) =>
-      query.includes("FROM walls") ? walls : [gym],
+      query.includes("FROM logs") ? [nativeLog] : query.includes("FROM walls") ? walls : [gym],
     );
     await expect(new KilterBoardDirectory().fetch(credentials)).rejects.toThrow();
     expect(sdk.database.close).toHaveBeenCalledOnce();
@@ -299,7 +367,7 @@ describe("KilterBoardDirectory", () => {
     { gyms: [{ ...gym, gym_uuid: "" }] },
   ])("rejects invalid gym facts (%j)", async ({ gyms }) => {
     sdk.database.getAll.mockImplementation(async (query) =>
-      query.includes("FROM walls") ? [wall] : gyms,
+      query.includes("FROM logs") ? [nativeLog] : query.includes("FROM walls") ? [wall] : gyms,
     );
     await expect(new KilterBoardDirectory().fetch(credentials)).rejects.toThrow();
     expect(existsSync(mirror())).toBe(false);

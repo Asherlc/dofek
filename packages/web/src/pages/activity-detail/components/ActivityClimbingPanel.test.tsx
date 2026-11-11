@@ -11,6 +11,28 @@ vi.mock(
 );
 beforeEach(resetMaps);
 
+it("lists explicitly linked Kaya and Kilter locations under one area heading", () => {
+  const entry = climbingMapLogs[0];
+  const climb = entry?.climb;
+  const area = climb?.areaPath[0];
+  if (!entry || !climb || !area) throw new Error("Expected climbing fixture");
+  const entries = ["Touchstone Great Western Power Company", "Great Western Power Company"].map(
+    (name, index) => ({
+      ...entry,
+      id: `log-${index}`,
+      providerId: index === 0 ? "kaya" : "kilter",
+      sourceName: index === 0 ? "Kaya" : "Kilter Board",
+      climb: { ...climb, name: `Problem ${index + 1}` },
+      areaGroupId: "30000000-0000-4000-8000-000000000001",
+      areaPath: [{ ...area, id: `gym-${index}`, name }],
+    }),
+  );
+  render(<ActivityClimbingPanel entries={entries} locations={{}} />);
+  expect(screen.getAllByRole("heading", { name: /^Area:/ })).toHaveLength(1);
+  expect(screen.getByRole("button", { name: "Select entry 1, Problem 1" })).toBeVisible();
+  expect(screen.getByRole("button", { name: "Select entry 2, Problem 2" })).toBeVisible();
+});
+
 it("reveals the selected suggestion after attachment moves it into another section", () => {
   const entry = climbingMapLogs[0];
   if (!entry) throw new Error("Expected entry");
