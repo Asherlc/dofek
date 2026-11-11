@@ -360,7 +360,7 @@ jobs:
           test -d /mnt/dofek-data/kafka/plugins/1.2.0/core
           test -d /mnt/dofek-data/kafka/plugins/1.2.0/s3
           mountpoint -q /mnt/dofek-data || { echo "::error::Required data filesystem is not mounted"; exit 1; }
-          for path in /mnt/dofek-data/postgres /mnt/dofek-data/clickhouse /mnt/dofek-data/redpanda /mnt/dofek-data/kafka-broker/data /mnt/dofek-data/kafka/data /mnt/dofek-data/databasus /mnt/dofek-data/cloudbeaver /mnt/dofek-data/redis /mnt/dofek-data/peerdb-catalog /mnt/dofek-data/peerdb-minio; do
+          for path in /mnt/dofek-data/postgres /mnt/dofek-data/clickhouse /mnt/dofek-data/redpanda /mnt/dofek-data/kafka-broker/data /mnt/dofek-data/kafka/data /mnt/dofek-data/databasus /mnt/dofek-data/cloudbeaver /mnt/dofek-data/redis /mnt/dofek-data/peerdb-catalog /mnt/dofek-data/peerdb-minio /mnt/dofek-data/collector-metrics; do
             if [ ! -d "$path" ]; then
               echo "::error::Required host bind mount path is missing: $path"
               exit 1

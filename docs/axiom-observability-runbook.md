@@ -131,7 +131,7 @@ Metrics builder: dataset `dofek-host-metrics`, metric
 space available to unprivileged users, and `reserved` is `total - used - free`
 (root-reserved blocks). Total capacity is the sum of the three, not `used` plus
 `free`. The scraper needs `include_virtual_filesystems: true` because a
-same-path bind shares its backing device with another mount, and gopsutil
+bind shares its backing device with another mount, and gopsutil
 otherwise skips duplicate-device bind mounts; the strict mount-point filter
 still limits collection to `/mnt/dofek-data`:
 [hostmetrics receiver](https://raw.githubusercontent.com/open-telemetry/opentelemetry-collector-contrib/v0.149.0/receiver/hostmetricsreceiver/README.md),
@@ -143,8 +143,12 @@ Before deployment, verify the existing native dataset and ingestion access:
 
 1. Confirm `dofek-host-metrics` exists as `otel:metrics:v1` with 29-day
    retention, and that the existing `AXIOM_API_TOKEN` can write to it.
-2. Confirm `/mnt/dofek-data` exists. The read-only same-path collector bind
-   fails its task when the source is absent, and CI checks it first:
+2. Provision the empty `/mnt/dofek-data/collector-metrics` directory through the
+   separate [OCI Terraform root](../deploy/oracle-free/README.md#collector-capacity-mount)
+   after reviewing its plan. The collector binds only that directory read-only
+   at `/mnt/dofek-data`, retaining the metric's mount-point label and filesystem
+   capacity without access to sibling database files. The bind fails its task
+   when the source is absent; CI checks both the data mount and directory first:
    [Docker bind mounts](https://docs.docker.com/engine/storage/bind-mounts/#syntax).
 3. Validate the collector config and deploy `otel_collector_config_v4`. Swarm
    config objects are immutable:

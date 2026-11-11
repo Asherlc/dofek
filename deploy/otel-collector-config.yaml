@@ -39,16 +39,16 @@ receivers:
         expr: 'body matches "severity(_local)?: .NOTICE." or body matches "routine: .exec_stmt_raise."'
 
   # Capacity of the data volume that holds Postgres, ClickHouse, Kafka, PeerDB,
-  # backups and archives. The collector mounts that path read-only at the same
-  # path, so the strict mount-point filter matches the host path without a
-  # chrooted root_path. The default inode metric is disabled; the usage metric
+  # backups and archives. Only an empty child directory is mounted read-only at
+  # /mnt/dofek-data; it reports the same filesystem without exposing data files.
+  # The default inode metric is disabled; the usage metric
   # records the free/reserved/used states, where free is the space available to
   # unprivileged users and reserved is total minus used minus that free space.
   hostmetrics/filesystem:
     collection_interval: 30s
     scrapers:
       filesystem:
-        # A same-path bind mount shares its underlying device with other mounts
+        # The bind mount shares its underlying device with other mounts
         # on the host, and the default `include_virtual_filesystems: false` skips
         # duplicate-device mounts, so /mnt/dofek-data would emit nothing. The
         # strict mount-point filter below still limits collection to that path.

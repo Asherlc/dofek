@@ -585,6 +585,9 @@ jobs:
           cd deploy
           terraform init -backend=false
           terraform validate
+          cd oracle-free
+          terraform init -backend=false
+          terraform validate
 
   check-dns-records:
     name: DNS Record Coverage

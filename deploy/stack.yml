@@ -815,12 +815,12 @@ services:
     env_file: ${COLLECTOR_ENV_FILE:?COLLECTOR_ENV_FILE is required}
     volumes:
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
-      # Capacity of the single data volume. Mounted read-only at the same path
-      # so the hostmetrics mount-point filter matches the host path unchanged.
+      # An empty directory on the data filesystem provides its capacity without
+      # exposing sibling database files. Keep the collector's metric path stable.
       # A native bind fails its task when the source is absent, and the deploy
       # workflow checks `mountpoint -q /mnt/dofek-data` before applying.
       - type: bind
-        source: /mnt/dofek-data
+        source: /mnt/dofek-data/collector-metrics
         target: /mnt/dofek-data
         read_only: true
     configs:
