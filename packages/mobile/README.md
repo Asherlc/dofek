@@ -500,6 +500,17 @@ Follow the [release and recovery runbook](../../docs/mobile-ota-recovery.md).
 Use [pnpm patch/patch-commit](https://pnpm.io/cli/patch-commit) when updating the
 patch, then rerun the native regression and existing Release archive job.
 
+The [notification hook](lib/useCollectionNotifications.ts) records
+`collection_notifications_enable_completed` through the existing mobile logger
+after the current native authorization check resolves. `requestPermission`
+records whether prompting was allowed; `granted` records the returned permission
+state. A denied result proves the call completed but does not mean alerts are
+enabled. Existing telemetry adds `appBuild`, `runtimeVersion`, and `assetsVersion`
+(the [Expo update ID](https://docs.expo.dev/versions/latest/sdk/updates/#updateid)).
+Rejected, superseded, or retired checks do not emit this completion event.
+Correlate it with the installed build and launched runtime before claiming
+recovery from an unavailable native method; see the [Axiom query contract](../../docs/axiom-observability-runbook.md#queries).
+
 The SVG 15.16.0 dependency patch separates its Android tap-sound binding from
 the web module graph. It preserves the native press behavior introduced by
 [upstream PR 3016](https://github.com/software-mansion/react-native-svg/pull/3016)
