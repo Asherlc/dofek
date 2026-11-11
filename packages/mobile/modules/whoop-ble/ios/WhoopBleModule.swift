@@ -143,11 +143,11 @@ public class WhoopBleModule: Module {
             try self.uploader.sampleCount(stream: .imu)
         }
 
-        Function("getDeviceSummary") { () -> [String: Any] in
+        AsyncFunction("getDeviceSummary") { () -> [String: Any] in
             try self.deviceSummaryPayload()
         }
 
-        Function("getDataPathStats") { () -> [String: Any] in
+        AsyncFunction("getDataPathStats") { () -> [String: Any] in
             try self.connectionManager.syncOnBleQueue {
                 let packetTypeSummary = self.packetTypeCounts
                     .sorted(by: { $0.key < $1.key })
@@ -218,7 +218,7 @@ public class WhoopBleModule: Module {
 
         // MARK: - Durable capture and native background delivery
 
-        Function("configureUpload") { (context: [String: Any]) in
+        AsyncFunction("configureUpload") { (context: [String: Any]) in
             guard let userId = context["userId"] as? String,
                   let serverURL = context["serverURL"] as? String,
                   let token = context["token"] as? String,
@@ -238,14 +238,14 @@ public class WhoopBleModule: Module {
             }
         }
 
-        Function("flushUploads") {
+        AsyncFunction("flushUploads") {
             do { try self.uploader.flush() } catch {
                 SentrySDK.capture(error: error)
                 throw error
             }
         }
 
-        Function("disableUploads") {
+        AsyncFunction("disableUploads") {
             let operationId = UUID().uuidString
             let startedAt = ProcessInfo.processInfo.systemUptime
             var stage = "ble_suspend"

@@ -162,6 +162,7 @@ services:
   analytics-worker:
     image: ${APP_IMAGE:?APP_IMAGE must be the resolved immutable deployment image}
     command: ["analytics-worker"]
+    stop_grace_period: 30m
     env_file: ${ANALYTICS_WORKER_ENV_FILE:?ANALYTICS_WORKER_ENV_FILE is required}
     environment:
       DEPLOY_ENVIRONMENT: ${DEPLOY_ENVIRONMENT:-production}

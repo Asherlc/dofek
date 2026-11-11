@@ -342,11 +342,20 @@ final class WhoopBleSampleStoreTests: XCTestCase {
         XCTAssertNil(try store.binding)
     }
     func testErasureCutoffSurvivesOwnerChangeAndPurgeWithoutLeakingCounters() throws {
-        let store = try WhoopBleSampleStore(directory: directory())
+        let (store, probe) = try SQLiteWorkProbe.opening { try WhoopBleSampleStore(directory: directory()) }
         try store.configure(owner)
         try store.advanceErasureCutoff(to: ISO8601DateFormatter().date(from: "2026-10-28T00:00:02Z")!)
         try store.append(deviceId: "a", samplesByStream: [.realtime: samples([1, 3])])
+        for stream in WhoopUploadStream.allCases {
+            try seedPersistedSamples(10_000, stream: stream, second: 3, probe: probe)
+            XCTAssertNotNil(try store.reserve(stream: stream))
+        }
+        let old = try XCTUnwrap(store.pendingBatches().first)
         try store.purge()
+        XCTAssertEqual(try probe.integer("SELECT COUNT(*) FROM samples"), 0)
+        XCTAssertEqual(try probe.integer("SELECT COUNT(*) FROM batches"), 0)
+        XCTAssertNotEqual(try store.generation, old.generation)
+        XCTAssertFalse(try store.acknowledge(id: old.id, generation: old.generation))
         try store.configure(WhoopUploadBinding(userId: "bob", serverURL: owner.serverURL))
         XCTAssertEqual(try store.statistics(stream: .realtime)["receivedCount"] as? Int, 0)
         try store.append(deviceId: "a", samplesByStream: [.realtime: samples([1, 2])])

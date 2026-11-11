@@ -8,6 +8,19 @@ final class CleanupLogRecorder {
     private let lock = NSLock()
     private var records: [SentryLog] = []
 
+    @MainActor
+    func start(entry: XCTestExpectation) {
+        SentrySDK.start { options in
+            options.dsn = "https://key@sentry.example/123"
+            options.beforeSendLog = { log in
+                guard log.attributes["operation"]?.value as? String == "disableUploads" else { return nil }
+                self.append(log)
+                if log.attributes["stage"]?.value as? String == "ble_suspend" { entry.fulfill() }
+                return nil
+            }
+        }
+    }
+
     func append(_ log: SentryLog) {
         lock.withLock { records.append(log) }
     }
