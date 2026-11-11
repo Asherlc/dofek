@@ -483,6 +483,9 @@ The native dependency set also includes ExpoNetwork, the pnpm patch to
 The `@expo/plist` 0.10.1 and 0.10.2 consumers share the existing
 [XML parser patch](../../patches/@expo__plist@0.10.1.patch), selected by the
 exact version mappings in [pnpm-workspace.yaml](../../pnpm-workspace.yaml).
+It retains leading-whitespace normalization and passes the explicit XML media type required by the pinned
+parser's [`parseFromString`](https://github.com/xmldom/xmldom/blob/0.9.12/lib/dom-parser.js)
+API; older plist consumers retain their existing patches.
 
 Runtime 1.12 retains the HealthKit authorization-not-determined classification
 introduced in 1.10, with the stable code consumed by anchored sync. A type awaiting authorization leaves
