@@ -139,7 +139,19 @@ For stalled session cleanup, query Sentry's `dofek-mobile` logs with
 `uploader_queue_wait` records entry before waiting for the uploader's serial queue;
 `uploader_cancel_tasks` records entry after acquiring it, before requesting transfer
 cancellation and reading reserved identities. `uploader_store_purge` precedes the
-SQLite purge, and `uploader_remove_bodies` precedes file cleanup. These stages
+SQLite purge, and `uploader_remove_bodies` precedes file cleanup. Within the store,
+`store_lock_wait` precedes the mutex wait, `store_begin` follows lock acquisition
+before `BEGIN IMMEDIATE`, and `store_reset_stats`, `store_delete_samples`,
+`store_delete_batches`, `store_clear_binding` and `store_rotate_generation`
+precede the corresponding writes. `store_commit` precedes `COMMIT`;
+`store_completed` establishes that commit returned successfully. Failed writes
+retain the existing rollback and error propagation, following SQLite's
+[transaction semantics](https://www.sqlite.org/lang_transaction.html).
+Each entry includes `isMainThread` and the current native `threadId`, captured at
+that boundary rather than inherited from the initial caller. Apple's
+[hang investigation guidance](https://developer.apple.com/documentation/xcode/understanding-hangs-in-your-app)
+explains why UI-thread evidence is distinct from a pending background operation.
+These stages
 share the original operation ID and elapsed clock; the next entry establishes
 that the preceding operation returned. `durationMs` is elapsed time since
 cleanup began; a stage entry alone does not establish completion or confirm that

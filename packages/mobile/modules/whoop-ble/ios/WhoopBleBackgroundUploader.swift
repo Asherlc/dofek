@@ -138,7 +138,7 @@ final class WhoopBleBackgroundUploader: NSObject {
         lastCaptureSchedule = nil
         // Invalidate persisted completion identity even if file cleanup fails.
         onStage("uploader_store_purge")
-        try store.purge()
+        try store.purge(onStage: onStage)
         onStage("uploader_remove_bodies")
         try removeBodies()
     }

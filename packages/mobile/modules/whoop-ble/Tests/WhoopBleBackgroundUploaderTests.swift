@@ -44,7 +44,10 @@ final class WhoopBleBackgroundUploaderTests: XCTestCase {
         wait(for: [flushed, cleaned], timeout: 5)
         try settle(uploader)
         XCTAssertEqual(stages.snapshot, [
-            "uploader_queue_wait", "uploader_cancel_tasks", "uploader_store_purge", "uploader_remove_bodies"
+            "uploader_queue_wait", "uploader_cancel_tasks", "uploader_store_purge",
+            "store_lock_wait", "store_begin", "store_reset_stats", "store_delete_samples",
+            "store_delete_batches", "store_clear_binding", "store_rotate_generation",
+            "store_commit", "store_completed", "uploader_remove_bodies"
         ])
         XCTAssertNil(try store.binding)
         XCTAssertEqual(try store.queuedCount(stream: .realtime), 0)

@@ -26,6 +26,18 @@ final class CleanupLogRecorder {
     }
 
     var snapshot: [SentryLog] { lock.withLock { records } }
+
+    func assertOperationMetadata(file: StaticString = #filePath, line: UInt = #line) throws {
+        let records = snapshot
+        let operationId = try XCTUnwrap(records.first?.attributes["operationId"]?.value as? String, file: file, line: line)
+        XCTAssertNotNil(UUID(uuidString: operationId), file: file, line: line)
+        XCTAssertTrue(records.allSatisfy { $0.attributes["operationId"]?.value as? String == operationId }, file: file, line: line)
+        for record in records {
+            XCTAssertNotNil(record.attributes["durationMs"]?.value as? Double, file: file, line: line)
+            XCTAssertEqual(record.attributes["isMainThread"]?.value as? Bool, false, file: file, line: line)
+            XCTAssertGreaterThan(try XCTUnwrap(record.attributes["threadId"]?.value as? Int), 0, file: file, line: line)
+        }
+    }
 }
 
 var captureError: NSError {
