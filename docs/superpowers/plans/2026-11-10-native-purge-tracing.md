@@ -27,7 +27,7 @@
 - [x] Add real SQLite deletion and deferred-constraint commit failures to the store tests. Require the last stage to name the failed operation, original failure propagation and rollback of counters, binding and samples.
 - [x] Add the smallest callback forwarding through `purge(onStage:)`, `purgeLocked(onStage:)` and `transaction(onStage:_:)`, defaulting to the existing no-observer behavior for other callers. Emit lock wait, begin, counter reset, sample deletion, batch deletion, binding deletion, generation rotation, commit and completion boundaries.
 - [x] Extend the real Hermes cleanup test to require correlated inner stages and native thread metadata; observe RED before adding the metadata. Preserve responsiveness and actual Promise completion assertions.
-- [ ] Run the complete standalone Swift suite and Hermes bridge suite, tracked-source SwiftLint, repository lint/typechecks and the canonical unit/mobile tier. Review the actual diff and evidence once.
-- [ ] Update the module reference and incident baseline, commit and push on the current branch, open a PR and complete canonical CI/release. Request an affected-device reproduction only once the new signed build is available.
+- [x] Run the complete standalone Swift suite and Hermes bridge suite, tracked-source SwiftLint, repository lint/typechecks and the canonical unit/mobile tier. Review the actual diff and evidence once.
+- [x] Update the module reference and incident baseline, commit and push on the current branch, open a PR and complete canonical CI/release. Request an affected-device reproduction only once the new signed build is available. PR #3265 and release 42982697452 succeeded; TestFlight 1794383939 is VALID and IN_BETA_TESTING. Reproduction requested; device acceptance remains pending.
 
 Execution continues under the operator's existing inline method and approval; no additional implementation-method question is needed.
