@@ -477,13 +477,13 @@ describe("processFitFileImportJob", () => {
     expect(query.sql).toContain("fit_recovery_error");
     expect(query.params).toContain(recoveryError);
     expect(result.errors).toEqual([]);
-    expect(mockCaptureException).toHaveBeenCalledWith(
+    expect(mockCaptureException).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({ message: recoveryError }),
-      expect.objectContaining({
+      {
         level: "warning",
-        tags: expect.objectContaining({ fitImportStep: "recovery", providerId: "wahoo" }),
-        extra: expect.objectContaining({ userId: "user-1" }),
-      }),
+        tags: { fitImportStep: "recovery", providerId: "wahoo" },
+        extra: { userId: "user-1" },
+      },
     );
   });
 
@@ -506,6 +506,14 @@ describe("processFitFileImportJob", () => {
       return new PgDialect().sqlToQuery(statement);
     });
     expect(queries.map((query) => query.params[0])).toEqual(["Damaged tail", null]);
+    expect(mockCaptureException).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ message: "Damaged tail" }),
+      {
+        level: "warning",
+        tags: { fitImportStep: "recovery", providerId: "wahoo" },
+        extra: { userId: "user-1" },
+      },
+    );
   });
 
   it("keeps an unexpected persistence failure fatal after FIT recovery", async () => {

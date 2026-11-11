@@ -121,6 +121,9 @@ describe("streamFitFile", () => {
   });
 
   it("propagates a nullable recovery warning from native metadata", async () => {
+    await vi.resetModules();
+    const { streamFitFile: streamFitFileUnderTest } = await import("./stream-decoder.ts");
+
     for (const recoveryError of [null, "FIT decode failed: truncated data"]) {
       const decoder = simulatedDecoder();
       mockSpawn.mockReturnValue(decoder.child);
@@ -133,12 +136,16 @@ describe("streamFitFile", () => {
         decoder.send({ type: "end", messageCount: 0 });
         decoder.finish();
       });
-      await streamFitFile("activity.fit", noopConsumer({ onMetadata }));
+      await streamFitFileUnderTest("activity.fit", noopConsumer({ onMetadata }));
       expect(onMetadata).toHaveBeenCalledWith(expect.objectContaining({ recoveryError }));
     }
   });
 
   it("rejects malformed recovery warning metadata", async () => {
+    await vi.resetModules();
+    const { FitDecoderError: FitDecoderErrorUnderTest, streamFitFile: streamFitFileUnderTest } =
+      await import("./stream-decoder.ts");
+
     for (const recoveryError of [17, "", undefined]) {
       const decoder = simulatedDecoder();
       mockSpawn.mockReturnValue(decoder.child);
@@ -152,7 +159,9 @@ describe("streamFitFile", () => {
           decoder.finish();
         })();
       });
-      await expect(streamFitFile("activity.fit", noopConsumer())).rejects.toThrow(FitDecoderError);
+      await expect(streamFitFileUnderTest("activity.fit", noopConsumer())).rejects.toThrow(
+        FitDecoderErrorUnderTest,
+      );
     }
   });
 

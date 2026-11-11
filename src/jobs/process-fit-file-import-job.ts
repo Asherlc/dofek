@@ -587,7 +587,7 @@ export async function importFitFile(
       );
     }
 
-    if (importType === "activity" && streamMetadata.recoveryError !== null) {
+    if (streamMetadata.recoveryError !== null) {
       captureException(new FitDecoderError(streamMetadata.recoveryError), {
         level: "warning",
         tags: { fitImportStep: "recovery", providerId: data.providerId },
