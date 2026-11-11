@@ -1296,6 +1296,13 @@
       "when": 1794416457995,
       "tag": "0184_activity_fit_recovery_error",
       "breakpoints": true
+    },
+    {
+      "idx": 185,
+      "version": "7",
+      "when": 1794433425118,
+      "tag": "0185_climbing_area_groups",
+      "breakpoints": true
     }
   ]
 }

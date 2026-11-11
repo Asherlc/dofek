@@ -43,6 +43,29 @@ const meta = {
 } satisfies Meta<typeof ActivityClimbingPanel>;
 export default meta;
 type Story = StoryObj<typeof meta>;
+export const ExplicitLocationGroup: Story = {
+  args: {
+    locations: {},
+    entries: ["Touchstone Great Western Power Company", "Great Western Power Company"].map(
+      (name, index) => {
+        const providerId = index === 0 ? "kaya" : "kilter";
+        const area = { ...rootArea, id: `gym-${index}`, providerId, name };
+        return {
+          ...climbingLogFixture,
+          id: `log-${index}`,
+          providerId,
+          sourceName: index === 0 ? "Kaya" : "Kilter Board",
+          areaGroupId: "30000000-0000-4000-8000-000000000001",
+          areaPath: [area],
+          sourceLinks: [],
+          climb: climbingLogFixture.climb
+            ? { ...climbingLogFixture.climb, providerId, areaId: area.id, areaPath: [area] }
+            : null,
+        };
+      },
+    ),
+  },
+};
 export const GroupedListAndMap: Story = {};
 export const ApproximateArea: Story = {
   args: {
