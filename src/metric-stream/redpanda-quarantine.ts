@@ -1,4 +1,5 @@
 import kafkaJs, { type ConfigResourceTypes } from "kafkajs";
+import { z } from "zod";
 
 export const METRIC_STREAM_QUARANTINE_RETENTION_MS = "604800000";
 export const METRIC_STREAM_QUARANTINE_RETENTION_BYTES = "1073741824";
@@ -14,14 +15,82 @@ export function metricStreamQuarantineTopic(sourceTopic: string): string {
   return `${sourceTopic}${METRIC_STREAM_QUARANTINE_TOPIC_SUFFIX}`;
 }
 
-interface KafkaQuarantineAdmin {
-  alterConfigs(options: {
-    resources: {
+export interface KafkaQuarantineConfigAdmin {
+  describeConfigs(options: {
+    includeSynonyms: boolean;
+    resources: Array<{
       type: ConfigResourceTypes;
       name: string;
-      configEntries: { name: string; value: string }[];
-    }[];
+      configNames: string[];
+    }>;
   }): Promise<unknown>;
+}
+
+const describedTopicConfigSchema = z.object({
+  resources: z
+    .array(
+      z.object({
+        configEntries: z.array(
+          z.object({
+            configName: z.string(),
+            configValue: z.string().nullable(),
+          }),
+        ),
+        errorCode: z.number().int(),
+        errorMessage: z.string().nullable(),
+        resourceName: z.string(),
+        resourceType: z.number().int(),
+      }),
+    )
+    .length(1),
+});
+
+export async function assertQuarantineTopicConfiguration(
+  admin: KafkaQuarantineConfigAdmin,
+  quarantineTopic: string,
+): Promise<void> {
+  const response = describedTopicConfigSchema.safeParse(
+    await admin.describeConfigs({
+      includeSynonyms: false,
+      resources: [
+        {
+          configNames: METRIC_STREAM_QUARANTINE_TOPIC_CONFIG.map((entry) => entry.name),
+          name: quarantineTopic,
+          type: kafkaJs.ConfigResourceTypes.TOPIC,
+        },
+      ],
+    }),
+  );
+  const failure = `Kafka could not verify quarantine topic ${quarantineTopic}`;
+  if (!response.success) {
+    throw new Error(`${failure}: malformed DescribeConfigs response`, { cause: response.error });
+  }
+  const resource = response.data.resources[0];
+  if (
+    !resource ||
+    resource.resourceName !== quarantineTopic ||
+    resource.resourceType !== kafkaJs.ConfigResourceTypes.TOPIC
+  ) {
+    throw new Error(failure);
+  }
+  if (resource.errorCode !== 0) {
+    throw new Error(`${failure}: ${resource.errorMessage ?? `broker error ${resource.errorCode}`}`);
+  }
+  for (const { name, value } of METRIC_STREAM_QUARANTINE_TOPIC_CONFIG) {
+    const entries = resource.configEntries.filter((entry) => entry.configName === name);
+    if (entries.length > 1) {
+      throw new Error(`Quarantine topic ${quarantineTopic} has duplicate ${name} entries`);
+    }
+    const actualValue = entries[0]?.configValue;
+    if (actualValue !== value) {
+      throw new Error(
+        `Quarantine topic ${quarantineTopic} ${name} must be ${value}; found ${actualValue === undefined ? "missing" : String(actualValue)}`,
+      );
+    }
+  }
+}
+
+interface KafkaQuarantineAdmin extends KafkaQuarantineConfigAdmin {
   connect(): Promise<void>;
   createTopics(options: {
     topics: {
@@ -91,25 +160,15 @@ export class KafkaMetricStreamQuarantineWriter implements MetricStreamQuarantine
 
   async connect(): Promise<void> {
     await this.#admin.connect();
-    await this.#admin.createTopics({
-      topics: [
-        {
-          configEntries: METRIC_STREAM_QUARANTINE_TOPIC_CONFIG,
-          topic: this.#topic,
-        },
-      ],
-      waitForLeaders: true,
-    });
-    await this.#admin.alterConfigs({
-      resources: [
-        {
-          configEntries: METRIC_STREAM_QUARANTINE_TOPIC_CONFIG,
-          name: this.#topic,
-          type: kafkaJs.ConfigResourceTypes.TOPIC,
-        },
-      ],
-    });
-    await this.#admin.disconnect();
+    try {
+      await this.#admin.createTopics({
+        topics: [{ configEntries: METRIC_STREAM_QUARANTINE_TOPIC_CONFIG, topic: this.#topic }],
+        waitForLeaders: true,
+      });
+      await assertQuarantineTopicConfiguration(this.#admin, this.#topic);
+    } finally {
+      await this.#admin.disconnect();
+    }
     await this.#producer.connect();
   }
 

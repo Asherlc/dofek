@@ -154,6 +154,7 @@ export const activity = fitness.table(
     }),
     stravaId: text("strava_id"), // Strava activity ID for cross-provider linking
     raw: jsonb("raw"),
+    fitRecoveryError: text("fit_recovery_error"),
     providerAbsentAt: timestamp("provider_absent_at", { withTimezone: true }),
     absenceProviderId: text("absence_provider_id").references(() => provider.id),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),

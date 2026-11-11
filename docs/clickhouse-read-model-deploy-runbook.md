@@ -580,6 +580,68 @@ turn the daily model into a warning-only step. dbt's incremental model contract
 keeps the serving transformation bounded and stateful:
 [dbt incremental models](https://docs.getdbt.com/docs/build/incremental-models).
 
+## Overview oxygen and temperature cutover
+
+`daily_health_sensor` replaces request-time raw-event decoding for oxygen and
+WHOOP temperature. The shared API still applies the caller's timezone and source
+priorities to typed samples. See the [model](../analytics/models/read_models/daily_health_sensor.sql)
+and its [real-engine regressions](../packages/server/src/repositories/daily-health-sensor.integration.test.ts).
+
+Prepare this model **before rolling the API onto its new reader**:
+
+Keep the reader PR unmerged while preparation is outstanding: successful main
+CI can request an automatic release. The existing [build-only workflow](../.github/workflows/build-docker.yml)
+supports a manual candidate-image build without rolling the API; run that
+image's dbt project in the authorized production operator runtime for the
+preparation below. See the [release procedure](../deploy/README.md#deployment).
+
+1. Apply schema-only migration `0111_daily_health_sensor` through the approved
+   deployment migration procedure. It creates an empty serving table and performs
+   no historical backfill.
+2. Follow the existing [channel-projection preparation gate](clickhouse-metric-stream.md#daily-heart-rate-source-access).
+   Verify complete `by_user_channel_recorded_at` coverage, normal candidate
+   projection selection, and outer `FINAL` primary-key pruning. Materializing the
+   existing projection is an explicit capacity-reviewed operator action, because
+   the raw table has one historical partition. Do not bypass this gate with
+   optimizer forcing or larger timeouts. ClickHouse documents [projection
+   maintenance](https://clickhouse.com/docs/sql-reference/statements/alter/projection)
+   and [query plans](https://clickhouse.com/docs/sql-reference/statements/explain).
+3. Verify historical day-marker coverage using the existing
+   [provider/day bootstrap procedure](clickhouse-metric-stream.md#daily-provider-metric-count-rollout).
+   Use the candidate image's dbt project in the approved production operator
+   environment to run `dbt run --project-dir analytics --profiles-dir analytics
+   --threads 1 --select daily_health_sensor`. Each run processes at most 32 dirty
+   source days. Repeat bounded runs while checking the query below. Do not start
+   an unrestricted raw-history query or put a backfill into migrations.
+4. Hold API cutover until `missing_days = 0` and `dirty_days = 0`. Then follow the
+   normal release procedure, verify an uncached overview request, and compare
+   tRPC duration and ClickHouse rows read with the incident baseline. Confirm
+   both web and mobile reads and scheduled cache warming.
+
+```sql
+WITH source_days AS (
+  SELECT user_id, provider_id, recorded_date, max(changed_at) AS changed_at
+  FROM analytics.metric_stream_day_change
+  GROUP BY user_id, provider_id, recorded_date
+)
+SELECT
+  countIf(served.recorded_date IS NULL) AS missing_days,
+  countIf(served.recorded_date IS NULL OR source_days.changed_at > served.source_changed_at) AS dirty_days
+FROM source_days
+LEFT JOIN analytics.daily_health_sensor AS served FINAL
+  ON served.user_id = source_days.user_id
+  AND served.provider_id = source_days.provider_id
+  AND served.recorded_date = source_days.recorded_date
+SETTINGS join_use_nulls = 1;
+```
+
+The existing processing pipeline records a successful dbt invocation, which does
+not establish that every bounded model has drained its backlog. For imports
+spanning more than one batch, use these source-to-target watermarks as the
+freshness evidence; do not infer complete oxygen/temperature coverage solely
+from a successful processing banner. See [analytics processing](../src/processing/analytics-processing.ts)
+and [incremental model behavior](https://docs.getdbt.com/docs/build/incremental-models).
+
 ## Activity sensor parts blocked by missing projections
 
 For `activity_sensor_sample: PARTIAL SUCCESS`, inspect the batch's first fatal

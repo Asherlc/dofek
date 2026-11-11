@@ -1,0 +1,228 @@
+{
+  "broker": "apache/kafka:4.4.0@sha256:833b867a9585a141da455dc2b57431c65cbccb27f11c91f694444cca9f777e0f",
+  "workflowSource": "working tree based on d4e7a34e",
+  "topics": 6,
+  "stockIncrementalConvergence": true,
+  "structuredReadback": true,
+  "fixedWriterConnectReconnect": true,
+  "negativeReadbackDetectsDrift": true,
+  "reconvergenceRepairsDrift": true,
+  "topicIdsPreserved": true,
+  "offsetsPreserved": true,
+  "unrelatedCompressionPreserved": true,
+  "qualificationLimit": "CLI workflow ran in native Docker fixture. Verifier logic ran on host Node26/KafkaJS2.2.4 with only broker endpoint changed to the fixture address; packaged APP_IMAGE invocation not run locally due Docker disk headroom.",
+  "resources": [
+    {
+      "topic": "source",
+      "config": [
+        {
+          "name": "compression.type",
+          "value": "lz4",
+          "source": 1
+        },
+        {
+          "name": "remote.storage.enable",
+          "value": "false",
+          "source": 1
+        },
+        {
+          "name": "cleanup.policy",
+          "value": "delete",
+          "source": 1
+        },
+        {
+          "name": "segment.bytes",
+          "value": "134217728",
+          "source": 1
+        },
+        {
+          "name": "retention.ms",
+          "value": "604800000",
+          "source": 1
+        },
+        {
+          "name": "retention.bytes",
+          "value": "4294967296",
+          "source": 1
+        }
+      ]
+    },
+    {
+      "topic": "source.quarantine.v1",
+      "config": [
+        {
+          "name": "compression.type",
+          "value": "lz4",
+          "source": 1
+        },
+        {
+          "name": "remote.storage.enable",
+          "value": "false",
+          "source": 1
+        },
+        {
+          "name": "cleanup.policy",
+          "value": "delete",
+          "source": 1
+        },
+        {
+          "name": "segment.bytes",
+          "value": "134217728",
+          "source": 1
+        },
+        {
+          "name": "retention.ms",
+          "value": "604800000",
+          "source": 1
+        },
+        {
+          "name": "retention.bytes",
+          "value": "1073741824",
+          "source": 1
+        }
+      ]
+    },
+    {
+      "topic": "live",
+      "config": [
+        {
+          "name": "compression.type",
+          "value": "lz4",
+          "source": 1
+        },
+        {
+          "name": "remote.storage.enable",
+          "value": "false",
+          "source": 1
+        },
+        {
+          "name": "cleanup.policy",
+          "value": "delete",
+          "source": 1
+        },
+        {
+          "name": "segment.bytes",
+          "value": "134217728",
+          "source": 1
+        },
+        {
+          "name": "retention.ms",
+          "value": "604800000",
+          "source": 1
+        },
+        {
+          "name": "retention.bytes",
+          "value": "4294967296",
+          "source": 1
+        }
+      ]
+    },
+    {
+      "topic": "live.quarantine.v1",
+      "config": [
+        {
+          "name": "compression.type",
+          "value": "lz4",
+          "source": 1
+        },
+        {
+          "name": "remote.storage.enable",
+          "value": "false",
+          "source": 1
+        },
+        {
+          "name": "cleanup.policy",
+          "value": "delete",
+          "source": 1
+        },
+        {
+          "name": "segment.bytes",
+          "value": "134217728",
+          "source": 1
+        },
+        {
+          "name": "retention.ms",
+          "value": "604800000",
+          "source": 1
+        },
+        {
+          "name": "retention.bytes",
+          "value": "1073741824",
+          "source": 1
+        }
+      ]
+    },
+    {
+      "topic": "history",
+      "config": [
+        {
+          "name": "compression.type",
+          "value": "lz4",
+          "source": 1
+        },
+        {
+          "name": "remote.storage.enable",
+          "value": "false",
+          "source": 1
+        },
+        {
+          "name": "cleanup.policy",
+          "value": "delete",
+          "source": 1
+        },
+        {
+          "name": "segment.bytes",
+          "value": "134217728",
+          "source": 1
+        },
+        {
+          "name": "retention.ms",
+          "value": "604800000",
+          "source": 1
+        },
+        {
+          "name": "retention.bytes",
+          "value": "4294967296",
+          "source": 1
+        }
+      ]
+    },
+    {
+      "topic": "history.quarantine.v1",
+      "config": [
+        {
+          "name": "compression.type",
+          "value": "lz4",
+          "source": 1
+        },
+        {
+          "name": "remote.storage.enable",
+          "value": "false",
+          "source": 1
+        },
+        {
+          "name": "cleanup.policy",
+          "value": "delete",
+          "source": 1
+        },
+        {
+          "name": "segment.bytes",
+          "value": "134217728",
+          "source": 1
+        },
+        {
+          "name": "retention.ms",
+          "value": "604800000",
+          "source": 1
+        },
+        {
+          "name": "retention.bytes",
+          "value": "1073741824",
+          "source": 1
+        }
+      ]
+    }
+  ],
+  "explicitTopicConfigSourceEnforced": true,
+  "currentVerifierWithConfigSourceEnumPassed": true
+}

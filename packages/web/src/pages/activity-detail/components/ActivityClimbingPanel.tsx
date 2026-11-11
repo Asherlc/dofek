@@ -121,35 +121,53 @@ export function ActivityClimbingPanel({
                   <h3 className="text-sm font-semibold text-muted">Unattached</h3>
                 )}
                 {groupClimbingLogEntriesByArea(section.entries).map(
-                  ({ area, entries: groupEntries }) => (
-                    <div key={area?.id ?? "unlocated"} className="space-y-2">
-                      <h3 className="text-sm font-semibold text-foreground">
-                        {area?.name ?? "Other climbs"}
-                      </h3>
-                      <ul aria-label={`${area?.name ?? "Other"} climbs`} className="space-y-2">
-                        {groupEntries.map(({ entry, entryNumber }) => (
-                          <ClimbingLogEntryCard
-                            key={entry.id}
-                            entry={entry}
-                            entryNumber={entryNumber + section.offset}
-                            location={locations[entry.id]}
-                            attachmentState={attachmentStates?.[entry.id]}
-                            onAttach={section.onAttach}
-                            hideMap
-                            selected={entry.id === selectedEntryId}
-                            onSelect={() => selectEntry(entry.id)}
-                            onHighlight={(active, interaction) =>
-                              highlightEntry((previous) => ({
-                                ...previous,
-                                [interaction]: active ? entry.id : null,
-                              }))
-                            }
-                            onOpenEntry={onOpenEntry ? () => onOpenEntry(entry.id) : undefined}
-                          />
-                        ))}
-                      </ul>
-                    </div>
-                  ),
+                  ({ area, areaPath, entries: groupEntries }) => {
+                    const areaNames = areaPath.map((node) => node.name);
+                    return (
+                      <div key={area?.id ?? "unlocated"} className="space-y-2">
+                        {area ? (
+                          <section
+                            className="overflow-x-auto whitespace-nowrap text-sm text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                            tabIndex={0}
+                            aria-label={`Area: ${areaNames.join(" › ")}`}
+                          >
+                            <h3 aria-label={`Area: ${areaNames.join(" › ")}`}>
+                              {areaNames.length > 1 && (
+                                <span className="text-muted">
+                                  {areaNames.slice(0, -1).join(" › ")} ›{" "}
+                                </span>
+                              )}
+                              <span className="font-semibold text-foreground">{area.name}</span>
+                            </h3>
+                          </section>
+                        ) : (
+                          <h3 className="text-sm font-semibold text-foreground">Other climbs</h3>
+                        )}
+                        <ul aria-label={`${area?.name ?? "Other"} climbs`} className="space-y-2">
+                          {groupEntries.map(({ entry, entryNumber }) => (
+                            <ClimbingLogEntryCard
+                              key={entry.id}
+                              entry={entry}
+                              entryNumber={entryNumber + section.offset}
+                              location={locations[entry.id]}
+                              attachmentState={attachmentStates?.[entry.id]}
+                              onAttach={section.onAttach}
+                              hideMap
+                              selected={entry.id === selectedEntryId}
+                              onSelect={() => selectEntry(entry.id)}
+                              onHighlight={(active, interaction) =>
+                                highlightEntry((previous) => ({
+                                  ...previous,
+                                  [interaction]: active ? entry.id : null,
+                                }))
+                              }
+                              onOpenEntry={onOpenEntry ? () => onOpenEntry(entry.id) : undefined}
+                            />
+                          ))}
+                        </ul>
+                      </div>
+                    );
+                  },
                 )}
               </section>
             ))}

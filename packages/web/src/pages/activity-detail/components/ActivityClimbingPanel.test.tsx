@@ -11,6 +11,28 @@ vi.mock(
 );
 beforeEach(resetMaps);
 
+it("lists explicitly linked Kaya and Kilter locations under one area heading", () => {
+  const entry = climbingMapLogs[0];
+  const climb = entry?.climb;
+  const area = climb?.areaPath[0];
+  if (!entry || !climb || !area) throw new Error("Expected climbing fixture");
+  const entries = ["Touchstone Great Western Power Company", "Great Western Power Company"].map(
+    (name, index) => ({
+      ...entry,
+      id: `log-${index}`,
+      providerId: index === 0 ? "kaya" : "kilter",
+      sourceName: index === 0 ? "Kaya" : "Kilter Board",
+      climb: { ...climb, name: `Problem ${index + 1}` },
+      areaGroupId: "30000000-0000-4000-8000-000000000001",
+      areaPath: [{ ...area, id: `gym-${index}`, name }],
+    }),
+  );
+  render(<ActivityClimbingPanel entries={entries} locations={{}} />);
+  expect(screen.getAllByRole("heading", { name: /^Area:/ })).toHaveLength(1);
+  expect(screen.getByRole("button", { name: "Select entry 1, Problem 1" })).toBeVisible();
+  expect(screen.getByRole("button", { name: "Select entry 2, Problem 2" })).toBeVisible();
+});
+
 it("reveals the selected suggestion after attachment moves it into another section", () => {
   const entry = climbingMapLogs[0];
   if (!entry) throw new Error("Expected entry");
@@ -171,7 +193,7 @@ it("synchronizes row hover/focus, selection and repeated map choices without res
 
 it("retains unlocated entries and honest source scope in a single map layout", async () => {
   render(<ActivityClimbingPanel entries={climbingMapLogs} locations={climbingMapLocations} />);
-  expect(screen.getByRole("heading", { name: "Wall" })).toBeVisible();
+  expect(screen.getByRole("heading", { name: "Area: Wall" })).toBeVisible();
   expect(screen.getByRole("heading", { name: "Other climbs" })).toBeVisible();
   await screen.findByRole("button", { name: /Area location: Goat Rock · OpenBeta/ });
   expect(screen.getByText("No recorded location")).toBeVisible();
@@ -222,4 +244,51 @@ it("keeps the focused climb highlighted when the pointer leaves its row", async 
   expect(dot).toHaveAttribute("data-highlighted", "true");
   fireEvent.blur(control);
   expect(dot).toHaveAttribute("data-highlighted", "false");
+});
+
+it("renders the complete recorded area path in a focusable scroll region and preserves missing areas", () => {
+  const entry = climbingMapLogs[0];
+  const climb = entry?.climb;
+  const baseArea = climb?.areaPath[0];
+  if (!entry || !climb || !baseArea) throw new Error("Expected a climb fixture");
+  const areaPath = [
+    { ...baseArea, id: "california", name: "California", parentAreaId: null },
+    {
+      ...baseArea,
+      id: "sf-bay",
+      name: "San Francisco Bay Area",
+      parentAreaId: "california",
+    },
+    { ...baseArea, id: "east-bay", name: "East Bay Area", parentAreaId: "sf-bay" },
+    { ...baseArea, id: "berkeley", name: "Berkeley", parentAreaId: "east-bay" },
+    {
+      ...baseArea,
+      id: "grizzly-peak",
+      name: "Grizzly Peak Boulders",
+      parentAreaId: "berkeley",
+    },
+    {
+      ...baseArea,
+      id: "main-rock",
+      name: "Main Rock (aka Scary Boulder)",
+      parentAreaId: "grizzly-peak",
+    },
+  ];
+  const fullPath =
+    "California › San Francisco Bay Area › East Bay Area › Berkeley › Grizzly Peak Boulders › Main Rock (aka Scary Boulder)";
+  render(
+    <ActivityClimbingPanel
+      entries={[
+        { ...entry, climb: { ...climb, areaPath } },
+        { ...entry, id: "indoor", climb: null, title: "Indoor" },
+      ]}
+      locations={{}}
+    />,
+  );
+  const heading = screen.getByRole("heading", { name: `Area: ${fullPath}` });
+  expect(heading).toHaveTextContent(fullPath);
+  const areaRegion = screen.getByRole("region", { name: `Area: ${fullPath}` });
+  expect(areaRegion).toHaveAttribute("tabindex", "0");
+  expect(areaRegion).toContainElement(heading);
+  expect(screen.getByRole("heading", { name: "Other climbs" })).toBeVisible();
 });

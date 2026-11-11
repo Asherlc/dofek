@@ -10,7 +10,7 @@ import type {
   MetricStreamEventPublisher,
   MetricStreamPublishOptions,
   MetricStreamReplacementPublishResult,
-} from "../metric-stream/redpanda-producer.ts";
+} from "../metric-stream/publisher.ts";
 import { getDefaultMetricStreamEventPublisher } from "../metric-stream/redpanda-producer.ts";
 import type { ProcessingDatasetKey } from "./dataset-contracts.ts";
 

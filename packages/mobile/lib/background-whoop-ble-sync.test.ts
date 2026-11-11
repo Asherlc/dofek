@@ -5,6 +5,7 @@ import {
   syncWhoopBle,
   teardownBackgroundWhoopBleSync,
 } from "./background-whoop-ble-sync";
+import * as telemetry from "./telemetry";
 import type { WhoopBleSyncDeps } from "./whoop-ble-sync-types";
 import { makeWhoopCaptureStats } from "./whoop-ble-test-helpers";
 
@@ -30,9 +31,9 @@ function deps() {
     addCaptureErrorListener: vi
       .fn<WhoopBleSyncDeps["addCaptureErrorListener"]>()
       .mockReturnValue({ remove: vi.fn() }),
-    configureUpload: vi.fn(),
-    flushUploads: vi.fn(),
-    getDataPathStats: vi.fn(makeWhoopCaptureStats),
+    configureUpload: vi.fn().mockResolvedValue(undefined),
+    flushUploads: vi.fn().mockResolvedValue(undefined),
+    getDataPathStats: vi.fn().mockImplementation(async () => makeWhoopCaptureStats()),
     findWhoop: vi.fn().mockResolvedValue({ id: "strap", name: "WHOOP" }),
     connect: vi.fn().mockResolvedValue(true),
     startImuStreaming: vi.fn().mockResolvedValue(true),
@@ -50,10 +51,80 @@ function deferred<T>() {
 }
 describe("native WHOOP lifecycle", () => {
   beforeEach(() => {
+    vi.spyOn(telemetry, "captureException");
     vi.clearAllMocks();
     AppState.currentState = "active";
   });
   afterEach(() => teardownBackgroundWhoopBleSync());
+  it("waits for configuration and does not connect a session retired while it is pending", async () => {
+    const native = deps();
+    const configured = deferred<void>();
+    native.configureUpload.mockImplementationOnce(() => configured.promise);
+    const initializing = initBackgroundWhoopBleSync(context, native);
+    try {
+      await Promise.resolve();
+      expect(native.findWhoop).not.toHaveBeenCalled();
+      teardownBackgroundWhoopBleSync();
+    } finally {
+      configured.resolve();
+      await initializing;
+    }
+    expect(native.connect).not.toHaveBeenCalled();
+  });
+  it("does not retire a replacement when an older configuration rejects", async () => {
+    const old = deps();
+    let reject!: (error: Error) => void;
+    old.configureUpload.mockImplementationOnce(
+      () =>
+        new Promise<void>((_resolve, fail) => {
+          reject = fail;
+        }),
+    );
+    const initializing = initBackgroundWhoopBleSync(context, old);
+    const failed = expect(initializing).rejects.toThrow("old queue unavailable");
+    const replacement = deps();
+    await initBackgroundWhoopBleSync({ ...context, token: "replacement" }, replacement);
+    reject(new Error("old queue unavailable"));
+    await failed;
+    replacement.flushUploads.mockClear();
+    await syncWhoopBle();
+    expect(replacement.flushUploads).toHaveBeenCalledOnce();
+    expect(replacement.disconnect).not.toHaveBeenCalled();
+  });
+  it("reports a rejected foreground flush and continues the live connection", async () => {
+    AppState.currentState = "background";
+    const native = deps();
+    await initBackgroundWhoopBleSync(context, native);
+    const failure = new Error("Native delivery unavailable");
+    native.flushUploads.mockRejectedValueOnce(failure);
+    AppState.currentState = "active";
+    await stateChanged("active");
+    expect(telemetry.captureException).toHaveBeenCalledWith(failure, {
+      source: "whoop-ble-foreground-flush",
+    });
+    expect(native.connect).toHaveBeenCalledOnce();
+  });
+  it("reports a late diagnostic failure without borrowing the replacement lifetime", async () => {
+    const native = deps();
+    let reject!: (error: Error) => void;
+    native.getDataPathStats.mockImplementationOnce(
+      () =>
+        new Promise<ReturnType<typeof makeWhoopCaptureStats>>((_resolve, fail) => {
+          reject = fail;
+        }),
+    );
+    await initBackgroundWhoopBleSync(context, native);
+    await initBackgroundWhoopBleSync({ ...context, token: "replacement" }, deps());
+    const failure = new Error("Retired queue unavailable");
+    reject(failure);
+    await vi.waitFor(() =>
+      expect(telemetry.captureException).toHaveBeenCalledWith(failure, {
+        source: "whoop-ble-capture-diagnostics",
+        trigger: "initial",
+        retiredLifetime: true,
+      }),
+    );
+  });
   it("configures account ownership before capture and flushes native delivery", async () => {
     const native = deps();
     await initBackgroundWhoopBleSync(context, native);
@@ -118,6 +189,7 @@ describe("native WHOOP lifecycle", () => {
     const found = deferred<{ id: string; name: string }>();
     native.findWhoop.mockReturnValue(found.promise);
     const initializing = initBackgroundWhoopBleSync(context, native);
+    await vi.waitFor(() => expect(native.findWhoop).toHaveBeenCalledOnce());
     AppState.currentState = "background";
     stateChanged("background");
     AppState.currentState = "active";
@@ -127,6 +199,27 @@ describe("native WHOOP lifecycle", () => {
     await initializing;
     expect(native.connect).toHaveBeenCalledOnce();
     expect(native.startImuStreaming).toHaveBeenCalledOnce();
+  });
+  it("does not duplicate foreground discovery when the initial flush finishes later", async () => {
+    const native = deps();
+    const flushed = deferred<void>();
+    const found = deferred<null>();
+    native.flushUploads.mockReturnValueOnce(flushed.promise);
+    native.findWhoop.mockReturnValueOnce(found.promise).mockResolvedValue(null);
+    const initializing = initBackgroundWhoopBleSync(context, native);
+    await vi.waitFor(() => expect(native.flushUploads).toHaveBeenCalledOnce());
+    const foregroundSync = stateChanged("active");
+    try {
+      await vi.waitFor(() => expect(native.findWhoop).toHaveBeenCalledOnce());
+      flushed.resolve();
+      await initializing;
+      expect(native.findWhoop).toHaveBeenCalledOnce();
+    } finally {
+      flushed.resolve();
+      found.resolve(null);
+      await initializing;
+      await foregroundSync;
+    }
   });
   it.each(["find", "connect", "stream"])(
     "stops foreground connection work after backgrounding during %s",

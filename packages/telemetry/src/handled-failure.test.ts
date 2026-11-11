@@ -2,6 +2,58 @@ import { describe, expect, it } from "vitest";
 import { classifyHandledFailure } from "./handled-failure.ts";
 
 describe("classifyHandledFailure", () => {
+  it("classifies the observed auth restore connection loss through its underlying cause", () => {
+    const error = new Error("fetch failed: The network connection was lost.");
+    expect(classifyHandledFailure(error, "auth-state-restore")).toBe("connection_lost");
+    expect(
+      classifyHandledFailure(new Error("Request failed", { cause: error }), "auth-state-restore"),
+    ).toBe("connection_lost");
+  });
+
+  it.each([undefined, "react-query", "auth-saved-user-restore", "auth-state-restore-other"])(
+    "retains connection loss outside the approved auth restore source (%s)",
+    (source) => {
+      expect(
+        classifyHandledFailure(new Error("fetch failed: The network connection was lost."), source),
+      ).toBeNull();
+    },
+  );
+
+  it.each([
+    new Error("Failed to write value."),
+    new Error("HTTP 403"),
+    new Error("Unknown native failure"),
+    "unknown failure",
+    new SyntaxError("fetch failed: The network connection was lost."),
+    Object.assign(new Error("fetch failed: The network connection was lost."), {
+      name: "ZodError",
+    }),
+  ])("retains unexpected cause %# under an auth connection-loss wrapper", (cause) => {
+    expect(
+      classifyHandledFailure(
+        new Error("fetch failed: The network connection was lost.", { cause }),
+        "auth-state-restore",
+      ),
+    ).toBeNull();
+  });
+
+  it.each([
+    new Error("The network connection was lost."),
+    new Error("fetch failed: UnexpectedException: The network connection was lost."),
+    new Error("fetch failed: The network connection was lost.; HTTP 403"),
+    new SyntaxError("Invalid JSON", {
+      cause: new Error("fetch failed: The network connection was lost."),
+    }),
+  ])("retains unapproved or malformed auth outcome %#", (error) => {
+    expect(classifyHandledFailure(error, "auth-state-restore")).toBeNull();
+  });
+
+  it("retains a cyclic auth connection-loss cause", () => {
+    const error = new Error("fetch failed: The network connection was lost.");
+    error.cause = error;
+    expect(classifyHandledFailure(error, "auth-state-restore")).toBeNull();
+  });
+
   it.each([new Error("Failed to write value."), new Error("HTTP 403"), "unknown failure"])(
     "keeps an unexpected underlying cause reportable under a cancellation wrapper",
     (cause) => {
@@ -41,6 +93,13 @@ describe("classifyHandledFailure", () => {
     );
     expect(classifyHandledFailure({ data: { code: "BAD_REQUEST", httpStatus: 403 } })).toBeNull();
     expect(classifyHandledFailure(new Error("Invalid email or password"))).toBeNull();
+  });
+
+  it("preserves an explicit credential outcome over auth transport text", () => {
+    const error = Object.assign(new Error("fetch failed: The network connection was lost."), {
+      data: { handledFailure: "invalid_credentials" },
+    });
+    expect(classifyHandledFailure(error, "auth-state-restore")).toBe("invalid_credentials");
   });
 
   it.each([

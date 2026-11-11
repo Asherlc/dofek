@@ -68,6 +68,9 @@ coordination appropriate to their runtime.
 - HTTP errors expose the provider, status, response body, scope, optional user,
   and parsed `retryAfterSeconds`. Timeout errors expose the provider, scope,
   optional user, `timeoutMs`, and original cause.
+- Default HTTP error messages contain the provider, status and retry guidance;
+  upstream bodies remain in `responseBody` for diagnostics rather than appearing
+  in display messages. See the [error factories](src/rate-limit.ts).
 - Other HTTP error responses are returned unchanged, so callers must check
   `response.ok`.
 - These helpers do not retry automatically. The caller decides whether and when

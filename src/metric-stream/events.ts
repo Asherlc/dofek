@@ -44,7 +44,6 @@ const timestampInputSchema = z.union([z.string().min(1), z.date()]).transform((v
 
 export const metricStreamRowInputSchema = z
   .object({
-    id: z.guid().optional(),
     recordedAt: timestampInputSchema,
     userId: z.guid(),
     providerId: nonEmptyStringSchema,
@@ -193,7 +192,7 @@ function createDeterministicMetricStreamId(
   row: z.output<typeof metricStreamRowInputSchema>,
 ): string {
   if (row.externalId === null || row.externalId === undefined) {
-    throw new Error("Metric stream rows without id must include externalId");
+    throw new Error("Metric stream rows must include externalId");
   }
 
   const hash = createHash("sha1")
@@ -244,7 +243,7 @@ export function createMetricStreamEvent(
   return metricStreamEventV2Schema.parse({
     version: METRIC_STREAM_EVENT_VERSION,
     operationRevision,
-    id: parsedRow.id ?? createDeterministicMetricStreamId(parsedRow),
+    id: createDeterministicMetricStreamId(parsedRow),
     recordedAt: parsedRow.recordedAt,
     userId: parsedRow.userId,
     providerId: parsedRow.providerId,

@@ -1,0 +1,47 @@
+{
+  "source": "6fe1d4fbd479cc1ed9be874538e2b7dc3c1b1551",
+  "user": 1000,
+  "readOnlyMetadata": true,
+  "configuredTopics": 6,
+  "generations": [
+    {
+      "topic": "metric-stream-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3",
+      "partition": 0,
+      "clusterId": "2G0qJAr9TImYWLduxjq29g",
+      "topicId": "N26OuOYjRFi7XjlEaiKG_g"
+    },
+    {
+      "topic": "metric-stream-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3.quarantine.v1",
+      "partition": 0,
+      "clusterId": "2G0qJAr9TImYWLduxjq29g",
+      "topicId": "mSnsZJCxSM6niGse_DnxIA"
+    },
+    {
+      "topic": "metric-stream-live-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3",
+      "partition": 0,
+      "clusterId": "2G0qJAr9TImYWLduxjq29g",
+      "topicId": "1l5JWr_kQuev6W4sXJVnoQ"
+    },
+    {
+      "topic": "metric-stream-live-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3.quarantine.v1",
+      "partition": 0,
+      "clusterId": "2G0qJAr9TImYWLduxjq29g",
+      "topicId": "h4zo9KroShCxcxMvLsvcDQ"
+    },
+    {
+      "topic": "metric-stream-history-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3",
+      "partition": 0,
+      "clusterId": "2G0qJAr9TImYWLduxjq29g",
+      "topicId": "P7MsnYU4RimPZIkPJ6MQRw"
+    },
+    {
+      "topic": "metric-stream-history-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3.quarantine.v1",
+      "partition": 0,
+      "clusterId": "2G0qJAr9TImYWLduxjq29g",
+      "topicId": "wwLo8M2_SX2iKO9B37OABg"
+    }
+  ],
+  "retainedRedpandaCompletionHoldVerified": true,
+  "allSixPhase1TopicGenerationsPreserved": true,
+  "phase1ClusterIdentityPreserved": true
+}
