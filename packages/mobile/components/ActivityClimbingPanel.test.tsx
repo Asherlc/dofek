@@ -12,6 +12,27 @@ vi.mock(
 import { ActivityClimbingPanel } from "./ActivityClimbingPanel";
 import { climbingLogFixture, exactClimbingLocation } from "./climbing-log-entry-fixtures";
 
+it("lists explicitly linked Kaya and Kilter locations under one area heading", () => {
+  const climb = climbingLogFixture.climb;
+  const area = climb?.areaPath[0];
+  if (!climb || !area) throw new Error("Expected climbing fixture");
+  const entries = ["Touchstone Great Western Power Company", "Great Western Power Company"].map(
+    (name, index) => ({
+      ...climbingLogFixture,
+      id: `log-${index}`,
+      providerId: index === 0 ? "kaya" : "kilter",
+      sourceName: index === 0 ? "Kaya" : "Kilter Board",
+      climb: { ...climb, name: `Problem ${index + 1}` },
+      areaGroupId: "30000000-0000-4000-8000-000000000001",
+      areaPath: [{ ...area, id: `gym-${index}`, name }],
+    }),
+  );
+  render(<ActivityClimbingPanel entries={entries} locations={{}} />);
+  expect(screen.getAllByRole("header", { name: /^Area:/ })).toHaveLength(1);
+  expect(screen.getByRole("button", { name: "Select entry 1, Problem 1" })).toBeDefined();
+  expect(screen.getByRole("button", { name: "Select entry 2, Problem 2" })).toBeDefined();
+});
+
 it("scrolls the climb list to the selected row using its measured position", () => {
   const scrollTo = vi.fn();
   const scrollView = vi

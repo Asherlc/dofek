@@ -3,7 +3,11 @@ import { type Area, climbingLogEntryAreaPath } from "./climbing-log.ts";
 type SourceArea = Pick<Area, "id" | "name" | "providerId">;
 
 export function groupClimbingLogEntriesByArea<
-  T extends { climb: { areaPath: readonly SourceArea[] } | null; areaPath?: readonly SourceArea[] },
+  T extends {
+    climb: { areaPath: readonly SourceArea[] } | null;
+    areaPath?: readonly SourceArea[];
+    areaGroupId?: string | null;
+  },
 >(
   entries: readonly T[],
 ): Array<{
@@ -15,6 +19,7 @@ export function groupClimbingLogEntriesByArea<
   const providersByPath = new Map<string, Set<string>>();
   const ambiguousPaths = new Set<string>();
   for (const entry of entries) {
+    if (entry.areaGroupId) continue;
     const area = climbingLogEntryAreaPath(entry).at(-1);
     if (!area || pathsByArea.has(area.id)) continue;
     const path = JSON.stringify(
@@ -40,9 +45,11 @@ export function groupClimbingLogEntriesByArea<
     const area = climbingLogEntryAreaPath(entry).at(-1) ?? null;
     const path = area ? pathsByArea.get(area.id) : undefined;
     const key = area
-      ? path !== undefined && !ambiguousPaths.has(path)
-        ? `path:${path}`
-        : `area:${area.id}`
+      ? entry.areaGroupId
+        ? `group:${entry.areaGroupId}`
+        : path !== undefined && !ambiguousPaths.has(path)
+          ? `path:${path}`
+          : `area:${area.id}`
       : null;
     let group = groups.get(key);
     if (!group) {

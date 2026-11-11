@@ -38,6 +38,18 @@ vi.mock("@dofek/providers/providers", async (importOriginal) => ({
 describe("ActivityDetailHeader", () => {
   beforeEach(() => vi.clearAllMocks());
 
+  it("shows a server-projected FIT recovery warning and omits it for a clean activity", () => {
+    const warning = "Some FIT data could not be recovered from the original file.";
+    const { rerender } = render(
+      <ActivityDetailHeader activity={{ ...detailHeaderActivity, fitRecoveryWarning: warning }} />,
+    );
+
+    expect(screen.getByRole("alert").textContent).toBe(warning);
+
+    rerender(<ActivityDetailHeader activity={detailHeaderActivity} />);
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
   it("keeps the activity identity with an inline tree of distinct source branches", () => {
     render(<ActivityDetailHeader activity={detailHeaderActivity} />);
 

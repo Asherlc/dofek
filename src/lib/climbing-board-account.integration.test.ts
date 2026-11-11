@@ -1,6 +1,6 @@
 import { eq, sql } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { activity } from "../db/schema/activity.ts";
 import { area, climb, climbingAttempt, climbingLogEntry } from "../db/schema/climbing.ts";
@@ -20,6 +20,25 @@ import { TouchstoneProvider } from "../providers/touchstone.ts";
 import type { SyncProvider } from "../providers/types.ts";
 import { createIntegrationMswFixture } from "../test/early-msw-lifecycle.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
+
+const sdk = vi.hoisted(() => ({
+  getAll: vi.fn<(query: string) => Promise<unknown[]>>(),
+}));
+// Approved SDK-only exception: PowerSync's private Undici socket bypasses MSW.
+// REST remains on MSW, and persistence uses real PostgreSQL.
+vi.mock("@powersync/node", async (original) => ({
+  ...(await original<typeof import("@powersync/node")>()),
+  PowerSyncDatabase: class {
+    getAll = sdk.getAll;
+    connect = () => Promise.resolve();
+    waitForFirstSync = () => Promise.resolve();
+    syncStream = () => ({
+      subscribe: async () => ({ waitForFirstSync: () => Promise.resolve() }),
+    });
+    registerListener = () => () => undefined;
+    close = () => Promise.resolve();
+  },
+}));
 
 const otherUser = "00000000-0000-4000-8000-000000009902";
 const auroraProviders = [
@@ -41,6 +60,7 @@ const kilterLog = {
   topped: true,
   currentDifficultyId: 20,
 };
+const syncedLog = { log_uuid: "one", climb_uuid: "problem", angle: 40, attempts: 3 };
 const ascent = {
   uuid: "one",
   user_id: 42,
@@ -65,6 +85,7 @@ const server = createIntegrationMswFixture();
 describe("board account canonical persistence", () => {
   let context: TestContext;
   let logs: unknown;
+  let syncedLogs: Array<typeof syncedLog>;
   let pages: unknown[];
   let pageIndex: number;
 
@@ -94,6 +115,8 @@ describe("board account canonical persistence", () => {
   });
   beforeEach(() => {
     logs = [kilterLog];
+    syncedLogs = [syncedLog];
+    sdk.getAll.mockImplementation(async (query) => (query.includes("FROM logs") ? syncedLogs : []));
     pages = [{ ascents: [ascent], bids: [bid], _complete: true }];
     pageIndex = 0;
     server.use(
@@ -156,7 +179,7 @@ describe("board account canonical persistence", () => {
       expect.objectContaining({
         externalId: "kilter:log:one",
         activityId: expect.any(String),
-        raw: kilterLog,
+        raw: { ...kilterLog, syncLog: syncedLog },
         climbedOn: null,
       }),
     ]);
@@ -177,12 +200,32 @@ describe("board account canonical persistence", () => {
     ).toEqual(attempts.map((attempt) => attempt.id).sort());
   });
 
+  it("persists three app-sync attempts when REST reports one, retaining both source counts", async () => {
+    logs = [{ ...kilterLog, attempts: 1 }];
+    expect(await run(new KilterProvider())).toMatchObject({ errors: [], recordsSynced: 1 });
+    expect(await context.db.select().from(climbingAttempt)).toHaveLength(3);
+    expect((await stored())[0]?.raw).toMatchObject({
+      attempts: 1,
+      syncLog: { attempts: 3 },
+    });
+  });
+
+  it("preserves stored Kilter logs when an empty REST snapshot disagrees with app sync", async () => {
+    const provider = new KilterProvider();
+    expect(await run(provider)).toMatchObject({ errors: [] });
+    const before = await stored();
+    logs = [];
+    expect(await run(provider)).toMatchObject({ recordsSynced: 0, errors: [expect.any(Object)] });
+    expect(await stored()).toEqual(before);
+  });
+
   it("retires absent Kilter logs only for the completed owner's provider snapshot", async () => {
     const provider = new KilterProvider();
     expect(await run(provider)).toMatchObject({ errors: [] });
     expect(await run(provider, otherUser)).toMatchObject({ errors: [] });
     expect(await run(new TensionProvider())).toMatchObject({ errors: [] });
     logs = [];
+    syncedLogs = [];
     expect(await run(provider)).toMatchObject({ errors: [] });
     const rows = await stored();
     expect(
@@ -194,6 +237,7 @@ describe("board account canonical persistence", () => {
         .every((row) => row.providerAbsentAt === null),
     ).toBe(true);
     logs = [kilterLog];
+    syncedLogs = [syncedLog];
     expect(await run(provider)).toMatchObject({ errors: [] });
     expect((await stored()).every((row) => row.providerAbsentAt === null)).toBe(true);
   });
@@ -229,7 +273,7 @@ describe("board account canonical persistence", () => {
         sql`SELECT outcome FROM fitness.v_climbing_attempt`,
       );
       expect(outcomes).toEqual([{ outcome: null }, { outcome: null }, { outcome: null }]);
-      expect((await stored())[0]?.raw).toEqual(updatedLog);
+      expect((await stored())[0]?.raw).toEqual({ ...updatedLog, syncLog: syncedLog });
     },
   );
 
@@ -245,6 +289,7 @@ describe("board account canonical persistence", () => {
           logUuid: kilterLog.logUuid,
           climbUuid: kilterLog.climbUuid,
           createdAt: kilterLog.createdAt,
+          angle: kilterLog.angle,
           attempts: 3,
         },
       ];
@@ -263,6 +308,7 @@ describe("board account canonical persistence", () => {
     async (flashed) => {
       const provider = new KilterProvider();
       logs = [{ ...kilterLog, attempts: 1, topped: null, flashed: true }];
+      syncedLogs = [{ ...syncedLog, attempts: 1 }];
       expect(await run(provider)).toMatchObject({ errors: [] });
       const before = await context.db.select().from(climbingAttempt);
       expect(before).toEqual([

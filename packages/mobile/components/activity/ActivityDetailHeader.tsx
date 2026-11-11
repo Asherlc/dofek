@@ -31,6 +31,7 @@ export function ActivityDetailHeader({
     | "providerId"
     | "subsource"
     | "providerAbsentAt"
+    | "fitRecoveryWarning"
   >;
 } & Omit<ComponentProps<typeof ActivitySourceDisclosure>, "tree">) {
   const viewerTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -96,6 +97,11 @@ export function ActivityDetailHeader({
   return (
     <View style={styles.header}>
       {photos ? <ActivityImages {...photos} heading={heading} /> : heading}
+      {activity.fitRecoveryWarning ? (
+        <View accessible accessibilityRole="alert" style={styles.providerAbsentBanner}>
+          <Text style={styles.providerAbsentExplanation}>{activity.fitRecoveryWarning}</Text>
+        </View>
+      ) : null}
       <ProviderAbsentBanner key={`restore-${activity.id}`} activity={activity} />
     </View>
   );

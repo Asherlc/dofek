@@ -175,29 +175,39 @@ export class KilterBoardClient implements ClimbingBoardClient {
       throw new Error(`Kilter Board grade request failed (HTTP ${gradeResponse.status}).`);
     const grades = z.array(gradeSchema).parse(await gradeResponse.json());
     const byId = new Map(grades.map((grade) => [grade.difficultyGradeId, grade]));
-    let directory: Awaited<ReturnType<KilterBoardDirectory["fetch"]>> = { walls: [], gyms: [] };
-    if (logs.some(({ log }) => log.wallUuid || log.gymUuid)) {
-      for (const _attempt of [0, 1]) {
-        try {
-          directory = await this.#directory.fetch(async (directorySignal) => {
-            if (current.expiresAt.getTime() <= Date.now()) await refresh(directorySignal);
-            return { token: current.accessToken, expiresAt: current.expiresAt };
-          }, signal);
-          break;
-        } catch (error) {
-          const rejected =
-            error instanceof Error &&
-            "status" in error &&
-            [401, 403].includes(Number(error.status));
-          if (!rejected) throw error;
-          if (refreshed) throw reconnect("directory authorization expired or was rejected");
-          await refresh();
-        }
+    const readDirectory = async (): ReturnType<KilterBoardDirectory["fetch"]> => {
+      try {
+        return await this.#directory.fetch(async (directorySignal) => {
+          if (current.expiresAt.getTime() <= Date.now()) await refresh(directorySignal);
+          return { token: current.accessToken, expiresAt: current.expiresAt };
+        }, signal);
+      } catch (error) {
+        const rejected =
+          error instanceof Error && "status" in error && [401, 403].includes(Number(error.status));
+        if (!rejected) throw error;
+        if (refreshed) throw reconnect("directory authorization expired or was rejected");
+        await refresh();
+        return readDirectory();
       }
-    }
+    };
+    const directory = await readDirectory();
+    const syncedLogs = new Map(directory.logs.map((log) => [log.log_uuid, log]));
+    if (syncedLogs.size !== logs.length)
+      throw new Error(
+        "Kilter Board app-sync and REST log inventories disagree. Check your Kilter logbook before syncing again; no records were reconciled.",
+      );
     const walls = new Map(directory.walls.map((wall) => [wall.wall_uuid, wall]));
     const gyms = new Map(directory.gyms.map((gym) => [gym.gym_uuid, gym]));
     const entries: SourceClimbingLogEntry[] = logs.map(({ log, raw }) => {
+      const syncedLog = syncedLogs.get(log.logUuid);
+      if (
+        !syncedLog ||
+        syncedLog.climb_uuid !== log.climbUuid ||
+        syncedLog.angle !== (log.angle ?? null)
+      )
+        throw new Error(
+          `Kilter Board app-sync log ${log.logUuid} does not match its REST identity. Check this log in Kilter before syncing again; no records were reconciled.`,
+        );
       const wall = log.wallUuid ? walls.get(log.wallUuid) : undefined;
       if (log.gymUuid && wall?.gym_uuid && log.gymUuid !== wall.gym_uuid)
         throw new Error(
@@ -238,8 +248,8 @@ export class KilterBoardClient implements ClimbingBoardClient {
         ...(log.angle == null ? {} : { wallAngle: { value: log.angle, unit: "degrees" } }),
         notes: rating?.comment?.trim() ? rating.comment : null,
         reportedGrades: gradeComponents(difficulty == null ? undefined : byId.get(difficulty)),
-        ...(log.attempts != null && log.attempts > 0
-          ? { reportedAttemptCounts: [{ scope: "climb" as const, count: log.attempts }] }
+        ...(syncedLog.attempts != null && syncedLog.attempts > 0
+          ? { reportedAttemptCounts: [{ scope: "climb" as const, count: syncedLog.attempts }] }
           : {}),
         attempts: [attempt],
         climb: {
@@ -248,7 +258,7 @@ export class KilterBoardClient implements ClimbingBoardClient {
           setting: "indoor",
           ...(log.climbName?.trim() ? { name: log.climbName } : {}),
         },
-        raw,
+        raw: { ...z.record(z.string(), z.json()).parse(raw), syncLog: syncedLog },
       };
     });
     return { entries, absentExternalIds: [], authoritative: true };
