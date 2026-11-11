@@ -713,6 +713,14 @@ export function ActivityHeader({
   return (
     <div>
       {photos ? <ActivityPhotos {...photos} heading={heading} /> : heading}
+      {activity.fitRecoveryWarning ? (
+        <p
+          className="mt-3 rounded border border-amber-400/50 bg-amber-400/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300"
+          role="alert"
+        >
+          {activity.fitRecoveryWarning}
+        </p>
+      ) : null}
 
       {stats.length > 0 && (
         <div className="mt-5 grid grid-cols-2 gap-x-6 gap-y-4 border-t border-border/60 pt-4 sm:grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] sm:gap-x-0">

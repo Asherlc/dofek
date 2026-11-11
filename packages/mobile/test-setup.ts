@@ -452,10 +452,10 @@ vi.mock("react-native-svg", () => {
   const React = require("react");
 
   function svgComponent(name: string) {
-    const component = ({ children, onPress, ...props }: Record<string, unknown>) =>
+    const component = ({ children, onPress, accessible, ...props }: Record<string, unknown>) =>
       React.createElement(
         name,
-        { ...props, onClick: onPress },
+        { ...props, "data-accessible": accessible, onClick: onPress },
         ...(children != null ? [children] : []),
       );
     component.displayName = name;

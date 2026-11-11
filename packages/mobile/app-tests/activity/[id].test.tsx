@@ -500,6 +500,7 @@ const baseCyclingActivity = {
   sourceProviders: ["wahoo"],
   sourceLinks: [],
   sourceDecision: null,
+  fitRecoveryWarning: null,
   sourceTree: { primary: null, otherSources: [] },
   avgHr: 145,
   avgHrState: { status: "available" },

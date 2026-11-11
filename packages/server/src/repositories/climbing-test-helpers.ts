@@ -144,6 +144,7 @@ export function climbingActivityFixture(overrides: Partial<ActivityRow> = {}): A
     elevation_gain_m: null,
     elevation_loss_m: null,
     sample_count: null,
+    fit_recovery_error: false,
     provider_absent_at: null,
     ...overrides,
   };
