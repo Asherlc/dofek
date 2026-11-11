@@ -468,17 +468,21 @@ require a new binary with the resulting runtime, following Expo's
 [runtime compatibility guidance](https://docs.expo.dev/eas-update/runtime-versions/).
 
 The current stable [Expo SDK 58](https://expo.dev/changelog/sdk-58)
-native dependency set uses Expo 58.0.23, Expo Router 58.0.30, Expo Updates
-58.0.21, React Native 0.88.1, and React Native SVG 15.16.0, pinned in
+native dependency set uses Expo 58.0.24, Expo Router 58.0.31, Expo Updates
+58.0.22, React Native 0.88.1, and React Native SVG 15.16.0, pinned in
 [package.json](./package.json). The
-[Expo dependency matrix](https://github.com/expo/expo/blob/expo%4058.0.23/packages/expo/bundledNativeModules.json)
+[Expo dependency matrix](https://github.com/expo/expo/blob/expo%4058.0.24/packages/expo/bundledNativeModules.json)
 and the [lockfile](../../pnpm-lock.yaml) define the corresponding SDK-managed
 versions, including the updated native Modules Core and JSI packages.
 Validate SDK-managed versions with
 `pnpm tsx ../../scripts/with-env.ts -- pnpm expo install --check` from this package, following Expo's
 [dependency validation guidance](https://docs.expo.dev/more/expo-cli/#configuring-dependency-validation).
 The native dependency set also includes ExpoNetwork, the pnpm patch to
-`expo-apple-authentication@58.0.2`, and [MapLibre Native](https://maplibre.org/maplibre-react-native/docs/setup/expo/).
+`expo-apple-authentication@58.0.3`, and [MapLibre Native](https://maplibre.org/maplibre-react-native/docs/setup/expo/).
+
+The `@expo/plist` 0.10.1 and 0.10.2 consumers share the existing
+[XML parser patch](../../patches/@expo__plist@0.10.1.patch), selected by the
+exact version mappings in [pnpm-workspace.yaml](../../pnpm-workspace.yaml).
 
 Runtime 1.12 retains the HealthKit authorization-not-determined classification
 introduced in 1.10, with the stable code consumed by anchored sync. A type awaiting authorization leaves
@@ -528,7 +532,7 @@ and Swift metadata ([Swift compiler guidance](https://forums.swift.org/t/linker-
 When upgrading Sentry, update the React Native package patch and binary
 podspec together, then verify all native consumers and the Release archive.
 
-The [Apple patch](../../patches/expo-apple-authentication@58.0.2.patch) preserves
+The [Apple patch](../../patches/expo-apple-authentication@58.0.3.patch) preserves
 Expo's authorization exception mapping and cancellation. Other authorization
 errors carry only an allowlisted NSError domain, numeric code, and optional
 immediate underlying domain/code. Unknown domains become `other`; native
