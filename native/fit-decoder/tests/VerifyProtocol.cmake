@@ -84,9 +84,12 @@ execute_process(
   ERROR_VARIABLE truncated_error
   RESULT_VARIABLE truncated_result
 )
-if(truncated_result EQUAL 0)
-  message(FATAL_ERROR "FIT decoder accepted a truncated file")
+if(NOT truncated_result EQUAL 0)
+  message(FATAL_ERROR "FIT activity with complete records should recover: ${truncated_error}")
 endif()
-if(NOT truncated_output STREQUAL "")
-  message(FATAL_ERROR "FIT decoder emitted protocol data before rejecting a truncated file")
+string(REPLACE "\n" ";" truncated_lines "${truncated_output}")
+list(GET truncated_lines 0 truncated_metadata)
+string(JSON recovery_error GET "${truncated_metadata}" recoveryError)
+if(recovery_error STREQUAL "")
+  message(FATAL_ERROR "Recovered truncated activity did not report its decode warning")
 endif()
