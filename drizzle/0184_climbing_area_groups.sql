@@ -8,7 +8,9 @@ CREATE UNIQUE INDEX area_group_owner_id_idx ON fitness.area_group (user_id, id);
 ALTER TABLE fitness.area ADD COLUMN group_id uuid;
 --> statement-breakpoint
 ALTER TABLE fitness.area ADD CONSTRAINT area_group_owner_fk
-FOREIGN KEY (user_id, group_id) REFERENCES fitness.area_group (user_id, id);
+FOREIGN KEY (user_id, group_id) REFERENCES fitness.area_group (user_id, id) NOT VALID;
+--> statement-breakpoint
+ALTER TABLE fitness.area VALIDATE CONSTRAINT area_group_owner_fk;
 --> statement-breakpoint
 CREATE INDEX area_group_idx ON fitness.area (group_id);
 --> statement-breakpoint

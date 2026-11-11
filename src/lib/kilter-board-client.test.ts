@@ -49,7 +49,7 @@ function client(logs: unknown, gradeList: unknown = grades) {
 
 describe("KilterBoardClient", () => {
   const syncedLog = { log_uuid: "log-one", climb_uuid: "problem", angle: 40, attempts: 3 };
-  it("uses the app-sync attempt count when REST underreports the same log", async () => {
+  it("uses the app-sync attempt count when REST reports a lower count for the same log", async () => {
     const restLog = { ...log, attempts: 1, topped: false };
     const instance = new KilterBoardClient(
       async (input) => Response.json(String(input).endsWith("/grades") ? grades : [restLog]),

@@ -65,3 +65,12 @@ upstream cache/update mechanism.
 - [x] Extend the existing SDK schema/default user sync, preserve cancellation/authorization/cleanup behavior, and select the verified app-sync count without a REST count fallback.
 - [x] Run parser/directory/authentication tests and real read-only account validation; confirm 3 for warm 1 and 1 for Twist by Two. Record peak local memory without claiming production memory acceptance.
 - [x] Rerun relevant checks and the unit/mobile tier; include this change in the single final whole-diff review.
+
+### Task 4: Align SDK patches and finish CI
+
+The user approved compatible Expo SDK 58 patch alignment after CI stopped at its existing dependency check. Use the stock Expo installer, exact pins and the existing Apple diagnostic patch; no SDK-major upgrade or production release.
+
+- [x] Align compatible SDK versions and carry the Apple patch with pnpm patch/patch-commit.
+- [x] Run Expo dependency validation, the installed-patch Swift regression and iOS Metro export.
+- [x] Fix the new migration foreign-key lint with the existing NOT VALID/validation convention and reapply to the empty disposable workspace database. Run its PostgreSQL regressions, Squawk, SQLFluff and the full required pre-push checks.
+- [x] Push, update the draft PR and start monitoring its next CI run. Record any remaining failures without suppressing checks.
