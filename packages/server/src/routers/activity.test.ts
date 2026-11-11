@@ -1561,7 +1561,7 @@ describe("activityRouter", () => {
       expect(queryCache.invalidateByPrefix).toHaveBeenCalledWith("user-1:calendar.");
     });
 
-    it("enqueues an activity restore analytics refresh after restore", async () => {
+    it("enqueues every restored member rather than the requested group alias", async () => {
       const execute = vi
         .fn()
         .mockResolvedValue([
@@ -1575,7 +1575,7 @@ describe("activityRouter", () => {
       });
 
       await caller.restoreProviderAbsent({
-        ids: ["00000000-0000-0000-0000-000000000001", "00000000-0000-0000-0000-000000000002"],
+        ids: ["00000000-0000-0000-0000-000000000099"],
       });
 
       expect(mockEnqueueActivityRestoreAnalyticsRefresh).toHaveBeenCalledWith("user-1", [

@@ -586,7 +586,7 @@ export const activityRouter = router({
     .input(z.object({ ids: z.array(z.guid()).min(1).max(MAX_BULK_DELETE_ACTIVITY_IDS) }))
     .mutation(async ({ ctx, input }) => {
       try {
-        const restoredCount = await withAccountErasureUserWriteFence(
+        const restoration = await withAccountErasureUserWriteFence(
           ctx.db,
           ctx.userId,
           async (transaction) => {
@@ -596,13 +596,12 @@ export const activityRouter = router({
               ctx.timezone,
               ctx.accessWindow,
             );
-            const { restoredCount } = await repo.restoreProviderAbsent(input.ids);
-            return restoredCount;
+            return repo.restoreProviderAbsent(input.ids);
           },
         );
         await invalidateActivityListCaches(ctx.userId);
-        await scheduleActivityRestoreAnalyticsRefresh(ctx.userId, input.ids);
-        return { success: true, restoredCount };
+        await scheduleActivityRestoreAnalyticsRefresh(ctx.userId, restoration.memberActivityIds);
+        return { success: true, restoredCount: restoration.restoredCount };
       } catch (error) {
         if (isRelationMissingError(error)) {
           throw new TRPCError({

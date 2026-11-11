@@ -320,10 +320,12 @@ const mockStrengthExercisesQuery = vi.fn();
 const mockClimbingEntriesQuery = vi.fn();
 const mockHangboardDetailsQuery = vi.fn();
 const mockDeleteMutate = vi.fn();
+const mockRestoreProviderAbsentMutate = vi.fn();
 const mockRecomputeMutate = vi.fn();
 const mockRecomputeShouldFail = vi.fn(() => false);
 const mockRouterBack = vi.fn();
 const mockActivityByIdInvalidate = vi.fn().mockResolvedValue(undefined);
+const mockActivityInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockActivityStreamInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockActivityHrZonesInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockActivityPowerZonesInvalidate = vi.fn().mockResolvedValue(undefined);
@@ -415,6 +417,20 @@ vi.mock("../../lib/trpc", () => ({
           isPending: false,
         }),
       },
+      restoreProviderAbsent: {
+        useMutation: (options?: {
+          onSuccess?: () => Promise<void>;
+          onError?: (error: Error) => void;
+        }) => ({
+          mutate: (input: { ids: string[] }) => {
+            mockRestoreProviderAbsentMutate(input);
+            void options?.onSuccess?.();
+          },
+          isPending: false,
+          error: null,
+          reset: vi.fn(),
+        }),
+      },
     },
     climbing: {
       activityLogEntries: { useQuery: (...args: unknown[]) => mockClimbingEntriesQuery(...args) },
@@ -449,6 +465,7 @@ vi.mock("../../lib/trpc", () => ({
         trainingV2: { invalidate: mockMobileTrainingInvalidate },
       },
       activity: {
+        invalidate: mockActivityInvalidate,
         images: { invalidate: mockActivityImagesInvalidate },
         byId: { invalidate: mockActivityByIdInvalidate },
         stream: { invalidate: mockActivityStreamInvalidate },
@@ -609,6 +626,8 @@ function getPlaceholderData(
 }
 
 beforeEach(() => {
+  activityRouteParams.id = "00000000-0000-0000-0000-000000000001";
+  mockRestoreProviderAbsentMutate.mockClear();
   mockHardwareRefetch.mockClear();
   mockHardwareQuery.mockReturnValue({
     data: { items: [], power: [] },
@@ -663,6 +682,7 @@ beforeEach(() => {
   mockRecomputeShouldFail.mockReset();
   mockRecomputeShouldFail.mockReturnValue(false);
   mockActivityByIdInvalidate.mockClear();
+  mockActivityInvalidate.mockClear();
   mockActivityStreamInvalidate.mockClear();
   mockActivityHrZonesInvalidate.mockClear();
   mockActivityPowerZonesInvalidate.mockClear();
@@ -2615,6 +2635,29 @@ describe("ActivityDetailScreen", () => {
     expect(screen.getByText("Removed")).toBeTruthy();
     expect(screen.getByText("Strava")).toBeTruthy();
     expect(screen.getByText(/March 5, 2026/)).toBeTruthy();
+  });
+
+  it("restores the canonical activity while refreshing detail cached under its route alias", async () => {
+    const canonicalActivityId = "00000000-0000-4000-8000-000000000201";
+    activityRouteParams.id = "00000000-0000-4000-8000-000000000999";
+    mockByIdQuery.mockReturnValue({
+      data: {
+        ...baseCyclingActivity,
+        id: canonicalActivityId,
+        providerId: "strava",
+        providerAbsentAt: "2026-03-05T14:30:00.000Z",
+      },
+      isLoading: false,
+      error: null,
+    });
+
+    const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
+    render(React.createElement(ActivityDetailScreen));
+
+    fireEvent.click(screen.getByRole("button", { name: "Restore activity" }));
+
+    expect(mockRestoreProviderAbsentMutate).toHaveBeenCalledWith({ ids: [canonicalActivityId] });
+    expect(mockActivityInvalidate).toHaveBeenCalledWith();
   });
 });
 

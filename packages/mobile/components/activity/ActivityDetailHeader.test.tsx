@@ -12,6 +12,23 @@ vi.mock("react-native", async () => {
 });
 
 vi.mock("../ProviderLogo", () => ({ ProviderLogo: () => null }));
+vi.mock("../../lib/trpc", () => ({
+  trpc: {
+    useUtils: () => ({
+      activity: { byId: { invalidate: vi.fn() }, list: { invalidate: vi.fn() } },
+      calendar: {
+        weekListV2: { invalidate: vi.fn() },
+        activityOverview: { invalidate: vi.fn() },
+        calendarData: { invalidate: vi.fn() },
+      },
+    }),
+    activity: {
+      restoreProviderAbsent: {
+        useMutation: () => ({ mutate: vi.fn(), isPending: false, error: null, reset: vi.fn() }),
+      },
+    },
+  },
+}));
 vi.mock("@dofek/providers/providers", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@dofek/providers/providers")>()),
   providerLabel: (id: string) => (id === "kilter" ? "Kilter Board" : id),

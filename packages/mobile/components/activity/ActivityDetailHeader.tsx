@@ -19,6 +19,7 @@ export function ActivityDetailHeader({
   photos?: Omit<ComponentProps<typeof ActivityImages>, "heading">;
   activity: Pick<
     ActivityDetail,
+    | "id"
     | "name"
     | "activityType"
     | "primaryActivityType"

@@ -1289,6 +1289,13 @@
       "when": 1794331467000,
       "tag": "0183_activity_measured_bounds",
       "breakpoints": true
+    },
+    {
+      "idx": 184,
+      "version": "7",
+      "when": 1794423816810,
+      "tag": "0184_preserve_active_activity_sources",
+      "breakpoints": true
     }
   ]
 }
