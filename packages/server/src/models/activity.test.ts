@@ -68,10 +68,19 @@ const fullRow: ActivityRow = {
   elevation_gain_m: 350,
   elevation_loss_m: 340,
   sample_count: 5400,
+  fit_recovery_error: false,
   provider_absent_at: null,
 };
 
 describe("Activity", () => {
+  it("maps a recovered FIT source to the fixed user-facing detail warning", () => {
+    const detail = new Activity({ ...fullRow, fit_recovery_error: true }, mockLookup).toDetail();
+
+    expect(detail.fitRecoveryWarning).toBe(
+      "Some activity data could not be recovered from the original file. The available data was imported; this activity may be incomplete.",
+    );
+  });
+
   it("projects rounded measured duration and keeps an unknown end null", () => {
     expect(
       new Activity(
@@ -572,6 +581,7 @@ describe("Activity", () => {
         sampleCount: 5400,
         sampleCountState: { status: "available" },
         providerAbsentAt: null,
+        fitRecoveryWarning: null,
         sourceDecision: {
           origin: { status: "unresolved", candidateMemberActivityIds: [] },
           sourceCount: 2,

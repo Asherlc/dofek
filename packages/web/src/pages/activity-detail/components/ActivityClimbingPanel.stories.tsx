@@ -62,6 +62,32 @@ const meta = {
 } satisfies Meta<typeof ActivityClimbingPanel>;
 export default meta;
 type Story = StoryObj<typeof meta>;
+export const ExplicitLocationGroup: Story = {
+  args: {
+    locations: {},
+    entries: ["Touchstone Great Western Power Company", "Great Western Power Company"].map(
+      (name, index) => {
+        const providerId = index === 0 ? "kaya" : "kilter";
+        const area = { ...rootArea, id: `gym-${index}`, providerId, name };
+        return {
+          ...first,
+          id: `log-${index}`,
+          providerId,
+          sourceName: index === 0 ? "Kaya" : "Kilter Board",
+          areaGroupId: "30000000-0000-4000-8000-000000000001",
+          areaPath: [area],
+          sourceLinks: [],
+          climb: { ...firstClimb, providerId, areaId: area.id, areaPath: [area] },
+        };
+      },
+    ),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getAllByRole("heading", { name: /^Area:/ })).toHaveLength(1);
+    await expect(canvas.getAllByRole("button", { name: /^Select entry/ })).toHaveLength(2);
+  },
+};
 export const GroupedListAndMap: Story = {
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);

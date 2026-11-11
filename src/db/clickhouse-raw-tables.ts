@@ -41,6 +41,7 @@ export function buildPostgresFitnessActivityRawTableStatement(
   rejected_provider_end_utc_offset_minutes Nullable(Int64),
   strava_id Nullable(String),
   raw Nullable(String),
+  fit_recovery_error Nullable(String),
   provider_absent_at Nullable(DateTime64(6, 'UTC')),
   absence_provider_id Nullable(String),
   deleted_at Nullable(DateTime64(6, 'UTC')),

@@ -166,7 +166,8 @@ export interface ClimbingLogSyncInput {
   entries: readonly SourceClimbingLogEntry[];
 }
 
-type AreaRow = typeof area.$inferSelect;
+// Sync owns source facts; explicit location membership is maintained independently.
+type AreaRow = Omit<typeof area.$inferSelect, "groupId">;
 type ClimbRow = typeof climb.$inferSelect;
 type PitchRow = typeof pitch.$inferSelect;
 type AttemptRow = typeof climbingAttempt.$inferSelect;

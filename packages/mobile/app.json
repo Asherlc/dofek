@@ -62,6 +62,8 @@
     },
     "plugins": [
       "expo-router",
+      "expo-font",
+      "expo-secure-store",
       "@maplibre/maplibre-react-native",
       [
         "expo-splash-screen",

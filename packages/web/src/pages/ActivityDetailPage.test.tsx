@@ -118,6 +118,7 @@ const mockActivity: ActivityDetail & { displayedDate?: string } = {
   sourceLinks: [],
   sourceTree: { primary: null, otherSources: [] },
   sourceDecision: null,
+  fitRecoveryWarning: null,
 };
 
 const mockStreamPoints: Array<{
@@ -749,6 +750,28 @@ async function importActivityHeader() {
 }
 
 describe("ActivityDetailPage", () => {
+  it("shows the server-projected FIT recovery warning on the activity detail header", async () => {
+    const ActivityHeader = await importActivityHeader();
+    const warning = "Some FIT data could not be recovered from the original file.";
+
+    renderWithUnits(
+      <ActivityHeader
+        activity={{ ...mockActivity, fitRecoveryWarning: warning }}
+        units={new UnitConverter("metric")}
+      />,
+    );
+
+    expect(screen.getByRole("alert").textContent).toBe(warning);
+  });
+
+  it("does not show a FIT recovery warning for a clean activity", async () => {
+    const ActivityHeader = await importActivityHeader();
+
+    renderWithUnits(<ActivityHeader activity={mockActivity} units={new UnitConverter("metric")} />);
+
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
   it("shows Kilter logged windows on a connected climbing detail header", async () => {
     const ActivityHeader = await importActivityHeader();
     renderWithUnits(
@@ -2555,11 +2578,11 @@ describe("ActivityDetailPage", () => {
       renderWithUnits(<ActivityDetailPage />);
       expect(getQueryEnabledFlag(mockClimbingEntriesUseQuery.mock.calls[0]?.[1])).toBe(true);
       expect(mockClimbingEntriesUseQuery).toHaveBeenCalledWith(
-        { activityId: "test-123", responseVersion: 4 },
+        { activityId: "test-123", responseVersion: 5 },
         expect.objectContaining({ enabled: true, select: decodeClimbingLogEntriesResponse }),
       );
       expect(mockEntrySuggestionsUseQuery).toHaveBeenCalledWith(
-        { activityId: "test-123", responseVersion: 4 },
+        { activityId: "test-123", responseVersion: 5 },
         expect.objectContaining({ enabled: true, select: decodeClimbingLogEntriesResponse }),
       );
       expect(screen.getByText("Summit outing")).toBeInTheDocument();
@@ -2818,12 +2841,12 @@ describe("ActivityDetailPage", () => {
       await waitFor(() => {
         expect(mockClimbingEntriesInvalidate).toHaveBeenCalledWith({
           activityId: "test-123",
-          responseVersion: 4,
+          responseVersion: 5,
         });
         expect(mockActivityImagesInvalidate).toHaveBeenCalledWith({ id: "test-123" });
         expect(mockEntrySuggestionsInvalidate).toHaveBeenCalledWith({
           activityId: "test-123",
-          responseVersion: 4,
+          responseVersion: 5,
         });
         expect(mockClimbingSessionSummaryInvalidate).toHaveBeenCalledWith();
         expect(mockClimbingGradeProgressionInvalidate).toHaveBeenCalledWith();
@@ -2926,7 +2949,7 @@ describe("ActivityDetailPage", () => {
         await waitFor(() =>
           expect(mockClimbingEntriesInvalidate).toHaveBeenCalledWith({
             activityId: "test-123",
-            responseVersion: 4,
+            responseVersion: 5,
           }),
         );
         Object.assign(mockActivity, originalActivity);
