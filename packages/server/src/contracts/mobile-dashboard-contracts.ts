@@ -17,7 +17,6 @@ import { progressiveOverloadRowSchema } from "./progressive-overload.ts";
 import { trainingChartAvailabilitySchema } from "./training-chart-availability.ts";
 
 const dateSchema = z.iso.date();
-const score100Schema = z.number().min(0).max(100);
 const stressScoreSchema = z.number().min(0).max(3);
 const nonnegativeNumberSchema = z.number().min(0);
 const climbingGradeDisplaySchema = z
@@ -275,35 +274,6 @@ export const mobileRecoveryTabOutputSchema = z.object({
   }),
   baselineRelative: z.array(baselineRelativeMetricSchema),
   healthStatus: z.array(healthStatusMetricSchema),
-  healthspan: z.object({
-    healthspanScore: score100Schema.nullable(),
-    yearsDelta: z.number().nullable(),
-    availability: z.object({
-      status: z.enum(["available", "insufficient_data"]),
-      availableMetricCount: z.number().int().min(0).max(9),
-      requiredMetricCount: z.literal(3),
-      missingMetricLabels: z.array(z.string()),
-      summary: z.string(),
-      nextCondition: z.string().nullable(),
-    }),
-    metrics: z.array(
-      z.object({
-        name: z.string(),
-        value: z.number().nullable(),
-        unit: z.string(),
-        score: score100Schema,
-        status: z.enum(["excellent", "good", "fair", "poor"]),
-        yearsDelta: z.number(),
-      }),
-    ),
-    history: z.array(
-      z.object({
-        weekStart: dateSchema,
-        score: score100Schema,
-      }),
-    ),
-    trend: z.enum(["improving", "declining", "stable"]).nullable(),
-  }),
 });
 
 export type MobileRecoveryTabResult = z.infer<typeof mobileRecoveryTabOutputSchema>;
@@ -502,10 +472,7 @@ export const mobileRecoveryFixtureSchema = z
     );
     validateWeeksOverlappingWindow(
       input,
-      [
-        ...data.stress.weekly.map((row) => row.weekStart),
-        ...data.healthspan.history.map((row) => row.weekStart),
-      ],
+      [...data.stress.weekly.map((row) => row.weekStart)],
       context,
     );
 

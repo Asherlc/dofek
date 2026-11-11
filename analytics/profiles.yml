@@ -9,6 +9,10 @@ dofek:
       user: "{{ env_var('DBT_CLICKHOUSE_USER', env_var('CLICKHOUSE_URL', 'http://default:@127.0.0.1:8123').split('://')[-1].split('@')[0].split(':')[0]) }}"
       password: "{{ env_var('DBT_CLICKHOUSE_PASSWORD', env_var('CLICKHOUSE_URL', 'http://default:@127.0.0.1:8123').split('://')[-1].split('@')[0].split(':')[-1]) }}"
       secure: "{{ env_var('DBT_CLICKHOUSE_SECURE', 'false') | lower == 'true' }}"
+      custom_settings: &publication_settings
+        async_insert: 0
+        http_wait_end_of_query: 1
+        mutations_sync: 2
     prod:
       type: clickhouse
       schema: "{{ env_var('DBT_CLICKHOUSE_SCHEMA', 'analytics') }}"
@@ -18,6 +22,7 @@ dofek:
       password: "{{ env_var('DBT_CLICKHOUSE_PASSWORD', env_var('CLICKHOUSE_PASSWORD')) }}"
       secure: "{{ env_var('DBT_CLICKHOUSE_SECURE', 'false') | lower == 'true' }}"
       send_receive_timeout: 300
+      custom_settings: *publication_settings
     lint:
       type: clickhouse
       schema: "{{ env_var('DBT_CLICKHOUSE_SCHEMA', 'analytics') }}"
@@ -26,3 +31,4 @@ dofek:
       user: "{{ env_var('DBT_CLICKHOUSE_USER', env_var('CLICKHOUSE_URL', 'http://default:@127.0.0.1:8123').split('://')[-1].split('@')[0].split(':')[0]) }}"
       password: "{{ env_var('DBT_CLICKHOUSE_PASSWORD', env_var('CLICKHOUSE_URL', 'http://default:@127.0.0.1:8123').split('://')[-1].split('@')[0].split(':')[-1]) }}"
       secure: "{{ env_var('DBT_CLICKHOUSE_SECURE', 'false') | lower == 'true' }}"
+      custom_settings: *publication_settings

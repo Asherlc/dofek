@@ -3,6 +3,11 @@ import { readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import {
+  ANALYTICS_PUBLICATION_RESOURCE,
+  withAnalyticsQueryOwner,
+} from "../src/analytics/analytics-query-owner.ts";
+import { runOwnedDbtBuild } from "../src/analytics/dbt-build.ts";
 import { createClickHouseClientFromEnv } from "../src/db/clickhouse.ts";
 import { createDatabaseFromEnv } from "../src/db/index.ts";
 import {
@@ -201,30 +206,45 @@ export async function runAnalyticsBuildFromEnvironment(): Promise<void> {
     try {
       const clickHouse = createClickHouseClientFromEnv();
       try {
-        const pendingDatasets = await listProcessingDatasetsAwaitingAnalytics(database);
-        const microbatchBounds = await resolveAnalyticsMicrobatchBounds(clickHouse);
-        const result = await runAnalyticsBuild({
-          selectedModels: PRODUCTION_DBT_MODELS,
-          artifactDirectory,
-          microbatchBounds,
-          loadPendingDatasets: async () => pendingDatasets,
-          runDbt: runDbtProcess,
-          readArtifact: async (name) => {
-            const serializedArtifact = await readFile(join(artifactDirectory, name), "utf8");
-            const parsedArtifact: unknown = JSON.parse(serializedArtifact);
-            return parsedArtifact;
-          },
-          projectCyclingPower: async (asOf) => {
-            const { projectCyclingPower } = await import(
-              "../src/analytics/cycling-power-projector.ts"
+        await withAnalyticsQueryOwner(
+          database,
+          clickHouse,
+          { resourceId: ANALYTICS_PUBLICATION_RESOURCE, intentId: "analytics-build" },
+          async (owner) => {
+            const pendingDatasets = await listProcessingDatasetsAwaitingAnalytics(database);
+            const microbatchBounds = await resolveAnalyticsMicrobatchBounds(owner.client);
+            const result = await runAnalyticsBuild({
+              selectedModels: PRODUCTION_DBT_MODELS,
+              artifactDirectory,
+              microbatchBounds,
+              loadPendingDatasets: async () => pendingDatasets,
+              runDbt: (args) =>
+                runOwnedDbtBuild(
+                  owner,
+                  artifactDirectory,
+                  args[args.indexOf("--select") + 1]?.split(" ") ?? "all",
+                  () => runDbtProcess(args),
+                ),
+              readArtifact: async (name) => {
+                const serializedArtifact = await readFile(join(artifactDirectory, name), "utf8");
+                const parsedArtifact: unknown = JSON.parse(serializedArtifact);
+                return parsedArtifact;
+              },
+              projectCyclingPower: async (asOf) => {
+                const { projectCyclingPower } = await import(
+                  "../src/analytics/cycling-power-projector.ts"
+                );
+                const { cyclingPowerPolicy } = await import(
+                  "../src/analytics/cycling-power-policy.ts"
+                );
+                return projectCyclingPower(owner, cyclingPowerPolicy, asOf);
+              },
+              recordRun: (run) => recordProcessingAnalyticsRun(database, run),
+            });
+            console.log(
+              `[analytics-processing] recorded ${result.datasets} datasets; ${result.failed} failed`,
             );
-            const { cyclingPowerPolicy } = await import("../src/analytics/cycling-power-policy.ts");
-            return projectCyclingPower(clickHouse, cyclingPowerPolicy, asOf);
           },
-          recordRun: (run) => recordProcessingAnalyticsRun(database, run),
-        });
-        console.log(
-          `[analytics-processing] recorded ${result.datasets} datasets; ${result.failed} failed`,
         );
       } finally {
         await clickHouse.close?.();

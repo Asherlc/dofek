@@ -92,6 +92,48 @@ describe("ActivityCardContent", () => {
     expect(screen.getByRole("checkbox", { name: "Select Running" })).toBeDefined();
   });
 
+  it("shows an unknown duration without claiming zero minutes", () => {
+    render(
+      <ActivityCardContent
+        activity={activity({
+          activityType: "climbing",
+          primaryActivityType: "climbing",
+          durationMin: null,
+          source: {
+            origin: {
+              status: "resolved",
+              memberActivityId: "kilter-point-only",
+              providerId: "kilter",
+              sourceName: null,
+            },
+            tree: {
+              primary: {
+                id: "kilter-point-only",
+                providerId: "kilter",
+                sourceName: null,
+                label: "Kilter Board",
+                description: null,
+                url: null,
+                children: [],
+              },
+              otherSources: [],
+            },
+            primarySourceLabel: "Kilter Board",
+            sourceCount: 1,
+            overlapSummary: null,
+          },
+          stats: [],
+        })}
+        units={units}
+        selectMode={false}
+        selected={false}
+      />,
+    );
+
+    expect(screen.getByText(/Duration unavailable/)).toBeVisible();
+    expect(screen.queryByText("0m")).toBeNull();
+  });
+
   const photo = {
     id: "photo-1",
     url: "https://private.test/photo",

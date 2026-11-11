@@ -69,7 +69,15 @@ Activity details show attached climbing logs and same-day attachment suggestions
 for climbing activities. Cards group under Area headings and show the
 published display grade, concise attempt counts, pitch labels, and server-derived
 rock labels through the [shared grouping helper](../training/src/climbing-log-groups.ts)
-and [card](src/pages/activity-detail/components/ClimbingLogEntryCard.tsx).
+and [card](src/pages/activity-detail/components/ClimbingLogEntryCard.tsx). Each
+Area heading renders the complete recorded root-to-leaf lineage, emphasizing the
+final area, and keeps long paths on one focusable line with
+[CSS horizontal overflow](https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/overflow-x).
+The activity panel and breakdown use named, focusable scroll sections, following
+[MDN's keyboard-scrolling guidance](https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/overflow#accessibility).
+Those two files have an approved exception for Biome's
+[`noNoninteractiveTabindex`](https://biomejs.dev/linter/rules/no-noninteractive-tabindex/javascript/)
+rule; all other rules remain enabled.
 The activity [climbing panel](src/pages/activity-detail/components/ActivityClimbingPanel.tsx)
 uses a single-column list grouped by Area beside its shared map; other log
 collections retain the responsive [breakdown](src/pages/activity-detail/components/ClimbingLogEntryBreakdown.tsx).
@@ -164,7 +172,7 @@ pnpm test                        # Run repo-wide Vitest suites from the repo roo
 ```
 
 Activity cards lead with the shared rounded-outline activity icon. A Lineage control
-below the content and map expands inside the same card to show explicitly
+below the content and map opens an anchored flyout to show explicitly
 labeled Original and Shared to branches. Separate copies from the same provider remain distinct, while
 unconnected records appear as other matching sources. Dofek remains implicit.
 See [ActivityCardContent](src/components/ActivityCardContent.tsx) and
@@ -182,9 +190,9 @@ Both clients render the [shared source-tree contract](../providers-meta/src/acti
 from the [server projection](../server/src/models/activity-source-tree.ts).
 Retained origin evidence establishes links between source records; membership
 and metric priorities do not. Recording-app/device metadata can identify an
-earlier source without claiming its record is available. The inline button
-follows the [WAI disclosure pattern](https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/)
-and stays independent of activity navigation and selection.
+earlier source without claiming its record is available. The card button reuses
+the same [Radix Popover](https://www.radix-ui.com/primitives/docs/components/popover)
+as the detail header and stays independent of activity navigation and selection.
 
 ## Activity metric sources
 

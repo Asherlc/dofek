@@ -1,7 +1,7 @@
-type HandledFailure = "offline" | "cancelled" | "invalid_credentials";
+type HandledFailure = "offline" | "cancelled" | "invalid_credentials" | "connection_lost";
 
 /** Classify handled outcomes only; unknown failures remain reportable. */
-export function classifyHandledFailure(error: unknown): HandledFailure | null {
+export function classifyHandledFailure(error: unknown, source?: string): HandledFailure | null {
   const visited = new Set<unknown>();
   let current = error;
   while (typeof current === "object" && current !== null && !visited.has(current)) {
@@ -19,6 +19,12 @@ export function classifyHandledFailure(error: unknown): HandledFailure | null {
       kind ??= "invalid_credentials";
     }
     if (current instanceof Error) {
+      if (
+        source === "auth-state-restore" &&
+        current.message === "fetch failed: The network connection was lost."
+      ) {
+        kind ??= "connection_lost";
+      }
       if (
         current.name === "AbortError" ||
         /^(?:fetch failed:\s*cancel(?:led|ed)|The operation was aborted\.)$/i.test(current.message)

@@ -4,11 +4,17 @@ import {
   formatActivityMetric,
   groupActivityMetrics,
 } from "@dofek/format/activity-data-state";
-import { formatDateLong, formatDurationSeconds, formatNumber } from "@dofek/format/format";
-import { formatRecordLocalTime } from "@dofek/format/record-local-time";
+import {
+  formatDateLong,
+  formatDurationMinutes,
+  formatDurationSeconds,
+  formatNumber,
+} from "@dofek/format/format";
+import { formatRecordLocalTime, formatRecordLocalTimeRange } from "@dofek/format/record-local-time";
 import type { UnitConverter } from "@dofek/format/units";
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { processingPollInterval } from "@dofek/providers/processing-status";
+import { providerLabel } from "@dofek/providers/providers";
 import { ACTIVITY_IMAGES_QUERY_OPTIONS } from "@dofek/training/activity-images";
 import { activityQueryPlaceholder } from "@dofek/training/activity-query-placeholder";
 import { buildClimbingMapLocations, buildClimbingMapMarkers } from "@dofek/training/climbing-map";
@@ -138,11 +144,11 @@ export function ActivityDetailPage() {
     { enabled: isClimbingActivity, placeholderData: activityQueryPlaceholder(id) },
   );
   const climbingEntries = trpc.climbing.activityLogEntries.useQuery(
-    { activityId: id, responseVersion: 3 },
+    { activityId: id, responseVersion: 5 },
     { enabled: isClimbingActivity, select: decodeClimbingLogEntriesResponse },
   );
   const entrySuggestions = trpc.climbing.unattachedClimbingLogEntries.useQuery(
-    { activityId: id, responseVersion: 3 },
+    { activityId: id, responseVersion: 5 },
     { enabled: isClimbingActivity, select: decodeClimbingLogEntriesResponse },
   );
   const climbingEntriesLoading = climbingEntries.isLoading && !climbingEntries.data;
@@ -181,7 +187,7 @@ export function ActivityDetailPage() {
         trpcUtils.activity.images.invalidate({ id: input.activityId }),
         trpcUtils.climbing.activityLogEntries.invalidate({
           activityId: input.activityId,
-          responseVersion: 3,
+          responseVersion: 5,
         }),
         trpcUtils.climbing.sessionSummary.invalidate(),
         trpcUtils.climbing.gradeProgressionV2.invalidate(),
@@ -189,7 +195,7 @@ export function ActivityDetailPage() {
         trpcUtils.climbing.strengths.invalidate(),
         trpcUtils.climbing.unattachedClimbingLogEntries.invalidate({
           activityId: input.activityId,
-          responseVersion: 3,
+          responseVersion: 5,
         }),
       ]);
     },
@@ -579,29 +585,22 @@ export function ActivityHeader({
   units: UnitConverter;
   photos?: Omit<ComponentProps<typeof ActivityPhotos>, "heading">;
 } & Omit<ComponentProps<typeof ActivitySourceDisclosure>, "tree">) {
-  const durationMin =
-    activity.startedAt && activity.endedAt
-      ? Math.round(
-          (new Date(activity.endedAt).getTime() - new Date(activity.startedAt).getTime()) / 60000,
-        )
-      : null;
+  const viewerTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const localStartTime = formatRecordLocalTime(
     activity.startedAt,
     activity.localTimeContext,
     "start",
     undefined,
-    Intl.DateTimeFormat().resolvedOptions().timeZone,
+    viewerTimezone,
   );
-
-  const formatDuration = (mins: number) => {
-    const hours = Math.floor(mins / 60);
-    const remainingMinutes = mins % 60;
-    return hours > 0 ? `${hours}h ${remainingMinutes}m` : `${remainingMinutes}m`;
-  };
 
   const stats: Array<ActivityMetric | { label: string; value: string; description?: string }> = [];
 
-  if (durationMin != null) stats.push({ label: "Duration", value: formatDuration(durationMin) });
+  stats.push({
+    label: "Duration",
+    value:
+      activity.durationMin === null ? "Unavailable" : formatDurationMinutes(activity.durationMin),
+  });
   if (!(isCyclingActivity(activity.activityType) && isIndoorCyclingModality(activity.modality))) {
     stats.push(
       formatActivityMetric(
@@ -687,6 +686,25 @@ export function ActivityHeader({
             {formatDateLong(activity.displayedDate, { timeZone: "UTC" })} at{" "}
             {localStartTime === "--" ? "Local time unavailable" : localStartTime}
           </p>
+          {activity.climbingLogSessions.length > 0 ? (
+            <ul aria-label="Logged climbs" className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+              {activity.climbingLogSessions.map((session) => {
+                const window = formatRecordLocalTimeRange(
+                  session.firstLoggedAt,
+                  session.lastLoggedAt,
+                  activity.localTimeContext,
+                  undefined,
+                  viewerTimezone,
+                );
+                const label = `${providerLabel(session.providerId)} · Logged climbs · ${window}`;
+                return (
+                  <li key={session.id} aria-label={label} className="text-xs text-subtle">
+                    {label}
+                  </li>
+                );
+              })}
+            </ul>
+          ) : null}
         </div>
       }
     />
@@ -695,6 +713,14 @@ export function ActivityHeader({
   return (
     <div>
       {photos ? <ActivityPhotos {...photos} heading={heading} /> : heading}
+      {activity.fitRecoveryWarning ? (
+        <p
+          className="mt-3 rounded border border-amber-400/50 bg-amber-400/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300"
+          role="alert"
+        >
+          {activity.fitRecoveryWarning}
+        </p>
+      ) : null}
 
       {stats.length > 0 && (
         <div className="mt-5 grid grid-cols-2 gap-x-6 gap-y-4 border-t border-border/60 pt-4 sm:grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] sm:gap-x-0">

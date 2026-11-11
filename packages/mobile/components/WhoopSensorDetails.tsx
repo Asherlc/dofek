@@ -91,10 +91,13 @@ export function WhoopSensorPanel() {
   const [captureError, setCaptureError] = useState<string | null>(null);
   useEffect(() => {
     let disposed = false;
+    let inFlight = false;
     const refresh = async () => {
+      if (inFlight) return;
+      inFlight = true;
       try {
         const native = await import("../modules/whoop-ble");
-        const stats = native.getDataPathStats();
+        const stats = await native.getDataPathStats();
         if (!disposed) {
           setLocalCapture(stats.buffers.sensorRecords);
           setCaptureError(null);
@@ -103,6 +106,8 @@ export function WhoopSensorPanel() {
         captureException(error, { context: "whoop-sensor-capture-status" });
         if (!disposed)
           setCaptureError("Local sensor queue could not be read. Retrying automatically.");
+      } finally {
+        inFlight = false;
       }
     };
     void refresh();

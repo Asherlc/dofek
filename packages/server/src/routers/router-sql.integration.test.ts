@@ -211,11 +211,6 @@ describe("Router SQL validity", () => {
       expectValidSql("calendar.activityOverview", { weeks: 4, endDate: "2026-03-20" }));
   });
 
-  // ── Healthspan ──
-  describe("healthspan", () => {
-    it("score", () => expectValidSql("healthspan.score", { weeks: 4 }));
-  });
-
   // ── Stress ──
   describe("stress", () => {
     it("scores", () => expectValidSql("stress.scores", { days: 30 }));

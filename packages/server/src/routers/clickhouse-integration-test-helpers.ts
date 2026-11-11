@@ -44,9 +44,8 @@ import {
   buildTestBodyMeasurementSelectSql,
   buildTestDailyActivityLoadSelectSql,
   buildTestDailyBodyMeasurementSelectSql,
+  buildTestDailyHealthSensorSelectSql,
   buildTestDailySleepSelectSql,
-  buildTestHealthspanActivityZoneMinutesSelectSql,
-  buildTestHealthspanReadModelSelectSql,
   buildTestRecoveryReadModelSelectSql,
   buildTestStrainReadModelSelectSql,
 } from "./clickhouse-integration-test-read-models-b.ts";
@@ -87,7 +86,7 @@ export interface ClickHouseActivityPolarizationZoneSeedRow {
 
 interface ClickHouseTestHandle {
   client: ClickHouseClient;
-  setupClient: ClickHouseClient;
+  setupClient: ReturnType<typeof createIsolatedClickHouseClient>;
 }
 
 interface RawTableSync {
@@ -418,9 +417,14 @@ function buildTestAnalyticsSelectSql(
 function createIsolatedClickHouseClient(
   client: ClickHouseClient,
   databases: IsolatedClickHouseDatabases,
-): ClickHouseClient {
+): ClickHouseClient & Required<Pick<ClickHouseClient, "insert">> {
   const precomputedAnalyticsSelectByName = new Map<string, string>();
   return {
+    exec: (options) =>
+      client.exec({
+        ...options,
+        query: rewriteClickHouseDatabaseNames(options.query, databases),
+      }),
     command: async (options) => {
       const queries = rewriteClickHouseTestCommand(
         options.query,
@@ -433,6 +437,8 @@ function createIsolatedClickHouseClient(
           result = await client.command({
             ...options,
             query,
+            // Match dbt's bounded build policy instead of scaling buffers with host cores.
+            clickhouse_settings: { ...options.clickhouse_settings, max_threads: 1 },
           });
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
@@ -559,6 +565,13 @@ export async function createClickHouseTestActivitySensorStore(
   return createClickHouseTestStore(testContext, syncClickHouseTestActivitySensorStoreWithClient);
 }
 
+/** Reader fixtures populate final tables directly and do not rebuild source models. */
+export async function createClickHouseTestActivitySensorReaderStore(
+  testContext: ClickHouseSyncTestContext,
+): Promise<ActivitySensorStore> {
+  return createClickHouseTestStore(testContext, async () => {});
+}
+
 export async function createClickHouseTestActivityPowerCurveStore(
   testContext: ClickHouseSyncTestContext,
 ): Promise<ActivitySensorStore> {
@@ -681,6 +694,11 @@ AS
 ${buildTestDailyRecoveryInputsSelectSql(defaultTestDatabases)}`,
   });
   await client.command({
+    query: `CREATE VIEW IF NOT EXISTS analytics.daily_health_sensor
+AS
+${buildTestDailyHealthSensorSelectSql(defaultTestDatabases)}`,
+  });
+  await client.command({
     query: `CREATE VIEW IF NOT EXISTS analytics.daily_sleep
 AS
 ${buildTestDailySleepSelectSql(defaultTestDatabases)}`,
@@ -709,16 +727,6 @@ ${buildTestBodyMeasurementSelectSql(defaultTestDatabases)}`,
     query: `CREATE VIEW IF NOT EXISTS analytics.daily_body_measurement
 AS
 ${buildTestDailyBodyMeasurementSelectSql(defaultTestDatabases)}`,
-  });
-  await client.command({
-    query: `CREATE VIEW IF NOT EXISTS analytics.healthspan_activity_zone_minutes
-AS
-${buildTestHealthspanActivityZoneMinutesSelectSql(defaultTestDatabases)}`,
-  });
-  await client.command({
-    query: `CREATE VIEW IF NOT EXISTS analytics.weekly_healthspan
-AS
-${buildTestHealthspanReadModelSelectSql(defaultTestDatabases)}`,
   });
   await client.command({ query: buildActivityVo2MaxEstimateTableSql() });
 
@@ -824,57 +832,6 @@ async function syncClickHouseRawTablesWithClient(
   }
 }
 
-function formatNullableClickHouseString(value: string | null | undefined): string {
-  if (value === null || value === undefined) {
-    return "NULL";
-  }
-  return clickHouseStringLiteral(value);
-}
-
-function formatNullableClickHouseUuid(value: string | null | undefined): string {
-  if (value === null || value === undefined) {
-    return "NULL";
-  }
-  return `toUUID(${clickHouseStringLiteral(value)})`;
-}
-
-function formatNullableClickHouseFloat(value: number | null | undefined): string {
-  if (value === null || value === undefined) {
-    return "NULL";
-  }
-  return String(value);
-}
-
-function formatClickHouseVector(value: readonly number[] | null | undefined): string {
-  if (!value || value.length === 0) {
-    return "[]";
-  }
-  return `[${value.join(",")}]`;
-}
-
-function formatClickHouseMetricStreamSeedValue(row: ClickHouseMetricStreamSeedRow): string {
-  const id = row.id ?? randomUUID();
-  return `(
-    toUUID(${clickHouseStringLiteral(id)}),
-    ${formatNullableClickHouseUuid(row.activityId)},
-    toUUID(${clickHouseStringLiteral(row.userId)}),
-    parseDateTime64BestEffort(${clickHouseStringLiteral(row.recordedAt)}, 6, 'UTC'),
-    ${clickHouseStringLiteral(row.channel)},
-    ${clickHouseStringLiteral(row.providerId)},
-    ${formatNullableClickHouseString(row.externalId)},
-    ${formatNullableClickHouseString(row.deviceId)},
-    ${formatNullableClickHouseString(row.sourceType)},
-    ${formatNullableClickHouseFloat(row.scalar)},
-    ${formatClickHouseVector(row.vector)},
-    ${formatNullableClickHouseString(row.point ?? "")},
-    ${formatNullableClickHouseString(row.metadata ?? "")},
-    now64(9),
-    ${row.isDeleted ? 1 : 0},
-    ${row.version ?? 1},
-    ${row.generation ?? 0}
-  )`;
-}
-
 export async function insertClickHouseMetricStreamRows(
   testContext: ClickHouseSyncTestContext,
   rows: readonly ClickHouseMetricStreamSeedRow[],
@@ -888,26 +845,29 @@ export async function insertClickHouseMetricStreamRows(
     throw new Error("ClickHouse test activity sensor store has not been created");
   }
 
-  await handle.setupClient.command({
-    query: `INSERT INTO ingest.metric_stream (
-      id,
-      activity_id,
-      user_id,
-      recorded_at,
-      channel,
-      provider_id,
-      external_id,
-      device_id,
-      source_type,
-      scalar,
-      vector,
-      point,
-      metadata,
-      ingested_at,
-      is_deleted,
-      version,
-      generation
-    ) VALUES ${rows.map(formatClickHouseMetricStreamSeedValue).join(",\n")}`,
+  await handle.setupClient.insert({
+    table: "ingest.metric_stream",
+    format: "JSONEachRow",
+    clickhouse_settings: { date_time_input_format: "best_effort" },
+    values: rows.map((row) => ({
+      id: row.id ?? randomUUID(),
+      activity_id: row.activityId ?? null,
+      user_id: row.userId,
+      recorded_at: row.recordedAt,
+      channel: row.channel,
+      provider_id: row.providerId,
+      external_id: row.externalId ?? null,
+      device_id: row.deviceId ?? null,
+      source_type: row.sourceType ?? null,
+      scalar: row.scalar ?? null,
+      vector: row.vector ?? [],
+      point: row.point ?? "",
+      metadata: row.metadata ?? "",
+      ingested_at: new Date().toISOString(),
+      is_deleted: row.isDeleted ? 1 : 0,
+      version: row.version ?? 1,
+      generation: row.generation ?? 0,
+    })),
   });
 }
 

@@ -29,7 +29,7 @@ describe("mobile-dashboard router integration", () => {
           ON CONFLICT DO NOTHING`,
     );
 
-    // Seed recorded sleep for last night.
+    // Seed a fixed UTC night that crosses midnight.
     await testCtx.db.execute(
       sql`INSERT INTO fitness.sleep_session (
               provider_id, user_id, started_at, ended_at,
@@ -37,7 +37,7 @@ describe("mobile-dashboard router integration", () => {
               staging_available, sleep_type
             ) VALUES (
               'test_provider', ${TEST_USER_ID},
-              NOW() - INTERVAL '8 hours', NOW(),
+              '2026-11-04T21:00:00Z'::timestamptz, '2026-11-05T05:00:00Z'::timestamptz,
               480, 120, 96, 240, 24, true, 'sleep'
             )
             ON CONFLICT DO NOTHING`,
@@ -81,7 +81,9 @@ describe("mobile-dashboard router integration", () => {
   }
 
   it("returns recorded sleep duration and stage proportions", async () => {
-    const today = new Date().toISOString().slice(0, 10);
+    const endDate = "2026-11-05";
+    // The nightly model assigns the start time minus six hours to its sleep day.
+    const sleepDate = "2026-11-04";
     const result = await query<{
       sleep: {
         lastNight: {
@@ -93,15 +95,15 @@ describe("mobile-dashboard router integration", () => {
         } | null;
       };
       latestDate: string | null;
-    }>({ endDate: today });
+    }>({ endDate });
 
     expect(result.sleep.lastNight).toMatchObject({
-      date: today,
+      date: sleepDate,
       durationMinutes: 480,
       deepPct: 25,
       remPct: 20,
       stagingAvailable: true,
     });
-    expect(result.latestDate).toBe(today);
+    expect(result.latestDate).toBe(sleepDate);
   });
 });

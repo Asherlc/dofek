@@ -276,7 +276,7 @@ function buildProcessingAlert(
     datasetLabels,
     occurredAt,
     title: `${titleLabel} ${titleSuffix}`,
-    message: `Dofek couldn’t update ${subject}. Your existing data is still available. Contact support for help.`,
+    message: `Dofek couldn’t update ${subject}. Contact support for help.`,
     action: "contact_support",
     actionLabel: "Contact support",
   };
