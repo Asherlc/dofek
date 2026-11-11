@@ -5,6 +5,72 @@ import XCTest
 @testable import ExpoWhoopBle
 
 final class WhoopBleModuleTests: XCTestCase {
+    func testCleanupQueueLeavesUnrelatedAsyncProbeResponsiveAndQueuesConfiguration() async throws {
+        let logs = CleanupLogRecorder()
+        let cleanupStarted = expectation(description: "Native cleanup entered while BLE queue is occupied")
+        await logs.start(entry: cleanupStarted)
+        defer { SentrySDK.close() }
+        let (context, module) = try makeModule()
+        defer { XCTAssertNoThrow(try module.uploader.disable()) }
+        let runtime = try context.runtime
+        let blocked = expectation(description: "BLE queue occupied")
+        let release = DispatchSemaphore(value: 0)
+        module.connectionManager.bleQueue.async {
+            blocked.fulfill()
+            release.wait()
+        }
+        defer { release.signal() }
+        await fulfillment(of: [blocked], timeout: 5)
+
+        try await runtime.execute {
+            _ = try runtime.eval("""
+                globalThis.cleanupFinished = false;
+                globalThis.configureFinished = false;
+                globalThis.cleanupPromise = expo.modules.WhoopBle.disableUploads().then(() => {
+                    globalThis.cleanupFinished = true;
+                    return true;
+                });
+                globalThis.configurePromise = expo.modules.WhoopBle.configureUpload({
+                    userId: 'bridge-test-account', serverURL: 'https://example.com',
+                    token: 'test-session', headers: {}
+                }).then(() => {
+                    globalThis.configureFinished = true;
+                    return true;
+                });
+                globalThis.probePromise = expo.modules.BridgeProbe.probe();
+                """)
+        }
+        await fulfillment(of: [cleanupStarted], timeout: 5)
+        let probeReturned = expectation(description: "Unrelated Expo async probe promise resolved")
+        let probe = Task {
+            let result = try await runtime.evalAsync("globalThis.probePromise").ref()
+            let value = try await runtime.execute { try result.take().asBool() }
+            XCTAssertTrue(value)
+            probeReturned.fulfill()
+        }
+        let probeResponse = await XCTWaiter.fulfillment(of: [probeReturned], timeout: 5)
+        XCTAssertEqual(probeResponse, .completed)
+        guard probeResponse == .completed else {
+            release.signal()
+            try await probe.value
+            return
+        }
+        try await probe.value
+
+        try await runtime.execute {
+            XCTAssertFalse(try runtime.eval("globalThis.cleanupFinished").asBool())
+            XCTAssertFalse(try runtime.eval("globalThis.configureFinished").asBool())
+        }
+
+        release.signal()
+        let cleanup = try await runtime.evalAsync("globalThis.cleanupPromise").ref()
+        let cleanupResult = try await runtime.execute { try cleanup.take().asBool() }
+        XCTAssertTrue(cleanupResult)
+        let configured = try await runtime.evalAsync("globalThis.configurePromise").ref()
+        let configuredResult = try await runtime.execute { try configured.take().asBool() }
+        XCTAssertTrue(configuredResult)
+    }
+
     func testCleanupLeavesJavaScriptResponsiveWhileWaitingForBleQueue() async throws {
         let logs = CleanupLogRecorder()
         let entered = expectation(description: "Native cleanup entry while BLE queue is occupied")
@@ -93,18 +159,10 @@ final class WhoopBleModuleTests: XCTestCase {
         defer { SentrySDK.close() }
         let (context, module) = try makeModule()
         _ = try module.uploader
-        let directory = try FileManager.default.url(
-            for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true
-        ).appendingPathComponent("WhoopBleUploads/bodies")
-        let backup = directory.deletingLastPathComponent().appendingPathComponent(UUID().uuidString)
-        try FileManager.default.moveItem(at: directory, to: backup)
+        let fixture = try makeBodyRemovalFailure()
         defer {
-            if FileManager.default.fileExists(atPath: directory.path) {
-                XCTAssertNoThrow(try FileManager.default.removeItem(at: directory))
-            }
-            XCTAssertNoThrow(try FileManager.default.moveItem(at: backup, to: directory))
+            XCTAssertNoThrow(try restoreBodyDirectory(fixture.directory, backup: fixture.backup))
         }
-        try Data().write(to: directory)
         let rejection = try await outcome("disableUploads()", in: context)
         XCTAssertNotEqual(rejection, "unexpected success")
         let failure = try XCTUnwrap(logs.snapshot.last)
@@ -112,6 +170,32 @@ final class WhoopBleModuleTests: XCTestCase {
         XCTAssertEqual(failure.attributes["failedStage"]?.value as? String, "uploader_remove_bodies")
         XCTAssertEqual(failure.level, .error)
         try logs.assertOperationMetadata()
+    }
+
+    func testCleanupFailureKeepsConfigurationFencedUntilSuccessfulRetry() async throws {
+        let (context, module) = try makeModule()
+        _ = try module.uploader
+        let fixture = try makeBodyRemovalFailure()
+        defer {
+            XCTAssertNoThrow(try restoreBodyDirectory(fixture.directory, backup: fixture.backup))
+            XCTAssertNoThrow(try module.uploader.disable())
+        }
+
+        let cleanupFailure = try await outcome("disableUploads()", in: context)
+        XCTAssertNotEqual(cleanupFailure, "unexpected success")
+        module.connectionManager.syncOnBleQueue { XCTAssertTrue(module.captureSuspended) }
+        try restoreBodyDirectory(fixture.directory, backup: fixture.backup)
+
+        let configure = "configureUpload({userId: 'bridge-test-account', serverURL: 'https://example.com', token: 'test-session', headers: {}})"
+        let rejectedConfiguration = try await outcome(configure, in: context)
+        XCTAssertNotEqual(rejectedConfiguration, "unexpected success")
+        module.connectionManager.syncOnBleQueue { XCTAssertTrue(module.captureSuspended) }
+
+        let retriedCleanup = try await outcome("disableUploads()", in: context)
+        XCTAssertEqual(retriedCleanup, "unexpected success")
+        let configured = try await outcome(configure, in: context)
+        XCTAssertEqual(configured, "unexpected success")
+        module.connectionManager.syncOnBleQueue { XCTAssertFalse(module.captureSuspended) }
     }
 
     func testExplicitRetryRejectsRetainedCaptureFailure() async throws {
@@ -151,6 +235,23 @@ final class WhoopBleModuleTests: XCTestCase {
             XCTAssertNil(module.captureFailure)
             XCTAssertFalse(module.captureSuspended)
         }
+    }
+
+    func testFreshModuleKeepsCaptureSuspendedUntilSuccessfulConfiguration() async throws {
+        let (context, module) = try makeModule()
+        defer { XCTAssertNoThrow(try module.uploader.disable()) }
+
+        let initialRejection = try await outcome("connect('invalid-peripheral-id')", in: context)
+        XCTAssertTrue(initialRejection.contains("WHOOP_BLE_CAPTURE_SUSPENDED"), initialRejection)
+        module.connectionManager.syncOnBleQueue { XCTAssertTrue(module.captureSuspended) }
+
+        let configure = "configureUpload({userId: 'bridge-test-account', serverURL: 'https://example.com', token: 'test-session', headers: {}})"
+        let configuration = try await outcome(configure, in: context)
+        XCTAssertEqual(configuration, "unexpected success")
+
+        let configuredRejection = try await outcome("connect('invalid-peripheral-id')", in: context)
+        XCTAssertTrue(configuredRejection.contains("INVALID_ID"), configuredRejection)
+        module.connectionManager.syncOnBleQueue { XCTAssertFalse(module.captureSuspended) }
     }
 
     func testQueuedCaptureFailureIsObservedBeforeConnectDispatch() async throws {

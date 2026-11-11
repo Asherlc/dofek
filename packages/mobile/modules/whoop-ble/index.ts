@@ -1,5 +1,6 @@
 import type { EventSubscription } from "expo-modules-core";
 import { z } from "zod";
+import { requireWhoopCleanupToBeResolved } from "../../lib/whoop-cleanup-intent";
 import WhoopBleModule from "./src/WhoopBleModule";
 
 /** A discovered WHOOP strap */
@@ -222,6 +223,7 @@ export function disconnect(): void {
 
 /** Disconnect and clear every account-owned IMU/realtime buffer and parser state. */
 export async function purgeAccountState(deviceErasureCutoff: string): Promise<boolean> {
+  uploadConfigurationGeneration += 1;
   return WhoopBleModule.purgeAccountState(deviceErasureCutoff);
 }
 
@@ -296,7 +298,14 @@ export interface WhoopUploadContext {
 }
 
 /** Configure account-bound native delivery before starting capture. */
+let uploadConfigurationGeneration = 0;
+
 export async function configureUpload(context: WhoopUploadContext): Promise<void> {
+  const generation = uploadConfigurationGeneration;
+  await requireWhoopCleanupToBeResolved();
+  if (generation !== uploadConfigurationGeneration) {
+    throw new Error("WHOOP upload configuration was superseded by account cleanup.");
+  }
   await WhoopBleModule.configureUpload(context);
 }
 
@@ -307,6 +316,7 @@ export async function flushUploads(): Promise<void> {
 
 /** Revoke delivery and await purging the signed-out account's queue. */
 export async function disableUploads(): Promise<void> {
+  uploadConfigurationGeneration += 1;
   await WhoopBleModule.disableUploads();
 }
 

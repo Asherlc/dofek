@@ -62,6 +62,7 @@ final class WhoopBleModuleConnectionManagerDelegateTests: XCTestCase {
         module.connectionManager.syncOnBleQueue {
             module.watchdog = WhoopBleDataWatchdog(queue: module.connectionManager.bleQueue, timeoutSeconds: 0.01)
             module.watchdog.delegate = observer
+            module.captureSuspended = false
             module.connectionManager.setState(.ready)
             module.publishReadyConnection(peripheralId: "test-strap", peripheralName: "WHOOP", wasStreaming: false)
         }

@@ -66,6 +66,34 @@ func outcome(_ call: String, in context: TestAppContext) async throws -> String 
 
 private final class WhoopBridgeModulesProvider: ModulesProvider {
     override func getModuleClasses() -> [ExpoModuleTupleType] {
-        [(WhoopBleModule.self, "WhoopBle")]
+        [(WhoopBleModule.self, "WhoopBle"), (BridgeProbeModule.self, "BridgeProbe")]
     }
+}
+
+final class BridgeProbeModule: Module {
+    func definition() -> ModuleDefinition {
+        Name("BridgeProbe")
+
+        AsyncFunction("probe") { () -> Bool in
+            return true
+        }
+    }
+}
+
+func makeBodyRemovalFailure() throws -> (directory: URL, backup: URL) {
+    let directory = try FileManager.default.url(
+        for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true
+    ).appendingPathComponent("WhoopBleUploads/bodies")
+    let backup = directory.deletingLastPathComponent().appendingPathComponent(UUID().uuidString)
+    try FileManager.default.moveItem(at: directory, to: backup)
+    try Data().write(to: directory)
+    return (directory, backup)
+}
+
+func restoreBodyDirectory(_ directory: URL, backup: URL) throws {
+    guard FileManager.default.fileExists(atPath: backup.path) else { return }
+    if FileManager.default.fileExists(atPath: directory.path) {
+        try FileManager.default.removeItem(at: directory)
+    }
+    try FileManager.default.moveItem(at: backup, to: directory)
 }

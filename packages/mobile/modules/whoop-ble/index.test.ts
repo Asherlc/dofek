@@ -4,15 +4,55 @@ const nativeModule = vi.hoisted(() => ({
   configureUpload: vi.fn(),
   flushUploads: vi.fn(),
   disableUploads: vi.fn(),
+  purgeAccountState: vi.fn(),
   addListener: vi.fn(),
   getDataPathStats: vi.fn(),
   getDeviceSummary: vi.fn(),
 }));
+const secureStore = vi.hoisted(() => ({
+  getItemAsync: vi.fn(),
+  setItemAsync: vi.fn(),
+  deleteItemAsync: vi.fn(),
+  AFTER_FIRST_UNLOCK: "kSecAttrAccessibleAfterFirstUnlock",
+}));
 
 vi.unmock("../whoop-ble");
 vi.mock("./src/WhoopBleModule", () => ({ default: nativeModule }));
+vi.mock("expo-secure-store", () => secureStore);
 
 import { addDeviceStateListener, getDataPathStats, getDeviceSummary } from "./index";
+
+const cleanupIntentKey = "dofek_whoop_cleanup_intent_v1";
+const uploadContext = {
+  userId: "user",
+  token: "secret",
+  serverURL: "https://example.com",
+  headers: { "x-app-version": "1" },
+};
+
+function useSecureStore(values = new Map<string, string>()) {
+  secureStore.getItemAsync.mockImplementation(async (key: string) => values.get(key) ?? null);
+  secureStore.setItemAsync.mockImplementation(async (key: string, value: string) => {
+    values.set(key, value);
+  });
+  secureStore.deleteItemAsync.mockImplementation(async (key: string) => {
+    values.delete(key);
+  });
+  return values;
+}
+
+beforeEach(() => {
+  nativeModule.configureUpload.mockReset().mockResolvedValue(undefined);
+  nativeModule.flushUploads.mockReset().mockResolvedValue(undefined);
+  nativeModule.disableUploads.mockReset().mockResolvedValue(undefined);
+  nativeModule.purgeAccountState.mockReset().mockResolvedValue(true);
+  nativeModule.addListener.mockReset();
+  nativeModule.getDataPathStats.mockReset();
+  nativeModule.getDeviceSummary.mockReset();
+  secureStore.getItemAsync.mockReset().mockResolvedValue(null);
+  secureStore.setItemAsync.mockReset().mockResolvedValue(undefined);
+  secureStore.deleteItemAsync.mockReset().mockResolvedValue(undefined);
+});
 
 function makeBufferStreamDiagnostics() {
   return {
@@ -111,12 +151,6 @@ describe("WhoopBle native bridge", () => {
     });
     expect((await getDataPathStats()).buffers.blockedUploadStreams).toEqual(["sensorRecords"]);
   });
-  beforeEach(() => {
-    nativeModule.addListener.mockReset();
-    nativeModule.getDataPathStats.mockReset();
-    nativeModule.getDeviceSummary.mockReset();
-  });
-
   it("preserves validated capture diagnostics and durable queue metadata", async () => {
     const stats = makeDataPathStats();
     nativeModule.getDataPathStats.mockResolvedValue(stats);
@@ -261,4 +295,82 @@ describe("native upload ownership", () => {
     });
     await expect(bridge.disableUploads()).rejects.toThrow("queue unavailable");
   });
+});
+
+describe("WHOOP cleanup intent configuration fence", () => {
+  it("dispatches a replacement configuration after disable enters the native FIFO", async () => {
+    vi.resetModules();
+    const persisted = useSecureStore();
+    const helper = await import("../../lib/whoop-cleanup-intent");
+    await helper.persistWhoopCleanupIntent();
+    expect(persisted.has(cleanupIntentKey)).toBe(true);
+    const bridge = await import("./index");
+    let finishCleanup!: () => void;
+    const pendingCleanup = new Promise<void>((resolve) => {
+      finishCleanup = resolve;
+    });
+    nativeModule.disableUploads.mockImplementationOnce(() => pendingCleanup);
+    const cleanup = bridge.disableUploads();
+    const configuring = bridge.configureUpload(uploadContext);
+    try {
+      await vi.waitFor(() => expect(nativeModule.configureUpload).toHaveBeenCalledOnce());
+      expect(nativeModule.configureUpload.mock.invocationCallOrder[0]).toBeGreaterThan(
+        nativeModule.disableUploads.mock.invocationCallOrder[0] ?? 0,
+      );
+    } finally {
+      finishCleanup();
+      await Promise.all([cleanup, configuring]);
+    }
+  });
+
+  it("blocks same-account configuration when an unknown intent survives a fresh module load", async () => {
+    useSecureStore(new Map([[cleanupIntentKey, "pending-cleanup"]]));
+    vi.resetModules();
+    const bridge = await import("./index");
+
+    await expect(bridge.configureUpload(uploadContext)).rejects.toThrow();
+    expect(nativeModule.configureUpload).not.toHaveBeenCalled();
+  });
+
+  it("rejects configuration when reading cleanup intent fails", async () => {
+    const readFailure = new Error("SecureStore is unavailable");
+    secureStore.getItemAsync.mockRejectedValueOnce(readFailure);
+    vi.resetModules();
+    const bridge = await import("./index");
+
+    await expect(bridge.configureUpload(uploadContext)).rejects.toBe(readFailure);
+    expect(nativeModule.configureUpload).not.toHaveBeenCalled();
+  });
+
+  it.each(["disable", "purge"] as const)(
+    "does not dispatch a configuration whose delayed intent read is overtaken by %s",
+    async (cleanup) => {
+      let finishRead: ((value: string | null) => void) | undefined;
+      secureStore.getItemAsync.mockImplementationOnce(
+        () => new Promise<string | null>((resolve) => (finishRead = resolve)),
+      );
+      vi.resetModules();
+      const bridge = await import("./index");
+      const configuring = bridge.configureUpload(uploadContext);
+      try {
+        await vi.waitFor(() => expect(secureStore.getItemAsync).toHaveBeenCalledOnce());
+        expect(nativeModule.configureUpload).not.toHaveBeenCalled();
+
+        if (cleanup === "disable") {
+          await bridge.disableUploads();
+          expect(nativeModule.disableUploads).toHaveBeenCalledOnce();
+        } else {
+          await bridge.purgeAccountState("2026-11-11T00:00:00.000Z");
+          expect(nativeModule.purgeAccountState).toHaveBeenCalledOnce();
+        }
+
+        finishRead?.(null);
+        await expect(configuring).rejects.toThrow();
+        expect(nativeModule.configureUpload).not.toHaveBeenCalled();
+      } finally {
+        finishRead?.(null);
+        await Promise.allSettled([configuring]);
+      }
+    },
+  );
 });

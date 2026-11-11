@@ -10,8 +10,8 @@ import {
 import { purgeAccountState as purgeWatchMotionAccountState } from "../modules/watch-motion";
 import { purgeAccountState as purgeWhoopBleAccountState } from "../modules/whoop-ble";
 import { clearMobileAccountErasurePreparation } from "./account-erasure-storage";
-import { clearSessionToken } from "./auth";
 import type { AccountErasureCleanupLease } from "./auth-context";
+import { clearSessionToken } from "./auth-session";
 import { teardownBackgroundAccelerometerSync } from "./background-accelerometer-sync";
 import { teardownBackgroundBleHeartRateSync } from "./background-ble-heart-rate-sync";
 import { teardownBackgroundHealthKitSync } from "./background-health-kit-sync";

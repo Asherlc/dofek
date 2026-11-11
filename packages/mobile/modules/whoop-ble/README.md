@@ -84,12 +84,26 @@ rows only after a valid server acknowledgment; failures retain the rows.
 SQLite provides [atomic commits](https://sqlite.org/isolation.html).
 
 `configureUpload()`, `flushUploads()`, `disableUploads()`, `getDataPathStats()` and `getDeviceSummary()`
-return Promises. They use Expo's stock
+return Promises. They share one module-owned serial queue through Expo's stock
 [`AsyncFunction`](https://docs.expo.dev/modules/module-api/#asyncfunction)
-to keep queue waits and disk work off the JavaScript thread. Await configuration
+to keep queue waits and disk work off the JavaScript thread and other modules'
+async queue. Await configuration
 before starting capture and await disable before completing session cleanup.
 Disable resolves only after the existing native purge and body removal return;
-failures reject. This does not change synchronous sample persistence.
+failures reject and block later configuration until an explicit successful
+disable. Capture starts suspended until configuration succeeds. This does not
+change synchronous sample persistence.
+
+[Session persistence](../../lib/auth-session.ts) can adopt replacement credentials
+after removing the old credentials and persisting an opaque
+[cleanup intent](../../lib/whoop-cleanup-intent.ts), without waiting for the bulk
+purge. Live replacement configuration queues behind native cleanup. After an app
+restart, unfinished cleanup blocks WHOOP configuration while signed-in navigation
+remains available; sign out to perform explicit cleanup before configuring again.
+The intent uses [SecureStore](https://docs.expo.dev/versions/latest/sdk/securestore/)
+and clears only for its matching successful cleanup. Account deletion retains its
+separate awaited cleanup lease. Native cleanup and credential failures remain
+awaited and reported; there is no automatic purge retry.
 
 Automatic reconnection keeps the Core Bluetooth connection request pending
 while the strap is unavailable. Service discovery and notification subscription

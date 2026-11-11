@@ -13,9 +13,11 @@ import RNSentry
 public class WhoopBleModule: Module {
     private static let deviceErasureCutoffKey = "dofek_device_erasure_cutoff_v1"
 
+    private let moduleQueue = DispatchQueue(label: "com.dofek.whoop-ble.module")
     internal let connectionManager = WhoopBleConnectionManager()
     internal var captureFailure: String?
-    internal var captureSuspended = false
+    internal var captureSuspended = true
+    private var cleanupFailure: String?
     internal var uploader: WhoopBleBackgroundUploader {
         get throws { try WhoopBleUploadRuntime.shared() }
     }
@@ -146,7 +148,7 @@ public class WhoopBleModule: Module {
 
         AsyncFunction("getDeviceSummary") { () -> [String: Any] in
             try self.deviceSummaryPayload()
-        }
+        }.runOnQueue(self.moduleQueue)
 
         AsyncFunction("getDataPathStats") { () -> [String: Any] in
             try self.connectionManager.syncOnBleQueue {
@@ -183,7 +185,7 @@ public class WhoopBleModule: Module {
                 stats.merge(self.captureDiagnostics.payload) { _, captured in captured }
                 return stats
             }
-        }
+        }.runOnQueue(self.moduleQueue)
 
         // MARK: - Realtime HR / Optical commands
 
@@ -226,6 +228,11 @@ public class WhoopBleModule: Module {
                   let headers = context["headers"] as? [String: String] else {
                 throw WhoopUploadError(message: "WHOOP upload configuration is incomplete")
             }
+            if let cleanupFailure = self.cleanupFailure {
+                throw WhoopUploadError(
+                    message: "WHOOP upload configuration is blocked because cleanup failed: \(cleanupFailure)"
+                )
+            }
             do {
                 self.connectionManager.syncOnBleQueue { self.captureSuspended = true }
                 try self.uploader.configure(userId: userId, serverURL: serverURL, token: token, headers: headers)
@@ -237,14 +244,14 @@ public class WhoopBleModule: Module {
                 SentrySDK.capture(error: error)
                 throw error
             }
-        }
+        }.runOnQueue(self.moduleQueue)
 
         AsyncFunction("flushUploads") {
             do { try self.uploader.flush() } catch {
                 SentrySDK.capture(error: error)
                 throw error
             }
-        }
+        }.runOnQueue(self.moduleQueue)
 
         AsyncFunction("disableUploads") {
             let operationId = UUID().uuidString
@@ -272,7 +279,9 @@ public class WhoopBleModule: Module {
                 recordStage("uploader_disable")
                 try uploader.disable(onStage: recordStage)
                 recordStage("completed")
+                self.cleanupFailure = nil
             } catch {
+                self.cleanupFailure = error.localizedDescription
                 SentrySDK.logger.error("WHOOP cleanup failed", attributes: [
                     "operation": "disableUploads", "operationId": operationId,
                     "stage": "failed", "failedStage": stage,
@@ -282,7 +291,7 @@ public class WhoopBleModule: Module {
                 SentrySDK.capture(error: error)
                 throw error
             }
-        }
+        }.runOnQueue(self.moduleQueue)
 
         // MARK: - Background reconnection
 

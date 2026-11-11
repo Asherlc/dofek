@@ -12,12 +12,10 @@ import {
 } from "react";
 import { AppState } from "react-native";
 import { clearMobileAccountErasurePreparation } from "./account-erasure-storage";
+import { type AuthUser, logout as authLogout, fetchCurrentUser } from "./auth";
 import {
-  type AuthUser,
-  logout as authLogout,
   clearSessionToken,
   createAccountErasureCleanupNonce,
-  fetchCurrentUser,
   getOrCreateSessionOwnerNonce,
   getSavedSessionUser,
   getSessionToken,
@@ -25,7 +23,7 @@ import {
   rotateSessionOwnerNonce,
   saveSessionToken,
   saveSessionUser,
-} from "./auth";
+} from "./auth-session";
 import { removeMobileQueryCache } from "./mobile-query-persistence";
 import { isSecureStoreAccessibilityError } from "./secure-store-access";
 import { SERVER_URL } from "./server";
