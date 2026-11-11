@@ -75,7 +75,8 @@ read-only mirror of its board/gym directory through the
 The reader uses the SDK's [single-reader pool setting](https://github.com/powersync-ja/powersync-js/blob/main/packages/node/src/db/options.ts)
 for its serial directory queries. Extra database threads inherit Node's
 [preload arguments](https://nodejs.org/api/worker_threads.html#new-workerfilename-options)
-and duplicate telemetry initialization within the sync worker's memory budget.
+and duplicate telemetry initialization within the sync worker's memory budget;
+see the [production measurements](production-incident-baseline.md#2026-11-10--kilter-recovery-blocked-by-directory-reader-memory).
 The authenticated service advertised `global_gyms` as its directory stream;
 the [reader](../src/lib/kilter-board-directory.ts) subscribes to that stream
 without downloading the unrelated climb catalogue. The source field mapping
