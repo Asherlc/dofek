@@ -43,8 +43,13 @@ for (const source of sources) {
 The native provider is queried first when the seed has an external ID. Its
 current name, aliases, references, and locations inform subsequent discovery;
 the original seed is unchanged. Provider results validate before matching.
-An unsuccessful provider request rejects the search: callers own error reporting,
-user messages, caching, scheduling, and retry policy.
+An unsuccessful provider request rejects with `CatalogueSearchError`, an
+[`AggregateError`](https://tc39.es/ecma262/multipage/control-abstraction-objects.html#sec-aggregate-error-objects)
+whose `errors` retains the original failures, whose `sources` retains successful
+source results, and whose message has one display line per failed provider.
+A failed native lookup leaves other discovery on the original
+seed; it is not requested twice. Callers own error reporting, user messages,
+caching, scheduling, and retry policy; see the [search implementation](src/search.ts).
 
 All seed fields shown above are required; `externalId`, `sourceUrl`, `name`,
 `kind`, and `setting` may be null. Optional `aliases` and `references` carry
@@ -68,7 +73,7 @@ context; see the [schemas](src/contracts.ts) and [plain-text projection](src/are
 | KAYA | Inline public and authenticated native destination/area/subarea fields supply descriptions, access text, type and access flags. Gym profiles retain address and website context. The separately verified native selection excludes unsupported public-only short descriptions. Parent references retain native IDs; no recursive location query is added. See the [reader](src/kaya.ts) and [native location client](https://set.plastick.rocks/location-11950.js.map). |
 | Mountain Project | A native route's local area and its immediate parent supply source sections, access notes and route-type counts. Name-discovery hits lack a proven parent ID, so their area context remains unavailable rather than guessed. See the [reader](src/mountain-project.ts). |
 | OpenBeta | The local area and immediate parent supply description/location text and source grade/discipline totals. Area reads are shared within a search and validate native UUIDs. See the [reader](src/openbeta.ts) and upstream [Area schema](https://github.com/OpenBeta/openbeta-graphql/blob/develop/src/graphql/schema/Area.gql). |
-| theCrag | Proven hierarchy IDs supply area pages with matching canonical native IDs. Only `.regions__read > .regions__inner > .node-info` owns area sections/tags; inherited headers also apply to tags without an inheritance title. Type and displayed route totals retain their source meaning. See the [reader](src/thecrag.ts), [tagging definitions](https://www.thecrag.com/en/article/tagging) and [area documentation](https://www.thecrag.com/en/article/documentingacrag). |
+| theCrag | Proven hierarchy IDs supply area pages with matching canonical native IDs, or named canonical URLs verified against the page and final breadcrumb native IDs ([North America example](https://www.thecrag.com/en/climbing/world/area/11737675)). Only `.regions__read > .regions__inner > .node-info` owns area sections/tags; inherited headers also apply to tags without an inheritance title. Type and displayed route totals retain their source meaning. See the [reader](src/thecrag.ts), [tagging definitions](https://www.thecrag.com/en/article/tagging) and [area documentation](https://www.thecrag.com/en/article/documentingacrag). |
 | 8a.nu / Vertical-Life | Verified crag and broader area records supply descriptions/access, crag flags with literal counts, and source statistics. Native crag/area identities are checked before attaching context. See the [reader](src/vertical-life.ts). |
 
 Absent fields stay absent or nullable; each reader retains its observed source

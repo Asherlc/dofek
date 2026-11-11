@@ -2,16 +2,274 @@ import { randomUUID } from "node:crypto";
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { ImageDiscovery } from "../activity-images/types.ts";
+import { dispatchActivityImageOutbox } from "../jobs/activity-image-outbox.ts";
 import {
+  AccountErasureUserFencedError,
+  withAccountErasureUserWriteFence,
+} from "./account-erasure.ts";
+import {
+  claimActivityImageWork,
   completeActivityImageWork,
+  failActivityImageWork,
   listPendingActivityImageWork,
   loadActivityImageWork,
+  reconcileActivityImageWork,
   recordActivityImageDiscovery,
   recordClimbingImageDiscovery,
   retireActivityImages,
 } from "./activity-images.ts";
 import { activityImage, activityImageWork } from "./schema/activity-images.ts";
-import { setupTestDatabase, type TestContext } from "./test-helpers.ts";
+import { hasDatabaseLockWaiter, setupTestDatabase, type TestContext } from "./test-helpers.ts";
+
+describe("activity image claims", () => {
+  let ctx: TestContext;
+  beforeAll(async () => {
+    ctx = await setupTestDatabase();
+    await ctx.db.execute(
+      sql`INSERT INTO fitness.provider(id,name) VALUES('image-claim-test','Image claims')`,
+    );
+  });
+  afterAll(async () => {
+    await ctx?.cleanup();
+  });
+
+  async function createWork() {
+    const userId = randomUUID();
+    const activityId = randomUUID();
+    await ctx.db.execute(
+      sql`INSERT INTO fitness.user_profile(id,name) VALUES(${userId},'Claim user')`,
+    );
+    await ctx.db.execute(
+      sql`INSERT INTO fitness.provider_connection(user_id,provider_id) VALUES(${userId},'image-claim-test')`,
+    );
+    await ctx.db.execute(
+      sql`INSERT INTO fitness.activity(id,user_id,provider_id,external_id,canonical_type,provider_type,started_at) VALUES(${activityId},${userId},'image-claim-test',${activityId},'cycling','Ride',now())`,
+    );
+    await recordActivityImageDiscovery(ctx.db, {
+      userId,
+      activityId,
+      providerId: "image-claim-test",
+      discovery: {
+        coverage: "complete",
+        expectedCount: 1,
+        reason: null,
+        images: [
+          {
+            sourceId: "photo",
+            kind: "photo",
+            caption: null,
+            position: 0,
+            variants: [{ url: "https://cdn.example/photo.jpg", width: 100, height: 100 }],
+            revision: null,
+            raw: {},
+          },
+        ],
+      },
+    });
+    const pending = (await listPendingActivityImageWork(ctx.db)).find(
+      (work) => work.userId === userId,
+    );
+    if (!pending) throw Error("Missing pending claim work");
+    const work = await loadActivityImageWork(ctx.db, pending.id, userId);
+    if (!work) throw Error("Missing claim work");
+    return work;
+  }
+
+  it("claims work published before the outbox dispatch transaction commits", async () => {
+    const work = await createWork();
+    let claimOutcome: Promise<unknown> | undefined;
+    await dispatchActivityImageOutbox(ctx.db, {
+      async add() {
+        // Redis can deliver immediately while the dispatcher still holds the user fence.
+        claimOutcome = claimActivityImageWork(ctx.db, work).then(
+          (claimed) => ({ claimed }),
+          (error: unknown) => ({ error }),
+        );
+        await expect.poll(() => hasDatabaseLockWaiter(ctx.db)).toBe(true);
+      },
+    });
+    expect(await claimOutcome).toEqual({ claimed: true });
+    const [stored] = await ctx.db
+      .select()
+      .from(activityImageWork)
+      .where(eq(activityImageWork.id, work.id));
+    expect(stored).toMatchObject({
+      state: "processing",
+      attempts: 1,
+      dispatchedAt: expect.any(Date),
+    });
+  });
+
+  it("allows only one concurrent claimant to increment the attempt count", async () => {
+    const work = await createWork();
+    const claims = await Promise.all([
+      claimActivityImageWork(ctx.db, work),
+      claimActivityImageWork(ctx.db, work),
+    ]);
+    expect(claims.sort()).toEqual([false, true]);
+    const [stored] = await ctx.db
+      .select()
+      .from(activityImageWork)
+      .where(eq(activityImageWork.id, work.id));
+    expect(stored).toMatchObject({ state: "processing", attempts: 1 });
+  });
+
+  it("claims delayed work while stale-dispatch reconciliation waits for its user fence", async () => {
+    const work = await createWork();
+    await ctx.db.execute(
+      sql`UPDATE fitness.activity_image_work SET dispatched_at=now()-interval '16 minutes' WHERE id=${work.id}`,
+    );
+    let reconciliationOutcome: Promise<unknown> | undefined;
+    await withAccountErasureUserWriteFence(ctx.db, work.userId, async (tx) => {
+      reconciliationOutcome = reconcileActivityImageWork(ctx.db).then(
+        () => ({ reconciled: true }),
+        (error: unknown) => ({ error }),
+      );
+      await expect.poll(() => hasDatabaseLockWaiter(ctx.db)).toBe(true);
+      expect(await claimActivityImageWork(tx, work)).toBe(true);
+    });
+    expect(await reconciliationOutcome).toEqual({ reconciled: true });
+    const [stored] = await ctx.db
+      .select()
+      .from(activityImageWork)
+      .where(eq(activityImageWork.id, work.id));
+    expect(stored).toMatchObject({ state: "processing", attempts: 1 });
+  });
+
+  it("leaves future retries untouched until they become available", async () => {
+    const work = await createWork();
+    await ctx.db.execute(
+      sql`UPDATE fitness.activity_image_work SET state='retryable_failure',available_at=now()+interval '1 hour' WHERE id=${work.id}`,
+    );
+    expect(await claimActivityImageWork(ctx.db, work)).toBe(false);
+    const [waiting] = await ctx.db
+      .select()
+      .from(activityImageWork)
+      .where(eq(activityImageWork.id, work.id));
+    expect(waiting).toMatchObject({ state: "retryable_failure", attempts: 0 });
+    await ctx.db.execute(
+      sql`UPDATE fitness.activity_image_work SET available_at=now()-interval '1 second' WHERE id=${work.id}`,
+    );
+    expect(await claimActivityImageWork(ctx.db, work)).toBe(true);
+  });
+
+  it("finishes a failed acquisition while lease reconciliation holds its user fence", async () => {
+    const work = await createWork();
+    await claimActivityImageWork(ctx.db, work);
+    await ctx.db.execute(
+      sql`UPDATE fitness.activity_image_work SET processing_at=now()-interval '16 minutes' WHERE id=${work.id}`,
+    );
+    let failureOutcome: Promise<unknown> | undefined;
+    await withAccountErasureUserWriteFence(ctx.db, work.userId, async (tx) => {
+      failureOutcome = failActivityImageWork(ctx.db, work, true, "image_download_failed").then(
+        () => ({ failed: true }),
+        (error: unknown) => ({ error }),
+      );
+      await expect.poll(() => hasDatabaseLockWaiter(ctx.db)).toBe(true);
+      await reconcileActivityImageWork(tx);
+    });
+    expect(await failureOutcome).toEqual({ failed: true });
+    const [stored] = await ctx.db
+      .select()
+      .from(activityImageWork)
+      .where(eq(activityImageWork.id, work.id));
+    expect(stored).toMatchObject({
+      state: "retryable_failure",
+      attempts: 1,
+      errorCode: "lease_expired",
+    });
+  });
+
+  it.each([
+    { retryable: true, attempts: 0, expectedState: "retryable_failure" },
+    { retryable: true, attempts: 4, expectedState: "terminal_failure" },
+    { retryable: false, attempts: 0, expectedState: "terminal_failure" },
+  ])(
+    "records a failure with retryable=$retryable after $attempts prior attempts",
+    async ({ retryable, attempts, expectedState }) => {
+      const work = await createWork();
+      await ctx.db.execute(
+        sql`UPDATE fitness.activity_image_work SET attempts=${attempts} WHERE id=${work.id}`,
+      );
+      const loaded = await loadActivityImageWork(ctx.db, work.id, work.userId);
+      if (!loaded) throw Error("Missing failure work");
+      await claimActivityImageWork(ctx.db, loaded);
+      await failActivityImageWork(ctx.db, loaded, retryable, "image_download_failed");
+      const [stored] = await ctx.db
+        .select()
+        .from(activityImageWork)
+        .where(eq(activityImageWork.id, work.id));
+      expect(stored).toMatchObject({
+        state: expectedState,
+        attempts: attempts + 1,
+        errorCode: "image_download_failed",
+        dispatchedAt: null,
+        processingAt: null,
+      });
+    },
+  );
+
+  it.each([
+    {
+      state: "processing",
+      attempts: 4,
+      expectedState: "retryable_failure",
+      errorCode: "lease_expired",
+    },
+    {
+      state: "processing",
+      attempts: 5,
+      expectedState: "terminal_failure",
+      errorCode: "lease_expired",
+    },
+    { state: "pending", attempts: 0, expectedState: "pending", errorCode: null },
+    {
+      state: "retryable_failure",
+      attempts: 3,
+      expectedState: "retryable_failure",
+      errorCode: null,
+    },
+  ])(
+    "reconciles expired $state work with $attempts attempts",
+    async ({ state, attempts, expectedState, errorCode }) => {
+      const work = await createWork();
+      const otherOwnerWork = await createWork();
+      await ctx.db.execute(sql`UPDATE fitness.activity_image_work
+      SET state=${state},attempts=${attempts},dispatched_at=now()-interval '16 minutes',
+          processing_at=CASE WHEN ${state}='processing' THEN now()-interval '16 minutes' ELSE NULL END
+      WHERE id IN (${work.id},${otherOwnerWork.id})`);
+      await reconcileActivityImageWork(ctx.db);
+      for (const workId of [work.id, otherOwnerWork.id]) {
+        const [stored] = await ctx.db
+          .select()
+          .from(activityImageWork)
+          .where(eq(activityImageWork.id, workId));
+        expect(stored).toMatchObject({
+          state: expectedState,
+          attempts,
+          dispatchedAt: null,
+          processingAt: null,
+          errorCode,
+        });
+      }
+    },
+  );
+
+  it("rejects claims after account erasure is requested", async () => {
+    const work = await createWork();
+    await ctx.db.execute(
+      sql`INSERT INTO fitness.account_erasure_request(user_id,user_hash,user_hash_key_id,write_fence_hash,status_token_hash,replay_retained_until,completion_deadline) VALUES(${work.userId},${randomUUID()},'test',encode(public.digest(${work.userId},'sha256'),'hex'),${randomUUID()},now()+interval '1 day',now()+interval '2 days')`,
+    );
+    await expect(claimActivityImageWork(ctx.db, work)).rejects.toBeInstanceOf(
+      AccountErasureUserFencedError,
+    );
+    const [stored] = await ctx.db
+      .select()
+      .from(activityImageWork)
+      .where(eq(activityImageWork.id, work.id));
+    expect(stored).toMatchObject({ state: "pending", attempts: 0, processingAt: null });
+  });
+});
 
 describe("activity image persistence", () => {
   let ctx: TestContext;

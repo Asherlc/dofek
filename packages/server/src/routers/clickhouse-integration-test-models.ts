@@ -1,4 +1,5 @@
 import { buildActivitySensorSummaryRowsTableSql } from "../../../../src/db/clickhouse-activity-sensor-summary.ts";
+import { createMigration as createHealthSensorMigration } from "../../../../src/db/clickhouse-migrations/0111_daily_health_sensor.ts";
 
 export interface IsolatedClickHouseDatabases {
   analytics: string;
@@ -34,11 +35,10 @@ export const clickHouseMigrationAnalyticsViewNames = [
   "analytics.daily_activity_load",
   "analytics.daily_strain",
   "analytics.daily_body_measurement",
-  "analytics.healthspan_activity_zone_minutes",
-  "analytics.weekly_healthspan",
   "analytics.activity_trend_daily",
 ] as const;
 export const analyticsBuildOrder = [
+  "analytics.daily_health_sensor",
   "analytics.v_activity",
   "analytics.v_activity_members",
   "analytics.v_sleep",
@@ -62,12 +62,15 @@ export const analyticsBuildOrder = [
   "analytics.daily_activity_load",
   "analytics.daily_strain",
   "analytics.daily_body_measurement",
-  "analytics.healthspan_activity_zone_minutes",
-  "analytics.weekly_healthspan",
   "analytics.activity_trend_daily",
 ] as const;
 
 export function buildTestAnalyticsTableStatement(viewName: string): string {
+  if (viewName.endsWith(".daily_health_sensor")) {
+    return createHealthSensorMigration()
+      .statements.join("\n")
+      .replaceAll("analytics.daily_health_sensor", viewName);
+  }
   const columnDefinitionsByViewName: Record<string, string> = {
     v_activity: `id UUID,
 provider_id String,
@@ -470,29 +473,6 @@ workload_ratio Nullable(Float64),
 is_deleted UInt8,
 refresh_version UInt64,
 refreshed_at DateTime64(9)`,
-    healthspan_activity_zone_minutes: `activity_id UUID,
-user_id UUID,
-started_at DateTime64(6, 'UTC'),
-ended_at DateTime64(6, 'UTC'),
-aerobic_minutes Nullable(Float64),
-high_intensity_minutes Nullable(Float64),
-is_deleted UInt8,
-refresh_version UInt64,
-refreshed_at DateTime64(9)`,
-    weekly_healthspan: `user_id UUID,
-week_start Date,
-avg_sleep_min Nullable(Float64),
-bedtime_stddev_min Nullable(Float64),
-avg_resting_hr Nullable(Float64),
-avg_steps Nullable(Float64),
-latest_vo2max Nullable(Float64),
-weekly_aerobic_min Nullable(Float64),
-weekly_high_intensity_min Nullable(Float64),
-sessions_per_week Nullable(Float64),
-weight_kg Nullable(Float64),
-body_fat_pct Nullable(Float64),
-refresh_version UInt64,
-refreshed_at DateTime64(9)`,
     activity_trend_daily: `user_id UUID,
 bucket_date Date,
 avg_hr Nullable(Float64),
@@ -638,8 +618,6 @@ refreshed_at DateTime64(9)`,
     shortViewName === "daily_body_measurement" ||
     shortViewName === "daily_activity_load" ||
     shortViewName === "daily_strain" ||
-    shortViewName === "healthspan_activity_zone_minutes" ||
-    shortViewName === "weekly_healthspan" ||
     shortViewName === "provider_stats" ||
     shortViewName === "hiking_activity" ||
     shortViewName === "activity_power_curve" ||
@@ -670,30 +648,27 @@ refreshed_at DateTime64(9)`,
                 ? "(user_id, date)"
                 : shortViewName === "daily_body_measurement"
                   ? "(user_id, measurement_id)"
-                  : shortViewName === "daily_activity_load" ||
-                      shortViewName === "healthspan_activity_zone_minutes"
+                  : shortViewName === "daily_activity_load"
                     ? "(user_id, activity_id)"
                     : shortViewName === "daily_strain"
                       ? "(user_id, date)"
-                      : shortViewName === "weekly_healthspan"
-                        ? "(user_id, week_start)"
-                        : shortViewName === "provider_stats"
-                          ? "(user_id, provider_id)"
-                          : shortViewName === "activity_power_curve" ||
-                              shortViewName === "activity_pace_curve"
-                            ? "(user_id, activity_id, duration_seconds)"
-                            : shortViewName === "hiking_activity" ||
-                                shortViewName === "activity_heart_rate_distribution" ||
-                                shortViewName === "activity_aerobic_efficiency" ||
-                                shortViewName === "activity_polarization_zones"
+                      : shortViewName === "provider_stats"
+                        ? "(user_id, provider_id)"
+                        : shortViewName === "activity_power_curve" ||
+                            shortViewName === "activity_pace_curve"
+                          ? "(user_id, activity_id, duration_seconds)"
+                          : shortViewName === "hiking_activity" ||
+                              shortViewName === "activity_heart_rate_distribution" ||
+                              shortViewName === "activity_aerobic_efficiency" ||
+                              shortViewName === "activity_polarization_zones"
+                            ? "(user_id, activity_id)"
+                            : shortViewName === "cycling_activity"
                               ? "(user_id, activity_id)"
-                              : shortViewName === "cycling_activity"
-                                ? "(user_id, activity_id)"
-                                : shortViewName === "daily_cycling"
-                                  ? "(user_id, date)"
-                                  : shortViewName === "resting_heart_rate_sleep_window"
-                                    ? "(user_id, sleep_id)"
-                                    : "tuple()";
+                              : shortViewName === "daily_cycling"
+                                ? "(user_id, date)"
+                                : shortViewName === "resting_heart_rate_sleep_window"
+                                  ? "(user_id, sleep_id)"
+                                  : "tuple()";
   return `CREATE TABLE IF NOT EXISTS ${viewName} (
 ${columnDefinitions}
 )

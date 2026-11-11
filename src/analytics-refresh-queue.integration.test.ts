@@ -18,6 +18,55 @@ function deferred() {
 }
 
 describe("analytics refresh queue (Redis integration)", () => {
+  it("drains the active build on shutdown and leaves its follow-up for the replacement", async () => {
+    const connection = getRedisConnection();
+    const queue = new Queue<AnalyticsRefreshJobData>(`test-analytics-drain-${randomUUID()}`, {
+      connection,
+    });
+    const controller = new AbortController();
+    const started = deferred();
+    const finish = deferred();
+    const errors: Error[] = [];
+    let builds = 0;
+    let drained = false;
+    const consumer = runAnalyticsRefreshJobs({
+      queue,
+      connection,
+      intervalMilliseconds: 900_000,
+      signal: controller.signal,
+      reportFailure: (error) => errors.push(error),
+      processRefresh: async () => {
+        builds += 1;
+        started.resolve();
+        await finish.promise;
+      },
+    }).then(() => {
+      drained = true;
+    });
+    try {
+      await started.promise;
+      await enqueueAnalyticsRefresh(queue);
+      controller.abort();
+      expect(await queue.getActiveCount()).toBe(1);
+      expect(drained).toBe(false);
+
+      finish.resolve();
+      await consumer;
+
+      expect(drained).toBe(true);
+      expect(builds).toBe(1);
+      const waiting = await queue.getWaiting();
+      expect(waiting.filter((job) => job.name === "analytics-refresh")).toHaveLength(1);
+      expect(errors).toEqual([]);
+    } finally {
+      controller.abort();
+      finish.resolve();
+      await consumer;
+      await queue.obliterate();
+      await queue.close();
+    }
+  });
+
   it("durably combines requests, wakes immediately, and serializes the next batch across consumers", async () => {
     const connection = getRedisConnection();
     const queue = new Queue<AnalyticsRefreshJobData>(`test-analytics-${randomUUID()}`, {

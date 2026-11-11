@@ -1,0 +1,870 @@
+[
+  {
+    "sample": 0,
+    "at": "2026-11-09T01:35:05Z",
+    "freeBytes": 43682246656,
+    "rootFreeBytes": 7708409856,
+    "kafkaAllocatedBytes": 24465408,
+    "nativeSourceLogBytes": null,
+    "totalLag": 0,
+    "stableGroups": 6,
+    "healthyApplicationTasks": 10,
+    "archiveOutputs": [
+      {
+        "name": "dofek_metric-stream-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-live-r2-archive",
+        "successfulOutputs": 12,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-history-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      }
+    ]
+  },
+  {
+    "sample": 1,
+    "at": "2026-11-09T01:36:39Z",
+    "freeBytes": 43662913536,
+    "rootFreeBytes": 7699333120,
+    "kafkaAllocatedBytes": 24477696,
+    "nativeSourceLogBytes": null,
+    "totalLag": 0,
+    "stableGroups": 6,
+    "healthyApplicationTasks": 10,
+    "archiveOutputs": [
+      {
+        "name": "dofek_metric-stream-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-live-r2-archive",
+        "successfulOutputs": 12,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-history-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      }
+    ]
+  },
+  {
+    "sample": 2,
+    "at": "2026-11-09T01:37:39Z",
+    "freeBytes": 43647827968,
+    "rootFreeBytes": 7698911232,
+    "kafkaAllocatedBytes": 24485888,
+    "nativeSourceLogBytes": 23595268,
+    "totalLag": 0,
+    "stableGroups": 6,
+    "healthyApplicationTasks": 10,
+    "archiveOutputs": [
+      {
+        "name": "dofek_metric-stream-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-live-r2-archive",
+        "successfulOutputs": 12,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-history-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      }
+    ]
+  },
+  {
+    "sample": 3,
+    "at": "2026-11-09T01:38:40Z",
+    "freeBytes": 43688296448,
+    "rootFreeBytes": 7698370560,
+    "kafkaAllocatedBytes": 24498176,
+    "nativeSourceLogBytes": 23595268,
+    "totalLag": 0,
+    "stableGroups": 6,
+    "healthyApplicationTasks": 10,
+    "archiveOutputs": [
+      {
+        "name": "dofek_metric-stream-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-live-r2-archive",
+        "successfulOutputs": 12,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-history-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      }
+    ]
+  },
+  {
+    "sample": 4,
+    "at": "2026-11-09T01:39:40Z",
+    "freeBytes": 43690549248,
+    "rootFreeBytes": 7697891328,
+    "kafkaAllocatedBytes": 24506368,
+    "nativeSourceLogBytes": 23595268,
+    "totalLag": 0,
+    "stableGroups": 6,
+    "healthyApplicationTasks": 10,
+    "archiveOutputs": [
+      {
+        "name": "dofek_metric-stream-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-live-r2-archive",
+        "successfulOutputs": 12,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-history-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      }
+    ]
+  },
+  {
+    "sample": 5,
+    "at": "2026-11-09T01:40:39Z",
+    "freeBytes": 43681136640,
+    "rootFreeBytes": 7697293312,
+    "kafkaAllocatedBytes": 24514560,
+    "nativeSourceLogBytes": 23595268,
+    "totalLag": 0,
+    "stableGroups": 6,
+    "healthyApplicationTasks": 10,
+    "archiveOutputs": [
+      {
+        "name": "dofek_metric-stream-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-live-r2-archive",
+        "successfulOutputs": 12,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-history-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      }
+    ]
+  },
+  {
+    "sample": 6,
+    "at": "2026-11-09T01:41:39Z",
+    "freeBytes": 43667480576,
+    "rootFreeBytes": 7696924672,
+    "kafkaAllocatedBytes": 24522752,
+    "nativeSourceLogBytes": 23595268,
+    "totalLag": 0,
+    "stableGroups": 6,
+    "healthyApplicationTasks": 10,
+    "archiveOutputs": [
+      {
+        "name": "dofek_metric-stream-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-live-r2-archive",
+        "successfulOutputs": 12,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-history-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      }
+    ]
+  },
+  {
+    "sample": 7,
+    "at": "2026-11-09T01:42:39Z",
+    "freeBytes": 43650359296,
+    "rootFreeBytes": 7696465920,
+    "kafkaAllocatedBytes": 24530944,
+    "nativeSourceLogBytes": 23595268,
+    "totalLag": 0,
+    "stableGroups": 6,
+    "healthyApplicationTasks": 10,
+    "archiveOutputs": [
+      {
+        "name": "dofek_metric-stream-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-live-r2-archive",
+        "successfulOutputs": 12,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-history-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      }
+    ]
+  },
+  {
+    "sample": 8,
+    "at": "2026-11-09T01:43:40Z",
+    "freeBytes": 43700920320,
+    "rootFreeBytes": 7696072704,
+    "kafkaAllocatedBytes": 24539136,
+    "nativeSourceLogBytes": 23595268,
+    "totalLag": 0,
+    "stableGroups": 6,
+    "healthyApplicationTasks": 10,
+    "archiveOutputs": [
+      {
+        "name": "dofek_metric-stream-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-live-r2-archive",
+        "successfulOutputs": 12,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-history-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      }
+    ]
+  },
+  {
+    "sample": 9,
+    "at": "2026-11-09T01:44:39Z",
+    "freeBytes": 43710824448,
+    "rootFreeBytes": 7695671296,
+    "kafkaAllocatedBytes": 24547328,
+    "nativeSourceLogBytes": 23595268,
+    "totalLag": 0,
+    "stableGroups": 6,
+    "healthyApplicationTasks": 10,
+    "archiveOutputs": [
+      {
+        "name": "dofek_metric-stream-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-live-r2-archive",
+        "successfulOutputs": 12,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-history-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      }
+    ]
+  },
+  {
+    "sample": 10,
+    "at": "2026-11-09T01:45:40Z",
+    "freeBytes": 43706589184,
+    "rootFreeBytes": 7695286272,
+    "kafkaAllocatedBytes": 24555520,
+    "nativeSourceLogBytes": 23595268,
+    "totalLag": 0,
+    "stableGroups": 6,
+    "healthyApplicationTasks": 10,
+    "archiveOutputs": [
+      {
+        "name": "dofek_metric-stream-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-live-r2-archive",
+        "successfulOutputs": 12,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-history-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      }
+    ]
+  },
+  {
+    "sample": 11,
+    "at": "2026-11-09T01:46:39Z",
+    "freeBytes": 43701112832,
+    "rootFreeBytes": 7694856192,
+    "kafkaAllocatedBytes": 24563712,
+    "nativeSourceLogBytes": 23595268,
+    "totalLag": 0,
+    "stableGroups": 6,
+    "healthyApplicationTasks": 10,
+    "archiveOutputs": [
+      {
+        "name": "dofek_metric-stream-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-live-r2-archive",
+        "successfulOutputs": 12,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-history-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      }
+    ]
+  },
+  {
+    "sample": 12,
+    "at": "2026-11-09T01:47:39Z",
+    "freeBytes": 43725361152,
+    "rootFreeBytes": 7694409728,
+    "kafkaAllocatedBytes": 24576000,
+    "nativeSourceLogBytes": 23595268,
+    "totalLag": 0,
+    "stableGroups": 6,
+    "healthyApplicationTasks": 10,
+    "archiveOutputs": [
+      {
+        "name": "dofek_metric-stream-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-live-r2-archive",
+        "successfulOutputs": 12,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-history-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      }
+    ]
+  },
+  {
+    "sample": 13,
+    "at": "2026-11-09T01:48:39Z",
+    "freeBytes": 43769511936,
+    "rootFreeBytes": 7694012416,
+    "kafkaAllocatedBytes": 24584192,
+    "nativeSourceLogBytes": 23595268,
+    "totalLag": 0,
+    "stableGroups": 6,
+    "healthyApplicationTasks": 10,
+    "archiveOutputs": [
+      {
+        "name": "dofek_metric-stream-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-live-r2-archive",
+        "successfulOutputs": 12,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-history-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      }
+    ]
+  },
+  {
+    "sample": 14,
+    "at": "2026-11-09T01:49:40Z",
+    "freeBytes": 43764514816,
+    "rootFreeBytes": 7693627392,
+    "kafkaAllocatedBytes": 24592384,
+    "nativeSourceLogBytes": 23595268,
+    "totalLag": 0,
+    "stableGroups": 6,
+    "healthyApplicationTasks": 10,
+    "archiveOutputs": [
+      {
+        "name": "dofek_metric-stream-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-live-r2-archive",
+        "successfulOutputs": 12,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-history-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      }
+    ]
+  },
+  {
+    "sample": 15,
+    "at": "2026-11-09T01:50:39Z",
+    "freeBytes": 43752820736,
+    "rootFreeBytes": 7693238272,
+    "kafkaAllocatedBytes": 24600576,
+    "nativeSourceLogBytes": 23595268,
+    "totalLag": 0,
+    "stableGroups": 6,
+    "healthyApplicationTasks": 10,
+    "archiveOutputs": [
+      {
+        "name": "dofek_metric-stream-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-live-r2-archive",
+        "successfulOutputs": 12,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-history-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      }
+    ]
+  },
+  {
+    "sample": 16,
+    "at": "2026-11-09T01:51:40Z",
+    "freeBytes": 43720568832,
+    "rootFreeBytes": 7692853248,
+    "kafkaAllocatedBytes": 24608768,
+    "nativeSourceLogBytes": 23595268,
+    "totalLag": 0,
+    "stableGroups": 6,
+    "healthyApplicationTasks": 10,
+    "archiveOutputs": [
+      {
+        "name": "dofek_metric-stream-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-live-r2-archive",
+        "successfulOutputs": 12,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-history-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      }
+    ]
+  },
+  {
+    "sample": 17,
+    "at": "2026-11-09T01:52:39Z",
+    "freeBytes": 43716112384,
+    "rootFreeBytes": 7692386304,
+    "kafkaAllocatedBytes": 24616960,
+    "nativeSourceLogBytes": 23595268,
+    "totalLag": 0,
+    "stableGroups": 6,
+    "healthyApplicationTasks": 10,
+    "archiveOutputs": [
+      {
+        "name": "dofek_metric-stream-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-live-r2-archive",
+        "successfulOutputs": 12,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-history-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      }
+    ]
+  },
+  {
+    "sample": 18,
+    "at": "2026-11-09T01:53:39Z",
+    "freeBytes": 43753840640,
+    "rootFreeBytes": 7691997184,
+    "kafkaAllocatedBytes": 24625152,
+    "nativeSourceLogBytes": 23595268,
+    "totalLag": 0,
+    "stableGroups": 6,
+    "healthyApplicationTasks": 10,
+    "archiveOutputs": [
+      {
+        "name": "dofek_metric-stream-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-live-r2-archive",
+        "successfulOutputs": 12,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-history-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      }
+    ]
+  },
+  {
+    "sample": 19,
+    "at": "2026-11-09T01:54:40Z",
+    "freeBytes": 43722682368,
+    "rootFreeBytes": 7691616256,
+    "kafkaAllocatedBytes": 24633344,
+    "nativeSourceLogBytes": 23595268,
+    "totalLag": 0,
+    "stableGroups": 6,
+    "healthyApplicationTasks": 10,
+    "archiveOutputs": [
+      {
+        "name": "dofek_metric-stream-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-live-r2-archive",
+        "successfulOutputs": 12,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-history-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      }
+    ]
+  },
+  {
+    "sample": 20,
+    "at": "2026-11-09T01:55:40Z",
+    "freeBytes": 43711311872,
+    "rootFreeBytes": 7691251712,
+    "kafkaAllocatedBytes": 24641536,
+    "nativeSourceLogBytes": 23595268,
+    "totalLag": 0,
+    "stableGroups": 6,
+    "healthyApplicationTasks": 10,
+    "archiveOutputs": [
+      {
+        "name": "dofek_metric-stream-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-live-r2-archive",
+        "successfulOutputs": 12,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-history-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      }
+    ]
+  },
+  {
+    "sample": 21,
+    "at": "2026-11-09T01:56:39Z",
+    "freeBytes": 43706576896,
+    "rootFreeBytes": 7690866688,
+    "kafkaAllocatedBytes": 24649728,
+    "nativeSourceLogBytes": 23595268,
+    "totalLag": 0,
+    "stableGroups": 6,
+    "healthyApplicationTasks": 10,
+    "archiveOutputs": [
+      {
+        "name": "dofek_metric-stream-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-live-r2-archive",
+        "successfulOutputs": 12,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-history-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      }
+    ]
+  },
+  {
+    "sample": 22,
+    "at": "2026-11-09T01:57:40Z",
+    "freeBytes": 43690876928,
+    "rootFreeBytes": 7690448896,
+    "kafkaAllocatedBytes": 24662016,
+    "nativeSourceLogBytes": 23595268,
+    "totalLag": 0,
+    "stableGroups": 6,
+    "healthyApplicationTasks": 10,
+    "archiveOutputs": [
+      {
+        "name": "dofek_metric-stream-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-live-r2-archive",
+        "successfulOutputs": 12,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-history-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      }
+    ]
+  },
+  {
+    "sample": 23,
+    "at": "2026-11-09T01:58:39Z",
+    "freeBytes": 43734433792,
+    "rootFreeBytes": 7690027008,
+    "kafkaAllocatedBytes": 24670208,
+    "nativeSourceLogBytes": 23595268,
+    "totalLag": 0,
+    "stableGroups": 6,
+    "healthyApplicationTasks": 10,
+    "archiveOutputs": [
+      {
+        "name": "dofek_metric-stream-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-live-r2-archive",
+        "successfulOutputs": 12,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-history-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      }
+    ]
+  },
+  {
+    "sample": 24,
+    "at": "2026-11-09T01:59:39Z",
+    "freeBytes": 43739906048,
+    "rootFreeBytes": 7689650176,
+    "kafkaAllocatedBytes": 24678400,
+    "nativeSourceLogBytes": 23595268,
+    "totalLag": 0,
+    "stableGroups": 6,
+    "healthyApplicationTasks": 10,
+    "archiveOutputs": [
+      {
+        "name": "dofek_metric-stream-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-live-r2-archive",
+        "successfulOutputs": 12,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-history-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      }
+    ]
+  },
+  {
+    "sample": 25,
+    "at": "2026-11-09T02:00:39Z",
+    "freeBytes": 43691499520,
+    "rootFreeBytes": 7686467584,
+    "kafkaAllocatedBytes": 26427392,
+    "nativeSourceLogBytes": 25332291,
+    "totalLag": 0,
+    "stableGroups": 6,
+    "healthyApplicationTasks": 10,
+    "archiveOutputs": [
+      {
+        "name": "dofek_metric-stream-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-live-r2-archive",
+        "successfulOutputs": 16,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-history-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      }
+    ]
+  },
+  {
+    "sample": 26,
+    "at": "2026-11-09T02:01:39Z",
+    "freeBytes": 43547193344,
+    "rootFreeBytes": 7668973568,
+    "kafkaAllocatedBytes": 49647616,
+    "nativeSourceLogBytes": 48533832,
+    "totalLag": 0,
+    "stableGroups": 6,
+    "healthyApplicationTasks": 10,
+    "archiveOutputs": [
+      {
+        "name": "dofek_metric-stream-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-live-r2-archive",
+        "successfulOutputs": 26,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-history-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      }
+    ]
+  },
+  {
+    "sample": 27,
+    "at": "2026-11-09T02:02:39Z",
+    "freeBytes": 43532427264,
+    "rootFreeBytes": 7668293632,
+    "kafkaAllocatedBytes": 49655808,
+    "nativeSourceLogBytes": 48533832,
+    "totalLag": 0,
+    "stableGroups": 6,
+    "healthyApplicationTasks": 10,
+    "archiveOutputs": [
+      {
+        "name": "dofek_metric-stream-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-live-r2-archive",
+        "successfulOutputs": 26,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-history-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      }
+    ]
+  },
+  {
+    "sample": 28,
+    "at": "2026-11-09T02:03:40Z",
+    "freeBytes": 43616329728,
+    "rootFreeBytes": 7667851264,
+    "kafkaAllocatedBytes": 49664000,
+    "nativeSourceLogBytes": 48533832,
+    "totalLag": 0,
+    "stableGroups": 6,
+    "healthyApplicationTasks": 10,
+    "archiveOutputs": [
+      {
+        "name": "dofek_metric-stream-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-live-r2-archive",
+        "successfulOutputs": 26,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-history-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      }
+    ]
+  },
+  {
+    "sample": 29,
+    "at": "2026-11-09T02:04:39Z",
+    "freeBytes": 43619979264,
+    "rootFreeBytes": 7667474432,
+    "kafkaAllocatedBytes": 49672192,
+    "nativeSourceLogBytes": 48533832,
+    "totalLag": 0,
+    "stableGroups": 6,
+    "healthyApplicationTasks": 10,
+    "archiveOutputs": [
+      {
+        "name": "dofek_metric-stream-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-live-r2-archive",
+        "successfulOutputs": 26,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-history-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      }
+    ]
+  },
+  {
+    "sample": 30,
+    "at": "2026-11-09T02:05:39Z",
+    "freeBytes": 43608772608,
+    "rootFreeBytes": 7667101696,
+    "kafkaAllocatedBytes": 49680384,
+    "nativeSourceLogBytes": 48533832,
+    "totalLag": 0,
+    "stableGroups": 6,
+    "healthyApplicationTasks": 10,
+    "archiveOutputs": [
+      {
+        "name": "dofek_metric-stream-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-live-r2-archive",
+        "successfulOutputs": 26,
+        "errors": 0
+      },
+      {
+        "name": "dofek_metric-stream-history-r2-archive",
+        "successfulOutputs": 0,
+        "errors": 0
+      }
+    ]
+  }
+]

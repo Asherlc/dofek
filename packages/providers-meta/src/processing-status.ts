@@ -220,7 +220,7 @@ export function processingStatusMessage(input: {
   switch (input.status) {
     case "delayed":
     case "blocked":
-      return "Your existing data is still available.";
+      return null;
     case "failed":
       return failureGuidance;
     case "partial":

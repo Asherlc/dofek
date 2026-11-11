@@ -1,0 +1,42 @@
+{
+  "at": "2026-11-09T17:54:18.381Z",
+  "headBeforeMerge": "62298eeb0246053aa5e2e23e84e09c16efdc8856",
+  "mergedMain": "26dea075097b7ffb6c935f720da971e63a6c1973",
+  "attribution": "current uncommitted workspace files; not immutable application image",
+  "sha256": {
+    "src/account-erasure/kafka-log-storage.ts": "29d5c04207a39e1742382f4d32be469033cddf2013bf90dd08bd7679b243d057",
+    "src/account-erasure/kafka-remote-history.ts": "0db6aa804191469f1dd940609586042efff18073dc8c60844e37267132856617",
+    "src/account-erasure/kafka-remote-storage.ts": "5a73967401656c2c61926426be1df1769349dd71545f3320fe2c6ed3bc5866f8",
+    "src/account-erasure/kafka-remote-record.ts": "17e7ac16c6e3b4ee74f471e1ee4754c49633c7edfee65f1af003a525cd37044b",
+    "src/account-erasure/redpanda-drain.ts": "2b77d9373a0039450e5f66a783753a0aecb663b57cf6104d737a34b9b65358e2",
+    "src/jobs/account-erasure-runtime.ts": "69650c0829a57be03f199113e9505ac2ba9634158003616b23a4664e3202e331",
+    "src/jobs/account-erasure-phase-runner.ts": "05f9b619166fee5fec6dec4eb45116591b6c5cc44b6549d2fd9d78e6d3764dc4",
+    "scripts/deploy-service-environment.ts": "0500fe20a2e054156a1708ae9e2a400784be9fb45dc7e46e051b9221e034e320",
+    ".github/workflows/deploy-web-stack.yml": "ca82318c146d0af552c5c0ef1cf73b87d8d5b70f7d45d3140dc2ab0d6c96f9fe",
+    "deploy/kafka/topic-policy.json": "00f9058fdc6a3d395b92682b17e62ce5b1b3df53549d6d296c2f59055ca6952f",
+    "deploy/kafka/plugin-sha256.txt": "0bd243005263d014416f451ebc471f8f0dd1abed6f69de3db7f46a169d57d90a"
+  },
+  "qualificationFixtureSha256": "4ce9a60e5147f08dbabd3fd19faab61281632c5b4087f3bb207a870496d36731",
+  "checks": {
+    "unitMobile": {
+      "command": "pnpm test --run",
+      "testFilesPassed": 1460,
+      "testFilesSkipped": 2,
+      "testsPassed": 23939,
+      "testsSkipped": 19
+    },
+    "lint": {
+      "command": "CLICKHOUSE_URL=<workspace ClickHouse> pnpm lint",
+      "exitCode": 0
+    },
+    "typechecks": [
+      "root",
+      "packages/server",
+      "packages/web"
+    ],
+    "actionlint": {
+      "command": "actionlint -shellcheck= .github/workflows/deploy-web-stack.yml",
+      "exitCode": 0
+    }
+  }
+}

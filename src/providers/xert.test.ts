@@ -585,7 +585,7 @@ describe("XertProvider", () => {
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain(
-      "xert API service unavailable (503): rate exceeded",
+      "xert API service unavailable (503). Try again later.",
     );
   });
 

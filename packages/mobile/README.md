@@ -105,7 +105,10 @@ Activity details show climbing logs and same-day attachment suggestions for
 climbing activities. Cards group under Area headings and show published
 display grades, concise attempt counts, pitch labels, and server-derived rock labels
 through the [shared grouping helper](../training/src/climbing-log-groups.ts) and
-[card](components/ClimbingLogEntryCard.tsx). Provider records
+[card](components/ClimbingLogEntryCard.tsx). Each Area heading renders the complete
+recorded root-to-leaf lineage, emphasizing the final area, and keeps long paths on
+one line in a [horizontal ScrollView](https://reactnative.dev/docs/scrollview#horizontal).
+Provider records
 use server columns and filters, fetch the selected log's complete graph, and
 retain cached rows during refresh errors. Their
 [detail viewer](components/ClimbingLogEntryDetails.tsx) shows source links,
@@ -465,17 +468,24 @@ require a new binary with the resulting runtime, following Expo's
 [runtime compatibility guidance](https://docs.expo.dev/eas-update/runtime-versions/).
 
 The current stable [Expo SDK 58](https://expo.dev/changelog/sdk-58)
-native dependency set uses Expo 58.0.20, Expo Router 58.0.27, Expo Updates
-58.0.18, React Native 0.88.0, and React Native SVG 15.16.0, pinned in
+native dependency set uses Expo 58.0.24, Expo Router 58.0.31, Expo Updates
+58.0.22, React Native 0.88.1, and React Native SVG 15.16.0, pinned in
 [package.json](./package.json). The
-[Expo dependency matrix](https://github.com/expo/expo/blob/expo%4058.0.20/packages/expo/bundledNativeModules.json)
+[Expo dependency matrix](https://github.com/expo/expo/blob/expo%4058.0.24/packages/expo/bundledNativeModules.json)
 and the [lockfile](../../pnpm-lock.yaml) define the corresponding SDK-managed
 versions, including the updated native Modules Core and JSI packages.
 Validate SDK-managed versions with
 `pnpm tsx ../../scripts/with-env.ts -- pnpm expo install --check` from this package, following Expo's
 [dependency validation guidance](https://docs.expo.dev/more/expo-cli/#configuring-dependency-validation).
 The native dependency set also includes ExpoNetwork, the pnpm patch to
-`expo-apple-authentication@58.0.2`, and [MapLibre Native](https://maplibre.org/maplibre-react-native/docs/setup/expo/).
+`expo-apple-authentication@58.0.3`, and [MapLibre Native](https://maplibre.org/maplibre-react-native/docs/setup/expo/).
+
+The `@expo/plist` 0.10.1 and 0.10.2 consumers share the existing
+[XML parser patch](../../patches/@expo__plist@0.10.1.patch), selected by the
+exact version mappings in [pnpm-workspace.yaml](../../pnpm-workspace.yaml).
+It retains leading-whitespace normalization and passes the explicit XML media type required by the pinned
+parser's [`parseFromString`](https://github.com/xmldom/xmldom/blob/0.9.12/lib/dom-parser.js)
+API; older plist consumers retain their existing patches.
 
 Runtime 1.12 retains the HealthKit authorization-not-determined classification
 introduced in 1.10, with the stable code consumed by anchored sync. A type awaiting authorization leaves
@@ -489,6 +499,17 @@ build and release that binary before testing updates against its interface.
 Follow the [release and recovery runbook](../../docs/mobile-ota-recovery.md).
 Use [pnpm patch/patch-commit](https://pnpm.io/cli/patch-commit) when updating the
 patch, then rerun the native regression and existing Release archive job.
+
+The [notification hook](lib/useCollectionNotifications.ts) records
+`collection_notifications_enable_completed` through the existing mobile logger
+after the current native authorization check resolves. `requestPermission`
+records whether prompting was allowed; `granted` records the returned permission
+state. A denied result proves the call completed but does not mean alerts are
+enabled. Existing telemetry adds `appBuild`, `runtimeVersion`, and `assetsVersion`
+(the [Expo update ID](https://docs.expo.dev/versions/latest/sdk/updates/#updateid)).
+Rejected, superseded, or retired checks do not emit this completion event.
+Correlate it with the installed build and launched runtime before claiming
+recovery from an unavailable native method; see the [Axiom query contract](../../docs/axiom-observability-runbook.md#queries).
 
 The SVG 15.16.0 dependency patch separates its Android tap-sound binding from
 the web module graph. It preserves the native press behavior introduced by
@@ -514,7 +535,7 @@ and Swift metadata ([Swift compiler guidance](https://forums.swift.org/t/linker-
 When upgrading Sentry, update the React Native package patch and binary
 podspec together, then verify all native consumers and the Release archive.
 
-The [Apple patch](../../patches/expo-apple-authentication@58.0.2.patch) preserves
+The [Apple patch](../../patches/expo-apple-authentication@58.0.3.patch) preserves
 Expo's authorization exception mapping and cancellation. Other authorization
 errors carry only an allowlisted NSError domain, numeric code, and optional
 immediate underlying domain/code. Unknown domains become `other`; native
@@ -672,7 +693,8 @@ Source-map and release correlation:
 
 The activities screen leads with the shared rounded-outline activity icon.
 The [Lineage disclosure](components/ActivitySourceDisclosure.tsx) sits after the
-activity content and map, inside the same card. It shows an explicit Original
+activity content and map and opens the same scrollable [Modal](https://reactnative.dev/docs/modal)
+overlay as the detail header. It shows an explicit Original
 heading and labeled Shared to branches. When an Original is known, one divider
 and Other heading groups all additional recordings. Unresolved origins show
 Original unknown above the available recordings. The

@@ -983,6 +983,52 @@ it("preserves multiple route gear styles and ignores other route and ascent styl
 });
 
 describe("theCrag source-owned area context", () => {
+  const region = readFileSync(new URL("./fixtures/thecrag-region.html", import.meta.url), "utf8");
+  const regionRoute = detail().replaceAll("456", "11737675");
+
+  it("hydrates a region with a slug canonical URL and verified native page identity", async () => {
+    const { result } = await lookupWithParent(regionRoute, region);
+    expect(result.candidates[0]?.locations[0]?.context).toEqual({
+      url: `${origin}/en/climbing/north-america`,
+      type: "region",
+      sections: [],
+      tags: [],
+      statistics: [{ sourceKey: "routes", label: "Routes", value: 234526 }],
+    });
+  });
+
+  it.each([
+    region.replace('data-nid="11737675"', 'data-nid="789"'),
+    region.replace('data-nid="11737675"', ""),
+    region.replace('data-nid="11737675"', 'data-nid="011737675"'),
+    region.replace('data-nid="11737675"><span', 'data-nid="789"><span'),
+    region.replace('href="/en/climbing/north-america"', 'href="/en/climbing/europe"'),
+    region.replace(
+      "https://www.thecrag.com/en/climbing/north-america",
+      "https://evil.example/en/climbing/north-america",
+    ),
+    region.replace(
+      "https://www.thecrag.com/en/climbing/north-america",
+      "https://user@www.thecrag.com/en/climbing/north-america",
+    ),
+    region.replace(
+      "https://www.thecrag.com/en/climbing/north-america",
+      "https://www.thecrag.com/en/climbing/north-america?extra=1",
+    ),
+    region.replace(
+      "https://www.thecrag.com/en/climbing/north-america",
+      "https://www.thecrag.com/en/climbing/north-america#map",
+    ),
+    region.replaceAll("/en/climbing/north-america", "/en/climbing/route/11737675"),
+    region.replaceAll("/en/climbing/north-america", "/en/climbing/area/789"),
+    region.replaceAll("/en/climbing/north-america", "/en/article/tagging"),
+  ])(
+    "rejects a slug area without consistent native page and canonical identity %#",
+    async (html) => {
+      await expect(lookupWithParent(regionRoute, html)).rejects.toThrow(/parent area identity/);
+    },
+  );
+
   it("hydrates all proven ancestors once and keeps inherited parent facts off routes", async () => {
     const area = readFileSync(new URL("./fixtures/thecrag-area.html", import.meta.url), "utf8");
     const routeHtml = detail(

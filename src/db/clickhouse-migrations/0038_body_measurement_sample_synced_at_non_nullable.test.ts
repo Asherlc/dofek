@@ -81,7 +81,7 @@ describe("0038_body_measurement_sample_synced_at_non_nullable", () => {
       "ALTER TABLE analytics.body_measurement_sample UPDATE _peerdb_synced_at = recorded_at WHERE _peerdb_synced_at IS NULL",
     );
     expect(vi.mocked(client.command).mock.calls[0]?.[0]?.clickhouse_settings).toEqual({
-      mutations_sync: 2,
+      mutations_sync: "2",
     });
     expect(vi.mocked(client.command).mock.calls[1]?.[0]?.query).toBe(
       "ALTER TABLE analytics.body_measurement_sample MODIFY COLUMN _peerdb_synced_at DateTime64(9) DEFAULT now()",
@@ -177,7 +177,7 @@ describe("0038_body_measurement_sample_synced_at_non_nullable", () => {
 
     expect(client.command).toHaveBeenCalledTimes(2);
     expect(vi.mocked(client.command).mock.calls[0]?.[0]?.clickhouse_settings).toEqual({
-      mutations_sync: 2,
+      mutations_sync: "2",
     });
     expect(vi.mocked(client.command).mock.calls[1]?.[0]?.query).toBe(
       "ALTER TABLE analytics.body_measurement_sample MODIFY COLUMN _peerdb_synced_at DateTime64(9) DEFAULT now()",

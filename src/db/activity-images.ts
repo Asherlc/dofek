@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { ActivityImageWork, ImageDiscovery } from "../activity-images/types.ts";
+import { withAccountErasureUserWriteFence } from "./account-erasure.ts";
 import type { Database } from "./index.ts";
 import { executeWithSchema, type SchemaExecutionDatabase } from "./typed-sql.ts";
 
@@ -157,27 +158,32 @@ export async function loadActivityImageWork(
     : null;
 }
 export async function claimActivityImageWork(
-  db: SchemaExecutionDatabase,
+  db: ActivityImageDatabase,
   work: ActivityImageWork,
 ): Promise<boolean> {
-  const rows = await executeWithSchema(
-    db,
-    idRow,
-    sql`UPDATE fitness.activity_image_work SET state='processing',attempts=attempts+1,processing_at=now() WHERE id=${work.id}::uuid AND state IN ('pending','retryable_failure') AND available_at<=now() RETURNING id`,
-  );
-  return rows.length > 0;
+  // Match outbox dispatch: acquire the user fence before locking the work row.
+  return withAccountErasureUserWriteFence(db, work.userId, async (tx) => {
+    const rows = await executeWithSchema(
+      tx,
+      idRow,
+      sql`UPDATE fitness.activity_image_work SET state='processing',attempts=attempts+1,processing_at=now() WHERE id=${work.id}::uuid AND state IN ('pending','retryable_failure') AND available_at<=now() RETURNING id`,
+    );
+    return rows.length > 0;
+  });
 }
 export async function failActivityImageWork(
-  db: SchemaExecutionDatabase,
+  db: ActivityImageDatabase,
   work: ActivityImageWork,
   retryable: boolean,
   code: string,
   delaySeconds = 30,
 ): Promise<void> {
   const retry = retryable && work.attempts < 4;
-  await db.execute(
-    sql`UPDATE fitness.activity_image_work SET state=${retry ? "retryable_failure" : "terminal_failure"},error_code=${code},available_at=now()+${delaySeconds}*interval '1 second',dispatched_at=NULL,processing_at=NULL WHERE id=${work.id}::uuid AND state='processing'`,
-  );
+  await withAccountErasureUserWriteFence(db, work.userId, async (tx) => {
+    await tx.execute(
+      sql`UPDATE fitness.activity_image_work SET state=${retry ? "retryable_failure" : "terminal_failure"},error_code=${code},available_at=now()+${delaySeconds}*interval '1 second',dispatched_at=NULL,processing_at=NULL WHERE id=${work.id}::uuid AND state='processing'`,
+    );
+  });
 }
 export interface StoredImageMetadata {
   sha256: string;
@@ -219,13 +225,24 @@ export async function completeActivityImageWork(
     return true;
   });
 }
-export async function reconcileActivityImageWork(db: SchemaExecutionDatabase): Promise<void> {
-  await db.execute(
-    sql`UPDATE fitness.activity_image_work SET state=CASE WHEN attempts>=5 THEN 'terminal_failure' ELSE 'retryable_failure' END,dispatched_at=NULL,processing_at=NULL,error_code='lease_expired' WHERE state='processing' AND processing_at<now()-interval '15 minutes'`,
+export async function reconcileActivityImageWork(db: ActivityImageDatabase): Promise<void> {
+  const owners = await executeWithSchema(
+    db,
+    z.object({ user_id: z.string() }),
+    sql`SELECT DISTINCT user_id FROM fitness.activity_image_work
+      WHERE (state='processing' AND processing_at<now()-interval '15 minutes')
+        OR (state IN ('pending','retryable_failure') AND dispatched_at<now()-interval '15 minutes')`,
   );
-  await db.execute(
-    sql`UPDATE fitness.activity_image_work SET dispatched_at=NULL WHERE state IN ('pending','retryable_failure') AND dispatched_at<now()-interval '15 minutes'`,
-  );
+  for (const owner of owners) {
+    await withAccountErasureUserWriteFence(db, owner.user_id, async (tx) => {
+      await tx.execute(
+        sql`UPDATE fitness.activity_image_work SET state=CASE WHEN attempts>=5 THEN 'terminal_failure' ELSE 'retryable_failure' END,dispatched_at=NULL,processing_at=NULL,error_code='lease_expired' WHERE user_id=${owner.user_id}::uuid AND state='processing' AND processing_at<now()-interval '15 minutes'`,
+      );
+      await tx.execute(
+        sql`UPDATE fitness.activity_image_work SET dispatched_at=NULL WHERE user_id=${owner.user_id}::uuid AND state IN ('pending','retryable_failure') AND dispatched_at<now()-interval '15 minutes'`,
+      );
+    });
+  }
 }
 export async function retireActivityImages(
   db: SchemaExecutionDatabase,

@@ -1,6 +1,7 @@
 import type { Mock } from "vitest";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ClickHouseClient } from "../db/clickhouse.ts";
+import { unexpectedClickHouseExec } from "../db/clickhouse-test-helpers.ts";
 import {
   countActivePeerDbActivities,
   countActivePeerDbProviderRows,
@@ -13,6 +14,7 @@ import {
 
 function createMockClickHouseClient(query: Mock): ClickHouseClient {
   return {
+    exec: vi.fn(unexpectedClickHouseExec),
     command: vi.fn(),
     query,
   };

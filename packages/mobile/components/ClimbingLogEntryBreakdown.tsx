@@ -1,7 +1,7 @@
 import { groupClimbingLogEntriesByArea } from "@dofek/training/climbing-log-groups";
 import type { ClimbingMapLocation } from "@dofek/training/climbing-map";
 import { useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { ScrollView, StyleSheet, Text, View } from "react-native";
 import type { ClimbingLogEntryDetail } from "../../server/src/contracts/climbing-log-contracts.ts";
 import { colors } from "../theme";
 import { type ClimbingLogAttachmentState, ClimbingLogEntryCard } from "./ClimbingLogEntryCard";
@@ -49,16 +49,35 @@ export function ClimbingLogEntryBreakdown({
     >
       {areaRows.map((areaRow) => (
         <View key={areaRow[0]?.entries[0]?.entry.id} style={styles.row}>
-          {areaRow.map(({ area, entries: groupEntries, span: groupColumns }) => (
+          {areaRow.map(({ area, areaPath, entries: groupEntries, span: groupColumns }) => (
             <View
               key={area?.id ?? "unlocated"}
               accessibilityLabel={area?.name}
               style={[styles.group, { flexGrow: groupColumns, flexBasis: (groupColumns - 1) * 12 }]}
             >
               {area && (
-                <Text accessibilityRole="header" style={styles.heading}>
-                  {area.name}
-                </Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  style={styles.headingScroll}
+                >
+                  <Text
+                    accessibilityRole="header"
+                    accessibilityLabel={`Area: ${areaPath.map((node) => node.name).join(" › ")}`}
+                    style={styles.heading}
+                  >
+                    {areaPath.length > 1 && (
+                      <Text style={styles.headingParent}>
+                        {areaPath
+                          .slice(0, -1)
+                          .map((node) => node.name)
+                          .join(" › ")}{" "}
+                        ›{" "}
+                      </Text>
+                    )}
+                    <Text style={styles.headingLeaf}>{area.name}</Text>
+                  </Text>
+                </ScrollView>
               )}
               <View style={styles.grid}>
                 {Array.from(
@@ -112,6 +131,9 @@ const styles = StyleSheet.create({
   groups: { gap: 12 },
   group: { gap: 8, flexShrink: 1, minWidth: 0 },
   heading: { color: colors.text, fontSize: 14, fontWeight: "600", lineHeight: 20 },
+  headingScroll: { flexGrow: 0 },
+  headingParent: { color: colors.textMuted },
+  headingLeaf: { color: colors.text, fontWeight: "700" },
   grid: { gap: 12 },
   row: { flexDirection: "row", alignItems: "flex-start", gap: 12 },
   cell: { flex: 1, minWidth: 0 },

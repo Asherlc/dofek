@@ -223,6 +223,7 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
             AND deduped_samples.recorded_at <= coalesce(activity.ended_at, activity.started_at + INTERVAL 12 HOUR)
             ${clickHouseToIntervalDayLowerBound(days, "activity.started_at")}
             AND activity.is_deleted = 0
+            AND coalesce(activity.provider_type, '') != 'climbing_log'
             AND has({enduranceActivityTypes:Array(String)}, activity.canonical_type)
         ),
         sample_rate AS (
@@ -311,6 +312,7 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
             AND deduped_samples.recorded_at <= coalesce(activity.ended_at, activity.started_at + INTERVAL 12 HOUR)
             ${clickHouseToIntervalDayLowerBound(days, "activity.started_at")}
             AND activity.is_deleted = 0
+            AND coalesce(activity.provider_type, '') != 'climbing_log'
             AND has({enduranceActivityTypes:Array(String)}, activity.canonical_type)
         ),
         sample_rate AS (
@@ -374,6 +376,7 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
     maxPoints: number,
     sources?: ActivityMetricSourceSelection,
   ): Promise<StreamPointRow[]> {
+    if (window.providerType === "climbing_log") return [];
     const selected = ACTIVITY_CHART_METRICS.flatMap((metric) => {
       const provider = sources?.[metric.key];
       return provider ? [{ ...metric, provider }] : [];
@@ -559,6 +562,7 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
   }
 
   async getHeartRateZoneSeconds(window: ActivitySensorWindow): Promise<HeartRateZoneSecondRow[]> {
+    if (window.providerType === "climbing_log") return [];
     const result = await this.#client.query<Record<string, unknown>>({
       query: `
         SELECT
@@ -584,6 +588,7 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
     ftp: number,
     powerSourceId?: string,
   ): Promise<PowerZoneSecondRow[]> {
+    if (window.providerType === "climbing_log") return [];
     const result = await this.#client.query<PowerZoneSecondRow>({
       query: `
         WITH power_samples AS (

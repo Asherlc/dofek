@@ -1544,7 +1544,7 @@ describe("ProviderDetailScreen", () => {
         providerId: "wahoo",
         dataType: "climbingLogEntries",
         recordId: log.id,
-        responseVersion: 3,
+        responseVersion: 4,
       });
       expect(screen.getByRole("dialog").textContent).toContain("Grades");
       expect(mockRecordFilterOptionsQuery).toHaveBeenCalledWith({

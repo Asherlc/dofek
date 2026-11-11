@@ -1,0 +1,17 @@
+{
+  "at": "2026-11-08T22:47:34.252Z",
+  "productionActions": false,
+  "syntheticBackendOnly": true,
+  "canonicalStackEnvironmentCompared": true,
+  "canonicalEnvironmentKeys": 29,
+  "explicitLocalListenerOverrides": [
+    "KAFKA_LISTENER_SECURITY_PROTOCOL_MAP",
+    "KAFKA_ADVERTISED_LISTENERS",
+    "KAFKA_LISTENERS"
+  ],
+  "generatedServerPropertiesCompared": 30,
+  "rendererBrokerWorkerScopeAndCredentialEquality": true,
+  "prefixSingleSourced": true,
+  "productionBackendScopeStillRequiresReleaseVerification": true,
+  "evidenceLimit": "Counts and equality flags were recorded without the compared consumed env-file key set; complete backend equality is not independently verifiable from this receipt."
+}

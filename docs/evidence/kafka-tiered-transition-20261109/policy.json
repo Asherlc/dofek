@@ -1,0 +1,429 @@
+{
+  "at": "2026-11-09T17:51:39.222Z",
+  "check": "actual canonical incremental policy convergence and readback",
+  "topics": 6,
+  "resources": [
+    {
+      "errorCode": 0,
+      "errorMessage": "",
+      "resourceType": 2,
+      "resourceName": "review-legacy",
+      "configEntries": [
+        {
+          "configName": "remote.storage.enable",
+          "configValue": "true",
+          "readOnly": false,
+          "isDefault": false,
+          "configSource": 1,
+          "isSensitive": false,
+          "configSynonyms": []
+        },
+        {
+          "configName": "cleanup.policy",
+          "configValue": "delete",
+          "readOnly": false,
+          "isDefault": false,
+          "configSource": 1,
+          "isSensitive": false,
+          "configSynonyms": []
+        },
+        {
+          "configName": "segment.bytes",
+          "configValue": "134217728",
+          "readOnly": false,
+          "isDefault": false,
+          "configSource": 1,
+          "isSensitive": false,
+          "configSynonyms": []
+        },
+        {
+          "configName": "retention.ms",
+          "configValue": "604800000",
+          "readOnly": false,
+          "isDefault": false,
+          "configSource": 1,
+          "isSensitive": false,
+          "configSynonyms": []
+        },
+        {
+          "configName": "local.retention.bytes",
+          "configValue": "1",
+          "readOnly": false,
+          "isDefault": false,
+          "configSource": 1,
+          "isSensitive": false,
+          "configSynonyms": []
+        },
+        {
+          "configName": "retention.bytes",
+          "configValue": "4294967296",
+          "readOnly": false,
+          "isDefault": false,
+          "configSource": 1,
+          "isSensitive": false,
+          "configSynonyms": []
+        }
+      ]
+    },
+    {
+      "errorCode": 0,
+      "errorMessage": "",
+      "resourceType": 2,
+      "resourceName": "review-legacy.quarantine.v1",
+      "configEntries": [
+        {
+          "configName": "remote.storage.enable",
+          "configValue": "true",
+          "readOnly": false,
+          "isDefault": false,
+          "configSource": 1,
+          "isSensitive": false,
+          "configSynonyms": []
+        },
+        {
+          "configName": "cleanup.policy",
+          "configValue": "delete",
+          "readOnly": false,
+          "isDefault": false,
+          "configSource": 1,
+          "isSensitive": false,
+          "configSynonyms": []
+        },
+        {
+          "configName": "segment.bytes",
+          "configValue": "134217728",
+          "readOnly": false,
+          "isDefault": false,
+          "configSource": 1,
+          "isSensitive": false,
+          "configSynonyms": []
+        },
+        {
+          "configName": "retention.ms",
+          "configValue": "604800000",
+          "readOnly": false,
+          "isDefault": false,
+          "configSource": 1,
+          "isSensitive": false,
+          "configSynonyms": []
+        },
+        {
+          "configName": "local.retention.bytes",
+          "configValue": "1",
+          "readOnly": false,
+          "isDefault": false,
+          "configSource": 1,
+          "isSensitive": false,
+          "configSynonyms": []
+        },
+        {
+          "configName": "retention.bytes",
+          "configValue": "1073741824",
+          "readOnly": false,
+          "isDefault": false,
+          "configSource": 1,
+          "isSensitive": false,
+          "configSynonyms": []
+        }
+      ]
+    },
+    {
+      "errorCode": 0,
+      "errorMessage": "",
+      "resourceType": 2,
+      "resourceName": "review-live",
+      "configEntries": [
+        {
+          "configName": "remote.storage.enable",
+          "configValue": "true",
+          "readOnly": false,
+          "isDefault": false,
+          "configSource": 1,
+          "isSensitive": false,
+          "configSynonyms": []
+        },
+        {
+          "configName": "cleanup.policy",
+          "configValue": "delete",
+          "readOnly": false,
+          "isDefault": false,
+          "configSource": 1,
+          "isSensitive": false,
+          "configSynonyms": []
+        },
+        {
+          "configName": "segment.bytes",
+          "configValue": "134217728",
+          "readOnly": false,
+          "isDefault": false,
+          "configSource": 1,
+          "isSensitive": false,
+          "configSynonyms": []
+        },
+        {
+          "configName": "retention.ms",
+          "configValue": "604800000",
+          "readOnly": false,
+          "isDefault": false,
+          "configSource": 1,
+          "isSensitive": false,
+          "configSynonyms": []
+        },
+        {
+          "configName": "local.retention.bytes",
+          "configValue": "1",
+          "readOnly": false,
+          "isDefault": false,
+          "configSource": 1,
+          "isSensitive": false,
+          "configSynonyms": []
+        },
+        {
+          "configName": "retention.bytes",
+          "configValue": "4294967296",
+          "readOnly": false,
+          "isDefault": false,
+          "configSource": 1,
+          "isSensitive": false,
+          "configSynonyms": []
+        }
+      ]
+    },
+    {
+      "errorCode": 0,
+      "errorMessage": "",
+      "resourceType": 2,
+      "resourceName": "review-live.quarantine.v1",
+      "configEntries": [
+        {
+          "configName": "remote.storage.enable",
+          "configValue": "true",
+          "readOnly": false,
+          "isDefault": false,
+          "configSource": 1,
+          "isSensitive": false,
+          "configSynonyms": []
+        },
+        {
+          "configName": "cleanup.policy",
+          "configValue": "delete",
+          "readOnly": false,
+          "isDefault": false,
+          "configSource": 1,
+          "isSensitive": false,
+          "configSynonyms": []
+        },
+        {
+          "configName": "segment.bytes",
+          "configValue": "134217728",
+          "readOnly": false,
+          "isDefault": false,
+          "configSource": 1,
+          "isSensitive": false,
+          "configSynonyms": []
+        },
+        {
+          "configName": "retention.ms",
+          "configValue": "604800000",
+          "readOnly": false,
+          "isDefault": false,
+          "configSource": 1,
+          "isSensitive": false,
+          "configSynonyms": []
+        },
+        {
+          "configName": "local.retention.bytes",
+          "configValue": "1",
+          "readOnly": false,
+          "isDefault": false,
+          "configSource": 1,
+          "isSensitive": false,
+          "configSynonyms": []
+        },
+        {
+          "configName": "retention.bytes",
+          "configValue": "1073741824",
+          "readOnly": false,
+          "isDefault": false,
+          "configSource": 1,
+          "isSensitive": false,
+          "configSynonyms": []
+        }
+      ]
+    },
+    {
+      "errorCode": 0,
+      "errorMessage": "",
+      "resourceType": 2,
+      "resourceName": "review-history",
+      "configEntries": [
+        {
+          "configName": "remote.storage.enable",
+          "configValue": "true",
+          "readOnly": false,
+          "isDefault": false,
+          "configSource": 1,
+          "isSensitive": false,
+          "configSynonyms": []
+        },
+        {
+          "configName": "cleanup.policy",
+          "configValue": "delete",
+          "readOnly": false,
+          "isDefault": false,
+          "configSource": 1,
+          "isSensitive": false,
+          "configSynonyms": []
+        },
+        {
+          "configName": "segment.bytes",
+          "configValue": "134217728",
+          "readOnly": false,
+          "isDefault": false,
+          "configSource": 1,
+          "isSensitive": false,
+          "configSynonyms": []
+        },
+        {
+          "configName": "retention.ms",
+          "configValue": "604800000",
+          "readOnly": false,
+          "isDefault": false,
+          "configSource": 1,
+          "isSensitive": false,
+          "configSynonyms": []
+        },
+        {
+          "configName": "local.retention.bytes",
+          "configValue": "1",
+          "readOnly": false,
+          "isDefault": false,
+          "configSource": 1,
+          "isSensitive": false,
+          "configSynonyms": []
+        },
+        {
+          "configName": "retention.bytes",
+          "configValue": "4294967296",
+          "readOnly": false,
+          "isDefault": false,
+          "configSource": 1,
+          "isSensitive": false,
+          "configSynonyms": []
+        }
+      ]
+    },
+    {
+      "errorCode": 0,
+      "errorMessage": "",
+      "resourceType": 2,
+      "resourceName": "review-history.quarantine.v1",
+      "configEntries": [
+        {
+          "configName": "remote.storage.enable",
+          "configValue": "true",
+          "readOnly": false,
+          "isDefault": false,
+          "configSource": 1,
+          "isSensitive": false,
+          "configSynonyms": []
+        },
+        {
+          "configName": "cleanup.policy",
+          "configValue": "delete",
+          "readOnly": false,
+          "isDefault": false,
+          "configSource": 1,
+          "isSensitive": false,
+          "configSynonyms": []
+        },
+        {
+          "configName": "segment.bytes",
+          "configValue": "134217728",
+          "readOnly": false,
+          "isDefault": false,
+          "configSource": 1,
+          "isSensitive": false,
+          "configSynonyms": []
+        },
+        {
+          "configName": "retention.ms",
+          "configValue": "604800000",
+          "readOnly": false,
+          "isDefault": false,
+          "configSource": 1,
+          "isSensitive": false,
+          "configSynonyms": []
+        },
+        {
+          "configName": "local.retention.bytes",
+          "configValue": "1",
+          "readOnly": false,
+          "isDefault": false,
+          "configSource": 1,
+          "isSensitive": false,
+          "configSynonyms": []
+        },
+        {
+          "configName": "retention.bytes",
+          "configValue": "1073741824",
+          "readOnly": false,
+          "isDefault": false,
+          "configSource": 1,
+          "isSensitive": false,
+          "configSynonyms": []
+        }
+      ]
+    }
+  ],
+  "offsets": {
+    "review-legacy": [
+      {
+        "partition": 0,
+        "offset": "400",
+        "high": "400",
+        "low": "200"
+      }
+    ],
+    "review-legacy.quarantine.v1": [
+      {
+        "partition": 0,
+        "offset": "400",
+        "high": "400",
+        "low": "200"
+      }
+    ],
+    "review-live": [
+      {
+        "partition": 0,
+        "offset": "400",
+        "high": "400",
+        "low": "200"
+      }
+    ],
+    "review-live.quarantine.v1": [
+      {
+        "partition": 0,
+        "offset": "400",
+        "high": "400",
+        "low": "200"
+      }
+    ],
+    "review-history": [
+      {
+        "partition": 0,
+        "offset": "400",
+        "high": "400",
+        "low": "200"
+      }
+    ],
+    "review-history.quarantine.v1": [
+      {
+        "partition": 0,
+        "offset": "400",
+        "high": "400",
+        "low": "200"
+      }
+    ]
+  }
+}

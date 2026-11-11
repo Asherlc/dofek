@@ -1,9 +1,13 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { createClient } from "@clickhouse/client";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import {
+  ANALYTICS_PUBLICATION_RESOURCE,
+  withAnalyticsQueryOwner,
+} from "../analytics/analytics-query-owner.ts";
 import { runningRevisionFixture } from "./activity-data-integrity-cadence-test-helpers.ts";
 import type { ActivityIntegrityClickHouseClient } from "./activity-data-integrity-clickhouse.ts";
-import { runActivityIntegrityDbtBuild } from "./activity-data-integrity-dbt.ts";
+import { runActivityIntegrityDbtBuild as runOwnedActivityIntegrityDbtBuild } from "./activity-data-integrity-dbt.ts";
 import {
   activityIntegrityFixtureIds,
   bootstrapActivityIntegrityIdentityModels,
@@ -12,7 +16,9 @@ import {
   scopeClickHouseClient,
   seedProductionDbtFixture,
 } from "./activity-data-integrity-dbt-test-helpers.ts";
+import { createClickHouseClientFromEnv } from "./clickhouse.ts";
 import { TEST_USER_ID } from "./schema/core.ts";
+import { setupTestDatabase, type TestContext } from "./test-helpers.ts";
 
 const { wahooActivityId } = activityIntegrityFixtureIds;
 const priorDbtEnvironment = new Map(
@@ -22,9 +28,12 @@ const priorDbtEnvironment = new Map(
 describe("activity data integrity dbt build", () => {
   let client: ReturnType<typeof createClient>;
   let scopedClient: ActivityIntegrityClickHouseClient;
+  const publicationClient = createClickHouseClientFromEnv();
+  let context: TestContext;
   const database = `activity_integrity_dbt_${randomBytes(6).toString("hex")}`;
 
   beforeAll(async () => {
+    context = await setupTestDatabase();
     const clickHouseUrl = process.env.CLICKHOUSE_URL?.trim();
     if (!clickHouseUrl)
       throw new Error("CLICKHOUSE_URL is required for activity dbt integration tests");
@@ -44,6 +53,18 @@ describe("activity data integrity dbt build", () => {
     });
   }, 120_000);
 
+  function runActivityIntegrityDbtBuild(
+    input: Parameters<typeof runOwnedActivityIntegrityDbtBuild>[0],
+    target: ActivityIntegrityClickHouseClient,
+  ) {
+    return withAnalyticsQueryOwner(
+      context.db,
+      publicationClient,
+      { resourceId: ANALYTICS_PUBLICATION_RESOURCE, intentId: "activity-integrity-build" },
+      (owner) => runOwnedActivityIntegrityDbtBuild(input, target, owner),
+    );
+  }
+
   afterAll(async () => {
     for (const [key, value] of priorDbtEnvironment) {
       if (value == null) delete process.env[key];
@@ -53,6 +74,8 @@ describe("activity data integrity dbt build", () => {
       await client.command({ query: `DROP DATABASE IF EXISTS ${database} SYNC` });
       await client.close();
     }
+    await context?.cleanup();
+    await publicationClient.close?.();
   }, 120_000);
 
   it("finishes 101 revision/member aliases, old-group tombstones and downstream cadence before returning", async () => {

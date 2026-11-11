@@ -153,6 +153,45 @@ export const NonMapActivity: Story = {
   ],
 };
 
+export const ClimbingUnknownDuration: Story = {
+  args: {
+    activity: {
+      ...strengthActivity,
+      id: "kilter-point-only",
+      name: "Kilter climbing",
+      activityType: "climbing",
+      durationMin: null,
+      source: {
+        origin: {
+          status: "resolved",
+          memberActivityId: "kilter-point-only",
+          providerId: "kilter",
+          sourceName: null,
+        },
+        tree: {
+          primary: {
+            id: "kilter-point-only",
+            providerId: "kilter",
+            sourceName: null,
+            label: "Kilter Board",
+            description: null,
+            url: null,
+            children: [],
+          },
+          otherSources: [],
+        },
+        primarySourceLabel: "Kilter Board",
+        sourceCount: 1,
+        overlapSummary: null,
+      },
+      stats: [],
+    },
+  },
+  play: async ({ canvasElement }) => {
+    await expect(within(canvasElement).getByText("Duration unavailable")).toBeVisible();
+  },
+};
+
 export const MappedActivity: Story = {
   args: { activity: mappedActivity },
   decorators: [
