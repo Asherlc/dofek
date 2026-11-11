@@ -3,6 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Decoder, Encoder, Profile, Stream, Utils } from "@garmin/fitsdk";
 import { UnrecoverableError } from "bullmq";
+import { SQL } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import type { SyncDatabase } from "../db/index.ts";
@@ -97,6 +99,7 @@ interface TestFitActivity {
   records: ParsedFitRecord[];
   laps: Record<string, unknown>[];
   events: Record<string, unknown>[];
+  recoveryError?: string | null;
 }
 
 function createFitFileImportJob(data: unknown) {
@@ -256,6 +259,7 @@ async function streamActivity(
     fieldOccurrences: [],
     isWeightFile: false,
     session: activity.session,
+    recoveryError: activity.recoveryError ?? null,
   });
   for (let offset = 0; offset < activity.records.length; offset += 250) {
     await consumer.onRecordBatch(activity.records.slice(offset, offset + 250));
@@ -302,6 +306,7 @@ async function streamGeneratedTestFit(
       ],
       isWeightFile: false,
       session: null,
+      recoveryError: null,
     });
     return { messageCount: 0 };
   }
@@ -319,6 +324,7 @@ async function streamGeneratedTestFit(
     ],
     isWeightFile: true,
     session: null,
+    recoveryError: null,
   });
   const weights = weightRows.map((weight) => ({
     timestamp: weight.timestamp instanceof Date ? weight.timestamp : new Date(weight.timestamp),
@@ -443,6 +449,141 @@ describe("processFitFileImportJob", () => {
     await expect(processFitFileImportJob(job, mockDb)).rejects.toBeInstanceOf(UnrecoverableError);
   });
 
+  it("retains recovered FIT originals, commits staged records, and reports partial recovery", async () => {
+    const filePath = await writeTempFit(createActivityFit());
+    const recoveryError = "Malformed final FIT record";
+    mockActivityStreamOnce({ ...defaultFitActivity(), recoveryError });
+
+    const result = await processFitFileImportJob(
+      createFitFileImportJob({
+        filePath,
+        originalPath: "wahoo_workout-42.fit",
+        userId: "user-1",
+        providerId: "wahoo",
+      }),
+      mockDb,
+    );
+
+    expect(mockRetainFile).toHaveBeenCalledBefore(mockStreamFitFile);
+    expect(mockWriteMetricStreamBatchForScope).toHaveBeenCalledOnce();
+    expect(mockWriteMetricStreamBatchForScope.mock.calls[0]?.[2]).toEqual(
+      expect.arrayContaining([expect.objectContaining({ activityId: "activity-row-1" })]),
+    );
+    expect(mockDb.execute).toHaveBeenCalledAfter(mockWriteMetricStreamBatchForScope);
+    expect(mockDb.execute).toHaveBeenCalledAfter(mockReplaceActivityDeviceObservations);
+    const statement = vi.mocked(mockDb.execute).mock.calls[0]?.[0];
+    if (!(statement instanceof SQL)) throw new Error("Expected FIT recovery status update");
+    const query = new PgDialect().sqlToQuery(statement);
+    expect(query.sql).toContain("fit_recovery_error");
+    expect(query.params).toContain(recoveryError);
+    expect(result.errors).toEqual([]);
+    expect(mockCaptureException).toHaveBeenCalledWith(
+      expect.objectContaining({ message: recoveryError }),
+      expect.objectContaining({
+        level: "warning",
+        tags: expect.objectContaining({ fitImportStep: "recovery", providerId: "wahoo" }),
+        extra: expect.objectContaining({ userId: "user-1" }),
+      }),
+    );
+  });
+
+  it("clears a stale recovery marker on a later clean import", async () => {
+    const filePath = await writeTempFit(createActivityFit());
+    mockActivityStreamOnce({ ...defaultFitActivity(), recoveryError: "Damaged tail" });
+    mockActivityStreamOnce(defaultFitActivity());
+    const data = {
+      filePath,
+      originalPath: "wahoo_workout-42.fit",
+      userId: "user-1",
+      providerId: "wahoo",
+    };
+
+    await importFitFile(mockDb, data, async () => {});
+    await importFitFile(mockDb, data, async () => {});
+
+    const queries = vi.mocked(mockDb.execute).mock.calls.map(([statement]) => {
+      if (!(statement instanceof SQL)) throw new Error("Expected FIT recovery status update");
+      return new PgDialect().sqlToQuery(statement);
+    });
+    expect(queries.map((query) => query.params[0])).toEqual(["Damaged tail", null]);
+  });
+
+  it("keeps an unexpected persistence failure fatal after FIT recovery", async () => {
+    const filePath = await writeTempFit(createActivityFit());
+    const persistenceError = new Error("metric write failed");
+    mockActivityStreamOnce({ ...defaultFitActivity(), recoveryError: "Damaged tail" });
+    mockWriteMetricStreamBatchForScope.mockRejectedValueOnce(persistenceError);
+
+    await expect(
+      importFitFile(
+        mockDb,
+        {
+          filePath,
+          originalPath: "wahoo_workout-42.fit",
+          userId: "user-1",
+          providerId: "wahoo",
+        },
+        async () => {},
+      ),
+    ).rejects.toBe(persistenceError);
+    expect(mockDb.execute).not.toHaveBeenCalled();
+  });
+
+  it("updates recovery provenance on a matched Garmin summary without replacing its raw fields", async () => {
+    const filePath = await writeTempFit(createActivityFit());
+    const recoveryError = "Damaged tail";
+    mockActivityStreamOnce({ ...defaultFitActivity(), recoveryError });
+    mockFindUniqueProviderActivityByExactIdentity.mockResolvedValueOnce({
+      id: "activity-row-1",
+    });
+
+    await importFitFile(
+      mockDb,
+      {
+        filePath,
+        originalPath: "DI_CONNECT/activity.fit",
+        userId: "user-1",
+        providerId: "garmin-dump",
+      },
+      async () => {},
+    );
+
+    expect(mockUpsertProviderActivity).not.toHaveBeenCalled();
+    expect(mockDb.execute).toHaveBeenCalledOnce();
+    expect(mockDb.execute).toHaveBeenCalledAfter(mockReplaceActivityDeviceObservations);
+    const statement = vi.mocked(mockDb.execute).mock.calls[0]?.[0];
+    if (!(statement instanceof SQL)) throw new Error("Expected exact FIT recovery status update");
+    const query = new PgDialect().sqlToQuery(statement);
+    expect(query.sql).toContain("fit_recovery_error");
+    expect(query.params).toContain(recoveryError);
+  });
+
+  it("clears recovery provenance on a clean exact Garmin summary match", async () => {
+    const filePath = await writeTempFit(createActivityFit());
+    mockActivityStreamOnce(defaultFitActivity());
+    mockFindUniqueProviderActivityByExactIdentity.mockResolvedValueOnce({
+      id: "activity-row-1",
+    });
+
+    await importFitFile(
+      mockDb,
+      {
+        filePath,
+        originalPath: "DI_CONNECT/activity.fit",
+        userId: "user-1",
+        providerId: "garmin-dump",
+      },
+      async () => {},
+    );
+
+    const statement = vi.mocked(mockDb.execute).mock.calls[0]?.[0];
+    if (!(statement instanceof SQL)) throw new Error("Expected exact FIT recovery status clear");
+    const query = new PgDialect().sqlToQuery(statement);
+    expect(query.sql).toContain("fit_recovery_error");
+    expect(query.params).toContain(null);
+    expect(mockDb.execute).toHaveBeenCalledAfter(mockReplaceActivityDeviceObservations);
+  });
+
   it("retains the original FIT bytes before decoding begins", async () => {
     const bytes = createActivityFit();
     const filePath = await writeTempFit(bytes);
@@ -561,6 +702,7 @@ describe("processFitFileImportJob", () => {
         fieldOccurrences: [],
         isWeightFile: false,
         session: defaultFitActivity().session,
+        recoveryError: null,
       });
       for (let offset = 0; offset < messages.length; offset += 250) {
         await consumer.onDeviceInfoBatch(messages.slice(offset, offset + 250));
@@ -602,6 +744,7 @@ describe("processFitFileImportJob", () => {
         fieldOccurrences: [],
         isWeightFile: false,
         session: defaultFitActivity().session,
+        recoveryError: null,
       });
       await consumer.onDeviceInfoBatch([{ product_name: "Recorder" }]);
       throw new FitDecoderError("invalid FIT checksum");
@@ -992,6 +1135,7 @@ describe("processFitFileImportJob", () => {
           fieldOccurrences: [],
           isWeightFile: false,
           session: activity.session,
+          recoveryError: null,
         });
         await consumer.onRecordBatch(activity.records);
         throw new FitDecoderError("invalid final message count");

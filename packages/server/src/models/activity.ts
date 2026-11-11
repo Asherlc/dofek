@@ -26,6 +26,9 @@ export type {
   SourceLink,
 };
 
+const FIT_RECOVERY_WARNING =
+  "Some activity data could not be recovered from the original file. The available data was imported; this activity may be incomplete.";
+
 export interface ActivityDetail {
   climbingLogSessions: ClimbingLogActivitySession[];
   id: string;
@@ -71,6 +74,7 @@ export interface ActivityDetail {
   sampleCount: number | null;
   sampleCountState: ActivityDataState;
   providerAbsentAt: string | null;
+  fitRecoveryWarning: string | null;
 }
 
 export interface ActivityRow extends ActivityOriginColumns {
@@ -107,6 +111,7 @@ export interface ActivityRow extends ActivityOriginColumns {
   elevation_gain_m: number | null;
   elevation_loss_m: number | null;
   sample_count: number | null;
+  fit_recovery_error: boolean;
   provider_absent_at: string | null;
 }
 
@@ -314,6 +319,7 @@ export class Activity {
       sampleCount: this.sampleCount,
       sampleCountState: activityMeasurementState("Sample count", this.sampleCount),
       providerAbsentAt: this.providerAbsentAt,
+      fitRecoveryWarning: this.#row.fit_recovery_error ? FIT_RECOVERY_WARNING : null,
     };
   }
 }

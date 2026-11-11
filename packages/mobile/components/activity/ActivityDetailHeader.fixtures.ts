@@ -18,6 +18,7 @@ export const detailHeaderActivity: ComponentProps<typeof ActivityDetailHeader>["
   providerId: "garmin",
   subsource: null,
   providerAbsentAt: null,
+  fitRecoveryWarning: null,
   sourceTree: garminActivitySourceTree,
 };
 

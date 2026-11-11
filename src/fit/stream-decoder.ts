@@ -31,6 +31,7 @@ const metadataMessageSchema = z.object({
   fileType: z.number().int().nonnegative().nullable(),
   fileTypeName: z.string().nullable(),
   fileId: rawMessageSchema.nullable(),
+  recoveryError: z.string().min(1).nullable(),
   hasWeightMessages: z.boolean(),
   session: rawMessageSchema.nullable(),
   sportName: z.string().nullable(),
@@ -83,6 +84,7 @@ export interface FitStreamMetadata {
   fileTypeName: string | null;
   fieldOccurrences: Array<z.infer<typeof fieldOccurrenceSchema>>;
   isWeightFile: boolean;
+  recoveryError: string | null;
   session: ParsedFitSession | null;
 }
 
@@ -261,6 +263,7 @@ export async function streamFitFile(
             fileTypeName: message.fileTypeName,
             fieldOccurrences: message.fieldOccurrences,
             isWeightFile: metadataIsWeightFile,
+            recoveryError: message.recoveryError,
             session: message.session
               ? parsedSession(message.session, message.sportName, message.subSportName)
               : null,

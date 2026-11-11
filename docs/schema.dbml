@@ -510,6 +510,7 @@ table fitness.activity {
   rejected_provider_end_utc_offset_minutes bigint
   strava_id text
   raw jsonb
+  fit_recovery_error text
   provider_absent_at "timestamp with time zone"
   absence_provider_id text
   deleted_at "timestamp with time zone"
@@ -899,6 +900,38 @@ table fitness.activity_image_work {
   }
 }
 
+table fitness.analytics_query_owner {
+  resource_id text [pk, not null]
+  owner_id uuid
+  backend_pid bigint
+  quiescent boolean [not null, default: true]
+  intent_id text
+  ingested_at "timestamp with time zone" [not null, default: `'epoch'`]
+  query_id uuid
+  query_terminal boolean [not null, default: true]
+}
+
+table fitness.analytics_stream_state {
+  transport text [not null]
+  epoch text [not null]
+  topic text [not null]
+  partition bigint [not null]
+  owner_id uuid [not null]
+  processed jsonb
+  pending jsonb
+  group_state text
+  group_first_position jsonb
+  group_last_position jsonb
+  group_member_count bigint
+  group_positions_digest text
+  group_first_ingested_at "timestamp with time zone"
+
+  indexes {
+    (transport, epoch, topic, partition) [pk]
+
+  }
+}
+
 table fitness.area {
   id uuid [pk, not null, default: `gen_random_uuid()`]
   user_id uuid [not null]
@@ -1227,6 +1260,20 @@ table fitness.account_erasure_checkpoint {
 
   indexes {
     (request_id, phase) [pk]
+  }
+}
+
+table fitness.account_erasure_identifier {
+  request_id uuid [not null]
+  family text [not null]
+  identity_key text [not null]
+  encrypted_identifier text [not null]
+
+  indexes {
+    (request_id, family, identity_key) [pk]
+
+
+
   }
 }
 
@@ -2209,6 +2256,8 @@ ref medication_dose_event_provider_id_provider_id_fk: fitness.medication_dose_ev
 ref medication_dose_event_user_id_user_profile_id_fk: fitness.medication_dose_event.user_id > fitness.user_profile.id [delete: no action, update: no action]
 
 ref account_erasure_checkpoint_request_id_account_erasure_request_id_fk: fitness.account_erasure_checkpoint.request_id > fitness.account_erasure_request.id [delete: cascade, update: no action]
+
+ref account_erasure_identifier_request_id_account_erasure_request_id_fk: fitness.account_erasure_identifier.request_id > fitness.account_erasure_request.id [delete: cascade, update: no action]
 
 ref account_erasure_identity_fence_request_id_account_erasure_request_id_fk: fitness.account_erasure_identity_fence.request_id > fitness.account_erasure_request.id [delete: restrict, update: no action]
 

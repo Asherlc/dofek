@@ -1,7 +1,10 @@
+import { randomUUID } from "node:crypto";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   findUniqueProviderActivityByExactIdentity,
   type ProviderActivityExactIdentity,
+  upsertProviderActivity,
 } from "./provider-activity-sync.ts";
 import { activity } from "./schema/activity.ts";
 import { setupTestDatabase, type TestContext } from "./test-helpers.ts";
@@ -69,5 +72,51 @@ describe("findUniqueProviderActivityByExactIdentity", () => {
     await expect(findUniqueProviderActivityByExactIdentity(context.db, identity)).resolves.toBe(
       undefined,
     );
+  });
+
+  it("preserves FIT recovery status during ordinary provider upserts", async () => {
+    const startedAt = new Date("2026-10-14T10:00:00.000Z");
+    const endedAt = new Date("2026-10-14T11:00:00.000Z");
+    const externalId = randomUUID();
+    const [existing] = await context.db
+      .insert(activity)
+      .values({
+        providerId: "garmin-dump-identity-test",
+        externalId,
+        canonicalType: "hiking",
+        providerType: "hiking",
+        modality: null,
+        startedAt,
+        endedAt,
+        raw: { sourceName: "original" },
+      })
+      .returning({ id: activity.id, userId: activity.userId });
+    if (!existing) throw new Error("Expected the FIT summary activity to be inserted");
+
+    await context.db
+      .update(activity)
+      .set({ fitRecoveryError: "Recovered FIT tail" })
+      .where(eq(activity.id, existing.id));
+    await upsertProviderActivity(
+      context.db,
+      {
+        providerId: "garmin-dump-identity-test",
+        userId: existing.userId,
+        externalId,
+        activityType: { canonicalType: "hiking", providerType: "hiking", modality: null },
+        startedAt,
+        endedAt,
+        name: "Updated provider activity",
+        raw: { sourceName: "updated" },
+      },
+      { name: "Updated provider activity", raw: { sourceName: "updated" } },
+    );
+
+    const [updated] = await context.db
+      .select({ fitRecoveryError: activity.fitRecoveryError, raw: activity.raw })
+      .from(activity)
+      .where(eq(activity.id, existing.id));
+    expect(updated?.fitRecoveryError).toBe("Recovered FIT tail");
+    expect(updated?.raw).toEqual({ sourceName: "updated" });
   });
 });
