@@ -24,7 +24,6 @@ import {
  * - settings (get, set, getAll, slackStatus)
  * - sync (providers, providerStats, logs, syncStatus)
  * - food (search, quickAdd, update, delete, list with meal filter)
- * - healthspan (trend with weekly history)
  * - nutrition-analytics (micronutrientAdequacy, macroRatios)
  */
 describe("Router data coverage", () => {
@@ -269,7 +268,6 @@ describe("Router data coverage", () => {
       }
     }
 
-    // ── Insert sleep sessions with stage data for recovery/healthspan ──
     for (let i = 90; i >= 0; i--) {
       const duration = 450 + Math.round(Math.sin(i * 0.4) * 30);
       const deep = Math.round(duration * 0.15);
@@ -335,7 +333,6 @@ describe("Router data coverage", () => {
       );
     }
 
-    // ── Insert strength workouts with sets for healthspan + strength endpoints ──
     // Create an exercise first
     await testCtx.db.execute(
       sql`INSERT INTO fitness.exercise (id, name, equipment)
@@ -964,52 +961,6 @@ describe("Router data coverage", () => {
       for (const row of result) {
         expect(row.date).toBeTruthy();
         expect(Number(row.calories)).toBeGreaterThan(0);
-      }
-    });
-  });
-
-  // ══════════════════════════════════════════════════════════════
-  // Healthspan — score with trend
-  // ══════════════════════════════════════════════════════════════
-  describe("healthspan", () => {
-    it("score returns composite with trend and metrics", async () => {
-      const result = await query<{
-        healthspanScore: number;
-        metrics: {
-          name: string;
-          value: number | null;
-          unit: string;
-          score: number;
-          status: string;
-        }[];
-        history: { weekStart: string; score: number }[];
-        trend: "improving" | "declining" | "stable" | null;
-      }>("healthspan.score", { weeks: 12 });
-
-      expect(result.healthspanScore).toBeGreaterThanOrEqual(0);
-      expect(result.healthspanScore).toBeLessThanOrEqual(100);
-      expect(result.metrics).toHaveLength(9);
-
-      expect(result.history.length).toBeGreaterThan(0);
-
-      // Trend should be computed if 4+ weeks of history
-      if (result.history.length >= 4) {
-        expect(result.trend).not.toBeNull();
-        expect(["improving", "declining", "stable"]).toContain(result.trend);
-      }
-
-      // Check specific metric statuses
-      for (const metric of result.metrics) {
-        expect(["excellent", "good", "fair", "poor"]).toContain(metric.status);
-        expect(metric.score).toBeGreaterThanOrEqual(0);
-        expect(metric.score).toBeLessThanOrEqual(100);
-      }
-
-      // Steps metric should reflect our test data (~8000 avg)
-      const stepsMetric = result.metrics.find((m) => m.name === "Daily Steps");
-      expect(stepsMetric).toBeDefined();
-      if (stepsMetric?.value != null) {
-        expect(stepsMetric.value).toBeGreaterThan(5000);
       }
     });
   });

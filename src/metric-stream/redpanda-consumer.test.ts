@@ -15,7 +15,25 @@ const kafkaConsumerSubscribe = vi.hoisted(() => vi.fn(async () => undefined));
 const kafkaConsumerRun = vi.hoisted(() => vi.fn(async () => undefined));
 const kafkaAdminConnect = vi.hoisted(() => vi.fn(async () => undefined));
 const kafkaAdminCreateTopics = vi.hoisted(() => vi.fn(async () => true));
-const kafkaAdminAlterConfigs = vi.hoisted(() => vi.fn(async () => undefined));
+const kafkaAdminDescribeConfigs = vi.hoisted(() =>
+  vi.fn(async (options: { resources: { name: string }[] }) => ({
+    resources: [
+      {
+        resourceName: options.resources[0]?.name,
+        resourceType: 2,
+        errorCode: 0,
+        errorMessage: null,
+        configEntries: [
+          { configName: "cleanup.policy", configValue: "delete" },
+          { configName: "retention.ms", configValue: "604800000" },
+          { configName: "retention.bytes", configValue: "1073741824" },
+        ],
+      },
+    ],
+    throttleTime: 0,
+  })),
+);
+
 const kafkaAdminDisconnect = vi.hoisted(() => vi.fn(async () => undefined));
 const kafkaProducerConnect = vi.hoisted(() => vi.fn(async () => undefined));
 const kafkaProducerSend = vi.hoisted(() => vi.fn(async () => undefined));
@@ -38,7 +56,7 @@ const kafkaConstructor = vi.hoisted(() =>
   vi.fn(function vitestConstructor() {
     return {
       admin: () => ({
-        alterConfigs: kafkaAdminAlterConfigs,
+        describeConfigs: kafkaAdminDescribeConfigs,
         connect: kafkaAdminConnect,
         createTopics: kafkaAdminCreateTopics,
         disconnect: kafkaAdminDisconnect,
@@ -67,7 +85,6 @@ vi.mock("../logger.ts", () => ({
 
 const event = createMetricStreamEvent(
   {
-    id: "10000000-0000-4000-8000-000000000001",
     recordedAt: "2026-06-06T19:00:00.000Z",
     userId: "00000000-0000-0000-0000-000000000001",
     providerId: "apple_health",
@@ -676,7 +693,7 @@ describe("createKafkaMetricStreamConsumerFromEnv", () => {
     kafkaConsumerRun.mockClear();
     kafkaAdminConnect.mockClear();
     kafkaAdminCreateTopics.mockClear();
-    kafkaAdminAlterConfigs.mockClear();
+    kafkaAdminDescribeConfigs.mockClear();
     kafkaAdminDisconnect.mockClear();
     kafkaProducerConnect.mockClear();
     kafkaProducerSend.mockClear();
@@ -788,14 +805,11 @@ describe("createKafkaMetricStreamConsumerFromEnv", () => {
       ],
       waitForLeaders: true,
     });
-    expect(kafkaAdminAlterConfigs).toHaveBeenCalledWith({
+    expect(kafkaAdminDescribeConfigs).toHaveBeenCalledWith({
+      includeSynonyms: false,
       resources: [
         {
-          configEntries: [
-            { name: "cleanup.policy", value: "delete" },
-            { name: "retention.ms", value: "604800000" },
-            { name: "retention.bytes", value: "1073741824" },
-          ],
+          configNames: ["cleanup.policy", "retention.ms", "retention.bytes"],
           name: "metric-stream-v1.quarantine.v1",
           type: 2,
         },

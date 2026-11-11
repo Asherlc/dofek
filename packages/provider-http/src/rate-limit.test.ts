@@ -18,6 +18,25 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+it.each([
+  { status: 429, description: "rate limit exceeded" },
+  { status: 502, description: "service unavailable" },
+])(
+  "keeps HTTP $status messages actionable and response bodies diagnostic",
+  async ({ status, description }) => {
+    const body = "<!DOCTYPE html><html>upstream error page</html>";
+    const providerFetch = createRateLimitAwareFetch(async () => response(status, body, "30"), {
+      providerId: "openbeta",
+    });
+    await expect(providerFetch("https://api.openbeta.io")).rejects.toMatchObject({
+      message: `openbeta API ${description} (${status}). Try again later.`,
+      responseBody: body,
+      statusCode: status,
+      retryAfterSeconds: 30,
+    });
+  },
+);
+
 it.each([200, 400, 429, 499, 600])("does not classify HTTP %s as a server error", (status) => {
   expect(isServiceUnavailableStatus(status)).toBe(false);
 });

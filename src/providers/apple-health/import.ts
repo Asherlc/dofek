@@ -16,7 +16,7 @@ import { SOURCE_TYPE_FILE } from "../../db/sensor-channels.ts";
 import { getTokenUserId } from "../../db/token-user-context.ts";
 import { ensureProvider } from "../../db/tokens.ts";
 import { logger } from "../../logger.ts";
-import type { MetricStreamEventPublisher } from "../../metric-stream/redpanda-producer.ts";
+import type { MetricStreamEventPublisher } from "../../metric-stream/publisher.ts";
 import type { SyncError, SyncResult } from "../types.ts";
 import { getStringAttrs } from "./dates.ts";
 import {

@@ -65,7 +65,7 @@ export class ClimbingStrengthsEnrichmentRepository extends BaseRepository<Catalo
         if (context.status === "missing") context = { ...context, status: "pending", error: null };
       }
       if (context.status === "pending") pending = true;
-      if (context.error) errors.add(context.error);
+      if (context.error) for (const message of context.error.split("\n")) errors.add(message);
       for (const entry of group) contexts.set(entry.logEntryId, context);
     }
     return {

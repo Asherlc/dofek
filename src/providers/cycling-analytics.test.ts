@@ -316,7 +316,7 @@ describe("CyclingAnalyticsProvider — rate-limit aware fetch wiring", () => {
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toContain(
-      "cycling_analytics API service unavailable (502): service down",
+      "cycling_analytics API service unavailable (502). Try again later.",
     );
   });
 

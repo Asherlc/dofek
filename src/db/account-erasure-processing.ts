@@ -3,6 +3,12 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { captureAccountErasurePostgresWalLsn } from "../account-erasure/peerdb-erasure.ts";
 import { assertPostgresAccountErasureComplete } from "../account-erasure/postgres-erasure.ts";
+import { accountErasureRouteHighWatermarkSchema } from "../account-erasure/redpanda-drain.ts";
+import {
+  ACCOUNT_ERASURE_SNAPSHOT_LIMITS,
+  ACCOUNT_ERASURE_SNAPSHOT_SUPPORT_REQUIRED,
+  assertAccountErasureSnapshotEncryptedBytes,
+} from "../account-erasure/snapshot-budget.ts";
 import type { AccountErasurePhase } from "../jobs/process-account-erasure-job.ts";
 import type { Database } from "./index.ts";
 import { executeWithSchema, timestampStringSchema } from "./typed-sql.ts";
@@ -17,6 +23,7 @@ const checkpointDetailsRowSchema = z.object({
 const claimedRequestRowSchema = z.object({
   completion_deadline: timestampStringSchema,
   encrypted_remote_snapshot: z.string().min(1).nullable(),
+  encrypted_snapshot_bytes: z.coerce.number().int().nonnegative(),
   id: z.uuid(),
   pii_scrubbed_at: timestampStringSchema.nullable(),
   requested_at: timestampStringSchema,
@@ -77,6 +84,7 @@ export async function listPendingAccountErasureRequests(
         FROM fitness.account_erasure_outbox AS outbox
         JOIN fitness.account_erasure_request AS request ON request.id = outbox.request_id
         WHERE request.status <> 'completed'
+          AND request.last_error IS DISTINCT FROM ${ACCOUNT_ERASURE_SNAPSHOT_SUPPORT_REQUIRED}
           AND (
             request.user_id IS NOT NULL
             OR request.pii_scrubbed_at IS NOT NULL
@@ -143,6 +151,7 @@ export async function markOverdueAccountErasureRequests(
           updated_at = ${now.toISOString()}
         WHERE status <> 'completed'
           AND completion_deadline <= ${now.toISOString()}
+          AND last_error IS DISTINCT FROM ${ACCOUNT_ERASURE_SNAPSHOT_SUPPORT_REQUIRED}
           AND last_error IS DISTINCT FROM
             'Account erasure exceeded its 30-day completion deadline; deletion continues'
         RETURNING id`,
@@ -178,6 +187,7 @@ export async function claimAccountErasureRequest(
           updated_at = ${now.toISOString()}
         WHERE id = ${requestId}::uuid
           AND status <> 'completed'
+          AND last_error IS DISTINCT FROM ${ACCOUNT_ERASURE_SNAPSHOT_SUPPORT_REQUIRED}
           AND (
             (
               user_id IS NOT NULL
@@ -207,13 +217,16 @@ export async function claimAccountErasureRequest(
           user_id,
           user_hash,
           user_hash_key_id,
-          encrypted_remote_snapshot,
+          coalesce(octet_length(encrypted_remote_snapshot),0) AS encrypted_snapshot_bytes,
+          CASE WHEN octet_length(encrypted_remote_snapshot)<=${ACCOUNT_ERASURE_SNAPSHOT_LIMITS.encryptedBytes}
+            THEN encrypted_remote_snapshot ELSE NULL END AS encrypted_remote_snapshot,
           pii_scrubbed_at,
           requested_at,
           replay_retained_until,
           completion_deadline`,
   );
   const row = rows[0];
+  if (row) assertAccountErasureSnapshotEncryptedBytes(row.encrypted_snapshot_bytes);
   return row
     ? {
         completionDeadline: new Date(row.completion_deadline),
@@ -234,7 +247,6 @@ export async function renewAccountErasureLease(
   requestId: string,
   leaseOwner: string,
   leaseDurationMs: number,
-  now = new Date(),
 ): Promise<void> {
   const parsedLeaseOwner = z.string().min(1).max(200).parse(leaseOwner);
   const parsedLeaseDurationMs = z
@@ -243,18 +255,23 @@ export async function renewAccountErasureLease(
     .min(30_000)
     .max(24 * 60 * 60 * 1_000)
     .parse(leaseDurationMs);
-  const leaseExpiresAt = new Date(now.getTime() + parsedLeaseDurationMs);
   const rows = await executeWithSchema(
     database,
     idRowSchema,
-    sql`UPDATE fitness.account_erasure_request
+    sql`WITH locked AS MATERIALIZED (
+          SELECT id,lease_owner,status,lease_expires_at
+          FROM fitness.account_erasure_request WHERE id=${requestId}::uuid FOR UPDATE
+        )
+        UPDATE fitness.account_erasure_request AS request
         SET
-          lease_expires_at = ${leaseExpiresAt.toISOString()},
-          updated_at = ${now.toISOString()}
-        WHERE id = ${requestId}::uuid
-          AND lease_owner = ${parsedLeaseOwner}
-          AND status <> 'completed'
-        RETURNING id`,
+          lease_expires_at = clock_timestamp() + ${parsedLeaseDurationMs} * interval '1 millisecond',
+          updated_at = clock_timestamp()
+        FROM locked
+        WHERE request.id = locked.id
+          AND locked.lease_owner = ${parsedLeaseOwner}
+          AND locked.status <> 'completed'
+          AND locked.lease_expires_at > clock_timestamp()
+        RETURNING request.id`,
   );
   if (rows.length !== 1) {
     throw new Error("Account erasure lease is no longer owned");
@@ -318,7 +335,11 @@ export async function saveAccountErasurePhaseProgress(
   const rows = await executeWithSchema(
     database,
     idRowSchema,
-    sql`UPDATE fitness.account_erasure_request
+    sql`WITH locked AS MATERIALIZED (
+          SELECT id,lease_owner,lease_expires_at,status
+          FROM fitness.account_erasure_request WHERE id=${requestId}::uuid FOR UPDATE
+        )
+        UPDATE fitness.account_erasure_request AS request
         SET
           phase_progress = jsonb_set(
             phase_progress,
@@ -327,10 +348,12 @@ export async function saveAccountErasurePhaseProgress(
             true
           ),
           updated_at = now()
-        WHERE id = ${requestId}::uuid
-          AND lease_owner = ${leaseOwner}
-          AND status <> 'completed'
-        RETURNING id`,
+        FROM locked
+        WHERE request.id=locked.id
+          AND locked.lease_owner = ${leaseOwner}
+          AND locked.status <> 'completed'
+          AND locked.lease_expires_at > clock_timestamp()
+        RETURNING request.id`,
   );
   if (rows.length !== 1) {
     throw new Error("Account erasure lease was lost while saving phase progress");
@@ -431,7 +454,8 @@ export async function markAccountErasureFailed(
           status = 'failed',
           failure_count = failure_count + 1,
           last_error = ${failure},
-          retry_at = ${retryAt.toISOString()},
+          retry_at = CASE WHEN ${failure}=${ACCOUNT_ERASURE_SNAPSHOT_SUPPORT_REQUIRED}
+            THEN NULL ELSE ${retryAt.toISOString()}::timestamptz END,
           lease_owner = NULL,
           lease_expires_at = NULL,
           updated_at = ${now.toISOString()}
@@ -552,6 +576,30 @@ export async function scrubAccountErasureRequestPii(
       throw new Error("Account erasure cannot scrub request PII before deleting the user profile");
     }
 
+    const brokerCheckpoints = await executeWithSchema(
+      transaction,
+      checkpointDetailsRowSchema.extend({ phase: z.enum(["ingest_fence", "consumer_drain"]) }),
+      sql`SELECT phase, details FROM fitness.account_erasure_checkpoint
+          WHERE request_id = ${requestId}::uuid
+            AND phase IN ('ingest_fence', 'consumer_drain')
+          FOR UPDATE`,
+    );
+    for (const checkpoint of brokerCheckpoints) {
+      const key =
+        checkpoint.phase === "ingest_fence" ? "highWatermarks" : "quarantineHighWatermarks";
+      const structural = z
+        .object({ [key]: z.array(accountErasureRouteHighWatermarkSchema).min(1).max(3) })
+        .parse(checkpoint.details);
+      await transaction.execute(sql`UPDATE fitness.account_erasure_checkpoint
+          SET details = ${JSON.stringify(structural)}::jsonb
+          WHERE request_id = ${requestId}::uuid AND phase = ${checkpoint.phase}`);
+    }
+
+    await transaction.execute(
+      sql`DELETE FROM fitness.account_erasure_identifier
+          WHERE request_id = ${requestId}::uuid`,
+    );
+
     await transaction.execute(
       sql`INSERT INTO fitness.account_erasure_checkpoint (
             request_id, phase, details
@@ -559,14 +607,14 @@ export async function scrubAccountErasureRequestPii(
           VALUES (${requestId}::uuid, 'request_pii_scrub', NULL)
           ON CONFLICT (request_id, phase) DO UPDATE SET details = NULL`,
     );
+    // Retain only non-identifying fields retention verification still need after scrub.
+    // Broker checkpoints were schema-projected above to bounded route/generation
+    // fields only. Preserve that projection; remove all account PII.
     await transaction.execute(
       sql`UPDATE fitness.account_erasure_checkpoint
           SET details =
             CASE
-              WHEN phase = 'consumer_drain' THEN jsonb_build_object(
-                'quarantineHighWatermarks',
-                details -> 'quarantineHighWatermarks'
-              )
+              WHEN phase IN ('ingest_fence', 'consumer_drain') THEN details
               WHEN phase = 'peerdb_drain_verification' THEN jsonb_build_object(
                 'stagingBoundary',
                 jsonb_build_object(

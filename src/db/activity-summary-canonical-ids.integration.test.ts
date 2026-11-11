@@ -401,6 +401,7 @@ function createActivityTableSql(targetSchema: string): string {
   id UUID,
   group_id UUID,
   user_id UUID,
+  provider_type String,
   started_at DateTime64(6, 'UTC'),
   ended_at Nullable(DateTime64(6, 'UTC')),
   _peerdb_synced_at DateTime64(9, 'UTC')
@@ -478,12 +479,12 @@ ORDER BY (user_id, activity_id)`;
 
 function insertChangedRawMemberActivitySql(targetSchema: string): string {
   return `INSERT INTO ${targetSchema}.source_activity VALUES
-  ('${memberActivityId}', '${canonicalActivityId}', '${testUserId}', toDateTime64('2026-05-31 18:08:51', 6, 'UTC'), toDateTime64('2026-05-31 19:42:38', 6, 'UTC'), toDateTime64('2026-06-01 00:10:00', 9, 'UTC'))`;
+  ('${memberActivityId}', '${canonicalActivityId}', '${testUserId}', 'cycling', toDateTime64('2026-05-31 18:08:51', 6, 'UTC'), toDateTime64('2026-05-31 19:42:38', 6, 'UTC'), toDateTime64('2026-06-01 00:10:00', 9, 'UTC'))`;
 }
 
 function insertUnchangedRawMemberActivitySql(targetSchema: string): string {
   return `INSERT INTO ${targetSchema}.source_activity VALUES
-  ('${memberActivityId}', '${canonicalActivityId}', '${testUserId}', toDateTime64('2026-05-31 18:08:51', 6, 'UTC'), toDateTime64('2026-05-31 19:42:38', 6, 'UTC'), toDateTime64('2026-05-31 23:30:00', 9, 'UTC'))`;
+  ('${memberActivityId}', '${canonicalActivityId}', '${testUserId}', 'cycling', toDateTime64('2026-05-31 18:08:51', 6, 'UTC'), toDateTime64('2026-05-31 19:42:38', 6, 'UTC'), toDateTime64('2026-05-31 23:30:00', 9, 'UTC'))`;
 }
 
 function insertDedupedActivitiesSql(targetSchema: string): string {

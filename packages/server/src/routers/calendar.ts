@@ -63,7 +63,7 @@ const calendarActivityEntrySchema = z.object({
   startedAt: timestampStringSchema,
   endedAt: timestampStringSchema.nullable(),
   localTimeContext: recordLocalTimeContextSchema,
-  durationMin: z.number(),
+  durationMin: z.number().nullable(),
   source: activityListSourceSchema,
   lastProcessedAt: timestampStringSchema.nullable(),
   distanceMeters: z.number().nullable(),
@@ -145,7 +145,7 @@ export const calendarRouter = router({
 
   weekList: cachedProtectedQuery({
     maxAge: CacheTTL.MEDIUM,
-    keyVersion: "activity-calendar-power-stress-v11",
+    keyVersion: "activity-calendar-power-stress-v12",
   })
     .input(activityListInputSchema)
     .output(z.array(calendarDayActivitiesSchema))
@@ -169,7 +169,7 @@ export const calendarRouter = router({
 
   weekListV2: cachedProtectedQuery({
     maxAge: CacheTTL.MEDIUM,
-    keyVersion: "activity-calendar-page-power-stress-v2",
+    keyVersion: "activity-calendar-page-power-stress-v3",
   })
     .input(
       activityListInputSchema.extend({
@@ -206,7 +206,7 @@ export const calendarRouter = router({
 
   activityOverview: cachedProtectedQuery({
     maxAge: CacheTTL.MEDIUM,
-    keyVersion: "activity-calendar-primary-type-v3",
+    keyVersion: "activity-calendar-primary-type-v4",
   })
     .input(activityListInputSchema)
     .output(activityOverviewSchema)

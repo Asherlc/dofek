@@ -3,6 +3,7 @@ import {
   ProviderRequestTimeoutError,
 } from "@dofek/provider-http/rate-limit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import * as climbingSnapshots from "../db/climbing-log-snapshot.ts";
 import type { ClimbingLogSyncInput } from "../db/climbing-log-sync.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { SyncRun } from "./sync-run.ts";
@@ -283,13 +284,14 @@ describe("MountainProjectProvider", () => {
   ])(
     "reconciles only complete valid discovery $reconciles/$synced",
     async ({ rows, reconciles, synced }) => {
+      const snapshot = vi.spyOn(climbingSnapshots, "persistClimbingLogSnapshot");
       const db = database();
       const result = await run(
         provider(async () => new Response(csv(rows))),
         db,
       );
       expect(result.recordsSynced).toBe(synced);
-      expect(db.execute).toHaveBeenCalledTimes(reconciles ? 1 : 0);
+      expect(snapshot).toHaveBeenCalledTimes(reconciles ? 1 : 0);
     },
   );
   it.each([

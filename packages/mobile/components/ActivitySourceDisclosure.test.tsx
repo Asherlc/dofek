@@ -136,24 +136,27 @@ describe("ActivitySourceDisclosure", () => {
     expect(within(link).queryByText("Provider recording notice")).toBeNull();
   });
 
-  it("opens header sources in a dismissible overlay and restores focus", async () => {
-    render(
-      <ActivitySourceDisclosure
-        tree={branchingActivitySourceTree}
-        heading={<Text>Morning Ride</Text>}
-      />,
-    );
-    const trigger = screen.getByRole("button", { name: "Lineage: Hang Ten" });
-    act(() => trigger.focus());
-    fireEvent.click(trigger);
-    const dialog = screen.getByRole("dialog", { name: "Lineage" });
-    expect(within(dialog).getByText("Apple Health")).toBeDefined();
-    fireEvent.click(within(dialog).getByRole("button", { name: "Close lineage" }));
-    expect(screen.queryByRole("dialog")).toBeNull();
-    await waitFor(() => expect(trigger).toHaveFocus());
-    expect(trigger.getAttribute("aria-expanded")).toBe("false");
-    expect(screen.getByText("Morning Ride")).toBeDefined();
-  });
+  it.each([false, true])(
+    "opens sources in a dismissible overlay and restores focus (heading: %s)",
+    async (withHeading) => {
+      render(
+        <ActivitySourceDisclosure
+          tree={branchingActivitySourceTree}
+          heading={withHeading ? <Text>Morning Ride</Text> : undefined}
+        />,
+      );
+      const trigger = screen.getByRole("button", { name: "Lineage: Hang Ten" });
+      act(() => trigger.focus());
+      fireEvent.click(trigger);
+      const dialog = screen.getByRole("dialog", { name: "Lineage" });
+      expect(within(dialog).getByText("Apple Health")).toBeDefined();
+      fireEvent.click(within(dialog).getByRole("button", { name: "Close lineage" }));
+      expect(screen.queryByRole("dialog")).toBeNull();
+      await waitFor(() => expect(trigger).toHaveFocus());
+      expect(trigger.getAttribute("aria-expanded")).toBe("false");
+      if (withHeading) expect(screen.getByText("Morning Ride")).toBeDefined();
+    },
+  );
 
   it.each([
     ["whoop", "WHOOP (Cloud)"],
@@ -249,7 +252,7 @@ describe("ActivitySourceDisclosure", () => {
     expect(container.innerHTML).toBe("");
   });
 
-  it("toggles an inline tree with a single primary root and accessible controls", () => {
+  it("toggles an overlay with a single primary root and accessible controls", () => {
     render(<ActivitySourceDisclosure tree={branchingActivitySourceTree} />);
     const trigger = screen.getByRole("button", { name: "Lineage: Hang Ten" });
     expect(getComputedStyle(trigger).minHeight).toBe("44px");

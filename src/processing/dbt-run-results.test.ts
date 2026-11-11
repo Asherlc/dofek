@@ -24,6 +24,45 @@ const sources = {
 };
 
 describe("parseDbtRunArtifacts", () => {
+  it("checks every manifest model for an unselected local build", () => {
+    const parsed = parseDbtRunArtifacts({
+      manifest,
+      sources,
+      selectedModels: "all",
+      runResults: {
+        metadata: { invocation_id: "all-models" },
+        results: [
+          {
+            unique_id: "model.dofek.daily_sleep",
+            status: "success",
+            execution_time: 1,
+            message: null,
+          },
+          {
+            unique_id: "model.dofek.daily_recovery",
+            status: "error",
+            execution_time: 1,
+            message: "failure",
+          },
+        ],
+      },
+    });
+    expect(parsed.succeeded).toBe(false);
+    expect(parsed.models.map((model) => [model.name, model.status])).toEqual([
+      ["daily_sleep", "succeeded"],
+      ["daily_recovery", "failed"],
+    ]);
+  });
+  it("rejects an all-model build with no manifest models", () => {
+    expect(() =>
+      parseDbtRunArtifacts({
+        manifest: { ...manifest, nodes: {} },
+        sources,
+        selectedModels: "all",
+        runResults: { metadata: { invocation_id: "empty" }, results: [] },
+      }),
+    ).toThrow("no models");
+  });
   it("maps success, warning, skipped, and error results by manifest model name", () => {
     const parsed = parseDbtRunArtifacts({
       manifest,

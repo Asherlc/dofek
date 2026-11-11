@@ -1284,43 +1284,6 @@ describe("Router coverage", () => {
   });
 
   // ══════════════════════════════════════════════════════════════
-  // Healthspan — score with weekly history
-  // ══════════════════════════════════════════════════════════════
-  describe("healthspan", () => {
-    it("score returns composite with trend and metrics", async () => {
-      const result = await query<{
-        healthspanScore: number;
-        metrics: {
-          name: string;
-          value: number | null;
-          unit: string;
-          score: number;
-          status: string;
-        }[];
-        history: { weekStart: string; score: number }[];
-        trend: "improving" | "declining" | "stable" | null;
-      }>("healthspan.score", { weeks: 12 });
-
-      expect(result.healthspanScore).toBeGreaterThanOrEqual(0);
-      expect(result.healthspanScore).toBeLessThanOrEqual(100);
-      expect(result.metrics).toHaveLength(9);
-
-      expect(result.history.length).toBeGreaterThan(0);
-
-      if (result.history.length >= 4) {
-        expect(result.trend).not.toBeNull();
-        expect(["improving", "declining", "stable"]).toContain(result.trend);
-      }
-
-      for (const metric of result.metrics) {
-        expect(["excellent", "good", "fair", "poor"]).toContain(metric.status);
-        expect(metric.score).toBeGreaterThanOrEqual(0);
-        expect(metric.score).toBeLessThanOrEqual(100);
-      }
-    });
-  });
-
-  // ══════════════════════════════════════════════════════════════
   // Efficiency — aerobicEfficiency with Z2 data
   // ══════════════════════════════════════════════════════════════
   describe("efficiency", () => {

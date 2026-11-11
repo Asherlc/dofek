@@ -199,21 +199,6 @@ function validRecoveryFixture(): z.input<typeof mobileRecoveryFixtureSchema> {
         },
       ],
       healthStatus: [],
-      healthspan: {
-        healthspanScore: 84,
-        yearsDelta: 1.8,
-        availability: {
-          status: "available",
-          availableMetricCount: 3,
-          requiredMetricCount: 3,
-          missingMetricLabels: [],
-          summary: "3 of 3 required Healthspan metrics are available.",
-          nextCondition: null,
-        },
-        metrics: [],
-        history: [],
-        trend: "improving" as const,
-      },
     },
   };
 }
@@ -504,7 +489,12 @@ describe("mobileRecoveryFixtureSchema", () => {
       avgDailyStress: 1,
       highStressDays: 0,
     });
-    fixture.data.healthspan.history.push({ weekStart: "2026-08-03", score: 84 });
+    fixture.data.stress.weekly.push({
+      weekStart: "2026-08-03",
+      cumulativeStress: 7,
+      avgDailyStress: 1,
+      highStressDays: 0,
+    });
 
     const result = mobileRecoveryFixtureSchema.safeParse(fixture);
     expectIssue(result, [], "Fixture week 2026-06-15 does not overlap 2026-06-28..2026-07-27");

@@ -119,12 +119,14 @@ final class WhoopBleBackgroundUploader: NSObject {
         }
     }
 
-    func disable() throws {
-        try queue.sync { try disableLocked() }
+    func disable(onStage: (String) -> Void = { _ in }) throws {
+        onStage("uploader_queue_wait")
+        try queue.sync { try disableLocked(onStage: onStage) }
     }
 
-    private func disableLocked(cutoff: Date? = nil) throws {
+    private func disableLocked(cutoff: Date? = nil, onStage: (String) -> Void) throws {
         token = nil; headers = [:]; blocked.removeAll()
+        onStage("uploader_cancel_tasks")
         try cancelOwnedTasks()
         if let cutoff { try store.advanceErasureCutoff(to: cutoff) }
         active.removeAll()
@@ -135,13 +137,15 @@ final class WhoopBleBackgroundUploader: NSObject {
         lastSubmission.removeAll()
         lastCaptureSchedule = nil
         // Invalidate persisted completion identity even if file cleanup fails.
-        try store.purge()
+        onStage("uploader_store_purge")
+        try store.purge(onStage: onStage)
+        onStage("uploader_remove_bodies")
         try removeBodies()
     }
 
     func purge(cutoff: Date) throws {
         try queue.sync {
-            try disableLocked(cutoff: cutoff)
+            try disableLocked(cutoff: cutoff, onStage: { _ in })
         }
     }
 

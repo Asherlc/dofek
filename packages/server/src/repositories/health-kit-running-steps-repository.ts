@@ -6,7 +6,7 @@ import {
 import type { SyncDatabase } from "../../../../src/db/index.ts";
 import { markProviderActivityPresent } from "../../../../src/db/provider-activity-sync.ts";
 import type { MetricStreamRowInput } from "../../../../src/metric-stream/events.ts";
-import type { MetricStreamEventPublisher } from "../../../../src/metric-stream/redpanda-producer.ts";
+import type { MetricStreamEventPublisher } from "../../../../src/metric-stream/publisher.ts";
 import { writeMetricStreamRows } from "../../../../src/metric-stream/write-metric-stream.ts";
 import {
   appleHealthWorkoutExternalId,

@@ -20,6 +20,7 @@ describe("computed cycling power schema upgrade", () => {
       .replaceAll("analytics.", `${database}.`)
       .replaceAll("postgres_fitness.", `${rawDatabase}.`);
   const client: ClickHouseClient = {
+    exec: (options) => actual.exec({ ...options, query: rewrite(options.query) }),
     command: (options) => actual.command({ ...options, query: rewrite(options.query) }),
     query: (options) =>
       actual.query({

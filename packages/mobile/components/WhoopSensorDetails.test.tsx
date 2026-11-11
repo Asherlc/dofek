@@ -84,7 +84,7 @@ describe("WHOOP background sensor details", () => {
 
     const stats = makeWhoopCaptureStats();
     stats.buffers.sensorRecords.receivedCount = 11;
-    vi.mocked(getDataPathStats).mockReturnValueOnce(stats);
+    vi.mocked(getDataPathStats).mockResolvedValueOnce(stats);
     await act(async () => {
       await vi.advanceTimersByTimeAsync(10_000);
     });
@@ -115,11 +115,36 @@ describe("WHOOP background sensor details", () => {
     stats.buffers.sensorRecords.receivedCount = 9;
     stats.buffers.sensorRecords.count = 4;
     stats.buffers.sensorRecords.confirmedCount = 5;
-    vi.mocked(getDataPathStats).mockReturnValueOnce(stats);
+    vi.mocked(getDataPathStats).mockResolvedValueOnce(stats);
     render(<WhoopSensorPanel />);
     expect(
       await screen.findByText("Captured on this phone: 9 · Queued: 4 · Uploaded: 5"),
     ).toBeTruthy();
+  });
+  it("keeps one local queue read in flight across polling ticks", async () => {
+    vi.useFakeTimers();
+    let resolve!: (stats: ReturnType<typeof makeWhoopCaptureStats>) => void;
+    const pending = new Promise<ReturnType<typeof makeWhoopCaptureStats>>((done) => {
+      resolve = done;
+    });
+    vi.mocked(getDataPathStats).mockClear().mockReturnValueOnce(pending);
+    const panel = render(<WhoopSensorPanel />);
+    try {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(30_000);
+      });
+      expect(getDataPathStats).toHaveBeenCalledOnce();
+      await act(async () => {
+        resolve(makeWhoopCaptureStats());
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000);
+      });
+      expect(getDataPathStats).toHaveBeenCalledTimes(2);
+    } finally {
+      panel.unmount();
+      resolve(makeWhoopCaptureStats());
+    }
   });
 
   it("shows locally captured and queued records before the first upload", () => {

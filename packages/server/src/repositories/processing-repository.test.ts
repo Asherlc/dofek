@@ -1303,8 +1303,7 @@ describe("ProcessingRepository", () => {
           datasetLabels: ["Activities"],
           occurredAt: "2026-07-22T18:00:00.000Z",
           title: "Activities wasn’t updated",
-          message:
-            "Dofek couldn’t update activities. Your existing data is still available. Contact support for help.",
+          message: "Dofek couldn’t update activities. Contact support for help.",
           action: "contact_support",
           actionLabel: "Contact support",
         },
