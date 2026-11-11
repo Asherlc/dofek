@@ -211,7 +211,7 @@ describe("ClimbingCatalogueSearch", () => {
     expect(requests).toBe(0);
   });
 
-  it("propagates adapter failures to the caller", async () => {
+  it("retains original adapter failures for the caller", async () => {
     const failure = new Error("Provider unavailable");
     const search = new ClimbingCatalogueSearch([
       {
@@ -221,7 +221,76 @@ describe("ClimbingCatalogueSearch", () => {
         },
       },
     ]);
-    await expect(search.search(seed)).rejects.toBe(failure);
+    await expect(search.search(seed)).rejects.toMatchObject({ errors: [failure], sources: [] });
+  });
+
+  it("keeps each provider display message on one line while retaining its diagnostic error", async () => {
+    const failure = new Error("Upstream rejected\n  climb details.\nRetry later.");
+    const search = new ClimbingCatalogueSearch([
+      {
+        providerId: "openbeta",
+        search: async () => {
+          throw failure;
+        },
+      },
+    ]);
+    await expect(search.search(seed)).rejects.toMatchObject({
+      message: "openbeta: Upstream rejected climb details. Retry later.",
+      errors: [failure],
+    });
+  });
+
+  it("preserves successful native results when discovery sources fail", async () => {
+    const failure = new Error("OpenBeta API service unavailable (502). Try again later.");
+    const secondFailure = new Error("theCrag rejected the request (302). Try again later.");
+    const search = new ClimbingCatalogueSearch([
+      { providerId: "kaya", search: async () => ({ candidates: [native], complete: true }) },
+      {
+        providerId: "openbeta",
+        search: async () => {
+          throw failure;
+        },
+      },
+      {
+        providerId: "thecrag",
+        search: async () => {
+          throw secondFailure;
+        },
+      },
+    ]);
+    await expect(search.search(seed)).rejects.toMatchObject({
+      errors: [failure, secondFailure],
+      sources: [{ providerId: "kaya", matches: [{ confidence: "source", candidate: native }] }],
+      message: expect.stringContaining("openbeta"),
+    });
+  });
+
+  it("continues discovery from the original seed after a single failed native lookup", async () => {
+    let nativeRequests = 0;
+    const discoverySeeds: CatalogueSeed[] = [];
+    const failure = new Error("Kaya rejected climb details. Try again later.");
+    const search = new ClimbingCatalogueSearch([
+      {
+        providerId: "kaya",
+        search: async () => {
+          nativeRequests++;
+          throw failure;
+        },
+      },
+      {
+        providerId: "openbeta",
+        search: async (input) => {
+          discoverySeeds.push(input);
+          return { candidates: [], complete: false };
+        },
+      },
+    ]);
+    await expect(search.search(seed)).rejects.toMatchObject({
+      errors: [failure],
+      sources: [{ providerId: "openbeta", matches: [], searchComplete: false }],
+    });
+    expect(nativeRequests).toBe(1);
+    expect(discoverySeeds).toEqual([seed]);
   });
 
   it("rejects a candidate attributed to a different adapter", async () => {

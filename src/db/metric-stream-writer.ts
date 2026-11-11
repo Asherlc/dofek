@@ -5,11 +5,11 @@ import {
   type MetricStreamRowInput,
   metricStreamRowInputSchema,
 } from "../metric-stream/events.ts";
-import {
-  getDefaultMetricStreamEventPublisher,
-  type MetricStreamEventPublisher,
-  type MetricStreamReplacementPublishResult,
-} from "../metric-stream/redpanda-producer.ts";
+import type {
+  MetricStreamEventPublisher,
+  MetricStreamReplacementPublishResult,
+} from "../metric-stream/publisher.ts";
+import { getDefaultMetricStreamEventPublisher } from "../metric-stream/redpanda-producer.ts";
 import {
   prepareMetricStreamRows,
   withAccountErasureMetricStreamWriteFence,
@@ -19,7 +19,6 @@ import { getTokenUserId } from "./token-user-context.ts";
 import type { Database } from "./typed-sql.ts";
 
 export interface MetricStreamInsert {
-  id?: string;
   recordedAt: Date;
   userId?: string;
   providerId: string;

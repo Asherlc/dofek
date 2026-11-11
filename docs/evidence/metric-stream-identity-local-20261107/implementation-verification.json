@@ -1,0 +1,55 @@
+{
+  "status": "PASS_LOCAL_IMPLEMENTATION_TESTS_NOT_PRODUCTION_RECOVERY",
+  "sourceCommit": "5c3a9c2f21d85251f3be06dff6c38224ed5fc3d1",
+  "suite": "src/metric-stream/clickhouse-sink.integration.test.ts",
+  "command": "CLICKHOUSE_URL=<isolated server> pnpm exec vitest run --project integration src/metric-stream/clickhouse-sink.integration.test.ts",
+  "runs": [
+    {
+      "version": "26.10.2.103",
+      "passed": 20,
+      "failed": 0,
+      "retries": 0,
+      "seconds": 46.91,
+      "pruningRegression": {
+        "fixtureRows": 65536,
+        "readRows": 20480,
+        "readBytes": 2383872,
+        "writtenRows": 4096,
+        "queryMilliseconds": 101
+      }
+    },
+    {
+      "version": "26.6.1.1193",
+      "passed": 20,
+      "failed": 0,
+      "retries": 0,
+      "seconds": 53.1,
+      "pruningRegression": {
+        "fixtureRows": 65536,
+        "readRows": 20480,
+        "readBytes": 2383872,
+        "writtenRows": 4096,
+        "queryMilliseconds": 151
+      }
+    }
+  ],
+  "oldQueryRedRegression": {
+    "readRows": 77824,
+    "requiredMaximumExclusive": 32768
+  },
+  "exact266Runtime": {
+    "reportedVersion": "26.6.1.1193",
+    "binaryPackage": "https://packages.clickhouse.com/tgz/stable/clickhouse-common-static-26.6.1.1193-arm64.tgz",
+    "sha512": "7c4483a7463934997710d2c8d0791df25049182bf75ccc66bc7d9543d30299e8fea2db75e0b17c0cbd9ceed5912a29bdc60a6e0f640da42704117a0d4d41553e",
+    "serverConfigPackage": "https://packages.clickhouse.com/tgz/stable/clickhouse-server-26.6.1.1193-arm64.tgz",
+    "serverConfigSha512": "a4cc47576d52f5f31694ecc37018c45b06e77b5a815c59f4defcb248006ace0434cb879617873d09a85bb96f862df3bcc67d5a384e90c47513331e73a945c293",
+    "verification": "Both packages matched official adjacent .sha512 files; binary and stock config were read-only mounted into a cached container shell. SELECT version() verified the running server.",
+    "memoryLimitBytes": 3221225472,
+    "testStorage": "owned host-backed scratch, below 2 GiB; no existing volumes touched"
+  },
+  "limits": [
+    "Small executable fixture, not production latency or universal scan bound",
+    "Historical deletion-candidate coverage remains unestablished",
+    "No deployment, acknowledgement repair, offset changes or consumer recovery"
+  ]
+}

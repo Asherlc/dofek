@@ -1,0 +1,2338 @@
+{
+  "sourceCommit": "f987b8d027de65223ae28924d9e3b7e2b379ee0c",
+  "status": "LOCAL_QUALIFICATION_PASS_UNDER_IMMUTABLE_IDENTITY_ASSUMPTION",
+  "productionAuthorized": false,
+  "versions": [
+    {
+      "version": "26.6.1.1193",
+      "semantics": [
+        "activityId/parts",
+        "activityId/merged",
+        "channel/parts",
+        "channel/merged",
+        "externalId/parts",
+        "externalId/merged",
+        "scalar/parts",
+        "scalar/merged",
+        "generation/parts",
+        "generation/merged",
+        "null-overlap",
+        "cross-activity",
+        "deleted",
+        "erased",
+        "exact-rank-tie",
+        "unconstrained-branch",
+        "replay",
+        "replay/tombstone-observed",
+        "physical-erasure"
+      ],
+      "measurements": 64,
+      "parts": [
+        {
+          "distribution": "balanced",
+          "stage": "parts",
+          "parts": [
+            {
+              "rows": 524288,
+              "marks": 65,
+              "bytes_on_disk": 178243348
+            },
+            {
+              "rows": 524288,
+              "marks": 65,
+              "bytes_on_disk": 177857940
+            }
+          ]
+        },
+        {
+          "distribution": "balanced",
+          "stage": "merged",
+          "parts": [
+            {
+              "rows": 1048576,
+              "marks": 129,
+              "bytes_on_disk": 357094760
+            }
+          ]
+        },
+        {
+          "distribution": "dominant",
+          "stage": "parts",
+          "parts": [
+            {
+              "rows": 524288,
+              "marks": 65,
+              "bytes_on_disk": 178071589
+            },
+            {
+              "rows": 524288,
+              "marks": 65,
+              "bytes_on_disk": 177510607
+            }
+          ]
+        },
+        {
+          "distribution": "dominant",
+          "stage": "merged",
+          "parts": [
+            {
+              "rows": 1048576,
+              "marks": 129,
+              "bytes_on_disk": 356736444
+            }
+          ]
+        }
+      ],
+      "incidentRowRatio": [
+        0.031008668876547286,
+        0.053847042286055545
+      ],
+      "incidentByteRatio": [
+        0.09975235816566974,
+        0.22343476580951127
+      ],
+      "allByteRatio": [
+        0.053458174701947504,
+        0.2947275760475191
+      ],
+      "pairs": [
+        {
+          "distribution": "balanced",
+          "stage": "parts",
+          "ids": 1,
+          "run": 0,
+          "baseline": {
+            "distribution": "balanced",
+            "stage": "parts",
+            "cardinality": 1,
+            "run": 0,
+            "lane": "A-current",
+            "read_rows": 1064961,
+            "read_bytes": 17056759,
+            "query_duration_ms": 22,
+            "memory_usage": 6887281,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "balanced",
+            "stage": "parts",
+            "cardinality": 1,
+            "run": 0,
+            "lane": "B-identity-local",
+            "read_rows": 57345,
+            "read_bytes": 2409399,
+            "query_duration_ms": 18,
+            "memory_usage": 7933363,
+            "projections": []
+          },
+          "rowRatio": 0.053847042286055545,
+          "byteRatio": 0.14125772662907413
+        },
+        {
+          "distribution": "balanced",
+          "stage": "parts",
+          "ids": 1,
+          "run": 1,
+          "baseline": {
+            "distribution": "balanced",
+            "stage": "parts",
+            "cardinality": 1,
+            "run": 1,
+            "lane": "A-current",
+            "read_rows": 1064961,
+            "read_bytes": 17056759,
+            "query_duration_ms": 22,
+            "memory_usage": 5861717,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "balanced",
+            "stage": "parts",
+            "cardinality": 1,
+            "run": 1,
+            "lane": "B-identity-local",
+            "read_rows": 49153,
+            "read_bytes": 2270135,
+            "query_duration_ms": 24,
+            "memory_usage": 6068333,
+            "projections": []
+          },
+          "rowRatio": 0.046154741816836486,
+          "byteRatio": 0.13309298677433387
+        },
+        {
+          "distribution": "balanced",
+          "stage": "parts",
+          "ids": 64,
+          "run": 0,
+          "baseline": {
+            "distribution": "balanced",
+            "stage": "parts",
+            "cardinality": 64,
+            "run": 0,
+            "lane": "A-current",
+            "read_rows": 1064961,
+            "read_bytes": 17071858,
+            "query_duration_ms": 26,
+            "memory_usage": 5891509,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "balanced",
+            "stage": "parts",
+            "cardinality": 64,
+            "run": 0,
+            "lane": "B-identity-local",
+            "read_rows": 57345,
+            "read_bytes": 2423474,
+            "query_duration_ms": 20,
+            "memory_usage": 6130858,
+            "projections": []
+          },
+          "rowRatio": 0.053847042286055545,
+          "byteRatio": 0.14195724917580735
+        },
+        {
+          "distribution": "balanced",
+          "stage": "parts",
+          "ids": 64,
+          "run": 1,
+          "baseline": {
+            "distribution": "balanced",
+            "stage": "parts",
+            "cardinality": 64,
+            "run": 1,
+            "lane": "A-current",
+            "read_rows": 1064961,
+            "read_bytes": 17071858,
+            "query_duration_ms": 36,
+            "memory_usage": 5900301,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "balanced",
+            "stage": "parts",
+            "cardinality": 64,
+            "run": 1,
+            "lane": "B-identity-local",
+            "read_rows": 49153,
+            "read_bytes": 2284210,
+            "query_duration_ms": 16,
+            "memory_usage": 6090346,
+            "projections": []
+          },
+          "rowRatio": 0.046154741816836486,
+          "byteRatio": 0.13379973052728064
+        },
+        {
+          "distribution": "balanced",
+          "stage": "parts",
+          "ids": 113,
+          "run": 0,
+          "baseline": {
+            "distribution": "balanced",
+            "stage": "parts",
+            "cardinality": 113,
+            "run": 0,
+            "lane": "A-current",
+            "read_rows": 1064961,
+            "read_bytes": 17098579,
+            "query_duration_ms": 28,
+            "memory_usage": 5925912,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "balanced",
+            "stage": "parts",
+            "cardinality": 113,
+            "run": 0,
+            "lane": "B-identity-local",
+            "read_rows": 57345,
+            "read_bytes": 2448387,
+            "query_duration_ms": 20,
+            "memory_usage": 6165341,
+            "projections": []
+          },
+          "rowRatio": 0.053847042286055545,
+          "byteRatio": 0.14319242552261213
+        },
+        {
+          "distribution": "balanced",
+          "stage": "parts",
+          "ids": 113,
+          "run": 1,
+          "baseline": {
+            "distribution": "balanced",
+            "stage": "parts",
+            "cardinality": 113,
+            "run": 1,
+            "lane": "A-current",
+            "read_rows": 1064961,
+            "read_bytes": 17098579,
+            "query_duration_ms": 32,
+            "memory_usage": 5922216,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "balanced",
+            "stage": "parts",
+            "cardinality": 113,
+            "run": 1,
+            "lane": "B-identity-local",
+            "read_rows": 49153,
+            "read_bytes": 2309123,
+            "query_duration_ms": 27,
+            "memory_usage": 6121629,
+            "projections": []
+          },
+          "rowRatio": 0.046154741816836486,
+          "byteRatio": 0.13504765512970404
+        },
+        {
+          "distribution": "balanced",
+          "stage": "parts",
+          "ids": 8192,
+          "run": 0,
+          "baseline": {
+            "distribution": "balanced",
+            "stage": "parts",
+            "cardinality": 8192,
+            "run": 0,
+            "lane": "A-current",
+            "read_rows": 1073153,
+            "read_bytes": 69313340,
+            "query_duration_ms": 95,
+            "memory_usage": 32839780,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "balanced",
+            "stage": "parts",
+            "cardinality": 8192,
+            "run": 0,
+            "lane": "B-identity-local",
+            "read_rows": 65537,
+            "read_bytes": 4429779,
+            "query_duration_ms": 71,
+            "memory_usage": 21689923,
+            "projections": []
+          },
+          "rowRatio": 0.06106957721778721,
+          "byteRatio": 0.0639094725488629
+        },
+        {
+          "distribution": "balanced",
+          "stage": "parts",
+          "ids": 8192,
+          "run": 1,
+          "baseline": {
+            "distribution": "balanced",
+            "stage": "parts",
+            "cardinality": 8192,
+            "run": 1,
+            "lane": "A-current",
+            "read_rows": 1073153,
+            "read_bytes": 69313340,
+            "query_duration_ms": 87,
+            "memory_usage": 31629552,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "balanced",
+            "stage": "parts",
+            "cardinality": 8192,
+            "run": 1,
+            "lane": "B-identity-local",
+            "read_rows": 57345,
+            "read_bytes": 4290515,
+            "query_duration_ms": 57,
+            "memory_usage": 21646227,
+            "projections": []
+          },
+          "rowRatio": 0.05343599654476109,
+          "byteRatio": 0.061900277782025795
+        },
+        {
+          "distribution": "balanced",
+          "stage": "merged",
+          "ids": 1,
+          "run": 0,
+          "baseline": {
+            "distribution": "balanced",
+            "stage": "merged",
+            "cardinality": 1,
+            "run": 0,
+            "lane": "A-current",
+            "read_rows": 1056769,
+            "read_bytes": 18905083,
+            "query_duration_ms": 22,
+            "memory_usage": 11061607,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "balanced",
+            "stage": "merged",
+            "cardinality": 1,
+            "run": 0,
+            "lane": "B-identity-local",
+            "read_rows": 40961,
+            "read_bytes": 3700731,
+            "query_duration_ms": 20,
+            "memory_usage": 9338310,
+            "projections": []
+          },
+          "rowRatio": 0.03876059952553491,
+          "byteRatio": 0.1957532267909112
+        },
+        {
+          "distribution": "balanced",
+          "stage": "merged",
+          "ids": 1,
+          "run": 1,
+          "baseline": {
+            "distribution": "balanced",
+            "stage": "merged",
+            "cardinality": 1,
+            "run": 1,
+            "lane": "A-current",
+            "read_rows": 1056769,
+            "read_bytes": 18905083,
+            "query_duration_ms": 23,
+            "memory_usage": 9851169,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "balanced",
+            "stage": "merged",
+            "cardinality": 1,
+            "run": 1,
+            "lane": "B-identity-local",
+            "read_rows": 40961,
+            "read_bytes": 3700731,
+            "query_duration_ms": 16,
+            "memory_usage": 9338102,
+            "projections": []
+          },
+          "rowRatio": 0.03876059952553491,
+          "byteRatio": 0.1957532267909112
+        },
+        {
+          "distribution": "balanced",
+          "stage": "merged",
+          "ids": 64,
+          "run": 0,
+          "baseline": {
+            "distribution": "balanced",
+            "stage": "merged",
+            "cardinality": 64,
+            "run": 0,
+            "lane": "A-current",
+            "read_rows": 1064961,
+            "read_bytes": 17070907,
+            "query_duration_ms": 28,
+            "memory_usage": 5512804,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "balanced",
+            "stage": "merged",
+            "cardinality": 64,
+            "run": 0,
+            "lane": "B-identity-local",
+            "read_rows": 49153,
+            "read_bytes": 1996603,
+            "query_duration_ms": 21,
+            "memory_usage": 6049694,
+            "projections": []
+          },
+          "rowRatio": 0.046154741816836486,
+          "byteRatio": 0.11695939764653396
+        },
+        {
+          "distribution": "balanced",
+          "stage": "merged",
+          "ids": 64,
+          "run": 1,
+          "baseline": {
+            "distribution": "balanced",
+            "stage": "merged",
+            "cardinality": 64,
+            "run": 1,
+            "lane": "A-current",
+            "read_rows": 1064961,
+            "read_bytes": 17070907,
+            "query_duration_ms": 26,
+            "memory_usage": 5512388,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "balanced",
+            "stage": "merged",
+            "cardinality": 64,
+            "run": 1,
+            "lane": "B-identity-local",
+            "read_rows": 40961,
+            "read_bytes": 1857339,
+            "query_duration_ms": 19,
+            "memory_usage": 6049486,
+            "projections": []
+          },
+          "rowRatio": 0.03846244134761743,
+          "byteRatio": 0.10880142455230996
+        },
+        {
+          "distribution": "balanced",
+          "stage": "merged",
+          "ids": 113,
+          "run": 0,
+          "baseline": {
+            "distribution": "balanced",
+            "stage": "merged",
+            "cardinality": 113,
+            "run": 0,
+            "lane": "A-current",
+            "read_rows": 1056769,
+            "read_bytes": 16958364,
+            "query_duration_ms": 29,
+            "memory_usage": 5808326,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "balanced",
+            "stage": "merged",
+            "cardinality": 113,
+            "run": 0,
+            "lane": "B-identity-local",
+            "read_rows": 40961,
+            "read_bytes": 1882252,
+            "query_duration_ms": 23,
+            "memory_usage": 6071687,
+            "projections": []
+          },
+          "rowRatio": 0.03876059952553491,
+          "byteRatio": 0.11099254621495329
+        },
+        {
+          "distribution": "balanced",
+          "stage": "merged",
+          "ids": 113,
+          "run": 1,
+          "baseline": {
+            "distribution": "balanced",
+            "stage": "merged",
+            "cardinality": 113,
+            "run": 1,
+            "lane": "A-current",
+            "read_rows": 1056769,
+            "read_bytes": 16958364,
+            "query_duration_ms": 28,
+            "memory_usage": 5807910,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "balanced",
+            "stage": "merged",
+            "cardinality": 113,
+            "run": 1,
+            "lane": "B-identity-local",
+            "read_rows": 40961,
+            "read_bytes": 1882252,
+            "query_duration_ms": 17,
+            "memory_usage": 6071479,
+            "projections": []
+          },
+          "rowRatio": 0.03876059952553491,
+          "byteRatio": 0.11099254621495329
+        },
+        {
+          "distribution": "balanced",
+          "stage": "merged",
+          "ids": 8192,
+          "run": 0,
+          "baseline": {
+            "distribution": "balanced",
+            "stage": "merged",
+            "cardinality": 8192,
+            "run": 0,
+            "lane": "A-current",
+            "read_rows": 1064961,
+            "read_bytes": 69168013,
+            "query_duration_ms": 94,
+            "memory_usage": 31493439,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "balanced",
+            "stage": "merged",
+            "cardinality": 8192,
+            "run": 0,
+            "lane": "B-identity-local",
+            "read_rows": 49153,
+            "read_bytes": 3863644,
+            "query_duration_ms": 63,
+            "memory_usage": 21541477,
+            "projections": []
+          },
+          "rowRatio": 0.046154741816836486,
+          "byteRatio": 0.05585882595759979
+        },
+        {
+          "distribution": "balanced",
+          "stage": "merged",
+          "ids": 8192,
+          "run": 1,
+          "baseline": {
+            "distribution": "balanced",
+            "stage": "merged",
+            "cardinality": 8192,
+            "run": 1,
+            "lane": "A-current",
+            "read_rows": 1064961,
+            "read_bytes": 69168002,
+            "query_duration_ms": 145,
+            "memory_usage": 31496790,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "balanced",
+            "stage": "merged",
+            "cardinality": 8192,
+            "run": 1,
+            "lane": "B-identity-local",
+            "read_rows": 49153,
+            "read_bytes": 3863644,
+            "query_duration_ms": 60,
+            "memory_usage": 21540533,
+            "projections": []
+          },
+          "rowRatio": 0.046154741816836486,
+          "byteRatio": 0.05585883484100061
+        },
+        {
+          "distribution": "dominant",
+          "stage": "parts",
+          "ids": 1,
+          "run": 0,
+          "baseline": {
+            "distribution": "dominant",
+            "stage": "parts",
+            "cardinality": 1,
+            "run": 0,
+            "lane": "A-current",
+            "read_rows": 1064961,
+            "read_bytes": 19030427,
+            "query_duration_ms": 25,
+            "memory_usage": 11218146,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "dominant",
+            "stage": "parts",
+            "cardinality": 1,
+            "run": 0,
+            "lane": "B-identity-local",
+            "read_rows": 57345,
+            "read_bytes": 4252059,
+            "query_duration_ms": 24,
+            "memory_usage": 9410586,
+            "projections": []
+          },
+          "rowRatio": 0.053847042286055545,
+          "byteRatio": 0.22343476580951127
+        },
+        {
+          "distribution": "dominant",
+          "stage": "parts",
+          "ids": 1,
+          "run": 1,
+          "baseline": {
+            "distribution": "dominant",
+            "stage": "parts",
+            "cardinality": 1,
+            "run": 1,
+            "lane": "A-current",
+            "read_rows": 1064961,
+            "read_bytes": 19030427,
+            "query_duration_ms": 24,
+            "memory_usage": 9927382,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "dominant",
+            "stage": "parts",
+            "cardinality": 1,
+            "run": 1,
+            "lane": "B-identity-local",
+            "read_rows": 49153,
+            "read_bytes": 4112795,
+            "query_duration_ms": 18,
+            "memory_usage": 9367194,
+            "projections": []
+          },
+          "rowRatio": 0.046154741816836486,
+          "byteRatio": 0.216116800742306
+        },
+        {
+          "distribution": "dominant",
+          "stage": "parts",
+          "ids": 64,
+          "run": 0,
+          "baseline": {
+            "distribution": "dominant",
+            "stage": "parts",
+            "cardinality": 64,
+            "run": 0,
+            "lane": "A-current",
+            "read_rows": 1064961,
+            "read_bytes": 19030427,
+            "query_duration_ms": 29,
+            "memory_usage": 9931830,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "dominant",
+            "stage": "parts",
+            "cardinality": 64,
+            "run": 0,
+            "lane": "B-identity-local",
+            "read_rows": 57345,
+            "read_bytes": 4252059,
+            "query_duration_ms": 19,
+            "memory_usage": 9418080,
+            "projections": []
+          },
+          "rowRatio": 0.053847042286055545,
+          "byteRatio": 0.22343476580951127
+        },
+        {
+          "distribution": "dominant",
+          "stage": "parts",
+          "ids": 64,
+          "run": 1,
+          "baseline": {
+            "distribution": "dominant",
+            "stage": "parts",
+            "cardinality": 64,
+            "run": 1,
+            "lane": "A-current",
+            "read_rows": 1064961,
+            "read_bytes": 19030427,
+            "query_duration_ms": 28,
+            "memory_usage": 9935078,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "dominant",
+            "stage": "parts",
+            "cardinality": 64,
+            "run": 1,
+            "lane": "B-identity-local",
+            "read_rows": 49153,
+            "read_bytes": 4112795,
+            "query_duration_ms": 19,
+            "memory_usage": 9374208,
+            "projections": []
+          },
+          "rowRatio": 0.046154741816836486,
+          "byteRatio": 0.216116800742306
+        },
+        {
+          "distribution": "dominant",
+          "stage": "parts",
+          "ids": 113,
+          "run": 0,
+          "baseline": {
+            "distribution": "dominant",
+            "stage": "parts",
+            "cardinality": 113,
+            "run": 0,
+            "lane": "A-current",
+            "read_rows": 1064961,
+            "read_bytes": 19030427,
+            "query_duration_ms": 45,
+            "memory_usage": 9933960,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "dominant",
+            "stage": "parts",
+            "cardinality": 113,
+            "run": 0,
+            "lane": "B-identity-local",
+            "read_rows": 57345,
+            "read_bytes": 4252059,
+            "query_duration_ms": 22,
+            "memory_usage": 9422146,
+            "projections": []
+          },
+          "rowRatio": 0.053847042286055545,
+          "byteRatio": 0.22343476580951127
+        },
+        {
+          "distribution": "dominant",
+          "stage": "parts",
+          "ids": 113,
+          "run": 1,
+          "baseline": {
+            "distribution": "dominant",
+            "stage": "parts",
+            "cardinality": 113,
+            "run": 1,
+            "lane": "A-current",
+            "read_rows": 1064961,
+            "read_bytes": 19030427,
+            "query_duration_ms": 32,
+            "memory_usage": 9936008,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "dominant",
+            "stage": "parts",
+            "cardinality": 113,
+            "run": 1,
+            "lane": "B-identity-local",
+            "read_rows": 49153,
+            "read_bytes": 4112795,
+            "query_duration_ms": 26,
+            "memory_usage": 9379010,
+            "projections": []
+          },
+          "rowRatio": 0.046154741816836486,
+          "byteRatio": 0.216116800742306
+        },
+        {
+          "distribution": "dominant",
+          "stage": "parts",
+          "ids": 8192,
+          "run": 0,
+          "baseline": {
+            "distribution": "dominant",
+            "stage": "parts",
+            "cardinality": 8192,
+            "run": 0,
+            "lane": "A-current",
+            "read_rows": 1073153,
+            "read_bytes": 21139973,
+            "query_duration_ms": 80,
+            "memory_usage": 18590815,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "dominant",
+            "stage": "parts",
+            "cardinality": 8192,
+            "run": 0,
+            "lane": "B-identity-local",
+            "read_rows": 65537,
+            "read_bytes": 6230533,
+            "query_duration_ms": 54,
+            "memory_usage": 21680607,
+            "projections": []
+          },
+          "rowRatio": 0.06106957721778721,
+          "byteRatio": 0.2947275760475191
+        },
+        {
+          "distribution": "dominant",
+          "stage": "parts",
+          "ids": 8192,
+          "run": 1,
+          "baseline": {
+            "distribution": "dominant",
+            "stage": "parts",
+            "cardinality": 8192,
+            "run": 1,
+            "lane": "A-current",
+            "read_rows": 1073153,
+            "read_bytes": 21139973,
+            "query_duration_ms": 63,
+            "memory_usage": 18592207,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "dominant",
+            "stage": "parts",
+            "cardinality": 8192,
+            "run": 1,
+            "lane": "B-identity-local",
+            "read_rows": 57345,
+            "read_bytes": 6091269,
+            "query_duration_ms": 54,
+            "memory_usage": 21632791,
+            "projections": []
+          },
+          "rowRatio": 0.05343599654476109,
+          "byteRatio": 0.2881398665930179
+        },
+        {
+          "distribution": "dominant",
+          "stage": "merged",
+          "ids": 1,
+          "run": 0,
+          "baseline": {
+            "distribution": "dominant",
+            "stage": "merged",
+            "cardinality": 1,
+            "run": 0,
+            "lane": "A-current",
+            "read_rows": 1056769,
+            "read_bytes": 17198757,
+            "query_duration_ms": 32,
+            "memory_usage": 7236727,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "dominant",
+            "stage": "merged",
+            "cardinality": 1,
+            "run": 0,
+            "lane": "B-identity-local",
+            "read_rows": 32769,
+            "read_bytes": 1680757,
+            "query_duration_ms": 27,
+            "memory_usage": 6019035,
+            "projections": []
+          },
+          "rowRatio": 0.031008668876547286,
+          "byteRatio": 0.09772549260391318
+        },
+        {
+          "distribution": "dominant",
+          "stage": "merged",
+          "ids": 1,
+          "run": 1,
+          "baseline": {
+            "distribution": "dominant",
+            "stage": "merged",
+            "cardinality": 1,
+            "run": 1,
+            "lane": "A-current",
+            "read_rows": 1056769,
+            "read_bytes": 17198757,
+            "query_duration_ms": 20,
+            "memory_usage": 6260177,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "dominant",
+            "stage": "merged",
+            "cardinality": 1,
+            "run": 1,
+            "lane": "B-identity-local",
+            "read_rows": 32769,
+            "read_bytes": 1680757,
+            "query_duration_ms": 17,
+            "memory_usage": 6018827,
+            "projections": []
+          },
+          "rowRatio": 0.031008668876547286,
+          "byteRatio": 0.09772549260391318
+        },
+        {
+          "distribution": "dominant",
+          "stage": "merged",
+          "ids": 64,
+          "run": 0,
+          "baseline": {
+            "distribution": "dominant",
+            "stage": "merged",
+            "cardinality": 64,
+            "run": 0,
+            "lane": "A-current",
+            "read_rows": 1056769,
+            "read_bytes": 17213854,
+            "query_duration_ms": 24,
+            "memory_usage": 6265889,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "dominant",
+            "stage": "merged",
+            "cardinality": 64,
+            "run": 0,
+            "lane": "B-identity-local",
+            "read_rows": 32769,
+            "read_bytes": 1694830,
+            "query_duration_ms": 19,
+            "memory_usage": 6041175,
+            "projections": []
+          },
+          "rowRatio": 0.031008668876547286,
+          "byteRatio": 0.09845732396707907
+        },
+        {
+          "distribution": "dominant",
+          "stage": "merged",
+          "ids": 64,
+          "run": 1,
+          "baseline": {
+            "distribution": "dominant",
+            "stage": "merged",
+            "cardinality": 64,
+            "run": 1,
+            "lane": "A-current",
+            "read_rows": 1056769,
+            "read_bytes": 17213854,
+            "query_duration_ms": 28,
+            "memory_usage": 6265473,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "dominant",
+            "stage": "merged",
+            "cardinality": 64,
+            "run": 1,
+            "lane": "B-identity-local",
+            "read_rows": 32769,
+            "read_bytes": 1694830,
+            "query_duration_ms": 19,
+            "memory_usage": 6040967,
+            "projections": []
+          },
+          "rowRatio": 0.031008668876547286,
+          "byteRatio": 0.09845732396707907
+        },
+        {
+          "distribution": "dominant",
+          "stage": "merged",
+          "ids": 113,
+          "run": 0,
+          "baseline": {
+            "distribution": "dominant",
+            "stage": "merged",
+            "cardinality": 113,
+            "run": 0,
+            "lane": "A-current",
+            "read_rows": 1056769,
+            "read_bytes": 17240625,
+            "query_duration_ms": 32,
+            "memory_usage": 6269460,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "dominant",
+            "stage": "merged",
+            "cardinality": 113,
+            "run": 0,
+            "lane": "B-identity-local",
+            "read_rows": 32769,
+            "read_bytes": 1719793,
+            "query_duration_ms": 19,
+            "memory_usage": 6058043,
+            "projections": []
+          },
+          "rowRatio": 0.031008668876547286,
+          "byteRatio": 0.09975235816566974
+        },
+        {
+          "distribution": "dominant",
+          "stage": "merged",
+          "ids": 113,
+          "run": 1,
+          "baseline": {
+            "distribution": "dominant",
+            "stage": "merged",
+            "cardinality": 113,
+            "run": 1,
+            "lane": "A-current",
+            "read_rows": 1056769,
+            "read_bytes": 17240625,
+            "query_duration_ms": 87,
+            "memory_usage": 6267252,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "dominant",
+            "stage": "merged",
+            "cardinality": 113,
+            "run": 1,
+            "lane": "B-identity-local",
+            "read_rows": 32769,
+            "read_bytes": 1719793,
+            "query_duration_ms": 19,
+            "memory_usage": 6057835,
+            "projections": []
+          },
+          "rowRatio": 0.031008668876547286,
+          "byteRatio": 0.09975235816566974
+        },
+        {
+          "distribution": "dominant",
+          "stage": "merged",
+          "ids": 8192,
+          "run": 0,
+          "baseline": {
+            "distribution": "dominant",
+            "stage": "merged",
+            "cardinality": 8192,
+            "run": 0,
+            "lane": "A-current",
+            "read_rows": 1064961,
+            "read_bytes": 69107541,
+            "query_duration_ms": 92,
+            "memory_usage": 31266464,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "dominant",
+            "stage": "merged",
+            "cardinality": 8192,
+            "run": 0,
+            "lane": "B-identity-local",
+            "read_rows": 40961,
+            "read_bytes": 3694363,
+            "query_duration_ms": 52,
+            "memory_usage": 21527833,
+            "projections": []
+          },
+          "rowRatio": 0.03846244134761743,
+          "byteRatio": 0.053458174701947504
+        },
+        {
+          "distribution": "dominant",
+          "stage": "merged",
+          "ids": 8192,
+          "run": 1,
+          "baseline": {
+            "distribution": "dominant",
+            "stage": "merged",
+            "cardinality": 8192,
+            "run": 1,
+            "lane": "A-current",
+            "read_rows": 1064961,
+            "read_bytes": 69107541,
+            "query_duration_ms": 98,
+            "memory_usage": 31263152,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "dominant",
+            "stage": "merged",
+            "cardinality": 8192,
+            "run": 1,
+            "lane": "B-identity-local",
+            "read_rows": 40961,
+            "read_bytes": 3694363,
+            "query_duration_ms": 52,
+            "memory_usage": 21527257,
+            "projections": []
+          },
+          "rowRatio": 0.03846244134761743,
+          "byteRatio": 0.053458174701947504
+        }
+      ],
+      "incidentPlanPruning": [
+        {
+          "case": "identity-local-26.6.1.1193-balanced-parts-113-B-identity-local-explain.json",
+          "granuleStages": [
+            "Granules: 5/128",
+            "Granules: 1/1"
+          ]
+        },
+        {
+          "case": "identity-local-26.6.1.1193-balanced-merged-113-B-identity-local-explain.json",
+          "granuleStages": [
+            "Granules: 4/128",
+            "Granules: 1/1"
+          ]
+        },
+        {
+          "case": "identity-local-26.6.1.1193-dominant-parts-113-B-identity-local-explain.json",
+          "granuleStages": [
+            "Granules: 5/128",
+            "Granules: 1/1"
+          ]
+        },
+        {
+          "case": "identity-local-26.6.1.1193-dominant-merged-113-B-identity-local-explain.json",
+          "granuleStages": [
+            "Granules: 3/128",
+            "Granules: 1/1"
+          ]
+        }
+      ]
+    },
+    {
+      "version": "26.10.2.103",
+      "semantics": [
+        "activityId/parts",
+        "activityId/merged",
+        "channel/parts",
+        "channel/merged",
+        "externalId/parts",
+        "externalId/merged",
+        "scalar/parts",
+        "scalar/merged",
+        "generation/parts",
+        "generation/merged",
+        "null-overlap",
+        "cross-activity",
+        "deleted",
+        "erased",
+        "exact-rank-tie",
+        "unconstrained-branch",
+        "replay",
+        "replay/tombstone-observed",
+        "physical-erasure"
+      ],
+      "measurements": 64,
+      "parts": [
+        {
+          "distribution": "balanced",
+          "stage": "parts",
+          "parts": [
+            {
+              "rows": 524288,
+              "marks": 65,
+              "bytes_on_disk": 178256270
+            },
+            {
+              "rows": 524288,
+              "marks": 65,
+              "bytes_on_disk": 177870817
+            }
+          ]
+        },
+        {
+          "distribution": "balanced",
+          "stage": "merged",
+          "parts": [
+            {
+              "rows": 1048576,
+              "marks": 129,
+              "bytes_on_disk": 235362288
+            }
+          ]
+        },
+        {
+          "distribution": "dominant",
+          "stage": "parts",
+          "parts": [
+            {
+              "rows": 524288,
+              "marks": 65,
+              "bytes_on_disk": 178084508
+            },
+            {
+              "rows": 524288,
+              "marks": 65,
+              "bytes_on_disk": 177523484
+            }
+          ]
+        },
+        {
+          "distribution": "dominant",
+          "stage": "merged",
+          "parts": [
+            {
+              "rows": 1048576,
+              "marks": 129,
+              "bytes_on_disk": 234943470
+            }
+          ]
+        }
+      ],
+      "incidentRowRatio": [
+        0.030770140878398362,
+        0.03876059952553491
+      ],
+      "incidentByteRatio": [
+        0.08522082449073692,
+        0.1786660383395496
+      ],
+      "allByteRatio": [
+        0.04960873332608124,
+        0.2544262946788059
+      ],
+      "pairs": [
+        {
+          "distribution": "balanced",
+          "stage": "parts",
+          "ids": 1,
+          "run": 0,
+          "baseline": {
+            "distribution": "balanced",
+            "stage": "parts",
+            "cardinality": 1,
+            "run": 0,
+            "lane": "A-current",
+            "read_rows": 1064961,
+            "read_bytes": 17056759,
+            "query_duration_ms": 29,
+            "memory_usage": 5728859,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "balanced",
+            "stage": "parts",
+            "cardinality": 1,
+            "run": 0,
+            "lane": "B-identity-local",
+            "read_rows": 40961,
+            "read_bytes": 1557431,
+            "query_duration_ms": 17,
+            "memory_usage": 5933734,
+            "projections": []
+          },
+          "rowRatio": 0.03846244134761743,
+          "byteRatio": 0.091308729870663
+        },
+        {
+          "distribution": "balanced",
+          "stage": "parts",
+          "ids": 1,
+          "run": 1,
+          "baseline": {
+            "distribution": "balanced",
+            "stage": "parts",
+            "cardinality": 1,
+            "run": 1,
+            "lane": "A-current",
+            "read_rows": 1064961,
+            "read_bytes": 17056759,
+            "query_duration_ms": 21,
+            "memory_usage": 5709027,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "balanced",
+            "stage": "parts",
+            "cardinality": 1,
+            "run": 1,
+            "lane": "B-identity-local",
+            "read_rows": 32769,
+            "read_bytes": 1418167,
+            "query_duration_ms": 15,
+            "memory_usage": 5931782,
+            "projections": []
+          },
+          "rowRatio": 0.030770140878398362,
+          "byteRatio": 0.08314399001592272
+        },
+        {
+          "distribution": "balanced",
+          "stage": "parts",
+          "ids": 64,
+          "run": 0,
+          "baseline": {
+            "distribution": "balanced",
+            "stage": "parts",
+            "cardinality": 64,
+            "run": 0,
+            "lane": "A-current",
+            "read_rows": 1064961,
+            "read_bytes": 17071858,
+            "query_duration_ms": 27,
+            "memory_usage": 5744770,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "balanced",
+            "stage": "parts",
+            "cardinality": 64,
+            "run": 0,
+            "lane": "B-identity-local",
+            "read_rows": 40961,
+            "read_bytes": 1571506,
+            "query_duration_ms": 19,
+            "memory_usage": 6019036,
+            "projections": []
+          },
+          "rowRatio": 0.03846244134761743,
+          "byteRatio": 0.09205242920834979
+        },
+        {
+          "distribution": "balanced",
+          "stage": "parts",
+          "ids": 64,
+          "run": 1,
+          "baseline": {
+            "distribution": "balanced",
+            "stage": "parts",
+            "cardinality": 64,
+            "run": 1,
+            "lane": "A-current",
+            "read_rows": 1064961,
+            "read_bytes": 17071858,
+            "query_duration_ms": 33,
+            "memory_usage": 5744626,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "balanced",
+            "stage": "parts",
+            "cardinality": 64,
+            "run": 1,
+            "lane": "B-identity-local",
+            "read_rows": 32769,
+            "read_bytes": 1432242,
+            "query_duration_ms": 17,
+            "memory_usage": 6016700,
+            "projections": []
+          },
+          "rowRatio": 0.030770140878398362,
+          "byteRatio": 0.08389491055982307
+        },
+        {
+          "distribution": "balanced",
+          "stage": "parts",
+          "ids": 113,
+          "run": 0,
+          "baseline": {
+            "distribution": "balanced",
+            "stage": "parts",
+            "cardinality": 113,
+            "run": 0,
+            "lane": "A-current",
+            "read_rows": 1064961,
+            "read_bytes": 17098579,
+            "query_duration_ms": 30,
+            "memory_usage": 5780422,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "balanced",
+            "stage": "parts",
+            "cardinality": 113,
+            "run": 0,
+            "lane": "B-identity-local",
+            "read_rows": 40961,
+            "read_bytes": 1596419,
+            "query_duration_ms": 26,
+            "memory_usage": 6112174,
+            "projections": []
+          },
+          "rowRatio": 0.03846244134761743,
+          "byteRatio": 0.09336559488364501
+        },
+        {
+          "distribution": "balanced",
+          "stage": "parts",
+          "ids": 113,
+          "run": 1,
+          "baseline": {
+            "distribution": "balanced",
+            "stage": "parts",
+            "cardinality": 113,
+            "run": 1,
+            "lane": "A-current",
+            "read_rows": 1064961,
+            "read_bytes": 17098579,
+            "query_duration_ms": 30,
+            "memory_usage": 5780022,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "balanced",
+            "stage": "parts",
+            "cardinality": 113,
+            "run": 1,
+            "lane": "B-identity-local",
+            "read_rows": 32769,
+            "read_bytes": 1457155,
+            "query_duration_ms": 19,
+            "memory_usage": 6109230,
+            "projections": []
+          },
+          "rowRatio": 0.030770140878398362,
+          "byteRatio": 0.08522082449073692
+        },
+        {
+          "distribution": "balanced",
+          "stage": "parts",
+          "ids": 8192,
+          "run": 0,
+          "baseline": {
+            "distribution": "balanced",
+            "stage": "parts",
+            "cardinality": 8192,
+            "run": 0,
+            "lane": "A-current",
+            "read_rows": 1073153,
+            "read_bytes": 69313340,
+            "query_duration_ms": 69,
+            "memory_usage": 31714949,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "balanced",
+            "stage": "parts",
+            "cardinality": 8192,
+            "run": 0,
+            "lane": "B-identity-local",
+            "read_rows": 49153,
+            "read_bytes": 3577811,
+            "query_duration_ms": 56,
+            "memory_usage": 20344588,
+            "projections": []
+          },
+          "rowRatio": 0.045802415871734975,
+          "byteRatio": 0.05161792809291833
+        },
+        {
+          "distribution": "balanced",
+          "stage": "parts",
+          "ids": 8192,
+          "run": 1,
+          "baseline": {
+            "distribution": "balanced",
+            "stage": "parts",
+            "cardinality": 8192,
+            "run": 1,
+            "lane": "A-current",
+            "read_rows": 1073153,
+            "read_bytes": 69313340,
+            "query_duration_ms": 72,
+            "memory_usage": 31714549,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "balanced",
+            "stage": "parts",
+            "cardinality": 8192,
+            "run": 1,
+            "lane": "B-identity-local",
+            "read_rows": 40961,
+            "read_bytes": 3438547,
+            "query_duration_ms": 44,
+            "memory_usage": 19892523,
+            "projections": []
+          },
+          "rowRatio": 0.03816883519870885,
+          "byteRatio": 0.04960873332608124
+        },
+        {
+          "distribution": "balanced",
+          "stage": "merged",
+          "ids": 1,
+          "run": 0,
+          "baseline": {
+            "distribution": "balanced",
+            "stage": "merged",
+            "cardinality": 1,
+            "run": 0,
+            "lane": "A-current",
+            "read_rows": 1056769,
+            "read_bytes": 18905083,
+            "query_duration_ms": 28,
+            "memory_usage": 5424843,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "balanced",
+            "stage": "merged",
+            "cardinality": 1,
+            "run": 0,
+            "lane": "B-identity-local",
+            "read_rows": 40961,
+            "read_bytes": 3700731,
+            "query_duration_ms": 16,
+            "memory_usage": 5153842,
+            "projections": []
+          },
+          "rowRatio": 0.03876059952553491,
+          "byteRatio": 0.1957532267909112
+        },
+        {
+          "distribution": "balanced",
+          "stage": "merged",
+          "ids": 1,
+          "run": 1,
+          "baseline": {
+            "distribution": "balanced",
+            "stage": "merged",
+            "cardinality": 1,
+            "run": 1,
+            "lane": "A-current",
+            "read_rows": 1056769,
+            "read_bytes": 18905083,
+            "query_duration_ms": 19,
+            "memory_usage": 5499154,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "balanced",
+            "stage": "merged",
+            "cardinality": 1,
+            "run": 1,
+            "lane": "B-identity-local",
+            "read_rows": 40961,
+            "read_bytes": 3700731,
+            "query_duration_ms": 16,
+            "memory_usage": 5153346,
+            "projections": []
+          },
+          "rowRatio": 0.03876059952553491,
+          "byteRatio": 0.1957532267909112
+        },
+        {
+          "distribution": "balanced",
+          "stage": "merged",
+          "ids": 64,
+          "run": 0,
+          "baseline": {
+            "distribution": "balanced",
+            "stage": "merged",
+            "cardinality": 64,
+            "run": 0,
+            "lane": "A-current",
+            "read_rows": 1064961,
+            "read_bytes": 17070907,
+            "query_duration_ms": 23,
+            "memory_usage": 5455856,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "balanced",
+            "stage": "merged",
+            "cardinality": 64,
+            "run": 0,
+            "lane": "B-identity-local",
+            "read_rows": 49153,
+            "read_bytes": 1996603,
+            "query_duration_ms": 17,
+            "memory_usage": 5162697,
+            "projections": []
+          },
+          "rowRatio": 0.046154741816836486,
+          "byteRatio": 0.11695939764653396
+        },
+        {
+          "distribution": "balanced",
+          "stage": "merged",
+          "ids": 64,
+          "run": 1,
+          "baseline": {
+            "distribution": "balanced",
+            "stage": "merged",
+            "cardinality": 64,
+            "run": 1,
+            "lane": "A-current",
+            "read_rows": 1064961,
+            "read_bytes": 17070907,
+            "query_duration_ms": 23,
+            "memory_usage": 5455648,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "balanced",
+            "stage": "merged",
+            "cardinality": 64,
+            "run": 1,
+            "lane": "B-identity-local",
+            "read_rows": 40961,
+            "read_bytes": 1857339,
+            "query_duration_ms": 16,
+            "memory_usage": 5160025,
+            "projections": []
+          },
+          "rowRatio": 0.03846244134761743,
+          "byteRatio": 0.10880142455230996
+        },
+        {
+          "distribution": "balanced",
+          "stage": "merged",
+          "ids": 113,
+          "run": 0,
+          "baseline": {
+            "distribution": "balanced",
+            "stage": "merged",
+            "cardinality": 113,
+            "run": 0,
+            "lane": "A-current",
+            "read_rows": 1056769,
+            "read_bytes": 16958364,
+            "query_duration_ms": 28,
+            "memory_usage": 5393890,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "balanced",
+            "stage": "merged",
+            "cardinality": 113,
+            "run": 0,
+            "lane": "B-identity-local",
+            "read_rows": 40961,
+            "read_bytes": 1882252,
+            "query_duration_ms": 16,
+            "memory_usage": 5463383,
+            "projections": []
+          },
+          "rowRatio": 0.03876059952553491,
+          "byteRatio": 0.11099254621495329
+        },
+        {
+          "distribution": "balanced",
+          "stage": "merged",
+          "ids": 113,
+          "run": 1,
+          "baseline": {
+            "distribution": "balanced",
+            "stage": "merged",
+            "cardinality": 113,
+            "run": 1,
+            "lane": "A-current",
+            "read_rows": 1056769,
+            "read_bytes": 16958364,
+            "query_duration_ms": 29,
+            "memory_usage": 5393682,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "balanced",
+            "stage": "merged",
+            "cardinality": 113,
+            "run": 1,
+            "lane": "B-identity-local",
+            "read_rows": 40961,
+            "read_bytes": 1882252,
+            "query_duration_ms": 17,
+            "memory_usage": 5463175,
+            "projections": []
+          },
+          "rowRatio": 0.03876059952553491,
+          "byteRatio": 0.11099254621495329
+        },
+        {
+          "distribution": "balanced",
+          "stage": "merged",
+          "ids": 8192,
+          "run": 0,
+          "baseline": {
+            "distribution": "balanced",
+            "stage": "merged",
+            "cardinality": 8192,
+            "run": 0,
+            "lane": "A-current",
+            "read_rows": 1064961,
+            "read_bytes": 69168002,
+            "query_duration_ms": 172,
+            "memory_usage": 24100622,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "balanced",
+            "stage": "merged",
+            "cardinality": 8192,
+            "run": 0,
+            "lane": "B-identity-local",
+            "read_rows": 49153,
+            "read_bytes": 3863644,
+            "query_duration_ms": 47,
+            "memory_usage": 17696116,
+            "projections": []
+          },
+          "rowRatio": 0.046154741816836486,
+          "byteRatio": 0.05585883484100061
+        },
+        {
+          "distribution": "balanced",
+          "stage": "merged",
+          "ids": 8192,
+          "run": 1,
+          "baseline": {
+            "distribution": "balanced",
+            "stage": "merged",
+            "cardinality": 8192,
+            "run": 1,
+            "lane": "A-current",
+            "read_rows": 1064961,
+            "read_bytes": 69172320,
+            "query_duration_ms": 72,
+            "memory_usage": 23696878,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "balanced",
+            "stage": "merged",
+            "cardinality": 8192,
+            "run": 1,
+            "lane": "B-identity-local",
+            "read_rows": 49153,
+            "read_bytes": 3863644,
+            "query_duration_ms": 46,
+            "memory_usage": 17695908,
+            "projections": []
+          },
+          "rowRatio": 0.046154741816836486,
+          "byteRatio": 0.055855347919514624
+        },
+        {
+          "distribution": "dominant",
+          "stage": "parts",
+          "ids": 1,
+          "run": 0,
+          "baseline": {
+            "distribution": "dominant",
+            "stage": "parts",
+            "cardinality": 1,
+            "run": 0,
+            "lane": "A-current",
+            "read_rows": 1064961,
+            "read_bytes": 19030427,
+            "query_duration_ms": 24,
+            "memory_usage": 9786548,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "dominant",
+            "stage": "parts",
+            "cardinality": 1,
+            "run": 0,
+            "lane": "B-identity-local",
+            "read_rows": 40961,
+            "read_bytes": 3400091,
+            "query_duration_ms": 18,
+            "memory_usage": 9762811,
+            "projections": []
+          },
+          "rowRatio": 0.03846244134761743,
+          "byteRatio": 0.1786660383395496
+        },
+        {
+          "distribution": "dominant",
+          "stage": "parts",
+          "ids": 1,
+          "run": 1,
+          "baseline": {
+            "distribution": "dominant",
+            "stage": "parts",
+            "cardinality": 1,
+            "run": 1,
+            "lane": "A-current",
+            "read_rows": 1064961,
+            "read_bytes": 19030427,
+            "query_duration_ms": 24,
+            "memory_usage": 9776804,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "dominant",
+            "stage": "parts",
+            "cardinality": 1,
+            "run": 1,
+            "lane": "B-identity-local",
+            "read_rows": 32769,
+            "read_bytes": 3260827,
+            "query_duration_ms": 15,
+            "memory_usage": 9760859,
+            "projections": []
+          },
+          "rowRatio": 0.030770140878398362,
+          "byteRatio": 0.17134807327234433
+        },
+        {
+          "distribution": "dominant",
+          "stage": "parts",
+          "ids": 64,
+          "run": 0,
+          "baseline": {
+            "distribution": "dominant",
+            "stage": "parts",
+            "cardinality": 64,
+            "run": 0,
+            "lane": "A-current",
+            "read_rows": 1064961,
+            "read_bytes": 19030427,
+            "query_duration_ms": 29,
+            "memory_usage": 9786755,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "dominant",
+            "stage": "parts",
+            "cardinality": 64,
+            "run": 0,
+            "lane": "B-identity-local",
+            "read_rows": 40961,
+            "read_bytes": 3400091,
+            "query_duration_ms": 19,
+            "memory_usage": 9769553,
+            "projections": []
+          },
+          "rowRatio": 0.03846244134761743,
+          "byteRatio": 0.1786660383395496
+        },
+        {
+          "distribution": "dominant",
+          "stage": "parts",
+          "ids": 64,
+          "run": 1,
+          "baseline": {
+            "distribution": "dominant",
+            "stage": "parts",
+            "cardinality": 64,
+            "run": 1,
+            "lane": "A-current",
+            "read_rows": 1064961,
+            "read_bytes": 19030427,
+            "query_duration_ms": 27,
+            "memory_usage": 9786163,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "dominant",
+            "stage": "parts",
+            "cardinality": 64,
+            "run": 1,
+            "lane": "B-identity-local",
+            "read_rows": 32769,
+            "read_bytes": 3260827,
+            "query_duration_ms": 19,
+            "memory_usage": 9767601,
+            "projections": []
+          },
+          "rowRatio": 0.030770140878398362,
+          "byteRatio": 0.17134807327234433
+        },
+        {
+          "distribution": "dominant",
+          "stage": "parts",
+          "ids": 113,
+          "run": 0,
+          "baseline": {
+            "distribution": "dominant",
+            "stage": "parts",
+            "cardinality": 113,
+            "run": 0,
+            "lane": "A-current",
+            "read_rows": 1064961,
+            "read_bytes": 19030427,
+            "query_duration_ms": 44,
+            "memory_usage": 9791350,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "dominant",
+            "stage": "parts",
+            "cardinality": 113,
+            "run": 0,
+            "lane": "B-identity-local",
+            "read_rows": 40961,
+            "read_bytes": 3400091,
+            "query_duration_ms": 21,
+            "memory_usage": 9774419,
+            "projections": []
+          },
+          "rowRatio": 0.03846244134761743,
+          "byteRatio": 0.1786660383395496
+        },
+        {
+          "distribution": "dominant",
+          "stage": "parts",
+          "ids": 113,
+          "run": 1,
+          "baseline": {
+            "distribution": "dominant",
+            "stage": "parts",
+            "cardinality": 113,
+            "run": 1,
+            "lane": "A-current",
+            "read_rows": 1064961,
+            "read_bytes": 19030427,
+            "query_duration_ms": 39,
+            "memory_usage": 9786654,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "dominant",
+            "stage": "parts",
+            "cardinality": 113,
+            "run": 1,
+            "lane": "B-identity-local",
+            "read_rows": 32769,
+            "read_bytes": 3260827,
+            "query_duration_ms": 19,
+            "memory_usage": 9468067,
+            "projections": []
+          },
+          "rowRatio": 0.030770140878398362,
+          "byteRatio": 0.17134807327234433
+        },
+        {
+          "distribution": "dominant",
+          "stage": "parts",
+          "ids": 8192,
+          "run": 0,
+          "baseline": {
+            "distribution": "dominant",
+            "stage": "parts",
+            "cardinality": 8192,
+            "run": 0,
+            "lane": "A-current",
+            "read_rows": 1073153,
+            "read_bytes": 21139973,
+            "query_duration_ms": 53,
+            "memory_usage": 20708660,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "dominant",
+            "stage": "parts",
+            "cardinality": 8192,
+            "run": 0,
+            "lane": "B-identity-local",
+            "read_rows": 49153,
+            "read_bytes": 5378565,
+            "query_duration_ms": 54,
+            "memory_usage": 19180964,
+            "projections": []
+          },
+          "rowRatio": 0.045802415871734975,
+          "byteRatio": 0.2544262946788059
+        },
+        {
+          "distribution": "dominant",
+          "stage": "parts",
+          "ids": 8192,
+          "run": 1,
+          "baseline": {
+            "distribution": "dominant",
+            "stage": "parts",
+            "cardinality": 8192,
+            "run": 1,
+            "lane": "A-current",
+            "read_rows": 1073153,
+            "read_bytes": 21139973,
+            "query_duration_ms": 108,
+            "memory_usage": 20705444,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "dominant",
+            "stage": "parts",
+            "cardinality": 8192,
+            "run": 1,
+            "lane": "B-identity-local",
+            "read_rows": 40961,
+            "read_bytes": 5239301,
+            "query_duration_ms": 52,
+            "memory_usage": 18729091,
+            "projections": []
+          },
+          "rowRatio": 0.03816883519870885,
+          "byteRatio": 0.24783858522430469
+        },
+        {
+          "distribution": "dominant",
+          "stage": "merged",
+          "ids": 1,
+          "run": 0,
+          "baseline": {
+            "distribution": "dominant",
+            "stage": "merged",
+            "cardinality": 1,
+            "run": 0,
+            "lane": "A-current",
+            "read_rows": 1056769,
+            "read_bytes": 17198757,
+            "query_duration_ms": 21,
+            "memory_usage": 5677332,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "dominant",
+            "stage": "merged",
+            "cardinality": 1,
+            "run": 0,
+            "lane": "B-identity-local",
+            "read_rows": 32769,
+            "read_bytes": 1680757,
+            "query_duration_ms": 17,
+            "memory_usage": 5275113,
+            "projections": []
+          },
+          "rowRatio": 0.031008668876547286,
+          "byteRatio": 0.09772549260391318
+        },
+        {
+          "distribution": "dominant",
+          "stage": "merged",
+          "ids": 1,
+          "run": 1,
+          "baseline": {
+            "distribution": "dominant",
+            "stage": "merged",
+            "cardinality": 1,
+            "run": 1,
+            "lane": "A-current",
+            "read_rows": 1056769,
+            "read_bytes": 17198757,
+            "query_duration_ms": 18,
+            "memory_usage": 5672548,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "dominant",
+            "stage": "merged",
+            "cardinality": 1,
+            "run": 1,
+            "lane": "B-identity-local",
+            "read_rows": 32769,
+            "read_bytes": 1680757,
+            "query_duration_ms": 17,
+            "memory_usage": 5274905,
+            "projections": []
+          },
+          "rowRatio": 0.031008668876547286,
+          "byteRatio": 0.09772549260391318
+        },
+        {
+          "distribution": "dominant",
+          "stage": "merged",
+          "ids": 64,
+          "run": 0,
+          "baseline": {
+            "distribution": "dominant",
+            "stage": "merged",
+            "cardinality": 64,
+            "run": 0,
+            "lane": "A-current",
+            "read_rows": 1056769,
+            "read_bytes": 17213854,
+            "query_duration_ms": 27,
+            "memory_usage": 5769371,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "dominant",
+            "stage": "merged",
+            "cardinality": 64,
+            "run": 0,
+            "lane": "B-identity-local",
+            "read_rows": 32769,
+            "read_bytes": 1694830,
+            "query_duration_ms": 22,
+            "memory_usage": 5281919,
+            "projections": []
+          },
+          "rowRatio": 0.031008668876547286,
+          "byteRatio": 0.09845732396707907
+        },
+        {
+          "distribution": "dominant",
+          "stage": "merged",
+          "ids": 64,
+          "run": 1,
+          "baseline": {
+            "distribution": "dominant",
+            "stage": "merged",
+            "cardinality": 64,
+            "run": 1,
+            "lane": "A-current",
+            "read_rows": 1056769,
+            "read_bytes": 17213854,
+            "query_duration_ms": 23,
+            "memory_usage": 5683812,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "dominant",
+            "stage": "merged",
+            "cardinality": 64,
+            "run": 1,
+            "lane": "B-identity-local",
+            "read_rows": 32769,
+            "read_bytes": 1694830,
+            "query_duration_ms": 17,
+            "memory_usage": 5281711,
+            "projections": []
+          },
+          "rowRatio": 0.031008668876547286,
+          "byteRatio": 0.09845732396707907
+        },
+        {
+          "distribution": "dominant",
+          "stage": "merged",
+          "ids": 113,
+          "run": 0,
+          "baseline": {
+            "distribution": "dominant",
+            "stage": "merged",
+            "cardinality": 113,
+            "run": 0,
+            "lane": "A-current",
+            "read_rows": 1056769,
+            "read_bytes": 17240625,
+            "query_duration_ms": 24,
+            "memory_usage": 5686583,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "dominant",
+            "stage": "merged",
+            "cardinality": 113,
+            "run": 0,
+            "lane": "B-identity-local",
+            "read_rows": 32769,
+            "read_bytes": 1719793,
+            "query_duration_ms": 17,
+            "memory_usage": 5286834,
+            "projections": []
+          },
+          "rowRatio": 0.031008668876547286,
+          "byteRatio": 0.09975235816566974
+        },
+        {
+          "distribution": "dominant",
+          "stage": "merged",
+          "ids": 113,
+          "run": 1,
+          "baseline": {
+            "distribution": "dominant",
+            "stage": "merged",
+            "cardinality": 113,
+            "run": 1,
+            "lane": "A-current",
+            "read_rows": 1056769,
+            "read_bytes": 17240625,
+            "query_duration_ms": 26,
+            "memory_usage": 5686343,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "dominant",
+            "stage": "merged",
+            "cardinality": 113,
+            "run": 1,
+            "lane": "B-identity-local",
+            "read_rows": 32769,
+            "read_bytes": 1719793,
+            "query_duration_ms": 17,
+            "memory_usage": 5286626,
+            "projections": []
+          },
+          "rowRatio": 0.031008668876547286,
+          "byteRatio": 0.09975235816566974
+        },
+        {
+          "distribution": "dominant",
+          "stage": "merged",
+          "ids": 8192,
+          "run": 0,
+          "baseline": {
+            "distribution": "dominant",
+            "stage": "merged",
+            "cardinality": 8192,
+            "run": 0,
+            "lane": "A-current",
+            "read_rows": 1064961,
+            "read_bytes": 69107541,
+            "query_duration_ms": 70,
+            "memory_usage": 24402070,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "dominant",
+            "stage": "merged",
+            "cardinality": 8192,
+            "run": 0,
+            "lane": "B-identity-local",
+            "read_rows": 40961,
+            "read_bytes": 3694363,
+            "query_duration_ms": 48,
+            "memory_usage": 17682536,
+            "projections": []
+          },
+          "rowRatio": 0.03846244134761743,
+          "byteRatio": 0.053458174701947504
+        },
+        {
+          "distribution": "dominant",
+          "stage": "merged",
+          "ids": 8192,
+          "run": 1,
+          "baseline": {
+            "distribution": "dominant",
+            "stage": "merged",
+            "cardinality": 8192,
+            "run": 1,
+            "lane": "A-current",
+            "read_rows": 1064961,
+            "read_bytes": 69107541,
+            "query_duration_ms": 71,
+            "memory_usage": 24395286,
+            "projections": []
+          },
+          "candidate": {
+            "distribution": "dominant",
+            "stage": "merged",
+            "cardinality": 8192,
+            "run": 1,
+            "lane": "B-identity-local",
+            "read_rows": 40961,
+            "read_bytes": 3694363,
+            "query_duration_ms": 46,
+            "memory_usage": 17682328,
+            "projections": []
+          },
+          "rowRatio": 0.03846244134761743,
+          "byteRatio": 0.053458174701947504
+        }
+      ],
+      "incidentPlanPruning": [
+        {
+          "case": "identity-local-26.10.2.103-balanced-parts-113-B-identity-local-explain.json",
+          "granuleStages": [
+            "│                  Granules: 64/128",
+            "│                  Granules: 3/64",
+            "Granules: 1/1"
+          ]
+        },
+        {
+          "case": "identity-local-26.10.2.103-balanced-merged-113-B-identity-local-explain.json",
+          "granuleStages": [
+            "│                  Granules: 4/128",
+            "Granules: 1/1"
+          ]
+        },
+        {
+          "case": "identity-local-26.10.2.103-dominant-parts-113-B-identity-local-explain.json",
+          "granuleStages": [
+            "│                  Granules: 64/128",
+            "│                  Granules: 3/64",
+            "Granules: 1/1"
+          ]
+        },
+        {
+          "case": "identity-local-26.10.2.103-dominant-merged-113-B-identity-local-explain.json",
+          "granuleStages": [
+            "│                  Granules: 3/128",
+            "Granules: 1/1"
+          ]
+        }
+      ]
+    }
+  ],
+  "caveats": [
+    "No production latency forecast; clustered temporal fixture does not establish bounded reads for all scopes or distributions",
+    "Immutable identity is assumed; arbitrary historical user/provider/timestamp moves are outside this qualification",
+    "Unread broker events and archive replay remain uncertified",
+    "Scope ledger, deletion acknowledgements and consumer lifecycle unchanged; tests exercise lookup SQL, not a deployed consumer",
+    "Exact ranking-tuple ties retain arbitrary single-row argMax selection; tests do not promise the same winner",
+    "Container limit3GiB; one version at a time; no added projection or forced optimizer setting"
+  ],
+  "fixture": {
+    "physicalRows": 1048576,
+    "existingProjections": 6,
+    "targetUserFractions": [
+      0.125,
+      0.75
+    ],
+    "partLayouts": [
+      2,
+      1
+    ],
+    "candidateCounts": [
+      1,
+      64,
+      113,
+      8192
+    ],
+    "timestampModel": "Fixed base timestamp plus monotonic source ordinal; activity groups have contiguous source-time ranges",
+    "idModel": "MD5(source ordinal), decorrelated from primary-key scope",
+    "optimizer": "Defaults; no forced projection or filtering settings",
+    "containerMemoryBytes": 3221225472
+  },
+  "cleanup": "Owned isolated databases dropped; Compose project removed with volumes; zero owned containers/networks/volumes verified"
+}

@@ -39,7 +39,7 @@ jobs:
           images: ${{ steps.image-name.outputs.name }}
           tags: |
             type=sha,value=${{ github.sha }}
-            type=raw,value=latest
+            type=raw,value=latest,enable={{is_default_branch}}
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: packages/ml

@@ -16,7 +16,7 @@ import { SOURCE_TYPE_FILE } from "../../db/sensor-channels.ts";
 import { getTokenUserId } from "../../db/token-user-context.ts";
 import { logger } from "../../logger.ts";
 import type { MetricStreamDeleteScopeInput } from "../../metric-stream/events.ts";
-import type { MetricStreamEventPublisher } from "../../metric-stream/redpanda-producer.ts";
+import type { MetricStreamEventPublisher } from "../../metric-stream/publisher.ts";
 import { replaceHangTenIntervals } from "./hang-ten-intervals.ts";
 import type { HealthRecord } from "./records.ts";
 import { normalizeRunningQuantity, RUNNING_QUANTITY_TYPES } from "./running-quantities.ts";

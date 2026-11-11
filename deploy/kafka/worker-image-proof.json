@@ -1,0 +1,78 @@
+{
+  "source": "cd9c4eb28d186a2fab9af2ac2e91864c32f38477",
+  "productionActions": false,
+  "startedAt": "2026-11-08T17:56:14.149Z",
+  "sources": [
+    "image-proof-1794160574150-0",
+    "image-proof-1794160574150-1",
+    "image-proof-1794160574150-2"
+  ],
+  "checkpoints": [
+    {
+      "partition": 0,
+      "offset": "100",
+      "high": "100",
+      "low": "0",
+      "clusterId": "MkU3OEVBNTcwNTJENDM2Qk",
+      "topicId": "XSbSi2nYSVSjRs2RYpMyhg",
+      "topic": "image-proof-1794160574150-0"
+    },
+    {
+      "partition": 0,
+      "offset": "100",
+      "high": "100",
+      "low": "0",
+      "clusterId": "MkU3OEVBNTcwNTJENDM2Qk",
+      "topicId": "Dnh25tkgQlKPFUB8uMkdaw",
+      "topic": "image-proof-1794160574150-0.quarantine.v1"
+    },
+    {
+      "partition": 0,
+      "offset": "100",
+      "high": "100",
+      "low": "0",
+      "clusterId": "MkU3OEVBNTcwNTJENDM2Qk",
+      "topicId": "5tdMiHwDRD6xM1OIW1Z1lQ",
+      "topic": "image-proof-1794160574150-1"
+    },
+    {
+      "partition": 0,
+      "offset": "100",
+      "high": "100",
+      "low": "0",
+      "clusterId": "MkU3OEVBNTcwNTJENDM2Qk",
+      "topicId": "gemdBwDWSPqbcpv68NwXmw",
+      "topic": "image-proof-1794160574150-1.quarantine.v1"
+    },
+    {
+      "partition": 0,
+      "offset": "100",
+      "high": "100",
+      "low": "0",
+      "clusterId": "MkU3OEVBNTcwNTJENDM2Qk",
+      "topicId": "j4nlYuy4RYqR6qyk7BOZRw",
+      "topic": "image-proof-1794160574150-2"
+    },
+    {
+      "partition": 0,
+      "offset": "100",
+      "high": "100",
+      "low": "0",
+      "clusterId": "MkU3OEVBNTcwNTJENDM2Qk",
+      "topicId": "vWnFHmeQRrC3sK2CUOkjew",
+      "topic": "image-proof-1794160574150-2.quarantine.v1"
+    }
+  ],
+  "productionPhaseRejectedLogicalExpiry": true,
+  "nativeChecks": 34,
+  "generationSurvivedFreshClientRestart": true,
+  "productionPhaseRejectedRetainedBytesAfterRestart": true,
+  "productionPhaseAcceptedNativeRemoval": true,
+  "observationMilliseconds": 78208,
+  "productionPhaseRejectedRetainedRedpanda": true,
+  "image": "ghcr.io/asherlc/dofek@sha256:a498aaa503db452480fdd43a71cc8799aa2564eea30a070e0296a08effc48620",
+  "scope": "Packaged production retention_verification phase and native adapter, production Node flags and telemetry preloads; unrelated retention gates stubbed. Not a full queue-driven worker boot or production activation.",
+  "settings": "Stock Kafka 4.4 cleanup and file-delete settings unchanged; broker restarted with fresh admin client; matching readonly worker storage mounts.",
+  "telemetryWarning": "Production instrumentation emitted TimeoutNegativeWarning; fixture assertions completed successfully. No runtime workaround applied.",
+  "fixtureCleanup": "Owned native-guard Compose container and network removed; synthetic fixture bind paths retained locally, no production paths touched."
+}

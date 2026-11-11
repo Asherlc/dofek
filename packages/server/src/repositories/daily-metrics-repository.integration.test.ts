@@ -11,6 +11,7 @@ import { buildRestingHeartRateSleepWindowTableSql } from "../../../../src/db/cli
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { buildIngestMetricStreamCreateTableSql } from "../../../../src/metric-stream/clickhouse-table.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
+import { refreshDailyHealthSensor } from "./daily-health-sensor-test-helpers.ts";
 import { DailyMetricsRepository } from "./daily-metrics-repository.ts";
 import {
   dailyMetricsSpo2QueryParams,
@@ -155,6 +156,7 @@ describe("DailyMetricsRepository sample-derived oxygen saturation", () => {
     });
     store = {
       async query(schema, query, params) {
+        await refreshDailyHealthSensor(client, database);
         const response = await client.query({
           query: query
             .replaceAll("ingest.", `${database}.`)
