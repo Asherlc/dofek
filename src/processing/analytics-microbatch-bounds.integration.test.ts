@@ -101,6 +101,7 @@ describe("analytics microbatch bounds", () => {
         query: `CREATE TABLE analytics.deduped_activities (
   activity_id UUID,
   user_id UUID,
+  provider_type Nullable(String),
   started_at DateTime64(6, 'UTC'),
   ended_at Nullable(DateTime64(6, 'UTC')),
   member_activity_ids Array(UUID),

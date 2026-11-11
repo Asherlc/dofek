@@ -33,10 +33,6 @@ on:
 env:
   REGISTRY: ghcr.io
 
-concurrency:
-  group: ${{ (inputs.target == 'web-stack' || inputs.target == 'web' || inputs.target == 'ota' || inputs.target == 'ios' || inputs.target == 'all') && 'deploy-web-production' || format('deploy-{0}-{1}', inputs.target, github.run_id) }}
-  cancel-in-progress: false
-
 jobs:
   terraform:
     name: Deploy Infra
@@ -90,7 +86,7 @@ jobs:
           images: ${{ steps.tag.outputs.image }}
           tags: |
             type=sha,value=${{ github.sha }}
-            type=raw,value=latest
+            type=raw,value=latest,enable={{is_default_branch}}
       - name: Compute web asset base URL
         id: web-assets
         env:
@@ -154,7 +150,7 @@ jobs:
           images: ${{ steps.tag.outputs.image }}
           tags: |
             type=sha,value=${{ github.sha }}
-            type=raw,value=latest
+            type=raw,value=latest,enable={{is_default_branch}}
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: packages/ml
@@ -168,6 +164,9 @@ jobs:
   web-stack:
     name: Deploy Web Stack
     needs: [terraform, docker, docker_ml]
+    concurrency:
+      group: deploy-web-production
+      cancel-in-progress: false
     if: ${{ !cancelled() && (needs.terraform.result == 'success' || needs.terraform.result == 'skipped') && (needs.docker.result == 'success' || needs.docker.result == 'skipped') && (needs.docker_ml.result == 'success' || needs.docker_ml.result == 'skipped') && vars.ORACLE_SERVER_HOST != '' && (inputs.target == 'web-stack' || inputs.target == 'web' || inputs.target == 'ota' || inputs.target == 'ios' || inputs.target == 'all') }}
     permissions:
       actions: read
@@ -185,10 +184,25 @@ jobs:
       dispatching_run_id: ${{ github.run_id }}
     secrets: inherit
 
-  ios:
-    name: Deploy iOS
+  ios-archive:
+    name: Build iOS Release
+    # Manual image tags may resolve to a different source than github.sha.
     needs: web-stack
     if: ${{ !cancelled() && needs.web-stack.result == 'success' && (inputs.target == 'ios' || inputs.target == 'all') }}
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+      deployments: read
+    uses: ./.github/workflows/build-ios-release.yml
+    with:
+      commit_sha: ${{ needs.web-stack.outputs.commit_sha }}
+      dispatching_run_id: ${{ github.run_id }}
+
+  ios:
+    name: Deploy iOS
+    needs: [web-stack, ios-archive]
+    if: ${{ !cancelled() && needs.web-stack.result == 'success' && needs.ios-archive.result == 'success' && needs.ios-archive.outputs.artifact_id != '' && (inputs.target == 'ios' || inputs.target == 'all') }}
     permissions:
       actions: read
       contents: read
@@ -197,7 +211,9 @@ jobs:
     uses: ./.github/workflows/deploy-ios.yml
     with:
       commit_sha: ${{ needs.web-stack.outputs.commit_sha }}
-      dispatching_run_id: ${{ github.run_id }}
+      archive_commit_sha: ${{ needs.ios-archive.outputs.commit_sha }}
+      build_number: ${{ needs.ios-archive.outputs.build_number }}
+      artifact_id: ${{ needs.ios-archive.outputs.artifact_id }}
 
   ota:
     name: Deploy OTA

@@ -11,6 +11,7 @@ import {
 } from "@dofek/training/climbing-log";
 import { and, asc, eq, ne, sql } from "drizzle-orm";
 import { z } from "zod";
+import { persistClimbingLogActivityObservation } from "./climbing-log-activity.ts";
 import type { SyncDatabase, TransactionDatabase } from "./index.ts";
 import {
   area,
@@ -106,6 +107,10 @@ const sourceAttemptCountSchema = z
   .refine((count) => count.scope === "pitch" || count.pitch === undefined, {
     message: "A whole-climb count cannot identify a pitch.",
   });
+const sourceActivityObservationSchema = z.strictObject({
+  recordedAt: z.iso.datetime({ offset: true }),
+  gymExternalId: z.string().trim().min(1).nullable().optional(),
+});
 const sourceLogSchema = climbingLogEntrySchema
   .pick({
     externalId: true,
@@ -125,8 +130,10 @@ const sourceLogSchema = climbingLogEntrySchema
   .extend({
     externalId: climbingLogEntrySchema.shape.externalId.unwrap(),
     climb: sourceClimbWithPitchesSchema.nullable().optional(),
+    areas: z.array(sourceAreaSchema).readonly().optional(),
     reportedAttemptCounts: z.array(sourceAttemptCountSchema).readonly().optional(),
     attempts: z.array(sourceAttemptSchema).readonly(),
+    activityObservation: sourceActivityObservationSchema.optional(),
   })
   .superRefine((entry, context) => {
     for (const [index, count] of (entry.reportedAttemptCounts ?? []).entries()) {
@@ -159,7 +166,8 @@ export interface ClimbingLogSyncInput {
   entries: readonly SourceClimbingLogEntry[];
 }
 
-type AreaRow = typeof area.$inferSelect;
+// Sync owns source facts; explicit location membership is maintained independently.
+type AreaRow = Omit<typeof area.$inferSelect, "groupId">;
 type ClimbRow = typeof climb.$inferSelect;
 type PitchRow = typeof pitch.$inferSelect;
 type AttemptRow = typeof climbingAttempt.$inferSelect;
@@ -871,6 +879,7 @@ async function removeSupersededObjects(
     await tx.execute(sql`
     DELETE FROM fitness.area AS obsolete WHERE obsolete.id = ${id}::uuid
     AND NOT EXISTS (SELECT 1 FROM fitness.climb AS climb WHERE climb.area_id = obsolete.id)
+    AND NOT EXISTS (SELECT 1 FROM fitness.climbing_log_entry AS entry WHERE entry.area_id = obsolete.id)
     AND NOT EXISTS (SELECT 1 FROM fitness.area AS child WHERE child.parent_area_id = obsolete.id)
   `);
 }
@@ -919,13 +928,36 @@ export async function persistClimbingLogEntries(
         definition = await resolveClimb(tx, scope, source.climb, associated, oldAreas);
       const {
         climb: _climb,
+        areas,
         attempts: _attempts,
         reportedAttemptCounts: _counts,
         reportedGrades,
+        activityObservation: _activityObservation,
         ...facts
       } = source;
       const id = known?.id ?? randomUUID();
-      const changes = { ...facts, climbId: definition?.id ?? null, providerAbsentAt: null };
+      let areaId = known?.areaId ?? null;
+      if (areas !== undefined) {
+        const prior = await areaChain(tx, areaId);
+        for (const node of prior) oldAreas.add(node.id);
+        areaId = await resolveAreas(tx, scope, areas, prior);
+      }
+      const activityId = await persistClimbingLogActivityObservation(tx, {
+        ...scope,
+        source,
+        activityId: source.activityObservation
+          ? (known?.activityId ?? source.activityId ?? null)
+          : source.activityId === undefined
+            ? (known?.activityId ?? null)
+            : source.activityId,
+      });
+      const changes = {
+        ...facts,
+        areaId,
+        activityId,
+        climbId: definition?.id ?? null,
+        providerAbsentAt: null,
+      };
       if (known) await tx.update(climbingLogEntry).set(changes).where(eq(climbingLogEntry.id, id));
       else await tx.insert(climbingLogEntry).values({ id, ...scope, ...changes });
       await replaceLogGrades(tx, id, reportedGrades);

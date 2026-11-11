@@ -110,7 +110,11 @@ export function attachWorkerEvents(
       } else {
         logger.error(`[worker] Job failed: ${err.message}`);
       }
-      if (job?.id) {
+      // BullMQ removes terminal jobs before emitting `failed` when requested.
+      const removedOnFailure =
+        job?.opts.removeOnFail === true &&
+        (err instanceof UnrecoverableError || job.attemptsMade >= (job.opts.attempts ?? 1));
+      if (job?.id && !removedOnFailure) {
         const message = `BullMQ job failed: queue=${worker.name} jobId=${job.id} cause=${err.message}`;
         void Job.addJobLog(worker, job.id, `[error] ${message}`, 100).catch((logError: unknown) => {
           captureException(logError, {

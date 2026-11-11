@@ -286,6 +286,22 @@ describe("activity_sensor_sample read model", () => {
 
     expect(profileRows[0].readRows).toBeLessThan(unrelatedCount);
   }, 120_000);
+  it("excludes point-only groups while retaining the unknown-end recording fallback", async () => {
+    const activeClient = requireClient(client);
+    await seedFixture(activeClient, targetSchema);
+    await activeClient.command({
+      query: `ALTER TABLE ${targetSchema}.deduped_activities
+      UPDATE ended_at = NULL, provider_type = if(activity_id = toUUID('${crossMidnightActivityId}'), 'climbing_log', 'climbing')
+      WHERE user_id = toUUID('${overlapUserId}') SETTINGS mutations_sync = 2`,
+    });
+    const result = await activeClient.query({
+      query: renderActivitySensorSampleSql(targetSchema),
+      format: "JSONEachRow",
+    });
+    const rows = z.array(activitySensorSampleRowSchema).parse(await result.json());
+    expect(rows.filter((row) => row.activity_id === crossMidnightActivityId)).toEqual([]);
+    expect(rows.filter((row) => row.activity_id === overlappingActivityId)).toHaveLength(1);
+  });
 });
 
 function requireClickHouseUrl(): string {
@@ -344,6 +360,7 @@ async function seedFixture(client: ClickHouseClient, targetSchema: string): Prom
   await client.command({
     query: `CREATE TABLE ${targetSchema}.deduped_activities (
       activity_id UUID,
+      provider_type Nullable(String),
       user_id UUID,
       started_at DateTime64(6, 'UTC'),
       ended_at Nullable(DateTime64(6, 'UTC')),
@@ -355,6 +372,7 @@ async function seedFixture(client: ClickHouseClient, targetSchema: string): Prom
     ENGINE = ReplacingMergeTree()
     ORDER BY (user_id, activity_id)`,
   });
+
   await client.command({
     query: `CREATE TABLE ${targetSchema}.deduped_sensor (
       user_id UUID,

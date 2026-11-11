@@ -1,0 +1,76 @@
+--- a/tiered-storage/jcloud/src/main/java/org/apache/bookkeeper/mledger/offload/jcloud/impl/BlobStoreManagedLedgerOffloader.java
++++ b/tiered-storage/jcloud/src/main/java/org/apache/bookkeeper/mledger/offload/jcloud/impl/BlobStoreManagedLedgerOffloader.java
+@@ -264,7 +264,8 @@
+                     try (BlockAwareSegmentInputStream blockStream = new BlockAwareSegmentInputStreamImpl(
+                             readHandle, startEntry, blockSize, this.offloaderStats, managedLedgerName)) {
+ 
+-                        Payload partPayload = Payloads.newInputStreamPayload(blockStream);
++                        // Signing and retries must be able to reopen this bounded multipart block.
++                        Payload partPayload = Payloads.newByteArrayPayload(blockStream.readNBytes(blockSize));
+                         partPayload.getContentMetadata().setContentLength((long) blockSize);
+                         partPayload.getContentMetadata().setContentType("application/octet-stream");
+                         parts.add(writeBlobStore.uploadMultipartPart(mpu, partId, partPayload));
+@@ -320,7 +321,8 @@
+                     objectMetadata.putAll(extraMetadata);
+                 }
+                 DataBlockUtils.addVersionInfo(blobBuilder, objectMetadata);
+-                Payload indexPayload = Payloads.newInputStreamPayload(indexStream);
++                Payload indexPayload = Payloads.newByteArrayPayload(
++                        indexStream.readNBytes(Math.toIntExact(indexStream.getStreamSize())));
+                 indexPayload.getContentMetadata().setContentLength(indexStream.getStreamSize());
+                 indexPayload.getContentMetadata().setContentType("application/octet-stream");
+ 
+--- a/tiered-storage/jcloud/src/test/java/org/apache/bookkeeper/mledger/offload/jcloud/impl/BlobStoreManagedLedgerOffloaderTest.java
++++ b/tiered-storage/jcloud/src/test/java/org/apache/bookkeeper/mledger/offload/jcloud/impl/BlobStoreManagedLedgerOffloaderTest.java
+@@ -57,7 +57,9 @@
+ import org.apache.bookkeeper.mledger.offload.jcloud.provider.TieredStorageConfiguration;
+ import org.apache.pulsar.common.naming.TopicName;
+ import org.jclouds.blobstore.BlobStore;
++import org.jclouds.blobstore.domain.Blob;
+ import org.jclouds.blobstore.options.CopyOptions;
++import org.jclouds.io.Payload;
+ import org.mockito.Mockito;
+ import org.testng.Assert;
+ import org.testng.annotations.AfterClass;
+@@ -111,6 +113,41 @@
+                 new HashMap<String, String>(), scheduler, scheduler, this.offloaderStats,
+                 entryOffsetsCache);
+         return offloader;
++    }
++
++    @Test
++    public void testMultipartPayloadCanBeReadForSigningAndUpload() throws Exception {
++        BlobStore signingStore = mock(BlobStore.class, delegatesTo(blobStore));
++        Mockito.doAnswer(invocation -> {
++            Payload payload = invocation.getArgument(2);
++            byte[] signingBytes;
++            try (var input = payload.openStream()) {
++                signingBytes = input.readAllBytes();
++            }
++            try (var input = payload.openStream()) {
++                assertEquals(input.readAllBytes(), signingBytes);
++            }
++            return blobStore.uploadMultipartPart(invocation.getArgument(0), invocation.getArgument(1), payload);
++        }).when(signingStore).uploadMultipartPart(any(), anyInt(), any());
++        Mockito.doAnswer(invocation -> {
++            Blob blob = invocation.getArgument(1);
++            Payload payload = blob.getPayload();
++            byte[] signingBytes;
++            try (var input = payload.openStream()) {
++                signingBytes = input.readAllBytes();
++            }
++            try (var input = payload.openStream()) {
++                assertEquals(input.readAllBytes(), signingBytes);
++            }
++            return blobStore.putBlob(invocation.getArgument(0), blob);
++        }).when(signingStore).putBlob(any(), any());
++        @Cleanup
++        ReadHandle readHandle = buildReadHandle();
++        @Cleanup
++        LedgerOffloader offloader = getOffloader(signingStore);
++        UUID uuid = UUID.randomUUID();
++        offloader.offload(readHandle, uuid, new HashMap<>()).get();
++        assertTrue(blobStore.blobExists(BUCKET, DataBlockUtils.dataBlockOffloadKey(readHandle.getId(), uuid)));
+     }
+ 
+     @Test(timeOut = 600000)  // 10 minutes.

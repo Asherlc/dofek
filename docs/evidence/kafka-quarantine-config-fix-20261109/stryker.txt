@@ -1,0 +1,71 @@
+Local qualification, 2026-11-09 UTC, Node26.5.0, Stryker10.1.1.
+Source/test content subsequently committed as fb5c4955d. No production resources used.
+Command: pnpm exec stryker run --mutate src/metric-stream/redpanda-quarantine.ts --testFiles 'src/metric-stream/redpanda-quarantine.test.ts,src/metric-stream/redpanda-consumer.test.ts' --concurrency 2 --force
+Existing checked-in ignoreStatic and excluded StringLiteral mutations remain unchanged; 69 counted mutants out of 94 instrumented, all counted mutants killed.
+
+06:15:20 (36342) INFO ProjectReader Found 1 of 12611 file(s) to be mutated using incremental report with 94 mutant(s), and 16 test(s). Force mode is activated, all mutants will be retested.
+06:15:20 (36342) INFO ProjectReader Found 2 test file(s) matching --testFiles patterns.
+06:15:20 (36342) INFO Instrumenter Instrumented 1 source file(s) with 94 mutant(s)
+06:15:22 (36342) INFO ConcurrencyTokenProvider Creating 2 test runner process(es).
+06:15:23 (36342) INFO BroadcastReporter Detected that current console does not support the "progress" reporter, downgrading to "progress-append-only" reporter
+06:15:24 (36342) INFO DryRunExecutor Starting initial test run (vitest test runner with "perTest" coverage analysis). This may take a while.
+06:15:25 (36342) INFO DryRunExecutor Initial test run succeeded. Ran 41 tests in 0 seconds (net 151.53124999999977 ms, overhead 492.4687500000002 ms).
+06:15:25 (36342) INFO IncrementalDiffer Incremental report:
+	Mutants:	0 files changed (+0 -0)
+	Tests:		2 files changed (+35 -11)
+	Result:		0 of 94 mutant result(s) are reused.
+
+All tests
+  redpanda-consumer.test.ts
+    ✘ runMetricStreamEventConsumer > reports lag, sink latency, and deletion throughput for each consumed batch [line 111] (covered 0)
+    ✘ runMetricStreamEventConsumer > reports lag from the consumed offset when a tombstone follows valid data [line 191] (covered 0)
+    ✘ runMetricStreamEventConsumer > reports lag for a tombstone-only batch without fabricating sink cost [line 226] (covered 0)
+    ✘ runMetricStreamEventConsumer > subscribes to the metric stream topic and handles parsed events before resolving offsets [line 265] (covered 0)
+    ✘ runMetricStreamEventConsumer > registers a supplied lifecycle listener before consuming events [line 319] (covered 0)
+    ✘ runMetricStreamEventConsumer > does not register the consumer lifecycle observer without a listener [line 349] (covered 0)
+    ✘ runMetricStreamEventConsumer > passes delete events to sinks in Redpanda batch order [line 371] (covered 0)
+    ✘ runMetricStreamEventConsumer > does not resolve offsets when the handler fails [line 423] (covered 0)
+    ✘ runMetricStreamEventConsumer > skips tombstone messages and does not call the handler for empty batches [line 466] (covered 0)
+    ✘ runMetricStreamEventConsumer > leaves the complete batch uncommitted when durable quarantine fails [line 507] (covered 0)
+    ✘ runMetricStreamEventConsumer > does not let a later valid message bypass an earlier unhandled offset [line 585] (covered 0)
+    ✘ runMetricStreamEventConsumer > writes malformed payloads durably before handling later events and committing [line 627] (covered 0)
+    ✘ createKafkaMetricStreamConsumerFromEnv > requires Redpanda brokers [line 702] (covered 0)
+    ✘ createKafkaMetricStreamConsumerFromEnv > requires a metric stream topic [line 711] (covered 0)
+    ✘ createKafkaMetricStreamConsumerFromEnv > rejects broker lists that only contain separators and whitespace [line 720] (covered 0)
+    ✘ createKafkaMetricStreamConsumerFromEnv > requires a consumer group when configured as undefined [line 730] (covered 0)
+    ✘ createKafkaMetricStreamConsumerFromEnv > requires a consumer group when configured as [line 730] (covered 0)
+    ✓ createKafkaMetricStreamConsumerFromEnv > uses the configured live-sink identity and metric-stream-live-v1 subscription [line 744] (killed 1)
+    ~ createKafkaMetricStreamConsumerFromEnv > uses the configured history-sink identity and metric-stream-history-v1 subscription [line 744] (covered 45)
+    ✓ createKafkaMetricStreamConsumerFromEnv > trims broker lists and adapts KafkaJS consumer methods [line 763] (killed 4)
+    ~ createKafkaMetricStreamConsumerFromEnv > forwards Kafka group lifecycle events to sink readiness [line 821] (covered 2)
+  redpanda-quarantine.test.ts
+    ✓ KafkaMetricStreamQuarantineWriter > connects the producer only after checking the exact quarantine policy [line 65] (killed 28)
+    ✓ KafkaMetricStreamQuarantineWriter > rejects invalid cleanup.policy without connecting the producer [line 87] (killed 5)
+    ~ KafkaMetricStreamQuarantineWriter > rejects invalid retention.ms without connecting the producer [line 87] (covered 49)
+    ~ KafkaMetricStreamQuarantineWriter > rejects invalid retention.bytes without connecting the producer [line 87] (covered 49)
+    ✓ KafkaMetricStreamQuarantineWriter > rejects a missing required configuration entry [line 98] (killed 2)
+    ✓ KafkaMetricStreamQuarantineWriter > rejects a duplicate required configuration entry [line 98] (killed 3)
+    ✓ KafkaMetricStreamQuarantineWriter > fails closed on a missing DescribeConfigs resource [line 114] (killed 2)
+    ✓ KafkaMetricStreamQuarantineWriter > fails closed on a wrong topic DescribeConfigs resource [line 114] (killed 7)
+    ✓ KafkaMetricStreamQuarantineWriter > fails closed on a wrong type DescribeConfigs resource [line 114] (killed 1)
+    ~ KafkaMetricStreamQuarantineWriter > fails closed on a duplicate DescribeConfigs resource [line 114] (covered 20)
+    ✓ KafkaMetricStreamQuarantineWriter > fails closed on a broker error DescribeConfigs resource [line 114] (killed 2)
+    ~ KafkaMetricStreamQuarantineWriter > fails closed on a malformed DescribeConfigs resource [line 114] (covered 20)
+    ✓ KafkaMetricStreamQuarantineWriter > retains the parse failure cause for a malformed configuration response [line 136] (killed 1)
+    ✓ KafkaMetricStreamQuarantineWriter > reports broker errors with detail null [line 144] (killed 1)
+    ~ KafkaMetricStreamQuarantineWriter > reports broker errors with detail Topic authorization failed [line 144] (covered 33)
+    ~ KafkaMetricStreamQuarantineWriter > disconnects admin and propagates creation failure without starting the producer [line 155] (covered 9)
+    ✘ KafkaMetricStreamQuarantineWriter > loads through Node's native ESM loader [line 163] (covered 0)
+    ✓ KafkaMetricStreamQuarantineWriter > stores full replay context with all-replica acknowledgement [line 184] (killed 10)
+    ✓ KafkaMetricStreamQuarantineWriter > serializes non-Error parse failures without losing their reason [line 232] (killed 2)
+
+Ran 2.37 tests per mutant on average.
+------------------------|------------------|----------|-----------|------------|----------|----------|
+                        | % Mutation score |          |           |            |          |          |
+File                    |  total | covered | # killed | # timeout | # survived | # no cov | # errors |
+------------------------|--------|---------|----------|-----------|------------|----------|----------|
+All files               | 100.00 |  100.00 |       69 |         0 |          0 |        0 |        0 |
+ redpanda-quarantine.ts | 100.00 |  100.00 |       69 |         0 |          0 |        0 |        0 |
+------------------------|--------|---------|----------|-----------|------------|----------|----------|
+06:15:34 (36342) INFO MutationTestReportHelper Final mutation score of 100.00 is greater than or equal to break threshold 75
+06:15:34 (36342) INFO MutationTestExecutor Done in 15 seconds.

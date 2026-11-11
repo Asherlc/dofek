@@ -1,0 +1,18 @@
+{
+  "observedAt": "2026-11-09T17:54:18.734Z",
+  "api": "https://api.github.com/repos/Asherlc/dofek/actions/workflows/deploy-web.yml",
+  "workflow": {
+    "id": 258723662,
+    "path": ".github/workflows/deploy-web.yml",
+    "state": "disabled_manually",
+    "updated_at": "2026-11-04T21:13:41.000-08:00"
+  },
+  "changedByThisReview": false,
+  "productionActivationAuthorized": false,
+  "activationBlockers": [
+    "qualified stock index-cache cleanup policy",
+    "exact merged immutable application image qualification",
+    "fresh production identities, backend and credential scope, measured capacity, quiescence and forward recovery",
+    "retained-data retirement and erasure branch integration"
+  ]
+}

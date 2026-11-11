@@ -1,0 +1,12 @@
+(node:41915) TimeoutNegativeWarning: -1794239454547 is a negative number.
+Timeout duration was set to 1.
+(Use `node --trace-warnings ...` to show where the warning was created)
+file://<workspace>/[eval1]:17
+        throw new Error(`${topic}: ${key} must be explicitly configured as ${expected}; found ${entries[0]?.configValue ?? 'missing'} (source ${entries[0]?.configSource ?? 'missing'})`);
+              ^
+
+Error: live.quarantine.v1: remote.storage.enable must be explicitly configured as false; found false (source 5)
+    at file://<workspace>/[eval1]:17:15
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+
+Node.js v26.5.0

@@ -32,7 +32,7 @@ export default class IntegrationTestSequencer extends BaseSequencer {
     const baselinePath = path.resolve(root, "scripts/integration-test-timings.json");
     if (!existsSync(baselinePath))
       throw new Error(
-        `Missing integration timing baseline ${baselinePath}; restore the committed baseline or refresh from all four successful timing artifacts`,
+        `Missing integration timing baseline ${baselinePath}; restore the committed baseline or refresh from all five successful timing artifacts`,
       );
     const bytes = readFileSync(baselinePath);
     let value: unknown;
@@ -40,14 +40,14 @@ export default class IntegrationTestSequencer extends BaseSequencer {
       value = JSON.parse(bytes.toString("utf8"));
     } catch (cause) {
       throw new Error(
-        `Malformed integration timing baseline ${baselinePath}; refresh from all four successful timing artifacts`,
+        `Malformed integration timing baseline ${baselinePath}; refresh from all five successful timing artifacts`,
         { cause },
       );
     }
     const parsed = timingBaselineSchema.safeParse(value);
     if (!parsed.success)
       throw new Error(
-        `Invalid integration timing baseline ${baselinePath}: ${parsed.error.message}; refresh from all four successful timing artifacts`,
+        `Invalid integration timing baseline ${baselinePath}: ${parsed.error.message}; refresh from all five successful timing artifacts`,
       );
     const baseline = parsed.data;
     const weights = new Map(

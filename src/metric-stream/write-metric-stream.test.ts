@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createMetricStreamEvent, type MetricStreamRowInput } from "./events.ts";
-import type { MetricStreamEventPublisher } from "./redpanda-producer.ts";
+import type { MetricStreamEventPublisher } from "./publisher.ts";
 import { writeMetricStreamRows } from "./write-metric-stream.ts";
 
 const metricStreamRow: MetricStreamRowInput = {

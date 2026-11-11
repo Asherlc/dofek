@@ -23,12 +23,9 @@ const snapshot: AccountErasureRemoteSnapshot = {
     },
   ],
   localIdentifiers: {
-    activityIds: [],
     exportObjects: [],
     fileUploads: [],
-    processingOperationIds: [],
     sessionIds: [],
-    sleepSessionIds: [],
     userId: "20000000-0000-4000-8000-000000001994",
   },
   posthogDistinctId: "20000000-0000-4000-8000-000000001994",

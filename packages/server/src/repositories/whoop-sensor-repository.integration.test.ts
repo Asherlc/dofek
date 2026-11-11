@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildIngestMetricStreamCreateTableSql } from "../../../../src/metric-stream/clickhouse-table.ts";
 import { rewriteClickHouseDatabaseNames } from "../routers/clickhouse-integration-test-models.ts";
 import { ClickHouseActivitySensorStore } from "./clickhouse-activity-sensor-store.ts";
+import { refreshDailyHealthSensor } from "./daily-health-sensor-test-helpers.ts";
 import { WhoopSensorRepository } from "./whoop-sensor-repository.ts";
 
 const userId = "00000000-0000-4000-8000-000000000001";
@@ -64,6 +65,7 @@ describe("WHOOP retained sensor records", () => {
         }),
       })),
     });
+    await refreshDailyHealthSensor(client, database);
   });
 
   afterAll(async () => {
@@ -120,6 +122,7 @@ describe("WHOOP retained sensor records", () => {
         }),
       })),
     });
+    await refreshDailyHealthSensor(client, database);
     expect(
       await repository.dailyTemperatures({ days: 1, endDate: "2026-03-29", timezone: "UTC" }),
     ).toEqual([

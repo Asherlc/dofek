@@ -26,6 +26,7 @@ import { heartRateZoneCountColumns, heartRateZoneSqlParams } from "./heart-rate-
 export const activityMetricSamplesSql = `SELECT *
   FROM analytics.sensor_scalar_sample FINAL
   WHERE user_id = {userId:UUID}
+    AND {isPointOnly:Bool} = 0
     AND channel IN ('heart_rate', 'power', 'speed', 'cadence', 'altitude')
     AND recorded_date >= toDate(parseDateTime64BestEffort({windowStartedAt:String}, 6, 'UTC'))
     AND recorded_date <= toDate(parseDateTime64BestEffort({windowEndedAt:String}, 6, 'UTC'))
@@ -43,6 +44,7 @@ export const activityMetricSourceIdSql = `if(coalesce(device_id, '') = '', provi
 export function activityMetricParams(window: ActivitySensorWindow) {
   return {
     userId: window.userId,
+    isPointOnly: window.providerType === "climbing_log",
     windowStartedAt: window.startedAt,
     windowEndedAt:
       window.endedAt ?? new Date(Date.parse(window.startedAt) + 12 * 60 * 60 * 1000).toISOString(),

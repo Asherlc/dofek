@@ -86,7 +86,7 @@ describe("0074_metric_stream_external_id_projection", () => {
     await client.command({
       query: `ALTER TABLE ${table}
         MATERIALIZE PROJECTION ${METRIC_STREAM_PROVIDER_EXTERNAL_ID_PROJECTION}`,
-      clickhouse_settings: { mutations_sync: 2 },
+      clickhouse_settings: { mutations_sync: "2" },
     });
 
     const result = await client.query({
