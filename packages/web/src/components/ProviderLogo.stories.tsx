@@ -1,3 +1,4 @@
+import { PROVIDER_CATALOG } from "@dofek/providers/provider-catalog";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { ProviderLogo } from "./ProviderLogo";
 
@@ -14,6 +15,19 @@ const meta = {
 export default meta;
 
 type Story = StoryObj<typeof meta>;
+
+export const AllProviders: Story = {
+  render: (args) => (
+    <div className="grid grid-cols-4 gap-6 p-6">
+      {Object.entries(PROVIDER_CATALOG).map(([provider, entry]) => (
+        <div key={provider} className="flex items-center gap-3">
+          <ProviderLogo {...args} provider={provider} />
+          <span>{entry.label}</span>
+        </div>
+      ))}
+    </div>
+  ),
+};
 
 export const Strava: Story = {
   args: {

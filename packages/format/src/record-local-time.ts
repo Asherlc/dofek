@@ -282,6 +282,20 @@ export function formatRecordLocalTime(
     .replace(/\u202f/g, " ");
 }
 
+export function formatRecordLocalTimeRange(
+  firstTimestamp: string,
+  lastTimestamp: string,
+  context: RecordLocalTimeContext,
+  locale?: string,
+  viewerTimezone?: string,
+): string {
+  const first = formatRecordLocalTime(firstTimestamp, context, "start", locale, viewerTimezone);
+  if (firstTimestamp === lastTimestamp) return first;
+
+  const last = formatRecordLocalTime(lastTimestamp, context, "end", locale, viewerTimezone);
+  return `${first} – ${last}`;
+}
+
 export function recordLocalHour(
   timestamp: string,
   context: RecordLocalTimeContext,

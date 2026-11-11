@@ -59,6 +59,20 @@ describe("account erasure outbox and worker (integration)", () => {
         execution: AccountErasurePhaseExecution,
       ): Promise<Record<string, unknown> | null> {
         phaseRuns.push(phase);
+        const highWatermarks = [
+          {
+            topic: "worker-erasure-fixture",
+            partition: 0,
+            low: "0",
+            offset: "100",
+            clusterId: "0".repeat(22),
+            topicId: "1".repeat(22),
+          },
+        ];
+        if (phase === "ingest_fence") return { highWatermarks };
+        if (phase === "consumer_drain") {
+          return { quarantineHighWatermarks: highWatermarks };
+        }
         if (phase === "postgres_erasure") {
           await erasePostgresAccount(context.db, execution.request.id, userId);
           return null;

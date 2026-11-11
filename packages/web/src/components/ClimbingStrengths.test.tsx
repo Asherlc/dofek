@@ -371,16 +371,27 @@ it("expands source hierarchies with provider links and inherited area labels", a
   const link = screen.getByRole("link", { name: "Mountain Project" });
   expect(link).toHaveAttribute("href", "https://www.mountainproject.com/area/12");
 });
-it("keeps contributing climbs visible alongside enrichment errors", () => {
+it("groups duplicate metadata errors behind one disclosure while keeping climbs visible", () => {
   render(
     <ClimbingStrengths
       data={{
         ...fixture,
         enrichmentPending: true,
-        enrichmentErrors: ["Reconnect Kaya and retry."],
+        enrichmentErrors: [
+          "Reconnect Kaya and retry.",
+          "OpenBeta is unavailable. Retry later.",
+          "Reconnect Kaya and retry.",
+        ],
       }}
     />,
   );
-  expect(screen.getByText("Reconnect Kaya and retry.")).toBeTruthy();
+  expect(screen.getAllByText("Catalogue metadata incomplete")).toHaveLength(1);
+  expect(screen.getByText("Reconnect Kaya and retry.")).not.toBeVisible();
+  fireEvent.click(screen.getByText("Provider details"));
+  expect(screen.getAllByText("Reconnect Kaya and retry.")).toHaveLength(1);
+  expect(screen.getByText("Reconnect Kaya and retry.")).toBeVisible();
+  expect(screen.getByText("OpenBeta is unavailable. Retry later.")).toBeVisible();
+  fireEvent.click(screen.getByText("Provider details"));
+  expect(screen.getByText("Reconnect Kaya and retry.")).not.toBeVisible();
   expect(screen.getByText("Evening Arete")).toBeTruthy();
 });

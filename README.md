@@ -57,7 +57,7 @@ High-volume sensor samples ──────┴─> Redpanda ──────
   analytics outside request paths. The serialized analytics worker also calls
   the pure [`@dofek/cycling-power`](packages/cycling-power/README.md) algorithms
   through its [bounded projector](src/analytics/README.md); dbt inputs precede
-  projection and dependent healthspan models follow it. Derived sensor analytics
+  projection and dependent threshold/activity-power models follow it. Derived sensor analytics
   are never written back to Postgres.
 - Express and tRPC serve both clients. BullMQ workers use Redis for scheduled
   syncs, imports, exports, post-sync work, and analytics cleanup.
@@ -256,7 +256,7 @@ injection, health gates, rollback boundaries, and diagnostics.
 
 To check when production last deployed or why merged changes have not released,
 follow [Checking the Latest Production Deployment](deploy/README.md#checking-the-latest-production-deployment).
-Correlate the parent workflow's server job with the running image; the procedure
+Inspect Release Production's server job and correlate it with the running image; the procedure
 also checks whether automatic deployment is disabled.
 
 ## Documentation Policy

@@ -5,7 +5,12 @@ import {
   type ClickHouseClient,
   createClickHouseClientFromEnv,
 } from "../../../../src/db/clickhouse.ts";
-import { buildTestDailyActivityLoadSelectSql } from "./clickhouse-integration-test-read-models-b.ts";
+import { buildIngestMetricStreamCreateTableSql } from "../../../../src/metric-stream/clickhouse-table.ts";
+import { buildTestAnalyticsTableStatement } from "./clickhouse-integration-test-models.ts";
+import {
+  buildTestDailyActivityLoadSelectSql,
+  buildTestDailyHealthSensorSelectSql,
+} from "./clickhouse-integration-test-read-models-b.ts";
 
 const activityLoadRowsSchema = z.array(
   z.object({
@@ -78,5 +83,30 @@ describe("ClickHouse integration daily activity load test model", () => {
         daily_load: 30,
       },
     ]);
+  });
+
+  it("builds the shared health-sensor fixture from the canonical model and schema", async () => {
+    await client.command({
+      query: buildIngestMetricStreamCreateTableSql().replaceAll("ingest.", `${analyticsDatabase}.`),
+    });
+    await client.command({
+      query: buildTestAnalyticsTableStatement(`${analyticsDatabase}.daily_health_sensor`),
+    });
+    await client.command({
+      query: `INSERT INTO ${analyticsDatabase}.metric_stream
+      (id,user_id,provider_id,recorded_at,channel,scalar) VALUES
+      (generateUUIDv4(),{userId:UUID},'garmin','2026-07-28 12:00:00','spo2',97)`,
+      query_params: { userId },
+    });
+    await client.command({
+      query: `INSERT INTO ${analyticsDatabase}.daily_health_sensor
+      ${buildTestDailyHealthSensorSelectSql({ analytics: analyticsDatabase, ingest: analyticsDatabase, postgresFitness: analyticsDatabase })}`,
+    });
+    const result = await client.query({
+      query: `SELECT samples.value AS value
+      FROM ${analyticsDatabase}.daily_health_sensor FINAL ARRAY JOIN samples`,
+      format: "JSONEachRow",
+    });
+    expect(await result.json()).toEqual([{ value: 97 }]);
   });
 });

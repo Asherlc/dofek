@@ -1,0 +1,21 @@
+{
+  "productionActions": false,
+  "topic": "native-guard-1794158145979",
+  "checkpoint": [
+    {
+      "partition": 0,
+      "offset": "100",
+      "high": "100",
+      "low": "0",
+      "clusterId": "MkU3OEVBNTcwNTJENDM2Qk",
+      "topicId": "s2B0joBIQcCooy2gi3GNBQ",
+      "topic": "native-guard-1794158145979"
+    }
+  ],
+  "rejectedLogicalExpiry": true,
+  "initialRestartHarnessError": "Explicit reconnect of the same disconnected KafkaJS admin object failed with write after end; resumed the same unchanged broker using a fresh worker-style admin.",
+  "generationSurvivedRestart": true,
+  "retainedBytesAfterRestart": true,
+  "acceptedAfterNativeRemoval": true,
+  "cleanupObservationMilliseconds": 7829
+}

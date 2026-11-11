@@ -5,12 +5,16 @@ import {
   createMetricStreamBatchPartitionKey,
   createMetricStreamDeletedEvent,
   createMetricStreamEvent,
-  type MetricStreamDeletedEventV3,
   type MetricStreamDeleteScopeInput,
   type MetricStreamEventV2,
   type MetricStreamProcessingContext,
   type MetricStreamRowInput,
 } from "./events.ts";
+import type {
+  MetricStreamEventPublisher,
+  MetricStreamPublishOptions,
+  MetricStreamReplacementPublishResult,
+} from "./publisher.ts";
 import { type MetricStreamRoute, metricStreamTopicForRoute } from "./routes.ts";
 
 export interface KafkaProducerMessage {
@@ -35,30 +39,6 @@ export interface KafkaProducerLike {
   connect(): Promise<void>;
   disconnect(): Promise<void>;
   send(input: KafkaProducerSendInput): Promise<unknown>;
-}
-
-export interface MetricStreamEventPublisher {
-  publishRows(
-    rows: readonly MetricStreamRowInput[],
-    options: MetricStreamPublishOptions,
-  ): Promise<MetricStreamEventV2[]>;
-  replaceRows?(
-    scope: MetricStreamDeleteScopeInput,
-    rows: readonly MetricStreamRowInput[],
-    operationRevision: string,
-    processing?: MetricStreamProcessingContext,
-  ): Promise<MetricStreamReplacementPublishResult>;
-}
-
-export interface MetricStreamPublishOptions {
-  operationRevision: string;
-  partitionKey?: string;
-  processing?: MetricStreamProcessingContext;
-}
-
-export interface MetricStreamReplacementPublishResult {
-  deleted: MetricStreamDeletedEventV3;
-  rows: MetricStreamEventV2[];
 }
 
 export class KafkaMetricStreamEventPublisher implements MetricStreamEventPublisher {

@@ -13,6 +13,9 @@ the exact section.
 
 ## Start Here
 
+- [pulsar-foundation-qualification.md](pulsar-foundation-qualification.md):
+  isolated Pulsar infrastructure, R2 payload correction and native storage tests;
+  production cutover remains separately gated.
 - [../README.md](../README.md): repository overview, local development, and the high-level architecture.
 - [development-environment.md](development-environment.md): reproducible local
   and cloud tools, Dev Containers, CodeGraph, RTK, and initialization commands.

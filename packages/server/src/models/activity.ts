@@ -2,6 +2,7 @@ import type { ActivityDataState } from "@dofek/format/activity-data-state";
 import type { RecordLocalTimeContext } from "@dofek/format/record-local-time";
 import type { ActivityOriginEvidence } from "@dofek/providers/activity-origin";
 import type { ActivitySourceTree } from "@dofek/providers/activity-source-tree";
+import type { ClimbingLogActivitySession } from "../contracts/climbing-log-contracts.ts";
 import { activityMeasurementState } from "../services/activity-data-state.ts";
 import { type ActivityOriginColumns, activityOriginFromColumns } from "./activity-origin.ts";
 import type { ActivitySource } from "./activity-source.ts";
@@ -25,7 +26,11 @@ export type {
   SourceLink,
 };
 
+const FIT_RECOVERY_WARNING =
+  "Some activity data could not be recovered from the original file. The available data was imported; this activity may be incomplete.";
+
 export interface ActivityDetail {
+  climbingLogSessions: ClimbingLogActivitySession[];
   id: string;
   displayedDate: string;
   resolvedFrom?: string;
@@ -35,6 +40,7 @@ export interface ActivityDetail {
   modality: string | null;
   startedAt: string;
   endedAt: string | null;
+  durationMin: number | null;
   name: string | null;
   notes: string | null;
   perceivedExertion: number | null;
@@ -68,6 +74,7 @@ export interface ActivityDetail {
   sampleCount: number | null;
   sampleCountState: ActivityDataState;
   providerAbsentAt: string | null;
+  fitRecoveryWarning: string | null;
 }
 
 export interface ActivityRow extends ActivityOriginColumns {
@@ -104,6 +111,7 @@ export interface ActivityRow extends ActivityOriginColumns {
   elevation_gain_m: number | null;
   elevation_loss_m: number | null;
   sample_count: number | null;
+  fit_recovery_error: boolean;
   provider_absent_at: string | null;
 }
 
@@ -152,6 +160,15 @@ export class Activity {
 
   get endedAt(): string | null {
     return this.#row.ended_at ? String(this.#row.ended_at) : null;
+  }
+
+  get durationMin(): number | null {
+    const endedAt = this.endedAt;
+    return endedAt === null
+      ? null
+      : Math.round(
+          ((new Date(endedAt).getTime() - new Date(this.startedAt).getTime()) / 60_000) * 10,
+        ) / 10;
   }
 
   get name(): string | null {
@@ -244,7 +261,7 @@ export class Activity {
   }
 
   /** Serialize to the ActivityDetail shape consumed by API clients. */
-  toDetail(): ActivityDetail {
+  toDetail(climbingLogSessions: ClimbingLogActivitySession[] = []): ActivityDetail {
     const sourceLinks = this.sourceLinks;
     const origin = activityOriginFromColumns(this.#row);
     return {
@@ -257,6 +274,7 @@ export class Activity {
       modality: this.modality,
       startedAt: this.startedAt,
       endedAt: this.endedAt,
+      durationMin: this.durationMin,
       name: this.name,
       notes: this.notes,
       perceivedExertion: this.perceivedExertion,
@@ -265,8 +283,19 @@ export class Activity {
       subsource: this.subsource,
       sourceProviders: this.sourceProviders,
       sourceLinks,
-      sourceTree: buildActivitySourceTree(origin, sourceLinks, this.#row.origin_evidence),
-      sourceDecision: buildActivitySourceDecision(origin, sourceLinks, this.#lookupProvider),
+      climbingLogSessions,
+      sourceTree: buildActivitySourceTree(
+        origin,
+        sourceLinks,
+        this.#row.origin_evidence,
+        climbingLogSessions,
+      ),
+      sourceDecision: buildActivitySourceDecision(
+        origin,
+        sourceLinks,
+        this.#lookupProvider,
+        climbingLogSessions,
+      ),
       avgHr: this.avgHr,
       avgHrState: activityMeasurementState("Average heart rate", this.avgHr),
       maxHr: this.maxHr,
@@ -290,6 +319,7 @@ export class Activity {
       sampleCount: this.sampleCount,
       sampleCountState: activityMeasurementState("Sample count", this.sampleCount),
       providerAbsentAt: this.providerAbsentAt,
+      fitRecoveryWarning: this.#row.fit_recovery_error ? FIT_RECOVERY_WARNING : null,
     };
   }
 }

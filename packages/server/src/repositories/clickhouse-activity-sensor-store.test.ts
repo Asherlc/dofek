@@ -111,6 +111,18 @@ describe("ClickHouseActivitySensorStore", () => {
     await expect(store.getStream(window, 500)).resolves.toEqual([]);
   });
 
+  it("returns no sensor data for a point-only climbing window", async () => {
+    const staleRows = [{ zone: 1, seconds: 12 }];
+    const { store, query } = makeStore(staleRows);
+    const pointOnlyWindow = { ...window, providerType: "climbing_log", endedAt: null };
+
+    await expect(store.getStream(pointOnlyWindow, 500)).resolves.toEqual([]);
+    await expect(store.getHeartRateZoneSeconds(pointOnlyWindow)).resolves.toEqual([]);
+    await expect(store.getPowerZoneSeconds(pointOnlyWindow, 275)).resolves.toEqual([]);
+
+    expect(query).not.toHaveBeenCalled();
+  });
+
   it("queries activity summaries from the ClickHouse analytics schema", async () => {
     const { store, query } = makeStore([
       {

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   decryptCredentialValue,
   deriveCredentialIdentifier,
+  deriveCredentialKeyringIdentifier,
   encryptCredentialValue,
   isEncryptedCredentialValue,
 } from "./credential-encryption.ts";
@@ -38,6 +39,52 @@ describe("credential encryption", () => {
 
     expect(decrypted).toBe(plaintext);
     expect(isEncryptedCredentialValue(plaintext)).toBe(false);
+  });
+
+  it("does not wrap an already encrypted value a second time", async () => {
+    const context = {
+      tableName: "fitness.oauth_token",
+      columnName: "access_token",
+      scopeId: "already-encrypted",
+    };
+    const encrypted = await encryptCredentialValue("secret", context);
+    expect(await encryptCredentialValue(encrypted, context)).toBe(encrypted);
+  });
+
+  it.each(["tableName", "columnName", "scopeId"] as const)(
+    "rejects ciphertext under another %s",
+    async (key) => {
+      const context = {
+        tableName: "fitness.oauth_token",
+        columnName: "access_token",
+        scopeId: "owner-a",
+      };
+      const encrypted = await encryptCredentialValue("secret", context);
+      await expect(
+        decryptCredentialValue(encrypted, { ...context, [key]: "different" }),
+      ).rejects.toThrow(
+        `Credential encryption context mismatch for ${key === "tableName" ? "different" : context.tableName}.${key === "columnName" ? "different" : context.columnName} (key=${key === "tableName" ? "table_name" : key === "columnName" ? "column_name" : "scope_id"}).`,
+      );
+    },
+  );
+
+  it.each([
+    undefined,
+    "",
+    Buffer.alloc(31).toString("base64"),
+    Buffer.alloc(33).toString("base64"),
+  ])("rejects missing or invalid master key configuration (%s)", async (value) => {
+    vi.stubEnv("CREDENTIAL_ENCRYPTION_KEY_BASE64", value);
+    const context = {
+      tableName: "fitness.oauth_token",
+      columnName: "access_token",
+      scopeId: "invalid-key",
+    };
+    const message = value
+      ? "must decode to exactly 32 bytes"
+      : "is required for credential encryption";
+    await expect(encryptCredentialValue("secret", context)).rejects.toThrow(message);
+    expect(() => deriveCredentialKeyringIdentifier(context)).toThrow(message);
   });
 
   it("uses provider-credentials when the key name is not configured", async () => {
@@ -113,5 +160,37 @@ describe("credential encryption", () => {
     });
 
     expect(boundaryShifted).not.toBe(first);
+  });
+
+  it("binds retained state to the resolved keyring configuration without changing credential identifiers", () => {
+    const context = {
+      tableName: "fitness.account_erasure_checkpoint",
+      columnName: "key_binding",
+      scopeId: "request-a",
+    };
+    vi.stubEnv("CREDENTIAL_ENCRYPTION_KEY_BASE64", Buffer.alloc(32, 7).toString("base64"));
+    vi.stubEnv("CREDENTIAL_ENCRYPTION_KEY_NAME", undefined);
+    vi.stubEnv("CREDENTIAL_ENCRYPTION_KEY_NAMESPACE", undefined);
+    const binding = deriveCredentialKeyringIdentifier(context);
+    const identifier = deriveCredentialIdentifier("value", context);
+    expect(binding).toMatch(/^[a-f0-9]{64}$/);
+    vi.stubEnv("CREDENTIAL_ENCRYPTION_KEY_NAME", "provider-credentials");
+    vi.stubEnv("CREDENTIAL_ENCRYPTION_KEY_NAMESPACE", "dofek");
+    expect(deriveCredentialKeyringIdentifier(context)).toBe(binding);
+    expect(deriveCredentialKeyringIdentifier({ ...context, scopeId: "request-b" })).not.toBe(
+      binding,
+    );
+    for (const [name, value] of [
+      ["CREDENTIAL_ENCRYPTION_KEY_NAME", "changed"],
+      ["CREDENTIAL_ENCRYPTION_KEY_NAMESPACE", "changed"],
+    ] as const) {
+      vi.stubEnv(name, value);
+      expect(deriveCredentialKeyringIdentifier(context)).not.toBe(binding);
+      expect(deriveCredentialIdentifier("value", context)).toBe(identifier);
+      vi.stubEnv("CREDENTIAL_ENCRYPTION_KEY_NAME", "provider-credentials");
+      vi.stubEnv("CREDENTIAL_ENCRYPTION_KEY_NAMESPACE", "dofek");
+    }
+    vi.stubEnv("CREDENTIAL_ENCRYPTION_KEY_BASE64", Buffer.alloc(32, 9).toString("base64"));
+    expect(deriveCredentialKeyringIdentifier(context)).not.toBe(binding);
   });
 });

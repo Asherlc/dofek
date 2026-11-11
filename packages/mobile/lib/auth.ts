@@ -154,24 +154,21 @@ export async function getSavedSessionUser(token: string): Promise<AuthUser | nul
 /** Clear the session token (logout). */
 export async function clearSessionToken(): Promise<void> {
   invalidateSessionPersistence();
-  // The Promise executor runs synchronously, revoking native ownership before
-  // any credential operation can await, while retaining a failure for reporting.
-  const nativeCleanup = Promise.allSettled([
-    new Promise<void>((resolve) => {
-      disableUploads();
-      resolve();
-    }),
-  ]);
-  const credentialCleanup = await serializeSessionPersistence(async () => {
+  // Start native cleanup immediately and reserve persistence ordering before yielding.
+  // Adopting its Promise keeps later session writes behind completed native cleanup.
+  const nativeCleanup = Promise.allSettled([disableUploads()]);
+  const cleanupResults = await serializeSessionPersistence(async () => {
+    const nativeResults = await nativeCleanup;
     cachedSessionToken = null;
-    return Promise.allSettled([
+    const credentialResults = await Promise.allSettled([
       deleteSecureStoreItem(SESSION_TOKEN_KEY),
       SecureStore.deleteItemAsync(SESSION_USER_KEY),
       deleteSecureStoreItem(SESSION_OWNER_NONCE_KEY),
     ]);
+    return [...nativeResults, ...credentialResults];
   });
   cachedSessionToken = null;
-  const failures = [...(await nativeCleanup), ...credentialCleanup]
+  const failures = cleanupResults
     .filter((result) => result.status === "rejected")
     .map((result) => result.reason);
   if (failures.length > 0) {
@@ -230,10 +227,12 @@ export async function fetchCurrentUser(serverUrl: string, token: string): Promis
   });
   if (res.status === 401 || res.status === 403) return null;
   if (!res.ok) {
-    const data: unknown = await res.json().catch((error: unknown) => {
-      captureException(error, { source: "auth-bootstrap-error-json" });
-      return null;
-    });
+    const data: unknown = res.headers.get("content-type")?.includes("application/json")
+      ? await res.json().catch((error: unknown) => {
+          captureException(error, { source: "auth-bootstrap-error-json" });
+          return null;
+        })
+      : null;
     const parsed = ErrorResponseSchema.safeParse(data);
     throw new Error(
       parsed.success ? parsed.data.error : `Auth bootstrap failed: ${res.status} ${res.statusText}`,

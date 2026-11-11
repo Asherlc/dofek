@@ -21,7 +21,7 @@ import {
   type MetricStreamEventV2,
   type MetricStreamRowInput,
 } from "../metric-stream/events.ts";
-import type { MetricStreamEventPublisher } from "../metric-stream/redpanda-producer.ts";
+import type { MetricStreamEventPublisher } from "../metric-stream/publisher.ts";
 
 export const OPENBETA_TEST_USER_UUID = "00000000-0000-0000-0000-000000000002";
 
