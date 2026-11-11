@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   enable: vi.fn(),
   disable: vi.fn(),
   captureException: vi.fn(),
+  info: vi.fn(),
   alert: vi.fn(),
   remove: vi.fn(),
   appState: "active",
@@ -31,7 +32,10 @@ vi.mock("../modules/background-refresh", () => ({
   disableCollectionNotifications: mocks.disable,
 }));
 
-vi.mock("./telemetry", () => ({ captureException: mocks.captureException }));
+vi.mock("./telemetry", () => ({
+  captureException: mocks.captureException,
+  logger: { info: mocks.info },
+}));
 
 import { useCollectionNotifications } from "./useCollectionNotifications";
 
@@ -52,6 +56,55 @@ describe("useCollectionNotifications", () => {
     mocks.appState = "background";
     renderHook(() => useCollectionNotifications(true));
     expect(mocks.enable).toHaveBeenCalledWith(false);
+  });
+
+  it("does not record completion until the native check settles", async () => {
+    let resolvePermission: (granted: boolean) => void = () => {};
+    mocks.enable.mockReturnValue(
+      new Promise<boolean>((resolve) => {
+        resolvePermission = resolve;
+      }),
+    );
+    renderHook(() => useCollectionNotifications(true));
+
+    await act(async () => {});
+    expect(mocks.info).not.toHaveBeenCalled();
+
+    await act(async () => resolvePermission(true));
+    expect(mocks.info).toHaveBeenCalledOnce();
+  });
+
+  it("records a completed check when notification access is granted", async () => {
+    renderHook(() => useCollectionNotifications(true));
+
+    await waitFor(() => expect(mocks.info).toHaveBeenCalledOnce());
+    expect(mocks.info).toHaveBeenCalledWith(
+      "collection-notifications",
+      "Native collection notification check completed",
+      {
+        event: "collection_notifications_enable_completed",
+        requestPermission: true,
+        granted: true,
+      },
+    );
+  });
+
+  it("records a completed denied check from a background launch without prompting", async () => {
+    mocks.appState = "background";
+    mocks.enable.mockResolvedValue(false);
+    renderHook(() => useCollectionNotifications(true));
+
+    await waitFor(() => expect(mocks.info).toHaveBeenCalledOnce());
+    expect(mocks.info).toHaveBeenCalledWith(
+      "collection-notifications",
+      "Native collection notification check completed",
+      {
+        event: "collection_notifications_enable_completed",
+        requestPermission: false,
+        granted: false,
+      },
+    );
+    expect(mocks.alert).not.toHaveBeenCalled();
   });
 
   it("requests permission when a background launch later becomes active", async () => {
@@ -113,6 +166,7 @@ describe("useCollectionNotifications", () => {
       }),
     );
     expect(mocks.alert).toHaveBeenCalledWith("Notifications unavailable", error.message);
+    expect(mocks.info).not.toHaveBeenCalled();
   });
 
   it("explains denied collection notifications once while authorization remains denied", async () => {
@@ -125,6 +179,15 @@ describe("useCollectionNotifications", () => {
       expect.stringContaining("iOS Settings"),
     );
     expect(mocks.captureException).not.toHaveBeenCalled();
+    expect(mocks.info).toHaveBeenCalledWith(
+      "collection-notifications",
+      "Native collection notification check completed",
+      {
+        event: "collection_notifications_enable_completed",
+        requestPermission: true,
+        granted: false,
+      },
+    );
 
     await act(async () => mocks.onAppState("active"));
     expect(mocks.alert).toHaveBeenCalledOnce();
@@ -173,6 +236,7 @@ describe("useCollectionNotifications", () => {
     rerender({ enabled: false });
     await act(async () => resolvePermission(false));
     expect(mocks.alert).not.toHaveBeenCalled();
+    expect(mocks.info).not.toHaveBeenCalled();
   });
 
   it("ignores stale denial results after a newer foreground check succeeds", async () => {
@@ -187,6 +251,16 @@ describe("useCollectionNotifications", () => {
     await act(async () => mocks.onAppState("active"));
     await act(async () => resolvePermission(false));
     expect(mocks.alert).not.toHaveBeenCalled();
+    expect(mocks.info).toHaveBeenCalledOnce();
+    expect(mocks.info).toHaveBeenCalledWith(
+      "collection-notifications",
+      "Native collection notification check completed",
+      {
+        event: "collection_notifications_enable_completed",
+        requestPermission: true,
+        granted: true,
+      },
+    );
   });
 
   it("can explain a new denial after notification access was restored", async () => {
@@ -212,5 +286,6 @@ describe("useCollectionNotifications", () => {
     await act(async () => rejectPermission(new Error("authorization interrupted")));
     expect(mocks.alert).not.toHaveBeenCalled();
     expect(mocks.captureException).toHaveBeenCalledOnce();
+    expect(mocks.info).not.toHaveBeenCalled();
   });
 });
