@@ -74,3 +74,12 @@ The user approved compatible Expo SDK 58 patch alignment after CI stopped at its
 - [x] Run Expo dependency validation, the installed-patch Swift regression and iOS Metro export.
 - [x] Fix the new migration foreign-key lint with the existing NOT VALID/validation convention and reapply to the empty disposable workspace database. Run its PostgreSQL regressions, Squawk, SQLFluff and the full required pre-push checks.
 - [x] Push, update the draft PR and start monitoring its next CI run. Record any remaining failures without suppressing checks.
+
+### Task 5: Repair conversion and persistence qualification
+
+CI reproduced two gaps: the migration-0146 converter used the current Area insert model, and the board-account suite only supplied REST fixtures. The user explicitly approved a PowerSync-only SDK mock in that PostgreSQL suite; REST stays on MSW, PostgreSQL remains real, and adapter unit/live SDK validation stays separate.
+
+- [x] Capture CI failures: missing group_id during historical conversion, and an unhandled SDK WebSocket connection in account persistence tests.
+- [x] Use an explicit historical Area column list in the converter; run all 11 existing real-PostgreSQL conversion cases.
+- [x] Add the scoped SDK fixture and update retained raw facts; verify app count 3 versus REST count 1 and prevent retirement on inconsistent inventories. All 21 account-persistence cases pass.
+- [x] Run required lint/typechecks and relevant unit checks, commit/push the repairs, then monitor CI. No broader SDK mock permission or production test path is added.
