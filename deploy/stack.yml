@@ -815,16 +815,8 @@ services:
     env_file: ${COLLECTOR_ENV_FILE:?COLLECTOR_ENV_FILE is required}
     volumes:
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
-      # An empty directory on the data filesystem provides its capacity without
-      # exposing sibling database files. Keep the collector's metric path stable.
-      # A native bind fails its task when the source is absent, and the deploy
-      # workflow checks `mountpoint -q /mnt/dofek-data` before applying.
-      - type: bind
-        source: /mnt/dofek-data/collector-metrics
-        target: /mnt/dofek-data
-        read_only: true
     configs:
-      - source: otel_collector_config_v4
+      - source: otel_collector_config_v3
         target: /etc/otelcol-contrib/config.yaml
 
   ota:
@@ -930,7 +922,7 @@ configs:
   # Swarm config objects are immutable: when otel-collector-config.yaml changes,
   # bump this key's version suffix (e.g. _v2) so a new config object is created
   # and the collector rolls onto it — same convention as netdata_db_limits_v2.
-  otel_collector_config_v4:
+  otel_collector_config_v3:
     file: ./otel-collector-config.yaml
   # Swarm config objects are immutable: when metric-stream-r2-archive.connect.yml
   # changes, bump this key's version suffix so a new config object is created and

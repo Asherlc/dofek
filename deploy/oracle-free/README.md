@@ -101,29 +101,6 @@ after capacity changes. See
   another supported shape deliberately.
 - Do not assume an account upgrade guarantees capacity or zero cost.
 
-## Collector capacity mount
-
-`terraform_data.collector_metrics_directory` creates the empty, root-owned
-`/mnt/dofek-data/collector-metrics` directory after cloud-init completes and
-requires `/mnt/dofek-data` to be mounted. The collector binds only this directory
-read-only at its `/mnt/dofek-data` path, so filesystem statistics remain available
-without exposing sibling database files or backups. See
-[Docker bind mounts](https://docs.docker.com/engine/storage/bind-mounts/) and
-[Terraform provisioners](https://developer.hashicorp.com/terraform/language/provisioners).
-
-Before applying this root, load an authorized host-access key in the local SSH
-agent and verify the reserved IP's host key in the operator's `known_hosts`.
-The provisioner uses stock OpenSSH with batch mode and strict host-key checking;
-unknown or changed host identities fail rather than being accepted automatically.
-See [OpenSSH options](https://man.openbsd.org/ssh_config#StrictHostKeyChecking).
-Review the full OCI plan before apply, including unrelated image or instance
-changes; this directory resource does not edit instance metadata or cloud-init.
-The ordinary Cloudflare apply and application deploy do not create the directory,
-and the stack preflight fails until it exists. Do not use this directory for
-application data. Terraform reruns provisioning when its instance, volume
-attachment, or directory trigger changes:
-[terraform_data](https://developer.hashicorp.com/terraform/language/resources/terraform-data).
-
 ## Storage layout
 
 The defaults split 200 GB into a 50 GB boot volume and 150 GB data volume.

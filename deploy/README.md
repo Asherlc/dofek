@@ -154,18 +154,12 @@ infrastructure has been retired.
   [OTel ingestion](https://axiom.co/docs/send-data/opentelemetry). Both retain
   data for 29 days; see the [Axiom runbook](../docs/axiom-observability-runbook.md)
   for map configuration, query paths, and field-limit diagnosis.
+
 - Traefik forwards only `500`–`599` access logs as OTLP logs with
   `service.name=traefik`, joining the unsampled `logs/app` pipeline. Fields and
   headers default to `drop`; path, query, client identity, and headers are not
   exported. See the [Axiom runbook](../docs/axiom-observability-runbook.md#traefik-server-error-access-logs)
   for fields, types, and queries.
-- The collector scrapes `/mnt/dofek-data` capacity every 30 seconds, mounting
-  only the empty host directory `/mnt/dofek-data/collector-metrics` read-only
-  at that collector path. Metrics go to the dedicated
-  `dofek-host-metrics` dataset (`otel:metrics:v1`, 29-day retention) with
-  `service.name=dofek-host`. Before deployment, verify the dataset kind,
-  retention, and existing ingestion token's write access; see the
-  [Axiom runbook](../docs/axiom-observability-runbook.md#rollout-prerequisites-for-host-capacity-metrics).
 
 ## Deployment
 
@@ -861,18 +855,7 @@ ssh dofek-server 'docker logs $(docker ps --format "{{.Names}}" | grep -E "dofek
 
 ### Collector Config Changes
 
-`otel-collector-config.yaml` is a Docker Swarm **config object** (`otel_collector_config_v4` in `stack.yml`) that `docker stack deploy` uploads into the swarm — there is no host file and no Terraform sync. Swarm config objects are **immutable**, so after editing the file you must **bump the config key's version suffix** in `stack.yml` (e.g. `otel_collector_config` → `otel_collector_config_v2`), the same convention as `netdata_db_limits_v2`. A normal `deploy-web-stack` run then creates the new config object and rolls the collector onto it; no `deploy-terraform` needed.
-
-The collector binds only the empty `/mnt/dofek-data/collector-metrics` directory
-read-only at `/mnt/dofek-data` inside the container. This reports the data
-filesystem's capacity without exposing sibling database files or backups.
-The separate [OCI Terraform root](oracle-free/README.md#collector-capacity-mount)
-provisions this directory; review its plan and apply it before deploying the
-stack. The normal Cloudflare Terraform apply does not provision the host.
-Swarm discards compose-only bind options, so no `bind.create_host_path` is
-declared. A task fails if the source is absent, and the deploy preflight checks
-both the data mount and directory first. See
-[Docker bind mounts](https://docs.docker.com/engine/storage/bind-mounts/#syntax).
+`otel-collector-config.yaml` is a Docker Swarm **config object** (`otel_collector_config` in `stack.yml`) that `docker stack deploy` uploads into the swarm — there is no host file and no Terraform sync. Swarm config objects are **immutable**, so after editing the file you must **bump the config key's version suffix** in `stack.yml` (e.g. `otel_collector_config` → `otel_collector_config_v2`), the same convention as `netdata_db_limits_v2`. A normal `deploy-web-stack` run then creates the new config object and rolls the collector onto it; no `deploy-terraform` needed.
 
 ### Mobile CI Secrets (Infisical OIDC)
 

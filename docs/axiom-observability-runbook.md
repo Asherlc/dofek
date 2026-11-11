@@ -1,6 +1,6 @@
 <!-- cspell:words getschema todouble -->
 
-# Axiom logs, traces, metrics, and field limits
+# Axiom logs, traces, and field limits
 
 ## Dataset contract
 
@@ -12,11 +12,6 @@ OpenTelemetry signal: [OTel ingestion](https://axiom.co/docs/send-data/opentelem
 See the [collector configuration](../deploy/otel-collector-config.yaml),
 [environment wrapper](../scripts/with-env.ts), and
 [processor retention verification](../src/account-erasure/processor-retention.ts).
-
-Host capacity is a metrics signal and uses the dedicated metrics dataset
-`dofek-host-metrics` through the `x-axiom-metrics-dataset` header; query it with
-MPL or the Metrics builder, not APL. See the rollout prerequisites below before
-deploying.
 
 Log exporters group metadata into a nested OTLP attribute named `custom`, stored
 as the `attributes.custom` map in Axiom. The shared exporter wraps only Axiom's
@@ -117,50 +112,8 @@ a specific cause. Service fields can be absent when no backend was selected.
 See the [Traefik 3.6.25 field middleware](https://raw.githubusercontent.com/traefik/traefik/v3.6.25/pkg/middlewares/accesslog/field_middleware.go)
 and [proxy error handler](https://raw.githubusercontent.com/traefik/traefik/v3.6.25/pkg/proxy/httputil/proxy.go).
 
-## Host capacity metrics
-
-`system.filesystem.usage` for `/mnt/dofek-data` is exported every 30 seconds to
-`dofek-host-metrics` with `service.name=dofek-host`. Query it in the Axiom
-Metrics builder: dataset `dofek-host-metrics`, metric
-`system.filesystem.usage`, filtered to that service and mount point, grouped by
-`state`. APL does not apply to metrics datasets:
-[MPL introduction](https://axiom.co/docs/mpl/introduction),
-[Axiom metrics](https://axiom.co/docs/query-data/metrics).
-
-`state` values are disjoint byte counts: `used` is allocated space, `free` is
-space available to unprivileged users, and `reserved` is `total - used - free`
-(root-reserved blocks). Total capacity is the sum of the three, not `used` plus
-`free`. The scraper needs `include_virtual_filesystems: true` because a
-bind shares its backing device with another mount, and gopsutil
-otherwise skips duplicate-device bind mounts; the strict mount-point filter
-still limits collection to `/mnt/dofek-data`:
-[hostmetrics receiver](https://raw.githubusercontent.com/open-telemetry/opentelemetry-collector-contrib/v0.149.0/receiver/hostmetricsreceiver/README.md),
-[bind-mount handling](https://raw.githubusercontent.com/shirou/gopsutil/v4.26.1/disk/disk_linux.go).
-
-## Rollout prerequisites for host capacity metrics
-
-Before deployment, verify the existing native dataset and ingestion access:
-
-1. Confirm `dofek-host-metrics` exists as `otel:metrics:v1` with 29-day
-   retention, and that the existing `AXIOM_API_TOKEN` can write to it.
-2. Provision the empty `/mnt/dofek-data/collector-metrics` directory through the
-   separate [OCI Terraform root](../deploy/oracle-free/README.md#collector-capacity-mount)
-   after reviewing its plan. The collector binds only that directory read-only
-   at `/mnt/dofek-data`, retaining the metric's mount-point label and filesystem
-   capacity without access to sibling database files. The bind fails its task
-   when the source is absent; CI checks both the data mount and directory first:
-   [Docker bind mounts](https://docs.docker.com/engine/storage/bind-mounts/#syntax).
-3. Validate the collector config and deploy `otel_collector_config_v4`. Swarm
-   config objects are immutable:
-   [Docker configs](https://docs.docker.com/engine/swarm/configs/).
-
 ## Post-deploy acceptance
 
-- Host capacity: within two scrape intervals (60 seconds) plus ingestion delay,
-  `dofek-host-metrics` has `system.filesystem.usage` for
-  `service.name=dofek-host` and `mountpoint=/mnt/dofek-data` with `used`, `free`,
-  and `reserved` states. The three values should sum to the volume size from
-  `df -B1 /mnt/dofek-data`.
 - Traefik errors: drive one request that returns `5xx`; within one collector
   batch (5 seconds) plus ingestion delay, `dofek-logs` has a
   `service.name=traefik` record whose `attributes.custom` lacks the path,
