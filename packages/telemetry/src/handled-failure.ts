@@ -23,7 +23,7 @@ export function classifyHandledFailure(error: unknown, source?: string): Handled
         source === "auth-state-restore" &&
         current.message === "fetch failed: The network connection was lost."
       ) {
-        kind = "connection_lost";
+        kind ??= "connection_lost";
       }
       if (
         current.name === "AbortError" ||

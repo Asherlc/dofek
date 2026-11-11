@@ -95,6 +95,13 @@ describe("classifyHandledFailure", () => {
     expect(classifyHandledFailure(new Error("Invalid email or password"))).toBeNull();
   });
 
+  it("preserves an explicit credential outcome over auth transport text", () => {
+    const error = Object.assign(new Error("fetch failed: The network connection was lost."), {
+      data: { handledFailure: "invalid_credentials" },
+    });
+    expect(classifyHandledFailure(error, "auth-state-restore")).toBe("invalid_credentials");
+  });
+
   it.each([
     new Error("HTTP 403"),
     new Error("fetch failed: The request timed out."),
