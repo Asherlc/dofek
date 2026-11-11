@@ -192,6 +192,7 @@ entity "activity" {
   rejected_provider_end_utc_offset_minutes : bigint
   strava_id : text
   raw : jsonb
+  fit_recovery_error : text
   provider_absent_at : timestamp
   absence_provider_id : text <<FK>>
   deleted_at : timestamp
@@ -478,6 +479,35 @@ entity "activity_image_work" {
   created_at : timestamp
 }
 
+entity "analytics_query_owner" {
+  * resource_id : text <<PK>>
+  --
+  owner_id : uuid
+  backend_pid : bigint
+  quiescent : boolean
+  intent_id : text
+  ingested_at : timestamp
+  query_id : uuid
+  query_terminal : boolean
+}
+
+entity "analytics_stream_state" {
+  * transport : text <<PK>>
+  * epoch : text <<PK>>
+  * topic : text <<PK>>
+  * partition : bigint <<PK>>
+  --
+  owner_id : uuid
+  processed : jsonb
+  pending : jsonb
+  group_state : text
+  group_first_position : jsonb
+  group_last_position : jsonb
+  group_member_count : bigint
+  group_positions_digest : text
+  group_first_ingested_at : timestamp
+}
+
 entity "area" {
   * id : uuid <<PK>>
   --
@@ -486,7 +516,14 @@ entity "area" {
   external_id : text
   name : text
   parent_area_id : uuid <<FK>>
+  group_id : uuid <<FK>>
   coordinates : point
+}
+
+entity "area_group" {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
 }
 
 entity "climb" {
@@ -698,6 +735,14 @@ entity "account_erasure_checkpoint" {
   --
   details : jsonb
   completed_at : timestamp
+}
+
+entity "account_erasure_identifier" {
+  * request_id : uuid <<PK>>
+  * family : text <<PK>>
+  * identity_key : text <<PK>>
+  --
+  encrypted_identifier : text
 }
 
 entity "account_erasure_identity_fence" {
@@ -1338,7 +1383,9 @@ user_profile ||--o{ activity_image_object
 activity_image ||--o{ activity_image_work
 user_profile ||--o{ area
 provider ||--o{ area
+area_group ||--o{ area
 area ||--o{ area
+user_profile ||--o{ area_group
 user_profile ||--o{ climb
 provider ||--o{ climb
 area ||--o{ climb
@@ -1366,6 +1413,7 @@ user_profile ||--o{ health_event
 provider ||--o{ medication_dose_event
 user_profile ||--o{ medication_dose_event
 account_erasure_request ||--o{ account_erasure_checkpoint
+account_erasure_request ||--o{ account_erasure_identifier
 account_erasure_request ||--o{ account_erasure_identity_fence
 account_erasure_request ||--o| account_erasure_outbox
 user_profile ||--o{ auth_account

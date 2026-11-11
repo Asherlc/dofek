@@ -84,6 +84,7 @@ export const activityDetailRowSchema = z.object({
   source_external_ids: z.array(activitySourceSchema).nullable(),
   absent_source_external_ids: z.array(activitySourceSchema).nullable().default(null),
   member_activity_ids: z.array(z.string()).optional().default([]),
+  fit_recovery_error: z.boolean(),
   avg_hr: z.number().nullable(),
   max_hr: z.number().nullable(),
   avg_power: z.number().nullable(),

@@ -479,11 +479,13 @@ Validate SDK-managed versions with
 [dependency validation guidance](https://docs.expo.dev/more/expo-cli/#configuring-dependency-validation).
 The native dependency set also includes ExpoNetwork, the pnpm patch to
 `expo-apple-authentication@58.0.3`, and [MapLibre Native](https://maplibre.org/maplibre-react-native/docs/setup/expo/).
-The [plist patch](../../patches/@expo__plist@0.10.2.patch) retains leading-whitespace
-normalization and passes the explicit XML media type required by the pinned
+
+The `@expo/plist` 0.10.1 and 0.10.2 consumers share the existing
+[XML parser patch](../../patches/@expo__plist@0.10.1.patch), selected by the
+exact version mappings in [pnpm-workspace.yaml](../../pnpm-workspace.yaml).
+It retains leading-whitespace normalization and passes the explicit XML media type required by the pinned
 parser's [`parseFromString`](https://github.com/xmldom/xmldom/blob/0.9.12/lib/dom-parser.js)
-API; the same fix remains applied to older plist versions still used by other
-config plugins.
+API; older plist consumers retain their existing patches.
 
 Runtime 1.12 retains the HealthKit authorization-not-determined classification
 introduced in 1.10, with the stable code consumed by anchored sync. A type awaiting authorization leaves
@@ -497,6 +499,17 @@ build and release that binary before testing updates against its interface.
 Follow the [release and recovery runbook](../../docs/mobile-ota-recovery.md).
 Use [pnpm patch/patch-commit](https://pnpm.io/cli/patch-commit) when updating the
 patch, then rerun the native regression and existing Release archive job.
+
+The [notification hook](lib/useCollectionNotifications.ts) records
+`collection_notifications_enable_completed` through the existing mobile logger
+after the current native authorization check resolves. `requestPermission`
+records whether prompting was allowed; `granted` records the returned permission
+state. A denied result proves the call completed but does not mean alerts are
+enabled. Existing telemetry adds `appBuild`, `runtimeVersion`, and `assetsVersion`
+(the [Expo update ID](https://docs.expo.dev/versions/latest/sdk/updates/#updateid)).
+Rejected, superseded, or retired checks do not emit this completion event.
+Correlate it with the installed build and launched runtime before claiming
+recovery from an unavailable native method; see the [Axiom query contract](../../docs/axiom-observability-runbook.md#queries).
 
 The SVG 15.16.0 dependency patch separates its Android tap-sound binding from
 the web module graph. It preserves the native press behavior introduced by

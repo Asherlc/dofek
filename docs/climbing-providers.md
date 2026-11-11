@@ -41,6 +41,17 @@ board app. Aurora's observed sign-in request includes those acceptance flags
 Both Dofek clients display this prerequisite in the active connection form.
 
 Kilter refresh tokens rotate through the existing encrypted token repository.
+
+Kilter reads attempt counts from its app-sync `logs` rows through the same
+disposable PowerSync mirror used for gyms and boards. REST supplies log names,
+grades and other metadata. The [reader](../src/lib/kilter-board-directory.ts)
+waits for the SDK's initial user-data and directory sync before reading counts;
+the [importer](../src/lib/kilter-board-client.ts) requires matching log, climb
+and angle identities and consistent inventories before reconciliation. It keeps
+the original REST payload fields and appends the selected app-sync facts in
+`raw.syncLog`. See the [PowerSync SDK](https://github.com/powersync-ja/powersync-js/tree/main/packages/node)
+and the [observed count discrepancy](production-incident-baseline.md#2026-11-11--kilter-chart-markers-attempt-count-and-explicit-gym-identity).
+
 Aurora does not supply an expiry in the observed session response; its stored
 far-future timestamp is a local opaque-session marker, not a vendor expiry
 guarantee. Rejected sessions require reconnection. The implementation uses
