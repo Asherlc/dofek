@@ -91,8 +91,18 @@ data loss. Repeated reports of the same operation can produce multiple events.
 No user ID, request URL, or error text is supplied as a custom count property.
 The existing SDK identity/consent behavior still applies.
 
-Mobile also records informational logs and breadcrumbs. The existing background
-sync policy counts known timeouts and lost connections as `background_transport`;
+Mobile also records informational logs and breadcrumbs.
+
+Auth restore's exact `fetch failed: The network connection was lost.` outcome
+counts as `connection_lost` only with source `auth-state-restore`. Other sources
+retain their existing reporting policy; unknown underlying causes remain
+exceptions. This policy changes reporting only; it does not establish recovery.
+Verify session preservation and subsequent
+successful server authentication separately. Apple describes the underlying
+[connection-loss outcome](https://developer.apple.com/library/archive/qa/qa1941/_index.html).
+
+The existing background sync policy counts known timeouts and lost connections
+as `background_transport`;
 it includes WHOOP IMU/realtime uploads and Apple Health sync-status uploads
 (`apple-health-sync-log`). The [classifier](../packages/mobile/lib/health-kit-errors.ts)
 keeps parsing, schema and storage failures reportable. This does not promise subsequent delivery.

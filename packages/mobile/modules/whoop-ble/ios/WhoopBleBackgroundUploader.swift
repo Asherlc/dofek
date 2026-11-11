@@ -119,16 +119,19 @@ final class WhoopBleBackgroundUploader: NSObject {
         }
     }
 
-    func disable(onStage: (String) -> Void = { _ in }) throws {
+    func disable(cutoff: Date? = nil, onStage: (String) -> Void = { _ in }) throws {
         onStage("uploader_queue_wait")
-        try queue.sync { try disableLocked(onStage: onStage) }
+        try queue.sync { try disableLocked(cutoff: cutoff, onStage: onStage) }
     }
 
     private func disableLocked(cutoff: Date? = nil, onStage: (String) -> Void) throws {
         token = nil; headers = [:]; blocked.removeAll()
         onStage("uploader_cancel_tasks")
         try cancelOwnedTasks()
-        if let cutoff { try store.advanceErasureCutoff(to: cutoff) }
+        if let cutoff {
+            onStage("uploader_advance_erasure_cutoff")
+            try store.advanceErasureCutoff(to: cutoff)
+        }
         active.removeAll()
         tokenEpoch += 1; submittedEpoch.removeAll()
         authRetriedEpoch.removeAll()

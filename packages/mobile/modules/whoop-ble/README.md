@@ -156,8 +156,10 @@ For stalled session cleanup, query Sentry's `dofek-mobile` logs with
 `completed` or `failed` with `failedStage`. Inside `uploader_disable`,
 `uploader_queue_wait` records entry before waiting for the uploader's serial queue;
 `uploader_cancel_tasks` records entry after acquiring it, before requesting transfer
-cancellation and reading reserved identities. `uploader_store_purge` precedes the
-SQLite purge, and `uploader_remove_bodies` precedes file cleanup. Within the store,
+cancellation and reading reserved identities. When a device erasure cutoff is
+retained, `uploader_advance_erasure_cutoff` marks its transactional SQLite update
+after cancellation and before `uploader_store_purge`. `uploader_remove_bodies`
+precedes file cleanup. Within the store,
 `store_lock_wait` precedes the mutex wait, `store_begin` follows lock acquisition
 before `BEGIN IMMEDIATE`, and `store_reset_stats`, `store_delete_samples`,
 `store_delete_batches`, `store_clear_binding` and `store_rotate_generation`

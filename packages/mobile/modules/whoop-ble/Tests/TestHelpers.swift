@@ -4,6 +4,44 @@ import SQLite3
 import XCTest
 @testable import WhoopBLE
 
+extension WhoopBleBackgroundUploaderTests {
+    func setup(
+        reportError: @escaping (Error) -> Void = { _ in },
+        now: @escaping () -> Date = Date.init
+    ) throws -> (WhoopBleBackgroundUploader, WhoopBleSampleStore, TestWhoopUploadTransport) {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try FileManager.default.removeItem(at: directory) }
+        let store = try WhoopBleSampleStore(directory: directory)
+        let transport = TestWhoopUploadTransport()
+        let uploader = try WhoopBleBackgroundUploader(
+            store: store, directory: directory.appendingPathComponent("bodies"), transport: transport,
+            reportError: reportError, now: now
+        )
+        try uploader.configure(userId: "alice", serverURL: "https://example.com", token: "secret", headers: [:])
+        return (uploader, store, transport)
+    }
+
+    func settle(_ uploader: WhoopBleBackgroundUploader) throws {
+        // Reconciliation and delegate work return to the serial queue.
+        for _ in 0..<4 { _ = try uploader.diagnostics() }
+    }
+}
+
+func assertUploaderCutoffStageOrder(_ stages: [String]) throws {
+    let cancel = try XCTUnwrap(stages.firstIndex(of: "uploader_cancel_tasks"))
+    let advance = try XCTUnwrap(stages.firstIndex(of: "uploader_advance_erasure_cutoff"))
+    let purge = try XCTUnwrap(stages.firstIndex(of: "uploader_store_purge"))
+    XCTAssertLessThan(cancel, advance)
+    XCTAssertLessThan(advance, purge)
+}
+
+func uploaderCutoffBoundaryRows(_ cutoff: Date) -> [[String: Any]] {
+    let formatter = ISO8601DateFormatter()
+    return [-1.0, 0.0, 1.0].map {
+        ["timestamp": formatter.string(from: cutoff.addingTimeInterval($0)), "heartRateBpm": 70]
+    }
+}
+
 final class CleanupStageRecorder {
     private let lock = NSLock()
     private var stages: [String] = []

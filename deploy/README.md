@@ -155,6 +155,12 @@ infrastructure has been retired.
   data for 29 days; see the [Axiom runbook](../docs/axiom-observability-runbook.md)
   for map configuration, query paths, and field-limit diagnosis.
 
+- Traefik forwards only `500`–`599` access logs as OTLP logs with
+  `service.name=traefik`, joining the unsampled `logs/app` pipeline. Fields and
+  headers default to `drop`; path, query, client identity, and headers are not
+  exported. See the [Axiom runbook](../docs/axiom-observability-runbook.md#traefik-server-error-access-logs)
+  for fields, types, and queries.
+
 ## Deployment
 
 Deployments are push-based from CI, using a remote Docker context over SSH. CI never runs shell scripts on the server — it only calls the Docker API.

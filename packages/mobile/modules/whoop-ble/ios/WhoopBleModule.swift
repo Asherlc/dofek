@@ -277,7 +277,8 @@ public class WhoopBleModule: Module {
                 recordStage("uploader_bootstrap")
                 let uploader = try self.uploader
                 recordStage("uploader_disable")
-                try uploader.disable(onStage: recordStage)
+                let cutoff = UserDefaults.standard.object(forKey: Self.deviceErasureCutoffKey) as? Date
+                try uploader.disable(cutoff: cutoff, onStage: recordStage)
                 recordStage("completed")
                 self.cleanupFailure = nil
             } catch {

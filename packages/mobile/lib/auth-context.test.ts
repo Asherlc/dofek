@@ -352,18 +352,22 @@ describe("auth-context", () => {
       }
     });
 
-    it("keeps the saved session usable when verification fails offline", async () => {
-      const { fetchCurrentUser, clearSessionToken } = await importAuthApis();
-      const error = new TypeError("Network request failed");
-      vi.mocked(fetchCurrentUser).mockRejectedValueOnce(error);
-      const { result } = renderHook(() => useAuth(), { wrapper });
+    it.each(["Network request failed", "fetch failed: The network connection was lost."])(
+      "keeps the saved session usable after %s",
+      async (message) => {
+        const { fetchCurrentUser, clearSessionToken } = await importAuthApis();
+        const error = new TypeError(message);
+        vi.mocked(fetchCurrentUser).mockRejectedValueOnce(error);
+        const { result } = renderHook(() => useAuth(), { wrapper });
 
-      await waitFor(() => expect(result.current.isLoading).toBe(false));
-      expect(result.current.user).toEqual(savedUser);
-      expect(result.current.bootstrapError).toBeNull();
-      expect(clearSessionToken).not.toHaveBeenCalled();
-      expect(mockCaptureException).toHaveBeenCalledWith(error, { source: "auth-state-restore" });
-    });
+        await waitFor(() => expect(result.current.isLoading).toBe(false));
+        expect(result.current.user).toEqual(savedUser);
+        expect(result.current.sessionToken).toBe("existing-token");
+        expect(result.current.bootstrapError).toBeNull();
+        expect(clearSessionToken).not.toHaveBeenCalled();
+        expect(mockCaptureException).toHaveBeenCalledWith(error, { source: "auth-state-restore" });
+      },
+    );
 
     it("clears the saved session when the server rejects the token", async () => {
       const { fetchCurrentUser, clearSessionToken } = await importAuthApis();
@@ -400,24 +404,27 @@ describe("auth-context", () => {
       );
     });
 
-    it("rechecks the saved session when connectivity returns", async () => {
-      const { fetchCurrentUser } = await importAuthApis();
-      onlineManager.setOnline(false);
-      vi.mocked(fetchCurrentUser)
-        .mockRejectedValueOnce(new TypeError("Network request failed"))
-        .mockResolvedValueOnce({ ...savedUser, name: "Updated User" });
-      const { result } = renderHook(() => useAuth(), { wrapper });
+    it.each(["Network request failed", "fetch failed: The network connection was lost."])(
+      "rechecks the saved session after %s when connectivity returns",
+      async (message) => {
+        const { fetchCurrentUser } = await importAuthApis();
+        onlineManager.setOnline(false);
+        vi.mocked(fetchCurrentUser)
+          .mockRejectedValueOnce(new TypeError(message))
+          .mockResolvedValueOnce({ ...savedUser, name: "Updated User" });
+        const { result } = renderHook(() => useAuth(), { wrapper });
 
-      try {
-        await waitFor(() => expect(mockCaptureException).toHaveBeenCalled());
-        await act(async () => onlineManager.setOnline(true));
-        await waitFor(() => expect(result.current.user?.name).toBe("Updated User"));
-        expect(result.current.isLoading).toBe(false);
-        expect(result.current.bootstrapError).toBeNull();
-      } finally {
-        onlineManager.setOnline(true);
-      }
-    });
+        try {
+          await waitFor(() => expect(mockCaptureException).toHaveBeenCalled());
+          await act(async () => onlineManager.setOnline(true));
+          await waitFor(() => expect(result.current.user?.name).toBe("Updated User"));
+          expect(result.current.isLoading).toBe(false);
+          expect(result.current.bootstrapError).toBeNull();
+        } finally {
+          await act(async () => onlineManager.setOnline(true));
+        }
+      },
+    );
 
     it.each(["reconnection", "foreground"])(
       "retries a token-only bootstrap failure on %s",
@@ -431,7 +438,7 @@ describe("auth-context", () => {
         mockGetSavedSessionUser.mockResolvedValue(null);
         onlineManager.setOnline(false);
         vi.mocked(fetchCurrentUser)
-          .mockRejectedValueOnce(new TypeError("Network request failed"))
+          .mockRejectedValueOnce(new Error("fetch failed: The network connection was lost."))
           .mockResolvedValueOnce(savedUser);
         const { result } = renderHook(() => useAuth(), { wrapper });
 
@@ -444,7 +451,7 @@ describe("auth-context", () => {
           await waitFor(() => expect(result.current.user).toEqual(savedUser));
           expect(result.current.bootstrapError).toBeNull();
         } finally {
-          onlineManager.setOnline(true);
+          await act(async () => onlineManager.setOnline(true));
         }
       },
     );
