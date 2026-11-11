@@ -1,6 +1,6 @@
 # Explicit Climbing Location Groups Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Group explicitly equivalent source locations on web and mobile without changing source names.
 
@@ -32,11 +32,11 @@
 
 **Interfaces:** Produces `areaGroup` table and nullable `area.groupId`; repository detail exposes optional nullable `areaGroupId`; wire version 5 includes it, versions 1–4 omit it.
 
-- [ ] Write database regressions for shared groups with different names, effective location precedence, rename/resync preservation, cross-owner FK rejection, and erasure fencing/deletion. Write version-5 roundtrip and old-version projection tests.
-- [ ] Run the new integration suite through `pnpm test:integration -- packages/server/src/repositories/climbing-area-group.integration.test.ts`; confirm missing schema/projection failures. Run contract tests and confirm unsupported version/serialization failures.
-- [ ] Add the schema, generate the migration, add the stock erasure fence, and project membership with an owner-scoped join. Update the existing typed database test helper.
-- [ ] Apply `pnpm migrate` locally. Run the database and contract suites, migration lint, schema diagram generation, and relevant typechecks. Expected: all pass.
-- [ ] Review actual diff and commit/push the completed persistence and contract change.
+- [x] Write database regressions for shared groups with different names, effective location precedence, rename/resync preservation, cross-owner FK rejection, and erasure fencing/deletion. Write version-5 roundtrip and old-version projection tests.
+- [x] Run the new integration suite through `pnpm test:integration -- packages/server/src/repositories/climbing-area-group.integration.test.ts`; confirm missing schema/projection failures. Run contract tests and confirm unsupported version/serialization failures.
+- [x] Add the schema, generate the migration, add the stock erasure fence, and project membership with an owner-scoped join. Update the existing typed database test helper.
+- [x] Apply `pnpm migrate` locally. Run the database and contract suites, migration lint, schema diagram generation, and relevant typechecks. Expected: all pass.
+- [x] Review actual diff and commit/push the completed persistence and contract change.
 
 ### Task 2: Use explicit groups on both clients
 
@@ -44,8 +44,24 @@
 
 **Interfaces:** Consumes nullable `areaGroupId` from Task 1. Existing `groupClimbingLogEntriesByArea()` return shape and source paths remain unchanged.
 
-- [ ] Write failing grouping tests for explicit membership across names/renames, separate explicit groups, no unmapped bridge, order and numbering. Update activity query expectations to version 5 and observe failures.
-- [ ] Prioritize explicit group IDs in the current helper, excluding mapped areas from name-path ambiguity accounting. Request version 5 from both activity screens.
-- [ ] Run shared grouping, contract, web/mobile activity and chart tests. Expected: all pass. Run the unit/mobile tier, lint and typechecks; document any named unrelated failure.
-- [ ] Record confirmed diagnosis and unresolved Kilter API count discrepancy. Document a stock SQL operator transaction for the confirmed mapping after deployment.
-- [ ] Obtain a fresh whole-diff review, address material findings test-first, then commit and push. No production deployment or source-count overwrite is part of this branch.
+- [x] Write failing grouping tests for explicit membership across names/renames, separate explicit groups, no unmapped bridge, order and numbering. Update activity query expectations to version 5 and observe failures.
+- [x] Prioritize explicit group IDs in the current helper, excluding mapped areas from name-path ambiguity accounting. Request version 5 from both activity screens.
+- [x] Run shared grouping, contract, web/mobile activity and chart tests. Expected: all pass. Run the unit/mobile tier, lint and typechecks; document any named unrelated failure.
+- [x] Record confirmed diagnosis and unresolved Kilter API count discrepancy. Document a stock SQL operator transaction for the confirmed mapping after deployment.
+- [x] Obtain a fresh whole-diff review, address material findings test-first, then commit and push. No production deployment or source-count overwrite is part of this branch.
+
+### Task 3: Read the app's attempt count
+
+Approved separately after live source investigation. The PowerSync log row
+reported 3 for the incident UUID; the retained REST snapshot and production log
+reported 1. A later REST read reported 3 as well. This does not establish the
+upstream cache/update mechanism.
+
+**Files:** `src/lib/kilter-board-directory.ts`, `src/lib/kilter-board-client.ts`, their colocated tests, and `docs/climbing-providers.md`.
+
+**Interfaces:** The existing mirror returns selected native `logs` alongside `walls` and `gyms`. The importer matches log/climb/angle identities, requires consistent inventories, selects the sync count, and retains the original REST fields plus `raw.syncLog`.
+
+- [x] Write and run a failing regression with REST count 1 and app-sync count 3, mismatched/missing identities, empty inventory disagreement and SDK initial-sync completion.
+- [x] Extend the existing SDK schema/default user sync, preserve cancellation/authorization/cleanup behavior, and select the verified app-sync count without a REST count fallback.
+- [x] Run parser/directory/authentication tests and real read-only account validation; confirm 3 for warm 1 and 1 for Twist by Two. Record peak local memory without claiming production memory acceptance.
+- [x] Rerun relevant checks and the unit/mobile tier; include this change in the single final whole-diff review.

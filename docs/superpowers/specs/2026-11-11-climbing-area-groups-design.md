@@ -25,6 +25,13 @@ Account-erasure fencing and deletion must cover the new owned table through
 the existing [discovery and constraint traversal](../../../src/account-erasure/postgres-erasure.ts).
 
 The independent chart fix adds markers at Kilter's raw `createdAt` log instants,
-without inventing per-attempt timing. The attempt-count discrepancy remains
-unresolved: the user reports 3 in Kilter while its authenticated `/api/logs`
-response and the stored raw record both report 1.
+without inventing per-attempt timing. The user also approved reading attempt
+counts through the existing PowerSync mirror after a read of the app-sync row
+confirmed 3 for the same log UUID whose retained REST record reported 1.
+The latest REST read subsequently reported 3 too; the timing or upstream
+mechanism behind the different snapshots is unconfirmed. Preserve the REST
+snapshot unchanged and append the selected sync facts as `raw.syncLog`.
+Require consistent log identities/inventory before authoritative reconciliation.
+Use the stock SDK's initial-sync completion for both directory and user data.
+See the [reader](../../../src/lib/kilter-board-directory.ts) and
+[count mapping](../../../src/lib/kilter-board-client.ts).

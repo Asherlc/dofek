@@ -149,6 +149,7 @@ function identity(log: ClimbingLogEntryDetail): string | null {
     normalized(log.displayGrade),
     normalized(log.climb.name),
     log.climb.areaPath.map((area) => normalized(area.name)),
+    log.areaGroupId ?? null,
     targets,
   ]);
 }
