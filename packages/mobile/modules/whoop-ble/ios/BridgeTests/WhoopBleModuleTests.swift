@@ -61,12 +61,12 @@ final class WhoopBleModuleTests: XCTestCase {
         XCTAssertEqual(records.map { $0.attributes["stage"]?.value as? String }, [
             "ble_suspend", "disconnect", "uploader_bootstrap", "uploader_disable",
             "uploader_queue_wait", "uploader_cancel_tasks", "uploader_store_purge",
+            "store_lock_wait", "store_begin", "store_reset_stats", "store_delete_samples",
+            "store_delete_batches", "store_clear_binding", "store_rotate_generation",
+            "store_commit", "store_completed",
             "uploader_remove_bodies", "completed"
         ])
-        let operationId = try XCTUnwrap(records.first?.attributes["operationId"]?.value as? String)
-        XCTAssertNotNil(UUID(uuidString: operationId))
-        XCTAssertTrue(records.allSatisfy { $0.attributes["operationId"]?.value as? String == operationId })
-        XCTAssertNotNil(records.last?.attributes["durationMs"]?.value as? Double)
+        try logs.assertOperationMetadata()
         module.connectionManager.syncOnBleQueue { XCTAssertTrue(module.captureSuspended) }
     }
 
@@ -111,6 +111,7 @@ final class WhoopBleModuleTests: XCTestCase {
         XCTAssertEqual(failure.attributes["stage"]?.value as? String, "failed")
         XCTAssertEqual(failure.attributes["failedStage"]?.value as? String, "uploader_remove_bodies")
         XCTAssertEqual(failure.level, .error)
+        try logs.assertOperationMetadata()
     }
 
     func testExplicitRetryRejectsRetainedCaptureFailure() async throws {

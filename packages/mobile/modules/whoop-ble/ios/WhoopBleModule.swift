@@ -1,4 +1,5 @@
 import CoreBluetooth
+import Darwin
 import ExpoModulesCore
 import Foundation
 import RNSentry
@@ -253,6 +254,7 @@ public class WhoopBleModule: Module {
                 stage = nextStage
                 SentrySDK.logger.info("WHOOP cleanup stage", attributes: [
                     "operation": "disableUploads", "operationId": operationId, "stage": stage,
+                    "isMainThread": Thread.isMainThread, "threadId": Int(pthread_mach_thread_np(pthread_self())),
                     "durationMs": (ProcessInfo.processInfo.systemUptime - startedAt) * 1_000
                 ])
             }
@@ -274,6 +276,7 @@ public class WhoopBleModule: Module {
                 SentrySDK.logger.error("WHOOP cleanup failed", attributes: [
                     "operation": "disableUploads", "operationId": operationId,
                     "stage": "failed", "failedStage": stage,
+                    "isMainThread": Thread.isMainThread, "threadId": Int(pthread_mach_thread_np(pthread_self())),
                     "durationMs": (ProcessInfo.processInfo.systemUptime - startedAt) * 1_000
                 ])
                 SentrySDK.capture(error: error)
