@@ -46,14 +46,14 @@ export type ProviderActivityInsert = Omit<
 
 type StoredActivityConflictUpdateKey = Exclude<
   keyof StoredActivityInsert,
-  "userId" | "providerId" | "externalId" | "providerAbsentAt"
+  "userId" | "providerId" | "externalId" | "providerAbsentAt" | "absenceProviderId"
 >;
 
 type StoredActivityConflictUpdate = {
   [K in StoredActivityConflictUpdateKey]?: StoredActivityInsert[K] | SQL;
 };
 
-/** Fields allowed in activity upsert conflict updates. Never includes providerAbsentAt. */
+/** Conflict updates cannot clear the provider tombstone or its confirming provider. */
 export type ProviderActivityConflictUpdate = Omit<
   StoredActivityConflictUpdate,
   "canonicalType" | "providerType" | "modality"
@@ -310,9 +310,10 @@ export class ProviderActivityListSync {
   async reconcile(
     presentExternalIds?: ReadonlySet<string>,
     options?: Pick<ProviderActivityAbsenceReconciliation, "presentAppleHealthIdentities">,
+    db: SyncDatabase = this.#scope.db,
   ): Promise<void> {
     if (this.#reconciliationDisabled) return;
-    await finishProviderActivityListSync(this.#scope.db, {
+    await finishProviderActivityListSync(db, {
       providerId: this.#scope.providerId,
       userId: this.#scope.userId,
       windowStart: this.#scope.windowStart,

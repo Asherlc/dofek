@@ -42,6 +42,7 @@ export function renderModel(
   return renderDbtModelSql(readModelSql("activity_route_identity.sql"), {
     isIncremental: incremental,
     activityRefreshScoped: scopedIds !== undefined,
+    activityRefreshIds: scopedIds,
   })
     .replaceAll("{{ ref('deduped_activities') }}", `${database}.deduped_activities`)
     .replaceAll("{{ ref('activity_location_sample') }}", `${database}.activity_location_sample`)
@@ -49,10 +50,6 @@ export function renderModel(
     .replaceAll("{{ ref('activity_sensor_sample') }}", `${database}.activity_sensor_sample`)
     .replaceAll("{{ this }}", `${database}.activity_route_identity`)
     .replaceAll('{{ var("activity_refresh_user_id") }}', userId)
-    .replaceAll(
-      "{{ activity_refresh_ids() }}",
-      `[${(scopedIds ?? []).map((id) => `toUUID('${id}')`).join(",")}]`,
-    )
     .concat("\nSETTINGS join_use_nulls = 1, max_threads = 1, enable_materialized_cte = 1");
 }
 
@@ -107,6 +104,8 @@ export async function seedRouteIdentityFixture(
   input: {
     provider: string;
     routeId: string | null;
+    canonicalType?: string;
+    modality?: string | null;
     pointCount?: number;
     activityId?: string;
     userId?: string;
@@ -120,8 +119,8 @@ export async function seedRouteIdentityFixture(
   const seededUserId = input.userId ?? userId;
   await client.command({
     query: `INSERT INTO ${database}.deduped_activities
-      (activity_id, user_id, member_activity_ids, canonical_type, started_at, ended_at, refresh_version, is_deleted, refreshed_at)
-      VALUES ('${seededActivityId}', '${seededUserId}', [${(input.memberIds ?? [seededActivityId]).map((id) => `'${id}'`).join(",")}], 'cycling', toDateTime64('2026-09-01 12:00:00', 6, 'UTC'),
+      (activity_id, user_id, member_activity_ids, canonical_type, modality, started_at, ended_at, refresh_version, is_deleted, refreshed_at)
+      VALUES ('${seededActivityId}', '${seededUserId}', [${(input.memberIds ?? [seededActivityId]).map((id) => `'${id}'`).join(",")}], '${input.canonicalType ?? "cycling"}', ${input.modality === undefined || input.modality === null ? "NULL" : `'${input.modality}'`}, toDateTime64('2026-09-01 12:00:00', 6, 'UTC'),
         addSeconds(toDateTime64('2026-09-01 12:00:00', 6, 'UTC'), ${input.durationSeconds ?? input.seconds?.at(-1) ?? ((input.points?.length ?? input.pointCount ?? 4) - 1) * 10}), 1, 0, toDateTime64('2026-09-01 12:00:00', 9, 'UTC'))`,
   });
   if (input.routeId !== null) {
@@ -165,7 +164,7 @@ export async function seedSchema(
       refresh_version UInt64 MATERIALIZED toUInt64(toUnixTimestamp64Nano(refreshed_at))
     ) ENGINE = ReplacingMergeTree(refresh_version) ORDER BY (user_id, activity_id, channel, recorded_at)`,
     `CREATE TABLE ${database}.deduped_activities (
-      activity_id UUID, user_id UUID, member_activity_ids Array(UUID), canonical_type String, started_at DateTime64(6, 'UTC'),
+      activity_id UUID, user_id UUID, member_activity_ids Array(UUID), canonical_type String, modality Nullable(String), started_at DateTime64(6, 'UTC'),
       ended_at Nullable(DateTime64(6, 'UTC')), refresh_version UInt64, is_deleted UInt8,
       refreshed_at DateTime64(9, 'UTC')
     ) ENGINE = ReplacingMergeTree(refresh_version) ORDER BY (user_id, activity_id)`,

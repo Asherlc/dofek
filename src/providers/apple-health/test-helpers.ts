@@ -5,7 +5,7 @@ import type {
 } from "../../db/provider-data-deletion.ts";
 import type { Database } from "../../db/typed-sql.ts";
 import type { HealthRecord } from "./records.ts";
-import type { HangTenActivitySegment, HealthWorkout } from "./workouts.ts";
+import type { HangTenActivitySegment, HealthWorkout, WorkoutMetadata } from "./workouts.ts";
 
 export async function resolveProviderDataGenerationsForTest(
   database: Database,
@@ -76,5 +76,53 @@ export function hangTenWorkout(overrides: Partial<HealthWorkout> = {}): HealthWo
       activitySegments: hangTenActivitySegments(),
     },
     ...overrides,
+  };
+}
+
+export function hangTenContactMetadata(version = 3): WorkoutMetadata {
+  const segments = [1, 2, 3].flatMap((round) => [
+    ...Array.from({ length: 6 }, (_, repeat) => [
+      {
+        stepID: `round-${round}-hang-${repeat + 1}`,
+        kind: "work",
+        durationSeconds: 7,
+        target: {
+          kind: "resolvedContacts",
+          resolution: {
+            boardID: "tension.grindstone",
+            revisionID: "2026-09-contact-first",
+            modelSHA256: "board-model-checksum",
+            contactIDs: ["edge-25-left", "edge-25-right"],
+            requirement: {
+              kind: "edge",
+              selection: "bilateralPair",
+              depth: { range: { minimum: 25, maximum: 25 } },
+            },
+          },
+        },
+        ...(version === 3 ? { handUse: "double", side: "both" } : {}),
+      },
+      {
+        stepID: `round-${round}-rest-${repeat + 1}`,
+        kind: "rest",
+        durationSeconds: 3,
+      },
+    ]).flat(),
+    {
+      stepID: `round-${round}-recovery`,
+      kind: "rest",
+      durationSeconds: round === 3 ? 7.341392541668029 : 180,
+    },
+  ]);
+
+  return {
+    "HangTen.PlanName": "Rehab",
+    "HangTen.BoardID": "tension.grindstone",
+    "HangTen.BoardName": "Grindstone Mk2",
+    "HangTen.SessionID": "66666666-6666-4666-8666-666666666666",
+    "HangTen.ActivitySegments.v2": JSON.stringify({
+      version,
+      segments: segments.map((segment, index) => ({ ...segment, stepNumber: index + 1 })),
+    }),
   };
 }

@@ -1,9 +1,30 @@
 import { formatDateTime, formatNumber, formatTimeOnly } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
+import type { ActivityMetricSource } from "@dofek/providers/activity-metric-source";
 import { activityMetricColors, statusColors } from "@dofek/scoring/colors";
+import {
+  type ActivityChartSeries,
+  type ActivityChartWindow,
+  activityChartSeries,
+  nearestActivityChartSample,
+} from "@dofek/training/activity-chart-series";
+import {
+  type ClimbingChartAnnotation,
+  climbingChartPositions,
+} from "@dofek/training/climbing-chart";
 import { cadenceAxisLabel } from "@dofek/training/training";
-import { type ReactNode, useCallback, useMemo, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+} from "react";
+import type { ActivityHeartRateContext } from "../../../../../server/src/contracts/activity-metric-sources.ts";
 import type { StreamPoint } from "../../../../../server/src/routers/activity.ts";
+import { ActivityMetricSourcePicker } from "../../../components/ActivityMetricSourcePicker.tsx";
 import { DofekChart } from "../../../components/DofekChart.tsx";
 import { ChartLoadingSkeleton } from "../../../components/LoadingSkeleton.tsx";
 import {
@@ -32,13 +53,16 @@ function buildAxisPointerEvents(
   onHoverPosition?: (position: { lat: number; lng: number } | null) => void,
 ) {
   if (!onHoverPosition) return undefined;
+  const samples = dataPoints.map((point) => ({ timestamp: Date.parse(point.recordedAt), point }));
+  const startedAt = Math.min(...samples.map((sample) => sample.timestamp));
+  const endedAt = Math.max(...samples.map((sample) => sample.timestamp));
   return {
     updateAxisPointer: (params: Record<string, unknown>) => {
       const axesInfo = params.axesInfo;
       if (Array.isArray(axesInfo) && axesInfo.length > 0) {
         const rawValue: unknown = axesInfo[0]?.value;
-        if (typeof rawValue === "number" && rawValue >= 0 && rawValue < dataPoints.length) {
-          const point = dataPoints[Math.round(rawValue)];
+        if (typeof rawValue === "number" && rawValue >= startedAt && rawValue <= endedAt) {
+          const point = nearestActivityChartSample(samples, rawValue)?.point;
           if (point?.lat != null && point?.lng != null) {
             onHoverPosition({ lat: point.lat, lng: point.lng });
             return;
@@ -51,6 +75,34 @@ function buildAxisPointerEvents(
   };
 }
 
+function chartSeriesData(series: ActivityChartSeries) {
+  const data: Array<{
+    value: [number, number | null];
+    name: string;
+    displayValue?: string;
+    itemStyle: { opacity: number };
+  }> = [];
+  for (const [index, sample] of series.samples.entries()) {
+    const timestampLabel = formatDateTime(new Date(sample.timestamp));
+    const previous = series.samples[index - 1];
+    if (sample.startsSegment && previous) {
+      data.push({
+        value: [previous.timestamp + (sample.timestamp - previous.timestamp) / 2, null],
+        name: `Gap before ${timestampLabel}`,
+        displayValue: "No recorded samples",
+        itemStyle: { opacity: 0 },
+      });
+    }
+    data.push({
+      value: [sample.timestamp, sample.value],
+      name: `Sample ${sample.index + 1} · ${timestampLabel}`,
+      displayValue: formatNumber(sample.value, 0),
+      itemStyle: { opacity: sample.showMarker ? 1 : 0 },
+    });
+  }
+  return data;
+}
+
 interface MetricDefinition {
   name: string;
   axisName: string;
@@ -60,6 +112,8 @@ interface MetricDefinition {
 
 export function MetricsChart({
   points,
+  activityWindow,
+  heartRateContext,
   activityType,
   hasHr,
   hasPower,
@@ -71,8 +125,18 @@ export function MetricsChart({
   renderLegend,
   metricSources = [],
   error,
+  climbAnnotations = [],
+  highlightedClimbId,
+  selectedClimbId,
+  onSelectClimb,
 }: {
   points: StreamPoint[];
+  activityWindow?: ActivityChartWindow;
+  heartRateContext?: ActivityHeartRateContext;
+  climbAnnotations?: readonly ClimbingChartAnnotation[];
+  highlightedClimbId?: string | null;
+  selectedClimbId?: string | null;
+  onSelectClimb?: (entryId: string) => void;
   activityType: string;
   hasHr: boolean;
   hasPower: boolean;
@@ -85,7 +149,7 @@ export function MetricsChart({
   metricSources?: Array<{
     key: string;
     label: string;
-    sources: Array<{ id: string; label: string }>;
+    sources: ActivityMetricSource[];
     selectedId: string;
     onChange: (sourceId: string) => void;
   }>;
@@ -95,6 +159,35 @@ export function MetricsChart({
   }) => ReactNode;
 }) {
   const [legendSelected, setLegendSelected] = useState<Record<string, boolean>>({});
+  const zoomRef = useRef({ start: 0, end: 100 });
+  const [, renderSelectionZoom] = useReducer((revision: number) => revision + 1, 0);
+  const handleZoom = useCallback((params: Record<string, unknown>) => {
+    const range = Array.isArray(params.batch) ? params.batch[0] : params;
+    if (typeof range?.start === "number" && typeof range?.end === "number") {
+      zoomRef.current = { start: range.start, end: range.end };
+    }
+  }, []);
+  const timeline = activityChartSeries(
+    heartRateContext?.points ??
+      points.map((point) => ({ recordedAt: point.recordedAt, value: null })),
+    heartRateContext?.window ?? activityWindow,
+  );
+  const climbs = climbingChartPositions(climbAnnotations, timeline.startedAt, timeline.endedAt);
+  const selectedPosition = climbs.find(({ annotation }) => annotation.id === selectedClimbId);
+  const selectedStart = selectedPosition?.startPosition;
+  const selectedEnd = selectedPosition?.endPosition;
+  useEffect(() => {
+    if (selectedClimbId == null || selectedStart === undefined || selectedEnd === undefined) return;
+    const previous = zoomRef.current;
+    const start = selectedStart * 100;
+    const end = selectedEnd * 100;
+    if (start >= previous.start && end <= previous.end) return;
+    zoomRef.current = {
+      start: Math.min(previous.start, Math.max(0, start - 2)),
+      end: Math.max(previous.end, Math.min(100, end + 2)),
+    };
+    renderSelectionZoom();
+  }, [selectedClimbId, selectedStart, selectedEnd]);
   const toggleMetric = useCallback((name: string) => {
     setLegendSelected((previous) => ({ ...previous, [name]: previous[name] === false }));
   }, []);
@@ -116,12 +209,26 @@ export function MetricsChart({
     () => ({
       ...(buildAxisPointerEvents(points, onHoverPosition) ?? {}),
       legendselectchanged: handleLegendChange,
+      datazoom: handleZoom,
+      click: (params: Record<string, unknown>) => {
+        if (params.componentType !== "markLine" && params.componentType !== "markArea") return;
+        const data = params.data;
+        if (
+          data &&
+          typeof data === "object" &&
+          "climbId" in data &&
+          typeof data.climbId === "string"
+        ) {
+          onSelectClimb?.(data.climbId);
+        }
+      },
     }),
-    [points, onHoverPosition, handleLegendChange],
+    [points, onHoverPosition, handleLegendChange, handleZoom, onSelectClimb],
   );
 
   if (loading && metricSources.length === 0) return <ChartLoadingSkeleton height={300} />;
-  if (points.length === 0 && metricSources.length === 0) return null;
+  if (points.length === 0 && !heartRateContext?.points.length && metricSources.length === 0)
+    return null;
 
   const metrics: MetricDefinition[] = [];
   if (hasHr || metricSources.some((source) => source.key === "heartRate"))
@@ -177,7 +284,7 @@ export function MetricsChart({
                   aria-label={`Toggle ${metric.name}`}
                   aria-pressed={isVisible(metric.name)}
                   onClick={() => toggle(metric.name)}
-                  className={`flex min-h-9 items-center gap-1.5 px-2 text-xs font-medium ${isVisible(metric.name) ? "text-foreground" : "text-dim line-through"}`}
+                  className={`flex min-h-11 shrink-0 items-center gap-1.5 px-2 text-xs font-medium ${isVisible(metric.name) ? "text-foreground" : "text-dim line-through"}`}
                 >
                   <span
                     className="h-2 w-2 rounded-full"
@@ -189,19 +296,14 @@ export function MetricsChart({
                 {metricSources
                   .filter((source) => source.label === metric.name)
                   .map((metricSource) => (
-                    <select
+                    <ActivityMetricSourcePicker
                       key={metricSource.key}
-                      aria-label={`${metric.name} source`}
-                      value={metricSource.selectedId}
-                      onChange={(event) => metricSource.onChange(event.target.value)}
-                      className="min-h-9 min-w-0 max-w-44 rounded-r-md border-l border-border bg-transparent py-1 pl-2 pr-1 text-xs text-muted"
-                    >
-                      {metricSource.sources.map((source) => (
-                        <option key={source.id} value={source.id}>
-                          {source.label}
-                        </option>
-                      ))}
-                    </select>
+                      label={metric.name}
+                      sources={metricSource.sources}
+                      selectedId={metricSource.selectedId}
+                      onChange={metricSource.onChange}
+                      className="max-w-60 rounded-r-md border-l border-border px-2"
+                    />
                   ))}
               </div>
             ))}
@@ -211,7 +313,10 @@ export function MetricsChart({
 
   const isVisible = (name: string) => legendSelected[name] !== false;
 
-  const times = points.map((p) => p.recordedAt);
+  const climbTooltip = (annotation: ClimbingChartAnnotation) => ({
+    formatter: () =>
+      `${escapeTooltipHtml(annotation.label)}<br/>${escapeTooltipHtml(formatDateTime(new Date(annotation.startedAt)))}${annotation.endedAt ? ` – ${escapeTooltipHtml(formatDateTime(new Date(annotation.endedAt)))}` : ""}`,
+  });
   const yAxes = metrics.map((metric, index) => {
     const visible = isVisible(metric.name);
     const isFirst = index === 0;
@@ -227,7 +332,7 @@ export function MetricsChart({
         max: "dataMax",
         position,
         showSplitLine,
-        axisLabel: { color: metric.color },
+        axisLabel: { color: metric.color, formatter: (value: number) => formatNumber(value, 0) },
       }),
       show: visible,
       offset: !isFirst && visibleRightBefore > 0 ? visibleRightBefore * 60 : 0,
@@ -235,20 +340,22 @@ export function MetricsChart({
   });
 
   const series = metrics.map((metric, index) => ({
+    id: metric.name,
     name: metric.name,
     type: "line" as const,
     yAxisIndex: index,
-    data: metric.data.map((value, dataIndex) =>
-      value == null
-        ? null
-        : {
-            value,
-            itemStyle: {
-              opacity:
-                metric.data[dataIndex - 1] == null && metric.data[dataIndex + 1] == null ? 1 : 0,
-            },
-          },
+    data: chartSeriesData(
+      activityChartSeries(
+        metric.name === "Heart Rate" && heartRateContext
+          ? heartRateContext.points
+          : points.map((point, dataIndex) => ({
+              recordedAt: point.recordedAt,
+              value: metric.data[dataIndex] ?? null,
+            })),
+        heartRateContext?.window ?? activityWindow,
+      ),
     ),
+    connectNulls: false,
     showSymbol: true,
     showAllSymbol: true,
     symbol: "circle",
@@ -256,37 +363,108 @@ export function MetricsChart({
     emphasis: { itemStyle: { opacity: 1 } },
     lineStyle: { width: 1.5, color: metric.color },
     itemStyle: { color: metric.color },
+    ...(metric.name === "Heart Rate" && climbs.length > 0
+      ? {
+          markLine: {
+            animation: false,
+            tooltip: { trigger: "item" },
+            symbol: "none",
+            lineStyle: { color: "#a78bfa", width: 1.5, type: "dashed" },
+            label: { show: false },
+            data: climbs
+              .filter(({ annotation }) => annotation.endedAt === null)
+              .map(({ annotation }) => ({
+                id: annotation.id,
+                climbId: annotation.id,
+                name: annotation.label,
+                xAxis: Date.parse(annotation.startedAt),
+                tooltip: climbTooltip(annotation),
+                lineStyle: {
+                  width: annotation.id === highlightedClimbId ? 3 : 1.5,
+                  type: annotation.id === highlightedClimbId ? "solid" : "dashed",
+                },
+                label: {
+                  show: annotation.id === highlightedClimbId,
+                  formatter: annotation.label,
+                  position: "insideEndTop",
+                  color: chartThemeColors.legendText,
+                },
+              })),
+          },
+          markArea: {
+            animation: false,
+            tooltip: { trigger: "item" },
+            itemStyle: { color: "rgba(167,139,250,0.16)" },
+            label: { show: false },
+            data: climbs
+              .filter(({ annotation }) => annotation.endedAt !== null)
+              .map(({ annotation, startPosition, endPosition }) => [
+                {
+                  id: annotation.id,
+                  climbId: annotation.id,
+                  name: annotation.label,
+                  xAxis:
+                    timeline.startedAt + startPosition * (timeline.endedAt - timeline.startedAt),
+                  tooltip: climbTooltip(annotation),
+                  itemStyle: {
+                    color:
+                      annotation.id === highlightedClimbId
+                        ? "rgba(167,139,250,0.36)"
+                        : "rgba(167,139,250,0.16)",
+                  },
+                  label: {
+                    show: annotation.id === highlightedClimbId,
+                    formatter: annotation.label,
+                    position: "insideTop",
+                    color: chartThemeColors.legendText,
+                  },
+                },
+                {
+                  xAxis: timeline.startedAt + endPosition * (timeline.endedAt - timeline.startedAt),
+                },
+              ]),
+          },
+        }
+      : {}),
   }));
 
   const visibleRightAxisCount = metrics.slice(1).filter((m) => isVisible(m.name)).length;
 
   const option = {
+    aria: {
+      label: {
+        description:
+          "Activity metrics over time. Dots mark recorded samples; gaps indicate unobserved time.",
+      },
+    },
     grid: {
       top: customLegend ? 24 : 40,
       right: 60 + Math.max(0, visibleRightAxisCount - 1) * 60,
       bottom: 86,
       left: 60,
     },
-    tooltip: dofekTooltip({
-      axisPointer: {
-        label: {
-          formatter: ({ value }: { value: string }) => formatDateTime(value),
+    tooltip: {
+      ...dofekTooltip({
+        axisPointer: {
+          label: {
+            formatter: ({ value }: { value: number }) => formatDateTime(new Date(value)),
+          },
         },
-      },
-    }),
+      }),
+      valueFormatter: (value: number) => formatNumber(value, 0),
+    },
     legend: { ...dofekLegend(customLegend === undefined), selected: legendSelected },
     dataZoom: [
-      { type: "inside", xAxisIndex: 0, start: 0, end: 100 },
+      { type: "inside", xAxisIndex: 0, ...zoomRef.current },
       {
         type: "slider",
         xAxisIndex: 0,
-        start: 0,
-        end: 100,
+        ...zoomRef.current,
         height: 32,
         bottom: 16,
         showDataShadow: false,
         showDetail: true,
-        labelFormatter: (_value: number, valueText: string) => formatTimeOnly(valueText),
+        labelFormatter: (value: number) => formatTimeOnly(new Date(value)),
         handleSize: "100%",
         moveHandleSize: 8,
         brushSelect: false,
@@ -303,12 +481,18 @@ export function MetricsChart({
         textStyle: { color: chartThemeColors.axisLabel },
       },
     ],
-    xAxis: dofekAxis.category({
-      data: times,
-      axisLabel: {
-        formatter: (v: string) => formatTimeOnly(v),
-      },
-    }),
+    xAxis: {
+      ...dofekAxis.time({
+        axisLabel: {
+          formatter: (value: number) => formatTimeOnly(new Date(value)),
+        },
+      }),
+      min: timeline.startedAt,
+      max: timeline.endedAt,
+      name: "Time",
+      nameLocation: "middle",
+      nameGap: 28,
+    },
     yAxis: yAxes,
     series,
   };
@@ -316,18 +500,48 @@ export function MetricsChart({
   return (
     <figure className="m-0">
       {customLegend?.({ isVisible, toggle: toggleMetric })}
+      {heartRateContext && isVisible("Heart Rate") && (
+        <p className="mt-2 text-xs text-muted">
+          {heartRateContext.window.endedAt
+            ? "HR chart spans 5 minutes before and after the activity."
+            : "HR chart starts 5 minutes before the activity."}
+        </p>
+      )}
       {loading ? (
         <ChartLoadingSkeleton height={300} />
-      ) : points.length === 0 && error ? null : points.length === 0 ? (
+      ) : points.length === 0 &&
+        !heartRateContext?.points.length &&
+        error ? null : points.length === 0 && !heartRateContext?.points.length ? (
         <p className="py-6 text-sm text-muted">No samples for the selected sources.</p>
       ) : (
-        <DofekChart option={option} height={380} onEvents={chartEvents} />
+        <DofekChart
+          option={option}
+          height={380}
+          onEvents={chartEvents}
+          timeRangeMode="data"
+          notMerge={false}
+          replaceMerge={["series"]}
+        />
       )}
-      {points.length > 0 && (
-        <figcaption className="mt-1 flex flex-wrap items-baseline gap-x-2 px-[60px] text-xs text-dim">
-          <span className="font-medium text-muted">Zoom timeline</span>
-          <span>Drag the handles to focus on part of the activity.</span>
-        </figcaption>
+      {hasHr && isVisible("Heart Rate") && climbs.length > 0 && (
+        <details className="mt-2 text-xs text-muted">
+          <summary className="cursor-pointer">Climbs ({climbs.length})</summary>
+          <ul className="mt-2 space-y-1">
+            {climbs.map(({ annotation }) => (
+              <li key={annotation.id}>
+                <button
+                  type="button"
+                  onClick={() => onSelectClimb?.(annotation.id)}
+                  aria-pressed={annotation.id === selectedClimbId}
+                  className="text-left text-accent"
+                >
+                  {annotation.label} · {formatDateTime(new Date(annotation.startedAt))}
+                  {annotation.endedAt && ` – ${formatDateTime(new Date(annotation.endedAt))}`}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </details>
       )}
     </figure>
   );
@@ -344,38 +558,56 @@ export function ElevationChart({
   units: UnitConverter;
   onHoverPosition?: (position: { lat: number; lng: number } | null) => void;
 }) {
-  const elevPoints = points.filter((p) => p.altitude != null);
+  const elevation = activityChartSeries(
+    points.map((point) => ({
+      recordedAt: point.recordedAt,
+      value: point.altitude != null ? Math.round(units.convertElevation(point.altitude)) : null,
+    })),
+  );
   const chartEvents = useMemo(
-    () => buildAxisPointerEvents(elevPoints, onHoverPosition),
-    [elevPoints, onHoverPosition],
+    () => buildAxisPointerEvents(points, onHoverPosition),
+    [points, onHoverPosition],
   );
 
   if (loading) return <ChartLoadingSkeleton height={200} />;
-  if (elevPoints.length === 0) return null;
+  if (elevation.samples.length === 0) return null;
 
   const option = {
+    aria: {
+      label: {
+        description:
+          "Elevation over activity time. Dots mark recorded samples; gaps indicate unobserved time.",
+      },
+    },
     grid: dofekGrid("single", { top: 10, right: 20, bottom: 30, left: 50 }),
     tooltip: dofekTooltip({
-      formatter: (params: Array<{ value: number; dataIndex: number }>) => {
+      formatter: (params: Array<{ value: [number, number | null]; dataIndex: number }>) => {
         const firstParam = params[0];
-        if (!firstParam) return "";
-        return `Elevation: ${Math.round(units.convertElevation(firstParam.value))} ${escapeTooltipHtml(units.elevationLabel)}`;
+        if (!firstParam || firstParam.value[1] == null) return "";
+        return `${escapeTooltipHtml(formatDateTime(new Date(firstParam.value[0])))}<br/>Elevation: ${firstParam.value[1]} ${escapeTooltipHtml(units.elevationLabel)}`;
       },
     }),
-    xAxis: dofekAxis.category({
-      data: elevPoints.map((p) => p.recordedAt),
-      axisLabel: {
-        formatter: (v: string) => formatTimeOnly(v),
-      },
-    }),
+    xAxis: {
+      ...dofekAxis.time({
+        axisLabel: {
+          formatter: (value: number) => formatTimeOnly(new Date(value)),
+        },
+      }),
+      min: elevation.startedAt,
+      max: elevation.endedAt,
+    },
     yAxis: { ...dofekAxis.value({ name: `Elevation (${units.elevationLabel})` }), scale: true },
     series: [
       {
         type: "line",
-        data: elevPoints.map((p) =>
-          p.altitude != null ? Math.round(units.convertElevation(p.altitude)) : null,
-        ),
-        showSymbol: false,
+        data: chartSeriesData(elevation),
+        connectNulls: false,
+        showSymbol: true,
+        showAllSymbol: true,
+        symbol: "circle",
+        symbolSize: 6,
+        emphasis: { itemStyle: { opacity: 1 } },
+        itemStyle: { color: CHART_COLORS.altitude },
         lineStyle: { width: 1.5, color: CHART_COLORS.altitude },
         areaStyle: {
           color: {
@@ -394,5 +626,9 @@ export function ElevationChart({
     ],
   };
 
-  return <DofekChart option={option} height={200} onEvents={chartEvents} />;
+  return (
+    <figure className="m-0">
+      <DofekChart option={option} height={200} onEvents={chartEvents} timeRangeMode="data" />
+    </figure>
+  );
 }

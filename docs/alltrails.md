@@ -2,7 +2,12 @@
 
 <!-- cspell:words alltrails apkanalyzer apksigner appsflyer JADX javascripts ndimensional recaptcha -->
 
-Last checked: 2026-10-18 (America/Los_Angeles).
+Last checked: 2026-10-21 (America/Los_Angeles).
+
+> Historical investigation. The AllTrails provider was removed on 2026-10-21
+> in [PR #3039](https://github.com/Asherlc/dofek/pull/3039). Dofek no longer
+> offers AllTrails connection or sync. The implementation and setup notes below
+> describe the [former provider][provider-source].
 
 ## Finding And Scope
 
@@ -13,9 +18,10 @@ did not account for the native identity-service implementation. The contracts
 below come from deployed first-party [web source maps][web-login] and an
 authentic, historical [Android APK][native-apk].
 
-This investigation used public source downloads and static analysis. No account
-login, authenticated API validation, app execution, or challenge bypass was
-performed. **Current server acceptance remains unverified.** Native findings
+The source investigation used public downloads and static analysis. Production
+account-connect attempts on October 21 were rejected with HTTP `403` and human
+verification; see the [production evidence](#production-verification-block-2026-10-21).
+**Successful account access remains unverified.** Native findings
 are from **19.0.2**, not the latest Android release. A valid app signature and
 available source do not establish present operation.
 
@@ -269,16 +275,16 @@ It is useful for geometry checks and cannot validate recorded activity time.
 
 ## Integration Assessment
 
-The [Dofek provider](../src/providers/alltrails.ts) implements the native
+The [Dofek provider][provider-source] implements the native
 credential flow, persisted refresh-token handling, cursor history, and raw
 six-axis recording ingestion. Both worker and server register it; the shared
 web/mobile credential form connects each user's account. The implementation
 uses `ALLTRAILS_API_KEY` and `ALLTRAILS_CLIENT_ID` as application configuration
 from Infisical, separate from the user's encrypted tokens and account ID.
-See the [provider guide](../src/providers/README.md#alltrails) and
+See the [former provider guide][provider-guide-source] and
 [credential storage contract](credential-encryption.md).
 
-The current [sync implementation](../src/providers/alltrails.ts) enumerates
+The former [sync implementation][provider-source] enumerates
 every inventory page and fetches separate deep detail for each recording
 before applying the requested window to decoded raw GPS timestamps. Each
 poll therefore costs the inventory requests plus one detail request per
@@ -290,10 +296,10 @@ implemented or validated against a live account.
 
 Account deletion requires disconnecting AllTrails first. Dofek has no verified
 AllTrails remote-session revocation policy, so the
-[deletion prerequisite](../src/account-erasure/remote-snapshot.ts) rejects the
+[deletion prerequisite][erasure-source] rejects the
 request before activation instead of leaving account erasure unable to finish.
 
-The [database integration suite](../src/providers/alltrails-sync.integration.test.ts)
+The [former database integration suite][integration-source]
 uses synthetic source-shaped responses through MSW, a real Postgres database,
 and a capturing metric publisher. Local tests cannot establish current
 AllTrails server acceptance. Before claiming current operation, validate:
@@ -306,8 +312,9 @@ AllTrails server acceptance. Before claiming current operation, validate:
    decoded raw times match the known recording start/end.
 4. The service's current challenge behavior and actionable reconnect errors.
 
-These live-service checks remain unperformed. No account login is part of the
-local test suite.
+No successful live-service check has been recorded. The October 21 production
+login attempts were blocked before a token response. No account login is part
+of the local test suite.
 
 An AllTrails-issued delegated authorization-code client would be preferable
 to collecting account passwords: OAuth's current security BCP disallows the
@@ -329,9 +336,9 @@ implement the alpha-targeted PKCE flow.
 `ALLTRAILS_API_KEY` and `ALLTRAILS_CLIENT_ID` are application configuration
 maintained centrally in Infisical. Users connect their own account through
 Dofek's existing email/password form; they do not obtain these settings.
-The [service environment renderer](../scripts/deploy-service-environment.ts)
+The [former service environment renderer][environment-source]
 forwards both settings to web, migration-phase web, and worker, which consume
-the same [AllTrails provider](../src/providers/alltrails.ts).
+the same [AllTrails provider][provider-source].
 
 On 2026-10-18, both settings were already present and nonempty in Infisical
 production, but absent from the running `dofek_web` service environment. The
@@ -354,8 +361,44 @@ login, one persisted refresh, complete history pagination including private
 recordings, and one recording's raw timestamps against its known start/end.
 Record the app version, validation date, and exact outcome here. Keep
 configuration values, passwords, tokens, and challenge responses out of
-logs and documentation. The [provider's error handling](../src/providers/alltrails.ts)
+logs and documentation. The [former provider's error handling][provider-source]
 surfaces verification failures without retaining the response body.
+
+### Production Verification Block: 2026-10-21
+
+Two real account-connect attempts at `14:30:24Z` and `14:30:37Z` reached
+`POST https://api-v5.alltrails.com/identity/oauth/token` and received HTTP `403`.
+The [production Sentry event](https://east-bay-software.sentry.io/issues/7804756250/)
+identifies the provider's human-verification branch on release
+`07ee6448aef61e9ecef36737460fbd835fbe8f4b`. Both required application settings
+were present in a names-only Infisical check. Opening the first-party login
+page in Firefox also displayed a DataDome frame with `Access is temporarily
+restricted`, before the credential form. During follow-up validation, Chrome
+and a regular Safari window both presented verification sliders. The operator
+reported that neither verification attempt reached the account. Chrome showed
+`Access is temporarily restricted`; Safari still showed `Verification Required`
+at the final inspection. No account tokens were obtained, so token handoff,
+backend refresh, and recording access could not be tested. These results do
+not establish whether a successfully authenticated browser session could be
+used from the backend.
+
+The [provider][provider-source] initially raised a distinct verification
+error. The [shared credential router][credential-router-source]
+returns `FORBIDDEN` with a safe explanation for both web and mobile, and retains
+Sentry reporting. A verification block does not classify the password as invalid
+or mark stored tokens revoked. Unexpected internal errors retain the existing
+generic client message. This corrects the misleading dialog; production login
+remains blocked until an accepted authentication path is validated.
+
+DataDome's supported [Android](https://docs.datadome.co/docs/sdk-android) and
+[iOS](https://docs.datadome.co/docs/sdk-ios) SDKs present challenges and retry
+requests after resolution. Both use a client key; iOS configures the API origin,
+and Android supports optional API-domain initialization. An interactive
+connection flow therefore needs validation of the
+challenge, token handoff, and subsequent backend refresh/data requests before
+it can be recommended as a working Dofek integration. No such flow or
+AllTrails-issued delegated client has been validated. Re-entering the same
+password in the existing backend form cannot complete the missing challenge.
 
 ## Other Official Surfaces
 
@@ -366,6 +409,12 @@ those documented capabilities do not provide personal recording sync. These
 surfaces do not negate the internal identity API found above.
 
 [homepage]: https://www.alltrails.com/
+[provider-source]: https://github.com/Asherlc/dofek/blob/1e26588e12c837aa9cbc68f75e5b7ffa50327f6a/src/providers/alltrails.ts
+[provider-guide-source]: https://github.com/Asherlc/dofek/blob/1e26588e12c837aa9cbc68f75e5b7ffa50327f6a/src/providers/README.md#alltrails
+[integration-source]: https://github.com/Asherlc/dofek/blob/1e26588e12c837aa9cbc68f75e5b7ffa50327f6a/src/providers/alltrails-sync.integration.test.ts
+[erasure-source]: https://github.com/Asherlc/dofek/blob/1e26588e12c837aa9cbc68f75e5b7ffa50327f6a/src/account-erasure/remote-snapshot.ts
+[environment-source]: https://github.com/Asherlc/dofek/blob/1e26588e12c837aa9cbc68f75e5b7ffa50327f6a/scripts/deploy-service-environment.ts
+[credential-router-source]: https://github.com/Asherlc/dofek/blob/1e26588e12c837aa9cbc68f75e5b7ffa50327f6a/packages/server/src/routers/credential-auth.ts
 [assetlinks]: https://www.alltrails.com/.well-known/assetlinks.json
 [native-apk]: https://dl1.clic2load.fr/a/f/com.alltrails.alltrails.apk
 [web-login]: https://d27scpai1jcyi9.cloudfront.net/7454ca94ed332d519ef5b7580cbdcdac98d1934d/_next/static/chunks/5351.03190f80fa961e18.js.map

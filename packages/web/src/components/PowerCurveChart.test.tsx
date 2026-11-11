@@ -21,11 +21,9 @@ describe("PowerCurveChart", () => {
     );
 
     expect(screen.getByTestId("power-curve").dataset.series).toContain("Sustainable power model");
-    expect(screen.getByText("How this is calculated")).toBeVisible();
-    expect(screen.getByText(/Critical Power/)).not.toBeVisible();
   });
 
-  it("hides the method disclosure when the fitted curve has no points", () => {
+  it("omits the fitted curve when the model has no sustainable power", () => {
     render(
       <PowerCurveChart
         data={[{ durationSeconds: 300, label: "5min", bestPower: 350, activityDate: "2026-07-01" }]}
@@ -36,6 +34,5 @@ describe("PowerCurveChart", () => {
     expect(screen.getByTestId("power-curve").dataset.series).not.toContain(
       "Sustainable power model",
     );
-    expect(screen.queryByText("How this is calculated")).toBeNull();
   });
 });

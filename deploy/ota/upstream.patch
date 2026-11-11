@@ -1,0 +1,511 @@
+diff --git a/internal/providers/expo/expo.go b/internal/providers/expo/expo.go
+index fab79da..cc27b3c 100644
+--- a/internal/providers/expo/expo.go
++++ b/internal/providers/expo/expo.go
+@@ -13,6 +13,7 @@ import (
+ 	"xprem/config"
+ 	cache2 "xprem/internal/cache"
+ 	"xprem/internal/types"
++	"xprem/internal/version"
+ )
+ 
+ // The "operationName" header values below are a contract with the test mocks
+@@ -27,6 +28,11 @@ type UserAccount struct {
+ 	Email    string `json:"email"`
+ }
+ 
++// Actor identifies a human or robot credential independently of display names.
++type Actor struct {
++	Id string `json:"id"`
++}
++
+ type BranchMapping struct {
+ 	BranchName  string  `json:"branchName"`
+ 	BranchId    string  `json:"branchId"`
+@@ -58,32 +64,59 @@ func HasCredential(auth types.Auth) bool {
+ 		(auth.SessionSecret != nil && strings.TrimSpace(*auth.SessionSecret) != "")
+ }
+ 
+-func ValidateAuth(appId string, expoAuth types.Auth) (*UserAccount, error) {
++func ValidateAuth(appId string, expoAuth types.Auth) (*Actor, error) {
+ 	if !HasCredential(expoAuth) {
+ 		return nil, errors.New("no valid Expo auth provided")
+ 	}
+-	expoAccount, err := FetchUserAccountInformations(expoAuth)
++	caller, err := fetchActor(expoAuth)
+ 	if err != nil {
+ 		return nil, err
+ 	}
+-	if expoAccount == nil {
+-		return nil, errors.New("no expo account found")
++	serverToken := GetAccessToken(appId)
++	if strings.TrimSpace(serverToken) == "" {
++		return nil, errors.New("no Expo access token configured for app")
++	}
++	server, err := fetchActor(types.Auth{Token: &serverToken})
++	if err != nil {
++		return nil, fmt.Errorf("could not resolve configured Expo actor: %w", err)
++	}
++	if caller.Id != server.Id {
++		return nil, errors.New("Expo actor does not match configured app actor")
+ 	}
+-	// Both sides must resolve to a real username before they are compared.
+-	// FetchSelfUsername answers "" when the server's own token is missing or
+-	// Expo is unreachable, and a caller's empty username must never equal it:
+-	// two empty strings would read as the same user.
+-	if strings.TrimSpace(expoAccount.Username) == "" {
+-		return nil, errors.New("expo account has no username")
++	return caller, nil
++}
++
++func fetchActor(auth types.Auth) (*Actor, error) {
++	actorCache := cache2.GetCache()
++	cacheKey := fmt.Sprintf("expo-provider:actor:%s:%s", version.Version, credentialFingerprint(auth))
++	if actor, ok := cache2.GetJSON[Actor](actorCache, cacheKey); ok {
++		return &actor, nil
++	}
++	var response struct {
++		Data struct {
++			Actor *Actor `json:"meActor"`
++		} `json:"data"`
++		Errors []struct {
++			Message string `json:"message"`
++		} `json:"errors"`
++	}
++	headers := map[string]string{}
++	if config.IsTestMode() {
++		// Retain the existing Expo identity-operation mock contract.
++		headers["operationName"] = "FetchExpoUserAccountInformations"
++	}
++	if err := MakeGraphQLRequest(context.Background(), `query GetCurrentActor { meActor { id } }`, nil, auth, &response, headers); err != nil {
++		return nil, err
+ 	}
+-	selfExpoUsername := FetchSelfUsername(appId)
+-	if strings.TrimSpace(selfExpoUsername) == "" {
+-		return nil, errors.New("could not resolve the Expo user of the server access token")
++	if len(response.Errors) > 0 {
++		return nil, fmt.Errorf("expo rejected the credential: %s", response.Errors[0].Message)
+ 	}
+-	if selfExpoUsername != expoAccount.Username {
+-		return nil, errors.New("expo account does not match self expo username")
++	if response.Data.Actor == nil || strings.TrimSpace(response.Data.Actor.Id) == "" {
++		return nil, errors.New("expo credential does not resolve to an actor")
+ 	}
+-	return expoAccount, nil
++	ttl := userAccountCacheTTLSeconds
++	cache2.SetJSON(actorCache, cacheKey, *response.Data.Actor, &ttl)
++	return response.Data.Actor, nil
+ }
+ 
+ // GetAccessToken returns the Expo access token configured for the given
+diff --git a/internal/repository/update_bucket.go b/internal/repository/update_bucket.go
+index b78d5b9..d384434 100644
+--- a/internal/repository/update_bucket.go
++++ b/internal/repository/update_bucket.go
+@@ -39,7 +39,10 @@ func (s *BucketUpdateRepository) GetLatestUpdate(ctx context.Context, appId stri
+ 	updates = sortNewestFirst(updates)
+ 	for i := range updates {
+ 		storedMetadata, metaErr := update2.RetrieveUpdateStoredMetadata(ctx, updates[i])
+-		if metaErr != nil || storedMetadata == nil || storedMetadata.Platform != platform {
++		if metaErr != nil {
++			return nil, fmt.Errorf("failed to read update metadata: %w", metaErr)
++		}
++		if storedMetadata == nil || storedMetadata.Platform != platform {
+ 			continue
+ 		}
+ 		valid, err := s.isUpdateValid(ctx, updates[i])
+diff --git a/internal/services/expo_protocol_service.go b/internal/services/expo_protocol_service.go
+index d3f32c9..f16d3cf 100644
+--- a/internal/services/expo_protocol_service.go
++++ b/internal/services/expo_protocol_service.go
+@@ -256,8 +256,7 @@ func (s *ExpoProtocolService) putRawResponse(ctx context.Context, w http.Respons
+ 	}
+ 	headers := map[string][]string{
+ 		"Content-Disposition": {fmt.Sprintf("form-data; name=\"%s\"", fieldName)},
+-		"Content-Type":        {"application/json"},
+-		"content-type":        {"application/json; charset=utf-8"},
++		"Content-Type":        {"application/json; charset=utf-8"},
+ 	}
+ 	if signedHash != "" {
+ 		headers["expo-signature"] = []string{fmt.Sprintf("sig=\"%s\", keyid=\"main\"", signedHash)}
+diff --git a/test/expo_auth_test.go b/test/expo_auth_test.go
+index 529c49a..f96b80b 100644
+--- a/test/expo_auth_test.go
++++ b/test/expo_auth_test.go
+@@ -1,8 +1,10 @@
+ package test
+ 
+ import (
++	"encoding/json"
+ 	"net/http"
+ 	"path/filepath"
++	"strings"
+ 	"testing"
+ 
+ 	"xprem/internal/types"
+@@ -11,6 +13,70 @@ import (
+ 	"github.com/stretchr/testify/assert"
+ )
+ 
++// Expo robots resolve through meActor, while the human-only me field is null.
++// Exercise the normal upload route so its publishing permission depends on
++// the configured actor's identity, not on a username or a nonempty token.
++func TestRequestUploadUrlValidatesExpoActorIdentity(t *testing.T) {
++	actor := func(id, kind string) map[string]interface{} {
++		identity := map[string]interface{}{"id": id, "__typename": kind}
++		if kind == "User" {
++			identity["username"] = "same_name"
++		}
++		return identity
++	}
++	for _, tc := range []struct {
++		name           string
++		server, caller map[string]interface{}
++		graphqlError   string
++		want           int
++	}{
++		{"configured robot", actor("robot-1", "Robot"), actor("robot-1", "Robot"), "", http.StatusOK},
++		{"configured human", actor("user-1", "User"), actor("user-1", "User"), "", http.StatusOK},
++		{"different robot", actor("robot-1", "Robot"), actor("robot-2", "Robot"), "", http.StatusUnauthorized},
++		{"same username different human", actor("user-1", "User"), actor("user-2", "User"), "", http.StatusUnauthorized},
++		{"missing caller", actor("robot-1", "Robot"), nil, "", http.StatusUnauthorized},
++		{"missing server", nil, actor("robot-1", "Robot"), "", http.StatusUnauthorized},
++		{"both missing", nil, nil, "", http.StatusUnauthorized},
++		{"blank caller id", actor("robot-1", "Robot"), actor(" ", "Robot"), "", http.StatusUnauthorized},
++		{"both blank ids", actor("", "User"), actor("", "User"), "", http.StatusUnauthorized},
++		{"caller graphql error with actor", actor("robot-1", "Robot"), actor("robot-1", "Robot"), "caller", http.StatusUnauthorized},
++		{"server graphql error with actor", actor("robot-1", "Robot"), actor("robot-1", "Robot"), "server", http.StatusUnauthorized},
++	} {
++		t.Run(tc.name, func(t *testing.T) {
++			teardown := setup(t)
++			defer teardown()
++			httpmock.RegisterResponder("POST", "https://api.expo.dev/graphql", func(req *http.Request) (*http.Response, error) {
++				var body struct {
++					Query string `json:"query"`
++				}
++				if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
++					return nil, err
++				}
++				identity := tc.caller
++				lookup := "caller"
++				if req.Header.Get("Authorization") == "Bearer EXPO_ACCESS_TOKEN" {
++					identity = tc.server
++					lookup = "server"
++				}
++				var human map[string]interface{}
++				if identity != nil && identity["__typename"] == "User" {
++					human = identity
++				}
++				data := map[string]interface{}{"me": human}
++				if strings.Contains(body.Query, "meActor") {
++					data = map[string]interface{}{"meActor": identity}
++				}
++				response := map[string]interface{}{"data": data}
++				if tc.graphqlError == lookup {
++					response["errors"] = []map[string]interface{}{{"message": "Authentication failed"}}
++				}
++				return httpmock.NewJsonResponse(http.StatusOK, response)
++			})
++			assert.Equal(t, tc.want, requestUploadUrlWithBearer(t, "Bearer caller_token"))
++		})
++	}
++}
++
+ // mockExpoMe answers the Expo `me` lookup per bearer token; any token missing
+ // from the table gets `me: null`, which is how Expo answers an unknown token.
+ func mockExpoMe(byBearer map[string]map[string]interface{}) {
+diff --git a/test/helpers.go b/test/helpers.go
+index 17c97ca..c3f7124 100644
+--- a/test/helpers.go
++++ b/test/helpers.go
+@@ -247,7 +247,8 @@ func MockExpoBranchesResponse(updateBranches []map[string]interface{}) (*http.Re
+ func MockExpoAccountResponse(me map[string]interface{}) (*http.Response, error) {
+ 	return httpmock.NewJsonResponse(http.StatusOK, map[string]interface{}{
+ 		"data": map[string]interface{}{
+-			"me": me,
++			"me":      me,
++			"meActor": me,
+ 		},
+ 	})
+ }
+diff --git a/test/manifest_storage_errors_test.go b/test/manifest_storage_errors_test.go
+new file mode 100644
+index 0000000..6b7812f
+--- /dev/null
++++ b/test/manifest_storage_errors_test.go
+@@ -0,0 +1,131 @@
++package test
++
++import (
++	"bytes"
++	"encoding/json"
++	"mime"
++	"mime/multipart"
++	"net/http"
++	"net/http/httptest"
++	"os"
++	"path/filepath"
++	"testing"
++	"xprem/internal/bucket"
++
++	"github.com/stretchr/testify/require"
++)
++
++func TestManifestStorageFailuresRemainErrors(t *testing.T) {
++	for _, tc := range []struct {
++		name            string
++		fault           string
++		missing         string
++		corrupt         bool
++		empty           bool
++		status          int
++		noUpdate        bool
++		otherPlatform   bool
++		newerIncomplete bool
++	}{
++		{name: "metadata read failure", fault: "update-metadata.json", status: http.StatusInternalServerError},
++		{name: "marker read failure", fault: ".check", status: http.StatusInternalServerError},
++		{name: "malformed stored metadata", corrupt: true, status: http.StatusInternalServerError},
++		{name: "incomplete upload missing metadata", missing: "update-metadata.json", status: http.StatusOK, noUpdate: true},
++		{name: "incomplete upload missing marker", missing: ".check", status: http.StatusOK, noUpdate: true},
++		{name: "empty runtime", empty: true, status: http.StatusOK, noUpdate: true},
++		{name: "complete update", status: http.StatusOK},
++		{name: "other platform", otherPlatform: true, status: http.StatusOK, noUpdate: true},
++		{name: "complete update behind incomplete upload", newerIncomplete: true, status: http.StatusOK},
++	} {
++		t.Run(tc.name, func(t *testing.T) {
++			t.Setenv("STORAGE_MODE", "local")
++			t.Setenv("CACHE_MODE", "local")
++			t.Setenv("DB_URL", "")
++			teardown := setup(t)
++			defer teardown()
++			root := t.TempDir()
++			projectRoot, err := findProjectRoot()
++			require.NoError(t, err)
++			updateDir := filepath.Join(root, "test-app-id", "branch-1", "1", "1674170951")
++			if !tc.empty {
++				require.NoError(t, os.MkdirAll(updateDir, 0o755))
++				for _, name := range []string{"metadata.json", "expoConfig.json", "update-metadata.json", ".check"} {
++					contents, err := os.ReadFile(filepath.Join(projectRoot, "test", "test-updates", "test-app-id", "branch-1", "1", "1674170951", name))
++					require.NoError(t, err)
++					require.NoError(t, os.WriteFile(filepath.Join(updateDir, name), contents, 0o644))
++				}
++			}
++			if tc.fault != "" {
++				path := filepath.Join(updateDir, tc.fault)
++				require.NoError(t, os.Remove(path))
++				// A self-referential symlink produces a real storage read error
++				// even when tests execute as root inside a container.
++				require.NoError(t, os.Symlink(tc.fault, path))
++			}
++			if tc.missing != "" {
++				require.NoError(t, os.Remove(filepath.Join(updateDir, tc.missing)))
++			}
++			if tc.corrupt {
++				require.NoError(t, os.WriteFile(filepath.Join(updateDir, "update-metadata.json"), []byte("{"), 0o644))
++			}
++			if tc.otherPlatform {
++				require.NoError(t, os.WriteFile(filepath.Join(updateDir, "update-metadata.json"), []byte(`{"platform":"ios"}`), 0o644))
++			}
++			if tc.newerIncomplete {
++				newerDir := filepath.Join(root, "test-app-id", "branch-1", "1", "1674170952")
++				require.NoError(t, os.MkdirAll(newerDir, 0o755))
++				require.NoError(t, os.WriteFile(filepath.Join(newerDir, ".check"), []byte(".check"), 0o644))
++			}
++			t.Setenv("LOCAL_BUCKET_BASE_PATH", root)
++			bucket.ResetBucketInstance()
++			t.Cleanup(bucket.ResetBucketInstance)
++			mockWorkingExpoResponse("staging")
++			request := httptest.NewRequest(http.MethodGet, "http://localhost:3000/manifest", nil)
++			request.Header.Set("expo-platform", "android")
++			request.Header.Set("expo-runtime-version", "1")
++			request.Header.Set("expo-channel-name", "staging")
++			request.Header.Set("expo-app-id", "test-app-id")
++			request.Header.Set("expo-protocol-version", "1")
++			response := httptest.NewRecorder()
++			serveThroughRouter(response, request)
++			require.Equal(t, tc.status, response.Code, response.Body.String())
++			if tc.status == http.StatusOK {
++				_, envelope, err := mime.ParseMediaType(response.Header().Get("Content-Type"))
++				require.NoError(t, err)
++				part, err := multipart.NewReader(bytes.NewReader(response.Body.Bytes()), envelope["boundary"]).NextPart()
++				require.NoError(t, err)
++				require.Len(t, part.Header.Values("Content-Type"), 1, "JSON parts require one Content-Type field")
++				mediaType, _, err := mime.ParseMediaType(part.Header.Get("Content-Type"))
++				require.NoError(t, err)
++				require.Equal(t, "application/json", mediaType)
++				if tc.noUpdate {
++					require.Contains(t, response.Body.String(), "noUpdateAvailable")
++				} else {
++					require.Contains(t, response.Body.String(), `name="manifest"`)
++					metadata, err := os.ReadFile(filepath.Join(updateDir, "update-metadata.json"))
++					require.NoError(t, err)
++					var expected struct {
++						UpdateUUID string `json:"updateUUID"`
++					}
++					require.NoError(t, json.Unmarshal(metadata, &expected))
++					_, parameters, err := mime.ParseMediaType(response.Header().Get("Content-Type"))
++					require.NoError(t, err)
++					reader := multipart.NewReader(bytes.NewReader(response.Body.Bytes()), parameters["boundary"])
++					for {
++						part, err := reader.NextPart()
++						require.NoError(t, err)
++						if part.FormName() != "manifest" {
++							continue
++						}
++						var actual struct {
++							ID string `json:"id"`
++						}
++						require.NoError(t, json.NewDecoder(part).Decode(&actual))
++						require.Equal(t, expected.UpdateUUID, actual.ID)
++						break
++					}
++				}
++			}
++		})
++	}
++}
+diff --git a/internal/handlers/upload_handler.go b/internal/handlers/upload_handler.go
+index 4cd1fb54..7b7fcb23 100644
+--- a/internal/handlers/upload_handler.go
++++ b/internal/handlers/upload_handler.go
+@@ -364,11 +364,13 @@ func (h *UploadHandler) RequestUploadUrlHandler(w http.ResponseWriter, r *http.R
+ 			http.Error(w, err.Error(), http.StatusBadRequest)
+ 			return
+ 		}
+-		if errors.Is(err, services.ErrNoChangesDetected) {
++		var unchanged *services.NoChangesDetectedError
++		if errors.As(err, &unchanged) {
+ 			w.Header().Set("Content-Type", "application/json")
+ 			w.WriteHeader(http.StatusNotAcceptable)
+ 			_ = json.NewEncoder(w).Encode(map[string]string{
+-				"error": "You have already uploaded this update, no changes detected",
++				"error":      "You have already uploaded this update, no changes detected",
++				"updateUUID": unchanged.UpdateUUID,
+ 			})
+ 			return
+ 		}
+diff --git a/internal/services/deployment_identical_test.go b/internal/services/deployment_identical_test.go
+index a5d33c5d..3ba08d2b 100644
+--- a/internal/services/deployment_identical_test.go
++++ b/internal/services/deployment_identical_test.go
+@@ -53,6 +53,21 @@ func TestRequestUploadURLs_RefusesAnIdenticalPublish(t *testing.T) {
+ 	assert.ErrorIs(t, err, ErrNoChangesDetected)
+ }
+ 
++func TestRequestUploadURLs_IdenticalPublishReturnsExistingUUID(t *testing.T) {
++	svc, h := newDedupTestHarness(t)
++	files := publishFiles("bundle-v1", "assets/a")
++	seedPublished(t, h, files)
++	ctx := context.Background()
++	previous, err := h.updateRepo.GetLatestUpdate(ctx, h.appId, "main", "1", "ios")
++	require.NoError(t, err)
++	require.NoError(t, h.updateRepo.StoreUpdateUUIDInMetadata(ctx, *previous, "existing-update"))
++	_, err = svc.RequestUploadURLs(ctx, publishParams(h, files))
++	var unchanged *NoChangesDetectedError
++	require.ErrorAs(t, err, &unchanged)
++	assert.Equal(t, "existing-update", unchanged.UpdateUUID)
++	assert.ErrorIs(t, err, ErrNoChangesDetected)
++}
++
+ func TestRequestUploadURLs_AcceptsAChangedBundle(t *testing.T) {
+ 	svc, h := newDedupTestHarness(t)
+ 	seedPublished(t, h, publishFiles("bundle-v1", "assets/a"))
+diff --git a/internal/services/deployment_service.go b/internal/services/deployment_service.go
+index 8a5bb756..e2ca2377 100644
+--- a/internal/services/deployment_service.go
++++ b/internal/services/deployment_service.go
+@@ -516,28 +516,38 @@ func (s *DeploymentService) dedupExistingUploadAssets(ctx context.Context, appId
+ 	return dedupedAssets
+ }
+ 
+-// isIdenticalToLatest reports whether this publish would re-ship the content the
+-// branch already serves for the platform. A store that cannot answer never
++// identicalToLatest returns the update whose content this publish would re-ship
++// on the branch for the platform. A store that cannot answer never
+ // blocks the publish.
+-func (s *DeploymentService) isIdenticalToLatest(ctx context.Context, params RequestUploadURLParams, incoming *types.UpdateAssetMapping) bool {
++func (s *DeploymentService) identicalToLatest(ctx context.Context, params RequestUploadURLParams, incoming *types.UpdateAssetMapping) *types.Update {
+ 	// Straight to the repo: refusing a publish over a stale cached envelope
+ 	// would block re-shipping the previous good build after a bad one.
+ 	latest, err := s.updateRepo.GetLatestUpdate(ctx, params.AppID, params.BranchName, params.RuntimeVersion, params.Platform)
+ 	if err != nil {
+ 		log.Printf("[RequestID: %s] Warning: GetLatestUpdate returned error, skipping identical check: %v", params.RequestID, err)
+-		return false
++		return nil
+ 	}
+ 	if latest == nil {
+-		return false
++		return nil
+ 	}
+ 	stored, err := s.updateRepo.GetUpdateAssetMapping(ctx, *latest)
+ 	if err != nil {
+ 		log.Printf("[RequestID: %s] Warning: GetUpdateAssetMapping returned error, skipping identical check: %v", params.RequestID, err)
+-		return false
++		return nil
+ 	}
+-	return update2.AreUpdatesIdentical(stored, incoming)
++	if update2.AreUpdatesIdentical(stored, incoming) {
++		return latest
++	}
++	return nil
+ }
+ 
++type NoChangesDetectedError struct {
++	UpdateUUID string
++}
++
++func (e *NoChangesDetectedError) Error() string { return ErrNoChangesDetected.Error() }
++func (e *NoChangesDetectedError) Unwrap() error { return ErrNoChangesDetected }
++
+ func (s *DeploymentService) RequestUploadURLs(ctx context.Context, params RequestUploadURLParams) (*RequestUploadURLResponse, error) {
+ 	err := s.branchService.UpsertBranchAndRuntimeVersion(ctx, params.AppID, params.BranchName, params.RuntimeVersion)
+ 	if err != nil {
+@@ -562,9 +572,16 @@ func (s *DeploymentService) RequestUploadURLs(ctx context.Context, params Reques
+ 		log.Printf("[RequestID: %s] %v", params.RequestID, err)
+ 		return nil, err
+ 	}
+-	if s.isIdenticalToLatest(ctx, params, mapping) {
++	if previous := s.identicalToLatest(ctx, params, mapping); previous != nil {
++		metadata, err := s.updateRepo.RetrieveUpdateStoredMetadata(ctx, *previous)
++		if err != nil {
++			return nil, err
++		}
++		if metadata == nil {
++			return nil, fmt.Errorf("missing stored metadata for unchanged update %s", previous.UpdateId)
++		}
+ 		log.Printf("[RequestID: %s] Updates are identical, refusing upload", params.RequestID)
+-		return nil, ErrNoChangesDetected
++		return nil, &NoChangesDetectedError{UpdateUUID: metadata.UpdateUUID}
+ 	}
+ 
+ 	updateId := update2.GenerateUpdateTimestamp(params.Platform)
+diff --git a/test/requestUpload_test.go b/test/requestUpload_test.go
+index 24456b64..853351fa 100644
+--- a/test/requestUpload_test.go
++++ b/test/requestUpload_test.go
+@@ -528,10 +528,24 @@ func TestStatelessIdenticalPublishIsRefused(t *testing.T) {
+ 			first := postRequestUploadUrl(t, "DO_NOT_USE", "1", fixture.platform, sample)
+ 			assert.Equal(t, http.StatusOK, first.Code)
+ 			markUpdateChecked(t, basePath, "DO_NOT_USE", "1", updateIdFromResponse(t, first))
++			metadataPath := filepath.Join(basePath, "test-app-id", "DO_NOT_USE", "1", strconv.FormatInt(updateIdFromResponse(t, first), 10), "update-metadata.json")
++			stored, err := os.ReadFile(metadataPath)
++			require.NoError(t, err)
++			var metadata map[string]any
++			require.NoError(t, json.Unmarshal(stored, &metadata))
++			metadata["updateUUID"] = "existing-update"
++			stored, err = json.Marshal(metadata)
++			require.NoError(t, err)
++			require.NoError(t, os.WriteFile(metadataPath, stored, 0o644))
+ 
+ 			second := postRequestUploadUrl(t, "DO_NOT_USE", "1", fixture.platform, sample)
+ 			assert.Equal(t, http.StatusNotAcceptable, second.Code)
+ 			assert.Contains(t, second.Body.String(), "no changes detected")
++			var unchanged struct {
++				UpdateUUID string `json:"updateUUID"`
++			}
++			require.NoError(t, json.Unmarshal(second.Body.Bytes(), &unchanged))
++			assert.Equal(t, "existing-update", unchanged.UpdateUUID)
+ 		})
+ 	}
+ }

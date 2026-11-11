@@ -133,7 +133,7 @@ function equivalencePredicate(
   }
   if (key.kind === "climb") {
     return sql`EXISTS (
-      SELECT 1 FROM (${rockClimbingLogProjection(gradePreference, { attemptScope: key.attemptScope, ropeMethod: key.ropeMethod ?? "unknown", solo: key.solo })}) AS matched_climb
+      SELECT 1 FROM (${rockClimbingLogProjection(gradePreference, { attemptScope: [key.attemptScope], ropeMethod: key.ropeMethod ?? "unknown", solo: [key.solo] })}) AS matched_climb
       WHERE matched_climb.activity_id = ANY(a.member_activity_ids)
         AND matched_climb.climb_kind::text = ${key.climbKind}
         AND matched_climb.grade_system::text = ${key.gradeSystem}
@@ -587,9 +587,9 @@ export class PerformanceComparisonRepository {
           this.#gradePreference,
           equivalence.key.kind === "climb" && !isIdentityEquivalence(equivalence.key)
             ? {
-                attemptScope: equivalence.key.attemptScope,
+                attemptScope: [equivalence.key.attemptScope],
                 ropeMethod: equivalence.key.ropeMethod ?? "unknown",
-                solo: equivalence.key.solo,
+                solo: [equivalence.key.solo],
               }
             : {},
         )}) AS climb ON climb.activity_id = ANY(a.member_activity_ids)

@@ -5,12 +5,7 @@ import type { AppRouter } from "dofek-server/router";
 import { type ReactNode, useMemo } from "react";
 import { within } from "storybook/test";
 import { trpc } from "../lib/trpc.ts";
-import {
-  CredentialAuthModal,
-  GarminAuthModal,
-  TokenAuthModal,
-  WhoopAuthModal,
-} from "./DataSourcesAuthModals.tsx";
+import { CredentialAuthModal, TokenAuthModal, WhoopAuthModal } from "./DataSourcesAuthModals.tsx";
 
 type TokenAuthScenario = "success" | "loading" | "error";
 
@@ -122,15 +117,18 @@ type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
 
+export const BoardUsername: Story = {
+  args: {
+    providerId: "tension",
+    providerName: "Tension Board",
+  },
+};
+
 export const WithDescription: Story = {
   args: {
     description:
       "This provider requires your device serial number. Find it on the back of your device or in the companion app settings.",
   },
-};
-
-export const Garmin: Story = {
-  render: () => <GarminAuthModal onClose={() => {}} onSuccess={() => {}} />,
 };
 
 export const Whoop: Story = {
@@ -175,4 +173,19 @@ export const PersonalTokenError: Story = {
     await userEvent.click(canvas.getByRole("button", { name: "Connect" }));
     await canvas.findByRole("alert");
   },
+};
+
+export const TheCragPersonalKey: Story = {
+  render: () => (
+    <TokenAuthModal
+      kind="access-token"
+      providerId="thecrag"
+      providerName="theCrag"
+      tokenLabel="Personal API key"
+      instructionsUrl="https://www.thecrag.com/en/article/logbookreadapi"
+      description="Requires an active theCrag supporter subscription. This key imports public and private ascents and notes into Dofek. Revoke it in theCrag Settings > API Keys when you stop using it."
+      onClose={() => {}}
+      onSuccess={() => {}}
+    />
+  ),
 };

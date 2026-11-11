@@ -256,7 +256,11 @@ function ProviderStrip({ providers, error }: { providers: FeaturedProvider[]; er
                 className="flex items-center gap-3 rounded-lg border border-border bg-surface-solid px-3 py-3"
               >
                 <div className="flex h-9 w-9 items-center justify-center rounded-md bg-surface-solid">
-                  <img src={`/logos/${id}.${ext}`} alt={label} className="h-7 w-7 object-contain" />
+                  <img
+                    src={`/logos/${id}.${ext}`}
+                    alt={label}
+                    className="h-7 w-7 rounded-[20%] object-contain"
+                  />
                 </div>
                 <div className="min-w-0">
                   <div className="truncate text-sm font-semibold text-foreground">{label}</div>

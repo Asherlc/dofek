@@ -1,4 +1,5 @@
 import type { ProviderManualConnectionKind } from "@dofek/providers/provider-connection";
+import type { ImageDiscovery } from "../activity-images/types.ts";
 import type { OAuthConfig, TokenSet } from "../auth/oauth.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import type { ProcessingDatasetKey } from "../processing/dataset-contracts.ts";
@@ -45,11 +46,16 @@ export interface ProviderIdentityCapabilities {
   providesEmail: boolean;
 }
 
+/** Commit rotated credentials before a provider revoker performs further remote work. */
+export type ProviderRevocationTokenPersistence = (tokens: TokenSet) => Promise<void>;
+
 /**
  * Auth setup returned by providers that require user connection.
  * OAuth providers supply oauthConfig + exchangeCode; credential providers use automatedLogin only.
  */
 export interface ProviderAuthSetup {
+  /** Validate connection ownership inside the credential persistence transaction. */
+  assertCanConnect?: (db: SyncDatabase, userId: string, tokens: TokenSet) => Promise<void>;
   oauthConfig?: OAuthConfig;
   /** Override the authorization URL (e.g. with PKCE challenge baked in) */
   authUrl?: string;
@@ -59,20 +65,29 @@ export interface ProviderAuthSetup {
     onTokensIssued?: (tokens: TokenSet) => void,
   ) => Promise<TokenSet>;
   /** Provider-specific cleanup for an existing authorization. */
-  revokeExistingTokens?: (tokens: TokenSet) => Promise<void>;
+  revokeExistingTokens?: (
+    tokens: TokenSet,
+    onTokensRefreshed?: ProviderRevocationTokenPersistence,
+  ) => Promise<void>;
   /**
    * Provider-specific revocation semantics for durable account-erasure replay.
    * This must accept only provider-documented terminal outcomes.
    */
-  revokeTokensForAccountErasure?: (tokens: TokenSet) => Promise<void>;
+  revokeTokensForAccountErasure?: (
+    tokens: TokenSet,
+    onTokensRefreshed?: ProviderRevocationTokenPersistence,
+  ) => Promise<void>;
   /**
    * Provider-specific reconnect lifecycle.
+   * `replace` replaces credentials only for the same verified providerAccountId,
+   * preserving the registration on success and any failed OAuth connection.
+   * Registration deletion is reserved for explicit disconnect/account erasure.
    * `revoke-then-replace` revokes before exchange.
    * `deauthorize-on-token-limit` exchanges first and deauthorizes only after
    * the provider explicitly rejects the exchange for too many active tokens.
    * The default exchanges and persists the replacement before cleaning up old tokens.
    */
-  reconnectStrategy?: "deauthorize-on-token-limit" | "revoke-then-replace";
+  reconnectStrategy?: "replace" | "deauthorize-on-token-limit" | "revoke-then-replace";
   apiBaseUrl?: string;
   /** Automated login that drives the OAuth flow with credentials (no browser needed) */
   automatedLogin?: (email: string, password: string) => Promise<TokenSet>;
@@ -81,6 +96,7 @@ export interface ProviderAuthSetup {
     kind: ProviderManualConnectionKind;
     label: string;
     instructionsUrl: `https://${string}`;
+    description?: string;
     exchangeToken: (token: string) => Promise<TokenSet>;
   };
   /** OAuth 1.0 flow for providers that use 3-legged OAuth (e.g. FatSecret) */
@@ -176,6 +192,9 @@ interface BaseProvider {
   /** Human-readable name */
   readonly name: string;
 
+  /** Data arrives through notifications; this source must not be polled. */
+  readonly pushOnly?: boolean;
+
   /** Optional explicit processing-status scope for custom providers and tests. */
   readonly processingDatasetKeys?: readonly ProcessingDatasetKey[];
 
@@ -207,6 +226,16 @@ interface BaseProvider {
  * credentials with `loadTokens()` during sync. See `docs/adding-a-provider.md`.
  */
 export interface SyncProvider extends BaseProvider {
+  discoverClimbingImages?(
+    run: SyncRun,
+    climbingExternalId: string,
+    options?: { refresh?: boolean },
+  ): Promise<ImageDiscovery>;
+  discoverActivityImages?(
+    run: SyncRun,
+    activityExternalId: string,
+    options?: { refresh?: boolean },
+  ): Promise<ImageDiscovery>;
   /**
    * Number of days scheduled sync jobs should request by default.
    * Omit to use the framework default.
@@ -314,6 +343,27 @@ export interface WebhookProvider extends SyncProvider {
 
   /** Whether this is an app-level (single) or per-user subscription */
   readonly webhookScope: "app" | "user";
+}
+
+/** Notification ingestion whose receiving endpoint is configured in a provider portal. */
+export interface PushProvider extends SyncProvider {
+  readonly pushOnly: true;
+  parseWebhookPayload(body: unknown): WebhookEvent[];
+  syncWebhookEvent(
+    db: SyncDatabase,
+    event: WebhookEvent,
+    options?: SyncOptions,
+  ): Promise<SyncResult>;
+}
+
+export function isPushProvider(provider: Provider): provider is PushProvider {
+  return (
+    provider.pushOnly === true &&
+    "syncWebhookEvent" in provider &&
+    typeof provider.syncWebhookEvent === "function" &&
+    "parseWebhookPayload" in provider &&
+    typeof provider.parseWebhookPayload === "function"
+  );
 }
 
 /** Type guard: narrows a Provider to WebhookProvider. */

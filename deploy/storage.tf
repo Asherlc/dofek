@@ -10,6 +10,32 @@ resource "cloudflare_r2_bucket" "ota" {
   location   = "WEUR"
 }
 
+resource "cloudflare_r2_bucket" "ota_releases" {
+  account_id = var.cloudflare_account_id
+  name       = "dofek-ota-releases"
+  location   = "WEUR"
+}
+
+resource "cloudflare_r2_bucket" "ota_backups" {
+  account_id = var.cloudflare_account_id
+  name       = "dofek-ota-backups"
+  location   = "WEUR"
+}
+
+resource "cloudflare_r2_bucket_lock" "ota_snapshots" {
+  account_id  = var.cloudflare_account_id
+  bucket_name = cloudflare_r2_bucket.ota_backups.name
+
+  rules = [{
+    id      = "preserve-verified-ota-snapshots"
+    enabled = true
+    prefix  = "snapshots/"
+    condition = {
+      type = "Indefinite"
+    }
+  }]
+}
+
 resource "cloudflare_r2_bucket" "storybook" {
   account_id = var.cloudflare_account_id
   name       = "dofek-storybook"
@@ -289,3 +315,34 @@ resource "cloudflare_r2_bucket_lifecycle" "ota_preview_cleanup" {
 # NOTE: S3-compatible API credentials for R2 must be created manually in
 # the Cloudflare dashboard. Store R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY
 # in Infisical.
+
+resource "cloudflare_r2_bucket" "activity_media" {
+  account_id = var.cloudflare_account_id
+  name       = "dofek-activity-media"
+  location   = "WEUR"
+}
+
+resource "cloudflare_r2_bucket_lifecycle" "ota_releases_preview_cleanup" {
+  account_id  = var.cloudflare_account_id
+  bucket_name = cloudflare_r2_bucket.ota_releases.name
+
+  rules = [{
+    id      = "expire-pr-previews"
+    enabled = true
+    conditions = {
+      prefix = "${var.expo_app_id}/pr-"
+    }
+    delete_objects_transition = {
+      condition = {
+        max_age = 1209600
+        type    = "Age"
+      }
+    }
+    abort_multipart_uploads_transition = {
+      condition = {
+        max_age = 604800
+        type    = "Age"
+      }
+    }
+  }]
+}

@@ -57,8 +57,10 @@ entity "oauth_token" {
   * provider_id : text <<PK>>
   --
   access_token : text
+  authorization_id : uuid
   refresh_token : text
   provider_account_id : text
+  provider_account_lookup_id : text
   expires_at : timestamp
   scopes : text
   created_at : timestamp
@@ -144,7 +146,6 @@ entity "user_profile" {
   birth_date : date
   max_hr : smallint
   resting_hr : smallint
-  ftp : smallint
   is_admin : boolean
   created_at : timestamp
   updated_at : timestamp
@@ -191,9 +192,19 @@ entity "activity" {
   rejected_provider_end_utc_offset_minutes : bigint
   strava_id : text
   raw : jsonb
+  fit_recovery_error : text
   provider_absent_at : timestamp
+  absence_provider_id : text <<FK>>
   deleted_at : timestamp
   created_at : timestamp
+}
+
+entity "activity_device_observation" {
+  * activity_id : uuid <<PK>>
+  * sequence : bigint <<PK>>
+  --
+  message_type : text
+  raw : jsonb
 }
 
 entity "activity_group" {
@@ -364,7 +375,6 @@ entity "sport_settings" {
   --
   user_id : uuid <<FK>>
   sport : text
-  ftp : smallint
   threshold_hr : smallint
   threshold_pace_per_km : real
   power_zone_pcts : jsonb
@@ -396,6 +406,108 @@ entity "strength_set" {
   created_at : timestamp
 }
 
+entity "activity_image" {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  activity_id : uuid <<FK>>
+  climbing_log_entry_id : uuid <<FK>>
+  provider_id : text <<FK>>
+  source_id : text
+  candidate : jsonb
+  generation : integer
+  object_id : uuid <<FK>>
+  retired_at : timestamp
+  created_at : timestamp
+  updated_at : timestamp
+}
+
+entity "activity_image_backfill" {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  provider_id : text <<FK>>
+  available_at : timestamp
+  cursor_started_at : timestamp
+  cursor_id : uuid
+  high_water_at : timestamp
+  scanned : integer
+  discovered : integer
+  failed : integer
+  state : text
+  updated_at : timestamp
+}
+
+entity "activity_image_discovery" {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  activity_id : uuid <<FK>>
+  climbing_log_entry_id : uuid <<FK>>
+  provider_id : text <<FK>>
+  coverage : text
+  expected_count : integer
+  reason : text
+  checked_at : timestamp
+}
+
+entity "activity_image_object" {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  sha256 : text
+  object_key : text
+  mime_type : text
+  size_bytes : bigint
+  width : integer
+  height : integer
+  created_at : timestamp
+}
+
+entity "activity_image_work" {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
+  image_id : uuid <<FK>>
+  generation : integer
+  state : text
+  attempts : integer
+  available_at : timestamp
+  dispatched_at : timestamp
+  processing_at : timestamp
+  error_code : text
+  created_at : timestamp
+}
+
+entity "analytics_query_owner" {
+  * resource_id : text <<PK>>
+  --
+  owner_id : uuid
+  backend_pid : bigint
+  quiescent : boolean
+  intent_id : text
+  ingested_at : timestamp
+  query_id : uuid
+  query_terminal : boolean
+}
+
+entity "analytics_stream_state" {
+  * transport : text <<PK>>
+  * epoch : text <<PK>>
+  * topic : text <<PK>>
+  * partition : bigint <<PK>>
+  --
+  owner_id : uuid
+  processed : jsonb
+  pending : jsonb
+  group_state : text
+  group_first_position : jsonb
+  group_last_position : jsonb
+  group_member_count : bigint
+  group_positions_digest : text
+  group_first_ingested_at : timestamp
+}
+
 entity "area" {
   * id : uuid <<PK>>
   --
@@ -404,7 +516,14 @@ entity "area" {
   external_id : text
   name : text
   parent_area_id : uuid <<FK>>
+  group_id : uuid <<FK>>
   coordinates : point
+}
+
+entity "area_group" {
+  * id : uuid <<PK>>
+  --
+  user_id : uuid <<FK>>
 }
 
 entity "climb" {
@@ -437,6 +556,7 @@ entity "climbing_attempt" {
   pitch_id : uuid <<FK>>
   parent_attempt_id : uuid <<FK>>
   attempt_index : bigint
+  source_completed : boolean
   source_result : text
   rope_method : rope_method
   solo : boolean
@@ -459,6 +579,7 @@ entity "climbing_log_entry" {
   provider_id : text <<FK>>
   external_id : text
   climb_id : uuid <<FK>>
+  area_id : uuid <<FK>>
   activity_id : uuid <<FK>>
   climbed_on : date
   discipline : climbing_discipline
@@ -466,7 +587,7 @@ entity "climbing_log_entry" {
   notes : text
   board : jsonb
   wall_angle : jsonb
-  hold_type : climbing_hold_type
+  hold_types : climbing_hold_type[]
   source_name : text
   raw : jsonb
   provider_absent_at : timestamp
@@ -614,6 +735,14 @@ entity "account_erasure_checkpoint" {
   --
   details : jsonb
   completed_at : timestamp
+}
+
+entity "account_erasure_identifier" {
+  * request_id : uuid <<PK>>
+  * family : text <<PK>>
+  * identity_key : text <<PK>>
+  --
+  encrypted_identifier : text
 }
 
 entity "account_erasure_identity_fence" {
@@ -1217,7 +1346,9 @@ provider ||--o{ webhook_subscription
 provider_connection ||--o{ webhook_subscription
 provider ||--o{ activity
 user_profile ||--o{ activity
+provider ||--o{ activity
 activity_group ||--o{ activity
+activity ||--o{ activity_device_observation
 user_profile ||--o{ activity_group
 user_profile ||--o{ activity_group_alias
 activity_group ||--o{ activity_group_alias
@@ -1239,9 +1370,22 @@ sleep_session ||--o{ sleep_stage
 user_profile ||--o{ sport_settings
 activity ||--o{ strength_set
 exercise ||--o{ strength_set
+provider ||--o{ activity_image
+activity ||--o{ activity_image
+climbing_log_entry ||--o{ activity_image
+activity_image_object ||--o{ activity_image
+user_profile ||--o{ activity_image_backfill
+provider ||--o{ activity_image_backfill
+provider ||--o{ activity_image_discovery
+activity ||--o{ activity_image_discovery
+climbing_log_entry ||--o{ activity_image_discovery
+user_profile ||--o{ activity_image_object
+activity_image ||--o{ activity_image_work
 user_profile ||--o{ area
 provider ||--o{ area
+area_group ||--o{ area
 area ||--o{ area
+user_profile ||--o{ area_group
 user_profile ||--o{ climb
 provider ||--o{ climb
 area ||--o{ climb
@@ -1251,6 +1395,7 @@ pitch ||--o{ climbing_attempt
 climbing_attempt ||--o{ climbing_attempt
 user_profile ||--o{ climbing_log_entry
 provider ||--o{ climbing_log_entry
+area ||--o{ climbing_log_entry
 climb ||--o{ climbing_log_entry
 activity ||--o{ climbing_log_entry
 climbing_log_entry ||--o{ climbing_log_entry_grade
@@ -1268,6 +1413,7 @@ user_profile ||--o{ health_event
 provider ||--o{ medication_dose_event
 user_profile ||--o{ medication_dose_event
 account_erasure_request ||--o{ account_erasure_checkpoint
+account_erasure_request ||--o{ account_erasure_identifier
 account_erasure_request ||--o{ account_erasure_identity_fence
 account_erasure_request ||--o| account_erasure_outbox
 user_profile ||--o{ auth_account

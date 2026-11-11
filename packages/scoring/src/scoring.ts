@@ -1,60 +1,6 @@
 import { statusColors, textColors } from "./colors.ts";
 
-/**
- * Whoop-like 0–21 strain score with display classification.
- *
- * Construct directly with a strain value or use `fromRawLoad()` to convert
- * raw daily training load (duration_min × avg_hr/max_hr) using logarithmic
- * scaling that produces diminishing returns at higher loads.
- */
-export class StrainScore {
-  static readonly #SCALE_FACTOR = 2.775;
-  static readonly #MAX = 21;
-  static readonly #ACUTE_LOAD_DAYS = 7;
-
-  readonly value: number;
-  constructor(value: number) {
-    this.value = value;
-  }
-
-  get color(): string {
-    if (this.value > 17) return statusColors.danger;
-    if (this.value >= 14) return statusColors.warning;
-    if (this.value >= 10) return statusColors.positive;
-    return textColors.secondary;
-  }
-
-  get label(): string {
-    if (this.value > 17) return "All Out";
-    if (this.value >= 14) return "High";
-    if (this.value >= 10) return "Moderate";
-    return "Light";
-  }
-
-  get description(): string {
-    if (this.value > 17) return "Maximum effort reached. Prioritize recovery tonight.";
-    if (this.value >= 14) return "Significant training load. Monitor fatigue closely.";
-    if (this.value >= 10) return "A productive training day with manageable load.";
-    return "Low load day. You have room for more intensity.";
-  }
-
-  static fromRawLoad(rawLoad: number): StrainScore {
-    if (rawLoad <= 0) return new StrainScore(0);
-    const strain = StrainScore.#SCALE_FACTOR * Math.log(1 + rawLoad);
-    const value = Math.round(Math.min(strain, StrainScore.#MAX) * 10) / 10;
-    return new StrainScore(value);
-  }
-
-  static fromPhysiologicalLoad(physiologicalLoad: number): StrainScore {
-    return StrainScore.fromRawLoad(physiologicalLoad);
-  }
-
-  static fromAcuteLoad(acuteLoad: number): StrainScore {
-    return StrainScore.fromRawLoad(acuteLoad / StrainScore.#ACUTE_LOAD_DAYS);
-  }
-}
-
-/** Get the color for a recovery/readiness score (0-100) */
+/** Shared presentation thresholds for retained 0–100 score displays. */
 export const SCORE_WARNING_THRESHOLD = 50;
 export const SCORE_RECOVERED_THRESHOLD = 70;
 
@@ -79,7 +25,7 @@ export function scoreColor(score: number): string {
   return statusColors.danger;
 }
 
-/** Get a human-readable label for a recovery score (0-100) */
+/** Get a presentation label for a 0–100 score. */
 export function scoreLabel(score: number): string {
   if (score > SCORE_RECOVERED_THRESHOLD) return "Recovered";
   if (score >= SCORE_WARNING_THRESHOLD) return "Moderate";
@@ -145,109 +91,11 @@ export function trendColor(trend: "improving" | "worsening" | "stable" | "declin
   return textColors.neutral;
 }
 
-/** Get the color for a categorical readiness level (high/moderate/low) */
-export function readinessLevelColor(level: "high" | "moderate" | "low" | "unknown"): string {
-  if (level === "high") return statusColors.positive;
-  if (level === "moderate") return statusColors.warning;
-  if (level === "low") return statusColors.danger;
-  return textColors.neutral;
-}
-
 /** Get the color for a health metric status (excellent/good/fair/poor) */
 export function healthStatusColor(status: "excellent" | "good" | "fair" | "poor"): string {
   if (status === "excellent") return statusColors.positive;
   if (status === "good") return statusColors.info;
   if (status === "fair") return statusColors.warning;
-  return statusColors.danger;
-}
-
-/**
- * Map a z-score to a 0-100 recovery score using an asymmetric sigmoid.
- * Tuned to match Whoop's recovery scoring:
- *   z=0 (at baseline mean) → 62 (average day feels "recovered")
- *   z=+1 → ~80, z=-1 → ~40
- *   z=+2 → ~93, z=-2 → ~18
- * Uses separate scales for positive/negative z to handle the asymmetric center.
- */
-export function zScoreToRecoveryScore(zScore: number): number {
-  const center = 62;
-  const sigmoidSteepness = 1.1;
-  const sigmoid = 1 / (1 + Math.exp(-zScore * sigmoidSteepness));
-  const scaleUp = 100 - center; // 38: maps sigmoid 0.5→1.0 to 62→100
-  const scaleDown = center; // 62: maps sigmoid 0.0→0.5 to 0→62
-  const score =
-    sigmoid >= 0.5
-      ? center + scaleUp * ((sigmoid - 0.5) / 0.5)
-      : center - scaleDown * ((0.5 - sigmoid) / 0.5);
-  return Math.max(0, Math.min(100, Math.round(score)));
-}
-
-export const DEFAULT_READINESS_COMPONENT_SCORE = 62;
-
-export interface BaselineReadinessInputs {
-  hrvZScore: number | null;
-  respiratoryRateZScore: number | null;
-  restingHeartRateZScore: number | null;
-  sleepEfficiency: number | null;
-}
-
-export interface BaselineReadinessComponents {
-  hrvScore: number;
-  respiratoryRateScore: number;
-  restingHrScore: number;
-  sleepScore: number;
-}
-
-export function baselineReadinessComponents(
-  inputs: BaselineReadinessInputs,
-): BaselineReadinessComponents {
-  return {
-    hrvScore:
-      inputs.hrvZScore == null
-        ? DEFAULT_READINESS_COMPONENT_SCORE
-        : zScoreToRecoveryScore(inputs.hrvZScore),
-    restingHrScore:
-      inputs.restingHeartRateZScore == null
-        ? DEFAULT_READINESS_COMPONENT_SCORE
-        : zScoreToRecoveryScore(-inputs.restingHeartRateZScore),
-    sleepScore:
-      inputs.sleepEfficiency == null
-        ? DEFAULT_READINESS_COMPONENT_SCORE
-        : Math.max(0, Math.min(100, Math.round(inputs.sleepEfficiency))),
-    respiratoryRateScore:
-      inputs.respiratoryRateZScore == null
-        ? DEFAULT_READINESS_COMPONENT_SCORE
-        : zScoreToRecoveryScore(-inputs.respiratoryRateZScore),
-  };
-}
-
-/** Get the color for a sleep performance tier */
-export function sleepTierColor(tier: "Excellent" | "Good" | "Fair" | "Poor"): string {
-  if (tier === "Excellent") return statusColors.positive;
-  if (tier === "Good") return statusColors.info;
-  if (tier === "Fair") return statusColors.warning;
-  return statusColors.danger;
-}
-
-/** Get a contextual description for a sleep performance tier */
-export function sleepTierDescription(tier: "Excellent" | "Good" | "Fair" | "Poor"): string {
-  if (tier === "Excellent") return "Exceptional sleep that fully supports recovery.";
-  if (tier === "Good") return "Solid sleep. You got most of what your body needed.";
-  if (tier === "Fair") return "Below your sleep need. Recovery may be impacted.";
-  return "Significantly short on sleep. Prioritize rest tonight.";
-}
-
-/** Get the color for sleep debt in minutes */
-export function sleepDebtColor(minutes: number): string {
-  if (minutes <= 0) return statusColors.positive;
-  if (minutes < 120) return statusColors.warning;
-  return statusColors.danger;
-}
-
-/** Get the color for a sleep performance percentage (actual vs target) */
-export function sleepPerformanceColor(percentage: number): string {
-  if (percentage >= 95) return statusColors.positive;
-  if (percentage >= 85) return statusColors.warning;
   return statusColors.danger;
 }
 

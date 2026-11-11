@@ -19,13 +19,13 @@ import {
 import { formatMeasurementText, type UnitConverter } from "@dofek/format/units";
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { processingPollInterval } from "@dofek/providers/processing-status";
-import { providerLabel, providerSourceLabel } from "@dofek/providers/providers";
+import { providerSourceLabel } from "@dofek/providers/providers";
 import type { ClimbingMapLocation } from "@dofek/training/climbing-map";
 import { isIndoorCyclingModality } from "@dofek/training/endurance-types";
 import { formatActivityTypeLabel } from "@dofek/training/training";
 import type { ActivityLocation } from "dofek-server/types";
 import { useRouter } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AccessibilityInfo,
   Alert,
@@ -41,12 +41,12 @@ import { ActivityHeatmap } from "../../components/ActivityHeatmap";
 import { ActivityMapTile } from "../../components/ActivityMapTile";
 import { ActivityMetricStrip } from "../../components/ActivityMetricStrip";
 import { ActivityOverview } from "../../components/ActivityOverview";
+import { ActivityPhotoPreview } from "../../components/ActivityPhotoPreview";
+import { ActivitySourceDisclosure } from "../../components/ActivitySourceDisclosure";
 import { ActivityTypeIcon } from "../../components/ActivityTypeIcon";
 import { PaginationControls } from "../../components/PaginationControls";
 import { ProcessingStatusWidget } from "../../components/ProcessingStatusWidget";
-import { ProviderLogo } from "../../components/ProviderLogo";
 import { QueryStatePanel } from "../../components/QueryStatePanel";
-import { SERVER_URL } from "../../lib/server";
 import { trpc } from "../../lib/trpc";
 import { useUnitConverter } from "../../lib/units";
 import { useProcessingStatus } from "../../lib/useProcessingStatus";
@@ -84,8 +84,9 @@ function formatActivityAccessibilityLabel(
   action: "Open" | "Select" | "Deselect",
   activity: {
     activityType: string;
+    primaryActivityType: string | null;
     modality: string | null;
-    durationMin: number;
+    durationMin: number | null;
     localTimeContext: RecordLocalTimeContext;
     name: string | null;
     startedAt: string;
@@ -98,7 +99,9 @@ function formatActivityAccessibilityLabel(
   },
   units: UnitConverter,
 ): string {
-  const activityTypeLabel = formatActivityTypeLabel(activity.activityType);
+  const activityTypeLabel = formatActivityTypeLabel(
+    activity.primaryActivityType ?? activity.activityType,
+  );
   const labelParts = [
     activity.name ?? activityTypeLabel,
     displayRecordLocalTime(activity.startedAt, activity.localTimeContext),
@@ -170,19 +173,31 @@ export default function ActivitiesScreen() {
   const [weeks, setWeeks] = useState(DEFAULT_WEEKS);
   const [activityType, setActivityType] = useState(ALL_ACTIVITY_TYPES);
   const [selectMode, setSelectMode] = useState(false);
-  const [selectedActivityIds, setSelectedActivityIds] = useState<Set<string>>(new Set());
+  const [selectedActivities, setSelectedActivities] = useState<Map<string, string>>(new Map());
+  const selectedActivityIds = new Set(selectedActivities.keys());
   const [activityPage, setActivityPage] = useState(0);
   const selectedActivityType = activityType === ALL_ACTIVITY_TYPES ? undefined : activityType;
-  const queryInput = {
-    weeks,
-    endDate,
-    ...(selectedActivityType ? { activityType: selectedActivityType } : {}),
-  };
+  const queryInput = useMemo(
+    () => ({
+      weeks,
+      endDate,
+      ...(selectedActivityType ? { activityType: selectedActivityType } : {}),
+    }),
+    [weeks, endDate, selectedActivityType],
+  );
   const trpcUtils = trpc.useUtils();
-  const query = trpc.calendar.weekList.useQuery(queryInput, {
+  const pageInput = useMemo(
+    () => ({ ...queryInput, page: activityPage, pageSize: ACTIVITY_PAGE_SIZE }),
+    [queryInput, activityPage],
+  );
+  const rangeKey = JSON.stringify(queryInput);
+  const lastSuccessfulInput = useRef<{ rangeKey: string; input: typeof pageInput } | undefined>(
+    undefined,
+  );
+  const query = trpc.calendar.weekListV2.useQuery(pageInput, {
     placeholderData: (previousData) => previousData,
     refetchInterval: (query) =>
-      query.state.data?.some((day) =>
+      query.state.data?.days.some((day) =>
         day.activities.some((activity) => activity.location?.kind === "processing"),
       )
         ? processingPollInterval("active")
@@ -191,6 +206,17 @@ export default function ActivitiesScreen() {
   const overviewQuery = trpc.calendar.activityOverview.useQuery(queryInput, {
     placeholderData: (previousData) => previousData,
   });
+  useEffect(() => {
+    if (query.data && !query.isPlaceholderData && !query.isError) {
+      lastSuccessfulInput.current = { rangeKey, input: pageInput };
+    }
+  }, [query.data, query.isPlaceholderData, query.isError, rangeKey, pageInput]);
+  const previousInput = lastSuccessfulInput.current;
+  const pageData =
+    query.data ??
+    (previousInput?.rangeKey === rangeKey
+      ? trpcUtils.calendar.weekListV2.getData(previousInput.input)
+      : undefined);
   const calendarQuery = trpc.calendar.calendarData.useQuery(
     { days: weeks * 7 },
     {
@@ -201,21 +227,21 @@ export default function ActivitiesScreen() {
   const processingStatus = useProcessingStatus({ datasets: ["activity"] });
   const bulkDelete = trpc.activity.bulkDelete.useMutation({
     onSuccess: async () => {
-      await trpcUtils.calendar.weekList.invalidate();
+      await trpcUtils.calendar.weekListV2.invalidate();
       await trpcUtils.calendar.activityOverview.invalidate();
       await trpcUtils.calendar.calendarData.invalidate();
       await trpcUtils.activity.list.invalidate();
-      setSelectedActivityIds(new Set());
+      setSelectedActivities(new Map());
       setSelectMode(false);
     },
   });
   const mergeActivities = trpc.activity.merge.useMutation({
     onSuccess: async () => {
-      await trpcUtils.calendar.weekList.invalidate();
+      await trpcUtils.calendar.weekListV2.invalidate();
       await trpcUtils.calendar.activityOverview.invalidate();
       await trpcUtils.calendar.calendarData.invalidate();
       await trpcUtils.activity.list.invalidate();
-      setSelectedActivityIds(new Set());
+      setSelectedActivities(new Map());
       setSelectMode(false);
     },
     onError: (error) => Alert.alert("Unable to merge activities", error.message),
@@ -223,7 +249,7 @@ export default function ActivitiesScreen() {
   const { refreshing, onRefresh } = useRefresh({
     invalidate: () =>
       Promise.all([
-        trpcUtils.calendar.weekList.invalidate(),
+        trpcUtils.calendar.weekListV2.invalidate(),
         trpcUtils.calendar.activityOverview.invalidate(),
         trpcUtils.calendar.calendarData.invalidate(),
         trpcUtils.activity.list.invalidate(),
@@ -231,56 +257,30 @@ export default function ActivitiesScreen() {
       ]).then(() => undefined),
   });
 
-  const dayGroups = query.data;
+  const dayGroups = pageData?.days;
   const hasActivities = dayGroups?.some((day) => day.activities.length > 0) ?? false;
-  const activityCount = dayGroups?.reduce((total, day) => total + day.activities.length, 0) ?? 0;
-  const totalActivityPages = Math.ceil(activityCount / ACTIVITY_PAGE_SIZE);
-  const currentActivityPage = Math.min(activityPage, Math.max(totalActivityPages - 1, 0));
-  const visibleDayGroups = useMemo(() => {
-    if (!dayGroups) return undefined;
-    const visibleActivities = dayGroups
-      .flatMap((day) =>
-        day.activities.map((activity) => ({
-          date: day.date,
-          activity,
-        })),
-      )
-      .slice(
-        currentActivityPage * ACTIVITY_PAGE_SIZE,
-        (currentActivityPage + 1) * ACTIVITY_PAGE_SIZE,
-      );
-    const grouped = new Map<string, typeof visibleActivities>();
-    for (const entry of visibleActivities) {
-      const existing = grouped.get(entry.date) ?? [];
-      existing.push(entry);
-      grouped.set(entry.date, existing);
-    }
-    return [...grouped.entries()].map(([date, entries]) => ({
-      date,
-      activities: entries.map((entry) => entry.activity),
-    }));
-  }, [currentActivityPage, dayGroups]);
+  const activityCount = pageData?.totalCount ?? 0;
+  const currentActivityPage = pageData?.page ?? activityPage;
+  const visibleDayGroups = dayGroups;
+  useEffect(() => {
+    if (query.data && !query.isPlaceholderData) setActivityPage(query.data.page);
+  }, [query.data, query.isPlaceholderData]);
   const selectedCount = selectedActivityIds.size;
-  const selectedTypes = new Set(
-    (dayGroups ?? [])
-      .flatMap((day) => day.activities)
-      .filter((activity) => selectedActivityIds.has(activity.id))
-      .map((activity) => activity.activityType),
-  );
+  const selectedTypes = new Set(selectedActivities.values());
   const mergeEligible = selectedCount >= 2 && selectedTypes.size === 1;
-  const toggleSelectedActivity = (activityId: string) => {
-    setSelectedActivityIds((current) => {
-      const next = new Set(current);
+  const toggleSelectedActivity = (activityId: string, activityType: string) => {
+    setSelectedActivities((current) => {
+      const next = new Map(current);
       if (next.has(activityId)) {
         next.delete(activityId);
       } else {
-        next.add(activityId);
+        next.set(activityId, activityType);
       }
       return next;
     });
   };
   const cancelSelection = () => {
-    setSelectedActivityIds(new Set());
+    setSelectedActivities(new Map());
     setSelectMode(false);
   };
   const updateActivityType = (nextActivityType: string) => {
@@ -399,10 +399,15 @@ export default function ActivitiesScreen() {
         </>
       )}
 
-      {query.isLoading && !query.data ? (
+      {query.isLoading && !pageData ? (
         <QueryStatePanel variant="loading" minHeight={200} />
-      ) : query.isError && !query.data ? (
-        <QueryStatePanel variant="error" message={userFacingErrorMessage(query.error)} />
+      ) : query.isError && !pageData ? (
+        <QueryStatePanel
+          variant="error"
+          message={userFacingErrorMessage(query.error)}
+          onRetry={() => void query.refetch()}
+          retrying={query.isFetching}
+        />
       ) : !dayGroups || dayGroups.length === 0 ? (
         <QueryStatePanel variant="empty" message={`No activities in the last ${weeks} weeks.`} />
       ) : (
@@ -413,6 +418,8 @@ export default function ActivitiesScreen() {
               message={userFacingErrorMessage(query.error)}
               minHeight={72}
               style={styles.backgroundErrorPanel}
+              onRetry={() => void query.refetch()}
+              retrying={query.isFetching}
             />
           ) : null}
           {visibleDayGroups?.map((day) => (
@@ -422,51 +429,60 @@ export default function ActivitiesScreen() {
                 <View style={styles.dayHeaderRule} />
               </View>
               {day.activities.map((activity) => (
-                <TouchableOpacity
+                <View
                   key={activity.id}
-                  activeOpacity={0.7}
-                  onPress={() => {
-                    if (selectMode) {
-                      toggleSelectedActivity(activity.id);
-                      return;
-                    }
-                    router.push(`/activity/${activity.id}`);
-                  }}
                   style={[
                     styles.card,
                     selectedActivityIds.has(activity.id) ? styles.cardSelected : null,
                   ]}
-                  accessibilityRole="button"
-                  accessibilityLabel={formatActivityAccessibilityLabel(
-                    selectMode
-                      ? selectedActivityIds.has(activity.id)
-                        ? "Deselect"
-                        : "Select"
-                      : "Open",
-                    activity,
-                    units,
-                  )}
-                  accessibilityState={{
-                    selected: selectMode ? selectedActivityIds.has(activity.id) : undefined,
-                  }}
                 >
-                  <View style={styles.cardContent}>
-                    <View style={styles.cardMain}>
-                      <View style={styles.titleRow}>
-                        {activity.source.origin.status === "resolved" ? (
-                          <View
-                            accessibilityRole="image"
-                            accessibilityLabel={`Primary recording provider: ${providerLabel(activity.source.origin.providerId)}`}
-                          >
-                            <ProviderLogo
-                              provider={activity.source.origin.providerId}
-                              serverUrl={SERVER_URL}
-                              size={32}
-                            />
-                          </View>
-                        ) : null}
+                  <TouchableOpacity
+                    activeOpacity={0.7}
+                    onPress={() => {
+                      if (selectMode) {
+                        toggleSelectedActivity(activity.id, activity.activityType);
+                        return;
+                      }
+                      router.push(`/activity/${activity.id}`);
+                    }}
+                    style={styles.cardAction}
+                    accessibilityRole="button"
+                    accessibilityLabel={formatActivityAccessibilityLabel(
+                      selectMode
+                        ? selectedActivityIds.has(activity.id)
+                          ? "Deselect"
+                          : "Select"
+                        : "Open",
+                      activity,
+                      units,
+                    )}
+                    accessibilityState={{
+                      selected: selectMode ? selectedActivityIds.has(activity.id) : undefined,
+                    }}
+                  />
+                  <View style={styles.cardContent} pointerEvents="box-none">
+                    <View
+                      pointerEvents="none"
+                      accessibilityElementsHidden
+                      importantForAccessibility="no-hide-descendants"
+                    >
+                      <ActivityTypeIcon
+                        activityType={activity.primaryActivityType ?? activity.activityType}
+                        size={40}
+                      />
+                    </View>
+                    <View style={styles.cardMain} pointerEvents="box-none">
+                      <View
+                        style={styles.titleRow}
+                        pointerEvents="none"
+                        accessibilityElementsHidden
+                        importantForAccessibility="no-hide-descendants"
+                      >
                         <Text style={styles.activityName} numberOfLines={1}>
-                          {activity.name ?? formatActivityTypeLabel(activity.activityType)}
+                          {activity.name ??
+                            formatActivityTypeLabel(
+                              activity.primaryActivityType ?? activity.activityType,
+                            )}
                         </Text>
                         {selectMode ? (
                           <Text
@@ -481,28 +497,54 @@ export default function ActivitiesScreen() {
                           </Text>
                         ) : null}
                         {activity.name !== null &&
-                        activity.name !== formatActivityTypeLabel(activity.activityType) ? (
+                        activity.name !==
+                          formatActivityTypeLabel(
+                            activity.primaryActivityType ?? activity.activityType,
+                          ) ? (
                           <Text style={styles.typePill}>
-                            {formatActivityTypeLabel(activity.activityType)}
+                            {formatActivityTypeLabel(
+                              activity.primaryActivityType ?? activity.activityType,
+                            )}
                           </Text>
                         ) : null}
                       </View>
-                      <Text style={styles.activityMeta}>
-                        {displayRecordLocalTime(activity.startedAt, activity.localTimeContext)} ·{" "}
-                        {formatDurationMinutes(activity.durationMin)}
-                      </Text>
-                      <ActivityMetricStrip activity={activity} units={units} />
+                      <View style={styles.metaRow} pointerEvents="box-none">
+                        <View
+                          pointerEvents="none"
+                          accessibilityElementsHidden
+                          importantForAccessibility="no-hide-descendants"
+                        >
+                          <Text style={styles.activityMeta}>
+                            {displayRecordLocalTime(activity.startedAt, activity.localTimeContext)}{" "}
+                            · {formatDurationMinutes(activity.durationMin)}
+                          </Text>
+                        </View>
+                      </View>
+                      <View
+                        pointerEvents="none"
+                        accessibilityElementsHidden
+                        importantForAccessibility="no-hide-descendants"
+                      >
+                        <ActivityMetricStrip activity={activity} units={units} />
+                      </View>
                     </View>
-                    {!activity.location && activity.source.origin.status !== "resolved" ? (
-                      <ActivityTypeIcon activityType={activity.activityType} />
-                    ) : null}
                   </View>
                   {activity.location ? (
-                    <View style={styles.mapPanel}>
+                    <View
+                      style={styles.mapPanel}
+                      pointerEvents="none"
+                      accessibilityElementsHidden
+                      importantForAccessibility="no-hide-descendants"
+                    >
                       <ActivityMapTile location={activity.location} />
                     </View>
+                  ) : !activity.isProviderAbsent ? (
+                    <View pointerEvents="none">
+                      <ActivityPhotoPreview activityId={activity.id} />
+                    </View>
                   ) : null}
-                </TouchableOpacity>
+                  <ActivitySourceDisclosure tree={activity.source.tree} />
+                </View>
               ))}
             </View>
           ))}
@@ -849,6 +891,13 @@ const styles = StyleSheet.create({
     borderColor: colors.accent,
     borderWidth: 1,
   },
+  cardAction: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+  },
   cardContent: {
     flexDirection: "row",
     gap: spacing.sm,
@@ -900,6 +949,12 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 12,
     marginTop: 2,
+  },
+  metaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    flexWrap: "wrap",
   },
   mapPanel: {
     paddingHorizontal: spacing.sm,

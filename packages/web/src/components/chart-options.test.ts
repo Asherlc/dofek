@@ -1,8 +1,6 @@
-import { statusColors } from "@dofek/scoring/colors";
 import { describe, expect, it } from "vitest";
 import { chartColors } from "../lib/chartTheme.ts";
 import { buildPolarizationTrendOption } from "./PolarizationTrendChart.tsx";
-import { buildRampRateOption } from "./RampRateChart.tsx";
 import { buildSleepAnalyticsOption } from "./SleepAnalyticsChart.tsx";
 
 function makePolarizationWeek(input: {
@@ -327,34 +325,6 @@ describe("PolarizationTrendChart option builder", () => {
   });
 });
 
-describe("RampRateChart option builder", () => {
-  const sampleWeeks = [
-    { week: "2024-01-01", rampRate: 3.5 },
-    { week: "2024-01-08", rampRate: 6.2 },
-  ];
-
-  it("marks series with empty data as tooltip-hidden", () => {
-    const option = buildRampRateOption(sampleWeeks);
-    const series = getSeriesArray(option);
-    const seriesWithEmptyData = series.filter((s) => Array.isArray(s.data) && s.data.length === 0);
-    for (const s of seriesWithEmptyData) {
-      expect(s.tooltip).toEqual(expect.objectContaining({ show: false }));
-    }
-  });
-
-  it("tooltip formatter returns empty string for empty params", () => {
-    const option = buildRampRateOption(sampleWeeks);
-    const formatter = getTooltipFormatter(option);
-    expect(formatter([])).toBe("");
-  });
-
-  it("tooltip formatter handles params with missing data", () => {
-    const option = buildRampRateOption(sampleWeeks);
-    const formatter = getTooltipFormatter(option);
-    expect(formatter([{ dataIndex: -1, value: ["", 0], marker: "" }])).toBeDefined();
-  });
-});
-
 describe("SleepAnalyticsChart option builder", () => {
   const sourceEvidence = {
     providerId: null,
@@ -411,64 +381,25 @@ describe("SleepAnalyticsChart option builder", () => {
     },
   ];
 
-  it("places sleep debt annotation on its own row beneath the legend", () => {
-    const option = buildSleepAnalyticsOption(sampleNightly, -72);
-    const graphic = option.graphic;
-    if (!Array.isArray(graphic)) throw new Error("Expected graphic to be an array");
-    const [firstGraphic] = graphic;
-    expect(firstGraphic).toBeDefined();
-    if (!firstGraphic) {
-      throw new Error("Expected a sleep debt graphic annotation");
-    }
-
-    const legend = option.legend;
-    if (typeof legend !== "object" || legend === null || !("top" in legend))
-      throw new Error("Expected legend with top");
-    expect(legend.top).toBe(0);
-    expect(firstGraphic.top).toBeGreaterThanOrEqual(24);
-    const grid = option.grid;
-    if (typeof grid !== "object" || grid === null || !("top" in grid))
-      throw new Error("Expected grid with top");
-    expect(grid.top).toBeGreaterThan(60);
-  });
-
-  it("formats debt text as deficit when debt is positive", () => {
-    const option = buildSleepAnalyticsOption(sampleNightly, 126);
-    const graphic = option.graphic;
-    if (!Array.isArray(graphic)) throw new Error("Expected graphic to be an array");
-    const [firstGraphic] = graphic;
-    expect(firstGraphic).toBeDefined();
-    if (!firstGraphic) {
-      throw new Error("Expected a sleep debt graphic annotation");
-    }
-
-    expect(firstGraphic.style.text).toContain("14d Sleep Debt:");
-    expect(firstGraphic.style.text).toContain("deficit");
-    expect(firstGraphic.style.fill).toBe(statusColors.danger);
-  });
-
   it("identifies partial records in the chart tooltip", () => {
     const [sampleNight] = sampleNightly;
     if (!sampleNight) throw new Error("Expected a sample sleep night");
-    const option = buildSleepAnalyticsOption(
-      [
-        {
-          ...sampleNight,
-          deepPct: null,
-          remPct: null,
-          lightPct: null,
-          awakePct: null,
-          efficiency: null,
-          stagingAvailable: false,
-          stageState: {
-            status: "missing",
-            reason: "Sleep stages were not reported for this night.",
-            nextAction: "Sync sleep data from a source that reports sleep stages.",
-          },
+    const option = buildSleepAnalyticsOption([
+      {
+        ...sampleNight,
+        deepPct: null,
+        remPct: null,
+        lightPct: null,
+        awakePct: null,
+        efficiency: null,
+        stagingAvailable: false,
+        stageState: {
+          status: "missing",
+          reason: "Sleep stages were not reported for this night.",
+          nextAction: "Sync sleep data from a source that reports sleep stages.",
         },
-      ],
-      0,
-    );
+      },
+    ]);
     const formatter = getTooltipFormatter(option);
     const html = formatter([
       {

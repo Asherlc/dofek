@@ -41,7 +41,9 @@ export function buildPostgresFitnessActivityRawTableStatement(
   rejected_provider_end_utc_offset_minutes Nullable(Int64),
   strava_id Nullable(String),
   raw Nullable(String),
+  fit_recovery_error Nullable(String),
   provider_absent_at Nullable(DateTime64(6, 'UTC')),
+  absence_provider_id Nullable(String),
   deleted_at Nullable(DateTime64(6, 'UTC')),
   created_at DateTime64(6, 'UTC'),
 ${peerDbMetadataColumnDefinitions},
@@ -298,14 +300,18 @@ ${replacingMergeTreeTable("(operation_id, dataset_key, flow_name, batch_key, id)
   birth_date Nullable(Date),
   max_hr Nullable(Int16),
   resting_hr Nullable(Int16),
-  ftp Nullable(Int16),
   is_admin Bool,
   created_at DateTime64(6, 'UTC'),
   updated_at DateTime64(6, 'UTC'),
 ${peerDbMetadataColumnDefinitions}
 )
 ${replacingMergeTreeTable("(id)")}`,
-    `CREATE VIEW IF NOT EXISTS postgres_fitness.user_profile_current AS
+    buildUserProfileCurrentViewSql(),
+  ];
+}
+
+export function buildUserProfileCurrentViewSql(): string {
+  return `CREATE OR REPLACE VIEW postgres_fitness.user_profile_current AS
 SELECT
   id,
   name,
@@ -313,11 +319,9 @@ SELECT
   birth_date,
   max_hr,
   resting_hr,
-  ftp,
   is_admin,
   created_at,
   updated_at
 FROM postgres_fitness.user_profile FINAL
-WHERE _peerdb_is_deleted = 0`,
-  ];
+WHERE _peerdb_is_deleted = 0`;
 }

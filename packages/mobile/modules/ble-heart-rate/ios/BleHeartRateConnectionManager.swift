@@ -8,6 +8,8 @@ final class BleHeartRateConnectionManager: NSObject {
     weak var delegate: BleHeartRateConnectionManagerDelegate?
 
     let bleQueue: DispatchQueue
+    internal let collectionActivityQueueKey = DispatchSpecificKey<Bool>()
+    internal var collectionActivityObserver: NSObjectProtocol?
     private let centralManagerOwner: BleHeartRateCentralManagerOwner<any BleHeartRateCentralManaging>
     private let centralManagerFactory: (
         CBCentralManagerDelegate,
@@ -45,6 +47,14 @@ final class BleHeartRateConnectionManager: NSObject {
         centralManagerOwner = BleHeartRateCentralManagerOwner(queue: queue)
         self.centralManagerFactory = centralManagerFactory
         super.init()
+        bleQueue.setSpecific(key: collectionActivityQueueKey, value: true)
+        observeCollectionActivity()
+    }
+
+    deinit {
+        if let collectionActivityObserver {
+            NotificationCenter.default.removeObserver(collectionActivityObserver)
+        }
     }
 
     private func ensureCentralManager() -> any BleHeartRateCentralManaging {

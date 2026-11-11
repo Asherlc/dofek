@@ -8,7 +8,9 @@ import {
   resolveProviderActivityType,
 } from "@dofek/training/activity-types";
 import { UnrecoverableError } from "bullmq";
+import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { replaceActivityDeviceObservations } from "../db/activity-device-observations.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import {
   replaceMetricStreamBatch,
@@ -31,12 +33,18 @@ import {
 } from "../fit/stream-decoder.ts";
 import { captureException } from "../lib/error-reporting.ts";
 import { logger } from "../logger.ts";
-import type { MetricStreamEventPublisher } from "../metric-stream/redpanda-producer.ts";
+import type { MetricStreamEventPublisher } from "../metric-stream/publisher.ts";
+import {
+  createProviderArtifactStorageFromEnv,
+  type ProviderArtifactStorage,
+} from "../provider-artifact-storage.ts";
 import {
   fitImportDroppedFieldOccurrencesTotal,
   fitImportFilesWithDroppedFieldTotal,
 } from "../sync-metrics.ts";
 import { accountErasureAllowsQueuedUserWork } from "./account-erasure-work-guard.ts";
+import { OriginalFitRetentionError } from "./original-fit-retention-error.ts";
+import { deleteRetainedProviderFitSource } from "./provider-fit-staging.ts";
 import {
   type FitFileImportJobData,
   type FitFileImportJobResult,
@@ -45,6 +53,7 @@ import {
 
 interface FitFileImportJob {
   data: unknown;
+  updateData: (data: FitFileImportJobData) => Promise<void>;
   getChildrenValues?: () => Promise<Record<string, unknown>>;
   getIgnoredChildrenFailures?: () => Promise<Record<string, string>>;
   updateProgress: (data: FitFileImportProgressInfo) => Promise<void>;
@@ -185,6 +194,7 @@ function activityTypeFromFitSession(session: ParsedFitSession): ProviderActivity
 }
 
 const FIT_FILE_TYPE_ACTIVITY = 4;
+const stagedDeviceBatchSchema = z.array(z.record(z.string(), z.unknown())).max(250);
 const stagedRecordBatchSchema = z
   .array(
     z.object({
@@ -213,6 +223,7 @@ interface FitImportSpool {
   recordBatchCount: number;
   weightBatchCount: number;
   weightMessageCount: number;
+  deviceBatchCount: number;
 }
 
 async function createFitImportSpool(): Promise<FitImportSpool> {
@@ -221,12 +232,13 @@ async function createFitImportSpool(): Promise<FitImportSpool> {
     recordBatchCount: 0,
     weightBatchCount: 0,
     weightMessageCount: 0,
+    deviceBatchCount: 0,
   };
 }
 
 function spoolBatchPath(
   spool: FitImportSpool,
-  batchType: "records" | "weights",
+  batchType: "records" | "weights" | "devices",
   batchIndex: number,
 ): string {
   return join(spool.directory, `${batchType}-${batchIndex}.json`);
@@ -247,6 +259,29 @@ async function stageWeightBatch(spool: FitImportSpool, weights: ParsedFitWeight[
   );
   spool.weightBatchCount++;
   spool.weightMessageCount += weights.length;
+}
+
+async function stageDeviceBatch(
+  spool: FitImportSpool,
+  messages: Record<string, unknown>[],
+): Promise<void> {
+  await writeFile(
+    spoolBatchPath(spool, "devices", spool.deviceBatchCount),
+    JSON.stringify(messages),
+  );
+  spool.deviceBatchCount++;
+}
+
+async function* replayDeviceBatches(spool: FitImportSpool, fileId: Record<string, unknown> | null) {
+  if (fileId !== null) yield [{ messageType: "file_id" as const, raw: fileId }];
+  for (let batchIndex = 0; batchIndex < spool.deviceBatchCount; batchIndex++) {
+    const decoded: unknown = JSON.parse(
+      await readFile(spoolBatchPath(spool, "devices", batchIndex), "utf8"),
+    );
+    yield stagedDeviceBatchSchema
+      .parse(decoded)
+      .map((raw) => ({ messageType: "device_info" as const, raw }));
+  }
 }
 
 async function replayRecordBatches(
@@ -476,11 +511,30 @@ async function resolveFitFileImportJobData(
 
 export async function importFitFile(
   db: SyncDatabase,
-  data: FitFileImportJobData & { filePath: string },
+  data: FitFileImportJobData & { filePath: string; retainedArtifactKey?: string },
   onProgress: (info: FitFileImportProgressInfo) => Promise<void>,
   metricStreamPublisher?: MetricStreamEventPublisher,
+  artifacts: ProviderArtifactStorage = createProviderArtifactStorageFromEnv(),
+  onRetained?: (objectKey: string) => Promise<void>,
 ): Promise<FitFileImportJobResult> {
   await onProgress({ percentage: 10, message: "Reading FIT file..." });
+  let retainedArtifactKey: string;
+  try {
+    retainedArtifactKey = await artifacts.retainFile({
+      userId: data.userId,
+      providerId: data.providerId,
+      filePath: data.filePath,
+      ...(data.retainedArtifactKey === undefined
+        ? {}
+        : { retainedObjectKey: data.retainedArtifactKey }),
+    });
+  } catch (error) {
+    captureException(error, { tags: { fitImportStep: "original-retention" } });
+    throw new OriginalFitRetentionError("The original FIT file could not be saved.", {
+      cause: error,
+    });
+  }
+  await onRetained?.(retainedArtifactKey);
   await onProgress({ percentage: 25, message: "Decoding FIT file..." });
   const spool = await createFitImportSpool();
   try {
@@ -515,6 +569,9 @@ export async function importFitFile(
             await stageWeightBatch(spool, weights);
           }
         },
+        onDeviceInfoBatch: async (messages) => {
+          if (importType === "activity") await stageDeviceBatch(spool, messages);
+        },
       });
     } catch (error) {
       if (error instanceof FitDecoderError || error instanceof FitFileImportValidationError) {
@@ -528,6 +585,14 @@ export async function importFitFile(
         data,
         new FitDecoderError("Native FIT decoder returned no file metadata"),
       );
+    }
+
+    if (streamMetadata.recoveryError !== null) {
+      captureException(new FitDecoderError(streamMetadata.recoveryError), {
+        level: "warning",
+        tags: { fitImportStep: "recovery", providerId: data.providerId },
+        extra: { userId: data.userId },
+      });
     }
 
     if (importType === "weight") {
@@ -576,6 +641,16 @@ export async function importFitFile(
             await writeMetricStreamBatchForScope(db, scope, rows, SOURCE_TYPE_FILE);
           }
         });
+        await replaceActivityDeviceObservations(
+          db,
+          { activityId, userId: data.userId },
+          replayDeviceBatches(spool, streamMetadata.fileId),
+        );
+        await db.execute(sql`UPDATE fitness.activity
+          SET fit_recovery_error = ${streamMetadata.recoveryError}
+          WHERE id = ${activityId}::uuid
+            AND user_id = ${data.userId}::uuid
+            AND provider_id = ${data.providerId}`);
       }
     } else {
       recordDroppedFitFields(data.providerId, streamMetadata, routingConsumedFields);
@@ -604,6 +679,7 @@ export async function processFitFileImportJob(
   job: FitFileImportJob,
   db: SyncDatabase,
   metricStreamPublisher?: MetricStreamEventPublisher,
+  artifacts: ProviderArtifactStorage = createProviderArtifactStorageFromEnv(),
 ): Promise<FitFileImportJobResult> {
   await updateFitFileImportProgress(job, {
     percentage: 0,
@@ -626,15 +702,16 @@ export async function processFitFileImportJob(
     data,
     (info) => updateFitFileImportProgress(job, info),
     metricStreamPublisher,
+    artifacts,
+    (retainedArtifactKey) => job.updateData({ ...data, retainedArtifactKey }),
   );
-  if (result.errors.length > 0) {
-    if (data.deleteFileAfterImport) {
+  if (data.deleteFileAfterImport) {
+    if (!(await deleteRetainedProviderFitSource(data))) {
       await rm(data.filePath, { force: true });
     }
-    throw unrecoverableErrorFromResult(result);
   }
-  if (data.deleteFileAfterImport) {
-    await rm(data.filePath, { force: true });
+  if (result.errors.length > 0) {
+    throw unrecoverableErrorFromResult(result);
   }
   return result;
 }

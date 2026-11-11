@@ -1,7 +1,11 @@
-import { fireEvent, render, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { AppState, type AppStateStatus } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  disableCollectionNotifications,
+  enableCollectionNotifications,
+} from "../modules/background-refresh";
 
 const { mockRegisterQueryLifecycle, mockCleanupQueryLifecycle } = vi.hoisted(() => {
   const cleanup = vi.fn();
@@ -23,9 +27,28 @@ const mockTeardownBackgroundAccelerometerSync = vi.fn();
 const mockInitBackgroundWatchSync = vi.fn().mockResolvedValue(undefined);
 const mockTeardownBackgroundWatchSync = vi.fn();
 const mockTeardownBackgroundWhoopBleSync = vi.fn();
+const mockInitBackgroundWhoopBleSync = vi.fn().mockResolvedValue(undefined);
 const mockUseWhoopBleSync = vi.fn();
 const mockUseBleHeartRateSync = vi.fn();
 const mockRefreshRemove = vi.fn();
+const {
+  mockCreateRefreshDiagnostics,
+  mockReportRefreshDiagnostics,
+  mockRemoveRefreshDiagnostics,
+  mockAddRefreshListener,
+} = vi.hoisted(() => {
+  const report = vi.fn();
+  const remove = vi.fn();
+  return {
+    mockCreateRefreshDiagnostics: vi.fn(() => ({ report, remove })),
+    mockReportRefreshDiagnostics: report,
+    mockRemoveRefreshDiagnostics: remove,
+    mockAddRefreshListener: vi.fn(),
+  };
+});
+vi.mock("../lib/background-refresh-diagnostics", () => ({
+  createBackgroundRefreshDiagnostics: mockCreateRefreshDiagnostics,
+}));
 const mockLoadStatusCapability = vi.fn();
 const mockLoadPreparation = vi.fn();
 let rootAppStateCallback: ((state: AppStateStatus) => void) | null = null;
@@ -49,7 +72,7 @@ const {
 interface MockAuthStateValue {
   accountErasureCleanupInProgress?: boolean;
   accountSessionOwnerNonce?: string | null;
-  user: { id: string } | null;
+  user: { id: string; name?: string } | null;
   serverUrl: string;
   isLoading: boolean;
   sessionToken: string | null;
@@ -100,7 +123,7 @@ vi.mock("expo-router", async () => {
   const React = await import("react");
 
   const Stack = ({ children }: { children: ReactNode }) =>
-    React.createElement("Stack", null, children);
+    React.createElement("Stack", { "data-testid": "app-navigation" }, children);
   Stack.Screen = () => null;
 
   return {
@@ -159,6 +182,7 @@ vi.mock("../lib/background-watch-inertial-measurement-unit-sync", () => ({
 }));
 
 vi.mock("../lib/background-whoop-ble-sync", () => ({
+  initBackgroundWhoopBleSync: (...args: unknown[]) => mockInitBackgroundWhoopBleSync(...args),
   syncWhoopBle: vi.fn(),
   teardownBackgroundWhoopBleSync: (...args: unknown[]) =>
     mockTeardownBackgroundWhoopBleSync(...args),
@@ -209,11 +233,21 @@ vi.mock("../lib/version-headers", () => ({
 }));
 
 vi.mock("../modules/background-refresh", () => ({
-  addBackgroundRefreshListener: () => ({ remove: mockRefreshRemove }),
+  enableCollectionNotifications: vi.fn(() => Promise.resolve(true)),
+  disableCollectionNotifications: vi.fn(),
+  addBackgroundRefreshListener: (...args: unknown[]) => {
+    mockAddRefreshListener(...args);
+    return { remove: mockRefreshRemove };
+  },
   scheduleRefresh: vi.fn(),
 }));
 
 vi.mock("../modules/whoop-ble", () => ({
+  configureUpload: vi.fn().mockResolvedValue(undefined),
+  flushUploads: vi.fn().mockResolvedValue(undefined),
+  addCaptureErrorListener: vi.fn(),
+  retryConnection: vi.fn(),
+  getDataPathStats: vi.fn(),
   addConnectionStateListener: vi.fn(),
   confirmRealtimeDataDrain: vi.fn(),
   confirmSamplesDrain: vi.fn(),
@@ -255,6 +289,14 @@ vi.mock("../modules/health-kit", async () => {
     queryDailyStatistics: vi.fn().mockResolvedValue([]),
     queryCategorySamples: vi.fn().mockResolvedValue([]),
     queryQuantitySamples: vi.fn().mockResolvedValue([]),
+    queryRunningStepSamples: vi.fn().mockResolvedValue({ workouts: [], samples: [] }),
+    queryRunningStepChanges: vi.fn().mockResolvedValue({
+      hasMore: false,
+      workouts: [],
+      samples: [],
+      deletedUUIDs: [],
+      queryId: null,
+    }),
     queryWorkouts: vi.fn().mockResolvedValue([]),
     querySleepSamples: vi.fn().mockResolvedValue([]),
     queryWorkoutRoutes: vi.fn().mockResolvedValue([]),
@@ -270,6 +312,7 @@ mockCreateClient.mockImplementation(() => ({
     recordSync: { mutate: vi.fn().mockResolvedValue({ recorded: true }) },
     deleteQuantitySamples: { mutate: vi.fn().mockResolvedValue({ deleted: 0 }) },
     pushQuantitySamples: { mutate: vi.fn() },
+    pushRunningStepSamples: { mutate: vi.fn().mockResolvedValue({ inserted: 0 }) },
     pushWorkouts: { mutate: vi.fn() },
     pushWorkoutRoutes: { mutate: vi.fn() },
     pushSleepSamples: { mutate: vi.fn() },
@@ -296,6 +339,7 @@ async function importRootLayout() {
 describe("RootLayout background cleanup", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockUseWhoopBleSync.mockReset();
     mockGetRequestStatus.mockResolvedValue("shouldRequest");
     mockIsHealthKitAvailable.mockReturnValue(false);
     mockHasEverAuthorized.mockReturnValue(false);
@@ -318,6 +362,72 @@ describe("RootLayout background cleanup", () => {
       rootAppStateCallback = callback;
       return { remove: vi.fn() };
     });
+  });
+
+  it("passes the authenticated owner and transport headers to native WHOOP sync", async () => {
+    const RootLayout = await importRootLayout();
+    const rendered = render(<RootLayout />);
+    await waitFor(() => expect(mockUseWhoopBleSync).toHaveBeenCalled());
+    expect(mockUseWhoopBleSync).toHaveBeenLastCalledWith(
+      {
+        userId: "user-1",
+        token: "session-token",
+        serverURL: "https://dofek.test",
+        headers: expect.objectContaining({
+          "x-app-version": expect.any(String),
+          "x-assets-version": expect.any(String),
+          "x-timezone": expect.any(String),
+        }),
+      },
+      expect.objectContaining({
+        configureUpload: (await import("../modules/whoop-ble")).configureUpload,
+        flushUploads: (await import("../modules/whoop-ble")).flushUploads,
+      }),
+    );
+    rendered.unmount();
+  });
+
+  it("keeps WHOOP owned by its mounted hook when the auth cleanup nonce changes", async () => {
+    const { useWhoopBleSync } =
+      await vi.importActual<typeof import("../lib/useWhoopBleSync")>("../lib/useWhoopBleSync");
+    mockUseWhoopBleSync.mockImplementation(useWhoopBleSync);
+    const RootLayout = await importRootLayout();
+    const rendered = render(<RootLayout />);
+    await waitFor(() => expect(mockInitBackgroundWhoopBleSync).toHaveBeenCalledOnce());
+    await waitFor(() => expect(mockInitBackgroundHealthKitSync).toHaveBeenCalledOnce());
+
+    mockAuthState.value.accountSessionOwnerNonce = "22222222-2222-4222-8222-222222222222";
+    await act(async () => rendered.rerender(<RootLayout />));
+
+    expect(mockInitBackgroundHealthKitSync).toHaveBeenCalledTimes(2);
+    expect(mockInitBackgroundWhoopBleSync).toHaveBeenCalledOnce();
+    expect(mockTeardownBackgroundWhoopBleSync).not.toHaveBeenCalled();
+    rendered.unmount();
+    expect(mockTeardownBackgroundWhoopBleSync).toHaveBeenCalledOnce();
+    mockUseWhoopBleSync.mockReset();
+  });
+
+  it("owns diagnostics alongside the authenticated refresh listener and retires them on cleanup", async () => {
+    const RootLayout = await importRootLayout();
+    const rendered = render(<RootLayout />);
+    await waitFor(() => expect(mockInitBackgroundAccelerometerSync).toHaveBeenCalled());
+    expect(mockCreateRefreshDiagnostics).toHaveBeenCalledOnce();
+    expect(mockAddRefreshListener).toHaveBeenCalledWith(
+      expect.any(Function),
+      mockReportRefreshDiagnostics,
+    );
+    rendered.unmount();
+    expect(mockRefreshRemove).toHaveBeenCalledOnce();
+    expect(mockRemoveRefreshDiagnostics).toHaveBeenCalledOnce();
+  });
+
+  it("does not start diagnostic replay for an unauthenticated session", async () => {
+    mockAuthState.value = { ...mockAuthState.value, user: null, sessionToken: null };
+    const RootLayout = await importRootLayout();
+    const rendered = render(<RootLayout />);
+    await waitFor(() => expect(mockMarkAppInteractive).toHaveBeenCalled());
+    expect(mockCreateRefreshDiagnostics).not.toHaveBeenCalled();
+    rendered.unmount();
   });
 
   it("registers query lifecycle once and removes it on root unmount", async () => {
@@ -389,6 +499,72 @@ describe("RootLayout background cleanup", () => {
     await waitFor(() => {
       expect(mockSetTelemetryRoute).toHaveBeenCalledWith("/settings");
     });
+  });
+
+  it("preserves pending collection alerts through auth and deferred sync bootstrap", async () => {
+    let finishDeletionRestore: (value: null) => void = () => {};
+    mockLoadStatusCapability.mockReturnValue(
+      new Promise<null>((resolve) => {
+        finishDeletionRestore = resolve;
+      }),
+    );
+    mockAuthState.value = {
+      ...mockAuthState.value,
+      user: null,
+      sessionToken: null,
+      isLoading: true,
+    };
+    const RootLayout = await importRootLayout();
+    const rendered = render(<RootLayout />);
+
+    expect(disableCollectionNotifications).not.toHaveBeenCalled();
+    expect(enableCollectionNotifications).not.toHaveBeenCalled();
+
+    mockAuthState.value = {
+      ...mockAuthState.value,
+      user: { id: "user-1" },
+      sessionToken: "session-token",
+      isLoading: false,
+    };
+    rendered.rerender(<RootLayout />);
+    expect(disableCollectionNotifications).not.toHaveBeenCalled();
+    expect(enableCollectionNotifications).not.toHaveBeenCalled();
+
+    await act(async () => finishDeletionRestore(null));
+    await waitFor(() => expect(enableCollectionNotifications).toHaveBeenCalledWith(true));
+    expect(disableCollectionNotifications).not.toHaveBeenCalled();
+  });
+
+  it("disables collection alerts once auth confirms the saved session has ended", async () => {
+    mockAuthState.value = {
+      ...mockAuthState.value,
+      user: null,
+      sessionToken: null,
+      isLoading: true,
+    };
+    const RootLayout = await importRootLayout();
+    const rendered = render(<RootLayout />);
+    expect(disableCollectionNotifications).not.toHaveBeenCalled();
+
+    mockAuthState.value = { ...mockAuthState.value, isLoading: false };
+    rendered.rerender(<RootLayout />);
+    await waitFor(() => expect(disableCollectionNotifications).toHaveBeenCalledOnce());
+    expect(enableCollectionNotifications).not.toHaveBeenCalled();
+  });
+
+  it("preserves native alerts when session restore fails instead of confirming sign-out", async () => {
+    mockAuthState.value = {
+      ...mockAuthState.value,
+      user: null,
+      sessionToken: null,
+      bootstrapError: "Database unavailable",
+    };
+    const RootLayout = await importRootLayout();
+    const rendered = render(<RootLayout />);
+
+    expect(await rendered.findByText("Database unavailable")).toBeTruthy();
+    expect(disableCollectionNotifications).not.toHaveBeenCalled();
+    expect(enableCollectionNotifications).not.toHaveBeenCalled();
   });
 
   it("shows bootstrap failure instead of login when auth restore fails", async () => {
@@ -509,6 +685,9 @@ describe("RootLayout background cleanup", () => {
     expect(mockInitBackgroundWatchSync).not.toHaveBeenCalled();
     expect(mockUseWhoopBleSync).not.toHaveBeenCalled();
     expect(mockUseBleHeartRateSync).not.toHaveBeenCalled();
+    expect(mockCreateRefreshDiagnostics).not.toHaveBeenCalled();
+    expect(disableCollectionNotifications).toHaveBeenCalled();
+    expect(enableCollectionNotifications).not.toHaveBeenCalled();
   });
 
   it("blocks a later authenticated account and all producers while cleanup is pending", async () => {
@@ -528,6 +707,7 @@ describe("RootLayout background cleanup", () => {
     expect(mockInitBackgroundWatchSync).not.toHaveBeenCalled();
     expect(mockUseWhoopBleSync).not.toHaveBeenCalled();
     expect(mockUseBleHeartRateSync).not.toHaveBeenCalled();
+    expect(mockCreateRefreshDiagnostics).not.toHaveBeenCalled();
   });
 
   it("keeps producers gated after a locked restore and retries cleanup state on foreground", async () => {
@@ -553,6 +733,7 @@ describe("RootLayout background cleanup", () => {
     expect(mockInitBackgroundWatchSync).not.toHaveBeenCalled();
     expect(mockUseWhoopBleSync).not.toHaveBeenCalled();
     expect(mockUseBleHeartRateSync).not.toHaveBeenCalled();
+    expect(mockCreateRefreshDiagnostics).not.toHaveBeenCalled();
   });
 
   it("does not let an old account cleanup gate or purge a later session generation", async () => {
@@ -596,7 +777,6 @@ describe("RootLayout background cleanup", () => {
       expect(mockTeardownBackgroundHealthKitSync).toHaveBeenCalled();
       expect(mockTeardownBackgroundAccelerometerSync).toHaveBeenCalled();
       expect(mockTeardownBackgroundWatchSync).toHaveBeenCalled();
-      expect(mockTeardownBackgroundWhoopBleSync).toHaveBeenCalled();
       expect(mockRefreshRemove).toHaveBeenCalled();
     });
   });
@@ -615,6 +795,41 @@ describe("RootLayout background cleanup", () => {
       expect(mockStartStartupPhase).toHaveBeenCalledWith("service-bootstrap");
       expect(mockFinishStartupPhase).toHaveBeenCalledWith("service-bootstrap", "ready");
     });
+  });
+
+  it("opens navigation and starts Bluetooth collection while server queries are offline", async () => {
+    const RootLayout = await importRootLayout();
+    const { onlineManager } = await import("@tanstack/react-query");
+    const wasOnline = onlineManager.isOnline();
+    onlineManager.setOnline(false);
+
+    try {
+      const rendered = render(<RootLayout />);
+
+      await waitFor(() => {
+        expect(rendered.getByTestId("app-navigation")).toBeTruthy();
+        expect(mockUseWhoopBleSync).toHaveBeenCalledOnce();
+        expect(mockUseBleHeartRateSync).toHaveBeenCalledOnce();
+      });
+      expect(onlineManager.isOnline()).toBe(false);
+      expect(disableCollectionNotifications).not.toHaveBeenCalled();
+      rendered.unmount();
+    } finally {
+      onlineManager.setOnline(wasOnline);
+    }
+  });
+
+  it("keeps collection running when background verification updates the same account's name", async () => {
+    const RootLayout = await importRootLayout();
+    const rendered = render(<RootLayout />);
+    await waitFor(() => expect(mockInitBackgroundHealthKitSync).toHaveBeenCalledOnce());
+
+    mockAuthState.value.user = { id: "user-1", name: "Updated User" };
+    await act(async () => rendered.rerender(<RootLayout />));
+
+    expect(mockTeardownBackgroundHealthKitSync).not.toHaveBeenCalled();
+    expect(mockTeardownBackgroundWhoopBleSync).not.toHaveBeenCalled();
+    expect(mockInitBackgroundHealthKitSync).toHaveBeenCalledOnce();
   });
 
   it("uses targeted invalidation after the canonical HealthKit sync completes", async () => {
@@ -678,44 +893,28 @@ describe("RootLayout background cleanup", () => {
 
     expect(mockHttpBatchLink).toHaveBeenCalledOnce();
     expect(mockHttpLink).toHaveBeenCalledOnce();
-    expect(mockSplitLink).toHaveBeenCalledTimes(2);
+    expect(mockSplitLink).toHaveBeenCalledOnce();
 
-    const mutationSplitOptions = mockSplitLink.mock.calls[1]?.[0];
-    const querySplitOptions = mockSplitLink.mock.calls[0]?.[0];
-    if (typeof mutationSplitOptions !== "object" || mutationSplitOptions == null) {
-      throw new Error("Expected mutation split link options");
+    const splitOptions = mockSplitLink.mock.calls[0]?.[0];
+    if (typeof splitOptions !== "object" || splitOptions == null) {
+      throw new Error("Expected split link options");
     }
-    if (typeof querySplitOptions !== "object" || querySplitOptions == null) {
-      throw new Error("Expected query split link options");
-    }
-    const mutationCondition = Reflect.get(mutationSplitOptions, "condition");
-    const queryCondition = Reflect.get(querySplitOptions, "condition");
-    if (typeof mutationCondition !== "function" || typeof queryCondition !== "function") {
-      throw new Error("Expected split link conditions");
+    const condition = Reflect.get(splitOptions, "condition");
+    if (typeof condition !== "function") {
+      throw new Error("Expected split link condition");
     }
 
-    expect(mutationCondition({ type: "mutation" })).toBe(true);
-    expect(mutationCondition({ type: "query" })).toBe(false);
-    expect(queryCondition({ type: "query", path: "mobileDashboard.dashboard" })).toBe(true);
-    expect(queryCondition({ type: "query", path: "mobileDashboard.dashboardV2" })).toBe(true);
-    expect(queryCondition({ type: "query", path: "mobileDashboard.recovery" })).toBe(true);
-    expect(queryCondition({ type: "query", path: "mobileDashboard.training" })).toBe(true);
-    expect(queryCondition({ type: "query", path: "processing.status" })).toBe(false);
-    expect(queryCondition({ type: "query", path: "anomalyDetection.check" })).toBe(false);
-    expect(queryCondition({ type: "mutation", path: "mobileDashboard.dashboard" })).toBe(false);
-    const mutationLink = Reflect.get(mutationSplitOptions, "true");
-    const defaultQueryLink = Reflect.get(querySplitOptions, "false");
-    const dashboardQueryLink = Reflect.get(querySplitOptions, "true");
-
-    expect(mutationLink).toEqual({
+    expect(condition({ type: "query", path: "mobileDashboard.dashboard" })).toBe(true);
+    expect(condition({ type: "query", path: "mobileDashboard.dashboardV2" })).toBe(true);
+    expect(condition({ type: "query", path: "mobileDashboard.recovery" })).toBe(true);
+    expect(condition({ type: "query", path: "mobileDashboard.trainingV2" })).toBe(true);
+    expect(condition({ type: "query", path: "processing.status" })).toBe(false);
+    expect(condition({ type: "mutation", path: "healthKitSync.recordSync" })).toBe(false);
+    expect(Reflect.get(splitOptions, "false")).toEqual({
       type: "batch",
       options: expect.anything(),
     });
-    expect(defaultQueryLink).toEqual({
-      type: "batch",
-      options: expect.anything(),
-    });
-    expect(dashboardQueryLink).toEqual({
+    expect(Reflect.get(splitOptions, "true")).toEqual({
       type: "single",
       options: expect.anything(),
     });

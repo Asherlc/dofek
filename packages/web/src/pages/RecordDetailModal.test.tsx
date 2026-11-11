@@ -22,6 +22,44 @@ const baseRecord: Record<string, unknown> = {
 afterEach(cleanup);
 
 describe("RecordDetailModal", () => {
+  it("renders a supported old-server scalar grip and numeric angle", () => {
+    const { holdTypes: _holdTypes, ...entry } = climbingLogEntryFixture({
+      wallAngle: { value: 30, unit: "degrees" },
+    });
+    render(
+      <RecordDetailModal
+        dataType="climbingLogEntries"
+        state={{
+          data: { ...entry, holdType: "crimp" },
+          error: null,
+          isLoading: false,
+        }}
+        onClose={() => {}}
+      />,
+    );
+    expect(screen.getByText("Hold types: crimp")).toBeInTheDocument();
+    expect(screen.getByText("Wall angle: 30°")).toBeInTheDocument();
+  });
+
+  it("preserves current-server categories and every recorded grip", () => {
+    render(
+      <RecordDetailModal
+        dataType="climbingLogEntries"
+        state={{
+          data: climbingLogEntryFixture({
+            holdTypes: ["crimp", "volume"],
+            wallAngle: { category: "slab" },
+          }),
+          error: null,
+          isLoading: false,
+        }}
+        onClose={() => {}}
+      />,
+    );
+    expect(screen.getByText("Hold types: crimp, volume")).toBeInTheDocument();
+    expect(screen.getByText("Wall angle: Slab")).toBeInTheDocument();
+  });
+
   it("keeps cached climbing details visible beside a refresh error", () => {
     const climb = climbingClimbFixture();
     climb.coordinates = { latitude: 0, longitude: -120 };

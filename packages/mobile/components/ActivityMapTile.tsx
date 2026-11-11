@@ -1,14 +1,26 @@
 import { providerSourceLabel } from "@dofek/providers/providers";
+import { createMapStyle } from "@dofek/training/map-style";
+import type { StaticMapCreateOptions } from "@maplibre/maplibre-react-native";
 import type { ActivityLocation } from "dofek-server/types";
-import { useState } from "react";
-import { Image, StyleSheet, Text, View } from "react-native";
+import { useMemo, useState } from "react";
+import {
+  Image,
+  type LayoutChangeEvent,
+  StyleSheet,
+  Text,
+  useColorScheme,
+  View,
+} from "react-native";
 import Svg, { Circle, Polyline } from "react-native-svg";
+import { useNativeMapSnapshot } from "../lib/native-map-snapshot";
 import { colors, radius } from "../theme";
+import { MapAttribution } from "./MapAttribution";
 import { MapProcessingState } from "./MapProcessingState";
 
 type ReadyActivityLocation = Exclude<ActivityLocation, { kind: "processing" }>;
 
 export function ActivityMapTile({ location }: { location: ActivityLocation }) {
+  const mode = useColorScheme() === "dark" ? "dark" : "light";
   if (location.kind === "processing") {
     return (
       <View style={[styles.container, { aspectRatio: 16 / 9 }]}>
@@ -16,14 +28,55 @@ export function ActivityMapTile({ location }: { location: ActivityLocation }) {
       </View>
     );
   }
-  return <ReadyMapTile key={JSON.stringify(location.mapPreview)} location={location} />;
+  return (
+    <ReadyMapTile
+      key={`${mode}:${JSON.stringify(location.mapPreview)}`}
+      location={location}
+      mode={mode}
+    />
+  );
 }
 
-function ReadyMapTile({ location }: { location: ReadyActivityLocation }) {
-  const [loadFailed, setLoadFailed] = useState(false);
-  const [loadedTiles, setLoadedTiles] = useState<ReadonlySet<number>>(() => new Set());
+function ReadyMapTile({
+  location,
+  mode,
+}: {
+  location: ReadyActivityLocation;
+  mode: "light" | "dark";
+}) {
+  const [width, setWidth] = useState<number | null>(null);
+  const mapStyle = useMemo(() => createMapStyle(mode), [mode]);
   const { mapPreview } = location;
-  const mapReady = loadedTiles.size === location.mapPreview.tiles.length;
+  const { center, zoom, width: referenceWidth, height: referenceHeight } = mapPreview;
+  const longitude = center[0];
+  const latitude = center[1];
+  // Native cameras stop at zoom zero. Enlarge only low-zoom images enough to
+  // keep the complete reference viewport, then scale the image with its SVG.
+  const renderScale = width == null ? null : Math.max(width / referenceWidth, 2 ** -zoom);
+  const snapshotWidth = renderScale == null ? null : referenceWidth * renderScale;
+  const snapshotHeight = renderScale == null ? null : referenceHeight * renderScale;
+  const snapshotZoom = renderScale == null ? null : Math.max(0, zoom + Math.log2(renderScale));
+  const options = useMemo<StaticMapCreateOptions | null>(
+    () =>
+      snapshotWidth != null && snapshotHeight != null && snapshotZoom != null
+        ? {
+            center: [longitude, latitude],
+            zoom: snapshotZoom,
+            width: snapshotWidth,
+            height: snapshotHeight,
+            mapStyle,
+            output: "base64",
+            logo: false,
+          }
+        : null,
+    [longitude, latitude, snapshotWidth, snapshotHeight, snapshotZoom, mapStyle],
+  );
+  function handleLayout(event: LayoutChangeEvent) {
+    const nextWidth = event.nativeEvent.layout.width;
+    if (nextWidth > 0) setWidth(nextWidth);
+  }
+  const snapshot = useNativeMapSnapshot(options);
+  const { uri, ready: mapReady, failed: loadFailed } = snapshot;
   const accessibilityLabel =
     location.kind === "climbing_source"
       ? `Climbing source locations: ${location.sourcePoints
@@ -35,7 +88,11 @@ function ReadyMapTile({ location }: { location: ReadyActivityLocation }) {
       : "Activity location map";
 
   return (
-    <View style={[styles.container, { aspectRatio: mapPreview.width / mapPreview.height }]}>
+    <View
+      testID="activity-map-panel"
+      onLayout={handleLayout}
+      style={[styles.container, { aspectRatio: mapPreview.width / mapPreview.height }]}
+    >
       {loadFailed ? (
         <View style={styles.fallback} accessibilityLabel="Activity location unavailable" accessible>
           <Text style={styles.fallbackText}>Map unavailable</Text>
@@ -48,24 +105,22 @@ function ReadyMapTile({ location }: { location: ReadyActivityLocation }) {
             accessibilityLabel={mapReady ? accessibilityLabel : undefined}
             accessible={mapReady}
           >
-            {mapPreview.tiles.map((tile, index) => (
+            {uri && (
               <Image
-                key={`${tile.url}-${tile.x}-${tile.y}`}
-                testID="activity-map-preview-tile"
-                source={{ uri: tile.url }}
-                style={{
-                  position: "absolute",
-                  left: `${(tile.x / mapPreview.width) * 100}%`,
-                  top: `${(tile.y / mapPreview.height) * 100}%`,
-                  width: `${(tile.width / mapPreview.width) * 100}%`,
-                  height: `${(tile.height / mapPreview.height) * 100}%`,
-                }}
-                resizeMode="cover"
-                onLoad={() => setLoadedTiles((previous) => new Set([...previous, index]))}
-                onError={() => setLoadFailed(true)}
+                key={uri}
+                testID="activity-map-preview"
+                source={{ uri }}
+                style={StyleSheet.absoluteFill}
+                resizeMode="stretch"
+                pointerEvents="none"
+                onLoad={snapshot.onLoad}
+                onError={snapshot.onError}
               />
-            ))}
+            )}
             <ActivityMapOverlay location={location} />
+          </View>
+          <View pointerEvents="none" style={styles.attribution}>
+            <MapAttribution />
           </View>
           {!mapReady && (
             <View style={StyleSheet.absoluteFill}>
@@ -163,6 +218,7 @@ const styles = StyleSheet.create({
     position: "relative",
     width: "100%",
   },
+  attribution: { position: "absolute", right: 3, bottom: 2, backgroundColor: colors.surface },
   sourceMarker: {
     position: "absolute",
     transform: [{ translateX: -8 }, { translateY: -8 }],

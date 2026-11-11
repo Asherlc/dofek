@@ -288,6 +288,7 @@ describe("activity sensor provenance", () => {
       local_time_source: "unknown",
       subsource: null,
       source_providers: ["provenance_wahoo", "provenance_peloton"],
+      origin_evidence: [],
       source_external_ids: null,
       avg_hr: null,
       max_hr: null,

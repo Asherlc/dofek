@@ -1,5 +1,9 @@
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
-import type { ProviderManualConnectionKind } from "@dofek/providers/provider-connection";
+import {
+  type ProviderManualConnectionKind,
+  providerCredentialInput,
+  providerCredentialSubmitHint,
+} from "@dofek/providers/provider-connection";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -16,14 +20,6 @@ import { trpc } from "../../lib/trpc";
 import { colors } from "../../theme";
 import { styles } from "./styles.ts";
 import type { ProviderDetailModals } from "./use-provider-detail-actions.ts";
-
-function credentialSubmitHint(username: string, password: string, loading: boolean) {
-  if (loading) return null;
-  if (!username.trim() && !password) return "Enter your email and password to continue.";
-  if (!username.trim()) return "Enter your email to continue.";
-  if (!password) return "Enter your password to continue.";
-  return null;
-}
 
 // ── Generic Credential Auth Modal ──
 
@@ -42,12 +38,18 @@ export function CredentialAuthModal({
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const emailRef = useRef<TextInputInstance>(null);
+  const identifierRef = useRef<TextInputInstance>(null);
+  const credentialInput = providerCredentialInput(providerId);
   const signInDisabled = loading || !username.trim() || !password;
-  const signInHint = credentialSubmitHint(username, password, loading);
+  const signInHint = providerCredentialSubmitHint(
+    username,
+    password,
+    loading,
+    credentialInput.identifier,
+  );
 
   useEffect(() => {
-    emailRef.current?.focus();
+    identifierRef.current?.focus();
   }, []);
 
   const signInMutation = trpc.credentialAuth.signIn.useMutation();
@@ -91,14 +93,19 @@ export function CredentialAuthModal({
             </View>
           ) : null}
 
+          {credentialInput.instructions ? (
+            <Text style={styles.modalDescription}>{credentialInput.instructions}</Text>
+          ) : null}
           <TextInput
-            ref={emailRef}
+            ref={identifierRef}
             style={styles.input}
-            placeholder="Email"
+            placeholder={credentialInput.label}
+            accessibilityLabel={credentialInput.label}
+            accessibilityHint={credentialInput.instructions}
             placeholderTextColor={colors.textTertiary}
             value={username}
             onChangeText={setUsername}
-            keyboardType="email-address"
+            keyboardType={credentialInput.identifier === "email" ? "email-address" : "default"}
             autoCapitalize="none"
             autoCorrect={false}
           />
@@ -144,6 +151,7 @@ export function TokenAuthModal({
   providerName,
   tokenLabel,
   instructionsUrl,
+  description,
   onClose,
   onSuccess,
 }: {
@@ -152,6 +160,7 @@ export function TokenAuthModal({
   providerName: string;
   tokenLabel: string;
   instructionsUrl: string;
+  description?: string;
   onClose: () => void;
   onSuccess: () => void;
 }) {
@@ -238,10 +247,13 @@ export function TokenAuthModal({
             </View>
           ) : null}
 
+          {description ? <Text style={styles.modalDescription}>{description}</Text> : null}
           <TextInput
             ref={tokenRef}
             style={styles.input}
             placeholder={tokenLabel}
+            accessibilityLabel={tokenLabel}
+            accessibilityHint={description}
             placeholderTextColor={colors.textTertiary}
             value={token}
             onChangeText={setToken}
@@ -293,6 +305,7 @@ export function ProviderDetailAuthModals({ modals }: { modals: ProviderDetailMod
           providerName={modals.tokenAuthProvider.name}
           tokenLabel={modals.tokenAuthProvider.label}
           instructionsUrl={modals.tokenAuthProvider.instructionsUrl}
+          description={modals.tokenAuthProvider.description}
           onClose={modals.closeTokenAuth}
           onSuccess={modals.handleTokenSuccess}
         />
@@ -300,123 +313,7 @@ export function ProviderDetailAuthModals({ modals }: { modals: ProviderDetailMod
       {modals.whoopAuthOpen && (
         <WhoopAuthModal onClose={modals.closeWhoopAuth} onSuccess={modals.handleWhoopSuccess} />
       )}
-      {modals.garminAuthOpen && (
-        <GarminAuthModal onClose={modals.closeGarminAuth} onSuccess={modals.handleGarminSuccess} />
-      )}
     </>
-  );
-}
-
-// ── Garmin Auth Modal ──
-
-export function GarminAuthModal({
-  onClose,
-  onSuccess,
-}: {
-  onClose: () => void;
-  onSuccess: () => void;
-}) {
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-  const emailRef = useRef<TextInputInstance>(null);
-  const signInDisabled = loading || !username.trim() || !password;
-  const signInHint = credentialSubmitHint(username, password, loading);
-
-  useEffect(() => {
-    emailRef.current?.focus();
-  }, []);
-
-  const signInMutation = trpc.garminAuth.signIn.useMutation();
-
-  const handleSignIn = useCallback(async () => {
-    setError("");
-    setLoading(true);
-    try {
-      await signInMutation.mutateAsync({ username: username.trim(), password });
-      onSuccess();
-    } catch (error_: unknown) {
-      captureException(error_, {
-        source: "provider-garmin-auth-sign-in",
-        providerId: "garmin",
-      });
-      setError(userFacingErrorMessage(error_, "Sign in failed. Check your details and try again."));
-    } finally {
-      setLoading(false);
-    }
-  }, [username, password, signInMutation, onSuccess]);
-
-  const handleClose = useCallback(() => {
-    if (!loading) onClose();
-  }, [loading, onClose]);
-
-  return (
-    <Modal visible transparent animationType="fade" onRequestClose={handleClose}>
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalContent}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Connect Garmin</Text>
-            <TouchableOpacity
-              onPress={handleClose}
-              activeOpacity={0.7}
-              disabled={loading}
-              accessibilityRole="button"
-              accessibilityLabel="Close Garmin connection"
-              accessibilityState={{ disabled: loading }}
-            >
-              <Text style={styles.modalClose}>{"\u00D7"}</Text>
-            </TouchableOpacity>
-          </View>
-
-          {error ? (
-            <View style={styles.errorBanner}>
-              <Text style={styles.errorText}>{error}</Text>
-            </View>
-          ) : null}
-
-          <TextInput
-            ref={emailRef}
-            style={styles.input}
-            placeholder="Email"
-            placeholderTextColor={colors.textTertiary}
-            value={username}
-            onChangeText={setUsername}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="Password"
-            placeholderTextColor={colors.textTertiary}
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-          />
-          {signInHint ? <Text style={styles.disabledHint}>{signInHint}</Text> : null}
-          <TouchableOpacity
-            style={[styles.signInButton, signInDisabled && styles.signInButtonDisabled]}
-            onPress={handleSignIn}
-            activeOpacity={0.7}
-            disabled={signInDisabled}
-            accessibilityRole="button"
-            accessibilityLabel="Sign in to Garmin"
-            accessibilityHint={signInHint ?? undefined}
-            accessibilityState={{
-              busy: loading,
-              disabled: signInDisabled,
-            }}
-          >
-            <Text
-              style={[styles.signInButtonText, signInDisabled && styles.signInButtonTextDisabled]}
-            >
-              {loading ? "Signing in..." : "Sign In"}
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </Modal>
   );
 }
 
@@ -441,7 +338,7 @@ export function WhoopAuthModal({
   const emailRef = useRef<TextInputInstance>(null);
   const codeRef = useRef<TextInputInstance>(null);
   const credentialSignInDisabled = loading || !username.trim() || !password;
-  const credentialSignInHint = credentialSubmitHint(username, password, loading);
+  const credentialSignInHint = providerCredentialSubmitHint(username, password, loading);
   const verificationDisabled = loading || !code;
   const verificationHint = !loading && !code ? "Enter the verification code to continue." : null;
 

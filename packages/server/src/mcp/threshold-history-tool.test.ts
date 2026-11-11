@@ -18,33 +18,27 @@ const page = {
   end_date: "2026-08-01",
   items: [
     {
-      id: "00000000-0000-4000-8000-000000000102",
-      evidence_kind: "configured" as const,
-      sport: "cycling",
-      threshold_type: "ftp",
+      activity_id: null,
       value: 250,
       unit: "watt",
-      observed_at: "2026-07-01T12:00:00.000Z",
-      effective_at: "2026-07-01T12:00:00.000Z",
-      provider: null,
-      provider_record_id: null,
-      value_kind: "configured" as const,
-      historical_validity: "effective_dated" as const,
-      raw_evidence_available: false,
-      quality: {
-        status: "high" as const,
-        reason: null,
+      method: "computed_eftp",
+      event_at: "2026-07-01T12:00:00Z",
+      evidence_activity_id: "00000000-0000-4000-8000-000000000102",
+      evidence_at: "2026-06-01T12:00:00Z",
+      evidence_duration_seconds: 1200,
+      evidence_power: 260,
+      model_version: "v1",
+      uncertainty: {
+        kind: "not_quantifiable" as const,
+        watts: null,
+        reason:
+          "Reference-curve estimate; individual physiological FTP uncertainty has not been quantified.",
       },
+      unavailable_reason: null,
+      evidence_kind: "computed",
+      historical_validity: "effective_dated",
     },
   ],
-  legacy_current: {
-    value: 240,
-    unit: "watt" as const,
-    source: "user_profile.ftp" as const,
-    value_kind: "configured" as const,
-    historical_validity: "unknown" as const,
-    reason: "Legacy current FTP has no effective date and is not applied to historical activities",
-  },
   next_cursor: null,
 };
 
@@ -60,6 +54,7 @@ describe("get_threshold_history", () => {
       userId: "00000000-0000-4000-8000-000000000001",
       scopes: ["activity:read"],
       timezone: "America/Los_Angeles",
+      sensorStore: { query: vi.fn() },
     });
     client = new Client({ name: "threshold-history-client", version: "1.0.0" });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -92,8 +87,8 @@ describe("get_threshold_history", () => {
     expect(
       thresholdHistoryOutputSchema.parse(result.structuredContent).result.items[0],
     ).toMatchObject({
-      provider: null,
-      value_kind: "configured",
+      method: "computed_eftp",
+      evidence_kind: "computed",
       historical_validity: "effective_dated",
     });
     expect(

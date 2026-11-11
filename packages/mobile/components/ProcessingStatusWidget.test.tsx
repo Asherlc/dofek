@@ -159,7 +159,15 @@ describe("ProcessingStatusWidget", () => {
   });
 
   it("stays quiet when ready unless always visible", () => {
-    const ready: ProcessingStatusSnapshot = { ...snapshot, overallStatus: "ready" };
+    const ready: ProcessingStatusSnapshot = {
+      ...snapshot,
+      overallStatus: "ready",
+      datasets: snapshot.datasets.map((dataset) => ({
+        ...dataset,
+        status: "ready",
+        lastReadyAt: snapshot.generatedAt,
+      })),
+    };
     expect(render(<ProcessingStatusWidget data={ready} />).container.innerHTML).toBe("");
     render(<ProcessingStatusWidget data={ready} alwaysVisible />);
     expect(screen.getByText("Garmin sync complete")).toBeTruthy();
@@ -250,6 +258,7 @@ describe("ProcessingStatusWidget", () => {
 
     expect(screen.getByText("Syncing Garmin")).toBeTruthy();
     expect(screen.queryByText("Processing status is unavailable")).toBeNull();
+    expect(screen.getByText("The processing status refresh failed.")).toBeTruthy();
   });
 
   it("hides aggregate progress when a non-ready dataset has no progress", () => {
@@ -374,7 +383,6 @@ describe("ProcessingStatusWidget", () => {
       const progressLabel = providerId ? "Processing progress" : heading;
       expect(screen.getByRole("progressbar", { name: progressLabel })).toBeTruthy();
       if (providerId) {
-        expect(screen.getByText("Your existing data is still available.")).toBeTruthy();
         fireEvent.click(screen.getByRole("button", { name: "Show processing details" }));
         expect(screen.getByText("Waiting to continue")).toBeTruthy();
       }
@@ -500,7 +508,6 @@ describe("ProcessingStatusWidget", () => {
     fireEvent.click(screen.getByRole("button", { name: "Show processing details" }));
     expect(screen.getByText("Sleep")).toBeTruthy();
     expect(screen.getByText("Waiting to continue")).toBeTruthy();
-    expect(screen.getByText("Your existing data is still available.")).toBeTruthy();
     expect(screen.queryByRole("button", { name: /Dismiss .* failure|Reconnect/ })).toBeNull();
   });
 
@@ -660,8 +667,340 @@ describe("ProcessingStatusWidget", () => {
       />,
     );
 
-    expect(screen.getByText("Garmin sync complete")).toBeTruthy();
+    expect(screen.getByText("No sync outcome recorded")).toBeTruthy();
     expect(screen.queryByText("Activities")).toBeNull();
     expect(screen.queryByText("No completed update recorded")).toBeNull();
   });
+  it("shows the latest failed sync instead of synthetic pipeline readiness", () => {
+    render(
+      <ProcessingStatusWidget
+        alwaysVisible
+        providerHistory={{
+          needsReauth: true,
+          lastSuccessfulSyncAt: null,
+          recentLogs: [
+            {
+              status: "error",
+              syncedAt: "2026-07-23T12:00:00.000Z",
+              dataType: "activities",
+              authFailureReason: "authorization_failed",
+              errorMessage: "Authorization failed",
+            },
+          ],
+        }}
+        data={{ ...snapshot, overallStatus: "ready", operations: [], datasets: [] }}
+      />,
+    );
+    expect(screen.getByText("Latest Garmin sync failed")).toBeTruthy();
+    expect(screen.getByText("Reconnect Garmin to resume Activities data.")).toBeTruthy();
+    expect(screen.queryByText("Garmin sync complete")).toBeNull();
+  });
+
+  it("shows newer failed history over an old recorded processing success", () => {
+    vi.setSystemTime(new Date("2026-07-24T12:00:00.000Z"));
+    render(
+      <ProcessingStatusWidget
+        alwaysVisible
+        providerHistory={{
+          needsReauth: false,
+          lastSuccessfulSyncAt: "2026-07-22T12:00:00.000Z",
+          recentLogs: [
+            {
+              status: "error",
+              syncedAt: "2026-07-23T12:00:00.000Z",
+              dataType: "activities",
+              authFailureReason: "authorization_failed",
+            },
+          ],
+        }}
+        data={{
+          ...snapshot,
+          overallStatus: "ready",
+          datasets: [{ ...activityDataset, status: "ready", lastReadyAt: snapshot.generatedAt }],
+          operations: [{ ...operation, status: "ready" }],
+        }}
+      />,
+    );
+    expect(screen.getByText("Latest Garmin sync failed")).toBeTruthy();
+    expect(screen.getByText("Latest attempt: 1d ago")).toBeTruthy();
+    expect(
+      screen.getByText("Try syncing Garmin again. Open Diagnostics if the problem continues."),
+    ).toBeTruthy();
+    expect(screen.queryByText("Reconnect Garmin to resume Activities data.")).toBeNull();
+    expect(screen.queryByText("Garmin sync complete")).toBeNull();
+  });
+
+  it.each([
+    ["success", "Last update processed"],
+    ["error", "Processing failed"],
+    ["degraded", "Update processed with issues"],
+    ["unknown", "Update outcome unavailable"],
+  ])("labels the recorded push %s timestamp", (status, label) => {
+    vi.setSystemTime(new Date("2026-07-24T12:00:00.000Z"));
+    render(
+      <ProcessingStatusWidget
+        alwaysVisible
+        providerHistory={{
+          pushOnly: true,
+          lastSuccessfulSyncAt: null,
+          recentLogs: [{ status, syncedAt: "2026-07-23T12:00:00.000Z" }],
+        }}
+        data={{ ...snapshot, overallStatus: "ready", datasets: [], operations: [] }}
+      />,
+    );
+    expect(screen.getByText(`${label}: 1d ago`)).toBeTruthy();
+  });
+
+  it("shows a push processing error with a processing timestamp and its actual cause", () => {
+    vi.setSystemTime(new Date("2026-07-24T12:00:00.000Z"));
+    render(
+      <ProcessingStatusWidget
+        alwaysVisible
+        providerHistory={{
+          pushOnly: true,
+          needsReauth: false,
+          lastProcessedUpdateAt: "2026-07-22T12:00:00.000Z",
+          lastSuccessfulSyncAt: "2026-07-24T12:00:00.000Z",
+          recentLogs: [
+            {
+              status: "error",
+              syncedAt: "2026-07-23T12:00:00.000Z",
+              dataType: "activities",
+              errorMessage: "An activity file could not be read.",
+            },
+          ],
+        }}
+        data={{ ...snapshot, overallStatus: "ready", datasets: [], operations: [] }}
+      />,
+    );
+
+    expect(screen.getByText("Couldn't process the latest Garmin update")).toBeTruthy();
+    expect(screen.getByText("An activity file could not be read.")).toBeTruthy();
+    expect(screen.getByText("Processing failed: 1d ago")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Reconnect Garmin" })).toBeNull();
+  });
+
+  it("dismisses a failed push ingestion with an update processing accessibility label", () => {
+    render(
+      <ProcessingStatusWidget
+        data={{
+          ...snapshot,
+          overallStatus: "failed",
+          datasets: [{ ...activityDataset, status: "failed", lastFailedAt: snapshot.generatedAt }],
+          operations: [
+            {
+              ...operation,
+              kind: "push_ingest",
+              status: "failed",
+              errorCode: "push_ingest_failed",
+              errorMessage: "An activity file could not be read.",
+              timeline: [],
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.getByText("An activity file could not be read.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Reconnect Garmin" })).toBeNull();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Dismiss Garmin update processing failure" }),
+    );
+    expect(mockDismissOperation).toHaveBeenCalledWith({ operationId: operation.id });
+  });
+
+  it("replaces a resolved push authorization failure's stale reconnect instructions", () => {
+    render(
+      <ProcessingStatusWidget
+        alwaysVisible
+        providerHistory={{
+          pushOnly: true,
+          needsReauth: false,
+          lastSuccessfulSyncAt: null,
+          lastProcessedUpdateAt: null,
+          recentLogs: [],
+        }}
+        data={{
+          ...snapshot,
+          overallStatus: "failed",
+          datasets: [{ ...activityDataset, status: "failed", lastFailedAt: snapshot.generatedAt }],
+          operations: [
+            {
+              ...operation,
+              kind: "push_ingest",
+              status: "failed",
+              errorCode: "provider_auth_failed",
+              errorMessage: "Reconnect Garmin to resume incoming updates.",
+              timeline: [],
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.queryByText("Reconnect Garmin to resume incoming updates.")).toBeNull();
+    expect(
+      screen.getByText("Earlier updates remain available. Open Diagnostics for details."),
+    ).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Reconnect Garmin" })).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Dismiss Garmin update processing failure" }),
+    ).toBeTruthy();
+  });
+  it("keeps analytics progress visible when ingestion finishes successfully", () => {
+    render(
+      <ProcessingStatusWidget
+        alwaysVisible
+        data={snapshot}
+        providerHistory={{
+          lastSuccessfulSyncAt: "2026-07-22T12:00:00.000Z",
+          recentLogs: [{ status: "success", syncedAt: "2026-07-22T12:00:00.000Z" }],
+        }}
+      />,
+    );
+    expect(screen.getByText("Syncing Garmin")).toBeTruthy();
+    expect(screen.getByRole("progressbar", { name: "Processing progress" })).toBeTruthy();
+  });
+  it.each(["success", "error"])(
+    "shows a newer %s outcome after an older processing failure was dismissed",
+    (status) => {
+      const failed = failedWahooSnapshot();
+      render(
+        <ProcessingStatusWidget
+          alwaysVisible
+          data={{
+            ...failed,
+            operations: failed.operations.map((operation) => ({ ...operation, dismissed: true })),
+          }}
+          providerHistory={{
+            lastSuccessfulSyncAt: null,
+            recentLogs: [{ status, syncedAt: "2026-07-23T12:00:00.000Z" }],
+          }}
+        />,
+      );
+      expect(
+        screen.getByText(status === "success" ? "Wahoo sync complete" : "Latest Wahoo sync failed"),
+      ).toBeTruthy();
+    },
+  );
+
+  it("keeps the dismissed outcome quiet when the sync log describes the same failed attempt", () => {
+    const failed = failedWahooSnapshot();
+    expect(
+      render(
+        <ProcessingStatusWidget
+          alwaysVisible
+          data={{
+            ...failed,
+            operations: failed.operations.map((operation) => ({ ...operation, dismissed: true })),
+          }}
+          providerHistory={{
+            lastSuccessfulSyncAt: null,
+            recentLogs: [{ status: "error", syncedAt: "2026-07-22T16:05:00.000Z" }],
+          }}
+        />,
+      ).container.innerHTML,
+    ).toBe("");
+  });
+
+  it("shows a cached query error when every processing failure was dismissed", () => {
+    const failed = failedWahooSnapshot();
+    render(
+      <ProcessingStatusWidget
+        alwaysVisible
+        data={{
+          ...failed,
+          operations: failed.operations.map((operation) => ({ ...operation, dismissed: true })),
+        }}
+        error={new Error("The processing status refresh failed.")}
+      />,
+    );
+    expect(screen.getByRole("alert").textContent).toBe("The processing status refresh failed.");
+  });
+
+  it.each([false, true])(
+    "uses restored authorization for a processing failure reconnect action, equal log=%s",
+    (withLog) => {
+      const failed = failedWahooSnapshot();
+      const recordedError = "Authentication failed during the recorded attempt.";
+      render(
+        <ProcessingStatusWidget
+          alwaysVisible
+          data={{
+            ...failed,
+            operations: failed.operations.map((operation) => ({
+              ...operation,
+              errorCode: "provider_auth_failed",
+              errorMessage: recordedError,
+            })),
+          }}
+          providerHistory={{
+            needsReauth: false,
+            lastSuccessfulSyncAt: null,
+            recentLogs: withLog
+              ? [
+                  {
+                    status: "error",
+                    syncedAt: "2026-07-22T16:05:00.000Z",
+                    authFailureReason: "authorization_failed",
+                  },
+                ]
+              : [],
+          }}
+        />,
+      );
+      expect(screen.getByText(recordedError)).toBeTruthy();
+      expect(screen.queryByRole("button", { name: "Reconnect Wahoo" })).toBeNull();
+      expect(screen.getByRole("button", { name: "Dismiss Wahoo sync failure" })).toBeTruthy();
+    },
+  );
+  it.each(["success", "error"])(
+    "keeps newer active sibling details beside an old failure, latest sync=%s",
+    (status) => {
+      const failed = failedWahooSnapshot();
+      const failedDataset = failed.datasets.at(0);
+      const failedOperation = failed.operations.at(0);
+      if (!failedDataset || !failedOperation) throw new Error("Expected processing fixtures");
+      render(
+        <ProcessingStatusWidget
+          alwaysVisible
+          data={{
+            ...failed,
+            datasets: [
+              failedDataset,
+              {
+                ...failedDataset,
+                key: "sleep",
+                label: "Sleep",
+                status: "active",
+                lastFailedAt: null,
+                lastAdvancedAt: "2026-07-22T17:00:00.000Z",
+                progressPercentage: 60,
+              },
+            ],
+            operations: [
+              { ...failedOperation, datasets: ["activity"] },
+              {
+                ...failedOperation,
+                id: "new-active",
+                status: "active",
+                datasets: ["sleep"],
+                createdAt: "2026-07-22T17:00:00.000Z",
+                errorMessage: null,
+                errorCode: null,
+              },
+            ],
+          }}
+          providerHistory={{
+            lastSuccessfulSyncAt: null,
+            recentLogs: [{ status, syncedAt: "2026-07-22T16:06:00.000Z" }],
+          }}
+        />,
+      );
+      expect(screen.getByText("Sleep")).toBeTruthy();
+      expect(screen.getByText("Activities")).toBeTruthy();
+      expect(screen.queryByText("Latest Wahoo sync failed")).toBeNull();
+      expect(screen.queryByText("Wahoo sync complete")).toBeNull();
+    },
+  );
 });

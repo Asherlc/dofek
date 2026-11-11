@@ -10,7 +10,7 @@ import { ChartLoadingSkeleton } from "../../components/LoadingSkeleton.tsx";
 import { PageSection } from "../../components/PageSection.tsx";
 import { PmcChart } from "../../components/PmcChart.tsx";
 import { QueryStatePanel } from "../../components/QueryStatePanel.tsx";
-import { RecentActivitiesSection } from "../../components/RecentActivitiesSection.tsx";
+import { SportVolumeChart } from "../../components/SportVolumeChart.tsx";
 import { TrainingCalendar } from "../../components/TrainingCalendar.tsx";
 import { TrainingInsightsPanel } from "../../components/TrainingInsightsPanel.tsx";
 import { minimumSelectedRangeQueryInput, selectedRangeQueryInput } from "../../lib/timeRange.ts";
@@ -71,11 +71,8 @@ export function TrainingOverview() {
       </Section>
 
       <Section title="Volume & Zones">
+        <SportVolumeChart days={days} />
         <TrainingInsightsPanel days={days} />
-      </Section>
-
-      <Section title="Recent Activities">
-        <RecentActivitiesSection />
       </Section>
 
       {insightsQuery.isLoading && (

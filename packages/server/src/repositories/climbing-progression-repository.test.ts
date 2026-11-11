@@ -104,7 +104,7 @@ const baseRow = {
   pitch_number: null,
   unknown_pitch_attempt_id: null,
   wall_angle_degrees: 30,
-  hold_type: null,
+  hold_types: null,
   climb_name: "Blue Arete",
   location_name: "Pacific Pipe",
   source_name: "Kaya",
@@ -430,6 +430,43 @@ describe("ClimbingProgressionRepository", () => {
     });
   });
 
+  it.each(["strava", "kaya"])(
+    "merges equivalent reordered and repeated grip sets for %s source copies",
+    async (provider) => {
+      const repository = new ClimbingProgressionRepository(
+        executeDb([
+          { ...baseRow, hold_types: ["crimp", "jug"] },
+          {
+            ...baseRow,
+            entry_id: "00000000-0000-4000-8000-000000000102",
+            entry_activity_id: "00000000-0000-4000-8000-000000000012",
+            entry_provider: provider,
+            hold_types: ["jug", "crimp", "crimp"],
+          },
+        ]),
+        "00000000-0000-4000-8000-000000000002",
+        "UTC",
+      );
+      const result = await repository.listRange({
+        startDate: "2026-07-10",
+        endDate: "2026-07-10",
+        providers: [],
+        filters: {},
+        locations: [],
+        gradeSystems: [],
+        cursor: null,
+        limit: 100,
+      });
+      expect(result.coverage).toMatchObject({
+        entries: 1,
+        merged_exact_duplicate_records: 1,
+        possible_duplicate_groups: 0,
+      });
+      expect(result.daily[0]).toMatchObject({ attempts: 3, entries: 1, sends: 1 });
+      expect(result.sessions[0]?.climbing_log_entries).toHaveLength(1);
+    },
+  );
+
   it("flags identity overlaps with conflicting observations without silently merging them", async () => {
     const repository = new ClimbingProgressionRepository(
       executeDb([
@@ -477,6 +514,47 @@ describe("ClimbingProgressionRepository", () => {
     expect(result.sessions[0]?.climbing_log_entries).toHaveLength(2);
   });
 
+  it.each([
+    { first: null, second: ["crimp"] },
+    { first: ["crimp"], second: ["jug"] },
+  ])("retains same-grade source observations with distinct grip evidence %j", async (holds) => {
+    const repository = new ClimbingProgressionRepository(
+      executeDb([
+        { ...baseRow, hold_types: holds.first },
+        {
+          ...baseRow,
+          entry_id: "00000000-0000-4000-8000-000000000102",
+          entry_activity_id: "00000000-4000-4000-8000-000000000012",
+          entry_provider: "strava",
+          hold_types: holds.second,
+        },
+      ]),
+      "00000000-0000-4000-8000-000000000002",
+      "UTC",
+    );
+    const result = await repository.listRange({
+      startDate: "2026-07-10",
+      endDate: "2026-07-10",
+      providers: [],
+      filters: {},
+      locations: [],
+      gradeSystems: [],
+      cursor: null,
+      limit: 100,
+    });
+    expect(result.coverage).toMatchObject({
+      entries: 2,
+      merged_exact_duplicate_records: 0,
+      possible_duplicate_groups: 1,
+      entries_excluded_from_aggregates: 2,
+    });
+    expect(result.sessions[0]?.climbing_log_entries.map((entry) => entry.hold_types)).toEqual([
+      holds.first,
+      holds.second,
+    ]);
+    expect(result.daily[0]).toMatchObject({ attempts: null, attempts_status: "unavailable" });
+  });
+
   it("does not merge entries that differ by hold type and merges stable same-provider identities", async () => {
     const rows = [
       baseRow,
@@ -485,7 +563,7 @@ describe("ClimbingProgressionRepository", () => {
         entry_id: "00000000-0000-4000-8000-000000000102",
         entry_activity_id: "00000000-0000-4000-8000-000000000012",
         grade: "V6",
-        hold_type: "crimp",
+        hold_types: ["crimp"],
       },
     ];
     const first = await new ClimbingProgressionRepository(

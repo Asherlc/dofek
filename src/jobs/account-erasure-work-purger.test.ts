@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { S3ServiceException } from "@aws-sdk/client-s3";
 import { describe, expect, it, vi } from "vitest";
 import type { AccountErasureRemoteSnapshot } from "../account-erasure/remote-snapshot.ts";
@@ -27,6 +28,8 @@ const mocks = vi.hoisted(() => {
   return {
     abortImportMultipart: vi.fn(async () => undefined),
     closeByQueue,
+    createImageQueue: vi.fn(() => queue("activity-images")),
+    eraseImageObjects: vi.fn(async () => undefined),
     createActivityQueue: vi.fn(() => queue("activity-delete-analytics")),
     createExportQueue: vi.fn(() => queue("export")),
     createFitBatchQueue: vi.fn(() => queue("fit-file-import-batch")),
@@ -39,6 +42,7 @@ const mocks = vi.hoisted(() => {
     createSyncQueue: vi.fn(() => queue("sync")),
     createZipQueue: vi.fn(() => queue("zip-entry-extract")),
     deleteImportObject: vi.fn(async () => undefined),
+    deleteProviderArtifactsForUser: vi.fn(async () => undefined),
     queuesByName,
     purgeAccountRedisStateForSnapshot: vi.fn(async () => ({
       aofPersisted: true,
@@ -51,7 +55,7 @@ const mocks = vi.hoisted(() => {
     purgeAccountWork: vi.fn<typeof import("../account-erasure/work-erasure.ts").purgeAccountWork>(
       async () => undefined,
     ),
-    removeLocalPath: vi.fn(async () => undefined),
+    removeLocalPath: vi.fn<typeof import("node:fs/promises").rm>(async () => undefined),
     r2Client: {
       destroy: vi.fn(),
       send: vi.fn(async () => ({})),
@@ -59,7 +63,8 @@ const mocks = vi.hoisted(() => {
   };
 });
 
-vi.mock("node:fs/promises", () => ({
+vi.mock("node:fs/promises", async (original) => ({
+  ...(await original<typeof import("node:fs/promises")>()),
   rm: mocks.removeLocalPath,
 }));
 
@@ -82,6 +87,12 @@ vi.mock("../file-upload-storage.ts", () => ({
   },
 }));
 
+vi.mock("../provider-artifact-storage.ts", () => ({
+  R2ProviderArtifactStorage: class {
+    deleteForUser = mocks.deleteProviderArtifactsForUser;
+  },
+}));
+
 vi.mock("../r2-storage.ts", () => ({
   createR2Client: vi.fn(() => mocks.r2Client),
   requiredR2EnvironmentVariable: vi.fn((name: string) => `${name.toLowerCase()}-bucket`),
@@ -91,7 +102,11 @@ vi.mock("./provider-queue-config.ts", () => ({
   getConfiguredProviderIds: vi.fn(() => ["strava", "garmin"]),
 }));
 
+vi.mock("../activity-images/storage.ts", () => ({
+  eraseActivityImageObjects: mocks.eraseImageObjects,
+}));
 vi.mock("./queues.ts", () => ({
+  createActivityImageQueue: mocks.createImageQueue,
   createActivityDeleteAnalyticsQueue: mocks.createActivityQueue,
   createExportQueue: mocks.createExportQueue,
   createFitFileImportBatchQueue: mocks.createFitBatchQueue,
@@ -113,7 +128,6 @@ const snapshot: AccountErasureRemoteSnapshot = {
   authIdentities: [],
   externalEffects: [],
   localIdentifiers: {
-    activityIds: [],
     exportObjects: [
       {
         exportId: "10000000-0000-4000-8000-000000001994",
@@ -128,9 +142,7 @@ const snapshot: AccountErasureRemoteSnapshot = {
         uploadId: "30000000-0000-4000-8000-000000001994",
       },
     ],
-    processingOperationIds: [],
     sessionIds: [],
-    sleepSessionIds: [],
     userId: "40000000-0000-4000-8000-000000001994",
   },
   posthogDistinctId: "posthog-distinct-1994",
@@ -141,10 +153,49 @@ const snapshot: AccountErasureRemoteSnapshot = {
 };
 
 describe("createAccountErasureWorkPurgerFromEnv", () => {
+  it("erases pending originals for every owned provider even when queue discovery fails", async () => {
+    const fs = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
+    const { join, dirname } = await import("node:path");
+    const directory = await fs.mkdtemp("/tmp/account-staging-deletion-");
+    vi.stubEnv("JOB_FILES_DIR", directory);
+    const userId = snapshot.localIdentifiers.userId;
+    const owned = ["wahoo", "garmin"].map((providerId) =>
+      join(directory, "provider-fit", userId, providerId, "a".repeat(64), "activity.fit"),
+    );
+    const otherUser = join(
+      directory,
+      "provider-fit",
+      "other-user",
+      "wahoo",
+      "a".repeat(64),
+      "activity.fit",
+    );
+    try {
+      for (const filePath of [...owned, otherUser]) {
+        await fs.mkdir(dirname(filePath), { recursive: true });
+        await fs.writeFile(filePath, "pending FIT original");
+      }
+      mocks.removeLocalPath.mockImplementation(fs.rm);
+      mocks.purgeAccountWork.mockRejectedValueOnce(new Error("Redis queue discovery unavailable"));
+      const purger = createAccountErasureWorkPurgerFromEnv();
+
+      await expect(purger.purge(snapshot)).rejects.toThrow("Redis queue discovery unavailable");
+
+      expect(owned.map(existsSync)).toEqual([false, false]);
+      expect(existsSync(otherUser)).toBe(true);
+    } finally {
+      mocks.removeLocalPath.mockImplementation(async () => undefined);
+      mocks.purgeAccountWork.mockClear();
+      vi.unstubAllEnvs();
+      await fs.rm(directory, { force: true, recursive: true });
+    }
+  });
+
   it("purges every non-coordinator queue plus attributable objects and files", async () => {
     const purger = createAccountErasureWorkPurgerFromEnv();
 
     await purger.purge(snapshot);
+    expect(mocks.eraseImageObjects).toHaveBeenCalledWith(snapshot.localIdentifiers.userId);
 
     expect(mocks.purgeAccountWork).toHaveBeenCalledWith(
       {
@@ -162,6 +213,7 @@ describe("createAccountErasureWorkPurgerFromEnv", () => {
       "sync",
       "sync-strava",
       "sync-garmin",
+      "activity-images",
       "import",
       "fit-file-import",
       "fit-file-import-batch",
@@ -192,6 +244,7 @@ describe("createAccountErasureWorkPurgerFromEnv", () => {
     await dependencies.purgeRedis(snapshot.localIdentifiers.userId, ["bullmq-job-1994"]);
     await dependencies.abortImportMultipart("imports/user/upload", "multipart-1994");
     await dependencies.deleteImportObject("imports/user/upload");
+    await dependencies.deleteProviderArtifactsForUser(snapshot.localIdentifiers.userId);
     await dependencies.deleteExportObject("exports/user/export/archive.zip");
     await dependencies.removeLocalPath("/tmp/dofek-job-files/work");
 
@@ -202,6 +255,9 @@ describe("createAccountErasureWorkPurgerFromEnv", () => {
       force: true,
       recursive: true,
     });
+    expect(mocks.deleteProviderArtifactsForUser).toHaveBeenCalledWith(
+      snapshot.localIdentifiers.userId,
+    );
     expect(mocks.r2Client.send).toHaveBeenCalledWith(
       expect.objectContaining({
         input: {
@@ -217,7 +273,7 @@ describe("createAccountErasureWorkPurgerFromEnv", () => {
 
     await purger.close();
 
-    expect(mocks.closeByQueue).toHaveLength(12);
+    expect(mocks.closeByQueue).toHaveLength(13);
     for (const close of mocks.closeByQueue.values()) {
       expect(close).toHaveBeenCalledOnce();
     }

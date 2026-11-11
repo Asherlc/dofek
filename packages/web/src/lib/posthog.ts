@@ -54,7 +54,8 @@ export function initPostHog() {
     capture_exceptions: {
       capture_unhandled_errors: true,
       capture_unhandled_rejections: true,
-      capture_console_errors: true,
+      // Handled failures use telemetry's classification; console output is not an exception.
+      capture_console_errors: false,
     },
   });
 }

@@ -9,11 +9,11 @@ import {
 } from "@dofek/format/record-local-time";
 import type { ProviderAbsentSource } from "@dofek/providers/providers";
 import type { ClimbingMapLocation } from "@dofek/training/climbing-map";
-import { TrainingStressCalculator } from "@dofek/training/training-load";
 import { getProvider } from "dofek/providers/registry";
 import { z } from "zod";
 import type { ActivityLocation } from "../contracts/activity-location.ts";
-import { osmPointMapPreview, osmTilePreview } from "../lib/osm-tile.ts";
+import type { ClimbingLogActivitySession } from "../contracts/climbing-log-contracts.ts";
+import { pointMapPreview, routeMapPreview } from "../lib/map-preview.ts";
 import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import {
   activityOriginColumnsSchema,
@@ -42,11 +42,12 @@ export interface CalendarActivityEntry {
   id: string;
   name: string | null;
   activityType: string;
+  primaryActivityType: string | null;
   modality: string | null;
   startedAt: string;
   endedAt: string | null;
   localTimeContext: RecordLocalTimeContext;
-  durationMin: number;
+  durationMin: number | null;
   source: ActivityListSourceDetail;
   lastProcessedAt: string | null;
   distanceMeters: number | null;
@@ -69,9 +70,18 @@ export interface CalendarDayActivities {
 
 export const activityRowSchema = z.object({
   ...activityOriginColumnsSchema.shape,
+  origin_evidence: z.array(
+    z.object({
+      upstreamMemberActivityId: z.string(),
+      downstreamMemberActivityId: z.string(),
+      field: z.string(),
+      value: z.string(),
+    }),
+  ),
   id: z.string(),
   name: z.string().nullable(),
   canonical_type: z.string(),
+  primary_canonical_type: z.string().nullable(),
   modality: z.string().nullable(),
   started_at: timestampStringSchema,
   ended_at: timestampStringSchema.nullable(),
@@ -82,10 +92,11 @@ export const activityRowSchema = z.object({
   start_utc_offset_minutes: z.coerce.number().nullable(),
   end_utc_offset_minutes: z.coerce.number().nullable(),
   local_time_source: localTimeSourceSchema,
-  duration_min: z.coerce.number(),
+  duration_min: z.coerce.number().nullable(),
   avg_hr: z.coerce.number().nullable(),
   max_hr: z.coerce.number().nullable(),
   avg_power: z.coerce.number().nullable(),
+  power_tss: z.coerce.number().nullable(),
   total_distance: z.coerce.number().nullable(),
   elevation_gain_m: z.coerce.number().nullable(),
   centroid_lat: z.coerce.number().nullable(),
@@ -97,12 +108,6 @@ export const activityRowSchema = z.object({
     .optional()
     .default([]),
   source_external_ids: z.array(z.record(z.string(), z.string().nullable())).optional().default([]),
-});
-
-export const baselineRowSchema = z.object({
-  max_hr: z.coerce.number().nullable(),
-  resting_hr: z.coerce.number().nullable(),
-  ftp: z.coerce.number().nullable(),
 });
 
 function authoritativeLocalTimeContext(
@@ -135,10 +140,16 @@ export interface WeekListInput {
   includeProviderAbsent?: boolean;
 }
 
+export interface ActivityListPage {
+  days: CalendarDayActivities[];
+  totalCount: number;
+  page: number;
+  pageSize: number;
+}
+
 interface CalendarEntryContext {
-  baseline: z.infer<typeof baselineRowSchema>;
-  calculator: TrainingStressCalculator;
-  routePreview?: ReturnType<typeof osmTilePreview>;
+  climbingLogSessions?: ClimbingLogActivitySession[];
+  routePreview?: ReturnType<typeof routeMapPreview>;
   mapReadiness?: "processing" | "awaiting_summary" | "unavailable";
 }
 
@@ -149,7 +160,7 @@ export function createActiveCalendarEntry(
   const sourceLocations = context.sourceLocations;
   let sourceLocation: ActivityLocation | null = null;
   if (sourceLocations?.length) {
-    const sourcePreview = osmPointMapPreview(
+    const sourcePreview = pointMapPreview(
       sourceLocations.map((location) => ({
         lat: location.coordinates.latitude,
         lng: location.coordinates.longitude,
@@ -176,7 +187,13 @@ export function createActiveCalendarEntry(
     ...projectCalendarEntry(
       row,
       context,
-      buildActivityListSource(activityOriginFromColumns(row), sourceLinks, getProvider),
+      buildActivityListSource(
+        activityOriginFromColumns(row),
+        sourceLinks,
+        getProvider,
+        row.origin_evidence,
+        context.climbingLogSessions,
+      ),
       sourceLocation ??
         (context.mapReadiness != null && context.mapReadiness !== "unavailable"
           ? { kind: "processing" }
@@ -196,7 +213,15 @@ export function createProviderAbsentCalendarEntry(
     ...projectCalendarEntry(
       row,
       context,
-      buildActivityListSource(activityOriginFromColumns(row), undefined, getProvider),
+      buildActivityListSource(
+        activityOriginFromColumns(row),
+        ActivitySourceAttribution.fromClickHouseRow(
+          row.source_external_ids,
+          row.absent_source_external_ids,
+        ).toSourceLinks(getProvider),
+        getProvider,
+        row.origin_evidence,
+      ),
       context.mapReadiness === "processing" ? { kind: "processing" } : null,
     ),
     isProviderAbsent: true,
@@ -211,16 +236,10 @@ function projectCalendarEntry(
   source: ActivityListSourceDetail,
   sourceLocation: ActivityLocation | null,
 ): CalendarActivityEntry {
-  const { baseline, calculator } = context;
   const trainingStress = computeActivityTrainingStress({
+    activityType: row.canonical_type,
     durationMin: row.duration_min,
-    avgPower: row.avg_power,
-    avgHr: row.avg_hr,
-    maxHr: row.max_hr,
-    baselineMaxHr: baseline.max_hr,
-    baselineRestingHr: baseline.resting_hr,
-    ftp: baseline.ftp,
-    calculator,
+    powerTss: row.power_tss,
   });
   const tss = trainingStress.status === "available" ? trainingStress.score : null;
 
@@ -228,11 +247,12 @@ function projectCalendarEntry(
     id: row.id,
     name: row.name,
     activityType: row.canonical_type,
+    primaryActivityType: row.primary_canonical_type,
     modality: row.modality,
     startedAt: row.started_at,
     endedAt: row.ended_at,
     localTimeContext: authoritativeLocalTimeContext(row),
-    durationMin: Math.round(row.duration_min * 10) / 10,
+    durationMin: row.duration_min === null ? null : Math.round(row.duration_min * 10) / 10,
     source,
     lastProcessedAt: row.last_processed_at,
     distanceMeters: row.total_distance,
@@ -247,7 +267,7 @@ function projectCalendarEntry(
             centroidLng: row.centroid_lng,
             mapPreview:
               context.routePreview ??
-              osmTilePreview([{ lat: row.centroid_lat, lng: row.centroid_lng }]),
+              routeMapPreview([{ lat: row.centroid_lat, lng: row.centroid_lng }]),
           }
         : sourceLocation,
     tss: tss != null ? Math.round(tss * 10) / 10 : null,
@@ -256,17 +276,13 @@ function projectCalendarEntry(
 }
 
 interface TssInput {
-  durationMin: number;
-  avgPower: number | null;
-  avgHr: number | null;
-  maxHr: number | null;
-  baselineMaxHr: number | null;
-  baselineRestingHr: number | null;
-  ftp: number | null;
-  calculator: TrainingStressCalculator;
+  activityType: string;
+  durationMin: number | null;
+  powerTss: number | null;
 }
 
 type ActivityTrainingStress =
+  | { status: "not_applicable" }
   | {
       status: "available";
       score: number;
@@ -277,79 +293,29 @@ type ActivityTrainingStress =
     };
 
 function computeActivityTrainingStress(input: TssInput): ActivityTrainingStress {
-  if (input.durationMin <= 0) {
+  if (input.activityType !== "cycling") {
+    return { status: "not_applicable" };
+  }
+  if (input.durationMin === null || input.durationMin <= 0) {
     return {
       status: "missing",
       reason: "Record an activity duration greater than zero.",
     };
   }
-  if (input.avgPower != null && input.avgPower > 0 && input.ftp != null && input.ftp > 0) {
+  if (input.powerTss != null) {
     return {
       status: "available",
-      score: TrainingStressCalculator.computePowerTss(input.avgPower, input.ftp, input.durationMin),
-    };
-  }
-  const effectiveMaxHr = input.baselineMaxHr ?? input.maxHr;
-  const effectiveRestingHr = input.baselineRestingHr ?? 60;
-  if (
-    input.avgHr != null &&
-    input.avgHr > 0 &&
-    effectiveMaxHr != null &&
-    effectiveMaxHr > effectiveRestingHr
-  ) {
-    return {
-      status: "available",
-      score: input.calculator.computeHrTss(
-        input.durationMin,
-        input.avgHr,
-        effectiveMaxHr,
-        effectiveRestingHr,
-      ),
+      score: input.powerTss,
     };
   }
   return {
     status: "missing",
-    reason: formatTrainingStressUnavailableReason(input, effectiveMaxHr, effectiveRestingHr),
+    reason: "Record cycling power with sufficient sustained-effort evidence for computed eFTP.",
   };
 }
 
-function formatTrainingStressUnavailableReason(
-  input: TssInput,
-  effectiveMaxHr: number | null,
-  effectiveRestingHr: number,
-): string {
-  const powerActions: string[] = [];
-  if (input.avgPower == null || input.avgPower <= 0) {
-    powerActions.push("record average power");
-  }
-  if (input.ftp == null || input.ftp <= 0) {
-    powerActions.push("set functional threshold power");
-  }
-
-  const heartRateActions: string[] = [];
-  if (input.avgHr == null || input.avgHr <= 0) {
-    heartRateActions.push("record average heart rate");
-  }
-  if (effectiveMaxHr == null || effectiveMaxHr <= 0) {
-    heartRateActions.push("set maximum heart rate");
-  } else if (effectiveMaxHr <= effectiveRestingHr) {
-    heartRateActions.push("set maximum heart rate above resting heart rate");
-  }
-
-  const powerAction = joinActions(powerActions);
-  const heartRateAction = joinActions(heartRateActions);
-  return `${capitalize(powerAction)}, or ${heartRateAction}.`;
-}
-
-function joinActions(actions: string[]): string {
-  return actions.join(" and ");
-}
-
-function capitalize(value: string): string {
-  return `${value.charAt(0).toUpperCase()}${value.slice(1)}`;
-}
-
 function formatActivityStats(trainingStress: ActivityTrainingStress): ActivityStat[] {
+  if (trainingStress.status === "not_applicable") return [];
   if (trainingStress.status === "missing") {
     return [
       {

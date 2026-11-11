@@ -1,12 +1,28 @@
 // @vitest-environment jsdom
 import { render, screen } from "@testing-library/react";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import {
   climbingAttemptFixture,
   climbingClimbFixture,
   climbingLogEntryFixture,
 } from "../../server/src/repositories/climbing-test-helpers.ts";
 import { ClimbingLogEntryDetails } from "./ClimbingLogEntryDetails";
+
+it("renders the board and visited gym instead of the shared problem location", () => {
+  const climb = climbingClimbFixture();
+  const location = climb.areaPath[0];
+  if (!location) throw new Error("Expected fixture location");
+  const gym = { ...location, name: "Visited gym" };
+  const entry = climbingLogEntryFixture({
+    climb,
+    board: { name: "Original 12 x 12", externalId: "wall" },
+    areaPath: [gym],
+  });
+  render(<ClimbingLogEntryDetails entry={entry} />);
+  expect(screen.getByText("Board: Original 12 x 12")).toBeTruthy();
+  expect(screen.getByText("Visited gym")).toBeTruthy();
+  expect(screen.queryByText("Wall")).toBeNull();
+});
 
 it("shows Mountain Project facts without numbering an unrecorded attempt", () => {
   const log = climbingLogEntryFixture({
@@ -75,4 +91,131 @@ it("renders the climb, grades, known attempt facts and notes", () => {
   expect(screen.getByText("Used aid")).toBeTruthy();
   expect(screen.getByText("Lead")).toBeTruthy();
   expect(screen.getByText("Source note")).toBeTruthy();
+});
+
+vi.mock("./ClimbingPhotos", () => ({
+  ClimbingPhotos: ({ id }: { id: string }) => <div data-testid="ascent-photos">{id}</div>,
+}));
+
+it.each(["kaya", "openbeta"])(
+  "uses the server-selected KAYA photo source with preferred provider %s",
+  (providerId) => {
+    const sourceId = "20000000-0000-4000-8000-000000000099";
+    const entry = climbingLogEntryFixture({
+      providerId,
+      externalId: "source-record",
+      photoLogEntryId: sourceId,
+    });
+    render(<ClimbingLogEntryDetails entry={entry} />);
+    expect(screen.getByTestId("ascent-photos").textContent).toBe(sourceId);
+  },
+);
+it.each([
+  { providerId: "kaya", externalId: "kaya:session:123:attempted:456" },
+  { providerId: "openbeta", externalId: "source-record" },
+  { providerId: "kaya", externalId: null },
+])("omits the gallery when the server reports no eligible photo source: %o", (source) => {
+  render(
+    <ClimbingLogEntryDetails
+      entry={climbingLogEntryFixture({ ...source, photoLogEntryId: null })}
+    />,
+  );
+  expect(screen.queryByTestId("ascent-photos")).toBeNull();
+});
+
+it("displays all recorded grips and the source wall category", () => {
+  render(
+    <ClimbingLogEntryDetails
+      entry={climbingLogEntryFixture({
+        holdTypes: ["crimp", "volume", "no_grips"],
+        wallAngle: { category: "roof" },
+      })}
+    />,
+  );
+  expect(screen.getByText("Hold types: crimp, volume, no grips")).toBeTruthy();
+  expect(screen.getByText("Wall angle: Roof")).toBeTruthy();
+});
+
+it("groups source tags once and keeps custom and unknown grip labels visible", () => {
+  render(
+    <ClimbingLogEntryDetails
+      entry={climbingLogEntryFixture({
+        holdTypes: ["crimp"],
+        tags: [
+          {
+            providerId: "kaya",
+            sourceKey: "known-grip",
+            label: "Crimp",
+            categoryKey: "3",
+            categoryLabel: "Grip",
+          },
+          {
+            providerId: "kaya",
+            sourceKey: "unknown-grip",
+            label: "Moon scoop",
+            categoryKey: "3",
+            categoryLabel: "Grip",
+          },
+          {
+            providerId: "kaya",
+            sourceKey: "move",
+            label: "Bicycle",
+            categoryKey: "2",
+            categoryLabel: "Movement",
+          },
+          {
+            providerId: "kaya",
+            sourceKey: "move",
+            label: "Bicycle",
+            categoryKey: "2",
+            categoryLabel: "Movement",
+          },
+          {
+            providerId: "kaya",
+            sourceKey: "custom",
+            label: "Crimp",
+            categoryKey: "custom",
+            categoryLabel: "My category",
+          },
+          {
+            providerId: "custom-source",
+            sourceKey: "free",
+            label: "Mystery label",
+            categoryKey: null,
+            categoryLabel: null,
+          },
+        ],
+      })}
+    />,
+  );
+  expect(screen.getByText("Hold types: crimp")).toBeTruthy();
+  expect(screen.getByText("Kaya · Grip")).toBeTruthy();
+  expect(screen.getByText("Moon scoop")).toBeTruthy();
+  expect(screen.getByText("Kaya · Movement")).toBeTruthy();
+  expect(screen.getAllByText("Bicycle")).toHaveLength(1);
+  expect(screen.getAllByText("Crimp")).toHaveLength(1);
+  expect(screen.getByText("Kaya · My category")).toBeTruthy();
+  expect(screen.getByText("custom-source · Uncategorized tags")).toBeTruthy();
+  expect(screen.getByText("Mystery label")).toBeTruthy();
+});
+
+it("shows two unordered attempts with one successful send", () => {
+  const entry = climbingLogEntryFixture({ providerId: "kaya", recordedClimbAttemptCount: 2 });
+  entry.attempts = [
+    climbingAttemptFixture(entry.id, {
+      outcome: "completed",
+      rockResultLabels: ["sent"],
+      ropeMethod: "top_rope",
+    }),
+    climbingAttemptFixture(entry.id, {
+      id: "20000000-0000-4000-8000-000000000006",
+      outcome: "failed",
+      ropeMethod: "top_rope",
+    }),
+  ];
+  render(<ClimbingLogEntryDetails entry={entry} />);
+  expect(screen.getByText("Attempts: 2")).toBeTruthy();
+  expect(screen.getAllByText("Attempt (order unknown)")).toHaveLength(2);
+  expect(screen.getByText("sent")).toBeTruthy();
+  expect(screen.getByText("Failed")).toBeTruthy();
 });

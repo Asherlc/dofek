@@ -1,9 +1,23 @@
+import type { ActivityHardware } from "@dofek/providers/activity-hardware";
+import {
+  activityMetricSourcePresentation,
+  activityMetricSourceText,
+} from "@dofek/providers/activity-metric-source";
+import {
+  type ActivitySourceTree,
+  activityMetricSourceInheritance,
+} from "@dofek/providers/activity-source-tree";
 import { providerRecordLabel, providerSourceLabel } from "@dofek/providers/providers";
+import { computeCyclingPowerWork } from "@dofek/training/cycling-workout-metrics";
 import { mapHrZones } from "@dofek/zones/zones";
+import { cyclingPowerCoveragePolicy } from "dofek/analytics/cycling-power-policy";
 import { z } from "zod";
 import {
   ACTIVITY_CHART_METRICS,
+  type ActivityHeartRateContext,
+  type ActivityMetricSourceSelection,
   type ActivityMetricSources,
+  type ActivityPowerWork,
 } from "../contracts/activity-metric-sources.ts";
 import type { ActivitySensorQueryStore, ActivitySensorWindow } from "./activity-sensor-types.ts";
 import { heartRateZoneCountColumns, heartRateZoneSqlParams } from "./heart-rate-zone-sql.ts";
@@ -12,6 +26,7 @@ import { heartRateZoneCountColumns, heartRateZoneSqlParams } from "./heart-rate-
 export const activityMetricSamplesSql = `SELECT *
   FROM analytics.sensor_scalar_sample FINAL
   WHERE user_id = {userId:UUID}
+    AND {isPointOnly:Bool} = 0
     AND channel IN ('heart_rate', 'power', 'speed', 'cadence', 'altitude')
     AND recorded_date >= toDate(parseDateTime64BestEffort({windowStartedAt:String}, 6, 'UTC'))
     AND recorded_date <= toDate(parseDateTime64BestEffort({windowEndedAt:String}, 6, 'UTC'))
@@ -29,10 +44,106 @@ export const activityMetricSourceIdSql = `if(coalesce(device_id, '') = '', provi
 export function activityMetricParams(window: ActivitySensorWindow) {
   return {
     userId: window.userId,
+    isPointOnly: window.providerType === "climbing_log",
     windowStartedAt: window.startedAt,
     windowEndedAt:
       window.endedAt ?? new Date(Date.parse(window.startedAt) + 12 * 60 * 60 * 1000).toISOString(),
     memberActivityIds: window.memberActivityIds,
+  };
+}
+
+interface HeartRateStreamStore {
+  getStream(
+    window: ActivitySensorWindow,
+    maxPoints: number,
+    sources: ActivityMetricSourceSelection,
+  ): Promise<Array<{ recorded_at: string; heart_rate: number | null }>>;
+}
+
+/** Display context only; activity summaries and zones retain the recorded window. */
+export async function getActivityHeartRateContext(
+  store: HeartRateStreamStore,
+  window: ActivitySensorWindow,
+  maxPoints: number,
+  heartRateSourceId: string | undefined,
+): Promise<ActivityHeartRateContext> {
+  const marginMs = 5 * 60 * 1000;
+  const chartWindow = {
+    startedAt: new Date(Date.parse(window.startedAt) - marginMs).toISOString(),
+    endedAt: window.endedAt ? new Date(Date.parse(window.endedAt) + marginMs).toISOString() : null,
+  };
+  const points = heartRateSourceId
+    ? await store.getStream({ ...window, ...chartWindow }, maxPoints, {
+        heartRate: heartRateSourceId,
+      })
+    : [];
+  return {
+    window: chartWindow,
+    points: points
+      .filter((point) => point.heart_rate !== null)
+      .map((point) => ({
+        recordedAt: point.recorded_at,
+        value: point.heart_rate,
+      })),
+  };
+}
+
+const powerSampleSchema = z.object({
+  elapsed_seconds: z.coerce.number(),
+  power: z.coerce.number().nullable(),
+});
+
+/** Mechanical work from full power samples, with the same gap policy as cycling analytics. */
+export async function getActivityPowerWork(
+  store: ActivitySensorQueryStore,
+  window: ActivitySensorWindow,
+  powerSourceId?: string,
+): Promise<ActivityPowerWork> {
+  const durationSeconds = window.endedAt
+    ? Math.floor((Date.parse(window.endedAt) - Date.parse(window.startedAt)) / 1_000)
+    : 0;
+  if (durationSeconds <= 0) {
+    return { workKilojoules: null, coverage: { coveredSeconds: 0, coveragePct: 0 } };
+  }
+  const samples = await store.query(
+    powerSampleSchema,
+    `WITH samples AS (
+      ${
+        powerSourceId
+          ? `SELECT recorded_at, argMin(scalar, (provider_priority, provider_id, id)) AS power
+        FROM (${activityMetricSamplesSql})
+        WHERE channel = 'power' AND ${activityMetricSourceIdSql} = {powerSourceId:String}
+        GROUP BY recorded_at`
+          : `SELECT recorded_at, scalar AS power
+        FROM analytics.activity_sensor_sample FINAL
+        WHERE user_id = {userId:UUID} AND activity_id = {activityId:UUID}
+          AND recorded_at >= parseDateTime64BestEffort({windowStartedAt:String}, 6, 'UTC')
+          AND recorded_at <= parseDateTime64BestEffort({windowEndedAt:String}, 6, 'UTC')
+          AND channel = 'power' AND is_deleted = 0`
+      }
+    )
+    SELECT dateDiff('millisecond', parseDateTime64BestEffort({windowStartedAt:String}, 6, 'UTC'), recorded_at) / 1000 AS elapsed_seconds,
+      power FROM samples ORDER BY recorded_at`,
+    {
+      ...activityMetricParams(window),
+      activityId: window.activityId,
+      ...(powerSourceId ? { powerSourceId } : {}),
+    },
+  );
+  const metrics = computeCyclingPowerWork(
+    samples.map((sample) => ({
+      elapsedSeconds: sample.elapsed_seconds,
+      powerWatts: sample.power,
+    })),
+    durationSeconds,
+    cyclingPowerCoveragePolicy,
+  );
+  return {
+    workKilojoules: metrics.workKilojoules,
+    coverage: {
+      coveredSeconds: metrics.coverage.coveredSeconds,
+      coveragePct: metrics.coverage.coveragePct,
+    },
   };
 }
 
@@ -41,11 +152,20 @@ const sourceRowSchema = z.object({
   provider_id: z.string(),
   device_id: z.string().nullable(),
   source_id: z.string(),
+  activity_ids: z.array(z.string()),
+  sample_count: z.coerce.number(),
+});
+const deviceNameSchema = z.object({
+  provider_id: z.string(),
+  device_id: z.string(),
+  device_name: z.string(),
 });
 
 export async function getActivityMetricSources(
   store: ActivitySensorQueryStore,
   window: ActivitySensorWindow,
+  hardware: ActivityHardware = { items: [], power: [] },
+  sourceTree: ActivitySourceTree = { primary: null, otherSources: [] },
 ): Promise<ActivityMetricSources> {
   const rows = await store.query(
     sourceRowSchema,
@@ -53,22 +173,123 @@ export async function getActivityMetricSources(
     WITH source_samples AS (
       SELECT *, ${activityMetricSourceIdSql} AS source_id FROM (${activityMetricSamplesSql})
     )
-    SELECT channel, provider_id, source_id, any(nullIf(device_id, '')) AS device_id
+    SELECT channel, provider_id, source_id, any(nullIf(device_id, '')) AS device_id,
+      groupUniqArray(ifNull(toString(activity_id), '')) AS activity_ids,
+      uniqExact(recorded_at) AS sample_count
     FROM source_samples
     GROUP BY channel, provider_id, source_id
     ORDER BY channel, min(provider_priority), provider_id, min(id), source_id`,
     activityMetricParams(window),
   );
+  const peripheralIds = rows
+    .filter((row) => row.provider_id === "ble_heart_rate" && row.device_id !== null)
+    .map((row) => row.device_id);
+  // Raw storage is ordered by user/activity/channel/time; keep this lookup within
+  // the same eligible activity window and only request the selected peripherals.
+  const peripheralNames = peripheralIds.length
+    ? await store.query(
+        deviceNameSchema,
+        `
+    SELECT provider_id, assumeNotNull(device_id) AS device_id,
+      argMax(JSONExtractString(metadata, 'device_name'), tuple(recorded_at, version, id)) AS device_name
+    FROM ingest.metric_stream FINAL
+    WHERE user_id = {userId:UUID} AND provider_id = 'ble_heart_rate'
+      AND device_id IN {peripheralIds:Array(String)}
+      AND channel IN ('heart_rate', 'rr_interval_ms')
+      AND recorded_at >= parseDateTime64BestEffort({windowStartedAt:String}, 6, 'UTC')
+      AND recorded_at <= parseDateTime64BestEffort({windowEndedAt:String}, 6, 'UTC')
+      AND (activity_id IS NULL OR activity_id IN (SELECT arrayJoin(CAST({memberActivityIds:Array(String)}, 'Array(UUID)'))))
+      AND is_deleted = 0 AND scalar > 0 AND JSONExtractString(metadata, 'device_name') != ''
+    GROUP BY provider_id, device_id`,
+        { ...activityMetricParams(window), peripheralIds },
+      )
+    : [];
   return ACTIVITY_CHART_METRICS.flatMap((metric) => {
-    const sources = rows
-      .filter((row) => row.channel === metric.channel)
-      .map((row) => ({
+    const metricRows = rows.filter((row) => row.channel === metric.channel);
+    if (metric.key === "heartRate") {
+      const directlyRecorded = (row: z.infer<typeof sourceRowSchema>) =>
+        row.activity_ids.some((id) => window.memberActivityIds.includes(id)) ||
+        hardware.items.some(
+          (item) =>
+            item.role === "recorder" &&
+            window.memberActivityIds.includes(item.activityId) &&
+            item.providerId === row.provider_id &&
+            row.device_id !== null &&
+            row.device_id === item.sourceName,
+        );
+      // Stable sorting preserves provider priority for equal recording evidence and counts.
+      metricRows.sort(
+        (left, right) =>
+          Number(directlyRecorded(right)) - Number(directlyRecorded(left)) ||
+          right.sample_count - left.sample_count,
+      );
+    }
+    const sources = metricRows.map((row) => {
+      // A workout's ancestry does not override an explicitly attributed sample device.
+      const inherited =
+        row.device_id === null
+          ? activityMetricSourceInheritance(sourceTree, row.activity_ids, row.provider_id)
+          : null;
+      const peripheralName = peripheralNames.find(
+        (device) => device.provider_id === row.provider_id && device.device_id === row.device_id,
+      )?.device_name;
+      const originalLabel =
+        inherited?.label ??
+        (row.provider_id === "apple_health" || row.provider_id === "whoop_ble"
+          ? providerSourceLabel(row.provider_id, row.device_id)
+          : providerRecordLabel(row.provider_id, peripheralName ?? row.device_id));
+      const provenance = hardware.items.filter(
+        (item) =>
+          item.providerId === row.provider_id &&
+          row.activity_ids.includes(item.activityId) &&
+          (row.device_id === null ||
+            row.device_id === item.sourceName ||
+            row.device_id === item.label),
+      );
+      const role = provenance.some((item) => item.role === "recorder") ? "recorder" : "creator";
+      const matching = provenance.filter((item) => item.role === role);
+      const labels = [...new Set(matching.map((item) => item.label))];
+      const name =
+        labels.length === 1 &&
+        row.activity_ids.every((id) => matching.some((item) => item.activityId === id))
+          ? labels[0]
+          : undefined;
+      let label = originalLabel;
+      if (name) {
+        const includesHardwareName = originalLabel
+          .replace(/\s+/g, " ")
+          .toLowerCase()
+          .includes(name.replace(/\s+/g, " ").toLowerCase());
+        if (role === "recorder") {
+          label = includesHardwareName ? originalLabel : `${originalLabel} · recorded by ${name}`;
+        } else {
+          const baseLabel =
+            includesHardwareName && !inherited
+              ? providerRecordLabel(row.provider_id, null)
+              : originalLabel;
+          label = `${baseLabel} · file created by ${name}`;
+        }
+      }
+      const presentation =
+        inherited?.presentation ??
+        activityMetricSourcePresentation(
+          row.provider_id,
+          peripheralName ?? row.device_id,
+          label,
+          name,
+        );
+      return {
         id: row.source_id,
-        label:
-          row.provider_id === "apple_health"
-            ? providerSourceLabel(row.provider_id, row.device_id)
-            : providerRecordLabel(row.provider_id, row.device_id),
-      }));
+        label,
+        presentation:
+          inherited &&
+          role === "recorder" &&
+          name &&
+          activityMetricSourceText(presentation) === null
+            ? { ...presentation, displayName: name }
+            : presentation,
+      };
+    });
     const first = sources[0];
     return first
       ? [

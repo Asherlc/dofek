@@ -2,6 +2,35 @@ import { statusColors } from "@dofek/scoring/colors";
 import { StyleSheet } from "react-native";
 import { colors } from "../../theme";
 
+export const statsStyles = StyleSheet.create({
+  grid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    rowGap: 16,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+    paddingTop: 16,
+  },
+  card: {
+    paddingRight: 12,
+    width: "48%",
+    minWidth: 130,
+    flexGrow: 1,
+  },
+  label: {
+    fontSize: 11,
+    color: colors.textTertiary,
+    marginBottom: 4,
+  },
+  value: {
+    fontSize: 22,
+    fontWeight: "700",
+    color: colors.text,
+    fontVariant: ["tabular-nums"],
+  },
+  secondary: { color: colors.textSecondary, fontSize: 12, marginTop: 4 },
+});
+
 export const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -57,9 +86,6 @@ export const styles = StyleSheet.create({
     alignItems: "center",
     gap: 12,
   },
-  icon: {
-    fontSize: 32,
-  },
   headerText: {
     flex: 1,
     gap: 6,
@@ -86,35 +112,6 @@ export const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.textSecondary,
     marginTop: 4,
-  },
-  sourceRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    alignItems: "center",
-    marginTop: 2,
-  },
-  source: {
-    fontSize: 12,
-    color: colors.textTertiary,
-  },
-  sourceLinkRow: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  sourceLinkPressable: {
-    paddingVertical: 2,
-    paddingHorizontal: 4,
-    borderRadius: 4,
-  },
-  sourceLink: {
-    fontSize: 12,
-    color: colors.accent,
-    textDecorationLine: "underline",
-  },
-  sourceRemoved: {
-    fontSize: 12,
-    color: colors.textTertiary,
-    textDecorationLine: "line-through",
   },
   providerAbsentBanner: {
     marginTop: 8,

@@ -7,8 +7,16 @@ import { verifyAccountErasureBackupRetention } from "../account-erasure/backup-r
 import {
   eraseClickHouseAccount,
   fenceClickHouseAccount,
+  prepareClickHouseAccountErasure,
 } from "../account-erasure/clickhouse-erasure.ts";
 import { R2DatabaseBackupStorage } from "../account-erasure/database-backup-storage.ts";
+import {
+  ACCOUNT_ERASURE_IDENTIFIER_PAGE_SIZE,
+  AccountErasureIdentifierStore,
+} from "../account-erasure/identifier-store.ts";
+import { KafkaLogStorage } from "../account-erasure/kafka-log-storage.ts";
+import { KafkaRemoteHistory } from "../account-erasure/kafka-remote-history.ts";
+import { KafkaRemoteStorage } from "../account-erasure/kafka-remote-storage.ts";
 import { assertPeerDbAccountErasureDrained } from "../account-erasure/peerdb-erasure.ts";
 import {
   createPeerDbStagingStorageFromEnv,
@@ -38,8 +46,14 @@ import {
   type AccountErasureRemoteSnapshot,
   decryptAccountErasureSnapshot,
 } from "../account-erasure/remote-snapshot.ts";
+import {
+  ANALYTICS_PUBLICATION_RESOURCE,
+  withAnalyticsQueryOwner,
+} from "../analytics/analytics-query-owner.ts";
+import type { ClickHouseClient } from "../db/clickhouse.ts";
 import { createPeerDbMirrorApiClientFromEnv } from "../db/clickhouse-cdc.ts";
 import type { Database } from "../db/index.ts";
+import { metricStreamQuarantineTopic } from "../metric-stream/redpanda-quarantine.ts";
 import { getAllProviders } from "../providers/index.ts";
 import { createR2Client, requiredR2EnvironmentVariable } from "../r2-storage.ts";
 import {
@@ -62,9 +76,8 @@ export interface AccountErasureRuntime {
   phaseRunner: AccountErasurePhaseRunner;
 }
 
-type AccountErasureRuntimeDatabase = Pick<Database, "execute" | "transaction">;
-type AccountErasureRuntimeClickHouseClient = Parameters<typeof eraseClickHouseAccount>[0] &
-  Parameters<typeof assertPeerDbAccountErasureDrained>[1];
+type AccountErasureRuntimeDatabase = Pick<Database, "execute" | "transaction" | "$client">;
+type AccountErasureRuntimeClickHouseClient = ClickHouseClient;
 
 export async function createAccountErasureRuntime(
   database: AccountErasureRuntimeDatabase,
@@ -97,14 +110,60 @@ export async function createAccountErasureRuntime(
     const redpanda = createAccountErasureRedpandaAdminFromEnv();
     startupCleanup.push(() => redpanda.close());
     await redpanda.connect();
-
-    const identifiers = (snapshot: AccountErasureRemoteSnapshot) => ({
-      activityIds: snapshot.localIdentifiers.activityIds,
-      operationIds: snapshot.localIdentifiers.processingOperationIds,
-      sleepSessionIds: snapshot.localIdentifiers.sleepSessionIds,
-      userId: snapshot.localIdentifiers.userId,
+    if (requiredR2EnvironmentVariable("KAFKA_TIERED_STORAGE_REGION") !== "auto")
+      throw new Error("KAFKA_TIERED_STORAGE_REGION must be auto for the qualified R2 endpoint");
+    const brokerR2Client = createR2Client({
+      accessKeyId: requiredR2EnvironmentVariable("KAFKA_TIERED_STORAGE_ACCESS_KEY_ID"),
+      secretAccessKey: requiredR2EnvironmentVariable("KAFKA_TIERED_STORAGE_SECRET_ACCESS_KEY"),
+      endpoint: requiredR2EnvironmentVariable("KAFKA_TIERED_STORAGE_ENDPOINT"),
     });
+    startupCleanup.push(async () => brokerR2Client.destroy());
+    const remoteHistory = new KafkaRemoteHistory(redpanda.admin, () =>
+      redpanda.createMetadataConsumer(),
+    );
+    const remoteStorage = new KafkaRemoteStorage(
+      brokerR2Client,
+      requiredR2EnvironmentVariable("KAFKA_TIERED_STORAGE_BUCKET"),
+      `${requiredR2EnvironmentVariable("KAFKA_CLUSTER_ID")}/`,
+      (boundaries) => remoteHistory.assertDeleted(boundaries),
+    );
+    const brokerStorage = new KafkaLogStorage(
+      redpanda.admin,
+      {
+        directory: "/var/lib/dofek/kafka-data",
+        brokerDirectory: "/var/lib/kafka/data",
+        retiredDirectories: [
+          "/var/lib/dofek/retired-broker-data",
+          "/var/lib/dofek/aborted-kafka-data",
+        ],
+        topics: redpanda.routes.flatMap(({ topic }) => [topic, metricStreamQuarantineTopic(topic)]),
+      },
+      remoteStorage,
+    );
+
+    const identifiers = (input: { requestId: string; leaseOwner: string }) =>
+      new AccountErasureIdentifierStore(database, {
+        ...input,
+        pageSize: ACCOUNT_ERASURE_IDENTIFIER_PAGE_SIZE,
+      });
     const dependencies: AccountErasurePhaseRunnerDependencies = {
+      prepareIdentifiers: (input) =>
+        withAnalyticsQueryOwner(
+          database,
+          clickHouseClient,
+          {
+            resourceId: ANALYTICS_PUBLICATION_RESOURCE,
+            intentId: `account-erasure:${input.requestId}`,
+          },
+          (owner) => prepareClickHouseAccountErasure(owner, identifiers(input), input),
+        ),
+      assertIdentifiersReady: async (input) => {
+        const store = identifiers(input);
+        await store.assertClosureComplete(input.stage);
+        if (!(await store.loadPhysicalProgress(input.stage)))
+          throw new Error("Account erasure physical preparation is incomplete");
+      },
+      assertBrokerStorageExpired: (boundaries) => brokerStorage.assertExpired(boundaries),
       assertConsumersDrained: async (highWatermarks) => {
         for (const route of redpanda.routes) {
           const captured = highWatermarks.filter((entry) => entry.topic === route.topic);
@@ -118,13 +177,11 @@ export async function createAccountErasureRuntime(
           );
         }
       },
-      assertPeerDbDrained: (snapshot, walLsn) =>
-        assertPeerDbAccountErasureDrained(
-          database,
-          clickHouseClient,
-          walLsn,
-          identifiers(snapshot),
-        ),
+      assertPeerDbDrained: (input, walLsn) =>
+        assertPeerDbAccountErasureDrained(database, clickHouseClient, walLsn, {
+          userId: input.userId,
+          store: identifiers(input),
+        }),
       assertQuarantineExpired: async (highWatermarks) => {
         for (const route of redpanda.routes) {
           const captured = highWatermarks.filter((entry) => entry.topic === route.topic);
@@ -146,49 +203,76 @@ export async function createAccountErasureRuntime(
           await Promise.all(
             redpanda.routes.map(async ({ topic }) =>
               (
-                await captureAccountErasureHighWatermarks(redpanda.admin, topic)
+                await brokerStorage.capture(topic, () =>
+                  captureAccountErasureHighWatermarks(redpanda.admin, topic),
+                )
+              ).map((entry) => ({ ...entry, topic })),
+            ),
+          )
+        ).flat(),
+      captureQuarantineHighWatermarks: async () =>
+        (
+          await Promise.all(
+            redpanda.routes.map(async ({ topic }) =>
+              (
+                await brokerStorage.capture(metricStreamQuarantineTopic(topic), () =>
+                  captureAccountErasureQuarantineHighWatermarks(redpanda.admin, topic),
+                )
               ).map((entry) => ({ ...entry, topic })),
             ),
           )
         ).flat(),
       capturePeerDbStagingBoundary: (input) =>
         capturePeerDbStagingBoundary(database, peerDbMirrorApi, peerDbStaging.storage, input),
-      captureQuarantineHighWatermarks: async () =>
-        (
-          await Promise.all(
-            redpanda.routes.map(async ({ topic }) =>
-              (
-                await captureAccountErasureQuarantineHighWatermarks(redpanda.admin, topic)
-              ).map((entry) => ({ ...entry, topic })),
-            ),
-          )
-        ).flat(),
       decryptSnapshot: decryptAccountErasureSnapshot,
-      eraseArchive: (snapshot, options) =>
+      eraseArchive: (input, options) =>
         eraseMetricStreamArchive(
           archiveStorage,
-          {
-            activityIds: new Set(snapshot.localIdentifiers.activityIds),
-            operationIds: new Set(snapshot.localIdentifiers.processingOperationIds),
-            userId: snapshot.localIdentifiers.userId,
-          },
+          { userId: input.userId, stage: input.stage, store: identifiers(input) },
           options,
         ),
-      eraseClickHouse: (snapshot) =>
-        eraseClickHouseAccount(clickHouseClient, identifiers(snapshot)),
+      eraseClickHouse: (input) =>
+        withAnalyticsQueryOwner(
+          database,
+          clickHouseClient,
+          {
+            resourceId: ANALYTICS_PUBLICATION_RESOURCE,
+            intentId: `account-erasure:${input.requestId}`,
+          },
+          (owner) => eraseClickHouseAccount(owner, identifiers(input), input),
+        ),
       erasePostgres: (requestId, userId) => erasePostgresAccount(database, requestId, userId),
       eraseProcessors: (snapshot, progress) =>
         eraseAccountProcessors(snapshot, processorConfig, progress),
       eraseStripe: (snapshot) => eraseStripeAccount(snapshot),
-      fenceIngest: (snapshot) =>
-        fenceClickHouseAccount(
+      // Activation already committed its PG fence; never hold that transaction
+      // while waiting for this global ClickHouse publication owner.
+      fenceIngest: (input) =>
+        withAnalyticsQueryOwner(
+          database,
           clickHouseClient,
-          snapshot.localIdentifiers.userId,
-          snapshot.localIdentifiers.processingOperationIds,
+          {
+            resourceId: ANALYTICS_PUBLICATION_RESOURCE,
+            intentId: `account-erasure:${input.requestId}`,
+          },
+          async (owner) => {
+            const store = identifiers(input);
+            let cursor: string | undefined;
+            do {
+              const page = await store.readPage("operation", cursor);
+              await fenceClickHouseAccount(
+                owner.client,
+                input.userId,
+                page.entries.map((entry) => entry.value),
+              );
+              cursor = page.nextCursor ?? undefined;
+            } while (cursor);
+          },
         ),
       now: () => new Date(),
       purgeWork: (snapshot) => workPurger.purge(snapshot),
-      revokeRemote: (snapshot) => revokeRemoteAccounts(snapshot, providers),
+      revokeRemote: (snapshot, persistProviderCredentials) =>
+        revokeRemoteAccounts(snapshot, providers, persistProviderCredentials),
       verifyBackupRetention: (input) =>
         verifyAccountErasureBackupRetention(databaseBackupStorage, {
           maxSweepPasses: MAX_DATABASE_BACKUP_SWEEP_PASSES,
@@ -212,6 +296,7 @@ export async function createAccountErasureRuntime(
           try {
             peerDbStaging.close();
           } finally {
+            brokerR2Client.destroy();
             r2Client.destroy();
           }
         }

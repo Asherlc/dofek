@@ -79,6 +79,76 @@ final class BleHeartRateConnectionManagerTests: XCTestCase {
         XCTAssertEqual(disconnected.wait(timeout: .now() + 1), .success)
         XCTAssertEqual(buffer.sampleCount, 0)
     }
+
+    func testActivitySnapshotKeepsCollectingUntilTheLastReadyMonitorDisconnects() {
+        let manager = BleHeartRateConnectionManager()
+        let firstId = UUID()
+        let secondId = UUID()
+        manager.bleQueue.sync {
+            manager.sessions[firstId] = BleHeartRatePeripheralSession(
+                id: firstId.uuidString,
+                state: .ready
+            )
+            manager.sessions[secondId] = BleHeartRatePeripheralSession(
+                id: secondId.uuidString,
+                state: .ready
+            )
+        }
+
+        XCTAssertEqual(collectionActivitySnapshot(), ["ble-heart-rate"])
+
+        manager.disconnect(peripheralId: firstId.uuidString)
+        manager.bleQueue.sync {}
+
+        XCTAssertEqual(collectionActivitySnapshot(), ["ble-heart-rate"])
+
+        manager.disconnect(peripheralId: secondId.uuidString)
+        manager.bleQueue.sync {}
+
+        XCTAssertEqual(collectionActivitySnapshot(), [])
+    }
+
+    func testActivitySnapshotDoesNotCountUnreadyMonitors() {
+        let manager = BleHeartRateConnectionManager()
+        let id = UUID()
+        let session = BleHeartRatePeripheralSession(id: id.uuidString)
+        manager.bleQueue.sync {
+            manager.sessions[id] = session
+        }
+
+        for state in [
+            BleHeartRateConnectionState.idle,
+            .scanning,
+            .connecting,
+            .discoveringServices,
+            .subscribing,
+        ] {
+            manager.bleQueue.sync {
+                manager.setState(state, for: session)
+                XCTAssertEqual(collectionActivitySnapshot(), [], "state: \(state)")
+            }
+        }
+    }
+
+    func testCollectionActivityObserverDoesNotRetainTheManager() {
+        weak var retainedManager: BleHeartRateConnectionManager?
+
+        do {
+            let manager = BleHeartRateConnectionManager()
+            retainedManager = manager
+        }
+
+        XCTAssertNil(retainedManager)
+    }
+
+    private func collectionActivitySnapshot() -> Set<String> {
+        let collectors = NSMutableSet()
+        NotificationCenter.default.post(
+            name: Notification.Name("Dofek.collectionActivityRequested"),
+            object: collectors
+        )
+        return Set(collectors.compactMap { $0 as? String })
+    }
 }
 
 private final class FakeCentralManager: BleHeartRateCentralManaging {

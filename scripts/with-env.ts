@@ -77,9 +77,10 @@ const commandEnvironment = {
 };
 const axiomApiToken = commandEnvironment.AXIOM_API_TOKEN;
 if (axiomApiToken) {
-  const authorizationHeaders = `Authorization=Bearer ${axiomApiToken},X-Axiom-Dataset=dofek-logs`;
+  const authorizationHeaders = `Authorization=Bearer ${axiomApiToken}`;
   commandEnvironment.OTEL_EXPORTER_OTLP_HEADERS = authorizationHeaders;
-  commandEnvironment.OTEL_EXPORTER_OTLP_LOGS_HEADERS = authorizationHeaders;
+  commandEnvironment.OTEL_EXPORTER_OTLP_TRACES_HEADERS ??= `${authorizationHeaders},X-Axiom-Dataset=dofek-traces`;
+  commandEnvironment.OTEL_EXPORTER_OTLP_LOGS_HEADERS = `${authorizationHeaders},X-Axiom-Dataset=dofek-logs`;
 }
 
 const commandResult = spawnSync(commandArguments[0], commandArguments.slice(1), {

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { type OsmTilePreview, osmTilePreview } from "../lib/osm-tile.ts";
+import { type MapPreview, routeMapPreview } from "../lib/map-preview.ts";
 
 const routePreviewPointRowSchema = z.object({
   activity_id: z.string(),
@@ -7,7 +7,7 @@ const routePreviewPointRowSchema = z.object({
   lng: z.coerce.number(),
 });
 
-export type ActivityRoutePreview = OsmTilePreview;
+export type ActivityRoutePreview = MapPreview;
 
 interface RoutePreviewSensorStore {
   query<TSchema extends z.ZodType>(
@@ -105,9 +105,9 @@ export async function getActivityRoutePreviews(
           lng,
           row_number() OVER (PARTITION BY activity_id ORDER BY recorded_at) AS point_index,
           count() OVER (PARTITION BY activity_id) AS point_count
-        FROM analytics.activity_location_sample
+        FROM analytics.activity_location_sample AS location
         WHERE user_id = {userId:UUID}
-          AND activity_id IN (
+          AND location.activity_id IN (
             SELECT arrayJoin(CAST({activityIds:Array(String)}, 'Array(UUID)'))
           )
           AND is_deleted = 0
@@ -139,7 +139,7 @@ export async function getActivityRoutePreviews(
   return new Map(
     Array.from(pointsByActivityId.entries()).map(([activityId, points]) => [
       activityId,
-      osmTilePreview(points),
+      routeMapPreview(points),
     ]),
   );
 }

@@ -17,9 +17,21 @@ training = [
     "scikit-learn>=1.9.0",
     "torch>=2.13.0",
 ]
+matching = [
+    "btrees==6.4",
+    "dedupe==3.0.3",
+    "duckdb==2.0.0",
+    "leuvenmapmatching==1.1.4",
+    "pydantic==2.14.2",
+    "rtree==1.4.1",
+    "splink==5.0.0",
+    "torch==2.15.0",
+    "transformers==5.22.1",
+]
 
 [project.scripts]
 dofek-export = "dofek_ml.export:main"
+dofek-match = "dofek_ml.matching_cli:main"
 
 [dependency-groups]
 dev = [
@@ -35,6 +47,14 @@ dev = [
 [build-system]
 requires = ["uv_build>=0.12.1,<0.14.0"]
 build-backend = "uv_build"
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 
 # ── ruff (linter + formatter) ──
 

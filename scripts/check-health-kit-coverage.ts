@@ -5,7 +5,11 @@ import { z } from "zod";
 
 const packageDirectory = realpathSync("packages/mobile/modules/health-kit");
 const minimumCoverage = 90;
-const sources = ["ios/HealthKitQueries.swift", "ios/HealthKitTypes.swift"];
+const sources = [
+  "ios/HealthKitQueries.swift",
+  "ios/HealthKitTypes.swift",
+  "ios/HealthKitWorkoutTransport.swift",
+];
 
 console.log("Running Swift tests with coverage...");
 execFileSync("swift", ["test", "--enable-code-coverage"], {

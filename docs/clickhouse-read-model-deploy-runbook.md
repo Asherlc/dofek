@@ -580,6 +580,164 @@ turn the daily model into a warning-only step. dbt's incremental model contract
 keeps the serving transformation bounded and stateful:
 [dbt incremental models](https://docs.getdbt.com/docs/build/incremental-models).
 
+## Overview oxygen and temperature cutover
+
+`daily_health_sensor` replaces request-time raw-event decoding for oxygen and
+WHOOP temperature. The shared API still applies the caller's timezone and source
+priorities to typed samples. See the [model](../analytics/models/read_models/daily_health_sensor.sql)
+and its [real-engine regressions](../packages/server/src/repositories/daily-health-sensor.integration.test.ts).
+
+Prepare this model **before rolling the API onto its new reader**:
+
+Keep the reader PR unmerged while preparation is outstanding: successful main
+CI can request an automatic release. The existing [build-only workflow](../.github/workflows/build-docker.yml)
+supports a manual candidate-image build without rolling the API; run that
+image's dbt project in the authorized production operator runtime for the
+preparation below. See the [release procedure](../deploy/README.md#deployment).
+
+1. Apply schema-only migration `0111_daily_health_sensor` through the approved
+   deployment migration procedure. It creates an empty serving table and performs
+   no historical backfill.
+2. Follow the existing [channel-projection preparation gate](clickhouse-metric-stream.md#daily-heart-rate-source-access).
+   Verify complete `by_user_channel_recorded_at` coverage, normal candidate
+   projection selection, and outer `FINAL` primary-key pruning. Materializing the
+   existing projection is an explicit capacity-reviewed operator action, because
+   the raw table has one historical partition. Do not bypass this gate with
+   optimizer forcing or larger timeouts. ClickHouse documents [projection
+   maintenance](https://clickhouse.com/docs/sql-reference/statements/alter/projection)
+   and [query plans](https://clickhouse.com/docs/sql-reference/statements/explain).
+3. Verify historical day-marker coverage using the existing
+   [provider/day bootstrap procedure](clickhouse-metric-stream.md#daily-provider-metric-count-rollout).
+   Use the candidate image's dbt project in the approved production operator
+   environment to run `dbt run --project-dir analytics --profiles-dir analytics
+   --threads 1 --select daily_health_sensor`. Each run processes at most 32 dirty
+   source days. Repeat bounded runs while checking the query below. Do not start
+   an unrestricted raw-history query or put a backfill into migrations.
+4. Hold API cutover until `missing_days = 0` and `dirty_days = 0`. Then follow the
+   normal release procedure, verify an uncached overview request, and compare
+   tRPC duration and ClickHouse rows read with the incident baseline. Confirm
+   both web and mobile reads and scheduled cache warming.
+
+```sql
+WITH source_days AS (
+  SELECT user_id, provider_id, recorded_date, max(changed_at) AS changed_at
+  FROM analytics.metric_stream_day_change
+  GROUP BY user_id, provider_id, recorded_date
+)
+SELECT
+  countIf(served.recorded_date IS NULL) AS missing_days,
+  countIf(served.recorded_date IS NULL OR source_days.changed_at > served.source_changed_at) AS dirty_days
+FROM source_days
+LEFT JOIN analytics.daily_health_sensor AS served FINAL
+  ON served.user_id = source_days.user_id
+  AND served.provider_id = source_days.provider_id
+  AND served.recorded_date = source_days.recorded_date
+SETTINGS join_use_nulls = 1;
+```
+
+The existing processing pipeline records a successful dbt invocation, which does
+not establish that every bounded model has drained its backlog. For imports
+spanning more than one batch, use these source-to-target watermarks as the
+freshness evidence; do not infer complete oxygen/temperature coverage solely
+from a successful processing banner. See [analytics processing](../src/processing/analytics-processing.ts)
+and [incremental model behavior](https://docs.getdbt.com/docs/build/incremental-models).
+
+## Activity sensor parts blocked by missing projections
+
+For `activity_sensor_sample: PARTIAL SUCCESS`, inspect the batch's first fatal
+ClickHouse message before choosing a repair. The October 21 recurrence of
+[DOFEK-SERVER-6B](https://east-bay-software.sentry.io/issues/7743140686/)
+was `Code: 252 TOO_MANY_PARTS`, rather than the earlier timeout. Lightweight
+replacement deletes left fully masked parts without a projection. ClickHouse's
+[merge predicate](https://github.com/ClickHouse/ClickHouse/blob/v26.6.1.1193-stable/src/Storages/MergeTree/Compaction/MergePredicates/MergeTreeMergePredicate.cpp#L43)
+rejects adjacent parts with different projection sets.
+
+The bounded append model prevents further replacement deletes. It does not
+repair existing parts. Projection rematerialization alone did not repair the
+fully masked part in the isolated reproduction. Do not raise part limits or
+put a cleanup mutation into the recurring worker.
+
+The following is an operator maintenance procedure, requiring separate approval
+and the append release ready for rollout. Coordinate quiescence and restoration
+through the [production release procedure](../deploy/README.md#deployment).
+Keep analytics writers stopped until cutover and the append release are ready;
+resuming the old delete-and-insert model recreates the defect. Use a separate
+operator process, not an extra dbt process inside the analytics worker.
+
+1. Capture the source `SHOW CREATE TABLE`, database engine, pending mutations,
+   dependent views, active part counts, free disk, and current query load. Require
+   `analytics` to use `Atomic`, no remaining writer or pending mutation, and
+   enough disk for a separate copy. Resolve any materialized-view dependency
+   before proceeding. Record the source logical row count and existing tombstone
+   count. ClickHouse documents [Atomic databases](https://clickhouse.com/docs/engines/database-engines/atomic),
+   [parts](https://clickhouse.com/docs/operations/system-tables/parts), and
+   [mutations](https://clickhouse.com/docs/operations/system-tables/mutations).
+2. Create a new candidate with the existing schema and projections. An existing
+   candidate name must fail and be inspected rather than silently reused:
+
+   ```sql
+   CREATE TABLE analytics.activity_sensor_sample_repair
+   AS analytics.activity_sensor_sample;
+
+   INSERT INTO analytics.activity_sensor_sample_repair
+   SELECT * FROM analytics.activity_sensor_sample FINAL
+   SETTINGS max_threads = 1, max_memory_usage = 1073741824;
+   ```
+
+   Preserve every logical row, including `is_deleted = 1`; do not retimestamp
+   rows or copy hidden `_row_exists` masks. This uses
+   [CREATE TABLE AS](https://clickhouse.com/docs/sql-reference/statements/create/table)
+   and [ReplacingMergeTree FINAL](https://clickhouse.com/docs/engines/table-engines/mergetree-family/replacingmergetree).
+   The one-thread/1-GiB bounds apply only to this operator query. Stop on failure
+   with the original table intact.
+3. Require zero row differences in both directions, and require every active
+   candidate part to have `by_activity_source_refresh_version`:
+
+   ```sql
+   SELECT count() AS differences
+   FROM (
+     (SELECT * FROM analytics.activity_sensor_sample FINAL
+      EXCEPT ALL SELECT * FROM analytics.activity_sensor_sample_repair FINAL)
+     UNION ALL
+     (SELECT * FROM analytics.activity_sensor_sample_repair FINAL
+      EXCEPT ALL SELECT * FROM analytics.activity_sensor_sample FINAL)
+   )
+   SETTINGS max_threads = 1, max_memory_usage = 1073741824;
+
+   SELECT count() AS active_parts,
+     countIf(has(projections, 'by_activity_source_refresh_version')) AS projected_parts
+   FROM system.parts
+   WHERE active AND database = 'analytics'
+     AND table = 'activity_sensor_sample_repair';
+   ```
+
+   Also compare the logical row/tombstone counts with preflight. `EXCEPT ALL`
+   retains duplicate-sensitive comparison semantics:
+   [ClickHouse EXCEPT](https://clickhouse.com/docs/sql-reference/statements/select/except).
+4. With writers still stopped, atomically exchange names:
+
+   ```sql
+   EXCHANGE TABLES analytics.activity_sensor_sample
+   AND analytics.activity_sensor_sample_repair;
+   ```
+
+   [EXCHANGE TABLES](https://clickhouse.com/docs/sql-reference/statements/exchange)
+   provides atomic name exchange for Atomic databases. Verify the serving name's
+   schema, logical rows, tombstones, projections, and dependent view reads. Before
+   any new writes, exchanging the names again restores the original table; after
+   writers resume, the retained original is stale and must not be swapped back.
+5. Resume only with the append release. Require a successful normal analytics
+   cycle and cache warm, then a second successful cycle without missing-projection
+   part growth or skipped dependent models. Verify affected activity reads on
+   both clients' shared API. Remove `analytics.activity_sensor_sample_repair`
+   after successful cutover validation so no long-lived duplicate remains, and
+   record release, pre/post counts, checks, and cleanup in the incident baseline.
+
+The copy, duplicate-sensitive parity query, and atomic exchange were validated
+with a tiny isolated ClickHouse fixture containing a masked row, a replacement
+version, and an explicit tombstone. Production capacity, dependency review,
+execution, and end-to-end readback remain gates for the approved maintenance.
+
 ## Activity source-version projection rollout (migration 0073)
 
 Migration `0073_activity_sensor_summary_source_version` registers
@@ -935,3 +1093,33 @@ changes leave merged values and group IDs unchanged. Inspect `origin_evidence`
 for supporting fields and `origin_candidate_member_ids` when attribution remains
 unresolved. Preserve Apple Health `sourceBundle` in the existing raw workout payload
 on subsequent native syncs; do not fabricate identifiers for historical rows.
+
+### Strong, Hang Ten, and Apple Watch attribution
+
+The [PostgreSQL resolver](../drizzle/_views/00_activity_origin.sql) and
+[ClickHouse selector](../analytics/macros/activity_origin.sql) treat Strong,
+Hang Ten, and Apple Watch as initiating sources within an existing matched activity group. This is
+an explicit product assumption, not evidence that WHOOP imported their records.
+Strong documents [sharing workouts through Apple Health](https://help.strongapp.io/article/147-sync-with-apple-health),
+and Hang Ten documents [saving completed sessions to Apple Health](https://apps.apple.com/us/app/hang-ten-training/id6797141761).
+Neither source establishes a transfer chain for a particular WHOOP workout.
+
+Prefer a Strong CSV member over its Apple Health copies. Otherwise, select the
+single Apple Health member labeled Strong, Hang Ten, Hang Ten Training, or Apple Watch.
+Watch recognition accepts personalized source names such as `Asher’s Apple Watch`,
+case differences, and nonbreaking spaces between words. This rule interprets the
+retained [HealthKit source name](https://developer.apple.com/documentation/healthkit/hksource/name)
+as an initiating-source product policy; it does not establish a transfer edge to
+WHOOP or Peloton. Both clients use the shared
+[source-logo mapping](../packages/providers-meta/src/providers.ts) to show a watch
+icon with the Apple Health badge.
+Multiple initiating candidates, conflicting provenance, and cycles remain
+unresolved. The rule changes recording attribution only; field selection,
+sensor priorities, grouping, and evidenced copy edges retain their existing behavior.
+
+Apply `0162_apple_watch_activity_origin` (which extends `0159_recording_app_origin`)
+and build the incremental activity models with
+the matching release. Existing ClickHouse rows require recomputation before
+clients receive the updated origin; use the established scoped refresh procedure
+above when validating a specific activity. Both clients consume the shared origin
+contract, including Apple Health source-app logos.

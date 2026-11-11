@@ -29,6 +29,7 @@ const activity: ActivityRow = {
   local_time_source: "provider_timezone",
   subsource: "Wahoo trainer",
   source_providers: ["wahoo", "strava"],
+  origin_evidence: [],
   source_external_ids: null,
   avg_hr: null,
   max_hr: null,
@@ -45,6 +46,7 @@ const activity: ActivityRow = {
 };
 
 const window: ActivitySensorWindow = {
+  providerType: null,
   activityId: canonicalId,
   userId,
   startedAt,
@@ -78,6 +80,28 @@ const source = {
 };
 
 describe("ActivityTimeseriesRepository", () => {
+  it("does not invent elapsed time or sensor samples for a point-only source", async () => {
+    const { activities, repository, sensorStore } = makeRepository([]);
+    activities.findSensorWindow.mockResolvedValueOnce({
+      ...window,
+      endedAt: null,
+      providerType: "climbing_log",
+    });
+    const result = await repository.list({
+      activityId: aliasId,
+      streams: ["elapsed_time", "heart_rate"],
+      resolution: "1s",
+      fill: "none",
+      cursor: null,
+      limit: 1000,
+    });
+    expect(result.activity.endedAt).toBeNull();
+    expect(result.timestamps).toEqual([]);
+    expect(sensorStore.query).not.toHaveBeenCalled();
+    expect(result.nextCursor).toBeNull();
+    expect(result.streams.heart_rate?.summary.observedSamples).toBe(0);
+  });
+
   it("resolves an alias to its owned canonical activity before querying deduped samples", async () => {
     const { activities, repository, sensorStore } = makeRepository([
       { recorded_at: at(0), channel: "power", scalar: 0, lat: null, lng: null, ...source },

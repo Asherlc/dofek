@@ -1,291 +1,129 @@
-import type { InertialMeasurementUnitSample } from "@dofek/imu";
 import * as Sentry from "@sentry/react-native";
-import { AppState, type AppStateStatus } from "react-native";
-import type { WhoopRealtimeDataSample } from "../modules/whoop-ble";
-import { isAfterDeviceErasureCutoff, loadDeviceErasureCutoff } from "./device-erasure-cutoff";
-import { DeviceSampleGroups, type DeviceScopedSample } from "./device-sample-groups.ts";
+import { Alert, AppState } from "react-native";
 import { captureException, logger } from "./telemetry";
+import { WhoopBleDiagnostics, type WhoopSyncTrigger } from "./whoop-ble-diagnostics";
+import type { WhoopBleSyncDeps, WhoopUploadContext } from "./whoop-ble-sync-types";
 
-const PERIODIC_DRAIN_INTERVAL_MS = 30_000; // Upload buffered samples every 30s
 const LOG_CATEGORY = "whoop-ble";
-const IMU_UPLOAD_BATCH_SIZE = 500;
-const REALTIME_UPLOAD_BATCH_SIZE = 500;
-const DEFAULT_WHOOP_DEVICE_ID = "WHOOP Strap";
-
-/** tRPC client interface for passive WHOOP IMU sample upload. */
-export interface InertialMeasurementUnitUploadClient {
-  inertialMeasurementUnitSync: {
-    pushSamples: {
-      mutate(input: {
-        deviceId: string;
-        deviceType: string;
-        samples: InertialMeasurementUnitSample[];
-      }): Promise<{ inserted: number }>;
-    };
-  };
+interface WhoopBleSyncSession {
+  deps: WhoopBleSyncDeps;
+  diagnostics: WhoopBleDiagnostics;
+  active: boolean;
+  connected: boolean;
+  connectionIntent: boolean;
+  syncing: boolean;
+  captureErrorSubscription?: { remove(): void };
+  appStateSubscription?: { remove(): void };
+  connectionStateSubscription?: { remove(): void };
 }
+let currentSession: WhoopBleSyncSession | null = null;
 
-type BufferedInertialMeasurementUnitSample = InertialMeasurementUnitSample & DeviceScopedSample;
-type ShouldContinueUploading = () => boolean;
-type RealtimeDataSample = WhoopRealtimeDataSample;
-
-function toInertialMeasurementUnitUploadSample(
-  sample: BufferedInertialMeasurementUnitSample,
-): InertialMeasurementUnitSample {
-  return {
-    timestamp: sample.timestamp,
-    x: sample.x,
-    y: sample.y,
-    z: sample.z,
-    gyroscopeX: sample.gyroscopeX,
-    gyroscopeY: sample.gyroscopeY,
-    gyroscopeZ: sample.gyroscopeZ,
-  };
-}
-
-function toRealtimeDataUploadSample(
-  sample: RealtimeDataSample,
-): Omit<RealtimeDataSample, "deviceId"> {
-  return {
-    timestamp: sample.timestamp,
-    heartRateBpm: sample.heartRateBpm,
-    rrIntervalMs: sample.rrIntervalMs,
-    quaternionW: sample.quaternionW,
-    quaternionX: sample.quaternionX,
-    quaternionY: sample.quaternionY,
-    quaternionZ: sample.quaternionZ,
-    opticalRawHex: sample.opticalRawHex,
-  };
-}
-
-/** Dependencies injected for testability (wraps the whoop-ble native module) */
-export interface WhoopBleSyncDeps {
-  isBluetoothAvailable(): boolean;
-  findWhoop(): Promise<{ id: string; name: string | null } | null>;
-  connect(peripheralId: string): Promise<boolean>;
-  startImuStreaming(): Promise<boolean>;
-  stopImuStreaming(): Promise<boolean>;
-  peekBufferedSamples(maxCount?: number): Promise<BufferedInertialMeasurementUnitSample[]>;
-  confirmSamplesDrain(count: number): void;
-  peekBufferedRealtimeData(maxCount?: number): Promise<RealtimeDataSample[]>;
-  confirmRealtimeDataDrain(count: number): void;
-  addConnectionStateListener(
-    callback: (event: { state: string; peripheralId?: string; error?: string }) => void,
-  ): { remove(): void };
-  disconnect(): void;
-}
-
-/** tRPC client interface for BLE realtime data upload (heart rate + beat interval + orientation + optical) */
-export interface WhoopBleRealtimeUploadClient {
-  whoopBleSync: {
-    pushRealtimeData: {
-      mutate(input: {
-        deviceId: string;
-        samples: Array<Omit<WhoopRealtimeDataSample, "deviceId">>;
-      }): Promise<{ inserted: number }>;
-    };
-  };
-}
-
-let appStateSubscription: ReturnType<typeof AppState.addEventListener> | null = null;
-let connectionStateSubscription: { remove(): void } | null = null;
-let periodicDrainTimer: ReturnType<typeof setInterval> | null = null;
-let syncing = false;
-let connected = false;
-let currentDeps: WhoopBleSyncDeps | null = null;
-let currentRealtimeClient: WhoopBleRealtimeUploadClient | null = null;
-
-/**
- * Initialize always-on WHOOP BLE accelerometer sync.
- *
- * - Connects to the WHOOP strap and starts IMU streaming while the app is active
- * - On subsequent foreground events, uploads buffered samples (streaming stays on)
- * - Should be called once after authentication when the setting is enabled
- */
-export async function initBackgroundWhoopBleSync(
-  trpcClient: InertialMeasurementUnitUploadClient,
-  whoopDeps: WhoopBleSyncDeps,
-  realtimeClient?: WhoopBleRealtimeUploadClient,
+async function captureSnapshot(
+  session: WhoopBleSyncSession,
+  trigger: WhoopSyncTrigger,
+  appState = AppState.currentState ?? "unknown",
 ): Promise<void> {
-  currentDeps = whoopDeps;
-  currentRealtimeClient = realtimeClient ?? null;
-
-  // Clean up existing listeners
-  if (appStateSubscription) {
-    appStateSubscription.remove();
-    appStateSubscription = null;
+  if (!session.active) return;
+  try {
+    const stats = await session.deps.getDataPathStats();
+    if (!session.active) return;
+    session.diagnostics.snapshot(stats, trigger, appState);
+  } catch (error: unknown) {
+    captureException(error, {
+      source: "whoop-ble-capture-diagnostics",
+      trigger,
+      ...(session.active ? {} : { retiredLifetime: true }),
+    });
   }
-  if (connectionStateSubscription) {
-    connectionStateSubscription.remove();
-    connectionStateSubscription = null;
-  }
-  stopPeriodicDrainTimer();
-
-  // Listen for native BLE disconnects so we re-establish on next sync cycle.
-  // Without this, the TS `connected` flag stays true after a disconnect
-  // and the sync loop never attempts reconnection.
-  connectionStateSubscription = whoopDeps.addConnectionStateListener((event) => {
-    if (event.state === "disconnected") {
-      logger.info(LOG_CATEGORY, `BLE disconnected (${event.error ?? "no error"}), will reconnect`);
-      connected = false;
-    } else if (event.state === "connected") {
-      logger.info(LOG_CATEGORY, "BLE reconnected");
-      connected = true;
-    }
-  });
-
-  // Sync whenever the app comes to foreground
-  appStateSubscription = AppState.addEventListener("change", (nextState: AppStateStatus) => {
-    if (nextState !== "active") {
-      stopPeriodicDrainTimer();
-      return;
-    }
-    startPeriodicDrainTimer(trpcClient, whoopDeps, realtimeClient);
-    if (syncing) {
-      logger.info(LOG_CATEGORY, "foreground sync skipped — already syncing");
-      return;
-    }
-
-    logger.info(LOG_CATEGORY, "app foregrounded — starting sync");
-    syncing = true;
-    syncOnForeground(trpcClient, whoopDeps, realtimeClient, shouldRunForegroundPeriodicDrain)
-      .catch((error: unknown) => {
-        logger.error(LOG_CATEGORY, `foreground sync error: ${error}`);
-        captureException(error, { source: "whoop-ble-foreground-sync" });
-      })
-      .finally(() => {
-        syncing = false;
-      });
-  });
-
-  // The AppState listener only fires on state transitions, so sync immediately
-  // when init runs in the foreground. Defer a backgrounded initialization until
-  // the next active transition so this foreground sync does not try to start a
-  // BLE connection while the app is suspended.
-  if (shouldRunForegroundPeriodicDrain()) {
-    logger.info(LOG_CATEGORY, "initializing background sync");
-    syncing = true;
-    try {
-      await syncOnForeground(
-        trpcClient,
-        whoopDeps,
-        realtimeClient,
-        shouldRunForegroundPeriodicDrain,
-      );
-      logger.info(LOG_CATEGORY, "initial sync complete");
-    } catch (error: unknown) {
-      logger.error(LOG_CATEGORY, `initial sync error: ${error}`);
-      captureException(error, { source: "whoop-ble-init-sync" });
-    } finally {
-      syncing = false;
-    }
-  } else {
-    logger.info(LOG_CATEGORY, "initial sync deferred until app foregrounds");
-  }
-
-  // Periodically drain the buffer while the app is active so samples
-  // don't pile up waiting for a foreground transition.
-  startPeriodicDrainTimer(trpcClient, whoopDeps, realtimeClient);
 }
-
-function shouldRunForegroundPeriodicDrain(): boolean {
+function foreground(): boolean {
   return AppState.currentState === "active";
 }
 
-function shouldAlwaysContinueUploading(): boolean {
-  return true;
-}
-
-function stopPeriodicDrainTimer(): void {
-  if (!periodicDrainTimer) return;
-
-  clearInterval(periodicDrainTimer);
-  periodicDrainTimer = null;
-}
-
-function startPeriodicDrainTimer(
-  trpcClient: InertialMeasurementUnitUploadClient,
-  whoopDeps: WhoopBleSyncDeps,
-  realtimeClient?: WhoopBleRealtimeUploadClient,
-): void {
-  if (!shouldRunForegroundPeriodicDrain() || periodicDrainTimer) return;
-
-  periodicDrainTimer = setInterval(() => {
-    if (!shouldRunForegroundPeriodicDrain()) {
-      stopPeriodicDrainTimer();
-      return;
-    }
-    if (syncing || !connected) return;
-    syncing = true;
-    drainBuffer(trpcClient, whoopDeps, realtimeClient, shouldRunForegroundPeriodicDrain)
-      .catch((error: unknown) => {
-        logger.error(LOG_CATEGORY, `periodic drain error: ${error}`);
-        captureException(error, { source: "whoop-ble-periodic-drain" });
-      })
-      .finally(() => {
-        syncing = false;
-      });
-  }, PERIODIC_DRAIN_INTERVAL_MS);
-}
-
-/**
- * Run a single WHOOP BLE sync cycle: connect if needed, then upload buffered samples.
- *
- * Exported so that the background refresh handler can call this directly
- * (every ~15-30 min) without waiting for the user to open the app.
- * Other errors are reported to telemetry and rethrown so the native background
- * task can record an unsuccessful refresh; an expected connect-handshake timeout
- * is logged as a breadcrumb, still drains buffered samples, and does not fail the
- * refresh.
- */
-export async function syncWhoopBle(
-  trpcClient: InertialMeasurementUnitUploadClient,
-  whoopDeps: WhoopBleSyncDeps,
-  realtimeClient?: WhoopBleRealtimeUploadClient,
+/** Configure native account ownership before any BLE capture can begin. */
+export async function initBackgroundWhoopBleSync(
+  context: WhoopUploadContext,
+  deps: WhoopBleSyncDeps,
 ): Promise<void> {
+  teardownBackgroundWhoopBleSync();
+  const session: WhoopBleSyncSession = {
+    deps,
+    diagnostics: new WhoopBleDiagnostics(),
+    active: true,
+    connected: false,
+    connectionIntent: false,
+    syncing: false,
+  };
+  currentSession = session;
   try {
-    logger.info(LOG_CATEGORY, "background refresh — starting sync");
-    await syncOnForeground(trpcClient, whoopDeps, realtimeClient);
-    logger.info(LOG_CATEGORY, "background refresh — sync complete");
-  } catch (error: unknown) {
-    // A strap that is asleep, out of range, or busy with the WHOOP app can make the
-    // connect handshake time out. That is an expected environmental condition for a
-    // background refresh, and the buffered samples can still be uploaded without a
-    // live strap connection — so drain anyway instead of failing the whole refresh.
-    if (isWhoopBleConnectionTimeout(error)) {
-      logger.warn(
-        LOG_CATEGORY,
-        "background refresh — connect timed out, uploading buffered samples without a strap",
-      );
-      Sentry.addBreadcrumb({
-        category: "whoop-ble",
-        message: "Background refresh connect timed out",
-        level: "warning",
-      });
-      await drainBuffer(trpcClient, whoopDeps, realtimeClient);
-      return;
+    await deps.configureUpload(context);
+    if (!session.active) return;
+    session.captureErrorSubscription = deps.addCaptureErrorListener(({ message }) => {
+      if (!session.active) return;
+      captureException(new Error(message), { source: "whoop-ble-native-capture" });
+      Alert.alert("WHOOP capture stopped", message);
+    });
+    void captureSnapshot(session, "initial");
+    session.connectionStateSubscription = deps.addConnectionStateListener((event) => {
+      if (!session.active) return;
+      if (event.state === "connected") session.connected = true;
+      else if (event.state === "disconnected") session.connected = false;
+      void captureSnapshot(session, "connection");
+    });
+    session.appStateSubscription = AppState.addEventListener("change", async (state) => {
+      if (!session.active) return;
+      void captureSnapshot(session, "app_state", state);
+      if (state !== "active") return;
+      try {
+        await deps.flushUploads();
+      } catch (error: unknown) {
+        captureException(error, {
+          source: "whoop-ble-foreground-flush",
+          ...(session.active ? {} : { retiredLifetime: true }),
+        });
+      }
+      if (!session.active || session.syncing) return;
+      session.syncing = true;
+      await syncOnForeground(session, foreground)
+        .catch((error: unknown) => {
+          captureException(error, {
+            source: "whoop-ble-foreground-sync",
+            retiredLifetime: !session.active,
+          });
+        })
+        .finally(() => {
+          session.syncing = false;
+        });
+    });
+    await deps.flushUploads();
+    if (!session.active || !foreground() || session.syncing) return;
+    session.syncing = true;
+    try {
+      await syncOnForeground(session, foreground);
+    } catch (error: unknown) {
+      captureException(error, { source: "whoop-ble-init-sync", retiredLifetime: !session.active });
+    } finally {
+      session.syncing = false;
     }
-    logger.error(LOG_CATEGORY, `background refresh sync error: ${error}`);
-    captureException(error, { source: "whoop-ble-background-refresh" });
+  } catch (error: unknown) {
+    if (currentSession === session) teardownBackgroundWhoopBleSync();
     throw error;
   }
 }
 
-/**
- * Expo rejects a native promise with a JavaScript `Error` carrying the native error
- * `code`. The WHOOP connect handshake rejects with `TIMEOUT` when the strap does not
- * become ready before the connection deadline.
- */
-function isWhoopBleConnectionTimeout(error: unknown): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === "TIMEOUT";
+/** Ask iOS to deliver the current account's durable queue, independently of BLE connection. */
+export async function syncWhoopBle(): Promise<void> {
+  const session = currentSession;
+  if (!session?.active) return;
+  void captureSnapshot(session, "background");
+  await session.deps.flushUploads();
 }
 
 async function syncOnForeground(
-  trpcClient: InertialMeasurementUnitUploadClient,
-  whoopDeps: WhoopBleSyncDeps,
-  realtimeClient?: WhoopBleRealtimeUploadClient,
-  shouldContinueUploading: ShouldContinueUploading = shouldAlwaysContinueUploading,
+  session: WhoopBleSyncSession,
+  shouldContinueConnecting: () => boolean,
 ): Promise<void> {
+  const { deps: whoopDeps } = session;
   // Connect if not already connected.
   //
   // Note: we skip the isBluetoothAvailable() pre-check because it suffers
@@ -296,11 +134,12 @@ async function syncOnForeground(
   // the sync before findWhoop() can even run. Instead, we let findWhoop()
   // handle unavailable Bluetooth by returning null (it checks state internally
   // after the manager has had time to initialize).
-  if (!shouldContinueUploading()) return;
+  if (!session.active || !shouldContinueConnecting()) return;
 
-  if (!connected) {
+  if (!session.connected) {
     logger.info(LOG_CATEGORY, "not connected, searching for WHOOP strap");
     const device = await whoopDeps.findWhoop();
+    if (!session.active || !shouldContinueConnecting()) return;
     if (!device) {
       logger.warn(LOG_CATEGORY, "no WHOOP strap found");
       Sentry.addBreadcrumb({
@@ -310,7 +149,7 @@ async function syncOnForeground(
       });
       return;
     }
-    if (!shouldContinueUploading()) return;
+    if (!session.active || !shouldContinueConnecting()) return;
 
     const deviceLabel = device.name ?? device.id;
     logger.info(LOG_CATEGORY, `connecting to ${deviceLabel}`);
@@ -319,10 +158,12 @@ async function syncOnForeground(
       message: `Connecting to ${deviceLabel}`,
       level: "info",
     });
+    session.connectionIntent = true;
     await whoopDeps.connect(device.id);
-    if (!shouldContinueUploading()) {
+    if (!session.active) return;
+    if (!shouldContinueConnecting()) {
       whoopDeps.disconnect();
-      connected = false;
+      session.connected = false;
       return;
     }
     logger.info(LOG_CATEGORY, "connected, sending TOGGLE_IMU_MODE");
@@ -331,18 +172,23 @@ async function syncOnForeground(
     // WHOOP app sync, but this ensures continuous capture regardless.
     try {
       await whoopDeps.startImuStreaming();
-      logger.info(LOG_CATEGORY, "TOGGLE_IMU_MODE sent");
+      if (session.active) logger.info(LOG_CATEGORY, "TOGGLE_IMU_MODE sent");
     } catch (error: unknown) {
-      captureException(error, { source: "whoop-ble-start-streaming" });
+      captureException(error, {
+        source: "whoop-ble-start-streaming",
+        ...(session.active ? {} : { retiredLifetime: true }),
+      });
+      if (!session.active) return;
       // Best-effort — passive data may still flow without the command
       logger.warn(LOG_CATEGORY, `startImuStreaming failed (passive data may still work): ${error}`);
     }
-    if (!shouldContinueUploading()) {
+    if (!session.active) return;
+    if (!shouldContinueConnecting()) {
       whoopDeps.disconnect();
-      connected = false;
+      session.connected = false;
       return;
     }
-    connected = true;
+    session.connected = true;
     logger.info(LOG_CATEGORY, "listening for IMU data");
     Sentry.addBreadcrumb({
       category: "whoop-ble",
@@ -350,209 +196,27 @@ async function syncOnForeground(
       level: "info",
     });
   } else {
-    logger.info(LOG_CATEGORY, "already connected, uploading buffer");
-  }
-
-  // Log data path stats for debugging (exposed from native module)
-  try {
-    // Dynamic import to avoid coupling the interface to diagnostic functions
-    const bleModule = require("../modules/whoop-ble");
-    if (typeof bleModule.getDataPathStats === "function") {
-      const stats = bleModule.getDataPathStats();
-      logger.info(LOG_CATEGORY, `data path stats: ${JSON.stringify(stats)}`);
-    }
-  } catch (error: unknown) {
-    captureException(error, { source: "whoop-ble-data-path-stats-connect" });
-  }
-
-  await drainBuffer(trpcClient, whoopDeps, realtimeClient, shouldContinueUploading);
-}
-
-/**
- * Drain the native sample buffers and upload to the server.
- * Pulls samples in small batches (1000) to avoid memory spikes
- * from serializing the entire buffer across the native bridge at once.
- */
-async function drainBuffer(
-  trpcClient: InertialMeasurementUnitUploadClient,
-  whoopDeps: WhoopBleSyncDeps,
-  realtimeClient?: WhoopBleRealtimeUploadClient,
-  shouldContinueUploading: ShouldContinueUploading = shouldAlwaysContinueUploading,
-): Promise<void> {
-  const deviceErasureCutoff = await loadDeviceErasureCutoff();
-
-  // Log data path stats on every drain for diagnostics
-  try {
-    const bleModule = require("../modules/whoop-ble");
-    if (typeof bleModule.getDataPathStats === "function") {
-      const stats = bleModule.getDataPathStats();
-      if (stats.dataNotificationCount > 0) {
-        logger.info(
-          LOG_CATEGORY,
-          `stats: packets=${stats.packetTypes} rtBuf=${stats.realtimeBufferCount ?? 0}`,
-        );
-      }
-    }
-  } catch (error) {
-    captureException(error);
-  }
-  // Drain IMU buffer using peek-then-confirm: samples stay in the native
-  // buffer until the server confirms receipt, preventing data loss on
-  // network failures.
-  let totalImuUploaded = 0;
-  while (true) {
-    const samples = await whoopDeps.peekBufferedSamples(IMU_UPLOAD_BATCH_SIZE);
-    if (samples.length === 0) break;
-    const uploadableSamples =
-      deviceErasureCutoff === null
-        ? samples
-        : samples.filter((sample) =>
-            isAfterDeviceErasureCutoff(sample.timestamp, deviceErasureCutoff),
-          );
-
-    let deviceIds = Array.from(
-      new Set(
-        uploadableSamples.map((sample) => sample.deviceId?.trim() || DEFAULT_WHOOP_DEVICE_ID),
-      ),
-    );
-    let firstTimestamp: string | undefined;
-    let lastTimestamp: string | undefined;
-
-    try {
-      const groups = new DeviceSampleGroups(
-        DEFAULT_WHOOP_DEVICE_ID,
-        toInertialMeasurementUnitUploadSample,
-      );
-      for (const sample of uploadableSamples) {
-        groups.add(sample);
-      }
-      deviceIds = [...groups.entries()].map(([deviceId]) => deviceId);
-      firstTimestamp = samples[0]?.timestamp;
-      lastTimestamp = samples[samples.length - 1]?.timestamp;
-
-      let inserted = 0;
-      for (const [deviceId, uploadSamples] of groups.entries()) {
-        if (!shouldContinueUploading()) {
-          logger.info(LOG_CATEGORY, "IMU upload skipped — app is no longer active");
-          return;
-        }
-        const result = await trpcClient.inertialMeasurementUnitSync.pushSamples.mutate({
-          deviceId,
-          deviceType: "whoop",
-          samples: uploadSamples,
-        });
-        inserted += result.inserted;
-      }
-      whoopDeps.confirmSamplesDrain(samples.length);
-      totalImuUploaded += samples.length;
-      logger.info(
-        LOG_CATEGORY,
-        `uploaded ${samples.length} IMU samples (server inserted: ${inserted})`,
-      );
-    } catch (error: unknown) {
-      logger.error(LOG_CATEGORY, `IMU upload failed, ${samples.length} samples retained: ${error}`);
-      captureException(error, {
-        source: "whoop-ble-imu-upload",
-        bufferedSampleCount: samples.length,
-        deviceCount: deviceIds.length,
-        deviceIds,
-        firstTimestamp: firstTimestamp ?? samples[0]?.timestamp,
-        lastTimestamp: lastTimestamp ?? samples[samples.length - 1]?.timestamp,
-      });
-      break; // Stop draining — samples are still in the buffer for retry
-    }
-  }
-
-  if (totalImuUploaded > 0) {
-    logger.info(LOG_CATEGORY, `IMU drain complete: ${totalImuUploaded} samples`);
-  }
-
-  // Drain realtime data buffer (beat interval + quaternion + optical from 0x28 packets)
-  const effectiveRealtimeClient = realtimeClient ?? currentRealtimeClient;
-  if (effectiveRealtimeClient) {
-    let totalRealtimeUploaded = 0;
-    while (true) {
-      const realtimeSamples = await whoopDeps.peekBufferedRealtimeData(REALTIME_UPLOAD_BATCH_SIZE);
-      logger.info(LOG_CATEGORY, `realtime buffer: ${realtimeSamples.length} samples`);
-      if (realtimeSamples.length === 0) break;
-      const uploadableRealtimeSamples =
-        deviceErasureCutoff === null
-          ? realtimeSamples
-          : realtimeSamples.filter((sample) =>
-              isAfterDeviceErasureCutoff(sample.timestamp, deviceErasureCutoff),
-            );
-
-      try {
-        const groups = new DeviceSampleGroups(DEFAULT_WHOOP_DEVICE_ID, toRealtimeDataUploadSample);
-        for (const sample of uploadableRealtimeSamples) {
-          groups.add(sample);
-        }
-
-        let inserted = 0;
-        for (const [deviceId, uploadSamples] of groups.entries()) {
-          if (!shouldContinueUploading()) {
-            logger.info(LOG_CATEGORY, "realtime upload skipped — app is no longer active");
-            return;
-          }
-          const result = await effectiveRealtimeClient.whoopBleSync.pushRealtimeData.mutate({
-            deviceId,
-            samples: uploadSamples,
-          });
-          inserted += result.inserted;
-        }
-        whoopDeps.confirmRealtimeDataDrain(realtimeSamples.length);
-        totalRealtimeUploaded += realtimeSamples.length;
-        logger.info(
-          LOG_CATEGORY,
-          `uploaded ${realtimeSamples.length} realtime samples (server inserted: ${inserted})`,
-        );
-      } catch (error: unknown) {
-        logger.error(
-          LOG_CATEGORY,
-          `realtime upload failed, ${realtimeSamples.length} samples retained: ${error}`,
-        );
-        captureException(error, { source: "whoop-ble-realtime-upload" });
-        break;
-      }
-    }
-
-    if (totalRealtimeUploaded > 0) {
-      logger.info(LOG_CATEGORY, `realtime drain complete: ${totalRealtimeUploaded} samples`);
-    }
+    logger.info(LOG_CATEGORY, "already connected");
   }
 }
 
-/** Clean up background WHOOP BLE sync listeners and disconnect */
+/** Retire JavaScript connection work while preserving native account ownership and queued uploads. */
 export function teardownBackgroundWhoopBleSync(): void {
-  if (appStateSubscription) {
-    appStateSubscription.remove();
-    appStateSubscription = null;
-  }
-
-  if (connectionStateSubscription) {
-    connectionStateSubscription.remove();
-    connectionStateSubscription = null;
-  }
-
-  if (periodicDrainTimer) {
-    clearInterval(periodicDrainTimer);
-    periodicDrainTimer = null;
-  }
-
-  if (connected && currentDeps) {
+  const session = currentSession;
+  if (!session) return;
+  currentSession = null;
+  session.active = false;
+  session.captureErrorSubscription?.remove();
+  session.appStateSubscription?.remove();
+  session.connectionStateSubscription?.remove();
+  if (session.connected) {
     try {
-      currentDeps.stopImuStreaming().catch((error: unknown) => {
-        captureException(error, { source: "whoop-ble-teardown" });
+      session.deps.stopImuStreaming().catch((error: unknown) => {
+        captureException(error, { source: "whoop-ble-teardown", retiredLifetime: true });
       });
     } catch (error: unknown) {
-      captureException(error, { source: "whoop-ble-teardown-sync" });
-      // Best-effort cleanup
+      captureException(error, { source: "whoop-ble-teardown-sync", retiredLifetime: true });
     }
-    currentDeps.disconnect();
   }
-
-  connected = false;
-  currentDeps = null;
-  currentRealtimeClient = null;
-  syncing = false;
+  if (session.connected || session.connectionIntent) session.deps.disconnect();
 }

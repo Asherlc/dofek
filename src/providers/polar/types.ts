@@ -5,6 +5,7 @@ export interface PolarExercise {
   upload_time: string;
   polar_user: string;
   device: string;
+  device_id?: string;
   start_time: string;
   duration: string;
   calories: number;
@@ -70,6 +71,8 @@ export interface ParsedPolarActivity {
   distanceMeters?: number;
   avgHeartRate?: number;
   maxHeartRate?: number;
+  device: string;
+  deviceId?: string;
 }
 
 export interface ParsedPolarSleep {

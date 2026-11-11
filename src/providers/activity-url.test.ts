@@ -9,10 +9,9 @@ import { KomootProvider } from "./komoot.ts";
 import { PelotonProvider } from "./peloton.ts";
 import { PolarProvider } from "./polar/provider.ts";
 import { RideWithGpsProvider } from "./ride-with-gps.ts";
-import { StravaProvider } from "./strava.ts";
+import { StravaProvider } from "./strava/provider.ts";
 import { SuuntoProvider } from "./suunto.ts";
 import { TrainerRoadProvider } from "./trainerroad.ts";
-import { VeloHeroProvider } from "./velohero.ts";
 import { WahooProvider } from "./wahoo/provider.ts";
 import { XertProvider } from "./xert.ts";
 import { ZwiftProvider } from "./zwift.ts";
@@ -93,11 +92,6 @@ describe("activityUrl", () => {
       name: "Xert",
       provider: new XertProvider(),
       expected: "https://www.xertonline.com/activities/123",
-    },
-    {
-      name: "VeloHero",
-      provider: new VeloHeroProvider(),
-      expected: "https://app.velohero.com/workouts/show/123",
     },
   ];
 

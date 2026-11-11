@@ -62,3 +62,20 @@ export const SyncedWithIssues: Story = {
     },
   },
 };
+
+export const AutomaticUpdateFailed: Story = {
+  args: {
+    providerName: "Garmin",
+    pushOnly: true,
+    entry: {
+      id: "push-update-01",
+      syncedAt: "2026-10-24T12:00:00.000Z",
+      dataType: "update",
+      status: "error",
+      recordCount: null,
+      durationMs: null,
+      errorMessage: "An activity file could not be read.",
+      authFailureReason: null,
+    },
+  },
+};

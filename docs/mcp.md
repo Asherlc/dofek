@@ -187,6 +187,7 @@ The canonical tool names, schemas, and scope checks are defined in the [MCP tool
 | `find_repeated_efforts` | `activity:read` | Discovers repeated exact or strongly inferred identities, with opt-in weak name/duration candidates and canonical/source evidence. |
 | `get_effort_trend` | `activity:read` | Returns chronological repetitions and descriptive deltas for a discovered effort or explicit equivalence, preserving quality and false-fitness caveats. |
 | `get_climbing_sessions` | `activity:read` | Returns exact-range climbing/hiking sessions with full attached log graphs and scoped rock aggregates. |
+| `get_climbing_catalogue_context` | `activity:read` | Reads disposable, attributed catalogue context for one owned active climbing log, without external fetching or changes to recorded facts. |
 | `get_climbing_progression` | `activity:read` | Returns longitudinal climbing grade, attempt, send-rate, frequency, rolling-exposure, duplicate, and provenance analysis. |
 | `get_finger_loading` | `activity:read` | Returns structured finger-loading protocols, effective load, and total time under tension inside exact date boundaries. |
 | `get_finger_loading_progression` | `activity:read` | Returns longitudinal finger-load detail, explicit-threshold high-intensity days, consecutive exposure, and provenance as a separate load channel. |
@@ -214,12 +215,45 @@ and the `nutrition:write` scope approved by the user.
 Create and update descriptions encourage sourced nutrition for the consumed
 portion, clarification when brand/label/portion information is missing, and
 explicit approval for estimates. Unknown nutrients must not be filled with
-zero. Incomplete entries remain supported when explicitly requested; these
-descriptions guide the model rather than enforce completeness. See the
+zero. Create requires known calories, protein, carbohydrate, and fat for the
+entire consumed portion; the service rejects incomplete new entries. Updates
+preserve explicit-null unknown nutrient decisions, but validate the resulting
+effective nutrition, including unchanged values and source-clears. See the
 [tool descriptors](../packages/server/src/mcp/food-record-tools.ts) and
+[service validation](../packages/server/src/services/food-record-service.ts), plus
 [OpenAI's tool metadata guidance](https://developers.openai.com/plugins/guides/optimize-metadata).
 The [manual nutrition eval](mcp-nutrition-manual-eval.md) measures conversational
 behavior separately from schema and mutation tests.
+
+New create/update operations with zero effective calories require nonempty
+`zero_calorie_evidence`: identify the label, manufacturer, reliable database
+(with a URL when available), or user confirmation of a genuinely zero-calorie
+item. The service appends this evidence to `food_description`, retaining existing
+text unless the caller replaces or clears it. A description clear uses the
+source description before appending the evidence. Supply evidence on every new
+zero-calorie operation; an older description is not an implicit attestation.
+Evidence cannot override contradictory macros
+([mutation boundary](../packages/server/src/services/food-record-service.ts)).
+
+Validation preserves source calories instead of requiring 4/4/9 equality. It
+rejects calories below a deliberately conservative protein/fat floor:
+`max(0, 1.8 × max(0, protein − 1) + 8 × max(0, fat − 1) − 10)` kcal, using
+known gram amounts only. The chosen factors sit below the lowest protein/fat
+factors in [USDA Handbook 74, table 13](https://www.ars.usda.gov/ARSUserFiles/80400525/Data/Classics/ah74.pdf).
+The 1 g macro allowances and 10 kcal slack are an intentionally generous
+application policy accommodating [nutrition-label rounding and specific energy factors](https://www.ecfr.gov/current/title-21/section-101.9#p-101.9(c)).
+Carbohydrate is excluded because fiber and sugar alcohols have varying energy
+factors under that regulation. This check detects clear contradictions; it does
+not verify that the supplied nutrition or evidence is true.
+
+Validation failures return `INVALID_ARGUMENT` with an actionable message and a
+stable `details.reason`: `MISSING_REQUIRED_NUTRITION`,
+`CALORIES_BELOW_MACRO_MINIMUM`, `ZERO_CALORIE_EVIDENCE_REQUIRED`, or
+`INVALID_NUTRIENT_AMOUNT`. Rejected writes roll back the source/ledger operation
+and do not invalidate nutrition caches. Historical raw facts, delete/restore,
+and identical request replays retain their existing behavior
+([service](../packages/server/src/services/food-record-service.ts),
+[Postgres regressions](../packages/server/src/services/food-record-service.integration.test.ts)).
 
 `search_food_entries` requires `start_date` and `end_date`. Its optional
 case-insensitive text query matches the effective food name, description,
@@ -259,7 +293,9 @@ decisions that resume following it. Values in `set` override scalar fields;
 fields in `clear` follow the source value again. `nutrient_set` accepts a
 non-negative amount or explicit `null`; `nutrient_clear` resumes following the
 raw nutrient. A field or nutrient cannot appear in both forms, and an update
-must contain at least one decision. `delete_food_entry` hides the effective
+must contain at least one decision; supplied zero-calorie evidence counts as a
+description decision ([service schema](../packages/server/src/services/food-record-service.ts)).
+`delete_food_entry` hides the effective
 record and removes its contribution from canonical nutrition without deleting
 the raw provider row. `restore_food_entry` makes the same effective record
 visible again. `get_food_entry_history` returns ledger operations and recorded
@@ -333,9 +369,35 @@ tool-level `insufficient_scope` authorization failures.
 All food mutations advertise `idempotentHint: true`, `readOnlyHint: false`, and
 `openWorldHint: false`. Create, update, and restore advertise
 `destructiveHint: false`; delete alone advertises `destructiveHint: true`.
-Search, get, and history advertise `readOnlyHint: true` and
-`openWorldHint: false`. These hints follow the official [MCP tool annotation
+Search, get, and history advertise `readOnlyHint: true`,
+`openWorldHint: false`, and `destructiveHint: false`. OpenAI requires these
+three annotations to be explicit booleans and specifies `destructiveHint: false`
+for read-only tools ([OpenAI plugin guidelines](https://developers.openai.com/plugins/plugin-guidelines#correct-annotation)).
+These hints follow the official [MCP tool annotation
 contract](https://modelcontextprotocol.io/specification/2025-11-25/server/tools#toolannotations).
+
+### ChatGPT permission prompts
+
+Capture the exact prompt and inspect the saved Dofek-specific permission before
+diagnosing repeated approvals. ChatGPT's tool-approval policy and Dofek's OAuth
+account authorization are separate controls; a saved tool permission does not
+grant additional OAuth scopes ([OpenAI plugin permissions](https://learn.chatgpt.com/docs/plugins#how-permissions-and-data-sharing-work)).
+After deploying annotation changes, refresh the app's discovered tools in
+ChatGPT's app settings before retesting ([OpenAI custom MCP setup](https://developers.openai.com/api/docs/guides/custom-mcp-server)).
+Explicit annotations establish the tool metadata contract; they do not prove
+that a client is applying its saved approval policy correctly. See the
+[2026-10-22 investigation](production-incident-baseline.md#2026-10-22--chatgpt-repeated-dofek-tool-approvals-despite-allow-all-actions)
+for the unresolved client behavior and the food-read annotation correction.
+
+## Widget appearance
+
+The Day Nutrition and Analytics Explorer widgets follow the MCP host's light
+or dark theme, including changes while a widget is open. They apply host color
+variables through the SDK's
+[`useHostStyleVariables`](https://apps.extensions.modelcontextprotocol.io/api/functions/_modelcontextprotocol_ext-apps_react.useHostStyleVariables.html)
+hook, with light/dark defaults when host colors are absent. Analytics charts
+use [ECharts' dark theme](https://echarts.apache.org/handbook/en/concepts/style/)
+and a transparent background to match the widget.
 
 ## Output contract
 
@@ -513,6 +575,15 @@ normalized power by that contemporaneous estimate. Missing power remains
 `null`, and both power and elevation aggregates report activity coverage. See the
 [cycling-performance repository](../packages/server/src/repositories/cycling-performance-repository.ts).
 
+`get_climbing_catalogue_context({climbing_log_entry_id})` reads the same
+informational cache as web/mobile climb details. Missing, pending, ready and
+error states remain explicit; candidate links preserve source attribution,
+match confidence and inherited tag context. This read-only tool does not
+initiate external lookups; use **Find catalogue info** in climb details to
+populate or refresh the cache. Enrichment expires and never changes recorded
+climbs or metrics. See the [tool](../packages/server/src/mcp/climbing-catalogue-tool.ts)
+and [cache contract](climbing-trait-coverage.md#informational-catalogue-cache).
+
 `get_climbing_sessions` returns climbing sessions and hiking outings with
 attached logs. Each log includes current Climb/Area/Pitch definitions,
 published and reported grades, scoped attempts and outcomes, notes, provenance
@@ -661,7 +732,7 @@ For other clients, use the OAuth setup above when the client supports remote MCP
 
 ## Local Axiom MCP
 
-The repo `.mcp.json` also exposes an `axiom` MCP server for production log queries. It starts `mcp-server-axiom` through `npx` and derives `AXIOM_TOKEN`, `AXIOM_URL`, and `AXIOM_ORG_ID` from the authenticated local Axiom CLI config. The deployed collector routes application and infrastructure logs to `dofek-logs` ([source](../deploy/otel-collector-config.yaml)).
+The repo `.mcp.json` also exposes an `axiom` MCP server for production log queries. It starts `mcp-server-axiom` through `npx` and derives `AXIOM_TOKEN`, `AXIOM_URL`, and `AXIOM_ORG_ID` from the authenticated local Axiom CLI config. The collector routes logs to `dofek-logs` and traces to `dofek-traces` ([source](../deploy/otel-collector-config.yaml)). Log metadata uses `['attributes.custom']['key']`; see the [Axiom runbook](axiom-observability-runbook.md) for current and historical query paths and [Axiom's map syntax](https://axiom.co/docs/apl/data-types/map-fields).
 
 ```bash
 axiom auth status --no-spinner

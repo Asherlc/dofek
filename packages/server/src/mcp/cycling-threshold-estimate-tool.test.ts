@@ -1,6 +1,7 @@
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport, McpServer } from "@modelcontextprotocol/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { cyclingThresholdUncertainty } from "../contracts/cycling-threshold.ts";
 import { cyclingThresholdEstimateOutputSchema } from "./tool-output.ts";
 
 const mocks = vi.hoisted(() => ({ estimate: vi.fn() }));
@@ -22,23 +23,33 @@ function response() {
   return {
     start_date: "2026-05-01",
     end_date: "2026-08-01",
-    requested_method: "twenty_minute_95_percent" as const,
     result: {
       threshold_watts: 285,
       watts_per_kg: null,
       watts_per_kg_reason: "No directly measured body weight within 30 days",
-      method: "twenty_minute_95_percent" as const,
+      method: "computed_eftp" as const,
       classification: "estimated" as const,
-      confidence: "moderate" as const,
-      uncertainty: {
-        watts: null,
-        kind: "not_quantifiable" as const,
-        reason: "A single heuristic has no statistical interval",
+      uncertainty: cyclingThresholdUncertainty,
+      evidence: {
+        value: 285,
+        unit: "watt",
+        method: "computed_eftp",
+        event_at: "2026-08-01T00:00:00Z",
+        evidence_activity_id: null,
+        evidence_at: null,
+        evidence_duration_seconds: null,
+        evidence_power: null,
+        model_version: "v1",
+        uncertainty: {
+          kind: "not_quantifiable" as const,
+          watts: null,
+          reason:
+            "Reference-curve estimate; individual physiological FTP uncertainty has not been quantified.",
+        },
+        unavailable_reason: null,
       },
-      evidence: { threshold_history: [], efforts: [] },
       relevant_activity_ids: [],
-      assumptions: ["FTP is estimated as 95% of maximal 20-minute power"],
-      model: null,
+      assumptions: ["FTP is an ongoing reference-curve estimate"],
     },
     unavailable_reason: null,
     weight: {
@@ -47,6 +58,16 @@ function response() {
     },
   };
 }
+
+it.each([0, -1])("rejects zero or negative threshold watts per kilogram %s", (watts_per_kg) => {
+  const payload = response();
+  expect(
+    cyclingThresholdEstimateOutputSchema.safeParse({
+      ...payload,
+      result: { ...payload.result, watts_per_kg },
+    }).success,
+  ).toBe(false);
+});
 
 describe("estimate_cycling_threshold", () => {
   let client: Client;
@@ -73,24 +94,18 @@ describe("estimate_cycling_threshold", () => {
     await server.close();
   });
 
-  it("passes a labeled method and source filters and strictly parses the result", async () => {
+  it("passes the requested end date and strictly parses computed evidence", async () => {
     const result = await client.callTool({
       name: "estimate_cycling_threshold",
       arguments: {
         start_date: "2026-05-01",
         end_date: "2026-08-01",
-        method: "twenty_minute_95_percent",
-        providers: ["wahoo"],
-        modalities: ["outdoor"],
       },
     });
 
     expect(mocks.estimate).toHaveBeenCalledWith({
       startDate: "2026-05-01",
       endDate: "2026-08-01",
-      method: "twenty_minute_95_percent",
-      providers: ["wahoo"],
-      modalities: ["outdoor"],
     });
     expect(
       cyclingThresholdEstimateOutputSchema.parse(result.structuredContent).result.result,
@@ -105,16 +120,6 @@ describe("estimate_cycling_threshold", () => {
         unexpected: true,
       }).success,
     ).toBe(false);
-  });
-
-  it("defaults to best_supported", async () => {
-    await client.callTool({
-      name: "estimate_cycling_threshold",
-      arguments: { start_date: "2026-05-01", end_date: "2026-08-01" },
-    });
-    expect(mocks.estimate).toHaveBeenCalledWith(
-      expect.objectContaining({ method: "best_supported", providers: [], modalities: [] }),
-    );
   });
 
   it("validates dates and requires ClickHouse plus activity scope", async () => {

@@ -10,7 +10,11 @@
 
 {% set activity_refresh_scoped = activity_refresh_scope_enabled() %}
 
-WITH current_duplicate_groups AS (
+WITH
+{% if activity_refresh_scoped %}
+{{ activity_refresh_scope_ctes() }}
+{% endif %}
+current_duplicate_groups AS (
     SELECT
         source_records.activity_id AS activity_id,
         toString(source_records.group_id) AS group_id

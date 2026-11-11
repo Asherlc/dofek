@@ -1,8 +1,13 @@
+import { signInToKaya } from "@dofek/kaya-client";
+import { signInToZepp, ZEPP_REGISTRATION_REDIRECT_URI } from "@dofek/zepp-client";
 import { TRPCError } from "@trpc/server";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import { queryCache } from "dofek/lib/cache";
+import { captureException } from "dofek/lib/error-reporting";
+import { ProviderInvalidCredentialsError } from "dofek/providers/auth-errors";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
+import { InvalidCredentialsError } from "./auth/password-credential.ts";
 import {
   CacheTTL,
   type Context,
@@ -12,6 +17,8 @@ import {
   requestCacheTtl,
   router,
 } from "./trpc.ts";
+
+vi.mock("dofek/lib/error-reporting", () => ({ captureException: vi.fn() }));
 
 const safeInternalErrorMessage =
   "We couldn't complete this request. Please try again. If the problem continues, contact support.";
@@ -46,6 +53,60 @@ async function serializeTransportError(error: unknown) {
 }
 
 describe("tRPC error serialization", () => {
+  it("marks confirmed invalid credentials while preserving their actionable error", async () => {
+    const cause = new InvalidCredentialsError();
+    const result = await serializeTransportError(
+      new TRPCError({ code: "BAD_REQUEST", message: cause.message, cause }),
+    );
+    const body = JSON.parse(result.body);
+    expect(result.status).toBe(400);
+    expect(body.error.message).toBe(cause.message);
+    expect(body.error.data.handledFailure).toBe("invalid_credentials");
+  });
+
+  it.each([503, 200])(
+    "retains Kaya HTTP/schema failure %s as reportable despite its legacy credential class",
+    async (status) => {
+      let upstream: unknown;
+      try {
+        await signInToKaya("fixture@example.test", "fixture", async () =>
+          Response.json({ message: "ok" }, { status }),
+        );
+      } catch (error) {
+        upstream = error;
+      }
+      expect(upstream).toBeDefined();
+      const cause = new ProviderInvalidCredentialsError("Kaya", { cause: upstream });
+      const result = await serializeTransportError(
+        new TRPCError({ code: "BAD_REQUEST", message: cause.message, cause }),
+      );
+      expect(JSON.parse(result.body).error.data.handledFailure).toBeUndefined();
+    },
+  );
+
+  it("retains a malformed Zepp redirect as reportable despite its legacy credential class", async () => {
+    let upstream: unknown;
+    try {
+      await signInToZepp(
+        "fixture@example.test",
+        "fixture",
+        async () =>
+          new Response(null, {
+            status: 303,
+            headers: { location: ZEPP_REGISTRATION_REDIRECT_URI },
+          }),
+      );
+    } catch (error) {
+      upstream = error;
+    }
+    expect(upstream).toBeDefined();
+    const cause = new ProviderInvalidCredentialsError("Zepp", { cause: upstream });
+    const result = await serializeTransportError(
+      new TRPCError({ code: "BAD_REQUEST", message: cause.message, cause }),
+    );
+    expect(JSON.parse(result.body).error.data.handledFailure).toBeUndefined();
+  });
+
   it("serializes a configuration failure with the feature and support action", async () => {
     const diagnostic = new Error("CLICKHOUSE_URL environment variable is required");
     const testRouter = router({
@@ -250,6 +311,29 @@ describe("cached query contract versions", () => {
     await expect(caller.dashboard(input)).resolves.toBe("fresh-contract");
     expect(resolver).toHaveBeenCalledOnce();
   });
+  it("rebuilds transient responses even when background completion invalidated before the response returned", async () => {
+    const outputSchema = z.object({ pending: z.boolean() });
+    let first = true;
+    const resolver = vi.fn(async () => {
+      const pending = first;
+      first = false;
+      await queryCache.invalidateByPrefix("user-1:metadata:");
+      return { pending };
+    });
+    const caller = router({
+      metadata: cachedProtectedQuery({
+        maxAge: CacheTTL.LONG,
+        outputSchema,
+        shouldCache: (data) => !outputSchema.parse(data).pending,
+      })
+        .output(outputSchema)
+        .query(resolver),
+    }).createCaller(testContext({ db: {}, sensorStore: {}, userId: "user-1", timezone: "UTC" }));
+    expect(await caller.metadata()).toEqual({ pending: true });
+    expect(await caller.metadata()).toEqual({ pending: false });
+    expect(await caller.metadata()).toEqual({ pending: false });
+    expect(resolver).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("requestCacheTtl", () => {
@@ -328,5 +412,69 @@ describe("requestCacheTtl", () => {
         new Date("2026-07-08T23:45:00.000Z"),
       ),
     ).toThrow("calendar service unavailable");
+  });
+});
+
+describe("schema-aware cached queries", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.clearAllMocks();
+  });
+  const outputSchema = z.object({ count: z.number() });
+  function typedCaller(resolver: () => unknown) {
+    return router({
+      typed: cachedProtectedQuery({ maxAge: CacheTTL.SHORT, outputSchema })
+        .output(outputSchema)
+        .query(resolver),
+    }).createCaller(testContext({ userId: "user-1", timezone: "UTC", db: {}, sensorStore: {} }));
+  }
+  it("parses a valid cached hit without invoking the resolver", async () => {
+    const get = vi.spyOn(queryCache, "get").mockResolvedValue({ count: 3, extra: "discarded" });
+    const set = vi.spyOn(queryCache, "set").mockResolvedValue(undefined);
+    const resolver = vi.fn(() => ({ count: 9 }));
+    expect(await typedCaller(resolver).typed()).toEqual({ count: 3 });
+    expect(get).toHaveBeenCalledOnce();
+    expect(resolver).not.toHaveBeenCalled();
+    expect(set).not.toHaveBeenCalled();
+  });
+  it("reports and evicts malformed cached data then rebuilds through the resolver", async () => {
+    vi.spyOn(queryCache, "get").mockResolvedValue({ count: "invalid" });
+    const invalidate = vi.spyOn(queryCache, "invalidate").mockResolvedValue(undefined);
+    const set = vi.spyOn(queryCache, "set").mockResolvedValue(undefined);
+    const resolver = vi.fn(() => ({ count: 7 }));
+    expect(await typedCaller(resolver).typed()).toEqual({ count: 7 });
+    expect(captureException).toHaveBeenCalledWith(expect.any(z.ZodError));
+    expect(invalidate).toHaveBeenCalledWith(requestCacheKey("user-1", "typed", undefined, "UTC"));
+    expect(resolver).toHaveBeenCalledOnce();
+    expect(set).toHaveBeenCalledWith(
+      requestCacheKey("user-1", "typed", undefined, "UTC"),
+      { count: 7 },
+      CacheTTL.SHORT,
+    );
+  });
+  it("validates cache misses before writing data", async () => {
+    vi.spyOn(queryCache, "get").mockResolvedValue(undefined);
+    const set = vi.spyOn(queryCache, "set").mockResolvedValue(undefined);
+    const caller = typedCaller(() => ({ count: "invalid" }));
+    await expect(caller.typed()).rejects.toMatchObject({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Output validation failed",
+    });
+    expect(set).not.toHaveBeenCalled();
+  });
+  it("caches a valid miss without reporting or evicting it as malformed", async () => {
+    vi.spyOn(queryCache, "get").mockResolvedValue(undefined);
+    const invalidate = vi.spyOn(queryCache, "invalidate").mockResolvedValue(undefined);
+    const set = vi.spyOn(queryCache, "set").mockResolvedValue(undefined);
+    const resolver = vi.fn(() => ({ count: 5 }));
+    expect(await typedCaller(resolver).typed()).toEqual({ count: 5 });
+    expect(resolver).toHaveBeenCalledOnce();
+    expect(captureException).not.toHaveBeenCalled();
+    expect(invalidate).not.toHaveBeenCalled();
+    expect(set).toHaveBeenCalledWith(
+      requestCacheKey("user-1", "typed", undefined, "UTC"),
+      { count: 5 },
+      CacheTTL.SHORT,
+    );
   });
 });

@@ -91,8 +91,8 @@ export async function syncInertialMeasurementUnitToServer(
   // Don't query into the future or if fromDate is after now
   if (fromDate >= now) {
     onProgress?.("Already up to date");
-    await ensureRecording(coreMotion, onProgress);
-    return { inserted: 0, recording: true };
+    const recording = await ensureRecording(coreMotion, onProgress);
+    return { inserted: 0, recording };
   }
 
   onProgress?.(`Querying IMU data from ${fromDate.toISOString()}...`);
@@ -106,8 +106,8 @@ export async function syncInertialMeasurementUnitToServer(
   if (samples.length === 0) {
     onProgress?.("No new IMU samples");
     coreMotion.setLastSyncTimestamp(queryWindowEndDate.toISOString());
-    await ensureRecording(coreMotion, onProgress);
-    return { inserted: 0, recording: true };
+    const recording = await ensureRecording(coreMotion, onProgress);
+    return { inserted: 0, recording };
   }
 
   onProgress?.(`Uploading ${samples.length} IMU samples...`);
@@ -134,9 +134,9 @@ export async function syncInertialMeasurementUnitToServer(
   coreMotion.setLastSyncTimestamp(queryWindowEndDate.toISOString());
   onProgress?.(`Synced ${totalInserted} IMU samples`);
 
-  await ensureRecording(coreMotion, onProgress);
+  const recording = await ensureRecording(coreMotion, onProgress);
 
-  return { inserted: totalInserted, recording: true };
+  return { inserted: totalInserted, recording };
 }
 
 /**
@@ -146,11 +146,17 @@ export async function syncInertialMeasurementUnitToServer(
 async function ensureRecording(
   coreMotion: InertialMeasurementUnitAdapter,
   onProgress?: (message: string) => void,
-): Promise<void> {
-  if (!coreMotion.isAccelerometerRecordingAvailable()) return;
+): Promise<boolean> {
+  if (!coreMotion.isAccelerometerRecordingAvailable()) return false;
 
   // Always start a new recording — CMSensorRecorder handles overlapping
   // calls gracefully (extends the recording window)
   onProgress?.("Starting accelerometer recording (12 hours)...");
-  await coreMotion.startRecording(TWELVE_HOURS_SECONDS);
+  const recording = await coreMotion.startRecording(TWELVE_HOURS_SECONDS);
+  if (!recording) {
+    onProgress?.(
+      "Accelerometer recording did not start. Enable Motion & Fitness access for Dofek in iOS Settings.",
+    );
+  }
+  return recording;
 }

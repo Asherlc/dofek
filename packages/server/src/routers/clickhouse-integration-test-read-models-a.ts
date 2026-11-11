@@ -45,6 +45,7 @@ sensor_bearing_members AS (
     ON members.user_id = samples.user_id
    AND members.activity_id = samples.source_activity_id
   WHERE samples.is_deleted = 0
+    AND coalesce(members.provider_type, '') != 'climbing_log'
     AND samples.recorded_at >= members.started_at
     AND samples.recorded_at <= greatest(
       coalesce(members.ended_at, members.started_at + INTERVAL 12 HOUR),
@@ -62,6 +63,7 @@ best AS (
       row_number() OVER (
         PARTITION BY members.group_id
         ORDER BY
+          coalesce(members.provider_type, '') = 'climbing_log' ASC,
           sensor_sample_count > 0 DESC,
           sensor_sample_count DESC,
           has_elevation DESC,
@@ -94,7 +96,7 @@ SELECT
   activity.started_at AS started_at,
   activity.ended_at AS ended_at,
   best.source_name AS source_name,
-  best.name AS name,
+  activity.name AS name,
   activity.notes AS notes,
   activity.timezone AS timezone,
   activity.start_utc_offset_minutes AS start_utc_offset_minutes,
@@ -113,7 +115,8 @@ SELECT
   activity.origin_evidence AS origin_evidence,
   toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,
   toUInt8(0) AS is_deleted,
-  now64(9, 'UTC') AS refreshed_at
+  now64(9, 'UTC') AS refreshed_at,
+  activity.primary_canonical_type AS primary_canonical_type
 FROM ${databases.analytics}.v_activity AS activity
 INNER JOIN best
   ON best.group_id = activity.id`;
@@ -133,7 +136,7 @@ export function buildTestActivitySensorSampleSelectSql(
     ended_at,
     member_activity_ids
   FROM ${databases.analytics}.deduped_activities FINAL
-  WHERE is_deleted = 0
+  WHERE is_deleted = 0 AND coalesce(provider_type, '') != 'climbing_log'
 )
 SELECT
   current_activity.activity_id AS activity_id,
@@ -381,7 +384,6 @@ SELECT
   CAST(NULL, 'Nullable(DateTime64(6, ''UTC''))') AS first_sample_at,
   CAST(NULL, 'Nullable(DateTime64(6, ''UTC''))') AS last_sample_at,
   CAST(NULL, 'Nullable(Float64)') AS best_twenty_minute_power,
-  CAST(NULL, 'Nullable(Float64)') AS normalized_power,
   CAST(NULL, 'Nullable(Float64)') AS smoothed_avg_power,
   CAST(NULL, 'Nullable(Float64)') AS climbing_elevation_gain_m,
   CAST(NULL, 'Nullable(Int32)') AS climbing_seconds,
@@ -574,7 +576,6 @@ SELECT
   coalesce(sensor_summary.first_sample_at, activity.started_at) AS first_sample_at,
   coalesce(sensor_summary.last_sample_at, activity.started_at) AS last_sample_at,
   CAST(NULL, 'Nullable(Float64)') AS best_twenty_minute_power,
-  CAST(NULL, 'Nullable(Float64)') AS normalized_power,
   CAST(NULL, 'Nullable(Float64)') AS smoothed_avg_power,
   CAST(NULL, 'Nullable(Float64)') AS climbing_elevation_gain_m,
   CAST(NULL, 'Nullable(Int32)') AS climbing_seconds,
@@ -1228,15 +1229,22 @@ export function buildTestActivityOriginSelectSql(
   const body = macro.match(/\{% macro activity_origin\(\) %\}([\s\S]*?)\{% endmacro %\}/)?.[1];
   if (!body) throw new Error("Missing activity origin macro");
   return `WITH legacy AS (${legacySql}), ranked AS (
-    SELECT a.id AS activity_id, a.user_id, a.group_id, a.provider_id, a.source_name, a.raw
+    SELECT a.id AS activity_id, a.user_id, a.group_id, a.provider_id, a.external_id, a.source_name, a.raw
     FROM ${databases.postgresFitness}.activity AS a FINAL
     INNER JOIN legacy ON legacy.id = a.group_id AND legacy.user_id = a.user_id
     WHERE has(legacy.member_activity_ids, a.id) AND a._peerdb_is_deleted = 0
   ), ${body}
-  SELECT legacy.* REPLACE(origins.primary_activity_id AS primary_activity_id),
+  SELECT legacy.* REPLACE(origins.primary_activity_id AS primary_activity_id,
+    if(origins.primary_activity_id IS NOT NULL,
+      if(nullIf(trim(BOTH ' ' FROM primary_member.name),'') IS NULL,NULL,primary_member.name),legacy.name) AS name),
     legacy.primary_activity_id AS representative_activity_id,
     origins.primary_provider_id, origins.primary_source_name,
-    origins.origin_candidate_member_ids, origins.origin_evidence
+    origins.origin_candidate_member_ids, origins.origin_evidence,
+    primary_member.canonical_type AS primary_canonical_type
   FROM legacy INNER JOIN activity_origins AS origins
-    ON legacy.id = origins.group_id AND legacy.user_id = origins.user_id`;
+    ON legacy.id = origins.group_id AND legacy.user_id = origins.user_id
+  LEFT JOIN ${databases.postgresFitness}.activity AS primary_member FINAL
+    ON primary_member.id = origins.primary_activity_id
+      AND primary_member.group_id = legacy.id AND primary_member.user_id = legacy.user_id
+      AND primary_member._peerdb_is_deleted = 0`;
 }

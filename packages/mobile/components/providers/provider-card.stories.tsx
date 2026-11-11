@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-native";
 import type { ComponentType } from "react";
 import { View } from "react-native";
+import { expect, within } from "storybook/test";
 import { AuthProvider } from "../../lib/auth-context";
 import { ProviderCard } from "./provider-card.tsx";
 
@@ -55,6 +56,84 @@ export default providerCardMeta;
 type ProviderCardStory = StoryObj<typeof providerCardMeta>;
 
 export const Connected: ProviderCardStory = {};
+
+export const CrimpdConnected: ProviderCardStory = {
+  args: {
+    provider: {
+      ...providerCardMeta.args.provider,
+      id: "crimpd",
+      label: "Crimpd",
+      authType: "credential",
+    },
+    onImport: () => {},
+  },
+};
+
+export const VerticalLifeConnected: ProviderCardStory = {
+  args: {
+    provider: {
+      ...providerCardMeta.args.provider,
+      id: "eight-a",
+      label: "8a.nu / Vertical-Life",
+      authType: "credential",
+    },
+    onImport: () => {},
+  },
+};
+
+export const VerticalLifeNarrow: ProviderCardStory = {
+  ...VerticalLifeConnected,
+  decorators: [
+    (Story: ComponentType) => (
+      <View style={{ width: 340 }}>
+        <Story />
+      </View>
+    ),
+  ],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const title = canvas.getByText("8a.nu / Vertical-Life");
+    const sync = canvas.getByRole("button", { name: "Sync 8a.nu / Vertical-Life" });
+    await expect(title.getBoundingClientRect().right).toBeLessThanOrEqual(
+      sync.getBoundingClientRect().left,
+    );
+  },
+};
+
+export const VerticalLifeNotConnected: ProviderCardStory = {
+  args: {
+    provider: {
+      ...providerCardMeta.args.provider,
+      id: "eight-a",
+      label: "8a.nu / Vertical-Life",
+      authType: "credential",
+      enabled: false,
+      authStatus: "not_connected",
+      lastSyncAt: null,
+      lastSuccessfulSyncAt: null,
+      syncFreshness: null,
+    },
+    onImport: () => {},
+    onConnect: () => {},
+  },
+};
+
+export const CrimpdNotConnected: ProviderCardStory = {
+  args: {
+    provider: {
+      ...providerCardMeta.args.provider,
+      id: "crimpd",
+      label: "Crimpd",
+      authType: "credential",
+      enabled: false,
+      authStatus: "not_connected",
+      lastSyncAt: null,
+      lastSuccessfulSyncAt: null,
+      syncFreshness: null,
+    },
+    onImport: () => {},
+  },
+};
 
 export const NotConnected: ProviderCardStory = {
   args: {
@@ -187,11 +266,11 @@ export const AppleHealthImportOnly: ProviderCardStory = {
 export const PushOnly: ProviderCardStory = {
   args: {
     provider: {
-      id: "whoop-ble",
+      id: "whoop_ble",
       label: "WHOOP BLE",
       enabled: false,
       authStatus: "connected",
-      authType: "none",
+      authType: "push:mobile",
       lastSyncAt: null,
       lastSuccessfulSyncAt: null,
       syncFreshness: null,
@@ -264,4 +343,79 @@ export const StaleProvider: ProviderCardStory = {
       pushOnly: false,
     },
   },
+};
+
+const garminProvider = {
+  id: "garmin",
+  label: "Garmin",
+  authType: "oauth",
+  enabled: false,
+  authStatus: "not_connected" as const,
+  lastSyncAt: null,
+  lastSuccessfulSyncAt: null,
+  syncFreshness: null,
+  recentLogs: [],
+  importOnly: false,
+  pushOnly: true,
+};
+
+export const GarminConnect: ProviderCardStory = {
+  args: {
+    provider: garminProvider,
+  },
+};
+
+export const GarminConnected: ProviderCardStory = {
+  name: "Garmin · Waiting for first update",
+  args: { provider: { ...garminProvider, authStatus: "connected" } },
+};
+
+export const GarminUpdateProcessed: ProviderCardStory = {
+  args: {
+    provider: {
+      ...garminProvider,
+      authStatus: "connected",
+      lastProcessedUpdateAt: oneHourAgo,
+      recentLogs: [
+        {
+          id: "garmin-update-success",
+          providerId: "garmin",
+          dataType: "activities",
+          status: "success",
+          recordCount: 1,
+          durationMs: 1250,
+          errorMessage: null,
+          authFailureReason: null,
+          syncedAt: oneHourAgo,
+        },
+      ],
+    },
+  },
+};
+
+export const GarminUpdateFailed: ProviderCardStory = {
+  args: {
+    provider: {
+      ...garminProvider,
+      authStatus: "connected",
+      lastProcessedUpdateAt: oneHourAgo,
+      recentLogs: [
+        {
+          id: "garmin-update-failed",
+          providerId: "garmin",
+          dataType: "activities",
+          status: "error",
+          recordCount: null,
+          durationMs: 1250,
+          errorMessage: "An activity file could not be read.",
+          authFailureReason: null,
+          syncedAt: new Date().toISOString(),
+        },
+      ],
+    },
+  },
+};
+
+export const GarminReconnect: ProviderCardStory = {
+  args: { provider: { ...garminProvider, authStatus: "expired" } },
 };

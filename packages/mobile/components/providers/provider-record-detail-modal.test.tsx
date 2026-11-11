@@ -8,6 +8,44 @@ import {
 import { ProviderRecordDetailModal } from "./provider-record-detail-modal";
 
 vi.mock("expo-router", () => ({ useRouter: () => ({ push: vi.fn() }) }));
+it("renders a supported old-server scalar grip and numeric angle", () => {
+  const { holdTypes: _holdTypes, ...entry } = climbingLogEntryFixture({
+    wallAngle: { value: 30, unit: "degrees" },
+  });
+  render(
+    <ProviderRecordDetailModal
+      dataType="climbingLogEntries"
+      state={{
+        data: { ...entry, holdType: "crimp" },
+        error: null,
+        isLoading: false,
+      }}
+      onClose={() => {}}
+    />,
+  );
+  expect(screen.getByText("Hold types: crimp")).toBeTruthy();
+  expect(screen.getByText("Wall angle: 30°")).toBeTruthy();
+});
+
+it("preserves current-server categories and every recorded grip", () => {
+  render(
+    <ProviderRecordDetailModal
+      dataType="climbingLogEntries"
+      state={{
+        data: climbingLogEntryFixture({
+          holdTypes: ["crimp", "volume"],
+          wallAngle: { category: "slab" },
+        }),
+        error: null,
+        isLoading: false,
+      }}
+      onClose={() => {}}
+    />,
+  );
+  expect(screen.getByText("Hold types: crimp, volume")).toBeTruthy();
+  expect(screen.getByText("Wall angle: Slab")).toBeTruthy();
+});
+
 it("keeps cached climbing details visible beside a refresh error", () => {
   const climb = climbingClimbFixture();
   climb.coordinates = { latitude: 0, longitude: -120 };

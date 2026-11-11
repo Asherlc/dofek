@@ -108,9 +108,92 @@ describe("verifyProcessorRetentionPolicies", () => {
       },
     });
     expect(requests[1]).toMatchObject({
+      url: "https://api.axiom.co/v2/datasets/dofek-traces",
+      init: {
+        headers: {
+          Authorization: "Bearer axiom-key",
+          "X-Axiom-Org-Id": "axiom-org",
+        },
+      },
+    });
+    expect(requests[2]).toMatchObject({
       url: "https://sentry.example.com/api/0/organizations/east-bay-software/?detailed=1",
       init: { headers: { Authorization: "Bearer sentry-key" } },
     });
+  });
+
+  it.each([
+    { logRetentionDays: 14, traceRetentionDays: 29 },
+    { logRetentionDays: 29, traceRetentionDays: 14 },
+  ])(
+    "reports the longest verified Axiom retention with a log dataset override",
+    async ({ logRetentionDays, traceRetentionDays }) => {
+      const requests: string[] = [];
+      const fetchFn: typeof globalThis.fetch = async (url) => {
+        const requestUrl = String(url);
+        requests.push(requestUrl);
+        if (requestUrl.includes("axiom.co")) {
+          return Response.json({
+            retentionDays: requestUrl.endsWith("dofek-traces")
+              ? traceRetentionDays
+              : logRetentionDays,
+            useRetentionPeriod: true,
+          });
+        }
+        return Response.json({ dataRetention: 29 });
+      };
+
+      await expect(
+        verifyProcessorRetentionPolicies({ ...config, axiomDataset: "custom-logs" }, fetchFn),
+      ).resolves.toEqual({ axiomRetentionDays: 29, sentryRetentionDays: 29 });
+      expect(requests).toContain("https://api.axiom.co/v2/datasets/custom-logs");
+      expect(requests).toContain("https://api.axiom.co/v2/datasets/dofek-traces");
+    },
+  );
+
+  it.each([
+    {
+      condition: "disabled",
+      metadata: { retentionDays: 29, useRetentionPeriod: false },
+      error: "Axiom dataset retention is not enabled for dofek-traces",
+    },
+    {
+      condition: "excessive",
+      metadata: { retentionDays: 30, useRetentionPeriod: true },
+      error: "Axiom dataset retention exceeds the 29-day account-erasure boundary for dofek-traces",
+    },
+    {
+      condition: "missing",
+      metadata: {},
+      error: "Axiom dataset dofek-traces does not expose valid retention settings",
+    },
+  ])(
+    "rejects $condition trace retention even when log retention is valid",
+    async ({ metadata, error }) => {
+      await expect(
+        verifyProcessorRetentionPolicies(config, async (url) => {
+          if (String(url).endsWith("dofek-traces")) return Response.json(metadata);
+          return String(url).includes("axiom.co")
+            ? Response.json({ retentionDays: 29, useRetentionPeriod: true })
+            : Response.json({ dataRetention: 29 });
+        }),
+      ).rejects.toThrow(error);
+    },
+  );
+
+  it("identifies the trace dataset when its retention lookup fails", async () => {
+    await expect(
+      verifyProcessorRetentionPolicies(config, async (url) => {
+        if (String(url).endsWith("dofek-traces")) {
+          return new Response("dataset not found", { status: 404 });
+        }
+        return String(url).includes("axiom.co")
+          ? Response.json({ retentionDays: 29, useRetentionPeriod: true })
+          : Response.json({ dataRetention: 29 });
+      }),
+    ).rejects.toThrow(
+      "Axiom dataset retention verification failed with status 404 for dofek-traces",
+    );
   });
 
   it("rejects an Axiom request failure", async () => {

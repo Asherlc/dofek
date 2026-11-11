@@ -6,7 +6,7 @@ export const climbingContextSchema = climbingLogEntrySchema
   .pick({
     board: true,
     wallAngle: true,
-    holdType: true,
+    holdTypes: true,
   })
   .extend({
     providerId: recordedTextSchema,

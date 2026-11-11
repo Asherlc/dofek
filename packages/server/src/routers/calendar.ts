@@ -5,6 +5,7 @@ import {
 import { activityOverviewComparisonSchema } from "@dofek/format/activity-overview";
 import { recordLocalTimeContextSchema } from "@dofek/format/record-local-time";
 import { activityOriginSchema } from "@dofek/providers/activity-origin";
+import { activitySourceTreeSchema } from "@dofek/providers/activity-source-tree";
 import {
   ACTIVITY_HEATMAP_BAND_IDS,
   type ActivityHeatmapBandId,
@@ -50,17 +51,19 @@ const activityListSourceSchema = z.object({
   primarySourceLabel: z.string().nullable(),
   sourceCount: z.number().int().positive(),
   overlapSummary: z.string().nullable(),
+  tree: activitySourceTreeSchema,
 });
 
 const calendarActivityEntrySchema = z.object({
   id: z.string(),
   name: z.string().nullable(),
   activityType: z.string(),
+  primaryActivityType: z.string().nullable(),
   modality: z.string().nullable(),
   startedAt: timestampStringSchema,
   endedAt: timestampStringSchema.nullable(),
   localTimeContext: recordLocalTimeContextSchema,
-  durationMin: z.number(),
+  durationMin: z.number().nullable(),
   source: activityListSourceSchema,
   lastProcessedAt: timestampStringSchema.nullable(),
   distanceMeters: z.number().nullable(),
@@ -142,10 +145,46 @@ export const calendarRouter = router({
 
   weekList: cachedProtectedQuery({
     maxAge: CacheTTL.MEDIUM,
-    keyVersion: "activity-calendar-origin-v5",
+    keyVersion: "activity-calendar-power-stress-v12",
   })
     .input(activityListInputSchema)
     .output(z.array(calendarDayActivitiesSchema))
+    .query(async ({ ctx, input }) => {
+      if (!ctx.sensorStore) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            "Activity calendar requires the ClickHouse activity analytics store. Set CLICKHOUSE_URL and retry.",
+        });
+      }
+      await ensureProvidersRegistered();
+      return new ActivitiesCalendarRepository(
+        ctx.db,
+        ctx.userId,
+        ctx.timezone,
+        ctx.sensorStore,
+        ctx.accessWindow,
+      ).getWeekList(input);
+    }),
+
+  weekListV2: cachedProtectedQuery({
+    maxAge: CacheTTL.MEDIUM,
+    keyVersion: "activity-calendar-page-power-stress-v3",
+  })
+    .input(
+      activityListInputSchema.extend({
+        page: z.number().int().nonnegative().default(0),
+        pageSize: z.number().int().min(1).max(100).default(20),
+      }),
+    )
+    .output(
+      z.object({
+        days: z.array(calendarDayActivitiesSchema),
+        totalCount: z.number().int().nonnegative(),
+        page: z.number().int().nonnegative(),
+        pageSize: z.number().int().positive(),
+      }),
+    )
     .query(async ({ ctx, input }) => {
       if (!ctx.sensorStore) {
         throw new TRPCError({
@@ -162,12 +201,12 @@ export const calendarRouter = router({
         ctx.sensorStore,
         ctx.accessWindow,
       );
-      return repo.getWeekList(input);
+      return repo.getPage(input);
     }),
 
   activityOverview: cachedProtectedQuery({
     maxAge: CacheTTL.MEDIUM,
-    keyVersion: "activity-calendar-states-v2",
+    keyVersion: "activity-calendar-primary-type-v4",
   })
     .input(activityListInputSchema)
     .output(activityOverviewSchema)

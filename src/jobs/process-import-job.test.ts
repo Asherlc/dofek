@@ -5,12 +5,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../db/index.ts";
 import { getProviderIngestContext } from "../db/provider-ingest-context.ts";
 import { createMetricStreamEvent, type MetricStreamRowInput } from "../metric-stream/events.ts";
-import type { MetricStreamPublishOptions } from "../metric-stream/redpanda-producer.ts";
+import type { MetricStreamPublishOptions } from "../metric-stream/publisher.ts";
 import {
   APPLE_HEALTH_IMPORT_VALIDATION_ERROR_NAME,
   STRONG_CSV_IMPORT_VALIDATION_ERROR_NAME,
 } from "./import-validation-error.ts";
 import type { LocalImportJobData as ImportJobData } from "./local-import-job-data.ts";
+import { OriginalFitRetentionError } from "./original-fit-retention-error.ts";
 
 const mockCaptureException = vi.fn();
 vi.mock("@sentry/node", () => ({
@@ -41,7 +42,7 @@ vi.mock("node:fs/promises", async (importOriginal) => {
   realUnlink = actual.unlink;
   return { ...actual, unlink: (...args: [string]) => mockUnlink(...args) };
 });
-const { writeFile, access } = await import("node:fs/promises");
+const { writeFile, readFile, access } = await import("node:fs/promises");
 
 const mockLoggerInfo = vi.fn();
 const mockLoggerError = vi.fn();
@@ -169,6 +170,18 @@ const mockImportKayaExportFile = vi.fn().mockResolvedValue({
 });
 vi.mock("../providers/kaya/import.ts", () => ({
   importKayaExportFile: (...args: unknown[]) => mockImportKayaExportFile(...args),
+}));
+const mockImportCrimpdExportFile = vi.fn().mockResolvedValue({ recordsSynced: 3, errors: [] });
+vi.mock("../providers/crimpd/provider.ts", () => ({
+  importCrimpdExportFile: (...args: unknown[]) => mockImportCrimpdExportFile(...args),
+}));
+const mockImportEightAExportFile = vi.fn().mockResolvedValue({ recordsSynced: 3, errors: [] });
+vi.mock("../providers/eight-a/provider.ts", () => ({
+  importEightAExportFile: (...args: unknown[]) => mockImportEightAExportFile(...args),
+}));
+const mockImportMoonBoardExportFile = vi.fn().mockResolvedValue({ recordsSynced: 3, errors: [] });
+vi.mock("../providers/moonboard/provider.ts", () => ({
+  importMoonBoardExportFile: (...args: unknown[]) => mockImportMoonBoardExportFile(...args),
 }));
 const mockImportZosAppBin = vi.fn().mockResolvedValue({
   recordsSynced: 3,
@@ -847,6 +860,61 @@ describe("processImportJob", () => {
       });
     });
   });
+  describe("climbing file imports", () => {
+    it.each([
+      ["crimpd", mockImportCrimpdExportFile],
+      ["eight-a", mockImportEightAExportFile],
+      ["moonboard", mockImportMoonBoardExportFile],
+    ] as const)(
+      "dispatches %s to its importer and records completion",
+      async (importType, importer) => {
+        await writeFile(tempFilePath, "climbing export data");
+        const job = createMockJob({ filePath: tempFilePath, importType });
+        await runImportJob(job, mockDb);
+        expect(importer).toHaveBeenCalledWith(
+          mockDb,
+          importType === "crimpd" ? tempFilePath : "climbing export data",
+          "user-1",
+        );
+        expect(mockLogSync).toHaveBeenCalledWith(
+          mockDb,
+          expect.objectContaining({ providerId: importType, status: "success", recordCount: 3 }),
+        );
+        expect(mockRecordRelationalCanonicalCommits).toHaveBeenCalled();
+      },
+    );
+
+    it("surfaces a malformed climbing export as a terminal actionable failure", async () => {
+      await writeFile(tempFilePath, "bad export");
+      const error = new Error("Crimpd ZIP must contain sets.csv. Export your logbook again.");
+      error.name = "ClimbingImportValidationError";
+      mockImportCrimpdExportFile.mockRejectedValueOnce(error);
+      await expect(
+        runImportJob(createMockJob({ filePath: tempFilePath, importType: "crimpd" }), mockDb),
+      ).rejects.toMatchObject({ name: "ClimbingImportValidationError", message: error.message });
+      expect(mockRecordRelationalCanonicalCommits).not.toHaveBeenCalled();
+      expect(mockAppendProcessingStageEvent).toHaveBeenCalledWith(
+        mockDb,
+        expect.objectContaining({ status: "failed", errorMessage: error.message }),
+      );
+    });
+
+    it("reports partial climbing errors without declaring a successful upload", async () => {
+      await writeFile(tempFilePath, "climbing export data");
+      mockImportEightAExportFile.mockResolvedValueOnce({
+        recordsSynced: 1,
+        errors: [{ message: "row 3: date is invalid" }],
+      });
+      await expect(
+        runImportJob(createMockJob({ filePath: tempFilePath, importType: "eight-a" }), mockDb),
+      ).rejects.toThrow("row 3: date is invalid");
+      expect(mockLogSync).toHaveBeenCalledWith(
+        mockDb,
+        expect.objectContaining({ providerId: "eight-a", status: "error", recordCount: 1 }),
+      );
+    });
+  });
+
   describe("kaya-export import", () => {
     it("reads file and calls importKayaExportFile with correct args", async () => {
       await writeFile(
@@ -1127,6 +1195,35 @@ describe("processImportJob", () => {
   });
 
   describe("fit-file import", () => {
+    it("preserves original manual FIT bytes after retention fails and cleans them after retry succeeds", async () => {
+      const error = new OriginalFitRetentionError("Original FIT retention failed", {
+        cause: new Error("R2 unavailable"),
+      });
+      mockImportFitFile.mockRejectedValueOnce(error);
+      const job = createMockJob({ filePath: tempFilePath, importType: "fit-file" });
+
+      await expect(runImportJob(job, mockDb)).rejects.toBe(error);
+
+      await expect(readFile(tempFilePath)).resolves.toEqual(Buffer.from("test data"));
+      expect(mockAppendProcessingStageEvent).toHaveBeenCalledWith(
+        mockDb,
+        expect.objectContaining({
+          stage: "ingest",
+          status: "failed",
+          errorCode: "file_import_failed",
+        }),
+      );
+      expect(mockAppendProcessingStageEvent).not.toHaveBeenCalledWith(
+        mockDb,
+        expect.objectContaining({ stage: "ingest", status: "succeeded" }),
+      );
+      expect(mockCaptureException).toHaveBeenCalledWith(error, { tags: { phase: "file-import" } });
+
+      await runImportJob(job, mockDb);
+
+      await expect(access(tempFilePath)).rejects.toMatchObject({ code: "ENOENT" });
+    });
+
     it("delegates FIT decoding and records the import lifecycle", async () => {
       const job = createMockJob({ filePath: tempFilePath, importType: "fit-file" });
       await runImportJob(job, mockDb);

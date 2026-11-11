@@ -3,6 +3,7 @@ import { withAccountErasureUserWriteFence } from "../db/account-erasure.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { captureException } from "../lib/error-reporting.ts";
 import { logger } from "../logger.ts";
+import { isPushProvider } from "../providers/types.ts";
 import { enqueueSyncJob } from "./enqueue-sync-job.ts";
 import type { SyncJob } from "./queues.ts";
 import { SyncJobContext } from "./sync-job-context.ts";
@@ -27,10 +28,21 @@ export async function processSyncJob(
   let providers = getEnabledSyncProviders();
   if (providerId) {
     const registeredProvider = getProvider(providerId);
-    if (registeredProvider && !isSyncEligibleProvider(registeredProvider)) {
+    if (registeredProvider && isPushProvider(registeredProvider) && job.data.webhookEvent) {
+      const validation = registeredProvider.validate();
+      if (validation) throw new Error(`Provider not configured: ${validation}`);
+      providers = [registeredProvider];
+    } else if (registeredProvider && !isSyncEligibleProvider(registeredProvider)) {
       logger.info(`[worker] Skipping non-sync provider in sync queue: ${providerId}`);
       await job.updateProgress({
-        providers: { [providerId]: { status: "done", message: "Skipped file-import provider" } },
+        providers: {
+          [providerId]: {
+            status: "done",
+            message: registeredProvider.pushOnly
+              ? "Data arrives automatically from this provider"
+              : "Skipped file-import provider",
+          },
+        },
         percentage: 100,
       });
       return;

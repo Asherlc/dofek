@@ -1,3 +1,4 @@
+import { gpsCoordinatesSchema } from "@dofek/climbing-catalogue/geometry";
 import {
   localTimeContextUnknown,
   offsetMinutesFromTimestamp,
@@ -14,10 +15,11 @@ import {
 } from "@dofek/kaya-client";
 import { resolveProviderActivityType } from "@dofek/training/activity-types";
 import { isValidClimbingGrade } from "@dofek/training/climbing-grades";
-import { gpsCoordinatesSchema } from "@dofek/training/gps-coordinates";
 import { sql } from "drizzle-orm";
 import timezoneAt from "tz-lookup";
 import { z } from "zod";
+import { type ImageDiscovery, sourceImageIdentity } from "../activity-images/types.ts";
+import { recordClimbingImageDiscovery } from "../db/activity-images.ts";
 import { persistClimbingLogSnapshot } from "../db/climbing-log-snapshot.ts";
 import type {
   SourceAreaDefinition,
@@ -99,6 +101,52 @@ export class KayaSyncProvider implements SyncProvider {
 
   #isAccessTokenRejected(error: unknown): error is KayaApiError {
     return error instanceof KayaApiError && error.status === 401;
+  }
+
+  async discoverClimbingImages(
+    run: SyncRun,
+    externalId: string,
+    _options?: { refresh?: boolean },
+  ): Promise<ImageDiscovery> {
+    const ascentId = /^kaya:ascent:([1-9]\d*)$/.exec(externalId)?.[1];
+    if (!ascentId) throw new Error("Kaya photo refresh requires a valid ascent identity.");
+    const userId = run.options.userId;
+    if (!userId) throw new Error("Kaya photo refresh requires a userId.");
+    try {
+      let tokens = await loadTokens(run.db, this.id, userId);
+      if (!tokens)
+        throw new ProviderStoredIdentityMissingError(
+          this.name,
+          "credentials — reconnect via the app",
+        );
+      const identity = scopesSchema.parse(tokens.scopes ? JSON.parse(tokens.scopes) : null);
+      if (tokens.expiresAt <= new Date())
+        tokens = await this.#refreshTokens(run.db, userId, tokens);
+      let ascents: KayaAscent[];
+      try {
+        ascents = await new KayaClient(tokens.accessToken, this.fetchFn).listAscents(
+          identity.kayaUserId,
+        );
+      } catch (error) {
+        if (!this.#isAccessTokenRejected(error)) throw error;
+        tokens = await this.#refreshTokens(run.db, userId, tokens);
+        ascents = await new KayaClient(tokens.accessToken, this.fetchFn).listAscents(
+          identity.kayaUserId,
+        );
+      }
+      const ascent = ascents.find((entry) => entry.id === ascentId);
+      return ascent
+        ? kayaImageDiscovery(ascent)
+        : {
+            coverage: "unavailable",
+            expectedCount: null,
+            reason: "kaya_ascent_not_found",
+            images: [],
+          };
+    } catch (error) {
+      if (!(error instanceof RefreshTokenRevokedError)) captureException(error);
+      throw error;
+    }
   }
 
   async sync(run: SyncRun): Promise<SyncResult> {
@@ -214,6 +262,8 @@ export class KayaSyncProvider implements SyncProvider {
                 date: ascent.date,
                 label: ascent.ascent_type.name,
                 attempts: ascent.attempts,
+                lead: ascent.lead,
+                reportedGrade: ascent.grade,
                 gym: ascent.climb.gym ?? ascent.gym ?? session.gym,
                 notes: ascent.comment,
                 raw: ascent,
@@ -232,6 +282,7 @@ export class KayaSyncProvider implements SyncProvider {
                   externalId: `kaya:session:${session.id}:attempted:${record.id}`,
                   date: session.start_time,
                   attempts: record.attempts,
+                  sent: record.sent,
                   gym: record.gym ?? session.gym,
                   raw: record,
                 },
@@ -248,6 +299,8 @@ export class KayaSyncProvider implements SyncProvider {
               date: ascent.date,
               label: ascent.ascent_type.name,
               attempts: ascent.attempts,
+              lead: ascent.lead,
+              reportedGrade: ascent.grade,
               gym: ascent.climb.gym ?? ascent.gym ?? null,
               notes: ascent.comment,
               raw: ascent,
@@ -271,16 +324,62 @@ export class KayaSyncProvider implements SyncProvider {
           `,
               );
         const sourceAttachedIds = new Set(sourceAttachedEntries.map((entry) => entry.externalId));
-        const result = await persistClimbingLogSnapshot(transaction, {
-          userId,
-          providerId: this.id,
-          entries: [
-            ...entries,
-            ...standaloneEntries.map((entry) =>
-              sourceAttachedIds.has(entry.externalId) ? { ...entry, activityId: null } : entry,
-            ),
-          ],
-        });
+        const snapshotEntries = [
+          ...entries,
+          ...standaloneEntries.map((entry) =>
+            sourceAttachedIds.has(entry.externalId) ? { ...entry, activityId: null } : entry,
+          ),
+        ];
+        // A send can remove the climb from attempted_climbs without carrying its
+        // failed attempts into the ascent's count. Retain that observed history.
+        const priorAttemptIds = ascents
+          .filter(
+            (ascent) =>
+              ascent.session_id &&
+              knownSessions.has(ascent.session_id) &&
+              ascent.attempts === null &&
+              ["redpoint", "send", "repeat"].includes(ascent.ascent_type.name.trim().toLowerCase()),
+          )
+          .map(
+            (ascent) =>
+              `kaya:session:${ascent.session_id}:attempted:${ascent.session_id}_${ascent.climb.id}`,
+          );
+        const retainedAttempts = priorAttemptIds.length
+          ? await executeWithSchema(
+              transaction,
+              z.object({ externalId: z.string() }),
+              sql`
+              SELECT external_id AS "externalId" FROM fitness.climbing_log_entry
+              WHERE user_id = ${userId} AND provider_id = ${this.id}
+                AND external_id = ANY(${sql.param(priorAttemptIds)}::text[])
+                AND raw ->> 'sent' = 'false'
+                AND (raw ->> 'attempts') ~ '^[1-9][0-9]*$'
+            `,
+            )
+          : [];
+        const result = await persistClimbingLogSnapshot(
+          transaction,
+          {
+            userId,
+            providerId: this.id,
+            entries: snapshotEntries,
+          },
+          retainedAttempts.map((entry) => entry.externalId),
+        );
+        const ascentByExternalId = new Map(
+          ascents.map((ascent) => [`kaya:ascent:${ascent.id}`, ascent]),
+        );
+        for (const [index, climbingLogEntryId] of result.logEntryIds.entries()) {
+          const externalId = snapshotEntries[index]?.externalId;
+          const ascent = externalId ? ascentByExternalId.get(externalId) : undefined;
+          if (ascent)
+            await recordClimbingImageDiscovery(transaction, {
+              userId,
+              climbingLogEntryId,
+              providerId: this.id,
+              discovery: kayaImageDiscovery(ascent),
+            });
+        }
         await finishProviderActivityListSync(transaction, {
           userId,
           providerId: this.id,
@@ -329,9 +428,12 @@ function kayaLogEntry(
     date: string;
     label?: string;
     attempts: number | null;
+    sent?: boolean;
+    lead?: boolean | null;
     gym: KayaAscent["climb"]["gym"];
     notes?: string | null;
     raw: SourceClimbingLogEntry["raw"];
+    reportedGrade?: KayaAscent["grade"];
   },
 ): SourceClimbingLogEntry {
   const boulder = climb.climb_type.name.toLowerCase().includes("boulder");
@@ -341,13 +443,16 @@ function kayaLogEntry(
   }
   const setting = areas.length ? "outdoor" : source.gym ? "indoor" : null;
   if (!areas.length && source.gym) areas.push(kayaArea(source.gym));
+  if (climb.wallarea) areas.push(kayaArea(climb.wallarea));
   const climbedOn = source.date.trim() === "" ? null : source.date.slice(0, 10);
   if (
     climbedOn !== null &&
     (climbedOn.startsWith("0000-") || !z.iso.date().safeParse(climbedOn).success)
   )
     throw new Error(`Kaya log ${source.externalId} has an invalid climb date.`);
-  const label = source.label?.trim().toLowerCase();
+  const sourceResult =
+    source.label ?? (source.sent === true ? "Send" : source.sent === false ? "Attempt" : undefined);
+  const label = sourceResult?.trim().toLowerCase();
   const qualifier: SourceClimbingAttempt["qualifier"] =
     label === "onsight"
       ? "free-onsight"
@@ -358,18 +463,38 @@ function kayaLogEntry(
           : undefined;
   const grade = climb.grade?.name.trim();
   const system = boulder ? "v_scale" : "yds";
-  const ropeMethod = boulder || climb.lead == null ? null : climb.lead ? "lead" : "top_rope";
+  const holdTypes = kayaGripTypes(climb.tags);
+  let wallAngle: SourceClimbingLogEntry["wallAngle"] =
+    climb.angle === null ? null : { value: climb.angle, unit: null };
+  // KAYA's outdoor editor stores category codes, independently of board angles.
+  if (setting === "outdoor" && !climb.board && climb.angle !== null) {
+    const categories: Record<number, "slab" | "vertical" | "overhang" | "roof"> = {
+      [-20]: "slab",
+      0: "vertical",
+      20: "overhang",
+      50: "roof",
+    };
+    const category = categories[climb.angle];
+    if (category) wallAngle = { category };
+  }
+  const lead = source.lead ?? climb.lead;
+  const ropeMethod = boulder || lead == null ? null : lead ? "lead" : "top_rope";
   const attempts: SourceClimbingAttempt[] = [
     {
       scope: "climb",
       ropeMethod,
-      ...(qualifier === undefined ? {} : { qualifier, sourceResult: source.label }),
+      ...(qualifier === undefined ? {} : { qualifier }),
+      ...(qualifier !== undefined || source.sent === false ? { sourceResult } : {}),
       ...(label === "repeat" ? { hadCompletedBefore: true } : {}),
     },
   ];
-  if (ropeMethod !== null && source.attempts !== null)
+  if (source.attempts !== null)
     for (let attemptCount = 1; attemptCount < source.attempts; attemptCount++)
-      attempts.push({ scope: "climb", ropeMethod });
+      attempts.push({
+        scope: "climb",
+        ropeMethod,
+        ...(source.sent === false ? { sourceResult: "Attempt" } : {}),
+      });
   return {
     externalId: source.externalId,
     climbedOn,
@@ -378,7 +503,17 @@ function kayaLogEntry(
     ...(source.notes === undefined ? {} : { notes: source.notes }),
     raw: source.raw,
     board: climb.board ? { name: climb.board.name, externalId: climb.board.id } : null,
-    wallAngle: climb.angle == null ? null : { value: climb.angle, unit: null },
+    wallAngle,
+    holdTypes,
+    reportedGrades:
+      source.reportedGrade == null
+        ? []
+        : [
+            {
+              value: source.reportedGrade.name,
+              system: isValidClimbingGrade(source.reportedGrade.name, system) ? system : null,
+            },
+          ],
     ...(source.attempts === null
       ? {}
       : { reportedAttemptCounts: [{ scope: "climb", count: source.attempts }] }),
@@ -388,6 +523,14 @@ function kayaLogEntry(
       name: climb.name,
       kind: boulder ? "boulder" : "route",
       setting,
+      ...(climb.latitude == null || climb.longitude == null
+        ? {}
+        : {
+            coordinates: gpsCoordinatesSchema.parse({
+              latitude: climb.latitude,
+              longitude: climb.longitude,
+            }),
+          }),
       ...(grade === undefined
         ? {}
         : {
@@ -398,6 +541,28 @@ function kayaLogEntry(
       ...(areas.length ? { areas } : {}),
     },
   };
+}
+
+function kayaGripTypes(tags: KayaAscent["climb"]["tags"]): SourceClimbingLogEntry["holdTypes"] {
+  const grips = new Map<string, NonNullable<SourceClimbingLogEntry["holdTypes"]>[number]>([
+    ["Crimp", "crimp"],
+    ["Sloper", "sloper"],
+    ["Pinch", "pinch"],
+    ["Pocket", "pocket"],
+    ["Jug", "jug"],
+    ["Volume", "volume"],
+    ["Jam", "jam"],
+    ["No Grips", "no_grips"],
+  ]);
+  const holds = [
+    ...new Set(
+      tags.flatMap((tag) => {
+        const hold = tag.tag_type_id === "3" ? grips.get(tag.name) : undefined;
+        return hold === undefined ? [] : [hold];
+      }),
+    ),
+  ];
+  return holds.length === 0 ? null : holds;
 }
 
 function kayaArea(location: NonNullable<KayaAscent["climb"]["gym"]>): SourceAreaDefinition {
@@ -451,4 +616,61 @@ function kayaSessionLocalTimeContext(session: KayaSession, startedAt: Date, ende
     endUtcOffsetMinutes: endUtcOffsetMinutes === 0 ? null : endUtcOffsetMinutes,
     source: "provider_offset",
   });
+}
+
+const photoUrlSchema = z.url({ protocol: /^https$/ });
+const mediaSchema = z
+  .object({
+    id: z.string().min(1),
+    photo: z
+      .object({
+        photo_url: photoUrlSchema.nullish(),
+        thumb_url: photoUrlSchema.nullish(),
+      })
+      .passthrough()
+      .nullable(),
+  })
+  .passthrough();
+
+/** Only ascent photographs; climb galleries and video covers are separate source records. */
+function kayaImageDiscovery(ascent: unknown): ImageDiscovery {
+  const parsed = mediaSchema.safeParse(ascent);
+  if (!parsed.success)
+    return {
+      coverage: "partial",
+      expectedCount: null,
+      reason: "invalid_kaya_ascent_photo",
+      images: [],
+    };
+  const { id, photo } = parsed.data;
+  if (photo === null) return { coverage: "complete", expectedCount: 0, reason: null, images: [] };
+  const urls = [
+    ...new Set(
+      [photo.photo_url, photo.thumb_url].filter((url): url is string => typeof url === "string"),
+    ),
+  ];
+  const first = urls[0];
+  if (!first)
+    return {
+      coverage: "partial",
+      expectedCount: null,
+      reason: "invalid_kaya_ascent_photo",
+      images: [],
+    };
+  return {
+    coverage: "complete",
+    expectedCount: 1,
+    reason: null,
+    images: [
+      {
+        sourceId: `kaya:ascent:${id}:photo`,
+        kind: "photo",
+        caption: null,
+        position: 0,
+        variants: urls.map((url) => ({ url, width: null, height: null })),
+        revision: sourceImageIdentity(first),
+        raw: { id, photo },
+      },
+    ],
+  };
 }

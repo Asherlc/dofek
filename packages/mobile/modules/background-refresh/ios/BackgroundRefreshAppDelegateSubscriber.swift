@@ -14,9 +14,10 @@ public class BackgroundRefreshAppDelegateSubscriber: ExpoAppDelegateSubscriber {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
+        CollectionNotificationService.shared.start()
         BackgroundRefreshModule.registerBackgroundTask { refreshTask in
             // Schedule the next refresh before doing work
-            Self.scheduleRefresh()
+            BackgroundRefreshScheduler.schedule()
 
             guard let taskId = BackgroundRefreshModule.taskCoordinator.beginTask(completion: { success in
                 DispatchQueue.main.async {
@@ -40,17 +41,15 @@ public class BackgroundRefreshAppDelegateSubscriber: ExpoAppDelegateSubscriber {
             )
         }
 
-        Self.scheduleRefresh()
+        BackgroundRefreshScheduler.schedule()
         return true
     }
 
-    private static func scheduleRefresh() {
-        let request = BGAppRefreshTaskRequest(identifier: BackgroundRefreshModule.taskIdentifier)
-        request.earliestBeginDate = Date(timeIntervalSinceNow: 15 * 60)
-        do {
-            try BGTaskScheduler.shared.submit(request)
-        } catch {
-            print("[BackgroundRefresh] Failed to schedule: \(error.localizedDescription)")
-        }
+    public func applicationDidBecomeActive(_ application: UIApplication) {
+        CollectionNotificationService.shared.appBecameActive()
+    }
+
+    public func applicationWillTerminate(_ application: UIApplication) {
+        CollectionNotificationService.shared.appWillTerminate()
     }
 }

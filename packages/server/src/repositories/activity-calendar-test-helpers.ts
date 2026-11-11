@@ -21,6 +21,7 @@ export function makeDatabase(
   sourceEntries: ClimbingLogEntryDetail[] = [],
 ) {
   function sourceQueryRows(query: string): TestDatabaseRow[] | null {
+    if (query.includes("fitness.v_climbing_log_activity")) return [];
     if (query.includes("FROM fitness.user_settings")) return [];
     if (query.includes('AS "activityId"'))
       return sourceEntries.map((entry) => ({
@@ -82,15 +83,18 @@ export function makeSensorStore(rowSets: Record<string, unknown>[][]): ActivityS
           schema.parse(
             ("canonical_type" in row || "activity_type" in row) && "started_at" in row
               ? {
+                  power_tss: null,
                   timezone: null,
                   start_utc_offset_minutes: null,
                   end_utc_offset_minutes: null,
                   local_time_source: "unknown",
                   provider_id: "wahoo",
                   primary_activity_id: null,
+                  primary_canonical_type: null,
                   primary_provider_id: null,
                   primary_source_name: null,
                   origin_candidate_member_ids: [],
+                  origin_evidence: [],
                   member_activity_ids: [],
                   route_activity_id: row.id,
                   modality: null,
@@ -100,7 +104,7 @@ export function makeSensorStore(rowSets: Record<string, unknown>[][]): ActivityS
                   last_processed_at: null,
                   ...row,
                 }
-              : row,
+              : { power_tss: null, ...row },
           ),
         ),
       ),
@@ -128,9 +132,11 @@ export function makeSensorStore(rowSets: Record<string, unknown>[][]): ActivityS
 export function makeActivityRow<T extends Record<string, unknown>>(overrides?: T) {
   return {
     primary_activity_id: null,
+    primary_canonical_type: null,
     primary_provider_id: null,
     primary_source_name: null,
     origin_candidate_member_ids: [],
+    origin_evidence: [],
     timezone: null,
     start_utc_offset_minutes: null,
     end_utc_offset_minutes: null,
@@ -155,6 +161,7 @@ export function makeActivityRow<T extends Record<string, unknown>>(overrides?: T
     duration_min: 60,
     avg_hr: null,
     max_hr: null,
+    power_tss: null,
     avg_power: 250,
     total_distance: null,
     elevation_gain_m: null,
@@ -194,6 +201,7 @@ export function makeCalendarEntry(
   return {
     name: overrides.name ?? overrides.id,
     activityType: overrides.activityType ?? "running",
+    primaryActivityType: overrides.primaryActivityType ?? null,
     modality: overrides.modality ?? null,
     endedAt: overrides.endedAt ?? overrides.startedAt,
     localTimeContext: overrides.localTimeContext ?? {
@@ -208,6 +216,7 @@ export function makeCalendarEntry(
       primarySourceLabel: "Wahoo",
       sourceCount: 1,
       overlapSummary: null,
+      tree: { primary: null, otherSources: [] },
     },
     lastProcessedAt: overrides.lastProcessedAt ?? "2026-03-18T08:05:00.000Z",
     distanceMeters: overrides.distanceMeters ?? null,

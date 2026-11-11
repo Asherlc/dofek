@@ -1,3 +1,4 @@
+import { gpsCoordinatesSchema } from "@dofek/climbing-catalogue/geometry";
 import { parseMountainProjectGrades } from "@dofek/mountain-project/grades";
 import {
   type GradeSystem,
@@ -6,7 +7,6 @@ import {
   parseClimbingGrade,
 } from "@dofek/training/climbing-grades";
 import type { AttemptOutcome, GradeComponent, RopeMethod } from "@dofek/training/climbing-log";
-import { gpsCoordinatesSchema } from "@dofek/training/gps-coordinates";
 import { z } from "zod";
 import type { SourceClimbDefinition } from "./climbing-log-sync.ts";
 import {
@@ -47,12 +47,13 @@ export const legacyClimbingRowSchema = z.object({
 });
 export type LegacyClimbingRow = z.infer<typeof legacyClimbingRowSchema>;
 export class LegacyClimbingFactConflict extends Error {
-  constructor(
-    readonly field: string,
-    message: string,
-    readonly externalId: string | null = null,
-  ) {
+  readonly field: string;
+  readonly externalId: string | null;
+
+  constructor(field: string, message: string, externalId: string | null = null) {
     super(message);
+    this.field = field;
+    this.externalId = externalId;
     this.name = "LegacyClimbingFactConflict";
   }
 }

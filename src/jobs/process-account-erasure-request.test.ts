@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { AccountErasureSnapshotBudgetError } from "../account-erasure/snapshot-budget.ts";
 import type { ClaimedAccountErasureRequest } from "../db/account-erasure-processing.ts";
 import type { Database } from "../db/index.ts";
 import {
@@ -23,9 +24,13 @@ const accountErasureDatabaseMocks = vi.hoisted(() => ({
 const sentryMocks = vi.hoisted(() => ({
   captureException: vi.fn(),
 }));
+const snapshotMocks = vi.hoisted(() => ({
+  updateAccountErasureProviderCredentials: vi.fn(),
+}));
 
 vi.mock("../db/account-erasure-processing.ts", () => accountErasureDatabaseMocks);
 vi.mock("@sentry/node", () => sentryMocks);
+vi.mock("../account-erasure/remote-snapshot.ts", () => snapshotMocks);
 
 const request: ClaimedAccountErasureRequest = {
   completionDeadline: new Date("2026-08-25T12:00:00.000Z"),
@@ -101,6 +106,108 @@ afterEach(() => {
 });
 
 describe("processAccountErasureRequest", () => {
+  it("reports snapshot admission failure without exposing identifying state and persists its actionable error", async () => {
+    const error = new AccountErasureSnapshotBudgetError(
+      "Account deletion snapshot exceeds its 2 MiB encrypted size limit. Contact support before retrying.",
+    );
+    accountErasureDatabaseMocks.claimAccountErasureRequest.mockRejectedValueOnce(error);
+    await expect(
+      processAccountErasureRequest(database, request.id, "worker-1", phaseRunner()),
+    ).rejects.toBe(error);
+    expect(accountErasureDatabaseMocks.markAccountErasureFailed).toHaveBeenCalledWith(
+      database,
+      request.id,
+      "worker-1",
+      "Account deletion snapshot requires support assistance",
+    );
+    expect(sentryMocks.captureException).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "Account erasure phase failed" }),
+      {
+        tags: {
+          accountErasurePhase: "coordination",
+          errorName: "AccountErasureSnapshotBudgetError",
+          source: "account-erasure-request",
+        },
+      },
+    );
+  });
+
+  it("retains both causes and reports a failed snapshot-admission retry-state write", async () => {
+    const admission = new AccountErasureSnapshotBudgetError("snapshot budget exceeded");
+    const persistence = new Error("retry state unavailable");
+    accountErasureDatabaseMocks.claimAccountErasureRequest.mockRejectedValueOnce(admission);
+    accountErasureDatabaseMocks.markAccountErasureFailed.mockRejectedValueOnce(persistence);
+    const result = processAccountErasureRequest(database, request.id, "worker-1", phaseRunner());
+    await expect(result).rejects.toMatchObject({
+      name: "AggregateError",
+      errors: [admission, persistence],
+      cause: admission,
+    });
+    expect(sentryMocks.captureException).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "Account erasure phase failed" }),
+      {
+        tags: {
+          accountErasurePhase: "retry_state",
+          errorName: "Error",
+          source: "account-erasure-request",
+        },
+      },
+    );
+  });
+
+  it("reports an unrelated claim failure without trying to repair an unowned request", async () => {
+    const error = new Error("private database detail");
+    accountErasureDatabaseMocks.claimAccountErasureRequest.mockRejectedValueOnce(error);
+    await expect(
+      processAccountErasureRequest(database, request.id, "worker-1", phaseRunner()),
+    ).rejects.toBe(error);
+    expect(accountErasureDatabaseMocks.markAccountErasureFailed).not.toHaveBeenCalled();
+    expect(sentryMocks.captureException).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "Account erasure phase failed" }),
+      {
+        tags: {
+          accountErasurePhase: "coordination",
+          errorName: "Error",
+          source: "account-erasure-request",
+        },
+      },
+    );
+  });
+
+  it("commits refreshed credentials and exposes the new encrypted snapshot to verification", async () => {
+    const claimed = { ...request };
+    const tokens = {
+      accessToken: "rotated",
+      refreshToken: "rotated-refresh",
+      expiresAt: new Date(),
+      scopes: null,
+    };
+    accountErasureDatabaseMocks.claimAccountErasureRequest.mockResolvedValue(claimed);
+    snapshotMocks.updateAccountErasureProviderCredentials.mockResolvedValue("rotated-ciphertext");
+    let verificationSnapshot: string | null = null;
+    const runner = phaseRunner(async (phase, execution) => {
+      if (phase === "remote_revocation")
+        await execution.persistProviderCredentials("garmin", tokens);
+      if (phase === "remote_revocation_verification")
+        verificationSnapshot = execution.request.encryptedRemoteSnapshot;
+      return null;
+    });
+    await processAccountErasureRequest(
+      database,
+      request.id,
+      "worker-1",
+      runner,
+      new Date("2026-08-25T12:00:00.001Z"),
+    );
+    expect(snapshotMocks.updateAccountErasureProviderCredentials).toHaveBeenCalledWith(
+      database,
+      request.id,
+      "worker-1",
+      "garmin",
+      tokens,
+    );
+    expect(verificationSnapshot).toBe("rotated-ciphertext");
+  });
   it("does not execute effects when another worker owns the request", async () => {
     accountErasureDatabaseMocks.claimAccountErasureRequest.mockResolvedValue(null);
     const runner = phaseRunner();
@@ -306,21 +413,24 @@ describe("processAccountErasureRequest", () => {
     expect(accountErasureDatabaseMocks.completeAccountErasure).not.toHaveBeenCalled();
   });
 
-  it("recaptures a pre-route ingest fence before draining consumers", async () => {
+  it("preserves completed Kafka ingest_fence and consumer_drain on resume", async () => {
+    const kafkaIngestFence = {
+      highWatermarks: [
+        {
+          topic: "metric-stream-live-v2",
+          low: "10",
+          offset: "20",
+          partition: 0,
+        },
+      ],
+    };
     accountErasureDatabaseMocks.loadAccountErasureCheckpoints.mockResolvedValue(
       new Set(["ingest_fence", "consumer_drain"]),
     );
-    accountErasureDatabaseMocks.loadAccountErasureCheckpointDetails.mockResolvedValue({
-      highWatermarks: [{ low: "10", offset: "20", partition: 0 }],
-    });
-    const routedHighWatermarks = [
-      { low: "10", offset: "20", partition: 0, topic: "metric-stream-legacy-v1" },
-      { low: "0", offset: "2", partition: 0, topic: "metric-stream-live-v1" },
-      { low: "0", offset: "1", partition: 0, topic: "metric-stream-history-v1" },
-    ];
-    const runner = phaseRunner(async (phase) =>
-      phase === "ingest_fence" ? { highWatermarks: routedHighWatermarks } : null,
+    accountErasureDatabaseMocks.loadAccountErasureCheckpointDetails.mockResolvedValue(
+      kafkaIngestFence,
     );
+    const runner = phaseRunner();
 
     await processAccountErasureRequest(
       database,
@@ -330,29 +440,52 @@ describe("processAccountErasureRequest", () => {
       new Date("2026-08-03T12:00:00.000Z"),
     );
 
-    expect(runner.runPhase).toHaveBeenCalledWith(
+    expect(runner.runPhase).not.toHaveBeenCalledWith("ingest_fence", expect.anything());
+    expect(runner.runPhase).not.toHaveBeenCalledWith("consumer_drain", expect.anything());
+    expect(accountErasureDatabaseMocks.loadAccountErasureCheckpointDetails).toHaveBeenCalledWith(
+      database,
+      request.id,
       "ingest_fence",
-      expect.objectContaining({ request: expect.objectContaining({ id: request.id }) }),
     );
-    expect(runner.runPhase).toHaveBeenCalledWith(
-      "consumer_drain",
-      expect.objectContaining({ request: expect.objectContaining({ id: request.id }) }),
+  });
+
+  it("recaptures when ingest_fence checkpoint is missing or empty", async () => {
+    accountErasureDatabaseMocks.loadAccountErasureCheckpoints.mockResolvedValue(
+      new Set(["ingest_fence", "consumer_drain"]),
     );
+    accountErasureDatabaseMocks.loadAccountErasureCheckpointDetails.mockResolvedValue({
+      highWatermarks: [],
+    });
+    const recaptured = {
+      highWatermarks: [{ topic: "metric-stream-live-v2", low: "0", offset: "42", partition: 0 }],
+    };
+    const runner = phaseRunner(async (phase) => (phase === "ingest_fence" ? recaptured : null));
+
+    await processAccountErasureRequest(
+      database,
+      request.id,
+      "worker-1",
+      runner,
+      new Date("2026-08-03T12:00:00.000Z"),
+    );
+
+    expect(runner.runPhase).toHaveBeenCalledWith("ingest_fence", expect.anything());
+    expect(runner.runPhase).toHaveBeenCalledWith("consumer_drain", expect.anything());
     expect(accountErasureDatabaseMocks.markAccountErasurePhaseCompleted).toHaveBeenCalledWith(
       database,
       request.id,
       "worker-1",
       "ingest_fence",
-      { highWatermarks: routedHighWatermarks },
+      recaptured,
     );
   });
 
-  it("recaptures an empty ingest fence before draining consumers", async () => {
+  it("recaptures when ingest_fence checkpoint lacks topic on high watermarks", async () => {
     accountErasureDatabaseMocks.loadAccountErasureCheckpoints.mockResolvedValue(
-      new Set(["ingest_fence"]),
+      new Set(["ingest_fence", "consumer_drain"]),
     );
     accountErasureDatabaseMocks.loadAccountErasureCheckpointDetails.mockResolvedValue({
-      highWatermarks: [],
+      highWatermarks: [{ low: "10", offset: "20", partition: 0 }],
     });
     const runner = phaseRunner();
 
@@ -365,14 +498,25 @@ describe("processAccountErasureRequest", () => {
     );
 
     expect(runner.runPhase).toHaveBeenCalledWith("ingest_fence", expect.anything());
+    expect(runner.runPhase).toHaveBeenCalledWith("consumer_drain", expect.anything());
   });
 
-  it("does not recapture an ingest fence that already names its route", async () => {
+  it("recaptures legacy Pulsar stream-fence rows instead of treating them as durable", async () => {
     accountErasureDatabaseMocks.loadAccountErasureCheckpoints.mockResolvedValue(
-      new Set(["ingest_fence"]),
+      new Set(["ingest_fence", "consumer_drain"]),
     );
     accountErasureDatabaseMocks.loadAccountErasureCheckpointDetails.mockResolvedValue({
-      highWatermarks: [{ low: "10", offset: "20", partition: 0, topic: "metric-stream-legacy-v1" }],
+      streams: [
+        {
+          fence: {
+            transport: "pulsar",
+            state: "empty",
+            epoch: "epoch-1",
+            topic: "persistent://public/default/legacy",
+            partition: -1,
+          },
+        },
+      ],
     });
     const runner = phaseRunner();
 
@@ -384,10 +528,11 @@ describe("processAccountErasureRequest", () => {
       new Date("2026-08-03T12:00:00.000Z"),
     );
 
-    expect(runner.runPhase).not.toHaveBeenCalledWith("ingest_fence", expect.anything());
+    expect(runner.runPhase).toHaveBeenCalledWith("ingest_fence", expect.anything());
+    expect(runner.runPhase).toHaveBeenCalledWith("consumer_drain", expect.anything());
   });
 
-  it("does not recapture a legacy fence after the user identifier is scrubbed", async () => {
+  it("does not recapture a transport fence after the user identifier is scrubbed", async () => {
     accountErasureDatabaseMocks.claimAccountErasureRequest.mockResolvedValue({
       ...request,
       userId: null,
@@ -413,7 +558,7 @@ describe("processAccountErasureRequest", () => {
     expect(runner.runPhase).not.toHaveBeenCalled();
   });
 
-  it("does not recapture a legacy fence after the encrypted snapshot is scrubbed", async () => {
+  it("does not recapture a transport fence after the encrypted snapshot is scrubbed", async () => {
     accountErasureDatabaseMocks.claimAccountErasureRequest.mockResolvedValue({
       ...request,
       encryptedRemoteSnapshot: null,

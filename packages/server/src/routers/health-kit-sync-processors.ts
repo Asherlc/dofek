@@ -6,19 +6,25 @@ import { selectDailyHeartRateVariability } from "@dofek/heart-rate-variability";
 import { resolveProviderActivityType } from "@dofek/training/activity-types";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import {
+  lockActivityGroups,
+  reconcileActivityGroups,
+} from "../../../../src/db/activity-group-reconciliation.ts";
 import type { Database as DrizzleDatabase, SyncDatabase } from "../../../../src/db/index.ts";
-import { ProviderActivityListSync } from "../../../../src/db/provider-activity-sync.ts";
+import {
+  ProviderActivityListSync,
+  upsertProviderActivity,
+} from "../../../../src/db/provider-activity-sync.ts";
 import {
   BODY_MEASUREMENT_COLUMN_TO_CHANNEL,
   SOURCE_TYPE_API,
 } from "../../../../src/db/sensor-channels.ts";
 import type { MetricStreamRowInput } from "../../../../src/metric-stream/events.ts";
-import {
-  getDefaultMetricStreamEventPublisher,
-  type MetricStreamEventPublisher,
-} from "../../../../src/metric-stream/redpanda-producer.ts";
+import type { MetricStreamEventPublisher } from "../../../../src/metric-stream/publisher.ts";
+import { getDefaultMetricStreamEventPublisher } from "../../../../src/metric-stream/redpanda-producer.ts";
 import { writeMetricStreamRows } from "../../../../src/metric-stream/write-metric-stream.ts";
 import { replaceHangTenIntervals } from "../../../../src/providers/apple-health/hang-ten-intervals.ts";
+import { normalizeRunningQuantity } from "../../../../src/providers/apple-health/running-quantities.ts";
 import {
   buildAppleHealthWorkoutIdentity,
   collectAppleHealthWorkoutIdentities,
@@ -326,9 +332,11 @@ export async function processMetricStream(
       const mapping = metricStreamTypes[sample.type];
       if (!mapping) continue;
 
-      const metricValue = INTEGER_METRIC_STREAM_COLUMNS.has(mapping.column)
-        ? Math.round(sample.value)
-        : sample.value;
+      const metricValue =
+        normalizeRunningQuantity(sample.type, sample.value, sample.unit) ??
+        (INTEGER_METRIC_STREAM_COLUMNS.has(mapping.column)
+          ? Math.round(sample.value)
+          : sample.value);
       const externalId = `hk:${sample.uuid}`;
       rows.push({
         recordedAt: sample.startDate,
@@ -421,6 +429,40 @@ export async function processWorkouts(
     windowEnd: new Date(options.windowEnd),
   });
 
+  const inserted = await upsertHealthKitWorkouts(db, userId, workouts);
+  for (const workout of workouts)
+    activitySync.trackPresent(appleHealthWorkoutExternalId(workout.uuid));
+
+  await db.transaction(async (transaction) => {
+    await lockActivityGroups(transaction, userId);
+    await activitySync.reconcile(
+      undefined,
+      {
+        presentAppleHealthIdentities: collectAppleHealthWorkoutIdentities(
+          workouts.map((workout) =>
+            buildAppleHealthWorkoutIdentity({
+              syncIdentifier: workout.metadata?.HKMetadataKeySyncIdentifier,
+              startedAt: new Date(workout.startDate),
+              endedAt: new Date(workout.endDate),
+              sourceName: workout.sourceName,
+            }),
+          ),
+        ),
+      },
+      transaction,
+    );
+    await reconcileActivityGroups(transaction, userId);
+  });
+
+  return inserted;
+}
+
+/** Additive upsert shared by authoritative workout lists and associated sample contexts. */
+export async function upsertHealthKitWorkouts(
+  db: WorkoutSyncDatabase,
+  userId: string,
+  workouts: WorkoutSample[],
+): Promise<number> {
   let inserted = 0;
   for (const workout of workouts) {
     const normalizedWorkout = applyWorkoutMetadata(
@@ -445,6 +487,10 @@ export async function processWorkouts(
       sourceBundle: workout.sourceBundle,
       metadata: workout.metadata,
       workoutActivities: workout.workoutActivities,
+      ...(workout.sourceProductType !== undefined
+        ? { sourceProductType: workout.sourceProductType }
+        : {}),
+      ...(workout.device !== undefined ? { device: workout.device } : {}),
       ...(normalizedWorkout.hangTen ? { hangTen: normalizedWorkout.hangTen } : {}),
     };
 
@@ -461,38 +507,21 @@ export async function processWorkouts(
       raw: rawData,
     };
     await db.transaction(async (transactionDb) => {
-      const returned = await activitySync.upsert(
-        values,
-        {
-          activityType: normalizedWorkout.activityType,
-          startedAt: normalizedWorkout.startDate,
-          endedAt: normalizedWorkout.endDate,
-          name: normalizedWorkout.hangTen?.planName,
-          sourceName: normalizedWorkout.sourceName,
-          ...appleHealthLocalTimeContext(workout.startDate, workout.endDate),
-          raw: rawData,
-        },
-        transactionDb,
-      );
+      const returned = await upsertProviderActivity(transactionDb, values, {
+        activityType: normalizedWorkout.activityType,
+        startedAt: normalizedWorkout.startDate,
+        endedAt: normalizedWorkout.endDate,
+        name: normalizedWorkout.hangTen?.planName,
+        sourceName: normalizedWorkout.sourceName,
+        ...appleHealthLocalTimeContext(workout.startDate, workout.endDate),
+        raw: rawData,
+      });
       if (returned && normalizedWorkout.hangTen) {
         await replaceHangTenIntervals(transactionDb, returned.id, normalizedWorkout);
       }
     });
     inserted++;
   }
-
-  await activitySync.reconcile(undefined, {
-    presentAppleHealthIdentities: collectAppleHealthWorkoutIdentities(
-      workouts.map((workout) =>
-        buildAppleHealthWorkoutIdentity({
-          syncIdentifier: workout.metadata?.HKMetadataKeySyncIdentifier,
-          startedAt: new Date(workout.startDate),
-          endedAt: new Date(workout.endDate),
-          sourceName: workout.sourceName,
-        }),
-      ),
-    ),
-  });
 
   return inserted;
 }

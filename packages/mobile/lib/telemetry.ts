@@ -1,11 +1,17 @@
+import { AxiomLogExporter } from "@dofek/telemetry";
+import { classifyHandledFailure } from "@dofek/telemetry/handled-failure";
 import { SeverityNumber } from "@opentelemetry/api-logs";
 import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-http";
 import { resourceFromAttributes } from "@opentelemetry/resources";
 import { BatchLogRecordProcessor, LoggerProvider } from "@opentelemetry/sdk-logs";
 import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
 import * as Sentry from "@sentry/react-native";
+import Constants from "expo-constants";
+import { randomUUID } from "expo-crypto";
+import * as Updates from "expo-updates";
 import PostHog from "posthog-react-native";
 import { shouldSuppressBackgroundTransientNetworkError } from "./health-kit-errors";
+import { getVersionHeaders } from "./version-headers";
 
 const SENTRY_DSN: string | undefined = process.env.EXPO_PUBLIC_SENTRY_DSN;
 const SENTRY_RELEASE: string | undefined = process.env.EXPO_PUBLIC_SENTRY_RELEASE;
@@ -20,6 +26,36 @@ let initialized = false;
 let loggerProvider: LoggerProvider | undefined;
 let posthogClient: PostHog | undefined;
 let currentTelemetryRoute: string | undefined;
+let currentTelemetryUserId: string | undefined;
+let telemetrySessionGeneration = 0;
+let runtimeContext: Record<string, string> | undefined;
+
+function getRuntimeContext(): Record<string, string> {
+  if (!runtimeContext) {
+    const versionHeaders = getVersionHeaders();
+    runtimeContext = {
+      appVersion: versionHeaders["x-app-version"],
+      appBuild:
+        Constants.platform?.ios?.buildNumber ??
+        Constants.platform?.android?.versionCode?.toString() ??
+        "unknown",
+      assetsVersion: versionHeaders["x-assets-version"],
+      runtimeVersion: Updates.runtimeVersion ?? "unknown",
+      runtimeId: randomUUID(),
+    };
+  }
+  return runtimeContext;
+}
+
+function correlateContext(data: Record<string, unknown> = {}): Record<string, unknown> {
+  const context = { ...data, ...getRuntimeContext() };
+  if (currentTelemetryUserId && data.retiredLifetime !== true) {
+    context.userId = currentTelemetryUserId;
+  } else {
+    delete context.userId;
+  }
+  return context;
+}
 
 const uuidRouteSegment =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -92,10 +128,12 @@ function createLogProcessors(): BatchLogRecordProcessor[] {
   if (OTEL_ENDPOINT) {
     processors.push(
       new BatchLogRecordProcessor({
-        exporter: new OTLPLogExporter({
-          url: OTEL_ENDPOINT,
-          headers: OTEL_HEADERS ? parseHeaders(OTEL_HEADERS) : undefined,
-        }),
+        exporter: new AxiomLogExporter(
+          new OTLPLogExporter({
+            url: OTEL_ENDPOINT,
+            headers: OTEL_HEADERS ? parseHeaders(OTEL_HEADERS) : undefined,
+          }),
+        ),
       }),
     );
   }
@@ -123,6 +161,9 @@ type TelemetryUser = {
 };
 
 export function identifyUser(user: TelemetryUser): void {
+  telemetrySessionGeneration += 1;
+  currentTelemetryUserId = user.id;
+  Sentry.setUser({ id: user.id });
   posthogClient?.identify(user.id, {
     email: user.email,
     name: user.name,
@@ -130,7 +171,17 @@ export function identifyUser(user: TelemetryUser): void {
 }
 
 export function resetUser(): void {
+  telemetrySessionGeneration += 1;
+  currentTelemetryUserId = undefined;
+  Sentry.setUser(null);
   posthogClient?.reset();
+  posthogClient?.register({ service: "dofek-mobile", ...getRuntimeContext() });
+}
+
+/** Capture a check that retires async telemetry when the authenticated session changes. */
+export function captureTelemetrySessionGuard(): () => boolean {
+  const generation = telemetrySessionGeneration;
+  return () => generation === telemetrySessionGeneration;
 }
 
 export function initTelemetry() {
@@ -168,7 +219,7 @@ export function initTelemetry() {
         },
       },
     });
-    posthogClient.register({ service: "dofek-mobile" });
+    posthogClient.register({ service: "dofek-mobile", ...getRuntimeContext() });
   }
 
   const logProcessors = createLogProcessors();
@@ -210,29 +261,45 @@ export function captureException(
   context: Record<string, unknown> = {},
   options: CaptureExceptionOptions = {},
 ) {
+  const retiredLifetime = context.retiredLifetime === true;
   const hasExplicitRoute = typeof context.route === "string";
   const explicitRoute =
     typeof context.route === "string" ? normalizeTelemetryRoute(context.route) : undefined;
-  const telemetryContext =
-    hasExplicitRoute || currentTelemetryRoute
+  const telemetryContext = correlateContext(
+    hasExplicitRoute || (!retiredLifetime && currentTelemetryRoute)
       ? { ...context, route: hasExplicitRoute ? explicitRoute : currentTelemetryRoute }
-      : context;
+      : context,
+  );
   const source = typeof context.source === "string" ? context.source : undefined;
-  // Suppress non-actionable transient network failures from declared background
-  // sync sources at every error-tracking destination. Applying the check here
-  // (rather than only in Sentry's beforeSend) keeps Sentry and PostHog consistent
-  // — otherwise the PostHog capture path silently mints error-tracking issues for
-  // errors Sentry drops. Logs and breadcrumbs below still record the failure for
-  // observability.
-  const captureToErrorTracking =
-    options.reportToErrorTracking !== false &&
-    !shouldSuppressBackgroundTransientNetworkError(error, source);
-  if (captureToErrorTracking) {
-    Sentry.captureException(error, {
-      ...(source ? { tags: { source } } : {}),
-      extra: telemetryContext,
+  const handledFailure =
+    classifyHandledFailure(error, source) ??
+    (shouldSuppressBackgroundTransientNetworkError(error, source) ? "background_transport" : null);
+  if (handledFailure) {
+    if (!retiredLifetime) posthogClient?.capture("handled_failure", { kind: handledFailure });
+    emitLog(SeverityNumber.INFO, "INFO", "handled-failure", "Handled operational failure", {
+      ...telemetryContext,
+      kind: handledFailure,
     });
-    posthogClient?.captureException(error, sanitizePostHogProperties(telemetryContext));
+    return;
+  }
+  const captureToErrorTracking = options.reportToErrorTracking !== false;
+  if (captureToErrorTracking) {
+    if (retiredLifetime) {
+      Sentry.captureException(error, (scope) => {
+        scope.setUser(null);
+        if (source) scope.setTag("source", source);
+        scope.setExtras(telemetryContext);
+        return scope;
+      });
+    } else {
+      Sentry.captureException(error, {
+        ...(source ? { tags: { source } } : {}),
+        extra: telemetryContext,
+      });
+      // PostHog's mobile captureException binds to its current distinct ID;
+      // retired failures stay in Sentry and OTel without borrowing that identity.
+      posthogClient?.captureException(error, sanitizePostHogProperties(telemetryContext));
+    }
   }
   const errorMessage =
     error instanceof Error ? error.message : typeof error === "string" ? error : "Unknown error";
@@ -253,15 +320,19 @@ function emitLog(
   const logData =
     typeof data?.route === "string"
       ? { ...data, route: normalizeTelemetryRoute(data.route) }
-      : currentTelemetryRoute && (data === undefined || !("route" in data))
+      : data?.retiredLifetime !== true &&
+          currentTelemetryRoute &&
+          (data === undefined || !("route" in data))
         ? { ...data, route: currentTelemetryRoute }
         : data;
-  const sanitizedData = sanitizeLogAttributes(logData);
+  const sanitizedData = sanitizeLogAttributes(correlateContext(logData));
+  const breadcrumbData = sanitizedData ? { ...sanitizedData } : undefined;
+  if (breadcrumbData) delete breadcrumbData.userId;
   Sentry.addBreadcrumb({
     category,
     message,
     level: sentryBreadcrumbLevel(severityText),
-    ...(sanitizedData ? { data: sanitizedData } : {}),
+    ...(breadcrumbData ? { data: breadcrumbData } : {}),
   });
 
   if (loggerProvider) {

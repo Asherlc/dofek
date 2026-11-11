@@ -24,7 +24,7 @@ describe("efficiency.polarizationTrend integration", () => {
 
     await testCtx.db.execute(
       sql`UPDATE fitness.user_profile
-          SET max_hr = ${MAX_HR}, ftp = 250, birth_date = '1990-01-01'
+          SET max_hr = ${MAX_HR}, birth_date = '1990-01-01'
           WHERE id = ${TEST_USER_ID}`,
     );
 

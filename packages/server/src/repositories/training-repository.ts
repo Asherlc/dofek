@@ -63,6 +63,7 @@ export interface TrainingHrZonesResult {
 const activityStatsRowSchema = z.object({
   id: z.string(),
   canonical_type: z.string(),
+  primary_canonical_type: z.string().nullable(),
   name: z.string().nullable(),
   started_at: timestampStringSchema,
   ended_at: timestampStringSchema.nullable(),
@@ -268,7 +269,8 @@ export class TrainingRepository extends BaseRepository {
       `SELECT
         toString(a.activity_id) AS id,
         a.canonical_type AS canonical_type,
-        a.name AS name,
+        identity.primary_canonical_type AS primary_canonical_type,
+        identity.name AS name,
         formatDateTime(a.started_at, '%Y-%m-%dT%H:%i:%SZ') AS started_at,
         formatDateTime(a.ended_at, '%Y-%m-%dT%H:%i:%SZ') AS ended_at,
         round(a.avg_hr, 1) AS avg_hr,
@@ -280,6 +282,10 @@ export class TrainingRepository extends BaseRepository {
         coalesce(a.power_sample_count, 0) AS power_samples,
         a.total_distance AS distance_meters
       FROM analytics.activity_summary a
+      INNER JOIN analytics.deduped_activities AS identity FINAL
+        ON identity.activity_id = a.activity_id
+        AND identity.user_id = a.user_id
+        AND identity.is_deleted = 0
       WHERE a.user_id = {userId:UUID}
         ${rangeFilter}
         ${predicate}

@@ -12,6 +12,13 @@ import { trpc } from "../../lib/trpc";
 import { colors } from "../../theme";
 
 export function ProviderDetailExtras({ providerId }: { providerId: string }) {
+  if (providerId === "garmin") {
+    return (
+      <Text style={styles.subtitle}>
+        New data arrives automatically after you sync your Garmin device.
+      </Text>
+    );
+  }
   if (providerId === "whoop") {
     return <WhoopWearLocationPicker />;
   }

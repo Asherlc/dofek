@@ -7,6 +7,10 @@ export interface MockQuery {
   error: Error | null;
 }
 
+export interface MockWeekListQuery extends Omit<MockQuery, "data"> {
+  data: Array<{ date: string; activities: ReturnType<typeof activity>[] }>;
+}
+
 export interface WeekListQueryOptions {
   placeholderData?: (previousData: unknown) => unknown;
   refetchInterval?: (query: { state: { data: unknown } }) => number | false;
@@ -49,6 +53,7 @@ export function activity(overrides: Record<string, unknown> = {}) {
     id: "activity-1",
     name: "Trainer Ride",
     activityType: "indoor_cycling",
+    primaryActivityType: null,
     modality: null,
     startedAt: "2026-03-18T07:00:00.000Z",
     endedAt: "2026-03-18T08:00:00.000Z",
@@ -60,6 +65,7 @@ export function activity(overrides: Record<string, unknown> = {}) {
     },
     durationMin: 60,
     source: {
+      tree: { primary: null, otherSources: [] },
       origin: { status: "unresolved", candidateMemberActivityIds: [] },
       primarySourceLabel: "Wahoo",
       sourceCount: 1,
@@ -94,7 +100,7 @@ export function emptyActivityOverviewQuery(): MockOverviewQuery {
   };
 }
 
-export function activityListQuery(activities: ReturnType<typeof activity>[]): MockQuery {
+export function activityListQuery(activities: ReturnType<typeof activity>[]): MockWeekListQuery {
   return {
     data: [{ date: "2026-03-18", activities }],
     isLoading: false,
@@ -104,23 +110,6 @@ export function activityListQuery(activities: ReturnType<typeof activity>[]): Mo
 }
 
 type RecordedGpsLocation = Extract<ActivityLocation, { kind: "recorded_gps" }>;
-
-export const routeMapTiles = [
-  {
-    url: "https://tile.openstreetmap.org/15/5241/12665.png",
-    x: 0,
-    y: 0,
-    width: 256,
-    height: 256,
-  },
-  {
-    url: "https://tile.openstreetmap.org/15/5242/12665.png",
-    x: 256,
-    y: 0,
-    width: 256,
-    height: 256,
-  },
-];
 
 export function recordedGpsLocation(
   mapPreview: Partial<RecordedGpsLocation["mapPreview"]> = {},
@@ -132,7 +121,8 @@ export function recordedGpsLocation(
     mapPreview: {
       width: 1024,
       height: 576,
-      tiles: routeMapTiles.slice(0, 1),
+      center: [-122.4194, 37.7749],
+      zoom: 14,
       routePath: null,
       ...mapPreview,
     },
@@ -145,15 +135,8 @@ export function climbingSourceLocation(pointCount: number): ActivityLocation {
     mapPreview: {
       width: 1024,
       height: 576,
-      tiles: [
-        {
-          url: "https://tile.openstreetmap.org/15/6800/12400.png",
-          x: 0,
-          y: 0,
-          width: 256,
-          height: 256,
-        },
-      ],
+      center: [-105.27099609, 40.03497508],
+      zoom: 14,
       routePath: null,
     },
     sourcePoints: (

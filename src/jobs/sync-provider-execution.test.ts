@@ -118,6 +118,71 @@ describe("sync-provider-execution", () => {
     expect(provider.sync).not.toHaveBeenCalled();
   });
 
+  it("processes a portal-configured push event without a subscription API", async () => {
+    const provider = Object.assign(createMockProvider({ id: "garmin" }), {
+      pushOnly: true,
+      parseWebhookPayload: vi.fn(),
+      syncWebhookEvent: vi.fn(async () => ({
+        provider: "garmin",
+        recordsSynced: 1,
+        errors: [],
+        duration: 1,
+      })),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+    const job = createMockJob({ providerId: "garmin", userId: "user-1" });
+    const event: WebhookEvent = {
+      ownerExternalId: "owner",
+      eventType: "update",
+      objectType: "dailies",
+    };
+    Object.assign(job.data, { webhookEvent: event });
+
+    await runSyncJob(job, mockDb);
+
+    expect(provider.syncWebhookEvent).toHaveBeenCalledWith(mockDb, event, expect.any(Object));
+    expect(provider.sync).not.toHaveBeenCalled();
+  });
+
+  it("retries the original push event when targeted processing fails", async () => {
+    const failure = new Error("Activity parsing failed");
+    const provider = Object.assign(createMockProvider({ id: "garmin" }), {
+      pushOnly: true,
+      parseWebhookPayload: vi.fn(),
+      syncWebhookEvent: vi.fn().mockRejectedValue(failure),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+    const job = createMockJob({ providerId: "garmin", userId: "user-1" });
+    Object.assign(job.data, {
+      webhookEvent: { ownerExternalId: "owner", eventType: "update", objectType: "activityFiles" },
+    });
+
+    await expect(runSyncJob(job, mockDb)).rejects.toBe(failure);
+    expect(provider.sync).not.toHaveBeenCalled();
+    expect(mockCaptureException).toHaveBeenCalled();
+  });
+
+  it("retries a push notification when its handler returns a mapping error", async () => {
+    const failure = new Error("Invalid activity mapping");
+    const provider = Object.assign(createMockProvider({ id: "garmin" }), {
+      pushOnly: true,
+      parseWebhookPayload: vi.fn(),
+      syncWebhookEvent: vi.fn().mockResolvedValue({
+        provider: "garmin",
+        recordsSynced: 0,
+        errors: [{ message: failure.message, cause: failure }],
+        duration: 1,
+      }),
+    });
+    mockGetEnabledSyncProviders.mockReturnValue([provider]);
+    const job = createMockJob({ providerId: "garmin", userId: "user-1" });
+    Object.assign(job.data, {
+      webhookEvent: { ownerExternalId: "owner", eventType: "update", objectType: "activities" },
+    });
+    await expect(runSyncJob(job, mockDb)).rejects.toBe(failure);
+    expect(mockCaptureException).toHaveBeenCalled();
+  });
+
   it("runs a regular window sync for a webhook provider when the job has no event", async () => {
     const sync = vi.fn(async () => ({
       provider: "strava",

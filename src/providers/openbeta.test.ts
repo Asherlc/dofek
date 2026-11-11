@@ -4,6 +4,7 @@ import {
 } from "@dofek/provider-http/rate-limit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
+import * as climbingSnapshots from "../db/climbing-log-snapshot.ts";
 import type { ClimbingLogSyncInput } from "../db/climbing-log-sync.ts";
 import type { SyncDatabase } from "../db/index.ts";
 import { SyncRun } from "./sync-run.ts";
@@ -145,17 +146,17 @@ describe("OpenBetaProvider", () => {
     {
       style: "Aid",
       label: "Redpoint",
-      expected: { scope: "climb", ropeMethod: null, usedAid: true },
+      expected: { scope: "climb", ropeMethod: null, usedAid: true, sourceResult: "Redpoint" },
     },
     {
       style: "Lead",
       label: "Frenchfree",
-      expected: { scope: "climb", ropeMethod: "lead", usedAid: true },
+      expected: { scope: "climb", ropeMethod: "lead", usedAid: true, sourceResult: "Frenchfree" },
     },
     {
       style: "Lead",
       label: " Frenchfree ",
-      expected: { scope: "climb", ropeMethod: "lead", usedAid: true },
+      expected: { scope: "climb", ropeMethod: "lead", usedAid: true, sourceResult: " Frenchfree " },
     },
     {
       style: "Lead",
@@ -179,8 +180,31 @@ describe("OpenBetaProvider", () => {
         sourceResult: " Pinkpoint ",
       },
     },
-    { style: null, label: "Unknown", expected: { scope: "climb", ropeMethod: null } },
-    { style: "Lead", label: "Attempt", expected: { scope: "climb", ropeMethod: "lead" } },
+    {
+      style: null,
+      label: "Unknown",
+      expected: { scope: "climb", ropeMethod: null, sourceResult: "Unknown" },
+    },
+    {
+      style: "TR",
+      label: "completed",
+      expected: { scope: "climb", ropeMethod: "top_rope", sourceResult: "completed" },
+    },
+    {
+      style: "Lead",
+      label: " Sent ",
+      expected: { scope: "climb", ropeMethod: "lead", sourceResult: " Sent " },
+    },
+    {
+      style: "Lead",
+      label: "Attempt",
+      expected: { scope: "climb", ropeMethod: "lead", sourceResult: "Attempt" },
+    },
+    {
+      style: "TR",
+      label: " aTtEmPt ",
+      expected: { scope: "climb", ropeMethod: "top_rope", sourceResult: " aTtEmPt " },
+    },
     {
       style: "Lead",
       label: " oNsIgHt ",
@@ -422,7 +446,10 @@ describe("OpenBetaProvider", () => {
     });
   });
   it.each([
-    [() => new Response("", { status: 500 }), "OpenBeta API request failed (500)."],
+    [
+      () => new Response("", { status: 500 }),
+      "openbeta API service unavailable (500). Try again later.",
+    ],
     [
       () => jsonResponse({ data: null, errors: [{ message: "profile lookup denied" }] }),
       "OpenBeta API returned an error: profile lookup denied",
@@ -518,20 +545,23 @@ describe("OpenBetaProvider", () => {
       errors: [expect.objectContaining({ message: expect.stringContaining("not found") })],
     });
   });
-  it.each([502, 503, 504])("delegates HTTP %s tick failures to queue retries", async (status) => {
-    const provider = new OpenBetaProvider(
-      vi.fn().mockResolvedValue(new Response("upstream timeout", { status })),
-    );
-    const { db } = makeDb();
+  it.each([500, 502, 503, 504, 525, 599])(
+    "delegates HTTP %s tick failures to queue retries",
+    async (status) => {
+      const provider = new OpenBetaProvider(
+        vi.fn().mockResolvedValue(new Response("upstream timeout", { status })),
+      );
+      const { db } = makeDb();
 
-    await expect(provider.sync(makeRun(db))).rejects.toBeInstanceOf(
-      ProviderServiceUnavailableError,
-    );
+      await expect(provider.sync(makeRun(db))).rejects.toBeInstanceOf(
+        ProviderServiceUnavailableError,
+      );
 
-    expect(mocks.captureException).not.toHaveBeenCalled();
-    expect(db.insert).not.toHaveBeenCalled();
-    expect(db.execute).not.toHaveBeenCalled();
-  });
+      expect(mocks.captureException).not.toHaveBeenCalled();
+      expect(db.insert).not.toHaveBeenCalled();
+      expect(db.execute).not.toHaveBeenCalled();
+    },
+  );
   it("delegates request timeouts to queue retries", async () => {
     const error = new ProviderRequestTimeoutError({ providerId: "openbeta", timeoutMs: 120_000 });
     const provider = new OpenBetaProvider(vi.fn().mockRejectedValue(error));
@@ -546,7 +576,7 @@ describe("OpenBetaProvider", () => {
   });
   it("captures tick export failures and returns their actionable message", async () => {
     const provider = new OpenBetaProvider(
-      vi.fn().mockResolvedValue(new Response("", { status: 500 })),
+      vi.fn().mockResolvedValue(new Response("invalid JSON", { status: 200 })),
     );
     const { db } = makeDb();
 
@@ -555,12 +585,11 @@ describe("OpenBetaProvider", () => {
     expect(result).toMatchObject({
       provider: "openbeta",
       recordsSynced: 0,
-      errors: [expect.objectContaining({ message: "OpenBeta API request failed (500)." })],
+      errors: [expect.objectContaining({ cause: expect.any(SyntaxError) })],
     });
-    expect(mocks.captureException).toHaveBeenCalledWith(
-      expect.objectContaining({ message: "OpenBeta API request failed (500)." }),
-      { tags: { provider: "openbeta", phase: "tick_export" } },
-    );
+    expect(mocks.captureException).toHaveBeenCalledWith(expect.any(SyntaxError), {
+      tags: { provider: "openbeta", phase: "tick_export" },
+    });
   });
   it("captures climbing-log write failures", async () => {
     mocks.withSyncLog.mockRejectedValueOnce(new Error("climbing entry write failed"));
@@ -582,6 +611,7 @@ describe("OpenBetaProvider", () => {
     );
   });
   it("reconciles an explicitly empty public tick list", async () => {
+    const snapshot = vi.spyOn(climbingSnapshots, "persistClimbingLogSnapshot");
     const { db } = makeDb();
     const provider = new OpenBetaProvider(
       vi.fn().mockResolvedValue(graphqlResponse({ userTicks: [] })),
@@ -590,7 +620,11 @@ describe("OpenBetaProvider", () => {
     const result = await provider.sync(makeRun(db));
 
     expect(result).toMatchObject({ provider: "openbeta", recordsSynced: 0, errors: [] });
-    expect(db.execute).toHaveBeenCalledTimes(1);
+    expect(snapshot).toHaveBeenCalledExactlyOnceWith(db, {
+      userId: USER_ID,
+      providerId: "openbeta",
+      entries: [],
+    });
   });
   it("reports that OpenBeta is always configured and exposes manual profile auth", () => {
     const provider = new OpenBetaProvider(vi.fn());

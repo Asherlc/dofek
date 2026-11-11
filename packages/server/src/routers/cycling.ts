@@ -2,6 +2,7 @@ import { activityDataStateSchema } from "@dofek/format/activity-data-state";
 import { ACTIVITY_MODALITIES } from "@dofek/training/activity-types";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import { cyclingEftpTrendSchema } from "../contracts/cycling-threshold.ts";
 import { trainingChartAvailabilitySchema } from "../contracts/training-chart-availability.ts";
 import { selectedChartCustomRangeQuery, selectedChartRangeQuery } from "../lib/chart-range.ts";
 import { selectedChartRangeDaysSchema } from "../lib/date-window.ts";
@@ -55,6 +56,7 @@ const estimateEvidenceByPeriodSchema = z.object({
   vo2Max: estimateEvidenceSchema,
 });
 const pmcSchema = z.object({
+  unavailableReason: z.string().nullable(),
   data: z.array(
     z.object({
       date: z.string(),
@@ -65,9 +67,6 @@ const pmcSchema = z.object({
     }),
   ),
   model: z.object({
-    type: z.enum(["learned", "generic"]),
-    pairedActivities: z.number(),
-    r2: z.number().nullable(),
     ftp: z.number().nullable(),
   }),
 });
@@ -79,17 +78,7 @@ const performanceOutputSchema = z.object({
     season: powerSummaryPeriodSchema,
   }),
   pmc: pmcSchema,
-  eftpTrend: z.object({
-    trend: z.array(
-      z.object({
-        date: z.string(),
-        eftp: z.number(),
-        activityName: z.string().nullable(),
-      }),
-    ),
-    currentEftp: z.number().nullable(),
-    model: powerModelSchema.nullable(),
-  }),
+  eftpTrend: cyclingEftpTrendSchema,
   availability: z.object({
     powerCurve: trainingChartAvailabilitySchema,
     pmc: trainingChartAvailabilitySchema,
@@ -107,6 +96,7 @@ const activityItemSchema = z.object({
   started_at: z.string(),
   ended_at: z.string().nullable(),
   canonical_type: z.string(),
+  primary_canonical_type: z.string().nullable(),
   name: z.string().nullable(),
   provider_id: z.string(),
   source_providers: z.array(z.string()),
@@ -136,6 +126,7 @@ const activitiesOutputSchema = z.object({
   }),
   verticalAscent: z.array(
     z.object({
+      activityId: z.string(),
       date: z.string(),
       activityName: z.string(),
       activityType: z.string(),
@@ -194,7 +185,7 @@ export const cyclingRouter = router({
     CacheTTL.LONG,
     async ({ ctx, range }) =>
       performanceOutputSchema.parse(await requireRepository(ctx).getPerformance(range)),
-    { keyVersion: "cycling-performance-v2" },
+    { keyVersion: "cycling-performance-power-stress-v4" },
   ),
   activities: selectedChartCustomRangeQuery(
     "cycling.activities",
@@ -209,6 +200,6 @@ export const cyclingRouter = router({
     async ({ ctx, input, range }) =>
       activitiesOutputSchema.parse(await requireRepository(ctx).getActivities(range, input)),
     activitiesOutputSchema,
-    { keyVersion: "cycling-activity-states-v1" },
+    { keyVersion: "cycling-activity-computed-eftp-ascent-v4" },
   ),
 });

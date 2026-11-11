@@ -1,8 +1,13 @@
 import { CYCLING_ACTIVITY_TYPES } from "@dofek/training/training";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { cyclingThresholdUncertainty } from "../contracts/cycling-threshold.ts";
 import { ChartRange } from "../lib/chart-range.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
+import { CyclingThresholdRepository } from "./cycling-threshold-repository.ts";
 import { PmcRepository } from "./pmc-repository.ts";
+import { pmcThresholdHistoryRows } from "./pmc-test-helpers.ts";
+
+afterEach(() => vi.restoreAllMocks());
 
 vi.mock("dofek/personalization/storage", () => ({
   loadPersonalizedParams: vi.fn().mockResolvedValue(null),
@@ -13,10 +18,6 @@ vi.mock("dofek/personalization/params", () => ({
     exponentialMovingAverage: {
       chronicTrainingLoadDays: 42,
       acuteTrainingLoadDays: 7,
-    },
-    trainingImpulseConstants: {
-      genderFactor: 1.92,
-      exponent: 1.67,
     },
   }),
 }));
@@ -46,10 +47,15 @@ function makeActivityRow(overrides: Record<string, unknown> = {}) {
 function makeSensorStore(
   activityRows: unknown[],
   normalizedPowerRows: unknown[],
+  currentEftp: number | null,
 ): ActivitySensorStore {
   const query = vi.fn(
     async (schema: { parse: (row: unknown) => unknown }, queryText = ""): Promise<unknown[]> => {
-      const rows = queryText.includes("normalized_power") ? normalizedPowerRows : activityRows;
+      if (queryText.includes("cycling_threshold_history"))
+        return pmcThresholdHistoryRows(currentEftp).map((row) => schema.parse(row));
+      const rows = queryText.includes("cycling_activity_power_metrics")
+        ? normalizedPowerRows
+        : activityRows;
       return rows.map((row, rowIndex) => {
         try {
           return schema.parse(row);
@@ -79,6 +85,7 @@ function makeRepoHarness(
   normalizedPowerRows: Record<string, unknown>[] = [],
   timezone = "UTC",
   rawActivityCount = activityRows.length,
+  currentEftp: number | null = null,
 ) {
   const execute = vi.fn();
   execute.mockResolvedValueOnce([{ activity_count: rawActivityCount }]);
@@ -87,7 +94,7 @@ function makeRepoHarness(
   }
   execute.mockResolvedValue([]);
   const db = { execute };
-  const sensorStore = makeSensorStore(activityRows, normalizedPowerRows);
+  const sensorStore = makeSensorStore(activityRows, normalizedPowerRows, currentEftp);
   return {
     repo: new PmcRepository(db, "user-1", timezone, sensorStore),
     execute: db.execute,
@@ -126,16 +133,13 @@ describe("PmcRepository", () => {
   }
 
   describe("getChart", () => {
-    it("returns empty data with generic model when no raw activities exist", async () => {
+    it("returns empty data with threshold metadata when no raw activities exist", async () => {
       const { repo } = makeRepoHarness([], [], "UTC", 0);
 
       const result = await repo.getChart(ChartRange.fromDays(180));
 
       expect(result.data).toEqual([]);
       expect(result.model).toEqual({
-        type: "generic",
-        pairedActivities: 0,
-        r2: null,
         ftp: null,
       });
     });
@@ -161,7 +165,7 @@ describe("PmcRepository", () => {
 
       const { queryText: activityQuery, params: activityParams } = findQueryCall(
         query,
-        "CROSS JOIN user_baseline ub",
+        "FROM analytics.activity_summary asum",
       );
       expect(activityQuery).toContain("has({activityTypes:Array(String)}, asum.canonical_type)");
       expect(activityParams).toMatchObject({
@@ -171,24 +175,12 @@ describe("PmcRepository", () => {
       });
       expectCyclingOnlyActivityTypes(activityParams.activityTypes);
 
-      const { queryText: normalizedPowerQuery, params: normalizedPowerParams } = findQueryCall(
+      const { params: normalizedPowerParams } = findQueryCall(
         query,
-        "normalized_power",
+        "cycling_activity_power_metrics",
       );
-      expect(normalizedPowerQuery).toContain("has({activityTypes:Array(String)}, canonical_type)");
       expect(normalizedPowerParams).toMatchObject({ userId: "user-1", queryDays: 407 });
       expectCyclingOnlyActivityTypes(normalizedPowerParams.activityTypes);
-    });
-
-    it("filters fallback max heart rate baseline to cycling activity types", async () => {
-      const { repo, query } = makeRepoHarness([makeActivityRow()], []);
-
-      await repo.getChart(ChartRange.fromDays(30));
-
-      const activityQuery = vi.mocked(query).mock.calls[0]?.[1];
-      expect(activityQuery).toContain("SELECT maxIf(max_hr, max_hr > 0)");
-      expect(activityQuery).toContain("has({activityTypes:Array(String)}, canonical_type)");
-      expectCyclingOnlyActivityTypes(vi.mocked(query).mock.calls[0]?.[2]?.activityTypes);
     });
 
     it("extends query history when requested display days exceed the minimum history", async () => {
@@ -198,14 +190,14 @@ describe("PmcRepository", () => {
 
       const { queryText: activityQuery, params: activityParams } = findQueryCall(
         query,
-        "CROSS JOIN user_baseline ub",
+        "FROM analytics.activity_summary asum",
       );
       expect(activityQuery).toContain("INTERVAL {queryDays:Int32} DAY");
       expect(activityParams).toMatchObject({ queryDays: 442 });
 
       const { queryText: normalizedPowerQuery, params: normalizedPowerParams } = findQueryCall(
         query,
-        "normalized_power",
+        "cycling_activity_power_metrics",
       );
       expect(normalizedPowerQuery).toContain("INTERVAL {queryDays:Int32} DAY");
       expect(normalizedPowerParams).toMatchObject({ queryDays: 442 });
@@ -218,14 +210,14 @@ describe("PmcRepository", () => {
 
       const { queryText: activityQuery, params: activityParams } = findQueryCall(
         query,
-        "CROSS JOIN user_baseline ub",
+        "FROM analytics.activity_summary asum",
       );
       expect(activityQuery).toContain("asum.started_at > now() - INTERVAL {queryDays:Int32} DAY");
       expect(activityParams).toHaveProperty("queryDays", 407);
 
       const { queryText: normalizedPowerQuery, params: normalizedPowerParams } = findQueryCall(
         query,
-        "normalized_power",
+        "cycling_activity_power_metrics",
       );
       expect(normalizedPowerQuery).toContain("started_at > now() - INTERVAL {queryDays:Int32} DAY");
       expect(normalizedPowerParams).toHaveProperty("queryDays", 407);
@@ -234,14 +226,14 @@ describe("PmcRepository", () => {
     it("omits selected-range lower-bound filters when days is null", async () => {
       const { repo, query } = makeRepoHarness(
         [makeActivityRow()],
-        [{ activity_id: "activity-1", np: 220 }],
+        [{ activity_id: "activity-1", power_tss: 220, eftp: 190 }],
       );
 
       await repo.getChart(ChartRange.fromDays(null));
 
       const { queryText: activityQuery, params: activityParams } = findQueryCall(
         query,
-        "CROSS JOIN user_baseline ub",
+        "FROM analytics.activity_summary asum",
       );
       expect(activityQuery).not.toContain(
         "asum.started_at > now() - INTERVAL {queryDays:Int32} DAY",
@@ -250,7 +242,7 @@ describe("PmcRepository", () => {
 
       const { queryText: normalizedPowerQuery, params: normalizedPowerParams } = findQueryCall(
         query,
-        "normalized_power",
+        "cycling_activity_power_metrics",
       );
       expect(normalizedPowerQuery).not.toContain(
         "started_at > now() - INTERVAL {queryDays:Int32} DAY",
@@ -264,7 +256,11 @@ describe("PmcRepository", () => {
           makeActivityRow({ id: "recent-activity", date: "2026-07-07" }),
           makeActivityRow({ id: "earliest-activity", date: "2026-06-29" }),
         ],
-        [],
+        [
+          { activity_id: "recent-activity", power_tss: 50 },
+          { activity_id: "middle-activity", power_tss: 50 },
+          { activity_id: "earliest-activity", power_tss: 50 },
+        ],
       );
 
       const result = await repo.getChart(ChartRange.fromDays(null));
@@ -281,7 +277,11 @@ describe("PmcRepository", () => {
           makeActivityRow({ id: "middle-activity", date: "2026-07-03" }),
           makeActivityRow({ id: "earliest-activity", date: "2026-06-29" }),
         ],
-        [],
+        [
+          { activity_id: "recent-activity", power_tss: 50 },
+          { activity_id: "middle-activity", power_tss: 50 },
+          { activity_id: "earliest-activity", power_tss: 50 },
+        ],
       );
 
       const result = await repo.getChart(ChartRange.fromDays(null));
@@ -289,44 +289,40 @@ describe("PmcRepository", () => {
       expect(result.data).toHaveLength(11);
     });
 
-    it("reads sample counts from the activity summary read model", async () => {
-      const { repo, query } = makeRepoHarness(
-        [makeActivityRow()],
-        [{ activity_id: "activity-1", np: 220 }],
-      );
-
-      await repo.getChart(ChartRange.fromDays(90));
-
-      expect(query).toHaveBeenNthCalledWith(
-        1,
-        expect.anything(),
-        expect.stringContaining("coalesce(asum.hr_sample_count, 0) AS hr_samples"),
-        expect.anything(),
-      );
-      expect(vi.mocked(query).mock.calls[0]?.[1]).not.toContain("sample_counts AS");
-      expect(vi.mocked(query).mock.calls[0]?.[1]).not.toContain(
-        "INNER JOIN analytics.deduped_sensor AS samples",
-      );
-      expect(query).toHaveBeenNthCalledWith(
-        2,
-        expect.anything(),
-        expect.stringContaining("FROM analytics.activity_summary"),
-        expect.anything(),
-      );
-      expect(vi.mocked(query).mock.calls[1]?.[1]).toContain("normalized_power");
-    });
-
-    it("returns chart data built from ClickHouse rows", async () => {
+    it("uses the canonical current threshold reader independently of per-activity thresholds", async () => {
+      const getCurrent = vi
+        .spyOn(CyclingThresholdRepository.prototype, "getCurrent")
+        .mockResolvedValueOnce({
+          value: 287,
+          unit: "watt",
+          method: "computed_eftp",
+          event_at: "2026-06-01T12:00:00Z",
+          evidence_activity_id: null,
+          evidence_at: null,
+          evidence_duration_seconds: null,
+          evidence_power: null,
+          model_version: "test-current-threshold",
+          unavailable_reason: null,
+          uncertainty: cyclingThresholdUncertainty,
+        });
       const { repo } = makeRepoHarness(
         [makeActivityRow({ id: "power-activity" })],
-        [{ activity_id: "power-activity", np: 220 }],
+        [{ activity_id: "power-activity", power_tss: 220, eftp: 190 }],
       );
 
       const result = await repo.getChart(ChartRange.fromDays(90));
 
-      expect(result.model.ftp).toBe(190);
+      expect(result.model.ftp).toBe(287);
+      expect(getCurrent).toHaveBeenCalledOnce();
       expect(result.data.length).toBeGreaterThan(0);
-      expect(Object.keys(result).sort()).toStrictEqual(["data", "model"]);
+      expect(result.unavailableReason).toBeNull();
+    });
+    it("keeps the current threshold unavailable when no current history exists", async () => {
+      const { repo } = makeRepoHarness(
+        [makeActivityRow()],
+        [{ activity_id: "activity-1", power_tss: null, eftp: null }],
+      );
+      expect((await repo.getChart(ChartRange.fromDays(90))).model.ftp).toBeNull();
     });
   });
 });

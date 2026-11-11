@@ -1,5 +1,4 @@
 import { HttpResponse, http } from "msw";
-import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { CorosProvider } from "../providers/coros.ts";
 import { DecathlonProvider } from "../providers/decathlon.ts";
@@ -8,6 +7,7 @@ import { KomootProvider } from "../providers/komoot.ts";
 import { MapMyFitnessProvider } from "../providers/mapmyfitness.ts";
 import { SuuntoProvider } from "../providers/suunto.ts";
 import type { Provider } from "../providers/types.ts";
+import { createIntegrationMswFixture } from "../test/early-msw-lifecycle.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import { eraseStripeAccount, revokeRemoteAccounts } from "./remote-revocation.ts";
 import type { AccountErasureRemoteSnapshot } from "./remote-snapshot.ts";
@@ -34,12 +34,9 @@ const snapshot: AccountErasureRemoteSnapshot = {
   ],
   externalEffects: [],
   localIdentifiers: {
-    activityIds: [],
     exportObjects: [],
     fileUploads: [],
-    processingOperationIds: [],
     sessionIds: [],
-    sleepSessionIds: [],
     userId: "10000000-0000-4000-8000-000000001994",
   },
   processorEmails: ["erase@example.test"],
@@ -52,11 +49,11 @@ const snapshot: AccountErasureRemoteSnapshot = {
   webhooks: [],
 };
 
-const server = setupServer();
+const server = createIntegrationMswFixture();
 
 describe("remote account revocation (integration)", () => {
   beforeAll(async () => {
-    server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
     process.env.APPLE_TEAM_ID = "APPLE_TEAM";
     process.env.APPLE_KEY_ID = "APPLE_KEY";
     process.env.APPLE_PRIVATE_KEY = await generateTestKeyPem();
@@ -80,7 +77,7 @@ describe("remote account revocation (integration)", () => {
   });
 
   afterAll(() => {
-    server.close();
+    server.deactivate();
   });
 
   it("revokes Apple refresh credentials, cancels Stripe, and deletes the customer", async () => {
@@ -115,7 +112,7 @@ describe("remote account revocation (integration)", () => {
     );
 
     await eraseStripeAccount(snapshot);
-    await revokeRemoteAccounts(snapshot, []);
+    await revokeRemoteAccounts(snapshot, [], async () => {});
 
     expect(operations).toEqual(["stripe-subscription", "stripe-customer", "apple"]);
   });
@@ -281,7 +278,7 @@ describe("remote account revocation (integration)", () => {
       ),
     );
 
-    await expect(revokeRemoteAccounts(snapshot, [])).rejects.toThrow(
+    await expect(revokeRemoteAccounts(snapshot, [], async () => {})).rejects.toThrow(
       "Apple credential revocation failed (400)",
     );
   });
@@ -294,7 +291,7 @@ describe("remote account revocation (integration)", () => {
     );
     const fetchSpy = vi.spyOn(globalThis, "fetch");
 
-    await expect(revokeRemoteAccounts(snapshot, [])).rejects.toThrow(
+    await expect(revokeRemoteAccounts(snapshot, [], async () => {})).rejects.toThrow(
       "Apple credential revocation failed (503)",
     );
     expect(fetchSpy).toHaveBeenCalledTimes(1);
@@ -325,9 +322,9 @@ describe("remote account revocation (integration)", () => {
       stripe: null,
     };
 
-    await expect(revokeRemoteAccounts(providerSnapshot, [provider])).rejects.toThrow(
-      "Provider unreviewed-provider has no account-erasure revocation policy",
-    );
+    await expect(
+      revokeRemoteAccounts(providerSnapshot, [provider], async () => {}),
+    ).rejects.toThrow("Provider unreviewed-provider has no account-erasure revocation policy");
   });
 
   it("uses provider account-erasure semantics without weakening reconnect revocation", async () => {
@@ -360,7 +357,9 @@ describe("remote account revocation (integration)", () => {
       stripe: null,
     };
 
-    await expect(revokeRemoteAccounts(providerSnapshot, [provider])).resolves.toEqual([
+    await expect(
+      revokeRemoteAccounts(providerSnapshot, [provider], async () => {}),
+    ).resolves.toEqual([
       {
         disposition: "remote_revoked",
         providerId: provider.id,
@@ -368,6 +367,7 @@ describe("remote account revocation (integration)", () => {
     ]);
     expect(revokeForAccountErasure).toHaveBeenCalledWith(
       expect.objectContaining({ providerAccountId: "provider-account-1" }),
+      expect.any(Function),
     );
     expect(revokeExistingTokens).not.toHaveBeenCalled();
   });
@@ -400,7 +400,9 @@ describe("remote account revocation (integration)", () => {
       stripe: null,
     };
 
-    await expect(revokeRemoteAccounts(providerSnapshot, [new FitbitProvider()])).resolves.toEqual([
+    await expect(
+      revokeRemoteAccounts(providerSnapshot, [new FitbitProvider()], async () => {}),
+    ).resolves.toEqual([
       {
         disposition: "remote_revoked",
         providerId: "fitbit",
@@ -467,8 +469,8 @@ describe("remote account revocation (integration)", () => {
     };
     const providers = [new MapMyFitnessProvider(), new KomootProvider(), new SuuntoProvider()];
 
-    await revokeRemoteAccounts(providerSnapshot, providers);
-    await revokeRemoteAccounts(providerSnapshot, providers);
+    await revokeRemoteAccounts(providerSnapshot, providers, async () => {});
+    await revokeRemoteAccounts(providerSnapshot, providers, async () => {});
 
     expect(requests).toEqual([
       "mapmyfitness",
@@ -506,7 +508,9 @@ describe("remote account revocation (integration)", () => {
       }),
     );
 
-    await expect(revokeRemoteAccounts(providerSnapshot, [new SuuntoProvider()])).resolves.toEqual([
+    await expect(
+      revokeRemoteAccounts(providerSnapshot, [new SuuntoProvider()], async () => {}),
+    ).resolves.toEqual([
       {
         disposition: "no_remote_authorization",
         providerId: "strong-csv",
@@ -536,9 +540,9 @@ describe("remote account revocation (integration)", () => {
         stripe: null,
       };
 
-      await expect(revokeRemoteAccounts(providerSnapshot, [provider])).rejects.toThrow(
-        `Provider ${provider.id} has no account-erasure revocation policy`,
-      );
+      await expect(
+        revokeRemoteAccounts(providerSnapshot, [provider], async () => {}),
+      ).rejects.toThrow(`Provider ${provider.id} has no account-erasure revocation policy`);
     }
   });
 });

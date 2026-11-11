@@ -94,3 +94,79 @@ describe("ProviderCard sync summary", () => {
     expect(onConnect).toHaveBeenCalledOnce();
   });
 });
+
+describe("OAuth notification providers", () => {
+  it.each(["not_connected", "expired"] as const)(
+    "keeps Garmin authorization available when %s",
+    (authStatus) => {
+      const { onConnect, onSync } = renderProvider({
+        id: "garmin",
+        label: "Garmin",
+        pushOnly: true,
+        authStatus,
+      });
+      fireEvent.click(
+        screen.getByRole("button", {
+          name: authStatus === "not_connected" ? "Connect Garmin" : "Reconnect Garmin",
+        }),
+      );
+      expect(onConnect).toHaveBeenCalledOnce();
+      expect(onSync).not.toHaveBeenCalled();
+      expect(screen.queryByRole("button", { name: "Sync Garmin" })).toBeNull();
+    },
+  );
+
+  it("shows a connected automatic source waiting for its first processed update", () => {
+    renderProvider({
+      id: "garmin",
+      label: "Garmin",
+      pushOnly: true,
+      lastProcessedUpdateAt: null,
+      recentLogs: [],
+    });
+
+    expect(screen.getByText("Connected")).toBeTruthy();
+    expect(screen.getByText("Updates automatically")).toBeTruthy();
+    expect(screen.getByText("Waiting for first update")).toBeTruthy();
+    expect(screen.queryByText(/^Last update processed:/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Reconnect Garmin" })).toBeNull();
+  });
+
+  it("keeps a processing failure separate from its connection and last completed update", () => {
+    renderProvider({
+      id: "garmin",
+      label: "Garmin",
+      pushOnly: true,
+      lastProcessedUpdateAt: new Date(Date.now() - 25 * 60_000).toISOString(),
+      recentLogs: [
+        {
+          ...successfulLog,
+          providerId: "garmin",
+          status: "error",
+          syncedAt: new Date().toISOString(),
+          errorMessage: "An activity file could not be read.",
+        },
+      ],
+    });
+
+    expect(screen.getByText("Connected")).toBeTruthy();
+    expect(screen.getByText("Updates automatically")).toBeTruthy();
+    expect(screen.getByText("Last update processed: 25m ago")).toBeTruthy();
+    expect(screen.getByText("Couldn't process the latest update")).toBeTruthy();
+    expect(screen.queryByText("Waiting for first update")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Reconnect Garmin" })).toBeNull();
+  });
+});
+
+it("keeps mobile capture actions in source details", () => {
+  renderProvider({
+    id: "whoop_ble",
+    label: "WHOOP (Bluetooth)",
+    authType: "push:mobile",
+    pushOnly: true,
+  });
+  expect(screen.getByRole("button", { name: "Open WHOOP (Bluetooth) details" })).toBeTruthy();
+  expect(screen.getByText("Push only")).toBeTruthy();
+  expect(screen.queryByText("Updates automatically")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Reconnect WHOOP (Bluetooth)" })).toBeNull();
+});

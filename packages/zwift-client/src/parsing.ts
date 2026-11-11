@@ -53,6 +53,8 @@ export function parseZwiftActivity(act: ZwiftActivitySummary): ParsedZwiftActivi
     startedAt: new Date(act.startDate),
     endedAt: new Date(act.endDate),
     raw: {
+      primaryImageUrl: act.primaryImageUrl,
+      snapshotList: act.snapshotList,
       distanceMeters: act.distanceInMeters,
       avgHeartRate: act.avgHeartRate,
       maxHeartRate: act.maxHeartRate,

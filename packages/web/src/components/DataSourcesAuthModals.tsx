@@ -1,5 +1,9 @@
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
-import type { ProviderManualConnectionKind } from "@dofek/providers/provider-connection";
+import {
+  type ProviderManualConnectionKind,
+  providerCredentialInput,
+  providerCredentialSubmitHint,
+} from "@dofek/providers/provider-connection";
 import type React from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { locallyReportedErrorMeta } from "../lib/query-client.ts";
@@ -14,14 +18,6 @@ const disabledAuthSubmitButtonClassName =
 
 function authSubmitButtonClassName(disabled: boolean) {
   return disabled ? disabledAuthSubmitButtonClassName : enabledAuthSubmitButtonClassName;
-}
-
-function credentialSubmitHint(username: string, password: string, loading: boolean) {
-  if (loading) return null;
-  if (!username.trim() && !password) return "Enter your email and password to continue.";
-  if (!username.trim()) return "Enter your email to continue.";
-  if (!password) return "Enter your password to continue.";
-  return null;
 }
 
 // -- Credential Auth Modal --
@@ -43,9 +39,15 @@ export function CredentialAuthModal({
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const emailRef = useRef<HTMLInputElement>(null);
+  const identifierRef = useRef<HTMLInputElement>(null);
+  const credentialInput = providerCredentialInput(providerId);
   const signInDisabled = loading || !username.trim() || !password;
-  const signInHint = credentialSubmitHint(username, password, loading);
+  const signInHint = providerCredentialSubmitHint(
+    username,
+    password,
+    loading,
+    credentialInput.identifier,
+  );
 
   const signInMutation = trpc.credentialAuth.signIn.useMutation({
     meta: locallyReportedErrorMeta,
@@ -76,7 +78,7 @@ export function CredentialAuthModal({
     <ModalDialog
       open
       onClose={onClose}
-      initialFocusRef={emailRef}
+      initialFocusRef={identifierRef}
       contentClassName="bg-surface-solid border border-border-strong rounded-xl p-6 w-[calc(100%-2rem)] max-w-sm shadow-2xl"
     >
       <div className="flex items-center justify-between mb-4">
@@ -106,19 +108,28 @@ export function CredentialAuthModal({
       )}
 
       <form onSubmit={handleSignIn} className="space-y-3">
+        {credentialInput.instructions ? (
+          <p id={`${providerId}-credential-instructions`} className="text-xs text-muted">
+            {credentialInput.instructions}
+          </p>
+        ) : null}
         <div>
-          <label htmlFor={`${providerId}-email`} className="block text-xs text-muted mb-1">
-            Email
+          <label htmlFor={`${providerId}-identifier`} className="block text-xs text-muted mb-1">
+            {credentialInput.label}
           </label>
           <input
-            ref={emailRef}
-            id={`${providerId}-email`}
-            type="email"
+            ref={identifierRef}
+            id={`${providerId}-identifier`}
+            type={credentialInput.identifier === "email" ? "email" : "text"}
+            autoComplete="username"
+            aria-describedby={
+              credentialInput.instructions ? `${providerId}-credential-instructions` : undefined
+            }
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             required
             className="w-full px-3 py-2 text-sm bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-accent"
-            placeholder="you@example.com"
+            placeholder={credentialInput.placeholder}
           />
         </div>
         <div>
@@ -160,6 +171,7 @@ export function TokenAuthModal({
   providerName,
   tokenLabel,
   instructionsUrl,
+  description,
   onClose,
   onSuccess,
 }: {
@@ -168,6 +180,7 @@ export function TokenAuthModal({
   providerName: string;
   tokenLabel: string;
   instructionsUrl: string;
+  description?: string;
   onClose: () => void;
   onSuccess: () => void;
 }) {
@@ -244,6 +257,11 @@ export function TokenAuthModal({
         </a>{" "}
         and paste your {tokenLabel} below.
       </p>
+      {description ? (
+        <p id={`${providerId}-token-description`} className="mb-3 text-xs text-muted">
+          {description}
+        </p>
+      ) : null}
 
       {error && (
         <div role="alert" className="mb-3 text-xs text-red-400 bg-red-400/10 rounded px-3 py-2">
@@ -259,6 +277,7 @@ export function TokenAuthModal({
           <input
             ref={tokenRef}
             id={`${providerId}-token`}
+            aria-describedby={description ? `${providerId}-token-description` : undefined}
             type={kind === "public-profile" ? "text" : "password"}
             value={token}
             onChange={(event) => setToken(event.target.value)}
@@ -285,122 +304,6 @@ export function TokenAuthModal({
   );
 }
 
-// -- Garmin Auth Modal --
-
-export function GarminAuthModal({
-  onClose,
-  onSuccess,
-}: {
-  onClose: () => void;
-  onSuccess: () => void;
-}) {
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-  const emailRef = useRef<HTMLInputElement>(null);
-  const signInDisabled = loading || !username.trim() || !password;
-  const signInHint = credentialSubmitHint(username, password, loading);
-
-  const signInMutation = trpc.garminAuth.signIn.useMutation({
-    meta: locallyReportedErrorMeta,
-  });
-
-  const handleSignIn = useCallback(
-    async (e: React.FormEvent<HTMLFormElement>) => {
-      e.preventDefault();
-      setError("");
-      setLoading(true);
-      try {
-        await signInMutation.mutateAsync({ username: username.trim(), password });
-        onSuccess();
-      } catch (err: unknown) {
-        captureException(err, {
-          operation: "garminAuth.signIn",
-          providerId: "garmin",
-        });
-        setError(userFacingErrorMessage(err, "Sign in failed"));
-      } finally {
-        setLoading(false);
-      }
-    },
-    [username, password, signInMutation, onSuccess],
-  );
-
-  return (
-    <ModalDialog
-      open
-      onClose={onClose}
-      initialFocusRef={emailRef}
-      contentClassName="bg-surface-solid border border-border-strong rounded-xl p-6 w-[calc(100%-2rem)] max-w-sm shadow-2xl"
-    >
-      <div className="flex items-center justify-between mb-4">
-        <ModalDialogTitle className="text-sm font-semibold text-foreground">
-          Connect Garmin
-        </ModalDialogTitle>
-        <button
-          type="button"
-          onClick={onClose}
-          className="text-subtle hover:text-foreground text-lg leading-none p-1"
-          aria-label="Close"
-        >
-          &times;
-        </button>
-      </div>
-
-      {error && (
-        <div className="mb-3 text-xs text-red-400 bg-red-400/10 rounded px-3 py-2">{error}</div>
-      )}
-
-      <form onSubmit={handleSignIn} className="space-y-3">
-        <div>
-          <label htmlFor="garmin-email" className="block text-xs text-muted mb-1">
-            Email
-          </label>
-          <input
-            ref={emailRef}
-            id="garmin-email"
-            type="email"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            required
-            className="w-full px-3 py-2 text-sm bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-accent"
-            placeholder="you@example.com"
-          />
-        </div>
-        <div>
-          <label htmlFor="garmin-password" className="block text-xs text-muted mb-1">
-            Password
-          </label>
-          <input
-            id="garmin-password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            className="w-full px-3 py-2 text-sm bg-accent/10 border border-border-strong rounded text-foreground focus:outline-none focus:border-accent"
-          />
-        </div>
-        {signInHint ? (
-          <p id="garmin-auth-hint" className="text-xs text-muted">
-            {signInHint}
-          </p>
-        ) : null}
-        <button
-          type="submit"
-          disabled={signInDisabled}
-          aria-describedby={signInHint ? "garmin-auth-hint" : undefined}
-          className={authSubmitButtonClassName(signInDisabled)}
-        >
-          {loading ? "Signing in..." : "Sign In"}
-        </button>
-      </form>
-    </ModalDialog>
-  );
-}
-
-// -- WHOOP Auth Modal --
-
 type WhoopStep = "credentials" | "verify" | "saving";
 
 export function WhoopAuthModal({
@@ -420,7 +323,7 @@ export function WhoopAuthModal({
   const emailRef = useRef<HTMLInputElement>(null);
   const codeRef = useRef<HTMLInputElement>(null);
   const credentialSignInDisabled = loading || !username.trim() || !password;
-  const credentialSignInHint = credentialSubmitHint(username, password, loading);
+  const credentialSignInHint = providerCredentialSubmitHint(username, password, loading);
   const verificationDisabled = loading || !code;
   const verificationHint = !loading && !code ? "Enter the verification code to continue." : null;
 

@@ -8,10 +8,10 @@ one local calendar day. The web and mobile views provide the same navigation:
 - **Today** returns to the current day.
 - The date picker can select today or an earlier day.
 
-The view identifies the device's local time zone next to the selected date. That
-time zone defines the calendar-day boundaries used by the server query, so a
-sample near midnight is assigned to the day shown for that device. The server
-returns the source samples and summaries; the clients only render them.
+The device's local time zone defines the calendar-day boundaries used by the
+server query, so a sample near midnight is assigned to the day shown for that
+device. The server returns the source samples and summaries; the clients only
+render them.
 
 See the [web view](../packages/web/src/pages/DailyHeartRatePage.tsx), [mobile
 view](../packages/mobile/app/daily-heart-rate.tsx), and [server repository](../packages/server/src/repositories/heart-rate-repository.ts)

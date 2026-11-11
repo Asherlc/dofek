@@ -1,12 +1,12 @@
 import { HttpResponse, http } from "msw";
-import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { sendPlainTextEmail } from "./email.ts";
+import { createIntegrationMswFixture } from "./test/early-msw-lifecycle.ts";
 import { failOnUnhandledExternalRequest } from "./test/msw.ts";
 
 const BREVO_EMAIL_URL = "https://api.brevo.com/v3/smtp/email";
 const envBackup = { ...process.env };
-const server = setupServer();
+const server = createIntegrationMswFixture();
 
 function setEmailEnv(): void {
   process.env.BREVO_API_KEY = "brevo-api-key";
@@ -15,7 +15,7 @@ function setEmailEnv(): void {
 
 describe("shared email", () => {
   beforeAll(() => {
-    server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
   });
 
   beforeEach(() => {
@@ -27,7 +27,7 @@ describe("shared email", () => {
   });
 
   afterAll(() => {
-    server.close();
+    server.deactivate();
     process.env = envBackup;
   });
 

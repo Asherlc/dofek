@@ -26,11 +26,11 @@ export const PartialData: Story = {
   args: {
     availability: {
       status: "insufficient_data",
-      sourceLabel: "Daily strain model",
+      sourceLabel: "Training load model",
       observedCount: 1,
       minimumCount: 2,
       message:
-        "No daily strain trend is available from the daily strain model. Record at least 2 training days to show this chart.",
+        "No training load trend is available from the training load model. Record at least 2 training days to show this chart.",
     },
   },
 };

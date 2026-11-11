@@ -2,17 +2,15 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { locallyReportedErrorMeta } from "../lib/query-client.ts";
-import { CredentialAuthModal, GarminAuthModal, WhoopAuthModal } from "./DataSourcesAuthModals.tsx";
+import { CredentialAuthModal, WhoopAuthModal } from "./DataSourcesAuthModals.tsx";
 
 const mockCredentialSignIn = vi.hoisted(() => vi.fn());
 const mockTokenConnect = vi.hoisted(() => vi.fn());
-const mockGarminSignIn = vi.hoisted(() => vi.fn());
 const mockWhoopSignIn = vi.hoisted(() => vi.fn());
 const mockWhoopVerifyCode = vi.hoisted(() => vi.fn());
 const mockWhoopSaveTokens = vi.hoisted(() => vi.fn());
 const mockCredentialUseMutation = vi.hoisted(() => vi.fn());
 const mockTokenUseMutation = vi.hoisted(() => vi.fn());
-const mockGarminUseMutation = vi.hoisted(() => vi.fn());
 const mockWhoopSignInUseMutation = vi.hoisted(() => vi.fn());
 const mockWhoopVerifyUseMutation = vi.hoisted(() => vi.fn());
 const mockWhoopSaveUseMutation = vi.hoisted(() => vi.fn());
@@ -22,7 +20,6 @@ vi.mock("../lib/trpc.ts", () => ({
   trpc: {
     credentialAuth: { signIn: { useMutation: mockCredentialUseMutation } },
     tokenAuth: { connect: { useMutation: mockTokenUseMutation } },
-    garminAuth: { signIn: { useMutation: mockGarminUseMutation } },
     whoopAuth: {
       signIn: { useMutation: mockWhoopSignInUseMutation },
       verifyCode: { useMutation: mockWhoopVerifyUseMutation },
@@ -41,13 +38,50 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockCredentialUseMutation.mockReturnValue({ mutateAsync: mockCredentialSignIn });
   mockTokenUseMutation.mockReturnValue({ mutateAsync: mockTokenConnect });
-  mockGarminUseMutation.mockReturnValue({ mutateAsync: mockGarminSignIn });
   mockWhoopSignInUseMutation.mockReturnValue({ mutateAsync: mockWhoopSignIn });
   mockWhoopVerifyUseMutation.mockReturnValue({ mutateAsync: mockWhoopVerifyCode });
   mockWhoopSaveUseMutation.mockReturnValue({ mutateAsync: mockWhoopSaveTokens });
 });
 
 describe("data source auth dialogs", () => {
+  it.each(["tension", "grasshopper", "decoy", "soill", "touchstone", "aurora-board"])(
+    "connects %s with its exact trimmed board username",
+    async (providerId) => {
+      mockCredentialSignIn.mockResolvedValue({ success: true });
+      const onSuccess = vi.fn();
+      render(
+        <CredentialAuthModal
+          providerId={providerId}
+          providerName="Climbing Board"
+          onClose={vi.fn()}
+          onSuccess={onSuccess}
+        />,
+      );
+      const username = screen.getByLabelText("Username");
+      expect(username).toHaveAttribute("type", "text");
+      expect(username).toHaveAttribute("placeholder", "Your username");
+      expect(username).toHaveAccessibleDescription(
+        "Use an existing board account after accepting its terms of use and privacy policy in the board app.",
+      );
+      const signIn = screen.getByRole("button", { name: "Sign In" });
+      expect(signIn).toBeDisabled();
+      expect(signIn).toHaveAccessibleDescription("Enter your username and password to continue.");
+      fireEvent.change(screen.getByLabelText("Password"), { target: { value: "board-password" } });
+      expect(signIn).toHaveAccessibleDescription("Enter your username to continue.");
+      fireEvent.change(username, { target: { value: "  Boulder.User_01  " } });
+      expect(signIn).toBeEnabled();
+      fireEvent.click(signIn);
+      await waitFor(() => {
+        expect(mockCredentialSignIn).toHaveBeenCalledWith({
+          providerId,
+          username: "Boulder.User_01",
+          password: "board-password",
+        });
+        expect(onSuccess).toHaveBeenCalledOnce();
+      });
+    },
+  );
+
   it("shows an unfamiliar public profile identity as visible text", async () => {
     const { TokenAuthModal } = await import("./DataSourcesAuthModals.tsx");
     render(
@@ -65,8 +99,9 @@ describe("data source auth dialogs", () => {
   });
 
   it.each([
-    { id: "polar", name: "Polar" },
-    { id: "alltrails", name: "AllTrails" },
+    { id: "eight-sleep", name: "Eight Sleep" },
+    { id: "zwift", name: "Zwift" },
+    { id: "kilter", name: "Kilter Board" },
   ])("submits $name credentials with a trimmed email and protected password", async (provider) => {
     const onSuccess = vi.fn();
     render(
@@ -78,6 +113,7 @@ describe("data source auth dialogs", () => {
       />,
     );
 
+    expect(screen.getByLabelText("Email")).toHaveAttribute("type", "email");
     expect(screen.getByLabelText("Password")).toHaveAttribute("type", "password");
     fireEvent.change(screen.getByLabelText("Email"), {
       target: { value: "  athlete@example.com  " },
@@ -108,10 +144,6 @@ describe("data source auth dialogs", () => {
           onSuccess={vi.fn()}
         />
       ),
-    },
-    {
-      name: "Garmin sign-in",
-      renderDialog: () => <GarminAuthModal onClose={vi.fn()} onSuccess={vi.fn()} />,
     },
     {
       name: "WHOOP sign-in",
@@ -151,12 +183,6 @@ describe("data source auth dialogs", () => {
       ),
     },
     {
-      name: "Connect Garmin",
-      renderDialog: (onClose: () => void) => (
-        <GarminAuthModal onClose={onClose} onSuccess={() => {}} />
-      ),
-    },
-    {
       name: "Connect WHOOP",
       renderDialog: (onClose: () => void) => (
         <WhoopAuthModal onClose={onClose} onSuccess={() => {}} />
@@ -178,6 +204,7 @@ describe("data source auth dialogs", () => {
 describe("Data source authentication telemetry", () => {
   it.each([
     ["openbeta", "OpenBeta profile URL or username", "text"],
+    ["thecrag", "Personal API key", "password"],
     ["wger", "JWT refresh token", "password"],
   ])("uses the appropriate input visibility for %s", async (providerId, label, inputType) => {
     const { TokenAuthModal } = await import("./DataSourcesAuthModals.tsx");
@@ -355,29 +382,6 @@ describe("Data source authentication telemetry", () => {
     expect(JSON.stringify(mockCaptureException.mock.calls)).not.toContain("private@example.com");
   });
 
-  it("reports Garmin sign-in failures with only provider context", async () => {
-    const error = new Error("Garmin unavailable");
-    mockGarminSignIn.mockRejectedValue(error);
-
-    render(<GarminAuthModal onClose={vi.fn()} onSuccess={vi.fn()} />);
-    fireEvent.change(screen.getByLabelText("Email"), {
-      target: { value: "private@example.com" },
-    });
-    fireEvent.change(screen.getByLabelText("Password"), {
-      target: { value: "provider-password-must-not-leak" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Sign In" }));
-
-    await waitFor(() => expect(screen.getByText(error.message)).toBeTruthy());
-    expect(mockGarminUseMutation).toHaveBeenCalledWith({
-      meta: locallyReportedErrorMeta,
-    });
-    expect(mockCaptureException).toHaveBeenCalledWith(error, {
-      operation: "garminAuth.signIn",
-      providerId: "garmin",
-    });
-  });
-
   it("reports WHOOP verification failures without challenge or code", async () => {
     const error = new Error("Verification code expired");
     const challengeId = "challenge-must-not-leak";
@@ -437,4 +441,27 @@ describe("Data source authentication telemetry", () => {
     });
     expect(JSON.stringify(mockCaptureException.mock.calls)).not.toContain(token);
   });
+});
+
+it("shows theCrag key access disclosure before connection", async () => {
+  const { TokenAuthModal } = await import("./DataSourcesAuthModals.tsx");
+  render(
+    <TokenAuthModal
+      kind="access-token"
+      providerId="thecrag"
+      providerName="theCrag"
+      tokenLabel="Personal API key"
+      instructionsUrl="https://www.thecrag.com/en/article/logbookreadapi"
+      description="This key imports your public and private ascent notes."
+      onClose={vi.fn()}
+      onSuccess={vi.fn()}
+    />,
+  );
+  expect(
+    screen.getByText("This key imports your public and private ascent notes."),
+  ).toBeInTheDocument();
+  expect(screen.getByLabelText("Personal API key")).toHaveAttribute("type", "password");
+  expect(screen.getByLabelText("Personal API key")).toHaveAccessibleDescription(
+    "This key imports your public and private ascent notes.",
+  );
 });

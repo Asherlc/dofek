@@ -7,6 +7,9 @@ export interface LocalImportJobData {
     | "strong-csv"
     | "cronometer-csv"
     | "kaya-export"
+    | "crimpd"
+    | "eight-a"
+    | "moonboard"
     | "zos-app"
     | "garmin-dump"
     | "fit-file";

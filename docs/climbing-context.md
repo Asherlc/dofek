@@ -7,14 +7,62 @@ A climbing log entry records an occurrence on a Climb, optionally associated wit
 | Model | Canonical facts |
 | --- | --- |
 | Area | Owner/provider, verified source identity, name, nullable parent Area and coordinates |
+| AreaGroup | Owner-scoped explicit identity linking source Areas that describe the same place |
 | Climb | Owner/provider, verified source identity, nullable name/kind/Area/setting, advertised route protection, coordinates, ordered published grades |
 | Pitch | Required Climb, nullable verified identity/number/name, ordered published grades |
-| ClimbingLogEntry | Owner/provider, occurrence identity, optional Climb/Activity, independently nullable source date, discipline/title/notes, reported grades, board/angle/hold type, raw source record and retention metadata |
+| ClimbingLogEntry | Owner/provider, occurrence identity, optional Climb/Activity, independently nullable source date, discipline/title/notes, reported grades, board/angle/hold types, raw source record and retention metadata |
 | ClimbingAttempt | Required log, scope, optional Pitch/parent, nullable actual order and original source result label, independent method/solo/protection/aid/fall-or-hang/dab/beta/history facts and notes |
 
 Areas form an adjacency list through `parentAreaId`. PostgreSQL recursive queries build the current path; ownership constraints and cycle checks protect the hierarchy. Shared metadata updates apply to past logs referencing the same verified source object. Unidentified objects remain local to their log; matching names do not establish identity. See the [schema](../src/db/schema/climbing.ts) and PostgreSQL [recursive queries](https://www.postgresql.org/docs/current/queries-with.html#QUERIES-WITH-RECURSIVE).
 
-API coordinates use `GpsCoordinates { latitude, longitude }`. PostgreSQL stores one native `point`, with x = longitude and y = latitude. Coordinates must be finite and within ±180° longitude and ±90° latitude; zero is valid. See the [value type](../packages/training/src/gps-coordinates.ts) and PostgreSQL's [geometric types](https://www.postgresql.org/docs/current/datatype-geometric.html).
+An explicit `area.group_id` links source Areas without replacing their names,
+provider IDs, hierarchy, or coordinates. The owner-scoped foreign key prevents
+cross-account membership. Source sync updates only source facts and preserves
+this relationship through renames. The activity-log repository returns the
+effective leaf Area's `areaGroupId`, preferring the location recorded on the log
+over the shared Climb location. The existing list grouping uses explicit groups
+before name paths and never bridges explicit groups through an unmapped name.
+See the [schema](../src/db/schema/climbing.ts),
+[repository](../packages/server/src/repositories/climbing-activity-log-entry-repository.ts),
+[shared grouping](../packages/training/src/climbing-log-groups.ts), and
+[PostgreSQL foreign keys](https://www.postgresql.org/docs/current/ddl-constraints.html#DDL-CONSTRAINTS-FK).
+
+### Assigning a confirmed location group
+
+After the schema is deployed, an operator can assign a confirmed pair with
+stock `psql`. Run the block as a script with `psql -v ON_ERROR_STOP=1 -f <file>`.
+Set `user_id`, `area_a`, and `area_b` to the verified owner and
+source Area UUIDs. Inspect their provider/external IDs and names first. If an
+Area already belongs to a group, review that group's complete membership before
+changing it; this transaction deliberately accepts only two ungrouped Areas.
+No data-specific mapping belongs in a deploy migration. The transaction uses
+[row locks](https://www.postgresql.org/docs/current/explicit-locking.html#LOCKING-ROWS)
+and [psql's `\gset` and error handling](https://www.postgresql.org/docs/current/app-psql.html)
+to stop when the pair is missing, duplicated, differently owned, or already mapped.
+
+```sql
+\set ON_ERROR_STOP on
+\unset location_group_id
+BEGIN;
+WITH selected AS MATERIALIZED (
+  SELECT user_id FROM fitness.area
+  WHERE user_id = :'user_id'::uuid
+    AND id IN (:'area_a'::uuid, :'area_b'::uuid)
+    AND group_id IS NULL
+  FOR UPDATE
+)
+INSERT INTO fitness.area_group (user_id)
+SELECT user_id FROM selected GROUP BY user_id HAVING count(*) = 2
+RETURNING id AS location_group_id \gset
+
+UPDATE fitness.area SET group_id = :'location_group_id'::uuid
+WHERE user_id = :'user_id'::uuid
+  AND id IN (:'area_a'::uuid, :'area_b'::uuid)
+RETURNING provider_id, external_id, name, group_id;
+COMMIT;
+```
+
+API coordinates use `GpsCoordinates { latitude, longitude }`. PostgreSQL stores one native `point`, with x = longitude and y = latitude. Coordinates must be finite and within ±180° longitude and ±90° latitude; zero is valid. See the [value type](../packages/climbing-catalogue/src/geometry.ts) and PostgreSQL's [geometric types](https://www.postgresql.org/docs/current/datatype-geometric.html).
 
 Published grade components belong to their Climb or Pitch. Independently reported grades belong to the log. Each component has a value and nullable grading system, with collection order stored on its owned grade row. Progression ranks use published grades. See the [grade definitions](../packages/training/src/climbing-grades.ts) and [observation query](../packages/server/src/repositories/climbing-rock-observations.ts).
 
@@ -26,7 +74,7 @@ Whole-Climb attempts have no Pitch or parent. Pitch attempts may reference an id
 
 Completion, rope method, solo, protection, aid, fall/hang, dab, and history remain independent. A top-rope method, a pitch count, or absence of falls alone does not establish completion. Aid use does not establish a fall or hang. `fellOrHung` retains the combined source condition; unknown booleans remain null. The [writer](../src/db/climbing-log-sync.ts) retains exact labels and their attempt associations across partial updates; the [fact normalizer](../src/db/source-attempt-facts.ts) interprets the separate execution qualifiers.
 
-Every attempt whose log identifies a route requires a recorded rope method, including whole-Climb, pitch, and counted occurrences. Bouldering, summits, and unclassified climbs retain nullable methods. A partial refresh can retain an existing method, but a new route occurrence or an explicit clearing of its method must satisfy the requirement. Providers must supply a method for each route occurrence; one described try does not establish methods for anonymous counted tries. The [shared source validator](../src/db/source-attempt-facts.ts) and [database guards](../drizzle/0150_require_climbing_route_methods.sql) enforce the invariant. The migration stops on unresolved legacy records until verified source or user evidence supplies their methods; it does not delete attempts or infer methods from aid, solo, grades, or outcomes.
+Rope methods remain nullable on routes, boulders, summits, and unclassified climbs. Missing source evidence preserves unknown state; a partial refresh that omits the method retains the previous fact, while an explicit null clears it. Provider adapters resolve supported source precedence before writing; counts alone do not establish methods for other attempts. The [writer](../src/db/climbing-log-sync.ts) and [nullable-method migration](../drizzle/0171_nullable_climbing_route_methods.sql) preserve this policy. Migration 0171 removes the earlier cross-table requirement without rewriting historical attempts; PostgreSQL documents [trigger removal](https://www.postgresql.org/docs/current/sql-droptrigger.html).
 
 Web and mobile cards show recorded rope methods and known scoped attempt counts. The [reader](../packages/server/src/repositories/climbing-activity-log-entry-repository.ts) returns a null whole-climb attempt count for Mountain Project logs rather than treating a tick as a reported total. Cards omit unknown counts while retaining known outcomes, and Details shows the retained facts under `Recorded result`, preserving a known attempt order without inventing one. A blank source result adds no outcome status to the card; Details describes it as `Not reported by source`. Known completion and failure labels remain scoped to their whole climb or pitch. See the [shared formatter](../packages/format/src/climbing-log.ts), [web card](../packages/web/src/pages/activity-detail/components/ClimbingLogEntryCard.tsx), and [mobile card](../packages/mobile/components/ClimbingLogEntryCard.tsx).
 
@@ -46,6 +94,87 @@ The server derives a free rock send from completion with known absence of aid an
 | GradeSystem | `v_scale`, `font`, `yds`, `french`, `uiaa`, `ewbank`, `saxon`, `norwegian`, `brazilian_crux`, `british_adjectival`, `british_technical`, `aid`, `water_ice`, `alpine_ice`, `mixed`, `ifas`, `nccs` |
 
 Nullable fields carry unknown state separately from these enum values. The [shared schemas](../packages/training/src/climbing-log.ts) and [grade library](../packages/training/src/climbing-grades.ts) are authoritative. The generated [UML](schema.puml) includes the database tables, enums, and ownership relationships.
+
+Recorded grips use nullable, nonempty `holdTypes` collections containing `crimp`,
+`sloper`, `pinch`, `pocket`, `jug`, `volume`, `jam`, or `no_grips`. A wall angle is
+either a numeric value with recorded or unknown units, or a source category
+(`slab`, `vertical`, `overhang`, `roof`); categories do not imply measured degrees.
+The [shared schemas](../packages/training/src/climbing-experience.ts),
+[log contract](../packages/training/src/climbing-log.ts), and
+[forward migration](../drizzle/0170_climbing_traits.sql) define these facts.
+Strengths count each distinct climb once in each recorded grip and once in its
+grade baseline. Missing metadata preserves an evidenced set; contradictory sets
+remain unknown, as implemented by the
+[strengths service](../packages/server/src/services/climbing-strengths.ts).
+
+## Response versions and independent releases
+
+Canonical storage and repositories always use plural `holdTypes` and the
+numeric-or-category wall-angle model above. The existing tRPC procedures
+`climbing.activityLogEntries`, `climbing.unattachedClimbingLogEntries`, and
+`providerDetail.recordDetail` accept `responseVersion: 1 | 2 | 3 | 4 | 5`, defaulting to
+`1`. For provider records, the version applies to climbing log entries only.
+The [response contract](../packages/server/src/contracts/climbing-log-contracts.ts)
+projects the canonical record at the API boundary; it does not create another
+storage path. Input and output validation follow
+[tRPC's validator contract](https://trpc.io/docs/server/validators).
+
+| Requested version | Recorded holds | Recorded wall angle |
+| --- | --- | --- |
+| Omitted or `1` | Scalar `holdType` only: one distinct `crimp`, `sloper`, `pinch`, `pocket`, or `jug` is retained. Multiple grips, newer grip kinds, and unknown grips produce null; no predominant grip is selected. | Numeric objects retain their values and units. Source categories produce null. |
+| `2` | Complete nullable `holdTypes` collection; no scalar alias. | Complete nullable numeric-or-category object. |
+| `3` | Same complete grip collection as `2`, plus attributed recorded `tags`. | Complete nullable numeric-or-category object. |
+| `4` | Same as `3`, plus the log's effective `areaPath`. | Complete nullable numeric-or-category object. |
+| `5` | Same as `4`, plus explicit location membership in `areaGroupId`. | Complete nullable numeric-or-category object. |
+
+Web and mobile activity screens request version `5`; provider record details
+and attachment pickers request version `4`. Updated decoders accept all five
+supported responses. Versions `1`–`4` omit `areaGroupId`, preserving strict
+installed clients. Deploy the version-5 API before publishing the matching
+activity screens: an API explicitly limited to earlier versions rejects a
+version-5 request during input validation. The
+[shared input schema](../packages/training/src/climbing-log-response.ts)
+defines that supported-version boundary.
+An earlier server's original `z.object` input strips the unknown version
+option and still returns version `1`; the decoder promotes its scalar grip
+to a collection. This supports a newer client with an earlier API as well as
+an installed older client with the newer API. It does not accept malformed
+hybrid payloads or invent absent traits. See the
+[decoders](../packages/server/src/contracts/climbing-log-contracts.ts),
+[response tests](../packages/server/src/contracts/climbing-log-contracts.test.ts),
+and [Zod object behavior](https://zod.dev/api#objects).
+
+Versioned request inputs separate query keys, and the server cache includes
+the raw input and the procedure's cache version. Mobile keeps persisted-cache
+contract `20`; the new versioned keys and strict decoders handle mixed API/OTA
+release order. See the [server cache](../packages/server/src/trpc.ts),
+[mobile persistence](../packages/mobile/lib/mobile-query-persistence.ts), and
+[TanStack query-key guidance](https://tanstack.com/query/latest/docs/framework/react/guides/query-keys).
+
+MCP tools `get_activity_details`, `get_climbing_sessions`, and
+`get_climbing_progression` accept the equivalent `response_version`, also
+defaulting to `1`. Progression entries use `hold_type` in version `1` and
+`hold_types` in versions `2` and `3`; their existing `wall_angle_degrees` remains a
+numeric-only field. The tools project the selected version before building
+both text and structured results, so the two representations agree. See the
+[shared version policy](../packages/training/src/climbing-log-response.ts),
+[activity tool](../packages/server/src/mcp/activity-details-tool.ts),
+[sessions tool](../packages/server/src/mcp/climbing-sessions-tool.ts), and
+[progression tool](../packages/server/src/mcp/climbing-progression-tool.ts).
+
+Version `3` activity and session tools also expose recorded tags. Their labels,
+provider IDs and source category keys come from retained log payloads through
+the [tag decoder](../src/climbing-tags.ts); catalogue enrichment remains
+separate from recorded tags and strengths metrics. See the
+[detail contract](../packages/server/src/contracts/climbing-log-contracts.ts) and
+[strengths contract](../packages/training/src/climbing-strengths.ts).
+
+When a recorded source tag is renamed, strengths display the name from the latest
+recorded calendar date among the included observations. Source record identity
+breaks equal-date ties deterministically; older observations still contribute to
+that same source-tag cohort. Climb details preserve each record's original name.
+Category names follow the same latest-observation rule in the
+[strengths service](../packages/server/src/services/climbing-strengths.ts).
 
 ## Browsing, attachment, and analytics
 

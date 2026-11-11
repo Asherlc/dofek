@@ -43,10 +43,11 @@ export function processorRetentionConfigFromEnv(
 
 async function loadAxiomRetentionDays(
   config: ProcessorRetentionConfig,
+  datasetName: string,
   fetchFn: typeof globalThis.fetch,
 ): Promise<number> {
   const response = await fetchFn(
-    `https://api.axiom.co/v2/datasets/${encodeURIComponent(config.axiomDataset)}`,
+    `https://api.axiom.co/v2/datasets/${encodeURIComponent(datasetName)}`,
     {
       headers: {
         Authorization: `Bearer ${config.axiomApiToken}`,
@@ -55,14 +56,26 @@ async function loadAxiomRetentionDays(
     },
   );
   if (!response.ok) {
-    throw new Error(`Axiom dataset retention verification failed with status ${response.status}`);
+    throw new Error(
+      `Axiom dataset retention verification failed with status ${response.status} for ${datasetName}; verify the dataset exists and AXIOM_API_TOKEN can read it`,
+    );
   }
-  const dataset = axiomDatasetSchema.parse(await response.json());
+  const result = axiomDatasetSchema.safeParse(await response.json());
+  if (!result.success) {
+    throw new Error(
+      `Axiom dataset ${datasetName} does not expose valid retention settings; account erasure cannot verify the retention boundary`,
+    );
+  }
+  const dataset = result.data;
   if (!dataset.useRetentionPeriod) {
-    throw new Error("Axiom dataset retention is not enabled");
+    throw new Error(
+      `Axiom dataset retention is not enabled for ${datasetName}; enable retention at 29 days or less`,
+    );
   }
   if (dataset.retentionDays > MAX_ACCOUNT_ERASURE_RETENTION_DAYS) {
-    throw new Error("Axiom dataset retention exceeds the 29-day account-erasure boundary");
+    throw new Error(
+      `Axiom dataset retention exceeds the 29-day account-erasure boundary for ${datasetName}; set retention to 29 days or less`,
+    );
   }
   return dataset.retentionDays;
 }
@@ -109,7 +122,10 @@ export async function verifyProcessorRetentionPolicies(
   sentryRetentionDays: number;
 }> {
   const config = configSchema.parse(rawConfig);
-  const axiomRetentionDays = await loadAxiomRetentionDays(config, fetchFn);
+  const axiomRetentionDays = Math.max(
+    await loadAxiomRetentionDays(config, config.axiomDataset, fetchFn),
+    await loadAxiomRetentionDays(config, "dofek-traces", fetchFn),
+  );
   const sentryRetentionDays = await loadSentryRetentionDays(config, fetchFn);
   return { axiomRetentionDays, sentryRetentionDays };
 }

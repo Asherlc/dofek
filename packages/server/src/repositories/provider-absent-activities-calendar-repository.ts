@@ -1,4 +1,3 @@
-import { TrainingStressCalculator } from "@dofek/training/training-load";
 import type { Database } from "dofek/db";
 import { z } from "zod";
 import { BaseRepository } from "../lib/base-repository.ts";
@@ -6,7 +5,6 @@ import { dateWindowStartString } from "../lib/date-window.ts";
 import { timestampStringSchema } from "../lib/typed-sql.ts";
 import {
   activityRowSchema,
-  baselineRowSchema,
   type CalendarActivityEntry,
   type CalendarDayActivities,
   createProviderAbsentCalendarEntry,
@@ -27,6 +25,7 @@ const activitySummaryMetricsRowSchema = z.object({
   avg_hr: z.coerce.number().nullable(),
   max_hr: z.coerce.number().nullable(),
   avg_power: z.coerce.number().nullable(),
+  power_tss: z.coerce.number().nullable(),
   total_distance: z.coerce.number().nullable(),
   elevation_gain_m: z.coerce.number().nullable(),
   centroid_lat: z.coerce.number().nullable(),
@@ -48,6 +47,10 @@ export class ProviderAbsentActivitiesCalendarRepository extends BaseRepository {
   }
 
   async getWeekList(input: WeekListInput): Promise<CalendarDayActivities[]> {
+    return this.getDayGroups(await this.getRows(input));
+  }
+
+  async getRows(input: WeekListInput) {
     const days = input.weeks * 7;
     const windowStart = dateWindowStartString(input.endDate, days);
     const activityTypeFilter = input.activityType
@@ -69,6 +72,7 @@ export class ProviderAbsentActivitiesCalendarRepository extends BaseRepository {
           toString(activity.group_id) AS route_activity_id,
           activity.name AS name,
           activity.canonical_type AS canonical_type,
+          activity.canonical_type AS primary_canonical_type,
           activity.modality AS modality,
           toString(activity.started_at) AS started_at,
           toString(activity.ended_at) AS ended_at,
@@ -77,6 +81,10 @@ export class ProviderAbsentActivitiesCalendarRepository extends BaseRepository {
           activity.provider_id AS primary_provider_id,
           activity.source_name AS primary_source_name,
           [toString(activity.id)] AS origin_candidate_member_ids,
+          CAST([], 'Array(Map(String, String))') AS origin_evidence,
+          [map('providerId', activity.provider_id, 'externalId', activity.external_id,
+            'memberActivityId', toString(activity.id), 'subsource', coalesce(activity.source_name, ''),
+            'providerAbsentAt', toString(activity.provider_absent_at))] AS absent_source_external_ids,
           activity.source_name AS source_name,
           [activity.id] AS member_activity_ids,
           activity.timezone AS timezone,
@@ -87,6 +95,7 @@ export class ProviderAbsentActivitiesCalendarRepository extends BaseRepository {
           NULL AS avg_hr,
           NULL AS max_hr,
           NULL AS avg_power,
+          NULL AS power_tss,
           NULL AS total_distance,
           NULL AS elevation_gain_m,
           NULL AS centroid_lat,
@@ -106,23 +115,19 @@ export class ProviderAbsentActivitiesCalendarRepository extends BaseRepository {
       queryParams,
     );
 
+    return activityRows;
+  }
+
+  async getDayGroups(
+    activityRows: z.infer<typeof providerAbsentActivityRowSchema>[],
+  ): Promise<CalendarDayActivities[]> {
     if (activityRows.length === 0) {
       return [];
     }
 
     const activityIds = activityRows.map((row) => row.id);
-    const [summaryRows, baselineRows, routePreviewByActivityId] = await Promise.all([
+    const [summaryRows, routePreviewByActivityId] = await Promise.all([
       this.#fetchSummaryMetricsByActivityId(activityIds),
-      this.#sensorStore.query(
-        baselineRowSchema,
-        `SELECT
-            up.max_hr AS max_hr,
-            up.resting_hr AS resting_hr,
-            up.ftp AS ftp
-          FROM postgres_fitness.user_profile_current up
-          WHERE up.id = {userId:UUID}`,
-        { userId: this.userId },
-      ),
       getActivityRoutePreviews(this.#sensorStore, this.userId, activityIds),
     ]);
 
@@ -135,6 +140,7 @@ export class ProviderAbsentActivitiesCalendarRepository extends BaseRepository {
         avg_hr: summary.avg_hr,
         max_hr: summary.max_hr,
         avg_power: summary.avg_power,
+        power_tss: summary.power_tss,
         total_distance: summary.total_distance,
         elevation_gain_m: summary.elevation_gain_m,
         centroid_lat: summary.centroid_lat,
@@ -142,7 +148,6 @@ export class ProviderAbsentActivitiesCalendarRepository extends BaseRepository {
       };
     });
 
-    const baseline = baselineRows[0] ?? { max_hr: null, resting_hr: null, ftp: null };
     const mapReadinessByActivityId = await getActivityMapReadiness(
       this.#sensorStore,
       this.userId,
@@ -154,13 +159,10 @@ export class ProviderAbsentActivitiesCalendarRepository extends BaseRepository {
           memberActivityIds: row.member_activity_ids,
         })),
     );
-    const calculator = new TrainingStressCalculator();
 
     const dayMap = new Map<string, CalendarActivityEntry[]>();
     for (const row of enrichedRows) {
       const entry = createProviderAbsentCalendarEntry(row, {
-        baseline,
-        calculator,
         routePreview: routePreviewByActivityId.get(row.id),
         mapReadiness: mapReadinessByActivityId.get(row.id),
       });
@@ -193,7 +195,8 @@ export class ProviderAbsentActivitiesCalendarRepository extends BaseRepository {
     return this.#sensorStore.query(
       activitySummaryMetricsRowSchema,
       `SELECT
-          toString(activity_id) AS id,
+          toString(summary.activity_id) AS id,
+          metrics.power_tss AS power_tss,
           avg_hr,
           max_hr,
           avg_power,
@@ -201,11 +204,13 @@ export class ProviderAbsentActivitiesCalendarRepository extends BaseRepository {
           elevation_gain_m,
           centroid_lat,
           centroid_lng
-        FROM analytics.activity_summary_rows FINAL
-        WHERE user_id = {userId:UUID}
-          AND activity_id IN {activityIds:Array(UUID)}
+        FROM analytics.activity_summary_rows AS summary FINAL
+        LEFT JOIN analytics.cycling_activity_power_metrics AS metrics
+          ON metrics.user_id = summary.user_id AND metrics.activity_id = summary.activity_id
+        WHERE summary.user_id = {userId:UUID}
+          AND summary.activity_id IN {activityIds:Array(UUID)}
         ORDER BY refresh_version DESC
-        LIMIT 1 BY activity_id`,
+        LIMIT 1 BY summary.activity_id`,
       { userId: this.userId, activityIds },
     );
   }

@@ -1,4 +1,5 @@
 import { formatDateYmd } from "@dofek/format/format";
+import type { ActivitySourceTree } from "@dofek/providers/activity-source-tree";
 import { providerLabel } from "@dofek/providers/providers";
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -9,118 +10,15 @@ import { useMemo } from "react";
 import { View } from "react-native";
 import { expect, within } from "storybook/test";
 import ActivitiesScreen from "../../app/(tabs)/activities";
+import { branchingActivitySourceTree } from "../../app-fixtures/activity-source-tree";
+import { activityImageFixture } from "../../components/activity-images-test-helpers";
 import { trpc } from "../../lib/trpc";
 
 const mapPreview = {
   width: 1024,
   height: 576,
-  tiles: [
-    {
-      url: "https://tile.openstreetmap.org/19/83856/202646.png",
-      x: -179.332,
-      y: -132.862,
-      width: 256,
-      height: 256,
-    },
-    {
-      url: "https://tile.openstreetmap.org/19/83857/202646.png",
-      x: 76.668,
-      y: -132.862,
-      width: 256,
-      height: 256,
-    },
-    {
-      url: "https://tile.openstreetmap.org/19/83858/202646.png",
-      x: 332.668,
-      y: -132.862,
-      width: 256,
-      height: 256,
-    },
-    {
-      url: "https://tile.openstreetmap.org/19/83859/202646.png",
-      x: 588.668,
-      y: -132.862,
-      width: 256,
-      height: 256,
-    },
-    {
-      url: "https://tile.openstreetmap.org/19/83860/202646.png",
-      x: 844.668,
-      y: -132.862,
-      width: 256,
-      height: 256,
-    },
-    {
-      url: "https://tile.openstreetmap.org/19/83856/202647.png",
-      x: -179.332,
-      y: 123.138,
-      width: 256,
-      height: 256,
-    },
-    {
-      url: "https://tile.openstreetmap.org/19/83857/202647.png",
-      x: 76.668,
-      y: 123.138,
-      width: 256,
-      height: 256,
-    },
-    {
-      url: "https://tile.openstreetmap.org/19/83858/202647.png",
-      x: 332.668,
-      y: 123.138,
-      width: 256,
-      height: 256,
-    },
-    {
-      url: "https://tile.openstreetmap.org/19/83859/202647.png",
-      x: 588.668,
-      y: 123.138,
-      width: 256,
-      height: 256,
-    },
-    {
-      url: "https://tile.openstreetmap.org/19/83860/202647.png",
-      x: 844.668,
-      y: 123.138,
-      width: 256,
-      height: 256,
-    },
-    {
-      url: "https://tile.openstreetmap.org/19/83856/202648.png",
-      x: -179.332,
-      y: 379.138,
-      width: 256,
-      height: 256,
-    },
-    {
-      url: "https://tile.openstreetmap.org/19/83857/202648.png",
-      x: 76.668,
-      y: 379.138,
-      width: 256,
-      height: 256,
-    },
-    {
-      url: "https://tile.openstreetmap.org/19/83858/202648.png",
-      x: 332.668,
-      y: 379.138,
-      width: 256,
-      height: 256,
-    },
-    {
-      url: "https://tile.openstreetmap.org/19/83859/202648.png",
-      x: 588.668,
-      y: 379.138,
-      width: 256,
-      height: 256,
-    },
-    {
-      url: "https://tile.openstreetmap.org/19/83860/202648.png",
-      x: 844.668,
-      y: 379.138,
-      width: 256,
-      height: 256,
-    },
-  ],
+  center: [-122.4188, 37.77525] satisfies [number, number],
+  zoom: 18,
   routePath: [
     { x: 288.304, y: 453.089 },
     { x: 512, y: 311.585 },
@@ -134,113 +32,8 @@ const climbingSourceLocation = {
   mapPreview: {
     width: 1024,
     height: 576,
-    tiles: [
-      {
-        url: "https://tile.openstreetmap.org/14/3393/6201.png",
-        x: -32.996,
-        y: -25.606,
-        width: 256,
-        height: 256,
-      },
-      {
-        url: "https://tile.openstreetmap.org/14/3394/6201.png",
-        x: 223.004,
-        y: -25.606,
-        width: 256,
-        height: 256,
-      },
-      {
-        url: "https://tile.openstreetmap.org/14/3395/6201.png",
-        x: 479.004,
-        y: -25.606,
-        width: 256,
-        height: 256,
-      },
-      {
-        url: "https://tile.openstreetmap.org/14/3396/6201.png",
-        x: 735.004,
-        y: -25.606,
-        width: 256,
-        height: 256,
-      },
-      {
-        url: "https://tile.openstreetmap.org/14/3397/6201.png",
-        x: 991.004,
-        y: -25.606,
-        width: 256,
-        height: 256,
-      },
-      {
-        url: "https://tile.openstreetmap.org/14/3393/6202.png",
-        x: -32.996,
-        y: 230.394,
-        width: 256,
-        height: 256,
-      },
-      {
-        url: "https://tile.openstreetmap.org/14/3394/6202.png",
-        x: 223.004,
-        y: 230.394,
-        width: 256,
-        height: 256,
-      },
-      {
-        url: "https://tile.openstreetmap.org/14/3395/6202.png",
-        x: 479.004,
-        y: 230.394,
-        width: 256,
-        height: 256,
-      },
-      {
-        url: "https://tile.openstreetmap.org/14/3396/6202.png",
-        x: 735.004,
-        y: 230.394,
-        width: 256,
-        height: 256,
-      },
-      {
-        url: "https://tile.openstreetmap.org/14/3397/6202.png",
-        x: 991.004,
-        y: 230.394,
-        width: 256,
-        height: 256,
-      },
-      {
-        url: "https://tile.openstreetmap.org/14/3393/6203.png",
-        x: -32.996,
-        y: 486.394,
-        width: 256,
-        height: 256,
-      },
-      {
-        url: "https://tile.openstreetmap.org/14/3394/6203.png",
-        x: 223.004,
-        y: 486.394,
-        width: 256,
-        height: 256,
-      },
-      {
-        url: "https://tile.openstreetmap.org/14/3395/6203.png",
-        x: 479.004,
-        y: 486.394,
-        width: 256,
-        height: 256,
-      },
-      {
-        url: "https://tile.openstreetmap.org/14/3396/6203.png",
-        x: 735.004,
-        y: 486.394,
-        width: 256,
-        height: 256,
-      },
-      {
-        url: "https://tile.openstreetmap.org/14/3397/6203.png",
-        x: 991.004,
-        y: 486.394,
-        width: 256,
-        height: 256,
-      },
-    ],
+    center: [-105.39999996, 40.00700003],
+    zoom: 13,
     routePath: null,
   },
   sourcePoints: [
@@ -261,20 +54,77 @@ const climbingSourceLocation = {
   ],
 } satisfies ActivityLocation;
 
-function createStoryData(climbingActivity = false, originProvider: string | null = "garmin") {
+function createStoryData(
+  climbingActivity = false,
+  originProvider: string | null = "garmin",
+  photoActivity = false,
+  originSourceName: string | null = null,
+  branchingSources = false,
+) {
   const today = formatDateYmd();
   const yesterday = formatDateYmd(new Date(Date.now() - 86_400_000));
   const queryInput = { weeks: 4, endDate: today };
+  const hangboarding =
+    originProvider === "apple_health" && originSourceName === "Hang Ten Training";
+  const primaryActivityType = climbingActivity
+    ? "climbing"
+    : hangboarding
+      ? "hangboard"
+      : "road_cycling";
+  const hasRoute = !climbingActivity && !hangboarding;
 
-  const weekList: AppRouterOutputs["calendar"]["weekList"] = [
+  const sourceTree: ActivitySourceTree = branchingSources
+    ? branchingActivitySourceTree
+    : originProvider === null
+      ? { primary: null, otherSources: branchingActivitySourceTree.otherSources }
+      : originProvider === "apple_health"
+        ? {
+            primary: {
+              id: "recording-app",
+              providerId: hangboarding ? "hang-ten" : "strong",
+              sourceName: null,
+              label: hangboarding ? "Hang Ten" : "Strong",
+              description: null,
+              url: null,
+              children: [
+                {
+                  id: "apple-health",
+                  providerId: "apple_health",
+                  sourceName: null,
+                  label: "Apple Health",
+                  description: null,
+                  url: null,
+                  children: [],
+                },
+              ],
+            },
+            otherSources: [],
+          }
+        : {
+            primary: {
+              id: "recording-app",
+              providerId: originProvider,
+              sourceName: originProvider === "garmin" ? originSourceName : null,
+              label:
+                originProvider === "garmin" && originSourceName
+                  ? originSourceName
+                  : providerLabel(originProvider),
+              description: null,
+              url: null,
+              children: [],
+            },
+            otherSources: [],
+          };
+
+  const weekListV2: AppRouterOutputs["calendar"]["weekListV2"]["days"] = [
     {
       date: today,
       activities: [
         {
           id: "story-outdoor",
-          name: "Morning Ride",
-          activityType: "road_cycling",
-          modality: "road",
+          name: hangboarding ? "Hangboard repeats" : "Morning Ride",
+          activityType: hangboarding ? "hangboard" : "road_cycling",
+          modality: hangboarding ? null : "road",
           startedAt: `${today}T07:30:00Z`,
           endedAt: `${today}T09:00:00Z`,
           localTimeContext: {
@@ -285,6 +135,7 @@ function createStoryData(climbingActivity = false, originProvider: string | null
           },
           durationMin: 90,
           source: {
+            tree: sourceTree,
             origin:
               originProvider === null
                 ? { status: "unresolved", candidateMemberActivityIds: [] }
@@ -292,23 +143,30 @@ function createStoryData(climbingActivity = false, originProvider: string | null
                     status: "resolved",
                     memberActivityId: "00000000-0000-4000-8000-000000000001",
                     providerId: originProvider,
-                    sourceName: "Garmin Edge 530",
+                    sourceName:
+                      originSourceName ?? (originProvider === "apple_health" ? "Strong" : null),
                   },
             primarySourceLabel: originProvider === null ? null : providerLabel(originProvider),
             sourceCount: 2,
             overlapSummary: "2 matched source records",
           },
           lastProcessedAt: `${today}T09:05:00Z`,
-          distanceMeters: 32400,
-          distanceState: { status: "available" },
-          elevationGainM: 412,
-          elevationState: { status: "available" },
-          location: {
-            kind: "recorded_gps",
-            centroidLat: 37.7749,
-            centroidLng: -122.4194,
-            mapPreview,
-          },
+          distanceMeters: hangboarding ? null : 32400,
+          distanceState: hangboarding
+            ? { status: "missing", reason: "Distance not recorded" }
+            : { status: "available" },
+          elevationGainM: hangboarding ? null : 412,
+          elevationState: hangboarding
+            ? { status: "missing", reason: "Elevation not recorded" }
+            : { status: "available" },
+          location: hangboarding
+            ? null
+            : {
+                kind: "recorded_gps",
+                centroidLat: 37.7749,
+                centroidLng: -122.4194,
+                mapPreview,
+              },
           tss: 78.4,
           stats: [{ status: "available", label: "Training Stress Score", value: "78.4" }],
         },
@@ -332,6 +190,18 @@ function createStoryData(climbingActivity = false, originProvider: string | null
           },
           durationMin: 45,
           source: {
+            tree: {
+              primary: {
+                id: "strong",
+                providerId: "strong",
+                sourceName: null,
+                label: "Strong",
+                description: null,
+                url: null,
+                children: [],
+              },
+              otherSources: [],
+            },
             origin: { status: "unresolved", candidateMemberActivityIds: [] },
             primarySourceLabel: "Strong (via Apple Health)",
             sourceCount: 1,
@@ -358,7 +228,7 @@ function createStoryData(climbingActivity = false, originProvider: string | null
   ];
 
   if (climbingActivity) {
-    weekList[0].activities = [
+    weekListV2[0].activities = [
       {
         id: "a1220000-0000-4000-8000-000000000001",
         name: "Boulder Canyon climbing",
@@ -374,6 +244,18 @@ function createStoryData(climbingActivity = false, originProvider: string | null
         },
         durationMin: 120,
         source: {
+          tree: {
+            primary: {
+              id: "mountain-project",
+              providerId: "mountain-project",
+              sourceName: null,
+              label: "Mountain Project",
+              description: null,
+              url: null,
+              children: [],
+            },
+            otherSources: [],
+          },
           origin: { status: "unresolved", candidateMemberActivityIds: [] },
           primarySourceLabel: "Mountain Project",
           sourceCount: 1,
@@ -394,15 +276,15 @@ function createStoryData(climbingActivity = false, originProvider: string | null
   const activityOverview = {
     activityCount: 2,
     totalMinutes: climbingActivity ? 165 : 135,
-    totalDistanceMeters: climbingActivity ? null : 32400,
-    totalDistanceState: climbingActivity
-      ? { status: "missing", reason: "Distance not recorded" }
-      : { status: "available" },
-    totalElevationGainM: climbingActivity ? null : 412,
-    totalElevationState: climbingActivity
-      ? { status: "missing", reason: "Elevation not recorded" }
-      : { status: "available" },
-    activityTypes: [climbingActivity ? "climbing" : "road_cycling", "strength"],
+    totalDistanceMeters: hasRoute ? 32400 : null,
+    totalDistanceState: hasRoute
+      ? { status: "available" }
+      : { status: "missing", reason: "Distance not recorded" },
+    totalElevationGainM: hasRoute ? 412 : null,
+    totalElevationState: hasRoute
+      ? { status: "available" }
+      : { status: "missing", reason: "Elevation not recorded" },
+    activityTypes: [primaryActivityType, "strength"],
   };
 
   const calendarData = [
@@ -418,7 +300,7 @@ function createStoryData(climbingActivity = false, originProvider: string | null
       date: today,
       activityCount: 1,
       totalMinutes: climbingActivity ? 120 : 90,
-      activityTypes: [climbingActivity ? "climbing" : "road_cycling"],
+      activityTypes: [primaryActivityType],
       trainingTimeBand: "high" as const,
       trainingTimeMeaning: "High recorded training volume",
     },
@@ -443,7 +325,32 @@ function createStoryData(climbingActivity = false, originProvider: string | null
     operations: [],
   };
 
-  return { today, queryInput, weekList, activityOverview, calendarData, processingStatus };
+  const activityImages = {
+    images: photoActivity
+      ? [
+          {
+            ...activityImageFixture,
+            url: "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=1200&q=80",
+          },
+        ]
+      : [],
+    coverage: [],
+    acquisition: [],
+  };
+  return {
+    today,
+    queryInput,
+    weekListV2: {
+      days: weekListV2,
+      totalCount: weekListV2.reduce((count, day) => count + day.activities.length, 0),
+      page: 0,
+      pageSize: 20,
+    },
+    activityOverview,
+    calendarData,
+    processingStatus,
+    activityImages,
+  };
 }
 
 function createMockLink(storyData: ReturnType<typeof createStoryData>): TRPCLink<AppRouter> {
@@ -458,14 +365,16 @@ function createMockObservable(
 ): OperationResultObservable<AppRouter, unknown> {
   const result: OperationResultObservable<AppRouter, unknown> = {
     subscribe(observer) {
-      if (path === "calendar.weekList") {
-        observer.next?.({ result: { data: storyData.weekList } });
+      if (path === "calendar.weekListV2") {
+        observer.next?.({ result: { data: storyData.weekListV2 } });
       } else if (path === "calendar.activityOverview") {
         observer.next?.({ result: { data: storyData.activityOverview } });
       } else if (path === "calendar.calendarData") {
         observer.next?.({ result: { data: storyData.calendarData } });
       } else if (path === "processing.status") {
         observer.next?.({ result: { data: storyData.processingStatus } });
+      } else if (path === "activity.images") {
+        observer.next?.({ result: { data: storyData.activityImages } });
       } else {
         throw new Error(`Unhandled activities story tRPC operation: ${path}`);
       }
@@ -483,22 +392,38 @@ function MockProviders({
   children,
   climbingActivity,
   originProvider,
+  photoActivity,
+  originSourceName,
+  branchingSources,
 }: {
   children: React.ReactNode;
   climbingActivity: boolean;
   originProvider: string | null;
+  photoActivity: boolean;
+  originSourceName: string | null;
+  branchingSources: boolean;
 }) {
   const storyData = useMemo(
-    () => createStoryData(climbingActivity, originProvider),
-    [climbingActivity, originProvider],
+    () =>
+      createStoryData(
+        climbingActivity,
+        originProvider,
+        photoActivity,
+        originSourceName,
+        branchingSources,
+      ),
+    [climbingActivity, originProvider, photoActivity, originSourceName, branchingSources],
   );
   const queryClient = useMemo(() => {
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false, staleTime: Number.POSITIVE_INFINITY } },
     });
     client.setQueryData(
-      [["calendar", "weekList"], { input: storyData.queryInput, type: "query" }],
-      storyData.weekList,
+      [
+        ["calendar", "weekListV2"],
+        { input: { ...storyData.queryInput, page: 0, pageSize: 20 }, type: "query" },
+      ],
+      storyData.weekListV2,
     );
     client.setQueryData(
       [["calendar", "activityOverview"], { input: storyData.queryInput, type: "query" }],
@@ -536,11 +461,14 @@ const meta = {
     (Story, context) => (
       <MockProviders
         climbingActivity={context.parameters.climbingActivity === true}
+        branchingSources={context.parameters.branchingSources === true}
+        photoActivity={context.parameters.photoActivity === true}
         originProvider={
           context.parameters.originProvider === null
             ? null
             : (context.parameters.originProvider ?? "garmin")
         }
+        originSourceName={context.parameters.originSourceName ?? null}
       >
         <View style={{ flex: 1, backgroundColor: "#000" }}>
           <Story />
@@ -574,10 +502,17 @@ export const Default: Story = {
 };
 
 export const SelectionMode: Story = {
+  parameters: { originProvider: "whoop" },
   play: async ({ canvasElement, userEvent }) => {
-    await userEvent.click(
-      await within(canvasElement).findByRole("button", { name: "Select activities" }),
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("button", { name: "Select activities" }));
+    await userEvent.click(await canvas.findByRole("button", { name: "Lineage: WHOOP (Cloud)" }));
+    await expect(canvas.getByRole("button", { name: "Lineage: WHOOP (Cloud)" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
     );
+    await userEvent.click(canvas.getByRole("button", { name: "Lineage: WHOOP (Cloud)" }));
+    await expect(canvas.getByText("0 activities selected")).toBeVisible();
   },
 };
 
@@ -594,4 +529,36 @@ export const ClimbingActivity: Story = {
 export const UnresolvedRecordingOrigin: Story = { parameters: { originProvider: null } };
 export const OnlyStravaCopyAvailable: Story = { parameters: { originProvider: "strava" } };
 export const KayaProviderLogo: Story = { parameters: { originProvider: "kaya" } };
-export const PrimaryProviderWithoutLogo: Story = { parameters: { originProvider: "velohero" } };
+export const PrimaryProviderWithoutLogo: Story = {
+  parameters: { originProvider: "mountain-project" },
+};
+
+export const AppleHealthSourceApp: Story = { parameters: { originProvider: "apple_health" } };
+export const PhotoWithoutMap: Story = { parameters: { photoActivity: true } };
+export const DirectWhoop: Story = { parameters: { originProvider: "whoop" } };
+export const HangTenViaAppleHealth: Story = {
+  parameters: { originProvider: "apple_health", originSourceName: "Hang Ten Training" },
+  play: async ({ canvasElement, userEvent }) => {
+    await userEvent.click(
+      await within(canvasElement).findByRole("button", { name: "Lineage: Hang Ten" }),
+    );
+    const canvas = within(canvasElement);
+    await expect(await canvas.findByText("Apple Health")).toBeVisible();
+  },
+};
+
+export const BranchingSourcesCollapsed: Story = {
+  parameters: { branchingSources: true },
+};
+export const BranchingSourcesExpanded: Story = {
+  parameters: { branchingSources: true },
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    const trigger = await canvas.findByRole("button", { name: "Lineage: Hang Ten" });
+    await userEvent.click(trigger);
+    await expect(trigger).toHaveAttribute("aria-expanded", "true");
+    await expect(canvas.getAllByText("Hang Ten")).toHaveLength(2);
+    await expect(canvas.getAllByText("Strava")).toHaveLength(2);
+    await expect(canvas.getByText("WHOOP")).toBeVisible();
+  },
+};

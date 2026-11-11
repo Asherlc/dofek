@@ -661,6 +661,7 @@ export interface ProcessingOperationWithEvents extends ProcessingOperation {
 interface ScopedProcessingOperationsInput {
   userId: string;
   providerId?: string;
+  kind?: ProcessingOperation["kind"];
   datasetKeys?: readonly ProcessingDatasetKey[];
   limit?: number;
 }
@@ -671,6 +672,7 @@ export async function listScopedProcessingOperations(
 ): Promise<ProcessingOperationWithEvents[]> {
   const userId = z.uuid().parse(input.userId);
   const providerId = z.string().min(1).optional().parse(input.providerId);
+  const kind = operationKindSchema.optional().parse(input.kind);
   const datasetKeys = z.array(datasetKeySchema).optional().parse(input.datasetKeys);
   const limit = z
     .number()
@@ -692,6 +694,7 @@ export async function listScopedProcessingOperations(
           FROM fitness.processing_operation operation
           WHERE operation.user_id = ${userId}::uuid
             AND (${providerId ?? null}::text IS NULL OR operation.provider_id = ${providerId ?? null})
+            ${kind ? sql`AND operation.kind = ${kind}` : sql``}
             ${datasetPredicate}
             AND operation.created_at >= now() - interval '90 days'
           ORDER BY operation.created_at DESC, operation.id DESC

@@ -19,27 +19,23 @@ export const ADAPTIVE_MIN_REQUESTS_FOR_BUDGET_LEARNING = 8;
 
 export const DEFAULT_PROVIDER_THROTTLE_MS: Readonly<Record<string, number>> = {
   strava: 10_000,
-  garmin: 5_000,
   whoop: 1_000,
 };
 
 /** Providers that run one BullMQ job per sync step (not one job per full sync). */
-export const STEP_CHAIN_SYNC_PROVIDERS: ReadonlySet<string> = new Set(["garmin", "whoop", "ziva"]);
+export const STEP_CHAIN_SYNC_PROVIDERS: ReadonlySet<string> = new Set(["whoop", "ziva"]);
 
 /**
  * Typical HTTP calls per step-chain sync job (auth refresh, bootstrap, and bounded data calls).
  * Used to align BullMQ job pacing with HTTP-level adaptive budgets.
  */
 export const DEFAULT_HTTP_REQUESTS_PER_SYNC_JOB: Readonly<Record<string, number>> = {
-  garmin: 2,
   whoop: 3,
   ziva: 17,
 };
 
 /** Seed inferred budgets for step-chain providers before the first 429 observation. */
 export const DEFAULT_PROVIDER_INFERRED_BUDGET: Readonly<Record<string, number>> = {
-  // Garmin's unofficial API is IP-based; keep the default budget conservative.
-  garmin: 20,
   whoop: ADAPTIVE_DEFAULT_INFERRED_BUDGET,
 };
 

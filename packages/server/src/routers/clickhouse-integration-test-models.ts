@@ -1,4 +1,5 @@
 import { buildActivitySensorSummaryRowsTableSql } from "../../../../src/db/clickhouse-activity-sensor-summary.ts";
+import { createMigration as createHealthSensorMigration } from "../../../../src/db/clickhouse-migrations/0111_daily_health_sensor.ts";
 
 export interface IsolatedClickHouseDatabases {
   analytics: string;
@@ -17,7 +18,7 @@ export function rewriteClickHouseDatabaseNames(
 }
 
 export const CLICKHOUSE_TEST_VIEW_REGEX =
-  /^CREATE (?:MATERIALIZED )?VIEW IF NOT EXISTS ([A-Za-z0-9_]+\.[A-Za-z0-9_]+)(?:\n[\s\S]*?)?\nAS\n?([\s\S]*)$/;
+  /^CREATE (?:(?:MATERIALIZED )?VIEW IF NOT EXISTS|OR REPLACE VIEW) ([A-Za-z0-9_]+\.[A-Za-z0-9_]+)(?:\n[\s\S]*?)?\nAS\n?([\s\S]*)$/;
 export const clickHouseMigrationAnalyticsViewNames = [
   "analytics.v_activity",
   "analytics.v_activity_members",
@@ -29,19 +30,15 @@ export const clickHouseMigrationAnalyticsViewNames = [
   "analytics.daily_recovery_inputs",
   "analytics.daily_recovery",
   "analytics.deduped_location",
-  "analytics.daily_endurance_load",
   "analytics.activity_summary",
   "analytics.hiking_activity",
   "analytics.daily_activity_load",
-  "analytics.weekly_endurance_ramp_rate",
-  "analytics.weekly_training_monotony",
   "analytics.daily_strain",
   "analytics.daily_body_measurement",
-  "analytics.healthspan_activity_zone_minutes",
-  "analytics.weekly_healthspan",
   "analytics.activity_trend_daily",
 ] as const;
 export const analyticsBuildOrder = [
+  "analytics.daily_health_sensor",
   "analytics.v_activity",
   "analytics.v_activity_members",
   "analytics.v_sleep",
@@ -61,19 +58,19 @@ export const analyticsBuildOrder = [
   "analytics.activity_stream_points",
   "analytics.activity_heart_rate_zones",
   "analytics.activity_summary",
-  "analytics.daily_endurance_load",
   "analytics.hiking_activity",
   "analytics.daily_activity_load",
-  "analytics.weekly_endurance_ramp_rate",
-  "analytics.weekly_training_monotony",
   "analytics.daily_strain",
   "analytics.daily_body_measurement",
-  "analytics.healthspan_activity_zone_minutes",
-  "analytics.weekly_healthspan",
   "analytics.activity_trend_daily",
 ] as const;
 
 export function buildTestAnalyticsTableStatement(viewName: string): string {
+  if (viewName.endsWith(".daily_health_sensor")) {
+    return createHealthSensorMigration()
+      .statements.join("\n")
+      .replaceAll("analytics.daily_health_sensor", viewName);
+  }
   const columnDefinitionsByViewName: Record<string, string> = {
     v_activity: `id UUID,
 provider_id String,
@@ -100,7 +97,8 @@ representative_activity_id UUID,
 primary_provider_id Nullable(String),
 primary_source_name Nullable(String),
 origin_candidate_member_ids Array(UUID),
-origin_evidence Array(Map(String, String))`,
+origin_evidence Array(Map(String, String)),
+primary_canonical_type Nullable(String)`,
     v_activity_members: `activity_id UUID,
 user_id UUID,
 started_at DateTime64(6, 'UTC'),
@@ -246,10 +244,6 @@ hrv_mean_60d Nullable(Float64),
 hrv_sd_60d Nullable(Float64),
 rhr_mean_60d Nullable(Float64),
 rhr_sd_60d Nullable(Float64),
-hrv_score Nullable(Float64),
-resting_hr_score Nullable(Float64),
-sleep_score Nullable(Float64),
-respiratory_rate_score Nullable(Float64),
 is_deleted UInt8 DEFAULT 0,
 refresh_version UInt64,
 refreshed_at DateTime64(9)`,
@@ -365,7 +359,8 @@ origin_candidate_member_ids Array(UUID),
 origin_evidence Array(Map(String, String)),
 refresh_version UInt64,
 is_deleted UInt8,
-refreshed_at DateTime64(9, 'UTC')`,
+refreshed_at DateTime64(9, 'UTC'),
+primary_canonical_type Nullable(String)`,
     activity_sensor_sample: `activity_id UUID,
 user_id UUID,
 recorded_at DateTime64(6, 'UTC'),
@@ -399,6 +394,32 @@ refresh_version UInt64,
 is_deleted UInt8,
 source_refreshed_at DateTime64(9, 'UTC'),
 refreshed_at Nullable(DateTime64(6, 'UTC'))`,
+    activity_route_identity: `activity_id UUID,
+user_id UUID,
+canonical_activity_id UUID,
+explicit_provider_route_ids Array(Tuple(provider String, value String, source_activity_id UUID, field String)),
+route_fingerprint Nullable(String),
+reverse_route_fingerprint Nullable(String),
+direction String,
+points Array(Tuple(lat Float64, lng Float64)),
+point_count UInt64,
+route_distance_meters Nullable(Float64),
+started_at Nullable(DateTime64(6, 'UTC')),
+ended_at Nullable(DateTime64(6, 'UTC')),
+elevation_profile Array(Float64),
+coverage_pct Nullable(Float64),
+largest_gap_seconds Nullable(Float64),
+source_providers Array(String),
+source_devices Array(String),
+geometry_status String,
+activity_source_refreshed_at DateTime64(9, 'UTC'),
+location_source_refreshed_at DateTime64(9, 'UTC'),
+identity_source_refreshed_at DateTime64(9, 'UTC'),
+altitude_source_refreshed_at DateTime64(9, 'UTC'),
+source_refreshed_at DateTime64(9, 'UTC'),
+refresh_version UInt64,
+is_deleted UInt8,
+refreshed_at DateTime64(9, 'UTC')`,
     activity_location_summary_rows: `activity_id UUID,
 user_id UUID,
 total_distance Nullable(Float64),
@@ -418,48 +439,6 @@ activity_id UUID,
 zones Array(Tuple(zone UInt8, seconds UInt32)),
 refresh_version UInt64,
 is_deleted UInt8,
-refreshed_at DateTime64(9)`,
-    activity_summary: `activity_id UUID,
-user_id UUID,
-canonical_type String,
-provider_type Nullable(String),
-modality Nullable(String),
-name Nullable(String),
-started_at DateTime64(6, 'UTC'),
-ended_at Nullable(DateTime64(6, 'UTC')),
-avg_hr Nullable(Float64),
-max_hr Nullable(Int16),
-min_hr Nullable(Int16),
-avg_power Nullable(Float64),
-max_power Nullable(Int16),
-avg_speed Nullable(Float64),
-max_speed Nullable(Float64),
-avg_cadence Nullable(Float64),
-elevation_gain_legacy Nullable(Float64),
-total_distance Nullable(Float64),
-centroid_lat Nullable(Float64),
-centroid_lng Nullable(Float64),
-avg_left_balance Nullable(Float64),
-avg_left_torque_eff Nullable(Float64),
-avg_right_torque_eff Nullable(Float64),
-avg_left_pedal_smooth Nullable(Float64),
-avg_right_pedal_smooth Nullable(Float64),
-elevation_gain_m Nullable(Float64),
-elevation_loss_m Nullable(Float64),
-avg_stance_time Nullable(Float64),
-avg_vertical_osc Nullable(Float64),
-avg_ground_contact_time Nullable(Float64),
-avg_stride_length Nullable(Float64),
-sample_count UInt64,
-hr_sample_count UInt64,
-power_sample_count UInt64,
-first_sample_at DateTime64(6, 'UTC'),
-last_sample_at DateTime64(6, 'UTC'),
-best_twenty_minute_power Nullable(Float64),
-normalized_power Nullable(Float64),
-smoothed_avg_power Nullable(Float64),
-climbing_elevation_gain_m Nullable(Float64),
-climbing_seconds Nullable(Int32),
 refreshed_at DateTime64(9)`,
     hiking_activity: `activity_id UUID,
 user_id UUID,
@@ -485,62 +464,13 @@ daily_load Nullable(Float64),
 is_deleted UInt8,
 refresh_version UInt64,
 refreshed_at DateTime64(9)`,
-    daily_endurance_load: `activity_id UUID,
-user_id UUID,
-started_at Nullable(DateTime64(6, 'UTC')),
-ended_at Nullable(DateTime64(6, 'UTC')),
-date Nullable(Date),
-training_load Float64,
-is_deleted UInt8,
-refresh_version UInt64,
-refreshed_at DateTime64(9)`,
-    weekly_endurance_ramp_rate: `user_id UUID,
-week Date,
-ctl_start Float64,
-ctl_end Float64,
-ramp_rate Float64,
-is_deleted UInt8,
-refresh_version UInt64,
-refreshed_at DateTime64(9)`,
-    weekly_training_monotony: `user_id UUID,
-week Date,
-monotony Float64,
-strain Float64,
-weekly_load Float64,
-is_deleted UInt8,
-refresh_version UInt64,
-refreshed_at DateTime64(9)`,
     daily_strain: `user_id UUID,
 date Date,
 daily_load Float64,
-strain Float64,
 acute_load_7d Float64,
 chronic_load_28d Float64,
 workload_ratio Nullable(Float64),
 is_deleted UInt8,
-refresh_version UInt64,
-refreshed_at DateTime64(9)`,
-    healthspan_activity_zone_minutes: `activity_id UUID,
-user_id UUID,
-started_at DateTime64(6, 'UTC'),
-ended_at DateTime64(6, 'UTC'),
-aerobic_minutes Float64,
-high_intensity_minutes Float64,
-is_deleted UInt8,
-refresh_version UInt64,
-refreshed_at DateTime64(9)`,
-    weekly_healthspan: `user_id UUID,
-week_start Date,
-avg_sleep_min Nullable(Float64),
-bedtime_stddev_min Nullable(Float64),
-avg_resting_hr Nullable(Float64),
-avg_steps Nullable(Float64),
-latest_vo2max Nullable(Float64),
-weekly_aerobic_min Float64,
-weekly_high_intensity_min Float64,
-sessions_per_week Nullable(Float64),
-weight_kg Nullable(Float64),
-body_fat_pct Nullable(Float64),
 refresh_version UInt64,
 refreshed_at DateTime64(9)`,
     activity_trend_daily: `user_id UUID,
@@ -628,7 +558,6 @@ max_heart_rate Nullable(Float64),
 average_power Nullable(Float64),
 power_samples UInt64,
 heart_rate_samples UInt64,
-normalized_power Nullable(Float64),
 best_twenty_minute_power Nullable(Float64),
 elevation_gain_meters Nullable(Float64),
 elapsed_seconds Int32,
@@ -639,10 +568,11 @@ efficiency_factor Nullable(Float64),
 zone_two_samples Nullable(Int32),
 is_deleted UInt8,
 refresh_version UInt64,
-refreshed_at DateTime64(9, 'UTC')`,
+refreshed_at DateTime64(9, 'UTC'),
+primary_canonical_type Nullable(String)`,
     daily_cycling: `user_id UUID,
 date Date,
-activities Array(Tuple(UUID, DateTime64(6, 'UTC'), Float64, Float64, Float64, Nullable(Float64), UInt64, UInt64, Nullable(Float64), Nullable(String))),
+activities Array(Tuple(UUID, DateTime64(6, 'UTC'), Float64, Nullable(Float64), Nullable(Float64), Nullable(Float64), UInt64, UInt64, Nullable(String))),
 is_deleted UInt8,
 refresh_version UInt64,
 refreshed_at DateTime64(9, 'UTC')`,
@@ -676,6 +606,7 @@ refreshed_at DateTime64(9)`,
     shortViewName === "deduped_activities" ||
     shortViewName === "activity_sensor_sample" ||
     shortViewName === "activity_location_sample" ||
+    shortViewName === "activity_route_identity" ||
     shortViewName === "activity_sensor_summary_rows" ||
     shortViewName === "activity_location_summary_rows" ||
     shortViewName === "activity_stream_points" ||
@@ -685,13 +616,8 @@ refreshed_at DateTime64(9)`,
     shortViewName === "daily_recovery_inputs" ||
     shortViewName === "daily_recovery" ||
     shortViewName === "daily_body_measurement" ||
-    shortViewName === "daily_endurance_load" ||
     shortViewName === "daily_activity_load" ||
-    shortViewName === "weekly_endurance_ramp_rate" ||
-    shortViewName === "weekly_training_monotony" ||
     shortViewName === "daily_strain" ||
-    shortViewName === "healthspan_activity_zone_minutes" ||
-    shortViewName === "weekly_healthspan" ||
     shortViewName === "provider_stats" ||
     shortViewName === "hiking_activity" ||
     shortViewName === "activity_power_curve" ||
@@ -711,6 +637,7 @@ refreshed_at DateTime64(9)`,
         : shortViewName === "activity_location_sample"
           ? "(user_id, activity_id, recorded_date, recorded_at, source_metric_stream_id)"
           : shortViewName === "activity_sensor_summary_rows" ||
+              shortViewName === "activity_route_identity" ||
               shortViewName === "activity_location_summary_rows" ||
               shortViewName === "activity_stream_points" ||
               shortViewName === "activity_heart_rate_zones"
@@ -721,34 +648,27 @@ refreshed_at DateTime64(9)`,
                 ? "(user_id, date)"
                 : shortViewName === "daily_body_measurement"
                   ? "(user_id, measurement_id)"
-                  : shortViewName === "daily_endurance_load" ||
-                      shortViewName === "daily_activity_load" ||
-                      shortViewName === "healthspan_activity_zone_minutes"
+                  : shortViewName === "daily_activity_load"
                     ? "(user_id, activity_id)"
-                    : shortViewName === "weekly_endurance_ramp_rate" ||
-                        shortViewName === "weekly_training_monotony"
-                      ? "(user_id, week)"
-                      : shortViewName === "daily_strain"
-                        ? "(user_id, date)"
-                        : shortViewName === "weekly_healthspan"
-                          ? "(user_id, week_start)"
-                          : shortViewName === "provider_stats"
-                            ? "(user_id, provider_id)"
-                            : shortViewName === "activity_power_curve" ||
-                                shortViewName === "activity_pace_curve"
-                              ? "(user_id, activity_id, duration_seconds)"
-                              : shortViewName === "hiking_activity" ||
-                                  shortViewName === "activity_heart_rate_distribution" ||
-                                  shortViewName === "activity_aerobic_efficiency" ||
-                                  shortViewName === "activity_polarization_zones"
-                                ? "(user_id, activity_id)"
-                                : shortViewName === "cycling_activity"
-                                  ? "(user_id, activity_id)"
-                                  : shortViewName === "daily_cycling"
-                                    ? "(user_id, date)"
-                                    : shortViewName === "resting_heart_rate_sleep_window"
-                                      ? "(user_id, sleep_id)"
-                                      : "tuple()";
+                    : shortViewName === "daily_strain"
+                      ? "(user_id, date)"
+                      : shortViewName === "provider_stats"
+                        ? "(user_id, provider_id)"
+                        : shortViewName === "activity_power_curve" ||
+                            shortViewName === "activity_pace_curve"
+                          ? "(user_id, activity_id, duration_seconds)"
+                          : shortViewName === "hiking_activity" ||
+                              shortViewName === "activity_heart_rate_distribution" ||
+                              shortViewName === "activity_aerobic_efficiency" ||
+                              shortViewName === "activity_polarization_zones"
+                            ? "(user_id, activity_id)"
+                            : shortViewName === "cycling_activity"
+                              ? "(user_id, activity_id)"
+                              : shortViewName === "daily_cycling"
+                                ? "(user_id, date)"
+                                : shortViewName === "resting_heart_rate_sleep_window"
+                                  ? "(user_id, sleep_id)"
+                                  : "tuple()";
   return `CREATE TABLE IF NOT EXISTS ${viewName} (
 ${columnDefinitions}
 )

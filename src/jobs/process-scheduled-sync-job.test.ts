@@ -67,7 +67,7 @@ vi.mock("../providers/index.ts", () => ({
     if (providerId === "strong-csv") return { id: providerId, importOnly: true as const };
     if (providerId === "whoop") return { id: providerId, scheduledSyncLookbackDays: 30 };
     if (providerId === "unknown-provider") return undefined;
-    if (["strava", "wahoo", "garmin", "ziva"].includes(providerId)) {
+    if (["strava", "wahoo", "whoop", "ziva"].includes(providerId)) {
       return { id: providerId, authSetup: () => ({}) };
     }
     return { id: providerId };
@@ -335,22 +335,22 @@ describe("processScheduledSyncJob", () => {
 
   it("skips enqueue when a provider cooldown is active", async () => {
     const cooldown = {
-      providerId: "garmin",
+      providerId: "whoop",
       scope: "provider" as const,
       userId: null,
       expiresAt: new Date("2026-06-02T12:10:00Z"),
     };
     mockGetActiveCooldown.mockResolvedValue(cooldown);
     const db = createScheduledSyncDatabase([
-      { user_id: "user-1", provider_id: "garmin", has_tokens: true },
+      { user_id: "user-1", provider_id: "whoop", has_tokens: true },
     ]);
 
     const job = createScheduledSyncJob();
 
     await processScheduledSyncJob(job, db);
 
-    const garminQueue = getMockQueue("garmin");
-    expect(garminQueue.add).not.toHaveBeenCalled();
+    const whoopQueue = getMockQueue("whoop");
+    expect(whoopQueue.add).not.toHaveBeenCalled();
     expect(job.updateProgress).toHaveBeenCalledWith({
       percentage: 95,
       message: "Scheduled 0 sync jobs, skipped 1.",
@@ -360,7 +360,7 @@ describe("processScheduledSyncJob", () => {
       message: "Scheduled 0 sync jobs, skipped 1, for 1 users.",
     });
     expect(mockLoggerInfo).toHaveBeenCalledWith(
-      "[scheduled-sync] Skipping garmin for user-1: rate-limit cooldown active",
+      "[scheduled-sync] Skipping whoop for user-1: rate-limit cooldown active",
     );
     expect(mockLoggerInfo).toHaveBeenCalledWith(
       "[scheduled-sync] Enqueued 0 sync jobs for 1 users (1 skipped due to rate-limit cooldown)",
@@ -368,32 +368,32 @@ describe("processScheduledSyncJob", () => {
   });
 
   it("skips enqueue when a step-chain provider already has pending sync jobs", async () => {
-    const garminQueue = getMockQueue("garmin");
-    garminQueue.getActive = vi.fn().mockResolvedValue([
+    const whoopQueue = getMockQueue("whoop");
+    whoopQueue.getActive = vi.fn().mockResolvedValue([
       {
         data: {
           userId: "user-1",
-          providerId: "garmin",
+          providerId: "whoop",
           checkpoint: { phase: "api", stepIndex: 2 },
         },
       },
     ]);
 
     const db = createScheduledSyncDatabase([
-      { user_id: "user-1", provider_id: "garmin", has_tokens: true },
+      { user_id: "user-1", provider_id: "whoop", has_tokens: true },
     ]);
 
     const job = createScheduledSyncJob();
 
     await processScheduledSyncJob(job, db);
 
-    expect(garminQueue.add).not.toHaveBeenCalled();
+    expect(whoopQueue.add).not.toHaveBeenCalled();
     expect(job.updateProgress).toHaveBeenCalledWith({
       percentage: 95,
       message: "Scheduled 0 sync jobs, skipped 1.",
     });
     expect(mockLoggerInfo).toHaveBeenCalledWith(
-      "[scheduled-sync] Skipping garmin for user-1: 1 sync job(s) already queued",
+      "[scheduled-sync] Skipping whoop for user-1: 1 sync job(s) already queued",
     );
     expect(mockLoggerInfo).toHaveBeenCalledWith(
       "[scheduled-sync] Enqueued 0 sync jobs for 1 users (1 skipped due to in-flight sync)",
@@ -464,18 +464,18 @@ describe("processScheduledSyncJob", () => {
     mockGetActiveCooldown.mockImplementation((providerId: string) =>
       providerId === "strava" ? Promise.resolve(cooldown) : Promise.resolve(null),
     );
-    const garminQueue = getMockQueue("garmin");
-    garminQueue.getActive = vi.fn().mockResolvedValue([
+    const whoopQueue = getMockQueue("whoop");
+    whoopQueue.getActive = vi.fn().mockResolvedValue([
       {
         data: {
           userId: "user-1",
-          providerId: "garmin",
+          providerId: "whoop",
           checkpoint: { phase: "api", stepIndex: 2 },
         },
       },
     ]);
     const db = createScheduledSyncDatabase([
-      { user_id: "user-1", provider_id: "garmin", has_tokens: true },
+      { user_id: "user-1", provider_id: "whoop", has_tokens: true },
       { user_id: "user-2", provider_id: "strava", has_tokens: true },
     ]);
     const job = createScheduledSyncJob();

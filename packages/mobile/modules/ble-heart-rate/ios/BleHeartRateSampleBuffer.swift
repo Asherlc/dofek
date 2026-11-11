@@ -123,12 +123,14 @@ final class BleHeartRateSampleBuffer {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return samples.map { sample in
-            [
+            var result: [String: Any] = [
                 "deviceId": sample.deviceId,
                 "timestamp": formatter.string(from: sample.timestamp),
                 "heartRateBpm": sample.heartRateBpm,
                 "rrIntervalsMs": sample.rrIntervalsMs,
             ]
+            result["deviceName"] = sample.deviceName
+            return result
         }
     }
 }

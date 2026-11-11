@@ -12,6 +12,31 @@ export function ensureProvidersRegistered(): Promise<void> {
 
 async function doRegisterProviders() {
   const providers = [
+    ["kilter", () => import("../providers/kilter.ts").then((m) => new m.KilterProvider())],
+    ["tension", () => import("../providers/tension.ts").then((m) => new m.TensionProvider())],
+    [
+      "grasshopper",
+      () => import("../providers/grasshopper.ts").then((m) => new m.GrasshopperProvider()),
+    ],
+    ["decoy", () => import("../providers/decoy.ts").then((m) => new m.DecoyProvider())],
+    ["soill", () => import("../providers/soill.ts").then((m) => new m.SoillProvider())],
+    [
+      "touchstone",
+      () => import("../providers/touchstone.ts").then((m) => new m.TouchstoneProvider()),
+    ],
+    [
+      "aurora-board",
+      () => import("../providers/aurora-board.ts").then((m) => new m.AuroraBoardProvider()),
+    ],
+    ["crimpd", () => import("../providers/crimpd/provider.ts").then((m) => new m.CrimpdProvider())],
+    [
+      "eight-a",
+      () => import("../providers/eight-a/provider.ts").then((m) => new m.EightAProvider()),
+    ],
+    [
+      "moonboard",
+      () => import("../providers/moonboard/provider.ts").then((m) => new m.MoonBoardProvider()),
+    ],
     ["wahoo", () => import("../providers/wahoo/provider.ts").then((m) => new m.WahooProvider())],
     ["withings", () => import("../providers/withings.ts").then((m) => new m.WithingsProvider())],
     ["peloton", () => import("../providers/peloton.ts").then((m) => new m.PelotonProvider())],
@@ -37,7 +62,7 @@ async function doRegisterProviders() {
       () => import("../providers/garmin-dump.ts").then((m) => new m.GarminDumpProvider()),
     ],
     ["fit-file", () => import("../providers/fit-file.ts").then((m) => new m.FitFileProvider())],
-    ["strava", () => import("../providers/strava.ts").then((m) => new m.StravaProvider())],
+    ["strava", () => import("../providers/strava/provider.ts").then((m) => new m.StravaProvider())],
     [
       "cronometer-csv",
       () => import("../providers/cronometer-csv.ts").then((m) => new m.CronometerCsvProvider()),
@@ -65,7 +90,6 @@ async function doRegisterProviders() {
         import("../providers/cycling-analytics.ts").then((m) => new m.CyclingAnalyticsProvider()),
     ],
     ["wger", () => import("../providers/wger.ts").then((m) => new m.WgerProvider())],
-    ["velohero", () => import("../providers/velohero.ts").then((m) => new m.VeloHeroProvider())],
     [
       "mountain-project",
       () => import("../providers/mountain-project.ts").then((m) => new m.MountainProjectProvider()),
@@ -81,7 +105,6 @@ async function doRegisterProviders() {
       "thecrag",
       () => import("../providers/thecrag/provider.ts").then((m) => new m.TheCragProvider()),
     ],
-    ["alltrails", () => import("../providers/alltrails.ts").then((m) => new m.AllTrailsProvider())],
     [
       "amazfit-zepp",
       () => import("../providers/amazfit-zepp.ts").then((m) => new m.AmazfitZeppProvider()),

@@ -50,6 +50,7 @@ export interface AccountWorkDependencies {
   abortImportMultipart(objectKey: string, multipartUploadId: string): Promise<void>;
   deleteExportObject(objectKey: string): Promise<void>;
   deleteImportObject(objectKey: string): Promise<void>;
+  deleteProviderArtifactsForUser(userId: string): Promise<void>;
   jobFilesDirectory: string;
   purgeRedis(userId: string, bullmqJobIds: readonly string[]): Promise<void>;
   queues: readonly ErasureQueue[];
@@ -86,10 +87,7 @@ function collectJobPaths(value: JsonValue, paths: Set<string>): void {
   if (value === null || typeof value !== "object") return;
   for (const [key, nestedValue] of Object.entries(value)) {
     if (
-      (key === "archivePath" ||
-        key === "filePath" ||
-        key === "originalPath" ||
-        key === "outputDirectory") &&
+      (key === "archivePath" || key === "filePath" || key === "outputDirectory") &&
       typeof nestedValue === "string"
     ) {
       paths.add(nestedValue);
@@ -159,6 +157,7 @@ export async function purgeAccountWork(
     }
   }
   await dependencies.purgeRedis(identifiers.userId, [...bullmqJobIds]);
+  await dependencies.deleteProviderArtifactsForUser(identifiers.userId);
 
   for (const upload of identifiers.fileUploads) {
     if (upload.multipartUploadId) {

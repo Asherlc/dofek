@@ -29,12 +29,14 @@ let package = Package(
                 "TransferManager.swift",
                 "WatchSessionDelegate.swift",
                 "expo-target.config.js",
+                "mutantkit.yml",
                 "pods.rb",
             ],
             sources: [
                 "AccelerometerTransferCursor.swift",
                 "GyroscopeSampleBuffer.swift",
                 "WatchAccountStateStore.swift",
+                "WatchRecordingCallbackFence.swift",
             ]
         ),
         .testTarget(
@@ -51,6 +53,7 @@ let package = Package(
                 "AccelerometerTransferCursor.test.swift",
                 "GyroscopeSampleBuffer.test.swift",
                 "WatchAccountStateStore.test.swift",
+                "WatchRecordingCallbackFence.test.swift",
             ]
         ),
     ]

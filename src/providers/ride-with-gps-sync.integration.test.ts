@@ -1,6 +1,5 @@
 import { and, eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
-import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { userSettings } from "../db/schema/account.ts";
 import { activity } from "../db/schema/activity.ts";
@@ -9,6 +8,7 @@ import { oauthToken } from "../db/schema/reference.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { isEncryptedCredentialValue } from "../security/credential-encryption.ts";
+import { createIntegrationMswFixture } from "../test/early-msw-lifecycle.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import {
   type RideWithGpsApiTrackPoint,
@@ -137,7 +137,7 @@ function rwgpsHandlers(
   ];
 }
 
-const server = setupServer();
+const server = createIntegrationMswFixture();
 const metricStreamCapture = createCapturingMetricStreamPublisher();
 
 // ============================================================
@@ -151,7 +151,7 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
     process.env.RWGPS_CLIENT_ID = "test-client-id";
     process.env.RWGPS_CLIENT_SECRET = "test-client-secret";
     ctx = await setupTestDatabase();
-    server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "ride-with-gps", "RideWithGPS", "https://ridewithgps.com");
   }, 60_000);
 
@@ -165,7 +165,7 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
   });
 
   afterAll(async () => {
-    server.close();
+    server.deactivate();
     if (ctx) await ctx.cleanup();
   });
 
@@ -1052,10 +1052,10 @@ describe("RideWithGpsProvider.sync() (integration)", () => {
 
 describe("RideWithGpsProvider.getUserIdentity()", () => {
   const originalEnv = { ...process.env };
-  const identityServer = setupServer();
+  const identityServer = createIntegrationMswFixture();
 
   beforeAll(() => {
-    identityServer.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    identityServer.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
   });
 
   afterEach(() => {
@@ -1064,7 +1064,7 @@ describe("RideWithGpsProvider.getUserIdentity()", () => {
   });
 
   afterAll(() => {
-    identityServer.close();
+    identityServer.deactivate();
   });
 
   it("returns identity from user API", async () => {

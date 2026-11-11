@@ -1,18 +1,28 @@
 import { UnitConverter } from "@dofek/format/units";
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { expect, within } from "storybook/test";
 import type { ActivityDetail } from "../../../server/src/models/activity.ts";
+import { activityPhotoFixture } from "../components/ActivityPhoto.fixtures.ts";
+import {
+  walkingHardware,
+  walkingSourceTree,
+} from "../components/ActivitySourceDisclosure.fixtures.ts";
+import { detailSourceTree, removedDetailSourceTree } from "./ActivityDetailPage.fixtures.ts";
 import { ActivityHeader } from "./ActivityDetailPage.tsx";
 
 // ── ActivityHeader ──────────────────────────────────────────
 
 const baseActivity: ActivityDetail = {
+  climbingLogSessions: [],
   id: "abc-123",
   activityType: "cycling",
+  primaryActivityType: null,
   rawType: "cycling",
   modality: null,
   startedAt: "2026-03-31T08:00:00Z",
   displayedDate: "2026-03-31",
   endedAt: "2026-03-31T09:30:00Z",
+  durationMin: 90,
   localTimeContext: {
     timezone: "America/Los_Angeles",
     startUtcOffsetMinutes: -420,
@@ -22,19 +32,20 @@ const baseActivity: ActivityDetail = {
   name: "Morning Ride",
   notes: null,
   perceivedExertion: null,
-  providerId: "wahoo",
+  providerId: "garmin",
   subsource: null,
-  sourceProviders: ["wahoo", "apple_health"],
+  sourceProviders: ["garmin", "strava", "apple_health", "whoop"],
   sourceLinks: [
     {
-      providerId: "wahoo",
-      externalId: "42",
+      providerId: "garmin",
+      externalId: "123",
       subsource: null,
-      label: "Wahoo",
-      url: "https://systm.wahoofitness.com/history/activity-details/42",
+      label: "Garmin Connect",
+      url: "https://connect.garmin.com/modern/activity/123",
       providerAbsentAt: null,
     },
   ],
+  sourceTree: detailSourceTree,
   avgHr: 145,
   avgHrState: { status: "available" },
   maxHr: 175,
@@ -59,12 +70,106 @@ const baseActivity: ActivityDetail = {
   sampleCountState: { status: "available" },
   providerAbsentAt: null,
   sourceDecision: null,
+  fitRecoveryWarning: null,
 };
+
+const climbingSourceTree = {
+  primary: {
+    id: "kaya-climb-1",
+    providerId: "kaya",
+    sourceName: null,
+    label: "Kaya",
+    description: null,
+    url: null,
+    children: [],
+  },
+  otherSources: [
+    {
+      id: "whoop-climbing",
+      providerId: "whoop",
+      sourceName: null,
+      label: "WHOOP",
+      description: null,
+      url: null,
+      children: [],
+    },
+    {
+      id: "kilter-session-1",
+      providerId: "kilter",
+      sourceName: null,
+      label: "Kilter Board",
+      description: null,
+      url: null,
+      children: [],
+    },
+    {
+      id: "kilter-session-2",
+      providerId: "kilter",
+      sourceName: null,
+      label: "Kilter Board",
+      description: null,
+      url: null,
+      children: [],
+    },
+  ],
+};
+
+const climbingSourceLinks = [
+  {
+    providerId: "kaya",
+    externalId: "kaya-climb-1",
+    memberActivityId: "kaya-climb-1",
+    subsource: null,
+    label: "Kaya",
+    url: null,
+  },
+  {
+    providerId: "whoop",
+    externalId: "whoop-climbing",
+    memberActivityId: "whoop-climbing",
+    subsource: null,
+    label: "WHOOP",
+    url: null,
+  },
+  ...["kilter-log-1", "kilter-log-2", "kilter-log-3"].map((memberActivityId) => ({
+    providerId: "kilter",
+    externalId: memberActivityId,
+    memberActivityId,
+    subsource: null,
+    label: "Kilter Board",
+    url: null,
+  })),
+];
 
 const missingMetricState = (label: string) => ({
   status: "missing" as const,
   reason: `${label} not recorded`,
 });
+
+const climbingMeasurements = {
+  avgHr: null,
+  avgHrState: missingMetricState("Average heart rate"),
+  maxHr: null,
+  maxHrState: missingMetricState("Maximum heart rate"),
+  avgPower: null,
+  avgPowerState: missingMetricState("Average power"),
+  maxPower: null,
+  maxPowerState: missingMetricState("Maximum power"),
+  avgSpeed: null,
+  avgSpeedState: missingMetricState("Average speed"),
+  maxSpeed: null,
+  maxSpeedState: missingMetricState("Maximum speed"),
+  avgCadence: null,
+  avgCadenceState: missingMetricState("Average cadence"),
+  totalDistance: null,
+  totalDistanceState: missingMetricState("Distance"),
+  elevationGain: null,
+  elevationGainState: missingMetricState("Elevation gain"),
+  elevationLoss: null,
+  elevationLossState: missingMetricState("Elevation loss"),
+  sampleCount: null,
+  sampleCountState: missingMetricState("Samples"),
+};
 
 const headerMeta = {
   title: "Pages/ActivityDetail/ActivityHeader",
@@ -81,7 +186,286 @@ export default headerMeta;
 type HeaderStory = StoryObj<typeof headerMeta>;
 
 export const CyclingMetric: HeaderStory = {
-  args: {},
+  args: {
+    powerWork: { workKilojoules: 1188, coverage: { coveredSeconds: 5400, coveragePct: 100 } },
+  },
+};
+
+export const FitRecoveryWarning: HeaderStory = {
+  args: {
+    activity: {
+      ...baseActivity,
+      fitRecoveryWarning:
+        "Some activity data could not be recovered from the original file. The available data was imported; this activity may be incomplete.",
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement.ownerDocument.body);
+    await expect(canvas.getByRole("alert")).toBeVisible();
+  },
+};
+
+export const ConnectedKilterGymSession: HeaderStory = {
+  parameters: { layout: "padded" },
+  args: {
+    activity: {
+      ...baseActivity,
+      name: "Gym session",
+      activityType: "climbing",
+      primaryActivityType: "climbing",
+      sourceProviders: ["kaya", "whoop", "kilter"],
+      sourceLinks: climbingSourceLinks,
+      ...climbingMeasurements,
+      avgHr: 138,
+      avgHrState: { status: "available" },
+      maxHr: 168,
+      maxHrState: { status: "available" },
+      displayedDate: "2026-11-09",
+      startedAt: "2026-11-10T01:30:00.000Z",
+      endedAt: "2026-11-10T02:25:00.000Z",
+      durationMin: 55,
+      localTimeContext: {
+        timezone: "America/Los_Angeles",
+        startUtcOffsetMinutes: -480,
+        endUtcOffsetMinutes: -480,
+        source: "provider_timezone",
+      },
+      sourceTree: climbingSourceTree,
+      climbingLogSessions: [
+        {
+          id: "kilter-session-1",
+          providerId: "kilter",
+          memberActivityIds: ["kilter-log-1", "kilter-log-2"],
+          firstLoggedAt: "2026-11-10T01:40:00.000Z",
+          lastLoggedAt: "2026-11-10T01:44:33.000Z",
+        },
+        {
+          id: "kilter-session-2",
+          providerId: "kilter",
+          memberActivityIds: ["kilter-log-3"],
+          firstLoggedAt: "2026-11-10T02:03:00.000Z",
+          lastLoggedAt: "2026-11-10T02:03:00.000Z",
+        },
+      ],
+    },
+  },
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement.ownerDocument.body);
+    await expect(
+      canvas.getByText("Kilter Board · Logged climbs · 5:40 PM – 5:44 PM"),
+    ).toBeVisible();
+    await expect(canvas.getByText("Kilter Board · Logged climbs · 6:03 PM")).toBeVisible();
+    await expect(canvas.getByText("55m")).toBeVisible();
+    await userEvent.click(await canvas.findByRole("button", { name: "Kaya Lineage" }));
+    await expect(canvas.getAllByText("Kilter Board")).toHaveLength(2);
+    await expect(canvas.getByText("WHOOP")).toBeVisible();
+  },
+};
+
+export const StandaloneKilterSession: HeaderStory = {
+  parameters: { layout: "padded" },
+  args: {
+    activity: {
+      ...baseActivity,
+      name: "Kilter climbing",
+      activityType: "climbing",
+      primaryActivityType: "climbing",
+      providerId: "kilter",
+      sourceProviders: ["kilter"],
+      sourceLinks: [
+        {
+          providerId: "kilter",
+          externalId: "kilter-standalone-log",
+          memberActivityId: "kilter-standalone-log",
+          subsource: null,
+          label: "Kilter Board",
+          url: null,
+        },
+      ],
+      ...climbingMeasurements,
+      displayedDate: "2026-11-09",
+      startedAt: "2026-11-10T01:48:51.544Z",
+      endedAt: null,
+      durationMin: null,
+      localTimeContext: {
+        timezone: "America/Los_Angeles",
+        startUtcOffsetMinutes: -480,
+        endUtcOffsetMinutes: -480,
+        source: "provider_timezone",
+      },
+      sourceTree: {
+        primary: {
+          id: "kilter-standalone-session",
+          providerId: "kilter",
+          sourceName: null,
+          label: "Kilter Board",
+          description: null,
+          url: null,
+          children: [],
+        },
+        otherSources: [],
+      },
+      climbingLogSessions: [
+        {
+          id: "kilter-standalone-session",
+          providerId: "kilter",
+          memberActivityIds: ["kilter-standalone-log"],
+          firstLoggedAt: "2026-11-10T01:48:51.544Z",
+          lastLoggedAt: "2026-11-10T01:48:51.544Z",
+        },
+      ],
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement.ownerDocument.body);
+    await expect(canvas.getByText("Kilter Board · Logged climbs · 5:48 PM")).toBeVisible();
+    await expect(canvas.getByText("Duration")).toBeVisible();
+    await expect(canvas.getByText("Unavailable")).toBeVisible();
+  },
+};
+
+export const IndoorCycling: HeaderStory = {
+  args: {
+    activity: {
+      ...baseActivity,
+      name: "45 min Power Zone Ride",
+      modality: "indoor",
+      durationMin: 45,
+      endedAt: "2026-03-31T08:45:00Z",
+      totalDistance: 0,
+      elevationGain: null,
+      elevationGainState: missingMetricState("Elevation gain"),
+      avgPower: 177,
+      maxPower: 294,
+      avgSpeed: null,
+      avgSpeedState: missingMetricState("Average speed"),
+      avgCadence: 71,
+    },
+    powerWork: { workKilojoules: 477.8, coverage: { coveredSeconds: 2700, coveragePct: 100 } },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement.ownerDocument.body);
+    await expect(canvas.queryByText("Distance")).not.toBeInTheDocument();
+    await expect(canvas.getByText("Energy Output")).toBeVisible();
+    await expect(canvas.getByText("478 kJ")).toBeVisible();
+  },
+};
+
+export const PartialPowerOutput: HeaderStory = {
+  args: {
+    ...IndoorCycling.args,
+    powerWork: { workKilojoules: 400, coverage: { coveredSeconds: 2200, coveragePct: 81.5 } },
+  },
+};
+
+export const WalkingSourcesCollapsed: HeaderStory = {
+  parameters: { layout: "padded" },
+  args: {
+    activity: {
+      ...baseActivity,
+      name: "67 min 59 sec Walking",
+      activityType: "hiking",
+      startedAt: "2026-10-24T18:52:00Z",
+      endedAt: "2026-10-24T20:45:00Z",
+      displayedDate: "2026-10-24",
+      sourceTree: walkingSourceTree,
+      totalDistance: 6598,
+      elevationGain: 303.6,
+      avgHr: 108,
+      maxHr: 141,
+      avgSpeed: 0.9835,
+      avgPower: null,
+      avgPowerState: missingMetricState("Average power"),
+      maxPower: null,
+      maxPowerState: missingMetricState("Maximum power"),
+      avgCadence: null,
+      avgCadenceState: missingMetricState("Cadence"),
+    },
+    units: new UnitConverter("imperial"),
+    hardware: walkingHardware,
+  },
+};
+
+export const WalkingSourcesExpanded: HeaderStory = {
+  parameters: { layout: "padded" },
+  args: WalkingSourcesCollapsed.args,
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement.ownerDocument.body);
+    await userEvent.click(canvas.getByRole("button", { name: "Asher’s Apple Watch Lineage" }));
+    await expect(canvas.getByText("Apple Health")).toBeVisible();
+  },
+};
+
+export const PrimarySourceWithoutTitle: HeaderStory = {
+  ...WalkingSourcesCollapsed,
+  args: {
+    ...WalkingSourcesCollapsed.args,
+    activity: {
+      ...baseActivity,
+      ...WalkingSourcesCollapsed.args?.activity,
+      name: null,
+      activityType: "walking",
+      primaryActivityType: "running",
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement.ownerDocument.body);
+    await expect(canvas.getByRole("heading", { name: "Running" })).toBeVisible();
+    await expect(canvas.getByText("Walking")).toBeVisible();
+  },
+};
+
+export const BranchingCollapsed: HeaderStory = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement.ownerDocument.body);
+    await expect(canvas.getByRole("button", { name: "Garmin Edge 530 Lineage" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    await expect(canvas.queryByText("Strava")).toBeNull();
+  },
+};
+
+export const BranchingExpanded: HeaderStory = {
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement.ownerDocument.body);
+    await userEvent.click(canvas.getByRole("button", { name: "Garmin Edge 530 Lineage" }));
+    await expect(canvas.getAllByText("Garmin Edge 530")).toHaveLength(2);
+    await expect(canvas.getAllByText("Apple Health")).toHaveLength(2);
+    await expect(canvas.getByText("WHOOP")).toBeVisible();
+  },
+};
+
+export const EmptySources: HeaderStory = {
+  args: { activity: { ...baseActivity, sourceTree: { primary: null, otherSources: [] } } },
+  play: async ({ canvasElement }) => {
+    await expect(within(canvasElement).queryByRole("button", { name: /Lineage/ })).toBeNull();
+  },
+};
+
+export const UnresolvedSources: HeaderStory = {
+  args: {
+    activity: {
+      ...baseActivity,
+      sourceTree: { primary: null, otherSources: detailSourceTree.otherSources },
+    },
+  },
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement.ownerDocument.body);
+    await userEvent.click(canvas.getByRole("button", { name: "Lineage" }));
+    await expect(canvas.getByText("WHOOP")).toBeVisible();
+  },
+};
+
+export const RemovedSources: HeaderStory = {
+  args: { activity: { ...baseActivity, sourceTree: removedDetailSourceTree } },
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement.ownerDocument.body);
+    await userEvent.click(canvas.getByRole("button", { name: "Garmin Edge 530 Lineage" }));
+    await expect(canvas.getAllByText("Removed from provider")[0]).toBeVisible();
+    await expect(canvas.queryByRole("link", { name: "Strava" })).toBeNull();
+    await expect(canvas.getByRole("link", { name: "WHOOP" })).toBeVisible();
+  },
 };
 
 export const CyclingImperial: HeaderStory = {
@@ -146,6 +530,49 @@ export const Minimal: HeaderStory = {
       elevationLossState: missingMetricState("Elevation loss"),
       sourceProviders: [],
       sourceLinks: [],
+      sourceTree: { primary: null, otherSources: [] },
+    },
+  },
+};
+
+export const WithPhoto: HeaderStory = {
+  parameters: { layout: "padded" },
+  args: {
+    ...IndoorCycling.args,
+    activity: {
+      ...baseActivity,
+      ...IndoorCycling.args?.activity,
+      name: "45 min Power Zone Endurance Ride",
+    },
+    photos: {
+      images: [activityPhotoFixture],
+      loading: false,
+      error: null,
+      onRetry: () => undefined,
+    },
+  },
+};
+export const WithMultiplePhotos: HeaderStory = {
+  parameters: { layout: "padded" },
+  args: {
+    ...WithPhoto.args,
+    photos: {
+      images: [activityPhotoFixture, { ...activityPhotoFixture, id: "photo-2" }],
+      loading: false,
+      error: null,
+      onRetry: () => undefined,
+    },
+  },
+};
+export const PhotoRefreshError: HeaderStory = {
+  parameters: { layout: "padded" },
+  args: {
+    ...WithPhoto.args,
+    photos: {
+      images: [activityPhotoFixture],
+      loading: false,
+      error: new Error("Photo storage is unavailable. Try again."),
+      onRetry: () => undefined,
     },
   },
 };

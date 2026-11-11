@@ -14,7 +14,6 @@ const {
   mockLoggerWarn,
   mockCaptureException,
   mockInvalidateByPrefix,
-  mockVeloHeroProvider,
   mockCachedProtectedQuery,
   mockProtectedQueryCache,
   mockWithUserWriteFence,
@@ -37,9 +36,6 @@ const {
   mockLoggerWarn: vi.fn(),
   mockCaptureException: vi.fn(),
   mockInvalidateByPrefix: vi.fn().mockResolvedValue(undefined),
-  mockVeloHeroProvider: vi.fn(function vitestConstructor() {
-    return { id: "velohero" };
-  }),
   mockCachedProtectedQuery: vi.fn(),
   mockProtectedQueryCache: new Map<string, { data: unknown; expiresAt: number }>(),
   mockWithUserWriteFence: vi.fn(),
@@ -217,9 +213,6 @@ vi.mock("dofek/providers/xert", () => ({ XertProvider: vi.fn() }));
 vi.mock("dofek/providers/cycling-analytics", () => ({ CyclingAnalyticsProvider: vi.fn() }));
 vi.mock("dofek/providers/wger", () => ({ WgerProvider: vi.fn() }));
 vi.mock("dofek/providers/decathlon", () => ({ DecathlonProvider: vi.fn() }));
-vi.mock("dofek/providers/velohero", () => ({
-  VeloHeroProvider: mockVeloHeroProvider,
-}));
 
 // Mock schema and drizzle-orm for logs query
 vi.mock("dofek/db/schema/events", () => ({
@@ -271,9 +264,6 @@ describe("syncRouter", () => {
     mockProtectedQueryCache.clear();
     mockGetAllProviders.mockReturnValue([]);
     mockRegisterProvider.mockImplementation(() => undefined);
-    mockVeloHeroProvider.mockImplementation(function vitestConstructor() {
-      return { id: "velohero" };
-    });
     mockGetProviderSyncQueue.mockImplementation((id: string) => ({
       add: mockAdd,
       getJob: mockGetJob,
@@ -359,6 +349,40 @@ describe("syncRouter", () => {
   });
 
   describe("providers", () => {
+    it("projects an OAuth push connection without polling freshness or cooldown", async () => {
+      mockGetAllProviders.mockReturnValue([
+        {
+          id: "garmin",
+          name: "Garmin",
+          validate: () => null,
+          pushOnly: true,
+          authSetup: () => oauthAuthSetup("https://connect.garmin.com/oauth2Confirm"),
+        },
+      ]);
+      const caller = createCaller({
+        db: {
+          execute: vi
+            .fn()
+            .mockResolvedValueOnce([
+              { provider_id: "garmin", updated_at: new Date(), has_tokens: true },
+            ])
+            .mockResolvedValueOnce([])
+            .mockResolvedValueOnce([])
+            .mockResolvedValueOnce([])
+            .mockResolvedValueOnce([]),
+        },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+      const providers = await caller.providers();
+      expect(providers.find((provider) => provider.id === "garmin")).toMatchObject({
+        authType: "oauth",
+        pushOnly: true,
+        authorized: true,
+        syncFreshness: null,
+      });
+      expect(mockGetActiveProviderCooldown).not.toHaveBeenCalled();
+    });
     it("returns an active rate-limit cooldown as deferred sync status", async () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date("2026-09-03T12:00:00.000Z"));
@@ -569,6 +593,76 @@ describe("syncRouter", () => {
       // Cronometer CSV: import only
       const cronometerCsv = result.find((p: { id: string }) => p.id === "cronometer-csv");
       expect(cronometerCsv?.importOnly).toBe(true);
+    });
+
+    it("reports push processing evidence independently of historical polling attempts", async () => {
+      mockGetAllProviders.mockReturnValue([
+        {
+          id: "garmin",
+          name: "Garmin",
+          pushOnly: true,
+          validate: () => null,
+          authSetup: () => oauthAuthSetup("https://connect.garmin.com"),
+        },
+      ]);
+      const caller = createCaller({
+        db: {
+          execute: vi
+            .fn()
+            .mockResolvedValueOnce([
+              {
+                provider_id: "garmin",
+                has_tokens: true,
+                updated_at: new Date("2026-10-24T09:00:00Z"),
+              },
+            ])
+            .mockResolvedValueOnce([{ provider_id: "garmin", last_synced: "2026-10-24T12:00:00Z" }])
+            .mockResolvedValueOnce([])
+            .mockResolvedValueOnce([{ provider_id: "garmin", last_synced: "2026-10-24T08:00:00Z" }])
+            .mockResolvedValueOnce([
+              {
+                id: "legacy-poll",
+                provider_id: "garmin",
+                status: "error",
+                synced_at: new Date("2026-10-24T12:00:00Z"),
+                duration_ms: 10,
+                record_count: 0,
+                data_type: "sync",
+                error_message: "Old polling failed",
+                auth_failure_reason: null,
+              },
+            ])
+            .mockResolvedValueOnce([
+              { provider_id: "garmin", last_synced: "2026-10-24T10:00:00.000Z" },
+            ])
+            .mockResolvedValueOnce([
+              {
+                id: "push-update",
+                provider_id: "garmin",
+                status: "success",
+                synced_at: new Date("2026-10-24T10:00:00Z"),
+                duration_ms: null,
+                record_count: null,
+                data_type: "update",
+                error_message: null,
+                auth_failure_reason: null,
+              },
+            ]),
+        },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+
+      const result = await caller.providers();
+
+      expect(result.find((provider) => provider.id === "garmin")).toMatchObject({
+        lastProcessedUpdateAt: "2026-10-24T10:00:00.000Z",
+        syncFreshness: null,
+        recentLogs: [expect.objectContaining({ id: "push-update", status: "success" })],
+      });
+      expect(
+        result.find((provider) => provider.id === "whoop_ble")?.lastProcessedUpdateAt,
+      ).toBeNull();
     });
 
     it("returns current freshness from the latest successful pull-provider sync", async () => {
@@ -1037,6 +1131,47 @@ describe("syncRouter", () => {
   });
 
   describe("triggerSync", () => {
+    it("rejects manual polling of a connected push provider with actionable instructions", async () => {
+      mockGetAllProviders.mockReturnValue([
+        {
+          id: "garmin",
+          name: "Garmin",
+          validate: () => null,
+          pushOnly: true,
+          authSetup: () => oauthAuthSetup("https://connect.garmin.com/oauth2Confirm"),
+        },
+      ]);
+      const caller = createCaller({
+        db: {
+          execute: vi
+            .fn()
+            .mockResolvedValue([
+              { provider_id: "garmin", has_tokens: true, updated_at: new Date() },
+            ]),
+        },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+      await expect(caller.triggerSync({ providerId: "garmin" })).rejects.toThrow(
+        "Garmin sends new data automatically. Sync your device in Garmin Connect.",
+      );
+      expect(mockAdd).not.toHaveBeenCalled();
+    });
+
+    it("syncs polling sources while automatic sources receive new data independently", async () => {
+      mockGetAllProviders.mockReturnValue([
+        { id: "garmin", name: "Garmin", validate: () => null, pushOnly: true },
+        { id: "wahoo", name: "Wahoo", validate: () => null },
+      ]);
+      mockAdd.mockResolvedValueOnce({ id: "job-wahoo" });
+      const caller = createCaller({
+        db: { execute: vi.fn().mockResolvedValue([]) },
+        userId: "user-1",
+        timezone: "UTC",
+      });
+      const result = await caller.triggerSync({});
+      expect(result.providerJobs.map((job) => job.providerId)).toEqual(["wahoo"]);
+    });
     it("rejects a token-backed provider connection whose tokens are missing", async () => {
       mockGetAllProviders.mockReturnValue([
         {

@@ -23,17 +23,18 @@ extension WhoopBleConnectionManager {
         if let peripheral = connectedPeripheral, state == .idle {
             if peripheral.state == .connected {
                 setState(.discoveringServices)
-                peripheral.discoverServices(WhoopBleConstants.allServiceUUIDs)
+                peripheral.discoverServices(WhoopBleConstants.allServiceUUIDs + [CBUUID(string: "180A")])
                 startHandshakeTimeout(for: peripheral)
             } else {
                 setState(.connecting)
-                centralManager?.connect(peripheral, options: nil)
+                recordConnectionEvent("connect_requested", reason: "powered_on_reconnect")
+                peripheral.connect()
                 startHandshakeTimeout(for: peripheral)
             }
         }
     }
 
-    func handleRestoredPeripheral(_ peripheral: CBPeripheral) {
+    func handleRestoredPeripheral(_ peripheral: any WhoopBlePeripheralConnection) {
         setConnectedPeripheral(peripheral)
         peripheral.delegate = bleDelegate
         autoReconnect = true
@@ -41,12 +42,15 @@ extension WhoopBleConnectionManager {
 
         if peripheral.state == .connected {
             setState(.discoveringServices)
-            peripheral.discoverServices(WhoopBleConstants.allServiceUUIDs)
+            peripheral.discoverServices(WhoopBleConstants.allServiceUUIDs + [CBUUID(string: "180A")])
+            startHandshakeTimeout(for: peripheral)
+        } else if peripheral.state == .connecting {
+            setState(.connecting)
             startHandshakeTimeout(for: peripheral)
         }
     }
 
-    func handlePeripheralDiscovered(_ peripheral: CBPeripheral) {
+    func handlePeripheralDiscovered(_ peripheral: any WhoopBlePeripheralConnection) {
         if state == .scanning {
             centralManager?.stopScan()
             setState(.idle)
@@ -67,12 +71,13 @@ extension WhoopBleConnectionManager {
             setConnectedPeripheral(peripheral)
             peripheral.delegate = bleDelegate
             setState(.connecting)
-            centralManager?.connect(peripheral, options: nil)
+            recordConnectionEvent("connect_requested", reason: "scan_reconnect")
+            peripheral.connect()
             startHandshakeTimeout(for: peripheral)
         }
     }
 
-    func handlePeripheralConnected(_ peripheral: CBPeripheral) {
+    func handlePeripheralConnected(_ peripheral: any WhoopBlePeripheralConnection) {
         NSLog("[WhoopBLE] peripheral connected: %@ (state=%@)",
               peripheral.identifier.uuidString, state.rawValue)
         guard
@@ -81,10 +86,13 @@ extension WhoopBleConnectionManager {
         else { return }
 
         setState(.discoveringServices)
-        peripheral.discoverServices(WhoopBleConstants.allServiceUUIDs)
+        peripheral.discoverServices(WhoopBleConstants.allServiceUUIDs + [CBUUID(string: "180A")])
+        if connectCompletion == nil {
+            startHandshakeTimeout(for: peripheral)
+        }
     }
 
-    func handlePeripheralDisconnected(_ peripheral: CBPeripheral, error: Error?) {
+    func handlePeripheralDisconnected(_ peripheral: any WhoopBlePeripheralConnection, error: Error?) {
         NSLog("[WhoopBLE] peripheral disconnected: %@ (wasState=%@, error=%@, autoReconnect=%@)",
               peripheral.identifier.uuidString, state.rawValue,
               error?.localizedDescription ?? "none", autoReconnect ? "true" : "false")
@@ -93,12 +101,27 @@ extension WhoopBleConnectionManager {
             return
         }
 
-        wasStreaming = state == .streaming
+        handleDisconnection(peripheralId: peripheral.identifier.uuidString, error: error) {
+            setConnectedPeripheral(peripheral)
+            peripheral.delegate = bleDelegate
+            peripheral.connect()
+            startHandshakeTimeout(for: peripheral)
+        }
+    }
+
+    /// Settle the disconnected session before reconnecting its peripheral.
+    func handleDisconnection(
+        peripheralId: String,
+        error: Error?,
+        reconnectPeripheral: () -> Void
+    ) {
+        recordConnectionEvent("disconnected", peripheralId: peripheralId, error: error)
+        wasStreaming = wasStreaming || state == .streaming
         let shouldReconnect = autoReconnect
-        let peripheralId = peripheral.identifier.uuidString
 
         cleanup()
 
+        WhoopBleConnectionEvent.disconnected.post()
         delegate?.connectionManagerDidDisconnect(self, peripheralId: peripheralId, error: error)
 
         finishConnect(.failure(.disconnected(error?.localizedDescription)))
@@ -106,14 +129,12 @@ extension WhoopBleConnectionManager {
         if shouldReconnect {
             autoReconnect = true
             setState(.connecting)
-            setConnectedPeripheral(peripheral)
-            peripheral.delegate = bleDelegate
-            centralManager?.connect(peripheral, options: nil)
-            startHandshakeTimeout(for: peripheral)
+            recordConnectionEvent("connect_requested", peripheralId: peripheralId, reason: "automatic_reconnect")
+            reconnectPeripheral()
         }
     }
 
-    func handleServicesDiscovered(_ peripheral: CBPeripheral) {
+    func handleServicesDiscovered(_ peripheral: any WhoopBlePeripheralConnection) {
         let serviceUUIDs = peripheral.services?.map { $0.uuid.uuidString } ?? []
         NSLog("[WhoopBLE] services discovered: %@", serviceUUIDs.joined(separator: ", "))
         guard
@@ -121,6 +142,9 @@ extension WhoopBleConnectionManager {
             connectedPeripheral?.identifier == peripheral.identifier
         else { return }
 
+        if let information = peripheral.services?.first(where: { $0.uuid == CBUUID(string: "180A") }) {
+            peripheral.discoverCharacteristics(["2A24", "2A25", "2A26", "2A27"].map(CBUUID.init(string:)), for: information)
+        }
         guard let service = peripheral.services?.first(where: { service in
             WhoopBleConstants.allServiceUUIDs.contains(service.uuid)
         }) else {
@@ -135,7 +159,14 @@ extension WhoopBleConnectionManager {
         peripheral.discoverCharacteristics([cmdUUID, cmdRespUUID, dataUUID], for: service)
     }
 
-    func handleCharacteristicsDiscovered(_ peripheral: CBPeripheral, service: CBService) {
+    func handleCharacteristicsDiscovered(_ peripheral: any WhoopBlePeripheralConnection, service: CBService) {
+        if service.uuid == CBUUID(string: "180A") {
+            guard connectedPeripheral?.identifier == peripheral.identifier else { return }
+            for characteristic in service.characteristics ?? [] where characteristic.properties.contains(.read) {
+                peripheral.readValue(for: characteristic)
+            }
+            return
+        }
         let charUUIDs = service.characteristics?.map { $0.uuid.uuidString } ?? []
         NSLog("[WhoopBLE] characteristics discovered for service %@: %@",
               service.uuid.uuidString, charUUIDs.joined(separator: ", "))
@@ -164,7 +195,7 @@ extension WhoopBleConnectionManager {
 
         NSLog("[WhoopBLE] subscribing to DATA_FROM_STRAP + CMD_FROM_STRAP notifications")
         notificationSubscriptionTracker = WhoopBleNotificationSubscriptionTracker(
-            peripheral: peripheral,
+            peripheral: peripheral.notificationSource,
             dataCharacteristic: dataChar,
             commandResponseCharacteristic: cmdResponseCharacteristic
         )
@@ -176,7 +207,7 @@ extension WhoopBleConnectionManager {
     }
 
     func handleNotificationStateUpdated(
-        _ peripheral: CBPeripheral,
+        _ peripheral: any WhoopBlePeripheralConnection,
         characteristic: CBCharacteristic,
         error: Error?
     ) {
@@ -185,7 +216,7 @@ extension WhoopBleConnectionManager {
         }
 
         let update = tracker.recordNotificationState(
-            peripheral: peripheral,
+            peripheral: peripheral.notificationSource,
             characteristic: characteristic,
             isNotifying: characteristic.isNotifying,
             hasError: error != nil
@@ -197,9 +228,9 @@ extension WhoopBleConnectionManager {
         let previouslyStreaming = settleNotificationSubscriptionUpdate(
             update,
             failureDetail: detail,
-            cancelPeripheral: { [weak self, weak peripheral] in
-                guard let peripheral else { return }
-                self?.centralManager?.cancelPeripheralConnection(peripheral)
+            underlyingError: error,
+            cancelPeripheral: {
+                peripheral.cancelConnection()
             }
         )
 
@@ -222,7 +253,9 @@ extension WhoopBleConnectionManager {
     }
 
     /// Route a BLE notification to the appropriate delegate callback.
-    func handleNotification(from characteristic: CBCharacteristic, data: Data) {
+    func handleNotification(from peripheral: AnyObject, characteristic: CBCharacteristic, data: Data) {
+        guard connectedPeripheral?.notificationSource === peripheral else { return }
+        if recordDeviceInformation(uuid: characteristic.uuid.uuidString, data: data) { return }
         if characteristic.uuid == cmdResponseCharacteristic?.uuid {
             delegate?.connectionManager(self, didReceiveCommandResponse: data)
         } else {

@@ -83,7 +83,9 @@ export class ActivitySourceAttribution {
   }
 
   static #sourceKey(entry: SourceExternalIdEntry): string {
-    return `${entry.providerId}:${entry.subsource ?? ""}`;
+    return (
+      entry.memberActivityId ?? `${entry.providerId}:${entry.externalId}:${entry.subsource ?? ""}`
+    );
   }
 
   static #toSourceLink(entry: SourceExternalIdEntry, lookup: ProviderLookup): SourceLink {

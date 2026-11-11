@@ -128,6 +128,34 @@ meal-aggregate records appear once in editable meal cards; Apple Health daily
 aggregates remain totals-only. The provider-neutral rules are defined in
 [migration 0124](../drizzle/0124_meal_aggregate_nutrition_sources.sql).
 
+## Hang Ten Workouts
+
+Hang Ten writes contact-based intervals under `HangTen.ActivitySegments.v2`.
+The metadata key retains its `.v2` suffix even when the JSON body uses format
+version 3. Version 2 and 3 segments identify work targets as `resolvedContacts`
+or `selfSelected`; rest segments do not require contact identifiers. See the
+[metadata key](https://github.com/Asherlc/hang-ten/blob/c426d7019a65e1bb63c4c9f60ba88b4de65f22cc/HangTen/Models/WorkoutHistory.swift#L4-L8)
+and [recorded segment formats](https://github.com/Asherlc/hang-ten/blob/c426d7019a65e1bb63c4c9f60ba88b4de65f22cc/HangTen/Models/WorkoutActivityRecording.swift#L285-L369).
+
+Both XML imports and native HealthKit sync use the
+[shared workout parser](../src/providers/apple-health/workouts.ts). It also
+reads historical version 1 metadata from `HangTen.ActivitySegments`. When both
+keys are present, the current key takes precedence; invalid current metadata
+produces an import error instead of substituting older intervals. The
+[interval importer](../src/providers/apple-health/hang-ten-intervals.ts) retains
+the recorded target and hand metadata and labels exact contact depths without
+converting a depth range into an exact measurement.
+
+For a session reporting no completed hangs, resolve its displayed group ID to
+the Hang Ten member before comparing `raw.metadata` with
+`fitness.activity_interval`. Check the key and the JSON body's version
+separately. If the raw segments are present but interval rows are missing,
+reprocess the retained metadata with the current parser and interval importer
+in a transaction scoped to that member; preserve its original metadata and
+invalidate the affected user's query cache afterward. The
+[database regression](../packages/server/src/repositories/hang-ten-import.integration.test.ts)
+exercises import, reimport, and the shared detail response.
+
 ## Workout Source Attribution
 
 Apple Health workouts can preserve the upstream app name inside the workout JSON (`raw.sourceName`) even when the canonical `source_name` column is null. In production this is how workouts imported through Apple Health can still identify apps like Strong or WHOOP on the activity detail page.
@@ -222,3 +250,48 @@ The clinical records import runs after the XML import:
 6. Parse and batch-insert into `lab_result` table (500 per batch)
 
 The source name map uses SAX streaming — the export.xml can be 2.5GB and must not be loaded into memory. The SAX parser fires `opentag` for each `<ClinicalRecord>` element and extracts only the `sourceName` and `resourceFilePath` attributes.
+
+## Running form and observed step cadence
+
+Native sync imports available running stride length, ground-contact time, and
+vertical oscillation as raw sensor quantities. Apple defines these identifiers
+as [running stride length](https://developer.apple.com/documentation/healthkit/hkquantitytypeidentifier/runningstridelength),
+[running ground-contact time](https://developer.apple.com/documentation/healthkit/hkquantitytypeidentifier/runninggroundcontacttime),
+and [running vertical oscillation](https://developer.apple.com/documentation/healthkit/hkquantitytypeidentifier/runningverticaloscillation).
+The XML importer uses the same channels and source units.
+
+Running step uploads retain only quantities explicitly associated with a
+running workout, using Apple's [workout association predicate](https://developer.apple.com/documentation/healthkit/hkquery/predicateforobjects(from:)-5irg9)
+and [quantity-series query](https://developer.apple.com/documentation/healthkit/hkquantityseriessamplequerydescriptor).
+Each child retains the parent UUID, original count, exact interval, source
+bundle, and associated workout UUIDs. Native snapshots recover late
+associations in the selected observer range; historical associations outside
+that range still require a bounded historical sync. The anchored delta pages
+through at most 500 changed step parents, including unrelated or deleted
+parents, acknowledging each page only after successful uploads and deletions.
+This workout subset does not replace the complete-day step-statistics writer.
+
+Raw step parents use `hk:<sample UUID>` for replacement and deletion, while the
+[workout writer](../packages/server/src/routers/health-kit-sync-processors.ts)
+uses `hk:workout:<workout UUID>`. The
+[raw step writer](../packages/server/src/repositories/health-kit-running-steps-repository.ts)
+retains bare workout UUIDs in `workout_uuids`; the cadence model removes the
+workout prefix when resolving those associations to current owned activities.
+
+The [cadence model](../analytics/models/read_models/activity_step_cadence_rows.sql)
+selects one non-overlapping recording source and computes
+`60 * recorded steps / observed interval seconds`. Zero counts remain observed;
+missing or ambiguous evidence remains unavailable. This describes the recorded
+intervals, including any pauses within them, rather than full-workout active-time
+cadence. Apple's [workout duration](https://developer.apple.com/documentation/healthkit/hkworkout/duration)
+can account for pauses and is not interchangeable with the observed intervals.
+Positive direct cadence samples take precedence. Both clients show the supplied
+basis and observed wall-clock coverage, retain other running-form measurements
+when cadence is missing, and preserve server errors alongside previous data.
+
+Apply [ClickHouse migration 0107](../src/db/clickhouse-migrations/0107_running_step_cadence.ts)
+before refreshing the model and shared summary. The bounded incremental build
+cannot recover observations omitted by older importers. A released native
+build, authorization, device validation, and an explicitly bounded historical
+sync remain required; repository tests do not establish production recovery.
+The model follows [dbt incremental-model semantics](https://docs.getdbt.com/docs/build/incremental-models).

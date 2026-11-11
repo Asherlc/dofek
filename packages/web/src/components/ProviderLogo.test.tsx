@@ -1,7 +1,10 @@
 // @vitest-environment jsdom
-import { cleanup, render } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { cleanup, fireEvent, render } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { captureException } from "../lib/telemetry";
 import { ProviderLogo, providerLabel } from "./ProviderLogo";
+
+vi.mock("../lib/telemetry", () => ({ captureException: vi.fn() }));
 
 afterEach(cleanup);
 
@@ -31,7 +34,72 @@ describe("providerLabel", () => {
 });
 
 describe("ProviderLogo", () => {
+  describe("Garmin recording devices", () => {
+    it("shows a contained model thumbnail at the requested size", () => {
+      const { container } = render(
+        <ProviderLogo provider="garmin" sourceName="Forerunner 965" size={32} />,
+      );
+      const img = queryImg(container);
+      expect(img.src).toContain("010-02809-00");
+      expect(img.width).toBe(32);
+      expect(img.height).toBe(32);
+      expect(img.style.objectFit).toBe("contain");
+    });
+
+    it.each([undefined, "Unrecognized watch", "Forerunner 965 Ultra"])(
+      "keeps the provider logo for %s",
+      (sourceName) => {
+        const { container } = render(<ProviderLogo provider="garmin" sourceName={sourceName} />);
+        expect(queryImg(container).getAttribute("src")).toBe("/logos/garmin.svg");
+      },
+    );
+
+    it("keeps another provider's logo when its source names a Garmin model", () => {
+      const { container } = render(<ProviderLogo provider="strava" sourceName="Edge 1050" />);
+      expect(queryImg(container).getAttribute("src")).toBe("/logos/strava.svg");
+    });
+
+    it("reports a failed thumbnail and falls back to Garmin until the image URL changes", () => {
+      const { container, rerender } = render(
+        <ProviderLogo provider="garmin" sourceName="Forerunner 965" />,
+      );
+      fireEvent.error(queryImg(container));
+      expect(queryImg(container).getAttribute("src")).toBe("/logos/garmin.svg");
+      expect(captureException).toHaveBeenCalledWith(
+        expect.any(Error),
+        expect.objectContaining({ provider: "garmin", sourceName: "Forerunner 965" }),
+      );
+      rerender(<ProviderLogo provider="garmin" sourceName="Garmin Forerunner® 965" />);
+      expect(queryImg(container).getAttribute("src")).toBe("/logos/garmin.svg");
+      rerender(<ProviderLogo provider="garmin" sourceName="Edge 1050" />);
+      expect(queryImg(container).src).toContain("010-02890-00");
+    });
+  });
+
   describe("image logos", () => {
+    it.each([
+      ["kilter", "kilter.png"],
+      ["tension", "tension.png"],
+      ["grasshopper", "grasshopper.png"],
+      ["decoy", "decoy.png"],
+      ["soill", "soill.png"],
+      ["touchstone", "touchstone.png"],
+      ["aurora-board", "aurora-board.png"],
+      ["crimpd", "crimpd.png"],
+      ["eight-a", "eight-a.png"],
+      ["moonboard", "moonboard.png"],
+      ["thecrag", "thecrag.png"],
+      ["ziva", "ziva.png"],
+      ["github", "github.png"],
+      ["slack", "slack.png"],
+      ["intervals.icu", "intervals.icu.svg"],
+      ["cycling-analytics", "cycling_analytics.png"],
+      ["apple-health", "apple_health.png"],
+    ])("renders the bundled brand icon for %s", (provider, asset) => {
+      const { container } = render(<ProviderLogo provider={provider} />);
+      expect(queryImg(container).getAttribute("src")).toBe(`/logos/${asset}`);
+    });
+
     it("renders an SVG img for providers with SVG logos", () => {
       const { container } = render(<ProviderLogo provider="strava" />);
       const img = queryImg(container);
@@ -68,15 +136,15 @@ describe("ProviderLogo", () => {
 
   describe("letter fallback", () => {
     it("renders a styled letter for providers without a logo", () => {
-      const { container } = render(<ProviderLogo provider="velohero" />);
+      const { container } = render(<ProviderLogo provider="dofek" />);
       const span = querySpan(container);
-      expect(span.textContent).toBe("V");
+      expect(span.textContent).toBe("D");
     });
 
     it("uses the brand color when available", () => {
-      const { container } = render(<ProviderLogo provider="velohero" />);
+      const { container } = render(<ProviderLogo provider="dofek" />);
       const span = querySpan(container);
-      expect(span.style.backgroundColor).toBe("rgb(255, 102, 0)");
+      expect(span.style.backgroundColor).toBe("rgb(74, 157, 142)");
     });
 
     it("uses the default gray for unknown providers", () => {
@@ -92,9 +160,45 @@ describe("ProviderLogo", () => {
     });
 
     it("scales font size to 55% of size", () => {
-      const { container } = render(<ProviderLogo provider="velohero" size={40} />);
+      const { container } = render(<ProviderLogo provider="dofek" size={40} />);
       const span = querySpan(container);
       expect(span.style.fontSize).toBe("22px");
     });
+  });
+});
+
+describe("Apple Health source icons", () => {
+  it("renders the personalized Apple Watch source with its Apple Health badge", () => {
+    const { container } = render(
+      <ProviderLogo provider="apple_health" sourceName={"Asher’s Apple\u00a0Watch"} size={32} />,
+    );
+    const images = container.querySelectorAll("img");
+    expect(images).toHaveLength(2);
+    expect(images[0]?.getAttribute("src")).toBe("/logos/apple-watch.svg");
+    expect(images[0]?.getAttribute("width")).toBe("32");
+    expect(images[1]?.getAttribute("src")).toBe("/logos/apple_health.png");
+    expect(images[1]?.getAttribute("style")).toContain("width: 14px");
+  });
+
+  it.each([
+    ["Strong", "strong-csv"],
+    ["Hang Ten", "hang-ten"],
+  ])("shows %s with an Apple Health badge", (sourceName, asset) => {
+    const { container } = render(
+      <ProviderLogo provider="apple_health" sourceName={sourceName} size={32} />,
+    );
+    const images = container.querySelectorAll("img");
+    expect(images).toHaveLength(2);
+    expect(images[0]?.getAttribute("src")).toContain(`${asset}.png`);
+    expect(images[1]?.getAttribute("src")).toContain("apple_health.png");
+    expect(images[1]?.getAttribute("style")).toContain("bottom: 0");
+    expect(images[1]?.getAttribute("style")).toContain("right: 0");
+  });
+  it("uses the unknown source initial with the Apple Health badge", () => {
+    const { container, getByText } = render(
+      <ProviderLogo provider="apple_health" sourceName="New App" />,
+    );
+    expect(getByText("N")).toBeTruthy();
+    expect(container.querySelectorAll("img")).toHaveLength(1);
   });
 });

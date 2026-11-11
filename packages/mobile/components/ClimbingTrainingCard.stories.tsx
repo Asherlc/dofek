@@ -3,7 +3,7 @@ import { ClimbingTrainingCard } from "./ClimbingTrainingCard";
 import { climbingProgressionFixture } from "./climbing-progression-test-helpers";
 
 const data = {
-  gradeProgression: [climbingProgressionFixture()],
+  gradeProgression: climbingProgressionFixture(),
   volumeByGrade: [
     {
       climbKind: "boulder",

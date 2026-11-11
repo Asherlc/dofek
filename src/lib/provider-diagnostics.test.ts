@@ -5,10 +5,14 @@ let reportProviderHttpDiagnostic: typeof import("./provider-diagnostics.ts").rep
 let runWithProviderTokenDiagnostics: typeof import("./provider-token-diagnostic-context.ts").runWithProviderTokenDiagnostics;
 let runTransactionEffects: typeof import("../db/transaction-effects.ts").runTransactionEffects;
 
-const { debug, warn, captureException } = vi.hoisted(() => ({
+const { debug, warn, captureException, add } = vi.hoisted(() => ({
   debug: vi.fn(),
   warn: vi.fn(),
   captureException: vi.fn(),
+  add: vi.fn(),
+}));
+vi.mock("@opentelemetry/api", () => ({
+  metrics: { getMeter: () => ({ createCounter: () => ({ add }) }) },
 }));
 vi.mock("../logger.ts", () => ({ logger: { debug, warn } }));
 vi.mock("./error-reporting.ts", () => ({ captureException }));
@@ -273,9 +277,11 @@ describe("reportProviderAuthDiagnostic", () => {
       await runTransactionEffects(async () => {
         reportProviderAuthDiagnostic("provider", event, "user-123");
         expect(debug).not.toHaveBeenCalled();
+        expect(add).not.toHaveBeenCalled();
       });
       expect(debug).toHaveBeenCalledOnce();
       expect(debug).toHaveBeenCalledWith(expect.stringContaining(`"event":"${event}"`));
+      expect(add).toHaveBeenCalledWith(1, { provider: "provider", event });
     },
   );
 
@@ -288,6 +294,7 @@ describe("reportProviderAuthDiagnostic", () => {
       }),
     ).rejects.toThrow("commit failed");
     expect(debug).not.toHaveBeenCalled();
+    expect(add).not.toHaveBeenCalled();
   });
 
   it("records credential expiry and refresh availability without token values", () => {
@@ -306,9 +313,10 @@ describe("reportProviderAuthDiagnostic", () => {
     }
   });
 
-  it("reports failed credential lifecycle events as sanitized Sentry errors", () => {
+  it("counts failed credential lifecycle events with bounded labels and retains diagnostics", () => {
     reportProviderAuthDiagnostic("garmin", "sign_in_failed", "user-123");
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('"event":"sign_in_failed"'));
-    expect(captureException.mock.calls[0]?.[0].message).toBe("Provider garmin sign_in_failed");
+    expect(add).toHaveBeenCalledWith(1, { provider: "garmin", event: "sign_in_failed" });
+    expect(captureException).not.toHaveBeenCalled();
   });
 });

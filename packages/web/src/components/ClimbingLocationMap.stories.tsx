@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { type ReactNode, useMemo } from "react";
 import { expect, fireEvent, waitFor, within } from "storybook/test";
-import "leaflet/dist/leaflet.css";
+import "maplibre-gl/dist/maplibre-gl.css";
 import { trpc } from "../lib/trpc.ts";
 import { ClimbingLocationMap } from "./ClimbingLocationMap.tsx";
 import { climbingLocationMapFixture } from "./climbing-location-map-test-helpers.ts";
@@ -107,15 +107,3 @@ export const Loading: Story = {
 };
 export const Empty: Story = { args: { data: { bounds: null, nodes: [] } } };
 export const Refreshing: Story = { args: { loading: true } };
-export const TileError: Story = {
-  play: async ({ canvasElement }) => {
-    await waitFor(() => expect(canvasElement.querySelector("img.leaflet-tile")).not.toBeNull());
-    canvasElement.querySelector("img.leaflet-tile")?.dispatchEvent(new Event("error"));
-    await expect(within(canvasElement).findByRole("status")).resolves.toHaveTextContent(
-      "Some map tiles could not load",
-    );
-    await expect(
-      within(canvasElement).getByRole("region", { name: "Climbing locations" }),
-    ).toBeVisible();
-  },
-};

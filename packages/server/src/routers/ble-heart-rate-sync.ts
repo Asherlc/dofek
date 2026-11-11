@@ -7,6 +7,7 @@ import { filterFutureSamples } from "./sample-validation.ts";
 // ── Zod schemas ──
 
 const bleHeartRateSampleSchema = z.object({
+  deviceName: z.string().optional(),
   // Reject non-ISO strings at the boundary so a malformed mobile payload returns
   // an input-validation error instead of failing later as an internal insert
   // error. The mobile buffer serializes UTC timestamps with fractional seconds;

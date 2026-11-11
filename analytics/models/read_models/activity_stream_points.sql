@@ -11,7 +11,11 @@
     }
 ) }}
 
-WITH sensor_source_versions AS MATERIALIZED (
+WITH
+{% if activity_refresh_scoped %}
+{{ activity_refresh_scope_ctes() }}
+{% endif %}
+sensor_source_versions AS MATERIALIZED (
     SELECT
         activity_id,
         user_id,

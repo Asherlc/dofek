@@ -5,11 +5,26 @@ import yauzl from "yauzl";
 const MAX_ARCHIVE_ENTRY_COUNT = 100_000;
 const MAX_ARCHIVE_EXPANDED_BYTES = 4 * 1024 * 1024 * 1024;
 
+export class ArchiveValidationError extends Error {
+  override readonly name = "ArchiveValidationError";
+}
+
+function archiveReadFailure(error: Error): Error {
+  // Filesystem errors retain their OS code so workers can retry infrastructure failures.
+  return "code" in error || error instanceof ArchiveValidationError
+    ? error
+    : new ArchiveValidationError(error.message, { cause: error });
+}
+
 function openZip(filePath: string): Promise<yauzl.ZipFile> {
   return new Promise((resolve, reject) => {
     yauzl.open(filePath, { lazyEntries: true, validateEntrySizes: true }, (error, zipFile) => {
       if (error || !zipFile) {
-        reject(error ?? new Error("ZIP archive could not be opened"));
+        reject(
+          error
+            ? archiveReadFailure(error)
+            : new ArchiveValidationError("ZIP archive could not be opened"),
+        );
         return;
       }
       resolve(zipFile);
@@ -39,7 +54,8 @@ async function verifyZipSignature(filePath: string): Promise<void> {
       ((signature[2] === 0x03 && signature[3] === 0x04) ||
         (signature[2] === 0x05 && signature[3] === 0x06) ||
         (signature[2] === 0x07 && signature[3] === 0x08));
-    if (!validSignature) throw new Error("Upload does not have a valid ZIP file signature");
+    if (!validSignature)
+      throw new ArchiveValidationError("Upload does not have a valid ZIP file signature");
   } finally {
     await file.close();
   }
@@ -53,21 +69,21 @@ export async function validateImportArchive(filePath: string): Promise<void> {
     let expandedBytes = 0;
     const fail = (error: Error) => {
       zipFile.close();
-      reject(error);
+      reject(archiveReadFailure(error));
     };
     zipFile.on("entry", (entry) => {
       entryCount++;
       expandedBytes += entry.uncompressedSize;
       if (entryCount > MAX_ARCHIVE_ENTRY_COUNT) {
-        fail(new Error(`ZIP archive exceeds ${MAX_ARCHIVE_ENTRY_COUNT} entries`));
+        fail(new ArchiveValidationError(`ZIP archive exceeds ${MAX_ARCHIVE_ENTRY_COUNT} entries`));
         return;
       }
       if (expandedBytes > MAX_ARCHIVE_EXPANDED_BYTES) {
-        fail(new Error("ZIP archive exceeds the maximum expanded size"));
+        fail(new ArchiveValidationError("ZIP archive exceeds the maximum expanded size"));
         return;
       }
       if (isUnsafeEntryPath(entry.fileName)) {
-        fail(new Error("ZIP archive contains an unsafe entry path"));
+        fail(new ArchiveValidationError("ZIP archive contains an unsafe entry path"));
         return;
       }
       zipFile.readEntry();

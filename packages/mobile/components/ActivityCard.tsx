@@ -4,28 +4,25 @@ import {
   activityDataStateLabel,
   formatActivityMetric,
 } from "@dofek/format/activity-data-state";
-import { formatDurationRange, formatNumber, formatTimeOnly } from "@dofek/format/format";
+import { formatDurationMinutes, formatNumber, formatTimeOnly } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
-import { getActivityIconInfo } from "@dofek/training/activity-icons";
 import { formatActivityTypeLabel } from "@dofek/training/training";
 import { StyleSheet, Text, View } from "react-native";
 import { colors } from "../theme";
+import { ActivityTypeIcon } from "./ActivityTypeIcon";
 
 interface ActivityCardProps {
-  name: string;
+  name: string | null;
   activityType: string;
+  primaryActivityType: string | null;
   startedAt: string;
-  endedAt: string | null;
+  durationMin: number | null;
   avgHr: number | null;
   maxHr: number | null;
   avgPower: number | null;
   distanceKm: number | null;
   distanceState: ActivityDataState;
   units: UnitConverter;
-}
-
-function activityIcon(type: string): string {
-  return getActivityIconInfo(type).emoji;
 }
 
 function Stat({ value, label, unit }: { value: string | number; label: string; unit?: string }) {
@@ -59,8 +56,9 @@ function UnavailableStat({ metric }: { metric: ActivityMetric }) {
 export function ActivityCard({
   name,
   activityType,
+  primaryActivityType,
   startedAt,
-  endedAt,
+  durationMin,
   avgHr,
   maxHr,
   avgPower,
@@ -68,6 +66,8 @@ export function ActivityCard({
   distanceState,
   units,
 }: ActivityCardProps) {
+  const displayActivityType = primaryActivityType ?? activityType;
+  const isClimbing = displayActivityType === "climbing";
   const distanceMetric = formatActivityMetric("Distance", distanceKm, distanceState, (value) =>
     formatNumber(units.convertDistance(value), 2),
   );
@@ -75,13 +75,14 @@ export function ActivityCard({
   return (
     <View style={styles.card}>
       <View style={styles.header}>
-        <Text style={styles.icon}>{activityIcon(activityType)}</Text>
+        <ActivityTypeIcon activityType={displayActivityType} size={40} />
         <View style={styles.headerText}>
           <Text style={styles.name} numberOfLines={2}>
-            {name || formatActivityTypeLabel(activityType)}
+            {name ?? formatActivityTypeLabel(displayActivityType)}
           </Text>
           <Text style={styles.time}>
-            {formatTimeOnly(startedAt)} · {formatDurationRange(startedAt, endedAt)}
+            {formatTimeOnly(startedAt)} ·{" "}
+            {durationMin === null ? "Duration unavailable" : formatDurationMinutes(durationMin)}
           </Text>
         </View>
       </View>
@@ -91,7 +92,7 @@ export function ActivityCard({
       <View style={styles.stats}>
         {distanceMetric.status === "available" ? (
           <Stat value={distanceMetric.value} label="Distance" unit={units.distanceLabel} />
-        ) : (
+        ) : isClimbing ? null : (
           <UnavailableStat metric={distanceMetric} />
         )}
         {avgHr != null && <Stat value={Math.round(avgHr)} label="Avg HR" unit="bpm" />}
@@ -113,9 +114,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-  },
-  icon: {
-    fontSize: 28,
   },
   headerText: {
     flex: 1,

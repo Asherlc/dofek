@@ -1068,6 +1068,7 @@ function makeCorrelationEvidenceSources() {
     query: vi
       .fn()
       .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([
         {
           ...sleepRow,
@@ -1424,6 +1425,7 @@ describe("CorrelationRepository", () => {
         query: vi
           .fn()
           .mockResolvedValueOnce([])
+          .mockResolvedValueOnce([])
           .mockResolvedValueOnce([
             {
               date: "2026-01-02",
@@ -1559,6 +1561,7 @@ describe("CorrelationRepository", () => {
       const sensorStore = {
         query: vi
           .fn()
+          .mockResolvedValueOnce([])
           .mockResolvedValueOnce([])
           .mockResolvedValueOnce([
             {

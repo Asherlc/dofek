@@ -1,19 +1,20 @@
 # Providers
 
 <!-- cspell:ignore Ziva -->
-<!-- cspell:words alltrails -->
 
 This directory contains implementations for various data providers (fitness trackers, smart scales, nutrition apps).
 
 ## Core Concepts
 
 - **Provider Interface**: All providers implement the `Provider` interface (defined in `types.ts`).
-- **Sync vs Import**: Providers are either `SyncProvider` (fetches data via API) or `ImportProvider` (processes uploaded files).
+- **Sync, Push, and Import**: The [provider interfaces](types.ts) distinguish `SyncProvider` (fetches API data), `PushProvider` (processes official pushed events), and `ImportProvider` (processes uploaded files).
 - **Connections**: Supports OAuth 2.0 (`oauth`), OAuth 1.0 (`oauth1`), personal token (`token`), credentials (`credential`), and public profile identity (`public-profile`). Each sync provider connects per user through the [provider contract](types.ts) and [auth policy](provider-auth-policy.ts); see [the provider guide](../../docs/adding-a-provider.md).
 - **Manual connections**: `manualToken.kind` distinguishes `public-profile` from `access-token`. Both use the existing connect form and encrypted identity/token repository; [account-erasure snapshotting](../account-erasure/remote-snapshot.ts) marks public-profile connections as `no_remote_authorization`, including identities stored before this classification was added.
 - **Webhooks**: Many providers (Strava, Fitbit, Oura) support real-time updates via webhooks (`WebhookProvider`).
 
 ## Implementation Details
+
+- **Strava interrupted syncs**: The [provider](strava/provider.ts) saves completed activity IDs through the existing queue checkpoint store after metadata, photo discovery, and stream writes succeed. Checkpoints are bound to the exact sync window. Every attempt re-lists inventory from page one, refreshes list metadata while preserving detail-only provenance, and skips completed detail/stream downloads. Without a fresh detail download, the stored raw payload remains the previous source snapshot while normalized metadata refreshes. A complete inventory reconciles absence even if individual activity work fails; only an error-free completion clears the checkpoint. Retryable photo discovery remains pending. Numbered pagination is not a durable cursor; Strava documents the list endpoint's [page and time parameters](https://developers.strava.com/docs/reference/#api-Activities-getLoggedInAthleteActivities), and BullMQ describes [stalled-job reprocessing](https://docs.bullmq.io/guide/jobs/stalled). Database regressions cover changed inventories in [the integration suite](strava-sync.integration.test.ts).
 
 - **Registry**: All active providers are registered in `index.ts`.
 - **HTTP Client**: Provider fetches pass through the shared `@dofek/provider-http` boundary for adaptive rate limiting and a two-minute request deadline. The deadline composes with a caller-provided abort signal; request-start timeouts use `ETIMEDOUT`, and native response-body `TimeoutError` failures are also retryable instead of leaving a BullMQ job active indefinitely. Node.js documents [`AbortSignal.timeout()` and `AbortSignal.any()`](https://nodejs.org/api/globals.html#class-abortsignal).
@@ -32,7 +33,7 @@ This directory contains implementations for various data providers (fitness trac
 
 ## Climbing tick removals
 
-Mountain Project, OpenBeta, Kaya, and theCrag reconcile their complete logbooks
+Mountain Project, OpenBeta, and Kaya reconcile their complete logbooks
 on each successful sync, including valid empty lists. The
 [snapshot writer](../db/climbing-log-snapshot.ts) marks missing source records
 with `providerAbsentAt`, preserves their raw payloads and attempts, and restores
@@ -41,6 +42,17 @@ absent records; the provider record browser retains them. See the
 [active-log projection](../../packages/server/src/repositories/climbing-rock-observations.ts)
 and [provider records](../../packages/server/src/repositories/provider-detail-repository.ts).
 Failed, malformed, or incomplete discovery never retires records.
+Kaya preserves an observed failed session occurrence when its session is
+currently returned and an exact same-session, same-climb Redpoint/Send/Repeat
+ascent remains present without its own count;
+see the [verified transition and recovery rules](../../docs/kaya.md#attempt-occurrences)
+and [adapter](kaya-sync.ts). This avoids interpreting that feed transition as
+removal of the earlier effort.
+
+theCrag uses additive imports because official incremental responses are not
+complete logbook snapshots and the API does not document deletion events; see
+the [provider guide](../../docs/thecrag.md) and
+[official personal API](https://www.thecrag.com/en/article/logbookreadapi).
 
 CSV uploads retain their existing session-scoped reconciliation because an
 upload need not contain the complete remote logbook; see the
@@ -48,8 +60,9 @@ upload need not contain the complete remote logbook; see the
 
 ## Supported Providers
 
-- **API/credential/OAuth sync providers**: AllTrails, Amazfit/Zepp, BodySpec, Concept2, Cycling Analytics, Eight Sleep, FatSecret, Garmin, Kaya, Mountain Project, OpenBeta, Oura, Peloton, Polar, Ride with GPS, Strava, theCrag, TrainerRoad, Ultrahuman, VeloHero, Wahoo, Wger, WHOOP, Withings, Xert, Ziva, Zwift. See the [registry](registry.ts).
-- **Import-only providers**: Cronometer CSV, FIT files, Garmin account exports, Kaya CSV (`kaya-export`), Strong CSV, and Zepp OS App exports. FIT imports use Garmin's open FIT protocol and SDK-compatible files ([FIT SDK](https://developer.garmin.com/fit/overview/)).
+- **API/credential/OAuth sync providers**: Amazfit/Zepp, Aurora Board, BodySpec, Concept2, Crimpd, Cycling Analytics, Decoy Board, Eight Sleep, 8a.nu/Vertical-Life, FatSecret, Grasshopper Board, Kaya, Kilter Board, Mountain Project, OpenBeta, Oura, Peloton, Polar, Ride with GPS, So iLL Board, Strava, Tension Board, theCrag, Touchstone Board, TrainerRoad, Ultrahuman, Wahoo, Wger, WHOOP, Withings, Xert, Ziva, Zwift. See the [registration list](../jobs/provider-registration.ts).
+- **OAuth push providers**: Garmin uses official Health and Activity notifications through its dedicated queue, with no scheduled/manual polling. Connection controls remain available. See the [provider](garmin/provider.ts) and [Garmin guide](../../docs/garmin.md).
+- **Import-only providers**: Historical MoonBoard BoardLib CSV, Cronometer CSV, FIT files, Garmin account exports, Kaya CSV (`kaya-export`), Strong CSV, and Zepp OS App exports. Crimpd and 8a.nu/Vertical-Life retain uploads alongside account sync ([Crimpd](crimpd/provider.ts), [Vertical-Life](eight-a/provider.ts)). FIT imports use Garmin's open FIT protocol and SDK-compatible files ([FIT SDK](https://developer.garmin.com/fit/overview/)).
 - **Upload/native-mobile data sources**: Apple Health import and WHOOP BLE capture live outside this registry path in the web/mobile upload and native module flows.
 
 The Fitbit, Suunto, COROS, Komoot, MapMyFitness, and Decathlon modules remain available for
@@ -69,6 +82,28 @@ worker registries:
 - Decathlon requires an approved application registration before issuing client credentials
   ([Decathlon login authorization guide](https://login-doc.decathlon.com/authorization.html)).
 
+## Climbing boards and exports
+
+Kilter connects to its current backend. Tension, Grasshopper, Decoy, So iLL,
+Touchstone Board, and Aurora Board connect to independent accounts through
+Aurora's shared protocol. Crimpd connects per user and downloads its ZIP export
+through the existing importer ([implementation](crimpd/provider.ts)). Crimpd,
+8a.nu/Vertical-Life, and historical MoonBoard BoardLib files also use the existing
+upload/import flow. The
+[climbing provider guide](../../docs/climbing-providers.md) documents exact
+access, field limits, source evidence, account-erasure prerequisites, and
+unavailable 27 Crags/Griptonite/current MoonBoard contracts. See the
+[Aurora app directory](https://auroraclimbing.com/),
+[Crimpd export](https://crimpd.com/docs/data-export/), and
+[8a.nu export](https://www.8a.nu/faq).
+
+8a.nu/Vertical-Life also connects per user and reads the four shared logbook
+categories. Its strict CSV/native transition requires unique exact matches,
+preserves attachments and both source payloads, and rejects unmatched connected
+uploads rather than guessing identities. See the [provider](eight-a/provider.ts),
+[identity resolver](eight-a/identity.ts), and
+[verified protocol evidence](../../docs/climbing-logbook-api-research.md#vertical-life-mobile-client-verification).
+
 ## Ziva
 
 Ziva is a per-user OAuth nutrition provider backed by its documented stateless
@@ -79,24 +114,6 @@ operator smoke command are documented in the
 [Ziva provider guide](../../docs/ziva.md). See Ziva's
 [official MCP reference](https://ziva.fit/mcp-docs) for the public endpoint and
 tool catalog.
-
-## AllTrails
-
-AllTrails uses per-user email/password connection through the shared web and
-mobile forms, with encrypted identity access/refresh tokens. Configure
-`ALLTRAILS_API_KEY` and `ALLTRAILS_CLIENT_ID` in Infisical for the native
-application identity; neither variable contains an individual user's login.
-The [provider](alltrails.ts) uses the historical native identity contract and
-recording API described in the [source audit](../../docs/alltrails.md).
-
-Sync imports recorded activities and raw timestamped GPS/elevation from the
-native six-axis polyline format. Current account access remains unverified
-against a live AllTrails account. Human-verification responses surface as
-connection/sync errors. See the [API research and validation limits](../../docs/alltrails.md)
-before treating this source-backed integration as a verified current API.
-Disconnect AllTrails before deleting a Dofek account; the
-[erasure prerequisite](../account-erasure/remote-snapshot.ts) requires this
-because Dofek has no verified AllTrails session-revocation operation.
 
 ## Amazfit/Zepp
 
@@ -166,21 +183,13 @@ partially unsupported, or failed responses do not retire existing rows.
 
 ## theCrag
 
-theCrag imports a connected user's climbing logbook through the personal-key
-read API. Users need active supporter status and generate their own key in
-Settings → API Keys; the same secure token form connects the provider on web
-and mobile. The API includes private notes and supports pagination and
-incremental reads by ascent update time
-([official personal logbook API](https://www.thecrag.com/en/article/logbookreadapi)).
-
-The [provider](thecrag/provider.ts) stores standalone climbing log entries and original
-source payloads without creating workouts. Every sync reads the complete
-paginated logbook so removed ascents can be marked absent. Dofek polls daily
-with one concurrent sync job. Full reads use more of the API's weekly account
-budget than its recommended incremental reads; the numeric budget is not
-published in the [personal API guide](https://www.thecrag.com/en/article/logbookreadapi).
-See the [theCrag provider guide](../../docs/thecrag.md) for connection,
-storage, and the limits of published-contract testing.
+theCrag connects a personal API key on web and mobile and imports the owner's
+logbook through the [official personal API](https://www.thecrag.com/en/article/logbookreadapi).
+Active supporter status is required, and the key includes private ascent notes.
+The [provider](thecrag/provider.ts) imports full history once, then source-epoch
+incremental updates, retaining stable ascent IDs and existing attachments.
+Public-profile connections must reconnect. Keys remain owner-revoked in theCrag
+Settings > API Keys; see the [provider guide](../../docs/thecrag.md).
 
 ## OAuth authorization erasure
 

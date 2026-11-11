@@ -192,6 +192,68 @@ printf '%s' "$SENTRY_ENVIRONMENT" > "$1"
     expect(readFileSync(capturedValuePath, "utf8")).toBe("staging");
   });
 
+  it.each([
+    { tokenSource: "Infisical", localEnvironment: "", expectedToken: "infisical-token" },
+    {
+      tokenSource: "workspace-local overrides",
+      localEnvironment: "AXIOM_API_TOKEN=local-token\n",
+      expectedToken: "local-token",
+    },
+  ])(
+    "routes Axiom signals separately using $tokenSource",
+    ({ localEnvironment, expectedToken }) => {
+      const { fixtureRoot, scriptPath } = createFixture(`#!/bin/sh
+cat <<'EXPORT_OUTPUT'
+${JSON.stringify([{ key: "AXIOM_API_TOKEN", value: "infisical-token" }])}
+EXPORT_OUTPUT
+`);
+      writeFileSync(join(fixtureRoot, ".env.local"), localEnvironment);
+
+      const result = runWithEnv(
+        scriptPath,
+        fixtureRoot,
+        [
+          process.execPath,
+          "-e",
+          "console.log([process.env.OTEL_EXPORTER_OTLP_HEADERS, process.env.OTEL_EXPORTER_OTLP_TRACES_HEADERS, process.env.OTEL_EXPORTER_OTLP_LOGS_HEADERS].join('\\n'))",
+        ],
+        {
+          OTEL_EXPORTER_OTLP_HEADERS: undefined,
+          OTEL_EXPORTER_OTLP_TRACES_HEADERS: undefined,
+          OTEL_EXPORTER_OTLP_LOGS_HEADERS: undefined,
+        },
+      );
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).toBe(
+        `Authorization=Bearer ${expectedToken}\n` +
+          `Authorization=Bearer ${expectedToken},X-Axiom-Dataset=dofek-traces\n` +
+          `Authorization=Bearer ${expectedToken},X-Axiom-Dataset=dofek-logs\n`,
+      );
+    },
+  );
+
+  it("preserves explicit workspace-local trace headers", () => {
+    const { fixtureRoot, scriptPath } = createFixture(`#!/bin/sh
+cat <<'EXPORT_OUTPUT'
+${JSON.stringify([{ key: "AXIOM_API_TOKEN", value: "infisical-token" }])}
+EXPORT_OUTPUT
+`);
+    writeFileSync(
+      join(fixtureRoot, ".env.local"),
+      "OTEL_EXPORTER_OTLP_TRACES_HEADERS=Authorization=Bearer trace-token,X-Axiom-Dataset=custom-traces\n",
+    );
+
+    const result = runWithEnv(scriptPath, fixtureRoot, [
+      process.execPath,
+      "-e",
+      "console.log(process.env.OTEL_EXPORTER_OTLP_TRACES_HEADERS)",
+    ]);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe("Authorization=Bearer trace-token,X-Axiom-Dataset=custom-traces\n");
+  });
+
   it("propagates a wrapped command termination as a shell-compatible exit status", () => {
     const { fixtureRoot, scriptPath } = createFixture(`#!/bin/sh
 printf '[]'

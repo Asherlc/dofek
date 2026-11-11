@@ -30,7 +30,6 @@ vi.mock("../components/ProviderLogo.tsx", () => ({
 
 vi.mock("../components/DataSourcesAuthModals.tsx", () => ({
   CredentialAuthModal: () => <div>Credential reconnect form</div>,
-  GarminAuthModal: () => <div>Garmin reconnect form</div>,
   TokenAuthModal: () => <div>Token reconnect form</div>,
   WhoopAuthModal: ({ onSuccess }: { onSuccess: () => void }) => (
     <div>
@@ -81,6 +80,9 @@ interface MockProvider {
   authorized: boolean;
   authType: string;
   lastSyncedAt: string | null;
+  lastSuccessfulSyncAt?: string | null;
+  lastProcessedUpdateAt?: string | null;
+  recentLogs?: Array<{ status: string; syncedAt: string }>;
   importOnly: boolean;
   description?: string;
   needsReauth?: boolean;
@@ -180,6 +182,9 @@ const mockRecordDetailQuery = vi.fn();
 
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
+    whoopBleSync: {
+      sensorSnapshot: { useQuery: () => ({ data: undefined, error: null, isLoading: false }) },
+    },
     processing: {
       status: { useQuery: () => mockDataHealth },
       dismiss: { useMutation: () => mockProcessingDismissMutation },
@@ -278,6 +283,23 @@ describe("ProviderDetailPage import-only providers", () => {
     mockProviders.data = [];
   });
 
+  it.each([
+    ["crimpd", "Crimpd"],
+    ["eight-a", "8a.nu / Vertical-Life"],
+  ])("retains file uploads for connected %s", async (id, name) => {
+    mockUseParams.mockReturnValue({ id });
+    mockProviders.data = [
+      { id, name, authorized: true, authType: "credential", lastSyncedAt: null, importOnly: false },
+    ];
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    render(<ProviderDetailPage />);
+    expect(screen.getByRole("heading", { name: "Import" })).toBeTruthy();
+    expect(screen.getByText("Import file")).toBeTruthy();
+    expect(mockFileImportProviderCard).toHaveBeenCalledWith(
+      expect.objectContaining({ providerId: id, showDetailsLink: false }),
+    );
+  });
+
   it("hides sync controls for import-only providers", async () => {
     mockProviders.data = [
       {
@@ -286,6 +308,9 @@ describe("ProviderDetailPage import-only providers", () => {
         authorized: true,
         authType: "none",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: true,
       },
     ];
@@ -326,6 +351,9 @@ describe("ProviderDetailPage import-only providers", () => {
         authorized: true,
         authType: "oauth",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: false,
       },
     ];
@@ -368,6 +396,9 @@ describe("ProviderDetailPage import-only providers", () => {
         authorized: true,
         authType: "oauth",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: false,
       },
     ];
@@ -391,6 +422,9 @@ describe("ProviderDetailPage import-only providers", () => {
         authorized: true,
         authType: "oauth",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: false,
       },
     ];
@@ -426,6 +460,9 @@ describe("ProviderDetailPage import-only providers", () => {
         authorized: false,
         authType: "oauth",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: false,
         needsReauth: true,
       },
@@ -459,6 +496,9 @@ describe("ProviderDetailPage import-only providers", () => {
         authorized: true,
         authType: "none",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: true,
       },
     ];
@@ -479,6 +519,9 @@ describe("ProviderDetailPage import-only providers", () => {
         authorized: true,
         authType: "file-import",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: true,
       },
     ];
@@ -545,6 +588,9 @@ describe("ProviderDetailPage import-only providers", () => {
         authorized: true,
         authType: "oauth",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: false,
       },
     ];
@@ -566,6 +612,9 @@ describe("ProviderDetailPage import-only providers", () => {
         authorized: true,
         authType: "custom:whoop",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: false,
       },
     ];
@@ -612,6 +661,9 @@ describe("ProviderDetailPage import-only providers", () => {
         authorized: true,
         authType: "custom:whoop",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: false,
       },
     ];
@@ -636,6 +688,9 @@ describe("ProviderDetailPage import-only providers", () => {
         authorized: true,
         authType: "oauth",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: false,
       },
     ];
@@ -674,6 +729,9 @@ describe("ProviderDetailPage import-only providers", () => {
         authorized: true,
         authType: "custom:whoop",
         lastSyncedAt: "2026-06-29T12:00:00Z",
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: false,
         needsReauth: true,
       },
@@ -704,6 +762,9 @@ describe("ProviderDetailPage import-only providers", () => {
         authorized: false,
         authType: "token",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: false,
         needsReauth: true,
         tokenAuth: null,
@@ -733,6 +794,9 @@ describe("ProviderDetailPage import-only providers", () => {
         authorized: true,
         authType: "oauth",
         lastSyncedAt: "2026-06-30T12:00:00Z",
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: false,
       },
     ];
@@ -770,6 +834,9 @@ describe("ProviderDetailPage import-only providers", () => {
         authorized: true,
         authType: "oauth",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: false,
       },
     ];
@@ -807,6 +874,9 @@ describe("ProviderDetailPage import-only providers", () => {
         authorized: true,
         authType: "oauth",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: false,
       },
     ];
@@ -841,6 +911,9 @@ describe("ProviderDetailPage import-only providers", () => {
         authorized: true,
         authType: "oauth",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: false,
       },
     ];
@@ -883,6 +956,9 @@ describe("ProviderDetailPage import-only providers", () => {
         authorized: true,
         authType: "oauth",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: false,
       },
     ];
@@ -916,6 +992,9 @@ describe("ProviderDetailPage import-only providers", () => {
         authorized: true,
         authType: "oauth",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: false,
       },
     ];
@@ -948,6 +1027,9 @@ describe("ProviderDetailPage import-only providers", () => {
         authorized: true,
         authType: "oauth",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: false,
       },
     ];
@@ -987,6 +1069,9 @@ describe("ProviderDetailPage import-only providers", () => {
         authorized: true,
         authType: "oauth",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: false,
       },
     ];
@@ -1018,6 +1103,9 @@ describe("ProviderDetailPage import-only providers", () => {
         authorized: true,
         authType: "oauth",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: false,
       },
     ];
@@ -1067,6 +1155,9 @@ describe("ProviderDetailPage import-only providers", () => {
         authorized: true,
         authType: "oauth",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: false,
       },
     ];
@@ -1092,6 +1183,9 @@ describe("ProviderDetailPage import-only providers", () => {
         authorized: false,
         authType: "oauth",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: false,
       },
     ];
@@ -1120,15 +1214,18 @@ describe("ProviderDetailPage import-only providers", () => {
   });
 
   it("shows mobile-only providers without sync controls or history", async () => {
-    mockUseParams.mockReturnValue({ id: "whoop-mobile" });
+    mockUseParams.mockReturnValue({ id: "whoop_ble" });
     mockProviders.data = [
       {
-        id: "whoop-mobile",
-        name: "WHOOP Mobile",
+        id: "whoop_ble",
+        name: "WHOOP (Bluetooth)",
         description: "Streams live sensor data.",
         authorized: true,
-        authType: "none",
+        authType: "push:mobile",
         lastSyncedAt: "2026-06-30T12:00:00Z",
+        recentLogs: [],
+        lastSuccessfulSyncAt: "2026-06-30T12:00:00Z",
+        lastProcessedUpdateAt: null,
         importOnly: false,
         pushOnly: true,
       },
@@ -1138,21 +1235,25 @@ describe("ProviderDetailPage import-only providers", () => {
     render(<ProviderDetailPage />);
 
     expect(screen.getByRole("heading", { name: "Mobile sync" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Background sensors" })).toBeTruthy();
     expect(screen.getByText(/Streams live sensor data\. Open the Dofek app/)).toBeTruthy();
     expect(screen.getByText(/Last received:/)).toBeTruthy();
     expect(screen.queryByText("Sync Controls")).toBeNull();
     expect(screen.queryByText("Sync History")).toBeNull();
   });
 
-  it("uses the generic mobile sync instructions when a push provider has no description", async () => {
-    mockUseParams.mockReturnValue({ id: "whoop-mobile" });
+  it("uses WHOOP mobile instructions when WHOOP BLE has no description", async () => {
+    mockUseParams.mockReturnValue({ id: "whoop_ble" });
     mockProviders.data = [
       {
-        id: "whoop-mobile",
-        name: "WHOOP Mobile",
+        id: "whoop_ble",
+        name: "WHOOP (Bluetooth)",
         authorized: true,
-        authType: "none",
+        authType: "push:mobile",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: false,
         pushOnly: true,
       },
@@ -1178,6 +1279,9 @@ describe("ProviderDetailPage import-only providers", () => {
           authorized: false,
           authType,
           lastSyncedAt: null,
+          recentLogs: [],
+          lastSuccessfulSyncAt: null,
+          lastProcessedUpdateAt: null,
           importOnly: false,
           needsReauth: true,
         },
@@ -1192,26 +1296,69 @@ describe("ProviderDetailPage import-only providers", () => {
     },
   );
 
-  it("opens the Garmin reconnect form for an expired Garmin account", async () => {
-    mockUseParams.mockReturnValue({ id: "garmin" });
-    mockProviders.data = [
-      {
-        id: "garmin",
-        name: "Garmin",
-        authorized: false,
-        authType: "custom:garmin",
-        lastSyncedAt: null,
-        importOnly: false,
-        needsReauth: true,
-      },
-    ];
+  it.each([null, "2026-10-20T10:00:00Z"])(
+    "uses successful processing evidence for push providers: %s",
+    async (lastProcessedUpdateAt) => {
+      vi.setSystemTime(new Date("2026-10-24T10:00:00Z"));
+      mockUseParams.mockReturnValue({ id: "garmin" });
+      mockProviders.data = [
+        {
+          id: "garmin",
+          name: "Garmin",
+          authorized: true,
+          authType: "oauth",
+          importOnly: false,
+          pushOnly: true,
+          lastSyncedAt: "2026-10-24T09:00:00Z",
+          lastSuccessfulSyncAt: "2026-10-24T09:00:00Z",
+          lastProcessedUpdateAt,
+        },
+      ];
+      const { ProviderDetailPage } = await import("./ProviderDetailPage");
+      render(<ProviderDetailPage />);
+      if (lastProcessedUpdateAt)
+        expect(screen.getByText("Last update processed: 4d ago")).toBeTruthy();
+      else expect(screen.queryByText(/^Last update processed:/)).toBeNull();
+    },
+  );
 
-    const { ProviderDetailPage } = await import("./ProviderDetailPage");
-    render(<ProviderDetailPage />);
-    fireEvent.click(screen.getByRole("button", { name: "Reconnect Garmin" }));
-
-    expect(screen.getByText("Garmin reconnect form")).toBeTruthy();
-  });
+  it.each([false, true])(
+    "offers Garmin OAuth recovery only when needed, needsReauth=%s",
+    async (needsReauth) => {
+      const openWindow = vi.spyOn(window, "open").mockReturnValue(null);
+      mockUseParams.mockReturnValue({ id: "garmin" });
+      mockProviders.data = [
+        {
+          id: "garmin",
+          name: "Garmin",
+          authorized: !needsReauth,
+          authType: "oauth",
+          lastSyncedAt: "2026-10-20T10:00:00Z",
+          recentLogs: [],
+          lastSuccessfulSyncAt: "2026-10-20T10:00:00Z",
+          lastProcessedUpdateAt: "2026-10-20T10:00:00Z",
+          importOnly: false,
+          needsReauth,
+          pushOnly: true,
+        },
+      ];
+      const { ProviderDetailPage } = await import("./ProviderDetailPage");
+      render(<ProviderDetailPage />);
+      if (needsReauth) {
+        fireEvent.click(screen.getByRole("button", { name: "Reconnect Garmin" }));
+        expect(openWindow).toHaveBeenCalledWith("/auth/provider/garmin", "_blank");
+      } else {
+        expect(screen.queryByRole("button", { name: "Reconnect Garmin" })).toBeNull();
+      }
+      expect(
+        screen.getByText("New data arrives automatically after you sync your Garmin device."),
+      ).toBeTruthy();
+      expect(screen.getByText("Updates automatically")).toBeVisible();
+      expect(screen.getByText(/^Last update processed:/)).toBeTruthy();
+      expect(screen.queryByRole("button", { name: "Sync Last 7 Days" })).toBeNull();
+      openWindow.mockRestore();
+    },
+  );
 
   it("opens the credential and token reconnect forms for expired providers", async () => {
     mockUseParams.mockReturnValue({ id: "fitbit" });
@@ -1222,6 +1369,9 @@ describe("ProviderDetailPage import-only providers", () => {
         authorized: false,
         authType: "credential",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: false,
         needsReauth: true,
       },
@@ -1240,6 +1390,9 @@ describe("ProviderDetailPage import-only providers", () => {
         authorized: false,
         authType: "token",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: false,
         needsReauth: true,
         tokenAuth: {
@@ -1263,6 +1416,9 @@ describe("ProviderDetailPage import-only providers", () => {
         authorized: false,
         authType: "public-profile",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: false,
         needsReauth: true,
         tokenAuth: {
@@ -1287,6 +1443,9 @@ describe("ProviderDetailPage import-only providers", () => {
         authorized: true,
         authType: "oauth",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: false,
       },
     ];
@@ -1332,6 +1491,9 @@ describe("ProviderDetailPage delete all data", () => {
         authorized: true,
         authType: "oauth",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: false,
       },
     ];
@@ -1372,6 +1534,9 @@ describe("ProviderDetailPage activity records", () => {
         authorized: true,
         authType: "file-import",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: true,
       },
     ];
@@ -1402,6 +1567,9 @@ describe("ProviderDetailPage activity records", () => {
         authorized: true,
         authType: "oauth",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: false,
       },
     ];
@@ -1434,6 +1602,7 @@ describe("ProviderDetailPage activity records", () => {
       providerId: "wahoo",
       dataType: "activities",
       recordId: "activity-123",
+      responseVersion: 4,
     });
 
     expect(screen.getByRole("link", { name: "Open activity" }).getAttribute("href")).toBe(
@@ -1452,6 +1621,9 @@ describe("WhoopWearLocationPicker", () => {
         authorized: true,
         authType: "oauth",
         lastSyncedAt: "2026-03-19T12:00:00Z",
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: false,
       },
     ];
@@ -1497,6 +1669,9 @@ describe("WhoopWearLocationPicker", () => {
         authorized: true,
         authType: "oauth",
         lastSyncedAt: null,
+        recentLogs: [],
+        lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         importOnly: false,
       },
     ];

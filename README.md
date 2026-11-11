@@ -54,8 +54,11 @@ High-volume sensor samples ──────┴─> Redpanda ──────
 - PeerDB mirrors lower-volume `fitness.*` tables into `postgres_fitness.*` in
   ClickHouse.
 - Incremental dbt models under `analytics/models/` produce expensive derived
-  analytics outside request paths. Derived sensor analytics are never written
-  back to Postgres.
+  analytics outside request paths. The serialized analytics worker also calls
+  the pure [`@dofek/cycling-power`](packages/cycling-power/README.md) algorithms
+  through its [bounded projector](src/analytics/README.md); dbt inputs precede
+  projection and dependent threshold/activity-power models follow it. Derived sensor analytics
+  are never written back to Postgres.
 - Express and tRPC serve both clients. BullMQ workers use Redis for scheduled
   syncs, imports, exports, post-sync work, and analytics cleanup.
 
@@ -140,6 +143,12 @@ pnpm storybook:web
 pnpm storybook:mobile
 ```
 
+Before `pnpm lint`, start the workspace's ClickHouse service with
+`pnpm compose -- up -d --wait clickhouse`. For a new workspace, initialize
+`.env.local` first with `pnpm compose:env --write`. Full lint includes
+[dbt-templated analytics SQL checks](analytics/.sqlfluff); see
+[integration dependencies](docs/testing.md#integration-dependencies).
+
 `pnpm test` and `pnpm test:changed` are Docker-free unit/mobile tiers.
 Database-backed tests run through the integration or `:all` commands, which
 start the workspace's Compose dependencies. See [docs/testing.md](docs/testing.md)
@@ -172,6 +181,12 @@ Shared cross-client logic belongs in domain packages such as
 `@dofek/stats`, `@dofek/onboarding`, and `@dofek/providers`. Web and mobile
 clients render server-computed metric values rather than recomputing them.
 
+[`@dofek/climbing-catalogue`](packages/climbing-catalogue/README.md) is an
+independent public library for climbing route discovery and identity evidence.
+Dofek's [catalogue service](src/climbing-catalogue.ts) supplies application cache
+policy; [source composition](src/climbing-catalogue-sources.ts) supplies credentials
+and rate-limited transport.
+
 ## Data and Provider Contracts
 
 - Providers implement the interfaces in
@@ -197,6 +212,14 @@ identity providers, and eligible data-provider login flows. The server
 advertises the available methods through `/api/auth/providers`; see
 [the app-password guide](docs/app-password-auth.md) and
 [`src/auth/README.md`](src/auth/README.md).
+
+Garmin connects through the approved application's OAuth flow and receives new
+data through official push delivery. Existing history and account-export ZIP
+imports remain available; users with legacy private tokens must reconnect.
+See the [Garmin guide](docs/garmin.md) for Starter limits, required application
+configuration, and the deployment checks before releasing portal delivery
+([provider implementation](src/providers/garmin/provider.ts),
+[authorization migration](drizzle/0156_garmin_official_authorization.sql)).
 
 Committed `.env` files contain non-secret configuration. Infisical contains
 secrets such as client secrets, tokens, private keys, and encryption keys.
@@ -230,6 +253,11 @@ release to the OCI host.
 Do not deploy production manually from this overview. Follow
 [`deploy/README.md`](deploy/README.md) for migration ordering, Infisical
 injection, health gates, rollback boundaries, and diagnostics.
+
+To check when production last deployed or why merged changes have not released,
+follow [Checking the Latest Production Deployment](deploy/README.md#checking-the-latest-production-deployment).
+Inspect Release Production's server job and correlate it with the running image; the procedure
+also checks whether automatic deployment is disabled.
 
 ## Documentation Policy
 

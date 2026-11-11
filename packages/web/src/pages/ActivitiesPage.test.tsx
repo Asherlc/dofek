@@ -1,17 +1,24 @@
 /** @vitest-environment jsdom */
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { ActivityImage } from "@dofek/training/activity-images";
+import { QueryClient, QueryClientProvider, useQuery as useLiveQuery } from "@tanstack/react-query";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 interface MockQuery {
-  data: unknown[] | undefined;
+  data: Array<{ date: string; activities: ReturnType<typeof activity>[] }> | undefined;
   isLoading: boolean;
   isError: boolean;
   error: Error | null;
 }
 
 let mockQuery: MockQuery;
+const queryFixtureClient = new QueryClient();
+let liveQueryClient: QueryClient | undefined;
+let livePageFetch:
+  | ((input: { page?: number; pageSize?: number; weeks?: number }) => Promise<unknown>)
+  | undefined;
 let mockOverviewQuery: {
   data:
     | {
@@ -47,7 +54,7 @@ let weekListInput: unknown;
 interface WeekListOptions {
   placeholderData?: (previousData: unknown) => unknown;
   refetchInterval?: (query: {
-    state: { data?: Array<{ activities: Array<{ location: { kind: string } | null }> }> };
+    state: { data?: { days: Array<{ activities: Array<{ location: { kind: string } | null }> }> } };
   }) => number | false;
 }
 let weekListOptions: WeekListOptions | undefined;
@@ -67,6 +74,18 @@ let mockDataHealthQuery: {
   error: Error | null;
 };
 let processingStatusInput: unknown;
+const mockImagesUseQuery = vi.fn(
+  (
+    _input?: unknown,
+    _options?: unknown,
+  ): {
+    data: { images: ActivityImage[]; coverage: unknown[]; acquisition: unknown[] };
+    error: Error | null;
+  } => ({
+    data: { images: [], coverage: [], acquisition: [] },
+    error: null,
+  }),
+);
 
 interface BulkDeleteVariables {
   ids: string[];
@@ -77,21 +96,60 @@ vi.mock("@tanstack/react-router", () => ({
     children,
     to,
     params,
+    className,
   }: {
     children: ReactNode;
     to: string;
     params?: { id: string };
-  }) => <a href={params?.id ? to.replace("$id", params.id) : to}>{children}</a>,
+    className?: string;
+  }) => (
+    <a className={className} href={params?.id ? to.replace("$id", params.id) : to}>
+      {children}
+    </a>
+  ),
 }));
 
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
     calendar: {
-      weekList: {
-        useQuery: (input: unknown, options: WeekListOptions | undefined) => {
+      weekListV2: {
+        useQuery: (
+          input: { page?: number; pageSize?: number },
+          options: WeekListOptions | undefined,
+        ) => {
           weekListInput = input;
           weekListOptions = options;
-          return mockQuery;
+          const liveQuery = useLiveQuery(
+            {
+              queryKey: ["activities", input],
+              queryFn: () => livePageFetch?.(input),
+              placeholderData: options?.placeholderData,
+              retry: false,
+              enabled: Boolean(livePageFetch),
+            },
+            liveQueryClient ?? queryFixtureClient,
+          );
+          if (livePageFetch) return liveQuery;
+          const page = input.page ?? 0;
+          const pageSize = input.pageSize ?? 20;
+          let offset = 0;
+          const days = mockQuery.data
+            ?.map((day) => {
+              const start = offset;
+              offset += day.activities.length;
+              return {
+                ...day,
+                activities: day.activities.filter(
+                  (_activity, index) =>
+                    start + index >= page * pageSize && start + index < (page + 1) * pageSize,
+                ),
+              };
+            })
+            .filter((day) => day.activities.length > 0);
+          return {
+            ...mockQuery,
+            data: days ? { days, totalCount: offset, page, pageSize } : undefined,
+          };
         },
       },
       activityOverview: {
@@ -106,6 +164,9 @@ vi.mock("../lib/trpc.ts", () => ({
       },
     },
     activity: {
+      images: {
+        useQuery: (input: unknown, options: unknown) => mockImagesUseQuery(input, options),
+      },
       merge: {
         useMutation: (options?: { onSuccess?: () => Promise<void> | void }) => ({
           mutate: mergeMutate.mockImplementation(async () => options?.onSuccess?.()),
@@ -150,7 +211,10 @@ vi.mock("../lib/trpc.ts", () => ({
     },
     useUtils: () => ({
       calendar: {
-        weekList: { invalidate: invalidateWeekList },
+        weekListV2: {
+          invalidate: invalidateWeekList,
+          getData: (input: unknown) => liveQueryClient?.getQueryData(["activities", input]),
+        },
         activityOverview: { invalidate: invalidateActivityOverview },
         calendarData: { invalidate: invalidateCalendarData },
       },
@@ -173,13 +237,35 @@ vi.mock("../lib/unitContext.ts", () => ({
   }),
 }));
 
+import { branchingSourceTree } from "../components/ActivitySourceDisclosure.fixtures.ts";
+import { maps, resetMaps } from "../lib/maplibre-test-helpers.ts";
 import { ActivitiesPage } from "./ActivitiesPage.tsx";
+
+vi.mock("maplibre-gl", async () => (await import("../lib/maplibre-test-helpers.ts")).maplibreMock);
+
+beforeEach(() => {
+  queryFixtureClient.clear();
+  liveQueryClient?.clear();
+  liveQueryClient = undefined;
+  livePageFetch = undefined;
+  resetMaps();
+  vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(512);
+  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(288);
+});
+
+async function finishMapSnapshot() {
+  await waitFor(() => expect(maps.length).toBeGreaterThan(0));
+  act(() => {
+    for (const map of maps) map.fire("idle");
+  });
+}
 
 function activity(overrides: Record<string, unknown> = {}) {
   return {
     id: "activity-1",
     name: "Trainer Ride",
     activityType: "indoor_cycling",
+    primaryActivityType: null,
     startedAt: "2026-03-18T07:00:00.000Z",
     endedAt: "2026-03-18T08:00:00.000Z",
     localTimeContext: {
@@ -190,6 +276,7 @@ function activity(overrides: Record<string, unknown> = {}) {
     },
     durationMin: 60,
     source: {
+      tree: { primary: null, otherSources: [] },
       origin: { status: "unresolved", candidateMemberActivityIds: [] },
       primarySourceLabel: "Wahoo",
       sourceCount: 1,
@@ -210,15 +297,8 @@ function activity(overrides: Record<string, unknown> = {}) {
 const mapPreview = {
   width: 1024,
   height: 576,
-  tiles: [
-    {
-      url: "https://tile.openstreetmap.org/15/5241/12665.png",
-      x: 0,
-      y: 0,
-      width: 256,
-      height: 256,
-    },
-  ],
+  center: [-122.39868164, 37.76962919],
+  zoom: 14,
   routePath: [
     { x: 278.54, y: 379.51 },
     { x: 292.2, y: 370.88 },
@@ -226,7 +306,38 @@ const mapPreview = {
 };
 
 describe("ActivitiesPage", () => {
+  it("uses the primary activity type for unnamed activity links and selection labels", () => {
+    mockQuery = {
+      data: [
+        {
+          date: "2026-03-18",
+          activities: [
+            activity({
+              name: null,
+              activityType: "walking",
+              primaryActivityType: "running",
+            }),
+          ],
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+
+    render(<ActivitiesPage />);
+
+    expect(screen.getByRole("link", { name: "Running" })).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
+    expect(screen.getByRole("checkbox", { name: "Select Running" })).toBeDefined();
+  });
+
   beforeEach(() => {
+    mockImagesUseQuery.mockReset();
+    mockImagesUseQuery.mockReturnValue({
+      data: { images: [], coverage: [], acquisition: [] },
+      error: null,
+    });
     mockQuery = { data: [], isLoading: false, isError: false, error: null };
     mockOverviewQuery = {
       data: {
@@ -255,6 +366,87 @@ describe("ActivitiesPage", () => {
     mockBulkDeleteShouldFail = false;
     mockDataHealthQuery = { data: undefined, isLoading: false, error: null };
     processingStatusInput = undefined;
+  });
+
+  it("loads one photo only for visible cards without a map", () => {
+    const photo = {
+      id: "photo-1",
+      url: "https://private.test/photo",
+      width: 1200,
+      height: 800,
+      mimeType: "image/jpeg",
+      sizeBytes: 1000,
+      sources: [],
+    };
+    mockImagesUseQuery.mockReturnValue({
+      data: { images: [photo, { ...photo, id: "photo-2" }], coverage: [], acquisition: [] },
+      error: null,
+    });
+    mockQuery = {
+      data: [
+        {
+          date: "2026-03-18",
+          activities: [activity(), activity({ id: "mapped-2", location: { kind: "processing" } })],
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+    render(<ActivitiesPage />);
+    expect(screen.getAllByRole("img", { name: "Activity photo" })).toHaveLength(1);
+    expect(mockImagesUseQuery).toHaveBeenCalledWith(
+      { id: "activity-1" },
+      expect.objectContaining({ enabled: true }),
+    );
+    expect(mockImagesUseQuery).toHaveBeenCalledWith(
+      { id: "mapped-2" },
+      expect.objectContaining({ enabled: false }),
+    );
+  });
+
+  it("keeps a loaded photo and its card height when the card leaves the viewport", () => {
+    let visibilityChanged: ((entries: { isIntersecting: boolean }[]) => void) | undefined;
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        constructor(callback: (entries: { isIntersecting: boolean }[]) => void) {
+          visibilityChanged = callback;
+        }
+        observe() {
+          visibilityChanged?.([{ isIntersecting: true }]);
+        }
+        disconnect() {}
+      },
+    );
+    const photo = {
+      id: "photo-1",
+      url: "https://private.test/photo",
+      width: 1200,
+      height: 800,
+      mimeType: "image/jpeg",
+      sizeBytes: 1000,
+      sources: [],
+    };
+    mockImagesUseQuery.mockReturnValue({
+      data: { images: [photo], coverage: [], acquisition: [] },
+      error: null,
+    });
+    mockQuery = {
+      data: [{ date: "2026-03-18", activities: [activity()] }],
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+    render(<ActivitiesPage />);
+    expect(screen.getByRole("img", { name: "Activity photo" })).toBeInTheDocument();
+    act(() => visibilityChanged?.([{ isIntersecting: false }]));
+    expect(screen.getByRole("img", { name: "Activity photo" })).toBeInTheDocument();
+    expect(screen.getByTestId("activity-secondary-panel")).toBeInTheDocument();
+    expect(mockImagesUseQuery).toHaveBeenLastCalledWith(
+      { id: "activity-1" },
+      expect.objectContaining({ enabled: false }),
+    );
   });
 
   it("shows activity progress while summaries are updating", () => {
@@ -325,12 +517,18 @@ describe("ActivitiesPage", () => {
     const interval = weekListOptions?.refetchInterval;
     expect(interval).toBeTypeOf("function");
     expect(
-      interval?.({ state: { data: [{ activities: [{ location: { kind: "processing" } }] }] } }),
+      interval?.({
+        state: { data: { days: [{ activities: [{ location: { kind: "processing" } }] }] } },
+      }),
     ).toBe(3000);
     expect(
-      interval?.({ state: { data: [{ activities: [{ location: { kind: "recorded_gps" } }] }] } }),
+      interval?.({
+        state: { data: { days: [{ activities: [{ location: { kind: "recorded_gps" } }] }] } },
+      }),
     ).toBe(false);
-    expect(interval?.({ state: { data: [{ activities: [{ location: null }] }] } })).toBe(false);
+    expect(interval?.({ state: { data: { days: [{ activities: [{ location: null }] }] } } })).toBe(
+      false,
+    );
     expect(interval?.({ state: {} })).toBe(false);
   });
 
@@ -539,6 +737,8 @@ describe("ActivitiesPage", () => {
       weeks: 8,
       endDate: expect.any(String),
       activityType: "running",
+      page: 0,
+      pageSize: 20,
     });
     expect(overviewInput).toEqual({
       weeks: 8,
@@ -559,6 +759,8 @@ describe("ActivitiesPage", () => {
       weeks: 4,
       endDate: expect.any(String),
       includeProviderAbsent: true,
+      page: 0,
+      pageSize: 20,
     });
   });
 
@@ -576,7 +778,7 @@ describe("ActivitiesPage", () => {
     expect(screen.getByLabelText("Indoor Cycling activity")).toBeDefined();
   });
 
-  it("renders a map tile when an activity includes location data", () => {
+  it("renders a map snapshot when an activity includes location data", async () => {
     mockQuery = {
       data: [
         {
@@ -604,10 +806,15 @@ describe("ActivitiesPage", () => {
 
     render(<ActivitiesPage />);
 
+    await finishMapSnapshot();
+    expect(screen.getByTestId("activity-map-snapshot")).toHaveAttribute(
+      "src",
+      "data:image/png;base64,map",
+    );
     expect(screen.getByLabelText("Activity location map")).toBeDefined();
   });
 
-  it("links a climbing source-point preview to its activity while retaining climbing metrics", () => {
+  it("links a climbing source-point preview to its activity while retaining climbing metrics", async () => {
     mockQuery = {
       data: [
         {
@@ -644,14 +851,74 @@ describe("ActivitiesPage", () => {
       error: null,
     };
     render(<ActivitiesPage />);
+    await finishMapSnapshot();
+    expect(screen.getByTestId("activity-map-snapshot")).toHaveAttribute(
+      "src",
+      "data:image/png;base64,map",
+    );
     const map = screen.getByRole("img", {
       name: /Climbing source locations.*North Wall.*Mountain Project/,
     });
-    expect(map.closest("a")).toHaveAttribute("href", "/activity/climbing-1");
+    expect(screen.getByRole("link", { name: "Afternoon climbing" })).toHaveAttribute(
+      "href",
+      "/activity/climbing-1",
+    );
     expect(screen.getByText("Climbs")).toBeDefined();
     expect(map.querySelectorAll("circle")).toHaveLength(1);
     expect(map.querySelector("path")).toBeNull();
   });
+
+  it.each([false, true])(
+    "keeps source details separate from the card action in selection mode %s",
+    (selectMode) => {
+      mockQuery = {
+        data: [
+          {
+            date: "2026-03-18",
+            activities: [
+              activity({
+                source: {
+                  origin: {
+                    status: "resolved",
+                    memberActivityId: "00000000-0000-4000-8000-000000000001",
+                    providerId: "garmin",
+                    sourceName: "Garmin Edge 530",
+                  },
+                  primarySourceLabel: "Garmin Connect",
+                  tree: branchingSourceTree,
+                  sourceCount: 5,
+                  overlapSummary: null,
+                },
+              }),
+            ],
+          },
+        ],
+        isLoading: false,
+        isError: false,
+        error: null,
+      };
+      render(<ActivitiesPage />);
+      if (selectMode) fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
+      const trigger = screen.getByRole("button", { name: "Garmin Connect Lineage" });
+      expect(trigger.closest("a")).toBeNull();
+      expect(trigger.parentElement?.closest("button")).toBeNull();
+      fireEvent.click(trigger);
+      if (selectMode) {
+        expect(screen.getByRole("checkbox", { name: "Select Trainer Ride" })).not.toBeChecked();
+      } else {
+        expect(screen.getByRole("link", { name: "Trainer Ride" })).toHaveAttribute(
+          "href",
+          "/activity/activity-1",
+        );
+      }
+      fireEvent.click(trigger);
+      expect(trigger).toHaveAttribute("aria-expanded", "false");
+      if (selectMode) {
+        fireEvent.click(screen.getByRole("checkbox", { name: "Select Trainer Ride" }));
+        expect(screen.getByRole("checkbox", { name: "Select Trainer Ride" })).toBeChecked();
+      }
+    },
+  );
 
   it("shows selection guidance while choosing activities", () => {
     mockQuery = {
@@ -864,6 +1131,90 @@ describe("ActivitiesPage", () => {
     expect(screen.getByRole("button", { name: "Select activities" })).toBeDefined();
   });
 
+  it("keeps cached cards and navigation after an uncached server page fails", async () => {
+    liveQueryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    let failPage = true;
+    livePageFetch = async (input) => {
+      if (input.page === 1 && failPage)
+        throw new Error("Page two is unavailable. Retry the request.");
+      return {
+        days: [
+          {
+            date: "2026-03-18",
+            activities: [activity({ name: input.page === 1 ? "Next Ride" : "Cached Ride" })],
+          },
+        ],
+        totalCount: 21,
+        page: input.page ?? 0,
+        pageSize: 20,
+      };
+    };
+    render(
+      <QueryClientProvider client={liveQueryClient}>
+        <ActivitiesPage />
+      </QueryClientProvider>,
+    );
+    await screen.findByText("Cached Ride");
+    fireEvent.click(screen.getByRole("button", { name: "Next activities page" }));
+    await screen.findByText("Page two is unavailable. Retry the request.");
+    expect(screen.getByText("Cached Ride")).toBeDefined();
+    expect(screen.getByRole("navigation", { name: "activities pagination" })).toBeDefined();
+    failPage = false;
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await screen.findByText("Next Ride");
+    expect(screen.queryByText("Page two is unavailable. Retry the request.")).toBeNull();
+  });
+
+  it("does not label another range's cached cards as the failed selected range", async () => {
+    liveQueryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    livePageFetch = async (input) => {
+      if (input.weeks === 8) throw new Error("Selected range is unavailable.");
+      return {
+        days: [{ date: "2026-03-18", activities: [activity({ name: "Previous Range Ride" })] }],
+        totalCount: 1,
+        page: 0,
+        pageSize: 20,
+      };
+    };
+    render(
+      <QueryClientProvider client={liveQueryClient}>
+        <ActivitiesPage />
+      </QueryClientProvider>,
+    );
+    await screen.findByText("Previous Range Ride");
+    fireEvent.change(screen.getByLabelText("Date range"), { target: { value: "8" } });
+    await screen.findByText("Selected range is unavailable.");
+    expect(screen.queryByText("Previous Range Ride")).toBeNull();
+  });
+
+  it("keeps selected activity types across server pages when checking merge eligibility", () => {
+    mockQuery = {
+      data: [
+        {
+          date: "2026-03-18",
+          activities: Array.from({ length: 21 }, (_, index) =>
+            activity({
+              id: `ride-${index}`,
+              name: `Ride ${index}`,
+              activityType: index === 20 ? "running" : "cycling",
+            }),
+          ),
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+    render(<ActivitiesPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Select activities" }));
+    fireEvent.click(screen.getByText("Ride 0"));
+    fireEvent.click(screen.getByRole("button", { name: "Next activities page" }));
+    fireEvent.click(screen.getByText("Ride 20"));
+    expect(screen.getByRole("button", { name: "Merge" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByText("Select activities of one type to merge.")).toBeDefined();
+    expect(overviewInput).toEqual({ weeks: 4, endDate: expect.any(String) });
+  });
+
   it("paginates the activity card history", () => {
     mockQuery = {
       data: [
@@ -889,6 +1240,7 @@ describe("ActivitiesPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Next activities page" }));
 
+    expect(weekListInput).toMatchObject({ page: 1, pageSize: 20 });
     expect(screen.queryByText("Ride 1")).toBeNull();
     expect(screen.getByText("Ride 21")).toBeDefined();
   });

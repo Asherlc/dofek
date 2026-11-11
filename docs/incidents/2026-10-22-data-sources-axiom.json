@@ -1,0 +1,200 @@
+{
+  "schema_version": 1,
+  "captured_at_utc": "2026-10-23T01:41:40Z",
+  "source": "Axiom read-only fixed-window queries",
+  "sanitization": "Only allowlisted timestamps, procedure names, trace/span identifiers, queue name, numeric timings and counts are retained. Log bodies and authentication fields are excluded.",
+  "interpretation_limits": [
+    "An empty metrics result records what this fixed-window query returned; it does not identify the cause of missing telemetry.",
+    "Zero retained span events for these trace IDs does not establish whether sampling, export or another cause omitted spans.",
+    "These observations do not identify the cause of the 40-second production amplification."
+  ],
+  "queries": [
+    {
+      "id": "procedure_and_http_timings",
+      "source_dataset": "dofek-logs",
+      "utc_window": {
+        "start": "2026-10-22T16:00:00Z",
+        "end": "2026-10-22T16:01:20Z"
+      },
+      "apl": "['dofek-logs'] | where trace_id == 'df74fd805f75a5d40a4856edae0defc9' or trace_id == '0aaa9f871fc17f6c934b94846f2f1ff5' | where body contains 'procedure=sync.providers ' or body startswith '[web] POST /api/trpc/' | project _time, body, trace_id | order by _time asc",
+      "returned_row_count": 4,
+      "observations": [
+        {
+          "timestamp": "2026-10-22T16:00:45.382Z",
+          "trace_id": "df74fd805f75a5d40a4856edae0defc9",
+          "procedure": "sync.providers",
+          "database_duration_ms": 40386,
+          "total_duration_ms": 40410
+        },
+        {
+          "timestamp": "2026-10-22T16:00:45.383Z",
+          "trace_id": "0aaa9f871fc17f6c934b94846f2f1ff5",
+          "procedure": "sync.providers",
+          "database_duration_ms": 15565,
+          "total_duration_ms": 15585
+        },
+        {
+          "timestamp": "2026-10-22T16:00:45.389Z",
+          "trace_id": "0aaa9f871fc17f6c934b94846f2f1ff5",
+          "procedures": [
+            "sync.providers",
+            "sync.providerStats",
+            "sync.logs",
+            "processing.status",
+            "sync.activeSyncs",
+            "sync.activeImports",
+            "companionToken.list",
+            "billing.status",
+            "processing.alerts",
+            "settings.get",
+            "settings.get"
+          ],
+          "http_status_code": 200,
+          "http_batch_duration_ms": 15595
+        },
+        {
+          "timestamp": "2026-10-22T16:00:45.39Z",
+          "trace_id": "df74fd805f75a5d40a4856edae0defc9",
+          "procedures": [
+            "sync.providers",
+            "sync.providerStats",
+            "sync.logs",
+            "processing.status",
+            "sync.activeSyncs",
+            "sync.activeImports",
+            "companionToken.list"
+          ],
+          "http_status_code": 200,
+          "http_batch_duration_ms": 40423
+        }
+      ]
+    },
+    {
+      "id": "postgres_pool_longest_acquisitions",
+      "source_dataset": "dofek-logs",
+      "utc_window": {
+        "start": "2026-10-22T16:00:00Z",
+        "end": "2026-10-22T16:01:20Z"
+      },
+      "apl": "['dofek-logs'] | where ['service.name'] == 'dofek-web' and name == 'pg-pool.connect' | project _time, duration, trace_id | order by duration desc | take 3",
+      "returned_row_count": 3,
+      "observations": [
+        {
+          "timestamp": "2026-10-22T16:00:07.993Z",
+          "trace_id": "12b192e0c798ac5bf3936180225973f3",
+          "duration_ns": 11575647
+        },
+        {
+          "timestamp": "2026-10-22T16:00:08.03Z",
+          "trace_id": "12b192e0c798ac5bf3936180225973f3",
+          "duration_ns": 4438403
+        },
+        {
+          "timestamp": "2026-10-22T16:00:25.786Z",
+          "trace_id": "7aac6530ca1d3c15c17330db79cbecf8",
+          "duration_ns": 3581202
+        }
+      ]
+    },
+    {
+      "id": "postgres_pool_acquisition_summary",
+      "source_dataset": "dofek-logs",
+      "utc_window": {
+        "start": "2026-10-22T16:00:00Z",
+        "end": "2026-10-22T16:01:20Z"
+      },
+      "apl": "['dofek-logs'] | where ['service.name'] == 'dofek-web' and name == 'pg-pool.connect' | summarize span_count=count(), max_duration=max(duration), p95_duration=percentile(duration,95)",
+      "returned_row_count": 1,
+      "observations": [
+        {
+          "span_count": 58,
+          "maximum_duration_ns": 11575647,
+          "p95_duration_ns": 3581202
+        }
+      ]
+    },
+    {
+      "id": "initial_request_clickhouse_queue_wait",
+      "source_dataset": "dofek-logs",
+      "utc_window": {
+        "start": "2026-10-22T16:00:00Z",
+        "end": "2026-10-22T16:01:20Z"
+      },
+      "apl": "['dofek-logs'] | where trace_id == 'df74fd805f75a5d40a4856edae0defc9' and body == 'clickhouse.queue_wait' | project _time, trace_id, body, ['attributes.queue'], ['attributes.waitMs']",
+      "returned_row_count": 1,
+      "observations": [
+        {
+          "timestamp": "2026-10-22T16:00:04.997Z",
+          "trace_id": "df74fd805f75a5d40a4856edae0defc9",
+          "queue": "regular",
+          "wait_ms": 0.7259609997272491
+        }
+      ]
+    },
+    {
+      "id": "request_retained_event_counts",
+      "source_dataset": "dofek-logs",
+      "utc_window": {
+        "start": "2026-10-22T15:59:50Z",
+        "end": "2026-10-22T16:01:00Z"
+      },
+      "apl": "['dofek-logs'] | where trace_id == 'df74fd805f75a5d40a4856edae0defc9' or trace_id == '0aaa9f871fc17f6c934b94846f2f1ff5' | summarize events=count(), span_events=countif(isnotempty(name)), log_events=countif(isnotempty(body)) by trace_id",
+      "returned_row_count": 2,
+      "observations": [
+        {
+          "trace_id": "df74fd805f75a5d40a4856edae0defc9",
+          "retained_event_count": 4,
+          "retained_log_event_count": 4,
+          "retained_span_event_count": 0
+        },
+        {
+          "trace_id": "0aaa9f871fc17f6c934b94846f2f1ff5",
+          "retained_event_count": 3,
+          "retained_log_event_count": 3,
+          "retained_span_event_count": 0
+        }
+      ]
+    },
+    {
+      "id": "incident_metrics_query",
+      "source_dataset": "dofek-metrics",
+      "utc_window": {
+        "start": "2026-10-22T15:50:00Z",
+        "end": "2026-10-22T16:10:00Z"
+      },
+      "apl": "['dofek-metrics'] | summarize events=count()",
+      "returned_row_count": 0,
+      "observations": []
+    },
+    {
+      "id": "separate_activity_clickhouse_queue_waits",
+      "source_dataset": "dofek-logs",
+      "utc_window": {
+        "start": "2026-10-22T16:00:00Z",
+        "end": "2026-10-22T16:01:20Z"
+      },
+      "apl": "['dofek-logs'] | where trace_id == '7aac6530ca1d3c15c17330db79cbecf8' and name == 'clickhouse.queue_wait' | project _time, duration, trace_id, parent_span_id | order by duration desc | take 3",
+      "returned_row_count": 3,
+      "observations": [
+        {
+          "timestamp": "2026-10-22T16:00:28.115Z",
+          "trace_id": "7aac6530ca1d3c15c17330db79cbecf8",
+          "parent_span_id": "57bbd6121b7cf200",
+          "duration_ns": 5471369493
+        },
+        {
+          "timestamp": "2026-10-22T16:00:25.976Z",
+          "trace_id": "7aac6530ca1d3c15c17330db79cbecf8",
+          "parent_span_id": "f9c339b69bdb44be",
+          "duration_ns": 3640686005
+        },
+        {
+          "timestamp": "2026-10-22T16:00:25.938Z",
+          "trace_id": "7aac6530ca1d3c15c17330db79cbecf8",
+          "parent_span_id": "6809da0a4b984862",
+          "duration_ns": 3593971976
+        }
+      ]
+    }
+  ]
+}

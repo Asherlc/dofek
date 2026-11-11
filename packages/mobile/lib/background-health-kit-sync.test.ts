@@ -36,6 +36,14 @@ vi.mock("../modules/health-kit", () => ({
   queryDailyStatistics: vi.fn().mockResolvedValue([]),
   queryCategorySamples: vi.fn().mockResolvedValue([]),
   queryQuantitySamples: vi.fn().mockResolvedValue([]),
+  queryRunningStepSamples: vi.fn().mockResolvedValue({ workouts: [], samples: [] }),
+  queryRunningStepChanges: vi.fn().mockResolvedValue({
+    hasMore: false,
+    workouts: [],
+    samples: [],
+    deletedUUIDs: [],
+    queryId: null,
+  }),
   queryWorkouts: vi.fn().mockResolvedValue([]),
   queryWorkoutRoutes: vi.fn().mockResolvedValue([]),
   querySleepSamples: vi.fn().mockResolvedValue([]),
@@ -81,6 +89,7 @@ function createMockClient() {
       deleteQuantitySamples: {
         mutate: vi.fn().mockResolvedValue({ deleted: 0 }),
       },
+      pushRunningStepSamples: { mutate: vi.fn().mockResolvedValue({ inserted: 0 }) },
       pushWorkouts: {
         mutate: vi.fn().mockResolvedValue({ inserted: 0 }),
       },
@@ -576,7 +585,7 @@ describe("initBackgroundHealthKitSync", () => {
       "bg-healthkit-sync",
       "Sync stage completed",
       expect.objectContaining({
-        operation: "queryWorkoutRoutes",
+        operation: "queryRunningStepChanges",
         outcome: "failed",
       }),
     );

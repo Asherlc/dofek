@@ -1,5 +1,6 @@
 import { formatRelativeTime } from "@dofek/format/format";
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
+import { isCloudPushProvider } from "@dofek/providers/provider-connection";
 import { providerHealth } from "@dofek/providers/provider-health";
 import type { ProviderStats } from "@dofek/providers/provider-stats";
 import { DATA_TYPE_LABELS } from "@dofek/providers/provider-stats";
@@ -34,6 +35,7 @@ import {
   useProviderDetailActions,
 } from "../../components/providers/use-provider-detail-actions";
 import { getQueryErrorMessage, QueryStatePanel } from "../../components/QueryStatePanel";
+import { WhoopSensorPanel } from "../../components/WhoopSensorDetails";
 import { useAuth } from "../../lib/auth-context";
 import { trpc } from "../../lib/trpc";
 import { useProcessingStatus } from "../../lib/useProcessingStatus";
@@ -266,7 +268,15 @@ const recordStyles = StyleSheet.create({
 
 // ── Sync History ──
 
-function SyncHistory({ providerId, providerName }: { providerId: string; providerName: string }) {
+function SyncHistory({
+  providerId,
+  providerName,
+  pushOnly,
+}: {
+  providerId: string;
+  providerName: string;
+  pushOnly: boolean;
+}) {
   const [page, setPage] = useState(0);
   const pageSize = 20;
 
@@ -289,7 +299,9 @@ function SyncHistory({ providerId, providerName }: { providerId: string; provide
   if (rows.length === 0) {
     return (
       <View style={syncStyles.emptyContainer}>
-        <Text style={syncStyles.emptyText}>No sync history yet.</Text>
+        <Text style={syncStyles.emptyText}>
+          {pushOnly ? "No updates processed yet." : "No sync history yet."}
+        </Text>
       </View>
     );
   }
@@ -298,7 +310,12 @@ function SyncHistory({ providerId, providerName }: { providerId: string; provide
     <View>
       <View style={syncStyles.table}>
         {rows.map((row) => (
-          <ProviderSyncHistoryEntry key={row.id} providerName={providerName} entry={row} />
+          <ProviderSyncHistoryEntry
+            key={row.id}
+            providerName={providerName}
+            pushOnly={pushOnly}
+            entry={row}
+          />
         ))}
       </View>
 
@@ -309,7 +326,7 @@ function SyncHistory({ providerId, providerName }: { providerId: string; provide
           disabled={page === 0}
           activeOpacity={0.7}
           accessibilityRole="button"
-          accessibilityLabel="Previous sync history page"
+          accessibilityLabel={`Previous ${pushOnly ? "update" : "sync"} history page`}
           accessibilityState={{ disabled: page === 0 }}
         >
           <Text style={[recordStyles.pageButton, page === 0 && recordStyles.pageButtonDisabled]}>
@@ -322,7 +339,7 @@ function SyncHistory({ providerId, providerName }: { providerId: string; provide
           disabled={rows.length < pageSize}
           activeOpacity={0.7}
           accessibilityRole="button"
-          accessibilityLabel="Next sync history page"
+          accessibilityLabel={`Next ${pushOnly ? "update" : "sync"} history page`}
           accessibilityState={{ disabled: rows.length < pageSize }}
         >
           <Text
@@ -597,10 +614,15 @@ function ProviderDetailContent({
     needsReauth: Boolean(provider?.needsReauth),
     requiresAuthorization: displayProvider.authType !== "none",
   });
+  const isAutomaticSource = isCloudPushProvider(displayProvider);
   const lastSyncedAt =
     providerId === "apple_health"
       ? (appleHealthLogs.data?.[0]?.syncedAt ?? null)
-      : displayProvider.lastSyncedAt;
+      : isAutomaticSource
+        ? provider?.lastProcessedUpdateAt
+        : displayProvider.pushOnly
+          ? provider?.lastSuccessfulSyncAt
+          : displayProvider.lastSyncedAt;
   const appleHealthHistoryError =
     providerId === "apple_health" && appleHealthLogs.error && appleHealthLogs.data === undefined;
 
@@ -613,6 +635,7 @@ function ProviderDetailContent({
         trpcUtils.sync.providers.invalidate(),
         trpcUtils.sync.providerStats.invalidate(),
         trpcUtils.processing.status.invalidate(),
+        ...(providerId === "whoop_ble" ? [trpcUtils.whoopBleSync.sensorSnapshot.invalidate()] : []),
       ]).then(() => undefined),
   });
 
@@ -666,8 +689,18 @@ function ProviderDetailContent({
                     {health.authorization.label}
                   </Text>
                 </View>
+                {isAutomaticSource && isConnected ? (
+                  <Text style={styles.lastSync}>Updates automatically</Text>
+                ) : null}
                 {lastSyncedAt && formatRelativeTime(lastSyncedAt) && (
-                  <Text style={styles.lastSync}>Last sync: {formatRelativeTime(lastSyncedAt)}</Text>
+                  <Text style={styles.lastSync}>
+                    {isAutomaticSource
+                      ? "Last update processed"
+                      : displayProvider.pushOnly
+                        ? "Last received"
+                        : "Last sync"}
+                    : {formatRelativeTime(lastSyncedAt)}
+                  </Text>
                 )}
                 {appleHealthHistoryError ? (
                   <QueryStatePanel
@@ -702,6 +735,7 @@ function ProviderDetailContent({
         error={processingStatus.error}
         loading={processingStatus.isLoading}
         contextLabel={`${formatProviderName(providerId)} data status`}
+        providerHistory={provider ? { ...provider, pushOnly: isAutomaticSource } : undefined}
         alwaysVisible
       />
 
@@ -749,13 +783,20 @@ function ProviderDetailContent({
 
       {/* Provider-specific extras */}
       <ProviderDetailExtras providerId={providerId} />
+      {providerId === "whoop_ble" && <WhoopSensorPanel />}
 
       {/* Stats overview */}
       {providerStats && <ProviderStatsBreakdown stats={providerStats} variant="full" />}
 
       {/* Sync history */}
-      <Text style={styles.sectionTitle}>Sync History</Text>
-      <SyncHistory providerId={providerId} providerName={displayProvider.name} />
+      <Text style={styles.sectionTitle}>
+        {isAutomaticSource ? "Update history" : "Sync History"}
+      </Text>
+      <SyncHistory
+        providerId={providerId}
+        providerName={displayProvider.name}
+        pushOnly={isAutomaticSource}
+      />
 
       {/* Records browser */}
       <RecordsBrowser providerId={providerId} stats={providerStats} />

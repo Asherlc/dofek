@@ -10,7 +10,7 @@ export function ProviderRecordDetail({
   input: RecordDetailInput;
   onClose: () => void;
 }) {
-  const query = trpc.providerDetail.recordDetail.useQuery(input);
+  const query = trpc.providerDetail.recordDetail.useQuery({ ...input, responseVersion: 4 });
   return (
     <ProviderRecordDetailModal
       state={query}

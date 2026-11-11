@@ -1,16 +1,17 @@
+import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { initiateAccountErasure } from "../db/account-erasure.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
 import { executeWithSchema } from "../db/typed-sql.ts";
-import { AllTrailsProvider } from "../providers/alltrails.ts";
+import { THECRAG_PUBLIC_PROFILE_SCOPE } from "../providers/thecrag/identity.ts";
 import type { Provider } from "../providers/types.ts";
 import { isEncryptedCredentialValue } from "../security/credential-encryption.ts";
 import {
   createEncryptedAccountErasureSnapshot,
   decryptAccountErasureSnapshot,
+  ProviderRevocationPrerequisiteError,
 } from "./remote-snapshot.ts";
 
 const userId = "10000000-0000-4000-8000-000000001995";
@@ -26,7 +27,17 @@ const legacyWithingsUserId = "a0000000-0000-4000-8000-000000001995";
 const withingsUserId = "b0000000-0000-4000-8000-000000001995";
 const zivaUserId = "c0000000-0000-4000-8000-000000001995";
 const publicProfileUserId = "d0000000-0000-4000-8000-000000001995";
-const allTrailsUserId = "e0000000-0000-4000-8000-000000001995";
+const legacyTheCragConnections = [
+  { userId: "14000000-0000-4000-8000-000000001995", scopes: "thecrag:logbook-read" },
+  { userId: "e0000000-0000-4000-8000-000000001995", scopes: "logbook:read" },
+  { userId: "f0000000-0000-4000-8000-000000001995", scopes: null },
+  {
+    userId: "11000000-0000-4000-8000-000000001995",
+    scopes: "thecrag:public-profile logbook:read",
+  },
+];
+const publicTheCragUserId = "12000000-0000-4000-8000-000000001995";
+const disconnectedTheCragUserId = "13000000-0000-4000-8000-000000001995";
 const storedAccountRowSchema = z.object({
   provider_account_id: z.string().min(1),
 });
@@ -40,7 +51,7 @@ const authProviderDefinitions = [
   ["withings", "Withings"],
 ] as const;
 const providers: Provider[] = [
-  ...["mountain-project", "openbeta"].map(
+  ...["mountain-project", "openbeta", "thecrag"].map(
     (providerId): Provider => ({
       id: providerId,
       name: providerId,
@@ -104,9 +115,31 @@ describe("account-erasure remote snapshot persistence (integration)", () => {
             (${legacyWithingsUserId}::uuid, 'Legacy Withings Snapshot User'),
             (${withingsUserId}::uuid, 'Withings Snapshot User'),
             (${publicProfileUserId}::uuid, 'Public Profile Snapshot User'),
-            (${allTrailsUserId}::uuid, 'AllTrails Snapshot User'),
             (${zivaUserId}::uuid, 'Ziva Snapshot User')`,
     );
+    for (const connection of [
+      ...legacyTheCragConnections,
+      { userId: publicTheCragUserId, scopes: THECRAG_PUBLIC_PROFILE_SCOPE },
+      { userId: disconnectedTheCragUserId, scopes: undefined },
+    ]) {
+      await context.db.execute(sql`INSERT INTO fitness.user_profile (id, name)
+        VALUES (${connection.userId}::uuid, 'theCrag Snapshot User')`);
+      await ensureProvider(context.db, "thecrag", "theCrag", undefined, connection.userId);
+      if (connection.scopes !== undefined) {
+        await saveTokens(
+          context.db,
+          "thecrag",
+          {
+            accessToken:
+              connection.userId === publicTheCragUserId ? "public-climber" : "old-personal-key",
+            refreshToken: null,
+            expiresAt: new Date("2099-01-01T00:00:00Z"),
+            scopes: connection.scopes,
+          },
+          connection.userId,
+        );
+      }
+    }
     await ensureProvider(
       context.db,
       "polar",
@@ -173,29 +206,6 @@ describe("account-erasure remote snapshot persistence (integration)", () => {
       decathlonUserId,
     );
     await ensureProvider(context.db, "ziva", "Ziva", "https://connect.ziva.fit/mcp", zivaUserId);
-    await ensureProvider(
-      context.db,
-      "alltrails",
-      "AllTrails",
-      "https://api-v5.alltrails.com",
-      allTrailsUserId,
-    );
-    await saveTokens(
-      context.db,
-      "alltrails",
-      {
-        accessToken: "alltrails-access-token",
-        refreshToken: "alltrails-refresh-token",
-        expiresAt: new Date("2099-01-01T00:00:00.000Z"),
-        providerAccountId: "alltrails-account",
-        scopes: null,
-      },
-      allTrailsUserId,
-    );
-    await context.db.execute(
-      sql`INSERT INTO fitness.session (id, user_id, expires_at)
-          VALUES ('alltrails-erasure-session', ${allTrailsUserId}::uuid, now() + interval '1 day')`,
-    );
     for (const providerId of ["mountain-project", "openbeta"]) {
       await ensureProvider(context.db, providerId, providerId, undefined, publicProfileUserId);
       await saveTokens(
@@ -317,6 +327,120 @@ describe("account-erasure remote snapshot persistence (integration)", () => {
 
   afterAll(async () => {
     await context?.cleanup();
+  });
+
+  it.each(legacyTheCragConnections)(
+    "blocks legacy theCrag authorization with scope $scopes before activation",
+    async ({ userId: theCragUserId }) => {
+      await expect(
+        context.db.transaction((transaction) =>
+          createEncryptedAccountErasureSnapshot(transaction, theCragUserId, providers),
+        ),
+      ).rejects.toMatchObject({
+        name: ProviderRevocationPrerequisiteError.name,
+        message: expect.stringMatching(
+          /revoke.*personal.*key.*theCrag.*Settings.*API Keys.*disconnect.*before deleting/i,
+        ),
+      });
+      expect(await loadTokens(context.db, "thecrag", theCragUserId)).toMatchObject({
+        accessToken: "old-personal-key",
+      });
+    },
+  );
+
+  it.each([publicTheCragUserId, disconnectedTheCragUserId])(
+    "snapshots a public theCrag connection or one without credentials as no remote authorization (%s)",
+    async (theCragUserId) => {
+      const encrypted = await context.db.transaction((transaction) =>
+        createEncryptedAccountErasureSnapshot(transaction, theCragUserId, providers),
+      );
+      const snapshot = await decryptAccountErasureSnapshot(encrypted, theCragUserId);
+      expect(snapshot.providerConnections).toEqual([
+        { providerId: "thecrag", disposition: "no_remote_authorization" },
+      ]);
+    },
+  );
+
+  async function createBudgetUser() {
+    const budgetUserId = randomUUID();
+    await context.db.execute(sql`INSERT INTO fitness.user_profile(id,name)
+      VALUES (${budgetUserId}::uuid,'Snapshot budget fixture')`);
+    return budgetUserId;
+  }
+
+  it.each(["é", "\n"])(
+    "checks prerequisites for exact encoded session-item bytes for %j",
+    async (character) => {
+      const budgetUserId = await createBudgetUser();
+      const sessionId = character.repeat(2047);
+      await context.db.execute(sql`INSERT INTO fitness.session(id,user_id,expires_at)
+      VALUES (${sessionId},${budgetUserId}::uuid,now()+interval '1 day')`);
+      const encrypted = await context.db.transaction((transaction) =>
+        createEncryptedAccountErasureSnapshot(transaction, budgetUserId, providers),
+      );
+      const captured = await decryptAccountErasureSnapshot(encrypted, budgetUserId);
+      expect(captured.localIdentifiers.sessionIds).toEqual([sessionId]);
+      await context.db.execute(
+        sql`UPDATE fitness.session SET id=id||${character} WHERE user_id=${budgetUserId}::uuid`,
+      );
+      await expect(
+        context.db
+          .transaction((transaction) =>
+            createEncryptedAccountErasureSnapshot(transaction, budgetUserId, providers),
+          )
+          .then(() => undefined),
+      ).rejects.toThrow(/Account deletion snapshot exceeds.*4 KiB.*Contact support/);
+    },
+  );
+
+  it("rejects an oversized encrypted Apple credential before decrypting its payload", async () => {
+    const budgetUserId = await createBudgetUser();
+    await context.db.execute(sql`INSERT INTO fitness.auth_account
+      (user_id,auth_provider,provider_account_id,revocation_access_token,revocation_client_id)
+      VALUES (${budgetUserId}::uuid,'apple',${budgetUserId},${`enc:v1:${"A".repeat(65536)}`},'fixture-client')`);
+    await expect(
+      context.db.transaction((transaction) =>
+        createEncryptedAccountErasureSnapshot(transaction, budgetUserId, providers),
+      ),
+    ).rejects.toThrow(/Account deletion snapshot exceeds.*credential.*limit.*Contact support/);
+  });
+
+  it("rejects the combined encrypted credential input before loading provider tokens", async () => {
+    const budgetUserId = await createBudgetUser();
+    const budgetProviders: Provider[] = Array.from({ length: 9 }, (_, index) => ({
+      id: `snapshot-budget-${index}`,
+      name: `Budget fixture ${index}`,
+      validate: () => null,
+      authSetup: () => ({}),
+      sync: async () => ({
+        provider: `snapshot-budget-${index}`,
+        recordsSynced: 0,
+        duration: 0,
+        errors: [],
+      }),
+    }));
+    for (const provider of budgetProviders) {
+      await ensureProvider(context.db, provider.id, provider.name, undefined, budgetUserId);
+      await context.db.execute(sql`INSERT INTO fitness.oauth_token(user_id,provider_id,access_token,expires_at)
+        VALUES (${budgetUserId}::uuid,${provider.id},${`enc:v1:${"A".repeat(65536 - 7)}`},now()+interval '1 day')`);
+    }
+    await expect(
+      context.db.transaction((transaction) =>
+        createEncryptedAccountErasureSnapshot(transaction, budgetUserId, budgetProviders),
+      ),
+    ).rejects.toThrow(/Account deletion snapshot exceeds.*credential.*limit.*Contact support/);
+  });
+
+  it("rejects oversized identity metadata before loading Apple credential payloads", async () => {
+    const budgetUserId = await createBudgetUser();
+    await context.db.execute(sql`INSERT INTO fitness.auth_account
+      (user_id,auth_provider,provider_account_id,revocation_access_token,revocation_client_id)
+      VALUES (${budgetUserId}::uuid,'apple',${budgetUserId},'enc:v1:AAAA',${"x".repeat(1048577)})`);
+    await expect(
+      context.db.transaction((transaction) =>
+        createEncryptedAccountErasureSnapshot(transaction, budgetUserId, providers),
+      ),
+    ).rejects.toThrow(/Account deletion snapshot exceeds.*limit.*Contact support/);
   });
 
   it("snapshots public profiles without remote authorization", async () => {
@@ -464,6 +588,45 @@ describe("account-erasure remote snapshot persistence (integration)", () => {
     );
   });
 
+  it.each([
+    ["kilter", "Kilter Board"],
+    ["crimpd", "Crimpd"],
+    ["eight-a", "8a.nu / Vertical-Life"],
+    ["tension", "Tension Board"],
+    ["grasshopper", "Grasshopper Board"],
+    ["decoy", "Decoy Board"],
+    ["soill", "So iLL Board"],
+    ["touchstone", "Touchstone Board"],
+    ["aurora-board", "Aurora Board"],
+  ])(
+    "requires disconnecting an active %s session before account erasure",
+    async (providerId, name) => {
+      const boardUserId = randomUUID();
+      await context.db.execute(
+        sql`INSERT INTO fitness.user_profile (id, name) VALUES (${boardUserId}::uuid, 'Board User')`,
+      );
+      await ensureProvider(context.db, providerId, name, undefined, boardUserId);
+      await saveTokens(
+        context.db,
+        providerId,
+        {
+          accessToken: "board-session",
+          refreshToken: null,
+          expiresAt: new Date("2099-01-01T00:00:00Z"),
+          scopes: null,
+        },
+        boardUserId,
+      );
+      await expect(
+        context.db.transaction((transaction) =>
+          createEncryptedAccountErasureSnapshot(transaction, boardUserId, providers),
+        ),
+      ).rejects.toThrow(
+        `Disconnect ${name} in Dofek before deleting your account because remote session revocation is unavailable.`,
+      );
+    },
+  );
+
   it("blocks Ziva before registry lookup because remote revocation is not advertised", async () => {
     await expect(
       context.db.transaction((transaction) =>
@@ -472,34 +635,6 @@ describe("account-erasure remote snapshot persistence (integration)", () => {
     ).rejects.toThrow(
       "Disconnect Ziva in Dofek before deleting your account because Ziva does not advertise remote token revocation.",
     );
-  });
-
-  it("blocks connected AllTrails before erasure activation and preserves the user's session", async () => {
-    await expect(
-      initiateAccountErasure(
-        context.db,
-        allTrailsUserId,
-        (transaction) =>
-          createEncryptedAccountErasureSnapshot(transaction, allTrailsUserId, [
-            ...providers,
-            new AllTrailsProvider(),
-          ]),
-        async () => {},
-      ),
-    ).rejects.toThrow(
-      "Disconnect AllTrails in Dofek before deleting your account because Dofek cannot revoke AllTrails authorization remotely.",
-    );
-
-    const rows = await executeWithSchema(
-      context.db,
-      z.object({ sessions: z.number(), requests: z.number() }),
-      sql`SELECT
-            (SELECT count(*)::integer FROM fitness.session
-              WHERE user_id = ${allTrailsUserId}::uuid) AS sessions,
-            (SELECT count(*)::integer FROM fitness.account_erasure_request
-              WHERE user_id = ${allTrailsUserId}::uuid) AS requests`,
-    );
-    expect(rows).toEqual([{ sessions: 1, requests: 0 }]);
   });
 
   it("fails confirmation when an auth-capable connection has no revocation credentials", async () => {

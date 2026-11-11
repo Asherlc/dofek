@@ -30,9 +30,11 @@ function renderProvider({
   onSync = vi.fn(),
   provider = {
     id: "strava",
+    authType: "oauth",
     name: "Strava",
     lastSyncedAt: "2026-05-12T10:00:00.000Z",
     lastSuccessfulSyncAt: "2026-05-12T10:00:00.000Z",
+    lastProcessedUpdateAt: null,
     syncFreshness: {
       status: "current",
       label: "Sync current",
@@ -44,6 +46,7 @@ function renderProvider({
   needsAuth = false,
   needsReauth = false,
   recentLogs = [],
+  pushOnly = false,
 }: {
   onSync?: () => void;
   provider?: SyncProviderCardProps["provider"];
@@ -51,6 +54,7 @@ function renderProvider({
   needsAuth?: boolean;
   needsReauth?: boolean;
   recentLogs?: SyncProviderCardProps["recentLogs"];
+  pushOnly?: boolean;
 } = {}) {
   render(
     <SyncProviderCard
@@ -58,6 +62,7 @@ function renderProvider({
       state={state}
       needsAuth={needsAuth}
       needsReauth={needsReauth}
+      pushOnly={pushOnly}
       stats={undefined}
       recentLogs={recentLogs}
       onSync={onSync}
@@ -91,9 +96,11 @@ describe("SyncProviderCard", () => {
     renderProvider({
       provider: {
         id: "strava",
+        authType: "oauth",
         name: "Strava",
         lastSyncedAt: "2026-05-13T10:00:00.000Z",
         lastSuccessfulSyncAt: "2026-05-12T10:00:00.000Z",
+        lastProcessedUpdateAt: null,
         syncFreshness: {
           status: "overdue",
           label: "Sync overdue",
@@ -128,9 +135,11 @@ describe("SyncProviderCard", () => {
     renderProvider({
       provider: {
         id: "strava",
+        authType: "oauth",
         name: "Strava",
         lastSyncedAt: "2026-05-12T10:00:00.000Z",
         lastSuccessfulSyncAt: "2026-05-12T10:00:00.000Z",
+        lastProcessedUpdateAt: null,
         syncFreshness: {
           status: "overdue",
           label: "Sync overdue",
@@ -226,9 +235,11 @@ describe("SyncProviderCard", () => {
     renderProvider({
       provider: {
         id: "strava",
+        authType: "oauth",
         name: "Strava",
         lastSyncedAt: "2026-08-12T12:00:00.000Z",
         lastSuccessfulSyncAt: "2026-08-11T12:00:00.000Z",
+        lastProcessedUpdateAt: null,
         syncFreshness: {
           status: "overdue",
           label: "Sync overdue",
@@ -250,9 +261,11 @@ describe("SyncProviderCard", () => {
     renderProvider({
       provider: {
         id: "strava",
+        authType: "oauth",
         name: "Strava",
         lastSyncedAt: null,
         lastSuccessfulSyncAt: null,
+        lastProcessedUpdateAt: null,
         syncFreshness: {
           status: "unknown",
           label: "Sync status unknown",
@@ -273,9 +286,11 @@ describe("SyncProviderCard", () => {
     renderProvider({
       provider: {
         id: "strava",
+        authType: "oauth",
         name: "Strava",
         lastSyncedAt: "2026-08-12T12:00:00.000Z",
         lastSuccessfulSyncAt: "2026-08-11T12:00:00.000Z",
+        lastProcessedUpdateAt: null,
         syncFreshness: {
           status: "overdue",
           label: "Sync overdue",
@@ -301,9 +316,11 @@ describe("SyncProviderCard", () => {
     renderProvider({
       provider: {
         id: "garmin",
+        authType: "oauth",
         name: "Garmin",
         lastSyncedAt: "2026-09-03T04:00:00.000Z",
         lastSuccessfulSyncAt: "2026-09-03T04:00:00.000Z",
+        lastProcessedUpdateAt: null,
         syncFreshness: {
           status: "deferred",
           label: "Sync deferred",
@@ -388,9 +405,11 @@ describe("SyncProviderCard", () => {
       <SyncProviderCard
         provider={{
           id: "whoop_ble",
+          authType: "push:mobile",
           name: "WHOOP (Bluetooth)",
           lastSyncedAt: "2026-06-20T12:00:00.000Z",
           lastSuccessfulSyncAt: null,
+          lastProcessedUpdateAt: null,
           syncFreshness: null,
           authorized: true,
           description: "Synced from the iOS app when your WHOOP strap is nearby.",
@@ -411,10 +430,86 @@ describe("SyncProviderCard", () => {
       backgroundColor: operationalStatusColors.success.indicator,
     });
     expect(screen.getByText("Synced via iOS app")).not.toBeNull();
+    expect(screen.queryByRole("button", { name: "Reconnect WHOOP (Bluetooth)" })).toBeNull();
     expect(
       screen.getByText("Synced from the iOS app when your WHOOP strap is nearby."),
     ).not.toBeNull();
     expect(screen.queryByText("Receiving data")).toBeNull();
     expect(screen.queryByText("Live BLE push")).toBeNull();
   });
+});
+
+describe("OAuth notification providers", () => {
+  const garmin = {
+    id: "garmin",
+    authType: "oauth",
+    name: "Garmin",
+    authorized: true,
+    description: null,
+    lastSyncedAt: "2026-10-24T12:00:00Z",
+    lastSuccessfulSyncAt: null,
+    syncFreshness: null,
+    lastProcessedUpdateAt: null,
+  };
+
+  it("keeps a connected cloud source waiting for its first actual update", () => {
+    renderProvider({ provider: garmin, pushOnly: true });
+    expect(screen.getByText("Waiting for first update")).toBeVisible();
+    expect(screen.getByText("Connected")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Reconnect Garmin" })).toBeNull();
+  });
+
+  it("retains the successful update timestamp while a later update needs attention", () => {
+    renderProvider({
+      provider: { ...garmin, lastProcessedUpdateAt: "2026-10-24T11:00:00Z" },
+      pushOnly: true,
+      recentLogs: [
+        {
+          id: "failed-update",
+          status: "error",
+          syncedAt: "2026-10-24T12:00:00Z",
+          dataType: "update",
+          recordCount: null,
+          durationMs: null,
+          errorMessage: "The activity file could not be read.",
+          authFailureReason: null,
+        },
+      ],
+    });
+    expect(screen.getByText(/^Last update processed:/)).toBeVisible();
+    expect(
+      screen.getByRole("status", { name: "Update processing needs attention" }),
+    ).toHaveTextContent("Couldn't process the latest update");
+    expect(screen.getByText("Connected")).toBeVisible();
+  });
+
+  it.each([false, true])(
+    "offers Garmin authorization recovery when needsReauth=%s",
+    (needsReauth) => {
+      const onSync = vi.fn();
+      renderProvider({
+        provider: {
+          id: "garmin",
+          authType: "oauth",
+          name: "Garmin",
+          authorized: needsReauth,
+          description: null,
+          lastSyncedAt: null,
+          lastSuccessfulSyncAt: null,
+          lastProcessedUpdateAt: null,
+          syncFreshness: null,
+        },
+        pushOnly: true,
+        needsAuth: !needsReauth,
+        needsReauth,
+        onSync,
+      });
+      fireEvent.click(
+        screen.getByRole("button", { name: needsReauth ? "Reconnect Garmin" : "Connect Garmin" }),
+      );
+      expect(onSync).toHaveBeenCalledOnce();
+      expect(screen.getByText("Updates automatically")).toBeTruthy();
+      expect(screen.queryByRole("button", { name: /Sync Garmin/ })).toBeNull();
+    },
+  );
 });

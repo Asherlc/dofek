@@ -6,9 +6,11 @@ import {
 } from "@dofek/auth/auth";
 import * as AppleAuthentication from "expo-apple-authentication";
 import * as Crypto from "expo-crypto";
+import * as SecureStore from "expo-secure-store";
 import * as WebBrowser from "expo-web-browser";
 import { Platform } from "react-native";
 import { z } from "zod";
+import { disableUploads } from "../modules/whoop-ble";
 import {
   deleteSecureStoreItem,
   readSecureStoreItem,
@@ -20,6 +22,7 @@ export type { AuthUser, ConfiguredProviders };
 export { AuthUserSchema, ConfiguredProvidersSchema };
 
 const SESSION_TOKEN_KEY = "dofek_session_token";
+const SESSION_USER_KEY = "dofek_session_user_v1";
 const SESSION_OWNER_NONCE_KEY = "dofek_session_owner_nonce_v1";
 const APP_SCHEME = "dofek";
 const ErrorResponseSchema = z.object({ error: z.string().min(1) });
@@ -84,6 +87,12 @@ export async function saveSessionToken(token: string): Promise<void> {
   const writeGeneration = sessionPersistenceGeneration;
   await serializeSessionPersistence(async () => {
     if (writeGeneration !== sessionPersistenceGeneration) return;
+    const storedToken = await readSecureStoreItem(SESSION_TOKEN_KEY);
+    if (writeGeneration !== sessionPersistenceGeneration) return;
+    if (storedToken !== token) {
+      await SecureStore.deleteItemAsync(SESSION_USER_KEY);
+      if (writeGeneration !== sessionPersistenceGeneration) return;
+    }
     await writeSecureStoreItem(SESSION_TOKEN_KEY, token);
     if (writeGeneration === sessionPersistenceGeneration) {
       cachedSessionToken = token;
@@ -109,17 +118,65 @@ export async function getSessionToken(): Promise<string | null> {
   });
 }
 
+/** Save a verified user only while their session token remains persisted. */
+export async function saveSessionUser(token: string, user: AuthUser): Promise<void> {
+  const writeGeneration = sessionPersistenceGeneration;
+  await serializeSessionPersistence(async () => {
+    if (writeGeneration !== sessionPersistenceGeneration) return;
+    const storedToken = await readSecureStoreItem(SESSION_TOKEN_KEY);
+    if (writeGeneration !== sessionPersistenceGeneration || storedToken !== token) return;
+    await writeSecureStoreItem(SESSION_USER_KEY, JSON.stringify(AuthUserSchema.parse(user)));
+    if (writeGeneration !== sessionPersistenceGeneration) {
+      await SecureStore.deleteItemAsync(SESSION_USER_KEY);
+    }
+  });
+}
+
+/** Restore the saved user belonging to the persisted token without a network request. */
+export async function getSavedSessionUser(token: string): Promise<AuthUser | null> {
+  const readGeneration = sessionPersistenceGeneration;
+  return serializeSessionPersistence(async () => {
+    if (readGeneration !== sessionPersistenceGeneration) return null;
+    const storedToken = await readSecureStoreItem(SESSION_TOKEN_KEY);
+    if (readGeneration !== sessionPersistenceGeneration || storedToken !== token) return null;
+    const storedUser = await readSecureStoreItem(SESSION_USER_KEY);
+    if (readGeneration !== sessionPersistenceGeneration || storedUser === null) return null;
+    try {
+      const data: unknown = JSON.parse(storedUser);
+      return AuthUserSchema.parse(data);
+    } catch (error: unknown) {
+      captureException(error, { source: "auth-saved-user-restore" });
+      return null;
+    }
+  });
+}
+
 /** Clear the session token (logout). */
 export async function clearSessionToken(): Promise<void> {
   invalidateSessionPersistence();
-  await serializeSessionPersistence(async () => {
+  // Start native cleanup immediately and reserve persistence ordering before yielding.
+  // Adopting its Promise keeps later session writes behind completed native cleanup.
+  const nativeCleanup = Promise.allSettled([disableUploads()]);
+  const cleanupResults = await serializeSessionPersistence(async () => {
+    const nativeResults = await nativeCleanup;
     cachedSessionToken = null;
-    await Promise.all([
+    const credentialResults = await Promise.allSettled([
       deleteSecureStoreItem(SESSION_TOKEN_KEY),
+      SecureStore.deleteItemAsync(SESSION_USER_KEY),
       deleteSecureStoreItem(SESSION_OWNER_NONCE_KEY),
     ]);
-    cachedSessionToken = null;
+    return [...nativeResults, ...credentialResults];
   });
+  cachedSessionToken = null;
+  const failures = cleanupResults
+    .filter((result) => result.status === "rejected")
+    .map((result) => result.reason);
+  if (failures.length > 0) {
+    const error =
+      failures.length === 1 ? failures[0] : new AggregateError(failures, "Session cleanup failed");
+    captureException(error, { source: "auth-session-cleanup" });
+    throw error;
+  }
 }
 
 /** Generate an opaque local marker without retaining an account identifier. */
@@ -170,10 +227,12 @@ export async function fetchCurrentUser(serverUrl: string, token: string): Promis
   });
   if (res.status === 401 || res.status === 403) return null;
   if (!res.ok) {
-    const data: unknown = await res.json().catch((error: unknown) => {
-      captureException(error, { source: "auth-bootstrap-error-json" });
-      return null;
-    });
+    const data: unknown = res.headers.get("content-type")?.includes("application/json")
+      ? await res.json().catch((error: unknown) => {
+          captureException(error, { source: "auth-bootstrap-error-json" });
+          return null;
+        })
+      : null;
     const parsed = ErrorResponseSchema.safeParse(data);
     throw new Error(
       parsed.success ? parsed.data.error : `Auth bootstrap failed: ${res.status} ${res.statusText}`,

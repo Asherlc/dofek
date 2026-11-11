@@ -1,374 +1,405 @@
-import { eq, sql } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+import { ProviderServiceUnavailableError } from "@dofek/provider-http/rate-limit";
+import { and, eq, sql } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
-import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { persistClimbingLogEntries } from "../db/climbing-log-sync.ts";
+import { userSettings } from "../db/schema/account.ts";
 import { activity } from "../db/schema/activity.ts";
-import { climb, climbGrade, climbingAttempt, climbingLogEntry } from "../db/schema/climbing.ts";
+import { climb, climbingAttempt, climbingLogEntry } from "../db/schema/climbing.ts";
 import { TEST_USER_ID } from "../db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
+import { createIntegrationMswFixture } from "../test/early-msw-lifecycle.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
-import { theCragAscent, theCragPage } from "./test-helpers.ts";
+import { THECRAG_LOGBOOK_SCOPE } from "./thecrag/identity.ts";
 import { TheCragProvider } from "./thecrag/provider.ts";
+import { apiAscent, logbookPage } from "./thecrag/test-helpers.ts";
 
-const OTHER_USER_ID = "00000000-0000-0000-0000-000000000003";
+const server = createIntegrationMswFixture();
 const endpoint = "https://www.thecrag.com/api/logbook/ascents";
-const server = setupServer();
 
-function routeAscent(overrides: Record<string, unknown> = {}) {
-  return theCragAscent({ tick: { label: "lead solo", name: "Lead Solo" }, ...overrides });
-}
-
-describe("TheCragProvider.sync (PostgreSQL)", () => {
+describe("theCrag official logbook persistence (PostgreSQL)", () => {
   let context: TestContext;
-
-  const run = (options: { scheduled?: boolean; userId?: string } = {}) =>
-    new TheCragProvider().sync(
+  let requests: URL[];
+  const run = (full = false, userId = TEST_USER_ID) =>
+    new TheCragProvider(globalThis.fetch).sync(
       new SyncRun({
         db: context.db,
-        window: options.scheduled
-          ? SyncWindow.lastDays(7, { now: new Date("2026-10-11T12:00:00Z") })
-          : SyncWindow.full(new Date("2026-10-11T12:00:00Z")),
-        userId: options.userId ?? TEST_USER_ID,
-        origin: options.scheduled ? "scheduled" : "manual",
+        userId,
+        window: full ? SyncWindow.full() : SyncWindow.lastDays(7),
+        origin: full ? "manual" : "scheduled",
       }),
     );
-
-  const entries = () =>
+  const entries = (userId = TEST_USER_ID) =>
     context.db
       .select()
       .from(climbingLogEntry)
-      .where(eq(climbingLogEntry.providerId, "thecrag"))
-      .orderBy(climbingLogEntry.id);
-
-  const connect = async (userId = TEST_USER_ID, accountId = "123") => {
+      .where(and(eq(climbingLogEntry.providerId, "thecrag"), eq(climbingLogEntry.userId, userId)));
+  const progress = async (userId = TEST_USER_ID) => {
+    const [row] = await context.db
+      .select()
+      .from(userSettings)
+      .where(and(eq(userSettings.userId, userId), eq(userSettings.key, "thecrag_sync_cursor")));
+    return row?.value;
+  };
+  const connect = async (
+    accountId = "123",
+    authorizationId = randomUUID(),
+    userId = TEST_USER_ID,
+  ) => {
     await ensureProvider(context.db, "thecrag", "theCrag", "https://www.thecrag.com/api", userId);
     await saveTokens(
       context.db,
       "thecrag",
       {
-        accessToken: `test-key-${accountId}`,
+        accessToken: userId === TEST_USER_ID ? "personal-key" : "second-personal-key",
         providerAccountId: accountId,
+        authorizationId,
+        scopes: THECRAG_LOGBOOK_SCOPE,
         refreshToken: null,
-        expiresAt: new Date("2099-12-31T00:00:00Z"),
-        scopes: "logbook:read",
+        expiresAt: new Date("2099-12-31"),
       },
       userId,
     );
   };
-
+  function serve(reply: (url: URL) => Response = () => HttpResponse.json(logbookPage())) {
+    server.use(
+      http.get(endpoint, ({ request }) => {
+        expect(request.headers.get("X-CData-Key")).toBe("key=personal-key");
+        const url = new URL(request.url);
+        requests.push(url);
+        return reply(url);
+      }),
+    );
+  }
   beforeAll(async () => {
     context = await setupTestDatabase();
-    server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
-    await context.db.execute(sql`INSERT INTO fitness.user_profile (id, name)
-      VALUES (${OTHER_USER_ID}::uuid, 'Other climber')`);
-  }, 60_000);
-
+    server.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
+  }, 60000);
   beforeEach(async () => {
+    requests = [];
+    await context.db.execute(sql`TRUNCATE fitness.climb, fitness.area, fitness.activity CASCADE`);
+    await context.db.delete(userSettings).where(eq(userSettings.key, "thecrag_sync_cursor"));
     await connect();
-    await context.db.delete(climbingLogEntry).where(eq(climbingLogEntry.providerId, "thecrag"));
-    await context.db.delete(activity).where(eq(activity.providerId, "thecrag"));
   });
-
   afterEach(() => server.resetHandlers());
   afterAll(async () => {
-    server.close();
-    if (context) await context.cleanup();
+    server.deactivate();
+    await context?.cleanup();
   });
 
-  it.each([
-    ["lead solo", "Lead Solo", "lead"],
-    ["top rope solo", "Top Rope Solo", "top_rope"],
-  ] as const)(
-    "upserts a %s ascent without a workout or losing its raw payload",
-    async (label, name, ropeMethod) => {
-      const ascent = routeAscent({ tick: { label, name } });
-      server.use(http.get(endpoint, () => HttpResponse.json(theCragPage([ascent]))));
-      expect(await run()).toMatchObject({ recordsSynced: 1, errors: [] });
-      expect(await run()).toMatchObject({ recordsSynced: 1, errors: [] });
-      expect(await entries()).toEqual([
-        expect.objectContaining({
-          userId: TEST_USER_ID,
-          externalId: "thecrag:1001",
-          activityId: null,
-          climbedOn: "2026-10-10",
-          discipline: "rock_climbing",
-          raw: { accountId: "123", ascent },
-        }),
-      ]);
-      expect(await context.db.select().from(climb).where(eq(climb.providerId, "thecrag"))).toEqual([
-        expect.objectContaining({
-          externalId: "2001",
-          kind: "route",
-          name: "Sunset Arete",
-          routeProtection: ["sport"],
-        }),
-      ]);
-      expect(await context.db.select().from(climbGrade)).toEqual([
-        expect.objectContaining({ system: "yds", value: "5.10a" }),
-      ]);
-      expect(await context.db.select().from(climbingAttempt)).toEqual([
-        expect.objectContaining({
-          scope: "climb",
-          ropeMethod,
-          solo: true,
-          sourceResult: null,
-          fellOrHung: null,
-          usedAid: null,
-          protectionUsed: ["sport"],
-          receivedBeta: null,
-          attemptIndex: null,
-        }),
-      ]);
-      expect(
-        await context.db.select().from(activity).where(eq(activity.providerId, "thecrag")),
-      ).toHaveLength(0);
-    },
-  );
-
-  it("retains a boulder Redpoint without a rope method", async () => {
-    const ascent = theCragAscent({
-      climbedGearStyle: "boulder",
-      route: { id: "2001", name: "Boulder", grade: "V4", style: "Boulder" },
-    });
-    server.use(http.get(endpoint, () => HttpResponse.json(theCragPage([ascent]))));
+  it("imports an official ascent and reuses its canonical identity on replay", async () => {
+    serve();
     expect(await run()).toMatchObject({ recordsSynced: 1, errors: [] });
+    const [original] = await entries();
+    expect(original).toMatchObject({
+      externalId: "thecrag:1001",
+      notes: "Private training notes",
+      climbedOn: "2026-10-10",
+      activityId: null,
+    });
+    expect(await run()).toMatchObject({ recordsSynced: 1, errors: [] });
+    expect((await entries())[0]?.id).toBe(original?.id);
+    expect(requests[0]?.searchParams.has("since")).toBe(false);
+    expect(requests[1]?.searchParams.get("since")).toBe("1791676799");
+    expect(await progress()).toMatchObject({ accountId: "123", epoch: 1791676800 });
     expect(await context.db.select().from(climbingAttempt)).toEqual([
-      expect.objectContaining({
-        ropeMethod: null,
-        sourceResult: "redpoint",
-        fellOrHung: false,
-        usedAid: false,
-        dabbed: false,
-      }),
+      expect.objectContaining({ ropeMethod: "top_rope", sourceResult: "attempt" }),
     ]);
   });
 
-  it("rejects a route Redpoint without a method and preserves the prior import", async () => {
-    server.use(http.get(endpoint, () => HttpResponse.json(theCragPage([routeAscent()]))));
-    expect(await run()).toMatchObject({ recordsSynced: 1, errors: [] });
-    const previous = await entries();
-    const previousAttempts = await context.db.select().from(climbingAttempt);
-    server.use(
-      http.get(endpoint, () =>
-        HttpResponse.json(
-          theCragPage([
-            routeAscent({ epoch: 1791676999, markdown: "Updated source note" }),
-            theCragAscent({ id: "1002", epoch: 1791676998 }),
-          ]),
-        ),
-      ),
+  it("isolates ascent identities and incremental progress between users", async () => {
+    const secondUserId = randomUUID();
+    await context.db.execute(
+      sql`INSERT INTO fitness.user_profile (id, name) VALUES (${secondUserId}::uuid, 'Second user')`,
     );
-    expect(await run({ scheduled: true })).toMatchObject({
-      recordsSynced: 0,
-      errors: [
-        expect.objectContaining({
-          message: expect.stringMatching(/missing a rope method.*record.+source.+import/i),
-        }),
-      ],
-    });
-    expect(await entries()).toEqual(previous);
-    expect(await context.db.select().from(climbingAttempt)).toEqual(previousAttempts);
-  });
-
-  it("updates a corrected climb day while preserving a user-selected activity attachment", async () => {
-    let ascents = [routeAscent(), routeAscent({ id: "1002" })];
-    server.use(http.get(endpoint, () => HttpResponse.json(theCragPage(ascents))));
-    expect(await run()).toMatchObject({ recordsSynced: 2, errors: [] });
-    const [workout] = await context.db
-      .insert(activity)
-      .values({
-        userId: TEST_USER_ID,
-        providerId: "thecrag",
-        externalId: "recorded-workout",
-        providerType: "climbing",
-        canonicalType: "climbing",
-        startedAt: new Date("2026-10-10T12:00:00Z"),
-      })
-      .returning();
-    if (!workout) throw new Error("Fixture activity was not inserted");
-    await context.db
-      .update(climbingLogEntry)
-      .set({ activityId: workout.id })
-      .where(eq(climbingLogEntry.externalId, "thecrag:1002"));
-    ascents = [
-      routeAscent({ date: "2026-10-09", epoch: 1791676810 }),
-      routeAscent({ id: "1002", date: "2026-10-09", epoch: 1791676810 }),
-    ];
-    expect(await run()).toMatchObject({ recordsSynced: 2, errors: [] });
-    expect(await entries()).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ externalId: "thecrag:1001", climbedOn: "2026-10-09" }),
-        expect.objectContaining({
-          externalId: "thecrag:1002",
-          activityId: workout.id,
-          climbedOn: "2026-10-09",
-          raw: { accountId: "123", ascent: ascents[1] },
-        }),
-      ]),
-    );
-  });
-
-  it("refreshes the full logbook during scheduled syncs and imports backdated edits", async () => {
-    const requestedSince: Array<string | null> = [];
-    let ascents = [routeAscent()];
+    await connect("456", randomUUID(), secondUserId);
+    const admissions: { owner: string; since: string | null }[] = [];
     server.use(
       http.get(endpoint, ({ request }) => {
-        requestedSince.push(new URL(request.url).searchParams.get("since"));
-        return HttpResponse.json(theCragPage(ascents));
-      }),
-    );
-    expect(await run({ scheduled: true })).toMatchObject({ recordsSynced: 1, errors: [] });
-    ascents = [routeAscent({ date: "2020-01-20", epoch: 1791676810 })];
-    expect(await run({ scheduled: true })).toMatchObject({ recordsSynced: 1, errors: [] });
-    expect(requestedSince).toEqual([null, null]);
-    expect(await entries()).toEqual([
-      expect.objectContaining({
-        climbedOn: "2020-01-20",
-        raw: { accountId: "123", ascent: ascents[0] },
-      }),
-    ]);
-    expect(await run()).toMatchObject({ errors: [] });
-    expect(requestedSince.at(-1)).toBeNull();
-  });
-
-  it("keeps identical source IDs isolated between Dofek users", async () => {
-    await connect(OTHER_USER_ID);
-    server.use(http.get(endpoint, () => HttpResponse.json(theCragPage([routeAscent()]))));
-    expect(await run()).toMatchObject({ recordsSynced: 1, errors: [] });
-    expect(await run({ userId: OTHER_USER_ID })).toMatchObject({ recordsSynced: 1, errors: [] });
-    const stored = await entries();
-    expect(stored).toHaveLength(2);
-    expect(stored.map((entry) => entry.userId).sort()).toEqual([TEST_USER_ID, OTHER_USER_ID]);
-    server.use(http.get(endpoint, () => HttpResponse.json(theCragPage([]))));
-    expect(await run()).toMatchObject({ recordsSynced: 0, errors: [] });
-    expect(await entries()).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ userId: TEST_USER_ID, providerAbsentAt: expect.any(Date) }),
-        expect.objectContaining({ userId: OTHER_USER_ID, providerAbsentAt: null }),
-      ]),
-    );
-  });
-
-  it("reconciles a newly connected account while retaining the previous account's raw records", async () => {
-    server.use(http.get(endpoint, () => HttpResponse.json(theCragPage([routeAscent()]))));
-    expect(await run({ scheduled: true })).toMatchObject({ errors: [] });
-    await connect(TEST_USER_ID, "999");
-    let requestedSince: string | null | undefined;
-    server.use(
-      http.get(endpoint, ({ request }) => {
-        requestedSince = new URL(request.url).searchParams.get("since");
+        const second = request.headers.get("X-CData-Key") === "key=second-personal-key";
+        const since = new URL(request.url).searchParams.get("since");
+        admissions.push({ owner: second ? secondUserId : TEST_USER_ID, since });
         return HttpResponse.json(
-          theCragPage([routeAscent({ id: "1009", epoch: 100 })], {
-            account: { id: "999", name: "Other account", login: "other" },
-          }),
+          logbookPage(
+            [
+              apiAscent({
+                epoch: second ? 200 : since ? 101 : 100,
+                markdown: second ? "Second user's note" : "First user's note",
+              }),
+            ],
+            { account: { id: second ? "456" : "123" } },
+          ),
         );
       }),
     );
-    expect(await run({ scheduled: true })).toMatchObject({ recordsSynced: 1, errors: [] });
-    expect(requestedSince).toBeNull();
-    expect(await entries()).toHaveLength(2);
-    expect(await entries()).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ externalId: "thecrag:1001", providerAbsentAt: expect.any(Date) }),
-        expect.objectContaining({ externalId: "thecrag:1009", providerAbsentAt: null }),
-      ]),
-    );
+    expect(await run()).toMatchObject({ recordsSynced: 1, errors: [] });
+    expect(await run(false, secondUserId)).toMatchObject({ recordsSynced: 1, errors: [] });
+    expect(await run()).toMatchObject({ recordsSynced: 1, errors: [] });
+    expect(admissions).toEqual([
+      { owner: TEST_USER_ID, since: null },
+      { owner: secondUserId, since: null },
+      { owner: TEST_USER_ID, since: "99" },
+    ]);
+    expect(await progress()).toMatchObject({ accountId: "123", epoch: 101 });
+    expect(await progress(secondUserId)).toMatchObject({ accountId: "456", epoch: 200 });
+    expect(await entries()).toEqual([
+      expect.objectContaining({
+        externalId: "thecrag:1001",
+        userId: TEST_USER_ID,
+        notes: "First user's note",
+      }),
+    ]);
+    expect(await entries(secondUserId)).toEqual([
+      expect.objectContaining({
+        externalId: "thecrag:1001",
+        userId: secondUserId,
+        notes: "Second user's note",
+      }),
+    ]);
   });
 
-  it("leaves stored data intact when a later API page fails", async () => {
-    server.use(http.get(endpoint, () => HttpResponse.json(theCragPage([routeAscent()]))));
-    expect(await run()).toMatchObject({ errors: [] });
-    const previous = await entries();
-    server.use(
-      http.get(endpoint, ({ request }) =>
-        new URL(request.url).searchParams.get("page") === "1"
-          ? HttpResponse.json(
-              theCragPage([routeAscent({ epoch: 1791676999 })], { perPage: 1, numberAscents: 2 }),
-            )
-          : new HttpResponse(null, { status: 400 }),
-      ),
-    );
-    expect(await run({ scheduled: true })).toMatchObject({
-      recordsSynced: 0,
-      errors: [expect.any(Object)],
+  it("preserves an existing user-selected workout attachment and source ID", async () => {
+    serve();
+    await run();
+    const [original] = await entries();
+    const activityId = randomUUID();
+    await context.db.insert(activity).values({
+      id: activityId,
+      userId: TEST_USER_ID,
+      providerId: "thecrag",
+      externalId: "existing-workout",
+      canonicalType: "climbing",
+      providerType: "climbing",
+      startedAt: new Date("2026-10-10T12:00:00Z"),
     });
-    expect(await entries()).toEqual(previous);
-  });
-
-  it("rolls back all ascent writes when a PostgreSQL constraint rejects one record", async () => {
-    server.use(http.get(endpoint, () => HttpResponse.json(theCragPage([routeAscent()]))));
-    expect(await run()).toMatchObject({ errors: [] });
-    const previous = await entries();
-    await context.db.execute(sql`ALTER TABLE fitness.climbing_log_entry ADD CONSTRAINT test_reject_ascent
-      CHECK (external_id <> 'thecrag:1002')`);
-    try {
-      server.use(
-        http.get(endpoint, () =>
-          HttpResponse.json(
-            theCragPage([
-              routeAscent({ epoch: 1791676999 }),
-              routeAscent({ id: "1002", epoch: 1791676998 }),
-            ]),
-          ),
-        ),
-      );
-      const result = await run();
-      expect(result).toMatchObject({ recordsSynced: 0, errors: [expect.any(Object)] });
-      expect(result.errors[0]?.message).not.toContain("Personal ascent notes");
-      expect(await entries()).toEqual(previous);
-    } finally {
-      await context.db.execute(
-        sql`ALTER TABLE fitness.climbing_log_entry DROP CONSTRAINT test_reject_ascent`,
-      );
-    }
-  });
-
-  it("retires a removed ascent during scheduled syncs and restores the same record", async () => {
-    let ascents = [routeAscent(), routeAscent({ id: "1002" })];
-    server.use(http.get(endpoint, () => HttpResponse.json(theCragPage(ascents))));
-    expect(await run()).toMatchObject({ errors: [] });
-    const previous = await entries();
-    const removed = previous.find((entry) => entry.externalId === "thecrag:1002");
-    ascents = [routeAscent()];
-    expect(await run({ scheduled: true })).toMatchObject({ recordsSynced: 1, errors: [] });
-    expect(await entries()).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ externalId: "thecrag:1001", providerAbsentAt: null }),
-        { ...removed, providerAbsentAt: expect.any(Date) },
-      ]),
+    await context.db.execute(
+      sql`UPDATE fitness.climbing_log_entry SET activity_id=${activityId}::uuid WHERE id=${original?.id}::uuid`,
     );
-    ascents = [routeAscent(), routeAscent({ id: "1002" })];
-    expect(await run({ scheduled: true })).toMatchObject({ recordsSynced: 2, errors: [] });
-    expect(await entries()).toEqual(previous);
-  });
-
-  it("retires the final ascents when the complete logbook becomes empty", async () => {
-    server.use(http.get(endpoint, () => HttpResponse.json(theCragPage([routeAscent()]))));
-    expect(await run()).toMatchObject({ errors: [] });
-    const previous = await entries();
-    const attempts = await context.db.select().from(climbingAttempt);
-    server.use(http.get(endpoint, () => HttpResponse.json(theCragPage([]))));
-    expect(await run({ scheduled: true })).toMatchObject({ recordsSynced: 0, errors: [] });
-    expect(await entries()).toEqual(
-      previous.map((entry) => ({ ...entry, providerAbsentAt: expect.any(Date) })),
-    );
-    expect(await context.db.select().from(climbingAttempt)).toEqual(attempts);
-  });
-
-  it("rejects an account response belonging to another key owner before writing", async () => {
-    server.use(
-      http.get(endpoint, () =>
-        HttpResponse.json(
-          theCragPage([routeAscent()], {
-            account: { id: "456", name: "Wrong account", login: "wrong" },
-          }),
-        ),
+    server.resetHandlers();
+    serve(() =>
+      HttpResponse.json(
+        logbookPage([apiAscent({ epoch: 1791676801, markdown: "Updated private note" })]),
       ),
     );
-    expect(await run()).toMatchObject({ recordsSynced: 0, errors: [expect.any(Object)] });
-    expect(await entries()).toHaveLength(0);
+    expect(await run()).toMatchObject({ errors: [] });
+    expect((await entries())[0]).toMatchObject({
+      id: original?.id,
+      activityId,
+      notes: "Updated private note",
+    });
+  });
+
+  it("preserves the recorded day when an incremental source response omits its date", async () => {
+    serve();
+    await run();
+    server.resetHandlers();
+    const source = apiAscent({ epoch: 1791676801 });
+    Reflect.deleteProperty(source, "date");
+    serve(() => HttpResponse.json(logbookPage([source])));
+    expect(await run()).toMatchObject({ errors: [] });
+    expect((await entries())[0]?.climbedOn).toBe("2026-10-10");
+  });
+
+  it("retains old imported entries when a successful delta is empty", async () => {
+    serve();
+    await run();
+    const before = await entries();
+    const cursor = await progress();
+    server.resetHandlers();
+    serve(() => HttpResponse.json(logbookPage([])));
+    expect(await run()).toMatchObject({ recordsSynced: 0, errors: [] });
+    expect(await entries()).toEqual(before);
+    expect(await progress()).toEqual(cursor);
+  });
+
+  it("imports every page and saves the maximum source epoch", async () => {
+    serve((url) => {
+      const page = Number(url.searchParams.get("page"));
+      return HttpResponse.json(
+        logbookPage([apiAscent({ id: String(1000 + page), epoch: 300 - page })], {
+          numberAscents: 2,
+          perPage: 1,
+          page: String(page),
+        }),
+      );
+    });
+    expect(await run()).toMatchObject({ recordsSynced: 2, errors: [] });
+    expect(await entries()).toHaveLength(2);
+    expect(await progress()).toMatchObject({ epoch: 299 });
+  });
+
+  it("imports full history again after reconnecting to the same account", async () => {
+    serve();
+    await run();
+    await connect();
+    await run();
+    expect(requests.map((url) => url.searchParams.has("since"))).toEqual([false, false]);
+  });
+
+  it("keeps incremental state scoped to the connected remote account", async () => {
+    serve();
+    await run();
+    await connect("456");
+    server.resetHandlers();
+    serve(() =>
+      HttpResponse.json(logbookPage([apiAscent({ id: "1002" })], { account: { id: "456" } })),
+    );
+    expect(await run()).toMatchObject({ errors: [] });
+    expect(requests[1]?.searchParams.has("since")).toBe(false);
+    expect(await progress()).toMatchObject({ accountId: "456" });
+    expect(await entries()).toHaveLength(2);
+  });
+
+  it("bypasses incremental progress for an explicit full import", async () => {
+    serve();
+    await run();
+    await run(true);
+    expect(requests[1]?.searchParams.has("since")).toBe(false);
+  });
+
+  it("applies a changed ascent at the same epoch without erasing a previously recorded rope method", async () => {
+    serve();
+    await run();
+    server.resetHandlers();
+    serve(() =>
+      HttpResponse.json(
+        logbookPage([
+          apiAscent({
+            climbedGearStyle: "sport",
+            tick: { label: "redpoint" },
+            markdown: "Same second edit",
+            route: { id: "2001", style: "Sport" },
+          }),
+        ]),
+      ),
+    );
+    expect(await run()).toMatchObject({ errors: [] });
+    expect((await entries())[0]?.notes).toBe("Same second edit");
+    expect(await context.db.select().from(climbingAttempt)).toEqual([
+      expect.objectContaining({ ropeMethod: "top_rope", sourceResult: "redpoint" }),
+    ]);
+  });
+
+  it.each(["http", "incomplete", "malformed", "duplicate", "wrong account"])(
+    "preserves saved data and progress after a %s page failure",
+    async (failure) => {
+      serve();
+      await run();
+      const before = await entries();
+      const cursor = await progress();
+      server.resetHandlers();
+      serve((url) => {
+        const page = Number(url.searchParams.get("page"));
+        if (page === 1)
+          return HttpResponse.json(
+            logbookPage([apiAscent({ epoch: 1791676900 })], { numberAscents: 2, perPage: 1 }),
+          );
+        if (failure === "http") return new HttpResponse(null, { status: 500 });
+        if (failure === "malformed")
+          return HttpResponse.json({ data: { malformed: "not a page" } });
+        if (failure === "incomplete")
+          return HttpResponse.json(logbookPage([], { numberAscents: 2, perPage: 1, page: "2" }));
+        return HttpResponse.json(
+          logbookPage([apiAscent({ id: failure === "duplicate" ? "1001" : "1002" })], {
+            numberAscents: 2,
+            perPage: 1,
+            page: "2",
+            account: { id: failure === "wrong account" ? "456" : "123" },
+          }),
+        );
+      });
+      if (failure === "http") {
+        await expect(run()).rejects.toBeInstanceOf(ProviderServiceUnavailableError);
+      } else {
+        expect((await run()).errors).toHaveLength(1);
+      }
+      expect(await entries()).toEqual(before);
+      expect(await progress()).toEqual(cursor);
+    },
+  );
+
+  it("rolls back source writes and keeps progress when Postgres rejects a write", async () => {
+    serve();
+    await run();
+    const before = await entries();
+    const cursor = await progress();
+    await context.db.execute(
+      sql`CREATE FUNCTION fitness.reject_thecrag_test_write() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE check_violation USING MESSAGE='private-bound-note'; END; $$`,
+    );
+    await context.db.execute(
+      sql`CREATE TRIGGER reject_thecrag_test_write BEFORE INSERT OR UPDATE ON fitness.climbing_log_entry FOR EACH ROW EXECUTE FUNCTION fitness.reject_thecrag_test_write()`,
+    );
+    server.resetHandlers();
+    serve(() =>
+      HttpResponse.json(
+        logbookPage([apiAscent({ epoch: 1791676900, markdown: "must not persist" })]),
+      ),
+    );
+    const result = await run();
+    await context.db.execute(
+      sql`DROP TRIGGER reject_thecrag_test_write ON fitness.climbing_log_entry`,
+    );
+    await context.db.execute(sql`DROP FUNCTION fitness.reject_thecrag_test_write()`);
+    expect(result.errors[0]?.message).toMatch(/could not save/);
+    expect(JSON.stringify(result)).not.toContain("private-bound-note");
+    expect(await entries()).toEqual(before);
+    expect(await progress()).toEqual(cursor);
+  });
+
+  it("does not confuse historical public credentials with official API keys", async () => {
+    await saveTokens(
+      context.db,
+      "thecrag",
+      {
+        accessToken: "sampleclimber",
+        providerAccountId: "123",
+        scopes: "thecrag:public-profile",
+        refreshToken: null,
+        expiresAt: new Date("2099-12-31"),
+      },
+      TEST_USER_ID,
+    );
+    serve();
+    expect((await run()).errors[0]?.message).toMatch(/Reconnect/);
+    expect(requests).toHaveLength(0);
+  });
+
+  it("keeps recorded attempts from earlier public imports when the API omits totals", async () => {
+    await persistClimbingLogEntries(context.db, {
+      userId: TEST_USER_ID,
+      providerId: "thecrag",
+      entries: [
+        {
+          externalId: "thecrag:1001",
+          climbedOn: "2026-10-10",
+          climb: { externalId: "2001", kind: "route" },
+          reportedAttemptCounts: [{ scope: "climb", count: 4 }],
+          attempts: [
+            { scope: "climb", sourceResult: "attempt", ropeMethod: "top_rope" },
+            { scope: "climb", ropeMethod: "top_rope" },
+            { scope: "climb", ropeMethod: "top_rope" },
+            { scope: "climb", ropeMethod: "top_rope" },
+          ],
+        },
+      ],
+    });
+    const [original] = await entries();
+    serve();
+    expect(await run()).toMatchObject({ errors: [] });
+    expect((await entries())[0]?.id).toBe(original?.id);
+    expect(await context.db.select().from(climbingAttempt)).toHaveLength(4);
+  });
+
+  it("does not create synthetic activities while retaining route facts", async () => {
+    serve();
+    await run();
+    expect(await context.db.select().from(activity)).toHaveLength(0);
+    expect(await context.db.select().from(climb)).toEqual([
+      expect.objectContaining({ externalId: "2001", name: "Sample route", kind: "route" }),
+    ]);
   });
 });

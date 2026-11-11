@@ -2,20 +2,27 @@ import { gradeSystemLabel } from "@dofek/training/climbing-grades";
 import type { AttemptOutcome, ClimbingAttempt, GradeComponent } from "@dofek/training/climbing-log";
 import { formatClimbingRopeMethod } from "./climbing-context.ts";
 
+export function formatClimbingResultOutcome(
+  outcome: AttemptOutcome | null,
+  resultLabels: readonly string[] = [],
+  freeSend: boolean | null = null,
+): "Attempted" | "Completed" | null {
+  if (outcome === "failed") return "Attempted";
+  if (outcome === "completed" && freeSend !== true && resultLabels.length === 0) return "Completed";
+  return null;
+}
+
 export function formatClimbingRecordedResult(
   target: string | null,
   outcome: AttemptOutcome | null,
   recordedCount: number | null,
   resultLabels: readonly string[] = [],
+  freeSend: boolean | null = null,
 ): string | null {
-  const result =
-    target === null
-      ? outcome === "failed"
-        ? "Failed"
-        : null
-      : `${target}${outcome === "failed" ? " failed" : ""}`;
+  const result = formatClimbingResultOutcome(outcome, resultLabels, freeSend);
   return (
     [
+      target,
       result,
       recordedCount === null || isFirstTryClimbingResult(resultLabels)
         ? null
@@ -30,15 +37,18 @@ export function isFirstTryClimbingResult(labels: readonly string[]): boolean {
   return labels.some((label) => label === "Onsight" || label === "Flash");
 }
 
-export function formatClimbingRopeMethods(
-  attempts: readonly Pick<ClimbingAttempt, "ropeMethod">[],
-): string | null {
-  const labels = new Set(
-    attempts
-      .map((attempt) => formatClimbingRopeMethod(attempt.ropeMethod))
-      .filter((label) => label !== null),
-  );
-  return labels.size === 0 ? null : [...labels].join(" · ");
+export function climbingAttemptStyleLabels(
+  attempts: readonly Pick<ClimbingAttempt, "ropeMethod" | "fellOrHung">[],
+): string[][] {
+  const styles = new Map<string, string[]>();
+  for (const attempt of attempts) {
+    const labels = [
+      formatClimbingRopeMethod(attempt.ropeMethod),
+      attempt.fellOrHung === true ? "Fell/Hung" : null,
+    ].filter((label) => label !== null);
+    if (labels.length > 0) styles.set(labels.join(":"), labels);
+  }
+  return [...styles.values()];
 }
 
 export function formatClimbingGradeComponents(components: readonly GradeComponent[]): string {

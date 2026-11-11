@@ -36,18 +36,30 @@ function oauthTokenContext(
   };
 }
 
+function normalizeProviderAccountId(providerAccountId: string): string {
+  const normalizedProviderAccountId = providerAccountId.trim();
+  if (!normalizedProviderAccountId) {
+    throw new Error("OAuth provider account ID must not be empty");
+  }
+  return normalizedProviderAccountId;
+}
+
+function deriveProviderAccountLookupId(providerId: string, providerAccountId: string): string {
+  return deriveCredentialIdentifier(normalizeProviderAccountId(providerAccountId), {
+    tableName: "fitness.oauth_token",
+    columnName: "provider_account_lookup_id",
+    scopeId: providerId,
+  });
+}
+
 export function deriveProviderAccountKey(
   providerId: string,
   providerAccountId: string,
   userId?: string,
 ): string {
   const scopedUserId = resolveUserId(userId);
-  const normalizedProviderAccountId = providerAccountId.trim();
-  if (!normalizedProviderAccountId) {
-    throw new Error("OAuth provider account ID must not be empty");
-  }
   return deriveCredentialIdentifier(
-    normalizedProviderAccountId,
+    normalizeProviderAccountId(providerAccountId),
     oauthTokenContext(scopedUserId, providerId, "provider_account_id"),
   );
 }
@@ -115,6 +127,10 @@ export async function saveTokens(
   userId?: string,
 ): Promise<void> {
   const scopedUserId = resolveUserId(userId);
+  const normalizedProviderAccountId =
+    tokens.providerAccountId === undefined
+      ? undefined
+      : normalizeProviderAccountId(tokens.providerAccountId);
   const encryptedAccessToken = await encryptCredentialValue(
     tokens.accessToken,
     oauthTokenContext(scopedUserId, providerId, "access_token"),
@@ -125,23 +141,26 @@ export async function saveTokens(
         oauthTokenContext(scopedUserId, providerId, "refresh_token"),
       )
     : null;
-  if (tokens.providerAccountId !== undefined && tokens.providerAccountId.trim() === "") {
-    throw new Error("OAuth provider account ID must not be empty");
-  }
-  const encryptedProviderAccountId = tokens.providerAccountId
+  const encryptedProviderAccountId = normalizedProviderAccountId
     ? await encryptCredentialValue(
-        tokens.providerAccountId,
+        normalizedProviderAccountId,
         oauthTokenContext(scopedUserId, providerId, "provider_account_id"),
       )
     : undefined;
+  const providerAccountLookupId =
+    normalizedProviderAccountId === undefined
+      ? undefined
+      : deriveProviderAccountLookupId(providerId, normalizedProviderAccountId);
   await db
     .insert(oauthToken)
     .values({
       userId: scopedUserId,
       providerId,
       accessToken: encryptedAccessToken,
+      authorizationId: tokens.authorizationId ?? null,
       refreshToken: encryptedRefreshToken,
       providerAccountId: encryptedProviderAccountId ?? null,
+      providerAccountLookupId: providerAccountLookupId ?? null,
       expiresAt: tokens.expiresAt,
       scopes: tokens.scopes,
       updatedAt: new Date(),
@@ -150,17 +169,41 @@ export async function saveTokens(
       target: [oauthToken.userId, oauthToken.providerId],
       set: {
         accessToken: encryptedAccessToken,
+        authorizationId:
+          tokens.authorizationId === undefined
+            ? sql`${oauthToken.authorizationId}`
+            : tokens.authorizationId,
         refreshToken: encryptedRefreshToken,
         providerAccountId:
           encryptedProviderAccountId === undefined
             ? sql`${oauthToken.providerAccountId}`
             : encryptedProviderAccountId,
+        providerAccountLookupId:
+          providerAccountLookupId === undefined
+            ? sql`${oauthToken.providerAccountLookupId}`
+            : providerAccountLookupId,
         expiresAt: tokens.expiresAt,
         scopes: tokens.scopes,
         updatedAt: new Date(),
       },
     });
   reportProviderAuthDiagnostic(providerId, "tokens_saved", scopedUserId, tokens);
+}
+
+/** Find authorization owners without decrypting or scanning stored account IDs. */
+export async function findTokenUsersByProviderAccountId(
+  db: Pick<SyncDatabase, "select">,
+  providerId: string,
+  providerAccountId: string,
+): Promise<string[]> {
+  const lookupId = deriveProviderAccountLookupId(providerId, providerAccountId);
+  const rows = await db
+    .select({ userId: oauthToken.userId })
+    .from(oauthToken)
+    .where(
+      and(eq(oauthToken.providerId, providerId), eq(oauthToken.providerAccountLookupId, lookupId)),
+    );
+  return rows.map((row) => row.userId);
 }
 
 /**
@@ -277,6 +320,7 @@ export async function loadTokens(
   });
   return {
     accessToken: decryptedAccessToken,
+    ...(row.authorizationId ? { authorizationId: row.authorizationId } : {}),
     refreshToken: decryptedRefreshToken,
     expiresAt: row.expiresAt,
     ...(decryptedProviderAccountId

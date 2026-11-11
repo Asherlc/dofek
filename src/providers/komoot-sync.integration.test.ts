@@ -1,11 +1,12 @@
+import { ProviderServiceUnavailableError } from "@dofek/provider-http/rate-limit";
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
-import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { activity } from "../db/schema/activity.ts";
 import { oauthToken } from "../db/schema/reference.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
+import { createIntegrationMswFixture } from "../test/early-msw-lifecycle.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import { KomootProvider } from "./komoot.ts";
 import { SyncRun } from "./sync-run.ts";
@@ -92,7 +93,7 @@ function komootHandlers(
   ];
 }
 
-const server = setupServer();
+const server = createIntegrationMswFixture();
 
 describe("KomootProvider.sync() (integration)", () => {
   let ctx: TestContext;
@@ -101,7 +102,7 @@ describe("KomootProvider.sync() (integration)", () => {
     process.env.KOMOOT_CLIENT_ID = "test-client-id";
     process.env.KOMOOT_CLIENT_SECRET = "test-client-secret";
     ctx = await setupTestDatabase();
-    server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "komoot", "Komoot", "https://external-api.komoot.de/v007");
   }, 60_000);
 
@@ -110,7 +111,7 @@ describe("KomootProvider.sync() (integration)", () => {
   });
 
   afterAll(async () => {
-    server.close();
+    server.deactivate();
     if (ctx) await ctx.cleanup();
   });
 
@@ -259,7 +260,8 @@ describe("KomootProvider.sync() (integration)", () => {
     );
 
     expect(result.errors.length).toBeGreaterThan(0);
-    expect(result.errors[0]?.message).toContain("Komoot API error");
+    expect(result.errors[0]?.cause).toBeInstanceOf(ProviderServiceUnavailableError);
+    expect(result.errors[0]?.cause).toMatchObject({ providerId: "komoot", statusCode: 500 });
     expect(result.recordsSynced).toBe(1);
 
     const rows = await ctx.db.select().from(activity).where(eq(activity.providerId, "komoot"));
@@ -545,6 +547,7 @@ describe("KomootProvider.sync() (integration)", () => {
     );
 
     expect(result.errors.length).toBeGreaterThan(0);
-    expect(result.errors[0]?.message).toContain("Komoot API error");
+    expect(result.errors[0]?.cause).toBeInstanceOf(ProviderServiceUnavailableError);
+    expect(result.errors[0]?.cause).toMatchObject({ providerId: "komoot", statusCode: 500 });
   });
 });

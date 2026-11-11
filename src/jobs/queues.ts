@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { ACTIVITY_MODALITIES, CANONICAL_ACTIVITY_TYPES } from "@dofek/training/activity-types";
+import { type CatalogueSeed, catalogueSeedSchema } from "@dofek/training/climbing-catalogue";
 import type { ConnectionOptions, Job, JobsOptions } from "bullmq";
 import { FlowProducer, Queue, QueueEvents, RedisConnection } from "bullmq";
 import { z } from "zod";
@@ -55,6 +56,9 @@ export interface ImportJobData {
     | "strong-csv"
     | "cronometer-csv"
     | "kaya-export"
+    | "crimpd"
+    | "eight-a"
+    | "moonboard"
     | "zos-app"
     | "garmin-dump"
     | "fit-file";
@@ -81,9 +85,10 @@ export const fitFileImportActivitySummarySchema = z.object({
 export const fitFileImportJobDataSchema = z.object({
   filePath: z.string().optional(),
   originalPath: z.string(),
+  retainedArtifactKey: z.string().optional(),
   userId: z.string(),
   providerId: z.string(),
-  sourceName: z.string(),
+  sourceName: z.string().optional(),
   activitySummary: fitFileImportActivitySummarySchema.optional(),
   deleteFileAfterImport: z.boolean().optional(),
 });
@@ -146,7 +151,21 @@ export interface UserRefitPostSyncJobData {
   userId: string;
 }
 
-export type PostSyncJobData = GlobalMaintenancePostSyncJobData | UserRefitPostSyncJobData;
+export const climbingCatalogueJobDataSchema = z
+  .strictObject({
+    type: z.literal("climbing-catalogue"),
+    userId: z.string().min(1),
+    logEntryId: z.string().min(1),
+    seed: catalogueSeedSchema,
+  })
+  .refine((job) => job.seed.userId === job.userId && job.seed.logEntryId === job.logEntryId, {
+    message: "Catalogue refresh seed must belong to the queued user and log.",
+  });
+export type ClimbingCatalogueJobData = z.infer<typeof climbingCatalogueJobDataSchema>;
+export type PostSyncJobData =
+  | GlobalMaintenancePostSyncJobData
+  | UserRefitPostSyncJobData
+  | ClimbingCatalogueJobData;
 
 export interface ActivityDeleteAnalyticsJobData {
   type: "activity-delete-analytics-refresh";
@@ -442,7 +461,34 @@ let cachedImportQueue: Queue<ImportJobData> | null = null;
 let cachedDataExportQueue: Queue<ExportJobData> | null = null;
 let cachedFitFileImportQueue: Queue<FitFileImportJobData, FitFileImportJobResult> | null = null;
 let cachedFitFileImportQueueEvents: QueueEvents | null = null;
+let cachedAnalyticsRefreshQueue: Queue<AnalyticsRefreshJobData> | null = null;
+let cachedAnalyticsRefreshQueueEvents: QueueEvents | null = null;
+let analyticsRefreshWaitController = new AbortController();
+
+export function getAnalyticsRefreshWaitSignal(): AbortSignal {
+  return analyticsRefreshWaitController.signal;
+}
 let cachedFlowProducer: FlowProducer | null = null;
+
+export function createAnalyticsRefreshQueue(
+  connection?: ConnectionOptions,
+): Queue<AnalyticsRefreshJobData> {
+  return new Queue(ANALYTICS_REFRESH_QUEUE, {
+    connection: connection ?? getRedisCommandConnection(),
+  });
+}
+
+export function getAnalyticsRefreshQueue(): Queue<AnalyticsRefreshJobData> {
+  cachedAnalyticsRefreshQueue ??= createAnalyticsRefreshQueue();
+  return cachedAnalyticsRefreshQueue;
+}
+
+export function getAnalyticsRefreshQueueEvents(): QueueEvents {
+  cachedAnalyticsRefreshQueueEvents ??= new QueueEvents(ANALYTICS_REFRESH_QUEUE, {
+    connection: getRedisConnection(),
+  });
+  return cachedAnalyticsRefreshQueueEvents;
+}
 
 export function getImportQueue(): Queue<ImportJobData> {
   if (!cachedImportQueue) {
@@ -671,6 +717,41 @@ export async function enqueueDebouncedPostSyncMaintenance(
   );
 }
 
+function climbingCatalogueJobId(userId: string, logEntryId: string): string {
+  return `climbing-catalogue-${userId}-${logEntryId}`;
+}
+
+export async function getClimbingCatalogueRefreshState(
+  userId: string,
+  logEntryId: string,
+  queue: Pick<Queue<PostSyncJobData>, "getJob"> = getPostSyncQueue(),
+): Promise<"pending" | null> {
+  const job = await queue.getJob(climbingCatalogueJobId(userId, logEntryId));
+  if (!job) return null;
+  const state = await job.getState();
+  return ["waiting", "active", "delayed", "prioritized", "waiting-children"].includes(state)
+    ? "pending"
+    : null;
+}
+
+export async function enqueueClimbingCatalogueRefresh(
+  seed: CatalogueSeed,
+  queue: Pick<Queue<PostSyncJobData>, "add"> = getPostSyncQueue(),
+): Promise<void> {
+  const data = climbingCatalogueJobDataSchema.parse({
+    type: "climbing-catalogue",
+    userId: seed.userId,
+    logEntryId: seed.logEntryId,
+    seed,
+  });
+  await queue.add("climbing-catalogue", data, {
+    attempts: 1,
+    removeOnComplete: true,
+    removeOnFail: true,
+    jobId: climbingCatalogueJobId(seed.userId, seed.logEntryId),
+  });
+}
+
 export async function enqueueDebouncedUserRefit(
   userId: string,
   queue: Queue<PostSyncJobData> = getPostSyncQueue(),
@@ -693,7 +774,18 @@ export async function enqueueDebouncedUserRefit(
 }
 
 /** Close all cached queues, flow producers, and the shared Redis connection. */
+/** Cancel read-only analytics waits before draining the workers awaiting them. */
+export async function closeAnalyticsRefreshWaiters(): Promise<void> {
+  analyticsRefreshWaitController.abort(
+    new Error("Analytics refresh wait cancelled because the worker is shutting down"),
+  );
+}
+
 export async function closeAllQueueResources(): Promise<void> {
+  if (cachedActivityImageQueue) {
+    await cachedActivityImageQueue.close();
+    cachedActivityImageQueue = null;
+  }
   const closePromises: Array<Promise<unknown>> = [];
 
   for (const queue of cachedProviderQueues.values()) {
@@ -711,6 +803,9 @@ export async function closeAllQueueResources(): Promise<void> {
   if (cachedFitFileImportQueue) closePromises.push(cachedFitFileImportQueue.close());
   if (cachedFitFileImportQueueEvents) closePromises.push(cachedFitFileImportQueueEvents.close());
   if (cachedFlowProducer) closePromises.push(cachedFlowProducer.close());
+  if (cachedAnalyticsRefreshQueue) closePromises.push(cachedAnalyticsRefreshQueue.close());
+  if (cachedAnalyticsRefreshQueueEvents)
+    closePromises.push(cachedAnalyticsRefreshQueueEvents.close());
 
   cachedPostSyncQueue = null;
   cachedActivityDeleteAnalyticsQueue = null;
@@ -721,11 +816,30 @@ export async function closeAllQueueResources(): Promise<void> {
   cachedFitFileImportQueue = null;
   cachedFitFileImportQueueEvents = null;
   cachedFlowProducer = null;
-
   await Promise.allSettled(closePromises);
+
+  cachedAnalyticsRefreshQueue = null;
+  cachedAnalyticsRefreshQueueEvents = null;
+  analyticsRefreshWaitController = new AbortController();
 
   if (sharedRedisConnection) {
     await sharedRedisConnection.close();
     sharedRedisConnection = null;
   }
+}
+
+export type ActivityImageJobData = { userId: string } & (
+  | { workId: string }
+  | { backfillId: string }
+);
+export const ACTIVITY_IMAGE_QUEUE = "activity-images";
+let cachedActivityImageQueue: Queue<ActivityImageJobData> | null = null;
+export function createActivityImageQueue(
+  connection?: ConnectionOptions,
+): Queue<ActivityImageJobData> {
+  return new Queue(ACTIVITY_IMAGE_QUEUE, { connection: connection ?? getRedisCommandConnection() });
+}
+export function getActivityImageQueue(): Queue<ActivityImageJobData> {
+  cachedActivityImageQueue ??= createActivityImageQueue();
+  return cachedActivityImageQueue;
 }

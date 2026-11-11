@@ -5,7 +5,6 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { RecoveryBaselineRepository } from "../repositories/recovery-baseline-repository.ts";
-import { loadDashboardOverview } from "./dashboard-overview.ts";
 
 const testUserId = "00000000-0000-4000-8000-000000001771";
 const recoveryDate = "2026-01-01";
@@ -17,7 +16,6 @@ const tombstoneRowSchema = z.object({
 });
 
 const baselineContextRowSchema = z.object({
-  hrv_score: z.coerce.number(),
   hrv_mean_30d: z.coerce.number().nullable(),
   hrv_sd_30d: z.coerce.number().nullable(),
   hrv_z_score: z.coerce.number().nullable(),
@@ -103,7 +101,7 @@ describe("daily recovery read-model lifecycle", () => {
     ]);
   });
 
-  it("returns null baseline statistics and the default readiness component with no prior samples", async () => {
+  it("returns null baseline statistics with no prior samples", async () => {
     const activeClient = requireClient(client);
     await seedFixture(activeClient, targetSchema);
     await materializeRecoveryInputs(activeClient, targetSchema, false);
@@ -116,7 +114,6 @@ describe("daily recovery read-model lifecycle", () => {
         hrv_mean_30d: null,
         hrv_sd_30d: null,
         hrv_z_score: null,
-        hrv_score: 62,
       },
     ]);
   });
@@ -195,11 +192,12 @@ describe("daily recovery read-model lifecycle", () => {
     await materializeRecovery(activeClient, targetSchema, false);
 
     const sensorStore = createIsolatedSensorStore(activeClient, targetSchema);
-    await expect(loadRepresentativeApi(sensorStore)).resolves.toMatchObject({
-      readiness: {
+    await expect(loadRepresentativeApi(sensorStore)).resolves.toMatchObject([
+      {
         date: recoveryDate,
+        metrics: expect.arrayContaining([expect.objectContaining({ metric: "hrv", value: 65 })]),
       },
-    });
+    ]);
 
     const initialInputRowCount = await readPhysicalRowCount(
       activeClient,
@@ -230,9 +228,7 @@ describe("daily recovery read-model lifecycle", () => {
     await expect(readRecoveryTombstone(activeClient, targetSchema)).resolves.toEqual([
       { is_deleted: 1 },
     ]);
-    await expect(loadRepresentativeApi(sensorStore)).resolves.toMatchObject({
-      readiness: null,
-    });
+    await expect(loadRepresentativeApi(sensorStore)).resolves.toEqual([]);
   }, 180_000);
 });
 
@@ -338,8 +334,7 @@ async function materializeRecovery(
       efficiency_baseline_sample_count, efficiency_baseline_coverage,
       efficiency_mean_7d, efficiency_mean_previous_28d,
       hrv_mean_60d, hrv_sd_60d,
-      rhr_mean_60d, rhr_sd_60d, hrv_score, resting_hr_score,
-      sleep_score, respiratory_rate_score, is_deleted, refresh_version, refreshed_at
+      rhr_mean_60d, rhr_sd_60d, is_deleted, refresh_version, refreshed_at
     )
 ${renderModelSelectSql("daily_recovery", targetSchema, isIncremental)}`,
   });
@@ -403,7 +398,6 @@ async function readBaselineContext(
 ): Promise<z.infer<typeof baselineContextRowSchema>[]> {
   const result = await client.query({
     query: `SELECT
-        hrv_score,
         hrv_mean_30d,
         hrv_sd_30d,
         hrv_z_score,
@@ -461,12 +455,10 @@ function createIsolatedSensorStore(
 }
 
 async function loadRepresentativeApi(sensorStore: ActivitySensorStore) {
-  return loadDashboardOverview({
-    accessWindow: { kind: "full" },
-    endDate: recoveryDate,
-    sensorStore,
-    userId: testUserId,
-  });
+  return new RecoveryBaselineRepository(testUserId, sensorStore).listRange(
+    recoveryDate,
+    recoveryDate,
+  );
 }
 
 async function seedFixture(client: ClickHouseClient, targetSchema: string): Promise<void> {
@@ -477,7 +469,6 @@ async function seedFixture(client: ClickHouseClient, targetSchema: string): Prom
     createRestingHeartRateTableSql(targetSchema),
     createRecoveryInputsTableSql(targetSchema),
     createRecoveryTableSql(targetSchema),
-    createDailyStrainTableSql(targetSchema),
     createDailySleepTableSql(targetSchema),
     `INSERT INTO ${targetSchema}.v_daily_metrics VALUES (
       '${testUserId}',
@@ -496,7 +487,6 @@ async function seedBaselineFixture(client: ClickHouseClient, targetSchema: strin
     createRestingHeartRateTableSql(targetSchema),
     createRecoveryInputsTableSql(targetSchema),
     createRecoveryTableSql(targetSchema),
-    createDailyStrainTableSql(targetSchema),
     createDailySleepTableSql(targetSchema),
     `INSERT INTO ${targetSchema}.v_daily_metrics VALUES
       ('${testUserId}', toDate('2025-12-02'), 40, 12),
@@ -524,7 +514,6 @@ async function seedSentinelFixture(client: ClickHouseClient, targetSchema: strin
     createRestingHeartRateTableSql(targetSchema),
     createRecoveryInputsTableSql(targetSchema),
     createRecoveryTableSql(targetSchema),
-    createDailyStrainTableSql(targetSchema),
     createDailySleepTableSql(targetSchema),
     `INSERT INTO ${targetSchema}.v_daily_metrics VALUES
       ('${testUserId}', toDate('2026-08-21'), 0, 0),
@@ -661,25 +650,9 @@ function createRecoveryTableSql(targetSchema: string): string {
     hrv_sd_60d Nullable(Float64),
     rhr_mean_60d Nullable(Float64),
     rhr_sd_60d Nullable(Float64),
-    hrv_score Nullable(Float64),
-    resting_hr_score Nullable(Float64),
-    sleep_score Nullable(Float64),
-    respiratory_rate_score Nullable(Float64),
     is_deleted UInt8,
     refresh_version UInt64,
     refreshed_at DateTime64(9, 'UTC')
-  )
-  ENGINE = ReplacingMergeTree(refresh_version)
-  ORDER BY (user_id, date)`;
-}
-
-function createDailyStrainTableSql(targetSchema: string): string {
-  return `CREATE TABLE ${targetSchema}.daily_strain (
-    user_id UUID,
-    date Date,
-    daily_load Float64,
-    is_deleted UInt8,
-    refresh_version UInt64
   )
   ENGINE = ReplacingMergeTree(refresh_version)
   ORDER BY (user_id, date)`;

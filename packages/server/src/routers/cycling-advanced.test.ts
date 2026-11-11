@@ -68,80 +68,22 @@ function makeCaller(rowSets: unknown[][], rawActivityCount?: number) {
 // These router tests verify the router → repository → model wiring. Detailed
 // SQL/computation assertions live in the repository's own unit tests.
 describe("cyclingAdvancedRouter", () => {
-  describe("rampRate", () => {
-    it("returns no-data result when sensor store is empty", async () => {
-      const caller = makeCaller([[]]);
-      const result = await caller.rampRate({ days: 90 });
-      expect(result.weeks).toEqual([]);
-      expect(result.currentRampRate).toBe(0);
-      expect(result.recommendation).toBe("No data");
-    });
-  });
-
-  describe("trainingMonotony", () => {
-    it("maps repo rows into the wire shape", async () => {
-      const caller = makeCaller([
-        [
-          {
-            week: "2024-01-15",
-            monotony: 1.5,
-            strain: 300,
-            weekly_load: 200,
-            daily_mean_load: 28.57,
-            daily_load_standard_deviation: 19.05,
-          },
-        ],
-      ]);
-      const result = await caller.trainingMonotony({ days: 90 });
-      expect(result).toEqual([
-        {
-          week: "2024-01-15",
-          monotony: 1.5,
-          strain: 300,
-          weeklyLoad: 200,
-          dailyMeanLoad: 28.57,
-          dailyLoadStandardDeviation: 19.05,
-          method: {
-            formula:
-              "Monotony = 7-day mean daily cycling load ÷ population standard deviation of daily cycling load. Strain = weekly cycling load × monotony.",
-            calendar: "Monday–Sunday calendar weeks include zero-load days.",
-            activityScope: "Cycling activities with computed endurance training load.",
-            interpretation: "Daily training-load variability within each calendar week.",
-            source: {
-              title: "Foster (1998), Monitoring training in athletes",
-              url: "https://pubmed.ncbi.nlm.nih.gov/9662690/",
-            },
-          },
-        },
-      ]);
-    });
-
-    it("returns empty array when no data", async () => {
-      const caller = makeCaller([[]]);
-      const result = await caller.trainingMonotony({ days: 90 });
-      expect(result).toEqual([]);
-    });
-  });
-
   describe("activityVariability", () => {
     it("returns empty when FTP estimation has no data", async () => {
-      // First sensor query → FTP rows (empty). Repository short-circuits and
-      // doesn't issue the second query.
-      const caller = makeCaller([[]]);
+      const caller = makeCaller([[], [{ total: 0, power_total: 1 }]]);
       const result = await caller.activityVariability({ days: 90 });
       expect(result).toEqual({ rows: [], totalCount: 0, emptyReason: "no_ftp_estimate" });
     });
 
-    it("computes VI and IF from FTP plus per-activity rows", async () => {
-      // First sensor query → FTP estimate. Second → variability rows.
+    it("computes VI and renders canonical per-activity IF", async () => {
       const caller = makeCaller([
-        [{ ftp: 250 }],
         [
           {
             activity_id: "ride-1",
             date: "2024-01-15",
             name: "Ride",
             np: 230,
+            intensity_factor: 0.92,
             avg_power: 200,
             total_count: 1,
           },
@@ -166,6 +108,7 @@ describe("cyclingAdvancedRouter", () => {
       const caller = makeCaller([
         [
           {
+            activity_id: "00000000-0000-4000-8000-000000000001",
             date: "2024-01-15",
             name: "Mountain Ride",
             canonical_type: "cycling",
@@ -177,6 +120,7 @@ describe("cyclingAdvancedRouter", () => {
       ]);
       const result = await caller.verticalAscentRate({ days: 90 });
       expect(result).toHaveLength(1);
+      expect(result[0]?.activityId).toBe("00000000-0000-4000-8000-000000000001");
       // 500m in 3600s = 500m/h.
       expect(result[0]?.verticalAscentRate).toBe(500);
       expect(result[0]?.elevationGainMeters).toBe(500);

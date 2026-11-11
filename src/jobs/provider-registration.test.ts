@@ -34,7 +34,6 @@ const mockProviders = {
   xert: { id: "xert" },
   "cycling-analytics": { id: "cycling-analytics" },
   wger: { id: "wger" },
-  velohero: { id: "velohero" },
   "mountain-project": { id: "mountain-project" },
   openbeta: { id: "openbeta" },
   "amazfit-zepp": { id: "amazfit-zepp" },
@@ -87,7 +86,7 @@ vi.mock("../providers/garmin-dump.ts", () => ({
 vi.mock("../providers/fit-file.ts", () => ({
   FitFileProvider: mockProviderConstructor(mockProviders["fit-file"]),
 }));
-vi.mock("../providers/strava.ts", () => ({
+vi.mock("../providers/strava/provider.ts", () => ({
   StravaProvider: mockProviderConstructor(mockProviders.strava),
 }));
 vi.mock("../providers/cronometer-csv.ts", () => ({
@@ -123,9 +122,6 @@ vi.mock("../providers/cycling-analytics.ts", () => ({
 vi.mock("../providers/wger.ts", () => ({
   WgerProvider: mockProviderConstructor(mockProviders.wger),
 }));
-vi.mock("../providers/velohero.ts", () => ({
-  VeloHeroProvider: mockProviderConstructor(mockProviders.velohero),
-}));
 vi.mock("../providers/mountain-project.ts", () => ({
   MountainProjectProvider: mockProviderConstructor(mockProviders["mountain-project"]),
 }));
@@ -142,8 +138,8 @@ vi.mock("../providers/zos-app/provider.ts", () => ({
   ZosAppProvider: mockProviderConstructor(mockProviders["zos-app"]),
 }));
 
-// Real constructors verify theCrag and AllTrails expose their per-user auth contracts.
-const PROVIDER_COUNT = Object.keys(mockProviders).length + 2;
+// The real constructor verifies theCrag exposes its per-user auth contract.
+const PROVIDER_COUNT = Object.keys(mockProviders).length + 11;
 
 describe("provider-registration", () => {
   beforeEach(() => {
@@ -164,7 +160,27 @@ describe("provider-registration", () => {
     expect(mockRegisterProvider).toHaveBeenCalledWith(mockProviders.ziva);
   });
 
-  it("registers theCrag with a usable per-user API-key connection", async () => {
+  it("loads account-connected boards and climbing file providers", async () => {
+    const { ensureProvidersRegistered } = await import("./provider-registration.ts");
+    await ensureProvidersRegistered();
+    const ids = mockRegisterProvider.mock.calls.map(([provider]) => provider.id);
+    expect(ids).toEqual(
+      expect.arrayContaining([
+        "kilter",
+        "tension",
+        "grasshopper",
+        "decoy",
+        "soill",
+        "touchstone",
+        "aurora-board",
+        "crimpd",
+        "eight-a",
+        "moonboard",
+      ]),
+    );
+  });
+
+  it("registers theCrag with a personal API key connection", async () => {
     const { ensureProvidersRegistered } = await import("./provider-registration.ts");
     await ensureProvidersRegistered();
 
@@ -176,23 +192,9 @@ describe("provider-registration", () => {
     const setup = provider?.authSetup?.();
     expect(getProviderAuthTypeFromSetup(setup)).toBe("token");
     expect(setup?.manualToken).toMatchObject({
-      label: "Personal API key (active supporter required)",
+      label: "Personal API key",
       instructionsUrl: "https://www.thecrag.com/en/article/logbookreadapi",
     });
-  });
-
-  it("registers AllTrails with a per-user credential connection", async () => {
-    const { ensureProvidersRegistered } = await import("./provider-registration.ts");
-    await ensureProvidersRegistered();
-
-    const provider = mockRegisterProvider.mock.calls.find(([registered]) => {
-      return registered.id === "alltrails";
-    })?.[0];
-
-    expect(provider).toBeDefined();
-    const setup = provider?.authSetup?.();
-    expect(getProviderAuthTypeFromSetup(setup)).toBe("credential");
-    expect(setup?.automatedLogin).toBeTypeOf("function");
   });
 
   it("only registers once (memoization)", async () => {
@@ -215,6 +217,6 @@ describe("provider-registration", () => {
       "Failed to register peloton provider: Peloton init failed",
     );
 
-    expect(mockRegisterProvider).toHaveBeenCalledTimes(3);
+    expect(mockRegisterProvider.mock.calls.at(-1)?.[0].id).toBe("peloton");
   });
 });

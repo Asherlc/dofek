@@ -16,13 +16,13 @@ import {
 import { syncJobDataFromTriggerInput } from "dofek/jobs/sync-window";
 import { invalidateAllUserQueries } from "dofek/lib/cache";
 import { captureException } from "dofek/lib/error-reporting";
+import { sanitizeErrorMessage } from "dofek/lib/sanitize-error";
 import { ProviderModel, providerTokenAuthSchema } from "dofek/providers/provider-model";
 import { getAllProviders } from "dofek/providers/registry";
 import { z } from "zod";
 import { DEFAULT_SCHEDULED_SYNC_INTERVAL_MINUTES } from "../../../../src/jobs/scheduled-sync.ts";
 import { operationStatusOutputSchema, readOperationProgress } from "../lib/operation-progress.ts";
 import { hasCurrentProviderAuthFailure } from "../lib/provider-auth-state.ts";
-import { sanitizeErrorMessage } from "../lib/sanitize-error.ts";
 import { SyncRepository } from "../repositories/sync-repository.ts";
 import { evaluateProviderSyncFreshness } from "../services/provider-sync-freshness.ts";
 import {
@@ -54,6 +54,7 @@ const syncProviderRowOutputSchema = z.object({
   authorized: z.boolean(),
   lastSyncedAt: z.string().nullable(),
   lastSuccessfulSyncAt: z.string().nullable(),
+  lastProcessedUpdateAt: z.string().nullable(),
   syncFreshness: z
     .discriminatedUnion("status", [
       z.object({
@@ -281,14 +282,23 @@ const syncRouterProcedures = {
       const repo = new SyncRepository(ctx.db, ctx.userId, ctx.sensorStore);
 
       // Batch: load connections, latest attempts, recent auth errors, successes, and history.
-      const [allConnections, lastSyncs, latestErrors, lastSuccessfulSyncs, recentLogsByProvider] =
-        await Promise.all([
-          repo.getConnectedProviderIds(),
-          repo.getLastSyncTimes(),
-          repo.getLatestErrors(),
-          repo.getLastSuccessfulSyncTimes(),
-          repo.getRecentLogsByProvider(3),
-        ]);
+      const [
+        allConnections,
+        lastSyncs,
+        latestErrors,
+        lastSuccessfulSyncs,
+        recentLogsByProvider,
+        lastProcessedUpdates,
+        recentPushUpdates,
+      ] = await Promise.all([
+        repo.getConnectedProviderIds(),
+        repo.getLastSyncTimes(),
+        repo.getLatestErrors(),
+        repo.getLastSuccessfulSyncTimes(),
+        repo.getRecentLogsByProvider(3),
+        repo.getLastProcessedUpdateTimes(),
+        repo.getRecentPushUpdatesByProvider(3),
+      ]);
 
       const connectionSet = new Set(allConnections.map((row) => row.providerId));
       const credentialedConnectionSet = new Set(
@@ -300,6 +310,9 @@ const syncRouterProcedures = {
       const lastSyncMap = new Map(lastSyncs.map((r) => [r.providerId, r.lastSynced]));
       const lastSuccessfulSyncMap = new Map(
         lastSuccessfulSyncs.map((row) => [row.providerId, row.lastSynced]),
+      );
+      const lastProcessedUpdateMap = new Map(
+        lastProcessedUpdates.map((row) => [row.providerId, row.lastSynced]),
       );
       const authErrorProviders = new Set(
         latestErrors
@@ -325,7 +338,7 @@ const syncRouterProcedures = {
       const cooldowns = new Map(
         await Promise.all(
           registeredProviderModels
-            .filter((model) => model.isConnected && !model.importOnly)
+            .filter((model) => model.isConnected && !model.importOnly && !model.pushOnly)
             .map(
               async (model) =>
                 [
@@ -346,8 +359,11 @@ const syncRouterProcedures = {
           authorized: model.isConnected,
           lastSyncedAt: model.lastSyncedAt,
           lastSuccessfulSyncAt,
+          lastProcessedUpdateAt: model.pushOnly
+            ? (lastProcessedUpdateMap.get(model.id) ?? null)
+            : null,
           syncFreshness:
-            model.isConnected && !model.importOnly
+            model.isConnected && !model.importOnly && !model.pushOnly
               ? evaluateProviderSyncFreshness({
                   now: requestTime,
                   lastSuccessfulSyncAt: lastSuccessfulSyncAt
@@ -358,9 +374,10 @@ const syncRouterProcedures = {
                 })
               : null,
           importOnly: model.importOnly,
-          pushOnly: false,
+          pushOnly: model.pushOnly,
           needsReauth: authErrorProviders.has(model.id),
-          recentLogs: recentLogsByProvider.get(model.id) ?? [],
+          recentLogs:
+            (model.pushOnly ? recentPushUpdates : recentLogsByProvider).get(model.id) ?? [],
         };
       });
 
@@ -374,6 +391,7 @@ const syncRouterProcedures = {
           authorized: connectionSet.has(provider.id),
           lastSyncedAt: null,
           lastSuccessfulSyncAt: null,
+          lastProcessedUpdateAt: null,
           syncFreshness: null,
           importOnly: false,
           pushOnly: true,
@@ -698,6 +716,12 @@ function createTriggerSyncProcedure() {
           if (!model.isConnected) {
             throw new Error(`Provider not connected: ${provider.id}`);
           }
+          if (model.pushOnly) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: `${model.name} sends new data automatically. Sync your device in ${model.name} Connect.`,
+            });
+          }
           providerIds.push(provider.id);
         } else {
           for (const provider of getAllProviders()) {
@@ -708,7 +732,7 @@ function createTriggerSyncProcedure() {
               undefined,
               CUSTOM_AUTH_PROVIDERS,
             );
-            if (model.importOnly || !model.isConnected) continue;
+            if (model.importOnly || model.pushOnly || !model.isConnected) continue;
             providerIds.push(model.id);
           }
 

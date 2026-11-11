@@ -7,17 +7,17 @@
     "packages/scoring",
     "packages/zones",
     "packages/training",
+    "packages/cycling-power",
     "packages/eight-sleep",
-    "packages/garmin-connect",
     "packages/peloton-client",
     "packages/trainerroad-client",
     "packages/trainingpeaks-connect",
-    "packages/velohero-client",
     "packages/whoop-whoop",
     "packages/xert-client",
     "packages/zepp-client",
     "packages/zwift-client",
-    "packages/mobile/modules/whoop-ble"
+    "packages/mobile/modules/whoop-ble",
+    "packages/climbing-catalogue"
   ],
   "command": {
     "version": {

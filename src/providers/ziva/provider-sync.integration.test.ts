@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
-import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import type { TokenSet } from "../../auth/oauth.ts";
@@ -10,6 +9,7 @@ import { userProfile } from "../../db/schema/reference.ts";
 import { setupTestDatabase, type TestContext } from "../../db/test-helpers.ts";
 import { connectProviderWithTokens } from "../../db/tokens.ts";
 import { executeWithSchema } from "../../db/typed-sql.ts";
+import { createIntegrationMswFixture } from "../../test/early-msw-lifecycle.ts";
 import { failOnUnhandledExternalRequest } from "../../test/msw.ts";
 import type { SyncCheckpointStore } from "../sync-run.ts";
 import { SyncRun } from "../sync-run.ts";
@@ -25,7 +25,7 @@ const ZIVA_PROVIDER = {
 };
 const FIRST_DATE = "2026-09-19";
 const SECOND_DATE = "2026-09-20";
-const server = setupServer();
+const server = createIntegrationMswFixture();
 
 const nutritionResolutionSchema = z.object({
   calories: z.coerce.number().nullable(),
@@ -164,12 +164,12 @@ const originalClientId = process.env.ZIVA_CLIENT_ID;
 const originalClientSecret = process.env.ZIVA_CLIENT_SECRET;
 const originalRedirectUri = process.env.OAUTH_REDIRECT_URI;
 
-describe.sequential("ZivaProvider.sync (PostgreSQL + MCP protocol)", () => {
+describe("ZivaProvider.sync (PostgreSQL + MCP protocol)", { concurrent: false }, () => {
   beforeAll(async () => {
     process.env.ZIVA_CLIENT_ID = "ziva-integration-client";
     process.env.ZIVA_CLIENT_SECRET = "ziva-integration-secret";
     process.env.OAUTH_REDIRECT_URI = "https://dofek.example.test/oauth/callback";
-    server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
     context = await setupTestDatabase();
   }, 120_000);
 
@@ -178,7 +178,7 @@ describe.sequential("ZivaProvider.sync (PostgreSQL + MCP protocol)", () => {
   });
 
   afterAll(async () => {
-    server.close();
+    server.deactivate();
     await context?.cleanup();
     if (originalClientId === undefined) delete process.env.ZIVA_CLIENT_ID;
     else process.env.ZIVA_CLIENT_ID = originalClientId;

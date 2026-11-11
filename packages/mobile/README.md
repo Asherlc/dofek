@@ -2,6 +2,13 @@
 
 The mobile app for Dofek. Built with Expo and React Native, with native Swift modules for HealthKit and WHOOP BLE synchronization.
 
+The [Today route](<app/(tabs)/index.tsx>) retains recorded sleep and processing
+status. [Recovery](<app/(tabs)/recovery.tsx>) and
+[Training](<app/(tabs)/strain.tsx>) retain observed measurements, personal
+baselines, and descriptive workload data. Custom recovery, 0–21 strain, and
+sleep-performance scores and their dependent recommendations are retired;
+see the [removal scope](../../docs/superpowers/specs/2026-11-03-remove-daily-scores-design.md).
+
 ## Core Features
 
 - **HealthKit Sync**: Background synchronization of health and fitness metrics from iOS using `BackgroundRefreshModule` which registers `BGAppRefreshTask`.
@@ -22,12 +29,40 @@ The mobile app for Dofek. Built with Expo and React Native, with native Swift mo
 - **Mobile Dashboard**: Simplified mobile-first health and recovery tracking with SVG-based charts (`react-native-svg`).
 - **Nutrition history**: Read-only nutrition history, totals, source resolution, and analytics.
 
+## Offline startup
+
+After a successful sign-in or online session restore, the app saves the verified
+user alongside the session in [SecureStore](https://docs.expo.dev/versions/latest/sdk/securestore/).
+Subsequent launches restore that local session before contacting the server, so
+navigation and Bluetooth sample collection can start without internet access.
+Session verification runs in the background and repeats on foregrounding or
+reconnection through the existing [network lifecycle](lib/mobile-query-lifecycle.ts).
+A rejected session clears local authentication; connection failures preserve it.
+Sign-out and account deletion remove the saved identity.
+
+First-time sign-in, and the first online restore after upgrading from a version
+that saved only the token, need internet to establish the saved identity.
+WHOOP capture commits samples to an account-bound native SQLite queue and uses
+file-backed [iOS background uploads](https://developer.apple.com/documentation/foundation/downloading-files-in-the-background).
+Unacknowledged samples survive process recreation. Sign-out/account changes
+cancel the former account's requests and purge its queue; see the
+[WHOOP durability contract](modules/whoop-ble/README.md).
+The separate standard Bluetooth heart-rate monitor still uses an in-memory
+[buffer](modules/ble-heart-rate/ios/BleHeartRateSampleBuffer.swift).
+
 ## Project Structure
 
 Activity-list cards use the stored cycling modality to show training stats instead
 of distance and elevation for indoor and virtual rides, including reported zeros.
 The [metric strip](components/ActivityMetricStrip.tsx) and activity accessibility
 labels use the [shared cycling classification](../training/src/endurance-types.ts).
+
+The [activity detail screen](<app/activity/[id].tsx>) also hides distance for
+indoor and virtual cycling. Cycling details display server-computed mechanical
+Energy Output in kJ from the selected power source, including measured zero.
+The [activity API](../server/src/routers/activity.ts) supplies work and power
+coverage; the screen labels coverage below 99% as “Partial power data” and
+keeps the previous output visible while the selected source refreshes.
 
 The [Activities list](<app/(tabs)/activities.tsx>) uses
 [ActivityMapTile](components/ActivityMapTile.tsx) to show a full-width 16:9 map
@@ -43,15 +78,26 @@ The [GPS-route preview](../../docs/screenshots/mobile-activity-route.png) and
 show the [Activities stories](<app-stories/(tabs)/activities.stories.tsx>) at a
 390-pixel browser viewport.
 
+Activity details show downloaded photos in [ActivityImages](components/ActivityImages.tsx),
+with tappable thumbnails, captions, source labels, and a full-screen
+[native Modal](https://reactnative.dev/docs/modal). Cards without a map show the
+first downloaded photo through [ActivityPhotoPreview](components/ActivityPhotoPreview.tsx);
+recorded routes, climbing locations, and processing maps retain precedence.
+The [shared query policy](../training/src/activity-images.ts) refreshes signed
+image URLs while visible and discards inactive image queries. The
+[mobile persistence boundary](lib/mobile-query-persistence.ts) excludes queries
+marked `persist: false`, following TanStack's
+[query dehydration filter](https://tanstack.com/query/latest/docs/framework/react/reference/hydration#dehydrate).
+Cached photos remain visible during refresh errors, and photo load failures
+offer a refresh action in the activity detail.
+
 Activity and training maps reserve space and show “Processing map…” while server geometry,
 preview images, or native map rendering are pending. Lists poll while any map's
-geometry is processing. Preview images become ready only after every tile
-reports a successful [Image `onLoad`](https://reactnative.dev/docs/image#onload);
-native overview and compact maps show the processing panel until
-[`onMapReady`](https://github.com/react-native-maps/react-native-maps/blob/master/docs/mapview.md#events),
-then retain the native renderer's
-[`loadingEnabled` indicator](https://github.com/react-native-maps/react-native-maps/blob/master/docs/mapview.md#props)
-while its initial map rendering completes.
+geometry is processing. Previews use MapLibre Native static images and retain the
+server-authored projected overlays; interactive maps show the processing panel until
+the native renderer reports a completed frame. Both use the [shared light/dark style](../training/src/map-style.ts)
+and [OpenFreeMap vector tiles](https://openfreemap.org/quick_start/). See the
+[MapLibre map lifecycle callbacks](https://maplibre.org/maplibre-react-native/docs/components/map/).
 Existing previews remain visible during background refreshes, and map failures
 retain their error state.
 
@@ -59,7 +105,10 @@ Activity details show climbing logs and same-day attachment suggestions for
 climbing activities. Cards group under Area headings and show published
 display grades, concise attempt counts, pitch labels, and server-derived rock labels
 through the [shared grouping helper](../training/src/climbing-log-groups.ts) and
-[card](components/ClimbingLogEntryCard.tsx). Provider records
+[card](components/ClimbingLogEntryCard.tsx). Each Area heading renders the complete
+recorded root-to-leaf lineage, emphasizing the final area, and keeps long paths on
+one line in a [horizontal ScrollView](https://reactnative.dev/docs/scrollview#horizontal).
+Provider records
 use server columns and filters, fetch the selected log's complete graph, and
 retain cached rows during refresh errors. Their
 [detail viewer](components/ClimbingLogEntryDetails.tsx) shows source links,
@@ -69,48 +118,88 @@ viewer. Labels match web through [shared formatters](../format/src/climbing-log.
 See the
 [canonical response contract](../server/src/contracts/climbing-log-contracts.ts).
 
-Activity-detail climbing entries and suggestions use
-[ClimbingLogEntryBreakdown](./components/ClimbingLogEntryBreakdown.tsx) and
-[ClimbingLogEntryCard](./components/ClimbingLogEntryCard.tsx). Their source-location
-inputs share the web client's [coordinate and provenance types](../training/src/climbing-map.ts).
-[RouteMap](./components/RouteMap.tsx) renders source dots independently of the
-recorded GPS route and supports compact tick maps. The overview supports panning
-and zooming; compact maps do not intercept touches. A unique point opens its log
-details immediately; coincident locations show a counted marker with source-location
-labels. Selecting it lists every log by climb name,
-including repeated names, without an entry-number heading. The
-[shared marker grouping](../training/src/climbing-map.ts) preserves source coordinates
-and log identities; the count renders inside a
-[custom native marker](https://github.com/react-native-maps/react-native-maps/blob/master/docs/marker.md).
-Selection opens the exact log's
-[record modal](./components/providers/provider-record-detail-modal.tsx) and
-highlights its card, including repeated names at the same point. The
-[activity tests](./app-tests/activity/[id].test.tsx) cover closing and reopening
-the same occurrence. Colocated Storybook stories
-exercise exact Climb points, containing-Area points, missing GPS, and attachment
-states. The activity screen supplies each log's server-projected location to
-overview and compact maps even without a recorded GPS route. The
-[server projection](../server/src/repositories/climbing-activity-log-entry-repository.ts)
-uses a source Climb point or its nearest containing Area with coordinates;
-labels identify the source and distinguish Area from Climb locations.
-Unattached suggestions have their own compact source-location maps. The complete
-log and attempt graph follows the [canonical response contract](../server/src/contracts/climbing-log-contracts.ts).
+Activity details compose attached climbs in [ActivityClimbingPanel](./components/ActivityClimbingPanel.tsx):
+one interactive map above a grouped list on narrow screens, including same-day
+attachment suggestions under Unattached. Selecting a row or
+map point highlights the same occurrence; Log details opens the existing
+[record modal](./components/providers/provider-record-detail-modal.tsx).
+Selecting a climb also emphasizes its recorded HR chart line or time range.
+The [activity route](<app/activity/[id].tsx>) shares the active annotation ID
+with the [HR chart](components/activity/ActivityDetailCharts.tsx), so subsequent
+scrubbing and accessible chart selections can replace it. Climbs without
+recorded timing retain no chart position. Chart selections also select the
+matching list occurrence and reveal it in the bounded climb list using measured
+row positions and React Native's [ScrollView.scrollTo](https://reactnative.dev/docs/scrollview#scrollto).
 
-The Training route coordinates query states and delegates climbing payload validation, grade cards, and Hangboarding display to [ClimbingTrainingCard](./components/ClimbingTrainingCard.tsx), with focused tests and stories beside the component.
+Coincident coordinates show a counted marker and remain selectable in the grouped list, preserving
+both source coordinates and log identities through the
+[shared marker grouping](../training/src/climbing-map.ts).
+Area points are labelled approximate with their source provider; entries without
+coordinates remain selectable. The existing subdued light/dark map style remains
+shared with web. Map annotations use [MapLibre Native](https://maplibre.org/maplibre-react-native/docs/components/annotations/).
+Same-day suggestions retain their grouped attachment controls and location
+provenance on the same map, with independent pending and error states. Photos remain
+in [ActivityImages](./components/ActivityImages.tsx). The
+[activity tests](./app-tests/activity/[id].test.tsx) cover selection, route refresh
+states, attachments, and opening/closing the exact occurrence details.
 
-Climbing grade charts use the [shared chart selection and labels](../training/src/climbing-progression.ts)
-to display bouldering and routes with recorded rope methods, each with recorded
-aid status. Ordinary climbs use their style name; aided climbs retain an "Aid"
-qualifier.
+The [Training route](<app/(tabs)/strain.tsx>) requests
+`mobileDashboard.trainingV2` using the combined climbing progression
+[output contract](../server/src/contracts/mobile-dashboard-contracts.ts).
+The [server router](../server/src/routers/mobile-dashboard.ts) retains the original
+`mobileDashboard.training` lane-array response for older app versions. The route
+coordinates query states and delegates climbing payload validation, grade cards,
+and Hangboarding display to [ClimbingTrainingCard](./components/ClimbingTrainingCard.tsx),
+with focused tests and stories beside the component.
+
+Training also compares one repeated GPS route at a time through
+[RouteComparisonCard](./components/RouteComparisonCard.tsx). The
+[shared response contract](../training/src/route-comparison.ts) supplies pace,
+attempt counts, and activity timestamps; the [SVG chart](./components/RouteComparisonChart.tsx)
+shows faster pace higher and preserves same-day attempts as separate observations.
+Its [accessible data disclosure](./components/AccessibleChart.tsx) lists exact
+attempt values and opens each activity, following the
+[WAI disclosure pattern](https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/).
+
+The [climbing strengths profile](components/ClimbingStrengths.tsx) has its own
+`climbing.strengths` query using the current training dates and climbing filters.
+The [strengths chart](components/ClimbingStrengthsChart.tsx) offers Styles with the server-computed grade-adjusted radar and Progress with monthly send rates. Wall angle, Hold type, and observed source tag categories apply to all tabs, with no grade picker or format menu. The radar places the context-specific same-grade baseline at zero; results outside its dashed outline are stronger and those inside weaker. It needs three scored styles; smaller samples remain accessible through the exact-value disclosure. Progress combines grades and says that changes may reflect difficulty mix. The existing page-wide filters define one selected view. The [server aggregation](../server/src/services/climbing-strengths.ts) supplies one panel per breakdown dimension, retaining context-specific grade baselines. Selecting a chart point or exact-value row reveals source climbs, with zeros, unknown outcomes, missing observations and limited known-result samples distinct. Exact-value controls use [React Native accessibility roles and state](https://reactnative.dev/docs/accessibility) through [AccessibleChart](components/AccessibleChart.tsx).
+
+Page-wide filters show a compact type/setting summary. Filters opens a [native modal](https://reactnative.dev/docs/modal) with independent checkbox groups for every filter; each All checkbox selects or clears its group and exposes partial selections with the [WAI mixed checkbox state](https://www.w3.org/WAI/ARIA/apg/patterns/checkbox/). Type includes Bouldering, Lead, Top rope, Follow, and Unroped, replacing the overlapping kind/method selectors. The broader Discipline selector is omitted. Attempt scope, Solo status, Protection used, and Route protection stay under More filters with the same checkbox style. The [shared server projection](../server/src/repositories/climbing-rock-observations.ts) matches any selected value within each group and intersects groups; Whole climb remains the default scope, with both scopes selectable explicitly.
+
+Values and source-climb details use the [server-computed contract](../training/src/climbing-strengths.ts). The card offers the current training period or All time through the [Training route](<app/(tabs)/strain.tsx>), preserving its explicit end date and access restrictions in the [server query](../server/src/routers/climbing.ts).
+Unknown angle units remain
+unclassified, while known degrees retain their recorded numeric labels.
+Source categories retain provider attribution and use the same server-computed
+profiles as angle and hold breakdowns. Details show grouped recorded tags,
+including unfamiliar labels, through the
+[shared presentation helper](../training/src/climbing-tag-presentation.ts).
+Catalogue tags stay inside their reference disclosure and do not affect
+strengths, as defined by the [source coverage contract](../../docs/climbing-trait-coverage.md).
+The [Training route](<app/(tabs)/strain.tsx>) includes its existing local date
+anchor in the query key, validates restored responses with the shared schema,
+and labels retained data while it refreshes. Successful attachment actions
+invalidate strengths alongside the affected climbing detail queries; see the
+[attachment picker](components/ClimbingLogAttachment.tsx).
+
+The [grade progression chart](components/ClimbingGradeProgressionChart.tsx) shows
+one grade stack per period across all types and settings selected by the page
+filters. The [server projection](../server/src/repositories/climbing-grade-progression.ts)
+pools the selected observations before computing sends per distinct climbing day,
+so a day shared by types or settings counts once. The
+[shared contract and labels](../training/src/climbing-progression.ts) keep display
+grade scales distinct and qualify identical labels from different scales. The
+[repository](../server/src/repositories/climbing-repository.ts) continues to apply
+the user's saved grade preferences before pooling.
 
 [ClimbingLocationMapCard](./components/ClimbingLocationMapCard.tsx) uses the same
 Training dates and climbing filters to render [server-computed clusters](../training/src/climbing-location-map.ts).
 Larger circles split into individual climb locations as the map zooms; repeated
 logs at one coordinate stay selectable together, with their grade, date, source,
 location scope, and activity link. Its native map preserves the viewport during
-refreshes and uses the cross-platform region API to zoom into clusters; the
-[native map camera documentation](https://github.com/react-native-maps/react-native-maps/blob/master/docs/mapview.md#types)
-distinguishes MapKit altitude from Google Maps zoom values.
+refreshes and uses the [MapLibre Camera](https://maplibre.org/maplibre-react-native/docs/components/camera/)
+to zoom into clusters. The server response retains 256-pixel zoom bands; the
+[renderer](components/ClimbingLocationMapCard.tsx) converts these at the MapLibre camera boundary.
 
 Unattached logs in the selected location list offer **Attach to activity**.
 The [activity picker](components/ClimbingLogAttachment.tsx) shows eligible
@@ -136,6 +225,13 @@ enforces the same-day rule for both clients.
 - `targets/`: Native watchOS extension (DofekWatch).
 
 ## Development
+
+Native builds and OTA updates use Expo's automatic `fingerprint` runtime
+policy, including the Watch sources configured in `fingerprint.config.js`.
+New native interfaces receive a different runtime so older installations keep
+their compatible JavaScript; see [Expo runtime compatibility](https://docs.expo.dev/eas-update/runtime-versions/).
+Follow the [OTA release and recovery runbook](../../docs/mobile-ota-recovery.md)
+to stage updates on already-built binaries and recover an affected runtime.
 
 ```bash
 cd packages/mobile
@@ -281,8 +377,11 @@ Then:
    error.
 
 The post-termination authenticated screen is the required read proof:
-`AuthProvider` can render it only after the new process restores the session
-token through SecureStore and verifies it with the server. Static signature
+`AuthProvider` restores the session token and saved user through SecureStore,
+then verifies the session with the server in the background. Repeat the
+hard-stop and relaunch with internet unavailable to verify that local session
+restoration still reaches the app. Check the server logs separately for the
+online verification request. Static signature
 inspection can support the evidence:
 
 ```bash
@@ -339,18 +438,12 @@ for the approved SDK dependency tree.
   version in its [native dependency matrix](https://api.expo.dev/v2/sdks/58.0.0/native-modules).
   AsyncStorage 3.x breaks iOS builds on recent Expo SDKs; see
   [expo/expo#43757](https://github.com/expo/expo/issues/43757).
-- `react-native-maps@1.29.11` — the [stable release](https://github.com/react-native-maps/react-native-maps/releases/tag/v1.29.11)
-  uses Fabric with React Native 0.81.1 or newer, matching this app's React Native
-  0.88 dependency ([upstream compatibility table](https://github.com/react-native-maps/react-native-maps/blob/v1.29.11/README.md#compatibility)).
-  Expo 58.0.14 recommends this version in its
-  [native dependency matrix](https://github.com/expo/expo/blob/expo%4058.0.14/packages/expo/bundledNativeModules.json).
-  The tested native pin remains listed in Expo's documented
-  [`expo.install.exclude`](https://docs.expo.dev/more/expo-cli/#configuring-dependency-validation)
-  setting. The existing Expo check validates the remaining SDK-managed
-  packages. Maps upgrades require a fresh native binary, a matching runtime
-  increment, and the signed simulator audit: route, Start/Finish pins, elevation
-  hover/release, navigation/remount, and session restoration after restart
-  ([native runtime compatibility](https://docs.expo.dev/eas-update/runtime-versions/)).
+- `@maplibre/maplibre-react-native@11.5.0` renders the shared vector map style.
+  Its [Expo plugin](https://maplibre.org/maplibre-react-native/docs/setup/expo/)
+  is configured in `app.json` and requires a rebuilt native binary. Verify routes,
+  Start/Finish markers, chart hover/release, clustering and remount behavior in
+  the new binary before release. Native dependency changes produce a new
+  [fingerprint runtime](https://docs.expo.dev/eas-update/runtime-versions/).
 
 ## Testing
 
@@ -363,52 +456,60 @@ for the approved SDK dependency tree.
   prebuild and the Release archive; see the [runner](../../scripts/test-apple-auth-diagnostics.ts)
   and [workflow](../../.github/workflows/build-mobile.yml).
 
-### Native diagnostic runtime
+### Native runtime compatibility
 
-Runtime **1.12** adds reported WHOOP BPM to the native buffer payload and fixes
-fractional sensor timestamps; see the [WHOOP module contract](modules/whoop-ble/README.md).
-Build a new native binary containing these changes before publishing updates for
-runtime 1.12. Existing runtime 1.11 and earlier binaries retain their compatible
-updates. Increment the runtime whenever a bridge payload change requires new
-native code, following Expo's
+Runtime **1.13** adds WHOOP capture timestamps, buffer counters and retained
+diagnostic checkpoints to the native bridge. It includes runtime 1.12's reported
+WHOOP BPM and fractional timestamp fixes; see the
+[WHOOP module contract](modules/whoop-ble/README.md).
+Existing runtime 1.13 and earlier binaries retain their compatible updates.
+Current releases use Expo's automatic fingerprint policy; native changes
+require a new binary with the resulting runtime, following Expo's
 [runtime compatibility guidance](https://docs.expo.dev/eas-update/runtime-versions/).
 
-Runtime 1.12 retains the stable [Expo SDK 58](https://expo.dev/changelog/sdk-58)
-native dependency set with Expo 58.0.16, Expo Router 58.0.24, Expo Updates
-58.0.17, React Native 0.88.0, and React Native SVG 15.16.0, pinned in
+The current stable [Expo SDK 58](https://expo.dev/changelog/sdk-58)
+native dependency set uses Expo 58.0.24, Expo Router 58.0.31, Expo Updates
+58.0.22, React Native 0.88.1, and React Native SVG 15.16.0, pinned in
 [package.json](./package.json). The
-[Expo 58.0.16 dependency matrix](https://github.com/expo/expo/blob/expo%4058.0.16/packages/expo/bundledNativeModules.json)
-also aligns Crypto and Haptics to 58.0.7, Sharing to 58.0.19, Splash Screen to
-58.0.10, Dev Client to 58.0.14, Build Properties to 58.0.11, and Modules Core to
-58.0.23, with Modules JSI 58.0.16 resolved in the [lockfile](../../pnpm-lock.yaml).
+[Expo dependency matrix](https://github.com/expo/expo/blob/expo%4058.0.24/packages/expo/bundledNativeModules.json)
+and the [lockfile](../../pnpm-lock.yaml) define the corresponding SDK-managed
+versions, including the updated native Modules Core and JSI packages.
 Validate SDK-managed versions with
 `pnpm tsx ../../scripts/with-env.ts -- pnpm expo install --check` from this package, following Expo's
 [dependency validation guidance](https://docs.expo.dev/more/expo-cli/#configuring-dependency-validation).
 The native dependency set also includes ExpoNetwork, the pnpm patch to
-`expo-apple-authentication@58.0.2`, and `react-native-maps@1.29.11`.
+`expo-apple-authentication@58.0.3`, and [MapLibre Native](https://maplibre.org/maplibre-react-native/docs/setup/expo/).
+
+The `@expo/plist` 0.10.1 and 0.10.2 consumers share the existing
+[XML parser patch](../../patches/@expo__plist@0.10.1.patch), selected by the
+exact version mappings in [pnpm-workspace.yaml](../../pnpm-workspace.yaml).
+It retains leading-whitespace normalization and passes the explicit XML media type required by the pinned
+parser's [`parseFromString`](https://github.com/xmldom/xmldom/blob/0.9.12/lib/dom-parser.js)
+API; older plist consumers retain their existing patches.
 
 Runtime 1.12 retains the HealthKit authorization-not-determined classification
 introduced in 1.10, with the stable code consumed by anchored sync. A type awaiting authorization leaves
 its anchor unchanged and does not stop other observed types from syncing;
 unexpected query errors still fail. Apple documents this state as
 [`errorAuthorizationNotDetermined`](https://developer.apple.com/documentation/healthkit/hkerror/code/errorauthorizationnotdetermined).
-This patch alignment changes native executable code: Router fixes the iOS
-[`Link.AppleZoom` dismissal transition](https://github.com/expo/expo/pull/51676),
-and Modules Core changes [synchronous worklet result handling](https://github.com/expo/expo/pull/51656)
-and the [native JavaScript class factory](https://github.com/expo/expo/pull/51582).
-File System 58.0.10 and Font 58.0.9 include rebuilt native artifacts for the
-[Modules Core 58.0.23 ABI change](https://github.com/expo/expo/pull/51823),
-which requires the new runtime boundary even though these are patch releases.
-Build a new native binary containing these dependencies and HealthKit changes
-before publishing updates for runtime 1.11. Existing runtime 1.10 and earlier
-binaries must keep their compatible updates rather than receiving this dependency set.
-Expo requires a runtime increment when native code is updated; see
-[manual runtime version increments](https://docs.expo.dev/eas-update/runtime-versions/#manually-increment-the-runtime-version).
-Expo uses
-runtime versions to match updates to compatible native code
-([runtime versions](https://docs.expo.dev/eas-update/runtime-versions/)).
+Native patch releases can change executable code and ABI contracts; the
+[Modules Core ABI change](https://github.com/expo/expo/pull/51823) is one
+example. Fingerprinting derives a new runtime for the changed native inputs;
+build and release that binary before testing updates against its interface.
+Follow the [release and recovery runbook](../../docs/mobile-ota-recovery.md).
 Use [pnpm patch/patch-commit](https://pnpm.io/cli/patch-commit) when updating the
 patch, then rerun the native regression and existing Release archive job.
+
+The [notification hook](lib/useCollectionNotifications.ts) records
+`collection_notifications_enable_completed` through the existing mobile logger
+after the current native authorization check resolves. `requestPermission`
+records whether prompting was allowed; `granted` records the returned permission
+state. A denied result proves the call completed but does not mean alerts are
+enabled. Existing telemetry adds `appBuild`, `runtimeVersion`, and `assetsVersion`
+(the [Expo update ID](https://docs.expo.dev/versions/latest/sdk/updates/#updateid)).
+Rejected, superseded, or retired checks do not emit this completion event.
+Correlate it with the installed build and launched runtime before claiming
+recovery from an unavailable native method; see the [Axiom query contract](../../docs/axiom-observability-runbook.md#queries).
 
 The SVG 15.16.0 dependency patch separates its Android tap-sound binding from
 the web module graph. It preserves the native press behavior introduced by
@@ -434,7 +535,7 @@ and Swift metadata ([Swift compiler guidance](https://forums.swift.org/t/linker-
 When upgrading Sentry, update the React Native package patch and binary
 podspec together, then verify all native consumers and the Release archive.
 
-The [Apple patch](../../patches/expo-apple-authentication@58.0.2.patch) preserves
+The [Apple patch](../../patches/expo-apple-authentication@58.0.3.patch) preserves
 Expo's authorization exception mapping and cancellation. Other authorization
 errors carry only an allowlisted NSError domain, numeric code, and optional
 immediate underlying domain/code. Unknown domains become `other`; native
@@ -451,8 +552,10 @@ device sign-in validation remains separate from helper tests and archive validat
 
 Query persistence records allowlisted failure categories/codes and aggregate
 attempted-write counts and UTF-8 byte measurements per persister lifetime.
-Diagnostics contain no cache keys, user IDs, health values, tokens, or original
-native messages. The pinned AsyncStorage conversion drops NSError codes, so
+Persistence-specific attributes contain no cache keys, user IDs, health values,
+tokens, or original native messages. The shared telemetry context separately
+adds authenticated identity and runtime versions as described below. The pinned
+AsyncStorage conversion drops NSError codes, so
 known fixed storage messages also map to safe categories; other failures stay
 `unknown`. Read/remove and deserialization rejections retain their original
 identity, and write failures are captured through TanStack's retry callback
@@ -468,6 +571,30 @@ The 5 MiB cap measures `TextEncoder` UTF-8 output, matching the
 [Encoding Standard](https://encoding.spec.whatwg.org/#interface-textencoder).
 
 ## Mobile Telemetry
+
+The [shared telemetry boundary](./lib/telemetry.ts) adds canonical `userId` while
+authenticated, plus `appVersion`, native `appBuild`, `assetsVersion`,
+`runtimeVersion`, and a JavaScript-lifetime `runtimeId` to emitted logs and
+errors. Caller attributes cannot replace that identity or version context.
+The [authentication state](./lib/auth-context.tsx) sets or clears it when the
+user changes; Sentry identity and PostHog identity follow the same boundary.
+These identifiers support correlation across logs and requests, following
+[OpenTelemetry's context model](https://opentelemetry.io/docs/concepts/context-propagation/).
+Pending HTTP diagnostics retain a session guard and cannot attach an old request
+to a replacement account. Unexpected failures from retired WHOOP work use
+`retiredLifetime=true` and remain visible without an account or replacement route
+in Sentry and OTLP; they do not create a PostHog exception bound to the new user.
+Sentry breadcrumbs omit account IDs, and PostHog resets restore the shared
+runtime properties. These boundaries are covered by the
+[telemetry regressions](./lib/telemetry.test.ts) and
+[transport regressions](./lib/trpc-fetch.test.ts).
+
+WHOOP diagnostics connect native capture/queue snapshots, background task state,
+upload batches, HTTP responses, and server broker publication without logging
+sensor values. A retained native checkpoint contains metadata only, has unknown
+prior-account provenance, and cannot restore samples. See the
+[WHOOP diagnostic procedure](../../docs/whoop-ble-protocol.md#diagnosing-capture-upload-and-visibility)
+for fields, filters, raw/serving checks, and interpretation limits.
 
 `lib/telemetry.ts` always reports exceptions to Sentry via `EXPO_PUBLIC_SENTRY_DSN`.
 Exceptions also include the current Expo Router pathname in Sentry, PostHog, and
@@ -534,6 +661,8 @@ Workflow-only secrets loaded by iOS and OTA workflows ([iOS](../../.github/workf
 
 - `SENTRY_AUTH_TOKEN` (iOS and OTA sourcemap uploads)
 - `EXPO_TOKEN` (OTA workflows)
+- `EXPO_APP_ID` (PR channel setup links previews to the existing Expo project;
+  [preview workflow](../../.github/workflows/mobile-preview-ota.yml))
 
 The shared Infisical action fails when a requested secret is missing, so keep this list aligned with each workflow's `keys` block ([source](../../.github/actions/load-infisical-secrets/action.yml)).
 
@@ -544,7 +673,7 @@ Workflow key requirements:
 - `.github/workflows/build-mobile.yml`: `EXPO_PUBLIC_SENTRY_DSN`, `EXPO_PUBLIC_OTEL_ENDPOINT`, `EXPO_PUBLIC_OTEL_HEADERS`
 - `.github/workflows/deploy-ios.yml`: `SENTRY_AUTH_TOKEN`, `EXPO_PUBLIC_SENTRY_DSN`, `EXPO_PUBLIC_OTEL_ENDPOINT`, `EXPO_PUBLIC_OTEL_HEADERS`
 - `.github/workflows/deploy-ota.yml`: `EXPO_TOKEN`, `SENTRY_AUTH_TOKEN`, `EXPO_PUBLIC_SENTRY_DSN`, `EXPO_PUBLIC_OTEL_ENDPOINT`, `EXPO_PUBLIC_OTEL_HEADERS`
-- `.github/workflows/mobile-preview-ota.yml`: `EXPO_TOKEN`, `EXPO_PUBLIC_SENTRY_DSN`, `EXPO_PUBLIC_OTEL_ENDPOINT`, `EXPO_PUBLIC_OTEL_HEADERS`
+- `.github/workflows/mobile-preview-ota.yml`: `EXPO_APP_ID`, `EXPO_TOKEN`, `EXPO_PUBLIC_SENTRY_DSN`, `EXPO_PUBLIC_OTEL_ENDPOINT`, `EXPO_PUBLIC_OTEL_HEADERS`
 
 Source-map and release correlation:
 
@@ -562,21 +691,68 @@ Source-map and release correlation:
   uploaded from the export that produced the published update, while native
   symbols belong to the archive build.
 
-The activities screen uses a 32 px logo for the actual provider of the closest
-available recording as the leading card image when provenance resolves a primary.
-Unresolved origin keeps the activity-type icon on cards without a map.
-It reuses [ProviderLogo](components/ProviderLogo.tsx), including its
-existing letter fallback for SVG or missing assets. The
-[origin contract](../providers-meta/src/activity-origin.ts) is shared with web;
-field and sensor selection do not determine recording origin.
+The activities screen leads with the shared rounded-outline activity icon.
+The [Lineage disclosure](components/ActivitySourceDisclosure.tsx) sits after the
+activity content and map and opens the same scrollable [Modal](https://reactnative.dev/docs/modal)
+overlay as the detail header. It shows an explicit Original
+heading and labeled Shared to branches. When an Original is known, one divider
+and Other heading groups all additional recordings. Unresolved origins show
+Original unknown above the available recordings. The
+[shared projection](../providers-meta/src/activity-source-hardware.ts) uses
+recording-device labels without treating hardware inventory as sharing steps;
+technical metadata rows are omitted.
+
+The [activity detail header](components/activity/ActivityDetailHeader.tsx) opens
+the same lineage in a scrollable overlay with a Close action, using React Native's
+[Modal](https://reactnative.dev/docs/modal). The disclosure follows the
+[WAI disclosure pattern](https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/).
+Refresh errors retain their retry action while collapsed and cached entries
+remain available. Hardware-only, loading, and error states remain reachable;
+an empty tree without metadata or query state omits the control. Removed records
+retain their notice without actionable URLs.
+
+Both clients render the [shared source-tree contract](../providers-meta/src/activity-source-tree.ts)
+from the [server projection](../server/src/models/activity-source-tree.ts).
+Only retained origin evidence connects source records; metric priorities do not
+establish ancestry. Recording-app/device metadata can identify an earlier source
+without claiming its record is available.
+
+The [activity response decoder](types/api.ts) normalizes omitted primary-type
+metadata to `null`, using a [Zod default](https://zod.dev/api#defaults) while
+retaining a required nullable field in parsed records. Older responses during
+rolling deployments can therefore use the representative activity type for an
+unnamed activity. Supplied primary titles and types keep precedence in the
+[activity card](components/ActivityCard.tsx); unrelated required response fields
+remain validated.
+
+The [persisted query contract](lib/mobile-query-persistence.ts) invalidates older
+calendar/detail responses and cycling power responses without computed threshold
+evidence before restoring activity data. Its account-specific version buster
+uses TanStack's [persisted-client invalidation](https://tanstack.com/query/latest/docs/framework/react/plugins/persistQueryClient#cache-busting),
+covered by the [upgrade regression](lib/mobile-query-persistence.test.tsx).
+
+The inline source button has its own 44-point touch target, independent of the
+card's navigation or selection action. Its expanded accessibility state follows
+the [WAI disclosure pattern](https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/),
+using React Native's [Pressable](https://reactnative.dev/docs/pressable) and
+[accessibility state](https://reactnative.dev/docs/accessibility#accessibilitystate).
 
 ## Activity metric sources
 
-Activity views offer independent source controls for heart rate, power, speed,
-cadence, and elevation. Each control preselects its existing priority winner
+Activity views offer independent [source controls](components/activity/ActivityMetricSourcePicker.tsx)
+for heart rate, power, speed, cadence, and elevation. Provider logos, short device
+names where needed, and attribution icons keep the controls and chooser concise.
+Unknown sources retain identifying text; accessible names retain the complete
+source wording using React Native's [accessibility labels](https://reactnative.dev/docs/accessibility#accessibilitylabel).
+Each control preselects its existing priority winner
 without an Auto option. Choices distinguish providers and devices and apply
 only to the current view; saved priorities are unchanged. Heart-rate and power
 zones follow their respective selected sources.
+
+The [shared source presentation](../providers-meta/src/activity-metric-source.ts)
+supplies the compact name and attribution without client-side label parsing.
+The [cache hydration regression](lib/mobile-query-persistence.test.tsx) covers
+discarding persisted source lists from the preceding response contract.
 
 `activity.metricSources` lists available sources in the owned activity window,
 including standalone recordings and canonical member activities. `activity.stream`
@@ -585,7 +761,12 @@ The [source repository](../server/src/repositories/activity-metric-sources-repos
 and negative elevations, excludes invalid heart-rate samples, and preserves
 activity ownership and stream downsampling.
 
-The [metric line chart](components/activity/ActivityDetailCharts.tsx) shows
-isolated readings as dots, including a source with only one reading. Lines stop
-at missing samples. The colocated `SparseReadings` story and chart tests cover
-the visible readings and gaps.
+The [metric and elevation charts](components/activity/ActivityDetailCharts.tsx)
+position observations by elapsed time and evaluate continuity independently for
+each metric. Sparse observations retain markers; dense recordings show lines
+with markers on touch. Scrubbing selects the nearest measured observation by
+time and retains its original timeline index for the map.
+The [shared presentation policy](../training/src/activity-chart-series.ts) defines
+the cadence-based gap rule used by both clients. This follows the distinction
+between [differing reporting intervals and missing observations](https://www.datawrapper.de/academy/patchy-data).
+The `IndependentMetricTimelines` and `SparseReadings` stories show both cases.

@@ -1,4 +1,6 @@
+import type { ClimbingFilters } from "@dofek/training/climbing-filters";
 import type { ClimbingGradePreference } from "@dofek/training/climbing-grades";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
 import { ClimbingRepository } from "./climbing-repository.ts";
 
@@ -13,6 +15,47 @@ function repository(rows: Record<string, unknown>[], preference?: ClimbingGradeP
 }
 const boulder = { climb_kind: "boulder", grade_system: "v_scale", grade: "V4" };
 const route = { climb_kind: "route", grade_system: "yds", grade: "5.10c" };
+describe("ClimbingRepository weekly volume", () => {
+  it.each([30, null])(
+    "returns weekly observations without replacing unknown values for %s days",
+    async (days) => {
+      const weeks = [
+        { week: "2026-10-19", attempts: null, minutes: 90 },
+        { week: "2026-10-26", attempts: 5, minutes: null },
+      ];
+      expect(await repository(weeks).getVolumeOverTime(days)).toEqual(weeks);
+    },
+  );
+  it.each([
+    [{}, false],
+    [{ setting: undefined }, false],
+    [{ setting: ["outdoor"] }, true],
+    [{ setting: ["outdoor"], climbKind: undefined }, true],
+  ] satisfies [ClimbingFilters, boolean][])(
+    "binds the recorded-activity filter gate for %j",
+    async (filters, expected) => {
+      const execute = vi.fn().mockResolvedValue([]);
+      const repo = new ClimbingRepository({ execute }, "user", "UTC");
+      await repo.getVolumeOverTime(30, filters);
+      const query = new PgDialect().sqlToQuery(execute.mock.calls[0]?.[0]);
+      expect(query.params.at(-1)).toBe(expected);
+    },
+  );
+  it("binds a caller-local end date for an all-time query", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-27T01:00:00Z"));
+    try {
+      const execute = vi.fn().mockResolvedValue([]);
+      const repo = new ClimbingRepository({ execute }, "user", "America/Los_Angeles");
+      await repo.getVolumeOverTime(null);
+      const query = new PgDialect().sqlToQuery(execute.mock.calls[0]?.[0]);
+      expect(query.params).toContain("2026-10-26");
+      expect(query.params).not.toContain(undefined);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
 describe("ClimbingRepository map entries", () => {
   const location = {
     coordinates: { latitude: 0, longitude: -122.25 },
@@ -73,12 +116,16 @@ describe("ClimbingRepository map entries", () => {
   });
 });
 describe("ClimbingRepository display-grade aggregation", () => {
-  it.each(["getGradeProgression", "getVolumeByGrade", "getSessionSummaries"] as const)(
+  it.each(["getVolumeByGrade", "getSessionSummaries"] as const)(
     "returns empty %s for no observations",
     async (method) => {
       expect(await repository([])[method](30)).toEqual([]);
     },
   );
+  it("returns no grade progression for no observations", async () => {
+    expect(await repository([]).getGradeProgression(30)).toEqual([]);
+    expect(await repository([]).getGradeProgressionV2(30)).toBeNull();
+  });
   it("converts compatible source grades to each selected preference", async () => {
     const result = await repository(
       [
@@ -146,8 +193,8 @@ describe("ClimbingRepository display-grade aggregation", () => {
       expect.objectContaining({ grade: "V4", attempts: 5, sends: 3 }),
     ]);
   });
-  it("uses individual attempt facts for progression lanes", async () => {
-    const [lead, topRope] = await repository([
+  it("pools individual attempt facts into one grade progression", async () => {
+    const chart = await repository([
       {
         ...route,
         session_date: "2026-10-01",
@@ -158,18 +205,10 @@ describe("ClimbingRepository display-grade aggregation", () => {
           { ropeMethod: "top_rope", solo: false, usedAid: true, sends: 0, unknownOutcomes: 0 },
         ],
       },
-    ]).getGradeProgression(30);
-    expect(lead?.toDetail()).toMatchObject({
-      ropeMethod: "lead",
-      solo: true,
-      usedAid: false,
-      periods: [{ settings: [{ sends: 1, climbingDays: 1 }] }],
-    });
-    expect(topRope?.toDetail()).toMatchObject({
-      ropeMethod: "top_rope",
-      solo: false,
-      usedAid: true,
-      periods: [{ settings: [{ sends: 0, climbingDays: 1 }] }],
+    ]).getGradeProgressionV2(30);
+    expect(chart?.toDetail()).toMatchObject({
+      grades: [{ climbKind: "route", grade: "5.10c" }],
+      periods: [{ sends: 1, climbingDays: 1, segments: [{ sends: 1, sendsPerDay: 1 }] }],
     });
   });
   it("retains recorded days and unknown outcomes in progression", async () => {
@@ -183,10 +222,10 @@ describe("ClimbingRepository display-grade aggregation", () => {
           { ropeMethod: null, solo: null, usedAid: null, sends: 0, unknownOutcomes: 1 },
         ],
       },
-    ]).getGradeProgression(30);
-    expect(result[0]?.toDetail()).toMatchObject({
+    ]).getGradeProgressionV2(30);
+    expect(result?.toDetail()).toMatchObject({
       grades: [{ grade: "V4" }],
-      periods: [{ settings: [{ sends: 0, unknownOutcomes: 1, climbingDays: 1 }] }],
+      periods: [{ sends: 0, unknownOutcomes: 1, climbingDays: 1 }],
     });
   });
 });
@@ -341,4 +380,34 @@ describe("ClimbingRepository attached rock observations", () => {
       [],
     );
   });
+});
+
+// Query wiring coverage complements the executable PostgreSQL access-window tests.
+describe("ClimbingRepository access-policy wiring", () => {
+  it.each([
+    "getGradeProgression",
+    "getGradeProgressionV2",
+    "getVolumeByGrade",
+    "getSessionSummaries",
+    "getMapEntries",
+  ] as const)(
+    "forwards restricted access dates to both canonical branches for %s",
+    async (method) => {
+      const execute = vi.fn().mockResolvedValue([]);
+      const startDate = "2026-10-19";
+      const endDateExclusive = "2026-10-26";
+      const repo = new ClimbingRepository({ execute }, "user", "America/Los_Angeles", {
+        kind: "limited",
+        paid: false,
+        reason: "free_recent_week",
+        startDate,
+        endDateExclusive,
+      });
+      await repo[method](90);
+      expect(execute).toHaveBeenCalledOnce();
+      const query = new PgDialect().sqlToQuery(execute.mock.calls[0]?.[0]);
+      expect(query.params.filter((value) => value === startDate)).toHaveLength(2);
+      expect(query.params.filter((value) => value === endDateExclusive)).toHaveLength(2);
+    },
+  );
 });

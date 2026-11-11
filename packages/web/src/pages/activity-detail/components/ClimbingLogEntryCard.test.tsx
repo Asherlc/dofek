@@ -1,4 +1,5 @@
 /** @vitest-environment jsdom */
+import { operationalStatusColors } from "@dofek/scoring/colors";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import {
@@ -7,6 +8,49 @@ import {
   climbingLogEntryFixture,
 } from "../../../../../server/src/repositories/climbing-test-helpers.ts";
 import { ClimbingLogEntryCard } from "./ClimbingLogEntryCard.tsx";
+
+it("keeps an attempt-free project visible without an invented count or outcome", () => {
+  render(
+    <ul>
+      <ClimbingLogEntryCard
+        entry={climbingLogEntryFixture({
+          title: "Untried project",
+          attempts: [],
+          recordedClimbAttemptCount: null,
+          recordedClimbOutcome: null,
+        })}
+      />
+    </ul>,
+  );
+  expect(screen.getByText("Untried project")).toBeInTheDocument();
+  expect(screen.queryByText(/Attempts:|Attempted|Completed/)).not.toBeInTheDocument();
+});
+
+it.each(["lead", "top_rope", "follow"] as const)(
+  "shows recorded falls or hangs on %s without inventing completion",
+  (ropeMethod) => {
+    const entry = climbingLogEntryFixture({
+      freeSend: false,
+      recordedClimbOutcome: null,
+      recordedClimbAttemptCount: null,
+    });
+    entry.attempts = [climbingAttemptFixture(entry.id, { ropeMethod, fellOrHung: true })];
+    render(
+      <ul>
+        <ClimbingLogEntryCard entry={entry} />
+      </ul>,
+    );
+    const method = { lead: "Lead", top_rope: "Top rope", follow: "Follow" }[ropeMethod];
+    const methodBadge = screen.getByText(method);
+    const fallBadge = screen.getByText("Fell/Hung");
+    expect(methodBadge).toHaveClass("rounded-full");
+    expect(methodBadge).toHaveStyle({ backgroundColor: operationalStatusColors.neutral.surface });
+    expect(fallBadge).toHaveClass("rounded-full");
+    expect(fallBadge).toHaveStyle({ backgroundColor: operationalStatusColors.warning.surface });
+    expect(methodBadge.parentElement).toBe(fallBadge.parentElement);
+    expect(screen.queryByText(/Attempted|Completed|Sent/)).not.toBeInTheDocument();
+  },
+);
 
 it("shows Mountain Project's recorded top-rope method with an unknown attempt count", () => {
   const climb = { ...climbingClimbFixture("mountain-project"), name: "Havarti Cheese" };
@@ -30,7 +74,7 @@ it("shows Mountain Project's recorded top-rope method with an unknown attempt co
 });
 
 it.each([
-  { count: null, summary: null },
+  { count: null, summary: "Completed" },
   { count: 2, summary: "Attempts: 2" },
 ])("shows the recorded result with attempt count $count", ({ count, summary }) => {
   const entry = climbingLogEntryFixture({
@@ -42,8 +86,8 @@ it.each([
       <ClimbingLogEntryCard entry={entry} />
     </ul>,
   );
-  if (summary === null) expect(screen.queryByText("Completed")).not.toBeInTheDocument();
-  else expect(screen.getByText(summary)).toBeInTheDocument();
+  expect(screen.getByText(summary)).toBeInTheDocument();
+  expect(screen.getByText("Completed")).toBeInTheDocument();
 });
 
 it.each([undefined, 3])(
@@ -82,6 +126,32 @@ it.each([undefined, 3])(
     expect(screen.getByRole("button", { name })).toHaveAttribute("aria-busy", "true");
     expect(screen.getByRole("button", { name })).toBeDisabled();
     expect(screen.getByRole("button", { name })).toHaveTextContent("Attaching...");
+  },
+);
+
+it.each([
+  { freeSend: false, outcome: "completed", label: "Completed" },
+  { freeSend: false, outcome: "failed", label: "Attempted" },
+  { freeSend: null, outcome: "completed", label: "Completed" },
+  { freeSend: true, outcome: "completed", label: null },
+  { freeSend: false, outcome: null, label: null },
+  { freeSend: null, outcome: null, label: null },
+] as const)(
+  "renders the server's send status ($freeSend, $outcome)",
+  ({ freeSend, outcome, label }) => {
+    const entry = climbingLogEntryFixture({
+      freeSend,
+      recordedClimbOutcome: outcome,
+      recordedClimbAttemptCount: 2,
+    });
+    render(
+      <ul>
+        <ClimbingLogEntryCard entry={entry} />
+      </ul>,
+    );
+    expect(screen.getByText("Attempts: 2")).toBeInTheDocument();
+    if (label !== null) expect(screen.getByText(label)).toBeInTheDocument();
+    expect(screen.queryAllByText(/Attempted/)).toHaveLength(outcome === "failed" ? 1 : 0);
   },
 );
 
@@ -144,7 +214,75 @@ it.each(["Onsight", "Flash"] as const)(
     );
     expect(screen.getByText("Blue boulder")).toBeInTheDocument();
     expect(screen.getByText("V5")).toBeInTheDocument();
-    expect(screen.getByText(label)).toBeInTheDocument();
+    expect(screen.getByText(label)).toHaveClass("rounded-full");
     expect(screen.queryByText(/Attempts:|completed/i)).not.toBeInTheDocument();
   },
 );
+
+it.each([
+  { number: 2, name: "Crux", context: "Pitch 2 · Attempts: 1" },
+  { number: null, name: "Crux", context: "Crux · Attempts: 1" },
+  { number: null, name: null, context: "Pitch · Attempts: 1" },
+])(
+  "keeps a recorded pitch's context beside its outcome badge ($context)",
+  ({ number, name, context }) => {
+    const climb = climbingClimbFixture();
+    const pitch = {
+      id: "20000000-0000-4000-8000-000000000006",
+      climbId: climb.id,
+      externalId: null,
+      number,
+      name,
+      publishedGrades: [],
+    };
+    const entry = climbingLogEntryFixture({
+      climbId: climb.id,
+      climb: { ...climb, pitches: [pitch] },
+      recordedPitchAttemptCount: 1,
+    });
+    const attempt = climbingAttemptFixture(entry.id, {
+      scope: "pitch",
+      pitchId: pitch.id,
+      outcome: "failed",
+      ropeMethod: "lead",
+    });
+    entry.attempts = [attempt];
+    entry.pitchResults = [
+      {
+        pitch,
+        attemptIds: [attempt.id],
+        recordedOutcome: "failed",
+        recordedAttemptCount: 1,
+        displayGrade: null,
+      },
+    ];
+    render(
+      <ul>
+        <ClimbingLogEntryCard entry={entry} />
+      </ul>,
+    );
+    expect(screen.getByText(context)).toBeInTheDocument();
+    expect(screen.getByText("Attempted")).toBeInTheDocument();
+  },
+);
+
+it.each([
+  { kind: "boulder" as const, label: "Problem" },
+  { kind: "route" as const, label: "Route" },
+  { kind: null, label: "Route" },
+])("labels source links as $label for climb kind $kind", ({ kind, label }) => {
+  const entry = climbingLogEntryFixture({
+    climb: { ...climbingClimbFixture("mountain-project"), name: "Corner", kind },
+    sourceLinks: [
+      {
+        providerId: "mountain-project",
+        kind: "route" as const,
+        url: "https://www.mountainproject.com/route/1/corner",
+      },
+    ],
+  });
+  render(<ClimbingLogEntryCard entry={entry} onSelect={vi.fn()} />);
+  expect(
+    screen.getByRole("link", { name: `Corner ${label.toLowerCase()} on Mountain Project` }),
+  ).toHaveTextContent(label);
+});

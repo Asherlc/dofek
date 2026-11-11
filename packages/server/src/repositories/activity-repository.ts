@@ -1,5 +1,6 @@
 import { mapHrZones, mapPowerZones } from "@dofek/zones/zones";
 import { TRPCError } from "@trpc/server";
+import { retireActivityImages } from "dofek/db/activity-images";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
@@ -11,11 +12,15 @@ import {
   postgresEndDateTimestampRangeLowerBound,
   type RangeDays,
 } from "../lib/date-window.ts";
-import { osmTilePreview } from "../lib/osm-tile.ts";
+import { routeMapPreview } from "../lib/map-preview.ts";
 import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import { logger } from "../logger.ts";
 import type { ActivityRow } from "../models/activity.ts";
+import { activityOriginFromColumns } from "../models/activity-origin.ts";
+import { ActivitySourceAttribution } from "../models/activity-source-attribution.ts";
+import { buildActivitySourceTree } from "../models/activity-source-tree.ts";
 import { activityMeasurementState } from "../services/activity-data-state.ts";
+import { listActivityHardware } from "./activity-hardware-repository.ts";
 import { postgresActivityCalendarDate } from "./activity-local-date.ts";
 import {
   getActivityMetricSources,
@@ -39,8 +44,12 @@ import type { ActivitySensorQueryStore, ActivitySensorWindow } from "./activity-
 export type { ActivitySensorQueryOptions, ActivitySensorWindow } from "./activity-sensor-types.ts";
 
 import { ActivityVisibilityRepository } from "./activity-visibility-repository.ts";
+import { ClimbingActivityLogEntryRepository } from "./climbing-activity-log-entry-repository.ts";
 
-type ActivityListItem = Record<string, unknown> & { location: ActivityLocation | null };
+type ActivityListItem = Record<string, unknown> & {
+  location: ActivityLocation | null;
+  primary_canonical_type: string | null;
+};
 
 function activityNotFoundError(): TRPCError {
   return new TRPCError({ code: "NOT_FOUND", message: "Activity not found" });
@@ -324,6 +333,7 @@ export class ActivityRepository extends BaseRepository {
       distance_meters: number | null;
       elevation_gain_m: number | null;
       provider_type: string;
+      primary_canonical_type: string | null;
       total_count?: number;
       member_activity_ids?: string[];
       location: ActivityLocation | null;
@@ -512,9 +522,11 @@ export class ActivityRepository extends BaseRepository {
             a.perceived_exertion,
             a.provider_id,
             a.primary_activity_id::text AS primary_activity_id,
+            a.primary_canonical_type::text AS primary_canonical_type,
             a.primary_provider_id,
             a.primary_source_name,
             a.origin_candidate_member_ids::text[] AS origin_candidate_member_ids,
+            a.origin_evidence,
             a.timezone,
             a.start_utc_offset_minutes,
             a.end_utc_offset_minutes,
@@ -524,6 +536,15 @@ export class ActivityRepository extends BaseRepository {
             a.source_external_ids,
             a.absent_source_external_ids,
             a.member_activity_ids,
+            EXISTS (
+              SELECT 1
+              FROM fitness.activity member
+              WHERE member.id = ANY(a.member_activity_ids)
+                AND member.user_id = a.user_id
+                AND member.deleted_at IS NULL
+                AND member.provider_absent_at IS NULL
+                AND member.fit_recovery_error IS NOT NULL
+            ) AS fit_recovery_error,
             NULL::double precision AS avg_hr,
             NULL::smallint AS max_hr,
             NULL::double precision AS avg_power,
@@ -564,11 +585,13 @@ export class ActivityRepository extends BaseRepository {
             a.perceived_exertion,
             a.provider_id,
             NULL::text AS primary_activity_id,
+            NULL::text AS primary_canonical_type,
             NULL::text AS primary_provider_id,
             NULL::text AS primary_source_name,
             ARRAY(SELECT member.id::text FROM fitness.activity AS member
               WHERE member.user_id = a.user_id AND member.group_id = a.group_id
                 AND member.deleted_at IS NULL ORDER BY member.id) AS origin_candidate_member_ids,
+            '[]'::jsonb AS origin_evidence,
             CASE
               WHEN a.local_time_source IN ('provider_timezone', 'device_timezone', 'user_home_timezone')
               THEN a.timezone
@@ -603,6 +626,7 @@ export class ActivityRepository extends BaseRepository {
               ELSE NULL
             END AS absent_source_external_ids,
             ARRAY[a.id]::uuid[] AS member_activity_ids,
+            false AS fit_recovery_error,
             NULL::double precision AS avg_hr,
             NULL::smallint AS max_hr,
             NULL::double precision AS avg_power,
@@ -741,7 +765,7 @@ export class ActivityRepository extends BaseRepository {
                 centroidLng: summary.centroid_lng,
                 mapPreview:
                   routePreview ??
-                  osmTilePreview([{ lat: summary.centroid_lat, lng: summary.centroid_lng }]),
+                  routeMapPreview([{ lat: summary.centroid_lat, lng: summary.centroid_lng }]),
               }
             : pendingLocation,
       };
@@ -763,10 +787,50 @@ export class ActivityRepository extends BaseRepository {
     return rows.map((row) => new StreamPoint(streamPointRowSchema.parse(row)));
   }
 
-  async getMetricSources(activityId: string) {
+  async getMetricSources(activityId: string, responseVersion: 1 | 2 = 1) {
     const window = await this.findSensorWindow(activityId);
     if (!window) throw activityNotFoundError();
-    return getActivityMetricSources(this.#requireSensorStore("metric sources"), window);
+    const hardware = await listActivityHardware(this.db, window);
+    const store = this.#requireSensorStore("metric sources");
+    if (responseVersion === 1) return getActivityMetricSources(store, window, hardware);
+    const [ancestry] = await this.query(
+      activityDetailRowSchema.pick({
+        primary_activity_id: true,
+        primary_provider_id: true,
+        primary_source_name: true,
+        origin_candidate_member_ids: true,
+        origin_evidence: true,
+        source_external_ids: true,
+        absent_source_external_ids: true,
+      }),
+      sql`SELECT primary_activity_id::text, primary_provider_id, primary_source_name,
+        origin_candidate_member_ids::text[], origin_evidence,
+        source_external_ids, absent_source_external_ids
+      FROM fitness.v_activity WHERE id = ${window.activityId}::uuid AND user_id = ${this.userId}::uuid`,
+    );
+    if (!ancestry) throw activityNotFoundError();
+    const sessions = await new ClimbingActivityLogEntryRepository(
+      this.db,
+      this.userId,
+      this.timezone,
+      this.accessWindow,
+    ).getActivityLogSessions([window.activityId]);
+    const sourceTree = buildActivitySourceTree(
+      activityOriginFromColumns(ancestry),
+      ActivitySourceAttribution.fromEntries(
+        ancestry.source_external_ids,
+        ancestry.absent_source_external_ids,
+      ).toSourceLinks(() => undefined),
+      ancestry.origin_evidence,
+      sessions.get(window.activityId) ?? [],
+    );
+    return getActivityMetricSources(store, window, hardware, sourceTree);
+  }
+
+  async getHardware(activityId: string) {
+    const window = await this.findSensorWindow(activityId);
+    if (!window) throw activityNotFoundError();
+    return listActivityHardware(this.db, window);
   }
 
   /** HR zone distribution for a single activity using the canonical Karvonen model. */
@@ -816,7 +880,8 @@ export class ActivityRepository extends BaseRepository {
             a.user_id,
             a.started_at::text AS started_at,
             a.ended_at::text AS ended_at,
-            a.member_activity_ids
+            a.member_activity_ids,
+            a.provider_type
           FROM fitness.v_activity a
           WHERE a.id = ${resolution.resolved_group_id}::uuid
             AND a.user_id = ${this.userId}
@@ -830,6 +895,7 @@ export class ActivityRepository extends BaseRepository {
       startedAt: row.started_at,
       endedAt: row.ended_at,
       memberActivityIds: row.member_activity_ids,
+      providerType: row.provider_type,
     };
   }
 
@@ -925,6 +991,7 @@ export class ActivityRepository extends BaseRepository {
           AND deleted_at IS NULL
       `);
     }
+    await retireActivityImages(this.db, { userId: this.userId, activityIds: memberActivityIds });
     return { deletedCount: uniqueActivityIds.length, memberActivityIds };
   }
 

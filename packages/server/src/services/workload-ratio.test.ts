@@ -7,7 +7,6 @@ describe("buildWorkloadRatioResult", () => {
       {
         date: "2026-03-28",
         dailyLoad: 100,
-        strain: 12.8,
         acuteLoad: 700,
         chronicLoad: 350,
         workloadRatio: 2,
@@ -24,30 +23,6 @@ describe("buildWorkloadRatioResult", () => {
     expect(result.timeSeries[0]?.workloadRatio).toBe(2);
   });
 
-  it("uses the latest row for the displayed strain", () => {
-    const result = buildWorkloadRatioResult([
-      {
-        date: "2026-03-27",
-        dailyLoad: 100,
-        strain: 12.8,
-        acuteLoad: 700,
-        chronicLoad: 350,
-        workloadRatio: 2,
-      },
-      {
-        date: "2026-03-28",
-        dailyLoad: 0,
-        strain: 0,
-        acuteLoad: 600,
-        chronicLoad: 350,
-        workloadRatio: 1.71,
-      },
-    ]);
-
-    expect(result.displayedStrain).toBe(0);
-    expect(result.displayedDate).toBe("2026-03-28");
-  });
-
   it("does not share mutable context between results", () => {
     const first = buildWorkloadRatioResult([]);
     const second = buildWorkloadRatioResult([]);
@@ -61,7 +36,6 @@ describe("buildWorkloadRatioResult", () => {
   it("rejects results without the required context", () => {
     const parsed = workloadRatioResultSchema.safeParse({
       timeSeries: [],
-      displayedStrain: 0,
       displayedDate: null,
     });
 

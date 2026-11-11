@@ -2,7 +2,7 @@ import { climbingLogEntryName } from "@dofek/training/climbing-log";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { type ComponentProps, useMemo, useState } from "react";
 import { expect, within } from "storybook/test";
-import "leaflet/dist/leaflet.css";
+import "maplibre-gl/dist/maplibre-gl.css";
 import {
   climbingAttemptFixture,
   climbingClimbFixture,
@@ -54,15 +54,16 @@ export const OverlappingSources: Story = {
     entries: ["mountain-project", "openbeta"].map((providerId, index) => {
       const id = `30000000-0000-4000-8000-00000000000${index + 1}`;
       const areaId = `40000000-0000-4000-8000-00000000000${index + 1}`;
-      const regionId = `50000000-0000-4000-8000-00000000000${index + 1}`;
       const climb = climbingClimbFixture(providerId);
       climb.id = `60000000-0000-4000-8000-00000000000${index + 1}`;
       climb.name = index === 0 ? "Swiss Cheese" : "Left Arete";
       climb.areaId = areaId;
-      climb.areaPath = climb.areaPath.flatMap((area) => [
-        { ...area, id: regionId, name: "Donner Summit", parentAreaId: null },
-        { ...area, id: areaId, name: "Green Phantom Rock", parentAreaId: regionId },
-      ]);
+      climb.areaPath = climb.areaPath.map((area) => ({
+        ...area,
+        id: areaId,
+        name: "Green Phantom Rock",
+        parentAreaId: null,
+      }));
       return climbingLogEntryFixture({
         id,
         providerId,
@@ -87,7 +88,9 @@ export const OverlappingSources: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(canvas.getAllByRole("heading", { name: "Green Phantom Rock" })).toHaveLength(1);
+    await expect(canvas.getAllByRole("heading", { name: "Area: Green Phantom Rock" })).toHaveLength(
+      1,
+    );
     await expect(
       canvas.getByRole("link", { name: "Swiss Cheese on Mountain Project" }),
     ).toBeVisible();
@@ -119,6 +122,129 @@ export const Wide: Story = {
       </div>
     ),
   ],
+};
+export const AreaBlocks: Story = {
+  decorators: Wide.decorators,
+  parameters: { layout: "padded" },
+  args: {
+    entries: [
+      { wall: "Wreckage Wall", name: "Hunger Pains" },
+      { wall: "Scale Wall", name: "Thin Fingers" },
+      { wall: "Scale Wall", name: "The Corner" },
+      { wall: "Scale Wall", name: "Long Reach" },
+      { wall: "Memorial Wall", name: "Short Term Memory" },
+      { wall: "Cave Wall", name: "Cave Route" },
+    ].map(({ wall, name }, index) => {
+      const climb = climbingClimbFixture();
+      return climbingLogEntryFixture({
+        id: `block-${index}`,
+        displayGrade: "5.10a",
+        climb: {
+          ...climb,
+          name,
+          areaPath: climb.areaPath.map((area) => ({ ...area, id: wall, name: wall })),
+        },
+      });
+    }),
+    locations: {},
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const grid = canvas.getByRole("region", { name: "Attached climbing logs" });
+    const wreckage = within(canvas.getByRole("list", { name: "Wreckage Wall climbs" })).getByRole(
+      "listitem",
+    );
+    const scale = within(canvas.getByRole("list", { name: "Scale Wall climbs" })).getAllByRole(
+      "listitem",
+    );
+    const memorial = within(canvas.getByRole("list", { name: "Memorial Wall climbs" })).getByRole(
+      "listitem",
+    );
+    const cave = within(canvas.getByRole("list", { name: "Cave Wall climbs" })).getByRole(
+      "listitem",
+    );
+    for (const climb of scale) {
+      await expect(climb.getBoundingClientRect().top).toBeGreaterThan(
+        wreckage.getBoundingClientRect().bottom,
+      );
+      await expect(climb.getBoundingClientRect().width).toBeCloseTo(
+        wreckage.getBoundingClientRect().width,
+        0,
+      );
+      await expect(memorial.getBoundingClientRect().top).toBeGreaterThan(
+        climb.getBoundingClientRect().bottom,
+      );
+    }
+    if (grid.getBoundingClientRect().width >= 532) {
+      await expect(memorial.getBoundingClientRect().top).toBeCloseTo(
+        cave.getBoundingClientRect().top,
+        0,
+      );
+      await expect(cave.getBoundingClientRect().left).toBeGreaterThan(
+        memorial.getBoundingClientRect().right,
+      );
+    } else {
+      await expect(cave.getBoundingClientRect().top).toBeGreaterThan(
+        memorial.getBoundingClientRect().bottom,
+      );
+    }
+    await expect(grid.scrollWidth).toBeLessThanOrEqual(grid.clientWidth);
+  },
+};
+export const SingleClimbWall: Story = {
+  decorators: Wide.decorators,
+  parameters: { layout: "padded" },
+  args: {
+    entries: [
+      { wall: "Wreckage Wall", name: "Hunger Pains", grade: "5.10b" },
+      { wall: "Memorial Wall", name: "Short Term Memory", grade: "5.10a" },
+    ].map(({ wall, name, grade }, index) => {
+      const climb = climbingClimbFixture();
+      return climbingLogEntryFixture({
+        id: `tick-${index + 1}`,
+        displayGrade: grade,
+        climb: {
+          ...climb,
+          name,
+          areaPath: climb.areaPath.map((area) => ({ ...area, id: wall, name: wall })),
+        },
+      });
+    }),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const grid = canvas.getByRole("region", { name: "Attached climbing logs" });
+    const singleWall = canvas.getByRole("list", { name: "Wreckage Wall climbs" });
+    const secondWall = canvas.getByRole("list", { name: "Memorial Wall climbs" });
+    const singleClimb = within(singleWall).getByRole("listitem");
+    const secondClimb = within(secondWall).getByRole("listitem");
+    await expect(secondClimb.getBoundingClientRect().width).toBeCloseTo(
+      singleClimb.getBoundingClientRect().width,
+      0,
+    );
+    if (grid.getBoundingClientRect().width >= 600) {
+      await expect(singleClimb.getBoundingClientRect().width).toBeLessThan(
+        grid.getBoundingClientRect().width / 2,
+      );
+    } else if (grid.getBoundingClientRect().width <= 320) {
+      await expect(singleClimb.getBoundingClientRect().width).toBeCloseTo(
+        grid.getBoundingClientRect().width,
+        0,
+      );
+      await expect(secondClimb.getBoundingClientRect().top).toBeGreaterThan(
+        singleClimb.getBoundingClientRect().bottom,
+      );
+    }
+    if (canvasElement.getBoundingClientRect().width >= 600) {
+      await expect(secondClimb.getBoundingClientRect().top).toBeCloseTo(
+        singleClimb.getBoundingClientRect().top,
+        0,
+      );
+      await expect(secondClimb.getBoundingClientRect().left).toBeGreaterThan(
+        singleClimb.getBoundingClientRect().right,
+      );
+    }
+  },
 };
 
 function ActivityArrangement({
@@ -178,13 +304,12 @@ function ActivityArrangement({
 export const RepeatedPoint: Story = {
   args: { entries: climbingMapLogs.filter((entry) => entry.id !== "tick-2") },
   render: (args) => <ActivityArrangement {...args} />,
-  play: async ({ canvasElement, userEvent }) => {
+  play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const dot = await canvas.findByRole("button", {
       name: /^2 climbs · Swiss Cheese · Swiss Cheese ·/,
     });
     const bounds = dot.getBoundingClientRect();
-    // Preserve enumerable native coordinates for Leaflet's preclick event copy.
     dot.dispatchEvent(
       new MouseEvent("click", {
         bubbles: true,
@@ -192,23 +317,11 @@ export const RepeatedPoint: Story = {
         clientY: bounds.y + bounds.height / 2,
       }),
     );
-    const [firstChoice, secondChoice] = await canvas.findAllByRole("button", {
-      name: "Swiss Cheese",
-    });
-    if (!firstChoice || !secondChoice) throw new Error("Expected both climb choices");
-    await userEvent.click(firstChoice);
     await expect(
       canvas
         .getByRole("region", { name: "Attached climbing logs" })
         .querySelector('[aria-current="true"]'),
     ).toBe(canvas.getByRole("list", { name: "Wall climbs" }).children[0]);
-    secondChoice.focus();
-    await userEvent.keyboard("[Enter]");
-    await expect(
-      canvas
-        .getByRole("region", { name: "Attached climbing logs" })
-        .querySelector('[aria-current="true"]'),
-    ).toBe(canvas.getByRole("list", { name: "Wall climbs" }).children[1]);
     await expect(
       canvas.getByRole("button", { name: /^2 climbs · Swiss Cheese · Swiss Cheese ·/ }),
     ).toBe(dot);

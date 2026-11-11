@@ -9,22 +9,7 @@ import { trpc } from "../lib/trpc";
 
 const settingsModelCards = [
   ["exponentialMovingAverage", "Training Load Windows", "Past 365 days"],
-  [
-    "readinessWeights",
-    "Readiness Score Weights",
-    "Past 365 days after a 60-day rolling-baseline warm-up",
-  ],
-  [
-    "sleepTarget",
-    "Sleep Target",
-    "Past 365 days; next-day recovery uses up to 60 days of baseline history",
-  ],
   ["stressThresholds", "Stress Sensitivity", "Past 425 days, including rolling-baseline warm-up"],
-  [
-    "trainingImpulseConstants",
-    "Heart Rate Effort Model",
-    "All qualifying activities; the power reference uses the past 365 days",
-  ],
 ].map(([key, title, dataWindow]) => ({
   key,
   title,
@@ -78,10 +63,11 @@ function createSeededProviders() {
       {
         id: "garmin",
         name: "Garmin",
-        authType: "custom:garmin",
+        authType: "oauth",
         authorized: false,
         lastSyncedAt: null,
         importOnly: false,
+        pushOnly: true,
         needsReauth: false,
       },
     ],
@@ -117,30 +103,21 @@ function createSeededProviders() {
     fittedAt: null,
     effective: {
       exponentialMovingAverage: { chronicTrainingLoadDays: 42, acuteTrainingLoadDays: 7 },
-      readinessWeights: { hrv: 0.5, restingHr: 0.2, sleep: 0.15, respiratoryRate: 0.15 },
-      sleepTarget: { minutes: 480 },
       stressThresholds: {
         hrvThresholds: [-2.0, -1.5, -1.0],
         rhrThresholds: [2.0, 1.5, 1.0],
       },
-      trainingImpulseConstants: { genderFactor: 1.92, exponent: 1.67 },
     },
     defaults: {
       exponentialMovingAverage: { chronicTrainingLoadDays: 42, acuteTrainingLoadDays: 7 },
-      readinessWeights: { hrv: 0.5, restingHr: 0.2, sleep: 0.15, respiratoryRate: 0.15 },
-      sleepTarget: { minutes: 480 },
       stressThresholds: {
         hrvThresholds: [-2.0, -1.5, -1.0],
         rhrThresholds: [2.0, 1.5, 1.0],
       },
-      trainingImpulseConstants: { genderFactor: 1.92, exponent: 1.67 },
     },
     parameters: {
       exponentialMovingAverage: null,
-      readinessWeights: null,
-      sleepTarget: null,
       stressThresholds: null,
-      trainingImpulseConstants: null,
     },
     modelCards: settingsModelCards,
   });

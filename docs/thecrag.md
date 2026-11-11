@@ -1,133 +1,165 @@
 # theCrag
 
-Dofek's [`thecrag` provider](../src/providers/thecrag/provider.ts) reads one connected user's climbing logbook and
-stores each ascent as a standalone `fitness.climbing_log_entry`. The integration
-uses the existing personal-token connection flow on both web and mobile.
+Dofek's [provider](../src/providers/thecrag/provider.ts) imports the connected
+user's climbing logbook through the official
+[personal Logbook Read API](https://www.thecrag.com/en/article/logbookreadapi).
+It requires an active theCrag supporter subscription and a personal API key.
+The API is account-scoped and read-only, includes public and private ascent
+notes, and is intended for third-party dashboards without a separate commercial
+agreement, according to that reference.
 
-## Connect
+## Connect and reconnect
 
-1. Keep an active theCrag supporter subscription.
-2. In theCrag, open Settings → API Keys and generate a personal API key.
-3. In Dofek's data sources, choose **theCrag** and paste the key into
-   **Personal API key (active supporter required)**.
+In Data Sources, choose **theCrag**, open the linked instructions, create a key
+in theCrag **Settings > API Keys**, and paste it into **Personal API key**.
+Both web and mobile conceal the input and explain private-data access before
+connection. The [connection flow](../src/providers/thecrag/provider.ts) verifies
+page one, derives the remote account ID, and stores the key in the existing
+[encrypted per-user credential repository](../src/db/tokens.ts).
 
-theCrag requires supporter status both to issue a key and to use it. Keys can
-expire; the public guide does not give a fixed lifetime. The connection form
-links to the [official personal logbook API instructions](https://www.thecrag.com/en/article/logbookreadapi).
-If theCrag rejects a saved key, restore supporter eligibility or generate a
-replacement, then reconnect in Dofek.
+Existing username/public-profile connections must reconnect with a key. The
+provider checks the saved credential classification before sending a request;
+a public username is never used as an API key. Reconnection creates a new
+connection identity and starts a full official import, preserving existing
+records and user-selected workout attachments. See the
+[database tests](../src/providers/thecrag-sync.integration.test.ts).
 
-Dofek treats HTTP 401 as a rejected key requiring reconnection. An unclassified
-HTTP 403 is reported as blocked access and preserves saved credentials; it does
-not prove the key has been revoked.
+Keys have upstream expiry and a weekly usage budget; the official guide does
+not disclose the budget or an exact key lifetime. Check theCrag's API Keys page
+for status and usage. Dofek reports access errors with those checks rather than
+assuming a particular cause. See the [official limits and key management](https://www.thecrag.com/en/article/logbookreadapi).
 
-Keys are saved per Dofek user through the existing encrypted token storage.
-There are no new deployment environment variables or application credentials.
-Dofek does not ask for the user's theCrag password.
+### Account-status API investigation — 2026-11-11
 
-## Read contract
+A read-only production probe using the connected account's saved key returned
+HTTP 400 from the official logbook endpoint at 15:57:07 UTC, requiring minimum
+access level `logbook`. The JSON contained error/request fields only; neither
+the body nor response headers supplied supporter status, key expiry or weekly
+budget. No raw response or key was retained in this record.
 
-Requests use the production endpoint and the documented key header:
+The [general API guide](https://www.thecrag.com/en/article/api) documents
+`GET /api/climber/id/{accountID}/subscriptions/thecrag`, and the
+[endpoint reference](https://www.thecrag.com/api-wadl.xml) includes subscription
+reads. Native requests to that endpoint and the account endpoint returned HTML
+403 blocks. A comparison using the existing Impit Chrome transport reached
+both APIs at 15:59:04–05 UTC, but both returned JSON HTTP 400 access denials
+with the same saved key and no account-status metadata. This comparison did
+not change the logbook sync transport.
 
-```http
-GET https://www.thecrag.com/api/logbook/ascents?page=1
-X-CData-Key: key=<personal-api-key>
-```
+The public guide links to `/settings/apikey/`; a logged-out read redirects to
+sign-in. The guide and endpoint reference inspected here did not document a
+personal-key status/budget endpoint. Adding Dofek API or MCP fields alone
+cannot recover these missing values: a readable upstream source must first
+be verified. An access denial does not establish an expired subscription or
+exhausted budget. See the [personal-key guide](https://www.thecrag.com/en/article/logbookreadapi).
 
-The API accepts `page` and an optional `since` Unix-epoch timestamp for
-ascents updated after that point. Its `data` response contains `account`,
-`ascents`, `numberAscents`, `page`, and `perPage`. Each ascent has an ID and
-creation/update epochs, dates, tick metadata, notes, and route context. Private
-notes are included. See the [published request and response reference](https://www.thecrag.com/en/article/logbookreadapi).
+## Sync behavior
 
-## Sync and storage
+The [client](../src/providers/thecrag/client.ts) uses native fetch through the
+shared provider rate-limit, request deadline and diagnostic boundary. It sends
+`GET https://www.thecrag.com/api/logbook/ascents` with
+`X-CData-Key: key=<key>` in the header, never the URL, and rejects redirects.
+The endpoint, header, `page`/`since` parameters and response pagination fields
+are specified in the [personal API reference](https://www.thecrag.com/en/article/logbookreadapi).
 
-Every sync reads the full paginated logbook, including scheduled syncs, so
-removed ascents and edited historical ascents are discovered independently of
-their climb dates. A sync validates the complete fetched batch before saving it
-and reconciling missing ascents in one database transaction through the
-[snapshot writer](../src/db/climbing-log-snapshot.ts).
+The first sync reads all pages. Later bounded syncs use the highest successfully
+imported source `epoch`, replaying the boundary second to retain equal-timestamp
+edits. Explicit full-history requests bypass that cursor. The
+[progress store](../src/providers/thecrag/progress.ts) uses existing per-user
+settings, scoped to remote account and connection identity. Empty deltas keep
+existing progress; a page, parse or write failure never advances it. If saving
+progress fails after records commit, the next run safely replays those records.
+No new schema, deployment secret or retry setting is required.
 
-The original ascent payload remains available in `raw.ascent`, and
-`raw.accountId` identifies its source account. The payload retains provider IDs,
-tick labels, historical markers, performance ratings, tags, pitch data, and
-route ancestry. Verified route/ancestor IDs identify shared Climb and Area
-objects. Published route grades and separately reported ascent grades retain
-their owners. Source dates and notes belong to the log. Recorded gear style
-and tick labels supply independent execution facts; advertised route protection
-stays on the Climb. Catalogue pitch definitions and counts do not establish
-tries. Without a reported attempt total, the log records one occurrence.
-Missing method, board and angle remain unknown. See the
-[adapter](../src/providers/thecrag/provider.ts) and [model](climbing-context.md).
+The provider checks account ownership, page numbers, totals, page sizes and
+ascent identity uniqueness before writing. Partial and failed responses do not
+retire existing entries. Incremental responses are not authoritative snapshots,
+and the official API guide does not specify a deletion feed; imports therefore
+remain additive. See the [provider](../src/providers/thecrag/provider.ts) and
+[canonical writer](../src/db/climbing-log-sync.ts).
 
-After a complete successful fetch, missing ascents receive a `providerAbsentAt`
-timestamp. A valid empty logbook retires every previously imported source
-ascent for that Dofek user and provider. Raw payloads, attempts, and attachments
-remain stored; reappearing ascents restore their original records. Incomplete
-pagination, invalid records, and fetch failures leave existing records intact.
-See the [provider integration tests](../src/providers/thecrag-sync.integration.test.ts).
+## Stored records
 
-The [queue policy](../src/jobs/provider-queue-config.ts) uses daily polling and concurrency one. These settings reduce
-request volume; they are not an upstream quota guarantee. theCrag documents
-a weekly per-account budget without a numeric allowance in its
-[personal API guide](https://www.thecrag.com/en/article/logbookreadapi). That
-guide recommends incremental reads to minimize token usage; Dofek deliberately
-uses full reads to detect upstream deletions, consuming more of that budget.
+The [mapper](../src/providers/thecrag/mapping.ts) retains stable
+`thecrag:<ascent-id>` identities, original route IDs, recorded climb dates,
+private/public notes, published grades, explicit gear methods and tick results.
+Shared ancestor IDs and names form the supplied area hierarchy. Raw source
+fields remain in `raw.ascent`, including opaque pitch/tag data whose detailed
+schema is not documented by the personal API reference. Unsupported details
+are not converted into inferred canonical facts.
 
-## Evidence and limitations
+Sport/trad protection does not prove a lead. Missing methods, attempt totals,
+ascent grade overrides and private facts are not invented; previously supplied
+facts remain under the [canonical merge contract](../src/db/climbing-log-sync.ts).
+The API's derived CPR performance scores are retained only as opaque source
+provenance. No synthetic workouts are created. See the
+[mapping tests](../src/providers/thecrag/mapping.test.ts) and
+[real database coverage](../src/providers/thecrag-sync.integration.test.ts).
 
-The implementation and fixtures target the published personal-endpoint
-contract. An authenticated production response has not yet been verified;
-unauthenticated research requests were blocked by Cloudflare. Passing fixture
-tests establish Dofek's handling of that contract, not live-account access.
+Unexpected database errors pass through the
+[sanitized persistence boundary](../src/providers/thecrag/persistence.ts).
+JSON/schema failures omit raw bodies, parser error causes, API keys and private
+notes from user-facing errors and telemetry. HTTP access errors distinguish
+observed status from an unconfirmed cause; an access denial alone does not prove
+that supporter status expired.
 
-The [importer](../src/providers/thecrag/provider.ts) recognizes supported rock, ice,
-mixed, snow, hiking, scrambling and mountaineering classifications when source
-styles establish them. theCrag supports additional valid disciplines
-([Route Gear Styles](https://www.thecrag.com/en/article/styles)). If recorded
-gear and route styles cannot establish a supported discipline, or conflict,
-the entire batch stops without changing saved entries. No ascents are skipped,
-so incomplete discovery cannot retire saved ascents. A top-rope tick
-can still be classified when its route supplies a sport or trad style.
+When the official API explicitly reports the recognized minimum-`logbook`
+access denial, the [client](../src/providers/thecrag/client.ts) returns
+“theCrag requires logbook access for this key” with the observed HTTP status
+and a Settings > API Keys instruction. Other access denials retain the generic
+access message. The fixed message flows through the existing sync error used
+by the [MCP provider-status response](../packages/server/src/mcp/provider-status.ts);
+no new endpoint or account-status fields are required. The
+[client tests](../src/providers/thecrag/client.test.ts) cover recognized and
+unrecognized denials, response privacy, malformed JSON and cancellation.
 
-The reference names `date` and `logDate` as ISO-8601 values but does not
-establish every live representation. It also lists `gradeAtom.type` without
-defining its values or identifying a grading-system discriminator
-([personal API reference](https://www.thecrag.com/en/article/logbookreadapi)).
-Only valid `YYYY-MM-DD` source-date prefixes establish the normalized date.
-Grade components retain source text; clear V-scale/YDS syntax and explicit
-supported scale labels establish systems through the shared validator.
-Bare numeric grades or `6a`/`6A` without a supported system label retain a null
-system. theCrag's
-[grade-system documentation](https://www.thecrag.com/en/article/gradesonthecrag)
-shows why identical grade text can belong to different systems. The undefined
-live semantics of `gradeAtom.type` remain an acceptance-check limitation.
+## Disconnect and account deletion
 
-The [importer](../src/providers/thecrag/provider.ts) supports explicit textual scale
-labels with colon syntax, including the following examples:
+Revoke the personal key in theCrag **Settings > API Keys** before disconnecting
+Dofek. The official guide documents owner-managed revocation, not a remote
+revocation endpoint. Disconnecting removes Dofek's saved key and stops future
+syncs while preserving imports; it does not revoke the upstream key or remove
+already imported data. The upstream distinction is documented in
+[Third-Party Data Retention](https://www.thecrag.com/en/article/logbookreadapi).
 
-| Label | System | Supported example |
-|-------|--------|-------------------|
-| `FR` | French | `FR: 6a` |
-| `FB` | Fontainebleau | `FB: 6A` |
-| `AU` | Ewbank | `AU: 20` |
-| `UIAA` | UIAA | `UIAA: 7` |
-| `YDS` | Yosemite Decimal | `YDS: 5.10a` |
-| `BLDV` | V-scale | `BLDV: V4` |
-| `AID` / `AIDC` | Aid | `AID: A2`, `AIDC: C2` |
-| `WICE` / `AICE` | Water / alpine ice | `WICE: WI3`, `AICE: AI3` |
-| `MIXED` | Mixed | `MIXED: M4` |
-| `IFAS` / `NCCS` | Alpine / commitment | `IFAS: AD`, `NCCS: III` |
-| `UK` / `UKT` | British adjectival / technical | `UK: E1`, `UKT: 5a` |
+The [account-erasure prerequisite](../src/account-erasure/remote-snapshot.ts)
+requires personal-key connections to be disconnected before deleting the Dofek
+account, with an instruction to revoke the key upstream. Historical public-only
+connections still have no remote authorization to revoke. Dofek does not claim
+to verify an owner-managed upstream revocation.
 
-The labels come from theCrag's
-[grade-system documentation](https://www.thecrag.com/en/article/gradesonthecrag).
-The prefixed examples describe Dofek's tested importer inputs; the personal
-endpoint does not document that native `route.grade` values contain those
-prefixes. They are not a verified `gradeAtom.type` mapping.
+## Informational catalogue
 
-A first live acceptance check should confirm key issuance and supporter
-eligibility, authenticated pagination, date representation, native grade
-metadata, and an edited historical ascent or deletion appearing in a subsequent
-full sync. Use a private fixture account and keep its key and personal
-notes out of logs and shared test fixtures.
+The separate [catalogue reader](../packages/climbing-catalogue/src/thecrag.ts) still
+provides disposable public route context; it is not used by logbook sync. Its
+public HTTP client remains necessary for those lookups. See the
+[catalogue contract](climbing-trait-coverage.md#informational-catalogue-cache).
+
+## Public read path
+
+This section records the retired integration and is not the current sync path.
+The previous public-feed/ascent-page integration failed from production while
+workstation browser and HTTP probes succeeded. Both ascent URL variants
+redirected to the processing host, whose destination returned 403. See the
+[October 29 incident](production-incident-baseline.md#2026-10-29--thecrag-ascent-requests-redirected-to-a-forbidden-host)
+and [October 30 comparison](production-incident-baseline.md#2026-10-30--thecrag-connection-warning-recurrence).
+The official endpoint was reachable from production without a key (HTTP 400
+JSON, no redirect); this is reachability evidence, not authenticated sync
+recovery. Live recovery requires deployment and a valid key connected in Dofek.
+
+## Transport evidence — 2026-10-26
+
+Fresh logged-out Chrome retrieved a public account's feed, one ascent, its empty
+next page and public details. Native Node fetch and curl returned Cloudflare
+403 block pages from both the workstation and production; changing only the
+User-Agent did not resolve those blocks. The upstream blocking rule was not
+identified, so these responses did not establish an authentication requirement.
+
+Impit 0.14.7's default `chrome` profile subsequently retrieved the feed, the
+exact next link and ascent details with HTTP 200, no cookies or credentials,
+on macOS ARM64 Node 26.7.0 and in a separate container on the production OCI
+network using the deployed ARM64 Alpine Node 26.12.1 image. The container ran
+as UID 1000 with a 128 MiB memory limit, no application secrets and no browser
+process. Production services and deployment configuration were unchanged.
+These observations verify that account and network at the time of testing;
+they do not establish future availability or historical completeness.

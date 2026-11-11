@@ -29,6 +29,79 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
+export const Sent: Story = {
+  args: {
+    entry: {
+      ...climbingLogFixture,
+      freeSend: true,
+      recordedClimbAttemptCount: 1,
+      attempts: [
+        climbingAttemptFixture(climbingLogFixture.id, {
+          ropeMethod: "lead",
+          rockResultLabels: ["sent"],
+        }),
+      ],
+    },
+  },
+};
+export const Completed: Story = {
+  args: {
+    entry: {
+      ...climbingLogFixture,
+      freeSend: false,
+      recordedClimbOutcome: "completed",
+      recordedClimbAttemptCount: 2,
+      attempts: [
+        climbingAttemptFixture(climbingLogFixture.id, { outcome: "failed" }),
+        climbingAttemptFixture(climbingLogFixture.id, { outcome: "completed", fellOrHung: true }),
+      ],
+    },
+  },
+};
+export const Attempted: Story = {
+  args: {
+    entry: {
+      ...climbingLogFixture,
+      freeSend: false,
+      recordedClimbOutcome: "failed",
+      recordedClimbAttemptCount: 1,
+      attempts: [climbingAttemptFixture(climbingLogFixture.id, { outcome: "failed" })],
+    },
+  },
+};
+export const FellHung: Story = {
+  args: {
+    entry: {
+      ...climbingLogFixture,
+      freeSend: false,
+      recordedClimbOutcome: null,
+      recordedClimbAttemptCount: null,
+      attempts: [
+        climbingAttemptFixture(climbingLogFixture.id, {
+          ropeMethod: "lead",
+          fellOrHung: true,
+          outcome: null,
+        }),
+      ],
+    },
+  },
+};
+export const Onsight: Story = {
+  args: {
+    entry: {
+      ...climbingLogFixture,
+      freeSend: true,
+      recordedClimbAttemptCount: 1,
+      attempts: [
+        climbingAttemptFixture(climbingLogFixture.id, {
+          outcome: "completed",
+          ropeMethod: "lead",
+          rockResultLabels: ["sent", "Onsight"],
+        }),
+      ],
+    },
+  },
+};
 export const MinimalEntry: Story = { args: { entry: climbingLogEntryFixture() } };
 export const ExactClimb: Story = { args: { location: exactClimbingLocation } };
 export const AreaLocation: Story = { args: { location: areaClimbingLocation } };
@@ -68,5 +141,15 @@ export const AttachError: Story = {
       pending: false,
       error: "Refresh this activity and try attaching this entry again.",
     },
+  },
+};
+
+export const SharedMapRow: Story = {
+  args: {
+    hideMap: true,
+    entryNumber: 1,
+    onSelect: fn(),
+    onOpenEntry: fn(),
+    location: exactClimbingLocation,
   },
 };

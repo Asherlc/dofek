@@ -225,7 +225,6 @@ exports[`CyclingTrainingMetricsRepository > computes a paginated activity from c
         "average_power_watts": 200,
         "kind": "calculated_read_model",
         "maximum_heart_rate_bpm": 155,
-        "normalized_power_watts": 205,
       },
       "provider_id": "peloton",
       "quality": {
@@ -243,9 +242,19 @@ exports[`CyclingTrainingMetricsRepository > computes a paginated activity from c
       "started_at": "2026-06-15T15:00:00.000Z",
       "thresholds": {
         "ftp": {
-          "effective_from": "2026-01-01",
-          "kind": "configured",
-          "source_record_id": "00000000-0000-4000-8000-000000000100",
+          "effective_from": "2026-06-15T15:00:00.000Z",
+          "evidence_activity_id": "00000000-0000-4000-8000-000000000011",
+          "evidence_at": "2026-06-14T15:00:00.000Z",
+          "evidence_duration_seconds": 600,
+          "evidence_power_watts": 300,
+          "kind": "computed",
+          "method": "computed_eftp",
+          "model_version": "test-cycling-model",
+          "uncertainty": {
+            "kind": "not_quantifiable",
+            "reason": "Reference-curve estimate; individual physiological FTP uncertainty has not been quantified.",
+            "watts": null,
+          },
           "unit": "W",
           "value": 250,
         },
@@ -262,7 +271,7 @@ exports[`CyclingTrainingMetricsRepository > computes a paginated activity from c
   "definitions": {
     "aerobic_efficiency": "Mean synchronized power divided by mean synchronized heart rate.",
     "cardiac_drift": "100 × (first-half power:HR - second-half power:HR) / first-half power:HR, using equal elapsed halves.",
-    "intensity_factor": "Normalized power divided by FTP effective on the activity date.",
+    "intensity_factor": "Canonical normalized power divided by computed eFTP effective for the activity.",
     "interval_detection": "Recorded boundaries take precedence; otherwise work requires a 30-second mean at or above 105% of effective FTP.",
     "normalized_power": "Fourth root of the mean fourth power of complete 30-second rolling average power.",
     "training_stress_score": "Elapsed hours multiplied by intensity factor squared and 100.",
@@ -320,7 +329,6 @@ exports[`CyclingTrainingMetricsRepository > computes a paginated activity from c
         activity.timezone AS activity_timezone,
         activity.local_time_source AS local_time_source,
         cycling.average_power AS aggregate_average_power,
-        cycling.normalized_power AS aggregate_normalized_power,
         cycling.average_heart_rate AS aggregate_average_heart_rate,
         cycling.max_heart_rate AS aggregate_max_heart_rate
       FROM analytics.cycling_activity AS cycling FINAL
@@ -398,6 +406,23 @@ exports[`CyclingTrainingMetricsRepository > computes a paginated activity from c
               AND curve.duration_seconds IN ({durations:Array(UInt32)})
               AND curve.is_deleted = 0
             ORDER BY curve.activity_id, curve.duration_seconds",
+  },
+  {
+    "parameters": {
+      "activityIds": [
+        "00000000-0000-4000-8000-000000000010",
+      ],
+      "userId": "00000000-0000-4000-8000-000000000001",
+    },
+    "query": "SELECT
+      toString(metrics.activity_id) AS activity_id,
+      formatDateTime(metrics.started_at, '%Y-%m-%dT%H:%i:%S.%fZ', 'UTC') AS started_at,
+      normalized_power, eftp, power_tss, intensity_factor, metrics.model_version AS model_version, if(metrics.evidence_activity_id IS NULL, NULL, toString(metrics.evidence_activity_id)) AS evidence_activity_id,
+    if(metrics.evidence_at IS NULL, NULL, formatDateTime(metrics.evidence_at, '%Y-%m-%dT%H:%i:%S.%fZ', 'UTC')) AS evidence_at,
+    metrics.evidence_duration_seconds AS evidence_duration_seconds, metrics.evidence_power AS evidence_power
+      FROM analytics.cycling_activity_power_metrics AS metrics
+      WHERE metrics.user_id = {userId:UUID} AND metrics.activity_id IN ({activityIds:Array(UUID)})
+",
   },
 ]
 `;
@@ -553,15 +578,15 @@ exports[`CyclingTrainingMetricsRepository > preserves limited estimated-power, t
         "unavailable_reasons": [
           {
             "metric": "normalized_power",
-            "reason": "power coverage is below 90%",
+            "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
           },
           {
             "metric": "intensity_factor",
-            "reason": "no valid FTP was effective for this activity",
+            "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
           },
           {
             "metric": "training_stress_score",
-            "reason": "no valid FTP was effective for this activity",
+            "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
           },
           {
             "metric": "heart_rate",
@@ -602,7 +627,6 @@ exports[`CyclingTrainingMetricsRepository > preserves limited estimated-power, t
         "average_power_watts": 200,
         "kind": "calculated_read_model",
         "maximum_heart_rate_bpm": 155,
-        "normalized_power_watts": 205,
       },
       "provider_id": "peloton",
       "quality": {
@@ -632,7 +656,7 @@ exports[`CyclingTrainingMetricsRepository > preserves limited estimated-power, t
   "definitions": {
     "aerobic_efficiency": "Mean synchronized power divided by mean synchronized heart rate.",
     "cardiac_drift": "100 × (first-half power:HR - second-half power:HR) / first-half power:HR, using equal elapsed halves.",
-    "intensity_factor": "Normalized power divided by FTP effective on the activity date.",
+    "intensity_factor": "Canonical normalized power divided by computed eFTP effective for the activity.",
     "interval_detection": "Recorded boundaries take precedence; otherwise work requires a 30-second mean at or above 105% of effective FTP.",
     "normalized_power": "Fourth root of the mean fourth power of complete 30-second rolling average power.",
     "training_stress_score": "Elapsed hours multiplied by intensity factor squared and 100.",
@@ -649,6 +673,317 @@ exports[`CyclingTrainingMetricsRepository > preserves limited estimated-power, t
     300,
   ],
 }
+`;
+
+exports[`CyclingTrainingMetricsRepository > retains historical heart-rate settings and explains an unpublished canonical power projection 1`] = `
+{
+  "activities": [
+    {
+      "activity_id": "00000000-0000-4000-8000-000000000012",
+      "best_powers": [],
+      "date": "2026-06-15",
+      "duration_seconds": 300,
+      "ended_at": "2026-06-15T15:05:00.000Z",
+      "member_activity_ids": [
+        "00000000-0000-4000-8000-000000000012",
+      ],
+      "metrics": {
+        "aerobic_efficiency": {
+          "paired_seconds": 0,
+          "power_to_heart_rate_ratio": null,
+        },
+        "cadence": {
+          "average_rpm": null,
+        },
+        "cardiac_drift": {
+          "first_half_power_to_heart_rate": null,
+          "method": "equal_elapsed_time_halves_power_to_heart_rate",
+          "paired_seconds": 0,
+          "percent": null,
+          "second_half_power_to_heart_rate": null,
+        },
+        "coverage": {
+          "cadence": {
+            "coverage_pct": 0,
+            "covered_seconds": 0,
+            "largest_gap_seconds": null,
+            "median_sample_interval_seconds": null,
+            "missing_seconds": 300,
+            "observed_samples": 0,
+            "zero_seconds": 0,
+          },
+          "heart_rate": {
+            "coverage_pct": 0,
+            "covered_seconds": 0,
+            "largest_gap_seconds": null,
+            "median_sample_interval_seconds": null,
+            "missing_seconds": 300,
+            "observed_samples": 0,
+            "zero_seconds": 0,
+          },
+          "power": {
+            "coverage_pct": 100,
+            "covered_seconds": 300,
+            "largest_gap_seconds": 1,
+            "median_sample_interval_seconds": 1,
+            "missing_seconds": 0,
+            "observed_samples": 300,
+            "zero_seconds": 0,
+          },
+        },
+        "heart_rate": {
+          "average_bpm": null,
+          "maximum_bpm": null,
+        },
+        "heart_rate_zones": {
+          "threshold": 175,
+          "upper_pcts": [
+            0.6,
+            0.7,
+            0.8,
+            0.9,
+          ],
+          "zones": [
+            {
+              "percent": 0,
+              "seconds": 0,
+              "zone": 1,
+            },
+            {
+              "percent": 0,
+              "seconds": 0,
+              "zone": 2,
+            },
+            {
+              "percent": 0,
+              "seconds": 0,
+              "zone": 3,
+            },
+            {
+              "percent": 0,
+              "seconds": 0,
+              "zone": 4,
+            },
+            {
+              "percent": 0,
+              "seconds": 0,
+              "zone": 5,
+            },
+          ],
+        },
+        "interval_detection": null,
+        "interval_source": "none",
+        "intervals": [],
+        "power": {
+          "average_watts": 200,
+          "intensity_factor": null,
+          "normalized_watts": null,
+          "training_stress_score": null,
+          "variability_index": null,
+          "work_kilojoules": 60,
+        },
+        "power_zones": null,
+        "unavailable_reasons": [
+          {
+            "metric": "normalized_power",
+            "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
+          },
+          {
+            "metric": "intensity_factor",
+            "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
+          },
+          {
+            "metric": "training_stress_score",
+            "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
+          },
+          {
+            "metric": "heart_rate",
+            "reason": "no heart-rate samples are available",
+          },
+          {
+            "metric": "cadence",
+            "reason": "no cadence samples are available",
+          },
+          {
+            "metric": "aerobic_efficiency",
+            "reason": "no synchronized power and heart-rate samples are available",
+          },
+          {
+            "metric": "cardiac_drift",
+            "reason": "activity is shorter than 20 minutes",
+          },
+        ],
+        "value_kind": "calculated_from_samples",
+      },
+      "modality": "indoor",
+      "name": "Power Zone Endurance",
+      "provenance": {
+        "activity_timezone": "America/New_York",
+        "duplicate_merged": false,
+        "power_measurement_kinds": [
+          "direct",
+        ],
+        "sample_source_providers": [
+          "wahoo",
+        ],
+        "timezone_assumption_required": false,
+        "timezone_source": "provider_timezone",
+      },
+      "provider_aggregates": {
+        "average_heart_rate_bpm": 140,
+        "average_power_watts": 200,
+        "kind": "calculated_read_model",
+        "maximum_heart_rate_bpm": 155,
+      },
+      "provider_id": "peloton",
+      "quality": {
+        "reasons": [],
+        "status": "high",
+        "trustworthy_for_longitudinal_comparison": true,
+      },
+      "source_devices": [
+        "KICKR",
+      ],
+      "source_providers": [
+        "apple_health",
+        "peloton",
+      ],
+      "started_at": "2026-06-15T15:00:00.000Z",
+      "thresholds": {
+        "ftp": null,
+        "threshold_heart_rate": {
+          "effective_from": "2026-01-01",
+          "kind": "configured",
+          "source_record_id": "00000000-0000-4000-8000-000000000100",
+          "unit": "bpm",
+          "value": 175,
+        },
+      },
+    },
+  ],
+  "definitions": {
+    "aerobic_efficiency": "Mean synchronized power divided by mean synchronized heart rate.",
+    "cardiac_drift": "100 × (first-half power:HR - second-half power:HR) / first-half power:HR, using equal elapsed halves.",
+    "intensity_factor": "Canonical normalized power divided by computed eFTP effective for the activity.",
+    "interval_detection": "Recorded boundaries take precedence; otherwise work requires a 30-second mean at or above 105% of effective FTP.",
+    "normalized_power": "Fourth root of the mean fourth power of complete 30-second rolling average power.",
+    "training_stress_score": "Elapsed hours multiplied by intensity factor squared and 100.",
+    "variability_index": "Normalized power divided by average power.",
+    "work_kilojoules": "Sum of covered one-second power values divided by 1,000.",
+  },
+  "next_cursor": null,
+  "range": {
+    "end_date": "2026-06-30",
+    "start_date": "2026-06-01",
+    "timezone": "UTC",
+  },
+  "requested_best_power_durations_seconds": [],
+}
+`;
+
+exports[`CyclingTrainingMetricsRepository > retains historical heart-rate settings and explains an unpublished canonical power projection 2`] = `
+[
+  "[{"value":["\\n        SELECT *\\n        FROM fitness.sport_settings\\n        WHERE user_id = "]},"00000000-0000-4000-8000-000000000001",{"value":["\\n          AND sport = "]},"cycling",{"value":["\\n        ORDER BY effective_from DESC\\n      "]}]",
+  "[{"value":["\\n              SELECT\\n                activity_id::text AS member_activity_id,\\n                interval_index,\\n                label,\\n                interval_type,\\n                started_at,\\n                ended_at,\\n                source_kind,\\n                source_provider,\\n                source_activity_id,\\n                segment_type,\\n                target_intensity,\\n                target_zone,\\n                target_cadence_rpm,\\n                target_power_watts,\\n                target_resistance,\\n                work_recovery_kind,\\n                raw\\n              FROM fitness.activity_interval\\n              WHERE activity_id IN ("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"00000000-0000-4000-8000-000000000012",{"value":["::uuid"]}]}]},{"value":[")\\n              ORDER BY activity_id, interval_index\\n            "]}]",
+]
+`;
+
+exports[`CyclingTrainingMetricsRepository > retains historical heart-rate settings and explains an unpublished canonical power projection 3`] = `
+[
+  {
+    "parameters": {
+      "endDate": "2026-06-30",
+      "modalities": [],
+      "pageLimit": 11,
+      "providers": [],
+      "startDate": "2026-06-01",
+      "timezone": "UTC",
+      "userId": "00000000-0000-4000-8000-000000000001",
+    },
+    "query": "/* cycling-training-metrics:activities */
+      SELECT
+        toString(cycling.activity_id) AS activity_id,
+        toString(toDate(toTimeZone(cycling.started_at, {timezone:String}))) AS activity_date,
+        formatDateTime(cycling.started_at, '%Y-%m-%dT%H:%i:%S.%fZ', 'UTC') AS started_at,
+        if(cycling.ended_at IS NULL, NULL,
+          formatDateTime(cycling.ended_at, '%Y-%m-%dT%H:%i:%S.%fZ', 'UTC')) AS ended_at,
+        cycling.elapsed_seconds AS elapsed_seconds,
+        cycling.modality AS modality,
+        cycling.activity_name AS activity_name,
+        cycling.provider_id AS provider_id,
+        activity.source_providers AS source_providers,
+        activity.member_activity_ids AS member_activity_ids,
+        activity.timezone AS activity_timezone,
+        activity.local_time_source AS local_time_source,
+        cycling.average_power AS aggregate_average_power,
+        cycling.average_heart_rate AS aggregate_average_heart_rate,
+        cycling.max_heart_rate AS aggregate_max_heart_rate
+      FROM analytics.cycling_activity AS cycling FINAL
+      INNER JOIN analytics.deduped_activities AS activity FINAL
+        ON activity.activity_id = cycling.activity_id
+        AND activity.user_id = cycling.user_id
+      WHERE cycling.user_id = {userId:UUID}
+        AND cycling.is_deleted = 0
+        AND activity.is_deleted = 0
+        AND toDate(toTimeZone(cycling.started_at, {timezone:String}))
+          BETWEEN toDate({startDate:String}) AND toDate({endDate:String})
+        AND (empty({modalities:Array(String)}) OR has({modalities:Array(String)}, cycling.modality))
+        AND (empty({providers:Array(String)}) OR hasAny(activity.source_providers, {providers:Array(String)}))
+
+      ORDER BY cycling.started_at DESC, cycling.activity_id ASC
+      LIMIT {pageLimit:UInt32}",
+  },
+  {
+    "parameters": {
+      "activityIds": [
+        "00000000-0000-4000-8000-000000000012",
+      ],
+      "userId": "00000000-0000-4000-8000-000000000001",
+    },
+    "query": "/* cycling-training-metrics:samples */
+            SELECT
+              toString(sensor.activity_id) AS activity_id,
+              dateDiff('millisecond', activity.started_at, sensor.recorded_at) / 1000 AS elapsed_seconds,
+              if(countIf(sensor.channel = 'power') = 0, NULL,
+                maxIf(sensor.scalar, sensor.channel = 'power')) AS power,
+              if(countIf(sensor.channel = 'heart_rate') = 0, NULL,
+                maxIf(sensor.scalar, sensor.channel = 'heart_rate')) AS heart_rate,
+              if(countIf(sensor.channel = 'cadence') = 0, NULL,
+                maxIf(sensor.scalar, sensor.channel = 'cadence')) AS cadence,
+              arraySort(groupUniqArrayIf(sensor.provider_id, sensor.provider_id != '')) AS source_providers,
+              arraySort(groupUniqArrayIf(sensor.device_id, sensor.device_id != '')) AS source_devices,
+              arraySort(groupUniqArrayIf(sensor.measurement_kind,
+                sensor.channel = 'power' AND sensor.measurement_kind != '')) AS power_measurement_kinds,
+              arraySort(groupUniqArray(tuple(sensor.channel, sensor.provider_id,
+                sensor.device_id, sensor.measurement_kind))) AS stream_evidence
+            FROM analytics.activity_sensor_sample AS sensor FINAL
+            INNER JOIN analytics.deduped_activities AS activity FINAL
+              ON activity.activity_id = sensor.activity_id AND activity.user_id = sensor.user_id
+            WHERE sensor.user_id = {userId:UUID}
+              AND sensor.activity_id IN ({activityIds:Array(UUID)})
+              AND sensor.channel IN ('power', 'heart_rate', 'cadence')
+              AND sensor.is_deleted = 0
+            GROUP BY sensor.activity_id, activity.started_at, sensor.recorded_at
+            ORDER BY sensor.activity_id, sensor.recorded_at",
+  },
+  {
+    "parameters": {
+      "activityIds": [
+        "00000000-0000-4000-8000-000000000012",
+      ],
+      "userId": "00000000-0000-4000-8000-000000000001",
+    },
+    "query": "SELECT
+      toString(metrics.activity_id) AS activity_id,
+      formatDateTime(metrics.started_at, '%Y-%m-%dT%H:%i:%S.%fZ', 'UTC') AS started_at,
+      normalized_power, eftp, power_tss, intensity_factor, metrics.model_version AS model_version, if(metrics.evidence_activity_id IS NULL, NULL, toString(metrics.evidence_activity_id)) AS evidence_activity_id,
+    if(metrics.evidence_at IS NULL, NULL, formatDateTime(metrics.evidence_at, '%Y-%m-%dT%H:%i:%S.%fZ', 'UTC')) AS evidence_at,
+    metrics.evidence_duration_seconds AS evidence_duration_seconds, metrics.evidence_power AS evidence_power
+      FROM analytics.cycling_activity_power_metrics AS metrics
+      WHERE metrics.user_id = {userId:UUID} AND metrics.activity_id IN ({activityIds:Array(UUID)})
+",
+  },
+]
 `;
 
 exports[`CyclingTrainingMetricsRepository > returns a stable cursor and never double-counts the lookahead activity 1`] = `
@@ -728,15 +1063,15 @@ exports[`CyclingTrainingMetricsRepository > returns a stable cursor and never do
         "unavailable_reasons": [
           {
             "metric": "normalized_power",
-            "reason": "power coverage is below 90%",
+            "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
           },
           {
             "metric": "intensity_factor",
-            "reason": "no valid FTP was effective for this activity",
+            "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
           },
           {
             "metric": "training_stress_score",
-            "reason": "no valid FTP was effective for this activity",
+            "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
           },
           {
             "metric": "heart_rate",
@@ -772,7 +1107,6 @@ exports[`CyclingTrainingMetricsRepository > returns a stable cursor and never do
         "average_power_watts": 200,
         "kind": "calculated_read_model",
         "maximum_heart_rate_bpm": 155,
-        "normalized_power_watts": 205,
       },
       "provider_id": "peloton",
       "quality": {
@@ -798,7 +1132,7 @@ exports[`CyclingTrainingMetricsRepository > returns a stable cursor and never do
   "definitions": {
     "aerobic_efficiency": "Mean synchronized power divided by mean synchronized heart rate.",
     "cardiac_drift": "100 × (first-half power:HR - second-half power:HR) / first-half power:HR, using equal elapsed halves.",
-    "intensity_factor": "Normalized power divided by FTP effective on the activity date.",
+    "intensity_factor": "Canonical normalized power divided by computed eFTP effective for the activity.",
     "interval_detection": "Recorded boundaries take precedence; otherwise work requires a 30-second mean at or above 105% of effective FTP.",
     "normalized_power": "Fourth root of the mean fourth power of complete 30-second rolling average power.",
     "training_stress_score": "Elapsed hours multiplied by intensity factor squared and 100.",
@@ -850,7 +1184,6 @@ exports[`CyclingTrainingMetricsRepository > returns a stable cursor and never do
         activity.timezone AS activity_timezone,
         activity.local_time_source AS local_time_source,
         cycling.average_power AS aggregate_average_power,
-        cycling.normalized_power AS aggregate_normalized_power,
         cycling.average_heart_rate AS aggregate_average_heart_rate,
         cycling.max_heart_rate AS aggregate_max_heart_rate
       FROM analytics.cycling_activity AS cycling FINAL
@@ -900,6 +1233,23 @@ exports[`CyclingTrainingMetricsRepository > returns a stable cursor and never do
               AND sensor.is_deleted = 0
             GROUP BY sensor.activity_id, activity.started_at, sensor.recorded_at
             ORDER BY sensor.activity_id, sensor.recorded_at",
+  },
+  {
+    "parameters": {
+      "activityIds": [
+        "00000000-0000-4000-8000-000000000010",
+      ],
+      "userId": "00000000-0000-4000-8000-000000000001",
+    },
+    "query": "SELECT
+      toString(metrics.activity_id) AS activity_id,
+      formatDateTime(metrics.started_at, '%Y-%m-%dT%H:%i:%S.%fZ', 'UTC') AS started_at,
+      normalized_power, eftp, power_tss, intensity_factor, metrics.model_version AS model_version, if(metrics.evidence_activity_id IS NULL, NULL, toString(metrics.evidence_activity_id)) AS evidence_activity_id,
+    if(metrics.evidence_at IS NULL, NULL, formatDateTime(metrics.evidence_at, '%Y-%m-%dT%H:%i:%S.%fZ', 'UTC')) AS evidence_at,
+    metrics.evidence_duration_seconds AS evidence_duration_seconds, metrics.evidence_power AS evidence_power
+      FROM analytics.cycling_activity_power_metrics AS metrics
+      WHERE metrics.user_id = {userId:UUID} AND metrics.activity_id IN ({activityIds:Array(UUID)})
+",
   },
 ]
 `;
@@ -981,15 +1331,15 @@ exports[`CyclingTrainingMetricsRepository > returns a stable cursor and never do
         "unavailable_reasons": [
           {
             "metric": "normalized_power",
-            "reason": "power coverage is below 90%",
+            "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
           },
           {
             "metric": "intensity_factor",
-            "reason": "no valid FTP was effective for this activity",
+            "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
           },
           {
             "metric": "training_stress_score",
-            "reason": "no valid FTP was effective for this activity",
+            "reason": "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
           },
           {
             "metric": "heart_rate",
@@ -1025,7 +1375,6 @@ exports[`CyclingTrainingMetricsRepository > returns a stable cursor and never do
         "average_power_watts": 200,
         "kind": "calculated_read_model",
         "maximum_heart_rate_bpm": 155,
-        "normalized_power_watts": 205,
       },
       "provider_id": "peloton",
       "quality": {
@@ -1051,7 +1400,7 @@ exports[`CyclingTrainingMetricsRepository > returns a stable cursor and never do
   "definitions": {
     "aerobic_efficiency": "Mean synchronized power divided by mean synchronized heart rate.",
     "cardiac_drift": "100 × (first-half power:HR - second-half power:HR) / first-half power:HR, using equal elapsed halves.",
-    "intensity_factor": "Normalized power divided by FTP effective on the activity date.",
+    "intensity_factor": "Canonical normalized power divided by computed eFTP effective for the activity.",
     "interval_detection": "Recorded boundaries take precedence; otherwise work requires a 30-second mean at or above 105% of effective FTP.",
     "normalized_power": "Fourth root of the mean fourth power of complete 30-second rolling average power.",
     "training_stress_score": "Elapsed hours multiplied by intensity factor squared and 100.",
@@ -1066,255 +1415,4 @@ exports[`CyclingTrainingMetricsRepository > returns a stable cursor and never do
   },
   "requested_best_power_durations_seconds": [],
 }
-`;
-
-exports[`CyclingTrainingMetricsRepository > uses the setting effective on each activity date and explains missing FTP 1`] = `
-{
-  "activities": [
-    {
-      "activity_id": "00000000-0000-4000-8000-000000000012",
-      "best_powers": [],
-      "date": "2025-12-20",
-      "duration_seconds": 300,
-      "ended_at": "2025-12-20T15:05:00.000Z",
-      "member_activity_ids": [
-        "00000000-0000-4000-8000-000000000012",
-      ],
-      "metrics": {
-        "aerobic_efficiency": {
-          "paired_seconds": 0,
-          "power_to_heart_rate_ratio": null,
-        },
-        "cadence": {
-          "average_rpm": null,
-        },
-        "cardiac_drift": {
-          "first_half_power_to_heart_rate": null,
-          "method": "equal_elapsed_time_halves_power_to_heart_rate",
-          "paired_seconds": 0,
-          "percent": null,
-          "second_half_power_to_heart_rate": null,
-        },
-        "coverage": {
-          "cadence": {
-            "coverage_pct": 0,
-            "covered_seconds": 0,
-            "largest_gap_seconds": null,
-            "median_sample_interval_seconds": null,
-            "missing_seconds": 300,
-            "observed_samples": 0,
-            "zero_seconds": 0,
-          },
-          "heart_rate": {
-            "coverage_pct": 0,
-            "covered_seconds": 0,
-            "largest_gap_seconds": null,
-            "median_sample_interval_seconds": null,
-            "missing_seconds": 300,
-            "observed_samples": 0,
-            "zero_seconds": 0,
-          },
-          "power": {
-            "coverage_pct": 100,
-            "covered_seconds": 300,
-            "largest_gap_seconds": 1,
-            "median_sample_interval_seconds": 1,
-            "missing_seconds": 0,
-            "observed_samples": 300,
-            "zero_seconds": 0,
-          },
-        },
-        "heart_rate": {
-          "average_bpm": null,
-          "maximum_bpm": null,
-        },
-        "heart_rate_zones": null,
-        "interval_detection": null,
-        "interval_source": "none",
-        "intervals": [],
-        "power": {
-          "average_watts": 200,
-          "intensity_factor": null,
-          "normalized_watts": 200,
-          "training_stress_score": null,
-          "variability_index": 1,
-          "work_kilojoules": 60,
-        },
-        "power_zones": null,
-        "unavailable_reasons": [
-          {
-            "metric": "intensity_factor",
-            "reason": "no valid FTP was effective for this activity",
-          },
-          {
-            "metric": "training_stress_score",
-            "reason": "no valid FTP was effective for this activity",
-          },
-          {
-            "metric": "heart_rate",
-            "reason": "no heart-rate samples are available",
-          },
-          {
-            "metric": "cadence",
-            "reason": "no cadence samples are available",
-          },
-          {
-            "metric": "aerobic_efficiency",
-            "reason": "no synchronized power and heart-rate samples are available",
-          },
-          {
-            "metric": "cardiac_drift",
-            "reason": "activity is shorter than 20 minutes",
-          },
-        ],
-        "value_kind": "calculated_from_samples",
-      },
-      "modality": "indoor",
-      "name": "Power Zone Endurance",
-      "provenance": {
-        "activity_timezone": "America/New_York",
-        "duplicate_merged": false,
-        "power_measurement_kinds": [
-          "direct",
-        ],
-        "sample_source_providers": [
-          "wahoo",
-        ],
-        "timezone_assumption_required": false,
-        "timezone_source": "provider_timezone",
-      },
-      "provider_aggregates": {
-        "average_heart_rate_bpm": 140,
-        "average_power_watts": 200,
-        "kind": "calculated_read_model",
-        "maximum_heart_rate_bpm": 155,
-        "normalized_power_watts": 205,
-      },
-      "provider_id": "peloton",
-      "quality": {
-        "reasons": [],
-        "status": "high",
-        "trustworthy_for_longitudinal_comparison": true,
-      },
-      "source_devices": [
-        "KICKR",
-      ],
-      "source_providers": [
-        "apple_health",
-        "peloton",
-      ],
-      "started_at": "2025-12-20T15:00:00.000Z",
-      "thresholds": {
-        "ftp": null,
-        "threshold_heart_rate": null,
-      },
-    },
-  ],
-  "definitions": {
-    "aerobic_efficiency": "Mean synchronized power divided by mean synchronized heart rate.",
-    "cardiac_drift": "100 × (first-half power:HR - second-half power:HR) / first-half power:HR, using equal elapsed halves.",
-    "intensity_factor": "Normalized power divided by FTP effective on the activity date.",
-    "interval_detection": "Recorded boundaries take precedence; otherwise work requires a 30-second mean at or above 105% of effective FTP.",
-    "normalized_power": "Fourth root of the mean fourth power of complete 30-second rolling average power.",
-    "training_stress_score": "Elapsed hours multiplied by intensity factor squared and 100.",
-    "variability_index": "Normalized power divided by average power.",
-    "work_kilojoules": "Sum of covered one-second power values divided by 1,000.",
-  },
-  "next_cursor": null,
-  "range": {
-    "end_date": "2025-12-31",
-    "start_date": "2025-12-01",
-    "timezone": "UTC",
-  },
-  "requested_best_power_durations_seconds": [],
-}
-`;
-
-exports[`CyclingTrainingMetricsRepository > uses the setting effective on each activity date and explains missing FTP 2`] = `
-[
-  "[{"value":["\\n        SELECT *\\n        FROM fitness.sport_settings\\n        WHERE user_id = "]},"00000000-0000-4000-8000-000000000001",{"value":["\\n          AND sport = "]},"cycling",{"value":["\\n        ORDER BY effective_from DESC\\n      "]}]",
-  "[{"value":["\\n              SELECT\\n                activity_id::text AS member_activity_id,\\n                interval_index,\\n                label,\\n                interval_type,\\n                started_at,\\n                ended_at,\\n                source_kind,\\n                source_provider,\\n                source_activity_id,\\n                segment_type,\\n                target_intensity,\\n                target_zone,\\n                target_cadence_rpm,\\n                target_power_watts,\\n                target_resistance,\\n                work_recovery_kind,\\n                raw\\n              FROM fitness.activity_interval\\n              WHERE activity_id IN ("]},{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"decoder":{},"shouldInlineParams":false,"usedTables":[],"queryChunks":[{"value":[""]},"00000000-0000-4000-8000-000000000012",{"value":["::uuid"]}]}]},{"value":[")\\n              ORDER BY activity_id, interval_index\\n            "]}]",
-]
-`;
-
-exports[`CyclingTrainingMetricsRepository > uses the setting effective on each activity date and explains missing FTP 3`] = `
-[
-  {
-    "parameters": {
-      "endDate": "2025-12-31",
-      "modalities": [],
-      "pageLimit": 11,
-      "providers": [],
-      "startDate": "2025-12-01",
-      "timezone": "UTC",
-      "userId": "00000000-0000-4000-8000-000000000001",
-    },
-    "query": "/* cycling-training-metrics:activities */
-      SELECT
-        toString(cycling.activity_id) AS activity_id,
-        toString(toDate(toTimeZone(cycling.started_at, {timezone:String}))) AS activity_date,
-        formatDateTime(cycling.started_at, '%Y-%m-%dT%H:%i:%S.%fZ', 'UTC') AS started_at,
-        if(cycling.ended_at IS NULL, NULL,
-          formatDateTime(cycling.ended_at, '%Y-%m-%dT%H:%i:%S.%fZ', 'UTC')) AS ended_at,
-        cycling.elapsed_seconds AS elapsed_seconds,
-        cycling.modality AS modality,
-        cycling.activity_name AS activity_name,
-        cycling.provider_id AS provider_id,
-        activity.source_providers AS source_providers,
-        activity.member_activity_ids AS member_activity_ids,
-        activity.timezone AS activity_timezone,
-        activity.local_time_source AS local_time_source,
-        cycling.average_power AS aggregate_average_power,
-        cycling.normalized_power AS aggregate_normalized_power,
-        cycling.average_heart_rate AS aggregate_average_heart_rate,
-        cycling.max_heart_rate AS aggregate_max_heart_rate
-      FROM analytics.cycling_activity AS cycling FINAL
-      INNER JOIN analytics.deduped_activities AS activity FINAL
-        ON activity.activity_id = cycling.activity_id
-        AND activity.user_id = cycling.user_id
-      WHERE cycling.user_id = {userId:UUID}
-        AND cycling.is_deleted = 0
-        AND activity.is_deleted = 0
-        AND toDate(toTimeZone(cycling.started_at, {timezone:String}))
-          BETWEEN toDate({startDate:String}) AND toDate({endDate:String})
-        AND (empty({modalities:Array(String)}) OR has({modalities:Array(String)}, cycling.modality))
-        AND (empty({providers:Array(String)}) OR hasAny(activity.source_providers, {providers:Array(String)}))
-
-      ORDER BY cycling.started_at DESC, cycling.activity_id ASC
-      LIMIT {pageLimit:UInt32}",
-  },
-  {
-    "parameters": {
-      "activityIds": [
-        "00000000-0000-4000-8000-000000000012",
-      ],
-      "userId": "00000000-0000-4000-8000-000000000001",
-    },
-    "query": "/* cycling-training-metrics:samples */
-            SELECT
-              toString(sensor.activity_id) AS activity_id,
-              dateDiff('millisecond', activity.started_at, sensor.recorded_at) / 1000 AS elapsed_seconds,
-              if(countIf(sensor.channel = 'power') = 0, NULL,
-                maxIf(sensor.scalar, sensor.channel = 'power')) AS power,
-              if(countIf(sensor.channel = 'heart_rate') = 0, NULL,
-                maxIf(sensor.scalar, sensor.channel = 'heart_rate')) AS heart_rate,
-              if(countIf(sensor.channel = 'cadence') = 0, NULL,
-                maxIf(sensor.scalar, sensor.channel = 'cadence')) AS cadence,
-              arraySort(groupUniqArrayIf(sensor.provider_id, sensor.provider_id != '')) AS source_providers,
-              arraySort(groupUniqArrayIf(sensor.device_id, sensor.device_id != '')) AS source_devices,
-              arraySort(groupUniqArrayIf(sensor.measurement_kind,
-                sensor.channel = 'power' AND sensor.measurement_kind != '')) AS power_measurement_kinds,
-              arraySort(groupUniqArray(tuple(sensor.channel, sensor.provider_id,
-                sensor.device_id, sensor.measurement_kind))) AS stream_evidence
-            FROM analytics.activity_sensor_sample AS sensor FINAL
-            INNER JOIN analytics.deduped_activities AS activity FINAL
-              ON activity.activity_id = sensor.activity_id AND activity.user_id = sensor.user_id
-            WHERE sensor.user_id = {userId:UUID}
-              AND sensor.activity_id IN ({activityIds:Array(UUID)})
-              AND sensor.channel IN ('power', 'heart_rate', 'cadence')
-              AND sensor.is_deleted = 0
-            GROUP BY sensor.activity_id, activity.started_at, sensor.recorded_at
-            ORDER BY sensor.activity_id, sensor.recorded_at",
-  },
-]
 `;

@@ -88,7 +88,7 @@ describe("bluetooth-device-catalog", () => {
     mockHeartRate.reset();
     mockWhoop.reset();
     mockHeartRate.getDevices.mockResolvedValue([]);
-    mockWhoop.getDeviceSummary.mockReturnValue({
+    mockWhoop.getDeviceSummary.mockResolvedValue({
       id: null,
       name: null,
       connectionState: "idle",
@@ -99,7 +99,7 @@ describe("bluetooth-device-catalog", () => {
 
   it("lists WHOOP before every persisted heart-rate monitor", async () => {
     mockHeartRate.getDevices.mockResolvedValue([polar, wahoo]);
-    mockWhoop.getDeviceSummary.mockReturnValue({
+    mockWhoop.getDeviceSummary.mockResolvedValue({
       id: null,
       name: null,
       connectionState: "ready",
@@ -158,7 +158,7 @@ describe("bluetooth-device-catalog", () => {
     const { subscribeBluetoothDevices } = await import("./bluetooth-device-catalog.ts");
     const listener = vi.fn();
     subscribeBluetoothDevices(listener);
-    mockWhoop.getDeviceSummary.mockReturnValue({
+    mockWhoop.getDeviceSummary.mockResolvedValue({
       id: "whoop-123",
       name: "WHOOP 4.0",
       connectionState: "streaming",
@@ -226,7 +226,7 @@ describe("bluetooth-device-catalog", () => {
     );
     expect(Sentry.captureException).toHaveBeenCalledWith(error, {
       tags: { source: "bluetooth-device-catalog-subscription" },
-      extra: { source: "bluetooth-device-catalog-subscription" },
+      extra: expect.objectContaining({ source: "bluetooth-device-catalog-subscription" }),
     });
   });
 

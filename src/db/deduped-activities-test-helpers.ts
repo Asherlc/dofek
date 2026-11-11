@@ -44,12 +44,9 @@ export function renderDedupedActivitiesSelectSql(
   return renderDbtModelSql(readModelSql("deduped_activities.sql"), {
     isIncremental: true,
     activityRefreshScoped: scopedIds !== undefined,
+    activityRefreshIds: scopedIds,
   })
     .replaceAll('{{ var("activity_refresh_user_id") }}', testUserId)
-    .replaceAll(
-      "{{ activity_refresh_ids() }}",
-      `CAST([${(scopedIds ?? []).map((id) => `'${id}'`).join(",")}], 'Array(UUID)')`,
-    )
     .replace(/{{ ref\('activity_source_records'\) }}/g, `${targetSchema}.activity_source_records`)
     .replace(/{{ ref\('deduped_sensor'\) }}/g, `${targetSchema}.deduped_sensor`)
     .replace(
@@ -306,7 +303,8 @@ function createDedupedActivitiesTableSql(targetSchema: string): string {
   origin_evidence Array(Map(String, String)),
   refresh_version UInt64,
   is_deleted UInt8,
-  refreshed_at DateTime64(9, 'UTC')
+  refreshed_at DateTime64(9, 'UTC'),
+  primary_canonical_type Nullable(String)
 )
 ENGINE = ReplacingMergeTree(refresh_version)
 ORDER BY (user_id, activity_id)`;
@@ -328,6 +326,7 @@ function createSourceActivityTableSql(targetSchema: string): string {
   return `CREATE TABLE ${targetSchema}.source_activity (
   id UUID,
   user_id UUID,
+  provider_type Nullable(String),
   provider_id Nullable(String),
   external_id Nullable(String),
   source_name Nullable(String),

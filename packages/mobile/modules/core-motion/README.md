@@ -34,7 +34,7 @@ Availability still varies by device, so callers must check
 | `getMotionAuthorizationStatus()` | Returns `authorized`, `denied`, `restricted`, or `notDetermined`. |
 | `requestMotionPermission()` | Triggers authorization through a short motion-activity query and returns the resulting status. |
 | `startRecording(durationSeconds)` | Starts recording; durations above 12 hours are clamped. |
-| `isRecordingActive()` | Reports whether this app has previously started a session, not whether Apple is currently recording. |
+| `isRecordingActive()` | Requires current availability and authorization plus an unexpired recording deadline; see the [native module](ios/CoreMotionModule.swift) and [state store](ios/CoreMotionAccountStateStore.swift). |
 | `queryRecordedData(fromDate, toDate)` | Returns ISO-timestamped `{ x, y, z }` samples for the requested interval. |
 | `getLastSyncTimestamp()` / `setLastSyncTimestamp()` | Reads or writes the app's persisted upload cursor. |
 
@@ -42,6 +42,18 @@ Availability still varies by device, so callers must check
 seconds. It rejects malformed dates with `COREMOTION_INVALID_DATE` and returns
 an empty array when recording is unavailable or Apple has no retained samples
 for the interval.
+
+The [native collection reporter](ios/CoreMotionCollectionActivityReporter.swift)
+contributes `core-motion` to the synchronous
+`Dofek.collectionActivityRequested` snapshot only while the requested session
+has not expired, accelerometer recording is available, and
+[`CMSensorRecorder.authorizationStatus()`](https://developer.apple.com/documentation/coremotion/cmsensorrecorder/authorizationstatus%28%29)
+is authorized. The app-closed collection warning uses this native snapshot.
+Starting recording renews the persisted deadline with the requested duration,
+bounded by Apple's [12-hour recording limit](https://developer.apple.com/documentation/coremotion/cmsensorrecorder/recordaccelerometer%28forduration%3A%29);
+only authorized requests retain a deadline, while rejected requests and
+account purge clear it. The deadline tracks the requested session, and does
+not verify hardware sample delivery; physical-device validation remains required.
 
 ## Usage
 
@@ -92,7 +104,8 @@ changes require a new native build in its
 Use a physical iPhone to validate availability, authorization, sampling, and
 background recording; a Simulator build does not prove those hardware paths.
 
-The platform-neutral ISO date parser has focused Swift tests:
+The platform-neutral date parser, recording deadline, account purge, and
+synchronous collection reporter have focused Swift tests:
 
 ```bash
 cd packages/mobile/modules/core-motion

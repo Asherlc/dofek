@@ -2,7 +2,7 @@ import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import { Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
-import { climbingLogEntryDetailSchema } from "../../../server/src/contracts/climbing-log-contracts.ts";
+import { decodeClimbingLogEntryDetailResponse } from "../../../server/src/contracts/climbing-log-contracts.ts";
 import { colors } from "../../theme";
 import { ClimbingLogEntryDetails } from "../ClimbingLogEntryDetails";
 import { formatCellValue, formatColumnName } from "./provider-detail-record-format";
@@ -21,7 +21,9 @@ export function ProviderRecordDetailModal({
   const router = useRouter();
   const record = state.data;
   const climbingLog =
-    dataType === "climbingLogEntries" && record ? climbingLogEntryDetailSchema.parse(record) : null;
+    dataType === "climbingLogEntries" && record
+      ? decodeClimbingLogEntryDetailResponse(record)
+      : null;
   const rawValue = record?.raw;
   const raw = typeof rawValue === "object" && rawValue !== null ? rawValue : null;
 

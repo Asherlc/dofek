@@ -16,8 +16,11 @@ type QueryOptions = Parameters<NonNullable<ClickHouseCommandClient["query"]>>[0]
 class TestClickHouseClient implements ClickHouseCommandClient {
   readonly command = vi.fn(async () => undefined);
   readonly queryCalls: QueryOptions[] = [];
+  readonly tableCount: number | string;
 
-  constructor(readonly tableCount: number | string) {}
+  constructor(tableCount: number | string) {
+    this.tableCount = tableCount;
+  }
 
   async query<TRow extends object>(options: QueryOptions): Promise<{ json(): Promise<TRow[]> }> {
     this.queryCalls.push(options);

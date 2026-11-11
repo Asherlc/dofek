@@ -4,23 +4,26 @@ import type {
   ClimbingLocationMap,
   ClimbingLocationMapEntry,
 } from "@dofek/training/climbing-location-map";
+import { createMapStyle } from "@dofek/training/map-style";
+import { Camera, type CameraRef, Marker, Map as NativeMap } from "@maplibre/maplibre-react-native";
 import { useRouter } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { type LayoutChangeEvent, Pressable, StyleSheet, Text, View } from "react-native";
-import MapView, { Marker, type Region } from "react-native-maps";
+import {
+  type LayoutChangeEvent,
+  Pressable,
+  StyleSheet,
+  Text,
+  useColorScheme,
+  View,
+} from "react-native";
+import { captureException } from "../lib/telemetry";
 import { colors, radius, spacing } from "../theme";
 import { ClimbingLogAttachment } from "./ClimbingLogAttachment";
+import { MapAttribution } from "./MapAttribution";
 import { MapProcessingState } from "./MapProcessingState";
 import { QueryStatePanel } from "./QueryStatePanel";
 
 const MAP_HEIGHT = 280;
-
-function zoomForRegion(region: Region, width: number) {
-  return Math.max(
-    0,
-    Math.min(19, Math.floor(Math.log2((360 * width) / (256 * region.longitudeDelta)))),
-  );
-}
 
 export function ClimbingLocationMapCard({
   data,
@@ -32,7 +35,10 @@ export function ClimbingLocationMapCard({
   error?: { message: string } | null;
 }) {
   const router = useRouter();
-  const map = useRef<MapView>(null);
+  const camera = useRef<CameraRef>(null);
+  const mode = useColorScheme() === "dark" ? "dark" : "light";
+  const mapStyle = useMemo(() => createMapStyle(mode), [mode]);
+  const [mapFailed, setMapFailed] = useState(false);
   const [mapWidth, setMapWidth] = useState<number | null>(null);
   const [mapReady, setMapReady] = useState(false);
   const [zoom, setZoom] = useState(0);
@@ -42,39 +48,38 @@ export function ClimbingLocationMapCard({
   const west = data?.bounds?.west;
   const north = data?.bounds?.north;
   const east = data?.bounds?.east;
-  const fitRegion = useMemo<Region | null>(() => {
+  const fitBounds = useMemo<[number, number, number, number] | null>(() => {
     if (south == null || west == null || north == null || east == null) return null;
     const longitudeSpan = east < west ? east + 360 - west : east - west;
     const longitude = west + longitudeSpan / 2;
     const latitude = (south + north) / 2;
-    const latitudeScale = Math.max(0.01, Math.cos((latitude * Math.PI) / 180));
-    const aspectRatio = (mapWidth ?? 320) / MAP_HEIGHT;
-    const latitudeSpan = Math.max(0.005, (north - south) * 1.3);
-    const paddedLongitudeSpan = Math.max(0.005, longitudeSpan * 1.3);
-    return {
-      latitude,
-      longitude: longitude > 180 ? longitude - 360 : longitude,
-      latitudeDelta: Math.min(
-        170,
-        Math.max(latitudeSpan, (paddedLongitudeSpan * latitudeScale) / aspectRatio),
-      ),
-      longitudeDelta: Math.min(
-        360,
-        Math.max(paddedLongitudeSpan, (latitudeSpan * aspectRatio) / latitudeScale),
-      ),
-    };
-  }, [south, west, north, east, mapWidth]);
+    const latSpan = Math.max(0.005, (north - south) * 1.3);
+    const lngSpan = Math.max(0.005, longitudeSpan * 1.3);
+    return [
+      longitude - lngSpan / 2,
+      latitude - latSpan / 2,
+      longitude + lngSpan / 2,
+      latitude + latSpan / 2,
+    ];
+  }, [south, west, north, east]);
+  const initialViewState = useMemo(
+    () => (fitBounds ? { bounds: fitBounds } : undefined),
+    [fitBounds],
+  );
 
   useEffect(() => {
-    if (!fitRegion) {
+    if (!fitBounds) {
       setMapReady(false);
+      setMapFailed(false);
       return;
     }
     if (!mapWidth) return;
-    setZoom(zoomForRegion(fitRegion, mapWidth));
     setSelectedId(null);
-    map.current?.animateToRegion(fitRegion, 300);
-  }, [fitRegion, mapWidth]);
+    camera.current?.fitBounds(fitBounds, {
+      duration: 300,
+      padding: { top: 10, bottom: 10, left: 10, right: 10 },
+    });
+  }, [fitBounds, mapWidth]);
 
   const selected = data?.nodes.find((node) => node.id === selectedId);
 
@@ -94,30 +99,31 @@ export function ClimbingLocationMapCard({
           minHeight={80}
         />
       )}
-      {fitRegion ? (
+      {fitBounds ? (
         <View
           testID="climbing-location-map-wrapper"
           style={styles.mapWrapper}
           onLayout={handleLayout}
         >
           {mapWidth != null && mapWidth > 0 && (
-            <MapView
-              ref={map}
+            <NativeMap
               style={{ width: mapWidth, height: MAP_HEIGHT }}
-              initialRegion={fitRegion}
-              onRegionChangeComplete={(region) => setZoom(zoomForRegion(region, mapWidth))}
-              scrollEnabled
-              zoomEnabled
-              rotateEnabled={false}
-              pitchEnabled={false}
-              showsUserLocation={false}
-              showsPointsOfInterests={false}
-              toolbarEnabled={false}
-              onMapReady={() => setMapReady(true)}
-              loadingEnabled
-              loadingIndicatorColor={colors.accent}
-              loadingBackgroundColor={colors.surfaceSecondary}
+              mapStyle={mapStyle}
+              onRegionDidChange={(event) =>
+                setZoom(Math.max(0, Math.min(19, Math.floor(event.nativeEvent.zoom + 1))))
+              }
+              dragPan
+              touchZoom
+              touchRotate={false}
+              touchPitch={false}
+              attribution
+              onDidFinishLoadingMap={() => setMapReady(true)}
+              onDidFailLoadingMap={() => {
+                captureException(new Error("Climbing location map failed to load"));
+                setMapFailed(true);
+              }}
             >
+              <Camera ref={camera} initialViewState={initialViewState} />
               {data?.nodes
                 .filter((node) => node.minZoom <= zoom && zoom <= node.maxZoom)
                 .map((node) => {
@@ -130,27 +136,18 @@ export function ClimbingLocationMapCard({
                   return (
                     <Marker
                       key={node.id}
-                      identifier={node.id}
-                      coordinate={node.coordinates}
-                      title={label}
+                      id={node.id}
+                      lngLat={[node.coordinates.longitude, node.coordinates.latitude]}
                       accessibilityRole="button"
                       accessibilityLabel={label}
-                      anchor={{ x: 0.5, y: 0.5 }}
+                      anchor="center"
                       onPress={() => {
                         if (node.expansionZoom != null) {
-                          const longitudeDelta = (360 * mapWidth) / (256 * 2 ** node.expansionZoom);
-                          map.current?.animateToRegion(
-                            {
-                              ...node.coordinates,
-                              longitudeDelta,
-                              latitudeDelta:
-                                (longitudeDelta *
-                                  MAP_HEIGHT *
-                                  Math.cos((node.coordinates.latitude * Math.PI) / 180)) /
-                                mapWidth,
-                            },
-                            300,
-                          );
+                          camera.current?.easeTo({
+                            center: [node.coordinates.longitude, node.coordinates.latitude],
+                            zoom: node.expansionZoom - 1,
+                            duration: 300,
+                          });
                           setSelectedId(null);
                         } else {
                           setSelectedId(node.id);
@@ -172,9 +169,18 @@ export function ClimbingLocationMapCard({
                     </Marker>
                   );
                 })}
-            </MapView>
+            </NativeMap>
           )}
-          {!mapReady && (
+          {mapFailed && (
+            <View style={StyleSheet.absoluteFill}>
+              <QueryStatePanel
+                variant="error"
+                message="Map unavailable. Check your connection and reopen climbing locations."
+                minHeight={MAP_HEIGHT}
+              />
+            </View>
+          )}
+          {!mapReady && !mapFailed && (
             <View style={StyleSheet.absoluteFill}>
               <MapProcessingState />
             </View>
@@ -187,6 +193,7 @@ export function ClimbingLocationMapCard({
       ) : !error ? (
         <QueryStatePanel variant="empty" message="No climbing locations in this period" />
       ) : null}
+      {fitBounds && <MapAttribution />}
       {selected && (
         <View accessibilityLabel="Climbs at this location" style={styles.entries}>
           {selected.entries.map((entry) => (

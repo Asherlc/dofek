@@ -1,9 +1,13 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { createMapStyle } from "@dofek/training/map-style";
+import { StaticMapImageManager } from "@maplibre/maplibre-react-native";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ActivityLocation } from "dofek-server/types";
-import React from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { useColorScheme } from "react-native";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { captureException } from "../lib/telemetry";
 import { ActivityMapTile } from "./ActivityMapTile";
 
+vi.mock("../lib/telemetry", () => ({ captureException: vi.fn() }));
 const location = {
   kind: "recorded_gps",
   centroidLat: 37,
@@ -11,116 +15,115 @@ const location = {
   mapPreview: {
     width: 1024,
     height: 576,
+    center: [-122, 37],
+    zoom: 12,
     routePath: [
       { x: 100, y: 100 },
       { x: 200, y: 200 },
     ],
-    tiles: [
-      { url: "https://tiles.test/1.png", x: 0, y: 0, width: 256, height: 256 },
-      { url: "https://tiles.test/1.png", x: 256, y: 0, width: 256, height: 256 },
-    ],
   },
 } satisfies ActivityLocation;
+function measure(width = 320) {
+  fireEvent(
+    screen.getByTestId("activity-map-panel"),
+    new CustomEvent("layout", { detail: { width, height: (width * 9) / 16 } }),
+  );
+}
 
 describe("ActivityMapTile", () => {
-  afterEach(() => vi.restoreAllMocks());
-
-  it("reserves a full-width 16:9 map panel while geometry is processing", () => {
-    const nativeElement = vi.spyOn(React, "createElement");
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(StaticMapImageManager.createImage).mockResolvedValue("file:///preview.png");
+    vi.mocked(useColorScheme).mockReturnValue("light");
+  });
+  it("reserves a full-width panel while geometry is processing", () => {
     render(<ActivityMapTile location={{ kind: "processing" }} />);
-    const panel = screen.getByRole("progressbar", { name: "Processing map" }).parentElement;
-    expect(panel?.style.width).toBe("100%");
-    expect(nativeElement).toHaveBeenCalledWith(
-      "View",
-      expect.objectContaining({
-        style: expect.objectContaining({ width: "100%", aspectRatio: 16 / 9 }),
-      }),
-      expect.anything(),
-    );
+    expect(
+      screen.getByRole("progressbar", { name: "Processing map" }).parentElement?.style.width,
+    ).toBe("100%");
   });
-
-  it("uses the full card width and preview aspect ratio while image tiles load", () => {
-    const nativeElement = vi.spyOn(React, "createElement");
-    render(
-      <ActivityMapTile
-        location={{ ...location, mapPreview: { ...location.mapPreview, width: 800, height: 600 } }}
-      />,
-    );
-    const panel = screen.getByTestId("activity-route-viewport").parentElement;
-    expect(panel?.style.width).toBe("100%");
-    expect(nativeElement).toHaveBeenCalledWith(
-      "View",
-      expect.objectContaining({
-        style: expect.objectContaining({ width: "100%", aspectRatio: 800 / 600 }),
-      }),
-      expect.anything(),
-    );
-    expect(screen.getByRole("progressbar", { name: "Processing map" })).toBeTruthy();
-  });
-
-  it("keeps processing until every tile instance loads, counting repeated load events once", () => {
+  it("uses a native static image with a camera matching the scaled server overlay", async () => {
     render(<ActivityMapTile location={location} />);
+    expect(StaticMapImageManager.createImage).not.toHaveBeenCalled();
+    measure();
+    expect(StaticMapImageManager.createImage).toHaveBeenCalledWith({
+      center: [-122, 37],
+      zoom: 12 + Math.log2(320 / 1024),
+      width: 320,
+      height: 180,
+      mapStyle: createMapStyle("light"),
+      output: "base64",
+      logo: false,
+    });
+    const image = await screen.findByTestId("activity-map-preview");
     expect(screen.getByRole("progressbar", { name: "Processing map" })).toBeTruthy();
-    const tiles = screen.getAllByTestId("activity-map-preview-tile");
-    const first = tiles[0];
-    const second = tiles[1];
-    if (!first || !second) throw new Error("Expected both preview tiles");
-    fireEvent.load(first);
-    fireEvent.load(first);
-    expect(screen.getByRole("progressbar", { name: "Processing map" })).toBeTruthy();
-    fireEvent.load(second);
+    fireEvent.load(image);
     expect(screen.queryByRole("progressbar", { name: "Processing map" })).toBeNull();
     expect(screen.getByLabelText("Activity location map")).toBeTruthy();
+    expect(document.querySelector('[testid="activity-route-path"]')?.getAttribute("points")).toBe(
+      "100,100 200,200",
+    );
+    expect(screen.getByText(/OpenFreeMap.*OpenMapTiles.*OpenStreetMap/)).toBeTruthy();
+  });
+  it("keeps the server camera valid at tiny rendered sizes", async () => {
+    render(
+      <ActivityMapTile
+        location={{ ...location, mapPreview: { ...location.mapPreview, zoom: 0 } }}
+      />,
+    );
+    measure(64);
+    await waitFor(() =>
+      expect(StaticMapImageManager.createImage).toHaveBeenCalledWith(
+        expect.objectContaining({ zoom: 0, width: 1024, height: 576 }),
+      ),
+    );
   });
 
-  it("preserves a loaded preview on refresh and shows processing for a changed preview", () => {
+  it("retains an equal preview during refresh and reloads when camera or theme changes", async () => {
     const view = render(<ActivityMapTile location={location} />);
-    for (const tile of screen.getAllByTestId("activity-map-preview-tile")) fireEvent.load(tile);
-    const mountedTile = screen.getAllByTestId("activity-map-preview-tile")[0];
+    measure();
+    fireEvent.load(await screen.findByTestId("activity-map-preview"));
     view.rerender(
       <ActivityMapTile location={{ ...location, mapPreview: { ...location.mapPreview } }} />,
     );
+    expect(StaticMapImageManager.createImage).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("progressbar", { name: "Processing map" })).toBeNull();
-    expect(screen.getAllByTestId("activity-map-preview-tile")[0]).toBe(mountedTile);
-    view.rerender(
-      <ActivityMapTile
-        location={{
-          ...location,
-          mapPreview: {
-            ...location.mapPreview,
-            tiles: location.mapPreview.tiles.map((tile) => ({
-              ...tile,
-              url: "https://tiles.test/2.png",
-            })),
-          },
-        }}
-      />,
+    vi.mocked(useColorScheme).mockReturnValue("dark");
+    view.rerender(<ActivityMapTile location={location} />);
+    measure();
+    await waitFor(() => expect(StaticMapImageManager.createImage).toHaveBeenCalledTimes(2));
+    expect(StaticMapImageManager.createImage).toHaveBeenLastCalledWith(
+      expect.objectContaining({ mapStyle: createMapStyle("dark") }),
     );
-    expect(screen.getByRole("progressbar", { name: "Processing map" })).toBeTruthy();
   });
-
-  it("preserves a map failure until a changed preview starts loading", () => {
-    const view = render(<ActivityMapTile location={location} />);
-    const tile = screen.getAllByTestId("activity-map-preview-tile")[0];
-    if (!tile) throw new Error("Expected a preview tile");
-    fireEvent.error(tile);
-    expect(screen.getByText("Map unavailable")).toBeTruthy();
+  it("reports a rejected snapshot and clears processing", async () => {
+    const error = new Error("Map style download failed");
+    vi.mocked(StaticMapImageManager.createImage).mockRejectedValue(error);
+    render(<ActivityMapTile location={location} />);
+    measure();
+    expect(await screen.findByText("Map unavailable")).toBeTruthy();
+    expect(captureException).toHaveBeenCalledWith(error);
     expect(screen.queryByRole("progressbar", { name: "Processing map" })).toBeNull();
-    view.rerender(
-      <ActivityMapTile
-        location={{
-          ...location,
-          mapPreview: {
-            ...location.mapPreview,
-            tiles: location.mapPreview.tiles.map((item) => ({
-              ...item,
-              url: "https://tiles.test/2.png",
-            })),
-          },
-        }}
-      />,
+  });
+  it("reports image decoding failures", async () => {
+    render(<ActivityMapTile location={location} />);
+    measure();
+    fireEvent.error(await screen.findByTestId("activity-map-preview"));
+    expect(screen.getByText("Map unavailable")).toBeTruthy();
+    expect(captureException).toHaveBeenCalled();
+  });
+  it("ignores an obsolete snapshot after its preview unmounts", async () => {
+    let resolve: ((uri: string) => void) | undefined;
+    vi.mocked(StaticMapImageManager.createImage).mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
     );
-    expect(screen.getByRole("progressbar", { name: "Processing map" })).toBeTruthy();
-    expect(screen.getAllByTestId("activity-map-preview-tile")).toHaveLength(2);
+    const view = render(<ActivityMapTile location={location} />);
+    measure();
+    view.unmount();
+    await act(async () => resolve?.("data:image/png;base64,obsolete"));
+    expect(screen.queryByTestId("activity-map-preview")).toBeNull();
   });
 });

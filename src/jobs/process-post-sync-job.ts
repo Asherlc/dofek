@@ -38,6 +38,11 @@ export async function processPostSyncJob(
   getSensorStore: () => RefitSensorStore,
   refreshBodyMeasurements: () => Promise<void>,
 ) {
+  if (job.data.type === "climbing-catalogue") {
+    const { processClimbingCatalogueJob } = await import("./climbing-catalogue-job.ts");
+    await processClimbingCatalogueJob(job.data, db);
+    return;
+  }
   if (job.data.type === "global-maintenance") {
     await updatePostSyncProgress(job, 0, "Starting global post-sync maintenance...");
     logger.info("[post-sync] Running global post-sync maintenance");

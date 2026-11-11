@@ -12,12 +12,6 @@ export type { ActivityHrZones, StreamPoint } from "./routers/activity.ts";
 // Recovery router types
 
 export type { ActivityLocation } from "./contracts/activity-location.ts";
-// Sleep need router types
-export type {
-  SleepNeedResult,
-  SleepNeedV2,
-  SleepNight,
-} from "./contracts/sleep-need-contract.ts";
 // Climbing router types
 export type {
   ClimbingGradeProgressionRow,
@@ -37,9 +31,6 @@ export type {
   ActivityVariabilityResult,
   ActivityVariabilityRow,
   PedalDynamicsRow,
-  RampRateResult,
-  RampRateWeek,
-  TrainingMonotonyWeek,
   VerticalAscentRow,
 } from "./routers/cycling-advanced.ts";
 // Daily metrics router types
@@ -52,8 +43,6 @@ export type {
   PolarizationTrendResult,
   PolarizationWeek,
 } from "./routers/efficiency.ts";
-// Healthspan router types
-export type { HealthspanMetric, HealthspanResult } from "./routers/healthspan.ts";
 // Hiking router types
 export type {
   ActivityComparisonInstance,
@@ -68,20 +57,15 @@ export type { PmcChartResult, PmcDataPoint, TssModelInfo } from "./routers/pmc.t
 export type { CriticalPowerModel } from "./routers/power.ts";
 export type {
   HrvVariabilityRow,
-  ReadinessComponents,
-  ReadinessRow,
-  ReadinessWeights,
   SleepAnalyticsDataState,
   SleepAnalyticsResult,
   SleepConsistencyRow,
   SleepNightlyRow,
-  StrainTargetResult,
   WorkloadRatioResult,
   WorkloadRatioRow,
 } from "./routers/recovery.ts";
 // Running router types
 export type { PaceTrendRow, RunningDynamicsRow } from "./routers/running.ts";
-export type { SleepPerformanceInfo } from "./routers/sleep-need.ts";
 // Strength router types
 export type {
   EstimatedOneRepMaxEntry,

@@ -1,6 +1,24 @@
 # Loading Performance Monitors
 
-These monitor specs live in `scripts/loading-performance-monitors.ts`. They are not automatically applied; validate the APL against the production `dofek-logs` schema before creating or updating Axiom monitors.
+These monitor specs live in [scripts/loading-performance-monitors.ts](../../scripts/loading-performance-monitors.ts). They are not automatically applied; validate each APL query against its production dataset before creating or updating Axiom monitors.
+
+Logs use `dofek-logs`; spans use `dofek-traces`, following Axiom's
+[dedicated dataset requirement for each OpenTelemetry signal](https://axiom.co/docs/send-data/opentelemetry).
+Log messages are in `body`, severity is in `severity_text`, and log metadata is
+grouped into the `attributes.custom` map before export. Use
+`['attributes.custom']['consumer_lag']`, for example. Custom trace attributes
+also use `attributes.custom`, accessed as
+`['attributes.custom']['clickhouse.queue.wait_ms']`. Axiom documents these
+[map-field access paths](https://axiom.co/docs/apl/data-types/map-fields).
+The [collector](../../deploy/otel-collector-config.yaml) and
+[direct mobile exporter](../../packages/mobile/lib/telemetry.ts) group log
+metadata before sending it to Axiom.
+
+The slow tRPC monitor parses durations and procedure names from `body` because
+the [tRPC logger](../../packages/server/src/trpc.ts) writes them as message text.
+The metric-stream monitors read structured metadata emitted by the
+[consumer](../../src/metric-stream/redpanda-consumer.ts), while queue wait uses
+the [ClickHouse limiter's span attributes](../../packages/server/src/repositories/limited-activity-sensor-store.ts).
 
 ## Required monitors
 
@@ -16,15 +34,17 @@ These monitor specs live in `scripts/loading-performance-monitors.ts`. They are 
 
 ## Creation workflow
 
-1. Run Axiom schema discovery for `dofek-logs` and confirm the fields used by each query exist in the target window. On 2026-07-02, dataset discovery succeeded but `getschema` was blocked by the Axiom limiter with trace `895049a092736a1149ccd3904e5d1bcd`; rerun schema discovery before creating live monitors.
+1. Run Axiom schema discovery for both `dofek-logs` and `dofek-traces`, then confirm that each query's fields are populated in the target window.
 2. Dry-run each `aplQuery` from `scripts/loading-performance-monitors.ts` against recent production data.
 3. Create or update Axiom monitors with the checked-in names, thresholds, ranges, intervals, and group notification settings.
 4. Record the monitor IDs next to the issue or incident that creates them.
 
 The metric-stream monitors require a deployed sink that emits
-`metric_stream.consumer_batch`. Do not create them against guessed fields: the
-local Axiom MCP credential returned HTTP 401 on 2026-09-03, so schema validation
-and monitor creation remain blocked until that credential is renewed.
+`metric_stream.consumer_batch`. Validate actual events rather than guessing
+field names or treating historical authentication failures as current evidence.
+Attribute grouping applies to newly emitted logs; historical flattened fields
+retain their previous paths. These monitor queries target the current map
+schema. Axiom treats [map properties and flattened fields as separate fields](https://axiom.co/docs/apl/data-types/map-fields#map-fields-and-flattened-fields).
 
 Axiom documents monitor management through the `/v2/monitors` API, threshold and match monitor behavior in monitor examples, and `percentile()` as an APL aggregation function for distribution thresholds. See the Axiom monitor API docs, monitor examples, and percentile docs for the current platform details:
 

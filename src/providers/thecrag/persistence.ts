@@ -1,8 +1,9 @@
 import { z } from "zod";
-import { persistClimbingLogSnapshot } from "../../db/climbing-log-snapshot.ts";
-import type { SourceClimbingLogEntry } from "../../db/climbing-log-sync.ts";
+import {
+  persistClimbingLogEntries,
+  type SourceClimbingLogEntry,
+} from "../../db/climbing-log-sync.ts";
 import type { SyncDatabase } from "../../db/index.ts";
-import { MissingRouteMethodError } from "../../db/source-attempt-facts.ts";
 import { captureException } from "../../lib/error-reporting.ts";
 
 export async function writeClimbingRecords(
@@ -12,7 +13,7 @@ export async function writeClimbingRecords(
   records: readonly SourceClimbingLogEntry[],
 ): Promise<number> {
   try {
-    const written = await persistClimbingLogSnapshot(database, {
+    const written = await persistClimbingLogEntries(database, {
       userId,
       providerId,
       entries: records,
@@ -20,10 +21,9 @@ export async function writeClimbingRecords(
     return written.recordsSynced;
   } catch (error) {
     // Drizzle query errors include the complete bound logbook payload.
-    const sanitized =
-      error instanceof MissingRouteMethodError
-        ? error
-        : new Error("theCrag could not save your logbook. Try again or contact support.");
+    const sanitized = new Error(
+      "theCrag could not save your logbook. Try again or contact support.",
+    );
     const postgresCode = z
       .object({ code: z.string().regex(/^[0-9A-Z]{5}$/) })
       .safeParse(error instanceof Error ? (error.cause ?? error) : error);

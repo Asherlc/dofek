@@ -52,6 +52,15 @@ function frequentProvider(concurrency = 3, limiter?: RateLimiterConfig): Provide
  * Concurrency is conservative to avoid hitting undocumented soft limits.
  */
 const PROVIDER_QUEUE_CONFIGS: ReadonlyMap<string, ProviderQueueConfig> = new Map([
+  ["kilter", { concurrency: 1, syncTier: "daily" }],
+  ["crimpd", { concurrency: 1, syncTier: "daily" }],
+  ["eight-a", { concurrency: 1, syncTier: "daily" }],
+  ["tension", { concurrency: 1, syncTier: "daily" }],
+  ["grasshopper", { concurrency: 1, syncTier: "daily" }],
+  ["decoy", { concurrency: 1, syncTier: "daily" }],
+  ["soill", { concurrency: 1, syncTier: "daily" }],
+  ["touchstone", { concurrency: 1, syncTier: "daily" }],
+  ["aurora-board", { concurrency: 1, syncTier: "daily" }],
   // ── Providers with documented rate limits ──
   // Strava: 100 req/15min (using 90 for safety margin)
   ["strava", realtimeProvider(2, { max: 90, duration: 15 * 60_000 })],
@@ -61,20 +70,15 @@ const PROVIDER_QUEUE_CONFIGS: ReadonlyMap<string, ProviderQueueConfig> = new Map
   ["wahoo", realtimeProvider()],
   ["polar", realtimeProvider()],
   ["ride-with-gps", realtimeProvider()],
-  ["velohero", realtimeProvider()],
   ["xert", realtimeProvider()],
   ["cycling_analytics", realtimeProvider()],
 
   // ── Frequent tier ──
-  // Garmin sync is step-chained: one BullMQ job per sync phase (activities, sleep, etc.).
-  // Job limiter paces phases; adaptive fetch paces individual HTTP calls.
-  ["garmin", frequentProvider(1, { max: 1, duration: 5_000 })],
   // WHOOP sync is step-chained: one BullMQ job ≈ one API step (~3 HTTP calls with auth).
   // Job limiter paces steps; adaptive fetch paces individual HTTP calls.
   ["whoop", frequentProvider(1, { max: 1, duration: 1_000 })],
   ["ziva", { concurrency: 1, syncTier: "frequent" }],
   ["kaya", frequentProvider(1)],
-  ["alltrails", frequentProvider(1)],
   ["oura", frequentProvider()],
   ["peloton", frequentProvider()],
   ["ultrahuman", frequentProvider()],
@@ -92,6 +96,7 @@ const PROVIDER_QUEUE_CONFIGS: ReadonlyMap<string, ProviderQueueConfig> = new Map
   ["thecrag", { concurrency: 1, syncTier: "daily" }],
 
   // ── On-demand tier ──
+  ["garmin", { concurrency: 3, syncTier: "on-demand" }],
   ["bodyspec", { concurrency: 1, syncTier: "on-demand" }],
 ]);
 

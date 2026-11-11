@@ -85,24 +85,37 @@ describe("resolveActivityIconCategory", () => {
 });
 
 describe("getActivityIconInfo", () => {
-  it("returns category metadata for each icon group", () => {
-    expect(getActivityIconInfo("running")).toEqual({
-      category: "running",
-      emoji: "\u{1F3C3}",
-      gradientFrom: "#ea580c",
-      gradientTo: "#c2410c",
-    });
-    expect(getActivityIconInfo("rowing")).toEqual({
-      category: "rowing",
-      emoji: "\u{1F6A3}",
-      gradientFrom: "#0284c7",
-      gradientTo: "#0369a1",
-    });
-    expect(getActivityIconInfo("dancing")).toEqual({
-      category: "dance",
-      emoji: "\u{1F483}",
-      gradientFrom: "#d946ef",
-      gradientTo: "#a21caf",
-    });
+  it.each([
+    "cycling",
+    "running",
+    "swimming",
+    "walking",
+    "strength",
+    "yoga",
+    "hiit",
+    "elliptical",
+    "rowing",
+    "skiing",
+    "climbing",
+    "hangboard",
+    "surfing",
+    "soccer",
+    "dance",
+    "archery",
+  ])("provides canonical rounded outline geometry for %s", (activityType) => {
+    const info = getActivityIconInfo(activityType);
+    expect(info.category).toBe(resolveActivityIconCategory(activityType));
+    expect(info.svg).toContain('viewBox="0 0 32 32"');
+    expect(info.svg).toContain('stroke="currentColor"');
+    expect(info.svg).toContain('stroke-linecap="round"');
+    expect(info.svg).toContain('stroke-linejoin="round"');
+    expect(info.svg).toContain('fill="none"');
+  });
+
+  it("shares family geometry across aliases and uses the neutral fallback", () => {
+    expect(getActivityIconInfo(" Cycling ").svg).toBe(getActivityIconInfo("cycling").svg);
+    expect(getActivityIconInfo(" Hangboarding ").svg).toBe(getActivityIconInfo("hangboard").svg);
+    expect(getActivityIconInfo("archery").svg).toBe(getActivityIconInfo("other").svg);
+    expect(getActivityIconInfo("hangboard").svg).not.toBe(getActivityIconInfo("climbing").svg);
   });
 });

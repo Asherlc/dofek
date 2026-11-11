@@ -8,7 +8,6 @@ vi.mock("@sentry/node", () => ({
 const mockWaitForPeerDbActivityDeletes = vi.fn().mockResolvedValue(undefined);
 const mockWaitForPeerDbActivityRestores = vi.fn().mockResolvedValue(undefined);
 const mockRunActivityReadModelBuild = vi.fn().mockResolvedValue(undefined);
-const mockRunProviderDeleteReadModelBuild = vi.fn().mockResolvedValue(undefined);
 const mockWaitForMetricStreamDeleteAcknowledgement = vi.fn().mockResolvedValue(undefined);
 const mockWaitForPeerDbProviderDeletes = vi.fn().mockResolvedValue(undefined);
 const mockInvalidateByPrefix = vi.fn().mockResolvedValue(undefined);
@@ -27,12 +26,13 @@ vi.mock("../logger.ts", () => ({
 vi.mock("../analytics/activity-read-model-build.ts", () => ({
   waitForPeerDbActivityDeletes: (...args: unknown[]) => mockWaitForPeerDbActivityDeletes(...args),
   waitForPeerDbActivityRestores: (...args: unknown[]) => mockWaitForPeerDbActivityRestores(...args),
-  runActivityReadModelBuild: (...args: unknown[]) => mockRunActivityReadModelBuild(...args),
-  runProviderDeleteReadModelBuild: (...args: unknown[]) =>
-    mockRunProviderDeleteReadModelBuild(...args),
   waitForMetricStreamDeleteAcknowledgement: (...args: unknown[]) =>
     mockWaitForMetricStreamDeleteAcknowledgement(...args),
   waitForPeerDbProviderDeletes: (...args: unknown[]) => mockWaitForPeerDbProviderDeletes(...args),
+}));
+
+vi.mock("../analytics-refresh-queue.ts", () => ({
+  refreshAnalyticsAndWait: (...args: unknown[]) => mockRunActivityReadModelBuild(...args),
 }));
 
 vi.mock("../db/clickhouse.ts", () => ({
@@ -49,6 +49,22 @@ vi.mock("../lib/cache.ts", () => ({
 import { processActivityDeleteAnalyticsJob } from "./process-activity-delete-analytics-job.ts";
 
 const fakeDb = { execute: vi.fn() };
+let sharedLockHeld = false;
+const sharedLockEntered = vi.fn();
+const workLockPool = {
+  close: async () => {},
+  tryRunWithExclusiveUserLock: async <T>(_userId: string, work: () => Promise<T>) =>
+    sharedLockHeld ? undefined : work(),
+  runWithSharedUserLock: async <T>(_userId: string, work: () => Promise<T>) => {
+    sharedLockEntered();
+    sharedLockHeld = true;
+    try {
+      return await work();
+    } finally {
+      sharedLockHeld = false;
+    }
+  },
+};
 
 function createActivityAnalyticsJob(
   type:
@@ -90,30 +106,101 @@ describe("processActivityDeleteAnalyticsJob", () => {
     mockWaitForPeerDbActivityRestores.mockResolvedValue(undefined);
     mockRunActivityReadModelBuild.mockResolvedValue(undefined);
     mockCaptureException.mockClear();
-    mockRunProviderDeleteReadModelBuild.mockClear();
     mockWaitForMetricStreamDeleteAcknowledgement.mockClear();
     mockWaitForPeerDbProviderDeletes.mockClear();
     mockAccountErasureAllowsQueuedUserWork.mockResolvedValue(true);
   });
 
-  it("waits only for Postgres CDC because metric-stream deletion is already acknowledged", async () => {
-    await processActivityDeleteAnalyticsJob(createProviderDeleteAnalyticsJob(), fakeDb);
+  it("waits for serialized refresh completion before invalidating cache", async () => {
+    let finish = () => {};
+    const pending = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    let started = () => {};
+    const enqueued = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    mockRunActivityReadModelBuild.mockImplementationOnce(async () => {
+      started();
+      await pending;
+    });
+    const job = createActivityAnalyticsJob("activity-recompute-analytics-refresh");
+    const processing = processActivityDeleteAnalyticsJob(job, fakeDb, workLockPool);
+    await enqueued;
+    expect(mockInvalidateByPrefix).not.toHaveBeenCalled();
+    expect(await workLockPool.tryRunWithExclusiveUserLock("user-1", async () => "erasing")).toBe(
+      "erasing",
+    );
+    finish();
+    await processing;
+    expect(mockInvalidateByPrefix).toHaveBeenCalledOnce();
+    expect(sharedLockEntered).toHaveBeenCalled();
+  });
 
+  it("rechecks erasure inside the cache-write lock after the refresh wait", async () => {
+    mockRunActivityReadModelBuild.mockImplementationOnce(async () => {
+      expect(sharedLockHeld).toBe(false);
+      mockAccountErasureAllowsQueuedUserWork.mockImplementation(async () => {
+        expect(sharedLockHeld).toBe(true);
+        return false;
+      });
+    });
+    await processActivityDeleteAnalyticsJob(
+      createActivityAnalyticsJob("activity-recompute-analytics-refresh"),
+      fakeDb,
+      workLockPool,
+    );
+    expect(mockInvalidateByPrefix).not.toHaveBeenCalled();
+  });
+
+  it.each(["activity-delete-analytics-refresh", "activity-restore-analytics-refresh"] as const)(
+    "skips %s rebuilding when erasure starts during the CDC wait",
+    async (type) => {
+      const wait =
+        type === "activity-delete-analytics-refresh"
+          ? mockWaitForPeerDbActivityDeletes
+          : mockWaitForPeerDbActivityRestores;
+      wait.mockImplementationOnce(async () => {
+        mockAccountErasureAllowsQueuedUserWork.mockResolvedValue(false);
+      });
+      const job = createActivityAnalyticsJob(type);
+      await processActivityDeleteAnalyticsJob(job, fakeDb, workLockPool);
+      expect(wait).toHaveBeenCalledOnce();
+      expect(mockRunActivityReadModelBuild).not.toHaveBeenCalled();
+      expect(mockInvalidateByPrefix).not.toHaveBeenCalled();
+      expect(job.updateProgress.mock.calls.map(([progress]) => progress.percentage)).toEqual([
+        0, 20,
+      ]);
+      expect(mockClose).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("waits only for Postgres CDC because metric-stream deletion is already acknowledged", async () => {
+    const job = createProviderDeleteAnalyticsJob();
+    await processActivityDeleteAnalyticsJob(job, fakeDb, workLockPool);
+
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 90,
+      message: "Invalidating provider analytics cache...",
+    });
+    expect(job.updateProgress).toHaveBeenCalledWith({
+      percentage: 100,
+      message: "Provider analytics refresh complete.",
+    });
     expect(mockWaitForMetricStreamDeleteAcknowledgement).not.toHaveBeenCalled();
     expect(mockWaitForPeerDbProviderDeletes).toHaveBeenCalledWith(
       expect.anything(),
       "user-1",
       "strava",
     );
-    expect(mockRunProviderDeleteReadModelBuild).toHaveBeenCalledOnce();
-    expect(mockRunActivityReadModelBuild).not.toHaveBeenCalled();
+    expect(mockRunActivityReadModelBuild).toHaveBeenCalledOnce();
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith("user-1:");
   });
 
   it("waits for PeerDB, rebuilds activity read models, and invalidates user caches", async () => {
     const job = createActivityAnalyticsJob("activity-delete-analytics-refresh");
 
-    await processActivityDeleteAnalyticsJob(job, fakeDb);
+    await processActivityDeleteAnalyticsJob(job, fakeDb, workLockPool);
 
     expect(mockWaitForPeerDbActivityDeletes).toHaveBeenCalledWith(expect.anything(), [
       "00000000-0000-0000-0000-000000000001",
@@ -127,7 +214,9 @@ describe("processActivityDeleteAnalyticsJob", () => {
     mockRunActivityReadModelBuild.mockRejectedValueOnce(new Error("dbt failed"));
     const job = createActivityAnalyticsJob("activity-delete-analytics-refresh");
 
-    await expect(processActivityDeleteAnalyticsJob(job, fakeDb)).rejects.toThrow("dbt failed");
+    await expect(processActivityDeleteAnalyticsJob(job, fakeDb, workLockPool)).rejects.toThrow(
+      "dbt failed",
+    );
     expect(mockClose).toHaveBeenCalledOnce();
   });
 
@@ -137,6 +226,7 @@ describe("processActivityDeleteAnalyticsJob", () => {
         "00000000-0000-0000-0000-000000000002",
       ]),
       fakeDb,
+      workLockPool,
     );
 
     expect(mockWaitForPeerDbActivityRestores).toHaveBeenCalledWith(expect.anything(), [
@@ -154,6 +244,7 @@ describe("processActivityDeleteAnalyticsJob", () => {
         "00000000-0000-0000-0000-000000000003",
       ]),
       fakeDb,
+      workLockPool,
     );
 
     expect(mockWaitForPeerDbActivityDeletes).not.toHaveBeenCalled();
@@ -166,7 +257,7 @@ describe("processActivityDeleteAnalyticsJob", () => {
   it("reports delete analytics progress", async () => {
     const job = createActivityAnalyticsJob("activity-delete-analytics-refresh");
 
-    await processActivityDeleteAnalyticsJob(job, fakeDb);
+    await processActivityDeleteAnalyticsJob(job, fakeDb, workLockPool);
 
     expect(job.updateProgress).toHaveBeenCalledWith({
       percentage: 0,
@@ -193,7 +284,7 @@ describe("processActivityDeleteAnalyticsJob", () => {
   it("reports restore analytics progress", async () => {
     const job = createActivityAnalyticsJob("activity-restore-analytics-refresh");
 
-    await processActivityDeleteAnalyticsJob(job, fakeDb);
+    await processActivityDeleteAnalyticsJob(job, fakeDb, workLockPool);
 
     expect(job.updateProgress).toHaveBeenCalledWith({
       percentage: 0,
@@ -220,7 +311,7 @@ describe("processActivityDeleteAnalyticsJob", () => {
   it("reports recompute analytics progress", async () => {
     const job = createActivityAnalyticsJob("activity-recompute-analytics-refresh");
 
-    await processActivityDeleteAnalyticsJob(job, fakeDb);
+    await processActivityDeleteAnalyticsJob(job, fakeDb, workLockPool);
 
     expect(job.updateProgress).toHaveBeenCalledWith({
       percentage: 0,
@@ -245,7 +336,7 @@ describe("processActivityDeleteAnalyticsJob", () => {
     const job = createActivityAnalyticsJob("activity-delete-analytics-refresh");
     job.updateProgress = vi.fn().mockRejectedValue(progressError);
 
-    await processActivityDeleteAnalyticsJob(job, fakeDb);
+    await processActivityDeleteAnalyticsJob(job, fakeDb, workLockPool);
 
     expect(mockRunActivityReadModelBuild).toHaveBeenCalledOnce();
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith("user-1:");

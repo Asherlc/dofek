@@ -1,0 +1,74 @@
+{
+  "source": "6fe1d4fbd479cc1ed9be874538e2b7dc3c1b1551",
+  "image": "ghcr.io/asherlc/dofek@sha256:9dec51d5dba7ac3b234be2defbdaa63c5d677675470f35bff320df4c365eaa20",
+  "mergedPr": "https://github.com/Asherlc/dofek/pull/3233",
+  "mainCi": "https://github.com/Asherlc/dofek/actions/runs/42562370508",
+  "mainCiSuccessfulJobs": 90,
+  "releaseRun": "https://github.com/Asherlc/dofek/actions/runs/42564567850",
+  "releaseStartedAt": "2026-11-09T04:57:27Z",
+  "releaseCompletedAt": "2026-11-09T05:25:58Z",
+  "workflowConclusion": "success",
+  "approval": {
+    "question": "Q5",
+    "words": "Approved.",
+    "scope": "Merge3233 and normal shared release; selected internal PLAINTEXT trust boundary and narrow Terraform-only GHA managing-credential exception accepted"
+  },
+  "dispatcher": {
+    "workflow": "deploy.yml",
+    "target": "web",
+    "imageTag": "sha-6fe1d4f",
+    "dockerBuildsSkipped": true,
+    "automaticDeployWebSetting": "disabled_manually; unchanged",
+    "optionalMobilePublication": "not forced; skipped",
+    "canonicalWebStackGatesPreserved": true
+  },
+  "terraform": {
+    "root": "deploy",
+    "added": 0,
+    "changed": 0,
+    "destroyed": 0,
+    "ociRootApplied": false
+  },
+  "publicRootHttpStatus": 200,
+  "allEightSharedServiceDigestsVerified": true,
+  "workerActualEntrypoint": [
+    "./entrypoint.sh"
+  ],
+  "workerActualCommand": [
+    "worker"
+  ],
+  "bothWorkerStorageMountsReadOnly": true,
+  "brokerImageEnvironmentAndMountUnchanged": true,
+  "remoteStorageEnabled": false,
+  "phase1ClusterAndAllSixTopicIdentitiesPreserved": true,
+  "actualReleasedWorkerNativeCapturePassed": true,
+  "retainedRedpandaCompletionHoldVerified": true,
+  "retainedRedpandaRootPresent": true,
+  "abortedKafkaRootPresent": true,
+  "retainedDirectoriesMovedOrDeleted": false,
+  "redpandaServicePrunedByCanonicalStack": true,
+  "firstObservation": "observation-first.json",
+  "finalObservation": "observation-final.json",
+  "policyQualification": "INCOMPLETE:3quarantine segment.bytes reset to default1GiB, not approved128MiB",
+  "quarantineConfigurationDefect": {
+    "file": "src/metric-stream/redpanda-quarantine.ts",
+    "operation": "Legacy AlterConfigs on each startup replaces all topic overrides with only cleanup.policy, retention.ms and retention.bytes",
+    "fileUnchangedFromOldApplicationSource": "f02798b72a144d137a0bd06ca111ad23f0c2c800",
+    "affectedTopics": [
+      "metric-stream-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3.quarantine.v1",
+      "metric-stream-live-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3.quarantine.v1",
+      "metric-stream-history-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3.quarantine.v1"
+    ],
+    "observedSegmentBytes": "1073741824",
+    "selectedSegmentBytes": "134217728",
+    "retentionTimeAndByteLimitsUnchanged": true,
+    "remoteStorageRemainsFalse": true,
+    "productionPolicyCorrectionPerformed": false,
+    "requiredBeforeTiering": "Stop startup from clearing separately configured segment/remote topic settings; implementation strategy not yet selected"
+  },
+  "limits": [
+    "Point-in-time post-release metadata plus stock workflow stability checks, not a new30minute cutover observation",
+    "No archive/body downloads, historical identity audits, restore qualification or forensic deletion proof",
+    "No tiered activation, OCI apply, offset reset, manual acknowledgement or credential-value edits"
+  ]
+}

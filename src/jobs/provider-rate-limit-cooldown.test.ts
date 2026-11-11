@@ -107,18 +107,18 @@ describe("ProviderRateLimitCooldownStore", () => {
     const store = new InMemoryProviderRateLimitCooldownStore();
 
     const cooldown = await store.record(
-      rateLimitError({ providerId: "garmin", retryAfterSeconds: 600 }),
+      rateLimitError({ providerId: "example", retryAfterSeconds: 600 }),
       "user-1",
     );
 
     expect(cooldown).toEqual({
-      providerId: "garmin",
+      providerId: "example",
       scope: "provider",
       userId: null,
       expiresAt: new Date("2026-06-02T12:10:00Z"),
       consecutiveHits: 1,
     });
-    await expect(store.getActive("garmin", "user-2")).resolves.toEqual(cooldown);
+    await expect(store.getActive("example", "user-2")).resolves.toEqual(cooldown);
     vi.useRealTimers();
   });
 
@@ -188,21 +188,6 @@ describe("ProviderRateLimitCooldownStore", () => {
     vi.useRealTimers();
   });
 
-  it("caps Garmin escalation at the provider-specific four-hour maximum", async () => {
-    vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
-    const store = new InMemoryProviderRateLimitCooldownStore();
-
-    let cooldown = await store.record(rateLimitError({ providerId: "garmin" }), "user-1");
-    for (let hit = 1; hit < 3; hit++) {
-      vi.setSystemTime(cooldown.expiresAt);
-      cooldown = await store.record(rateLimitError({ providerId: "garmin" }), "user-1");
-    }
-
-    expect(cooldown.consecutiveHits).toBe(3);
-    expect(cooldown.expiresAt).toEqual(new Date("2026-06-02T22:00:00Z"));
-    vi.useRealTimers();
-  });
-
   it("caps Whoop escalation at the provider-specific four-hour maximum", async () => {
     vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
     const store = new InMemoryProviderRateLimitCooldownStore();
@@ -223,26 +208,26 @@ describe("ProviderRateLimitCooldownStore", () => {
     const store = new InMemoryProviderRateLimitCooldownStore();
 
     const cooldown = await store.record(
-      rateLimitError({ providerId: "garmin", retryAfterSeconds: 0 }),
+      rateLimitError({ providerId: "example", retryAfterSeconds: 0 }),
       "user-1",
     );
 
-    expect(cooldown.expiresAt).toEqual(new Date("2026-06-02T14:00:00Z"));
+    expect(cooldown.expiresAt).toEqual(new Date("2026-06-02T12:30:00Z"));
     vi.useRealTimers();
   });
 
-  it("escalates Garmin cooldown duration on consecutive rate-limit hits", async () => {
+  it("escalates fallback cooldown duration on consecutive rate-limit hits", async () => {
     vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
     const store = new InMemoryProviderRateLimitCooldownStore();
 
-    const first = await store.record(rateLimitError({ providerId: "garmin" }), "user-1");
+    const first = await store.record(rateLimitError({ providerId: "example" }), "user-1");
     expect(first.consecutiveHits).toBe(1);
-    expect(first.expiresAt).toEqual(new Date("2026-06-02T14:00:00Z"));
+    expect(first.expiresAt).toEqual(new Date("2026-06-02T12:30:00Z"));
 
-    vi.setSystemTime(new Date("2026-06-02T14:00:00Z"));
-    const second = await store.record(rateLimitError({ providerId: "garmin" }), "user-1");
+    vi.setSystemTime(new Date("2026-06-02T12:30:00Z"));
+    const second = await store.record(rateLimitError({ providerId: "example" }), "user-1");
     expect(second.consecutiveHits).toBe(2);
-    expect(second.expiresAt).toEqual(new Date("2026-06-02T18:00:00Z"));
+    expect(second.expiresAt).toEqual(new Date("2026-06-02T13:30:00Z"));
     vi.useRealTimers();
   });
 
@@ -250,10 +235,10 @@ describe("ProviderRateLimitCooldownStore", () => {
     vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
     const store = new InMemoryProviderRateLimitCooldownStore();
 
-    await store.record(rateLimitError({ providerId: "garmin" }), "user-1");
-    vi.setSystemTime(new Date("2026-06-02T16:00:01Z"));
+    await store.record(rateLimitError({ providerId: "example" }), "user-1");
+    vi.setSystemTime(new Date("2026-06-02T14:30:01Z"));
 
-    const second = await store.record(rateLimitError({ providerId: "garmin" }), "user-1");
+    const second = await store.record(rateLimitError({ providerId: "example" }), "user-1");
     expect(second.consecutiveHits).toBe(1);
     vi.useRealTimers();
   });
@@ -262,10 +247,10 @@ describe("ProviderRateLimitCooldownStore", () => {
     vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
     const store = new InMemoryProviderRateLimitCooldownStore();
 
-    await store.record(rateLimitError({ providerId: "garmin" }), "user-1");
-    vi.setSystemTime(new Date("2026-06-02T16:00:00Z"));
+    await store.record(rateLimitError({ providerId: "example" }), "user-1");
+    vi.setSystemTime(new Date("2026-06-02T14:30:00Z"));
 
-    const second = await store.record(rateLimitError({ providerId: "garmin" }), "user-1");
+    const second = await store.record(rateLimitError({ providerId: "example" }), "user-1");
     expect(second.consecutiveHits).toBe(2);
     vi.useRealTimers();
   });
@@ -290,7 +275,7 @@ describe("ProviderRateLimitCooldownStore", () => {
     vi.spyOn(providerAdaptiveRateLimitStore, "getLearnedCooldownSeconds").mockResolvedValue(300);
     const store = new InMemoryProviderRateLimitCooldownStore();
 
-    const cooldown = await store.record(rateLimitError({ providerId: "garmin" }), "user-1");
+    const cooldown = await store.record(rateLimitError({ providerId: "example" }), "user-1");
 
     expect(cooldown.expiresAt).toEqual(new Date("2026-06-02T12:05:00Z"));
     vi.useRealTimers();
@@ -301,11 +286,11 @@ describe("ProviderRateLimitCooldownStore", () => {
     const store = new InMemoryProviderRateLimitCooldownStore();
 
     const cooldown = await store.record(
-      rateLimitError({ providerId: "garmin", retryAfterSeconds: -10 }),
+      rateLimitError({ providerId: "example", retryAfterSeconds: -10 }),
       "user-1",
     );
 
-    expect(cooldown.expiresAt).toEqual(new Date("2026-06-02T14:00:00Z"));
+    expect(cooldown.expiresAt).toEqual(new Date("2026-06-02T12:30:00Z"));
     vi.useRealTimers();
   });
 
@@ -313,9 +298,9 @@ describe("ProviderRateLimitCooldownStore", () => {
     vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
     const store = new InMemoryProviderRateLimitCooldownStore();
 
-    await store.record(rateLimitError({ providerId: "garmin", retryAfterSeconds: 600 }), "user-1");
+    await store.record(rateLimitError({ providerId: "example", retryAfterSeconds: 600 }), "user-1");
     const second = await store.record(
-      rateLimitError({ providerId: "garmin", retryAfterSeconds: 600 }),
+      rateLimitError({ providerId: "example", retryAfterSeconds: 600 }),
       "user-1",
     );
 
@@ -360,11 +345,11 @@ describe("ProviderRateLimitCooldownStore", () => {
     const store = new InMemoryProviderRateLimitCooldownStore();
 
     const longer = await store.record(
-      rateLimitError({ providerId: "garmin", retryAfterSeconds: 600 }),
+      rateLimitError({ providerId: "example", retryAfterSeconds: 600 }),
       "user-1",
     );
     const result = await store.record(
-      rateLimitError({ providerId: "garmin", retryAfterSeconds: 60 }),
+      rateLimitError({ providerId: "example", retryAfterSeconds: 60 }),
       "user-1",
     );
 
@@ -373,7 +358,7 @@ describe("ProviderRateLimitCooldownStore", () => {
       consecutiveHits: 2,
     });
     expect(result.expiresAt).toEqual(new Date("2026-06-02T12:10:00Z"));
-    await expect(store.getActive("garmin", "user-1")).resolves.toEqual({
+    await expect(store.getActive("example", "user-1")).resolves.toEqual({
       ...longer,
       consecutiveHits: 2,
     });
@@ -384,15 +369,15 @@ describe("ProviderRateLimitCooldownStore", () => {
     vi.setSystemTime(new Date("2026-06-02T12:00:00Z"));
     const store = new InMemoryProviderRateLimitCooldownStore();
 
-    await store.record(rateLimitError({ providerId: "garmin", retryAfterSeconds: 60 }), "user-1");
+    await store.record(rateLimitError({ providerId: "example", retryAfterSeconds: 60 }), "user-1");
     const longer = await store.record(
-      rateLimitError({ providerId: "garmin", retryAfterSeconds: 600 }),
+      rateLimitError({ providerId: "example", retryAfterSeconds: 600 }),
       "user-1",
     );
 
     expect(longer.expiresAt).toEqual(new Date("2026-06-02T12:10:00Z"));
     expect(longer.consecutiveHits).toBe(2);
-    await expect(store.getActive("garmin", "user-1")).resolves.toEqual(longer);
+    await expect(store.getActive("example", "user-1")).resolves.toEqual(longer);
     vi.useRealTimers();
   });
 
@@ -401,11 +386,11 @@ describe("ProviderRateLimitCooldownStore", () => {
     const { setCalls, store } = createMockRedisStore();
 
     const longer = await store.record(
-      rateLimitError({ providerId: "garmin", retryAfterSeconds: 600 }),
+      rateLimitError({ providerId: "example", retryAfterSeconds: 600 }),
       "user-1",
     );
     const result = await store.record(
-      rateLimitError({ providerId: "garmin", retryAfterSeconds: 60 }),
+      rateLimitError({ providerId: "example", retryAfterSeconds: 60 }),
       "user-1",
     );
 
@@ -415,9 +400,9 @@ describe("ProviderRateLimitCooldownStore", () => {
     });
     // The second set still writes the longer expiry with a TTL reflecting it.
     expect(setCalls[1]).toEqual({
-      key: "provider-rate-limit:garmin:provider",
+      key: "provider-rate-limit:example:provider",
       value: JSON.stringify({
-        providerId: "garmin",
+        providerId: "example",
         scope: "provider",
         userId: null,
         expiresAt: "2026-06-02T12:10:00.000Z",
@@ -426,7 +411,7 @@ describe("ProviderRateLimitCooldownStore", () => {
       mode: "PX",
       millisecondsToExpire: 600_000,
     });
-    await expect(store.getActive("garmin", "user-1")).resolves.toEqual({
+    await expect(store.getActive("example", "user-1")).resolves.toEqual({
       ...longer,
       consecutiveHits: 2,
     });
@@ -466,7 +451,7 @@ describe("ProviderRateLimitCooldownStore", () => {
   it("returns null when no cooldown state exists", async () => {
     const store = new InMemoryProviderRateLimitCooldownStore();
 
-    await expect(store.getActive("garmin", "user-1")).resolves.toBeNull();
+    await expect(store.getActive("example", "user-1")).resolves.toBeNull();
   });
 
   it("records provider cooldown state in Redis with serialized expiry", async () => {
@@ -474,15 +459,15 @@ describe("ProviderRateLimitCooldownStore", () => {
     const { setCalls, store } = createMockRedisStore();
 
     const cooldown = await store.record(
-      rateLimitError({ providerId: "garmin", retryAfterSeconds: 600 }),
+      rateLimitError({ providerId: "example", retryAfterSeconds: 600 }),
       "user-1",
     );
 
     expect(setCalls).toEqual([
       {
-        key: "provider-rate-limit:garmin:provider",
+        key: "provider-rate-limit:example:provider",
         value: JSON.stringify({
-          providerId: "garmin",
+          providerId: "example",
           scope: "provider",
           userId: null,
           expiresAt: "2026-06-02T12:10:00.000Z",
@@ -492,7 +477,7 @@ describe("ProviderRateLimitCooldownStore", () => {
         millisecondsToExpire: 600_000,
       },
     ]);
-    await expect(store.getActive("garmin", "user-1")).resolves.toEqual(cooldown);
+    await expect(store.getActive("example", "user-1")).resolves.toEqual(cooldown);
     vi.useRealTimers();
   });
 
@@ -531,7 +516,7 @@ describe("ProviderRateLimitCooldownStore", () => {
     vi.spyOn(providerAdaptiveRateLimitStore, "getLearnedCooldownSeconds").mockResolvedValue(300);
     const { setCalls, store } = createMockRedisStore();
 
-    const cooldown = await store.record(rateLimitError({ providerId: "garmin" }), "user-1");
+    const cooldown = await store.record(rateLimitError({ providerId: "example" }), "user-1");
 
     expect(cooldown.expiresAt).toEqual(new Date("2026-06-02T12:05:00Z"));
     expect(setCalls[0]?.millisecondsToExpire).toBe(300_000);
@@ -546,41 +531,41 @@ describe("ProviderRateLimitCooldownStore", () => {
       "42",
       JSON.stringify({ scope: "provider", userId: null, expiresAt: "2026-06-02T12:00:00.000Z" }),
       JSON.stringify({
-        providerId: "garmin",
+        providerId: "example",
         scope: "unknown",
         userId: null,
         expiresAt: "2026-06-02T12:00:00.000Z",
       }),
       JSON.stringify({
-        providerId: "garmin",
+        providerId: "example",
         scope: "provider",
         userId: 1,
         expiresAt: "2026-06-02T12:00:00.000Z",
       }),
-      JSON.stringify({ providerId: "garmin", scope: "provider", userId: null, expiresAt: 1 }),
+      JSON.stringify({ providerId: "example", scope: "provider", userId: null, expiresAt: 1 }),
       JSON.stringify({
-        providerId: "garmin",
+        providerId: "example",
         scope: "provider",
         userId: null,
         expiresAt: "not-a-date",
       }),
       JSON.stringify({
-        providerId: "garmin",
+        providerId: "example",
         scope: "provider",
         userId: null,
         expiresAt: "2026-06-02T12:00:00.000Z",
         consecutiveHits: "not-a-number",
       }),
       JSON.stringify({
-        providerId: "garmin",
+        providerId: "example",
         scope: "provider",
         userId: null,
         expiresAt: "2026-06-02T12:00:00.000Z",
         consecutiveHits: null,
       }),
     ]) {
-      values.set("provider-rate-limit:garmin:provider", raw);
-      await expect(store.getActive("garmin", "user-1")).resolves.toBeNull();
+      values.set("provider-rate-limit:example:provider", raw);
+      await expect(store.getActive("example", "user-1")).resolves.toBeNull();
     }
   });
 
@@ -589,16 +574,16 @@ describe("ProviderRateLimitCooldownStore", () => {
     const { setCalls, store, watchCalls } = createMockRedisStore({ atomic: true });
 
     const cooldown = await store.record(
-      rateLimitError({ providerId: "garmin", retryAfterSeconds: 600 }),
+      rateLimitError({ providerId: "example", retryAfterSeconds: 600 }),
       "user-1",
     );
 
-    expect(watchCalls).toEqual(["provider-rate-limit:garmin:provider"]);
+    expect(watchCalls).toEqual(["provider-rate-limit:example:provider"]);
     expect(setCalls).toEqual([
       {
-        key: "provider-rate-limit:garmin:provider",
+        key: "provider-rate-limit:example:provider",
         value: JSON.stringify({
-          providerId: "garmin",
+          providerId: "example",
           scope: "provider",
           userId: null,
           expiresAt: "2026-06-02T12:10:00.000Z",
@@ -608,7 +593,7 @@ describe("ProviderRateLimitCooldownStore", () => {
         millisecondsToExpire: 600_000,
       },
     ]);
-    await expect(store.getActive("garmin", "user-1")).resolves.toEqual(cooldown);
+    await expect(store.getActive("example", "user-1")).resolves.toEqual(cooldown);
     vi.useRealTimers();
   });
 
@@ -620,9 +605,12 @@ describe("ProviderRateLimitCooldownStore", () => {
     });
 
     await expect(
-      mock.store.record(rateLimitError({ providerId: "garmin", retryAfterSeconds: 600 }), "user-1"),
+      mock.store.record(
+        rateLimitError({ providerId: "example", retryAfterSeconds: 600 }),
+        "user-1",
+      ),
     ).rejects.toThrow(
-      "Failed to persist rate-limit cooldown for provider-rate-limit:garmin:provider after 10 Redis transaction conflicts",
+      "Failed to persist rate-limit cooldown for provider-rate-limit:example:provider after 10 Redis transaction conflicts",
     );
 
     expect(mock.execAttempts).toBe(10);
@@ -637,13 +625,13 @@ describe("ProviderRateLimitCooldownStore", () => {
     });
 
     await mock.store.record(
-      rateLimitError({ providerId: "garmin", retryAfterSeconds: 600 }),
+      rateLimitError({ providerId: "example", retryAfterSeconds: 600 }),
       "user-1",
     );
 
     expect(mock.watchCalls).toEqual([
-      "provider-rate-limit:garmin:provider",
-      "provider-rate-limit:garmin:provider",
+      "provider-rate-limit:example:provider",
+      "provider-rate-limit:example:provider",
     ]);
     expect(mock.execAttempts).toBe(2);
     vi.useRealTimers();
@@ -654,12 +642,12 @@ describe("ProviderRateLimitCooldownStore", () => {
     const { setCalls, store } = createMockRedisStore();
 
     const cooldown = await store.record(
-      rateLimitError({ providerId: "garmin", retryAfterSeconds: 600 }),
+      rateLimitError({ providerId: "example", retryAfterSeconds: 600 }),
       "user-1",
     );
 
     expect(setCalls).toHaveLength(1);
-    await expect(store.getActive("garmin", "user-1")).resolves.toEqual(cooldown);
+    await expect(store.getActive("example", "user-1")).resolves.toEqual(cooldown);
     vi.useRealTimers();
   });
 
@@ -699,22 +687,22 @@ describe("ProviderRateLimitCooldownStore", () => {
     );
 
     await expect(
-      module.providerRateLimitCooldownStore.getActive("garmin", "user-1"),
+      module.providerRateLimitCooldownStore.getActive("example", "user-1"),
     ).resolves.toBeNull();
-    expect(mockClient.get).toHaveBeenCalledWith("provider-rate-limit:garmin:provider");
+    expect(mockClient.get).toHaveBeenCalledWith("provider-rate-limit:example:provider");
     await expect(
       module.providerRateLimitCooldownStore.record(
-        rateLimitError({ providerId: "garmin", retryAfterSeconds: 600 }),
+        rateLimitError({ providerId: "example", retryAfterSeconds: 600 }),
         "user-1",
       ),
     ).resolves.toMatchObject({
-      providerId: "garmin",
+      providerId: "example",
       expiresAt: new Date("2026-06-02T12:10:00.000Z"),
     });
-    expect(mockClient.watch).toHaveBeenCalledWith("provider-rate-limit:garmin:provider");
+    expect(mockClient.watch).toHaveBeenCalledWith("provider-rate-limit:example:provider");
     expect(mockClient.multi).toHaveBeenCalledOnce();
     expect(transaction.set).toHaveBeenCalledWith(
-      "provider-rate-limit:garmin:provider",
+      "provider-rate-limit:example:provider",
       expect.any(String),
       "PX",
       600_000,
@@ -729,7 +717,7 @@ describe("ProviderRateLimitCooldownStore", () => {
 describe("provider rate-limit scheduling helpers", () => {
   it("computes non-negative delay to a cooldown expiry", () => {
     const cooldown = {
-      providerId: "garmin",
+      providerId: "example",
       scope: "provider" as const,
       userId: null,
       expiresAt: new Date("2026-06-02T12:10:00Z"),
@@ -741,7 +729,7 @@ describe("provider rate-limit scheduling helpers", () => {
 
   it("builds BullMQ-safe delayed retry job IDs", () => {
     const cooldown = {
-      providerId: "garmin",
+      providerId: "example",
       scope: "provider" as const,
       userId: null,
       expiresAt: new Date("2026-06-02T12:10:00Z"),
@@ -749,6 +737,6 @@ describe("provider rate-limit scheduling helpers", () => {
 
     const jobId = providerRateLimitCooldownJobId(cooldown, "user-1");
 
-    expect(jobId).toBe("provider-rate-limit-garmin-provider-1780402200000");
+    expect(jobId).toBe("provider-rate-limit-example-provider-1780402200000");
   });
 });

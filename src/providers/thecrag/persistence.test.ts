@@ -1,12 +1,11 @@
 import { inspect } from "node:util";
 import { DrizzleQueryError } from "drizzle-orm";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { MissingRouteMethodError } from "../../db/source-attempt-facts.ts";
 import { createMockDatabase } from "../test-helpers.ts";
 import { writeClimbingRecords } from "./persistence.ts";
 
 const mocks = vi.hoisted(() => ({ persist: vi.fn(), captureException: vi.fn() }));
-vi.mock("../../db/climbing-log-snapshot.ts", () => ({ persistClimbingLogSnapshot: mocks.persist }));
+vi.mock("../../db/climbing-log-sync.ts", () => ({ persistClimbingLogEntries: mocks.persist }));
 vi.mock("../../lib/error-reporting.ts", () => ({ captureException: mocks.captureException }));
 
 afterEach(() => vi.resetAllMocks());
@@ -28,7 +27,7 @@ describe("theCrag log persistence", () => {
     });
   });
 
-  it("reconciles a complete empty logbook through the canonical writer", async () => {
+  it("accepts an empty observed batch through the additive writer", async () => {
     const { db } = createMockDatabase();
     mocks.persist.mockResolvedValueOnce({ recordsSynced: 0, logEntryIds: [] });
     await expect(writeClimbingRecords(db, "user-42", "thecrag", [])).resolves.toBe(0);
@@ -36,17 +35,6 @@ describe("theCrag log persistence", () => {
       userId: "user-42",
       providerId: "thecrag",
       entries: [],
-    });
-  });
-
-  it("preserves actionable missing-method errors for provider imports", async () => {
-    const failure = new MissingRouteMethodError("thecrag:42");
-    mocks.persist.mockRejectedValueOnce(failure);
-    await expect(
-      writeClimbingRecords(createMockDatabase().db, "user-42", "thecrag", [record]),
-    ).rejects.toBe(failure);
-    expect(mocks.captureException).toHaveBeenCalledWith(failure, {
-      tags: { provider: "thecrag", phase: "logbook_save" },
     });
   });
 

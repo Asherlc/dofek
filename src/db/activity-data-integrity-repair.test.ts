@@ -8,13 +8,43 @@ import {
   type ClickHouseGroupRow,
   clickHouseGroupRowSchema,
 } from "./activity-data-integrity-clickhouse.ts";
+import { runActivityIntegrityDbtBuild } from "./activity-data-integrity-dbt.ts";
 import {
   type ActivityIntegrityDatabase,
   type ActivityIntegrityRepairOptions,
-  repairActivityDataIntegrity,
+  repairActivityDataIntegrity as repairActivityDataIntegrityActual,
   retireActivityDataIntegrityArtifact,
-  rollbackActivityDataIntegrity,
+  rollbackActivityDataIntegrity as rollbackActivityDataIntegrityActual,
 } from "./activity-data-integrity-repair.ts";
+
+vi.mock("./activity-data-integrity-dbt.ts", () => ({ runActivityIntegrityDbtBuild: vi.fn() }));
+function fixtureRebuild(client: Parameters<typeof repairActivityDataIntegrityActual>[1]) {
+  const owner = { client, assertActive: vi.fn(async () => undefined), runSynchronousDbt: vi.fn() };
+  return (input: Parameters<typeof runActivityIntegrityDbtBuild>[0]) =>
+    runActivityIntegrityDbtBuild(input, client, owner);
+}
+function repairActivityDataIntegrity(
+  db: ActivityIntegrityDatabase,
+  client: Parameters<typeof repairActivityDataIntegrityActual>[1],
+  options: ActivityIntegrityRepairOptions,
+  dependencies: Partial<Parameters<typeof repairActivityDataIntegrityActual>[3]> = {},
+) {
+  return repairActivityDataIntegrityActual(db, client, options, {
+    ...dependencies,
+    rebuildReadModels: dependencies.rebuildReadModels ?? fixtureRebuild(client),
+  });
+}
+function rollbackActivityDataIntegrity(
+  db: ActivityIntegrityDatabase,
+  client: Parameters<typeof rollbackActivityDataIntegrityActual>[1],
+  path: string,
+  dependencies: Partial<Parameters<typeof rollbackActivityDataIntegrityActual>[3]> = {},
+) {
+  return rollbackActivityDataIntegrityActual(db, client, path, {
+    ...dependencies,
+    rebuildReadModels: dependencies.rebuildReadModels ?? fixtureRebuild(client),
+  });
+}
 
 const dialect = new PgDialect();
 const userId = "00000000-0000-4000-8000-000000000001";
@@ -207,6 +237,7 @@ const repairedGroupRows = priorGroupRows.map((row) => ({
 const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
+  vi.mocked(runActivityIntegrityDbtBuild).mockReset();
   repairJournalState.record = null;
   await Promise.all(
     temporaryDirectories.splice(0).map(async (directory) => {
@@ -460,6 +491,51 @@ function repairDependencies(directory: string, rebuildReadModels = vi.fn(async (
 }
 
 describe("repairActivityDataIntegrity", () => {
+  it.each([false, true])(
+    "uses the production default dbt runner for repair (failure=%s)",
+    async (fails) => {
+      const directory = await artifactDirectory();
+      const clickhouse = createClickHouse(
+        [[priorSourceRow], [repairedSourceRow]],
+        [priorGroupRows, repairedGroupRows],
+        [],
+        { mirror: [[repairedSourceRow]] },
+      );
+      const failure = new Error("default repair dbt failed");
+      if (fails) vi.mocked(runActivityIntegrityDbtBuild).mockRejectedValueOnce(failure);
+      const result = repairActivityDataIntegrity(
+        createDatabase(vi.fn().mockResolvedValue([postgresCandidate])),
+        clickhouse,
+        {
+          execute: true,
+          userId,
+          batchSize: 10,
+          maxBatches: 1,
+          acceptanceOwner: "data-on-call@example.com",
+          acceptanceDeadline: deadline,
+          ...window,
+        },
+        { ...repairDependencies(directory), rebuildReadModels: undefined },
+      );
+      if (fails) await expect(result).rejects.toBe(failure);
+      else await expect(result).resolves.toMatchObject({ updated: 1 });
+      expect(runActivityIntegrityDbtBuild).toHaveBeenCalledExactlyOnceWith(
+        {
+          userId,
+          activityIds: [activityId, pelotonId],
+          eventTimeStart: new Date("2026-09-01"),
+          eventTimeEnd: new Date("2026-09-03"),
+        },
+        clickhouse,
+        expect.objectContaining({ client: clickhouse }),
+      );
+      expect(repairJournalState.record?.phase).toBe(fails ? "rebuild_failed" : "executed");
+      expect(
+        JSON.parse(await readFile(repairJournalState.record?.artifact_path ?? "", "utf8")),
+      ).toMatchObject({ phase: fails ? "rebuild_failed" : "executed" });
+    },
+  );
+
   it("rebuilds the expanded historical graph through the UTC day after CDC becomes ready", async () => {
     const directory = await artifactDirectory();
     const olderMember = {
@@ -1424,6 +1500,7 @@ describe("repairActivityDataIntegrity", () => {
       rollbackEligibility: "eligible",
       failure: { message: "dbt failed" },
     });
+    expect(repairJournalState.record?.phase).toBe("rebuild_failed");
     const rollbackRebuildReadModels = vi.fn(async () => undefined);
     await expect(
       rollbackActivityDataIntegrity(createDatabase(execute), clickhouse, artifactPath, {
@@ -1721,6 +1798,37 @@ describe("repairActivityDataIntegrity", () => {
 });
 
 describe("rollbackActivityDataIntegrity", () => {
+  it.each([false, true])(
+    "uses the production default dbt runner for rollback (failure=%s)",
+    async (fails) => {
+      const { result, rollbackDb } = await executedArtifact();
+      const clickhouse = createClickHouse([[priorSourceRow]], [priorGroupRows], [], {
+        mirror: [[priorSourceRow]],
+      });
+      const failure = new Error("default rollback dbt failed");
+      if (fails) vi.mocked(runActivityIntegrityDbtBuild).mockRejectedValueOnce(failure);
+      const rollback = rollbackActivityDataIntegrity(rollbackDb, clickhouse, result.artifactPath, {
+        now: () => now,
+      });
+      if (fails) await expect(rollback).rejects.toBe(failure);
+      else await expect(rollback).resolves.toMatchObject({ updated: 1 });
+      expect(runActivityIntegrityDbtBuild).toHaveBeenCalledExactlyOnceWith(
+        {
+          userId,
+          activityIds: [activityId, pelotonId],
+          eventTimeStart: new Date("2026-09-01"),
+          eventTimeEnd: new Date("2026-09-03"),
+        },
+        clickhouse,
+        expect.objectContaining({ client: clickhouse }),
+      );
+      expect(repairJournalState.record?.phase).toBe(fails ? "rollback_committed" : "rolled_back");
+      expect(JSON.parse(await readFile(result.artifactPath, "utf8"))).toMatchObject({
+        phase: fails ? "rollback_committed" : "rolled_back",
+      });
+    },
+  );
+
   async function executedArtifact(options?: { stalePostgres?: boolean }) {
     const directory = await artifactDirectory();
     const repairDb = createDatabase(vi.fn().mockResolvedValue([postgresCandidate]));
@@ -1749,6 +1857,30 @@ describe("rollbackActivityDataIntegrity", () => {
     );
     return { directory, result, rollbackDb };
   }
+
+  it("preserves the committed rollback journal and artifact when rebuilding throws", async () => {
+    const { result, rollbackDb } = await executedArtifact();
+    const clickhouse = createClickHouse([[priorSourceRow]], [priorGroupRows], [], {
+      mirror: [[priorSourceRow]],
+    });
+    const failure = new Error("cadence batch verification failed");
+    const rebuildReadModels = vi.fn(async () => {
+      throw failure;
+    });
+    await expect(
+      rollbackActivityDataIntegrity(rollbackDb, clickhouse, result.artifactPath, {
+        now: () => now,
+        rebuildReadModels,
+      }),
+    ).rejects.toBe(failure);
+    expect(rebuildReadModels).toHaveBeenCalledOnce();
+    expect(repairJournalState.record?.phase).toBe("rollback_committed");
+    expect(JSON.parse(await readFile(result.artifactPath, "utf8"))).toMatchObject({
+      phase: "rollback_committed",
+      rollbackCommit: { updated: 1 },
+    });
+    expect(clickhouse.insert).not.toHaveBeenCalled();
+  });
 
   it("rejects a stale Postgres CAS before writing captured ClickHouse rows", async () => {
     const { result, rollbackDb } = await executedArtifact({ stalePostgres: true });

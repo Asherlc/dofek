@@ -108,6 +108,7 @@ tombstoned AS (
   FROM fitness.activity AS a
   WHERE
     a.provider_absent_at IS NOT null
+    AND a.provider_type <> 'climbing_log'
     AND a.deleted_at IS null
     AND a.external_id IS NOT null
     AND a.external_id <> ''
@@ -253,6 +254,7 @@ best_per_group AS (
   INNER JOIN ranked AS r ON fg.activity_id = r.id
   ORDER BY
     fg.group_id ASC,
+    (r.provider_type IS NOT DISTINCT FROM 'climbing_log') ASC,
     r.complete_working_set_count DESC,
     r.set_count DESC,
     r.exercise_count DESC,
@@ -296,8 +298,11 @@ best_context_per_group AS (
 group_bounds AS (
   SELECT
     fg.group_id,
-    MIN(r.started_at) AS started_at,
-    MAX(r.ended_at) AS ended_at
+    COALESCE(
+      MIN(r.started_at) FILTER (WHERE r.provider_type IS DISTINCT FROM 'climbing_log'),
+      MIN(r.started_at)
+    ) AS started_at,
+    MAX(r.ended_at) FILTER (WHERE r.provider_type IS DISTINCT FROM 'climbing_log') AS ended_at
   FROM final_groups AS fg
   INNER JOIN ranked AS r ON fg.activity_id = r.id
   GROUP BY fg.group_id
@@ -325,26 +330,6 @@ tombstoned_groups AS (
   SELECT DISTINCT fg.group_id
   FROM final_groups AS fg
   INNER JOIN effective_tombstoned AS t ON fg.activity_id = t.id
-),
-
-origin_group_members AS (
-  SELECT
-    group_id,
-    user_id,
-    JSONB_AGG(JSONB_BUILD_OBJECT(
-      'id', id, 'providerId', provider_id, 'sourceName', source_name, 'raw', raw
-    ) ORDER BY id) AS members
-  FROM ranked
-  GROUP BY group_id, user_id
-),
-
-activity_origins AS (
-  SELECT
-    groups.group_id,
-    groups.user_id,
-    origin.*
-  FROM origin_group_members AS groups
-  CROSS JOIN LATERAL fitness.resolve_activity_origin(groups.members) AS origin
 ),
 
 merged AS (
@@ -451,7 +436,11 @@ SELECT
   m.started_at,
   m.ended_at,
   m.source_name,
-  m.name,
+  CASE
+    WHEN origin.primary_activity_id IS null THEN m.name
+    WHEN NULLIF(TRIM(primary_activity.name), '') IS null THEN null
+    ELSE primary_activity.name
+  END AS name,
   m.notes,
   m.timezone,
   m.raw,
@@ -467,7 +456,27 @@ SELECT
   origin.primary_provider_id,
   origin.primary_source_name,
   origin.origin_candidate_member_ids,
-  origin.origin_evidence
+  origin.origin_evidence,
+  primary_activity.canonical_type::text AS primary_canonical_type
 FROM merged AS m
-INNER JOIN activity_origins AS origin ON m.group_id = origin.group_id AND m.user_id = origin.user_id
+-- Build provenance only after the requested canonical groups have been selected.
+CROSS JOIN
+  LATERAL (
+    SELECT
+      JSONB_AGG(JSONB_BUILD_OBJECT(
+        'id', r.id, 'providerId', r.provider_id, 'externalId', r.external_id,
+        'sourceName', r.source_name,
+        'raw', JSONB_BUILD_OBJECT(
+          'sourceBundle', r.raw -> 'sourceBundle',
+          'device_name', r.raw -> 'device_name',
+          'platform', r.raw -> 'platform',
+          'deviceType', r.raw -> 'deviceType'
+        )
+      ) ORDER BY r.id) AS members
+    FROM fitness.activity AS r
+    WHERE r.id = ANY(m.member_activity_ids) AND r.user_id = m.user_id
+  ) AS origin_group
+CROSS JOIN LATERAL fitness.resolve_activity_origin(origin_group.members) AS origin
+LEFT JOIN fitness.activity AS primary_activity
+  ON origin.primary_activity_id = primary_activity.id AND m.user_id = primary_activity.user_id
 ORDER BY m.started_at DESC;

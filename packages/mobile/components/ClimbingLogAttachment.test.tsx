@@ -134,10 +134,11 @@ describe("ClimbingLogAttachment", () => {
   it("attaches only the selected log and refreshes its map and activity views before closing", async () => {
     const fixture = renderPicker();
     const affectedKeys = [
+      getQueryKey(trpc.activity.images, { id: "00000000-0000-4000-8000-000000000001" }, "query"),
       getQueryKey(trpc.climbing.locationMap),
       getQueryKey(
         trpc.climbing.activityLogEntries,
-        { activityId: "00000000-0000-4000-8000-000000000001" },
+        { activityId: "00000000-0000-4000-8000-000000000001", responseVersion: 4 },
         "query",
       ),
       getQueryKey(
@@ -147,14 +148,15 @@ describe("ClimbingLogAttachment", () => {
       ),
       getQueryKey(
         trpc.climbing.unattachedClimbingLogEntries,
-        { activityId: "00000000-0000-4000-8000-000000000002" },
+        { activityId: "00000000-0000-4000-8000-000000000002", responseVersion: 4 },
         "query",
       ),
       getQueryKey(trpc.climbing.sessionSummary),
-      getQueryKey(trpc.climbing.gradeProgression),
+      getQueryKey(trpc.mobileDashboard.trainingV2),
+      getQueryKey(trpc.climbing.strengths),
       getQueryKey(trpc.climbing.volumeByGrade),
       getQueryKey(trpc.activity.list),
-      getQueryKey(trpc.calendar.weekList),
+      getQueryKey(trpc.calendar.weekListV2),
     ];
     for (const key of affectedKeys) fixture.queryClient.setQueryData(key, []);
 

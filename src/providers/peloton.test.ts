@@ -2032,3 +2032,66 @@ describe("Peloton — rate-limit aware fetch wiring", () => {
     }
   });
 });
+
+vi.mock("../db/activity-images.ts", () => ({
+  recordActivityImageDiscovery: vi.fn(async () => undefined),
+}));
+
+describe("Peloton media discovery", () => {
+  it("fetches workout details with a current bearer token", async () => {
+    const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({
+        ...sampleWorkout,
+        ride: { ...sampleRide, image_url: "https://cdn.test/art.jpg" },
+      }),
+    );
+    const result = await new PelotonProvider(fetchFn).discoverActivityImages(
+      new SyncRun({
+        db: createMockDb(),
+        userId: "00000000-0000-0000-0000-000000000001",
+        window: SyncWindow.fromSince({ since: new Date(0) }),
+      }),
+      sampleWorkout.id,
+    );
+    expect(result.images[0]?.variants[0]?.url).toBe("https://cdn.test/art.jpg");
+    expect(new Headers(fetchFn.mock.calls[0]?.[1]?.headers).get("Authorization")).toBe(
+      `Bearer ${VALID_TOKEN.accessToken}`,
+    );
+  });
+  it.each([false, true])(
+    "persists workout media and reports storage failures (%s)",
+    async (fail) => {
+      const { recordActivityImageDiscovery } = await import("../db/activity-images.ts");
+      vi.mocked(recordActivityImageDiscovery).mockClear();
+      if (fail)
+        vi.mocked(recordActivityImageDiscovery).mockRejectedValueOnce(
+          Error("database unavailable"),
+        );
+      const workout = makeSyncWorkout();
+      const fetchFn = vi
+        .fn()
+        .mockResolvedValueOnce(Response.json({ id: "user-123" }))
+        .mockResolvedValueOnce(Response.json(makeWorkoutListResponse([workout])))
+        .mockResolvedValueOnce(Response.json(makeSyncPerformanceGraph(["heart_rate"])));
+      const result = await new PelotonProvider(fetchFn).sync(
+        new SyncRun({
+          db: createMockDb(),
+          userId: "00000000-0000-0000-0000-000000000001",
+          window: SyncWindow.fromSince({ since: new Date((workout.start_time - 1000) * 1000) }),
+        }),
+      );
+      expect(recordActivityImageDiscovery).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          userId: "00000000-0000-0000-0000-000000000001",
+          providerId: "peloton",
+          activityId: "10000000-0000-4000-8000-000000000001",
+          discovery: expect.objectContaining({ images: expect.any(Array) }),
+        }),
+      );
+      expect(
+        result.errors.some((e) => e.message === "Peloton image discovery persistence failed"),
+      ).toBe(fail);
+    },
+  );
+});

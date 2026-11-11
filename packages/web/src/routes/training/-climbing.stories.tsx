@@ -13,10 +13,11 @@ import type { AppRouter } from "dofek-server/router";
 import { useMemo } from "react";
 import { expect, within } from "storybook/test";
 import { z } from "zod";
-import "leaflet/dist/leaflet.css";
+import "maplibre-gl/dist/maplibre-gl.css";
 import { climbingLocationMapFixture } from "../../components/climbing-location-map-test-helpers.ts";
 import { climbingAttachmentActivities } from "../../components/climbing-log-attachment-test-helpers.ts";
 import { climbingProgressionFixture } from "../../components/climbing-progression-test-helpers.ts";
+import { climbingStrengthsFixture } from "../../components/climbing-strengths-fixtures.ts";
 import { trpc } from "../../lib/trpc.ts";
 import { ClimbingTab } from "./climbing.tsx";
 
@@ -41,47 +42,54 @@ const mockLink: TRPCLink<AppRouter> = () => {
     }
     const grade = { climbKind: "route", gradeSystem: "yds", grade: "5.10a", gradeSortValue: 10 };
     const data =
-      op.path === "climbing.locationMap"
-        ? mapFixture
-        : op.path === "climbing.attachmentActivities"
-          ? climbingAttachmentActivities
-          : op.path === "climbing.attachClimbingLogEntry"
-            ? { attached: true }
-            : op.path === "climbing.gradeProgression"
-              ? [climbingProgressionFixture("route", { ropeMethod: "lead" })]
-              : op.path === "climbing.volumeByGrade"
-                ? [{ ...grade, attempts: 3, recordedAttempts: 3, sends: 2 }]
-                : op.path === "climbing.sessionSummary"
+      op.path === "climbing.strengths"
+        ? climbingStrengthsFixture
+        : op.path === "climbing.locationMap"
+          ? mapFixture
+          : op.path === "climbing.attachmentActivities"
+            ? climbingAttachmentActivities
+            : op.path === "climbing.attachClimbingLogEntry"
+              ? { attached: true }
+              : op.path === "climbing.gradeProgressionV2"
+                ? climbingProgressionFixture()
+                : op.path === "climbing.volumeOverTime"
                   ? [
-                      {
-                        activityId: "demo",
-                        date: "2026-10-04",
-                        name: "Afternoon climbing",
-                        locationName: "Crag",
-                        attempts: 3,
-                        sends: 2,
-                        hardestBoulderGrade: null,
-                        hardestBoulderGradeSortValue: null,
-                        hardestRouteGrade: "5.10a",
-                        hardestRouteGradeSortValue: 10,
-                      },
+                      { week: "2026-09-28", attempts: 12, minutes: 120 },
+                      { week: "2026-10-05", attempts: 8, minutes: 90 },
                     ]
-                  : op.path === "activity.list"
-                    ? { items: [], totalCount: 0 }
-                    : op.path === "climbing.hangboardingSummary"
-                      ? {
-                          sessionCount: 0,
-                          totalDurationSeconds: 0,
-                          averageDurationSeconds: null,
-                          totalWorkDurationSeconds: null,
-                          totalRestDurationSeconds: null,
-                          workIntervalCount: null,
-                          averageHeartRate: null,
-                          peakHeartRate: null,
-                          latestSession: null,
-                          daily: [],
-                        }
-                      : null;
+                  : op.path === "climbing.volumeByGrade"
+                    ? [{ ...grade, attempts: 3, recordedAttempts: 3, sends: 2 }]
+                    : op.path === "climbing.sessionSummary"
+                      ? [
+                          {
+                            activityId: "demo",
+                            date: "2026-10-04",
+                            name: "Afternoon climbing",
+                            locationName: "Crag",
+                            attempts: 3,
+                            sends: 2,
+                            hardestBoulderGrade: null,
+                            hardestBoulderGradeSortValue: null,
+                            hardestRouteGrade: "5.10a",
+                            hardestRouteGradeSortValue: 10,
+                          },
+                        ]
+                      : op.path === "activity.list"
+                        ? { items: [], totalCount: 0 }
+                        : op.path === "climbing.hangboardingSummary"
+                          ? {
+                              sessionCount: 0,
+                              totalDurationSeconds: 0,
+                              averageDurationSeconds: null,
+                              totalWorkDurationSeconds: null,
+                              totalRestDurationSeconds: null,
+                              workIntervalCount: null,
+                              averageHeartRate: null,
+                              peakHeartRate: null,
+                              latestSession: null,
+                              daily: [],
+                            }
+                          : null;
     const result: OperationResultObservable<AppRouter, unknown> = {
       subscribe(observer) {
         observer.next?.({ result: { data } });
@@ -129,6 +137,31 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 export const Default: Story = {};
+export const ExplorationInteraction: Story = {
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole("button", { name: "Filters" }));
+    const filters = within(canvasElement.ownerDocument.body);
+    await userEvent.click(filters.getByRole("checkbox", { name: "All climbing" }));
+    await userEvent.click(filters.getByRole("checkbox", { name: /^Bouldering$/ }));
+    await userEvent.click(filters.getByRole("checkbox", { name: "All settings" }));
+    await userEvent.click(filters.getByRole("checkbox", { name: /^Indoor$/ }));
+    await expect(filters.getByRole("checkbox", { name: /^Bouldering$/ })).toBeChecked();
+    await expect(filters.getByRole("checkbox", { name: /^Indoor$/ })).toBeChecked();
+    await userEvent.click(filters.getByRole("button", { name: "Done" }));
+    const section = canvas.getByRole("heading", { name: "Climbing Strengths" }).closest("section");
+    if (!section) throw new Error("Missing strengths section");
+    const strengths = within(section);
+    await userEvent.click(strengths.getByRole("button", { name: "Progress" }));
+    await userEvent.click(strengths.getByText("Exact values"));
+    await userEvent.click(
+      strengths.getByRole("button", { name: /Vertical · All grades · 2026-10-01/ }),
+    );
+    await expect(strengths.getByRole("region", { name: "Selected climbs" })).toHaveTextContent(
+      "Evening Arete",
+    );
+  },
+};
 export const AttachClimbToActivity: Story = {
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);

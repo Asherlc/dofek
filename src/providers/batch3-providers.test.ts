@@ -1,5 +1,3 @@
-import { parseDurationToSeconds, parseVeloHeroWorkout } from "@dofek/velohero/parsing";
-import { mapVeloHeroSport } from "@dofek/velohero/sports";
 import { describe, expect, it } from "vitest";
 import { parseCyclingAnalyticsRide } from "./cycling-analytics.ts";
 import { mapDecathlonSport, parseDecathlonActivity } from "./decathlon.ts";
@@ -212,85 +210,6 @@ describe("Decathlon Provider", () => {
       expect(parsed.endedAt).toEqual(new Date("2026-03-01T08:00:00Z"));
       expect(parsed.raw.distanceKm).toBe(10.5);
       expect(parsed.raw.avgHeartRate).toBe(155);
-    });
-  });
-});
-
-// ============================================================
-// VeloHero
-// ============================================================
-
-describe("VeloHero Provider", () => {
-  describe("mapVeloHeroSport", () => {
-    it("maps known sport IDs", () => {
-      expect(mapVeloHeroSport("1").canonicalType).toBe("cycling");
-      expect(mapVeloHeroSport("2").canonicalType).toBe("running");
-      expect(mapVeloHeroSport("3").canonicalType).toBe("swimming");
-      expect(mapVeloHeroSport("6").canonicalType).toBe("cycling");
-    });
-
-    it("returns other for unknown IDs", () => {
-      expect(mapVeloHeroSport("99").canonicalType).toBe("other");
-    });
-  });
-
-  describe("parseDurationToSeconds", () => {
-    it("parses HH:MM:SS format", () => {
-      expect(parseDurationToSeconds("01:30:00")).toBe(5400);
-      expect(parseDurationToSeconds("00:45:30")).toBe(2730);
-      expect(parseDurationToSeconds("02:00:00")).toBe(7200);
-    });
-
-    it("returns 0 for invalid format", () => {
-      expect(parseDurationToSeconds("invalid")).toBe(0);
-    });
-  });
-
-  describe("parseVeloHeroWorkout", () => {
-    it("maps workout fields and converts distance", () => {
-      const workout = {
-        id: "42",
-        date_ymd: "2026-03-01",
-        start_time: "08:00:00",
-        dur_time: "01:30:00",
-        sport_id: "1",
-        dist_km: "45.5",
-        title: "Morning Ride",
-        avg_hr: "145",
-        max_hr: "175",
-        avg_power: "200",
-        max_power: "450",
-        avg_cadence: "88",
-        max_cadence: "110",
-        calories: "900",
-        ascent: "600",
-        descent: "580",
-      };
-
-      const parsed = parseVeloHeroWorkout(workout);
-      expect(parsed.externalId).toBe("42");
-      expect(parsed.activityType.canonicalType).toBe("cycling");
-      expect(parsed.name).toBe("Morning Ride");
-      expect(parsed.raw.distanceMeters).toBe(45500);
-      expect(parsed.raw.avgHeartRate).toBe(145);
-      expect(parsed.raw.avgPower).toBe(200);
-      // Duration: 1:30:00 = 5400 seconds
-      const expectedEnd = new Date(parsed.startedAt.getTime() + 5400000);
-      expect(parsed.endedAt).toEqual(expectedEnd);
-    });
-
-    it("uses sport type as name when title is missing", () => {
-      const workout = {
-        id: "43",
-        date_ymd: "2026-03-02",
-        start_time: "09:00:00",
-        dur_time: "00:30:00",
-        sport_id: "2",
-        dist_km: "5.0",
-      };
-
-      const parsed = parseVeloHeroWorkout(workout);
-      expect(parsed.name).toBe("running workout");
     });
   });
 });

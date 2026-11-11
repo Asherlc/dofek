@@ -1,5 +1,10 @@
 # Mountain Project provider
 
+Missing rock catalogue settings are assumed outdoor by the
+[canonical read view](../drizzle/0164_climbing_catalogue_setting.sql) for analytics
+and filters. Explicit settings take precedence, and imported source records
+retain null rather than storing this assumption as a raw fact.
+
 The Mountain Project integration syncs a connected user's route and boulder
 ticks as standalone climbing log entries. It is an unofficial integration and
 fetches a public export endpoint observed on
@@ -80,13 +85,19 @@ original labels and normalizes their independently supported facts through the
 | Onsight / Flash | First attempt index; supported completion and execution facts; beta follows the shared history rule |
 | Boulder Attempt | Failed attempt |
 | Fell/Hung | `fellOrHung = true`; completion remains unknown |
-| Blank qualifier | Outcome and execution facts remain unknown |
+| Blank qualifier with TR | Successful completion on reads; explicit aid/fall facts still take precedence |
+| Other blank qualifier | Outcome and execution facts remain unknown |
+
+The [attempt read view](../drizzle/0165_mountain_project_top_rope_completion.sql)
+applies the top-rope rule to existing Mountain Project whole-route ticks as well
+as future imports. It defaults missing aid/fall flags to false for that case,
+while retaining explicit result labels and raw stored fields unchanged.
 
 The export supplies no attempt total, so each tick records one whole-Climb
 occurrence. `Pitches` describes the tick's pitch extent and creates neither
-additional tries nor catalogue Pitch objects. A top-rope method alone proves
-no completion or free send. Advertised sport/trad route types belong to the
-Climb and do not prove which protection the person used. These are Dofek's
+additional tries nor catalogue Pitch objects. Outside the blank-qualifier rule
+above, a top-rope method alone proves no completion or free send. Advertised
+sport/trad route types belong to the Climb and do not prove which protection the person used. These are Dofek's
 [normalization rules](climbing-context.md), based on the observed
 [tick export](https://www.mountainproject.com/user/200232920/cole-schmidt/tick-export).
 

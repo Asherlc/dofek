@@ -86,6 +86,14 @@ timestamp, `heartRateBpm`, and an `rrIntervalsMs` array that is empty when the
 monitor reports none. The bounded native buffer retains up to 86,400 samples
 and defaults to pages of 1,000.
 
+When the registered monitor has a reported name, samples also retain an
+optional capture-time `deviceName`. It is uploaded as raw metric metadata
+`device_name`; the peripheral UUID remains the sample's device identity.
+The name comes from Core Bluetooth's optional
+[`CBPeripheral.name`](https://developer.apple.com/documentation/corebluetooth/cbperipheral/name)
+retained by the existing app-managed monitor list. Later name changes do not
+rewrite buffered samples, and no Device Information Service discovery is added.
+
 `scanAndConnect` adds a monitor to Dofek's persisted **app-managed** list. This
 is Dofek's own registry, not a list of every peripheral iOS knows, has paired,
 or is currently connected to. `connect(peripheralId)` is limited to an ID in

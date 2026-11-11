@@ -1055,22 +1055,22 @@ describe("PredictionsRepository getTargets mapping", () => {
 });
 
 describe("PredictionsRepository predict dispatching to activity subtypes", () => {
-  it("predict for cardio_power fetches activity-specific query (2 PG + 5 CH calls)", async () => {
+  it("predict for cardio_power fetches activity-specific query (2 PG + 6 CH calls)", async () => {
     const execute = vi.fn().mockResolvedValue([]);
     const localSensorStore = { ...sensorStore, query: vi.fn().mockResolvedValue([]) };
     const repo = new PredictionsRepository({ execute }, "user-1", "UTC", localSensorStore);
     await repo.predict("cardio_power", 365);
     expect(execute).toHaveBeenCalledTimes(2);
-    expect(localSensorStore.query).toHaveBeenCalledTimes(5);
+    expect(localSensorStore.query).toHaveBeenCalledTimes(6);
   });
 
-  it("predict for strength_volume fetches strength-specific query (3 PG + 4 CH calls)", async () => {
+  it("predict for strength_volume fetches strength-specific query (3 PG + 5 CH calls)", async () => {
     const execute = vi.fn().mockResolvedValue([]);
     const localSensorStore = { ...sensorStore, query: vi.fn().mockResolvedValue([]) };
     const repo = new PredictionsRepository({ execute }, "user-1", "UTC", localSensorStore);
     await repo.predict("strength_volume", 365);
     expect(execute).toHaveBeenCalledTimes(3);
-    expect(localSensorStore.query).toHaveBeenCalledTimes(4);
+    expect(localSensorStore.query).toHaveBeenCalledTimes(5);
   });
 
   it("fetches resting heart rate using the repository timezone date", async () => {
@@ -1381,7 +1381,8 @@ describe("PredictionsRepository predict pipeline mapping", () => {
       return Promise.resolve(result);
     });
     let sensorCallIndex = 0;
-    const sensorQuery = vi.fn().mockImplementation(() => {
+    const sensorQuery = vi.fn().mockImplementation((_schema, query: string) => {
+      if (query.includes("spo2_sample_daily")) return Promise.resolve([]);
       const result = sensorCallResults[sensorCallIndex] ?? [];
       sensorCallIndex++;
       return Promise.resolve(result);
@@ -1412,7 +1413,7 @@ describe("PredictionsRepository predict pipeline mapping", () => {
     );
     const result = await repo.predict("cardio_power", 90);
     expect(execute.mock.calls.length).toBe(3);
-    expect(sensorQuery.mock.calls.length).toBe(5);
+    expect(sensorQuery.mock.calls.length).toBe(6);
     expect(result).toBeNull();
   });
 
@@ -1451,7 +1452,7 @@ describe("PredictionsRepository predict pipeline mapping", () => {
     );
     const result = await repo.predict("strength_volume", 90);
     expect(execute.mock.calls.length).toBe(3);
-    expect(sensorQuery.mock.calls.length).toBe(4);
+    expect(sensorQuery.mock.calls.length).toBe(5);
     expect(result).toBeNull();
   });
 

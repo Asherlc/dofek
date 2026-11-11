@@ -1,20 +1,26 @@
-import { useCallback, useRef, useState } from "react";
+import {
+  type ActivityChartSeries,
+  nearestActivityChartSample,
+} from "@dofek/training/activity-chart-series";
+import { useCallback, useMemo, useState } from "react";
 import { type GestureResponderEvent, PanResponder } from "react-native";
 
 const CHART_PADDING_LEFT = 44;
 
 interface ChartScrubOptions {
   plotWidth: number;
-  totalPoints: number;
+  series: ActivityChartSeries;
   onHoverIndex?: (index: number | null) => void;
+  onHoverTime?: (timestamp: number | null) => void;
   onScrubStart?: () => void;
   onScrubEnd?: () => void;
 }
 
 export function useChartScrub({
   plotWidth,
-  totalPoints,
+  series,
   onHoverIndex,
+  onHoverTime,
   onScrubStart,
   onScrubEnd,
 }: ChartScrubOptions) {
@@ -24,42 +30,48 @@ export function useChartScrub({
     (touchX: number) => {
       const relativeX = touchX - CHART_PADDING_LEFT;
       const normalizedX = Math.max(0, Math.min(1, relativeX / plotWidth));
-      return Math.round(normalizedX * Math.max(totalPoints - 1, 1));
+      const timestamp = series.startedAt + normalizedX * (series.endedAt - series.startedAt);
+      return timestamp;
     },
-    [plotWidth, totalPoints],
+    [plotWidth, series],
   );
 
   const handleTouch = useCallback(
     (event: GestureResponderEvent) => {
-      const index = fromX(event.nativeEvent.locationX);
+      const timestamp = fromX(event.nativeEvent.locationX);
+      const index = nearestActivityChartSample(series.samples, timestamp)?.index ?? null;
       setTouchIndex(index);
       onHoverIndex?.(index);
+      onHoverTime?.(timestamp);
     },
-    [fromX, onHoverIndex],
+    [fromX, onHoverIndex, onHoverTime, series.samples],
   );
 
   const handleTouchEnd = useCallback(() => {
     setTouchIndex(null);
     onHoverIndex?.(null);
+    onHoverTime?.(null);
     onScrubEnd?.();
-  }, [onHoverIndex, onScrubEnd]);
+  }, [onHoverIndex, onHoverTime, onScrubEnd]);
 
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => !!onHoverIndex,
-      onMoveShouldSetPanResponder: (_, gestureState) =>
-        !!onHoverIndex &&
-        Math.abs(gestureState.dx) > 10 &&
-        Math.abs(gestureState.dx) > Math.abs(gestureState.dy),
-      onPanResponderGrant: (event) => {
-        onScrubStart?.();
-        handleTouch(event);
-      },
-      onPanResponderMove: (event) => handleTouch(event),
-      onPanResponderRelease: handleTouchEnd,
-      onPanResponderTerminate: handleTouchEnd,
-    }),
-  ).current;
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => series.samples.length > 0,
+        onMoveShouldSetPanResponder: (_, gestureState) =>
+          series.samples.length > 0 &&
+          Math.abs(gestureState.dx) > 10 &&
+          Math.abs(gestureState.dx) > Math.abs(gestureState.dy),
+        onPanResponderGrant: (event) => {
+          onScrubStart?.();
+          handleTouch(event);
+        },
+        onPanResponderMove: (event) => handleTouch(event),
+        onPanResponderRelease: handleTouchEnd,
+        onPanResponderTerminate: handleTouchEnd,
+      }),
+    [series, onScrubStart, handleTouch, handleTouchEnd],
+  );
 
   return { touchIndex, panResponder };
 }

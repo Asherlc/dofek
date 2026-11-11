@@ -1,14 +1,8 @@
 import {
-  type ReadinessComponents,
-  ReadinessScore,
-  type ReadinessWeights,
-} from "@dofek/recovery/readiness";
-import {
   aggregateWeeklyStress,
   computeDailyStress,
   computeStressTrend,
 } from "@dofek/recovery/stress";
-import { baselineReadinessComponents } from "@dofek/scoring/scoring";
 import type { Database } from "dofek/db";
 import { captureException } from "dofek/lib/error-reporting";
 import { getEffectiveParams } from "dofek/personalization/params";
@@ -35,9 +29,7 @@ import {
 import { fetchRestingHeartRateValuesCte } from "../repositories/resting-heart-rate-query.ts";
 import { SettingsRepository } from "../repositories/settings-repository.ts";
 import type { StressResult } from "../repositories/stress-repository.ts";
-import { buildHealthspanResult } from "../routers/healthspan.ts";
-import { fetchHealthspanRawData } from "../routers/healthspan-query.ts";
-import type { HrvVariabilityRow, ReadinessRow } from "../routers/recovery.ts";
+import type { HrvVariabilityRow } from "../routers/recovery.ts";
 import type { BaselineProcessingStatus } from "./baseline-progress.ts";
 import {
   buildHealthMetricEvidence,
@@ -62,34 +54,6 @@ interface MobileRecoveryTabContext {
 
 function findRecoveryMetric(row: DailyRecoveryBaseline, metric: BaselineRelativeMetric["metric"]) {
   return row.metrics.find((candidate) => candidate.metric === metric);
-}
-
-function computeReadinessRows(
-  rows: DailyRecoveryBaseline[],
-  weights: ReadinessWeights,
-): ReadinessRow[] {
-  const results: ReadinessRow[] = [];
-  for (const row of rows) {
-    const hrv = findRecoveryMetric(row, "hrv");
-    const restingHeartRate = findRecoveryMetric(row, "resting_heart_rate");
-    const respiratoryRate = findRecoveryMetric(row, "respiratory_rate");
-    const sleepEfficiency = findRecoveryMetric(row, "sleep_efficiency");
-
-    const components: ReadinessComponents = baselineReadinessComponents({
-      hrvZScore: hrv?.baseline.zScore ?? null,
-      restingHeartRateZScore: restingHeartRate?.baseline.zScore ?? null,
-      respiratoryRateZScore: respiratoryRate?.baseline.zScore ?? null,
-      sleepEfficiency: sleepEfficiency?.value ?? null,
-    });
-    const readiness = new ReadinessScore(components, weights);
-    results.push({
-      date: row.date,
-      readinessScore: readiness.score,
-      components: readiness.components,
-      weights,
-    });
-  }
-  return results;
 }
 
 function computeStressFromRows(
@@ -179,6 +143,7 @@ export async function loadMobileRecoveryTab(
     ctx.db,
     ctx.userId,
     ctx.timezone,
+    ctx.sensorStore,
     ctx.accessWindow,
   );
   const bodyRepo = new BodyAnalyticsRepository(
@@ -197,7 +162,6 @@ export async function loadMobileRecoveryTab(
 
   const metricsQueryDays = days + 60;
   const weightDays = Math.max(days, 90);
-  const healthspanWeeks = Math.max(Math.ceil(days / 7), 4);
   const recoveryStartDate = dateWindowStartString(endDate, Math.max(0, days - 1));
 
   const [storedParams, recoveryRows, dailyMetricsRows, restingHeartRateCte, goalSetting] =
@@ -221,7 +185,6 @@ export async function loadMobileRecoveryTab(
   const recoveryRowsInWindow = recoveryRows.filter(
     (row) => row.date >= recoveryStartDate && row.date <= endDate,
   );
-  const readinessScore = computeReadinessRows(recoveryRowsInWindow, effective.readinessWeights);
   const stress = computeStressFromRows(recoveryRowsInWindow, effective.stressThresholds);
   const dailyMetrics = filterDailyMetrics(dailyMetricsRows, days, endDate);
   const metricEvidenceRows = filterDailyMetrics(
@@ -252,35 +215,18 @@ export async function loadMobileRecoveryTab(
   const goalWeightKg =
     parsedGoalWeightKg != null && Number.isFinite(parsedGoalWeightKg) ? parsedGoalWeightKg : null;
 
-  const [
-    hrvBaseline,
-    weight,
-    bodyFatTrend,
-    weightPrediction,
-    bodyFatPrediction,
-    healthspanRaw,
-    decisionContext,
-  ] = await Promise.all([
-    metricsRepo.getHrvBaseline(days, endDate, restingHeartRateCte),
-    bodyRepo.getSmoothedWeight(weightDays, endDate),
-    bodyRepo.getSmoothedBodyFat(weightDays, endDate),
-    bodyRepo.getWeightPrediction(weightDays, endDate, goalWeightKg),
-    bodyRepo.getBodyFatPrediction(weightDays, endDate),
-    fetchHealthspanRawData(
-      {
-        userId: ctx.userId,
-        timezone: ctx.timezone,
-        accessWindow: ctx.accessWindow,
-        sensorStore: ctx.sensorStore,
-      },
-      endDate,
-      healthspanWeeks * 7,
-    ),
-    bodyRepo.getBodyDecisionContext(endDate).catch((error: unknown) => {
-      captureException(error);
-      return null;
-    }),
-  ]);
+  const [hrvBaseline, weight, bodyFatTrend, weightPrediction, bodyFatPrediction, decisionContext] =
+    await Promise.all([
+      metricsRepo.getHrvBaseline(days, endDate, restingHeartRateCte),
+      bodyRepo.getSmoothedWeight(weightDays, endDate),
+      bodyRepo.getSmoothedBodyFat(weightDays, endDate),
+      bodyRepo.getWeightPrediction(weightDays, endDate, goalWeightKg),
+      bodyRepo.getBodyFatPrediction(weightDays, endDate),
+      bodyRepo.getBodyDecisionContext(endDate).catch((error: unknown) => {
+        captureException(error);
+        return null;
+      }),
+    ]);
 
   const restingHeartRateBaseline = baselineRelative.find(
     (metric) => metric.metric === "resting_heart_rate",
@@ -344,7 +290,6 @@ export async function loadMobileRecoveryTab(
     hrvVariability: computeHrvVariability(dailyMetricsRows, days, endDate),
     hrvBaseline,
     restingHeartRateTrendDirection: computeRestingHeartRateTrendDirection(hrvBaseline),
-    readinessScore,
     stress,
     trends: deriveTrends(dailyMetrics),
     dailyMetrics,
@@ -355,6 +300,5 @@ export async function loadMobileRecoveryTab(
     bodyFatPrediction,
     baselineRelative,
     healthStatus,
-    healthspan: buildHealthspanResult(healthspanRaw),
   };
 }

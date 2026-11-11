@@ -1,12 +1,12 @@
 import { createHash } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
-import { setupServer } from "msw/node";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { AccountErasureRestoreIntent } from "../../../../src/account-erasure/restore-ledger.ts";
 import { deleteExpiredAccountErasurePreparations } from "../../../../src/db/account-erasure-processing.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../../../../src/db/tokens.ts";
+import { createIntegrationMswFixture } from "../../../../src/test/early-msw-lifecycle.ts";
 import { failOnUnhandledExternalRequest } from "../../../../src/test/msw.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
@@ -16,7 +16,7 @@ const accountErasureUserId = "30000000-0000-4000-8000-000000001994";
 const guardedAccountErasureUserId = "40000000-0000-4000-8000-000000001994";
 const stripeSecretKey = "sk_test_account_erasure_router";
 let stripeCustomerDiscoveryRequests = 0;
-const externalApiServer = setupServer(
+const externalApiServer = createIntegrationMswFixture(
   http.get("https://api.stripe.com/v1/customers", ({ request }) => {
     expect(request.headers.get("authorization")).toBe(`Bearer ${stripeSecretKey}`);
     expect(new URL(request.url).searchParams.get("limit")).toBe("100");
@@ -41,7 +41,7 @@ describe("account erasure router (integration)", () => {
 
   beforeAll(async () => {
     process.env.STRIPE_SECRET_KEY = stripeSecretKey;
-    externalApiServer.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    externalApiServer.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
     context = await setupTestDatabase();
     await context.db.execute(
       sql`INSERT INTO fitness.user_profile (id, name, email)
@@ -125,7 +125,7 @@ describe("account erasure router (integration)", () => {
       server.closeAllConnections();
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
-    externalApiServer.close();
+    externalApiServer.deactivate();
     if (originalStripeSecretKey === undefined) {
       delete process.env.STRIPE_SECRET_KEY;
     } else {
@@ -194,6 +194,39 @@ describe("account erasure router (integration)", () => {
       posthogDistinctId: "another-users-distinct-id",
     });
     expect(result.error.data.code).toBe("BAD_REQUEST");
+  });
+
+  it("returns the actionable snapshot budget error before activating deletion", async () => {
+    const extraSessions = Array.from(
+      { length: 128 },
+      (_, index) => `snapshot-budget-session-${index}`,
+    );
+    await context.db.execute(sql`INSERT INTO fitness.session(id,user_id,expires_at)
+      VALUES ${sql.join(
+        extraSessions.map(
+          (id) => sql`(${id},${accountErasureUserId}::uuid,now()+interval '1 day')`,
+        ),
+        sql`, `,
+      )}`);
+    try {
+      const prepared = await mutate("accountErasure.prepare", { confirmation: "DELETE" });
+      const result = await publicMutation("accountErasure.confirm", {
+        preparationToken: prepared.result.data.preparationToken,
+      });
+      expect(result.error.data.code).toBe("PRECONDITION_FAILED");
+      expect(result.error.message).toMatch(
+        /Account deletion snapshot exceeds.*limit.*Contact support/,
+      );
+      const rows = await context.db.execute(sql`SELECT count(*)::integer AS requests
+        FROM fitness.account_erasure_request WHERE user_id=${accountErasureUserId}::uuid`);
+      expect(rows).toEqual([expect.objectContaining({ requests: 0 })]);
+    } finally {
+      await context.db.execute(sql`DELETE FROM fitness.session WHERE user_id=${accountErasureUserId}::uuid
+        AND id IN (${sql.join(
+          extraSessions.map((id) => sql`${id}`),
+          sql`, `,
+        )})`);
+    }
   });
 
   it("returns an actionable precondition error before activating an unsafe provider request", async () => {

@@ -11,6 +11,7 @@ import {
   PROCESSING_EVENT_STATUSES,
   PROCESSING_STAGES,
 } from "dofek/processing/processing-state";
+import { getAllProviders } from "dofek/providers/registry";
 import { z } from "zod";
 import { endDateSchema } from "../lib/date-window.ts";
 import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
@@ -148,7 +149,16 @@ export const processingRouter = router({
   status: cachedProtectedQuery({ maxAge: processingPollInterval("active") })
     .input(statusInputSchema)
     .output(statusOutputSchema)
-    .query(({ ctx, input }) => new ProcessingRepository(ctx.db, ctx.userId).status(input)),
+    .query(async ({ ctx, input }) => {
+      const repository = new ProcessingRepository(ctx.db, ctx.userId);
+      if (!input.providerId) return repository.status(input);
+      await ensureProvidersRegistered();
+      const provider = getAllProviders().find((candidate) => candidate.id === input.providerId);
+      return repository.status({
+        ...input,
+        ...(provider?.pushOnly ? { kind: "push_ingest" as const } : {}),
+      });
+    }),
   history: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
     .input(
       z.object({

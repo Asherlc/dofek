@@ -4,7 +4,7 @@ import { extractClickHouseTableColumnNames } from "../clickhouse-activity-sensor
 import {
   buildActivitySummaryRowsTableSql,
   buildActivitySummaryViewSql,
-} from "../clickhouse-activity-summary.ts";
+} from "./activity-summary-schema-before-0108.ts";
 import { runClickHouseMigrationStatement } from "./statement-runner.ts";
 import type { ClickHouseMigration } from "./types.ts";
 

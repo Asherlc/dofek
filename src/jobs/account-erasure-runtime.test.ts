@@ -1,30 +1,68 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { KafkaRemoteStorage } from "../account-erasure/kafka-remote-storage.ts";
 import type { AccountErasureRemoteSnapshot } from "../account-erasure/remote-snapshot.ts";
 import type { ClaimedAccountErasureRequest } from "../db/account-erasure-processing.ts";
+import type { ClickHouseClient } from "../db/clickhouse.ts";
+import { createDatabase } from "../db/index.ts";
 import type { AccountErasurePhaseExecution } from "./process-account-erasure-request.ts";
 
 const mocks = vi.hoisted(() => ({
-  assertConsumersDrained: vi.fn(async () => undefined),
+  configureBrokerStorage: vi.fn(),
+  configureRemoteHistory: vi.fn(),
+  assertNativeDeleted: vi.fn(async (_boundaries: readonly unknown[]) => new Map()),
+  metadataConsumer: { name: "native metadata consumer" },
+  assertBrokerStorageExpired: vi.fn(async () => undefined),
+  withOwner: vi.fn(
+    async (
+      _database: unknown,
+      client: ClickHouseClient,
+      _input: { resourceId: string; intentId: string },
+      operation: (owner: { client: ClickHouseClient }) => Promise<unknown>,
+    ) => operation({ client }),
+  ),
   assertPeerDbDrained: vi.fn(async () => undefined),
+  assertConsumersDrained: vi.fn(async () => undefined),
+  captureHighWatermarks: vi.fn(async (_admin: unknown, _topic: string) => [
+    { low: "0", offset: "42", partition: 0 },
+  ]),
+  captureQuarantineHighWatermarks: vi.fn(async (_admin: unknown, _topic: string) => [
+    { low: "0", offset: "7", partition: 0 },
+  ]),
   assertQuarantineExpired: vi.fn(async () => undefined),
   assertReplayExpired: vi.fn(async () => undefined),
-  captureHighWatermarks: vi.fn(async () => [{ low: "1", offset: "3", partition: 0 }]),
-  captureQuarantineHighWatermarks: vi.fn(async () => [{ low: "4", offset: "12", partition: 0 }]),
+  closeKafka: vi.fn(async () => undefined),
+  connectKafka: vi.fn(async () => undefined),
+
+  captureBrokerStorage: vi.fn(
+    async (
+      topic: string,
+      captureOffsets: () => Promise<Array<{ low: string; offset: string; partition: number }>>,
+    ) => {
+      const generations: Record<string, string> = {
+        "metric-stream-v1": "AAAAAAAAAAAAAAAAAAAAAA",
+        "metric-stream-live-v2": "BBBBBBBBBBBBBBBBBBBBBB",
+        "metric-stream-history-v2": "CCCCCCCCCCCCCCCCCCCCCC",
+        "metric-stream-v1.quarantine.v1": "aaaaaaaaaaaaaaaaaaaaaa",
+        "metric-stream-live-v2.quarantine.v1": "bbbbbbbbbbbbbbbbbbbbbb",
+        "metric-stream-history-v2.quarantine.v1": "cccccccccccccccccccccc",
+      };
+      const topicId = generations[topic];
+      if (!topicId) throw new Error(`Unexpected capture topic: ${topic}`);
+      return (await captureOffsets()).map((entry) => ({
+        ...entry,
+        clusterId: "0000000000000000000000",
+        topicId,
+      }));
+    },
+  ),
   capturePeerDbStagingBoundary: vi.fn(async () => ({
     cutoff: "2026-08-03T12:00:00.000Z",
     eTag: '"boundary-etag"',
     key: "account-erasure-boundaries/10000000-0000-4000-8000-000000001994",
-    mirrors: [
-      {
-        name: "dofek_fitness_raw_analytics",
-        status: "STATUS_PAUSED",
-      },
-    ],
+    mirrors: [{ name: "dofek_fitness_raw_analytics", status: "STATUS_PAUSED" }],
   })),
   captureWalLsn: vi.fn(async () => "0/1A2B"),
   closePeerDbStaging: vi.fn(),
-  closeRedpanda: vi.fn(async () => undefined),
-  connectRedpanda: vi.fn(async () => undefined),
   decryptSnapshot: vi.fn(),
   ensureProvidersRegistered: vi.fn(async () => undefined),
   eraseArchive: vi.fn(async () => ({
@@ -33,6 +71,34 @@ const mocks = vi.hoisted(() => ({
     recordsRemoved: 0,
   })),
   eraseClickHouse: vi.fn(async () => undefined),
+  prepareIdentifiers: vi.fn(async () => undefined),
+  readIdentifierPage: vi.fn(
+    async (
+      _family?: unknown,
+      _after?: string,
+    ): Promise<{
+      entries: Array<{ key: string; value: string }>;
+      nextCursor: string | null;
+    }> => ({
+      entries: [{ key: "a".repeat(64), value: "40000000-0000-4000-8000-000000001994" }],
+      nextCursor: null,
+    }),
+  ),
+  assertIdentifierClosure: vi.fn(async (_stage?: "initial" | "final") => undefined),
+  identifierStoreCreated: vi.fn((_database?: unknown, _input?: unknown) => undefined),
+  loadPhysicalProgress: vi.fn(
+    async (
+      _stage?: "initial" | "final",
+    ): Promise<{
+      step: "apply";
+      afterIntentKey: null;
+      pending: null;
+    } | null> => ({
+      step: "apply",
+      afterIntentKey: null,
+      pending: null,
+    }),
+  ),
   erasePostgres: vi.fn(async () => undefined),
   eraseProcessors: vi.fn(async () => ({ processor: "queued" })),
   eraseStripe: vi.fn(async () => ({
@@ -48,6 +114,7 @@ const mocks = vi.hoisted(() => ({
     destroy: vi.fn(),
     send: vi.fn(),
   },
+  brokerR2Client: { destroy: vi.fn(), send: vi.fn() },
   verifyBackupRetention: vi.fn(async () => ({ deletedObjects: 2 })),
   verifyPeerDbStagingRetention: vi.fn(async () => ({
     lifecycleRetentionDays: 1,
@@ -60,11 +127,58 @@ const mocks = vi.hoisted(() => ({
     sentryRetentionDays: 30,
   })),
   verifyProcessors: vi.fn(async () => ({ processor: "complete" })),
+  phaseRunnerShouldFail: false,
+}));
+
+vi.mock("../account-erasure/kafka-log-storage.ts", () => ({
+  KafkaLogStorage: class {
+    constructor(admin: unknown, paths: unknown, remote: unknown) {
+      mocks.configureBrokerStorage(admin, paths, remote);
+    }
+    assertExpired = mocks.assertBrokerStorageExpired;
+    capture = mocks.captureBrokerStorage;
+  },
+}));
+
+vi.mock("../analytics/analytics-query-owner.ts", () => ({
+  ANALYTICS_PUBLICATION_RESOURCE: "metric-stream-source",
+  withAnalyticsQueryOwner: mocks.withOwner,
+}));
+const ownerDatabase = createDatabase("postgres://unit:unit@localhost/unit");
+afterAll(async () => ownerDatabase.$client.end());
+
+vi.mock("./account-erasure-phase-runner.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./account-erasure-phase-runner.ts")>();
+  return {
+    ...actual,
+    createAccountErasurePhaseRunner: (
+      dependencies: Parameters<typeof actual.createAccountErasurePhaseRunner>[0],
+    ) => {
+      if (mocks.phaseRunnerShouldFail) {
+        throw new Error("phase runner unavailable");
+      }
+      return actual.createAccountErasurePhaseRunner(dependencies);
+    },
+  };
+});
+vi.mock("../account-erasure/kafka-remote-history.ts", () => ({
+  KafkaRemoteHistory: class {
+    constructor(admin: unknown, consumer: unknown) {
+      mocks.configureRemoteHistory(admin, consumer);
+    }
+    assertDeleted = mocks.assertNativeDeleted;
+  },
 }));
 
 vi.mock("../r2-storage.ts", () => ({
-  createR2Client: vi.fn(() => mocks.r2Client),
-  requiredR2EnvironmentVariable: vi.fn((name: string) => `${name.toLowerCase()}-bucket`),
+  createR2Client: vi.fn((config?: unknown) => (config ? mocks.brokerR2Client : mocks.r2Client)),
+  requiredR2EnvironmentVariable: vi.fn((name: string) =>
+    name === "KAFKA_TIERED_STORAGE_REGION"
+      ? "auto"
+      : name === "KAFKA_CLUSTER_ID"
+        ? "0000000000000000000000"
+        : `${name.toLowerCase()}-bucket`,
+  ),
 }));
 
 vi.mock("@sentry/node", () => ({
@@ -87,6 +201,25 @@ vi.mock("../account-erasure/database-backup-storage.ts", () => ({
 vi.mock("../account-erasure/clickhouse-erasure.ts", () => ({
   eraseClickHouseAccount: mocks.eraseClickHouse,
   fenceClickHouseAccount: mocks.fenceClickHouse,
+  prepareClickHouseAccountErasure: mocks.prepareIdentifiers,
+}));
+
+vi.mock("../account-erasure/identifier-store.ts", () => ({
+  ACCOUNT_ERASURE_IDENTIFIER_PAGE_SIZE: 500,
+  AccountErasureIdentifierStore: class {
+    constructor(database: unknown, input: unknown) {
+      mocks.identifierStoreCreated(database, input);
+    }
+    readPage(family: unknown, after?: string) {
+      return mocks.readIdentifierPage(family, after);
+    }
+    loadPhysicalProgress(stage: "initial" | "final") {
+      return mocks.loadPhysicalProgress(stage);
+    }
+    assertClosureComplete(stage: "initial" | "final") {
+      return mocks.assertIdentifierClosure(stage);
+    }
+  },
 }));
 
 vi.mock("../account-erasure/peerdb-erasure.ts", () => ({
@@ -132,35 +265,48 @@ vi.mock("../account-erasure/processor-retention.ts", () => ({
   verifyProcessorRetentionPolicies: mocks.verifyProcessorRetention,
 }));
 
-vi.mock("../account-erasure/redpanda-drain.ts", () => ({
-  assertAccountErasureConsumersDrained: mocks.assertConsumersDrained,
-  assertAccountErasureQuarantineExpired: mocks.assertQuarantineExpired,
-  assertAccountErasureReplayExpired: mocks.assertReplayExpired,
-  captureAccountErasureHighWatermarks: mocks.captureHighWatermarks,
-  captureAccountErasureQuarantineHighWatermarks: mocks.captureQuarantineHighWatermarks,
-  createAccountErasureRedpandaAdminFromEnv: vi.fn(() => ({
-    admin: { name: "redpanda-admin" },
-    close: mocks.closeRedpanda,
-    connect: mocks.connectRedpanda,
-    routes: [
-      {
-        topic: "metric-stream-v1",
-        consumerGroups: ["metric-stream-clickhouse-sink", "metric-stream-r2-archive"],
-      },
-      {
-        topic: "metric-stream-live-v1",
-        consumerGroups: ["metric-stream-live-clickhouse-sink", "metric-stream-live-r2-archive"],
-      },
-      {
-        topic: "metric-stream-history-v1",
-        consumerGroups: [
-          "metric-stream-history-clickhouse-sink",
-          "metric-stream-history-r2-archive",
+vi.mock("../account-erasure/redpanda-drain.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../account-erasure/redpanda-drain.ts")>();
+  return {
+    ...actual,
+    assertAccountErasureConsumersDrained: mocks.assertConsumersDrained,
+    assertAccountErasureQuarantineExpired: mocks.assertQuarantineExpired,
+    assertAccountErasureReplayExpired: mocks.assertReplayExpired,
+    captureAccountErasureHighWatermarks: mocks.captureHighWatermarks,
+    captureAccountErasureQuarantineHighWatermarks: mocks.captureQuarantineHighWatermarks,
+    createAccountErasureRedpandaAdminFromEnv: vi.fn((env: NodeJS.ProcessEnv = process.env) => {
+      const brokers = env.REDPANDA_BROKERS?.split(",")
+        .map((broker) => broker.trim())
+        .filter(Boolean);
+      if (!brokers?.length) {
+        throw new Error("REDPANDA_BROKERS is required for account erasure");
+      }
+      return {
+        admin: { name: "kafka-admin" },
+        createMetadataConsumer: () => mocks.metadataConsumer,
+        close: mocks.closeKafka,
+        connect: mocks.connectKafka,
+        routes: [
+          {
+            topic: "metric-stream-v1",
+            consumerGroups: ["metric-stream-clickhouse-sink", "metric-stream-r2-archive"],
+          },
+          {
+            topic: "metric-stream-live-v2",
+            consumerGroups: ["metric-stream-live-clickhouse-sink", "metric-stream-live-r2-archive"],
+          },
+          {
+            topic: "metric-stream-history-v2",
+            consumerGroups: [
+              "metric-stream-history-clickhouse-sink",
+              "metric-stream-history-r2-archive",
+            ],
+          },
         ],
-      },
-    ],
-  })),
-}));
+      };
+    }),
+  };
+});
 
 vi.mock("../account-erasure/remote-revocation.ts", () => ({
   eraseStripeAccount: mocks.eraseStripe,
@@ -202,12 +348,9 @@ const snapshot: AccountErasureRemoteSnapshot = {
   authIdentities: [],
   externalEffects: [],
   localIdentifiers: {
-    activityIds: ["30000000-0000-4000-8000-000000001994"],
     exportObjects: [],
     fileUploads: [],
-    processingOperationIds: ["40000000-0000-4000-8000-000000001994"],
     sessionIds: [],
-    sleepSessionIds: ["50000000-0000-4000-8000-000000001994"],
     userId: request.userId ?? "missing-user",
   },
   posthogDistinctId: "posthog-distinct-1994",
@@ -222,279 +365,555 @@ function execution(
   claimedRequest: ClaimedAccountErasureRequest = request,
 ): AccountErasurePhaseExecution {
   return {
+    leaseOwner: "runtime-fixture-worker",
     deleteProfile: vi.fn(async () => ({ walLsn: "0/1A2B" })),
     loadCheckpointDetails,
     loadProgress: vi.fn(async () => null),
     request: claimedRequest,
+    persistProviderCredentials: vi.fn(async () => undefined),
     saveProgress: vi.fn(async () => undefined),
     scrubPii: vi.fn(async () => undefined),
   };
 }
 
+function mockClickHouse() {
+  return {
+    exec: vi.fn<ClickHouseClient["exec"]>(),
+    command: vi.fn(async () => undefined),
+    insert: vi.fn(async () => undefined),
+    query: vi.fn(async () => ({ json: async () => [] })),
+  };
+}
+
+const retainedRequest: ClaimedAccountErasureRequest = {
+  ...request,
+  encryptedRemoteSnapshot: null,
+  piiScrubbedAt: new Date("2026-08-03T12:00:00.000Z"),
+  userId: null,
+};
+
+const peerDbDrainCheckpoint = {
+  stagingBoundary: {
+    cutoff: "2026-08-03T12:00:00.000Z",
+    eTag: '"boundary-etag"',
+    key: "account-erasure-boundaries/10000000-0000-4000-8000-000000001994",
+    mirrors: [{ name: "dofek_fitness_raw_analytics", status: "STATUS_PAUSED" as const }],
+  },
+  verified: true,
+};
+
+async function retentionLoadCheckpointDetails(
+  phase: Parameters<AccountErasurePhaseExecution["loadCheckpointDetails"]>[0],
+) {
+  if (phase === "consumer_drain") {
+    return {
+      quarantineHighWatermarks: [
+        { topic: "metric-stream-v1", low: "0", offset: "7", partition: 0 },
+        { topic: "metric-stream-live-v2", low: "0", offset: "7", partition: 0 },
+        { topic: "metric-stream-history-v2", low: "0", offset: "7", partition: 0 },
+      ],
+    };
+  }
+  if (phase === "ingest_fence")
+    return {
+      highWatermarks: [
+        { topic: "metric-stream-v1", low: "0", offset: "42", partition: 0 },
+        { topic: "metric-stream-live-v2", low: "0", offset: "42", partition: 0 },
+        { topic: "metric-stream-history-v2", low: "0", offset: "42", partition: 0 },
+      ],
+    };
+  if (phase === "peerdb_drain_verification") {
+    return peerDbDrainCheckpoint;
+  }
+  return null;
+}
+
+function runtimeInputs() {
+  return {
+    database: ownerDatabase,
+    clickHouseClient: mockClickHouse(),
+    workPurger: { close: vi.fn(async () => undefined), purge: vi.fn(async () => undefined) },
+  };
+}
+
 describe("createAccountErasureRuntime", () => {
-  it("connects concrete production adapters and closes owned resources", async () => {
-    mocks.decryptSnapshot.mockResolvedValue(snapshot);
-    mocks.closePeerDbStaging.mockClear();
-    mocks.r2Client.destroy.mockClear();
-    const database = {
-      execute: vi.fn(async () => []),
-      transaction: vi.fn(),
-    };
-    const clickHouseClient = {
-      command: vi.fn(async () => undefined),
-      insert: vi.fn(async () => undefined),
-      query: vi.fn(async () => ({ json: async () => [] })),
-    };
-    const workPurger = {
-      close: vi.fn(async () => undefined),
-      purge: vi.fn(async () => undefined),
-    };
-    const runtime = await createAccountErasureRuntime(database, clickHouseClient, workPurger);
-
-    const topics = ["metric-stream-v1", "metric-stream-live-v1", "metric-stream-history-v1"];
-    const highWatermarks = topics.map((topic) => ({ topic, low: "1", offset: "3", partition: 0 }));
-    const quarantineHighWatermarks = topics.map((topic) => ({
-      topic,
-      low: "4",
-      offset: "12",
-      partition: 0,
-    }));
-
-    expect(mocks.ensureProvidersRegistered).toHaveBeenCalledOnce();
-    expect(mocks.connectRedpanda).toHaveBeenCalledOnce();
-
-    await expect(runtime.phaseRunner.runPhase("ingest_fence", execution())).resolves.toEqual({
-      highWatermarks,
-    });
-    expect(mocks.fenceClickHouse).toHaveBeenCalledWith(
-      clickHouseClient,
-      snapshot.localIdentifiers.userId,
-      snapshot.localIdentifiers.processingOperationIds,
-    );
-    await expect(
-      runtime.phaseRunner.runPhase(
-        "consumer_drain",
-        execution(async (phase) => (phase === "ingest_fence" ? { highWatermarks } : null)),
-      ),
-    ).resolves.toEqual({
-      quarantineHighWatermarks,
-    });
-    expect(mocks.assertConsumersDrained).toHaveBeenCalledWith(
-      { name: "redpanda-admin" },
-      "metric-stream-v1",
-      [{ topic: "metric-stream-v1", low: "1", offset: "3", partition: 0 }],
-      ["metric-stream-clickhouse-sink", "metric-stream-r2-archive"],
-    );
-    expect(mocks.captureQuarantineHighWatermarks).toHaveBeenCalledWith(
-      { name: "redpanda-admin" },
-      "metric-stream-v1",
-    );
-    await runtime.phaseRunner.runPhase(
-      "retention_verification",
-      execution(
-        async (phase) =>
-          phase === "consumer_drain"
-            ? {
-                quarantineHighWatermarks,
-              }
-            : phase === "peerdb_drain_verification"
-              ? {
-                  stagingBoundary: {
-                    cutoff: "2026-08-03T12:00:00.000Z",
-                    eTag: '"boundary-etag"',
-                    key: `account-erasure-boundaries/${request.id}`,
-                    mirrors: [
-                      {
-                        name: "dofek_fitness_raw_analytics",
-                        status: "STATUS_PAUSED",
-                      },
-                    ],
-                  },
-                }
-              : null,
-        {
-          ...request,
-          encryptedRemoteSnapshot: null,
-          piiScrubbedAt: new Date("2026-08-03T12:00:00.000Z"),
-          userId: null,
-        },
-      ),
-    );
-    expect(mocks.assertQuarantineExpired).toHaveBeenCalledWith(
-      { name: "redpanda-admin" },
-      "metric-stream-v1",
-      [{ topic: "metric-stream-v1", low: "4", offset: "12", partition: 0 }],
-    );
-    expect(mocks.verifyPeerDbStagingRetention).toHaveBeenCalledWith(mocks.peerDbStagingStorage, {
-      cutoff: new Date("2026-08-03T12:00:00.000Z"),
-      now: expect.any(Date),
-    });
-
-    await runtime.phaseRunner.runPhase(
-      "consumer_drain_verification",
-      execution(async (phase) => (phase === "ingest_fence" ? { highWatermarks } : null)),
-    );
-    await expect(
-      runtime.phaseRunner.runPhase(
-        "consumer_drain",
-        execution(async (phase) =>
-          phase === "ingest_fence" ? { highWatermarks: highWatermarks.slice(0, 2) } : null,
-        ),
-      ),
-    ).rejects.toThrow("Account erasure checkpoint is missing topic metric-stream-history-v1");
-    for (const [index, topic] of topics.entries()) {
-      const prefix = ["metric-stream", "metric-stream-live", "metric-stream-history"][index];
-      expect(mocks.captureHighWatermarks).toHaveBeenCalledWith({ name: "redpanda-admin" }, topic);
-      expect(mocks.captureQuarantineHighWatermarks).toHaveBeenCalledWith(
-        { name: "redpanda-admin" },
-        topic,
-      );
-      expect(mocks.assertConsumersDrained).toHaveBeenCalledWith(
-        { name: "redpanda-admin" },
-        topic,
-        [highWatermarks[index]],
-        [`${prefix}-clickhouse-sink`, `${prefix}-r2-archive`],
-      );
-      expect(mocks.assertReplayExpired).toHaveBeenCalledWith({ name: "redpanda-admin" }, topic, [
-        highWatermarks[index],
-      ]);
-      expect(mocks.assertQuarantineExpired).toHaveBeenCalledWith(
-        { name: "redpanda-admin" },
-        topic,
-        [quarantineHighWatermarks[index]],
-      );
-    }
-
-    await expect(runtime.phaseRunner.runPhase("clickhouse_initial", execution())).resolves.toEqual({
-      verified: false,
-    });
-    expect(mocks.eraseClickHouse).toHaveBeenCalledWith(clickHouseClient, {
-      activityIds: snapshot.localIdentifiers.activityIds,
-      operationIds: snapshot.localIdentifiers.processingOperationIds,
-      sleepSessionIds: snapshot.localIdentifiers.sleepSessionIds,
-      userId: snapshot.localIdentifiers.userId,
-    });
-
-    await expect(runtime.phaseRunner.runPhase("archive_initial", execution())).resolves.toEqual({
-      objectsRewritten: 0,
-      recordsRemoved: 0,
-    });
-    expect(mocks.eraseArchive).toHaveBeenCalledWith(
-      expect.anything(),
-      {
-        activityIds: new Set(snapshot.localIdentifiers.activityIds),
-        operationIds: new Set(snapshot.localIdentifiers.processingOperationIds),
-        userId: snapshot.localIdentifiers.userId,
-      },
-      expect.objectContaining({
-        onObjectCompleted: expect.any(Function),
-      }),
-    );
-
-    await expect(runtime.phaseRunner.runPhase("postgres_erasure", execution())).resolves.toBeNull();
-    expect(mocks.erasePostgres).toHaveBeenCalledWith(database, request.id, request.userId);
-    expect(mocks.captureWalLsn).not.toHaveBeenCalled();
-
-    await runtime.phaseRunner.runPhase(
-      "peerdb_drain_verification",
-      execution(async (phase) =>
-        phase === "postgres_profile_delete" ? { walLsn: "0/1A2B" } : null,
-      ),
-    );
-    expect(mocks.assertPeerDbDrained).toHaveBeenCalledWith(database, clickHouseClient, "0/1A2B", {
-      activityIds: snapshot.localIdentifiers.activityIds,
-      operationIds: snapshot.localIdentifiers.processingOperationIds,
-      sleepSessionIds: snapshot.localIdentifiers.sleepSessionIds,
-      userId: snapshot.localIdentifiers.userId,
-    });
-    expect(mocks.capturePeerDbStagingBoundary).toHaveBeenCalledWith(
-      database,
-      mocks.peerDbMirrorApi,
-      mocks.peerDbStagingStorage,
-      {
-        loadProgress: expect.any(Function),
-        requestId: request.id,
-        saveProgress: expect.any(Function),
-      },
-    );
-    await runtime.close();
-    expect(mocks.closePeerDbStaging).toHaveBeenCalledOnce();
-    expect(mocks.closeRedpanda).toHaveBeenCalledOnce();
-    expect(workPurger.close).toHaveBeenCalledOnce();
-    expect(mocks.r2Client.destroy).toHaveBeenCalledOnce();
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.phaseRunnerShouldFail = false;
+    process.env.REDPANDA_BROKERS = "kafka.test:9092";
+    process.env.METRIC_STREAM_LEGACY_TOPIC = "metric-stream-v1";
+    process.env.METRIC_STREAM_LIVE_TOPIC = "metric-stream-live-v2";
+    process.env.METRIC_STREAM_HISTORY_TOPIC = "metric-stream-history-v2";
+    mocks.r2Client.send.mockResolvedValue({ Contents: [], IsTruncated: false });
   });
 
-  it("releases acquired resources when runtime startup fails", async () => {
-    const Sentry = await import("@sentry/node");
-    const startupError = new Error("Redpanda authentication failed");
-    mocks.closePeerDbStaging.mockClear();
-    mocks.closeRedpanda.mockClear();
-    mocks.r2Client.destroy.mockClear();
-    mocks.connectRedpanda.mockRejectedValueOnce(startupError);
-    vi.mocked(Sentry.captureException).mockClear();
+  it("connects the remote verifier to the dedicated client, native history and consumer factory", async () => {
+    const { createR2Client } = await import("../r2-storage.ts");
+    vi.mocked(createR2Client).mockClear();
+    mocks.assertNativeDeleted.mockClear();
+    const inputs = runtimeInputs();
+    const runtime = await createAccountErasureRuntime(
+      inputs.database,
+      inputs.clickHouseClient,
+      inputs.workPurger,
+    );
+    try {
+      expect(createR2Client).toHaveBeenCalledWith({
+        accessKeyId: "kafka_tiered_storage_access_key_id-bucket",
+        secretAccessKey: "kafka_tiered_storage_secret_access_key-bucket",
+        endpoint: "kafka_tiered_storage_endpoint-bucket",
+      });
+      const factory = mocks.configureRemoteHistory.mock.lastCall?.[1];
+      expect(factory).toBeTypeOf("function");
+      if (typeof factory !== "function") throw new Error("missing metadata consumer factory");
+      expect(factory()).toBe(mocks.metadataConsumer);
+      const remote = mocks.configureBrokerStorage.mock.lastCall?.[2];
+      if (!(remote instanceof KafkaRemoteStorage))
+        throw new Error("missing remote storage dependency");
+      mocks.brokerR2Client.send.mockResolvedValue({ IsTruncated: false });
+      const boundaries = ["metric-stream-v1", "metric-stream-live-v2", "metric-stream-history-v2"]
+        .flatMap((topic) => [topic, `${topic}.quarantine.v1`])
+        .map((topic) => ({
+          topic,
+          clusterId: "0000000000000000000000",
+          topicId: "dI2O6HVWQkuC7XgSy7cJ3w",
+          partition: 0,
+          low: "0",
+          offset: "0",
+        }));
+      await expect(remote.assertExpired(boundaries)).resolves.toEqual(new Map());
+      expect(mocks.assertNativeDeleted).toHaveBeenCalledWith(boundaries);
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("rejects an unsupported R2 region and closes acquired resources", async () => {
+    const { requiredR2EnvironmentVariable } = await import("../r2-storage.ts");
+    const inputs = runtimeInputs();
+    await vi.mocked(requiredR2EnvironmentVariable).withImplementation(
+      (name) =>
+        name === "KAFKA_TIERED_STORAGE_REGION" ? "us-east-1" : `${name.toLowerCase()}-bucket`,
+      async () => {
+        await expect(
+          createAccountErasureRuntime(inputs.database, inputs.clickHouseClient, inputs.workPurger),
+        ).rejects.toThrow("REGION must be auto");
+      },
+    );
+    expect(inputs.workPurger.close).toHaveBeenCalledOnce();
+  });
+
+  it("closes the dedicated broker client when later native adapter startup fails", async () => {
+    const inputs = runtimeInputs();
+    mocks.brokerR2Client.destroy.mockClear();
+    const error = new Error("native storage mount unavailable");
+    mocks.configureBrokerStorage.mockImplementationOnce(() => {
+      throw error;
+    });
+    await expect(
+      createAccountErasureRuntime(inputs.database, inputs.clickHouseClient, inputs.workPurger),
+    ).rejects.toBe(error);
+    expect(mocks.brokerR2Client.destroy).toHaveBeenCalledOnce();
+  });
+  it("captures Kafka high-watermarks and drains consumer groups per route", async () => {
+    mocks.decryptSnapshot.mockResolvedValue(snapshot);
     const database = {
+      $client: ownerDatabase.$client,
       execute: vi.fn(async () => []),
       transaction: vi.fn(),
     };
-    const clickHouseClient = {
+    const clickhouse = {
+      exec: vi.fn<ClickHouseClient["exec"]>(),
       command: vi.fn(async () => undefined),
       insert: vi.fn(async () => undefined),
       query: vi.fn(async () => ({ json: async () => [] })),
     };
+    const runtime = await createAccountErasureRuntime(database, clickhouse, {
+      close: vi.fn(async () => undefined),
+      purge: vi.fn(async () => undefined),
+    });
+    try {
+      const topics = ["metric-stream-v1", "metric-stream-live-v2", "metric-stream-history-v2"];
+      const highWatermarks = topics.map((topic, index) => ({
+        topic,
+        low: "0",
+        offset: "42",
+        partition: 0,
+        clusterId: "0000000000000000000000",
+        topicId: ["AAAAAAAAAAAAAAAAAAAAAA", "BBBBBBBBBBBBBBBBBBBBBB", "CCCCCCCCCCCCCCCCCCCCCC"][
+          index
+        ],
+      }));
+      const quarantineHighWatermarks = topics.map((topic, index) => ({
+        topic,
+        low: "0",
+        offset: "7",
+        partition: 0,
+        clusterId: "0000000000000000000000",
+        topicId: ["aaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbb", "cccccccccccccccccccccc"][
+          index
+        ],
+      }));
+
+      await expect(runtime.phaseRunner.runPhase("ingest_fence", execution())).resolves.toEqual({
+        highWatermarks,
+      });
+      expect(mocks.configureBrokerStorage).toHaveBeenCalledWith(
+        { name: "kafka-admin" },
+        {
+          directory: "/var/lib/dofek/kafka-data",
+          brokerDirectory: "/var/lib/kafka/data",
+          retiredDirectories: [
+            "/var/lib/dofek/retired-broker-data",
+            "/var/lib/dofek/aborted-kafka-data",
+          ],
+          topics: topics.flatMap((topic) => [topic, `${topic}.quarantine.v1`]),
+        },
+        expect.any(KafkaRemoteStorage),
+      );
+      expect(mocks.connectKafka).toHaveBeenCalledOnce();
+      expect(mocks.captureHighWatermarks).toHaveBeenCalledTimes(3);
+
+      await expect(
+        runtime.phaseRunner.runPhase(
+          "consumer_drain",
+          execution(async (phase) => (phase === "ingest_fence" ? { highWatermarks } : null)),
+        ),
+      ).resolves.toEqual({
+        drained: true,
+        quarantineHighWatermarks,
+      });
+      expect(mocks.assertConsumersDrained).toHaveBeenCalledTimes(3);
+      expect(mocks.captureQuarantineHighWatermarks).toHaveBeenCalledTimes(3);
+      expect(mocks.assertConsumersDrained).toHaveBeenCalledWith(
+        { name: "kafka-admin" },
+        "metric-stream-v1",
+        [highWatermarks[0]],
+        ["metric-stream-clickhouse-sink", "metric-stream-r2-archive"],
+      );
+      expect(mocks.withOwner).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({
+          resourceId: "metric-stream-source",
+          intentId: `account-erasure:${request.id}`,
+        }),
+        expect.any(Function),
+      );
+      expect(mocks.prepareIdentifiers).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({
+          requestId: request.id,
+          leaseOwner: "runtime-fixture-worker",
+          stage: "initial",
+        }),
+      );
+      expect(mocks.identifierStoreCreated).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          requestId: request.id,
+          leaseOwner: "runtime-fixture-worker",
+          pageSize: 500,
+        }),
+      );
+
+      await expect(
+        runtime.phaseRunner.runPhase(
+          "consumer_drain",
+          execution(async (phase) =>
+            phase === "ingest_fence" ? { highWatermarks: highWatermarks.slice(0, 2) } : null,
+          ),
+        ),
+      ).rejects.toThrow("Account erasure checkpoint is missing topic metric-stream-history-v2");
+    } finally {
+      await runtime.close();
+      expect(mocks.closeKafka).toHaveBeenCalledOnce();
+    }
+  });
+
+  it("prepares ClickHouse identifiers and drains PeerDB with staging boundary capture", async () => {
+    mocks.decryptSnapshot.mockResolvedValue(snapshot);
     const workPurger = {
       close: vi.fn(async () => undefined),
       purge: vi.fn(async () => undefined),
     };
+    const runtime = await createAccountErasureRuntime(ownerDatabase, mockClickHouse(), workPurger);
+    try {
+      await expect(
+        runtime.phaseRunner.runPhase(
+          "peerdb_drain_verification",
+          execution(async (phase) =>
+            phase === "postgres_profile_delete" ? { walLsn: "0/ABCD" } : null,
+          ),
+        ),
+      ).resolves.toEqual({
+        stagingBoundary: expect.objectContaining({
+          key: peerDbDrainCheckpoint.stagingBoundary.key,
+        }),
+        verified: true,
+      });
+      expect(mocks.assertIdentifierClosure).toHaveBeenCalledWith("initial");
+      expect(mocks.loadPhysicalProgress).toHaveBeenCalledWith("initial");
+      expect(mocks.assertPeerDbDrained).toHaveBeenCalledWith(
+        ownerDatabase,
+        expect.anything(),
+        "0/ABCD",
+        expect.objectContaining({
+          userId: request.userId,
+          store: expect.anything(),
+        }),
+      );
+      expect(mocks.capturePeerDbStagingBoundary).toHaveBeenCalledWith(
+        ownerDatabase,
+        mocks.peerDbMirrorApi,
+        mocks.peerDbStagingStorage,
+        expect.objectContaining({ requestId: request.id }),
+      );
 
-    await expect(createAccountErasureRuntime(database, clickHouseClient, workPurger)).rejects.toBe(
-      startupError,
-    );
+      await expect(
+        runtime.phaseRunner.runPhase("clickhouse_initial", execution()),
+      ).resolves.toEqual({ verified: false });
+      expect(mocks.withOwner).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({
+          resourceId: "metric-stream-source",
+          intentId: `account-erasure:${request.id}`,
+        }),
+        expect.any(Function),
+      );
+      expect(mocks.eraseClickHouse).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({
+          requestId: request.id,
+          leaseOwner: "runtime-fixture-worker",
+          stage: "initial",
+        }),
+      );
 
-    expect(Sentry.captureException).toHaveBeenCalledWith(startupError, {
+      await expect(
+        runtime.phaseRunner.runPhase("archive_initial", execution()),
+      ).resolves.toMatchObject({ objectsRewritten: 0, recordsRemoved: 0 });
+      expect(mocks.eraseArchive).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          userId: request.userId,
+          stage: "initial",
+          store: expect.anything(),
+        }),
+        expect.objectContaining({ onObjectCompleted: expect.any(Function) }),
+      );
+    } finally {
+      await runtime.close();
+      expect(mocks.closeKafka).toHaveBeenCalledOnce();
+      expect(workPurger.close).toHaveBeenCalledOnce();
+    }
+  });
+
+  it("closes Kafka during startup cleanup when phase-runner wiring fails", async () => {
+    mocks.phaseRunnerShouldFail = true;
+    try {
+      await expect(
+        createAccountErasureRuntime(ownerDatabase, mockClickHouse(), {
+          close: vi.fn(async () => undefined),
+          purge: vi.fn(async () => undefined),
+        }),
+      ).rejects.toThrow("phase runner unavailable");
+      expect(mocks.connectKafka).toHaveBeenCalledOnce();
+      expect(mocks.closeKafka).toHaveBeenCalledOnce();
+    } finally {
+      mocks.phaseRunnerShouldFail = false;
+    }
+  });
+
+  it("preserves the startup cause and reports cleanup failures", async () => {
+    const Sentry = await import("@sentry/node");
+    const cleanupError = new Error("Kafka cleanup unavailable");
+    mocks.phaseRunnerShouldFail = true;
+    mocks.closeKafka.mockRejectedValueOnce(cleanupError);
+    const result = await createAccountErasureRuntime(ownerDatabase, mockClickHouse(), {
+      close: vi.fn(async () => undefined),
+      purge: vi.fn(async () => undefined),
+    }).catch((error: unknown) => error);
+    expect(result).toBeInstanceOf(AggregateError);
+    if (!(result instanceof AggregateError)) throw new Error("Missing aggregate error");
+    expect(result.cause).toMatchObject({ message: "phase runner unavailable" });
+    expect(result.errors).toEqual([
+      expect.objectContaining({ message: "phase runner unavailable" }),
+      cleanupError,
+    ]);
+    expect(Sentry.captureException).toHaveBeenCalledWith(result.cause, {
       tags: { accountErasureStep: "runtimeStartup" },
     });
-    expect(mocks.closePeerDbStaging).toHaveBeenCalledOnce();
-    expect(mocks.closeRedpanda).toHaveBeenCalledOnce();
-    expect(workPurger.close).toHaveBeenCalledOnce();
-    expect(mocks.r2Client.destroy).toHaveBeenCalledOnce();
-  });
-
-  it("reports startup cleanup failures without hiding the original cause", async () => {
-    const Sentry = await import("@sentry/node");
-    const startupError = new Error("Redpanda authentication failed");
-    const cleanupError = new Error("Redpanda disconnect failed");
-    mocks.closePeerDbStaging.mockClear();
-    mocks.closeRedpanda.mockClear();
-    mocks.r2Client.destroy.mockClear();
-    mocks.connectRedpanda.mockRejectedValueOnce(startupError);
-    mocks.closeRedpanda.mockRejectedValueOnce(cleanupError);
-    vi.mocked(Sentry.captureException).mockClear();
-    const database = {
-      execute: vi.fn(async () => []),
-      transaction: vi.fn(),
-    };
-    const clickHouseClient = {
-      command: vi.fn(async () => undefined),
-      insert: vi.fn(async () => undefined),
-      query: vi.fn(async () => ({ json: async () => [] })),
-    };
-    const workPurger = {
-      close: vi.fn(async () => undefined),
-      purge: vi.fn(async () => undefined),
-    };
-
-    await expect(
-      createAccountErasureRuntime(database, clickHouseClient, workPurger),
-    ).rejects.toMatchObject({
-      cause: startupError,
-      errors: [startupError, cleanupError],
-      message: "Account erasure runtime startup and cleanup failed",
-    });
-
     expect(Sentry.captureException).toHaveBeenCalledWith(cleanupError, {
       tags: { accountErasureStep: "runtimeStartupCleanup" },
     });
-    expect(mocks.closePeerDbStaging).toHaveBeenCalledOnce();
-    expect(mocks.r2Client.destroy).toHaveBeenCalledOnce();
+  });
+
+  it("pages ClickHouse fence identifiers and fences each page's operation values", async () => {
+    const pageOneValue = "40000000-0000-4000-8000-000000001001";
+    const pageTwoValue = "40000000-0000-4000-8000-000000001002";
+    mocks.readIdentifierPage
+      .mockResolvedValueOnce({
+        entries: [{ key: "a".repeat(64), value: pageOneValue }],
+        nextCursor: "cursor-page-1",
+      })
+      .mockResolvedValueOnce({
+        entries: [{ key: "b".repeat(64), value: pageTwoValue }],
+        nextCursor: null,
+      });
+    const runtime = await createAccountErasureRuntime(ownerDatabase, mockClickHouse(), {
+      close: vi.fn(async () => undefined),
+      purge: vi.fn(async () => undefined),
+    });
+    try {
+      await runtime.phaseRunner.runPhase("ingest_fence", execution());
+      expect(mocks.readIdentifierPage).toHaveBeenNthCalledWith(1, "operation", undefined);
+      expect(mocks.readIdentifierPage).toHaveBeenNthCalledWith(2, "operation", "cursor-page-1");
+      expect(mocks.fenceClickHouse).toHaveBeenNthCalledWith(1, expect.anything(), request.userId, [
+        pageOneValue,
+      ]);
+      expect(mocks.fenceClickHouse).toHaveBeenNthCalledWith(2, expect.anything(), request.userId, [
+        pageTwoValue,
+      ]);
+      expect(mocks.withOwner).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({
+          resourceId: "metric-stream-source",
+          intentId: `account-erasure:${request.id}`,
+        }),
+        expect.any(Function),
+      );
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("fails closed when identifier physical preparation is incomplete", async () => {
+    mocks.loadPhysicalProgress.mockResolvedValueOnce(null);
+    const runtime = await createAccountErasureRuntime(ownerDatabase, mockClickHouse(), {
+      close: vi.fn(async () => undefined),
+      purge: vi.fn(async () => undefined),
+    });
+    try {
+      await expect(runtime.phaseRunner.runPhase("clickhouse_initial", execution())).rejects.toThrow(
+        "Account erasure physical preparation is incomplete",
+      );
+      expect(mocks.assertIdentifierClosure).toHaveBeenCalledWith("initial");
+      expect(mocks.loadPhysicalProgress).toHaveBeenCalledWith("initial");
+      expect(mocks.eraseClickHouse).not.toHaveBeenCalled();
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("reuses the failed final erasure intent when retrying its preparation", async () => {
+    mocks.decryptSnapshot.mockResolvedValue(snapshot);
+    let pendingIntent: string | null = null;
+    mocks.withOwner.mockImplementation(async (_database, client, input, operation) => {
+      const { intentId } = input;
+      if (pendingIntent !== null && pendingIntent !== intentId)
+        throw new Error("pending intent mismatch");
+      pendingIntent = intentId;
+      const result = await operation({ client });
+      pendingIntent = null;
+      return result;
+    });
+    mocks.eraseClickHouse.mockRejectedValueOnce(new Error("terminal erasure failure"));
+    const runtime = await createAccountErasureRuntime(ownerDatabase, mockClickHouse(), {
+      close: vi.fn(async () => undefined),
+      purge: vi.fn(async () => undefined),
+    });
+    try {
+      await expect(
+        runtime.phaseRunner.runPhase("clickhouse_verification", execution()),
+      ).rejects.toThrow("terminal erasure failure");
+      expect(pendingIntent).toBe(`account-erasure:${request.id}`);
+      await expect(
+        runtime.phaseRunner.runPhase("clickhouse_verification", execution()),
+      ).resolves.toEqual({ verified: true });
+      expect(pendingIntent).toBeNull();
+      expect(mocks.prepareIdentifiers).toHaveBeenCalledTimes(2);
+      expect(mocks.eraseClickHouse).toHaveBeenCalledTimes(2);
+    } finally {
+      await runtime.close();
+      mocks.withOwner.mockImplementation(async (_database, client, _input, operation) =>
+        operation({ client }),
+      );
+    }
+  });
+
+  it("completes retention verification after broker storage and existing retention checks", async () => {
+    const runtime = await createAccountErasureRuntime(ownerDatabase, mockClickHouse(), {
+      close: vi.fn(async () => undefined),
+      purge: vi.fn(async () => undefined),
+    });
+    try {
+      await expect(
+        runtime.phaseRunner.runPhase(
+          "retention_verification",
+          execution(retentionLoadCheckpointDetails, retainedRequest),
+        ),
+      ).resolves.toEqual({
+        backupRetention: { deletedObjects: 2 },
+        peerDbStagingRetention: {
+          lifecycleRetentionDays: 1,
+          multipartUploadsInspected: 0,
+          objectsInspected: 2,
+          verified: true,
+        },
+        processorRetention: {
+          axiomRetentionDays: 30,
+          sentryRetentionDays: 30,
+        },
+        quarantineRetentionVerified: true,
+        verified: true,
+      });
+      expect(mocks.verifyPeerDbStagingRetention).toHaveBeenCalledWith(
+        mocks.peerDbStagingStorage,
+        expect.objectContaining({
+          cutoff: new Date(peerDbDrainCheckpoint.stagingBoundary.cutoff),
+          now: expect.any(Date),
+        }),
+      );
+      expect(mocks.assertBrokerStorageExpired).toHaveBeenCalledWith([
+        ...["metric-stream-v1", "metric-stream-live-v2", "metric-stream-history-v2"].map(
+          (topic) => ({ topic, low: "0", offset: "42", partition: 0 }),
+        ),
+        ...["metric-stream-v1", "metric-stream-live-v2", "metric-stream-history-v2"].map(
+          (topic) => ({ topic: `${topic}.quarantine.v1`, low: "0", offset: "7", partition: 0 }),
+        ),
+      ]);
+      expect(mocks.assertBrokerStorageExpired).toHaveBeenCalledBefore(
+        vi.mocked(mocks.verifyBackupRetention),
+      );
+      expect(mocks.verifyBackupRetention).toHaveBeenCalled();
+      expect(mocks.verifyProcessorRetention).toHaveBeenCalled();
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  it("fails closed when required REDPANDA_BROKERS configuration is missing", async () => {
+    delete process.env.REDPANDA_BROKERS;
+    await expect(
+      createAccountErasureRuntime(ownerDatabase, mockClickHouse(), {
+        close: vi.fn(async () => undefined),
+        purge: vi.fn(async () => undefined),
+      }),
+    ).rejects.toThrow(/REDPANDA_BROKERS is required for account erasure/);
+  });
+
+  it("fails closed when required REDPANDA_BROKERS configuration is blank", async () => {
+    process.env.REDPANDA_BROKERS = "   ";
+    await expect(
+      createAccountErasureRuntime(ownerDatabase, mockClickHouse(), {
+        close: vi.fn(async () => undefined),
+        purge: vi.fn(async () => undefined),
+      }),
+    ).rejects.toThrow(/REDPANDA_BROKERS is required for account erasure/);
   });
 });

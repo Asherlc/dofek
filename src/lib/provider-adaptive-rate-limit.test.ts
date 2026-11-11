@@ -11,12 +11,12 @@ import {
 } from "./sync-step-admission-context.ts";
 
 const sharedRedisMocks = vi.hoisted(() => ({
-  set: vi.fn().mockResolvedValue("OK"),
+  eval: vi.fn().mockResolvedValue(1),
   get: vi.fn().mockResolvedValue(null),
   sharedRedisConnection: vi.fn().mockImplementation(() => ({
     get client() {
       return Promise.resolve({
-        set: (...args: unknown[]) => sharedRedisMocks.set(...args),
+        eval: (...args: unknown[]) => sharedRedisMocks.eval(...args),
         get: (...args: unknown[]) => sharedRedisMocks.get(...args),
       });
     },
@@ -55,7 +55,7 @@ function rateLimitError(options: {
   });
 }
 
-function createMockRedisAdaptiveStore(options?: { atomic?: boolean; execFailCount?: number }) {
+function createMockRedisAdaptiveStore() {
   const values = new Map<string, string>();
   const setCalls: Array<{
     key: string;
@@ -63,53 +63,22 @@ function createMockRedisAdaptiveStore(options?: { atomic?: boolean; execFailCoun
     mode: "PX";
     millisecondsToExpire: number;
   }> = [];
-  const watchCalls: string[] = [];
-  let execAttempts = 0;
+  let updateAttempts = 0;
 
   const client = {
-    set: async (key: string, value: string, mode: "PX", millisecondsToExpire: number) => {
-      setCalls.push({ key, value, mode, millisecondsToExpire });
+    eval: async (_script: string, _numberOfKeys: number, ...args: (string | number)[]) => {
+      const key = String(args[0]);
+      const exists = String(args[1]);
+      const previous = String(args[2]);
+      const value = String(args[3]);
+      const millisecondsToExpire = Number(args[4]);
+      updateAttempts++;
+      if ((values.get(key) ?? null) !== (exists === "0" ? null : previous)) return 0;
+      setCalls.push({ key, value, mode: "PX", millisecondsToExpire });
       values.set(key, value);
-      return "OK";
+      return 1;
     },
     get: async (key: string) => values.get(key) ?? null,
-    ...(options?.atomic
-      ? {
-          watch: async (key: string) => {
-            watchCalls.push(key);
-            return "OK";
-          },
-          unwatch: async () => "OK",
-          multi: () => {
-            let pending:
-              | {
-                  key: string;
-                  value: string;
-                  mode: "PX";
-                  millisecondsToExpire: number;
-                }
-              | undefined;
-            const chain = {
-              set: (key: string, value: string, mode: "PX", millisecondsToExpire: number) => {
-                pending = { key, value, mode, millisecondsToExpire };
-                return chain;
-              },
-              exec: async () => {
-                execAttempts++;
-                if (options.execFailCount && execAttempts <= options.execFailCount) {
-                  return null;
-                }
-                if (pending) {
-                  setCalls.push(pending);
-                  values.set(pending.key, pending.value);
-                }
-                return ["OK"];
-              },
-            };
-            return chain;
-          },
-        }
-      : {}),
   };
 
   const getRedisClient: ConstructorParameters<typeof RedisAdaptiveRateLimitStore>[0] = async () =>
@@ -118,9 +87,8 @@ function createMockRedisAdaptiveStore(options?: { atomic?: boolean; execFailCoun
   return {
     values,
     setCalls,
-    watchCalls,
-    get execAttempts() {
-      return execAttempts;
+    get updateAttempts() {
+      return updateAttempts;
     },
     store: new RedisAdaptiveRateLimitStore(getRedisClient),
   };
@@ -186,8 +154,8 @@ describe("InMemoryAdaptiveRateLimitStore", () => {
       "X-RateLimit-Usage": "95,400",
     });
 
-    await store.recordSuccess("garmin", "provider", null, headers);
-    await store.awaitAdmission("garmin", "provider", null);
+    await store.recordSuccess("whoop", "provider", null, headers);
+    await store.awaitAdmission("whoop", "provider", null);
   });
 
   it("tracks in-memory admission delays outside vitest", async () => {
@@ -238,14 +206,14 @@ describe("InMemoryAdaptiveRateLimitStore", () => {
     await store.awaitAdmission("whoop", "provider", null);
   });
 
-  it("records only one budget admission per garmin sync step in memory", async () => {
+  it("records only one budget admission per whoop sync step in memory", async () => {
     const requestSpy = vi.spyOn(adaptiveRateLimit, "recordAdaptiveRequest");
     const touchSpy = vi.spyOn(adaptiveRateLimit, "recordAdaptiveThrottleTouch");
     const store = new InMemoryAdaptiveRateLimitStore();
 
     await runWithSyncStepAdmission(async () => {
-      await store.awaitAdmission("garmin", "provider", null);
-      await store.awaitAdmission("garmin", "provider", null);
+      await store.awaitAdmission("whoop", "provider", null);
+      await store.awaitAdmission("whoop", "provider", null);
     });
 
     expect(requestSpy).toHaveBeenCalledTimes(1);
@@ -261,7 +229,7 @@ describe("InMemoryAdaptiveRateLimitStore", () => {
 
     await runWithSyncStepAdmission(async () => {
       tryClaimSyncStepAdmission();
-      await store.awaitAdmission("garmin", "provider", null);
+      await store.awaitAdmission("whoop", "provider", null);
     });
 
     expect(requestSpy).not.toHaveBeenCalled();
@@ -276,9 +244,9 @@ describe("InMemoryAdaptiveRateLimitStore", () => {
 
     await runWithSyncStepAdmission(async () => {
       await Promise.all([
-        store.awaitAdmission("garmin", "provider", null),
-        store.awaitAdmission("garmin", "provider", null),
-        store.awaitAdmission("garmin", "provider", null),
+        store.awaitAdmission("whoop", "provider", null),
+        store.awaitAdmission("whoop", "provider", null),
+        store.awaitAdmission("whoop", "provider", null),
       ]);
     });
 
@@ -295,13 +263,13 @@ describe("RedisAdaptiveRateLimitStore", () => {
   it("persists state in Redis with the adaptive key prefix", async () => {
     const { store, setCalls } = createMockRedisAdaptiveStore();
 
-    await store.awaitAdmission("garmin", "provider", null);
+    await store.awaitAdmission("whoop", "provider", null);
 
     expect(setCalls.length).toBeGreaterThan(0);
-    expect(setCalls[0]?.key).toBe("provider-adaptive-rate:garmin:provider");
+    expect(setCalls[0]?.key).toBe("provider-adaptive-rate:whoop:provider");
     expect(setCalls[0]?.mode).toBe("PX");
     expect(setCalls[0]?.millisecondsToExpire).toBe(ADAPTIVE_RATE_WINDOW_MS * 4);
-    expect(setCalls[0]?.value).toContain('"providerId":"garmin"');
+    expect(setCalls[0]?.value).toContain('"providerId":"whoop"');
     const saved = JSON.parse(setCalls.at(-1)?.value ?? "{}");
     expect(saved.requestCount).toBe(1);
   });
@@ -320,16 +288,16 @@ describe("RedisAdaptiveRateLimitStore", () => {
     const { store, setCalls } = createMockRedisAdaptiveStore();
 
     await runWithSyncStepAdmission(async () => {
-      await store.awaitAdmission("garmin", "provider", null);
-      await store.awaitAdmission("garmin", "provider", null);
-      await store.awaitAdmission("garmin", "provider", null);
+      await store.awaitAdmission("whoop", "provider", null);
+      await store.awaitAdmission("whoop", "provider", null);
+      await store.awaitAdmission("whoop", "provider", null);
     });
 
     let saved = JSON.parse(setCalls.at(-1)?.value ?? "{}");
     expect(saved.requestCount).toBe(1);
 
     await runWithSyncStepAdmission(async () => {
-      await store.awaitAdmission("garmin", "provider", null);
+      await store.awaitAdmission("whoop", "provider", null);
     });
 
     saved = JSON.parse(setCalls.at(-1)?.value ?? "{}");
@@ -341,9 +309,9 @@ describe("RedisAdaptiveRateLimitStore", () => {
 
     await runWithSyncStepAdmission(async () => {
       await Promise.all([
-        store.awaitAdmission("garmin", "provider", null),
-        store.awaitAdmission("garmin", "provider", null),
-        store.awaitAdmission("garmin", "provider", null),
+        store.awaitAdmission("whoop", "provider", null),
+        store.awaitAdmission("whoop", "provider", null),
+        store.awaitAdmission("whoop", "provider", null),
       ]);
     });
 
@@ -352,12 +320,12 @@ describe("RedisAdaptiveRateLimitStore", () => {
   });
 
   it("persists throttle touches for additional sync-step HTTP calls", async () => {
-    const mock = createMockRedisAdaptiveStore({ atomic: true });
+    const mock = createMockRedisAdaptiveStore();
 
     await runWithSyncStepAdmission(async () => {
-      await mock.store.awaitAdmission("garmin", "provider", null);
+      await mock.store.awaitAdmission("whoop", "provider", null);
       const savesAfterFirst = mock.setCalls.length;
-      await mock.store.awaitAdmission("garmin", "provider", null);
+      await mock.store.awaitAdmission("whoop", "provider", null);
       expect(mock.setCalls.length).toBeGreaterThan(savesAfterFirst);
     });
   });
@@ -366,9 +334,9 @@ describe("RedisAdaptiveRateLimitStore", () => {
     const mock = createMockRedisAdaptiveStore();
 
     await runWithSyncStepAdmission(async () => {
-      await mock.store.awaitAdmission("garmin", "provider", null);
+      await mock.store.awaitAdmission("whoop", "provider", null);
       const savesAfterFirst = mock.setCalls.length;
-      await mock.store.awaitAdmission("garmin", "provider", null);
+      await mock.store.awaitAdmission("whoop", "provider", null);
       expect(mock.setCalls.length).toBeGreaterThan(savesAfterFirst);
     });
   });
@@ -428,10 +396,7 @@ describe("RedisAdaptiveRateLimitStore", () => {
     expect(await store.getLearnedCooldownSeconds("whoop")).toBe(180);
 
     const redisStore = new RedisAdaptiveRateLimitStore(async () => ({
-      set: async (key, value, _mode, _millisecondsToExpire) => {
-        values.set(key, value);
-        return "OK";
-      },
+      eval: async () => 1,
       get: async (key) => values.get(key) ?? null,
     }));
     expect(await redisStore.getLearnedCooldownSeconds("whoop")).toBe(180);
@@ -440,20 +405,20 @@ describe("RedisAdaptiveRateLimitStore", () => {
   it("creates fresh state when Redis payload is missing required fields", async () => {
     const { store, values } = createMockRedisAdaptiveStore();
     values.set(
-      "provider-adaptive-rate:garmin:provider",
-      JSON.stringify({ providerId: "garmin", scope: "invalid" }),
+      "provider-adaptive-rate:whoop:provider",
+      JSON.stringify({ providerId: "whoop", scope: "invalid" }),
     );
 
-    await store.awaitAdmission("garmin", "provider", null);
-    expect(values.get("provider-adaptive-rate:garmin:provider")).toContain('"scope":"provider"');
+    await store.awaitAdmission("whoop", "provider", null);
+    expect(values.get("provider-adaptive-rate:whoop:provider")).toContain('"scope":"provider"');
   });
 
   it("creates fresh state when Redis payload has invalid numeric fields", async () => {
     const { store, values } = createMockRedisAdaptiveStore();
     values.set(
-      "provider-adaptive-rate:garmin:provider",
+      "provider-adaptive-rate:whoop:provider",
       JSON.stringify({
-        providerId: "garmin",
+        providerId: "whoop",
         scope: "provider",
         userId: null,
         windowStartMs: "bad",
@@ -463,8 +428,8 @@ describe("RedisAdaptiveRateLimitStore", () => {
       }),
     );
 
-    await store.awaitAdmission("garmin", "provider", null);
-    expect(values.get("provider-adaptive-rate:garmin:provider")).toContain('"windowStartMs":');
+    await store.awaitAdmission("whoop", "provider", null);
+    expect(values.get("provider-adaptive-rate:whoop:provider")).toContain('"windowStartMs":');
   });
 
   it("records Strava quota from Redis-backed success responses", async () => {
@@ -508,7 +473,7 @@ describe("RedisAdaptiveRateLimitStore", () => {
       "X-RateLimit-Usage": "95,400",
     });
 
-    await store.recordSuccess("garmin", "provider", null, headers);
+    await store.recordSuccess("whoop", "provider", null, headers);
 
     const saved = JSON.parse(setCalls.at(-1)?.value ?? "{}");
     expect(saved.stravaShortUsage).toBeNull();
@@ -584,9 +549,9 @@ describe("RedisAdaptiveRateLimitStore", () => {
   it("rejects persisted state with invalid lastRequestMs", async () => {
     const { store, values } = createMockRedisAdaptiveStore();
     values.set(
-      "provider-adaptive-rate:garmin:provider",
+      "provider-adaptive-rate:whoop:provider",
       JSON.stringify({
-        providerId: "garmin",
+        providerId: "whoop",
         scope: "provider",
         userId: null,
         windowStartMs: 1_000,
@@ -596,8 +561,8 @@ describe("RedisAdaptiveRateLimitStore", () => {
       }),
     );
 
-    await store.awaitAdmission("garmin", "provider", null);
-    const saved = JSON.parse(values.get("provider-adaptive-rate:garmin:provider") ?? "{}");
+    await store.awaitAdmission("whoop", "provider", null);
+    const saved = JSON.parse(values.get("provider-adaptive-rate:whoop:provider") ?? "{}");
     expect(saved.lastRequestMs).not.toBe("now");
     expect(typeof saved.lastRequestMs).toBe("number");
   });
@@ -605,9 +570,9 @@ describe("RedisAdaptiveRateLimitStore", () => {
   it("rejects persisted state with non-finite optional numeric fields", async () => {
     const { store, values } = createMockRedisAdaptiveStore();
     values.set(
-      "provider-adaptive-rate:garmin:provider",
+      "provider-adaptive-rate:whoop:provider",
       JSON.stringify({
-        providerId: "garmin",
+        providerId: "whoop",
         scope: "provider",
         userId: null,
         windowStartMs: 1_000,
@@ -623,32 +588,39 @@ describe("RedisAdaptiveRateLimitStore", () => {
       }),
     );
 
-    await store.awaitAdmission("garmin", "provider", null);
-    const saved = JSON.parse(values.get("provider-adaptive-rate:garmin:provider") ?? "{}");
+    await store.awaitAdmission("whoop", "provider", null);
+    const saved = JSON.parse(values.get("provider-adaptive-rate:whoop:provider") ?? "{}");
     expect(saved.inferredBudget).toBeNull();
     expect(saved.observedCooldownSeconds).toBeNull();
   });
 
-  it("uses atomic Redis WATCH/MULTI admission when available", async () => {
-    const mock = createMockRedisAdaptiveStore({ atomic: true });
+  it("persists admitted state with compare-and-set", async () => {
+    const mock = createMockRedisAdaptiveStore();
 
-    await mock.store.awaitAdmission("garmin", "provider", null);
+    await mock.store.awaitAdmission("whoop", "provider", null);
 
-    expect(mock.watchCalls).toEqual(["provider-adaptive-rate:garmin:provider"]);
-    const saved = JSON.parse(mock.values.get("provider-adaptive-rate:garmin:provider") ?? "{}");
+    const saved = JSON.parse(mock.values.get("provider-adaptive-rate:whoop:provider") ?? "{}");
     expect(saved.requestCount).toBe(1);
   });
 
-  it("retries atomic Redis admission when exec reports a conflict", async () => {
-    const mock = createMockRedisAdaptiveStore({ atomic: true, execFailCount: 1 });
+  it("reloads competing state when compare-and-set reports a conflict", async () => {
+    const competing = JSON.stringify({
+      ...createInitialAdaptiveState("whoop", "provider", null),
+      requestCount: 5,
+    });
+    const client = {
+      get: vi.fn().mockResolvedValueOnce(null).mockResolvedValue(competing),
+      eval: vi.fn().mockResolvedValueOnce(0).mockResolvedValue(1),
+    };
+    const store = new RedisAdaptiveRateLimitStore(async () => client);
 
-    await mock.store.awaitAdmission("garmin", "provider", null);
+    await store.awaitAdmission("whoop", "provider", null);
 
-    expect(mock.watchCalls).toEqual([
-      "provider-adaptive-rate:garmin:provider",
-      "provider-adaptive-rate:garmin:provider",
-    ]);
-    expect(mock.execAttempts).toBe(2);
+    expect(client.eval).toHaveBeenCalledTimes(2);
+    expect(client.eval.mock.calls[1]?.[4]).toBe(competing);
+    const saved = client.eval.mock.calls[1]?.[5];
+    if (typeof saved !== "string") throw new Error("Expected serialized adaptive state");
+    expect(JSON.parse(saved).requestCount).toBe(6);
   });
 
   it("completes atomic Strava admission after the quota pacing interval elapses", async () => {
@@ -656,7 +628,7 @@ describe("RedisAdaptiveRateLimitStore", () => {
     vi.stubEnv("NODE_ENV", "production");
     vi.useFakeTimers();
     vi.setSystemTime(20_000);
-    const mock = createMockRedisAdaptiveStore({ atomic: true });
+    const mock = createMockRedisAdaptiveStore();
     mock.values.set(
       "provider-adaptive-rate:strava:provider",
       JSON.stringify({
@@ -673,7 +645,7 @@ describe("RedisAdaptiveRateLimitStore", () => {
     await vi.advanceTimersByTimeAsync(20_000);
     await admission;
 
-    expect(mock.execAttempts).toBe(1);
+    expect(mock.updateAttempts).toBe(1);
     vi.useRealTimers();
     vi.unstubAllEnvs();
   });
@@ -683,7 +655,7 @@ describe("RedisAdaptiveRateLimitStore", () => {
     vi.stubEnv("NODE_ENV", "production");
     vi.useFakeTimers();
     vi.setSystemTime(20_000);
-    const mock = createMockRedisAdaptiveStore({ atomic: true });
+    const mock = createMockRedisAdaptiveStore();
     mock.values.set(
       "provider-adaptive-rate:strava:provider",
       JSON.stringify({
@@ -698,13 +670,13 @@ describe("RedisAdaptiveRateLimitStore", () => {
 
     await mock.store.awaitAdmission("strava", "provider", null);
 
-    expect(mock.execAttempts).toBe(1);
+    expect(mock.updateAttempts).toBe(1);
     vi.useRealTimers();
     vi.unstubAllEnvs();
   });
 
   it("creates fresh adaptive state when Redis returns null during atomic admission", async () => {
-    const mock = createMockRedisAdaptiveStore({ atomic: true });
+    const mock = createMockRedisAdaptiveStore();
 
     await mock.store.awaitAdmission("whoop", "provider", null);
 
@@ -714,12 +686,12 @@ describe("RedisAdaptiveRateLimitStore", () => {
   });
 
   it("creates fresh adaptive state when Redis payload is invalid during atomic admission", async () => {
-    const mock = createMockRedisAdaptiveStore({ atomic: true });
-    mock.values.set("provider-adaptive-rate:garmin:provider", "not-json");
+    const mock = createMockRedisAdaptiveStore();
+    mock.values.set("provider-adaptive-rate:whoop:provider", "not-json");
 
-    await mock.store.awaitAdmission("garmin", "provider", null);
+    await mock.store.awaitAdmission("whoop", "provider", null);
 
-    const saved = JSON.parse(mock.values.get("provider-adaptive-rate:garmin:provider") ?? "{}");
+    const saved = JSON.parse(mock.values.get("provider-adaptive-rate:whoop:provider") ?? "{}");
     expect(saved.scope).toBe("provider");
     expect(saved.requestCount).toBe(1);
   });
@@ -746,17 +718,9 @@ describe("providerAdaptiveRateLimitStore", () => {
     vi.stubEnv("VITEST", "");
     vi.stubEnv("NODE_ENV", "production");
 
-    const transaction = {
-      set: vi.fn(),
-      exec: vi.fn().mockResolvedValue([["OK"]]),
-    };
-    transaction.set.mockReturnValue(transaction);
     const mockClient = {
-      set: vi.fn().mockResolvedValue("OK"),
+      eval: vi.fn().mockResolvedValue(1),
       get: vi.fn().mockResolvedValue(null),
-      watch: vi.fn().mockResolvedValue("OK"),
-      unwatch: vi.fn().mockResolvedValue("OK"),
-      multi: vi.fn().mockReturnValue(transaction),
     };
     vi.doMock("../jobs/queues.ts", () => ({
       getRedisConnection: vi.fn().mockReturnValue({}),
@@ -771,14 +735,17 @@ describe("providerAdaptiveRateLimitStore", () => {
     const mod = await import("./provider-adaptive-rate-limit.ts");
     expect(mod.providerAdaptiveRateLimitStore.constructor.name).toBe("RedisAdaptiveRateLimitStore");
     await expect(
-      mod.providerAdaptiveRateLimitStore.getLearnedCooldownSeconds("garmin"),
+      mod.providerAdaptiveRateLimitStore.getLearnedCooldownSeconds("whoop"),
     ).resolves.toBeNull();
     expect(mockClient.get).toHaveBeenCalled();
-    await mod.providerAdaptiveRateLimitStore.recordSuccess("garmin", "provider", null);
-    expect(mockClient.set).toHaveBeenCalledWith(
-      "provider-adaptive-rate:garmin:provider",
+    await mod.providerAdaptiveRateLimitStore.recordSuccess("whoop", "provider", null);
+    expect(mockClient.eval).toHaveBeenCalledWith(
       expect.any(String),
-      "PX",
+      1,
+      "provider-adaptive-rate:whoop:provider",
+      "0",
+      "",
+      expect.any(String),
       ADAPTIVE_RATE_WINDOW_MS * 4,
     );
 
@@ -786,28 +753,18 @@ describe("providerAdaptiveRateLimitStore", () => {
     vi.setSystemTime(1_000);
     mockClient.get
       .mockReset()
-      .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(
         JSON.stringify({
-          ...createInitialAdaptiveState("garmin", "provider", null, 1_000),
+          ...createInitialAdaptiveState("whoop", "provider", null, 1_000),
           lastRequestMs: 1_000,
           throttleMs: 100,
         }),
       )
       .mockResolvedValue(null);
-    const admission = mod.providerAdaptiveRateLimitStore.awaitAdmission("garmin", "provider", null);
+    const admission = mod.providerAdaptiveRateLimitStore.awaitAdmission("whoop", "provider", null);
     await vi.advanceTimersByTimeAsync(100);
     await admission;
-    expect(mockClient.watch).toHaveBeenCalledWith("provider-adaptive-rate:garmin:provider");
-    expect(mockClient.unwatch).toHaveBeenCalledOnce();
-    expect(mockClient.multi).toHaveBeenCalledOnce();
-    expect(transaction.set).toHaveBeenCalledWith(
-      "provider-adaptive-rate:garmin:provider",
-      expect.any(String),
-      "PX",
-      ADAPTIVE_RATE_WINDOW_MS * 4,
-    );
-    expect(transaction.exec).toHaveBeenCalledOnce();
+    expect(mockClient.eval).toHaveBeenCalledTimes(2);
     vi.useRealTimers();
 
     vi.unstubAllEnvs();
@@ -822,15 +779,15 @@ describe("providerAdaptiveRateLimitStore", () => {
     const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
     const { store, values } = createMockRedisAdaptiveStore();
     values.set(
-      "provider-adaptive-rate:garmin:provider",
+      "provider-adaptive-rate:whoop:provider",
       JSON.stringify({
-        ...createInitialAdaptiveState("garmin", "provider", null, 1_000),
+        ...createInitialAdaptiveState("whoop", "provider", null, 1_000),
         throttleMs: 5_000,
         lastRequestMs: 1_000,
       }),
     );
 
-    const admission = store.awaitAdmission("garmin", "provider", null);
+    const admission = store.awaitAdmission("whoop", "provider", null);
     await vi.advanceTimersByTimeAsync(5_000);
     await admission;
 
@@ -839,7 +796,7 @@ describe("providerAdaptiveRateLimitStore", () => {
       setTimeoutSpy.mock.calls.some(([, delay]) => typeof delay === "number" && delay > 0),
     ).toBe(true);
     expect(
-      JSON.parse(values.get("provider-adaptive-rate:garmin:provider") ?? "{}").requestCount,
+      JSON.parse(values.get("provider-adaptive-rate:whoop:provider") ?? "{}").requestCount,
     ).toBe(1);
   });
 

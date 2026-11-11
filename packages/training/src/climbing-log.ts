@@ -1,7 +1,7 @@
+import { gpsCoordinatesSchema } from "@dofek/climbing-catalogue/geometry";
 import { z } from "zod";
 import { climbingBoardSchema, climbingWallAngleSchema } from "./climbing-experience.ts";
 import { gradeSystemSchema, isValidClimbingGrade } from "./climbing-grades.ts";
-import { gpsCoordinatesSchema } from "./gps-coordinates.ts";
 
 export const CLIMB_KINDS = ["boulder", "route", "summit"] as const;
 export const CLIMB_SETTINGS = ["indoor", "outdoor"] as const;
@@ -18,6 +18,17 @@ export const ROPE_METHODS = ["lead", "top_rope", "follow", "unroped"] as const;
 export const PROTECTION_STYLES = ["sport", "trad"] as const;
 export const ATTEMPT_SCOPES = ["climb", "pitch"] as const;
 export const ATTEMPT_OUTCOMES = ["completed", "failed"] as const;
+export const CLIMBING_HOLD_TYPES = [
+  "crimp",
+  "sloper",
+  "pinch",
+  "pocket",
+  "jug",
+  "volume",
+  "jam",
+  "no_grips",
+] as const;
+export const climbingHoldTypesSchema = z.array(z.enum(CLIMBING_HOLD_TYPES)).nonempty();
 
 export const climbKindSchema = z.enum(CLIMB_KINDS);
 export const climbSettingSchema = z.enum(CLIMB_SETTINGS);
@@ -82,7 +93,7 @@ export const climbingLogEntrySchema = z.strictObject({
   reportedGrades: z.array(gradeComponentSchema),
   board: climbingBoardSchema.nullable(),
   wallAngle: climbingWallAngleSchema.nullable(),
-  holdType: z.enum(["crimp", "sloper", "pinch", "pocket", "jug"]).nullable(),
+  holdTypes: climbingHoldTypesSchema.nullable(),
   sourceName: recordedTextSchema.nullable(),
   raw: z.json().nullable(),
   providerAbsentAt: z.iso.datetime().nullable(),
@@ -125,6 +136,7 @@ export const climbingAttemptSchema = z
 export const recordedClimbingAttemptSchema = z
   .strictObject({
     ...climbingAttemptFields,
+    sourceCompleted: z.boolean().nullable(),
     sourceResult: z
       .string()
       .refine((value) => value.trim().length > 0)
@@ -150,6 +162,14 @@ export function isClimbingLogActivity(activityType: string): boolean {
 }
 export type AttemptScope = z.infer<typeof attemptScopeSchema>;
 export type AttemptOutcome = z.infer<typeof attemptOutcomeSchema>;
+
+/** A board log can record a location independently of its globally shared problem. */
+export function climbingLogEntryAreaPath<TArea>(entry: {
+  areaPath?: readonly TArea[];
+  climb: { areaPath: readonly TArea[] } | null;
+}): readonly TArea[] {
+  return entry.areaPath ?? entry.climb?.areaPath ?? [];
+}
 
 const kayaColorSchema = z.union([
   recordedTextSchema,

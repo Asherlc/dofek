@@ -1,6 +1,10 @@
 import { formatDateYmd } from "@dofek/format/format";
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
-import type { ProviderManualConnectionMetadata } from "@dofek/providers/provider-connection";
+import {
+  isCloudPushProvider,
+  type ProviderManualConnectionMetadata,
+} from "@dofek/providers/provider-connection";
+import type { ProviderSyncHistory } from "@dofek/providers/sync-card-summary";
 import * as WebBrowser from "expo-web-browser";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAppleHealthProviderModel } from "../../lib/apple-health-provider";
@@ -13,7 +17,7 @@ import {
 import { captureException } from "../../lib/telemetry";
 import { trpc } from "../../lib/trpc";
 
-interface ProviderRecord {
+interface ProviderRecord extends ProviderSyncHistory {
   id: string;
   name: string;
   authType: string;
@@ -47,15 +51,12 @@ export interface ProviderDetailModals {
   credentialAuthProvider: CredentialAuthProvider | null;
   tokenAuthProvider: TokenAuthProvider | null;
   whoopAuthOpen: boolean;
-  garminAuthOpen: boolean;
   closeCredentialAuth: () => void;
   closeTokenAuth: () => void;
   closeWhoopAuth: () => void;
-  closeGarminAuth: () => void;
   handleCredentialSuccess: () => void;
   handleTokenSuccess: () => void;
   handleWhoopSuccess: () => void;
-  handleGarminSuccess: () => void;
 }
 
 export interface ProviderDetailActionsResult {
@@ -111,7 +112,6 @@ export function useProviderDetailActions(
     useState<CredentialAuthProvider | null>(null);
   const [tokenAuthProvider, setTokenAuthProvider] = useState<TokenAuthProvider | null>(null);
   const [whoopAuthOpen, setWhoopAuthOpen] = useState(false);
-  const [garminAuthOpen, setGarminAuthOpen] = useState(false);
 
   const isMounted = useRef(false);
   const pollingRef = useRef(false);
@@ -266,6 +266,7 @@ export function useProviderDetailActions(
             name: displayProvider.name,
             label: displayProvider.tokenAuth.label,
             instructionsUrl: displayProvider.tokenAuth.instructionsUrl,
+            description: displayProvider.tokenAuth.description,
           });
         } else {
           const error = new Error(
@@ -280,9 +281,6 @@ export function useProviderDetailActions(
         break;
       case "custom:whoop":
         setWhoopAuthOpen(true);
-        break;
-      case "custom:garmin":
-        setGarminAuthOpen(true);
         break;
     }
   }, [displayProvider, handleHealthKitConnect, isSyncing, serverUrl, sessionToken, trpcUtils]);
@@ -345,7 +343,7 @@ export function useProviderDetailActions(
   );
 
   const handlePrimaryAction = useCallback(async () => {
-    if (isConnected && !needsReauth) {
+    if (isConnected && !needsReauth && !displayProvider?.pushOnly) {
       if (providerId === "whoop") {
         if (rangeSinceDate > rangeUntilDate) {
           setSyncMessage('"From" date must be on or before "To" date');
@@ -363,6 +361,7 @@ export function useProviderDetailActions(
 
     await handleConnect();
   }, [
+    displayProvider?.pushOnly,
     handleConnect,
     handleSync,
     isConnected,
@@ -408,10 +407,6 @@ export function useProviderDetailActions(
     setWhoopAuthOpen(false);
   }, []);
 
-  const closeGarminAuth = useCallback(() => {
-    setGarminAuthOpen(false);
-  }, []);
-
   const handleCredentialSuccess = useCallback(() => {
     setCredentialAuthProvider(null);
     trpcUtils.sync.providers.invalidate();
@@ -427,18 +422,18 @@ export function useProviderDetailActions(
     trpcUtils.sync.providers.invalidate();
   }, [trpcUtils]);
 
-  const handleGarminSuccess = useCallback(() => {
-    setGarminAuthOpen(false);
-    trpcUtils.sync.providers.invalidate();
-  }, [trpcUtils]);
-
   return {
     provider,
     displayProvider,
     isLoading: providers.isLoading,
     inventoryError: providers.error,
     isConnected,
-    primaryActionLabel: needsReauth ? "Reconnect" : isConnected ? "Sync" : "Connect",
+    primaryActionLabel:
+      needsReauth || (isConnected && displayProvider?.pushOnly)
+        ? "Reconnect"
+        : isConnected
+          ? "Sync"
+          : "Connect",
     isSyncing,
     syncMessage,
     syncProgress,
@@ -452,7 +447,10 @@ export function useProviderDetailActions(
           }
         : null,
     shouldShowActions: Boolean(
-      displayProvider && !displayProvider.importOnly && !displayProvider.pushOnly,
+      displayProvider &&
+        !displayProvider.importOnly &&
+        (!displayProvider.pushOnly ||
+          (isCloudPushProvider(displayProvider) && (!isConnected || needsReauth))),
     ),
     shouldShowFullSync:
       isConnected &&
@@ -467,15 +465,12 @@ export function useProviderDetailActions(
       credentialAuthProvider,
       tokenAuthProvider,
       whoopAuthOpen,
-      garminAuthOpen,
       closeCredentialAuth,
       closeTokenAuth,
       closeWhoopAuth,
-      closeGarminAuth,
       handleCredentialSuccess,
       handleTokenSuccess,
       handleWhoopSuccess,
-      handleGarminSuccess,
     },
   };
 }

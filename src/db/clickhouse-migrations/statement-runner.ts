@@ -16,7 +16,7 @@ export async function runClickHouseMigrationStatement(
     await waitForClickHouseTable(client, "ingest", "metric_stream");
     await waitForClickHouseTable(client, "analytics", "v_activity_members");
   }
-  if (statement.startsWith("CREATE VIEW IF NOT EXISTS analytics.activity_summary")) {
+  if (statement.startsWith("CREATE OR REPLACE VIEW analytics.activity_summary\n")) {
     await waitForClickHouseTable(client, "analytics", "deduped_sensor");
     await waitForClickHouseTable(client, "analytics", "deduped_location");
     await waitForClickHouseTable(client, "analytics", "v_activity");

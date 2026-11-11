@@ -1,6 +1,11 @@
 import { healthMetricSchema } from "@dofek/mcp-contracts/health-explorer";
 import { z } from "zod";
 import type { ActivitySensorStore } from "./activity-repository.ts";
+import {
+  dailyMetricsSpo2QueryParams,
+  dailyMetricsWithSpo2ClickHouseCte,
+} from "./daily-metrics-spo2-query.ts";
+import { localDateString } from "./resting-heart-rate-query.ts";
 
 const dataCoverageRowSchema = z.object({
   metric: healthMetricSchema,
@@ -34,20 +39,23 @@ const dailyCoverageMetrics = [
   "flights_climbed",
 ] as const satisfies readonly (keyof typeof dailyMetricColumns)[];
 
-function dailyMetricCoverageSelect(metric: keyof typeof dailyMetricColumns): string {
+function dailyMetricCoverageTuple(metric: keyof typeof dailyMetricColumns): string {
   const column = dailyMetricColumns[metric];
-  return `SELECT
-    '${metric}' AS metric,
-    nullIf(toString(minIf(date, ${column} IS NOT NULL)), '1970-01-01') AS first_observed,
-    nullIf(toString(maxIf(date, ${column} IS NOT NULL)), '1970-01-01') AS last_observed,
-    countIf(${column} IS NOT NULL) AS total_days_observed,
-    arraySort(arrayDistinct(arrayFlatten(groupArrayIf(source_providers, ${column} IS NOT NULL)))) AS source_providers
-  FROM analytics.v_daily_metrics
-  WHERE user_id = {userId:UUID}`;
+  return `tuple('${metric}',
+    nullIf(toString(minIf(date, ${column} IS NOT NULL)), '1970-01-01'),
+    nullIf(toString(maxIf(date, ${column} IS NOT NULL)), '1970-01-01'),
+    countIf(${column} IS NOT NULL),
+    arraySort(arrayDistinct(arrayFlatten(groupArrayIf(source_providers, ${column} IS NOT NULL)))))`;
 }
 
-const coverageQuery = `
-${dailyCoverageMetrics.map((metric) => dailyMetricCoverageSelect(metric)).join("\nUNION ALL\n")}
+const coverageQuery = `WITH ${dailyMetricsWithSpo2ClickHouseCte(false)}
+, daily_metric_coverage AS (
+  SELECT arrayJoin([${dailyCoverageMetrics.map(dailyMetricCoverageTuple).join(",\n")}]) AS item
+  FROM daily_metrics WHERE user_id = {userId:UUID}
+)
+SELECT item.1 AS metric, item.2 AS first_observed, item.3 AS last_observed,
+  item.4 AS total_days_observed, item.5 AS source_providers
+FROM daily_metric_coverage
 UNION ALL
 SELECT
   'resting_hr' AS metric,
@@ -87,6 +95,12 @@ export class DataCoverageRepository {
 
   async list(): Promise<DataCoverageRow[]> {
     return this.#store.query(dataCoverageRowSchema, coverageQuery, {
+      ...dailyMetricsSpo2QueryParams({
+        userId: this.#userId,
+        timezone: this.#timezone,
+        endDate: localDateString(new Date(), this.#timezone),
+        days: null,
+      }),
       userId: this.#userId,
       timezone: this.#timezone,
     });

@@ -1,10 +1,17 @@
+import { climbingResponseVersionSchema } from "@dofek/training/climbing-log-response";
 import { TRPCError } from "@trpc/server";
 import type { SyncDatabase } from "dofek/db";
+import { withProviderOperationFence } from "dofek/db/provider-operation-fence";
 import { deleteProviderAuthorization } from "dofek/db/tokens";
 import { getProviderDataDeletionQueue } from "dofek/jobs/queues";
 import { invalidateAllUserQueries } from "dofek/lib/cache";
 import { captureException } from "dofek/lib/error-reporting";
+import { getAllProviders } from "dofek/providers/registry";
 import { z } from "zod";
+import {
+  climbingLogEntryDetailSchema,
+  serializeClimbingLogEntryDetailResponse,
+} from "../contracts/climbing-log-contracts.ts";
 import { providerDataDeletesTotal } from "../lib/metrics.ts";
 import { operationStatusOutputSchema } from "../lib/operation-progress.ts";
 import { logger } from "../logger.ts";
@@ -18,8 +25,10 @@ import {
   SYNC_LOG_FILTER_OPTION_FIELDS,
   tableInfo,
 } from "../repositories/provider-detail-repository.ts";
+import { SyncRepository } from "../repositories/sync-repository.ts";
 import { readProviderDataDeletionStatus } from "../services/provider-data-deletion-status.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
+import { ensureProvidersRegistered } from "./sync-helpers.ts";
 
 // Re-export for backward compatibility (used by settings router and tests)
 export {
@@ -32,8 +41,8 @@ export {
   tableInfo,
 };
 
+import { sanitizeErrorMessage } from "dofek/lib/sanitize-error";
 import { fieldFiltersSchema } from "../lib/field-filters.ts";
-import { sanitizeErrorMessage } from "../lib/sanitize-error.ts";
 
 const SYNC_LOG_FILTER_FIELDS = {
   id: "id",
@@ -45,78 +54,54 @@ const SYNC_LOG_FILTER_FIELDS = {
   authFailureReason: "auth_failure_reason",
   durationMs: "duration_ms",
 } as const;
+const recordDetailOutputSchema = z.record(z.string(), z.unknown()).nullable();
 
-/**
- * Attempt to revoke tokens remotely before disconnecting a provider.
- * Best-effort: logs and captures errors but never throws.
- */
+/** Revoke provider credentials before deleting the local authorization. */
 async function revokeTokensOnDisconnect(
   db: SyncDatabase,
   userId: string,
   providerId: string,
 ): Promise<void> {
-  try {
-    const { loadTokens } = await import("dofek/db/tokens");
-    const tokens = await loadTokens(db, providerId, userId);
-    if (!tokens) return;
+  const { loadTokens, saveTokens } = await import("dofek/db/tokens");
+  const tokens = await loadTokens(db, providerId, userId);
+  if (!tokens) return;
 
-    const { getAllProviders } = await import("dofek/providers/registry");
-    const { ensureProvidersRegistered } = await import("./sync-helpers.ts");
-    await ensureProvidersRegistered();
+  const { getAllProviders } = await import("dofek/providers/registry");
+  const { ensureProvidersRegistered } = await import("./sync-helpers.ts");
+  await ensureProvidersRegistered();
+  const provider = getAllProviders().find((candidate) => candidate.id === providerId);
+  const setup = provider?.authSetup?.();
+  if (!setup) return;
 
-    const provider = getAllProviders().find(
-      (candidate: { id: string }) => candidate.id === providerId,
-    );
-    if (!provider?.authSetup) return;
-
-    const setup = provider.authSetup();
-    if (!setup) return;
-
-    // Provider-specific revocation (e.g., Wahoo's DELETE /v1/permissions
-    // which revokes ALL tokens for the app+user, including orphaned ones)
-    let customRevocationSucceeded = false;
-    if (setup.revokeExistingTokens) {
-      try {
-        await setup.revokeExistingTokens(tokens);
-        logger.info(`[disconnect] Remote token revocation succeeded for ${providerId}`);
-        customRevocationSucceeded = true;
-      } catch (customError) {
-        const message = customError instanceof Error ? customError.message : String(customError);
-        logger.warn(
-          `[disconnect] Custom revocation failed for ${providerId}, falling back to standard OAuth revocation: ${message}`,
-        );
-        captureException(customError);
-      }
+  if (setup.revokeExistingTokens) {
+    try {
+      await setup.revokeExistingTokens(tokens, (updatedTokens) =>
+        saveTokens(db, providerId, updatedTokens, userId),
+      );
+      logger.info(`[disconnect] Remote token revocation succeeded for ${providerId}`);
+      return;
+    } catch (error: unknown) {
+      captureException(error);
+      throw error;
     }
+  }
 
-    // Standard OAuth revocation via POST /oauth/revoke (RFC 7009).
-    // Used as primary when no custom handler, or as fallback when custom fails.
-    if (!customRevocationSucceeded && setup.oauthConfig?.revokeUrl) {
-      const { revokeToken } = await import("dofek/auth/oauth");
-      if (tokens.accessToken) {
-        try {
-          await revokeToken(setup.oauthConfig, tokens.accessToken);
-        } catch (accessError) {
-          const message = accessError instanceof Error ? accessError.message : String(accessError);
-          logger.warn(`[disconnect] Access token revocation failed for ${providerId}: ${message}`);
-          captureException(accessError);
-        }
-      }
-      if (tokens.refreshToken) {
-        try {
-          await revokeToken(setup.oauthConfig, tokens.refreshToken);
-        } catch (refreshError) {
-          const message =
-            refreshError instanceof Error ? refreshError.message : String(refreshError);
-          logger.warn(`[disconnect] Refresh token revocation failed for ${providerId}: ${message}`);
-          captureException(refreshError);
-        }
-      }
+  if (!setup.oauthConfig?.revokeUrl) return;
+  const { revokeToken } = await import("dofek/auth/oauth");
+  for (const [tokenType, token] of [
+    ["Access", tokens.accessToken],
+    ["Refresh", tokens.refreshToken],
+  ] as const) {
+    if (!token) continue;
+    try {
+      await revokeToken(setup.oauthConfig, token);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.warn(
+        `[disconnect] ${tokenType} token revocation failed for ${providerId}: ${message}`,
+      );
+      captureException(error);
     }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    logger.warn(`[disconnect] Remote token revocation failed for ${providerId}: ${message}`);
-    captureException(error);
   }
 }
 
@@ -132,6 +117,20 @@ export const providerDetailRouter = router({
       }),
     )
     .query(async ({ ctx, input }) => {
+      await ensureProvidersRegistered();
+      if (getAllProviders().find((provider) => provider.id === input.providerId)?.pushOnly) {
+        const repository = new SyncRepository(ctx.db, ctx.userId);
+        const rows = await repository.getPushUpdateHistory(
+          input.providerId,
+          input.limit,
+          input.offset,
+          input.filters,
+        );
+        return rows.map((row) => ({
+          ...row,
+          errorMessage: sanitizeErrorMessage(row.errorMessage),
+        }));
+      }
       const { syncLog } = await import("dofek/db/schema/events");
       const { and, desc, eq } = await import("drizzle-orm");
       const { buildPostgresFilterConditionsMapped } = await import("../lib/field-filters.ts");
@@ -165,6 +164,10 @@ export const providerDetailRouter = router({
   logFilterOptions: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
     .input(z.object({ providerId: z.string() }))
     .query(async ({ ctx, input }) => {
+      await ensureProvidersRegistered();
+      if (getAllProviders().find((provider) => provider.id === input.providerId)?.pushOnly) {
+        return new SyncRepository(ctx.db, ctx.userId).getPushUpdateFilterOptions(input.providerId);
+      }
       const repo = new ProviderDetailRepository(ctx.db, ctx.userId);
       return repo.getSyncLogFilterOptions(input.providerId);
     }),
@@ -219,38 +222,54 @@ export const providerDetailRouter = router({
     }),
 
   /** Single record detail with raw data */
-  recordDetail: cachedProtectedQuery({ maxAge: CacheTTL.SHORT })
+  recordDetail: cachedProtectedQuery({
+    maxAge: CacheTTL.SHORT,
+    keyVersion: "provider-record-detail-response-v1",
+    outputSchema: recordDetailOutputSchema,
+  })
     .input(
       z.object({
         providerId: z.string(),
         dataType: dataTypeEnum,
         recordId: z.string(),
+        responseVersion: climbingResponseVersionSchema,
       }),
     )
+    .output(recordDetailOutputSchema)
     .query(async ({ ctx, input }) => {
       const repo = new ProviderDetailRepository(ctx.db, ctx.userId, ctx.sensorStore);
-      return repo.getRecordDetail(input.providerId, input.dataType, input.recordId);
+      const record = await repo.getRecordDetail(input.providerId, input.dataType, input.recordId);
+      return input.dataType === "climbingLogEntries" && record !== null
+        ? serializeClimbingLogEntryDetailResponse(
+            climbingLogEntryDetailSchema.parse(record),
+            input.responseVersion,
+          )
+        : record;
     }),
 
   /** Disconnect a provider while retaining previously imported records. */
   disconnect: protectedProcedure
     .input(z.object({ providerId: z.string() }))
     .mutation(async ({ ctx, input }) => {
-      const repo = new ProviderDetailRepository(ctx.db, ctx.userId);
+      await withProviderOperationFence(
+        ctx.db,
+        ctx.userId,
+        input.providerId,
+        async (operationDb) => {
+          const repo = new ProviderDetailRepository(operationDb, ctx.userId);
+          const isOwner = await repo.verifyOwnership(input.providerId);
+          if (!isOwner) {
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "This provider is not connected to your account.",
+            });
+          }
 
-      const isOwner = await repo.verifyOwnership(input.providerId);
-      if (!isOwner) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "This provider is not connected to your account.",
-        });
-      }
-
-      // Revoke tokens remotely before deleting local authorization — prevents
-      // orphaned tokens on the provider side (e.g. Wahoo's active token limit).
-      await revokeTokensOnDisconnect(ctx.db, ctx.userId, input.providerId);
-
-      await deleteProviderAuthorization(ctx.db, input.providerId, ctx.userId);
+          // Rotated credentials commit independently before remote revocation.
+          await revokeTokensOnDisconnect(ctx.db, ctx.userId, input.providerId);
+          await deleteProviderAuthorization(operationDb, input.providerId, ctx.userId);
+        },
+      );
       await invalidateAllUserQueries(ctx.userId);
       return { success: true };
     }),
@@ -259,16 +278,23 @@ export const providerDetailRouter = router({
   deleteAllData: protectedProcedure
     .input(z.object({ providerId: z.string(), confirmation: z.literal("DELETE") }))
     .mutation(async ({ ctx, input }) => {
-      const repo = new ProviderDetailRepository(ctx.db, ctx.userId, ctx.sensorStore);
-      const canDelete = await repo.canDeleteProviderData(input.providerId);
-      if (!canDelete) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "No connected provider or retained provider data was found for your account.",
-        });
-      }
-
-      const request = await repo.requestProviderDataDeletion(input.providerId);
+      const request = await withProviderOperationFence(
+        ctx.db,
+        ctx.userId,
+        input.providerId,
+        async (operationDb) => {
+          const repo = new ProviderDetailRepository(operationDb, ctx.userId, ctx.sensorStore);
+          const canDelete = await repo.canDeleteProviderData(input.providerId);
+          if (!canDelete) {
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message:
+                "No connected provider or retained provider data was found for your account.",
+            });
+          }
+          return repo.requestProviderDataDeletion(input.providerId);
+        },
+      );
       providerDataDeletesTotal.inc({ provider_id: input.providerId });
       await invalidateAllUserQueries(ctx.userId);
       return { success: true, operationId: request.eventId };

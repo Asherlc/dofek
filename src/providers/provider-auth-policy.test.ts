@@ -5,8 +5,6 @@ import { checkPerUserAuthCompliance } from "./provider-auth-policy.ts";
 
 /** OAuth app credentials stubbed so authSetup() can be exercised in policy tests. */
 const OAUTH_APP_ENV_VARS = [
-  "ALLTRAILS_API_KEY",
-  "ALLTRAILS_CLIENT_ID",
   "STRAVA_CLIENT_ID",
   "STRAVA_CLIENT_SECRET",
   "WITHINGS_CLIENT_ID",
@@ -17,6 +15,8 @@ const OAUTH_APP_ENV_VARS = [
   "POLAR_CLIENT_SECRET",
   "FITBIT_CLIENT_ID",
   "FITBIT_CLIENT_SECRET",
+  "GARMIN_CLIENT_ID",
+  "GARMIN_CLIENT_SECRET",
   "OURA_CLIENT_ID",
   "OURA_CLIENT_SECRET",
   "FATSECRET_CONSUMER_KEY",

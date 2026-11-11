@@ -1,5 +1,9 @@
 import { formatDurationSeconds, formatRelativeTime } from "@dofek/format/format";
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
+import {
+  isCloudPushProvider,
+  type ProviderManualConnectionMetadata,
+} from "@dofek/providers/provider-connection";
 import type { ProviderStats } from "@dofek/providers/provider-stats";
 import { syncCardSummary } from "@dofek/providers/sync-card-summary";
 import { ActivityIndicator, Text, TouchableOpacity, View } from "react-native";
@@ -28,6 +32,7 @@ export interface Provider {
   tokenAuth?: ProviderManualConnectionMetadata | null;
   lastSyncAt: string | null;
   lastSuccessfulSyncAt: string | null;
+  lastProcessedUpdateAt?: string | null;
   syncFreshness: ProviderSyncFreshness | null;
   importOnly: boolean;
   pushOnly: boolean;
@@ -78,6 +83,9 @@ function formatDuration(ms: number): string {
 }
 
 const IMPORT_PROVIDER_LABELS: Readonly<Record<string, string>> = {
+  crimpd: "Crimpd",
+  "eight-a": "8a.nu / Vertical-Life",
+  moonboard: "MoonBoard",
   "apple-health": "Apple Health",
   "strong-csv": "Strong",
   "cronometer-csv": "Cronometer",
@@ -115,14 +123,24 @@ export function ProviderCard({
 }) {
   const { serverUrl } = useAuth();
   const dotColor = statusDotColor(provider.authStatus);
-  const summary = syncCardSummary(provider);
+  const isAutomaticSource = isCloudPushProvider(provider);
+  const summary = syncCardSummary({ ...provider, pushOnly: isAutomaticSource });
   const lastSyncRelative = summary.lastAttemptAt ? formatRelativeTime(summary.lastAttemptAt) : null;
   const lastSuccessfulSyncRelative = provider.lastSuccessfulSyncAt
     ? formatRelativeTime(provider.lastSuccessfulSyncAt)
     : null;
+  const lastProcessedUpdateRelative = provider.lastProcessedUpdateAt
+    ? formatRelativeTime(provider.lastProcessedUpdateAt)
+    : null;
   const canRunManualSync = !provider.importOnly && !provider.pushOnly;
   const syncFreshness =
     canRunManualSync && provider.authStatus !== "not_connected" ? provider.syncFreshness : null;
+  const canAuthorize =
+    !provider.importOnly &&
+    provider.authType !== "none" &&
+    provider.authType !== "push:mobile" &&
+    (!isAutomaticSource || provider.authStatus !== "connected");
+  const actionLabel = providerActionLabel(provider.authStatus);
   const canImport = onImport !== undefined;
   const showingProgress = (syncing || importing) && syncProgress !== undefined;
 
@@ -140,24 +158,24 @@ export function ProviderCard({
           <View style={[styles.statusDot, { backgroundColor: dotColor }]} />
           <Text style={styles.cardTitle}>{provider.label}</Text>
         </TouchableOpacity>
-        {(canRunManualSync || canImport) && (
+        {(canRunManualSync || canAuthorize || canImport) && (
           <View style={styles.cardActions}>
-            {canRunManualSync ? (
+            {canRunManualSync || canAuthorize ? (
               <TouchableOpacity
                 style={[styles.syncButton, syncing && styles.syncButtonDisabled]}
-                onPress={provider.authStatus === "connected" ? onSync : onConnect}
+                onPress={
+                  canRunManualSync && provider.authStatus === "connected" ? onSync : onConnect
+                }
                 activeOpacity={0.7}
                 disabled={syncing}
                 accessibilityRole="button"
-                accessibilityLabel={`${providerActionLabel(provider.authStatus)} ${provider.label}`}
+                accessibilityLabel={`${actionLabel} ${provider.label}`}
                 accessibilityState={{ busy: syncing, disabled: syncing }}
               >
                 {syncing ? (
                   <ActivityIndicator color={colors.text} size="small" />
                 ) : (
-                  <Text style={styles.syncButtonText}>
-                    {providerActionLabel(provider.authStatus)}
-                  </Text>
+                  <Text style={styles.syncButtonText}>{actionLabel}</Text>
                 )}
               </TouchableOpacity>
             ) : null}
@@ -200,7 +218,7 @@ export function ProviderCard({
             <Text style={styles.cardMetaText}>
               {provider.importOnly
                 ? "Import only"
-                : provider.pushOnly
+                : provider.pushOnly && !isAutomaticSource
                   ? "Push only"
                   : statusLabel(provider.authStatus)}
             </Text>
@@ -211,6 +229,20 @@ export function ProviderCard({
             ) : !summary.hasHistory ? (
               <Text style={styles.cardMetaText}>Never synced</Text>
             ) : null)}
+          {isAutomaticSource && provider.authStatus === "connected" ? (
+            <Text style={styles.cardMetaText}>Updates automatically</Text>
+          ) : null}
+          {isAutomaticSource && lastProcessedUpdateRelative ? (
+            <Text style={styles.cardMetaText}>
+              Last update processed: {lastProcessedUpdateRelative}
+            </Text>
+          ) : null}
+          {isAutomaticSource &&
+          provider.authStatus === "connected" &&
+          !provider.lastProcessedUpdateAt &&
+          provider.recentLogs.length === 0 ? (
+            <Text style={styles.cardMetaText}>Waiting for first update</Text>
+          ) : null}
           {summary.latestIssue ? (
             <Text style={styles.cardMetaText}>{summary.latestIssue.label}</Text>
           ) : null}
@@ -280,5 +312,3 @@ export function SyncLogRow({ log }: { log: SyncLog }) {
     </View>
   );
 }
-
-import type { ProviderManualConnectionMetadata } from "@dofek/providers/provider-connection";

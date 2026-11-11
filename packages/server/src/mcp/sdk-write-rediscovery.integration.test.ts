@@ -91,7 +91,7 @@ describe("MCP SDK write and fresh discovery", () => {
           request_id: "22222222-2222-4222-8222-222222222222",
           date: "2026-09-15",
           food_name: "Unauthorized isolated oats",
-          nutrients: { protein: 12.5 },
+          nutrients: { calories: 300, protein: 12.5, carbohydrate: 40, fat: 0 },
         },
       });
       expect(rejected.isError).toBe(true);
@@ -118,6 +118,54 @@ describe("MCP SDK write and fresh discovery", () => {
     }
   });
 
+  it("rejects missing and invalid required nutrients through SDK HTTP without writing", async () => {
+    const client = new Client({ name: "dofek-sdk-nutrition-test", version: "1.0.0" });
+    const nutrients = { calories: 300, protein: 12.5, carbohydrate: 40, fat: 0 };
+    try {
+      await client.connect(
+        new StreamableHTTPClientTransport(endpoint, {
+          requestInit: { headers: { Authorization: `Bearer ${token}` } },
+        }),
+      );
+      for (const id of Object.keys(nutrients)) {
+        const missing = Object.fromEntries(Object.entries(nutrients).filter(([key]) => key !== id));
+        for (const invalid of [
+          missing,
+          { ...nutrients, [id]: "" },
+          { ...nutrients, [id]: null },
+          { ...nutrients, [id]: -1 },
+          { ...nutrients, [id]: "0" },
+        ]) {
+          const rejected = await client.callTool({
+            name: "create_food_entry",
+            arguments: {
+              request_id: crypto.randomUUID(),
+              date: "2026-09-15",
+              food_name: "Incomplete isolated oats",
+              nutrients: invalid,
+            },
+          });
+          expect(rejected.isError).toBe(true);
+        }
+      }
+      const searched = foodRecordSearchOutputSchema.parse(
+        (
+          await client.callTool({
+            name: "search_food_entries",
+            arguments: {
+              start_date: "2026-09-15",
+              end_date: "2026-09-15",
+              query: "Incomplete isolated oats",
+            },
+          })
+        ).structuredContent,
+      );
+      expect(searched.result.items).toEqual([]);
+    } finally {
+      await client.close();
+    }
+  });
+
   it("writes through SDK HTTP, validates the result, then rediscovers and reads it", async () => {
     const firstClient = new Client({ name: "dofek-sdk-write-test", version: "1.0.0" });
     let firstClientClosed = false;
@@ -129,7 +177,7 @@ describe("MCP SDK write and fresh discovery", () => {
       await firstClient.connect(firstTransport);
       const listed = await firstClient.listTools();
       expect(listed.nextCursor).toBeUndefined();
-      expect(listed.tools).toHaveLength(37);
+      expect(listed.tools).toHaveLength(38);
       const initialToolNames = listed.tools.map((tool) => tool.name).toSorted();
       const createTool = listed.tools.find((tool) => tool.name === "create_food_entry");
       expect(createTool).toBeDefined();
@@ -142,6 +190,12 @@ describe("MCP SDK write and fresh discovery", () => {
       expect(createTool?.inputSchema).toMatchObject({
         type: "object",
         required: expect.arrayContaining(["request_id", "date", "food_name", "nutrients"]),
+        properties: {
+          nutrients: {
+            type: "object",
+            required: expect.arrayContaining(["calories", "protein", "carbohydrate", "fat"]),
+          },
+        },
       });
       expect(createTool?.outputSchema).toMatchObject({
         type: "object",
@@ -156,7 +210,7 @@ describe("MCP SDK write and fresh discovery", () => {
           date: "2026-09-15",
           meal: "breakfast",
           food_name: "SDK isolated oats",
-          nutrients: { protein: 12.5 },
+          nutrients: { calories: 300, protein: 12.5, carbohydrate: 40, fat: 0 },
         },
       });
       expect(created.isError).not.toBe(true);
@@ -170,7 +224,12 @@ describe("MCP SDK write and fresh discovery", () => {
       expect(createdJson).toEqual(createdStructured);
       const mutation = foodRecordMutationOutputSchema.parse(created.structuredContent);
       expect(mutation.result.record.food_name).toBe("SDK isolated oats");
-      expect(mutation.result.record.nutrients).toMatchObject({ protein: 12.5 });
+      expect(mutation.result.record.nutrients).toMatchObject({
+        calories: 300,
+        protein: 12.5,
+        carbohydrate: 40,
+        fat: 0,
+      });
       expect(mutation.result.operation.replayed).toBe(false);
 
       await firstClient.close();
@@ -184,7 +243,7 @@ describe("MCP SDK write and fresh discovery", () => {
         await freshClient.connect(freshTransport);
         const freshTools = await freshClient.listTools();
         expect(freshTools.nextCursor).toBeUndefined();
-        expect(freshTools.tools).toHaveLength(37);
+        expect(freshTools.tools).toHaveLength(38);
         expect(freshTools.tools.map((tool) => tool.name).toSorted()).toEqual(initialToolNames);
         expect(
           freshTools.tools.find((tool) => tool.name === "search_food_entries")?.annotations,

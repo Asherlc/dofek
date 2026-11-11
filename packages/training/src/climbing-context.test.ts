@@ -6,11 +6,24 @@ const emptyMetadata = {
   climb: null,
   board: null,
   wallAngle: null,
-  holdType: null,
+  holdTypes: null,
   providerId: "kaya",
 };
 
 describe("climbing context", () => {
+  it("retains explicit multiple grips and categorical wall angles", () => {
+    expect(
+      climbingContextSchema.parse({
+        ...emptyMetadata,
+        holdTypes: ["crimp", "volume", "jam", "no_grips"],
+        wallAngle: { category: "slab" },
+      }),
+    ).toMatchObject({
+      holdTypes: ["crimp", "volume", "jam", "no_grips"],
+      wallAngle: { category: "slab" },
+    });
+  });
+
   it("preserves an empty source snapshot without supplying missing facts", () => {
     expect(climbingContextSchema.parse({ ...emptyMetadata, providerId: "kaya" })).toEqual({
       ...emptyMetadata,
@@ -48,7 +61,11 @@ describe("climbing context", () => {
     { wallAngle: { value: "40", unit: "degrees" } },
     { wallAngle: { value: 40, unit: "radians" } },
     { wallAngle: { value: 40, unit: null, extra: true } },
-    { holdType: "unknown-grip" },
+    { holdTypes: ["unknown-grip"] },
+    { holdTypes: [] },
+    { holdTypes: ["crimp", null] },
+    { wallAngle: { category: "invented" } },
+    { wallAngle: { category: "slab", value: -20, unit: "degrees" } },
   ])("rejects malformed canonical facts: %j", (fields) => {
     expect(climbingContextSchema.safeParse({ ...emptyMetadata, ...fields }).success).toBe(false);
   });

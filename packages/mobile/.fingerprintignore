@@ -1,0 +1,8 @@
+# Prebuild regenerates this icon from assets/icon.png, which Expo fingerprints.
+targets/**/Assets.xcassets/AppIcon.appiconset/**
+
+# Watch documentation and Swift test tooling are not inputs to the app binary.
+targets/**/*.md
+targets/**/Tests/**
+targets/**/Package.swift
+targets/**/.build/**

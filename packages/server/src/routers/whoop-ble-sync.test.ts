@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { crc32 } from "node:zlib";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { makeTransactionalTestDatabase } from "./test-helpers.ts";
 
@@ -12,6 +14,7 @@ vi.mock("../../../../src/db/provider-data-deletion.ts", async (importOriginal) =
 vi.mock("../logger.ts", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
+vi.mock("dofek/lib/error-reporting", () => ({ captureException: vi.fn() }));
 
 // Mock trpc with a real tRPC setup
 vi.mock("../trpc.ts", async () => {
@@ -28,6 +31,8 @@ vi.mock("../trpc.ts", async () => {
   };
 });
 
+import { captureException } from "dofek/lib/error-reporting";
+import { logger } from "../logger.ts";
 import { whoopBleSyncRouter } from "./whoop-ble-sync.ts";
 
 function makeMockDb() {
@@ -68,17 +73,300 @@ describe("whoopBleSyncRouter", () => {
     ctx = makeCtx(mockDb, metricStreamPublisher);
   });
 
+  describe("pushSensorRecords", () => {
+    const frameHex =
+      readFileSync(
+        new URL(
+          "../../../mobile/modules/whoop-ble/Tests/fixtures/imu-activation-capture.tsv",
+          import.meta.url,
+        ),
+        "utf8",
+      )
+        .split("\n")
+        .map((line) => line.split("\t").at(-1) ?? "")
+        .find((hex) => hex.length === 248 && hex.slice(16, 20) === "2f12") ?? "";
+    const sample = {
+      captureId: "1087b7ac-fc32-4c29-8b31-72e366dc974d",
+      timestamp: "2026-10-30T12:00:00.000Z",
+      frameHex,
+      deviceInfo: { firmware: "50.42.1.0", model: "WHOOP MG" },
+    };
+
+    it("retains original frame bytes and receipt time with stable retry identity", async () => {
+      const trpcCaller = whoopBleSyncRouter.createCaller(ctx);
+      expect(
+        await trpcCaller.pushSensorRecords({ deviceId: "strap-a", samples: [sample] }),
+      ).toEqual({ inserted: 1 });
+      await trpcCaller.pushSensorRecords({ deviceId: "strap-a", samples: [sample] });
+      const rows = getPublishedRows(metricStreamPublisher);
+      expect(rows).toEqual([
+        expect.objectContaining({
+          channel: "sensor_record",
+          recordedAt: sample.timestamp,
+          externalId: `whoop_ble:strap-a:sensor_record:${sample.captureId}`,
+          metadata: sample,
+        }),
+        expect.objectContaining({
+          channel: "sensor_record",
+          recordedAt: sample.timestamp,
+          externalId: `whoop_ble:strap-a:sensor_record:${sample.captureId}`,
+          metadata: sample,
+        }),
+      ]);
+    });
+
+    it.each([0, 299_999, 300_000])(
+      "accepts receipt clocks within the tolerance: %i ms",
+      async (offset) => {
+        const now = Date.parse(sample.timestamp);
+        const clock = vi.spyOn(Date, "now").mockReturnValue(now);
+        try {
+          const result = await whoopBleSyncRouter.createCaller(ctx).pushSensorRecords({
+            deviceId: "strap-a",
+            samples: [{ ...sample, timestamp: new Date(now + offset).toISOString() }],
+          });
+          expect(result).toEqual({ inserted: 1 });
+          expect(logger.info).toHaveBeenCalledWith(
+            "[sensor-upload] upload_published",
+            expect.objectContaining({
+              stream: "sensorRecords",
+              publishedRowCount: 1,
+              boundary: "redpanda",
+            }),
+          );
+        } finally {
+          clock.mockRestore();
+        }
+      },
+    );
+
+    it("rejects the entire batch when one receipt clock exceeds five minutes by one millisecond", async () => {
+      const now = Date.parse(sample.timestamp);
+      const clock = vi.spyOn(Date, "now").mockReturnValue(now);
+      try {
+        await expect(
+          whoopBleSyncRouter.createCaller(ctx).pushSensorRecords({
+            deviceId: "strap-a",
+            samples: [sample, { ...sample, timestamp: new Date(now + 300_001).toISOString() }],
+          }),
+        ).rejects.toMatchObject({
+          code: "BAD_REQUEST",
+          message: "WHOOP packet reception time is in the future; check your phone's clock",
+        });
+        expect(getPublishedRows(metricStreamPublisher)).toEqual([]);
+      } finally {
+        clock.mockRestore();
+      }
+    });
+
+    it("accepts a batch at the exact byte limit and rejects one extra byte", async () => {
+      // Constructed envelopes test transport bounds, not sensor interpretation.
+      function opaqueFrame(length: number) {
+        const frame = Buffer.alloc(length);
+        frame[0] = 0xaa;
+        frame[1] = 1;
+        frame.writeUInt16LE(length - 8, 2);
+        frame[5] = 1;
+        let checksum = 0xffff;
+        for (const byte of frame.subarray(0, 6)) {
+          checksum ^= byte;
+          for (let bit = 0; bit < 8; bit++)
+            checksum = (checksum & 1) !== 0 ? (checksum >>> 1) ^ 0xa001 : checksum >>> 1;
+        }
+        frame.writeUInt16LE(checksum, 6);
+        frame[8] = 43;
+        frame[9] = 22;
+        frame.writeUInt32LE(crc32(frame.subarray(8, -4)), length - 4);
+        return frame.toString("hex");
+      }
+      const input = {
+        deviceId: "strap-a",
+        samples: [
+          { ...sample, frameHex: "" },
+          { ...sample, frameHex: "" },
+        ],
+      };
+      if ((262_144 - Buffer.byteLength(JSON.stringify(input))) % 2 !== 0) input.deviceId += "a";
+      const totalFrameBytes = (262_144 - Buffer.byteLength(JSON.stringify(input))) / 2;
+      input.samples[0].frameHex = opaqueFrame(65_543);
+      input.samples[1].frameHex = opaqueFrame(totalFrameBytes - 65_543);
+      expect(Buffer.byteLength(JSON.stringify(input))).toBe(262_144);
+      const caller = whoopBleSyncRouter.createCaller(ctx);
+      await expect(caller.pushSensorRecords(input)).resolves.toEqual({ inserted: 2 });
+      await expect(
+        caller.pushSensorRecords({ ...input, deviceId: `${input.deviceId}a` }),
+      ).rejects.toThrow(/262144 bytes/);
+      expect(metricStreamPublisher.publishRows).toHaveBeenCalledOnce();
+    });
+
+    it("rejects damaged frames before acknowledging them", async () => {
+      const bytes = Buffer.from(frameHex, "hex");
+      bytes[73] ^= 1;
+      await expect(
+        whoopBleSyncRouter.createCaller(ctx).pushSensorRecords({
+          deviceId: "strap-a",
+          samples: [{ ...sample, frameHex: bytes.toString("hex") }],
+        }),
+      ).rejects.toThrow(/CRC/);
+      expect(getPublishedRows(metricStreamPublisher)).toEqual([]);
+    });
+
+    it("propagates publication failure so the native queue retains its reservation", async () => {
+      metricStreamPublisher.publishRows.mockRejectedValue(new Error("Broker unavailable"));
+      await expect(
+        whoopBleSyncRouter
+          .createCaller(ctx)
+          .pushSensorRecords({ deviceId: "strap-a", samples: [sample] }),
+      ).rejects.toThrow("Broker unavailable");
+      expect(captureException).toHaveBeenCalled();
+    });
+
+    it("rejects batches over the record count bound", async () => {
+      await expect(
+        whoopBleSyncRouter.createCaller(ctx).pushSensorRecords({
+          deviceId: "strap-a",
+          samples: Array.from({ length: 17 }, () => sample),
+        }),
+      ).rejects.toThrow();
+    });
+
+    it("rejects a byte-oversized batch of otherwise valid opaque frames", async () => {
+      // Constructed maximum-size envelope; no sensor meanings are assigned.
+      const frame = Buffer.alloc(65_543);
+      Buffer.from("aa01ffff0001e435", "hex").copy(frame);
+      frame[8] = 43;
+      frame[9] = 22;
+      frame.writeUInt32LE(crc32(frame.subarray(8, -4)), frame.length - 4);
+      await expect(
+        whoopBleSyncRouter.createCaller(ctx).pushSensorRecords({
+          deviceId: "strap-a",
+          samples: Array.from({ length: 3 }, () => ({
+            ...sample,
+            frameHex: frame.toString("hex"),
+          })),
+        }),
+      ).rejects.toThrow(/262144 bytes/);
+      expect(getPublishedRows(metricStreamPublisher)).toEqual([]);
+    });
+  });
+
   describe("pushRealtimeData", () => {
     const caller = whoopBleSyncRouter.createCaller;
 
+    it("correlates receipt and publication after broker acknowledgment without logging sensor values", async () => {
+      let acknowledge!: () => void;
+      const acknowledgment = new Promise<void>((resolve) => {
+        acknowledge = resolve;
+      });
+      metricStreamPublisher.publishRows.mockImplementation(async (rows) => {
+        await acknowledgment;
+        return rows.map((_, index) => ({ id: `event-${index}` }));
+      });
+      const telemetry = {
+        batchId: "268dc563-bc67-4d37-8ff1-0067a7f7ce85",
+        bufferInstanceId: "9a5b18b9-6037-47b7-ac55-fc2484191178",
+      };
+      const upload = caller({
+        ...ctx,
+        appVersion: "1.12.0",
+        assetsVersion: "ota-1",
+      }).pushRealtimeData({
+        deviceId: "WHOOP Strap",
+        telemetry,
+        samples: [
+          {
+            timestamp: "2026-03-30T12:00:00.000Z",
+            heartRateBpm: 72,
+            rrIntervalMs: 812,
+            quaternionW: 0,
+            quaternionX: 0,
+            quaternionY: 0,
+            quaternionZ: 0,
+          },
+        ],
+      });
+      await vi.waitFor(() => expect(metricStreamPublisher.publishRows).toHaveBeenCalledOnce());
+      const attributes = {
+        ...telemetry,
+        userId: "test-user-id",
+        deviceId: "WHOOP Strap",
+        appVersion: "1.12.0",
+        assetsVersion: "ota-1",
+        inputSampleCount: 1,
+        acceptedSampleCount: 1,
+        filteredSampleCount: 0,
+      };
+      expect(logger.info).toHaveBeenCalledWith(
+        "[sensor-upload] upload_received",
+        expect.objectContaining(attributes),
+      );
+      expect(logger.info).not.toHaveBeenCalledWith(
+        "[sensor-upload] upload_published",
+        expect.objectContaining(telemetry),
+      );
+      acknowledge();
+      await expect(upload).resolves.toEqual({ inserted: 2 });
+      expect(logger.info).toHaveBeenCalledWith(
+        "[sensor-upload] upload_published",
+        expect.objectContaining({
+          ...attributes,
+          publishedRowCount: 2,
+          boundary: "redpanda",
+        }),
+      );
+    });
+
+    it("correlates a rejected publish and reports the original exception", async () => {
+      const publishError = new Error("broker unavailable");
+      metricStreamPublisher.publishRows.mockRejectedValueOnce(publishError);
+      const telemetry = { batchId: "7f25e8cf-c346-42b1-9c2a-9c37af2f45e6" };
+      await expect(
+        caller(ctx).pushRealtimeData({
+          deviceId: "WHOOP Strap",
+          telemetry,
+          samples: [
+            {
+              timestamp: "2026-03-30T12:00:00Z",
+              heartRateBpm: 72,
+              quaternionW: 0,
+              quaternionX: 0,
+              quaternionY: 0,
+              quaternionZ: 0,
+            },
+          ],
+        }),
+      ).rejects.toMatchObject({ cause: publishError });
+      expect(logger.error).toHaveBeenCalledWith(
+        "[sensor-upload] upload_failed",
+        expect.objectContaining(telemetry),
+      );
+      expect(captureException).toHaveBeenCalledWith(
+        publishError,
+        expect.objectContaining({ extra: expect.objectContaining(telemetry) }),
+      );
+    });
+
     it("returns zero inserted for empty samples array", async () => {
       const trpcCaller = caller(ctx);
+      const telemetry = { batchId: "336eb233-4bca-4b70-bb91-22a55f131917" };
       const result = await trpcCaller.pushRealtimeData({
         deviceId: "WHOOP Strap",
         samples: [],
+        telemetry,
       });
 
       expect(result).toEqual({ inserted: 0 });
+      expect(logger.info).toHaveBeenCalledWith(
+        "[sensor-upload] upload_published",
+        expect.objectContaining({
+          ...telemetry,
+          boundary: "no_metric_rows",
+          inputSampleCount: 0,
+          acceptedSampleCount: 0,
+          filteredSampleCount: 0,
+          publishedRowCount: 0,
+        }),
+      );
     });
 
     it("ensures the whoop_ble provider exists before inserting", async () => {
@@ -448,14 +736,14 @@ describe("whoopBleSyncRouter", () => {
       ]);
     });
 
-    it("logs timestamps and sample count on successful push", async () => {
+    it("logs chronological timestamp bounds and sample count for an unordered push", async () => {
       const { logger } = await import("../logger.ts");
       const trpcCaller = caller(ctx);
       await trpcCaller.pushRealtimeData({
         deviceId: "WHOOP Strap",
         samples: [
           {
-            timestamp: "2026-03-30T12:00:00.000Z",
+            timestamp: "2026-03-30T12:00:01.000Z",
             rrIntervalMs: 812,
             quaternionW: 0,
             quaternionX: 0,
@@ -463,7 +751,7 @@ describe("whoopBleSyncRouter", () => {
             quaternionZ: 0,
           },
           {
-            timestamp: "2026-03-30T12:00:01.000Z",
+            timestamp: "2026-03-30T12:00:00.000Z",
             rrIntervalMs: 810,
             quaternionW: 0,
             quaternionX: 0,
@@ -576,10 +864,12 @@ describe("whoopBleSyncRouter", () => {
       vi.setSystemTime(new Date("2026-03-30T12:00:00.000Z"));
 
       const trpcCaller = caller(ctx);
+      const telemetry = { batchId: "41176483-7baa-42fe-8003-353c43ed5a26" };
 
       try {
         const result = await trpcCaller.pushRealtimeData({
           deviceId: "WHOOP Strap",
+          telemetry,
           samples: [
             {
               timestamp: "2026-03-30T12:06:00.001Z",
@@ -594,6 +884,55 @@ describe("whoopBleSyncRouter", () => {
 
         expect(result.inserted).toBe(0);
         expect(metricStreamPublisher.publishRows).not.toHaveBeenCalled();
+        expect(logger.info).toHaveBeenCalledWith(
+          "[sensor-upload] upload_published",
+          expect.objectContaining({
+            ...telemetry,
+            boundary: "no_metric_rows",
+            inputSampleCount: 1,
+            acceptedSampleCount: 0,
+            filteredSampleCount: 1,
+            publishedRowCount: 0,
+          }),
+        );
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("publishes valid readings while filtering raw future-clock samples in the same batch", async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-03-30T12:00:00.000Z"));
+      try {
+        const sample = {
+          timestamp: "2026-03-30T12:00:00.000Z",
+          heartRateBpm: 72,
+          rrIntervalMs: 0,
+          quaternionW: 0,
+          quaternionX: 0,
+          quaternionY: 0,
+          quaternionZ: 0,
+        };
+        const result = await caller(ctx).pushRealtimeData({
+          deviceId: "WHOOP Strap",
+          samples: [sample, { ...sample, timestamp: "2106-02-07T06:28:15.000Z", heartRateBpm: 99 }],
+        });
+        expect(result).toEqual({ inserted: 1 });
+        expect(getPublishedRows(metricStreamPublisher)).toEqual([
+          expect.objectContaining({
+            recordedAt: sample.timestamp,
+            channel: "heart_rate",
+            scalar: 72,
+          }),
+        ]);
+        expect(logger.info).toHaveBeenCalledWith(
+          "[sensor-upload] upload_published",
+          expect.objectContaining({
+            inputSampleCount: 2,
+            acceptedSampleCount: 1,
+            filteredSampleCount: 1,
+          }),
+        );
       } finally {
         vi.useRealTimers();
       }

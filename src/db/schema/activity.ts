@@ -154,7 +154,9 @@ export const activity = fitness.table(
     }),
     stravaId: text("strava_id"), // Strava activity ID for cross-provider linking
     raw: jsonb("raw"),
+    fitRecoveryError: text("fit_recovery_error"),
     providerAbsentAt: timestamp("provider_absent_at", { withTimezone: true }),
+    absenceProviderId: text("absence_provider_id").references(() => provider.id),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -200,6 +202,26 @@ export const activity = fitness.table(
     check(
       "activity_perceived_exertion_range",
       sql`${table.perceivedExertion} IS NULL OR ${table.perceivedExertion} BETWEEN 0 AND 10`,
+    ),
+  ],
+);
+
+export const activityDeviceObservation = fitness.table(
+  "activity_device_observation",
+  {
+    activityId: uuid("activity_id")
+      .notNull()
+      .references(() => activity.id, { onDelete: "cascade" }),
+    sequence: bigint("sequence", { mode: "number" }).notNull(),
+    messageType: text("message_type", { enum: ["file_id", "device_info"] }).notNull(),
+    raw: jsonb("raw").$type<Record<string, unknown>>().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.activityId, table.sequence] }),
+    check("activity_device_observation_sequence_nonnegative", sql`${table.sequence} >= 0`),
+    check(
+      "activity_device_observation_message_type",
+      sql`${table.messageType} IN ('file_id', 'device_info')`,
     ),
   ],
 );
@@ -302,7 +324,6 @@ export const sportSettings = fitness.table(
       .notNull()
       .references(() => userProfile.id),
     sport: text("sport").notNull(),
-    ftp: smallint("ftp"),
     thresholdHr: smallint("threshold_hr"),
     thresholdPacePerKm: real("threshold_pace_per_km"),
     powerZonePcts: jsonb("power_zone_pcts"),

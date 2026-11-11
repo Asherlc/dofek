@@ -1,22 +1,16 @@
-import {
-  type ClimbingFilters,
-  climbingFilterKeys,
-  climbingFilterLabels,
-  climbingFilterOptions,
-  climbingFiltersSchema,
-} from "@dofek/training/climbing-filters";
+import type { ClimbingFilters as Filters } from "@dofek/training/climbing-filters";
 import { keepPreviousData } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import type { ClimbingSessionSummaryRow } from "dofek-server/types";
-import { useId, useState } from "react";
-import type { Activity } from "../../components/ActivityList.tsx";
-import type { ActivityTableColumn } from "../../components/ActivityTable.tsx";
+import { useState } from "react";
+import { ClimbingFilters } from "../../components/ClimbingFilters.tsx";
 import { ClimbingGradeProgressionChart } from "../../components/ClimbingGradeProgressionChart.tsx";
 import { ClimbingLocationMap } from "../../components/ClimbingLocationMap.tsx";
+import { ClimbingStrengths } from "../../components/ClimbingStrengths.tsx";
 import { ClimbingVolumeByGradeChart } from "../../components/ClimbingVolumeByGradeChart.tsx";
+import { ClimbingVolumeOverTimeChart } from "../../components/ClimbingVolumeOverTimeChart.tsx";
 import { HangboardingSummary } from "../../components/HangboardingSummary.tsx";
 import { QueryStatePanel } from "../../components/QueryStatePanel.tsx";
-import { RecentActivitiesSection } from "../../components/RecentActivitiesSection.tsx";
+import { useTodayQueryDate } from "../../hooks/useTodayQueryDate.ts";
 import { useTrainingDays } from "../../lib/trainingDaysContext.ts";
 import { TRAINING_SLOW_QUERY_OPTIONS } from "../../lib/trainingQueryOptions.ts";
 import { trpc } from "../../lib/trpc.ts";
@@ -25,75 +19,37 @@ export const Route = createFileRoute("/training/climbing")({
   component: ClimbingTab,
 });
 
-const CLIMBING_ACTIVITY_TYPES = ["climbing"] as const;
-
 function climbingRangeInput(days: number | null): { days?: number } {
   return days === null ? {} : { days };
 }
 
-function climbingSessionColumns(
-  sessionSummaries: ClimbingSessionSummaryRow[],
-): Array<ActivityTableColumn<Activity>> {
-  const summariesByActivityId = new Map(
-    sessionSummaries.map((summary) => [summary.activityId, summary]),
-  );
-  const summaryFor = (activity: Activity) => summariesByActivityId.get(activity.id);
-
-  return [
-    {
-      key: "attempts",
-      label: "Attempts",
-      headerClassName: "pb-2 pr-4 whitespace-nowrap",
-      cellClassName: "py-2 pr-4 text-muted tabular-nums whitespace-nowrap",
-      renderCell: (activity) => summaryFor(activity)?.attempts ?? "—",
-    },
-    {
-      key: "sends",
-      label: "Sends",
-      headerClassName: "pb-2 pr-4 whitespace-nowrap",
-      cellClassName: "py-2 pr-4 text-muted tabular-nums whitespace-nowrap",
-      renderCell: (activity) => summaryFor(activity)?.sends ?? "—",
-    },
-    {
-      key: "best-boulder-grade",
-      label: "Best Boulder Grade",
-      headerClassName: "pb-2 pr-4 whitespace-nowrap",
-      cellClassName: "py-2 pr-4 text-muted whitespace-nowrap",
-      renderCell: (activity) => {
-        const summary = summaryFor(activity);
-        return summary ? (summary.hardestBoulderGrade ?? "None") : "—";
-      },
-    },
-    {
-      key: "best-route-grade",
-      label: "Best Route Grade",
-      headerClassName: "pb-2 whitespace-nowrap",
-      cellClassName: "py-2 text-muted whitespace-nowrap",
-      renderCell: (activity) => {
-        const summary = summaryFor(activity);
-        return summary ? (summary.hardestRouteGrade ?? "None") : "—";
-      },
-    },
-  ];
-}
-
 export function ClimbingTab() {
   const { days } = useTrainingDays();
-  const [filters, setFilters] = useState<ClimbingFilters>({});
-  const [filtersOpen, setFiltersOpen] = useState(false);
-  const filtersId = useId();
+  const endDate = useTodayQueryDate();
+  const [filters, setFilters] = useState<Filters>({});
+  const [includeAreaMetadata, setIncludeAreaMetadata] = useState(true);
   const rangeInput = { ...climbingRangeInput(days), ...filters };
   const climbingQueryOptions = {
     ...TRAINING_SLOW_QUERY_OPTIONS,
     placeholderData: keepPreviousData,
   };
-  const gradeProgression = trpc.climbing.gradeProgression.useQuery(
+  const gradeProgression = trpc.climbing.gradeProgressionV2.useQuery(
     rangeInput,
     climbingQueryOptions,
   );
   const volumeByGrade = trpc.climbing.volumeByGrade.useQuery(rangeInput, climbingQueryOptions);
+  const volumeOverTime = trpc.climbing.volumeOverTime.useQuery(
+    { ...rangeInput, days },
+    climbingQueryOptions,
+  );
   const locationMap = trpc.climbing.locationMap.useQuery(rangeInput, climbingQueryOptions);
-  const sessionSummary = trpc.climbing.sessionSummary.useQuery(rangeInput, climbingQueryOptions);
+  const strengths = trpc.climbing.strengths.useQuery(
+    { ...rangeInput, days, endDate, responseVersion: 2, includeAreaMetadata },
+    {
+      ...climbingQueryOptions,
+      refetchInterval: (query) => (query.state.data?.enrichmentPending ? 1500 : false),
+    },
+  );
   const hangboardingSummary = trpc.climbing.hangboardingSummary.useQuery(
     climbingRangeInput(days),
     TRAINING_SLOW_QUERY_OPTIONS,
@@ -101,81 +57,41 @@ export function ClimbingTab() {
 
   return (
     <>
-      <div className="mb-6 space-y-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            className="rounded-lg border border-border px-3 py-2 text-sm"
-            aria-expanded={filtersOpen}
-            aria-controls={filtersId}
-            onClick={() => setFiltersOpen(!filtersOpen)}
-          >
-            {Object.keys(filters).length ? "Filter climbing" : "All climbing"}{" "}
-            <span aria-hidden="true">▾</span>
-          </button>
-          {climbingFilterKeys.map((key) => {
-            const label = climbingFilterOptions[key].find(([value]) => value === filters[key])?.[1];
-            return label ? (
-              <button
-                key={key}
-                type="button"
-                aria-label={`Remove ${climbingFilterLabels[key]}: ${label} filter`}
-                className="rounded-full bg-surface-hover px-3 py-1 text-xs"
-                onClick={() =>
-                  setFilters((current) => {
-                    const next = { ...current };
-                    delete next[key];
-                    return next;
-                  })
-                }
-              >
-                {climbingFilterLabels[key]}: {label} <span aria-hidden="true">×</span>
-              </button>
-            ) : null;
-          })}
-        </div>
-        {filtersOpen ? (
-          <div id={filtersId} className="flex flex-wrap gap-4 rounded-lg border border-border p-3">
-            {climbingFilterKeys.map((key) => (
-              <label key={key} className="flex flex-col gap-1 text-xs text-muted">
-                {climbingFilterLabels[key]}
-                <select
-                  className="rounded border border-border bg-surface px-2 py-2 text-sm"
-                  value={filters[key] === undefined ? "" : String(filters[key])}
-                  onChange={(event) =>
-                    setFilters((current) => {
-                      const next = { ...current };
-                      delete next[key];
-                      const selected = climbingFilterOptions[key].find(
-                        ([option]) => String(option) === event.target.value,
-                      );
-                      return climbingFiltersSchema.parse(
-                        selected ? { ...next, [key]: selected[0] } : next,
-                      );
-                    })
-                  }
-                >
-                  <option value="">All</option>
-                  {climbingFilterOptions[key].map(([value, label]) => (
-                    <option key={String(value)} value={String(value)}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ))}
-          </div>
-        ) : null}
+      <div className="mb-6">
+        <ClimbingFilters value={filters} onChange={setFilters} />
       </div>
       {gradeProgression.isFetching ||
       volumeByGrade.isFetching ||
-      sessionSummary.isFetching ||
+      volumeOverTime.isFetching ||
+      strengths.isFetching ||
       locationMap.isFetching ? (
         <p role="status" className="mb-3 text-xs text-muted">
           Updating climbing…
         </p>
       ) : null}
       <div className="grid grid-cols-1 gap-6">
+        <Section title="Climbing Volume">
+          {volumeOverTime.error ? (
+            <QueryStatePanel error={volumeOverTime.error} height={0} />
+          ) : null}
+          {volumeOverTime.error && !volumeOverTime.data ? null : (
+            <ClimbingVolumeOverTimeChart
+              data={volumeOverTime.data ?? []}
+              loading={volumeOverTime.isLoading}
+            />
+          )}
+        </Section>
+        <Section title="Climbing Strengths">
+          {strengths.error ? <QueryStatePanel error={strengths.error} height={0} /> : null}
+          {strengths.error && !strengths.data ? null : (
+            <ClimbingStrengths
+              data={strengths.data}
+              loading={strengths.isLoading}
+              includeAreaMetadata={includeAreaMetadata}
+              onIncludeAreaMetadataChange={setIncludeAreaMetadata}
+            />
+          )}
+        </Section>
         <Section title="Climbing Locations">
           {locationMap.error ? <QueryStatePanel error={locationMap.error} height={0} /> : null}
           {locationMap.error && !locationMap.data ? null : (
@@ -187,9 +103,9 @@ export function ClimbingTab() {
           {gradeProgression.error ? (
             <QueryStatePanel error={gradeProgression.error} height={0} />
           ) : null}
-          {gradeProgression.error && !gradeProgression.data ? null : (
+          {gradeProgression.error && gradeProgression.data === undefined ? null : (
             <ClimbingGradeProgressionChart
-              data={gradeProgression.data ?? []}
+              data={gradeProgression.data ?? null}
               loading={gradeProgression.isLoading}
             />
           )}
@@ -205,70 +121,6 @@ export function ClimbingTab() {
           )}
         </Section>
       </div>
-
-      <Section title="Recent Climbing Activities">
-        <div className="space-y-4">
-          {sessionSummary.error ? (
-            <QueryStatePanel error={sessionSummary.error} height={0} />
-          ) : null}
-          {Object.keys(filters).length ? (
-            sessionSummary.isLoading && !sessionSummary.data ? (
-              <QueryStatePanel variant="loading" />
-            ) : sessionSummary.error && !sessionSummary.data ? null : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                  <thead>
-                    <tr>
-                      {[
-                        "Activity",
-                        "Attempts",
-                        "Sends",
-                        "Best Boulder Grade",
-                        "Best Route Grade",
-                      ].map((label) => (
-                        <th key={label} className="pb-2 pr-4 text-muted font-medium">
-                          {label}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sessionSummary.data?.map((session) => (
-                      <tr key={session.activityId}>
-                        <td className="py-2 pr-4">
-                          <a
-                            className="text-accent hover:underline"
-                            href={`/activity/${session.activityId}`}
-                          >
-                            {session.name}
-                          </a>
-                          <div className="text-xs text-dim">{session.date}</div>
-                        </td>
-                        <td className="py-2 pr-4">{session.attempts ?? "—"}</td>
-                        <td className="py-2 pr-4">{session.sends}</td>
-                        <td className="py-2 pr-4">{session.hardestBoulderGrade ?? "None"}</td>
-                        <td className="py-2">{session.hardestRouteGrade ?? "None"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {sessionSummary.data?.length === 0 ? (
-                  <p className="py-4 text-sm text-muted">
-                    No climbing activities match these filters.
-                  </p>
-                ) : null}
-              </div>
-            )
-          ) : (
-            <RecentActivitiesSection
-              activityTypes={CLIMBING_ACTIVITY_TYPES}
-              showDistance={false}
-              additionalColumns={climbingSessionColumns(sessionSummary.data ?? [])}
-              additionalDataLoading={sessionSummary.isLoading}
-            />
-          )}
-        </div>
-      </Section>
 
       <Section title="Hangboarding">
         {hangboardingSummary.error && !hangboardingSummary.data ? (

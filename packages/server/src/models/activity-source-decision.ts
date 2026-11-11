@@ -1,6 +1,9 @@
-import type { ActivityOrigin } from "@dofek/providers/activity-origin";
+import type { ActivityOrigin, ActivityOriginEvidence } from "@dofek/providers/activity-origin";
+import type { ActivitySourceTree } from "@dofek/providers/activity-source-tree";
 import { providerLabel } from "@dofek/providers/providers";
+import type { ClimbingLogActivitySession } from "../contracts/climbing-log-contracts.ts";
 import type { ProviderLookup, SourceLink } from "./activity-source-attribution.ts";
+import { buildActivitySourceTree, projectActivitySourceLinks } from "./activity-source-tree.ts";
 
 export interface ActivitySourceDecisionDetail {
   origin: ActivityOrigin;
@@ -14,6 +17,7 @@ export interface ActivityListSourceDetail {
   primarySourceLabel: string | null;
   sourceCount: number;
   overlapSummary: string | null;
+  tree: ActivitySourceTree;
 }
 
 function primaryLabel(origin: ActivityOrigin, lookupProvider?: ProviderLookup): string | null {
@@ -26,12 +30,14 @@ export function buildActivitySourceDecision(
   origin: ActivityOrigin,
   sourceLinks: SourceLink[],
   lookupProvider?: ProviderLookup,
+  sessions: readonly ClimbingLogActivitySession[] = [],
 ): ActivitySourceDecisionDetail | null {
-  if (sourceLinks.length < 2) return null;
+  const sourceCount = projectActivitySourceLinks(sourceLinks, sessions).length;
+  if (sourceCount < 2) return null;
   const primarySourceLabel = primaryLabel(origin, lookupProvider);
   return {
     origin,
-    sourceCount: sourceLinks.length,
+    sourceCount,
     primarySourceLabel,
     explanation:
       primarySourceLabel === null
@@ -43,13 +49,16 @@ export function buildActivitySourceDecision(
 export function buildActivityListSource(
   origin: ActivityOrigin,
   sourceLinks: SourceLink[] | undefined,
-  lookupProvider?: ProviderLookup,
+  lookupProvider: ProviderLookup | undefined,
+  evidence: ActivityOriginEvidence[],
+  sessions: readonly ClimbingLogActivitySession[] = [],
 ): ActivityListSourceDetail {
-  const sourceCount = Math.max(sourceLinks?.length ?? 0, 1);
+  const sourceCount = Math.max(projectActivitySourceLinks(sourceLinks ?? [], sessions).length, 1);
   return {
     origin,
     primarySourceLabel: primaryLabel(origin, lookupProvider),
     sourceCount,
     overlapSummary: sourceCount > 1 ? `${sourceCount} matched source records` : null,
+    tree: buildActivitySourceTree(origin, sourceLinks ?? [], evidence, sessions),
   };
 }

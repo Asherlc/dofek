@@ -1,8 +1,9 @@
 /** @vitest-environment jsdom */
 
 import type { HealthExplorerSnapshot } from "@dofek/mcp-contracts/health-explorer";
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { applyDocumentTheme } from "@modelcontextprotocol/ext-apps";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { HealthExplorer } from "./health-explorer.tsx";
 
 const { mockInit } = vi.hoisted(() => ({
@@ -60,6 +61,54 @@ const snapshot: HealthExplorerSnapshot = {
 };
 
 describe("HealthExplorer", () => {
+  beforeEach(() => {
+    mockInit.mockClear();
+    applyDocumentTheme("light");
+  });
+
+  afterEach(() => {
+    applyDocumentTheme("light");
+  });
+
+  it.each(["light", "dark"] as const)("renders the chart for the %s host theme", (theme) => {
+    applyDocumentTheme(theme);
+
+    render(<HealthExplorer snapshot={snapshot} onMetricChange={vi.fn()} />);
+
+    expect(mockInit).toHaveBeenCalledWith(
+      screen.getByRole("img", { name: "Health trend chart" }),
+      theme === "dark" ? "dark" : undefined,
+    );
+    expect(mockInit.mock.results[0]?.value.setOption).toHaveBeenCalledWith(
+      expect.objectContaining({ backgroundColor: "transparent" }),
+    );
+  });
+
+  it("updates the chart when the host switches from dark to light", async () => {
+    applyDocumentTheme("dark");
+    const { unmount } = render(<HealthExplorer snapshot={snapshot} onMetricChange={vi.fn()} />);
+    const darkChart = mockInit.mock.results[0]?.value;
+
+    await act(async () => {
+      applyDocumentTheme("light");
+    });
+
+    await waitFor(() => {
+      expect(mockInit).toHaveBeenLastCalledWith(
+        screen.getByRole("img", { name: "Health trend chart" }),
+        undefined,
+      );
+    });
+    expect(darkChart?.dispose).toHaveBeenCalledOnce();
+    expect(mockInit.mock.results[1]?.value.setOption).toHaveBeenCalledWith(
+      expect.objectContaining({ backgroundColor: "transparent" }),
+    );
+
+    const lightChart = mockInit.mock.results[1]?.value;
+    unmount();
+    expect(lightChart?.dispose).toHaveBeenCalledOnce();
+  });
+
   it("renders server-provided summaries and requests a selected metric", () => {
     const onMetricChange = vi.fn();
 

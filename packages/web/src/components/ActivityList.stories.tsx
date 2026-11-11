@@ -8,120 +8,15 @@ import {
   RouterProvider,
 } from "@tanstack/react-router";
 import type { ComponentType } from "react";
-import { within } from "storybook/test";
+import { expect, within } from "storybook/test";
 import { UnitContext } from "../lib/unitContext.ts";
 import { type Activity, ActivityList } from "./ActivityList.tsx";
 
 const mapPreview = {
   width: 1024,
   height: 576,
-  tiles: [
-    {
-      url: "https://tile.openstreetmap.org/19/83856/202646.png",
-      x: -179.332,
-      y: -132.862,
-      width: 256,
-      height: 256,
-    },
-    {
-      url: "https://tile.openstreetmap.org/19/83857/202646.png",
-      x: 76.668,
-      y: -132.862,
-      width: 256,
-      height: 256,
-    },
-    {
-      url: "https://tile.openstreetmap.org/19/83858/202646.png",
-      x: 332.668,
-      y: -132.862,
-      width: 256,
-      height: 256,
-    },
-    {
-      url: "https://tile.openstreetmap.org/19/83859/202646.png",
-      x: 588.668,
-      y: -132.862,
-      width: 256,
-      height: 256,
-    },
-    {
-      url: "https://tile.openstreetmap.org/19/83860/202646.png",
-      x: 844.668,
-      y: -132.862,
-      width: 256,
-      height: 256,
-    },
-    {
-      url: "https://tile.openstreetmap.org/19/83856/202647.png",
-      x: -179.332,
-      y: 123.138,
-      width: 256,
-      height: 256,
-    },
-    {
-      url: "https://tile.openstreetmap.org/19/83857/202647.png",
-      x: 76.668,
-      y: 123.138,
-      width: 256,
-      height: 256,
-    },
-    {
-      url: "https://tile.openstreetmap.org/19/83858/202647.png",
-      x: 332.668,
-      y: 123.138,
-      width: 256,
-      height: 256,
-    },
-    {
-      url: "https://tile.openstreetmap.org/19/83859/202647.png",
-      x: 588.668,
-      y: 123.138,
-      width: 256,
-      height: 256,
-    },
-    {
-      url: "https://tile.openstreetmap.org/19/83860/202647.png",
-      x: 844.668,
-      y: 123.138,
-      width: 256,
-      height: 256,
-    },
-    {
-      url: "https://tile.openstreetmap.org/19/83856/202648.png",
-      x: -179.332,
-      y: 379.138,
-      width: 256,
-      height: 256,
-    },
-    {
-      url: "https://tile.openstreetmap.org/19/83857/202648.png",
-      x: 76.668,
-      y: 379.138,
-      width: 256,
-      height: 256,
-    },
-    {
-      url: "https://tile.openstreetmap.org/19/83858/202648.png",
-      x: 332.668,
-      y: 379.138,
-      width: 256,
-      height: 256,
-    },
-    {
-      url: "https://tile.openstreetmap.org/19/83859/202648.png",
-      x: 588.668,
-      y: 379.138,
-      width: 256,
-      height: 256,
-    },
-    {
-      url: "https://tile.openstreetmap.org/19/83860/202648.png",
-      x: 844.668,
-      y: 379.138,
-      width: 256,
-      height: 256,
-    },
-  ],
+  center: [-122.4188, 37.77525] satisfies [number, number],
+  zoom: 18,
   routePath: [
     { x: 288.304, y: 453.089 },
     { x: 512, y: 311.585 },
@@ -135,6 +30,7 @@ const activities: Activity[] = [
     started_at: "2026-03-18T07:00:00Z",
     ended_at: "2026-03-18T07:45:00Z",
     canonical_type: "running",
+    primary_canonical_type: null,
     name: "Morning Run",
     provider_id: "strava",
     source_providers: ["strava"],
@@ -154,6 +50,7 @@ const activities: Activity[] = [
     started_at: "2026-03-17T17:00:00Z",
     ended_at: "2026-03-17T18:00:00Z",
     canonical_type: "cycling",
+    primary_canonical_type: null,
     name: "Trainer Ride",
     provider_id: "wahoo",
     source_providers: ["wahoo"],
@@ -209,6 +106,22 @@ type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
 
+export const PrimarySourceWithoutTitle: Story = {
+  args: {
+    activities: activities.slice(0, 1).map((activity) => ({
+      ...activity,
+      name: null,
+      canonical_type: "walking",
+      primary_canonical_type: "running",
+    })),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByText("Running")).toBeVisible();
+    await expect(canvas.getByText("Walking")).toBeVisible();
+  },
+};
+
 export const ProcessingMap: Story = {
   args: {
     activities: activities.map((activity) => ({ ...activity, location: { kind: "processing" } })),
@@ -223,6 +136,7 @@ export const Climbing: Story = {
         started_at: "2026-10-04T17:00:00Z",
         ended_at: "2026-10-04T20:30:00Z",
         canonical_type: "climbing",
+        primary_canonical_type: null,
         name: null,
         provider_id: "whoop",
         source_providers: ["apple_health", "whoop"],

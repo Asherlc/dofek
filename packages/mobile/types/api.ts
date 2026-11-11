@@ -10,8 +10,6 @@ import { z } from "zod";
 
 export type {
   HrvVariabilityRow as HeartRateVariabilityRow,
-  ReadinessComponents,
-  ReadinessRow,
   SleepAnalyticsDataState,
   SleepAnalyticsResult,
   SleepConsistencyRow,
@@ -27,6 +25,7 @@ const ActivityRowBaseSchema = z.object({
   id: z.union([z.string(), z.number()]),
   name: z.string().nullable().optional(),
   canonical_type: z.string().nullable().optional(),
+  primary_canonical_type: z.string().nullable().default(null),
   started_at: z.string(),
   ended_at: z.string().nullable().optional(),
   avg_hr: z.number().nullable().optional(),

@@ -269,6 +269,14 @@ vi.mock("../../modules/health-kit", () => ({
   queryDailyStatistics: vi.fn().mockResolvedValue([]),
   queryCategorySamples: vi.fn().mockResolvedValue([]),
   queryQuantitySamples: vi.fn().mockResolvedValue([]),
+  queryRunningStepSamples: vi.fn().mockResolvedValue({ workouts: [], samples: [] }),
+  queryRunningStepChanges: vi.fn().mockResolvedValue({
+    hasMore: false,
+    workouts: [],
+    samples: [],
+    deletedUUIDs: [],
+    queryId: null,
+  }),
   queryWorkouts: vi.fn().mockResolvedValue([]),
   querySleepSamples: vi.fn().mockResolvedValue([]),
   queryWorkoutRoutes: vi.fn().mockResolvedValue([]),
@@ -304,7 +312,6 @@ const mockInvalidateActiveImports = vi.fn();
 const mockSyncStatusFetch = vi.fn();
 const mockCredentialSignIn = vi.fn();
 const mockTokenConnect = vi.fn();
-const mockGarminSignIn = vi.fn();
 const mockWhoopSignIn = vi.fn();
 const mockWhoopVerifyCode = vi.fn();
 const mockWhoopSaveTokens = vi.fn();
@@ -350,9 +357,6 @@ vi.mock("../../lib/trpc", () => ({
     tokenAuth: {
       connect: { useMutation: () => ({ mutateAsync: mockTokenConnect }) },
     },
-    garminAuth: {
-      signIn: { useMutation: () => ({ mutateAsync: mockGarminSignIn }) },
-    },
     whoopAuth: {
       signIn: { useMutation: () => ({ mutateAsync: mockWhoopSignIn }) },
       verifyCode: { useMutation: () => ({ mutateAsync: mockWhoopVerifyCode }) },
@@ -365,6 +369,7 @@ vi.mock("../../lib/trpc", () => ({
           recordSync: { mutate: vi.fn().mockResolvedValue({ recorded: true }) },
           deleteQuantitySamples: { mutate: vi.fn().mockResolvedValue({ deleted: 0 }) },
           pushQuantitySamples: { mutate: vi.fn().mockResolvedValue({ inserted: 0, errors: [] }) },
+          pushRunningStepSamples: { mutate: vi.fn().mockResolvedValue({ inserted: 0 }) },
           pushWorkouts: { mutate: vi.fn().mockResolvedValue({ inserted: 0 }) },
           pushWorkoutRoutes: { mutate: vi.fn().mockResolvedValue({ inserted: 0 }) },
           pushSleepSamples: { mutate: vi.fn().mockResolvedValue({ inserted: 0 }) },
@@ -423,7 +428,9 @@ const credentialProvider = {
 
 const credentialProviders = [
   credentialProvider,
-  { ...credentialProvider, id: "alltrails", name: "AllTrails" },
+  { ...credentialProvider, id: "zwift", name: "Zwift" },
+  { ...credentialProvider, id: "crimpd", name: "Crimpd" },
+  { ...credentialProvider, id: "eight-a", name: "8a.nu / Vertical-Life" },
 ];
 
 const tokenProvider = {
@@ -1047,7 +1054,6 @@ describe("ProvidersScreen", () => {
     mockUseRefresh.mockClear();
     mockCredentialSignIn.mockReset();
     mockTokenConnect.mockReset();
-    mockGarminSignIn.mockReset();
     mockWhoopSignIn.mockReset();
     mockWhoopVerifyCode.mockReset();
     mockWhoopSaveTokens.mockReset();
@@ -1065,6 +1071,68 @@ describe("ProvidersScreen", () => {
     mockSyncHealthKit.mockReset().mockResolvedValue({ inserted: 0, errors: [] });
     setupDefaultMocks();
   });
+
+  it("orders provider cards alphabetically, including Apple Health", async () => {
+    mockProvidersQuery.mockReturnValue({
+      data: [
+        connectedProvider,
+        { ...importOnlyProvider, id: "eight-a", name: "8a.nu / Vertical-Life" },
+        disconnectedProvider,
+      ],
+      isLoading: false,
+      error: null,
+    });
+    await renderProvidersScreen();
+
+    expect(
+      screen
+        .getAllByRole("button", { name: /^Open .* details$/ })
+        .map((card) => card.getAttribute("aria-label")),
+    ).toEqual([
+      "Open 8a.nu / Vertical-Life details",
+      "Open Apple Health details",
+      "Open Strava details",
+      "Open Wahoo details",
+    ]);
+  });
+
+  it.each([
+    ["crimpd", "Crimpd", ["application/zip", "application/x-zip-compressed"]],
+    [
+      "eight-a",
+      "8a.nu / Vertical-Life",
+      ["text/csv", "text/comma-separated-values", "application/csv", "text/plain"],
+    ],
+  ])(
+    "offers account sync and file import together for connected %s",
+    async (id, name, mimeTypes) => {
+      mockProvidersQuery.mockReturnValue({
+        data: [{ ...connectedProvider, id, name, authType: "credential" }],
+        isLoading: false,
+        error: null,
+      });
+      mockSyncMutateAsync.mockResolvedValue({ jobId: "crimpd-job", providerJobs: [] });
+      mockSyncStatusFetch.mockResolvedValue({
+        status: "done",
+        providers: { [id]: { status: "done" } },
+      });
+      mockGetDocumentAsync.mockResolvedValue({ canceled: true });
+      await renderProvidersScreen();
+      const card = within(screen.getByTestId(`provider-card-${id}`));
+      fireEvent.click(card.getByText("Sync"));
+      await waitFor(() => {
+        expect(mockSyncMutateAsync).toHaveBeenCalledWith({ providerId: id, sinceDays: 7 });
+      });
+      fireEvent.click(card.getByRole("button", { name: `Import file for ${name}` }));
+      await waitFor(() => {
+        expect(mockGetDocumentAsync).toHaveBeenCalledWith(
+          expect.objectContaining({
+            type: mimeTypes,
+          }),
+        );
+      });
+    },
+  );
 
   it("scopes pull-to-refresh to provider list query families", async () => {
     await renderProvidersScreen();
@@ -1137,7 +1205,7 @@ describe("ProvidersScreen", () => {
   it("groups Garmin connection methods and shows the selected method", async () => {
     mockProvidersQuery.mockReturnValue({
       data: [
-        { ...connectedProvider, id: "garmin", name: "Garmin", authType: "custom:garmin" },
+        { ...connectedProvider, id: "garmin", name: "Garmin", authType: "oauth" },
         {
           ...importOnlyProvider,
           id: "garmin-dump",
@@ -1207,7 +1275,7 @@ describe("ProvidersScreen", () => {
           id: "garmin",
           name: "Garmin",
           description: null,
-          authType: "custom:garmin",
+          authType: "oauth",
           tokenAuth: null,
           authorized: true,
           lastSyncedAt: "2026-08-12T12:00:00.000Z",
@@ -2479,6 +2547,56 @@ describe("ProvidersScreen", () => {
     });
   });
 
+  it.each([
+    ["crimpd", "Crimpd", "zip", ["application/zip", "application/x-zip-compressed"]],
+    [
+      "eight-a",
+      "8a.nu / Vertical-Life",
+      "csv",
+      ["text/csv", "text/comma-separated-values", "application/csv", "text/plain"],
+    ],
+    [
+      "moonboard",
+      "MoonBoard",
+      "csv",
+      ["text/csv", "text/comma-separated-values", "application/csv", "text/plain"],
+    ],
+  ] as const)(
+    "selects and imports a file from the %s card",
+    async (id, name, extension, documentTypes) => {
+      mockProvidersQuery.mockReturnValue({
+        data: [{ ...importOnlyProvider, id, name }],
+        isLoading: false,
+        error: null,
+      });
+      const uri = `file:///tmp/${id}-export.${extension}`;
+      mockGetDocumentAsync.mockResolvedValue({
+        canceled: false,
+        assets: [
+          {
+            uri,
+            name: `${id}-export.${extension}`,
+            mimeType: extension === "zip" ? "application/zip" : "text/csv",
+          },
+        ],
+      });
+      mockImportSharedFile.mockResolvedValue({ providerId: id, jobId: `job-${id}` });
+      await renderProvidersScreen();
+      fireEvent.click(within(screen.getByTestId(`provider-card-${id}`)).getByText("Import file"));
+      await waitFor(() => {
+        expect(mockGetDocumentAsync).toHaveBeenCalledWith({
+          copyToCacheDirectory: true,
+          multiple: false,
+          type: [...documentTypes],
+        });
+        expect(mockImportSharedFile).toHaveBeenCalledWith(
+          expect.objectContaining({ fileUri: uri, providerId: id }),
+          expect.objectContaining({ fileUploadApi: expect.any(Object), file: expect.any(Object) }),
+        );
+      });
+    },
+  );
+
   it("selects and imports a Kaya CSV from the Kaya card", async () => {
     mockProvidersQuery.mockReturnValue({
       data: [
@@ -2721,66 +2839,35 @@ describe("ProvidersScreen", () => {
     });
   });
 
-  it("opens Garmin auth modal when Connect is clicked on a custom:garmin provider", async () => {
-    const garminProvider = {
-      id: "garmin",
-      name: "Garmin",
-      authType: "custom:garmin",
-      authorized: false,
-      importOnly: false,
-      lastSyncedAt: null,
-    };
-    mockProvidersQuery.mockReturnValue({
-      data: [garminProvider],
-      isLoading: false,
-    });
-
-    await renderProvidersScreen();
-
-    const garminCard = within(screen.getByTestId("provider-card-garmin"));
-    fireEvent.click(garminCard.getByText("Connect"));
-
-    await waitFor(() => {
-      expect(screen.getByText("Connect Garmin")).toBeTruthy();
-    });
-  });
-
-  it("Garmin auth modal calls signIn mutation with correct args", async () => {
-    const garminProvider = {
-      id: "garmin",
-      name: "Garmin",
-      authType: "custom:garmin",
-      authorized: false,
-      importOnly: false,
-      lastSyncedAt: null,
-    };
-    mockProvidersQuery.mockReturnValue({
-      data: [garminProvider],
-      isLoading: false,
-    });
-    mockGarminSignIn.mockResolvedValue({ success: true });
-
-    await renderProvidersScreen();
-
-    const garminCard = within(screen.getByTestId("provider-card-garmin"));
-    fireEvent.click(garminCard.getByText("Connect"));
-    await waitFor(() => {
-      expect(screen.getByText("Connect Garmin")).toBeTruthy();
-    });
-
-    fireEvent.change(screen.getByPlaceholderText("Email"), {
-      target: { value: "user@garmin.com" },
-    });
-    fireEvent.change(screen.getByPlaceholderText("Password"), { target: { value: "garminpass" } });
-    fireEvent.click(screen.getByText("Sign In"));
-
-    await waitFor(() => {
-      expect(mockGarminSignIn).toHaveBeenCalledWith({
-        username: "user@garmin.com",
-        password: "garminpass",
+  it.each([false, true])(
+    "opens Garmin OAuth from its notification source card, authorized=%s",
+    async (authorized) => {
+      const WebBrowser = await import("expo-web-browser");
+      mockProvidersQuery.mockReturnValue({
+        data: [
+          {
+            id: "garmin",
+            name: "Garmin",
+            authType: "oauth",
+            authorized,
+            importOnly: false,
+            pushOnly: true,
+            needsReauth: authorized,
+            lastSyncedAt: null,
+          },
+        ],
+        isLoading: false,
       });
-    });
-  });
+      await renderProvidersScreen();
+      const garminCard = within(screen.getByTestId("provider-card-garmin"));
+      fireEvent.click(garminCard.getByText(authorized ? "Reconnect" : "Connect"));
+      await waitFor(() =>
+        expect(WebBrowser.openBrowserAsync).toHaveBeenCalledWith(
+          "https://test.example.com/auth/provider/garmin?code=provider-handoff-code",
+        ),
+      );
+    },
+  );
 
   it("opens WHOOP auth modal when Connect is clicked on a custom:whoop provider", async () => {
     const whoopProvider = {

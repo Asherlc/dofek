@@ -8,6 +8,50 @@ import { ClimbingLogEntryCard } from "./ClimbingLogEntryCard";
 import { climbingLogFixture, exactClimbingLocation } from "./climbing-log-entry-fixtures";
 
 describe("ClimbingLogEntryCard", () => {
+  it("keeps an attempt-free project visible without an invented count or outcome", () => {
+    render(
+      <ClimbingLogEntryCard
+        entry={{
+          ...climbingLogFixture,
+          title: "Untried project",
+          climb: null,
+          attempts: [],
+          recordedClimbAttemptCount: null,
+          recordedClimbOutcome: null,
+        }}
+      />,
+    );
+    expect(screen.getByText("Untried project")).toBeTruthy();
+    expect(screen.queryByText(/Attempts:|Attempted|Completed/)).toBeNull();
+  });
+  it.each(["lead", "top_rope", "follow"] as const)(
+    "shows recorded falls or hangs on %s without inventing completion",
+    (ropeMethod) => {
+      render(
+        <ClimbingLogEntryCard
+          entry={{
+            ...climbingLogFixture,
+            freeSend: false,
+            recordedClimbOutcome: null,
+            recordedClimbAttemptCount: null,
+            attempts: [
+              climbingAttemptFixture(climbingLogFixture.id, { ropeMethod, fellOrHung: true }),
+            ],
+          }}
+        />,
+      );
+      const method = { lead: "Lead", top_rope: "Top rope", follow: "Follow" }[ropeMethod];
+      const methodLabel = screen.getByText(method);
+      const fallLabel = screen.getByText("Fell/Hung");
+      expect(methodLabel.parentElement?.style.borderRadius).toBe("999px");
+      expect(fallLabel.parentElement?.style.borderRadius).toBe("999px");
+      expect(methodLabel.parentElement?.style.backgroundColor).toBe("rgb(241, 245, 249)");
+      expect(fallLabel.parentElement?.style.backgroundColor).toBe("rgb(254, 243, 199)");
+      expect(methodLabel.parentElement?.parentElement).toBe(fallLabel.parentElement?.parentElement);
+      expect(screen.queryByText(/Attempted|Completed|Sent/)).toBeNull();
+    },
+  );
+
   it("announces selection on the climb link while retaining the source and Attach actions", () => {
     const onAttach = vi.fn();
     const { rerender } = render(
@@ -18,7 +62,7 @@ describe("ClimbingLogEntryCard", () => {
     expect(climb.getAttribute("aria-selected")).toBe("true");
     climb.focus();
     expect(document.activeElement).toBe(climb);
-    const source = screen.getByRole("link", { name: "Mountain Project" });
+    const source = screen.getByRole("link", { name: "Climb on Mountain Project" });
     source.focus();
     expect(document.activeElement).toBe(source);
     fireEvent.click(screen.getByRole("button", { name: "Attach Swiss Cheese to this activity" }));
@@ -99,9 +143,10 @@ describe("ClimbingLogEntryCard", () => {
   it("preserves source links, climbing context and recorded attempt summary", () => {
     render(<ClimbingLogEntryCard entry={climbingLogFixture} />);
     expect(screen.getByRole("link", { name: "Swiss Cheese on Mountain Project" })).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Mountain Project" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Climb on Mountain Project" })).toBeTruthy();
     expect(screen.getByText("5.4")).toBeTruthy();
-    expect(screen.queryByText("Completed")).toBeNull();
+    expect(screen.getByText("Sent")).toBeTruthy();
+    expect(screen.getByText("Sent").parentElement?.style.borderRadius).toBe("999px");
   });
 
   it("shows a known recorded attempt count alongside its outcome", () => {
@@ -110,23 +155,96 @@ describe("ClimbingLogEntryCard", () => {
         entry={{ ...climbingLogFixture, providerId: "kaya", recordedClimbAttemptCount: 2 }}
       />,
     );
+    expect(screen.getByText("Sent")).toBeTruthy();
     expect(screen.getByText("Attempts: 2")).toBeTruthy();
   });
 
-  it("shows a compact single-point map", () => {
+  it.each([
+    { freeSend: false, outcome: "completed", badge: "Completed" },
+    { freeSend: false, outcome: "failed", badge: "Attempted" },
+    { freeSend: null, outcome: "completed", badge: "Completed" },
+    { freeSend: true, outcome: "completed", badge: null },
+    { freeSend: false, outcome: null, badge: null },
+    { freeSend: null, outcome: null, badge: null },
+  ] as const)(
+    "renders the server's send status ($freeSend, $outcome)",
+    ({ freeSend, outcome, badge }) => {
+      render(
+        <ClimbingLogEntryCard
+          entry={{
+            ...climbingLogFixture,
+            freeSend,
+            recordedClimbOutcome: outcome,
+            recordedClimbAttemptCount: 2,
+            attempts: [climbingAttemptFixture(climbingLogFixture.id, { outcome })],
+          }}
+        />,
+      );
+      expect(screen.getByText("Attempts: 2")).toBeTruthy();
+      if (badge !== null) expect(screen.getByText(badge)).toBeTruthy();
+      expect(screen.queryAllByText("Attempted")).toHaveLength(badge === "Attempted" ? 1 : 0);
+      expect(screen.queryAllByText("Completed")).toHaveLength(badge === "Completed" ? 1 : 0);
+    },
+  );
+
+  it.each([
+    { number: 2, name: "Crux", expected: "Pitch 2" },
+    { number: null, name: "Crux", expected: "Crux" },
+    { number: null, name: null, expected: "Pitch" },
+  ])("keeps $expected context separate from its attempted badge", ({ number, name, expected }) => {
+    const climb = climbingClimbFixture();
+    const pitch = {
+      id: "20000000-0000-4000-8000-000000000020",
+      climbId: climb.id,
+      externalId: null,
+      number,
+      name,
+      publishedGrades: [],
+    };
+    const attempt = climbingAttemptFixture(climbingLogFixture.id, {
+      scope: "pitch",
+      pitchId: pitch.id,
+      outcome: "failed",
+      ropeMethod: "lead",
+    });
+    render(
+      <ClimbingLogEntryCard
+        entry={{
+          ...climbingLogFixture,
+          climbId: climb.id,
+          climb: { ...climb, pitches: [pitch] },
+          recordedClimbAttemptCount: 0,
+          recordedClimbOutcome: null,
+          recordedPitchAttemptCount: 1,
+          attempts: [attempt],
+          pitchResults: [
+            {
+              pitch,
+              attemptIds: [attempt.id],
+              recordedOutcome: "failed",
+              recordedAttemptCount: 1,
+              displayGrade: null,
+            },
+          ],
+        }}
+      />,
+    );
+    expect(screen.getByText(`${expected} · Attempts: 1`)).toBeTruthy();
+    expect(screen.getByText("Attempted")).toBeTruthy();
+  });
+
+  it("shows a compact single-point map", async () => {
     const { container } = render(
       <ClimbingLogEntryCard entry={climbingLogFixture} location={exactClimbingLocation} />,
     );
-    expect(container.querySelector("mapview")).toBeNull();
-    const wrapper = container.querySelector('[style*="overflow: hidden"]')?.firstElementChild;
+    expect(container.querySelector("nativemap")).toBeNull();
+    const wrapper = container.querySelector('[pointer-events="none"]');
     if (!wrapper) throw new Error("Expected the compact map layout wrapper");
     fireEvent(wrapper, new CustomEvent("layout", { detail: { width: 280, height: 140 } }));
-    const map = container.querySelector("mapview");
-    expect(map?.getAttribute("style")).toContain("height: 140px");
-    expect(container.querySelectorAll("marker")).toHaveLength(1);
-    expect(container.querySelector("polyline")).toBeNull();
-    expect(container.querySelector('[title="Start"]')).toBeNull();
-    expect(container.querySelector('[title="Finish"]')).toBeNull();
+    const preview = await screen.findByTestId("compact-route-preview");
+    fireEvent.load(preview);
+    expect(preview.parentElement?.getAttribute("style")).toContain("height: 140px");
+    expect(preview.parentElement?.getAttribute("pointer-events")).toBe("none");
   });
 
   it("keeps the retry action available after an attachment error", () => {
@@ -155,6 +273,7 @@ it.each(["Onsight", "Flash"] as const)(
       climb: { ...climbingClimbFixture("kaya"), name: null, kind: "boulder" as const },
       raw: { color: { name: "Blue" } },
       displayGrade: "V5",
+      freeSend: true,
       recordedClimbAttemptCount: 1,
       attempts: [
         climbingAttemptFixture(climbingLogFixture.id, { rockResultLabels: ["sent", label] }),
@@ -164,6 +283,30 @@ it.each(["Onsight", "Flash"] as const)(
     expect(screen.getByText("Blue boulder")).toBeTruthy();
     expect(screen.getByText("V5")).toBeTruthy();
     expect(screen.getByText(label)).toBeTruthy();
+    expect(screen.getByText(label).parentElement?.style.borderRadius).toBe("999px");
     expect(screen.queryByText(/Attempts:|completed/i)).toBeNull();
   },
 );
+
+it.each([
+  { kind: "boulder" as const, label: "Problem" },
+  { kind: "route" as const, label: "Route" },
+  { kind: null, label: "Route" },
+])("labels source links as $label for climb kind $kind", ({ kind, label }) => {
+  const entry = {
+    ...climbingLogFixture,
+    climb: { ...climbingClimbFixture("mountain-project"), name: "Corner", kind },
+    sourceLinks: [
+      {
+        providerId: "mountain-project",
+        kind: "route" as const,
+        url: "https://www.mountainproject.com/route/1/corner",
+      },
+    ],
+  };
+  render(<ClimbingLogEntryCard entry={entry} onSelect={vi.fn()} />);
+  expect(
+    screen.getByRole("link", { name: `Corner ${label.toLowerCase()} on Mountain Project` })
+      .textContent,
+  ).toContain(label);
+});

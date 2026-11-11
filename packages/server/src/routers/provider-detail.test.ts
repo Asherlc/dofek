@@ -1,5 +1,8 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { TokenSet } from "dofek/auth/oauth";
+import type { ProviderRevocationTokenPersistence } from "dofek/providers/types";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
+import { climbingLogEntryFixture } from "../repositories/climbing-test-helpers.ts";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
 vi.mock("../trpc.ts", async () => {
@@ -47,6 +50,7 @@ vi.mock("dofek/db/schema/reference", () => ({
 
 const {
   mockLoadTokens,
+  mockSaveTokens,
   mockDeleteProviderAuthorization,
   mockGetAllProviders,
   mockEnsureProvidersRegistered,
@@ -56,8 +60,11 @@ const {
   mockSentryCaptureException,
   mockProviderDataDeletesInc,
   mockGetProviderDataDeletionJob,
+  mockWithProviderOperationFence,
+  mockHasProviderArtifacts,
 } = vi.hoisted(() => ({
   mockLoadTokens: vi.fn(),
+  mockSaveTokens: vi.fn(),
   mockDeleteProviderAuthorization: vi.fn(),
   mockGetAllProviders: vi.fn(),
   mockEnsureProvidersRegistered: vi.fn(),
@@ -67,6 +74,16 @@ const {
   mockSentryCaptureException: vi.fn(),
   mockProviderDataDeletesInc: vi.fn(),
   mockGetProviderDataDeletionJob: vi.fn(),
+  mockWithProviderOperationFence: vi.fn(),
+  mockHasProviderArtifacts: vi.fn(),
+}));
+
+vi.mock("dofek/provider-artifact-storage", () => ({
+  createProviderArtifactStorageFromEnv: () => ({ hasForProvider: mockHasProviderArtifacts }),
+}));
+
+vi.mock("dofek/db/provider-operation-fence", () => ({
+  withProviderOperationFence: mockWithProviderOperationFence,
 }));
 
 vi.mock("dofek/jobs/queues", () => ({
@@ -75,6 +92,7 @@ vi.mock("dofek/jobs/queues", () => ({
 
 vi.mock("dofek/db/tokens", () => ({
   loadTokens: (...args: unknown[]) => mockLoadTokens(...args),
+  saveTokens: (...args: unknown[]) => mockSaveTokens(...args),
   deleteProviderAuthorization: (...args: unknown[]) => mockDeleteProviderAuthorization(...args),
 }));
 vi.mock("dofek/providers/registry", () => ({
@@ -101,7 +119,11 @@ vi.mock("../lib/metrics.ts", () => ({
   providerDataDeletesTotal: { inc: (...args: unknown[]) => mockProviderDataDeletesInc(...args) },
 }));
 
-import { PROVIDER_ACCOUNT_TABLES } from "../repositories/provider-detail-repository.ts";
+import {
+  PROVIDER_ACCOUNT_TABLES,
+  ProviderDetailRepository,
+} from "../repositories/provider-detail-repository.ts";
+import { SyncRepository } from "../repositories/sync-repository.ts";
 import { dataTypeEnum, providerDetailRouter, tableInfo } from "./provider-detail.ts";
 
 // Zod schemas for drizzle SQL object introspection
@@ -252,6 +274,20 @@ describe("providerDetailRouter", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockGetAllProviders.mockReturnValue([]);
+    mockHasProviderArtifacts.mockReset().mockResolvedValue(false);
+    mockWithProviderOperationFence.mockImplementation(
+      async <T>(
+        database: unknown,
+        _userId: string,
+        _providerId: string,
+        operation: (database: unknown) => Promise<T>,
+      ) => operation(database),
+    );
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   // ── tableInfo ──
@@ -345,41 +381,102 @@ describe("providerDetailRouter", () => {
   // ── logs ──
 
   describe("logs", () => {
-    it("returns paginated sync logs for a specific provider", async () => {
-      const mockSelect = vi.fn().mockReturnValue({
-        from: vi.fn().mockReturnValue({
-          where: vi.fn().mockReturnValue({
-            orderBy: vi.fn().mockReturnValue({
-              limit: vi.fn().mockReturnValue({
-                offset: vi.fn().mockResolvedValue([
-                  {
-                    id: "log-1",
-                    providerId: "strava",
-                    dataType: "activities",
-                    status: "success",
-                    recordCount: 5,
-                    errorMessage: null,
-                    durationMs: 1200,
-                    syncedAt: "2024-01-14T10:00:00Z",
-                  },
-                ]),
-              }),
-            }),
-          }),
-        }),
-      });
-
+    it("serves push update history from the processing ledger", async () => {
+      mockGetAllProviders.mockReturnValue([
+        { id: "strava", pushOnly: false },
+        { id: "garmin", pushOnly: true },
+      ]);
       const caller = createCaller({
-        db: { select: mockSelect, execute: vi.fn().mockResolvedValue([]) },
+        db: {
+          execute: vi.fn().mockResolvedValue([
+            {
+              id: "push-update",
+              provider_id: "garmin",
+              status: "success",
+              synced_at: new Date("2026-10-24T10:00:00Z"),
+              duration_ms: null,
+              record_count: null,
+              data_type: "update",
+              error_message: "Delivery rejected: access_token=private-token",
+              auth_failure_reason: null,
+            },
+          ]),
+        },
         userId: "user-1",
         timezone: "UTC",
       });
 
-      const result = await caller.logs({ providerId: "strava", limit: 20, offset: 0 });
-      expect(result).toHaveLength(1);
-      expect(result[0]?.providerId).toBe("strava");
-      expect(result[0]?.errorMessage).toBe(null);
+      await expect(caller.logs({ providerId: "garmin", limit: 20, offset: 0 })).resolves.toEqual([
+        expect.objectContaining({
+          id: "push-update",
+          dataType: "update",
+          syncedAt: "2026-10-24T10:00:00.000Z",
+          errorMessage: "Delivery rejected: access_token=[REDACTED]",
+        }),
+      ]);
     });
+
+    it("forwards push history pagination and filters to the repository", async () => {
+      mockGetAllProviders.mockReturnValue([
+        { id: "strava", pushOnly: false },
+        { id: "garmin", pushOnly: true },
+      ]);
+      const getPushUpdateHistory = vi
+        .spyOn(SyncRepository.prototype, "getPushUpdateHistory")
+        .mockResolvedValue([]);
+      const caller = createCaller({ db: { execute: vi.fn() }, userId: "user-1", timezone: "UTC" });
+      const filters = { status: "error", dataType: "update", authFailureReason: "token_expired" };
+
+      await expect(
+        caller.logs({ providerId: "garmin", limit: 7, offset: 14, filters }),
+      ).resolves.toEqual([]);
+
+      expect(getPushUpdateHistory).toHaveBeenCalledExactlyOnceWith("garmin", 7, 14, filters);
+      expect(mockEnsureProvidersRegistered).toHaveBeenCalledOnce();
+    });
+
+    it.each(["strava", "whoop_ble"])(
+      "returns sync logs for %s beside a push provider",
+      async (providerId) => {
+        mockGetAllProviders.mockReturnValue([
+          { id: "garmin", pushOnly: true },
+          { id: "strava", pushOnly: false },
+        ]);
+        const mockSelect = vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              orderBy: vi.fn().mockReturnValue({
+                limit: vi.fn().mockReturnValue({
+                  offset: vi.fn().mockResolvedValue([
+                    {
+                      id: "log-1",
+                      providerId,
+                      dataType: "activities",
+                      status: "success",
+                      recordCount: 5,
+                      errorMessage: null,
+                      durationMs: 1200,
+                      syncedAt: "2024-01-14T10:00:00Z",
+                    },
+                  ]),
+                }),
+              }),
+            }),
+          }),
+        });
+
+        const caller = createCaller({
+          db: { select: mockSelect, execute: vi.fn().mockResolvedValue([]) },
+          userId: "user-1",
+          timezone: "UTC",
+        });
+
+        const result = await caller.logs({ providerId, limit: 20, offset: 0 });
+        expect(result).toHaveLength(1);
+        expect(result[0]?.providerId).toBe(providerId);
+        expect(result[0]?.errorMessage).toBe(null);
+      },
+    );
 
     it("redacts error messages in logs", async () => {
       const mockSelect = vi.fn().mockReturnValue({
@@ -394,7 +491,7 @@ describe("providerDetailRouter", () => {
                     dataType: "activities",
                     status: "error",
                     recordCount: 0,
-                    errorMessage: "OAuth token expired: secret-refresh-token",
+                    errorMessage: "OAuth token expired: refresh_token=secret-refresh-token",
                     durationMs: 500,
                     syncedAt: "2024-01-14T10:00:00Z",
                   },
@@ -412,7 +509,7 @@ describe("providerDetailRouter", () => {
       });
 
       const result = await caller.logs({ providerId: "strava", limit: 20, offset: 0 });
-      expect(result[0]?.errorMessage).toBe("OAuth token expired: secret-refresh-token");
+      expect(result[0]?.errorMessage).toBe("OAuth token expired: refresh_token=[REDACTED]");
     });
 
     it("preserves null errorMessage as null", async () => {
@@ -507,6 +604,54 @@ describe("providerDetailRouter", () => {
   });
 
   describe("logFilterOptions", () => {
+    it("returns push update dropdown values for the matching registered provider", async () => {
+      mockGetAllProviders.mockReturnValue([
+        { id: "strava", pushOnly: false },
+        { id: "garmin", pushOnly: true },
+      ]);
+      const options = {
+        status: [{ value: "error" }, { value: "success" }],
+        dataType: [{ value: "update" }],
+        authFailureReason: [{ value: "token_expired" }],
+      };
+      const getPushUpdateFilterOptions = vi
+        .spyOn(SyncRepository.prototype, "getPushUpdateFilterOptions")
+        .mockResolvedValue(options);
+      const caller = createCaller({ db: { execute: vi.fn() }, userId: "user-1", timezone: "UTC" });
+
+      await expect(caller.logFilterOptions({ providerId: "garmin" })).resolves.toEqual(options);
+
+      expect(getPushUpdateFilterOptions).toHaveBeenCalledExactlyOnceWith("garmin");
+      expect(mockEnsureProvidersRegistered).toHaveBeenCalledOnce();
+    });
+
+    it.each(["strava", "whoop_ble"])(
+      "returns sync log dropdown values for %s beside a push provider",
+      async (providerId) => {
+        mockGetAllProviders.mockReturnValue([
+          { id: "garmin", pushOnly: true },
+          { id: "strava", pushOnly: false },
+        ]);
+        const options = {
+          status: [{ value: "success" }],
+          dataType: [{ value: "activities" }],
+          authFailureReason: [],
+        };
+        const getSyncLogFilterOptions = vi
+          .spyOn(ProviderDetailRepository.prototype, "getSyncLogFilterOptions")
+          .mockResolvedValue(options);
+        const caller = createCaller({
+          db: { execute: vi.fn() },
+          userId: "user-1",
+          timezone: "UTC",
+        });
+
+        await expect(caller.logFilterOptions({ providerId })).resolves.toEqual(options);
+
+        expect(getSyncLogFilterOptions).toHaveBeenCalledExactlyOnceWith(providerId);
+      },
+    );
+
     it("returns distinct sync log dropdown values for a provider", async () => {
       const caller = createCaller({
         db: {
@@ -821,6 +966,35 @@ describe("providerDetailRouter", () => {
   // ── recordDetail ──
 
   describe("recordDetail", () => {
+    it.each([undefined, 1, 2] as const)(
+      "negotiates climbing detail version %s without changing unrelated records",
+      async (responseVersion) => {
+        const detail = climbingLogEntryFixture({
+          holdTypes: ["crimp", "jug"],
+          wallAngle: { category: "slab" },
+        });
+        const lookup = vi
+          .spyOn(ProviderDetailRepository.prototype, "getRecordDetail")
+          .mockResolvedValueOnce(detail);
+        const caller = createCaller({
+          db: { execute: vi.fn() },
+          userId: "user-1",
+          timezone: "UTC",
+        });
+        const { holdTypes: _holds, ...legacy } = detail;
+        const result = await caller.recordDetail({
+          providerId: "kaya",
+          dataType: "climbingLogEntries",
+          recordId: detail.id,
+          ...(responseVersion === undefined ? {} : { responseVersion }),
+        });
+        expect(result).toEqual(
+          responseVersion === 2 ? detail : { ...legacy, holdType: null, wallAngle: null },
+        );
+        lookup.mockRestore();
+      },
+    );
+
     it("returns a single activity record with raw data", async () => {
       const caller = createCaller({
         db: {
@@ -979,6 +1153,49 @@ describe("providerDetailRouter", () => {
   // ── disconnect ──
 
   describe("disconnect", () => {
+    it("uses the fenced database for ownership and deletion while saving refreshed credentials independently", async () => {
+      const operationDb = {
+        execute: vi.fn().mockResolvedValue([{ id: "garmin" }]),
+        transaction: vi.fn(),
+      };
+      const db = { execute: vi.fn(), transaction: vi.fn() };
+      const tokens = { accessToken: "expired", refreshToken: "before" };
+      const refreshed = { accessToken: "fresh", refreshToken: "after" };
+      mockWithProviderOperationFence.mockImplementationOnce(
+        async (
+          _database: unknown,
+          _userId: string,
+          _providerId: string,
+          operation: (database: typeof operationDb) => Promise<unknown>,
+        ) => operation(operationDb),
+      );
+      mockLoadTokens.mockResolvedValue(tokens);
+      mockGetAllProviders.mockReturnValue([
+        {
+          id: "garmin",
+          authSetup: () => ({
+            revokeExistingTokens: async (
+              _tokens: TokenSet,
+              persist: ProviderRevocationTokenPersistence,
+            ) => persist(refreshed),
+          }),
+        },
+      ]);
+      const caller = createCaller({ db, userId: "user-1", timezone: "UTC" });
+
+      await expect(caller.disconnect({ providerId: "garmin" })).resolves.toEqual({ success: true });
+
+      expect(mockWithProviderOperationFence).toHaveBeenCalledWith(
+        db,
+        "user-1",
+        "garmin",
+        expect.any(Function),
+      );
+      expect(db.execute).not.toHaveBeenCalled();
+      expect(mockSaveTokens).toHaveBeenCalledWith(db, "garmin", refreshed, "user-1");
+      expect(mockDeleteProviderAuthorization).toHaveBeenCalledWith(operationDb, "garmin", "user-1");
+      expect(operationDb.transaction).not.toHaveBeenCalled();
+    });
     it("removes authorization without deleting imported provider records", async () => {
       const mockExecute = vi.fn().mockResolvedValue([{ id: "strava" }]);
       const mockTransaction = vi.fn();
@@ -1092,7 +1309,7 @@ describe("providerDetailRouter", () => {
       await caller.disconnect({ providerId: "wahoo" });
 
       expect(mockLoadTokens).toHaveBeenCalledWith(expect.anything(), "wahoo", "user-1");
-      expect(mockRevokeExisting).toHaveBeenCalledWith(storedTokens);
+      expect(mockRevokeExisting).toHaveBeenCalledWith(storedTokens, expect.any(Function));
       expect(mockDeleteProviderAuthorization).toHaveBeenCalledWith(
         expect.anything(),
         "wahoo",
@@ -1246,7 +1463,7 @@ describe("providerDetailRouter", () => {
       expect(mockRevokeToken).toHaveBeenCalledWith(expect.anything(), "refresh-only");
     });
 
-    it("falls back to standard OAuth revocation when custom revocation fails", async () => {
+    it("persists rotated credentials and retains authorization when custom revocation fails", async () => {
       mockLoadTokens.mockResolvedValue({
         accessToken: "expired-token",
         refreshToken: null,
@@ -1262,7 +1479,17 @@ describe("providerDetailRouter", () => {
           authSetup: () => ({
             oauthConfig: { revokeUrl: "https://api.wahooligan.com/oauth/revoke" },
             exchangeCode: vi.fn(),
-            revokeExistingTokens: vi.fn().mockRejectedValue(new Error("401 Unauthorized")),
+            revokeExistingTokens: async (
+              tokens: TokenSet,
+              persist: ProviderRevocationTokenPersistence,
+            ) => {
+              await persist({
+                ...tokens,
+                accessToken: "rotated-access",
+                refreshToken: "rotated-refresh",
+              });
+              throw new Error("401 Unauthorized");
+            },
           }),
         },
       ]);
@@ -1276,31 +1503,28 @@ describe("providerDetailRouter", () => {
         });
       const mockExecute = vi.fn().mockResolvedValue([{ id: "wahoo" }]);
 
+      const db = { execute: mockExecute, transaction: mockTransaction };
       const caller = createCaller({
-        db: { execute: mockExecute, transaction: mockTransaction },
+        db,
         userId: "user-1",
         timezone: "UTC",
       });
 
-      const result = await caller.disconnect({ providerId: "wahoo" });
-
-      expect(result).toEqual({ success: true });
-      expect(mockLoggerWarn).toHaveBeenCalledWith(
-        expect.stringContaining("Custom revocation failed for wahoo"),
-      );
-      // Falls back to standard OAuth revocation for the access token
-      expect(mockRevokeToken).toHaveBeenCalledWith(
-        expect.objectContaining({ revokeUrl: "https://api.wahooligan.com/oauth/revoke" }),
-        "expired-token",
-      );
-      expect(mockDeleteProviderAuthorization).toHaveBeenCalledWith(
-        expect.anything(),
+      await expect(caller.disconnect({ providerId: "wahoo" })).rejects.toThrow("401 Unauthorized");
+      expect(mockSaveTokens).toHaveBeenCalledWith(
+        db,
         "wahoo",
+        expect.objectContaining({
+          accessToken: "rotated-access",
+          refreshToken: "rotated-refresh",
+        }),
         "user-1",
       );
+      expect(mockRevokeToken).not.toHaveBeenCalled();
+      expect(mockDeleteProviderAuthorization).not.toHaveBeenCalled();
     });
 
-    it("still removes local authorization when all remote revocation methods fail", async () => {
+    it("retains standard OAuth's best-effort disconnect behavior", async () => {
       mockLoadTokens.mockResolvedValue({
         accessToken: "expired-token",
         refreshToken: "expired-refresh",
@@ -1316,7 +1540,6 @@ describe("providerDetailRouter", () => {
           authSetup: () => ({
             oauthConfig: { revokeUrl: "https://api.wahooligan.com/oauth/revoke" },
             exchangeCode: vi.fn(),
-            revokeExistingTokens: vi.fn().mockRejectedValue(new Error("401 Unauthorized")),
           }),
         },
       ]);
@@ -1346,7 +1569,7 @@ describe("providerDetailRouter", () => {
         expect.stringContaining("Refresh token revocation failed for wahoo"),
       );
       expect(mockSentryCaptureException).toHaveBeenCalledWith(expect.any(Error));
-      expect(mockSentryCaptureException).toHaveBeenCalledTimes(3);
+      expect(mockSentryCaptureException).toHaveBeenCalledTimes(2);
       expect(mockDeleteProviderAuthorization).toHaveBeenCalledWith(
         expect.anything(),
         "wahoo",
@@ -1484,6 +1707,46 @@ describe("providerDetailRouter", () => {
   });
 
   describe("deleteAllData", () => {
+    it("acquires the provider fence before checking ownership or requesting deletion", async () => {
+      const userId = "00000000-0000-4000-8000-000000000001";
+      const eventId = "30000000-0000-4000-8000-000000000001";
+      const txExecute = vi
+        .fn()
+        .mockResolvedValue([
+          { event_id: eventId, generation: "1", provider_id: "garmin", user_id: userId },
+        ]);
+      const operationDb = {
+        execute: vi.fn().mockResolvedValue([{ id: "garmin" }]),
+        transaction: vi.fn(
+          async (operation: (database: { execute: typeof txExecute }) => Promise<unknown>) =>
+            operation({ execute: txExecute }),
+        ),
+      };
+      const db = { execute: vi.fn(), transaction: vi.fn() };
+      mockWithProviderOperationFence.mockImplementationOnce(
+        async (
+          _database: unknown,
+          _userId: string,
+          _providerId: string,
+          operation: (database: typeof operationDb) => Promise<unknown>,
+        ) => operation(operationDb),
+      );
+      const caller = createCaller({ db, userId, timezone: "UTC" });
+
+      await expect(
+        caller.deleteAllData({ providerId: "garmin", confirmation: "DELETE" }),
+      ).resolves.toEqual({ success: true, operationId: eventId });
+
+      expect(mockWithProviderOperationFence).toHaveBeenCalledWith(
+        db,
+        userId,
+        "garmin",
+        expect.any(Function),
+      );
+      expect(db.execute).not.toHaveBeenCalled();
+      expect(db.transaction).not.toHaveBeenCalled();
+      expect(operationDb.transaction).toHaveBeenCalledOnce();
+    });
     it("requires the exact DELETE confirmation", async () => {
       const caller = createCaller({
         db: { execute: vi.fn(), transaction: vi.fn() },

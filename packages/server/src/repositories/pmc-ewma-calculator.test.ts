@@ -1,34 +1,47 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PmcEwmaCalculator } from "./pmc-ewma-calculator.ts";
 
 function dateStringDaysAgo(daysAgo: number): string {
   const date = new Date();
-  date.setDate(date.getDate() - daysAgo);
+  date.setUTCDate(date.getUTCDate() - daysAgo);
   return date.toISOString().slice(0, 10);
 }
 
 describe("PmcEwmaCalculator", () => {
-  it("applies exact exponential moving average formulas for chronic and acute load", () => {
-    const firstDate = dateStringDaysAgo(2);
-    const secondDate = dateStringDaysAgo(1);
-    const thirdDate = dateStringDaysAgo(0);
-    const calculator = new PmcEwmaCalculator({
-      chronicTrainingLoadDays: 4,
-      acuteTrainingLoadDays: 2,
-    });
-
-    const result = calculator.compute({
-      dailyLoad: new Map([[firstDate, 100]]),
-      queryDays: 2,
-      displayDays: 2,
-    });
-
-    expect(result).toEqual([
-      { date: firstDate, load: 100, ctl: 25, atl: 50, tsb: -25 },
-      { date: secondDate, load: 0, ctl: 18.8, atl: 25, tsb: -6.2 },
-      { date: thirdDate, load: 0, ctl: 14.1, atl: 12.5, tsb: 1.6 },
-    ]);
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-02T00:30:00Z"));
   });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+  });
+
+  it.each(["UTC", "America/Los_Angeles"])(
+    "applies exact exponential moving average formulas in %s",
+    (timezone) => {
+      vi.stubEnv("TZ", timezone);
+      const firstDate = dateStringDaysAgo(2);
+      const secondDate = dateStringDaysAgo(1);
+      const thirdDate = dateStringDaysAgo(0);
+      const calculator = new PmcEwmaCalculator({
+        chronicTrainingLoadDays: 4,
+        acuteTrainingLoadDays: 2,
+      });
+
+      const result = calculator.compute({
+        dailyLoad: new Map([[firstDate, 100]]),
+        queryDays: 2,
+        displayDays: 2,
+      });
+
+      expect(result).toEqual([
+        { date: firstDate, load: 100, ctl: 25, atl: 50, tsb: -25 },
+        { date: secondDate, load: 0, ctl: 18.8, atl: 25, tsb: -6.2 },
+        { date: thirdDate, load: 0, ctl: 14.1, atl: 12.5, tsb: 1.6 },
+      ]);
+    },
+  );
 
   it("trims leading display days before chronic load becomes meaningful", () => {
     const firstMeaningfulDate = dateStringDaysAgo(2);
@@ -88,6 +101,9 @@ describe("PmcEwmaCalculator", () => {
   });
 
   it("returns the full display window when no day reaches the meaningful chronic load threshold", () => {
+    vi.stubEnv("TZ", "America/Los_Angeles");
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-23T09:30:00Z"));
     const calculator = new PmcEwmaCalculator({
       chronicTrainingLoadDays: 42,
       acuteTrainingLoadDays: 7,
@@ -100,11 +116,46 @@ describe("PmcEwmaCalculator", () => {
     });
 
     expect(result).toHaveLength(31);
+    expect(result[0]?.date).toBe("2026-09-23");
+    expect(result.at(-1)?.date).toBe("2026-10-23");
     expect(result.every((point) => point.load === 0)).toBe(true);
     expect(result.every((point) => point.ctl === 0)).toBe(true);
     expect(result.every((point) => point.atl === 0)).toBe(true);
     expect(result.every((point) => point.tsb === 0)).toBe(true);
   });
+
+  it.each(["2026-10-23T08:30:00.000Z", "2026-10-23T09:30:00.000Z", "2026-10-23T10:30:00.000Z"])(
+    "preserves UTC display dates and endpoint loads across DST at %s",
+    (fixedNow) => {
+      vi.stubEnv("TZ", "America/Los_Angeles");
+      vi.useFakeTimers({ toFake: ["Date"] });
+      try {
+        vi.setSystemTime(new Date(fixedNow));
+        const calculator = new PmcEwmaCalculator({
+          chronicTrainingLoadDays: 42,
+          acuteTrainingLoadDays: 7,
+        });
+        const result = calculator.compute({
+          dailyLoad: new Map([
+            ["2026-09-23", 84],
+            ["2026-10-23", 42],
+          ]),
+          queryDays: 407,
+          displayDays: 30,
+        });
+        const expectedDates = Array.from({ length: 31 }, (_, day) =>
+          new Date(Date.UTC(2026, 8, 23 + day)).toISOString().slice(0, 10),
+        );
+
+        expect(result.map((point) => point.date)).toEqual(expectedDates);
+        expect(result[0]?.load).toBe(84);
+        expect(result.at(-1)).toMatchObject({ date: "2026-10-23", load: 42 });
+      } finally {
+        vi.useRealTimers();
+        vi.unstubAllEnvs();
+      }
+    },
+  );
 
   it("produces consecutive dates and decays chronic load on rest days", () => {
     const activityDate = dateStringDaysAgo(5);

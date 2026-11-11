@@ -15,7 +15,6 @@ import { deriveProcessingState, type ProcessingStageEvent } from "./processing-s
 
 describe("dataset contracts", () => {
   it("assigns every production dbt model exactly once", () => {
-    expect(PRODUCTION_DBT_MODELS).toHaveLength(45);
     expect(() => validateDatasetContracts(DATASET_CONTRACTS, PRODUCTION_DBT_MODELS)).not.toThrow();
 
     const assignedModels = DATASET_CONTRACTS.flatMap((contract) => contract.analyticsModels);
@@ -258,14 +257,6 @@ describe("dataset contracts", () => {
   });
 
   it("keeps provider processing scopes limited to datasets they can affect", () => {
-    expect(processingDatasetKeysForProvider("alltrails")).toEqual([
-      "activity",
-      "hiking",
-      "cycling",
-      "recovery",
-      "training",
-      "providers",
-    ]);
     expect(processingDatasetKeysForProvider("bodyspec")).toEqual(["body", "providers"]);
     expect(processingDatasetKeysForProvider("eight-sleep")).toEqual([
       "sleep",

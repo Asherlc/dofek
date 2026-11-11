@@ -28,16 +28,6 @@ export const SELECTED_CHART_RANGE_ENDPOINTS = {
   },
   "cycling.activities": { defaultDays: 90, routerFile: "cycling.ts", input: "custom" },
   "cycling.performance": { defaultDays: 90, routerFile: "cycling.ts", input: "days" },
-  "cyclingAdvanced.rampRate": {
-    defaultDays: 90,
-    routerFile: "cycling-advanced.ts",
-    input: "days",
-  },
-  "cyclingAdvanced.trainingMonotony": {
-    defaultDays: 90,
-    routerFile: "cycling-advanced.ts",
-    input: "days",
-  },
   "cyclingAdvanced.verticalAscentRate": {
     defaultDays: 90,
     routerFile: "cycling-advanced.ts",
@@ -109,11 +99,10 @@ export const SELECTED_CHART_RANGE_ENDPOINTS = {
   "power.eftpTrend": { defaultDays: 365, routerFile: "power.ts", input: "days" },
   "power.powerCurve": { defaultDays: 90, routerFile: "power.ts", input: "days" },
   "recovery.hrvVariability": { defaultDays: 90, routerFile: "recovery.ts", input: "dateRange" },
-  "recovery.readinessScore": { defaultDays: 30, routerFile: "recovery.ts", input: "dateRange" },
   "recovery.sleepAnalytics": { defaultDays: 90, routerFile: "recovery.ts", input: "dateRange" },
   "recovery.workloadRatio": { defaultDays: 90, routerFile: "recovery.ts", input: "dateRange" },
-  "running.dynamics": { defaultDays: 90, routerFile: "running.ts", input: "days" },
-  "running.dynamicsV2": { defaultDays: 90, routerFile: "running.ts", input: "days" },
+  "running.dynamics": { defaultDays: 90, routerFile: "running.ts", input: "custom" },
+  "running.dynamicsV2": { defaultDays: 90, routerFile: "running.ts", input: "custom" },
   "running.paceTrend": { defaultDays: 90, routerFile: "running.ts", input: "days" },
   "running.paceTrendV2": { defaultDays: 90, routerFile: "running.ts", input: "days" },
   "sleep.list": { defaultDays: 30, routerFile: "sleep.ts", input: "dateRange" },
@@ -125,6 +114,7 @@ export const SELECTED_CHART_RANGE_ENDPOINTS = {
   "training.hrZones": { defaultDays: 90, routerFile: "training.ts", input: "days" },
   "training.activityStats": { defaultDays: 90, routerFile: "training.ts", input: "days" },
   "training.weeklyVolume": { defaultDays: 90, routerFile: "training.ts", input: "days" },
+  "training.sportVolume": { defaultDays: 90, routerFile: "training.ts", input: "custom" },
 } as const;
 
 export type SelectedChartRangeEndpoint = keyof typeof SELECTED_CHART_RANGE_ENDPOINTS;

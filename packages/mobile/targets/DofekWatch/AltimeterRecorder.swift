@@ -1,3 +1,6 @@
+#if canImport(Sentry)
+import Sentry
+#endif
 import CoreMotion
 import Foundation
 
@@ -10,6 +13,7 @@ final class AltimeterRecorder: ObservableObject {
     static let shared = AltimeterRecorder()
 
     private let altimeter = CMAltimeter()
+    private let callbackFence = WatchRecordingCallbackFence()
     private let accountStateStore = WatchAccountStateStore()
     private let operationQueue: OperationQueue = {
         let queue = OperationQueue()
@@ -27,9 +31,11 @@ final class AltimeterRecorder: ObservableObject {
         return formatter
     }()
 
-    @Published var isRecording: Bool = false
+    @Published private(set) var recordingStartedAt: Date?
     @Published private(set) var bufferedSampleCount: Int = 0
     @Published private(set) var lastError: String?
+
+    var isRecording: Bool { recordingStartedAt != nil }
 
     static var isAvailable: Bool {
         CMAltimeter.isRelativeAltitudeAvailable()
@@ -38,6 +44,10 @@ final class AltimeterRecorder: ObservableObject {
     /// Start recording barometric altitude samples (~1 Hz).
     /// Buffers samples in memory until `clearBufferedSamples(count:)` is called after transfer.
     func startRecording() {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { self.startRecording() }
+            return
+        }
         guard Self.isAvailable else {
             publishError("Barometer not available on this device")
             return
@@ -45,53 +55,62 @@ final class AltimeterRecorder: ObservableObject {
         guard accountStateStore.isSyncEnabled else { return }
         guard !isRecording else { return }
 
+        let identity = callbackFence.reset()
         altimeter.startRelativeAltitudeUpdates(to: operationQueue) { [weak self] data, error in
             guard let self = self else { return }
             if let error = error {
                 NSLog("[AltimeterRecorder] update error: %@", error.localizedDescription)
-                self.publishError(error.localizedDescription)
+                #if canImport(Sentry)
+                SentrySDK.capture(error: error)
+                #endif
+                self.callbackFence.whenCurrentOnMain(identity) {
+                    self.publishError(error.localizedDescription)
+                }
                 return
             }
             guard let data = data else { return }
 
             let pressureKPa = data.pressure.doubleValue
 
-            self.bufferLock.lock()
-            guard self.accountStateStore.isSyncEnabled else {
-                self.bufferLock.unlock()
-                return
+            var appended = false
+            self.callbackFence.apply(ifCurrent: identity) {
+                self.bufferLock.lock()
+                defer { self.bufferLock.unlock() }
+                guard self.accountStateStore.isSyncEnabled else { return }
+                if self.baselinePressureKPa == nil {
+                    self.baselinePressureKPa = pressureKPa
+                }
+                let baseline = self.baselinePressureKPa ?? pressureKPa
+                let altitudeM = AltitudeCalculator.relativeAltitudeMeters(
+                    pressureKPa: pressureKPa,
+                    baselinePressureKPa: baseline
+                )
+                let sample: [String: Any] = [
+                    "timestamp": self.formatter.string(from: Date()),
+                    "altitudeM": altitudeM,
+                    "pressureKPa": pressureKPa,
+                ]
+                self.buffer.append(sample)
+                appended = true
             }
-            if self.baselinePressureKPa == nil {
-                self.baselinePressureKPa = pressureKPa
-            }
-            let baseline = self.baselinePressureKPa ?? pressureKPa
-            let altitudeM = AltitudeCalculator.relativeAltitudeMeters(
-                pressureKPa: pressureKPa,
-                baselinePressureKPa: baseline
-            )
-            let sample: [String: Any] = [
-                "timestamp": self.formatter.string(from: Date()),
-                "altitudeM": altitudeM,
-                "pressureKPa": pressureKPa,
-            ]
-            self.buffer.append(sample)
-            let count = self.buffer.count
-            self.bufferLock.unlock()
-            self.publishBufferedSampleCount(count)
+            if appended { self.publishBufferedSampleCount() }
         }
 
-        DispatchQueue.main.async {
-            self.isRecording = true
-            self.lastError = nil
-        }
+        recordingStartedAt = Date()
+        lastError = nil
+        WatchSessionDelegate.shared.publishRecordingActivity()
     }
 
     /// Stop recording barometric altitude samples.
     func stopRecording() {
-        altimeter.stopRelativeAltitudeUpdates()
-        DispatchQueue.main.async {
-            self.isRecording = false
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { self.stopRecording() }
+            return
         }
+        callbackFence.reset()
+        altimeter.stopRelativeAltitudeUpdates()
+        recordingStartedAt = nil
+        WatchSessionDelegate.shared.publishRecordingActivity()
     }
 
     /// Snapshot buffered samples without draining.
@@ -113,31 +132,39 @@ final class AltimeterRecorder: ObservableObject {
         } else if count > 0 {
             buffer.removeFirst(count)
         }
-        let remaining = buffer.count
         bufferLock.unlock()
-        publishBufferedSampleCount(remaining)
+        publishBufferedSampleCount()
     }
 
     func purgeAccountState() {
-        stopRecording()
-        bufferLock.lock()
-        buffer.removeAll()
-        baselinePressureKPa = nil
-        bufferLock.unlock()
-        publishBufferedSampleCount(0)
+        let identity = callbackFence.reset {
+            bufferLock.lock()
+            buffer.removeAll()
+            baselinePressureKPa = nil
+            bufferLock.unlock()
+        }
+        callbackFence.whenCurrentOnMain(identity) { self.stopRecording() }
+        publishBufferedSampleCount()
     }
 
-    private func publishBufferedSampleCount(_ count: Int) {
+    private func publishBufferedSampleCount() {
         DispatchQueue.main.async {
+            self.bufferLock.lock()
+            let count = self.buffer.count
+            self.bufferLock.unlock()
             self.bufferedSampleCount = count
         }
     }
 
     private func publishError(_ message: String) {
-        altimeter.stopRelativeAltitudeUpdates()
-        DispatchQueue.main.async {
-            self.lastError = message
-            self.isRecording = false
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { self.publishError(message) }
+            return
         }
+        callbackFence.reset()
+        altimeter.stopRelativeAltitudeUpdates()
+        lastError = message
+        recordingStartedAt = nil
+        WatchSessionDelegate.shared.publishRecordingActivity()
     }
 }

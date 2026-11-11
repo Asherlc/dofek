@@ -15,12 +15,17 @@ describe("clickHouseMigrations", () => {
     expect(migrations.at(0)?.id).toBe("0001_clickhouse_analytics_schema_cleanup");
     const migrationIds = migrations.map((migration) => migration.id);
     expect(new Set(migrationIds).size).toBe(migrationIds.length);
-    expect(migrationIds.slice(-4)).toEqual([
-      "0101_activity_end_time_nullability",
-      "0102_activity_field_source_priorities",
-      "0103_strong_strength_title_precedence",
-      "0104_activity_origin",
+    expect(migrationIds.slice(-5)).toEqual([
+      "0109_remove_heart_rate_tss",
+      "0110_remove_daily_scores",
+      "0111_daily_health_sensor",
+      "0112_remove_healthspan",
+      "0113_activity_fit_recovery_error",
     ]);
+    expect(migrations.at(-1)).toMatchObject({
+      id: "0113_activity_fit_recovery_error",
+      phase: "pre-cdc",
+    });
     const migrationNumbers = migrationIds.map((migrationId) => Number(migrationId.slice(0, 4)));
     expect(migrationNumbers).toEqual(
       [...migrationNumbers].sort(

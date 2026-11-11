@@ -25,16 +25,18 @@ export function ClimbingLogAttachment({
   const utils = trpc.useUtils();
   const attachment = trpc.climbing.attachClimbingLogEntry.useMutation({
     meta: locallyReportedErrorMeta,
-    onSuccess: async () => {
+    onSuccess: async (_result, input) => {
       await Promise.all([
         utils.climbing.locationMap.invalidate(),
         utils.climbing.activityLogEntries.invalidate(),
         utils.climbing.unattachedClimbingLogEntries.invalidate(),
         utils.climbing.sessionSummary.invalidate(),
-        utils.climbing.gradeProgression.invalidate(),
+        utils.climbing.gradeProgressionV2.invalidate(),
         utils.climbing.volumeByGrade.invalidate(),
+        utils.climbing.strengths.invalidate(),
+        utils.activity.images.invalidate({ id: input.activityId }),
         utils.activity.list.invalidate(),
-        utils.calendar.weekList.invalidate(),
+        utils.calendar.weekListV2.invalidate(),
       ]);
       onClose();
     },

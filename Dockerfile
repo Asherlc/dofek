@@ -7,13 +7,16 @@ COPY package.json ./
 # Node Alpine omits Corepack; npm is used only to install the pinned bootstrap tools.
 RUN npm install -g npm@12.0.1 corepack@0.35.0 && corepack enable && corepack prepare --activate
 
-FROM python:3.13.16-alpine3.24 AS dbt-tools
+FROM python:3.13.18-alpine3.24 AS dbt-tools
+# dbt 1.12.6 requires parser wheels unavailable on Alpine; use the compatible 1.11 line.
+# https://pypi.org/project/dbt-core-experimental-parser/2.0.8/
 RUN apk add --no-cache build-base && \
     pip install --no-cache-dir \
-    dbt-core==1.11.12 \
-    dbt-clickhouse==1.10.1 \
-    sqlfluff==4.2.2 \
-    sqlfluff-templater-dbt==4.2.2 \
+    dbt-core==1.11.16 \
+    dbt-clickhouse==1.10.3 \
+    sqlfluff==4.4.0 \
+    sqlfluff-templater-dbt==4.4.0 \
+    sqlparse==0.6.0 \
     certifi==2026.10.19
 
 # ── Native FIT decoder: CMake + vcpkg ────────────────────────────────
@@ -67,19 +70,20 @@ COPY packages/eight-sleep/package.json ./packages/eight-sleep/
 COPY packages/zwift-client/package.json ./packages/zwift-client/
 COPY packages/zepp-client/package.json ./packages/zepp-client/
 COPY packages/trainerroad-client/package.json ./packages/trainerroad-client/
-COPY packages/velohero-client/package.json ./packages/velohero-client/
 COPY packages/mountain-project-client/package.json ./packages/mountain-project-client/
-COPY packages/garmin-connect/package.json ./packages/garmin-connect/
 COPY packages/trainingpeaks-connect/package.json ./packages/trainingpeaks-connect/
 COPY packages/kaya-client/package.json ./packages/kaya-client/
 COPY packages/provider-http/package.json ./packages/provider-http/
 COPY packages/peloton-client/package.json ./packages/peloton-client/
 COPY packages/xert-client/package.json ./packages/xert-client/
 COPY packages/format/package.json ./packages/format/
+COPY packages/telemetry/package.json ./packages/telemetry/
 COPY packages/filter-columns/package.json ./packages/filter-columns/
 COPY packages/scoring/package.json ./packages/scoring/
 COPY packages/nutrition/package.json ./packages/nutrition/
 COPY packages/training/package.json ./packages/training/
+COPY packages/cycling-power/package.json ./packages/cycling-power/
+COPY packages/climbing-catalogue/package.json ./packages/climbing-catalogue/
 COPY packages/stats/package.json ./packages/stats/
 COPY packages/onboarding/package.json ./packages/onboarding/
 COPY packages/providers-meta/package.json ./packages/providers-meta/
@@ -153,12 +157,8 @@ COPY --from=source --chown=node:node /app/packages/zepp-client/src ./packages/ze
 COPY --from=source --chown=node:node /app/packages/zepp-client/package.json ./packages/zepp-client/
 COPY --from=source --chown=node:node /app/packages/trainerroad-client/src ./packages/trainerroad-client/src
 COPY --from=source --chown=node:node /app/packages/trainerroad-client/package.json ./packages/trainerroad-client/
-COPY --from=source --chown=node:node /app/packages/velohero-client/src ./packages/velohero-client/src
-COPY --from=source --chown=node:node /app/packages/velohero-client/package.json ./packages/velohero-client/
 COPY --from=source --chown=node:node /app/packages/mountain-project-client/src ./packages/mountain-project-client/src
 COPY --from=source --chown=node:node /app/packages/mountain-project-client/package.json ./packages/mountain-project-client/
-COPY --from=source --chown=node:node /app/packages/garmin-connect/src ./packages/garmin-connect/src
-COPY --from=source --chown=node:node /app/packages/garmin-connect/package.json ./packages/garmin-connect/
 COPY --from=source --chown=node:node /app/packages/trainingpeaks-connect/src ./packages/trainingpeaks-connect/src
 COPY --from=source --chown=node:node /app/packages/trainingpeaks-connect/package.json ./packages/trainingpeaks-connect/
 COPY --from=source --chown=node:node /app/packages/kaya-client/src ./packages/kaya-client/src
@@ -171,6 +171,8 @@ COPY --from=source --chown=node:node /app/packages/xert-client/src ./packages/xe
 COPY --from=source --chown=node:node /app/packages/xert-client/package.json ./packages/xert-client/
 COPY --from=source --chown=node:node /app/packages/format/src ./packages/format/src
 COPY --from=source --chown=node:node /app/packages/format/package.json ./packages/format/
+COPY --from=source --chown=node:node /app/packages/telemetry/src ./packages/telemetry/src
+COPY --from=source --chown=node:node /app/packages/telemetry/package.json ./packages/telemetry/
 COPY --from=source --chown=node:node /app/packages/filter-columns/src ./packages/filter-columns/src
 COPY --from=source --chown=node:node /app/packages/filter-columns/package.json ./packages/filter-columns/
 COPY --from=source --chown=node:node /app/packages/stats/src ./packages/stats/src
@@ -185,6 +187,10 @@ COPY --from=source --chown=node:node /app/packages/auth/src ./packages/auth/src
 COPY --from=source --chown=node:node /app/packages/auth/package.json ./packages/auth/
 COPY --from=source --chown=node:node /app/packages/training/src ./packages/training/src
 COPY --from=source --chown=node:node /app/packages/training/package.json ./packages/training/
+COPY --from=source --chown=node:node /app/packages/cycling-power/src ./packages/cycling-power/src
+COPY --from=source --chown=node:node /app/packages/cycling-power/package.json ./packages/cycling-power/
+COPY --from=source --chown=node:node /app/packages/climbing-catalogue/src ./packages/climbing-catalogue/src
+COPY --from=source --chown=node:node /app/packages/climbing-catalogue/package.json ./packages/climbing-catalogue/
 COPY --from=source --chown=node:node /app/packages/heart-rate-variability/src ./packages/heart-rate-variability/src
 COPY --from=source --chown=node:node /app/packages/heart-rate-variability/package.json ./packages/heart-rate-variability/
 COPY --from=source --chown=node:node /app/packages/imu/src ./packages/imu/src
@@ -203,19 +209,20 @@ RUN ln -sfn /app node_modules/dofek && \
     ln -sfn /app/packages/zwift-client node_modules/zwift-client && \
     ln -sfn /app/packages/zepp-client node_modules/zepp-client && \
     ln -sfn /app/packages/trainerroad-client node_modules/trainerroad-client && \
-    ln -sfn /app/packages/velohero-client node_modules/velohero-client && \
-    ln -sfn /app/packages/garmin-connect node_modules/garmin-connect && \
     ln -sfn /app/packages/trainingpeaks-connect node_modules/trainingpeaks-connect && \
     ln -sfn /app/packages/whoop-whoop node_modules/whoop-whoop && \
     mkdir -p node_modules/@dofek && \
     ln -sfn /app/packages/kaya-client node_modules/@dofek/kaya-client && \
     ln -sfn /app/packages/format node_modules/@dofek/format && \
+    ln -sfn /app/packages/telemetry node_modules/@dofek/telemetry && \
     ln -sfn /app/packages/filter-columns node_modules/@dofek/filter-columns && \
     ln -sfn /app/packages/stats node_modules/@dofek/stats && \
     ln -sfn /app/packages/scoring node_modules/@dofek/scoring && \
     ln -sfn /app/packages/nutrition node_modules/@dofek/nutrition && \
     ln -sfn /app/packages/onboarding node_modules/@dofek/onboarding && \
     ln -sfn /app/packages/training node_modules/@dofek/training && \
+    ln -sfn /app/packages/cycling-power node_modules/@dofek/cycling-power && \
+    ln -sfn /app/packages/climbing-catalogue node_modules/@dofek/climbing-catalogue && \
     ln -sfn /app/packages/auth node_modules/@dofek/auth && \
     ln -sfn /app/packages/heart-rate-variability node_modules/@dofek/heart-rate-variability && \
     ln -sfn /app/packages/imu node_modules/@dofek/imu && \

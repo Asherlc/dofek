@@ -5,6 +5,7 @@
     "moduleResolution": "nodenext",
     "rewriteRelativeImportExtensions": true,
     "strict": true,
+    "erasableSyntaxOnly": true,
     "noUncheckedIndexedAccess": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,

@@ -17,7 +17,6 @@ There is no root export; import the module subpath you need.
 
 ```ts
 import {
-  computeHrTss,
   computeTrimp,
 } from "@dofek/training/pmc";
 
@@ -33,12 +32,6 @@ console.log({
     maximumHeartRate,
     restingHeartRate,
   ),
-  hrTss: computeHrTss(
-    durationMinutes,
-    averageHeartRate,
-    maximumHeartRate,
-    restingHeartRate,
-  ),
 });
 ```
 
@@ -49,35 +42,102 @@ Every public module is imported as `@dofek/training/<subpath>`.
 | Subpath | Purpose |
 | --- | --- |
 | `activity-icons` | Normalize activity names into framework-neutral icon categories |
+| `activity-chart-series` | [Shared activity-chart timing, gap, marker, and nearest-observation presentation policy](src/activity-chart-series.ts) |
+| `activity-images` | [Activity-image metadata, captions, and shared web/mobile query refresh policy](src/activity-images.ts) |
 | `climbing-grades` | Validate recorded grade components; order and convert supported free-rock grades with [Sandbag](https://github.com/OpenBeta/sandbag) |
-| `climbing-context` | Validate the current Climb and Area path with recorded board, wall-angle, and hold-type context |
+| `climbing-context` | Validate the current Climb and Area path with recorded board, wall-angle, and grip context |
+| `climbing-catalogue` | [Disposable catalogue context](src/climbing-catalogue.ts): attributed candidate matches, scoped locations, multiple/inherited tags and cache status, separately from recorded climbing facts |
 | `climbing-sources` | [Select route destinations and match provider attribution to tick links](src/climbing-sources.ts) for web and mobile using a supplied provider-label resolver |
 | `climbing-map` | [Source locations and shared card-location/overview-marker builders](src/climbing-map.ts) for web and mobile; preserves server-selected ownership and full card positions |
 | `climbing-location-map` | [Server-computed map circles and zoom bands](src/climbing-location-map.ts) shared by web and mobile; [Supercluster](https://github.com/mapbox/supercluster) groups nearby logged climbs while retaining individual source locations |
 | `climbing-experience` | [Shared recorded board and wall-angle schemas](src/climbing-experience.ts) |
+| `climbing-tags` | [Attributed source-tag contract](src/climbing-tags.ts), preserving literal labels and source/category keys |
+| `climbing-tag-presentation` | [Grouped tag labels](src/climbing-tag-presentation.ts), avoiding repeated known grip labels in details |
+| `climbing-strengths-presentation` | [Source-aware category breakdown selection](src/climbing-strengths-presentation.ts) for web and mobile |
 | `climbing-log` | [Area, Climb, Pitch, owned GradeComponent collections, ClimbingLogEntry, scoped ClimbingAttempt, and their canonical enums](src/climbing-log.ts) |
+| `climbing-log-response` | [Supported response-version input schema and faithful version-1 projection of canonical grip collections and wall angles](src/climbing-log-response.ts) |
 | `climbing-log-groups` | [Group log cards by their closest recorded Area identity](src/climbing-log-groups.ts), preserving original entry numbers, group order, and entries without an Area |
-| `gps-coordinates` | [Complete finite latitude/longitude pairs](src/gps-coordinates.ts) for [native PostgreSQL point storage](https://www.postgresql.org/docs/current/datatype-geometric.html#DATATYPE-GEOMETRIC-POINTS) using x = longitude and y = latitude |
-| `climbing-progression` | [Server-computed grade-stack contract](src/climbing-progression.ts), chart selection for recorded aid status and route methods, concise lane and setting labels, and period/exact-value formatting shared by web and mobile |
+| `map-style` | Shared light/dark [MapLibre style specification](https://maplibre.org/maplibre-style-spec/) using [OpenFreeMap vector tiles](https://openfreemap.org/quick_start/) for interactive maps and snapshots |
+| `climbing-progression` | [Server-computed combined grade-stack contract](src/climbing-progression.ts), display grade labels with scale disambiguation, and period/exact-value formatting shared by web and mobile; the [server](../server/src/repositories/climbing-grade-progression.ts) pools selected types and settings using distinct climbing dates |
+| `climbing-progression-v1` | [Supported V1 lane contract](src/climbing-progression-v1.ts) for older clients; the [versioned routers](../server/src/routers/climbing.ts) preserve its per-type/per-setting response while current clients explicitly request the combined V2 projection |
+| `climbing-strengths` | [Success-by-style response contract](src/climbing-strengths.ts): per-grade and pooled All grades profiles plus server-computed grade-adjusted strength differences, with rates from known results, total distinct-climb and unknown-result counts, baselines, nullable source outcomes, exclusion coverage, clipped monthly outcomes, and shared result/rate/count labels for web and mobile views |
+| `climbing-strengths-views` | [Shared Styles / Progress navigation and chart format definitions](src/climbing-strengths-views.ts), with fixed Styles radar and Progress views |
 | `cycling-workout-metrics` | Coverage-aware per-activity power, heart-rate, cadence, drift, zone, load, and interval calculations |
 | `derived-cardio` | Cycling and submaximal walking/running VO2 max estimates and validation |
 | `endurance-types` | Endurance and indoor-cycling type guards |
 | `grade-adjusted-pace` | Grade cost factor and adjusted running pace |
+| `route-comparison` | [GPS-matched route and identified attempt response schemas](src/route-comparison.ts), shared by web and mobile; unavailable pace remains `null` |
 | `muscle-groups` | Muscle-group expansion, totals, intensities, and display colors |
-| `pmc` | TRIMP, heart-rate/power stress, FTP estimate, learned stress model, and performance-management calculations |
-| `power-analysis` | Power curves, normalized power, critical-power fit, regression, and duration constants |
+| `pmc` | TRIMP and power-based performance-management contracts |
+| `running-cadence` | [Cadence basis and supplied-coverage labels](src/running-cadence.ts) shared by web and mobile; values remain server-authored |
+| `running-response` | [Running response versions, wire validation, and faithful legacy projection](src/running-response.ts) for independently released API and clients |
+| `power-analysis` | Standard curve-duration constants and chart labels |
 | `training` | Canonical activity types, provider normalization, and weekly-volume grouping |
 | `training-distribution` | [Karvonen](https://pubmed.ncbi.nlm.nih.gov/13470504/) and [Treff](https://www.frontiersin.org/journals/physiology/articles/10.3389/fphys.2019.00707/full) weekly intensity-distribution summaries |
-| `training-load` | `TrainingStressCalculator` stateful facade |
-| `workout-recommendation` | Workout recommendation types and calculation |
+| `training-chart-availability` | [Shared chart availability schema](src/training-chart-availability.ts); counts and messages are computed by the server |
 
 ## Model details
 
+### Activity images
+
+The [image presentation contract](src/activity-images.ts) retains stored-image
+dimensions, source associations, and captions. Its query options refresh active
+acquisition every three seconds and renew visible stored-image links every four
+minutes, before the [server's five-minute signed URL lifetime](../../src/activity-images/storage.ts).
+Failed link renewal retries after thirty seconds while stored images remain visible.
+Empty completed results stop polling. Inactive queries discard their temporary
+links; remounting or focusing the client refreshes the query. Persistence metadata excludes them from the
+mobile disk cache. TanStack documents the [query refresh options](https://tanstack.com/query/latest/docs/framework/react/reference/useQuery),
+and Cloudflare describes [signed URLs as temporary bearer access](https://developers.cloudflare.com/r2/api/s3/presigned-urls/).
+
+### Activity chart presentation
+
+The [chart-series helper](src/activity-chart-series.ts) positions each metric's
+returned observations on a proportional time axis. Continuity uses that metric's
+lower-median positive sample interval with 50% timing tolerance. At least two
+positive intervals are required to infer cadence; fewer observations remain
+dots. The rule scales with the returned sampling interval so downsampling a long
+recording does not manufacture gaps. These are Dofek display heuristics, following
+[time-based gap handling](https://api.highcharts.com/highstock/plotOptions.series.gapUnit),
+not a classification of sensor failure. Series with at most 20 observations and
+isolated observations retain markers; dense continuous segments show markers
+on hover or touch. Measurements are preserved without filling or smoothing.
+The renderer can show only gaps retained in the API's downsampled observations.
+
+### Timed climbing overlays
+
+Climbing activity heart-rate charts on web and mobile render the server's
+`chartAnnotations` with climb names, display grades and original timestamps.
+The [chart geometry](src/activity-chart-series.ts) uses the recorded activity
+window when supplied, keeping endpoint climbs visible when sensor observations
+start later or end earlier. It preserves the original samples and recording gaps;
+an activity without a recorded end uses the last observation for that boundary.
+For climbing HR, both clients instead render the server's
+[`activity.heartRateContext`](../server/src/routers/activity.ts) window and
+observations. Its [repository](../server/src/repositories/activity-metric-sources-repository.ts)
+adds five minutes before the recorded start and after a recorded end, retaining
+the selected HR source and leaving activity durations, summaries and zones scoped
+to the original window. Empty margins stay empty; no readings are synthesized.
+The [server projection](../server/src/services/climbing-chart-annotations.ts)
+accepts timezone-qualified KAYA ascent and export dates from retained raw
+records; date-only logs, session attempt summaries and ingestion timestamps
+do not establish climb timing. Current KAYA records have no per-climb end
+boundary. The [shared annotation contract](src/climbing-chart.ts) represents
+instants as markers and bounded climbs as shaded regions, using the existing
+[ECharts marker components](https://echarts.apache.org/en/option.html#series-line.markArea)
+and [SVG shapes](https://www.w3.org/TR/SVG2/shapes.html).
+
 ### Activity icons
 
-The [activity icon metadata](src/activity-icons.ts) includes a shared SVG for
-hangboarding, rendered by web and mobile ActivityTypeIcon components. Inline
-emoji consumers use a hand fallback rather than the generic activity symbol.
+The [activity icon metadata](src/activity-icons.ts) owns Dofek's original rounded
+outline SVG family for all 16 existing categories, including a neutral activity
+glyph for unknown types. Category resolution remains shared across web and
+mobile. Each glyph uses a 32-unit view box, rounded strokes, and `currentColor`
+so renderers can supply a theme-appropriate foreground; see the
+[SVG painting specification](https://www.w3.org/TR/SVG2/painting.html).
+Web uses the shared SVG as a [CSS mask](https://www.w3.org/TR/css-masking-1/),
+and mobile renders the same source through
+[react-native-svg's SvgXml](https://github.com/software-mansion/react-native-svg/blob/main/USAGE.md#use-with-xml-strings).
 
 ### Climbing grades and attempts
 
@@ -98,11 +158,122 @@ separate. Server queries derive completion, result labels and counts; see the
 [current model](../../docs/climbing-context.md) and
 [schemas](src/climbing-log.ts).
 
+Canonical grip collections are nullable and nonempty when supplied. Wall angles
+retain either numeric values with known/unknown units or explicit source
+categories. The [response-version module](src/climbing-log-response.ts) defines
+versions `1`, `2` and `3`, defaults omitted requests to `1`, and projects only the
+traits that the original scalar contract can express. A single supported grip
+remains scalar; multiple grips, newer grip kinds, and categorical angles become
+null in version `1` without altering canonical records. Version `2` retains the
+complete collection and angle object. Version `3` adds attributed recorded
+source tags through the [server detail contract](../server/src/contracts/climbing-log-contracts.ts).
+The [tag contract](src/climbing-tags.ts) keeps source/category identity; the
+[strengths contract](src/climbing-strengths.ts) adds separate recorded-category
+panels without changing the original panel dimensions. See the
+[shared model](src/climbing-log.ts), [angle schema](src/climbing-experience.ts),
+and [server response-version contract](../../docs/climbing-context.md#response-versions-and-independent-releases).
+
 The [log-card grouping helper](src/climbing-log-groups.ts) groups areas across
 sources when their complete ordered name paths match, ignoring case and extra
 whitespace. Distinct parent paths remain separate. If one source has multiple
 Area IDs for the same path, the match is ambiguous and those areas remain
 separate. Grouping preserves every log and its original occurrence number.
+
+### Climbing catalogue evidence
+
+Route discovery, provider adapters, and identity evidence live in the independent
+[`@dofek/climbing-catalogue` package](../climbing-catalogue/README.md).
+This module adds Dofek's user/log seed, cache status, and shared web/mobile labels
+around the package's [source-result contract](../climbing-catalogue/src/contracts.ts).
+
+Version 0.2.0 moves these public exports from
+`@dofek/training/climbing-catalogue` to
+`@dofek/climbing-catalogue/contracts`:
+
+- `catalogueProviderSchema`, `catalogueLocationSchema`, `catalogueTagSchema`,
+  `catalogueCandidateSchema`, and `catalogueSearchResultSchema`;
+- `CatalogueProviderId`, `CatalogueLocation`, `CatalogueCandidate`,
+  `CatalogueSearchResult`, and `ClimbingCatalogueAdapter`.
+
+The former `@dofek/training/gps-coordinates` module also moves to
+`@dofek/climbing-catalogue/geometry`, retaining `gpsCoordinatesSchema` and
+`GpsCoordinates`. Training's climbing schemas compose that canonical coordinate
+and numeric wall-angle validation; see the [geometry module](../climbing-catalogue/src/geometry.ts).
+
+Update those imports and add `@dofek/climbing-catalogue` as a direct dependency.
+`CatalogueSeed` and `catalogueSeedSchema` in this package retain Dofek's user/log
+fields; use their independent equivalents from the new package for standalone
+search. Cache context schemas and presentation labels remain here. This minor
+version marks an incompatible change during initial development, when SemVer
+allows public APIs to change; see [SemVer section 4](https://semver.org/spec/v2.0.0.html#spec-item-4).
+
+The [catalogue response contract](src/climbing-catalogue.ts) keeps disposable
+reference observations separate from recorded climb facts. Both clients use
+`climbingCatalogueConfidenceLabel` for Own source, Provider reference,
+Location corroborated, and Possible match labels; they display the server's
+`evidence` strings and optional `searchArea` without deciding identity.
+Incomplete searches remain qualified even when no candidates were returned.
+
+Explicit provider references can link renamed climbs: the paired catalogue
+stories show Mountain Project's
+[Cheddar Corner](https://www.mountainproject.com/route/105736399/cheddar-corner)
+and OpenBeta's
+[Corner Route](https://openbeta.io/climb/f3a2b199-c2d3-59b8-8f12-dd7ce734e88b/corner-route).
+OpenBeta exposes the reference as `metadata.mp_id` in its
+[Climb schema](https://github.com/OpenBeta/openbeta-graphql/blob/develop/src/graphql/schema/Climb.gql).
+A separate conflict story keeps the candidate possible and displays the server's
+reason. Catalogue grades and tags remain attributed observations, independent
+of that identity decision; see the [matching design](../../docs/superpowers/specs/2026-10-29-climbing-catalogue-matching-design.md).
+
+### Cached catalogue traits in strengths
+
+The [catalogue location contract](../climbing-catalogue/src/contracts.ts) now
+carries optional area-only source context: URL, literal type, plain-text sections,
+attributed tags/counts and statistics. The paired
+[web](../web/src/components/ClimbingCatalogueContext.tsx) and
+[mobile](../mobile/components/ClimbingCatalogueContext.tsx) disclosures keep area
+names concise and expose inherited provenance with the source link.
+
+The [strengths contract](src/climbing-strengths.ts) carries route/area trait
+sources, pending enrichment and errors. The server's
+[enrichment repository](../server/src/repositories/climbing-strengths-enrichment-repository.ts)
+loads seeds in bulk, shares a user/source-fact cache across repeated log entries,
+and enqueues missing context through the existing worker. The
+[cache service](../../src/climbing-catalogue.ts) uses v4 keys and keeps source
+observations disposable; it never writes identities or traits into recorded logs.
+
+Only cached, explicitly observed traits enter the
+[trait projection](../server/src/services/climbing-catalogue-traits.ts). Accepted
+route identity and compatibility checks gate route evidence; independently
+corroborated local areas can contribute area evidence without declaring a route
+match. Recorded route wall/hold facts retain precedence. Descriptions, source
+statistics and tag counts do not become route measurements. The
+[aggregation](../server/src/services/climbing-strengths.ts) supports
+`includeAreaMetadata: false` to exclude area contributions and returns computed
+chart values with source attribution. Both
+[web](../web/src/components/ClimbingStrengths.tsx) and
+[mobile](../mobile/components/ClimbingStrengths.tsx) show source provenance beside
+the chart within the existing Styles/Progress views.
+
+### Running response versions
+
+The existing `running.dynamics` and `running.dynamicsV2` procedures accept
+`responseVersion: 1 | 2`, defaulting to `1`, following the
+[climbing response-version pattern](src/climbing-log-response.ts). The procedure
+suffix and negotiated response version are separate. The
+[running wire contract](src/running-response.ts) projects version `1` to the
+historical fields and includes only rows with finite cadence, pace and distance.
+Genuine numeric zeros remain zero. Version `2` retains nullable measurements,
+cadence basis and coverage; its wrapper has separate form/cadence availability. Canonical
+records remain complete; the projection runs only at the API boundary in the
+[running router](../server/src/routers/running.ts).
+
+Both repository clients explicitly request version `2` and validate its shared
+schema before rendering. Unknown measurements remain missing values, and a
+malformed response produces an actionable error. The shared
+[availability schema](src/training-chart-availability.ts) validates the wire
+shape; the [server factory](../server/src/contracts/training-chart-availability.ts)
+owns availability calculations and messages.
 
 ### Training distributions
 
@@ -128,38 +299,44 @@ product heuristics.
 
 ### Training stress and performance
 
-- `computeTrimp` applies the package's exponential heart-rate-load formula.
-- `computeHrTss` normalizes that load to the package's one-hour threshold
-  reference.
-- Power stress uses duration, FTP, and normalized power.
-- Stress-model helpers fit a personal linear relationship from paired heart-rate
-  and power observations.
-- FTP estimation uses 95% of the best 20-minute average power, matching the
-  [TrainingPeaks threshold procedure](https://help.trainingpeaks.com/hc/en-us/articles/204071934-How-to-Calculate-Threshold-Values-for-Power-Heart-Rate-or-Pace).
+- `computeTrimp` applies the [Banister-style TRIMP formula](https://cris.maastrichtuniversity.nl/ws/files/62102783/Hesselink_2017_Methods_of_Monitoring_Training_Load_and_Their_Relationships.pdf), separately from TSS.
+- Power stress and ongoing eFTP use [`@dofek/cycling-power`](../cycling-power/README.md).
+  The application analytics worker supplies the canonical activity-applicable
+  results, following the [analytics architecture](../../analytics/README.md).
 
 ### Power and curve analysis
 
-- Power curves use prefix sums to find the best average power across the
-  package's standard durations.
-- Normalized power uses 30-second rolling averages and fourth-power weighting,
-  following the
-  [TrainingPeaks calculation](https://help.trainingpeaks.com/hc/en-us/articles/204071804-Normalized-Power).
-- Critical power fits the two-parameter relationship introduced by
-  [Monod and Scherrer (1965)](https://doi.org/10.1080/00140136508930810)
-  using efforts from 120 through 600 seconds.
+- Application power-duration curves read canonical elapsed-time observations
+  from the [`activity_power_curve` model](../../analytics/models/read_models/activity_power_curve.sql).
+- Normalized power is supplied by the independent
+  [`@dofek/cycling-power` implementation](../cycling-power/src/power.ts), using
+  the [TrainingPeaks 30-second rolling-average definition](https://help.trainingpeaks.com/hc/en-us/articles/204071804-Normalized-Power).
+- [`@dofek/cycling-power/critical-power`](../cycling-power/src/critical-power.ts)
+  fits the two-parameter relationship introduced by
+  [Monod and Scherrer (1965)](https://doi.org/10.1080/00140136508930810).
+  Its caller supplies the duration interval; the application keeps its
+  [120–600-second fit policy](../../src/analytics/cycling-power-policy.ts) outside the numerical package.
 
 ### Cycling workout metrics
 
-`computeCyclingWorkoutMetrics` resamples native power, heart-rate, and cadence streams to elapsed
+`prepareCyclingWorkoutMetrics` resamples native power, heart-rate, and cadence streams to elapsed
 one-second buckets without filling dropouts. A native observation is held only to the next native
 timestamp when the gap is at most the bounded continuity tolerance; measured zero remains zero and
 missing elapsed seconds remain missing. The result reports native observation counts, covered,
 missing, and zero seconds, median sample interval, and largest gap independently for every stream.
+All resampling and power-work inputs require the caller's `PowerCoveragePolicy`; the package
+does not supply application hold or gap defaults. Dofek passes its shared
+[application policy](../../src/analytics/cycling-power-policy.ts) to these adapters.
 
-Average power and work use covered power seconds only. Normalized power uses the package's canonical
-30-second rolling/fourth-power calculation and is withheld when any elapsed power second is missing.
+Average power and work use covered power seconds only. The caller supplies normalized power,
+intensity factor, and power TSS from the canonical numerical engine through the
+[required power-metric inputs](src/cycling-workout-metrics.ts); this module assembles those
+results with stream coverage and interval evidence rather than calculating another estimate.
+Summary-only callers can use `computeCyclingPowerWork`, which shares the
+[bucket calculation](src/cycling-workout-metrics.ts) and returns work and power coverage while
+allocating only buckets touched by native observations, independent of missing elapsed time.
 Intensity factor is normalized power divided by the FTP effective for that activity. Power TSS uses
-`duration_hours × intensity_factor² × 100`, following the package's documented power-stress model;
+`duration_hours × intensity_factor² × 100`, following the [power-stress definition](https://www.trainingpeaks.com/learn/articles/estimating-training-stress-score-tss/);
 both values are unavailable rather than manufactured when FTP or normalized power is missing.
 
 Aerobic efficiency is mean synchronized power divided by mean synchronized heart rate. Cardiac drift
@@ -201,3 +378,23 @@ calculations are estimates and are not medical advice.
 [Dofek repository](https://github.com/Asherlc/dofek/tree/main/packages/training).
 Please [open an issue](https://github.com/Asherlc/dofek/issues) for bugs or API
 proposals, or [submit a pull request](https://github.com/Asherlc/dofek/pulls).
+
+### Climbing strengths view migration
+
+The [strengths query](../server/src/routers/climbing.ts) negotiates
+`responseVersion: 1 | 2`, defaulting to `1`. Version 1 preserves the historical
+panel-dimension vocabulary; version 2 includes the unified `style` dimension.
+Both repository clients explicitly request version 2. This follows the existing
+[climbing response negotiation](src/climbing-log-response.ts) pattern and keeps
+older installed clients able to parse their responses.
+
+The `climbing-strengths-views` subpath now exports
+[`CLIMBING_STRENGTHS_TABS` and `ClimbingStrengthsTab`](src/climbing-strengths-views.ts)
+for fixed Styles (`radar`) and Progress (`progress`) views.
+The removed Grades visualization's `profile` value is no longer present in
+either the tab or renderer-view metadata above.
+Replace `CLIMBING_STRENGTHS_PURPOSES`, `climbingStrengthsPurpose`, and
+`climbingStrengthsPurposeView` imports with the fixed tab values; there is no
+alternate-format selector. The renderer-level `CLIMBING_STRENGTHS_VIEWS` and
+`ClimbingStrengthsView` exports remain available. This is a breaking subpath API
+change for package consumers; both repository clients migrate together.

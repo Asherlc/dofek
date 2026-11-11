@@ -97,7 +97,6 @@ current_rows AS (
         with_windows.user_id AS user_id,
         with_windows.date AS date,
         with_windows.daily_load AS daily_load,
-        least(21, round(2.775 * log(1 + greatest(with_windows.daily_load, 0)), 1)) AS strain,
         with_windows.acute_load_7d AS acute_load_7d,
         with_windows.chronic_load_28d AS chronic_load_28d,
         if(
@@ -146,7 +145,6 @@ SELECT
     CAST(result_keys.user_id, 'UUID') AS user_id,
     CAST(result_keys.date, 'Date') AS date,
     coalesce(current_rows.daily_load, 0) AS daily_load,
-    coalesce(current_rows.strain, 0) AS strain,
     coalesce(current_rows.acute_load_7d, 0) AS acute_load_7d,
     coalesce(current_rows.chronic_load_28d, 0) AS chronic_load_28d,
     current_rows.workload_ratio AS workload_ratio,

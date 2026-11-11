@@ -5,17 +5,20 @@ interface ActivityTypeIconProps {
   activityType: string;
   variant?: "card" | "compact" | "plain";
   className?: string;
+  color?: string;
 }
 
 export function ActivityTypeIcon({
   activityType,
   variant = "card",
   className = "",
+  color,
 }: ActivityTypeIconProps) {
-  const { emoji, svg, gradientFrom, gradientTo } = getActivityIconInfo(activityType);
+  const { svg, gradientFrom, gradientTo } = getActivityIconInfo(activityType);
   const label = formatActivityTypeLabel(activityType);
   const isCompact = variant === "compact";
   const isPlain = variant === "plain";
+  const maskImage = `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
 
   return (
     <div
@@ -23,6 +26,7 @@ export function ActivityTypeIcon({
       data-activity-type={activityType}
       className={[
         "relative overflow-hidden",
+        isPlain ? "text-foreground" : "text-white",
         isCompact ? "h-12 w-16 rounded" : isPlain ? "h-12 w-16" : "aspect-[16/9] w-full",
         className,
       ]
@@ -30,35 +34,30 @@ export function ActivityTypeIcon({
         .join(" ")}
       role="img"
       aria-label={`${label} activity`}
-      style={
-        isPlain
+      style={{
+        color,
+        backgroundImage: isPlain
           ? undefined
-          : {
-              backgroundImage: `linear-gradient(to bottom right, ${gradientFrom}, ${gradientTo})`,
-            }
-      }
+          : `linear-gradient(to bottom right, ${gradientFrom}, ${gradientTo})`,
+      }}
     >
       <div className="flex h-full w-full items-center justify-center">
         <span
-          className={
-            isCompact
-              ? "text-2xl leading-none"
-              : isPlain
-                ? "text-3xl leading-none"
-                : "text-5xl leading-none"
-          }
+          data-activity-glyph=""
+          className={isCompact ? "h-9 w-9" : isPlain ? "h-10 w-10" : "h-18 w-18"}
           aria-hidden="true"
-        >
-          {svg ? (
-            <img
-              src={`data:image/svg+xml,${encodeURIComponent(svg)}`}
-              alt=""
-              className="h-[1.5em] w-[1.5em]"
-            />
-          ) : (
-            emoji
-          )}
-        </span>
+          style={{
+            backgroundColor: "currentColor",
+            maskImage,
+            maskRepeat: "no-repeat",
+            maskPosition: "center",
+            maskSize: "contain",
+            WebkitMaskImage: maskImage,
+            WebkitMaskRepeat: "no-repeat",
+            WebkitMaskPosition: "center",
+            WebkitMaskSize: "contain",
+          }}
+        />
       </div>
     </div>
   );

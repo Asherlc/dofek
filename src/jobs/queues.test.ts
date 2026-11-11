@@ -1,7 +1,9 @@
+import type { CatalogueSeed } from "@dofek/training/climbing-catalogue";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ImportJobData } from "./queues.ts";
 
 const {
+  mockQueueGetJob,
   mockQueueAdd,
   mockQueueClose,
   MockQueue,
@@ -11,9 +13,15 @@ const {
   MockQueueEvents,
   MockRedisConnection,
 } = vi.hoisted(() => {
+  const mockQueueGetJob = vi.fn();
   const mockQueueAdd = vi.fn();
   const mockQueueClose = vi.fn().mockResolvedValue(undefined);
-  const mockQueueInstance = { name: "mock-queue", add: mockQueueAdd, close: mockQueueClose };
+  const mockQueueInstance = {
+    name: "mock-queue",
+    add: mockQueueAdd,
+    getJob: mockQueueGetJob,
+    close: mockQueueClose,
+  };
   const MockQueue = vi.fn(function vitestConstructor() {
     return mockQueueInstance;
   });
@@ -31,6 +39,7 @@ const {
     return { close: vi.fn().mockResolvedValue(undefined) };
   });
   return {
+    mockQueueGetJob,
     mockQueueAdd,
     mockQueueClose,
     MockQueue,
@@ -50,19 +59,86 @@ vi.mock("bullmq", () => ({
 }));
 
 import {
+  ANALYTICS_REFRESH_QUEUE,
   closeAllQueueResources,
   createProviderDataDeletionQueue,
   EXPORT_QUEUE,
   enqueueDataExport,
   enqueueProviderDataDeletion,
   enqueueProviderDataDeletionContinuation,
+  getAnalyticsRefreshQueue,
+  getAnalyticsRefreshQueueEvents,
   getDataExportQueue,
   getProviderDataDeletionQueue,
   PROVIDER_DATA_DELETION_QUEUE,
   providerDataDeletionJobDataSchema,
 } from "./queues.ts";
 
+const catalogueSeed: CatalogueSeed = {
+  userId: "user-a",
+  logEntryId: "log-a",
+  providerId: "kaya",
+  externalId: "1",
+  sourceUrl: null,
+  name: "Crack",
+  kind: "route",
+  setting: "outdoor",
+  locations: [],
+};
+
 describe("queues", () => {
+  it("queues one disposable catalogue refresh per user and log", async () => {
+    const { enqueueClimbingCatalogueRefresh } = await import("./queues.ts");
+    await enqueueClimbingCatalogueRefresh(catalogueSeed);
+    expect(mockQueueAdd).toHaveBeenCalledWith(
+      "climbing-catalogue",
+      { type: "climbing-catalogue", userId: "user-a", logEntryId: "log-a", seed: catalogueSeed },
+      expect.objectContaining({
+        attempts: 1,
+        removeOnComplete: true,
+        removeOnFail: true,
+        jobId: "climbing-catalogue-user-a-log-a",
+      }),
+    );
+  });
+  it.each(["waiting", "active", "delayed", "prioritized", "waiting-children"])(
+    "projects %s jobs as pending",
+    async (state) => {
+      const { getClimbingCatalogueRefreshState } = await import("./queues.ts");
+      mockQueueGetJob.mockResolvedValue({ getState: async () => state });
+      expect(await getClimbingCatalogueRefreshState("user-a", "log-a")).toBe("pending");
+      expect(mockQueueGetJob).toHaveBeenCalledWith("climbing-catalogue-user-a-log-a");
+    },
+  );
+  it.each(["completed", "failed", "unknown", null])(
+    "does not leave pending after job state %s",
+    async (state) => {
+      const { getClimbingCatalogueRefreshState } = await import("./queues.ts");
+      mockQueueGetJob.mockResolvedValue(
+        state === null ? undefined : { getState: async () => state },
+      );
+      expect(await getClimbingCatalogueRefreshState("user-a", "log-a")).toBeNull();
+    },
+  );
+  it("rejects job snapshots attributed to a different user or log", async () => {
+    const { climbingCatalogueJobDataSchema } = await import("./queues.ts");
+    expect(
+      climbingCatalogueJobDataSchema.safeParse({
+        type: "climbing-catalogue",
+        userId: "other",
+        logEntryId: "log-a",
+        seed: catalogueSeed,
+      }).success,
+    ).toBe(false);
+    expect(
+      climbingCatalogueJobDataSchema.safeParse({
+        type: "climbing-catalogue",
+        userId: "user-a",
+        logEntryId: "other",
+        seed: catalogueSeed,
+      }).success,
+    ).toBe(false);
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     delete process.env.REDIS_URL;
@@ -988,6 +1064,39 @@ describe("queues", () => {
     });
   });
 
+  describe("activity image queues", () => {
+    it("uses an explicit connection for a standalone queue and the shared connection by default", async () => {
+      const { createActivityImageQueue, getRedisCommandConnection } = await import("./queues.ts");
+      const connection = { host: "image-redis.test", port: 6380 };
+      createActivityImageQueue(connection);
+      expect(MockQueue).toHaveBeenLastCalledWith("activity-images", { connection });
+      createActivityImageQueue();
+      expect(MockQueue).toHaveBeenLastCalledWith("activity-images", {
+        connection: getRedisCommandConnection(),
+      });
+      await closeAllQueueResources();
+    });
+    it("reuses the cached image queue until shutdown, closes it once, and creates it again", async () => {
+      const { getActivityImageQueue } = await import("./queues.ts");
+      await closeAllQueueResources();
+      vi.clearAllMocks();
+      try {
+        const first = getActivityImageQueue();
+        expect(getActivityImageQueue()).toBe(first);
+        expect(MockQueue).toHaveBeenCalledOnce();
+        expect(MockQueue).toHaveBeenCalledWith("activity-images", expect.any(Object));
+        await closeAllQueueResources();
+        expect(mockQueueClose).toHaveBeenCalledOnce();
+        await closeAllQueueResources();
+        expect(mockQueueClose).toHaveBeenCalledOnce();
+        getActivityImageQueue();
+        expect(MockQueue).toHaveBeenCalledTimes(2);
+      } finally {
+        await closeAllQueueResources();
+      }
+    });
+  });
+
   describe("closeAllQueueResources", () => {
     it("closes all cached queues and flow producers", async () => {
       const {
@@ -1019,5 +1128,65 @@ describe("queues", () => {
       expect(mockQueueEventsClose).not.toHaveBeenCalled();
       expect(mockFlowProducerClose).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe("analytics refresh resource lifecycle", () => {
+  it("retains dispatch handles while their asynchronous close is pending", async () => {
+    await closeAllQueueResources();
+    const queue = getAnalyticsRefreshQueue();
+    const events = getAnalyticsRefreshQueueEvents();
+    const queueCount = MockQueue.mock.calls.length;
+    const eventCount = MockQueueEvents.mock.calls.length;
+    let finish = () => {};
+    mockQueueClose.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const closing = closeAllQueueResources();
+    expect(getAnalyticsRefreshQueue()).toBe(queue);
+    expect(getAnalyticsRefreshQueueEvents()).toBe(events);
+    expect(MockQueue).toHaveBeenCalledTimes(queueCount);
+    expect(MockQueueEvents).toHaveBeenCalledTimes(eventCount);
+    finish();
+    await closing;
+    getAnalyticsRefreshQueue();
+    getAnalyticsRefreshQueueEvents();
+    expect(MockQueue).toHaveBeenCalledTimes(queueCount + 1);
+    expect(MockQueueEvents).toHaveBeenCalledTimes(eventCount + 1);
+    await closeAllQueueResources();
+  });
+
+  it("cancels refresh waiters without recreating their signal before final teardown", async () => {
+    const { closeAnalyticsRefreshWaiters, getAnalyticsRefreshWaitSignal } = await import(
+      "./queues.ts"
+    );
+    await closeAllQueueResources();
+    const signal = getAnalyticsRefreshWaitSignal();
+    await closeAnalyticsRefreshWaiters();
+    expect(signal.aborted).toBe(true);
+    expect(getAnalyticsRefreshWaitSignal()).toBe(signal);
+    await closeAllQueueResources();
+    expect(getAnalyticsRefreshWaitSignal().aborted).toBe(false);
+  });
+
+  it("reuses dispatch resources and releases both connections during shutdown", async () => {
+    await closeAllQueueResources();
+    vi.clearAllMocks();
+    expect(getAnalyticsRefreshQueue()).toBe(getAnalyticsRefreshQueue());
+    expect(getAnalyticsRefreshQueueEvents()).toBe(getAnalyticsRefreshQueueEvents());
+    expect(MockQueue).toHaveBeenCalledOnce();
+    expect(MockQueueEvents).toHaveBeenCalledOnce();
+    expect(MockQueue).toHaveBeenCalledWith(ANALYTICS_REFRESH_QUEUE, expect.any(Object));
+    await closeAllQueueResources();
+    expect(mockQueueClose).toHaveBeenCalledOnce();
+    expect(mockQueueEventsClose).toHaveBeenCalledOnce();
+    getAnalyticsRefreshQueue();
+    getAnalyticsRefreshQueueEvents();
+    expect(MockQueue).toHaveBeenCalledTimes(2);
+    expect(MockQueueEvents).toHaveBeenCalledTimes(2);
+    await closeAllQueueResources();
   });
 });

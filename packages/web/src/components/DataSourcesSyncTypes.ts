@@ -33,6 +33,7 @@ export interface SyncProviderSummary {
   authorized: boolean;
   lastSyncedAt: string | null;
   lastSuccessfulSyncAt: string | null;
+  lastProcessedUpdateAt: string | null;
   syncFreshness: ProviderSyncFreshness | null;
   importOnly: boolean;
   pushOnly: boolean;

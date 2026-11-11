@@ -57,27 +57,6 @@ const meta = {
         },
       ],
     },
-    monotony: [
-      {
-        week: "2026-07-20",
-        monotony: 1.5,
-        strain: 300,
-        weeklyLoad: 200,
-        dailyMeanLoad: 28.57,
-        dailyLoadStandardDeviation: 19.05,
-        method: {
-          formula:
-            "Monotony = 7-day mean daily cycling load ÷ population standard deviation of daily cycling load. Strain = weekly cycling load × monotony.",
-          calendar: "Monday–Sunday calendar weeks include zero-load days.",
-          activityScope: "Cycling activities with computed endurance training load.",
-          interpretation: "Daily training-load variability within each calendar week.",
-          source: {
-            title: "Foster (1998), Monitoring training in athletes",
-            url: "https://pubmed.ncbi.nlm.nih.gov/9662690/",
-          },
-        },
-      },
-    ],
   },
 } satisfies Meta<typeof TrainingDistributionCards>;
 
@@ -86,12 +65,6 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Complete: Story = {};
-
-export const EmptyMonotonyData: Story = {
-  args: {
-    monotony: [],
-  },
-};
 
 export const InsufficientPolarizationData: Story = {
   args: {

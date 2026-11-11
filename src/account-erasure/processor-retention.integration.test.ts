@@ -1,6 +1,6 @@
 import { HttpResponse, http } from "msw";
-import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { createIntegrationMswFixture } from "../test/early-msw-lifecycle.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import { verifyProcessorRetentionPolicies } from "./processor-retention.ts";
 
@@ -13,11 +13,22 @@ const config = {
   sentryOrg: "east-bay-software",
 };
 
-const server = setupServer();
+const server = createIntegrationMswFixture(
+  http.get("https://api.axiom.co/v2/datasets/dofek-traces", ({ request }) => {
+    expect(request.headers.get("authorization")).toBe("Bearer axiom-token");
+    expect(request.headers.get("x-axiom-org-id")).toBe("axiom-org");
+    return HttpResponse.json({
+      id: "dofek-traces",
+      name: "dofek-traces",
+      retentionDays: 29,
+      useRetentionPeriod: true,
+    });
+  }),
+);
 
 describe("account-erasure processor retention (integration)", () => {
   beforeAll(() => {
-    server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
   });
 
   afterEach(() => {
@@ -25,7 +36,7 @@ describe("account-erasure processor retention (integration)", () => {
   });
 
   afterAll(() => {
-    server.close();
+    server.deactivate();
   });
 
   it("verifies processor retention with a one-day margin before the public deadline", async () => {
@@ -70,6 +81,21 @@ describe("account-erasure processor retention (integration)", () => {
 
     await expect(verifyProcessorRetentionPolicies(config)).rejects.toThrow(
       "Axiom dataset retention is not enabled",
+    );
+  });
+
+  it("fails closed when the trace dataset cannot be verified", async () => {
+    server.use(
+      http.get("https://api.axiom.co/v2/datasets/dofek-logs", () =>
+        HttpResponse.json({ retentionDays: 29, useRetentionPeriod: true }),
+      ),
+      http.get("https://api.axiom.co/v2/datasets/dofek-traces", () =>
+        HttpResponse.json({ message: "Dataset not found" }, { status: 404 }),
+      ),
+    );
+
+    await expect(verifyProcessorRetentionPolicies(config)).rejects.toThrow(
+      "Axiom dataset retention verification failed with status 404 for dofek-traces",
     );
   });
 

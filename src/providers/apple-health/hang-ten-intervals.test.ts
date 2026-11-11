@@ -7,9 +7,68 @@ import {
   hangTenIntervalLabel,
   replaceHangTenIntervals,
 } from "./hang-ten-intervals.ts";
-import { hangTenActivitySegments, hangTenWorkout } from "./test-helpers.ts";
+import { hangTenActivitySegments, hangTenContactMetadata, hangTenWorkout } from "./test-helpers.ts";
+import { applyWorkoutMetadata } from "./workouts.ts";
 
 describe("hangTenIntervalLabel", () => {
+  it("labels the recorded contact requirement with its exact depth", () => {
+    const workout = applyWorkoutMetadata(hangTenWorkout(), hangTenContactMetadata());
+
+    expect(buildHangTenIntervals("act-1", workout)[0]?.label).toBe("Step 1: 25 mm edge");
+  });
+
+  it.each([
+    { depth: undefined, label: "Step 1: edge" },
+    { depth: { range: { minimum: 20, maximum: 25 } }, label: "Step 1: edge" },
+  ])("keeps a contact label without inventing an exact depth: $label", ({ depth, label }) => {
+    expect(
+      hangTenIntervalLabel({
+        stepID: "contact-step",
+        stepNumber: 1,
+        kind: "work",
+        target: {
+          kind: "resolvedContacts",
+          resolution: {
+            boardID: "board",
+            revisionID: "revision",
+            contactIDs: ["edge-left", "edge-right"],
+            requirement: { kind: "edge", depth },
+          },
+        },
+      }),
+    ).toBe(label);
+  });
+
+  it("labels self-selected hangs without a contact type", () => {
+    expect(
+      hangTenIntervalLabel({
+        stepID: "free-hang",
+        stepNumber: 1,
+        kind: "work",
+        target: { kind: "selfSelected" },
+      }),
+    ).toBe("Step 1: Work");
+  });
+
+  it("uses a generic label when the recorded contact requirement omits its kind", () => {
+    expect(
+      hangTenIntervalLabel({
+        stepID: "contact-hang",
+        stepNumber: 1,
+        kind: "work",
+        target: {
+          kind: "resolvedContacts",
+          resolution: {
+            boardID: "board",
+            revisionID: "revision",
+            contactIDs: ["edge-left"],
+            requirement: { contactID: "edge-left", selection: "single" },
+          },
+        },
+      }),
+    ).toBe("Step 1: Work");
+  });
+
   it("labels work intervals with hold size and type", () => {
     expect(
       hangTenIntervalLabel({

@@ -1,6 +1,6 @@
 import { standardViewHeader } from "./clickhouse-sql-helpers.ts";
 
-export function buildActivityOriginViewSql(legacyFields: string): string {
+export function buildActivityOriginViewSql(legacyFields: string, primaryTitles = false): string {
   const header = standardViewHeader("analytics.v_activity");
   const matchingMembers =
     "arraySort(legacy.member_activity_ids) = arraySort(origins.member_activity_ids)";
@@ -9,7 +9,7 @@ export function buildActivityOriginViewSql(legacyFields: string): string {
 WITH legacy_fields AS (${legacyFields}),
 materialized_origins AS (
   SELECT activity_id, user_id, primary_activity_id, primary_provider_id, primary_source_name,
-    origin_candidate_member_ids, origin_evidence, member_activity_ids
+    origin_candidate_member_ids, origin_evidence, member_activity_ids${primaryTitles ? ", name, primary_canonical_type" : ""}
   FROM analytics.deduped_activities FINAL WHERE is_deleted = 0
 )
 SELECT
@@ -23,10 +23,11 @@ SELECT
   if(${matchingMembers}, coalesce(origins.origin_evidence, CAST([], 'Array(Map(String, String))')),
     CAST([], 'Array(Map(String, String))')) AS origin_evidence,
   legacy.provider_id, legacy.user_id, legacy.canonical_type, legacy.provider_type, legacy.modality,
-  legacy.started_at, legacy.ended_at, legacy.source_name, legacy.name, legacy.notes,
+  legacy.started_at, legacy.ended_at, legacy.source_name,
+  ${primaryTitles ? `if(${resolved}, origins.name, legacy.name) AS name` : "legacy.name"}, legacy.notes,
   legacy.timezone, legacy.start_utc_offset_minutes, legacy.end_utc_offset_minutes,
   legacy.local_time_source, legacy.raw, legacy.source_providers, legacy.source_external_ids,
-  legacy.absent_source_external_ids, legacy.member_activity_ids
+  legacy.absent_source_external_ids, legacy.member_activity_ids${primaryTitles ? `,\n  if(${resolved}, origins.primary_canonical_type, NULL) AS primary_canonical_type` : ""}
 FROM legacy_fields AS legacy
 LEFT JOIN materialized_origins AS origins ON origins.activity_id = legacy.id AND origins.user_id = legacy.user_id`;
 }

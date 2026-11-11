@@ -12,6 +12,8 @@ import compression from "compression";
 import cookieParser from "cookie-parser";
 import { createDatabaseFromEnv } from "dofek/db";
 import { bootstrapClickHouseFromEnv, createClickHouseClientFromEnv } from "dofek/db/clickhouse";
+import { closeProviderOperationFencePool } from "dofek/db/provider-operation-fence";
+import { enqueueSyncJob } from "dofek/jobs/enqueue-sync-job";
 import {
   createActivityDeleteAnalyticsQueue,
   createExportQueue,
@@ -35,10 +37,8 @@ import {
   createLazyAccountErasureRestoreLedger,
 } from "../../../src/account-erasure/restore-ledger.ts";
 import { reconcileAccountErasureRestoreIntents } from "../../../src/account-erasure/restore-reconciliation.ts";
-import {
-  getDefaultMetricStreamEventPublisher,
-  type MetricStreamEventPublisher,
-} from "../../../src/metric-stream/redpanda-producer.ts";
+import type { MetricStreamEventPublisher } from "../../../src/metric-stream/publisher.ts";
+import { getDefaultMetricStreamEventPublisher } from "../../../src/metric-stream/redpanda-producer.ts";
 import { isAdmin } from "./auth/admin.ts";
 import { getSessionIdFromRequest } from "./auth/cookies.ts";
 import { validateSession } from "./auth/session.ts";
@@ -65,6 +65,7 @@ import { createCompanionTokenHttpRouter } from "./routes/companion-token.ts";
 import { createDeveloperClientsRouter } from "./routes/developer-clients.ts";
 import { createExportRouter } from "./routes/export.ts";
 import { createExternalWriteApiRouter } from "./routes/external-write-api.ts";
+import { createGarminWebhookRouter } from "./routes/garmin-webhooks.ts";
 import { createIngestZosHealthRouter } from "./routes/ingest-zos-health.ts";
 import { createIngestZosImuRouter } from "./routes/ingest-zos-imu.ts";
 import { createOpenAiAppsChallengeRouter } from "./routes/openai-apps-challenge.ts";
@@ -137,8 +138,17 @@ export function createGracefulShutdownHandler(
           exit(1);
           return;
         }
-        logger.info("[server] Shutdown complete");
-        exit(0);
+        void closeProviderOperationFencePool().then(
+          () => {
+            logger.info("[server] Shutdown complete");
+            exit(0);
+          },
+          (error: unknown) => {
+            captureException(error, { tags: { context: "provider-operation-lock-shutdown" } });
+            logger.error("[server] Could not close provider operation locks");
+            exit(1);
+          },
+        );
       });
     }, drainDelayMs);
     closeTimer.unref();
@@ -248,7 +258,7 @@ function setupRoutes(
     let logPathSearch = req.originalUrl;
     try {
       const logUrl = new URL(req.originalUrl, "http://localhost");
-      for (const sensitiveParameter of ["session", "code"]) {
+      for (const sensitiveParameter of ["session", "code", "token"]) {
         if (logUrl.searchParams.has(sensitiveParameter)) {
           logUrl.searchParams.set(sensitiveParameter, "[REDACTED]");
         }
@@ -322,6 +332,21 @@ function setupRoutes(
   // Webhook routes must be mounted before JSON middleware because signature verification uses raw bodies.
   app.use("/api/webhooks/app-store", createAppStoreWebhookRouter({ db }));
   app.use("/api/webhooks/stripe", createStripeWebhookRouter({ db }));
+  app.use(
+    "/api/webhooks/garmin",
+    createGarminWebhookRouter({
+      db,
+      sharedSecret: process.env.GARMIN_WEBHOOK_SECRET,
+      enqueueEvent: async (userId, webhookEvent) => {
+        await enqueueSyncJob("garmin", {
+          providerId: "garmin",
+          userId,
+          origin: "manual",
+          webhookEvent,
+        });
+      },
+    }),
+  );
   app.use("/api/webhooks", createWebhookRouter({ db, syncQueue }));
   app.use("/api/export", createExportRouter({ db, exportQueue }));
   app.use(

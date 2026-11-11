@@ -246,3 +246,185 @@ export const EmptyHistory: Story = {
 };
 export const Loading: Story = { args: { data: undefined, loading: true } };
 export const ApiError: Story = { args: { data: undefined, error: new Error("Please try again.") } };
+
+const emptyProviderSnapshot: ProcessingStatusSnapshot = {
+  ...activeSnapshot,
+  overallStatus: "ready",
+  datasets: [],
+  operations: [],
+};
+export const NoRecordedOutcome: Story = {
+  args: {
+    data: emptyProviderSnapshot,
+    alwaysVisible: true,
+    contextLabel: "Garmin data status",
+    providerHistory: { lastSuccessfulSyncAt: null, recentLogs: [] },
+  },
+};
+
+export const AutomaticSourceWaiting: Story = {
+  args: {
+    data: emptyProviderSnapshot,
+    alwaysVisible: true,
+    contextLabel: "Garmin data status",
+    providerHistory: {
+      pushOnly: true,
+      lastProcessedUpdateAt: null,
+      lastSuccessfulSyncAt: null,
+      recentLogs: [],
+    },
+  },
+};
+
+export const AutomaticUpdateProcessing: Story = {
+  args: {
+    data: {
+      ...activeSnapshot,
+      operations: [{ ...activeOperation, kind: "push_ingest" }],
+    },
+    alwaysVisible: true,
+    contextLabel: "Garmin data status",
+    providerHistory: {
+      pushOnly: true,
+      lastProcessedUpdateAt: "2026-07-21T12:00:00.000Z",
+      lastSuccessfulSyncAt: null,
+      recentLogs: [],
+    },
+  },
+};
+
+export const AutomaticUpdateFailed: Story = {
+  args: {
+    data: emptyProviderSnapshot,
+    alwaysVisible: true,
+    contextLabel: "Garmin data status",
+    providerHistory: {
+      pushOnly: true,
+      needsReauth: false,
+      lastProcessedUpdateAt: "2026-10-24T09:16:00.000Z",
+      lastSuccessfulSyncAt: null,
+      recentLogs: [
+        {
+          status: "error",
+          syncedAt: "2026-10-24T09:39:00.000Z",
+          dataType: "activities",
+          errorMessage: "An activity file could not be read.",
+        },
+      ],
+    },
+  },
+};
+
+export const AutomaticUpdateDegraded: Story = {
+  args: {
+    data: emptyProviderSnapshot,
+    alwaysVisible: true,
+    providerHistory: {
+      pushOnly: true,
+      lastSuccessfulSyncAt: null,
+      recentLogs: [{ status: "degraded", syncedAt: "2026-10-24T11:00:00Z" }],
+    },
+  },
+};
+
+export const AutomaticUpdateOutcomeUnavailable: Story = {
+  args: {
+    data: emptyProviderSnapshot,
+    alwaysVisible: true,
+    providerHistory: {
+      pushOnly: true,
+      lastSuccessfulSyncAt: null,
+      recentLogs: [{ status: "unknown", syncedAt: "2026-10-24T11:00:00Z" }],
+    },
+  },
+};
+export const LatestSyncFailed: Story = {
+  args: {
+    data: emptyProviderSnapshot,
+    alwaysVisible: true,
+    contextLabel: "Garmin data status",
+    providerHistory: {
+      needsReauth: false,
+      lastSuccessfulSyncAt: "2026-07-22T12:00:00.000Z",
+      recentLogs: [
+        {
+          status: "error",
+          syncedAt: "2026-10-21T12:00:00.000Z",
+          dataType: "activities",
+          authFailureReason: "authorization_failed",
+        },
+      ],
+    },
+  },
+};
+export const LatestSyncDegraded: Story = {
+  args: {
+    data: emptyProviderSnapshot,
+    alwaysVisible: true,
+    providerHistory: {
+      lastSuccessfulSyncAt: null,
+      recentLogs: [
+        { status: "degraded", syncedAt: "2026-10-21T12:00:00.000Z", dataType: "activities" },
+      ],
+    },
+  },
+};
+export const UnknownSyncOutcome: Story = {
+  args: {
+    data: emptyProviderSnapshot,
+    alwaysVisible: true,
+    providerHistory: {
+      lastSuccessfulSyncAt: null,
+      recentLogs: [{ status: "unknown", syncedAt: "2026-10-21T12:00:00.000Z" }],
+    },
+  },
+};
+
+export const FailureWithNewerProgress: Story = {
+  args: {
+    alwaysVisible: true,
+    providerHistory: {
+      needsReauth: false,
+      lastSuccessfulSyncAt: null,
+      recentLogs: [
+        { status: "error", syncedAt: "2026-07-22T16:06:00.000Z", dataType: "activities" },
+      ],
+    },
+    data: {
+      ...activeSnapshot,
+      overallStatus: "failed",
+      generatedAt: "2026-07-22T17:01:00.000Z",
+      datasets: [
+        {
+          ...activeDataset,
+          status: "failed",
+          progressPercentage: null,
+          lastFailedAt: "2026-07-22T16:05:00.000Z",
+        },
+        {
+          ...activeDataset,
+          key: "sleep",
+          label: "Sleep",
+          status: "active",
+          lastAdvancedAt: "2026-07-22T17:00:00.000Z",
+        },
+      ],
+      operations: [
+        {
+          ...activeOperation,
+          status: "failed",
+          errorCode: "provider_sync_failed",
+          errorMessage: "The recorded activity sync failed.",
+          timeline: [],
+        },
+        {
+          ...activeOperation,
+          id: "00000000-0000-4000-8000-000000001853",
+          datasets: ["sleep"],
+          createdAt: "2026-07-22T17:00:00.000Z",
+          timeline: [],
+        },
+      ],
+    },
+  },
+};

@@ -1,24 +1,30 @@
 import { SyncRun } from "../sync-run.ts";
 import { SyncWindow } from "../sync-window.ts";
-import { type createMockDatabase, theCragPage } from "../test-helpers.ts";
+import type { createMockDatabase } from "../test-helpers.ts";
 
-export function response(
-  ascents: Record<string, unknown>[] = [],
-  overrides: Record<string, unknown> = {},
-): Response {
-  return new Response(JSON.stringify(theCragPage(ascents, overrides)), {
-    status: 200,
-    headers: { "Content-Type": "application/json" },
-  });
+export function apiAscent(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "1001",
+    epoch: 1791676800,
+    date: "2026-10-10",
+    climbedGearStyle: "top rope",
+    tick: { label: "attempt", name: "Attempt: Top rope" },
+    markdown: "Private training notes",
+    route: { id: "2001", name: "Sample route", grade: "5.10b", style: "Top rope" },
+    ...overrides,
+  };
 }
 
-export function tokens(accountId = "123") {
+export function logbookPage(ascents = [apiAscent()], overrides: Record<string, unknown> = {}) {
   return {
-    accessToken: "personal-key",
-    refreshToken: null,
-    expiresAt: new Date("2099-12-31T00:00:00.000Z"),
-    scopes: "logbook:read",
-    providerAccountId: accountId,
+    data: {
+      account: { id: "123", login: "sampleclimber" },
+      ascents,
+      numberAscents: ascents.length,
+      page: "1",
+      perPage: 250,
+      ...overrides,
+    },
   };
 }
 

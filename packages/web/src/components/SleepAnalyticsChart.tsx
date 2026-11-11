@@ -1,7 +1,6 @@
 import { formatDateMedium, formatDurationMinutes, formatNumber } from "@dofek/format/format";
 import { getMissingSleepStates, type MissingSleepState } from "@dofek/format/sleep-data-state";
 import { sleepStageColors, statusColors } from "@dofek/scoring/colors";
-import { sleepDebtColor } from "@dofek/scoring/scoring";
 import type { SleepNightlyRow } from "dofek-server/types";
 import {
   dofekAxis,
@@ -15,7 +14,6 @@ import { DofekChart } from "./DofekChart.tsx";
 
 interface SleepAnalyticsChartProps {
   nightly: SleepNightlyRow[];
-  sleepDebt: number | null;
   loading?: boolean;
 }
 
@@ -29,16 +27,9 @@ function getLatestMissingSleepState(nightly: SleepNightlyRow[]): MissingSleepSta
   return null;
 }
 
-export function buildSleepAnalyticsOption(nightly: SleepNightlyRow[], sleepDebt: number) {
-  const debtLabel =
-    sleepDebt > 0
-      ? `${formatDurationMinutes(sleepDebt)} deficit`
-      : `${formatDurationMinutes(Math.abs(sleepDebt))} surplus`;
-  const debtColor = sleepDebtColor(sleepDebt);
-
+export function buildSleepAnalyticsOption(nightly: SleepNightlyRow[]) {
   return {
-    // Reserve vertical space for both the legend row and sleep debt status row.
-    grid: dofekGrid("dualAxis", { top: 82, bottom: 40, left: 50 }),
+    grid: dofekGrid("dualAxis", { top: 40, bottom: 40, left: 50 }),
     tooltip: dofekTooltip({
       formatter: (
         params: {
@@ -84,21 +75,6 @@ export function buildSleepAnalyticsOption(nightly: SleepNightlyRow[], sleepDebt:
       data: ["Deep", "REM", "Light", "Awake", "7d Avg"],
       top: 0,
     }),
-    graphic: [
-      {
-        type: "text" as const,
-        right: 10,
-        top: 28,
-        silent: true,
-        style: {
-          text: `14d Sleep Debt: ${debtLabel}`,
-          fill: debtColor,
-          fontSize: 13,
-          fontWeight: "bold" as const,
-          align: "right" as const,
-        },
-      },
-    ],
     xAxis: dofekAxis.time(),
     yAxis: [
       dofekAxis.value({
@@ -159,7 +135,7 @@ export function buildSleepAnalyticsOption(nightly: SleepNightlyRow[], sleepDebt:
   };
 }
 
-export function SleepAnalyticsChart({ nightly, sleepDebt, loading }: SleepAnalyticsChartProps) {
+export function SleepAnalyticsChart({ nightly, loading }: SleepAnalyticsChartProps) {
   const summaryNights = nightly.slice(-14);
   const hasMeasuredSleepValues = summaryNights.some(
     (night) =>
@@ -169,8 +145,8 @@ export function SleepAnalyticsChart({ nightly, sleepDebt, loading }: SleepAnalyt
       night.awakePct != null ||
       night.rollingAvgDuration != null,
   );
-  const hasSleepSummary = nightly.length > 0 && sleepDebt != null && hasMeasuredSleepValues;
-  const option = hasSleepSummary ? buildSleepAnalyticsOption(summaryNights, sleepDebt) : {};
+  const hasSleepSummary = nightly.length > 0 && hasMeasuredSleepValues;
+  const option = hasSleepSummary ? buildSleepAnalyticsOption(summaryNights) : {};
   const missingState = getLatestMissingSleepState(summaryNights);
   const emptyMessage = missingState
     ? `${missingState.reason} ${missingState.nextAction}`

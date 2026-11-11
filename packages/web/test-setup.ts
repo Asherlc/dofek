@@ -14,6 +14,17 @@ beforeEach(() => {
       disconnect() {}
     },
   );
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      constructor(private callback: (entries: { contentRect: { width: number } }[]) => void) {}
+      observe(target: Element) {
+        this.callback([{ contentRect: { width: target.getBoundingClientRect().width } }]);
+      }
+      unobserve() {}
+      disconnect() {}
+    },
+  );
 });
 
 if (typeof navigator !== "undefined") {

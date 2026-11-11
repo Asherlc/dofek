@@ -269,7 +269,7 @@ describe("DecathlonProvider — rate-limit aware fetch wiring", () => {
     );
 
     expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]?.message).toContain("Decathlon API error (500)");
+    expect(result.errors[0]?.message).toContain("decathlon API service unavailable (500)");
     expect(result.recordsSynced).toBe(0);
   });
 

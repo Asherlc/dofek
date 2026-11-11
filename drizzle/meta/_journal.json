@@ -1072,6 +1072,237 @@
       "when": 1792533600000,
       "tag": "0152_activity_origin",
       "breakpoints": true
+    },
+    {
+      "idx": 153,
+      "version": "7",
+      "when": 1792535016715,
+      "tag": "0153_lowly_virginia_dare",
+      "breakpoints": true
+    },
+    {
+      "idx": 154,
+      "version": "7",
+      "when": 1792536568180,
+      "tag": "0154_organic_molten_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 155,
+      "version": "7",
+      "when": 1792544514755,
+      "tag": "0155_activity_image_reference_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 156,
+      "version": "7",
+      "when": 1792605600000,
+      "tag": "0156_garmin_official_authorization",
+      "breakpoints": true
+    },
+    {
+      "idx": 157,
+      "version": "7",
+      "when": 1792686183056,
+      "tag": "0157_sync_log_recent_history_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 158,
+      "version": "7",
+      "when": 1792746852421,
+      "tag": "0158_activity_copy_identity",
+      "breakpoints": true
+    },
+    {
+      "idx": 159,
+      "version": "7",
+      "when": 1792792800000,
+      "tag": "0159_recording_app_origin",
+      "breakpoints": true
+    },
+    {
+      "idx": 160,
+      "version": "7",
+      "when": 1792812600000,
+      "tag": "0160_scoped_activity_origin",
+      "breakpoints": true
+    },
+    {
+      "idx": 161,
+      "version": "7",
+      "when": 1792819617330,
+      "tag": "0161_bound_activity_origin_input",
+      "breakpoints": true
+    },
+    {
+      "idx": 162,
+      "version": "7",
+      "when": 1792884000000,
+      "tag": "0162_apple_watch_activity_origin",
+      "breakpoints": true
+    },
+    {
+      "idx": 163,
+      "version": "7",
+      "when": 1792886400000,
+      "tag": "0163_activity_device_observation",
+      "breakpoints": true
+    },
+    {
+      "idx": 164,
+      "version": "7",
+      "when": 1793053745114,
+      "tag": "0164_climbing_catalogue_setting",
+      "breakpoints": true
+    },
+    {
+      "idx": 165,
+      "version": "7",
+      "when": 1793054593792,
+      "tag": "0165_mountain_project_top_rope_completion",
+      "breakpoints": true
+    },
+    {
+      "idx": 166,
+      "version": "7",
+      "when": 1793055512990,
+      "tag": "0166_openbeta_tick_completion",
+      "breakpoints": true
+    },
+    {
+      "idx": 167,
+      "version": "7",
+      "when": 1793055600000,
+      "tag": "0167_climbing_image_owners",
+      "breakpoints": true
+    },
+    {
+      "idx": 168,
+      "version": "7",
+      "when": 1793077854638,
+      "tag": "0168_v_activity_primary_title",
+      "breakpoints": true
+    },
+    {
+      "idx": 169,
+      "version": "7",
+      "when": 1793107916820,
+      "tag": "0169_peloton_activity_origin",
+      "breakpoints": true
+    },
+    {
+      "idx": 170,
+      "version": "7",
+      "when": 1793109000000,
+      "tag": "0170_climbing_traits",
+      "breakpoints": true
+    },
+    {
+      "idx": 171,
+      "version": "7",
+      "when": 1793293661047,
+      "tag": "0171_nullable_climbing_route_methods",
+      "breakpoints": true
+    },
+    {
+      "idx": 172,
+      "version": "7",
+      "when": 1793464976821,
+      "tag": "0172_source_climbing_completion",
+      "breakpoints": true
+    },
+    {
+      "idx": 173,
+      "version": "7",
+      "when": 1793465090330,
+      "tag": "0173_climbing_file_imports",
+      "breakpoints": true
+    },
+    {
+      "idx": 174,
+      "version": "7",
+      "when": 1793577267980,
+      "tag": "0174_kaya_activity_origin",
+      "breakpoints": true
+    },
+    {
+      "idx": 175,
+      "version": "7",
+      "when": 1793594425786,
+      "tag": "0175_remove_configured_cycling_ftp",
+      "breakpoints": true
+    },
+    {
+      "idx": 176,
+      "version": "7",
+      "when": 1793677094982,
+      "tag": "0176_remove_heart_rate_tss_parameters",
+      "breakpoints": true
+    },
+    {
+      "idx": 177,
+      "version": "7",
+      "when": 1793716200000,
+      "tag": "0177_remove_daily_score_parameters",
+      "breakpoints": true
+    },
+    {
+      "idx": 178,
+      "version": "7",
+      "when": 1793899500000,
+      "tag": "0178_native_metric_stream_delivery",
+      "breakpoints": true
+    },
+    {
+      "idx": 179,
+      "version": "7",
+      "when": 1793899501000,
+      "tag": "0179_account_erasure_identifiers",
+      "breakpoints": true
+    },
+    {
+      "idx": 180,
+      "version": "7",
+      "when": 1794286379502,
+      "tag": "0180_climbing_log_location",
+      "breakpoints": true
+    },
+    {
+      "idx": 181,
+      "version": "7",
+      "when": 1794289910392,
+      "tag": "0181_healthspan_retirement_boundary",
+      "breakpoints": true
+    },
+    {
+      "idx": 182,
+      "version": "7",
+      "when": 1794331466000,
+      "tag": "0182_climbing_log_activity",
+      "breakpoints": true
+    },
+    {
+      "idx": 183,
+      "version": "7",
+      "when": 1794331467000,
+      "tag": "0183_activity_measured_bounds",
+      "breakpoints": true
+    },
+    {
+      "idx": 184,
+      "version": "7",
+      "when": 1794416457995,
+      "tag": "0184_activity_fit_recovery_error",
+      "breakpoints": true
+    },
+    {
+      "idx": 185,
+      "version": "7",
+      "when": 1794433425118,
+      "tag": "0185_climbing_area_groups",
+      "breakpoints": true
     }
   ]
 }

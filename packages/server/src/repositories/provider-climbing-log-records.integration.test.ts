@@ -1,19 +1,19 @@
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
-import { setupServer } from "msw/node";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { createClickHouseClientFromEnv } from "../../../../src/db/clickhouse.ts";
 import { persistClimbingLogEntries } from "../../../../src/db/climbing-log-sync.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
+import { createIntegrationMswFixture } from "../../../../src/test/early-msw-lifecycle.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 import type { BodyClickHouseStore } from "./body-clickhouse.ts";
 import { ProviderDetailRepository } from "./provider-detail-repository.ts";
 import { SyncRepository } from "./sync-repository.ts";
 
 // The current provider has no ClickHouse records; PostgreSQL holds the real log graph.
-const network = setupServer(
+const network = createIntegrationMswFixture(
   http.post("*", () =>
     HttpResponse.text("", {
       headers: { "Content-Type": "application/x-ndjson" },
@@ -37,7 +37,7 @@ describe("provider climbing log records", () => {
   let foreignId: string;
 
   beforeAll(async () => {
-    network.listen({ onUnhandledRequest: "error" });
+    network.activate({ onUnhandledFrame: "error" });
     context = await setupTestDatabase();
     await context.db.execute(sql`INSERT INTO fitness.user_profile (id, name) VALUES
       (${userId}::uuid, 'Log owner'), (${otherUserId}::uuid, 'Other log owner')`);
@@ -124,7 +124,7 @@ describe("provider climbing log records", () => {
     );
   });
   afterAll(async () => {
-    network.close();
+    network.deactivate();
     await client.close?.();
     await context?.cleanup();
   });

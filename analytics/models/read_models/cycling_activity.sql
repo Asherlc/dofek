@@ -63,7 +63,8 @@ active_cycling AS (
         assumeNotNull(summary.canonical_type) AS canonical_type,
         summary.provider_type AS provider_type,
         nullIf(summary.modality, '') AS modality,
-        summary.name AS activity_name,
+        identity.name AS activity_name,
+        identity.primary_canonical_type AS primary_canonical_type,
         assumeNotNull(summary.started_at) AS started_at,
         summary.ended_at AS ended_at,
         summary.total_distance AS distance_meters,
@@ -72,7 +73,6 @@ active_cycling AS (
         summary.avg_power AS average_power,
         coalesce(summary.power_sample_count, 0) AS power_samples,
         coalesce(summary.hr_sample_count, 0) AS heart_rate_samples,
-        summary.normalized_power AS normalized_power,
         summary.best_twenty_minute_power AS best_twenty_minute_power,
         summary.elevation_gain_m AS elevation_gain_meters,
         if(
@@ -132,7 +132,6 @@ active_rows AS (
         active_cycling.average_power AS average_power,
         active_cycling.power_samples AS power_samples,
         active_cycling.heart_rate_samples AS heart_rate_samples,
-        active_cycling.normalized_power AS normalized_power,
         active_cycling.best_twenty_minute_power AS best_twenty_minute_power,
         active_cycling.elevation_gain_meters AS elevation_gain_meters,
         active_cycling.elapsed_seconds AS elapsed_seconds,
@@ -143,7 +142,8 @@ active_rows AS (
         active_cycling.zone_two_samples AS zone_two_samples,
         toUInt8(0) AS is_deleted,
         refresh_clock.refresh_version AS refresh_version,
-        refresh_clock.refreshed_at AS refreshed_at
+        refresh_clock.refreshed_at AS refreshed_at,
+        active_cycling.primary_canonical_type AS primary_canonical_type
     FROM active_cycling
     INNER JOIN dirty_keys
         ON dirty_keys.activity_id = active_cycling.activity_id
@@ -177,7 +177,6 @@ tombstone_rows AS (
         existing_rows.average_power AS average_power,
         existing_rows.power_samples AS power_samples,
         existing_rows.heart_rate_samples AS heart_rate_samples,
-        existing_rows.normalized_power AS normalized_power,
         existing_rows.best_twenty_minute_power AS best_twenty_minute_power,
         existing_rows.elevation_gain_meters AS elevation_gain_meters,
         existing_rows.elapsed_seconds AS elapsed_seconds,
@@ -188,7 +187,8 @@ tombstone_rows AS (
         existing_rows.zone_two_samples AS zone_two_samples,
         toUInt8(1) AS is_deleted,
         refresh_clock.refresh_version AS refresh_version,
-        refresh_clock.refreshed_at AS refreshed_at
+        refresh_clock.refreshed_at AS refreshed_at,
+        existing_rows.primary_canonical_type AS primary_canonical_type
     FROM existing_rows
     INNER JOIN dirty_keys
         ON dirty_keys.activity_id = existing_rows.activity_id
@@ -218,7 +218,6 @@ SELECT
     average_power,
     power_samples,
     heart_rate_samples,
-    normalized_power,
     best_twenty_minute_power,
     elevation_gain_meters,
     elapsed_seconds,
@@ -229,7 +228,8 @@ SELECT
     zone_two_samples,
     is_deleted,
     refresh_version,
-    refreshed_at
+    refreshed_at,
+    primary_canonical_type
 FROM active_rows
 {% if is_incremental() %}
 UNION ALL
@@ -250,7 +250,6 @@ SELECT
     average_power,
     power_samples,
     heart_rate_samples,
-    normalized_power,
     best_twenty_minute_power,
     elevation_gain_meters,
     elapsed_seconds,
@@ -261,6 +260,7 @@ SELECT
     zone_two_samples,
     is_deleted,
     refresh_version,
-    refreshed_at
+    refreshed_at,
+    primary_canonical_type
 FROM tombstone_rows
 {% endif %}

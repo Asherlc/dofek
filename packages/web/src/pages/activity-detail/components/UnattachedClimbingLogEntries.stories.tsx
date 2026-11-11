@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, fn, within } from "storybook/test";
-import "leaflet/dist/leaflet.css";
+import "maplibre-gl/dist/maplibre-gl.css";
 import { climbingMapLocations, climbingMapLogs } from "./climbing-log-map-test-helpers.ts";
 import { UnattachedClimbingLogEntries } from "./UnattachedClimbingLogEntries.tsx";
 
@@ -68,4 +68,11 @@ export const AttachStates: Story = {
     );
     await expect(args.onAttach).toHaveBeenCalledWith("tick-2");
   },
+};
+
+export const StatusOnlyError: Story = {
+  args: { showEntries: false, error: new Error("Source is unavailable. Retry the sync.") },
+};
+export const StatusOnlyLoading: Story = {
+  args: { showEntries: false, suggestions: undefined, isLoading: true },
 };

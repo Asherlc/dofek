@@ -53,6 +53,8 @@ export function parseWorkout(workout: PelotonWorkout): ParsedPelotonWorkout {
     raw: {
       instructor: workout.ride?.instructor?.name,
       classTitle: workout.ride?.title,
+      classImageUrl: workout.ride?.image_url,
+      classExtraImages: workout.ride?.extra_images,
       difficultyRating: workout.ride?.difficulty_rating_avg,
       overallRating: workout.ride?.overall_rating_avg,
       rideDescription: workout.ride?.description,

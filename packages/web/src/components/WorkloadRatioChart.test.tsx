@@ -40,7 +40,6 @@ describe("WorkloadRatioChart", () => {
           {
             date: "2026-03-28",
             dailyLoad: 100,
-            strain: 12.8,
             acuteLoad: 700,
             chronicLoad: 350,
             workloadRatio: 2,

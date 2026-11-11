@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parsePolarSleep } from "./parsers.ts";
+import { parsePolarExercise, parsePolarSleep } from "./parsers.ts";
 import type { PolarSleep } from "./types.ts";
 
 const sleep: PolarSleep = {
@@ -26,4 +26,22 @@ describe("parsePolarSleep", () => {
   it("marks the provider-supplied stage bundle as available", () => {
     expect(parsePolarSleep(sleep).stagingAvailable).toBe(true);
   });
+});
+
+it("retains exercise recording hardware without using it as source identity", () => {
+  expect(
+    parsePolarExercise({
+      id: "exercise-1",
+      upload_time: "2026-10-24T10:00:00Z",
+      polar_user: "user-1",
+      device: "Polar Vantage V3",
+      device_id: "ABC12345",
+      start_time: "2026-10-24T09:00:00Z",
+      duration: "PT1H",
+      calories: 300,
+      sport: "CYCLING",
+      has_route: false,
+      detailed_sport_info: "Cycling",
+    }),
+  ).toMatchObject({ device: "Polar Vantage V3", deviceId: "ABC12345" });
 });

@@ -11,6 +11,7 @@ import {
   providerLogoType,
   providerRecordLabel,
   providerSourceLabel,
+  providerSourceLogo,
 } from "./providers.ts";
 
 describe("PROVIDER_LABELS", () => {
@@ -51,6 +52,26 @@ describe("providerLabel", () => {
 });
 
 describe("providerSourceLabel", () => {
+  it("renders Apple model identifiers through both Apple Health provider aliases", () => {
+    for (const provider of ["apple_health", "apple-health"]) {
+      expect(providerSourceLabel(provider, "Watch6,9")).toBe(
+        "Apple Watch Series 7 (GPS + Cellular, 45mm) (via Apple Health)",
+      );
+    }
+  });
+
+  it("renders Garmin enum names without guessing an edition", () => {
+    expect(providerSourceLabel("garmin", "fr955")).toBe("Garmin · Forerunner 955");
+    expect(providerRecordLabel("fit-file", "edge530")).toBe("FIT File · Edge 530");
+  });
+
+  it("includes the Garmin recording model without repeating a provider-only name", () => {
+    expect(providerSourceLabel("garmin", "Forerunner 965")).toBe("Garmin · Forerunner 965");
+    expect(providerSourceLabel("garmin", "  fēnix 8 – 47mm  ")).toBe("Garmin · fēnix 8 – 47mm");
+    expect(providerSourceLabel("garmin", "Garmin")).toBe("Garmin");
+    expect(providerSourceLabel("garmin", null)).toBe("Garmin");
+  });
+
   it("shows Apple Health upstream app names when present", () => {
     expect(providerSourceLabel("apple_health", "Strong")).toBe("Strong (via Apple Health)");
   });
@@ -93,6 +114,12 @@ describe("providerAbsent summaries", () => {
 });
 
 describe("providerAbsentExplanation", () => {
+  it("uses a readable device name in Apple Health removal explanations", () => {
+    expect(providerAbsentExplanation("apple_health", "Watch6,9")).toContain(
+      "originally from Apple Watch Series 7 (GPS + Cellular, 45mm)",
+    );
+  });
+
   it("clarifies Apple Health subsource tombstones do not delete the upstream app activity", () => {
     expect(providerAbsentExplanation("apple_health", "Strava")).toContain("Apple Health copy");
     expect(providerAbsentExplanation("apple_health", "Strava")).toContain(
@@ -116,8 +143,7 @@ describe("providerAbsentExplanation", () => {
 
 describe("BRAND_COLORS", () => {
   it("maps providers to hex color strings", () => {
-    expect(BRAND_COLORS.velohero).toBe("#FF6600");
-    expect(BRAND_COLORS.bodyspec).toBe("#00B4D8");
+    expect(BRAND_COLORS.dofek).toBe("#4A9D8E");
     expect(BRAND_COLORS.ble_heart_rate).toBe("#E0245E");
   });
 });
@@ -135,17 +161,8 @@ describe("providerLogoType", () => {
   });
 
   it("returns null for providers without logos", () => {
-    expect(providerLogoType("velohero")).toBeNull();
     expect(providerLogoType("ble_heart_rate")).toBeNull();
     expect(providerLogoType("unknown")).toBeNull();
-    expect(providerLogoType("ziva")).toBeNull();
-  });
-});
-
-describe("Ziva catalog metadata", () => {
-  it("uses the generic provider presentation without guessed branding", () => {
-    expect(BRAND_COLORS.ziva).toBeUndefined();
-    expect(providerLogoType("ziva")).toBeNull();
   });
 });
 
@@ -153,5 +170,57 @@ describe("providerLogoId", () => {
   it("resolves WHOOP Bluetooth to the shared WHOOP logo asset stem", () => {
     expect(providerLogoId("whoop_ble")).toBe("whoop");
     expect(providerLogoId("whoop")).toBe("whoop");
+  });
+});
+
+describe("providerSourceLogo", () => {
+  it.each(["apple_health", "apple-health"])(
+    "recognizes Apple Watch recordings through %s",
+    (id) => {
+      for (const source of ["Apple Watch", "Asher’s Apple\u00a0Watch", "  ASHER'S APPLE WATCH  "]) {
+        expect(providerSourceLogo(id, source)).toEqual({
+          provider: "apple-watch",
+          viaAppleHealth: true,
+        });
+      }
+    },
+  );
+
+  it.each(["Pineapple Watch", "Apple Watch Companion", "Watch", "Apple Watch Ultra"])(
+    "retains the unknown source fallback for %s",
+    (source) => {
+      expect(providerSourceLogo("apple_health", source)).toEqual({
+        provider: source,
+        viaAppleHealth: true,
+      });
+    },
+  );
+
+  it.each([
+    ["Strong", "strong-csv"],
+    ["Hang Ten", "hang-ten"],
+    ["Hang Ten Training", "hang-ten"],
+    ["  wahoo  ", "wahoo"],
+    ["New App", "New App"],
+  ])("resolves Apple Health source %s", (source, provider) => {
+    expect(providerSourceLogo("apple_health", source)).toEqual({ provider, viaAppleHealth: true });
+  });
+  it.each([null, "", "  ", "Apple Health", "HealthKit"])("keeps Apple Health for %s", (source) => {
+    expect(providerSourceLogo("apple_health", source)).toEqual({
+      provider: "apple_health",
+      viaAppleHealth: false,
+    });
+  });
+  it("supports the Apple Health alias", () => {
+    expect(providerSourceLogo("apple-health", "Strong")).toEqual({
+      provider: "strong-csv",
+      viaAppleHealth: true,
+    });
+  });
+  it("keeps direct provider identity", () => {
+    expect(providerSourceLogo("wahoo", "Strong")).toEqual({
+      provider: "wahoo",
+      viaAppleHealth: false,
+    });
   });
 });

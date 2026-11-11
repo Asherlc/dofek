@@ -45,6 +45,8 @@ export function parsePolarExercise(exercise: PolarExercise): ParsedPolarActivity
     distanceMeters: exercise.distance,
     avgHeartRate: exercise.heart_rate?.average,
     maxHeartRate: exercise.heart_rate?.maximum,
+    device: exercise.device,
+    deviceId: exercise.device_id,
   };
 }
 

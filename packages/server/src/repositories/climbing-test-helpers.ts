@@ -19,17 +19,19 @@ export function climbingLogEntryFixture(
     reportedGrades: [],
     board: null,
     wallAngle: null,
-    holdType: null,
+    holdTypes: null,
     sourceName: null,
     raw: null,
     providerAbsentAt: null,
     createdAt: "2026-10-01T00:00:00.000Z",
     climb: null,
     mapLocation: null,
+    photoLogEntryId: null,
     attempts: [],
     recordedClimbAttemptCount: 0,
     recordedPitchAttemptCount: 0,
     recordedClimbOutcome: null,
+    freeSend: null,
     pitchResults: [],
     displayGrade: null,
     sourceLinks: [],
@@ -40,6 +42,10 @@ export function climbingLogDatabaseFixture(detail: ClimbingLogEntryDetail) {
   return {
     log: climbingLogEntrySchema.strip().parse(detail),
     climb: detail.climb,
+    areaPath: detail.areaPath ?? detail.climb?.areaPath ?? [],
+    logAreaId: detail.areaPath?.at(-1)?.id ?? null,
+    areaGroupId: detail.areaGroupId ?? null,
+    freeSend: detail.freeSend,
     attempts: detail.attempts.map((attempt) => climbingAttemptSchema.strip().parse(attempt)),
   };
 }
@@ -106,6 +112,7 @@ export function climbingAttemptFixture(
 export function climbingActivityFixture(overrides: Partial<ActivityRow> = {}): ActivityRow {
   return {
     primary_activity_id: null,
+    primary_canonical_type: null,
     primary_provider_id: null,
     primary_source_name: null,
     origin_candidate_member_ids: [],
@@ -125,6 +132,7 @@ export function climbingActivityFixture(overrides: Partial<ActivityRow> = {}): A
     local_time_source: "unknown",
     subsource: null,
     source_providers: ["strava"],
+    origin_evidence: [],
     source_external_ids: null,
     avg_hr: null,
     max_hr: null,
@@ -137,6 +145,7 @@ export function climbingActivityFixture(overrides: Partial<ActivityRow> = {}): A
     elevation_gain_m: null,
     elevation_loss_m: null,
     sample_count: null,
+    fit_recovery_error: false,
     provider_absent_at: null,
     ...overrides,
   };

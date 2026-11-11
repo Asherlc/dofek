@@ -346,7 +346,7 @@ async function requestMany(app: express.Express, count: number): Promise<number[
 }
 
 function createTestApp(
-  sensorStore = undefined,
+  sensorStore: Parameters<typeof createMcpRouter>[0]["sensorStore"] = undefined,
   rateLimit: Partial<RateLimitOptions> | false = false,
 ) {
   const app = express();
@@ -383,7 +383,13 @@ const toolListResponseSchema = z.object({
   result: z.object({
     tools: z.array(
       z.object({
-        annotations: z.object({ readOnlyHint: z.boolean().optional() }).optional(),
+        annotations: z
+          .object({
+            readOnlyHint: z.boolean().optional(),
+            openWorldHint: z.boolean().optional(),
+            destructiveHint: z.boolean().optional(),
+          })
+          .optional(),
         description: z.string(),
         inputSchema: z.object({}).passthrough(),
         name: z.string(),
@@ -474,15 +480,8 @@ function makeActivityMapPreview() {
       { x: 120.5, y: 300.25 },
       { x: 640.75, y: 180.5 },
     ],
-    tiles: [
-      {
-        height: 256,
-        url: "https://tile.openstreetmap.org/13/1310/3166.png",
-        width: 256,
-        x: 0,
-        y: 0,
-      },
-    ],
+    center: [-122.34375, 37.74900069],
+    zoom: 12,
     width: 1024,
   };
 }
@@ -609,13 +608,11 @@ describe("createMcpRouter", () => {
       start_date: "2026-08-01",
       end_date: "2026-09-01",
       items: [],
-      legacy_current: null,
       next_cursor: null,
     });
     toolTestMocks.cyclingThresholdEstimate.mockResolvedValue({
       start_date: "2026-08-01",
       end_date: "2026-09-01",
-      requested_method: "best_supported",
       result: null,
       unavailable_reason: "No supported recorded or power-duration threshold evidence is available",
       weight: { value_kg: null, reason: "No weight" },
@@ -985,6 +982,7 @@ describe("createMcpRouter", () => {
         "render_health_explorer",
       ],
       "activity:read": [
+        "get_climbing_catalogue_context",
         "get_climbing_progression",
         "get_threshold_history",
         "get_strength_progression",
@@ -1214,18 +1212,6 @@ describe("createMcpRouter", () => {
       properties: {
         start_date: { format: "date", type: "string" },
         end_date: { format: "date", type: "string" },
-        method: {
-          enum: [
-            "best_supported",
-            "configured",
-            "twenty_minute_95_percent",
-            "sustained_40_to_70_minutes",
-            "critical_power_model",
-          ],
-          type: "string",
-        },
-        modalities: { type: "array" },
-        providers: { type: "array" },
       },
       required: ["start_date", "end_date"],
       type: "object",
@@ -1376,6 +1362,7 @@ describe("createMcpRouter", () => {
       "get_finger_loading_progression",
       "get_climbing_progression",
       "get_climbing_sessions",
+      "get_climbing_catalogue_context",
       "get_strength_sessions",
       "get_strength_progression",
       "get_nutrition_summary",
@@ -1384,6 +1371,13 @@ describe("createMcpRouter", () => {
       "render_health_explorer",
     ]) {
       expect(findListedTool(tools, name).annotations).toMatchObject({ readOnlyHint: true });
+    }
+    for (const name of ["search_food_entries", "get_food_entry", "get_food_entry_history"]) {
+      expect(findListedTool(tools, name).annotations).toMatchObject({
+        readOnlyHint: true,
+        openWorldHint: false,
+        destructiveHint: false,
+      });
     }
     expect(findListedTool(tools, "start_provider_sync").annotations?.readOnlyHint).not.toBe(true);
   });
@@ -1402,6 +1396,10 @@ describe("createMcpRouter", () => {
         path: ["result", "groups", "[]", "identityEvidence", "[]", "method"],
       },
       { name: "get_daily_health_summary", path: ["result", "source_providers"] },
+      {
+        name: "get_climbing_catalogue_context",
+        path: ["result", "sources", "[]", "matches", "[]", "confidence"],
+      },
       {
         name: "get_health_trends",
         path: [
@@ -1446,11 +1444,11 @@ describe("createMcpRouter", () => {
       },
       {
         name: "get_threshold_history",
-        path: ["result", "items", "[]", "quality", "status"],
+        path: ["result", "items", "[]", "evidence_duration_seconds"],
       },
       {
         name: "estimate_cycling_threshold",
-        path: ["result", "result", "model", "residuals", "[]", "residual_watts"],
+        path: ["result", "result", "evidence", "model_version"],
       },
       { name: "render_health_explorer", path: ["coverage", "by_metric"] },
       {
@@ -1651,6 +1649,7 @@ describe("createMcpRouter", () => {
 
   it("returns daily health summaries from the metrics repository", async () => {
     authorizeMcpToken();
+    const sensorStore = makeMockSensorStore();
     toolTestMocks.dailyMetricsList.mockResolvedValue([
       {
         date: "2026-05-20",
@@ -1669,7 +1668,7 @@ describe("createMcpRouter", () => {
       },
     ]);
 
-    const response = await request(createTestApp(), {
+    const response = await request(createTestApp(sensorStore), {
       authorization: "Bearer good-token",
       body: createToolCallRequest("get_daily_health_summary", {
         date: "2026-05-20",
@@ -1696,6 +1695,7 @@ describe("createMcpRouter", () => {
       expect.anything(),
       "user-id",
       "America/Los_Angeles",
+      sensorStore,
     );
     expect(toolTestMocks.dailyMetricsList).toHaveBeenCalledWith(1, "2026-05-20");
   });
@@ -2210,15 +2210,8 @@ describe("createMcpRouter", () => {
                   { x: 120.5, y: 300.25 },
                   { x: 640.75, y: 180.5 },
                 ],
-                tiles: [
-                  {
-                    height: 256,
-                    url: "https://tile.openstreetmap.org/13/1310/3166.png",
-                    width: 256,
-                    x: 0,
-                    y: 0,
-                  },
-                ],
+                center: [-122.34375, 37.74900069],
+                zoom: 12,
                 width: 1024,
               },
             },
@@ -2583,37 +2576,38 @@ describe("createMcpRouter", () => {
     });
   });
 
-  it("returns configured threshold history through MCP transport", async () => {
+  it("returns computed threshold history through MCP transport", async () => {
     authorizeMcpToken(["activity:read"]);
     toolTestMocks.cyclingThresholdListHistory.mockResolvedValue({
       start_date: "2026-05-01",
       end_date: "2026-08-01",
       items: [
         {
-          id: "00000000-0000-4000-8000-000000000102",
-          evidence_kind: "configured",
-          sport: "cycling",
-          threshold_type: "ftp",
+          activity_id: null,
           value: 250,
           unit: "watt",
-          observed_at: "2026-07-01T12:00:00.000Z",
-          effective_at: "2026-07-01T12:00:00.000Z",
-          provider: null,
-          provider_record_id: null,
-          value_kind: "configured",
-          historical_validity: "effective_dated",
-          raw_evidence_available: false,
-          quality: {
-            status: "high",
-            reason: null,
+          method: "computed_eftp",
+          event_at: "2026-07-01T12:00:00Z",
+          evidence_activity_id: "00000000-0000-4000-8000-000000000102",
+          evidence_at: "2026-06-01T12:00:00Z",
+          evidence_duration_seconds: 1200,
+          evidence_power: 260,
+          model_version: "v1",
+          uncertainty: {
+            kind: "not_quantifiable" as const,
+            watts: null,
+            reason:
+              "Reference-curve estimate; individual physiological FTP uncertainty has not been quantified.",
           },
+          unavailable_reason: null,
+          evidence_kind: "computed",
+          historical_validity: "effective_dated",
         },
       ],
-      legacy_current: null,
       next_cursor: null,
     });
 
-    const response = await request(createTestApp(), {
+    const response = await request(createTestApp(makeMockSensorStore()), {
       authorization: "Bearer good-token",
       body: createToolCallRequest("get_threshold_history", {
         start_date: "2026-05-01",
@@ -2625,7 +2619,7 @@ describe("createMcpRouter", () => {
 
     expect(structured.result.items[0]).toMatchObject({
       value: 250,
-      value_kind: "configured",
+      method: "computed_eftp",
     });
     expect(toolTestMocks.cyclingThresholdListHistory).toHaveBeenCalledWith({
       startDate: "2026-05-01",
@@ -2640,23 +2634,37 @@ describe("createMcpRouter", () => {
     toolTestMocks.cyclingThresholdEstimate.mockResolvedValue({
       start_date: "2026-05-01",
       end_date: "2026-08-01",
-      requested_method: "twenty_minute_95_percent",
       result: {
         threshold_watts: 285,
         watts_per_kg: null,
         watts_per_kg_reason: "No weight",
-        method: "twenty_minute_95_percent",
+        method: "computed_eftp",
         classification: "estimated",
-        confidence: "moderate",
         uncertainty: {
           watts: null,
           kind: "not_quantifiable",
           reason: "A single heuristic has no statistical interval",
         },
-        evidence: { threshold_history: [], efforts: [] },
+        evidence: {
+          value: 285,
+          unit: "watt",
+          method: "computed_eftp",
+          event_at: "2026-08-01T00:00:00Z",
+          evidence_activity_id: null,
+          evidence_at: null,
+          evidence_duration_seconds: null,
+          evidence_power: null,
+          model_version: "v1",
+          uncertainty: {
+            kind: "not_quantifiable" as const,
+            watts: null,
+            reason:
+              "Reference-curve estimate; individual physiological FTP uncertainty has not been quantified.",
+          },
+          unavailable_reason: null,
+        },
         relevant_activity_ids: [],
         assumptions: ["This is not measured FTP"],
-        model: null,
       },
       unavailable_reason: null,
       weight: { value_kg: null, reason: "No weight" },
@@ -2667,7 +2675,6 @@ describe("createMcpRouter", () => {
       body: createToolCallRequest("estimate_cycling_threshold", {
         start_date: "2026-05-01",
         end_date: "2026-08-01",
-        method: "twenty_minute_95_percent",
       }),
     });
     const parsedResponse = toolCallResponseSchema.parse(parseJsonRpcEvent(response.text));
@@ -2683,9 +2690,6 @@ describe("createMcpRouter", () => {
     expect(toolTestMocks.cyclingThresholdEstimate).toHaveBeenCalledWith({
       startDate: "2026-05-01",
       endDate: "2026-08-01",
-      method: "twenty_minute_95_percent",
-      providers: [],
-      modalities: [],
     });
   });
 
@@ -3014,7 +3018,7 @@ describe("createMcpRouter", () => {
       },
     ]);
 
-    const response = await request(createTestApp(), {
+    const response = await request(createTestApp(makeMockSensorStore()), {
       authorization: "Bearer good-token",
       body: createToolCallRequest("get_sleep_summary", {
         end_date: "2026-05-18",
@@ -3069,7 +3073,7 @@ describe("createMcpRouter", () => {
       },
     ]);
 
-    const response = await request(createTestApp(), {
+    const response = await request(createTestApp(makeMockSensorStore()), {
       authorization: "Bearer good-token",
       body: createToolCallRequest("get_sleep_summary", {
         end_date: "2026-05-18",
@@ -3876,6 +3880,7 @@ describe("createMcpRouter", () => {
         provider_id: "apple_health",
         raw_type: "strength",
         sample_count: 10,
+        origin_evidence: [],
         source_external_ids: [],
         source_providers: ["apple_health"],
         start_utc_offset_minutes: 0,
@@ -3988,6 +3993,7 @@ describe("createMcpRouter", () => {
       raw_type: "strength",
       resolved_from: requestedMemberId,
       sample_count: null,
+      origin_evidence: [],
       source_external_ids: [
         {
           providerId: "apple_health",

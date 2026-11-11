@@ -9,7 +9,7 @@ import type { Database } from "./index.ts";
 const notificationRowSchema = z.object({
   email: z.string().email(),
   provider_name: z.string(),
-  auth_failure_reason: providerAuthFailureReasonSchema.nullable(),
+  auth_failure_reason: providerAuthFailureReasonSchema,
 });
 
 /** Suppress repeated warnings during a connection's ongoing failure streak. */
@@ -26,7 +26,7 @@ export async function notifyProviderSyncIssue(
     const [notification] = await executeWithSchema(
       transaction,
       notificationRowSchema,
-      sql`SELECT profile.email, provider.name AS provider_name, auth_issue.auth_failure_reason
+      sql`SELECT profile.email, provider.name AS provider_name, latest.auth_failure_reason
           FROM fitness.provider_connection connection
           JOIN fitness.user_profile profile ON profile.id = connection.user_id
           JOIN fitness.provider provider ON provider.id = connection.provider_id
@@ -34,7 +34,7 @@ export async function notifyProviderSyncIssue(
             ON delivery.user_id = connection.user_id
             AND delivery.provider_id = connection.provider_id
           CROSS JOIN LATERAL (
-            SELECT status, origin
+            SELECT status, origin, auth_failure_reason
             FROM fitness.sync_log
             WHERE user_id = connection.user_id
               AND provider_id = connection.provider_id
@@ -54,27 +54,15 @@ export async function notifyProviderSyncIssue(
             ORDER BY synced_at DESC, id DESC
             LIMIT 1
           ) recovery ON true
-          LEFT JOIN LATERAL (
-            SELECT auth_failure_reason
-            FROM fitness.sync_log
-            WHERE user_id = connection.user_id
-              AND provider_id = connection.provider_id
-              AND data_type = 'sync'
-              AND status = 'error'
-              AND auth_failure_reason IS NOT NULL
-              AND synced_at >= connection.created_at
-              AND (recovery.synced_at IS NULL OR synced_at > recovery.synced_at)
-            ORDER BY synced_at DESC, id DESC
-            LIMIT 1
-          ) auth_issue ON true
           WHERE connection.user_id = ${userId}
             AND connection.provider_id = ${providerId}
             AND profile.email IS NOT NULL
             AND latest.status = 'error'
+            AND latest.auth_failure_reason IS NOT NULL
             AND delivery.sent_at IS NULL
             AND (
-              auth_issue.auth_failure_reason = 'refresh_token_revoked'
-              OR (
+              latest.auth_failure_reason = 'refresh_token_revoked'
+              OR (latest.origin = 'scheduled' AND (
                 SELECT COUNT(*) FROM (
                   SELECT id
                   FROM fitness.sync_log
@@ -82,25 +70,20 @@ export async function notifyProviderSyncIssue(
                     AND provider_id = connection.provider_id
                     AND data_type = 'sync'
                     AND status = 'error'
-                    AND (
-                      origin = 'scheduled'
-                      OR (auth_failure_reason IS NOT NULL AND latest.origin = 'scheduled')
-                    )
+                    AND auth_failure_reason IS NOT NULL
                     AND synced_at >= connection.created_at
                     AND (recovery.synced_at IS NULL OR synced_at > recovery.synced_at)
                   ORDER BY synced_at DESC, id DESC
                   LIMIT 2
                 ) failures
-              ) = 2
+              ) = 2)
             )
           FOR UPDATE OF connection`,
     );
     if (!notification) return;
 
     const providerName = notification.provider_name;
-    const explanation = notification.auth_failure_reason
-      ? `Reconnect ${providerName} in Dofek to resume syncing your health data.`
-      : `Dofek has been unable to sync ${providerName} during repeated automatic syncs. We will keep trying automatically. Open the connection in Dofek to check its status or try syncing again.`;
+    const explanation = `Reconnect ${providerName} in Dofek to resume syncing your health data.`;
     await sendPlainTextEmail({
       toEmail: notification.email,
       subject: `Your ${providerName} connection needs attention`,

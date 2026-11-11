@@ -56,3 +56,27 @@ describe("AccessibleChart", () => {
     expect(screen.getByText("74 beats per minute")).toBeDefined();
   });
 });
+
+it("opens an observed record from an actionable exact-value row", () => {
+  let selected = false;
+  render(
+    <AccessibleChart
+      title="Climbing"
+      summary="Grades"
+      rows={[
+        {
+          label: "Slab · V3",
+          value: "40%",
+          onPress: () => {
+            selected = true;
+          },
+        },
+      ]}
+    >
+      <Text>Chart</Text>
+    </AccessibleChart>,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "View Climbing data" }));
+  fireEvent.click(screen.getByRole("button", { name: "Slab · V3: 40%" }));
+  expect(selected).toBe(true);
+});

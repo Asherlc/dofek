@@ -7,7 +7,7 @@ import {
   S3Client,
 } from "@aws-sdk/client-s3";
 import type { StartedTestContainer } from "testcontainers";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   type DatabaseBackupStorage,
   sweepExpiredDatabaseBackups,
@@ -28,7 +28,7 @@ describe("R2 database backup retention against SeaweedFS S3", () => {
   let client: S3Client;
   let container: StartedTestContainer | undefined;
 
-  beforeAll(async () => {
+  beforeEach(async () => {
     container = await createSeaweedFsS3Container().start();
     client = new S3Client({
       credentials: {
@@ -41,7 +41,7 @@ describe("R2 database backup retention against SeaweedFS S3", () => {
     });
   }, 120_000);
 
-  afterAll(async () => {
+  afterEach(async () => {
     client?.destroy();
     if (container) await container.stop();
   });

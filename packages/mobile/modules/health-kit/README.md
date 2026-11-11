@@ -9,6 +9,25 @@ This module provides the iOS-native HealthKit bridge used by the mobile app to:
 - incrementally query samples and deletions with a native-persisted opaque anchor
 - enable background delivery + observer events
 
+Workout queries retain the optional recording hardware supplied by
+[`HKDevice`](https://developer.apple.com/documentation/healthkit/hkdevice)
+as `device`, separately from `sourceName` and `sourceBundle`. Available name,
+model, manufacturer, version and identifier fields pass through normal and
+observer-triggered workout uploads into the activity's raw payload. Unknown
+fields remain absent; existing activities gain newly retained facts after sync.
+The workout's [`HKSourceRevision.productType`](https://developer.apple.com/documentation/healthkit/hksourcerevision/producttype)
+is retained separately as `sourceProductType`, since `HKDevice.model` can identify
+only a device family. The server resolves known Apple Watch identifiers to
+specific generation/size names using the watch-only mapping from
+[DeviceKit 5.9.0](https://github.com/devicekit/DeviceKit/blob/5.9.0/Source/Device.generated.swift),
+with its MIT notice retained in the lookup file. Unknown identifiers remain
+verbatim; generic Watch/Apple Watch values do not establish a specific model.
+Source product identifiers take precedence over a specific device model; when
+both are unavailable, a known watch identifier in `device.hardwareVersion`
+can resolve the model from previously retained [HKDevice facts](https://developer.apple.com/documentation/healthkit/hkdevice).
+Existing uploads need a workout resync from an updated native build to acquire
+the newly retained identifier.
+
 ## Structure
 
 - `index.ts`: TypeScript API exported to React Native code.
@@ -16,14 +35,91 @@ This module provides the iOS-native HealthKit bridge used by the mobile app to:
 - `ios/HealthKitModule.swift`: Main Swift module implementation.
 - `ios/HealthKitTypes.swift`: Canonical HealthKit read/write type sets used for
   authorization and legacy-sample cleanup.
-- `ios/HealthKitQueries.swift`: Shared date/unit/query helpers.
-- `Tests/`: Swift unit tests for query/type helpers.
+- [`ios/HealthKitQueries.swift`](ios/HealthKitQueries.swift): Shared date/unit/query helpers.
+- [`ios/HealthKitWorkoutTransport.swift`](ios/HealthKitWorkoutTransport.swift):
+  Workout bridge encoding, including source, recording device and JSON-safe metadata.
+- [`Tests/`](Tests/): Swift unit tests, with workout transport coverage in
+  [`HealthKitWorkoutTransportTests.swift`](Tests/HealthKitWorkoutTransportTests.swift).
 
 ## App Integration
 
 - Provider UI/connect flow: `packages/mobile/app/providers/index.tsx`
 - Sync pipeline: `packages/mobile/lib/health-kit-sync.ts`
 - Background sync bootstrap: `packages/mobile/lib/background-health-kit-sync.ts`
+
+## Running Measurements
+
+Read authorization, observer delivery, explicit history sync and anchored updates
+include running speed, power, stride length, ground-contact time and vertical
+oscillation. Native uploads use m/s, W, m, ms and mm respectively; the server
+normalizes both native and XML uploads into the existing metric stream. Apple
+defines these [running quantity types](https://developer.apple.com/documentation/healthkit/hkquantitytypeidentifier).
+
+[`HealthKitQuantitySeriesTransport.swift`](ios/HealthKitQuantitySeriesTransport.swift)
+reads individual quantities for these five types with Apple's
+[`HKQuantitySeriesSampleQueryDescriptor`](https://developer.apple.com/documentation/healthkit/hkquantityseriessamplequerydescriptor).
+Both ordinary and condensed samples use the same batched reader. Each uploaded
+point retains its real quantity, interval with fractional seconds, source and
+parent UUID. It never substitutes a condensed parent's average for its points;
+Apple explains the underlying aggregation in
+[`HKQuantitySample.quantity`](https://developer.apple.com/documentation/healthkit/hkquantitysample/quantity)
+and [condensed workout samples](https://developer.apple.com/documentation/healthkit/accessing-condensed-workout-samples).
+
+The existing account-erasure cutoff filters parents before expansion. Anchored
+queries finish expansion before registering a pending anchor, then JavaScript
+uploads additions and applies parent-UUID deletions before acknowledging success.
+An extraction or upload failure preserves the committed cursor for retry, using
+HealthKit's [anchored-query additions/deletions](https://developer.apple.com/documentation/healthkit/hkanchoredobjectquery).
+
+Retrieving previously omitted running observations requires an updated native
+app release, permission for the added types and an explicit sync covering the
+desired history. An OTA JavaScript update alone cannot install this Swift change
+([Expo native compatibility](https://docs.expo.dev/eas-update/runtime-versions/)).
+HealthKit requires authorization per type and can return limited or empty data
+without revealing a denied read permission, so a successful sync does not prove
+that the watch recorded these measurements
+([Apple authorization](https://developer.apple.com/documentation/healthkit/authorizing-access-to-health-data)).
+
+## Associated Running Step Intervals
+
+`queryRunningStepSamples(startDate, endDate)` returns `{ workouts, samples }`.
+Each `RunningStepSample` retains a real count, exact start/end interval, parent
+UUID, source name/bundle, and `workoutUuids`. Collection uses only steps explicitly
+associated with running workouts through Apple's
+[workout association predicate](https://developer.apple.com/documentation/healthkit/hkquery/predicateforobjects(from:)-5irg9),
+then enumerates their original quantities with the
+[quantity series descriptor](https://developer.apple.com/documentation/healthkit/hkquantityseriessamplequerydescriptor).
+Associations are merged per child, including adjacent running contexts outside
+the initial range; discovering these contexts does not expand the selected raw
+parent set. All-day deduplicated statistics retain their existing daily upload
+route, since associated running steps cover a different subset of observations.
+
+`queryRunningStepChanges(initialStartDate)` also returns `deletedUUIDs` and a
+pending `queryId` and required `hasMore`. Discovery pages contain at most 500
+added/deleted parents. The client acknowledges each successful page and continues
+while `hasMore` is true, including pages with no associated running observations.
+A later failure preserves the last committed page cursor. Added parents discover
+associated historical running workouts;
+range snapshots on full, workout and step observer sync recover associations
+that arrive after the parent. The StepCount anchor commits only after snapshot,
+addition uploads and parent deletions succeed, following Apple's
+[anchored-query lifecycle](https://developer.apple.com/documentation/healthkit/hkanchoredobjectquery).
+The device erasure cutoff applies to contexts and raw observations.
+
+The dedicated `healthKitSync.pushRunningStepSamples` mutation accepts the original
+workout contexts additively and preserves manual activity deletions. It publishes
+raw `step_count` events with parent `hk:<UUID>` identity and metadata
+`interval_end`, `source_bundle`, `workout_uuids`; it computes no cadence or workout
+step total. Parent deletions tombstone only the raw step channel. Context upserts
+and user ownership follow the existing
+[provider activity upsert](../../../../src/db/provider-activity-sync.ts) and
+[guarded presence restoration](../../../../src/db/provider-activity-absence.ts).
+
+Previously omitted observations still require an updated native release,
+HealthKit authorization and an explicit history sync. An OTA update cannot add
+native methods ([Expo runtime versions](https://docs.expo.dev/eas-update/runtime-versions/)),
+and empty HealthKit results do not establish whether read access was denied
+([Apple authorization](https://developer.apple.com/documentation/healthkit/authorizing-access-to-health-data)).
 
 ## Background Observer Completion
 
@@ -86,8 +182,10 @@ From repo root:
 - `pnpm test:mobile -- packages/mobile/lib/health-kit-sync.test.ts`
 - `pnpm test:mobile -- packages/mobile/lib/background-health-kit-sync.test.ts`
 - `pnpm tsx scripts/check-health-kit-coverage.ts`: runs native Swift tests and
-  enforces 90% line and function coverage for `HealthKitQueries.swift` and
-  `HealthKitTypes.swift`. The runner discovers the exported coverage report with
+  enforces 90% line and function coverage for `HealthKitQueries.swift`,
+  `HealthKitTypes.swift` and `HealthKitWorkoutTransport.swift`
+  ([coverage runner](../../../../scripts/check-health-kit-coverage.ts)).
+  The runner discovers the exported coverage report with
   SwiftPM's [`swift test --show-codecov-path`](https://github.com/swiftlang/swift-package-manager/blob/main/Sources/PackageManagerDocs/Documentation.docc/SwiftTest.md),
   so validation and CI artifacts follow the active toolchain's build layout.
 

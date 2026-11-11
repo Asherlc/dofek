@@ -7,8 +7,9 @@ describe("ActivityCard", () => {
   const baseProps = {
     name: "Morning Run",
     activityType: "running",
+    primaryActivityType: null,
     startedAt: "2026-03-18T07:00:00Z",
-    endedAt: "2026-03-18T07:45:00Z",
+    durationMin: 45,
     avgHr: null,
     maxHr: null,
     avgPower: null,
@@ -22,9 +23,42 @@ describe("ActivityCard", () => {
     expect(screen.getByText("Morning Run")).toBeTruthy();
   });
 
-  it("falls back to activityType when name is empty", () => {
-    render(<ActivityCard {...baseProps} name="" />);
+  it("shows an unknown duration without claiming zero minutes", () => {
+    render(<ActivityCard {...baseProps} durationMin={null} />);
+
+    expect(screen.getByText(/Duration unavailable/)).toBeTruthy();
+    expect(screen.queryByText("0m")).toBeNull();
+  });
+
+  it("uses the primary activity type when its name is missing", () => {
+    render(
+      <ActivityCard
+        {...baseProps}
+        name={null}
+        activityType="walking"
+        primaryActivityType="running"
+      />,
+    );
+
+    expect(screen.getByText("Running")).toBeDefined();
+    expect(screen.getByLabelText("Running activity")).toBeDefined();
+  });
+
+  it("falls back to activityType when name is missing", () => {
+    render(<ActivityCard {...baseProps} name={null} />);
     expect(screen.getByText("Running")).toBeTruthy();
+  });
+
+  it("uses the primary climbing source for the icon over a cardio representative", () => {
+    render(
+      <ActivityCard
+        {...baseProps}
+        name="Kaya climbing"
+        activityType="cardio"
+        primaryActivityType="climbing"
+      />,
+    );
+    expect(screen.getByLabelText("Climbing activity").querySelector("SvgXml")).toBeTruthy();
   });
 
   it("shows avg HR when provided", () => {
@@ -52,6 +86,36 @@ describe("ActivityCard", () => {
     expect(screen.getByText("5.25")).toBeTruthy();
     expect(screen.getByText("Distance")).toBeTruthy();
     expect(screen.getByText("km")).toBeTruthy();
+  });
+
+  it("omits unavailable distance for a climbing primary activity", () => {
+    render(
+      <ActivityCard
+        {...baseProps}
+        activityType="cardio"
+        primaryActivityType="climbing"
+        distanceKm={null}
+        distanceState={{ status: "missing", reason: "Distance not recorded" }}
+      />,
+    );
+
+    expect(screen.queryByText("Distance unavailable")).toBeNull();
+    expect(screen.queryByText("Distance not recorded")).toBeNull();
+  });
+
+  it("keeps a measured distance for a climbing primary activity", () => {
+    render(
+      <ActivityCard
+        {...baseProps}
+        activityType="cardio"
+        primaryActivityType="climbing"
+        distanceKm={5.25}
+        distanceState={{ status: "available" }}
+      />,
+    );
+
+    expect(screen.getByText("5.25")).toBeTruthy();
+    expect(screen.getByText("Distance")).toBeTruthy();
   });
 
   it("shows distance in miles when unit system is imperial", () => {
@@ -88,45 +152,26 @@ describe("ActivityCard", () => {
     expect(screen.getByLabelText("Distance processing: Distance is still processing")).toBeTruthy();
   });
 
-  it("shows specific icons for common activity types", () => {
-    const { rerender } = render(<ActivityCard {...baseProps} activityType="running" />);
-    expect(screen.getByText("\u{1F3C3}")).toBeTruthy();
-
-    rerender(<ActivityCard {...baseProps} activityType="cycling" />);
-    expect(screen.getByText("\u{1F6B4}")).toBeTruthy();
-
-    rerender(<ActivityCard {...baseProps} activityType="hiit" />);
-    expect(screen.getByText("\u{1F4A5}")).toBeTruthy();
-
-    rerender(<ActivityCard {...baseProps} activityType="rowing" />);
-    expect(screen.getByText("\u{1F6A3}")).toBeTruthy();
-  });
-
-  it("shows default icon for unknown activity types", () => {
-    render(<ActivityCard {...baseProps} activityType="archery" />);
-    expect(screen.getByText("\u{26A1}")).toBeTruthy();
-  });
-
-  it("shows water icon for paddle sports", () => {
-    render(<ActivityCard {...baseProps} activityType="paddleboarding" />);
-    expect(screen.getByText("\u{1F3C4}")).toBeTruthy();
+  it.each([
+    ["running", "Running"],
+    ["cycling", "Cycling"],
+    ["hangboard", "Hangboarding"],
+    ["archery", "Archery"],
+    ["paddleboarding", "Paddleboarding"],
+  ])("renders the shared activity icon for %s", (activityType, label) => {
+    render(<ActivityCard {...baseProps} activityType={activityType} />);
+    expect(screen.getByLabelText(`${label} activity`).querySelector("SvgXml")).toBeTruthy();
   });
 
   it("parses postgres-style space-separated timestamps", () => {
-    render(
-      <ActivityCard
-        {...baseProps}
-        startedAt="2026-03-18 07:00:00+00"
-        endedAt="2026-03-18 07:45:00+00"
-      />,
-    );
+    render(<ActivityCard {...baseProps} startedAt="2026-03-18 07:00:00+00" />);
     // Should NOT show placeholders — timestamps are valid
     expect(screen.queryByText("-- · --")).toBeNull();
   });
 
   it("falls back to placeholders for invalid timestamps", () => {
-    render(<ActivityCard {...baseProps} startedAt="not-a-date" endedAt="still-not-a-date" />);
-    expect(screen.getByText("-- · --")).toBeTruthy();
+    render(<ActivityCard {...baseProps} startedAt="not-a-date" />);
+    expect(screen.getByText(/-- · 45m/)).toBeTruthy();
     expect(screen.queryByText("Invalid Date")).toBeNull();
     expect(screen.queryByText("NaNh")).toBeNull();
   });

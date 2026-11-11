@@ -6,7 +6,7 @@ only after the `CI` workflow succeeds for the current `main` commit.
 
 ## npm architecture
 
-pnpm remains the workspace and publishing package manager. Lerna 9 is used only
+pnpm remains the workspace and publishing package manager. Lerna is used only
 for the part pnpm does not provide: detecting changed release packages,
 independently patch-versioning them, updating workspace dependency versions,
 and updating the package manifests. The version workflow commits those
@@ -58,6 +58,16 @@ registry, and the tagging step is a no-op for versions already tagged. It does
 not rewrite an existing tag target, so verify release artifacts, npm versions,
 and release-tag targets after publishing.
 
+The private Garmin client, `@dofek/garmin-connect`, is retired from this
+repository and its automated release paths. It is excluded from the current
+[workspace](../pnpm-workspace.yaml), [release package list](../lerna.json), and
+[public-package test command](../package.json). Its
+[historical package manifest](https://github.com/Asherlc/dofek/blob/585bfa7d2e9417bc77e9cef751a2ef5901fdbd7d/packages/garmin-connect/package.json)
+is retained in Git history. Repository retirement does not unpublish existing
+npm versions; registry removal is a separate npm operation
+([npm unpublish](https://docs.npmjs.com/cli/v11/commands/npm-unpublish)). See the
+[Garmin guide](garmin.md) for the official integration.
+
 ### Adding another npm package
 
 A public package must:
@@ -76,11 +86,49 @@ A public package must:
 - be listed in `lerna.json` and the `release:npm:test` package paths; and
 - pass a clean tarball installation before its first publication.
 
+Include the package in the Docker-free mutation test collection and both Stryker
+source lists as well. Verify related-test discovery with
+`pnpm exec vitest related --config vitest.config.mutation.ts --run <source>` before
+opening the PR; mutation runs cannot use database-backed integration suites.
+See the [test tiers](testing.md#integration-dependencies) and
+[Stryker Vitest configuration](https://stryker-mutator.io/docs/stryker-js/vitest-runner/).
+
 The first version must be published by an npm owner with 2FA because npm cannot
 attach a trusted publisher to a package that does not yet exist. After that
 one-time bootstrap, configure `Asherlc/dofek` and `release-npm.yml` as the
 package's GitHub Actions trusted publisher. Subsequent releases require no
 registry credential or maintainer action.
+
+If an authenticated `npm publish` on macOS requires a one-time password but
+does not offer interactive authentication through `rtk`, run it under `script`
+to preserve a terminal for npm:
+
+```sh
+rtk proxy script -q /dev/null npm publish /path/to/package.tgz --access public
+```
+
+First confirm `npm whoami` succeeds; use `npm login --auth-type=web` if it returns
+401. npm's [interactive authentication implementation](https://github.com/npm/cli/blob/v11.19.0/lib/utils/auth.js)
+requires both stdin and stdout to be terminals before starting its OTP flow.
+Use an already verified pnpm tarball so compiled export overrides are retained.
+After upload, wait for registry processing and verify with `npm view` and a fresh
+installation before declaring the package available; see [npm view](https://docs.npmjs.com/cli/v11/commands/npm-view).
+
+### Climbing catalogue extraction
+
+[`@dofek/climbing-catalogue`](../packages/climbing-catalogue/README.md) starts
+at 0.1.0 with standalone search, matching, and provider adapters. The corresponding
+`@dofek/training` 0.2.0 release removes generic catalogue exports; follow its
+[import migration guide](../packages/training/README.md#climbing-catalogue-evidence).
+The explicit training version records this incompatible pre-1.0 change rather
+than letting the automatic patch workflow version it; the existing pending-version
+guard leaves unpublished manifest versions for the release workflow. See the
+[version workflow](../.github/workflows/version-npm.yml) and
+[SemVer's initial-development rule](https://semver.org/spec/v2.0.0.html#spec-item-4).
+
+The [0.1.0 registry release](https://www.npmjs.com/package/@dofek/climbing-catalogue/v/0.1.0)
+was bootstrapped on 2026-11-02, verified through a clean registry installation,
+and configured to trust `Asherlc/dofek` / `release-npm.yml` for subsequent releases.
 
 ## SwiftPM architecture
 
@@ -129,3 +177,20 @@ GitHub App on that repository (or its owner), add an exporter that follows the
 `.github/swift-packages.json`. Do not create another release workflow. The App
 installation must be able to push commits and tags and create releases in the
 distribution repository.
+
+### Cycling power release
+
+`@dofek/cycling-power` participates in the shared version/build/test/publish path
+through [lerna.json](../lerna.json), the root release test command, and the public
+package manifest. Version 0.1.0 was bootstrapped manually on 2026-11-02. Its npm
+trusted publisher authorizes `Asherlc/dofek`, workflow `release-npm.yml`, with direct
+publishing enabled; later source fixes are released through the normal patch
+version PR. The trust was created with `npm trust github @dofek/cycling-power
+--file release-npm.yml --repo Asherlc/dofek --allow-publish --yes`. npm requires
+separate two-factor authentication for this configuration operation
+([npm trust](https://docs.npmjs.com/cli/v11/commands/npm-trust/),
+[trusted publishers](https://docs.npmjs.com/trusted-publishers/)).
+
+A clean install of the published initial package verified all five public module
+exports and its registry checksum. The shared release build and 1,512 release
+tests also passed before PR review fixes; subsequent CI verifies the final tree.

@@ -3,8 +3,8 @@ import type { QueryClient } from "@tanstack/react-query";
 const SYNCED_HEALTH_DATA_QUERY_PATHS = new Set([
   "mobileDashboard.dashboardV2",
   "mobileDashboard.recovery",
-  "mobileDashboard.training",
-  "calendar.weekList",
+  "mobileDashboard.trainingV2",
+  "calendar.weekListV2",
   "calendar.activityOverview",
   "activity.list",
   "food.byDateV2",

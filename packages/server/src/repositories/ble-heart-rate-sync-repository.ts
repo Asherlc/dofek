@@ -2,10 +2,8 @@ import { BLE_HEART_RATE_PROVIDER_ID } from "@dofek/providers/push-providers";
 import type { Database } from "dofek/db";
 import { HEART_RATE, RR_INTERVAL_MS } from "../../../../src/db/sensor-channels.ts";
 import type { MetricStreamRowInput } from "../../../../src/metric-stream/events.ts";
-import {
-  getDefaultMetricStreamEventPublisher,
-  type MetricStreamEventPublisher,
-} from "../../../../src/metric-stream/redpanda-producer.ts";
+import type { MetricStreamEventPublisher } from "../../../../src/metric-stream/publisher.ts";
+import { getDefaultMetricStreamEventPublisher } from "../../../../src/metric-stream/redpanda-producer.ts";
 import { writeMetricStreamRows } from "../../../../src/metric-stream/write-metric-stream.ts";
 import { canonicalizeTimestampForExternalId } from "../lib/canonical-timestamp.ts";
 import { ensurePushProvider } from "./push-provider-repository.ts";
@@ -21,6 +19,7 @@ const INSERT_BATCH_SIZE = 2000;
  * heart-rate variability. A single notification may include several.
  */
 export interface BleHeartRateSample {
+  deviceName?: string;
   timestamp: string;
   heartRateBpm: number;
   rrIntervalsMs: number[];
@@ -77,6 +76,9 @@ export class BleHeartRateSyncRepository {
             externalId: `${BLE_HEART_RATE_PROVIDER_ID}:${deviceId}:${HEART_RATE}:${canonicalRecordedAt}`,
             deviceId,
             sourceType: "ble",
+            ...(sample.deviceName !== undefined
+              ? { metadata: { device_name: sample.deviceName } }
+              : {}),
             channel: HEART_RATE,
             scalar: sample.heartRateBpm,
           });
@@ -93,6 +95,9 @@ export class BleHeartRateSyncRepository {
             externalId: `${BLE_HEART_RATE_PROVIDER_ID}:${deviceId}:${RR_INTERVAL_MS}:${canonicalRecordedAt}:${index}`,
             deviceId,
             sourceType: "ble",
+            ...(sample.deviceName !== undefined
+              ? { metadata: { device_name: sample.deviceName } }
+              : {}),
             channel: RR_INTERVAL_MS,
             scalar: rrIntervalMs,
           });

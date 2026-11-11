@@ -24,6 +24,7 @@ import { trainFromDataset, trainPredictor } from "../ml/predictor.ts";
 import { type ActivitySensorStore, activityRepositoryFor } from "./activity-repository.ts";
 import { fetchBodyCompRows } from "./body-clickhouse.ts";
 import { fetchSleepNights } from "./clickhouse-sleep-repository.ts";
+import { fetchDailyMetricsWithSpo2Cte } from "./daily-metrics-spo2-query.ts";
 import { fetchRestingHeartRateValuesCte, localDateString } from "./resting-heart-rate-query.ts";
 
 // ---------------------------------------------------------------------------
@@ -360,13 +361,20 @@ export class PredictionsRepository {
       endDate,
       days,
     });
+    const dailyMetricsCte = await fetchDailyMetricsWithSpo2Cte({
+      sensorStore: this.#sensorStore,
+      userId: this.#userId,
+      timezone: this.#timezone,
+      endDate,
+      days,
+    });
     return executeWithSchema(
       this.#db,
       dailyRowSchema,
-      sql`WITH ${restingHeartRateCte},
+      sql`WITH ${dailyMetricsCte}, ${restingHeartRateCte},
           metric_dates AS (
 		            SELECT dm.date
-		            FROM fitness.v_daily_metrics dm
+		            FROM daily_metrics dm
 		            WHERE dm.user_id = ${this.#userId}
 		              AND dm.date > ${endDate}::date - ${days}::int
 		              AND dm.date <= ${endDate}::date
@@ -382,7 +390,7 @@ export class PredictionsRepository {
             dm.steps,
             dm.skin_temp_c
           FROM metric_dates dates
-          LEFT JOIN fitness.v_daily_metrics dm
+          LEFT JOIN daily_metrics dm
             ON dm.user_id = ${this.#userId}
            AND dm.date = dates.date
 	          LEFT JOIN resting_heart_rate drhr

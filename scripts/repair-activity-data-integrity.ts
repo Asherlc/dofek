@@ -2,6 +2,14 @@ import { parseArgs } from "node:util";
 import * as Sentry from "@sentry/node";
 import { z } from "zod";
 import {
+  ANALYTICS_PUBLICATION_RESOURCE,
+  withAnalyticsQueryOwner,
+} from "../src/analytics/analytics-query-owner.ts";
+import {
+  type ActivityIntegrityDbtBuildInput,
+  runActivityIntegrityDbtBuild,
+} from "../src/db/activity-data-integrity-dbt.ts";
+import {
   ACTIVITY_INTEGRITY_MAX_ACCEPTANCE_WINDOW_MS,
   type ActivityIntegrityRepairOptions,
   repairActivityDataIntegrity,
@@ -206,12 +214,23 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
 
     const clickHouse = createClickHouseClientFromEnv();
     try {
+      const rebuildReadModels = (input: ActivityIntegrityDbtBuildInput) =>
+        withAnalyticsQueryOwner(
+          db,
+          clickHouse,
+          { resourceId: ANALYTICS_PUBLICATION_RESOURCE, intentId: "activity-integrity-build" },
+          (owner) => runActivityIntegrityDbtBuild(input, owner.client, owner),
+        );
       if (command.kind === "rollback") {
-        const result = await rollbackActivityDataIntegrity(db, clickHouse, command.artifactPath);
+        const result = await rollbackActivityDataIntegrity(db, clickHouse, command.artifactPath, {
+          rebuildReadModels,
+        });
         console.log(JSON.stringify({ kind: "rollback", ...result }));
         return;
       }
-      const result = await repairActivityDataIntegrity(db, clickHouse, command.options);
+      const result = await repairActivityDataIntegrity(db, clickHouse, command.options, {
+        rebuildReadModels,
+      });
       console.log(
         JSON.stringify({
           kind: command.options.execute ? "execute" : "dry-run",

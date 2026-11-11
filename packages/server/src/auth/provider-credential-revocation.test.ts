@@ -21,6 +21,7 @@ const tokens = {
   expiresAt: new Date("2027-01-01"),
   scopes: "read",
 };
+const onTokensRefreshed = vi.fn();
 
 describe("revokeProviderCredentials", () => {
   beforeEach(() => {
@@ -36,21 +37,25 @@ describe("revokeProviderCredentials", () => {
       providerId: "wahoo",
       revokeExistingTokens,
       tokens,
+      onTokensRefreshed,
     });
 
-    expect(revokeExistingTokens).toHaveBeenCalledWith(tokens);
+    expect(revokeExistingTokens).toHaveBeenCalledWith(tokens, onTokensRefreshed);
     expect(mocks.revokeToken).not.toHaveBeenCalled();
   });
 
-  it("falls back to standard OAuth revocation after a custom revoker fails", async () => {
+  it("propagates an authoritative custom failure without forgetting its credentials", async () => {
     const customError = new Error("custom revocation unavailable");
 
-    await revokeProviderCredentials({
-      oauthConfig: { revokeUrl: "https://provider.example/revoke" },
-      providerId: "wahoo",
-      revokeExistingTokens: vi.fn().mockRejectedValue(customError),
-      tokens,
-    });
+    await expect(
+      revokeProviderCredentials({
+        oauthConfig: { revokeUrl: "https://provider.example/revoke" },
+        providerId: "wahoo",
+        revokeExistingTokens: vi.fn().mockRejectedValue(customError),
+        tokens,
+        onTokensRefreshed,
+      }),
+    ).rejects.toThrow(customError);
 
     expect(mocks.captureException).toHaveBeenCalledWith(
       customError,
@@ -58,16 +63,7 @@ describe("revokeProviderCredentials", () => {
         tags: expect.objectContaining({ providerId: "wahoo" }),
       }),
     );
-    expect(mocks.revokeToken).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({ revokeUrl: "https://provider.example/revoke" }),
-      "access-token",
-    );
-    expect(mocks.revokeToken).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({ revokeUrl: "https://provider.example/revoke" }),
-      "refresh-token",
-    );
+    expect(mocks.revokeToken).not.toHaveBeenCalled();
   });
 
   it("fails explicitly when the provider has no revocation policy", async () => {
@@ -76,6 +72,7 @@ describe("revokeProviderCredentials", () => {
         oauthConfig: {},
         providerId: "provider-without-revocation",
         tokens,
+        onTokensRefreshed,
       }),
     ).rejects.toThrow("Provider provider-without-revocation has no credential revocation policy");
   });
@@ -89,6 +86,7 @@ describe("revokeProviderCredentials", () => {
         oauthConfig: { revokeUrl: "https://provider.example/revoke" },
         providerId: "strava",
         tokens,
+        onTokensRefreshed,
       }),
     ).rejects.toThrow("Failed to revoke strava credentials");
 

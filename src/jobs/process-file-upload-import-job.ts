@@ -20,11 +20,15 @@ import {
 } from "../file-upload-metrics.ts";
 import type { ImportUploadStorage } from "../file-upload-storage.ts";
 import { accountErasureAllowsQueuedUserWork } from "./account-erasure-work-guard.ts";
-import { isImportValidationError } from "./import-validation-error.ts";
+import {
+  createClimbingImportValidationError,
+  isImportValidationError,
+} from "./import-validation-error.ts";
 import type { LocalImportJobData } from "./local-import-job-data.ts";
+import { OriginalFitRetentionError } from "./original-fit-retention-error.ts";
 import { processImportJob } from "./process-import-job.ts";
 import type { ImportJobData } from "./queues.ts";
-import { validateImportArchive } from "./validate-import-archive.ts";
+import { ArchiveValidationError, validateImportArchive } from "./validate-import-archive.ts";
 
 interface DurableImportJob {
   id: string;
@@ -134,6 +138,9 @@ export async function processFileUploadImportJob(
   storage: ImportUploadStorage,
 ): Promise<void> {
   const upload = await claimFileUploadForProcessing(database, job.data.uploadId, job.id);
+  if (upload.userId !== job.data.userId || upload.importType !== job.data.importType) {
+    throw new UnrecoverableError("Upload owner or import type does not match its queued job");
+  }
   if (upload.state === "completed") return;
   if (
     !(await accountErasureAllowsQueuedUserWork(
@@ -187,8 +194,12 @@ export async function processFileUploadImportJob(
       return;
     }
     await storage.deleteObject(upload.objectKey);
-  } catch (error) {
-    if (error instanceof WaitingChildrenError) {
+  } catch (caughtError) {
+    const error =
+      upload.importType === "crimpd" && caughtError instanceof ArchiveValidationError
+        ? createClimbingImportValidationError(caughtError.message)
+        : caughtError;
+    if (error instanceof WaitingChildrenError || error instanceof OriginalFitRetentionError) {
       preserveWorkDirectory = true;
       throw error;
     }

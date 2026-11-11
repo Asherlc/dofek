@@ -80,13 +80,17 @@ export function registerRecoveryTrainingSeriesTool(
         throw new Error("get_recovery_training_series requires the ClickHouse analytics store");
       }
       const sensorStore = context.sensorStore;
-      const dailyMetrics = new DailyMetricsRepository(context.db, context.userId, context.timezone);
       const repository = new RecoveryTrainingSeriesRepository(
         {
           ...(requestedStreams.includes("health") && sensorStore
             ? {
                 dailyMetrics: new RecoveryHealthMetricsRepository(
-                  dailyMetrics,
+                  new DailyMetricsRepository(
+                    context.db,
+                    context.userId,
+                    context.timezone,
+                    sensorStore,
+                  ),
                   sensorStore,
                   context.userId,
                   context.timezone,

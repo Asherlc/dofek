@@ -1,5 +1,6 @@
 import type { LegacyActivityType } from "@dofek/training/activity-types";
 import { z } from "zod";
+import { RUNNING_QUANTITY_TYPES } from "../../../../src/providers/apple-health/running-quantities.ts";
 import type { protectedProcedure } from "../trpc.ts";
 
 export const PROVIDER_ID = "apple_health";
@@ -42,6 +43,21 @@ export const healthKitSampleSchema = z.object({
   metadata: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional(),
 });
 
+export const runningStepSampleSchema = healthKitSampleSchema
+  .extend({
+    type: z.literal("HKQuantityTypeIdentifierStepCount"),
+    uuid: z.uuid(),
+    value: z.number().finite().nonnegative(),
+    unit: z.literal("count"),
+    startDate: z.iso.datetime({ offset: true }),
+    endDate: z.iso.datetime({ offset: true }),
+    workoutUuids: z.array(z.uuid()).min(1),
+  })
+  .refine((sample) => Date.parse(sample.endDate) > Date.parse(sample.startDate), {
+    message: "Running step intervals must end after they start. Resync Apple Health steps.",
+  });
+export type RunningStepSample = z.infer<typeof runningStepSampleSchema>;
+
 export const workoutActivitySchema = z.object({
   uuid: z.string(),
   activityType: z.number(),
@@ -51,6 +67,7 @@ export const workoutActivitySchema = z.object({
 });
 
 export const workoutSampleSchema = z.object({
+  sourceProductType: z.string().optional(),
   uuid: z.string(),
   workoutType: z.string(),
   startDate: z.string(),
@@ -61,6 +78,18 @@ export const workoutSampleSchema = z.object({
   sourceBundle: z.string(),
   metadata: z.record(z.string(), z.union([z.string(), z.number()])).optional(),
   workoutActivities: z.array(workoutActivitySchema).optional(),
+  device: z
+    .object({
+      name: z.string().optional(),
+      model: z.string().optional(),
+      manufacturer: z.string().optional(),
+      hardwareVersion: z.string().optional(),
+      firmwareVersion: z.string().optional(),
+      softwareVersion: z.string().optional(),
+      localIdentifier: z.string().optional(),
+      udiDeviceIdentifier: z.string().optional(),
+    })
+    .optional(),
 });
 
 export const routeLocationSchema = z.object({
@@ -145,6 +174,12 @@ export const pointInTimeDailyMetricTypes: Record<string, { column: string }> = {
 
 /** Metric stream types and their column names */
 export const metricStreamTypes: Record<string, { column: string }> = {
+  ...Object.fromEntries(
+    Object.entries(RUNNING_QUANTITY_TYPES).map(([type, mapping]) => [
+      type,
+      { column: mapping.channel },
+    ]),
+  ),
   HKQuantityTypeIdentifierHeartRate: { column: "heart_rate" },
   HKQuantityTypeIdentifierOxygenSaturation: { column: "spo2" },
   HKQuantityTypeIdentifierRespiratoryRate: { column: "respiratory_rate" },

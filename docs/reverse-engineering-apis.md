@@ -9,7 +9,7 @@ Use this approach when a platform:
 - Has a partner-only API with no realistic path to access
 - Has a deprecated or limited public API that doesn't expose the data you need
 
-We've successfully reverse engineered: **WHOOP**, **Eight Sleep**, **Zwift**, **TrainerRoad**, **VeloHero**, and **Garmin Connect** (internal API).
+We've successfully reverse engineered: **WHOOP**, **Eight Sleep**, **Zwift**, **TrainerRoad**, and **Garmin Connect** (internal API).
 
 ## Discovery methods
 
@@ -145,7 +145,6 @@ Often someone has already done the hard work. Search GitHub for unofficial clien
 
 **Examples we leveraged:**
 - **Zwift:** [rally25rs/zwift-api-wrapper](https://github.com/rally25rs/zwift-api-wrapper) documented the Keycloak auth and API endpoints
-- **VeloHero:** tapiriik's [velohero.py](https://github.com/cpfair/tapiriik/blob/master/tapiriik/services/VeloHero/velohero.py) documented the SSO flow
 
 ### 4. Proxy interception (mobile traffic)
 
@@ -254,23 +253,13 @@ const cookies = loginResponse.headers.getSetCookie();
 const authCookie = cookies.find(c => c.startsWith("SharedTrainerRoadAuth="));
 ```
 
-### Pattern 5: Session token via SSO endpoint (VeloHero)
+### Pattern 5: Multi-step SSO with OAuth1→OAuth2 exchange (Garmin Connect)
 
-Simple form POST that returns a session token.
-
-```typescript
-const response = await fetch(`${BASE_URL}/sso`, {
-  method: "POST",
-  headers: { "Content-Type": "application/x-www-form-urlencoded" },
-  body: new URLSearchParams({ user: email, pass: password, view: "json" }),
-});
-const data = await response.json();
-// Use data.session as cookie: VeloHero_session=<token>
-```
-
-### Pattern 6: Multi-step SSO with OAuth1→OAuth2 exchange (Garmin Connect)
-
-The most complex auth flow we've encountered. Garmin's SSO involves CSRF tokens, session cookies, an OAuth1 ticket exchange, and a final OAuth2 token swap.
+Historical private-API recipe from the
+[retired unofficial client at `585bfa7`](https://github.com/Asherlc/dofek/blob/585bfa7d2e9417bc77e9cef751a2ef5901fdbd7d/packages/garmin-connect/src/client.ts).
+That client used CSRF tokens, session cookies, an OAuth1 ticket exchange, and a
+final OAuth2 token swap. Its source and release wiring have been removed. Dofek
+uses the [official OAuth and push integration](garmin.md).
 
 ```typescript
 // Step 1: GET /sso/embed — initialize session cookies
@@ -306,7 +295,13 @@ const oauth2Response = await fetch(`${OAUTH_BASE}/exchange/user/2.0`, {
 // Returns JSON: access_token, refresh_token, expires_in
 ```
 
-**Key details:** Cookie jar must persist across all 5 steps. User-Agent must be `com.garmin.android.apps.connectmobile`. MFA is supported (SMS + TOTP).
+**Retired client details:** Cookies persisted across the SSO steps and the client
+used `com.garmin.android.apps.connectmobile` as its login user agent.
+Interactive MFA was **not supported**: an MFA response threw
+`GarminMfaRequiredError`. Carrying an existing `mfa_token` in a later exchange
+did not implement SMS or TOTP challenges. See the historical
+[sign-in flow](https://github.com/Asherlc/dofek/blob/585bfa7d2e9417bc77e9cef751a2ef5901fdbd7d/packages/garmin-connect/src/client.ts#L159) and
+[exchange implementation](https://github.com/Asherlc/dofek/blob/585bfa7d2e9417bc77e9cef751a2ef5901fdbd7d/packages/garmin-connect/src/client.ts#L284).
 
 ## Common tricks and gotchas
 
@@ -345,7 +340,7 @@ headers: {
 
 Some APIs limit how much data you can request at once:
 - **WHOOP:** cycles endpoint has a 200-day window limit — loop in chunks
-- **VeloHero/TrainerRoad:** use date range params to avoid huge responses
+- **TrainerRoad:** use date range params to avoid huge responses
 
 ### Redirect handling
 
@@ -353,7 +348,7 @@ Cookie-based auth often redirects on login. Use `redirect: "manual"` to capture 
 
 ### Re-authentication strategy
 
-For services without refresh tokens (Eight Sleep, TrainerRoad, VeloHero):
+For services without refresh tokens (Eight Sleep, TrainerRoad):
 1. Store credentials as environment variables (`SERVICE_USERNAME`, `SERVICE_PASSWORD`)
 2. Check token/cookie expiry before each sync
 3. Re-authenticate automatically if expired

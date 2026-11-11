@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { climbingLogEntryDetailSchema } from "../../../server/src/contracts/climbing-log-contracts.ts";
+import { decodeClimbingLogEntryDetailResponse } from "../../../server/src/contracts/climbing-log-contracts.ts";
 import { ClimbingLogEntryDetails } from "../components/ClimbingLogEntryDetails.tsx";
 import { ModalDialog, ModalDialogTitle } from "../components/ModalDialog.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
@@ -18,7 +18,9 @@ export function RecordDetailModal({
 }) {
   const record = state.data;
   const climbingLog =
-    dataType === "climbingLogEntries" && record ? climbingLogEntryDetailSchema.parse(record) : null;
+    dataType === "climbingLogEntries" && record
+      ? decodeClimbingLogEntryDetailResponse(record)
+      : null;
   const rawValue = record?.raw;
   const raw = typeof rawValue === "object" && rawValue !== null ? rawValue : null;
   const fields = Object.entries(record ?? {}).filter(([key]) => key !== "raw" && key !== "user_id");

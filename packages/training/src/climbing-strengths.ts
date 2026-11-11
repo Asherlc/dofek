@@ -1,0 +1,164 @@
+import { z } from "zod";
+
+const count = z.number().int().nonnegative();
+const rate = z.number().min(0).max(100).nullable();
+export const climbingTraitSourceSchema = z.object({
+  providerId: z.string(),
+  url: z.url(),
+  scope: z.enum(["route", "area"]),
+  name: z.string(),
+  trait: z.string(),
+});
+export type ClimbingTraitSource = z.infer<typeof climbingTraitSourceSchema>;
+const example = z.object({
+  logEntryId: z.string(),
+  activityId: z.string().nullable(),
+  name: z.string(),
+  grade: z.string(),
+  date: z.string(),
+  providerId: z.string(),
+  sourceName: z.string(),
+  sourceUrl: z.string().nullable(),
+  outcome: z.enum(["sent", "not_sent"]).nullable(),
+  traitSources: z.array(climbingTraitSourceSchema).optional(),
+});
+const cell = z.object({
+  grade: z.string(),
+  sends: count,
+  climbs: count,
+  unknownOutcomes: count,
+  successRate: rate,
+  differencePercentagePoints: z.number().min(-100).max(100).nullable(),
+  sampleStatus: z.enum(["no_data", "limited", "available"]),
+  examples: z.array(example),
+});
+const profile = z.object({
+  grades: z.array(
+    z.object({
+      grade: z.string(),
+      gradeSortValue: z.number(),
+      sends: count,
+      climbs: count,
+      unknownOutcomes: count,
+      successRate: rate,
+    }),
+  ),
+  rows: z.array(z.object({ key: z.string(), label: z.string(), cells: z.array(cell) })),
+  progress: z.array(
+    z.object({
+      startDate: z.iso.date(),
+      endDate: z.iso.date(),
+      rows: z.array(
+        z.object({
+          key: z.string(),
+          cells: z.array(
+            cell.pick({
+              grade: true,
+              sends: true,
+              climbs: true,
+              unknownOutcomes: true,
+              successRate: true,
+              sampleStatus: true,
+            }),
+          ),
+        }),
+      ),
+    }),
+  ),
+});
+const panel = profile.extend({
+  key: z.string(),
+  contextKey: z.string(),
+  contextLabel: z.string(),
+  dimension: z.enum(["wall_angle", "hold_type", "style", "setting"]),
+  setting: z.enum(["indoor", "outdoor", "unknown"]).nullable(),
+  allGrades: profile,
+  gradeAdjustedStrengths: z.array(
+    z.object({
+      key: z.string(),
+      expectedSuccessRate: rate,
+      differencePercentagePoints: z.number().min(-100).max(100).nullable(),
+      sampleStatus: z.enum(["no_data", "limited", "available"]),
+    }),
+  ),
+  coverage: z.object({ missingTraits: count, unknownOutcomes: count }),
+});
+const tagPanel = panel.extend({
+  dimension: z.literal("tag"),
+  category: z.object({
+    providerId: z.string(),
+    key: z.string().nullable(),
+    label: z.string(),
+  }),
+});
+export const climbingStrengthsSchema = z.object({
+  panels: z.array(panel),
+  enrichmentPending: z.boolean().optional(),
+  enrichmentErrors: z.array(z.string()).optional(),
+  tagPanels: z.array(tagPanel).optional(),
+  coverage: z.object({ unknownOutcomes: count, missingGrades: count, missingIdentity: count }),
+});
+export type ClimbingStrengths = z.infer<typeof climbingStrengthsSchema>;
+export type ClimbingStrengthsPanel = ClimbingStrengths["panels"][number];
+export type ClimbingStrengthsTagPanel = z.infer<typeof tagPanel>;
+export type ClimbingStrengthsDisplayPanel = ClimbingStrengthsPanel | ClimbingStrengthsTagPanel;
+export type ClimbingStrengthsCell = ClimbingStrengthsPanel["rows"][number]["cells"][number];
+export type ClimbingStrengthsExample = ClimbingStrengthsCell["examples"][number];
+
+export const ALL_CLIMBING_GRADES = "All grades";
+export function climbingStrengthsBaselineLabel(grade: string): string {
+  return grade === ALL_CLIMBING_GRADES ? "Overall baseline" : "Same-grade baseline";
+}
+
+/** Select server-computed values for rendering, without aggregating client-side. */
+export function climbingStrengthsGradePanel<Panel extends ClimbingStrengthsDisplayPanel>(
+  panel: Panel,
+  grade: string,
+): Panel {
+  return grade === ALL_CLIMBING_GRADES ? { ...panel, ...panel.allGrades } : panel;
+}
+
+/** Format the supplied rate without interpreting an unknown result as missing climbs. */
+export function climbingStrengthsRateLabel(
+  value: Pick<ClimbingStrengthsCell, "climbs" | "successRate">,
+): string {
+  return value.successRate === null
+    ? value.climbs > 0
+      ? "Result unknown"
+      : "No data"
+    : `${value.successRate}%`;
+}
+
+/** Counts include every logged climb; the server computes rates from known results only. */
+export function climbingStrengthsCountLabel(
+  value: Pick<ClimbingStrengthsCell, "sends" | "climbs" | "unknownOutcomes">,
+): string {
+  return `${value.sends} ${value.sends === 1 ? "send" : "sends"} / ${value.climbs} ${value.climbs === 1 ? "climb" : "climbs"}${value.unknownOutcomes > 0 ? ` · ${value.unknownOutcomes} ${value.unknownOutcomes === 1 ? "result" : "results"} unknown` : ""}`;
+}
+
+export function climbingStrengthsSendLabel(
+  value: Pick<ClimbingStrengthsCell, "sends" | "climbs" | "unknownOutcomes">,
+): string {
+  return `Sent ${value.sends} of ${value.climbs} ${value.climbs === 1 ? "climb" : "climbs"}${value.unknownOutcomes > 0 ? ` · ${value.unknownOutcomes} ${value.unknownOutcomes === 1 ? "result" : "results"} unknown` : ""}`;
+}
+
+export function climbingStrengthsResultLabel(outcome: ClimbingStrengthsExample["outcome"]): string {
+  return outcome === null ? "Result unknown" : outcome === "sent" ? "Sent" : "Not sent";
+}
+
+/** Presentation of the server-computed, grade-adjusted difference. */
+export function climbingStrengthsDifferenceLabel(value: number | null): string {
+  return value === null
+    ? "No comparable results"
+    : `${value > 0 ? "+" : ""}${value} percentage points vs same-grade baseline`;
+}
+
+export function climbingStrengthsAdjustedLabel(
+  strength: ClimbingStrengthsDisplayPanel["gradeAdjustedStrengths"][number] | undefined,
+): string {
+  if (strength?.sampleStatus === "limited") return "Too few climbs to judge strengths yet";
+  const difference = strength?.differencePercentagePoints;
+  if (difference == null) return "No results to compare yet";
+  if (difference === 0) return "Sending as often as usual at these grades";
+  return `Sending ${difference > 0 ? "more" : "less"} often than usual at these grades (${difference > 0 ? "+" : ""}${difference} percentage points)`;
+}

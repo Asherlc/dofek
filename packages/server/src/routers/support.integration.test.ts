@@ -1,10 +1,11 @@
 import { POSTHOG_API_KEY, POSTHOG_HOST } from "dofek/lib/posthog-config";
 import { sql } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
-import { setupServer } from "msw/node";
+import { HttpNetworkFrame } from "msw/experimental";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
+import { createIntegrationMswFixture } from "../../../../src/test/early-msw-lifecycle.ts";
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
 import { makeMockSensorStore } from "./test-helpers.ts";
@@ -12,7 +13,7 @@ import { makeMockSensorStore } from "./test-helpers.ts";
 const USER_WITH_EMAIL = "00000000-0000-4000-8000-0000000000e1";
 const USER_WITHOUT_EMAIL = "00000000-0000-4000-8000-0000000000e2";
 
-const mswServer = setupServer();
+const mswServer = createIntegrationMswFixture();
 const postHogConfigUrl = `${POSTHOG_HOST}/array/${POSTHOG_API_KEY}/config`;
 const postHogMessageUrl = `${POSTHOG_HOST}/api/conversations/v1/widget/message`;
 
@@ -32,8 +33,10 @@ describe("support router", () => {
   const sessionCookies: Record<string, string> = {};
 
   beforeAll(async () => {
-    mswServer.listen({
-      onUnhandledRequest(request) {
+    mswServer.activate({
+      onUnhandledFrame({ frame }) {
+        if (!(frame instanceof HttpNetworkFrame)) return;
+        const request = frame.data.request;
         if (new URL(request.url).hostname === "localhost") {
           return;
         }
@@ -74,7 +77,7 @@ describe("support router", () => {
   afterEach(() => mswServer.resetHandlers());
 
   afterAll(async () => {
-    mswServer.close();
+    mswServer.deactivate();
     if (server) {
       server.closeAllConnections();
       await new Promise<void>((resolve) => server.close(() => resolve()));

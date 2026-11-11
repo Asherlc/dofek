@@ -320,3 +320,28 @@ describe("PelotonClient", () => {
     );
   });
 });
+
+it("fetches one workout with ride media and safely encodes its ID", async () => {
+  const workout = {
+    id: "ride/123",
+    status: "COMPLETE",
+    fitness_discipline: "cycling",
+    created_at: 1,
+    start_time: 1,
+    end_time: 2,
+    is_total_work_personal_record: false,
+  };
+  const fetchFn = vi.fn<typeof globalThis.fetch>().mockResolvedValue(Response.json(workout));
+  await expect(new PelotonClient("secret", fetchFn).getWorkout("ride/123")).resolves.toEqual(
+    workout,
+  );
+  const url = new URL(String(fetchFn.mock.calls[0]?.[0]));
+  expect(url.pathname).toBe("/api/workout/ride%2F123");
+  expect(url.searchParams.get("joins")).toBe("ride");
+});
+it("rejects malformed single-workout data", async () => {
+  const fetchFn = vi.fn<typeof globalThis.fetch>().mockResolvedValue(Response.json({ id: "bad" }));
+  await expect(new PelotonClient("secret", fetchFn).getWorkout("bad")).rejects.toBeInstanceOf(
+    z.ZodError,
+  );
+});

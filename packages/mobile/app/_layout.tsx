@@ -1,6 +1,5 @@
 import * as Sentry from "@sentry/react-native";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { httpBatchLink, httpLink, splitLink } from "@trpc/client";
 import { Stack, usePathname, useRouter } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -25,14 +24,15 @@ import {
   initBackgroundHealthKitSync,
   teardownBackgroundHealthKitSync,
 } from "../lib/background-health-kit-sync";
+import { createBackgroundRefreshDiagnostics } from "../lib/background-refresh-diagnostics";
 import { runRequiredBackgroundRefreshWork } from "../lib/background-refresh-work";
 import {
   createWatchSyncClient,
   initBackgroundWatchInertialMeasurementUnitSync,
   teardownBackgroundWatchInertialMeasurementUnitSync,
 } from "../lib/background-watch-inertial-measurement-unit-sync";
-import { syncWhoopBle, teardownBackgroundWhoopBleSync } from "../lib/background-whoop-ble-sync";
-import type { SyncTrpcClient } from "../lib/health-kit-sync";
+import { syncWhoopBle } from "../lib/background-whoop-ble-sync";
+import type { SyncTrpcClient } from "../lib/health-kit-sync-types";
 import { invalidateSyncedHealthData } from "../lib/invalidate-synced-health-data";
 import { registerMobileQueryLifecycle } from "../lib/mobile-query-lifecycle";
 import { MobileQueryPersistenceProvider } from "../lib/mobile-query-persistence";
@@ -49,7 +49,9 @@ import {
 import { captureException, initTelemetry, logger, setTelemetryRoute } from "../lib/telemetry";
 import { trpc } from "../lib/trpc";
 import { createTrpcFetch } from "../lib/trpc-fetch";
+import { createMobileTrpcLinks } from "../lib/trpc-links";
 import { useBleHeartRateSync } from "../lib/useBleHeartRateSync";
+import { useCollectionNotifications } from "../lib/useCollectionNotifications";
 import { useWhoopBleSync } from "../lib/useWhoopBleSync";
 import { getVersionHeaders } from "../lib/version-headers";
 import { addBackgroundRefreshListener } from "../modules/background-refresh";
@@ -59,13 +61,12 @@ import {
   peekBufferedSamples as peekHeartRateSamples,
 } from "../modules/ble-heart-rate";
 import {
+  addCaptureErrorListener,
   addConnectionStateListener as addWhoopConnectionStateListener,
-  confirmRealtimeDataDrain as confirmWhoopRealtimeDataDrain,
-  confirmSamplesDrain as confirmWhoopSamplesDrain,
+  configureUpload,
   findWhoop,
-  isBluetoothAvailable,
-  peekBufferedRealtimeData as peekWhoopRealtimeData,
-  peekBufferedSamples as peekWhoopSamples,
+  flushUploads,
+  getDataPathStats as getWhoopDataPathStats,
   startImuStreaming,
   stopImuStreaming,
   connect as whoopConnect,
@@ -94,51 +95,41 @@ SplashScreen.preventAutoHideAsync().catch((error: unknown) => {
  * Headless component that manages WHOOP BLE accelerometer sync.
  * Must be rendered inside the tRPC provider tree so it can use tRPC query hooks.
  */
-function WhoopBleSyncManager({ trpcClient }: { trpcClient: ReturnType<typeof trpc.createClient> }) {
-  const whoopSyncClient = useMemo(
+const whoopDeps = {
+  configureUpload,
+  flushUploads,
+  addCaptureErrorListener,
+  getDataPathStats: getWhoopDataPathStats,
+  findWhoop,
+  connect: whoopConnect,
+  startImuStreaming,
+  stopImuStreaming,
+  addConnectionStateListener: addWhoopConnectionStateListener,
+  disconnect: whoopDisconnect,
+};
+
+function WhoopBleSyncManager({
+  userId,
+  token,
+  serverURL,
+}: {
+  userId: string;
+  token: string;
+  serverURL: string;
+}) {
+  const context = useMemo(
     () => ({
-      inertialMeasurementUnitSync: {
-        pushSamples: {
-          mutate: (
-            input: Parameters<typeof trpcClient.inertialMeasurementUnitSync.pushSamples.mutate>[0],
-          ) => trpcClient.inertialMeasurementUnitSync.pushSamples.mutate(input),
-        },
+      userId,
+      token,
+      serverURL,
+      headers: {
+        ...getVersionHeaders(),
+        "x-timezone": Intl.DateTimeFormat().resolvedOptions().timeZone,
       },
     }),
-    [trpcClient],
+    [userId, token, serverURL],
   );
-
-  const whoopRealtimeClient = useMemo(
-    () => ({
-      whoopBleSync: {
-        pushRealtimeData: {
-          mutate: (input: Parameters<typeof trpcClient.whoopBleSync.pushRealtimeData.mutate>[0]) =>
-            trpcClient.whoopBleSync.pushRealtimeData.mutate(input),
-        },
-      },
-    }),
-    [trpcClient],
-  );
-
-  const whoopDeps = useMemo(
-    () => ({
-      isBluetoothAvailable,
-      findWhoop,
-      connect: whoopConnect,
-      startImuStreaming,
-      stopImuStreaming,
-      peekBufferedSamples: peekWhoopSamples,
-      confirmSamplesDrain: confirmWhoopSamplesDrain,
-      peekBufferedRealtimeData: peekWhoopRealtimeData,
-      confirmRealtimeDataDrain: confirmWhoopRealtimeDataDrain,
-      addConnectionStateListener: addWhoopConnectionStateListener,
-      disconnect: whoopDisconnect,
-    }),
-    [],
-  );
-
-  useWhoopBleSync(whoopSyncClient, whoopDeps, whoopRealtimeClient);
-
+  useWhoopBleSync(context, whoopDeps);
   return null;
 }
 
@@ -198,6 +189,7 @@ function AuthGate() {
     logout,
     retryBootstrap,
   } = useAuth();
+  const userId = user?.id;
   const pathname = usePathname();
   const router = useRouter();
   const [backgroundSyncReady, setBackgroundSyncReady] = useState(false);
@@ -206,6 +198,19 @@ function AuthGate() {
   const [localCleanupPending, setLocalCleanupPending] = useState(false);
   const [localCleanupOwnerNonce, setLocalCleanupOwnerNonce] = useState<string | null>(null);
   const startupInteractiveMarkedRef = useRef(false);
+  const localCleanupBlocksSession =
+    localCleanupPending && (!user || localCleanupOwnerNonce === accountSessionOwnerNonce);
+  const collectionSessionEnded =
+    accountErasureCleanupInProgress ||
+    localCleanupBlocksSession ||
+    (!isLoading && !bootstrapError && !user);
+  useCollectionNotifications(
+    collectionSessionEnded
+      ? false
+      : !isLoading && !bootstrapError && deletionRecoveryReady && backgroundSyncReady
+        ? true
+        : undefined,
+  );
 
   const [queryClient] = useState(createAppQueryClient);
 
@@ -229,26 +234,8 @@ function AuthGate() {
       },
     };
 
-    const batchLink = httpBatchLink(commonOptions);
-    const dashboardQueryLink = httpLink(commonOptions);
-
     return trpc.createClient({
-      links: [
-        splitLink({
-          condition: (operation) => operation.type === "mutation",
-          true: batchLink,
-          false: splitLink({
-            condition: (operation) =>
-              operation.type === "query" &&
-              (operation.path === "mobileDashboard.dashboard" ||
-                operation.path === "mobileDashboard.dashboardV2" ||
-                operation.path === "mobileDashboard.recovery" ||
-                operation.path === "mobileDashboard.training"),
-            true: dashboardQueryLink,
-            false: batchLink,
-          }),
-        }),
-      ],
+      links: createMobileTrpcLinks(commonOptions),
     });
   }, [serverUrl, sessionToken]);
 
@@ -332,10 +319,8 @@ function AuthGate() {
   }, [isLoading, user]);
 
   useEffect(() => {
-    const localCleanupBlocksSession =
-      localCleanupPending && (!user || localCleanupOwnerNonce === accountSessionOwnerNonce);
     if (
-      !user ||
+      !userId ||
       !deletionRecoveryReady ||
       accountErasureCleanupInProgress ||
       localCleanupBlocksSession
@@ -353,19 +338,12 @@ function AuthGate() {
       idleHandle.cancel();
       setBackgroundSyncReady(false);
     };
-  }, [
-    accountErasureCleanupInProgress,
-    accountSessionOwnerNonce,
-    deletionRecoveryReady,
-    localCleanupOwnerNonce,
-    localCleanupPending,
-    user,
-  ]);
+  }, [accountErasureCleanupInProgress, deletionRecoveryReady, localCleanupBlocksSession, userId]);
 
   // Set up background HealthKit sync when authenticated
   useEffect(() => {
     if (
-      !user ||
+      !userId ||
       !trpcClient ||
       !backgroundSyncReady ||
       !deletionRecoveryReady ||
@@ -390,6 +368,9 @@ function AuthGate() {
         },
         pushQuantitySamples: {
           mutate: (input) => trpcClient.healthKitSync.pushQuantitySamples.mutate(input),
+        },
+        pushRunningStepSamples: {
+          mutate: (input) => trpcClient.healthKitSync.pushRunningStepSamples.mutate(input),
         },
         pushWorkouts: {
           mutate: (input) => trpcClient.healthKitSync.pushWorkouts.mutate(input),
@@ -448,17 +429,8 @@ function AuthGate() {
     // On each wake, restart Watch recording, sync IMU data, and
     // retry WHOOP BLE connection so coverage continues even if the user
     // never opens the app.
+    const refreshDiagnostics = createBackgroundRefreshDiagnostics();
     const refreshSubscription = addBackgroundRefreshListener(() => {
-      // Upload any WHOOP BLE samples buffered since last sync
-      const whoopRealtimeSyncClient = {
-        whoopBleSync: {
-          pushRealtimeData: {
-            mutate: (
-              input: Parameters<typeof trpcClient.whoopBleSync.pushRealtimeData.mutate>[0],
-            ) => trpcClient.whoopBleSync.pushRealtimeData.mutate(input),
-          },
-        },
-      };
       return runRequiredBackgroundRefreshWork([
         {
           source: "bg-refresh-watch-sync",
@@ -477,41 +449,24 @@ function AuthGate() {
         },
         {
           source: "bg-refresh-whoop-flush",
-          run: () =>
-            syncWhoopBle(
-              imuSyncClient,
-              {
-                isBluetoothAvailable,
-                findWhoop,
-                connect: whoopConnect,
-                startImuStreaming,
-                stopImuStreaming,
-                peekBufferedSamples: peekWhoopSamples,
-                confirmSamplesDrain: confirmWhoopSamplesDrain,
-                peekBufferedRealtimeData: peekWhoopRealtimeData,
-                confirmRealtimeDataDrain: confirmWhoopRealtimeDataDrain,
-                addConnectionStateListener: addWhoopConnectionStateListener,
-                disconnect: whoopDisconnect,
-              },
-              whoopRealtimeSyncClient,
-            ),
+          run: () => syncWhoopBle(),
         },
         {
           source: "bg-refresh-ble-heart-rate-flush",
           run: () => syncBleHeartRate(),
         },
       ]);
-    });
+    }, refreshDiagnostics.report);
 
     return () => {
+      refreshDiagnostics.remove();
       teardownBackgroundHealthKitSync();
       teardownBackgroundAccelerometerSync();
       teardownBackgroundWatchInertialMeasurementUnitSync();
-      teardownBackgroundWhoopBleSync();
       refreshSubscription.remove();
     };
   }, [
-    user,
+    userId,
     trpcClient,
     queryClient,
     backgroundSyncReady,
@@ -582,8 +537,6 @@ function AuthGate() {
     );
   }
 
-  const localCleanupBlocksSession =
-    localCleanupPending && (!user || localCleanupOwnerNonce === accountSessionOwnerNonce);
   const showPublicDeletionStatus =
     localCleanupBlocksSession ||
     (!user && (pathname === "/account-deletion" || hasSavedDeletionRecovery));
@@ -624,7 +577,9 @@ function AuthGate() {
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
       <TelemetryRouteSync isAuthenticated isLoading={false} />
       <MobileQueryPersistenceProvider key={user.id} queryClient={queryClient} userId={user.id}>
-        {backgroundSyncReady && <WhoopBleSyncManager trpcClient={trpcClient} />}
+        {backgroundSyncReady && userId && sessionToken && (
+          <WhoopBleSyncManager userId={userId} token={sessionToken} serverURL={serverUrl} />
+        )}
         {backgroundSyncReady && <BleHeartRateSyncManager trpcClient={trpcClient} />}
         <Stack screenOptions={rootStackScreenOptions}>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />

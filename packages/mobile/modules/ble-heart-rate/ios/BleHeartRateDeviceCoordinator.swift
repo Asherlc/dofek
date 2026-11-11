@@ -163,7 +163,8 @@ final class BleHeartRateDeviceCoordinator: BleHeartRateConnectionManagerDelegate
             deviceId: deviceId,
             timestamp: timestamp,
             heartRateBpm: measurement.heartRateBpm,
-            rrIntervalsMs: measurement.rrIntervalsMs
+            rrIntervalsMs: measurement.rrIntervalsMs,
+            deviceName: deviceRegistry.snapshot(id: deviceId, bufferedSampleCount: 0)?.name
         )
         sampleBuffer.append(sample)
         do {

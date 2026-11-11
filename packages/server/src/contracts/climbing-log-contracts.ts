@@ -1,3 +1,5 @@
+import { gpsCoordinatesSchema } from "@dofek/climbing-catalogue/geometry";
+import { climbingChartAnnotationSchema } from "@dofek/training/climbing-chart";
 import { climbingSourceLinkSchema } from "@dofek/training/climbing-context";
 import {
   areaSchema,
@@ -7,9 +9,25 @@ import {
   climbSchema,
   pitchSchema,
 } from "@dofek/training/climbing-log";
+import {
+  type ClimbingResponseVersion,
+  climbingLogTraitsV1Schema,
+  toClimbingLogTraitsV1,
+} from "@dofek/training/climbing-log-response";
 import type { ClimbingMapLocation } from "@dofek/training/climbing-map";
-import { gpsCoordinatesSchema } from "@dofek/training/gps-coordinates";
+import { climbingTagSchema } from "@dofek/training/climbing-tags";
 import { z } from "zod";
+
+import { timestampStringSchema } from "../lib/typed-sql.ts";
+
+export const climbingLogActivitySessionSchema = z.strictObject({
+  id: z.guid(),
+  providerId: z.string(),
+  memberActivityIds: z.array(z.guid()),
+  firstLoggedAt: timestampStringSchema,
+  lastLoggedAt: timestampStringSchema,
+});
+export type ClimbingLogActivitySession = z.infer<typeof climbingLogActivitySessionSchema>;
 
 export const climbingMapLocationSchema = z.strictObject({
   coordinates: gpsCoordinatesSchema,
@@ -33,18 +51,65 @@ export const climbingPitchResultSchema = z.strictObject({
   displayGrade: z.string().nullable(),
 });
 export const climbingLogEntryDetailSchema = climbingLogEntrySchema.extend({
+  areaPath: z.array(areaSchema).optional(),
+  areaGroupId: z.guid().nullable().optional(),
+  photoLogEntryId: z.guid().nullable(),
   climb: climbingLogClimbDetailSchema.nullable(),
   mapLocation: climbingMapLocationSchema.nullable(),
   attempts: z.array(climbingLogAttemptDetailSchema),
   recordedClimbAttemptCount: z.number().int().nonnegative().nullable(),
   recordedPitchAttemptCount: z.number().int().nonnegative(),
   recordedClimbOutcome: attemptOutcomeSchema.nullable(),
+  freeSend: z.boolean().nullable(),
   pitchResults: z.array(climbingPitchResultSchema),
   displayGrade: z.string().nullable(),
   sourceLinks: z.array(climbingSourceLinkSchema),
+  tags: z.array(climbingTagSchema).optional(),
+  chartAnnotations: z.array(climbingChartAnnotationSchema).optional(),
 });
 export type ClimbingLogEntryDetail = z.infer<typeof climbingLogEntryDetailSchema>;
 export type ClimbingPitchResult = z.infer<typeof climbingPitchResultSchema>;
+
+export const legacyClimbingLogEntryDetailSchema = climbingLogEntryDetailSchema
+  .omit({ holdTypes: true, tags: true, areaPath: true, areaGroupId: true })
+  .extend(climbingLogTraitsV1Schema.shape);
+export const climbingLogEntryDetailResponseSchema = z.union([
+  climbingLogEntryDetailSchema,
+  legacyClimbingLogEntryDetailSchema,
+]);
+const climbingLogEntriesResponseSchema = z.array(climbingLogEntryDetailResponseSchema);
+
+export function serializeClimbingLogEntryDetailResponse(
+  entry: ClimbingLogEntryDetail,
+  version: ClimbingResponseVersion,
+): z.infer<typeof climbingLogEntryDetailResponseSchema> {
+  if (version === 5) return entry;
+  const { areaGroupId: _areaGroupId, ...version4 } = entry;
+  if (version === 4) return version4;
+  const { areaPath: _areaPath, ...previous } = version4;
+  if (version === 3) return previous;
+  const { tags: _tags, ...withoutTags } = previous;
+  if (version === 2) return withoutTags;
+  const { holdTypes: _holdTypes, ...rest } = withoutTags;
+  return { ...rest, ...toClimbingLogTraitsV1(entry) };
+}
+
+function canonicalLogEntry(
+  entry: z.infer<typeof climbingLogEntryDetailResponseSchema>,
+): ClimbingLogEntryDetail {
+  if ("holdTypes" in entry) return entry;
+  const { holdType, ...rest } = entry;
+  return { ...rest, holdTypes: holdType === null ? null : [holdType] };
+}
+
+/** Accept supported wire contracts during independent server/client releases. */
+export function decodeClimbingLogEntryDetailResponse(value: unknown): ClimbingLogEntryDetail {
+  return canonicalLogEntry(climbingLogEntryDetailResponseSchema.parse(value));
+}
+
+export function decodeClimbingLogEntriesResponse(value: unknown): ClimbingLogEntryDetail[] {
+  return climbingLogEntriesResponseSchema.parse(value).map(canonicalLogEntry);
+}
 
 export const climbingAttachmentActivitySchema = z.object({
   id: z.guid(),

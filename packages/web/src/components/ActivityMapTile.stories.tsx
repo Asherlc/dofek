@@ -1,117 +1,14 @@
+import { mapAttributionText } from "@dofek/training/map-style";
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { expect, within } from "storybook/test";
 import { climbingSourceLocation } from "./ActivityMapTile.fixtures.ts";
 import { ActivityMapTile } from "./ActivityMapTile.tsx";
 
 const mapPreview = {
   width: 1024,
   height: 576,
-  tiles: [
-    {
-      url: "https://tile.openstreetmap.org/19/83856/202646.png",
-      x: -179.332,
-      y: -132.862,
-      width: 256,
-      height: 256,
-    },
-    {
-      url: "https://tile.openstreetmap.org/19/83857/202646.png",
-      x: 76.668,
-      y: -132.862,
-      width: 256,
-      height: 256,
-    },
-    {
-      url: "https://tile.openstreetmap.org/19/83858/202646.png",
-      x: 332.668,
-      y: -132.862,
-      width: 256,
-      height: 256,
-    },
-    {
-      url: "https://tile.openstreetmap.org/19/83859/202646.png",
-      x: 588.668,
-      y: -132.862,
-      width: 256,
-      height: 256,
-    },
-    {
-      url: "https://tile.openstreetmap.org/19/83860/202646.png",
-      x: 844.668,
-      y: -132.862,
-      width: 256,
-      height: 256,
-    },
-    {
-      url: "https://tile.openstreetmap.org/19/83856/202647.png",
-      x: -179.332,
-      y: 123.138,
-      width: 256,
-      height: 256,
-    },
-    {
-      url: "https://tile.openstreetmap.org/19/83857/202647.png",
-      x: 76.668,
-      y: 123.138,
-      width: 256,
-      height: 256,
-    },
-    {
-      url: "https://tile.openstreetmap.org/19/83858/202647.png",
-      x: 332.668,
-      y: 123.138,
-      width: 256,
-      height: 256,
-    },
-    {
-      url: "https://tile.openstreetmap.org/19/83859/202647.png",
-      x: 588.668,
-      y: 123.138,
-      width: 256,
-      height: 256,
-    },
-    {
-      url: "https://tile.openstreetmap.org/19/83860/202647.png",
-      x: 844.668,
-      y: 123.138,
-      width: 256,
-      height: 256,
-    },
-    {
-      url: "https://tile.openstreetmap.org/19/83856/202648.png",
-      x: -179.332,
-      y: 379.138,
-      width: 256,
-      height: 256,
-    },
-    {
-      url: "https://tile.openstreetmap.org/19/83857/202648.png",
-      x: 76.668,
-      y: 379.138,
-      width: 256,
-      height: 256,
-    },
-    {
-      url: "https://tile.openstreetmap.org/19/83858/202648.png",
-      x: 332.668,
-      y: 379.138,
-      width: 256,
-      height: 256,
-    },
-    {
-      url: "https://tile.openstreetmap.org/19/83859/202648.png",
-      x: 588.668,
-      y: 379.138,
-      width: 256,
-      height: 256,
-    },
-    {
-      url: "https://tile.openstreetmap.org/19/83860/202648.png",
-      x: 844.668,
-      y: 379.138,
-      width: 256,
-      height: 256,
-    },
-  ],
+  center: [-122.41879999995231, 37.775250001673115] satisfies [number, number],
+  zoom: 18,
   routePath: [
     { x: 288.304, y: 453.089 },
     { x: 512, y: 311.585 },
@@ -169,5 +66,18 @@ export const ClimbingSourceLocations: Story = {
   name: "Climbing source points",
   args: {
     location: climbingSourceLocation,
+  },
+};
+
+export const Thumbnail: Story = {
+  args: { variant: "thumbnail" },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const tile = canvas.getByTestId("activity-map-tile").getBoundingClientRect();
+    const credit = canvas.getByText(mapAttributionText).getBoundingClientRect();
+    await expect(credit.top).toBeGreaterThanOrEqual(tile.top);
+    await expect(credit.bottom).toBeLessThanOrEqual(tile.bottom);
+    await expect(credit.left).toBeGreaterThanOrEqual(tile.left);
+    await expect(credit.right).toBeLessThanOrEqual(tile.right);
   },
 };

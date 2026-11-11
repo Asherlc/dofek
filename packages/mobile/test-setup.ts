@@ -1,5 +1,6 @@
 import { createElement, type ReactNode, useEffect, useRef } from "react";
 import { beforeEach, vi } from "vitest";
+import { makeWhoopCaptureStats } from "./lib/whoop-ble-test-helpers";
 
 const asyncStorageValues = vi.hoisted(() => new Map<string, string>());
 const secureStoreValues = vi.hoisted(() => new Map<string, string>());
@@ -37,10 +38,19 @@ vi.mock("@sentry/react-native", () => ({
   withScope: vi.fn(),
   setTag: vi.fn(),
   setExtra: vi.fn(),
+  setUser: vi.fn(),
+}));
+
+vi.mock("expo-constants", () => ({
+  default: { platform: { ios: { buildNumber: "test-build" } } },
 }));
 
 vi.mock("expo-crypto", () => ({
   randomUUID: vi.fn(() => crypto.randomUUID()),
+}));
+
+vi.mock("@expo/vector-icons", () => ({
+  Ionicons: ({ name }: { name: string }) => createElement("span", { "data-icon": name }),
 }));
 
 vi.mock("posthog-react-native", () => ({
@@ -260,6 +270,10 @@ vi.mock("react-native", () => {
         ...props,
         "aria-label": accessibilityLabel,
         "data-testid": testID,
+        "data-source-uri":
+          typeof props.source === "object" && props.source !== null && "uri" in props.source
+            ? props.source.uri
+            : undefined,
         onError,
         style: flattenStyle(style),
       },
@@ -267,7 +281,26 @@ vi.mock("react-native", () => {
     );
   Image.displayName = "Image";
   const FlatList = createMockComponent("FlatList");
-  const Modal = createMockComponent("Modal");
+  const ModalContent = createMockComponent("Modal");
+  const Modal = ({
+    visible,
+    onDismiss,
+    onRequestClose,
+    transparent: _transparent,
+    ...props
+  }: Record<string, unknown>) => {
+    const previouslyVisible = React.useRef(visible);
+    React.useEffect(() => {
+      if (previouslyVisible.current && !visible && typeof onDismiss === "function") onDismiss();
+      previouslyVisible.current = visible;
+    }, [visible, onDismiss]);
+    return React.createElement(ModalContent, {
+      ...props,
+      onKeyDown: (event: { key: string }) => {
+        if (event.key === "Escape" && typeof onRequestClose === "function") onRequestClose();
+      },
+    });
+  };
   const ActivityIndicator = ({ color, style, ...props }: Record<string, unknown>) =>
     React.createElement("activityindicator", {
       ...props,
@@ -338,7 +371,10 @@ vi.mock("react-native", () => {
   };
 
   const Alert = { alert: vi.fn() };
-  const AccessibilityInfo = { announceForAccessibility: vi.fn() };
+  const AccessibilityInfo = {
+    announceForAccessibility: vi.fn(),
+    sendAccessibilityEvent: vi.fn(),
+  };
   const Linking = { openURL: vi.fn(() => Promise.resolve()) };
   const Share = { share: vi.fn(() => Promise.resolve({ action: "sharedAction" })) };
 
@@ -401,6 +437,7 @@ vi.mock("react-native", () => {
     LayoutAnimation,
     UIManager,
     DynamicColorIOS,
+    useColorScheme: vi.fn(() => "light"),
     useWindowDimensions: vi.fn(() => ({
       width: 390,
       height: 844,
@@ -415,10 +452,10 @@ vi.mock("react-native-svg", () => {
   const React = require("react");
 
   function svgComponent(name: string) {
-    const component = ({ children, onPress, ...props }: Record<string, unknown>) =>
+    const component = ({ children, onPress, accessible, ...props }: Record<string, unknown>) =>
       React.createElement(
         name,
-        { ...props, onClick: onPress },
+        { ...props, "data-accessible": accessible, onClick: onPress },
         ...(children != null ? [children] : []),
       );
     component.displayName = name;
@@ -430,6 +467,7 @@ vi.mock("react-native-svg", () => {
     default: svgComponent("Svg"),
     Svg: svgComponent("Svg"),
     SvgXml: svgComponent("SvgXml"),
+    SvgUri: svgComponent("SvgUri"),
     Circle: svgComponent("Circle"),
     Line: svgComponent("Line"),
     Polygon: svgComponent("Polygon"),
@@ -581,6 +619,14 @@ vi.mock("./modules/health-kit", async () => {
     queryDailyStatistics: vi.fn(() => Promise.resolve([])),
     queryCategorySamples: vi.fn(() => Promise.resolve([])),
     queryQuantitySamples: vi.fn(() => Promise.resolve([])),
+    queryRunningStepSamples: vi.fn().mockResolvedValue({ workouts: [], samples: [] }),
+    queryRunningStepChanges: vi.fn().mockResolvedValue({
+      hasMore: false,
+      workouts: [],
+      samples: [],
+      deletedUUIDs: [],
+      queryId: null,
+    }),
     queryWorkouts: vi.fn(() => Promise.resolve([])),
     queryWorkoutRoutes: vi.fn(() => Promise.resolve([])),
     querySleepSamples: vi.fn(() => Promise.resolve([])),
@@ -605,6 +651,10 @@ vi.mock("./modules/core-motion", () => ({
 
 // ── Background Refresh native module mock ──────────────────────────
 vi.mock("./modules/background-refresh", () => ({
+  enableCollectionNotifications: vi.fn(() => Promise.resolve(true)),
+  disableCollectionNotifications: vi.fn(),
+  getDiagnostics: vi.fn(() => ({ events: [], overflowCount: 0 })),
+  clearDiagnostics: vi.fn(),
   scheduleRefresh: vi.fn(),
   isBackgroundRefreshAvailable: vi.fn(() => false),
   addBackgroundRefreshListener: vi.fn(() => ({ remove: vi.fn() })),
@@ -631,6 +681,7 @@ vi.mock("./modules/app-store-billing", () => ({
 
 // ── expo-updates mock ─────────────────────────────────────────────
 vi.mock("expo-updates", () => ({
+  manifest: null,
   updateId: null,
   channel: null,
   runtimeVersion: null,
@@ -640,6 +691,11 @@ vi.mock("expo-updates", () => ({
 
 // ── WHOOP BLE native module mock ───────────────────────────────────
 vi.mock("./modules/whoop-ble", () => ({
+  configureUpload: vi.fn().mockResolvedValue(undefined),
+  addCaptureErrorListener: vi.fn(() => ({ remove: vi.fn() })),
+  flushUploads: vi.fn().mockResolvedValue(undefined),
+  disableUploads: vi.fn().mockResolvedValue(undefined),
+  getDataPathStats: vi.fn().mockImplementation(async () => makeWhoopCaptureStats()),
   isBluetoothAvailable: vi.fn(() => false),
   findWhoop: vi.fn(() => Promise.resolve(null)),
   connect: vi.fn(() => Promise.resolve(false)),
@@ -672,8 +728,8 @@ vi.mock("./modules/ble-heart-rate", () => ({
   purgeAccountState: vi.fn(),
 }));
 
-// ── React Native Maps mock ──────────────────────────────────────────
-vi.mock("react-native-maps", () => {
+// ── MapLibre Native mock ────────────────────────────────────────────
+vi.mock("@maplibre/maplibre-react-native", () => {
   const React = require("react");
   function mapComponent(name: string) {
     const component = ({ children, testID, ...props }: Record<string, unknown>) =>
@@ -681,14 +737,13 @@ vi.mock("react-native-maps", () => {
     component.displayName = name;
     return component;
   }
-  const MapView = mapComponent("MapView");
-  const Polyline = mapComponent("Polyline");
-  const Marker = mapComponent("Marker");
   return {
-    __esModule: true,
-    default: MapView,
-    Polyline,
-    Marker,
+    Map: mapComponent("NativeMap"),
+    Camera: mapComponent("NativeCamera"),
+    GeoJSONSource: mapComponent("GeoJSONSource"),
+    Layer: mapComponent("MapLayer"),
+    Marker: mapComponent("MapMarker"),
+    StaticMapImageManager: { createImage: vi.fn(() => Promise.resolve("file:///map-preview.png")) },
   };
 });
 

@@ -14,6 +14,16 @@ describe("buildActivityReadModelRefreshStatements", () => {
     expect(view).toContain("representative_activity_id");
     expect(view?.match(/CREATE VIEW/g)).toHaveLength(1);
   });
+  it("preserves the column contract used by historical migrations", () => {
+    const view = buildActivityOriginReadModelRefreshStatements()[2];
+    expect(view).not.toContain("primary_canonical_type");
+    expect(view).not.toContain("origins.name");
+  });
+  it("projects the primary title and nullable type for the current schema", () => {
+    const view = buildActivityOriginReadModelRefreshStatements(true)[2];
+    expect(view).toContain("origins.name, legacy.name) AS name");
+    expect(view).toContain("origins.primary_canonical_type, NULL) AS primary_canonical_type");
+  });
   it("drops and recreates the activity read model views", () => {
     const statements = buildActivityReadModelRefreshStatements();
 

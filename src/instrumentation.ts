@@ -1,3 +1,4 @@
+import { AxiomLogExporter } from "@dofek/telemetry";
 import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
 import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-http";
 import { OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-proto";
@@ -16,6 +17,7 @@ import {
   POSTHOG_LOGS_URL,
   POSTHOG_TRACES_URL,
 } from "./lib/posthog-config.ts";
+import { TELEMETRY_REDACTED_QUERY_PARAMS, telemetryHttpAttributes } from "./lib/telemetry-url.ts";
 
 function isProductionDeployment(environment: string | undefined): boolean {
   return environment === "prod" || environment === "production";
@@ -72,7 +74,7 @@ function createLogRecordProcessors(env: Record<string, string | undefined>): Log
   if (hasAxiomLogExport) {
     processors.push(
       new BatchLogRecordProcessor({
-        exporter: new OTLPLogExporter(),
+        exporter: new AxiomLogExporter(new OTLPLogExporter()),
       }),
     );
   }
@@ -137,6 +139,27 @@ export function startInstrumentation(
         ? [
             getNodeAutoInstrumentations({
               "@opentelemetry/instrumentation-winston": { enabled: false },
+              "@opentelemetry/instrumentation-http": {
+                redactedQueryParams: TELEMETRY_REDACTED_QUERY_PARAMS,
+                // The installed SDK's native redactedQueryParams covers client URLs only.
+                startIncomingSpanHook: (request) => {
+                  const scheme =
+                    "encrypted" in request.socket && request.socket.encrypted ? "https" : "http";
+                  const origin = request.headers.host ? `${scheme}://${request.headers.host}` : "";
+                  return telemetryHttpAttributes(`${origin}${request.url ?? "/"}`);
+                },
+                startOutgoingSpanHook: (request) => {
+                  const host = request.hostname ?? request.host ?? "";
+                  const port = request.port ? `:${request.port}` : "";
+                  return telemetryHttpAttributes(
+                    `${request.protocol ?? "http:"}//${host}${port}${request.path ?? "/"}`,
+                  );
+                },
+              },
+              "@opentelemetry/instrumentation-undici": {
+                startSpanHook: (request) =>
+                  telemetryHttpAttributes(`${request.origin}${request.path}`),
+              },
             }),
           ]
         : []),

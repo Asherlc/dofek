@@ -1,5 +1,9 @@
-import type { ActivityMetricSources } from "../../../server/src/contracts/activity-metric-sources.ts";
+import type {
+  ActivityHeartRateContext,
+  ActivityMetricSources,
+} from "../../../server/src/contracts/activity-metric-sources.ts";
 import type { ClimbingLogEntryDetail } from "../../../server/src/contracts/climbing-log-contracts.ts";
+import { decodeClimbingLogEntriesResponse } from "../../../server/src/contracts/climbing-log-contracts.ts";
 import {
   climbingAttemptFixture,
   climbingClimbFixture,
@@ -10,57 +14,40 @@ import {
 import { formatDateTime, formatTimeOnly } from "@dofek/format/format";
 import type { UnitSystem } from "@dofek/format/units";
 import { UnitConverter } from "@dofek/format/units";
+import type { ActivityHardware } from "@dofek/providers/activity-hardware";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ActivityDetail } from "../../../server/src/models/activity.ts";
 import type { StrengthExerciseDetail } from "../../../server/src/routers/activity.ts";
+import {
+  sourceHardware,
+  strongSourceTree,
+} from "../components/ActivitySourceDisclosure.fixtures.ts";
 import { UnitContext } from "../lib/unitContext.ts";
+import { detailSourceTree, removedDetailSourceTree } from "./ActivityDetailPage.fixtures.ts";
 
 const capturedOptions: Array<Record<string, unknown>> = [];
 const capturedEvents: Array<Record<string, (...params: Array<Record<string, unknown>>) => void>> =
   [];
 
-const leafletMocks = vi.hoisted(() => ({
-  map: vi.fn((container: HTMLElement) => ({
-    remove: vi.fn(() => container.replaceChildren()),
-    fitBounds: vi.fn(),
-    container,
-  })),
-  tileLayer: vi.fn(() => ({
-    addTo: vi.fn(),
-    on: vi.fn(),
-    once: vi.fn((_event: string, onLoad: () => void) => onLoad()),
-  })),
-  latLng: vi.fn((lat: number, lng: number) => ({ lat, lng })),
-  latLngBounds: vi.fn(() => ({})),
-  polyline: vi.fn(() => ({ addTo: vi.fn() })),
-  circleMarker: vi.fn(() => {
-    const element = document.createElementNS("http://www.w3.org/2000/svg", "path");
-    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    svg.append(element);
-    const marker = {
-      addTo: vi.fn((map: { container: HTMLElement }) => {
-        map.container.append(svg);
-        return marker;
-      }),
-      remove: vi.fn(),
-      setLatLng: vi.fn(),
-      bindTooltip: vi.fn(() => marker),
-      on: vi.fn((event: string, listener: () => void) => {
-        element.addEventListener(event, listener);
-        return marker;
-      }),
-      fire: vi.fn((event: string) => {
-        element.dispatchEvent(new Event(event));
-        return marker;
-      }),
-      getElement: vi.fn(() => element),
-      openTooltip: vi.fn(),
-      closeTooltip: vi.fn(),
-    };
-    return marker;
-  }),
+import { maps, markers, resetMaps } from "../lib/maplibre-test-helpers.ts";
+
+vi.mock("maplibre-gl", async () => {
+  const helper = await import("../lib/maplibre-test-helpers.ts");
+  return {
+    ...helper.maplibreMock,
+    Map: class extends helper.TestMap {
+      constructor(options: Record<string, unknown>) {
+        super(options);
+        queueMicrotask(() => this.fire("load"));
+      }
+    },
+  };
+});
+
+vi.mock("maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url", () => ({
+  default: "/maplibre-worker.js",
 }));
 
 vi.mock("echarts-for-react", () => ({
@@ -83,6 +70,7 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 const mockActivity: ActivityDetail & { displayedDate?: string } = {
+  climbingLogSessions: [],
   id: "test-123",
   displayedDate: "2026-03-18",
   notes: null,
@@ -95,10 +83,12 @@ const mockActivity: ActivityDetail & { displayedDate?: string } = {
   sampleCountState: { status: "missing", reason: "Sample Count not recorded" },
   name: "Morning Run",
   activityType: "running",
+  primaryActivityType: null,
   rawType: "running",
   modality: null,
   startedAt: "2026-03-18T07:00:00Z",
   endedAt: "2026-03-18T07:45:00Z",
+  durationMin: 45,
   localTimeContext: {
     timezone: null,
     startUtcOffsetMinutes: 60,
@@ -126,7 +116,9 @@ const mockActivity: ActivityDetail & { displayedDate?: string } = {
   avgCadenceState: { status: "missing", reason: "Avg Cadence not recorded" },
   sourceProviders: ["whoop", "apple_health"],
   sourceLinks: [],
+  sourceTree: { primary: null, otherSources: [] },
   sourceDecision: null,
+  fitRecoveryWarning: null,
 };
 
 const mockStreamPoints: Array<{
@@ -177,6 +169,7 @@ interface MockQueryResult<T> {
   error: Error | null;
   isError: boolean;
   isLoading: boolean;
+  isFetching?: boolean;
 }
 
 const mockActivityByIdUseQuery = vi.fn<
@@ -235,10 +228,12 @@ const mockEntrySuggestionsUseQuery = vi.fn(
 );
 const mockAttachEntryMutate = vi.fn();
 const mockAttachShouldFail = vi.fn(() => false);
+const mockActivityImagesInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockClimbingEntriesInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockEntrySuggestionsInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockClimbingSessionSummaryInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockClimbingGradeProgressionInvalidate = vi.fn().mockResolvedValue(undefined);
+const mockClimbingStrengthsInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockClimbingVolumeByGradeInvalidate = vi.fn().mockResolvedValue(undefined);
 
 interface MockHrZone {
@@ -260,7 +255,11 @@ interface MockPowerZone {
 }
 
 interface MockPowerZonesResult {
-  ftp: number;
+  ftp: number | null;
+  thresholdEvidence: Omit<typeof computedThresholdEvidence, "value" | "unavailable_reason"> & {
+    value: number | null;
+    unavailable_reason: string | null;
+  };
   zones: MockPowerZone[];
 }
 
@@ -291,6 +290,14 @@ const mockStreamUseQuery = vi.fn(
     isLoading: false,
   }),
 );
+const mockHeartRateContextQuery = vi.fn(
+  (_input?: unknown, _options?: unknown): MockQueryResult<ActivityHeartRateContext> => ({
+    data: undefined,
+    error: null,
+    isError: false,
+    isLoading: false,
+  }),
+);
 type MockRouteData =
   | { status: "processing" | "unavailable" }
   | { status: "ready"; points: Array<{ lat: number | null; lng: number | null }> };
@@ -311,6 +318,24 @@ const mockRouteUseQuery = vi.fn(
     isLoading: false,
   }),
 );
+const computedThresholdEvidence = {
+  value: 250,
+  unit: "watt" as const,
+  method: "computed_eftp" as const,
+  event_at: "2026-03-05T12:00:00Z",
+  evidence_activity_id: "00000000-0000-4000-8000-000000000101",
+  evidence_at: "2026-03-01T12:00:00Z",
+  evidence_duration_seconds: 1200,
+  evidence_power: 265,
+  model_version: "v1",
+  uncertainty: {
+    kind: "not_quantifiable" as const,
+    watts: null,
+    reason:
+      "Reference-curve estimate; individual physiological FTP uncertainty has not been quantified.",
+  },
+  unavailable_reason: null,
+};
 const mockPowerZonesUseQuery = vi.fn(
   (_input?: unknown, _options?: { enabled?: boolean }): MockQueryResult<MockPowerZonesResult> => ({
     data: undefined,
@@ -318,6 +343,15 @@ const mockPowerZonesUseQuery = vi.fn(
     isError: false,
     isLoading: false,
   }),
+);
+const mockPowerWorkUseQuery = vi.fn(
+  (
+    _input?: unknown,
+    _options?: unknown,
+  ): MockQueryResult<{
+    workKilojoules: number | null;
+    coverage: { coveredSeconds: number; coveragePct: number };
+  }> => ({ data: undefined, error: null, isError: false, isLoading: false }),
 );
 const mockMetricSourcesUseQuery = vi.fn(
   (): MockQueryResult<ActivityMetricSources> => ({
@@ -328,11 +362,27 @@ const mockMetricSourcesUseQuery = vi.fn(
   }),
 );
 const mockRecomputeMutate = vi.fn();
+const mockHardwareUseQuery = vi.fn(
+  (): {
+    data: ActivityHardware;
+    isLoading: boolean;
+    error: Error | null;
+    refetch: () => void;
+  } => ({ data: { items: [], power: [] }, isLoading: false, error: null, refetch: vi.fn() }),
+);
+const mockImagesUseQuery = vi.fn(() => ({
+  data: { images: [], coverage: [], acquisition: [] },
+  error: null,
+  isLoading: false,
+  isFetching: false,
+  refetch: vi.fn(),
+}));
 const mockRecomputeShouldFail = vi.fn(() => false);
 const mockActivityByIdInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockActivityStreamInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockActivityHrZonesInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockActivityPowerZonesInvalidate = vi.fn().mockResolvedValue(undefined);
+const mockActivityPowerWorkInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockActivityStrengthExercisesInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockActivityListInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockCalendarWeekListInvalidate = vi.fn().mockResolvedValue(undefined);
@@ -341,12 +391,16 @@ const mockCalendarActivityOverviewInvalidate = vi.fn().mockResolvedValue(undefin
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
     activity: {
+      images: { useQuery: mockImagesUseQuery },
       byId: { useQuery: mockActivityByIdUseQuery },
       stream: { useQuery: mockStreamUseQuery },
+      heartRateContext: { useQuery: mockHeartRateContextQuery },
       metricSources: { useQuery: mockMetricSourcesUseQuery },
+      hardware: { useQuery: mockHardwareUseQuery },
       route: { useQuery: mockRouteUseQuery },
       hrZones: { useQuery: mockHrZonesUseQuery },
       powerZones: { useQuery: mockPowerZonesUseQuery },
+      powerWork: { useQuery: mockPowerWorkUseQuery },
       strengthExercises: { useQuery: mockStrengthExercisesUseQuery },
       hangboardDetails: { useQuery: mockHangboardDetailsUseQuery },
       recompute: {
@@ -401,29 +455,31 @@ vi.mock("../lib/trpc.ts", () => ({
     },
     useUtils: () => ({
       activity: {
+        images: { invalidate: mockActivityImagesInvalidate },
         byId: { invalidate: mockActivityByIdInvalidate },
         stream: { invalidate: mockActivityStreamInvalidate },
+        heartRateContext: { invalidate: vi.fn().mockResolvedValue(undefined) },
         hrZones: { invalidate: mockActivityHrZonesInvalidate },
         powerZones: { invalidate: mockActivityPowerZonesInvalidate },
+        powerWork: { invalidate: mockActivityPowerWorkInvalidate },
         strengthExercises: { invalidate: mockActivityStrengthExercisesInvalidate },
         list: { invalidate: mockActivityListInvalidate },
       },
       calendar: {
-        weekList: { invalidate: mockCalendarWeekListInvalidate },
+        weekListV2: { invalidate: mockCalendarWeekListInvalidate },
         activityOverview: { invalidate: mockCalendarActivityOverviewInvalidate },
       },
       climbing: {
         activityLogEntries: { invalidate: mockClimbingEntriesInvalidate },
         unattachedClimbingLogEntries: { invalidate: mockEntrySuggestionsInvalidate },
         sessionSummary: { invalidate: mockClimbingSessionSummaryInvalidate },
-        gradeProgression: { invalidate: mockClimbingGradeProgressionInvalidate },
+        gradeProgressionV2: { invalidate: mockClimbingGradeProgressionInvalidate },
+        strengths: { invalidate: mockClimbingStrengthsInvalidate },
         volumeByGrade: { invalidate: mockClimbingVolumeByGradeInvalidate },
       },
     }),
   },
 }));
-
-vi.mock("leaflet", () => leafletMocks);
 
 vi.mock("react-body-highlighter", () => ({
   default: ({ type }: { type: string }) => <div data-testid={`muscle-map-${type}`} />,
@@ -435,6 +491,13 @@ vi.mock("react-body-highlighter", () => ({
 }));
 
 afterEach(() => {
+  mockHardwareUseQuery.mockReset();
+  mockHardwareUseQuery.mockReturnValue({
+    data: { items: [], power: [] },
+    isLoading: false,
+    error: null,
+    refetch: vi.fn(),
+  });
   mockMetricSourcesUseQuery.mockReset();
   mockMetricSourcesUseQuery.mockReturnValue({
     data: [],
@@ -450,6 +513,13 @@ afterEach(() => {
     isLoading: false,
   });
   mockStreamUseQuery.mockClear();
+  mockHeartRateContextQuery.mockReset();
+  mockHeartRateContextQuery.mockReturnValue({
+    data: undefined,
+    error: null,
+    isError: false,
+    isLoading: false,
+  });
   mockStreamUseQuery.mockImplementation((_input?: unknown, _options?: unknown) => ({
     data: mockStreamPoints,
     error: null,
@@ -481,10 +551,12 @@ afterEach(() => {
   mockAttachEntryMutate.mockClear();
   mockAttachShouldFail.mockReset();
   mockAttachShouldFail.mockReturnValue(false);
+  mockActivityImagesInvalidate.mockClear();
   mockClimbingEntriesInvalidate.mockClear();
   mockEntrySuggestionsInvalidate.mockClear();
   mockClimbingSessionSummaryInvalidate.mockClear();
   mockClimbingGradeProgressionInvalidate.mockClear();
+  mockClimbingStrengthsInvalidate.mockClear();
   mockClimbingVolumeByGradeInvalidate.mockClear();
   mockStrengthExercisesUseQuery.mockReset();
   mockStrengthExercisesUseQuery.mockReturnValue({
@@ -501,6 +573,14 @@ afterEach(() => {
     isLoading: false,
   });
   mockPowerZonesUseQuery.mockReset();
+  mockPowerWorkUseQuery.mockReset();
+  mockPowerWorkUseQuery.mockReturnValue({
+    data: undefined,
+    error: null,
+    isError: false,
+    isLoading: false,
+  });
+  mockActivityPowerWorkInvalidate.mockClear();
   mockPowerZonesUseQuery.mockReturnValue({
     data: undefined,
     error: null,
@@ -517,12 +597,7 @@ afterEach(() => {
 function renderWithUnits(ui: ReactNode, unitSystem: UnitSystem = "metric") {
   capturedOptions.length = 0;
   capturedEvents.length = 0;
-  leafletMocks.map.mockClear();
-  leafletMocks.tileLayer.mockClear();
-  leafletMocks.latLng.mockClear();
-  leafletMocks.latLngBounds.mockClear();
-  leafletMocks.polyline.mockClear();
-  leafletMocks.circleMarker.mockClear();
+  resetMaps();
   mockStrengthExercisesUseQuery.mockClear();
   mockHangboardDetailsUseQuery.mockClear();
   mockClimbingEntriesUseQuery.mockClear();
@@ -584,7 +659,11 @@ function getQueryEnabledFlag(value: unknown): boolean | undefined {
   return typeof enabled === "boolean" ? enabled : undefined;
 }
 
-function getPlaceholderData(value: unknown): ((previousData: unknown) => unknown) | undefined {
+function getPlaceholderData(
+  value: unknown,
+):
+  | ((previousData: unknown, previousQuery?: { queryKey: readonly unknown[] }) => unknown)
+  | undefined {
   if (!value || typeof value !== "object") {
     return undefined;
   }
@@ -596,7 +675,10 @@ function getPlaceholderData(value: unknown): ((previousData: unknown) => unknown
 function getSeriesData(opt: Record<string, unknown>): Array<unknown> {
   const series = opt.series;
   if (Array.isArray(series) && series[0] && typeof series[0] === "object" && "data" in series[0]) {
-    return series[0].data;
+    return series[0].data.map((datum: unknown) => {
+      if (typeof datum !== "object" || datum === null || !("value" in datum)) return datum;
+      return Array.isArray(datum.value) ? datum.value[1] : datum.value;
+    });
   }
   return [];
 }
@@ -668,6 +750,162 @@ async function importActivityHeader() {
 }
 
 describe("ActivityDetailPage", () => {
+  it("shows the server-projected FIT recovery warning on the activity detail header", async () => {
+    const ActivityHeader = await importActivityHeader();
+    const warning = "Some FIT data could not be recovered from the original file.";
+
+    renderWithUnits(
+      <ActivityHeader
+        activity={{ ...mockActivity, fitRecoveryWarning: warning }}
+        units={new UnitConverter("metric")}
+      />,
+    );
+
+    expect(screen.getByRole("alert").textContent).toBe(warning);
+  });
+
+  it("does not show a FIT recovery warning for a clean activity", async () => {
+    const ActivityHeader = await importActivityHeader();
+
+    renderWithUnits(<ActivityHeader activity={mockActivity} units={new UnitConverter("metric")} />);
+
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("shows Kilter logged windows on a connected climbing detail header", async () => {
+    const ActivityHeader = await importActivityHeader();
+    renderWithUnits(
+      <ActivityHeader
+        activity={{
+          ...mockActivity,
+          name: "Gym session",
+          activityType: "climbing",
+          durationMin: 60,
+          climbingLogSessions: [
+            {
+              id: "kilter-session-1",
+              providerId: "kilter",
+              memberActivityIds: ["kilter-point-1", "kilter-point-2"],
+              firstLoggedAt: "2026-04-14T10:02:00.000Z",
+              lastLoggedAt: "2026-04-14T10:06:33.000Z",
+            },
+          ],
+        }}
+        units={new UnitConverter("metric")}
+      />,
+    );
+
+    const loggedClimbs = screen.getByRole("list", { name: "Logged climbs" });
+    expect(loggedClimbs.textContent).toMatch(/Kilter Board · Logged climbs · .+ – .+/);
+  });
+
+  it("shows the server-projected measured duration or an accessible unknown value", async () => {
+    const ActivityHeader = await importActivityHeader();
+    const measured = { ...mockActivity, durationMin: 60 };
+    const pointOnly = {
+      ...mockActivity,
+      activityType: "climbing",
+      endedAt: null,
+      durationMin: null,
+    };
+
+    const { rerender } = renderWithUnits(
+      <ActivityHeader activity={measured} units={new UnitConverter("metric")} />,
+    );
+    expect(screen.getByText("1h 0m")).toBeVisible();
+
+    rerender(
+      <UnitContext.Provider value={{ unitSystem: "metric", setUnitSystem: () => {} }}>
+        <ActivityHeader activity={pointOnly} units={new UnitConverter("metric")} />
+      </UnitContext.Provider>,
+    );
+    expect(screen.getByText("Duration")).toBeVisible();
+    expect(screen.getByText("Unavailable")).toBeVisible();
+    expect(screen.queryByText("0m")).toBeNull();
+  });
+
+  it("uses the server's surrounding HR observations for a climbing activity", async () => {
+    mockActivityByIdUseQuery.mockReturnValue({
+      data: { ...mockActivity, activityType: "climbing" },
+      error: null,
+      isError: false,
+      isLoading: false,
+    });
+    mockHeartRateContextQuery.mockReturnValue({
+      data: {
+        window: { startedAt: "2026-04-14T09:55:00.000Z", endedAt: "2026-04-14T11:05:00.000Z" },
+        points: [
+          { recordedAt: "2026-04-14T09:55:00.000Z", value: 91 },
+          { recordedAt: "2026-04-14T11:05:00.000Z", value: 92 },
+        ],
+      },
+      error: null,
+      isError: false,
+      isLoading: false,
+    });
+    const ActivityDetailPage = await importPage();
+    renderWithUnits(<ActivityDetailPage />);
+    await waitFor(() =>
+      expect(
+        capturedOptions.some(
+          (option) =>
+            Array.isArray(option.series) &&
+            option.series.some(
+              (series) => series.name === "Heart Rate" && series.data?.[0]?.value?.[1] === 91,
+            ),
+        ),
+      ).toBe(true),
+    );
+  });
+  it("uses the readable primary activity type for the title and breadcrumb when its name is missing", async () => {
+    mockActivityByIdUseQuery.mockReturnValue({
+      data: {
+        ...mockActivity,
+        name: null,
+        activityType: "walking",
+        primaryActivityType: "running",
+      },
+      error: null,
+      isError: false,
+      isLoading: false,
+    });
+
+    const ActivityDetailPage = await importPage();
+    renderWithUnits(<ActivityDetailPage />);
+
+    expect(screen.getByRole("heading", { level: 1, name: "Running" })).toBeDefined();
+    expect(screen.getAllByText("Running")).toHaveLength(2);
+    expect(screen.getByText("Walking")).toBeDefined();
+  });
+
+  it("uses the readable representative type for the title and breadcrumb when no primary is resolved", async () => {
+    mockActivityByIdUseQuery.mockReturnValue({
+      data: {
+        ...mockActivity,
+        name: null,
+        activityType: "hiking",
+        primaryActivityType: null,
+      },
+      error: null,
+      isError: false,
+      isLoading: false,
+    });
+
+    const ActivityDetailPage = await importPage();
+    renderWithUnits(<ActivityDetailPage />);
+
+    expect(screen.getByRole("heading", { level: 1, name: "Hiking" })).toBeDefined();
+    expect(screen.getAllByText("Hiking")).toHaveLength(3);
+  });
+
+  it("requests downloaded photos for the current activity with signed-link renewal", async () => {
+    const { ActivityDetailPage } = await import("./ActivityDetailPage.tsx");
+    renderWithUnits(<ActivityDetailPage />);
+    expect(mockImagesUseQuery).toHaveBeenCalledWith(
+      { id: "test-123" },
+      expect.objectContaining({ refetchOnMount: "always", refetchOnWindowFocus: true }),
+    );
+  });
   it("shows a loading skeleton before activity details resolve", async () => {
     mockActivityByIdUseQuery.mockReturnValue({
       data: undefined,
@@ -683,27 +921,11 @@ describe("ActivityDetailPage", () => {
     expect(screen.queryByText("Activity not found")).toBeNull();
   });
 
-  it("renders active and removed source links with their distinct displays", async () => {
+  it("keeps removed source records visible without links while retaining active sources", async () => {
     mockActivityByIdUseQuery.mockReturnValue({
       data: {
         ...mockActivity,
-        sourceLinks: [
-          {
-            providerId: "strava",
-            externalId: "strava-activity",
-            subsource: null,
-            label: "Strava",
-            url: "https://strava.example.test/activities/1",
-          },
-          {
-            providerId: "garmin",
-            externalId: "garmin-activity",
-            subsource: null,
-            label: "Garmin",
-            url: null,
-            providerAbsentAt: "2026-06-20T10:00:00.000Z",
-          },
-        ],
+        sourceTree: removedDetailSourceTree,
       },
       error: null,
       isError: false,
@@ -713,14 +935,14 @@ describe("ActivityDetailPage", () => {
 
     renderWithUnits(<ActivityDetailPage />);
 
-    expect(screen.getByRole("link", { name: "Strava" }).getAttribute("href")).toBe(
-      "https://strava.example.test/activities/1",
+    fireEvent.click(screen.getByRole("button", { name: "Garmin Edge 530 Lineage" }));
+    expect(screen.getAllByText("Removed from provider")).toHaveLength(2);
+    expect(screen.getByText("Strava").closest("a")).toBeNull();
+    expect(screen.queryByRole("link", { name: "Garmin Edge 530" })).toBeNull();
+    expect(screen.getByRole("link", { name: "WHOOP" })).toHaveAttribute(
+      "href",
+      "https://app.whoop.com/activities/123",
     );
-    const removed = screen.getByText("Garmin (removed)");
-    expect(removed.getAttribute("title")).toBe(
-      `Removed ${formatDateTime("2026-06-20T10:00:00.000Z")}`,
-    );
-    expect(removed.className).toContain("line-through");
   });
 
   it("shows the primary server error instead of reporting a missing activity", async () => {
@@ -810,13 +1032,15 @@ describe("ActivityDetailPage", () => {
           name: null,
           sourceLinks: [],
           sourceProviders: [],
+          sourceTree: { primary: null, otherSources: [] },
         }}
         units={new UnitConverter("metric")}
       />,
     );
 
-    expect(screen.getByRole("heading", { name: "running" })).toBeDefined();
-    expect(screen.queryByText(/^Source:/)).toBeNull();
+    expect(screen.getByRole("heading", { name: "Running" })).toBeDefined();
+    expect(screen.queryByRole("button", { name: /Lineage/ })).toBeNull();
+    expect(screen.getByText("10.0 km")).toBeVisible();
   });
 
   it("renders the server-provided calendar date at a UTC boundary", async () => {
@@ -841,16 +1065,16 @@ describe("ActivityDetailPage", () => {
     expect(screen.getByText(/Wed, Mar 18, 2026 at/)).toBeDefined();
   });
 
-  it("omits duration for an activity that has not ended", async () => {
+  it("announces unknown duration for an activity that has not ended", async () => {
     const ActivityHeader = await importActivityHeader();
     renderWithUnits(
       <ActivityHeader
-        activity={{ ...mockActivity, endedAt: null }}
+        activity={{ ...mockActivity, endedAt: null, durationMin: null }}
         units={new UnitConverter("metric")}
       />,
     );
 
-    expect(screen.queryByText("Duration")).toBeNull();
+    expect(screen.getByText("Unavailable")).toBeVisible();
     expect(screen.getByText("10.0 km")).toBeDefined();
   });
 
@@ -931,7 +1155,7 @@ describe("ActivityDetailPage", () => {
     expect(screen.getByText("Processing route map…")).toBeDefined();
     expect(screen.getByRole("status").parentElement).toHaveClass("h-[400px]");
     expect(screen.getByRole("status").querySelector(".animate-spin")).not.toBeNull();
-    expect(leafletMocks.tileLayer).not.toHaveBeenCalled();
+    expect(maps).toHaveLength(0);
     const routeOptions = mockRouteUseQuery.mock.calls[0]?.[1];
     if (
       !routeOptions ||
@@ -1006,41 +1230,90 @@ describe("ActivityDetailPage", () => {
 
     renderWithUnits(<ActivityDetailPage />);
 
-    expect(screen.getAllByRole("region", { name: "Climbing locations" })).toHaveLength(3);
+    expect(screen.getAllByRole("region", { name: "Climbing locations" })).toHaveLength(1);
     expect(screen.getByText("Climbing refresh failed")).toBeDefined();
     const climbPoint = await screen.findByRole("button", {
       name: "Located climb · Climb location: Located climb · Mountain Project",
     });
-    const createdMaps = leafletMocks.map.mock.calls.length;
+    const createdMaps = maps.length;
     act(() => climbPoint.focus());
     fireEvent.keyDown(climbPoint, { key: "Enter" });
+    expect(screen.getByRole("button", { name: "Select entry 2, Located climb" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    const details = screen.getByRole("button", { name: "Log details for entry 2, Located climb" });
+    details.focus();
+    fireEvent.click(details);
     const dialog = await screen.findByRole("dialog");
     expect(
-      within(within(dialog).getByRole("region", { name: "Climbing log details" })).getByText(
-        "Located climb",
-      ),
+      within(dialog).getByRole("region", { name: "Climbing log details" }),
     ).toBeInTheDocument();
-    expect(
-      screen
-        .getByRole("region", { name: "Attached climbing logs", hidden: true })
-        .querySelector('[aria-current="true"]'),
-    ).toHaveAttribute("aria-current", "true");
     fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    await waitFor(() => expect(climbPoint).toHaveFocus());
-    fireEvent.click(climbPoint);
+    await waitFor(() => expect(details).toHaveFocus());
+    fireEvent.click(details);
     expect(
       within(await screen.findByRole("dialog")).getByRole("region", {
         name: "Climbing log details",
       }),
     ).toBeInTheDocument();
-    expect(leafletMocks.map).toHaveBeenCalledTimes(createdMaps);
+    expect(maps).toHaveLength(createdMaps);
     if (state.startsWith("cached")) {
-      await waitFor(() => expect(leafletMocks.latLng).toHaveBeenCalledWith(7, 8));
+      await waitFor(() =>
+        expect(
+          markers.some((marker) => marker.coordinates?.[0] === 8 && marker.coordinates[1] === 7),
+        ).toBe(true),
+      );
     }
     if (state.endsWith("error")) {
       expect(screen.getByText("Recorded route refresh failed")).toBeDefined();
     }
+  });
+
+  it("fits a cycling route to its own points when climbing suggestions remain cached", async () => {
+    mockActivityByIdUseQuery.mockReturnValue({
+      data: { ...mockActivity, activityType: "cycling" },
+      error: null,
+      isError: false,
+      isLoading: false,
+    });
+    mockRouteUseQuery.mockReturnValue({
+      data: {
+        status: "ready",
+        points: [
+          { lat: 7, lng: 8 },
+          { lat: 9, lng: 10 },
+        ],
+      },
+      error: null,
+      isLoading: false,
+    });
+    mockEntrySuggestionsUseQuery.mockReturnValue({
+      data: [
+        climbingLogEntryFixture({
+          id: "cached-suggestion",
+          mapLocation: {
+            coordinates: { latitude: 42, longitude: -100 },
+            scope: "area",
+            objectId: "cached-area",
+            providerId: "openbeta",
+            name: "Cached area",
+          },
+        }),
+      ],
+      error: null,
+      isLoading: false,
+    });
+    const ActivityDetailPage = await importPage();
+    renderWithUnits(<ActivityDetailPage />);
+    await waitFor(() => expect(maps).toHaveLength(1));
+    expect(maps[0]?.fitBounds).toHaveBeenCalledWith(
+      [
+        [8, 7],
+        [10, 9],
+      ],
+      { padding: 30, duration: 0 },
+    );
   });
 
   it("shows a loading state before route freshness is known", async () => {
@@ -1054,7 +1327,7 @@ describe("ActivityDetailPage", () => {
     renderWithUnits(<ActivityDetailPage />);
 
     expect(screen.getByText("Loading route map…")).toBeDefined();
-    expect(leafletMocks.tileLayer).not.toHaveBeenCalled();
+    expect(maps).toHaveLength(0);
   });
 
   it("shows a route-specific error instead of drawing cached partial GPS", async () => {
@@ -1068,7 +1341,7 @@ describe("ActivityDetailPage", () => {
     renderWithUnits(<ActivityDetailPage />);
 
     expect(screen.getByText("Route freshness query failed.")).toBeDefined();
-    expect(leafletMocks.tileLayer).not.toHaveBeenCalled();
+    expect(maps).toHaveLength(0);
   });
 
   it("draws the ready route endpoint even when the cached sensor stream ends early", async () => {
@@ -1087,51 +1360,56 @@ describe("ActivityDetailPage", () => {
 
     renderWithUnits(<ActivityDetailPage />);
 
-    await waitFor(() => expect(leafletMocks.latLng).toHaveBeenCalledWith(9, 9));
+    await waitFor(() =>
+      expect(
+        markers.some((marker) => marker.coordinates?.[0] === 9 && marker.coordinates[1] === 9),
+      ).toBe(true),
+    );
   });
 
-  it("shows OpenStreetMap tiles with attribution on the route map", async () => {
+  it("shows the shared vector map background and its attribution on the route map", async () => {
     const ActivityDetailPage = await importPage();
     renderWithUnits(<ActivityDetailPage />);
-
-    await waitFor(() =>
-      expect(leafletMocks.map).toHaveBeenCalledWith(
-        expect.any(HTMLElement),
-        expect.objectContaining({ attributionControl: true }),
-      ),
-    );
-    expect(leafletMocks.tileLayer).toHaveBeenCalledWith(
-      "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-      expect.objectContaining({
-        attribution:
-          '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-      }),
-    );
+    await waitFor(() => expect(maps).toHaveLength(1));
+    expect(maps[0]?.options).toMatchObject({
+      attributionControl: {},
+      style: {
+        sources: {
+          openmaptiles: { type: "vector", attribution: expect.stringContaining("OpenStreetMap") },
+        },
+      },
+    });
   });
 
   it("creates a route hover marker from valid chart pointer events", async () => {
     const ActivityDetailPage = await importPage();
     renderWithUnits(<ActivityDetailPage />);
 
-    await waitFor(() => expect(leafletMocks.map).toHaveBeenCalledOnce());
-    await waitFor(() => expect(leafletMocks.circleMarker).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(maps).toHaveLength(1));
+    await waitFor(() => expect(markers).toHaveLength(2));
     const metricEvents = capturedEvents.find((events) => events.updateAxisPointer != null);
     if (!metricEvents?.updateAxisPointer || !metricEvents.globalout) {
       throw new Error("Metrics chart pointer events were not registered");
     }
 
-    metricEvents.updateAxisPointer({ axesInfo: [{ value: 0 }] });
-    await waitFor(() => expect(leafletMocks.circleMarker).toHaveBeenCalledTimes(3));
+    metricEvents.updateAxisPointer({
+      axesInfo: [{ value: Date.parse(mockStreamPoints[0]?.recordedAt ?? "") }],
+    });
+    await waitFor(() => expect(markers).toHaveLength(3));
 
     metricEvents.updateAxisPointer({});
     metricEvents.updateAxisPointer({ axesInfo: [] });
     metricEvents.updateAxisPointer({ axesInfo: [{ value: -1 }] });
-    metricEvents.updateAxisPointer({ axesInfo: [{ value: mockStreamPoints.length + 1 }] });
+    metricEvents.updateAxisPointer({
+      axesInfo: [{ value: Date.parse(mockStreamPoints.at(-1)?.recordedAt ?? "") + 1 }],
+    });
 
-    expect(leafletMocks.circleMarker).toHaveBeenCalledTimes(3);
+    expect(markers).toHaveLength(3);
 
-    metricEvents.updateAxisPointer({ axesInfo: [{ value: 1 }] });
-    await waitFor(() => expect(leafletMocks.circleMarker).toHaveBeenCalledTimes(4));
+    metricEvents.updateAxisPointer({
+      axesInfo: [{ value: Date.parse(mockStreamPoints[1]?.recordedAt ?? "") }],
+    });
+    await waitFor(() => expect(markers).toHaveLength(4));
     metricEvents.globalout();
   });
 
@@ -1300,15 +1578,17 @@ describe("ActivityDetailPage", () => {
 
     renderWithUnits(<ActivityDetailPage />);
 
-    await waitFor(() => expect(leafletMocks.map).toHaveBeenCalledOnce());
+    await waitFor(() => expect(maps).toHaveLength(1));
     const metricEvents = capturedEvents.find((events) => events.updateAxisPointer != null);
     if (!metricEvents?.updateAxisPointer) {
       throw new Error("Metrics chart pointer events were not registered");
     }
 
-    metricEvents.updateAxisPointer({ axesInfo: [{ value: 1 }] });
+    metricEvents.updateAxisPointer({
+      axesInfo: [{ value: Date.parse(mockStreamPoints[1]?.recordedAt ?? "") }],
+    });
 
-    expect(leafletMocks.circleMarker).toHaveBeenCalledTimes(2);
+    expect(markers).toHaveLength(2);
   });
 
   it("shows a climbing-entry query failure for a climbing activity", async () => {
@@ -1356,6 +1636,36 @@ describe("ActivityDetailPage", () => {
     mockStreamPoints.splice(0, mockStreamPoints.length, ...originalStream);
   });
 
+  it("shows the server reason when computed cycling threshold evidence is unavailable", async () => {
+    const originalActivity = { ...mockActivity };
+    const originalStream = [...mockStreamPoints];
+    mockStreamPoints.splice(
+      0,
+      mockStreamPoints.length,
+      ...originalStream.map((point) => ({ ...point, power: 210 })),
+    );
+    Object.assign(mockActivity, { activityType: "cycling", avgPower: 220, maxPower: 360 });
+    mockPowerZonesUseQuery.mockReturnValue({
+      data: {
+        ftp: null,
+        zones: [],
+        thresholdEvidence: {
+          ...computedThresholdEvidence,
+          value: null,
+          unavailable_reason: "No supported sustained power effort is available.",
+        },
+      },
+      isLoading: false,
+      error: null,
+      isError: false,
+    });
+    const ActivityDetailPage = await importPage();
+    renderWithUnits(<ActivityDetailPage />);
+    expect(screen.getByText("No supported sustained power effort is available.")).toBeDefined();
+    Object.assign(mockActivity, originalActivity);
+    mockStreamPoints.splice(0, mockStreamPoints.length, ...originalStream);
+  });
+
   it("keeps cached power zones visible while reporting their refresh failure", async () => {
     const originalActivity = { ...mockActivity };
     const originalStream = [...mockStreamPoints];
@@ -1368,6 +1678,7 @@ describe("ActivityDetailPage", () => {
     mockPowerZonesUseQuery.mockReturnValue({
       data: {
         ftp: 250,
+        thresholdEvidence: computedThresholdEvidence,
         zones: [{ zone: 1, label: "Zone 1", minPct: 0, maxPct: 55, seconds: 300, percent: 100 }],
       },
       error: new Error("Power zones refresh failed."),
@@ -1380,6 +1691,29 @@ describe("ActivityDetailPage", () => {
 
     expect(screen.getByText("Power Zones")).toBeDefined();
     expect(screen.getByText("Power zones refresh failed.")).toBeDefined();
+    expect(screen.getByText("Computed eFTP: 250 W")).toBeDefined();
+    const previousZones = { ftp: 250, thresholdEvidence: computedThresholdEvidence, zones: [] };
+    const placeholder = getPlaceholderData(mockPowerZonesUseQuery.mock.calls.at(-1)?.[1]);
+    expect(
+      placeholder?.(previousZones, {
+        queryKey: [
+          ["activity", "powerZones"],
+          { input: { id: "test-123", powerSourceId: "old-source" }, type: "query" },
+        ],
+      }),
+    ).toBe(previousZones);
+    expect(
+      placeholder?.(previousZones, {
+        queryKey: [["activity", "powerZones"], { input: { id: "different-ride" }, type: "query" }],
+      }),
+    ).toBeUndefined();
+    expect(screen.getByText(/Evidence:/)).toBeDefined();
+    fireEvent.click(screen.getByText("Estimate uncertainty"));
+    expect(
+      screen.getByText(
+        "Reference-curve estimate; individual physiological FTP uncertainty has not been quantified.",
+      ),
+    ).toBeTruthy();
     Object.assign(mockActivity, originalActivity);
     mockStreamPoints.splice(0, mockStreamPoints.length, ...originalStream);
   });
@@ -1424,6 +1758,7 @@ describe("ActivityDetailPage", () => {
     });
     expect(mockActivityHrZonesInvalidate).toHaveBeenCalledWith({ id: "test-123" });
     expect(mockActivityPowerZonesInvalidate).toHaveBeenCalledWith({ id: "test-123" });
+    expect(mockActivityPowerWorkInvalidate).toHaveBeenCalledWith({ id: "test-123" });
     expect(mockActivityStrengthExercisesInvalidate).toHaveBeenCalledWith({ id: "test-123" });
     expect(mockActivityListInvalidate).toHaveBeenCalled();
     expect(mockCalendarWeekListInvalidate).toHaveBeenCalled();
@@ -1465,6 +1800,54 @@ describe("ActivityDetailPage", () => {
     );
   });
 
+  it.each([true, false])(
+    "shows a refresh status while power work is fetching (%s)",
+    async (isFetching) => {
+      mockActivityByIdUseQuery.mockReturnValue({
+        data: { ...mockActivity, activityType: "cycling" },
+        error: null,
+        isError: false,
+        isLoading: false,
+      });
+      mockMetricSourcesUseQuery.mockReturnValue({
+        data: [
+          {
+            key: "power",
+            label: "Power",
+            defaultSourceId: "wahoo",
+            sources: [
+              {
+                id: "wahoo",
+                label: "Wahoo",
+                presentation: {
+                  displayName: "Wahoo",
+                  providerId: "wahoo",
+                  sourceName: null,
+                  attribution: null,
+                },
+              },
+            ],
+          },
+        ],
+        error: null,
+        isError: false,
+        isLoading: false,
+      });
+      mockPowerWorkUseQuery.mockReturnValue({
+        data: { workKilojoules: 478, coverage: { coveredSeconds: 2700, coveragePct: 100 } },
+        error: null,
+        isError: false,
+        isLoading: false,
+        isFetching,
+      });
+      const ActivityDetailPage = await importPage();
+      renderWithUnits(<ActivityDetailPage />);
+      expect(screen.getByText("478 kJ")).toBeVisible();
+      if (isFetching) expect(screen.getByText("Updating metrics…")).toBeVisible();
+      else expect(screen.queryByText("Updating metrics…")).toBeNull();
+    },
+  );
+
   describe("provider tombstone status", () => {
     afterEach(() => {
       mockActivity.providerAbsentAt = null;
@@ -1488,6 +1871,161 @@ describe("ActivityDetailPage", () => {
   });
 
   describe("ActivityHeader unit display", () => {
+    it.each(["indoor", "virtual"])("omits simulated distance for %s cycling", async (modality) => {
+      const ActivityHeader = await importActivityHeader();
+      renderWithUnits(
+        <ActivityHeader
+          activity={{ ...mockActivity, activityType: "cycling", modality, totalDistance: 25000 }}
+          units={new UnitConverter("metric")}
+        />,
+      );
+      expect(screen.queryByText("Distance")).toBeNull();
+      expect(screen.getByText("Duration")).toBeVisible();
+    });
+
+    it("retains a recorded zero distance for outdoor cycling", async () => {
+      const ActivityHeader = await importActivityHeader();
+      renderWithUnits(
+        <ActivityHeader
+          activity={{
+            ...mockActivity,
+            activityType: "cycling",
+            modality: "outdoor",
+            totalDistance: 0,
+          }}
+          units={new UnitConverter("metric")}
+        />,
+      );
+      expect(screen.getByText("Distance")).toBeVisible();
+      expect(screen.getByText("0.0 km")).toBeVisible();
+    });
+
+    it.each(["metric", "imperial"] as const)(
+      "shows server-calculated energy output in kJ with %s units",
+      async (unitSystem) => {
+        mockActivityByIdUseQuery.mockReturnValue({
+          data: { ...mockActivity, activityType: "cycling" },
+          error: null,
+          isError: false,
+          isLoading: false,
+        });
+        mockPowerWorkUseQuery.mockReturnValue({
+          data: { workKilojoules: 477.8, coverage: { coveredSeconds: 2700, coveragePct: 100 } },
+          error: null,
+          isError: false,
+          isLoading: false,
+        });
+        const ActivityDetailPage = await importPage();
+        renderWithUnits(<ActivityDetailPage />, unitSystem);
+        expect(screen.getByText("Energy Output")).toBeVisible();
+        expect(screen.getByText("478 kJ")).toBeVisible();
+        expect(screen.queryByText("Partial power data")).toBeNull();
+        expect(mockPowerWorkUseQuery).toHaveBeenLastCalledWith(
+          { id: "test-123", powerSourceId: undefined },
+          expect.objectContaining({ enabled: true }),
+        );
+        const previous = {
+          workKilojoules: 477.8,
+          coverage: { coveredSeconds: 2700, coveragePct: 100 },
+        };
+        const placeholder = getPlaceholderData(mockPowerWorkUseQuery.mock.calls[0]?.[1]);
+        expect(
+          placeholder?.(previous, {
+            queryKey: [
+              ["activity", "powerWork"],
+              { input: { id: "test-123", powerSourceId: "old-source" }, type: "query" },
+            ],
+          }),
+        ).toBe(previous);
+        expect(
+          placeholder?.(previous, {
+            queryKey: [
+              ["activity", "powerWork"],
+              { input: { id: "different-ride" }, type: "query" },
+            ],
+          }),
+        ).toBeUndefined();
+        expect(placeholder?.(previous)).toBeUndefined();
+      },
+    );
+
+    it.each([0, null])(
+      "distinguishes zero output from missing power (%s)",
+      async (workKilojoules) => {
+        mockActivityByIdUseQuery.mockReturnValue({
+          data: { ...mockActivity, activityType: "cycling" },
+          error: null,
+          isError: false,
+          isLoading: false,
+        });
+        mockPowerWorkUseQuery.mockReturnValue({
+          data: {
+            workKilojoules,
+            coverage: {
+              coveredSeconds: workKilojoules == null ? 0 : 2700,
+              coveragePct: workKilojoules == null ? 0 : 100,
+            },
+          },
+          error: null,
+          isError: false,
+          isLoading: false,
+        });
+        const ActivityDetailPage = await importPage();
+        renderWithUnits(<ActivityDetailPage />);
+        if (workKilojoules == null) expect(screen.queryByText("Energy Output")).toBeNull();
+        else expect(screen.getByText("0 kJ")).toBeVisible();
+      },
+    );
+
+    it.each([98.9, 99])(
+      "qualifies incomplete power coverage at %s percent",
+      async (coveragePct) => {
+        mockActivityByIdUseQuery.mockReturnValue({
+          data: { ...mockActivity, activityType: "cycling" },
+          error: null,
+          isError: false,
+          isLoading: false,
+        });
+        mockPowerWorkUseQuery.mockReturnValue({
+          data: { workKilojoules: 400, coverage: { coveredSeconds: 2600, coveragePct } },
+          error: null,
+          isError: false,
+          isLoading: false,
+        });
+        const ActivityDetailPage = await importPage();
+        renderWithUnits(<ActivityDetailPage />);
+        expect(screen.getByText("400 kJ")).toBeVisible();
+        expect(screen.queryByText("Partial power data") !== null).toBe(coveragePct < 99);
+      },
+    );
+
+    it("keeps cached output visible alongside a power-work refresh error", async () => {
+      mockActivityByIdUseQuery.mockReturnValue({
+        data: { ...mockActivity, activityType: "cycling" },
+        error: null,
+        isError: false,
+        isLoading: false,
+      });
+      mockPowerWorkUseQuery.mockReturnValue({
+        data: { workKilojoules: 478, coverage: { coveredSeconds: 2700, coveragePct: 100 } },
+        error: new Error("Power samples are unavailable. Retry this activity."),
+        isError: true,
+        isLoading: false,
+      });
+      const ActivityDetailPage = await importPage();
+      renderWithUnits(<ActivityDetailPage />);
+      expect(screen.getByText("478 kJ")).toBeVisible();
+      expect(screen.getByText("Power samples are unavailable. Retry this activity.")).toBeVisible();
+    });
+
+    it("disables energy output for non-cycling activities", async () => {
+      const ActivityDetailPage = await importPage();
+      renderWithUnits(<ActivityDetailPage />);
+      expect(mockPowerWorkUseQuery).toHaveBeenLastCalledWith(
+        expect.anything(),
+        expect.objectContaining({ enabled: false }),
+      );
+    });
     it("formats multi-hour activity durations", async () => {
       const ActivityHeader = await importActivityHeader();
       renderWithUnits(
@@ -1496,6 +2034,7 @@ describe("ActivityDetailPage", () => {
             ...mockActivity,
             startedAt: "2026-03-18T07:00:00Z",
             endedAt: "2026-03-18T09:05:00Z",
+            durationMin: 125,
           }}
           units={new UnitConverter("metric")}
         />,
@@ -1531,136 +2070,109 @@ describe("ActivityDetailPage", () => {
     });
   });
 
-  describe("source providers", () => {
-    it("shows source providers with human-readable labels", async () => {
+  describe("source tree", () => {
+    it("opens the queried lineage with its reported recording", async () => {
+      mockActivityByIdUseQuery.mockReturnValue({
+        data: { ...mockActivity, sourceTree: detailSourceTree },
+        error: null,
+        isError: false,
+        isLoading: false,
+      });
+      mockHardwareUseQuery.mockReturnValue({
+        data: sourceHardware,
+        isLoading: false,
+        error: null,
+        refetch: vi.fn(),
+      });
       const ActivityDetailPage = await importPage();
       renderWithUnits(<ActivityDetailPage />);
-      expect(screen.getByText(/WHOOP/)).toBeDefined();
-      expect(screen.getByText(/Apple Health/)).toBeDefined();
+      const trigger = screen.getByRole("button", { name: "Garmin Edge 530 Lineage" });
+      fireEvent.click(trigger);
+      expect(trigger).toHaveAttribute("aria-expanded", "true");
+      expect(screen.getByRole("link", { name: "Garmin Edge 530" })).toBeVisible();
+      expect(screen.getByRole("heading", { name: "Original" })).toBeVisible();
     });
 
-    it("shows Apple Health upstream app names when subsource is present", async () => {
-      const originalData = { ...mockActivity };
-      Object.assign(mockActivity, {
-        providerId: "apple_health",
-        subsource: "Strong",
-        sourceProviders: ["apple_health"],
-        sourceLinks: [],
+    it("expands the server source tree inside the real detail header with distinct transfer branches", async () => {
+      mockActivityByIdUseQuery.mockReturnValue({
+        data: { ...mockActivity, sourceTree: detailSourceTree },
+        error: null,
+        isError: false,
+        isLoading: false,
       });
-
       const ActivityDetailPage = await importPage();
       renderWithUnits(<ActivityDetailPage />);
 
-      expect(screen.getByText(/Strong \(via Apple Health\)/)).toBeDefined();
+      const trigger = screen.getByRole("button", { name: "Garmin Edge 530 Lineage" });
+      expect(trigger).toHaveAttribute("aria-expanded", "false");
+      expect(screen.queryByText("Strava")).toBeNull();
+      expect(screen.getByRole("heading", { name: "Morning Run" })).toBeVisible();
+      expect(screen.getByText(/Wed, Mar 18, 2026 at/)).toBeVisible();
+      expect(screen.getByText("45m")).toBeVisible();
+      expect(screen.getByText("10.0 km")).toBeVisible();
 
-      Object.assign(mockActivity, originalData);
+      trigger.focus();
+      fireEvent.click(trigger);
+
+      expect(trigger).toHaveAttribute("aria-expanded", "true");
+      const details = document.getElementById(trigger.getAttribute("aria-controls") ?? "");
+      expect(details).toBeVisible();
+      expect(screen.getAllByText("Garmin Edge 530")).toHaveLength(2);
+      expect(screen.getByRole("link", { name: "Garmin Edge 530" })).toHaveAttribute(
+        "href",
+        "https://connect.garmin.com/modern/activity/123",
+      );
+      const strava = screen.getByRole("link", { name: "Strava" }).closest("li");
+      if (!strava) throw new Error("Missing Strava branch");
+      expect(within(strava).getByText("Apple Health")).toBeVisible();
+      expect(screen.getAllByText("Apple Health")).toHaveLength(2);
+      expect(
+        within(screen.getByRole("region", { name: "Other" })).getByText("WHOOP"),
+      ).toBeVisible();
+      expect(screen.getByRole("heading", { name: "Morning Run" })).toBeVisible();
+      expect(screen.getByText("10.0 km")).toBeVisible();
+
+      fireEvent.click(trigger);
+      expect(trigger).toHaveAttribute("aria-expanded", "false");
+      await waitFor(() => expect(trigger).toHaveFocus());
+      expect(screen.queryByText("Strava")).toBeNull();
     });
 
-    it("renders multiple Apple Health upstream app source links", async () => {
-      const originalData = { ...mockActivity };
-      Object.assign(mockActivity, {
-        providerId: "whoop",
-        subsource: "WHOOP",
-        sourceProviders: ["apple_health", "whoop"],
-        sourceLinks: [
-          {
-            providerId: "apple_health",
-            label: "Strong (via Apple Health)",
-            url: null,
-            providerAbsentAt: null,
-            memberActivityId: "strong-member",
-          },
-          {
-            providerId: "apple_health",
-            label: "WHOOP (via Apple Health)",
-            url: null,
-            providerAbsentAt: null,
-            memberActivityId: "whoop-apple-member",
-          },
-          {
-            providerId: "whoop",
-            label: "WHOOP (Cloud)",
-            url: "https://app.whoop.com/activities/whoop-cloud",
-            providerAbsentAt: null,
-            memberActivityId: "whoop-cloud-member",
-          },
-        ],
-      });
-
-      const ActivityDetailPage = await importPage();
-      renderWithUnits(<ActivityDetailPage />);
-
-      expect(screen.getByText(/Strong \(via Apple Health\)/)).toBeDefined();
-      expect(screen.getByText(/WHOOP \(via Apple Health\)/)).toBeDefined();
-      expect(screen.getByRole("link", { name: "WHOOP (Cloud)" })).toBeDefined();
-
-      Object.assign(mockActivity, originalData);
-    });
-
-    it("renders removed source links without anchors", async () => {
-      const originalData = { ...mockActivity };
-      Object.assign(mockActivity, {
-        providerId: "garmin",
-        subsource: null,
-        sourceProviders: ["garmin", "strava"],
-        sourceLinks: [
-          {
-            providerId: "garmin",
-            label: "Garmin",
-            url: "https://connect.garmin.com/modern/activity/456",
-            providerAbsentAt: null,
-          },
-          {
-            providerId: "strava",
-            label: "Strava",
-            url: "https://www.strava.com/activities/123",
-            providerAbsentAt: "2026-03-05T14:30:00.000Z",
-          },
-        ],
-      });
-
-      const ActivityDetailPage = await importPage();
-      renderWithUnits(<ActivityDetailPage />);
-
-      expect(screen.getByText("Strava (removed)")).toBeTruthy();
-      expect(screen.queryByRole("link", { name: "Strava" })).toBeNull();
-      expect(screen.getByRole("link", { name: "Garmin" })).toBeTruthy();
-
-      Object.assign(mockActivity, originalData);
-    });
-
-    it("renders source links as clickable anchors", async () => {
-      const originalData = { ...mockActivity };
-      Object.assign(mockActivity, {
-        providerId: "wahoo",
-        subsource: null,
-        sourceProviders: ["strava", "garmin"],
-        sourceLinks: [
-          { providerId: "strava", label: "Strava", url: "https://www.strava.com/activities/123" },
-          {
-            providerId: "garmin",
-            label: "Garmin",
-            url: "https://connect.garmin.com/modern/activity/456",
-          },
-        ],
-      });
-
-      const ActivityDetailPage = await importPage();
-      renderWithUnits(<ActivityDetailPage />);
-
-      const stravaLink = screen.getByText("Strava");
-      expect(stravaLink.tagName).toBe("A");
-      expect(stravaLink.getAttribute("href")).toBe("https://www.strava.com/activities/123");
-      expect(stravaLink.getAttribute("target")).toBe("_blank");
-
-      const garminLink = screen.getByText("Garmin");
-      expect(garminLink.tagName).toBe("A");
-      expect(garminLink.getAttribute("href")).toBe(
-        "https://connect.garmin.com/modern/activity/456",
+    it("renders recording attribution from the server even without flat source links", async () => {
+      const ActivityHeader = await importActivityHeader();
+      renderWithUnits(
+        <ActivityHeader
+          activity={{ ...mockActivity, sourceTree: strongSourceTree }}
+          units={new UnitConverter("metric")}
+        />,
       );
 
-      // Restore
-      Object.assign(mockActivity, originalData);
+      fireEvent.click(screen.getByRole("button", { name: "Strong Lineage" }));
+      expect(screen.getAllByText("Strong")).toHaveLength(2);
+      expect(screen.getByText("Recording app reported by Apple Health")).toBeVisible();
+      expect(screen.getByText("Apple Health")).toBeVisible();
+      expect(screen.getByText("Recorded by Strong")).toBeVisible();
+    });
+
+    it("keeps unresolved source records expandable without inventing a primary root", async () => {
+      const ActivityHeader = await importActivityHeader();
+      renderWithUnits(
+        <ActivityHeader
+          activity={{
+            ...mockActivity,
+            sourceTree: { primary: null, otherSources: detailSourceTree.otherSources },
+          }}
+          units={new UnitConverter("metric")}
+        />,
+      );
+
+      const trigger = screen.getByRole("button", { name: "Lineage" });
+      expect(trigger).toHaveAttribute("aria-expanded", "false");
+      fireEvent.click(trigger);
+      expect(
+        within(screen.getByRole("region", { name: "Available recordings" })).getByText("WHOOP"),
+      ).toBeVisible();
+      expect(screen.getByRole("heading", { name: "Morning Run" })).toBeVisible();
     });
   });
 
@@ -1758,17 +2270,14 @@ describe("ActivityDetailPage", () => {
       expect(typeof formatter).toBe("function");
       if (typeof formatter !== "function") throw new Error("Expected timestamp formatter");
 
-      expect(formatter({ value: mockStreamPoints[0]?.recordedAt })).toBe(
+      expect(formatter({ value: Date.parse(mockStreamPoints[0]?.recordedAt ?? "") })).toBe(
         formatDateTime("2026-03-18T07:00:00Z"),
       );
     });
 
-    it("presents the navigator as a labeled control instead of a miniature chart", async () => {
+    it("shows a draggable navigator with formatted time labels", async () => {
       const ActivityDetailPage = await importPage();
       renderWithUnits(<ActivityDetailPage />);
-
-      expect(screen.getByText("Zoom timeline")).toBeDefined();
-      expect(screen.getByText("Drag the handles to focus on part of the activity.")).toBeDefined();
 
       const metricsOption = findOptionByYAxisArrayName("Heart Rate");
       expect(metricsOption).toBeDefined();
@@ -1785,7 +2294,7 @@ describe("ActivityDetailPage", () => {
       const labelFormatter = slider?.labelFormatter;
       expect(typeof labelFormatter).toBe("function");
       if (typeof labelFormatter === "function") {
-        expect(labelFormatter(0, mockStreamPoints[0]?.recordedAt)).toBe(
+        expect(labelFormatter(Date.parse(mockStreamPoints[0]?.recordedAt ?? ""))).toBe(
           formatTimeOnly(mockStreamPoints[0]?.recordedAt ?? ""),
         );
       }
@@ -2015,7 +2524,20 @@ describe("ActivityDetailPage", () => {
           isLoading: false,
         });
         mockClimbingEntriesUseQuery.mockReturnValue({
-          data: [climbingLogEntryFixture({ id: "cached-log", title: "Cached climb" })],
+          data: [
+            climbingLogEntryFixture({
+              id: "cached-log",
+              title: "Cached climb",
+              chartAnnotations: [
+                {
+                  id: "cached-log",
+                  label: "Cached timed climb",
+                  startedAt: "2026-03-18T07:15:00Z",
+                  endedAt: null,
+                },
+              ],
+            }),
+          ],
           error: null,
           isError: false,
           isLoading: false,
@@ -2031,6 +2553,7 @@ describe("ActivityDetailPage", () => {
 
         expect(screen.queryByRole("heading", { name: "Climbs" })).not.toBeInTheDocument();
         expect(screen.queryByText("Cached climb")).not.toBeInTheDocument();
+        expect(screen.queryByText(/Cached timed climb/)).not.toBeInTheDocument();
         expect(screen.queryByText("Suggested climb")).not.toBeInTheDocument();
         expect(getQueryEnabledFlag(mockClimbingEntriesUseQuery.mock.calls[0]?.[1])).toBe(false);
         expect(getQueryEnabledFlag(mockEntrySuggestionsUseQuery.mock.calls[0]?.[1])).toBe(false);
@@ -2055,15 +2578,19 @@ describe("ActivityDetailPage", () => {
       renderWithUnits(<ActivityDetailPage />);
       expect(getQueryEnabledFlag(mockClimbingEntriesUseQuery.mock.calls[0]?.[1])).toBe(true);
       expect(mockClimbingEntriesUseQuery).toHaveBeenCalledWith(
-        { activityId: "test-123" },
-        expect.objectContaining({ enabled: true }),
+        { activityId: "test-123", responseVersion: 5 },
+        expect.objectContaining({ enabled: true, select: decodeClimbingLogEntriesResponse }),
+      );
+      expect(mockEntrySuggestionsUseQuery).toHaveBeenCalledWith(
+        { activityId: "test-123", responseVersion: 5 },
+        expect.objectContaining({ enabled: true, select: decodeClimbingLogEntriesResponse }),
       );
       expect(screen.getByText("Summit outing")).toBeInTheDocument();
       expect(screen.getByText("Ridge traverse")).toBeInTheDocument();
       expect(screen.getByText("Log refresh failed")).toBeInTheDocument();
       expect(screen.getByText("Suggestions refresh failed")).toBeInTheDocument();
       expect(
-        screen.getByRole("button", { name: "Attach entry 1, Ridge traverse to this activity" }),
+        screen.getByRole("button", { name: "Attach entry 2, Ridge traverse to this activity" }),
       ).toBeEnabled();
     });
     it("waits for attached climbs before showing the empty suggestions notice", async () => {
@@ -2136,7 +2663,7 @@ describe("ActivityDetailPage", () => {
             displayGrade: "V3",
             board: null,
             wallAngle: null,
-            holdType: null,
+            holdTypes: null,
             recordedClimbAttemptCount: 1,
             recordedClimbOutcome: "completed",
             climb: {
@@ -2192,7 +2719,7 @@ describe("ActivityDetailPage", () => {
             displayGrade: "V4",
             board: null,
             wallAngle: null,
-            holdType: null,
+            holdTypes: null,
             recordedClimbAttemptCount: 2,
             recordedClimbOutcome: "completed",
             climb: {
@@ -2246,7 +2773,7 @@ describe("ActivityDetailPage", () => {
             displayGrade: "5.10a",
             board: null,
             wallAngle: null,
-            holdType: null,
+            holdTypes: null,
             recordedClimbAttemptCount: 1,
             recordedClimbOutcome: null,
             climb: {
@@ -2292,7 +2819,7 @@ describe("ActivityDetailPage", () => {
       expect(within(climbsSection).getByText("Project")).toBeInTheDocument();
       expect(
         within(climbsSection).getAllByRole("button", {
-          name: /^Attach entry [12], (Blue Circuit|Project) to this activity$/,
+          name: /^Attach entry [23], (Blue Circuit|Project) to this activity$/,
         }),
       ).toHaveLength(2);
       expect(screen.getByText("Mountain Project")).toBeDefined();
@@ -2301,7 +2828,7 @@ describe("ActivityDetailPage", () => {
       expect(screen.getByText("V4", { exact: true })).toBeDefined();
       expect(screen.getAllByText("Flash")).toHaveLength(2);
       const controls = screen.getAllByRole("button", {
-        name: /^Attach entry [12], (Blue Circuit|Project) to this activity$/,
+        name: /^Attach entry [23], (Blue Circuit|Project) to this activity$/,
       });
       expect(controls).toHaveLength(2);
       const secondControl = controls.at(1);
@@ -2312,10 +2839,18 @@ describe("ActivityDetailPage", () => {
         climbingLogEntryId: "tick-2",
       });
       await waitFor(() => {
-        expect(mockClimbingEntriesInvalidate).toHaveBeenCalledWith({ activityId: "test-123" });
-        expect(mockEntrySuggestionsInvalidate).toHaveBeenCalledWith({ activityId: "test-123" });
+        expect(mockClimbingEntriesInvalidate).toHaveBeenCalledWith({
+          activityId: "test-123",
+          responseVersion: 5,
+        });
+        expect(mockActivityImagesInvalidate).toHaveBeenCalledWith({ id: "test-123" });
+        expect(mockEntrySuggestionsInvalidate).toHaveBeenCalledWith({
+          activityId: "test-123",
+          responseVersion: 5,
+        });
         expect(mockClimbingSessionSummaryInvalidate).toHaveBeenCalledWith();
         expect(mockClimbingGradeProgressionInvalidate).toHaveBeenCalledWith();
+        expect(mockClimbingStrengthsInvalidate).toHaveBeenCalledWith();
         expect(mockClimbingVolumeByGradeInvalidate).toHaveBeenCalledWith();
       });
       expect(mockActivityByIdInvalidate).not.toHaveBeenCalled();
@@ -2353,7 +2888,7 @@ describe("ActivityDetailPage", () => {
               displayGrade: "5.10a",
               board: null,
               wallAngle: null,
-              holdType: null,
+              holdTypes: null,
               recordedClimbAttemptCount: 1,
               recordedClimbOutcome: "completed",
               climb: {
@@ -2412,7 +2947,10 @@ describe("ActivityDetailPage", () => {
           climbingLogEntryId: "available-tick",
         });
         await waitFor(() =>
-          expect(mockClimbingEntriesInvalidate).toHaveBeenCalledWith({ activityId: "test-123" }),
+          expect(mockClimbingEntriesInvalidate).toHaveBeenCalledWith({
+            activityId: "test-123",
+            responseVersion: 5,
+          }),
         );
         Object.assign(mockActivity, originalActivity);
       },
@@ -2434,7 +2972,7 @@ describe("ActivityDetailPage", () => {
             displayGrade: "5.10a",
             board: null,
             wallAngle: null,
-            holdType: null,
+            holdTypes: null,
             recordedClimbAttemptCount: 1,
             recordedClimbOutcome: "completed",
             climb: {
@@ -2539,7 +3077,7 @@ describe("ActivityDetailPage", () => {
             displayGrade: "V4",
             board: null,
             wallAngle: null,
-            holdType: null,
+            holdTypes: null,
             recordedClimbAttemptCount: 7,
             recordedClimbOutcome: "completed",
             climb: {
@@ -2615,7 +3153,7 @@ describe("ActivityDetailPage", () => {
             displayGrade: "V5",
             board: null,
             wallAngle: { value: 35, unit: "degrees" },
-            holdType: "crimp",
+            holdTypes: ["crimp"],
             recordedClimbAttemptCount: 1,
             recordedClimbOutcome: "failed",
             climb: {
@@ -2658,7 +3196,7 @@ describe("ActivityDetailPage", () => {
             displayGrade: "V3",
             board: null,
             wallAngle: null,
-            holdType: null,
+            holdTypes: null,
             recordedClimbAttemptCount: 1,
             recordedClimbOutcome: null,
             climb: {
@@ -2706,9 +3244,9 @@ describe("ActivityDetailPage", () => {
       expect(screen.getByText("Sent")).toBeDefined();
       expect(screen.getByText("Attempts: 7")).toBeDefined();
       expect(screen.getByText("Project")).toBeDefined();
-      expect(screen.getByText("Failed · Attempts: 1")).toBeDefined();
+      expect(screen.getByText("Attempted")).toBeDefined();
       expect(screen.getByText("Wall angle: 35°")).toBeDefined();
-      expect(screen.getByText("Attempts: 1")).toBeDefined();
+      expect(screen.getAllByText("Attempts: 1")).toHaveLength(2);
       expect(screen.getAllByText("Touchstone Pacific Pipe")).toHaveLength(3);
       expect(
         screen.queryByText("No unattached climbing logs for this day."),
@@ -2854,6 +3392,7 @@ describe("ActivityDetailPage", () => {
       mockPowerZonesUseQuery.mockReturnValue({
         data: {
           ftp: 250,
+          thresholdEvidence: computedThresholdEvidence,
           zones: [
             { zone: 1, label: "Recovery", minPct: 0, maxPct: 55, seconds: 300, percent: 33.3 },
             { zone: 2, label: "Endurance", minPct: 56, maxPct: 75, seconds: 600, percent: 66.7 },
@@ -2947,6 +3486,7 @@ describe("ActivityDetailPage", () => {
       mockPowerZonesUseQuery.mockReturnValue({
         data: {
           ftp: 250,
+          thresholdEvidence: computedThresholdEvidence,
           zones: [
             { zone: 1, label: "Endurance", minPct: 56, maxPct: 75, seconds: 240, percent: 100 },
           ],
@@ -2997,8 +3537,26 @@ describe("activity heart-rate sources", () => {
           key: "heartRate",
           label: "Heart Rate",
           sources: [
-            { id: "whoop", label: "WHOOP" },
-            { id: "garmin", label: "Garmin" },
+            {
+              id: "whoop",
+              label: "WHOOP",
+              presentation: {
+                displayName: "WHOOP",
+                providerId: "whoop",
+                sourceName: null,
+                attribution: { kind: "cloud", label: "via WHOOP" },
+              },
+            },
+            {
+              id: "garmin",
+              label: "Garmin",
+              presentation: {
+                displayName: "Garmin",
+                providerId: "garmin",
+                sourceName: null,
+                attribution: { kind: "cloud", label: "via Garmin" },
+              },
+            },
           ],
           defaultSourceId: "whoop",
         },
@@ -3009,11 +3567,11 @@ describe("activity heart-rate sources", () => {
     });
     const { ActivityDetailPage } = await import("./ActivityDetailPage.tsx");
     renderWithUnits(<ActivityDetailPage />);
-    const select = screen.getByRole("combobox", { name: "Heart Rate source" });
-    expect(select).toHaveValue("whoop");
-    expect(within(select).queryByRole("option", { name: /auto/i })).not.toBeInTheDocument();
-    fireEvent.change(select, { target: { value: "garmin" } });
-    expect(select).toHaveValue("garmin");
+    const trigger = screen.getByRole("button", { name: "Heart Rate source: WHOOP" });
+    fireEvent.click(trigger);
+    expect(screen.getByRole("radio", { name: "WHOOP" })).toBeChecked();
+    fireEvent.click(screen.getByRole("radio", { name: "Garmin" }));
+    expect(screen.getByRole("button", { name: "Heart Rate source: Garmin" })).toBeVisible();
     expect(mockStreamUseQuery).toHaveBeenLastCalledWith(
       { id: "test-123", maxPoints: 500, sources: { heartRate: "garmin" } },
       expect.anything(),
@@ -3032,8 +3590,26 @@ it("keeps the HR source picker available to recover from a failed source switch"
         key: "heartRate",
         label: "Heart Rate",
         sources: [
-          { id: "whoop", label: "WHOOP" },
-          { id: "garmin", label: "Garmin" },
+          {
+            id: "whoop",
+            label: "WHOOP",
+            presentation: {
+              displayName: "WHOOP",
+              providerId: "whoop",
+              sourceName: null,
+              attribution: { kind: "cloud", label: "via WHOOP" },
+            },
+          },
+          {
+            id: "garmin",
+            label: "Garmin",
+            presentation: {
+              displayName: "Garmin",
+              providerId: "garmin",
+              sourceName: null,
+              attribution: { kind: "cloud", label: "via Garmin" },
+            },
+          },
         ],
         defaultSourceId: "whoop",
       },
@@ -3063,15 +3639,13 @@ it("keeps the HR source picker available to recover from a failed source switch"
   });
   const { ActivityDetailPage } = await import("./ActivityDetailPage.tsx");
   renderWithUnits(<ActivityDetailPage />);
-  fireEvent.change(screen.getByRole("combobox", { name: "Heart Rate source" }), {
-    target: { value: "garmin" },
-  });
+  fireEvent.click(screen.getByRole("button", { name: /Heart Rate source:/ }));
+  fireEvent.click(screen.getByRole("radio", { name: "Garmin" }));
   expect(screen.getByText("Garmin samples could not be read")).toBeInTheDocument();
   expect(screen.queryByText("No samples for the selected sources.")).not.toBeInTheDocument();
-  fireEvent.change(screen.getByRole("combobox", { name: "Heart Rate source" }), {
-    target: { value: "whoop" },
-  });
-  expect(screen.getByRole("combobox", { name: "Heart Rate source" })).toHaveValue("whoop");
+  fireEvent.click(screen.getByRole("button", { name: /Heart Rate source:/ }));
+  fireEvent.click(screen.getByRole("radio", { name: "WHOOP" }));
+  expect(screen.getByRole("button", { name: "Heart Rate source: WHOOP" })).toBeVisible();
 });
 
 it("selects independent metric sources and sends elevation and zone choices", async () => {
@@ -3081,8 +3655,26 @@ it("selects independent metric sources and sends elevation and zone choices", as
         key: "heartRate",
         label: "Heart Rate",
         sources: [
-          { id: "whoop", label: "WHOOP" },
-          { id: "garmin", label: "Garmin" },
+          {
+            id: "whoop",
+            label: "WHOOP",
+            presentation: {
+              displayName: "WHOOP",
+              providerId: "whoop",
+              sourceName: null,
+              attribution: { kind: "cloud", label: "via WHOOP" },
+            },
+          },
+          {
+            id: "garmin",
+            label: "Garmin",
+            presentation: {
+              displayName: "Garmin",
+              providerId: "garmin",
+              sourceName: null,
+              attribution: { kind: "cloud", label: "via Garmin" },
+            },
+          },
         ],
         defaultSourceId: "whoop",
       },
@@ -3090,8 +3682,26 @@ it("selects independent metric sources and sends elevation and zone choices", as
         key: "power",
         label: "Power",
         sources: [
-          { id: "wahoo", label: "Wahoo" },
-          { id: "garmin", label: "Garmin" },
+          {
+            id: "wahoo",
+            label: "Wahoo",
+            presentation: {
+              displayName: "Wahoo",
+              providerId: "wahoo",
+              sourceName: null,
+              attribution: { kind: "cloud", label: "via Wahoo" },
+            },
+          },
+          {
+            id: "garmin",
+            label: "Garmin",
+            presentation: {
+              displayName: "Garmin",
+              providerId: "garmin",
+              sourceName: null,
+              attribution: { kind: "cloud", label: "via Garmin" },
+            },
+          },
         ],
         defaultSourceId: "wahoo",
       },
@@ -3099,8 +3709,26 @@ it("selects independent metric sources and sends elevation and zone choices", as
         key: "altitude",
         label: "Elevation",
         sources: [
-          { id: "wahoo", label: "Wahoo" },
-          { id: "garmin", label: "Garmin" },
+          {
+            id: "wahoo",
+            label: "Wahoo",
+            presentation: {
+              displayName: "Wahoo",
+              providerId: "wahoo",
+              sourceName: null,
+              attribution: { kind: "cloud", label: "via Wahoo" },
+            },
+          },
+          {
+            id: "garmin",
+            label: "Garmin",
+            presentation: {
+              displayName: "Garmin",
+              providerId: "garmin",
+              sourceName: null,
+              attribution: { kind: "cloud", label: "via Garmin" },
+            },
+          },
         ],
         defaultSourceId: "wahoo",
       },
@@ -3111,13 +3739,11 @@ it("selects independent metric sources and sends elevation and zone choices", as
   });
   const { ActivityDetailPage } = await import("./ActivityDetailPage.tsx");
   renderWithUnits(<ActivityDetailPage />);
-  fireEvent.change(screen.getByRole("combobox", { name: "Power source" }), {
-    target: { value: "garmin" },
-  });
-  fireEvent.change(screen.getByRole("combobox", { name: "Elevation source" }), {
-    target: { value: "garmin" },
-  });
-  expect(screen.getByRole("combobox", { name: "Heart Rate source" })).toHaveValue("whoop");
+  fireEvent.click(screen.getByRole("button", { name: /Power source:/ }));
+  fireEvent.click(screen.getByRole("radio", { name: "Garmin" }));
+  fireEvent.click(screen.getByRole("button", { name: /Elevation source:/ }));
+  fireEvent.click(screen.getByRole("radio", { name: "Garmin" }));
+  expect(screen.getByRole("button", { name: "Heart Rate source: WHOOP" })).toBeVisible();
   expect(mockStreamUseQuery).toHaveBeenLastCalledWith(
     {
       id: "test-123",
@@ -3127,6 +3753,10 @@ it("selects independent metric sources and sends elevation and zone choices", as
     expect.anything(),
   );
   expect(mockPowerZonesUseQuery).toHaveBeenLastCalledWith(
+    { id: "test-123", powerSourceId: "garmin" },
+    expect.anything(),
+  );
+  expect(mockPowerWorkUseQuery).toHaveBeenLastCalledWith(
     { id: "test-123", powerSourceId: "garmin" },
     expect.anything(),
   );

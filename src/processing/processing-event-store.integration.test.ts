@@ -134,6 +134,45 @@ describe("processing event store (integration)", () => {
     );
   });
 
+  it("filters push operation kind before the status limit while preserving tenant isolation", async () => {
+    const push = await createProcessingOperation(testContext.db, {
+      userId,
+      providerId: "garmin",
+      kind: "push_ingest",
+      datasetKeys: ["activity"],
+    });
+    const legacy = await createProcessingOperation(testContext.db, {
+      userId,
+      providerId: "garmin",
+      kind: "provider_sync",
+      datasetKeys: ["activity"],
+    });
+    await testContext.db.execute(sql`UPDATE fitness.processing_operation
+      SET created_at = now() + interval '1 minute' WHERE id = ${legacy.id}::uuid`);
+    await createProcessingOperation(testContext.db, {
+      userId: otherUserId,
+      providerId: "garmin",
+      kind: "push_ingest",
+      datasetKeys: ["activity"],
+    });
+
+    const status = await listScopedProcessingOperations(testContext.db, {
+      userId,
+      providerId: "garmin",
+      kind: "push_ingest",
+      datasetKeys: ["activity"],
+      limit: 1,
+    });
+
+    expect(status.map((operation) => operation.id)).toEqual([push.id]);
+    const raw = await listScopedProcessingOperations(testContext.db, {
+      userId,
+      providerId: "garmin",
+      limit: 1,
+    });
+    expect(raw.map((operation) => operation.id)).toEqual([legacy.id]);
+  });
+
   it("keeps relational and metric-stream stage facts independent", async () => {
     const operation = await createOperation();
     const commonInput = {

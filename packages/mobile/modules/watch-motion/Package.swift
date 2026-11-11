@@ -13,6 +13,7 @@ let package = Package(
                 "SampleFileParser.swift",
                 "WatchFileInbox.swift",
                 "WatchMotionAccountStateStore.swift",
+                "WatchCollectionActivityReporter.swift",
             ]
         ),
         .testTarget(

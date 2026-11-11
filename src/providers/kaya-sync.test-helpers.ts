@@ -112,6 +112,7 @@ export function ascent(
     session_id: "session-1",
     date: "2026-08-01T10:30:00.000Z",
     attempts: options.attempts === undefined ? 2 : options.attempts,
+    grade: null,
     ascent_type: { id: "redpoint", name: options.ascentType ?? "Redpoint" },
     climb: {
       id: `climb-${id}`,
@@ -127,6 +128,7 @@ export function ascent(
       subarea: null,
       board: null,
       angle: null,
+      tags: [],
     },
   };
 }

@@ -74,3 +74,11 @@ export const InvalidRange: Story = {
     shouldShowFullSync: false,
   },
 };
+
+export const GarminConnect: Story = {
+  args: { primaryActionLabel: "Connect", shouldShowFullSync: false },
+};
+
+export const GarminReconnect: Story = {
+  args: { primaryActionLabel: "Reconnect", shouldShowFullSync: false },
+};

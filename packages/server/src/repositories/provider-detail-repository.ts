@@ -6,6 +6,7 @@ import {
   type ProviderDataDeletionRequest,
   type ProviderDataDeletionRequestStatus,
 } from "dofek/db/provider-data-deletion";
+import { createProviderArtifactStorageFromEnv } from "dofek/provider-artifact-storage";
 import { type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
@@ -772,7 +773,7 @@ export class ProviderDetailRepository {
 
   /**
    * Whether this user may request provider data deletion.
-   * A live connection or an owned canonical record proves access; catalog
+   * A live connection, an owned canonical record, or a retained original proves access; catalog
    * membership alone is never sufficient.
    */
   async canDeleteProviderData(providerId: string): Promise<boolean> {
@@ -813,7 +814,9 @@ export class ProviderDetailRepository {
       `,
       { userId: this.#userId, providerId },
     );
-    return metricStreamRows[0]?.has_data === 1;
+    if (metricStreamRows[0]?.has_data === 1) return true;
+
+    return createProviderArtifactStorageFromEnv().hasForProvider(this.#userId, providerId);
   }
 
   /** Atomically delete provider records, advance the generation fence, and write the outbox event. */

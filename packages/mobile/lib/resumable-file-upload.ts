@@ -3,6 +3,9 @@ export type UploadImportType =
   | "strong-csv"
   | "cronometer-csv"
   | "kaya-export"
+  | "crimpd"
+  | "eight-a"
+  | "moonboard"
   | "garmin-dump"
   | "fit-file";
 

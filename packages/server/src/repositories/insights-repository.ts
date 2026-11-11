@@ -18,6 +18,10 @@ import { executeWithSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import { fetchBodyCompRows } from "./body-clickhouse.ts";
 import { fetchSleepNights } from "./clickhouse-sleep-repository.ts";
+import {
+  dailyMetricsSpo2QueryParams,
+  dailyMetricsWithSpo2ClickHouseCte,
+} from "./daily-metrics-spo2-query.ts";
 import { fetchRestingHeartRateRows } from "./resting-heart-rate-query.ts";
 
 export class InsightsRepository {
@@ -44,18 +48,24 @@ export class InsightsRepository {
       await Promise.all([
         this.#sensorStore.query(
           dailyRowSchema,
-          `SELECT
+          `WITH ${dailyMetricsWithSpo2ClickHouseCte(days !== null)} SELECT
             toString(daily_metrics.date) AS date,
             NULL AS resting_hr,
             hrv,
             spo2_avg,
             steps,
             skin_temp_c
-          FROM analytics.v_daily_metrics AS daily_metrics
+          FROM daily_metrics
           WHERE daily_metrics.user_id = {userId:UUID}
             ${clickHouseWindowStartPredicate({ expression: "daily_metrics.date", days })}
           ORDER BY daily_metrics.date ASC`,
           {
+            ...dailyMetricsSpo2QueryParams({
+              userId: this.#userId,
+              timezone: this.#timezone,
+              endDate,
+              days,
+            }),
             userId: this.#userId,
             ...(metricWindowStart !== undefined ? { windowStart: metricWindowStart } : {}),
           },

@@ -21,10 +21,7 @@ import {
   uint64StringSchema,
   waitForPostgresMirror,
 } from "./activity-data-integrity-clickhouse.ts";
-import {
-  type ActivityIntegrityDbtBuildInput,
-  runActivityIntegrityDbtBuild,
-} from "./activity-data-integrity-dbt.ts";
+import type { ActivityIntegrityDbtBuildInput } from "./activity-data-integrity-dbt.ts";
 import {
   assertNoEligibleActivityIntegrityJournal,
   createPostgresCommittedActivityIntegrityJournal,
@@ -170,7 +167,7 @@ interface ActivityIntegrityRepairDependencies {
   artifactDirectory?: string;
   generateRunId?: () => string;
   now?: () => Date;
-  rebuildReadModels?: (input: ActivityIntegrityDbtBuildInput) => Promise<void>;
+  rebuildReadModels: (input: ActivityIntegrityDbtBuildInput) => Promise<void>;
   loadHomeTimezone?: (db: SchemaExecutionDatabase, userId: string) => Promise<string | null>;
   cdcReadinessTimeoutMs?: number;
   cdcReadinessPollIntervalMs?: number;
@@ -181,7 +178,7 @@ interface ActivityIntegrityRepairDependencies {
 interface ActivityIntegrityRollbackDependencies {
   now?: () => Date;
   generateRunId?: () => string;
-  rebuildReadModels?: (input: ActivityIntegrityDbtBuildInput) => Promise<void>;
+  rebuildReadModels: (input: ActivityIntegrityDbtBuildInput) => Promise<void>;
   cdcReadinessTimeoutMs?: number;
   cdcReadinessPollIntervalMs?: number;
   monotonicNow?: () => number;
@@ -521,7 +518,7 @@ async function repairActivityDataIntegrityWithLease(
   db: ActivityIntegrityDatabase,
   clickHouse: ActivityIntegrityClickHouseClient,
   options: ActivityIntegrityRepairOptions,
-  dependencies: ActivityIntegrityRepairDependencies = {},
+  dependencies: ActivityIntegrityRepairDependencies,
 ): Promise<ActivityIntegrityRepairResult> {
   const now = dependencies.now ?? (() => new Date());
   const generateRunId = dependencies.generateRunId ?? randomUUID;
@@ -638,7 +635,7 @@ async function repairActivityDataIntegrityWithLease(
     postgresCommit: { completedAt: now().toISOString(), updated },
   };
   await replacePrivateJson(artifactPath, postgresCommitted, generateRunId);
-  const rebuildReadModels = dependencies.rebuildReadModels ?? runActivityIntegrityDbtBuild;
+  const rebuildReadModels = dependencies.rebuildReadModels;
   let failureStage: "cdc_readiness" | "dbt_rebuild" | "verification" = "cdc_readiness";
   try {
     await waitForPostgresMirror(clickHouse, options.userId, changedRows, dependencies);
@@ -723,7 +720,7 @@ export async function repairActivityDataIntegrity(
   db: ActivityIntegrityDatabase,
   clickHouse: ActivityIntegrityClickHouseClient,
   options: ActivityIntegrityRepairOptions,
-  dependencies: ActivityIntegrityRepairDependencies = {},
+  dependencies: ActivityIntegrityRepairDependencies,
 ): Promise<ActivityIntegrityRepairResult> {
   return withActivityIntegrityLease(db, () =>
     repairActivityDataIntegrityWithLease(db, clickHouse, options, dependencies),
@@ -786,7 +783,7 @@ async function rollbackActivityDataIntegrityWithLease(
   db: ActivityIntegrityDatabase,
   clickHouse: ActivityIntegrityClickHouseClient,
   artifactPath: string,
-  dependencies: ActivityIntegrityRollbackDependencies = {},
+  dependencies: ActivityIntegrityRollbackDependencies,
 ): Promise<ActivityIntegrityRollbackResult> {
   const artifact = await readArtifact(artifactPath);
   const journal = await readActivityIntegrityJournal(db, artifact.runId);
@@ -852,7 +849,7 @@ async function rollbackActivityDataIntegrityWithLease(
     repairedEndedAt: row.endedAt,
   }));
   await waitForPostgresMirror(clickHouse, artifact.userId, rollbackMirrorRows, dependencies);
-  const rebuildReadModels = dependencies.rebuildReadModels ?? runActivityIntegrityDbtBuild;
+  const rebuildReadModels = dependencies.rebuildReadModels;
   await rebuildReadModels({
     userId: artifact.userId,
     activityIds: affectedIds,
@@ -890,7 +887,7 @@ export async function rollbackActivityDataIntegrity(
   db: ActivityIntegrityDatabase,
   clickHouse: ActivityIntegrityClickHouseClient,
   artifactPath: string,
-  dependencies: ActivityIntegrityRollbackDependencies = {},
+  dependencies: ActivityIntegrityRollbackDependencies,
 ): Promise<ActivityIntegrityRollbackResult> {
   const resolvedArtifactPath = resolve(artifactPath);
   return withActivityIntegrityLease(db, () =>

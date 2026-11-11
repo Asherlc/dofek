@@ -1,6 +1,6 @@
 import type { DayNutritionPreview } from "@dofek/mcp-contracts/day-nutrition";
 import type { HealthExplorerSnapshot, HealthMetric } from "@dofek/mcp-contracts/health-explorer";
-import { useApp } from "@modelcontextprotocol/ext-apps/react";
+import { useApp, useHostStyleVariables } from "@modelcontextprotocol/ext-apps/react";
 import { useCallback, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { DayNutritionPreviewPanel } from "./day-nutrition-preview.tsx";
@@ -54,6 +54,7 @@ function DofekMcpApp() {
       };
     },
   });
+  useHostStyleVariables(app, app?.getHostContext());
   const onMetricChange = useCallback(
     async (metric: HealthMetric) => {
       if (!app || view.kind !== "health-explorer") return;

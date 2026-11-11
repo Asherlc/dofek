@@ -1,6 +1,9 @@
 import { Job, UnrecoverableError, Worker } from "bullmq";
+import { createActivityImageJobDependencies } from "../activity-images/acquire.ts";
+import { loadActivityImageWork } from "../db/activity-images.ts";
 import type { createClickHouseClientFromEnv } from "../db/clickhouse.ts";
 import type { createDatabaseFromEnv } from "../db/index.ts";
+import { runWithProviderUserIngestContext } from "../db/provider-ingest-context.ts";
 import type { createRefitSensorStore } from "../db/refit-sensor-store.ts";
 import type { createImportUploadStorageFromEnv } from "../file-upload-storage.ts";
 import { jobContext, logger } from "../logger.ts";
@@ -12,6 +15,11 @@ import {
 } from "./account-erasure-work-guard.ts";
 import { createAccountErasureWorker } from "./account-erasure-worker.ts";
 import { processActivityDeleteAnalyticsJob } from "./process-activity-delete-analytics-job.ts";
+import {
+  loadActivityImageBackfillProvider,
+  processActivityImageBackfillJob,
+} from "./process-activity-image-backfill-job.ts";
+import { processActivityImageJob } from "./process-activity-image-job.ts";
 import { processExportJob } from "./process-export-job.ts";
 import { processFileUploadImportJob } from "./process-file-upload-import-job.ts";
 import { processFitFileImportBatchJob } from "./process-fit-file-import-batch-job.ts";
@@ -25,7 +33,9 @@ import { createProviderDataDeletionDependencies } from "./provider-data-deletion
 import { getConfiguredProviderIds, getProviderQueueConfig } from "./provider-queue-config.ts";
 import {
   ACTIVITY_DELETE_ANALYTICS_QUEUE,
+  ACTIVITY_IMAGE_QUEUE,
   type ActivityAnalyticsJobData,
+  type ActivityImageJobData,
   EXPORT_QUEUE,
   type ExportJobData,
   FIT_FILE_IMPORT_BATCH_QUEUE,
@@ -136,6 +146,9 @@ export function createWorkerQueues({
               db,
               getImportUploadStorage(),
             ),
+          job.data.importType === "fit-file" || job.data.importType === "garmin-dump"
+            ? job.data.importType
+            : undefined,
         ),
       ),
     { autorun: false, connection },
@@ -164,6 +177,7 @@ export function createWorkerQueues({
           job.data.userId,
           "FIT file import",
           () => processFitFileImportJob(job, db),
+          job.data.providerId,
         ),
       ),
     { autorun: false, connection, concurrency: 2 },
@@ -222,13 +236,7 @@ export function createWorkerQueues({
     ACTIVITY_DELETE_ANALYTICS_QUEUE,
     (job) =>
       jobContext.run(job, () =>
-        runQueuedUserWorkUnlessAccountErasing(
-          accountErasureWorkLockPool,
-          db,
-          job.data.userId,
-          "activity analytics refresh",
-          () => processActivityDeleteAnalyticsJob(job, db),
-        ),
+        processActivityDeleteAnalyticsJob(job, db, accountErasureWorkLockPool),
       ),
     { autorun: false, connection, concurrency: 1 },
   );
@@ -253,6 +261,7 @@ export function createWorkerQueues({
                 accountErasureAllowsQueuedUserWork(db, job.data.userId, workKind),
               ),
             ),
+          job.data.providerId,
         ),
       );
     },
@@ -265,6 +274,32 @@ export function createWorkerQueues({
     { connection },
   );
 
+  const imageWorker = new Worker<ActivityImageJobData>(
+    ACTIVITY_IMAGE_QUEUE,
+    async (job) => {
+      const providerId =
+        "workId" in job.data
+          ? (await loadActivityImageWork(db, job.data.workId, job.data.userId))?.providerId
+          : await loadActivityImageBackfillProvider(db, job.data.backfillId, job.data.userId);
+      if (!providerId) return;
+      await jobContext.run(job, () =>
+        runQueuedUserWorkUnlessAccountErasing(
+          accountErasureWorkLockPool,
+          db,
+          job.data.userId,
+          "activity images",
+          () =>
+            runWithProviderUserIngestContext(job.data.userId, { homeTimezone: null }, async () => {
+              if ("workId" in job.data)
+                await processActivityImageJob(job.data, createActivityImageJobDependencies(db));
+              else await processActivityImageBackfillJob(db, job.data);
+            }),
+          providerId,
+        ),
+      );
+    },
+    { autorun: false, connection, concurrency: 4 },
+  );
   const allWorkers: Worker[] = [
     ...providerWorkers.values(),
     sharedSyncWorker,
@@ -278,6 +313,7 @@ export function createWorkerQueues({
     activityDeleteAnalyticsWorker,
     providerDataDeletionWorker,
     accountErasureWorker,
+    imageWorker,
   ];
   return { allWorkers, fitFileImportWorker, providerDataDeletionWorker };
 }

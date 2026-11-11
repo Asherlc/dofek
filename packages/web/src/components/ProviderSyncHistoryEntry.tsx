@@ -19,6 +19,7 @@ export interface ProviderSyncHistoryEntryData {
 interface ProviderSyncHistoryEntryProps {
   providerName: string;
   entry: ProviderSyncHistoryEntryData;
+  pushOnly?: boolean;
 }
 
 const toneClasses: Record<ProviderSyncLogTone, string> = {
@@ -27,12 +28,18 @@ const toneClasses: Record<ProviderSyncLogTone, string> = {
   danger: "border-l-red-400",
 };
 
-export function ProviderSyncHistoryEntry({ providerName, entry }: ProviderSyncHistoryEntryProps) {
+export function ProviderSyncHistoryEntry({
+  providerName,
+  entry,
+  pushOnly = false,
+}: ProviderSyncHistoryEntryProps) {
   const presentation = providerSyncLogPresentation({
     providerName,
     dataType: entry.dataType,
     status: entry.status,
     authFailureReason: entry.authFailureReason,
+    errorMessage: entry.errorMessage,
+    pushOnly,
   });
 
   return (
@@ -78,7 +85,12 @@ export function ProviderSyncHistoryEntry({ providerName, entry }: ProviderSyncHi
             <>
               <dt className="text-subtle">Error</dt>
               <dd className="break-words">
-                {userFacingErrorMessage(entry.errorMessage, "The sync failed. Please try again.")}
+                {userFacingErrorMessage(
+                  entry.errorMessage,
+                  pushOnly
+                    ? "The update could not be processed. Open Diagnostics for details."
+                    : "The sync failed. Please try again.",
+                )}
               </dd>
             </>
           ) : null}

@@ -7,6 +7,8 @@ export const pelotonInstructorSchema = z.object({
 });
 
 export const pelotonRideSchema = z.object({
+  image_url: z.string().nullish(),
+  extra_images: z.array(z.unknown()).nullish(),
   id: z.string(),
   title: z.string(),
   description: z.string().optional(),

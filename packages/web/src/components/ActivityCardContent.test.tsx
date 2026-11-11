@@ -1,9 +1,25 @@
 /** @vitest-environment jsdom */
 
 import { UnitConverter } from "@dofek/format/units";
-import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { maps, resetMaps } from "../lib/maplibre-test-helpers.ts";
 import { ActivityCardContent, type ActivityCardData } from "./ActivityCardContent.tsx";
+
+vi.mock("maplibre-gl", async () => (await import("../lib/maplibre-test-helpers.ts")).maplibreMock);
+
+beforeEach(() => {
+  resetMaps();
+  vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(512);
+  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(288);
+});
+
+async function finishMapSnapshot() {
+  await waitFor(() => expect(maps.length).toBeGreaterThan(0));
+  act(() => {
+    for (const map of maps) map.fire("idle");
+  });
+}
 
 const units = new UnitConverter("metric");
 
@@ -12,6 +28,7 @@ function activity(overrides: Partial<ActivityCardData> = {}): ActivityCardData {
     id: "activity-1",
     name: null,
     activityType: "strength",
+    primaryActivityType: null,
     modality: null,
     startedAt: "2026-07-14T08:46:00.000Z",
     localTimeContext: {
@@ -23,6 +40,7 @@ function activity(overrides: Partial<ActivityCardData> = {}): ActivityCardData {
     durationMin: 30,
     source: {
       origin: { status: "unresolved", candidateMemberActivityIds: [] },
+      tree: { primary: null, otherSources: [] },
       primarySourceLabel: "Strong (via Apple Health)",
       sourceCount: 1,
       overlapSummary: null,
@@ -41,8 +59,152 @@ function activity(overrides: Partial<ActivityCardData> = {}): ActivityCardData {
 afterEach(cleanup);
 
 describe("ActivityCardContent", () => {
+  it("uses the primary climbing source for the icon over a cardio representative", () => {
+    render(
+      <ActivityCardContent
+        activity={activity({
+          name: "Kaya climbing",
+          activityType: "cardio",
+          primaryActivityType: "climbing",
+        })}
+        units={units}
+        selectMode={false}
+        selected={false}
+      />,
+    );
+    expect(screen.getByRole("img", { name: "Climbing activity" })).toHaveAttribute(
+      "data-activity-type",
+      "climbing",
+    );
+  });
+
+  it("uses the primary activity type for an unnamed activity title and selection label", () => {
+    render(
+      <ActivityCardContent
+        activity={activity({ activityType: "walking", primaryActivityType: "running" })}
+        units={units}
+        selectMode
+        selected={false}
+      />,
+    );
+
+    expect(screen.getByRole("heading", { name: "Running" })).toBeDefined();
+    expect(screen.getByRole("checkbox", { name: "Select Running" })).toBeDefined();
+  });
+
+  it("shows an unknown duration without claiming zero minutes", () => {
+    render(
+      <ActivityCardContent
+        activity={activity({
+          activityType: "climbing",
+          primaryActivityType: "climbing",
+          durationMin: null,
+          source: {
+            origin: {
+              status: "resolved",
+              memberActivityId: "kilter-point-only",
+              providerId: "kilter",
+              sourceName: null,
+            },
+            tree: {
+              primary: {
+                id: "kilter-point-only",
+                providerId: "kilter",
+                sourceName: null,
+                label: "Kilter Board",
+                description: null,
+                url: null,
+                children: [],
+              },
+              otherSources: [],
+            },
+            primarySourceLabel: "Kilter Board",
+            sourceCount: 1,
+            overlapSummary: null,
+          },
+          stats: [],
+        })}
+        units={units}
+        selectMode={false}
+        selected={false}
+      />,
+    );
+
+    expect(screen.getByText(/Duration unavailable/)).toBeVisible();
+    expect(screen.queryByText("0m")).toBeNull();
+  });
+
+  const photo = {
+    id: "photo-1",
+    url: "https://private.test/photo",
+    width: 1200,
+    height: 800,
+    mimeType: "image/jpeg",
+    sizeBytes: 12000,
+    sources: [],
+  };
+
+  it("shows one photo in the secondary panel when the activity has no map", () => {
+    render(
+      <ActivityCardContent
+        activity={activity()}
+        units={units}
+        selectMode={false}
+        selected={false}
+        photo={photo}
+      />,
+    );
+    expect(screen.getByRole("img", { name: "Activity photo" })).toHaveAttribute("src", photo.url);
+    expect(screen.getByTestId("activity-card-layout")).toHaveClass(
+      "sm:grid-cols-[minmax(0,2fr)_minmax(18rem,3fr)]",
+    );
+    expect(screen.getByTestId("activity-secondary-panel")).toBeInTheDocument();
+  });
+
+  it("directs users to activity details when a card photo fails", () => {
+    render(
+      <ActivityCardContent
+        activity={activity()}
+        units={units}
+        selectMode={false}
+        selected={false}
+        photo={photo}
+      />,
+    );
+    fireEvent.error(screen.getByRole("img", { name: "Activity photo" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("Open the activity to refresh photos");
+  });
+
+  it.each([
+    { kind: "processing" as const },
+    {
+      kind: "recorded_gps" as const,
+      centroidLat: 37,
+      centroidLng: -122,
+      mapPreview: {
+        width: 512,
+        height: 288,
+        center: [0, 0] satisfies [number, number],
+        zoom: 0,
+        routePath: null,
+      },
+    },
+  ])("keeps the $kind map instead of a photo", (location) => {
+    render(
+      <ActivityCardContent
+        activity={activity({ location })}
+        units={units}
+        selectMode={false}
+        selected={false}
+        photo={photo}
+      />,
+    );
+    expect(screen.queryByRole("img", { name: "Activity photo" })).toBeNull();
+    expect(screen.getByTestId("activity-secondary-panel")).toBeInTheDocument();
+  });
+
   it.each(["garmin", "strava", "apple_health"])(
-    "uses the actual %s primary provider as the leading card image",
+    "keeps the activity icon ahead of the resolved %s source control",
     (providerId) => {
       render(
         <ActivityCardContent
@@ -52,7 +214,19 @@ describe("ActivityCardContent", () => {
                 status: "resolved",
                 memberActivityId: "00000000-0000-4000-8000-000000000001",
                 providerId,
-                sourceName: "Garmin Edge 530",
+                sourceName: providerId === "apple_health" ? "Strong" : "Garmin Edge 530",
+              },
+              tree: {
+                primary: {
+                  id: "source-1",
+                  providerId: providerId === "apple_health" ? "strong-csv" : providerId,
+                  sourceName: providerId === "garmin" ? "Garmin Edge 530" : null,
+                  label: providerId,
+                  description: null,
+                  url: null,
+                  children: [],
+                },
+                otherSources: [],
               },
               primarySourceLabel: providerId,
               sourceCount: 2,
@@ -64,25 +238,31 @@ describe("ActivityCardContent", () => {
           selected={false}
         />,
       );
-      const providerImage = screen.getByRole("img", { name: /Primary recording provider:/ });
-      expect(providerImage.parentElement?.firstElementChild).toBe(providerImage);
-      const logo = providerImage.querySelector("img");
-      expect(logo).toHaveAttribute("width", "32");
+      const activityIcon = screen.getByTestId("activity-type-icon");
+      expect(activityIcon.parentElement?.firstElementChild).toBe(activityIcon);
+      const source = screen.getByRole("button", { name: /Lineage/ });
+      const logo = source.querySelector("img");
+      expect(logo).toHaveAttribute("width", "18");
       expect(logo?.getAttribute("src")).toContain(
-        providerId === "apple_health" ? "apple_health" : providerId,
+        providerId === "garmin"
+          ? "010-02060-00"
+          : providerId === "apple_health"
+            ? "strong-csv"
+            : providerId,
       );
     },
   );
 
-  it("omits the primary logo when provenance is unresolved", () => {
+  it("keeps activity content when no external source records are available", () => {
     render(
       <ActivityCardContent
         activity={activity({
           source: {
             origin: { status: "unresolved", candidateMemberActivityIds: [] },
+            tree: { primary: null, otherSources: [] },
             primarySourceLabel: null,
-            sourceCount: 2,
-            overlapSummary: "2 matched source records",
+            sourceCount: 1,
+            overlapSummary: null,
           },
         })}
         units={units}
@@ -90,7 +270,9 @@ describe("ActivityCardContent", () => {
         selected={false}
       />,
     );
-    expect(screen.queryByRole("img", { name: /Primary recording provider:/ })).toBeNull();
+    expect(screen.getByTestId("activity-type-icon")).toBeVisible();
+    expect(screen.getByText("Training Stress Score")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Lineage" })).toBeNull();
   });
   it.each([
     { modality: "indoor", distanceMeters: 0, elevationGainM: null },
@@ -174,7 +356,13 @@ describe("ActivityCardContent", () => {
           stats: [{ status: "available", label: "Climbs", value: "3" }],
           location: {
             kind: "climbing_source",
-            mapPreview: { width: 512, height: 288, tiles: [], routePath: null },
+            mapPreview: {
+              width: 512,
+              height: 288,
+              center: [0, 0] satisfies [number, number],
+              zoom: 0,
+              routePath: null,
+            },
             sourcePoints: [
               {
                 x: 256,
@@ -263,11 +451,34 @@ describe("ActivityCardContent", () => {
     expect(screen.queryByText("—")).toBeNull();
   });
 
-  it("gives mapped activities a full-height map pane and keeps metrics with the details", () => {
+  it("gives mapped activities a full-height map pane and keeps metrics with the details", async () => {
     render(
       <ActivityCardContent
         activity={activity({
           activityType: "running",
+          source: {
+            origin: {
+              status: "resolved",
+              memberActivityId: "00000000-0000-4000-8000-000000000001",
+              providerId: "whoop",
+              sourceName: null,
+            },
+            tree: {
+              primary: {
+                id: "source-whoop",
+                providerId: "whoop",
+                sourceName: null,
+                label: "WHOOP (Cloud)",
+                description: null,
+                url: null,
+                children: [],
+              },
+              otherSources: [],
+            },
+            primarySourceLabel: "WHOOP",
+            sourceCount: 1,
+            overlapSummary: null,
+          },
           distanceMeters: 5000,
           distanceState: { status: "available" },
           elevationGainM: 120,
@@ -279,7 +490,8 @@ describe("ActivityCardContent", () => {
             mapPreview: {
               width: 256,
               height: 256,
-              tiles: [],
+              center: [0, 0] satisfies [number, number],
+              zoom: 0,
               routePath: null,
             },
           },
@@ -293,7 +505,14 @@ describe("ActivityCardContent", () => {
     expect(screen.getByTestId("activity-card-layout")).toHaveClass(
       "sm:grid-cols-[minmax(0,2fr)_minmax(18rem,3fr)]",
     );
+    await finishMapSnapshot();
+    expect(screen.getByTestId("activity-map-snapshot")).toHaveAttribute(
+      "src",
+      "data:image/png;base64,map",
+    );
     expect(screen.getByLabelText("Activity location map")).toBeDefined();
+    expect(screen.getByTestId("activity-type-icon")).toBeVisible();
+    expect(screen.getByRole("button", { name: "WHOOP (Cloud) Lineage" })).toBeVisible();
     expect(screen.getByTestId("activity-detail-metrics")).toBeDefined();
     expect(screen.queryByText("No route recorded")).toBeNull();
     expect(screen.getByTestId("activity-secondary-panel")).toBeDefined();
@@ -316,7 +535,8 @@ describe("ActivityCardContent", () => {
             mapPreview: {
               width: 256,
               height: 256,
-              tiles: [],
+              center: [0, 0] satisfies [number, number],
+              zoom: 0,
               routePath: null,
             },
           },

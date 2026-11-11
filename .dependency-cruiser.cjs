@@ -128,6 +128,7 @@ module.exports = {
         "drizzle/",
         "^packages/web/dist/",
         "^packages/web/storybook-static/",
+        "^packages/mobile/storybook-static/",
       ],
     },
   },

@@ -1,5 +1,6 @@
 import { UnitConverter } from "@dofek/format/units";
 import { activityMetricColors } from "@dofek/scoring/colors";
+import { activityChartTimingPoints } from "@dofek/training/fixtures/activity-chart-timing";
 import {
   type ActivityPreviewMetric,
   activityMetricSourcePreview,
@@ -7,11 +8,16 @@ import {
   activityPreviewSource,
   defaultActivityMetricSources,
 } from "@dofek/training/fixtures/activity-metric-sources";
+import {
+  climbingChartAnnotations,
+  climbingHeartRateContext,
+} from "@dofek/training/fixtures/climbing-chart";
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { useState } from "react";
-import { Modal, Pressable, Text, View } from "react-native";
+import { Modal, Platform, Pressable, Text, View } from "react-native";
 import { colors } from "../../theme";
-import { AreaChart, CHART_COLORS, LineChart, MetricSourcePicker } from "./ActivityDetailCharts";
+import { AreaChart, CHART_COLORS, LineChart } from "./ActivityDetailCharts";
+import { ActivityMetricSourcePicker } from "./ActivityMetricSourcePicker";
 
 const meta = {
   title: "Activity/ActivityDetailCharts",
@@ -38,7 +44,22 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 export const Default: Story = {};
+export const TimedClimbs: Story = {
+  args: {
+    climbAnnotations: climbingChartAnnotations,
+    activityWindow: climbingHeartRateContext.window,
+    data: climbingHeartRateContext.points,
+  },
+};
 export const Empty: Story = { args: { data: [] } };
+export const FractionalReadings: Story = {
+  args: {
+    data: meta.args.data.map((sample, index) => ({
+      ...sample,
+      value: [43.383949279785156, 76.92308044433594, 69.5, 110.25][index] ?? null,
+    })),
+  },
+};
 export const SparseReadings: Story = {
   args: {
     data: [null, 130, null, 145, null, 155, null].map((value, index) => ({
@@ -54,6 +75,30 @@ export const MissingSamples: Story = {
       value: index === 1 ? null : sample.value,
     })),
   },
+};
+export const IndependentMetricTimelines: Story = {
+  render: () => (
+    <View style={{ gap: 16 }}>
+      <LineChart
+        data={activityChartTimingPoints.map((point) => ({
+          recordedAt: point.recordedAt,
+          value: point.heartRate,
+        }))}
+        color={CHART_COLORS.heartRate}
+        label="Heart Rate"
+        unit="bpm"
+      />
+      <LineChart
+        data={activityChartTimingPoints.map((point) => ({
+          recordedAt: point.recordedAt,
+          value: point.power,
+        }))}
+        color={CHART_COLORS.power}
+        label="Power"
+        unit="W"
+      />
+    </View>
+  ),
 };
 export const Area: Story = { render: (args) => <AreaChart {...args} /> };
 export const HighElevation: Story = {
@@ -303,11 +348,67 @@ export const HeartRateSources = {
   render: function HeartRateSourcesStory() {
     const [selectedId, setSelectedId] = useState("whoop");
     return (
-      <MetricSourcePicker
+      <ActivityMetricSourcePicker
         label="Heart Rate"
+        serverUrl={Platform.OS === "web" ? "" : "https://dofek.fit"}
         sources={[
-          { id: "whoop", label: "WHOOP" },
-          { id: "garmin", label: "Garmin" },
+          {
+            id: "whoop",
+            label: "WHOOP",
+            presentation: {
+              displayName: "WHOOP",
+              providerId: "whoop",
+              sourceName: null,
+              attribution: null,
+            },
+          },
+          {
+            id: "garmin",
+            label: "Garmin",
+            presentation: {
+              displayName: "Garmin",
+              providerId: "garmin",
+              sourceName: null,
+              attribution: null,
+            },
+          },
+        ]}
+        selectedId={selectedId}
+        onChange={setSelectedId}
+      />
+    );
+  },
+};
+
+export const ElevationSources = {
+  render: function ElevationSourcesStory() {
+    const [selectedId, setSelectedId] = useState("watch");
+    return (
+      <ActivityMetricSourcePicker
+        label="Elevation"
+        serverUrl={Platform.OS === "web" ? "" : "https://dofek.fit"}
+        showLabel={false}
+        sources={[
+          {
+            id: "watch",
+            label: "Asher’s Apple Watch (via Apple Health)",
+            presentation: {
+              displayName: "Asher’s Apple Watch",
+              providerId: "apple_health",
+              sourceName: "Asher’s Apple Watch",
+              attribution: { kind: "apple_health", label: "via Apple Health" },
+            },
+          },
+          {
+            id: "garmin",
+            label: "Garmin",
+            presentation: {
+              displayName: "Garmin",
+              providerId: "garmin",
+              sourceName: null,
+              attribution: null,
+            },
+          },
         ]}
         selectedId={selectedId}
         onChange={setSelectedId}

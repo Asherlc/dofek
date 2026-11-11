@@ -7,6 +7,7 @@ import { z } from "zod";
 const outputNames = [
   "analytics",
   "docker_ml",
+  "docker_ota",
   "docker_server",
   "e2e_web",
   "ml",
@@ -218,6 +219,7 @@ function classifyChanges(
     return {
       analytics: true,
       docker_ml: true,
+      docker_ota: true,
       docker_server: true,
       e2e_web: true,
       ml: true,
@@ -258,6 +260,9 @@ function classifyChanges(
     );
   const mobileChange =
     affectedPackages.has("dofek-mobile") ||
+    changedFiles.some(
+      (changedFile) => changedFile.startsWith("packages/mobile/") && !changedFile.endsWith(".md"),
+    ) ||
     globalPackageChange ||
     hasMatchingFile(changedFiles, /^\.github\/workflows\/build-mobile\.yml$/);
   const zeppChange =
@@ -277,6 +282,12 @@ function classifyChanges(
     analytics: analyticsChange,
     docker_ml:
       mlChange || hasMatchingFile(changedFiles, /^\.github\/workflows\/build-docker-ml\.yml$/),
+    docker_ota:
+      globalPackageChange ||
+      hasMatchingFile(
+        changedFiles,
+        /^(?:deploy\/ota\/|\.github\/workflows\/build-private-ota\.yml$|scripts\/check-ota-image-visibility\.ts$)/,
+      ),
     docker_server: serverChange,
     e2e_web:
       serverChange ||

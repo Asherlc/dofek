@@ -1,6 +1,7 @@
 {
   "platforms": ["ios"],
   "ios": {
-    "modules": ["WhoopBleModule"]
+    "modules": ["WhoopBleModule"],
+    "appDelegateSubscribers": ["WhoopBleUploadAppDelegateSubscriber"]
   }
 }

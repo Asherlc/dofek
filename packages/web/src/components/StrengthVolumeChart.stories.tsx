@@ -1,13 +1,54 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import type { VolumeOverTimeRow } from "dofek-server/types";
+import { expect, within } from "storybook/test";
 import { StrengthVolumeChart } from "./StrengthVolumeChart.tsx";
 
 const volumeData: VolumeOverTimeRow[] = [
-  { week: "2026-05-04", totalVolumeKg: 8_450, setCount: 42, workoutCount: 3 },
-  { week: "2026-05-11", totalVolumeKg: 9_180, setCount: 45, workoutCount: 3 },
-  { week: "2026-05-18", totalVolumeKg: 10_240, setCount: 51, workoutCount: 4 },
-  { week: "2026-05-25", totalVolumeKg: 7_900, setCount: 38, workoutCount: 3 },
-  { week: "2026-06-01", totalVolumeKg: 11_350, setCount: 54, workoutCount: 4 },
+  {
+    week: "2026-05-04",
+    totalVolumeKg: 8_450,
+    setCount: 42,
+    workoutCount: 3,
+    durationMinutes: 90,
+    recordedVolumeKg: 1000,
+    recordedSetCount: 10,
+  },
+  {
+    week: "2026-05-11",
+    totalVolumeKg: 9_180,
+    setCount: 45,
+    workoutCount: 3,
+    durationMinutes: 90,
+    recordedVolumeKg: 1000,
+    recordedSetCount: 10,
+  },
+  {
+    week: "2026-05-18",
+    totalVolumeKg: 10_240,
+    setCount: 51,
+    workoutCount: 4,
+    durationMinutes: 90,
+    recordedVolumeKg: 1000,
+    recordedSetCount: 10,
+  },
+  {
+    week: "2026-05-25",
+    totalVolumeKg: 7_900,
+    setCount: 38,
+    workoutCount: 3,
+    durationMinutes: 90,
+    recordedVolumeKg: 1000,
+    recordedSetCount: 10,
+  },
+  {
+    week: "2026-06-01",
+    totalVolumeKg: 11_350,
+    setCount: 54,
+    workoutCount: 4,
+    durationMinutes: 90,
+    recordedVolumeKg: 1000,
+    recordedSetCount: 10,
+  },
 ];
 
 const meta = {
@@ -28,5 +69,12 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
+export const TimeSelected: Story = {
+  play: async ({ canvasElement, userEvent }) => {
+    const metric = within(canvasElement).getByRole("combobox", { name: "Strength volume metric" });
+    await userEvent.selectOptions(metric, "time");
+    await expect(metric).toHaveValue("time");
+  },
+};
 export const Loading: Story = { args: { data: [], loading: true } };
 export const Empty: Story = { args: { data: [] } };

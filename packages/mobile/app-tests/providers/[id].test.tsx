@@ -67,14 +67,17 @@ vi.mock("react-native", () => ({
   },
   ScrollView: ({
     children,
+    refreshControl,
     ...props
-  }: { children?: React.ReactNode } & Record<string, unknown>) => {
+  }: { children?: React.ReactNode; refreshControl?: React.ReactNode } & Record<
+    string,
+    unknown
+  >) => {
     const {
       style: _s,
       contentContainerStyle: _cs,
       showsHorizontalScrollIndicator: _sh,
       horizontal: _h,
-      refreshControl: _rc,
       accessibilityLabel,
       accessibilityRole,
       ...rest
@@ -82,10 +85,12 @@ vi.mock("react-native", () => ({
     return React.createElement(
       "div",
       { ...rest, "aria-label": accessibilityLabel, role: accessibilityRole },
+      refreshControl,
       children,
     );
   },
-  RefreshControl: () => null,
+  RefreshControl: ({ onRefresh }: { onRefresh?: () => void }) =>
+    React.createElement("button", { type: "button", onClick: onRefresh }, "Pull to refresh"),
   TouchableOpacity: ({
     children,
     onPress,
@@ -306,6 +311,7 @@ const mockInvalidateAvailableDataTypes = vi.fn();
 const mockInvalidateRecords = vi.fn();
 const mockInvalidateDetailLogs = vi.fn();
 const mockInvalidateLogs = vi.fn();
+const mockInvalidateSensorSnapshot = vi.fn();
 const mockSyncStatusFetch = vi.fn();
 const mockSettingsGetQuery = vi.fn().mockReturnValue({ data: null, isLoading: false });
 const mockSettingsSetMutate = vi.fn();
@@ -314,9 +320,9 @@ const mockSettingsGetSetData = vi.fn();
 const mockSettingsGetInvalidate = vi.fn();
 const mockCaptureException = vi.fn();
 const mockTokenConnect = vi.fn();
-const mockUseRefresh = vi.fn((_options: { invalidate?: () => Promise<void> } | undefined) => ({
+const mockUseRefresh = vi.fn((options: { invalidate?: () => Promise<void> } | undefined) => ({
   refreshing: false,
-  onRefresh: vi.fn(),
+  onRefresh: vi.fn(() => options?.invalidate?.()),
 }));
 
 vi.mock("../../lib/useRefresh", () => ({
@@ -326,6 +332,9 @@ vi.mock("../../lib/useRefresh", () => ({
 
 vi.mock("../../lib/trpc", () => ({
   trpc: {
+    whoopBleSync: {
+      sensorSnapshot: { useQuery: () => ({ data: undefined, error: null, isLoading: false }) },
+    },
     processing: {
       status: { useQuery: (...args: unknown[]) => mockDataHealthQuery(...args) },
       dismiss: { useMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }) },
@@ -369,6 +378,7 @@ vi.mock("../../lib/trpc", () => ({
         },
       },
       invalidate: vi.fn(),
+      whoopBleSync: { sensorSnapshot: { invalidate: mockInvalidateSensorSnapshot } },
       processing: {
         status: { invalidate: mockInvalidateDataHealth },
       },
@@ -411,6 +421,14 @@ vi.mock("../../modules/health-kit", async () => {
     queryQuantitySamples: vi.fn(),
     querySleepSamples: vi.fn(),
     queryWorkoutRoutes: vi.fn(),
+    queryRunningStepSamples: vi.fn().mockResolvedValue({ workouts: [], samples: [] }),
+    queryRunningStepChanges: vi.fn().mockResolvedValue({
+      hasMore: false,
+      workouts: [],
+      samples: [],
+      deletedUUIDs: [],
+      queryId: null,
+    }),
     queryWorkouts: vi.fn(),
     requestPermissions: (...args: unknown[]) => mockRequestPermissions(...args),
   };
@@ -427,6 +445,8 @@ const authorizedProvider = {
   authorized: true,
   importOnly: false,
   lastSyncedAt: "2026-03-19T12:00:00Z",
+  recentLogs: [],
+  lastSuccessfulSyncAt: null,
   needsReauth: false,
 };
 
@@ -437,6 +457,8 @@ const unauthorizedProvider = {
   authorized: false,
   importOnly: false,
   lastSyncedAt: null,
+  recentLogs: [],
+  lastSuccessfulSyncAt: null,
   needsReauth: false,
 };
 
@@ -452,6 +474,8 @@ const tokenProvider = {
   authorized: false,
   importOnly: false,
   lastSyncedAt: null,
+  recentLogs: [],
+  lastSuccessfulSyncAt: null,
   needsReauth: false,
 };
 
@@ -462,17 +486,21 @@ const importOnlyProvider = {
   authorized: true,
   importOnly: true,
   lastSyncedAt: null,
+  recentLogs: [],
+  lastSuccessfulSyncAt: null,
   needsReauth: false,
 };
 
 const pushOnlyProvider = {
-  id: "whoop-ble",
+  id: "whoop_ble",
   name: "WHOOP BLE",
-  authType: "none",
+  authType: "push:mobile",
   authorized: true,
   importOnly: false,
   pushOnly: true,
   lastSyncedAt: null,
+  recentLogs: [],
+  lastSuccessfulSyncAt: null,
   needsReauth: false,
 };
 
@@ -545,6 +573,7 @@ describe("ProviderDetailScreen", () => {
     mockInvalidateRecords.mockReset();
     mockInvalidateDetailLogs.mockReset();
     mockInvalidateLogs.mockReset();
+    mockInvalidateSensorSnapshot.mockReset();
     mockSyncStatusFetch.mockReset();
     mockOpenBrowserAsync.mockReset();
     mockGetRequestStatus.mockReset();
@@ -762,14 +791,16 @@ describe("ProviderDetailScreen", () => {
     });
 
     it("does not render actions for push-only providers", async () => {
-      mockUseLocalSearchParams.mockReturnValue({ id: "whoop-ble" });
+      mockUseLocalSearchParams.mockReturnValue({ id: "whoop_ble" });
       mockProvidersQuery.mockReturnValue({ data: [pushOnlyProvider], isLoading: false });
 
       const { default: ProviderDetailScreen } = await import("../../app/providers/[id]");
       render(<ProviderDetailScreen />);
 
       expect(screen.getByText("WHOOP BLE")).toBeTruthy();
+      expect(screen.getByText(/background sensors/i)).toBeTruthy();
       expect(screen.queryByText("Connect")).toBeNull();
+      expect(screen.queryByText("Reconnect")).toBeNull();
       expect(screen.queryByText("Sync")).toBeNull();
       expect(screen.queryByText("Full sync")).toBeNull();
     });
@@ -820,13 +851,12 @@ describe("ProviderDetailScreen", () => {
             {
               key: "activity",
               label: "Activities",
-              rawRows: 12,
-              latestRawAt: "2026-06-29T12:00:00Z",
-              latestReadModelAt: null,
-              cdcLagSeconds: 90000,
-              readModelLagSeconds: null,
+              currentStage: "cdc",
+              progressPercentage: null,
+              lastAdvancedAt: "2026-06-29T12:00:00Z",
+              lastReadyAt: null,
+              lastFailedAt: null,
               status: "active",
-              message: "Activity data is available, but ClickHouse mirrors are not current.",
             },
           ],
         },
@@ -1016,6 +1046,113 @@ describe("ProviderDetailScreen", () => {
         expect(mockOpenBrowserAsync).toHaveBeenCalledWith(
           "https://test.example.com/auth/provider/strava?code=provider-handoff-code",
         );
+      });
+    });
+
+    it.each([null, "2026-10-20T10:00:00Z"])(
+      "uses processed update evidence for push providers: %s",
+      async (lastProcessedUpdateAt) => {
+        vi.setSystemTime(new Date("2026-10-24T10:00:00Z"));
+        mockUseLocalSearchParams.mockReturnValue({ id: "garmin" });
+        mockProvidersQuery.mockReturnValue({
+          data: [
+            {
+              ...unauthorizedProvider,
+              id: "garmin",
+              name: "Garmin",
+              authorized: true,
+              authType: "oauth",
+              pushOnly: true,
+              lastSyncedAt: "2026-10-24T09:00:00Z",
+              lastSuccessfulSyncAt: "2026-10-24T09:00:00Z",
+              lastProcessedUpdateAt,
+            },
+          ],
+          isLoading: false,
+        });
+        const { default: ProviderDetailScreen } = await import("../../app/providers/[id]");
+        render(<ProviderDetailScreen />);
+        expect(screen.getByText("Updates automatically")).toBeTruthy();
+        if (lastProcessedUpdateAt)
+          expect(screen.getByText("Last update processed: 2026-10-20T10:00:00Z ago")).toBeTruthy();
+        else expect(screen.queryByText(/^Last update processed:/)).toBeNull();
+        expect(screen.queryByRole("button", { name: "Reconnect Garmin" })).toBeNull();
+      },
+    );
+
+    it.each([false, true])(
+      "opens Garmin OAuth for a push-only source, authorized=%s",
+      async (authorized) => {
+        mockUseLocalSearchParams.mockReturnValue({ id: "garmin" });
+        mockProvidersQuery.mockReturnValue({
+          data: [
+            {
+              ...unauthorizedProvider,
+              id: "garmin",
+              name: "Garmin",
+              authorized,
+              needsReauth: authorized,
+              authType: "oauth",
+              pushOnly: true,
+              lastSyncedAt: "2026-10-20T10:00:00Z",
+              recentLogs: [],
+              lastSuccessfulSyncAt: "2026-10-20T10:00:00Z",
+              lastProcessedUpdateAt: "2026-10-20T10:00:00Z",
+            },
+          ],
+          isLoading: false,
+        });
+        const { default: ProviderDetailScreen } = await import("../../app/providers/[id]");
+        render(<ProviderDetailScreen />);
+        fireEvent.click(screen.getByRole("button", { name: authorized ? "Reconnect" : "Connect" }));
+        await waitFor(() =>
+          expect(mockOpenBrowserAsync).toHaveBeenCalledWith(
+            "https://test.example.com/auth/provider/garmin?code=provider-handoff-code",
+          ),
+        );
+        expect(
+          screen.getByText("New data arrives automatically after you sync your Garmin device."),
+        ).toBeTruthy();
+        expect(screen.getByText(/^Last update processed:/)).toBeTruthy();
+        expect(screen.queryByText("Full Sync")).toBeNull();
+      },
+    );
+
+    it("presents and paginates automatic update history with accessible update labels", async () => {
+      mockUseLocalSearchParams.mockReturnValue({ id: "garmin" });
+      mockProvidersQuery.mockReturnValue({
+        data: [{ ...authorizedProvider, id: "garmin", name: "Garmin", pushOnly: true }],
+        isLoading: false,
+      });
+      const { default: ProviderDetailScreen } = await import("../../app/providers/[id]");
+      const { rerender } = render(<ProviderDetailScreen />);
+      expect(screen.getByText("Update history")).toBeTruthy();
+      expect(screen.getByText("No updates processed yet.")).toBeTruthy();
+
+      mockLogsQuery.mockReturnValue({
+        data: Array.from({ length: 20 }, (_, index) => ({
+          id: `update-${index}`,
+          syncedAt: "2026-10-20T10:00:00Z",
+          dataType: "activities",
+          status: "success",
+          recordCount: 1,
+          durationMs: 100,
+          errorMessage: null,
+          authFailureReason: null,
+        })),
+        isLoading: false,
+      });
+      rerender(<ProviderDetailScreen />);
+      expect(screen.getAllByText("Activities update processed")).toHaveLength(20);
+      expect(screen.getByRole("button", { name: "Previous update history page" })).toHaveProperty(
+        "disabled",
+        true,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Next update history page" }));
+      expect(mockLogsQuery).toHaveBeenLastCalledWith({
+        providerId: "garmin",
+        limit: 20,
+        offset: 20,
       });
     });
 
@@ -1407,6 +1544,7 @@ describe("ProviderDetailScreen", () => {
         providerId: "wahoo",
         dataType: "climbingLogEntries",
         recordId: log.id,
+        responseVersion: 4,
       });
       expect(screen.getByRole("dialog").textContent).toContain("Grades");
       expect(mockRecordFilterOptionsQuery).toHaveBeenCalledWith({
@@ -1561,6 +1699,8 @@ describe("ProviderDetailScreen", () => {
       authorized: true,
       importOnly: false,
       lastSyncedAt: "2026-03-19T12:00:00Z",
+      recentLogs: [],
+      lastSuccessfulSyncAt: null,
       needsReauth: false,
     };
 
@@ -1634,6 +1774,18 @@ describe("ProviderDetailScreen", () => {
       fireEvent.click(screen.getByRole("button", { name: "To" }));
 
       expect(screen.queryByText('"From" date must be on or before "To" date')).toBeNull();
+    });
+
+    it("refreshes the WHOOP sensor snapshot on pull-to-refresh", async () => {
+      mockUseLocalSearchParams.mockReturnValue({ id: "whoop_ble" });
+      mockProvidersQuery.mockReturnValue({ data: [pushOnlyProvider], isLoading: false });
+      const { default: ProviderDetailScreen } = await import("../../app/providers/[id]");
+      render(<ProviderDetailScreen />);
+
+      fireEvent.click(screen.getByRole("button", { name: "Pull to refresh" }));
+
+      await waitFor(() => expect(mockInvalidateSensorSnapshot).toHaveBeenCalledOnce());
+      expect(mockUseRefresh.mock.results.at(-1)?.value.onRefresh).toHaveBeenCalledOnce();
     });
 
     it("renders wear location picker when providerId is whoop", async () => {

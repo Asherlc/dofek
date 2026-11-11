@@ -88,6 +88,39 @@ export class ProviderStoredIdentityInvalidError extends ProviderAuthError {
   }
 }
 
+export class ProviderAuthorizationAlreadyOwnedError extends Error {
+  constructor(providerName: string) {
+    super(
+      `${providerName} account is already connected to another Dofek account. Disconnect it from the other Dofek account before connecting here.`,
+    );
+    this.name = "ProviderAuthorizationAlreadyOwnedError";
+  }
+}
+
+export class ProviderAuthorizationAccountMismatchError extends Error {
+  constructor(providerName: string) {
+    super(
+      `Reconnect using the currently connected ${providerName} account. Disconnect ${providerName} first to connect a different account.`,
+    );
+    this.name = "ProviderAuthorizationAccountMismatchError";
+  }
+}
+
+/** A connection-stage failure whose message contains only trusted labels and an HTTP status. */
+export class ProviderConnectionError extends Error {
+  readonly stage: "identity" | "permissions";
+  readonly statusCode: number;
+
+  constructor(providerName: string, stage: "identity" | "permissions", statusCode: number) {
+    super(
+      `${providerName} connection failed while confirming your ${stage} (HTTP ${statusCode}). Please contact support if this continues.`,
+    );
+    this.name = "ProviderConnectionError";
+    this.stage = stage;
+    this.statusCode = statusCode;
+  }
+}
+
 export function authFailureReasonFromError(error: unknown): ProviderAuthFailureReason | undefined {
   const visitedErrors = new Set<unknown>();
   let currentError: unknown = error;

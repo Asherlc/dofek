@@ -18,3 +18,9 @@ describe("providerDangerZoneCopy", () => {
     );
   });
 });
+
+it("explains owner-managed theCrag key revocation at disconnect", () => {
+  expect(providerDangerZoneCopy("theCrag").disconnectDescription).toMatch(
+    /personal API key.*revoke.*theCrag Settings.*API Keys/i,
+  );
+});

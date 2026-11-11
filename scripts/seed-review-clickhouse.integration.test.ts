@@ -123,19 +123,14 @@ describe("review ClickHouse seed maintenance", () => {
       },
     });
 
-    let maintenanceFailure: unknown;
-    try {
-      for (let run = 0; run < 2; run++) {
-        for (const statement of buildReviewClickHouseCopyStatements(
-          activeTestContext.connectionString,
-        )) {
-          await activeClickHouseClient.command({
-            query: rewriteReviewDatabases(statement, ingestDatabase, postgresFitnessDatabase),
-          });
-        }
+    for (let run = 0; run < 2; run++) {
+      for (const statement of buildReviewClickHouseCopyStatements(
+        activeTestContext.connectionString,
+      )) {
+        await activeClickHouseClient.command({
+          query: rewriteReviewDatabases(statement, ingestDatabase, postgresFitnessDatabase),
+        });
       }
-    } catch (error) {
-      maintenanceFailure = error;
     }
 
     const result = await activeClickHouseClient.query({
@@ -165,10 +160,6 @@ describe("review ClickHouse seed maintenance", () => {
       format: "JSONEachRow",
     });
     expect(bodyWeightCountSchema.parse(await bodyWeightResult.json())).toEqual([{ count: 90 }]);
-
-    if (maintenanceFailure) {
-      throw maintenanceFailure;
-    }
   });
 });
 

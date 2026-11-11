@@ -5,9 +5,10 @@ import { middlewareMarker } from "@trpc/server/unstable-core-do-not-import";
 import type { Database } from "dofek/db";
 import { queryCache } from "dofek/lib/cache";
 import { captureException } from "dofek/lib/error-reporting";
-import { ZodError } from "zod";
+import { ZodError, type ZodType } from "zod";
 import type { AccountErasureRestoreLedger } from "../../../src/account-erasure/restore-ledger.ts";
-import type { MetricStreamEventPublisher } from "../../../src/metric-stream/redpanda-producer.ts";
+import type { MetricStreamEventPublisher } from "../../../src/metric-stream/publisher.ts";
+import { InvalidCredentialsError } from "./auth/password-credential.ts";
 import type { AccessWindow } from "./billing/entitlement.ts";
 import {
   cacheHitsTotal,
@@ -61,6 +62,9 @@ function shouldSanitizeInternalError(error: TRPCError): boolean {
 
 const trpc = initTRPC.context<Context>().create({
   errorFormatter({ error, shape }) {
+    if (error.code === "BAD_REQUEST" && error.cause instanceof InvalidCredentialsError) {
+      return { ...shape, data: { ...shape.data, handledFailure: "invalid_credentials" as const } };
+    }
     if (error.code === "BAD_REQUEST" && error.cause instanceof ZodError) {
       const data = { ...shape.data };
       delete data.stack;
@@ -266,6 +270,8 @@ interface CachePolicy {
   maxAge: number;
   expiresAt?: CacheExpiry;
   keyVersion?: string;
+  outputSchema?: ZodType;
+  shouldCache?: (data: unknown) => boolean;
 }
 
 function localDateString(date: Date, timezone: string): string {
@@ -331,7 +337,17 @@ function cached(policy: CachePolicy) {
 
     // Cache lookup
     const cacheLookupStart = performance.now();
-    const hit = ctx.cacheMode === "refresh" ? undefined : await queryCache.get(key);
+    let hit = ctx.cacheMode === "refresh" ? undefined : await queryCache.get(key);
+    if (hit !== undefined && policy.outputSchema !== undefined) {
+      const parsed = await policy.outputSchema.safeParseAsync(hit);
+      if (parsed.success) {
+        hit = parsed.data;
+      } else {
+        captureException(parsed.error);
+        await queryCache.invalidate(key);
+        hit = undefined;
+      }
+    }
     trpcCacheLookupDuration.observe(
       { procedure: path, hit: hit !== undefined ? "true" : "false" },
       (performance.now() - cacheLookupStart) / 1000,
@@ -367,7 +383,7 @@ function cached(policy: CachePolicy) {
       { procedure: path, type, cache_hit: "false" },
       totalDurationMs / 1000,
     );
-    if (result.ok) {
+    if (result.ok && (policy.shouldCache?.(result.data) ?? true)) {
       await queryCache.set(key, result.data, requestCacheTtl(policy, ctx.timezone));
     }
     return result;

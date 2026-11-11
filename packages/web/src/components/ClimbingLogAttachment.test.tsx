@@ -69,18 +69,24 @@ describe("ClimbingLogAttachment", () => {
   it("attaches exactly the chosen log and activity and refreshes their affected cached views", async () => {
     const { fixture } = renderAttachment();
     const keys = [
+      getQueryKey(trpc.activity.images, { id: "22222222-2222-4222-8222-222222222222" }, "query"),
       getQueryKey(trpc.climbing.locationMap, { days: 90 }, "query"),
-      getQueryKey(trpc.climbing.activityLogEntries, { activityId: "activity-1" }, "query"),
+      getQueryKey(
+        trpc.climbing.activityLogEntries,
+        { activityId: "activity-1", responseVersion: 4 },
+        "query",
+      ),
       getQueryKey(
         trpc.climbing.unattachedClimbingLogEntries,
-        { activityId: "activity-1" },
+        { activityId: "activity-1", responseVersion: 4 },
         "query",
       ),
       getQueryKey(trpc.climbing.sessionSummary, { days: 90 }, "query"),
-      getQueryKey(trpc.climbing.gradeProgression, { days: 90 }, "query"),
+      getQueryKey(trpc.climbing.gradeProgressionV2, { days: 90 }, "query"),
+      getQueryKey(trpc.climbing.strengths),
       getQueryKey(trpc.climbing.volumeByGrade, { days: 90 }, "query"),
       getQueryKey(trpc.activity.list, { limit: 10 }, "query"),
-      getQueryKey(trpc.calendar.weekList, undefined, "query"),
+      getQueryKey(trpc.calendar.weekListV2, undefined, "query"),
     ];
     for (const key of keys) fixture.queryClient.setQueryData(key, []);
     fireEvent.click(await screen.findByRole("radio", { name: /Approach hike/ }));

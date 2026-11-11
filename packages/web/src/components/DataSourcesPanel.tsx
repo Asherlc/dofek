@@ -9,12 +9,7 @@ import { pollSyncJob } from "../lib/poll-sync-job.ts";
 import { locallyReportedErrorMeta } from "../lib/query-client.ts";
 import { captureException } from "../lib/telemetry.ts";
 import { trpc } from "../lib/trpc.ts";
-import {
-  CredentialAuthModal,
-  GarminAuthModal,
-  TokenAuthModal,
-  WhoopAuthModal,
-} from "./DataSourcesAuthModals.tsx";
+import { CredentialAuthModal, TokenAuthModal, WhoopAuthModal } from "./DataSourcesAuthModals.tsx";
 import type { ProviderState, SyncProviderSummary } from "./DataSourcesSyncTypes.ts";
 import { FileImportProviderCard } from "./FileImportProviderCard.tsx";
 import {
@@ -38,8 +33,7 @@ const oauthPostMessage = z.object({
   providerId: z.string().optional(),
 });
 
-const providerRegionClassName =
-  "h-80 space-y-3 overflow-y-auto overscroll-contain rounded-lg pr-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:h-96 lg:h-[28rem]";
+const providerRegionClassName = "min-h-80 space-y-3 rounded-lg sm:min-h-96 lg:min-h-[28rem]";
 const providerGridClassName = "grid gap-3 sm:grid-cols-2 lg:grid-cols-3";
 
 export function DataSourcesPanel() {
@@ -76,7 +70,6 @@ export function DataSourcesPanel() {
 
   // Auth modal state
   const [whoopAuthOpen, setWhoopAuthOpen] = useState(false);
-  const [garminAuthOpen, setGarminAuthOpen] = useState(false);
   const [credentialAuthProvider, setCredentialAuthProvider] = useState<{
     id: string;
     name: string;
@@ -294,7 +287,10 @@ export function DataSourcesPanel() {
 
       trpcUtils.sync.providers.invalidate();
       // Auto-trigger a full sync for the newly connected provider
-      if (providerId) {
+      if (
+        providerId &&
+        allProviders.some((provider) => provider.id === providerId && !provider.pushOnly)
+      ) {
         handleSync(providerId, true);
       }
     };
@@ -325,7 +321,7 @@ export function DataSourcesPanel() {
       channel?.close();
       window.removeEventListener("message", onMessage);
     };
-  }, [trpcUtils, handleSync]);
+  }, [allProviders, trpcUtils, handleSync]);
 
   const handleProviderClick = useCallback(
     (provider: SyncProviderSummary) => {
@@ -333,9 +329,11 @@ export function DataSourcesPanel() {
         handleSync(provider.id);
         return;
       }
-      if (provider.pushOnly) {
+      if (
+        provider.pushOnly &&
+        (provider.authType === "none" || provider.authType === "push:mobile")
+      )
         return;
-      }
       switch (provider.authType) {
         case "oauth":
         case "oauth1":
@@ -353,6 +351,7 @@ export function DataSourcesPanel() {
               name: provider.name,
               label: provider.tokenAuth.label,
               instructionsUrl: provider.tokenAuth.instructionsUrl,
+              description: provider.tokenAuth.description,
             });
           } else {
             const error = new Error(
@@ -367,9 +366,6 @@ export function DataSourcesPanel() {
           break;
         case "custom:whoop":
           setWhoopAuthOpen(true);
-          break;
-        case "custom:garmin":
-          setGarminAuthOpen(true);
           break;
         default:
           handleSync(provider.id);
@@ -394,7 +390,7 @@ export function DataSourcesPanel() {
 
   for (const p of allProviders) {
     const importConfig = getFileImportConfig(p.id);
-    if (importConfig) {
+    if (importConfig && p.importOnly) {
       unifiedProviders.push({ kind: "import", id: p.id, config: importConfig });
     } else {
       unifiedProviders.push({ kind: "sync", provider: p });
@@ -404,6 +400,7 @@ export function DataSourcesPanel() {
     unifiedProviders.map((entry) => ({
       ...entry,
       id: entry.kind === "import" ? entry.id : entry.provider.id,
+      label: entry.kind === "import" ? entry.config.title : entry.provider.name,
     })),
   );
 
@@ -425,9 +422,9 @@ export function DataSourcesPanel() {
     const provider = entry.provider;
     const state = providerStates[provider.id] ?? { status: "idle" };
     const needsAuth =
-      !provider.pushOnly &&
       provider.authType !== "none" &&
       provider.authType !== "file-import" &&
+      provider.authType !== "push:mobile" &&
       !provider.authorized;
     const needsReauth = provider.needsReauth === true;
     const providerStats = statsByProvider.get(provider.id);
@@ -489,7 +486,9 @@ export function DataSourcesPanel() {
               ))
             : providerGroups.map((group) =>
                 group.kind === "provider" ? (
-                  <div key={group.provider.id}>{renderProviderEntry(group.provider)}</div>
+                  <div key={group.provider.id} className="grid">
+                    {renderProviderEntry(group.provider)}
+                  </div>
                 ) : (
                   <ProviderFamilyCard
                     key={group.family.id}
@@ -511,17 +510,6 @@ export function DataSourcesPanel() {
           onClose={() => setWhoopAuthOpen(false)}
           onSuccess={() => {
             setWhoopAuthOpen(false);
-            trpcUtils.sync.providers.invalidate();
-          }}
-        />
-      )}
-
-      {/* Garmin Auth Modal */}
-      {garminAuthOpen && (
-        <GarminAuthModal
-          onClose={() => setGarminAuthOpen(false)}
-          onSuccess={() => {
-            setGarminAuthOpen(false);
             trpcUtils.sync.providers.invalidate();
           }}
         />
@@ -554,6 +542,7 @@ export function DataSourcesPanel() {
           providerName={tokenAuthProvider.name}
           tokenLabel={tokenAuthProvider.label}
           instructionsUrl={tokenAuthProvider.instructionsUrl}
+          description={tokenAuthProvider.description}
           onClose={() => setTokenAuthProvider(null)}
           onSuccess={() => {
             setTokenAuthProvider(null);

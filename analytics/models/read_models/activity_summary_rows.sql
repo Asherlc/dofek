@@ -12,7 +12,11 @@
 {% set initial_lookback_days = var('initial_lookback_days', 120) %}
 {% set activity_refresh_scoped = activity_refresh_scope_enabled() %}
 
-WITH current_activity AS (
+WITH
+{% if activity_refresh_scoped %}
+{{ activity_refresh_scope_ctes() }}
+{% endif %}
+current_activity AS (
     SELECT
         activity_id,
         user_id,
@@ -71,7 +75,8 @@ changed_raw_activity AS (
         activity.group_id AS activity_id,
         activity.user_id,
         activity.started_at,
-        coalesce(activity.ended_at, activity.started_at + INTERVAL 12 HOUR) AS ended_at
+        if(coalesce(activity.provider_type, '') = 'climbing_log', activity.started_at,
+            coalesce(activity.ended_at, activity.started_at + INTERVAL 12 HOUR)) AS ended_at
     FROM {{ source('postgres_fitness', 'activity') }} AS activity
     CROSS JOIN target_state
     WHERE NOT target_state.is_empty
@@ -96,6 +101,15 @@ sensor_summary_dirty_keys AS (
     CROSS JOIN target_state
     WHERE NOT target_state.is_empty
         AND sensor.refreshed_at > target_state.last_refreshed_at
+),
+
+step_cadence_dirty_keys AS (
+    SELECT
+activity_id,
+user_id
+    FROM {{ ref('activity_step_cadence_rows') }} FINAL
+    CROSS JOIN target_state
+    WHERE refreshed_at > target_state.last_refreshed_at
 ),
 
 location_summary_dirty_keys AS (
@@ -201,6 +215,11 @@ dirty_key_candidates AS (
             activity_id,
             user_id
         FROM location_summary_dirty_keys
+        UNION ALL
+        SELECT
+activity_id,
+user_id
+FROM step_cadence_dirty_keys
     )
 ),
 
@@ -356,7 +375,11 @@ SELECT
         'Nullable(String)'
     ) AS modality,
     CAST(
-        coalesce(activity_bounds.name, existing_activity_summary_for_dirty_keys.name),
+        if(
+            activity_bounds.activity_id IS null,
+            existing_activity_summary_for_dirty_keys.name,
+            activity_bounds.name
+        ),
         'Nullable(String)'
     ) AS name,
     CAST(
@@ -378,7 +401,12 @@ SELECT
     sensor_summary.max_power AS max_power,
     if(activity_bounds.modality IN ('indoor', 'virtual'), null, sensor_summary.avg_speed) AS avg_speed,
     if(activity_bounds.modality IN ('indoor', 'virtual'), null, sensor_summary.max_speed) AS max_speed,
-    sensor_summary.avg_cadence AS avg_cadence,
+    if(isFinite(sensor_summary.avg_cadence) AND sensor_summary.avg_cadence > 0,
+        sensor_summary.avg_cadence, step_cadence.avg_cadence) AS avg_cadence,
+    multiIf(isFinite(sensor_summary.avg_cadence) AND sensor_summary.avg_cadence > 0, 'cadence_samples',
+        step_cadence.avg_cadence IS NOT null, 'step_intervals', 'unknown') AS cadence_basis,
+    if(cadence_basis = 'step_intervals', step_cadence.observed_seconds, null) AS cadence_observed_seconds,
+    if(cadence_basis = 'step_intervals', round(100 * step_cadence.coverage_fraction, 1), null) AS cadence_coverage_percent,
     sensor_summary.elevation_gain_legacy AS elevation_gain_legacy,
     if(
         activity_bounds.modality IN ('indoor', 'virtual'),
@@ -404,7 +432,6 @@ SELECT
     sensor_summary.first_sample_at AS first_sample_at,
     sensor_summary.last_sample_at AS last_sample_at,
     sensor_summary.best_twenty_minute_power AS best_twenty_minute_power,
-    sensor_summary.normalized_power AS normalized_power,
     sensor_summary.smoothed_avg_power AS smoothed_avg_power,
     sensor_summary.climbing_elevation_gain_m AS climbing_elevation_gain_m,
     sensor_summary.climbing_seconds AS climbing_seconds,
@@ -424,3 +451,8 @@ LEFT JOIN sensor_summary
 LEFT JOIN location_summary
     ON location_summary.activity_id = active_dirty_keys.activity_id
     AND location_summary.user_id = active_dirty_keys.user_id
+
+LEFT JOIN {{ ref('activity_step_cadence_rows') }} AS step_cadence FINAL
+    ON step_cadence.activity_id = active_dirty_keys.activity_id
+    AND step_cadence.user_id = active_dirty_keys.user_id
+    AND step_cadence.is_deleted = 0

@@ -1,4 +1,7 @@
-import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
+import {
+  ProviderRateLimitError,
+  ProviderServiceUnavailableError,
+} from "@dofek/provider-http/rate-limit";
 import { describe, expect, it, vi } from "vitest";
 import { TrainingPeaksConnectClient } from "./client.ts";
 
@@ -16,6 +19,7 @@ function mockFetch(response: { status: number; ok: boolean; body: unknown }): Ty
   return vi.fn().mockResolvedValue({
     ok: response.ok,
     status: response.status,
+    headers: new Headers(),
     json: () => Promise.resolve(response.body),
     text: () =>
       Promise.resolve(
@@ -243,9 +247,11 @@ describe("TrainingPeaksConnectClient.getWorkouts", () => {
     const fetchFn = mockFetch({ status: 500, ok: false, body: "Server Error" });
     const client = new TrainingPeaksConnectClient("test-token", fetchFn);
 
-    await expect(client.getWorkouts(456, "2024-01-01", "2024-01-31")).rejects.toThrow(
-      "TrainingPeaks API error (500)",
-    );
+    const error = await client
+      .getWorkouts(456, "2024-01-01", "2024-01-31")
+      .catch((error: unknown) => error);
+    expect(error).toBeInstanceOf(ProviderServiceUnavailableError);
+    expect(error).toMatchObject({ providerId: "trainingpeaks", statusCode: 500 });
   });
 });
 

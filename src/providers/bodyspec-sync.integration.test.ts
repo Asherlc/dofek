@@ -1,9 +1,9 @@
 import { HttpResponse, http } from "msw";
-import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { dexaScan, dexaScanRegion } from "../db/schema/events.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
+import { createIntegrationMswFixture } from "../test/early-msw-lifecycle.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import { BodySpecProvider } from "./bodyspec.ts";
 import { SyncRun } from "./sync-run.ts";
@@ -199,11 +199,11 @@ function bodyspecHandlers(opts?: { apiError?: boolean }) {
 
 describe("BodySpecProvider.sync() (integration)", () => {
   let ctx: TestContext;
-  let server: ReturnType<typeof setupServer>;
+  let server: ReturnType<typeof createIntegrationMswFixture>;
 
   beforeAll(() => {
-    server = setupServer(...bodyspecHandlers());
-    server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server = createIntegrationMswFixture(...bodyspecHandlers());
+    server.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
   });
 
   afterEach(async () => {
@@ -212,7 +212,7 @@ describe("BodySpecProvider.sync() (integration)", () => {
   });
 
   afterAll(() => {
-    server.close();
+    server.deactivate();
   });
 
   beforeEach(async () => {

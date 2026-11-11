@@ -52,6 +52,7 @@ const createFoodRecordSchema = z
     meal: mealSchema.nullable().optional(),
     foodName: nonemptyTextSchema,
     foodDescription: nullableTextSchema.optional(),
+    zeroCalorieEvidence: nonemptyTextSchema.optional(),
     category: categorySchema.nullable().optional(),
     numberOfUnits: z.number().finite().nonnegative().nullable().optional(),
     servingUnit: nullableTextSchema.optional(),
@@ -79,6 +80,7 @@ const updateFoodRecordSchema = z
     expectedVersion: z.uuid().nullable(),
     requestId: z.uuid(),
     set: scalarSetSchema,
+    zeroCalorieEvidence: nonemptyTextSchema.optional(),
     clear: z.array(editableFieldSchema),
     nutrientSet: z.record(nutrientIdSchema, nullableNutrientAmountSchema),
     nutrientClear: z.array(nutrientIdSchema),
@@ -109,7 +111,8 @@ const updateFoodRecordSchema = z
       setFields.size === 0 &&
       input.clear.length === 0 &&
       setNutrients.size === 0 &&
-      input.nutrientClear.length === 0
+      input.nutrientClear.length === 0 &&
+      !input.zeroCalorieEvidence
     ) {
       context.addIssue({ code: "custom", message: "Update must contain at least one decision" });
     }
@@ -231,6 +234,61 @@ function requireRecord(
   throw new Error(`Food record snapshot ${recordId}@${version ?? "source"} was not found`);
 }
 
+function withZeroCalorieEvidence(description: string | null | undefined, evidence: string): string {
+  return [description, `Zero-calorie evidence: ${evidence}`].filter(Boolean).join("\n");
+}
+
+function validateNutrition(
+  nutrients: Record<string, number | null>,
+  requireComplete: boolean,
+  zeroCalorieEvidence: string | undefined,
+): void {
+  const required = ["calories", "protein", "carbohydrate", "fat"];
+  const missing = required.filter((id) => nutrients[id] === undefined || nutrients[id] === null);
+  if (requireComplete && missing.length > 0) {
+    throw new FoodRecordError(
+      "INVALID_ARGUMENT",
+      `Nutrition is missing ${missing.join(", ")}. Obtain all four values for the consumed portion from a label, manufacturer, or reliable food database; do not substitute zero for unknown nutrition.`,
+      { reason: "MISSING_REQUIRED_NUTRITION", missingNutrients: missing },
+    );
+  }
+  for (const id of required) {
+    const amount = nutrients[id];
+    if (amount !== undefined && amount !== null && (!Number.isFinite(amount) || amount < 0)) {
+      throw new FoodRecordError(
+        "INVALID_ARGUMENT",
+        `The effective ${id} value is invalid. Correct it using sourced nutrition for the consumed portion.`,
+        { reason: "INVALID_NUTRIENT_AMOUNT", nutrient: id },
+      );
+    }
+  }
+  const calories = nutrients.calories;
+  if (calories === undefined || calories === null) return;
+  // Deliberately below USDA Handbook 74 table 13's lowest protein/fat factors.
+  // Allow 1 g rounding per macro and 10 kcal per portion (21 CFR 101.9(c)).
+  // Carbohydrate is excluded: fiber and sugar alcohol energy factors vary.
+  const minimumCalories = Math.max(
+    0,
+    1.8 * Math.max(0, (nutrients.protein ?? 0) - 1) +
+      8 * Math.max(0, (nutrients.fat ?? 0) - 1) -
+      10,
+  );
+  if (calories < minimumCalories) {
+    throw new FoodRecordError(
+      "INVALID_ARGUMENT",
+      "Calories are too low for the known protein and fat. Check calories, macros, and the consumed portion against the source; preserve label calories rather than replacing them with a 4/4/9 estimate.",
+      { reason: "CALORIES_BELOW_MACRO_MINIMUM", minimumCalories },
+    );
+  }
+  if (calories === 0 && !zeroCalorieEvidence) {
+    throw new FoodRecordError(
+      "INVALID_ARGUMENT",
+      "Zero calories require explicit evidence. Supply zero-calorie evidence identifying the label, manufacturer, reliable database, or user confirmation of a genuinely zero-calorie item; obtain missing nutrition instead of saving zeros.",
+      { reason: "ZERO_CALORIE_EVIDENCE_REQUIRED" },
+    );
+  }
+}
+
 function parseCommand<T>(schema: z.ZodType<T>, input: unknown): T {
   const parsed = schema.safeParse(input);
   if (parsed.success) return parsed.data;
@@ -345,6 +403,14 @@ export class FoodRecordService {
           const repository = this.#repositoryFactory(transaction, this.#userId);
           const head = await repository.createSourceAndIdentity({
             ...command,
+            ...(command.zeroCalorieEvidence
+              ? {
+                  foodDescription: withZeroCalorieEvidence(
+                    command.foodDescription,
+                    command.zeroCalorieEvidence,
+                  ),
+                }
+              : {}),
             externalId: `mcp:${command.requestId}`,
             requestHash: hash,
             actor: this.#actor,
@@ -354,6 +420,10 @@ export class FoodRecordService {
             head.identityId,
             head.version,
           );
+          if (!head.replayed) {
+            validateNutrition(command.nutrients, true, command.zeroCalorieEvidence);
+            validateNutrition(record.nutrients, true, command.zeroCalorieEvidence);
+          }
           return {
             result: {
               operation: {
@@ -419,6 +489,29 @@ export class FoodRecordService {
         this.#userId,
         async (transaction) => {
           const repository = this.#repositoryFactory(transaction, this.#userId);
+          const evidence =
+            "zeroCalorieEvidence" in command ? command.zeroCalorieEvidence : undefined;
+          if (kind === "update" && evidence) {
+            const descriptionDecision = fields.food_description;
+            let description: unknown;
+            if (descriptionDecision?.operation === "set") {
+              description = descriptionDecision.value;
+            } else {
+              const existing =
+                descriptionDecision?.operation === "clear"
+                  ? await repository.getAtVersion(command.recordId, null)
+                  : await repository.get(command.recordId);
+              if (!existing) throw new FoodRecordNotFoundError(command.recordId);
+              description = existing.foodDescription;
+            }
+            fields.food_description = {
+              operation: "set",
+              value: withZeroCalorieEvidence(
+                typeof description === "string" ? description : null,
+                evidence,
+              ),
+            };
+          }
           const head = await repository.appendChange({
             identityId: command.recordId,
             expectedVersion: command.expectedVersion,
@@ -435,6 +528,9 @@ export class FoodRecordService {
             head.identityId,
             head.version,
           );
+          if (!head.replayed && kind === "update") {
+            validateNutrition(record.nutrients, false, evidence);
+          }
           const affectedDates = head.replayed
             ? []
             : kind === "update"

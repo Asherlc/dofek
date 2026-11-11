@@ -8,6 +8,7 @@ import { createApp } from "../index.ts";
 import {
   type ClickHouseMetricStreamSeedRow,
   createClickHouseTestActivitySensorStore,
+  rebuildClickHouseTestActivityPowerCurve,
   seedClickHouseActivityPolarizationZone,
   seedClickHouseMetricStreamRows,
   syncClickHouseTestActivitySensorStore,
@@ -17,12 +18,11 @@ import {
  * Integration tests for router coverage gaps:
  * - stress (scores endpoint with JS scoring logic)
  * - predictions (targets + predict endpoints)
- * - recovery (sleepConsistency, hrvVariability, workloadRatio, sleepAnalytics, readinessScore)
+ * - recovery (sleepConsistency, hrvVariability, workloadRatio, sleepAnalytics)
  * - strength (volumeOverTime, estimatedOneRepMax, muscleGroupVolume, progressiveOverload, workoutSummary)
  * - anomalyDetection (check + history)
  * - power (eFTP fallback path)
  * - efficiency (aerobicDecoupling edge case)
- * - cyclingAdvanced (trainingMonotony)
  */
 describe("Router coverage", () => {
   let server: ReturnType<import("express").Express["listen"]>;
@@ -41,7 +41,7 @@ describe("Router coverage", () => {
     // Set up user profile
     await testCtx.db.execute(
       sql`UPDATE fitness.user_profile
-          SET max_hr = 190, resting_hr = 50, ftp = 250, birth_date = '1990-01-01'
+          SET max_hr = 190, resting_hr = 50, birth_date = '1990-01-01'
           WHERE id = ${TEST_USER_ID}`,
     );
 
@@ -329,6 +329,7 @@ describe("Router coverage", () => {
     // Start server
     const sensorStore = await createClickHouseTestActivitySensorStore(testCtx);
     await seedClickHouseMetricStreamRows(testCtx, metricStreamSeedRows);
+    await rebuildClickHouseTestActivityPowerCurve(testCtx);
     if (!polarizationActivity) {
       throw new Error("Polarization activity fixture was not created");
     }
@@ -560,12 +561,11 @@ describe("Router coverage", () => {
       }
     });
 
-    it("workloadRatio returns the recent-to-baseline ratio with displayed strain", async () => {
+    it("workloadRatio returns the recent-to-baseline ratio with descriptive load data", async () => {
       const result = await query<{
         timeSeries: {
           date: string;
           dailyLoad: number;
-          strain: number;
           acuteLoad: number;
           chronicLoad: number;
           workloadRatio: number | null;
@@ -576,30 +576,22 @@ describe("Router coverage", () => {
           recentDays: 7;
           baselineDays: 28;
         };
-        displayedStrain: number;
         displayedDate: string | null;
       }>("recovery.workloadRatio", { days: 90 });
 
       expect(Array.isArray(result.timeSeries)).toBe(true);
       expect(result.timeSeries.length).toBeGreaterThan(0);
 
-      expect(typeof result.displayedStrain).toBe("number");
-      expect(result.displayedStrain).toBeGreaterThanOrEqual(0);
-      expect(result.displayedStrain).toBeLessThanOrEqual(21);
-
       for (const row of result.timeSeries) {
         expect(row.date).toBeTruthy();
         expect(typeof row.dailyLoad).toBe("number");
-        expect(typeof row.strain).toBe("number");
-        expect(row.strain).toBeGreaterThanOrEqual(0);
-        expect(row.strain).toBeLessThanOrEqual(21);
         expect(typeof row.acuteLoad).toBe("number");
         expect(typeof row.chronicLoad).toBe("number");
         expect(row.dailyLoad).toBeGreaterThanOrEqual(0);
       }
     });
 
-    it("sleepAnalytics returns nightly data with stage percentages and sleep debt", async () => {
+    it("sleepAnalytics returns nightly data with stage percentages", async () => {
       const result = await query<{
         nightly: {
           date: string;
@@ -613,7 +605,6 @@ describe("Router coverage", () => {
           stagingAvailable: boolean;
           rollingAvgDuration: number | null;
         }[];
-        sleepDebt: number;
       }>("recovery.sleepAnalytics", { days: 90 });
 
       expect(result.nightly.length).toBeGreaterThan(0);
@@ -646,9 +637,6 @@ describe("Router coverage", () => {
         }
         expect(night.efficiency).toBeGreaterThan(0);
       }
-
-      // Sleep debt is computed from last 14 nights vs 480min target
-      expect(typeof result.sleepDebt).toBe("number");
     });
 
     it("sleepAnalytics computes sleepMinutes from stages for Apple Health", async () => {
@@ -697,7 +685,6 @@ describe("Router coverage", () => {
           durationMinutes: number;
           sleepMinutes: number;
         }[];
-        sleepDebt: number;
       }>("recovery.sleepAnalytics", { days: 1, endDate: sleepDate });
 
       const appleHealthNight = result.nightly.find(
@@ -705,39 +692,6 @@ describe("Router coverage", () => {
           night.durationMinutes === inBedDuration && night.sleepMinutes === expectedSleepMinutes,
       );
       expect(appleHealthNight).toBeDefined();
-    });
-
-    it("readinessScore returns composite scores with component breakdown", async () => {
-      const result = await query<
-        {
-          date: string;
-          readinessScore: number;
-          components: {
-            hrvScore: number;
-            restingHrScore: number;
-            sleepScore: number;
-            respiratoryRateScore: number;
-          };
-        }[]
-      >("recovery.readinessScore", { days: 30 });
-
-      expect(result.length).toBeGreaterThan(0);
-
-      for (const row of result) {
-        expect(row.date).toBeTruthy();
-        expect(row.readinessScore).toBeGreaterThanOrEqual(0);
-        expect(row.readinessScore).toBeLessThanOrEqual(100);
-
-        // Component scores should each be 0-100
-        expect(row.components.hrvScore).toBeGreaterThanOrEqual(0);
-        expect(row.components.hrvScore).toBeLessThanOrEqual(100);
-        expect(row.components.restingHrScore).toBeGreaterThanOrEqual(0);
-        expect(row.components.restingHrScore).toBeLessThanOrEqual(100);
-        expect(row.components.sleepScore).toBeGreaterThanOrEqual(0);
-        expect(row.components.sleepScore).toBeLessThanOrEqual(100);
-        expect(row.components.respiratoryRateScore).toBeGreaterThanOrEqual(0);
-        expect(row.components.respiratoryRateScore).toBeLessThanOrEqual(100);
-      }
     });
   });
 
@@ -1038,34 +992,6 @@ describe("Router coverage", () => {
   });
 
   // ══════════════════════════════════════════════════════════════
-  // Cycling Advanced — training monotony
-  // ══════════════════════════════════════════════════════════════
-  describe("cyclingAdvanced", () => {
-    it("trainingMonotony returns weekly monotony and strain values", async () => {
-      const result = await query<
-        {
-          week: string;
-          monotony: number;
-          strain: number;
-          weeklyLoad: number;
-        }[]
-      >("cyclingAdvanced.trainingMonotony", { days: 90 });
-
-      expect(Array.isArray(result)).toBe(true);
-
-      for (const week of result) {
-        expect(week.week).toBeTruthy();
-        expect(typeof week.monotony).toBe("number");
-        expect(week.monotony).toBeGreaterThan(0);
-        expect(typeof week.strain).toBe("number");
-        expect(week.strain).toBeGreaterThan(0);
-        expect(typeof week.weeklyLoad).toBe("number");
-        expect(week.weeklyLoad).toBeGreaterThan(0);
-      }
-    });
-  });
-
-  // ══════════════════════════════════════════════════════════════
   // Nutrition Analytics — adaptive TDEE
   // ══════════════════════════════════════════════════════════════
   describe("nutritionAnalytics", () => {
@@ -1354,70 +1280,6 @@ describe("Router coverage", () => {
     it("syncStatus returns null for unknown job", async () => {
       const result = await query<null>("sync.syncStatus", { jobId: "nonexistent-job-id" });
       expect(result).toBeNull();
-    });
-  });
-
-  // ══════════════════════════════════════════════════════════════
-  // PMC — chart with enough data for model estimation
-  // ══════════════════════════════════════════════════════════════
-  describe("pmc", () => {
-    it("chart returns FTP estimate and load data", async () => {
-      const result = await query<{
-        data: { date: string; load: number; ctl: number; atl: number; tsb: number }[];
-        model: {
-          type: "learned" | "generic";
-          pairedActivities: number;
-          r2: number | null;
-          ftp: number | null;
-        };
-      }>("pmc.chart", { days: 90 });
-
-      expect(result.data.length).toBeGreaterThan(0);
-      expect(result.model.ftp).not.toBeNull();
-      if (result.model.ftp != null) {
-        expect(result.model.ftp).toBeGreaterThan(100);
-      }
-      expect(result.model.pairedActivities).toBeGreaterThanOrEqual(0);
-
-      const loadDays = result.data.filter((d) => d.load > 0);
-      expect(loadDays.length).toBeGreaterThan(0);
-    });
-  });
-
-  // ══════════════════════════════════════════════════════════════
-  // Healthspan — score with weekly history
-  // ══════════════════════════════════════════════════════════════
-  describe("healthspan", () => {
-    it("score returns composite with trend and metrics", async () => {
-      const result = await query<{
-        healthspanScore: number;
-        metrics: {
-          name: string;
-          value: number | null;
-          unit: string;
-          score: number;
-          status: string;
-        }[];
-        history: { weekStart: string; score: number }[];
-        trend: "improving" | "declining" | "stable" | null;
-      }>("healthspan.score", { weeks: 12 });
-
-      expect(result.healthspanScore).toBeGreaterThanOrEqual(0);
-      expect(result.healthspanScore).toBeLessThanOrEqual(100);
-      expect(result.metrics).toHaveLength(9);
-
-      expect(result.history.length).toBeGreaterThan(0);
-
-      if (result.history.length >= 4) {
-        expect(result.trend).not.toBeNull();
-        expect(["improving", "declining", "stable"]).toContain(result.trend);
-      }
-
-      for (const metric of result.metrics) {
-        expect(["excellent", "good", "fair", "poor"]).toContain(metric.status);
-        expect(metric.score).toBeGreaterThanOrEqual(0);
-        expect(metric.score).toBeLessThanOrEqual(100);
-      }
     });
   });
 

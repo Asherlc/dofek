@@ -49,7 +49,7 @@ count; the server derives free-rock result labels from the recorded attempt
 facts. See the [shared model](../training/src/climbing-log.ts) and
 [formatters](src/climbing-context.ts).
 
-The [log formatter](src/climbing-log.ts) labels recorded rope methods once per
+The [log formatter](src/climbing-log.ts) labels distinct recorded attempt styles once per
 card and formats known counts as `Attempts: N`, omitting unknown counts supplied
 as null by the [server contract](../server/src/contracts/climbing-log-contracts.ts).
 Whole-climb summaries show the outcome
@@ -60,6 +60,24 @@ and internal references.
 
 ### Climbing cards
 
-[Climbing summaries](src/climbing-log.ts) omit generic “Completed” wording and
-suppress redundant attempt counts for the server's Onsight and Flash labels.
-Other recorded attempt counts and explicit failure results stay visible.
+[Climbing summaries](src/climbing-log.ts) distinguish known unfinished attempts
+(“Attempted”) from reaching the top (“Completed”), following
+[Garmin's completion labels and separate fall count](https://www8.garmin.com/manuals/webhelp/GUID-BD965919-30AA-4EB5-95D7-A899658C50EB/EN-US/GUID-D67857E8-04FB-44CA-9D58-B77AB8D50F83.html).
+Confirmed sends retain their result labels instead of a redundant “Completed”
+label. Onsight and Flash also suppress redundant attempt counts. Pitch results
+retain their scope. Rope methods and recorded falls or hangs appear as separate
+text badges, grouped by recorded attempt style through the
+[shared label formatter](src/climbing-log.ts). The
+[Mountain Project forum discussion](https://www.mountainproject.com/forum/topic/124980013/onsight-vs-flash-vs-redpoint)
+distinguishes Fell/Hung from a clean send without guaranteeing arrival at the top.
+Unknown completion stays unlabeled even when the attempt is
+known not to be a clean send; falling or hanging alone does not establish whether
+the climber reached the top. See the
+[server contract](../server/src/contracts/climbing-log-contracts.ts) and
+[canonical send projection](../../drizzle/0148_compute_climbing_attempt_outcome.sql).
+
+The [web card](../web/src/pages/activity-detail/components/ClimbingLogEntryCard.tsx)
+and [mobile card](../mobile/components/ClimbingLogEntryCard.tsx) render outcome
+and attempt-style labels as text badges, separately from attempt counts and pitch
+context. Both use the [shared outcome formatter](src/climbing-log.ts) and
+[semantic color palette](../scoring/src/colors.ts).

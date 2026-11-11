@@ -25,8 +25,6 @@ const state = vi.hoisted<{
   performanceError: Error | null;
   activityAnalyticsHasData: boolean;
   activityAnalyticsError: Error | null;
-  bulkDeleteOnSuccess: (() => Promise<void>) | null;
-  invalidatedQueries: string[];
   queryCalls: Array<{ name: string; input: unknown }>;
   selectedDays: number | null;
 }>(() => ({
@@ -42,8 +40,6 @@ const state = vi.hoisted<{
   performanceError: null,
   activityAnalyticsHasData: true,
   activityAnalyticsError: null,
-  bulkDeleteOnSuccess: null,
-  invalidatedQueries: [],
   queryCalls: [],
   selectedDays: 90,
 }));
@@ -59,39 +55,6 @@ vi.mock("@tanstack/react-router", () => ({
 
 vi.mock("@dofek/training/training", () => ({
   CYCLING_ACTIVITY_TYPES: ["cycling"],
-}));
-vi.mock("../../components/ActivityVariabilityTable.tsx", () => ({
-  ActivityVariabilityTable: ({
-    offset,
-    limit,
-    onPageChange,
-  }: {
-    offset: number;
-    limit: number;
-    onPageChange: (offset: number) => void;
-  }) => (
-    <button type="button" onClick={() => onPageChange(offset + limit)}>
-      Next variability page
-    </button>
-  ),
-}));
-vi.mock("../../components/ActivityList.tsx", () => ({
-  ActivityList: ({
-    error,
-    page,
-    onPageChange,
-  }: {
-    error?: string;
-    page: number;
-    onPageChange: (page: number) => void;
-  }) => (
-    <>
-      {error ? <p>{error}</p> : null}
-      <button type="button" onClick={() => onPageChange(page + 1)}>
-        Next activity page
-      </button>
-    </>
-  ),
 }));
 vi.mock("../../components/AerobicEfficiencyChart.tsx", () => ({
   AerobicEfficiencyChart: ({ activities }: { activities: unknown[] }) => {
@@ -110,9 +73,6 @@ vi.mock("../../components/PmcChart.tsx", () => ({
 }));
 vi.mock("../../components/PowerCurveChart.tsx", () => ({
   PowerCurveChart: () => <div data-testid="power-curve" />,
-}));
-vi.mock("../../components/RecentActivitiesSection.tsx", () => ({
-  RecentActivitiesSection: () => <div data-testid="recent-activities" />,
 }));
 vi.mock("../../components/VerticalAscentChart.tsx", () => ({
   VerticalAscentChart: () => <div data-testid="vertical-ascent" />,
@@ -141,32 +101,6 @@ const emptyQuery = { data: [], isLoading: false, error: null };
 
 vi.mock("../../lib/trpc.ts", () => ({
   trpc: {
-    useUtils: () => ({
-      cycling: {
-        activities: {
-          invalidate: async () => state.invalidatedQueries.push("cycling.activities"),
-        },
-        performance: {
-          invalidate: async () => state.invalidatedQueries.push("cycling.performance"),
-        },
-      },
-      calendar: {
-        weekList: {
-          invalidate: async () => state.invalidatedQueries.push("calendar.weekList"),
-        },
-        activityOverview: {
-          invalidate: async () => state.invalidatedQueries.push("calendar.activityOverview"),
-        },
-      },
-    }),
-    activity: {
-      bulkDelete: {
-        useMutation: (options: { onSuccess: () => Promise<void> }) => {
-          state.bulkDeleteOnSuccess = options.onSuccess;
-          return { mutate: vi.fn(), isPending: false, error: null };
-        },
-      },
-    },
     cycling: {
       performance: {
         useQuery: (input: { days: number | null }) => {
@@ -206,9 +140,31 @@ vi.mock("../../lib/trpc.ts", () => ({
                   },
                   pmc: {
                     data: [],
-                    model: { type: "generic", pairedActivities: 0, r2: null, ftp: null },
+                    model: { ftp: null },
                   },
-                  eftpTrend: { trend: [], currentEftp: null, model: null },
+                  eftpTrend: {
+                    trend: [],
+                    currentEftp: null,
+                    model: null,
+                    currentEvidence: {
+                      value: null,
+                      unit: "watt",
+                      method: "computed_eftp",
+                      event_at: null,
+                      evidence_activity_id: null,
+                      evidence_at: null,
+                      evidence_duration_seconds: null,
+                      evidence_power: null,
+                      model_version: null,
+                      uncertainty: {
+                        kind: "not_quantifiable" as const,
+                        watts: null,
+                        reason:
+                          "Reference-curve estimate; individual physiological FTP uncertainty has not been quantified.",
+                      },
+                      unavailable_reason: "No qualifying sustained power effort is available.",
+                    },
+                  },
                   estimateEvidence: state.estimateEvidenceAvailable
                     ? {
                         recent: {
@@ -288,7 +244,6 @@ vi.mock("../../lib/trpc.ts", () => ({
           data: state.activityAnalyticsHasData
             ? {
                 activities: { items: [], totalCount: 0 },
-                variability: { rows: [], totalCount: 0, emptyReason: null },
                 verticalAscent: [],
                 aerobicEfficiency: { activities: state.efficiencyActivities, maxHr: null },
               }
@@ -351,8 +306,6 @@ describe("CyclingTab", () => {
     state.performanceError = null;
     state.activityAnalyticsHasData = true;
     state.activityAnalyticsError = null;
-    state.bulkDeleteOnSuccess = null;
-    state.invalidatedQueries = [];
     state.queryCalls.length = 0;
     state.selectedDays = 90;
     window.localStorage.clear();
@@ -450,19 +403,6 @@ describe("CyclingTab", () => {
     expect(screen.getAllByText("Cycling data unavailable")).toHaveLength(2);
   });
 
-  it("invalidates both cycling query groups after deleting activities", async () => {
-    await renderCyclingTab();
-
-    await state.bulkDeleteOnSuccess?.();
-
-    expect(state.invalidatedQueries).toEqual([
-      "cycling.activities",
-      "cycling.performance",
-      "calendar.weekList",
-      "calendar.activityOverview",
-    ]);
-  });
-
   it("passes server-filtered aerobic efficiency activities to the chart", async () => {
     const cyclingActivity = {
       date: "2026-03-10",
@@ -491,10 +431,6 @@ describe("CyclingTab", () => {
         name: "cycling.activities",
         input: {
           days: 365,
-          activityLimit: 20,
-          activityOffset: 0,
-          variabilityLimit: 20,
-          variabilityOffset: 0,
         },
       },
     ]);
@@ -511,10 +447,6 @@ describe("CyclingTab", () => {
         name: "cycling.activities",
         input: {
           days: null,
-          activityLimit: 20,
-          activityOffset: 0,
-          variabilityLimit: 20,
-          variabilityOffset: 0,
         },
       },
     ]);
@@ -532,34 +464,10 @@ describe("CyclingTab", () => {
         name: "cycling.activities",
         input: {
           days: null,
-          activityLimit: 20,
-          activityOffset: 0,
-          variabilityLimit: 20,
-          variabilityOffset: 0,
         },
       },
     ]);
   });
-
-  it("resets both cycling pagination cursors when the selected range changes", async () => {
-    await renderCyclingTabInTrainingLayout();
-
-    fireEvent.click(screen.getByRole("button", { name: "Next activity page" }));
-    fireEvent.click(screen.getByRole("button", { name: "Next variability page" }));
-    expect(
-      state.queryCalls.filter((queryCall) => queryCall.name === "cycling.activities").at(-1),
-    ).toEqual({
-      name: "cycling.activities",
-      input: expect.objectContaining({ activityOffset: 20, variabilityOffset: 20 }),
-    });
-
-    fireEvent.click(screen.getByRole("radio", { name: "All" }));
-
-    expect(
-      state.queryCalls.filter((queryCall) => queryCall.name === "cycling.activities").at(-1),
-    ).toEqual({
-      name: "cycling.activities",
-      input: expect.objectContaining({ days: null, activityOffset: 0, variabilityOffset: 0 }),
-    });
-  });
 });
+
+vi.mock("../../components/SportVolumeChart.tsx", () => ({ SportVolumeChart: () => <div /> }));

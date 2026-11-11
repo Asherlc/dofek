@@ -1,6 +1,6 @@
 # How to Reverse Engineer an API: A Complete Walkthrough
 
-A step-by-step guide for going from "this app has data I want" to "I have a working TypeScript client that can fetch it." Written from experience building clients for WHOOP, Eight Sleep, Zwift, TrainerRoad, VeloHero, and Garmin Connect.
+A step-by-step guide for going from "this app has data I want" to "I have a working TypeScript client that can fetch it." Written from experience building clients for WHOOP, Eight Sleep, Zwift, TrainerRoad, and Garmin Connect.
 
 ## Phase 1: Reconnaissance
 
@@ -22,7 +22,7 @@ Also check:
 - Reddit threads (r/quantifiedself, r/fitness, service-specific subreddits) — people often share API findings
 - The service's own community forums — developers sometimes discuss API access
 
-**Why this matters:** We saved days of work on Zwift (rally25rs had documented everything), VeloHero (tapiriik had the SSO flow), and Garmin Connect (garth + python-garminconnect had 100+ endpoints mapped).
+**Why this matters:** We saved days of work on Zwift (rally25rs had documented everything) and Garmin Connect (garth + python-garminconnect had 100+ endpoints mapped).
 
 ### 1.2 Determine what the app actually shows
 

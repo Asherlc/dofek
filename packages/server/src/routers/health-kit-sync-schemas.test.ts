@@ -3,7 +3,34 @@ import {
   getDailyMetricAccumulatorKey,
   healthKitSampleSchema,
   workoutActivityTypeMap,
+  workoutSampleSchema,
 } from "./health-kit-sync-schemas.ts";
+
+it("retains optional reported workout hardware through validation", () => {
+  const device = {
+    name: "Watch",
+    model: "Watch7,12",
+    manufacturer: "Apple",
+    hardwareVersion: "2",
+    firmwareVersion: "3",
+    softwareVersion: "11",
+    localIdentifier: "local",
+    udiDeviceIdentifier: "udi",
+  };
+  expect(
+    workoutSampleSchema.parse({
+      uuid: "workout",
+      workoutType: "37",
+      startDate: "2026-10-01T00:00:00Z",
+      endDate: "2026-10-01T01:00:00Z",
+      duration: 3600,
+      sourceName: "Fitness",
+      sourceBundle: "com.apple.fitness",
+      sourceProductType: "Watch7,12",
+      device,
+    }),
+  ).toMatchObject({ device, sourceProductType: "Watch7,12" });
+});
 
 describe("healthKitSampleSchema", () => {
   const sample = {

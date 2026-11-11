@@ -102,6 +102,8 @@ export function generateCodeChallenge(verifier: string): string {
 
 export interface TokenSet {
   accessToken: string;
+  /** Identifies a provider authorization grant across access-token refreshes. */
+  authorizationId?: string;
   refreshToken: string | null;
   expiresAt: Date;
   /** Stable provider-side account identifier tied to this authorization. */

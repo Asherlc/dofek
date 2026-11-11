@@ -1,27 +1,27 @@
-import {
-  type CriticalPowerModel,
-  computeNormalizedPower,
-  computePowerCurve,
-  DURATION_LABELS,
-  fitCriticalPower,
-  STANDARD_DURATIONS,
-} from "@dofek/training/power-analysis";
+import { type CriticalPowerModel, fitCriticalPower } from "@dofek/cycling-power/critical-power";
+import { DURATION_LABELS, STANDARD_DURATIONS } from "@dofek/training/power-analysis";
 import { CYCLING_ACTIVITY_TYPES } from "@dofek/training/training";
+import { cyclingCriticalPowerPolicy } from "dofek/analytics/cycling-power-policy";
 import type { Database } from "dofek/db";
 import { z } from "zod";
-import { ChartRange } from "../lib/chart-range.ts";
+import {
+  type AccessWindow,
+  clickHouseAccessParams,
+  clickHouseAccessPredicate,
+} from "../billing/entitlement.ts";
+import type { ChartRange } from "../lib/chart-range.ts";
 import { dateStringSchema } from "../lib/typed-sql.ts";
 import { type ActivitySensorStore, activityRepositoryFor } from "./activity-repository.ts";
+import { CyclingThresholdRepository } from "./cycling-threshold-repository.ts";
 
 const CYCLING_TYPES: string[] = [...CYCLING_ACTIVITY_TYPES];
 
 // ── Zod schemas ──────────────────────────────────────────────
 
-const normalizedPowerRowSchema = z.object({
-  activity_id: z.string(),
-  activity_date: dateStringSchema,
-  activity_name: z.string().nullable(),
-  normalized_power: z.coerce.number(),
+const trendRowSchema = z.object({
+  date: dateStringSchema,
+  eftp: z.coerce.number(),
+  activityName: z.string().nullable(),
 });
 
 const powerCurvePointRowSchema = z.object({
@@ -52,8 +52,7 @@ export class PowerRepository {
 
   /**
    * Power Duration Curve: best average power for standard durations.
-   * Reads from the pre-computed activity_power_curve read model when available,
-   * falling back to raw sample fetch + client-side computation.
+   * Reads canonical elapsed-time evidence from activity_power_curve.
    */
   async getPowerCurve(range: ChartRange): Promise<{
     points: {
@@ -121,101 +120,44 @@ export class PowerRepository {
 
       return {
         points,
-        model: fitCriticalPower(points),
+        model: fitCriticalPower(points, cyclingCriticalPowerPolicy),
       };
     }
 
-    // Fall back to raw sample fetch + client-side computation
-    const samples = await this.#sensorStore.getPowerCurveSamples(
-      range.days,
-      this.#userId,
-      this.#timezone,
-      CYCLING_TYPES,
-    );
-
-    const results = computePowerCurve(samples);
-
-    return {
-      points: results.map((result) => ({
-        durationSeconds: result.durationSeconds,
-        label: DURATION_LABELS[result.durationSeconds] ?? `${result.durationSeconds}s`,
-        bestPower: result.bestPower,
-        activityDate: result.activityDate,
-      })),
-      model: fitCriticalPower(results),
-    };
+    return { points: [], model: null };
   }
 
-  /**
-   * eFTP trend: estimated Functional Threshold Power over time.
-   * Uses per-activity Normalized Power (NP) x 0.95.
-   */
-  async getEftpTrend(range: ChartRange): Promise<{
-    trend: { date: string; eftp: number; activityName: string | null }[];
-    currentEftp: number | null;
-    model: CriticalPowerModel | null;
-  }> {
-    if ((await this.#loadRawActivityCount(range)) === 0) {
-      return { trend: [], currentEftp: null, model: null };
-    }
-
-    const rows = await this.#sensorStore.query(
-      normalizedPowerRowSchema,
-      `SELECT
-        toString(activity_id) AS activity_id,
-        toString(toDate(toTimeZone(started_at, {timezone:String}))) AS activity_date,
-        name AS activity_name,
-        round(normalized_power, 1) AS normalized_power
-      FROM analytics.activity_summary
-      WHERE user_id = {userId:UUID}
-        ${range.clickHouseTimestampAfter("started_at")}
-        AND normalized_power IS NOT NULL
-        AND has({activityTypes:Array(String)}, canonical_type)
-      ORDER BY started_at`,
-      {
-        userId: this.#userId,
-        timezone: this.#timezone,
-        ...range.clickHouseParams(),
-        activityTypes: CYCLING_TYPES,
-      },
-    );
-
-    const normalizedPowerRows =
-      rows.length > 0
-        ? rows.map((row) => ({
-            activityDate: row.activity_date,
-            activityName: row.activity_name,
-            normalizedPower: row.normalized_power,
-          }))
-        : computeNormalizedPower(
-            await this.#sensorStore.getNormalizedPowerSamples(
-              range.days,
-              this.#userId,
-              this.#timezone,
-              CYCLING_TYPES,
-            ),
-          );
-
-    const trend = normalizedPowerRows.map((row) => ({
-      date: row.activityDate,
-      eftp: Math.round(row.normalizedPower * 0.95),
-      activityName: row.activityName,
-    }));
-
-    // Compute current eFTP via CP model from last 90 days' power curve
-    const { model } = await this.getPowerCurve(ChartRange.fromDays(90));
-
-    // Fall back to 95% of best recent 20-min power if CP model can't fit
-    let currentEftp: number | null = model?.cp ?? null;
-    if (currentEftp == null) {
-      const cutoff = new Date();
-      cutoff.setDate(cutoff.getDate() - 90);
-      const cutoffDate = cutoff.toISOString().slice(0, 10);
-      const recent = trend.filter((entry) => entry.date >= cutoffDate);
-      currentEftp = recent.length > 0 ? Math.max(...recent.map((entry) => entry.eftp)) : null;
-    }
-
-    return { trend, currentEftp, model };
+  /** The displayed slice of ongoing history never changes the current threshold. */
+  async getEftpTrend(range: ChartRange, accessWindow?: AccessWindow) {
+    const [trend, currentEvidence] = await Promise.all([
+      this.#sensorStore.query(
+        trendRowSchema,
+        `SELECT
+        toString(toDate(toTimeZone(history.event_at, {timezone:String}))) AS date,
+        history.eftp AS eftp, nullIf(activity.name, '') AS activityName
+        FROM analytics.cycling_threshold_history AS history
+        LEFT JOIN analytics.activity_summary AS activity
+          ON activity.user_id = history.user_id AND activity.activity_id = history.activity_id
+        WHERE history.user_id = {userId:UUID} AND history.eftp IS NOT NULL
+          AND history.event_at <= now64(6)
+          ${clickHouseAccessPredicate(accessWindow, "history.event_at")}
+          ${range.clickHouseTimestampAfter("history.event_at")}
+        ORDER BY history.event_at, ifNull(toString(history.activity_id), '')`,
+        {
+          userId: this.#userId,
+          timezone: this.#timezone,
+          ...range.clickHouseParams(),
+          ...clickHouseAccessParams(accessWindow, this.#timezone),
+        },
+      ),
+      new CyclingThresholdRepository(
+        this.#sensorStore,
+        this.#userId,
+        this.#timezone,
+        accessWindow,
+      ).getCurrent(),
+    ]);
+    return { trend, currentEftp: currentEvidence.value, currentEvidence, model: null };
   }
 
   async #loadRawActivityCount(range: ChartRange): Promise<number> {

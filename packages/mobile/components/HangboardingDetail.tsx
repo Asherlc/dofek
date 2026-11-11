@@ -41,6 +41,10 @@ export function HangboardingDetail({ data, loading, error }: HangboardingDetailP
     );
   }
 
+  const showExerciseBreakdown =
+    data.summary.exercises.length > 1 ||
+    data.summary.exercises.some((exercise) => exercise.label !== "Work");
+
   return (
     <View style={styles.container}>
       {error ? (
@@ -60,7 +64,7 @@ export function HangboardingDetail({ data, loading, error }: HangboardingDetailP
         <Metadata label="Board" value={nullableValue(data.boardName)} />
       </View>
 
-      {data.summary.exercises.length > 0 ? (
+      {showExerciseBreakdown ? (
         <View style={styles.exerciseList} accessibilityLabel="Finger loading summary">
           {data.summary.exercises.map((exercise) => (
             <View key={exercise.label} style={styles.exerciseRow}>
@@ -72,9 +76,9 @@ export function HangboardingDetail({ data, loading, error }: HangboardingDetailP
             </View>
           ))}
         </View>
-      ) : (
+      ) : data.summary.exercises.length === 0 ? (
         <QueryStatePanel variant="empty" message="No completed hangs recorded." minHeight={96} />
-      )}
+      ) : null}
 
       <View style={styles.metricsGrid}>
         <Metadata label="Hangs" value={String(data.summary.workIntervalCount)} />

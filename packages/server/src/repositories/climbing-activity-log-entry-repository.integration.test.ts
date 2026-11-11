@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { eq, inArray, sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import {
@@ -10,6 +11,7 @@ import { TEST_USER_ID as userId } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { ensureProvider } from "../../../../src/db/tokens.ts";
 import { ClimbingActivityLogEntryRepository } from "./climbing-activity-log-entry-repository.ts";
+import { ProviderDetailRepository } from "./provider-detail-repository.ts";
 
 describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
   let context: TestContext;
@@ -24,7 +26,7 @@ describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
     await context.db.delete(area);
     await context.db
       .delete(activity)
-      .where(inArray(activity.providerId, ["openbeta", "mountain-project"]));
+      .where(inArray(activity.providerId, ["openbeta", "mountain-project", "kaya", "whoop"]));
   });
   afterAll(async () => {
     await context.cleanup();
@@ -40,6 +42,115 @@ describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
     if (!entry) throw new Error("Expected projected log");
     return entry.toDetail();
   }
+  it("projects distinct source sessions in a visible group and follows late history, attachments and absence", async () => {
+    await ensureProvider(context.db, "whoop", "WHOOP", undefined, userId);
+    const recordedId = randomUUID();
+    await context.db.insert(activity).values({
+      id: recordedId,
+      userId,
+      providerId: "whoop",
+      externalId: randomUUID(),
+      canonicalType: "climbing",
+      providerType: "climbing",
+      startedAt: new Date("2026-11-10T01:00:00Z"),
+      endedAt: new Date("2026-11-10T02:00:00Z"),
+    });
+    const seed = async (entries: SourceClimbingLogEntry[]) =>
+      persistClimbingLogEntries(context.db, { userId, providerId: "openbeta", entries });
+    const result = await seed([
+      {
+        externalId: "point-one",
+        activityObservation: { recordedAt: "2026-11-10T01:10:00Z" },
+        board: { externalId: "A", name: "Board" },
+        attempts: [],
+      },
+      {
+        externalId: "point-two",
+        activityObservation: { recordedAt: "2026-11-10T01:14:00Z" },
+        board: { externalId: "A", name: "Board" },
+        attempts: [],
+      },
+      {
+        externalId: "point-three",
+        activityObservation: { recordedAt: "2026-11-10T01:15:00Z" },
+        board: { externalId: "B", name: "Board" },
+        attempts: [],
+      },
+      { externalId: "attached", activityId: recordedId, climbedOn: "2026-11-10", attempts: [] },
+    ]);
+    await context.db.execute(
+      sql`UPDATE fitness.activity SET group_id = (SELECT group_id FROM fitness.activity WHERE id = ${recordedId}) WHERE user_id=${userId} AND provider_type='climbing_log'`,
+    );
+    const [group] = await context.db
+      .select({ id: activity.groupId })
+      .from(activity)
+      .where(eq(activity.id, recordedId));
+    if (!group) throw new Error("Expected group");
+    const projected = (await repo().getActivityLogSessions([group.id])).get(group.id);
+    expect(projected).toHaveLength(2);
+    expect(
+      projected?.map((session) => [
+        session.firstLoggedAt,
+        session.lastLoggedAt,
+        session.memberActivityIds.length,
+      ]),
+    ).toEqual([
+      ["2026-11-10T01:10:00.000Z", "2026-11-10T01:14:00.000Z", 2],
+      ["2026-11-10T01:15:00.000Z", "2026-11-10T01:15:00.000Z", 1],
+    ]);
+    const canonicalLogs = await repo().getActivityLogEntries(group.id);
+    expect(canonicalLogs.map((entry) => entry.toDetail().id).sort()).toEqual(
+      [...result.logEntryIds].sort(),
+    );
+    expect(
+      await new ClimbingActivityLogEntryRepository(
+        context.db,
+        randomUUID(),
+        "UTC",
+      ).getActivityLogSessions([group.id]),
+    ).toEqual(new Map());
+    await seed([
+      {
+        externalId: "earlier",
+        activityObservation: { recordedAt: "2026-11-10T01:09:00Z" },
+        board: { externalId: "A", name: "Board" },
+        attempts: [],
+      },
+    ]);
+    await context.db.execute(
+      sql`UPDATE fitness.activity SET group_id=${group.id} WHERE user_id=${userId} AND provider_type='climbing_log'`,
+    );
+    const late = (await repo().getActivityLogSessions([group.id])).get(group.id);
+    expect(late?.[0]?.memberActivityIds).toEqual(
+      expect.arrayContaining(projected?.[0]?.memberActivityIds ?? []),
+    );
+    expect(late?.[0]?.firstLoggedAt).toBe("2026-11-10T01:09:00.000Z");
+    expect(late?.[0]?.id).not.toBe(projected?.[0]?.id);
+    await context.db
+      .update(climbingLogEntry)
+      .set({ providerAbsentAt: new Date() })
+      .where(eq(climbingLogEntry.externalId, "earlier"));
+    expect((await repo().getActivityLogSessions([group.id])).get(group.id)?.[0]?.id).toBe(
+      projected?.[0]?.id,
+    );
+    await context.db
+      .update(climbingLogEntry)
+      .set({ activityId: recordedId })
+      .where(eq(climbingLogEntry.externalId, "point-two"));
+    expect(
+      (await repo().getActivityLogSessions([group.id])).get(group.id)?.[0]?.memberActivityIds,
+    ).toHaveLength(1);
+    const limited = new ClimbingActivityLogEntryRepository(context.db, userId, "UTC", {
+      kind: "limited",
+      paid: false,
+      reason: "free_recent_week",
+      startDate: "2026-11-11",
+      endDateExclusive: "2026-11-12",
+    });
+    expect(await limited.getActivityLogSessions([group.id])).toEqual(new Map());
+    expect(await repo().getActivityLogSessions([])).toEqual(new Map());
+  });
+
   const route = {
     externalId: "route-one",
     name: "Route",
@@ -49,6 +160,343 @@ describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
       { externalId: "pitch-one", number: 1, publishedGrades: [{ value: "5.8", system: "yds" }] },
     ],
   } as const;
+  it("serves a log-specific gym ahead of shared climb geometry without changing the shared climb facts", async () => {
+    const source = {
+      ...route,
+      coordinates: { latitude: 40, longitude: 10 },
+      areas: [{ externalId: "source-area", name: "Source area" }],
+    };
+    const first = await write({
+      externalId: "gym-log",
+      climb: source,
+      areas: [
+        { externalId: "gym-a", name: "Gym A", coordinates: { latitude: 0, longitude: -120 } },
+      ],
+      attempts: [],
+    });
+    expect(first.areaPath?.map((area) => area.name)).toEqual(["Gym A"]);
+    expect(first.climb?.areaPath.map((area) => area.name)).toEqual(["Source area"]);
+    expect(first.climb?.coordinates).toEqual({ latitude: 40, longitude: 10 });
+    expect(first.mapLocation).toMatchObject({
+      scope: "area",
+      name: "Gym A",
+      coordinates: { latitude: 0, longitude: -120 },
+    });
+    const second = await write({
+      externalId: "gym-log-b",
+      climb: source,
+      areas: [{ externalId: "gym-b", name: "Gym B", coordinates: null }],
+      attempts: [],
+    });
+    expect(second.climb?.id).toBe(first.climb?.id);
+    expect(second.areaPath?.map((area) => area.name)).toEqual(["Gym B"]);
+    expect(second.mapLocation).toBeNull();
+  });
+  it("serves recorded locations even when the log has no named climb", async () => {
+    const detail = await write({
+      externalId: "gym-only",
+      areas: [{ externalId: "gym", name: "Gym", coordinates: { latitude: 1, longitude: 2 } }],
+      attempts: [],
+    });
+    expect(detail.climb).toBeNull();
+    expect(detail.areaPath?.map((area) => area.name)).toEqual(["Gym"]);
+    expect(detail.mapLocation).toMatchObject({
+      scope: "area",
+      name: "Gym",
+      coordinates: { latitude: 1, longitude: 2 },
+    });
+  });
+  it.each([
+    { sends: 1, nextDay: false },
+    { sends: 2, nextDay: false },
+    { sends: 1, nextDay: true },
+  ])(
+    "combines $sends count-free Kaya sends with failed session attempts (next day: $nextDay)",
+    async ({ sends, nextDay }) => {
+      await ensureProvider(context.db, "kaya", "Kaya", undefined, userId);
+      const [session] = await context.db
+        .insert(activity)
+        .values({
+          userId,
+          providerId: "kaya",
+          externalId: "1000",
+          providerType: "climbing",
+          canonicalType: "climbing",
+          startedAt: new Date("2026-10-02T12:00:00Z"),
+        })
+        .returning();
+      if (!session) throw new Error("Expected session");
+      const written = await persistClimbingLogEntries(context.db, {
+        userId,
+        providerId: "kaya",
+        entries: [
+          {
+            externalId: "kaya:session:1000:attempted:1000_2001",
+            activityId: session.id,
+            climbedOn: "2026-10-02",
+            discipline: "rock_climbing",
+            climb: { ...route, externalId: "2001" },
+            raw: { id: "1000_2001", sent: false, attempts: 1 },
+            attempts: [{ scope: "climb", sourceResult: "Attempt", ropeMethod: "top_rope" }],
+          },
+          {
+            externalId: "kaya:ascent:3001",
+            activityId: session.id,
+            climbedOn: nextDay ? "2026-10-03" : "2026-10-02",
+            discipline: "rock_climbing",
+            climb: { ...route, externalId: "2001" },
+            raw: { session_id: "1000", attempts: null, ascent_type: { name: "Redpoint" } },
+            attempts: [
+              {
+                scope: "climb",
+                sourceResult: "Redpoint",
+                qualifier: "free-send",
+                ropeMethod: "top_rope",
+              },
+            ],
+          },
+        ],
+      });
+      if (sends === 2) {
+        const repeated = await persistClimbingLogEntries(context.db, {
+          userId,
+          providerId: "kaya",
+          entries: [
+            {
+              externalId: "kaya:ascent:3002",
+              notes: "Second send comment",
+              activityId: session.id,
+              climbedOn: "2026-10-02",
+              discipline: "rock_climbing",
+              climb: { ...route, externalId: "2001" },
+              raw: { session_id: "1000", attempts: null, ascent_type: { name: "Repeat" } },
+              attempts: [
+                {
+                  scope: "climb",
+                  sourceResult: "Repeat",
+                  qualifier: "free-send",
+                  ropeMethod: "top_rope",
+                },
+              ],
+            },
+          ],
+        });
+        const repeatedId = repeated.logEntryIds[0];
+        if (!repeatedId) throw new Error("Expected repeat");
+        expect(await repo().getProviderLogEntry("kaya", repeatedId)).toMatchObject({
+          recordedClimbAttemptCount: 1,
+          notes: "Second send comment",
+          photoLogEntryId: repeatedId,
+        });
+      }
+      const sentId = written.logEntryIds[1];
+      if (!sentId) throw new Error("Expected send");
+      const detail = await repo().getProviderLogEntry("kaya", sentId);
+      expect(detail).toMatchObject({
+        id: sentId,
+        recordedClimbAttemptCount: sends === 1 ? 2 : 1,
+        recordedClimbOutcome: "completed",
+      });
+      expect(detail?.attempts.filter((attempt) => attempt.outcome === "completed")).toHaveLength(1);
+      expect(detail?.attempts.filter((attempt) => attempt.outcome === "failed")).toHaveLength(
+        sends === 1 ? 1 : 0,
+      );
+      expect(detail?.attempts.every((attempt) => attempt.attemptIndex === null)).toBe(true);
+      const logs = await repo().getActivityLogEntries(session.groupId);
+      expect(logs).toHaveLength(sends === 1 ? 1 : 3);
+      if (sends === 1) expect(logs[0]?.toDetail().recordedClimbAttemptCount).toBe(2);
+      else
+        expect(logs.map((log) => log.toDetail())).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              notes: "Second send comment",
+              photoLogEntryId: expect.any(String),
+            }),
+          ]),
+        );
+    },
+  );
+
+  it.each([false, true])(
+    "projects historical retained KAYA tags without rewriting raw source records (ascent: %s)",
+    async (ascent) => {
+      await ensureProvider(context.db, "kaya", "KAYA", undefined, userId);
+      const tags = [
+        { id: "custom", name: "Funky", tag_type_id: "81" },
+        { id: "technical", name: "Technical", tag_type_id: "6" },
+      ];
+      const raw = ascent ? { climb: { tags } } : { tags };
+      const written = await persistClimbingLogEntries(context.db, {
+        userId,
+        providerId: "kaya",
+        entries: [
+          {
+            externalId: "historical-tags",
+            climbedOn: "2026-10-02",
+            raw,
+            attempts: [{ scope: "climb" }],
+          },
+        ],
+      });
+      const id = written.logEntryIds[0];
+      if (!id) throw new Error("Expected historical KAYA log");
+      const [active] = await repo().getLogEntries([id]);
+      const retained = await repo().getProviderLogEntry("kaya", id);
+      const expected = [
+        {
+          providerId: "kaya",
+          sourceKey: "custom",
+          label: "Funky",
+          categoryKey: "81",
+          categoryLabel: null,
+        },
+        {
+          providerId: "kaya",
+          sourceKey: "technical",
+          label: "Technical",
+          categoryKey: "6",
+          categoryLabel: "Style",
+        },
+      ];
+      expect(active?.toDetail().tags).toEqual(expected);
+      expect(retained?.tags).toEqual(expected);
+      const [stored] = await context.db
+        .select({ raw: climbingLogEntry.raw })
+        .from(climbingLogEntry)
+        .where(eq(climbingLogEntry.id, id));
+      expect(stored?.raw).toEqual(raw);
+    },
+  );
+  it("unions retained tags from a secondary KAYA activity member", async () => {
+    await ensureProvider(context.db, "kaya", "KAYA", undefined, userId);
+    const [preferred] = await context.db
+      .insert(activity)
+      .values({
+        userId,
+        providerId: "openbeta",
+        externalId: "tags-preferred",
+        canonicalType: "climbing",
+        providerType: "climbing",
+        startedAt: new Date("2026-10-02T10:00:00Z"),
+      })
+      .returning();
+    if (!preferred?.groupId) throw new Error("Expected preferred activity group");
+    const [other] = await context.db
+      .insert(activity)
+      .values({
+        userId,
+        providerId: "kaya",
+        externalId: "tags-other",
+        groupId: preferred.groupId,
+        canonicalType: "climbing",
+        providerType: "climbing",
+        startedAt: new Date("2026-10-02T10:00:00Z"),
+      })
+      .returning();
+    if (!other) throw new Error("Expected KAYA activity");
+    const sharedClimb = { ...route, areas: [{ externalId: "tags-wall", name: "Wall" }] };
+    await write({
+      externalId: "tags-preferred-log",
+      activityId: preferred.id,
+      climb: sharedClimb,
+      attempts: [
+        {
+          scope: "climb",
+          ropeMethod: "lead",
+          sourceResult: "Send",
+          qualifier: "free-send",
+          fellOrHung: false,
+          usedAid: false,
+        },
+      ],
+    });
+    await persistClimbingLogEntries(context.db, {
+      userId,
+      providerId: "kaya",
+      entries: [
+        {
+          externalId: "tags-other-log",
+          activityId: other.id,
+          climb: sharedClimb,
+          attempts: [{ scope: "climb", ropeMethod: "lead" }],
+          raw: { tags: [{ id: "technical", name: "Technical", tag_type_id: "6" }] },
+        },
+      ],
+    });
+    const details = (await repo().getActivityLogEntries(preferred.groupId)).map((entry) =>
+      entry.toDetail(),
+    );
+    expect(details).toHaveLength(1);
+    expect(details[0]?.providerId).toBe("openbeta");
+    expect(details[0]?.tags).toEqual([
+      {
+        providerId: "kaya",
+        sourceKey: "technical",
+        label: "Technical",
+        categoryKey: "6",
+        categoryLabel: "Style",
+      },
+    ]);
+  });
+  it("retains private KAYA media provenance in Postgres while serving sanitized active and provider details", async () => {
+    await ensureProvider(context.db, "kaya", "KAYA", undefined, userId);
+    const raw = {
+      photo: {
+        photo_url: "https://upstream.test/private.jpg?token=secret",
+        thumb_url: "https://upstream.test/thumb.jpg",
+      },
+      climb: { slug: "corner", color: "blue" },
+      rating: 4,
+    };
+    const written = await persistClimbingLogEntries(context.db, {
+      userId,
+      providerId: "kaya",
+      entries: [
+        {
+          externalId: "kaya:ascent:private-photo",
+          climbedOn: "2026-10-02",
+          attempts: [{ scope: "climb" }],
+          raw,
+        },
+      ],
+    });
+    const id = written.logEntryIds[0];
+    if (!id) throw new Error("Expected KAYA log");
+    const [active] = await repo().getLogEntries([id]);
+    const provider = new ProviderDetailRepository(context.db, userId);
+    const detail = await provider.getRecordDetail("kaya", "climbingLogEntries", id);
+    expect(active?.toDetail().raw).toEqual({ climb: { slug: "corner", color: "blue" }, rating: 4 });
+    expect(detail?.raw).toEqual({ climb: { slug: "corner", color: "blue" }, rating: 4 });
+    const [retained] = await context.db
+      .select({ raw: climbingLogEntry.raw })
+      .from(climbingLogEntry)
+      .where(eq(climbingLogEntry.id, id));
+    expect(retained?.raw).toEqual(raw);
+    await context.db
+      .update(climbingLogEntry)
+      .set({ providerAbsentAt: new Date() })
+      .where(eq(climbingLogEntry.id, id));
+    const absent = await provider.getRecordDetail("kaya", "climbingLogEntries", id);
+    expect(absent?.raw).toEqual({ climb: { slug: "corner", color: "blue" }, rating: 4 });
+  });
+  it.each([null, "indoor", "outdoor"] as const)(
+    "uses the canonical catalogue setting when the source setting is %s",
+    async (setting) => {
+      const log = await write({
+        externalId: "catalogue-setting",
+        discipline: "rock_climbing",
+        climb: { ...route, setting },
+        attempts: [{ scope: "climb", ropeMethod: "lead" }],
+      });
+      expect(log.climb?.setting).toBe(setting ?? "outdoor");
+      if (!log.climbId) throw new Error("Expected a catalogue climb");
+      const [stored] = await context.db
+        .select({ setting: climb.setting })
+        .from(climb)
+        .where(eq(climb.id, log.climbId));
+      expect(stored?.setting).toBe(setting);
+    },
+  );
   it("uses the same selected source graph as activity detail for equivalent cross-provider logs", async () => {
     await ensureProvider(context.db, "mountain-project", "Mountain Project", undefined, userId);
     const [first] = await context.db
@@ -85,7 +533,7 @@ describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
         coordinates: { latitude: 10, longitude: 10 },
         areas: [{ externalId: "crag", name: "Crag" }],
       },
-      attempts: [{ scope: "climb", ropeMethod: "lead" }],
+      attempts: [{ scope: "climb", ropeMethod: "lead", sourceResult: "Unrecognized result" }],
     });
     await persistClimbingLogEntries(context.db, {
       userId,
@@ -264,7 +712,8 @@ describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
   it.each([
     { sourceResult: "Redpoint", outcome: "completed", labels: ["sent"] },
     { sourceResult: "failed", outcome: "failed", labels: [] },
-    { sourceResult: null, outcome: null, labels: [] },
+    { sourceResult: null, outcome: "completed", labels: ["sent"] },
+    { sourceResult: "Unrecognized result", outcome: null, labels: [] },
   ])("computes $outcome from stored source evidence", async ({ sourceResult, outcome, labels }) => {
     const before = await write({
       externalId: "source-result",
@@ -284,6 +733,88 @@ describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
       attempts: [{ outcome, rockResultLabels: labels }],
     });
   });
+  it.each([
+    {
+      name: "clean completion",
+      sourceResult: "completed",
+      fellOrHung: false,
+      usedAid: false,
+      freeSend: true,
+    },
+    {
+      name: "failed attempt",
+      sourceResult: "failed",
+      fellOrHung: null,
+      usedAid: null,
+      freeSend: false,
+    },
+    {
+      name: "completion with a fall or hang",
+      sourceResult: "completed",
+      fellOrHung: true,
+      usedAid: false,
+      freeSend: false,
+    },
+    {
+      name: "completion using aid",
+      sourceResult: "completed",
+      fellOrHung: false,
+      usedAid: true,
+      freeSend: false,
+    },
+    {
+      name: "completion with unknown fall or hang",
+      sourceResult: "completed",
+      fellOrHung: null,
+      usedAid: false,
+      freeSend: null,
+    },
+    {
+      name: "unknown outcome",
+      sourceResult: "Unrecognized result",
+      fellOrHung: false,
+      usedAid: false,
+      freeSend: null,
+    },
+    {
+      name: "unlabeled OpenBeta completion",
+      sourceResult: null,
+      fellOrHung: null,
+      usedAid: null,
+      freeSend: true,
+    },
+  ])(
+    "projects free-send evidence for $name",
+    async ({ sourceResult, fellOrHung, usedAid, freeSend }) => {
+      const log = await write({
+        externalId: "free-send-evidence",
+        discipline: "rock_climbing",
+        climb: route,
+        attempts: [{ scope: "climb", ropeMethod: "lead", sourceResult, fellOrHung, usedAid }],
+      });
+      expect(log).toMatchObject({ freeSend });
+    },
+  );
+  it.each([{ outcomes: ["failed", "completed"] }, { outcomes: ["completed", "failed"] }] as const)(
+    "retains a free send across mixed attempts $outcomes",
+    async ({ outcomes }) => {
+      const log = await write({
+        externalId: "mixed-free-send-evidence",
+        discipline: "rock_climbing",
+        climb: route,
+        attempts: outcomes.map((sourceResult, index) => ({
+          scope: "climb",
+          attemptIndex: index + 1,
+          ropeMethod: "lead",
+          sourceResult,
+          fellOrHung: sourceResult === "failed",
+          usedAid: false,
+        })),
+      });
+      expect(log).toMatchObject({ freeSend: true, recordedClimbAttemptCount: 2 });
+      expect(log.attempts.map((attempt) => attempt.outcome)).toEqual(outcomes);
+    },
+  );
   it("projects a completed pitch without claiming route completion", async () => {
     const log = await write({
       externalId: "pitch-only",
@@ -439,6 +970,7 @@ describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
       displayGrade: null,
       recordedClimbAttemptCount: 1,
       recordedClimbOutcome: "completed",
+      freeSend: null,
       climb: { publishedGrades: [] },
     });
     expect(summit.attempts[0]?.rockResultLabels).toEqual([]);
@@ -460,7 +992,7 @@ describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
         },
       ],
     });
-    expect(dab).toMatchObject({ recordedClimbOutcome: "completed" });
+    expect(dab).toMatchObject({ recordedClimbOutcome: "completed", freeSend: false });
     expect(dab.attempts[0]?.rockResultLabels).toEqual([]);
   });
   it("loads attached logs for a hiking activity without changing source dates", async () => {

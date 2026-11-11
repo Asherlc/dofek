@@ -72,7 +72,7 @@ zone_counts AS (
         )) AS z2_seconds,
         toInt32(countIf(sensor.scalar >= am.max_hr * 0.9)) AS z3_seconds
     FROM activity_meta AS am
-    INNER JOIN {{ ref('activity_sensor_sample') }} AS sensor
+    INNER JOIN {{ ref('activity_sensor_sample') }} AS sensor FINAL
         ON sensor.activity_id = am.activity_id
         AND sensor.user_id = am.user_id
         AND sensor.channel = 'heart_rate'

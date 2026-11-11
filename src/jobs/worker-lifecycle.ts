@@ -10,7 +10,7 @@ import type { startFileUploadOutboxDispatcher } from "./file-upload-outbox.ts";
 import type { startFileUploadReconciler } from "./file-upload-reconciliation.ts";
 import type { createGarminImportProgressCoordinator } from "./garmin-import-progress.ts";
 import type { startProviderDataDeletionOutboxDispatcher } from "./provider-data-deletion-outbox.ts";
-import { closeAllQueueResources } from "./queues.ts";
+import { closeAllQueueResources, closeAnalyticsRefreshWaiters } from "./queues.ts";
 import type { createWorkerReadinessServer } from "./worker-readiness.ts";
 
 export function createWorkerLifecycle({
@@ -22,6 +22,7 @@ export function createWorkerLifecycle({
   dataExportOutboxDispatcher,
   fileUploadOutboxDispatcher,
   fileUploadReconciler,
+  activityImageOutboxDispatcher,
   garminImportProgressCoordinator,
   accountErasureRuntime,
   accountErasureWorkLockPool,
@@ -36,6 +37,7 @@ export function createWorkerLifecycle({
   dataExportOutboxDispatcher: ReturnType<typeof startDataExportOutboxDispatcher>;
   fileUploadOutboxDispatcher: ReturnType<typeof startFileUploadOutboxDispatcher>;
   fileUploadReconciler: ReturnType<typeof startFileUploadReconciler>;
+  activityImageOutboxDispatcher: { close(): Promise<void> };
   garminImportProgressCoordinator: ReturnType<typeof createGarminImportProgressCoordinator>;
   accountErasureRuntime: Awaited<ReturnType<typeof createAccountErasureRuntime>>;
   accountErasureWorkLockPool: ReturnType<typeof createAccountErasureWorkLockPoolFromEnv>;
@@ -55,8 +57,10 @@ export function createWorkerLifecycle({
       dataExportOutboxDispatcher.close(),
       fileUploadOutboxDispatcher.close(),
       fileUploadReconciler.close(),
-      ...allWorkers.map((worker) => worker.close()),
+      activityImageOutboxDispatcher.close(),
     ]);
+    await closeAnalyticsRefreshWaiters();
+    await Promise.all(allWorkers.map((worker) => worker.close()));
     await Promise.all([
       garminImportProgressCoordinator.close(),
       accountErasureRuntime.close(),

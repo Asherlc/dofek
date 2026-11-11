@@ -22,6 +22,8 @@ const {
   mockIdentityWriteFence,
   mockLockIdentityFence,
   mockWithUserWriteFence,
+  mockWithProviderOperationFence,
+  mockSaveTokens,
   MockAccountErasureUserFencedError,
 } = vi.hoisted(() => ({
   mockRevokeToken: vi.fn(),
@@ -41,6 +43,8 @@ const {
   mockIdentityWriteFence: vi.fn(),
   mockLockIdentityFence: vi.fn(),
   mockWithUserWriteFence: vi.fn(),
+  mockWithProviderOperationFence: vi.fn(),
+  mockSaveTokens: vi.fn(),
   MockAccountErasureUserFencedError: class MockAccountErasureUserFencedError extends Error {
     constructor(cause?: unknown) {
       super("Account deletion is active for this user.", { cause });
@@ -58,6 +62,10 @@ vi.mock("dofek/db/account-erasure", () => ({
   lockAndAssertAccountErasureIdentityWriteFence: mockLockIdentityFence,
   withAccountErasureUserAndIdentityWriteFence: mockIdentityWriteFence,
   withAccountErasureUserWriteFence: mockWithUserWriteFence,
+}));
+
+vi.mock("dofek/db/provider-operation-fence", () => ({
+  withProviderOperationFence: mockWithProviderOperationFence,
 }));
 
 vi.mock("dofek/lib/error-reporting", () => ({
@@ -96,7 +104,7 @@ vi.mock("dofek/db/tokens", () => ({
   deleteTokens: (...args: unknown[]) => mockDeleteTokens(...args),
   deleteProviderAuthorization: (...args: unknown[]) => mockDeleteProviderAuthorization(...args),
   ensureProvider: vi.fn(),
-  saveTokens: vi.fn(),
+  saveTokens: mockSaveTokens,
 }));
 
 vi.mock("dofek/providers/registry", () => ({
@@ -113,7 +121,7 @@ const mockOauthStateStore = {
   delete: vi.fn(),
 };
 
-const mockDb = {};
+const mockDb = { transaction: vi.fn() };
 vi.mock("./shared.ts", () => ({
   getDb: () => mockDb,
   getOAuthStateStoreRef: () => mockOauthStateStore,
@@ -131,6 +139,7 @@ vi.mock("./shared.ts", () => ({
 }));
 
 import { captureException } from "dofek/lib/error-reporting";
+import { ProviderConnectionError } from "dofek/providers/auth-errors";
 import { MissingEmailForSignupError } from "../../auth/account-linking.ts";
 import { handleOAuth2Callback } from "./data-provider-callback.ts";
 
@@ -150,6 +159,7 @@ function createMockReqRes(query: Record<string, string> = {}) {
     status: vi.fn().mockReturnThis(),
     send: vi.fn(),
     type: vi.fn().mockReturnThis(),
+    set: vi.fn().mockReturnThis(),
     redirect: vi.fn(),
   });
 
@@ -162,6 +172,17 @@ describe("handleOAuth2Callback — revocation fallback", () => {
 
   beforeEach(() => {
     vi.resetAllMocks();
+    mockDb.transaction.mockImplementation(
+      async (operation: (database: typeof mockDb) => Promise<unknown>) => operation(mockDb),
+    );
+    mockWithProviderOperationFence.mockImplementation(
+      async (
+        _database: unknown,
+        _userId: string,
+        _providerId: string,
+        operation: (database: typeof mockDb) => Promise<unknown>,
+      ) => operation(mockDb),
+    );
     mockWithUserWriteFence.mockImplementation(
       async (
         _database: unknown,
@@ -227,6 +248,335 @@ describe("handleOAuth2Callback — revocation fallback", () => {
     vi.restoreAllMocks();
   });
 
+  function useRegistrationReplacement() {
+    mockGetAllProviders.mockReturnValue([
+      {
+        id: "wahoo",
+        name: "Garmin",
+        pushOnly: true,
+        authSetup: () => ({
+          oauthConfig: { clientId: "client", tokenUrl: "https://provider.test/token" },
+          exchangeCode: mockExchangeCode,
+          reconnectStrategy: "replace",
+          assertCanConnect: vi.fn(),
+          revokeExistingTokens: mockRevokeExistingTokens,
+        }),
+      },
+    ]);
+  }
+
+  it.each(["data", "login"])(
+    "reports permission confirmation failures safely for %s callbacks",
+    async (intent) => {
+      useRegistrationReplacement();
+      mockOauthStateStore.get.mockResolvedValue({
+        providerId: "wahoo",
+        intent,
+        userId: "user-1",
+      });
+      mockLoadTokens.mockResolvedValue(null);
+      const error = new ProviderConnectionError("Garmin Connect", "permissions", 403);
+      mockExchangeCode.mockRejectedValue(error);
+
+      const { req, res } = createMockReqRes({ code: "private-code", state: "private-state" });
+      await handleOAuth2Callback(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(500);
+      expect(res.set).toHaveBeenCalledWith("Content-Type", "text/plain; charset=utf-8");
+      expect(res.send).toHaveBeenCalledWith(
+        "Garmin Connect connection failed while confirming your permissions (HTTP 403). Please contact support if this continues.",
+      );
+      expect(captureException).toHaveBeenCalledWith(error);
+      expect(mockPersistProviderConnection).not.toHaveBeenCalled();
+      expect(mockRevokeExistingTokens).not.toHaveBeenCalled();
+      expect(res.redirect).not.toHaveBeenCalled();
+    },
+  );
+
+  it("reports identity confirmation failures and preserves an existing registration", async () => {
+    useRegistrationReplacement();
+    mockLoadTokens.mockResolvedValue({ accessToken: "old-access", providerAccountId: "account-1" });
+    mockExchangeCode.mockRejectedValue(
+      new ProviderConnectionError("Garmin Connect", "identity", 502),
+    );
+
+    const { req, res } = createMockReqRes({ code: "code", state: "state" });
+    await handleOAuth2Callback(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.set).toHaveBeenCalledWith("Content-Type", "text/plain; charset=utf-8");
+    expect(res.send).toHaveBeenCalledWith(
+      "Garmin Connect connection failed while confirming your identity (HTTP 502). Please contact support if this continues. Your existing connection is still active.",
+    );
+    expect(mockPersistProviderConnection).not.toHaveBeenCalled();
+    expect(mockRevokeExistingTokens).not.toHaveBeenCalled();
+    expect(mockDeleteProviderAuthorization).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      kind: "first connection",
+      existing: null,
+      status: 500,
+      message: "Connection failed — please try again from Garmin",
+    },
+    {
+      kind: "reconnect",
+      existing: { accessToken: "old-access", providerAccountId: "account-1" },
+      status: 400,
+      message:
+        "Garmin reconnect failed. Your existing connection is still active. Please try again later.",
+    },
+  ])(
+    "keeps arbitrary upstream error details out of a failed $kind response",
+    async ({ existing, status, message }) => {
+      useRegistrationReplacement();
+      mockLoadTokens.mockResolvedValue(existing);
+      mockExchangeCode.mockRejectedValue(
+        new Error("Upstream failure: access_token=secret-token <script>private</script>"),
+      );
+
+      const { req, res } = createMockReqRes({ code: "code", state: "state" });
+      await handleOAuth2Callback(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(status);
+      expect(res.set).toHaveBeenCalledWith("Content-Type", "text/plain; charset=utf-8");
+      expect(res.send).toHaveBeenCalledWith(message);
+      expect(mockRevokeExistingTokens).not.toHaveBeenCalled();
+    },
+  );
+
+  it("replaces credentials for the same registration without revoking either grant", async () => {
+    useRegistrationReplacement();
+    mockLoadTokens.mockResolvedValue({ accessToken: "old-access", providerAccountId: "account-1" });
+    mockExchangeCode.mockResolvedValue({
+      accessToken: "new-access",
+      expiresAt: new Date("2027-01-01"),
+      providerAccountId: "account-1",
+    });
+
+    const { req, res } = createMockReqRes({ code: "code", state: "state" });
+    await handleOAuth2Callback(req, res);
+
+    expect(mockPersistProviderConnection).toHaveBeenCalledWith(
+      expect.objectContaining({ tokens: expect.objectContaining({ accessToken: "new-access" }) }),
+    );
+    expect(mockRevokeExistingTokens).not.toHaveBeenCalled();
+    expect(res.send).toHaveBeenCalledWith(expect.stringContaining("success"));
+  });
+
+  it.each(["persistence", "identity"])(
+    "preserves the registration when replacement %s fails",
+    async (failure) => {
+      useRegistrationReplacement();
+      mockLoadTokens.mockResolvedValue({
+        accessToken: "old-access",
+        providerAccountId: "account-1",
+      });
+      if (failure === "persistence") {
+        mockExchangeCode.mockResolvedValue({
+          accessToken: "new-access",
+          expiresAt: new Date("2027-01-01"),
+          providerAccountId: "account-1",
+        });
+        mockPersistProviderConnection.mockRejectedValue(new Error("database write failed"));
+      } else {
+        mockExchangeCode.mockImplementation(
+          async (_code, _verifier, onTokensIssued: (tokens: unknown) => void) => {
+            onTokensIssued({ accessToken: "new-access", authorizationId: "issued-grant" });
+            throw new Error("identity request failed");
+          },
+        );
+      }
+
+      const { req, res } = createMockReqRes({ code: "code", state: "state" });
+      await handleOAuth2Callback(req, res);
+
+      expect(mockRevokeExistingTokens).not.toHaveBeenCalled();
+      expect(mockDeleteProviderAuthorization).not.toHaveBeenCalled();
+      expect(res.send).toHaveBeenCalledWith(expect.stringContaining("existing connection"));
+    },
+  );
+
+  it("requires disconnecting before replacing a registration with a different provider account", async () => {
+    useRegistrationReplacement();
+    mockLoadTokens.mockResolvedValue({ accessToken: "old-access", providerAccountId: "account-1" });
+    mockExchangeCode.mockResolvedValue({
+      accessToken: "new-access",
+      expiresAt: new Date("2027-01-01"),
+      providerAccountId: "account-2",
+    });
+
+    const { req, res } = createMockReqRes({ code: "code", state: "state" });
+    await handleOAuth2Callback(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.send).toHaveBeenCalledWith(expect.stringContaining("Disconnect Garmin first"));
+    expect(mockPersistProviderConnection).not.toHaveBeenCalled();
+    expect(mockRevokeExistingTokens).not.toHaveBeenCalled();
+  });
+
+  it("preserves a first-connect registration when local persistence fails", async () => {
+    useRegistrationReplacement();
+    mockLoadTokens.mockResolvedValue(null);
+    mockExchangeCode.mockResolvedValue({
+      accessToken: "new-access",
+      expiresAt: new Date("2027-01-01"),
+      providerAccountId: "verified-new-account",
+    });
+    mockPersistProviderConnection.mockRejectedValue(new Error("database write failed"));
+
+    const { req, res } = createMockReqRes({ code: "code", state: "state" });
+    await handleOAuth2Callback(req, res);
+
+    expect(mockRevokeExistingTokens).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(500);
+  });
+
+  it("fences push callbacks before remote revocation and commits rotated credentials outside the operation", async () => {
+    const transactionDb = { operation: true };
+    const existingTokens = { accessToken: "expired-access", refreshToken: "old-refresh" };
+    const refreshedTokens = { accessToken: "refreshed-access", refreshToken: "rotated-refresh" };
+    const events: string[] = [];
+    const operationDb = {
+      transaction: vi.fn(
+        async (operation: (transaction: typeof transactionDb) => Promise<unknown>) =>
+          operation(transactionDb).then(
+            (value) => {
+              events.push("commit-operation");
+              return value;
+            },
+            (error: unknown) => {
+              events.push("rollback-operation");
+              throw error;
+            },
+          ),
+      ),
+    };
+    mockWithProviderOperationFence.mockImplementationOnce(
+      async (
+        _database: unknown,
+        _userId: string,
+        _providerId: string,
+        operation: (database: typeof operationDb) => Promise<unknown>,
+      ) => {
+        events.push("provider-fence");
+        return operation(operationDb).finally(() => events.push("release-provider-fence"));
+      },
+    );
+    mockGetAllProviders.mockReturnValue([
+      {
+        id: "wahoo",
+        name: "Push provider",
+        pushOnly: true,
+        authSetup: () => ({
+          oauthConfig: { clientId: "client", tokenUrl: "https://provider.test/token" },
+          exchangeCode: mockExchangeCode,
+          reconnectStrategy: "revoke-then-replace",
+          revokeExistingTokens: async (
+            _tokens: unknown,
+            persist: (tokens: typeof refreshedTokens) => Promise<void>,
+          ) => {
+            events.push("refresh");
+            await persist(refreshedTokens);
+            events.push("delete-registration");
+            throw new Error("Remote registration deletion failed");
+          },
+        }),
+      },
+    ]);
+    mockLoadTokens.mockResolvedValue(existingTokens);
+    mockSaveTokens.mockImplementation(async () => events.push("commit-refresh"));
+
+    const { req, res } = createMockReqRes({ code: "auth-code", state: "state" });
+    await handleOAuth2Callback(req, res);
+
+    expect(events).toEqual([
+      "provider-fence",
+      "refresh",
+      "commit-refresh",
+      "delete-registration",
+      "rollback-operation",
+      "release-provider-fence",
+    ]);
+    expect(mockWithProviderOperationFence).toHaveBeenCalledWith(
+      mockDb,
+      "user-1",
+      "wahoo",
+      expect.any(Function),
+    );
+    expect(mockWithUserWriteFence).not.toHaveBeenCalled();
+    expect(mockLoadTokens).toHaveBeenCalledWith(transactionDb, "wahoo", "user-1");
+    expect(mockSaveTokens).toHaveBeenCalledWith(mockDb, "wahoo", refreshedTokens, "user-1");
+    expect(mockDeleteProviderAuthorization).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(400);
+  });
+
+  it.each(["exchange", "persistence"])(
+    "holds the push provider fence through cleanup after a failed %s",
+    async (failure) => {
+      const events: string[] = [];
+      const operationDb = {
+        transaction: vi.fn(async (operation: (transaction: typeof mockDb) => Promise<unknown>) =>
+          operation(mockDb).then(
+            (value) => {
+              events.push("commit-operation");
+              return value;
+            },
+            (error: unknown) => {
+              events.push("rollback-operation");
+              throw error;
+            },
+          ),
+        ),
+      };
+      mockWithProviderOperationFence.mockImplementationOnce(
+        async (
+          _database: unknown,
+          _userId: string,
+          _providerId: string,
+          operation: (database: typeof operationDb) => Promise<unknown>,
+        ) => operation(operationDb).finally(() => events.push("release-provider-fence")),
+      );
+      mockGetAllProviders.mockReturnValue([
+        {
+          id: "wahoo",
+          name: "Push provider",
+          pushOnly: true,
+          authSetup: () => ({
+            oauthConfig: { clientId: "client", tokenUrl: "https://provider.test/token" },
+            exchangeCode: mockExchangeCode,
+            reconnectStrategy: "revoke-then-replace",
+            revokeExistingTokens: mockRevokeExistingTokens,
+          }),
+        },
+      ]);
+      if (failure === "exchange") {
+        mockLoadTokens.mockResolvedValue({
+          accessToken: "old-access",
+          refreshToken: "old-refresh",
+        });
+        mockExchangeCode.mockRejectedValue(new Error("exchange failed"));
+        mockRevokeExistingTokens.mockImplementation(async () => events.push("revoke-old"));
+        mockDeleteProviderAuthorization.mockImplementation(async () => events.push("delete-old"));
+      } else {
+        mockLoadTokens.mockResolvedValue(null);
+        mockPersistProviderConnection.mockRejectedValue(new Error("persistence failed"));
+        mockRevokeExistingTokens.mockImplementation(async () => events.push("revoke-orphan"));
+      }
+
+      const { req } = createMockReqRes({ code: "auth-code", state: "state" });
+      const { res } = createMockReqRes();
+      await handleOAuth2Callback(req, res);
+
+      expect(events).toEqual(
+        failure === "exchange"
+          ? ["revoke-old", "commit-operation", "delete-old", "release-provider-fence"]
+          : ["rollback-operation", "revoke-orphan", "release-provider-fence"],
+      );
+    },
+  );
+
   it("deauthorizes and removes stored credentials after Wahoo's exact token-limit error", async () => {
     const events: string[] = [];
     mockLoadTokens.mockResolvedValue({
@@ -258,10 +608,10 @@ describe("handleOAuth2Callback — revocation fallback", () => {
       "delete-provider-authorization",
       "invalidate-cache",
     ]);
-    expect(mockRevokeExistingTokens).toHaveBeenCalledWith({
-      accessToken: "expired-access",
-      refreshToken: "expired-refresh",
-    });
+    expect(mockRevokeExistingTokens).toHaveBeenCalledWith(
+      { accessToken: "expired-access", refreshToken: "expired-refresh" },
+      expect.any(Function),
+    );
     expect(mockDeleteProviderAuthorization).toHaveBeenCalledWith(mockDb, "wahoo", "user-1");
     expect(mockDeleteTokens).not.toHaveBeenCalled();
     expect(mockPersistProviderConnection).not.toHaveBeenCalled();
@@ -306,12 +656,15 @@ describe("handleOAuth2Callback — revocation fallback", () => {
 
     await handleOAuth2Callback(req, res);
 
-    expect(mockRevokeExistingTokens).toHaveBeenCalledWith({
-      accessToken: "new-access",
-      refreshToken: "new-refresh",
-      expiresAt: new Date("2027-01-01"),
-      scopes: "user_read",
-    });
+    expect(mockRevokeExistingTokens).toHaveBeenCalledWith(
+      {
+        accessToken: "new-access",
+        refreshToken: "new-refresh",
+        expiresAt: new Date("2027-01-01"),
+        scopes: "user_read",
+      },
+      undefined,
+    );
     expect(res.status).toHaveBeenCalledWith(500);
   });
 
@@ -501,7 +854,7 @@ describe("handleOAuth2Callback — revocation fallback", () => {
     expect(res.send).toHaveBeenCalledWith(expect.stringContaining("success"));
   });
 
-  it("falls back to standard revocation after safe custom cleanup fails", async () => {
+  it("reports custom cleanup failure while keeping the successfully persisted replacement", async () => {
     mockGetAllProviders.mockReturnValue([
       {
         id: "ride-with-gps",
@@ -541,9 +894,12 @@ describe("handleOAuth2Callback — revocation fallback", () => {
 
     expect(mockPersistProviderConnection).toHaveBeenCalledOnce();
     expect(mockRevokeExistingTokens).toHaveBeenCalledOnce();
-    expect(mockRevokeToken).toHaveBeenCalledTimes(2);
+    expect(mockRevokeToken).not.toHaveBeenCalled();
     expect(mockLogger.warn).toHaveBeenCalledWith(
       expect.stringContaining("Custom revocation failed"),
+    );
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      expect.stringContaining("superseded authorization cleanup failed"),
     );
     expect(res.send).toHaveBeenCalledWith(expect.stringContaining("success"));
   });

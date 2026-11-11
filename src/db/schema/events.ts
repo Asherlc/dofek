@@ -110,7 +110,7 @@ export const fileUpload = fitness.table(
     check("file_upload_progress_valid", sql`${table.progressPercent} BETWEEN 0 AND 100`),
     check(
       "file_upload_import_type_valid",
-      sql`${table.importType} IN ('apple-health', 'strong-csv', 'cronometer-csv', 'kaya-export', 'zos-app', 'garmin-dump', 'fit-file')`,
+      sql`${table.importType} IN ('apple-health', 'strong-csv', 'cronometer-csv', 'kaya-export', 'crimpd', 'eight-a', 'moonboard', 'zos-app', 'garmin-dump', 'fit-file')`,
     ),
     check(
       "file_upload_state_valid",
@@ -186,7 +186,8 @@ export const syncLog = fitness.table(
     index("sync_log_user_provider_synced_at_idx").on(
       table.userId,
       table.providerId,
-      table.syncedAt.desc(),
+      table.syncedAt.desc().nullsFirst(),
+      table.id.desc().nullsFirst(),
     ),
     index("sync_log_user_origin_status_provider_synced_at_idx").on(
       table.userId,

@@ -11,6 +11,7 @@ let package = Package(
             exclude: [
                 "BackgroundRefreshAppDelegateSubscriber.swift",
                 "BackgroundRefreshModule.swift",
+                "BackgroundRefreshScheduler.swift",
                 "ExpoBackgroundRefresh.podspec",
             ]
         ),

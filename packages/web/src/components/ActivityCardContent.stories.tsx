@@ -1,7 +1,11 @@
 import { UnitConverter } from "@dofek/format/units";
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { useState } from "react";
+import { expect, within } from "storybook/test";
 import { ActivityCardContent, type ActivityCardData } from "./ActivityCardContent.tsx";
 import { climbingSourceLocation } from "./ActivityMapTile.fixtures.ts";
+import { activityPhotoFixture } from "./ActivityPhoto.fixtures.ts";
+import { branchingSourceTree, strongSourceTree } from "./ActivitySourceDisclosure.fixtures.ts";
 
 const units = new UnitConverter("metric");
 
@@ -9,6 +13,7 @@ const strengthActivity: ActivityCardData = {
   id: "strength-1",
   name: null,
   activityType: "strength",
+  primaryActivityType: null,
   modality: null,
   startedAt: "2026-07-14T08:46:00-07:00",
   localTimeContext: {
@@ -19,7 +24,13 @@ const strengthActivity: ActivityCardData = {
   },
   durationMin: 30,
   source: {
-    origin: { status: "unresolved", candidateMemberActivityIds: [] },
+    origin: {
+      status: "resolved",
+      memberActivityId: "00000000-0000-4000-8000-000000000001",
+      providerId: "apple_health",
+      sourceName: "Strong",
+    },
+    tree: strongSourceTree,
     primarySourceLabel: "Strong (via Apple Health)",
     sourceCount: 1,
     overlapSummary: null,
@@ -60,6 +71,7 @@ const mappedActivity: ActivityCardData = {
   id: "run-1",
   name: "Morning Run",
   activityType: "running",
+  primaryActivityType: null,
   modality: null,
   startedAt: "2026-07-14T07:38:00-07:00",
   localTimeContext: {
@@ -70,10 +82,16 @@ const mappedActivity: ActivityCardData = {
   },
   durationMin: 64,
   source: {
-    origin: { status: "unresolved", candidateMemberActivityIds: [] },
+    origin: {
+      status: "resolved",
+      memberActivityId: "00000000-0000-4000-8000-000000000001",
+      providerId: "garmin",
+      sourceName: "Garmin Edge 530",
+    },
+    tree: branchingSourceTree,
     primarySourceLabel: "Garmin Connect",
-    sourceCount: 2,
-    overlapSummary: "2 matched source records · Garmin Connect selected by source priority",
+    sourceCount: 5,
+    overlapSummary: "5 matched source records",
   },
   lastProcessedAt: "2026-07-14T08:45:00-07:00",
   distanceMeters: 8530,
@@ -87,36 +105,8 @@ const mappedActivity: ActivityCardData = {
     mapPreview: {
       width: 512,
       height: 512,
-      tiles: [
-        {
-          url: "https://tile.openstreetmap.org/19/83858/202646.png",
-          x: 0,
-          y: 0,
-          width: 256,
-          height: 256,
-        },
-        {
-          url: "https://tile.openstreetmap.org/19/83859/202646.png",
-          x: 256,
-          y: 0,
-          width: 256,
-          height: 256,
-        },
-        {
-          url: "https://tile.openstreetmap.org/19/83858/202647.png",
-          x: 0,
-          y: 256,
-          width: 256,
-          height: 256,
-        },
-        {
-          url: "https://tile.openstreetmap.org/19/83859/202647.png",
-          x: 256,
-          y: 256,
-          width: 256,
-          height: 256,
-        },
-      ],
+      center: [-122.41859436, 37.77559952],
+      zoom: 18,
       routePath: [
         { x: 82, y: 410 },
         { x: 178, y: 332 },
@@ -133,6 +123,7 @@ const meta = {
   title: "Activities/ActivityCardContent",
   component: ActivityCardContent,
   tags: ["autodocs"],
+  parameters: { layout: "fullscreen" },
   args: {
     activity: strengthActivity,
     units,
@@ -141,7 +132,7 @@ const meta = {
   },
   decorators: [
     (Story) => (
-      <div className="w-[1400px] max-w-full bg-background p-8">
+      <div className="w-full max-w-[1400px] bg-background p-4 sm:p-8">
         <Story />
       </div>
     ),
@@ -162,6 +153,45 @@ export const NonMapActivity: Story = {
   ],
 };
 
+export const ClimbingUnknownDuration: Story = {
+  args: {
+    activity: {
+      ...strengthActivity,
+      id: "kilter-point-only",
+      name: "Kilter climbing",
+      activityType: "climbing",
+      durationMin: null,
+      source: {
+        origin: {
+          status: "resolved",
+          memberActivityId: "kilter-point-only",
+          providerId: "kilter",
+          sourceName: null,
+        },
+        tree: {
+          primary: {
+            id: "kilter-point-only",
+            providerId: "kilter",
+            sourceName: null,
+            label: "Kilter Board",
+            description: null,
+            url: null,
+            children: [],
+          },
+          otherSources: [],
+        },
+        primarySourceLabel: "Kilter Board",
+        sourceCount: 1,
+        overlapSummary: null,
+      },
+      stats: [],
+    },
+  },
+  play: async ({ canvasElement }) => {
+    await expect(within(canvasElement).getByText("Duration unavailable")).toBeVisible();
+  },
+};
+
 export const MappedActivity: Story = {
   args: { activity: mappedActivity },
   decorators: [
@@ -171,6 +201,20 @@ export const MappedActivity: Story = {
       </div>
     ),
   ],
+};
+
+export const PrimarySourceWithoutTitle: Story = {
+  ...NonMapActivity,
+  args: {
+    activity: {
+      ...strengthActivity,
+      activityType: "walking",
+      primaryActivityType: "running",
+    },
+  },
+  play: async ({ canvasElement }) => {
+    await expect(within(canvasElement).getByRole("heading", { name: "Running" })).toBeVisible();
+  },
 };
 
 export const IndoorCycling: Story = {
@@ -186,6 +230,18 @@ export const IndoorCycling: Story = {
       distanceState: { status: "available" },
       source: {
         origin: { status: "unresolved", candidateMemberActivityIds: [] },
+        tree: {
+          primary: {
+            id: "peloton-record",
+            providerId: "peloton",
+            sourceName: null,
+            label: "Peloton",
+            description: null,
+            url: null,
+            children: [],
+          },
+          otherSources: [],
+        },
         primarySourceLabel: "Peloton",
         sourceCount: 1,
         overlapSummary: null,
@@ -211,6 +267,18 @@ export const VirtualCycling: Story = {
       elevationState: { status: "available" },
       source: {
         origin: { status: "unresolved", candidateMemberActivityIds: [] },
+        tree: {
+          primary: {
+            id: "zwift-record",
+            providerId: "zwift",
+            sourceName: null,
+            label: "Zwift",
+            description: null,
+            url: null,
+            children: [],
+          },
+          otherSources: [],
+        },
         primarySourceLabel: "Zwift",
         sourceCount: 1,
         overlapSummary: null,
@@ -237,6 +305,18 @@ export const ClimbingSourceLocations: Story = {
       durationMin: 120,
       source: {
         origin: { status: "unresolved", candidateMemberActivityIds: [] },
+        tree: {
+          primary: {
+            id: "mountain-project-record",
+            providerId: "mountain-project",
+            sourceName: null,
+            label: "Mountain Project",
+            description: null,
+            url: null,
+            children: [],
+          },
+          otherSources: [],
+        },
         primarySourceLabel: "Mountain Project",
         sourceCount: 1,
         overlapSummary: null,
@@ -298,6 +378,18 @@ export const PrimaryRecordingProvider: Story = {
           providerId: "garmin",
           sourceName: "Garmin Edge 530",
         },
+        tree: {
+          primary: {
+            id: "garmin-record",
+            providerId: "garmin",
+            sourceName: "Garmin Edge 530",
+            label: "Garmin Edge 530",
+            description: null,
+            url: null,
+            children: [],
+          },
+          otherSources: [],
+        },
         primarySourceLabel: "Garmin",
         sourceCount: 3,
         overlapSummary: "3 matched source records",
@@ -312,7 +404,8 @@ export const KayaProviderLogo: Story = {
     activity: {
       ...strengthActivity,
       name: "Kaya climbing",
-      activityType: "climbing",
+      activityType: "cardio",
+      primaryActivityType: "climbing",
       durationMin: 48,
       source: {
         origin: {
@@ -320,6 +413,18 @@ export const KayaProviderLogo: Story = {
           memberActivityId: "00000000-0000-4000-8000-000000000001",
           providerId: "kaya",
           sourceName: null,
+        },
+        tree: {
+          primary: {
+            id: "kaya-record",
+            providerId: "kaya",
+            sourceName: null,
+            label: "Kaya",
+            description: null,
+            url: null,
+            children: [],
+          },
+          otherSources: [],
         },
         primarySourceLabel: "Kaya",
         sourceCount: 1,
@@ -338,6 +443,7 @@ export const UnresolvedRecordingOrigin: Story = {
       ...mappedActivity,
       source: {
         origin: { status: "unresolved", candidateMemberActivityIds: [] },
+        tree: { primary: null, otherSources: branchingSourceTree.otherSources },
         primarySourceLabel: null,
         sourceCount: 2,
         overlapSummary: "2 matched source records",
@@ -356,14 +462,175 @@ export const PrimaryProviderWithoutLogo: Story = {
         origin: {
           status: "resolved",
           memberActivityId: "00000000-0000-4000-8000-000000000001",
-          providerId: "velohero",
+          providerId: "mountain-project",
           sourceName: null,
         },
-        primarySourceLabel: "VeloHero",
+        tree: {
+          primary: {
+            id: "mountain-project-record",
+            providerId: "mountain-project",
+            sourceName: null,
+            label: "Mountain Project",
+            description: null,
+            url: null,
+            children: [],
+          },
+          otherSources: [],
+        },
+        primarySourceLabel: "Mountain Project",
         sourceCount: 1,
         overlapSummary: null,
       },
     },
   },
   decorators: NonMapActivity.decorators,
+};
+
+export const AppleHealthSourceApps: Story = {
+  render: () => (
+    <div className="grid gap-4 lg:grid-cols-2">
+      {["Strong", "Hang Ten"].map((sourceName) => (
+        <article key={sourceName} className="card overflow-hidden">
+          <ActivityCardContent
+            activity={{
+              ...strengthActivity,
+              name: sourceName === "Strong" ? "Morning strength" : "Hangboard session",
+              activityType: sourceName === "Strong" ? "strength" : "hangboarding",
+              source: {
+                origin: {
+                  status: "resolved",
+                  memberActivityId: "00000000-0000-4000-8000-000000000001",
+                  providerId: "apple_health",
+                  sourceName,
+                },
+                tree:
+                  sourceName === "Strong"
+                    ? strongSourceTree
+                    : {
+                        primary: {
+                          id: "hang-ten-record",
+                          providerId: "hang-ten",
+                          sourceName: null,
+                          label: "Hang Ten",
+                          description: "Recording app reported by Apple Health",
+                          url: null,
+                          children: [
+                            {
+                              id: "apple-hang-ten-record",
+                              providerId: "apple_health",
+                              sourceName: null,
+                              label: "Apple Health",
+                              description: "Recorded by Hang Ten",
+                              url: null,
+                              children: [],
+                            },
+                          ],
+                        },
+                        otherSources: [],
+                      },
+                primarySourceLabel: `${sourceName} (via Apple Health)`,
+                sourceCount: 1,
+                overlapSummary: null,
+              },
+            }}
+            units={units}
+            selectMode={false}
+            selected={false}
+          />
+        </article>
+      ))}
+    </div>
+  ),
+};
+
+export const PhotoWithoutMap: Story = {
+  args: { activity: strengthActivity, photo: activityPhotoFixture },
+};
+
+export const MapBeforePhoto: Story = {
+  args: { activity: mappedActivity, photo: activityPhotoFixture },
+};
+
+function InteractiveCard({ selectMode }: { selectMode: boolean }) {
+  const [selected, setSelected] = useState(false);
+  const actionClassName =
+    "text-left after:absolute after:inset-0 after:z-10 focus-visible:outline-none focus-visible:after:rounded-lg focus-visible:after:outline-2 focus-visible:after:outline-accent";
+  const toggleSelected = () => setSelected((current) => !current);
+  const headingAction = selectMode ? (
+    <button
+      type="button"
+      onClick={toggleSelected}
+      aria-pressed={selected}
+      className={actionClassName}
+    >
+      {mappedActivity.name}
+    </button>
+  ) : (
+    <a href="#activity-navigation" className={actionClassName}>
+      {mappedActivity.name}
+    </a>
+  );
+  return (
+    <div>
+      <p id="activity-navigation" role="status" className="mb-4 text-sm text-foreground">
+        {selectMode
+          ? `Selected: ${selected ? "yes" : "no"}`
+          : "Navigation target: #activity-navigation"}
+      </p>
+      <article
+        className={`card relative block h-full overflow-hidden transition-colors ${selected ? "ring-2 ring-accent bg-surface-hover" : ""}`}
+      >
+        <ActivityCardContent
+          activity={mappedActivity}
+          units={units}
+          selectMode={selectMode}
+          selected={selected}
+          headingAction={headingAction}
+          onToggleSelected={toggleSelected}
+        />
+      </article>
+    </div>
+  );
+}
+
+export const NavigableCard: Story = {
+  render: () => <InteractiveCard selectMode={false} />,
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole("button", { name: "Garmin Connect Lineage" }));
+    await expect(canvas.getByRole("link", { name: "Morning Run" })).toBeVisible();
+  },
+};
+
+export const SelectableCard: Story = {
+  render: () => <InteractiveCard selectMode={true} />,
+  play: async ({ canvasElement, userEvent }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole("button", { name: "Garmin Connect Lineage" }));
+    await expect(canvas.getByRole("checkbox", { name: "Select Morning Run" })).not.toBeChecked();
+    await expect(canvas.getByRole("button", { name: "Morning Run" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+  },
+};
+
+export const SourceTreeExpanded: Story = {
+  args: {
+    activity: {
+      ...mappedActivity,
+      location: null,
+    },
+  },
+  decorators: NonMapActivity.decorators,
+  play: async ({ canvasElement, userEvent }) => {
+    await userEvent.click(
+      within(canvasElement).getByRole("button", { name: "Garmin Connect Lineage" }),
+    );
+  },
+};
+
+export const MappedSourceTreeExpanded: Story = {
+  ...MappedActivity,
+  play: SourceTreeExpanded.play,
 };

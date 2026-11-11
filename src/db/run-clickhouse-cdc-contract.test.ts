@@ -343,7 +343,7 @@ describe("run-clickhouse-cdc-contract", () => {
       writeMarker: unusedDependencies.writeMarker,
     });
     expect(JSON.parse(readFileSync(path, "utf8"))).toHaveLength(3);
-    expect((await import("node:fs/promises")).stat(path)).resolves.toMatchObject({
+    await expect((await import("node:fs/promises")).stat(path)).resolves.toMatchObject({
       mode: 0o100600,
     });
   });

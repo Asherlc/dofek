@@ -44,9 +44,22 @@ public class CoreMotionModule: Module {
     private let sensorRecorder = CMSensorRecorder()
     private let activityManager = CMMotionActivityManager()
     private let accountStateStore = CoreMotionAccountStateStore(userDefaults: .standard)
+    private lazy var collectionActivityReporter = CoreMotionCollectionActivityReporter(
+        accountStateStore: accountStateStore,
+        canRecord: { CoreMotionModule.canRecord }
+    )
+
+    private static var canRecord: Bool {
+        CMSensorRecorder.isAccelerometerRecordingAvailable() &&
+            CMSensorRecorder.authorizationStatus() == .authorized
+    }
 
     public func definition() -> ModuleDefinition {
         Name("CoreMotion")
+
+        OnCreate {
+            _ = self.collectionActivityReporter
+        }
 
         // MARK: - Availability & permissions
 
@@ -69,9 +82,7 @@ public class CoreMotionModule: Module {
         }
 
         Function("isRecordingActive") {
-            return UserDefaults.standard.bool(
-                forKey: CoreMotionAccountStateStore.recordingActiveKey
-            )
+            return Self.canRecord && self.accountStateStore.isRecordingActive
         }
 
         // MARK: - Querying recorded data
@@ -141,9 +152,11 @@ public class CoreMotionModule: Module {
             )
             return
         }
-        sensorRecorder.recordAccelerometer(forDuration: min(durationSeconds, 12 * 3600))
-        UserDefaults.standard.set(true, forKey: CoreMotionAccountStateStore.recordingActiveKey)
-        promise.resolve(true)
+        let duration = min(durationSeconds, CoreMotionAccountStateStore.maximumRecordingDuration)
+        sensorRecorder.recordAccelerometer(forDuration: duration)
+        let authorized = Self.canRecord
+        accountStateStore.recordingStarted(forDuration: duration, authorized: authorized)
+        promise.resolve(authorized)
     }
 
     private func queryRecordedData(

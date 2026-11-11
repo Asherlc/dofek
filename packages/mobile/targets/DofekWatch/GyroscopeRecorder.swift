@@ -1,3 +1,6 @@
+#if canImport(Sentry)
+import Sentry
+#endif
 import CoreMotion
 import Foundation
 
@@ -9,6 +12,8 @@ final class GyroscopeRecorder: ObservableObject {
     static let shared = GyroscopeRecorder()
 
     private let motionManager = CMMotionManager()
+    private let callbackFence = WatchRecordingCallbackFence()
+    private let accountStateStore = WatchAccountStateStore()
     private let operationQueue: OperationQueue = {
         let queue = OperationQueue()
         queue.name = "com.dofek.watch.gyroscope"
@@ -25,7 +30,9 @@ final class GyroscopeRecorder: ObservableObject {
 
     static let samplingIntervalSeconds: TimeInterval = 1.0 / 50.0 // 50 Hz
 
-    @Published var isRecording: Bool = false
+    @Published private(set) var recordingStartedAt: Date?
+
+    var isRecording: Bool { recordingStartedAt != nil }
 
     static var isAvailable: Bool {
         CMMotionManager().isDeviceMotionAvailable
@@ -34,14 +41,28 @@ final class GyroscopeRecorder: ObservableObject {
     /// Start recording gyroscope data at 50 Hz.
     /// Buffers samples in memory until a successful file transfer confirms them.
     func startRecording() {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { self.startRecording() }
+            return
+        }
         guard Self.isAvailable else { return }
-        guard WatchAccountStateStore().isSyncEnabled else { return }
+        guard accountStateStore.isSyncEnabled else { return }
         guard !motionManager.isDeviceMotionActive else { return }
 
+        let identity = callbackFence.reset()
         motionManager.deviceMotionUpdateInterval = Self.samplingIntervalSeconds
 
         motionManager.startDeviceMotionUpdates(to: operationQueue) { [weak self] motion, error in
-            guard let self = self, let motion = motion, error == nil else { return }
+            guard let self = self else { return }
+            if let error {
+                NSLog("[GyroscopeRecorder] update error: %@", error.localizedDescription)
+                #if canImport(Sentry)
+                SentrySDK.capture(error: error)
+                #endif
+                self.callbackFence.whenCurrentOnMain(identity) { self.stopRecording() }
+                return
+            }
+            guard let motion else { return }
 
             let sample: [String: Any] = [
                 "timestamp": self.formatter.string(from: Date()),
@@ -50,20 +71,26 @@ final class GyroscopeRecorder: ObservableObject {
                 "gyroscopeZ": motion.rotationRate.z,
             ]
 
-            self.sampleBuffer.append(sample)
+            self.callbackFence.apply(ifCurrent: identity) {
+                guard self.accountStateStore.isSyncEnabled else { return }
+                self.sampleBuffer.append(sample)
+            }
         }
 
-        DispatchQueue.main.async {
-            self.isRecording = true
-        }
+        recordingStartedAt = Date()
+        WatchSessionDelegate.shared.publishRecordingActivity()
     }
 
     /// Stop recording gyroscope data.
     func stopRecording() {
-        motionManager.stopDeviceMotionUpdates()
-        DispatchQueue.main.async {
-            self.isRecording = false
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { self.stopRecording() }
+            return
         }
+        callbackFence.reset()
+        motionManager.stopDeviceMotionUpdates()
+        recordingStartedAt = nil
+        WatchSessionDelegate.shared.publishRecordingActivity()
     }
 
     /// Return a non-destructive snapshot of all buffered gyroscope samples.
@@ -82,7 +109,7 @@ final class GyroscopeRecorder: ObservableObject {
     }
 
     func purgeAccountState() {
-        stopRecording()
-        sampleBuffer.clearAll()
+        let identity = callbackFence.reset { sampleBuffer.clearAll() }
+        callbackFence.whenCurrentOnMain(identity) { self.stopRecording() }
     }
 }

@@ -8,7 +8,12 @@ import {
   withAccountErasureUserWriteFence,
 } from "../db/account-erasure.ts";
 import { accountErasureQueuedUserWorkLockName } from "../db/account-erasure-locks.ts";
-import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
+import {
+  createTestBarrier,
+  hasDatabaseLockWaiter,
+  setupTestDatabase,
+  type TestContext,
+} from "../db/test-helpers.ts";
 import {
   createAccountErasureWorkLockPool,
   runQueuedUserWorkUnlessAccountErasing,
@@ -67,6 +72,52 @@ describe("account-erasure queued-work barrier (integration)", () => {
   afterAll(async () => {
     await context.cleanup();
   });
+
+  it.each(["upload", "cleanup"] as const)(
+    "serializes cleanup and upload when %s starts first across processes",
+    async (firstKind) => {
+      const firstPool = createAccountErasureWorkLockPool(context.connectionString);
+      const secondPool = createAccountErasureWorkLockPool(context.connectionString);
+      context.addCleanup(() => firstPool.close());
+      context.addCleanup(() => secondPool.close());
+      const started = createTestBarrier();
+      const release = createTestBarrier();
+      const events: string[] = [];
+      const firstWork = async () => {
+        events.push("first start");
+        started.resolve();
+        await release.promise;
+        events.push("first finish");
+      };
+      const first =
+        firstKind === "upload"
+          ? firstPool.runWithSharedUserLock(concurrentWorkUserId, firstWork, "strava")
+          : firstPool.tryRunWithExclusiveUserLock(concurrentWorkUserId, firstWork);
+      await started.promise;
+      const secondWork = vi.fn(async () => {
+        events.push("second");
+      });
+      const second =
+        firstKind === "upload"
+          ? secondPool.tryRunWithExclusiveUserLock(concurrentWorkUserId, secondWork)
+          : secondPool.runWithSharedUserLock(concurrentWorkUserId, secondWork, "peloton");
+      try {
+        if (firstKind === "upload") await expect(second).resolves.toBeUndefined();
+        else
+          await vi.waitFor(async () => expect(await hasDatabaseLockWaiter(context.db)).toBe(true));
+        expect(secondWork).not.toHaveBeenCalled();
+        await secondPool.runWithSharedUserLock(shutdownUserId, async () => "independent user");
+      } finally {
+        release.resolve();
+        await Promise.all([first, second]);
+      }
+      expect(events).toEqual(
+        firstKind === "upload"
+          ? ["first start", "first finish"]
+          : ["first start", "first finish", "second"],
+      );
+    },
+  );
 
   it("waits for pre-fence jobs and discards jobs admitted after the fence commits", async () => {
     const workLockPool = createAccountErasureWorkLockPool(context.connectionString);

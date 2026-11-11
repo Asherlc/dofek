@@ -15,7 +15,6 @@ import { ProcessingStatusWidget } from "../components/ProcessingStatusWidget.tsx
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import { SleepChart } from "../components/SleepChart.tsx";
 import { SleepDataSourcesTable } from "../components/SleepDataSourcesTable.tsx";
-import { SleepOverviewCards } from "../components/SleepOverviewCards.tsx";
 import { TimeRangeSelector } from "../components/TimeRangeSelector.tsx";
 import { useProcessingStatus } from "../hooks/useProcessingStatus.ts";
 import { useTimeRangePreference } from "../hooks/useTimeRangePreference.ts";
@@ -73,8 +72,6 @@ export function SleepPage() {
 
   const sleepData = trpc.sleep.list.useQuery({ ...selectedRangeQueryInput(days), endDate });
   const latestStages = trpc.sleep.latestStages.useQuery();
-  const sleepNeed = trpc.sleepNeed.calculateV2.useQuery({ endDate });
-  const sleepPerformance = trpc.sleepNeed.performance.useQuery({ endDate });
   const insightsQuery = trpc.insights.compute.useQuery({
     ...minimumSelectedRangeQueryInput(days, 90),
     endDate,
@@ -131,32 +128,13 @@ export function SleepPage() {
       <PageLayout
         headerChildren={<TimeRangeSelector days={days} onChange={setDays} />}
         title="Sleep"
-        subtitle="Sleep stages, debt, and patterns over time"
+        subtitle="Sleep stages and patterns over time"
       >
         <ProcessingStatusWidget
           data={processingStatus.data}
           error={processingStatus.error}
           loading={processingStatus.isLoading}
         />
-        {/* Sleep Performance Score + Bedtime Recommendation */}
-        {((sleepPerformance.isError && !sleepPerformance.data) ||
-          (sleepNeed.isError && !sleepNeed.data)) && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {sleepPerformance.isError && !sleepPerformance.data && (
-              <QueryStatePanel error={sleepPerformance.error} height={72} />
-            )}
-            {sleepNeed.isError && !sleepNeed.data && (
-              <QueryStatePanel error={sleepNeed.error} height={72} />
-            )}
-          </div>
-        )}
-        <SleepOverviewCards
-          sleepNeed={sleepNeed.data}
-          sleepNeedLoading={sleepNeed.isLoading}
-          sleepPerformance={sleepPerformance.data}
-          sleepPerformanceLoading={sleepPerformance.isLoading}
-        />
-
         {/* Sleep Stage Chart */}
         <PageSection title="Sleep Stages">
           {sleepData.isError && !sleepData.data && (

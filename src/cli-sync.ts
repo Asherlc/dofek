@@ -82,6 +82,7 @@ export async function handleSyncCommand(args: string[]): Promise<number> {
         job.data.userId,
         "CLI FIT file import",
         () => processFitFileImportJob(job, db),
+        job.data.providerId,
       ),
     { connection },
   );

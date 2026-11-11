@@ -16,6 +16,7 @@ const hoisted = vi.hoisted(() => {
   vi.stubEnv("SENTRY_DSN", "https://test@sentry.io/123");
   vi.stubEnv("METRIC_STREAM_LIVE_TOPIC", "metric-stream-live-test");
   vi.stubEnv("METRIC_STREAM_HISTORY_TOPIC", "metric-stream-history-test");
+  vi.stubEnv("ACTIVITY_MEDIA_R2_BUCKET", "activity-media-test");
 
   function noOpExit(): never {
     throw new Error("process.exit called unexpectedly in test");
@@ -195,6 +196,16 @@ vi.mock("../../db/provider-data-deletion.ts", () => ({
   markProviderDataDeletionCompleted: vi.fn(() => Promise.resolve()),
   markProviderDataDeletionFailed: vi.fn(() => Promise.resolve()),
 }));
+vi.mock("../../provider-artifact-storage.ts", () => ({
+  createProviderArtifactStorageFromEnv: vi.fn(() => ({
+    retainFile: vi.fn().mockResolvedValue("retained.fit"),
+    hasForProvider: vi.fn().mockResolvedValue(false),
+    ensureArtifact: vi.fn(),
+    materializeArtifact: vi.fn(),
+    deleteForUser: vi.fn(async () => undefined),
+    deleteForProvider: vi.fn(async () => undefined),
+  })),
+}));
 
 vi.mock("../../db/refit-sensor-store.ts", () => ({
   createRefitSensorStore: vi.fn(() => ({})),
@@ -272,6 +283,10 @@ vi.mock("../data-export-outbox.ts", () => ({
   startDataExportOutboxDispatcher: vi.fn(() => ({
     close: hoisted.mockCloseDataExportOutbox,
   })),
+}));
+
+vi.mock("../activity-image-outbox.ts", () => ({
+  startActivityImageOutboxDispatcher: vi.fn(() => ({ close: vi.fn(async () => undefined) })),
 }));
 
 vi.mock("../file-upload-outbox.ts", () => ({
@@ -358,6 +373,7 @@ vi.mock("../queues.ts", () => ({
   },
   getRedisConnection: vi.fn(() => ({})),
   getImportQueue: vi.fn(() => ({})),
+  getActivityImageQueue: vi.fn(() => ({ add: vi.fn(async () => ({})) })),
   getDataExportQueue: vi.fn(() => ({})),
   getAccountErasureQueue: vi.fn(() => ({})),
   providerSyncQueueName: vi.fn((id: string) => `sync-${id}`),
@@ -369,12 +385,14 @@ vi.mock("../queues.ts", () => ({
   EXPORT_QUEUE: "export-queue",
   SCHEDULED_SYNC_QUEUE: "scheduled-sync-queue",
   POST_SYNC_QUEUE: "post-sync-queue",
+  ACTIVITY_IMAGE_QUEUE: "activity-images",
   ACTIVITY_DELETE_ANALYTICS_QUEUE: "activity-delete-analytics-queue",
   PROVIDER_DATA_DELETION_QUEUE: "provider-data-deletion-queue",
   ACCOUNT_ERASURE_QUEUE: "account-erasure-queue",
   enqueueProviderDeleteAnalyticsRefresh: vi.fn(() => Promise.resolve()),
   getProviderDataDeletionQueue: vi.fn(() => ({})),
   closeAllQueueResources: vi.fn(() => Promise.resolve()),
+  closeAnalyticsRefreshWaiters: vi.fn(() => Promise.resolve()),
 }));
 
 vi.mock("@sentry/node", () => ({
@@ -424,6 +442,7 @@ afterAll(() => {
   vi.stubEnv("SENTRY_DSN", undefined);
   vi.stubEnv("METRIC_STREAM_LIVE_TOPIC", undefined);
   vi.stubEnv("METRIC_STREAM_HISTORY_TOPIC", undefined);
+  vi.stubEnv("ACTIVITY_MEDIA_R2_BUCKET", undefined);
 });
 
 export function getQueueWorkerHandler(
@@ -495,7 +514,7 @@ export async function processorArity(queueName: string): Promise<number> {
   }
   return processor.length;
 }
-export const EXPECTED_WORKER_COUNT = 13;
+export const EXPECTED_WORKER_COUNT = 14;
 
 export async function workerQueueDependencies() {
   const { createDatabaseFromEnv } = await import("../../db/index.ts");
@@ -571,6 +590,7 @@ export async function workerLifecycleDependencies(
     ),
     dataExportOutboxDispatcher: startDataExportOutboxDispatcher(db, getDataExportQueue()),
     fileUploadOutboxDispatcher: startFileUploadOutboxDispatcher(db, getImportQueue()),
+    activityImageOutboxDispatcher: { close: async () => undefined },
     fileUploadReconciler: startFileUploadReconciler(db, dependencies.getImportUploadStorage()),
     garminImportProgressCoordinator: createGarminImportProgressCoordinator(connection),
   };

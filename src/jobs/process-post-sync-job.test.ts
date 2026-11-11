@@ -9,6 +9,8 @@ vi.mock("@sentry/node", () => ({
 const mockRefitAllParams = vi.fn();
 const mockInvalidateByPrefix = vi.fn();
 const mockAccountErasureAllowsQueuedUserWork = vi.fn();
+const { mockCatalogueJob } = vi.hoisted(() => ({ mockCatalogueJob: vi.fn() }));
+vi.mock("./climbing-catalogue-job.ts", () => ({ processClimbingCatalogueJob: mockCatalogueJob }));
 
 vi.mock("./account-erasure-work-guard.ts", () => ({
   accountErasureAllowsQueuedUserWork: (database: unknown, userId: string, workKind: string) =>
@@ -52,7 +54,41 @@ const fakeSensorStore = {
 const getFakeSensorStore: Parameters<typeof processPostSyncJob>[2] = () => fakeSensorStore;
 const refreshBodyMeasurements = vi.fn();
 
+const catalogueSeed = {
+  userId: "user-a",
+  logEntryId: "log-a",
+  providerId: "kaya",
+  externalId: "1",
+  sourceUrl: null,
+  name: "Crack",
+  kind: "route" as const,
+  setting: "outdoor" as const,
+  locations: [],
+};
+
 describe("processPostSyncJob", () => {
+  it("delegates catalogue refresh without running personalized refits", async () => {
+    await processPostSyncJob(
+      {
+        data: {
+          type: "climbing-catalogue",
+          userId: "user-a",
+          logEntryId: "log-a",
+          seed: catalogueSeed,
+        },
+        updateProgress: vi.fn().mockResolvedValue(undefined),
+      },
+      fakeDb,
+      getFakeSensorStore,
+      refreshBodyMeasurements,
+    );
+    expect(mockCatalogueJob).toHaveBeenCalledWith(
+      { type: "climbing-catalogue", userId: "user-a", logEntryId: "log-a", seed: catalogueSeed },
+      fakeDb,
+    );
+    expect(mockRefitAllParams).not.toHaveBeenCalled();
+    expect(refreshBodyMeasurements).not.toHaveBeenCalled();
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     refreshBodyMeasurements.mockResolvedValue(undefined);
