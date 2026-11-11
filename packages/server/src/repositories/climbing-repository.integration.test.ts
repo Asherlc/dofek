@@ -58,6 +58,29 @@ describe("ClimbingRepository PostgreSQL scoped rock summaries", () => {
   const volume = async (filters: ClimbingFilters = {}) =>
     (await repo().getVolumeByGrade(30, filters)).map((row) => row.toDetail());
 
+  it("maps a logged gym ahead of shared climb coordinates and withholds unlocated gyms", async () => {
+    const problem = { ...route, coordinates: { latitude: 40, longitude: 10 } };
+    await write({
+      externalId: "located",
+      climb: problem,
+      areas: [
+        { externalId: "gym-a", name: "Gym A", coordinates: { latitude: 0, longitude: -120 } },
+      ],
+    });
+    await write({
+      externalId: "unlocated",
+      climb: problem,
+      areas: [{ externalId: "gym-b", name: "Gym B", coordinates: null }],
+    });
+    const entries = await repo().getMapEntries(30);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.location).toMatchObject({
+      name: "Gym A",
+      scope: "area",
+      coordinates: { latitude: 0, longitude: -120 },
+    });
+  });
+
   it.each([
     { filters: {}, grades: ["V1", "V2", "V3", "V4"], minutes: 300 },
     {

@@ -40,7 +40,12 @@ export const RecognizedWatchModels: Story = {
         name: "Lineage: Apple Watch Series 7 (GPS + Cellular, 45mm)",
       }),
     );
-    await expect(canvas.getByText("Garmin Forerunner 955")).toBeVisible();
+    await waitFor(
+      async () =>
+        await expect(
+          within(canvasElement.ownerDocument.body).getByText("Garmin Forerunner 955"),
+        ).toBeVisible(),
+    );
   },
 };
 export const EmptyTree: Story = {
@@ -56,9 +61,12 @@ export const BranchingExpanded: Story = {
     trigger.focus();
     await userEvent.keyboard("{Enter}");
     await expect(trigger).toHaveAttribute("aria-expanded", "true");
-    await expect(await canvas.findByText("Apple Health")).toBeVisible();
-    await expect(canvas.getAllByText("Strava")).toHaveLength(2);
-    await expect(canvas.getAllByText("WHOOP")[0]).toBeVisible();
+    const dialog = within(
+      await within(canvasElement.ownerDocument.body).findByRole("dialog", { name: "Lineage" }),
+    );
+    await waitFor(async () => await expect(dialog.getByText("Apple Health")).toBeVisible());
+    await expect(dialog.getAllByText("Strava")).toHaveLength(2);
+    await expect(dialog.getByText("WHOOP")).toBeVisible();
   },
 };
 export const DirectWhoop: Story = {
@@ -87,7 +95,12 @@ export const UnresolvedOrigin: Story = {
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
     await userEvent.click(await canvas.findByRole("button", { name: "Lineage" }));
-    await expect(await canvas.findByText("Apple Health")).toBeVisible();
+    await waitFor(
+      async () =>
+        await expect(
+          await within(canvasElement.ownerDocument.body).findByText("Apple Health"),
+        ).toBeVisible(),
+    );
   },
 };
 
@@ -99,7 +112,12 @@ export const RecordingDeviceExpanded: Story = {
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
     await userEvent.click(await canvas.findByRole("button", { name: "Lineage: Garmin Edge 530" }));
-    await expect(canvas.getByText("Peloton Bike+")).toBeVisible();
+    await waitFor(
+      async () =>
+        await expect(
+          within(canvasElement.ownerDocument.body).getByText("Peloton Bike+"),
+        ).toBeVisible(),
+    );
   },
 };
 export const HardwareOnly: Story = {
@@ -119,7 +137,10 @@ export const WalkingExpanded: Story = {
     await userEvent.click(
       await canvas.findByRole("button", { name: "Lineage: Asher’s Apple Watch" }),
     );
-    await expect(canvas.getByText("Peloton")).toBeVisible();
+    await waitFor(
+      async () =>
+        await expect(within(canvasElement.ownerDocument.body).getByText("Peloton")).toBeVisible(),
+    );
   },
 };
 export const HardwareLoading: Story = {
@@ -127,7 +148,12 @@ export const HardwareLoading: Story = {
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
     await userEvent.click(await canvas.findByRole("button", { name: "Lineage" }));
-    await expect(canvas.getByTestId("query-state-loading")).toBeVisible();
+    await waitFor(
+      async () =>
+        await expect(
+          within(canvasElement.ownerDocument.body).getByTestId("query-state-loading"),
+        ).toBeVisible(),
+    );
   },
 };
 export const HardwareError: Story = {

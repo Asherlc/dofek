@@ -3,7 +3,7 @@ import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { SyncDatabase } from "../db/index.ts";
 import { getTokenUserId } from "../db/token-user-context.ts";
-import type { MetricStreamEventPublisher } from "../metric-stream/redpanda-producer.ts";
+import type { MetricStreamEventPublisher } from "../metric-stream/publisher.ts";
 import { createProviderArtifactStorageFromEnv } from "../provider-artifact-storage.ts";
 import { processFitFileImportJob } from "./process-fit-file-import-job.ts";
 import { deleteRetainedProviderFitSource, stageProviderFitFile } from "./provider-fit-staging.ts";

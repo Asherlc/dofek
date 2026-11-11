@@ -79,7 +79,7 @@ function toHeartRateDevice(snapshot: BleHeartRateDeviceSnapshot): BluetoothDevic
 
 export async function getBluetoothDevices(): Promise<BluetoothDevice[]> {
   const heartRateDevices = await getHeartRateDevices();
-  return [toWhoopDevice(getWhoopDeviceSummary()), ...heartRateDevices.map(toHeartRateDevice)];
+  return [toWhoopDevice(await getWhoopDeviceSummary()), ...heartRateDevices.map(toHeartRateDevice)];
 }
 
 function errorMessage(error: unknown): string {

@@ -4,11 +4,13 @@ import {
   countMissingBodyMeasurementSamples,
 } from "./body-measurement-sample.ts";
 import type { ClickHouseClient } from "./clickhouse.ts";
+import { unexpectedClickHouseExec } from "./clickhouse-test-helpers.ts";
 
 describe("countMissingBodyMeasurementSamples", () => {
   it("formats DateTime64 query parameters for ClickHouse", async () => {
     const query = vi.fn(async () => ({ json: async () => [] }));
     const client: ClickHouseClient = {
+      exec: vi.fn(unexpectedClickHouseExec),
       command: vi.fn(async () => undefined),
       query,
     };
@@ -55,7 +57,7 @@ describe("backfillMissingBodyMeasurementSamples", () => {
   it("returns the insert summary without running a count query", async () => {
     const query = vi.fn(async () => ({ json: async () => [] }));
     const command = vi.fn(async () => ({ summary: { written_rows: "12" } }));
-    const client: ClickHouseClient = { command, query };
+    const client: ClickHouseClient = { command, query, exec: vi.fn(unexpectedClickHouseExec) };
 
     const insertedCount = await backfillMissingBodyMeasurementSamples(client, {
       start: new Date("2026-06-21T00:00:00.000Z"),

@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SyncDatabase } from "../db/index.ts";
 import { getProviderIngestContext } from "../db/provider-ingest-context.ts";
 import { createMetricStreamEvent, type MetricStreamRowInput } from "../metric-stream/events.ts";
-import type { MetricStreamPublishOptions } from "../metric-stream/redpanda-producer.ts";
+import type { MetricStreamPublishOptions } from "../metric-stream/publisher.ts";
 import {
   APPLE_HEALTH_IMPORT_VALIDATION_ERROR_NAME,
   STRONG_CSV_IMPORT_VALIDATION_ERROR_NAME,

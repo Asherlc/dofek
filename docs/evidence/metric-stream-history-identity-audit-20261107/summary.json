@@ -1,0 +1,131 @@
+{
+  "status": "PASS_ROW_IDENTITY_WITH_EXPLICIT_COVERAGE_LIMITS",
+  "recordedAt": "2026-11-08T01:11:03.834Z",
+  "source": {
+    "topic": "metric-stream-history-v1",
+    "partition": 0,
+    "startOffset": 70578630,
+    "endOffsetExclusive": 74445631
+  },
+  "export": {
+    "status": "completed",
+    "start": "2026-11-08T00:55:52.331Z",
+    "topic": "metric-stream-history-v1",
+    "partition": 0,
+    "startOffset": 70578630,
+    "endOffsetExclusive": 74445631,
+    "maximumCompressedBytes": 1073741824,
+    "maximumExportSeconds": 900,
+    "consumerGroup": null,
+    "projection": "identity/type/offset only",
+    "end": "2026-11-08T00:57:30.369Z",
+    "compressedBytes": 112346109,
+    "gzipIntegrity": "passed"
+  },
+  "coverage": {
+    "records": 3867001,
+    "distinct_offsets": 3867001,
+    "first_offset": 70578630,
+    "last_offset": 74445630,
+    "outside_scope": 0,
+    "null_values": 0,
+    "invalid_json_records": 0,
+    "row_records": 3866505,
+    "delete_records": 248,
+    "marker_records": 248,
+    "unknown_records": 0,
+    "invalid_identity_records": 0,
+    "precision_over_six_digits": 0,
+    "submillisecond_records": 0
+  },
+  "incoming": {
+    "incoming_tuples": 3866489,
+    "incoming_ids": 3866489,
+    "excess_identity_tuples": 0,
+    "rowEventsSharingExistingIdentityTuple": 16,
+    "identityFileBytes": 444646235,
+    "payloadEqualityNotChecked": true
+  },
+  "comparison": {
+    "status": "completed",
+    "start": "2026-11-08T01:05:12.343Z",
+    "queryId": "history-unread-identity-comparison-20261107-once",
+    "incomingIds": 3866489,
+    "incomingTuples": 3866489,
+    "method": "native tuple membership after verified single incoming identity per ID",
+    "limits": {
+      "threads": 1,
+      "memoryBytes": 1073741824,
+      "executionSeconds": 120,
+      "rows": 210000000,
+      "uncompressedBytes": 12884901888
+    },
+    "end": "2026-11-08T01:06:11.314Z",
+    "aggregate": {
+      "retained_versions": 11807909,
+      "conflicting_retained_versions": 0,
+      "conflicting_ids": 0
+    },
+    "queryLog": {
+      "query_duration_ms": 58041,
+      "read_rows": 209021415,
+      "read_bytes": 4228279393,
+      "memory_usage": 919351317,
+      "exception_code": 0
+    },
+    "projections": [
+      "ingest.metric_stream.by_provider_current_state_recorded_at"
+    ],
+    "projectionKind": "existing nonaggregating covering projection; base fallback handled by engine"
+  },
+  "postHealth": {
+    "metric-stream-clickhouse-sink": {
+      "state": "Stable",
+      "lag": 0
+    },
+    "metric-stream-history-clickhouse-sink": {
+      "state": "Empty",
+      "lag": 3867001,
+      "current": 70578630,
+      "logStart": 55609019,
+      "highWatermark": 74445631
+    },
+    "metric-stream-history-r2-archive": {
+      "state": "Stable",
+      "lag": 0
+    },
+    "metric-stream-live-clickhouse-sink": {
+      "state": "Stable",
+      "lag": 0
+    },
+    "metric-stream-live-r2-archive": {
+      "state": "Stable",
+      "lag": 0
+    },
+    "metric-stream-r2-archive": {
+      "state": "Stable",
+      "lag": 0
+    }
+  },
+  "exclusions": [
+    "Unrelated retained IDs",
+    "Candidate IDs affected by deletion scopes but absent from the incoming row-ID set",
+    "Archive bodies and later writes",
+    "Full event-schema validity beyond projected identity/type fields",
+    "Deletion acknowledgements, processing completeness and consumer recovery"
+  ],
+  "noProductionMutations": [
+    "No deployment or service scale",
+    "No consumer-group join or offset commits by audit reader",
+    "No persistent table or registry",
+    "No data mutation or acknowledgement repair",
+    "No R2 body reads"
+  ],
+  "cleanup": {
+    "ownedContainers": 0,
+    "ownedNetworks": 0,
+    "ownedVolumes": 0,
+    "privateInputsRemoved": true,
+    "removedPrivateFiles": 10
+  }
+}

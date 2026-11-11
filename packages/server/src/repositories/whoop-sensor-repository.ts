@@ -4,25 +4,15 @@ import { dateWindowStartString, type RangeDays } from "../lib/date-window.ts";
 import { dateStringSchema, timestampStringSchema } from "../lib/typed-sql.ts";
 import { decodeWhoopSensorRecord } from "../services/whoop-sensor-decoder.ts";
 import type { ActivitySensorQueryStore } from "./activity-sensor-types.ts";
+import { healthSensorSamplesSql } from "./health-sensor-query.ts";
 
-/** Read-only R18 projection over validated frames; never materialize duplicate measurements. */
+/** dbt decodes R18 frames; replayed measurements count once per device/timestamp. */
 export function whoopSkinTemperatureSamplesCte(): string {
-  return `whoop_sensor_frames AS (
-    SELECT id, device_id, JSONExtractString(metadata, 'frameHex') AS frame_hex
-    FROM ingest.metric_stream FINAL
-    WHERE user_id = {userId:UUID} AND provider_id = 'whoop_ble'
-      AND channel = 'sensor_record' AND is_deleted = 0
-  ), whoop_r18 AS (
-    SELECT id, device_id,
-      fromUnixTimestamp64Milli(toInt64(reinterpretAsUInt32(unhex(substring(frame_hex, 31, 8)))) * 1000 +
-        toInt64(round(reinterpretAsUInt16(unhex(substring(frame_hex, 39, 4))) * 1000 / 32768))) AS measured_at,
-      reinterpretAsUInt16(unhex(substring(frame_hex, 147, 4))) / 100.0 AS scalar
-    FROM whoop_sensor_frames
-    WHERE length(frame_hex) = 248 AND substring(frame_hex, 17, 6) = '2f1280'
-  ), whoop_skin_temperature_samples AS (
-    SELECT measured_at, device_id, argMin(scalar, id) AS skin_temp_c
-    FROM whoop_r18 WHERE scalar BETWEEN 5 AND 45 AND measured_at <= now64(3) + INTERVAL 5 MINUTE
-    GROUP BY measured_at, device_id
+  return `whoop_skin_temperature_samples AS (
+    SELECT recorded_at AS measured_at, source_name AS device_id, argMin(scalar, id) AS skin_temp_c
+    FROM (${healthSensorSamplesSql("skin_temperature")})
+    WHERE recorded_at <= now64(3) + INTERVAL 5 MINUTE
+    GROUP BY recorded_at, source_name
   )`;
 }
 

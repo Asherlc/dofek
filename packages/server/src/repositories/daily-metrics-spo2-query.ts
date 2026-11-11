@@ -11,6 +11,7 @@ import {
   dailyMetricsTemperatureClickHouseCte,
   dailyMetricsTemperaturePostgresCte,
 } from "./daily-metrics-temperature-query.ts";
+import { healthSensorSamplesSql } from "./health-sensor-query.ts";
 import { whoopTemperatureDailyCte } from "./whoop-sensor-repository.ts";
 
 const sampleDailySchema = z.object({
@@ -30,16 +31,12 @@ interface DailyMetricsSourceInput {
 }
 
 function sampleDailyClickHouseCte(includeWindowStart: boolean): string {
-  // Native HealthKit and Apple Health XML retain fractions; their existing
-  // aggregateSpO2ToDailyMetrics path also converts those raw fractions to percent.
   return `spo2_current_samples AS (
-    SELECT id, recorded_at, provider_id, device_id AS source_name,
-      if(provider_id = 'apple_health', scalar * 100, scalar) AS spo2_percent
-    FROM ingest.metric_stream FINAL
-    WHERE user_id = {userId:UUID} AND channel = 'spo2'
+    SELECT id, recorded_at, provider_id, source_name, scalar AS spo2_percent
+    FROM (${healthSensorSamplesSql("spo2")})
+    WHERE true
       ${includeWindowStart ? "AND recorded_at >= toDateTime64({spo2WindowStart:String}, 6, {timezone:String})" : ""}
       AND recorded_at < toDateTime64(addDays(toDate({spo2EndDate:String}), 1), 6, {timezone:String})
-      AND is_deleted = 0 AND spo2_percent > 0 AND spo2_percent <= 100 AND isFinite(spo2_percent)
   ),
   spo2_timestamp_samples AS (
     SELECT recorded_at, provider_id, source_name, argMin(spo2_percent, id) AS scalar

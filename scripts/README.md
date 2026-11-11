@@ -115,7 +115,7 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
 
 - `integration-test-sequencer.ts`: Uses Vitest's public
   [BaseSequencer extension](https://v4.vitest.dev/config/sequence) to balance the
-  existing four integration shards from one committed measured baseline.
+  existing five integration shards from one committed measured baseline.
   Discovery and original specifications remain authoritative. New files use
   the positive-duration median; estimates and all allocations are recorded in
   `reports/integration-sharding/<index>-of-<count>/assignment.json`.
@@ -124,16 +124,16 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
   after the run ends. It requires successful complete current-run results for
   exactly the assigned files.
 - `update-integration-test-timings.ts`: Validates the reporter-owned artifacts
-  and combines exactly four coherent shard exports. It does not parse Vitest's
+  and combines exactly five coherent shard exports. It does not parse Vitest's
   internal cache files; the [public reporter API](https://vitest.dev/api/advanced/reporters)
   supplies completed modules.
   Allocation never consumes independently restored caches. Invalid refresh input
   preserves the existing baseline.
   - CI export, after tests pass:
-    `pnpm tsx scripts/update-integration-test-timings.ts export reports/integration-sharding/1-of-4`
-  - Reviewed refresh from four downloaded directories from one successful run
+    `pnpm tsx scripts/update-integration-test-timings.ts export reports/integration-sharding/1-of-5`
+  - Reviewed refresh from five downloaded directories from one successful run
     attempt:
-    `pnpm tsx scripts/update-integration-test-timings.ts merge scripts/integration-test-timings.json <shard1-directory> <shard2-directory> <shard3-directory> <shard4-directory>`
+    `pnpm tsx scripts/update-integration-test-timings.ts merge scripts/integration-test-timings.json <shard1-directory> <shard2-directory> <shard3-directory> <shard4-directory> <shard5-directory>`
   - See [duration-balanced integration shards](../docs/testing.md#duration-balanced-integration-shards)
     for freshness, provenance, timing limitations and allocation verification.
 - `run-swift-mutation.ts`: Runs the pinned MutantKit tool for changed compiled
@@ -211,29 +211,16 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
   has zero desired replicas and all actual tasks are terminal, including web in
   maintenance mode. It allows the existing worker drain contract to finish;
   see [Swarm task states](https://docs.docker.com/engine/swarm/how-swarm-mode-works/swarm-task-states/).
-- `select-web-deploy.ts`: Selects the latest successful main-push CI release
-  after the production deployment concurrency slot is acquired. Walks the fetched
-  `origin/main` first-parent history newest first, checking successful CI by
-  `head_sha` until it finds a passing commit, bounded by the triggering commit.
-  Reads the API's `workflow_runs` array; an empty array means that commit has no
-  matching successful run.
-  Requires full main history and rejects a response for another commit, branch,
-  event, or conclusion; see [`git rev-list`](https://git-scm.com/docs/git-rev-list)
-  and the [workflow-run filters](https://docs.github.com/en/rest/actions/workflow-runs#list-workflow-runs-for-a-workflow).
-  Manual requests retain their explicit image tag. Unsuccessful CI triggers cancel their own
-  deployment request and never return a successful step result. The workflow
-  supplies the standard GitHub event, output, summary, repository, and run-ID
-  environment variables; see the [workflow-run API](https://docs.github.com/en/rest/actions/workflow-runs)
-  and [GitHub default environment variables](https://docs.github.com/en/actions/reference/workflows-and-actions/variables#default-environment-variables).
-  - Usage: `pnpm tsx scripts/select-web-deploy.ts` in `Deploy Web`.
 - `testflight-deployment.ts`: Detects signed iOS native changes against the
   latest successful upload receipt, prepares a pending intent immediately before
   Xcode upload, and finalizes that same deployment after upload succeeds. Uses one GitHub deployment
   history with environment `testflight` and task `testflight-upload`, independent
   of the caller workflow's commit or job name. Empty successful history requires
-  a first build; API or malformed-history failures stop the release. A newer
-  unresolved intent blocks publication, including `--force`, and is rechecked
-  inside every uploader attempt. Failed/cancelled uploads stay unresolved because
+  a first build; API or malformed-history failures stop the release. Read-only
+  build detection skips unresolved intents to find the last successful receipt
+  without sharing the publisher lock. A newer unresolved intent still blocks
+  publication, including `--force`, and is checked inside every uploader attempt.
+  Failed/cancelled uploads stay unresolved because
   Apple may already have accepted the binary. Only a confirmed success or an
   operator's `INACTIVE` reconciliation clears that guard; mark an intent inactive
   only after verifying Apple has no upload or that the upload command never began.
@@ -256,8 +243,8 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
   using the REST response's [global node ID](https://docs.github.com/en/graphql/guides/using-global-node-ids),
   preserves `INACTIVE` reconciliation, and completes an already `SUCCESS` receipt
   without another status write. The history read and intent creation are separate
-  API operations; publisher attempts rely on the caller's `deploy-web-production`
-  and reusable `deploy-ios` [concurrency serialization](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency),
+  API operations; publisher attempts rely on reusable `deploy-ios`
+  [concurrency serialization](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency),
   rather than an atomic API lock.
   Rerun only a failed receipt job to finalize the original
   successful upload without reuploading; the workflow retains those original outputs.

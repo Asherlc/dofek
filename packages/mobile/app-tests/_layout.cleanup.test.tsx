@@ -243,8 +243,8 @@ vi.mock("../modules/background-refresh", () => ({
 }));
 
 vi.mock("../modules/whoop-ble", () => ({
-  configureUpload: vi.fn(),
-  flushUploads: vi.fn(),
+  configureUpload: vi.fn().mockResolvedValue(undefined),
+  flushUploads: vi.fn().mockResolvedValue(undefined),
   addCaptureErrorListener: vi.fn(),
   retryConnection: vi.fn(),
   getDataPathStats: vi.fn(),

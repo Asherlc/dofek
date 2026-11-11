@@ -1,3 +1,4 @@
+import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
 import type { ClimbingLogEntryDetail } from "../contracts/climbing-log-contracts.ts";
 import { serializeClimbingLogEntryDetailResponse } from "../contracts/climbing-log-contracts.ts";
@@ -67,6 +68,91 @@ function kayaHistory() {
 }
 
 describe("ClimbingActivityLogEntryRepository", () => {
+  describe("getActivityLogSessions", () => {
+    const activityId = "20000000-0000-4000-8000-000000000020";
+    const otherActivityId = "20000000-0000-4000-8000-000000000021";
+    const firstSessionId = "30000000-0000-4000-8000-000000000001";
+    const secondSessionId = "30000000-0000-4000-8000-000000000002";
+    const rows = [
+      {
+        activityId,
+        id: firstSessionId,
+        providerId: "kilter",
+        memberActivityIds: ["40000000-0000-4000-8000-000000000001"],
+        firstLoggedAt: "2026-11-09T18:00:00.000Z",
+        lastLoggedAt: "2026-11-09T18:04:00.000Z",
+      },
+      {
+        activityId,
+        id: secondSessionId,
+        providerId: "kilter",
+        memberActivityIds: ["40000000-0000-4000-8000-000000000002"],
+        firstLoggedAt: "2026-11-09T18:20:00.000Z",
+        lastLoggedAt: "2026-11-09T18:25:00.000Z",
+      },
+      {
+        activityId: otherActivityId,
+        id: "30000000-0000-4000-8000-000000000003",
+        providerId: "kilter",
+        memberActivityIds: ["40000000-0000-4000-8000-000000000003"],
+        firstLoggedAt: "2026-11-10T18:00:00.000Z",
+        lastLoggedAt: "2026-11-10T18:01:00.000Z",
+      },
+    ];
+
+    it("groups multiple source sessions under their canonical activities", async () => {
+      const execute = vi.fn().mockResolvedValue(rows);
+      const repo = new ClimbingActivityLogEntryRepository(
+        { execute },
+        "20000000-0000-4000-8000-000000000002",
+        "UTC",
+      );
+
+      const sessions = await repo.getActivityLogSessions([activityId, otherActivityId]);
+
+      expect(sessions.get(activityId)).toEqual([
+        expect.objectContaining({ id: firstSessionId, providerId: "kilter" }),
+        expect.objectContaining({ id: secondSessionId, providerId: "kilter" }),
+      ]);
+      expect(sessions.get(otherActivityId)).toEqual([
+        expect.objectContaining({ id: "30000000-0000-4000-8000-000000000003" }),
+      ]);
+      const query = new PgDialect().sqlToQuery(execute.mock.calls[0]?.[0]);
+      expect(query.params).toEqual(
+        expect.arrayContaining([
+          "20000000-0000-4000-8000-000000000002",
+          activityId,
+          otherActivityId,
+        ]),
+      );
+    });
+
+    it("returns an empty map without querying for an empty activity selection", async () => {
+      const execute = vi.fn();
+      const repo = new ClimbingActivityLogEntryRepository(
+        { execute },
+        "20000000-0000-4000-8000-000000000002",
+        "UTC",
+      );
+
+      await expect(repo.getActivityLogSessions([])).resolves.toEqual(new Map());
+      expect(execute).not.toHaveBeenCalled();
+    });
+
+    it("validates rows returned from the database boundary", async () => {
+      const execute = vi
+        .fn()
+        .mockResolvedValue([{ ...rows[0], activityId: "invalid-activity-id" }]);
+      const repo = new ClimbingActivityLogEntryRepository(
+        { execute },
+        "20000000-0000-4000-8000-000000000002",
+        "UTC",
+      );
+
+      await expect(repo.getActivityLogSessions([activityId])).rejects.toThrow();
+    });
+  });
+
   it("combines a count-free Kaya send with known failed attempts and preserves identities", async () => {
     const { send, failed } = kayaHistory();
     const logs = await repository([send, failed]).getActivityLogEntries("activity");
@@ -315,6 +401,23 @@ describe("ClimbingActivityLogEntryRepository", () => {
         recordedClimbAttemptCount: null,
         attempts: [],
       });
+    },
+  );
+  it.each([
+    ["30000000-0000-4000-8000-000000000001", "30000000-0000-4000-8000-000000000002", 2],
+    ["30000000-0000-4000-8000-000000000001", null, 2],
+    [null, "30000000-0000-4000-8000-000000000001", 2],
+    ["30000000-0000-4000-8000-000000000001", "30000000-0000-4000-8000-000000000001", 1],
+    [null, null, 1],
+  ])(
+    "respects explicit area membership when consolidating (%s, %s)",
+    async (first, second, count) => {
+      const api = named("kaya");
+      api.areaGroupId = first;
+      const exported = named("kaya-export", "20000000-0000-4000-8000-000000000011");
+      exported.areaGroupId = second;
+      const logs = await repository([api, exported]).getActivityLogEntries("activity");
+      expect(logs).toHaveLength(count);
     },
   );
   it("retains distinct recorded times from consolidated sources", async () => {
