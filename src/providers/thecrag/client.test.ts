@@ -99,6 +99,89 @@ describe("theCrag official logbook client", () => {
     },
   );
 
+  it.each([400, 403])(
+    "identifies the confirmed logbook access denial for HTTP %s",
+    async (status) => {
+      const response = Response.json(
+        {
+          apiKey: "private-key",
+          args: { notes: "private notes" },
+          error:
+            "You have insufficient access for the api endpoint '/api/logbook/ascents', minimum level logbook",
+          errorLabel: "access denied",
+          method: "GET",
+          remote_ip: "192.0.2.1",
+        },
+        { status },
+      );
+      let failure: unknown;
+      try {
+        await new TheCragClient(
+          vi.fn<typeof fetch>().mockResolvedValue(response),
+          "private-key",
+        ).fetchPage(1);
+      } catch (error) {
+        failure = error;
+      }
+      expect(failure).toBeInstanceOf(ProviderAuthError);
+      expect(failure).toHaveProperty("authFailureReason", "authorization_failed");
+      expect(failure).toHaveProperty(
+        "message",
+        expect.stringContaining("requires logbook access for this key"),
+      );
+      expect(failure).toHaveProperty("message", expect.stringContaining(String(status)));
+      expect(failure).toHaveProperty("message", expect.stringContaining("Settings > API Keys"));
+      expect(inspect(failure)).not.toMatch(/private-key|private notes|192\.0\.2\.1/);
+      expect(captureException).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    { error: "private-key private notes" },
+    { error: 42 },
+    { args: { error: "minimum level logbook" } },
+  ])("keeps unrecognized JSON access denials generic and private", async (body) => {
+    const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(Response.json(body, { status: 400 }));
+    await expect(new TheCragClient(fetchFn, "private-key").fetchPage(1)).rejects.toThrow(
+      "theCrag denied logbook access (400). Check your API key, active supporter status and weekly usage budget in theCrag Settings > API Keys.",
+    );
+    expect(captureException).not.toHaveBeenCalled();
+  });
+
+  it("sanitizes malformed access-error JSON while preserving its authorization failure", async () => {
+    const response = new Response('{"private-key private notes', {
+      status: 403,
+      headers: { "Content-Type": "application/json" },
+    });
+    const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(response);
+    await expect(new TheCragClient(fetchFn, "private-key").fetchPage(1)).rejects.toMatchObject({
+      authFailureReason: "authorization_failed",
+      message: expect.stringContaining("theCrag denied logbook access (403)"),
+    });
+    expect(captureException).toHaveBeenCalledWith(expect.any(Error), {
+      tags: { provider: "thecrag", phase: "logbook_response" },
+    });
+    expect(inspect(captureException.mock.calls, { depth: null })).not.toMatch(
+      /private-key|private notes/,
+    );
+  });
+
+  it("preserves cancellation while decoding an access denial", async () => {
+    const controller = new AbortController();
+    const reason = new Error("sync cancelled");
+    const response = Response.json({}, { status: 400 });
+    vi.spyOn(response, "json").mockImplementation(async () => {
+      controller.abort(reason);
+      throw reason;
+    });
+    await expect(
+      new TheCragClient(vi.fn<typeof fetch>().mockResolvedValue(response), "key").fetchPage(1, {
+        signal: controller.signal,
+      }),
+    ).rejects.toBe(reason);
+    expect(captureException).not.toHaveBeenCalled();
+  });
+
   it.each([
     { data: { account: { id: "123" }, ascents: [], numberAscents: -1, page: 1, perPage: 250 } },
     logbookPage([], { page: "0" }),
