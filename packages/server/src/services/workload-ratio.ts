@@ -23,7 +23,6 @@ export function buildWorkloadRatioResult(timeSeries: WorkloadRatioRow[]): Worklo
   return {
     context: { ...workloadRatioContext },
     timeSeries,
-    displayedStrain: displayed?.strain ?? 0,
     displayedDate: displayed?.date ?? null,
   };
 }

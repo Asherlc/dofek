@@ -39,6 +39,7 @@ export class TestMap {
     this.zoom = 5;
   });
   resize = vi.fn();
+  easeTo = vi.fn();
   remove = vi.fn(() => this.container.replaceChildren());
   addControl = vi.fn();
   getZoom = () => this.zoom;

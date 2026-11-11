@@ -270,6 +270,10 @@ vi.mock("react-native", () => {
         ...props,
         "aria-label": accessibilityLabel,
         "data-testid": testID,
+        "data-source-uri":
+          typeof props.source === "object" && props.source !== null && "uri" in props.source
+            ? props.source.uri
+            : undefined,
         onError,
         style: flattenStyle(style),
       },
@@ -448,10 +452,10 @@ vi.mock("react-native-svg", () => {
   const React = require("react");
 
   function svgComponent(name: string) {
-    const component = ({ children, onPress, ...props }: Record<string, unknown>) =>
+    const component = ({ children, onPress, accessible, ...props }: Record<string, unknown>) =>
       React.createElement(
         name,
-        { ...props, onClick: onPress },
+        { ...props, "data-accessible": accessible, onClick: onPress },
         ...(children != null ? [children] : []),
       );
     component.displayName = name;
@@ -615,6 +619,14 @@ vi.mock("./modules/health-kit", async () => {
     queryDailyStatistics: vi.fn(() => Promise.resolve([])),
     queryCategorySamples: vi.fn(() => Promise.resolve([])),
     queryQuantitySamples: vi.fn(() => Promise.resolve([])),
+    queryRunningStepSamples: vi.fn().mockResolvedValue({ workouts: [], samples: [] }),
+    queryRunningStepChanges: vi.fn().mockResolvedValue({
+      hasMore: false,
+      workouts: [],
+      samples: [],
+      deletedUUIDs: [],
+      queryId: null,
+    }),
     queryWorkouts: vi.fn(() => Promise.resolve([])),
     queryWorkoutRoutes: vi.fn(() => Promise.resolve([])),
     querySleepSamples: vi.fn(() => Promise.resolve([])),
@@ -679,11 +691,11 @@ vi.mock("expo-updates", () => ({
 
 // ── WHOOP BLE native module mock ───────────────────────────────────
 vi.mock("./modules/whoop-ble", () => ({
-  configureUpload: vi.fn(),
+  configureUpload: vi.fn().mockResolvedValue(undefined),
   addCaptureErrorListener: vi.fn(() => ({ remove: vi.fn() })),
-  flushUploads: vi.fn(),
-  disableUploads: vi.fn(),
-  getDataPathStats: vi.fn(() => makeWhoopCaptureStats()),
+  flushUploads: vi.fn().mockResolvedValue(undefined),
+  disableUploads: vi.fn().mockResolvedValue(undefined),
+  getDataPathStats: vi.fn().mockImplementation(async () => makeWhoopCaptureStats()),
   isBluetoothAvailable: vi.fn(() => false),
   findWhoop: vi.fn(() => Promise.resolve(null)),
   connect: vi.fn(() => Promise.resolve(false)),

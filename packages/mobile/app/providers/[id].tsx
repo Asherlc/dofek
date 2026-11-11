@@ -35,6 +35,7 @@ import {
   useProviderDetailActions,
 } from "../../components/providers/use-provider-detail-actions";
 import { getQueryErrorMessage, QueryStatePanel } from "../../components/QueryStatePanel";
+import { WhoopSensorPanel } from "../../components/WhoopSensorDetails";
 import { useAuth } from "../../lib/auth-context";
 import { trpc } from "../../lib/trpc";
 import { useProcessingStatus } from "../../lib/useProcessingStatus";
@@ -634,6 +635,7 @@ function ProviderDetailContent({
         trpcUtils.sync.providers.invalidate(),
         trpcUtils.sync.providerStats.invalidate(),
         trpcUtils.processing.status.invalidate(),
+        ...(providerId === "whoop_ble" ? [trpcUtils.whoopBleSync.sensorSnapshot.invalidate()] : []),
       ]).then(() => undefined),
   });
 
@@ -781,6 +783,7 @@ function ProviderDetailContent({
 
       {/* Provider-specific extras */}
       <ProviderDetailExtras providerId={providerId} />
+      {providerId === "whoop_ble" && <WhoopSensorPanel />}
 
       {/* Stats overview */}
       {providerStats && <ProviderStatsBreakdown stats={providerStats} variant="full" />}

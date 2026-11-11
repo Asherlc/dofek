@@ -18,6 +18,12 @@ describe("isExpectedUserInputError", () => {
 });
 
 describe("isExpectedImportInputError", () => {
+  it("recognizes a rejected climbing export by its shared validation error name", () => {
+    const error = new Error("Crimpd ZIP must contain sets.csv. Export the original logbook again.");
+    error.name = "ClimbingImportValidationError";
+    expect(isExpectedImportInputError(error)).toBe(true);
+    expect(userFacingErrorMessage(error)).toBe(error.message);
+  });
   it.each([
     "Strong CSV has no Weight Unit declaration; choose kg or lbs before importing",
     "Strong CSV import completed with errors after importing 5 workouts",

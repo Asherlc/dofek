@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { gpsCoordinatesSchema } from "@dofek/climbing-catalogue/geometry";
 import { climbingAttemptSchema, gradeComponentSchema } from "@dofek/training/climbing-log";
-import { gpsCoordinatesSchema } from "@dofek/training/gps-coordinates";
 import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { captureException } from "../lib/error-reporting.ts";
@@ -316,17 +316,14 @@ async function persistTarget(
     let id = existing[0]?.id;
     if (!id) {
       id = randomUUID();
-      await db.insert(area).values({
-        id,
-        userId: row.user_id,
-        providerId: row.provider_id,
-        externalId: node.externalId,
-        name: node.name,
-        parentAreaId: parentId,
-        coordinates: node.coordinates
-          ? { x: node.coordinates.longitude, y: node.coordinates.latitude }
-          : null,
-      });
+      // Conversion runs at migration 0146, before later Area columns exist.
+      await db.execute(sql`
+        INSERT INTO fitness.area
+          (id, user_id, provider_id, external_id, name, parent_area_id, coordinates)
+        VALUES (${id}::uuid, ${row.user_id}::uuid, ${row.provider_id},
+          ${node.externalId ?? null}, ${node.name ?? null}, ${parentId}::uuid,
+          ${node.coordinates ? sql`point(${node.coordinates.longitude}, ${node.coordinates.latitude})` : null})
+      `);
     }
     parentId = id;
   }

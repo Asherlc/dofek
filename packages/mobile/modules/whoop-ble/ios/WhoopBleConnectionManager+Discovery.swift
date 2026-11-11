@@ -1,6 +1,10 @@
 import CoreBluetooth
 
 extension WhoopBleConnectionManager {
+    func peripheralConnection(_ peripheral: CBPeripheral) -> any WhoopBlePeripheralConnection {
+        WhoopBleCoreBluetoothPeripheral(peripheral, central: ensureCentralManager())
+    }
+
     @discardableResult
     func ensureCentralManager() -> CBCentralManager {
         if let existing = centralManager {

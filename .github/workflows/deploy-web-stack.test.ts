@@ -1,11 +1,67 @@
+import { MOCK_DOCKER, runKafkaBackendFixture, runTopicPolicyFixture } from "./deploy-web-stack-test-helpers.ts";
 import { deployTestDigest, deployTestOldImage, deployTestRepository, runDeployImageFixture } from "../../scripts/deploy-image-test-helpers.ts";
 import { spawnSync } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { parse } from "yaml";
+import { z } from "zod";
 
 const workflowText = readFileSync(".github/workflows/deploy-web-stack.yml", "utf8");
+const otaImage = `${deployTestRepository}-ota@${deployTestDigest}`;
+
+describe("consumed Kafka tiered backend", () => {
+  it.each(["", "bucket", "prefix", "credential", "worker"])("checks actual broker and worker scope: %s", (drift) => {
+    const result = runKafkaBackendFixture(workflowRunScript("Verify Kafka tiered backend before migrations"), drift);
+    expect(result.status === 0, result.stderr).toBe(drift === "");
+    expect(result.stdout + result.stderr).not.toContain("fixture-secret");
+    if (!drift) expect(result.stdout).toContain("Kafka broker and worker tiered backend match");
+  });
+});
+
+describe("deploy-owned Kafka topic policy", () => {
+  function policyScript() {
+    return ["Converge Kafka metric-stream topic policy", "Verify Kafka metric-stream topic policy", "Verify Kafka topic policy after consumer startup"]
+      .map(workflowRunScript).join("\n");
+  }
+
+  it("incrementally configures each actual route with its role policy before readback", () => {
+    const result = runTopicPolicyFixture(policyScript());
+    expect(result.status, result.stderr).toBe(0);
+    const updates = result.calls.filter((call) => call.includes("--alter"));
+    expect(updates.map((call) => [call[call.indexOf("--entity-name") + 1], call[call.indexOf("--add-config") + 1]])).toEqual([
+      ["source", "cleanup.policy=delete,retention.ms=604800000,retention.bytes=4294967296,segment.bytes=134217728,remote.storage.enable=true"],
+      ["source.quarantine.v1", "cleanup.policy=delete,retention.ms=604800000,retention.bytes=1073741824,segment.bytes=134217728,remote.storage.enable=true"],
+      ["live", "cleanup.policy=delete,retention.ms=604800000,retention.bytes=4294967296,segment.bytes=134217728,remote.storage.enable=true"],
+      ["live.quarantine.v1", "cleanup.policy=delete,retention.ms=604800000,retention.bytes=1073741824,segment.bytes=134217728,remote.storage.enable=true"],
+      ["history", "cleanup.policy=delete,retention.ms=604800000,retention.bytes=4294967296,segment.bytes=134217728,remote.storage.enable=true"],
+      ["history.quarantine.v1", "cleanup.policy=delete,retention.ms=604800000,retention.bytes=1073741824,segment.bytes=134217728,remote.storage.enable=true"],
+    ]);
+    for (const update of updates) {
+      expect(update).toContain("/opt/kafka/bin/kafka-configs.sh");
+      expect(update).toContain("fixture_default");
+      expect(update).toContain("--rm");
+    }
+    const verifiers = result.calls.filter((call) => call.includes("node"));
+    expect(verifiers).toHaveLength(2);
+    expect(verifiers[0]).toContain("ghcr.io/asherlc/dofek@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+    expect(result.stdout).toContain("RESTORE-CONSUMERS");
+  });
+
+  it("rejects aliased routes before any topic update", () => {
+    const result = runTopicPolicyFixture(policyScript(), "", ["source", "source", "history"]);
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("topic routes must be distinct");
+    expect(result.calls).toEqual([]);
+  });
+
+  it.each([["alter", 64], ["verify", 65]] as const)("stops before consumer restoration on %s failure", (failure, status) => {
+    const result = runTopicPolicyFixture(policyScript(), failure);
+    expect(result.status).toBe(status);
+    expect(result.stdout).not.toContain("RESTORE-CONSUMERS");
+  });
+});
 
 interface ServiceObservation {
   readonly desiredReplicas?: string;
@@ -23,6 +79,7 @@ interface ConsumerScenarios {
 
 interface DeployConsumerOptions {
   readonly failTaskInspection?: boolean;
+  readonly failOtaImageVerification?: boolean;
   readonly sleepSeconds?: number;
   readonly webConvergenceFailed?: boolean;
 }
@@ -33,113 +90,27 @@ interface DeployQuiescedOptions extends DeployConsumerOptions {
   readonly stackDeployStatus?: number;
 }
 
-const MOCK_DOCKER = `#!/usr/bin/env bash
-set -euo pipefail
-
-read_observation() {
-  local observed_service_name="$1"
-  local candidate_observation
-  local last_observation=""
-  local line_number=0
-  local target_line
-
-  scenario_file="$SCENARIO_DIR/$observed_service_name"
-  state_file="$STATE_DIR/$observed_service_name"
-  observation_index=0
-  observation=""
-
-  if [ -f "$state_file" ]; then
-    observation_index="$(<"$state_file")"
-  fi
-  target_line=$((observation_index + 1))
-  while IFS= read -r candidate_observation; do
-    line_number=$((line_number + 1))
-    last_observation="$candidate_observation"
-    if [ "$line_number" -eq "$target_line" ]; then
-      observation="$candidate_observation"
-      break
-    fi
-  done < "$scenario_file"
-  if [ -z "$observation" ]; then
-    observation="$last_observation"
-  fi
-  IFS='|' read -r update_state replicas task_id image desired_replicas <<< "$observation"
-}
-
-if [ "$1" = "stack" ] && [ "$2" = "deploy" ]; then
-  printf '%s\\n' "$@" > "$STACK_DEPLOY_CAPTURE"
-  exit "\${STACK_DEPLOY_STATUS:-0}"
-fi
-
-if [ "$1" = "stack" ] && [ "$2" = "config" ]; then
-  exit 0
-fi
-
-if [ "$1" = "service" ] && [ "$2" = "inspect" ]; then
-  service_name="$3"
-  format="$5"
-  read_observation "$service_name"
-  case "$format" in
-    *UpdateStatus*) printf '%s\\n' "$update_state" ;;
-    *ContainerSpec.Image*) printf '%s\\n' "$image" ;;
-    *Mode.Replicated.Replicas*) printf '%s\\n' "$desired_replicas" ;;
-    *) exit 1 ;;
-  esac
-  exit 0
-fi
-
-if [ "$1" = "service" ] && [ "$2" = "ls" ]; then
-  for argument in "$@"; do
-    case "$argument" in
-      name=*) service_name="\${argument#name=}" ;;
-    esac
-  done
-  read_observation "$service_name"
-  printf '%s\\n' "$replicas"
-  if [ "\${ADVANCE_ON_SERVICE_LS:-0}" = "1" ]; then
-    printf '%s\\n' "$((observation_index + 1))" > "$state_file"
-  fi
-  exit 0
-fi
-
-if [ "$1" = "service" ] && [ "$2" = "ps" ]; then
-  service_name="$3"
-  case " $* " in
-    *" --format "*)
-      if [ "$FAIL_TASK_INSPECTION" = "1" ]; then
-        printf '%s\\n' "mock task inspection failed" >&2
-        exit 64
-      fi
-      read_observation "$service_name"
-      printf '%s\\n' "$task_id"
-      printf '%s\\n' "$((observation_index + 1))" > "$state_file"
-      ;;
-    *) printf '%s\\n' "diagnostic task output for $service_name" ;;
-  esac
-  exit 0
-fi
-
-exit 1
-`;
 
 function deployConsumersRunScript(): string {
-  return workflowRunScript("Deploy ClickHouse consumer services");
+  const workflow = z.object({
+    jobs: z.object({
+      "web-stack": z.object({
+        steps: z.array(z.object({ id: z.string().optional(), run: z.string().optional() })),
+      }),
+    }),
+  }).parse(parse(workflowText));
+  const script = workflow.jobs["web-stack"].steps.find((step) => step.id === "deploy_stack_full")?.run;
+  if (!script) throw new Error("Could not find deploy_stack_full run script");
+  return script;
 }
 
 function workflowRunScript(name: string): string {
-  const stepStart = workflowText.indexOf(`      - name: ${name}`);
-  const runStart = workflowText.indexOf("        run: |\n", stepStart);
-  const stepEnd = workflowText.indexOf("\n      - ", runStart);
-
-  if (stepStart === -1 || runStart === -1 || stepEnd === -1) {
-    throw new Error(`Could not find the workflow step: ${name}`);
-  }
-
-  return workflowText
-    .slice(runStart + "        run: |\n".length, stepEnd)
-    .split("\n")
-    .map((line) => line.slice(10))
-    .join("\n");
+  const workflow = z.object({ jobs: z.object({ "web-stack": z.object({
+    steps: z.array(z.object({ name: z.string().optional(), run: z.string().optional() })),
+  }) }) }).parse(parse(workflowText));
+  const script = workflow.jobs["web-stack"].steps.find((step) => step.name === name)?.run;
+  if (!script) throw new Error(`Could not find the workflow step: ${name}`);
+  return script;
 }
 
 function deployQuiescedRunScript(): string {
@@ -179,6 +150,7 @@ function runDeployConsumers(scenarios: ConsumerScenarios, options: DeployConsume
   const dockerPath = join(temporaryDirectory, "docker");
   const nodePath = join(temporaryDirectory, "node");
   const stackDeployCapturePath = join(temporaryDirectory, "stack-deploy-args");
+  const imageVerificationCapturePath = join(temporaryDirectory, "image-verification-args");
 
   try {
     mkdirSync(scenarioDirectory);
@@ -191,7 +163,26 @@ function runDeployConsumers(scenarios: ConsumerScenarios, options: DeployConsume
     chmodSync(dockerPath, 0o755);
     chmodSync(nodePath, 0o755);
     const pnpmPath = join(temporaryDirectory, "pnpm");
-    writeFileSync(pnpmPath, "#!/usr/bin/env bash\n[ \"$1\" = tsx ] && [ \"$2\" = scripts/verify-deploy-image.ts ]\n");
+    writeFileSync(imageVerificationCapturePath, "");
+    writeFileSync(pnpmPath, `#!/usr/bin/env bash
+set -euo pipefail
+[ "$1" = tsx ]
+case "$2" in
+  scripts/stack-service-image.ts) printf '%s\\n' "$MOCK_OTA_IMAGE" ;;
+  scripts/verify-deploy-image.ts)
+    printf '%s\\n' "$*" >> "$IMAGE_VERIFICATION_CAPTURE"
+    if [ "$4" = dofek_ota ] && [ "$FAIL_OTA_IMAGE_VERIFICATION" = 1 ]; then
+      printf '%s\\n' "OTA running image mismatch" >&2
+      exit 1
+    fi
+    ;;
+  *) exit 1 ;;
+esac
+`);
+    writeFileSync(
+      join(scenarioDirectory, "dofek_ota"),
+      serializeScenario([{ ...STABLE_OBSERVATION, image: otaImage }]),
+    );
     chmodSync(pnpmPath, 0o755);
     writeFileSync(
       join(scenarioDirectory, "dofek_analytics-worker"),
@@ -206,6 +197,7 @@ function runDeployConsumers(scenarios: ConsumerScenarios, options: DeployConsume
       serializeScenario(scenarios.processingReconciliation ?? [STABLE_OBSERVATION]),
     );
     for (const serviceName of [
+      "dofek_kafka",
       "dofek_metric-stream-live-clickhouse-sink",
       "dofek_metric-stream-history-clickhouse-sink",
       "dofek_metric-stream-r2-archive",
@@ -239,6 +231,9 @@ ${deployConsumersRunScript()}`,
           ...process.env,
           PATH: `${temporaryDirectory}:${process.env.PATH ?? ""}`,
           FAIL_TASK_INSPECTION: options.failTaskInspection ? "1" : "0",
+          FAIL_OTA_IMAGE_VERIFICATION: options.failOtaImageVerification ? "1" : "0",
+          MOCK_OTA_IMAGE: otaImage,
+          IMAGE_VERIFICATION_CAPTURE: imageVerificationCapturePath,
           APP_IMAGE: deployTestRepository + "@" + deployTestDigest,
           MOCK_SLEEP_SECONDS: (options.sleepSeconds ?? 10).toString(),
           STACK_DEPLOY_CAPTURE: stackDeployCapturePath,
@@ -255,6 +250,7 @@ ${deployConsumersRunScript()}`,
     return {
       ...result,
       stackDeployArgs: readFileSync(stackDeployCapturePath, "utf8"),
+      imageVerificationArgs: readFileSync(imageVerificationCapturePath, "utf8"),
     };
   } finally {
     rmSync(temporaryDirectory, { force: true, recursive: true });
@@ -286,6 +282,7 @@ function runDeployQuiesced(
     writeFileSync(pnpmPath, "#!/usr/bin/env bash\n[ \"$1\" = tsx ] && [ \"$2\" = scripts/verify-deploy-image.ts ]\n");
     chmodSync(pnpmPath, 0o755);
     const defaultServiceNames = [
+      "dofek_kafka",
       "dofek_web",
       "dofek_worker",
       "dofek_cdc-health",
@@ -364,7 +361,7 @@ describe("deploy-web-stack workflow contract", () => {
       "Configure ClickHouse CDC",
       "Finalize PeerDB CDC contract",
       "Verify PeerDB CDC causal markers",
-      "Deploy ClickHouse consumer services",
+      "Deploy and verify remaining services",
     ];
     const positions = orderedSteps.map((name) => workflowText.indexOf(`      - name: ${name}`));
 
@@ -384,7 +381,7 @@ describe("deploy-web-stack workflow contract", () => {
       "Configure ClickHouse CDC",
       "Finalize PeerDB CDC contract",
       "Verify PeerDB CDC causal markers",
-      "Deploy ClickHouse consumer services",
+      "Deploy and verify remaining services",
       "Fail deployment after restoring processing services when web rolled back",
     ];
     const positions = orderedSteps.map((name) =>
@@ -417,7 +414,7 @@ describe("deploy-web-stack workflow contract", () => {
   it.each([
     ["Apply dependency stack before migrations", "web-pre-migration.env", deployTestOldImage],
     ["Deploy stack without ClickHouse consumers", "web.env", deployTestRepository + "@" + deployTestDigest],
-    ["Deploy ClickHouse consumer services", "web.env", deployTestRepository + "@" + deployTestDigest],
+    ["Deploy and verify remaining services", "web.env", deployTestRepository + "@" + deployTestDigest],
   ])("selects the correct web environment in %s", (step, expectedFile, expectedImage) => {
     const result = spawnSync(
       "bash",
@@ -648,6 +645,18 @@ ${workflowRunScript(step)}
     expect(result.githubOutput).not.toContain("web_convergence_failed=true");
   });
 
+  it("keeps a paused Kafka update fatal before continuing the release", () => {
+    const result = runDeployQuiesced([STABLE_OBSERVATION], {
+      serviceObservations: {
+        dofek_kafka: [{ ...STABLE_OBSERVATION, updateState: "paused" }],
+      },
+    });
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain("dofek_kafka update is paused");
+    expect(result.githubOutput).not.toContain("web_convergence_failed=true");
+  });
+
   it("quiesces the migration-running worker before the dependency stack apply", () => {
     const stepStart = workflowText.indexOf(
       "      - name: Apply dependency stack before migrations",
@@ -683,7 +692,7 @@ ${workflowRunScript(step)}
 
   it("keeps ClickHouse consumers quiesced when CDC configuration fails", () => {
     expect(workflowText).toContain(
-      `      - name: Deploy ClickHouse consumer services
+      `      - name: Deploy and verify remaining services
         id: deploy_stack_full
         if: success() && steps.deploy_stack_quiesced.conclusion == 'success' && steps.configure_clickhouse_cdc.conclusion == 'success'`,
     );
@@ -703,6 +712,26 @@ ${workflowRunScript(step)}
       'if [ "${{ steps.deploy_stack_quiesced.outputs.web_convergence_failed }}" = "true" ]; then',
     );
     expect(workflowText).toContain("its prior Swarm configuration remains in place");
+  });
+
+  it("verifies the canonical OTA image before declaring rollout complete", () => {
+    const result = runDeployConsumers({
+      analyticsWorker: [STABLE_OBSERVATION],
+      metricStreamClickhouseSink: [STABLE_OBSERVATION],
+    });
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.imageVerificationArgs).toContain(`scripts/verify-deploy-image.ts ${otaImage} dofek_ota`);
+    expect(result.stdout).toContain("dofek_ota task stable-task has remained converged for 60s");
+  });
+
+  it("fails rollout when the OTA running-image verifier rejects a converged task", () => {
+    const result = runDeployConsumers(
+      { analyticsWorker: [STABLE_OBSERVATION], metricStreamClickhouseSink: [STABLE_OBSERVATION] },
+      { failOtaImageVerification: true },
+    );
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("OTA running image mismatch");
+    expect(result.stdout).not.toContain("dofek_ota task stable-task has remained converged");
   });
 
   it("requires the same running task to remain converged for 60 seconds", () => {
@@ -758,10 +787,10 @@ ${workflowRunScript(step)}
 
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain(
-      "[10s] dofek_analytics-worker task changed from replaced-task to replacement-task; resetting stability window",
+      "[130s] dofek_analytics-worker task changed from replaced-task to replacement-task; resetting stability window",
     );
     expect(result.stdout).toContain(
-      "[70s] dofek_analytics-worker task replacement-task has remained converged for 60s",
+      "[190s] dofek_analytics-worker task replacement-task has remained converged for 60s",
     );
   });
 
@@ -777,10 +806,10 @@ ${workflowRunScript(step)}
 
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain(
-      "[10s] dofek_analytics-worker lost convergence; resetting stability window for task stable-task",
+      "[130s] dofek_analytics-worker lost convergence; resetting stability window for task stable-task",
     );
     expect(result.stdout).toContain(
-      "[80s] dofek_analytics-worker task stable-task has remained converged for 60s",
+      "[200s] dofek_analytics-worker task stable-task has remained converged for 60s",
     );
   });
 
@@ -807,7 +836,7 @@ ${workflowRunScript(step)}
         analyticsWorker: [{ replicas: "0/1", taskId: "starting-task", updateState: "updating" }],
         metricStreamClickhouseSink: [STABLE_OBSERVATION],
       },
-      { sleepSeconds: 1200 },
+      { sleepSeconds: 60 },
     );
 
     expect(result.status).toBe(124);

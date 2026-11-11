@@ -141,7 +141,7 @@ describe("activity payload dbt batch reconciliation", () => {
         artifactDirectory,
         "run",
         "dofek_analytics",
-        "models",
+        "models-0",
         "read_models",
         "activity_sensor_sample",
         "activity_sensor_sample_2026-09-06.sql",
@@ -415,6 +415,20 @@ describe("activity payload dbt batch reconciliation", () => {
       "2026-09-08",
     );
 
+    const compiledSql = await readFile(
+      join(
+        artifactDirectory,
+        "run",
+        "dofek_analytics",
+        "models-0",
+        "read_models",
+        "activity_location_sample.sql",
+      ),
+      "utf8",
+    );
+    expect(compiledSql).toContain("affected_groups AS MATERIALIZED");
+    expect(compiledSql).not.toContain("where ingested_at >= '2026-09-06 00:00:00'");
+
     const movedPointResult = await client.query({
       query: `SELECT toString(activity_id) AS activity_id,
           toString(source_metric_stream_id) AS source_metric_stream_id,
@@ -598,20 +612,6 @@ describe("activity payload dbt batch reconciliation", () => {
     expect(
       await activityPayloadTest.getLocationStreamVersion(client, database, unrelatedRouteGroupId),
     ).toBe(unchangedStreamVersion);
-
-    const compiledSql = await readFile(
-      join(
-        artifactDirectory,
-        "run",
-        "dofek_analytics",
-        "models",
-        "read_models",
-        "activity_location_sample.sql",
-      ),
-      "utf8",
-    );
-    expect(compiledSql).toContain("affected_groups AS MATERIALIZED");
-    expect(compiledSql).not.toContain("where ingested_at >= '2026-09-06 00:00:00'");
   }, 240_000);
 
   it("bounds incremental location reconciliation to affected member histories", async () => {

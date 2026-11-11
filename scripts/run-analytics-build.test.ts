@@ -1,5 +1,6 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { withAnalyticsQueryOwner } from "../src/analytics/analytics-query-owner.ts";
 import { createClickHouseClientFromEnv } from "../src/db/clickhouse.ts";
 import { createDatabaseFromEnv } from "../src/db/index.ts";
 import { AnalyticsBuildError } from "./analytics-build-error.ts";
@@ -18,6 +19,10 @@ vi.mock("../src/db/clickhouse.ts", () => ({
 }));
 vi.mock("../src/db/index.ts", () => ({
   createDatabaseFromEnv: vi.fn(),
+}));
+vi.mock("../src/analytics/analytics-query-owner.ts", () => ({
+  ANALYTICS_PUBLICATION_RESOURCE: "metric-stream-source",
+  withAnalyticsQueryOwner: vi.fn(),
 }));
 
 const TEST_MICROBATCH_BOUNDS = {
@@ -69,12 +74,306 @@ beforeEach(() => {
 });
 
 describe("runAnalyticsBuild", () => {
+  it("acquires publication before reading pending work or source bounds", async () => {
+    const admission = new Error("Publication admission held");
+    const end = vi.fn(async () => undefined),
+      close = vi.fn(async () => undefined);
+    const execute = vi.fn(async () => []),
+      query = vi.fn(async () => ({ json: async () => [] }));
+    vi.mocked(mkdtemp).mockResolvedValue("/tmp/dofek-dbt-test");
+    vi.mocked(rm).mockResolvedValue(undefined);
+    vi.mocked(createDatabaseFromEnv).mockReturnValue({ $client: { end }, execute });
+    vi.mocked(createClickHouseClientFromEnv).mockReturnValue({ query, close });
+    vi.mocked(withAnalyticsQueryOwner).mockRejectedValue(admission);
+    await expect(runAnalyticsBuildFromEnvironment()).rejects.toBe(admission);
+    expect(withAnalyticsQueryOwner).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      { resourceId: "metric-stream-source", intentId: "analytics-build" },
+      expect.any(Function),
+    );
+    expect(execute).not.toHaveBeenCalled();
+    expect(query).not.toHaveBeenCalled();
+    expect(end).toHaveBeenCalledOnce();
+    expect(close).toHaveBeenCalledOnce();
+  });
+  it("builds threshold-dependent models after projection and records both phases together", async () => {
+    const order: string[] = [];
+    let phase = 0;
+    const selected = [
+      "activity_summary_rows",
+      "cycling_threshold_history",
+      "cycling_activity_power_metrics",
+    ];
+    const recordRun = vi.fn(async () => {
+      order.push("record");
+      return { datasets: 1, failed: 0 };
+    });
+    await runAnalyticsBuild({
+      selectedModels: selected,
+      artifactDirectory: "/tmp/two-phase",
+      microbatchBounds: TEST_MICROBATCH_BOUNDS,
+      loadPendingDatasets: async () => [],
+      runDbt: async (args) => {
+        order.push(`dbt:${args.at(-1)}`);
+        phase += 1;
+        return 0;
+      },
+      readArtifact: async (name) =>
+        createArtifactReader(
+          `phase-${phase}`,
+          selected.map((model) => ({
+            uniqueId: `model.dofek.${model}`,
+            name: model,
+            status: "success",
+            executionTime: 1,
+            message: null,
+          })),
+        )(name),
+      projectCyclingPower: async () => {
+        order.push("project");
+        return { pendingActivities: 0, pendingUsers: 0, projectedUsers: 1 };
+      },
+      recordRun,
+    });
+    expect(order).toEqual([
+      "dbt:activity_summary_rows",
+      "project",
+      "dbt:cycling_threshold_history cycling_activity_power_metrics",
+      "record",
+    ]);
+    expect(recordRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        modelResults: selected.map((name) =>
+          expect.objectContaining({ name, status: "succeeded" }),
+        ),
+      }),
+    );
+  });
+
+  it("records downstream failure without claiming the input phase completed the dataset", async () => {
+    let phase = 0;
+    const selected = [
+      "activity_summary_rows",
+      "cycling_threshold_history",
+      "cycling_activity_power_metrics",
+    ];
+    const recordRun = vi.fn(async () => ({ datasets: 1, failed: 1 }));
+    await expect(
+      runAnalyticsBuild({
+        selectedModels: selected,
+        artifactDirectory: "/tmp/two-phase-failure",
+        microbatchBounds: TEST_MICROBATCH_BOUNDS,
+        loadPendingDatasets: async () => [],
+        runDbt: async () => (++phase === 1 ? 0 : 1),
+        readArtifact: async (name) =>
+          createArtifactReader(
+            `phase-${phase}`,
+            selected.map((model) => ({
+              uniqueId: `model.dofek.${model}`,
+              name: model,
+              status: phase === 2 && model !== "activity_summary_rows" ? "error" : "success",
+              executionTime: 1,
+              message: phase === 2 ? "Downstream failed" : null,
+            })),
+          )(name),
+        projectCyclingPower: async () => ({
+          pendingActivities: 0,
+          pendingUsers: 0,
+          projectedUsers: 1,
+        }),
+        recordRun,
+      }),
+    ).rejects.toBeInstanceOf(AnalyticsBuildError);
+    expect(recordRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        modelResults: [
+          expect.objectContaining({ name: "activity_summary_rows", status: "succeeded" }),
+          expect.objectContaining({ name: "cycling_threshold_history", status: "failed" }),
+          expect.objectContaining({ name: "cycling_activity_power_metrics", status: "failed" }),
+        ],
+      }),
+    );
+  });
+
+  it("does not run downstream models when an input model failed", async () => {
+    const selected = [
+      "activity_summary_rows",
+      "cycling_threshold_history",
+      "cycling_activity_power_metrics",
+    ];
+    const projectCyclingPower = vi.fn(async () => ({
+      pendingActivities: 0,
+      pendingUsers: 0,
+      projectedUsers: 0,
+    }));
+    const runDbt = vi.fn(async () => 1);
+    const recordRun = vi.fn(async () => ({ datasets: 1, failed: 1 }));
+    await expect(
+      runAnalyticsBuild({
+        selectedModels: selected,
+        artifactDirectory: "/tmp/input-failure",
+        microbatchBounds: TEST_MICROBATCH_BOUNDS,
+        loadPendingDatasets: async () => [],
+        runDbt,
+        recordRun,
+        projectCyclingPower,
+        readArtifact: createArtifactReader(
+          "input-failure",
+          selected.map((model) => ({
+            uniqueId: `model.dofek.${model}`,
+            name: model,
+            status: model === "activity_summary_rows" ? "error" : "skipped",
+            executionTime: 1,
+            message: "Input failed",
+          })),
+        ),
+      }),
+    ).rejects.toBeInstanceOf(AnalyticsBuildError);
+    expect(runDbt).toHaveBeenCalledOnce();
+    expect(projectCyclingPower).not.toHaveBeenCalled();
+    expect(recordRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        modelResults: [
+          expect.objectContaining({ name: "activity_summary_rows", status: "failed" }),
+          expect.objectContaining({ name: "cycling_threshold_history", status: "skipped" }),
+          expect.objectContaining({ name: "cycling_activity_power_metrics", status: "skipped" }),
+        ],
+      }),
+    );
+  });
+
+  it("drains activity and user batches before downstream builds and processing success", async () => {
+    const order: string[] = [];
+    const batches = [
+      { pendingActivities: 174, pendingUsers: 34, projectedUsers: 0 },
+      { pendingActivities: 74, pendingUsers: 34, projectedUsers: 0 },
+      { pendingActivities: 0, pendingUsers: 2, projectedUsers: 32 },
+      { pendingActivities: 0, pendingUsers: 0, projectedUsers: 2 },
+    ];
+    const selected = ["activity_summary_rows", "cycling_activity_power_metrics"];
+    const result = await runAnalyticsBuild({
+      selectedModels: selected,
+      artifactDirectory: "/tmp/cycling-projection-batches",
+      microbatchBounds: TEST_MICROBATCH_BOUNDS,
+      loadPendingDatasets: async () => [],
+      runDbt: async (args) => {
+        order.push(`dbt:${args.at(-1)}`);
+        return 0;
+      },
+      readArtifact: createArtifactReader(
+        "cycling-batches",
+        selected.map((name) => ({
+          uniqueId: `model.dofek.${name}`,
+          name,
+          status: "success",
+          executionTime: 1,
+          message: null,
+        })),
+      ),
+      projectCyclingPower: async () => {
+        const batch = batches.shift();
+        if (!batch) throw new Error("Projection ran after the backlog was drained");
+        order.push(`project:${batch.pendingActivities}:${batch.pendingUsers}`);
+        return batch;
+      },
+      recordRun: async () => {
+        order.push("record");
+        return { datasets: 1, failed: 0 };
+      },
+    });
+    expect(result).toEqual({ datasets: 1, failed: 0 });
+    expect(order).toEqual([
+      "dbt:activity_summary_rows",
+      "project:174:34",
+      "project:74:34",
+      "project:0:2",
+      "project:0:0",
+      "dbt:cycling_activity_power_metrics",
+      "record",
+    ]);
+  });
+
+  it("keeps one projection instant when batches cross UTC midnight", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-02T23:59:59Z"));
+    const instants: Array<string | null> = [];
+    try {
+      await runAnalyticsBuild({
+        selectedModels: ["cycling_activity"],
+        artifactDirectory: "/tmp/cycling-projection-midnight",
+        microbatchBounds: TEST_MICROBATCH_BOUNDS,
+        loadPendingDatasets: async () => [],
+        runDbt: async () => 0,
+        readArtifact: createArtifactReader("midnight", [
+          {
+            uniqueId: "model.dofek.cycling_activity",
+            name: "cycling_activity",
+            status: "success",
+            executionTime: 1,
+            message: null,
+          },
+        ]),
+        projectCyclingPower: async (asOf: Date) => {
+          instants.push(asOf?.toISOString() ?? null);
+          vi.setSystemTime(new Date("2026-11-03T00:00:01Z"));
+          return {
+            pendingActivities: 0,
+            pendingUsers: instants.length === 1 ? 1 : 0,
+            projectedUsers: 32,
+          };
+        },
+        recordRun: async () => ({ datasets: 1, failed: 0 }),
+      });
+      expect(instants).toEqual(["2026-11-02T23:59:59.000Z", "2026-11-02T23:59:59.000Z"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("withholds processing success when cycling projection stops making progress", async () => {
+    const recordRun = vi.fn(async () => ({ datasets: 1, failed: 0 }));
+    const runDbt = vi.fn(async () => 0);
+    let batches = 0;
+    await expect(
+      runAnalyticsBuild({
+        selectedModels: ["cycling_activity", "cycling_activity_power_metrics"],
+        artifactDirectory: "/tmp/cycling-projection-gate",
+        microbatchBounds: TEST_MICROBATCH_BOUNDS,
+        loadPendingDatasets: async () => [],
+        runDbt,
+        readArtifact: createArtifactReader("cycling-run", [
+          {
+            uniqueId: "model.dofek.cycling_activity",
+            name: "cycling_activity",
+            status: "success",
+            executionTime: 1,
+            message: null,
+          },
+        ]),
+        projectCyclingPower: async () => {
+          if (++batches > 2) throw new Error("Repeated a stalled projection");
+          return { pendingActivities: 1, pendingUsers: 1, projectedUsers: 0 };
+        },
+        recordRun,
+      }),
+    ).rejects.toThrow("Cycling power projection made no progress: 1 activities and 1 users remain");
+    expect(batches).toBe(2);
+    expect(runDbt).toHaveBeenCalledOnce();
+    expect(recordRun).not.toHaveBeenCalled();
+  });
+
   it("snapshots pending operations before starting dbt so later updates need another build", async () => {
     const pending: Array<{ operationId: string; datasetKey: "providers" }> = [
       { operationId: "30000000-0000-4000-8000-000000000001", datasetKey: "providers" },
     ];
     const recordRun = vi.fn(async () => ({ datasets: 1, failed: 0 }));
     await runAnalyticsBuild({
+      projectCyclingPower: async () => ({
+        pendingActivities: 0,
+        pendingUsers: 0,
+        projectedUsers: 0,
+      }),
       selectedModels: ["provider_stats"],
       artifactDirectory: "/tmp/dofek-dbt-snapshot",
       microbatchBounds: TEST_MICROBATCH_BOUNDS,
@@ -140,6 +439,11 @@ describe("runAnalyticsBuild", () => {
 
     await expect(
       runAnalyticsBuild({
+        projectCyclingPower: async () => ({
+          pendingActivities: 0,
+          pendingUsers: 0,
+          projectedUsers: 0,
+        }),
         loadPendingDatasets: async () => [],
         selectedModels: ["provider_stats"],
         artifactDirectory: "/tmp/dofek-dbt-test",
@@ -177,6 +481,11 @@ describe("runAnalyticsBuild", () => {
 
     await expect(
       runAnalyticsBuild({
+        projectCyclingPower: async () => ({
+          pendingActivities: 0,
+          pendingUsers: 0,
+          projectedUsers: 0,
+        }),
         loadPendingDatasets: async () => [],
         selectedModels: ["provider_stats"],
         artifactDirectory: "/tmp/dofek-dbt-test",
@@ -217,6 +526,11 @@ describe("runAnalyticsBuild", () => {
 
     await expect(
       runAnalyticsBuild({
+        projectCyclingPower: async () => ({
+          pendingActivities: 0,
+          pendingUsers: 0,
+          projectedUsers: 0,
+        }),
         loadPendingDatasets: async () => [],
         selectedModels: ["provider_stats"],
         artifactDirectory: "/tmp/dofek-dbt-test",
@@ -268,6 +582,11 @@ describe("runAnalyticsBuild", () => {
 
     await expect(
       runAnalyticsBuild({
+        projectCyclingPower: async () => ({
+          pendingActivities: 0,
+          pendingUsers: 0,
+          projectedUsers: 0,
+        }),
         loadPendingDatasets: async () => [],
         selectedModels: ["provider_stats"],
         artifactDirectory: "/tmp/dofek-dbt-test",
@@ -301,6 +620,11 @@ describe("runAnalyticsBuild", () => {
 
     await expect(
       runAnalyticsBuild({
+        projectCyclingPower: async () => ({
+          pendingActivities: 0,
+          pendingUsers: 0,
+          projectedUsers: 0,
+        }),
         loadPendingDatasets: async () => [],
         selectedModels: ["provider_stats"],
         artifactDirectory: "/tmp/dofek-dbt-test",
@@ -330,6 +654,11 @@ describe("runAnalyticsBuild", () => {
 
     await expect(
       runAnalyticsBuild({
+        projectCyclingPower: async () => ({
+          pendingActivities: 0,
+          pendingUsers: 0,
+          projectedUsers: 0,
+        }),
         loadPendingDatasets: async () => [],
         selectedModels: ["provider_stats"],
         artifactDirectory: "/tmp/dofek-dbt-test",
@@ -355,6 +684,11 @@ describe("runAnalyticsBuild", () => {
     const recordRun = vi.fn(async () => ({ datasets: 2, failed: 2 }));
 
     const error = await runAnalyticsBuild({
+      projectCyclingPower: async () => ({
+        pendingActivities: 0,
+        pendingUsers: 0,
+        projectedUsers: 0,
+      }),
       loadPendingDatasets: async () => [],
       selectedModels: ["provider_stats", "provider_stats_downstream"],
       artifactDirectory: "/tmp/dofek-dbt-test",
@@ -394,6 +728,11 @@ describe("runAnalyticsBuild", () => {
 
     await expect(
       runAnalyticsBuild({
+        projectCyclingPower: async () => ({
+          pendingActivities: 0,
+          pendingUsers: 0,
+          projectedUsers: 0,
+        }),
         loadPendingDatasets: async () => [],
         selectedModels: ["provider_stats"],
         artifactDirectory: "/tmp/dofek-dbt-test",

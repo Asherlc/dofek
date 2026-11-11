@@ -158,9 +158,3 @@ export function sleepBaselineRow(
     yesterday_load: load,
   };
 }
-
-export function dateDaysBefore(dateString: string, daysBefore: number): string {
-  const date = new Date(`${dateString}T12:00:00Z`);
-  date.setUTCDate(date.getUTCDate() - daysBefore);
-  return date.toISOString().slice(0, 10);
-}

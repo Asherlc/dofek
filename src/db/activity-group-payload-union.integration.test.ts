@@ -11,6 +11,7 @@ import {
   runDbtBatch,
 } from "./activity-payload-dbt-microbatch-test-helpers.ts";
 import { buildActivitySensorSummaryRowsTableSql } from "./clickhouse-activity-sensor-summary.ts";
+import { buildActivityStepCadenceRowsTableSql } from "./clickhouse-activity-step-cadence.ts";
 import { buildActivitySummaryRowsTableSql } from "./clickhouse-activity-summary.ts";
 import {
   buildPostgresFitnessActivityRawTableStatement,
@@ -601,6 +602,7 @@ async function seedFixture(
     createActivityLocationSampleSql(database),
     buildActivitySensorSummaryRowsTableSql().replaceAll("analytics.", `${database}.`),
     createActivityLocationSummarySql(database),
+    buildActivityStepCadenceRowsTableSql().replaceAll("analytics.", `${database}.`),
     buildActivitySummaryRowsTableSql().replaceAll("analytics.", `${database}.`),
     `INSERT INTO ${database}.source_activity
       (id, group_id, provider_id, user_id, external_id, canonical_type, provider_type,
@@ -668,15 +670,12 @@ function renderModel(
   return renderDbtModelSql(readModelSql(file), {
     isIncremental: incremental,
     activityRefreshScoped: scopedActivityIds != null,
+    activityRefreshIds: scopedActivityIds,
   })
     .replaceAll("{{ initial_lookback_days }}", "365")
     .replaceAll("{{ var('activity_location_batch_size', 100) }}", "100")
     .replaceAll("{{ var('activity_sensor_summary_batch_size', 100) }}", "100")
     .replaceAll('{{ var("activity_refresh_user_id") }}', userId)
-    .replaceAll(
-      "{{ activity_refresh_ids() }}",
-      `CAST([${(scopedActivityIds ?? []).map((id) => `'${id}'`).join(", ")}], 'Array(UUID)')`,
-    )
     .replaceAll("{{ this }}", `${database}.${file.replace(".sql", "")}`)
     .replace(/\{\{ ref\('([^']+)'\) \}\}/g, `${database}.$1`)
     .replaceAll("{{ source('postgres_fitness', 'activity') }}", `${database}.source_activity`)

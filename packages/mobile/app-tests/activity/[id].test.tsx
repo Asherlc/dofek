@@ -1,5 +1,8 @@
 import type { ActivityHardware } from "@dofek/providers/activity-hardware";
-import type { ActivityMetricSources } from "../../../server/src/contracts/activity-metric-sources.ts";
+import type {
+  ActivityHeartRateContext,
+  ActivityMetricSources,
+} from "../../../server/src/contracts/activity-metric-sources.ts";
 import { decodeClimbingLogEntriesResponse } from "../../../server/src/contracts/climbing-log-contracts.ts";
 import {
   climbingAttemptFixture,
@@ -224,7 +227,8 @@ vi.mock("@dofek/format/units", () => ({}));
 
 vi.mock("@dofek/providers/providers", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@dofek/providers/providers")>()),
-  providerLabel: (id: string) => (id === "strava" ? "Strava" : id),
+  providerLabel: (id: string) =>
+    id === "strava" ? "Strava" : id === "kilter" ? "Kilter Board" : id,
   providerSourceLabel: (id: string, subsource?: string | null) =>
     id === "apple_health" && subsource
       ? `${subsource} (via Apple Health)`
@@ -283,8 +287,33 @@ vi.mock("@dofek/zones/zones", async () => {
 const mockByIdQuery = vi.fn();
 const mockImagesQuery = vi.fn();
 const mockStreamQuery = vi.fn();
+const mockHeartRateContextQuery =
+  vi.fn<
+    (
+      _input?: unknown,
+      _options?: unknown,
+    ) => { data: ActivityHeartRateContext | undefined; isLoading: boolean; error: Error | null }
+  >();
 const mockRouteQuery = vi.fn();
 const mockHrZonesQuery = vi.fn();
+const computedThresholdEvidence = {
+  value: 250,
+  unit: "watt" as const,
+  method: "computed_eftp" as const,
+  event_at: "2026-03-05T12:00:00Z",
+  evidence_activity_id: "00000000-0000-4000-8000-000000000101",
+  evidence_at: "2026-03-01T12:00:00Z",
+  evidence_duration_seconds: 1200,
+  evidence_power: 265,
+  model_version: "v1",
+  uncertainty: {
+    kind: "not_quantifiable" as const,
+    watts: null,
+    reason:
+      "Reference-curve estimate; individual physiological FTP uncertainty has not been quantified.",
+  },
+  unavailable_reason: null,
+};
 const mockPowerZonesQuery = vi.fn();
 const mockPowerWorkQuery = vi.fn();
 const mockStrengthExercisesQuery = vi.fn();
@@ -354,6 +383,7 @@ vi.mock("../../lib/trpc", () => ({
       metricSources: { useQuery: (...args: unknown[]) => mockMetricSourcesQuery(...args) },
       hardware: { useQuery: (...args: unknown[]) => mockHardwareQuery(...args) },
       stream: { useQuery: (...args: unknown[]) => mockStreamQuery(...args) },
+      heartRateContext: { useQuery: mockHeartRateContextQuery },
       route: { useQuery: (...args: unknown[]) => mockRouteQuery(...args) },
       hrZones: { useQuery: (...args: unknown[]) => mockHrZonesQuery(...args) },
       powerZones: { useQuery: (...args: unknown[]) => mockPowerZonesQuery(...args) },
@@ -422,6 +452,7 @@ vi.mock("../../lib/trpc", () => ({
         images: { invalidate: mockActivityImagesInvalidate },
         byId: { invalidate: mockActivityByIdInvalidate },
         stream: { invalidate: mockActivityStreamInvalidate },
+        heartRateContext: { invalidate: vi.fn().mockResolvedValue(undefined) },
         hrZones: { invalidate: mockActivityHrZonesInvalidate },
         powerZones: { invalidate: mockActivityPowerZonesInvalidate },
         powerWork: { invalidate: mockActivityPowerWorkInvalidate },
@@ -430,7 +461,7 @@ vi.mock("../../lib/trpc", () => ({
         list: { invalidate: mockActivityListInvalidate },
       },
       calendar: {
-        weekList: { invalidate: mockCalendarWeekListInvalidate },
+        weekListV2: { invalidate: mockCalendarWeekListInvalidate },
         activityOverview: { invalidate: mockCalendarActivityOverviewInvalidate },
         calendarData: { invalidate: mockCalendarDataInvalidate },
       },
@@ -453,6 +484,8 @@ const baseCyclingActivity = {
   displayedDate: "2026-04-14",
   startedAt: "2026-04-14T10:00:00.000Z",
   endedAt: "2026-04-14T11:00:00.000Z",
+  durationMin: 60,
+  climbingLogSessions: [],
   localTimeContext: {
     timezone: "America/Los_Angeles",
     startUtcOffsetMinutes: -420,
@@ -467,6 +500,7 @@ const baseCyclingActivity = {
   sourceProviders: ["wahoo"],
   sourceLinks: [],
   sourceDecision: null,
+  fitRecoveryWarning: null,
   sourceTree: { primary: null, otherSources: [] },
   avgHr: 145,
   avgHrState: { status: "available" },
@@ -600,6 +634,8 @@ beforeEach(() => {
     refetch: vi.fn(),
   });
   mockStreamQuery.mockClear();
+  mockHeartRateContextQuery.mockReset();
+  mockHeartRateContextQuery.mockReturnValue({ data: undefined, error: null, isLoading: false });
   mockRouteQuery.mockClear();
   mockHrZonesQuery.mockClear();
   mockPowerZonesQuery.mockClear();
@@ -656,7 +692,74 @@ beforeEach(() => {
 });
 
 describe("ActivityDetailScreen", () => {
-  it("opens device facts with Sources in the real activity header", async () => {
+  it("shows Kilter's logged window and keeps point-only duration unknown beside Kaya climbs", async () => {
+    mockByIdQuery.mockReturnValue({
+      data: {
+        ...baseCyclingActivity,
+        activityType: "climbing",
+        endedAt: null,
+        durationMin: null,
+        climbingLogSessions: [
+          {
+            id: "kilter-session-1",
+            providerId: "kilter",
+            memberActivityIds: ["kilter-point-1"],
+            firstLoggedAt: "2026-04-14T10:02:00.000Z",
+            lastLoggedAt: "2026-04-14T10:02:00.000Z",
+          },
+        ],
+      },
+      isLoading: false,
+      error: null,
+    });
+    mockClimbingEntriesQuery.mockReturnValue({
+      data: [
+        climbingLogEntryFixture({ id: "kaya-climb", providerId: "kaya", title: "Kaya wall climb" }),
+        climbingLogEntryFixture({
+          id: "kilter-climb",
+          providerId: "kilter",
+          title: "Kilter board climb",
+        }),
+      ],
+      isLoading: false,
+      error: null,
+    });
+    const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
+
+    render(<ActivityDetailScreen />);
+
+    expect(screen.getByText("Kilter Board · Logged climbs · 3:02 AM")).toBeTruthy();
+    expect(screen.getByText("Duration")).toBeTruthy();
+    expect(screen.getByText("Unavailable")).toBeTruthy();
+    expect(screen.getByText("Kaya wall climb")).toBeTruthy();
+    expect(screen.getByText("Kilter board climb")).toBeTruthy();
+    expect(screen.queryByText("0m")).toBeNull();
+  });
+
+  it("shows surrounding HR readings supplied by the server for climbing", async () => {
+    mockByIdQuery.mockReturnValue({
+      data: { ...baseCyclingActivity, activityType: "climbing" },
+      isLoading: false,
+      error: null,
+    });
+    mockHeartRateContextQuery.mockReturnValue({
+      data: {
+        window: { startedAt: "2026-04-14T09:55:00.000Z", endedAt: "2026-04-14T11:05:00.000Z" },
+        points: [
+          { recordedAt: "2026-04-14T09:55:00.000Z", value: 91 },
+          { recordedAt: "2026-04-14T11:05:00.000Z", value: 92 },
+        ],
+      },
+      error: null,
+      isLoading: false,
+    });
+    const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
+    render(<ActivityDetailScreen />);
+    fireEvent.click(await screen.findByRole("button", { name: "View Heart Rate data" }));
+    expect(screen.getByText("91 bpm")).toBeDefined();
+    expect(screen.getByText("92 bpm")).toBeDefined();
+  });
+  it("opens lineage with actionable refresh errors in the real activity header", async () => {
     mockByIdQuery.mockReturnValue({
       data: { ...baseCyclingActivity, sourceTree: garminActivitySourceTree },
       isLoading: false,
@@ -675,7 +778,7 @@ describe("ActivityDetailScreen", () => {
             model: "Edge 530",
             manufacturer: "Garmin",
             evidence: "Reported recording device.",
-            details: [{ label: "Serial number", value: "EDGE-123" }],
+            details: [],
           },
         ],
         power: [],
@@ -686,12 +789,10 @@ describe("ActivityDetailScreen", () => {
     });
     const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
     render(<ActivityDetailScreen />);
-    expect(screen.queryByText("Serial number: EDGE-123")).toBeNull();
     expect(screen.getByText("Reconnect Garmin and retry device metadata.")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(mockHardwareRefetch).toHaveBeenCalledOnce();
-    fireEvent.click(screen.getByRole("button", { name: "Sources: Garmin Edge 530" }));
-    expect(screen.getByText("Serial number: EDGE-123")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Lineage: Garmin Edge 530" }));
     expect(screen.getByText("220 W")).toBeTruthy();
   });
 
@@ -705,12 +806,12 @@ describe("ActivityDetailScreen", () => {
     render(<ActivityDetailScreen />);
 
     expect(screen.getByText("Morning Ride")).toBeTruthy();
-    const trigger = screen.getByRole("button", { name: "Sources: Garmin Edge 530" });
+    const trigger = screen.getByRole("button", { name: "Lineage: Garmin Edge 530" });
     expect(trigger.getAttribute("aria-expanded")).toBe("false");
     fireEvent.click(trigger);
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
     expect(screen.getAllByText("Apple Health")).toHaveLength(2);
-    fireEvent.click(screen.getByRole("button", { name: "View source for Strava" }));
+    fireEvent.click(screen.getByRole("button", { name: "View activity for Strava" }));
     expect(Linking.openURL).toHaveBeenCalledWith("https://www.strava.com/activities/123");
     expect(screen.getByText("Morning Ride")).toBeTruthy();
     expect(screen.getByText("220 W")).toBeTruthy();
@@ -751,7 +852,7 @@ describe("ActivityDetailScreen", () => {
         meta: { persist: false },
       }),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Open photo 1: At the summit" }));
+    fireEvent.click(screen.getByRole("button", { name: "View 1 photo" }));
     expect(screen.getByRole("button", { name: "Close photo" })).toBeTruthy();
   });
 
@@ -781,7 +882,7 @@ describe("ActivityDetailScreen", () => {
     });
     const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
     const view = render(React.createElement(ActivityDetailScreen));
-    fireEvent.click(screen.getByRole("button", { name: "Open photo 1: At the summit" }));
+    fireEvent.click(screen.getByRole("button", { name: "View 1 photo" }));
     expect(screen.getByRole("button", { name: "Close photo" })).toBeTruthy();
     activityRouteParams.id = "00000000-0000-0000-0000-000000000002";
     view.rerender(React.createElement(ActivityDetailScreen));
@@ -853,11 +954,11 @@ describe("ActivityDetailScreen", () => {
     render(React.createElement(ActivityDetailScreen));
     expect(getQueryEnabledFlag(mockClimbingEntriesQuery.mock.calls[0]?.[1])).toBe(true);
     expect(mockClimbingEntriesQuery).toHaveBeenCalledWith(
-      { activityId: baseCyclingActivity.id, responseVersion: 3 },
+      { activityId: baseCyclingActivity.id, responseVersion: 5 },
       expect.objectContaining({ enabled: true, select: decodeClimbingLogEntriesResponse }),
     );
     expect(mockEntrySuggestionsQuery).toHaveBeenCalledWith(
-      { activityId: baseCyclingActivity.id, responseVersion: 3 },
+      { activityId: baseCyclingActivity.id, responseVersion: 5 },
       expect.objectContaining({ enabled: true, select: decodeClimbingLogEntriesResponse }),
     );
     expect(screen.getByText("Summit outing")).toBeTruthy();
@@ -865,7 +966,7 @@ describe("ActivityDetailScreen", () => {
     expect(screen.getByText("Log refresh failed")).toBeTruthy();
     expect(screen.getByText("Suggestions refresh failed")).toBeTruthy();
     expect(
-      screen.getByRole("button", { name: "Attach entry 1, Ridge traverse to this activity" }),
+      screen.getByRole("button", { name: "Attach entry 2, Ridge traverse to this activity" }),
     ).toBeTruthy();
   });
   it("shows route processing and disables GPX while cached sensor points are partial", async () => {
@@ -994,8 +1095,8 @@ describe("ActivityDetailScreen", () => {
 
     render(React.createElement(ActivityDetailScreen));
 
-    expect(screen.getAllByText("Route ends at none")).toHaveLength(
-      state.startsWith("cached") ? 2 : 3,
+    expect(screen.queryAllByText("Route ends at none")).toHaveLength(
+      state.startsWith("cached") ? 0 : 1,
     );
     expect(screen.getByText("Climbing refresh failed")).toBeTruthy();
     expect(screen.getByLabelText("Climbing entry: Located climb")).toBeTruthy();
@@ -1014,16 +1115,28 @@ describe("ActivityDetailScreen", () => {
           name: "Located climb",
         },
       },
+      {
+        entryId: "suggested",
+        entryNumber: 3,
+        label: "Suggested climb",
+        location: {
+          coordinates: { latitude: 1, longitude: -122.5 },
+          scope: "area",
+          objectId: "source-area",
+          providerId: "openbeta",
+          name: "Containing area",
+        },
+      },
     ]);
     act(() => overviewProps?.onSelectEntry?.("10000000-0000-4000-8000-000000000301"));
+    expect(
+      screen
+        .getByRole("button", { name: "Select entry 2, Located climb" })
+        .getAttribute("aria-selected"),
+    ).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "Log details for entry 2, Located climb" }));
     expect(screen.getByRole("button", { name: "Close record detail" })).toBeTruthy();
     expect(screen.getByText("Record Detail")).toBeTruthy();
-    expect(
-      within(screen.getByLabelText("Climbing entry: Located climb"))
-        .getByText("Located climb")
-        .closest('[data-accessible="true"]')
-        ?.getAttribute("aria-selected"),
-    ).toBe("true");
     const selectedOverviewProps = vi
       .mocked(RouteMap)
       .mock.calls.filter(([props]) => !props.compact)
@@ -1043,6 +1156,41 @@ describe("ActivityDetailScreen", () => {
     if (state.endsWith("error")) {
       expect(screen.getByText("Recorded route refresh failed")).toBeTruthy();
     }
+  });
+
+  it("keeps the cycling route scoped to its activity when climbing suggestions remain cached", async () => {
+    mockByIdQuery.mockReturnValue({ data: baseCyclingActivity, isLoading: false, error: null });
+    mockRouteQuery.mockReturnValue({
+      data: {
+        status: "ready",
+        points: [
+          { lat: 7, lng: 8 },
+          { lat: 9, lng: 10 },
+        ],
+      },
+      error: null,
+      isLoading: false,
+    });
+    mockEntrySuggestionsQuery.mockReturnValue({
+      data: [
+        climbingLogEntryFixture({
+          id: "cached-suggestion",
+          mapLocation: {
+            coordinates: { latitude: 42, longitude: -100 },
+            scope: "area",
+            objectId: "cached-area",
+            providerId: "openbeta",
+            name: "Cached area",
+          },
+        }),
+      ],
+      error: null,
+      isLoading: false,
+    });
+    const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
+    render(<ActivityDetailScreen />);
+    const overview = vi.mocked(RouteMap).mock.calls.find(([props]) => !props.compact)?.[0];
+    expect(overview?.climbMarkers).toEqual([]);
   });
 
   it("opens the exact repeated climb in a detail modal and can reopen it after closing", async () => {
@@ -1076,13 +1224,13 @@ describe("ActivityDetailScreen", () => {
     render(<ActivityDetailScreen />);
     const overview = vi.mocked(RouteMap).mock.calls.find(([props]) => !props.compact)?.[0];
     expect(overview?.climbMarkers?.map((marker) => marker.entryId)).toEqual([firstId, secondId]);
-    act(() => overview?.onSelectEntry?.(secondId));
+    fireEvent.click(screen.getByRole("button", { name: "Log details for entry 2, Corner" }));
     const detail = screen.getByTestId("modal");
     expect(within(detail).getByText("Second occurrence notes")).toBeTruthy();
     expect(within(detail).queryByText("First occurrence notes")).toBeNull();
     fireEvent.click(within(detail).getByRole("button", { name: "Close record detail" }));
     expect(screen.queryByText("Record Detail")).toBeNull();
-    act(() => overview?.onSelectEntry?.(secondId));
+    fireEvent.click(screen.getByRole("button", { name: "Log details for entry 2, Corner" }));
     expect(within(screen.getByTestId("modal")).getByText("Second occurrence notes")).toBeTruthy();
   });
 
@@ -1316,11 +1464,11 @@ describe("ActivityDetailScreen", () => {
     await waitFor(() => {
       expect(mockClimbingEntriesInvalidate).toHaveBeenCalledWith({
         activityId: baseCyclingActivity.id,
-        responseVersion: 3,
+        responseVersion: 5,
       });
       expect(mockEntrySuggestionsInvalidate).toHaveBeenCalledWith({
         activityId: baseCyclingActivity.id,
-        responseVersion: 3,
+        responseVersion: 5,
       });
       expect(mockActivityImagesInvalidate).toHaveBeenCalledWith({ id: baseCyclingActivity.id });
       expect(mockClimbingSessionSummaryInvalidate).toHaveBeenCalledWith();
@@ -1432,7 +1580,7 @@ describe("ActivityDetailScreen", () => {
     await waitFor(() => {
       expect(mockClimbingEntriesInvalidate).toHaveBeenCalledWith({
         activityId: baseCyclingActivity.id,
-        responseVersion: 3,
+        responseVersion: 5,
       });
     });
   });
@@ -1916,10 +2064,29 @@ describe("ActivityDetailScreen", () => {
     expect(screen.queryByText("No heart rate zone data")).toBeNull();
   });
 
+  it("shows the server reason when computed cycling threshold evidence is unavailable", async () => {
+    mockPowerZonesQuery.mockReturnValue({
+      data: {
+        ftp: null,
+        zones: [],
+        thresholdEvidence: {
+          ...computedThresholdEvidence,
+          value: null,
+          unavailable_reason: "No supported sustained power effort is available.",
+        },
+      },
+      isLoading: false,
+    });
+    const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
+    render(React.createElement(ActivityDetailScreen));
+    expect(screen.getByText("No supported sustained power effort is available.")).toBeTruthy();
+  });
+
   it("labels the power zone chart with zone names", async () => {
     mockPowerZonesQuery.mockReturnValue({
       data: {
         ftp: 250,
+        thresholdEvidence: computedThresholdEvidence,
         zones: [
           { zone: 1, label: "Recovery", minPct: 0, maxPct: 55, seconds: 300, percent: 33.3 },
           { zone: 2, label: "Endurance", minPct: 56, maxPct: 75, seconds: 600, percent: 66.7 },
@@ -1933,6 +2100,29 @@ describe("ActivityDetailScreen", () => {
 
     expect(screen.getByText("Zone 1")).toBeTruthy();
     expect(screen.getByText("Recovery")).toBeTruthy();
+    expect(screen.getByText("Computed eFTP: 250 W")).toBeTruthy();
+    const previousZones = { ftp: 250, thresholdEvidence: computedThresholdEvidence, zones: [] };
+    const placeholder = getPlaceholderData(mockPowerZonesQuery.mock.calls.at(-1)?.[1]);
+    expect(
+      placeholder?.(previousZones, {
+        queryKey: [
+          ["activity", "powerZones"],
+          { input: { id: baseCyclingActivity.id, powerSourceId: "old-source" }, type: "query" },
+        ],
+      }),
+    ).toBe(previousZones);
+    expect(
+      placeholder?.(previousZones, {
+        queryKey: [["activity", "powerZones"], { input: { id: "different-ride" }, type: "query" }],
+      }),
+    ).toBeUndefined();
+    expect(screen.getByText(/Evidence:/)).toBeTruthy();
+    fireEvent.click(screen.getByText("Estimate uncertainty"));
+    expect(
+      screen.getByText(
+        "Reference-curve estimate; individual physiological FTP uncertainty has not been quantified.",
+      ),
+    ).toBeTruthy();
     expect(screen.getByText("Zone 2")).toBeTruthy();
     expect(screen.getByText("Endurance")).toBeTruthy();
   });
@@ -2132,9 +2322,11 @@ describe("ActivityDetailScreen", () => {
     const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
     render(React.createElement(ActivityDetailScreen));
     expect(screen.getAllByText("Swiss Cheese")).toHaveLength(2);
-    for (const link of screen.getAllByRole("link", { name: "Swiss Cheese on mountain-project" }))
+    for (const link of screen.getAllByRole("link", {
+      name: "Swiss Cheese route on mountain-project",
+    }))
       fireEvent.click(link);
-    for (const link of screen.getAllByRole("link", { name: "mountain-project" }))
+    for (const link of screen.getAllByRole("link", { name: "Climb on mountain-project" }))
       fireEvent.click(link);
     expect(Linking.openURL).toHaveBeenCalledWith(
       "https://www.mountainproject.com/route/105734732/swiss-cheese",
@@ -2401,7 +2593,7 @@ describe("ActivityDetailScreen", () => {
     const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
     render(React.createElement(ActivityDetailScreen));
 
-    fireEvent.click(screen.getByRole("button", { name: "Sources: Strong" }));
+    fireEvent.click(screen.getByRole("button", { name: "Lineage: Strong" }));
     expect(screen.getByText("Apple Health")).toBeTruthy();
     expect(screen.getByText("Recorded by Strong")).toBeTruthy();
   });
@@ -2707,6 +2899,7 @@ it.each([false, true])(
     });
     const zones = {
       ftp: 250,
+      thresholdEvidence: computedThresholdEvidence,
       zones: [{ zone: 2, label: "Endurance", minPct: 56, maxPct: 75, seconds: 600, percent: 100 }],
     };
     mockPowerZonesQuery.mockImplementation((input: { powerSourceId?: string }) => ({

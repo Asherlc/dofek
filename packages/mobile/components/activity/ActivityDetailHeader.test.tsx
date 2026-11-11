@@ -12,26 +12,42 @@ vi.mock("react-native", async () => {
 });
 
 vi.mock("../ProviderLogo", () => ({ ProviderLogo: () => null }));
+vi.mock("@dofek/providers/providers", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@dofek/providers/providers")>()),
+  providerLabel: (id: string) => (id === "kilter" ? "Kilter Board" : id),
+}));
 
 describe("ActivityDetailHeader", () => {
   beforeEach(() => vi.clearAllMocks());
+
+  it("shows a server-projected FIT recovery warning and omits it for a clean activity", () => {
+    const warning = "Some FIT data could not be recovered from the original file.";
+    const { rerender } = render(
+      <ActivityDetailHeader activity={{ ...detailHeaderActivity, fitRecoveryWarning: warning }} />,
+    );
+
+    expect(screen.getByRole("alert").textContent).toBe(warning);
+
+    rerender(<ActivityDetailHeader activity={detailHeaderActivity} />);
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
 
   it("keeps the activity identity with an inline tree of distinct source branches", () => {
     render(<ActivityDetailHeader activity={detailHeaderActivity} />);
 
     expect(screen.getByText("Morning Ride")).toBeDefined();
     expect(screen.getByText(/Tue, Apr 14, 2026 at 3:00 AM/)).toBeDefined();
-    const trigger = screen.getByRole("button", { name: "Sources: Garmin Edge 530" });
+    const trigger = screen.getByRole("button", { name: "Lineage: Garmin Edge 530" });
     expect(trigger.getAttribute("aria-expanded")).toBe("false");
     expect(screen.queryByText("Apple Health")).toBeNull();
 
     fireEvent.click(trigger);
 
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
-    expect(screen.getAllByText("Garmin Edge 530")).toHaveLength(1);
+    expect(screen.getAllByText("Garmin Edge 530")).toHaveLength(2);
     expect(screen.getAllByText("Apple Health")).toHaveLength(2);
     expect(screen.getByText("WHOOP")).toBeDefined();
-    fireEvent.click(screen.getByRole("button", { name: "View source for Strava" }));
+    fireEvent.click(screen.getByRole("button", { name: "View activity for Strava" }));
     expect(Linking.openURL).toHaveBeenCalledWith("https://www.strava.com/activities/123");
     expect(screen.getByText("Morning Ride")).toBeDefined();
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
@@ -55,7 +71,7 @@ describe("ActivityDetailHeader", () => {
 
   it.each(["{Enter}", " "])("expands and collapses with the real RN-web %j key", async (key) => {
     render(<ActivityDetailHeader activity={detailHeaderActivity} />);
-    const trigger = screen.getByRole("button", { name: "Sources: Garmin Edge 530" });
+    const trigger = screen.getByRole("button", { name: "Lineage: Garmin Edge 530" });
     act(() => trigger.focus());
     await act(async () => userEvent.keyboard(key));
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
@@ -72,7 +88,37 @@ describe("ActivityDetailHeader", () => {
       />,
     );
     expect(screen.getByText("Morning Ride")).toBeDefined();
-    expect(screen.queryByRole("button", { name: /Sources/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Lineage/ })).toBeNull();
+  });
+
+  it("shows each projected Kilter log window and keeps a single log to one timestamp", () => {
+    const session = {
+      id: "00000000-0000-4000-8000-000000000101",
+      providerId: "kilter",
+      memberActivityIds: ["00000000-0000-4000-8000-000000000102"],
+      firstLoggedAt: "2026-04-14T10:00:00.000Z",
+      lastLoggedAt: "2026-04-14T10:04:33.000Z",
+    };
+    const singleLogSession = {
+      ...session,
+      id: "00000000-0000-4000-8000-000000000103",
+      memberActivityIds: ["00000000-0000-4000-8000-000000000104"],
+      firstLoggedAt: "2026-04-14T10:10:00.000Z",
+      lastLoggedAt: "2026-04-14T10:10:00.000Z",
+    };
+    render(
+      <ActivityDetailHeader
+        activity={{
+          ...detailHeaderActivity,
+          name: "Gym session",
+          activityType: "climbing",
+          climbingLogSessions: [session, singleLogSession],
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Kilter Board · Logged climbs · 3:00 AM – 3:04 AM")).toBeTruthy();
+    expect(screen.getByText("Kilter Board · Logged climbs · 3:10 AM")).toBeTruthy();
   });
 
   it("expands disconnected sources when recording attribution is unresolved", () => {
@@ -84,7 +130,7 @@ describe("ActivityDetailHeader", () => {
         }}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Sources" }));
+    fireEvent.click(screen.getByRole("button", { name: "Lineage" }));
     expect(screen.getByText("WHOOP")).toBeDefined();
   });
 
@@ -93,8 +139,8 @@ describe("ActivityDetailHeader", () => {
     expect(screen.getByText("Removed from provider sync")).toBeDefined();
     expect(screen.getByText("Removed")).toBeDefined();
     expect(screen.getByText(/Mar 5, 2026/)).toBeDefined();
-    fireEvent.click(screen.getByRole("button", { name: "Sources: Garmin Edge 530" }));
+    fireEvent.click(screen.getByRole("button", { name: "Lineage: Garmin Edge 530" }));
     expect(screen.getByText("Removed from provider sync on March 5, 2026")).toBeDefined();
-    expect(screen.queryByRole("button", { name: "View source for Garmin Edge 530" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "View activity for Garmin Edge 530" })).toBeNull();
   });
 });

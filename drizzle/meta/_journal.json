@@ -1205,6 +1205,104 @@
       "when": 1793293661047,
       "tag": "0171_nullable_climbing_route_methods",
       "breakpoints": true
+    },
+    {
+      "idx": 172,
+      "version": "7",
+      "when": 1793464976821,
+      "tag": "0172_source_climbing_completion",
+      "breakpoints": true
+    },
+    {
+      "idx": 173,
+      "version": "7",
+      "when": 1793465090330,
+      "tag": "0173_climbing_file_imports",
+      "breakpoints": true
+    },
+    {
+      "idx": 174,
+      "version": "7",
+      "when": 1793577267980,
+      "tag": "0174_kaya_activity_origin",
+      "breakpoints": true
+    },
+    {
+      "idx": 175,
+      "version": "7",
+      "when": 1793594425786,
+      "tag": "0175_remove_configured_cycling_ftp",
+      "breakpoints": true
+    },
+    {
+      "idx": 176,
+      "version": "7",
+      "when": 1793677094982,
+      "tag": "0176_remove_heart_rate_tss_parameters",
+      "breakpoints": true
+    },
+    {
+      "idx": 177,
+      "version": "7",
+      "when": 1793716200000,
+      "tag": "0177_remove_daily_score_parameters",
+      "breakpoints": true
+    },
+    {
+      "idx": 178,
+      "version": "7",
+      "when": 1793899500000,
+      "tag": "0178_native_metric_stream_delivery",
+      "breakpoints": true
+    },
+    {
+      "idx": 179,
+      "version": "7",
+      "when": 1793899501000,
+      "tag": "0179_account_erasure_identifiers",
+      "breakpoints": true
+    },
+    {
+      "idx": 180,
+      "version": "7",
+      "when": 1794286379502,
+      "tag": "0180_climbing_log_location",
+      "breakpoints": true
+    },
+    {
+      "idx": 181,
+      "version": "7",
+      "when": 1794289910392,
+      "tag": "0181_healthspan_retirement_boundary",
+      "breakpoints": true
+    },
+    {
+      "idx": 182,
+      "version": "7",
+      "when": 1794331466000,
+      "tag": "0182_climbing_log_activity",
+      "breakpoints": true
+    },
+    {
+      "idx": 183,
+      "version": "7",
+      "when": 1794331467000,
+      "tag": "0183_activity_measured_bounds",
+      "breakpoints": true
+    },
+    {
+      "idx": 184,
+      "version": "7",
+      "when": 1794416457995,
+      "tag": "0184_activity_fit_recovery_error",
+      "breakpoints": true
+    },
+    {
+      "idx": 185,
+      "version": "7",
+      "when": 1794433425118,
+      "tag": "0185_climbing_area_groups",
+      "breakpoints": true
     }
   ]
 }

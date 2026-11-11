@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { GpsCoordinates } from "@dofek/climbing-catalogue/geometry";
 import {
   type AttemptScope,
   areaSchema,
@@ -8,9 +9,9 @@ import {
   type GradeComponent,
   pitchSchema,
 } from "@dofek/training/climbing-log";
-import type { GpsCoordinates } from "@dofek/training/gps-coordinates";
 import { and, asc, eq, ne, sql } from "drizzle-orm";
 import { z } from "zod";
+import { persistClimbingLogActivityObservation } from "./climbing-log-activity.ts";
 import type { SyncDatabase, TransactionDatabase } from "./index.ts";
 import {
   area,
@@ -77,6 +78,7 @@ const sourceAttemptSchema = z
     parentSourceKey: z.string().trim().min(1).optional(),
     qualifier: sourceQualifierSchema.optional(),
     attemptIndex: climbingAttemptSchema.shape.attemptIndex.optional(),
+    sourceCompleted: climbingAttemptSchema.shape.sourceCompleted.optional(),
     sourceResult: climbingAttemptSchema.shape.sourceResult.optional(),
     ropeMethod: climbingAttemptSchema.shape.ropeMethod.optional(),
     solo: climbingAttemptSchema.shape.solo.optional(),
@@ -105,6 +107,10 @@ const sourceAttemptCountSchema = z
   .refine((count) => count.scope === "pitch" || count.pitch === undefined, {
     message: "A whole-climb count cannot identify a pitch.",
   });
+const sourceActivityObservationSchema = z.strictObject({
+  recordedAt: z.iso.datetime({ offset: true }),
+  gymExternalId: z.string().trim().min(1).nullable().optional(),
+});
 const sourceLogSchema = climbingLogEntrySchema
   .pick({
     externalId: true,
@@ -124,8 +130,22 @@ const sourceLogSchema = climbingLogEntrySchema
   .extend({
     externalId: climbingLogEntrySchema.shape.externalId.unwrap(),
     climb: sourceClimbWithPitchesSchema.nullable().optional(),
+    areas: z.array(sourceAreaSchema).readonly().optional(),
     reportedAttemptCounts: z.array(sourceAttemptCountSchema).readonly().optional(),
-    attempts: z.array(sourceAttemptSchema).nonempty().readonly(),
+    attempts: z.array(sourceAttemptSchema).readonly(),
+    activityObservation: sourceActivityObservationSchema.optional(),
+  })
+  .superRefine((entry, context) => {
+    for (const [index, count] of (entry.reportedAttemptCounts ?? []).entries()) {
+      if (count.count <= 1000) continue;
+      const name = entry.climb?.name ?? entry.title;
+      const label = name ? `${name} [${entry.externalId}]` : entry.externalId;
+      context.addIssue({
+        code: "custom",
+        message: `Source count for ${label} exceeds 1,000 attempts. Review this entry in the source logbook before syncing again.`,
+        path: ["reportedAttemptCounts", index, "count"],
+      });
+    }
   });
 const sourceInputSchema = z.strictObject({
   userId: z.guid(),
@@ -146,7 +166,8 @@ export interface ClimbingLogSyncInput {
   entries: readonly SourceClimbingLogEntry[];
 }
 
-type AreaRow = typeof area.$inferSelect;
+// Sync owns source facts; explicit location membership is maintained independently.
+type AreaRow = Omit<typeof area.$inferSelect, "groupId">;
 type ClimbRow = typeof climb.$inferSelect;
 type PitchRow = typeof pitch.$inferSelect;
 type AttemptRow = typeof climbingAttempt.$inferSelect;
@@ -427,6 +448,7 @@ async function resolveClimb(
 
 const factKeys = [
   "attemptIndex",
+  "sourceCompleted",
   "sourceResult",
   "ropeMethod",
   "solo",
@@ -498,7 +520,9 @@ function matchAttempt(
   sharedCountedMethod: boolean,
 ): AttemptRow | undefined {
   const remaining = rows.filter((row) => !matched.has(row.id));
-  if (!described(supplied)) return remaining[0];
+  const hasSuppliedFacts =
+    factKeys.some((key) => supplied[key] !== undefined) || supplied.parentAttemptId !== undefined;
+  if (!hasSuppliedFacts) return remaining[0];
   if (supplied.attemptIndex != null) {
     const indexed = remaining.filter((row) => row.attemptIndex === supplied.attemptIndex);
     if (indexed.length > 1)
@@ -511,6 +535,7 @@ function matchAttempt(
       factKeys.every(
         (key) =>
           key === "sourceResult" ||
+          key === "sourceCompleted" ||
           (key === "ropeMethod" && sharedCountedMethod) ||
           supplied[key] == null ||
           row[key] == null ||
@@ -535,6 +560,12 @@ function matchAttempt(
         row.sourceResult?.trim().toLowerCase() === supplied.sourceResult?.trim().toLowerCase(),
     );
     if (resultMatches.length === 1) return resultMatches[0];
+  }
+  if (supplied.sourceCompleted != null) {
+    const completionMatches = compatible.filter(
+      (row) => row.sourceCompleted === supplied.sourceCompleted,
+    );
+    if (completionMatches.length === 1) return completionMatches[0];
   }
   if (compatible.length === 1) return compatible[0];
   if (compatible.length > 1) {
@@ -668,6 +699,7 @@ function associatedParent(
         factKeys.every(
           (key) =>
             key === "sourceResult" ||
+            key === "sourceCompleted" ||
             facts[key] == null ||
             row[key] == null ||
             equalFact(facts[key], row[key]),
@@ -679,6 +711,12 @@ function associatedParent(
           row.sourceResult?.trim().toLowerCase() === facts.sourceResult?.trim().toLowerCase(),
       );
       if (resultMatches.length) candidates = resultMatches;
+    }
+    if (facts.sourceCompleted != null) {
+      const completionMatches = candidates.filter(
+        (row) => row.sourceCompleted === facts.sourceCompleted,
+      );
+      if (completionMatches.length) candidates = completionMatches;
     }
     for (const candidate of candidates)
       if (candidate.parentAttemptId) parents.add(candidate.parentAttemptId);
@@ -841,6 +879,7 @@ async function removeSupersededObjects(
     await tx.execute(sql`
     DELETE FROM fitness.area AS obsolete WHERE obsolete.id = ${id}::uuid
     AND NOT EXISTS (SELECT 1 FROM fitness.climb AS climb WHERE climb.area_id = obsolete.id)
+    AND NOT EXISTS (SELECT 1 FROM fitness.climbing_log_entry AS entry WHERE entry.area_id = obsolete.id)
     AND NOT EXISTS (SELECT 1 FROM fitness.area AS child WHERE child.parent_area_id = obsolete.id)
   `);
 }
@@ -889,13 +928,36 @@ export async function persistClimbingLogEntries(
         definition = await resolveClimb(tx, scope, source.climb, associated, oldAreas);
       const {
         climb: _climb,
+        areas,
         attempts: _attempts,
         reportedAttemptCounts: _counts,
         reportedGrades,
+        activityObservation: _activityObservation,
         ...facts
       } = source;
       const id = known?.id ?? randomUUID();
-      const changes = { ...facts, climbId: definition?.id ?? null, providerAbsentAt: null };
+      let areaId = known?.areaId ?? null;
+      if (areas !== undefined) {
+        const prior = await areaChain(tx, areaId);
+        for (const node of prior) oldAreas.add(node.id);
+        areaId = await resolveAreas(tx, scope, areas, prior);
+      }
+      const activityId = await persistClimbingLogActivityObservation(tx, {
+        ...scope,
+        source,
+        activityId: source.activityObservation
+          ? (known?.activityId ?? source.activityId ?? null)
+          : source.activityId === undefined
+            ? (known?.activityId ?? null)
+            : source.activityId,
+      });
+      const changes = {
+        ...facts,
+        areaId,
+        activityId,
+        climbId: definition?.id ?? null,
+        providerAbsentAt: null,
+      };
       if (known) await tx.update(climbingLogEntry).set(changes).where(eq(climbingLogEntry.id, id));
       else await tx.insert(climbingLogEntry).values({ id, ...scope, ...changes });
       await replaceLogGrades(tx, id, reportedGrades);

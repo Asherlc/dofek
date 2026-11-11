@@ -1,6 +1,11 @@
 import type { ClimbingStrengthsDisplayPanel } from "./climbing-strengths.ts";
 
-const dimensions = { wall_angle: "Wall angle", hold_type: "Hold type", setting: "Setting" };
+const dimensions = {
+  wall_angle: "Wall angle",
+  hold_type: "Hold type",
+  style: "Style",
+  setting: "Setting",
+};
 
 export function climbingStrengthsPanelLabel(panel: ClimbingStrengthsDisplayPanel): string {
   return panel.dimension === "tag" ? panel.category.label : dimensions[panel.dimension];
@@ -21,6 +26,7 @@ export function climbingStrengthsDefaultBreakdown(panels: ClimbingStrengthsDispl
   const panel =
     panels.find((panel) => panel.dimension === "wall_angle" && climbingStrengthsObserved(panel)) ??
     panels.find((panel) => panel.dimension === "hold_type" && climbingStrengthsObserved(panel)) ??
+    panels.find((panel) => panel.dimension === "style" && climbingStrengthsObserved(panel)) ??
     panels.find((panel) => panel.dimension === "tag" && climbingStrengthsObserved(panel)) ??
     panels.find((panel) => panel.dimension !== "setting");
   return panel ? climbingStrengthsBreakdownKey(panel) : "wall_angle";
@@ -32,6 +38,8 @@ export function climbingStrengthsBreakdownOptions(panels: ClimbingStrengthsDispl
     ["hold_type", { key: "hold_type", label: "Hold type", providerId: null }],
   ]);
   for (const panel of panels) {
+    if (panel.dimension === "style")
+      options.set("style", { key: "style", label: "Style", providerId: null });
     if (panel.dimension !== "tag" || !climbingStrengthsObserved(panel)) continue;
     const key = climbingStrengthsBreakdownKey(panel);
     options.set(key, { key, label: panel.category.label, providerId: panel.category.providerId });

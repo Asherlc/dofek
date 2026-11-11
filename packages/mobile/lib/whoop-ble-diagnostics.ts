@@ -100,6 +100,7 @@ export class WhoopBleDiagnostics {
       checkpointAt: buffers.checkpointAt,
       ...bufferAttributes("imu", buffers.imu),
       ...bufferAttributes("realtime", buffers.realtime),
+      ...bufferAttributes("sensorRecords", buffers.sensorRecords),
       activeUploadCount: buffers.activeUploadCount,
       blockedUploadStreams: buffers.blockedUploadStreams.join(","),
       lastUploadError: buffers.lastUploadError,

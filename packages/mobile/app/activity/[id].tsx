@@ -2,12 +2,14 @@ import {
   type ActivityMetric,
   activityDataStateLabel,
   formatActivityMetric,
+  groupActivityMetrics,
 } from "@dofek/format/activity-data-state";
-import { formatDurationRange, formatDurationSeconds, formatNumber } from "@dofek/format/format";
+import { formatDurationMinutes, formatDurationSeconds, formatNumber } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { processingPollInterval } from "@dofek/providers/processing-status";
 import { ACTIVITY_IMAGES_QUERY_OPTIONS } from "@dofek/training/activity-images";
+import { activityQueryPlaceholder } from "@dofek/training/activity-query-placeholder";
 import { buildClimbingMapLocations, buildClimbingMapMarkers } from "@dofek/training/climbing-map";
 import { isIndoorCyclingModality } from "@dofek/training/endurance-types";
 import type { MuscleGroupInput } from "@dofek/training/muscle-groups";
@@ -29,7 +31,7 @@ import type {
   ActivityMetric as SourceMetric,
 } from "../../../server/src/contracts/activity-metric-sources.ts";
 import { decodeClimbingLogEntriesResponse } from "../../../server/src/contracts/climbing-log-contracts.ts";
-import { ActivityImages } from "../../components/ActivityImages";
+import { ActivityClimbingPanel } from "../../components/ActivityClimbingPanel";
 import { ActivityPerceivedExertion } from "../../components/ActivityPerceivedExertion";
 import {
   AreaChart,
@@ -40,8 +42,9 @@ import {
 import { ActivityDetailHeader } from "../../components/activity/ActivityDetailHeader";
 import { ActivityMetricSourcePicker } from "../../components/activity/ActivityMetricSourcePicker";
 import { statsStyles, styles } from "../../components/activity/styles";
+import { useActivityMapHover } from "../../components/activity/useActivityMapHover";
 import { HrZonesChart, PowerZonesChart } from "../../components/activity/ZoneDistributionCharts";
-import { ClimbingLogEntryBreakdown } from "../../components/ClimbingLogEntryBreakdown";
+import { CyclingThresholdDetails } from "../../components/CyclingThresholdDetails";
 import { HangboardingDetail } from "../../components/HangboardingDetail";
 import { MapProcessingState } from "../../components/MapProcessingState";
 import { MuscleGroupBodyDiagram } from "../../components/MuscleGroupBodyDiagram";
@@ -65,37 +68,51 @@ type StatItem = ActivityMetric | { label: string; value: string; qualifier?: str
 function StatsGrid({ stats }: { stats: StatItem[] }) {
   return (
     <View style={statsStyles.grid}>
-      {stats
-        .filter((stat) => !("status" in stat) || stat.status !== "missing")
-        .map((stat) => {
-          const metric = "status" in stat ? stat : null;
-          const unavailableMetric = metric && metric.status !== "available" ? metric : null;
-          const isUnavailable = unavailableMetric !== null;
-          const accessibleLabel = unavailableMetric
-            ? `${unavailableMetric.label} ${activityDataStateLabel(unavailableMetric.status)}: ${unavailableMetric.reason}`
-            : undefined;
-          const displayedValue = unavailableMetric?.reason ?? ("value" in stat ? stat.value : null);
-          return (
-            <View
-              key={stat.label}
-              style={statsStyles.card}
-              accessible={isUnavailable}
-              accessibilityLabel={accessibleLabel}
-            >
-              <Text style={statsStyles.label}>
-                {unavailableMetric
-                  ? `${unavailableMetric.label} ${activityDataStateLabel(unavailableMetric.status)}`
-                  : stat.label}
+      {groupActivityMetrics(stats).map(({ primary: stat, secondary }) => {
+        const metric = "status" in stat ? stat : null;
+        const unavailableMetric = metric && metric.status !== "available" ? metric : null;
+        const isUnavailable = unavailableMetric !== null;
+        const accessibleLabel = unavailableMetric
+          ? [
+              `${unavailableMetric.label} ${activityDataStateLabel(unavailableMetric.status)}: ${unavailableMetric.reason}`,
+              secondary
+                ? "value" in secondary
+                  ? `${secondary.label}: ${secondary.value}`
+                  : `${secondary.label} ${activityDataStateLabel(secondary.status)}: ${secondary.reason}`
+                : null,
+            ]
+              .filter(Boolean)
+              .join(". ")
+          : undefined;
+        const displayedValue = unavailableMetric?.reason ?? ("value" in stat ? stat.value : null);
+        return (
+          <View
+            key={stat.label}
+            style={statsStyles.card}
+            accessible={isUnavailable || accessibleLabel !== undefined}
+            accessibilityLabel={accessibleLabel}
+          >
+            <Text style={statsStyles.label}>
+              {unavailableMetric
+                ? `${unavailableMetric.label} ${activityDataStateLabel(unavailableMetric.status)}`
+                : stat.label}
+            </Text>
+            <Text style={statsStyles.value}>{displayedValue}</Text>
+            {secondary && (
+              <Text style={statsStyles.secondary}>
+                {"value" in secondary
+                  ? `Max ${secondary.value}`
+                  : `${secondary.label} ${activityDataStateLabel(secondary.status)}: ${secondary.reason}`}
               </Text>
-              <Text style={statsStyles.value}>{displayedValue}</Text>
-              {"qualifier" in stat && stat.qualifier && (
-                <Text style={{ color: colors.textSecondary, fontSize: 12, marginTop: 4 }}>
-                  {stat.qualifier}
-                </Text>
-              )}
-            </View>
-          );
-        })}
+            )}
+            {"qualifier" in stat && stat.qualifier && (
+              <Text style={{ color: colors.textSecondary, fontSize: 12, marginTop: 4 }}>
+                {stat.qualifier}
+              </Text>
+            )}
+          </View>
+        );
+      })}
     </View>
   );
 }
@@ -296,7 +313,7 @@ export default function ActivityDetailScreen() {
       }
       await Promise.all([
         trpcUtils.activity.list.invalidate(),
-        trpcUtils.calendar.weekList.invalidate(),
+        trpcUtils.calendar.weekListV2.invalidate(),
         trpcUtils.calendar.activityOverview.invalidate(),
         trpcUtils.calendar.calendarData.invalidate(),
       ]);
@@ -313,13 +330,14 @@ export default function ActivityDetailScreen() {
         await Promise.all([
           trpcUtils.activity.byId.invalidate({ id }),
           trpcUtils.activity.stream.invalidate({ id, maxPoints: 200 }),
+          trpcUtils.activity.heartRateContext.invalidate({ id }),
           trpcUtils.activity.hrZones.invalidate({ id }),
           trpcUtils.activity.powerZones.invalidate({ id }),
           trpcUtils.activity.powerWork.invalidate({ id }),
           trpcUtils.activity.strengthExercises.invalidate({ id }),
           trpcUtils.activity.hangboardDetails.invalidate({ id }),
           trpcUtils.activity.list.invalidate(),
-          trpcUtils.calendar.weekList.invalidate(),
+          trpcUtils.calendar.weekListV2.invalidate(),
           trpcUtils.calendar.activityOverview.invalidate(),
         ]);
       } finally {
@@ -358,7 +376,10 @@ export default function ActivityDetailScreen() {
     { id: id ?? "" },
     { ...ACTIVITY_IMAGES_QUERY_OPTIONS, enabled: !!id },
   );
-  const metricSources = trpc.activity.metricSources.useQuery({ id: id ?? "" }, { enabled: !!id });
+  const metricSources = trpc.activity.metricSources.useQuery(
+    { id: id ?? "", responseVersion: 2 },
+    { enabled: !!id },
+  );
   const hardware = trpc.activity.hardware.useQuery({ id: id ?? "" }, { enabled: !!id });
   const [sourceSelection, setSourceSelection] = useState<{
     activityId: string;
@@ -406,22 +427,14 @@ export default function ActivityDetailScreen() {
     { id: id ?? "", powerSourceId: sources.power },
     {
       enabled: !!id && isCycling,
-      placeholderData: (previousData, previousQuery) => {
-        const previousInput = previousQuery?.queryKey[1]?.input;
-        return previousInput &&
-          typeof previousInput === "object" &&
-          "id" in previousInput &&
-          previousInput.id === id
-          ? previousData
-          : undefined;
-      },
+      placeholderData: activityQueryPlaceholder(id),
     },
   );
   const powerZones = trpc.activity.powerZones.useQuery(
     { id: id ?? "", powerSourceId: sources.power },
     {
       enabled: !!id && isCycling && hasPower,
-      placeholderData: (previousData) => previousData,
+      placeholderData: activityQueryPlaceholder(id),
     },
   );
   const isStrengthActivity =
@@ -432,19 +445,25 @@ export default function ActivityDetailScreen() {
   );
   const isClimbingActivity =
     detail.data != null && isActivityDetailType(detail.data.activityType, "climbing");
+  const heartRateContext = trpc.activity.heartRateContext.useQuery(
+    { id: id ?? "", maxPoints: 200, ...heartRateSourceInput },
+    { enabled: !!id && isClimbingActivity, placeholderData: activityQueryPlaceholder(id) },
+  );
   const climbingEntries = trpc.climbing.activityLogEntries.useQuery(
-    { activityId: id ?? "", responseVersion: 3 },
+    { activityId: id ?? "", responseVersion: 5 },
     { enabled: !!id && isClimbingActivity, select: decodeClimbingLogEntriesResponse },
   );
   const entrySuggestions = trpc.climbing.unattachedClimbingLogEntries.useQuery(
-    { activityId: id, responseVersion: 3 },
+    { activityId: id, responseVersion: 5 },
     { enabled: !!id && isClimbingActivity, select: decodeClimbingLogEntriesResponse },
   );
   const climbingEntriesLoading = climbingEntries.isLoading && !climbingEntries.data;
   const [selectedClimbingEntryId, setSelectedClimbingEntryId] = useState<string | null>(null);
-  const selectedClimbingEntry = climbingEntries.data?.find(
-    (entry) => entry.id === selectedClimbingEntryId,
-  );
+  const [highlightedClimbId, setHighlightedClimbId] = useState<string | null>(null);
+  const selectedClimbingEntry = [
+    ...(climbingEntries.data ?? []),
+    ...(entrySuggestions.data ?? []),
+  ].find((entry) => entry.id === selectedClimbingEntryId);
   const climbingLocations = useMemo(
     () =>
       buildClimbingMapLocations([
@@ -454,8 +473,14 @@ export default function ActivityDetailScreen() {
     [climbingEntries.data, entrySuggestions.data],
   );
   const climbMarkers = useMemo(
-    () => buildClimbingMapMarkers(climbingEntries.data ?? []),
-    [climbingEntries.data],
+    () =>
+      isClimbingActivity
+        ? buildClimbingMapMarkers([
+            ...(climbingEntries.data ?? []),
+            ...(entrySuggestions.data ?? []),
+          ])
+        : [],
+    [isClimbingActivity, climbingEntries.data, entrySuggestions.data],
   );
   const [entryAttachState, setEntryAttachState] = useState<
     Record<string, { pending: boolean; error: string | null }>
@@ -466,7 +491,7 @@ export default function ActivityDetailScreen() {
         trpcUtils.activity.images.invalidate({ id: input.activityId }),
         trpcUtils.climbing.activityLogEntries.invalidate({
           activityId: input.activityId,
-          responseVersion: 3,
+          responseVersion: 5,
         }),
         trpcUtils.climbing.sessionSummary.invalidate(),
         trpcUtils.mobileDashboard.trainingV2.invalidate(),
@@ -474,7 +499,7 @@ export default function ActivityDetailScreen() {
         trpcUtils.climbing.strengths.invalidate(),
         trpcUtils.climbing.unattachedClimbingLogEntries.invalidate({
           activityId: input.activityId,
-          responseVersion: 3,
+          responseVersion: 5,
         }),
       ]);
     },
@@ -505,23 +530,12 @@ export default function ActivityDetailScreen() {
     { enabled: !!id && isHangboardingActivity },
   );
 
-  const [hoveredPosition, setHoveredPosition] = useState<{ lat: number; lng: number } | null>(null);
+  const {
+    hoveredPosition,
+    handleHoverIndex,
+    handleHoverTime: handleHeartRateHoverTime,
+  } = useActivityMapHover(points);
   const [scrollEnabled, setScrollEnabled] = useState(true);
-
-  const handleHoverIndex = useCallback(
-    (index: number | null) => {
-      if (index != null) {
-        const point = points[index];
-        if (point?.lat != null && point?.lng != null) {
-          setHoveredPosition({ lat: point.lat, lng: point.lng });
-          return;
-        }
-      }
-      setHoveredPosition(null);
-    },
-    [points],
-  );
-
   const handleScrubStart = useCallback(() => setScrollEnabled(false), []);
   const handleScrubEnd = useCallback(() => setScrollEnabled(true), []);
 
@@ -554,7 +568,9 @@ export default function ActivityDetailScreen() {
   const hasGps = routePoints.length > 0;
   const hasMap = hasGps || climbMarkers.length > 0;
   const routeMapPending = route.isLoading || route.data?.status === "processing";
-  const hasHr = points.some((p) => p.heartRate != null);
+  const hasHr =
+    points.some((p) => p.heartRate != null) ||
+    (isClimbingActivity && (heartRateContext.data?.points.length ?? 0) > 0);
   const hasAltitude = points.some((p) => p.altitude != null);
 
   const exportOptions: Array<{
@@ -622,12 +638,11 @@ export default function ActivityDetailScreen() {
   // Build stats array
   const stats: StatItem[] = [];
 
-  if (activity.startedAt && activity.endedAt) {
-    stats.push({
-      label: "Duration",
-      value: formatDurationRange(activity.startedAt, activity.endedAt),
-    });
-  }
+  stats.push({
+    label: "Duration",
+    value:
+      activity.durationMin === null ? "Unavailable" : formatDurationMinutes(activity.durationMin),
+  });
   if (!(isCycling && isIndoorCyclingModality(activity.modality))) {
     stats.push(
       formatActivityMetric(
@@ -702,7 +717,15 @@ export default function ActivityDetailScreen() {
     >
       {/* Activity Header */}
       <ActivityDetailHeader
+        key={id}
         activity={activity}
+        photos={{
+          images: images.data?.images ?? [],
+          loading: images.isLoading,
+          error: images.error,
+          retrying: images.isFetching,
+          onRetry: () => void images.refetch(),
+        }}
         hardware={hardware.data}
         hardwareLoading={hardware.isLoading}
         hardwareError={hardware.error}
@@ -715,14 +738,6 @@ export default function ActivityDetailScreen() {
         <QueryStatePanel variant="error" message={powerWork.error.message} />
       )}
       <ActivityPerceivedExertion value={activity.perceivedExertion} />
-      <ActivityImages
-        key={id}
-        images={images.data?.images ?? []}
-        loading={images.isLoading}
-        error={images.error}
-        retrying={images.isFetching}
-        onRetry={() => void images.refetch()}
-      />
 
       {isHangboardingActivity && (
         <View style={hangboardingStyles.container}>
@@ -755,14 +770,18 @@ export default function ActivityDetailScreen() {
           <MapProcessingState />
         </View>
       ) : null}
-      {hasMap && (
-        <RouteMap
-          points={routePoints}
-          climbMarkers={climbMarkers}
-          onSelectEntry={setSelectedClimbingEntryId}
-          hoveredPosition={hoveredPosition}
-        />
-      )}
+      {hasMap &&
+        !(
+          isClimbingActivity &&
+          ((climbingEntries.data?.length ?? 0) > 0 || (entrySuggestions.data?.length ?? 0) > 0)
+        ) && (
+          <RouteMap
+            points={routePoints}
+            climbMarkers={climbMarkers}
+            onSelectEntry={setSelectedClimbingEntryId}
+            hoveredPosition={hoveredPosition}
+          />
+        )}
 
       {/* Strength Exercises */}
       {(strengthExercises.data?.length ?? 0) > 0 && (
@@ -776,18 +795,28 @@ export default function ActivityDetailScreen() {
             <Text style={styles.errorText}>{userFacingErrorMessage(climbingEntries.error)}</Text>
           )}
           {climbingEntriesLoading && <QueryStatePanel variant="loading" minHeight={72} />}
-          {(climbingEntries.data?.length ?? 0) > 0 && (
-            <ClimbingLogEntryBreakdown
+          {((climbingEntries.data?.length ?? 0) > 0 ||
+            (entrySuggestions.data?.length ?? 0) > 0) && (
+            <ActivityClimbingPanel
+              selectedEntryId={highlightedClimbId}
+              onSelectEntry={setHighlightedClimbId}
+              points={routePoints}
+              hoveredPosition={hoveredPosition}
+              onOpenEntry={setSelectedClimbingEntryId}
+              suggestions={entrySuggestions.data}
+              attachmentStates={entryAttachState}
+              onAttach={handleAttachEntry}
               entries={climbingEntries.data ?? []}
               locations={climbingLocations}
-              selectedEntryId={selectedClimbingEntryId}
             />
           )}
           {(entrySuggestions.error ||
-            (!climbingEntriesLoading && entrySuggestions.isLoading) ||
-            (entrySuggestions.data?.length ?? 0) > 0 ||
-            climbingEntries.data?.length === 0) && (
+            (!climbingEntriesLoading &&
+              entrySuggestions.isLoading &&
+              entrySuggestions.data === undefined) ||
+            (climbingEntries.data?.length === 0 && entrySuggestions.data?.length === 0)) && (
             <UnattachedClimbingLogEntries
+              showEntries={false}
               suggestions={entrySuggestions.data}
               locations={climbingLocations}
               selectedEntryId={selectedClimbingEntryId}
@@ -812,8 +841,12 @@ export default function ActivityDetailScreen() {
         <QueryStatePanel variant="error" message={metricSources.error.message} />
       )}
       {stream.error && <QueryStatePanel variant="error" message={stream.error.message} />}
+      {isClimbingActivity && heartRateContext.error && (
+        <QueryStatePanel variant="error" message={heartRateContext.error.message} />
+      )}
       {sourceControls.length > 0 &&
         (stream.isFetching ||
+          heartRateContext.isFetching ||
           hrZones.isFetching ||
           powerZones.isFetching ||
           powerWork.isFetching) && (
@@ -840,15 +873,38 @@ export default function ActivityDetailScreen() {
           />
         ))}
       {hasHr && (
-        <LineChart
-          data={points.map((p) => ({ recordedAt: p.recordedAt, value: p.heartRate }))}
-          color={CHART_COLORS.heartRate}
-          label="Heart Rate"
-          unit="bpm"
-          onHoverIndex={hasGps ? handleHoverIndex : undefined}
-          onScrubStart={hasGps ? handleScrubStart : undefined}
-          onScrubEnd={hasGps ? handleScrubEnd : undefined}
-        />
+        <>
+          <LineChart
+            highlightedClimbId={highlightedClimbId}
+            onSelectClimb={setHighlightedClimbId}
+            activityWindow={
+              isClimbingActivity ? (heartRateContext.data?.window ?? activity) : activity
+            }
+            climbAnnotations={
+              isClimbingActivity
+                ? climbingEntries.data?.flatMap((entry) => entry.chartAnnotations ?? [])
+                : undefined
+            }
+            data={
+              isClimbingActivity && heartRateContext.data
+                ? heartRateContext.data.points
+                : points.map((p) => ({ recordedAt: p.recordedAt, value: p.heartRate }))
+            }
+            color={CHART_COLORS.heartRate}
+            label="Heart Rate"
+            unit="bpm"
+            onHoverTime={hasGps ? handleHeartRateHoverTime : undefined}
+            onScrubStart={hasGps ? handleScrubStart : undefined}
+            onScrubEnd={hasGps ? handleScrubEnd : undefined}
+          />
+          {isClimbingActivity && heartRateContext.data && (
+            <Text style={styles.chartsLoadingText}>
+              {heartRateContext.data.window.endedAt
+                ? "HR chart spans 5 minutes before and after the activity."
+                : "HR chart starts 5 minutes before the activity."}
+            </Text>
+          )}
+        </>
       )}
 
       {sourceControls
@@ -970,7 +1026,10 @@ export default function ActivityDetailScreen() {
       {/* Power Zones (cycling only, requires eFTP) */}
       {powerZones.error && <QueryStatePanel variant="error" message={powerZones.error.message} />}
       {isCycling && hasPower && powerZones.data != null && (
-        <PowerZonesChart zones={powerZones.data.zones} />
+        <View style={{ gap: 8 }}>
+          <CyclingThresholdDetails evidence={powerZones.data.thresholdEvidence} />
+          {powerZones.data.ftp != null && <PowerZonesChart zones={powerZones.data.zones} />}
+        </View>
       )}
 
       <Pressable

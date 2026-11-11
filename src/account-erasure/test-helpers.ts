@@ -30,8 +30,13 @@ export function createSeaweedFsS3Container(credentials?: {
     ])
     .withExposedPorts(9000)
     .withWaitStrategy(Wait.forLogMessage(/Start Seaweed S3 API Server/));
+  const archive = new TarArchive();
+  // Allocate one volume per small test collection within the default eight-slot cap.
+  // https://github.com/seaweedfs/seaweedfs/blob/4.47/weed/command/scaffold/master.toml
+  archive.append("[master.volume_growth]\ncopy_1 = 1\n", {
+    name: "etc/seaweedfs/master.toml",
+  });
   if (credentials) {
-    const archive = new TarArchive();
     archive.append(
       JSON.stringify({
         identities: [
@@ -46,10 +51,10 @@ export function createSeaweedFsS3Container(credentials?: {
       }),
       { name: "tmp/s3-test-identity.json" },
     );
-    // Testcontainers' content-copy helper still uses archiver 7's removed factory.
-    // Its public tar input works with the workspace's archiver 8 security override.
-    container.withCopyArchivesToContainer([{ tar: archive, target: "/" }]);
-    void archive.finalize();
   }
+  // Testcontainers' content-copy helper still uses archiver 7's removed factory.
+  // Its public tar input works with the workspace's archiver 8 security override.
+  container.withCopyArchivesToContainer([{ tar: archive, target: "/" }]);
+  void archive.finalize();
   return container;
 }

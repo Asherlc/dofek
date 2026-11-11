@@ -1,11 +1,11 @@
+import { getMultipartBoundary, parseMultipart } from "@remix-run/multipart-parser";
 import { z } from "zod";
 
 const defaultCommandOptions = {
   channel: "production",
   platform: "ios",
-  runtimeVersion: "1.0",
   url: "https://ota.dofek.asherlc.com/manifest",
-} satisfies OtaManifestRequestOptions;
+} satisfies Omit<OtaManifestRequestOptions, "runtimeVersion" | "appId">;
 
 const assetSchema = z.object({
   contentType: z.string(),
@@ -24,9 +24,12 @@ const manifestSchema = z.object({
 });
 
 const commandOptionsSchema = z.object({
+  appId: z.string({ error: "--app-id is required" }).trim().min(1, "--app-id is required"),
   channel: z.string().min(1),
   platform: z.enum(["android", "ios"]),
-  runtimeVersion: z.string().min(1),
+  runtimeVersion: z
+    .string({ error: "--runtime-version is required; resolve the app runtime before checking OTA" })
+    .min(1, "--runtime-version is required; resolve the app runtime before checking OTA"),
   url: z.url(),
 });
 
@@ -34,6 +37,7 @@ type OtaManifest = z.infer<typeof manifestSchema>;
 type OtaPlatform = z.infer<typeof commandOptionsSchema.shape.platform>;
 
 interface OtaManifestRequestOptions {
+  appId: string;
   channel: string;
   platform: OtaPlatform;
   runtimeVersion: string;
@@ -43,35 +47,23 @@ interface OtaManifestRequestOptions {
 interface OtaManifestCheckOptions {
   fetchImplementation: typeof fetch;
   timeoutMilliseconds: number;
-  requestOptions?: OtaManifestRequestOptions;
+  requestOptions: OtaManifestRequestOptions;
 }
 
-function extractBoundary(contentType: string): string | null {
-  const boundaryMatch = contentType.match(/boundary=(?:"([^"]+)"|([^;\s]+))/i);
-  return boundaryMatch?.[1] ?? boundaryMatch?.[2] ?? null;
-}
-
-function extractManifestPart(body: string, boundary: string): string | null {
-  const normalizedBody = body.replaceAll("\r\n", "\n");
-  for (const part of normalizedBody.split(`--${boundary}`)) {
-    const separatorIndex = part.indexOf("\n\n");
-    if (separatorIndex === -1) {
-      continue;
-    }
-
-    const headers = part.slice(0, separatorIndex).toLowerCase();
-    if (
-      !headers.includes('content-disposition: form-data; name="manifest"') ||
-      (!headers.includes("content-type: application/json") &&
-        !headers.includes("content-type: application/expo+json"))
-    ) {
-      continue;
-    }
-
-    return part.slice(separatorIndex + 2).trim();
-  }
-
-  return null;
+function extractJsonPart(body: string, boundary: string, partName: string): string | null {
+  const parts = [...parseMultipart(Buffer.from(body), { boundary })];
+  const matchingParts = parts.filter((part) => part.name === partName);
+  if (matchingParts.length > 1)
+    throw new Error(`OTA response requires exactly one ${partName} part`);
+  const part = matchingParts[0];
+  if (
+    !part ||
+    !["application/json", "application/expo+json"].includes(
+      part.headers["content-type"]?.split(";")[0]?.trim().toLowerCase() ?? "",
+    )
+  )
+    return null;
+  return part.text;
 }
 
 function readOptionValue(arguments_: string[], index: number, optionName: string): string {
@@ -86,7 +78,8 @@ function parseCommandOptions(arguments_: string[]): OtaManifestRequestOptions {
   const options: {
     channel: string;
     platform: string;
-    runtimeVersion: string;
+    runtimeVersion?: string;
+    appId?: string;
     url: string;
   } = { ...defaultCommandOptions };
 
@@ -96,6 +89,10 @@ function parseCommandOptions(arguments_: string[]): OtaManifestRequestOptions {
       continue;
     }
     switch (argument) {
+      case "--app-id":
+        options.appId = readOptionValue(arguments_, index, argument);
+        index += 1;
+        break;
       case "--channel":
         options.channel = readOptionValue(arguments_, index, argument);
         index += 1;
@@ -123,13 +120,14 @@ function parseCommandOptions(arguments_: string[]): OtaManifestRequestOptions {
 export async function checkOtaManifest({
   fetchImplementation,
   timeoutMilliseconds,
-  requestOptions = defaultCommandOptions,
+  requestOptions,
 }: OtaManifestCheckOptions): Promise<OtaManifest | null> {
   let response: Response;
   try {
     response = await fetchImplementation(requestOptions.url, {
       headers: {
         accept: "application/expo+json, application/json, multipart/mixed",
+        "expo-app-id": requestOptions.appId,
         "expo-channel-name": requestOptions.channel,
         "expo-platform": requestOptions.platform,
         "expo-protocol-version": "1",
@@ -162,17 +160,27 @@ export async function checkOtaManifest({
     throw new Error("OTA manifest response is not multipart/mixed");
   }
 
-  const boundary = extractBoundary(contentType);
+  const boundary = getMultipartBoundary(contentType);
   if (!boundary) {
     throw new Error("OTA manifest response is missing a multipart boundary");
   }
 
-  const manifestPart = extractManifestPart(await response.text(), boundary);
+  const body = await response.text();
+  const manifestPart = extractJsonPart(body, boundary, "manifest");
   if (!manifestPart) {
+    const directivePart = extractJsonPart(body, boundary, "directive");
+    if (directivePart) {
+      z.object({ type: z.literal("noUpdateAvailable") }).parse(JSON.parse(directivePart));
+      return null;
+    }
     throw new Error("OTA manifest response is missing a valid manifest part");
   }
 
-  return manifestSchema.parse(JSON.parse(manifestPart));
+  const manifest = manifestSchema.parse(JSON.parse(manifestPart));
+  if (manifest.runtimeVersion !== requestOptions.runtimeVersion) {
+    throw new Error("OTA manifest runtime does not match requested runtime");
+  }
+  return manifest;
 }
 
 const isDirectExecution =

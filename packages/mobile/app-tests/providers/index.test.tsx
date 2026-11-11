@@ -269,6 +269,14 @@ vi.mock("../../modules/health-kit", () => ({
   queryDailyStatistics: vi.fn().mockResolvedValue([]),
   queryCategorySamples: vi.fn().mockResolvedValue([]),
   queryQuantitySamples: vi.fn().mockResolvedValue([]),
+  queryRunningStepSamples: vi.fn().mockResolvedValue({ workouts: [], samples: [] }),
+  queryRunningStepChanges: vi.fn().mockResolvedValue({
+    hasMore: false,
+    workouts: [],
+    samples: [],
+    deletedUUIDs: [],
+    queryId: null,
+  }),
   queryWorkouts: vi.fn().mockResolvedValue([]),
   querySleepSamples: vi.fn().mockResolvedValue([]),
   queryWorkoutRoutes: vi.fn().mockResolvedValue([]),
@@ -361,6 +369,7 @@ vi.mock("../../lib/trpc", () => ({
           recordSync: { mutate: vi.fn().mockResolvedValue({ recorded: true }) },
           deleteQuantitySamples: { mutate: vi.fn().mockResolvedValue({ deleted: 0 }) },
           pushQuantitySamples: { mutate: vi.fn().mockResolvedValue({ inserted: 0, errors: [] }) },
+          pushRunningStepSamples: { mutate: vi.fn().mockResolvedValue({ inserted: 0 }) },
           pushWorkouts: { mutate: vi.fn().mockResolvedValue({ inserted: 0 }) },
           pushWorkoutRoutes: { mutate: vi.fn().mockResolvedValue({ inserted: 0 }) },
           pushSleepSamples: { mutate: vi.fn().mockResolvedValue({ inserted: 0 }) },
@@ -420,6 +429,8 @@ const credentialProvider = {
 const credentialProviders = [
   credentialProvider,
   { ...credentialProvider, id: "zwift", name: "Zwift" },
+  { ...credentialProvider, id: "crimpd", name: "Crimpd" },
+  { ...credentialProvider, id: "eight-a", name: "8a.nu / Vertical-Life" },
 ];
 
 const tokenProvider = {
@@ -1060,6 +1071,68 @@ describe("ProvidersScreen", () => {
     mockSyncHealthKit.mockReset().mockResolvedValue({ inserted: 0, errors: [] });
     setupDefaultMocks();
   });
+
+  it("orders provider cards alphabetically, including Apple Health", async () => {
+    mockProvidersQuery.mockReturnValue({
+      data: [
+        connectedProvider,
+        { ...importOnlyProvider, id: "eight-a", name: "8a.nu / Vertical-Life" },
+        disconnectedProvider,
+      ],
+      isLoading: false,
+      error: null,
+    });
+    await renderProvidersScreen();
+
+    expect(
+      screen
+        .getAllByRole("button", { name: /^Open .* details$/ })
+        .map((card) => card.getAttribute("aria-label")),
+    ).toEqual([
+      "Open 8a.nu / Vertical-Life details",
+      "Open Apple Health details",
+      "Open Strava details",
+      "Open Wahoo details",
+    ]);
+  });
+
+  it.each([
+    ["crimpd", "Crimpd", ["application/zip", "application/x-zip-compressed"]],
+    [
+      "eight-a",
+      "8a.nu / Vertical-Life",
+      ["text/csv", "text/comma-separated-values", "application/csv", "text/plain"],
+    ],
+  ])(
+    "offers account sync and file import together for connected %s",
+    async (id, name, mimeTypes) => {
+      mockProvidersQuery.mockReturnValue({
+        data: [{ ...connectedProvider, id, name, authType: "credential" }],
+        isLoading: false,
+        error: null,
+      });
+      mockSyncMutateAsync.mockResolvedValue({ jobId: "crimpd-job", providerJobs: [] });
+      mockSyncStatusFetch.mockResolvedValue({
+        status: "done",
+        providers: { [id]: { status: "done" } },
+      });
+      mockGetDocumentAsync.mockResolvedValue({ canceled: true });
+      await renderProvidersScreen();
+      const card = within(screen.getByTestId(`provider-card-${id}`));
+      fireEvent.click(card.getByText("Sync"));
+      await waitFor(() => {
+        expect(mockSyncMutateAsync).toHaveBeenCalledWith({ providerId: id, sinceDays: 7 });
+      });
+      fireEvent.click(card.getByRole("button", { name: `Import file for ${name}` }));
+      await waitFor(() => {
+        expect(mockGetDocumentAsync).toHaveBeenCalledWith(
+          expect.objectContaining({
+            type: mimeTypes,
+          }),
+        );
+      });
+    },
+  );
 
   it("scopes pull-to-refresh to provider list query families", async () => {
     await renderProvidersScreen();
@@ -2473,6 +2546,56 @@ describe("ProvidersScreen", () => {
       );
     });
   });
+
+  it.each([
+    ["crimpd", "Crimpd", "zip", ["application/zip", "application/x-zip-compressed"]],
+    [
+      "eight-a",
+      "8a.nu / Vertical-Life",
+      "csv",
+      ["text/csv", "text/comma-separated-values", "application/csv", "text/plain"],
+    ],
+    [
+      "moonboard",
+      "MoonBoard",
+      "csv",
+      ["text/csv", "text/comma-separated-values", "application/csv", "text/plain"],
+    ],
+  ] as const)(
+    "selects and imports a file from the %s card",
+    async (id, name, extension, documentTypes) => {
+      mockProvidersQuery.mockReturnValue({
+        data: [{ ...importOnlyProvider, id, name }],
+        isLoading: false,
+        error: null,
+      });
+      const uri = `file:///tmp/${id}-export.${extension}`;
+      mockGetDocumentAsync.mockResolvedValue({
+        canceled: false,
+        assets: [
+          {
+            uri,
+            name: `${id}-export.${extension}`,
+            mimeType: extension === "zip" ? "application/zip" : "text/csv",
+          },
+        ],
+      });
+      mockImportSharedFile.mockResolvedValue({ providerId: id, jobId: `job-${id}` });
+      await renderProvidersScreen();
+      fireEvent.click(within(screen.getByTestId(`provider-card-${id}`)).getByText("Import file"));
+      await waitFor(() => {
+        expect(mockGetDocumentAsync).toHaveBeenCalledWith({
+          copyToCacheDirectory: true,
+          multiple: false,
+          type: [...documentTypes],
+        });
+        expect(mockImportSharedFile).toHaveBeenCalledWith(
+          expect.objectContaining({ fileUri: uri, providerId: id }),
+          expect.objectContaining({ fileUploadApi: expect.any(Object), file: expect.any(Object) }),
+        );
+      });
+    },
+  );
 
   it("selects and imports a Kaya CSV from the Kaya card", async () => {
     mockProvidersQuery.mockReturnValue({

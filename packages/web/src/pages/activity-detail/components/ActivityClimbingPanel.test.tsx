@@ -1,0 +1,294 @@
+// @vitest-environment jsdom
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, expect, it, vi } from "vitest";
+import { maps, resetMaps } from "../../../lib/maplibre-test-helpers.ts";
+import { ActivityClimbingPanel } from "./ActivityClimbingPanel.tsx";
+import { climbingMapLocations, climbingMapLogs } from "./climbing-log-map-test-helpers.ts";
+
+vi.mock(
+  "maplibre-gl",
+  async () => (await import("../../../lib/maplibre-test-helpers.ts")).maplibreMock,
+);
+beforeEach(resetMaps);
+
+it("lists explicitly linked Kaya and Kilter locations under one area heading", () => {
+  const entry = climbingMapLogs[0];
+  const climb = entry?.climb;
+  const area = climb?.areaPath[0];
+  if (!entry || !climb || !area) throw new Error("Expected climbing fixture");
+  const entries = ["Touchstone Great Western Power Company", "Great Western Power Company"].map(
+    (name, index) => ({
+      ...entry,
+      id: `log-${index}`,
+      providerId: index === 0 ? "kaya" : "kilter",
+      sourceName: index === 0 ? "Kaya" : "Kilter Board",
+      climb: { ...climb, name: `Problem ${index + 1}` },
+      areaGroupId: "30000000-0000-4000-8000-000000000001",
+      areaPath: [{ ...area, id: `gym-${index}`, name }],
+    }),
+  );
+  render(<ActivityClimbingPanel entries={entries} locations={{}} />);
+  expect(screen.getAllByRole("heading", { name: /^Area:/ })).toHaveLength(1);
+  expect(screen.getByRole("button", { name: "Select entry 1, Problem 1" })).toBeVisible();
+  expect(screen.getByRole("button", { name: "Select entry 2, Problem 2" })).toBeVisible();
+});
+
+it("reveals the selected suggestion after attachment moves it into another section", () => {
+  const entry = climbingMapLogs[0];
+  if (!entry) throw new Error("Expected entry");
+  const scrollTo = vi.fn();
+  const bounds = vi
+    .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+    .mockImplementation(function (this: HTMLElement) {
+      return this.tagName === "LI" ? new DOMRect(0, 800, 300, 150) : new DOMRect(0, 100, 300, 500);
+    });
+  try {
+    const view = render(
+      <ActivityClimbingPanel
+        entries={[]}
+        suggestions={[entry]}
+        locations={{}}
+        selectedEntryId={null}
+      />,
+    );
+    Object.defineProperty(screen.getByRole("region", { name: "Climb list" }), "scrollTo", {
+      value: scrollTo,
+    });
+    view.rerender(
+      <ActivityClimbingPanel
+        entries={[]}
+        suggestions={[entry]}
+        locations={{}}
+        selectedEntryId={entry.id}
+      />,
+    );
+    scrollTo.mockClear();
+    view.rerender(
+      <ActivityClimbingPanel
+        entries={[entry]}
+        suggestions={[]}
+        locations={{}}
+        selectedEntryId={entry.id}
+      />,
+    );
+    expect(scrollTo).toHaveBeenCalledWith({ top: 350, behavior: "auto" });
+  } finally {
+    bounds.mockRestore();
+  }
+});
+
+it("reveals the same map selection again after the list scrolls away", async () => {
+  const entry = climbingMapLogs[0];
+  if (!entry) throw new Error("Expected entry");
+  render(<ActivityClimbingPanel entries={[entry]} locations={climbingMapLocations} />);
+  const marker = await screen.findByRole("button", { name: /^Swiss Cheese · Climb location/ });
+  const list = screen.getByRole("region", { name: "Climb list" });
+  const row = screen.getByRole("button", { name: "Select entry 1, Swiss Cheese" }).closest("li");
+  if (!row) throw new Error("Expected row");
+  vi.spyOn(list, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 100, 300, 500));
+  vi.spyOn(row, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 800, 300, 150));
+  const scrollTo = vi.fn();
+  Object.defineProperty(list, "scrollTo", { value: scrollTo });
+  fireEvent.click(marker);
+  scrollTo.mockClear();
+  fireEvent.click(marker);
+  expect(scrollTo).toHaveBeenCalledWith({ top: 350, behavior: "auto" });
+});
+
+it("reveals a chart-selected occurrence inside the list without stealing focus", () => {
+  const onSelectEntry = vi.fn();
+  const view = render(
+    <ActivityClimbingPanel
+      entries={climbingMapLogs}
+      locations={{}}
+      selectedEntryId={null}
+      onSelectEntry={onSelectEntry}
+    />,
+  );
+  const repeat = screen.getByRole("button", { name: "Select entry 4, Swiss Cheese" });
+  const list = screen.getByRole("region", { name: "Climb list" });
+  const row = repeat.closest("li");
+  if (!row) throw new Error("Expected row");
+  vi.spyOn(list, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 100, 300, 500));
+  vi.spyOn(row, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 800, 300, 150));
+  const scrollTo = vi.fn();
+  Object.defineProperty(list, "scrollTo", { value: scrollTo });
+  view.rerender(
+    <ActivityClimbingPanel
+      entries={climbingMapLogs}
+      locations={{}}
+      selectedEntryId={climbingMapLogs[3]?.id}
+      onSelectEntry={onSelectEntry}
+    />,
+  );
+  expect(repeat).toHaveAttribute("aria-pressed", "true");
+  expect(scrollTo).toHaveBeenCalledWith({ top: 350, behavior: "auto" });
+  expect(repeat).not.toHaveFocus();
+  fireEvent.click(screen.getByRole("button", { name: "Select entry 1, Swiss Cheese" }));
+  expect(onSelectEntry).toHaveBeenLastCalledWith("tick-1");
+});
+
+it("shares the hovered or focused occurrence with the chart and clears on unmount", () => {
+  const onHighlightEntry = vi.fn();
+  const { unmount } = render(
+    <ActivityClimbingPanel
+      entries={climbingMapLogs}
+      locations={{}}
+      onHighlightEntry={onHighlightEntry}
+    />,
+  );
+  const first = screen.getByRole("button", { name: "Select entry 1, Swiss Cheese" });
+  const repeat = screen.getByRole("button", { name: "Select entry 4, Swiss Cheese" });
+  const row = repeat.closest("li");
+  if (!row) throw new Error("Expected repeat row");
+  fireEvent.focus(first);
+  expect(onHighlightEntry).toHaveBeenLastCalledWith("tick-1");
+  fireEvent.mouseEnter(row);
+  expect(onHighlightEntry).toHaveBeenLastCalledWith(climbingMapLogs[3]?.id);
+  fireEvent.mouseLeave(row);
+  expect(onHighlightEntry).toHaveBeenLastCalledWith("tick-1");
+  fireEvent.blur(first);
+  expect(onHighlightEntry).toHaveBeenLastCalledWith(null);
+  fireEvent.mouseEnter(row);
+  unmount();
+  expect(onHighlightEntry).toHaveBeenLastCalledWith(null);
+});
+
+it("synchronizes row hover/focus, selection and repeated map choices without resetting the map", async () => {
+  const open = vi.fn();
+  render(
+    <ActivityClimbingPanel
+      entries={climbingMapLogs}
+      locations={climbingMapLocations}
+      onOpenEntry={open}
+    />,
+  );
+  const dot = await screen.findByRole("button", { name: /^2 climbs · Swiss Cheese/ });
+  const first = screen.getByRole("button", { name: "Select entry 1, Swiss Cheese" });
+  const repeat = screen.getByRole("button", { name: "Select entry 4, Swiss Cheese" });
+  const row = first.closest("li");
+  if (!row) throw new Error("Expected climb row");
+  fireEvent.mouseEnter(row);
+  expect(dot).toHaveAttribute("data-highlighted", "true");
+  fireEvent.mouseLeave(row);
+  expect(dot).toHaveAttribute("data-highlighted", "false");
+  fireEvent.focus(repeat);
+  expect(dot).toHaveAttribute("data-highlighted", "true");
+  const repeatRow = repeat.closest("li");
+  if (!repeatRow) throw new Error("Expected repeat row");
+  fireEvent.click(repeatRow);
+  expect(repeat).toHaveAttribute("aria-pressed", "true");
+  expect(dot).toHaveAttribute("aria-pressed", "true");
+  expect(open).not.toHaveBeenCalled();
+  fireEvent.click(dot);
+  expect(first).toHaveAttribute("aria-pressed", "true");
+  fireEvent.click(repeat);
+  expect(first).toHaveAttribute("aria-pressed", "false");
+  expect(repeat).toHaveAttribute("aria-pressed", "true");
+  fireEvent.click(screen.getByRole("button", { name: "Log details for entry 1, Swiss Cheese" }));
+  expect(open).toHaveBeenCalledWith("tick-1");
+  await waitFor(() => expect(maps).toHaveLength(1));
+  expect(maps[0]?.fitBounds).toHaveBeenCalledOnce();
+});
+
+it("retains unlocated entries and honest source scope in a single map layout", async () => {
+  render(<ActivityClimbingPanel entries={climbingMapLogs} locations={climbingMapLocations} />);
+  expect(screen.getByRole("heading", { name: "Area: Wall" })).toBeVisible();
+  expect(screen.getByRole("heading", { name: "Other climbs" })).toBeVisible();
+  await screen.findByRole("button", { name: /Area location: Goat Rock · OpenBeta/ });
+  expect(screen.getByText("No recorded location")).toBeVisible();
+  const indoor = screen.getByRole("button", { name: "Select entry 3, Indoor board log" });
+  fireEvent.click(indoor);
+  expect(indoor).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getAllByRole("region", { name: "Climbing locations" })).toHaveLength(1);
+  await screen.findByRole("button", { name: /^2 climbs · Swiss Cheese/ });
+});
+
+it("includes unattached suggestions on the shared map even with no attached logs and preserves attachment errors", async () => {
+  const onAttach = vi.fn();
+  const suggestion = climbingMapLogs[0];
+  if (!suggestion) throw new Error("Expected suggestion");
+  render(
+    <ActivityClimbingPanel
+      entries={[]}
+      suggestions={[suggestion]}
+      locations={climbingMapLocations}
+      attachmentStates={{
+        [suggestion.id]: { pending: false, error: "Refresh this activity and try again." },
+      }}
+      onAttach={onAttach}
+    />,
+  );
+  const dot = await screen.findByRole("button", { name: /^Swiss Cheese · Climb location/ });
+  fireEvent.click(dot);
+  expect(screen.getByRole("button", { name: "Select entry 1, Swiss Cheese" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  expect(screen.getByRole("alert")).toHaveTextContent("Refresh this activity and try again.");
+  fireEvent.click(
+    screen.getByRole("button", { name: "Attach entry 1, Swiss Cheese to this activity" }),
+  );
+  expect(onAttach).toHaveBeenCalledWith(suggestion.id);
+});
+
+it("keeps the focused climb highlighted when the pointer leaves its row", async () => {
+  render(<ActivityClimbingPanel entries={climbingMapLogs} locations={climbingMapLocations} />);
+  const dot = await screen.findByRole("button", { name: /^2 climbs · Swiss Cheese/ });
+  const control = screen.getByRole("button", { name: "Select entry 1, Swiss Cheese" });
+  const row = control.closest("li");
+  if (!row) throw new Error("Expected row");
+  fireEvent.focus(control);
+  fireEvent.mouseEnter(row);
+  fireEvent.mouseLeave(row);
+  expect(dot).toHaveAttribute("data-highlighted", "true");
+  fireEvent.blur(control);
+  expect(dot).toHaveAttribute("data-highlighted", "false");
+});
+
+it("renders the complete recorded area path in a focusable scroll region and preserves missing areas", () => {
+  const entry = climbingMapLogs[0];
+  const climb = entry?.climb;
+  const baseArea = climb?.areaPath[0];
+  if (!entry || !climb || !baseArea) throw new Error("Expected a climb fixture");
+  const areaPath = [
+    { ...baseArea, id: "california", name: "California", parentAreaId: null },
+    {
+      ...baseArea,
+      id: "sf-bay",
+      name: "San Francisco Bay Area",
+      parentAreaId: "california",
+    },
+    { ...baseArea, id: "east-bay", name: "East Bay Area", parentAreaId: "sf-bay" },
+    { ...baseArea, id: "berkeley", name: "Berkeley", parentAreaId: "east-bay" },
+    {
+      ...baseArea,
+      id: "grizzly-peak",
+      name: "Grizzly Peak Boulders",
+      parentAreaId: "berkeley",
+    },
+    {
+      ...baseArea,
+      id: "main-rock",
+      name: "Main Rock (aka Scary Boulder)",
+      parentAreaId: "grizzly-peak",
+    },
+  ];
+  const fullPath =
+    "California › San Francisco Bay Area › East Bay Area › Berkeley › Grizzly Peak Boulders › Main Rock (aka Scary Boulder)";
+  render(
+    <ActivityClimbingPanel
+      entries={[
+        { ...entry, climb: { ...climb, areaPath } },
+        { ...entry, id: "indoor", climb: null, title: "Indoor" },
+      ]}
+      locations={{}}
+    />,
+  );
+  const heading = screen.getByRole("heading", { name: `Area: ${fullPath}` });
+  expect(heading).toHaveTextContent(fullPath);
+  const areaRegion = screen.getByRole("region", { name: `Area: ${fullPath}` });
+  expect(areaRegion).toHaveAttribute("tabindex", "0");
+  expect(areaRegion).toContainElement(heading);
+  expect(screen.getByRole("heading", { name: "Other climbs" })).toBeVisible();
+});

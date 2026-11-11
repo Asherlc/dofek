@@ -1,10 +1,23 @@
+import {
+  runningDynamicsResponseSchema,
+  runningDynamicsRowsResponseSchema,
+  runningResponseVersionSchema,
+  toRunningDynamicsRowsV1,
+} from "@dofek/training/running-response";
+
+export type { RunningDynamicsRow } from "@dofek/training/running-response";
+
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import {
   makeTrainingChartAvailability,
   trainingChartAvailabilitySchema,
 } from "../contracts/training-chart-availability.ts";
-import { selectedChartRangeQuery } from "../lib/chart-range.ts";
+import {
+  selectedChartCustomRangeQuery,
+  selectedChartRangeQuery,
+  selectedChartRangeSchema,
+} from "../lib/chart-range.ts";
 import { dateStringSchema } from "../lib/typed-sql.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
 import { RunningRepository } from "../repositories/running-repository.ts";
@@ -23,18 +36,6 @@ function requireSensorStore(
   return sensorStore;
 }
 
-export interface RunningDynamicsRow {
-  activityId: string;
-  date: string;
-  activityName: string;
-  cadence: number;
-  strideLengthMeters: number | null;
-  stanceTimeMs: number | null;
-  verticalOscillationMm: number | null;
-  paceSecondsPerKm: number;
-  distanceKm: number;
-}
-
 export interface PaceTrendRow {
   date: string;
   activityName: string;
@@ -42,18 +43,6 @@ export interface PaceTrendRow {
   distanceKm: number;
   durationMinutes: number;
 }
-
-const runningDynamicsRowSchema = z.object({
-  activityId: z.string(),
-  date: dateStringSchema,
-  activityName: z.string(),
-  cadence: z.number(),
-  strideLengthMeters: z.number().nullable(),
-  stanceTimeMs: z.number().nullable(),
-  verticalOscillationMm: z.number().nullable(),
-  paceSecondsPerKm: z.number(),
-  distanceKm: z.number(),
-});
 
 const paceTrendRowSchema = z.object({
   date: dateStringSchema,
@@ -84,11 +73,22 @@ function runningAvailability(chartLabel: string, dataLabel: string, observedCoun
 }
 
 export const runningRouter = router({
-  dynamics: selectedChartRangeQuery("running.dynamics", CacheTTL.LONG, async ({ ctx, range }) => {
-    const sensorStore = requireSensorStore(ctx.sensorStore, "running.dynamics");
-    const repo = new RunningRepository(ctx.db, ctx.userId, ctx.timezone, sensorStore);
-    return (await repo.getDynamics(range.days)).map((activity) => activity.toDetail());
-  }),
+  dynamics: selectedChartCustomRangeQuery(
+    "running.dynamics",
+    CacheTTL.LONG,
+    z.object({
+      days: selectedChartRangeSchema("running.dynamics"),
+      responseVersion: runningResponseVersionSchema,
+    }),
+    async ({ ctx, input, range }) => {
+      const sensorStore = requireSensorStore(ctx.sensorStore, "running.dynamics");
+      const repo = new RunningRepository(ctx.db, ctx.userId, ctx.timezone, sensorStore);
+      const data = (await repo.getDynamics(range.days)).map((activity) => activity.toDetail());
+      return input.responseVersion === 1 ? toRunningDynamicsRowsV1(data) : data;
+    },
+    runningDynamicsRowsResponseSchema,
+    { keyVersion: "running-response-negotiation-v1" },
+  ),
 
   paceTrend: selectedChartRangeQuery("running.paceTrend", CacheTTL.LONG, async ({ ctx, range }) => {
     const sensorStore = requireSensorStore(ctx.sensorStore, "running.paceTrend");
@@ -96,23 +96,54 @@ export const runningRouter = router({
     return (await repo.getPaceTrend(range.days)).map((activity) => activity.toDetail());
   }),
 
-  dynamicsV2: selectedChartRangeQuery(
+  dynamicsV2: selectedChartCustomRangeQuery(
     "running.dynamicsV2",
     CacheTTL.LONG,
-    async ({ ctx, range }) => {
+    z.object({
+      days: selectedChartRangeSchema("running.dynamicsV2"),
+      responseVersion: runningResponseVersionSchema,
+    }),
+    async ({ ctx, input, range }) => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "running.dynamicsV2");
       const repo = new RunningRepository(ctx.db, ctx.userId, ctx.timezone, sensorStore);
       const data = (await repo.getDynamics(range.days)).map((activity) => activity.toDetail());
+      if (input.responseVersion === 1) {
+        const legacyData = toRunningDynamicsRowsV1(data);
+        return {
+          data: legacyData,
+          availability: runningAvailability(
+            "running dynamics data",
+            "running dynamics data",
+            legacyData.length,
+          ),
+        };
+      }
       return {
         data,
-        availability: runningAvailability(
-          "running dynamics data",
-          "running dynamics data",
-          data.length,
-        ),
+        cadenceAvailability: makeTrainingChartAvailability({
+          sourceLabel: RUNNING_SENSOR_SOURCE,
+          observedCount: data.filter((row) => row.cadence !== null).length,
+          minimumCount: 1,
+          messages: {
+            available: "Running cadence is available.",
+            insufficientData:
+              "No cadence samples or usable imported step intervals are available for these runs. Check the selected range and Apple Health sync status.",
+          },
+        }),
+        availability: makeTrainingChartAvailability({
+          sourceLabel: RUNNING_SENSOR_SOURCE,
+          observedCount: data.length,
+          minimumCount: 1,
+          messages: {
+            available: "Running form measurements are available.",
+            insufficientData:
+              "No running form measurements are available for these runs. Check the selected range and sync status.",
+          },
+        }),
       };
     },
-    { outputSchema: runningChartOutput(runningDynamicsRowSchema) },
+    runningDynamicsResponseSchema,
+    { keyVersion: "running-response-negotiation-v1" },
   ),
 
   paceTrendV2: selectedChartRangeQuery(

@@ -5,7 +5,7 @@ protocol WhoopBleConnectionManagerDelegate: AnyObject {
     /// Called when connection is fully established and characteristics are ready.
     func connectionManagerDidBecomeReady(
         _ manager: WhoopBleConnectionManager,
-        peripheral: CBPeripheral,
+        peripheral: any WhoopBlePeripheralConnection,
         cmdCharacteristic: CBCharacteristic,
         wasStreaming: Bool
     )

@@ -37,6 +37,11 @@ This gate is complete when the acquisition surfaces make no contradictory or pro
 
 ### Next: Daily Brief and Today Plan
 
+The previous custom-score-based Daily summary and its dependent suggestions
+are retired; see the [approved removal scope](superpowers/specs/2026-11-03-remove-daily-scores-design.md).
+Any future Brief requires independently supported recommendation methods
+rather than restoring those score rules.
+
 Make one personalized, trustworthy action the center of the web and mobile home experiences.
 
 - [ ] Generate one primary action from server-owned metric and recommendation logic. The client renders the decision and must not independently calculate its health meaning.

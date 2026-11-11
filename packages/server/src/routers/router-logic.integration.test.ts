@@ -108,7 +108,6 @@ describe("Router transformation logic", () => {
       await query("sportSettings.list");
       const { status, result } = await mutate("sportSettings.upsert", {
         sport: "cycling",
-        ftp: 250,
         thresholdHr: 165,
         effectiveFrom: "2025-01-01",
         notes: "Start of season",
@@ -116,53 +115,53 @@ describe("Router transformation logic", () => {
       expect(status).toBe(200);
       const settings = result.result.data;
       expect(settings.sport).toBe("cycling");
-      expect(settings.ftp).toBe(250);
       expect(settings.thresholdHr).toBe(165);
       settingsId = settings.id;
 
       const { result: listResult } = await query("sportSettings.list");
       expect(
-        listResult.result.data.find((entry: { sport: string }) => entry.sport === "cycling")?.ftp,
-      ).toBe(250);
+        listResult.result.data.find((entry: { sport: string }) => entry.sport === "cycling")
+          ?.thresholdHr,
+      ).toBe(165);
     });
 
     it("upsert with same sport+date updates existing entry", async () => {
       const { status, result } = await mutate("sportSettings.upsert", {
         sport: "cycling",
-        ftp: 260,
         thresholdHr: 168,
         effectiveFrom: "2025-01-01",
-        notes: "Updated FTP",
+        notes: "Updated threshold heart rate",
       });
       expect(status).toBe(200);
       const settings = result.result.data;
-      expect(settings.ftp).toBe(260);
+      expect(settings.thresholdHr).toBe(168);
       // Should be same id since ON CONFLICT updates
       expect(settings.id).toBe(settingsId);
 
       const { result: listResult } = await query("sportSettings.list");
       expect(
-        listResult.result.data.find((entry: { sport: string }) => entry.sport === "cycling")?.ftp,
-      ).toBe(260);
+        listResult.result.data.find((entry: { sport: string }) => entry.sport === "cycling")
+          ?.thresholdHr,
+      ).toBe(168);
     });
 
     it("upsert with different date creates new entry", async () => {
       const { status, result } = await mutate("sportSettings.upsert", {
         sport: "cycling",
-        ftp: 270,
         thresholdHr: 170,
         effectiveFrom: "2025-06-01",
         notes: "Mid-season bump",
       });
       expect(status).toBe(200);
       const settings = result.result.data;
-      expect(settings.ftp).toBe(270);
+      expect(settings.thresholdHr).toBe(170);
       expect(settings.id).not.toBe(settingsId);
 
       const { result: listResult } = await query("sportSettings.list");
       expect(
-        listResult.result.data.find((entry: { sport: string }) => entry.sport === "cycling")?.ftp,
-      ).toBe(270);
+        listResult.result.data.find((entry: { sport: string }) => entry.sport === "cycling")
+          ?.thresholdHr,
+      ).toBe(170);
     });
 
     it("list returns most recent per sport", async () => {
@@ -172,18 +171,18 @@ describe("Router transformation logic", () => {
       // Should return only 1 entry for cycling (the most recent by effective_from)
       const cyclingEntries = list.filter((s: { sport: string }) => s.sport === "cycling");
       expect(cyclingEntries).toHaveLength(1);
-      expect(cyclingEntries[0].ftp).toBe(270); // the June entry
+      expect(cyclingEntries[0].thresholdHr).toBe(170); // the June entry
     });
 
     it("getBySport returns setting effective at a specific date", async () => {
-      // Ask for settings as of March 2025 — should get the Jan entry (FTP 260)
+      // Ask for settings as of March 2025 — should get the Jan entry (threshold HR 168)
       const { status, result } = await query("sportSettings.getBySport", {
         sport: "cycling",
         asOfDate: "2025-03-15",
       });
       expect(status).toBe(200);
       const settings = result.result.data;
-      expect(settings.ftp).toBe(260);
+      expect(settings.thresholdHr).toBe(168);
     });
 
     it("getBySport with future date returns latest", async () => {
@@ -192,7 +191,7 @@ describe("Router transformation logic", () => {
         asOfDate: "2025-12-31",
       });
       expect(status).toBe(200);
-      expect(result.result.data.ftp).toBe(270);
+      expect(result.result.data.thresholdHr).toBe(170);
     });
 
     it("history returns all entries ordered by effective_from DESC", async () => {
@@ -203,8 +202,8 @@ describe("Router transformation logic", () => {
       const history = result.result.data;
       expect(history).toHaveLength(2);
       // Most recent first
-      expect(history[0].ftp).toBe(270);
-      expect(history[1].ftp).toBe(260);
+      expect(history[0].thresholdHr).toBe(170);
+      expect(history[1].thresholdHr).toBe(168);
     });
 
     it("delete removes a specific entry", async () => {
@@ -231,10 +230,11 @@ describe("Router transformation logic", () => {
         version: 1,
         fittedAt: new Date().toISOString(),
         exponentialMovingAverage: null,
-        readinessWeights: null,
-        sleepTarget: { minutes: 500, sampleCount: 10 },
-        stressThresholds: null,
-        trainingImpulseConstants: null,
+        stressThresholds: {
+          hrvThresholds: [-1.5, -1, -0.5],
+          rhrThresholds: [1.5, 1, 0.5],
+          sampleCount: 90,
+        },
       });
 
       const { result: statusBefore } = await query("personalization.status");
@@ -341,115 +341,6 @@ describe("Router transformation logic", () => {
   });
 
   // ══════════════════════════════════════════════════════════════
-  // Sleep Need — Whoop-inspired sleep need formula
-  // ══════════════════════════════════════════════════════════════
-  describe("sleepNeed", () => {
-    beforeAll(async () => {
-      // Insert 30 nights of sleep data + daily HRV
-      const sleepInserts: ReturnType<typeof sql>[] = [];
-      const metricsInserts: ReturnType<typeof sql>[] = [];
-      const sleepNeedMetricStreamRows: ClickHouseMetricStreamSeedRow[] = [];
-
-      for (let i = 1; i <= 30; i++) {
-        const date = new Date();
-        date.setDate(date.getDate() - i);
-        const dateStr = date.toISOString().slice(0, 10);
-
-        // Sleep: vary between 400-500 min
-        const durationMin = 400 + Math.round(Math.sin(i) * 50);
-        const startHour = 22;
-        const startedAt = new Date(date);
-        startedAt.setHours(startHour, 0, 0, 0);
-        const endedAt = new Date(startedAt.getTime() + durationMin * 60 * 1000);
-
-        sleepInserts.push(
-          sql`INSERT INTO fitness.sleep_session
-              (provider_id, user_id, external_id, started_at, ended_at, duration_minutes, sleep_type)
-              VALUES ('test-provider', ${TEST_USER_ID}, ${`sleep-${i}`}, ${startedAt.toISOString()}, ${endedAt.toISOString()}, ${durationMin}, 'sleep')`,
-        );
-
-        // Daily metrics: HRV varies with sleep quality (higher sleep = higher HRV next day)
-        const hrv = 40 + (durationMin - 400) * 0.5;
-        metricsInserts.push(
-          sql`INSERT INTO fitness.daily_metrics (date, provider_id, user_id, hrv, steps)
-              VALUES (${dateStr}::date, 'test-provider', ${TEST_USER_ID}, ${hrv}, ${8000 + Math.round(Math.random() * 4000)})
-              ON CONFLICT DO NOTHING`,
-        );
-        for (let sampleIndex = 0; sampleIndex < 30; sampleIndex++) {
-          sleepNeedMetricStreamRows.push({
-            userId: TEST_USER_ID,
-            recordedAt: new Date(startedAt.getTime() + (sampleIndex + 1) * 60_000).toISOString(),
-            providerId: "test-provider",
-            sourceType: "api",
-            channel: "heart_rate",
-            scalar: 58,
-          });
-        }
-      }
-
-      for (const insert of [...sleepInserts, ...metricsInserts]) {
-        await testCtx.db.execute(insert);
-      }
-
-      await syncClickHouseTestActivitySensorStore(testCtx);
-      await seedClickHouseMetricStreamRows(testCtx, sleepNeedMetricStreamRows);
-      await queryCache.invalidateAll();
-    }, 30_000);
-
-    it("returns personalized sleep need with data", async () => {
-      const { status, result } = await query("sleepNeed.calculate", {
-        targetWakeHour: 7,
-        targetWakeMinute: 0,
-      });
-      expect(status).toBe(200);
-      const data = result.result.data;
-
-      expect(data).not.toBeNull();
-
-      // With 30 nights of data and varied HRV, we should get a calculated baseline
-      expect(data.baselineMinutes).toBeGreaterThan(0);
-      expect(data.totalNeedMinutes).toBeGreaterThan(0);
-      expect(data.totalNeedMinutes).toBeGreaterThanOrEqual(data.baselineMinutes);
-      // Calendar-based: always exactly 7 nights
-      expect(data.recentNights).toHaveLength(7);
-
-      for (const night of data.recentNights) {
-        expect(night.date).toBeTruthy();
-        expect(night.neededMinutes).toBeGreaterThan(0);
-        // Nights with data have numeric values; calendar gaps have null
-        if (night.actualMinutes != null) {
-          expect(night.actualMinutes).toBeGreaterThan(0);
-          expect(night.debtMinutes).toBeGreaterThanOrEqual(0);
-        } else {
-          expect(night.debtMinutes).toBeNull();
-        }
-      }
-    });
-
-    it("accumulated debt reflects sleep deficits", async () => {
-      const { status, result } = await query("sleepNeed.calculate", {
-        targetWakeHour: 7,
-        targetWakeMinute: 0,
-      });
-      expect(status).toBe(200);
-      const data = result.result.data;
-
-      expect(data).not.toBeNull();
-
-      // If baseline > some nights' durations, there should be accumulated debt
-      // (our test data varies 400-500 min, so if baseline is ~450, some nights are below)
-      expect(data.accumulatedDebtMinutes).toBeGreaterThan(0);
-      expect(typeof data.strainDebtMinutes).toBe("number");
-      const nightsWithData = data.recentNights.filter((night) => night.actualMinutes != null);
-      expect(nightsWithData.length).toBeGreaterThan(0);
-      expect(nightsWithData.every((night) => night.providerId === "test-provider")).toBe(true);
-      expect(nightsWithData.every((night) => night.sourceProviders.includes("test-provider"))).toBe(
-        true,
-      );
-    });
-  });
-
-  // ══════════════════════════════════════════════════════════════
   // Hiking — grade-adjusted pace cost factor model
   // ══════════════════════════════════════════════════════════════
   describe("hiking walkingBiomechanics", () => {
@@ -534,8 +425,7 @@ describe("Router transformation logic", () => {
     }, 120_000);
 
     beforeAll(async () => {
-      // Update existing daily_metrics rows (already inserted by sleepNeed) to add walking data
-      // Also insert additional rows for dates not covered by sleepNeed
+      // Seed walking biomechanics independently of other analytics fixtures.
       for (let i = 1; i <= 14; i++) {
         const date = new Date();
         date.setDate(date.getDate() - i);
@@ -554,7 +444,7 @@ describe("Router transformation logic", () => {
                 AND user_id = ${TEST_USER_ID}`,
         );
 
-        // Also insert for dates not already present (beyond the 30 days from sleepNeed)
+        // Insert dates without an existing daily metrics row.
         await testCtx.db.execute(
           sql`INSERT INTO fitness.daily_metrics
               (date, provider_id, user_id, walking_speed, walking_step_length, walking_double_support_pct, walking_asymmetry_pct, walking_steadiness)
@@ -618,149 +508,6 @@ describe("Router transformation logic", () => {
     });
   });
 
-  // ══════════════════════════════════════════════════════════════
-  // Healthspan — scoring functions produce correct ranges
-  // ══════════════════════════════════════════════════════════════
-  describe("healthspan", () => {
-    beforeAll(async () => {
-      // Set birth date for biological age calculation
-      await testCtx.db.execute(
-        sql`UPDATE fitness.user_profile
-            SET birth_date = '1990-01-01'
-            WHERE id = ${TEST_USER_ID}`,
-      );
-
-      const healthspanBodyMetricRows: ClickHouseMetricStreamSeedRow[] = [
-        {
-          userId: TEST_USER_ID,
-          recordedAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-          providerId: "test-provider",
-          externalId: "test-body-1",
-          sourceType: "api",
-          channel: "body_weight",
-          scalar: 75,
-        },
-        {
-          userId: TEST_USER_ID,
-          recordedAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-          providerId: "test-provider",
-          externalId: "test-body-1",
-          sourceType: "api",
-          channel: "body_fat_percentage",
-          scalar: 18,
-        },
-      ];
-
-      // Insert a strength workout for strength frequency score
-      const workoutDate = new Date();
-      workoutDate.setDate(workoutDate.getDate() - 3);
-      await testCtx.db.execute(
-        sql`INSERT INTO fitness.activity
-            (provider_id, user_id, external_id, started_at, name, canonical_type, provider_type)
-            VALUES ('test-provider', ${TEST_USER_ID}, 'strength-1', ${workoutDate.toISOString()}, 'Test Workout', 'strength', 'strength')
-            ON CONFLICT DO NOTHING`,
-      );
-
-      await syncClickHouseTestActivitySensorStore(testCtx);
-      await seedClickHouseMetricStreamRows(testCtx, healthspanBodyMetricRows);
-      await queryCache.invalidateAll();
-    }, 30_000);
-
-    it("returns composite score with metric breakdowns", async () => {
-      const { status, result } = await query("healthspan.score", {
-        weeks: 4,
-      });
-      expect(status).toBe(200);
-      const data = result.result.data;
-
-      // Composite score should be 0-100
-      expect(data.healthspanScore).toBeGreaterThanOrEqual(0);
-      expect(data.healthspanScore).toBeLessThanOrEqual(100);
-
-      // Should have 9 metric breakdowns
-      expect(data.metrics).toHaveLength(9);
-
-      for (const metric of data.metrics) {
-        expect(metric.name).toBeTruthy();
-        expect(metric.unit).toBeTruthy();
-        expect(metric.score).toBeGreaterThanOrEqual(0);
-        expect(metric.score).toBeLessThanOrEqual(100);
-        expect(["excellent", "good", "fair", "poor"]).toContain(metric.status);
-      }
-
-      // Trend should be defined (may be null with insufficient history)
-      expect(data.trend).toBeDefined();
-    });
-
-    it("lean body mass is scored from body fat percentage", async () => {
-      const { status, result } = await query("healthspan.score", {
-        weeks: 4,
-      });
-      expect(status).toBe(200);
-      const data = result.result.data;
-
-      const leanMassMetric = data.metrics.find(
-        (m: { name: string }) => m.name === "Lean Body Mass",
-      );
-      expect(leanMassMetric).toBeDefined();
-      // 18% body fat = 82% lean mass -> should score well
-      expect(leanMassMetric.value).toBeCloseTo(82, 0);
-      expect(leanMassMetric.score).toBeGreaterThanOrEqual(80);
-    });
-
-    it("resting HR score reflects inserted data", async () => {
-      const { status, result } = await query("healthspan.score", {
-        weeks: 4,
-      });
-      expect(status).toBe(200);
-      const data = result.result.data;
-
-      const rhrMetric = data.metrics.find((m: { name: string }) => m.name === "Resting Heart Rate");
-      expect(rhrMetric).toBeDefined();
-      // Derived resting HR should come from the seeded overnight sensor samples.
-      if (rhrMetric.value !== null) {
-        expect(rhrMetric.value).toBeCloseTo(58, 0);
-      }
-    });
-  });
-
-  // ══════════════════════════════════════════════════════════════
-  // Cycling Advanced — ramp rate EWMA + load-change observation
-  // ══════════════════════════════════════════════════════════════
-  describe("cyclingAdvanced rampRate", () => {
-    it("computes ramp rate with EWMA and describes the load change", async () => {
-      // Data was already inserted in shared cycling fixture setup (cycling activities with HR + power)
-      const { status, result } = await query("cyclingAdvanced.rampRate", {
-        days: 90,
-      });
-      expect(status).toBe(200);
-      const data = result.result.data;
-
-      expect(typeof data.currentRampRate).toBe("number");
-      expect(typeof data.recommendation).toBe("string");
-      expect(data.recommendation.length).toBeGreaterThan(0);
-      expect(Array.isArray(data.weeks)).toBe(true);
-
-      if (data.weeks.length > 0) {
-        expect(data.recommendation).toMatch(
-          /^Weekly training-load change: [+-]?\d+(?:\.\d+)? points$/,
-        );
-        expect(data.currentRampRate).toBe(data.weeks.at(-1).rampRate);
-        for (const week of data.weeks) {
-          expect(week.week).toBeTruthy();
-          expect(typeof week.ctlStart).toBe("number");
-          expect(typeof week.ctlEnd).toBe("number");
-          expect(typeof week.rampRate).toBe("number");
-        }
-      } else {
-        expect(data.recommendation).toBe("No data");
-      }
-    });
-  });
-
-  // ══════════════════════════════════════════════════════════════
-  // Efficiency — aerobic decoupling with power+HR data
-  // ══════════════════════════════════════════════════════════════
   describe("efficiency aerobicDecoupling", () => {
     it("returns decoupling results when activities have power and HR", async () => {
       const { status, result } = await query("efficiency.aerobicDecoupling", {

@@ -1,7 +1,7 @@
 import { HttpResponse, http } from "msw";
-import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
+import { createIntegrationMswFixture } from "../test/early-msw-lifecycle.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import { ZohoDeskClient } from "../zoho-desk.ts";
 import {
@@ -23,12 +23,9 @@ const snapshot: AccountErasureRemoteSnapshot = {
     },
   ],
   localIdentifiers: {
-    activityIds: [],
     exportObjects: [],
     fileUploads: [],
-    processingOperationIds: [],
     sessionIds: [],
-    sleepSessionIds: [],
     userId: "20000000-0000-4000-8000-000000001994",
   },
   posthogDistinctId: "20000000-0000-4000-8000-000000001994",
@@ -54,7 +51,7 @@ const zohoDesk = new ZohoDeskClient({
   refreshToken: "zoho-refresh",
 });
 
-const server = setupServer();
+const server = createIntegrationMswFixture();
 const zohoDeleteBodySchema = z.object({ ids: z.array(z.string().min(1)) });
 
 function processorProgress(
@@ -70,7 +67,7 @@ function processorProgress(
 
 describe("account-erasure processors (integration)", () => {
   beforeAll(() => {
-    server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
   });
 
   afterEach(() => {
@@ -78,7 +75,7 @@ describe("account-erasure processors (integration)", () => {
   });
 
   afterAll(() => {
-    server.close();
+    server.deactivate();
   });
 
   it("deletes Brevo logs plus recorded and legacy Zoho tickets before queuing PostHog", async () => {

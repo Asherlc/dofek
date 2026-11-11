@@ -191,6 +191,37 @@ final class HealthKitAnchorStoreTests: XCTestCase {
         XCTAssertNil(defaults.object(forKey: HealthKitAnchorStore.key(for: "body-mass")))
     }
 
+    func testSeriesExtractionFailureLeavesCommittedAnchorAvailableForRetry() async throws {
+        let type = HKQuantityType.quantityType(forIdentifier: .runningPower)!
+        let committed = HKQueryAnchor(fromValue: 7)
+        let coordinator = HealthKitAnchoredQueryCoordinator(
+            anchorStore: HealthKitAnchorStore(userDefaults: defaults)
+        )
+        let first = try await coordinator.run(typeIdentifier: type.identifier) { _ in
+            ((), committed)
+        }
+        try coordinator.complete(typeIdentifier: type.identifier, queryId: XCTUnwrap(first.queryId), succeeded: true)
+        let sample = HKQuantitySample(type: type, quantity: HKQuantity(unit: .watt(), doubleValue: 240), start: Date(), end: Date())
+        do {
+            _ = try await coordinator.run(typeIdentifier: type.identifier) { anchor in
+                try self.assertEquivalent(anchor, committed)
+                let transported = try await HealthKitQuantitySeriesTransport.transportSamples(
+                    [sample], typeIdentifier: type.identifier
+                ) { _ in
+                    throw TestError.queryFailed
+                }
+                return (transported, HKQueryAnchor(fromValue: 9))
+            }
+            XCTFail("Expected extraction error before pending-anchor registration")
+        } catch {
+            XCTAssertEqual(error as? TestError, .queryFailed)
+        }
+        _ = try await coordinator.run(typeIdentifier: type.identifier) { anchor in
+            try self.assertEquivalent(anchor, committed)
+            return ((), nil)
+        }
+    }
+
     func testLegacyIntegerIsRemovedAndReported() {
         let key = HealthKitAnchorStore.key(for: "distance")
         defaults.set(42, forKey: key)

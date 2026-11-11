@@ -28,7 +28,7 @@ This directory contains background job processing logic using BullMQ and Redis.
 - **Shared sync coordination**: Shared jobs fan out through the existing provider queues with one absolute sync window. BullMQ parent dependencies preserve dispatch through coordinator retries and child pruning; failed provider jobs report independently. The coordinator uses the [waiting-children processing pattern](https://docs.bullmq.io/patterns/process-step-jobs).
 - **Sync processing identity**: Each newly created queue job has its own processing operation, correlated by its queue ID, stored creation timestamp, and provider. Retries and continuations reuse the operation ID persisted in job data. A queue ID alone cannot identify a permanent processing record because BullMQ permits reusing it after job removal; see [BullMQ job IDs](https://docs.bullmq.io/guide/jobs/job-ids).
 - **Credential reconnects**: Generic and WHOOP credential handlers commit renewed tokens inside the account-erasure fence, then reacquire the fence to dispatch a full sync. Each reconnect uses a fresh queue ID so an older active sync or delayed bounded retry cannot absorb the request. Existing provider cooldown delays still apply; see [BullMQ job IDs](https://docs.bullmq.io/guide/jobs/job-ids) and [delayed jobs](https://docs.bullmq.io/guide/jobs/delayed). Garmin uses [official OAuth](../providers/garmin/oauth.ts); its push-only connection does not dispatch a full poll.
-- **Redis command deadlines**: Shared nonblocking Redis commands and per-provider sync queue commands have a five-second deadline so stalled dispatch releases the account-erasure transaction. Worker and event-listener connections retain their blocking behavior. BullMQ distinguishes request-facing producers from persistent workers in its [connection guidance](https://docs.bullmq.io/guide/connections); ioredis defines [commandTimeout](https://github.com/redis/ioredis/blob/main/lib/redis/RedisOptions.ts) separately from the connection deadline.
+- **Redis command deadlines**: Shared Redis commands outside blocking worker connections and per-provider sync queue commands have a five-second deadline so stalled dispatch releases the account-erasure transaction. Worker and event-listener connections retain their blocking behavior. BullMQ distinguishes request-facing producers from persistent workers in its [connection guidance](https://docs.bullmq.io/guide/connections); ioredis defines [commandTimeout](https://github.com/redis/ioredis/blob/main/lib/redis/RedisOptions.ts) separately from the connection deadline.
 - **Queues**: Defined in `queues.ts` with typed job data interfaces.
 - **Workers**: Implemented in `worker.ts` and kept running while queues are idle. The Swarm service maintains a running replica; an idle process exit ends its task and creates an availability gap before replacement ([Docker Swarm services](https://docs.docker.com/engine/swarm/how-swarm-mode-works/services/)).
 - **Worker responsibilities**: `worker.ts` coordinates startup;
@@ -105,15 +105,18 @@ reprocessing and historical-data limits.
 ## Provider Issue Emails
 
 The shared [sync logger](../db/sync-log.ts) checks completed, overall provider
-failures for user notification. Authorization failures send an email immediately;
-other issues send one after two scheduled failures since the last successful
-overall sync. Manual errors and individual data-step errors do not count toward
-that threshold. A successful manual or scheduled overall sync allows a later
+failures for user notification. Revoked refresh tokens trigger an email immediately;
+other authorization issues require two overall authorization failures since the
+last successful overall sync, with the current failure coming from an automatic
+sync. Timeouts, outages, rate limits and other non-authorization failures never
+trigger an email or confirm a previous authorization issue. Repeated manual
+errors and individual data-step errors do not trigger confirmation.
+A successful manual or scheduled overall sync allows a later
 issue to trigger a new alert. See the
 [notification implementation](../db/provider-issue-notification.ts) and its
 [database integration tests](../db/provider-issue-notification.integration.test.ts).
 
-Emails name the provider, explain whether reconnection is required, and link to
+Emails name the provider, ask the user to reconnect, and link to
 its page on `https://dofek.fit`. They use the existing `BREVO_API_KEY` and
 `EXPORT_EMAIL_FROM` worker configuration and Brevo's
 [transactional email API](https://developers.brevo.com/docs/send-a-transactional-email).
@@ -135,6 +138,6 @@ a later sync may send it again.
 Email requests have a 30-second deadline so a stalled sender cannot hold the
 notification transaction indefinitely. Missing recipient addresses are skipped.
 Delivery errors are reported to Sentry with `operation=provider-issue-email` and
-logged without changing the recorded provider outcome; a later failed sync tries
-delivery again while the issue remains active. The shared backend applies the
+logged without changing the recorded provider outcome; a later eligible
+authorization failure tries delivery again. The shared backend applies the
 same notification policy for web and mobile users.

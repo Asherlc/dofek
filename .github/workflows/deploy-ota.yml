@@ -26,6 +26,14 @@ jobs:
     name: Publish OTA
     runs-on: ubuntu-latest
     steps:
+      - name: Validate deployed source commit
+        env:
+          COMMIT_SHA: ${{ inputs.commit_sha }}
+        run: |
+          if [[ ! "$COMMIT_SHA" =~ ^[a-f0-9]{40}$ ]]; then
+            echo "::error::commit_sha must be the full source SHA verified by the successful server rollout"
+            exit 1
+          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -35,6 +43,7 @@ jobs:
         with:
           keys: |
             EXPO_TOKEN
+            EXPO_APP_ID
             SENTRY_AUTH_TOKEN
             EXPO_PUBLIC_SENTRY_DSN
             EXPO_PUBLIC_OTEL_ENDPOINT
@@ -56,11 +65,14 @@ jobs:
       # The caller has already completed the matching server rollout. Validate
       # once: an unavailable or invalid manifest stops publication for diagnosis.
       - name: Validate OTA server
-        run: pnpm tsx scripts/check-ota-manifest.ts
-      # eoas runs `pnpx expo export` internally and swallows its output, so a
-      # failing export only shows up as a generic "exited with non-zero code: 1".
-      # Run an isolated preflight so the real Metro/expo error is visible. The
-      # publish step below owns the final dist directory and its source maps.
+        id: runtime
+        working-directory: packages/mobile
+        run: |
+          RUNTIME_VERSION=$(pnpm exec expo-updates runtimeversion:resolve --platform ios --workflow managed | jq -er '.runtimeVersion | strings | select(length > 0)')
+          echo "runtime_version=$RUNTIME_VERSION" >> "$GITHUB_OUTPUT"
+          pnpm tsx ../../scripts/check-ota-manifest.ts --app-id "$EXPO_APP_ID" --runtime-version "$RUNTIME_VERSION"
+      # Keep export diagnostics visible before the publisher owns dist and its
+      # source maps. Both commands use the installed Expo version.
       - name: Export iOS bundle (surfaces the error eoas hides)
         working-directory: packages/mobile
         run: pnpm expo export --output-dir /tmp/dofek-ota-preflight --platform ios
@@ -71,10 +83,9 @@ jobs:
           RELEASE_CHANNEL: production
           SENTRY_RELEASE: ${{ inputs.commit_sha }}
           EXPO_PUBLIC_SENTRY_RELEASE: ${{ inputs.commit_sha }}
-        # EOAS 2.3.22 is the compatible Expo Open OTA publisher; eoas@3.1.0
-        # is a different npm project. Keep the invocation on the pinned pnpm
-        # toolchain and pass the sourcemap alias to the published export.
-        run: pnpm dlx eoas@2.3.22 publish --branch main --platform ios --nonInteractive --packageRunner pnpm --dumpSourcemap
+        run: pnpm exec eoas publish --branch main --platform ios --nonInteractive --packageRunner "pnpm exec" --dumpSourcemap --emitMetadata
+      - name: Verify published device update
+        run: pnpm tsx scripts/verify-published-ota.ts packages/mobile/dist/xprem-update-metadata.json production "${{ steps.runtime.outputs.runtime_version }}"
       - name: Upload OTA sourcemaps to Sentry
         working-directory: packages/mobile
         env:

@@ -7,6 +7,10 @@ export interface MockQuery {
   error: Error | null;
 }
 
+export interface MockWeekListQuery extends Omit<MockQuery, "data"> {
+  data: Array<{ date: string; activities: ReturnType<typeof activity>[] }>;
+}
+
 export interface WeekListQueryOptions {
   placeholderData?: (previousData: unknown) => unknown;
   refetchInterval?: (query: { state: { data: unknown } }) => number | false;
@@ -96,7 +100,7 @@ export function emptyActivityOverviewQuery(): MockOverviewQuery {
   };
 }
 
-export function activityListQuery(activities: ReturnType<typeof activity>[]): MockQuery {
+export function activityListQuery(activities: ReturnType<typeof activity>[]): MockWeekListQuery {
   return {
     data: [{ date: "2026-03-18", activities }],
     isLoading: false,

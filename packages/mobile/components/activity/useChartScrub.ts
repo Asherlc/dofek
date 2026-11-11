@@ -11,6 +11,7 @@ interface ChartScrubOptions {
   plotWidth: number;
   series: ActivityChartSeries;
   onHoverIndex?: (index: number | null) => void;
+  onHoverTime?: (timestamp: number | null) => void;
   onScrubStart?: () => void;
   onScrubEnd?: () => void;
 }
@@ -19,6 +20,7 @@ export function useChartScrub({
   plotWidth,
   series,
   onHoverIndex,
+  onHoverTime,
   onScrubStart,
   onScrubEnd,
 }: ChartScrubOptions) {
@@ -29,25 +31,28 @@ export function useChartScrub({
       const relativeX = touchX - CHART_PADDING_LEFT;
       const normalizedX = Math.max(0, Math.min(1, relativeX / plotWidth));
       const timestamp = series.startedAt + normalizedX * (series.endedAt - series.startedAt);
-      return nearestActivityChartSample(series.samples, timestamp)?.index ?? null;
+      return timestamp;
     },
     [plotWidth, series],
   );
 
   const handleTouch = useCallback(
     (event: GestureResponderEvent) => {
-      const index = fromX(event.nativeEvent.locationX);
+      const timestamp = fromX(event.nativeEvent.locationX);
+      const index = nearestActivityChartSample(series.samples, timestamp)?.index ?? null;
       setTouchIndex(index);
       onHoverIndex?.(index);
+      onHoverTime?.(timestamp);
     },
-    [fromX, onHoverIndex],
+    [fromX, onHoverIndex, onHoverTime, series.samples],
   );
 
   const handleTouchEnd = useCallback(() => {
     setTouchIndex(null);
     onHoverIndex?.(null);
+    onHoverTime?.(null);
     onScrubEnd?.();
-  }, [onHoverIndex, onScrubEnd]);
+  }, [onHoverIndex, onHoverTime, onScrubEnd]);
 
   const panResponder = useMemo(
     () =>

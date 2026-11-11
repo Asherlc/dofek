@@ -1,5 +1,4 @@
 import type { ClimbingMapLocation } from "@dofek/training/climbing-map";
-import { TrainingStressCalculator } from "@dofek/training/training-load";
 import type { Database } from "dofek/db";
 import type { z } from "zod";
 import { loadClimbingGradePreference } from "../climbing-grade-preferences.ts";
@@ -7,8 +6,8 @@ import { BaseRepository } from "../lib/base-repository.ts";
 import { dateWindowStartString } from "../lib/date-window.ts";
 import { mergeDayGroups } from "./activity-calendar-day-groups.ts";
 import {
+  type ActivityListPage,
   activityRowSchema,
-  baselineRowSchema,
   type CalendarActivityEntry,
   type CalendarDayActivities,
   createActiveCalendarEntry,
@@ -36,7 +35,8 @@ export class ActivitiesCalendarRepository extends BaseRepository {
   }
 
   async getWeekList(input: WeekListInput): Promise<CalendarDayActivities[]> {
-    const activeDays = await this.#getActiveWeekList(input);
+    const { rows } = await this.#getActiveRows(input);
+    const activeDays = await this.#getActiveDayGroups(rows);
     if (!input.includeProviderAbsent) {
       return activeDays;
     }
@@ -51,11 +51,58 @@ export class ActivitiesCalendarRepository extends BaseRepository {
     return mergeDayGroups(activeDays, hiddenDays);
   }
 
-  async #getActiveWeekList(input: WeekListInput): Promise<CalendarDayActivities[]> {
+  async getPage(
+    input: WeekListInput & { page: number; pageSize: number },
+  ): Promise<ActivityListPage> {
+    const hiddenRepository = new ProviderAbsentActivitiesCalendarRepository(
+      this.db,
+      this.userId,
+      this.timezone,
+      this.#sensorStore,
+      this.accessWindow,
+    );
+    const [{ rows }, hiddenRows] = await Promise.all([
+      this.#getActiveRows(input),
+      input.includeProviderAbsent ? hiddenRepository.getRows(input) : Promise.resolve([]),
+    ]);
+    const candidates = new Map<string, { row: z.infer<typeof activityRowSchema>; hidden: boolean }>(
+      [...rows.map((row) => [row.id, { row, hidden: false }] as const)],
+    );
+    for (const row of hiddenRows) {
+      if (!candidates.has(row.id)) candidates.set(row.id, { row, hidden: true });
+    }
+    const ordered = [...candidates.values()].sort(
+      (left, right) =>
+        right.row.local_date.localeCompare(left.row.local_date) ||
+        right.row.started_at.localeCompare(left.row.started_at) ||
+        left.row.id.localeCompare(right.row.id),
+    );
+    const totalCount = ordered.length;
+    const page = Math.min(input.page, Math.max(0, Math.ceil(totalCount / input.pageSize) - 1));
+    const selected = ordered.slice(page * input.pageSize, (page + 1) * input.pageSize);
+    const selectedIds = new Set(selected.map((entry) => entry.row.id));
+    const hiddenIds = new Set(
+      selected.filter((entry) => entry.hidden).map((entry) => entry.row.id),
+    );
+    const [activeDays, hiddenDays] = await Promise.all([
+      this.#getActiveDayGroups(rows.filter((row) => selectedIds.has(row.id))),
+      hiddenRepository.getDayGroups(hiddenRows.filter((row) => hiddenIds.has(row.id))),
+    ]);
+    const days = mergeDayGroups(activeDays, hiddenDays);
+    for (const day of days) {
+      day.activities.sort(
+        (left, right) =>
+          right.startedAt.localeCompare(left.startedAt) || left.id.localeCompare(right.id),
+      );
+    }
+    return { days, totalCount, page, pageSize: input.pageSize };
+  }
+
+  async #getActiveRows(input: WeekListInput) {
     const days = input.weeks * 7;
     const windowStart = dateWindowStartString(input.endDate, days);
     const activityTypeFilter = input.activityType
-      ? "AND activity.canonical_type = {activityType:String}"
+      ? "AND coalesce(activity.primary_canonical_type, activity.canonical_type) = {activityType:String}"
       : "";
     const queryParams = {
       userId: this.userId,
@@ -65,10 +112,9 @@ export class ActivitiesCalendarRepository extends BaseRepository {
     };
     const activityDate = clickHouseActivityCalendarDate("activity");
 
-    const [activityRows, baselineRows] = await Promise.all([
-      this.#sensorStore.query(
-        activityRowSchema,
-        `SELECT
+    const activityRows = await this.#sensorStore.query(
+      activityRowSchema,
+      `SELECT
             toString(activity.activity_id) AS id,
             activity.name AS name,
             activity.canonical_type AS canonical_type,
@@ -88,10 +134,11 @@ export class ActivitiesCalendarRepository extends BaseRepository {
             activity.start_utc_offset_minutes AS start_utc_offset_minutes,
             activity.end_utc_offset_minutes AS end_utc_offset_minutes,
             activity.local_time_source AS local_time_source,
-            dateDiff('second', activity.started_at, activity.ended_at) / 60.0 AS duration_min,
+            dateDiff('millisecond', activity.started_at, activity.ended_at) / 60000.0 AS duration_min,
             asum.avg_hr AS avg_hr,
             asum.max_hr AS max_hr,
             asum.avg_power AS avg_power,
+            metrics.power_tss AS power_tss,
             asum.total_distance AS total_distance,
             asum.elevation_gain_m AS elevation_gain_m,
             asum.centroid_lat AS centroid_lat,
@@ -109,25 +156,16 @@ export class ActivitiesCalendarRepository extends BaseRepository {
           LEFT JOIN analytics.activity_summary asum
             ON asum.user_id = activity.user_id
            AND asum.activity_id = activity.activity_id
+          LEFT JOIN analytics.cycling_activity_power_metrics metrics
+            ON metrics.user_id = activity.user_id AND metrics.activity_id = activity.activity_id
           WHERE activity.user_id = {userId:UUID}
             AND activity.is_deleted = 0
-            AND activity.ended_at IS NOT NULL
+            AND (activity.ended_at IS NOT NULL OR activity.provider_type = 'climbing_log')
             AND ${activityDate} >= toDate({windowStart:String})
             ${activityTypeFilter}
           ORDER BY activity.started_at DESC`,
-        queryParams,
-      ),
-      this.#sensorStore.query(
-        baselineRowSchema,
-        `SELECT
-            up.max_hr AS max_hr,
-            up.resting_hr AS resting_hr,
-            up.ftp AS ftp
-          FROM postgres_fitness.user_profile_current up
-          WHERE up.id = {userId:UUID}`,
-        { userId: this.userId },
-      ),
-    ]);
+      queryParams,
+    );
 
     const activityRowsMatchingType = filterActivityRowsByType(activityRows, input.activityType);
     const filteredActivityRows = await activityRepositoryFor(
@@ -136,28 +174,40 @@ export class ActivitiesCalendarRepository extends BaseRepository {
       this.timezone,
       this.accessWindow,
     ).filterToVisibleCanonicalActivities(activityRowsMatchingType);
+    return { rows: filteredActivityRows };
+  }
+
+  async #getActiveDayGroups(
+    filteredActivityRows: z.infer<typeof activityRowSchema>[],
+  ): Promise<CalendarDayActivities[]> {
     const locationActivityIds = filteredActivityRows
       .filter((row) => row.centroid_lat != null && row.centroid_lng != null)
       .map((row) => row.id);
     const sourceActivityIds = filteredActivityRows
       .filter((row) => row.centroid_lat == null || row.centroid_lng == null)
       .map((row) => row.id);
-    const [routePreviewByActivityId, sourceLocationsByActivityId] = await Promise.all([
-      getActivityRoutePreviews(this.#sensorStore, this.userId, locationActivityIds),
-      sourceActivityIds.length
-        ? loadClimbingGradePreference(this.db, this.userId).then((preference) =>
-            new ClimbingActivityLogEntryRepository(
-              this.db,
-              this.userId,
-              this.timezone,
-              this.accessWindow,
-              preference,
-            ).getActivityMapLocations(sourceActivityIds),
-          )
-        : Promise.resolve(new Map<string, ClimbingMapLocation[]>()),
-    ]);
+    const [routePreviewByActivityId, sourceLocationsByActivityId, sourceSessionsByActivityId] =
+      await Promise.all([
+        getActivityRoutePreviews(this.#sensorStore, this.userId, locationActivityIds),
+        sourceActivityIds.length
+          ? loadClimbingGradePreference(this.db, this.userId).then((preference) =>
+              new ClimbingActivityLogEntryRepository(
+                this.db,
+                this.userId,
+                this.timezone,
+                this.accessWindow,
+                preference,
+              ).getActivityMapLocations(sourceActivityIds),
+            )
+          : Promise.resolve(new Map<string, ClimbingMapLocation[]>()),
+        new ClimbingActivityLogEntryRepository(
+          this.db,
+          this.userId,
+          this.timezone,
+          this.accessWindow,
+        ).getActivityLogSessions(filteredActivityRows.map((row) => row.id)),
+      ]);
 
-    const baseline = baselineRows[0] ?? { max_hr: null, resting_hr: null, ftp: null };
     const mapReadinessByActivityId = await getActivityMapReadiness(
       this.#sensorStore,
       this.userId,
@@ -173,16 +223,14 @@ export class ActivitiesCalendarRepository extends BaseRepository {
           memberActivityIds: row.member_activity_ids,
         })),
     );
-    const calculator = new TrainingStressCalculator();
 
     const dayMap = new Map<string, CalendarActivityEntry[]>();
     for (const row of filteredActivityRows) {
       const entry = createActiveCalendarEntry(row, {
-        baseline,
-        calculator,
         routePreview: routePreviewByActivityId.get(row.id),
         sourceLocations: sourceLocationsByActivityId.get(row.id),
         mapReadiness: mapReadinessByActivityId.get(row.id),
+        climbingLogSessions: sourceSessionsByActivityId.get(row.id),
       });
 
       const bucket = dayMap.get(row.local_date) ?? [];
@@ -201,6 +249,9 @@ function filterActivityRowsByType(
   activityType: string | undefined,
 ) {
   return activityType
-    ? activityRows.filter((activityRow) => activityRow.canonical_type === activityType)
+    ? activityRows.filter(
+        (activityRow) =>
+          (activityRow.primary_canonical_type ?? activityRow.canonical_type) === activityType,
+      )
     : activityRows;
 }

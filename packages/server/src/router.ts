@@ -23,7 +23,6 @@ import { efficiencyRouter } from "./routers/efficiency.ts";
 import { fileUploadRouter } from "./routers/file-upload.ts";
 import { foodRouter } from "./routers/food.ts";
 import { healthKitSyncRouter } from "./routers/health-kit-sync.ts";
-import { healthspanRouter } from "./routers/healthspan.ts";
 import { heartRateRouter } from "./routers/heart-rate.ts";
 import { hikingRouter } from "./routers/hiking.ts";
 import { inertialMeasurementUnitSyncRouter } from "./routers/inertial-measurement-unit-sync.ts";
@@ -45,13 +44,11 @@ import { recoveryRouter } from "./routers/recovery.ts";
 import { runningRouter } from "./routers/running.ts";
 import { settingsRouter } from "./routers/settings.ts";
 import { sleepRouter } from "./routers/sleep.ts";
-import { sleepNeedRouter } from "./routers/sleep-need.ts";
 import { sportSettingsRouter } from "./routers/sport-settings.ts";
 import { strengthRouter } from "./routers/strength.ts";
 import { stressRouter } from "./routers/stress.ts";
 import { supportRouter } from "./routers/support.ts";
 import { syncRouter } from "./routers/sync.ts";
-import { todayPlanRouter } from "./routers/today-plan.ts";
 import { tokenAuthRouter } from "./routers/token-auth.ts";
 import { trainingRouter } from "./routers/training.ts";
 import { trendsRouter } from "./routers/trends.ts";
@@ -72,7 +69,6 @@ const appRouterProcedures = {
   personalization: personalizationRouter,
   auth: authRouter,
   sleep: sleepRouter,
-  sleepNeed: sleepNeedRouter,
   dailyMetrics: dailyMetricsRouter,
   body: bodyRouter,
   bodyAnalytics: bodyAnalyticsRouter,
@@ -113,8 +109,6 @@ const appRouterProcedures = {
   running: runningRouter,
   settings: settingsRouter,
   stress: stressRouter,
-  todayPlan: todayPlanRouter,
-  healthspan: healthspanRouter,
   medicationDoseEvents: medicationDoseEventsRouter,
   mcp: mcpRouter,
   sportSettings: sportSettingsRouter,

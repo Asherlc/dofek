@@ -110,12 +110,7 @@ export function isServiceUnavailableStatus(
   statusCode: number,
   additionalStatusCodes: readonly number[] = [],
 ): boolean {
-  return (
-    statusCode === 502 ||
-    statusCode === 503 ||
-    statusCode === 504 ||
-    additionalStatusCodes.includes(statusCode)
-  );
+  return (statusCode >= 500 && statusCode <= 599) || additionalStatusCodes.includes(statusCode);
 }
 
 export async function fetchWithRateLimitHandling(
@@ -158,7 +153,7 @@ function createDefaultRateLimitError(
   responseBody: string,
 ): ProviderRateLimitError {
   return new ProviderRateLimitError({
-    message: `${providerId} API rate limit exceeded (${response.status}): ${responseBody}`,
+    message: `${providerId} API rate limit exceeded (${response.status}). Try again later.`,
     providerId,
     statusCode: response.status,
     responseBody,
@@ -176,7 +171,7 @@ function createDefaultServiceUnavailableError(
   responseBody: string,
 ): ProviderServiceUnavailableError {
   return new ProviderServiceUnavailableError({
-    message: `${providerId} API service unavailable (${response.status}): ${responseBody}`,
+    message: `${providerId} API service unavailable (${response.status}). Try again later.`,
     providerId,
     statusCode: response.status,
     responseBody,

@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { loadCatalogueSeed } from "./climbing-catalogue-seed.ts";
+import { loadCatalogueSeed, loadCatalogueSeeds } from "./climbing-catalogue-seed.ts";
 import { persistClimbingLogEntries, type SourceClimbingLogEntry } from "./climbing-log-sync.ts";
 import { activity } from "./schema/activity.ts";
 import { area, climb, climbingLogEntry } from "./schema/climbing.ts";
@@ -47,7 +47,7 @@ describe("loadCatalogueSeed PostgreSQL visibility and source metadata", () => {
     if (!id) throw new Error("Expected source log");
     return id;
   }
-  async function attach() {
+  async function attach(externalId = "log-id") {
     const [parent] = await context.db
       .insert(activity)
       .values({
@@ -60,8 +60,33 @@ describe("loadCatalogueSeed PostgreSQL visibility and source metadata", () => {
       })
       .returning();
     if (!parent) throw new Error("Expected activity");
-    return { parent, id: await write({ activityId: parent.id }) };
+    return { parent, id: await write({ activityId: parent.id, externalId }) };
   }
+  it("batch-loads current owned visible logs among mixed and repeated IDs", async () => {
+    const first = await write();
+    const absent = await write({ externalId: "absent-log" });
+    await context.db
+      .update(climbingLogEntry)
+      .set({ providerAbsentAt: new Date() })
+      .where(eq(climbingLogEntry.id, absent));
+    const { parent, id: attached } = await attach("attached-log");
+    await context.db
+      .update(activity)
+      .set({ deletedAt: new Date() })
+      .where(eq(activity.id, parent.id));
+    const result = await loadCatalogueSeeds(context.db, userId, [
+      first,
+      first,
+      absent,
+      attached,
+      "00000000-0000-4000-8000-000000000099",
+    ]);
+    expect(result.map((seed) => seed.logEntryId)).toEqual([first]);
+    expect(
+      await loadCatalogueSeeds(context.db, "00000000-0000-4000-8000-000000000099", [first]),
+    ).toEqual([]);
+    expect(await loadCatalogueSeeds(context.db, userId, [])).toEqual([]);
+  });
   it("preserves source climb identity and every native location scope", async () => {
     const id = await write({
       climb: {
@@ -140,8 +165,15 @@ describe("loadCatalogueSeed PostgreSQL visibility and source metadata", () => {
       .where(eq(climb.externalId, "climb-id"));
     expect((await loadCatalogueSeed(context.db, userId, id))?.name).toBe("Renamed source");
   });
-  it("uses recorded titles for unnamed climbs and excludes nameless logs", async () => {
-    const id = await write({ climb: { externalId: "climb-id", name: null, kind: "summit" } });
+  it("uses recorded titles and preserves unnamed source identities", async () => {
+    const id = await write({
+      climb: {
+        externalId: "climb-id",
+        name: null,
+        kind: "summit",
+        coordinates: { latitude: 37, longitude: -122 },
+      },
+    });
     expect(await loadCatalogueSeed(context.db, userId, id)).toMatchObject({
       name: "Log title",
       kind: null,
@@ -150,7 +182,18 @@ describe("loadCatalogueSeed PostgreSQL visibility and source metadata", () => {
       .update(climbingLogEntry)
       .set({ title: null })
       .where(eq(climbingLogEntry.id, id));
-    expect(await loadCatalogueSeed(context.db, userId, id)).toBeNull();
+    expect(await loadCatalogueSeed(context.db, userId, id)).toMatchObject({
+      name: null,
+      externalId: "climb-id",
+      locations: [
+        {
+          externalId: "climb-id",
+          name: null,
+          scope: "climb",
+          coordinates: { latitude: 37, longitude: -122 },
+        },
+      ],
+    });
   });
   it("does not substitute the log identity when no source climb exists", async () => {
     const id = await write({ climb: undefined });

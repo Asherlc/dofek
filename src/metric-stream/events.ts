@@ -44,7 +44,6 @@ const timestampInputSchema = z.union([z.string().min(1), z.date()]).transform((v
 
 export const metricStreamRowInputSchema = z
   .object({
-    id: z.guid().optional(),
     recordedAt: timestampInputSchema,
     userId: z.guid(),
     providerId: nonEmptyStringSchema,
@@ -193,7 +192,7 @@ function createDeterministicMetricStreamId(
   row: z.output<typeof metricStreamRowInputSchema>,
 ): string {
   if (row.externalId === null || row.externalId === undefined) {
-    throw new Error("Metric stream rows without id must include externalId");
+    throw new Error("Metric stream rows must include externalId");
   }
 
   const hash = createHash("sha1")
@@ -208,6 +207,19 @@ function createDeterministicMetricStreamId(
     .update(row.channel)
     .update("\0")
     .update(row.recordedAt);
+  const metadata = row.metadata;
+  if (
+    metadata &&
+    typeof metadata === "object" &&
+    !Array.isArray(metadata) &&
+    typeof metadata.interval_end === "string"
+  ) {
+    hash.update("\0interval_end:").update(new Date(metadata.interval_end).toISOString());
+    hash.update("\0source_type:").update(row.sourceType);
+    hash
+      .update("\0source_bundle:")
+      .update(typeof metadata.source_bundle === "string" ? metadata.source_bundle : "");
+  }
   if (row.generation > 0) {
     hash.update("\0generation:").update(String(row.generation));
   }
@@ -231,7 +243,7 @@ export function createMetricStreamEvent(
   return metricStreamEventV2Schema.parse({
     version: METRIC_STREAM_EVENT_VERSION,
     operationRevision,
-    id: parsedRow.id ?? createDeterministicMetricStreamId(parsedRow),
+    id: createDeterministicMetricStreamId(parsedRow),
     recordedAt: parsedRow.recordedAt,
     userId: parsedRow.userId,
     providerId: parsedRow.providerId,

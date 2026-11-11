@@ -13,6 +13,40 @@ import {
 } from "./climbing-log-contracts.ts";
 
 describe("versioned climbing detail responses", () => {
+  it("retains explicit area membership in V5 while preserving strict older responses", () => {
+    const original = climbingLogEntryFixture();
+    const entry = { ...original, areaGroupId: "30000000-0000-4000-8000-000000000001" };
+    expect(decodeClimbingLogEntryDetailResponse(entry)).toEqual(entry);
+    expect(serializeClimbingLogEntryDetailResponse(entry, 5)).toEqual(entry);
+    for (const version of [1, 2, 3, 4] as const) {
+      expect(serializeClimbingLogEntryDetailResponse(entry, version)).toEqual(
+        serializeClimbingLogEntryDetailResponse(original, version),
+      );
+    }
+  });
+  it("parses required source-session fields at the runtime contract boundary", async () => {
+    vi.resetModules();
+    const { climbingLogActivitySessionSchema } = await import("./climbing-log-contracts.ts");
+    const session = {
+      id: "30000000-0000-4000-8000-000000000001",
+      providerId: "kilter",
+      memberActivityIds: ["40000000-0000-4000-8000-000000000001"],
+      firstLoggedAt: "2026-11-09T18:00:00.000Z",
+      lastLoggedAt: "2026-11-09T18:04:00.000Z",
+    };
+
+    expect(climbingLogActivitySessionSchema.parse(session)).toEqual(session);
+    expect(climbingLogActivitySessionSchema.safeParse({}).success).toBe(false);
+  });
+
+  it("preserves log-specific location in V4 while projecting the strict V3 payload", () => {
+    const original = climbingLogEntryFixture();
+    const entry = { ...original, areaPath: climbingClimbFixture().areaPath };
+    expect(
+      decodeClimbingLogEntryDetailResponse(serializeClimbingLogEntryDetailResponse(entry, 4)),
+    ).toEqual(entry);
+    expect(serializeClimbingLogEntryDetailResponse(entry, 3)).toEqual(original);
+  });
   it("retains attributed recorded tags in V3 without changing stored log traits", () => {
     const tags = [
       {

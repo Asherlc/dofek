@@ -9,12 +9,6 @@ public final class WhoopBleUploadAppDelegateSubscriber: ExpoAppDelegateSubscribe
             completionHandler()
             return
         }
-        do {
-            try WhoopBleUploadRuntime.shared().handleBackgroundEvents(completionHandler: completionHandler)
-        } catch {
-            WhoopBleUploadRuntime.reportNativeError(error)
-            // Storage could not open; release the OS callback after surfacing the failure.
-            DispatchQueue.main.async(execute: completionHandler)
-        }
+        WhoopBleUploadRuntime.handleBackgroundEvents(completionHandler: completionHandler)
     }
 }

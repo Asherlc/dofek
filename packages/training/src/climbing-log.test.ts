@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   areaSchema,
   climbingAttemptSchema,
+  climbingLogEntryAreaPath,
   climbingLogEntryName,
   climbingLogEntrySchema,
   climbSchema,
@@ -17,6 +18,16 @@ const owner = {
   providerId: "summitpost",
   externalId: "object:1234",
 };
+
+it("prefers a log's recorded location and uses the climb path only for an omitted log path", () => {
+  const climb = { areaPath: [{ name: "Catalogue location" }] };
+  expect(climbingLogEntryAreaPath({ climb, areaPath: [{ name: "Visited gym" }] })).toEqual([
+    { name: "Visited gym" },
+  ]);
+  expect(climbingLogEntryAreaPath({ climb, areaPath: [] })).toEqual([]);
+  expect(climbingLogEntryAreaPath({ climb })).toEqual([{ name: "Catalogue location" }]);
+  expect(climbingLogEntryAreaPath({ climb: null })).toEqual([]);
+});
 
 describe("climbing log activity association", () => {
   it.each([
@@ -60,9 +71,15 @@ const attempt = {
   createdAt: "2026-10-13T12:00:00Z",
 };
 const { outcome: _computedOutcome, ...recordedAttemptFields } = attempt;
-const recordedAttempt = { ...recordedAttemptFields, sourceResult: null };
+const recordedAttempt = { ...recordedAttemptFields, sourceCompleted: null, sourceResult: null };
 
 describe("recorded climbing attempt source facts", () => {
+  it.each([true, false, null])("preserves raw boolean completion %s", (sourceCompleted) => {
+    expect(
+      recordedClimbingAttemptSchema.parse({ ...recordedAttempt, sourceCompleted }),
+    ).toMatchObject({ sourceCompleted, sourceResult: null });
+  });
+
   it.each(["X", "Flash", " rEdPoInT ", "\tFlash\n", "\u00a0Flash\ufeff"])(
     "preserves the exact original source result %j",
     (sourceResult) => {

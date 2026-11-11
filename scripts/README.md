@@ -2,8 +2,19 @@
 
 Utility and maintenance scripts for development, infrastructure, and reverse engineering.
 
+`collect-clickhouse-ci-diagnostics.ts <container-id> <output-directory>` captures
+bounded, read-only ClickHouse CI failure evidence before the service is removed.
+It writes a manifest, allowlisted container state, resource usage, redacted log
+tails and system-table snapshots. Run it with `pnpm tsx`; the existing
+`CLICKHOUSE_URL`, when present, supplies only an in-memory password redaction
+value. Query authentication uses the container's existing password internally.
+Failed captures retain partial artifacts and make the command exit nonzero.
+See [integration failure diagnostics](../docs/testing.md#hosted-clickhouse-failure-diagnostics).
+Docker supports [formatted inspection](https://docs.docker.com/reference/cli/docker/container/inspect/),
+and GitHub removes [service containers at job completion](https://docs.github.com/en/actions/tutorials/use-containerized-services/use-docker-service-containers).
+
 `pnpm check:dependency-security` runs `check-node-forge-security.ts` and
-`check-braces-security.ts` against the installed Expo/Metro dependencies before
+`check-braces-security.ts` and `check-expo-zod-security.ts` against the installed Expo/Metro dependencies before
 the CI audit. See [dependency security patches](../docs/dependency-security-patches.md)
 for the upstream fixes, regression coverage, and scoped advisory exceptions.
 
@@ -102,20 +113,58 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
 
 ## Verification & Tooling
 
-- `run-swift-mutation.ts`: Runs the existing Muter tool for changed compiled
+- `integration-test-sequencer.ts`: Uses Vitest's public
+  [BaseSequencer extension](https://v4.vitest.dev/config/sequence) to balance the
+  existing five integration shards from one committed measured baseline.
+  Discovery and original specifications remain authoritative. New files use
+  the positive-duration median; estimates and all allocations are recorded in
+  `reports/integration-sharding/<index>-of-<count>/assignment.json`.
+- `integration-timing-reporter.ts`: Publishes completed whole-suite timings using
+  Vitest's public [per-specification cache API](https://vitest.dev/api/advanced/vitest#cache)
+  after the run ends. It requires successful complete current-run results for
+  exactly the assigned files.
+- `update-integration-test-timings.ts`: Validates the reporter-owned artifacts
+  and combines exactly five coherent shard exports. It does not parse Vitest's
+  internal cache files; the [public reporter API](https://vitest.dev/api/advanced/reporters)
+  supplies completed modules.
+  Allocation never consumes independently restored caches. Invalid refresh input
+  preserves the existing baseline.
+  - CI export, after tests pass:
+    `pnpm tsx scripts/update-integration-test-timings.ts export reports/integration-sharding/1-of-5`
+  - Reviewed refresh from five downloaded directories from one successful run
+    attempt:
+    `pnpm tsx scripts/update-integration-test-timings.ts merge scripts/integration-test-timings.json <shard1-directory> <shard2-directory> <shard3-directory> <shard4-directory> <shard5-directory>`
+  - See [duration-balanced integration shards](../docs/testing.md#duration-balanced-integration-shards)
+    for freshness, provenance, timing limitations and allocation verification.
+- `run-swift-mutation.ts`: Runs the pinned MutantKit tool for changed compiled
   Swift sources in their owning Swift packages. Git's merge-base comparison
   limits selection to the PR delta, and SwiftPM's source inventory respects
   each manifest's test and Expo bridge exclusions. Each selected package runs
   from its own directory with package-relative source paths and writes an
-  absolute JSON report under `reports/swift-mutation/`.
-  - Usage: `pnpm tsx scripts/run-swift-mutation.ts --base origin/main`
-  - The shared [Muter configuration](../packages/mobile/muter.conf.yml) is
-    linked into each package. The runner skips only an empty compiled-source
-    intersection, propagates every nonzero tool exit, and requires a valid
-    positive-work report after a selected run. Muter 16 uses its working
-    directory's configuration and filenames:
-    [configuration loading](https://github.com/muter-mutation-testing/muter/blob/16/Sources/muterCore/MuterRunSteps/LoadConfiguration.swift),
-    [file selection](https://github.com/muter-mutation-testing/muter/blob/16/Sources/muterCore/MuterRunSteps/DiscoverSourceFiles.swift).
+  absolute plan, configuration, JSON report and verification/archive evidence
+  under `reports/swift-mutation/`.
+  - Install: `mise install --locked github:juntaki/mutantkit` on macOS ARM64.
+  - Usage: `mise exec -- pnpm tsx scripts/run-swift-mutation.ts --base origin/main`
+  - The shared [configuration](../packages/mobile/mutantkit.yml) is linked into
+    each package. The runner compiler-validates every selected source, checks
+    exact plan hashes/inventory, runs full owning-package tests and verifies
+    complete official raw observations. Verified zero-candidate plans are not
+    applicable and receive no mutation score. Every other candidate runs through
+    official shards of at most twelve, followed by a required full-plan merge;
+    the complete campaign requires positive measured work. Every nonzero tool
+    exit propagates. CI uses `--base origin/main --prepare`, `--job <JSON>` and
+    `--merge`; the default command executes the complete campaign locally. See
+    [official sharding](https://github.com/juntaki/mutantkit/blob/1e345263e36e1658adeed6ae919b7f5875a2601b/Sources/MutationPlanner/PlanSharding.swift),
+    [planning](https://github.com/juntaki/mutantkit/blob/1e345263e36e1658adeed6ae919b7f5875a2601b/Sources/CLI/Commands/PlanCommand.swift),
+    [official reverification](https://github.com/juntaki/mutantkit/blob/1e345263e36e1658adeed6ae919b7f5875a2601b/Sources/CLI/Commands/VerifyRunCommand.swift)
+    and [native testing requirements](../docs/testing.md#native-swift-mutation-testing).
+  - Command metadata lives in `<name>.command.json`; `stdoutPath` and
+    `stderrPath` refer to the complete adjacent `<name>.command.stdout.log`
+    and `<name>.command.stderr.log` files. Evidence-bearing children write to
+    file descriptors, avoiding Node's aggregate capture limit. Human output is
+    replayed after completion in bounded chunks; parsed verification JSON stays
+    separate. See [Node stdio](https://nodejs.org/api/child_process.html#optionsstdio)
+    and the [runner](run-swift-mutation.ts).
 - Native mutation selection uses the [SwiftPM describe command](https://github.com/swiftlang/swift-package-manager/blob/main/Sources/Commands/PackageCommands/Describe.swift)
   and Git's [three-dot comparison](https://git-scm.com/docs/git-diff),
   rather than duplicating Swift manifest exclusions or comparing unrelated
@@ -162,29 +211,16 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
   has zero desired replicas and all actual tasks are terminal, including web in
   maintenance mode. It allows the existing worker drain contract to finish;
   see [Swarm task states](https://docs.docker.com/engine/swarm/how-swarm-mode-works/swarm-task-states/).
-- `select-web-deploy.ts`: Selects the latest successful main-push CI release
-  after the production deployment concurrency slot is acquired. Walks the fetched
-  `origin/main` first-parent history newest first, checking successful CI by
-  `head_sha` until it finds a passing commit, bounded by the triggering commit.
-  Reads the API's `workflow_runs` array; an empty array means that commit has no
-  matching successful run.
-  Requires full main history and rejects a response for another commit, branch,
-  event, or conclusion; see [`git rev-list`](https://git-scm.com/docs/git-rev-list)
-  and the [workflow-run filters](https://docs.github.com/en/rest/actions/workflow-runs#list-workflow-runs-for-a-workflow).
-  Manual requests retain their explicit image tag. Unsuccessful CI triggers cancel their own
-  deployment request and never return a successful step result. The workflow
-  supplies the standard GitHub event, output, summary, repository, and run-ID
-  environment variables; see the [workflow-run API](https://docs.github.com/en/rest/actions/workflow-runs)
-  and [GitHub default environment variables](https://docs.github.com/en/actions/reference/workflows-and-actions/variables#default-environment-variables).
-  - Usage: `pnpm tsx scripts/select-web-deploy.ts` in `Deploy Web`.
 - `testflight-deployment.ts`: Detects signed iOS native changes against the
   latest successful upload receipt, prepares a pending intent immediately before
   Xcode upload, and finalizes that same deployment after upload succeeds. Uses one GitHub deployment
   history with environment `testflight` and task `testflight-upload`, independent
   of the caller workflow's commit or job name. Empty successful history requires
-  a first build; API or malformed-history failures stop the release. A newer
-  unresolved intent blocks publication, including `--force`, and is rechecked
-  inside every uploader attempt. Failed/cancelled uploads stay unresolved because
+  a first build; API or malformed-history failures stop the release. Read-only
+  build detection skips unresolved intents to find the last successful receipt
+  without sharing the publisher lock. A newer unresolved intent still blocks
+  publication, including `--force`, and is checked inside every uploader attempt.
+  Failed/cancelled uploads stay unresolved because
   Apple may already have accepted the binary. Only a confirmed success or an
   operator's `INACTIVE` reconciliation clears that guard; mark an intent inactive
   only after verifying Apple has no upload or that the upload command never began.
@@ -207,8 +243,8 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
   using the REST response's [global node ID](https://docs.github.com/en/graphql/guides/using-global-node-ids),
   preserves `INACTIVE` reconciliation, and completes an already `SUCCESS` receipt
   without another status write. The history read and intent creation are separate
-  API operations; publisher attempts rely on the caller's `deploy-web-production`
-  and reusable `deploy-ios` [concurrency serialization](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency),
+  API operations; publisher attempts rely on reusable `deploy-ios`
+  [concurrency serialization](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency),
   rather than an atomic API lock.
   Rerun only a failed receipt job to finalize the original
   successful upload without reuploading; the workflow retains those original outputs.
@@ -322,8 +358,21 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
   the deployed update metadata, or reports that no update is available.
   URL, channel, runtime version, and platform have explicit command-line
   overrides for local and preview checks.
-  - Usage: `pnpm check:mobile-update`
+  - Usage: `pnpm check:mobile-update --app-id <app-id> --runtime-version <resolved-runtime>`
+  - Required: `--app-id <app-id> --runtime-version <version>`
   - Overrides: `--url <url> --channel <channel> --runtime-version <version> --platform <ios|android>`
+- `stack-service-image.ts`: Reads a service’s canonical immutable image from a Compose
+  stack, including [YAML merge keys](https://yaml.org/type/merge.html), for the existing
+  Swarm running-task verifier. Missing or mutable references fail explicitly.
+  - Usage: `pnpm tsx scripts/stack-service-image.ts deploy/stack.yml ota`
+- `verify-published-ota.ts`: Audits the exact published UUID/runtime, signed manifest,
+  and asset hashes against the [Expo Updates protocol](https://docs.expo.dev/technical-specs/expo-updates-1/).
+  EOAS [returns without writing a receipt for unchanged content](https://github.com/mercuretechnologies/xprem/blob/v3.2.7/apps/eoas/src/commands/publish.ts).
+  When no receipt exists, the audit requires the served launch bundle and complete
+  asset hash set to match the local export, verifies the device signature and
+  downloaded bytes, then writes the verified identity as the receipt. A present
+  receipt must match the requested runtime and branch and remains an exact UUID check.
+  - Usage: `pnpm tsx scripts/verify-published-ota.ts packages/mobile/dist/xprem-update-metadata.json production <resolved-runtime>`
 - `validate-deploy-env.ts`: Validates the rendered production dotenv and calls
   the same account-erasure keyring parser used by web and worker startup.
   - Usage: `pnpm tsx scripts/validate-deploy-env.ts <rendered-dotenv-path>`

@@ -5,7 +5,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ActivityRow } from "../models/activity.ts";
 import { Activity } from "../models/activity.ts";
 import { ActivityRepository } from "../repositories/activity-repository.ts";
-import { PowerRepository } from "../repositories/power-repository.ts";
+import {
+  CyclingThresholdRepository,
+  cyclingThresholdEvidenceFromMetrics,
+} from "../repositories/cycling-threshold-repository.ts";
 import { ExerciseWithSets, StrengthRepository } from "../repositories/strength-repository.ts";
 import { createTestCallerFactory, makeTestCaller } from "./test-helpers.ts";
 
@@ -143,6 +146,7 @@ function makeResolvedCaller(
   rows: Record<string, unknown>[],
   sensorStore: unknown = makeSensorStoreStub(),
   requestedId = "00000000-0000-0000-0000-000000000001",
+  climbingLogSessions: Record<string, unknown>[] = [],
 ) {
   const resolvedGroupId = typeof rows[0]?.id === "string" ? rows[0].id : requestedId;
   return makeTestCaller(
@@ -158,6 +162,7 @@ function makeResolvedCaller(
           ]
         : [],
       rows,
+      climbingLogSessions,
     ],
     (db) => ({ db, sensorStore, userId: "user-1", timezone: "UTC" }),
   ).caller;
@@ -217,6 +222,92 @@ function makeActivityRow(overrides: Partial<ActivityRow>): ActivityRow {
 }
 
 describe("activityRouter", () => {
+  describe("metric source response versions", () => {
+    it.each([undefined, 1, 2] as const)(
+      "serves the supported attribution contract for version %s",
+      async (responseVersion) => {
+        const id = "00000000-0000-4000-8000-000000000001";
+        const whoopId = "00000000-0000-4000-8000-000000000002";
+        const pelotonId = "00000000-0000-4000-8000-000000000003";
+        const row = {
+          id,
+          user_id: "user-1",
+          started_at: "2026-04-01T10:00:00Z",
+          ended_at: "2026-04-01T11:00:00Z",
+          member_activity_ids: [whoopId, pelotonId],
+          primary_activity_id: whoopId,
+          primary_provider_id: "whoop",
+          primary_source_name: null,
+          origin_candidate_member_ids: [],
+          absent_source_external_ids: [],
+          source_external_ids: [
+            {
+              memberActivityId: whoopId,
+              providerId: "whoop",
+              externalId: "original",
+              subsource: null,
+            },
+            {
+              memberActivityId: pelotonId,
+              providerId: "peloton",
+              externalId: "copy",
+              subsource: null,
+            },
+          ],
+          origin_evidence: [
+            {
+              upstreamMemberActivityId: whoopId,
+              downstreamMemberActivityId: pelotonId,
+              field: "external_id",
+              value: "original",
+            },
+          ],
+        };
+        const sensorStore = makeSensorStoreStub({
+          query: vi.fn().mockResolvedValue([
+            {
+              channel: "heart_rate",
+              provider_id: "peloton",
+              device_id: null,
+              source_id: "peloton",
+              activity_ids: [pelotonId],
+              sample_count: 500,
+            },
+          ]),
+        });
+        const { caller } = makeTestCaller(
+          createCaller,
+          [
+            [{ requested_id: id, resolved_group_id: id, resolution_kind: "group" }],
+            [row],
+            [],
+            [row],
+          ],
+          (db) => ({ db, sensorStore, userId: "user-1", timezone: "UTC" }),
+        );
+        const result = await caller.metricSources({
+          id,
+          ...(responseVersion === undefined ? {} : { responseVersion }),
+        });
+        expect(result[0]?.sources[0]).toMatchObject(
+          responseVersion === 2
+            ? {
+                id: "peloton",
+                label: "WHOOP via Peloton",
+                presentation: {
+                  providerId: "whoop",
+                  attribution: { kind: "provider", providerId: "peloton" },
+                },
+              }
+            : {
+                id: "peloton",
+                label: "Peloton",
+                presentation: { providerId: "peloton", attribution: null },
+              },
+        );
+      },
+    );
+  });
   describe("powerWork", () => {
     it("returns work for the selected source after resolving a provider member to its canonical ride", async () => {
       const id = "00000000-0000-4000-8000-000000000010";
@@ -529,6 +620,54 @@ describe("activityRouter", () => {
   });
 
   describe("byId", () => {
+    it("hydrates source sessions for the canonical activity ID", async () => {
+      const activityId = "30000000-0000-4000-8000-000000000001";
+      const session = {
+        activityId,
+        id: "40000000-0000-4000-8000-000000000001",
+        providerId: "kilter",
+        memberActivityIds: ["50000000-0000-4000-8000-000000000001"],
+        firstLoggedAt: "2026-11-09T18:00:00.000Z",
+        lastLoggedAt: "2026-11-09T18:04:00.000Z",
+      };
+      const row = {
+        id: activityId,
+        canonical_type: "climbing",
+        started_at: "2026-11-09T18:00:00.000Z",
+        ended_at: null,
+        name: "Kilter Board",
+        notes: null,
+        primary_activity_id: "50000000-0000-4000-8000-000000000001",
+        primary_provider_id: "kilter",
+        primary_source_name: "Kilter Board",
+        origin_candidate_member_ids: [],
+        provider_id: "kilter",
+        subsource: null,
+        source_providers: ["kilter"],
+        member_activity_ids: ["50000000-0000-4000-8000-000000000001"],
+        origin_evidence: [],
+        source_external_ids: [],
+        avg_hr: null,
+        max_hr: null,
+        avg_power: null,
+        max_power: null,
+        avg_speed: null,
+        max_speed: null,
+        avg_cadence: null,
+        total_distance: null,
+        elevation_gain_m: null,
+        elevation_loss_m: null,
+        sample_count: null,
+      };
+      const caller = makeResolvedCaller([row], makeSensorStoreStub(), activityId, [session]);
+
+      const result = await caller.byId({ id: activityId });
+
+      expect(result.climbingLogSessions).toEqual([
+        expect.objectContaining({ id: session.id, providerId: "kilter" }),
+      ]);
+    });
+
     it("returns mapped activity detail with source links", async () => {
       const row = {
         id: "abc-123",
@@ -636,6 +775,124 @@ describe("activityRouter", () => {
       expect(result.avgHr).toBeNull();
       expect(result.sourceProviders).toEqual([]);
       expect(result.sourceLinks).toEqual([]);
+    });
+  });
+
+  describe("heartRateContext", () => {
+    it("selects the default HR source rather than another metric's default", async () => {
+      const metricSources = vi
+        .spyOn(ActivityRepository.prototype, "getMetricSources")
+        .mockResolvedValue([
+          {
+            key: "power",
+            label: "Power",
+            defaultSourceId: "power-device",
+            sources: [{ id: "power-device", label: "Power device" }],
+          },
+          {
+            key: "heartRate",
+            label: "Heart Rate",
+            defaultSourceId: "whoop",
+            sources: [{ id: "whoop", label: "WHOOP" }],
+          },
+        ]);
+      try {
+        const store = makeSensorStoreStub({
+          getStream: vi.fn().mockImplementation(async (_window, _maxPoints, sources) => [
+            {
+              recorded_at: "2026-04-01T09:55:00.000Z",
+              heart_rate: sources.heartRate === "whoop" ? 91 : 192,
+            },
+          ]),
+        });
+        const caller = makeResolvedCaller(
+          [
+            {
+              ...makeActivityRow({}),
+              user_id: "user-1",
+              member_activity_ids: ["00000000-0000-0000-0000-000000000001"],
+            },
+          ],
+          store,
+        );
+        const result = await caller.heartRateContext({
+          id: "00000000-0000-0000-0000-000000000001",
+        });
+        expect(result.points).toEqual([{ recordedAt: "2026-04-01T09:55:00.000Z", value: 91 }]);
+      } finally {
+        metricSources.mockRestore();
+      }
+    });
+    it("returns an empty context when the activity has no HR source", async () => {
+      const metricSources = vi
+        .spyOn(ActivityRepository.prototype, "getMetricSources")
+        .mockResolvedValue([
+          {
+            key: "power",
+            label: "Power",
+            defaultSourceId: "power-device",
+            sources: [{ id: "power-device", label: "Power device" }],
+          },
+        ]);
+      try {
+        const caller = makeResolvedCaller([
+          {
+            ...makeActivityRow({}),
+            user_id: "user-1",
+            member_activity_ids: ["00000000-0000-0000-0000-000000000001"],
+          },
+        ]);
+        expect(
+          await caller.heartRateContext({ id: "00000000-0000-0000-0000-000000000001" }),
+        ).toEqual({
+          window: { startedAt: "2026-04-01T09:55:00.000Z", endedAt: "2026-04-01T11:05:00.000Z" },
+          points: [],
+        });
+      } finally {
+        metricSources.mockRestore();
+      }
+    });
+    it("requires the sensor store", async () => {
+      await expect(
+        makeCallerWithoutSensorStore().heartRateContext({
+          id: "00000000-0000-0000-0000-000000000001",
+        }),
+      ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+    });
+    it("does not query sensor samples for an inaccessible activity", async () => {
+      const store = makeSensorStoreStub();
+      await expect(
+        makeResolvedCaller([], store).heartRateContext({
+          id: "00000000-0000-0000-0000-000000000001",
+          heartRateSourceId: "whoop",
+        }),
+      ).rejects.toMatchObject({ code: "NOT_FOUND" });
+      expect(store.getStream).not.toHaveBeenCalled();
+    });
+    it("returns a separate padded window without changing activity-scoped stream requests", async () => {
+      const store = makeSensorStoreStub({
+        getStream: vi
+          .fn()
+          .mockResolvedValue([{ recorded_at: "2026-04-01T09:55:00.000Z", heart_rate: 91 }]),
+      });
+      const caller = makeResolvedCaller(
+        [
+          {
+            ...makeActivityRow({}),
+            user_id: "user-1",
+            member_activity_ids: ["00000000-0000-0000-0000-000000000001"],
+          },
+        ],
+        store,
+      );
+      const result = await caller.heartRateContext({
+        id: "00000000-0000-0000-0000-000000000001",
+        heartRateSourceId: "whoop",
+      });
+      expect(result).toEqual({
+        window: { startedAt: "2026-04-01T09:55:00.000Z", endedAt: "2026-04-01T11:05:00.000Z" },
+        points: [{ recordedAt: "2026-04-01T09:55:00.000Z", value: 91 }],
+      });
     });
   });
 
@@ -1635,7 +1892,7 @@ describe("activityRouter", () => {
         .mockResolvedValue(
           makeActivityRow({ canonical_type: "running", avg_power: null, max_power: null }),
         );
-      const getEftpTrendSpy = vi.spyOn(PowerRepository.prototype, "getEftpTrend");
+      const getEftpTrendSpy = vi.spyOn(CyclingThresholdRepository.prototype, "getForActivities");
       const getPowerZonesSpy = vi.spyOn(ActivityRepository.prototype, "getPowerZones");
 
       const caller = makeCallerWithoutSensorStore();
@@ -1654,7 +1911,7 @@ describe("activityRouter", () => {
       const findByIdSpy = vi
         .spyOn(ActivityRepository.prototype, "findById")
         .mockResolvedValue(makeActivityRow({ avg_power: null, max_power: null }));
-      const getEftpTrendSpy = vi.spyOn(PowerRepository.prototype, "getEftpTrend");
+      const getEftpTrendSpy = vi.spyOn(CyclingThresholdRepository.prototype, "getForActivities");
       const getPowerZonesSpy = vi.spyOn(ActivityRepository.prototype, "getPowerZones");
 
       const caller = makeCallerWithoutSensorStore();
@@ -1696,13 +1953,22 @@ describe("activityRouter", () => {
           .mockResolvedValue(
             makeActivityRow({ canonical_type: "cycling", avg_power: 210, max_power: 360 }),
           );
+        const metrics = {
+          activity_id: "00000000-0000-0000-0000-000000000001",
+          started_at: "2026-01-01T12:00:00.000000Z",
+          normalized_power: 240,
+          eftp: 265,
+          intensity_factor: 240 / 265,
+          power_tss: 82,
+          evidence_activity_id: "00000000-0000-4000-8000-000000000002",
+          evidence_at: "2025-12-01T12:00:00.000000Z",
+          evidence_duration_seconds: 1200,
+          evidence_power: 280,
+          model_version: "reference-v1",
+        };
         const getEftpTrendSpy = vi
-          .spyOn(PowerRepository.prototype, "getEftpTrend")
-          .mockResolvedValue({
-            trend: [],
-            currentEftp: 265,
-            model: null,
-          });
+          .spyOn(CyclingThresholdRepository.prototype, "getForActivities")
+          .mockResolvedValue(new Map([[metrics.activity_id, metrics]]));
         const getPowerZonesSpy = vi
           .spyOn(ActivityRepository.prototype, "getPowerZones")
           .mockResolvedValue(zones);
@@ -1716,20 +1982,47 @@ describe("activityRouter", () => {
           powerSourceId,
         });
 
-        const [range] = getEftpTrendSpy.mock.calls[0] ?? [];
-        expect(range?.days).toBe(90);
+        expect(getEftpTrendSpy).toHaveBeenCalledWith([metrics.activity_id]);
         expect(getPowerZonesSpy).toHaveBeenCalledWith(
           "00000000-0000-0000-0000-000000000001",
           265,
           powerSourceId,
         );
-        expect(result).toEqual({ zones, ftp: 265 });
+        expect(result).toEqual({
+          zones,
+          ftp: 265,
+          thresholdEvidence: cyclingThresholdEvidenceFromMetrics(metrics),
+        });
 
         findByIdSpy.mockRestore();
         getEftpTrendSpy.mockRestore();
         getPowerZonesSpy.mockRestore();
       },
     );
+
+    it("returns a specific unavailable threshold while retaining the activity response", async () => {
+      const findByIdSpy = vi
+        .spyOn(ActivityRepository.prototype, "findById")
+        .mockResolvedValue(
+          makeActivityRow({ canonical_type: "cycling", avg_power: 210, max_power: 360 }),
+        );
+      const metricsSpy = vi
+        .spyOn(CyclingThresholdRepository.prototype, "getForActivities")
+        .mockResolvedValue(new Map());
+      const caller = makeCaller([], {
+        getPowerCurveSamples: vi.fn(),
+        getNormalizedPowerSamples: vi.fn(),
+      });
+      const result = await caller.powerZones({ id: "00000000-0000-0000-0000-000000000001" });
+      expect(result).toEqual({
+        zones: [],
+        ftp: null,
+        thresholdEvidence: cyclingThresholdEvidenceFromMetrics(null),
+      });
+      expect(result?.thresholdEvidence.unavailable_reason).toBeTruthy();
+      findByIdSpy.mockRestore();
+      metricsSpy.mockRestore();
+    });
 
     it("throws NOT_FOUND when activity does not exist", async () => {
       const findByIdSpy = vi

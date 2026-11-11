@@ -301,7 +301,7 @@ The WHOOP app pushes 17 persistent config keys to the strap during sync via `SEN
 | 15 | `enable_passive_strap_fit_gen5` | ? | Passive strap fit detection |
 | 16 | `enable_sig11_during_sleep` | 2 | Signal 11 during sleep |
 
-**R22 = optical sensor data packets.** The firmware logs show "No active optical data collection sources" during daytime captures. Optical collection activates during sleep/recovery for SpO2 and skin temp measurement.
+**R22 = optical sensor data packets.** The firmware logs show "No active optical data collection sources" during the retained daytime capture. This does not establish a universal collection schedule. Skin temperature has a separate sensor; see [WHOOP's specifications](https://www.whoop.com/us/en/press-center/introducing-4-0-whoop-body-any-wear-technology/).
 
 ## Commands for Enhanced Data Capture
 
@@ -633,15 +633,53 @@ the [native capture regressions](../packages/mobile/modules/whoop-ble/Tests/Whoo
 exercise the absent-interval case. The [server chart regression](../packages/server/src/repositories/activity-metric-sources-repository.integration.test.ts)
 executes the reported-BPM path through an interval gap against ClickHouse.
 
-## Next Steps: SpO2 and Skin Temperature
+## Background thermal and optical records
 
-SpO2 and skin temperature are **not available in any packet type we've observed**. They are derived from raw optical sensor data (R22 packets) which the strap only collects during sleep/recovery periods. The firmware logs confirm: "No active optical data collection sources" during daytime.
+WHOOP has a dedicated skin-temperature sensor, separate from its optical LEDs;
+see the [manufacturer specifications](https://www.whoop.com/us/en/press-center/introducing-4-0-whoop-body-any-wear-technology/).
+The retained [PacketLogger fixture](../packages/mobile/modules/whoop-ble/Tests/fixtures/imu-activation-capture.tsv)
+contains 71 complete 124-byte R18 frames passing header CRC16 and body CRC32.
+Their unsigned thermal word at **full-frame offset 73** (payload offset 65)
+ranges from 3216 to 3222. Dividing by 100 matches the skin-temperature encoding
+documented in the independently maintained
+[5/MG R18 reference](https://github.com/ryanbr/noop/blob/2a1de7609843b095505274ad6fc811757210be80/docs/PROTOCOL_SENSORS.md#r18-biometric-summary).
+This corroborates the encoding, not physical calibration or the identity of
+the auxiliary thermal words. Do not apply WHOOP 4 ADC conversions to MG.
+The [server decoder tests](../packages/server/src/services/whoop-sensor-decoder.test.ts)
+exercise all 71 captured records and distinguish source time from reception time.
 
-To get R22 optical data:
-1. **Overnight BLE capture** — run PacketLogger or our iOS app during sleep when optical sensors are active
-2. **Parse R22 packets** — the `enable_r22_v4_packets` config key is set to 1 (enabled) while others are set to 2 (different format?), suggesting v4 is the active optical format
-3. **Decode the optical payload** — R22 likely contains raw multi-wavelength PPG data (green, red, IR) from which SpO2 and skin temp can be derived
-4. **Alternative**: Continue using the WHOOP API for daily SpO2 (`spo2_percentage`) and skin temp (`skin_temp_celsius`) from recovery scores — these are already synced
+The native [serializer](../packages/mobile/modules/whoop-ble/ios/WhoopBleSensorRecord.swift)
+preserves complete CRC-valid full type-40 realtime and type-43/type-47 sensor
+records, excluding compact HR-only packets, existing R21 IMU and ECG layouts.
+Full realtime records retain their opaque optical region instead of discarding
+it at the ingestion boundary. Each record has a stable capture identity and observed
+device-information strings. Records enter the existing SQLite outbox as
+`sensorRecords`; reservations contain at most 16 records and 262144 encoded bytes.
+The native uploader sends them through `whoopBleSync.pushSensorRecords`,
+independently of IMU/realtime delivery. The
+[durability tests](../packages/mobile/modules/whoop-ble/Tests/WhoopBleSampleStoreTests.swift)
+verify reopening, byte bounds and erasure.
+For captured R18 records, erasure checks both reception and source time, so
+a delayed historical offload cannot resurrect measurements preceding deletion.
+Unverified layouts retain observation-time semantics.
+
+The [router](../packages/server/src/routers/whoop-ble-sync.ts) validates complete
+frames before publishing canonical `sensor_record` metadata through the existing
+metric-stream path. Reception time is `recordedAt`; original source clocks remain
+in the frame. The [repository](../packages/server/src/repositories/whoop-sensor-repository.ts)
+projects R18 temperature at query time, groups replayed source timestamps once,
+and uses measurement dates for daily source selection without writing a derived
+Postgres value. Both clients inspect uploaded records on the WHOOP BLE provider
+detail screen.
+
+R20/R22/R26 remain opaque until reproducible captures support their layouts.
+Retain bytes without assigning unverified wavelengths, sample timing, SpO2
+percentages or respiratory rates. Existing optical activation commands remain
+unchanged; this change does not force persistent feature flags or initiate
+historical trimming. Actual availability requires a physical strap check. An
+overnight capture is the next evidence needed for additional optical maps; the
+[upstream reference](https://github.com/ryanbr/noop/blob/2a1de7609843b095505274ad6fc811757210be80/docs/PROTOCOL_SENSORS.md)
+distinguishes documented layouts from device-validated behavior.
 
 ## Tools
 

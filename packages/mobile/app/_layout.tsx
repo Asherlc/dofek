@@ -32,7 +32,7 @@ import {
   teardownBackgroundWatchInertialMeasurementUnitSync,
 } from "../lib/background-watch-inertial-measurement-unit-sync";
 import { syncWhoopBle } from "../lib/background-whoop-ble-sync";
-import type { SyncTrpcClient } from "../lib/health-kit-sync";
+import type { SyncTrpcClient } from "../lib/health-kit-sync-types";
 import { invalidateSyncedHealthData } from "../lib/invalidate-synced-health-data";
 import { registerMobileQueryLifecycle } from "../lib/mobile-query-lifecycle";
 import { MobileQueryPersistenceProvider } from "../lib/mobile-query-persistence";
@@ -368,6 +368,9 @@ function AuthGate() {
         },
         pushQuantitySamples: {
           mutate: (input) => trpcClient.healthKitSync.pushQuantitySamples.mutate(input),
+        },
+        pushRunningStepSamples: {
+          mutate: (input) => trpcClient.healthKitSync.pushRunningStepSamples.mutate(input),
         },
         pushWorkouts: {
           mutate: (input) => trpcClient.healthKitSync.pushWorkouts.mutate(input),

@@ -2,13 +2,21 @@ import {
   type ActivityMetric,
   activityDataStateLabel,
   formatActivityMetric,
+  groupActivityMetrics,
 } from "@dofek/format/activity-data-state";
-import { formatDateLong, formatDurationSeconds, formatNumber } from "@dofek/format/format";
-import { formatRecordLocalTime } from "@dofek/format/record-local-time";
+import {
+  formatDateLong,
+  formatDurationMinutes,
+  formatDurationSeconds,
+  formatNumber,
+} from "@dofek/format/format";
+import { formatRecordLocalTime, formatRecordLocalTimeRange } from "@dofek/format/record-local-time";
 import type { UnitConverter } from "@dofek/format/units";
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { processingPollInterval } from "@dofek/providers/processing-status";
+import { providerLabel } from "@dofek/providers/providers";
 import { ACTIVITY_IMAGES_QUERY_OPTIONS } from "@dofek/training/activity-images";
+import { activityQueryPlaceholder } from "@dofek/training/activity-query-placeholder";
 import { buildClimbingMapLocations, buildClimbingMapMarkers } from "@dofek/training/climbing-map";
 import { isIndoorCyclingModality } from "@dofek/training/endurance-types";
 import {
@@ -41,6 +49,7 @@ import { ActivityPerceivedExertion } from "../components/ActivityPerceivedExerti
 import { ActivityPhotos } from "../components/ActivityPhotos.tsx";
 import { ActivityRouteMap } from "../components/ActivityRouteMap.tsx";
 import { ActivitySourceDisclosure } from "../components/ActivitySourceDisclosure.tsx";
+import { CyclingThresholdDetails } from "../components/CyclingThresholdDetails.tsx";
 import { HangboardingDetail } from "../components/HangboardingDetail.tsx";
 import { HrZonesChart, PowerZonesChart } from "../components/HeartRateZonesChart.tsx";
 import { ChartLoadingSkeleton } from "../components/LoadingSkeleton.tsx";
@@ -49,11 +58,11 @@ import { PageLayout } from "../components/PageLayout.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
 import { trpc } from "../lib/trpc.ts";
 import { useUnitConverter } from "../lib/unitContext.ts";
+import { ActivityClimbingPanel } from "./activity-detail/components/ActivityClimbingPanel.tsx";
 import {
   ElevationChart,
   MetricsChart,
 } from "./activity-detail/components/ActivityDetailCharts.tsx";
-import { ClimbingLogEntryBreakdown } from "./activity-detail/components/ClimbingLogEntryBreakdown.tsx";
 import { DeleteActivityButton } from "./activity-detail/components/DeleteActivityButton.tsx";
 import { RecomputeActivityButton } from "./activity-detail/components/RecomputeActivityButton.tsx";
 import { UnattachedClimbingLogEntries } from "./activity-detail/components/UnattachedClimbingLogEntries.tsx";
@@ -69,7 +78,7 @@ export function ActivityDetailPage() {
   const detail = trpc.activity.byId.useQuery({ id });
   const hardware = trpc.activity.hardware.useQuery({ id });
   const images = trpc.activity.images.useQuery({ id }, ACTIVITY_IMAGES_QUERY_OPTIONS);
-  const metricSources = trpc.activity.metricSources.useQuery({ id: id ?? "" });
+  const metricSources = trpc.activity.metricSources.useQuery({ id: id ?? "", responseVersion: 2 });
   const [sourceSelection, setSourceSelection] = useState<{
     activityId: string;
     sources: ActivityMetricSourceSelection;
@@ -115,20 +124,12 @@ export function ActivityDetailPage() {
     { id, powerSourceId: sources.power },
     {
       enabled: isCycling,
-      placeholderData: (previousData, previousQuery) => {
-        const previousInput = previousQuery?.queryKey[1]?.input;
-        return previousInput &&
-          typeof previousInput === "object" &&
-          "id" in previousInput &&
-          previousInput.id === id
-          ? previousData
-          : undefined;
-      },
+      placeholderData: activityQueryPlaceholder(id),
     },
   );
   const powerZones = trpc.activity.powerZones.useQuery(
     { id, powerSourceId: sources.power },
-    { enabled: isCycling && hasPower, placeholderData: (previousData) => previousData },
+    { enabled: isCycling && hasPower, placeholderData: activityQueryPlaceholder(id) },
   );
   const isStrengthActivity =
     detail.data != null && isActivityDetailType(detail.data.activityType, "strength");
@@ -138,19 +139,26 @@ export function ActivityDetailPage() {
   );
   const isClimbingActivity =
     detail.data != null && isActivityDetailType(detail.data.activityType, "climbing");
+  const heartRateContext = trpc.activity.heartRateContext.useQuery(
+    { id, maxPoints: 500, ...heartRateSourceInput },
+    { enabled: isClimbingActivity, placeholderData: activityQueryPlaceholder(id) },
+  );
   const climbingEntries = trpc.climbing.activityLogEntries.useQuery(
-    { activityId: id, responseVersion: 3 },
+    { activityId: id, responseVersion: 5 },
     { enabled: isClimbingActivity, select: decodeClimbingLogEntriesResponse },
   );
   const entrySuggestions = trpc.climbing.unattachedClimbingLogEntries.useQuery(
-    { activityId: id, responseVersion: 3 },
+    { activityId: id, responseVersion: 5 },
     { enabled: isClimbingActivity, select: decodeClimbingLogEntriesResponse },
   );
   const climbingEntriesLoading = climbingEntries.isLoading && !climbingEntries.data;
   const [selectedClimbingEntryId, setSelectedClimbingEntryId] = useState<string | null>(null);
-  const selectedClimbingEntry = climbingEntries.data?.find(
-    (entry) => entry.id === selectedClimbingEntryId,
-  );
+  const [highlightedClimbId, setHighlightedClimbId] = useState<string | null>(null);
+  const [activeClimbId, setActiveClimbId] = useState<string | null>(null);
+  const selectedClimbingEntry = [
+    ...(climbingEntries.data ?? []),
+    ...(entrySuggestions.data ?? []),
+  ].find((entry) => entry.id === selectedClimbingEntryId);
   const climbingLocations = useMemo(
     () =>
       buildClimbingMapLocations([
@@ -160,8 +168,14 @@ export function ActivityDetailPage() {
     [climbingEntries.data, entrySuggestions.data],
   );
   const climbMarkers = useMemo(
-    () => buildClimbingMapMarkers(climbingEntries.data ?? []),
-    [climbingEntries.data],
+    () =>
+      isClimbingActivity
+        ? buildClimbingMapMarkers([
+            ...(climbingEntries.data ?? []),
+            ...(entrySuggestions.data ?? []),
+          ])
+        : [],
+    [isClimbingActivity, climbingEntries.data, entrySuggestions.data],
   );
   const trpcUtils = trpc.useUtils();
   const [entryAttachState, setEntryAttachState] = useState<
@@ -173,7 +187,7 @@ export function ActivityDetailPage() {
         trpcUtils.activity.images.invalidate({ id: input.activityId }),
         trpcUtils.climbing.activityLogEntries.invalidate({
           activityId: input.activityId,
-          responseVersion: 3,
+          responseVersion: 5,
         }),
         trpcUtils.climbing.sessionSummary.invalidate(),
         trpcUtils.climbing.gradeProgressionV2.invalidate(),
@@ -181,7 +195,7 @@ export function ActivityDetailPage() {
         trpcUtils.climbing.strengths.invalidate(),
         trpcUtils.climbing.unattachedClimbingLogEntries.invalidate({
           activityId: input.activityId,
-          responseVersion: 3,
+          responseVersion: 5,
         }),
       ]);
     },
@@ -259,7 +273,9 @@ export function ActivityDetailPage() {
   const routePoints = route.data?.status === "ready" ? route.data.points : EMPTY_ROUTE_POINTS;
   const hasGps = routePoints.length > 0;
   const routeProcessing = route.isLoading || route.data?.status === "processing";
-  const hasHr = points.some((p) => p.heartRate != null);
+  const hasHr =
+    points.some((p) => p.heartRate != null) ||
+    (isClimbingActivity && (heartRateContext.data?.points.length ?? 0) > 0);
   const hasSpeed = points.some((p) => p.speed != null);
   const hasCadence = points.some((p) => p.cadence != null);
   const hasAltitude = points.some((p) => p.altitude != null);
@@ -290,7 +306,15 @@ export function ActivityDetailPage() {
       {activity.providerAbsentAt ? <ProviderAbsentBanner activity={activity} /> : null}
 
       <ActivityHeader
+        key={id}
         activity={activity}
+        photos={{
+          images: images.data?.images ?? [],
+          loading: images.isLoading,
+          error: images.error,
+          retrying: images.isFetching,
+          onRetry: () => void images.refetch(),
+        }}
         powerWork={isCycling ? powerWork.data : undefined}
         units={units}
         hardware={hardware.data}
@@ -303,53 +327,49 @@ export function ActivityDetailPage() {
       ) : null}
       <ActivityPerceivedExertion value={activity.perceivedExertion} />
 
-      <ActivityPhotos
-        key={id}
-        images={images.data?.images ?? []}
-        loading={images.isLoading}
-        error={images.error}
-        retrying={images.isFetching}
-        onRetry={() => {
-          void images.refetch();
-        }}
-      />
-
       {detail.error ? <QueryStatePanel error={detail.error} height={72} /> : null}
 
       {metricSources.error && <QueryStatePanel error={metricSources.error} height={72} />}
+      {isClimbingActivity && heartRateContext.error && (
+        <QueryStatePanel error={heartRateContext.error} height={72} />
+      )}
       {stream.error ? (
         <Section title="Sensor Data">
           <QueryStatePanel error={stream.error} height={72} />
         </Section>
       ) : null}
 
-      {(route.error || routeProcessing || hasGps || climbMarkers.length > 0) && (
-        <Section title={!hasGps && climbMarkers.length > 0 ? undefined : "Route Map"}>
-          {route.error ? (
-            <QueryStatePanel error={route.error} height={160} />
-          ) : routeProcessing ? (
-            hasGps || climbMarkers.length > 0 ? (
-              <p role="status" className="text-sm text-muted">
-                {route.isLoading ? "Loading route map…" : "Processing route map…"}
-              </p>
-            ) : (
-              <div className="relative isolate h-[400px] rounded-lg">
-                <MapProcessingIndicator
-                  label={route.isLoading ? "Loading route map…" : "Processing route map…"}
-                />
-              </div>
-            )
-          ) : null}
-          {(hasGps || climbMarkers.length > 0) && (
-            <ActivityRouteMap
-              points={routePoints}
-              climbMarkers={climbMarkers}
-              onSelectEntry={setSelectedClimbingEntryId}
-              onRegisterHoverCallback={mapHoverRef}
-            />
-          )}
-        </Section>
-      )}
+      {!(
+        isClimbingActivity &&
+        ((climbingEntries.data?.length ?? 0) > 0 || (entrySuggestions.data?.length ?? 0) > 0)
+      ) &&
+        (route.error || routeProcessing || hasGps || climbMarkers.length > 0) && (
+          <Section title={!hasGps && climbMarkers.length > 0 ? undefined : "Route Map"}>
+            {route.error ? (
+              <QueryStatePanel error={route.error} height={160} />
+            ) : routeProcessing ? (
+              hasGps || climbMarkers.length > 0 ? (
+                <p role="status" className="text-sm text-muted">
+                  {route.isLoading ? "Loading route map…" : "Processing route map…"}
+                </p>
+              ) : (
+                <div className="relative isolate h-[400px] rounded-lg">
+                  <MapProcessingIndicator
+                    label={route.isLoading ? "Loading route map…" : "Processing route map…"}
+                  />
+                </div>
+              )
+            ) : null}
+            {(hasGps || climbMarkers.length > 0) && (
+              <ActivityRouteMap
+                points={routePoints}
+                climbMarkers={climbMarkers}
+                onSelectEntry={setSelectedClimbingEntryId}
+                onRegisterHoverCallback={mapHoverRef}
+              />
+            )}
+          </Section>
+        )}
 
       {(hasHr ||
         hasPower ||
@@ -359,6 +379,7 @@ export function ActivityDetailPage() {
         <Section title="Performance">
           {sourceControls.length > 0 &&
             (stream.isFetching ||
+              heartRateContext.isFetching ||
               hrZones.isFetching ||
               powerZones.isFetching ||
               powerWork.isFetching) && (
@@ -367,6 +388,16 @@ export function ActivityDetailPage() {
               </p>
             )}
           <MetricsChart
+            heartRateContext={isClimbingActivity ? heartRateContext.data : undefined}
+            activityWindow={activity}
+            highlightedClimbId={highlightedClimbId ?? activeClimbId}
+            selectedClimbId={activeClimbId}
+            onSelectClimb={setActiveClimbId}
+            climbAnnotations={
+              isClimbingActivity
+                ? climbingEntries.data?.flatMap((entry) => entry.chartAnnotations ?? [])
+                : undefined
+            }
             points={points}
             activityType={activity.activityType}
             hasHr={hasHr}
@@ -403,22 +434,43 @@ export function ActivityDetailPage() {
 
       {isClimbingActivity && (
         <Section title="Climbs">
+          {((climbingEntries.data?.length ?? 0) > 0 || (entrySuggestions.data?.length ?? 0) > 0) &&
+            route.error && <QueryStatePanel error={route.error} height={72} />}
+          {((climbingEntries.data?.length ?? 0) > 0 || (entrySuggestions.data?.length ?? 0) > 0) &&
+            routeProcessing && (
+              <p role="status" className="text-sm text-muted">
+                {route.isLoading ? "Loading route map…" : "Processing route map…"}
+              </p>
+            )}
           {climbingEntries.error && (
             <p className="text-sm text-red-400">{userFacingErrorMessage(climbingEntries.error)}</p>
           )}
-          {climbingEntriesLoading ? (
+          {climbingEntriesLoading && (
             <QueryStatePanel variant="loading" contextLabel="Climbs" height={72} />
-          ) : (climbingEntries.data?.length ?? 0) > 0 ? (
-            <ClimbingLogEntryBreakdown
+          )}
+          {((climbingEntries.data?.length ?? 0) > 0 ||
+            (entrySuggestions.data?.length ?? 0) > 0) && (
+            <ActivityClimbingPanel
+              selectedEntryId={activeClimbId}
+              onSelectEntry={setActiveClimbId}
+              onHighlightEntry={setHighlightedClimbId}
+              points={routePoints}
+              onRegisterHoverCallback={mapHoverRef}
+              onOpenEntry={setSelectedClimbingEntryId}
+              suggestions={entrySuggestions.data}
+              attachmentStates={entryAttachState}
+              onAttach={handleAttachEntry}
               entries={climbingEntries.data ?? []}
               locations={climbingLocations}
-              selectedEntryId={selectedClimbingEntryId}
             />
-          ) : null}
+          )}
           {(entrySuggestions.error ||
-            (!climbingEntriesLoading && entrySuggestions.isLoading) ||
-            (entrySuggestions.data?.length ?? 0) > 0 ||
-            (climbingEntries.data !== undefined && climbingEntries.data.length === 0)) && (
+            (!climbingEntriesLoading &&
+              entrySuggestions.isLoading &&
+              entrySuggestions.data === undefined) ||
+            (climbingEntries.data !== undefined &&
+              climbingEntries.data.length === 0 &&
+              entrySuggestions.data?.length === 0)) && (
             <div
               className={
                 climbingEntries.error ||
@@ -429,6 +481,7 @@ export function ActivityDetailPage() {
               }
             >
               <UnattachedClimbingLogEntries
+                showEntries={false}
                 suggestions={entrySuggestions.data}
                 locations={climbingLocations}
                 selectedEntryId={selectedClimbingEntryId}
@@ -502,11 +555,14 @@ export function ActivityDetailPage() {
               <QueryStatePanel error={powerZones.error} height={250} />
             ) : powerZones.data ? (
               <>
-                <PowerZonesChart
-                  zones={powerZones.data.zones}
-                  ftp={powerZones.data.ftp}
-                  loading={powerZones.isLoading}
-                />
+                <CyclingThresholdDetails evidence={powerZones.data.thresholdEvidence} />
+                {powerZones.data.ftp != null && (
+                  <PowerZonesChart
+                    zones={powerZones.data.zones}
+                    ftp={powerZones.data.ftp}
+                    loading={powerZones.isLoading}
+                  />
+                )}
                 {powerZones.error ? <QueryStatePanel error={powerZones.error} height={72} /> : null}
               </>
             ) : null}
@@ -521,35 +577,30 @@ export function ActivityHeader({
   activity,
   powerWork,
   units,
+  photos,
   ...sourceDetails
 }: {
   activity: ActivityDetail;
   powerWork?: ActivityPowerWork;
   units: UnitConverter;
+  photos?: Omit<ComponentProps<typeof ActivityPhotos>, "heading">;
 } & Omit<ComponentProps<typeof ActivitySourceDisclosure>, "tree">) {
-  const durationMin =
-    activity.startedAt && activity.endedAt
-      ? Math.round(
-          (new Date(activity.endedAt).getTime() - new Date(activity.startedAt).getTime()) / 60000,
-        )
-      : null;
+  const viewerTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const localStartTime = formatRecordLocalTime(
     activity.startedAt,
     activity.localTimeContext,
     "start",
     undefined,
-    Intl.DateTimeFormat().resolvedOptions().timeZone,
+    viewerTimezone,
   );
-
-  const formatDuration = (mins: number) => {
-    const hours = Math.floor(mins / 60);
-    const remainingMinutes = mins % 60;
-    return hours > 0 ? `${hours}h ${remainingMinutes}m` : `${remainingMinutes}m`;
-  };
 
   const stats: Array<ActivityMetric | { label: string; value: string; description?: string }> = [];
 
-  if (durationMin != null) stats.push({ label: "Duration", value: formatDuration(durationMin) });
+  stats.push({
+    label: "Duration",
+    value:
+      activity.durationMin === null ? "Unavailable" : formatDurationMinutes(activity.durationMin),
+  });
   if (!(isCyclingActivity(activity.activityType) && isIndoorCyclingModality(activity.modality))) {
     stats.push(
       formatActivityMetric(
@@ -616,55 +667,106 @@ export function ActivityHeader({
     ),
   );
 
+  const heading = (
+    <ActivitySourceDisclosure
+      tree={activity.sourceTree}
+      {...sourceDetails}
+      heading={
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 mb-1">
+            <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-foreground">
+              {activity.name ??
+                formatActivityTypeLabel(activity.primaryActivityType ?? activity.activityType)}
+            </h1>
+            <span className="text-xs text-subtle">
+              {formatActivityTypeLabel(activity.activityType)}
+            </span>
+          </div>
+          <p className="text-sm text-subtle">
+            {formatDateLong(activity.displayedDate, { timeZone: "UTC" })} at{" "}
+            {localStartTime === "--" ? "Local time unavailable" : localStartTime}
+          </p>
+          {activity.climbingLogSessions.length > 0 ? (
+            <ul aria-label="Logged climbs" className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+              {activity.climbingLogSessions.map((session) => {
+                const window = formatRecordLocalTimeRange(
+                  session.firstLoggedAt,
+                  session.lastLoggedAt,
+                  activity.localTimeContext,
+                  undefined,
+                  viewerTimezone,
+                );
+                const label = `${providerLabel(session.providerId)} · Logged climbs · ${window}`;
+                return (
+                  <li key={session.id} aria-label={label} className="text-xs text-subtle">
+                    {label}
+                  </li>
+                );
+              })}
+            </ul>
+          ) : null}
+        </div>
+      }
+    />
+  );
+
   return (
     <div>
-      <div className="flex items-baseline gap-3 mb-1">
-        <h1 className="text-xl font-semibold text-foreground">
-          {activity.name ??
-            formatActivityTypeLabel(activity.primaryActivityType ?? activity.activityType)}
-        </h1>
-        <span className="text-xs text-subtle">
-          {formatActivityTypeLabel(activity.activityType)}
-        </span>
-      </div>
-      <p className="text-sm text-subtle">
-        {formatDateLong(activity.displayedDate, { timeZone: "UTC" })} at{" "}
-        {localStartTime === "--" ? "Local time unavailable" : localStartTime}
-      </p>
-      <ActivitySourceDisclosure tree={activity.sourceTree} {...sourceDetails} />
+      {photos ? <ActivityPhotos {...photos} heading={heading} /> : heading}
+      {activity.fitRecoveryWarning ? (
+        <p
+          className="mt-3 rounded border border-amber-400/50 bg-amber-400/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300"
+          role="alert"
+        >
+          {activity.fitRecoveryWarning}
+        </p>
+      ) : null}
 
       {stats.length > 0 && (
-        <div className="flex flex-wrap gap-4">
-          {stats
-            .filter((stat) => !("status" in stat) || stat.status !== "missing")
-            .map((s) => {
-              const metric = "status" in s ? s : null;
-              const unavailableMetric = metric?.status !== "available" ? metric : null;
-              const displayedValue =
-                "status" in s ? (s.status === "available" ? s.value : s.reason) : s.value;
-              return (
-                <section
-                  key={s.label}
-                  className="card px-4 py-3"
-                  data-state={metric?.status}
-                  aria-label={
+        <div className="mt-5 grid grid-cols-2 gap-x-6 gap-y-4 border-t border-border/60 pt-4 sm:grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] sm:gap-x-0">
+          {groupActivityMetrics(stats).map(({ primary: s, secondary }) => {
+            const metric = "status" in s ? s : null;
+            const unavailableMetric = metric?.status !== "available" ? metric : null;
+            const displayedValue =
+              "status" in s ? (s.status === "available" ? s.value : s.reason) : s.value;
+            return (
+              <section
+                key={s.label}
+                className="min-w-0 border-border/60 sm:border-l sm:px-6 sm:first:border-l-0 sm:first:pl-0"
+                data-state={metric?.status}
+                aria-label={
+                  unavailableMetric
+                    ? `${unavailableMetric.label} ${activityDataStateLabel(unavailableMetric.status)}: ${unavailableMetric.reason}`
+                    : undefined
+                }
+              >
+                <div className="text-xs text-subtle mb-0.5">
+                  {unavailableMetric
+                    ? `${unavailableMetric.label} ${activityDataStateLabel(unavailableMetric.status)}`
+                    : s.label}
+                </div>
+                <div
+                  className={
                     unavailableMetric
-                      ? `${unavailableMetric.label} ${activityDataStateLabel(unavailableMetric.status)}: ${unavailableMetric.reason}`
-                      : undefined
+                      ? "text-sm font-medium"
+                      : "whitespace-nowrap text-2xl font-semibold tracking-tight tabular-nums"
                   }
                 >
-                  <div className="text-xs text-subtle mb-0.5">
-                    {unavailableMetric
-                      ? `${unavailableMetric.label} ${activityDataStateLabel(unavailableMetric.status)}`
-                      : s.label}
+                  {displayedValue}
+                </div>
+                {secondary ? (
+                  <div className="mt-1 text-xs text-subtle">
+                    {"value" in secondary
+                      ? `Max ${secondary.value}`
+                      : `${secondary.label} ${activityDataStateLabel(secondary.status)}: ${secondary.reason}`}
                   </div>
-                  <div className="text-lg font-medium tabular-nums">{displayedValue}</div>
-                  {"description" in s && s.description ? (
-                    <div className="text-xs text-subtle">{s.description}</div>
-                  ) : null}
-                </section>
-              );
-            })}
+                ) : null}
+                {"description" in s && s.description ? (
+                  <div className="text-xs text-subtle">{s.description}</div>
+                ) : null}
+              </section>
+            );
+          })}
         </div>
       )}
     </div>

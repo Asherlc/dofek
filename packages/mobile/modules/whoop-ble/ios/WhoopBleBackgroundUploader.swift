@@ -96,10 +96,12 @@ final class WhoopBleBackgroundUploader: NSObject {
         }
     }
 
-    func append(stream: WhoopUploadStream, deviceId: String, samples: [[String: Any]]) throws {
+    func append(deviceId: String, samplesByStream: [WhoopUploadStream: [[String: Any]]]) throws {
         try queue.sync {
-            try store.append(stream: stream, deviceId: deviceId, samples: samples)
-            if firstArrival[stream] == nil { firstArrival[stream] = now() }
+            try store.append(deviceId: deviceId, samplesByStream: samplesByStream)
+            for (stream, samples) in samplesByStream where !samples.isEmpty && firstArrival[stream] == nil {
+                firstArrival[stream] = now()
+            }
             // Capture stays synchronous/durable; only scheduling work is coalesced.
             if lastCaptureSchedule.map({ now().timeIntervalSince($0) >= 5 }) ?? true {
                 lastCaptureSchedule = now()
@@ -117,12 +119,14 @@ final class WhoopBleBackgroundUploader: NSObject {
         }
     }
 
-    func disable() throws {
-        try queue.sync { try disableLocked() }
+    func disable(onStage: (String) -> Void = { _ in }) throws {
+        onStage("uploader_queue_wait")
+        try queue.sync { try disableLocked(onStage: onStage) }
     }
 
-    private func disableLocked(cutoff: Date? = nil) throws {
+    private func disableLocked(cutoff: Date? = nil, onStage: (String) -> Void) throws {
         token = nil; headers = [:]; blocked.removeAll()
+        onStage("uploader_cancel_tasks")
         try cancelOwnedTasks()
         if let cutoff { try store.advanceErasureCutoff(to: cutoff) }
         active.removeAll()
@@ -133,13 +137,15 @@ final class WhoopBleBackgroundUploader: NSObject {
         lastSubmission.removeAll()
         lastCaptureSchedule = nil
         // Invalidate persisted completion identity even if file cleanup fails.
-        try store.purge()
+        onStage("uploader_store_purge")
+        try store.purge(onStage: onStage)
+        onStage("uploader_remove_bodies")
         try removeBodies()
     }
 
     func purge(cutoff: Date) throws {
         try queue.sync {
-            try disableLocked(cutoff: cutoff)
+            try disableLocked(cutoff: cutoff, onStage: { _ in })
         }
     }
 
@@ -153,6 +159,7 @@ final class WhoopBleBackgroundUploader: NSObject {
                 "bufferInstanceId": try store.generation,
                 "bufferCreatedAt": Self.iso(createdAt), "checkpointAt": Self.iso(now()),
                 "imu": try store.statistics(stream: .imu), "realtime": try store.statistics(stream: .realtime),
+                "sensorRecords": try store.statistics(stream: .sensorRecords),
                 "activeUploadCount": active.count, "blockedUploadStreams": blocked.map(\.rawValue)
             ]
             result["lastUploadError"] = lastError.map { $0 as Any } ?? NSNull()
@@ -219,9 +226,9 @@ final class WhoopBleBackgroundUploader: NSObject {
             do {
                 guard !blocked.contains(stream), retryAfter[stream].map({ $0 <= now() }) ?? true else { continue }
                 if let batch = pending.first(where: { $0.stream == stream }), active.contains(identity(batch)) { continue }
-                let count = try store.queuedCount(stream: stream, limit: 500)
+                let count = try store.queuedCount(stream: stream, limit: stream.batchLimit)
                 let since = lastSubmission[stream] ?? firstArrival[stream] ?? now()
-                guard count >= 500 || partial || now().timeIntervalSince(since) >= 30 else { continue }
+                guard count >= stream.batchLimit || partial || now().timeIntervalSince(since) >= 30 else { continue }
                 guard let batch = try store.reserve(stream: stream) else { continue }
                 let identity = identity(batch)
                 guard !active.contains(identity) else { continue }
@@ -232,7 +239,7 @@ final class WhoopBleBackgroundUploader: NSObject {
                 try FileManager.default.setAttributes(
                     [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: file.path)
                 #endif
-                let route = stream == .imu ? "inertialMeasurementUnitSync.pushSamples" : "whoopBleSync.pushRealtimeData"
+                let route = stream.route
                 guard let url = URL(string: binding.serverURL + "/api/trpc/" + route) else {
                     throw WhoopUploadError(message: "Invalid WHOOP upload URL")
                 }

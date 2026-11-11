@@ -44,6 +44,12 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 export const Default: Story = {};
 export const RoutePlusDots: Story = { args: { climbMarkers: markers } };
+export const SelectedClimb: Story = {
+  args: { climbMarkers: markers, selectedEntryId: "tick-1" },
+};
+export const SelectedArea: Story = {
+  args: { climbMarkers: markers, selectedEntryId: "tick-2" },
+};
 export const PointsOnly: Story = {
   args: { points: [], climbMarkers: markers, onSelectEntry: fn() },
   play: async ({ args, canvasElement }) => {

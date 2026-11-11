@@ -1,0 +1,1403 @@
+import { readFileSync } from "node:fs";
+import { describe, expect, it, vi } from "vitest";
+import type { CatalogueSeed } from "./contracts.ts";
+import { TheCragCatalogueAdapter } from "./thecrag.ts";
+
+const origin = "https://www.thecrag.com";
+const route = "/en/climbing/united-states/route/123";
+const seed = {
+  providerId: "kaya",
+  externalId: null,
+  sourceUrl: null,
+  name: "Cragmont Crack",
+  kind: null,
+  setting: null,
+  locations: [],
+} satisfies CatalogueSeed;
+function row(name = "Cragmont Crack", href = route) {
+  return `<tr><td class="rt_name"><span class="route"><a href="${href}" title="23 ascents - World › United States › Cragmont Park"><span class="star">★</span>${name}</a></span></td></tr>`;
+}
+function search(rows = row(), next = "") {
+  return `<h2 id="routes">Routes</h2><table class="routetable">${rows}</table>${next ? `<div class="pagination"><li class="next"><a href="${next}">Next</a></li></div>` : ""}`;
+}
+function detail(
+  extra = "",
+  canonical = route,
+  title = "5.6 Cragmont Crack, Trad climb in Cragmont Park | theCrag",
+) {
+  return `<link rel="canonical" href="${origin}${canonical}"><title>${title}</title><h1><span itemprop="name">Cragmont Crack</span><span class="grade">5.6</span></h1><a class="crumb__a" href="/en/climbing/area/456" data-nid="456"><span class="crumb__long">Cragmont Park</span></a>${extra}`;
+}
+function client(pages: string[]) {
+  return vi.fn<typeof fetch>().mockImplementation(async (input) => {
+    const isArea = new URL(String(input)).pathname.includes("/area/");
+    const html =
+      isArea && !pages[0]?.match(/rel="canonical" href="[^"\n]*\/area\/\d+\/?"/)
+        ? parentArea("", "")
+        : pages.shift();
+    return new Response(html, { headers: { "content-type": "text/html" } });
+  });
+}
+function lookup(html: string) {
+  return new TheCragCatalogueAdapter(client([html])).search({
+    ...seed,
+    providerId: "thecrag",
+    externalId: "123",
+  });
+}
+function locationInfo(...rows: string[]) {
+  return `<h3><span id="location">Location</span></h3><dl class="areaInfo">${rows.map((text) => `<dd>${text}</dd>`).join("")}</dl>`;
+}
+function parentArea(latitude = "37.5", longitude = "-122.5", canonical = "/en/climbing/area/456") {
+  return `<link rel="canonical" href="${canonical}"><meta property="place:location:latitude" content="${latitude}"><meta property="place:location:longitude" content="${longitude}">`;
+}
+async function lookupWithParent(routeHtml: string, parentHtml = parentArea()) {
+  const pages = [routeHtml, parentHtml];
+  const fetchFn = vi.fn<typeof fetch>().mockImplementation(async () => new Response(pages.shift()));
+  const result = await new TheCragCatalogueAdapter(fetchFn).search({
+    ...seed,
+    providerId: "thecrag",
+    externalId: "123",
+  });
+  return { result, fetchFn };
+}
+
+describe("TheCragCatalogueAdapter", () => {
+  it("does not claim complete coverage when a fourth name remains after three empty queries", async () => {
+    const fetchFn = vi
+      .fn<typeof fetch>()
+      .mockImplementation(
+        async (input) =>
+          new Response(
+            search(
+              new URL(String(input)).searchParams.get("S") === "Left start"
+                ? row("Left start")
+                : "",
+            ),
+          ),
+      );
+    expect(
+      await new TheCragCatalogueAdapter(fetchFn).search({
+        ...seed,
+        aliases: ["Up", "Down", "Left start"],
+      }),
+    ).toEqual({ candidates: [], complete: false });
+    expect(fetchFn).toHaveBeenCalledTimes(3);
+  });
+  it.each([false, true])(
+    "discovers historical names with request-sensitive results (overlap=%s)",
+    async (overlap) => {
+      const fetchFn = vi.fn<typeof fetch>().mockImplementation(async (input) => {
+        const url = new URL(String(input));
+        if (url.pathname.includes("/area/")) return new Response(parentArea("", ""));
+        if (url.pathname.includes("/route/"))
+          return new Response(
+            detail().replace('itemprop="name">Cragmont Crack', 'itemprop="name">Up'),
+          );
+        return new Response(search(url.searchParams.get("S") === "Up" || overlap ? row("Up") : ""));
+      });
+      const result = await new TheCragCatalogueAdapter(fetchFn).search({
+        ...seed,
+        aliases: ["", "  CRAGMONT   crack ", "Up", " up "],
+      });
+      expect(result.candidates.map((candidate) => candidate.name)).toEqual(["Up"]);
+      expect(result.complete).toBe(true);
+      expect(
+        fetchFn.mock.calls.map(([input]) => new URL(String(input)).searchParams.get("S")),
+      ).toEqual(["Cragmont Crack", "Up", null, null]);
+    },
+  );
+  it("shares three pages across aliases before paginating and reports uncovered names", async () => {
+    const fetchFn = vi.fn<typeof fetch>().mockImplementation(async (input) => {
+      const url = new URL(String(input));
+      return new Response(
+        search(
+          "",
+          url.searchParams.get("S") === seed.name ? "?S=Cragmont%20Crack&only=routes&page=2" : "",
+        ),
+      );
+    });
+    const result = await new TheCragCatalogueAdapter(fetchFn).search({
+      ...seed,
+      aliases: ["Up", "Down", "Left start"],
+    });
+    expect(result.complete).toBe(false);
+    expect(
+      fetchFn.mock.calls.map(([input]) => new URL(String(input)).searchParams.get("S")),
+    ).toEqual(["Cragmont Crack", "Up", "Down"]);
+  });
+  it("resumes validated per-query pagination after giving aliases an initial page", async () => {
+    const fetchFn = vi.fn<typeof fetch>().mockImplementation(async (input) => {
+      const url = new URL(String(input));
+      return new Response(
+        search(
+          "",
+          url.searchParams.get("S") === seed.name && !url.searchParams.has("page")
+            ? "?S=Cragmont%20Crack&only=routes&page=2"
+            : "",
+        ),
+      );
+    });
+    expect(
+      (await new TheCragCatalogueAdapter(fetchFn).search({ ...seed, aliases: ["Up"] })).complete,
+    ).toBe(true);
+    expect(
+      fetchFn.mock.calls.map(([input]) => {
+        const url = new URL(String(input));
+        return [url.searchParams.get("S"), url.searchParams.get("page")];
+      }),
+    ).toEqual([
+      ["Cragmont Crack", null],
+      ["Up", null],
+      ["Cragmont Crack", "2"],
+    ]);
+  });
+  it.each(["Great Roof, The", "The Great Roofs", "The Great Roof extension"])(
+    "retains name-related suggestion %s with qualifiers intact",
+    async (name) => {
+      const fetchFn = client([
+        search(row(name)),
+        detail().replace("Cragmont Crack</span>", `${name}</span>`),
+      ]);
+      expect(
+        (await new TheCragCatalogueAdapter(fetchFn).search({ ...seed, name: "The Great Roof" }))
+          .candidates[0]?.name,
+      ).toBe(name);
+    },
+  );
+  it("matches verified results using the same normalized name sent to discovery", async () => {
+    const fetchFn = vi.fn<typeof fetch>().mockImplementation(async (input) => {
+      const url = new URL(String(input));
+      if (url.pathname.includes("/area/")) return new Response(parentArea("", ""));
+      if (url.pathname.includes("/route/"))
+        return new Response(detail().replace("Cragmont Crack</span>", "The Great Roof</span>"));
+      return new Response(
+        search(url.searchParams.get("S") === "Great Roof, The" ? row("The Great Roof") : ""),
+      );
+    });
+    const result = await new TheCragCatalogueAdapter(fetchFn).search({
+      ...seed,
+      name: "Great\nRoof, The",
+    });
+    expect(result.candidates.map((candidate) => candidate.name)).toEqual(["The Great Roof"]);
+    expect(result.complete).toBe(true);
+    expect(fetchFn).toHaveBeenCalledTimes(3);
+  });
+  it("retains only literal route AKA labels from the verified headline scope", async () => {
+    const html = detail(
+      '<span itemprop="alternateName">Wrong breadcrumb alias</span><div class="headline__guts"><ul class="stats"><li title="Alternate name"><strong>Aka:</strong> Up</li></ul></div><li title="Alternate name"><strong>Aka:</strong> Wrong other scope</li>',
+    );
+    expect((await lookup(html)).candidates[0]?.aliases).toEqual(["Up"]);
+  });
+  it("normalizes and deduplicates published aliases while omitting empty labels", async () => {
+    const aliases = ["  Left \t\n  start  ", "Left start", "", " \t\n "];
+    const html = detail(
+      `<div class="headline__guts"><ul class="stats">${aliases.map((alias) => `<li title="Alternate name"><strong>Aka:</strong>${alias}</li>`).join("")}</ul></div>`,
+    );
+    expect((await lookup(html)).candidates[0]?.aliases).toEqual(["Left start"]);
+  });
+  it("omits the aliases field when published AKA labels contain no name", async () => {
+    const result = await lookup(
+      detail(
+        '<div class="headline__guts"><ul class="stats"><li title="Alternate name"><strong>Aka:</strong>  </li></ul></div>',
+      ),
+    );
+    expect(result.candidates[0]).not.toHaveProperty("aliases");
+  });
+  it("discovers source-declared AKA matches even when the search title is unrelated", async () => {
+    const fetchFn = client([
+      search(row("Tall Wall")),
+      detail(
+        '<div class="headline__guts"><ul class="stats"><li title="Alternate name"><strong>Aka:</strong> Up</li></ul></div>',
+      ).replace('itemprop="name">Cragmont Crack', 'itemprop="name">Tall Wall'),
+    ]);
+    expect(
+      (await new TheCragCatalogueAdapter(fetchFn).search({ ...seed, name: "Up" })).candidates[0],
+    ).toMatchObject({ name: "Tall Wall", aliases: ["Up"] });
+  });
+  it("caps unique detail hydration without treating an omitted route as evidence of uniqueness", async () => {
+    const rows = Array.from({ length: 61 }, (_, i) =>
+      row("Cragmont Crack", `/en/climbing/world/route/${i + 1}`),
+    ).join("");
+    const fetchFn = client([
+      search(rows),
+      ...Array.from({ length: 60 }, (_, i) => detail("", `/en/climbing/world/route/${i + 1}`)),
+    ]);
+    const result = await new TheCragCatalogueAdapter(fetchFn).search(seed);
+    expect(result.complete).toBe(false);
+    expect(result.candidates).toHaveLength(60);
+    expect(fetchFn).toHaveBeenCalledTimes(62);
+  });
+  it("does not count an alias's overlapping route against a full unique-route budget", async () => {
+    const paths = Array.from({ length: 60 }, (_, i) => `/en/climbing/world/route/${i + 1}`);
+    const fetchFn = client([
+      search(paths.map((path) => row(seed.name, path)).join("")),
+      search(row(seed.name, paths[0])),
+      ...paths.map((path) => detail("", path)),
+    ]);
+    const result = await new TheCragCatalogueAdapter(fetchFn).search({ ...seed, aliases: ["Up"] });
+    expect(result.complete).toBe(true);
+    expect(result.candidates.map((candidate) => candidate.externalId)).toEqual(
+      Array.from({ length: 60 }, (_, i) => String(i + 1)),
+    );
+    expect(fetchFn).toHaveBeenCalledTimes(63);
+  });
+  it.each([
+    "Lat/Lon: 37.25, -122.5",
+    "Lat/Lon:37,122",
+    " \t Lat/Lon:  37,  122 \n ",
+    "Lat/Lon: -90, -180",
+    "Lat/Lon: 90, 180",
+    "Lat/Lon: 0, 0",
+  ])("reads only the verified parent point for a valid route display %j", async (displayed) => {
+    const { result, fetchFn } = await lookupWithParent(
+      detail(locationInfo("Access: trail", displayed)),
+    );
+    expect(result.candidates[0]?.locations[0]?.coordinates).toEqual({
+      latitude: 37.5,
+      longitude: -122.5,
+    });
+    expect(fetchFn.mock.calls.map(([url]) => String(url))).toEqual([
+      `${origin}/en/climbing/world/route/123`,
+      `${origin}/en/climbing/area/456`,
+    ]);
+  });
+  it("hydrates area coordinates without requiring a route-displayed point", async () => {
+    const { result, fetchFn } = await lookupWithParent(detail());
+    expect(result.candidates[0]?.locations[0]?.coordinates).toEqual({
+      latitude: 37.5,
+      longitude: -122.5,
+    });
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+  });
+  it.each([
+    ["37", "122"],
+    ["0", "0"],
+    ["90", "180"],
+    ["-90", "-180"],
+    ["37.25", "-122.5"],
+  ])("accepts the verified parent coordinate boundaries %s, %s", async (lat, lon) => {
+    const { result, fetchFn } = await lookupWithParent(
+      detail(locationInfo("Lat/Lon: 37, -122")),
+      parentArea(lat, lon),
+    );
+    expect(result.candidates[0]?.locations[0]?.coordinates).toEqual({
+      latitude: Number(lat),
+      longitude: Number(lon),
+    });
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+  });
+  it.each([
+    ["", "122"],
+    ["37", ""],
+    [" 37", "122"],
+    ["37 ", "122"],
+    ["37", " 122"],
+    ["37", "122 "],
+    ["+37", "122"],
+    ["37", "+122"],
+    ["1e1", "122"],
+    ["37", "1e1"],
+    ["90.001", "122"],
+    ["-90.001", "122"],
+    ["37", "180.001"],
+    ["37", "-180.001"],
+  ])("leaves malformed or out-of-range parent coordinates %j, %j unknown", async (lat, lon) => {
+    const { result, fetchFn } = await lookupWithParent(
+      detail(locationInfo("Lat/Lon: 37, -122")),
+      parentArea(lat, lon),
+    );
+    expect(result.candidates[0]?.locations[0]?.coordinates).toBeNull();
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+  });
+  it.each(["latitude", "longitude"])("requires exactly one parent %s value", async (property) => {
+    const tag = `<meta property="place:location:${property}" content="37">`;
+    const parent = parentArea();
+    for (const html of [
+      parent.replace(new RegExp(`<meta property="place:location:${property}"[^>]*>`), ""),
+      parent.replace(new RegExp(`(<meta property="place:location:${property}")[^>]*>`), "$1>"),
+      parent + tag,
+    ]) {
+      const { result, fetchFn } = await lookupWithParent(
+        detail(locationInfo("Lat/Lon: 37, -122")),
+        html,
+      );
+      expect(result.candidates[0]?.locations[0]?.coordinates).toBeNull();
+      expect(fetchFn).toHaveBeenCalledTimes(2);
+    }
+  });
+  it.each([
+    "http://[",
+    "https://evil.example/en/climbing/area/456",
+    "https://name@www.thecrag.com/en/climbing/area/456",
+    "https://:password@www.thecrag.com/en/climbing/area/456",
+    "/en/climbing/area/456?extra=1",
+    "/en/climbing/area/456#map",
+    "/prefix/en/climbing/area/456",
+    "/en/climbing/area/456/routes",
+    "/en/climbing/area/456/routes/456",
+    "/en/climbing/route/456",
+    "/en/climbing/area/0456",
+    "/en/climbing/area/0",
+    "/en/climbing/area/789",
+  ])("rejects an unverified parent canonical URL %s", async (canonical) => {
+    await expect(
+      lookupWithParent(
+        detail(locationInfo("Lat/Lon: 37, -122")),
+        parentArea("37", "-122", canonical),
+      ),
+    ).rejects.toThrow(/parent area identity/);
+  });
+  it.each([
+    parentArea().replace(/<link[^>]*>/, ""),
+    `${parentArea()}<link rel="canonical" href="/en/climbing/area/456">`,
+    parentArea().replace('href="/en/climbing/area/456"', ""),
+  ])("rejects missing or ambiguous parent canonical markup", async (parent) => {
+    await expect(
+      lookupWithParent(detail(locationInfo("Lat/Lon: 37, -122")), parent),
+    ).rejects.toThrow(/parent area identity/);
+  });
+  it.each(["/en/climbing/area/456/", `${origin}/en/climbing/united-states/area/456`])(
+    "accepts a canonical parent path with the verified native identity %s",
+    async (canonical) => {
+      const { result } = await lookupWithParent(
+        detail(locationInfo("Lat/Lon: 37, -122")),
+        parentArea("37", "-122", canonical),
+      );
+      expect(result.candidates[0]?.locations[0]?.coordinates).toEqual({
+        latitude: 37,
+        longitude: -122,
+      });
+    },
+  );
+  it.each([
+    "/en/climbing/area/789",
+    "/en/climbing/area/456?extra=1",
+    "/en/climbing/area/456#map",
+    "/en/climbing/area/456/routes",
+    "/en/climbing/area/456/routes/456",
+    "/en/climbing/area/0456",
+    "/en/climbing/area/0",
+    "https://name@www.thecrag.com/en/climbing/area/456",
+    "https://:password@www.thecrag.com/en/climbing/area/456",
+  ])("does not follow a breadcrumb without a matching canonical area path %s", async (href) => {
+    const html = detail(locationInfo("Lat/Lon: 37, -122")).replace(
+      'href="/en/climbing/area/456"',
+      `href="${href}"`,
+    );
+    const { result, fetchFn } = await lookupWithParent(html);
+    expect(result.candidates[0]?.locations[0]?.coordinates).toBeNull();
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+  it.each([
+    ["Lat/Lon:", "37.22828, -122.10797", null],
+    ["Lat/Lon:", "137.22828, -122.10797", null],
+    ["Lat/Lon:", "37.22828, -222.10797", null],
+    ["Longitude:", "37.22828, -122.10797", null],
+    ["Lat/Lon:", "37.22828", null],
+  ])(
+    "keeps route-only displayed %s %s out of area geography without a verified parent",
+    async (label, pair, coordinates) => {
+      const html = detail(
+        `<meta property="place:location:latitude" content="40"><h3><span id="location">Location</span></h3><dl class="areaInfo"><dd>${label} ${pair}</dd></dl>`,
+      ).replace("Cragmont Park</span>", "Goat Rock</span>");
+      const fetchFn = client([
+        html,
+        '<link rel="canonical" href="https://www.thecrag.com/en/climbing/area/456"><h1>Goat Rock</h1>',
+      ]);
+      const result = await new TheCragCatalogueAdapter(fetchFn).search({
+        ...seed,
+        providerId: "thecrag",
+        externalId: "123",
+      });
+      expect(result.candidates[0]?.locations).toEqual([
+        { externalId: "456", name: "Goat Rock", scope: "area", coordinates },
+      ]);
+      expect(result.candidates[0]?.setting).toBeNull();
+    },
+  );
+  it.each([
+    ["37.22828, -122.10797", "37.22827985362", "-122.10796556377"],
+    ["37.24, -122.11", "37.22827985362", "-122.10796556377"],
+  ])(
+    "uses the verified parent point independently of a route's displayed %s",
+    async (displayed, latitude, longitude) => {
+      const routePath = "/en/climbing/united-states/castle-rock-state-park/route/18578485";
+      const parentPath = "/en/climbing/united-states/castle-rock-state-park/area/16447255";
+      const html = detail(
+        `<h3><a id="location"></a>Location</h3><dl class="areaInfo"><dd>Lat/Lon: ${displayed}</dd></dl>`,
+        routePath,
+      )
+        .replace(
+          'href="/en/climbing/area/456" data-nid="456"',
+          `href="${parentPath}" data-nid="16447255"`,
+        )
+        .replace("Cragmont Park</span>", "Goat Rock</span>");
+      const parent = `<link rel="canonical" href="${origin}${parentPath}"><h1>Goat Rock</h1><meta property="place:location:latitude" content="${latitude}"><meta property="place:location:longitude" content="${longitude}">`;
+      const fetchFn = client([html, parent]);
+      const result = await new TheCragCatalogueAdapter(fetchFn).search({
+        ...seed,
+        providerId: "thecrag",
+        externalId: "18578485",
+        sourceUrl: origin + routePath,
+      });
+      expect(result.candidates[0]?.locations).toEqual([
+        {
+          externalId: "16447255",
+          name: "Goat Rock",
+          scope: "area",
+          coordinates: { latitude: 37.22827985362, longitude: -122.10796556377 },
+        },
+      ]);
+      expect(String(fetchFn.mock.calls[1]?.[0])).toBe(origin + parentPath);
+    },
+  );
+  it("deduplicates parent area reads across routes in one bounded search", async () => {
+    const location =
+      '<h3><a id="location"></a>Location</h3><dl class="areaInfo"><dd>Lat/Lon: 37.22828, -122.10797</dd></dl>';
+    const parent = `<link rel="canonical" href="${origin}/en/climbing/area/456"><meta property="place:location:latitude" content="37.22827985362"><meta property="place:location:longitude" content="-122.10796556377">`;
+    const fetchFn = client([
+      search(row() + row("Cragmont Crack", "/en/climbing/united-states/route/124")),
+      detail(location),
+      parent,
+      detail(location, "/en/climbing/united-states/route/124"),
+    ]);
+    const result = await new TheCragCatalogueAdapter(fetchFn).search(seed);
+    expect(result.candidates).toHaveLength(2);
+    expect(result.candidates.map((candidate) => candidate.locations[0]?.coordinates)).toEqual([
+      { latitude: 37.22827985362, longitude: -122.10796556377 },
+      { latitude: 37.22827985362, longitude: -122.10796556377 },
+    ]);
+    expect(fetchFn).toHaveBeenCalledTimes(4);
+  });
+  it("reports unavailable parent HTTP reads without substituting a route point", async () => {
+    const fetchFn = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response(
+          detail(
+            '<h3><a id="location"></a>Location</h3><dl class="areaInfo"><dd>Lat/Lon: 37.24, -122.11</dd></dl>',
+          ),
+        ),
+      )
+      .mockResolvedValueOnce(new Response("Unavailable", { status: 404 }));
+    await expect(
+      new TheCragCatalogueAdapter(fetchFn).search({
+        ...seed,
+        providerId: "thecrag",
+        externalId: "123",
+      }),
+    ).rejects.toThrow(/theCrag.*HTTP 404/);
+  });
+  it.each(["  CRAGMONT  CRACK  ", "Ｃｒａｇｍｏｎｔ Crack", "Cragmont\t\nCrack"])(
+    "finds the sole matching result after normalizing %s",
+    async (name) => {
+      const fetchFn = client([search(row(name)), detail()]);
+      expect((await new TheCragCatalogueAdapter(fetchFn).search(seed)).candidates).toHaveLength(1);
+      expect(fetchFn).toHaveBeenCalledTimes(3);
+    },
+  );
+
+  it("does not merge distinct Unicode names when folding case", async () => {
+    const fetchFn = client([
+      search(row("STRASSE")),
+      detail().replace('itemprop="name">Cragmont Crack', 'itemprop="name">STRASSE'),
+    ]);
+    expect(await new TheCragCatalogueAdapter(fetchFn).search({ ...seed, name: "Straße" })).toEqual({
+      candidates: [],
+      complete: true,
+    });
+    expect(fetchFn).toHaveBeenCalledTimes(3);
+  });
+
+  it.each([
+    "http://[",
+    `https://evil.example${route}`,
+    `https://name@www.thecrag.com${route}`,
+    `https://:password@www.thecrag.com${route}`,
+    `${origin}${route}?extra=1`,
+    `${origin}${route}#fragment`,
+    `${origin}/prefix${route}`,
+    `${origin}${route}/ascents`,
+    `${origin}/en/climbing/route/0`,
+  ])("rejects unsafe route source %s before any request", async (sourceUrl) => {
+    const fetchFn = client([]);
+    await expect(
+      new TheCragCatalogueAdapter(fetchFn).search({ ...seed, providerId: "thecrag", sourceUrl }),
+    ).rejects.toThrow(/source URL/);
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
+
+  it("resolves trailing-slash route identities and trims name and grade", async () => {
+    const html = detail("", `${route}/`)
+      .replace('itemprop="name">Cragmont Crack', 'itemprop="name">  Cragmont Crack  ')
+      .replace('class="grade">5.6', 'class="grade">  5.6  ');
+    const result = await lookup(html);
+    expect(result.candidates[0]).toMatchObject({
+      externalId: "123",
+      name: "Cragmont Crack",
+      grade: "5.6",
+    });
+  });
+
+  it.each([
+    detail().replace(/<link[^>]+>/, ""),
+    detail(`<link rel="canonical" href="${origin}${route}">`),
+    detail().replace('itemprop="name">Cragmont Crack', 'itemprop="name">  '),
+  ])("rejects incomplete or conflicting detail identity markup", async (html) => {
+    await expect(lookup(html)).rejects.toThrow(/route page/);
+  });
+
+  it.each([
+    ["Cragmont Crack,Trad climb in Park | theCrag", "route", "Trad"],
+    ["Cragmont Crack,   10.67m   Trad climb in Park | theCrag", "route", "Trad"],
+    ["Cragmont Crack, Boulder climb in Park | theCrag", "route", "Boulder"],
+    ["Cragmont Crack, Unknown problem in Park | theCrag", null, "Unknown"],
+    ["Cragmont Crack, Trad climb in Park | theCrag extra", null, null],
+    ["Cragmont Crack", null, null],
+  ])("classifies only the verified title grammar %s", async (title, kind, label) => {
+    const result = await lookup(detail("", route, title ?? ""));
+    expect(result.candidates[0]?.kind).toBe(kind);
+    expect(result.candidates[0]?.tags).toEqual(
+      label
+        ? [
+            {
+              kind: "climb_type",
+              sourceKey: "title",
+              label,
+              category: null,
+              scope: "direct",
+              inheritedFrom: null,
+            },
+          ]
+        : [],
+    );
+  });
+
+  it("keeps native tag keys and normalized labels while ignoring unrelated or empty tags", async () => {
+    const markup = [
+      '<a rel="tag" href="/en/article/tagging#Always%20shady" title="INHERITED FROM   Cragmont Park  ">  Always   shady \n </a>',
+      '<a rel="tag" href="/en/article/tagging#Roof" title="not inherited from Park"> Roof </a>',
+      '<a rel="tag" href="/en/article/tagging#Ramp" title="inherited from Park&#10;extra">Slab</a>',
+      '<a rel="tag" href="/en/article/tagging#Empty">  </a>',
+      '<a rel="tag" href="http://[">Invalid URL</a>',
+      '<a rel="tag" href="https://evil.example/en/article/tagging#Ramp">Wrong host</a>',
+      '<a rel="tag" href="/en/article/other#Ramp">Wrong path</a>',
+      '<a rel="tag" href="/en/article/tagging">No key</a>',
+    ].join("");
+    const result = await lookup(detail(markup, route, "Unknown title"));
+    expect(result.candidates[0]?.tags).toEqual([
+      {
+        sourceKey: "Always shady",
+        label: "Always shady",
+        kind: "other",
+        category: null,
+        scope: "inherited",
+        inheritedFrom: "Cragmont Park",
+      },
+      {
+        sourceKey: "Roof",
+        label: "Roof",
+        kind: "steepness",
+        category: "roof",
+        scope: "direct",
+        inheritedFrom: null,
+      },
+      {
+        sourceKey: "Ramp",
+        label: "Slab",
+        kind: "steepness",
+        category: "slab",
+        scope: "direct",
+        inheritedFrom: null,
+      },
+    ]);
+  });
+
+  it("uses only valid styles on the canonical route and trims their labels", async () => {
+    const valid = `${route}/routes/with-gear-style/top-rope`;
+    const markup = `<div class="style-band"><a href="${valid}/">  Top   rope  </a>${[
+      "http://[",
+      `https://evil.example${valid}`,
+      `${valid}?filter=1`,
+      `${valid}#fragment`,
+      `${valid}/extra`,
+      "/en/climbing/route/999/routes/with-gear-style/aid",
+      "/other",
+    ]
+      .map((href) => `<a href="${href}">Invalid</a>`)
+      .join("")}<a href="${valid}">  </a></div>`;
+    const result = await lookup(detail(markup));
+    expect(result.candidates[0]?.tags).toEqual([
+      {
+        kind: "climb_type",
+        sourceKey: "route-gear-style:top-rope",
+        label: "Top rope",
+        category: null,
+        scope: "direct",
+        inheritedFrom: null,
+      },
+    ]);
+  });
+
+  it("retains only area breadcrumbs and validates optional native area IDs", async () => {
+    const crumb = (href: string, name: string, id?: string) =>
+      `<a class="crumb__a" href="${href}" ${id === undefined ? "" : `data-nid="${id}"`}><span class="crumb__long">${name}</span></a>`;
+    const markup = [
+      crumb("http://[", "Malformed"),
+      crumb("https://evil.example/en/climbing/area/1", "Foreign"),
+      crumb("/en/article/area", "Article"),
+      crumb(route, "Route"),
+      crumb("/en/climbing/area/1", "  "),
+      ...["x123", "123x", "0", undefined].map((id) =>
+        crumb("/en/climbing/area/unknown", "  Unknown   area  ", id),
+      ),
+    ].join("");
+    const result = await lookup(detail(markup));
+    expect(result.candidates[0]?.locations).toEqual([
+      { externalId: "456", name: "Cragmont Park", scope: "area", coordinates: null },
+      ...Array.from({ length: 4 }, () => ({
+        externalId: null,
+        name: "Unknown area",
+        scope: "area",
+        coordinates: null,
+      })),
+    ]);
+  });
+
+  it("leaves a missing published grade unknown", async () => {
+    expect(
+      (await lookup(detail().replace('class="grade">5.6', 'class="grade">   '))).candidates[0]
+        ?.grade,
+    ).toBeNull();
+  });
+
+  it.each([
+    "http://[",
+    "https://evil.example/en/climbing/world/search?S=Cragmont%20Crack&only=routes&page=2",
+    "https://name@www.thecrag.com/en/climbing/world/search?S=Cragmont%20Crack&only=routes&page=2",
+    "https://:password@www.thecrag.com/en/climbing/world/search?S=Cragmont%20Crack&only=routes&page=2",
+    "/other?S=Cragmont%20Crack&only=routes&page=2",
+    "?S=Other&only=routes&page=2",
+    "?S=Cragmont%20Crack&only=areas&page=2",
+    "?S=Cragmont%20Crack&only=routes&page=2#fragment",
+    "?S=Cragmont%20Crack&only=routes&page=0",
+    "?S=Cragmont%20Crack&only=routes&page=x12",
+    "?S=Cragmont%20Crack&only=routes&page=12x",
+    "?S=Cragmont%20Crack&only=routes",
+    "?S=Cragmont%20Crack&only=routes&page=2&other=1",
+    "?S=Cragmont%20Crack&only=routes&page=2&page=3",
+  ])("rejects unsafe or inconsistent pagination %s", async (next) => {
+    const fetchFn = client([search(row("Other"), next)]);
+    await expect(new TheCragCatalogueAdapter(fetchFn).search(seed)).rejects.toThrow(/pagination/);
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects competing next links", async () => {
+    const next = "?S=Cragmont%20Crack&only=routes&page=2";
+    const html = search(row("Other"), next).replace(
+      "</div>",
+      `<li class="next"><a href="${next}">Next</a></li></div>`,
+    );
+    await expect(new TheCragCatalogueAdapter(client([html])).search(seed)).rejects.toThrow(
+      /pagination/,
+    );
+  });
+
+  it("follows a multi-digit page number and records terminal emptiness", async () => {
+    const fetchFn = client([search("", "?S=Cragmont%20Crack&only=routes&page=12"), search("")]);
+    expect(await new TheCragCatalogueAdapter(fetchFn).search(seed)).toEqual({
+      candidates: [],
+      complete: true,
+    });
+    expect(String(fetchFn.mock.calls[1]?.[0])).toContain("page=12");
+  });
+
+  it("searches by name when the provider has no source identity, ignoring other providers' IDs", async () => {
+    for (const source of [
+      { ...seed, providerId: "thecrag" },
+      { ...seed, externalId: "foreign", sourceUrl: "https://other.example/climb/foreign" },
+    ]) {
+      const fetchFn = client([search("")]);
+      expect(await new TheCragCatalogueAdapter(fetchFn).search(source)).toEqual({
+        candidates: [],
+        complete: true,
+      });
+      expect(String(fetchFn.mock.calls[0]?.[0])).toContain("/world/search?");
+    }
+  });
+
+  it("rejects conflicting recorded identity before requesting the route", async () => {
+    const fetchFn = client([]);
+    await expect(
+      new TheCragCatalogueAdapter(fetchFn).search({
+        ...seed,
+        providerId: "thecrag",
+        externalId: "999",
+        sourceUrl: origin + route,
+      }),
+    ).rejects.toThrow(/identity/);
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
+
+  it("checks returned transport URLs against the exact requested route", async () => {
+    for (const responseUrl of [
+      `${origin}/en/climbing/world/route/123`,
+      "https://evil.example/en/climbing/world/route/123",
+    ]) {
+      const response = new Response(detail());
+      Object.defineProperty(response, "url", { value: responseUrl });
+      const adapter = new TheCragCatalogueAdapter(
+        vi
+          .fn<typeof fetch>()
+          .mockImplementation(async (input) =>
+            new URL(String(input)).pathname.includes("/area/")
+              ? new Response(parentArea("", ""))
+              : response,
+          ),
+      );
+      const operation = adapter.search({ ...seed, providerId: "thecrag", externalId: "123" });
+      if (new URL(responseUrl).origin === origin)
+        expect((await operation).candidates[0]?.externalId).toBe("123");
+      else await expect(operation).rejects.toThrow(/response URL/);
+    }
+  });
+  it("preserves every direct/inherited steepness and unknown source tag without angle guesses", async () => {
+    const tags = [
+      ["Ramp", "Slab"],
+      ["Vertical", "Vertical"],
+      ["Overhung", "Overhung"],
+      ["Roof", "Roof"],
+      ["Tufa", "Tufa"],
+      ["Slab", "Slab"],
+      ["Unknown", "Mystery"],
+    ]
+      .map(
+        ([key, label]) =>
+          `<a rel="tag" href="/en/article/tagging#${key}" title="${key === "Ramp" ? "inherited from Cragmont Park" : ""}">${label}</a>`,
+      )
+      .join("");
+    const fetchFn = client([
+      search(),
+      detail(
+        tags +
+          `<meta property="place:location:latitude" content="37"><meta property="place:location:longitude" content="-122">`,
+      ),
+    ]);
+    const result = await new TheCragCatalogueAdapter(fetchFn).search(seed);
+    expect(result.complete).toBe(true);
+    expect(result.candidates[0]).toMatchObject({
+      externalId: "123",
+      name: seed.name,
+      kind: "route",
+      setting: null,
+      grade: "5.6",
+      angle: null,
+    });
+    expect(
+      result.candidates[0]?.tags.map((tag) => [tag.sourceKey, tag.kind, tag.category]),
+    ).toEqual([
+      ["Ramp", "steepness", "slab"],
+      ["Vertical", "steepness", "vertical"],
+      ["Overhung", "steepness", "overhang"],
+      ["Roof", "steepness", "roof"],
+      ["Tufa", "steepness", "tufa"],
+      ["Slab", "other", null],
+      ["Unknown", "other", null],
+      ["title", "climb_type", null],
+    ]);
+    expect(result.candidates[0]?.tags[0]).toMatchObject({
+      scope: "inherited",
+      inheritedFrom: "Cragmont Park",
+    });
+    expect(result.candidates[0]?.locations).toEqual([
+      { externalId: "456", name: "Cragmont Park", scope: "area", coordinates: null },
+    ]);
+    expect(String(fetchFn.mock.calls[0]?.[0])).toBe(
+      `${origin}/en/climbing/world/search?S=Cragmont%20Crack&only=routes`,
+    );
+  });
+
+  it("follows pages and retains unique IDs while repeated rows keep discovery incomplete", async () => {
+    const fetchFn = client([
+      search(row("Different") + row(), "?S=Cragmont%20Crack&only=routes&page=2"),
+      search(row("  CRAGMONT  CRACK ")),
+      detail(),
+    ]);
+    const result = await new TheCragCatalogueAdapter(fetchFn).search(seed);
+    expect(result.complete).toBe(false);
+    expect(result.candidates).toHaveLength(1);
+    expect(fetchFn).toHaveBeenCalledTimes(4);
+  });
+
+  it("marks capped searches incomplete", async () => {
+    const pages = Array.from({ length: 3 }, (_, i) =>
+      search("", `?S=Cragmont%20Crack&only=routes&page=${i + 2}`),
+    );
+    const fetchFn = client(pages);
+    expect(await new TheCragCatalogueAdapter(fetchFn).search(seed)).toEqual({
+      candidates: [],
+      complete: false,
+    });
+    expect(fetchFn).toHaveBeenCalledTimes(3);
+  });
+
+  it("marks repeated pagination incomplete", async () => {
+    const fetchFn = client([
+      search("", "?S=Cragmont%20Crack&only=routes&page=2"),
+      search("", "?S=Cragmont%20Crack&only=routes&page=2"),
+    ]);
+    expect((await new TheCragCatalogueAdapter(fetchFn).search(seed)).complete).toBe(false);
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+  });
+
+  it("can fetch a known same-provider source independently of search and recognizes boulders", async () => {
+    const fetchFn = client([
+      detail("", route, "Cragmont Crack, Boulder problem in Cragmont Park | theCrag"),
+    ]);
+    const result = await new TheCragCatalogueAdapter(fetchFn).search({
+      ...seed,
+      providerId: "thecrag",
+      externalId: "123",
+      sourceUrl: origin + route,
+    });
+    expect(result.candidates[0]?.kind).toBe("boulder");
+    expect(result.complete).toBe(false);
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+  });
+  it("resolves a recorded numeric route ID without a stored URL or a matching old name", async () => {
+    const html = detail().replace(
+      'itemprop="name">Cragmont Crack',
+      'itemprop="name">Renamed Crack',
+    );
+    const fetchFn = client([html]);
+    const result = await new TheCragCatalogueAdapter(fetchFn).search({
+      ...seed,
+      providerId: "thecrag",
+      externalId: "123",
+      sourceUrl: null,
+    });
+    expect(result.candidates[0]).toMatchObject({ externalId: "123", name: "Renamed Crack" });
+    expect(String(fetchFn.mock.calls[0]?.[0])).toBe(`${origin}/en/climbing/world/route/123`);
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    "https://evil.example/route/123",
+    "https://www.thecrag.com@evil.example/route/123",
+    `${origin}/en/climbing/area/123`,
+  ])("rejects invalid source URL %s before requesting it", async (sourceUrl) => {
+    const fetchFn = client([]);
+    await expect(
+      new TheCragCatalogueAdapter(fetchFn).search({ ...seed, providerId: "thecrag", sourceUrl }),
+    ).rejects.toThrow(/source URL/i);
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
+
+  it("rejects foreign pagination before fetching it", async () => {
+    const fetchFn = client([search(row("Other"), "https://evil.example/?page=2")]);
+    await expect(new TheCragCatalogueAdapter(fetchFn).search(seed)).rejects.toThrow(/pagination/i);
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["<html>Just a moment</html>", "<h1>broken</h1>"])(
+    "rejects unavailable search markup",
+    async (html) => {
+      await expect(new TheCragCatalogueAdapter(client([html])).search(seed)).rejects.toThrow(
+        /search page/i,
+      );
+    },
+  );
+
+  it("rejects mismatched route identity", async () => {
+    await expect(
+      new TheCragCatalogueAdapter(client([search(), detail("", "/en/climbing/route/999")])).search(
+        seed,
+      ),
+    ).rejects.toThrow(/identity/i);
+  });
+
+  it("rejects blocked details and HTTP redirects", async () => {
+    await expect(
+      new TheCragCatalogueAdapter(client([search(), "<html>challenge</html>"])).search(seed),
+    ).rejects.toThrow(/route page/i);
+    const fetchFn = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        new Response("", { status: 302, headers: { location: "https://evil.example" } }),
+      );
+    await expect(new TheCragCatalogueAdapter(fetchFn).search(seed)).rejects.toThrow(/302/);
+    expect(fetchFn.mock.calls[0]?.[1]).toMatchObject({ redirect: "manual" });
+  });
+});
+
+it.each([
+  "Trad",
+  "Sport",
+  "Top rope",
+  "Mixed trad",
+  "Aid",
+  "Boulder",
+  "Ice",
+  "Unknown source type",
+])("retains literal %s catalogue type from the verified route title", async (label) => {
+  const suffix = label === "Boulder" ? "problem" : "climb";
+  const fetchFn = client([
+    search(),
+    detail(
+      '<div class="ascent"><span class="style">Sport</span></div>',
+      route,
+      `5.6 ★Cragmont Crack, 10.67m ${label} ${suffix} in Cragmont Park | theCrag`,
+    ),
+  ]);
+  const result = await new TheCragCatalogueAdapter(fetchFn).search(seed);
+  expect(result.candidates[0]?.tags).toContainEqual({
+    kind: "climb_type",
+    sourceKey: "title",
+    label,
+    category: null,
+    scope: "direct",
+    inheritedFrom: null,
+  });
+});
+it("preserves multiple route gear styles and ignores other route and ascent styles", async () => {
+  const markup = `<div class="band style-band"><a href="${route}/routes/with-gear-style/trad">TRAD</a><a href="${route}/routes/with-gear-style/sport">SPORT</a><a href="/en/climbing/route/999/routes/with-gear-style/aid">AID</a></div><div class="ascent"><a href="${route}/routes/with-gear-style/top-rope">Top rope</a></div>`;
+  const result = await new TheCragCatalogueAdapter(client([search(), detail(markup)])).search(seed);
+  expect(result.candidates[0]?.tags.filter((tag) => tag.kind === "climb_type")).toEqual([
+    {
+      kind: "climb_type",
+      sourceKey: "route-gear-style:trad",
+      label: "TRAD",
+      category: null,
+      scope: "direct",
+      inheritedFrom: null,
+    },
+    {
+      kind: "climb_type",
+      sourceKey: "route-gear-style:sport",
+      label: "SPORT",
+      category: null,
+      scope: "direct",
+      inheritedFrom: null,
+    },
+  ]);
+});
+
+describe("theCrag source-owned area context", () => {
+  const region = readFileSync(new URL("./fixtures/thecrag-region.html", import.meta.url), "utf8");
+  const regionRoute = detail().replaceAll("456", "11737675");
+
+  it("hydrates a region with a slug canonical URL and verified native page identity", async () => {
+    const { result } = await lookupWithParent(regionRoute, region);
+    expect(result.candidates[0]?.locations[0]?.context).toEqual({
+      url: `${origin}/en/climbing/north-america`,
+      type: "region",
+      sections: [],
+      tags: [],
+      statistics: [{ sourceKey: "routes", label: "Routes", value: 234526 }],
+    });
+  });
+
+  it.each([
+    region.replace('data-nid="11737675"', 'data-nid="789"'),
+    region.replace('data-nid="11737675"', ""),
+    region.replace('data-nid="11737675"', 'data-nid="011737675"'),
+    region.replace('data-nid="11737675"><span', 'data-nid="789"><span'),
+    region.replace('href="/en/climbing/north-america"', 'href="/en/climbing/europe"'),
+    region.replace(
+      "https://www.thecrag.com/en/climbing/north-america",
+      "https://evil.example/en/climbing/north-america",
+    ),
+    region.replace(
+      "https://www.thecrag.com/en/climbing/north-america",
+      "https://user@www.thecrag.com/en/climbing/north-america",
+    ),
+    region.replace(
+      "https://www.thecrag.com/en/climbing/north-america",
+      "https://www.thecrag.com/en/climbing/north-america?extra=1",
+    ),
+    region.replace(
+      "https://www.thecrag.com/en/climbing/north-america",
+      "https://www.thecrag.com/en/climbing/north-america#map",
+    ),
+    region.replaceAll("/en/climbing/north-america", "/en/climbing/route/11737675"),
+    region.replaceAll("/en/climbing/north-america", "/en/climbing/area/789"),
+    region.replaceAll("/en/climbing/north-america", "/en/article/tagging"),
+  ])(
+    "rejects a slug area without consistent native page and canonical identity %#",
+    async (html) => {
+      await expect(lookupWithParent(regionRoute, html)).rejects.toThrow(/parent area identity/);
+    },
+  );
+
+  it("hydrates all proven ancestors once and keeps inherited parent facts off routes", async () => {
+    const area = readFileSync(new URL("./fixtures/thecrag-area.html", import.meta.url), "utf8");
+    const routeHtml = detail(
+      '<a class="crumb__a" href="/en/climbing/world/area/789" data-nid="789"><span class="crumb__long">Sector</span></a>',
+    );
+    const fetchFn = vi.fn<typeof fetch>().mockImplementation(async (input) => {
+      const url = new URL(String(input));
+      if (url.pathname.includes("/search"))
+        return new Response(search(row() + row("Cragmont Crack", "/en/climbing/world/route/124")));
+      if (url.pathname.includes("/route/"))
+        return new Response(
+          routeHtml.replace(`/route/123`, `/route/${url.pathname.split("/").at(-1)}`),
+        );
+      return new Response(
+        area.replaceAll("16450483", url.pathname.endsWith("789") ? "789" : "456"),
+      );
+    });
+    const result = await new TheCragCatalogueAdapter(fetchFn).search(seed);
+    expect(fetchFn).toHaveBeenCalledTimes(5);
+    const locations = result.candidates[0]?.locations;
+    expect(locations?.map((location) => location.externalId)).toEqual(["456", "789"]);
+    const context = locations?.[0]?.context;
+    expect(context).toMatchObject({
+      url: `${origin}/en/climbing/united-states/california/san-francisco/east-bay-area/area/456`,
+      type: "cliff",
+      statistics: [{ sourceKey: "routes", label: "Routes", value: 13 }],
+    });
+    expect(context?.sections).toContainEqual({
+      sourceKey: "access-issues",
+      label: "Access issues",
+      text: "For any/all access issues at crags in this region, please contact the Bay Area Climbers Coalition.",
+      inheritedFrom: "San Francisco Bay Area",
+    });
+    expect(context?.tags).toContainEqual({
+      sourceKey: "Allowed",
+      label: "Allowed",
+      kind: "other",
+      category: null,
+      scope: "inherited",
+      inheritedFrom: "San Francisco Bay Area",
+      count: null,
+    });
+    expect(context?.tags).toContainEqual({
+      sourceKey: "Ramp",
+      label: "Slab",
+      kind: "steepness",
+      category: "slab",
+      scope: "direct",
+      inheritedFrom: null,
+      count: null,
+    });
+    expect(context?.sections.find((section) => section.sourceKey === "description")?.text).toBe(
+      "Another popular little Berkeley cliff tucked away in suburbia. Is popular with guides and can be overrun on the weekends.",
+    );
+    expect(context?.tags.map((tag) => tag.sourceKey)).not.toContain("ChildOnly");
+    expect(result.candidates[0]?.tags.map((tag) => tag.sourceKey)).toEqual(["title"]);
+    expect(result.candidates[0]?.angle).toBeNull();
+  });
+});
+
+it("preserves explicit tag inheritance over section inheritance and excludes nested owners", async () => {
+  const area =
+    parentArea() +
+    `<div class="regions__read"><div class="regions__inner"><div class="node-info access-issues"><h2>Access issues <small class="from">inherited from <a class="inherit-from" href="/en/climbing/parent">Parent</a></small></h2><div class="content"><a rel="tag" href="/en/article/tagging#Allowed" title="inherited from Grandparent">Allowed</a><a rel="tag" href="/en/article/tagging#Mystery">Mystery</a><div class="markdown"><p>Check <b>access</b>.</p><script>unsafe()</script></div><div class="node-info"><a rel="tag" href="/en/article/tagging#Nested">Nested</a></div></div></div></div></div>`;
+  const { result } = await lookupWithParent(detail(), area);
+  const context = result.candidates[0]?.locations[0]?.context;
+  expect(context?.sections).toEqual([
+    {
+      sourceKey: "access-issues",
+      label: "Access issues",
+      text: "Check access.",
+      inheritedFrom: "Parent",
+    },
+  ]);
+  expect(
+    context?.tags.map((tag) => [tag.sourceKey, tag.inheritedFrom, tag.scope, tag.count]),
+  ).toEqual([
+    ["Allowed", "Grandparent", "inherited", null],
+    ["Mystery", "Parent", "inherited", null],
+  ]);
+});
+
+it("resolves native IDs from source-declared named hierarchy links", async () => {
+  const html = detail().replace(
+    'href="/en/climbing/area/456"',
+    'href="/en/climbing/cragmont-park"',
+  );
+  const { result, fetchFn } = await lookupWithParent(html);
+  expect(String(fetchFn.mock.calls[1]?.[0])).toBe(`${origin}/en/climbing/world/area/456`);
+  expect(result.candidates[0]?.locations[0]?.coordinates).toEqual({
+    latitude: 37.5,
+    longitude: -122.5,
+  });
+});
+
+it.each([
+  [
+    "terminal",
+    "396575046",
+    "crag",
+    104,
+    "unique-features-and-strengths",
+    "Summary",
+    "Beautiful, south facing wall",
+    'Primarily developed by Andrea "Dinda" Bisio',
+  ],
+  [
+    "sector",
+    "9480758808",
+    "sector",
+    10,
+    "description",
+    "Description",
+    "Kleiner, aber feiner Sektor",
+    "Capricorner wurde 2009 eingerichtet.",
+  ],
+])(
+  "reads verified %s area sections and source counts",
+  async (fixture, id, type, count, sourceKey, label, start, history) => {
+    const html = readFileSync(
+      new URL(`./fixtures/thecrag-${fixture}.html`, import.meta.url),
+      "utf8",
+    );
+    const routeHtml = detail().replace(
+      'href="/en/climbing/area/456" data-nid="456"',
+      `href="/en/climbing/world/area/${id}" data-nid="${id}"`,
+    );
+    const { result } = await lookupWithParent(routeHtml, html);
+    const context = result.candidates[0]?.locations[0]?.context;
+    expect(context?.type).toBe(type);
+    expect(context?.statistics).toEqual([{ sourceKey: "routes", label: "Routes", value: count }]);
+    expect(context?.sections).toContainEqual(
+      expect.objectContaining({ sourceKey, label, text: expect.stringContaining(start) }),
+    );
+    expect(context?.sections).toContainEqual(
+      expect.objectContaining({
+        sourceKey: "history",
+        label: "History",
+        text: expect.stringContaining(history),
+      }),
+    );
+    if (fixture === "sector") {
+      expect(context?.tags).toContainEqual(
+        expect.objectContaining({
+          sourceKey: "Allowed",
+          scope: "inherited",
+          inheritedFrom: "Hohe Wand",
+        }),
+      );
+      expect(context?.sections).toContainEqual(
+        expect.objectContaining({
+          sourceKey: "access-issues",
+          text: "Dogs allowed with leash.",
+          inheritedFrom: "Hohe Wand",
+        }),
+      );
+    }
+  },
+);
+
+function ownerSection(content: string, header = "", kind = "description") {
+  return `<div class="regions__read"><div class="regions__inner"><div class="node-info ${kind}"><h2>Description ${header}</h2><div class="content">${content}</div></div></div></div>`;
+}
+function areaHeadline(content: string) {
+  return `<div class="regions__title"><h1><span class="heading__byline"><span class="info">${content}</span></span></h1></div>`;
+}
+
+it("normalizes padded source tag keys and skips incomplete hexadecimal escapes", async () => {
+  const result = await lookup(
+    detail(
+      `<a rel="tag" href="/en/article/tagging#%20Ramp%20">Slab</a><a rel="tag" href="/en/article/tagging#%0G">Invalid encoded tag</a>`,
+    ),
+  );
+  expect(result.candidates[0]?.tags).toContainEqual({
+    sourceKey: "Ramp",
+    label: "Slab",
+    kind: "steepness",
+    category: "slab",
+    scope: "direct",
+    inheritedFrom: null,
+  });
+  expect(result.candidates[0]?.tags.map((tag) => tag.sourceKey)).toEqual(["Ramp", "title"]);
+});
+
+it.each([
+  "http://[",
+  "https://elsewhere.example/en/climbing/parent",
+  "https://user@www.thecrag.com/en/climbing/parent",
+  "https://:password@www.thecrag.com/en/climbing/parent",
+  "/en/climbing/parent?filter=1",
+  "/en/climbing/parent#access",
+  "/en/article/tagging",
+])(
+  "keeps source-owned prose and tags direct when the section inheritance URL is invalid: %s",
+  async (href) => {
+    const header = `<small class="from">inherited from <a class="inherit-from" href="${href}">Unverified ancestor</a></small>`;
+    const { result } = await lookupWithParent(
+      detail(),
+      parentArea() +
+        ownerSection(
+          '<div class="markdown">Source description</div><a rel="tag" href="/en/article/tagging#Ramp">Slab</a>',
+          header,
+        ),
+    );
+    expect(result.candidates[0]?.locations[0]?.context?.sections).toEqual([
+      {
+        sourceKey: "description",
+        label: "Description",
+        text: "Source description",
+        inheritedFrom: null,
+      },
+    ]);
+    expect(result.candidates[0]?.locations[0]?.context?.tags).toEqual([
+      {
+        sourceKey: "Ramp",
+        label: "Slab",
+        kind: "steepness",
+        category: "slab",
+        count: null,
+        scope: "direct",
+        inheritedFrom: null,
+      },
+    ]);
+  },
+);
+
+it("does not assign one of two conflicting section ancestors to prose or direct tags", async () => {
+  const header =
+    '<small class="from">inherited from <a class="inherit-from" href="/en/climbing/first">First</a> <a class="inherit-from" href="/en/climbing/second">Second</a></small>';
+  const { result } = await lookupWithParent(
+    detail(),
+    parentArea() +
+      ownerSection(
+        '<div class="markdown">Source description</div><a rel="tag" href="/en/article/tagging#Ramp">Slab</a>',
+        header,
+      ),
+  );
+  const context = result.candidates[0]?.locations[0]?.context;
+  expect(context?.sections[0]?.inheritedFrom).toBeNull();
+  expect(context?.tags[0]).toMatchObject({ scope: "direct", inheritedFrom: null });
+});
+
+it("keeps literal tags in an unclassified section without inventing a prose section", async () => {
+  const { result } = await lookupWithParent(
+    detail(),
+    parentArea() +
+      ownerSection(
+        '<div class="markdown">Unclassified source text</div><a rel="tag" href="/en/article/tagging#Local">Local character</a>',
+        "",
+        "",
+      ),
+  );
+  const context = result.candidates[0]?.locations[0]?.context;
+  expect(context?.sections).toEqual([]);
+  expect(context?.tags).toEqual([
+    {
+      sourceKey: "Local",
+      label: "Local character",
+      kind: "other",
+      category: null,
+      count: null,
+      scope: "direct",
+      inheritedFrom: null,
+    },
+  ]);
+});
+
+it("omits empty prose while retaining a standalone literal area type", async () => {
+  const { result } = await lookupWithParent(
+    detail(),
+    parentArea() +
+      areaHeadline('<a href="/en/article/areatypes"> cliff </a>') +
+      ownerSection('<div class="markdown"><p> </p><script>hidden()</script></div>'),
+  );
+  expect(result.candidates[0]?.locations[0]?.context).toEqual({
+    url: `${origin}/en/climbing/area/456`,
+    type: "cliff",
+    sections: [],
+    tags: [],
+    statistics: [],
+  });
+});
+
+it("retains standalone area prose with missing type, tags and statistics", async () => {
+  const { result } = await lookupWithParent(
+    detail(),
+    parentArea() +
+      areaHeadline('<a href="/en/article/areatypes"> </a>') +
+      ownerSection('<div class="markdown"><p>Only a description.</p></div>'),
+  );
+  expect(result.candidates[0]?.locations[0]?.context).toEqual({
+    url: `${origin}/en/climbing/area/456`,
+    type: null,
+    sections: [
+      {
+        sourceKey: "description",
+        label: "Description",
+        text: "Only a description.",
+        inheritedFrom: null,
+      },
+    ],
+    tags: [],
+    statistics: [],
+  });
+});
+
+it.each([
+  "http://[",
+  "https://elsewhere.example/en/climbing/area/456/routes",
+  "https://user@www.thecrag.com/en/climbing/area/456/routes",
+  "https://:password@www.thecrag.com/en/climbing/area/456/routes",
+  "/en/climbing/area/456/routes?filter=1",
+  "/en/climbing/area/456/routes#stats",
+  "/en/climbing/area/456/photos",
+  "/en/climbing/area/789/routes",
+])("ignores route statistics outside the canonical area's routes URL: %s", async (href) => {
+  const { result } = await lookupWithParent(
+    detail(),
+    parentArea() +
+      areaHeadline(`<a href="/en/article/areatypes">cliff</a><a href="${href}">13 routes</a>`),
+  );
+  expect(result.candidates[0]?.locations[0]?.context?.statistics).toEqual([]);
+});
+
+it.each(["About 13 routes", "13 routes nearby", "No routes", "", "  "])(
+  "does not reinterpret source route totals without a literal count: %j",
+  async (label) => {
+    const { result } = await lookupWithParent(
+      detail(),
+      parentArea() +
+        areaHeadline(
+          `<a href="/en/article/areatypes">cliff</a><a href="/en/climbing/area/456/routes">${label}</a>`,
+        ),
+    );
+    expect(result.candidates[0]?.locations[0]?.context?.statistics).toEqual([]);
+  },
+);
+
+it.each([
+  ["1 route", 1],
+  ["1,234 routes", 1234],
+  ["0 routes", 0],
+])("retains standalone literal area route totals: %s", async (label, value) => {
+  const { result } = await lookupWithParent(
+    detail(),
+    parentArea() + areaHeadline(`<a href="/en/climbing/area/456/routes">${label}</a>`),
+  );
+  expect(result.candidates[0]?.locations[0]?.context).toEqual({
+    url: `${origin}/en/climbing/area/456`,
+    type: null,
+    sections: [],
+    tags: [],
+    statistics: [{ sourceKey: "routes", label: "Routes", value }],
+  });
+});
+
+it.each([
+  "https://user@www.thecrag.com/en/climbing/cragmont-park",
+  "https://:password@www.thecrag.com/en/climbing/cragmont-park",
+  "/en/climbing/cragmont-park?filter=1",
+  "/en/climbing/cragmont-park#access",
+])("does not synthesize a numeric area fetch from an unsafe named breadcrumb: %s", async (href) => {
+  const html = detail().replace('href="/en/climbing/area/456"', `href="${href}"`);
+  const { result, fetchFn } = await lookupWithParent(html);
+  expect(fetchFn).toHaveBeenCalledTimes(1);
+  expect(result.candidates[0]?.locations[0]).toEqual({
+    externalId: "456",
+    name: "Cragmont Park",
+    scope: "area",
+    coordinates: null,
+  });
+});

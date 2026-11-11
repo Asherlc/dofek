@@ -1,9 +1,4 @@
-import {
-  formatDateMedium,
-  formatDurationMinutes,
-  formatIntensity,
-  formatStandardDeviation,
-} from "@dofek/format/format";
+import { formatDateMedium, formatStandardDeviation } from "@dofek/format/format";
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import type { PersonalizationModelCard } from "dofek-server/types";
 import { useEffect } from "react";
@@ -87,27 +82,9 @@ export function PersonalizationPanel() {
       />
 
       <ParamCard
-        modelCard={modelCards.readinessWeights}
-        value={`Heart Rate Variability ${formatIntensity(data.effective.readinessWeights.hrv * 100)}, Resting Heart Rate ${formatIntensity(data.effective.readinessWeights.restingHr * 100)}, Sleep ${formatIntensity(data.effective.readinessWeights.sleep * 100)}, Respiratory Rate ${formatIntensity(data.effective.readinessWeights.respiratoryRate * 100)}`}
-        defaultValue={`Heart Rate Variability ${formatIntensity(data.defaults.readinessWeights.hrv * 100)}, Resting Heart Rate ${formatIntensity(data.defaults.readinessWeights.restingHr * 100)}, Sleep ${formatIntensity(data.defaults.readinessWeights.sleep * 100)}, Respiratory Rate ${formatIntensity(data.defaults.readinessWeights.respiratoryRate * 100)}`}
-      />
-
-      <ParamCard
-        modelCard={modelCards.sleepTarget}
-        value={formatDurationMinutes(data.effective.sleepTarget.minutes)}
-        defaultValue={formatDurationMinutes(data.defaults.sleepTarget.minutes)}
-      />
-
-      <ParamCard
         modelCard={modelCards.stressThresholds}
         value={`Heart Rate Variability (SD): ${data.effective.stressThresholds.hrvThresholds.map(formatStandardDeviation).join(", ")} · Resting Heart Rate (SD): ${data.effective.stressThresholds.rhrThresholds.map(formatStandardDeviation).join(", ")}`}
         defaultValue={`Heart Rate Variability (SD): ${data.defaults.stressThresholds.hrvThresholds.map(formatStandardDeviation).join(", ")} · Resting Heart Rate (SD): ${data.defaults.stressThresholds.rhrThresholds.map(formatStandardDeviation).join(", ")}`}
-      />
-
-      <ParamCard
-        modelCard={modelCards.trainingImpulseConstants}
-        value={`Factor: ${data.effective.trainingImpulseConstants.genderFactor}, Exp: ${data.effective.trainingImpulseConstants.exponent}`}
-        defaultValue={`Factor: ${data.defaults.trainingImpulseConstants.genderFactor}, Exp: ${data.defaults.trainingImpulseConstants.exponent}`}
       />
 
       {/* Actions */}
@@ -193,24 +170,13 @@ function resolveModelCards(
     (card) => card.key === "exponentialMovingAverage",
   );
   if (!exponentialMovingAverage) return { missingKey: "exponentialMovingAverage" };
-  const readinessWeights = modelCards.find((card) => card.key === "readinessWeights");
-  if (!readinessWeights) return { missingKey: "readinessWeights" };
-  const sleepTarget = modelCards.find((card) => card.key === "sleepTarget");
-  if (!sleepTarget) return { missingKey: "sleepTarget" };
   const stressThresholds = modelCards.find((card) => card.key === "stressThresholds");
   if (!stressThresholds) return { missingKey: "stressThresholds" };
-  const trainingImpulseConstants = modelCards.find(
-    (card) => card.key === "trainingImpulseConstants",
-  );
-  if (!trainingImpulseConstants) return { missingKey: "trainingImpulseConstants" };
 
   return {
     cards: {
       exponentialMovingAverage,
-      readinessWeights,
-      sleepTarget,
       stressThresholds,
-      trainingImpulseConstants,
     },
   };
 }

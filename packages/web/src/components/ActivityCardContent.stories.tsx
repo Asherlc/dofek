@@ -153,6 +153,45 @@ export const NonMapActivity: Story = {
   ],
 };
 
+export const ClimbingUnknownDuration: Story = {
+  args: {
+    activity: {
+      ...strengthActivity,
+      id: "kilter-point-only",
+      name: "Kilter climbing",
+      activityType: "climbing",
+      durationMin: null,
+      source: {
+        origin: {
+          status: "resolved",
+          memberActivityId: "kilter-point-only",
+          providerId: "kilter",
+          sourceName: null,
+        },
+        tree: {
+          primary: {
+            id: "kilter-point-only",
+            providerId: "kilter",
+            sourceName: null,
+            label: "Kilter Board",
+            description: null,
+            url: null,
+            children: [],
+          },
+          otherSources: [],
+        },
+        primarySourceLabel: "Kilter Board",
+        sourceCount: 1,
+        overlapSummary: null,
+      },
+      stats: [],
+    },
+  },
+  play: async ({ canvasElement }) => {
+    await expect(within(canvasElement).getByText("Duration unavailable")).toBeVisible();
+  },
+};
+
 export const MappedActivity: Story = {
   args: { activity: mappedActivity },
   decorators: [
@@ -365,7 +404,8 @@ export const KayaProviderLogo: Story = {
     activity: {
       ...strengthActivity,
       name: "Kaya climbing",
-      activityType: "climbing",
+      activityType: "cardio",
+      primaryActivityType: "climbing",
       durationMin: 48,
       source: {
         origin: {
@@ -557,7 +597,7 @@ export const NavigableCard: Story = {
   render: () => <InteractiveCard selectMode={false} />,
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(canvas.getByRole("button", { name: "Garmin Connect Sources" }));
+    await userEvent.click(canvas.getByRole("button", { name: "Garmin Connect Lineage" }));
     await expect(canvas.getByRole("link", { name: "Morning Run" })).toBeVisible();
   },
 };
@@ -566,7 +606,7 @@ export const SelectableCard: Story = {
   render: () => <InteractiveCard selectMode={true} />,
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(canvas.getByRole("button", { name: "Garmin Connect Sources" }));
+    await userEvent.click(canvas.getByRole("button", { name: "Garmin Connect Lineage" }));
     await expect(canvas.getByRole("checkbox", { name: "Select Morning Run" })).not.toBeChecked();
     await expect(canvas.getByRole("button", { name: "Morning Run" })).toHaveAttribute(
       "aria-pressed",
@@ -585,7 +625,7 @@ export const SourceTreeExpanded: Story = {
   decorators: NonMapActivity.decorators,
   play: async ({ canvasElement, userEvent }) => {
     await userEvent.click(
-      within(canvasElement).getByRole("button", { name: "Garmin Connect Sources" }),
+      within(canvasElement).getByRole("button", { name: "Garmin Connect Lineage" }),
     );
   },
 };

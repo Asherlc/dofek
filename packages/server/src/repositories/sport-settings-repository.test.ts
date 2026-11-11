@@ -14,7 +14,6 @@ function makeDbRow(overrides: Record<string, unknown> = {}): Record<string, unkn
     id: "ss-1",
     user_id: "user-1",
     sport: "cycling",
-    ftp: "250",
     threshold_hr: "170",
     threshold_pace_per_km: null,
     power_zone_pcts: [0.55, 0.75, 0.9, 1.05, 1.2],
@@ -54,7 +53,6 @@ describe("SportSettingsRepository", () => {
         id: "ss-1",
         userId: "user-1",
         sport: "cycling",
-        ftp: 250,
         thresholdHr: 170,
         thresholdPacePerKm: null,
         powerZonePcts: [0.55, 0.75, 0.9, 1.05, 1.2],
@@ -103,14 +101,14 @@ describe("SportSettingsRepository", () => {
 
     it("returns multiple historical settings", async () => {
       const { repository } = makeRepository([
-        makeDbRow({ effective_from: "2025-06-01", ftp: "280" }),
-        makeDbRow({ id: "ss-2", effective_from: "2025-01-01", ftp: "250" }),
+        makeDbRow({ effective_from: "2025-06-01", threshold_hr: "180" }),
+        makeDbRow({ id: "ss-2", effective_from: "2025-01-01", threshold_hr: "170" }),
       ]);
       const result = await repository.history("cycling");
 
       expect(result).toHaveLength(2);
-      expect(result[0]?.ftp).toBe(280);
-      expect(result[1]?.ftp).toBe(250);
+      expect(result[0]?.thresholdHr).toBe(180);
+      expect(result[1]?.thresholdHr).toBe(170);
     });
   });
 
@@ -119,14 +117,13 @@ describe("SportSettingsRepository", () => {
       const { repository } = makeRepository([makeDbRow()]);
       const settings: UpsertSportSettings = {
         sport: "cycling",
-        ftp: 250,
         thresholdHr: 170,
         effectiveFrom: "2025-01-01",
       };
       const result = await repository.upsert(settings);
 
       expect(result.sport).toBe("cycling");
-      expect(result.ftp).toBe(250);
+      expect(result.thresholdHr).toBe(170);
     });
 
     it("serializes JSON zone percentages", async () => {
@@ -162,7 +159,7 @@ describe("SportSettingsRepository", () => {
 
     it("defaults effectiveFrom to today when not provided", async () => {
       const { repository, execute } = makeRepository([makeDbRow()]);
-      await repository.upsert({ sport: "cycling", ftp: 260 });
+      await repository.upsert({ sport: "cycling", thresholdHr: 175 });
       expect(execute).toHaveBeenCalledTimes(1);
     });
   });

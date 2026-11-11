@@ -1,9 +1,4 @@
-import {
-  formatDateMedium,
-  formatDurationMinutes,
-  formatIntensity,
-  formatStandardDeviation,
-} from "@dofek/format/format";
+import { formatDateMedium, formatStandardDeviation } from "@dofek/format/format";
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import type { PersonalizationModelCard } from "dofek-server/types";
 import { useEffect } from "react";
@@ -74,27 +69,6 @@ export function PersonalizationPanel() {
         />
 
         <ParamCard
-          modelCard={modelCards.readinessWeights}
-          effective={data.effective.readinessWeights}
-          defaults={data.defaults.readinessWeights}
-          renderValue={(v: {
-            hrv: number;
-            restingHr: number;
-            sleep: number;
-            respiratoryRate: number;
-          }) =>
-            `Heart Rate Variability ${formatIntensity(v.hrv * 100)}, Resting Heart Rate ${formatIntensity(v.restingHr * 100)}, Sleep ${formatIntensity(v.sleep * 100)}, Respiratory Rate ${formatIntensity(v.respiratoryRate * 100)}`
-          }
-        />
-
-        <ParamCard
-          modelCard={modelCards.sleepTarget}
-          effective={data.effective.sleepTarget}
-          defaults={data.defaults.sleepTarget}
-          renderValue={(v: { minutes: number }) => formatDurationMinutes(v.minutes)}
-        />
-
-        <ParamCard
           modelCard={modelCards.stressThresholds}
           effective={data.effective.stressThresholds}
           defaults={data.defaults.stressThresholds}
@@ -103,15 +77,6 @@ export function PersonalizationPanel() {
             rhrThresholds: [number, number, number];
           }) =>
             `Heart Rate Variability (SD): ${v.hrvThresholds.map(formatStandardDeviation).join(", ")} · Resting Heart Rate (SD): ${v.rhrThresholds.map(formatStandardDeviation).join(", ")}`
-          }
-        />
-
-        <ParamCard
-          modelCard={modelCards.trainingImpulseConstants}
-          effective={data.effective.trainingImpulseConstants}
-          defaults={data.defaults.trainingImpulseConstants}
-          renderValue={(v: { genderFactor: number; exponent: number }) =>
-            `Factor: ${v.genderFactor}, Exponent: ${v.exponent}`
           }
         />
       </div>
@@ -183,24 +148,13 @@ function resolveModelCards(
     (card) => card.key === "exponentialMovingAverage",
   );
   if (!exponentialMovingAverage) return { missingKey: "exponentialMovingAverage" };
-  const readinessWeights = modelCards.find((card) => card.key === "readinessWeights");
-  if (!readinessWeights) return { missingKey: "readinessWeights" };
-  const sleepTarget = modelCards.find((card) => card.key === "sleepTarget");
-  if (!sleepTarget) return { missingKey: "sleepTarget" };
   const stressThresholds = modelCards.find((card) => card.key === "stressThresholds");
   if (!stressThresholds) return { missingKey: "stressThresholds" };
-  const trainingImpulseConstants = modelCards.find(
-    (card) => card.key === "trainingImpulseConstants",
-  );
-  if (!trainingImpulseConstants) return { missingKey: "trainingImpulseConstants" };
 
   return {
     cards: {
       exponentialMovingAverage,
-      readinessWeights,
-      sleepTarget,
       stressThresholds,
-      trainingImpulseConstants,
     },
   };
 }

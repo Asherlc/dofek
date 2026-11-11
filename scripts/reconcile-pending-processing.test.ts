@@ -13,8 +13,11 @@ const queueMocks = vi.hoisted(() => ({
   enqueue: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock("../src/analytics-refresh-queue.ts", () => ({
-  createAnalyticsRefreshQueue: () => ({ close: queueMocks.close, on: queueMocks.on }),
   enqueueAnalyticsRefresh: queueMocks.enqueue,
+}));
+
+vi.mock("../src/jobs/queues.ts", () => ({
+  createAnalyticsRefreshQueue: () => ({ close: queueMocks.close, on: queueMocks.on }),
 }));
 
 vi.mock("../src/db/clickhouse.ts", () => ({

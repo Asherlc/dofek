@@ -4,25 +4,32 @@ import RNSentry
 /// Dofek application bootstrap; excluded from the standalone protocol package.
 enum WhoopBleUploadRuntime {
     static let sessionIdentifier = "app.dofek.whoop-ble.upload.v1"
-    private static let sharedLock = NSLock()
-    private static var instance: WhoopBleBackgroundUploader?
+    private static let bootstrap = WhoopBleUploadBootstrap(makeUploader: makeUploader, reportError: reportNativeError)
 
     static func shared() throws -> WhoopBleBackgroundUploader {
-        sharedLock.lock(); defer { sharedLock.unlock() }
-        if let instance { return instance }
+        try bootstrap.shared()
+    }
+
+    static func prepare(onFailure: @escaping (Error) -> Void) {
+        bootstrap.prepare(onFailure: onFailure)
+    }
+
+    static func handleBackgroundEvents(completionHandler: @escaping () -> Void) {
+        bootstrap.handleBackgroundEvents(completionHandler: completionHandler)
+    }
+
+    private static func makeUploader() throws -> WhoopBleBackgroundUploader {
         let base = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
             .appendingPathComponent("WhoopBleUploads", isDirectory: true)
         let store = try WhoopBleSampleStore(directory: base)
         if let cutoff = UserDefaults.standard.object(forKey: "dofek_device_erasure_cutoff_v1") as? Date {
             try store.advanceErasureCutoff(to: cutoff)
         }
-        let service = try WhoopBleBackgroundUploader(
+        return try WhoopBleBackgroundUploader(
             store: store,
             directory: base.appendingPathComponent("bodies", isDirectory: true),
             transport: WhoopURLSessionTransport(), reportError: reportNativeError
         )
-        instance = service
-        return service
     }
 
     static func reportNativeError(_ error: Error) {

@@ -8,7 +8,42 @@ import {
   isRetryingOpenBetaTransportFailure,
   isRetryingZeppHttp500ServiceUnavailableError,
   isZeppHttp500ServiceUnavailableError,
+  redactProviderServiceUnavailableError,
 } from "./provider-transport-error.ts";
+
+describe("redactProviderServiceUnavailableError", () => {
+  it("preserves outage classification and retry metadata without response content", () => {
+    const original = new ProviderServiceUnavailableError({
+      providerId: "ultrahuman",
+      statusCode: 525,
+      message: "private body",
+      responseBody: "private body",
+      scope: "user",
+      userId: "user-1",
+      retryAfterSeconds: 30,
+    });
+    const error = redactProviderServiceUnavailableError(original, "Token validation failed");
+    expect(error).toBeInstanceOf(ProviderServiceUnavailableError);
+    expect(error).toMatchObject({
+      providerId: "ultrahuman",
+      statusCode: 525,
+      responseBody: "",
+      scope: "user",
+      userId: "user-1",
+      retryAfterSeconds: 30,
+      message: "Token validation failed (525). Try again.",
+    });
+    expect(error).not.toHaveProperty("cause");
+    expect(original.responseBody).toBe("private body");
+  });
+  it.each([
+    new SyntaxError("invalid JSON"),
+    new ProviderRequestTimeoutError({ providerId: "ultrahuman", timeoutMs: 120000 }),
+    "unexpected",
+  ])("preserves other errors unchanged: %s", (error) => {
+    expect(redactProviderServiceUnavailableError(error, "Token validation failed")).toBe(error);
+  });
+});
 
 describe("findProviderTransportError", () => {
   it.each([

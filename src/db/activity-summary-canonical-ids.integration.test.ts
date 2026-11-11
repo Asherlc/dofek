@@ -3,6 +3,7 @@ import { createClient } from "@clickhouse/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { buildActivitySensorSummaryRowsTableSql } from "./clickhouse-activity-sensor-summary.ts";
+import { buildActivityStepCadenceRowsTableSql } from "./clickhouse-activity-step-cadence.ts";
 import { buildActivitySummaryRowsTableSql } from "./clickhouse-activity-summary.ts";
 import { readModelSql, renderDbtModelSql } from "./read-model-sql-test-helpers.ts";
 
@@ -112,6 +113,37 @@ ${renderActivitySummaryRowsSelectSql(targetSchema)}`,
       { activityId: memberActivityId, deleted: 1 },
     ]);
   }, 180_000);
+
+  it("advances activity freshness when a late sensor summary changes", async () => {
+    const activeClient = requireClient(client);
+    await seedDuplicateActivitySummaryFixture(activeClient, targetSchema);
+    await activeClient.command({
+      query: `INSERT INTO ${targetSchema}.activity_summary_rows ${renderActivitySummaryRowsSelectSql(targetSchema)}`,
+    });
+    const before = await activeClient.query({
+      query: `SELECT toString(refreshed_at) AS refreshed_at FROM ${targetSchema}.activity_summary_rows FINAL WHERE activity_id=toUUID('${canonicalActivityId}')`,
+      format: "JSONEachRow",
+    });
+    const previous = await before.json<{ refreshed_at: string }>();
+    await activeClient.command({
+      query: `INSERT INTO ${targetSchema}.activity_sensor_summary_rows SELECT * REPLACE(toNullable(toFloat64(175)) AS avg_hr,toUInt64(toUnixTimestamp64Nano(now64(9))) AS refresh_version,now64(9) AS refreshed_at) FROM ${targetSchema}.activity_sensor_summary_rows FINAL WHERE activity_id=toUUID('${canonicalActivityId}')`,
+    });
+    const after = await activeClient.query({
+      query: renderActivitySummaryRowsSelectSql(targetSchema),
+      format: "JSONEachRow",
+    });
+    const changed = await after.json<{
+      activity_id: string;
+      avg_hr: number;
+      refreshed_at: string;
+    }>();
+    expect(changed.find((row) => row.activity_id === canonicalActivityId)).toMatchObject({
+      avg_hr: 175,
+    });
+    expect(changed.find((row) => row.activity_id === canonicalActivityId)?.refreshed_at).not.toBe(
+      previous[0]?.refreshed_at,
+    );
+  });
 
   it("refreshes the canonical summary when only the dedupe mapping changed", async () => {
     const activeClient = requireClient(client);
@@ -268,13 +300,14 @@ function renderActivitySummaryRowsSelectSql(
   return renderDbtModelSql(readModelSql("activity_summary_rows.sql"), {
     isIncremental: true,
     activityRefreshScoped: scopedActivityIds != null,
+    activityRefreshIds: scopedActivityIds,
   })
     .replaceAll('{{ var("activity_refresh_user_id") }}', testUserId)
-    .replaceAll(
-      "{{ activity_refresh_ids() }}",
-      `CAST([${(scopedActivityIds ?? []).map((id) => `'${id}'`).join(", ")}], 'Array(UUID)')`,
-    )
     .replace(/{{ initial_lookback_days }}/g, "120")
+    .replaceAll(
+      "{{ ref('activity_step_cadence_rows') }}",
+      `${targetSchema}.activity_step_cadence_rows`,
+    )
     .replace(/{{ this }}/g, `${targetSchema}.activity_summary_rows`)
     .replace(/{{ ref\('deduped_activities'\) }}/g, `${targetSchema}.deduped_activities`)
     .replace(/{{ ref\('deduped_activity_members'\) }}/g, `${targetSchema}.deduped_activity_members`)
@@ -308,6 +341,7 @@ async function seedDuplicateActivitySummaryFixture(
     createDedupedActivityMembersTableSql(targetSchema),
     createActivitySensorSummaryRowsTableSql(targetSchema),
     createActivityLocationSummaryRowsTableSql(targetSchema),
+    buildActivityStepCadenceRowsTableSql().replaceAll("analytics.", `${targetSchema}.`),
     buildActivitySummaryRowsTableSql().replaceAll("analytics.", `${targetSchema}.`),
     insertChangedRawMemberActivitySql(targetSchema),
     insertDedupedActivitiesSql(targetSchema),
@@ -331,6 +365,7 @@ async function seedDedupeMappingRefreshFixture(
     createDedupedActivityMembersTableSql(targetSchema),
     createActivitySensorSummaryRowsTableSql(targetSchema),
     createActivityLocationSummaryRowsTableSql(targetSchema),
+    buildActivityStepCadenceRowsTableSql().replaceAll("analytics.", `${targetSchema}.`),
     buildActivitySummaryRowsTableSql().replaceAll("analytics.", `${targetSchema}.`),
     insertUnchangedRawMemberActivitySql(targetSchema),
     insertDedupedActivitiesSql(targetSchema),
@@ -353,6 +388,7 @@ async function seedMetricPresenceFixture(
     createDedupedActivityMembersTableSql(targetSchema),
     createActivitySensorSummaryRowsTableSql(targetSchema),
     createActivityLocationSummaryRowsTableSql(targetSchema),
+    buildActivityStepCadenceRowsTableSql().replaceAll("analytics.", `${targetSchema}.`),
     buildActivitySummaryRowsTableSql().replaceAll("analytics.", `${targetSchema}.`),
     insertMetricPresenceActivitiesSql(targetSchema),
     insertMetricPresenceSensorSummarySql(targetSchema),
@@ -365,6 +401,7 @@ function createActivityTableSql(targetSchema: string): string {
   id UUID,
   group_id UUID,
   user_id UUID,
+  provider_type String,
   started_at DateTime64(6, 'UTC'),
   ended_at Nullable(DateTime64(6, 'UTC')),
   _peerdb_synced_at DateTime64(9, 'UTC')
@@ -442,12 +479,12 @@ ORDER BY (user_id, activity_id)`;
 
 function insertChangedRawMemberActivitySql(targetSchema: string): string {
   return `INSERT INTO ${targetSchema}.source_activity VALUES
-  ('${memberActivityId}', '${canonicalActivityId}', '${testUserId}', toDateTime64('2026-05-31 18:08:51', 6, 'UTC'), toDateTime64('2026-05-31 19:42:38', 6, 'UTC'), toDateTime64('2026-06-01 00:10:00', 9, 'UTC'))`;
+  ('${memberActivityId}', '${canonicalActivityId}', '${testUserId}', 'cycling', toDateTime64('2026-05-31 18:08:51', 6, 'UTC'), toDateTime64('2026-05-31 19:42:38', 6, 'UTC'), toDateTime64('2026-06-01 00:10:00', 9, 'UTC'))`;
 }
 
 function insertUnchangedRawMemberActivitySql(targetSchema: string): string {
   return `INSERT INTO ${targetSchema}.source_activity VALUES
-  ('${memberActivityId}', '${canonicalActivityId}', '${testUserId}', toDateTime64('2026-05-31 18:08:51', 6, 'UTC'), toDateTime64('2026-05-31 19:42:38', 6, 'UTC'), toDateTime64('2026-05-31 23:30:00', 9, 'UTC'))`;
+  ('${memberActivityId}', '${canonicalActivityId}', '${testUserId}', 'cycling', toDateTime64('2026-05-31 18:08:51', 6, 'UTC'), toDateTime64('2026-05-31 19:42:38', 6, 'UTC'), toDateTime64('2026-05-31 23:30:00', 9, 'UTC'))`;
 }
 
 function insertDedupedActivitiesSql(targetSchema: string): string {
@@ -462,13 +499,15 @@ function insertDedupedActivityMembersSql(targetSchema: string): string {
 }
 
 function insertCanonicalSensorSummarySql(targetSchema: string): string {
-  return `INSERT INTO ${targetSchema}.activity_sensor_summary_rows VALUES
-  ('${canonicalActivityId}', '${testUserId}', 150.0, 180, 90, 220.0, 500, 8.0, 16.0, 85.0, NULL, NULL, NULL, NULL, NULL, NULL, 100.0, 40.0, NULL, NULL, NULL, NULL, 1200, 1200, 600, toDateTime64('2026-05-31 18:08:51', 6, 'UTC'), toDateTime64('2026-05-31 19:42:38', 6, 'UTC'), NULL, NULL, NULL, NULL, NULL, 200, 200, 0, toDateTime64('2026-05-31 23:30:00', 9, 'UTC'))`;
+  return `INSERT INTO ${targetSchema}.activity_sensor_summary_rows
+    (activity_id,user_id,avg_hr,max_hr,min_hr,avg_power,max_power,avg_speed,max_speed,avg_cadence,elevation_gain_m,elevation_loss_m,sample_count,hr_sample_count,power_sample_count,first_sample_at,last_sample_at,source_refresh_version,refresh_version,is_deleted,refreshed_at) VALUES
+    ('${canonicalActivityId}','${testUserId}',150,180,90,220,500,8,16,85,100,40,1200,1200,600,toDateTime64('2026-05-31 18:08:51',6,'UTC'),toDateTime64('2026-05-31 19:42:38',6,'UTC'),200,200,0,toDateTime64('2026-05-31 23:30:00',9,'UTC'))`;
 }
 
 function insertDirtyRawMemberSensorSummarySql(targetSchema: string): string {
-  return `INSERT INTO ${targetSchema}.activity_sensor_summary_rows VALUES
-  ('${memberActivityId}', '${testUserId}', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 300, 300, 0, toDateTime64('2026-06-01 00:10:00', 9, 'UTC'))`;
+  return `INSERT INTO ${targetSchema}.activity_sensor_summary_rows
+    (activity_id,user_id,sample_count,hr_sample_count,power_sample_count,source_refresh_version,refresh_version,is_deleted,refreshed_at) VALUES
+    ('${memberActivityId}','${testUserId}',0,0,0,300,300,0,toDateTime64('2026-06-01 00:10:00',9,'UTC'))`;
 }
 
 function insertCanonicalLocationSummarySql(targetSchema: string): string {
@@ -477,8 +516,9 @@ function insertCanonicalLocationSummarySql(targetSchema: string): string {
 }
 
 function insertStaleRawActivitySummarySql(targetSchema: string): string {
-  return `INSERT INTO ${targetSchema}.activity_summary_rows VALUES
-  ('${memberActivityId}', '${testUserId}', 'cycling', NULL, NULL, NULL, toDateTime64('2026-05-31 18:08:51', 6, 'UTC'), toDateTime64('2026-05-31 19:42:38', 6, 'UTC'), NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, 0, 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 100, 0, toDateTime64('2026-06-01 00:00:00', 9, 'UTC'))`;
+  return `INSERT INTO ${targetSchema}.activity_summary_rows
+  (activity_id,user_id,canonical_type,started_at,ended_at,sample_count,hr_sample_count,power_sample_count,refresh_version,is_deleted,refreshed_at) VALUES
+  ('${memberActivityId}', '${testUserId}', 'cycling', toDateTime64('2026-05-31 18:08:51', 6, 'UTC'), toDateTime64('2026-05-31 19:42:38', 6, 'UTC'), 0, 0, 0, 100, 0, toDateTime64('2026-06-01 00:00:00', 9, 'UTC'))`;
 }
 
 function insertMetricPresenceActivitiesSql(targetSchema: string): string {

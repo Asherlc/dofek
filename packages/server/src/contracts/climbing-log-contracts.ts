@@ -1,3 +1,5 @@
+import { gpsCoordinatesSchema } from "@dofek/climbing-catalogue/geometry";
+import { climbingChartAnnotationSchema } from "@dofek/training/climbing-chart";
 import { climbingSourceLinkSchema } from "@dofek/training/climbing-context";
 import {
   areaSchema,
@@ -14,8 +16,18 @@ import {
 } from "@dofek/training/climbing-log-response";
 import type { ClimbingMapLocation } from "@dofek/training/climbing-map";
 import { climbingTagSchema } from "@dofek/training/climbing-tags";
-import { gpsCoordinatesSchema } from "@dofek/training/gps-coordinates";
 import { z } from "zod";
+
+import { timestampStringSchema } from "../lib/typed-sql.ts";
+
+export const climbingLogActivitySessionSchema = z.strictObject({
+  id: z.guid(),
+  providerId: z.string(),
+  memberActivityIds: z.array(z.guid()),
+  firstLoggedAt: timestampStringSchema,
+  lastLoggedAt: timestampStringSchema,
+});
+export type ClimbingLogActivitySession = z.infer<typeof climbingLogActivitySessionSchema>;
 
 export const climbingMapLocationSchema = z.strictObject({
   coordinates: gpsCoordinatesSchema,
@@ -39,6 +51,8 @@ export const climbingPitchResultSchema = z.strictObject({
   displayGrade: z.string().nullable(),
 });
 export const climbingLogEntryDetailSchema = climbingLogEntrySchema.extend({
+  areaPath: z.array(areaSchema).optional(),
+  areaGroupId: z.guid().nullable().optional(),
   photoLogEntryId: z.guid().nullable(),
   climb: climbingLogClimbDetailSchema.nullable(),
   mapLocation: climbingMapLocationSchema.nullable(),
@@ -51,12 +65,13 @@ export const climbingLogEntryDetailSchema = climbingLogEntrySchema.extend({
   displayGrade: z.string().nullable(),
   sourceLinks: z.array(climbingSourceLinkSchema),
   tags: z.array(climbingTagSchema).optional(),
+  chartAnnotations: z.array(climbingChartAnnotationSchema).optional(),
 });
 export type ClimbingLogEntryDetail = z.infer<typeof climbingLogEntryDetailSchema>;
 export type ClimbingPitchResult = z.infer<typeof climbingPitchResultSchema>;
 
 export const legacyClimbingLogEntryDetailSchema = climbingLogEntryDetailSchema
-  .omit({ holdTypes: true, tags: true })
+  .omit({ holdTypes: true, tags: true, areaPath: true, areaGroupId: true })
   .extend(climbingLogTraitsV1Schema.shape);
 export const climbingLogEntryDetailResponseSchema = z.union([
   climbingLogEntryDetailSchema,
@@ -68,8 +83,12 @@ export function serializeClimbingLogEntryDetailResponse(
   entry: ClimbingLogEntryDetail,
   version: ClimbingResponseVersion,
 ): z.infer<typeof climbingLogEntryDetailResponseSchema> {
-  if (version === 3) return entry;
-  const { tags: _tags, ...withoutTags } = entry;
+  if (version === 5) return entry;
+  const { areaGroupId: _areaGroupId, ...version4 } = entry;
+  if (version === 4) return version4;
+  const { areaPath: _areaPath, ...previous } = version4;
+  if (version === 3) return previous;
+  const { tags: _tags, ...withoutTags } = previous;
   if (version === 2) return withoutTags;
   const { holdTypes: _holdTypes, ...rest } = withoutTags;
   return { ...rest, ...toClimbingLogTraitsV1(entry) };

@@ -52,15 +52,8 @@ const night: SleepNightlyRow = {
 };
 
 describe("SleepAnalyticsChart", () => {
-  it("renders the empty state when sleep summary metrics are unavailable", () => {
-    render(<SleepAnalyticsChart nightly={[night]} sleepDebt={null} />);
-
-    expect(screen.getByText("No sleep data")).toBeTruthy();
-    expect(screen.queryByText("Sleep analytics chart")).toBeNull();
-  });
-
-  it("renders the chart when sleep rows and summary metrics are available", () => {
-    render(<SleepAnalyticsChart nightly={[night]} sleepDebt={30} />);
+  it("renders the chart when measured sleep values are available", () => {
+    render(<SleepAnalyticsChart nightly={[night]} />);
 
     expect(screen.getByText("Sleep analytics chart")).toBeTruthy();
   });
@@ -87,7 +80,7 @@ describe("SleepAnalyticsChart", () => {
       },
     };
 
-    render(<SleepAnalyticsChart nightly={[durationOnlyNight]} sleepDebt={30} />);
+    render(<SleepAnalyticsChart nightly={[durationOnlyNight]} />);
 
     expect(screen.getByText(/Sleep stages were not reported/)).toBeTruthy();
     expect(screen.queryByText("Sleep analytics chart")).toBeNull();
@@ -99,7 +92,7 @@ describe("SleepAnalyticsChart", () => {
       date: `2026-07-${String(index + 1).padStart(2, "0")}`,
     }));
 
-    render(<SleepAnalyticsChart nightly={nightly} sleepDebt={30} />);
+    render(<SleepAnalyticsChart nightly={nightly} />);
 
     expect(screen.getByText("Sleep analytics chart")).toHaveAttribute("data-series-length", "14");
   });
@@ -132,7 +125,7 @@ describe("SleepAnalyticsChart", () => {
       stagingAvailable: false,
     };
 
-    render(<SleepAnalyticsChart nightly={[unavailableNight]} sleepDebt={30} />);
+    render(<SleepAnalyticsChart nightly={[unavailableNight]} />);
 
     expect(screen.getByText(/Sleep duration was not recorded/)).toBeTruthy();
     expect(
@@ -170,7 +163,7 @@ describe("SleepAnalyticsChart", () => {
       stagingAvailable: false,
     };
 
-    const option = buildSleepAnalyticsOption([missingDurationNight], 0);
+    const option = buildSleepAnalyticsOption([missingDurationNight]);
     const tooltip = option.tooltip;
     if (
       typeof tooltip !== "object" ||
@@ -253,7 +246,6 @@ describe("SleepAnalyticsChart", () => {
           olderUnavailableNight,
           ...Array.from({ length: 14 }, () => recentUnavailableNight),
         ]}
-        sleepDebt={30}
       />,
     );
 

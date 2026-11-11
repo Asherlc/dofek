@@ -46,7 +46,7 @@ describe("CorrelationRepository observations", () => {
 
     await executeClickHouseTestCommand(
       testContext,
-      `INSERT INTO analytics.activity_summary (
+      `INSERT INTO analytics.activity_summary_rows (
         activity_id,
         user_id,
         canonical_type,

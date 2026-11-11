@@ -266,6 +266,7 @@ export function useProviderDetailActions(
             name: displayProvider.name,
             label: displayProvider.tokenAuth.label,
             instructionsUrl: displayProvider.tokenAuth.instructionsUrl,
+            description: displayProvider.tokenAuth.description,
           });
         } else {
           const error = new Error(

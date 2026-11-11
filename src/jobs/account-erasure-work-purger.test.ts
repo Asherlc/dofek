@@ -128,7 +128,6 @@ const snapshot: AccountErasureRemoteSnapshot = {
   authIdentities: [],
   externalEffects: [],
   localIdentifiers: {
-    activityIds: [],
     exportObjects: [
       {
         exportId: "10000000-0000-4000-8000-000000001994",
@@ -143,9 +142,7 @@ const snapshot: AccountErasureRemoteSnapshot = {
         uploadId: "30000000-0000-4000-8000-000000001994",
       },
     ],
-    processingOperationIds: [],
     sessionIds: [],
-    sleepSessionIds: [],
     userId: "40000000-0000-4000-8000-000000001994",
   },
   posthogDistinctId: "posthog-distinct-1994",

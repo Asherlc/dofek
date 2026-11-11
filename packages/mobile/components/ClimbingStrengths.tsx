@@ -1,6 +1,7 @@
 import { providerLabel } from "@dofek/providers/providers";
 import type {
   ClimbingStrengthsDisplayPanel,
+  ClimbingStrengthsExample,
   ClimbingStrengths as Strengths,
 } from "@dofek/training/climbing-strengths";
 import {
@@ -36,14 +37,20 @@ export function ClimbingStrengths({
   loading = false,
   error,
   rangeControl,
+  includeAreaMetadata = true,
+  onIncludeAreaMetadataChange,
 }: {
   data: Strengths | undefined;
   loading?: boolean;
   error?: { message: string } | null;
   rangeControl?: ReactNode;
+  includeAreaMetadata?: boolean;
+  onIncludeAreaMetadataChange?: (value: boolean) => void;
 }) {
   const [view, setView] = useState<ClimbingStrengthsTab>("radar");
   const [selectedBreakdown, setBreakdown] = useState<string | null>(null);
+  const [errorDetailsExpanded, setErrorDetailsExpanded] = useState(false);
+  const enrichmentErrors = [...new Set(data?.enrichmentErrors)];
   const panels = [...(data?.panels ?? []), ...(data?.tagPanels ?? [])];
   const options = climbingStrengthsBreakdownOptions(panels);
   const breakdown = options.some((option) => option.key === selectedBreakdown)
@@ -55,6 +62,46 @@ export function ClimbingStrengths({
       <Text style={styles.title}>Climbing strengths</Text>
       {rangeControl ? <Text style={styles.meta}>Strengths period</Text> : null}
       {rangeControl}
+      <Pressable
+        accessibilityRole="switch"
+        accessibilityLabel="Include area metadata"
+        accessibilityState={{ checked: includeAreaMetadata }}
+        onPress={() => onIncludeAreaMetadataChange?.(!includeAreaMetadata)}
+        style={[styles.controls, { minHeight: 44, alignItems: "center" }]}
+      >
+        <Text style={styles.link}>{includeAreaMetadata ? "☑" : "☐"}</Text>
+        <Text style={styles.text}>Include area metadata</Text>
+      </Pressable>
+      {data?.enrichmentPending ? (
+        <Text accessibilityLiveRegion="polite" style={styles.meta}>
+          Updating catalogue metadata…
+        </Text>
+      ) : null}
+      {enrichmentErrors.length > 0 ? (
+        <View style={styles.metadataWarning}>
+          <Text accessibilityLiveRegion="polite" style={styles.text}>
+            Catalogue metadata incomplete
+          </Text>
+          <Text style={styles.meta}>Recorded results remain available.</Text>
+          <Pressable
+            accessibilityRole="button"
+            aria-expanded={errorDetailsExpanded}
+            onPress={() => setErrorDetailsExpanded(!errorDetailsExpanded)}
+            style={styles.chip}
+          >
+            <Text style={styles.link}>
+              {errorDetailsExpanded ? "Hide provider details" : "Provider details"}
+            </Text>
+          </Pressable>
+          {errorDetailsExpanded
+            ? enrichmentErrors.map((message) => (
+                <Text key={message} style={styles.meta}>
+                  {message}
+                </Text>
+              ))
+            : null}
+        </View>
+      ) : null}
       {error && <QueryStatePanel variant="error" message={error.message} minHeight={80} />}
       {data != null || !loading ? (
         <>
@@ -149,13 +196,23 @@ function ClimbingStrengthsPanelContent({
   panel: ClimbingStrengthsDisplayPanel;
   view: ClimbingStrengthsTab;
 }) {
-  const router = useRouter();
   const [selectedDetail, setSelectedDetail] = useState<{ rowKey: string; grade: string } | null>(
     null,
   );
   const displayPanel = climbingStrengthsGradePanel(panel, ALL_CLIMBING_GRADES);
-  const selectedRow = displayPanel.rows.find((row) => row.key === selectedDetail?.rowKey);
-  const selectedCell = selectedRow?.cells.find((cell) => cell.grade === selectedDetail?.grade);
+  const selectedRow =
+    displayPanel.rows.find((row) => row.key === selectedDetail?.rowKey) ??
+    displayPanel.rows.find((row) =>
+      row.cells.some((cell) => cell.climbs > 0 || cell.unknownOutcomes > 0),
+    );
+  const selectedCell =
+    selectedRow?.cells.find((cell) => cell.grade === selectedDetail?.grade) ??
+    selectedRow?.cells.find((cell) => cell.climbs > 0 || cell.unknownOutcomes > 0);
+  if (
+    selectedDetail &&
+    (selectedRow?.key !== selectedDetail.rowKey || selectedCell?.grade !== selectedDetail.grade)
+  )
+    setSelectedDetail(null);
   if (!observed(panel))
     return (
       <Text style={styles.meta}>
@@ -199,43 +256,7 @@ function ClimbingStrengthsPanelContent({
             <Text style={styles.meta}>No examples available for this selection.</Text>
           ) : (
             selectedCell.examples.map((example) => (
-              <View key={example.logEntryId} style={styles.row}>
-                <Text style={styles.text}>{example.name}</Text>
-                <Text style={styles.meta}>
-                  {example.grade} · {example.date} · {climbingStrengthsResultLabel(example.outcome)}
-                </Text>
-                {example.sourceUrl ? (
-                  <Pressable
-                    accessibilityRole="link"
-                    accessibilityLabel={`${example.sourceName} source for ${example.name}`}
-                    style={styles.chip}
-                    onPress={async () => {
-                      if (
-                        example.sourceUrl &&
-                        !(await openExternalUrl(example.sourceUrl, "climbing-strengths-source"))
-                      )
-                        Alert.alert(
-                          "Unable to open source",
-                          `Open this source in your browser: ${example.sourceUrl}`,
-                        );
-                    }}
-                  >
-                    <Text style={styles.link}>{example.sourceName}</Text>
-                  </Pressable>
-                ) : (
-                  <Text style={styles.meta}>{example.sourceName}</Text>
-                )}
-                {example.activityId && (
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={`View activity for ${example.name}`}
-                    onPress={() => router.push(`/activity/${example.activityId}`)}
-                    style={styles.chip}
-                  >
-                    <Text style={styles.link}>View activity</Text>
-                  </Pressable>
-                )}
-              </View>
+              <ClimbingStrengthsExampleSources key={example.logEntryId} example={example} />
             ))
           )}
         </View>
@@ -243,7 +264,89 @@ function ClimbingStrengthsPanelContent({
     </View>
   );
 }
+
+function ClimbingStrengthsExampleSources({ example }: { example: ClimbingStrengthsExample }) {
+  const hasAreaMetadata = example.traitSources?.some((source) => source.scope === "area");
+  const [expanded, setExpanded] = useState(false);
+  const router = useRouter();
+  const sourceLink = (url: string, label: string, accessibilityLabel = label) => (
+    <Pressable
+      accessibilityRole="link"
+      accessibilityLabel={accessibilityLabel}
+      style={styles.chip}
+      onPress={async () => {
+        if (!(await openExternalUrl(url, "climbing-strengths-source")))
+          Alert.alert("Unable to open source", `Open this source in your browser: ${url}`);
+      }}
+    >
+      <Text style={styles.link}>{label}</Text>
+    </Pressable>
+  );
+  return (
+    <View style={styles.row}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`Sources for ${example.name}${hasAreaMetadata ? " · Area metadata" : ""}`}
+        accessibilityState={{ expanded }}
+        onPress={() => setExpanded(!expanded)}
+        style={{ minHeight: 44, gap: spacing.xs }}
+      >
+        <Text style={styles.text}>{example.name}</Text>
+        {hasAreaMetadata ? <Text style={styles.meta}>Area metadata</Text> : null}
+        <Text style={styles.meta}>
+          {example.grade} · {example.date} · {climbingStrengthsResultLabel(example.outcome)}
+        </Text>
+      </Pressable>
+      {expanded ? (
+        <View style={{ gap: spacing.sm }}>
+          {example.traitSources?.length ? (
+            example.traitSources.map((source) => (
+              <View
+                key={`${source.providerId}:${source.url}:${source.trait}`}
+                style={{ gap: spacing.xs }}
+              >
+                {sourceLink(source.url, providerLabel(source.providerId))}
+                <View style={styles.controls}>
+                  <Text style={styles.text}>{source.name}</Text>
+                  <Text style={styles.trait}>{source.trait}</Text>
+                </View>
+                {source.scope === "area" ? (
+                  <Text style={[styles.text, { paddingLeft: spacing.md }]}>↳ {example.name}</Text>
+                ) : null}
+              </View>
+            ))
+          ) : example.sourceUrl ? (
+            sourceLink(
+              example.sourceUrl,
+              example.sourceName,
+              `${example.sourceName} source for ${example.name}`,
+            )
+          ) : (
+            <Text style={styles.meta}>{example.sourceName}</Text>
+          )}
+          {example.activityId ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`View activity for ${example.name}`}
+              onPress={() => router.push(`/activity/${example.activityId}`)}
+              style={styles.chip}
+            >
+              <Text style={styles.link}>View activity</Text>
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
+    </View>
+  );
+}
 const styles = StyleSheet.create({
+  metadataWarning: {
+    padding: spacing.sm,
+    gap: spacing.xs,
+    borderWidth: 1,
+    borderColor: colors.surfaceSecondary,
+    borderRadius: radius.md,
+  },
   card: {
     backgroundColor: colors.surface,
     borderRadius: radius.xl,
@@ -263,6 +366,18 @@ const styles = StyleSheet.create({
   text: { color: colors.text, fontSize: 14 },
   meta: { color: colors.textSecondary, fontSize: 12 },
   row: { padding: spacing.sm, borderRadius: radius.md, gap: spacing.xs },
-  examples: { gap: spacing.sm },
+  examples: {
+    gap: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.surfaceSecondary,
+    paddingTop: spacing.md,
+  },
+  trait: {
+    color: colors.accent,
+    fontSize: 12,
+    backgroundColor: colors.surfaceSecondary,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radius.sm,
+  },
   link: { color: colors.accent, fontSize: 13 },
 });

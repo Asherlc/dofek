@@ -1,14 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
-import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
+import { createIntegrationMswFixture } from "../test/early-msw-lifecycle.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import { createEncryptedAccountErasureSnapshot } from "./remote-snapshot.ts";
 import { eraseStripeForAcceptedAccountErasure } from "./stripe-acceptance.ts";
 
-const server = setupServer();
+const server = createIntegrationMswFixture();
 
 describe("Stripe erasure at account-deletion acceptance (integration)", () => {
   let context: TestContext;
@@ -16,7 +16,7 @@ describe("Stripe erasure at account-deletion acceptance (integration)", () => {
   beforeAll(async () => {
     context = await setupTestDatabase();
     process.env.STRIPE_SECRET_KEY = "sk_test_acceptance";
-    server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
   }, 120_000);
 
   afterEach(() => {
@@ -24,7 +24,7 @@ describe("Stripe erasure at account-deletion acceptance (integration)", () => {
   });
 
   afterAll(async () => {
-    server.close();
+    server.deactivate();
     await context?.cleanup();
   });
 

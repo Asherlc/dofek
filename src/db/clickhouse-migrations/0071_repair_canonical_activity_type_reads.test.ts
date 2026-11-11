@@ -36,9 +36,11 @@ describe("0071_repair_canonical_activity_type_reads statements", () => {
       "analytics.activity_summary",
     ]) {
       const dropIndex = statements.indexOf(`DROP VIEW IF EXISTS ${view}`);
-      const createIndex = statements.findIndex((statement) =>
-        statement.startsWith(`CREATE VIEW IF NOT EXISTS ${view}\n`),
-      );
+      const createHeader =
+        view === "analytics.activity_summary"
+          ? `CREATE OR REPLACE VIEW ${view}\n`
+          : `CREATE VIEW IF NOT EXISTS ${view}\n`;
+      const createIndex = statements.findIndex((statement) => statement.startsWith(createHeader));
       expect(dropIndex).toBeGreaterThanOrEqual(0);
       expect(createIndex).toBeGreaterThan(dropIndex);
     }

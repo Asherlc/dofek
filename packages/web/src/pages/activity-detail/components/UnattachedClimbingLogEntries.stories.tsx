@@ -69,3 +69,10 @@ export const AttachStates: Story = {
     await expect(args.onAttach).toHaveBeenCalledWith("tick-2");
   },
 };
+
+export const StatusOnlyError: Story = {
+  args: { showEntries: false, error: new Error("Source is unavailable. Retry the sync.") },
+};
+export const StatusOnlyLoading: Story = {
+  args: { showEntries: false, suggestions: undefined, isLoading: true },
+};

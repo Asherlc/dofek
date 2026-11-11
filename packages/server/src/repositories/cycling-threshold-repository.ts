@@ -1,273 +1,250 @@
+import type {
+  CyclingThresholdEvidence,
+  CyclingThresholdHistoryItem,
+} from "../contracts/cycling-threshold.ts";
+import { cyclingThresholdUncertainty } from "../contracts/cycling-threshold.ts";
+
+export type {
+  CyclingThresholdEvidence,
+  CyclingThresholdHistoryItem,
+} from "../contracts/cycling-threshold.ts";
+
 import { createHash } from "node:crypto";
-import type { Database } from "dofek/db";
-import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
+import {
+  type AccessWindow,
+  clickHouseAccessParams,
+  clickHouseAccessPredicate,
+} from "../billing/entitlement.ts";
+import { timestampStringSchema } from "../lib/typed-sql.ts";
+import type { ActivitySensorStore } from "./activity-repository.ts";
 
+const evidenceColumns = {
+  evidence_activity_id: z.string().uuid().nullable(),
+  evidence_at: z.string().nullable(),
+  evidence_duration_seconds: z.coerce.number().positive().nullable(),
+  evidence_power: z.coerce.number().nonnegative().nullable(),
+};
 const historyRowSchema = z.object({
-  id: z.string().uuid(),
-  evidence_kind: z.literal("configured"),
-  sport: z.string(),
-  threshold_type: z.string(),
-  value: z.coerce.number().positive(),
-  unit: z.string(),
-  event_at: timestampStringSchema,
-  observed_at: timestampStringSchema.nullable(),
-  effective_at: timestampStringSchema.nullable(),
-  provider_id: z.string().nullable(),
-  provider_record_id: z.string().nullable(),
-  raw_available: z.boolean(),
+  event_at: z.string(),
+  activity_id: z.string().uuid().nullable(),
+  eftp: z.coerce.number().positive().nullable(),
+  ...evidenceColumns,
+  model_version: z.string(),
 });
-
-const legacyFtpSchema = z.object({ ftp: z.coerce.number().positive().nullable() });
-
-const cursorSchema = z
-  .object({
-    version: z.literal(1),
-    userId: z.string().uuid(),
-    shape: z.string(),
-    eventAt: timestampStringSchema,
-    evidenceKind: z.literal("configured"),
-    id: z.string().uuid(),
-  })
-  .strict();
-
-type HistoryRow = z.infer<typeof historyRowSchema>;
-type HistoryCursor = z.infer<typeof cursorSchema>;
-
+const activityMetricsSchema = z.object({
+  model_version: z.string(),
+  activity_id: z.string().uuid(),
+  started_at: timestampStringSchema,
+  normalized_power: z.coerce.number().nonnegative().nullable(),
+  eftp: z.coerce.number().positive().nullable(),
+  power_tss: z.coerce.number().nonnegative().nullable(),
+  intensity_factor: z.coerce.number().nonnegative().nullable(),
+  ...evidenceColumns,
+});
+export type CyclingActivityPowerMetrics = z.infer<typeof activityMetricsSchema>;
 export interface CyclingThresholdHistoryInput {
   startDate: string;
   endDate: string;
   cursor: string | null;
   limit: number;
 }
-
-export interface CyclingThresholdHistoryItem {
-  id: string;
-  evidence_kind: "configured";
-  sport: string;
-  threshold_type: string;
-  value: number;
-  unit: string;
-  observed_at: string | null;
-  effective_at: string | null;
-  provider: string | null;
-  provider_record_id: string | null;
-  value_kind: "configured";
-  historical_validity: "effective_dated";
-  raw_evidence_available: false;
-  quality: {
-    status: "high" | "moderate" | "limited";
-    reason: string | null;
-  };
-}
-
-export interface LegacyCurrentFtp {
-  value: number;
-  unit: "watt";
-  source: "user_profile.ftp";
-  value_kind: "configured";
-  historical_validity: "unknown";
-  reason: string;
-}
-
 export interface CyclingThresholdHistoryPage {
   start_date: string;
   end_date: string;
   items: CyclingThresholdHistoryItem[];
-  legacy_current: LegacyCurrentFtp | null;
   next_cursor: string | null;
 }
-
-function requestShape(input: CyclingThresholdHistoryInput, timezone: string): string {
-  return createHash("sha256")
-    .update(
-      JSON.stringify({
-        startDate: input.startDate,
-        endDate: input.endDate,
-        timezone,
-      }),
-    )
-    .digest("hex");
-}
-
-function decodeCursor(cursor: string, userId: string, shape: string): HistoryCursor {
-  let parsed: HistoryCursor;
-  try {
-    if (!/^[A-Za-z0-9_-]+$/.test(cursor)) throw new Error("invalid encoding");
-    const decoded = Buffer.from(cursor, "base64url").toString("utf8");
-    if (
-      Buffer.byteLength(decoded, "utf8") > 2_048 ||
-      Buffer.from(decoded, "utf8").toString("base64url") !== cursor
-    ) {
-      throw new Error("invalid encoding");
-    }
-    parsed = cursorSchema.parse(JSON.parse(decoded));
-  } catch {
-    throw new Error("Invalid analytical cursor");
-  }
-  if (parsed.userId !== userId || parsed.shape !== shape) {
-    throw new Error("Cursor does not match this request");
-  }
-  return parsed;
-}
-
-function encodeCursor(cursor: HistoryCursor): string {
-  return Buffer.from(JSON.stringify(cursorSchema.parse(cursor)), "utf8").toString("base64url");
-}
-
-function toHistoryItem(row: HistoryRow): CyclingThresholdHistoryItem {
+const cursorSchema = z
+  .object({
+    version: z.literal(2),
+    userId: z.uuid(),
+    shape: z.string(),
+    eventAt: z.string(),
+    activityId: z.string(),
+  })
+  .strict();
+const unavailableReason =
+  "No qualifying cycling power evidence is available on or before this date. Record a supported sustained cycling power effort.";
+function evidence(row: z.infer<typeof historyRowSchema> | undefined): CyclingThresholdEvidence {
   return {
-    id: row.id,
-    evidence_kind: row.evidence_kind,
-    sport: row.sport,
-    threshold_type: row.threshold_type,
-    value: row.value,
-    unit: row.unit,
-    observed_at: row.observed_at,
-    effective_at: row.effective_at,
-    provider: null,
-    provider_record_id: null,
-    value_kind: "configured",
-    historical_validity: "effective_dated",
-    raw_evidence_available: false,
-    quality: { status: "high", reason: null },
+    value: row?.eftp ?? null,
+    uncertainty: cyclingThresholdUncertainty,
+    unit: "watt",
+    method: "computed_eftp",
+    event_at: row?.event_at ?? null,
+    evidence_activity_id: row?.evidence_activity_id ?? null,
+    evidence_at: row?.evidence_at ?? null,
+    evidence_duration_seconds: row?.evidence_duration_seconds ?? null,
+    evidence_power: row?.evidence_power ?? null,
+    model_version: row?.model_version ?? null,
+    unavailable_reason: row?.eftp == null ? unavailableReason : null,
   };
 }
+/** Maps an already computed activity metric row to its applicable threshold evidence. */
+export function cyclingThresholdEvidenceFromMetrics(
+  metrics: CyclingActivityPowerMetrics | null,
+): CyclingThresholdEvidence {
+  return evidence(metrics ? { ...metrics, event_at: metrics.started_at } : undefined);
+}
 
-/** Effective-dated user threshold configuration. */
+function selectedEvidence(alias: string): string {
+  return `if(${alias}.evidence_activity_id IS NULL, NULL, toString(${alias}.evidence_activity_id)) AS evidence_activity_id,
+    if(${alias}.evidence_at IS NULL, NULL, formatDateTime(${alias}.evidence_at, '%Y-%m-%dT%H:%i:%S.%fZ', 'UTC')) AS evidence_at,
+    ${alias}.evidence_duration_seconds AS evidence_duration_seconds, ${alias}.evidence_power AS evidence_power`;
+}
+const selectedHistory = `formatDateTime(history.event_at, '%Y-%m-%dT%H:%i:%S.%fZ', 'UTC') AS event_at,
+  if(history.activity_id IS NULL, NULL, toString(history.activity_id)) AS activity_id,
+  history.eftp AS eftp, ${selectedEvidence("history")}, history.model_version AS model_version`;
+
+/** Reads the one computed cycling threshold history; never estimates on requests. */
 export class CyclingThresholdRepository {
-  readonly #db: Pick<Database, "execute">;
+  readonly #store: Pick<ActivitySensorStore, "query">;
   readonly #userId: string;
   readonly #timezone: string;
-
-  constructor(db: Pick<Database, "execute">, userId: string, timezone: string) {
-    this.#db = db;
+  readonly #accessWindow: AccessWindow | undefined;
+  constructor(
+    store: Pick<ActivitySensorStore, "query">,
+    userId: string,
+    timezone: string,
+    accessWindow?: AccessWindow,
+  ) {
+    this.#store = store;
     this.#userId = userId;
     this.#timezone = timezone;
+    this.#accessWindow = accessWindow;
   }
-
-  /** Latest effective-dated cycling FTP configuration on or before a date. */
-  async getApplicableConfiguredFtp(asOfDate: string): Promise<CyclingThresholdHistoryItem | null> {
-    const rows = await executeWithSchema(
-      this.#db,
+  async getCurrent(): Promise<CyclingThresholdEvidence> {
+    const rows = await this.#store.query(
       historyRowSchema,
-      sql`
-        SELECT
-          settings.id,
-          'configured'::text AS evidence_kind,
-          settings.sport,
-          'ftp'::text AS threshold_type,
-          settings.ftp::real AS value,
-          'watt'::text AS unit,
-          settings.effective_from::timestamp AT TIME ZONE ${this.#timezone} AS event_at,
-          settings.created_at AS observed_at,
-          settings.effective_from::timestamp AT TIME ZONE ${this.#timezone} AS effective_at,
-          NULL::text AS provider_id,
-          NULL::text AS provider_record_id,
-          false AS raw_available
-        FROM fitness.sport_settings AS settings
-        WHERE settings.user_id = ${this.#userId}::uuid
-          AND settings.sport = 'cycling'
-          AND settings.ftp IS NOT NULL
-          AND settings.effective_from <= ${asOfDate}::date
-        ORDER BY settings.effective_from DESC, settings.created_at DESC, settings.id ASC
-        LIMIT 1
-      `,
+      `SELECT ${selectedHistory}
+      FROM analytics.cycling_threshold_history AS history
+      WHERE history.user_id = {userId:UUID} AND history.event_at <= now64(6)
+      ${clickHouseAccessPredicate(this.#accessWindow, "history.event_at")}
+      ORDER BY history.event_at DESC, ifNull(toString(history.activity_id), '') DESC LIMIT 1`,
+      { userId: this.#userId, ...clickHouseAccessParams(this.#accessWindow, this.#timezone) },
     );
-    return rows[0] ? toHistoryItem(rows[0]) : null;
+    return evidence(rows[0]);
   }
-
+  async getAsOf(timestamp: string): Promise<CyclingThresholdEvidence> {
+    const rows = await this.#store.query(
+      historyRowSchema,
+      `SELECT ${selectedHistory}
+      FROM analytics.cycling_threshold_history AS history
+      WHERE history.user_id = {userId:UUID}
+        ${clickHouseAccessPredicate(this.#accessWindow, "history.event_at")}
+        ${
+          /^\d{4}-\d{2}-\d{2}$/.test(timestamp)
+            ? "AND history.event_at < toDateTime64(addDays(toDate({asOf:String}), 1), 6, {timezone:String})"
+            : "AND history.event_at <= parseDateTime64BestEffort({asOf:String}, 6)"
+        }
+      ORDER BY history.event_at DESC, ifNull(toString(history.activity_id), '') DESC LIMIT 1`,
+      {
+        userId: this.#userId,
+        asOf: timestamp,
+        timezone: this.#timezone,
+        ...clickHouseAccessParams(this.#accessWindow, this.#timezone),
+      },
+    );
+    return evidence(rows[0]);
+  }
+  async getForActivities(activityIds: string[]): Promise<Map<string, CyclingActivityPowerMetrics>> {
+    if (activityIds.length === 0) return new Map();
+    const rows = await this.#store.query(
+      activityMetricsSchema,
+      `SELECT
+      toString(metrics.activity_id) AS activity_id,
+      formatDateTime(metrics.started_at, '%Y-%m-%dT%H:%i:%S.%fZ', 'UTC') AS started_at,
+      normalized_power, eftp, power_tss, intensity_factor, metrics.model_version AS model_version, ${selectedEvidence("metrics")}
+      FROM analytics.cycling_activity_power_metrics AS metrics
+      WHERE metrics.user_id = {userId:UUID} AND metrics.activity_id IN ({activityIds:Array(UUID)})
+      ${clickHouseAccessPredicate(this.#accessWindow, "metrics.started_at")}`,
+      {
+        userId: this.#userId,
+        activityIds,
+        ...clickHouseAccessParams(this.#accessWindow, this.#timezone),
+      },
+    );
+    return new Map(rows.map((row) => [row.activity_id, row]));
+  }
   async listHistory(input: CyclingThresholdHistoryInput): Promise<CyclingThresholdHistoryPage> {
-    const shape = requestShape(input, this.#timezone);
-    const cursor = input.cursor ? decodeCursor(input.cursor, this.#userId, shape) : null;
-    const cursorFilter = cursor
-      ? sql`WHERE (
-          history.event_at < ${cursor.eventAt}
-          OR (
-            history.event_at = ${cursor.eventAt}
-            AND history.evidence_kind > ${cursor.evidenceKind}
-          )
-          OR (
-            history.event_at = ${cursor.eventAt}
-            AND history.evidence_kind = ${cursor.evidenceKind}
-            AND history.id > ${cursor.id}::uuid
-          )
-        )`
-      : sql``;
-
-    const rows = await executeWithSchema(
-      this.#db,
+    const shape = createHash("sha256")
+      .update(
+        JSON.stringify({
+          startDate: input.startDate,
+          endDate: input.endDate,
+          timezone: this.#timezone,
+        }),
+      )
+      .digest("hex");
+    const cursor = input.cursor ? this.#decodeCursor(input.cursor, shape) : null;
+    const rows = await this.#store.query(
       historyRowSchema,
-      sql`
-        WITH history AS (
-          SELECT
-            settings.id,
-            'configured'::text AS evidence_kind,
-            settings.sport,
-            'ftp'::text AS threshold_type,
-            settings.ftp::real AS value,
-            'watt'::text AS unit,
-            settings.effective_from::timestamp AT TIME ZONE ${this.#timezone} AS event_at,
-            settings.created_at AS observed_at,
-            settings.effective_from::timestamp AT TIME ZONE ${this.#timezone} AS effective_at,
-            NULL::text AS provider_id,
-            NULL::text AS provider_record_id,
-            false AS raw_available
-          FROM fitness.sport_settings AS settings
-          WHERE settings.user_id = ${this.#userId}::uuid
-            AND settings.sport = 'cycling'
-            AND settings.ftp IS NOT NULL
-            AND settings.effective_from BETWEEN ${input.startDate}::date AND ${input.endDate}::date
-        )
-        SELECT *
-        FROM history
-        ${cursorFilter}
-        ORDER BY event_at DESC, evidence_kind ASC, id ASC
-        LIMIT ${input.limit + 1}
-      `,
+      `SELECT ${selectedHistory}
+      FROM analytics.cycling_threshold_history AS history
+      WHERE history.user_id = {userId:UUID}
+        ${clickHouseAccessPredicate(this.#accessWindow, "history.event_at")}
+        AND toDate(toTimeZone(history.event_at, {timezone:String})) BETWEEN toDate({startDate:String}) AND toDate({endDate:String})
+        ${
+          cursor
+            ? `AND (history.event_at < parseDateTime64BestEffort({cursorAt:String}, 6)
+          OR (history.event_at = parseDateTime64BestEffort({cursorAt:String}, 6)
+            AND ifNull(toString(history.activity_id), '') < {cursorActivityId:String}))`
+            : ""
+        }
+      ORDER BY history.event_at DESC, ifNull(toString(history.activity_id), '') DESC
+      LIMIT {pageLimit:UInt32}`,
+      {
+        userId: this.#userId,
+        timezone: this.#timezone,
+        startDate: input.startDate,
+        endDate: input.endDate,
+        pageLimit: input.limit + 1,
+        ...clickHouseAccessParams(this.#accessWindow, this.#timezone),
+        ...(cursor ? { cursorAt: cursor.eventAt, cursorActivityId: cursor.activityId } : {}),
+      },
     );
-
-    const hasNextPage = rows.length > input.limit;
-    const pageRows = rows.slice(0, input.limit);
-    const last = pageRows.at(-1);
-    const nextCursor =
-      hasNextPage && last
-        ? encodeCursor({
-            version: 1,
-            userId: this.#userId,
-            shape,
-            eventAt: last.event_at,
-            evidenceKind: last.evidence_kind,
-            id: last.id,
-          })
-        : null;
-
-    let legacyCurrent: LegacyCurrentFtp | null = null;
-    const legacyRows = await executeWithSchema(
-      this.#db,
-      legacyFtpSchema,
-      sql`SELECT ftp FROM fitness.user_profile WHERE id = ${this.#userId}::uuid`,
-    );
-    const ftp = legacyRows[0]?.ftp ?? null;
-    if (ftp !== null) {
-      legacyCurrent = {
-        value: ftp,
-        unit: "watt",
-        source: "user_profile.ftp",
-        value_kind: "configured",
-        historical_validity: "unknown",
-        reason:
-          "Legacy current FTP has no effective date and is not applied to historical activities",
-      };
-    }
-
+    const page = rows.slice(0, input.limit);
+    const last = page.at(-1);
     return {
       start_date: input.startDate,
       end_date: input.endDate,
-      items: pageRows.map(toHistoryItem),
-      legacy_current: legacyCurrent,
-      next_cursor: nextCursor,
+      items: page.map((row) => ({
+        ...evidence(row),
+        activity_id: row.activity_id,
+        evidence_kind: "computed",
+        historical_validity: "effective_dated",
+      })),
+      next_cursor:
+        rows.length > input.limit && last
+          ? Buffer.from(
+              JSON.stringify({
+                version: 2,
+                userId: this.#userId,
+                shape,
+                eventAt: last.event_at,
+                activityId: last.activity_id ?? "",
+              }),
+            ).toString("base64url")
+          : null,
     };
+  }
+  #decodeCursor(value: string, shape: string): z.infer<typeof cursorSchema> {
+    let cursor: z.infer<typeof cursorSchema>;
+    try {
+      if (!/^[A-Za-z0-9_-]+$/.test(value)) throw new Error("invalid encoding");
+      const decoded = Buffer.from(value, "base64url").toString("utf8");
+      if (
+        Buffer.byteLength(decoded, "utf8") > 2048 ||
+        Buffer.from(decoded).toString("base64url") !== value
+      )
+        throw new Error("invalid encoding");
+      cursor = cursorSchema.parse(JSON.parse(decoded));
+    } catch {
+      throw new Error("Invalid analytical cursor");
+    }
+    if (cursor.userId !== this.#userId || cursor.shape !== shape)
+      throw new Error("Cursor does not match this request");
+    return cursor;
   }
 }

@@ -33,25 +33,10 @@ export interface PersonalizationParameters {
     sampleCount: number;
     correlation: number;
   } | null;
-  readinessWeights: {
-    hrv: number;
-    restingHr: number;
-    sleep: number;
-    respiratoryRate: number;
-    sampleCount: number;
-    correlation: number;
-  } | null;
-  sleepTarget: { minutes: number; sampleCount: number } | null;
   stressThresholds: {
     hrvThresholds: [number, number, number];
     rhrThresholds: [number, number, number];
     sampleCount: number;
-  } | null;
-  trainingImpulseConstants: {
-    genderFactor: number;
-    exponent: number;
-    sampleCount: number;
-    r2: number;
   } | null;
 }
 
@@ -89,20 +74,13 @@ export class PersonalizationRepository {
     return {
       isPersonalized:
         stored !== null &&
-        (stored.exponentialMovingAverage !== null ||
-          stored.readinessWeights !== null ||
-          stored.sleepTarget !== null ||
-          stored.stressThresholds !== null ||
-          stored.trainingImpulseConstants !== null),
+        (stored.exponentialMovingAverage !== null || stored.stressThresholds !== null),
       fittedAt: stored?.fittedAt ?? null,
       defaults: DEFAULT_PARAMS,
       effective,
       parameters: {
         exponentialMovingAverage: stored?.exponentialMovingAverage ?? null,
-        readinessWeights: stored?.readinessWeights ?? null,
-        sleepTarget: stored?.sleepTarget ?? null,
         stressThresholds: stored?.stressThresholds ?? null,
-        trainingImpulseConstants: stored?.trainingImpulseConstants ?? null,
       },
       modelCards: buildPersonalizationModelCards(stored),
     };
@@ -118,10 +96,7 @@ export class PersonalizationRepository {
       effective,
       parameters: {
         exponentialMovingAverage: params.exponentialMovingAverage,
-        readinessWeights: params.readinessWeights,
-        sleepTarget: params.sleepTarget,
         stressThresholds: params.stressThresholds,
-        trainingImpulseConstants: params.trainingImpulseConstants,
       },
     };
   }

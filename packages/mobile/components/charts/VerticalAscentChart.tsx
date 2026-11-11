@@ -6,6 +6,7 @@ import {
   getVerticalAscentActivityTypeGroup,
   type VerticalAscentActivityTypeGroup,
 } from "@dofek/training/training";
+import { useRouter } from "expo-router";
 import { useState } from "react";
 import { type LayoutChangeEvent, StyleSheet, Text, View } from "react-native";
 import Svg, { Circle, Line, Text as SvgText } from "react-native-svg";
@@ -13,6 +14,7 @@ import { colors } from "../../theme";
 import { AccessibleChart } from "../AccessibleChart";
 
 export interface VerticalAscentDataPoint {
+  activityId: string;
   date: string;
   activityName: string;
   activityType: string;
@@ -46,6 +48,7 @@ function colorForActivityTypeGroup(activityTypeGroup: VerticalAscentActivityType
 }
 
 export function VerticalAscentChart({ data, units, width: fixedWidth }: VerticalAscentChartProps) {
+  const router = useRouter();
   const [measuredWidth, setMeasuredWidth] = useState(0);
 
   const onLayout = (event: LayoutChangeEvent) => {
@@ -188,7 +191,8 @@ export function VerticalAscentChart({ data, units, width: fixedWidth }: Vertical
 
           return (
             <Circle
-              key={`${point.date}-${point.activityName}`}
+              key={point.activityId}
+              onPress={() => router.push(`/activity/${point.activityId}`)}
               cx={scaleX(point.timestamp)}
               cy={scaleY(point.displayVam)}
               r={radius}
@@ -231,6 +235,7 @@ export function VerticalAscentChart({ data, units, width: fixedWidth }: Vertical
       summary="Vertical ascent rate by activity; bubble size represents elevation gain."
       rows={points.map((point) => ({
         label: point.activityName,
+        onPress: () => router.push(`/activity/${point.activityId}`),
         value: `${formatDateShort(point.date)} · ${formatNumber(point.displayVam, 0)} ${elevationUnit} per hour · ${formatNumber(point.displayGain, 0)} ${elevationUnit} elevation gain · ${formatNumber(point.elapsedMinutes, 0)} minutes`,
       }))}
     >

@@ -42,6 +42,7 @@ export function renderModel(
   return renderDbtModelSql(readModelSql("activity_route_identity.sql"), {
     isIncremental: incremental,
     activityRefreshScoped: scopedIds !== undefined,
+    activityRefreshIds: scopedIds,
   })
     .replaceAll("{{ ref('deduped_activities') }}", `${database}.deduped_activities`)
     .replaceAll("{{ ref('activity_location_sample') }}", `${database}.activity_location_sample`)
@@ -49,10 +50,6 @@ export function renderModel(
     .replaceAll("{{ ref('activity_sensor_sample') }}", `${database}.activity_sensor_sample`)
     .replaceAll("{{ this }}", `${database}.activity_route_identity`)
     .replaceAll('{{ var("activity_refresh_user_id") }}', userId)
-    .replaceAll(
-      "{{ activity_refresh_ids() }}",
-      `[${(scopedIds ?? []).map((id) => `toUUID('${id}')`).join(",")}]`,
-    )
     .concat("\nSETTINGS join_use_nulls = 1, max_threads = 1, enable_materialized_cte = 1");
 }
 

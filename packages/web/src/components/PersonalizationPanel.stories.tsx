@@ -21,10 +21,7 @@ const personalizedStressThresholds = {
 
 const defaultEffectiveParameters = {
   exponentialMovingAverage: { chronicTrainingLoadDays: 42, acuteTrainingLoadDays: 7 },
-  readinessWeights: { hrv: 0.5, restingHr: 0.2, sleep: 0.15, respiratoryRate: 0.15 },
-  sleepTarget: { minutes: 480 },
   stressThresholds: defaultStressThresholds,
-  trainingImpulseConstants: { genderFactor: 0.64, exponent: 1.92 },
 };
 
 function modelCards(personalized: boolean) {
@@ -46,22 +43,6 @@ function modelCards(personalized: boolean) {
       excludedData: ["Days without a nonzero performance observation"],
     },
     {
-      key: "readinessWeights" as const,
-      title: "Readiness Score Weights",
-      description: "How much each factor contributes to your daily readiness score",
-      ...defaultEvidence,
-      dataWindow: "Past 365 days after a 60-day rolling-baseline warm-up",
-      excludedData: ["Days without heart-rate variability or resting heart rate"],
-    },
-    {
-      key: "sleepTarget" as const,
-      title: "Sleep Target",
-      description: "The amount of sleep associated with your best recovery",
-      ...defaultEvidence,
-      dataWindow: "Past 365 days; next-day recovery uses up to 60 days of baseline history",
-      excludedData: ["Naps and shorter duplicate sleep sessions"],
-    },
-    {
       key: "stressThresholds" as const,
       title: "Stress Sensitivity",
       description: "How far each threshold is from your usual baseline (in standard deviations)",
@@ -78,14 +59,6 @@ function modelCards(personalized: boolean) {
         : defaultEvidence),
       dataWindow: "Past 425 days, including rolling-baseline warm-up",
       excludedData: ["Days without nonzero rolling variability"],
-    },
-    {
-      key: "trainingImpulseConstants" as const,
-      title: "Heart Rate Effort Model",
-      description: "How heart rate intensity translates to training load",
-      ...defaultEvidence,
-      dataWindow: "All qualifying activities; the power reference uses the past 365 days",
-      excludedData: ["Activities without heart-rate samples or normalized power"],
     },
   ];
 }
@@ -109,10 +82,7 @@ function personalizationStatus(scenario: PersonalizationDataScenario) {
     },
     parameters: {
       exponentialMovingAverage: null,
-      readinessWeights: null,
-      sleepTarget: null,
       stressThresholds,
-      trainingImpulseConstants: null,
     },
     modelCards: modelCards(stressThresholds !== null),
   };

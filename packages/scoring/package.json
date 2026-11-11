@@ -16,7 +16,6 @@
     "fitness",
     "scoring",
     "recovery",
-    "strain",
     "typescript"
   ],
   "engines": {
@@ -32,11 +31,7 @@
     "./scoring": "./src/scoring.ts",
     "./colors": "./src/colors.ts",
     "./tokens": "./src/tokens.ts",
-    "./strain-target": "./src/strain-target.ts",
-    "./today-plan": "./src/today-plan.ts",
     "./epistemic-status": "./src/epistemic-status.ts",
-    "./sleep-performance": "./src/sleep-performance.ts",
-    "./healthspan-years": "./src/healthspan-years.ts",
     "./loading-policy": "./src/loading-policy.ts",
     "./query-cache": "./src/query-cache.ts"
   },
@@ -55,25 +50,9 @@
         "types": "./dist/tokens.d.ts",
         "import": "./dist/tokens.js"
       },
-      "./strain-target": {
-        "types": "./dist/strain-target.d.ts",
-        "import": "./dist/strain-target.js"
-      },
-      "./today-plan": {
-        "types": "./dist/today-plan.d.ts",
-        "import": "./dist/today-plan.js"
-      },
       "./epistemic-status": {
         "types": "./dist/epistemic-status.d.ts",
         "import": "./dist/epistemic-status.js"
-      },
-      "./sleep-performance": {
-        "types": "./dist/sleep-performance.d.ts",
-        "import": "./dist/sleep-performance.js"
-      },
-      "./healthspan-years": {
-        "types": "./dist/healthspan-years.d.ts",
-        "import": "./dist/healthspan-years.js"
       },
       "./loading-policy": {
         "types": "./dist/loading-policy.d.ts",

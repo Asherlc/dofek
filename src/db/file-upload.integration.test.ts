@@ -46,6 +46,16 @@ describe("file upload state machine (integration)", () => {
     };
   }
 
+  it.each(["crimpd", "eight-a", "moonboard"] as const)(
+    "persists and resumes a %s upload",
+    async (importType) => {
+      const input = { ...uploadInput(), importType };
+      const saved = await createFileUpload(testContext.db, input);
+      expect(saved.importType).toBe(importType);
+      expect(await findFileUploadForUser(testContext.db, input.id, userId)).toEqual(saved);
+    },
+  );
+
   it("returns the same session for repeated initiation", async () => {
     const input = uploadInput();
 

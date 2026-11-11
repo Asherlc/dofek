@@ -1,11 +1,12 @@
+import { ProviderServiceUnavailableError } from "@dofek/provider-http/rate-limit";
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
-import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { activity } from "../db/schema/activity.ts";
 import { oauthToken } from "../db/schema/reference.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
+import { createIntegrationMswFixture } from "../test/early-msw-lifecycle.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import { Concept2Provider } from "./concept2.ts";
 import { SyncRun } from "./sync-run.ts";
@@ -109,7 +110,7 @@ function concept2Handlers(
   ];
 }
 
-const server = setupServer();
+const server = createIntegrationMswFixture();
 
 describe("Concept2Provider.sync() (integration)", () => {
   let ctx: TestContext;
@@ -118,7 +119,7 @@ describe("Concept2Provider.sync() (integration)", () => {
     process.env.CONCEPT2_CLIENT_ID = "test-client-id";
     process.env.CONCEPT2_CLIENT_SECRET = "test-client-secret";
     ctx = await setupTestDatabase();
-    server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "concept2", "Concept2", "https://log.concept2.com");
   }, 60_000);
 
@@ -127,7 +128,7 @@ describe("Concept2Provider.sync() (integration)", () => {
   });
 
   afterAll(async () => {
-    server.close();
+    server.deactivate();
     if (ctx) await ctx.cleanup();
   });
 
@@ -302,7 +303,8 @@ describe("Concept2Provider.sync() (integration)", () => {
     );
 
     expect(result.errors.length).toBeGreaterThan(0);
-    expect(result.errors[0]?.message).toContain("API error");
+    expect(result.errors[0]?.cause).toBeInstanceOf(ProviderServiceUnavailableError);
+    expect(result.errors[0]?.cause).toMatchObject({ providerId: "concept2", statusCode: 500 });
     expect(result.recordsSynced).toBe(1);
 
     const rows = await ctx.db.select().from(activity).where(eq(activity.providerId, "concept2"));
@@ -400,6 +402,7 @@ describe("Concept2Provider.sync() (integration)", () => {
     );
 
     expect(result.errors.length).toBeGreaterThan(0);
-    expect(result.errors[0]?.message).toContain("API error");
+    expect(result.errors[0]?.cause).toBeInstanceOf(ProviderServiceUnavailableError);
+    expect(result.errors[0]?.cause).toMatchObject({ providerId: "concept2", statusCode: 500 });
   });
 });

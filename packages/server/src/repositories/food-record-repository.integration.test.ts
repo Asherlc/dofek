@@ -10,7 +10,7 @@ const userId = "70000000-0000-4000-8000-000000000001";
 const otherUserId = "70000000-0000-4000-8000-000000000002";
 const providerId = "food-record-test";
 
-describe.sequential("FoodRecordRepository with Postgres", () => {
+describe("FoodRecordRepository with Postgres", { concurrent: false }, () => {
   let context: TestContext;
   let repository: FoodRecordRepository;
 

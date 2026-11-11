@@ -107,8 +107,8 @@ export function getBufferedSampleCount(): number {
 }
 
 /** Get the current WHOOP identity, connection state, and buffer counts without scanning or connecting. */
-export function getDeviceSummary(): WhoopDeviceSummary {
-  return WhoopDeviceSummarySchema.parse(WhoopBleModule.getDeviceSummary());
+export async function getDeviceSummary(): Promise<WhoopDeviceSummary> {
+  return WhoopDeviceSummarySchema.parse(await WhoopBleModule.getDeviceSummary());
 }
 
 const DiagnosticCountSchema = z.number().int().nonnegative();
@@ -135,6 +135,7 @@ const WhoopBufferCheckpointSchema = z.object({
   checkpointAt: DiagnosticTimestampSchema,
   imu: WhoopBufferStreamDiagnosticsSchema,
   realtime: WhoopBufferStreamDiagnosticsSchema,
+  sensorRecords: WhoopBufferStreamDiagnosticsSchema,
 });
 
 const WhoopConnectionEventSchema = z.object({
@@ -189,7 +190,7 @@ const WhoopDataPathStatsSchema = z.object({
   lastValidHeartRateAt: DiagnosticTimestampSchema.nullable(),
   buffers: WhoopBufferCheckpointSchema.extend({
     activeUploadCount: DiagnosticCountSchema,
-    blockedUploadStreams: z.array(z.enum(["imu", "realtime"])),
+    blockedUploadStreams: z.array(z.enum(["imu", "realtime", "sensorRecords"])),
     lastUploadError: z.string().nullable(),
   }),
 });
@@ -197,8 +198,8 @@ const WhoopDataPathStatsSchema = z.object({
 export type WhoopDataPathStats = z.infer<typeof WhoopDataPathStatsSchema>;
 
 /** Get BLE capture, queue, discard, and prior-checkpoint metadata. */
-export function getDataPathStats(): WhoopDataPathStats {
-  return WhoopDataPathStatsSchema.parse(WhoopBleModule.getDataPathStats());
+export async function getDataPathStats(): Promise<WhoopDataPathStats> {
+  return WhoopDataPathStatsSchema.parse(await WhoopBleModule.getDataPathStats());
 }
 
 /**
@@ -295,18 +296,18 @@ export interface WhoopUploadContext {
 }
 
 /** Configure account-bound native delivery before starting capture. */
-export function configureUpload(context: WhoopUploadContext): void {
-  WhoopBleModule.configureUpload(context);
+export async function configureUpload(context: WhoopUploadContext): Promise<void> {
+  await WhoopBleModule.configureUpload(context);
 }
 
 /** Schedule bounded delivery of queued samples through iOS. */
-export function flushUploads(): void {
-  WhoopBleModule.flushUploads();
+export async function flushUploads(): Promise<void> {
+  await WhoopBleModule.flushUploads();
 }
 
-/** Synchronously revoke delivery and purge the signed-out account's queue. */
-export function disableUploads(): void {
-  WhoopBleModule.disableUploads();
+/** Revoke delivery and await purging the signed-out account's queue. */
+export async function disableUploads(): Promise<void> {
+  await WhoopBleModule.disableUploads();
 }
 
 /** Observe storage failures that stop native capture. */

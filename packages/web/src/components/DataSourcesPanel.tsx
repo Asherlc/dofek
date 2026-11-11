@@ -351,6 +351,7 @@ export function DataSourcesPanel() {
               name: provider.name,
               label: provider.tokenAuth.label,
               instructionsUrl: provider.tokenAuth.instructionsUrl,
+              description: provider.tokenAuth.description,
             });
           } else {
             const error = new Error(
@@ -389,7 +390,7 @@ export function DataSourcesPanel() {
 
   for (const p of allProviders) {
     const importConfig = getFileImportConfig(p.id);
-    if (importConfig) {
+    if (importConfig && p.importOnly) {
       unifiedProviders.push({ kind: "import", id: p.id, config: importConfig });
     } else {
       unifiedProviders.push({ kind: "sync", provider: p });
@@ -399,6 +400,7 @@ export function DataSourcesPanel() {
     unifiedProviders.map((entry) => ({
       ...entry,
       id: entry.kind === "import" ? entry.id : entry.provider.id,
+      label: entry.kind === "import" ? entry.config.title : entry.provider.name,
     })),
   );
 
@@ -484,7 +486,9 @@ export function DataSourcesPanel() {
               ))
             : providerGroups.map((group) =>
                 group.kind === "provider" ? (
-                  <div key={group.provider.id}>{renderProviderEntry(group.provider)}</div>
+                  <div key={group.provider.id} className="grid">
+                    {renderProviderEntry(group.provider)}
+                  </div>
                 ) : (
                   <ProviderFamilyCard
                     key={group.family.id}
@@ -538,6 +542,7 @@ export function DataSourcesPanel() {
           providerName={tokenAuthProvider.name}
           tokenLabel={tokenAuthProvider.label}
           instructionsUrl={tokenAuthProvider.instructionsUrl}
+          description={tokenAuthProvider.description}
           onClose={() => setTokenAuthProvider(null)}
           onSuccess={() => {
             setTokenAuthProvider(null);

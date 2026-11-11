@@ -3,34 +3,156 @@ import { formatDateTime } from "@dofek/format/format";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createClickHouseClientFromEnv } from "../../../../src/db/clickhouse.ts";
-import { buildActivitySummaryRowsTableSql } from "../../../../src/db/clickhouse-activity-summary.ts";
+import {
+  buildActivitySummaryRowsTableSql,
+  buildActivitySummaryViewSql,
+} from "../../../../src/db/clickhouse-activity-summary.ts";
+import { buildPostgresFitnessActivityRawTableStatement } from "../../../../src/db/clickhouse-raw-tables.ts";
 import { persistClimbingLogEntries } from "../../../../src/db/climbing-log-sync.ts";
+import { cyclingPowerSchemaStatements } from "../../../../src/db/cycling-power-schema.ts";
 import { activity } from "../../../../src/db/schema/activity.ts";
 import { TEST_USER_ID as userId } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import { ensureProvider } from "../../../../src/db/tokens.ts";
 import { routeMapPreview } from "../lib/map-preview.ts";
-import {
-  createClickHouseTestActivitySensorStore,
-  executeClickHouseTestCommand,
-} from "../routers/clickhouse-integration-test-helpers.ts";
 import { buildTestAnalyticsTableStatement } from "../routers/clickhouse-integration-test-models.ts";
 import { ActivitiesCalendarRepository } from "./activities-calendar-repository.ts";
+import { ActivityOverviewRepository } from "./activity-overview-repository.ts";
 import { ClickHouseActivitySensorStore } from "./clickhouse-activity-sensor-store.ts";
 import { ClimbingActivityLogEntryRepository } from "./climbing-activity-log-entry-repository.ts";
+
+async function createCalendarFixture(
+  context: TestContext,
+  activities: readonly (typeof activity.$inferSelect)[],
+  recordedLocation?: { activityId: string; latitude: number; longitude: number },
+) {
+  const client = createClickHouseClientFromEnv();
+  const database = `calendar_test_${randomUUID().replaceAll("-", "")}`;
+  const rewrite = (query: string) => query.replace(/\b(analytics|postgres_fitness)\b/g, database);
+  context.addCleanup(async () => {
+    await client.command({ query: `DROP DATABASE IF EXISTS ${database} SYNC` });
+    await client.close?.();
+  });
+  await client.command({ query: `CREATE DATABASE ${database}` });
+  for (const statement of [
+    buildPostgresFitnessActivityRawTableStatement(),
+    buildTestAnalyticsTableStatement("analytics.deduped_activities"),
+    buildTestAnalyticsTableStatement("analytics.activity_location_sample"),
+    buildActivitySummaryRowsTableSql(),
+    ...cyclingPowerSchemaStatements(),
+    buildActivitySummaryViewSql(),
+    "CREATE TABLE analytics.user_profile_current (id UUID,max_hr Nullable(Int32),resting_hr Nullable(Int32)) ENGINE=Memory",
+    "CREATE TABLE analytics.activity_location_member_change (user_id UUID,member_activity_id UUID,changed_at DateTime64(9,'UTC')) ENGINE=Memory",
+  ]) {
+    await client.command({ query: rewrite(statement) });
+  }
+  if (!client.insert) throw new Error("ClickHouse calendar fixtures require inserts");
+  const timestamp = (date: Date | null) =>
+    date?.toISOString().replace("T", " ").replace("Z", "") ?? null;
+  await client.insert({
+    table: `${database}.activity`,
+    format: "JSONEachRow",
+    values: activities.map((row) => ({
+      id: row.id,
+      group_id: row.groupId,
+      user_id: row.userId,
+      provider_id: row.providerId,
+      external_id: row.externalId,
+      name: row.name,
+      canonical_type: row.canonicalType,
+      provider_type: row.providerType,
+      modality: row.modality,
+      started_at: timestamp(row.startedAt),
+      ended_at: timestamp(row.endedAt),
+      provider_absent_at: timestamp(row.providerAbsentAt),
+    })),
+  });
+  await client.insert({
+    table: `${database}.deduped_activities`,
+    format: "JSONEachRow",
+    values: activities
+      .filter((row) => row.providerAbsentAt === null)
+      .map((row) => ({
+        activity_id: row.groupId,
+        user_id: row.userId,
+        provider_id: row.providerId,
+        canonical_type: row.canonicalType,
+        primary_canonical_type: row.canonicalType,
+        provider_type: row.providerType,
+        modality: row.modality,
+        name: row.name,
+        started_at: timestamp(row.startedAt),
+        ended_at: timestamp(row.endedAt),
+        local_time_source: "unknown",
+        primary_activity_id: row.id,
+        primary_provider_id: row.providerId,
+        member_activity_ids: [row.id],
+        source_external_ids: [
+          {
+            providerId: row.providerId,
+            externalId: row.externalId ?? "",
+            memberActivityId: row.id,
+          },
+        ],
+        refreshed_at: "2026-10-02 16:00:00",
+      })),
+  });
+  if (recordedLocation) {
+    const row = activities.find((candidate) => candidate.id === recordedLocation.activityId);
+    if (!row) throw new Error("Recorded location requires its fixture activity");
+    await client.insert({
+      table: `${database}.activity_summary_rows`,
+      format: "JSONEachRow",
+      values: [
+        {
+          activity_id: row.groupId,
+          user_id: row.userId,
+          canonical_type: row.canonicalType,
+          started_at: timestamp(row.startedAt),
+          ended_at: timestamp(row.endedAt),
+          centroid_lat: recordedLocation.latitude,
+          centroid_lng: recordedLocation.longitude,
+          refresh_version: 1,
+          is_deleted: 0,
+          refreshed_at: "2026-10-02 16:00:00",
+        },
+      ],
+    });
+  }
+  return new ClickHouseActivitySensorStore({
+    command: (options) => client.command({ ...options, query: rewrite(options.query) }),
+    query: (options) => client.query({ ...options, query: rewrite(options.query) }),
+  });
+}
 
 describe("Activities list source tree hydration", () => {
   let context: TestContext;
   let repository: ActivitiesCalendarRepository;
+  let overviewRepository: ActivityOverviewRepository;
   const groupId = randomUUID();
+  const climbingGroupId = randomUUID();
+  const climbingMemberId = randomUUID();
   const ids = Array.from({ length: 5 }, () => randomUUID());
   const absentId = randomUUID();
+  const staleGroupId = randomUUID();
   beforeAll(async () => {
     context = await setupTestDatabase();
     const providers = ["wahoo", "strava", "strava", "apple_health", "garmin"];
     for (const provider of new Set(providers)) {
       await ensureProvider(context.db, provider, provider, undefined, userId);
     }
+    await ensureProvider(context.db, "kaya", "Kaya", undefined, userId);
+    await context.db.insert(activity).values({
+      id: climbingMemberId,
+      groupId: climbingGroupId,
+      userId,
+      providerId: "kaya",
+      externalId: "primary-type-climbing",
+      canonicalType: "climbing",
+      providerType: "rock_climbing",
+      startedAt: new Date("2026-10-02T14:00:00Z"),
+      endedAt: new Date("2026-10-02T14:30:00Z"),
+    });
     await context.db.insert(activity).values(
       providers.map((providerId, index) => ({
         id: ids[index],
@@ -52,12 +174,15 @@ describe("Activities list source tree hydration", () => {
       await client.close?.();
     });
     await client.command({ query: `CREATE DATABASE ${database}` });
-    for (const table of ["deduped_activities", "activity_summary", "activity_location_sample"]) {
+    for (const table of ["deduped_activities", "activity_location_sample"]) {
       await client.command({
         query: rewrite(buildTestAnalyticsTableStatement(`analytics.${table}`)),
       });
     }
     await client.command({ query: rewrite(buildActivitySummaryRowsTableSql()) });
+    for (const statement of cyclingPowerSchemaStatements())
+      await client.command({ query: rewrite(statement) });
+    await client.command({ query: rewrite(buildActivitySummaryViewSql()) });
     await client.command({
       query: `CREATE TABLE ${database}.activity
       (id UUID, group_id UUID, user_id UUID, provider_id String, external_id String,
@@ -76,7 +201,7 @@ describe("Activities list source tree hydration", () => {
     });
     await client.command({
       query: `CREATE TABLE ${database}.user_profile_current
-      (id UUID, max_hr Nullable(Int32), resting_hr Nullable(Int32), ftp Nullable(Float64)) ENGINE=Memory`,
+      (id UUID, max_hr Nullable(Int32), resting_hr Nullable(Int32)) ENGINE=Memory`,
     });
     await client.command({
       query: `CREATE TABLE ${database}.activity_location_member_change
@@ -111,10 +236,97 @@ describe("Activities list source tree hydration", () => {
       command: (options) => client.command({ ...options, query: rewrite(options.query) }),
       query: (options) => client.query({ ...options, query: rewrite(options.query) }),
     });
+    await client.command({
+      query: `INSERT INTO ${database}.deduped_activities
+        (activity_id, user_id, provider_id, canonical_type, primary_canonical_type,
+         provider_type, name, started_at, ended_at, local_time_source,
+         primary_activity_id, primary_provider_id, member_activity_ids, source_external_ids, refreshed_at)
+        VALUES ('${climbingGroupId}','${userId}','peloton','cardio','climbing',
+          'cardio','Kaya climbing','2026-10-02 14:00:00','2026-10-02 14:30:00','unknown',
+          '${climbingMemberId}','kaya',['${climbingMemberId}'],
+          [map('providerId','kaya','externalId','primary-type-climbing','memberActivityId','${climbingMemberId}')],
+          '2026-10-02 14:35:00')`,
+    });
+    await client.command({
+      query: `INSERT INTO ${database}.deduped_activities
+        (activity_id,user_id,provider_id,canonical_type,provider_type,started_at,ended_at,local_time_source)
+        VALUES ('${staleGroupId}','${userId}','wahoo','cycling','cycling',
+          '2026-10-02 15:00:00','2026-10-02 15:30:00','unknown')`,
+    });
     repository = new ActivitiesCalendarRepository(context.db, userId, "UTC", sensorStore);
+    overviewRepository = new ActivityOverviewRepository(context.db, userId, "UTC", sensorStore);
   });
   afterAll(async () => {
     await context.cleanup();
+  });
+  it("paginates visible active and hidden records before enrichment with stable boundaries", async () => {
+    const input = { weeks: 1, endDate: "2026-10-02", includeProviderAbsent: true, pageSize: 1 };
+    const pages = await Promise.all(
+      [0, 1, 2].map((page) => repository.getPage({ ...input, page })),
+    );
+    expect(
+      pages.map((page) => ({
+        totalCount: page.totalCount,
+        page: page.page,
+        pageSize: page.pageSize,
+      })),
+    ).toEqual([0, 1, 2].map((page) => ({ totalCount: 3, page, pageSize: 1 })));
+    const entries = pages.flatMap((page) => page.days.flatMap((day) => day.activities));
+    expect(entries.map((entry) => entry.id)).toEqual([
+      climbingGroupId,
+      ...[groupId, absentId].sort(),
+    ]);
+    expect(entries.find((entry) => entry.id === absentId)?.isProviderAbsent).toBe(true);
+    expect(await repository.getPage({ ...input, page: 9 })).toEqual(pages[2]);
+    const active = await repository.getPage({
+      ...input,
+      page: 0,
+      pageSize: 20,
+      includeProviderAbsent: false,
+    });
+    expect(active.totalCount).toBe(2);
+    expect(active.days.flatMap((day) => day.activities.map((entry) => entry.id))).toEqual([
+      climbingGroupId,
+      groupId,
+    ]);
+    const filtered = await repository.getPage({ ...input, activityType: "climbing", page: 0 });
+    expect(filtered.totalCount).toBe(1);
+    expect(filtered.days[0]?.activities[0]?.id).toBe(climbingGroupId);
+    expect(await repository.getPage({ ...input, activityType: "running", page: 5 })).toEqual({
+      days: [],
+      totalCount: 0,
+      page: 0,
+      pageSize: 1,
+    });
+    expect(await overviewRepository.getActivityOverview(input)).toMatchObject({
+      activityCount: 2,
+      totalMinutes: 60,
+    });
+  });
+  it("filters cards and overview by primary type with representative fallback", async () => {
+    const input = { weeks: 1, endDate: "2026-10-02", activityType: "climbing" };
+    const days = await repository.getWeekList(input);
+    expect(days.flatMap((day) => day.activities)).toEqual([
+      expect.objectContaining({
+        id: climbingGroupId,
+        activityType: "cardio",
+        primaryActivityType: "climbing",
+      }),
+    ]);
+    expect(await overviewRepository.getActivityOverview(input)).toMatchObject({
+      activityCount: 1,
+      totalMinutes: 30,
+      activityTypes: ["climbing", "cycling"],
+    });
+    expect(
+      (await repository.getWeekList({ ...input, activityType: "cycling" }))
+        .flatMap((day) => day.activities)
+        .map((entry) => entry.id),
+    ).toEqual([groupId]);
+    expect(await repository.getWeekList({ ...input, activityType: "cardio" })).toEqual([]);
+    expect(
+      await overviewRepository.getActivityOverview({ ...input, activityType: "cardio" }),
+    ).toMatchObject({ activityCount: 0 });
   });
   it("hydrates stored evidence branches, duplicate provider records, and disconnected sources", async () => {
     const entries = (await repository.getWeekList({ weeks: 1, endDate: "2026-10-02" })).flatMap(
@@ -228,13 +440,11 @@ describe("Activities list climbing source GPS", () => {
         },
       ],
     });
-    const sensorStore = await createClickHouseTestActivitySensorStore(context);
-    await executeClickHouseTestCommand(
-      context,
-      `ALTER TABLE analytics.activity_summary UPDATE centroid_lat=37.8,centroid_lng=-122.4
-       WHERE activity_id=toUUID('${recorded.groupId}') AND user_id=toUUID('${userId}')
-       SETTINGS mutations_sync=2`,
-    );
+    const sensorStore = await createCalendarFixture(context, rows, {
+      activityId: recorded.id,
+      latitude: 37.8,
+      longitude: -122.4,
+    });
     repository = new ActivitiesCalendarRepository(context.db, userId, "UTC", sensorStore);
   });
   afterAll(async () => {
@@ -359,23 +569,26 @@ describe("Activities list cycling modality", () => {
   beforeAll(async () => {
     context = await setupTestDatabase();
     await ensureProvider(context.db, "wahoo", "Wahoo", undefined, userId);
-    await context.db.insert(activity).values(
-      [false, true].flatMap((isProviderAbsent) =>
-        (["indoor", "virtual", "road", null] as const).map((modality, index) => ({
-          userId,
-          providerId: "wahoo",
-          externalId: `cycling-${modality}-${isProviderAbsent}`,
-          name: `cycling-${modality}-${isProviderAbsent}`,
-          canonicalType: "cycling" as const,
-          providerType: "cycling",
-          modality,
-          startedAt: new Date(`2026-10-02T${10 + index}:00:00Z`),
-          endedAt: new Date(`2026-10-02T${10 + index}:30:00Z`),
-          providerAbsentAt: isProviderAbsent ? new Date("2026-10-03T12:00:00Z") : null,
-        })),
-      ),
-    );
-    const sensorStore = await createClickHouseTestActivitySensorStore(context);
+    const rows = await context.db
+      .insert(activity)
+      .values(
+        [false, true].flatMap((isProviderAbsent) =>
+          (["indoor", "virtual", "road", null] as const).map((modality, index) => ({
+            userId,
+            providerId: "wahoo",
+            externalId: `cycling-${modality}-${isProviderAbsent}`,
+            name: `cycling-${modality}-${isProviderAbsent}`,
+            canonicalType: "cycling" as const,
+            providerType: "cycling",
+            modality,
+            startedAt: new Date(`2026-10-02T${10 + index}:00:00Z`),
+            endedAt: new Date(`2026-10-02T${10 + index}:30:00Z`),
+            providerAbsentAt: isProviderAbsent ? new Date("2026-10-03T12:00:00Z") : null,
+          })),
+        ),
+      )
+      .returning();
+    const sensorStore = await createCalendarFixture(context, rows);
     repository = new ActivitiesCalendarRepository(context.db, userId, "UTC", sensorStore);
   });
 
@@ -415,5 +628,119 @@ describe("Activities list cycling modality", () => {
         expect.objectContaining({ name: "cycling-null-true", modality: null }),
       ]),
     );
+  });
+});
+
+describe("Point-only activity calendar visibility", () => {
+  let context: TestContext;
+  let sensorStore: ClickHouseActivitySensorStore;
+  let pointGroupId: string;
+  beforeAll(async () => {
+    context = await setupTestDatabase();
+    await ensureProvider(context.db, "kilter", "Kilter Board", undefined, userId);
+    await persistClimbingLogEntries(context.db, {
+      userId,
+      providerId: "kilter",
+      entries: [
+        {
+          externalId: "single-point",
+          activityObservation: { recordedAt: "2026-11-10T01:00:00Z" },
+          attempts: [],
+        },
+      ],
+    });
+    const [unfinished] = await context.db
+      .insert(activity)
+      .values({
+        userId,
+        providerId: "kilter",
+        externalId: "unfinished",
+        canonicalType: "cycling",
+        providerType: "cycling",
+        startedAt: new Date("2026-11-10T03:00:00Z"),
+      })
+      .returning();
+    const points = await context.db
+      .select()
+      .from(activity)
+      .where(sql`user_id=${userId} AND provider_type='climbing_log'`);
+    const point = points[0];
+    if (!point || !unfinished) throw new Error("Expected point and unfinished recording");
+    pointGroupId = point.groupId;
+    sensorStore = await createCalendarFixture(context, [point, unfinished]);
+  });
+  afterAll(async () => {
+    await context?.cleanup();
+  });
+  it("shows one point with unknown duration across calendar, page and overview without exposing unfinished recordings", async () => {
+    const input = { weeks: 1, endDate: "2026-11-10" };
+    const repository = new ActivitiesCalendarRepository(context.db, userId, "UTC", sensorStore);
+    const days = await repository.getWeekList(input);
+    expect(
+      days.flatMap((day) =>
+        day.activities.map((entry) => ({
+          id: entry.id,
+          durationMin: entry.durationMin,
+          endedAt: entry.endedAt,
+          sourceCount: entry.source.sourceCount,
+        })),
+      ),
+    ).toEqual([{ id: pointGroupId, durationMin: null, endedAt: null, sourceCount: 1 }]);
+    const page = await repository.getPage({ ...input, page: 0, pageSize: 10 });
+    expect(page.totalCount).toBe(1);
+    expect(page.days).toEqual(days);
+    const overview = await new ActivityOverviewRepository(
+      context.db,
+      userId,
+      "UTC",
+      sensorStore,
+    ).getActivityOverview(input);
+    expect(overview).toMatchObject({
+      activityCount: 1,
+      totalMinutes: 0,
+      activityTypes: ["climbing"],
+    });
+  });
+});
+
+describe("Calendar measured duration precision", () => {
+  let context: TestContext;
+  let sensorStore: ClickHouseActivitySensorStore;
+  let measuredActivityId: string;
+
+  beforeAll(async () => {
+    context = await setupTestDatabase();
+    await ensureProvider(context.db, "wahoo", "Wahoo", undefined, userId);
+    const [measuredActivity] = await context.db
+      .insert(activity)
+      .values({
+        userId,
+        providerId: "wahoo",
+        externalId: "fractional-second-duration",
+        canonicalType: "cycling",
+        providerType: "cycling",
+        startedAt: new Date("2026-03-01T10:00:00.490Z"),
+        endedAt: new Date("2026-03-01T11:30:27.410Z"),
+      })
+      .returning();
+    if (!measuredActivity) throw new Error("Expected the measured-duration fixture activity");
+    measuredActivityId = measuredActivity.groupId;
+    sensorStore = await createCalendarFixture(context, [measuredActivity]);
+  });
+
+  afterAll(async () => {
+    await context?.cleanup();
+  });
+
+  it("matches server detail duration at sub-second boundaries", async () => {
+    const days = await new ActivitiesCalendarRepository(
+      context.db,
+      userId,
+      "UTC",
+      sensorStore,
+    ).getWeekList({ weeks: 1, endDate: "2026-03-01" });
+    const entry = days.flatMap((day) => day.activities).find(({ id }) => id === measuredActivityId);
+
+    expect(entry?.durationMin).toBe(90.4);
   });
 });

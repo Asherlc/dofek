@@ -34,10 +34,10 @@ describe("Predictions router (integration)", () => {
           ON CONFLICT DO NOTHING`,
     );
 
-    // Set user profile with max_hr and ftp
+    // Set the heart-rate profile used by the fixture
     await testCtx.db.execute(
       sql`UPDATE fitness.user_profile
-          SET max_hr = 190, resting_hr = 50, ftp = 250
+          SET max_hr = 190, resting_hr = 50
           WHERE id = ${TEST_USER_ID}`,
     );
 

@@ -3,6 +3,20 @@ import {
   ProviderServiceUnavailableError,
 } from "@dofek/provider-http/rate-limit";
 
+/** Keep token-validation failures actionable without exposing upstream response content. */
+export function redactProviderServiceUnavailableError(error: unknown, message: string): unknown {
+  if (!(error instanceof ProviderServiceUnavailableError)) return error;
+  return new ProviderServiceUnavailableError({
+    providerId: error.providerId,
+    statusCode: error.statusCode,
+    message: `${message} (${error.statusCode}). Try again.`,
+    responseBody: "",
+    scope: error.scope,
+    userId: error.userId,
+    retryAfterSeconds: error.retryAfterSeconds,
+  });
+}
+
 export function findProviderTransportError(
   error: unknown,
 ): ProviderServiceUnavailableError | ProviderRequestTimeoutError | null {

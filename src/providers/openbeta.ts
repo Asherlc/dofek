@@ -1,6 +1,6 @@
+import { gpsCoordinatesSchema } from "@dofek/climbing-catalogue/geometry";
 import { isValidClimbingGrade } from "@dofek/training/climbing-grades";
 import type { ClimbKind, GradeComponent, RopeMethod } from "@dofek/training/climbing-log";
-import { gpsCoordinatesSchema } from "@dofek/training/gps-coordinates";
 import { z } from "zod";
 import type { TokenSet } from "../auth/oauth.ts";
 import { persistClimbingLogSnapshot } from "../db/climbing-log-snapshot.ts";

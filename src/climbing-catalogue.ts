@@ -1,10 +1,13 @@
 import { createHash } from "node:crypto";
+import { CatalogueSearchError, ClimbingCatalogueSearch } from "@dofek/climbing-catalogue";
+import type { ClimbingCatalogueAdapter } from "@dofek/climbing-catalogue/contracts";
 import {
-  type CatalogueCandidate,
+  ProviderRateLimitError,
+  ProviderServiceUnavailableError,
+} from "@dofek/provider-http/rate-limit";
+import {
   type CatalogueSeed,
-  type ClimbingCatalogueAdapter,
   type ClimbingCatalogueContext,
-  catalogueSearchResultSchema,
   catalogueSeedSchema,
   climbingCatalogueContextSchema,
 } from "@dofek/training/climbing-catalogue";
@@ -19,33 +22,11 @@ const missing: ClimbingCatalogueContext = {
   error: null,
   sources: [],
 };
-const normalized = (value: string) => value.trim().replace(/\s+/g, " ").toLowerCase();
 
-function key(seed: CatalogueSeed): string {
-  const fingerprint = createHash("sha256")
-    .update(JSON.stringify(catalogueSeedSchema.parse(seed)))
-    .digest("hex");
-  return `${seed.userId}:climbing.catalogueContext:v1:${fingerprint}`;
-}
-function corroborates(seed: CatalogueSeed, candidate: CatalogueCandidate): boolean {
-  if (
-    seed.setting !== "outdoor" ||
-    candidate.setting !== "outdoor" ||
-    !seed.kind ||
-    seed.kind !== candidate.kind
-  )
-    return false;
-  return seed.locations.some((location) =>
-    candidate.locations.some(
-      (other) =>
-        location.scope === other.scope &&
-        normalized(location.name) === normalized(other.name) &&
-        location.coordinates !== null &&
-        other.coordinates !== null &&
-        Math.abs(location.coordinates.latitude - other.coordinates.latitude) <= 0.001 &&
-        Math.abs(location.coordinates.longitude - other.coordinates.longitude) <= 0.001,
-    ),
-  );
+export function catalogueSeedCacheKey(seed: CatalogueSeed): string {
+  const { logEntryId: _logEntryId, ...source } = catalogueSeedSchema.parse(seed);
+  const fingerprint = createHash("sha256").update(JSON.stringify(source)).digest("hex");
+  return `${seed.userId}:climbing.catalogueContext:v5:${fingerprint}`;
 }
 
 /** Disposable source context. It never writes facts, matches, or winners to the database. */
@@ -58,7 +39,7 @@ export class ClimbingCatalogueService {
   }
 
   async read(seed: CatalogueSeed): Promise<ClimbingCatalogueContext> {
-    const cached = await this.cache.get(key(seed));
+    const cached = await this.cache.get(catalogueSeedCacheKey(seed));
     if (cached === undefined) return { ...missing, sources: [] };
     const result = climbingCatalogueContextSchema.parse(cached);
     return result.expiresAt && Date.parse(result.expiresAt) <= Date.now()
@@ -67,20 +48,41 @@ export class ClimbingCatalogueService {
   }
 
   async invalidate(seed: CatalogueSeed): Promise<void> {
-    await this.cache.invalidate(key(seed));
+    await this.cache.invalidate(catalogueSeedCacheKey(seed));
   }
 
   async markFailed(seed: CatalogueSeed, error: unknown): Promise<void> {
-    captureException(error, { tags: { phase: "climbing-catalogue-refresh" } });
+    const failures: unknown[] = error instanceof CatalogueSearchError ? error.errors : [error];
+    const providerFailures = failures.flatMap((failure) =>
+      failure instanceof ProviderRateLimitError ||
+      failure instanceof ProviderServiceUnavailableError
+        ? [
+            {
+              providerId: failure.providerId,
+              statusCode: failure.statusCode,
+              scope: failure.scope,
+              retryAfterSeconds: failure.retryAfterSeconds,
+              responseBodyBytes: Buffer.byteLength(failure.responseBody, "utf8"),
+            },
+          ]
+        : [],
+    );
+    captureException(error, {
+      tags: { phase: "climbing-catalogue-refresh" },
+      ...(providerFailures.length > 0 ? { extra: { providerFailures } } : {}),
+    });
     const previous = await this.read(seed);
+    const partialSources =
+      error instanceof CatalogueSearchError && error.sources.length > 0 ? error.sources : null;
     const expiresAt =
-      previous.fetchedAt && previous.expiresAt
+      !partialSources && previous.fetchedAt && previous.expiresAt
         ? previous.expiresAt
         : new Date(Date.now() + DAY).toISOString();
     await this.cache.set(
-      key(seed),
+      catalogueSeedCacheKey(seed),
       {
         ...previous,
+        ...(partialSources ? { sources: partialSources, fetchedAt: new Date().toISOString() } : {}),
         status: "error",
         expiresAt,
         error:
@@ -92,39 +94,8 @@ export class ClimbingCatalogueService {
 
   async refresh(seed: CatalogueSeed): Promise<ClimbingCatalogueContext> {
     try {
-      const sources = await Promise.all(
-        this.adapters.map(async (adapter) => {
-          const found = catalogueSearchResultSchema.parse(await adapter.search(seed));
-          if (found.candidates.some((candidate) => candidate.providerId !== adapter.providerId)) {
-            throw new Error(`Unexpected provider in ${adapter.providerId} catalogue response.`);
-          }
-          const candidates = [
-            ...new Map(
-              found.candidates
-                .filter(
-                  (candidate) =>
-                    (candidate.providerId === seed.providerId &&
-                      candidate.externalId === seed.externalId) ||
-                    normalized(candidate.name) === normalized(seed.name),
-                )
-                .map((candidate) => [candidate.externalId, candidate]),
-            ).values(),
-          ];
-          return {
-            providerId: adapter.providerId,
-            searchComplete: found.complete,
-            matches: candidates.map((candidate) => ({
-              candidate,
-              confidence:
-                candidate.providerId === seed.providerId && candidate.externalId === seed.externalId
-                  ? ("source" as const)
-                  : found.complete && candidates.length === 1 && corroborates(seed, candidate)
-                    ? ("corroborated" as const)
-                    : ("possible" as const),
-            })),
-          };
-        }),
-      );
+      const { userId: _userId, logEntryId: _logEntryId, ...query } = seed;
+      const sources = await new ClimbingCatalogueSearch(this.adapters).search(query);
       const ttl = sources.some((source) => source.matches.length > 0) ? 7 * DAY : DAY;
       const result = climbingCatalogueContextSchema.parse({
         status: "ready",
@@ -133,7 +104,7 @@ export class ClimbingCatalogueService {
         fetchedAt: new Date().toISOString(),
         expiresAt: new Date(Date.now() + ttl).toISOString(),
       });
-      await this.cache.set(key(seed), result, ttl);
+      await this.cache.set(catalogueSeedCacheKey(seed), result, ttl);
       return result;
     } catch (error) {
       await this.markFailed(seed, error);

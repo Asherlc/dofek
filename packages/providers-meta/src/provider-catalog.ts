@@ -4,11 +4,15 @@ export interface ProviderFamily {
   methodLabel: string;
 }
 
+export type ProviderCredentialIdentifier = "email" | "username";
+
 export interface ProviderCatalogEntry {
   label: string;
   family?: ProviderFamily;
   logo?: { id?: string; type: "png" | "svg" };
   brandColor?: string;
+  credentialIdentifier?: ProviderCredentialIdentifier;
+  credentialInstructions?: string;
 }
 
 const garminConnect: ProviderFamily = {
@@ -49,6 +53,12 @@ const kayaExport: ProviderFamily = {
   methodLabel: "Data export (CSV file)",
 };
 
+const auroraBoardCredentials = {
+  credentialIdentifier: "username" as const,
+  credentialInstructions:
+    "Use an existing board account after accepting its terms of use and privacy policy in the board app.",
+};
+
 /**
  * Canonical user-facing presentation for technical provider IDs.
  *
@@ -57,15 +67,25 @@ const kayaExport: ProviderFamily = {
  * in client provider settings.
  */
 export const PROVIDER_CATALOG: Readonly<Record<string, ProviderCatalogEntry>> = {
+  kilter: { label: "Kilter Board", logo: { type: "png" } },
+  tension: { label: "Tension Board", logo: { type: "png" }, ...auroraBoardCredentials },
+  grasshopper: { label: "Grasshopper Board", logo: { type: "png" }, ...auroraBoardCredentials },
+  decoy: { label: "Decoy Board", logo: { type: "png" }, ...auroraBoardCredentials },
+  soill: { label: "So iLL Board", logo: { type: "png" }, ...auroraBoardCredentials },
+  touchstone: { label: "Touchstone Board", logo: { type: "png" }, ...auroraBoardCredentials },
+  "aurora-board": { label: "Aurora Board", logo: { type: "png" }, ...auroraBoardCredentials },
+  crimpd: { label: "Crimpd", logo: { type: "png" } },
+  "eight-a": { label: "8a.nu / Vertical-Life", logo: { type: "png" } },
+  moonboard: { label: "MoonBoard", logo: { type: "png" } },
   google: { label: "Google", logo: { type: "svg" } },
   apple: { label: "Apple", logo: { type: "svg" } },
-  github: { label: "GitHub" },
-  slack: { label: "Slack" },
+  github: { label: "GitHub", logo: { type: "png" } },
+  slack: { label: "Slack", logo: { type: "png" } },
   strava: { label: "Strava", logo: { type: "svg" } },
   wahoo: { label: "Wahoo", logo: { type: "png" } },
   fitbit: { label: "Fitbit", logo: { type: "svg" } },
   "ride-with-gps": { label: "Ride with GPS", logo: { type: "png" } },
-  "intervals.icu": { label: "Intervals.icu" },
+  "intervals.icu": { label: "Intervals.icu", logo: { type: "svg" } },
   withings: { label: "Withings", logo: { type: "png" } },
   garmin: { label: "Garmin", family: garminConnect, logo: { type: "svg" } },
   "garmin-dump": {
@@ -84,22 +104,25 @@ export const PROVIDER_CATALOG: Readonly<Record<string, ProviderCatalogEntry>> = 
   komoot: { label: "Komoot", logo: { type: "svg" } },
   concept2: { label: "Concept2", logo: { type: "png" } },
   coros: { label: "COROS", logo: { type: "png" } },
-  "cycling-analytics": { label: "Cycling Analytics" },
+  "cycling-analytics": {
+    label: "Cycling Analytics",
+    logo: { id: "cycling_analytics", type: "png" },
+  },
   cycling_analytics: { label: "Cycling Analytics", logo: { type: "png" } },
   decathlon: { label: "Decathlon", logo: { type: "png" } },
   "eight-sleep": { label: "Eight Sleep", logo: { type: "svg" } },
   fatsecret: { label: "fatsecret", logo: { type: "png" } },
-  ziva: { label: "Ziva" },
+  ziva: { label: "Ziva", logo: { type: "png" } },
   mapmyfitness: { label: "MapMyFitness", logo: { type: "png" } },
   ultrahuman: { label: "Ultrahuman", logo: { type: "png" } },
   "amazfit-zepp": { label: "Amazfit/Zepp", family: zeppCloud, logo: { id: "zepp", type: "png" } },
   "zos-app": { label: "Zepp OS App", family: zeppApp, logo: { id: "zepp", type: "png" } },
-  "mountain-project": { label: "Mountain Project", brandColor: "#1F5A88" },
-  openbeta: { label: "OpenBeta" },
-  thecrag: { label: "theCrag" },
+  "mountain-project": { label: "Mountain Project", brandColor: "#1F5A88", logo: { type: "png" } },
+  openbeta: { label: "OpenBeta", logo: { type: "svg" } },
+  thecrag: { label: "theCrag", logo: { type: "png" } },
   wger: { label: "Wger", logo: { type: "png" } },
   xert: { label: "Xert", logo: { type: "png" } },
-  "apple-health": { label: "Apple Health" },
+  "apple-health": { label: "Apple Health", logo: { id: "apple_health", type: "png" } },
   apple_health: { label: "Apple Health", logo: { type: "png" } },
   "apple-watch": { label: "Apple Watch", logo: { type: "svg" } },
   "strong-csv": { label: "Strong", logo: { type: "png" } },
@@ -139,11 +162,12 @@ function hasAtLeastTwo<T>(entries: readonly T[]): entries is readonly [T, T, ...
 }
 
 /**
- * Groups only the provider IDs explicitly assigned to the same family.
+ * Groups only the provider IDs explicitly assigned to the same family,
+ * then orders the cards alphabetically by their displayed labels.
  * A family with one available connection method remains a regular provider
  * entry, so the clients do not show a meaningless method chooser.
  */
-export function groupProviderEntries<T extends { id: string }>(
+export function groupProviderEntries<T extends { id: string; label?: string }>(
   providers: readonly T[],
 ): ProviderEntryGroup<T>[] {
   const membersByFamily = new Map<string, T[]>();
@@ -172,5 +196,11 @@ export function groupProviderEntries<T extends { id: string }>(
       providers: members,
     });
   }
-  return groups;
+  const label = (group: ProviderEntryGroup<T>) =>
+    group.kind === "family"
+      ? group.family.label
+      : (group.provider.label ??
+        providerCatalogEntry(group.provider.id)?.label ??
+        group.provider.id);
+  return groups.sort((a, b) => label(a).localeCompare(label(b), "en", { sensitivity: "base" }));
 }

@@ -18,6 +18,7 @@ import { ProcessingStatusWidget } from "../components/ProcessingStatusWidget.tsx
 import { ProviderLogo } from "../components/ProviderLogo.tsx";
 import { ProviderStatsBreakdown } from "../components/ProviderStatsBreakdown.tsx";
 import { QueryStatePanel } from "../components/QueryStatePanel.tsx";
+import { WhoopSensorPanel } from "../components/WhoopSensorDetails.tsx";
 import { useProcessingStatus } from "../hooks/useProcessingStatus.ts";
 import { pollSyncJob } from "../lib/poll-sync-job.ts";
 import { locallyReportedErrorMeta } from "../lib/query-client.ts";
@@ -623,6 +624,7 @@ export function ProviderDetailPage() {
           providerName={provider.name}
           tokenLabel={provider.tokenAuth.label}
           instructionsUrl={provider.tokenAuth.instructionsUrl}
+          description={provider.tokenAuth.description}
           onClose={() => setReconnectModal(null)}
           onSuccess={handleReconnectSuccess}
         />
@@ -636,6 +638,7 @@ export function ProviderDetailPage() {
 
       {/* WHOOP wear location */}
       {providerId === "whoop" && <WhoopWearLocationPicker />}
+      {providerId === "whoop_ble" && <WhoopSensorPanel />}
 
       {/* Stats overview */}
       {providerStats && <ProviderStatsBreakdown stats={providerStats} variant="full" />}

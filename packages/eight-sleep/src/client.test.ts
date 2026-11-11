@@ -124,7 +124,7 @@ describe("EightSleepClient.getTrends", () => {
     const client = new EightSleepClient("test-token", "user-123", fetchFn);
 
     await expect(client.getTrends("America/New_York", "2024-01-01", "2024-01-02")).rejects.toThrow(
-      "Eight Sleep API error (500)",
+      "eight-sleep API service unavailable (500)",
     );
   });
 

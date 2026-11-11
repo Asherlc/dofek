@@ -1,10 +1,10 @@
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
-import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { activity } from "../db/schema/activity.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
+import { createIntegrationMswFixture } from "../test/early-msw-lifecycle.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import {
   type PelotonPerformanceGraph,
@@ -17,7 +17,7 @@ import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
 import { createCapturingMetricStreamPublisher } from "./test-helpers.ts";
 
-const server = setupServer();
+const server = createIntegrationMswFixture();
 const metricStreamCapture = createCapturingMetricStreamPublisher();
 
 // ============================================================
@@ -93,7 +93,7 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
 
   beforeAll(async () => {
     ctx = await setupTestDatabase();
-    server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "peloton", "Peloton", "https://api.onepeloton.com");
   }, 60_000);
 
@@ -106,7 +106,7 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
   });
 
   afterAll(async () => {
-    server.close();
+    server.deactivate();
     if (ctx) await ctx.cleanup();
   });
 
@@ -568,11 +568,11 @@ describe("PelotonProvider.sync() extended paths (integration)", () => {
 // pelotonAutomatedLogin tests (mock Auth0 flow)
 // ============================================================
 
-const loginServer = setupServer();
+const loginServer = createIntegrationMswFixture();
 
 describe("pelotonAutomatedLogin", () => {
   beforeAll(() => {
-    loginServer.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    loginServer.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
   });
 
   afterEach(() => {
@@ -580,7 +580,7 @@ describe("pelotonAutomatedLogin", () => {
   });
 
   afterAll(() => {
-    loginServer.close();
+    loginServer.deactivate();
   });
   it("completes the full Auth0 automated login flow", async () => {
     const injectedConfig = {

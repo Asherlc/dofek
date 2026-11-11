@@ -7,6 +7,7 @@ A climbing log entry records an occurrence on a Climb, optionally associated wit
 | Model | Canonical facts |
 | --- | --- |
 | Area | Owner/provider, verified source identity, name, nullable parent Area and coordinates |
+| AreaGroup | Owner-scoped explicit identity linking source Areas that describe the same place |
 | Climb | Owner/provider, verified source identity, nullable name/kind/Area/setting, advertised route protection, coordinates, ordered published grades |
 | Pitch | Required Climb, nullable verified identity/number/name, ordered published grades |
 | ClimbingLogEntry | Owner/provider, occurrence identity, optional Climb/Activity, independently nullable source date, discipline/title/notes, reported grades, board/angle/hold types, raw source record and retention metadata |
@@ -14,7 +15,54 @@ A climbing log entry records an occurrence on a Climb, optionally associated wit
 
 Areas form an adjacency list through `parentAreaId`. PostgreSQL recursive queries build the current path; ownership constraints and cycle checks protect the hierarchy. Shared metadata updates apply to past logs referencing the same verified source object. Unidentified objects remain local to their log; matching names do not establish identity. See the [schema](../src/db/schema/climbing.ts) and PostgreSQL [recursive queries](https://www.postgresql.org/docs/current/queries-with.html#QUERIES-WITH-RECURSIVE).
 
-API coordinates use `GpsCoordinates { latitude, longitude }`. PostgreSQL stores one native `point`, with x = longitude and y = latitude. Coordinates must be finite and within ±180° longitude and ±90° latitude; zero is valid. See the [value type](../packages/training/src/gps-coordinates.ts) and PostgreSQL's [geometric types](https://www.postgresql.org/docs/current/datatype-geometric.html).
+An explicit `area.group_id` links source Areas without replacing their names,
+provider IDs, hierarchy, or coordinates. The owner-scoped foreign key prevents
+cross-account membership. Source sync updates only source facts and preserves
+this relationship through renames. The activity-log repository returns the
+effective leaf Area's `areaGroupId`, preferring the location recorded on the log
+over the shared Climb location. The existing list grouping uses explicit groups
+before name paths and never bridges explicit groups through an unmapped name.
+See the [schema](../src/db/schema/climbing.ts),
+[repository](../packages/server/src/repositories/climbing-activity-log-entry-repository.ts),
+[shared grouping](../packages/training/src/climbing-log-groups.ts), and
+[PostgreSQL foreign keys](https://www.postgresql.org/docs/current/ddl-constraints.html#DDL-CONSTRAINTS-FK).
+
+### Assigning a confirmed location group
+
+After the schema is deployed, an operator can assign a confirmed pair with
+stock `psql`. Run the block as a script with `psql -v ON_ERROR_STOP=1 -f <file>`.
+Set `user_id`, `area_a`, and `area_b` to the verified owner and
+source Area UUIDs. Inspect their provider/external IDs and names first. If an
+Area already belongs to a group, review that group's complete membership before
+changing it; this transaction deliberately accepts only two ungrouped Areas.
+No data-specific mapping belongs in a deploy migration. The transaction uses
+[row locks](https://www.postgresql.org/docs/current/explicit-locking.html#LOCKING-ROWS)
+and [psql's `\gset` and error handling](https://www.postgresql.org/docs/current/app-psql.html)
+to stop when the pair is missing, duplicated, differently owned, or already mapped.
+
+```sql
+\set ON_ERROR_STOP on
+\unset location_group_id
+BEGIN;
+WITH selected AS MATERIALIZED (
+  SELECT user_id FROM fitness.area
+  WHERE user_id = :'user_id'::uuid
+    AND id IN (:'area_a'::uuid, :'area_b'::uuid)
+    AND group_id IS NULL
+  FOR UPDATE
+)
+INSERT INTO fitness.area_group (user_id)
+SELECT user_id FROM selected GROUP BY user_id HAVING count(*) = 2
+RETURNING id AS location_group_id \gset
+
+UPDATE fitness.area SET group_id = :'location_group_id'::uuid
+WHERE user_id = :'user_id'::uuid
+  AND id IN (:'area_a'::uuid, :'area_b'::uuid)
+RETURNING provider_id, external_id, name, group_id;
+COMMIT;
+```
+
+API coordinates use `GpsCoordinates { latitude, longitude }`. PostgreSQL stores one native `point`, with x = longitude and y = latitude. Coordinates must be finite and within ±180° longitude and ±90° latitude; zero is valid. See the [value type](../packages/climbing-catalogue/src/geometry.ts) and PostgreSQL's [geometric types](https://www.postgresql.org/docs/current/datatype-geometric.html).
 
 Published grade components belong to their Climb or Pitch. Independently reported grades belong to the log. Each component has a value and nullable grading system, with collection order stored on its owned grade row. Progression ranks use published grades. See the [grade definitions](../packages/training/src/climbing-grades.ts) and [observation query](../packages/server/src/repositories/climbing-rock-observations.ts).
 
@@ -64,7 +112,7 @@ remain unknown, as implemented by the
 Canonical storage and repositories always use plural `holdTypes` and the
 numeric-or-category wall-angle model above. The existing tRPC procedures
 `climbing.activityLogEntries`, `climbing.unattachedClimbingLogEntries`, and
-`providerDetail.recordDetail` accept `responseVersion: 1 | 2 | 3`, defaulting to
+`providerDetail.recordDetail` accept `responseVersion: 1 | 2 | 3 | 4 | 5`, defaulting to
 `1`. For provider records, the version applies to climbing log entries only.
 The [response contract](../packages/server/src/contracts/climbing-log-contracts.ts)
 projects the canonical record at the API boundary; it does not create another
@@ -76,13 +124,15 @@ storage path. Input and output validation follow
 | Omitted or `1` | Scalar `holdType` only: one distinct `crimp`, `sloper`, `pinch`, `pocket`, or `jug` is retained. Multiple grips, newer grip kinds, and unknown grips produce null; no predominant grip is selected. | Numeric objects retain their values and units. Source categories produce null. |
 | `2` | Complete nullable `holdTypes` collection; no scalar alias. | Complete nullable numeric-or-category object. |
 | `3` | Same complete grip collection as `2`, plus attributed recorded `tags`. | Complete nullable numeric-or-category object. |
+| `4` | Same as `3`, plus the log's effective `areaPath`. | Complete nullable numeric-or-category object. |
+| `5` | Same as `4`, plus explicit location membership in `areaGroupId`. | Complete nullable numeric-or-category object. |
 
-The updated web and mobile clients request version `3` and strictly validate
-all three supported responses before rendering the canonical client model.
-Versions `1` and `2` omit the new `tags` field, preserving their strict client
-contracts. Deploy the version-3 API before publishing these updated clients:
-an intermediate API that explicitly accepts only versions `1` and `2` rejects
-a version-3 request during input validation. The
+Web and mobile activity screens request version `5`; provider record details
+and attachment pickers request version `4`. Updated decoders accept all five
+supported responses. Versions `1`–`4` omit `areaGroupId`, preserving strict
+installed clients. Deploy the version-5 API before publishing the matching
+activity screens: an API explicitly limited to earlier versions rejects a
+version-5 request during input validation. The
 [shared input schema](../packages/training/src/climbing-log-response.ts)
 defines that supported-version boundary.
 An earlier server's original `z.object` input strips the unknown version

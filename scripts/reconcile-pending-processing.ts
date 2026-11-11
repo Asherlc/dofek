@@ -1,9 +1,7 @@
 import * as Sentry from "@sentry/node";
-import {
-  createAnalyticsRefreshQueue,
-  enqueueAnalyticsRefresh,
-} from "../src/analytics-refresh-queue.ts";
+import { enqueueAnalyticsRefresh } from "../src/analytics-refresh-queue.ts";
 import { createClickHouseClientFromEnv } from "../src/db/clickhouse.ts";
+import { createAnalyticsRefreshQueue } from "../src/jobs/queues.ts";
 import { captureException } from "../src/lib/error-reporting.ts";
 import {
   createProcessingReconciliationDatabaseFromEnv,

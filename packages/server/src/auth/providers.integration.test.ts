@@ -1,6 +1,6 @@
 import { HttpResponse, http } from "msw";
-import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { createIntegrationMswFixture } from "../../../../src/test/early-msw-lifecycle.ts";
 import { failOnUnhandledExternalRequest } from "../../../../src/test/msw.ts";
 import { validateNativeAppleCallback } from "./providers.ts";
 
@@ -35,13 +35,13 @@ function createFakeIdToken(
   return `${header}.${payload}.${fakeSignature}`;
 }
 
-const mswServer = setupServer();
+const mswServer = createIntegrationMswFixture();
 
 describe("validateNativeAppleCallback (integration)", () => {
   const originalEnv = { ...process.env };
 
   beforeAll(async () => {
-    mswServer.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    mswServer.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
 
     const { pem, keyId } = await generateTestKeyPem();
     process.env.APPLE_BUNDLE_ID = "com.dofek.app";
@@ -55,7 +55,7 @@ describe("validateNativeAppleCallback (integration)", () => {
   });
 
   afterAll(() => {
-    mswServer.close();
+    mswServer.deactivate();
     process.env = originalEnv;
   });
 

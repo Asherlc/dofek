@@ -1,13 +1,88 @@
 import { PgDialect } from "drizzle-orm/pg-core";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { makeTransactionalTestDatabase } from "../providers/test-helpers.ts";
 import { persistClimbingLogSnapshot } from "./climbing-log-snapshot.ts";
 import type { ClimbingLogSyncInput } from "./climbing-log-sync.ts";
 
-const { persist } = vi.hoisted(() => ({ persist: vi.fn() }));
+const { persist, markAbsent, markPresent } = vi.hoisted(() => ({
+  persist: vi.fn(),
+  markAbsent: vi.fn(),
+  markPresent: vi.fn(),
+}));
 vi.mock("./climbing-log-sync.ts", () => ({ persistClimbingLogEntries: persist }));
+vi.mock("./provider-activity-absence.ts", () => ({
+  markProviderActivityAbsent: markAbsent,
+  markProviderActivityPresent: markPresent,
+}));
 
 describe("climbing snapshot parameter binding", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+  it("binds retained identities and scope to retirement and restoration commands", async () => {
+    const input: ClimbingLogSyncInput = {
+      userId: "00000000-0000-4000-8000-000000000001",
+      providerId: "kaya",
+      entries: [],
+    };
+    const retainedIds = ["kaya:session:1000:attempted:1000_2001"];
+    persist.mockResolvedValueOnce({ logEntryIds: [], recordsSynced: 0 });
+    const execute = vi.fn().mockResolvedValue([]);
+    const db = makeTransactionalTestDatabase({
+      select: vi.fn(),
+      insert: vi.fn(),
+      delete: vi.fn(),
+      execute,
+    });
+    expect(await persistClimbingLogSnapshot(db, input, retainedIds)).toEqual({
+      logEntryIds: [],
+      recordsSynced: 0,
+    });
+    expect(execute).toHaveBeenCalledTimes(3);
+    const parameters = execute.mock.calls.map(
+      ([query]) => new PgDialect().sqlToQuery(query).params,
+    );
+    expect(parameters).toEqual([
+      [input.userId, input.providerId, [], retainedIds],
+      [input.userId, input.providerId, retainedIds],
+      [input.userId, input.providerId, retainedIds],
+    ]);
+  });
+  it("dispatches typed native observation presence to the shared lifecycle helpers", async () => {
+    const input: ClimbingLogSyncInput = {
+      userId: "00000000-0000-4000-8000-000000000001",
+      providerId: "kilter",
+      entries: [],
+    };
+    const persisted = { logEntryIds: ["00000000-0000-4000-8000-000000000002"], recordsSynced: 1 };
+    persist.mockResolvedValueOnce(persisted);
+    const observations: { external_id: string; absent: boolean }[] = [
+      { external_id: "kilter:log:removed", absent: true },
+      { external_id: "kilter:log:retained", absent: false },
+    ];
+    const execute = vi
+      .fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce(observations);
+    const db = makeTransactionalTestDatabase({
+      select: vi.fn(),
+      insert: vi.fn(),
+      delete: vi.fn(),
+      execute,
+    });
+    expect(await persistClimbingLogSnapshot(db, input, ["kilter:log:retained"])).toBe(persisted);
+    expect(markAbsent).toHaveBeenCalledExactlyOnceWith(db, {
+      userId: input.userId,
+      providerId: input.providerId,
+      externalId: "kilter:log:removed",
+    });
+    expect(markPresent).toHaveBeenCalledExactlyOnceWith(db, {
+      userId: input.userId,
+      providerId: input.providerId,
+      externalId: "kilter:log:retained",
+    });
+  });
   it("binds a large logbook as one UUID array within the PostgreSQL parameter limit", async () => {
     const logEntryIds = Array.from(
       { length: 65_534 },

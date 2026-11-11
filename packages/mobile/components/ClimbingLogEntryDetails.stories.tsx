@@ -109,3 +109,53 @@ export const GroupedSourceTags: Story = {
     },
   },
 };
+
+export const UnorderedKayaAttempts: Story = {
+  args: {
+    entry: {
+      ...entry,
+      providerId: "kaya",
+      sourceName: "Kaya",
+      notes: null,
+      recordedClimbAttemptCount: 2,
+      attempts: [
+        climbingAttemptFixture(entry.id, {
+          ropeMethod: "top_rope",
+          outcome: "completed",
+          rockResultLabels: ["sent"],
+          usedAid: false,
+          fellOrHung: false,
+        }),
+        climbingAttemptFixture(entry.id, {
+          id: "20000000-0000-4000-8000-000000000006",
+          ropeMethod: "top_rope",
+          outcome: "failed",
+        }),
+      ],
+    },
+  },
+};
+
+export const KilterBoardLocation: Story = {
+  args: {
+    entry: climbingLogEntryFixture({
+      providerId: "kilter",
+      sourceName: "Kilter Board",
+      title: "Evening problem",
+      climbedOn: "2026-11-09",
+      board: { name: "Original 12 x 12", externalId: "wall-one" },
+      wallAngle: { value: 40, unit: "degrees" },
+      areaPath: [
+        {
+          id: "20000000-0000-4000-8000-000000000010",
+          userId: entry.userId,
+          providerId: "kilter",
+          externalId: "gym-one",
+          name: "Summit Climbing · North Gym",
+          parentAreaId: null,
+          coordinates: { latitude: 37.5, longitude: -122.25 },
+        },
+      ],
+    }),
+  },
+};

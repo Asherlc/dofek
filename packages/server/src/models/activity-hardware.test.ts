@@ -650,7 +650,7 @@ describe("activity hardware", () => {
       },
     ]);
     expect(result.items.map((item) => item.label)).toEqual([
-      "Bike",
+      "Peloton Bike",
       "Polar Vantage V3",
       "Ride with GPS for iPhone",
       "Watch",
@@ -668,7 +668,7 @@ describe("activity hardware", () => {
     ["home_bike_plus", "Peloton Bike+"],
     ["home_bike_v1", "Peloton Bike"],
     ["home_bike", "Peloton Bike"],
-    ["bike", "Bike"],
+    ["bike", "Peloton Bike"],
     ["future_equipment", "Future equipment"],
   ])("names Peloton equipment %s readably", (deviceType, label) => {
     const result = normalizeActivityHardware([

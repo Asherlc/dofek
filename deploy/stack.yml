@@ -30,6 +30,32 @@ services:
       - --certificatesresolvers.le.acme.dnschallenge.delaybeforecheck=10
       - --certificatesresolvers.le.acme.email=asherlc@asherlc.com
       - --certificatesresolvers.le.acme.storage=/letsencrypt/acme.json
+      # Server-error access logs only. Field and header defaults are dropped so
+      # no request path, query, client identity or header reaches the exporter:
+      # RequestPath includes URL.RawQuery. The pinned 3.6 image (3.6.25) can
+      # drop query parameters, but earlier 3.6 patches cannot, so the path field
+      # is omitted entirely. Sentry keeps the failing operation endpoint.
+      - --accesslog=true
+      - --accesslog.format=json
+      - --accesslog.filters.statuscodes=500-599
+      - --accesslog.fields.defaultmode=drop
+      - --accesslog.fields.headers.defaultmode=drop
+      - --accesslog.fields.names.StartUTC=keep
+      - --accesslog.fields.names.Duration=keep
+      - --accesslog.fields.names.OriginDuration=keep
+      - --accesslog.fields.names.RouterName=keep
+      - --accesslog.fields.names.ServiceName=keep
+      - --accesslog.fields.names.ServiceAddr=keep
+      - --accesslog.fields.names.RequestMethod=keep
+      - --accesslog.fields.names.OriginStatus=keep
+      - --accesslog.fields.names.DownstreamStatus=keep
+      - --accesslog.fields.names.TraceId=keep
+      - --accesslog.fields.names.SpanId=keep
+      # Native OTLP export reuses the unsampled logs/app pipeline. Setting it
+      # makes Traefik discard the duplicate stdout access log line.
+      - --experimental.otlplogs=true
+      - --accesslog.otlp.http.endpoint=http://collector:4318/v1/logs
+      - --accesslog.otlp.servicename=traefik
     environment:
       CF_DNS_API_TOKEN: ${CLOUDFLARE_API_TOKEN:?CLOUDFLARE_API_TOKEN is required}
     ports:
@@ -133,6 +159,9 @@ services:
       ACCOUNT_ERASURE_LEDGER_R2_BUCKET: dofek-account-erasure-ledger
     volumes:
       - job_files:/app/job-files
+      - /mnt/dofek-data/kafka-broker/data:/var/lib/dofek/kafka-data:ro
+      - /mnt/dofek-data/redpanda:/var/lib/dofek/retired-broker-data:ro
+      - /mnt/dofek-data/kafka/data:/var/lib/dofek/aborted-kafka-data:ro
     healthcheck:
       test:
         [
@@ -159,6 +188,7 @@ services:
   analytics-worker:
     image: ${APP_IMAGE:?APP_IMAGE must be the resolved immutable deployment image}
     command: ["analytics-worker"]
+    stop_grace_period: 30m
     env_file: ${ANALYTICS_WORKER_ENV_FILE:?ANALYTICS_WORKER_ENV_FILE is required}
     environment:
       DEPLOY_ENVIRONMENT: ${DEPLOY_ENVIRONMENT:-production}
@@ -345,38 +375,63 @@ services:
           cpus: "1.5"
           memory: 13G
 
-  redpanda:
-    image: redpandadata/redpanda:v26.1.9
-    command:
-      - redpanda
-      - start
-      - --smp=1
-      - --memory=1G
-      - --reserve-memory=0M
-      - --overprovisioned
-      - --node-id=0
-      - --check=false
-      # NOTE: cluster properties like kafka_batch_max_bytes are NOT valid
-      # `rpk redpanda start` flags — adding e.g. --kafka-batch-max-bytes here
-      # crash-loops the broker. Set them via `rpk cluster config set` instead.
-      - --kafka-addr=internal://0.0.0.0:9092
-      - --advertise-kafka-addr=internal://redpanda:9092
-      - --rpc-addr=0.0.0.0:33145
-      - --advertise-rpc-addr=redpanda:33145
+  # Stock Kafka/Aiven tiering; JSONL archive remains independent.
+  kafka:
+    image: apache/kafka:4.4.0@sha256:833b867a9585a141da455dc2b57431c65cbccb27f11c91f694444cca9f777e0f
+    # Self-advertised name must resolve before Swarm marks the broker ready.
+    hostname: kafka
+    env_file: ${KAFKA_ENV_FILE:?KAFKA_ENV_FILE is required}
+    environment:
+      KAFKA_HEAP_OPTS: "-Xmx1G -Xms1G"
+      KAFKA_LOG_DIRS: "/var/lib/kafka/data"
+      KAFKA_PROCESS_ROLES: "broker,controller"
+      KAFKA_NODE_ID: "1"
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:29093"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:9092"
+      KAFKA_LISTENERS: "CONTROLLER://:29093,PLAINTEXT://:9092"
+      KAFKA_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
+      KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_REMOTE_LOG_STORAGE_SYSTEM_ENABLE: "true"
+      KAFKA_REMOTE_LOG_STORAGE_MANAGER_CLASS_PATH: "/plugins/1.2.0/core/*:/plugins/1.2.0/s3/*"
+      KAFKA_REMOTE_LOG_STORAGE_MANAGER_CLASS_NAME: "io.aiven.kafka.tieredstorage.RemoteStorageManager"
+      KAFKA_REMOTE_LOG_METADATA_MANAGER_CLASS_NAME: "org.apache.kafka.server.log.remote.metadata.storage.TopicBasedRemoteLogMetadataManager"
+      KAFKA_REMOTE_LOG_METADATA_MANAGER_LISTENER_NAME: "PLAINTEXT"
+      KAFKA_RLMM_CONFIG_REMOTE_LOG_METADATA_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_RLMM_CONFIG_REMOTE_LOG_METADATA_TOPIC_MIN_ISR: "1"
+      KAFKA_RSM_CONFIG_CHUNK_SIZE: "4194304"
+      KAFKA_RSM_CONFIG_FETCH_CHUNK_CACHE_CLASS: "io.aiven.kafka.tieredstorage.fetch.cache.MemoryChunkCache"
+      KAFKA_RSM_CONFIG_FETCH_CHUNK_CACHE_SIZE: "67108864"
+      KAFKA_RSM_CONFIG_FETCH_CHUNK_CACHE_PREFETCH_MAX_SIZE: "4194304"
+      KAFKA_RSM_CONFIG_STORAGE_BACKEND_CLASS: "io.aiven.kafka.tieredstorage.storage.s3.S3Storage"
+      KAFKA_RSM_CONFIG_STORAGE_S3_PATH_STYLE_ACCESS_ENABLED: "true"
+      AWS_REQUEST_CHECKSUM_CALCULATION: "WHEN_REQUIRED"
+      AWS_RESPONSE_CHECKSUM_VALIDATION: "WHEN_REQUIRED"
     volumes:
-      # Bind to the large /mnt/dofek-data disk, NOT a default named volume (which
-      # lands on the small root disk and fills during a metric-stream backfill).
-      - /mnt/dofek-data/redpanda:/var/lib/redpanda/data
+      # Fresh tiered generation; retain both original broker trees separately.
+      - /mnt/dofek-data/kafka-broker/data:/var/lib/kafka/data
+      - /mnt/dofek-data/kafka/plugins:/plugins:ro
     healthcheck:
-      test: ["CMD-SHELL", "rpk cluster health | grep -q 'Healthy:.*true'"]
+      # Port-liveness only. Deploy waits on an external kafka-broker-api-versions client
+      # before producers attach. Never run operator JVMs inside this cgroup.
+      test:
+        [
+          "CMD-SHELL",
+          "bash -c 'exec 3<>/dev/tcp/127.0.0.1/9092'",
+        ]
       interval: 10s
-      timeout: 10s
+      timeout: 5s
       retries: 12
       start_period: 60s
     deploy:
       resources:
         limits:
-          memory: 1500M
+          # Replaces retired Redpanda 1500M hot-log budget on this single-node host.
+          memory: 2048M
 
   metric-stream-clickhouse-sink: &metric-stream-clickhouse-sink
     image: ${APP_IMAGE:?APP_IMAGE must be the resolved immutable deployment image}
@@ -384,6 +439,7 @@ services:
     env_file: ${METRIC_STREAM_CLICKHOUSE_SINK_ENV_FILE:?METRIC_STREAM_CLICKHOUSE_SINK_ENV_FILE is required}
     environment: &metric-stream-clickhouse-sink-environment
       NODE_ENV: production
+      DATABASE_URL: postgres://health:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/health
       CLICKHOUSE_URL: http://default:${CLICKHOUSE_PASSWORD_ENCODED:?CLICKHOUSE_PASSWORD_ENCODED is required}@clickhouse:8123
       OTEL_SERVICE_NAME: dofek-metric-stream-clickhouse-sink
       OTEL_RESOURCE_ATTRIBUTES: deployment.environment=${DEPLOY_ENVIRONMENT:-production}
@@ -764,13 +820,13 @@ services:
         target: /etc/otelcol-contrib/config.yaml
 
   ota:
-    image: ghcr.io/axelmarciano/expo-open-ota:v2.3.16
+    image: ghcr.io/asherlc/dofek-ota-internal@sha256:7198693f2b6452986863444c3944c360240ec12eef143125b4ada4b755d4c0e2
     environment:
       EXPO_APP_ID: ${EXPO_APP_ID:?EXPO_APP_ID is required}
       EXPO_ACCESS_TOKEN: ${EXPO_TOKEN:?EXPO_TOKEN is required}
       BASE_URL: ${OTA_BASE_URL:-https://ota.dofek.asherlc.com}
       STORAGE_MODE: s3
-      S3_BUCKET_NAME: dofek-ota
+      S3_BUCKET_NAME: dofek-ota-releases
       AWS_REGION: auto
       AWS_BASE_ENDPOINT: ${R2_ENDPOINT}
       AWS_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID}

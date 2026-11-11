@@ -3,11 +3,12 @@ import { sql } from "drizzle-orm";
 import { executeWithSchema, type SqlExecutor } from "./execute-with-schema.ts";
 
 /** Read current owned source facts; catalogue lookups never modify the source graph. */
-export async function loadCatalogueSeed(
+export async function loadCatalogueSeeds(
   db: SqlExecutor,
   userId: string,
-  logEntryId: string,
-): Promise<CatalogueSeed | null> {
+  logEntryIds: readonly string[],
+): Promise<CatalogueSeed[]> {
+  if (logEntryIds.length === 0) return [];
   const rows = await executeWithSchema(
     db,
     catalogueSeedSchema,
@@ -38,9 +39,11 @@ export async function loadCatalogueSeed(
     FROM fitness.v_climbing_log_entry AS entry
     LEFT JOIN fitness.climb AS source_climb ON source_climb.id = entry.climb_id
       AND source_climb.user_id = entry.user_id AND source_climb.provider_id = entry.provider_id
-    WHERE entry.user_id = ${userId}::uuid AND entry.id = ${logEntryId}::uuid
+    WHERE entry.user_id = ${userId}::uuid AND entry.id IN (${sql.join(
+      [...new Set(logEntryIds)].map((id) => sql`${id}::uuid`),
+      sql`, `,
+    )})
       AND entry.provider_absent_at IS NULL
-      AND COALESCE(NULLIF(BTRIM(source_climb.name), ''), NULLIF(BTRIM(entry.title), '')) IS NOT NULL
       AND (entry.activity_id IS NULL OR EXISTS (
         SELECT 1 FROM fitness.activity AS parent
         WHERE parent.id = entry.activity_id AND parent.user_id = ${userId}::uuid
@@ -48,5 +51,13 @@ export async function loadCatalogueSeed(
       ))
   `,
   );
-  return rows[0] ?? null;
+  return rows;
+}
+
+export async function loadCatalogueSeed(
+  db: SqlExecutor,
+  userId: string,
+  logEntryId: string,
+): Promise<CatalogueSeed | null> {
+  return (await loadCatalogueSeeds(db, userId, [logEntryId]))[0] ?? null;
 }

@@ -21,6 +21,7 @@ export function makeDatabase(
   sourceEntries: ClimbingLogEntryDetail[] = [],
 ) {
   function sourceQueryRows(query: string): TestDatabaseRow[] | null {
+    if (query.includes("fitness.v_climbing_log_activity")) return [];
     if (query.includes("FROM fitness.user_settings")) return [];
     if (query.includes('AS "activityId"'))
       return sourceEntries.map((entry) => ({
@@ -82,6 +83,7 @@ export function makeSensorStore(rowSets: Record<string, unknown>[][]): ActivityS
           schema.parse(
             ("canonical_type" in row || "activity_type" in row) && "started_at" in row
               ? {
+                  power_tss: null,
                   timezone: null,
                   start_utc_offset_minutes: null,
                   end_utc_offset_minutes: null,
@@ -102,7 +104,7 @@ export function makeSensorStore(rowSets: Record<string, unknown>[][]): ActivityS
                   last_processed_at: null,
                   ...row,
                 }
-              : row,
+              : { power_tss: null, ...row },
           ),
         ),
       ),
@@ -159,6 +161,7 @@ export function makeActivityRow<T extends Record<string, unknown>>(overrides?: T
     duration_min: 60,
     avg_hr: null,
     max_hr: null,
+    power_tss: null,
     avg_power: 250,
     total_distance: null,
     elevation_gain_m: null,

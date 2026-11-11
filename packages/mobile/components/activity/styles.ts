@@ -6,28 +6,29 @@ export const statsStyles = StyleSheet.create({
   grid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 8,
+    rowGap: 16,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+    paddingTop: 16,
   },
   card: {
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    padding: 14,
+    paddingRight: 12,
     width: "48%",
+    minWidth: 130,
     flexGrow: 1,
   },
   label: {
     fontSize: 11,
     color: colors.textTertiary,
     marginBottom: 4,
-    textTransform: "uppercase",
-    letterSpacing: 0.3,
   },
   value: {
-    fontSize: 18,
+    fontSize: 22,
     fontWeight: "700",
     color: colors.text,
     fontVariant: ["tabular-nums"],
   },
+  secondary: { color: colors.textSecondary, fontSize: 12, marginTop: 4 },
 });
 
 export const styles = StyleSheet.create({

@@ -128,6 +128,7 @@ it("keeps source-climb selection after a refreshed response and opens its source
   fireEvent.click(screen.getByRole("button", { name: /^0°:/ }));
   result.rerender(<ClimbingStrengths data={structuredClone(climbingStrengthsComparisonFixture)} />);
   expect(screen.getByText("Quiet Feet")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Sources for Quiet Feet" }));
   fireEvent.click(screen.getByRole("link", { name: "Mountain Project source for Quiet Feet" }));
   expect(openExternalUrl).toHaveBeenCalledWith(
     "https://www.mountainproject.com/route/1",
@@ -233,4 +234,123 @@ it("prefers observed tags when wall and hold observations are missing", async ()
   expect(
     screen.getByRole("button", { name: "Kaya · Movement" }).getAttribute("aria-selected"),
   ).toBe("true");
+});
+
+it("starts with contributing climbs selected and resets a removed selection", () => {
+  const initial = climbingStrengthsComparisonFixture;
+  const view = render(<ClimbingStrengths data={initial} />);
+  expect(screen.getByText("Quiet Feet")).toBeTruthy();
+  openData();
+  fireEvent.click(screen.getByRole("button", { name: /^20°:/ }));
+  expect(screen.queryByText("Quiet Feet")).toBeNull();
+  const changed = {
+    ...initial,
+    panels: initial.panels.map((panel) => ({
+      ...panel,
+      allGrades: {
+        ...panel.allGrades,
+        rows: panel.allGrades.rows.filter((row) => row.key !== "angle-20"),
+      },
+    })),
+  };
+  view.rerender(<ClimbingStrengths data={changed} />);
+  expect(screen.getByText("Quiet Feet")).toBeTruthy();
+  view.rerender(<ClimbingStrengths data={initial} />);
+  expect(screen.getByText("Quiet Feet")).toBeTruthy();
+});
+it("enables area metadata initially and forwards its toggle", () => {
+  const onChange = vi.fn();
+  const view = render(<ClimbingStrengths data={data} onIncludeAreaMetadataChange={onChange} />);
+  const toggle = screen.getByRole("switch", { name: "Include area metadata" });
+  expect(toggle.getAttribute("aria-checked")).toBe("true");
+  fireEvent.click(toggle);
+  expect(onChange).toHaveBeenCalledWith(false);
+  view.rerender(
+    <ClimbingStrengths
+      data={data}
+      includeAreaMetadata={false}
+      onIncludeAreaMetadataChange={onChange}
+    />,
+  );
+  expect(
+    screen.getByRole("switch", { name: "Include area metadata" }).getAttribute("aria-checked"),
+  ).toBe("false");
+});
+it("expands source hierarchies with provider links and inherited area labels", async () => {
+  const initial = climbingStrengthsComparisonFixture;
+  const enriched = {
+    ...initial,
+    panels: initial.panels.map((panel) => ({
+      ...panel,
+      allGrades: {
+        ...panel.allGrades,
+        rows: panel.allGrades.rows.map((row) => ({
+          ...row,
+          cells: row.cells.map((cell) => ({
+            ...cell,
+            examples: cell.examples.map((example) => ({
+              ...example,
+              traitSources: [
+                {
+                  providerId: "mountain-project",
+                  url: "https://www.mountainproject.com/area/12",
+                  scope: "area" as const,
+                  name: "Auburn Quarry",
+                  trait: "Crimp",
+                },
+                {
+                  providerId: "kaya",
+                  url: "https://kaya-app.kayaclimb.com/climb/12",
+                  scope: "route" as const,
+                  name: "Source climb",
+                  trait: "Technical",
+                },
+              ],
+            })),
+          })),
+        })),
+      },
+    })),
+  };
+  render(<ClimbingStrengths data={enriched} />);
+  expect(screen.getByText("Area metadata")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Sources for Quiet Feet · Area metadata" }));
+  expect(screen.getByText("Auburn Quarry")).toBeTruthy();
+  expect(screen.getByText("Crimp")).toBeTruthy();
+  expect(screen.getByText("Source climb")).toBeTruthy();
+  expect(screen.getByText("Technical")).toBeTruthy();
+  const link = screen.getByRole("link", { name: "Mountain Project" });
+  fireEvent.click(link);
+  expect(openExternalUrl).toHaveBeenCalledWith(
+    "https://www.mountainproject.com/area/12",
+    "climbing-strengths-source",
+  );
+});
+it("groups duplicate metadata errors behind one disclosure while keeping climbs visible", () => {
+  render(
+    <ClimbingStrengths
+      data={{
+        ...climbingStrengthsComparisonFixture,
+        enrichmentPending: true,
+        enrichmentErrors: [
+          "Reconnect Kaya and retry.",
+          "OpenBeta is unavailable. Retry later.",
+          "Reconnect Kaya and retry.",
+        ],
+      }}
+    />,
+  );
+  expect(screen.getAllByText("Catalogue metadata incomplete")).toHaveLength(1);
+  expect(screen.queryByText("Reconnect Kaya and retry.")).toBeNull();
+  const details = screen.getByRole("button", { name: "Provider details" });
+  expect(details.getAttribute("aria-expanded")).toBe("false");
+  fireEvent.click(details);
+  expect(details.getAttribute("aria-expanded")).toBe("true");
+  expect(screen.getByRole("button", { name: "Hide provider details" })).toBe(details);
+  expect(screen.getAllByText("Reconnect Kaya and retry.")).toHaveLength(1);
+  expect(screen.getByText("OpenBeta is unavailable. Retry later.")).toBeTruthy();
+  fireEvent.click(details);
+  expect(screen.getByRole("button", { name: "Provider details" })).toBe(details);
+  expect(screen.queryByText("Reconnect Kaya and retry.")).toBeNull();
+  expect(screen.getByText("Quiet Feet")).toBeTruthy();
 });

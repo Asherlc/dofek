@@ -1,6 +1,5 @@
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
-import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   area,
@@ -15,6 +14,7 @@ import {
 import { TEST_USER_ID } from "../db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
+import { createIntegrationMswFixture } from "../test/early-msw-lifecycle.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import { OpenBetaProvider } from "./openbeta.ts";
 import { SyncRun } from "./sync-run.ts";
@@ -26,13 +26,13 @@ import {
   openBetaTick,
 } from "./test-helpers.ts";
 
-const server = setupServer();
+const server = createIntegrationMswFixture();
 describe("OpenBetaProvider canonical persistence", () => {
   let context: TestContext;
   let currentTicks: Record<string, unknown>[];
   beforeAll(async () => {
     context = await setupTestDatabase();
-    server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
     await ensureProvider(
       context.db,
       "openbeta",
@@ -68,7 +68,7 @@ describe("OpenBetaProvider canonical persistence", () => {
     await context.db.delete(area);
   });
   afterAll(async () => {
-    server.close();
+    server.deactivate();
     await context.cleanup();
   });
   function run() {

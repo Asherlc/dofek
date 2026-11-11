@@ -81,9 +81,7 @@ describe("QueryStatePanel", () => {
   });
 
   it("names and visibly identifies a contextual error without nesting alerts", () => {
-    render(
-      <QueryStatePanel contextLabel="Sleep" error={new Error("Sleep performance unavailable")} />,
-    );
+    render(<QueryStatePanel contextLabel="Sleep" error={new Error("Sleep history unavailable")} />);
 
     const heading = screen.getByRole("heading", {
       name: "Sleep: Could not load this section",

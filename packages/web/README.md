@@ -2,6 +2,13 @@
 
 The web dashboard for Dofek. A modern React SPA built with Vite, TypeScript, and Tailwind CSS.
 
+The [dashboard](src/pages/Dashboard.tsx) presents processing status, recorded
+health measurements, personal-baseline comparisons, and insights. The
+[Recovery view](src/routes/training/recovery.tsx) retains HRV and sleep analytics;
+custom recovery, 0–21 strain, and sleep-performance scores and their daily
+recommendations have been retired as described in the
+[removal scope](../../docs/superpowers/specs/2026-11-03-remove-daily-scores-design.md).
+
 ## Architecture
 
 - **React + TypeScript**: Functional components with hooks.
@@ -62,12 +69,28 @@ Activity details show attached climbing logs and same-day attachment suggestions
 for climbing activities. Cards group under Area headings and show the
 published display grade, concise attempt counts, pitch labels, and server-derived
 rock labels through the [shared grouping helper](../training/src/climbing-log-groups.ts)
-and [card](src/pages/activity-detail/components/ClimbingLogEntryCard.tsx).
-Areas flow as blocks, with singleton areas sharing a row and larger areas
-wrapping their cards internally. The
-[breakdown](src/pages/activity-detail/components/ClimbingLogEntryBreakdown.tsx)
-uses [ResizeObserver](https://www.w3.org/TR/resize-observer/) to keep each block's
-column span within the available grid and preserve consistent card widths.
+and [card](src/pages/activity-detail/components/ClimbingLogEntryCard.tsx). Each
+Area heading renders the complete recorded root-to-leaf lineage, emphasizing the
+final area, and keeps long paths on one focusable line with
+[CSS horizontal overflow](https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/overflow-x).
+The activity panel and breakdown use named, focusable scroll sections, following
+[MDN's keyboard-scrolling guidance](https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/overflow#accessibility).
+Those two files have an approved exception for Biome's
+[`noNoninteractiveTabindex`](https://biomejs.dev/linter/rules/no-noninteractive-tabindex/javascript/)
+rule; all other rules remain enabled.
+The activity [climbing panel](src/pages/activity-detail/components/ActivityClimbingPanel.tsx)
+uses a single-column list grouped by Area beside its shared map; other log
+collections retain the responsive [breakdown](src/pages/activity-detail/components/ClimbingLogEntryBreakdown.tsx).
+Hovering or keyboard focusing a climb also emphasizes its existing HR chart
+line or time range, preserving the current zoom. The
+[metrics chart](src/pages/activity-detail/components/ActivityDetailCharts.tsx)
+matches the server-supplied annotation ID. Selecting a chart line, time range,
+or exact-value climb selects that occurrence in the list and scrolls only the
+list to reveal it. Selections expand the chart's zoom only when the selected
+climb is outside the visible window. The chart merges updates and disables marker
+animation to retain existing elements, following the ECharts
+[data update guidance](https://echarts.apache.org/handbook/en/how-to/animation/transition/).
+Climbs without recorded timing do not acquire an inferred position.
 The provider data viewer's
 [record details](src/components/ClimbingLogEntryDetails.tsx) show source links,
 published and reported grade collections, known attempt facts, and notes.
@@ -76,9 +99,6 @@ viewer. Missing totals retain one recorded occurrence. Provider
 records fetch the selected log's complete graph and retain cached rows during
 refresh errors. See the [canonical response contract](../server/src/contracts/climbing-log-contracts.ts).
 
-
-The recent climbing activity table omits distance and keeps its climbing metrics,
-as configured by the [climbing page](src/routes/training/climbing.tsx).
 
 Activity-list cards use the stored cycling modality to show training stats instead
 of distance and elevation for indoor and virtual rides, including reported zeros.
@@ -127,32 +147,22 @@ Thumbnails render near the viewport through one snapshot queue, capture the map 
 [idle](https://maplibre.org/maplibre-gl-js/docs/API/classes/Map/#idle), and release the WebGL
 context. Their server-authored center/zoom and SVG overlays share an aspect-preserved frame.
 
-Activity-detail climbing logs and attachment suggestions share the
-[canonical log-card grid](src/pages/activity-detail/components/ClimbingLogEntryBreakdown.tsx).
-Their component inputs accept source locations keyed by entry ID; the
-[shared location types](../training/src/climbing-map.ts) retain coordinates,
-the owning Climb or Area, and provider attribution.
-[ActivityRouteMap](src/components/ActivityRouteMap.tsx) renders source dots
-independently of recorded GPS tracks and loads compact tick maps as they
-approach the viewport. A unique point opens its climbing log details immediately;
-coincident locations show a counted marker. Its tooltip lists every climb name and
-source-location label. Selecting that marker offers each log by climb name, including repeated names,
-without an entry-number heading. The [shared marker grouping](../training/src/climbing-map.ts)
-preserves source coordinates and log identities; the web count uses a
-[MapLibre HTML marker](https://maplibre.org/maplibre-gl-js/docs/API/classes/Marker/).
-Selection opens the exact log's
-[record dialog](src/pages/RecordDetailModal.tsx) and highlights its
-[climbing card](src/pages/activity-detail/components/ClimbingLogEntryCard.tsx),
-including repeated names at the same point. Closing the dialog returns keyboard
-focus to its triggering map point or occurrence button; the [activity tests](src/pages/ActivityDetailPage.test.tsx)
-cover closing and reopening the same occurrence.
-The activity screen supplies each log's server-projected location to the
-overview and compact maps, including when no recorded GPS route exists.
-The [server projection](../server/src/repositories/climbing-activity-log-entry-repository.ts)
-uses a source Climb point or its nearest containing Area with coordinates;
-labels identify the owning source and distinguish Area from Climb locations.
-Unattached suggestions show their own compact source-location maps. The
-colocated map and climbing-log Storybook stories exercise these component inputs.
+Activity-detail climbing logs and same-day attachment suggestions share
+[ActivityClimbingPanel](src/pages/activity-detail/components/ActivityClimbingPanel.tsx):
+a grouped list on the left of one interactive map in wide containers, and the
+map above the list on narrow screens. Row hover/focus highlights its point;
+selecting either a row or marker selects the same occurrence. Numbered list rows
+keep repeated names at coincident coordinates individually selectable using
+[MapLibre HTML markers](https://maplibre.org/maplibre-gl-js/docs/API/classes/Marker/)
+and the [shared grouping model](../training/src/climbing-map.ts).
+Area locations are explicitly approximate and retain their provider attribution.
+Missing GPS retains the row and its Log details control. Log details opens the existing
+[record dialog](src/pages/RecordDetailModal.tsx); closing restores focus to that
+control. Source links, status labels, photos and independent Attach states remain
+available. The [activity tests](src/pages/ActivityDetailPage.test.tsx) cover route
+refresh states, attachment actions and source details. The full
+[layout story](src/pages/activity-detail/components/ActivityClimbingPanel.stories.tsx)
+exercises hover, focus, selection and repeated coordinate selection on a real map.
 
 ```bash
 cd packages/web && pnpm dev      # Start Vite dev server (proxies /api to server)
@@ -161,16 +171,17 @@ cd packages/web && pnpm storybook # Start Storybook
 pnpm test                        # Run repo-wide Vitest suites from the repo root
 ```
 
-Activity cards lead with the shared rounded-outline activity icon. A source row
-below the content and map expands inside the same card to show propagation
-branches. The row shows the recording source once and serves as the root when
-expanded. Separate copies from the same provider remain distinct, while
+Activity cards lead with the shared rounded-outline activity icon. A Lineage control
+below the content and map opens an anchored flyout to show explicitly
+labeled Original and Shared to branches. Separate copies from the same provider remain distinct, while
 unconnected records appear as other matching sources. Dofek remains implicit.
 See [ActivityCardContent](src/components/ActivityCardContent.tsx) and
 [ActivitySourceDisclosure](src/components/ActivitySourceDisclosure.tsx).
 
-The [activity detail header](src/pages/ActivityDetailPage.tsx) uses the same
-disclosure in place of flat source links. Its required `sourceTree` comes from
+The [activity detail header](src/pages/ActivityDetailPage.tsx) places Lineage
+beside the title and opens its tree in an anchored flyout. It reuses
+[Radix Popover](https://www.radix-ui.com/primitives/docs/components/popover)
+for positioning, outside-click dismissal, Escape, and focus restoration. Its required `sourceTree` comes from
 the [detail model](../server/src/models/activity.ts); removed records retain
 their removal information without an actionable source URL. Empty trees omit
 the source row, while unresolved trees with matching records remain expandable.
@@ -179,9 +190,9 @@ Both clients render the [shared source-tree contract](../providers-meta/src/acti
 from the [server projection](../server/src/models/activity-source-tree.ts).
 Retained origin evidence establishes links between source records; membership
 and metric priorities do not. Recording-app/device metadata can identify an
-earlier source without claiming its record is available. The inline button
-follows the [WAI disclosure pattern](https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/)
-and stays independent of activity navigation and selection.
+earlier source without claiming its record is available. The card button reuses
+the same [Radix Popover](https://www.radix-ui.com/primitives/docs/components/popover)
+as the detail header and stays independent of activity navigation and selection.
 
 ## Activity metric sources
 
@@ -214,9 +225,11 @@ the cadence-based gap rule used by both clients. This follows the distinction
 between [differing reporting intervals and missing observations](https://www.datawrapper.de/academy/patchy-data).
 The `IndependentMetricTimelines` and `SparseReadings` stories show both cases.
 
-Activity details use one Sources disclosure for the device/provider inheritance
-tree and reported hardware facts. Device facts attach to their device node by
-activity ID; reported hardware appears beneath the provider that reports it.
-Metadata without a matching source record retains a provider branch. The [source disclosure](src/components/ActivitySourceDisclosure.tsx)
-keeps query errors and retry actions visible while collapsed and follows the
+Activity details use one [Lineage disclosure](src/components/ActivitySourceDisclosure.tsx)
+with an explicit Original heading, labeled Shared to branches, and, when an Original is known, one divider
+and Other heading for additional recordings. Unresolved origins show Original
+unknown above the available recordings. The [shared projection](../providers-meta/src/activity-source-hardware.ts)
+uses reported recording hardware to name entries without turning device inventory
+into sharing steps. Metadata rows are omitted. Errors and retry actions remain
+visible while collapsed, following the
 [WAI disclosure pattern](https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/).

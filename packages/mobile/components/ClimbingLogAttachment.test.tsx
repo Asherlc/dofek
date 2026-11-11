@@ -138,7 +138,7 @@ describe("ClimbingLogAttachment", () => {
       getQueryKey(trpc.climbing.locationMap),
       getQueryKey(
         trpc.climbing.activityLogEntries,
-        { activityId: "00000000-0000-4000-8000-000000000001", responseVersion: 3 },
+        { activityId: "00000000-0000-4000-8000-000000000001", responseVersion: 4 },
         "query",
       ),
       getQueryKey(
@@ -148,7 +148,7 @@ describe("ClimbingLogAttachment", () => {
       ),
       getQueryKey(
         trpc.climbing.unattachedClimbingLogEntries,
-        { activityId: "00000000-0000-4000-8000-000000000002", responseVersion: 3 },
+        { activityId: "00000000-0000-4000-8000-000000000002", responseVersion: 4 },
         "query",
       ),
       getQueryKey(trpc.climbing.sessionSummary),
@@ -156,7 +156,7 @@ describe("ClimbingLogAttachment", () => {
       getQueryKey(trpc.climbing.strengths),
       getQueryKey(trpc.climbing.volumeByGrade),
       getQueryKey(trpc.activity.list),
-      getQueryKey(trpc.calendar.weekList),
+      getQueryKey(trpc.calendar.weekListV2),
     ];
     for (const key of affectedKeys) fixture.queryClient.setQueryData(key, []);
 

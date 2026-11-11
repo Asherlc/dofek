@@ -1,11 +1,21 @@
 import type { ActivityHardware } from "@dofek/providers/activity-hardware";
-import { activityMetricSourcePresentation } from "@dofek/providers/activity-metric-source";
+import {
+  activityMetricSourcePresentation,
+  activityMetricSourceText,
+} from "@dofek/providers/activity-metric-source";
+import {
+  type ActivitySourceTree,
+  activityMetricSourceInheritance,
+} from "@dofek/providers/activity-source-tree";
 import { providerRecordLabel, providerSourceLabel } from "@dofek/providers/providers";
 import { computeCyclingPowerWork } from "@dofek/training/cycling-workout-metrics";
 import { mapHrZones } from "@dofek/zones/zones";
+import { cyclingPowerCoveragePolicy } from "dofek/analytics/cycling-power-policy";
 import { z } from "zod";
 import {
   ACTIVITY_CHART_METRICS,
+  type ActivityHeartRateContext,
+  type ActivityMetricSourceSelection,
   type ActivityMetricSources,
   type ActivityPowerWork,
 } from "../contracts/activity-metric-sources.ts";
@@ -16,6 +26,7 @@ import { heartRateZoneCountColumns, heartRateZoneSqlParams } from "./heart-rate-
 export const activityMetricSamplesSql = `SELECT *
   FROM analytics.sensor_scalar_sample FINAL
   WHERE user_id = {userId:UUID}
+    AND {isPointOnly:Bool} = 0
     AND channel IN ('heart_rate', 'power', 'speed', 'cadence', 'altitude')
     AND recorded_date >= toDate(parseDateTime64BestEffort({windowStartedAt:String}, 6, 'UTC'))
     AND recorded_date <= toDate(parseDateTime64BestEffort({windowEndedAt:String}, 6, 'UTC'))
@@ -33,10 +44,47 @@ export const activityMetricSourceIdSql = `if(coalesce(device_id, '') = '', provi
 export function activityMetricParams(window: ActivitySensorWindow) {
   return {
     userId: window.userId,
+    isPointOnly: window.providerType === "climbing_log",
     windowStartedAt: window.startedAt,
     windowEndedAt:
       window.endedAt ?? new Date(Date.parse(window.startedAt) + 12 * 60 * 60 * 1000).toISOString(),
     memberActivityIds: window.memberActivityIds,
+  };
+}
+
+interface HeartRateStreamStore {
+  getStream(
+    window: ActivitySensorWindow,
+    maxPoints: number,
+    sources: ActivityMetricSourceSelection,
+  ): Promise<Array<{ recorded_at: string; heart_rate: number | null }>>;
+}
+
+/** Display context only; activity summaries and zones retain the recorded window. */
+export async function getActivityHeartRateContext(
+  store: HeartRateStreamStore,
+  window: ActivitySensorWindow,
+  maxPoints: number,
+  heartRateSourceId: string | undefined,
+): Promise<ActivityHeartRateContext> {
+  const marginMs = 5 * 60 * 1000;
+  const chartWindow = {
+    startedAt: new Date(Date.parse(window.startedAt) - marginMs).toISOString(),
+    endedAt: window.endedAt ? new Date(Date.parse(window.endedAt) + marginMs).toISOString() : null,
+  };
+  const points = heartRateSourceId
+    ? await store.getStream({ ...window, ...chartWindow }, maxPoints, {
+        heartRate: heartRateSourceId,
+      })
+    : [];
+  return {
+    window: chartWindow,
+    points: points
+      .filter((point) => point.heart_rate !== null)
+      .map((point) => ({
+        recordedAt: point.recorded_at,
+        value: point.heart_rate,
+      })),
   };
 }
 
@@ -88,6 +136,7 @@ export async function getActivityPowerWork(
       powerWatts: sample.power,
     })),
     durationSeconds,
+    cyclingPowerCoveragePolicy,
   );
   return {
     workKilojoules: metrics.workKilojoules,
@@ -104,6 +153,7 @@ const sourceRowSchema = z.object({
   device_id: z.string().nullable(),
   source_id: z.string(),
   activity_ids: z.array(z.string()),
+  sample_count: z.coerce.number(),
 });
 const deviceNameSchema = z.object({
   provider_id: z.string(),
@@ -115,6 +165,7 @@ export async function getActivityMetricSources(
   store: ActivitySensorQueryStore,
   window: ActivitySensorWindow,
   hardware: ActivityHardware = { items: [], power: [] },
+  sourceTree: ActivitySourceTree = { primary: null, otherSources: [] },
 ): Promise<ActivityMetricSources> {
   const rows = await store.query(
     sourceRowSchema,
@@ -123,7 +174,8 @@ export async function getActivityMetricSources(
       SELECT *, ${activityMetricSourceIdSql} AS source_id FROM (${activityMetricSamplesSql})
     )
     SELECT channel, provider_id, source_id, any(nullIf(device_id, '')) AS device_id,
-      groupUniqArray(ifNull(toString(activity_id), '')) AS activity_ids
+      groupUniqArray(ifNull(toString(activity_id), '')) AS activity_ids,
+      uniqExact(recorded_at) AS sample_count
     FROM source_samples
     GROUP BY channel, provider_id, source_id
     ORDER BY channel, min(provider_priority), provider_id, min(id), source_id`,
@@ -153,58 +205,91 @@ export async function getActivityMetricSources(
       )
     : [];
   return ACTIVITY_CHART_METRICS.flatMap((metric) => {
-    const sources = rows
-      .filter((row) => row.channel === metric.channel)
-      .map((row) => {
-        const peripheralName = peripheralNames.find(
-          (device) => device.provider_id === row.provider_id && device.device_id === row.device_id,
-        )?.device_name;
-        const originalLabel =
-          row.provider_id === "apple_health" || row.provider_id === "whoop_ble"
-            ? providerSourceLabel(row.provider_id, row.device_id)
-            : providerRecordLabel(row.provider_id, peripheralName ?? row.device_id);
-        const provenance = hardware.items.filter(
+    const metricRows = rows.filter((row) => row.channel === metric.channel);
+    if (metric.key === "heartRate") {
+      const directlyRecorded = (row: z.infer<typeof sourceRowSchema>) =>
+        row.activity_ids.some((id) => window.memberActivityIds.includes(id)) ||
+        hardware.items.some(
           (item) =>
+            item.role === "recorder" &&
+            window.memberActivityIds.includes(item.activityId) &&
             item.providerId === row.provider_id &&
-            row.activity_ids.includes(item.activityId) &&
-            (row.device_id === null ||
-              row.device_id === item.sourceName ||
-              row.device_id === item.label),
+            row.device_id !== null &&
+            row.device_id === item.sourceName,
         );
-        const role = provenance.some((item) => item.role === "recorder") ? "recorder" : "creator";
-        const matching = provenance.filter((item) => item.role === role);
-        const labels = [...new Set(matching.map((item) => item.label))];
-        const name =
-          labels.length === 1 &&
-          row.activity_ids.every((id) => matching.some((item) => item.activityId === id))
-            ? labels[0]
-            : undefined;
-        let label = originalLabel;
-        if (name) {
-          const includesHardwareName = originalLabel
-            .replace(/\s+/g, " ")
-            .toLowerCase()
-            .includes(name.replace(/\s+/g, " ").toLowerCase());
-          if (role === "recorder") {
-            label = includesHardwareName ? originalLabel : `${originalLabel} · recorded by ${name}`;
-          } else {
-            const baseLabel = includesHardwareName
+      // Stable sorting preserves provider priority for equal recording evidence and counts.
+      metricRows.sort(
+        (left, right) =>
+          Number(directlyRecorded(right)) - Number(directlyRecorded(left)) ||
+          right.sample_count - left.sample_count,
+      );
+    }
+    const sources = metricRows.map((row) => {
+      // A workout's ancestry does not override an explicitly attributed sample device.
+      const inherited =
+        row.device_id === null
+          ? activityMetricSourceInheritance(sourceTree, row.activity_ids, row.provider_id)
+          : null;
+      const peripheralName = peripheralNames.find(
+        (device) => device.provider_id === row.provider_id && device.device_id === row.device_id,
+      )?.device_name;
+      const originalLabel =
+        inherited?.label ??
+        (row.provider_id === "apple_health" || row.provider_id === "whoop_ble"
+          ? providerSourceLabel(row.provider_id, row.device_id)
+          : providerRecordLabel(row.provider_id, peripheralName ?? row.device_id));
+      const provenance = hardware.items.filter(
+        (item) =>
+          item.providerId === row.provider_id &&
+          row.activity_ids.includes(item.activityId) &&
+          (row.device_id === null ||
+            row.device_id === item.sourceName ||
+            row.device_id === item.label),
+      );
+      const role = provenance.some((item) => item.role === "recorder") ? "recorder" : "creator";
+      const matching = provenance.filter((item) => item.role === role);
+      const labels = [...new Set(matching.map((item) => item.label))];
+      const name =
+        labels.length === 1 &&
+        row.activity_ids.every((id) => matching.some((item) => item.activityId === id))
+          ? labels[0]
+          : undefined;
+      let label = originalLabel;
+      if (name) {
+        const includesHardwareName = originalLabel
+          .replace(/\s+/g, " ")
+          .toLowerCase()
+          .includes(name.replace(/\s+/g, " ").toLowerCase());
+        if (role === "recorder") {
+          label = includesHardwareName ? originalLabel : `${originalLabel} · recorded by ${name}`;
+        } else {
+          const baseLabel =
+            includesHardwareName && !inherited
               ? providerRecordLabel(row.provider_id, null)
               : originalLabel;
-            label = `${baseLabel} · file created by ${name}`;
-          }
+          label = `${baseLabel} · file created by ${name}`;
         }
-        return {
-          id: row.source_id,
+      }
+      const presentation =
+        inherited?.presentation ??
+        activityMetricSourcePresentation(
+          row.provider_id,
+          peripheralName ?? row.device_id,
           label,
-          presentation: activityMetricSourcePresentation(
-            row.provider_id,
-            peripheralName ?? row.device_id,
-            label,
-            name,
-          ),
-        };
-      });
+          name,
+        );
+      return {
+        id: row.source_id,
+        label,
+        presentation:
+          inherited &&
+          role === "recorder" &&
+          name &&
+          activityMetricSourceText(presentation) === null
+            ? { ...presentation, displayName: name }
+            : presentation,
+      };
+    });
     const first = sources[0];
     return first
       ? [

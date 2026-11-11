@@ -9,6 +9,16 @@ import { ActivityMetricSourcePicker } from "./ActivityMetricSourcePicker.tsx";
 
 const sources: ActivityMetricSource[] = [
   {
+    id: "peloton-copy",
+    label: "WHOOP via Peloton",
+    presentation: {
+      displayName: "WHOOP",
+      providerId: "whoop",
+      sourceName: null,
+      attribution: { kind: "provider", providerId: "peloton", label: "Peloton" },
+    },
+  },
+  {
     id: "watch",
     label: "Asher’s Apple Watch (via Apple Health)",
     presentation: {
@@ -79,6 +89,7 @@ type Story = StoryObj<typeof meta>;
 export const AppleHealth: Story = {};
 export const Cloud: Story = { args: { selectedId: "whoop-cloud" } };
 export const Bluetooth: Story = { args: { selectedId: "whoop-bluetooth" } };
+export const InheritedViaPeloton: Story = { args: { selectedId: "peloton-copy" } };
 export const RecorderDetails: Story = { args: { selectedId: "fit-file" } };
 export const UnknownAttribution: Story = { args: { selectedId: "unknown" } };
 

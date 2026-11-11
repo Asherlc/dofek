@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
-import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { claimAccountErasureRequest } from "../db/account-erasure-processing.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { createGarminAuthSetup } from "../providers/garmin/oauth.ts";
 import type { Provider } from "../providers/types.ts";
@@ -10,6 +10,7 @@ import {
   encryptCredentialValue,
   isEncryptedCredentialValue,
 } from "../security/credential-encryption.ts";
+import { createIntegrationMswFixture } from "../test/early-msw-lifecycle.ts";
 import { revokeRemoteAccounts } from "./remote-revocation.ts";
 import {
   type AccountErasureRemoteSnapshot,
@@ -19,14 +20,14 @@ import {
 
 describe("account-erasure rotated revocation credentials (integration)", () => {
   let context: TestContext;
-  const server = setupServer();
+  const server = createIntegrationMswFixture();
   beforeAll(async () => {
-    server.listen({ onUnhandledRequest: "error" });
+    server.activate({ onUnhandledFrame: "error" });
     context = await setupTestDatabase();
   });
   afterEach(() => server.resetHandlers());
   afterAll(async () => {
-    server.close();
+    server.deactivate();
     await context?.cleanup();
   });
 
@@ -42,12 +43,9 @@ describe("account-erasure rotated revocation credentials (integration)", () => {
       stripe: null,
       webhooks: [],
       localIdentifiers: {
-        activityIds: [],
         exportObjects: [],
         fileUploads: [],
-        processingOperationIds: [],
         sessionIds: [],
-        sleepSessionIds: [],
         userId,
       },
       providerConnections: providerIds.map((providerId) => ({
@@ -73,6 +71,54 @@ describe("account-erasure rotated revocation credentials (integration)", () => {
         ${encrypted}, now() + interval '1 day', now() + interval '30 days', 'running', 'worker', now() + interval '5 minutes')`);
     return { requestId, userId, encrypted };
   }
+
+  it("refuses to load oversized retained ciphertext when claiming a deletion request", async () => {
+    const captured = await request();
+    await context.db.execute(sql`UPDATE fitness.account_erasure_request
+      SET encrypted_remote_snapshot=${`enc:v1:${"A".repeat(2 * 1024 * 1024)}`},
+        user_hash=${"a".repeat(64)},lease_expires_at=now()-interval '1 minute'
+      WHERE id=${captured.requestId}::uuid`);
+    await expect(
+      claimAccountErasureRequest(context.db, captured.requestId, "next-worker", 30000).then(
+        () => undefined,
+      ),
+    ).rejects.toThrow(/Account deletion snapshot exceeds.*limit.*Contact support/);
+  });
+
+  it("rejects an oversized retained ciphertext before attempting to decrypt or update it", async () => {
+    const captured = await request();
+    const oversized = `enc:v1:${"A".repeat(2 * 1024 * 1024)}`;
+    await context.db.execute(sql`UPDATE fitness.account_erasure_request
+      SET encrypted_remote_snapshot=${oversized} WHERE id=${captured.requestId}::uuid`);
+    await expect(
+      updateAccountErasureProviderCredentials(context.db, captured.requestId, "worker", "first", {
+        accessToken: "rotated",
+        refreshToken: null,
+        expiresAt: new Date("2099-01-01"),
+        scopes: null,
+      }).then(() => undefined),
+    ).rejects.toThrow(/Account deletion snapshot exceeds.*limit.*Contact support/);
+    const rows =
+      await context.db.execute(sql`SELECT encrypted_remote_snapshot=${oversized} AS unchanged
+      FROM fitness.account_erasure_request WHERE id=${captured.requestId}::uuid`);
+    expect(rows).toEqual([expect.objectContaining({ unchanged: true })]);
+  });
+
+  it("rolls back a rotated credential exceeding the decoded credential limit", async () => {
+    const captured = await request();
+    await expect(
+      updateAccountErasureProviderCredentials(context.db, captured.requestId, "worker", "first", {
+        accessToken: "x".repeat(65537),
+        refreshToken: null,
+        expiresAt: new Date("2099-01-01"),
+        scopes: null,
+      }).then(() => undefined),
+    ).rejects.toThrow(/Account deletion snapshot exceeds.*credential.*limit.*Contact support/);
+    const rows =
+      await context.db.execute(sql`SELECT encrypted_remote_snapshot=${captured.encrypted} AS unchanged
+      FROM fitness.account_erasure_request WHERE id=${captured.requestId}::uuid`);
+    expect(rows).toEqual([expect.objectContaining({ unchanged: true })]);
+  });
 
   it("retries Garmin deletion from committed rotated credentials after a remote 503", async () => {
     const { requestId, userId, encrypted } = await request(["garmin"]);

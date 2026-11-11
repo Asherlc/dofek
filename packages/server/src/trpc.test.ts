@@ -311,6 +311,29 @@ describe("cached query contract versions", () => {
     await expect(caller.dashboard(input)).resolves.toBe("fresh-contract");
     expect(resolver).toHaveBeenCalledOnce();
   });
+  it("rebuilds transient responses even when background completion invalidated before the response returned", async () => {
+    const outputSchema = z.object({ pending: z.boolean() });
+    let first = true;
+    const resolver = vi.fn(async () => {
+      const pending = first;
+      first = false;
+      await queryCache.invalidateByPrefix("user-1:metadata:");
+      return { pending };
+    });
+    const caller = router({
+      metadata: cachedProtectedQuery({
+        maxAge: CacheTTL.LONG,
+        outputSchema,
+        shouldCache: (data) => !outputSchema.parse(data).pending,
+      })
+        .output(outputSchema)
+        .query(resolver),
+    }).createCaller(testContext({ db: {}, sensorStore: {}, userId: "user-1", timezone: "UTC" }));
+    expect(await caller.metadata()).toEqual({ pending: true });
+    expect(await caller.metadata()).toEqual({ pending: false });
+    expect(await caller.metadata()).toEqual({ pending: false });
+    expect(resolver).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("requestCacheTtl", () => {

@@ -12,7 +12,7 @@ interface TimestampedSample {
 }
 
 interface SensorUploadTelemetryInput {
-  stream: "imu" | "realtime";
+  stream: "imu" | "realtime" | "sensorRecords";
   userId: string;
   deviceId: string;
   appVersion?: string;
@@ -82,8 +82,11 @@ export class SensorUploadTelemetry {
     logger.error("[sensor-upload] upload_failed", { event: "upload_failed", ...attributes });
     captureException(error, {
       tags: {
-        source:
-          this.#attributes.stream === "imu" ? "imu-push-samples" : "whoop-ble-push-realtime-data",
+        source: {
+          imu: "imu-push-samples",
+          realtime: "whoop-ble-push-realtime-data",
+          sensorRecords: "whoop-ble-push-sensor-records",
+        }[this.#attributes.stream],
       },
       extra: attributes,
     });

@@ -9,6 +9,45 @@ vi.mock("./telemetry", () => ({
 }));
 
 describe("inferImportProviderFromFile", () => {
+  it("detects the documented Crimpd ZIP before the generic archive source", () => {
+    expect(
+      inferImportProviderFromFile({
+        fileName: "crimpd-logs-2026-09-11T143000.000Z.zip",
+        fileExtension: ".zip",
+        mimeType: "application/zip",
+        csvHeaderLine: "",
+      }),
+    ).toBe("crimpd");
+  });
+  it.each([
+    [
+      "eight-a",
+      "route_boulder,name,location_name,sector_name,area_name,country_code,date,type,sub_type,rating,project,tries,repeats,difficulty,perceived_hardness,comment,height,recommended,sits",
+    ],
+    [
+      "moonboard",
+      "board,angle,climb_name,date,logged_grade,displayed_grade,is_benchmark,tries,is_mirror,comment",
+    ],
+  ])("detects %s from its distinctive CSV header", (id, csvHeaderLine) => {
+    expect(
+      inferImportProviderFromFile({
+        fileName: "export.csv",
+        fileExtension: ".csv",
+        mimeType: "text/csv",
+        csvHeaderLine,
+      }),
+    ).toBe(id);
+  });
+  it("keeps an unrelated CSV with climbing words unclassified", () => {
+    expect(
+      inferImportProviderFromFile({
+        fileName: "export.csv",
+        fileExtension: ".csv",
+        mimeType: "text/csv",
+        csvHeaderLine: "notes,board angle,date description",
+      }),
+    ).toBeNull();
+  });
   it("detects Strong CSV by header", () => {
     expect(
       inferImportProviderFromFile({

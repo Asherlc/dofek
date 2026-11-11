@@ -7,6 +7,12 @@ separate published and reported grades, and scoped attempt facts. See the
 
 The backend API and background job processor for Dofek. Built with Node.js, Express, tRPC, and Drizzle ORM.
 
+The [mobile dashboard overview](src/services/dashboard-overview.ts) serves
+recorded sleep, and the [recovery router](src/routers/recovery.ts) retains
+baseline and descriptive workload analytics. Custom recovery, 0–21 strain,
+sleep-performance/need, and dependent daily recommendation APIs are retired;
+see the [removal scope](../../docs/superpowers/specs/2026-11-03-remove-daily-scores-design.md).
+
 The [climbing](src/routers/climbing.ts) and [strength](src/routers/strength.ts)
 weekly volume queries provide the charts with attempt counts, working sets,
 weight multiplied by repetitions, and recorded activity duration. The
@@ -29,6 +35,21 @@ work uses the [shared power integration and coverage calculation](../training/sr
 with incomplete power coverage withheld from weekly totals.
 
 ## Architecture
+
+Activity cards and the performance-management chart use canonical cycling
+power TSS from the [cycling power analytics](../../src/analytics/README.md).
+Heart-rate-derived TSS and its learned conversion are removed. Noncycling
+cards omit TSS; incomplete power stress withholds the PMC chart with an
+explanation. The TSS-derived ramp-rate and monotony charts are retired;
+the separate analytical HR-zone-load channel retains its descriptive summaries.
+See the
+[evidence review](../../docs/tss-evidence-review-2026-11-02.md) for the distinction
+between a load index and validated recovery prediction.
+
+Release this API retirement with the matching mobile client. Older builds that
+call the retired ramp-rate or monotony procedures need to update; those routes
+do not return fabricated empty datasets. See the [router](src/routers/cycling-advanced.ts)
+and [mobile training screen](../mobile/app/(tabs)/strain.tsx).
 
 - **tRPC API**: The primary interface for both web and mobile clients. Defined in `src/router.ts`.
 - **Express Server**: Hosts the tRPC middleware and supplementary REST routes for webhooks, file uploads, and authentication.
@@ -116,7 +137,8 @@ with incomplete power coverage withheld from weekly totals.
   category while leaving the original `panels` dimensions unchanged. Tags keep
   provider/category/source identity; repeated observations contribute one climb
   per tag. The [source decoder](../../src/climbing-tags.ts) reads existing raw
-  payloads without a migration. Catalogue tags remain reference information.
+  payloads without a migration. Cached, identity-checked catalogue route/area
+  evidence can additionally supply missing trait dimensions, as described below.
   The [aggregation](src/services/climbing-strengths.ts) supplies one panel per
   breakdown dimension for the selection made by the existing page filters.
   It retains semantic context and display grade system in same-grade radar
@@ -133,6 +155,27 @@ with incomplete power coverage withheld from weekly totals.
   assumes missing Mountain Project/OpenBeta rock settings are outdoor for reads
   and global filters. Explicit settings take precedence; imported raw catalogue
   rows are unchanged. Other missing settings appear as Unknown setting.
+- **Climbing catalogue enrichment**: Strengths loads authorized log seeds in bulk,
+  groups repeated source facts by the user-scoped v4 cache key, and queues missing
+  context through the existing catalogue worker. Provider HTTP requests run in
+  that worker; the chart request consumes cached observations and exposes pending
+  and error states. See the [enrichment repository](src/repositories/climbing-strengths-enrichment-repository.ts),
+  [bulk seed query](../../src/db/climbing-catalogue-seed.ts),
+  [cache service](../../src/climbing-catalogue.ts) and [worker](../../src/jobs/climbing-catalogue-job.ts).
+  The [trait projection](src/services/climbing-catalogue-traits.ts) accepts route
+  evidence only after identity, kind/setting and conflict checks. Area context may
+  come from that accepted ancestry or an independently corroborated recorded
+  local area; a possible route match alone does not establish route traits.
+  Recorded wall/hold facts retain precedence across repeated observations;
+  descriptions, statistics and tag counts never supply measured route values.
+  `includeAreaMetadata: false` excludes area-sourced contributions. The
+  [aggregation](src/services/climbing-strengths.ts) computes metrics on the server
+  and preserves source attribution in the [shared contract](../training/src/climbing-strengths.ts).
+  Paired [web](../web/src/components/ClimbingStrengths.tsx) and
+  [mobile](../mobile/components/ClimbingStrengths.tsx) views place a source tree
+  beside the chart; individual catalogue details keep area prose/statistics in
+  disclosures through the [web catalogue view](../web/src/components/ClimbingCatalogueContext.tsx)
+  and [mobile catalogue view](../mobile/components/ClimbingCatalogueContext.tsx).
 - **Provider climbing records**: The [provider detail repository](src/repositories/provider-detail-repository.ts)
   lists retained logs, including undated records and provider-absence tombstones,
   and loads the full owned graph for a selected record. The [sync repository](src/repositories/sync-repository.ts)
@@ -153,6 +196,18 @@ with incomplete power coverage withheld from weekly totals.
   [full compatibility contract](../../docs/climbing-context.md#response-versions-and-independent-releases).
   tRPC documents [input and output validation](https://trpc.io/docs/server/validators),
   and Zod documents [unknown-key handling](https://zod.dev/api#objects).
+- **Running response versions**: The existing `running.dynamics` array and
+  `running.dynamicsV2` wrapper accept `responseVersion: 1 | 2`, defaulting to `1`.
+  The historical projection includes only rows with finite cadence, pace and
+  distance, preserving genuine zeros and the exact old fields. Version `2`
+  retains nullable measurements and cadence basis/coverage; its wrapper has
+  separate cadence availability. Canonical repository selection remains complete. Both clients
+  request `2` and validate the [shared wire contract](../training/src/running-response.ts)
+  before rendering. The [router](src/routers/running.ts) uses a new cache
+  namespace and raw request versions separate entries. Its
+  [transport tests](src/routers/running.test.ts) cover cold omitted-version
+  requests and both cache ordering directions, following the existing
+  [climbing version policy](../training/src/climbing-log-response.ts).
 - **Insights Engine**: Complex data analysis and correlation logic located in `src/insights/`.
 - **Machine Learning**: Predictive modeling (e.g., weight prediction, activity features) in `src/ml/`.
 
@@ -196,6 +251,14 @@ with incomplete power coverage withheld from weekly totals.
 - **Redis pairing store**: Companion pairing uses Lua scripts over related Redis keys and is intended for the single-node Redis deployment used by Dofek. Redis Cluster requires every key touched by one Lua script to be in the same hash slot; supporting Cluster mode would require redesigning the pairing key names with Redis hash tags. See the Redis Cluster scaling and hash tag documentation: https://redis.io/docs/latest/operate/oss_and_stack/management/scaling/ and https://redis.io/docs/latest/operate/oss_and_stack/reference/cluster-spec/#hash-tags.
 - **Monitoring**: Integrated with Sentry for error tracking and Prometheus for performance metrics (`src/lib/metrics.ts`).
 
+### Activity identity and filters
+
+Activity-list [filtering](src/repositories/activities-calendar-repository.ts) and
+[overview filter options](src/repositories/activity-overview-repository.ts) use
+the resolved primary activity type, falling back to the representative type when
+primary identity is unresolved. This matches web and mobile card icons while
+preserving the representative's sensor and metric responsibilities.
+
 ### Activity map readiness contract
 
 `calendar.weekList` and activity lists use the shared
@@ -224,10 +287,15 @@ MapLibre documents its [camera coordinate and zoom conventions](https://maplibre
 
 `calendar.weekList` owns both Training Stress Score calculation and availability explanations.
 Each activity stat is discriminated by `status`: an `available` stat contains its display-ready
-`value`, while a `missing` stat contains an actionable `reason` naming the missing duration,
-power/functional-threshold-power, or heart-rate/maximum-heart-rate prerequisite. Web and mobile
+`value`, while a `missing` stat contains an actionable `reason` naming the missing duration
+or cycling power/eFTP prerequisite. Web and mobile
 render this contract without deriving metric availability. The numeric activity `tss` field remains
 nullable for consumers that need the score rather than its compact-card presentation.
+
+The retirement advances the [activity-list](src/routers/calendar.ts) and
+[personalization-status](src/routers/personalization.ts) server cache versions,
+plus the [mobile persisted-query contract](../mobile/lib/mobile-query-persistence.ts),
+so pre-retirement responses cannot restore HR-derived scores or calibration cards.
 
 ### Exercise-volume trend evidence contract
 
@@ -333,24 +401,16 @@ are calculated in one bounded ClickHouse query over deduplicated activity sensor
 returning raw samples to the model. Formula and historical-refresh details are documented in
 [`analytics/README.md`](../../analytics/README.md#cycling-power-duration-semantics-and-refresh).
 
-`get_threshold_history` requires `activity:read`, an inclusive date range, and cursor pagination. It
-returns effective-dated cycling FTP from `fitness.sport_settings` plus the legacy current
-`user_profile.ftp`. The legacy value has unknown historical validity and is never silently applied
-to an old workout.
+`get_threshold_history` requires `activity:read`, a date range and cursor pagination.
+It returns the canonical computed eFTP history, including the supporting effort,
+effective time, model version and unquantified physiological uncertainty.
 
-`estimate_cycling_threshold` requires `activity:read` and the ClickHouse analytics store. Its
-selectable methods are `configured`, `twenty_minute_95_percent`,
-`sustained_40_to_70_minutes`, `critical_power_model`, and `best_supported`. The 20-minute method is
-explicitly the 95% heuristic described by
-[TrainingPeaks](https://help.trainingpeaks.com/hc/en-us/articles/204071934-How-to-Calculate-Threshold-Values-for-Power-Heart-Rate-or-Pace).
-The critical-power method fits the two-parameter Monod–Scherrer work-time relationship
-([Monod and Scherrer](https://doi.org/10.1080/00140136508930810)) over valid 120–600-second range
-bests. It returns CP, W′, R², power residuals, and residual RMSE. RMSE describes model fit only; it is
-not physiological uncertainty. Every method returns its source efforts and activity IDs,
-assumptions, confidence, and either an explicit uncertainty value or a reason one cannot be
-quantified. Calculated results have `classification: "estimated"` and are never labeled measured
-FTP. W/kg uses body-weight evidence selected for the requested range end date under the same nearby-
-weight policy as the power curve.
+`estimate_cycling_threshold` reads the same ongoing computed estimate applicable
+to the requested range end. It exposes no selectable alternative estimator or
+configured-value fallback. W/kg uses nearby body-weight evidence. CP exploration
+remains separately named and cannot supply another FTP for zones or load.
+See the [pure algorithms package](../cycling-power/README.md) and the
+[application projector](../../src/analytics/README.md).
 
 `get_cycling_training_metrics` requires `activity:read`, an inclusive date range, and the
 ClickHouse analytics store. It returns newest-first pages of at most 25 canonical cycling
@@ -363,9 +423,10 @@ The response labels sample-derived values `calculated_from_samples`, reports per
 covered, missing, and measured-zero seconds, and preserves merged activity IDs, providers, devices,
 power measurement kinds, timezone evidence, and a longitudinal-comparison quality assessment.
 Provider aggregate read-model values remain visible separately and do not override the
-sample-derived metrics. Effective-dated `fitness.sport_settings` are resolved independently for
-each activity; intensity factor, power TSS, and power zones remain `null` with an explicit reason
-when no valid contemporaneous FTP exists. Heart-rate zones follow the same rule for threshold HR.
+sample-derived metrics. Computed eFTP is resolved independently for each activity;
+intensity factor, power TSS and power zones remain unavailable with an explicit
+reason when supported eFTP evidence is missing. Effective-dated sport settings
+continue to supply heart-rate and custom-zone configuration.
 
 Recorded interval boundaries from any merged member activity take precedence and exact duplicate
 boundaries are consolidated while retaining their member activity IDs. When no recorded boundary
@@ -384,7 +445,7 @@ those units into a total: `total_daily_load.value` is explicitly `null` because 
 climbing, finger/tendon, and strength exposures are not biologically interchangeable.
 
 Power TSS is `elapsed_hours × (normalized_power / effective_FTP)² × 100`; FTP is resolved from the
-effective-dated history for each ride, and absent FTP or normalized power produces `null`, not zero.
+computed history for each ride, and absent eFTP or normalized power produces `null`, not zero.
 The heart-rate channel sums covered minutes in configured threshold-HR zones multiplied by the
 one-based zone number. Its weighting resembles Edwards-style zone load, but it is deliberately
 named `heart_rate_zone_load` because Dofek uses the athlete's configured threshold-HR boundaries,
@@ -473,8 +534,8 @@ or rejection, and does not downgrade an exact provider-route identity. See the
 Cycling values and candidate-minus-baseline deltas use the
 [shared cycling effort metrics](src/repositories/cycling-effort-metrics.ts): deduplicated sensor
 samples, historical threshold and weight evidence, intervals, observed best powers, environment
-and movement metrics, stream quality, provenance, and explicit unavailable reasons. A current
-FTP with unknown historical validity never supplies an old activity's threshold. Ordinary workout
+and movement metrics, stream quality, provenance, and explicit unavailable reasons.
+Each activity uses its own computed threshold; later rides cannot rewrite it. Ordinary workout
 bests are lower-bound observations, not maximal capacity; identity alone does not establish
 maximal intent or justify a fitness-decline conclusion. Segment/climb identity does not imply
 segment-specific sensor boundaries: metrics describe the containing activity. These limitations
@@ -655,7 +716,14 @@ versions its response cache when this contract changes; the
 invalidates cached responses from the older contract.
 
 Activity views offer independent source controls for heart rate, power, speed,
-cadence, and elevation. Each control preselects its existing priority winner
+cadence, and elevation. Heart rate prefers sources explicitly linked to a member
+activity or matching its reported recording device. Within that tier, or when
+no direct recording is evidenced, it prefers the most distinct valid sample
+timestamps in the activity window, using provider priority to break ties.
+Duplicate timestamps count once through ClickHouse's
+[`uniqExact`](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/uniqexact).
+The [source repository](src/repositories/activity-metric-sources-repository.ts)
+applies this rule for both web and mobile. Other controls preselect their priority winner
 without an Auto option. Choices distinguish providers and devices and apply
 only to the current view; saved priorities are unchanged. Heart-rate and power
 zones follow their respective selected sources.
@@ -663,6 +731,12 @@ zones follow their respective selected sources.
 `activity.metricSources` lists available sources in the owned activity window,
 including standalone recordings and canonical member activities. `activity.stream`
 accepts a `sources` map; zone endpoints accept their metric's source ID.
+For climbing detail charts, `activity.heartRateContext` returns a separate window
+with five minutes before the recorded activity start and after its recorded end,
+plus downsampled observations from the selected HR source. The
+[context repository](src/repositories/activity-metric-sources-repository.ts)
+reuses the same user/member isolation and source selection. This display window
+does not change the activity, its summaries, or its zone calculations.
 The [source repository](src/repositories/activity-metric-sources-repository.ts) retains zero power, speed, and cadence samples
 and negative elevations, excludes invalid heart-rate samples, and preserves
 activity ownership and stream downsampling.

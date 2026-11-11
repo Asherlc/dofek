@@ -103,6 +103,13 @@ import { createMigration as createMigration0103 } from "./0103_strong_strength_t
 import { createMigration as createMigration0104 } from "./0104_activity_origin.ts";
 import { createMigration as createMigration0105 } from "./0105_activity_absence_provider.ts";
 import { createMigration as createMigration0106 } from "./0106_activity_primary_type.ts";
+import { createMigration as createMigration0107 } from "./0107_running_step_cadence.ts";
+import { createMigration as createMigration0108 } from "./0108_computed_cycling_power.ts";
+import { createMigration as createMigration0109 } from "./0109_remove_heart_rate_tss.ts";
+import { createMigration as createMigration0110 } from "./0110_remove_daily_scores.ts";
+import { createMigration as createMigration0111 } from "./0111_daily_health_sensor.ts";
+import { createMigration as createMigration0112 } from "./0112_remove_healthspan.ts";
+import { createMigration as createMigration0113 } from "./0113_activity_fit_recovery_error.ts";
 import type { ClickHouseMigration, ClickHouseMigrationFactory } from "./types.ts";
 
 const migrationFactories: ClickHouseMigrationFactory[] = [
@@ -211,6 +218,13 @@ const migrationFactories: ClickHouseMigrationFactory[] = [
   createMigration0104,
   createMigration0105,
   createMigration0106,
+  createMigration0107,
+  createMigration0108,
+  createMigration0109,
+  createMigration0110,
+  createMigration0111,
+  createMigration0112,
+  createMigration0113,
 ];
 
 export function clickHouseMigrations(postgresConnectionString: string): ClickHouseMigration[] {

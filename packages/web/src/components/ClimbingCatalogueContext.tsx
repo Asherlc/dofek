@@ -1,6 +1,9 @@
 import { providerLabel } from "@dofek/providers/providers";
 import type { ClimbingCatalogueContext as Context } from "@dofek/training/climbing-catalogue";
-import { climbingCatalogueTagLabel } from "@dofek/training/climbing-catalogue";
+import {
+  climbingCatalogueConfidenceLabel,
+  climbingCatalogueTagLabel,
+} from "@dofek/training/climbing-catalogue";
 import { useEffect, useId, useState } from "react";
 import { trpc } from "../lib/trpc";
 
@@ -13,6 +16,72 @@ type Props = {
   refreshing?: boolean;
   error?: string | null;
 };
+
+type CatalogueLocation =
+  Context["sources"][number]["matches"][number]["candidate"]["locations"][number];
+
+function CatalogueArea({ location }: { location: CatalogueLocation }) {
+  const [open, setOpen] = useState(false);
+  const contentId = useId();
+  const area = location.context;
+  if (!area || !(area.type || area.sections.length || area.tags.length || area.statistics.length))
+    return <span className="text-subtle">{location.name}</span>;
+  return (
+    <div className="max-w-full">
+      <button
+        type="button"
+        aria-label={`Area information: ${location.name ?? "Unnamed area"}`}
+        aria-expanded={open}
+        aria-controls={contentId}
+        className="min-h-11 text-accent"
+        onClick={() => setOpen(!open)}
+      >
+        {location.name ?? "Unnamed area"}
+        <span aria-hidden="true"> {open ? "▾" : "▸"}</span>
+      </button>
+      {open && (
+        <div id={contentId} className="space-y-2 border-l border-border pl-3 pb-2">
+          <a
+            className="text-accent underline"
+            href={area.url}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            View area on source
+          </a>
+          {area.type && <p>Area type: {area.type}</p>}
+          {area.sections.map((section) => (
+            <div key={section.sourceKey}>
+              <h6 className="font-medium">{section.label}</h6>
+              <p className="whitespace-pre-line">{section.text}</p>
+              {section.inheritedFrom && (
+                <p className="text-subtle">↳ Inherited from {section.inheritedFrom}</p>
+              )}
+            </div>
+          ))}
+          {area.tags.map((tag) => (
+            <div key={`${tag.sourceKey}:${tag.label}:${tag.scope}:${tag.inheritedFrom}`}>
+              <p>
+                {tag.label}
+                {tag.count !== null ? ` (${tag.count})` : ""}
+              </p>
+              {tag.scope === "inherited" && (
+                <p className="text-subtle">
+                  ↳ Inherited{tag.inheritedFrom ? ` from ${tag.inheritedFrom}` : ""}
+                </p>
+              )}
+            </div>
+          ))}
+          {area.statistics.map((statistic) => (
+            <p key={statistic.sourceKey}>
+              {statistic.label}: {statistic.value}
+            </p>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function ClimbingCatalogueContextView({
   context,
@@ -35,47 +104,57 @@ export function ClimbingCatalogueContextView({
         aria-controls={contentId}
         onClick={onToggle}
       >
-        Catalogue context
+        Catalogue information
       </button>
       {open && (
         <div id={contentId} className="space-y-3">
-          <p className="text-subtle">Cached reference information</p>
-          {context?.fetchedAt && (
-            <p className="text-subtle">Fetched {new Date(context.fetchedAt).toLocaleString()}</p>
-          )}
           {message && (
             <p role="alert" className="text-red-500">
               {message}
             </p>
           )}
-          {loading && !context && <p role="status">Loading catalogue context…</p>}
+          {loading && !context && <p role="status">Loading climb information…</p>}
           {context?.sources.map((source) => (
             <div key={source.providerId} className="space-y-2">
               <h5 className="font-medium">{providerLabel(source.providerId)}</h5>
-              {!source.searchComplete && (
-                <p className="text-subtle">Search incomplete; more matches may exist.</p>
+              {source.searchArea && (
+                <p className="text-subtle">Search area: {source.searchArea.name}</p>
               )}
-              {source.matches.map(({ candidate, confidence }) => (
+              {!source.searchComplete && (
+                <p className="text-subtle">Search incomplete; more candidates may exist.</p>
+              )}
+              {source.matches.map(({ candidate, confidence, evidence }) => (
                 <div key={candidate.externalId} className="space-y-1">
-                  <p className="text-subtle">
-                    {confidence === "source"
-                      ? "Own source"
-                      : confidence === "corroborated"
-                        ? "Location corroborated"
-                        : "Possible match"}
-                  </p>
+                  <p className="text-subtle">{climbingCatalogueConfidenceLabel(confidence)}</p>
+                  {evidence?.map((reason) => (
+                    <p key={reason} className="text-subtle">
+                      {reason}
+                    </p>
+                  ))}
                   <a
                     className="text-accent underline"
                     href={candidate.url}
                     target="_blank"
                     rel="noopener noreferrer"
                   >
-                    {candidate.name}
+                    {candidate.name ?? "View climb"}
                   </a>
                   {candidate.locations.length > 0 && (
-                    <p className="text-subtle">
-                      {candidate.locations.map((location) => location.name).join(" › ")}
-                    </p>
+                    <div className="flex flex-wrap items-baseline gap-x-1">
+                      {candidate.locations.map((location, index) => (
+                        <div
+                          key={`${location.externalId}:${location.name}:${location.context?.url ?? ""}`}
+                          className="flex max-w-full items-baseline gap-x-1"
+                        >
+                          {index > 0 && (
+                            <span aria-hidden="true" className="text-subtle">
+                              ›
+                            </span>
+                          )}
+                          <CatalogueArea location={location} />
+                        </div>
+                      ))}
+                    </div>
                   )}
                   {candidate.grade && <p>Catalogue grade: {candidate.grade}</p>}
                   {candidate.tags.map((tag) => (
@@ -97,7 +176,7 @@ export function ClimbingCatalogueContextView({
           ))}
           {context?.status === "ready" &&
             context.sources.every((source) => source.matches.length === 0) && (
-              <p>No exact-name catalogue matches found.</p>
+              <p>No catalogue candidates to display.</p>
             )}
           {pending ? (
             <p role="status">Looking up catalogue info…</p>
@@ -109,8 +188,8 @@ export function ClimbingCatalogueContextView({
               className="min-h-11 text-accent underline"
             >
               {context && context.status !== "missing"
-                ? "Refresh catalogue info"
-                : "Find catalogue info"}
+                ? "Update climb information"
+                : "Look up climb"}
             </button>
           )}
         </div>

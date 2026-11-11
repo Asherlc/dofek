@@ -13,15 +13,14 @@ import { queryCache } from "dofek/lib/cache";
 import { getProvider } from "dofek/providers/registry";
 import { z } from "zod";
 import {
+  activityHeartRateContextSchema,
   activityMetricSourceSelectionSchema,
   activityMetricSourcesSchema,
   activityPowerWorkSchema,
+  activityPowerZonesSchema,
 } from "../contracts/activity-metric-sources.ts";
-import {
-  ChartRange,
-  selectedChartCustomRangeQuery,
-  selectedChartRangeSchema,
-} from "../lib/chart-range.ts";
+import type { CyclingThresholdEvidence } from "../contracts/cycling-threshold.ts";
+import { selectedChartCustomRangeQuery, selectedChartRangeSchema } from "../lib/chart-range.ts";
 import { endDateSchema } from "../lib/date-window.ts";
 import { Activity, type ActivityDetail } from "../models/activity.ts";
 import {
@@ -29,11 +28,18 @@ import {
   getOwnedActivityImages,
   listActivityImages,
 } from "../repositories/activity-images-repository.ts";
-import { getActivityPowerWork } from "../repositories/activity-metric-sources-repository.ts";
+import {
+  getActivityHeartRateContext,
+  getActivityPowerWork,
+} from "../repositories/activity-metric-sources-repository.ts";
 import { ActivityRepository } from "../repositories/activity-repository.ts";
 import { getActivityRoute } from "../repositories/activity-route-repository.ts";
+import { ClimbingActivityLogEntryRepository } from "../repositories/climbing-activity-log-entry-repository.ts";
+import {
+  CyclingThresholdRepository,
+  cyclingThresholdEvidenceFromMetrics,
+} from "../repositories/cycling-threshold-repository.ts";
 import { HangboardingRepository } from "../repositories/hangboarding-repository.ts";
-import { PowerRepository } from "../repositories/power-repository.ts";
 import { StrengthRepository } from "../repositories/strength-repository.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 import { ensureProvidersRegistered } from "./sync-helpers.ts";
@@ -110,7 +116,8 @@ export type ActivityHrZones = import("@dofek/zones/zones").ActivityHrZone[];
 
 export interface ActivityPowerZonesResult {
   zones: import("@dofek/zones/zones").ActivityPowerZone[];
-  ftp: number;
+  ftp: number | null;
+  thresholdEvidence: CyclingThresholdEvidence;
 }
 
 export const activityRouter = router({
@@ -158,12 +165,12 @@ export const activityRouter = router({
       }
     },
     undefined,
-    { keyVersion: "activity-list-maplibre-v3" },
+    { keyVersion: "activity-list-maplibre-v4" },
   ),
 
   byId: cachedProtectedQuery({
     maxAge: CacheTTL.MEDIUM,
-    keyVersion: "activity-maplibre-v5",
+    keyVersion: "activity-maplibre-v6",
   })
     .input(z.object({ id: z.guid() }))
     .query(async ({ ctx, input }): Promise<ActivityDetail> => {
@@ -181,7 +188,13 @@ export const activityRouter = router({
       }
 
       await ensureProvidersRegistered();
-      return new Activity(row, getProvider).toDetail();
+      const sessions = await new ClimbingActivityLogEntryRepository(
+        ctx.db,
+        ctx.userId,
+        ctx.timezone,
+        ctx.accessWindow,
+      ).getActivityLogSessions([row.id]);
+      return new Activity(row, getProvider).toDetail(sessions.get(row.id) ?? []);
     }),
 
   hangboardDetails: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
@@ -231,6 +244,39 @@ export const activityRouter = router({
       return points.map((point) => point.toDetail());
     }),
 
+  heartRateContext: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
+    .input(
+      z.object({
+        id: z.guid(),
+        maxPoints: z.number().int().min(10).max(10000).default(500),
+        heartRateSourceId: z.string().min(1).max(4096).optional(),
+      }),
+    )
+    .output(activityHeartRateContextSchema)
+    .query(async ({ ctx, input }) => {
+      if (!ctx.sensorStore) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            "ClickHouse activity analytics store is required for heart-rate context. Set CLICKHOUSE_URL and retry.",
+        });
+      }
+      const repo = new ActivityRepository(
+        ctx.db,
+        ctx.userId,
+        ctx.timezone,
+        ctx.accessWindow,
+        ctx.sensorStore,
+      );
+      const window = await repo.findSensorWindow(input.id);
+      if (!window) throw new TRPCError({ code: "NOT_FOUND", message: "Activity not found" });
+      const sourceId =
+        input.heartRateSourceId ??
+        (await repo.getMetricSources(input.id)).find((metric) => metric.key === "heartRate")
+          ?.defaultSourceId;
+      return getActivityHeartRateContext(ctx.sensorStore, window, input.maxPoints, sourceId);
+    }),
+
   route: protectedProcedure
     .input(
       z.object({
@@ -275,9 +321,11 @@ export const activityRouter = router({
 
   metricSources: cachedProtectedQuery({
     maxAge: CacheTTL.MEDIUM,
-    keyVersion: "source-presentation-v2",
+    keyVersion: "source-inheritance-v5",
   })
-    .input(z.object({ id: z.guid() }))
+    .input(
+      z.object({ id: z.guid(), responseVersion: z.union([z.literal(1), z.literal(2)]).default(1) }),
+    )
     .output(activityMetricSourcesSchema)
     .query(({ ctx, input }) =>
       new ActivityRepository(
@@ -286,7 +334,7 @@ export const activityRouter = router({
         ctx.timezone,
         ctx.accessWindow,
         ctx.sensorStore,
-      ).getMetricSources(input.id),
+      ).getMetricSources(input.id, input.responseVersion),
     ),
 
   hrZones: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
@@ -309,8 +357,9 @@ export const activityRouter = router({
       return repo.getHrZones(input.id, input.heartRateSourceId);
     }),
 
-  powerZones: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
+  powerZones: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM, keyVersion: "computed-eftp-v1" })
     .input(z.object({ id: z.guid(), powerSourceId: z.string().min(1).max(4096).optional() }))
+    .output(activityPowerZonesSchema)
     .query(async ({ ctx, input }): Promise<ActivityPowerZonesResult | null> => {
       const activityRepo = new ActivityRepository(
         ctx.db,
@@ -333,12 +382,13 @@ export const activityRouter = router({
         });
       }
 
-      const powerRepo = new PowerRepository(ctx.userId, ctx.timezone, ctx.sensorStore);
-      const { currentEftp } = await powerRepo.getEftpTrend(ChartRange.fromDays(90));
-      if (currentEftp == null) return null;
-
-      const zones = await activityRepo.getPowerZones(activity.id, currentEftp, input.powerSourceId);
-      return { zones, ftp: currentEftp };
+      const thresholds = new CyclingThresholdRepository(ctx.sensorStore, ctx.userId, ctx.timezone);
+      const metrics = (await thresholds.getForActivities([activity.id])).get(activity.id) ?? null;
+      const thresholdEvidence = cyclingThresholdEvidenceFromMetrics(metrics);
+      const ftp = thresholdEvidence.value;
+      const zones =
+        ftp === null ? [] : await activityRepo.getPowerZones(activity.id, ftp, input.powerSourceId);
+      return { zones, ftp, thresholdEvidence };
     }),
 
   powerWork: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })

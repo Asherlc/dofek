@@ -95,12 +95,12 @@ describe("durable Garmin import waiting-children protocol", () => {
   let context: TestContext;
 
   beforeAll(async () => {
-    archive.server.listen({ onUnhandledRequest: "error" });
+    archive.server.activate({ onUnhandledFrame: "error" });
     context = await setupTestDatabase();
   }, 60_000);
 
   afterAll(async () => {
-    archive.server.close();
+    archive.server.deactivate();
     archive.client.destroy();
     await context?.cleanup();
   });

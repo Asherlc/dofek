@@ -45,7 +45,6 @@ import { invalidateAllUserQueries, invalidateUserQueryDomains, queryCache } from
 import { PROVIDER_ACCOUNT_TABLES } from "../repositories/provider-detail-repository.ts";
 import { recoveryRouter } from "./recovery.ts";
 import { settingsRouter } from "./settings.ts";
-import { sleepNeedRouter } from "./sleep-need.ts";
 import { sportSettingsRouter } from "./sport-settings.ts";
 
 function queryChunkLength(value: unknown): number {
@@ -269,7 +268,7 @@ describe("recoveryRouter", () => {
   });
 
   describe("workloadRatio", () => {
-    it("returns workload ratio data with displayed strain", async () => {
+    it("returns workload ratio data and its latest date", async () => {
       const rows = [
         {
           date: "2024-01-15",
@@ -284,8 +283,6 @@ describe("recoveryRouter", () => {
 
       expect(result.timeSeries).toHaveLength(1);
       expect(result.timeSeries[0]?.workloadRatio).toBe(1.14);
-      expect(result.timeSeries[0]?.strain).toBeGreaterThan(0);
-      expect(result.displayedStrain).toBeGreaterThan(0);
       expect(result.displayedDate).toBe("2024-01-15");
     });
 
@@ -297,7 +294,6 @@ describe("recoveryRouter", () => {
       const result = await caller.workloadRatio({ days: 90 });
 
       expect(result.timeSeries[0]?.workloadRatio).toBeNull();
-      expect(result.displayedStrain).toBe(0);
     });
   });
 
@@ -320,8 +316,6 @@ describe("recoveryRouter", () => {
       expect(result.nightly).toHaveLength(14);
       expect(result.nightly[0]?.durationMinutes).toBe(480);
       expect(result.nightly[0]?.sleepMinutes).toBe(420);
-      // 14 nights * (480 - 420) = 840 min debt (based on sleepMinutes)
-      expect(result.sleepDebt).toBe(840);
     });
 
     it("rounds stage percentages to one decimal place", async () => {
@@ -392,145 +386,8 @@ describe("recoveryRouter", () => {
       const caller = makeCaller([]);
       const result = await caller.sleepAnalytics({ days: 90 });
       expect(result.nightly).toEqual([]);
-      expect(result.sleepDebt).toBeNull();
       expect(result.averageSleepMinutes).toBeNull();
       expect(result.averageEfficiencyPercent).toBeNull();
-    });
-  });
-
-  describe("readinessScore", () => {
-    it("computes readiness from metrics", async () => {
-      const today = new Date().toISOString().slice(0, 10);
-      const rows = [
-        {
-          date: today,
-          hrv: 65,
-          resting_hr: 52,
-          hrv_mean_60d: 60,
-          hrv_sd_60d: 10,
-          rhr_mean_60d: 55,
-          rhr_sd_60d: 3,
-          efficiency_pct: 90,
-        },
-      ];
-      const caller = makeCaller(rows);
-      const result = await caller.readinessScore({ days: 30, endDate: today });
-
-      expect(result.length).toBeGreaterThan(0);
-      const firstRow = result[0];
-      expect(firstRow.readinessScore).toBeGreaterThanOrEqual(0);
-      expect(firstRow.readinessScore).toBeLessThanOrEqual(100);
-      expect(firstRow.components).toHaveProperty("hrvScore");
-      expect(firstRow.components).toHaveProperty("sleepScore");
-    });
-
-    it("uses default scores for null metrics", async () => {
-      const today = new Date().toISOString().slice(0, 10);
-      const rows = [
-        {
-          date: today,
-          hrv: null,
-          resting_hr: null,
-          hrv_mean_60d: null,
-          hrv_sd_60d: null,
-          rhr_mean_60d: null,
-          rhr_sd_60d: null,
-          efficiency_pct: null,
-        },
-      ];
-      const caller = makeCaller(rows);
-      const result = await caller.readinessScore({ days: 30 });
-
-      if (result.length > 0) {
-        // All null defaults to 62 for each component (sigmoid center)
-        expect(result[0]?.readinessScore).toBe(62);
-        expect(result[0]?.components.hrvScore).toBe(62);
-        expect(result[0]?.components.restingHrScore).toBe(62);
-        expect(result[0]?.components.sleepScore).toBe(62);
-        expect(result[0]?.components.respiratoryRateScore).toBe(62);
-      }
-    });
-
-    it("computes respiratory rate score when data is available", async () => {
-      const today = new Date().toISOString().slice(0, 10);
-      const rows = [
-        {
-          date: today,
-          hrv: null,
-          resting_hr: null,
-          respiratory_rate: 14,
-          hrv_mean_30d: null,
-          hrv_sd_30d: null,
-          rhr_mean_30d: null,
-          rhr_sd_30d: null,
-          rr_mean_30d: 15,
-          rr_sd_30d: 1,
-          respiratory_rate_z_score: -1,
-          efficiency_pct: null,
-        },
-      ];
-      const caller = makeCaller(rows);
-      const result = await caller.readinessScore({ days: 30 });
-
-      if (result.length > 0) {
-        // Lower respiratory rate than baseline = better recovery
-        expect(result[0]?.components.respiratoryRateScore).toBeGreaterThan(62);
-      }
-    });
-
-    it("uses default respiratory rate score when data is partially null", async () => {
-      const today = new Date().toISOString().slice(0, 10);
-      const rows = [
-        {
-          date: today,
-          hrv: 60,
-          resting_hr: 55,
-          respiratory_rate: null,
-          hrv_mean_30d: 60,
-          hrv_sd_30d: 10,
-          rhr_mean_30d: 55,
-          rhr_sd_30d: 3,
-          rr_mean_30d: 15,
-          rr_sd_30d: 1,
-          efficiency_pct: 90,
-        },
-      ];
-      const caller = makeCaller(rows);
-      const result = await caller.readinessScore({ days: 30 });
-
-      if (result.length > 0) {
-        // Respiratory rate is null → default score 62
-        expect(result[0]?.components.respiratoryRateScore).toBe(62);
-      }
-    });
-
-    it("verifies all component scores are rounded", async () => {
-      const today = new Date().toISOString().slice(0, 10);
-      const rows = [
-        {
-          date: today,
-          hrv: 65,
-          resting_hr: 52,
-          respiratory_rate: 14,
-          hrv_mean_30d: 60,
-          hrv_sd_30d: 10,
-          rhr_mean_30d: 55,
-          rhr_sd_30d: 3,
-          rr_mean_30d: 15,
-          rr_sd_30d: 1,
-          efficiency_pct: 85,
-        },
-      ];
-      const caller = makeCaller(rows);
-      const result = await caller.readinessScore({ days: 30 });
-
-      if (result.length > 0) {
-        const components = result[0]?.components;
-        expect(Number.isInteger(components?.hrvScore)).toBe(true);
-        expect(Number.isInteger(components?.restingHrScore)).toBe(true);
-        expect(Number.isInteger(components?.sleepScore)).toBe(true);
-        expect(Number.isInteger(components?.respiratoryRateScore)).toBe(true);
-      }
     });
   });
 });
@@ -688,235 +545,38 @@ describe("settingsRouter", () => {
   });
 });
 
-// ── Sleep Need Router ──
-
-describe("sleepNeedRouter", () => {
-  const createCaller = createTestCallerFactory(sleepNeedRouter);
-
-  describe("calculate", () => {
-    it("returns an unavailable legacy recommendation when insufficient data", async () => {
-      const rows = [
-        {
-          date: "2024-01-15",
-          duration_minutes: 450,
-          next_day_hrv: null,
-          median_hrv: null,
-          good_recovery: false,
-          yesterday_load: 0,
-          staging_available: false,
-        },
-      ];
-      const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
-        userId: "user-1",
-        timezone: "UTC",
-        sensorStore: makeMockSensorStore(rows),
-      });
-      const result = await caller.calculate({ endDate: "2026-03-15" });
-
-      expect(result).toMatchObject({
-        baselineMinutes: 480,
-        strainDebtMinutes: 0,
-        recentNights: expect.any(Array),
-        canRecommend: false,
-      });
-    });
-
-    it("computes personalized baseline from good nights", async () => {
-      const rows = [];
-      for (let i = 0; i < 20; i++) {
-        rows.push({
-          date: `2024-01-${String(i + 1).padStart(2, "0")}`,
-          duration_minutes: 460,
-          next_day_hrv: 65,
-          median_hrv: 60,
-          good_recovery: true,
-          yesterday_load: 50,
-          staging_available: false,
-        });
-      }
-      const hrvRows = rows.map((row) => {
-        const nextDate = new Date(`${row.date}T12:00:00Z`);
-        nextDate.setUTCDate(nextDate.getUTCDate() + 1);
-        return {
-          date: nextDate.toISOString().slice(0, 10),
-          hrv: row.next_day_hrv,
-        };
-      });
-      const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(hrvRows) },
-        userId: "user-1",
-        timezone: "UTC",
-        sensorStore: makeMockSensorStore([
-          [{ load: 50 }],
-          rows.map((row) => ({
-            date: row.date,
-            started_at: `${row.date}T04:00:00Z`,
-            ended_at: `${row.date}T12:00:00Z`,
-            duration_minutes: row.duration_minutes,
-            deep_minutes: null,
-            rem_minutes: null,
-            light_minutes: row.duration_minutes,
-            awake_minutes: 0,
-            efficiency_pct: null,
-            staging_available: false,
-          })),
-        ]),
-      });
-      const result = await caller.calculate({ endDate: "2024-01-21" });
-
-      expect(result).not.toBeNull();
-      if (result === null) throw new Error("Expected personalized sleep need");
-      expect(result.baselineMinutes).toBe(460);
-      expect(result.strainDebtMinutes).toBe(10); // 50/5 = 10
-      expect(result.recentNights).toHaveLength(7);
-    });
-
-    it("handles empty data with an unavailable legacy recommendation", async () => {
-      const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue([]) },
-        userId: "user-1",
-        timezone: "UTC",
-        sensorStore: makeMockSensorStore([]),
-      });
-      const result = await caller.calculate({ endDate: "2026-03-15" });
-
-      expect(result).toMatchObject({
-        baselineMinutes: 480,
-        recentNights: expect.any(Array),
-        canRecommend: false,
-      });
-    });
-
-    it("returns an unavailable legacy recommendation for sparse data", async () => {
-      // endDate=2026-03-15, yesterday=2026-03-14
-      const rows = [
-        {
-          date: "2026-03-14",
-          duration_minutes: 420,
-          next_day_hrv: 60,
-          median_hrv: 55,
-          good_recovery: true,
-          yesterday_load: 0,
-          staging_available: false,
-        },
-      ];
-      const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
-        userId: "user-1",
-        timezone: "UTC",
-        sensorStore: makeMockSensorStore(rows),
-      });
-      const result = await caller.calculate({ endDate: "2026-03-15" });
-
-      expect(result).toMatchObject({
-        baselineMinutes: 480,
-        recentNights: expect.any(Array),
-        canRecommend: false,
-      });
-      expect(result.recentNights).toHaveLength(7);
-      const withData = result.recentNights.filter((night) => night.actualMinutes !== null);
-      const withoutData = result.recentNights.filter((night) => night.actualMinutes === null);
-      expect(withData).toEqual([
-        expect.objectContaining({
-          date: "2026-03-14",
-          actualMinutes: 420,
-          neededMinutes: 480,
-          debtMinutes: 60,
-        }),
-      ]);
-      expect(withoutData).toHaveLength(6);
-      for (const night of withoutData) {
-        expect(night).toMatchObject({
-          actualMinutes: null,
-          neededMinutes: 480,
-          debtMinutes: null,
-        });
-      }
-    });
-
-    it("keeps the legacy recommendation unavailable when the baseline is insufficient", async () => {
-      // endDate=2026-03-15, yesterday=2026-03-14
-      const rows = [
-        {
-          date: "2026-03-14",
-          duration_minutes: 450,
-          next_day_hrv: null,
-          median_hrv: null,
-          good_recovery: false,
-          yesterday_load: 0,
-          staging_available: false,
-        },
-      ];
-      const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
-        userId: "user-1",
-        timezone: "UTC",
-        sensorStore: makeMockSensorStore(rows),
-      });
-      const result = await caller.calculate({ endDate: "2026-03-15" });
-
-      expect(result).toMatchObject({
-        baselineMinutes: 480,
-        recentNights: expect.any(Array),
-        canRecommend: false,
-      });
-    });
-
-    it("keeps the legacy recommendation unavailable when yesterday has no sleep data", async () => {
-      // endDate=2026-03-15, yesterday=2026-03-14 — data only from 2026-03-12
-      const rows = [
-        {
-          date: "2026-03-12",
-          duration_minutes: 450,
-          next_day_hrv: null,
-          median_hrv: null,
-          good_recovery: false,
-          yesterday_load: 0,
-          staging_available: false,
-        },
-      ];
-      const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue(rows) },
-        userId: "user-1",
-        timezone: "UTC",
-        sensorStore: makeMockSensorStore(rows),
-      });
-      const result = await caller.calculate({ endDate: "2026-03-15" });
-
-      expect(result).toMatchObject({
-        baselineMinutes: 480,
-        recentNights: expect.any(Array),
-        canRecommend: false,
-      });
-    });
-
-    it("returns the legacy fallback shape without sleep data", async () => {
-      const caller = createCaller({
-        db: { execute: vi.fn().mockResolvedValue([]) },
-        userId: "user-1",
-        timezone: "UTC",
-        sensorStore: makeMockSensorStore([]),
-      });
-      const result = await caller.calculate({ endDate: "2026-03-15" });
-
-      expect(result).toMatchObject({
-        baselineMinutes: 480,
-        totalNeedMinutes: 480,
-        recentNights: expect.any(Array),
-        canRecommend: false,
-      });
-      for (const night of result.recentNights) {
-        expect(night.neededMinutes).toBe(480);
-      }
-    });
-  });
-});
-
 // ── Sport Settings Router ──
 
 describe("sportSettingsRouter", () => {
   const createCaller = createTestCallerFactory(sportSettingsRouter);
+  const storedSettings = {
+    id: "00000000-0000-4000-8000-000000000001",
+    user_id: "user-1",
+    sport: "cycling",
+    threshold_hr: 175,
+    threshold_pace_per_km: null,
+    power_zone_pcts: [0.55, 0.75, 0.9, 1.05, 1.2, 1.5],
+    hr_zone_pcts: [0.6, 0.7, 0.8, 0.9],
+    pace_zone_pcts: null,
+    effective_from: "2024-01-01",
+    notes: null,
+    created_at: "2024-01-01T00:00:00.000Z",
+    updated_at: "2024-01-01T00:00:00.000Z",
+  };
+  const returnedSettings = {
+    id: "00000000-0000-4000-8000-000000000001",
+    userId: "user-1",
+    sport: "cycling",
+    thresholdHr: 175,
+    thresholdPacePerKm: null,
+    powerZonePcts: [0.55, 0.75, 0.9, 1.05, 1.2, 1.5],
+    hrZonePcts: [0.6, 0.7, 0.8, 0.9],
+    paceZonePcts: null,
+    effectiveFrom: "2024-01-01",
+    notes: null,
+    createdAt: "2024-01-01T00:00:00.000Z",
+    updatedAt: "2024-01-01T00:00:00.000Z",
+  };
 
   function makeCaller(rows: Record<string, unknown>[] = []) {
     return createCaller({
@@ -929,19 +589,19 @@ describe("sportSettingsRouter", () => {
 
   describe("list", () => {
     it("returns sport settings", async () => {
-      const rows = [{ sport: "cycling", ftp: 250 }];
+      const rows = [storedSettings];
       const caller = makeCaller(rows);
       const result = await caller.list();
-      expect(result).toEqual(rows);
+      expect(result).toEqual([returnedSettings]);
     });
   });
 
   describe("getBySport", () => {
     it("returns setting for sport", async () => {
-      const rows = [{ sport: "cycling", ftp: 250 }];
+      const rows = [storedSettings];
       const caller = makeCaller(rows);
       const result = await caller.getBySport({ sport: "cycling" });
-      expect(result).toEqual(rows[0]);
+      expect(result).toEqual(returnedSettings);
     });
 
     it("returns null when not found", async () => {
@@ -954,8 +614,8 @@ describe("sportSettingsRouter", () => {
   describe("history", () => {
     it("returns setting history for sport", async () => {
       const rows = [
-        { sport: "cycling", ftp: 260, effective_from: "2024-02-01" },
-        { sport: "cycling", ftp: 250, effective_from: "2024-01-01" },
+        { ...storedSettings, threshold_hr: 180, effective_from: "2024-02-01" },
+        storedSettings,
       ];
       const caller = makeCaller(rows);
       const result = await caller.history({ sport: "cycling" });
@@ -965,11 +625,11 @@ describe("sportSettingsRouter", () => {
 
   describe("upsert", () => {
     it("creates sport settings", async () => {
-      const created = { sport: "cycling", ftp: 250 };
+      const created = storedSettings;
       const caller = makeCaller([created]);
       vi.mocked(invalidateUserQueryDomains).mockClear();
-      const result = await caller.upsert({ sport: "cycling", ftp: 250 });
-      expect(result).toEqual(created);
+      const result = await caller.upsert({ sport: "cycling", thresholdHr: 175 });
+      expect(result).toEqual(returnedSettings);
       expect(invalidateUserQueryDomains).toHaveBeenCalledWith("user-1", ["sportSettings"]);
     });
   });

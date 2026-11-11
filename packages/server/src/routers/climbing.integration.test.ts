@@ -4,6 +4,11 @@ import { queryCache } from "dofek/lib/cache";
 import { eq, sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
+import {
+  buildActivitySummaryRowsTableSql,
+  buildActivitySummaryViewSql,
+} from "../../../../src/db/clickhouse-activity-summary.ts";
+import { cyclingPowerSchemaStatements } from "../../../../src/db/cycling-power-schema.ts";
 import { activity } from "../../../../src/db/schema/activity.ts";
 import { area, climb, climbingLogEntry } from "../../../../src/db/schema/climbing.ts";
 import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
@@ -18,7 +23,6 @@ import {
 } from "../repositories/climbing-integration-test-helpers.ts";
 import { CacheTTL, requestCacheKey } from "../trpc.ts";
 import { activityRouter } from "./activity.ts";
-import { buildTestAnalyticsTableStatement } from "./clickhouse-integration-test-models.ts";
 import { climbingRouter } from "./climbing.ts";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
@@ -82,12 +86,16 @@ describe("Hangboarding climbing router integration", () => {
     firstDate = new Date(firstActivity.started_at).toISOString().slice(0, 10);
     secondDate = new Date(secondActivity.started_at).toISOString().slice(0, 10);
     await client.command({ query: `CREATE DATABASE ${database}` });
-    await client.command({
-      query: rewrite(buildTestAnalyticsTableStatement("analytics.activity_summary")),
-    });
+    for (const statement of [
+      buildActivitySummaryRowsTableSql(),
+      ...cyclingPowerSchemaStatements(),
+      buildActivitySummaryViewSql(),
+    ]) {
+      await client.command({ query: rewrite(statement) });
+    }
     if (!client.insert) throw new Error("ClickHouse test client requires inserts");
     await client.insert({
-      table: `${database}.activity_summary`,
+      table: `${database}.activity_summary_rows`,
       format: "JSONEachRow",
       values: [firstActivity, secondActivity].map((activity, index) => ({
         activity_id: activity.group_id,

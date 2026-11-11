@@ -14,6 +14,7 @@ export const PRODUCTION_DBT_MODELS = [
   "activity_sensor_sample",
   "activity_location_sample",
   "activity_route_identity",
+  "activity_step_cadence_rows",
   "activity_sensor_summary_rows",
   "activity_location_summary_rows",
   "activity_stream_points",
@@ -26,6 +27,8 @@ export const PRODUCTION_DBT_MODELS = [
   "activity_polarization_zones",
   "activity_power_curve",
   "cycling_activity",
+  "cycling_threshold_history",
+  "cycling_activity_power_metrics",
   "daily_cycling",
   "provider_metric_stream_daily",
   "provider_change_watermark",
@@ -35,18 +38,19 @@ export const PRODUCTION_DBT_MODELS = [
   "resting_heart_rate_sleep_window",
   "daily_sleep",
   "daily_recovery_inputs",
+  "daily_health_sensor",
   "daily_recovery",
-  "daily_endurance_load",
-  "weekly_endurance_ramp_rate",
-  "weekly_training_monotony",
   "daily_activity_load",
   "daily_strain",
   "daily_body_measurement",
-  "healthspan_activity_zone_minutes",
-  "weekly_healthspan",
 ] as const;
 
 export type ProductionDbtModel = (typeof PRODUCTION_DBT_MODELS)[number];
+
+export const CYCLING_POWER_DOWNSTREAM_DBT_MODELS = [
+  "cycling_threshold_history",
+  "cycling_activity_power_metrics",
+] as const satisfies readonly ProductionDbtModel[];
 
 export const PROCESSING_DATASET_KEYS = [
   "activity",
@@ -119,6 +123,7 @@ export const DATASET_CONTRACTS = [
       "activity_sensor_sample",
       "activity_location_sample",
       "activity_route_identity",
+      "activity_step_cadence_rows",
       "activity_sensor_summary_rows",
       "activity_location_summary_rows",
       "activity_stream_points",
@@ -130,7 +135,7 @@ export const DATASET_CONTRACTS = [
       "activity_power_curve",
       "daily_activity_load",
     ],
-    cacheQueryFamilies: ["activity", "dashboard", "providerDetail"],
+    cacheQueryFamilies: ["activity", "running", "dashboard", "providerDetail"],
     providerIds: ["*"],
     dataTypes: ["activity", "climbing", "metric_stream"],
     freshnessTargetMs: FIFTEEN_MINUTES_MS,
@@ -175,7 +180,12 @@ export const DATASET_CONTRACTS = [
         cdcEvidence: [{ kind: "clickhouse_sink_ack", sinkName: "metric_stream_clickhouse_sink" }],
       },
     ],
-    analyticsModels: ["cycling_activity", "daily_cycling"],
+    analyticsModels: [
+      "cycling_activity",
+      "daily_cycling",
+      "cycling_threshold_history",
+      "cycling_activity_power_metrics",
+    ],
     cacheQueryFamilies: ["cycling", "cyclingAdvanced"],
     providerIds: ["*"],
     dataTypes: ["cycling"],
@@ -204,7 +214,7 @@ export const DATASET_CONTRACTS = [
       "resting_heart_rate_sleep_window",
       "daily_sleep",
     ],
-    cacheQueryFamilies: ["sleep", "sleepNeed", "dashboard"],
+    cacheQueryFamilies: ["sleep", "dashboard"],
     providerIds: ["*"],
     dataTypes: ["sleep"],
     freshnessTargetMs: FIFTEEN_MINUTES_MS,
@@ -226,7 +236,12 @@ export const DATASET_CONTRACTS = [
         cdcEvidence: [{ kind: "clickhouse_sink_ack", sinkName: "metric_stream_clickhouse_sink" }],
       },
     ],
-    analyticsModels: ["daily_recovery_inputs", "daily_recovery", "daily_strain"],
+    analyticsModels: [
+      "daily_health_sensor",
+      "daily_recovery_inputs",
+      "daily_recovery",
+      "daily_strain",
+    ],
     cacheQueryFamilies: ["recovery", "stress", "dashboard"],
     providerIds: ["*"],
     dataTypes: ["activity", "daily_metrics", "sleep"],
@@ -250,22 +265,17 @@ export const DATASET_CONTRACTS = [
       },
     ],
     analyticsModels: [
-      "daily_endurance_load",
       "activity_pace_curve",
       "activity_heart_rate_distribution",
       "activity_sensor_processing_coverage",
       "activity_sensor_key_verification",
-      "weekly_endurance_ramp_rate",
-      "weekly_training_monotony",
-      "healthspan_activity_zone_minutes",
-      "weekly_healthspan",
     ],
-    cacheQueryFamilies: ["training", "healthspan", "durationCurves"],
+    cacheQueryFamilies: ["training", "durationCurves"],
     providerIds: ["*"],
     dataTypes: ["activity", "daily_metrics", "metric_stream"],
     freshnessTargetMs: FIFTEEN_MINUTES_MS,
-    webConsumers: ["training", "healthspan"],
-    mobileConsumers: ["training", "healthspan"],
+    webConsumers: ["training"],
+    mobileConsumers: ["training"],
   },
   {
     key: "body",
@@ -398,6 +408,13 @@ export function datasetsForProvider(
 }
 
 const PROVIDER_DATASET_CAPABILITIES: Readonly<Record<string, readonly ProcessingDatasetKey[]>> = {
+  kilter: ["activity", "training", "providers"],
+  tension: ["activity", "training", "providers"],
+  grasshopper: ["activity", "training", "providers"],
+  decoy: ["activity", "training", "providers"],
+  soill: ["activity", "training", "providers"],
+  touchstone: ["activity", "training", "providers"],
+  "aurora-board": ["activity", "training", "providers"],
   "amazfit-zepp": [
     "activity",
     "hiking",
@@ -458,6 +475,9 @@ export function processingDatasetKeysForProvider(
 }
 
 const IMPORT_DATASET_CAPABILITIES: Readonly<Record<string, readonly ProcessingDatasetKey[]>> = {
+  crimpd: ["activity", "training", "providers"],
+  "eight-a": ["activity", "training", "providers"],
+  moonboard: ["activity", "training", "providers"],
   "apple-health": [
     "activity",
     "hiking",

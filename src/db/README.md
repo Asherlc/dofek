@@ -16,9 +16,10 @@ This directory contains the Drizzle ORM schema, migrations, and database connect
 - `provider_issue_email`: Accepted issue-email delivery for each connection. The
   [notification query](./provider-issue-notification.ts) alerts immediately for
   confirmed refresh-token revocation. Other authorization failures wait for the
-  next automatic sync: recovery sends no email, another error sends one. Repeated
-  manual failures alone do not trigger that confirmation. Generic errors require
-  two automatic failures. Successful overall syncs clear the failure streak;
+  next automatic authorization failure: recovery sends no email, and timeouts,
+  outages, rate limits and other non-authorization errors never trigger or confirm
+  an email. Repeated manual failures alone do not trigger that confirmation.
+  Successful overall syncs clear the failure streak;
   history from before the current connection was created is excluded. The
   [integration tests](./provider-issue-notification.integration.test.ts) exercise
   recovery, confirmation, delivery retry, and concurrent suppression.
@@ -82,10 +83,20 @@ identity. Coordinates use native PostgreSQL
 [points](https://www.postgresql.org/docs/current/datatype-geometric.html).
 
 The [transactional writer](climbing-log-sync.ts) expands reported counts into
-scoped occurrences and retains one partially described occurrence when a total
-is missing. Recorded booleans and raw source result labels remain independently
+scoped occurrences and retains each supplied partially described attempt when a
+total is missing. Sources can supply an empty attempts array when only the log
+occurrence is known; this creates no attempt rows, as verified by the
+[database regression](climbing-log-sync.integration.test.ts). Recorded booleans and raw source result labels remain independently
 nullable. `fitness.v_climbing_attempt` computes outcome from each occurrence's
-original supported label through the [canonical result function](../../drizzle/0148_compute_climbing_attempt_outcome.sql).
+raw completion boolean when supplied, otherwise its original supported label.
+The writer accepts at most 1,000 attempts per reported count. Larger source
+counts fail validation before any graph writes rather than expanding an
+unbounded number of rows. The error identifies the occurrence by source ID and
+its name when available; the same database suite tests the accepted boundary
+and atomic rejection.
+The [completion migration](../../drizzle/0172_source_climbing_completion.sql)
+preserves the existing served shape while extending the
+[canonical result function](../../drizzle/0148_compute_climbing_attempt_outcome.sql).
 Methods remain nullable for every climb kind. Missing source evidence does
 not establish a method; omitted fields preserve existing facts and explicit
 null clears them. The [nullable-method migration](../../drizzle/0171_nullable_climbing_route_methods.sql)
@@ -107,6 +118,12 @@ removing the stored outcome. The [model guide](../../docs/climbing-context.md#ma
 describes that boundary.
 
 ## Activity recording origin
+
+The [Kaya origin migration](../../drizzle/0174_kaya_activity_origin.sql) treats
+Kaya sync and file-import sessions as initiating sources, matching the
+[dbt selector](../../analytics/macros/activity_origin.sql). Primary identity stays
+separate from the sensor-bearing representative, and competing initiating
+records retain unresolved attribution.
 
 The [origin function](../../drizzle/_views/00_activity_origin.sql) chooses the
 closest available recording from provenance within a group. The

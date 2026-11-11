@@ -5,6 +5,17 @@ For production SSH access details used during deploy or incident debugging, see 
 
 ## Reading iOS Build Errors
 
+If filtered logs stop without a causal error, download the complete job log
+before deciding which command failed. During [PR #3166's preview failure](https://github.com/Asherlc/dofek/actions/runs/41074540752/job/124127095782),
+`gh run view --log-failed` output stopped at runtime-resolution diagnostics,
+while the complete job log showed a later upload-authentication failure.
+GitHub provides a [plain-text job-log download endpoint](https://docs.github.com/en/rest/actions/workflow-jobs#download-job-logs-for-a-workflow-run):
+
+```bash
+gh api repos/Asherlc/dofek/actions/jobs/<JOB_ID>/logs > /tmp/ci-job.log
+rg -n 'Error:|error:|Process completed' /tmp/ci-job.log
+```
+
 The "iOS Native Build" CI job runs `xcodebuild archive` piped through `tail -40`, which only keeps the last 40 lines. Swift compiler errors are printed **mid-build** and get truncated. The job log only shows the final summary ("The following build commands failed") and exit code 65, not the actual error messages.
 
 ### How to get the actual Swift errors
@@ -58,6 +69,19 @@ gh run view <RUN_ID> --json jobs -q '.jobs[] | select(.conclusion == "failure") 
 | Swift Tests | Same — XCTest failures are inline |
 | Coverage | Usually fails because upstream test/build jobs failed; fix those first |
 | Unit & Integration Tests | Depends on unit/integration test jobs; check if they passed individually |
+
+### Partial Codecov coverage while integration shards run
+
+The [test workflow](../.github/workflows/test.yml) uploads five coverage reports:
+one unit report and four integration shards. Codecov [merges these uploads](https://docs.codecov.com/docs/merging-reports)
+for the commit. Check all five upload steps before diagnosing a project-coverage
+regression; an early partial report can fall below the target even when the
+complete report passes. The [repository configuration](../codecov.yml) uses
+Codecov's [`after_n_builds: 5`](https://docs.codecov.com/docs/notifications#preventing-notifications-until-after-n-builds)
+to wait for those reports before sending status notifications. Keep this count
+aligned with the workflow's coverage uploads when changing the shard matrix.
+Both upload steps enable [`fail_ci_if_error`](https://github.com/codecov/codecov-action/blob/303a32d7a59b442fa8d48b6a1cc6825c09c847a5/action.yml#L51-L54)
+so an upload error fails its job instead of leaving a missing report unnoticed.
 
 ## Deploy Rollout Healthcheck Failures
 

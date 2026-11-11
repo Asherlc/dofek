@@ -19,6 +19,7 @@ import {
 } from "./clickhouse-read-models.ts";
 import { buildRestingHeartRateSleepWindowTableSql } from "./clickhouse-resting-heart-rate.ts";
 import { standardViewHeader } from "./clickhouse-sql-helpers.ts";
+import { cyclingPowerSchemaStatements } from "./cycling-power-schema.ts";
 
 export function buildClickHouseBootstrapStatementsForNativeMetricStream(
   postgresConnectionString: string,
@@ -45,6 +46,7 @@ export function buildClickHouseBootstrapStatementsForNativeMetricStream(
     ...buildIncrementalDedupedSensorStatements(),
     buildRestingHeartRateSleepWindowTableSql(),
     ...buildDedupedLocationReadModelStatements(),
+    ...cyclingPowerSchemaStatements(),
     ...buildIncrementalActivitySummaryStatements(),
     ...buildActivityTrendDailyCreateReadModelStatements(),
   ];
@@ -155,6 +157,7 @@ deduped_samples AS (
    AND sensor_samples.recorded_at >= activity_bounds.started_at
    AND sensor_samples.recorded_at <= coalesce(activity_bounds.ended_at, activity_bounds.started_at + INTERVAL 12 HOUR)
   WHERE sensor_samples.is_deleted = 0
+    AND coalesce(activity_bounds.provider_type, '') != 'climbing_log'
     AND sensor_samples.scalar IS NOT NULL
 ),
 altitude_deltas AS (

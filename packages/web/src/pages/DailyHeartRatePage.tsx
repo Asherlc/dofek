@@ -20,7 +20,6 @@ export function DailyHeartRatePage() {
   const pageLoad = usePageLoad();
   const [date, setDate] = useState(() => formatDateYmd());
   const today = useTodayQueryDate();
-  const localTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const isToday = date === today;
   const canGoForward = date < today;
 
@@ -49,11 +48,7 @@ export function DailyHeartRatePage() {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold">Daily Heart Rate by Source</h2>
-          <p className="text-xs text-dim">Compare heart rate readings across providers</p>
-          <p className="text-xs text-dim">Local day in {localTimezone}</p>
-        </div>
+        <h2 className="text-lg font-semibold">Daily Heart Rate by Source</h2>
         <fieldset className="m-0 flex flex-wrap items-center gap-2 border-0 p-0">
           <legend className="sr-only">Day navigation</legend>
           <button

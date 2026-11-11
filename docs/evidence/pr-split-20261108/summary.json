@@ -1,0 +1,43 @@
+{
+  "base": "2752451fb4a7404e5d887d32341595a42a673dcd",
+  "source": "ed26f38b89888e0b06c37efa6d1b7d10305d7c94",
+  "pathCount": 728,
+  "changeCounts": {
+    "M": 183,
+    "D": 22,
+    "A": 523
+  },
+  "reviewBuckets": {
+    "shared-docs-and-guidance": 15,
+    "shared-build-ci-and-development": 23,
+    "broker-infrastructure-and-operations": 26,
+    "retired-pulsar-work": 15,
+    "erasure-and-related-tests": 62,
+    "historical-evidence": 449,
+    "mixed-incident-history": 1,
+    "shared-schema-hunks": 8,
+    "application-runtime-and-test-support": 106,
+    "analytics-coordination-and-support": 14,
+    "history-sink-and-sample-identity": 9
+  },
+  "notes": [
+    "Every path has an explicit disposition; dispositions do not claim all changes were ported.",
+    "Sibling ownership covers selected hunks, not wholesale frozen-file acceptance.",
+    "Deferred and retired work remains at the immutable source; it is not an untracked fourth implementation effort."
+  ],
+  "dispositionCounts": {
+    "deferred transport/marker-v2/publisher-factory redesign or associated naming/docs/test support; current Redpanda contracts retained": 141,
+    "extracted-scoped-hunks; remaining transport redesign retired": 9,
+    "owned-by-Kafka-PR3233; historical proposals retained at source where superseded": 24,
+    "Kafka-PR3233 owns broker/env readiness hunks; other transport cleanup deferred": 3,
+    "retired Pulsar experiment; no deletion/implementation imported into independent fixes": 15,
+    "retired Pulsar binary mirror prerequisite; current KafkaJS clients do not need it": 1,
+    "deferred transitional coverage exemptions and transport/test topology changes; unchanged gates retained": 4,
+    "owned-by-erasure-PR3234; select required writer/schema/test hunks": 79,
+    "owned-by-erasure-PR3234": 2,
+    "curated-copy": 10,
+    "retained-at-immutable-source; historical experiment, not active instructions": 437,
+    "curated history recovery entry here; full historical chronology retained at immutable source": 1,
+    "deferred diagnostic-only experiment; no runtime fix required": 2
+  }
+}

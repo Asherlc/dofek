@@ -459,7 +459,6 @@ table fitness.user_profile {
   birth_date date
   max_hr smallint
   resting_hr smallint
-  ftp smallint
   is_admin boolean [not null, default: false]
   created_at "timestamp with time zone" [not null, default: `now()`]
   updated_at "timestamp with time zone" [not null, default: `now()`]
@@ -511,6 +510,7 @@ table fitness.activity {
   rejected_provider_end_utc_offset_minutes bigint
   strava_id text
   raw jsonb
+  fit_recovery_error text
   provider_absent_at "timestamp with time zone"
   absence_provider_id text
   deleted_at "timestamp with time zone"
@@ -757,7 +757,6 @@ table fitness.sport_settings {
   id uuid [pk, not null, default: `gen_random_uuid()`]
   user_id uuid [not null]
   sport text [not null]
-  ftp smallint
   threshold_hr smallint
   threshold_pace_per_km real
   power_zone_pcts jsonb
@@ -901,6 +900,38 @@ table fitness.activity_image_work {
   }
 }
 
+table fitness.analytics_query_owner {
+  resource_id text [pk, not null]
+  owner_id uuid
+  backend_pid bigint
+  quiescent boolean [not null, default: true]
+  intent_id text
+  ingested_at "timestamp with time zone" [not null, default: `'epoch'`]
+  query_id uuid
+  query_terminal boolean [not null, default: true]
+}
+
+table fitness.analytics_stream_state {
+  transport text [not null]
+  epoch text [not null]
+  topic text [not null]
+  partition bigint [not null]
+  owner_id uuid [not null]
+  processed jsonb
+  pending jsonb
+  group_state text
+  group_first_position jsonb
+  group_last_position jsonb
+  group_member_count bigint
+  group_positions_digest text
+  group_first_ingested_at "timestamp with time zone"
+
+  indexes {
+    (transport, epoch, topic, partition) [pk]
+
+  }
+}
+
 table fitness.area {
   id uuid [pk, not null, default: `gen_random_uuid()`]
   user_id uuid [not null]
@@ -908,17 +939,29 @@ table fitness.area {
   external_id text
   name text [not null]
   parent_area_id uuid
+  group_id uuid
   coordinates point
 
   indexes {
     (user_id, provider_id, id) [name: 'area_owner_provider_id_idx', unique]
     (user_id, provider_id, external_id) [name: 'area_source_external_id_idx', unique]
     parent_area_id [name: 'area_parent_idx']
+    group_id [name: 'area_group_idx']
 
 
 
 
 
+
+  }
+}
+
+table fitness.area_group {
+  id uuid [pk, not null, default: `gen_random_uuid()`]
+  user_id uuid [not null]
+
+  indexes {
+    (user_id, id) [name: 'area_group_owner_id_idx', unique]
   }
 }
 
@@ -967,6 +1010,7 @@ table fitness.climbing_attempt {
   pitch_id uuid
   parent_attempt_id uuid
   attempt_index bigint
+  source_completed boolean
   source_result text
   rope_method rope_method
   solo boolean
@@ -1002,6 +1046,7 @@ table fitness.climbing_log_entry {
   provider_id text [not null]
   external_id text
   climb_id uuid
+  area_id uuid
   activity_id uuid
   climbed_on date
   discipline climbing_discipline
@@ -1018,10 +1063,12 @@ table fitness.climbing_log_entry {
   indexes {
 
 
+
     (user_id, provider_id, id) [name: 'climbing_log_entry_owner_provider_id_idx', unique]
     (user_id, provider_id, external_id) [name: 'climbing_log_entry_source_external_id_idx', unique]
     activity_id [name: 'climbing_log_entry_activity_idx']
     climb_id [name: 'climbing_log_entry_climb_idx']
+    area_id [name: 'climbing_log_entry_area_idx']
     (user_id, provider_id, climbed_on) [name: 'climbing_log_entry_source_date_idx']
 
 
@@ -1225,6 +1272,20 @@ table fitness.account_erasure_checkpoint {
 
   indexes {
     (request_id, phase) [pk]
+  }
+}
+
+table fitness.account_erasure_identifier {
+  request_id uuid [not null]
+  family text [not null]
+  identity_key text [not null]
+  encrypted_identifier text [not null]
+
+  indexes {
+    (request_id, family, identity_key) [pk]
+
+
+
   }
 }
 
@@ -2152,7 +2213,11 @@ ref area_user_id_user_profile_id_fk: fitness.area.user_id > fitness.user_profile
 
 ref area_provider_id_provider_id_fk: fitness.area.provider_id > fitness.provider.id [delete: no action, update: no action]
 
+ref area_group_owner_fk: fitness.area.(user_id, group_id) > fitness.area_group.(user_id, id) [delete: no action, update: no action]
+
 ref area_parent_owner_provider_fk: fitness.area.(user_id, provider_id, parent_area_id) > fitness.area.(user_id, provider_id, id) [delete: no action, update: no action]
+
+ref area_group_user_id_user_profile_id_fk: fitness.area_group.user_id > fitness.user_profile.id [delete: no action, update: no action]
 
 ref climb_user_id_user_profile_id_fk: fitness.climb.user_id > fitness.user_profile.id [delete: no action, update: no action]
 
@@ -2171,6 +2236,8 @@ ref climbing_attempt_parent_same_log_fk: fitness.climbing_attempt.(climbing_log_
 ref climbing_log_entry_user_id_user_profile_id_fk: fitness.climbing_log_entry.user_id > fitness.user_profile.id [delete: no action, update: no action]
 
 ref climbing_log_entry_provider_id_provider_id_fk: fitness.climbing_log_entry.provider_id > fitness.provider.id [delete: no action, update: no action]
+
+ref climbing_log_entry_area_owner_provider_fk: fitness.climbing_log_entry.(user_id, provider_id, area_id) > fitness.area.(user_id, provider_id, id) [delete: no action, update: no action]
 
 ref climbing_log_entry_climb_owner_provider_fk: fitness.climbing_log_entry.(user_id, provider_id, climb_id) > fitness.climb.(user_id, provider_id, id) [delete: no action, update: no action]
 
@@ -2205,6 +2272,8 @@ ref medication_dose_event_provider_id_provider_id_fk: fitness.medication_dose_ev
 ref medication_dose_event_user_id_user_profile_id_fk: fitness.medication_dose_event.user_id > fitness.user_profile.id [delete: no action, update: no action]
 
 ref account_erasure_checkpoint_request_id_account_erasure_request_id_fk: fitness.account_erasure_checkpoint.request_id > fitness.account_erasure_request.id [delete: cascade, update: no action]
+
+ref account_erasure_identifier_request_id_account_erasure_request_id_fk: fitness.account_erasure_identifier.request_id > fitness.account_erasure_request.id [delete: cascade, update: no action]
 
 ref account_erasure_identity_fence_request_id_account_erasure_request_id_fk: fitness.account_erasure_identity_fence.request_id > fitness.account_erasure_request.id [delete: restrict, update: no action]
 

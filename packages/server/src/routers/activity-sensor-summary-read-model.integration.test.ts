@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
   type ClickHouseClient,
@@ -75,6 +75,52 @@ describe("activity_sensor_summary_rows read model", () => {
   afterAll(async () => {
     await client?.command({ query: `DROP DATABASE IF EXISTS ${analyticsDatabase} SYNC` });
     await client?.close?.();
+  });
+
+  beforeEach(async () => {
+    if (!client) throw new Error("ClickHouse client was not initialized");
+    for (const table of [
+      "deduped_activities",
+      "activity_sensor_sample",
+      "activity_sensor_summary_rows",
+    ])
+      await client.command({ query: `TRUNCATE TABLE ${analyticsDatabase}.${table}` });
+  });
+
+  it("includes measured coasting in average power and preserves an observed zero-power ride", async () => {
+    if (!client) throw new Error("ClickHouse client was not initialized");
+    const userId = randomUUID();
+    const mixedId = randomUUID();
+    const zeroId = randomUUID();
+    for (const activityId of [mixedId, zeroId]) {
+      await client.command({
+        query: `INSERT INTO ${analyticsDatabase}.deduped_activities VALUES ('${activityId}','${userId}',now64(6)-INTERVAL 1 DAY,0)`,
+      });
+      await client.command({
+        query: `INSERT INTO ${analyticsDatabase}.activity_sensor_sample (activity_id,user_id,recorded_at,channel,scalar,refresh_version,is_deleted)
+          SELECT toUUID('${activityId}'),toUUID('${userId}'),now64(6)-INTERVAL 1 DAY+toIntervalSecond(number),'power',
+            if('${activityId}'='${zeroId}',0,if(number%2=0,240,0)),1,0 FROM numbers(60)`,
+      });
+    }
+    await client.command({
+      query: `INSERT INTO ${targetTable} ${renderActivitySensorSummarySql(targetTable, analyticsDatabase)}`,
+    });
+    const result = await client.query({
+      query: `SELECT toString(summary.activity_id) AS activity_id,avg_power,smoothed_avg_power FROM ${targetTable} AS summary FINAL WHERE summary.activity_id IN {ids:Array(UUID)}`,
+      query_params: { ids: [mixedId, zeroId] },
+      format: "JSONEachRow",
+    });
+    const rows = await result.json<{
+      activity_id: string;
+      avg_power: number | null;
+      smoothed_avg_power: number | null;
+    }>();
+    expect(rows).toHaveLength(2);
+    expect(rows.find((row) => row.activity_id === mixedId)?.avg_power).toBe(120);
+    expect(rows.find((row) => row.activity_id === zeroId)).toMatchObject({
+      avg_power: 0,
+      smoothed_avg_power: 0,
+    });
   });
 
   it("preserves unavailable elevation separately from measured ascent and descent", async () => {

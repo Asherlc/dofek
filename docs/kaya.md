@@ -26,6 +26,33 @@ log. See the [model](climbing-context.md) and observed
 
 ## Attempt occurrences
 
+A later session response can omit a previously observed failed climb while a
+separate Redpoint ascent for that same session and climb remains present. This
+transition was verified against retained payloads and the authenticated
+[GraphQL endpoint](https://kaya-beta.kayaclimb.com/graphql) on 2026-11-01.
+When that ascent reports no attempt count, [sync](../src/providers/kaya-sync.ts)
+preserves the known failed occurrence, including one retired by an earlier sync.
+Preservation requires an exact session/climb source identity, a known positive
+failed-attempt count, and a currently returned session and Redpoint/Send/Repeat
+ascent. Removing the supporting ascent removes this preservation basis. An
+ascent with its own explicit count retains its existing count behavior; the
+historical count is not added to that count.
+
+The [detail repository](../packages/server/src/repositories/climbing-activity-log-entry-repository.ts)
+combines those separately stored source occurrences for activity and ascent
+record details when exactly one uncounted send matches, including sessions
+spanning midnight. Multiple sends remain separate because the source does not
+establish which send the failed attempts belong to; their individual notes and
+photo sources remain accessible.
+The [web](../packages/web/src/components/ClimbingLogEntryDetails.tsx) and
+[mobile](../packages/mobile/components/ClimbingLogEntryDetails.tsx) viewers show
+the recorded count and label unknown attempt order explicitly. This recovery
+requires previously ingested failed-attempt evidence; a missing upstream count
+alone cannot reconstruct unobserved tries. Eligible retired records recover on
+the next successful sync after deployment. Source payloads and attempt IDs
+remain in their original canonical rows.
+
+
 The session request includes `attempted_climbs` alongside the separate
 `ascentsForUser` request. An attempted climb is a climb record whose ID combines
 the session and climb IDs, rather than an individual try. It imports as a

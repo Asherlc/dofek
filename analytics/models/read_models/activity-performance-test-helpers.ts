@@ -20,10 +20,10 @@ export function activityPerformanceId(index: number): string {
 
 /** Current final schemas only: never replay historical backfills in these fixtures. */
 export async function createActivityPerformanceFixture(client: ClickHouseClient, database: string) {
-  for (const query of [
+  for (const [index, query] of [
     `CREATE DATABASE ${database}`,
     `CREATE TABLE ${database}.deduped_activities (
-      user_id UUID, activity_id UUID, canonical_type String DEFAULT 'running',
+      user_id UUID, activity_id UUID, canonical_type String DEFAULT 'running', provider_type Nullable(String),
       started_at DateTime64(6, 'UTC'), ended_at Nullable(DateTime64(6, 'UTC')),
       member_activity_ids Array(UUID),
       refresh_version UInt64 DEFAULT toUInt64(toUnixTimestamp64Nano(now64(9))), is_deleted UInt8
@@ -50,8 +50,17 @@ export async function createActivityPerformanceFixture(client: ClickHouseClient,
       source_activity_version UInt64, source_sensor_version UInt64,
       is_deleted UInt8, refresh_version UInt64, duration_seconds UInt32 DEFAULT 0
     ) ENGINE = ReplacingMergeTree(refresh_version) ORDER BY (user_id, activity_id, duration_seconds)`,
-  ])
-    await client.command({ query });
+  ].entries()) {
+    const startedAt = performance.now();
+    const queryId = `${database}-fixture-${index}`;
+    process.stdout.write(
+      `${JSON.stringify({ activityPerformanceFixture: { database, queryId, phase: "started" } })}\n`,
+    );
+    await client.command({ query, query_id: queryId });
+    process.stdout.write(
+      `${JSON.stringify({ activityPerformanceFixture: { database, queryId, phase: "completed", elapsedMs: performance.now() - startedAt } })}\n`,
+    );
+  }
 }
 
 interface ActivityFixtureOptions {
@@ -231,6 +240,12 @@ async function executeActivityPerformanceModel(
       target: childEnvironment.DBT_TARGET,
       secure: (childEnvironment.DBT_CLICKHOUSE_SECURE ?? "false").toLowerCase() === "true",
     };
+    const startedAt = performance.now();
+    const progress = (phase: string, details: Record<string, unknown> = {}) =>
+      process.stdout.write(
+        `${JSON.stringify({ activityPerformanceCommand: { database, modelName, command, phase, elapsedMs: performance.now() - startedAt, ...details } })}\n`,
+      );
+    progress("spawn-requested");
     const result = await new Promise<{ code: number; output: string }>((resolve, reject) => {
       const child = spawn(
         "uv",
@@ -272,15 +287,33 @@ async function executeActivityPerformanceModel(
           stdio: ["ignore", "pipe", "pipe"],
         },
       );
+      child.once("spawn", () => progress("spawned", { pid: child.pid }));
       let output = "";
+      const observe = (stream: string, chunk: Buffer) => {
+        const text = chunk.toString();
+        output += text;
+        const stages = [
+          "Running with dbt",
+          "Registered adapter",
+          "Starting full parse",
+          "Concurrency:",
+          "START sql",
+          "OK created",
+          "Completed successfully",
+        ].filter((stage) => text.includes(stage));
+        progress("output", { stream, bytes: chunk.length, stages });
+      };
       child.stdout.on("data", (chunk: Buffer) => {
-        output += chunk.toString();
+        observe("stdout", chunk);
       });
       child.stderr.on("data", (chunk: Buffer) => {
-        output += chunk.toString();
+        observe("stderr", chunk);
       });
       child.once("error", reject);
-      child.once("close", (code) => resolve({ code: code ?? 1, output }));
+      child.once("close", (code) => {
+        progress("closed", { code });
+        resolve({ code: code ?? 1, output });
+      });
     });
     if (result.code !== 0) {
       throw new Error(

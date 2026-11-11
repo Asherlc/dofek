@@ -1,4 +1,5 @@
 import CoreBluetooth
+import Darwin
 import ExpoModulesCore
 import Foundation
 import RNSentry
@@ -47,7 +48,9 @@ public class WhoopBleModule: Module {
         OnCreate {
             self.connectionManager.delegate = self
             self.watchdog.delegate = self
-            do { _ = try self.uploader } catch { self.failCapture(error) }
+            WhoopBleUploadRuntime.prepare { [weak self] error in
+                self?.connectionManager.bleQueue.async { [weak self] in self?.failCapture(error) }
+            }
         }
 
         // MARK: - Availability
@@ -141,11 +144,11 @@ public class WhoopBleModule: Module {
             try self.uploader.sampleCount(stream: .imu)
         }
 
-        Function("getDeviceSummary") { () -> [String: Any] in
+        AsyncFunction("getDeviceSummary") { () -> [String: Any] in
             try self.deviceSummaryPayload()
         }
 
-        Function("getDataPathStats") { () -> [String: Any] in
+        AsyncFunction("getDataPathStats") { () -> [String: Any] in
             try self.connectionManager.syncOnBleQueue {
                 let packetTypeSummary = self.packetTypeCounts
                     .sorted(by: { $0.key < $1.key })
@@ -216,7 +219,7 @@ public class WhoopBleModule: Module {
 
         // MARK: - Durable capture and native background delivery
 
-        Function("configureUpload") { (context: [String: Any]) in
+        AsyncFunction("configureUpload") { (context: [String: Any]) in
             guard let userId = context["userId"] as? String,
                   let serverURL = context["serverURL"] as? String,
                   let token = context["token"] as? String,
@@ -236,20 +239,46 @@ public class WhoopBleModule: Module {
             }
         }
 
-        Function("flushUploads") {
+        AsyncFunction("flushUploads") {
             do { try self.uploader.flush() } catch {
                 SentrySDK.capture(error: error)
                 throw error
             }
         }
 
-        Function("disableUploads") {
+        AsyncFunction("disableUploads") {
+            let operationId = UUID().uuidString
+            let startedAt = ProcessInfo.processInfo.systemUptime
+            var stage = "ble_suspend"
+            func recordStage(_ nextStage: String) {
+                stage = nextStage
+                SentrySDK.logger.info("WHOOP cleanup stage", attributes: [
+                    "operation": "disableUploads", "operationId": operationId, "stage": stage,
+                    "isMainThread": Thread.isMainThread, "threadId": Int(pthread_mach_thread_np(pthread_self())),
+                    "durationMs": (ProcessInfo.processInfo.systemUptime - startedAt) * 1_000
+                ])
+            }
+
+            recordStage("ble_suspend")
             self.connectionManager.syncOnBleQueue {
                 self.captureSuspended = true
                 self.watchdog.stop()
             }
+            recordStage("disconnect")
             self.connectionManager.disconnect()
-            do { try self.uploader.disable() } catch {
+            do {
+                recordStage("uploader_bootstrap")
+                let uploader = try self.uploader
+                recordStage("uploader_disable")
+                try uploader.disable(onStage: recordStage)
+                recordStage("completed")
+            } catch {
+                SentrySDK.logger.error("WHOOP cleanup failed", attributes: [
+                    "operation": "disableUploads", "operationId": operationId,
+                    "stage": "failed", "failedStage": stage,
+                    "isMainThread": Thread.isMainThread, "threadId": Int(pthread_mach_thread_np(pthread_self())),
+                    "durationMs": (ProcessInfo.processInfo.systemUptime - startedAt) * 1_000
+                ])
                 SentrySDK.capture(error: error)
                 throw error
             }

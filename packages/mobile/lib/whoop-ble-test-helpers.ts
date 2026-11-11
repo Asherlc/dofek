@@ -36,6 +36,7 @@ export function makeWhoopCaptureStats(): WhoopCaptureStats {
       checkpointAt: "2026-10-23T01:00:00.000Z",
       imu: { ...stream },
       realtime: { ...stream },
+      sensorRecords: { ...stream },
     },
   };
 }
@@ -43,14 +44,14 @@ export function makeWhoopCaptureStats(): WhoopCaptureStats {
 export function makeMockDeps(): WhoopBleSyncDeps {
   return {
     addCaptureErrorListener: vi.fn().mockReturnValue({ remove: vi.fn() }),
-    configureUpload: vi.fn(),
-    flushUploads: vi.fn(),
+    configureUpload: vi.fn().mockResolvedValue(undefined),
+    flushUploads: vi.fn().mockResolvedValue(undefined),
     findWhoop: vi.fn().mockResolvedValue({ id: "whoop-123", name: "WHOOP 4.0" }),
     connect: vi.fn().mockResolvedValue(true),
     startImuStreaming: vi.fn().mockResolvedValue(true),
     stopImuStreaming: vi.fn().mockResolvedValue(true),
     disconnect: vi.fn(),
     addConnectionStateListener: vi.fn().mockReturnValue({ remove: vi.fn() }),
-    getDataPathStats: vi.fn().mockImplementation(makeWhoopCaptureStats),
+    getDataPathStats: vi.fn().mockImplementation(async () => makeWhoopCaptureStats()),
   };
 }

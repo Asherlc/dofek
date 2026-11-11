@@ -7,7 +7,7 @@ are separate questions. The current mappings are the
 [Kaya adapter](../src/providers/kaya-sync.ts),
 [Mountain Project adapter](../src/providers/mountain-project.ts),
 [OpenBeta adapter](../src/providers/openbeta.ts), and
-[theCrag parser](../src/providers/thecrag/public-parsing.ts).
+[theCrag parser](../src/providers/thecrag/mapping.ts).
 
 ## Evidence and audit limits
 
@@ -120,7 +120,7 @@ CUSTOM `1`, MOVEMENT `2`, GRIP `3`, FOOTWORK `4`, GENERAL `5`, STYLE `6`,
 CONDITIONS `7`, START `8`, FINISH `9`, and BOLDNESS `10`. All categories are
 projected from retained raw records into attributed tags for climb details and
 strengths, without being relabeled as grip types. The
-[provider decoder](../src/providers/kaya/climbing-tags.ts) preserves literal
+[provider decoder](../packages/climbing-catalogue/src/kaya-tags.ts) preserves literal
 labels and unknown category keys; the [generic contract](../packages/training/src/climbing-tags.ts)
 keeps source and category identity. No historical backfill or duplicate tag
 storage is needed. When no grip
@@ -158,7 +158,7 @@ could expose through another endpoint or page. See the existing
 | --- | --- | --- |
 | Mountain Project | Tick CSV plus route/Area identity and location enrichment; retained source rows and route responses. | The checked tick export and route API response have no structured hold or wall-angle field. Descriptions and protection text are present in route JSON; full route JSON remains in `raw.sourceEnrichment.route`. Gear/ascent style and description text do not establish recorded grip categories or measured angles. Sources: observed [route API](https://www.mountainproject.com/api/v2/routes/105734660), [tick-export contract](mountain-project.md#tick-export-contract), and [client](../packages/mountain-project-client/src/client.ts). |
 | OpenBeta | Public ticks, recorded result/style, grades, identified climbs/pitches and Area ancestry/coordinates. | The current query selects no grip or wall-angle field. This describes Dofek's selection, not an assertion that every upstream surface lacks those facts. [Importer query](../src/providers/openbeta.ts); [upstream GraphQL source](https://github.com/OpenBeta/openbeta-graphql). |
-| theCrag | Public ascent feed and ascent pages; public route/method/result/grade fields retained per ascent. | Public route pages expose structured categorical steepness and style tags, including multiple and inherited tags. The present parser does not fetch that route catalogue metadata, so this is a known enrichment gap. Ascent gear style is distinct from those traits. [Current parser](../src/providers/thecrag/public-parsing.ts); upstream [structured-tag definitions](https://www.thecrag.com/en/article/tagging), [gear-style definitions](https://www.thecrag.com/en/article/styles), and [feed discussion](https://github.com/theCrag/website/issues/1997). |
+| theCrag | Official personal logbook API; source route/method/result/grade fields and private notes retained per ascent. | Public route pages expose structured categorical steepness and style tags, including multiple and inherited tags. The present parser does not fetch that route catalogue metadata, so this is a known enrichment gap. Ascent gear style is distinct from those traits. [Current parser](../src/providers/thecrag/mapping.ts); upstream [structured-tag definitions](https://www.thecrag.com/en/article/tagging), [gear-style definitions](https://www.thecrag.com/en/article/styles), and [personal logbook API](https://www.thecrag.com/en/article/logbookreadapi). |
 
 The 2026-10-27 theCrag audit verified public route tags independently of the
 current importer. [When Your Luck Runs Out](https://www.thecrag.com/en/climbing/australia/south-australia/adelaide/route/521786997)
@@ -186,20 +186,39 @@ user labels; neither is a recorded grip classification. The
 [supporter logbook API](https://www.thecrag.com/en/article/logbookreadapi) also
 documents route tags under its own access conditions, but the public route
 pages already demonstrate structured traits. This inventory does not change
-the existing public-feed integration or select a new enrichment strategy.
+the [retired public-feed integration](thecrag.md#public-read-path) or select a new enrichment strategy.
 
 ## Informational catalogue cache
 
-Climb details on web and mobile also offer **Catalogue context**, an explicit
-lookup across KAYA, Mountain Project, theCrag and OpenBeta. This is disposable reference
+Climb details on web and mobile offer **Catalogue information**, an explicit
+refresh and reference disclosure across KAYA, Mountain Project, theCrag, OpenBeta and 8a.nu / Vertical-Life
+through the [source composition](../src/climbing-catalogue-sources.ts). This is disposable reference
 information: the [cache service](../src/climbing-catalogue.ts) retains successful
 results for seven days and empty results for one day, with source URLs, search
-completeness, and source/corroborated/possible-match attribution. It does not
+completeness, and source/reference/corroborated/possible-match attribution. It does not
 write catalogue facts or inferred identities into the recorded climbing graph,
-create ticks, or change grades, outcomes, deduplication or training metrics.
+create ticks, or change recorded grades, outcomes or deduplication. Strengths can
+consume eligible cached traits without changing those recorded facts, as
+specified in the [trait projection](../packages/server/src/services/climbing-catalogue-traits.ts).
 The [owned-log repository](../packages/server/src/repositories/climbing-catalogue-repository.ts)
 checks current visibility and the caller's access window before every cache
-read or refresh. Clearing the cache loses only this reference information.
+read or refresh. Strengths also loads authorized seeds in bulk and queues missing
+context through the existing worker; requests read cached evidence rather than
+performing provider HTTP reads. v4 cache keys include the user and source facts,
+excluding the occurrence log ID, so repeated logs share matching source context.
+Clearing the cache removes disposable evidence and leaves recorded facts intact.
+See the [bulk seed query](../src/db/climbing-catalogue-seed.ts),
+[enrichment repository](../packages/server/src/repositories/climbing-strengths-enrichment-repository.ts)
+and [cache service](../src/climbing-catalogue.ts).
+
+Unnamed climbs retain nullable names through the [seed query](../src/db/climbing-catalogue-seed.ts)
+and [catalogue contract](../packages/training/src/climbing-catalogue.ts). Their recorded
+provider ID can load source information without inventing a search name; the
+[KAYA reader](../packages/climbing-catalogue/src/kaya.ts) accepts unnamed source climbs.
+Both clients keep the source link available as **View climb** and omit cache
+terminology and fetch timestamps from the disclosure. The
+[database regression](../src/db/climbing-catalogue-seed.integration.test.ts) and
+[lookup regression](../src/climbing-catalogue.test.ts) cover this path.
 
 Live read-only checks on 2026-10-27 verified these discovery contracts:
 
@@ -207,7 +226,7 @@ Live read-only checks on 2026-10-27 verified these discovery contracts:
   declares `webSearchForClimb(name, offset, count)`. Authenticated logbook fields
   and public `WebClimb` fields are distinct: the public query accepts angle,
   location and published-grade metadata, but rejects `tags`. The
-  [catalogue reader](../src/providers/kaya/catalogue.ts) uses the verified search
+  [catalogue reader](../packages/climbing-catalogue/src/kaya.ts) uses the verified search
   response for discovery. With an existing user connection, authenticated
   `climb(id: ...)` reads fetch native Climb details, including `lead`,
   `is_trad`, and the full source tags verified on native Climbs above;
@@ -220,12 +239,12 @@ Live read-only checks on 2026-10-27 verified these discovery contracts:
 - Mountain Project's [search client](https://www.mountainproject.com/dist/search/block.js?v.5)
   posts to `/api/v2/search?q=...&from=...`. The verified response includes total,
   route IDs/URLs, grades, breadcrumbs and locations. The
-  [reader](../src/providers/mountain-project-catalogue.ts) retains all published
+  [reader](../packages/climbing-catalogue/src/mountain-project.ts) retains all published
   type labels, including Trad, Sport, TR, Mixed and Aid, as climb classifications
   rather than relabeling them steepness, grips or personal ascent methods.
 - theCrag's [route search](https://www.thecrag.com/en/climbing/world/search?S=Cragmont%20Crack&only=routes)
   exposes paginated route results. The
-  [reader](../src/providers/thecrag/catalogue.ts) fetches exact-name candidates
+  [reader](../packages/climbing-catalogue/src/thecrag.ts) fetches bounded candidate details
   and retains route-page tags, including multiple inherited steepness entries.
   A fresh [Cragmont Crack page](https://www.thecrag.com/en/climbing/united-states/california/san-francisco/east-bay-area/route/18589309)
   returned Overhung, Slab (`#Ramp`) and Vertical inherited from Cragmont Park.
@@ -240,12 +259,48 @@ Live read-only checks on 2026-10-27 verified these discovery contracts:
   [Climb schema](https://github.com/OpenBeta/openbeta-graphql/blob/develop/src/graphql/schema/Climb.gql),
   [search client](https://github.com/OpenBeta/open-tacos/blob/develop/src/js/typesense/TypesenseClient.ts),
   [public browser search configuration](https://github.com/OpenBeta/open-tacos/blob/develop/.env),
-  and [Dofek reader](../src/providers/openbeta-catalogue.ts). The browser search
+  and [OpenBeta catalogue adapter](../packages/climbing-catalogue/src/openbeta.ts). The browser search
   credential is public and search-only; no new private credential or service is
   provisioned. Upstream 502 responses remain actionable lookup errors.
 
-Searches are bounded to three pages. Capped or repeated pages remain explicitly
-incomplete and cannot establish a unique corroborated match. Indoor candidates
+Additional read-only checks on 2026-11-02 inspected Vertical-Life's
+[deployed API client](https://www.8a.nu/_nuxt/BvPRvgJk.js) and verified public
+[collection search](https://vlcapi.vertical-life.info/collection/v1/web/search?query=Midnight%20Lightning&pageIndex=0&pageSize=5&entityTypes%5B%5D=3)
+and [outdoor route detail](https://vlcapi.vertical-life.info/outdoor/v1/web/crags/bouldering/united-states/camp-4/sectors/unknown-sector-5dd83/routes/midnight-lightning)
+responses without credentials. The [adapter](../packages/climbing-catalogue/src/vertical-life.ts)
+uses the existing `eight-a` identity. Search `zlaggableId` matches detail
+`unifiedId`, while detail `zlaggableId` is a different identifier. Native route
+URLs load details with an ID check; discovery retains published grades,
+route/boulder kind and country/area/crag/known-sector ancestry. Unknown Sector
+placeholders are omitted. Route details supply no numeric wall angles or hold
+tags. Crag reads can supply a verified area point; this remains area geography,
+not a measured route point. Literal plus signs in source
+slugs are preserved and URL-encoded. These contracts are unofficial and may change.
+The application's synced 8a.nu entries currently lack a proven catalogue climb
+ID and the [seed query](../src/db/climbing-catalogue-seed.ts) supplies no source
+URL, so those entries use name discovery. Verified native ingestion identity is
+tracked separately in [issue #3204](https://github.com/Asherlc/dofek/issues/3204);
+the [ascent parser](../src/providers/eight-a/ascent.ts) keeps unknown climb IDs
+null rather than substituting the ascent occurrence ID.
+
+Global name searches share at most three page requests per provider across the
+current name and all meaningful logged/source aliases, rather than three pages
+per alias. Empty and case/whitespace-equivalent queries are removed; punctuation
+and route qualifiers remain available to upstream search. Each distinct query
+gets its first page before any query receives another page. Aliases not yet queried,
+unfinished pagination, repeated or omitted results, and detail caps keep combined
+coverage incomplete and cannot establish a unique corroborated match. Query
+pagination/repetition state is separate from global source-ID deduplication, so
+overlap between aliases does not itself imply incomplete coverage. Exact native
+and reference lookups, and independently complete OpenBeta local-area discovery,
+retain their separate paths. See the [shared query-name policy](../packages/climbing-catalogue/src/matching.ts)
+and the provider readers linked above; their upstream protocols are documented by
+the [MP search client](https://www.mountainproject.com/dist/search/block.js?v.5),
+[KAYA consumer query](https://kaya-app.kayaclimb.com/static/js/main.9113009d.chunk.js),
+[theCrag route search](https://www.thecrag.com/en/climbing/world/search?S=Cragmont%20Crack&only=routes),
+and [OpenBeta search client](https://github.com/OpenBeta/open-tacos/blob/develop/src/js/typesense/TypesenseClient.ts).
+
+Indoor candidates
 are possible matches unless the exact recorded provider identity is found;
 matching names or recycled colors never establish the same gym set. Failed
 refreshes retain still-unexpired context with an actionable error instead of
@@ -253,6 +308,125 @@ becoming an empty successful lookup. See the
 [shared response](../packages/training/src/climbing-catalogue.ts),
 [cache/matching tests](../src/climbing-catalogue.test.ts) and
 [database ownership tests](../src/db/climbing-catalogue-seed.integration.test.ts).
+
+Within one provider, two nonempty area IDs must agree before names can align
+those areas. Equal IDs permit a rename; differing IDs retain conflict evidence
+even when names and nearby points coincide. Missing IDs and different provider
+namespaces retain the name-based comparison, with the same distance and
+hierarchy checks. The [server matcher](../packages/climbing-catalogue/src/matching.ts)
+and its [regressions](../packages/climbing-catalogue/src/matching.test.ts) define this policy.
+
+Within each provider, the [server matcher](../packages/climbing-catalogue/src/matching.ts)
+stably orders matches as source, explicit reference, corroborated, then possible.
+It preserves order within each class, every candidate and all evidence; provider
+order is unchanged. The [web](../packages/web/src/components/ClimbingCatalogueContext.tsx)
+and [mobile](../packages/mobile/components/ClimbingCatalogueContext.tsx) views render
+that server order without a client-side score or winner selection.
+
+### Local discovery and identity evidence (2026-10-29)
+
+OpenBeta discovery uses `cragsWithin(filter: { bbox, zoom: 15 })` around the
+nearest recorded area point, independently of the route name. Dofek converts
+its shared 100 m local-area heuristic to a latitude-aware bounding box. A
+provider-owned OpenBeta UUID or Mountain Project area reference selects the
+area when available; otherwise the normalized local name and great-circle
+distance must agree. The reader hydrates at most three matching leaf areas.
+It reads `area(uuid)` metadata and `totalClimbs` before requesting climb facts,
+skips areas exceeding the remaining 200-fact processing budget, and compares the
+unique retained climb count with `totalClimbs`. It also checks the actual returned
+fact count before processing: overruns keep coverage incomplete, processing and
+retention stop at the remaining budget, and no further full-area reads occur
+after exhaustion. These unpaginated upstream responses can exceed an earlier
+advertised count, so the metadata check cannot guarantee a network-level response
+size cap. Missing, capped or partial coverage remains incomplete; `searchArea`
+records the scope of this lookup. Every successful incomplete local lookup
+continues with bounded Typesense name discovery, retaining local candidates and
+deduplicating the combined result by native climb ID. Already hydrated local
+climbs do not require another detail read. The combined result stays incomplete
+without claiming a matched-area search scope. This preserves name results when
+a broader recorded area cannot select a nearby leaf area, or when unrelated
+local climbs exhaust the processing budget before the target's area is read.
+At zoom 15, the upstream geographic query selects leaf areas. Complete local
+results, including empty matched-area coverage, retain their local path;
+HTTP, parsing and identity errors remain lookup errors. When
+the nearest area has no point, bounded name search remains available directly.
+The API has no cursor or completion flag on these area queries; the count check
+follows the upstream leaf-area contract, rather than assuming that any nonempty
+response is complete. Sources: the
+[Area schema](https://github.com/OpenBeta/openbeta-graphql/blob/develop/src/graphql/schema/Area.gql),
+[area data source](https://github.com/OpenBeta/openbeta-graphql/blob/develop/src/model/AreaDataSource.ts),
+and [reader and regression fixtures](../packages/climbing-catalogue/src/openbeta.test.ts).
+
+The combined path permits at most seven local requests (one geographic query,
+three metadata reads and three climb reads), then three name-search pages shared
+across all aliases. With the requested `per_page=20` honored, at most 60 unique
+eligible name hits require detail reads, yielding at most 70 discovery/route
+requests and 260 unique candidates before the shared matcher assesses relevance.
+Area-context hydration adds local-area/immediate-parent reads, deduplicated by
+native UUID within the search; 70 is therefore not the total request ceiling.
+This is a request-budget calculation under the documented
+[Typesense pagination contract](https://typesense.org/docs/30.2/api/search.html#pagination-parameters),
+not a response-size guarantee: the [reader](../packages/climbing-catalogue/src/openbeta.ts)
+does not independently cap over-returned Typesense hits or unpaginated area
+response bytes. Local processing still stops at 200 climb facts.
+
+The verified [Goat Rock area](https://openbeta.io/area/0045f7bf-6b6c-5d8a-bc9a-30f9168aea37/goat-rock)
+has UUID `0045f7bf-6b6c-5d8a-bc9a-30f9168aea37`, Mountain Project area reference
+`105734054`, point `37.2282, -122.1079`, and 12 climbs. Hydrated
+[Corner Route](https://openbeta.io/climb/f3a2b199-c2d3-59b8-8f12-dd7ce734e88b/corner-route)
+explicitly references Mountain Project's
+[Cheddar Corner](https://www.mountainproject.com/route/105736399/cheddar-corner)
+(`105736399`), despite the different names. Embedded geographic-search climbs
+did not reliably populate these references in the live audit: only hydrated
+area/native climb `metadata.mp_id` supplies climb identity evidence. Mountain
+Project can follow that reference directly through its existing route-detail
+endpoint. Neither a grade difference nor coincident area coordinates supplies
+or vetoes an identity reference. Sources: the linked public records,
+[Climb metadata schema](https://github.com/OpenBeta/openbeta-graphql/blob/develop/src/graphql/schema/Climb.gql),
+and the [MP reader](../packages/climbing-catalogue/src/mountain-project.ts).
+
+All five readers use the shared name relation for presentation aliases and
+bounded approximate suggestions. Original names and directional/start/extension/
+pitch qualifiers remain intact; approximate similarity is discovery evidence,
+not identity confidence. The shared matcher uses source-declared aliases and
+keeps unknown setting unknown. See the [matching policy](../packages/climbing-catalogue/src/matching.ts)
+and [Fuse.js search documentation](https://www.fusejs.io/api/options.html).
+
+theCrag search hydrates at most 60 unique route details over three pages before
+checking names and literal route AKA labels, so a route returned under an alias
+is not discarded solely because its displayed title differs. A repeated page,
+repeated route within one query or omitted detail keeps discovery incomplete;
+overlapping route IDs from different name queries share one detail read. AKA labels come
+only from `.headline__guts > ul.stats > li[title="Alternate name"]`, as observed
+on [this route's "Up" alias](https://www.thecrag.com/en/climbing/thailand/krabi/route/7257755094);
+breadcrumb abbreviations are not route aliases. Every source-proven native area
+breadcrumb can supply context through an area page with the matching canonical
+numeric ID; named hierarchy links with native IDs use the canonical numeric
+lookup path. Different geographic path spellings do not change that ID. Only
+that area's own `place:location` metadata supplies area coordinates, independent
+of whether the route repeats a `Lat/Lon:` pair. Parent reads are deduplicated by
+native area ID within each search. The
+[Goat Rock route page](https://www.thecrag.com/en/climbing/united-states/castle-rock-state-park/route/18578485)
+and [parent area](https://www.thecrag.com/en/climbing/united-states/castle-rock-state-park/area/16447255)
+display coincident points; a separately located route never replaces the parent
+point. An unavailable parent point leaves area coordinates unknown, while parent
+HTTP/identity failures remain actionable lookup errors. A route-only point is not
+assigned to area or climb scope because its inheritance is unverified. theCrag
+supports individual route/start locations; see
+[Locating Routes](https://www.thecrag.com/en/article/geolocation#locating-routes)
+and [route Lat/Lon editing](https://www.thecrag.com/article/updatingdescriptions).
+Provider identity does not imply outdoor setting. See the
+[theCrag reader](../packages/climbing-catalogue/src/thecrag.ts).
+
+KAYA native IDs remain distinct from URL slugs: the public
+[Swiss Cheese URL](https://kaya-app.kayaclimb.com/climb/Swiss-Cheese-56-Castle-Rock-State-Park-6084576)
+has native climb ID `887401`, not suffix `6084576`. Its Goat Rock area is native
+ID `46774` at `37.228451, -122.107888`; the broader Castle Rock State Park
+destination is `2204`. These are attributed source locations, not interchangeable
+route identities. Sources: the audited public search response from KAYA's
+[GraphQL endpoint](https://kaya-beta.kayaclimb.com/graphql), the
+[consumer identity fields](https://kaya-app.kayaclimb.com/static/js/main.9113009d.chunk.js),
+and [KAYA regression](../packages/climbing-catalogue/src/kaya.test.ts).
 
 Pending refresh status comes from the live job, independently of metadata TTL;
 concurrent refresh requests cannot replace a finished result with a long-lived
@@ -263,7 +437,7 @@ data after access/ownership errors. The
 tests cover these lifecycle boundaries. Recorded theCrag numeric route IDs use
 the verified `/en/climbing/world/route/<id>` detail path, so a rename does not
 force that source record through name search; see the
-[reader regression](../src/providers/thecrag/catalogue.test.ts).
+[reader regression](../packages/climbing-catalogue/src/thecrag.test.ts).
 
 ## Serving the imported metadata
 
@@ -287,16 +461,60 @@ available to version `2` and server analytics. See the
 [projection](../packages/training/src/climbing-log-response.ts) and
 [strengths service](../packages/server/src/services/climbing-strengths.ts).
 
-The strengths response keeps its existing angle/hold/setting `panels` and adds
-`tagPanels` for observed recorded tag categories. Each tag contributes once per
-identified climb and category/source; the same grade-adjusted and monthly
-calculations apply. Catalogue tags, including inherited Area context, remain
-reference information and never affect these metrics. Both clients show every
-catalogue tag under its existing disclosure, including unfamiliar tags, instead
-of hiding the generic `other` kind. See the
-[aggregation](../packages/server/src/services/climbing-strengths.ts),
-[web details](../packages/web/src/components/ClimbingCatalogueContext.tsx) and
-[mobile details](../packages/mobile/components/ClimbingCatalogueContext.tsx).
+### Source-owned area context (2026-11-02)
+
+The [area contract](../packages/climbing-catalogue/src/contracts.ts) attaches
+optional `context` only to area locations: source URL, nullable literal type,
+plain-text sections with inherited provenance, tags with nullable literal source
+counts, and statistics. The five adapters retain different observed fields:
+
+| Source | Current area context and boundary |
+| --- | --- |
+| KAYA | Inline public and authenticated location descriptions/access, type and access flags, plus native parent references and gym profiles. Native selections exclude unsupported public-only short descriptions. No recursive parent crawl. [Reader](../packages/climbing-catalogue/src/kaya.ts), [native client](https://set.plastick.rocks/location-11950.js.map). |
+| Mountain Project | Native route lookup hydrates the local area and immediate parent with source sections, access notes and route-type totals. Search hits without a proven parent ID retain unknown area context. [Reader](../packages/climbing-catalogue/src/mountain-project.ts). |
+| OpenBeta | Local area and immediate parent provide description/location text and grade/discipline totals. UUID-checked reads share a per-search cache. [Reader](../packages/climbing-catalogue/src/openbeta.ts); [Area schema](https://github.com/OpenBeta/openbeta-graphql/blob/develop/src/graphql/schema/Area.gql). |
+| theCrag | Verified canonical areas provide description, access, approach, summary and history, area type and displayed route count. Tags belong only to owner sections under `.regions__read > .regions__inner > .node-info`; child-route tags are excluded. Header `small.from > a.inherit-from` supplies section/tag inheritance when tag titles are absent; explicit tag inheritance is retained. [Reader](../packages/climbing-catalogue/src/thecrag.ts); [tag definitions](https://www.thecrag.com/en/article/tagging). |
+| 8a.nu / Vertical-Life | Checked crag and broader area records provide descriptions/access, crag flags with literal source counts and source statistics. [Reader](../packages/climbing-catalogue/src/vertical-life.ts). |
+
+The [web](../packages/web/src/components/ClimbingCatalogueContext.tsx) and
+[mobile](../packages/mobile/components/ClimbingCatalogueContext.tsx) views put
+these fields behind each populated area's disclosure. Area names appear once;
+source links and inherited tree labels retain attribution. Counts are displayed
+literally without assuming that they mean votes. Prose is plain text, and neither
+source counts nor descriptions become route measurements; see the
+[plain-text helper](../packages/climbing-catalogue/src/area-context.ts).
+
+### Training evidence and provenance
+
+The strengths response retains angle/hold/setting panels and recorded-tag
+`tagPanels`, adding eligible cached catalogue traits and observed style categories.
+Each tag contributes once per identified climb and source/category under the
+same server-computed grade-adjusted and monthly calculations. The
+[trait projection](../packages/server/src/services/climbing-catalogue-traits.ts)
+requires accepted route identity, compatible kind/setting and no conflict
+evidence for route traits. Area evidence can come from accepted route ancestry
+or an independently corroborated recorded local area; a possible route match
+alone supplies no route trait. Only explicitly observed tags and source numeric
+angles with known degree units can contribute; source descriptions/statistics
+are never interpreted as measurements.
+
+Recorded wall/hold facts retain precedence across repeated observations. Area
+contributions remain separately attributed and can be excluded with
+`includeAreaMetadata: false`; doing so does not remove recorded or eligible
+route evidence. Missing metadata is queued through the existing worker, and the
+response surfaces pending/errors while keeping recorded observations available.
+See the [enrichment repository](../packages/server/src/repositories/climbing-strengths-enrichment-repository.ts),
+[aggregation](../packages/server/src/services/climbing-strengths.ts) and
+[shared contract](../packages/training/src/climbing-strengths.ts).
+
+Both clients keep the existing Styles/Progress chart views and place the source
+tree beside the chart. Expanding the tree identifies route/area attribution;
+there are no separate summary or provider-area tabs. See the paired
+[web](../packages/web/src/components/ClimbingStrengths.tsx) and
+[mobile](../packages/mobile/components/ClimbingStrengths.tsx) views. The native
+8a.nu catalogue-ID gap remains tracked in
+[issue #3204](https://github.com/Asherlc/dofek/issues/3204); public Vertical-Life
+area support does not establish missing native log identities.
 
 ## Repeating the audit
 

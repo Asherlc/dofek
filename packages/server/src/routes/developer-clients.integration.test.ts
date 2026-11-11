@@ -32,7 +32,7 @@ async function close(server: Server): Promise<void> {
   );
 }
 
-describe.sequential("developer client management API", () => {
+describe("developer client management API", { concurrent: false }, () => {
   let context: TestContext;
   let server: Server;
   let baseUrl: string;

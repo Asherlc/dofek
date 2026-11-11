@@ -243,7 +243,6 @@ describe("metric-stream durable quarantine", () => {
         channel: "heart_rate",
         deviceId: "Apple Watch",
         externalId: "hk:heart-rate-1",
-        id: "10000000-0000-4000-8000-000000000001",
         providerId: "apple_health",
         recordedAt: "2026-06-06T19:00:00.000Z",
         scalar: 72,

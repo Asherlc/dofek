@@ -1,13 +1,17 @@
 import { UnitConverter } from "@dofek/format/units";
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { VerticalAscentChart, type VerticalAscentDataPoint } from "./VerticalAscentChart";
+
+const mockPush = vi.hoisted(() => vi.fn());
+vi.mock("expo-router", () => ({ useRouter: () => ({ push: mockPush }) }));
 
 const METRIC = new UnitConverter("metric");
 const IMPERIAL = new UnitConverter("imperial");
 
 const SAMPLE_DATA: VerticalAscentDataPoint[] = [
   {
+    activityId: "00000000-0000-4000-8000-000000000001",
     date: "2024-06-01",
     activityName: "Mountain Ride",
     activityType: "cycling",
@@ -17,6 +21,7 @@ const SAMPLE_DATA: VerticalAscentDataPoint[] = [
     elapsedMinutes: 45,
   },
   {
+    activityId: "00000000-0000-4000-8000-000000000002",
     date: "2024-06-08",
     activityName: "Hill Repeats",
     activityType: "cycling",
@@ -28,6 +33,24 @@ const SAMPLE_DATA: VerticalAscentDataPoint[] = [
 ];
 
 describe("VerticalAscentChart", () => {
+  it("opens activity details from bubbles and accessible activity rows", () => {
+    const { container } = render(
+      <VerticalAscentChart
+        data={SAMPLE_DATA.map((point, index) => ({
+          ...point,
+          activityId: `activity-${index}`,
+        }))}
+        units={METRIC}
+        width={360}
+      />,
+    );
+    fireEvent.click(container.querySelectorAll("circle")[1]);
+    expect(mockPush).toHaveBeenLastCalledWith("/activity/activity-1");
+    fireEvent.click(screen.getByRole("button", { name: "View Vertical ascent rate data" }));
+    fireEvent.click(screen.getByRole("button", { name: /Mountain Ride:/ }));
+    expect(mockPush).toHaveBeenLastCalledWith("/activity/activity-0");
+  });
+
   it("renders empty state when no data", () => {
     render(<VerticalAscentChart data={[]} units={METRIC} />);
     expect(screen.getByText("No activities with altitude data available")).toBeTruthy();
@@ -61,6 +84,7 @@ describe("VerticalAscentChart", () => {
       <VerticalAscentChart
         data={[
           {
+            activityId: "00000000-0000-4000-8000-000000000003",
             date: "2024-06-08",
             activityName: "Hill Repeats",
             activityType: "cycling",
@@ -70,6 +94,7 @@ describe("VerticalAscentChart", () => {
             elapsedMinutes: 20,
           },
           {
+            activityId: "00000000-0000-4000-8000-000000000004",
             date: "2024-06-01",
             activityName: "Mountain Ride",
             activityType: "cycling",
@@ -92,6 +117,7 @@ describe("VerticalAscentChart", () => {
       <VerticalAscentChart
         data={[
           {
+            activityId: "00000000-0000-4000-8000-000000000005",
             date: "2024-06-01",
             activityName: "Trainer Ride",
             activityType: "cycling",
@@ -101,6 +127,7 @@ describe("VerticalAscentChart", () => {
             elapsedMinutes: 45,
           },
           {
+            activityId: "00000000-0000-4000-8000-000000000006",
             date: "2024-06-08",
             activityName: "Virtual Ride",
             activityType: "cycling",
@@ -110,6 +137,7 @@ describe("VerticalAscentChart", () => {
             elapsedMinutes: 20,
           },
           {
+            activityId: "00000000-0000-4000-8000-000000000007",
             date: "2024-06-15",
             activityName: "Gravel Ride",
             activityType: "cycling",

@@ -29,7 +29,7 @@ export function ClimbingLogAttachment({
         utils.climbing.locationMap.invalidate(),
         utils.climbing.activityLogEntries.invalidate({
           activityId: input.activityId,
-          responseVersion: 3,
+          responseVersion: 4,
         }),
         utils.climbing.unattachedClimbingLogEntries.invalidate(),
         utils.climbing.sessionSummary.invalidate(),
@@ -38,7 +38,7 @@ export function ClimbingLogAttachment({
         utils.climbing.strengths.invalidate(),
         utils.activity.images.invalidate({ id: input.activityId }),
         utils.activity.list.invalidate(),
-        utils.calendar.weekList.invalidate(),
+        utils.calendar.weekListV2.invalidate(),
       ]);
       onClose();
     },

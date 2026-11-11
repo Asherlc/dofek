@@ -87,7 +87,7 @@ async function createGrant(
   };
 }
 
-describe.sequential("external write API network contract", () => {
+describe("external write API network contract", { concurrent: false }, () => {
   let testContext: TestContext;
   let server: Server;
   let baseUrl: string;

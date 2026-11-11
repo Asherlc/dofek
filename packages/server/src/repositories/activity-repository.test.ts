@@ -112,6 +112,7 @@ describe("ActivityRepository", () => {
             primary_provider_id: null,
             primary_source_name: null,
             origin_candidate_member_ids: [],
+            fit_recovery_error: false,
             start_utc_offset_minutes: null,
             end_utc_offset_minutes: null,
             local_time_source: "unknown",
@@ -127,6 +128,7 @@ describe("ActivityRepository", () => {
   function makeRepository(rows: Record<string, unknown>[] = []) {
     const execute = vi.fn().mockImplementation((query) => {
       const compiledQuery = dialect.sqlToQuery(query);
+      if (compiledQuery.sql.includes("fitness.v_climbing_log_activity")) return Promise.resolve([]);
       if (compiledQuery.sql.includes("identity_candidates")) {
         const requestedId = compiledQuery.params[0];
         const resolvedGroupId = typeof rows[0]?.id === "string" ? rows[0].id : null;
@@ -149,9 +151,14 @@ describe("ActivityRepository", () => {
     return { repo, execute };
   }
 
-  function makeRepositoryWithSensorStore(postgresRows: Record<string, unknown>[] = []) {
+  function makeRepositoryWithSensorStore(
+    postgresRows: Record<string, unknown>[] = [],
+    climbingLogSessions: Record<string, unknown>[] = [],
+  ) {
     const execute = vi.fn().mockImplementation((query) => {
       const compiledQuery = dialect.sqlToQuery(query);
+      if (compiledQuery.sql.includes("fitness.v_climbing_log_activity"))
+        return Promise.resolve(climbingLogSessions);
       if (compiledQuery.sql.includes("activity_device_observation")) return Promise.resolve([]);
       if (compiledQuery.sql.includes("identity_candidates")) {
         const requestedId = compiledQuery.params.find(
@@ -1175,6 +1182,7 @@ describe("ActivityRepository", () => {
               elevation_gain_m: null,
               elevation_loss_m: null,
               sample_count: null,
+              fit_recovery_error: false,
               provider_absent_at: "2024-01-16T08:00:00.000Z",
             },
           ]);
@@ -1442,6 +1450,7 @@ describe("ActivityRepository", () => {
           user_id: "user-1",
           started_at: "2024-01-15T10:00:00.000Z",
           ended_at: "2024-01-15T11:00:00.000Z",
+          provider_type: null,
           member_activity_ids: ["canonical-id", "member-id"],
         },
       ]);
@@ -1451,6 +1460,7 @@ describe("ActivityRepository", () => {
         userId: "user-1",
         startedAt: "2024-01-15T10:00:00.000Z",
         endedAt: "2024-01-15T11:00:00.000Z",
+        providerType: null,
         memberActivityIds: ["canonical-id", "member-id"],
       });
       const resolutionQuery = dialect.sqlToQuery(execute.mock.calls[0]?.[0]);
@@ -1477,6 +1487,7 @@ describe("ActivityRepository", () => {
           user_id: "user-1",
           started_at: "2024-01-15T10:00:00.000Z",
           ended_at: "2024-01-15T11:00:00.000Z",
+          provider_type: null,
           member_activity_ids: ["activity-id"],
         },
       ]);
@@ -1494,6 +1505,7 @@ describe("ActivityRepository", () => {
           user_id: "user-1",
           started_at: "2024-01-15T10:00:00.000Z",
           ended_at: "2024-01-15T11:00:00.000Z",
+          provider_type: null,
           member_activity_ids: ["activity-id", "source-activity-id"],
         },
       ]);
@@ -1507,6 +1519,7 @@ describe("ActivityRepository", () => {
           userId: "user-1",
           startedAt: "2024-01-15T10:00:00.000Z",
           endedAt: "2024-01-15T11:00:00.000Z",
+          providerType: null,
           memberActivityIds: ["activity-id", "source-activity-id"],
         },
         500,
@@ -1520,6 +1533,7 @@ describe("ActivityRepository", () => {
           user_id: "user-1",
           started_at: "2024-01-15T10:00:00.000Z",
           ended_at: "2024-01-15T11:00:00.000Z",
+          provider_type: null,
           member_activity_ids: ["member-id"],
         },
       ]);
@@ -1552,13 +1566,22 @@ describe("ActivityRepository", () => {
       user_id: "user-1",
       started_at: "2024-01-15T10:00:00.000Z",
       ended_at: "2024-01-15T11:00:00.000Z",
+      provider_type: null,
       member_activity_ids: ["member-id"],
+      primary_activity_id: null,
+      primary_provider_id: null,
+      primary_source_name: null,
+      origin_candidate_member_ids: [],
+      origin_evidence: [],
+      source_external_ids: [],
+      absent_source_external_ids: [],
     };
     const window = {
       activityId: row.id,
       userId: row.user_id,
       startedAt: row.started_at,
       endedAt: row.ended_at,
+      providerType: null,
       memberActivityIds: row.member_activity_ids,
     };
 
@@ -1613,11 +1636,165 @@ describe("ActivityRepository", () => {
           userId: window.userId,
           windowStartedAt: window.startedAt,
           windowEndedAt: window.endedAt,
+          isPointOnly: false,
           memberActivityIds: window.memberActivityIds,
         },
       );
       const windowQuery = dialect.sqlToQuery(execute.mock.calls[1]?.[0]);
       expect(windowQuery.params).toEqual(expect.arrayContaining(["canonical-id", "user-1"]));
+    });
+
+    it("uses the source session associated with the canonical activity group", async () => {
+      const kilterMemberId = "11111111-1111-4111-8111-111111111111";
+      const secondKilterMemberId = "11111111-1111-4111-8111-111111111112";
+      const pelotonMemberId = "22222222-2222-4222-8222-222222222222";
+      const sessionId = "33333333-3333-4333-8333-333333333333";
+      const canonicalActivityId = "44444444-4444-4444-8444-444444444444";
+      const { repo, sensorStore, execute } = makeRepositoryWithSensorStore(
+        [
+          {
+            ...row,
+            id: canonicalActivityId,
+            member_activity_ids: [kilterMemberId, secondKilterMemberId, pelotonMemberId],
+            primary_activity_id: kilterMemberId,
+            primary_provider_id: "kilter",
+            primary_source_name: "Kilter Board",
+            source_external_ids: [
+              { memberActivityId: kilterMemberId, providerId: "kilter", externalId: "log-1" },
+              {
+                memberActivityId: secondKilterMemberId,
+                providerId: "kilter",
+                externalId: "log-2",
+              },
+              { memberActivityId: pelotonMemberId, providerId: "peloton", externalId: "ride-1" },
+            ],
+            origin_evidence: [
+              {
+                upstreamMemberActivityId: kilterMemberId,
+                downstreamMemberActivityId: pelotonMemberId,
+                field: "external_id",
+                value: "shared-recording",
+              },
+              {
+                upstreamMemberActivityId: secondKilterMemberId,
+                downstreamMemberActivityId: pelotonMemberId,
+                field: "external_id",
+                value: "shared-recording",
+              },
+            ],
+          },
+        ],
+        [
+          {
+            activityId: canonicalActivityId,
+            id: sessionId,
+            providerId: "kilter",
+            memberActivityIds: [kilterMemberId, secondKilterMemberId],
+            firstLoggedAt: "2026-11-09T18:00:00.000Z",
+            lastLoggedAt: "2026-11-09T18:04:00.000Z",
+          },
+        ],
+      );
+      sensorStore.query.mockResolvedValueOnce([
+        {
+          channel: "heart_rate",
+          provider_id: "peloton",
+          device_id: null,
+          source_id: "peloton",
+          activity_ids: [pelotonMemberId],
+          sample_count: 500,
+        },
+      ]);
+
+      const result = await repo.getMetricSources(pelotonMemberId, 2);
+
+      expect(result[0]?.sources[0]).toMatchObject({
+        id: "peloton",
+        presentation: {
+          providerId: "kilter",
+          attribution: { kind: "provider", providerId: "peloton" },
+        },
+      });
+      const sessionQuery = execute.mock.calls
+        .map(([query]) => new PgDialect().sqlToQuery(query))
+        .find((query) => query.sql.includes("fitness.v_climbing_log_activity"));
+      expect(sessionQuery?.params).toEqual(expect.arrayContaining([canonicalActivityId, "user-1"]));
+    });
+
+    it.each(["resolved", "unresolved", "removed-original"])(
+      "uses canonical ancestry for %s metric sources",
+      async (state) => {
+        const whoopId = "11111111-1111-4111-8111-111111111111";
+        const pelotonId = "22222222-2222-4222-8222-222222222222";
+        const sources = [
+          {
+            memberActivityId: whoopId,
+            providerId: "whoop",
+            externalId: "original",
+            subsource: null,
+          },
+          {
+            memberActivityId: pelotonId,
+            providerId: "peloton",
+            externalId: "copy",
+            subsource: null,
+          },
+        ];
+        const { repo, sensorStore } = makeRepositoryWithSensorStore([
+          {
+            ...row,
+            provider_type: null,
+            member_activity_ids: [whoopId, pelotonId],
+            primary_activity_id: state === "unresolved" ? null : whoopId,
+            primary_provider_id: state === "unresolved" ? null : "whoop",
+            origin_candidate_member_ids: state === "unresolved" ? [whoopId, pelotonId] : [],
+            source_external_ids: sources.filter(
+              (source) => state !== "removed-original" || source.providerId !== "whoop",
+            ),
+            absent_source_external_ids:
+              state === "removed-original"
+                ? [{ ...sources[0], providerAbsentAt: "2026-10-21T00:00:00Z" }]
+                : [],
+            origin_evidence: [
+              {
+                upstreamMemberActivityId: whoopId,
+                downstreamMemberActivityId: pelotonId,
+                field: "external_id",
+                value: "original",
+              },
+            ],
+          },
+        ]);
+        sensorStore.query.mockResolvedValueOnce([
+          {
+            channel: "heart_rate",
+            provider_id: "peloton",
+            device_id: null,
+            source_id: "peloton",
+            activity_ids: [pelotonId],
+            sample_count: 500,
+          },
+        ]);
+        const result = await repo.getMetricSources("member-id", 2);
+        expect(result[0]?.sources[0]).toMatchObject({
+          id: "peloton",
+          label: "WHOOP via Peloton",
+          presentation: {
+            providerId: "whoop",
+            attribution: { kind: "provider", providerId: "peloton" },
+          },
+        });
+      },
+    );
+
+    it("returns NOT_FOUND if ancestry disappears after resolving the activity window", async () => {
+      const { repo, execute } = makeRepositoryWithSensorStore([row]);
+      vi.spyOn(repo, "findSensorWindow").mockResolvedValue(window);
+      execute.mockResolvedValue([]);
+      await expect(repo.getMetricSources("member-id", 2)).rejects.toMatchObject({
+        code: "NOT_FOUND",
+        message: "Activity not found",
+      });
     });
 
     it("rejects missing activities before querying metric sources", async () => {
@@ -1642,6 +1819,7 @@ describe("ActivityRepository", () => {
         expect.any(String),
         expect.objectContaining({
           userId: "user-1",
+          isPointOnly: false,
           memberActivityIds: ["member-id"],
           heartRateSourceId: "whoop",
         }),
@@ -1676,6 +1854,7 @@ describe("ActivityRepository", () => {
           user_id: "user-1",
           started_at: "2024-01-15T10:00:00.000Z",
           ended_at: "2024-01-15T11:00:00.000Z",
+          provider_type: null,
           member_activity_ids: ["activity-id"],
         },
       ]);
@@ -1717,6 +1896,7 @@ describe("ActivityRepository", () => {
           user_id: "user-1",
           started_at: "2024-01-15T10:00:00.000Z",
           ended_at: "2024-01-15T11:00:00.000Z",
+          provider_type: null,
           member_activity_ids: ["activity-id"],
         },
       ]);
@@ -1728,6 +1908,7 @@ describe("ActivityRepository", () => {
         userId: "user-1",
         startedAt: "2024-01-15T10:00:00.000Z",
         endedAt: "2024-01-15T11:00:00.000Z",
+        providerType: null,
         memberActivityIds: ["activity-id"],
       });
     });
@@ -1752,6 +1933,7 @@ describe("ActivityRepository", () => {
           user_id: "user-1",
           started_at: "2024-01-15T10:00:00.000Z",
           ended_at: "2024-01-15T11:00:00.000Z",
+          provider_type: null,
           member_activity_ids: ["activity-id"],
         },
       ]);
@@ -1785,6 +1967,7 @@ describe("ActivityRepository", () => {
           user_id: "user-1",
           started_at: "2024-01-15T10:00:00.000Z",
           ended_at: "2024-01-15T11:00:00.000Z",
+          provider_type: null,
           member_activity_ids: ["activity-id"],
         },
       ]);
@@ -1797,6 +1980,7 @@ describe("ActivityRepository", () => {
           userId: "user-1",
           startedAt: "2024-01-15T10:00:00.000Z",
           endedAt: "2024-01-15T11:00:00.000Z",
+          providerType: null,
           memberActivityIds: ["activity-id"],
         },
         275,

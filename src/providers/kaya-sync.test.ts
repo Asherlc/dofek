@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
     async (
       _db: SyncDatabase,
       input: ClimbingLogSyncInput,
+      _retainedExternalIds?: readonly string[],
     ): Promise<{ logEntryIds: string[]; recordsSynced: number }> => ({
       logEntryIds: [],
       recordsSynced: input.entries.length,
@@ -81,6 +82,51 @@ import { KayaApiError, KayaInvalidCredentialsError } from "@dofek/kaya-client";
 import { KayaSyncProvider } from "./kaya-sync.ts";
 
 describe("KayaSyncProvider", () => {
+  it.each([
+    { label: "Redpoint", sessionId: "1000", count: null, present: true, retain: true },
+    { label: " sEnD ", sessionId: "1000", count: null, present: true, retain: true },
+    { label: "Repeat", sessionId: "1000", count: null, present: true, retain: true },
+    { label: "Redpoint", sessionId: null, count: null, present: true, retain: false },
+    { label: "Redpoint", sessionId: "other", count: null, present: true, retain: false },
+    { label: "Redpoint", sessionId: "1000", count: null, present: false, retain: false },
+    { label: "Redpoint", sessionId: "1000", count: 3, present: true, retain: false },
+    { label: "Onsight", sessionId: "1000", count: null, present: true, retain: false },
+  ])(
+    "retains supported history for $label, session $sessionId, count $count, live session $present: $retain",
+    async ({ label, sessionId, count, present, retain }) => {
+      const db = database();
+      const historicalId = "kaya:session:1000:attempted:1000_2001";
+      vi.mocked(db.execute).mockResolvedValue([{ externalId: historicalId }]);
+      const source = {
+        ...ascent("history", {
+          lead: false,
+          climbType: "Routes",
+          grade: "5.11d",
+          attempts: count,
+          ascentType: label,
+        }),
+        session_id: sessionId,
+      };
+      source.climb.id = "2001";
+      mocks.loadTokens.mockResolvedValue({
+        accessToken: "token",
+        scopes: JSON.stringify({ kayaUserId: "42" }),
+      });
+      mocks.listSessions.mockResolvedValue(present ? [session("1000")] : []);
+      mocks.ascents.mockResolvedValue([source]);
+      mocks.upsertActivity.mockResolvedValue({ id: "activity-1" });
+      expect(await new KayaSyncProvider().sync(run(db))).toMatchObject({ errors: [] });
+      expect(mocks.persist.mock.calls[0]?.[2]).toEqual(retain ? [historicalId] : []);
+      if (retain) {
+        const parameters = vi.mocked(db.execute).mock.calls.flatMap(([query]) => {
+          if (typeof query === "string") throw new Error("Expected a parameterized query");
+          return new PgDialect().sqlToQuery(query.getSQL()).params;
+        });
+        expect(parameters).toContainEqual([historicalId]);
+      }
+    },
+  );
+
   it.each(
     [
       { lead: true, routeLead: false, expected: "lead" },
@@ -902,7 +948,7 @@ describe("KayaSyncProvider", () => {
     const sync = run(db);
 
     expect(await new KayaSyncProvider().sync(sync)).toMatchObject({ recordsSynced: 0, errors: [] });
-    expect(mocks.persist).toHaveBeenCalledWith(db, { userId, providerId: "kaya", entries: [] });
+    expect(mocks.persist).toHaveBeenCalledWith(db, { userId, providerId: "kaya", entries: [] }, []);
     expect(mocks.reconcileActivities).toHaveBeenCalledWith(db, {
       userId,
       providerId: "kaya",
