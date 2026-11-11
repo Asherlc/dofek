@@ -179,6 +179,15 @@ describe("useCollectionNotifications", () => {
       expect.stringContaining("iOS Settings"),
     );
     expect(mocks.captureException).not.toHaveBeenCalled();
+    expect(mocks.info).toHaveBeenCalledWith(
+      "collection-notifications",
+      "Native collection notification check completed",
+      {
+        event: "collection_notifications_enable_completed",
+        requestPermission: true,
+        granted: false,
+      },
+    );
 
     await act(async () => mocks.onAppState("active"));
     expect(mocks.alert).toHaveBeenCalledOnce();

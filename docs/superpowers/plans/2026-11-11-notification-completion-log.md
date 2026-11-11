@@ -32,6 +32,8 @@ Check result accuracy, promise settlement timing, stale-result/account attributi
 - [x] Run `pnpm exec vitest run --project mobile packages/mobile/lib/useCollectionNotifications.test.ts` and record the expected missing-log failures before implementation.
 - [x] Add the single guarded log call and existing logger import; run the same test command and confirm all cases pass.
 - [x] Lead reviews the actual diff; obtain an independent review of implementation and evidence. Update the existing mobile reference and incident record with the event and remaining device gate.
-- [ ] Run required lint, relevant tests, and root/server/web/mobile typechecks. Commit and push on `sentry/ios-native-ota`, open a draft PR, and coordinate release validation without merging or publishing.
+- [x] Run required lint, relevant tests, and root/server/web/mobile typechecks. Commit and push on `sentry/ios-native-ota`, open a draft PR, and coordinate release validation without merging or publishing.
+
+Implementation and local review are complete in [draft PR 3270](https://github.com/Asherlc/dofek/pull/3270). The full single-worker suite passed 24,373 tests with 19 skips across 1,468 passing files and two skips. The final focused rerun passed 18/18 after a test-only assertion enhancement; production source was unchanged, and a temporary argument/result-substitution mutation failed that assertion. Shared Expo alignment in [PR 3268](https://github.com/Asherlc/dofek/pull/3268), subsequent CI, coordinated release clearance, and actual device invocation remain pending. This plan does not establish incident closure.
 
 The [Expo runtime contract](https://docs.expo.dev/eas-update/runtime-versions/) and [release runbook](../../mobile-ota-recovery.md) remain the authority for the subsequent coordinated release and physical-device validation.
