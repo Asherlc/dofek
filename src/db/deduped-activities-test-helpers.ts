@@ -326,6 +326,7 @@ function createSourceActivityTableSql(targetSchema: string): string {
   return `CREATE TABLE ${targetSchema}.source_activity (
   id UUID,
   user_id UUID,
+  provider_type Nullable(String),
   provider_id Nullable(String),
   external_id Nullable(String),
   source_name Nullable(String),

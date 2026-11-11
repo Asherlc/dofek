@@ -146,6 +146,7 @@ function makeResolvedCaller(
   rows: Record<string, unknown>[],
   sensorStore: unknown = makeSensorStoreStub(),
   requestedId = "00000000-0000-0000-0000-000000000001",
+  climbingLogSessions: Record<string, unknown>[] = [],
 ) {
   const resolvedGroupId = typeof rows[0]?.id === "string" ? rows[0].id : requestedId;
   return makeTestCaller(
@@ -161,6 +162,7 @@ function makeResolvedCaller(
           ]
         : [],
       rows,
+      climbingLogSessions,
     ],
     (db) => ({ db, sensorStore, userId: "user-1", timezone: "UTC" }),
   ).caller;
@@ -618,6 +620,54 @@ describe("activityRouter", () => {
   });
 
   describe("byId", () => {
+    it("hydrates source sessions for the canonical activity ID", async () => {
+      const activityId = "30000000-0000-4000-8000-000000000001";
+      const session = {
+        activityId,
+        id: "40000000-0000-4000-8000-000000000001",
+        providerId: "kilter",
+        memberActivityIds: ["50000000-0000-4000-8000-000000000001"],
+        firstLoggedAt: "2026-11-09T18:00:00.000Z",
+        lastLoggedAt: "2026-11-09T18:04:00.000Z",
+      };
+      const row = {
+        id: activityId,
+        canonical_type: "climbing",
+        started_at: "2026-11-09T18:00:00.000Z",
+        ended_at: null,
+        name: "Kilter Board",
+        notes: null,
+        primary_activity_id: "50000000-0000-4000-8000-000000000001",
+        primary_provider_id: "kilter",
+        primary_source_name: "Kilter Board",
+        origin_candidate_member_ids: [],
+        provider_id: "kilter",
+        subsource: null,
+        source_providers: ["kilter"],
+        member_activity_ids: ["50000000-0000-4000-8000-000000000001"],
+        origin_evidence: [],
+        source_external_ids: [],
+        avg_hr: null,
+        max_hr: null,
+        avg_power: null,
+        max_power: null,
+        avg_speed: null,
+        max_speed: null,
+        avg_cadence: null,
+        total_distance: null,
+        elevation_gain_m: null,
+        elevation_loss_m: null,
+        sample_count: null,
+      };
+      const caller = makeResolvedCaller([row], makeSensorStoreStub(), activityId, [session]);
+
+      const result = await caller.byId({ id: activityId });
+
+      expect(result.climbingLogSessions).toEqual([
+        expect.objectContaining({ id: session.id, providerId: "kilter" }),
+      ]);
+    });
+
     it("returns mapped activity detail with source links", async () => {
       const row = {
         id: "abc-123",

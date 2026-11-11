@@ -70,6 +70,7 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 const mockActivity: ActivityDetail & { displayedDate?: string } = {
+  climbingLogSessions: [],
   id: "test-123",
   displayedDate: "2026-03-18",
   notes: null,
@@ -87,6 +88,7 @@ const mockActivity: ActivityDetail & { displayedDate?: string } = {
   modality: null,
   startedAt: "2026-03-18T07:00:00Z",
   endedAt: "2026-03-18T07:45:00Z",
+  durationMin: 45,
   localTimeContext: {
     timezone: null,
     startUtcOffsetMinutes: 60,
@@ -116,6 +118,7 @@ const mockActivity: ActivityDetail & { displayedDate?: string } = {
   sourceLinks: [],
   sourceTree: { primary: null, otherSources: [] },
   sourceDecision: null,
+  fitRecoveryWarning: null,
 };
 
 const mockStreamPoints: Array<{
@@ -747,6 +750,80 @@ async function importActivityHeader() {
 }
 
 describe("ActivityDetailPage", () => {
+  it("shows the server-projected FIT recovery warning on the activity detail header", async () => {
+    const ActivityHeader = await importActivityHeader();
+    const warning = "Some FIT data could not be recovered from the original file.";
+
+    renderWithUnits(
+      <ActivityHeader
+        activity={{ ...mockActivity, fitRecoveryWarning: warning }}
+        units={new UnitConverter("metric")}
+      />,
+    );
+
+    expect(screen.getByRole("alert").textContent).toBe(warning);
+  });
+
+  it("does not show a FIT recovery warning for a clean activity", async () => {
+    const ActivityHeader = await importActivityHeader();
+
+    renderWithUnits(<ActivityHeader activity={mockActivity} units={new UnitConverter("metric")} />);
+
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("shows Kilter logged windows on a connected climbing detail header", async () => {
+    const ActivityHeader = await importActivityHeader();
+    renderWithUnits(
+      <ActivityHeader
+        activity={{
+          ...mockActivity,
+          name: "Gym session",
+          activityType: "climbing",
+          durationMin: 60,
+          climbingLogSessions: [
+            {
+              id: "kilter-session-1",
+              providerId: "kilter",
+              memberActivityIds: ["kilter-point-1", "kilter-point-2"],
+              firstLoggedAt: "2026-04-14T10:02:00.000Z",
+              lastLoggedAt: "2026-04-14T10:06:33.000Z",
+            },
+          ],
+        }}
+        units={new UnitConverter("metric")}
+      />,
+    );
+
+    const loggedClimbs = screen.getByRole("list", { name: "Logged climbs" });
+    expect(loggedClimbs.textContent).toMatch(/Kilter Board · Logged climbs · .+ – .+/);
+  });
+
+  it("shows the server-projected measured duration or an accessible unknown value", async () => {
+    const ActivityHeader = await importActivityHeader();
+    const measured = { ...mockActivity, durationMin: 60 };
+    const pointOnly = {
+      ...mockActivity,
+      activityType: "climbing",
+      endedAt: null,
+      durationMin: null,
+    };
+
+    const { rerender } = renderWithUnits(
+      <ActivityHeader activity={measured} units={new UnitConverter("metric")} />,
+    );
+    expect(screen.getByText("1h 0m")).toBeVisible();
+
+    rerender(
+      <UnitContext.Provider value={{ unitSystem: "metric", setUnitSystem: () => {} }}>
+        <ActivityHeader activity={pointOnly} units={new UnitConverter("metric")} />
+      </UnitContext.Provider>,
+    );
+    expect(screen.getByText("Duration")).toBeVisible();
+    expect(screen.getByText("Unavailable")).toBeVisible();
+    expect(screen.queryByText("0m")).toBeNull();
+  });
+
   it("uses the server's surrounding HR observations for a climbing activity", async () => {
     mockActivityByIdUseQuery.mockReturnValue({
       data: { ...mockActivity, activityType: "climbing" },
@@ -988,16 +1065,16 @@ describe("ActivityDetailPage", () => {
     expect(screen.getByText(/Wed, Mar 18, 2026 at/)).toBeDefined();
   });
 
-  it("omits duration for an activity that has not ended", async () => {
+  it("announces unknown duration for an activity that has not ended", async () => {
     const ActivityHeader = await importActivityHeader();
     renderWithUnits(
       <ActivityHeader
-        activity={{ ...mockActivity, endedAt: null }}
+        activity={{ ...mockActivity, endedAt: null, durationMin: null }}
         units={new UnitConverter("metric")}
       />,
     );
 
-    expect(screen.queryByText("Duration")).toBeNull();
+    expect(screen.getByText("Unavailable")).toBeVisible();
     expect(screen.getByText("10.0 km")).toBeDefined();
   });
 
@@ -1957,6 +2034,7 @@ describe("ActivityDetailPage", () => {
             ...mockActivity,
             startedAt: "2026-03-18T07:00:00Z",
             endedAt: "2026-03-18T09:05:00Z",
+            durationMin: 125,
           }}
           units={new UnitConverter("metric")}
         />,
@@ -2500,11 +2578,11 @@ describe("ActivityDetailPage", () => {
       renderWithUnits(<ActivityDetailPage />);
       expect(getQueryEnabledFlag(mockClimbingEntriesUseQuery.mock.calls[0]?.[1])).toBe(true);
       expect(mockClimbingEntriesUseQuery).toHaveBeenCalledWith(
-        { activityId: "test-123", responseVersion: 3 },
+        { activityId: "test-123", responseVersion: 5 },
         expect.objectContaining({ enabled: true, select: decodeClimbingLogEntriesResponse }),
       );
       expect(mockEntrySuggestionsUseQuery).toHaveBeenCalledWith(
-        { activityId: "test-123", responseVersion: 3 },
+        { activityId: "test-123", responseVersion: 5 },
         expect.objectContaining({ enabled: true, select: decodeClimbingLogEntriesResponse }),
       );
       expect(screen.getByText("Summit outing")).toBeInTheDocument();
@@ -2763,12 +2841,12 @@ describe("ActivityDetailPage", () => {
       await waitFor(() => {
         expect(mockClimbingEntriesInvalidate).toHaveBeenCalledWith({
           activityId: "test-123",
-          responseVersion: 3,
+          responseVersion: 5,
         });
         expect(mockActivityImagesInvalidate).toHaveBeenCalledWith({ id: "test-123" });
         expect(mockEntrySuggestionsInvalidate).toHaveBeenCalledWith({
           activityId: "test-123",
-          responseVersion: 3,
+          responseVersion: 5,
         });
         expect(mockClimbingSessionSummaryInvalidate).toHaveBeenCalledWith();
         expect(mockClimbingGradeProgressionInvalidate).toHaveBeenCalledWith();
@@ -2871,7 +2949,7 @@ describe("ActivityDetailPage", () => {
         await waitFor(() =>
           expect(mockClimbingEntriesInvalidate).toHaveBeenCalledWith({
             activityId: "test-123",
-            responseVersion: 3,
+            responseVersion: 5,
           }),
         );
         Object.assign(mockActivity, originalActivity);

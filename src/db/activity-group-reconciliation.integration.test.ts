@@ -1,7 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import {
+  createProcessingOperation,
+  recordRelationalCanonicalCommits,
+} from "../processing/processing-event-store.ts";
 import { reconcileActivityGroups } from "./activity-group-reconciliation.ts";
+import { persistClimbingLogSnapshot } from "./climbing-log-snapshot.ts";
+import { persistClimbingLogEntries } from "./climbing-log-sync.ts";
 import { setupTestDatabase, type TestContext } from "./test-helpers.ts";
 
 describe("transactional activity group reconciliation", () => {
@@ -46,6 +52,183 @@ describe("transactional activity group reconciliation", () => {
     context.db.execute(
       sql`SELECT alias_id, group_id, reason FROM fitness.activity_group_alias WHERE user_id = ${userId} ORDER BY alias_id`,
     );
+
+  async function point(time: string, externalId = randomUUID()) {
+    await persistClimbingLogEntries(context.db, {
+      userId,
+      providerId: "group-test-a",
+      entries: [{ externalId, activityObservation: { recordedAt: time }, attempts: [] }],
+    });
+    const [row] = await context.db.execute<{ id: string; group_id: string }>(sql`
+      SELECT id, group_id FROM fitness.activity
+      WHERE user_id = ${userId} AND provider_id = 'group-test-a' AND external_id = ${externalId}`);
+    if (!row) throw new Error("Expected observation point");
+    return { id: row.id, groupId: row.group_id, externalId, time };
+  }
+
+  it("connects the Kaya–WHOOP–Kilter incident through the actual activity canonical commit", async () => {
+    const kaya = await activity(
+      "group-test-b",
+      "2026-11-10T01:28:42Z",
+      "2026-11-10T01:44:17Z",
+      undefined,
+      "climbing",
+    );
+    const whoop = await activity(
+      "whoop",
+      "2026-11-10T00:48:00.490Z",
+      "2026-11-10T01:48:59.410Z",
+      "2026-09-02T10:00:00Z",
+      "climbing",
+    );
+    const first = await point("2026-11-10T01:48:51.544Z");
+    const second = await point("2026-11-10T01:53:24.245Z");
+    const operation = await createProcessingOperation(context.db, {
+      userId,
+      providerId: "group-test-a",
+      kind: "provider_sync",
+      datasetKeys: ["activity"],
+    });
+    await recordRelationalCanonicalCommits(context.db, {
+      operationId: operation.id,
+      datasetKeys: ["activity"],
+      idempotencyKey: "incident-source-logs",
+    });
+    for (const member of [kaya, whoop, first, second])
+      expect(await membership(member.id)).toEqual([{ group_id: kaya.groupId }]);
+    expect(
+      await context.db.execute(sql`SELECT id FROM fitness.v_activity WHERE user_id = ${userId}`),
+    ).toEqual([{ id: kaya.groupId }]);
+  });
+
+  it.each(["2026-09-01T08:00:00Z", "2026-09-01T09:00:00Z"])(
+    "connects a point at the inclusive recording boundary %s",
+    async (time) => {
+      const workout = await activity("group-test-b", undefined, undefined, undefined, "climbing");
+      const observation = await point(time);
+      await reconcile();
+      expect(await membership(observation.id)).toEqual([{ group_id: workout.groupId }]);
+    },
+  );
+
+  it.each(["2026-09-01T07:59:59.999Z", "2026-09-01T09:00:00.001Z"])(
+    "keeps a point outside the recorded interval separate: %s",
+    async (time) => {
+      const workout = await activity("group-test-b", undefined, undefined, undefined, "climbing");
+      const observation = await point(time);
+      await reconcile();
+      expect(await membership(observation.id)).toEqual([{ group_id: observation.groupId }]);
+      expect(await membership(workout.id)).toEqual([{ group_id: workout.groupId }]);
+    },
+  );
+
+  it("does not connect through an unobserved gap surrounding a short workout", async () => {
+    const workout = await activity(
+      "group-test-b",
+      "2026-09-01T08:03:00Z",
+      "2026-09-01T08:04:00Z",
+      undefined,
+      "climbing",
+    );
+    const first = await point("2026-09-01T08:00:00Z");
+    const second = await point("2026-09-01T08:08:00Z");
+    await reconcile();
+    expect(await membership(first.id)).toEqual([{ group_id: first.groupId }]);
+    expect(await membership(second.id)).toEqual([{ group_id: first.groupId }]);
+    expect(await membership(workout.id)).toEqual([{ group_id: workout.groupId }]);
+  });
+
+  it("does not turn a singleton into a one-hour interval", async () => {
+    const workout = await activity(
+      "group-test-b",
+      "2026-09-01T08:30:00Z",
+      "2026-09-01T08:45:00Z",
+      undefined,
+      "climbing",
+    );
+    const observation = await point("2026-09-01T08:00:00Z");
+    await reconcile();
+    expect(await membership(observation.id)).toEqual([{ group_id: observation.groupId }]);
+    expect(await membership(workout.id)).toEqual([{ group_id: workout.groupId }]);
+  });
+
+  it("requires an active climbing recording with a real end and the same owner", async () => {
+    const cycling = await activity();
+    const noEnd = await activity("group-test-b", undefined, undefined, undefined, "climbing");
+    const deleted = await activity("group-test-b", undefined, undefined, undefined, "climbing");
+    const absent = await activity("whoop", undefined, undefined, undefined, "climbing");
+    await context.db.execute(
+      sql`UPDATE fitness.activity SET ended_at = NULL WHERE id = ${noEnd.id}`,
+    );
+    await context.db.execute(
+      sql`UPDATE fitness.activity SET deleted_at = NOW() WHERE id = ${deleted.id}`,
+    );
+    await context.db.execute(
+      sql`UPDATE fitness.activity SET provider_absent_at = NOW() WHERE id = ${absent.id}`,
+    );
+    const owner = userId;
+    userId = randomUUID();
+    await context.db.execute(
+      sql`INSERT INTO fitness.user_profile (id, name) VALUES (${userId}, 'Other owner')`,
+    );
+    const otherOwner = await activity("group-test-b", undefined, undefined, undefined, "climbing");
+    userId = owner;
+    const observation = await point("2026-09-01T08:05:00Z");
+    await reconcile();
+    expect(await membership(observation.id)).toEqual([{ group_id: observation.groupId }]);
+    for (const record of [cycling, noEnd])
+      expect((await membership(record.id))[0]?.group_id).not.toBe(observation.groupId);
+    for (const record of [deleted, absent, otherOwner])
+      expect(await membership(record.id)).toEqual([{ group_id: record.groupId }]);
+  });
+
+  it("preserves raw and group links through late history, bridges, deletion, absence and restoration", async () => {
+    const first = await point("2026-09-01T08:00:00Z");
+    const second = await point("2026-09-01T08:18:00Z");
+    await reconcile();
+    expect(await membership(second.id)).toEqual([{ group_id: second.groupId }]);
+    const bridge = await point("2026-09-01T08:09:00Z");
+    const earlier = await point("2026-09-01T07:55:00Z");
+    await reconcile();
+    const afterMerge = await aliases();
+    expect(afterMerge).toContainEqual(
+      expect.objectContaining({ alias_id: second.groupId, group_id: first.groupId }),
+    );
+    for (const member of [first, second, bridge, earlier])
+      expect(await membership(member.id)).toEqual([{ group_id: first.groupId }]);
+    await reconcile();
+    expect(await aliases()).toEqual(afterMerge);
+    await context.db.execute(
+      sql`UPDATE fitness.activity SET deleted_at = NOW() WHERE id = ${bridge.id}`,
+    );
+    await reconcile();
+    const [split] = await membership(second.id);
+    expect(split?.group_id).not.toBe(first.groupId);
+    await context.db.execute(
+      sql`UPDATE fitness.activity SET deleted_at = NULL WHERE id = ${bridge.id}`,
+    );
+    await reconcile();
+    const snapshot = async (members: (typeof first)[]) => {
+      await persistClimbingLogSnapshot(context.db, {
+        userId,
+        providerId: "group-test-a",
+        entries: members.map((member) => ({
+          externalId: member.externalId,
+          activityObservation: { recordedAt: member.time },
+          attempts: [],
+        })),
+      });
+      await reconcile();
+    };
+    await snapshot([first, second, earlier]);
+    expect((await membership(second.id))[0]?.group_id).not.toBe(first.groupId);
+    await snapshot([first, second, bridge, earlier]);
+    for (const member of [first, second, bridge, earlier])
+      expect(await membership(member.id)).toEqual([{ group_id: first.groupId }]);
+    expect(await aliases()).toContainEqual(
+      expect.objectContaining({ alias_id: second.groupId, group_id: first.groupId }),
+    );
+  });
 
   it("matches a propagated WHOOP identity despite changed timing and activity type", async () => {
     const original = await activity("whoop", undefined, undefined, undefined, "climbing");

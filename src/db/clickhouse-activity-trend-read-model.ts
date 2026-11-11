@@ -13,7 +13,8 @@ WITH activity_samples AS (
   FROM analytics.v_activity AS activity
   INNER JOIN analytics.deduped_sensor AS samples
     ON samples.user_id = activity.user_id
-  WHERE samples.recorded_at >= activity.started_at
+  WHERE coalesce(activity.provider_type, '') != 'climbing_log'
+    AND samples.recorded_at >= activity.started_at
     AND samples.recorded_at <= coalesce(activity.ended_at, activity.started_at + INTERVAL 12 HOUR)
     AND samples.is_deleted = 0
     AND samples.scalar IS NOT NULL

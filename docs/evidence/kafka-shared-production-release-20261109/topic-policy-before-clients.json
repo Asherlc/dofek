@@ -1,0 +1,152 @@
+[
+  {
+    "topic": "metric-stream-live-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3",
+    "config": {
+      "cleanup.policy": {
+        "value": "delete",
+        "source": "DYNAMIC_TOPIC_CONFIG"
+      },
+      "remote.storage.enable": {
+        "value": "false",
+        "source": "DYNAMIC_TOPIC_CONFIG"
+      },
+      "retention.bytes": {
+        "value": "4294967296",
+        "source": "DYNAMIC_TOPIC_CONFIG"
+      },
+      "retention.ms": {
+        "value": "604800000",
+        "source": "DYNAMIC_TOPIC_CONFIG"
+      },
+      "segment.bytes": {
+        "value": "134217728",
+        "source": "DYNAMIC_TOPIC_CONFIG"
+      }
+    }
+  },
+  {
+    "topic": "metric-stream-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3.quarantine.v1",
+    "config": {
+      "cleanup.policy": {
+        "value": "delete",
+        "source": "DYNAMIC_TOPIC_CONFIG"
+      },
+      "remote.storage.enable": {
+        "value": "false",
+        "source": "DYNAMIC_TOPIC_CONFIG"
+      },
+      "retention.bytes": {
+        "value": "1073741824",
+        "source": "DYNAMIC_TOPIC_CONFIG"
+      },
+      "retention.ms": {
+        "value": "604800000",
+        "source": "DYNAMIC_TOPIC_CONFIG"
+      },
+      "segment.bytes": {
+        "value": "134217728",
+        "source": "DYNAMIC_TOPIC_CONFIG"
+      }
+    }
+  },
+  {
+    "topic": "metric-stream-history-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3.quarantine.v1",
+    "config": {
+      "cleanup.policy": {
+        "value": "delete",
+        "source": "DYNAMIC_TOPIC_CONFIG"
+      },
+      "remote.storage.enable": {
+        "value": "false",
+        "source": "DYNAMIC_TOPIC_CONFIG"
+      },
+      "retention.bytes": {
+        "value": "1073741824",
+        "source": "DYNAMIC_TOPIC_CONFIG"
+      },
+      "retention.ms": {
+        "value": "604800000",
+        "source": "DYNAMIC_TOPIC_CONFIG"
+      },
+      "segment.bytes": {
+        "value": "134217728",
+        "source": "DYNAMIC_TOPIC_CONFIG"
+      }
+    }
+  },
+  {
+    "topic": "metric-stream-live-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3.quarantine.v1",
+    "config": {
+      "cleanup.policy": {
+        "value": "delete",
+        "source": "DYNAMIC_TOPIC_CONFIG"
+      },
+      "remote.storage.enable": {
+        "value": "false",
+        "source": "DYNAMIC_TOPIC_CONFIG"
+      },
+      "retention.bytes": {
+        "value": "1073741824",
+        "source": "DYNAMIC_TOPIC_CONFIG"
+      },
+      "retention.ms": {
+        "value": "604800000",
+        "source": "DYNAMIC_TOPIC_CONFIG"
+      },
+      "segment.bytes": {
+        "value": "134217728",
+        "source": "DYNAMIC_TOPIC_CONFIG"
+      }
+    }
+  },
+  {
+    "topic": "metric-stream-history-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3",
+    "config": {
+      "cleanup.policy": {
+        "value": "delete",
+        "source": "DYNAMIC_TOPIC_CONFIG"
+      },
+      "remote.storage.enable": {
+        "value": "false",
+        "source": "DYNAMIC_TOPIC_CONFIG"
+      },
+      "retention.bytes": {
+        "value": "4294967296",
+        "source": "DYNAMIC_TOPIC_CONFIG"
+      },
+      "retention.ms": {
+        "value": "604800000",
+        "source": "DYNAMIC_TOPIC_CONFIG"
+      },
+      "segment.bytes": {
+        "value": "134217728",
+        "source": "DYNAMIC_TOPIC_CONFIG"
+      }
+    }
+  },
+  {
+    "topic": "metric-stream-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3",
+    "config": {
+      "cleanup.policy": {
+        "value": "delete",
+        "source": "DYNAMIC_TOPIC_CONFIG"
+      },
+      "remote.storage.enable": {
+        "value": "false",
+        "source": "DYNAMIC_TOPIC_CONFIG"
+      },
+      "retention.bytes": {
+        "value": "4294967296",
+        "source": "DYNAMIC_TOPIC_CONFIG"
+      },
+      "retention.ms": {
+        "value": "604800000",
+        "source": "DYNAMIC_TOPIC_CONFIG"
+      },
+      "segment.bytes": {
+        "value": "134217728",
+        "source": "DYNAMIC_TOPIC_CONFIG"
+      }
+    }
+  }
+]

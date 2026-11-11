@@ -37,7 +37,7 @@ export const Blocked: Story = {
   name: "Waiting to continue",
   args: {
     heading: "Syncing Garmin is waiting to continue",
-    message: "Your existing data is still available.",
+    message: null,
     status: "blocked",
   },
 };

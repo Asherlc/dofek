@@ -23,7 +23,7 @@ export async function createActivityPerformanceFixture(client: ClickHouseClient,
   for (const [index, query] of [
     `CREATE DATABASE ${database}`,
     `CREATE TABLE ${database}.deduped_activities (
-      user_id UUID, activity_id UUID, canonical_type String DEFAULT 'running',
+      user_id UUID, activity_id UUID, canonical_type String DEFAULT 'running', provider_type Nullable(String),
       started_at DateTime64(6, 'UTC'), ended_at Nullable(DateTime64(6, 'UTC')),
       member_activity_ids Array(UUID),
       refresh_version UInt64 DEFAULT toUInt64(toUnixTimestamp64Nano(now64(9))), is_deleted UInt8

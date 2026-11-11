@@ -48,15 +48,29 @@ export function ClimbingLogEntryBreakdown({
         gap: CLIMB_GAP,
       }}
     >
-      {groupClimbingLogEntriesByArea(entries).map(({ area, entries: groupEntries }) => {
+      {groupClimbingLogEntriesByArea(entries).map(({ area, areaPath, entries: groupEntries }) => {
         const span = Math.min(groupEntries.length, columnCount);
+        const areaNames = areaPath.map((node) => node.name);
         return (
           <div
             key={area?.id ?? "unlocated"}
             className="min-w-0 space-y-2"
             style={{ gridColumn: `span ${span}` }}
           >
-            {area && <h3 className="text-sm font-medium text-foreground">{area.name}</h3>}
+            {area && (
+              <section
+                className="overflow-x-auto whitespace-nowrap text-sm text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                tabIndex={0}
+                aria-label={`Area: ${areaNames.join(" › ")}`}
+              >
+                <h3 aria-label={`Area: ${areaNames.join(" › ")}`}>
+                  {areaNames.length > 1 && (
+                    <span className="text-muted">{areaNames.slice(0, -1).join(" › ")} › </span>
+                  )}
+                  <span className="font-semibold text-foreground">{area.name}</span>
+                </h3>
+              </section>
+            )}
             <ul
               aria-label={area ? `${area.name} climbs` : "Climbing logs"}
               className="grid"

@@ -32,7 +32,6 @@
     "./colors": "./src/colors.ts",
     "./tokens": "./src/tokens.ts",
     "./epistemic-status": "./src/epistemic-status.ts",
-    "./healthspan-years": "./src/healthspan-years.ts",
     "./loading-policy": "./src/loading-policy.ts",
     "./query-cache": "./src/query-cache.ts"
   },
@@ -54,10 +53,6 @@
       "./epistemic-status": {
         "types": "./dist/epistemic-status.d.ts",
         "import": "./dist/epistemic-status.js"
-      },
-      "./healthspan-years": {
-        "types": "./dist/healthspan-years.d.ts",
-        "import": "./dist/healthspan-years.js"
       },
       "./loading-policy": {
         "types": "./dist/loading-policy.d.ts",

@@ -54,15 +54,16 @@ export const OverlappingSources: Story = {
     entries: ["mountain-project", "openbeta"].map((providerId, index) => {
       const id = `30000000-0000-4000-8000-00000000000${index + 1}`;
       const areaId = `40000000-0000-4000-8000-00000000000${index + 1}`;
-      const regionId = `50000000-0000-4000-8000-00000000000${index + 1}`;
       const climb = climbingClimbFixture(providerId);
       climb.id = `60000000-0000-4000-8000-00000000000${index + 1}`;
       climb.name = index === 0 ? "Swiss Cheese" : "Left Arete";
       climb.areaId = areaId;
-      climb.areaPath = climb.areaPath.flatMap((area) => [
-        { ...area, id: regionId, name: "Donner Summit", parentAreaId: null },
-        { ...area, id: areaId, name: "Green Phantom Rock", parentAreaId: regionId },
-      ]);
+      climb.areaPath = climb.areaPath.map((area) => ({
+        ...area,
+        id: areaId,
+        name: "Green Phantom Rock",
+        parentAreaId: null,
+      }));
       return climbingLogEntryFixture({
         id,
         providerId,
@@ -87,7 +88,9 @@ export const OverlappingSources: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(canvas.getAllByRole("heading", { name: "Green Phantom Rock" })).toHaveLength(1);
+    await expect(canvas.getAllByRole("heading", { name: "Area: Green Phantom Rock" })).toHaveLength(
+      1,
+    );
     await expect(
       canvas.getByRole("link", { name: "Swiss Cheese on Mountain Project" }),
     ).toBeVisible();

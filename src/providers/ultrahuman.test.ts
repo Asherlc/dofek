@@ -393,7 +393,7 @@ describe("UltrahumanProvider", () => {
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.message).toBe(
-      "2026-03-01: ultrahuman API service unavailable (500): provider validation failed",
+      "2026-03-01: ultrahuman API service unavailable (500). Try again later.",
     );
     expect(authFailureReasonFromError(result.errors[0]?.cause)).toBeUndefined();
     expect(spies.values).toHaveBeenCalledWith(

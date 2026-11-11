@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   formatRecordLocalTime,
+  formatRecordLocalTimeRange,
   localTimeContextUnknown,
   offsetMinutesFromTimestamp,
   recordLocalHour,
@@ -436,6 +437,37 @@ describe("formatRecordLocalTime", () => {
         "en-US",
       ),
     ).toBe("--");
+  });
+});
+
+describe("formatRecordLocalTimeRange", () => {
+  const dstContext = {
+    timezone: "America/Los_Angeles",
+    startUtcOffsetMinutes: -480,
+    endUtcOffsetMinutes: -420,
+    source: "provider_timezone" as const,
+  };
+
+  it("formats both bounds with the stored activity timezone", () => {
+    expect(
+      formatRecordLocalTimeRange(
+        "2026-03-08T09:30:00.000Z",
+        "2026-03-08T10:30:00.000Z",
+        dstContext,
+        "en-US",
+      ),
+    ).toBe("1:30 AM – 3:30 AM");
+  });
+
+  it("formats a single logged instant once", () => {
+    expect(
+      formatRecordLocalTimeRange(
+        "2026-03-08T09:30:00.000Z",
+        "2026-03-08T09:30:00.000Z",
+        dstContext,
+        "en-US",
+      ),
+    ).toBe("1:30 AM");
   });
 });
 

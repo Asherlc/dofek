@@ -23,7 +23,6 @@ import { efficiencyRouter } from "./routers/efficiency.ts";
 import { fileUploadRouter } from "./routers/file-upload.ts";
 import { foodRouter } from "./routers/food.ts";
 import { healthKitSyncRouter } from "./routers/health-kit-sync.ts";
-import { healthspanRouter } from "./routers/healthspan.ts";
 import { heartRateRouter } from "./routers/heart-rate.ts";
 import { hikingRouter } from "./routers/hiking.ts";
 import { inertialMeasurementUnitSyncRouter } from "./routers/inertial-measurement-unit-sync.ts";
@@ -110,7 +109,6 @@ const appRouterProcedures = {
   running: runningRouter,
   settings: settingsRouter,
   stress: stressRouter,
-  healthspan: healthspanRouter,
   medicationDoseEvents: medicationDoseEventsRouter,
   mcp: mcpRouter,
   sportSettings: sportSettingsRouter,

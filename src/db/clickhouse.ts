@@ -1,15 +1,12 @@
-import { createClient } from "@clickhouse/client";
+import { type CommandParams, createClient } from "@clickhouse/client";
 import { METRIC_STREAM_TABLE } from "../metric-stream/clickhouse-table.ts";
 import { buildClickHouseBootstrapStatementsForNativeMetricStream } from "./clickhouse-metric-stream-bootstrap.ts";
 
 export interface ClickHouseCommandClient {
-  command(options: {
-    query: string;
-    clickhouse_settings?: Record<string, string | number | boolean>;
-    query_params?: Record<string, unknown>;
-  }): Promise<unknown>;
+  command(options: CommandParams): Promise<unknown>;
   insert?(options: {
     table: string;
+    query_id?: string;
     values: readonly object[];
     format: "JSONEachRow";
     clickhouse_settings?: Record<string, string | number | boolean>;
@@ -19,6 +16,7 @@ export interface ClickHouseCommandClient {
     query_id?: string;
     format: "JSONEachRow";
     query_params?: Record<string, unknown>;
+    use_multipart_params?: boolean;
     abort_signal?: AbortSignal;
     clickhouse_settings?: Record<string, string | number | boolean>;
   }): Promise<{ json(): Promise<TRow[]> }>;
@@ -26,11 +24,13 @@ export interface ClickHouseCommandClient {
 }
 
 export interface ClickHouseClient extends ClickHouseCommandClient {
+  exec: ReturnType<typeof createClient>["exec"];
   query<TRow extends object>(options: {
     query: string;
     query_id?: string;
     format: "JSONEachRow";
     query_params?: Record<string, unknown>;
+    use_multipart_params?: boolean;
     abort_signal?: AbortSignal;
     clickhouse_settings?: Record<string, string | number | boolean>;
   }): Promise<{ json(): Promise<TRow[]> }>;
@@ -106,7 +106,7 @@ export function buildClickHouseBootstrapStatements(postgresConnectionString: str
 export function createClickHouseClientFromEnv(
   env: NodeJS.ProcessEnv = process.env,
   options: ClickHouseClientOptions = {},
-): ClickHouseClient {
+): ClickHouseClient & Required<Pick<ClickHouseClient, "close">> {
   const url = env.CLICKHOUSE_URL;
   if (!url) {
     throw new Error("CLICKHOUSE_URL environment variable is required");

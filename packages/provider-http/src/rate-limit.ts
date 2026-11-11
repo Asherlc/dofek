@@ -153,7 +153,7 @@ function createDefaultRateLimitError(
   responseBody: string,
 ): ProviderRateLimitError {
   return new ProviderRateLimitError({
-    message: `${providerId} API rate limit exceeded (${response.status}): ${responseBody}`,
+    message: `${providerId} API rate limit exceeded (${response.status}). Try again later.`,
     providerId,
     statusCode: response.status,
     responseBody,
@@ -171,7 +171,7 @@ function createDefaultServiceUnavailableError(
   responseBody: string,
 ): ProviderServiceUnavailableError {
   return new ProviderServiceUnavailableError({
-    message: `${providerId} API service unavailable (${response.status}): ${responseBody}`,
+    message: `${providerId} API service unavailable (${response.status}). Try again later.`,
     providerId,
     statusCode: response.status,
     responseBody,

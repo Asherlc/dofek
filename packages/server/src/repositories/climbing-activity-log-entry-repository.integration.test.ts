@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { eq, inArray, sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import {
@@ -25,7 +26,7 @@ describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
     await context.db.delete(area);
     await context.db
       .delete(activity)
-      .where(inArray(activity.providerId, ["openbeta", "mountain-project", "kaya"]));
+      .where(inArray(activity.providerId, ["openbeta", "mountain-project", "kaya", "whoop"]));
   });
   afterAll(async () => {
     await context.cleanup();
@@ -41,6 +42,115 @@ describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
     if (!entry) throw new Error("Expected projected log");
     return entry.toDetail();
   }
+  it("projects distinct source sessions in a visible group and follows late history, attachments and absence", async () => {
+    await ensureProvider(context.db, "whoop", "WHOOP", undefined, userId);
+    const recordedId = randomUUID();
+    await context.db.insert(activity).values({
+      id: recordedId,
+      userId,
+      providerId: "whoop",
+      externalId: randomUUID(),
+      canonicalType: "climbing",
+      providerType: "climbing",
+      startedAt: new Date("2026-11-10T01:00:00Z"),
+      endedAt: new Date("2026-11-10T02:00:00Z"),
+    });
+    const seed = async (entries: SourceClimbingLogEntry[]) =>
+      persistClimbingLogEntries(context.db, { userId, providerId: "openbeta", entries });
+    const result = await seed([
+      {
+        externalId: "point-one",
+        activityObservation: { recordedAt: "2026-11-10T01:10:00Z" },
+        board: { externalId: "A", name: "Board" },
+        attempts: [],
+      },
+      {
+        externalId: "point-two",
+        activityObservation: { recordedAt: "2026-11-10T01:14:00Z" },
+        board: { externalId: "A", name: "Board" },
+        attempts: [],
+      },
+      {
+        externalId: "point-three",
+        activityObservation: { recordedAt: "2026-11-10T01:15:00Z" },
+        board: { externalId: "B", name: "Board" },
+        attempts: [],
+      },
+      { externalId: "attached", activityId: recordedId, climbedOn: "2026-11-10", attempts: [] },
+    ]);
+    await context.db.execute(
+      sql`UPDATE fitness.activity SET group_id = (SELECT group_id FROM fitness.activity WHERE id = ${recordedId}) WHERE user_id=${userId} AND provider_type='climbing_log'`,
+    );
+    const [group] = await context.db
+      .select({ id: activity.groupId })
+      .from(activity)
+      .where(eq(activity.id, recordedId));
+    if (!group) throw new Error("Expected group");
+    const projected = (await repo().getActivityLogSessions([group.id])).get(group.id);
+    expect(projected).toHaveLength(2);
+    expect(
+      projected?.map((session) => [
+        session.firstLoggedAt,
+        session.lastLoggedAt,
+        session.memberActivityIds.length,
+      ]),
+    ).toEqual([
+      ["2026-11-10T01:10:00.000Z", "2026-11-10T01:14:00.000Z", 2],
+      ["2026-11-10T01:15:00.000Z", "2026-11-10T01:15:00.000Z", 1],
+    ]);
+    const canonicalLogs = await repo().getActivityLogEntries(group.id);
+    expect(canonicalLogs.map((entry) => entry.toDetail().id).sort()).toEqual(
+      [...result.logEntryIds].sort(),
+    );
+    expect(
+      await new ClimbingActivityLogEntryRepository(
+        context.db,
+        randomUUID(),
+        "UTC",
+      ).getActivityLogSessions([group.id]),
+    ).toEqual(new Map());
+    await seed([
+      {
+        externalId: "earlier",
+        activityObservation: { recordedAt: "2026-11-10T01:09:00Z" },
+        board: { externalId: "A", name: "Board" },
+        attempts: [],
+      },
+    ]);
+    await context.db.execute(
+      sql`UPDATE fitness.activity SET group_id=${group.id} WHERE user_id=${userId} AND provider_type='climbing_log'`,
+    );
+    const late = (await repo().getActivityLogSessions([group.id])).get(group.id);
+    expect(late?.[0]?.memberActivityIds).toEqual(
+      expect.arrayContaining(projected?.[0]?.memberActivityIds ?? []),
+    );
+    expect(late?.[0]?.firstLoggedAt).toBe("2026-11-10T01:09:00.000Z");
+    expect(late?.[0]?.id).not.toBe(projected?.[0]?.id);
+    await context.db
+      .update(climbingLogEntry)
+      .set({ providerAbsentAt: new Date() })
+      .where(eq(climbingLogEntry.externalId, "earlier"));
+    expect((await repo().getActivityLogSessions([group.id])).get(group.id)?.[0]?.id).toBe(
+      projected?.[0]?.id,
+    );
+    await context.db
+      .update(climbingLogEntry)
+      .set({ activityId: recordedId })
+      .where(eq(climbingLogEntry.externalId, "point-two"));
+    expect(
+      (await repo().getActivityLogSessions([group.id])).get(group.id)?.[0]?.memberActivityIds,
+    ).toHaveLength(1);
+    const limited = new ClimbingActivityLogEntryRepository(context.db, userId, "UTC", {
+      kind: "limited",
+      paid: false,
+      reason: "free_recent_week",
+      startDate: "2026-11-11",
+      endDateExclusive: "2026-11-12",
+    });
+    expect(await limited.getActivityLogSessions([group.id])).toEqual(new Map());
+    expect(await repo().getActivityLogSessions([])).toEqual(new Map());
+  });
+
   const route = {
     externalId: "route-one",
     name: "Route",
@@ -50,6 +160,52 @@ describe("ClimbingActivityLogEntryRepository PostgreSQL projection", () => {
       { externalId: "pitch-one", number: 1, publishedGrades: [{ value: "5.8", system: "yds" }] },
     ],
   } as const;
+  it("serves a log-specific gym ahead of shared climb geometry without changing the shared climb facts", async () => {
+    const source = {
+      ...route,
+      coordinates: { latitude: 40, longitude: 10 },
+      areas: [{ externalId: "source-area", name: "Source area" }],
+    };
+    const first = await write({
+      externalId: "gym-log",
+      climb: source,
+      areas: [
+        { externalId: "gym-a", name: "Gym A", coordinates: { latitude: 0, longitude: -120 } },
+      ],
+      attempts: [],
+    });
+    expect(first.areaPath?.map((area) => area.name)).toEqual(["Gym A"]);
+    expect(first.climb?.areaPath.map((area) => area.name)).toEqual(["Source area"]);
+    expect(first.climb?.coordinates).toEqual({ latitude: 40, longitude: 10 });
+    expect(first.mapLocation).toMatchObject({
+      scope: "area",
+      name: "Gym A",
+      coordinates: { latitude: 0, longitude: -120 },
+    });
+    const second = await write({
+      externalId: "gym-log-b",
+      climb: source,
+      areas: [{ externalId: "gym-b", name: "Gym B", coordinates: null }],
+      attempts: [],
+    });
+    expect(second.climb?.id).toBe(first.climb?.id);
+    expect(second.areaPath?.map((area) => area.name)).toEqual(["Gym B"]);
+    expect(second.mapLocation).toBeNull();
+  });
+  it("serves recorded locations even when the log has no named climb", async () => {
+    const detail = await write({
+      externalId: "gym-only",
+      areas: [{ externalId: "gym", name: "Gym", coordinates: { latitude: 1, longitude: 2 } }],
+      attempts: [],
+    });
+    expect(detail.climb).toBeNull();
+    expect(detail.areaPath?.map((area) => area.name)).toEqual(["Gym"]);
+    expect(detail.mapLocation).toMatchObject({
+      scope: "area",
+      name: "Gym",
+      coordinates: { latitude: 1, longitude: 2 },
+    });
+  });
   it.each([
     { sends: 1, nextDay: false },
     { sends: 2, nextDay: false },

@@ -4,6 +4,44 @@ import SQLite3
 import XCTest
 @testable import WhoopBLE
 
+final class CleanupStageRecorder {
+    private let lock = NSLock()
+    private var stages: [String] = []
+
+    func append(_ stage: String) { lock.withLock { stages.append(stage) } }
+    var snapshot: [String] { lock.withLock { stages } }
+}
+
+final class TestWhoopUploadTransport: WhoopUploadTransport {
+    var onCompletion: ((String, Int?, Data, URL?, Error?) -> Void)?
+    var onFinishEvents: (() -> Void)?
+    var tasks: [String] = []
+    var requests: [(URLRequest, URL, String)] = []
+    var reconciliationCount = 0
+    var delayCancellation = false
+    var delayedCancellations: [() -> Void] = []
+    var cancellations: [String] = []
+    var beforeAllTasks: (() -> Void)?
+    func allTasks(_ completion: @escaping ([String]) -> Void) {
+        reconciliationCount += 1
+        beforeAllTasks?()
+        completion(tasks)
+    }
+    func start(request: URLRequest, file: URL, identity: String) {
+        tasks.append(identity); requests.append((request, file, identity))
+    }
+    func cancel(identity: String) {
+        cancellations.append(identity)
+        let cancel = { self.tasks.removeAll { $0 == identity } }
+        if delayCancellation { delayedCancellations.append(cancel) } else { cancel() }
+    }
+    func complete(_ index: Int, status: Int = 200, body: String = "{\"result\":{\"data\":{\"inserted\":0}}}") {
+        let task = requests[index]
+        tasks.removeAll { $0 == task.2 }
+        onCompletion?(task.2, status, Data(body.utf8), task.0.url, nil)
+    }
+}
+
 final class TestWhoopPeripheralConnection: WhoopBlePeripheralConnection {
     let identifier: UUID
     let name: String? = "WHOOP test peripheral"
