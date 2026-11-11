@@ -28,7 +28,7 @@
 
 ### Task 1: Persist and serve explicit membership
 
-**Files:** `src/db/schema/climbing.ts`, new `drizzle/0184_climbing_area_groups.sql` and generated metadata/diagrams, `packages/server/src/repositories/climbing-activity-log-entry-repository.ts`, its existing test helper, `packages/server/src/contracts/climbing-log-contracts.ts`, `packages/training/src/climbing-log-response.ts`, their colocated tests, new `packages/server/src/repositories/climbing-area-group.integration.test.ts`.
+**Files:** `src/db/schema/climbing.ts`, new `drizzle/0185_climbing_area_groups.sql` and generated metadata/diagrams, `packages/server/src/repositories/climbing-activity-log-entry-repository.ts`, its existing test helper, `packages/server/src/contracts/climbing-log-contracts.ts`, `packages/training/src/climbing-log-response.ts`, their colocated tests, new `packages/server/src/repositories/climbing-area-group.integration.test.ts`.
 
 **Interfaces:** Produces `areaGroup` table and nullable `area.groupId`; repository detail exposes optional nullable `areaGroupId`; wire version 5 includes it, versions 1–4 omit it.
 

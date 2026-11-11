@@ -118,6 +118,7 @@ const mockActivity: ActivityDetail & { displayedDate?: string } = {
   sourceLinks: [],
   sourceTree: { primary: null, otherSources: [] },
   sourceDecision: null,
+  fitRecoveryWarning: null,
 };
 
 const mockStreamPoints: Array<{
@@ -749,6 +750,28 @@ async function importActivityHeader() {
 }
 
 describe("ActivityDetailPage", () => {
+  it("shows the server-projected FIT recovery warning on the activity detail header", async () => {
+    const ActivityHeader = await importActivityHeader();
+    const warning = "Some FIT data could not be recovered from the original file.";
+
+    renderWithUnits(
+      <ActivityHeader
+        activity={{ ...mockActivity, fitRecoveryWarning: warning }}
+        units={new UnitConverter("metric")}
+      />,
+    );
+
+    expect(screen.getByRole("alert").textContent).toBe(warning);
+  });
+
+  it("does not show a FIT recovery warning for a clean activity", async () => {
+    const ActivityHeader = await importActivityHeader();
+
+    renderWithUnits(<ActivityHeader activity={mockActivity} units={new UnitConverter("metric")} />);
+
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
   it("shows Kilter logged windows on a connected climbing detail header", async () => {
     const ActivityHeader = await importActivityHeader();
     renderWithUnits(

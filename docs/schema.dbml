@@ -510,6 +510,7 @@ table fitness.activity {
   rejected_provider_end_utc_offset_minutes bigint
   strava_id text
   raw jsonb
+  fit_recovery_error text
   provider_absent_at "timestamp with time zone"
   absence_provider_id text
   deleted_at "timestamp with time zone"

@@ -74,6 +74,7 @@ function metadataMessage(overrides: Record<string, unknown> = {}): Record<string
     fileType: 4,
     fileTypeName: "activity",
     fileId: null,
+    recoveryError: null,
     hasWeightMessages: false,
     session: null,
     sportName: null,
@@ -116,6 +117,51 @@ describe("streamFitFile", () => {
       await streamFitFile("activity.fit", noopConsumer({ onMetadata }));
 
       expect(onMetadata).toHaveBeenCalledWith(expect.objectContaining({ fileId }));
+    }
+  });
+
+  it("propagates a nullable recovery warning from native metadata", async () => {
+    await vi.resetModules();
+    const { streamFitFile: streamFitFileUnderTest } = await import("./stream-decoder.ts");
+
+    for (const recoveryError of [null, "FIT decode failed: truncated data"]) {
+      const decoder = simulatedDecoder();
+      mockSpawn.mockReturnValue(decoder.child);
+      const onMetadata = vi.fn(async () => undefined);
+      queueMicrotask(async () => {
+        decoder.send(metadataMessage({ recoveryError }));
+        await decoder.waitForAcknowledgement(1);
+        decoder.send({ type: "records", messages: [] });
+        await decoder.waitForAcknowledgement(2);
+        decoder.send({ type: "end", messageCount: 0 });
+        decoder.finish();
+      });
+      await streamFitFileUnderTest("activity.fit", noopConsumer({ onMetadata }));
+      expect(onMetadata).toHaveBeenCalledWith(expect.objectContaining({ recoveryError }));
+    }
+  });
+
+  it("rejects malformed recovery warning metadata", async () => {
+    await vi.resetModules();
+    const { FitDecoderError: FitDecoderErrorUnderTest, streamFitFile: streamFitFileUnderTest } =
+      await import("./stream-decoder.ts");
+
+    for (const recoveryError of [17, "", undefined]) {
+      const decoder = simulatedDecoder();
+      mockSpawn.mockReturnValue(decoder.child);
+      queueMicrotask(() => {
+        const message = metadataMessage({ recoveryError });
+        if (recoveryError === undefined) delete message.recoveryError;
+        decoder.send(message);
+        void (async () => {
+          await decoder.waitForAcknowledgement(1);
+          decoder.send({ type: "end", messageCount: 0 });
+          decoder.finish();
+        })();
+      });
+      await expect(streamFitFileUnderTest("activity.fit", noopConsumer())).rejects.toThrow(
+        FitDecoderErrorUnderTest,
+      );
     }
   });
 
@@ -220,6 +266,7 @@ describe("streamFitFile", () => {
           fileType: 4,
           fileTypeName: "activity",
           fileId: null,
+          recoveryError: null,
           hasWeightMessages: false,
           session: {
             sport: 2,
@@ -414,6 +461,7 @@ describe("streamFitFile", () => {
         fileType: null,
         fileTypeName: null,
         fileId: null,
+        recoveryError: null,
         hasWeightMessages: false,
         session: null,
         sportName: null,
@@ -617,6 +665,7 @@ describe("streamFitFile", () => {
         fileType: 9,
         fileTypeName: "weight",
         fileId: null,
+        recoveryError: null,
         hasWeightMessages: true,
         session: null,
         sportName: null,
@@ -745,6 +794,7 @@ describe("streamFitFile", () => {
         fileType: 4,
         fileTypeName: "activity",
         fileId: null,
+        recoveryError: null,
         hasWeightMessages: false,
         session: null,
         sportName: null,
@@ -823,6 +873,7 @@ describe("streamFitFile", () => {
       fileType: 4,
       fileTypeName: "activity",
       fileId: null,
+      recoveryError: null,
       hasWeightMessages: false,
       session: null,
       sportName: null,

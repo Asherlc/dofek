@@ -192,6 +192,7 @@ entity "activity" {
   rejected_provider_end_utc_offset_minutes : bigint
   strava_id : text
   raw : jsonb
+  fit_recovery_error : text
   provider_absent_at : timestamp
   absence_provider_id : text <<FK>>
   deleted_at : timestamp

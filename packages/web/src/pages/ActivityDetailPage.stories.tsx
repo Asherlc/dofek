@@ -70,6 +70,7 @@ const baseActivity: ActivityDetail = {
   sampleCountState: { status: "available" },
   providerAbsentAt: null,
   sourceDecision: null,
+  fitRecoveryWarning: null,
 };
 
 const climbingSourceTree = {
@@ -187,6 +188,20 @@ type HeaderStory = StoryObj<typeof headerMeta>;
 export const CyclingMetric: HeaderStory = {
   args: {
     powerWork: { workKilojoules: 1188, coverage: { coveredSeconds: 5400, coveragePct: 100 } },
+  },
+};
+
+export const FitRecoveryWarning: HeaderStory = {
+  args: {
+    activity: {
+      ...baseActivity,
+      fitRecoveryWarning:
+        "Some activity data could not be recovered from the original file. The available data was imported; this activity may be incomplete.",
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement.ownerDocument.body);
+    await expect(canvas.getByRole("alert")).toBeVisible();
   },
 };
 
