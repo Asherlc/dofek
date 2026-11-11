@@ -293,7 +293,7 @@ export class ClimbingRepository extends BaseRepository {
         ce.canonical_activity_id::text AS activity_id, ce.session_date,
         ce.climb_name, ce.title, ce.provider_id, ce.raw,
         ce.climb_kind, ce.grade_system, ce.grade,
-        CASE WHEN ce.coordinates IS NOT NULL THEN jsonb_build_object(
+        CASE WHEN ce.log_area_id IS NULL AND ce.coordinates IS NOT NULL THEN jsonb_build_object(
           'coordinates', jsonb_build_object('latitude', ce.coordinates[1], 'longitude', ce.coordinates[0]),
           'scope', 'climb', 'objectId', ce.climb_id, 'providerId', ce.provider_id, 'name', ce.climb_name)
         ELSE jsonb_build_object(
@@ -306,7 +306,7 @@ export class ClimbingRepository extends BaseRepository {
         WHERE node->'coordinates' IS NOT NULL AND node->'coordinates' <> 'null'::jsonb
         ORDER BY position DESC LIMIT 1
       ) AS nearest_area ON true
-      WHERE ce.coordinates IS NOT NULL OR nearest_area.node IS NOT NULL
+      WHERE (ce.log_area_id IS NULL AND ce.coordinates IS NOT NULL) OR nearest_area.node IS NOT NULL
       ORDER BY ce.id, ce.pitch_number NULLS FIRST, ce.pitch_id, ce.unknown_pitch_attempt_id`,
     );
     return rows.map((row) => ({

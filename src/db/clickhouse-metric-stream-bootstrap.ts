@@ -157,6 +157,7 @@ deduped_samples AS (
    AND sensor_samples.recorded_at >= activity_bounds.started_at
    AND sensor_samples.recorded_at <= coalesce(activity_bounds.ended_at, activity_bounds.started_at + INTERVAL 12 HOUR)
   WHERE sensor_samples.is_deleted = 0
+    AND coalesce(activity_bounds.provider_type, '') != 'climbing_log'
     AND sensor_samples.scalar IS NOT NULL
 ),
 altitude_deltas AS (

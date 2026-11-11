@@ -1,6 +1,7 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { captureAccountErasurePostgresIdentifiers } from "../account-erasure/identifier-store.ts";
 import {
   type AccountErasureExternalIdentity,
   type AccountErasureUserIdentity,
@@ -9,6 +10,10 @@ import {
   createAccountErasureUserIdentity,
 } from "../account-erasure/identity.ts";
 import type { AccountErasureRestoreIntent } from "../account-erasure/restore-ledger.ts";
+import {
+  ACCOUNT_ERASURE_SNAPSHOT_SUPPORT_REQUIRED,
+  assertAccountErasureSnapshotSourceBudget,
+} from "../account-erasure/snapshot-budget.ts";
 import { lockAccountErasureActivation } from "./account-erasure-locks.ts";
 import type { Database, TransactionDatabase } from "./index.ts";
 import {
@@ -307,6 +312,7 @@ async function loadAccountErasureExternalIdentities(
   transaction: TransactionDatabase,
   userId: string,
 ): Promise<AccountErasureExternalIdentity[]> {
+  await assertAccountErasureSnapshotSourceBudget(transaction, userId);
   const authIdentities = await executeWithSchema(
     transaction,
     authIdentityRowSchema,
@@ -466,6 +472,7 @@ async function activateAccountErasureInTransaction(
           ${options.recoveredFromRestore ? acceptedAt.toISOString() : null}
         )`,
   );
+  await captureAccountErasurePostgresIdentifiers(transaction, { requestId, userId });
   await transaction.execute(
     sql`INSERT INTO fitness.account_erasure_outbox (request_id)
         VALUES (${requestId}::uuid)`,
@@ -835,15 +842,20 @@ export async function findAccountErasureStatus(
     currentPhase: row.current_phase,
     deadlineMissed,
     id: row.id,
-    message: deadlineMissed
-      ? row.status === "completed"
-        ? "Account deletion completed after its 30-day deadline. Support was alerted to the delay."
-        : "Account deletion missed its 30-day deadline. Deletion remains active and automatic retries are continuing; support has been alerted."
-      : row.status === "failed"
-        ? row.retry_at
-          ? "Account deletion is still in progress. We are retrying it automatically."
+    message:
+      row.status !== "completed" && row.last_error === ACCOUNT_ERASURE_SNAPSHOT_SUPPORT_REQUIRED
+        ? deadlineMissed
+          ? "Account deletion missed its 30-day deadline and needs support assistance. Contact support with this request ID."
           : "Account deletion needs support assistance. Contact support with this request ID."
-        : null,
+        : deadlineMissed
+          ? row.status === "completed"
+            ? "Account deletion completed after its 30-day deadline. Support was alerted to the delay."
+            : "Account deletion missed its 30-day deadline. Deletion remains active and automatic retries are continuing; support has been alerted."
+          : row.status === "failed"
+            ? row.retry_at
+              ? "Account deletion is still in progress. We are retrying it automatically."
+              : "Account deletion needs support assistance. Contact support with this request ID."
+            : null,
     replayRetainedUntil: row.replay_retained_until,
     requestedAt: row.requested_at,
     retentionUntil: row.completion_deadline,

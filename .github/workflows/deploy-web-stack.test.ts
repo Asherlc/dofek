@@ -1,3 +1,4 @@
+import { MOCK_DOCKER, runKafkaBackendFixture, runTopicPolicyFixture } from "./deploy-web-stack-test-helpers.ts";
 import { deployTestDigest, deployTestOldImage, deployTestRepository, runDeployImageFixture } from "../../scripts/deploy-image-test-helpers.ts";
 import { spawnSync } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -9,6 +10,58 @@ import { z } from "zod";
 
 const workflowText = readFileSync(".github/workflows/deploy-web-stack.yml", "utf8");
 const otaImage = `${deployTestRepository}-ota@${deployTestDigest}`;
+
+describe("consumed Kafka tiered backend", () => {
+  it.each(["", "bucket", "prefix", "credential", "worker"])("checks actual broker and worker scope: %s", (drift) => {
+    const result = runKafkaBackendFixture(workflowRunScript("Verify Kafka tiered backend before migrations"), drift);
+    expect(result.status === 0, result.stderr).toBe(drift === "");
+    expect(result.stdout + result.stderr).not.toContain("fixture-secret");
+    if (!drift) expect(result.stdout).toContain("Kafka broker and worker tiered backend match");
+  });
+});
+
+describe("deploy-owned Kafka topic policy", () => {
+  function policyScript() {
+    return ["Converge Kafka metric-stream topic policy", "Verify Kafka metric-stream topic policy", "Verify Kafka topic policy after consumer startup"]
+      .map(workflowRunScript).join("\n");
+  }
+
+  it("incrementally configures each actual route with its role policy before readback", () => {
+    const result = runTopicPolicyFixture(policyScript());
+    expect(result.status, result.stderr).toBe(0);
+    const updates = result.calls.filter((call) => call.includes("--alter"));
+    expect(updates.map((call) => [call[call.indexOf("--entity-name") + 1], call[call.indexOf("--add-config") + 1]])).toEqual([
+      ["source", "cleanup.policy=delete,retention.ms=604800000,retention.bytes=4294967296,segment.bytes=134217728,remote.storage.enable=true"],
+      ["source.quarantine.v1", "cleanup.policy=delete,retention.ms=604800000,retention.bytes=1073741824,segment.bytes=134217728,remote.storage.enable=true"],
+      ["live", "cleanup.policy=delete,retention.ms=604800000,retention.bytes=4294967296,segment.bytes=134217728,remote.storage.enable=true"],
+      ["live.quarantine.v1", "cleanup.policy=delete,retention.ms=604800000,retention.bytes=1073741824,segment.bytes=134217728,remote.storage.enable=true"],
+      ["history", "cleanup.policy=delete,retention.ms=604800000,retention.bytes=4294967296,segment.bytes=134217728,remote.storage.enable=true"],
+      ["history.quarantine.v1", "cleanup.policy=delete,retention.ms=604800000,retention.bytes=1073741824,segment.bytes=134217728,remote.storage.enable=true"],
+    ]);
+    for (const update of updates) {
+      expect(update).toContain("/opt/kafka/bin/kafka-configs.sh");
+      expect(update).toContain("fixture_default");
+      expect(update).toContain("--rm");
+    }
+    const verifiers = result.calls.filter((call) => call.includes("node"));
+    expect(verifiers).toHaveLength(2);
+    expect(verifiers[0]).toContain("ghcr.io/asherlc/dofek@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+    expect(result.stdout).toContain("RESTORE-CONSUMERS");
+  });
+
+  it("rejects aliased routes before any topic update", () => {
+    const result = runTopicPolicyFixture(policyScript(), "", ["source", "source", "history"]);
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("topic routes must be distinct");
+    expect(result.calls).toEqual([]);
+  });
+
+  it.each([["alter", 64], ["verify", 65]] as const)("stops before consumer restoration on %s failure", (failure, status) => {
+    const result = runTopicPolicyFixture(policyScript(), failure);
+    expect(result.status).toBe(status);
+    expect(result.stdout).not.toContain("RESTORE-CONSUMERS");
+  });
+});
 
 interface ServiceObservation {
   readonly desiredReplicas?: string;
@@ -37,94 +90,6 @@ interface DeployQuiescedOptions extends DeployConsumerOptions {
   readonly stackDeployStatus?: number;
 }
 
-const MOCK_DOCKER = `#!/usr/bin/env bash
-set -euo pipefail
-
-read_observation() {
-  local observed_service_name="$1"
-  local candidate_observation
-  local last_observation=""
-  local line_number=0
-  local target_line
-
-  scenario_file="$SCENARIO_DIR/$observed_service_name"
-  state_file="$STATE_DIR/$observed_service_name"
-  observation_index=0
-  observation=""
-
-  if [ -f "$state_file" ]; then
-    observation_index="$(<"$state_file")"
-  fi
-  target_line=$((observation_index + 1))
-  while IFS= read -r candidate_observation; do
-    line_number=$((line_number + 1))
-    last_observation="$candidate_observation"
-    if [ "$line_number" -eq "$target_line" ]; then
-      observation="$candidate_observation"
-      break
-    fi
-  done < "$scenario_file"
-  if [ -z "$observation" ]; then
-    observation="$last_observation"
-  fi
-  IFS='|' read -r update_state replicas task_id image desired_replicas <<< "$observation"
-}
-
-if [ "$1" = "stack" ] && [ "$2" = "deploy" ]; then
-  printf '%s\\n' "$@" > "$STACK_DEPLOY_CAPTURE"
-  exit "\${STACK_DEPLOY_STATUS:-0}"
-fi
-
-if [ "$1" = "stack" ] && [ "$2" = "config" ]; then
-  exit 0
-fi
-
-if [ "$1" = "service" ] && [ "$2" = "inspect" ]; then
-  service_name="$3"
-  format="$5"
-  read_observation "$service_name"
-  case "$format" in
-    *UpdateStatus*) printf '%s\\n' "$update_state" ;;
-    *ContainerSpec.Image*) printf '%s\\n' "$image" ;;
-    *Mode.Replicated.Replicas*) printf '%s\\n' "$desired_replicas" ;;
-    *) exit 1 ;;
-  esac
-  exit 0
-fi
-
-if [ "$1" = "service" ] && [ "$2" = "ls" ]; then
-  for argument in "$@"; do
-    case "$argument" in
-      name=*) service_name="\${argument#name=}" ;;
-    esac
-  done
-  read_observation "$service_name"
-  printf '%s\\n' "$replicas"
-  if [ "\${ADVANCE_ON_SERVICE_LS:-0}" = "1" ]; then
-    printf '%s\\n' "$((observation_index + 1))" > "$state_file"
-  fi
-  exit 0
-fi
-
-if [ "$1" = "service" ] && [ "$2" = "ps" ]; then
-  service_name="$3"
-  case " $* " in
-    *" --format "*)
-      if [ "$FAIL_TASK_INSPECTION" = "1" ]; then
-        printf '%s\\n' "mock task inspection failed" >&2
-        exit 64
-      fi
-      read_observation "$service_name"
-      printf '%s\\n' "$task_id"
-      printf '%s\\n' "$((observation_index + 1))" > "$state_file"
-      ;;
-    *) printf '%s\\n' "diagnostic task output for $service_name" ;;
-  esac
-  exit 0
-fi
-
-exit 1
-`;
 
 function deployConsumersRunScript(): string {
   const workflow = z.object({
@@ -140,19 +105,12 @@ function deployConsumersRunScript(): string {
 }
 
 function workflowRunScript(name: string): string {
-  const stepStart = workflowText.indexOf(`      - name: ${name}`);
-  const runStart = workflowText.indexOf("        run: |\n", stepStart);
-  const stepEnd = workflowText.indexOf("\n      - ", runStart);
-
-  if (stepStart === -1 || runStart === -1 || stepEnd === -1) {
-    throw new Error(`Could not find the workflow step: ${name}`);
-  }
-
-  return workflowText
-    .slice(runStart + "        run: |\n".length, stepEnd)
-    .split("\n")
-    .map((line) => line.slice(10))
-    .join("\n");
+  const workflow = z.object({ jobs: z.object({ "web-stack": z.object({
+    steps: z.array(z.object({ name: z.string().optional(), run: z.string().optional() })),
+  }) }) }).parse(parse(workflowText));
+  const script = workflow.jobs["web-stack"].steps.find((step) => step.name === name)?.run;
+  if (!script) throw new Error(`Could not find the workflow step: ${name}`);
+  return script;
 }
 
 function deployQuiescedRunScript(): string {
@@ -239,6 +197,7 @@ esac
       serializeScenario(scenarios.processingReconciliation ?? [STABLE_OBSERVATION]),
     );
     for (const serviceName of [
+      "dofek_kafka",
       "dofek_metric-stream-live-clickhouse-sink",
       "dofek_metric-stream-history-clickhouse-sink",
       "dofek_metric-stream-r2-archive",
@@ -323,6 +282,7 @@ function runDeployQuiesced(
     writeFileSync(pnpmPath, "#!/usr/bin/env bash\n[ \"$1\" = tsx ] && [ \"$2\" = scripts/verify-deploy-image.ts ]\n");
     chmodSync(pnpmPath, 0o755);
     const defaultServiceNames = [
+      "dofek_kafka",
       "dofek_web",
       "dofek_worker",
       "dofek_cdc-health",
@@ -685,6 +645,18 @@ ${workflowRunScript(step)}
     expect(result.githubOutput).not.toContain("web_convergence_failed=true");
   });
 
+  it("keeps a paused Kafka update fatal before continuing the release", () => {
+    const result = runDeployQuiesced([STABLE_OBSERVATION], {
+      serviceObservations: {
+        dofek_kafka: [{ ...STABLE_OBSERVATION, updateState: "paused" }],
+      },
+    });
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain("dofek_kafka update is paused");
+    expect(result.githubOutput).not.toContain("web_convergence_failed=true");
+  });
+
   it("quiesces the migration-running worker before the dependency stack apply", () => {
     const stepStart = workflowText.indexOf(
       "      - name: Apply dependency stack before migrations",
@@ -815,10 +787,10 @@ ${workflowRunScript(step)}
 
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain(
-      "[70s] dofek_analytics-worker task changed from replaced-task to replacement-task; resetting stability window",
+      "[130s] dofek_analytics-worker task changed from replaced-task to replacement-task; resetting stability window",
     );
     expect(result.stdout).toContain(
-      "[130s] dofek_analytics-worker task replacement-task has remained converged for 60s",
+      "[190s] dofek_analytics-worker task replacement-task has remained converged for 60s",
     );
   });
 
@@ -834,10 +806,10 @@ ${workflowRunScript(step)}
 
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain(
-      "[70s] dofek_analytics-worker lost convergence; resetting stability window for task stable-task",
+      "[130s] dofek_analytics-worker lost convergence; resetting stability window for task stable-task",
     );
     expect(result.stdout).toContain(
-      "[140s] dofek_analytics-worker task stable-task has remained converged for 60s",
+      "[200s] dofek_analytics-worker task stable-task has remained converged for 60s",
     );
   });
 
@@ -864,7 +836,7 @@ ${workflowRunScript(step)}
         analyticsWorker: [{ replicas: "0/1", taskId: "starting-task", updateState: "updating" }],
         metricStreamClickhouseSink: [STABLE_OBSERVATION],
       },
-      { sleepSeconds: 1200 },
+      { sleepSeconds: 60 },
     );
 
     expect(result.status).toBe(124);

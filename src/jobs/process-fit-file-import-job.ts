@@ -8,6 +8,7 @@ import {
   resolveProviderActivityType,
 } from "@dofek/training/activity-types";
 import { UnrecoverableError } from "bullmq";
+import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { replaceActivityDeviceObservations } from "../db/activity-device-observations.ts";
 import type { SyncDatabase } from "../db/index.ts";
@@ -32,7 +33,7 @@ import {
 } from "../fit/stream-decoder.ts";
 import { captureException } from "../lib/error-reporting.ts";
 import { logger } from "../logger.ts";
-import type { MetricStreamEventPublisher } from "../metric-stream/redpanda-producer.ts";
+import type { MetricStreamEventPublisher } from "../metric-stream/publisher.ts";
 import {
   createProviderArtifactStorageFromEnv,
   type ProviderArtifactStorage,
@@ -586,6 +587,14 @@ export async function importFitFile(
       );
     }
 
+    if (streamMetadata.recoveryError !== null) {
+      captureException(new FitDecoderError(streamMetadata.recoveryError), {
+        level: "warning",
+        tags: { fitImportStep: "recovery", providerId: data.providerId },
+        extra: { userId: data.userId },
+      });
+    }
+
     if (importType === "weight") {
       await onProgress({ percentage: 80, message: "Writing FIT weight data..." });
       await replayWeightBatches(spool, (weights) =>
@@ -637,6 +646,11 @@ export async function importFitFile(
           { activityId, userId: data.userId },
           replayDeviceBatches(spool, streamMetadata.fileId),
         );
+        await db.execute(sql`UPDATE fitness.activity
+          SET fit_recovery_error = ${streamMetadata.recoveryError}
+          WHERE id = ${activityId}::uuid
+            AND user_id = ${data.userId}::uuid
+            AND provider_id = ${data.providerId}`);
       }
     } else {
       recordDroppedFitFields(data.providerId, streamMetadata, routingConsumedFields);

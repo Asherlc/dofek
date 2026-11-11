@@ -342,11 +342,20 @@ final class WhoopBleSampleStoreTests: XCTestCase {
         XCTAssertNil(try store.binding)
     }
     func testErasureCutoffSurvivesOwnerChangeAndPurgeWithoutLeakingCounters() throws {
-        let store = try WhoopBleSampleStore(directory: directory())
+        let (store, probe) = try SQLiteWorkProbe.opening { try WhoopBleSampleStore(directory: directory()) }
         try store.configure(owner)
         try store.advanceErasureCutoff(to: ISO8601DateFormatter().date(from: "2026-10-28T00:00:02Z")!)
         try store.append(deviceId: "a", samplesByStream: [.realtime: samples([1, 3])])
+        for stream in WhoopUploadStream.allCases {
+            try seedPersistedSamples(10_000, stream: stream, second: 3, probe: probe)
+            XCTAssertNotNil(try store.reserve(stream: stream))
+        }
+        let old = try XCTUnwrap(store.pendingBatches().first)
         try store.purge()
+        XCTAssertEqual(try probe.integer("SELECT COUNT(*) FROM samples"), 0)
+        XCTAssertEqual(try probe.integer("SELECT COUNT(*) FROM batches"), 0)
+        XCTAssertNotEqual(try store.generation, old.generation)
+        XCTAssertFalse(try store.acknowledge(id: old.id, generation: old.generation))
         try store.configure(WhoopUploadBinding(userId: "bob", serverURL: owner.serverURL))
         XCTAssertEqual(try store.statistics(stream: .realtime)["receivedCount"] as? Int, 0)
         try store.append(deviceId: "a", samplesByStream: [.realtime: samples([1, 2])])
@@ -412,5 +421,44 @@ final class WhoopBleSampleStoreTests: XCTestCase {
         XCTAssertEqual(samples.count, 1)
         XCTAssertEqual(samples.first?["timestamp"] as? String, "2026-10-28T00:00:02.430Z")
         XCTAssertEqual(try store.statistics(stream: .realtime)["erasureDiscardedCount"] as? Int, 2)
+    }
+}
+
+extension WhoopBleSampleStoreTests {
+    func testPurgeIdentifiesFailedSqliteOperationAndRollsBackTheStore() throws {
+        let failures = [
+            ("""
+            CREATE TRIGGER reject_sample_delete BEFORE DELETE ON samples
+            BEGIN SELECT RAISE(ABORT, 'purge fixture rejected delete'); END;
+            """, "store_delete_samples", "purge fixture rejected delete"),
+            ("""
+            PRAGMA foreign_keys = ON;
+            CREATE TABLE purge_commit_guard (
+                stream TEXT REFERENCES stats(stream) DEFERRABLE INITIALLY DEFERRED);
+            CREATE TRIGGER reject_purge_commit AFTER DELETE ON samples
+            BEGIN INSERT INTO purge_commit_guard VALUES ('missing'); END;
+            """, "store_commit", "FOREIGN KEY constraint failed"),
+        ]
+        for (fixture, failedStage, message) in failures {
+            let (store, probe) = try SQLiteWorkProbe.opening { try WhoopBleSampleStore(directory: directory()) }
+            try store.configure(owner)
+            try store.append(deviceId: "a", samplesByStream: [.realtime: samples([1])])
+            let binding = try store.binding
+            let generation = try store.generation
+            try probe.executeFixture(fixture)
+            let stages = CleanupStageRecorder()
+
+            XCTAssertThrowsError(try store.purge(onStage: stages.append)) { error in
+                XCTAssertTrue(error.localizedDescription.contains(message))
+            }
+
+            XCTAssertEqual(stages.snapshot.last, failedStage)
+            XCTAssertFalse(stages.snapshot.contains("store_completed"))
+            XCTAssertEqual(try store.binding, binding)
+            XCTAssertEqual(try store.generation, generation)
+            XCTAssertEqual(try store.queuedCount(stream: .realtime), 1)
+            XCTAssertEqual(try store.statistics(stream: .realtime)["receivedCount"] as? Int, 1)
+            XCTAssertEqual(try probe.integer("SELECT COUNT(*) FROM samples"), 1)
+        }
     }
 }

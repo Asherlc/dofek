@@ -55,6 +55,53 @@ describe("worker events", () => {
     });
   });
 
+  it.each([
+    { unrecoverable: false, attempts: 1 },
+    { unrecoverable: true, attempts: 3 },
+    { unrecoverable: false, attempts: undefined },
+    { unrecoverable: false, attempts: 0 },
+  ])(
+    "reports an automatically removed failure without writing to its deleted job (unrecoverable=$unrecoverable, attempts=$attempts)",
+    async ({ unrecoverable, attempts }) => {
+      const Sentry = await import("@sentry/node");
+      const { UnrecoverableError } = await import("bullmq");
+      const { logger } = await import("../logger.ts");
+      vi.mocked(Sentry.captureException).mockClear();
+      vi.mocked(logger.error).mockClear();
+      mockAddJobLog.mockClear();
+      const error = unrecoverable
+        ? new UnrecoverableError("catalogue failed")
+        : new Error("catalogue failed");
+
+      getWorkerHandler("failed")(
+        {
+          id: "removed-catalogue-job",
+          attemptsMade: 1,
+          opts: { removeOnFail: true, attempts },
+        },
+        error,
+      );
+
+      expect(Sentry.captureException).toHaveBeenCalledWith(error);
+      expect(logger.error).toHaveBeenCalledWith("[worker] Job failed: catalogue failed");
+      expect(mockAddJobLog).not.toHaveBeenCalled();
+    },
+  );
+
+  it("keeps job failure logs while an automatically removed job still has retries", () => {
+    mockAddJobLog.mockClear();
+    getWorkerHandler("failed")(
+      { id: "retrying-catalogue-job", attemptsMade: 1, opts: { removeOnFail: true, attempts: 3 } },
+      new Error("catalogue failed"),
+    );
+    expect(mockAddJobLog).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "sync-strava" }),
+      "retrying-catalogue-job",
+      "[error] BullMQ job failed: queue=sync-strava jobId=retrying-catalogue-job cause=catalogue failed",
+      100,
+    );
+  });
+
   it("sanitizes account erasure job failures across Sentry, logs, and BullMQ", async () => {
     const Sentry = await import("@sentry/node");
     const { logger } = await import("../logger.ts");

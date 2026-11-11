@@ -219,7 +219,10 @@ final class WhoopBleSampleStore {
             return min(limit, try field("count", in: row) as Int)
         }
     }
-    func purge() throws { try transaction { try purgeLocked() } }
+    /// Stage observers run inside the store lock and must not re-enter the store.
+    func purge(onStage: (String) -> Void = { _ in }) throws {
+        try transaction(onStage: onStage) { try purgeLocked(onStage: onStage) }
+    }
 
     func advanceErasureCutoff(to date: Date) throws {
         try transaction {
@@ -268,11 +271,16 @@ final class WhoopBleSampleStore {
         }
     }
 
-    private func purgeLocked() throws {
+    private func purgeLocked(onStage: (String) -> Void = { _ in }) throws {
+        onStage("store_reset_stats")
         try execute("UPDATE stats SET received = 0, confirmed = 0, erased = 0, cleared = 0, lastConfirmed = NULL")
+        onStage("store_delete_samples")
         try execute("DELETE FROM samples")
+        onStage("store_delete_batches")
         try execute("DELETE FROM batches")
+        onStage("store_clear_binding")
         try execute("DELETE FROM metadata WHERE key = ?", ["binding"])
+        onStage("store_rotate_generation")
         try setMetadata("generation", UUID().uuidString)
     }
     private func readBinding() throws -> WhoopUploadBinding? {
@@ -312,14 +320,18 @@ final class WhoopBleSampleStore {
         lock.lock(); defer { lock.unlock() }
         return try action()
     }
-    private func transaction<T>(_ action: () throws -> T) throws -> T {
-        try synchronized {
+    private func transaction<T>(onStage: (String) -> Void = { _ in }, _ action: () throws -> T) throws -> T {
+        onStage("store_lock_wait")
+        return try synchronized {
+            onStage("store_begin")
             try execute("BEGIN IMMEDIATE")
             var committed = false
             defer { if !committed { sqlite3_exec(database, "ROLLBACK", nil, nil, nil) } }
             let result = try action()
+            onStage("store_commit")
             try execute("COMMIT")
             committed = true
+            onStage("store_completed")
             return result
         }
     }

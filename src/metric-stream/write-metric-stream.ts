@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { getProviderDataGenerations } from "../db/provider-data-deletion.ts";
 import type { Database } from "../db/typed-sql.ts";
 import type { MetricStreamEventV2, MetricStreamRowInput } from "./events.ts";
-import type { MetricStreamEventPublisher } from "./redpanda-producer.ts";
+import type { MetricStreamEventPublisher } from "./publisher.ts";
 import { runWithMetricStreamWriteDatabase } from "./write-fence-context.ts";
 
 export interface WriteMetricStreamRowsOptions {

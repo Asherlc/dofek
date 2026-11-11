@@ -38,7 +38,7 @@ function createRecoveryErrorStoryLink(recoveryUnavailable: boolean): TRPCLink<Ap
     };
 }
 
-function createSeededProviders(healthspanInsufficient = false, recoveryUnavailable = false) {
+function createSeededProviders(recoveryUnavailable = false) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Number.POSITIVE_INFINITY } },
   });
@@ -57,68 +57,6 @@ function createSeededProviders(healthspanInsufficient = false, recoveryUnavailab
     "sleep",
     "recovery",
   ]);
-  const healthspan = healthspanInsufficient
-    ? {
-        healthspanScore: null,
-        yearsDelta: null,
-        metrics: [],
-        history: [],
-        trend: null,
-        availability: {
-          status: "insufficient_data" as const,
-          availableMetricCount: 2,
-          requiredMetricCount: 3 as const,
-          missingMetricLabels: ["VO2 Max", "Daily Steps"],
-          summary: "2 of 3 required Healthspan metrics are available.",
-          nextCondition:
-            "The score becomes available after 1 more supported metric syncs successfully.",
-        },
-      }
-    : {
-        healthspanScore: 84,
-        yearsDelta: 1.8,
-        metrics: [
-          {
-            name: "Sleep Duration",
-            value: 450,
-            unit: "min/night",
-            score: 100,
-            status: "excellent" as const,
-            yearsDelta: -2.5,
-          },
-          {
-            name: "Daily Steps",
-            value: 9200,
-            unit: "steps/day",
-            score: 85,
-            status: "excellent" as const,
-            yearsDelta: -1.75,
-          },
-          {
-            name: "Resting Heart Rate",
-            value: 54,
-            unit: "bpm",
-            score: 90,
-            status: "excellent" as const,
-            yearsDelta: -2,
-          },
-        ],
-        history: [
-          { weekStart: dates.weekStart(-21), score: 73 },
-          { weekStart: dates.weekStart(-14), score: 75 },
-          { weekStart: dates.weekStart(-7), score: 78 },
-          { weekStart: dates.weekStart(0), score: 80 },
-        ],
-        trend: "improving" as const,
-        availability: {
-          status: "available" as const,
-          availableMetricCount: 3,
-          requiredMetricCount: 3 as const,
-          missingMetricLabels: [],
-          summary: "3 of 3 required Healthspan metrics are available.",
-          nextCondition: null,
-        },
-      };
   const fixture = mobileRecoveryFixtureSchema.parse({
     input: { days: 30, endDate },
     data: {
@@ -314,7 +252,6 @@ function createSeededProviders(healthspanInsufficient = false, recoveryUnavailab
         },
       ],
       healthStatus: [],
-      healthspan,
     },
   });
 
@@ -330,15 +267,13 @@ function createSeededProviders(healthspanInsufficient = false, recoveryUnavailab
 
 function MockProviders({
   children,
-  healthspanInsufficient = false,
   recoveryUnavailable = false,
 }: {
   children: React.ReactNode;
-  healthspanInsufficient?: boolean;
   recoveryUnavailable?: boolean;
 }) {
   const { queryClient, trpcClient } = useMemo(() => {
-    const seededProviders = createSeededProviders(healthspanInsufficient, recoveryUnavailable);
+    const seededProviders = createSeededProviders(recoveryUnavailable);
     return {
       ...seededProviders,
       trpcClient: trpc.createClient({
@@ -348,7 +283,7 @@ function MockProviders({
         ],
       }),
     };
-  }, [healthspanInsufficient, recoveryUnavailable]);
+  }, [recoveryUnavailable]);
 
   return (
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
@@ -365,10 +300,7 @@ const meta = {
   },
   decorators: [
     (Story, context) => (
-      <MockProviders
-        healthspanInsufficient={context.parameters.healthspanInsufficient === true}
-        recoveryUnavailable={context.parameters.recoveryUnavailable === true}
-      >
+      <MockProviders recoveryUnavailable={context.parameters.recoveryUnavailable === true}>
         <View style={{ minHeight: 1400, backgroundColor: colors.background }}>
           <Story />
         </View>
@@ -382,12 +314,6 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
-
-export const InsufficientHealthspanData: Story = {
-  parameters: {
-    healthspanInsufficient: true,
-  },
-};
 
 export const RecoveryUnavailable: Story = {
   parameters: {

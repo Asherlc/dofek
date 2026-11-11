@@ -1,3 +1,6 @@
 <clickhouse>
   <max_server_memory_usage>1342177280</max_server_memory_usage>
+  <metric_log>
+    <settings>vertical_merge_algorithm_min_rows_to_activate = 0</settings>
+  </metric_log>
 </clickhouse>

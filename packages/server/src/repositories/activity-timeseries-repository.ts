@@ -238,6 +238,7 @@ function querySql(includePosition: boolean, raw: boolean): string {
 }
 
 function effectiveActivityEnd(window: ActivitySensorWindow): string {
+  if (window.providerType === "climbing_log") return window.startedAt;
   return (
     window.endedAt ??
     new Date(Date.parse(window.startedAt) + maximumOpenActivityMilliseconds).toISOString()
@@ -287,18 +288,21 @@ export class ActivityTimeseriesRepository {
     );
     if (request.streams.includes("moving_time")) requestedNativeStreams.push("speed");
     const channels = [...new Set(requestedNativeStreams)].sort();
-    const rows = await this.#sensorStore.query(
-      nativeSampleRowSchema,
-      querySql(request.streams.includes("position"), request.resolution === "raw"),
-      {
-        userId: window.userId,
-        activityId: window.activityId,
-        channels,
-        pageStartedAt,
-        pageEndedAt,
-        limit: request.limit + 1,
-      },
-    );
+    const rows =
+      window.providerType === "climbing_log"
+        ? []
+        : await this.#sensorStore.query(
+            nativeSampleRowSchema,
+            querySql(request.streams.includes("position"), request.resolution === "raw"),
+            {
+              userId: window.userId,
+              activityId: window.activityId,
+              channels,
+              pageStartedAt,
+              pageEndedAt,
+              limit: request.limit + 1,
+            },
+          );
     const movingTimeHistoryRows =
       request.streams.includes("moving_time") &&
       Date.parse(pageStartedAt) > Date.parse(window.startedAt)

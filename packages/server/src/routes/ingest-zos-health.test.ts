@@ -90,7 +90,7 @@ function createMockDatabase(
 
 function createTestApp(
   db: import("dofek/db").Database,
-  metricStreamPublisher?: import("../../../../src/metric-stream/redpanda-producer.ts").MetricStreamEventPublisher,
+  metricStreamPublisher?: import("../../../../src/metric-stream/publisher.ts").MetricStreamEventPublisher,
 ) {
   const app = express();
   app.use("/api/ingest", createIngestZosHealthRouter({ db, metricStreamPublisher }));
@@ -415,7 +415,7 @@ describe("createIngestZosHealthRouter", () => {
     const { db, transactionDatabase } = createMockDatabase();
     const metricStreamPublisher = {
       publishRows: vi.fn(async () => []),
-    } satisfies import("../../../../src/metric-stream/redpanda-producer.ts").MetricStreamEventPublisher;
+    } satisfies import("../../../../src/metric-stream/publisher.ts").MetricStreamEventPublisher;
 
     const response = await post(
       createTestApp(db, metricStreamPublisher),
@@ -463,7 +463,7 @@ describe("createIngestZosHealthRouter", () => {
     const { db, transactionDatabase } = createMockDatabase();
     const metricStreamPublisher = {
       publishRows: vi.fn(async () => []),
-    } satisfies import("../../../../src/metric-stream/redpanda-producer.ts").MetricStreamEventPublisher;
+    } satisfies import("../../../../src/metric-stream/publisher.ts").MetricStreamEventPublisher;
 
     const response = await post(
       createTestApp(db, metricStreamPublisher),
@@ -516,7 +516,7 @@ describe("createIngestZosHealthRouter", () => {
     const { db } = createMockDatabase();
     const metricStreamPublisher = {
       publishRows: vi.fn(async () => []),
-    } satisfies import("../../../../src/metric-stream/redpanda-producer.ts").MetricStreamEventPublisher;
+    } satisfies import("../../../../src/metric-stream/publisher.ts").MetricStreamEventPublisher;
 
     const response = await post(
       createTestApp(db, metricStreamPublisher),

@@ -144,14 +144,41 @@ export function ActivityClimbingPanel({
                 ]
               : []),
             ...groupClimbingLogEntriesByArea(section.entries).flatMap(
-              ({ area, entries: groupEntries }) => [
-                <Text
-                  key={`${section.key}-${area?.id ?? "unlocated"}`}
-                  accessibilityRole="header"
-                  style={styles.heading}
-                >
-                  {area?.name ?? "Other climbs"}
-                </Text>,
+              ({ area, areaPath, entries: groupEntries }) => [
+                area ? (
+                  <ScrollView
+                    key={`${section.key}-${area.id}`}
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    style={styles.headingScroll}
+                  >
+                    <Text
+                      accessibilityRole="header"
+                      accessibilityLabel={`Area: ${areaPath.map((node) => node.name).join(" › ")}`}
+                      style={styles.headingText}
+                    >
+                      {areaPath.length > 1 && (
+                        <Text style={styles.headingParent}>
+                          {areaPath
+                            .slice(0, -1)
+                            .map((node) => node.name)
+                            .join(" › ")}{" "}
+                          ›{" "}
+                        </Text>
+                      )}
+                      <Text style={styles.headingLeaf}>{area.name}</Text>
+                    </Text>
+                  </ScrollView>
+                ) : (
+                  <Text
+                    key={`${section.key}-unlocated`}
+                    accessibilityRole="header"
+                    accessibilityLabel="Other climbs"
+                    style={styles.heading}
+                  >
+                    Other climbs
+                  </Text>
+                ),
                 ...groupEntries.map(({ entry, entryNumber }) => (
                   <View
                     key={entry.id}
@@ -192,4 +219,8 @@ const styles = StyleSheet.create({
   list: { maxHeight: 560 },
   group: { gap: 8 },
   heading: { fontSize: 14, fontWeight: "600", color: colors.text },
+  headingText: { fontSize: 14, color: colors.text },
+  headingScroll: { flexGrow: 0 },
+  headingParent: { color: colors.textMuted },
+  headingLeaf: { color: colors.text, fontWeight: "700" },
 });

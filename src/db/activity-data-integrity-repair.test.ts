@@ -12,12 +12,39 @@ import { runActivityIntegrityDbtBuild } from "./activity-data-integrity-dbt.ts";
 import {
   type ActivityIntegrityDatabase,
   type ActivityIntegrityRepairOptions,
-  repairActivityDataIntegrity,
+  repairActivityDataIntegrity as repairActivityDataIntegrityActual,
   retireActivityDataIntegrityArtifact,
-  rollbackActivityDataIntegrity,
+  rollbackActivityDataIntegrity as rollbackActivityDataIntegrityActual,
 } from "./activity-data-integrity-repair.ts";
 
 vi.mock("./activity-data-integrity-dbt.ts", () => ({ runActivityIntegrityDbtBuild: vi.fn() }));
+function fixtureRebuild(client: Parameters<typeof repairActivityDataIntegrityActual>[1]) {
+  const owner = { client, assertActive: vi.fn(async () => undefined), runSynchronousDbt: vi.fn() };
+  return (input: Parameters<typeof runActivityIntegrityDbtBuild>[0]) =>
+    runActivityIntegrityDbtBuild(input, client, owner);
+}
+function repairActivityDataIntegrity(
+  db: ActivityIntegrityDatabase,
+  client: Parameters<typeof repairActivityDataIntegrityActual>[1],
+  options: ActivityIntegrityRepairOptions,
+  dependencies: Partial<Parameters<typeof repairActivityDataIntegrityActual>[3]> = {},
+) {
+  return repairActivityDataIntegrityActual(db, client, options, {
+    ...dependencies,
+    rebuildReadModels: dependencies.rebuildReadModels ?? fixtureRebuild(client),
+  });
+}
+function rollbackActivityDataIntegrity(
+  db: ActivityIntegrityDatabase,
+  client: Parameters<typeof rollbackActivityDataIntegrityActual>[1],
+  path: string,
+  dependencies: Partial<Parameters<typeof rollbackActivityDataIntegrityActual>[3]> = {},
+) {
+  return rollbackActivityDataIntegrityActual(db, client, path, {
+    ...dependencies,
+    rebuildReadModels: dependencies.rebuildReadModels ?? fixtureRebuild(client),
+  });
+}
 
 const dialect = new PgDialect();
 const userId = "00000000-0000-4000-8000-000000000001";
@@ -500,6 +527,7 @@ describe("repairActivityDataIntegrity", () => {
           eventTimeEnd: new Date("2026-09-03"),
         },
         clickhouse,
+        expect.objectContaining({ client: clickhouse }),
       );
       expect(repairJournalState.record?.phase).toBe(fails ? "rebuild_failed" : "executed");
       expect(
@@ -1792,6 +1820,7 @@ describe("rollbackActivityDataIntegrity", () => {
           eventTimeEnd: new Date("2026-09-03"),
         },
         clickhouse,
+        expect.objectContaining({ client: clickhouse }),
       );
       expect(repairJournalState.record?.phase).toBe(fails ? "rollback_committed" : "rolled_back");
       expect(JSON.parse(await readFile(result.artifactPath, "utf8"))).toMatchObject({

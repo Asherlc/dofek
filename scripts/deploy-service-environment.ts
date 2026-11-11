@@ -2,6 +2,22 @@ import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseEnv } from "node:util";
 
+const KAFKA_TIERED_STORAGE_KEYS = [
+  "KAFKA_TIERED_STORAGE_BUCKET",
+  "KAFKA_TIERED_STORAGE_ENDPOINT",
+  "KAFKA_TIERED_STORAGE_REGION",
+  "KAFKA_TIERED_STORAGE_ACCESS_KEY_ID",
+  "KAFKA_TIERED_STORAGE_SECRET_ACCESS_KEY",
+] as const;
+const KAFKA_BROKER_ENV_RENAMES = new Map<string, string>([
+  ["KAFKA_CLUSTER_ID", "CLUSTER_ID"],
+  ["KAFKA_TIERED_STORAGE_BUCKET", "KAFKA_RSM_CONFIG_STORAGE_S3_BUCKET_NAME"],
+  ["KAFKA_TIERED_STORAGE_ENDPOINT", "KAFKA_RSM_CONFIG_STORAGE_S3_ENDPOINT_URL"],
+  ["KAFKA_TIERED_STORAGE_REGION", "KAFKA_RSM_CONFIG_STORAGE_S3_REGION"],
+  ["KAFKA_TIERED_STORAGE_ACCESS_KEY_ID", "AWS_ACCESS_KEY_ID"],
+  ["KAFKA_TIERED_STORAGE_SECRET_ACCESS_KEY", "AWS_SECRET_ACCESS_KEY"],
+]);
+
 const DEPLOY_SERVICE_NAMES = [
   "analyticsWorker",
   "cdcHealth",
@@ -12,6 +28,7 @@ const DEPLOY_SERVICE_NAMES = [
   "web",
   "webPreMigration",
   "worker",
+  "kafka",
   "metricStreamClickhouseSink",
   "metricStreamLiveClickhouseSink",
   "metricStreamHistoryClickhouseSink",
@@ -32,6 +49,7 @@ export const DEPLOY_SERVICE_ENVIRONMENT_FILE_NAMES = {
   web: "web.env",
   webPreMigration: "web-pre-migration.env",
   worker: "worker.env",
+  kafka: "kafka.env",
   metricStreamClickhouseSink: "metric-stream-clickhouse-sink.env",
   metricStreamLiveClickhouseSink: "metric-stream-live-clickhouse-sink.env",
   metricStreamHistoryClickhouseSink: "metric-stream-history-clickhouse-sink.env",
@@ -202,6 +220,10 @@ const DEPLOY_SERVICE_ENVIRONMENT_POLICIES: Record<
   DeployServiceName,
   DeployServiceEnvironmentPolicy
 > = {
+  kafka: {
+    allowedKeys: ["KAFKA_CLUSTER_ID", ...KAFKA_TIERED_STORAGE_KEYS],
+    requiredKeys: ["KAFKA_CLUSTER_ID", ...KAFKA_TIERED_STORAGE_KEYS],
+  },
   analyticsWorker: {
     allowedKeys: ["CLICKHOUSE_PASSWORD", "SENTRY_DSN", "SENTRY_DSN_unencrypted"],
     requiredKeys: ["CLICKHOUSE_PASSWORD"],
@@ -239,6 +261,8 @@ const DEPLOY_SERVICE_ENVIRONMENT_POLICIES: Record<
   },
   worker: {
     allowedKeys: [
+      "KAFKA_CLUSTER_ID",
+      ...KAFKA_TIERED_STORAGE_KEYS,
       "METRIC_STREAM_LEGACY_TOPIC",
       ...APPLICATION_ENVIRONMENT_KEYS,
       "AXIOM_API_TOKEN",
@@ -258,6 +282,8 @@ const DEPLOY_SERVICE_ENVIRONMENT_POLICIES: Record<
       "SENTRY_ORG",
     ],
     requiredKeys: [
+      "KAFKA_CLUSTER_ID",
+      ...KAFKA_TIERED_STORAGE_KEYS,
       "METRIC_STREAM_LEGACY_TOPIC",
       ...COMMON_APPLICATION_REQUIRED_KEYS,
       "AXIOM_API_TOKEN",
@@ -321,6 +347,7 @@ const DEPLOY_SERVICE_ENVIRONMENT_POLICIES: Record<
 };
 
 export interface DeployServiceEnvironmentPaths {
+  kafka: string;
   analyticsWorker: string;
   cdcHealth: string;
   cdcOperations: string;
@@ -353,6 +380,7 @@ function readRawAssignments(source: string): ReadonlyMap<string, string> {
 
 function resolvePaths(outputDirectory: string): DeployServiceEnvironmentPaths {
   return {
+    kafka: join(outputDirectory, DEPLOY_SERVICE_ENVIRONMENT_FILE_NAMES.kafka),
     analyticsWorker: join(outputDirectory, DEPLOY_SERVICE_ENVIRONMENT_FILE_NAMES.analyticsWorker),
     cdcHealth: join(outputDirectory, DEPLOY_SERVICE_ENVIRONMENT_FILE_NAMES.cdcHealth),
     cdcOperations: join(outputDirectory, DEPLOY_SERVICE_ENVIRONMENT_FILE_NAMES.cdcOperations),
@@ -411,15 +439,31 @@ export function renderDeployServiceEnvironmentFiles(
     }
   }
 
+  if (!/^[A-Za-z0-9_-]{22}$/.test(environment.KAFKA_CLUSTER_ID ?? "")) {
+    throw new Error("KAFKA_CLUSTER_ID must be a 22-character Kafka UUID");
+  }
+  if (environment.KAFKA_TIERED_STORAGE_REGION !== "auto") {
+    throw new Error("KAFKA_TIERED_STORAGE_REGION must be auto for the qualified R2 endpoint");
+  }
+
   mkdirSync(outputDirectory, { mode: 0o700, recursive: true });
   chmodSync(outputDirectory, 0o700);
   const paths = resolvePaths(outputDirectory);
 
   for (const serviceName of DEPLOY_SERVICE_NAMES) {
     const lines = DEPLOY_SERVICE_ENVIRONMENT_POLICIES[serviceName].allowedKeys.flatMap((key) => {
+      if (key === "KAFKA_CLUSTER_ID") {
+        const targetKey = serviceName === "kafka" ? "CLUSTER_ID" : key;
+        return [`${targetKey}=${environment.KAFKA_CLUSTER_ID}`];
+      }
       const assignment = assignments.get(key);
-      return assignment === undefined ? [] : [assignment];
+      const targetKey = serviceName === "kafka" ? KAFKA_BROKER_ENV_RENAMES.get(key) : key;
+      if (!targetKey) throw new Error(`Missing Kafka environment mapping: ${key}`);
+      return assignment === undefined ? [] : [`${targetKey}${assignment.slice(key.length)}`];
     });
+    if (serviceName === "kafka") {
+      lines.push(`KAFKA_RSM_CONFIG_KEY_PREFIX=${environment.KAFKA_CLUSTER_ID}/`);
+    }
     const route = DEPLOY_SERVICE_ENVIRONMENT_POLICIES[serviceName].metricStreamRoute;
     if (route) {
       const assignment = assignments.get(route.topicKey);

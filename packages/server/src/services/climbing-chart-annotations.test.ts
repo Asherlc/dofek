@@ -3,6 +3,31 @@ import { climbingLogEntryFixture } from "../repositories/climbing-test-helpers.t
 import { climbingChartAnnotations } from "./climbing-chart-annotations.ts";
 
 describe("climbing chart annotations", () => {
+  it.each([
+    ["Twist by Two", "2026-11-10T01:48:51.544160Z", "2026-11-10T01:48:51.544Z"],
+    ["warm 1", "2026-11-10T01:53:24.245074Z", "2026-11-10T01:53:24.245Z"],
+  ])("plots Kilter log time for %s", (title, createdAt, startedAt) => {
+    const entry = climbingLogEntryFixture({
+      providerId: "kilter",
+      externalId: "kilter:log:123",
+      title,
+      displayGrade: "V3",
+      raw: { createdAt, attempts: 1 },
+    });
+    expect(climbingChartAnnotations(entry)).toEqual([
+      { id: entry.id, label: `${title} · V3`, startedAt, endedAt: null },
+    ]);
+  });
+  it.each([null, [], {}, { createdAt: "not a time" }, { createdAt: "2026-11-10" }])(
+    "leaves Kilter logs with incomplete source timing without markers: %j",
+    (raw) => {
+      expect(
+        climbingChartAnnotations(
+          climbingLogEntryFixture({ providerId: "kilter", externalId: "kilter:log:123", raw }),
+        ),
+      ).toEqual([]);
+    },
+  );
   it("plots the actual timestamp format retained by KAYA CSV exports", () => {
     const entry = climbingLogEntryFixture({
       providerId: "kaya-export",

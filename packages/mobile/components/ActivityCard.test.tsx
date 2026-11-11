@@ -9,7 +9,7 @@ describe("ActivityCard", () => {
     activityType: "running",
     primaryActivityType: null,
     startedAt: "2026-03-18T07:00:00Z",
-    endedAt: "2026-03-18T07:45:00Z",
+    durationMin: 45,
     avgHr: null,
     maxHr: null,
     avgPower: null,
@@ -21,6 +21,13 @@ describe("ActivityCard", () => {
   it("renders activity name", () => {
     render(<ActivityCard {...baseProps} />);
     expect(screen.getByText("Morning Run")).toBeTruthy();
+  });
+
+  it("shows an unknown duration without claiming zero minutes", () => {
+    render(<ActivityCard {...baseProps} durationMin={null} />);
+
+    expect(screen.getByText(/Duration unavailable/)).toBeTruthy();
+    expect(screen.queryByText("0m")).toBeNull();
   });
 
   it("uses the primary activity type when its name is missing", () => {
@@ -81,6 +88,36 @@ describe("ActivityCard", () => {
     expect(screen.getByText("km")).toBeTruthy();
   });
 
+  it("omits unavailable distance for a climbing primary activity", () => {
+    render(
+      <ActivityCard
+        {...baseProps}
+        activityType="cardio"
+        primaryActivityType="climbing"
+        distanceKm={null}
+        distanceState={{ status: "missing", reason: "Distance not recorded" }}
+      />,
+    );
+
+    expect(screen.queryByText("Distance unavailable")).toBeNull();
+    expect(screen.queryByText("Distance not recorded")).toBeNull();
+  });
+
+  it("keeps a measured distance for a climbing primary activity", () => {
+    render(
+      <ActivityCard
+        {...baseProps}
+        activityType="cardio"
+        primaryActivityType="climbing"
+        distanceKm={5.25}
+        distanceState={{ status: "available" }}
+      />,
+    );
+
+    expect(screen.getByText("5.25")).toBeTruthy();
+    expect(screen.getByText("Distance")).toBeTruthy();
+  });
+
   it("shows distance in miles when unit system is imperial", () => {
     render(
       <ActivityCard
@@ -127,20 +164,14 @@ describe("ActivityCard", () => {
   });
 
   it("parses postgres-style space-separated timestamps", () => {
-    render(
-      <ActivityCard
-        {...baseProps}
-        startedAt="2026-03-18 07:00:00+00"
-        endedAt="2026-03-18 07:45:00+00"
-      />,
-    );
+    render(<ActivityCard {...baseProps} startedAt="2026-03-18 07:00:00+00" />);
     // Should NOT show placeholders — timestamps are valid
     expect(screen.queryByText("-- · --")).toBeNull();
   });
 
   it("falls back to placeholders for invalid timestamps", () => {
-    render(<ActivityCard {...baseProps} startedAt="not-a-date" endedAt="still-not-a-date" />);
-    expect(screen.getByText("-- · --")).toBeTruthy();
+    render(<ActivityCard {...baseProps} startedAt="not-a-date" />);
+    expect(screen.getByText(/-- · 45m/)).toBeTruthy();
     expect(screen.queryByText("Invalid Date")).toBeNull();
     expect(screen.queryByText("NaNh")).toBeNull();
   });

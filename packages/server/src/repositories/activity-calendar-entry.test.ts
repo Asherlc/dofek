@@ -8,6 +8,26 @@ import {
 import { makeActivityRow } from "./activity-calendar-test-helpers.ts";
 
 describe("activity calendar entries", () => {
+  it("retains unknown duration through SQL row parsing, calendar output and training stress", () => {
+    const row = activityRowSchema.parse({
+      ...makeActivityRow(),
+      duration_min: null,
+      ended_at: null,
+      power_tss: 88,
+    });
+    expect(row.duration_min).toBeNull();
+    const entry = createActiveCalendarEntry(row, {});
+    expect(entry.durationMin).toBeNull();
+    expect(entry.tss).toBeNull();
+    expect(entry.stats).toEqual([
+      {
+        status: "missing",
+        label: "Training Stress Score",
+        reason: "Record an activity duration greater than zero.",
+      },
+    ]);
+  });
+
   it("uses canonical per-activity power stress even without heart rate", () => {
     const row = activityRowSchema.parse({
       ...makeActivityRow({ avg_hr: null, max_hr: null, avg_power: 50 }),

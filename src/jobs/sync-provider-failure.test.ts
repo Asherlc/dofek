@@ -79,10 +79,7 @@ describe("sync-provider-failure", () => {
 
   it.each([
     ["The activity attachment is missing.", "The activity attachment is missing."],
-    [
-      { unexpected: "provider response" },
-      "Garmin data could not be processed. Your existing data is still available.",
-    ],
+    [{ unexpected: "provider response" }, "Garmin data could not be processed."],
   ])("records a safe push outcome when rejection is %j", async (failure, expected) => {
     const provider = createMockProvider({
       id: "garmin",
@@ -140,7 +137,7 @@ describe("sync-provider-failure", () => {
     {
       message:
         "Failed query: SELECT secret FROM fitness.oauth_token\n    at query (/app/worker.ts:1)",
-      expected: "Garmin data could not be processed. Your existing data is still available.",
+      expected: "Garmin data could not be processed.",
     },
   ])("retains a safe push failure cause for $message", async ({ message, expected }) => {
     const provider = createMockProvider({

@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
 import {
-  createClickHouseTestActivitySensorStore,
+  createClickHouseTestActivitySensorReaderStore,
   executeClickHouseTestCommand,
 } from "../routers/clickhouse-integration-test-helpers.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
@@ -14,6 +14,7 @@ const staggeredStreamActivityId = "66666666-6666-6666-6666-666666666666";
 const powerActivityId = "77777777-7777-7777-7777-777777777777";
 const overlappingPowerActivityId = "88888888-8888-8888-8888-888888888888";
 const window = {
+  providerType: null,
   activityId,
   userId,
   startedAt: "2026-07-01T12:00:00.000Z",
@@ -47,7 +48,7 @@ describe("ClickHouseActivitySensorStore read-model lifecycle rows", () => {
 
   beforeAll(async () => {
     testContext = await setupTestDatabase();
-    sensorStore = await createClickHouseTestActivitySensorStore(testContext);
+    sensorStore = await createClickHouseTestActivitySensorReaderStore(testContext);
   });
 
   afterAll(async () => {
@@ -72,6 +73,15 @@ describe("ClickHouseActivitySensorStore read-model lifecycle rows", () => {
       `,
     );
 
+    await expect(
+      sensorStore.getStream(
+        { ...liveStreamWindow, endedAt: null, providerType: "climbing_log" },
+        500,
+      ),
+    ).resolves.toEqual([]);
+    await expect(
+      sensorStore.getStream({ ...liveStreamWindow, endedAt: null }, 500),
+    ).resolves.toHaveLength(1);
     await expect(sensorStore.getStream(liveStreamWindow, 500)).resolves.toEqual([
       {
         recorded_at: "2026-07-01T12:15:00.000Z",
