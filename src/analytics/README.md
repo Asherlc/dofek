@@ -29,7 +29,7 @@ numerical package continues rejecting invalid direct inputs. The
 verifies that invalid coverage produces unavailable NP without failing the build.
 
 [`run-analytics-build.ts`](../../scripts/run-analytics-build.ts) runs this stage
-after successful dbt input builds, then builds threshold-dependent healthspan
+after successful dbt input builds, then builds threshold and activity-power
 models before recording the combined processing result.
 Outstanding projection work prevents processing success and cache warming.
 Deletion and recomputation jobs await the same serialized analytics writer via
@@ -42,3 +42,10 @@ Both observation and history writes use the existing account-erasure fence insid
 `INSERT … SELECT`, and fenced accounts are excluded from dirty-user selection.
 The [race fixtures](cycling-power-projector.integration.test.ts) activate erasure
 between source reads and each persistence boundary.
+
+History publication sends its event tuples as JSONEachRow request-body data
+through ClickHouse's [`input()` table function](https://clickhouse.com/docs/sql-reference/table-functions/input),
+keeping only compact metadata in HTTP query parameters. This preserves the
+fenced `INSERT … SELECT` while avoiding the per-field HTTP parameter limit;
+the [long-history regression](cycling-power-projector.integration.test.ts)
+round-trips evidence larger than 128 KiB.

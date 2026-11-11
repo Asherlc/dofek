@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { KilterBoardClient } from "./kilter-board-client.ts";
+import type { KilterBoardDirectory } from "./kilter-board-directory.ts";
 
 const tokens = {
   accessToken: "access",
@@ -23,13 +24,188 @@ const grades = [
   { difficultyGradeId: 20, vScale: "V5", fontScale: "6C" },
   { difficultyGradeId: 22, vScale: "V6", fontScale: "7A" },
 ];
+function nativeLogs(logs: unknown) {
+  if (!Array.isArray(logs)) return [];
+  return logs.flatMap((log) =>
+    log && typeof log.logUuid === "string" && typeof log.climbUuid === "string"
+      ? [
+          {
+            log_uuid: log.logUuid.trim(),
+            climb_uuid: log.climbUuid.trim(),
+            angle: log.angle ?? null,
+            attempts: log.attempts ?? null,
+          },
+        ]
+      : [],
+  );
+}
+const emptyDirectory = { fetch: async () => ({ walls: [], gyms: [], logs: [] }) };
 function client(logs: unknown, gradeList: unknown = grades) {
-  return new KilterBoardClient(async (input) =>
-    Response.json(String(input).endsWith("/grades") ? gradeList : logs),
+  return new KilterBoardClient(
+    async (input) => Response.json(String(input).endsWith("/grades") ? gradeList : logs),
+    { fetch: async () => ({ walls: [], gyms: [], logs: nativeLogs(logs) }) },
   );
 }
 
 describe("KilterBoardClient", () => {
+  const syncedLog = { log_uuid: "log-one", climb_uuid: "problem", angle: 40, attempts: 3 };
+  it("uses the app-sync attempt count when REST reports a lower count for the same log", async () => {
+    const restLog = { ...log, attempts: 1, topped: false };
+    const instance = new KilterBoardClient(
+      async (input) => Response.json(String(input).endsWith("/grades") ? grades : [restLog]),
+      { fetch: async () => ({ walls: [], gyms: [], logs: [syncedLog] }) },
+    );
+    const result = await instance.fetchLogbook(tokens, vi.fn());
+    expect(result.entries[0]).toMatchObject({
+      reportedAttemptCounts: [{ scope: "climb", count: 3 }],
+      raw: { ...restLog, syncLog: syncedLog },
+    });
+  });
+  it.each(
+    [
+      [],
+      [{ ...syncedLog, climb_uuid: "another-problem" }],
+      [{ ...syncedLog, angle: 45 }],
+      [syncedLog, { ...syncedLog, log_uuid: "missing-from-rest" }],
+    ].map((logs) => ({ logs })),
+  )(
+    "rejects inconsistent source identities before authoritative reconciliation: %j",
+    async ({ logs }) => {
+      const instance = new KilterBoardClient(
+        async (input) => Response.json(String(input).endsWith("/grades") ? grades : [log]),
+        { fetch: async () => ({ walls: [], gyms: [], logs }) },
+      );
+      await expect(instance.fetchLogbook(tokens, vi.fn())).rejects.toThrow(/app.sync.*log/i);
+    },
+  );
+  it("does not retire logs when an empty REST response disagrees with app sync", async () => {
+    const instance = new KilterBoardClient(async () => Response.json([]), {
+      fetch: async () => ({ walls: [], gyms: [], logs: [syncedLog] }),
+    });
+    await expect(instance.fetchLogbook(tokens, vi.fn())).rejects.toThrow(/app.sync.*log/i);
+  });
+
+  const snapshot = {
+    logs: nativeLogs([log]),
+    walls: [
+      { wall_uuid: "wall-a", name: "Original 12 x 12", gym_uuid: "gym-a" },
+      { wall_uuid: "wall-b", name: "Home wall", gym_uuid: "gym-b" },
+    ],
+    gyms: [
+      { gym_uuid: "gym-a", name: "Gym A", latitude: 0, longitude: -120 },
+      { gym_uuid: "gym-b", name: "Gym B", latitude: null, longitude: null },
+    ],
+  };
+  function directoryClient(logs: unknown, directory: Pick<KilterBoardDirectory, "fetch">) {
+    return new KilterBoardClient(
+      async (input) => Response.json(String(input).endsWith("/grades") ? grades : logs),
+      {
+        fetch: async (...args) => ({ ...(await directory.fetch(...args)), logs: nativeLogs(logs) }),
+      },
+    );
+  }
+  it("resolves each log's physical board and gym without changing shared problem identity or raw facts", async () => {
+    const source = [
+      { ...log, wallUuid: "wall-a", gymUuid: "gym-a" },
+      { ...log, logUuid: "two", wallUuid: "wall-b" },
+    ];
+    const directory = { fetch: vi.fn<KilterBoardDirectory["fetch"]>(async () => snapshot) };
+    const result = await directoryClient(source, directory).fetchLogbook(tokens, vi.fn());
+    expect(result.entries).toMatchObject([
+      {
+        board: { name: "Original 12 x 12", externalId: "wall-a" },
+        areas: [
+          { externalId: "gym-a", name: "Gym A", coordinates: { latitude: 0, longitude: -120 } },
+        ],
+        climb: { externalId: "problem" },
+        raw: source[0],
+      },
+      {
+        board: { name: "Home wall", externalId: "wall-b" },
+        areas: [{ externalId: "gym-b", name: "Gym B", coordinates: null }],
+        climb: { externalId: "problem" },
+        raw: source[1],
+      },
+    ]);
+    expect(directory.fetch).toHaveBeenCalledOnce();
+    const getCredentials = directory.fetch.mock.calls[0]?.[0];
+    expect(await getCredentials?.(new AbortController().signal)).toEqual({
+      token: "access",
+      expiresAt: tokens.expiresAt,
+    });
+  });
+  it("resolves an explicit gym without a wall record and leaves unknown board facts unknown", async () => {
+    const result = await directoryClient([{ ...log, wallUuid: "missing", gymUuid: "gym-a" }], {
+      fetch: async () => snapshot,
+    }).fetchLogbook(tokens, vi.fn());
+    expect(result.entries[0]).toMatchObject({
+      board: { name: "Kilter Board", externalId: "missing" },
+      areas: [{ name: "Gym A" }],
+    });
+  });
+  it("does not invent a gym for unknown IDs or a home wall", async () => {
+    const result = await directoryClient(
+      [
+        { ...log, wallUuid: "missing" },
+        { ...log, logUuid: "two", wallUuid: "home" },
+      ],
+      {
+        fetch: async () => ({
+          ...snapshot,
+          walls: [{ wall_uuid: "home", name: "My board", gym_uuid: null }],
+        }),
+      },
+    ).fetchLogbook(tokens, vi.fn());
+    expect(result.entries.map((entry) => entry.areas)).toEqual([[], []]);
+    expect(result.entries[1]?.board?.name).toBe("My board");
+  });
+  it("rejects contradictory logged and directory gym identities", async () => {
+    await expect(
+      directoryClient([{ ...log, wallUuid: "wall-a", gymUuid: "gym-b" }], {
+        fetch: async () => snapshot,
+      }).fetchLogbook(tokens, vi.fn()),
+    ).rejects.toThrow(/conflicting gym/i);
+  });
+  it("propagates directory failure before declaring a logbook authoritative", async () => {
+    await expect(
+      directoryClient([{ ...log, wallUuid: "wall-a" }], {
+        fetch: async () => {
+          throw new Error("Directory unavailable");
+        },
+      }).fetchLogbook(tokens, vi.fn()),
+    ).rejects.toThrow("Directory unavailable");
+  });
+  it("reads app-sync counts even without board or gym identifiers", async () => {
+    const directory = { fetch: vi.fn<KilterBoardDirectory["fetch"]>(async () => snapshot) };
+    expect(
+      (await directoryClient([log], directory).fetchLogbook(tokens, vi.fn())).entries,
+    ).toHaveLength(1);
+    expect(directory.fetch).toHaveBeenCalledOnce();
+  });
+  it("renews rejected directory authorization once and persists it before retrying", async () => {
+    const persist = vi.fn();
+    const directory = { fetch: vi.fn<KilterBoardDirectory["fetch"]>() };
+    directory.fetch.mockRejectedValueOnce(Object.assign(new Error("Rejected"), { status: 401 }));
+    directory.fetch.mockImplementationOnce(async (credentials) => {
+      expect(persist).toHaveBeenCalledOnce();
+      expect(await credentials(new AbortController().signal)).toMatchObject({ token: "renewed" });
+      return snapshot;
+    });
+    const instance = new KilterBoardClient(async (input) => {
+      if (String(input).includes("/token"))
+        return Response.json({
+          access_token: "renewed",
+          refresh_token: "rotated",
+          expires_in: 300,
+        });
+      return Response.json(
+        String(input).endsWith("/grades") ? grades : [{ ...log, wallUuid: "wall-a" }],
+      );
+    }, directory);
+    await expect(instance.fetchLogbook(tokens, persist)).resolves.toMatchObject({
+      authoritative: true,
+    });
+  });
   it("rejects a grade catalog record missing its required identity", async () => {
     vi.resetModules();
     const { KilterBoardClient: FreshKilterBoardClient } = await import("./kilter-board-client.ts");
@@ -61,31 +237,43 @@ describe("KilterBoardClient", () => {
   it("initializes schemas that preserve normalized tokens, offset dates and personal grades", async () => {
     vi.resetModules();
     const { KilterBoardClient: FreshKilterBoardClient } = await import("./kilter-board-client.ts");
-    const instance = new FreshKilterBoardClient(async (input) => {
-      if (String(input).includes("/token"))
-        return Response.json({
-          access_token: " access ",
-          refresh_token: " refresh ",
-          expires_in: 300,
-        });
-      if (String(input).endsWith("/grades")) return Response.json(grades);
-      return Response.json([
-        {
-          ...log,
-          logUuid: " normalized-log ",
-          climbUuid: " normalized-climb ",
-          createdAt: "2026-10-02T00:30:00+02:00",
-          climbRating: { angle: 40, difficultyGradeId: 22, comment: "Personal rating" },
-        },
-      ]);
-    });
+    const instance = new FreshKilterBoardClient(
+      async (input) => {
+        if (String(input).includes("/token"))
+          return Response.json({
+            access_token: " access ",
+            refresh_token: " refresh ",
+            expires_in: 300,
+          });
+        if (String(input).endsWith("/grades")) return Response.json(grades);
+        return Response.json([
+          {
+            ...log,
+            logUuid: " normalized-log ",
+            climbUuid: " normalized-climb ",
+            createdAt: "2026-10-02T00:30:00+02:00",
+            climbRating: { angle: 40, difficultyGradeId: 22, comment: "Personal rating" },
+          },
+        ]);
+      },
+      {
+        fetch: async () => ({
+          walls: [],
+          gyms: [],
+          logs: [
+            { log_uuid: "normalized-log", climb_uuid: "normalized-climb", angle: 40, attempts: 3 },
+          ],
+        }),
+      },
+    );
     const connected = await instance.login("user", "password");
     expect(connected).toMatchObject({ accessToken: "access", refreshToken: "refresh" });
     const result = await instance.fetchLogbook(connected, vi.fn());
     expect(result.entries).toHaveLength(1);
     expect(result.entries[0]).toMatchObject({
       externalId: "kilter:log:normalized-log",
-      climbedOn: "2026-10-01",
+      climbedOn: null,
+      activityObservation: { recordedAt: "2026-10-02T00:30:00+02:00", gymExternalId: null },
       wallAngle: { value: 40, unit: "degrees" },
       climb: { externalId: "normalized-climb" },
       notes: "Personal rating",
@@ -172,7 +360,7 @@ describe("KilterBoardClient", () => {
     ).rejects.toThrow(/did not issue a refreshable/);
     const fetchFn = vi.fn<typeof fetch>();
     await expect(
-      new KilterBoardClient(fetchFn).fetchLogbook(
+      new KilterBoardClient(fetchFn, emptyDirectory).fetchLogbook(
         { ...tokens, refreshToken: null, expiresAt: new Date(0) },
         vi.fn(),
       ),
@@ -202,7 +390,7 @@ describe("KilterBoardClient", () => {
           String(input).endsWith("/logs") ? "Bearer new" : null,
         );
         return Response.json([]);
-      });
+      }, emptyDirectory);
       await instance.fetchLogbook(
         { ...tokens, expiresAt: new Date(now), providerAccountId: "owner" },
         persist,
@@ -218,7 +406,7 @@ describe("KilterBoardClient", () => {
       Response.json({ access_token: "new", refresh_token: "new-refresh", expires_in: 300 }),
     );
     await expect(
-      new KilterBoardClient(fetchFn).fetchLogbook(
+      new KilterBoardClient(fetchFn, emptyDirectory).fetchLogbook(
         { ...tokens, expiresAt: new Date(0) },
         vi.fn().mockRejectedValue(new Error("storage unavailable")),
       ),
@@ -235,7 +423,10 @@ describe("KilterBoardClient", () => {
           : new Response(null, { status }),
       );
       await expect(
-        new KilterBoardClient(fetchFn).fetchLogbook({ ...tokens, expiresAt: new Date(0) }, vi.fn()),
+        new KilterBoardClient(fetchFn, emptyDirectory).fetchLogbook(
+          { ...tokens, expiresAt: new Date(0) },
+          vi.fn(),
+        ),
       ).rejects.toThrow(/authorization expired or was rejected/);
       expect(fetchFn).toHaveBeenCalledTimes(2);
     },
@@ -268,7 +459,8 @@ describe("KilterBoardClient", () => {
       [{ difficultyGradeId: 0, vScale: "unrecognized", fontScale: " " }],
     ).fetchLogbook(tokens, vi.fn());
     expect(result.entries[0]).toMatchObject({
-      climbedOn: "2026-10-01",
+      climbedOn: null,
+      activityObservation: { recordedAt: "2026-10-02T00:30:00+02:00", gymExternalId: null },
       discipline: "rock_climbing",
       sourceName: "Kilter Board",
       board: { name: "Kilter Board", externalId: "wall" },
@@ -300,6 +492,29 @@ describe("KilterBoardClient", () => {
     expect(result.entries[0]?.notes).toBeNull();
   });
 
+  it("maps a native gym identity and preserves the original offset/microsecond instant", async () => {
+    const source = {
+      ...log,
+      gymUuid: " gym-1 ",
+      createdAt: "2026-11-10T01:48:51.544160Z",
+    };
+    const result = await client([source]).fetchLogbook(tokens, vi.fn());
+    expect(result.entries[0]?.activityObservation).toEqual({
+      recordedAt: "2026-11-10T01:48:51.544160Z",
+      gymExternalId: "gym-1",
+    });
+    expect(result.entries[0]?.climbedOn).toBeNull();
+    expect(result.entries[0]?.raw).toEqual({ ...source, syncLog: nativeLogs([source])[0] });
+  });
+
+  it("treats a blank native gym identity as unknown", async () => {
+    const result = await client([{ ...log, gymUuid: "  " }]).fetchLogbook(tokens, vi.fn());
+    expect(result.entries[0]?.activityObservation).toEqual({
+      recordedAt: log.createdAt,
+      gymExternalId: null,
+    });
+  });
+
   it("ignores blank matching rating comments and retains unknown catalog grades", async () => {
     const result = await client(
       [{ ...log, climbRating: { angle: 40, comment: " " } }],
@@ -322,8 +537,9 @@ describe("KilterBoardClient", () => {
     expect(result.entries).toEqual([
       expect.objectContaining({
         externalId: "kilter:log:log-one",
-        climbedOn: "2026-10-01",
-        raw: source,
+        climbedOn: null,
+        activityObservation: { recordedAt: log.createdAt, gymExternalId: null },
+        raw: { ...source, syncLog: nativeLogs([source])[0] },
         wallAngle: { value: 40, unit: "degrees" },
         reportedGrades: [
           { value: "V5", system: "v_scale" },
@@ -370,7 +586,7 @@ describe("KilterBoardClient", () => {
   it("retains the untouched upstream payload independently of parsed IDs", async () => {
     const raw = { ...log, logUuid: " log-one " };
     const result = await client([raw]).fetchLogbook(tokens, vi.fn());
-    expect(result.entries[0]?.raw).toEqual(raw);
+    expect(result.entries[0]?.raw).toEqual({ ...raw, syncLog: nativeLogs([raw])[0] });
   });
 
   it.each([
@@ -428,7 +644,7 @@ describe("KilterBoardClient", () => {
       );
       return Response.json([]);
     });
-    const instance = new KilterBoardClient(fetchFn);
+    const instance = new KilterBoardClient(fetchFn, emptyDirectory);
     const connected = await instance.login("me@example.com", "private-password");
     expect(requests[0]?.body.get("grant_type")).toBe("password");
     expect(requests[0]?.body.get("username")).toBe("me@example.com");
@@ -453,7 +669,7 @@ describe("KilterBoardClient", () => {
       expect(persist).toHaveBeenCalledOnce();
       expect(new Headers(init?.headers).get("authorization")).toBe("Bearer new");
       return Response.json([]);
-    });
+    }, emptyDirectory);
     await expect(instance.fetchLogbook(tokens, persist)).resolves.toMatchObject({ entries: [] });
     expect(logCalls).toBe(2);
   });

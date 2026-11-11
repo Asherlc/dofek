@@ -18,7 +18,7 @@ import { runIntegrationTimingCommand } from "./update-integration-test-timings.t
 
 const roots: string[] = [];
 const contexts: Vitest[] = [];
-function required<T>(value: T | undefined): T {
+function required<FixtureValue>(value: FixtureValue | undefined): FixtureValue {
   if (value === undefined) throw new Error("Missing fixture value");
   return value;
 }
@@ -53,9 +53,9 @@ function rootFixture() {
     JSON.stringify({
       schemaVersion: 1,
       provenance,
-      files: [0, 1, 2, 3].map((i) => ({
+      files: [0, 1, 2, 3, 4].map((fileIndex) => ({
         project: "integration",
-        file: `src/${i}.integration.test.ts`,
+        file: `src/${fileIndex}.integration.test.ts`,
         durationMs: 10,
       })),
     }),
@@ -66,12 +66,14 @@ async function fixture() {
   const root = rootFixture();
   const context = await createVitest(
     "test",
-    { root, config: false, watch: false, name: "integration", pool: "forks", shard: "1/4" },
+    { root, config: false, watch: false, name: "integration", pool: "forks", shard: "1/5" },
     { server: { middlewareMode: true } },
   );
   contexts.push(context);
-  const specs = [0, 1, 2, 3].map((i) =>
-    context.getRootProject().createSpecification(join(root, `src/${i}.integration.test.ts`)),
+  const specs = [0, 1, 2, 3, 4].map((fileIndex) =>
+    context
+      .getRootProject()
+      .createSpecification(join(root, `src/${fileIndex}.integration.test.ts`)),
   );
   const reporter = new IntegrationTimingReporter();
   reporter.onInit(context);
@@ -103,7 +105,7 @@ async function fixture() {
     if (module?.type !== "module") throw new Error("Missing fixture module");
     return module;
   });
-  const directory = join(root, "reports/integration-sharding/1-of-4");
+  const directory = join(root, "reports/integration-sharding/1-of-5");
   return { root, directory, context, reporter, selected, completed, modules };
 }
 describe("integration timing reporter", () => {
@@ -168,9 +170,9 @@ describe("integration timing reporter", () => {
 function runnerFixture(index: number, body = "expect(1).toBe(1)") {
   const root = rootFixture();
   symlinkSync(resolve("node_modules"), join(root, "node_modules"), "dir");
-  for (const i of [0, 1, 2, 3])
+  for (const fileIndex of [0, 1, 2, 3, 4])
     writeFileSync(
-      join(root, `src/${i}.integration.test.ts`),
+      join(root, `src/${fileIndex}.integration.test.ts`),
       `import { test, expect } from 'vitest'; test('kept', () => { ${body} }); test('other', () => expect(2).toBe(2));`,
     );
   writeFileSync(
@@ -191,12 +193,12 @@ export default defineConfig({ cacheDir: ${JSON.stringify(join(root, ".vitest-cac
         root,
         "--config",
         join(root, "vitest.config.ts"),
-        ...(sharded ? ["--shard", `${index}/4`] : []),
+        ...(sharded ? ["--shard", `${index}/5`] : []),
         ...extra,
       ],
       { cwd: root, env: { ...process.env, ...environment }, encoding: "utf8" },
     );
-  return { root, run, directory: join(root, `reports/integration-sharding/${index}-of-4`) };
+  return { root, run, directory: join(root, `reports/integration-sharding/${index}-of-5`) };
 }
 describe("real Vitest public timing lifecycle", () => {
   it("runs unsharded without a timing baseline or timing artifacts", () => {
@@ -206,8 +208,8 @@ describe("real Vitest public timing lifecycle", () => {
     expect(run.status, run.stdout + run.stderr).toBe(0);
     expect(existsSync(join(shard.root, "reports/integration-sharding"))).toBe(false);
   });
-  it("exports and merges four fresh child runners, while a warm run stays ineligible for export", () => {
-    const shards = [1, 2, 3, 4].map((index) => runnerFixture(index));
+  it("exports and merges five fresh child runners, while a warm run stays ineligible for export", () => {
+    const shards = [1, 2, 3, 4, 5].map((index) => runnerFixture(index));
     for (const shard of shards) {
       const run = shard.run();
       expect(run.status, run.stdout + run.stderr).toBe(0);
@@ -220,7 +222,7 @@ describe("real Vitest public timing lifecycle", () => {
       environment,
     );
     const baseline = JSON.parse(readFileSync(output, "utf8"));
-    expect(baseline.files).toHaveLength(4);
+    expect(baseline.files).toHaveLength(5);
     expect(
       baseline.files.every(
         (row: { durationMs: number }) => Number.isFinite(row.durationMs) && row.durationMs >= 0,

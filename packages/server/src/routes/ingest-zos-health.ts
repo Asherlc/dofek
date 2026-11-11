@@ -15,10 +15,8 @@ import {
   SPO2,
 } from "../../../../src/db/sensor-channels.ts";
 import type { MetricStreamRowInput } from "../../../../src/metric-stream/events.ts";
-import {
-  getDefaultMetricStreamEventPublisher,
-  type MetricStreamEventPublisher,
-} from "../../../../src/metric-stream/redpanda-producer.ts";
+import type { MetricStreamEventPublisher } from "../../../../src/metric-stream/publisher.ts";
+import { getDefaultMetricStreamEventPublisher } from "../../../../src/metric-stream/redpanda-producer.ts";
 import { writeMetricStreamRows } from "../../../../src/metric-stream/write-metric-stream.ts";
 import { validateCompanionToken } from "../companion/token-repository.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";

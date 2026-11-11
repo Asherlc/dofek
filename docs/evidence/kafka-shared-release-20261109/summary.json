@@ -1,0 +1,67 @@
+{
+  "source": "3350bbb7814063579fa2a268ccb23ca0aa4c087b",
+  "image": "ghcr.io/asherlc/dofek@sha256:54214d6276f03c5d96ae02ba75e91b7fc0fecd63c8b416ec36b7548a866a651b",
+  "buildRun": "https://github.com/Asherlc/dofek/actions/runs/42554799318",
+  "platform": "linux/arm64",
+  "node": "26.13.0",
+  "user": "1000:1000",
+  "entrypoint": [
+    "./entrypoint.sh"
+  ],
+  "sourceFilesMatched": 38,
+  "actualRetentionPhaseChecks": 5,
+  "allSixStructuralCheckpoints": true,
+  "dotPrefixAccepted": true,
+  "coveredNativeFilesBlock": true,
+  "retiredRedpandaBlocks": true,
+  "unexpectedTieringBlocks": true,
+  "generationChangeBlocks": true,
+  "threeSinkEnvironmentContracts": true,
+  "network": "none",
+  "nativeBrokerRestartRepeated": false,
+  "otherRetentionDependencies": "stubs; independent gates not qualified by this fixture",
+  "fixture": "Synthetic filesystem and Admin responses; actual packaged KafkaLogStorage and retention_verification. Not native cleanup/restart, complete worker startup, or full queue/API/DB qualification.",
+  "initialHarnessFailure": "Expected source/quarantine checkpoints in interleaved order; actual phase correctly groups source then quarantine. Harness now compares identical six-field objects by topic, with no application change.",
+  "mainComparison": {
+    "source": "afa8b6e46",
+    "identical": [
+      "src/metric-stream/clickhouse-sink.ts",
+      "src/metric-stream/events.ts",
+      "src/db/metric-stream-writer.ts",
+      "src/metric-stream/redpanda-consumer.ts",
+      "entrypoint.sh",
+      "drizzle/meta/_journal.json",
+      "src/db/clickhouse-migrations/"
+    ]
+  },
+  "cloudflarePlan": {
+    "source": "8a9c8de03c910a36f2f7dac397317e992324bf6e",
+    "run": "https://github.com/Asherlc/dofek/actions/runs/42549866789",
+    "result": "No changes",
+    "apply": false,
+    "qualifiesOciUserData": false
+  },
+  "rendererQualification": {
+    "initialFailure": "docker stack config retained quotes in CLUSTER_ID emitted by raw assignment rename",
+    "redTests": 5,
+    "greenTests": 26,
+    "actualDockerStackLoaderPassed": true,
+    "syntheticValuesOnly": true,
+    "engineCalls": false
+  },
+  "ociQualification": {
+    "terraformVersion": "1.16.6",
+    "lockedProvider": "oracle/oci 6.37.0",
+    "fmt": true,
+    "validate": true,
+    "templateDataVolumeEnabled": [
+      true,
+      false
+    ],
+    "yamlAndRuncmdSyntax": true,
+    "plan": false,
+    "apply": false,
+    "futureInstanceReplacementReviewRequired": true
+  },
+  "productionActions": false
+}

@@ -181,7 +181,7 @@ export class ActivityOverviewRepository extends BaseRepository {
           WHERE activity.user_id = {userId:UUID}
             AND activity.activity_id IN {activityIds:Array(UUID)}
             AND activity.is_deleted = 0
-            AND activity.ended_at IS NOT NULL
+            AND (activity.ended_at IS NOT NULL OR activity.provider_type = 'climbing_log')
             AND activity_date >= toDate({previousWindowStart:String})
             AND activity_date < toDate({endDateExclusive:String})
             ${activityTypeFilter}`,
@@ -196,7 +196,7 @@ export class ActivityOverviewRepository extends BaseRepository {
           WHERE activity.user_id = {userId:UUID}
             AND activity.activity_id IN {activityIds:Array(UUID)}
             AND activity.is_deleted = 0
-            AND activity.ended_at IS NOT NULL
+            AND (activity.ended_at IS NOT NULL OR activity.provider_type = 'climbing_log')
             AND activity_date >= toDate({currentWindowStart:String})
             AND activity_date < toDate({endDateExclusive:String})
           ORDER BY canonical_type ASC`,

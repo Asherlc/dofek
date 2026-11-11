@@ -37,10 +37,8 @@ import {
   createLazyAccountErasureRestoreLedger,
 } from "../../../src/account-erasure/restore-ledger.ts";
 import { reconcileAccountErasureRestoreIntents } from "../../../src/account-erasure/restore-reconciliation.ts";
-import {
-  getDefaultMetricStreamEventPublisher,
-  type MetricStreamEventPublisher,
-} from "../../../src/metric-stream/redpanda-producer.ts";
+import type { MetricStreamEventPublisher } from "../../../src/metric-stream/publisher.ts";
+import { getDefaultMetricStreamEventPublisher } from "../../../src/metric-stream/redpanda-producer.ts";
 import { isAdmin } from "./auth/admin.ts";
 import { getSessionIdFromRequest } from "./auth/cookies.ts";
 import { validateSession } from "./auth/session.ts";

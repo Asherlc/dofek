@@ -2,10 +2,8 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { SyncDatabase } from "../../../../src/db/index.ts";
 import { getProviderDataGenerations } from "../../../../src/db/provider-data-deletion.ts";
-import {
-  getDefaultMetricStreamEventPublisher,
-  type MetricStreamEventPublisher,
-} from "../../../../src/metric-stream/redpanda-producer.ts";
+import type { MetricStreamEventPublisher } from "../../../../src/metric-stream/publisher.ts";
+import { getDefaultMetricStreamEventPublisher } from "../../../../src/metric-stream/redpanda-producer.ts";
 import { RUNNING_QUANTITY_TYPES } from "../../../../src/providers/apple-health/running-quantities.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
 

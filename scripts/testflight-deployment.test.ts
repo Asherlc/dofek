@@ -228,16 +228,47 @@ describe("TestFlight upload receipts", () => {
   });
 
   it.each(["FAILURE", "ERROR", "PENDING", "IN_PROGRESS", "QUEUED", "WAITING", null])(
-    "blocks unresolved upload state %s even for explicit manual publication",
+    "blocks publication for unresolved upload state %s before creating an intent",
     (state) => {
-      gh.mockReturnValueOnce("").mockReturnValueOnce(
-        page([receipt(currentSha, state), receipt(earlierSha)]),
-      );
-      expect(() => requiresTestFlightUpload("owner/dofek", currentSha, true)).toThrow(
-        `(${currentSha}, ${state ?? "no status"})`,
+      gh.mockReturnValueOnce(page([receipt(currentSha, state), receipt(earlierSha)]));
+      expect(() =>
+        prepareTestFlightUpload("owner/dofek", currentSha, "1793210000", runUrl),
+      ).toThrow(`(${currentSha}, ${state ?? "no status"})`);
+      expect(gh).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it.each(["FAILURE", "ERROR", "PENDING", "IN_PROGRESS", "QUEUED", "WAITING", null])(
+    "compares native inputs with the last successful upload while a newer intent is %s",
+    (state) => {
+      gh.mockReturnValueOnce("")
+        .mockReturnValueOnce(page([receipt(currentSha, state)], true, "cursor-1"))
+        .mockReturnValueOnce(page([receipt(earlierSha)]))
+        .mockReturnValueOnce("packages/mobile/modules/health-kit/ios/HealthKitModule.swift\0");
+      expect(requiresTestFlightUpload("owner/dofek", currentSha)).toBe(true);
+      expect(gh).toHaveBeenLastCalledWith(
+        "git",
+        ["diff", "--name-only", "--no-renames", "-z", earlierSha, currentSha, "--"],
+        expect.any(Object),
       );
     },
   );
+
+  it("allows a first archive build while another upload has no successful receipt yet", () => {
+    gh.mockReturnValueOnce("").mockReturnValueOnce(page([receipt(currentSha, "PENDING")]));
+    expect(requiresTestFlightUpload("owner/dofek", currentSha)).toBe(true);
+    expect(gh).toHaveBeenCalledTimes(2);
+  });
+
+  it("allows a forced archive build without bypassing unresolved upload admission", () => {
+    gh.mockReturnValueOnce("").mockReturnValueOnce(page([receipt(currentSha, "PENDING")]));
+    expect(requiresTestFlightUpload("owner/dofek", currentSha, true)).toBe(true);
+    gh.mockReturnValueOnce(page([receipt(currentSha, "PENDING")]));
+    expect(() => prepareTestFlightUpload("owner/dofek", currentSha, "1793210000", runUrl)).toThrow(
+      "Unresolved",
+    );
+    expect(gh).toHaveBeenCalledTimes(3);
+  });
 
   it("fails when GitHub cannot establish upload history", () => {
     gh.mockReturnValueOnce("").mockImplementationOnce(() => {

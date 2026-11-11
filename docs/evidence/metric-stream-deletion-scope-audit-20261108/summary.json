@@ -1,0 +1,146 @@
+{
+  "status": "PASS_FROZEN_DELETION_CANDIDATE_IDENTITY_ONLY",
+  "source": {
+    "topic": "metric-stream-history-v1",
+    "partition": 0,
+    "startOffset": 70578630,
+    "endOffsetExclusive": 74445631
+  },
+  "coverage": {
+    "records": 3867001,
+    "nextOffset": 74445631,
+    "offsetErrors": 0,
+    "types": {
+      "metric_stream_deleted": 248,
+      "metric_stream_row": 3866505,
+      "metric_stream_batch_completed": 248
+    },
+    "expectedRecords": 3867001,
+    "expectedEndExclusive": 74445631
+  },
+  "scopeValidation": {
+    "validatedEvents": 248,
+    "versions": {
+      "3": 248
+    },
+    "scopeShapes": {
+      "activityId,userId": 248
+    },
+    "distinctScopes": 248
+  },
+  "population": {
+    "accounts": 1,
+    "activities": 248
+  },
+  "export": {
+    "compressedBytes": 9962005,
+    "maximumCompressedBytes": 1073741824,
+    "maximumSeconds": 900,
+    "consumerGroup": null,
+    "gzipIntegrity": "passed",
+    "projection": "offset/type for all records; scope/event metadata for deletion records only",
+    "initialProjectionAttempt": "aborted and excluded after detecting type vs eventType field error"
+  },
+  "comparison": {
+    "queryId": "history-delete-scope-identity-20261108-cardinality",
+    "method": "Exact distinct IDs equal exact distinct (id,user,provider,recorded_at) tuples across all retained physical versions of candidate IDs",
+    "result": {
+      "physical_versions": 19540887,
+      "audited_ids": 7732978,
+      "identity_tuples": 7732978
+    },
+    "queryLog": {
+      "exception_code": 0,
+      "query_duration_ms": 75087,
+      "read_rows": 226989012,
+      "read_bytes": 5366716746,
+      "memory_usage": 1508899199
+    },
+    "limits": {
+      "threads": 1,
+      "memoryBytes": 2147483648,
+      "seconds": 120,
+      "readRows": 300000000,
+      "readBytes": 12884901888,
+      "temporaryBytes": 2147483648
+    },
+    "projection": "by_provider_current_state_recorded_at",
+    "projectionKind": "nonaggregating covering projection plus base fallback; preserves physical versions",
+    "excessIdentityTuples": 0,
+    "boundParameters": 2
+  },
+  "excludedAttempts": [
+    {
+      "kind": "Expanded candidate EXPLAIN",
+      "exceptionCode": 159,
+      "durationMs": 30032,
+      "readRows": 12394496,
+      "readBytes": 738237668,
+      "peakBytes": 972003450,
+      "note": "IN-subquery planning executed candidate reads; not metadata-only"
+    },
+    {
+      "kind": "Grouped per-ID comparison, 1 GiB",
+      "exceptionCode": 241,
+      "durationMs": 103153,
+      "readRows": 233124820,
+      "readBytes": 5470828042,
+      "peakBytes": 1070482274
+    },
+    {
+      "kind": "Grouped per-ID comparison, 2 GiB",
+      "exceptionCode": 159,
+      "durationMs": 120000,
+      "readRows": 226989012,
+      "readBytes": 5366716746,
+      "peakBytes": 1128684258
+    }
+  ],
+  "committedDeletionSelectPlan": {
+    "sourceCommit": "5c3a9c2f21d85251f3be06dff6c38224ed5fc3d1",
+    "scope": "first deletion at frozen backlog start",
+    "selectedGranules": 7383,
+    "potentialGranules": 24478,
+    "readNode": "by_provider_generation",
+    "candidatePlanningReadRows": 303357,
+    "candidatePlanningReadBytes": 13905896,
+    "milliseconds": 421,
+    "noDeletionExecuted": true,
+    "limit": "Index selection does not establish actual execution duration or bytes"
+  },
+  "postHealth": {
+    "activeAudits": 0,
+    "historyReplicas": "0/0",
+    "historyCurrentOffset": 70578630,
+    "logStart": 55609019,
+    "highWatermark": 74445631,
+    "lag": 3867001,
+    "loadAverage": "1.27,1.76,1.62"
+  },
+  "exclusions": [
+    "Unrelated retained IDs",
+    "Archive bodies and replay",
+    "Future writes after snapshot",
+    "Full event-payload validity",
+    "Acknowledgement status and processing completeness",
+    "Production deletion execution or recovery"
+  ],
+  "noProductionMutations": [
+    "No deployment or service scale",
+    "No topic/configuration edits",
+    "No group join or offset commit",
+    "No persistent table or registry",
+    "No acknowledgement repair or archive-body reads"
+  ],
+  "cleanup": {
+    "privateInputsRemoved": true,
+    "removedPrivateFiles": 13,
+    "activeAuditQueries": 0,
+    "persistentAuditTablesCreated": 0
+  },
+  "ci": {
+    "sourceCommit": "42d8e03df60c8a17475804736c9f271614322896",
+    "runId": 42435839475,
+    "conclusion": "success"
+  }
+}

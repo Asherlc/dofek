@@ -1,0 +1,102 @@
+{
+  "status": "COMPLETE_TWO_HEALTHY_ZERO_LAG_SAMPLES",
+  "approvedQuestion": "Q15",
+  "userAnswer": "Y",
+  "sourceCommit": "9a16c806fc0ebe587c5d4e6665ac888f87beefa2",
+  "image": "ghcr.io/asherlc/dofek@sha256:d8ca75d14b4da18057f3cf43d34889adf3d65c4927caccee69a8cee34e8120a1",
+  "service": "dofek_metric-stream-history-clickhouse-sink",
+  "replicas": "1/1",
+  "groupState": "Stable",
+  "baselineCurrent": 70578630,
+  "sampleAt": "2026-11-08T04:55:18Z",
+  "current": 74445631,
+  "logStart": 55609019,
+  "highWatermark": 74445631,
+  "lag": 0,
+  "advancedFromBaseline": 3867001,
+  "otherServingAndArchiveLag": 0,
+  "clickhouseHealthy": true,
+  "loadAverage": [
+    0.35,
+    0.77,
+    1.62
+  ],
+  "rollbackPreviousImage": "ghcr.io/asherlc/dofek@sha256:b5676e5616082a09184397f0ea328b28e9d1320c4124cbafaf4f0578899e2d84",
+  "rollbackPreviousReplicas": 0,
+  "registryAuth": "temporary Docker config removed; existing credential used via private stdin; with-registry-auth supplied to Swarm",
+  "monitorHeartbeat": null,
+  "monitorTicket": "T08",
+  "recentScopedDeletion": {
+    "milliseconds": 15377,
+    "readRows": 60399395,
+    "readBytes": 12038031962,
+    "writtenRows": 11971,
+    "exceptionCode": 0
+  },
+  "noKafkaCutover": true,
+  "noManualAcknowledgementOrOffsetReset": true,
+  "postStartMaxInsertMilliseconds": 37870,
+  "postStartInsertExceptions": 0,
+  "firstFiveMinutesHealthy": true,
+  "initialOffsetsPerSecond": 460.8,
+  "estimatedCatchupUTC": null,
+  "estimateIsVariable": true,
+  "monitorCadenceMinutes": 5,
+  "criticalLogMatches": 0,
+  "recentInsertExceptions": 0,
+  "recentMaxInsertMilliseconds": 0,
+  "averageOffsetsPerSecond": 550.0,
+  "lastAnnouncedCurrent": 74445631,
+  "zeroLagStreak": 2,
+  "transientLiveLag": {
+    "peakObserved": 41627,
+    "followup": 9993,
+    "clearedAt": "2026-11-08T03:02:22Z",
+    "intervention": null
+  },
+  "unexpectedLogErrors": 0,
+  "lastTransientLiveLag": {
+    "peakObserved": 40624,
+    "clearedAt": "2026-11-08T04:01:46Z",
+    "intervention": null
+  },
+  "sharedHealthFollowupAt": "2026-11-08T04:01:46Z",
+  "otherGroupLags": {
+    "metric-stream-clickhouse-sink": 0,
+    "metric-stream-live-clickhouse-sink": 0,
+    "metric-stream-r2-archive": 0,
+    "metric-stream-live-r2-archive": 0,
+    "metric-stream-history-r2-archive": 0
+  },
+  "activeLiveLag": 0,
+  "firstZeroObservedAt": "2026-11-08T04:50:20Z",
+  "zeroLagSamples": [
+    {
+      "at": "2026-11-08T04:50:20Z",
+      "current": 74445631,
+      "highWatermark": 74445631,
+      "healthy": true,
+      "otherGroupLag": 0
+    },
+    {
+      "at": "2026-11-08T04:55:18Z",
+      "current": 74445631,
+      "highWatermark": 74445631,
+      "healthy": true,
+      "otherGroupLag": 0
+    }
+  ],
+  "optionalProfileSummary": {
+    "status": "UNAVAILABLE_OPTIONAL_DIAGNOSTIC",
+    "exceptionCode": 241,
+    "queryMemoryCapBytes": 268435456,
+    "reason": "Reading full query text from a merged system.query_log part required a 512.61 MiB allocation; bounded operator query aborted. Not a consumer INSERT failure.",
+    "retried": false,
+    "consumerRecoveryGateAffected": false
+  },
+  "confirmedCompleteAt": "2026-11-08T04:55:18Z",
+  "monitorStopped": true,
+  "serviceLeftRunning": true,
+  "dataFilesystemAvailableGiBApprox": 31,
+  "remainingKafkaCutoverAuthorization": false
+}

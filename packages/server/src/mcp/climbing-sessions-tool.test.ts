@@ -1,3 +1,4 @@
+import type { ClimbingResponseVersion } from "@dofek/training/climbing-log-response";
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport, McpServer } from "@modelcontextprotocol/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -33,7 +34,7 @@ import { registerClimbingSessionsTool } from "./climbing-sessions-tool.ts";
 describe("get_climbing_sessions context", () => {
   let client: Client;
   let server: McpServer;
-  async function callTool(responseVersion?: 1 | 2) {
+  async function callTool(responseVersion?: ClimbingResponseVersion) {
     server = new McpServer({ name: "climbing-context", version: "1.0.0" });
     registerClimbingSessionsTool(server, {
       db: { execute: vi.fn().mockResolvedValue([]), select: vi.fn(), transaction: vi.fn() },
@@ -64,6 +65,29 @@ describe("get_climbing_sessions context", () => {
     await client?.close();
     await server?.close();
     vi.clearAllMocks();
+  });
+  it("reports the logged gym instead of the shared problem location", async () => {
+    mocks.listRange.mockResolvedValue([
+      {
+        id: "activity-1",
+        avg_hr: null,
+        ended_at: null,
+        started_at: "2026-09-29T10:00:00Z",
+        name: "Board session",
+        canonical_type: "climbing",
+      },
+    ]);
+    const detail = climbingSessionDetail();
+    const sourceArea = detail.climb?.areaPath[0];
+    if (!sourceArea) throw new Error("Expected source Area fixture");
+    const log = { ...detail, areaPath: [{ ...sourceArea, name: "Visited gym" }] };
+    mocks.getActivityLogEntries.mockResolvedValue([{ toDetail: () => log }]);
+    mocks.getAttachedRockObservations.mockResolvedValue([]);
+    const output = await callTool(4);
+    expect(output.sessions[0]?.location).toBe("Visited gym");
+    expect(output.sessions[0]?.climbing_log_entries[0]).toMatchObject({
+      areaPath: [{ name: "Visited gym" }],
+    });
   });
   it.each([undefined, 1, 2] as const)("negotiates log traits for version %s", async (version) => {
     mocks.listRange.mockResolvedValue([

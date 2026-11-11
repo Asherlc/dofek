@@ -1,4 +1,6 @@
 #include <algorithm>
+#include <cstdint>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <optional>
@@ -16,6 +18,8 @@
 #include "fit_mesg_broadcaster.hpp"
 #include "fit_profile.hpp"
 #include "fit_profile_enum_names.hpp"
+#include "fit_runtime_exception.hpp"
+#include "fit_record_mesg.hpp"
 #include "fit_session_mesg.hpp"
 #include "field-json.hpp"
 
@@ -86,21 +90,58 @@ std::string JsonMessage(const fit::Mesg& message) {
   return output.str();
 }
 
-void DecodeWithListener(const std::string& file_path, fit::Decode& decoder, fit::MesgListener& listener) {
+std::optional<std::string> DecodeWithListener(
+    const std::string& file_path, fit::Decode& decoder, fit::MesgListener& listener) {
   std::ifstream file(file_path, std::ios::in | std::ios::binary);
   if (!file.is_open()) {
     throw std::runtime_error("Unable to open FIT file");
   }
   fit::MesgBroadcaster broadcaster;
   broadcaster.AddListener(listener);
-  if (!decoder.Read(file, broadcaster, broadcaster)) {
-    throw std::runtime_error("FIT decoder stopped before reaching the end of the file");
+  try {
+    if (!decoder.Read(file, broadcaster, broadcaster)) {
+      throw std::runtime_error("FIT decoder stopped before reaching the end of the file");
+    }
+  } catch (const fit::RuntimeException& error) {
+    if (file.bad()) {
+      throw;
+    }
+    return error.what();
   }
+  return std::nullopt;
+}
+
+bool FitsWithinFirstDeclaredSegment(const std::string& file_path) {
+  std::ifstream file(file_path, std::ios::in | std::ios::binary);
+  if (!file.is_open()) {
+    throw std::runtime_error("Unable to reopen FIT file header for recovery check");
+  }
+  unsigned char header[8]{};
+  file.read(reinterpret_cast<char*>(header), sizeof(header));
+  if (file.gcount() != static_cast<std::streamsize>(sizeof(header)) || file.bad()) {
+    throw std::runtime_error("Unable to read FIT file header for recovery check");
+  }
+  const std::uint64_t header_size = header[0];
+  if (header_size < FIT_HEADER_SIZE_NO_CRC) {
+    return false;
+  }
+  const std::uint64_t data_size = static_cast<std::uint64_t>(header[4]) |
+      (static_cast<std::uint64_t>(header[5]) << 8) |
+      (static_cast<std::uint64_t>(header[6]) << 16) |
+      (static_cast<std::uint64_t>(header[7]) << 24);
+  const std::uint64_t declared_segment_size = header_size + data_size + 2;
+  return std::filesystem::file_size(file_path) <= declared_segment_size;
 }
 
 class MetadataListener final : public fit::MesgListener {
  public:
   void OnMesg(fit::Mesg& message) override {
+    if (message.GetNum() == FIT_MESG_NUM_RECORD) {
+      const fit::RecordMesg record(message);
+      if (record.IsTimestampValid()) {
+        ++timestamped_record_count_;
+      }
+    }
     RecordFieldOccurrences(message);
     switch (message.GetNum()) {
       case FIT_MESG_NUM_FILE_ID: {
@@ -151,6 +192,7 @@ class MetadataListener final : public fit::MesgListener {
   const std::optional<std::string>& FileTypeName() const { return file_type_name_; }
   const std::optional<std::string>& FileIdJson() const { return file_id_json_; }
   bool HasWeightMessages() const { return has_weight_messages_; }
+  std::size_t TimestampedRecordCount() const { return timestamped_record_count_; }
   const std::optional<std::string>& SessionJson() const { return session_json_; }
   const std::optional<std::string>& SportName() const { return sport_name_; }
   const std::optional<std::string>& SubSportName() const { return sub_sport_name_; }
@@ -198,6 +240,7 @@ class MetadataListener final : public fit::MesgListener {
   std::optional<std::string> file_type_name_;
   std::optional<std::string> file_id_json_;
   bool has_weight_messages_ = false;
+  std::size_t timestamped_record_count_ = 0;
   std::optional<std::string> session_json_;
   std::optional<std::string> sport_name_;
   std::optional<std::string> sub_sport_name_;
@@ -244,6 +287,12 @@ class BatchListener final : public fit::MesgListener {
     }
     batch_bytes_ += (messages_.empty() ? 0 : 1) + json.size();
     messages_.push_back(std::move(json));
+    if (message.GetNum() == FIT_MESG_NUM_RECORD) {
+      const fit::RecordMesg record(message);
+      if (record.IsTimestampValid()) {
+        ++timestamped_record_count_;
+      }
+    }
     ++message_count_;
     if (messages_.size() == kMaximumBatchMessages) {
       FlushBatch();
@@ -251,6 +300,7 @@ class BatchListener final : public fit::MesgListener {
   }
 
   std::size_t MessageCount() const { return message_count_; }
+  std::size_t TimestampedRecordCount() const { return timestamped_record_count_; }
 
   void FlushBatch() {
     if (messages_.empty()) {
@@ -270,6 +320,7 @@ class BatchListener final : public fit::MesgListener {
   std::vector<std::string> messages_;
   std::size_t batch_bytes_ = 0;
   std::size_t message_count_ = 0;
+  std::size_t timestamped_record_count_ = 0;
 };
 
 void WaitForContinue() {
@@ -279,7 +330,7 @@ void WaitForContinue() {
   }
 }
 
-void WriteMetadata(const MetadataListener& metadata) {
+void WriteMetadata(const MetadataListener& metadata, const std::optional<std::string>& recovery_error) {
   std::ostringstream output;
   output << "{\"type\":\"metadata\",\"fileType\":";
   if (metadata.FileType().has_value()) {
@@ -303,6 +354,12 @@ void WriteMetadata(const MetadataListener& metadata) {
          << (metadata.HasWeightMessages() ? "true" : "false") << ",\"session\":";
   if (metadata.SessionJson().has_value()) {
     output << *metadata.SessionJson();
+  } else {
+    output << "null";
+  }
+  output << ",\"recoveryError\":";
+  if (recovery_error.has_value()) {
+    output << JsonString(*recovery_error);
   } else {
     output << "null";
   }
@@ -357,7 +414,9 @@ void WriteBatch(const std::string& type, const std::vector<std::string>& message
 std::size_t StreamMessages(
     const std::string& file_path,
     FIT_UINT16 target_message_number,
-    const std::string& batch_type) {
+    const std::string& batch_type,
+    const std::optional<std::string>& expected_recovery_error,
+    std::size_t expected_timestamped_records) {
   std::ifstream file(file_path, std::ios::in | std::ios::binary);
   if (!file.is_open()) {
     throw std::runtime_error("Unable to reopen FIT file");
@@ -366,25 +425,49 @@ std::size_t StreamMessages(
   fit::MesgBroadcaster broadcaster;
   BatchListener listener(target_message_number, batch_type);
   broadcaster.AddListener(static_cast<fit::MesgListener&>(listener));
-  if (!decoder.Read(file, broadcaster, broadcaster)) {
-    throw std::runtime_error("FIT decoder stopped before reaching the end of the file");
+  std::optional<std::string> recovery_error;
+  try {
+    if (!decoder.Read(file, broadcaster, broadcaster)) {
+      throw std::runtime_error("FIT decoder stopped before reaching the end of the file");
+    }
+  } catch (const fit::RuntimeException& error) {
+    if (file.bad()) {
+      throw;
+    }
+    recovery_error = error.what();
   }
   listener.FlushBatch();
+  if (recovery_error != expected_recovery_error) {
+    throw std::runtime_error("FIT decode outcome changed between metadata and streaming passes");
+  }
+  if (listener.TimestampedRecordCount() != expected_timestamped_records) {
+    throw std::runtime_error("FIT complete record count changed between metadata and streaming passes");
+  }
   return listener.MessageCount();
 }
 
 int Run(const std::string& file_path) {
   fit::Decode metadata_decoder;
   MetadataListener metadata;
-  DecodeWithListener(file_path, metadata_decoder, metadata);
-  WriteMetadata(metadata);
+  const std::optional<std::string> decode_error =
+      DecodeWithListener(file_path, metadata_decoder, metadata);
+  std::optional<std::string> recovery_error;
+  if (decode_error.has_value()) {
+    if (metadata.FileType() != FIT_FILE_ACTIVITY || metadata.HasWeightMessages() ||
+        metadata.TimestampedRecordCount() == 0 || !FitsWithinFirstDeclaredSegment(file_path)) {
+      throw std::runtime_error(*decode_error);
+    }
+    recovery_error = decode_error;
+  }
+  WriteMetadata(metadata, recovery_error);
   WaitForContinue();
 
   const bool is_weight_file =
       metadata.FileType() == FIT_FILE_WEIGHT || metadata.HasWeightMessages();
   const std::size_t message_count = is_weight_file
-      ? StreamMessages(file_path, FIT_MESG_NUM_WEIGHT_SCALE, "weights")
-      : StreamMessages(file_path, FIT_MESG_NUM_RECORD, "records");
+      ? StreamMessages(file_path, FIT_MESG_NUM_WEIGHT_SCALE, "weights", recovery_error, 0)
+      : StreamMessages(file_path, FIT_MESG_NUM_RECORD, "records", recovery_error,
+                       metadata.TimestampedRecordCount());
   std::cout << "{\"type\":\"end\",\"messageCount\":" << message_count << "}\n"
             << std::flush;
   return 0;

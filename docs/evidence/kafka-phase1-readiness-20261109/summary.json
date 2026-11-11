@@ -1,0 +1,352 @@
+{
+  "observedAtUTC": {
+    "servicesAndFilesystem": "2026-11-09T00:49:09Z",
+    "topicMetadata": "2026-11-09T00:51:44Z",
+    "groupSnapshotCapturedAt": "2026-11-09T00:53:05.101Z"
+  },
+  "productionMutations": false,
+  "payloadReads": false,
+  "filesystem": {
+    "totalBytes": 157396975616,
+    "usedBytes": 106091483136,
+    "availableBytes": 43235651584,
+    "retainedRedpandaAllocatedBytes": 31533346816,
+    "abortedKafkaAllocatedBytes": 909312,
+    "freshKafkaPathExists": false
+  },
+  "memory": {
+    "totalKiB": 24550252,
+    "availableKiB": 15194492,
+    "swapTotalKiB": 0
+  },
+  "services": {
+    "redpanda": 1,
+    "kafka": 0,
+    "web": 2,
+    "worker": 1,
+    "imagesMatchPreviouslyQualifiedPins": true
+  },
+  "erasureRequests": {
+    "total": 0,
+    "notCompleted": 0,
+    "pastDeadlineNotCompleted": 0,
+    "statementTimeoutMs": 3000,
+    "readOnly": true
+  },
+  "releaseOverlap": {
+    "observedRunningDeployOrTerraform": 0,
+    "observedQueuedDeployOrTerraform": 0
+  },
+  "byteMeasurements": {
+    "redpandaStartedAtUTC": "2026-11-08T06:11:52.918157272Z",
+    "liveProduceCounterBytes": 1113810634,
+    "legacyProduceCounterBytes": 0,
+    "historyProduceCounterBytes": 0,
+    "liveWrittenPartitionBytes": 22079501967,
+    "historyWrittenPartitionBytes": 9136469600,
+    "legacyWrittenPartitionBytes": 117,
+    "eachQuarantineWrittenPartitionBytes": 117,
+    "retainedRateHistoryEstablished": false,
+    "peakOrBackfillRateEstablished": false,
+    "limits": "Cumulative counters and retained partition bytes are not encoded Kafka hourly rates or filesystem allocation. Checked collector has no metrics pipeline; no active Prometheus or Netdata service observed."
+  },
+  "groups": [
+    {
+      "group": "metric-stream-clickhouse-sink",
+      "state": "Stable",
+      "members": 1,
+      "totalLag": 0,
+      "partitions": [
+        {
+          "topic": "metric-stream-v1",
+          "partition": 0,
+          "current": 1619570368,
+          "low": 1619570368,
+          "high": 1619570368,
+          "lag": 0
+        }
+      ]
+    },
+    {
+      "group": "metric-stream-history-clickhouse-sink",
+      "state": "Stable",
+      "members": 1,
+      "totalLag": 0,
+      "partitions": [
+        {
+          "topic": "metric-stream-history-v1",
+          "partition": 0,
+          "current": 74445631,
+          "low": 55609019,
+          "high": 74445631,
+          "lag": 0
+        }
+      ]
+    },
+    {
+      "group": "metric-stream-history-r2-archive",
+      "state": "Stable",
+      "members": 1,
+      "totalLag": 0,
+      "partitions": [
+        {
+          "topic": "metric-stream-history-v1",
+          "partition": 0,
+          "current": 74445631,
+          "low": 55609019,
+          "high": 74445631,
+          "lag": 0
+        }
+      ]
+    },
+    {
+      "group": "metric-stream-live-clickhouse-sink",
+      "state": "Stable",
+      "members": 1,
+      "totalLag": 0,
+      "partitions": [
+        {
+          "topic": "metric-stream-live-v1",
+          "partition": 0,
+          "current": 247752409,
+          "low": 211778201,
+          "high": 247752409,
+          "lag": 0
+        }
+      ]
+    },
+    {
+      "group": "metric-stream-live-r2-archive",
+      "state": "Stable",
+      "members": 1,
+      "totalLag": 0,
+      "partitions": [
+        {
+          "topic": "metric-stream-live-v1",
+          "partition": 0,
+          "current": 247752409,
+          "low": 211778201,
+          "high": 247752409,
+          "lag": 0
+        }
+      ]
+    },
+    {
+      "group": "metric-stream-r2-archive",
+      "state": "Stable",
+      "members": 1,
+      "totalLag": 0,
+      "partitions": [
+        {
+          "topic": "metric-stream-v1",
+          "partition": 0,
+          "current": 1619570368,
+          "low": 1619570368,
+          "high": 1619570368,
+          "lag": 0
+        }
+      ]
+    }
+  ],
+  "topics": [
+    {
+      "name": "metric-stream-v1",
+      "partitions": 1,
+      "replicas": 1,
+      "retention": [
+        {
+          "key": "retention.bytes",
+          "value": "42949672960",
+          "source": "DYNAMIC_TOPIC_CONFIG"
+        },
+        {
+          "key": "retention.ms",
+          "value": "604800000",
+          "source": "DEFAULT_CONFIG"
+        },
+        {
+          "key": "segment.bytes",
+          "value": "134217728",
+          "source": "DEFAULT_CONFIG"
+        },
+        {
+          "key": "segment.ms",
+          "value": "1209600000",
+          "source": "DEFAULT_CONFIG"
+        }
+      ]
+    },
+    {
+      "name": "metric-stream-live-v1",
+      "partitions": 1,
+      "replicas": 1,
+      "retention": [
+        {
+          "key": "retention.bytes",
+          "value": "-1",
+          "source": "DEFAULT_CONFIG"
+        },
+        {
+          "key": "retention.ms",
+          "value": "604800000",
+          "source": "DEFAULT_CONFIG"
+        },
+        {
+          "key": "segment.bytes",
+          "value": "134217728",
+          "source": "DEFAULT_CONFIG"
+        },
+        {
+          "key": "segment.ms",
+          "value": "1209600000",
+          "source": "DEFAULT_CONFIG"
+        }
+      ]
+    },
+    {
+      "name": "metric-stream-history-v1",
+      "partitions": 1,
+      "replicas": 1,
+      "retention": [
+        {
+          "key": "retention.bytes",
+          "value": "-1",
+          "source": "DEFAULT_CONFIG"
+        },
+        {
+          "key": "retention.ms",
+          "value": "604800000",
+          "source": "DEFAULT_CONFIG"
+        },
+        {
+          "key": "segment.bytes",
+          "value": "134217728",
+          "source": "DEFAULT_CONFIG"
+        },
+        {
+          "key": "segment.ms",
+          "value": "1209600000",
+          "source": "DEFAULT_CONFIG"
+        }
+      ]
+    },
+    {
+      "name": "metric-stream-v1.quarantine.v1",
+      "partitions": 1,
+      "replicas": 1,
+      "retention": [
+        {
+          "key": "retention.bytes",
+          "value": "1073741824",
+          "source": "DYNAMIC_TOPIC_CONFIG"
+        },
+        {
+          "key": "retention.ms",
+          "value": "604800000",
+          "source": "DYNAMIC_TOPIC_CONFIG"
+        },
+        {
+          "key": "segment.bytes",
+          "value": "134217728",
+          "source": "DEFAULT_CONFIG"
+        },
+        {
+          "key": "segment.ms",
+          "value": "1209600000",
+          "source": "DEFAULT_CONFIG"
+        }
+      ]
+    },
+    {
+      "name": "metric-stream-live-v1.quarantine.v1",
+      "partitions": 1,
+      "replicas": 1,
+      "retention": [
+        {
+          "key": "retention.bytes",
+          "value": "1073741824",
+          "source": "DYNAMIC_TOPIC_CONFIG"
+        },
+        {
+          "key": "retention.ms",
+          "value": "604800000",
+          "source": "DYNAMIC_TOPIC_CONFIG"
+        },
+        {
+          "key": "segment.bytes",
+          "value": "134217728",
+          "source": "DEFAULT_CONFIG"
+        },
+        {
+          "key": "segment.ms",
+          "value": "1209600000",
+          "source": "DEFAULT_CONFIG"
+        }
+      ]
+    },
+    {
+      "name": "metric-stream-history-v1.quarantine.v1",
+      "partitions": 1,
+      "replicas": 1,
+      "retention": [
+        {
+          "key": "retention.bytes",
+          "value": "1073741824",
+          "source": "DYNAMIC_TOPIC_CONFIG"
+        },
+        {
+          "key": "retention.ms",
+          "value": "604800000",
+          "source": "DYNAMIC_TOPIC_CONFIG"
+        },
+        {
+          "key": "segment.bytes",
+          "value": "134217728",
+          "source": "DEFAULT_CONFIG"
+        },
+        {
+          "key": "segment.ms",
+          "value": "1209600000",
+          "source": "DEFAULT_CONFIG"
+        }
+      ]
+    }
+  ],
+  "workerBaseline": {
+    "pinnedSource": "cd9c4eb28d186a2fab9af2ac2e91864c32f38477",
+    "pinnedImage": "ghcr.io/asherlc/dofek@sha256:a498aaa503db452480fdd43a71cc8799aa2564eea30a070e0296a08effc48620",
+    "comparedParent": "eba115371a10fb6a2a148da7191286087f7fcdd2",
+    "nativeStorageRuntimePhaseAndScrubIdentical": true,
+    "onlyDrainDifference": "type-only environment input annotation",
+    "laterSharedApplicationReleaseIndependentlyQualified": false,
+    "registryManifestAvailable": true,
+    "linuxArm64Available": true
+  },
+  "routingStorePrerequisites": {
+    "environment": "prod",
+    "canonicalCLI": "mise Infisical0.44.10",
+    "otherInstalledCLI": "Homebrew0.43.69",
+    "namesOnly": true,
+    "existingKeys": [
+      "REDPANDA_BROKERS",
+      "METRIC_STREAM_LEGACY_TOPIC",
+      "METRIC_STREAM_LIVE_TOPIC",
+      "METRIC_STREAM_HISTORY_TOPIC"
+    ],
+    "allPresent": true,
+    "changesMade": false,
+    "clusterIDPresentAndMatchesStoppedBroker": true
+  },
+  "commandQualification": {
+    "engineCalls": false,
+    "productionActions": false,
+    "shellBlocks": 5,
+    "canonicalBrokerEnvironmentKeys": 15,
+    "exactTopicCreates": 6,
+    "sourceCapBytes": 4294967296,
+    "quarantineCapBytes": 1073741824,
+    "segmentBytes": 134217728,
+    "retentionMs": 604800000,
+    "workerImageAndTwoReadonlyMountsVerified": true
+  }
+}
