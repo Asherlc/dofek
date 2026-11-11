@@ -10,7 +10,7 @@ The operator separately approved controlled analytics recovery after the ongoing
 
 ## Issue ledger
 
-Times are UTC. As of November 11, 32 of the original 52 issues are resolved in Sentry; 20 original issues and the subsequently reported SERVER-84 remain open. SERVER-6E regressed with a different provider after its earlier Withings recovery. The online phone freeze remains unresolved.
+Times are UTC. As of the latest November 11 reconciliation, 34 of the original 52 issues are resolved in Sentry; 18 original issues and the subsequently reported SERVER-84 remain open. Crimpd and Garmin were closed at the operator's explicit request with the qualifications below. SERVER-6E regressed with a different provider after its earlier Withings recovery. The online phone freeze remains unresolved.
 
 | Issue | Latest event | Group | Disposition and next evidence |
 |---|---|---|---|
@@ -49,7 +49,7 @@ Times are UTC. As of November 11, 32 of the original 52 issues are resolved in S
 | [DOFEK-SERVER-7C](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-7C) | 2026-11-02 19:54 | Operator prerequisites | Resolved — Current CDC health passing with zero consecutive failures; required password present, values not printed. |
 | [DOFEK-SERVER-7A](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-7A) | 2026-11-02 17:00 | OpenBeta provider export | Resolved — Exact failed sync row identifies the affected account; four subsequent overall exports succeeded with nine records each. |
 | [DOFEK-SERVER-79](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-79) | 2026-11-02 12:01 | Provider availability | Resolved — Resolved after 336 successful eight-a logbook syncs following the HTTP 503. |
-| [DOFEK-SERVER-78](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-78) | 2026-11-01 23:02 | Provider Crimpd | Open — Existing verified token-response correction; confirm deployed account connection. |
+| [DOFEK-SERVER-78](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-78) | 2026-11-01 23:02 | Provider Crimpd | Resolved at operator request — Historical token-response defect is corrected in the deployed image; no current connection or authenticated account recovery was established. |
 | [DOFEK-SERVER-76](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-76) | 2026-11-01 19:00 | Provider authorization | Resolved — Resolved after 336 successful theCrag syncs for the affected account. |
 | [DOFEK-MOBILE-28](https://east-bay-software.sentry.io/issues/DOFEK-MOBILE-28) | 2026-11-01 05:29 | WHOOP startup hang | Open — Asynchronous bootstrap correction already merged; verify signed device runtime. |
 | [DOFEK-MOBILE-29](https://east-bay-software.sentry.io/issues/DOFEK-MOBILE-29) | 2026-11-01 04:46 | WHOOP disk writes | Open — Grouped transaction fix already merged; synthetic page-write improvement does not prove device recovery. |
@@ -65,7 +65,7 @@ Times are UTC. As of November 11, 32 of the original 52 issues are resolved in S
 | [DOFEK-SERVER-71](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-71) | 2026-10-24 03:31 | Database pool | Resolved — Authenticated billing.status returned HTTP 200 JSON in 39 ms. |
 | [DOFEK-MOBILE-21](https://east-bay-software.sentry.io/issues/DOFEK-MOBILE-21) | 2026-10-23 23:11 | Native/OTA mismatch | Open — Existing signed rollback and fingerprint compatibility correction; verify installed native methods. |
 | [DOFEK-MOBILE-20](https://east-bay-software.sentry.io/issues/DOFEK-MOBILE-20) | 2026-10-23 00:56 | Apple sign-in | Open — Native code 1000 alone does not establish root cause; current signed-device reproduction needed. |
-| [DOFEK-SERVER-6Z](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6Z) | 2026-10-22 16:01 | Provider Garmin | Open — Historical permissions 403; verify authorization recovery for the affected connection. |
+| [DOFEK-SERVER-6Z](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6Z) | 2026-10-22 16:01 | Provider Garmin | Resolved at operator request — Approved refresh, persisted reload and exact identity/permissions reads returned 200 for the saved grant. Original October 22 identity/cause remain unknown; delivery holds are unchanged. |
 
 ## Confirmed findings
 
@@ -175,3 +175,11 @@ The exact image-work item from [SERVER-7E](https://east-bay-software.sentry.io/i
 [SERVER-6E](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6E) regressed with theCrag's scheduled logbook sync, independently of its earlier Withings errors. Sentry event `025fc67318e84a2fbf8959db9f7df89e` and Axiom's 08:30:15 UTC diagnostic identify HTTP 400. The deployed official-API client recheck at 08:50:22 UTC received JSON stating that the key has insufficient endpoint access and requires level `logbook`. Only status, field names and sanitized error text were emitted; the response's credential, arguments, address and ascent payloads were excluded. Key access and account status remain to be verified; this response does not establish that the subscription expired. No credential or runtime behavior changed.
 
 Production release verification passed, public `/healthz` returned HTTP 200 with `status: ok`, and web replicas returned to 2/2. The replacement analytics task completed PASS=42 and PASS=2 at 08:42:55 and 08:43:07 UTC, recorded 29 datasets with zero failures, and reported readiness HTTP 200 with `lastSuccessAt: 2026-11-11T08:43:46.522Z`. This confirms work recovery after the old executor's exit 137; natural shutdown remains a separate unresolved gap.
+
+## Operator-directed provider closures after workspace separation
+
+[Crimpd SERVER-78](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-78) was resolved at the operator's explicit request at 15:53:51 UTC. The original parser required a `success` field that the valid token response omitted; existing [PR #3191](https://github.com/Asherlc/dofek/pull/3191), commit `892289f3bd5aac42bb947d9422835868787a47fd`, makes that field optional while retaining required token validation and login/refresh regressions. The owning workspace verified both web replicas contained that correction. Its exact account check found no current Crimpd connection, credentials or sync history. This closes the historical corrected defect, not a claim of fresh authenticated export or affected-account recovery; Sentry note `6805816812` preserves that distinction.
+
+[Garmin SERVER-6Z](https://east-bay-software.sentry.io/issues/DOFEK-SERVER-6Z) was resolved after the operator explicitly requested closure and archival of the dedicated workspace. The approved live check at 15:59:28–29 UTC refreshed and durably reloaded the sole saved October 24 grant, then received HTTP 200 from the canonical identity and permissions resources with matching identity and `ACTIVITY_EXPORT HEALTH_EXPORT`. The October 22 failed operation's account identity and cause remain unknown; all ten observed delivery feeds remain On Hold. The complete [incident evidence](../production-incident-baseline.md#operator-directed-closure-and-workspace-archival) preserves the historical open dispositions and their later explicit supersession. Before archival, the complete append-only patch was independently copied into coordination and verified against SHA256 `025cc289fff4ba0784168f870d5e7b19faad5ba1c312c85f93f4f45bffea1441`.
+
+Live Sentry reconciliation confirms 19 open issues: 18 from the original batch plus SERVER-84. These operator-directed closures do not establish completion of the Strava history continuation, current iPhone sign-in recovery or Garmin data delivery.
