@@ -10,6 +10,8 @@
 
 **Spec:** [Approved design](../specs/2026-11-11-processing-inactivity-design.md).
 
+**Publication update, November 11:** The user separately approved merging current `main` into this branch after draft PR [#3277](https://github.com/Asherlc/dofek/pull/3277) exposed an append-only incident-baseline conflict. Preserve both complete incident records and repeat the required publication checks. This approval does not authorize merging the PR, deployment or production recovery.
+
 ## Global Constraints
 
 - Keep `STALE_OPERATION_THRESHOLD_MS = 12 * 60 * 60 * 1_000` and the strict greater-than boundary.
@@ -44,7 +46,7 @@
 - [x] **Step 3: Run RED.** After the lead confirms the shared local validation slot, run the focused unit and integration files using the generated workspace URLs. Capture the exact command, failed assertion and first fatal line. The old-operation/fresh-output regression must fail against unchanged production source for premature abandonment. Prerequisite failures do not count as RED.
 - [x] **Step 4: Make the smallest source correction.** In the current pending selection return `MAX(outbox.created_at) AS last_output_at`, retain its existing filters/grouping/ordering/limit, and use the parsed timestamp in the existing age comparison. Keep the join/operation lineage and all stale-handling/evidence code unchanged. Do not add new abstractions or locking protocols.
 - [x] **Step 5: Run GREEN and document.** Re-run the same focused files; all cases must pass with no ad-hoc waits. Update the processing runbook and report changed files, RED/GREEN evidence and any concern. No broad unit/mobile, native or mutation campaign is authorized to the worker.
-- [ ] **Step 6: Lead review and publication.** Lead reviews the diff and focused results, obtains the required task/whole-change review, runs full lint and root/server/web typechecks plus relevant focused units, then commits and pushes immediately. No worker commit before lead review/pre-push checks; do not cherry-pick or merge another branch. Shared heavy checks need direct peer coordination. Reuse passing checks unless subsequent source changes or a real concern justify repeating them.
+- [x] **Step 6: Lead review and publication.** Lead reviews the diff and focused results, obtains the required task/whole-change review, runs full lint and root/server/web typechecks plus relevant focused units, then commits and pushes immediately. No worker commit before lead review/pre-push checks; do not cherry-pick or merge another branch. Shared heavy checks need direct peer coordination. Reuse passing checks unless subsequent source changes or a real concern justify repeating them.
 
 **Focused commands:**
 
