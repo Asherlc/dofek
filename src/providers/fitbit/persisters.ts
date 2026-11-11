@@ -4,7 +4,7 @@ import { upsertProviderActivity } from "../../db/provider-activity-sync.ts";
 import { dailyMetrics, sleepSession } from "../../db/schema/activity.ts";
 import { SOURCE_TYPE_API } from "../../db/sensor-channels.ts";
 import { logger } from "../../logger.ts";
-import type { MetricStreamEventPublisher } from "../../metric-stream/redpanda-producer.ts";
+import type { MetricStreamEventPublisher } from "../../metric-stream/publisher.ts";
 import { parseTcx, tcxToSensorSamples } from "../../tcx/parser.ts";
 import type { SyncError } from "../types.ts";
 import type { FitbitActivity, FitbitClient } from "./client.ts";

@@ -38,12 +38,11 @@ export const PRODUCTION_DBT_MODELS = [
   "resting_heart_rate_sleep_window",
   "daily_sleep",
   "daily_recovery_inputs",
+  "daily_health_sensor",
   "daily_recovery",
   "daily_activity_load",
   "daily_strain",
   "daily_body_measurement",
-  "healthspan_activity_zone_minutes",
-  "weekly_healthspan",
 ] as const;
 
 export type ProductionDbtModel = (typeof PRODUCTION_DBT_MODELS)[number];
@@ -51,8 +50,6 @@ export type ProductionDbtModel = (typeof PRODUCTION_DBT_MODELS)[number];
 export const CYCLING_POWER_DOWNSTREAM_DBT_MODELS = [
   "cycling_threshold_history",
   "cycling_activity_power_metrics",
-  "healthspan_activity_zone_minutes",
-  "weekly_healthspan",
 ] as const satisfies readonly ProductionDbtModel[];
 
 export const PROCESSING_DATASET_KEYS = [
@@ -239,7 +236,12 @@ export const DATASET_CONTRACTS = [
         cdcEvidence: [{ kind: "clickhouse_sink_ack", sinkName: "metric_stream_clickhouse_sink" }],
       },
     ],
-    analyticsModels: ["daily_recovery_inputs", "daily_recovery", "daily_strain"],
+    analyticsModels: [
+      "daily_health_sensor",
+      "daily_recovery_inputs",
+      "daily_recovery",
+      "daily_strain",
+    ],
     cacheQueryFamilies: ["recovery", "stress", "dashboard"],
     providerIds: ["*"],
     dataTypes: ["activity", "daily_metrics", "sleep"],
@@ -267,15 +269,13 @@ export const DATASET_CONTRACTS = [
       "activity_heart_rate_distribution",
       "activity_sensor_processing_coverage",
       "activity_sensor_key_verification",
-      "healthspan_activity_zone_minutes",
-      "weekly_healthspan",
     ],
-    cacheQueryFamilies: ["training", "healthspan", "durationCurves"],
+    cacheQueryFamilies: ["training", "durationCurves"],
     providerIds: ["*"],
     dataTypes: ["activity", "daily_metrics", "metric_stream"],
     freshnessTargetMs: FIFTEEN_MINUTES_MS,
-    webConsumers: ["training", "healthspan"],
-    mobileConsumers: ["training", "healthspan"],
+    webConsumers: ["training"],
+    mobileConsumers: ["training"],
   },
   {
     key: "body",

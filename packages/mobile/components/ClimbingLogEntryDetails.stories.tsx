@@ -135,3 +135,27 @@ export const UnorderedKayaAttempts: Story = {
     },
   },
 };
+
+export const KilterBoardLocation: Story = {
+  args: {
+    entry: climbingLogEntryFixture({
+      providerId: "kilter",
+      sourceName: "Kilter Board",
+      title: "Evening problem",
+      climbedOn: "2026-11-09",
+      board: { name: "Original 12 x 12", externalId: "wall-one" },
+      wallAngle: { value: 40, unit: "degrees" },
+      areaPath: [
+        {
+          id: "20000000-0000-4000-8000-000000000010",
+          userId: entry.userId,
+          providerId: "kilter",
+          externalId: "gym-one",
+          name: "Summit Climbing · North Gym",
+          parentAreaId: null,
+          coordinates: { latitude: 37.5, longitude: -122.25 },
+        },
+      ],
+    }),
+  },
+};

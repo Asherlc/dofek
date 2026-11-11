@@ -272,7 +272,7 @@ export function captureException(
   );
   const source = typeof context.source === "string" ? context.source : undefined;
   const handledFailure =
-    classifyHandledFailure(error) ??
+    classifyHandledFailure(error, source) ??
     (shouldSuppressBackgroundTransientNetworkError(error, source) ? "background_transport" : null);
   if (handledFailure) {
     if (!retiredLifetime) posthogClient?.capture("handled_failure", { kind: handledFailure });

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   areaSchema,
   climbingAttemptSchema,
+  climbingLogEntryAreaPath,
   climbingLogEntryName,
   climbingLogEntrySchema,
   climbSchema,
@@ -17,6 +18,16 @@ const owner = {
   providerId: "summitpost",
   externalId: "object:1234",
 };
+
+it("prefers a log's recorded location and uses the climb path only for an omitted log path", () => {
+  const climb = { areaPath: [{ name: "Catalogue location" }] };
+  expect(climbingLogEntryAreaPath({ climb, areaPath: [{ name: "Visited gym" }] })).toEqual([
+    { name: "Visited gym" },
+  ]);
+  expect(climbingLogEntryAreaPath({ climb, areaPath: [] })).toEqual([]);
+  expect(climbingLogEntryAreaPath({ climb })).toEqual([{ name: "Catalogue location" }]);
+  expect(climbingLogEntryAreaPath({ climb: null })).toEqual([]);
+});
 
 describe("climbing log activity association", () => {
   it.each([

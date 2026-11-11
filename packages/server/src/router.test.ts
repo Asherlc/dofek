@@ -34,7 +34,6 @@ vi.mock("./routers/efficiency.ts", () => ({ efficiencyRouter: mockRouter }));
 vi.mock("./routers/food.ts", () => ({ foodRouter: mockRouter }));
 vi.mock("./routers/heart-rate.ts", () => ({ heartRateRouter: mockRouter }));
 vi.mock("./routers/health-kit-sync.ts", () => ({ healthKitSyncRouter: mockRouter }));
-vi.mock("./routers/healthspan.ts", () => ({ healthspanRouter: mockRouter }));
 vi.mock("./routers/hiking.ts", () => ({ hikingRouter: mockRouter }));
 vi.mock("./routers/insights.ts", () => ({ insightsRouter: mockRouter }));
 vi.mock("./routers/intervals.ts", () => ({ intervalsRouter: mockRouter }));
@@ -161,7 +160,6 @@ describe("appRouter", () => {
       "running",
       "settings",
       "stress",
-      "healthspan",
       "medicationDoseEvents",
       "mcp",
       "mobileDashboard",

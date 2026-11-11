@@ -60,7 +60,7 @@ interface ParseDbtRunArtifactsInput {
   manifest: unknown;
   runResults: unknown;
   sources: unknown;
-  selectedModels: readonly string[];
+  selectedModels: readonly string[] | "all";
 }
 
 function sanitizedMessage(message: string | null): string | null {
@@ -80,7 +80,15 @@ export function parseDbtRunArtifacts({
   const manifestNodeByUniqueId = new Map(
     Object.values(parsedManifest.nodes).map((node) => [node.unique_id, node]),
   );
-  const selectedModelSet = new Set(selectedModels);
+  const selectedNames =
+    selectedModels === "all"
+      ? Object.values(parsedManifest.nodes)
+          .filter((node) => node.resource_type === undefined || node.resource_type === "model")
+          .map((node) => node.name)
+      : selectedModels;
+  if (selectedModels === "all" && selectedNames.length === 0)
+    throw new Error("dbt build manifest contains no models");
+  const selectedModelSet = new Set(selectedNames);
   const resultByModelName = new Map<string, z.infer<typeof runResultSchema>>();
 
   for (const result of parsedRunResults.results) {
@@ -99,7 +107,7 @@ export function parseDbtRunArtifacts({
     }
   }
 
-  const models = selectedModels.map((name): DbtModelResult => {
+  const models = selectedNames.map((name): DbtModelResult => {
     const manifestNode = Object.values(parsedManifest.nodes).find(
       (node) =>
         node.name === name && (node.resource_type === undefined || node.resource_type === "model"),

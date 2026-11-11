@@ -4,6 +4,7 @@ import {
   DEFAULT_CLIMBING_GRADE_PREFERENCE,
 } from "@dofek/training/climbing-grades";
 import {
+  areaSchema,
   type ClimbingAttempt,
   climbingAttemptSchema,
   climbingLogEntrySchema,
@@ -13,8 +14,10 @@ import { recordedClimbingTags } from "dofek/climbing-tags";
 import { type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
+  type ClimbingLogActivitySession,
   type ClimbingLogEntryDetail,
   type ClimbingPitchResult,
+  climbingLogActivitySessionSchema,
   climbingLogClimbDetailSchema,
   climbingLogEntryDetailSchema,
 } from "../contracts/climbing-log-contracts.ts";
@@ -36,6 +39,9 @@ const databaseRowSchema = z.object({
     providerAbsentAt: timestampStringSchema.nullable(),
   }),
   climb: climbingLogClimbDetailSchema.nullable(),
+  areaPath: z.array(areaSchema),
+  logAreaId: z.guid().nullable(),
+  areaGroupId: z.guid().nullable(),
   freeSend: z.boolean().nullable(),
   attempts: z.array(
     z
@@ -60,9 +66,10 @@ function climbingDetailRaw(
 
 function mapLocation(
   climb: ClimbingLogEntryDetail["climb"],
+  areaPath: z.infer<typeof areaSchema>[],
+  logAreaId: string | null,
 ): ClimbingLogEntryDetail["mapLocation"] {
-  if (!climb) return null;
-  if (climb.coordinates)
+  if (logAreaId === null && climb?.coordinates)
     return {
       coordinates: climb.coordinates,
       scope: "climb",
@@ -70,7 +77,7 @@ function mapLocation(
       providerId: climb.providerId,
       name: climb.name,
     };
-  const area = climb.areaPath
+  const area = areaPath
     .slice()
     .reverse()
     .find((area) => area.coordinates !== null);
@@ -142,6 +149,7 @@ function identity(log: ClimbingLogEntryDetail): string | null {
     normalized(log.displayGrade),
     normalized(log.climb.name),
     log.climb.areaPath.map((area) => normalized(area.name)),
+    log.areaGroupId ?? null,
     targets,
   ]);
 }
@@ -305,6 +313,37 @@ export class ClimbingActivityLogEntryRepository extends BaseRepository {
       )
     ).map((log) => new ClimbingActivityLogEntry(log));
   }
+  async getActivityLogSessions(
+    activityIds: readonly string[],
+  ): Promise<Map<string, ClimbingLogActivitySession[]>> {
+    if (!activityIds.length) return new Map();
+    const rows = await this.query(
+      climbingLogActivitySessionSchema.extend({ activityId: z.guid() }),
+      sql`SELECT grouped.id AS "activityId", observation.session_id AS id,
+        observation.provider_id AS "providerId",
+        array_agg(observation.activity_id ORDER BY observation.recorded_at, point.external_id) AS "memberActivityIds",
+        MIN(observation.recorded_at) AS "firstLoggedAt", MAX(observation.recorded_at) AS "lastLoggedAt"
+      FROM fitness.v_activity AS grouped
+      JOIN fitness.v_climbing_log_activity AS observation
+        ON observation.user_id = grouped.user_id AND observation.activity_id = ANY(grouped.member_activity_ids)
+      JOIN fitness.activity AS point ON point.id = observation.activity_id AND point.user_id = observation.user_id
+      WHERE grouped.user_id = ${this.userId}::uuid
+        AND grouped.id IN (${sql.join(
+          activityIds.map((id) => sql`${id}::uuid`),
+          sql`, `,
+        )})
+        ${this.dateAccessPredicate(postgresActivityCalendarDate(sql`grouped`, this.timezone))}
+      GROUP BY grouped.id, observation.provider_id, observation.session_id
+      ORDER BY grouped.id, MIN(observation.recorded_at), observation.session_id`,
+    );
+    const sessions = new Map<string, ClimbingLogActivitySession[]>();
+    for (const { activityId, ...session } of rows) {
+      const group = sessions.get(activityId) ?? [];
+      group.push(session);
+      sessions.set(activityId, group);
+    }
+    return sessions;
+  }
   async getActivityMapLocations(
     activityIds: readonly string[],
   ): Promise<Map<string, ClimbingMapLocation[]>> {
@@ -411,11 +450,13 @@ export class ClimbingActivityLogEntryRepository extends BaseRepository {
         'externalId',catalogue.external_id,'name',catalogue.name,'kind',catalogue.kind,'areaId',catalogue.area_id,
         'publishedGrades',entry.published_grades,'setting',entry.setting,'routeProtection',catalogue.route_protection,
         'coordinates',CASE WHEN catalogue.coordinates IS NOT NULL THEN jsonb_build_object('latitude',catalogue.coordinates[1],'longitude',catalogue.coordinates[0]) END,
-        'areaPath',entry.area_path,'pitches',COALESCE((SELECT jsonb_agg(jsonb_build_object(
+        'areaPath',entry.climb_area_path,'pitches',COALESCE((SELECT jsonb_agg(jsonb_build_object(
           'id',pitch.id,'climbId',pitch.climb_id,'externalId',pitch.external_id,'number',pitch.number,'name',pitch.name,
           'publishedGrades',COALESCE((SELECT jsonb_agg(jsonb_build_object('value',component.value,'system',component.system) ORDER BY component.position) FROM fitness.pitch_grade AS component WHERE component.pitch_id=pitch.id),'[]'::jsonb)
         ) ORDER BY pitch.number NULLS LAST,pitch.id) FROM fitness.pitch AS pitch WHERE pitch.climb_id=catalogue.id),'[]'::jsonb)
       ) END AS climb,
+      entry.area_path AS "areaPath", entry.log_area_id AS "logAreaId",
+      location.group_id AS "areaGroupId",
       entry.free_send AS "freeSend",
       COALESCE((SELECT jsonb_agg(jsonb_build_object(
         'id',attempt.id,'climbingLogEntryId',attempt.climbing_log_entry_id,'scope',attempt.scope,'pitchId',attempt.pitch_id,
@@ -428,6 +469,8 @@ export class ClimbingActivityLogEntryRepository extends BaseRepository {
       ) ORDER BY attempt.attempt_index NULLS LAST,attempt.created_at,attempt.id) FROM fitness.v_climbing_attempt AS attempt WHERE attempt.climbing_log_entry_id=entry.id),'[]'::jsonb) AS attempts
       FROM fitness.v_climbing_log_entry AS entry
       LEFT JOIN fitness.climb AS catalogue ON catalogue.id=entry.climb_id
+      LEFT JOIN fitness.area AS location ON location.id=COALESCE(entry.log_area_id,catalogue.area_id)
+        AND location.user_id=entry.user_id
       LEFT JOIN fitness.activity AS attached ON attached.id=entry.activity_id AND attached.user_id=entry.user_id
       LEFT JOIN fitness.v_activity AS grouped ON grouped.user_id=entry.user_id AND attached.id=ANY(grouped.member_activity_ids)
       WHERE entry.user_id=${this.userId}::uuid AND ${predicate} ${eligibility}
@@ -462,7 +505,9 @@ export class ClimbingActivityLogEntryRepository extends BaseRepository {
         ...row.log,
         raw: climbingDetailRaw(row.log),
         climb: row.climb,
-        mapLocation: mapLocation(row.climb),
+        areaPath: row.areaPath,
+        areaGroupId: row.areaGroupId,
+        mapLocation: mapLocation(row.climb, row.areaPath, row.logAreaId),
         photoLogEntryId:
           row.log.providerId === "kaya" && row.log.externalId?.startsWith("kaya:ascent:")
             ? row.log.id

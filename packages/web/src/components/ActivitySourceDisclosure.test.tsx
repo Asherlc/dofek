@@ -41,7 +41,7 @@ describe("ActivitySourceDisclosure", () => {
     expect(screen.getByText("WHOOP")).toBeDefined();
   });
 
-  it("returns keyboard focus to the inline trigger when closing lineage", () => {
+  it("returns keyboard focus to the card trigger when closing lineage", async () => {
     render(<ActivitySourceDisclosure tree={branchingSourceTree} />);
     const trigger = screen.getByRole("button", { name: "Garmin Connect Lineage" });
     fireEvent.click(trigger);
@@ -49,24 +49,30 @@ describe("ActivitySourceDisclosure", () => {
     close.focus();
     fireEvent.click(close);
     expect(trigger).toHaveAttribute("aria-expanded", "false");
-    expect(trigger).toHaveFocus();
+    await waitFor(() => expect(trigger).toHaveFocus());
   });
 
-  it("opens header sources in a flyout and returns focus after Escape", async () => {
-    const { container } = render(
-      <ActivitySourceDisclosure tree={branchingSourceTree} heading={<h1>Morning Ride</h1>} />,
-    );
-    const trigger = screen.getByRole("button", { name: "Garmin Connect Lineage" });
-    trigger.focus();
-    fireEvent.click(trigger);
-    const flyout = screen.getByRole("dialog", { name: "Lineage" });
-    expect(within(flyout).getByRole("link", { name: "Strava" })).toBeVisible();
-    expect(container.contains(flyout)).toBe(false);
-    fireEvent.keyDown(flyout, { key: "Escape" });
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    await waitFor(() => expect(document.activeElement).toBe(trigger));
-    expect(screen.getByRole("heading", { name: "Morning Ride" })).toBeVisible();
-  });
+  it.each([false, true])(
+    "opens sources in a flyout and returns focus after Escape (heading: %s)",
+    async (withHeading) => {
+      const { container } = render(
+        <ActivitySourceDisclosure
+          tree={branchingSourceTree}
+          heading={withHeading ? <h1>Morning Ride</h1> : undefined}
+        />,
+      );
+      const trigger = screen.getByRole("button", { name: "Garmin Connect Lineage" });
+      trigger.focus();
+      fireEvent.click(trigger);
+      const flyout = screen.getByRole("dialog", { name: "Lineage" });
+      expect(within(flyout).getByRole("link", { name: "Strava" })).toBeVisible();
+      expect(container.contains(flyout)).toBe(false);
+      fireEvent.keyDown(flyout, { key: "Escape" });
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      await waitFor(() => expect(document.activeElement).toBe(trigger));
+      if (withHeading) expect(screen.getByRole("heading", { name: "Morning Ride" })).toBeVisible();
+    },
+  );
 
   it.each([
     ["whoop", "WHOOP (Cloud)"],
@@ -230,7 +236,7 @@ describe("ActivitySourceDisclosure", () => {
     expect(screen.getAllByText("Forerunner 965")).toHaveLength(2);
   });
 
-  it("expands inline with one primary root and distinct transfer branches", () => {
+  it("opens a flyout with one primary root and distinct transfer branches", () => {
     render(<ActivitySourceDisclosure tree={branchingSourceTree} />);
     const trigger = screen.getByRole("button", { name: "Garmin Connect Lineage" });
     expect(trigger).toHaveAttribute("aria-expanded", "false");
@@ -269,7 +275,7 @@ describe("ActivitySourceDisclosure", () => {
     expect(screen.getByText("WHOOP")).toBeVisible();
   });
 
-  it("keeps focus on the native disclosure button and gives each region a unique id", () => {
+  it("opens each card's flyout independently with its own accessible control", async () => {
     render(
       <>
         <ActivitySourceDisclosure tree={branchingSourceTree} />
@@ -278,14 +284,18 @@ describe("ActivitySourceDisclosure", () => {
     );
     const triggers = screen.getAllByRole("button", { name: "Garmin Connect Lineage" });
     expect(triggers[0]?.tagName).toBe("BUTTON");
-    expect(triggers[0]?.getAttribute("aria-controls")).not.toBe(
-      triggers[1]?.getAttribute("aria-controls"),
-    );
-    const trigger = triggers[0];
-    if (!trigger) throw new Error("Missing disclosure");
-    trigger.focus();
-    fireEvent.click(trigger);
-    expect(trigger).toHaveFocus();
+    const contentIds = [];
+    for (const trigger of triggers) {
+      trigger.focus();
+      fireEvent.click(trigger);
+      const flyout = screen.getByRole("dialog", { name: "Lineage" });
+      expect(trigger).toHaveAttribute("aria-controls", flyout.id);
+      expect(within(flyout).getByRole("button", { name: "Close lineage" })).toHaveFocus();
+      contentIds.push(flyout.id);
+      fireEvent.keyDown(flyout, { key: "Escape" });
+      await waitFor(() => expect(trigger).toHaveFocus());
+    }
+    expect(contentIds[0]).not.toBe(contentIds[1]);
   });
 
   it("renders server labels and URLs without adding Apple Health logo badges", () => {

@@ -34,6 +34,7 @@ import {
 } from "../repositories/activity-metric-sources-repository.ts";
 import { ActivityRepository } from "../repositories/activity-repository.ts";
 import { getActivityRoute } from "../repositories/activity-route-repository.ts";
+import { ClimbingActivityLogEntryRepository } from "../repositories/climbing-activity-log-entry-repository.ts";
 import {
   CyclingThresholdRepository,
   cyclingThresholdEvidenceFromMetrics,
@@ -164,12 +165,12 @@ export const activityRouter = router({
       }
     },
     undefined,
-    { keyVersion: "activity-list-maplibre-v3" },
+    { keyVersion: "activity-list-maplibre-v4" },
   ),
 
   byId: cachedProtectedQuery({
     maxAge: CacheTTL.MEDIUM,
-    keyVersion: "activity-maplibre-v5",
+    keyVersion: "activity-maplibre-v6",
   })
     .input(z.object({ id: z.guid() }))
     .query(async ({ ctx, input }): Promise<ActivityDetail> => {
@@ -187,7 +188,13 @@ export const activityRouter = router({
       }
 
       await ensureProvidersRegistered();
-      return new Activity(row, getProvider).toDetail();
+      const sessions = await new ClimbingActivityLogEntryRepository(
+        ctx.db,
+        ctx.userId,
+        ctx.timezone,
+        ctx.accessWindow,
+      ).getActivityLogSessions([row.id]);
+      return new Activity(row, getProvider).toDetail(sessions.get(row.id) ?? []);
     }),
 
   hangboardDetails: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
@@ -314,7 +321,7 @@ export const activityRouter = router({
 
   metricSources: cachedProtectedQuery({
     maxAge: CacheTTL.MEDIUM,
-    keyVersion: "source-inheritance-v4",
+    keyVersion: "source-inheritance-v5",
   })
     .input(
       z.object({ id: z.guid(), responseVersion: z.union([z.literal(1), z.literal(2)]).default(1) }),

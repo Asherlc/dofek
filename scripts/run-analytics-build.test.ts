@@ -1,5 +1,6 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { withAnalyticsQueryOwner } from "../src/analytics/analytics-query-owner.ts";
 import { createClickHouseClientFromEnv } from "../src/db/clickhouse.ts";
 import { createDatabaseFromEnv } from "../src/db/index.ts";
 import { AnalyticsBuildError } from "./analytics-build-error.ts";
@@ -18,6 +19,10 @@ vi.mock("../src/db/clickhouse.ts", () => ({
 }));
 vi.mock("../src/db/index.ts", () => ({
   createDatabaseFromEnv: vi.fn(),
+}));
+vi.mock("../src/analytics/analytics-query-owner.ts", () => ({
+  ANALYTICS_PUBLICATION_RESOURCE: "metric-stream-source",
+  withAnalyticsQueryOwner: vi.fn(),
 }));
 
 const TEST_MICROBATCH_BOUNDS = {
@@ -69,6 +74,29 @@ beforeEach(() => {
 });
 
 describe("runAnalyticsBuild", () => {
+  it("acquires publication before reading pending work or source bounds", async () => {
+    const admission = new Error("Publication admission held");
+    const end = vi.fn(async () => undefined),
+      close = vi.fn(async () => undefined);
+    const execute = vi.fn(async () => []),
+      query = vi.fn(async () => ({ json: async () => [] }));
+    vi.mocked(mkdtemp).mockResolvedValue("/tmp/dofek-dbt-test");
+    vi.mocked(rm).mockResolvedValue(undefined);
+    vi.mocked(createDatabaseFromEnv).mockReturnValue({ $client: { end }, execute });
+    vi.mocked(createClickHouseClientFromEnv).mockReturnValue({ query, close });
+    vi.mocked(withAnalyticsQueryOwner).mockRejectedValue(admission);
+    await expect(runAnalyticsBuildFromEnvironment()).rejects.toBe(admission);
+    expect(withAnalyticsQueryOwner).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      { resourceId: "metric-stream-source", intentId: "analytics-build" },
+      expect.any(Function),
+    );
+    expect(execute).not.toHaveBeenCalled();
+    expect(query).not.toHaveBeenCalled();
+    expect(end).toHaveBeenCalledOnce();
+    expect(close).toHaveBeenCalledOnce();
+  });
   it("builds threshold-dependent models after projection and records both phases together", async () => {
     const order: string[] = [];
     let phase = 0;
@@ -76,8 +104,6 @@ describe("runAnalyticsBuild", () => {
       "activity_summary_rows",
       "cycling_threshold_history",
       "cycling_activity_power_metrics",
-      "healthspan_activity_zone_minutes",
-      "weekly_healthspan",
     ];
     const recordRun = vi.fn(async () => {
       order.push("record");
@@ -113,7 +139,7 @@ describe("runAnalyticsBuild", () => {
     expect(order).toEqual([
       "dbt:activity_summary_rows",
       "project",
-      "dbt:cycling_threshold_history cycling_activity_power_metrics healthspan_activity_zone_minutes weekly_healthspan",
+      "dbt:cycling_threshold_history cycling_activity_power_metrics",
       "record",
     ]);
     expect(recordRun).toHaveBeenCalledWith(
@@ -129,8 +155,8 @@ describe("runAnalyticsBuild", () => {
     let phase = 0;
     const selected = [
       "activity_summary_rows",
-      "healthspan_activity_zone_minutes",
-      "weekly_healthspan",
+      "cycling_threshold_history",
+      "cycling_activity_power_metrics",
     ];
     const recordRun = vi.fn(async () => ({ datasets: 1, failed: 1 }));
     await expect(
@@ -163,8 +189,8 @@ describe("runAnalyticsBuild", () => {
       expect.objectContaining({
         modelResults: [
           expect.objectContaining({ name: "activity_summary_rows", status: "succeeded" }),
-          expect.objectContaining({ name: "healthspan_activity_zone_minutes", status: "failed" }),
-          expect.objectContaining({ name: "weekly_healthspan", status: "failed" }),
+          expect.objectContaining({ name: "cycling_threshold_history", status: "failed" }),
+          expect.objectContaining({ name: "cycling_activity_power_metrics", status: "failed" }),
         ],
       }),
     );
@@ -173,8 +199,8 @@ describe("runAnalyticsBuild", () => {
   it("does not run downstream models when an input model failed", async () => {
     const selected = [
       "activity_summary_rows",
-      "healthspan_activity_zone_minutes",
-      "weekly_healthspan",
+      "cycling_threshold_history",
+      "cycling_activity_power_metrics",
     ];
     const projectCyclingPower = vi.fn(async () => ({
       pendingActivities: 0,
@@ -210,8 +236,8 @@ describe("runAnalyticsBuild", () => {
       expect.objectContaining({
         modelResults: [
           expect.objectContaining({ name: "activity_summary_rows", status: "failed" }),
-          expect.objectContaining({ name: "healthspan_activity_zone_minutes", status: "skipped" }),
-          expect.objectContaining({ name: "weekly_healthspan", status: "skipped" }),
+          expect.objectContaining({ name: "cycling_threshold_history", status: "skipped" }),
+          expect.objectContaining({ name: "cycling_activity_power_metrics", status: "skipped" }),
         ],
       }),
     );
@@ -225,7 +251,7 @@ describe("runAnalyticsBuild", () => {
       { pendingActivities: 0, pendingUsers: 2, projectedUsers: 32 },
       { pendingActivities: 0, pendingUsers: 0, projectedUsers: 2 },
     ];
-    const selected = ["activity_summary_rows", "weekly_healthspan"];
+    const selected = ["activity_summary_rows", "cycling_activity_power_metrics"];
     const result = await runAnalyticsBuild({
       selectedModels: selected,
       artifactDirectory: "/tmp/cycling-projection-batches",
@@ -263,7 +289,7 @@ describe("runAnalyticsBuild", () => {
       "project:74:34",
       "project:0:2",
       "project:0:0",
-      "dbt:weekly_healthspan",
+      "dbt:cycling_activity_power_metrics",
       "record",
     ]);
   });
@@ -311,7 +337,7 @@ describe("runAnalyticsBuild", () => {
     let batches = 0;
     await expect(
       runAnalyticsBuild({
-        selectedModels: ["cycling_activity", "weekly_healthspan"],
+        selectedModels: ["cycling_activity", "cycling_activity_power_metrics"],
         artifactDirectory: "/tmp/cycling-projection-gate",
         microbatchBounds: TEST_MICROBATCH_BOUNDS,
         loadPendingDatasets: async () => [],

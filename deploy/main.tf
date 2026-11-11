@@ -11,9 +11,29 @@ terraform {
       source  = "cloudflare/cloudflare"
       version = "~> 5.0"
     }
+    # Writes KAFKA_TIERED_STORAGE_* into Infisical after Root-approved CI privilege.
+    # Provider docs: https://registry.terraform.io/providers/infisical/infisical/0.20.12/docs
+    infisical = {
+      source  = "infisical/infisical"
+      version = "0.20.12"
+    }
   }
 }
 
 provider "cloudflare" {
   api_token = var.cloudflare_api_token
 }
+
+# Kafka TS R2 + account_token mint only. Stock alias — no second Cloudflare
+# provider source. Token: GH CLOUDFLARE_TERRAFORM_R2_API_TOKEN (R2 Storage Write +
+# Account API Tokens Write; no DNS/Zone). Default provider keeps DNS/storage.
+# https://developer.hashicorp.com/terraform/language/providers/configuration#alias-multiple-provider-configurations
+provider "cloudflare" {
+  alias     = "r2"
+  api_token = var.cloudflare_terraform_r2_api_token
+}
+
+# Auth: Infisical OIDC via INFISICAL_AUTH_METHOD=oidc, INFISICAL_MACHINE_IDENTITY_ID,
+# INFISICAL_AUTH_JWT (GitHub Actions OIDC JWT minted immediately before apply).
+# GitHub OIDC: https://infisical.com/docs/documentation/platform/identities/oidc-auth/github
+provider "infisical" {}

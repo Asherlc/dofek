@@ -1,0 +1,290 @@
+{
+  "schema": 1,
+  "productionActions": false,
+  "source": "e19b92001",
+  "startedAt": "2026-11-08T22:31:56.678Z",
+  "sources": [
+    "child-proof-legacy",
+    "child-proof-live",
+    "child-proof-history"
+  ],
+  "observations": [
+    {
+      "at": "2026-11-08T22:31:57.757Z",
+      "mode": "prepare",
+      "check": "actual phase blocks after logical expiry",
+      "passed": true,
+      "error": "Error: Kafka retains segment before erasure boundary for child-proof-legacy",
+      "records": 2400
+    },
+    {
+      "at": "2026-11-08T22:34:28.327Z",
+      "mode": "advance",
+      "check": "all covered old segments visibly offloaded before expiry",
+      "passed": true,
+      "coveredObjects": 36
+    },
+    {
+      "at": "2026-11-08T22:34:28.406Z",
+      "mode": "advance",
+      "check": "actual phase blocks second logical expiry",
+      "passed": true,
+      "boundary": 400,
+      "records": 3600
+    },
+    {
+      "at": "2026-11-08T22:35:49.476Z",
+      "mode": "read",
+      "check": "actual retention phase",
+      "passed": false,
+      "error": "Error: Kafka retains segment before erasure boundary for child-proof-legacy"
+    },
+    {
+      "at": "2026-11-08T22:37:13.997Z",
+      "mode": "read",
+      "check": "actual retention phase",
+      "passed": false,
+      "error": "Error: Kafka retains segment before erasure boundary for child-proof-legacy"
+    },
+    {
+      "at": "2026-11-08T22:38:41.818Z",
+      "mode": "read",
+      "check": "actual retention phase",
+      "passed": true,
+      "value": {
+        "backupRetention": {
+          "verified": true
+        },
+        "peerDbStagingRetention": {
+          "verified": true
+        },
+        "processorRetention": {
+          "verified": true
+        },
+        "quarantineRetentionVerified": true,
+        "verified": true
+      }
+    },
+    {
+      "at": "2026-11-08T22:38:45.105Z",
+      "mode": "read",
+      "check": "remote-only record digest and generation survived fresh client",
+      "passed": true,
+      "count": 100,
+      "digest": "aad17bf9c4c43b807554e74eb897fa3aaa020d1519bc38283f2f3847c9abcc41",
+      "packaged": false,
+      "source": "workspace"
+    },
+    {
+      "at": "2026-11-08T22:41:59.857Z",
+      "mode": "after-restart",
+      "check": "actual retention phase",
+      "passed": true,
+      "value": {
+        "backupRetention": {
+          "verified": true
+        },
+        "peerDbStagingRetention": {
+          "verified": true
+        },
+        "processorRetention": {
+          "verified": true
+        },
+        "quarantineRetentionVerified": true,
+        "verified": true
+      }
+    },
+    {
+      "at": "2026-11-08T22:42:03.260Z",
+      "mode": "after-restart",
+      "check": "remote-only record digest and generation survived fresh client",
+      "passed": true,
+      "count": 100,
+      "digest": "aad17bf9c4c43b807554e74eb897fa3aaa020d1519bc38283f2f3847c9abcc41",
+      "packaged": false,
+      "source": "workspace"
+    },
+    {
+      "at": "2026-11-08T22:43:18.297Z",
+      "mode": "read",
+      "check": "actual retention phase",
+      "passed": true,
+      "value": {
+        "backupRetention": {
+          "verified": true
+        },
+        "peerDbStagingRetention": {
+          "verified": true
+        },
+        "processorRetention": {
+          "verified": true
+        },
+        "quarantineRetentionVerified": true,
+        "verified": true
+      }
+    },
+    {
+      "at": "2026-11-08T22:43:21.354Z",
+      "mode": "read",
+      "check": "remote-only record digest and generation survived fresh client",
+      "passed": true,
+      "count": 100,
+      "digest": "aad17bf9c4c43b807554e74eb897fa3aaa020d1519bc38283f2f3847c9abcc41",
+      "packaged": true,
+      "source": "e19b9200196c698e1d159597fc359d384d3a9a8e"
+    },
+    {
+      "at": "2026-11-08T22:46:02.724Z",
+      "mode": "negative",
+      "check": "orphan object blocks actual phase",
+      "passed": true
+    },
+    {
+      "at": "2026-11-08T22:46:05.898Z",
+      "mode": "negative",
+      "check": "incomplete multipart blocks actual phase",
+      "passed": true
+    },
+    {
+      "at": "2026-11-08T22:46:05.918Z",
+      "mode": "negative",
+      "check": "retained original broker root blocks actual phase",
+      "passed": true
+    },
+    {
+      "at": "2026-11-08T22:46:05.933Z",
+      "mode": "negative",
+      "check": "retained original broker root blocks actual phase",
+      "passed": true
+    }
+  ],
+  "runtimeSha256": {
+    "src/account-erasure/kafka-log-storage.ts": "eb48afe2718c7e29712f1c200082cbce81ee98c2c819eb31180d3faca2aaa624",
+    "src/account-erasure/kafka-remote-history.ts": "7fa1d6aa3fcce754102fa0cfba9eb126105b4eac5ee637b85605384abc790dd7",
+    "src/account-erasure/kafka-remote-record.ts": "17e7ac16c6e3b4ee74f471e1ee4754c49633c7edfee65f1af003a525cd37044b",
+    "src/account-erasure/kafka-remote-storage.ts": "0adbfa200b245e07d474c1fa062f7238d066a5988b1b7958bc0d66e2cb07e50f",
+    "src/account-erasure/redpanda-drain.ts": "08124eb0a7f9aa15d129352f95f296d0d64f7c5effdd4665159afcbb3608786d",
+    "src/jobs/account-erasure-runtime.ts": "69650c0829a57be03f199113e9505ac2ba9634158003616b23a4664e3202e331",
+    "src/jobs/account-erasure-phase-runner.ts": "05f9b619166fee5fec6dec4eb45116591b6c5cc44b6549d2fd9d78e6d3764dc4"
+  },
+  "checkpoints": [
+    {
+      "partition": 0,
+      "offset": "400",
+      "high": "400",
+      "low": "200",
+      "clusterId": "lOTpY0hBT0C-o779iHJVlQ",
+      "topicId": "ZEOaDqTHSCyn4dsA3AU1cQ",
+      "topic": "child-proof-legacy"
+    },
+    {
+      "partition": 0,
+      "offset": "400",
+      "high": "400",
+      "low": "200",
+      "clusterId": "lOTpY0hBT0C-o779iHJVlQ",
+      "topicId": "UbBL2S6AQ06ftYHaDxID4Q",
+      "topic": "child-proof-legacy.quarantine.v1"
+    },
+    {
+      "partition": 0,
+      "offset": "400",
+      "high": "400",
+      "low": "200",
+      "clusterId": "lOTpY0hBT0C-o779iHJVlQ",
+      "topicId": "20dlh5ynTvCBLq15zoWuSQ",
+      "topic": "child-proof-live"
+    },
+    {
+      "partition": 0,
+      "offset": "400",
+      "high": "400",
+      "low": "200",
+      "clusterId": "lOTpY0hBT0C-o779iHJVlQ",
+      "topicId": "OcsxCMhcSVSJq9jRLR0pig",
+      "topic": "child-proof-live.quarantine.v1"
+    },
+    {
+      "partition": 0,
+      "offset": "400",
+      "high": "400",
+      "low": "200",
+      "clusterId": "lOTpY0hBT0C-o779iHJVlQ",
+      "topicId": "mgJ9iF7lRDqrbgCxiiSbbA",
+      "topic": "child-proof-history"
+    },
+    {
+      "partition": 0,
+      "offset": "400",
+      "high": "400",
+      "low": "200",
+      "clusterId": "lOTpY0hBT0C-o779iHJVlQ",
+      "topicId": "rprGMH8dRAaYPVj4n8go9w",
+      "topic": "child-proof-history.quarantine.v1"
+    }
+  ],
+  "nativeCalls": 14,
+  "previousCheckpoints": [
+    {
+      "partition": 0,
+      "offset": "200",
+      "high": "200",
+      "low": "0",
+      "clusterId": "lOTpY0hBT0C-o779iHJVlQ",
+      "topicId": "ZEOaDqTHSCyn4dsA3AU1cQ",
+      "topic": "child-proof-legacy"
+    },
+    {
+      "partition": 0,
+      "offset": "200",
+      "high": "200",
+      "low": "0",
+      "clusterId": "lOTpY0hBT0C-o779iHJVlQ",
+      "topicId": "UbBL2S6AQ06ftYHaDxID4Q",
+      "topic": "child-proof-legacy.quarantine.v1"
+    },
+    {
+      "partition": 0,
+      "offset": "200",
+      "high": "200",
+      "low": "0",
+      "clusterId": "lOTpY0hBT0C-o779iHJVlQ",
+      "topicId": "20dlh5ynTvCBLq15zoWuSQ",
+      "topic": "child-proof-live"
+    },
+    {
+      "partition": 0,
+      "offset": "200",
+      "high": "200",
+      "low": "0",
+      "clusterId": "lOTpY0hBT0C-o779iHJVlQ",
+      "topicId": "OcsxCMhcSVSJq9jRLR0pig",
+      "topic": "child-proof-live.quarantine.v1"
+    },
+    {
+      "partition": 0,
+      "offset": "200",
+      "high": "200",
+      "low": "0",
+      "clusterId": "lOTpY0hBT0C-o779iHJVlQ",
+      "topicId": "mgJ9iF7lRDqrbgCxiiSbbA",
+      "topic": "child-proof-history"
+    },
+    {
+      "partition": 0,
+      "offset": "200",
+      "high": "200",
+      "low": "0",
+      "clusterId": "lOTpY0hBT0C-o779iHJVlQ",
+      "topicId": "rprGMH8dRAaYPVj4n8go9w",
+      "topic": "child-proof-history.quarantine.v1"
+    }
+  ],
+  "packagedSource": "e19b9200196c698e1d159597fc359d384d3a9a8e",
+  "packagedRuntimeHashMatched": true,
+  "evidenceLimits": {
+    "retentionRuntime": "Passing retention invocations are not individually tagged with workspace/image identity.",
+    "retiredRoots": "The two historical root-negative observations do not identify their tested paths.",
+    "postRemovalRecovery": "No separate passing post-removal observation was retained."
+  }
+}

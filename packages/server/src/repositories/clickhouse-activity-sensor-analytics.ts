@@ -66,6 +66,7 @@ export async function getClickHousePowerCurveSamples(
             AND deduped_samples.is_deleted = 0
             ${clickHouseToIntervalDayLowerBound(days, "activity.started_at")}
             AND activity.is_deleted = 0
+            AND coalesce(activity.provider_type, '') != 'climbing_log'
             AND has({activityTypes:Array(String)}, activity.canonical_type)
           GROUP BY activity.activity_id, activity.user_id, activity.started_at, activity.ended_at
           HAVING count() > 1
@@ -125,6 +126,7 @@ export async function getClickHouseNormalizedPowerSamples(
             AND deduped_samples.is_deleted = 0
             ${clickHouseToIntervalDayLowerBound(days, "activity.started_at")}
             AND activity.is_deleted = 0
+            AND coalesce(activity.provider_type, '') != 'climbing_log'
             AND has({activityTypes:Array(String)}, activity.canonical_type)
           GROUP BY activity.activity_id, activity.user_id, activity.started_at, activity.ended_at, activity.name
           HAVING count() >= 240

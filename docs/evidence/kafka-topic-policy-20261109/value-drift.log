@@ -1,0 +1,12 @@
+(node:40349) TimeoutNegativeWarning: -1794239247721 is a negative number.
+Timeout duration was set to 1.
+(Use `node --trace-warnings ...` to show where the warning was created)
+file://<workspace>/[eval1]:17
+        throw new Error(`${topic}: ${key} must be explicitly configured as ${expected}; found ${entries[0]?.configValue ?? 'missing'} (source ${entries[0]?.configSource ?? 'missing'})`);
+              ^
+
+Error: live.quarantine.v1: segment.bytes must be explicitly configured as 134217728; found 268435456 (source 1)
+    at file://<workspace>/[eval1]:17:15
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+
+Node.js v26.5.0

@@ -33,6 +33,7 @@ export function createSourceActivitySql(database: string): string {
     provider_id Nullable(String),
     user_id UUID,
     external_id Nullable(String),
+    provider_type String,
     provider_absent_at Nullable(DateTime64(6, 'UTC')),
     raw Nullable(String),
     source_name Nullable(String),

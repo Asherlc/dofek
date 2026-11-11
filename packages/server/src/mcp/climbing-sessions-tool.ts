@@ -1,4 +1,5 @@
 import type { FreeRockGradeSystem, RockClimbKind } from "@dofek/training/climbing-grades";
+import { climbingLogEntryAreaPath } from "@dofek/training/climbing-log";
 import { climbingResponseVersionSchema } from "@dofek/training/climbing-log-response";
 import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
@@ -37,7 +38,7 @@ export function registerClimbingSessionsTool(server: McpServer, context: DofekMc
         start_date: dateSchema,
         end_date: dateSchema,
         response_version: climbingResponseVersionSchema.describe(
-          "Defaults to 1 for legacy climbing traits. Use 2 for multiple grips and categorical wall angles, or 3 to also include recorded source tags.",
+          "Defaults to 1 for legacy climbing traits. Use 2 for multiple grips and categorical wall angles, 3 for recorded source tags, or 4 to include each log's recorded location.",
         ),
       }),
       outputSchema: climbingSessionsOutputSchema,
@@ -79,7 +80,10 @@ export function registerClimbingSessionsTool(server: McpServer, context: DofekMc
           avg_hr: activity.avg_hr,
           name: activity.name,
           location:
-            logs.find((log) => log.climb?.areaPath.length)?.climb?.areaPath.at(-1)?.name ?? null,
+            logs
+              .map(climbingLogEntryAreaPath)
+              .find((path) => path.length)
+              ?.at(-1)?.name ?? null,
           climbing_log_entries: logs.map((log) =>
             serializeClimbingLogEntryDetailResponse(log, response_version),
           ),

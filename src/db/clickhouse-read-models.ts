@@ -218,6 +218,7 @@ tombstoned AS (
   FROM postgres_fitness.activity FINAL
   WHERE _peerdb_is_deleted = 0
     AND coalesce(provider_absent_at, toDateTime64(0, 6, 'UTC')) != toDateTime64(0, 6, 'UTC')
+    AND coalesce(provider_type, '') != 'climbing_log'
     AND coalesce(deleted_at, toDateTime64(0, 6, 'UTC')) = toDateTime64(0, 6, 'UTC')
     AND external_id IS NOT NULL
     AND external_id != ''
@@ -270,6 +271,7 @@ best AS (
       row_number() OVER (
         PARTITION BY final_groups.group_id
         ORDER BY
+          coalesce(ranked.provider_type, '') = 'climbing_log' ASC,
           multiIf(
             ranked.canonical_type IN ('cycling', 'running', 'strength', 'walking', 'climbing'), 0,
             ranked.canonical_type IN ('cardio', 'other'), 2,
@@ -304,6 +306,7 @@ merged AS (
           toString(ranked.id)
         ),
         ranked.provider_type IS NOT NULL
+        AND (ranked.provider_type != 'climbing_log' OR best.provider_type = 'climbing_log')
         AND trimBoth(ranked.provider_type) != ''
         AND (
           ranked.canonical_type = best.canonical_type
@@ -315,10 +318,13 @@ merged AS (
       ''
     ) AS provider_type,
     any(best.modality) AS modality,
-    minIf(ranked.started_at, ranked.id IS NOT NULL) AS started_at,
-    maxIf(
-      coalesce(ranked.ended_at, ranked.started_at + INTERVAL 12 HOUR),
-      ranked.id IS NOT NULL
+    coalesce(
+            minOrNullIf(ranked.started_at, ranked.id IS NOT NULL AND coalesce(ranked.provider_type, '') != 'climbing_log'),
+            minIf(ranked.started_at, ranked.id IS NOT NULL)
+        ) AS started_at,
+    maxOrNullIf(
+      ranked.ended_at,
+      ranked.id IS NOT NULL AND coalesce(ranked.provider_type, '') != 'climbing_log'
     ) AS ended_at,
     any(best.source_name) AS source_name,
     argMinIf(ranked.name,

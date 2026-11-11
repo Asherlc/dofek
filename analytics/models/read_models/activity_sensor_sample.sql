@@ -53,6 +53,7 @@ activity_group_state AS (
         deduped.source_synced_at AS source_synced_at,
         deduped.member_activity_ids AS member_activity_ids,
         deduped.is_deleted AS is_deleted,
+        coalesce(deduped.provider_type, '') = 'climbing_log' AS is_point_only,
         deduped.refreshed_at AS refreshed_at
     FROM {{ ref('deduped_activities') }} AS deduped FINAL
     WHERE 1 = 1
@@ -75,7 +76,7 @@ current_activity AS (
         activity_group_state.source_synced_at,
         activity_group_state.member_activity_ids
     FROM activity_group_state
-    WHERE activity_group_state.is_deleted = 0
+    WHERE activity_group_state.is_deleted = 0 AND NOT activity_group_state.is_point_only
 ),
 
 activity_days AS (
@@ -172,6 +173,7 @@ stale_activity_samples AS (
       AND (
           samples.is_deleted = 1
           OR activity_group_state.is_deleted = 1
+          OR activity_group_state.is_point_only
           OR samples.recorded_at < activity_group_state.started_at
           OR samples.recorded_at > activity_group_state.effective_ended_at
           OR (

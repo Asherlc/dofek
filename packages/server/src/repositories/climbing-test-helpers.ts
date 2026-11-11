@@ -42,6 +42,9 @@ export function climbingLogDatabaseFixture(detail: ClimbingLogEntryDetail) {
   return {
     log: climbingLogEntrySchema.strip().parse(detail),
     climb: detail.climb,
+    areaPath: detail.areaPath ?? detail.climb?.areaPath ?? [],
+    logAreaId: detail.areaPath?.at(-1)?.id ?? null,
+    areaGroupId: detail.areaGroupId ?? null,
     freeSend: detail.freeSend,
     attempts: detail.attempts.map((attempt) => climbingAttemptSchema.strip().parse(attempt)),
   };
@@ -142,6 +145,7 @@ export function climbingActivityFixture(overrides: Partial<ActivityRow> = {}): A
     elevation_gain_m: null,
     elevation_loss_m: null,
     sample_count: null,
+    fit_recovery_error: false,
     provider_absent_at: null,
     ...overrides,
   };

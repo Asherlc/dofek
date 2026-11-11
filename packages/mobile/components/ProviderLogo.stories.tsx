@@ -1,3 +1,4 @@
+import { PROVIDER_CATALOG } from "@dofek/providers/provider-catalog";
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { Text, View } from "react-native";
 import { ProviderLogo } from "./ProviderLogo";
@@ -15,6 +16,25 @@ const meta = {
 export default meta;
 
 type Story = StoryObj<typeof meta>;
+
+export const AllProviders: Story = {
+  args: {
+    serverUrl: typeof location === "undefined" ? "https://dofek.fit" : location.origin,
+  },
+  render: (args) => (
+    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 24, padding: 24 }}>
+      {Object.entries(PROVIDER_CATALOG).map(([provider, entry]) => (
+        <View
+          key={provider}
+          style={{ flexDirection: "row", alignItems: "center", gap: 12, width: 220 }}
+        >
+          <ProviderLogo {...args} provider={provider} />
+          <Text>{entry.label}</Text>
+        </View>
+      ))}
+    </View>
+  ),
+};
 
 export const Strava: Story = {
   args: {

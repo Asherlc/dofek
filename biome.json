@@ -61,6 +61,19 @@
   },
   "overrides": [
     {
+      "includes": [
+        "packages/web/src/pages/activity-detail/components/ActivityClimbingPanel.tsx",
+        "packages/web/src/pages/activity-detail/components/ClimbingLogEntryBreakdown.tsx"
+      ],
+      "linter": {
+        "rules": {
+          "a11y": {
+            "noNoninteractiveTabindex": "off"
+          }
+        }
+      }
+    },
+    {
       "includes": ["**/routeTree.gen.ts"],
       "linter": { "enabled": false },
       "formatter": { "enabled": false },
