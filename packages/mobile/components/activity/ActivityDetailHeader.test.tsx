@@ -23,6 +23,7 @@ vi.mock("../../lib/trpc", () => ({
       },
     }),
     activity: {
+      restoreStatus: { useQuery: () => ({ data: undefined, error: null }) },
       restoreProviderAbsent: {
         useMutation: () => ({ mutate: vi.fn(), isPending: false, error: null, reset: vi.fn() }),
       },

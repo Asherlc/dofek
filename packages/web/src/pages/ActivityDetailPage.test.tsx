@@ -379,6 +379,10 @@ const mockImagesUseQuery = vi.fn(() => ({
 }));
 const mockRecomputeShouldFail = vi.fn(() => false);
 const mockRestoreProviderAbsentMutate = vi.fn();
+const mockRestoreResult = vi.fn<() => { analyticsJobId: string } | undefined>(() => undefined);
+const mockRestoreStatus = vi.fn<
+  () => { data: { status: "pending" | "completed"; error: null } | undefined; error: null }
+>(() => ({ data: undefined, error: null }));
 const mockActivityByIdInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockActivityInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockActivityStreamInvalidate = vi.fn().mockResolvedValue(undefined);
@@ -422,6 +426,7 @@ vi.mock("../lib/trpc.ts", () => ({
         }),
       },
       delete: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
+      restoreStatus: { useQuery: mockRestoreStatus },
       restoreProviderAbsent: {
         useMutation: (options?: {
           onSuccess?: () => Promise<void>;
@@ -431,6 +436,7 @@ vi.mock("../lib/trpc.ts", () => ({
             mockRestoreProviderAbsentMutate(input);
             void options?.onSuccess?.();
           },
+          data: mockRestoreResult(),
           isPending: false,
           error: null,
           reset: vi.fn(),
@@ -515,6 +521,8 @@ afterEach(() => {
   mockActivity.providerId = "whoop";
   mockActivity.subsource = null;
   mockRestoreProviderAbsentMutate.mockClear();
+  mockRestoreResult.mockReturnValue(undefined);
+  mockRestoreStatus.mockReturnValue({ data: undefined, error: null });
   mockHardwareUseQuery.mockReset();
   mockHardwareUseQuery.mockReturnValue({
     data: { items: [], power: [] },
@@ -1870,6 +1878,32 @@ describe("ActivityDetailPage", () => {
       expect(screen.getByText("Removed")).toBeDefined();
       expect(screen.getByText("Strava")).toBeDefined();
       expect(screen.getByText(formatDateTime("2026-03-05T14:30:00.000Z"))).toBeDefined();
+    });
+
+    it("keeps restore completion tracking mounted after PostgreSQL makes the activity visible", async () => {
+      mockActivity.providerAbsentAt = "2026-03-05T14:30:00.000Z";
+      mockRestoreResult.mockReturnValue({ analyticsJobId: "restore-job-1" });
+      mockRestoreStatus.mockReturnValue({ data: { status: "pending", error: null }, error: null });
+      const ActivityDetailPage = await importPage();
+      const { rerender } = renderWithUnits(<ActivityDetailPage />);
+      mockActivity.providerAbsentAt = null;
+      rerender(
+        <UnitContext.Provider value={{ unitSystem: "metric", setUnitSystem: () => {} }}>
+          <ActivityDetailPage />
+        </UnitContext.Provider>,
+      );
+      expect(screen.getByText("Refreshing restored activity charts…")).toBeDefined();
+      const invalidations = mockActivityInvalidate.mock.calls.length;
+      mockRestoreStatus.mockReturnValue({
+        data: { status: "completed", error: null },
+        error: null,
+      });
+      rerender(
+        <UnitContext.Provider value={{ unitSystem: "metric", setUnitSystem: () => {} }}>
+          <ActivityDetailPage />
+        </UnitContext.Provider>,
+      );
+      await waitFor(() => expect(mockActivityInvalidate).toHaveBeenCalledTimes(invalidations + 1));
     });
 
     it("restores the canonical activity while refreshing detail cached under its route alias", async () => {

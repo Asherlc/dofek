@@ -14,13 +14,28 @@ import { type ComponentType, useMemo } from "react";
 import { trpc } from "../lib/trpc.ts";
 import { ProviderAbsentBanner } from "./ProviderAbsentBanner.tsx";
 
-type RestoreScenario = "visible" | "pending" | "error";
+type RestoreScenario = "visible" | "pending" | "error" | "refreshing" | "refresh-error";
 
 function createRestoreMockLink(scenario: RestoreScenario): TRPCLink<AppRouter> {
   return () =>
     ({ op }) => {
       const result: OperationResultObservable<AppRouter, unknown> = {
         subscribe(observer) {
+          if (op.path === "activity.restoreStatus") {
+            observer.next?.({
+              result: {
+                data: {
+                  status: scenario === "refresh-error" ? "failed" : "pending",
+                  error:
+                    scenario === "refresh-error"
+                      ? "Activity restored, but refreshing charts failed. Use Recompute to retry."
+                      : null,
+                },
+              },
+            });
+            observer.complete?.();
+            return { unsubscribe: () => {} };
+          }
           if (op.path !== "activity.restoreProviderAbsent") {
             throw new globalThis.Error(
               `Unhandled activity detail story tRPC operation: ${op.path}`,
@@ -32,7 +47,19 @@ function createRestoreMockLink(scenario: RestoreScenario): TRPCLink<AppRouter> {
               TRPCClientError.from(new globalThis.Error("Provider connection is unavailable")),
             );
           else {
-            observer.next?.({ result: { data: { restoredCount: 1 } } });
+            observer.next?.({
+              result: {
+                data: {
+                  success: true,
+                  restoredCount: 1,
+                  analyticsJobId:
+                    scenario === "refreshing" || scenario === "refresh-error"
+                      ? "restore-job-1"
+                      : null,
+                  analyticsError: null,
+                },
+              },
+            });
             observer.complete?.();
           }
           return { unsubscribe: () => {} };
@@ -115,5 +142,22 @@ export const RestoreError: Story = {
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(await canvas.findByRole("button", { name: "Restore activity" }));
     await canvas.findByText("Provider connection is unavailable");
+  },
+};
+
+export const RefreshingCharts: Story = {
+  parameters: { restoreScenario: "refreshing" },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByRole("button", { name: "Restore activity" }));
+    await canvas.findByRole("button", { name: "Restoring…" });
+  },
+};
+export const ChartRefreshError: Story = {
+  parameters: { restoreScenario: "refresh-error" },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByRole("button", { name: "Restore activity" }));
+    await canvas.findByText(
+      "Activity restored, but refreshing charts failed. Use Recompute to retry.",
+    );
   },
 };

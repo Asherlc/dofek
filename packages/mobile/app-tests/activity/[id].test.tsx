@@ -321,6 +321,10 @@ const mockClimbingEntriesQuery = vi.fn();
 const mockHangboardDetailsQuery = vi.fn();
 const mockDeleteMutate = vi.fn();
 const mockRestoreProviderAbsentMutate = vi.fn();
+const mockRestoreResult = vi.fn<() => { analyticsJobId: string } | undefined>(() => undefined);
+const mockRestoreStatus = vi.fn<
+  () => { data: { status: "pending" | "completed"; error: null } | undefined; error: null }
+>(() => ({ data: undefined, error: null }));
 const mockRecomputeMutate = vi.fn();
 const mockRecomputeShouldFail = vi.fn(() => false);
 const mockRouterBack = vi.fn();
@@ -417,6 +421,7 @@ vi.mock("../../lib/trpc", () => ({
           isPending: false,
         }),
       },
+      restoreStatus: { useQuery: mockRestoreStatus },
       restoreProviderAbsent: {
         useMutation: (options?: {
           onSuccess?: () => Promise<void>;
@@ -426,6 +431,7 @@ vi.mock("../../lib/trpc", () => ({
             mockRestoreProviderAbsentMutate(input);
             void options?.onSuccess?.();
           },
+          data: mockRestoreResult(),
           isPending: false,
           error: null,
           reset: vi.fn(),
@@ -628,6 +634,8 @@ function getPlaceholderData(
 beforeEach(() => {
   activityRouteParams.id = "00000000-0000-0000-0000-000000000001";
   mockRestoreProviderAbsentMutate.mockClear();
+  mockRestoreResult.mockReturnValue(undefined);
+  mockRestoreStatus.mockReturnValue({ data: undefined, error: null });
   mockHardwareRefetch.mockClear();
   mockHardwareQuery.mockReturnValue({
     data: { items: [], power: [] },
@@ -2635,6 +2643,29 @@ describe("ActivityDetailScreen", () => {
     expect(screen.getByText("Removed")).toBeTruthy();
     expect(screen.getByText("Strava")).toBeTruthy();
     expect(screen.getByText(/March 5, 2026/)).toBeTruthy();
+  });
+
+  it("keeps restore completion tracking mounted after PostgreSQL makes the activity visible", async () => {
+    mockRestoreResult.mockReturnValue({ analyticsJobId: "restore-job-1" });
+    mockRestoreStatus.mockReturnValue({ data: { status: "pending", error: null }, error: null });
+    mockByIdQuery.mockReturnValue({
+      data: { ...baseCyclingActivity, providerAbsentAt: "2026-03-05T14:30:00.000Z" },
+      isLoading: false,
+      error: null,
+    });
+    const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
+    const { rerender } = render(React.createElement(ActivityDetailScreen));
+    mockByIdQuery.mockReturnValue({
+      data: { ...baseCyclingActivity, providerAbsentAt: null },
+      isLoading: false,
+      error: null,
+    });
+    rerender(React.createElement(ActivityDetailScreen));
+    expect(screen.getByText("Refreshing restored activity charts…")).toBeTruthy();
+    const invalidations = mockActivityInvalidate.mock.calls.length;
+    mockRestoreStatus.mockReturnValue({ data: { status: "completed", error: null }, error: null });
+    rerender(React.createElement(ActivityDetailScreen));
+    await waitFor(() => expect(mockActivityInvalidate).toHaveBeenCalledTimes(invalidations + 1));
   });
 
   it("restores the canonical activity while refreshing detail cached under its route alias", async () => {

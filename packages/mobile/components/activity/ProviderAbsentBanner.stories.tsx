@@ -6,7 +6,13 @@ import {
 } from "./ActivityDetailStoryProviders";
 import { ProviderAbsentBanner } from "./ProviderAbsentBanner";
 
-const restoreScenarios: RestoreStoryScenario[] = ["visible", "pending", "error"];
+const restoreScenarios: RestoreStoryScenario[] = [
+  "visible",
+  "pending",
+  "error",
+  "refreshing",
+  "refresh-error",
+];
 function restoreScenario(value: unknown): RestoreStoryScenario {
   return restoreScenarios.find((scenario) => scenario === value) ?? "visible";
 }
@@ -52,15 +58,6 @@ export const RestoreError: Story = {
     await canvas.findByText("Provider connection is unavailable");
   },
 };
-export const UnknownRemovalTime: Story = {
-  args: {
-    activity: {
-      id: "00000000-0000-4000-8000-000000000302",
-      providerId: "strava",
-      providerAbsentAt: null,
-    },
-  },
-};
 export const AppleHealthSource: Story = {
   args: {
     activity: {
@@ -69,5 +66,22 @@ export const AppleHealthSource: Story = {
       subsource: "Strong",
       providerAbsentAt: "2026-05-27T12:00:00Z",
     },
+  },
+};
+
+export const RefreshingCharts: Story = {
+  parameters: { restoreScenario: "refreshing" },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByRole("button", { name: "Restore activity" }));
+    await canvas.findByRole("button", { name: "Restoring…" });
+  },
+};
+export const ChartRefreshError: Story = {
+  parameters: { restoreScenario: "refresh-error" },
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByRole("button", { name: "Restore activity" }));
+    await canvas.findByText(
+      "Activity restored, but refreshing charts failed. Use Recompute to retry.",
+    );
   },
 };

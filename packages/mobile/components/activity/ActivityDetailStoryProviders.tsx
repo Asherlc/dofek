@@ -4,13 +4,28 @@ import type { AppRouter } from "dofek-server/router";
 import { type ReactNode, useMemo } from "react";
 import { trpc } from "../../lib/trpc";
 
-export type RestoreStoryScenario = "visible" | "pending" | "error";
+export type RestoreStoryScenario = "visible" | "pending" | "error" | "refreshing" | "refresh-error";
 
 function createRestoreMockLink(scenario: RestoreStoryScenario): TRPCLink<AppRouter> {
   return () =>
     ({ op }) => {
       const result: OperationResultObservable<AppRouter, unknown> = {
         subscribe(observer) {
+          if (op.path === "activity.restoreStatus") {
+            observer.next?.({
+              result: {
+                data: {
+                  status: scenario === "refresh-error" ? "failed" : "pending",
+                  error:
+                    scenario === "refresh-error"
+                      ? "Activity restored, but refreshing charts failed. Use Recompute to retry."
+                      : null,
+                },
+              },
+            });
+            observer.complete?.();
+            return { unsubscribe: () => {} };
+          }
           if (op.path !== "activity.restoreProviderAbsent") {
             throw new globalThis.Error(
               `Unhandled activity detail story tRPC operation: ${op.path}`,
@@ -22,7 +37,19 @@ function createRestoreMockLink(scenario: RestoreStoryScenario): TRPCLink<AppRout
               TRPCClientError.from(new globalThis.Error("Provider connection is unavailable")),
             );
           } else {
-            observer.next?.({ result: { data: { restoredCount: 1 } } });
+            observer.next?.({
+              result: {
+                data: {
+                  success: true,
+                  restoredCount: 1,
+                  analyticsJobId:
+                    scenario === "refreshing" || scenario === "refresh-error"
+                      ? "restore-job-1"
+                      : null,
+                  analyticsError: null,
+                },
+              },
+            });
             observer.complete?.();
           }
           return { unsubscribe: () => {} };

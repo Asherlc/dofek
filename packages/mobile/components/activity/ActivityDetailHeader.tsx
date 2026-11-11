@@ -96,7 +96,7 @@ export function ActivityDetailHeader({
   return (
     <View style={styles.header}>
       {photos ? <ActivityImages {...photos} heading={heading} /> : heading}
-      {activity.providerAbsentAt && <ProviderAbsentBanner activity={activity} />}
+      <ProviderAbsentBanner key={`restore-${activity.id}`} activity={activity} />
     </View>
   );
 }

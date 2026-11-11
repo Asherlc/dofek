@@ -6,6 +6,7 @@ import {
   providerSourceLabel,
 } from "@dofek/providers/providers";
 import { Link } from "@tanstack/react-router";
+import { useCallback, useEffect, useRef } from "react";
 import type { ActivityDetail } from "../../../server/src/models/activity.ts";
 import { locallyReportedErrorMeta } from "../lib/query-client.ts";
 import { captureException } from "../lib/telemetry.ts";
@@ -20,18 +21,69 @@ export function ProviderAbsentBanner({ activity }: { activity: ProviderAbsentAct
   const trpcUtils = trpc.useUtils();
   const providerLabel = providerSourceLabel(activity.providerId, activity.subsource);
   const remediationProviderLabel = providerName(activity.providerId);
+  const refreshActivityQueries = useCallback(async () => {
+    await Promise.all([
+      trpcUtils.activity.invalidate(),
+      trpcUtils.calendar.weekListV2.invalidate(),
+      trpcUtils.calendar.activityOverview.invalidate(),
+      trpcUtils.calendar.calendarData.invalidate(),
+    ]);
+  }, [trpcUtils]);
   const restore = trpc.activity.restoreProviderAbsent.useMutation({
     meta: locallyReportedErrorMeta,
-    onSuccess: async () => {
-      await Promise.all([
-        trpcUtils.activity.invalidate(),
-        trpcUtils.calendar.weekListV2.invalidate(),
-        trpcUtils.calendar.activityOverview.invalidate(),
-        trpcUtils.calendar.calendarData.invalidate(),
-      ]);
-    },
+    onSuccess: refreshActivityQueries,
     onError: (error) => captureException(error, { context: "activity-restore" }),
   });
+
+  const analyticsJobId = restore.data?.analyticsJobId;
+  const refreshStatus = trpc.activity.restoreStatus.useQuery(
+    { jobId: analyticsJobId ?? "" },
+    {
+      enabled: !!analyticsJobId,
+      refetchInterval: (query) =>
+        !query.state.error && query.state.data?.status === "pending" ? 2_000 : false,
+    },
+  );
+  const completedJobId = useRef<string | null>(null);
+  useEffect(() => {
+    if (
+      analyticsJobId &&
+      refreshStatus.data?.status === "completed" &&
+      completedJobId.current !== analyticsJobId
+    ) {
+      completedJobId.current = analyticsJobId;
+      void refreshActivityQueries().catch((error: unknown) =>
+        captureException(error, { context: "activity-restore-refresh" }),
+      );
+    }
+  }, [analyticsJobId, refreshStatus.data?.status, refreshActivityQueries]);
+  const isRefreshing =
+    restore.isPending ||
+    (!!analyticsJobId &&
+      !refreshStatus.error &&
+      refreshStatus.data?.status !== "completed" &&
+      refreshStatus.data?.status !== "failed");
+  const errorMessage = restore.error
+    ? userFacingErrorMessage(restore.error, "Unable to restore this activity.")
+    : refreshStatus.error
+      ? userFacingErrorMessage(
+          refreshStatus.error,
+          "Restore refresh status is unavailable. Reload the activity to check its charts.",
+        )
+      : (refreshStatus.data?.error ?? restore.data?.analyticsError);
+
+  if (!activity.providerAbsentAt) {
+    return isRefreshing || errorMessage ? (
+      <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4">
+        {isRefreshing && <p role="status">Refreshing restored activity charts…</p>}
+        {errorMessage && (
+          <p role="alert" className="text-sm text-red-700 dark:text-red-300">
+            {errorMessage}
+          </p>
+        )}
+      </div>
+    ) : null;
+  }
 
   return (
     <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4">
@@ -67,13 +119,13 @@ export function ProviderAbsentBanner({ activity }: { activity: ProviderAbsentAct
         <button
           type="button"
           className="inline-flex rounded-md bg-amber-900 px-3 py-2 text-xs font-semibold text-white disabled:cursor-wait disabled:opacity-60 dark:bg-amber-100 dark:text-amber-950"
-          disabled={restore.isPending}
+          disabled={isRefreshing}
           onClick={() => {
             restore.reset();
             restore.mutate({ ids: [activity.id] });
           }}
         >
-          {restore.isPending ? "Restoring…" : "Restore activity"}
+          {isRefreshing ? "Restoring…" : "Restore activity"}
         </button>
         <Link
           to="/providers/$id"
@@ -83,9 +135,9 @@ export function ProviderAbsentBanner({ activity }: { activity: ProviderAbsentAct
           Review {remediationProviderLabel} connection
         </Link>
       </div>
-      {restore.error && (
+      {errorMessage && (
         <p role="alert" className="mt-2 text-sm text-red-700 dark:text-red-300">
-          {userFacingErrorMessage(restore.error, "Unable to restore this activity.")}
+          {errorMessage}
         </p>
       )}
     </div>

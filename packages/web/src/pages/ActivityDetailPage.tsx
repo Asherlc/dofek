@@ -303,7 +303,7 @@ export function ActivityDetailPage() {
         </div>
       </div>
 
-      {activity.providerAbsentAt ? <ProviderAbsentBanner activity={activity} /> : null}
+      <ProviderAbsentBanner key={`restore-${activity.id}`} activity={activity} />
 
       <ActivityHeader
         key={id}
