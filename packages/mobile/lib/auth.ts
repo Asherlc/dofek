@@ -319,7 +319,7 @@ export async function logout(serverUrl: string, token: string): Promise<void> {
       headers: { Authorization: `Bearer ${token}` },
     });
   } catch (error: unknown) {
-    captureException(error, { source: "logout" });
+    captureException(error, { source: "logout", retiredLifetime: true });
   }
   await clearLocalSession;
 }

@@ -8,7 +8,6 @@ import {
   purgeAccountState as purgeHealthKitAccountState,
 } from "../modules/health-kit";
 import { purgeAccountState as purgeWatchMotionAccountState } from "../modules/watch-motion";
-import { purgeAccountState as purgeWhoopBleAccountState } from "../modules/whoop-ble";
 import { clearMobileAccountErasurePreparation } from "./account-erasure-storage";
 import type { AccountErasureCleanupLease } from "./auth-context";
 import { clearSessionToken } from "./auth-session";
@@ -22,6 +21,7 @@ import { purgeDofekFoodWriteBackFromHealthKit } from "./health-kit-food-writebac
 import { purgeMobileExportCache } from "./mobile-export-cache";
 import { removeAllMobileQueryCaches } from "./mobile-query-persistence";
 import { captureException } from "./telemetry";
+import { purgeWhoopAccountState as purgeWhoopBleAccountState } from "./whoop-upload-session";
 
 interface MobileAccountPurgeDependencies {
   advanceErasureCutoff(candidate: string): Promise<string>;

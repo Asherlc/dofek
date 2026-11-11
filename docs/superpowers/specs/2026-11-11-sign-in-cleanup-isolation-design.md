@@ -13,10 +13,13 @@ contains 13,944,095 samples; one local DELETE/ROLLBACK took 50.04 seconds.
 ## Approach and constraints
 
 Use stock [Expo AsyncFunction queue dispatch](https://docs.expo.dev/modules/module-api/#asyncfunction)
-with one module-owned serial queue for the five disk-backed WHOOP bridge calls.
+with one module-owned serial queue for the six disk-backed WHOOP bridge calls.
 This prevents WHOOP storage from occupying Expo's shared async queue and orders
-`disableUploads` before subsequent `configureUpload` calls. Diagnostics may wait
-on this queue without blocking unrelated native modules.
+`disableUploads` before subsequent `configureUpload` calls. The destructive
+`purgeAccountState` call shares that FIFO, holding its queue item through the
+store mutation or failure latch so already-dispatched configuration cannot
+overtake erasure. Diagnostics may wait on this queue without blocking unrelated
+native modules.
 
 Serialize credential deletion before replacement credentials, but await native
 cleanup separately. `clearSessionToken` still awaits cleanup and reports native

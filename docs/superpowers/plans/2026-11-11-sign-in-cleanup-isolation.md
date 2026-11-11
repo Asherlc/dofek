@@ -1,6 +1,6 @@
 # Sign-in Cleanup Isolation Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans task-by-task. Track review checkpoints in the plan ledger.
+Execute the tasks in order. Review each completed task before proceeding, and record validation results and review checkpoints.
 
 **Goal:** Complete valid sign-in while native sensor cleanup is pending, retaining ownership and erasure fences.
 **Architecture:** Put WHOOP disk-backed bridge calls on one serial module queue. Keep credential persistence ordered independently of native purge completion; cleanup still has an awaited, reportable result.
@@ -25,12 +25,12 @@
 ## Task 1: Native queue isolation and capture fencing
 
 **Files:** `packages/mobile/modules/whoop-ble/ios/WhoopBleModule.swift`, `ios/BridgeTests/WhoopBleModuleTests.swift`, `ios/BridgeTests/test-helpers.swift` beneath the same module.
-**Interfaces:** Existing five async methods and their payloads remain unchanged. One module-owned serial DispatchQueue orders disk-backed bridge work; existing native uploader/store continue owning data, generations and cancellation.
+**Interfaces:** Existing async methods and payloads remain unchanged. One module-owned serial DispatchQueue orders the six disk-backed methods, including `purgeAccountState`; existing native uploader/store continue owning data, generations and cancellation.
 
 - [ ] Add a real Hermes bridge test: block the BLE queue, start disable, queue configure, and show an unrelated test Expo module's async probe completes before releasing cleanup. Configuration must remain pending until cleanup completes.
 - [ ] Add a real failure fixture: failed native cleanup keeps capture suspended and rejects subsequent configure; a later explicit successful cleanup permits configuration again. Reuse existing native failure fixtures and test helpers, without test-only production APIs.
 - [ ] Run focused bridge tests and record RED before implementation; coordinate build clearance first if compiling the native host is required.
-- [ ] Add one serial module queue and dispatch getDeviceSummary, getDataPathStats, configureUpload, flushUploads and disableUploads on it. Retain a queue-confined cleanup failure only as needed to keep queued configuration fail-closed; clear it on successful explicit cleanup. Report architectural uncertainty rather than changing strategy.
+- [ ] Add one serial module queue and dispatch getDeviceSummary, getDataPathStats, configureUpload, flushUploads, disableUploads and purgeAccountState on it. Hold erasure through its store mutation or failure latch. Retain a queue-confined cleanup failure only as needed to keep queued configuration fail-closed; clear it on successful explicit cleanup. Report architectural uncertainty rather than changing strategy.
 - [ ] Run focused tests GREEN; self-review actual diff and hand it to the lead for task review.
 
 ## Task 2: Independent credential persistence

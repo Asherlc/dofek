@@ -10,9 +10,18 @@ final class WhoopBleModuleTests: XCTestCase {
         let cleanupStarted = expectation(description: "Native cleanup entered while BLE queue is occupied")
         await logs.start(entry: cleanupStarted)
         defer { SentrySDK.close() }
+        let priorCutoff = UserDefaults.standard.object(forKey: "dofek_device_erasure_cutoff_v1")
+        defer {
+            if let priorCutoff {
+                UserDefaults.standard.set(priorCutoff, forKey: "dofek_device_erasure_cutoff_v1")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "dofek_device_erasure_cutoff_v1")
+            }
+        }
         let (context, module) = try makeModule()
         defer { XCTAssertNoThrow(try module.uploader.disable()) }
         let runtime = try context.runtime
+        let initialGeneration = try XCTUnwrap(try module.uploader.diagnostics()["bufferInstanceId"] as? String)
         let blocked = expectation(description: "BLE queue occupied")
         let release = DispatchSemaphore(value: 0)
         module.connectionManager.bleQueue.async {
@@ -26,6 +35,7 @@ final class WhoopBleModuleTests: XCTestCase {
             _ = try runtime.eval("""
                 globalThis.cleanupFinished = false;
                 globalThis.configureFinished = false;
+                globalThis.purgeFinished = false;
                 globalThis.cleanupPromise = expo.modules.WhoopBle.disableUploads().then(() => {
                     globalThis.cleanupFinished = true;
                     return true;
@@ -35,6 +45,10 @@ final class WhoopBleModuleTests: XCTestCase {
                     token: 'test-session', headers: {}
                 }).then(() => {
                     globalThis.configureFinished = true;
+                    return true;
+                });
+                globalThis.purgePromise = expo.modules.WhoopBle.purgeAccountState('2000-01-01T00:00:00Z').then(() => {
+                    globalThis.purgeFinished = true;
                     return true;
                 });
                 globalThis.probePromise = expo.modules.BridgeProbe.probe();
@@ -60,6 +74,7 @@ final class WhoopBleModuleTests: XCTestCase {
         try await runtime.execute {
             XCTAssertFalse(try runtime.eval("globalThis.cleanupFinished").asBool())
             XCTAssertFalse(try runtime.eval("globalThis.configureFinished").asBool())
+            XCTAssertFalse(try runtime.eval("globalThis.purgeFinished").asBool())
         }
 
         release.signal()
@@ -69,6 +84,21 @@ final class WhoopBleModuleTests: XCTestCase {
         let configured = try await runtime.evalAsync("globalThis.configurePromise").ref()
         let configuredResult = try await runtime.execute { try configured.take().asBool() }
         XCTAssertTrue(configuredResult)
+        let purged = try await runtime.evalAsync("globalThis.purgePromise").ref()
+        let purgedResult = try await runtime.execute { try purged.take().asBool() }
+        XCTAssertTrue(purgedResult)
+
+        for call in ["connect('invalid-peripheral-id')", "retryConnection()"] {
+            let rejection = try await outcome(call, in: context)
+            XCTAssertTrue(rejection.contains("WHOOP_BLE_CAPTURE_SUSPENDED"), rejection)
+        }
+        let retainedCutoff = try XCTUnwrap(
+            UserDefaults.standard.object(forKey: "dofek_device_erasure_cutoff_v1") as? Date
+        )
+        let requestedCutoff = try XCTUnwrap(ISO8601DateFormatter().date(from: "2000-01-01T00:00:00Z"))
+        XCTAssertEqual(retainedCutoff, max(priorCutoff as? Date ?? requestedCutoff, requestedCutoff))
+        let generation = try XCTUnwrap(try module.uploader.diagnostics()["bufferInstanceId"] as? String)
+        XCTAssertNotEqual(generation, initialGeneration)
     }
 
     func testCleanupLeavesJavaScriptResponsiveWhileWaitingForBleQueue() async throws {
@@ -146,25 +176,60 @@ final class WhoopBleModuleTests: XCTestCase {
 
     func testCleanupFailureLogsTheStageAndStillThrows() async throws {
         let logs = CleanupLogRecorder()
+        let captures = SentryCaptureRecorder()
+        let cleanupStarted = expectation(description: "Disable reached cleanup while BLE is blocked")
         await MainActor.run {
-            SentrySDK.start { options in
-                options.dsn = "https://key@sentry.example/123"
-                options.beforeSend = { _ in nil }
-                options.beforeSendLog = { log in
-                    if log.attributes["operation"]?.value as? String == "disableUploads" { logs.append(log) }
-                    return nil
-                }
-            }
+            captures.start(userId: "account-A", logs: logs, logEntry: cleanupStarted)
         }
         defer { SentrySDK.close() }
+        let cleanupEventCaptured = expectation(description: "Disable failure passed through Sentry beforeSend")
+        let controlEventCaptured = expectation(description: "Control event passed through Sentry beforeSend")
+        captures.expect(cleanupEventCaptured, matching: "bodies")
+        captures.expect(controlEventCaptured, matching: "NativeAttributionControl")
         let (context, module) = try makeModule()
         _ = try module.uploader
         let fixture = try makeBodyRemovalFailure()
         defer {
             XCTAssertNoThrow(try restoreBodyDirectory(fixture.directory, backup: fixture.backup))
         }
-        let rejection = try await outcome("disableUploads()", in: context)
+        let blocked = expectation(description: "BLE queue occupied during disable failure")
+        let release = DispatchSemaphore(value: 0)
+        module.connectionManager.bleQueue.async {
+            blocked.fulfill()
+            release.wait()
+        }
+        defer { release.signal() }
+        await fulfillment(of: [blocked], timeout: 5)
+
+        let cleanup = Task { try await outcome("disableUploads()", in: context) }
+        await fulfillment(of: [cleanupStarted], timeout: 5)
+        await MainActor.run {
+            SentrySDK.configureScope { scope in scope.setUser(Sentry.User(userId: "account-B")) }
+        }
+        release.signal()
+        let rejection = try await cleanup.value
         XCTAssertNotEqual(rejection, "unexpected success")
+        await fulfillment(of: [cleanupEventCaptured], timeout: 5)
+        XCTAssertEqual(captures.snapshot.count, 1, "Captured Sentry events: \(captures.snapshot)")
+        let cleanupEvents = captures.snapshot.filter { $0.errorText.contains("bodies") }
+        XCTAssertEqual(cleanupEvents.count, 1, "Captured Sentry events: \(captures.snapshot)")
+        if let cleanupEvent = cleanupEvents.first {
+            XCTAssertNotEqual(cleanupEvent.userId, "account-B")
+        } else {
+            XCTFail("Expected the disable failure event to reach beforeSend")
+        }
+
+        SentrySDK.capture(error: NSError(domain: "NativeAttributionControl", code: 1))
+        await fulfillment(of: [controlEventCaptured], timeout: 5)
+        XCTAssertEqual(captures.snapshot.count, 2, "Captured Sentry events: \(captures.snapshot)")
+        let controlEvents = captures.snapshot.filter { $0.errorText.contains("NativeAttributionControl") }
+        XCTAssertEqual(controlEvents.count, 1, "Captured Sentry events: \(captures.snapshot)")
+        if let controlEvent = controlEvents.first {
+            XCTAssertEqual(controlEvent.userId, "account-B")
+        } else {
+            XCTFail("Expected the control event to reach beforeSend")
+        }
+
         let failure = try XCTUnwrap(logs.snapshot.last)
         XCTAssertEqual(failure.attributes["stage"]?.value as? String, "failed")
         XCTAssertEqual(failure.attributes["failedStage"]?.value as? String, "uploader_remove_bodies")
@@ -196,6 +261,124 @@ final class WhoopBleModuleTests: XCTestCase {
         let configured = try await outcome(configure, in: context)
         XCTAssertEqual(configured, "unexpected success")
         module.connectionManager.syncOnBleQueue { XCTAssertFalse(module.captureSuspended) }
+    }
+
+    func testFailedErasureRejectsConfigurationQueuedBehindPurge() async throws {
+        let captures = SentryCaptureRecorder()
+        await MainActor.run { captures.start(userId: "account-A") }
+        defer { SentrySDK.close() }
+        let cleanupEventCaptured = expectation(description: "Erasure failure passed through Sentry beforeSend")
+        let controlEventCaptured = expectation(description: "Control event passed through Sentry beforeSend")
+        captures.expect(cleanupEventCaptured, matching: "bodies")
+        captures.expect(controlEventCaptured, matching: "NativeAttributionControl")
+        let (context, module) = try makeModule()
+        _ = try module.uploader
+        let priorCutoff = UserDefaults.standard.object(forKey: "dofek_device_erasure_cutoff_v1")
+        defer {
+            if let priorCutoff {
+                UserDefaults.standard.set(priorCutoff, forKey: "dofek_device_erasure_cutoff_v1")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "dofek_device_erasure_cutoff_v1")
+            }
+        }
+        let requestedCutoff = try XCTUnwrap(ISO8601DateFormatter().date(from: "2001-01-01T00:00:00Z"))
+        let expectedCutoff = max(priorCutoff as? Date ?? requestedCutoff, requestedCutoff)
+        let cutoffWritten = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in
+                UserDefaults.standard.object(forKey: "dofek_device_erasure_cutoff_v1") as? Date == expectedCutoff
+            },
+            object: nil
+        )
+        let fixture = try makeBodyRemovalFailure()
+        defer {
+            XCTAssertNoThrow(try restoreBodyDirectory(fixture.directory, backup: fixture.backup))
+            XCTAssertNoThrow(try module.uploader.disable())
+        }
+
+        let blocked = expectation(description: "BLE queue occupied before erasure")
+        let release = DispatchSemaphore(value: 0)
+        module.connectionManager.bleQueue.async {
+            blocked.fulfill()
+            release.wait()
+        }
+        defer { release.signal() }
+        await fulfillment(of: [blocked], timeout: 5)
+
+        let runtime = try context.runtime
+        try await runtime.execute {
+            _ = try runtime.eval("""
+                globalThis.purgeResult = expo.modules.WhoopBle.purgeAccountState('2001-01-01T00:00:00Z').then(
+                    () => 'unexpected success', error => error.code
+                );
+                globalThis.queuedConfigureResult = expo.modules.WhoopBle.configureUpload({
+                    userId: 'bridge-test-account', serverURL: 'https://example.com',
+                    token: 'test-session', headers: {}
+                }).then(() => 'unexpected success', error => error.code + ': ' + error.message);
+                """)
+        }
+        await fulfillment(of: [cutoffWritten], timeout: 5)
+        await MainActor.run {
+            SentrySDK.configureScope { scope in scope.setUser(Sentry.User(userId: "account-B")) }
+        }
+
+        let configureReturned = expectation(description: "Configuration remains queued behind the blocked purge")
+        configureReturned.isInverted = true
+        let configureWaiter = Task {
+            let result = try await runtime.evalAsync("globalThis.queuedConfigureResult").ref()
+            _ = try await runtime.execute { try result.take().asString() }
+            configureReturned.fulfill()
+        }
+        let queuedResponse = await XCTWaiter.fulfillment(of: [configureReturned], timeout: 1)
+        XCTAssertEqual(queuedResponse, .completed)
+        release.signal()
+
+        let purge = try await runtime.evalAsync("globalThis.purgeResult").ref()
+        let purgeResult = try await runtime.execute { try purge.take().asString() }
+        XCTAssertEqual(purgeResult, "WHOOP_BLE_PURGE_FAILED")
+        XCTAssertEqual(
+            UserDefaults.standard.object(forKey: "dofek_device_erasure_cutoff_v1") as? Date,
+            expectedCutoff
+        )
+        let queuedConfigure = try await runtime.evalAsync("globalThis.queuedConfigureResult").ref()
+        let queuedConfigureResult = try await runtime.execute { try queuedConfigure.take().asString() }
+        XCTAssertTrue(queuedConfigureResult.contains("configuration is blocked because cleanup failed"), queuedConfigureResult)
+        try await configureWaiter.value
+        await fulfillment(of: [cleanupEventCaptured], timeout: 5)
+        XCTAssertEqual(captures.snapshot.count, 1, "Captured Sentry events: \(captures.snapshot)")
+        let cleanupEvents = captures.snapshot.filter { $0.errorText.contains("bodies") }
+        XCTAssertEqual(cleanupEvents.count, 1, "Captured Sentry events: \(captures.snapshot)")
+        if let cleanupEvent = cleanupEvents.first {
+            XCTAssertNotEqual(cleanupEvent.userId, "account-B")
+        } else {
+            XCTFail("Expected the erasure failure event to reach beforeSend")
+        }
+
+        SentrySDK.capture(error: NSError(domain: "NativeAttributionControl", code: 1))
+        await fulfillment(of: [controlEventCaptured], timeout: 5)
+        XCTAssertEqual(captures.snapshot.count, 2, "Captured Sentry events: \(captures.snapshot)")
+        let controlEvents = captures.snapshot.filter { $0.errorText.contains("NativeAttributionControl") }
+        XCTAssertEqual(controlEvents.count, 1, "Captured Sentry events: \(captures.snapshot)")
+        if let controlEvent = controlEvents.first {
+            XCTAssertEqual(controlEvent.userId, "account-B")
+        } else {
+            XCTFail("Expected the control event to reach beforeSend")
+        }
+
+        try restoreBodyDirectory(fixture.directory, backup: fixture.backup)
+        let laterConfiguration = try await outcome(
+            "configureUpload({userId: 'bridge-test-account', serverURL: 'https://example.com', token: 'test-session', headers: {}})",
+            in: context
+        )
+        XCTAssertTrue(laterConfiguration.contains("configuration is blocked because cleanup failed"), laterConfiguration)
+        module.connectionManager.syncOnBleQueue { XCTAssertTrue(module.captureSuspended) }
+
+        let successfulCleanup = try await outcome("disableUploads()", in: context)
+        XCTAssertEqual(successfulCleanup, "unexpected success")
+        let successfulConfiguration = try await outcome(
+            "configureUpload({userId: 'bridge-test-account', serverURL: 'https://example.com', token: 'test-session', headers: {}})",
+            in: context
+        )
+        XCTAssertEqual(successfulConfiguration, "unexpected success")
     }
 
     func testExplicitRetryRejectsRetainedCaptureFailure() async throws {

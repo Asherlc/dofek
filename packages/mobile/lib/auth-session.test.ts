@@ -580,6 +580,10 @@ describe("native upload signout boundary", () => {
       await Promise.allSettled(operations);
     }
     expect(await clearing).toBe(nativeFailure);
+    expect(mockCaptureException).toHaveBeenCalledWith(nativeFailure, {
+      source: "auth-session-cleanup",
+      retiredLifetime: true,
+    });
     const tokenReads = vi
       .mocked(storage.getItemAsync)
       .mock.calls.filter(([key]) => key === "dofek_session_token").length;
@@ -679,7 +683,10 @@ describe("native upload signout boundary", () => {
 
     await expect(clearSessionToken()).rejects.toBeNull();
 
-    expect(mockCaptureException).toHaveBeenCalledWith(null, { source: "auth-session-cleanup" });
+    expect(mockCaptureException).toHaveBeenCalledWith(null, {
+      source: "auth-session-cleanup",
+      retiredLifetime: true,
+    });
   });
   it("keeps replacement adoption fenced when writing the cleanup intent and native cleanup both fail", async () => {
     const native = await import("../modules/whoop-ble");

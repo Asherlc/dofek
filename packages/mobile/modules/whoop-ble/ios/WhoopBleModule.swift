@@ -288,7 +288,7 @@ public class WhoopBleModule: Module {
                     "isMainThread": Thread.isMainThread, "threadId": Int(pthread_mach_thread_np(pthread_self())),
                     "durationMs": (ProcessInfo.processInfo.systemUptime - startedAt) * 1_000
                 ])
-                SentrySDK.capture(error: error)
+                SentrySDK.capture(error: error) { scope in scope.setUser(nil) }
                 throw error
             }
         }.runOnQueue(self.moduleQueue)
@@ -323,34 +323,36 @@ public class WhoopBleModule: Module {
                 forKey: Self.deviceErasureCutoffKey
             )
 
-            self.connectionManager.bleQueue.async {
-                self.captureSuspended = true
-                self.watchdog.stop()
-                do { try self.uploader.purge(cutoff: retainedCutoff) } catch {
-                    SentrySDK.capture(error: error)
-                    promise.reject("WHOOP_BLE_PURGE_FAILED", error.localizedDescription)
-                    return
+            do {
+                try self.connectionManager.syncOnBleQueue {
+                    self.captureSuspended = true
+                    self.watchdog.stop()
+                    try self.uploader.purge(cutoff: retainedCutoff)
+                    self.frameParser.reset()
+                    self.cmdFrameParser.reset()
+                    self.orientationProcessor.reset()
+                    self.dataNotificationCount = 0
+                    self.cmdNotificationCount = 0
+                    self.totalFramesParsed = 0
+                    self.totalSamplesExtracted = 0
+                    self.emptyExtractions = 0
+                    self.packetTypeCounts.removeAll()
+                    self.lastCommandResponse = "none"
+                    self.captureDiagnostics = WhoopBleCaptureDiagnostics()
+                    self.lastKnownDeviceId = nil
+                    self.lastKnownDeviceName = nil
+                    self.connectionManager.disconnect { [weak self] in
+                        self?.connectionManager.connectionDiagnostics.clear()
+                        self?.emitDeviceState()
+                        promise.resolve(true)
+                    }
                 }
-                self.frameParser.reset()
-                self.cmdFrameParser.reset()
-                self.orientationProcessor.reset()
-                self.dataNotificationCount = 0
-                self.cmdNotificationCount = 0
-                self.totalFramesParsed = 0
-                self.totalSamplesExtracted = 0
-                self.emptyExtractions = 0
-                self.packetTypeCounts.removeAll()
-                self.lastCommandResponse = "none"
-                self.captureDiagnostics = WhoopBleCaptureDiagnostics()
-                self.lastKnownDeviceId = nil
-                self.lastKnownDeviceName = nil
-                self.connectionManager.disconnect { [weak self] in
-                    self?.connectionManager.connectionDiagnostics.clear()
-                    self?.emitDeviceState()
-                    promise.resolve(true)
-                }
+            } catch {
+                self.cleanupFailure = error.localizedDescription
+                SentrySDK.capture(error: error) { scope in scope.setUser(nil) }
+                promise.reject("WHOOP_BLE_PURGE_FAILED", error.localizedDescription)
             }
-        }
+        }.runOnQueue(self.moduleQueue)
     }
 
     private func connect(peripheralId: String, promise: Promise) {

@@ -701,6 +701,9 @@ describe("logout", () => {
 
     await logout("https://srv", "my-token");
 
-    expect(mockCaptureException).toHaveBeenCalledWith(logoutError, { source: "logout" });
+    expect(mockCaptureException).toHaveBeenCalledWith(logoutError, {
+      source: "logout",
+      retiredLifetime: true,
+    });
   });
 });

@@ -411,7 +411,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       await logoutOperation;
     } catch (error: unknown) {
-      captureException(error, { source: "logout" });
+      captureException(error, { source: "logout", retiredLifetime: true });
     }
   }, [clearLocalAuthState, sessionToken, user?.id]);
 

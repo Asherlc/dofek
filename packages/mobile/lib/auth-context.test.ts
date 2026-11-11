@@ -65,6 +65,7 @@ vi.mock("./auth", async (importOriginal) => {
 const wrapper = ({ children }: { children: ReactNode }) =>
   createElement(AuthProvider, null, children);
 
+const defaultUser = { id: "user-1", name: "Test User", email: "test@example.com" };
 const waitForAuthLoaded = (result: { current: { isLoading: boolean } }) =>
   waitFor(() => expect(result.current.isLoading).toBe(false));
 
@@ -119,38 +120,50 @@ describe("auth-context", () => {
         importAuthApis(),
         import("../modules/whoop-ble"),
       ]);
-      mockAuthSession.saveSessionToken.mockImplementation(actualSession.saveSessionToken);
-      mockAuthSession.saveSessionUser.mockImplementation(actualSession.saveSessionUser);
-      vi.mocked(apis.fetchCurrentUser).mockResolvedValue({
-        id: "replacement-user",
-        name: "Replacement",
-        email: null,
-      });
-      const { result, unmount } = renderHook(() => useAuth(), { wrapper });
-      await waitFor(() => expect(result.current.isLoading).toBe(false));
-      let finishCleanup!: () => void;
-      const pendingCleanup = new Promise<void>((resolve) => (finishCleanup = resolve));
-      vi.mocked(native.disableUploads)
-        .mockReset()
-        .mockImplementationOnce(() => pendingCleanup);
-      let cleanupSettled = false;
-      const clearing = actualSession.clearSessionToken().finally(() => (cleanupSettled = true));
-      let loginComplete = false;
-      let login!: Promise<void>;
-      act(() => {
-        login = result.current.onLoginSuccess("replacement-session").then(() => {
-          loginComplete = true;
-        });
-      });
+      const replacementUser = { id: "replacement-user", name: "Replacement", email: null };
+      const saveToken = mockAuthSession.saveSessionToken;
+      const saveUser = mockAuthSession.saveSessionUser;
+      const fetchUser = vi.mocked(apis.fetchCurrentUser);
+      const disableUploads = vi.mocked(native.disableUploads);
+      let unmount: (() => void) | undefined;
       try {
-        await vi.waitFor(() => expect(loginComplete).toBe(true));
-        expect(cleanupSettled).toBe(false);
-        expect(result.current.sessionToken).toBe("replacement-session");
-        expect(result.current.user?.id).toBe("replacement-user");
+        saveToken.mockImplementation(actualSession.saveSessionToken);
+        saveUser.mockImplementation(actualSession.saveSessionUser);
+        fetchUser.mockResolvedValue(replacementUser);
+        const hook = renderHook(() => useAuth(), { wrapper });
+        unmount = hook.unmount;
+        await waitForAuthLoaded(hook.result);
+        let finishCleanup!: () => void;
+        const pendingCleanup = new Promise<void>((resolve) => (finishCleanup = resolve));
+        disableUploads.mockReset().mockImplementationOnce(() => pendingCleanup);
+        let cleanupSettled = false;
+        const clearing = actualSession.clearSessionToken().finally(() => (cleanupSettled = true));
+        let login!: Promise<void>;
+        let loginComplete = false;
+        try {
+          await act(async () => {
+            login = hook.result.current.onLoginSuccess("replacement-session").then(() => {
+              loginComplete = true;
+            });
+            await vi.waitFor(() => expect(loginComplete).toBe(true));
+          });
+          expect(cleanupSettled).toBe(false);
+          expect(hook.result.current).toMatchObject({
+            sessionToken: "replacement-session",
+            user: replacementUser,
+          });
+        } finally {
+          finishCleanup();
+          const [cleanupResult, loginResult] = await Promise.allSettled([clearing, login]);
+          expect(cleanupResult).toEqual({ status: "fulfilled", value: undefined });
+          expect(loginResult).toEqual({ status: "fulfilled", value: undefined });
+        }
       } finally {
-        finishCleanup();
-        await Promise.all([clearing, login]);
-        unmount();
+        saveToken.mockReset().mockResolvedValue();
+        saveUser.mockReset().mockResolvedValue();
+        fetchUser.mockReset().mockResolvedValue(null);
+        disableUploads.mockReset().mockResolvedValue(undefined);
+        unmount?.();
       }
     });
     it("does not re-save when no token exists", async () => {
@@ -196,9 +209,7 @@ describe("auth-context", () => {
 
       const { result } = renderHook(() => useAuth(), { wrapper });
 
-      await waitFor(() => {
-        expect(getSessionToken).toHaveBeenCalledTimes(1);
-      });
+      await waitFor(() => expect(getSessionToken).toHaveBeenCalledTimes(1));
       await act(async () => {
         await Promise.resolve();
       });
@@ -239,11 +250,7 @@ describe("auth-context", () => {
 
       const { result } = renderHook(() => useAuth(), { wrapper });
 
-      await waitFor(() => {
-        expect(result.current.bootstrapError).toBe(
-          "Calling the getValueWithKeyAsync function has failed",
-        );
-      });
+      await waitFor(() => expect(result.current.bootstrapError).toBe(error.message));
 
       expect(mockCaptureException).toHaveBeenCalledWith(error, { source: "auth-state-restore" });
       expect(mockFinishStartupPhase).toHaveBeenCalledWith("authentication", "error");
@@ -279,9 +286,7 @@ describe("auth-context", () => {
 
       const { result } = renderHook(() => useAuth(), { wrapper });
 
-      await waitFor(() => {
-        expect(result.current.bootstrapError).toBe("Database unavailable");
-      });
+      await waitFor(() => expect(result.current.bootstrapError).toBe("Database unavailable"));
 
       await act(async () => {
         await result.current.retryBootstrap();
@@ -304,9 +309,7 @@ describe("auth-context", () => {
 
       const { result } = renderHook(() => useAuth(), { wrapper });
 
-      await waitFor(() => {
-        expect(result.current.bootstrapError).toBe("Database unavailable");
-      });
+      await waitFor(() => expect(result.current.bootstrapError).toBe("Database unavailable"));
 
       await act(async () => {
         await result.current.logout();
@@ -598,11 +601,7 @@ describe("auth-context", () => {
 
       // Simulate a logged-in user
       vi.mocked(getSessionToken).mockResolvedValue("test-token");
-      vi.mocked(fetchCurrentUser).mockResolvedValue({
-        id: "user-1",
-        name: "Test User",
-        email: "test@example.com",
-      });
+      vi.mocked(fetchCurrentUser).mockResolvedValue(defaultUser);
 
       // Make authLogout hang (never resolve) to simulate slow server
       let resolveLogout: (() => void) | undefined;
@@ -616,13 +615,7 @@ describe("auth-context", () => {
       const { result } = renderHook(() => useAuth(), { wrapper });
 
       // Wait for initial auth restore to complete
-      await waitFor(() => {
-        expect(result.current.user).toEqual({
-          id: "user-1",
-          name: "Test User",
-          email: "test@example.com",
-        });
-      });
+      await waitFor(() => expect(result.current.user).toEqual(defaultUser));
 
       // Call logout — should clear user state immediately
       act(() => {
@@ -673,11 +666,7 @@ describe("auth-context", () => {
       const { getSessionToken, fetchCurrentUser, logout: authLogout } = await importAuthApis();
 
       vi.mocked(getSessionToken).mockResolvedValue("test-token");
-      vi.mocked(fetchCurrentUser).mockResolvedValue({
-        id: "user-1",
-        name: "Test User",
-        email: "test@example.com",
-      });
+      vi.mocked(fetchCurrentUser).mockResolvedValue(defaultUser);
       vi.mocked(authLogout).mockResolvedValue();
 
       const { result } = renderHook(() => useAuth(), { wrapper });
@@ -693,62 +682,66 @@ describe("auth-context", () => {
       expect(mockRemoveMobileQueryCache).toHaveBeenCalledWith("user-1");
     });
 
-    it("keeps the new account's telemetry identity when an older logout finishes", async () => {
-      const { getSessionToken, fetchCurrentUser, logout: authLogout } = await importAuthApis();
-      vi.mocked(getSessionToken).mockResolvedValue("first-token");
-      vi.mocked(fetchCurrentUser).mockResolvedValueOnce({
-        id: "first-account",
-        name: "First User",
-        email: null,
-      });
-      let resolveLogout: (() => void) | undefined;
-      vi.mocked(authLogout).mockImplementationOnce(
-        () =>
-          new Promise<void>((resolve) => {
-            resolveLogout = resolve;
-          }),
-      );
-      const { result } = renderHook(() => useAuth(), { wrapper });
-      await waitFor(() => expect(result.current.user?.id).toBe("first-account"));
+    it.each(["resolves", "rejects"] as const)(
+      "keeps the new account's telemetry identity when an older logout %s",
+      async (settlement) => {
+        const { getSessionToken, fetchCurrentUser, logout: authLogout } = await importAuthApis();
+        const firstUser = { id: "first-account", name: "First User", email: null };
+        const secondUser = { id: "second-account", name: "Second User", email: null };
+        vi.mocked(getSessionToken).mockResolvedValue("first-token");
+        vi.mocked(fetchCurrentUser).mockResolvedValueOnce(firstUser);
+        let finishLogout: (() => void) | undefined;
+        const logoutFailure = new Error("Old logout request failed");
+        vi.mocked(authLogout).mockImplementationOnce(
+          () =>
+            new Promise<void>((resolve, reject) => {
+              finishLogout = () => (settlement === "resolves" ? resolve() : reject(logoutFailure));
+            }),
+        );
+        const { result } = renderHook(() => useAuth(), { wrapper });
+        await waitFor(() => expect(result.current.user?.id).toBe("first-account"));
 
-      let logout: Promise<void> | undefined;
-      act(() => {
-        logout = result.current.logout();
-      });
-      vi.mocked(fetchCurrentUser).mockResolvedValueOnce({
-        id: "second-account",
-        name: "Second User",
-        email: null,
-      });
-      await act(async () => result.current.onLoginSuccess("second-token"));
-      expect(result.current.user?.id).toBe("second-account");
-      expect(mockIdentifyUser).toHaveBeenLastCalledWith({
-        id: "second-account",
-        name: "Second User",
-        email: null,
-      });
-      mockResetUser.mockClear();
-      mockIdentifyUser.mockClear();
+        let logout: Promise<void> | undefined;
+        act(() => {
+          logout = result.current.logout();
+        });
+        try {
+          vi.mocked(fetchCurrentUser).mockResolvedValueOnce(secondUser);
+          await act(async () => result.current.onLoginSuccess("second-token"));
+          expect(result.current.user?.id).toBe("second-account");
+          expect(mockIdentifyUser).toHaveBeenLastCalledWith(secondUser);
+          mockResetUser.mockClear();
+          mockIdentifyUser.mockClear();
 
-      await act(async () => {
-        if (!resolveLogout || !logout) throw new Error("Logout did not start.");
-        resolveLogout();
-        await logout;
-      });
+          await act(async () => {
+            if (!finishLogout || !logout) throw new Error("Logout did not start.");
+            finishLogout();
+            await logout;
+          });
 
-      expect(result.current.user?.id).toBe("second-account");
-      expect(mockResetUser).not.toHaveBeenCalled();
-      expect(mockIdentifyUser).not.toHaveBeenCalled();
-    });
+          expect(result.current.user?.id).toBe("second-account");
+          expect(result.current.sessionToken).toBe("second-token");
+          expect(mockResetUser).not.toHaveBeenCalled();
+          expect(mockIdentifyUser).not.toHaveBeenCalled();
+          if (settlement === "rejects") {
+            expect(mockCaptureException).toHaveBeenCalledWith(logoutFailure, {
+              source: "logout",
+              retiredLifetime: true,
+            });
+          } else {
+            expect(mockCaptureException).not.toHaveBeenCalled();
+          }
+        } finally {
+          finishLogout?.();
+          if (logout) await act(async () => logout);
+        }
+      },
+    );
 
     it("clears an unused deletion preparation during normal logout", async () => {
       const { getSessionToken, fetchCurrentUser, logout: authLogout } = await importAuthApis();
       vi.mocked(getSessionToken).mockResolvedValue("test-token");
-      vi.mocked(fetchCurrentUser).mockResolvedValue({
-        id: "user-1",
-        name: "Test User",
-        email: "test@example.com",
-      });
+      vi.mocked(fetchCurrentUser).mockResolvedValue(defaultUser);
       vi.mocked(authLogout).mockResolvedValue();
       const { result } = renderHook(() => useAuth(), { wrapper });
       await waitFor(() => expect(result.current.user).not.toBeNull());
@@ -769,11 +762,7 @@ describe("auth-context", () => {
         saveSessionToken,
       } = await importAuthApis();
       vi.mocked(getSessionToken).mockResolvedValue("test-token");
-      vi.mocked(fetchCurrentUser).mockResolvedValue({
-        id: "user-1",
-        name: "Test User",
-        email: "test@example.com",
-      });
+      vi.mocked(fetchCurrentUser).mockResolvedValue(defaultUser);
       const { result } = renderHook(() => useAuth(), { wrapper });
       await waitFor(() => expect(result.current.user).not.toBeNull());
 
@@ -941,15 +930,19 @@ describe("auth-context", () => {
   });
   it("restores a signed-in user after a cold offline launch using persisted keychain state", async () => {
     const auth = await importAuthApis();
+    const bindActualSession = (session: typeof import("./auth-session")) => {
+      mockAuthSession.getSessionToken.mockImplementation(session.getSessionToken);
+      mockAuthSession.saveSessionToken.mockImplementation(session.saveSessionToken);
+      mockAuthSession.getOrCreateSessionOwnerNonce.mockImplementation(
+        session.getOrCreateSessionOwnerNonce,
+      );
+      mockAuthSession.rotateSessionOwnerNonce.mockImplementation(session.rotateSessionOwnerNonce);
+      mockGetSavedSessionUser.mockImplementation(session.getSavedSessionUser);
+      mockSaveSessionUser.mockImplementation(session.saveSessionUser);
+    };
+    vi.resetModules();
     const actual = await vi.importActual<typeof import("./auth-session")>("./auth-session");
-    mockAuthSession.getSessionToken.mockImplementation(actual.getSessionToken);
-    mockAuthSession.saveSessionToken.mockImplementation(actual.saveSessionToken);
-    mockAuthSession.getOrCreateSessionOwnerNonce.mockImplementation(
-      actual.getOrCreateSessionOwnerNonce,
-    );
-    mockAuthSession.rotateSessionOwnerNonce.mockImplementation(actual.rotateSessionOwnerNonce);
-    mockGetSavedSessionUser.mockImplementation(actual.getSavedSessionUser);
-    mockSaveSessionUser.mockImplementation(actual.saveSessionUser);
+    bindActualSession(actual);
     const user = { id: "cold-launch-user", name: "Saved User", email: null };
     vi.mocked(auth.fetchCurrentUser).mockResolvedValueOnce(user);
     const initialLaunch = renderHook(() => useAuth(), { wrapper });
@@ -962,16 +955,7 @@ describe("auth-context", () => {
       // A new process has no token or React state in memory; only keychain survives.
       vi.resetModules();
       const freshSession = await vi.importActual<typeof import("./auth-session")>("./auth-session");
-      mockAuthSession.getSessionToken.mockImplementation(freshSession.getSessionToken);
-      mockAuthSession.saveSessionToken.mockImplementation(freshSession.saveSessionToken);
-      mockAuthSession.getOrCreateSessionOwnerNonce.mockImplementation(
-        freshSession.getOrCreateSessionOwnerNonce,
-      );
-      mockAuthSession.rotateSessionOwnerNonce.mockImplementation(
-        freshSession.rotateSessionOwnerNonce,
-      );
-      mockGetSavedSessionUser.mockImplementation(freshSession.getSavedSessionUser);
-      mockSaveSessionUser.mockImplementation(freshSession.saveSessionUser);
+      bindActualSession(freshSession);
       const offlineError = new TypeError("Network request failed");
       vi.mocked(auth.fetchCurrentUser).mockRejectedValueOnce(offlineError);
       const offlineLaunch = renderHook(() => useAuth(), { wrapper });

@@ -2,14 +2,17 @@ import { type AuthUser, AuthUserSchema } from "@dofek/auth/auth";
 import * as Crypto from "expo-crypto";
 import * as SecureStore from "expo-secure-store";
 import { z } from "zod";
-import { disableUploads } from "../modules/whoop-ble";
 import {
   deleteSecureStoreItem,
   readSecureStoreItem,
   writeSecureStoreItem,
 } from "./secure-store-access";
 import { captureException } from "./telemetry";
-import { clearWhoopCleanupIntent, persistWhoopCleanupIntent } from "./whoop-cleanup-intent";
+import {
+  clearWhoopCleanupIntent,
+  disableWhoopUploads,
+  persistWhoopCleanupIntent,
+} from "./whoop-upload-session";
 
 const SESSION_TOKEN_KEY = "dofek_session_token";
 const SESSION_USER_KEY = "dofek_session_user_v1";
@@ -116,7 +119,7 @@ export async function getSavedSessionUser(token: string): Promise<AuthUser | nul
 /** Clear the session token (logout). */
 export async function clearSessionToken(): Promise<void> {
   invalidateSessionPersistence();
-  const nativeOutcome = disableUploads().then(
+  const nativeOutcome = disableWhoopUploads().then(
     () => ({ status: "fulfilled" as const }),
     (reason: unknown) => ({ status: "rejected" as const, reason }),
   );
@@ -167,7 +170,7 @@ export async function clearSessionToken(): Promise<void> {
   if (failures.length > 0) {
     const error =
       failures.length === 1 ? failures[0] : new AggregateError(failures, "Session cleanup failed");
-    captureException(error, { source: "auth-session-cleanup" });
+    captureException(error, { source: "auth-session-cleanup", retiredLifetime: true });
     throw error;
   }
 }

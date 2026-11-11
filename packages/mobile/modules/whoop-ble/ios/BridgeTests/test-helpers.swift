@@ -40,6 +40,57 @@ final class CleanupLogRecorder {
     }
 }
 
+struct SentryCapturedEvent: CustomStringConvertible {
+    let userId: String?
+    let errorText: String
+
+    var description: String { "userId=\(userId ?? "nil"), error=\(errorText)" }
+}
+
+final class SentryCaptureRecorder {
+    private let lock = NSLock()
+    private var events: [SentryCapturedEvent] = []
+    private var pendingExpectations: [(text: String, expectation: XCTestExpectation)] = []
+
+    @MainActor
+    func start(userId: String, logs: CleanupLogRecorder? = nil, logEntry: XCTestExpectation? = nil) {
+        SentrySDK.start { options in
+            options.dsn = "https://key@sentry.example/123"
+            options.beforeSend = { event in
+                let errorText = [event.error?.localizedDescription]
+                    .compactMap { $0 }
+                    .joined(separator: " ") + " " + (event.exceptions?.compactMap(\.value).joined(separator: " ") ?? "")
+                self.record(userId: event.user?.userId, errorText: errorText)
+                return nil
+            }
+            options.beforeSendLog = { log in
+                guard log.attributes["operation"]?.value as? String == "disableUploads" else { return nil }
+                logs?.append(log)
+                if log.attributes["stage"]?.value as? String == "ble_suspend" { logEntry?.fulfill() }
+                return nil
+            }
+        }
+        SentrySDK.configureScope { scope in
+            scope.setUser(Sentry.User(userId: userId))
+        }
+    }
+
+    func expect(_ expectation: XCTestExpectation, matching text: String) {
+        lock.withLock { pendingExpectations.append((text, expectation)) }
+    }
+
+    func record(userId: String?, errorText: String) {
+        let expectation = lock.withLock { () -> XCTestExpectation? in
+            events.append(SentryCapturedEvent(userId: userId, errorText: errorText))
+            guard let index = pendingExpectations.firstIndex(where: { errorText.contains($0.text) }) else { return nil }
+            return pendingExpectations.remove(at: index).expectation
+        }
+        expectation?.fulfill()
+    }
+
+    var snapshot: [SentryCapturedEvent] { lock.withLock { events } }
+}
+
 var captureError: NSError {
     NSError(domain: "CaptureTest", code: 1, userInfo: [
         NSLocalizedDescriptionKey: "The capture database is unavailable"
