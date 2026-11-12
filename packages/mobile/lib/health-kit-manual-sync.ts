@@ -217,6 +217,7 @@ export class HealthKitManualSyncController {
       attempt.expired = true;
       attempt.interrupted = true;
       this.#publish({ status: "paused", message: "Apple Health sync paused", error: null });
+      this.#completeNative(attempt, false);
     });
     this.#appStateSubscription = deps.listenForAppState((state) => {
       const attempt = this.#attempt;
@@ -280,8 +281,7 @@ export class HealthKitManualSyncController {
       this.#checkpoint = checkpoint;
       this.#assertAvailable();
       const attempt = this.#beginAttempt(checkpoint);
-      this.#starting = false;
-      return await attempt;
+      return attempt;
     } finally {
       this.#starting = false;
     }
@@ -296,11 +296,11 @@ export class HealthKitManualSyncController {
       await this.#recoverRestoreFailure(false);
       await this.#replaceInterruptedAttempt();
       this.#assertAvailable();
+      if (this.#attempt) throw new Error("Apple Health sync is already running.");
       if (!this.#checkpoint) throw new Error("There is no paused Apple Health sync to resume.");
       this.#assertAvailable();
       const attempt = this.#beginAttempt(this.#checkpoint);
-      this.#starting = false;
-      return await attempt;
+      return attempt;
     } finally {
       this.#starting = false;
     }
@@ -451,6 +451,7 @@ export class HealthKitManualSyncController {
       totalStageCount: MANUAL_HEALTH_KIT_SYNC_STAGES.length,
     });
     let outcomeAttempted = false;
+    let dataFinalized = false;
     const startedAt = Date.now();
     try {
       const grant = await this.#deps.startNative(taskId);
@@ -516,6 +517,7 @@ export class HealthKitManualSyncController {
         await this.#deps.clearCheckpoint(this.userId, checkpoint.requestId);
         this.#assertAttempt(attempt);
         this.#checkpoint = null;
+        dataFinalized = true;
       }
       this.#assertCanContinue(attempt);
       outcomeAttempted = true;
@@ -527,6 +529,7 @@ export class HealthKitManualSyncController {
           `Apple Health data synced, but sync history could not be saved: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
+      this.#assertCanContinue(attempt);
       if (result.errors.length === 0) {
         this.#publish({ status: "complete", message: "Apple Health sync complete", error: null });
       }
@@ -539,15 +542,19 @@ export class HealthKitManualSyncController {
         isHealthKitDatabaseInaccessible(error) ||
         error instanceof ManualHealthKitSyncInterruptedError;
       if (current && paused && !this.#retired) {
-        await this.#savePausedCheckpoint({ ...checkpoint, requiresResume: true });
-        if (this.#attempt !== attempt || this.#retired) throw error;
-        this.#publish({
-          status: "paused",
-          message: isHealthKitDatabaseInaccessible(error)
-            ? "Unlock your phone to continue Apple Health sync"
-            : "Apple Health sync paused",
-          error: null,
-        });
+        if (!dataFinalized) {
+          await this.#savePausedCheckpoint({ ...checkpoint, requiresResume: true });
+          if (this.#attempt !== attempt || this.#retired) throw error;
+        }
+        if (this.#attempt === attempt && !this.#retired) {
+          this.#publish({
+            status: "paused",
+            message: isHealthKitDatabaseInaccessible(error)
+              ? "Unlock your phone to continue Apple Health sync"
+              : "Apple Health sync paused",
+            error: null,
+          });
+        }
       } else if (current && !this.#retired && !attempt.expired) {
         let visibleError = error instanceof Error ? error.message : String(error);
         if (!outcomeAttempted && !attempt.nativeCompletionSent) {
@@ -562,13 +569,15 @@ export class HealthKitManualSyncController {
             visibleError = `Apple Health sync failed: ${visibleError}. Sync history could not be saved: ${recordError instanceof Error ? recordError.message : String(recordError)}`;
           }
         }
-        this.#publish({
-          status: "error",
-          message: null,
-          error: visibleError,
-        });
+        if (this.#attempt === attempt && !this.#retired && !attempt.interrupted) {
+          this.#publish({
+            status: "error",
+            message: null,
+            error: visibleError,
+          });
+        }
       }
-      if (current && !this.#retired && !attempt.expired) this.#completeNative(attempt, false);
+      if (current && !this.#retired) this.#completeNative(attempt, false);
       throw error;
     } finally {
       if (this.#attempt === attempt) this.#attempt = null;

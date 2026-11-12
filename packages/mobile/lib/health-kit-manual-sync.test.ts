@@ -428,6 +428,64 @@ describe("HealthKitManualSyncController", () => {
     });
   });
 
+  it("does not publish success when the native task expires during outcome recording", async () => {
+    const harness = makeHarness();
+    const recording = Promise.withResolvers<void>();
+    harness.deps.runSync.mockResolvedValue(success);
+    harness.deps.recordOutcome.mockReturnValueOnce(recording.promise);
+
+    const started = harness.controller.start(7);
+    await vi.waitFor(() => expect(harness.deps.recordOutcome).toHaveBeenCalledOnce());
+    harness.expire(harness.starts[0] ?? "");
+    recording.resolve();
+
+    await expect(started).rejects.toThrow(/interrupted/i);
+    expect(harness.controller.getSnapshot()).toMatchObject({ status: "paused" });
+    expect(harness.saved()).toBeNull();
+    expect(harness.deps.runSync).toHaveBeenCalledOnce();
+    expect(harness.deps.completeNative).toHaveBeenCalledWith(harness.starts[0], false);
+    expect(harness.deps.completeNative).not.toHaveBeenCalledWith(harness.starts[0], true);
+  });
+
+  it("does not publish success when the account retires during outcome recording", async () => {
+    const harness = makeHarness();
+    const recording = Promise.withResolvers<void>();
+    harness.deps.runSync.mockResolvedValue(success);
+    harness.deps.recordOutcome.mockReturnValueOnce(recording.promise);
+
+    const started = harness.controller.start(7);
+    await vi.waitFor(() => expect(harness.deps.recordOutcome).toHaveBeenCalledOnce());
+    const retirement = harness.controller.retire();
+    recording.resolve();
+
+    await expect(started).rejects.toThrow(/no longer available/i);
+    await retirement;
+    expect(harness.controller.getSnapshot()).toMatchObject({ status: "idle" });
+    expect(harness.saved()).toBeNull();
+    expect(harness.deps.runSync).toHaveBeenCalledOnce();
+    expect(harness.deps.completeNative).toHaveBeenCalledWith(harness.starts[0], false);
+    expect(harness.deps.completeNative).not.toHaveBeenCalledWith(harness.starts[0], true);
+  });
+
+  it("does not publish a terminal error after retirement during error recording", async () => {
+    const harness = makeHarness();
+    const recording = Promise.withResolvers<void>();
+    harness.deps.runSync.mockRejectedValue(new Error("HealthKit upload failed"));
+    harness.deps.recordOutcome.mockReturnValueOnce(recording.promise);
+
+    const started = harness.controller.start(7);
+    await vi.waitFor(() => expect(harness.deps.recordOutcome).toHaveBeenCalledOnce());
+    const retirement = harness.controller.retire();
+    recording.resolve();
+
+    await expect(started).rejects.toThrow("HealthKit upload failed");
+    await retirement;
+    expect(harness.controller.getSnapshot()).toMatchObject({ status: "idle", error: null });
+    expect(harness.saved()).toBeNull();
+    expect(harness.deps.completeNative).toHaveBeenCalledWith(harness.starts[0], false);
+    expect(harness.deps.completeNative).not.toHaveBeenCalledWith(harness.starts[0], true);
+  });
+
   it("does not save a late checkpoint after account retirement", async () => {
     const harness = makeHarness();
     const checkpointWrite = Promise.withResolvers<void>();
@@ -491,6 +549,59 @@ describe("HealthKitManualSyncController", () => {
     await harness.controller.resume();
     expect(harness.starts).toHaveLength(2);
     expect(harness.starts[1]).not.toBe(harness.starts[0]);
+  });
+
+  it("rejects Resume while another manual attempt owns the request", async () => {
+    const harness = makeHarness();
+    const activeAttempt = Promise.withResolvers<typeof success>();
+    harness.deps.runSync.mockReturnValueOnce(activeAttempt.promise).mockResolvedValue(success);
+    const started = harness.controller.start(7);
+    await vi.waitFor(() => expect(harness.deps.runSync).toHaveBeenCalledOnce());
+    const duplicateResume = harness.controller.resume().then(
+      () => "fulfilled",
+      () => "rejected",
+    );
+    activeAttempt.resolve(success);
+
+    const [startResult, duplicateResult] = await Promise.allSettled([started, duplicateResume]);
+    expect(startResult.status).toBe("fulfilled");
+    expect(duplicateResult).toMatchObject({ status: "fulfilled", value: "rejected" });
+    expect(harness.deps.startNative).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the replacement admission reserved when the expired start settles", async () => {
+    const harness = makeHarness();
+    const expiredAttempt = Promise.withResolvers<typeof success>();
+    harness.deps.runSync.mockReturnValueOnce(expiredAttempt.promise).mockResolvedValue(success);
+    const clearing = Promise.withResolvers<void>();
+    const clearCheckpoint = harness.deps.clearCheckpoint;
+    vi.mocked(harness.deps.clearCheckpoint).mockImplementationOnce(async (...args) => {
+      await clearing.promise;
+      await clearCheckpoint(...args);
+    });
+    const first = harness.controller.start(7);
+    await vi.waitFor(() => expect(harness.deps.runSync).toHaveBeenCalledOnce());
+    harness.expire(harness.starts[0] ?? "");
+    const replacement = harness.controller.start(30);
+    const firstSettled = first.then(
+      () => undefined,
+      () => undefined,
+    );
+
+    try {
+      expiredAttempt.resolve(success);
+      await firstSettled;
+      await vi.waitFor(() => expect(harness.deps.clearCheckpoint).toHaveBeenCalledOnce());
+      await expect(harness.controller.resume()).rejects.toThrow(/already running/i);
+      expect(harness.deps.startNative).toHaveBeenCalledOnce();
+      clearing.resolve();
+      await expect(replacement).resolves.toEqual(success);
+      expect(harness.deps.startNative).toHaveBeenCalledTimes(2);
+    } finally {
+      clearing.resolve();
+      expiredAttempt.resolve(success);
+      await Promise.allSettled([first, replacement]);
+    }
   });
 
   it("settles an expired in-flight query before a Resume tap starts its new native task", async () => {
