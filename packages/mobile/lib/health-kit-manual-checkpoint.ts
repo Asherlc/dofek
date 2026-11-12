@@ -3,10 +3,16 @@ import { z } from "zod";
 import { MANUAL_HEALTH_KIT_SYNC_STAGES } from "./health-kit-sync";
 import type { ManualHealthKitSyncStage } from "./health-kit-sync-types";
 import { readSecureStoreItem, writeSecureStoreItem } from "./secure-store-access";
-import { captureException } from "./telemetry";
 
 const CHECKPOINT_KEY_PREFIX = "dofek_manual_health_kit_checkpoint_v1";
 const INVALID_CHECKPOINT_MESSAGE = "Stored Apple Health sync checkpoint is invalid.";
+
+export class InvalidManualHealthKitCheckpointError extends Error {
+  constructor() {
+    super(INVALID_CHECKPOINT_MESSAGE);
+    this.name = "InvalidManualHealthKitCheckpointError";
+  }
+}
 
 /**
  * Each account owns its own SecureStore key, so one account can never occupy,
@@ -75,13 +81,12 @@ function parseStoredCheckpoint(raw: string): ManualHealthKitCheckpoint {
   let value: unknown;
   try {
     value = JSON.parse(raw);
-  } catch (error) {
-    captureException(error, { source: "health-kit-manual-checkpoint-parse" });
-    throw new Error(INVALID_CHECKPOINT_MESSAGE);
+  } catch {
+    throw new InvalidManualHealthKitCheckpointError();
   }
   const parsed = ManualHealthKitCheckpointSchema.safeParse(value);
   if (!parsed.success) {
-    throw new Error(INVALID_CHECKPOINT_MESSAGE);
+    throw new InvalidManualHealthKitCheckpointError();
   }
   return parsed.data;
 }
@@ -95,7 +100,7 @@ export function loadManualHealthKitCheckpoint(
     if (raw === null) return null;
     const checkpoint = parseStoredCheckpoint(raw);
     if (checkpoint.userId !== userId) {
-      throw new Error(INVALID_CHECKPOINT_MESSAGE);
+      throw new InvalidManualHealthKitCheckpointError();
     }
     return checkpoint;
   });

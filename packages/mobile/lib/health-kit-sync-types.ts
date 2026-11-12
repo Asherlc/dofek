@@ -149,6 +149,8 @@ export interface ManualHealthKitSyncContext {
   onStageComplete: (completion: ManualHealthKitSyncStageCompletion) => Promise<void>;
   /** Awaited before each query, upload, checkpoint, and anchor acknowledgement. */
   assertCanContinue: () => Promise<void>;
+  /** Lets the manual owner recover only an observed background-crossing route transport error. */
+  shouldRetryWorkoutRouteError: (error: unknown) => boolean;
 }
 
 /**

@@ -64,6 +64,7 @@ describe("syncRunningSteps manual interruption", () => {
       nextStage: "running-steps",
       onStageComplete: vi.fn(),
       assertCanContinue: vi.fn(),
+      shouldRetryWorkoutRouteError: vi.fn(() => false),
       ...overrides,
     };
   }

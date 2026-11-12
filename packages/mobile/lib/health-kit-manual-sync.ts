@@ -14,6 +14,7 @@ import {
 } from "./health-kit-errors";
 import {
   clearManualHealthKitCheckpoint,
+  InvalidManualHealthKitCheckpointError,
   loadManualHealthKitCheckpoint,
   type ManualHealthKitCheckpoint,
   purgeManualHealthKitCheckpoint,
@@ -121,35 +122,49 @@ const defaultWaitUntilForegroundConnected: HealthKitManualSyncDependencies["wait
   (signal, requireNewActivation = false) =>
     new Promise((resolve, reject) => {
       let sawActivation = false;
+      let settled = false;
+      const finish = (error?: unknown, rejectWait = false) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        if (rejectWait) reject(error);
+        else resolve();
+      };
       const check = async () => {
+        if (settled) return;
         if (signal.aborted) {
-          cleanup();
-          reject(new ManualHealthKitSyncInterruptedError());
+          finish(new ManualHealthKitSyncInterruptedError(), true);
           return;
         }
         if (AppState.currentState !== "active" || (requireNewActivation && !sawActivation)) return;
         const network = await Network.getNetworkStateAsync();
-        if (network.isConnected === true && network.isInternetReachable !== false) {
-          cleanup();
-          resolve();
+        if (settled) return;
+        if (signal.aborted) {
+          finish(new ManualHealthKitSyncInterruptedError(), true);
+          return;
         }
+        if (AppState.currentState !== "active" || (requireNewActivation && !sawActivation)) return;
+        if (network.isConnected === true && network.isInternetReachable !== false) finish();
+      };
+      const requestCheck = () => {
+        void check().catch((error: unknown) => {
+          captureException(error, { source: "health-kit-manual-connectivity" });
+          finish(signal.aborted ? new ManualHealthKitSyncInterruptedError() : error, true);
+        });
       };
       const appState = AppState.addEventListener("change", (state) => {
         if (state === "active") sawActivation = true;
-        void check();
+        requestCheck();
       });
-      const network = Network.addNetworkStateListener(() => void check());
-      const abort = () => {
-        cleanup();
-        reject(new ManualHealthKitSyncInterruptedError());
-      };
+      const network = Network.addNetworkStateListener(requestCheck);
+      const abort = () => finish(new ManualHealthKitSyncInterruptedError(), true);
       const cleanup = () => {
         appState.remove();
         network.remove();
         signal.removeEventListener("abort", abort);
       };
       signal.addEventListener("abort", abort, { once: true });
-      void check();
+      requestCheck();
     });
 
 function createDefaultDependencies(trpcClient: SyncTrpcClient): HealthKitManualSyncDependencies {
@@ -182,13 +197,15 @@ export class HealthKitManualSyncController {
   readonly #listeners = new Set<() => void>();
   readonly #expirationSubscription: { remove(): void };
   readonly #appStateSubscription: { remove(): void };
-  readonly #abort = new AbortController();
   #snapshot = INITIAL_STATE;
   #checkpoint: ManualHealthKitCheckpoint | null = null;
   #attempt: ManualAttempt | null = null;
   #retired = false;
   #disposed = false;
   #gate: Promise<void> = Promise.resolve();
+  #starting = false;
+  #hasRestoreError = false;
+  #restoreError: unknown;
 
   constructor({ userId, trpcClient, deps = createDefaultDependencies(trpcClient) }: Options) {
     this.userId = userId;
@@ -225,51 +242,68 @@ export class HealthKitManualSyncController {
   };
 
   async start(syncRangeDays: number | null): Promise<SyncResult> {
-    await this.ready;
-    this.#assertAvailable();
-    await this.#replaceInterruptedAttempt();
-    this.#assertAvailable();
-    if (this.#attempt) throw new Error("Apple Health sync is already running.");
-    const existing = this.#checkpoint;
-    if (existing) {
-      await this.#deps.clearCheckpoint(this.userId, existing.requestId);
+    if (this.#starting) throw new Error("Apple Health sync is already running.");
+    this.#starting = true;
+    try {
+      await this.ready;
       this.#assertAvailable();
+      await this.#recoverRestoreFailure(true);
+      await this.#replaceInterruptedAttempt();
+      this.#assertAvailable();
+      if (this.#attempt) throw new Error("Apple Health sync is already running.");
+      const existing = this.#checkpoint;
+      if (existing) {
+        await this.#deps.clearCheckpoint(this.userId, existing.requestId);
+        this.#assertAvailable();
+      }
+      const endDate = new Date().toISOString();
+      const startDate =
+        syncRangeDays === null
+          ? new Date(0).toISOString()
+          : (() => {
+              const date = new Date();
+              date.setDate(date.getDate() - syncRangeDays);
+              date.setHours(0, 0, 0, 0);
+              return date.toISOString();
+            })();
+      const checkpoint: ManualHealthKitCheckpoint = {
+        requestId: this.#deps.createId(),
+        userId: this.userId,
+        startDate,
+        endDate,
+        nextStage: "additive-and-category",
+        requiresResume: false,
+      };
+      this.#assertAvailable();
+      await this.#deps.saveCheckpoint(checkpoint);
+      this.#assertAvailable();
+      this.#checkpoint = checkpoint;
+      this.#assertAvailable();
+      const attempt = this.#beginAttempt(checkpoint);
+      this.#starting = false;
+      return await attempt;
+    } finally {
+      this.#starting = false;
     }
-    const endDate = new Date().toISOString();
-    const startDate =
-      syncRangeDays === null
-        ? new Date(0).toISOString()
-        : (() => {
-            const date = new Date();
-            date.setDate(date.getDate() - syncRangeDays);
-            date.setHours(0, 0, 0, 0);
-            return date.toISOString();
-          })();
-    const checkpoint: ManualHealthKitCheckpoint = {
-      requestId: this.#deps.createId(),
-      userId: this.userId,
-      startDate,
-      endDate,
-      nextStage: "additive-and-category",
-      requiresResume: false,
-    };
-    this.#assertAvailable();
-    await this.#deps.saveCheckpoint(checkpoint);
-    this.#assertAvailable();
-    this.#checkpoint = checkpoint;
-    this.#assertAvailable();
-    return this.#beginAttempt(checkpoint);
   }
 
   async resume(): Promise<SyncResult> {
-    await this.ready;
-    this.#assertAvailable();
-    await this.#replaceInterruptedAttempt();
-    this.#assertAvailable();
-    if (this.#attempt) throw new Error("Apple Health sync is already running.");
-    if (!this.#checkpoint) throw new Error("There is no paused Apple Health sync to resume.");
-    this.#assertAvailable();
-    return this.#beginAttempt(this.#checkpoint);
+    if (this.#starting) throw new Error("Apple Health sync is already running.");
+    this.#starting = true;
+    try {
+      await this.ready;
+      this.#assertAvailable();
+      await this.#recoverRestoreFailure(false);
+      await this.#replaceInterruptedAttempt();
+      this.#assertAvailable();
+      if (!this.#checkpoint) throw new Error("There is no paused Apple Health sync to resume.");
+      this.#assertAvailable();
+      const attempt = this.#beginAttempt(this.#checkpoint);
+      this.#starting = false;
+      return await attempt;
+    } finally {
+      this.#starting = false;
+    }
   }
 
   async runObserverAttempt<Result>(operation: () => Promise<Result>): Promise<Result> {
@@ -277,10 +311,6 @@ export class HealthKitManualSyncController {
       this.#assertAvailable();
       return operation();
     });
-  }
-
-  assertCanContinue(): void {
-    this.#assertAvailable();
   }
 
   assertAccountCurrent(): void {
@@ -296,12 +326,8 @@ export class HealthKitManualSyncController {
       this.#completeNative(this.#attempt, false);
       this.#attempt.abort.abort();
     }
-    this.#abort.abort();
     this.#expirationSubscription.remove();
     this.#appStateSubscription.remove();
-    if (this.#checkpoint && this.#snapshot.status === "running") {
-      void this.#savePausedCheckpoint(this.#checkpoint);
-    }
   }
 
   /** Account departure and erasure stop work and strictly purge only this account. */
@@ -312,7 +338,6 @@ export class HealthKitManualSyncController {
       this.#completeNative(this.#attempt, false);
       this.#attempt.abort.abort();
     }
-    this.#abort.abort();
     this.#expirationSubscription.remove();
     this.#appStateSubscription.remove();
     const checkpoint = this.#checkpoint;
@@ -323,15 +348,73 @@ export class HealthKitManualSyncController {
   }
 
   async #restore(): Promise<void> {
-    const checkpoint = await this.#deps.loadCheckpoint(this.userId);
-    if (this.#retired || this.#disposed || !checkpoint) return;
-    this.#checkpoint = checkpoint;
+    try {
+      const checkpoint = await this.#deps.loadCheckpoint(this.userId);
+      if (this.#retired || this.#disposed || !checkpoint) return;
+      this.#checkpoint = checkpoint;
+      this.#publish({
+        status: "paused",
+        message: "Apple Health sync paused",
+        error: null,
+        completedStageCount: MANUAL_HEALTH_KIT_SYNC_STAGES.indexOf(checkpoint.nextStage),
+        totalStageCount: MANUAL_HEALTH_KIT_SYNC_STAGES.length,
+      });
+    } catch (error) {
+      if (this.#retired || this.#disposed) return;
+      this.#hasRestoreError = true;
+      this.#restoreError = error;
+      captureException(error, { source: "health-kit-manual-sync-restore", userId: this.userId });
+      this.#publishRestoreError(error);
+    }
+  }
+
+  async #recoverRestoreFailure(replaceInvalid: boolean): Promise<void> {
+    if (!this.#hasRestoreError) return;
+    const restoreError = this.#restoreError;
+    if (restoreError instanceof InvalidManualHealthKitCheckpointError) {
+      if (!replaceInvalid) throw restoreError;
+      await this.#deps.purgeCheckpoint(this.userId);
+      this.#assertAvailable();
+      this.#hasRestoreError = false;
+      this.#restoreError = null;
+      this.#checkpoint = null;
+      return;
+    }
+    try {
+      const checkpoint = await this.#deps.loadCheckpoint(this.userId);
+      this.#assertAvailable();
+      this.#checkpoint = checkpoint;
+      this.#hasRestoreError = false;
+      this.#restoreError = null;
+      if (checkpoint) {
+        this.#publish({
+          status: "paused",
+          message: "Apple Health sync paused",
+          error: null,
+          completedStageCount: MANUAL_HEALTH_KIT_SYNC_STAGES.indexOf(checkpoint.nextStage),
+          totalStageCount: MANUAL_HEALTH_KIT_SYNC_STAGES.length,
+        });
+      } else {
+        this.#publish(INITIAL_STATE);
+      }
+    } catch (error) {
+      this.#assertAvailable();
+      this.#hasRestoreError = true;
+      this.#restoreError = error;
+      captureException(error, { source: "health-kit-manual-sync-restore", userId: this.userId });
+      this.#publishRestoreError(error);
+      throw error;
+    }
+  }
+
+  #publishRestoreError(error: unknown): void {
+    const invalid = error instanceof InvalidManualHealthKitCheckpointError;
     this.#publish({
-      status: "paused",
-      message: "Apple Health sync paused",
-      error: null,
-      completedStageCount: MANUAL_HEALTH_KIT_SYNC_STAGES.indexOf(checkpoint.nextStage),
-      totalStageCount: MANUAL_HEALTH_KIT_SYNC_STAGES.length,
+      status: "error",
+      message: "Apple Health sync could not be restored",
+      error: invalid
+        ? "The saved Apple Health sync checkpoint is invalid. Tap Sync to replace it."
+        : "Could not load the saved Apple Health sync request. Try again.",
     });
   }
 
@@ -367,7 +450,7 @@ export class HealthKitManualSyncController {
       completedStageCount: MANUAL_HEALTH_KIT_SYNC_STAGES.indexOf(checkpoint.nextStage),
       totalStageCount: MANUAL_HEALTH_KIT_SYNC_STAGES.length,
     });
-    let outcomeRecorded = false;
+    let outcomeAttempted = false;
     const startedAt = Date.now();
     try {
       const grant = await this.#deps.startNative(taskId);
@@ -433,11 +516,20 @@ export class HealthKitManualSyncController {
         await this.#deps.clearCheckpoint(this.userId, checkpoint.requestId);
         this.#assertAttempt(attempt);
         this.#checkpoint = null;
-        this.#publish({ status: "complete", message: "Apple Health sync complete", error: null });
       }
       this.#assertCanContinue(attempt);
-      outcomeRecorded = true;
-      await this.#deps.recordOutcome(result, null, Date.now() - startedAt);
+      outcomeAttempted = true;
+      try {
+        await this.#deps.recordOutcome(result, null, Date.now() - startedAt);
+      } catch (error) {
+        captureException(error, { source: "apple-health-sync-log", origin: "manual" });
+        throw new Error(
+          `Apple Health data synced, but sync history could not be saved: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+      if (result.errors.length === 0) {
+        this.#publish({ status: "complete", message: "Apple Health sync complete", error: null });
+      }
       this.#completeNative(attempt, result.errors.length === 0);
       return result;
     } catch (error) {
@@ -457,17 +549,23 @@ export class HealthKitManualSyncController {
           error: null,
         });
       } else if (current && !this.#retired && !attempt.expired) {
-        if (!outcomeRecorded && !attempt.nativeCompletionSent) {
-          outcomeRecorded = true;
-          if (!isExpectedManualSyncInterruption(error)) {
+        let visibleError = error instanceof Error ? error.message : String(error);
+        if (!outcomeAttempted && !attempt.nativeCompletionSent) {
+          outcomeAttempted = true;
+          if (!isExpectedManualSyncInterruption(error) && !attempt.recovering) {
             captureException(error, { source: "apple-health-sync", origin: "manual" });
           }
-          await this.#deps.recordOutcome(null, error, Date.now() - startedAt);
+          try {
+            await this.#deps.recordOutcome(null, error, Date.now() - startedAt);
+          } catch (recordError) {
+            captureException(recordError, { source: "apple-health-sync-log", origin: "manual" });
+            visibleError = `Apple Health sync failed: ${visibleError}. Sync history could not be saved: ${recordError instanceof Error ? recordError.message : String(recordError)}`;
+          }
         }
         this.#publish({
           status: "error",
           message: null,
-          error: error instanceof Error ? error.message : String(error),
+          error: visibleError,
         });
       }
       if (current && !this.#retired && !attempt.expired) this.#completeNative(attempt, false);
@@ -489,6 +587,9 @@ export class HealthKitManualSyncController {
         endDate: checkpoint.endDate,
         nextStage: checkpoint.nextStage,
         assertCanContinue: async () => this.#assertCanContinue(attempt),
+        shouldRetryWorkoutRouteError: (error) =>
+          attempt.activeUploadCrossedBackground &&
+          isBackgroundHealthKitTransientNetworkError(error),
         onStageComplete: async ({ stage, completedStageCount, totalStageCount }) => {
           this.#assertCanContinue(attempt);
           checkpoint.nextStage = stage;

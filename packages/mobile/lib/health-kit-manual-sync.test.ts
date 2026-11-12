@@ -1,5 +1,11 @@
+import * as Network from "expo-network";
+import * as SecureStore from "expo-secure-store";
+import { AppState } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ManualHealthKitCheckpoint } from "./health-kit-manual-checkpoint";
+import {
+  InvalidManualHealthKitCheckpointError,
+  type ManualHealthKitCheckpoint,
+} from "./health-kit-manual-checkpoint";
 import {
   HealthKitManualSyncController,
   type HealthKitManualSyncDependencies,
@@ -14,11 +20,23 @@ vi.mock("../modules/background-refresh", () => ({
   startHealthKitSync: vi.fn(async () => ({ supported: true })),
   updateHealthKitSyncProgress: vi.fn(),
 }));
+const { mockCaptureException } = vi.hoisted(() => ({ mockCaptureException: vi.fn() }));
+vi.mock("./telemetry", () => ({ captureException: mockCaptureException }));
 vi.mock("expo-network", () => ({
   addNetworkStateListener: vi.fn(() => ({ remove: vi.fn() })),
   getNetworkStateAsync: vi.fn(async () => ({ isConnected: true, isInternetReachable: true })),
 }));
-vi.mock("./apple-health-provider", () => ({ AppleHealthSyncService: class {} }));
+const { mockDefaultRunSync } = vi.hoisted(() => ({ mockDefaultRunSync: vi.fn() }));
+vi.mock("./apple-health-provider", () => ({
+  AppleHealthSyncService: class {
+    syncManualCheckpointed(input: unknown) {
+      return mockDefaultRunSync(input);
+    }
+    recordManualOutcome() {
+      return Promise.resolve();
+    }
+  },
+}));
 
 const unusedTestClient = {
   clinicalRecords: { push: { mutate: async () => ({ upserted: 0 }) } },
@@ -33,7 +51,10 @@ const unusedTestClient = {
   },
 } satisfies SyncTrpcClient;
 
-function makeHarness(checkpoint: ManualHealthKitCheckpoint | null = null) {
+function makeHarness(
+  checkpoint: ManualHealthKitCheckpoint | null = null,
+  loadCheckpoint?: HealthKitManualSyncDependencies["loadCheckpoint"],
+) {
   let saved = checkpoint;
   let expired: ((taskId: string) => void) | undefined;
   let appStateListener: ((state: string) => void) | undefined;
@@ -45,7 +66,7 @@ function makeHarness(checkpoint: ManualHealthKitCheckpoint | null = null) {
     saved = value;
   };
   const deps: HealthKitManualSyncDependencies = {
-    loadCheckpoint: vi.fn(async () => saved),
+    loadCheckpoint: vi.fn(loadCheckpoint ?? (async () => saved)),
     saveCheckpoint: vi.fn(persistCheckpoint),
     clearCheckpoint: vi.fn(async (_userId, requestId) => {
       if (saved?.requestId === requestId) saved = null;
@@ -97,9 +118,152 @@ function makeHarness(checkpoint: ManualHealthKitCheckpoint | null = null) {
 }
 
 const success = { deleted: 0, inserted: 2, errors: [] };
+const checkpointStorageKey = "dofek_manual_health_kit_checkpoint_v1.user-1";
 
 describe("HealthKitManualSyncController", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    mockDefaultRunSync.mockReset();
+    mockCaptureException.mockReset();
+    await SecureStore.deleteItemAsync(checkpointStorageKey);
+  });
+
+  it("routes a failed default connectivity probe through controller error reporting and cleans up", async () => {
+    const stateListeners: Array<(state: string) => void> = [];
+    const stateRemove = vi.fn();
+    const networkRemove = vi.fn();
+    const connectivityError = new Error("Connectivity probe failed");
+    vi.mocked(AppState.addEventListener).mockImplementation((_event, listener) => {
+      stateListeners.push(listener);
+      return { remove: stateRemove };
+    });
+    vi.mocked(Network.addNetworkStateListener).mockReturnValue({ remove: networkRemove });
+    vi.mocked(Network.getNetworkStateAsync).mockRejectedValue(connectivityError);
+    mockDefaultRunSync.mockImplementation(
+      async (input: Parameters<HealthKitManualSyncDependencies["runSync"]>[0]) => {
+        input.onStage?.({ operation: "pushQuantitySamples" });
+        for (const listener of stateListeners) listener("background");
+        throw new Error("fetch failed: The network connection was lost.");
+      },
+    );
+    const controller = new HealthKitManualSyncController({
+      userId: "user-1",
+      trpcClient: unusedTestClient,
+    });
+
+    await expect(controller.start(7)).rejects.toThrow("Connectivity probe failed");
+
+    expect(controller.getSnapshot()).toMatchObject({
+      status: "error",
+      error: "Connectivity probe failed",
+    });
+    expect(stateRemove).toHaveBeenCalled();
+    expect(networkRemove).toHaveBeenCalledOnce();
+    expect(mockCaptureException).toHaveBeenCalledWith(connectivityError, {
+      source: "health-kit-manual-connectivity",
+    });
+  }, 1000);
+
+  it("does not let a late connected probe resume work after retirement", async () => {
+    const stateListeners: Array<(state: string) => void> = [];
+    const stateRemove = vi.fn();
+    const networkRemove = vi.fn();
+    const networkCheck = Promise.withResolvers<{
+      isConnected: boolean;
+      isInternetReachable: boolean;
+    }>();
+    vi.mocked(AppState.addEventListener).mockImplementation((_event, listener) => {
+      stateListeners.push(listener);
+      return { remove: stateRemove };
+    });
+    vi.mocked(Network.addNetworkStateListener).mockReturnValue({ remove: networkRemove });
+    vi.mocked(Network.getNetworkStateAsync).mockReturnValue(networkCheck.promise);
+    mockDefaultRunSync.mockImplementation(
+      async (input: Parameters<HealthKitManualSyncDependencies["runSync"]>[0]) => {
+        input.onStage?.({ operation: "pushQuantitySamples" });
+        for (const listener of stateListeners) listener("background");
+        throw new Error("fetch failed: The network connection was lost.");
+      },
+    );
+    const controller = new HealthKitManualSyncController({
+      userId: "user-1",
+      trpcClient: unusedTestClient,
+    });
+    const started = controller.start(7);
+    await vi.waitFor(() => expect(Network.getNetworkStateAsync).toHaveBeenCalledOnce());
+
+    const retirement = controller.retire();
+    networkCheck.resolve({ isConnected: true, isInternetReachable: true });
+    await retirement;
+    await expect(started).rejects.toThrow();
+    expect(mockDefaultRunSync).toHaveBeenCalledOnce();
+    expect(stateRemove).toHaveBeenCalledTimes(2);
+    expect(networkRemove).toHaveBeenCalledOnce();
+  });
+
+  it("recovers an unknown stored cursor by purging only after an explicit new-window tap", async () => {
+    await SecureStore.setItemAsync(
+      checkpointStorageKey,
+      JSON.stringify({
+        requestId: "invalid-request",
+        userId: "user-1",
+        startDate: "2026-11-01T00:00:00.000Z",
+        endDate: "2026-11-02T00:00:00.000Z",
+        nextStage: "unknown-stage",
+        requiresResume: true,
+      }),
+    );
+    mockDefaultRunSync.mockResolvedValue(success);
+    const controller = new HealthKitManualSyncController({
+      userId: "user-1",
+      trpcClient: unusedTestClient,
+    });
+
+    await controller.ready;
+    expect(controller.getSnapshot()).toMatchObject({
+      status: "error",
+      error: expect.stringContaining("checkpoint"),
+    });
+    expect(await SecureStore.getItemAsync(checkpointStorageKey)).not.toBeNull();
+    await expect(controller.resume()).rejects.toThrow(/invalid/i);
+    expect(await SecureStore.getItemAsync(checkpointStorageKey)).not.toBeNull();
+
+    await controller.start(7);
+
+    expect(await SecureStore.getItemAsync(checkpointStorageKey)).toBeNull();
+    expect(mockDefaultRunSync).toHaveBeenCalledOnce();
+  });
+
+  it("retries a transient default checkpoint read without purging stored data", async () => {
+    await SecureStore.setItemAsync(
+      checkpointStorageKey,
+      JSON.stringify({
+        requestId: "durable-request",
+        userId: "user-1",
+        startDate: "2026-11-01T00:00:00.000Z",
+        endDate: "2026-11-02T00:00:00.000Z",
+        nextStage: "sleep",
+        requiresResume: true,
+      }),
+    );
+    vi.mocked(SecureStore.getItemAsync).mockRejectedValueOnce(
+      new Error("Keychain temporarily unavailable"),
+    );
+    mockDefaultRunSync.mockResolvedValue(success);
+    const controller = new HealthKitManualSyncController({
+      userId: "user-1",
+      trpcClient: unusedTestClient,
+    });
+
+    await controller.ready;
+    expect(controller.getSnapshot().status).toBe("error");
+    await controller.resume();
+
+    expect(await SecureStore.getItemAsync(checkpointStorageKey)).toBeNull();
+    expect(mockDefaultRunSync.mock.calls[0]?.[0]).toMatchObject({
+      manualExecution: { startDate: "2026-11-01T00:00:00.000Z" },
+    });
+  });
 
   it("waits for the native grant before starting HealthKit work", async () => {
     const harness = makeHarness();
@@ -167,6 +331,101 @@ describe("HealthKitManualSyncController", () => {
     expect(harness.deps.runSync.mock.calls[0]?.[0].manualExecution?.startDate).toBe(
       saved.startDate,
     );
+  });
+
+  it("publishes checkpoint restore failures and lets an explicit new window replace invalid state", async () => {
+    const restoreError = new InvalidManualHealthKitCheckpointError();
+    const harness = makeHarness(null, vi.fn().mockRejectedValueOnce(restoreError));
+    harness.deps.runSync.mockResolvedValue(success);
+
+    await harness.controller.ready;
+    expect(harness.controller.getSnapshot()).toMatchObject({
+      status: "error",
+      error: expect.stringContaining("checkpoint"),
+    });
+    expect(mockCaptureException).toHaveBeenCalledWith(restoreError, {
+      source: "health-kit-manual-sync-restore",
+      userId: "user-1",
+    });
+
+    await harness.controller.start(7);
+    expect(harness.deps.purgeCheckpoint).toHaveBeenCalledWith("user-1");
+    expect(harness.starts).toHaveLength(1);
+  });
+
+  it("retries a transient initial checkpoint read on explicit start and preserves valid saved work", async () => {
+    const saved: ManualHealthKitCheckpoint = {
+      requestId: "durable-request",
+      userId: "user-1",
+      startDate: "2026-11-01T00:00:00.000Z",
+      endDate: "2026-11-02T00:00:00.000Z",
+      nextStage: "sleep",
+      requiresResume: true,
+    };
+    const loadCheckpoint = vi
+      .fn<HealthKitManualSyncDependencies["loadCheckpoint"]>()
+      .mockRejectedValueOnce(new Error("Keychain temporarily unavailable"))
+      .mockResolvedValueOnce(saved);
+    const harness = makeHarness(saved, loadCheckpoint);
+    harness.deps.runSync.mockResolvedValue(success);
+
+    await harness.controller.ready;
+    expect(harness.controller.getSnapshot().status).toBe("error");
+    await harness.controller.resume();
+
+    expect(harness.deps.purgeCheckpoint).not.toHaveBeenCalled();
+    expect(harness.deps.clearCheckpoint).toHaveBeenCalledWith("user-1", "durable-request");
+    expect(harness.deps.runSync.mock.calls[0]?.[0].manualExecution?.startDate).toBe(
+      saved.startDate,
+    );
+  });
+
+  it("rejects concurrent new-window taps while checkpoint replacement is pending", async () => {
+    const harness = makeHarness(
+      null,
+      vi.fn().mockRejectedValueOnce(new InvalidManualHealthKitCheckpointError()),
+    );
+    const purge = Promise.withResolvers<void>();
+    vi.mocked(harness.deps.purgeCheckpoint).mockReturnValueOnce(purge.promise);
+    harness.deps.runSync.mockResolvedValue(success);
+    await harness.controller.ready;
+
+    const first = harness.controller.start(7);
+    await vi.waitFor(() => expect(harness.deps.purgeCheckpoint).toHaveBeenCalledOnce());
+    await expect(harness.controller.start(30)).rejects.toThrow(/already running/i);
+    purge.resolve();
+    await first;
+    expect(harness.deps.saveCheckpoint).toHaveBeenCalledOnce();
+  });
+
+  it("reports successful data work as a recording error and never replays it", async () => {
+    const harness = makeHarness();
+    harness.deps.runSync.mockResolvedValue(success);
+    harness.deps.recordOutcome.mockRejectedValue(new Error("Sync history unavailable"));
+
+    await expect(harness.controller.start(7)).rejects.toThrow("Sync history unavailable");
+
+    expect(harness.deps.runSync).toHaveBeenCalledOnce();
+    expect(harness.saved()).toBeNull();
+    expect(harness.controller.getSnapshot()).toMatchObject({
+      status: "error",
+      error: expect.stringContaining("history"),
+    });
+    expect(harness.deps.completeNative).toHaveBeenCalledWith("id-2", false);
+  });
+
+  it("settles native failure when terminal error recording also fails", async () => {
+    const harness = makeHarness();
+    harness.deps.runSync.mockRejectedValue(new Error("HealthKit upload failed"));
+    harness.deps.recordOutcome.mockRejectedValue(new Error("Sync history unavailable"));
+
+    await expect(harness.controller.start(7)).rejects.toThrow("HealthKit upload failed");
+
+    expect(harness.deps.completeNative).toHaveBeenCalledWith("id-2", false);
+    expect(harness.controller.getSnapshot()).toMatchObject({
+      status: "error",
+      error: expect.stringContaining("Sync history unavailable"),
+    });
   });
 
   it("does not save a late checkpoint after account retirement", async () => {

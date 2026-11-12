@@ -2,14 +2,12 @@ import * as SecureStore from "expo-secure-store";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   clearManualHealthKitCheckpoint,
+  InvalidManualHealthKitCheckpointError,
   loadManualHealthKitCheckpoint,
   type ManualHealthKitCheckpoint,
   purgeManualHealthKitCheckpoint,
   saveManualHealthKitCheckpoint,
 } from "./health-kit-manual-checkpoint";
-import { captureException } from "./telemetry";
-
-vi.mock("./telemetry", () => ({ captureException: vi.fn() }));
 
 // Duplicated on purpose: the per-account key derivation is the persisted
 // storage contract shared with the account cleanup paths, not an internal detail.
@@ -54,7 +52,6 @@ function deferred<Value>(): Deferred<Value> {
 beforeEach(async () => {
   await SecureStore.deleteItemAsync(checkpointKey(FIRST_USER));
   await SecureStore.deleteItemAsync(checkpointKey(SECOND_USER));
-  vi.mocked(captureException).mockClear();
   vi.mocked(SecureStore.getItemAsync).mockClear();
   vi.mocked(SecureStore.setItemAsync).mockClear();
   vi.mocked(SecureStore.deleteItemAsync).mockClear();
@@ -178,10 +175,9 @@ describe("manual HealthKit checkpoint storage", () => {
   it("fails explicitly when the stored request is corrupt", async () => {
     await SecureStore.setItemAsync(checkpointKey(FIRST_USER), "{not-json");
 
-    await expect(loadManualHealthKitCheckpoint(FIRST_USER)).rejects.toThrow(
-      INVALID_CHECKPOINT_MESSAGE,
+    await expect(loadManualHealthKitCheckpoint(FIRST_USER)).rejects.toBeInstanceOf(
+      InvalidManualHealthKitCheckpointError,
     );
-    expect(captureException).toHaveBeenCalledTimes(1);
   });
 
   it.each([

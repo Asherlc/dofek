@@ -1,4 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
+import type { ManualHealthKitCheckpoint } from "./health-kit-manual-checkpoint";
+import {
+  HealthKitManualSyncController,
+  type HealthKitManualSyncDependencies,
+} from "./health-kit-manual-sync";
 import {
   ADDITIVE_QUANTITY_TYPES,
   BACKGROUND_HEALTH_KIT_TYPES,
@@ -18,6 +23,18 @@ import {
 import { captureException } from "./telemetry";
 
 vi.mock("./telemetry", () => ({ captureException: vi.fn() }));
+vi.mock("expo-crypto", () => ({ randomUUID: () => "test-uuid" }));
+vi.mock("expo-network", () => ({
+  addNetworkStateListener: vi.fn(() => ({ remove: vi.fn() })),
+  getNetworkStateAsync: vi.fn(async () => ({ isConnected: true, isInternetReachable: true })),
+}));
+vi.mock("../modules/background-refresh", () => ({
+  addHealthKitSyncExpirationListener: vi.fn(() => ({ remove: vi.fn() })),
+  completeHealthKitSync: vi.fn(),
+  startHealthKitSync: vi.fn(async () => ({ supported: true })),
+  updateHealthKitSyncProgress: vi.fn(),
+}));
+vi.mock("./apple-health-provider", () => ({ AppleHealthSyncService: class {} }));
 
 const runningQuantities = [
   ["HKQuantityTypeIdentifierRunningSpeed", "m/s", 3.5],
@@ -1325,6 +1342,7 @@ describe("manual staged sync", () => {
       nextStage: "additive-and-category",
       onStageComplete: vi.fn(),
       assertCanContinue: vi.fn(),
+      shouldRetryWorkoutRouteError: vi.fn(() => false),
       ...overrides,
     };
   }
@@ -1402,6 +1420,128 @@ describe("manual staged sync", () => {
       queryWorkoutRoutes: vi.fn().mockResolvedValue([]),
     };
   }
+
+  it("retries a background-crossing route upload once through the controller and surfaces a failed fresh attempt", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    let appStateListener: ((state: string) => void) | undefined;
+    let saved: ManualHealthKitCheckpoint | null = null;
+    let nextId = 0;
+    const transportError = new Error("fetch failed: The network connection was lost.");
+    healthKit.queryDailyStatistics.mockResolvedValue([]);
+    healthKit.queryQuantitySamples.mockResolvedValue([]);
+    healthKit.queryWorkouts.mockResolvedValue([
+      {
+        uuid: "route-workout",
+        workoutType: "running",
+        startDate: "2026-03-21T07:00:00Z",
+        endDate: "2026-03-21T08:00:00Z",
+        duration: 3600,
+        totalDistance: 10000,
+        sourceName: "Apple Watch",
+        sourceBundle: "com.apple.health",
+      },
+    ]);
+    healthKit.queryWorkoutRoutes.mockResolvedValue([
+      { date: "2026-03-21T07:30:00Z", lat: 37.8, lng: -122.4 },
+    ]);
+    client.healthKitSync.pushWorkoutRoutes.mutate
+      .mockImplementationOnce(async () => {
+        appStateListener?.("background");
+        throw transportError;
+      })
+      .mockRejectedValueOnce(transportError);
+    const deps: HealthKitManualSyncDependencies = {
+      loadCheckpoint: vi.fn(async () => null),
+      saveCheckpoint: vi.fn(async (checkpoint) => {
+        saved = checkpoint;
+      }),
+      clearCheckpoint: vi.fn(async () => {
+        saved = null;
+      }),
+      purgeCheckpoint: vi.fn(async () => {
+        saved = null;
+      }),
+      startNative: vi.fn(async () => ({ supported: true })),
+      completeNative: vi.fn(),
+      listenForExpiration: vi.fn(() => ({ remove: vi.fn() })),
+      listenForAppState: vi.fn((listener) => {
+        appStateListener = listener;
+        return { remove: vi.fn() };
+      }),
+      isForeground: vi.fn(() => true),
+      waitUntilForegroundConnected: vi.fn(async () => {
+        appStateListener?.("active");
+      }),
+      runSync: (input) =>
+        syncHealthKitToServer({
+          trpcClient: client,
+          healthKit,
+          syncRangeDays: null,
+          ...input,
+        }),
+      recordOutcome: vi.fn(async () => undefined),
+      updateProgress: vi.fn(),
+      createId: () => `route-test-${++nextId}`,
+    };
+    const controller = new HealthKitManualSyncController({
+      userId: "user-1",
+      trpcClient: client,
+      deps,
+    });
+
+    const result = await controller.start(7);
+
+    expect(client.healthKitSync.pushWorkoutRoutes.mutate).toHaveBeenCalledTimes(2);
+    expect(deps.waitUntilForegroundConnected).toHaveBeenCalledOnce();
+    expect(result.errors).toEqual([
+      "Push workout routes: fetch failed: The network connection was lost.",
+    ]);
+    expect(controller.getSnapshot()).toMatchObject({ status: "paused", error: expect.any(String) });
+    expect(saved?.nextStage).toBe("workouts");
+    expect(deps.completeNative).toHaveBeenCalledWith("route-test-2", false);
+  });
+
+  it("keeps an active-app route upload failure partial and continues later stages", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    const routeError = new Error("The server rejected workout routes");
+    vi.mocked(captureException).mockClear();
+    healthKit.queryDailyStatistics.mockResolvedValue([]);
+    healthKit.queryQuantitySamples.mockResolvedValue([]);
+    healthKit.queryWorkouts.mockResolvedValue([
+      {
+        uuid: "route-workout",
+        workoutType: "running",
+        startDate: "2026-03-21T07:00:00Z",
+        endDate: "2026-03-21T08:00:00Z",
+        duration: 3600,
+        totalDistance: 10000,
+        sourceName: "Apple Watch",
+        sourceBundle: "com.apple.health",
+      },
+    ]);
+    healthKit.queryWorkoutRoutes.mockResolvedValue([
+      { date: "2026-03-21T07:30:00Z", lat: 37.8, lng: -122.4 },
+    ]);
+    client.healthKitSync.pushWorkoutRoutes.mutate.mockRejectedValue(routeError);
+    const manual = manualContext();
+
+    const result = await syncHealthKitToServer({
+      trpcClient: client,
+      healthKit,
+      syncRangeDays: 7,
+      manualExecution: manual,
+    });
+
+    expect(result.errors).toEqual(["Push workout routes: The server rejected workout routes"]);
+    expect(healthKit.querySleepSamples).toHaveBeenCalledOnce();
+    expect(stageCompletions(manual).some(({ stage }) => stage === "workouts")).toBe(false);
+    expect(captureException).toHaveBeenCalledWith(
+      routeError,
+      expect.objectContaining({ source: "health-kit-workout-route-push" }),
+    );
+  });
 
   it("reuses the original fixed window when resuming a stored request", async () => {
     const client = createMockClient();

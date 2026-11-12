@@ -1,11 +1,26 @@
 import { renderHook, waitFor } from "@testing-library/react";
 import { createElement, type ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { ManualHealthKitCheckpoint } from "./health-kit-manual-checkpoint";
+import {
+  HealthKitManualSyncController,
+  type HealthKitManualSyncDependencies,
+} from "./health-kit-manual-sync";
 import { HealthKitManualSyncProvider } from "./health-kit-manual-sync-context";
 import type { ManualHealthKitSyncContext, SyncResult } from "./health-kit-sync-types";
 import { ManualHealthKitSyncInterruptedError } from "./health-kit-sync-types";
 
 vi.mock("expo-crypto", () => ({ randomUUID: () => "test-uuid" }));
+vi.mock("expo-network", () => ({
+  addNetworkStateListener: vi.fn(() => ({ remove: vi.fn() })),
+  getNetworkStateAsync: vi.fn(async () => ({ isConnected: true, isInternetReachable: true })),
+}));
+vi.mock("../modules/background-refresh", () => ({
+  addHealthKitSyncExpirationListener: vi.fn(() => ({ remove: vi.fn() })),
+  completeHealthKitSync: vi.fn(),
+  startHealthKitSync: vi.fn(async () => ({ supported: true })),
+  updateHealthKitSyncProgress: vi.fn(),
+}));
 
 vi.mock("../modules/health-kit", () => ({
   completeAnchoredQuery: vi.fn(async () => true),
@@ -100,6 +115,7 @@ const manualExecution: ManualHealthKitSyncContext = {
   nextStage: "additive-and-category",
   onStageComplete: vi.fn(async () => {}),
   assertCanContinue: vi.fn(async () => {}),
+  shouldRetryWorkoutRouteError: vi.fn(() => false),
 };
 
 describe("AppleHealthAuthorizationState", () => {
@@ -196,6 +212,51 @@ describe("AppleHealthSyncService", () => {
     mockCaptureException.mockClear();
   });
 
+  function makeManualController(
+    trpcClient: AppleHealthTrpcClient,
+    syncFunction: AppleHealthSyncFunction,
+  ) {
+    const service = new AppleHealthSyncService({
+      trpcClient,
+      loadDeviceErasureCutoff: vi.fn(async () => null),
+      syncFunction,
+    });
+    let checkpoint: ManualHealthKitCheckpoint | null = null;
+    let nextId = 0;
+    const deps: HealthKitManualSyncDependencies = {
+      loadCheckpoint: vi.fn(async () => checkpoint),
+      saveCheckpoint: vi.fn(async (next) => {
+        checkpoint = next;
+      }),
+      clearCheckpoint: vi.fn(async (_userId, requestId) => {
+        if (checkpoint?.requestId === requestId) checkpoint = null;
+      }),
+      purgeCheckpoint: vi.fn(async () => {
+        checkpoint = null;
+      }),
+      startNative: vi.fn(async () => ({ supported: true })),
+      completeNative: vi.fn(),
+      listenForExpiration: vi.fn(() => ({ remove: vi.fn() })),
+      listenForAppState: vi.fn(() => ({ remove: vi.fn() })),
+      isForeground: vi.fn(() => true),
+      waitUntilForegroundConnected: vi.fn(async () => undefined),
+      runSync: (input) => service.syncManualCheckpointed(input),
+      recordOutcome: (result, error, durationMs) =>
+        service.recordManualOutcome(result, error, durationMs),
+      updateProgress: vi.fn(),
+      createId: () => `service-controller-${++nextId}`,
+    };
+    return {
+      controller: new HealthKitManualSyncController({
+        userId: "user-1",
+        trpcClient,
+        deps,
+      }),
+      deps,
+      checkpoint: () => checkpoint,
+    };
+  }
+
   it("records the successful terminal outcome for a resumable manual sync", async () => {
     const trpcClient = createTrpcClient();
     const syncResult: SyncResult = {
@@ -215,7 +276,7 @@ describe("AppleHealthSyncService", () => {
     });
   });
 
-  it("returns a successful sync when recording its history fails", async () => {
+  it("propagates a failed required manual outcome recording", async () => {
     const trpcClient = createTrpcClient();
     const recordError = new Error("Sync history unavailable");
     trpcClient.healthKitSync.recordSync.mutate = vi.fn().mockRejectedValue(recordError);
@@ -226,8 +287,50 @@ describe("AppleHealthSyncService", () => {
       syncFunction: vi.fn<AppleHealthSyncFunction>(async () => syncResult),
     });
 
-    await service.recordManualOutcome(syncResult, null, 42);
+    await expect(service.recordManualOutcome(syncResult, null, 42)).rejects.toBe(recordError);
+  });
 
+  it("settles the native task unsuccessfully when the actual service cannot record completed data", async () => {
+    const trpcClient = createTrpcClient();
+    const recordError = new Error("Sync history unavailable");
+    trpcClient.healthKitSync.recordSync.mutate = vi.fn().mockRejectedValue(recordError);
+    const result: SyncResult = { deleted: 0, inserted: 2, errors: [] };
+    const syncFunction = vi.fn<AppleHealthSyncFunction>(async () => result);
+    const { controller, deps, checkpoint } = makeManualController(trpcClient, syncFunction);
+
+    await expect(controller.start(7)).rejects.toThrow("sync history could not be saved");
+
+    expect(syncFunction).toHaveBeenCalledOnce();
+    expect(checkpoint()).toBeNull();
+    expect(controller.getSnapshot()).toMatchObject({
+      status: "error",
+      error: expect.stringContaining("Sync history unavailable"),
+    });
+    expect(deps.completeNative).toHaveBeenCalledWith("service-controller-2", false);
+    expect(mockCaptureException).toHaveBeenCalledWith(recordError, {
+      source: "apple-health-sync-log",
+      origin: "manual",
+    });
+  });
+
+  it("settles native failure when the actual service cannot record a terminal sync error", async () => {
+    const trpcClient = createTrpcClient();
+    const recordError = new Error("Sync history unavailable");
+    trpcClient.healthKitSync.recordSync.mutate = vi.fn().mockRejectedValue(recordError);
+    const syncError = new Error("HealthKit upload failed");
+    const syncFunction = vi.fn<AppleHealthSyncFunction>(async () => {
+      throw syncError;
+    });
+    const { controller, deps } = makeManualController(trpcClient, syncFunction);
+
+    await expect(controller.start(7)).rejects.toBe(syncError);
+
+    expect(syncFunction).toHaveBeenCalledOnce();
+    expect(controller.getSnapshot()).toMatchObject({
+      status: "error",
+      error: expect.stringContaining("Sync history unavailable"),
+    });
+    expect(deps.completeNative).toHaveBeenCalledWith("service-controller-2", false);
     expect(mockCaptureException).toHaveBeenCalledWith(recordError, {
       source: "apple-health-sync-log",
       origin: "manual",

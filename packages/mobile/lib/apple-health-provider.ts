@@ -204,18 +204,14 @@ export class AppleHealthSyncService {
     error: unknown | null,
     durationMs: number,
   ): Promise<void> {
-    try {
-      await this.#trpcClient.healthKitSync.recordSync.mutate({
-        status: error ? "error" : result?.errors.length ? "degraded" : "success",
-        recordCount: result ? result.inserted + result.deleted : 0,
-        durationMs,
-        ...(error ? { errorMessage: error instanceof Error ? error.message : String(error) } : {}),
-        ...(result?.errors.length ? { errorMessage: result.errors.join("; ") } : {}),
-        origin: "manual",
-      });
-    } catch (recordError) {
-      captureException(recordError, { source: "apple-health-sync-log", origin: "manual" });
-    }
+    await this.#trpcClient.healthKitSync.recordSync.mutate({
+      status: error ? "error" : result?.errors.length ? "degraded" : "success",
+      recordCount: result ? result.inserted + result.deleted : 0,
+      durationMs,
+      ...(error ? { errorMessage: error instanceof Error ? error.message : String(error) } : {}),
+      ...(result?.errors.length ? { errorMessage: result.errors.join("; ") } : {}),
+      origin: "manual",
+    });
   }
 
   async syncObserverChanges(options: {

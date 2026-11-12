@@ -490,6 +490,7 @@ export async function syncHealthKitToServer(options: SyncOptions): Promise<SyncR
         const routeResult = await trpcClient.healthKitSync.pushWorkoutRoutes.mutate({ routes });
         totalInserted += routeResult.inserted;
       } catch (error) {
+        if (manualExecution?.shouldRetryWorkoutRouteError(error)) throw error;
         handleWorkoutRouteError(error, {
           errors,
           errorLabel: "Push workout routes",
