@@ -60,12 +60,12 @@
 - Extend `SyncOptions` with a manual execution context: fixed window, next-stage cursor, awaited stage-completion callback, and async interruption/account check. Keep existing callers behavior-compatible through purposeful optional manual context; no test-only branches.
 - Publish semantic stage IDs and total count only where the production controller consumes them. Keep type grouping compatible with existing manual flow.
 
-- [ ] Write failing tests for original fixed dates on resume; skip fully completed stages; replay unfinished stage; never checkpoint partial errors; interruption before query/upload/anchor; stored request recreation/account mismatch/stale clear.
-- [ ] Run focused mobile tests and retain RED evidence.
-- [ ] Refactor only the manual pipeline into semantic stages: additive/category, each raw type, workouts/routes, sleep, each clinical type, running steps. Checkpoint after successful stage, not array offsets; reuse existing native anchors. Pass interruption checks into running-step page boundaries and before anchor acknowledgement.
-- [ ] Keep required existing error semantics and erasure cutoff. Surface partial errors without advancing the failing stage. Do not add a generic task runner or duplicate sample store.
-- [ ] Confirm stable identity replay using existing executable server tests; add minimal real-engine coverage only if existing evidence does not establish replay safety. Read integration-tests-ready before database tests.
-- [ ] Run sync/checkpoint/running-step mobile tests and mobile typecheck. Commit/push; report RED/GREEN and replay evidence before review gate.
+- [x] Write failing tests for original fixed dates on resume; skip fully completed stages; replay unfinished stage; never checkpoint partial errors; interruption before query/upload/anchor; stored request recreation/account mismatch/stale clear.
+- [x] Run focused mobile tests and retain RED evidence.
+- [x] Refactor only the manual pipeline into semantic stages: additive/category, each raw type, workouts/routes, sleep, each clinical type, running steps. Checkpoint after successful stage, not array offsets; reuse existing native anchors. Pass interruption checks into running-step page boundaries and before anchor acknowledgement.
+- [x] Keep required existing error semantics and erasure cutoff. Surface partial errors without advancing the failing stage. Do not add a generic task runner or duplicate sample store.
+- [x] Confirm stable identity replay using existing executable server tests; add minimal real-engine coverage only if existing evidence does not establish replay safety. Read integration-tests-ready before database tests.
+- [x] Run sync/checkpoint/running-step mobile tests and mobile typecheck. Commit/push; report RED/GREEN and replay evidence before review gate.
 
 ### Task 3: App-owned manual session and shared observer ownership
 
@@ -73,6 +73,7 @@
 
 **Interfaces:**
 - Manual controller is owned by authenticated app lifetime, bound to userId and SyncTrpcClient; exposes observable state plus `start(syncRangeDays: number | null)`, `resume()`, and `dispose()`.
+- Keep `start`/`resume` terminal results compatible with `Promise<SyncResult>` so existing manual callers can migrate without a parallel unowned sync path; root owns the operation even if a route unmounts. Use React's existing context/subscription primitives, with no new state framework.
 - Each native start attempt gets a fresh taskId, distinct from the durable checkpoint requestId; Resume never reuses a native task identifier whose old grant could arrive late.
 - State distinguishes idle/running/paused/error/complete and carries progress message and actual completed stage count. Both list and detail consume this single production state.
 - Shared execution gate serializes manual attempts and existing observer attempts; preserve observer IDs/types through waits and native expiry. Dispose/retire breaks pending waits and prevents new old-account side effects.
@@ -81,7 +82,9 @@
 - [ ] Test transport recovery only for known transient errors on requests crossing background state: wait for active+connected, retry once, surface a failed fresh attempt. Test actual HealthKit locked error separately; generic background state does not prove lock.
 - [ ] Implement with existing AppState/network lifecycle primitives and task bridge; use stock cancellation and promise mechanisms instead of timers. Native unsupported path pauses while in the background and resumes foreground work.
 - [ ] Root setup/teardown and existing erasure path retire controller, stop native work, remove listeners, and purge matching request state. Mounted route hooks subscribe rather than creating independent manual operations.
+- [ ] Erasure cleanup must strictly purge the checkpoint while the existing unattempted preparation still has `ownerUserId`, before `markMobileAccountErasureConfirmationAttempted` strips that identity. Stop the owned manual operation first and reuse the existing cleanup-lease checks. Do not add identifying fields to erased/attempted capability storage or a new key index. Test failure/crash ordering at this boundary and signed-out recovery. Modify concrete erasure callers as needed instead of blindly requiring an identity-free post-acceptance purge to discover the old account.
 - [ ] Record sync once at terminal successful/degraded/error outcome as appropriate; do not record a pause as success. A final logging failure must not replay accepted health data. Preserve existing unexpected-error Sentry reporting and actionable error messages.
+- [ ] Pause/interruption stays inside the app-owned operation; do not call a wrapper that records/captures an error for each interrupted data attempt. Guard final log writes by the current account too. Observers also need retirement checks at query/upload/anchor boundaries, in addition to serial gate admission.
 - [ ] Run controller, AppleHealthProvider, background HealthKit, account purge, and root lifetime tests; mobile typecheck/lint. Commit/push and report before review gate.
 
 ### Task 4: Shared provider presentation and final validation
