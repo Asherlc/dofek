@@ -201,4 +201,5 @@ export interface ObserverSyncOptions {
   minimumSampleDate?: string | null;
   typeIdentifiers: readonly string[];
   onStage?: (stage: HealthKitSyncStage) => void;
+  assertCanContinue?: () => Promise<void>;
 }

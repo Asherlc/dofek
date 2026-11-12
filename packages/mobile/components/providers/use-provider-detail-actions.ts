@@ -14,6 +14,7 @@ import {
   HEALTHKIT_DATABASE_INACCESSIBLE_MESSAGE,
   isHealthKitDatabaseInaccessible,
 } from "../../lib/health-kit-errors";
+import { ManualHealthKitSyncInterruptedError } from "../../lib/health-kit-sync-types";
 import { captureException } from "../../lib/telemetry";
 import { trpc } from "../../lib/trpc";
 
@@ -115,9 +116,7 @@ export function useProviderDetailActions(
 
   const isMounted = useRef(false);
   const pollingRef = useRef(false);
-  const trpcClient = trpcUtils.client;
   const appleHealth = useAppleHealthProviderModel({
-    trpcClient,
     enabled: providerId === "apple_health",
     onAuthorizationError: (error) => {
       captureException(error, { context: "healthkit-permission-check" });
@@ -328,6 +327,11 @@ export function useProviderDetailActions(
         await pollSyncJob(jobId);
       } catch (error: unknown) {
         setIsSyncing(false);
+        if (error instanceof ManualHealthKitSyncInterruptedError) {
+          setSyncProgress(null);
+          setSyncMessage("Apple Health sync paused");
+          return;
+        }
         if (!isHealthKitDatabaseInaccessible(error)) {
           captureException(error, {
             context:

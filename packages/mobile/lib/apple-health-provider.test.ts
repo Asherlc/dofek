@@ -1,6 +1,11 @@
 import { renderHook, waitFor } from "@testing-library/react";
+import { createElement, type ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { HealthKitManualSyncProvider } from "./health-kit-manual-sync-context";
 import type { SyncResult } from "./health-kit-sync-types";
+import { ManualHealthKitSyncInterruptedError } from "./health-kit-sync-types";
+
+vi.mock("expo-crypto", () => ({ randomUUID: () => "test-uuid" }));
 
 vi.mock("../modules/health-kit", () => ({
   completeAnchoredQuery: vi.fn(async () => true),
@@ -249,6 +254,41 @@ describe("AppleHealthSyncService", () => {
     });
   });
 
+  it("does not record or capture a manual pause as a failed sync", async () => {
+    const trpcClient = createTrpcClient();
+    const interrupted = new ManualHealthKitSyncInterruptedError();
+    const service = new AppleHealthSyncService({
+      trpcClient,
+      loadDeviceErasureCutoff: vi.fn(async () => null),
+      syncFunction: vi.fn<AppleHealthSyncFunction>().mockRejectedValue(interrupted),
+    });
+
+    await expect(service.sync({ syncRangeDays: null })).rejects.toBe(interrupted);
+    expect(trpcClient.healthKitSync.recordSync.mutate).not.toHaveBeenCalled();
+    expect(mockCaptureException).not.toHaveBeenCalled();
+  });
+
+  it("does not record or capture observer work interrupted by account retirement", async () => {
+    const trpcClient = createTrpcClient();
+    const interrupted = new ManualHealthKitSyncInterruptedError();
+    const service = new AppleHealthSyncService({
+      trpcClient,
+      loadDeviceErasureCutoff: vi.fn(async () => null),
+      syncFunction: vi.fn<AppleHealthSyncFunction>(),
+    });
+
+    await expect(
+      service.syncObserverChanges({
+        typeIdentifiers: ["HKQuantityTypeIdentifierHeartRate"],
+        assertCanContinue: async () => {
+          throw interrupted;
+        },
+      }),
+    ).rejects.toBe(interrupted);
+    expect(trpcClient.healthKitSync.recordSync.mutate).not.toHaveBeenCalled();
+    expect(mockCaptureException).not.toHaveBeenCalled();
+  });
+
   it("records a partial manual sync as degraded with its errors", async () => {
     const trpcClient = createTrpcClient();
     const syncFunction = vi.fn<AppleHealthSyncFunction>(async () => ({
@@ -380,7 +420,6 @@ describe("AppleHealthProviderModel", () => {
     const model = new AppleHealthProviderModel({
       authorizationState: state,
       authorizationService: new AppleHealthAuthorizationService(createNative()),
-      syncService: new AppleHealthSyncService({ trpcClient: createTrpcClient() }),
     });
 
     expect(model.toProviderCard()).toEqual(
@@ -405,7 +444,6 @@ describe("AppleHealthProviderModel", () => {
     const model = new AppleHealthProviderModel({
       authorizationState: AppleHealthAuthorizationState.unknown(),
       authorizationService: new AppleHealthAuthorizationService(createNative()),
-      syncService: new AppleHealthSyncService({ trpcClient: createTrpcClient() }),
     });
     const syncLog = {
       id: "apple-health-sync-1",
@@ -447,7 +485,6 @@ describe("useAppleHealthProviderModel", () => {
 
     const { result } = renderHook(() =>
       useAppleHealthProviderModel({
-        trpcClient: createTrpcClient(),
         authorizationService: new AppleHealthAuthorizationService(native),
       }),
     );
@@ -468,7 +505,6 @@ describe("useAppleHealthProviderModel", () => {
 
     renderHook(() =>
       useAppleHealthProviderModel({
-        trpcClient: createTrpcClient(),
         authorizationService: new AppleHealthAuthorizationService(native),
         onAuthorizationError,
       }),
@@ -480,5 +516,31 @@ describe("useAppleHealthProviderModel", () => {
       });
     });
     expect(onAuthorizationError).toHaveBeenCalledWith(authorizationError);
+  });
+
+  it("routes manual sync through the authenticated root controller", async () => {
+    const syncResult = { deleted: 0, inserted: 3, errors: [] };
+    const idleSnapshot = {
+      status: "idle" as const,
+      message: null,
+      completedStageCount: 0,
+      totalStageCount: 0,
+      error: null,
+    };
+    const controller = {
+      getSnapshot: () => idleSnapshot,
+      subscribe: () => () => undefined,
+      start: vi.fn(async () => syncResult),
+    } satisfies NonNullable<Parameters<typeof HealthKitManualSyncProvider>[0]["controller"]>;
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      createElement(HealthKitManualSyncProvider, { controller }, children);
+    const { result } = renderHook(() => useAppleHealthProviderModel({}), {
+      wrapper,
+    });
+
+    await waitFor(async () => {
+      await expect(result.current.sync({ syncRangeDays: 7 })).resolves.toEqual(syncResult);
+      expect(controller.start).toHaveBeenCalledWith(7);
+    });
   });
 });

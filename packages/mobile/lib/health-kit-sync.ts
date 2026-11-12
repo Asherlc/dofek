@@ -20,6 +20,7 @@ import type {
   SyncTrpcClient,
   WorkoutRoutePayload,
 } from "./health-kit-sync-types";
+import { ManualHealthKitSyncInterruptedError } from "./health-kit-sync-types";
 import { captureException } from "./telemetry";
 
 // Additive types use HKStatisticsCollectionQuery for proper source deduplication.
@@ -206,6 +207,7 @@ async function pushQuantitySampleBatches(
   samples: HealthKitSample[],
   onStage?: (stage: HealthKitSyncStage) => void,
   manualExecution?: ManualHealthKitSyncContext,
+  assertCanContinue?: () => Promise<void>,
 ): Promise<SyncResult> {
   let inserted = 0;
   const errors: string[] = [];
@@ -213,6 +215,7 @@ async function pushQuantitySampleBatches(
   for (let batchOffset = 0; batchOffset < samples.length; batchOffset += BATCH_SIZE) {
     const batch = samples.slice(batchOffset, batchOffset + BATCH_SIZE);
     await manualExecution?.assertCanContinue();
+    await assertCanContinue?.();
     onStage?.({
       operation: "pushQuantitySamples",
       batchIndex: batchOffset / BATCH_SIZE + 1,
@@ -596,6 +599,7 @@ async function syncAnchoredSampleType(
   initialStartDate: string,
 ): Promise<SyncResult> {
   const { healthKit, minimumSampleDate = null, onStage, trpcClient } = options;
+  await options.assertCanContinue?.();
   onStage?.({ operation: "queryAnchoredSamples", typeIdentifier });
   const changes = await healthKit
     .queryAnchoredSamples(typeIdentifier, initialStartDate)
@@ -618,6 +622,8 @@ async function syncAnchoredSampleType(
           isAfterDeviceErasureCutoff(sample.startDate, minimumSampleDate),
       ),
       onStage,
+      undefined,
+      options.assertCanContinue,
     );
     if (uploadResult.errors.length > 0) {
       throw new Error(uploadResult.errors.join("; "));
@@ -632,6 +638,7 @@ async function syncAnchoredSampleType(
         batchOffset += BATCH_SIZE
       ) {
         const deletedUUIDs = changes.deletedUUIDs.slice(batchOffset, batchOffset + BATCH_SIZE);
+        await options.assertCanContinue?.();
         onStage?.({
           operation: "deleteQuantitySamples",
           typeIdentifier,
@@ -648,6 +655,7 @@ async function syncAnchoredSampleType(
     }
 
     if (changes.queryId) {
+      await options.assertCanContinue?.();
       onStage?.({ operation: "completeAnchoredQuery", typeIdentifier });
       const committed = await healthKit.completeAnchoredQuery(
         typeIdentifier,
@@ -668,9 +676,11 @@ async function syncAnchoredSampleType(
   } catch (error) {
     if (changes.queryId) {
       try {
+        await options.assertCanContinue?.();
         onStage?.({ operation: "completeAnchoredQuery", typeIdentifier });
         await healthKit.completeAnchoredQuery(typeIdentifier, changes.queryId, false);
       } catch (completionError) {
+        if (completionError instanceof ManualHealthKitSyncInterruptedError) throw completionError;
         captureException(completionError, {
           source: "health-kit-anchor-completion",
           typeIdentifier,
@@ -688,6 +698,7 @@ async function syncObserverWorkouts(
 ): Promise<SyncResult> {
   const { healthKit, minimumSampleDate = null, onStage, trpcClient } = options;
   const errors: string[] = [];
+  await options.assertCanContinue?.();
   onStage?.({ operation: "queryWorkouts" });
   const workouts = (await healthKit.queryWorkouts(startDate, endDate))
     .filter(
@@ -696,6 +707,7 @@ async function syncObserverWorkouts(
         isAfterDeviceErasureCutoff(workout.startDate, minimumSampleDate),
     )
     .map(normalizeWorkout);
+  await options.assertCanContinue?.();
   onStage?.({ operation: "pushWorkouts", itemCount: workouts.length });
   const workoutResult = await trpcClient.healthKitSync.pushWorkouts.mutate({
     workouts,
@@ -708,6 +720,7 @@ async function syncObserverWorkouts(
   onStage?.({ operation: "queryWorkoutRoutes", itemCount: workouts.length });
   for (const workout of workouts) {
     try {
+      await options.assertCanContinue?.();
       const locations = (await healthKit.queryWorkoutRoutes(workout.uuid)).filter(
         (location) =>
           minimumSampleDate === null ||
@@ -735,6 +748,7 @@ async function syncObserverWorkouts(
   }
 
   if (routes.length > 0) {
+    await options.assertCanContinue?.();
     onStage?.({ operation: "pushWorkoutRoutes", itemCount: routes.length });
     try {
       const routeResult = await trpcClient.healthKitSync.pushWorkoutRoutes.mutate({ routes });
@@ -782,6 +796,7 @@ export async function syncHealthKitObserverChanges(
       continue;
     }
     onStage?.({ operation: "queryDailyStatistics", typeIdentifier });
+    await options.assertCanContinue?.();
     let statistics: DailyStatistic[];
     try {
       statistics = await healthKit.queryDailyStatistics(typeIdentifier, startDate, endDate);
@@ -800,6 +815,8 @@ export async function syncHealthKitObserverChanges(
         ),
       ),
       onStage,
+      undefined,
+      options.assertCanContinue,
     );
     inserted += result.inserted;
     errors.push(...result.errors);
@@ -818,6 +835,7 @@ export async function syncHealthKitObserverChanges(
     }
 
     onStage?.({ operation: "queryQuantitySamples", typeIdentifier });
+    await options.assertCanContinue?.();
     const samples = (
       await healthKit.queryQuantitySamples(typeIdentifier, startDate, endDate)
     ).filter(
@@ -825,7 +843,13 @@ export async function syncHealthKitObserverChanges(
         minimumSampleDate === null ||
         isAfterDeviceErasureCutoff(sample.startDate, minimumSampleDate),
     );
-    const result = await pushQuantitySampleBatches(trpcClient, samples, onStage);
+    const result = await pushQuantitySampleBatches(
+      trpcClient,
+      samples,
+      onStage,
+      undefined,
+      options.assertCanContinue,
+    );
     inserted += result.inserted;
     errors.push(...result.errors);
   }
@@ -848,12 +872,14 @@ export async function syncHealthKitObserverChanges(
 
   if (typeIdentifiers.has(SLEEP_TYPE_IDENTIFIER)) {
     onStage?.({ operation: "querySleepSamples" });
+    await options.assertCanContinue?.();
     const samples = (await healthKit.querySleepSamples(startDate, endDate)).filter(
       (sample) =>
         minimumSampleDate === null ||
         isAfterDeviceErasureCutoff(sample.startDate, minimumSampleDate),
     );
     if (samples.length > 0) {
+      await options.assertCanContinue?.();
       onStage?.({ operation: "pushSleepSamples", itemCount: samples.length });
       const result = await trpcClient.healthKitSync.pushSleepSamples.mutate({ samples });
       inserted += result.inserted;
@@ -865,6 +891,7 @@ export async function syncHealthKitObserverChanges(
     typeIdentifiers.has(WORKOUT_TYPE_IDENTIFIER) ||
     typeIdentifiers.has(WORKOUT_ROUTE_TYPE_IDENTIFIER)
   ) {
+    await options.assertCanContinue?.();
     const result = await syncRunningSteps(options, startDate, endDate);
     inserted += result.inserted;
     deleted += result.deleted;

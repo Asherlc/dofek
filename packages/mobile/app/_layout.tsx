@@ -32,6 +32,8 @@ import {
   teardownBackgroundWatchInertialMeasurementUnitSync,
 } from "../lib/background-watch-inertial-measurement-unit-sync";
 import { syncWhoopBle } from "../lib/background-whoop-ble-sync";
+import { HealthKitManualSyncController } from "../lib/health-kit-manual-sync";
+import { HealthKitManualSyncProvider } from "../lib/health-kit-manual-sync-context";
 import type { SyncTrpcClient } from "../lib/health-kit-sync-types";
 import { invalidateSyncedHealthData } from "../lib/invalidate-synced-health-data";
 import { registerMobileQueryLifecycle } from "../lib/mobile-query-lifecycle";
@@ -197,6 +199,12 @@ function AuthGate() {
   const [hasSavedDeletionRecovery, setHasSavedDeletionRecovery] = useState(false);
   const [localCleanupPending, setLocalCleanupPending] = useState(false);
   const [localCleanupOwnerNonce, setLocalCleanupOwnerNonce] = useState<string | null>(null);
+  const [manualSyncController, setManualSyncController] =
+    useState<HealthKitManualSyncController | null>(null);
+  const manualSyncOwner = useRef<{
+    userId: string;
+    controller: HealthKitManualSyncController;
+  } | null>(null);
   const startupInteractiveMarkedRef = useRef(false);
   const localCleanupBlocksSession =
     localCleanupPending && (!user || localCleanupOwnerNonce === accountSessionOwnerNonce);
@@ -238,6 +246,34 @@ function AuthGate() {
       links: createMobileTrpcLinks(commonOptions),
     });
   }, [serverUrl, sessionToken]);
+
+  const healthKitSyncClient: SyncTrpcClient = useMemo(
+    () => ({
+      clinicalRecords: {
+        push: { mutate: (input) => trpcClient.clinicalRecords.push.mutate(input) },
+      },
+      healthKitSync: {
+        recordSync: { mutate: (input) => trpcClient.healthKitSync.recordSync.mutate(input) },
+        deleteQuantitySamples: {
+          mutate: (input) => trpcClient.healthKitSync.deleteQuantitySamples.mutate(input),
+        },
+        pushQuantitySamples: {
+          mutate: (input) => trpcClient.healthKitSync.pushQuantitySamples.mutate(input),
+        },
+        pushRunningStepSamples: {
+          mutate: (input) => trpcClient.healthKitSync.pushRunningStepSamples.mutate(input),
+        },
+        pushWorkouts: { mutate: (input) => trpcClient.healthKitSync.pushWorkouts.mutate(input) },
+        pushWorkoutRoutes: {
+          mutate: (input) => trpcClient.healthKitSync.pushWorkoutRoutes.mutate(input),
+        },
+        pushSleepSamples: {
+          mutate: (input) => trpcClient.healthKitSync.pushSleepSamples.mutate(input),
+        },
+      },
+    }),
+    [trpcClient],
+  );
 
   const appStoreBillingService = useMemo(
     () => new AppStoreBillingService({ queryClient, trpcClient }),
@@ -340,6 +376,11 @@ function AuthGate() {
     };
   }, [accountErasureCleanupInProgress, deletionRecoveryReady, localCleanupBlocksSession, userId]);
 
+  useEffect(() => {
+    const previous = manualSyncOwner.current;
+    if (previous && previous.userId !== userId) void previous.controller.retire();
+  }, [userId]);
+
   // Set up background HealthKit sync when authenticated
   useEffect(() => {
     if (
@@ -353,39 +394,19 @@ function AuthGate() {
       return;
     startStartupPhase("service-bootstrap");
     let serviceBootstrapFailed = false;
-    const syncClient: SyncTrpcClient = {
-      clinicalRecords: {
-        push: {
-          mutate: (input) => trpcClient.clinicalRecords.push.mutate(input),
-        },
+    const controller = new HealthKitManualSyncController({
+      userId,
+      trpcClient: healthKitSyncClient,
+    });
+    manualSyncOwner.current = { userId, controller };
+    setManualSyncController(controller);
+    const healthKitBootstrap = initBackgroundHealthKitSync(
+      healthKitSyncClient,
+      () => {
+        return invalidateSyncedHealthData(queryClient);
       },
-      healthKitSync: {
-        recordSync: {
-          mutate: (input) => trpcClient.healthKitSync.recordSync.mutate(input),
-        },
-        deleteQuantitySamples: {
-          mutate: (input) => trpcClient.healthKitSync.deleteQuantitySamples.mutate(input),
-        },
-        pushQuantitySamples: {
-          mutate: (input) => trpcClient.healthKitSync.pushQuantitySamples.mutate(input),
-        },
-        pushRunningStepSamples: {
-          mutate: (input) => trpcClient.healthKitSync.pushRunningStepSamples.mutate(input),
-        },
-        pushWorkouts: {
-          mutate: (input) => trpcClient.healthKitSync.pushWorkouts.mutate(input),
-        },
-        pushWorkoutRoutes: {
-          mutate: (input) => trpcClient.healthKitSync.pushWorkoutRoutes.mutate(input),
-        },
-        pushSleepSamples: {
-          mutate: (input) => trpcClient.healthKitSync.pushSleepSamples.mutate(input),
-        },
-      },
-    };
-    const healthKitBootstrap = initBackgroundHealthKitSync(syncClient, () => {
-      return invalidateSyncedHealthData(queryClient);
-    }).catch((error: unknown) => {
+      controller,
+    ).catch((error: unknown) => {
       serviceBootstrapFailed = true;
       logger.warn(
         "bg-healthkit-sync",
@@ -461,6 +482,8 @@ function AuthGate() {
     return () => {
       refreshDiagnostics.remove();
       teardownBackgroundHealthKitSync();
+      controller.dispose();
+      setManualSyncController((current) => (current === controller ? null : current));
       teardownBackgroundAccelerometerSync();
       teardownBackgroundWatchInertialMeasurementUnitSync();
       refreshSubscription.remove();
@@ -468,6 +491,7 @@ function AuthGate() {
   }, [
     userId,
     trpcClient,
+    healthKitSyncClient,
     queryClient,
     backgroundSyncReady,
     accountErasureCleanupInProgress,
@@ -576,101 +600,103 @@ function AuthGate() {
   return (
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
       <TelemetryRouteSync isAuthenticated isLoading={false} />
-      <MobileQueryPersistenceProvider key={user.id} queryClient={queryClient} userId={user.id}>
-        {backgroundSyncReady && userId && sessionToken && (
-          <WhoopBleSyncManager userId={userId} token={sessionToken} serverURL={serverUrl} />
-        )}
-        {backgroundSyncReady && <BleHeartRateSyncManager trpcClient={trpcClient} />}
-        <Stack screenOptions={rootStackScreenOptions}>
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen
-            name="providers"
-            options={{
-              headerShown: false,
-            }}
-          />
-          <Stack.Screen
-            name="settings"
-            options={{
-              title: "Settings",
-            }}
-          />
-          <Stack.Screen
-            name="zepp-pairing"
-            options={{
-              title: "Pair your Zepp app",
-            }}
-          />
-          <Stack.Screen
-            name="bluetooth-devices/index"
-            options={{
-              title: "Bluetooth Devices",
-            }}
-          />
-          <Stack.Screen
-            name="bluetooth-devices/[id]"
-            options={{
-              title: "Bluetooth Device",
-            }}
-          />
-          <Stack.Screen
-            name="account-deletion"
-            options={{
-              title: "Account Deletion Status",
-            }}
-          />
-          <Stack.Screen
-            name="alerts"
-            options={{
-              title: "Alerts",
-            }}
-          />
-          <Stack.Screen
-            name="support"
-            options={{
-              title: "Contact support",
-            }}
-          />
-          <Stack.Screen
-            name="nutrition-analytics"
-            options={{
-              title: "Nutrition Analytics",
-            }}
-          />
-          <Stack.Screen
-            name="sleep"
-            options={{
-              title: "Sleep",
-            }}
-          />
-          <Stack.Screen
-            name="activity/[id]"
-            options={{
-              title: "Activity",
-            }}
-          />
-          <Stack.Screen
-            name="activities"
-            options={{
-              title: "Activities",
-              headerStyle: { backgroundColor: colors.background },
-              headerTintColor: colors.text,
-            }}
-          />
-          <Stack.Screen
-            name="correlation"
-            options={{
-              title: "Correlation Explorer",
-            }}
-          />
-          <Stack.Screen
-            name="preview"
-            options={{
-              title: "Preview Update",
-            }}
-          />
-        </Stack>
-      </MobileQueryPersistenceProvider>
+      <HealthKitManualSyncProvider controller={manualSyncController}>
+        <MobileQueryPersistenceProvider key={user.id} queryClient={queryClient} userId={user.id}>
+          {backgroundSyncReady && userId && sessionToken && (
+            <WhoopBleSyncManager userId={userId} token={sessionToken} serverURL={serverUrl} />
+          )}
+          {backgroundSyncReady && <BleHeartRateSyncManager trpcClient={trpcClient} />}
+          <Stack screenOptions={rootStackScreenOptions}>
+            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+            <Stack.Screen
+              name="providers"
+              options={{
+                headerShown: false,
+              }}
+            />
+            <Stack.Screen
+              name="settings"
+              options={{
+                title: "Settings",
+              }}
+            />
+            <Stack.Screen
+              name="zepp-pairing"
+              options={{
+                title: "Pair your Zepp app",
+              }}
+            />
+            <Stack.Screen
+              name="bluetooth-devices/index"
+              options={{
+                title: "Bluetooth Devices",
+              }}
+            />
+            <Stack.Screen
+              name="bluetooth-devices/[id]"
+              options={{
+                title: "Bluetooth Device",
+              }}
+            />
+            <Stack.Screen
+              name="account-deletion"
+              options={{
+                title: "Account Deletion Status",
+              }}
+            />
+            <Stack.Screen
+              name="alerts"
+              options={{
+                title: "Alerts",
+              }}
+            />
+            <Stack.Screen
+              name="support"
+              options={{
+                title: "Contact support",
+              }}
+            />
+            <Stack.Screen
+              name="nutrition-analytics"
+              options={{
+                title: "Nutrition Analytics",
+              }}
+            />
+            <Stack.Screen
+              name="sleep"
+              options={{
+                title: "Sleep",
+              }}
+            />
+            <Stack.Screen
+              name="activity/[id]"
+              options={{
+                title: "Activity",
+              }}
+            />
+            <Stack.Screen
+              name="activities"
+              options={{
+                title: "Activities",
+                headerStyle: { backgroundColor: colors.background },
+                headerTintColor: colors.text,
+              }}
+            />
+            <Stack.Screen
+              name="correlation"
+              options={{
+                title: "Correlation Explorer",
+              }}
+            />
+            <Stack.Screen
+              name="preview"
+              options={{
+                title: "Preview Update",
+              }}
+            />
+          </Stack>
+        </MobileQueryPersistenceProvider>
+      </HealthKitManualSyncProvider>
     </trpc.Provider>
   );
 }

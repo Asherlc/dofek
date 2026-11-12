@@ -57,6 +57,7 @@ export async function syncRunningSteps(
       const batch = samples.slice(offset, offset + BATCH_SIZE);
       const batchIds = new Set(batch.flatMap((sample) => sample.workoutUuids));
       await manualExecution?.assertCanContinue();
+      await options.assertCanContinue?.();
       onStage?.({ operation: "pushRunningStepSamples", itemCount: batch.length });
       const result = await trpcClient.healthKitSync.pushRunningStepSamples.mutate({
         workouts: workouts.filter((workout) => batchIds.has(workout.uuid)),
@@ -67,11 +68,13 @@ export async function syncRunningSteps(
     return inserted;
   }
   await manualExecution?.assertCanContinue();
+  await options.assertCanContinue?.();
   onStage?.({ operation: "queryRunningStepSamples", typeIdentifier });
   let inserted = await upload(await healthKit.queryRunningStepSamples(startDate, endDate));
   let deleted = 0;
   while (true) {
     await manualExecution?.assertCanContinue();
+    await options.assertCanContinue?.();
     onStage?.({ operation: "queryRunningStepChanges", typeIdentifier });
     const changes = await healthKit.queryRunningStepChanges(minimumSampleDate ?? startDate);
     try {
@@ -84,6 +87,7 @@ export async function syncRunningSteps(
       for (let offset = 0; offset < changes.deletedUUIDs.length; offset += BATCH_SIZE) {
         const deletedUUIDs = changes.deletedUUIDs.slice(offset, offset + BATCH_SIZE);
         await manualExecution?.assertCanContinue();
+        await options.assertCanContinue?.();
         onStage?.({
           operation: "deleteQuantitySamples",
           typeIdentifier,
@@ -98,6 +102,7 @@ export async function syncRunningSteps(
       }
       if (changes.queryId) {
         await manualExecution?.assertCanContinue();
+        await options.assertCanContinue?.();
         onStage?.({ operation: "completeAnchoredQuery", typeIdentifier });
         const committed = await healthKit.completeAnchoredQuery(
           typeIdentifier,
@@ -110,13 +115,14 @@ export async function syncRunningSteps(
           );
       }
     } catch (error) {
-      if (!(error instanceof ManualHealthKitSyncInterruptedError)) {
-        captureException(error, { source: "health-kit-running-step-sync" });
-      }
+      if (error instanceof ManualHealthKitSyncInterruptedError) throw error;
+      captureException(error, { source: "health-kit-running-step-sync" });
       if (changes.queryId) {
         try {
+          await options.assertCanContinue?.();
           await healthKit.completeAnchoredQuery(typeIdentifier, changes.queryId, false);
         } catch (completionError) {
+          if (completionError instanceof ManualHealthKitSyncInterruptedError) throw completionError;
           captureException(completionError, { source: "health-kit-running-step-anchor" });
         }
       }

@@ -49,6 +49,7 @@ import {
   HEALTHKIT_DATABASE_INACCESSIBLE_MESSAGE,
   isHealthKitDatabaseInaccessible,
 } from "../../lib/health-kit-errors";
+import { ManualHealthKitSyncInterruptedError } from "../../lib/health-kit-sync-types";
 import type { FileUploadApi } from "../../lib/resumable-file-upload";
 import {
   type ImportProviderId,
@@ -160,9 +161,7 @@ export default function ProvidersScreen() {
 
   const [healthKitSyncing, setHealthKitSyncing] = useState(false);
   const [healthKitProgress, setHealthKitProgress] = useState<string | undefined>();
-  const trpcClient = trpcUtils.client;
   const appleHealth = useAppleHealthProviderModel({
-    trpcClient,
     onAuthorizationError: (error) => {
       captureException(error, { context: "healthkit-permission-check" });
     },
@@ -205,6 +204,10 @@ export default function ProvidersScreen() {
       );
       trpcUtils.invalidate();
     } catch (error: unknown) {
+      if (error instanceof ManualHealthKitSyncInterruptedError) {
+        setHealthKitProgress("Apple Health sync paused");
+        return;
+      }
       if (!isHealthKitDatabaseInaccessible(error)) {
         captureException(error, { context: "healthkit-manual-sync" });
         setHealthKitProgress(userFacingErrorMessage(error, "Sync failed"));

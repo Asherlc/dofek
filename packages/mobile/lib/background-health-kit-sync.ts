@@ -12,14 +12,20 @@ import {
   isHealthKitDatabaseInaccessible,
   isTransientNetworkErrorMessage,
 } from "./health-kit-errors";
+import type { HealthKitManualSyncController } from "./health-kit-manual-sync";
 import { BACKGROUND_HEALTH_KIT_TYPES } from "./health-kit-sync";
 import type { HealthKitSyncStage, SyncTrpcClient } from "./health-kit-sync-types";
+import { ManualHealthKitSyncInterruptedError } from "./health-kit-sync-types";
 import { captureException, logger } from "./telemetry";
 
 const TAG = "bg-healthkit-sync";
 
 interface SyncContext {
   onSyncComplete?: () => void | Promise<void>;
+  manualController?: Pick<
+    HealthKitManualSyncController,
+    "assertAccountCurrent" | "runObserverAttempt"
+  >;
   trpcClient: SyncTrpcClient;
 }
 
@@ -71,16 +77,25 @@ async function performHealthKitSync(
   trpcClient: SyncTrpcClient,
   typeIdentifiers: readonly string[],
   onSyncComplete?: () => void | Promise<void>,
+  manualController?: Pick<
+    HealthKitManualSyncController,
+    "assertAccountCurrent" | "runObserverAttempt"
+  >,
 ): Promise<boolean> {
   const startedAt = performance.now();
   const stageTelemetry = createStageTelemetry();
   logger.info(TAG, "Starting sync");
   let result: Awaited<ReturnType<AppleHealthSyncService["syncObserverChanges"]>>;
   try {
-    result = await new AppleHealthSyncService({ trpcClient }).syncObserverChanges({
-      typeIdentifiers,
-      onStage: stageTelemetry.start,
-    });
+    const run = () =>
+      new AppleHealthSyncService({ trpcClient }).syncObserverChanges({
+        typeIdentifiers,
+        onStage: stageTelemetry.start,
+        assertCanContinue: manualController
+          ? async () => manualController.assertAccountCurrent()
+          : undefined,
+      });
+    result = manualController ? await manualController.runObserverAttempt(run) : await run();
   } catch (error) {
     stageTelemetry.complete("failed");
     const message = error instanceof Error ? error.message : String(error);
@@ -89,6 +104,10 @@ async function performHealthKitSync(
     // not an actionable error, so log it but don't send it to Sentry.
     if (isHealthKitDatabaseInaccessible(error)) {
       logger.info(TAG, "Device locked, skipping sync");
+      return false;
+    }
+    if (error instanceof ManualHealthKitSyncInterruptedError) {
+      logger.info(TAG, "Observer sync was interrupted; retaining catch-up work");
       return false;
     }
     if (isBackgroundHealthKitTransientNetworkError(error)) {
@@ -189,6 +208,7 @@ async function drainSyncQueue(): Promise<void> {
 
   syncing = true;
   setObserverSyncInProgress(true);
+  let drainAgain = true;
   try {
     const succeeded = await performHealthKitSync(
       context.trpcClient,
@@ -200,11 +220,18 @@ async function drainSyncQueue(): Promise<void> {
             }
           }
         : undefined,
+      context.manualController,
     );
+    if (!succeeded && currentSyncContext === context) {
+      pendingCatchUp = context;
+      drainAgain = false;
+    }
     if (currentSyncContext === context && updateIds.length > 0) {
       acknowledgeObserverUpdates(updateIds, succeeded);
     }
   } catch (error) {
+    if (currentSyncContext === context) pendingCatchUp = context;
+    drainAgain = false;
     captureException(error, {
       source: TAG,
       operation: "drainSyncQueue",
@@ -217,7 +244,7 @@ async function drainSyncQueue(): Promise<void> {
     setObserverSyncInProgress(pendingCatchUp !== undefined || pendingUpdates.size > 0);
   }
 
-  await drainSyncQueue();
+  if (drainAgain) await drainSyncQueue();
 }
 
 /**
@@ -230,6 +257,10 @@ async function drainSyncQueue(): Promise<void> {
 export async function initBackgroundHealthKitSync(
   trpcClient: SyncTrpcClient,
   onSyncComplete?: () => void | Promise<void>,
+  manualController?: Pick<
+    HealthKitManualSyncController,
+    "assertAccountCurrent" | "runObserverAttempt"
+  >,
 ) {
   const authorizationState = await new AppleHealthAuthorizationService().resolve();
   if (!authorizationState.canAttemptSync()) {
@@ -243,7 +274,7 @@ export async function initBackgroundHealthKitSync(
     teardownBackgroundHealthKitSync();
   }
 
-  const context: SyncContext = { trpcClient, onSyncComplete };
+  const context: SyncContext = { trpcClient, onSyncComplete, manualController };
   currentSyncContext = context;
 
   // Listen before registering native observers so an immediate HealthKit

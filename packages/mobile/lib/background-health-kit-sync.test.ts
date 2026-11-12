@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("expo-crypto", () => ({ randomUUID: () => "test-uuid" }));
+
 const mockSetupBackgroundObservers = vi.fn().mockResolvedValue(true);
 const mockAddSampleUpdateListener = vi.fn().mockReturnValue({ remove: vi.fn() });
 const mockCompleteObserverUpdates = vi.fn().mockReturnValue(0);
@@ -673,7 +675,7 @@ describe("initBackgroundHealthKitSync", () => {
     await initBackgroundHealthKitSync(secondClient, secondOnSyncComplete);
     const secondListener = mockAddSampleUpdateListener.mock.calls[1][0];
     secondListener({
-      typeIdentifier: "HKQuantityTypeIdentifierHeartRate",
+      typeIdentifier: "HKQuantityTypeIdentifierBodyMass",
       updateId: "second-context-update",
     });
     expect(secondClient.healthKitSync.pushWorkouts.mutate).not.toHaveBeenCalled();
@@ -1031,5 +1033,48 @@ describe("teardownBackgroundHealthKitSync", () => {
       source: "bg-healthkit-sync",
       operation: "teardownBackgroundObservers",
     });
+  });
+
+  it("keeps observer type work pending while its native callback expires behind the manual gate", async () => {
+    const gate = createDeferred<void>();
+    const enteredGate = createDeferred<void>();
+    let attempts = 0;
+    const manualController = {
+      assertAccountCurrent: vi.fn(),
+      runObserverAttempt: vi.fn(async <Result>(operation: () => Promise<Result>) => {
+        attempts += 1;
+        if (attempts === 1) {
+          enteredGate.resolve();
+          await gate.promise;
+        }
+        return operation();
+      }),
+    } satisfies NonNullable<Parameters<typeof initBackgroundHealthKitSync>[2]>;
+    await initBackgroundHealthKitSync(createMockClient(), undefined, manualController);
+    await enteredGate.promise;
+
+    const observerListener = mockAddSampleUpdateListener.mock.calls[0][0];
+    observerListener({
+      typeIdentifier: "HKQuantityTypeIdentifierHeartRate",
+      updateId: "expired-update",
+    });
+    mockCompleteObserverUpdates(["expired-update"], false);
+    gate.resolve();
+
+    await vi.waitFor(() => expect(manualController.runObserverAttempt).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() =>
+      expect(mockQueryAnchoredSamples).toHaveBeenCalledWith(
+        "HKQuantityTypeIdentifierHeartRate",
+        expect.any(String),
+      ),
+    );
+    expect(
+      mockQueryAnchoredSamples.mock.calls.filter(
+        ([type]) => type === "HKQuantityTypeIdentifierHeartRate",
+      ),
+    ).toHaveLength(2);
+    await vi.waitFor(() =>
+      expect(mockCompleteObserverUpdates).toHaveBeenCalledWith(["expired-update"], true),
+    );
   });
 });

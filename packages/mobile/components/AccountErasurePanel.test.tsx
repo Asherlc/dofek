@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { loadMobileAccountErasureStatusCapability } from "../lib/account-erasure-storage";
+import * as accountErasureStorage from "../lib/account-erasure-storage";
 import { AccountErasurePanel } from "./AccountErasurePanel";
 
 const mockPrepare = vi.hoisted(() => vi.fn());
@@ -13,6 +13,7 @@ const mockIsCleanupLeaseCurrent = vi.hoisted(() => vi.fn(() => true));
 const mockReplace = vi.hoisted(() => vi.fn());
 const mockQueryClient = vi.hoisted(() => ({ clear: vi.fn() }));
 const mockCaptureException = vi.hoisted(() => vi.fn());
+const mockPurgeManualCheckpoint = vi.hoisted(() => vi.fn());
 
 vi.mock("../lib/trpc", () => ({
   trpc: {
@@ -52,8 +53,18 @@ vi.mock("@tanstack/react-query", async (importOriginal) => {
 vi.mock("../lib/telemetry", () => ({
   captureException: mockCaptureException,
 }));
+vi.mock("../lib/health-kit-manual-checkpoint", () => ({
+  purgeManualHealthKitCheckpoint: mockPurgeManualCheckpoint,
+}));
+vi.mock("../lib/health-kit-manual-sync-context", () => ({
+  useHealthKitManualSync: () => ({ controller: null, state: { status: "idle" } }),
+}));
 
 describe("mobile AccountErasurePanel", () => {
+  const markConfirmationAttemptedSpy = vi.spyOn(
+    accountErasureStorage,
+    "markMobileAccountErasureConfirmationAttempted",
+  );
   const cleanupLease = {
     cleanupId: 1,
     cleanupOwnerNonce: "11111111-1111-4111-8111-111111111111",
@@ -73,10 +84,14 @@ describe("mobile AccountErasurePanel", () => {
       statusToken: "s".repeat(43),
     });
     mockPurge.mockImplementation(async () => {
-      expect((await loadMobileAccountErasureStatusCapability())?.statusToken).toBe("s".repeat(43));
+      expect(
+        (await accountErasureStorage.loadMobileAccountErasureStatusCapability())?.statusToken,
+      ).toBe("s".repeat(43));
       return { errors: [] };
     });
     mockBeginCleanup.mockReturnValue(cleanupLease);
+    mockIsCleanupLeaseCurrent.mockReturnValue(true);
+    mockPurgeManualCheckpoint.mockResolvedValue(undefined);
   });
 
   afterEach(cleanup);
@@ -112,18 +127,41 @@ describe("mobile AccountErasurePanel", () => {
     expect(mockBeginCleanup).toHaveBeenCalledBefore(mockConfirm);
     expect(mockConfirm).toHaveBeenCalledBefore(mockPurge);
     expect(mockBeginCleanup).toHaveBeenCalledWith("user-1");
+    expect(mockPurgeManualCheckpoint).toHaveBeenCalledBefore(mockConfirm);
+    expect(mockPurgeManualCheckpoint).toHaveBeenCalledBefore(markConfirmationAttemptedSpy);
     expect(mockPurge).toHaveBeenCalledWith({
       cleanupLease,
       isCleanupLeaseCurrent: mockIsCleanupLeaseCurrent,
       queryClient: mockQueryClient,
     });
     expect(mockFinishCleanup).toHaveBeenCalledWith(cleanupLease);
-    expect(await loadMobileAccountErasureStatusCapability()).toEqual(
+    expect(await accountErasureStorage.loadMobileAccountErasureStatusCapability()).toEqual(
       expect.objectContaining({ cleanupOwnerNonce: cleanupLease.cleanupOwnerNonce }),
     );
-    expect(JSON.stringify(await loadMobileAccountErasureStatusCapability())).not.toContain(
-      "user-1",
-    );
+    expect(
+      JSON.stringify(await accountErasureStorage.loadMobileAccountErasureStatusCapability()),
+    ).not.toContain("user-1");
+  });
+
+  it("blocks confirmation when strict checkpoint erasure fails and retries it", async () => {
+    mockPurgeManualCheckpoint.mockRejectedValueOnce(new Error("Keychain is locked"));
+    render(<AccountErasurePanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Delete account" }));
+    fireEvent.change(screen.getByPlaceholderText('Type "DELETE"'), {
+      target: { value: "DELETE" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Prepare account deletion" }));
+    const confirm = await screen.findByRole("button", { name: "Permanently delete my account" });
+    fireEvent.click(confirm);
+
+    await waitFor(() => expect(mockPurgeManualCheckpoint).toHaveBeenCalledTimes(1));
+    expect(mockConfirm).not.toHaveBeenCalled();
+    expect(markConfirmationAttemptedSpy).not.toHaveBeenCalled();
+    expect(await screen.findByRole("alert")).toBeTruthy();
+
+    fireEvent.click(confirm);
+    await waitFor(() => expect(mockConfirm).toHaveBeenCalledTimes(1));
+    expect(mockPurgeManualCheckpoint).toHaveBeenCalledTimes(2);
   });
 
   it("persists only the opaque cleanup nonce when the confirmation response is lost", async () => {
