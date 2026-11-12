@@ -45,7 +45,7 @@ const delegate = "import RNSentry\nfunc start() {\n  RNSentrySDK.start()\n}\n";
 
 test("configures cleanup attribution in the existing native Sentry startup", async () => {
   const result = await transform(delegate);
-  expect(result).toContain("import ExpoWhoopBle");
+  expect(result).toMatch(/^internal import ExpoWhoopBle$/m);
   expect(result).toContain("RNSentrySDK.start { options in");
   expect(result).toContain("WhoopBleModule.configureCleanupLogAttribution(options)");
 });
@@ -57,6 +57,7 @@ test("composes with Sentry's native initialization mod", async () => {
     true,
   );
   expect(result).toContain("WhoopBleModule.configureCleanupLogAttribution(options)");
+  expect(result).toMatch(/^internal import ExpoWhoopBle$/m);
   expect(result.match(/RNSentrySDK\.start/g)).toHaveLength(1);
 });
 

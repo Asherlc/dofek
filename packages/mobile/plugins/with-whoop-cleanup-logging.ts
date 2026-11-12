@@ -21,7 +21,10 @@ const withWhoopCleanupLogging: ConfigPlugin = (config) =>
           `${indent}RNSentrySDK.start { options in\n${indent}  ${hook}\n${indent}}`,
       );
       if (!contents.includes("import ExpoWhoopBle")) {
-        contents = contents.replace("import RNSentry", "import RNSentry\nimport ExpoWhoopBle");
+        contents = contents.replace(
+          "import RNSentry",
+          "import RNSentry\ninternal import ExpoWhoopBle",
+        );
       }
     }
     modConfig.modResults.contents = contents;
