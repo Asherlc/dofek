@@ -66,7 +66,7 @@ const datasetKeySchema = z.enum(PROCESSING_DATASET_KEYS);
 const outputPathSchema = z.enum(PROCESSING_OUTPUT_PATHS);
 const pendingOperationRowSchema = z.object({
   operation_id: z.uuid(),
-  operation_created_at: z.coerce.date(),
+  last_output_at: z.coerce.date(),
 });
 const outputRowSchema = z.object({
   dataset_key: datasetKeySchema,
@@ -402,7 +402,7 @@ export async function reconcilePendingProcessingOperations({
   const pendingOperations = await executeWithSchema(
     database,
     pendingOperationRowSchema,
-    sql`SELECT outbox.operation_id AS operation_id, operation.created_at AS operation_created_at
+    sql`SELECT outbox.operation_id AS operation_id, MAX(outbox.created_at) AS last_output_at
         FROM fitness.processing_queue_outbox outbox
         JOIN fitness.processing_operation operation ON operation.id = outbox.operation_id
         WHERE outbox.queue_name = 'processing-reconcile'
@@ -453,7 +453,7 @@ export async function reconcilePendingProcessingOperations({
 
     if (!allSucceeded) {
       const isStale =
-        now - pendingOperation.operation_created_at.getTime() > STALE_OPERATION_THRESHOLD_MS;
+        now - pendingOperation.last_output_at.getTime() > STALE_OPERATION_THRESHOLD_MS;
       if (isStale) {
         const staleDecisions = decisions.filter((decision) => decision.status !== "succeeded");
         await abandonStalledOperation(database, pendingOperation.operation_id, staleDecisions);
