@@ -116,6 +116,50 @@ export interface SyncOptions {
   syncRangeDays: number | null;
   onProgress?: (message: string) => void;
   onStage?: (stage: HealthKitSyncStage) => void;
+  /**
+   * App-owned manual operation context. Fixed window and checkpoint callbacks
+   * replace the implicit window; omitted for the existing foreground callers.
+   */
+  manualExecution?: ManualHealthKitSyncContext;
+}
+
+/** Semantic manual stages. Identifiers are stable so they can be checkpointed. */
+export type ManualHealthKitSyncStage =
+  | "additive-and-category"
+  | `raw:${string}`
+  | "workouts"
+  | "sleep"
+  | `clinical:${string}`
+  | "running-steps";
+
+export interface ManualHealthKitSyncStageCompletion {
+  stage: ManualHealthKitSyncStage;
+  /** Number of contiguous stages known complete after this one. */
+  completedStageCount: number;
+  totalStageCount: number;
+}
+
+export interface ManualHealthKitSyncContext {
+  /** Window requested when the operation started; resumes reuse it verbatim. */
+  startDate: string;
+  endDate: string;
+  /** Semantic stage to start at; earlier stages are already complete. */
+  nextStage: ManualHealthKitSyncStage;
+  /** Awaited after a stage fully succeeds. A rejection stops the pipeline. */
+  onStageComplete: (completion: ManualHealthKitSyncStageCompletion) => Promise<void>;
+  /** Awaited before each query, upload, checkpoint, and anchor acknowledgement. */
+  assertCanContinue: () => Promise<void>;
+}
+
+/**
+ * Expected control flow when the manual operation paused, expired, or lost its
+ * account between two side effects. It is not an unexpected failure.
+ */
+export class ManualHealthKitSyncInterruptedError extends Error {
+  constructor(message = "Apple Health sync was interrupted.") {
+    super(message);
+    this.name = "ManualHealthKitSyncInterruptedError";
+  }
 }
 
 export interface SyncResult {

@@ -1,6 +1,11 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { syncRunningSteps } from "./health-kit-running-steps-sync";
-import type { ObserverSyncOptions } from "./health-kit-sync-types";
+import {
+  type ManualHealthKitSyncContext,
+  ManualHealthKitSyncInterruptedError,
+  type ObserverSyncOptions,
+} from "./health-kit-sync-types";
+import { captureException } from "./telemetry";
 
 vi.mock("./telemetry", () => ({ captureException: vi.fn() }));
 
@@ -42,6 +47,143 @@ function options() {
 }
 const start = "2026-10-20T00:00:00Z";
 const end = "2026-10-21T00:00:00Z";
+
+describe("syncRunningSteps manual interruption", () => {
+  const interrupted = new ManualHealthKitSyncInterruptedError();
+
+  beforeEach(() => {
+    vi.mocked(captureException).mockClear();
+  });
+
+  function manualExecution(
+    overrides: Partial<ManualHealthKitSyncContext> = {},
+  ): ManualHealthKitSyncContext {
+    return {
+      startDate: start,
+      endDate: end,
+      nextStage: "running-steps",
+      onStageComplete: vi.fn(),
+      assertCanContinue: vi.fn(),
+      ...overrides,
+    };
+  }
+
+  it("stops before querying when the operation is interrupted", async () => {
+    const input = options();
+
+    await expect(
+      syncRunningSteps(
+        input,
+        start,
+        end,
+        manualExecution({ assertCanContinue: vi.fn().mockRejectedValue(interrupted) }),
+      ),
+    ).rejects.toBe(interrupted);
+
+    expect(input.healthKit.queryRunningStepSamples).not.toHaveBeenCalled();
+    expect(captureException).not.toHaveBeenCalled();
+  });
+
+  it("stops before uploading a snapshot when the operation is interrupted", async () => {
+    const input = options();
+    let shouldStop = false;
+    input.healthKit.queryRunningStepSamples.mockImplementation(async () => {
+      shouldStop = true;
+      return {
+        workouts: [{ uuid: "run" }],
+        samples: [{ uuid: "parent", workoutUuids: ["run"] }],
+      };
+    });
+
+    await expect(
+      syncRunningSteps(
+        input,
+        start,
+        end,
+        manualExecution({
+          assertCanContinue: vi.fn(async () => {
+            if (shouldStop) throw interrupted;
+          }),
+        }),
+      ),
+    ).rejects.toBe(interrupted);
+
+    expect(input.trpcClient.healthKitSync.pushRunningStepSamples.mutate).not.toHaveBeenCalled();
+    expect(input.healthKit.completeAnchoredQuery).not.toHaveBeenCalled();
+  });
+
+  it("discards an unacknowledged page when interruption precedes its anchor", async () => {
+    const input = options();
+    let shouldStop = false;
+    input.healthKit.queryRunningStepChanges.mockImplementation(async () => {
+      shouldStop = true;
+      return {
+        hasMore: false,
+        workouts: [],
+        samples: [],
+        deletedUUIDs: [],
+        queryId: "pending",
+      };
+    });
+
+    await expect(
+      syncRunningSteps(
+        input,
+        start,
+        end,
+        manualExecution({
+          assertCanContinue: vi.fn(async () => {
+            if (shouldStop) throw interrupted;
+          }),
+        }),
+      ),
+    ).rejects.toBe(interrupted);
+
+    expect(input.healthKit.completeAnchoredQuery).toHaveBeenCalledTimes(1);
+    expect(input.healthKit.completeAnchoredQuery).toHaveBeenCalledWith(
+      "HKQuantityTypeIdentifierStepCount",
+      "pending",
+      false,
+    );
+    expect(captureException).not.toHaveBeenCalled();
+  });
+
+  it("stops at the page boundary after acknowledging the completed page", async () => {
+    const input = options();
+    let shouldStop = false;
+    input.healthKit.queryRunningStepChanges.mockResolvedValueOnce({
+      hasMore: true,
+      workouts: [],
+      samples: [],
+      deletedUUIDs: [],
+      queryId: "first",
+    });
+    input.healthKit.completeAnchoredQuery.mockImplementation(async (_type, queryId, succeeded) => {
+      if (queryId === "first" && succeeded) shouldStop = true;
+      return true;
+    });
+
+    await expect(
+      syncRunningSteps(
+        input,
+        start,
+        end,
+        manualExecution({
+          assertCanContinue: vi.fn(async () => {
+            if (shouldStop) throw interrupted;
+          }),
+        }),
+      ),
+    ).rejects.toBe(interrupted);
+
+    expect(input.healthKit.queryRunningStepChanges).toHaveBeenCalledTimes(1);
+    expect(input.healthKit.completeAnchoredQuery).toHaveBeenCalledWith(
+      "HKQuantityTypeIdentifierStepCount",
+      "first",
+      true,
+    );
+  });
+});
 
 describe("syncRunningSteps", () => {
   it("drains a full unmatched parent page before uploading the next associated page", async () => {
