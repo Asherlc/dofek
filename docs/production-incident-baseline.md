@@ -37146,7 +37146,7 @@ lint and root/server/web/mobile typechecks pass. The complete mobile tier passed
 the shared correction, verified with `git diff --cached --exit-code` against
 its commit. Final-head CI and signed-device acceptance remain separate gates.
 
-Matching-head CI on `4ec08a690` passed 104 checks with seven expected skips, including the Release archive and WHOOP Expo bridge tests in Simulator. Main subsequently merged [PR #3284](https://github.com/Asherlc/dofek/pull/3284); the SDK files already match exactly, and the only conflict is these incident entries. Preserved both records and consolidated WHOOP qualification notes under their own heading beside the other November 12 incidents, leaving the common append point unchanged. The combined mobile tree passes all 2,190 tests across 213 files (81.54 seconds), mobile typecheck and scoped lint; no WHOOP runtime or dependency change was needed.
+[Matching-head CI on `4ec08a690`](https://github.com/Asherlc/dofek/actions/runs/43272626285) passed 104 checks with seven expected skips, including the Release archive and WHOOP Expo bridge tests in Simulator. Main subsequently merged [PR #3284](https://github.com/Asherlc/dofek/pull/3284); the SDK files already match exactly, and the only conflict is these incident entries. Preserved both records and consolidated WHOOP qualification notes under their own heading beside the other November 12 incidents, leaving the common append point unchanged. The combined mobile tree passes all 2,190 tests across 213 files (81.54 seconds), mobile typecheck and scoped lint; no WHOOP runtime or dependency change was needed.
 
 ## 2026-11-12 — GitHub OIDC token request blocks mobile bundle CI (unresolved)
 

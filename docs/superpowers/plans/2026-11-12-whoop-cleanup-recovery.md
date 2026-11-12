@@ -1,6 +1,6 @@
 # WHOOP cleanup restart recovery
 
-Execute with `superpowers:executing-plans`; review each task before continuing.
+Complete the tasks in order and review each result before continuing.
 
 **Goal:** Recover WHOOP uploads after interrupted cleanup without making the app wait for sensor deletion.
 
