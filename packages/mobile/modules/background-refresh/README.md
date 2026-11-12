@@ -67,7 +67,7 @@ The same native module owns one user-started Apple Health sync lifetime on iOS
 26 and later. It uses
 [`BGContinuedProcessingTask`](https://developer.apple.com/documentation/backgroundtasks/bgcontinuedprocessingtask),
 which starts in the foreground in response to a person's Sync/Resume tap and can
-continue while the app is backgrounded. The periodic accelerometer refresh task
+continue while the app is in the background. The periodic accelerometer refresh task
 is independent and keeps its own identifier.
 
 ```ts

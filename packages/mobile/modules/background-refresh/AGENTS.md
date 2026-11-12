@@ -79,7 +79,7 @@ native configuration, and authoritative platform references.
 - Preserve focused cases for success, rejection, expiration, no listener,
   listener removal, duplicate late completion, launch gating, registration and
   submission failures, invalid task IDs, stale launches from abandoned
-  requests, reused native task IDs, and owner interleavings (teardown or
+  requests, reused native task IDs, and owner transition ordering (teardown or
   expiration during launch-handler installation, queued start followed by
   listener retirement and replacement on the same module, a deferred native
   async start body after that replacement, and old-owner destruction not ending

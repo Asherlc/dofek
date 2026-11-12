@@ -42,12 +42,12 @@
 - `addHealthKitSyncExpirationListener(callback: (event: { taskId: string }) => void): EventSubscription`.
 - Use permitted task identifier pattern `com.dofek.app.healthkit-sync.*`, separate from periodic refresh, with each submitted identifier suffixed by its unique taskId. Register each exact request identifier once under iOS 26's continued-processing registration exception. Preserve taskId correlation across all native transitions. See Apple's [request identifier contract](https://developer.apple.com/documentation/backgroundtasks/bgcontinuedprocessingtaskrequest/init(identifier:title:subtitle:)) and [registration contract](https://developer.apple.com/documentation/backgroundtasks/bgtaskscheduler/register(fortaskwithidentifier:using:launchhandler:)).
 
-- [ ] Write Swift lifecycle tests for launch gating, rejection, expiration before grant, duplicate completion, teardown, and late launch. Write bridge tests for correlation and unsubscribe.
-- [ ] Run `rtk proxy swift test --package-path packages/mobile/modules/background-refresh` and `rtk proxy pnpm test:mobile -- packages/mobile/modules/background-refresh/index.test.ts`; record expected new behavior failing before implementation.
-- [ ] Implement Foundation-testable completion ownership and thin iOS 26 adapter inside existing module. Register appropriately per current Apple guidance; do not queue work after `.fail` rejection, invent background execution guarantees, or reuse periodic task IDs.
-- [ ] Make native progress reflect completed work; complete tasks at most once, reject abandoned pending starts, and surface specific failures. Keep existing refresh listener independent.
-- [ ] Rerun focused tests, `rtk proxy pnpm --dir packages/mobile typecheck`, and inspect config diff. Use iOS build during final integration to compile excluded bridge files.
-- [ ] Commit/push verified changes; report interface differences and exact checks before review gate.
+- [x] Write Swift lifecycle tests for launch gating, rejection, expiration before grant, duplicate completion, teardown, and late launch. Write bridge tests for correlation and unsubscribe.
+- [x] Run `rtk proxy swift test --package-path packages/mobile/modules/background-refresh` and `rtk proxy pnpm test:mobile -- packages/mobile/modules/background-refresh/index.test.ts`; record expected new behavior failing before implementation.
+- [x] Implement Foundation-testable completion ownership and thin iOS 26 adapter inside existing module. Register appropriately per current Apple guidance; do not queue work after `.fail` rejection, invent background execution guarantees, or reuse periodic task IDs.
+- [x] Make native progress reflect completed work; complete tasks at most once, reject abandoned pending starts, and surface specific failures. Keep existing refresh listener independent.
+- [x] Rerun focused tests, `rtk proxy pnpm --dir packages/mobile typecheck`, and inspect config diff. Use iOS build during final integration to compile excluded bridge files.
+- [x] Commit/push verified changes; report interface differences and exact checks before review gate.
 
 ### Task 2: Fixed-window staged sync and checkpoint storage
 
@@ -56,6 +56,7 @@
 **Interfaces:**
 - `ManualHealthKitCheckpoint` contains `requestId`, `userId`, fixed `startDate`/`endDate`, `nextStage` semantic identifier, and `requiresResume: boolean`.
 - `loadManualHealthKitCheckpoint(userId: string)`, `saveManualHealthKitCheckpoint(checkpoint)`, and `clearManualHealthKitCheckpoint(userId: string, requestId: string)` use existing secure-store access and validate persisted input. Clear only the matching request.
+- `purgeManualHealthKitCheckpoint(userId: string)` deletes that account's known key unconditionally for sign-out/erasure, including corrupt persisted input; it shares storage ordering with ordinary reads/writes/conditional clearing.
 - Extend `SyncOptions` with a manual execution context: fixed window, next-stage cursor, awaited stage-completion callback, and async interruption/account check. Keep existing callers behavior-compatible through purposeful optional manual context; no test-only branches.
 - Publish semantic stage IDs and total count only where the production controller consumes them. Keep type grouping compatible with existing manual flow.
 
