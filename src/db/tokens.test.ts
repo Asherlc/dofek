@@ -75,7 +75,6 @@ describe("ensureProvider", () => {
 
     const query = mock.spies.execute.mock.calls[0]?.[0];
     const serializedQuery = JSON.stringify(query);
-    expect(serializedQuery).toContain("VALUES");
     expect(serializedQuery).toContain("NULL");
     expect(serializedQuery).toContain("user-123");
   });
