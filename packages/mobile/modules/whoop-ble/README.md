@@ -180,6 +180,14 @@ the installed SDK's [native structured logger](https://docs.sentry.io/platforms/
 independent of JavaScript log-export timers. Attributes contain no credentials
 or sample payloads. Native changes require a new iOS build.
 
+During native Sentry initialization, call
+`WhoopBleModule.configureCleanupLogAttribution(options)` from
+[`RNSentrySDK.start(configureOptions:)`](https://github.com/getsentry/sentry-react-native/blob/8.29.0/packages/core/ios/RNSentrySDK.h).
+It uses the supported [log callback](https://docs.sentry.io/platforms/apple/guides/ios/logs/#beforesendlog)
+to remove `user.id`, `user.name` and `user.email` from `disableUploads` logs,
+while preserving the previous callback and attribution of unrelated logs.
+Cleanup stages remain correlated by their operation ID across account changes.
+
 The [native uploader](ios/WhoopBleBackgroundUploader.swift) uses independent
 500-sample batches for IMU and realtime streams. Sensor-record batches contain
 at most 16 records and 262,144 encoded bytes, following the

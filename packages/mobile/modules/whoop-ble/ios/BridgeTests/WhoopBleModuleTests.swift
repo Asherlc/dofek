@@ -139,7 +139,7 @@ extension WhoopBleModuleTests {
         let cleanup = Task { try await outcome("disableUploads()", in: context) }
         await fulfillment(of: [cleanupStarted], timeout: 5)
         await MainActor.run {
-            SentrySDK.configureScope { scope in scope.setUser(Sentry.User(userId: "account-B")) }
+            identifySyntheticSentryUser("account-B")
         }
         release.signal()
         let rejection = try await cleanup.value
@@ -169,6 +169,8 @@ extension WhoopBleModuleTests {
         XCTAssertEqual(failure.attributes["stage"]?.value as? String, "failed")
         XCTAssertEqual(failure.attributes["failedStage"]?.value as? String, "uploader_remove_bodies")
         XCTAssertEqual(failure.level, .error)
+        SentrySDK.logger.info("NativeAttributionLogControl")
+        logs.assertAnonymousCleanupAndAttributedControl(userId: "account-B")
         try logs.assertOperationMetadata()
     }
 

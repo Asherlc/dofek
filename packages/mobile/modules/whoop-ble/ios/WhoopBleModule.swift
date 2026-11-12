@@ -480,3 +480,19 @@ public class WhoopBleModule: Module {
         }
     }
 }
+
+extension WhoopBleModule {
+    /// Install during native Sentry initialization so retired cleanup logs cannot inherit the current account.
+    public static func configureCleanupLogAttribution(_ options: Sentry.Options) {
+        let beforeSendLog = options.beforeSendLog
+        options.beforeSendLog = { log in
+            if log.attributes["operation"]?.value as? String == "disableUploads" {
+                for key in ["user.id", "user.name", "user.email"] {
+                    log.attributes.removeValue(forKey: key)
+                }
+            }
+            if let beforeSendLog { return beforeSendLog(log) }
+            return log
+        }
+    }
+}

@@ -611,6 +611,16 @@ runtime properties. These boundaries are covered by the
 [telemetry regressions](./lib/telemetry.test.ts) and
 [transport regressions](./lib/trpc-fetch.test.ts).
 
+Native Sentry starts in the AppDelegate with the cleanup-log callback installed
+by [the Expo plugin](./plugins/with-whoop-cleanup-logging.ts). It removes user
+attributes only from WHOOP disable/cleanup logs after Cocoa enriches them;
+unrelated logs and events keep their account attribution. JavaScript uses
+`autoInitializeNativeSdk: false` to preserve that native configuration in both
+development and release builds. Both layers still initialize with a DSN, as
+required by Sentry's [native initialization options](https://docs.sentry.io/platforms/react-native/configuration/options/#autoinitializenativesdk).
+The callback uses Sentry's supported
+[`beforeSendLog` hook](https://docs.sentry.io/platforms/apple/guides/ios/logs/#beforesendlog).
+
 WHOOP diagnostics connect native capture/queue snapshots, background task state,
 upload batches, HTTP responses, and server broker publication without logging
 sensor values. A retained native checkpoint contains metadata only, has unknown
