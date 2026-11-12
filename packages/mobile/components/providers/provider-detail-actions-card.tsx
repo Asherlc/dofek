@@ -27,7 +27,7 @@ export function ProviderDetailActionsCard({
   onFullSync,
   onOpenClinicalRecords,
 }: {
-  primaryActionLabel: "Sync" | "Connect" | "Reconnect";
+  primaryActionLabel: "Sync" | "Connect" | "Reconnect" | "Resume";
   isSyncing: boolean;
   isRequestingPermissions: boolean;
   permissionMessage: string | null;

@@ -29,6 +29,22 @@ see the [removal scope](../../docs/superpowers/specs/2026-11-03-remove-daily-sco
 - **Mobile Dashboard**: Simplified mobile-first health and recovery tracking with SVG-based charts (`react-native-svg`).
 - **Nutrition history**: Read-only nutrition history, totals, source resolution, and analytics.
 
+## Manual HealthKit Sync
+
+The authenticated app root owns the manual HealthKit controller and its published
+progress, pause, and error state. Provider list and detail screens read that same
+state, so leaving a route does not discard progress. Resume continues the
+controller's saved date window; choosing Full sync starts a new all-history
+window. See the [controller context](lib/health-kit-manual-sync-context.tsx),
+[resumable sync controller](lib/health-kit-manual-sync.ts), and [provider actions](components/providers/use-provider-detail-actions.ts).
+
+The iOS HealthKit bridge directly queries protected HealthKit data. Changes to
+that native bridge require a rebuilt app binary; an OTA JavaScript update cannot
+install Swift changes. Expo documents update compatibility in its
+[runtime-version guide](https://docs.expo.dev/eas-update/runtime-versions/),
+and Apple documents HealthKit access through its
+[authorization flow](https://developer.apple.com/documentation/healthkit/authorizing-access-to-health-data).
+
 ## Offline startup
 
 After a successful sign-in or online session restore, the app saves the verified

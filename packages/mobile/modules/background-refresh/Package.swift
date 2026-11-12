@@ -13,6 +13,7 @@ let package = Package(
                 "BackgroundRefreshModule.swift",
                 "BackgroundRefreshScheduler.swift",
                 "ExpoBackgroundRefresh.podspec",
+                "HealthKitContinuedProcessingAdapter.swift",
             ]
         ),
         .testTarget(

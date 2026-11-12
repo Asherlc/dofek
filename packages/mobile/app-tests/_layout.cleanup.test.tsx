@@ -21,6 +21,13 @@ const mockSplitLink = vi.fn((options: unknown) => ({ type: "split", options }));
 const mockCreateClient = vi.fn();
 const mockInitBackgroundHealthKitSync = vi.fn().mockResolvedValue(undefined);
 const mockTeardownBackgroundHealthKitSync = vi.fn();
+const mockManualSyncControllers = vi.hoisted<
+  Array<{
+    userId: string;
+    dispose: ReturnType<typeof vi.fn>;
+    retire: ReturnType<typeof vi.fn>;
+  }>
+>(() => []);
 const mockInvalidateSyncedHealthData = vi.fn().mockResolvedValue(undefined);
 const mockInitBackgroundAccelerometerSync = vi.fn().mockResolvedValue(undefined);
 const mockTeardownBackgroundAccelerometerSync = vi.fn();
@@ -160,6 +167,22 @@ vi.mock("../lib/background-health-kit-sync", () => ({
   initBackgroundHealthKitSync: (...args: unknown[]) => mockInitBackgroundHealthKitSync(...args),
   teardownBackgroundHealthKitSync: (...args: unknown[]) =>
     mockTeardownBackgroundHealthKitSync(...args),
+}));
+
+vi.mock("../lib/health-kit-manual-sync", () => ({
+  HealthKitManualSyncController: class {
+    userId: string;
+    dispose = vi.fn();
+    retire = vi.fn(async () => undefined);
+    constructor({ userId }: { userId: string }) {
+      this.userId = userId;
+      mockManualSyncControllers.push(this);
+    }
+  },
+}));
+
+vi.mock("../lib/health-kit-manual-sync-context", () => ({
+  HealthKitManualSyncProvider: ({ children }: { children: ReactNode }) => children,
 }));
 
 vi.mock("../lib/invalidate-synced-health-data", () => ({
@@ -340,6 +363,7 @@ async function importRootLayout() {
 describe("RootLayout background cleanup", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockManualSyncControllers.length = 0;
     mockUseWhoopBleSync.mockReset();
     mockGetRequestStatus.mockResolvedValue("shouldRequest");
     mockIsHealthKitAvailable.mockReturnValue(false);
@@ -396,16 +420,45 @@ describe("RootLayout background cleanup", () => {
     const rendered = render(<RootLayout />);
     await waitFor(() => expect(mockInitBackgroundWhoopBleSync).toHaveBeenCalledOnce());
     await waitFor(() => expect(mockInitBackgroundHealthKitSync).toHaveBeenCalledOnce());
+    expect(mockManualSyncControllers).toHaveLength(1);
+    const previousController = mockManualSyncControllers[0];
+    const previousLifetime = mockInitBackgroundHealthKitSync.mock.calls[0]?.[3];
+    expect(previousLifetime).toBeInstanceOf(AbortSignal);
 
     mockAuthState.value.accountSessionOwnerNonce = "22222222-2222-4222-8222-222222222222";
     await act(async () => rendered.rerender(<RootLayout />));
 
     expect(mockInitBackgroundHealthKitSync).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(mockManualSyncControllers.length).toBeGreaterThanOrEqual(2));
+    expect(previousController?.dispose).toHaveBeenCalledOnce();
+    expect(previousController?.retire).not.toHaveBeenCalled();
+    expect(previousLifetime?.aborted).toBe(true);
+    expect(mockTeardownBackgroundHealthKitSync).toHaveBeenCalledWith(previousController);
+    expect(mockManualSyncControllers.every((controller) => controller.userId === "user-1")).toBe(
+      true,
+    );
     expect(mockInitBackgroundWhoopBleSync).toHaveBeenCalledOnce();
     expect(mockTeardownBackgroundWhoopBleSync).not.toHaveBeenCalled();
     rendered.unmount();
     expect(mockTeardownBackgroundWhoopBleSync).toHaveBeenCalledOnce();
     mockUseWhoopBleSync.mockReset();
+  });
+
+  it("retires only the previous account controller when auth changes users", async () => {
+    const RootLayout = await importRootLayout();
+    const rendered = render(<RootLayout />);
+    await waitFor(() => expect(mockManualSyncControllers).toHaveLength(1));
+    const previous = mockManualSyncControllers[0];
+
+    mockAuthState.value = { ...mockAuthState.value, user: { id: "user-2" } };
+    await act(async () => rendered.rerender(<RootLayout />));
+    await waitFor(() => expect(mockManualSyncControllers.length).toBeGreaterThanOrEqual(2));
+
+    expect(previous?.retire).toHaveBeenCalledOnce();
+    expect(
+      mockManualSyncControllers.slice(1).every((controller) => controller.userId === "user-2"),
+    ).toBe(true);
+    rendered.unmount();
   });
 
   it("dismisses splash and updates navigation while WHOOP restart cleanup is blocked", async () => {
@@ -828,8 +881,8 @@ describe("RootLayout background cleanup", () => {
       expect(mockInitBackgroundHealthKitSync).toHaveBeenCalledOnce();
       expect(mockInitBackgroundAccelerometerSync).toHaveBeenCalledOnce();
       expect(mockInitBackgroundWatchSync).toHaveBeenCalledOnce();
-      expect(mockUseWhoopBleSync).toHaveBeenCalledOnce();
-      expect(mockUseBleHeartRateSync).toHaveBeenCalledOnce();
+      expect(mockUseWhoopBleSync).toHaveBeenCalled();
+      expect(mockUseBleHeartRateSync).toHaveBeenCalled();
       expect(mockStartStartupPhase).toHaveBeenCalledWith("service-bootstrap");
       expect(mockFinishStartupPhase).toHaveBeenCalledWith("service-bootstrap", "ready");
     });
@@ -846,8 +899,8 @@ describe("RootLayout background cleanup", () => {
 
       await waitFor(() => {
         expect(rendered.getByTestId("app-navigation")).toBeTruthy();
-        expect(mockUseWhoopBleSync).toHaveBeenCalledOnce();
-        expect(mockUseBleHeartRateSync).toHaveBeenCalledOnce();
+        expect(mockUseWhoopBleSync).toHaveBeenCalled();
+        expect(mockUseBleHeartRateSync).toHaveBeenCalled();
       });
       expect(onlineManager.isOnline()).toBe(false);
       expect(disableCollectionNotifications).not.toHaveBeenCalled();
