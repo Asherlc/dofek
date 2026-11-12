@@ -4,15 +4,25 @@ const nativeModule = vi.hoisted(() => ({
   configureUpload: vi.fn(),
   flushUploads: vi.fn(),
   disableUploads: vi.fn(),
+  purgeAccountState: vi.fn(),
   addListener: vi.fn(),
   getDataPathStats: vi.fn(),
   getDeviceSummary: vi.fn(),
 }));
-
 vi.unmock("../whoop-ble");
 vi.mock("./src/WhoopBleModule", () => ({ default: nativeModule }));
 
 import { addDeviceStateListener, getDataPathStats, getDeviceSummary } from "./index";
+
+beforeEach(() => {
+  nativeModule.configureUpload.mockReset().mockResolvedValue(undefined);
+  nativeModule.flushUploads.mockReset().mockResolvedValue(undefined);
+  nativeModule.disableUploads.mockReset().mockResolvedValue(undefined);
+  nativeModule.purgeAccountState.mockReset().mockResolvedValue(true);
+  nativeModule.addListener.mockReset();
+  nativeModule.getDataPathStats.mockReset();
+  nativeModule.getDeviceSummary.mockReset();
+});
 
 function makeBufferStreamDiagnostics() {
   return {
@@ -111,12 +121,6 @@ describe("WhoopBle native bridge", () => {
     });
     expect((await getDataPathStats()).buffers.blockedUploadStreams).toEqual(["sensorRecords"]);
   });
-  beforeEach(() => {
-    nativeModule.addListener.mockReset();
-    nativeModule.getDataPathStats.mockReset();
-    nativeModule.getDeviceSummary.mockReset();
-  });
-
   it("preserves validated capture diagnostics and durable queue metadata", async () => {
     const stats = makeDataPathStats();
     nativeModule.getDataPathStats.mockResolvedValue(stats);

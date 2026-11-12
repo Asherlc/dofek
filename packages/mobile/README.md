@@ -550,6 +550,28 @@ server error messages and silent user cancellation. See the
 These diagnostics do not establish the cause of historical Apple failures;
 device sign-in validation remains separate from helper tests and archive validation.
 
+For an Apple sign-in investigation, record the following during the next
+affected-device attempt:
+
+- The login method: native Apple sign-in, browser-based Apple sign-in, or another
+  method. Include the installed signed build number and Expo runtime version.
+- The UTC attempt time, whether Apple's authorization sheet appeared, whether
+  authorization completed, and the displayed error or resulting screen state.
+- The observed failure stage: native authorization, returned credential, server
+  exchange, or session restoration. Correlate existing Sentry/Axiom records with
+  the attempt; retain safe native domain/code and underlying domain/code plus
+  server response status, without copying credentials, tokens, authorization
+  codes, or raw native error payloads.
+
+An unknown authorization error does not establish cancellation or its cause;
+see [Apple's error definition](https://developer.apple.com/documentation/authenticationservices/asauthorizationerror-swift.struct/code/unknown).
+Require an actual end-to-end Apple sign-in result on the affected signed device
+before declaring recovery. Missing error events alone are insufficient, and a
+frozen login screen does not identify which login method failed. Expo documents
+[physical-device testing and separate cancellation handling](https://docs.expo.dev/versions/latest/sdk/apple-authentication/).
+Use the existing [Axiom field/query guidance](../../docs/axiom-observability-runbook.md)
+when correlating an attempt.
+
 Query persistence records allowlisted failure categories/codes and aggregate
 attempted-write counts and UTF-8 byte measurements per persister lifetime.
 Persistence-specific attributes contain no cache keys, user IDs, health values,
@@ -588,6 +610,16 @@ Sentry breadcrumbs omit account IDs, and PostHog resets restore the shared
 runtime properties. These boundaries are covered by the
 [telemetry regressions](./lib/telemetry.test.ts) and
 [transport regressions](./lib/trpc-fetch.test.ts).
+
+Native Sentry starts in the AppDelegate with the cleanup-log callback installed
+by [the Expo plugin](./plugins/with-whoop-cleanup-logging.ts). It removes user
+attributes only from WHOOP disable/cleanup logs after Cocoa enriches them;
+unrelated logs and events keep their account attribution. JavaScript uses
+`autoInitializeNativeSdk: false` to preserve that native configuration in both
+development and release builds. Both layers still initialize with a DSN, as
+required by Sentry's [native initialization options](https://docs.sentry.io/platforms/react-native/configuration/options/#autoinitializenativesdk).
+The callback uses Sentry's supported
+[`beforeSendLog` hook](https://docs.sentry.io/platforms/apple/guides/ios/logs/#beforesendlog).
 
 WHOOP diagnostics connect native capture/queue snapshots, background task state,
 upload batches, HTTP responses, and server broker publication without logging

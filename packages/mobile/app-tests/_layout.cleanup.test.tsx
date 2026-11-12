@@ -380,7 +380,7 @@ describe("RootLayout background cleanup", () => {
         }),
       },
       expect.objectContaining({
-        configureUpload: (await import("../modules/whoop-ble")).configureUpload,
+        configureUpload: (await import("../lib/whoop-upload-session")).configureWhoopUploads,
         flushUploads: (await import("../modules/whoop-ble")).flushUploads,
       }),
     );

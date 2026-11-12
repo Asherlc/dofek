@@ -54,6 +54,7 @@ import { useBleHeartRateSync } from "../lib/useBleHeartRateSync";
 import { useCollectionNotifications } from "../lib/useCollectionNotifications";
 import { useWhoopBleSync } from "../lib/useWhoopBleSync";
 import { getVersionHeaders } from "../lib/version-headers";
+import { configureWhoopUploads } from "../lib/whoop-upload-session";
 import { addBackgroundRefreshListener } from "../modules/background-refresh";
 import {
   confirmSamplesDrain as confirmHeartRateSamplesDrain,
@@ -63,7 +64,6 @@ import {
 import {
   addCaptureErrorListener,
   addConnectionStateListener as addWhoopConnectionStateListener,
-  configureUpload,
   findWhoop,
   flushUploads,
   getDataPathStats as getWhoopDataPathStats,
@@ -96,7 +96,7 @@ SplashScreen.preventAutoHideAsync().catch((error: unknown) => {
  * Must be rendered inside the tRPC provider tree so it can use tRPC query hooks.
  */
 const whoopDeps = {
-  configureUpload,
+  configureUpload: configureWhoopUploads,
   flushUploads,
   addCaptureErrorListener,
   getDataPathStats: getWhoopDataPathStats,

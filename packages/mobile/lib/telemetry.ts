@@ -195,6 +195,7 @@ export function initTelemetry() {
   }
 
   Sentry.init({
+    autoInitializeNativeSdk: false,
     dsn: SENTRY_DSN,
     ...(SENTRY_RELEASE ? { release: SENTRY_RELEASE } : {}),
     ...(SENTRY_DIST ? { dist: SENTRY_DIST } : {}),

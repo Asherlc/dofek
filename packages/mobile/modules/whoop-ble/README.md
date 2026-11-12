@@ -83,13 +83,31 @@ store. The [uploader](ios/WhoopBleBackgroundUploader.swift) removes reserved
 rows only after a valid server acknowledgment; failures retain the rows.
 SQLite provides [atomic commits](https://sqlite.org/isolation.html).
 
-`configureUpload()`, `flushUploads()`, `disableUploads()`, `getDataPathStats()` and `getDeviceSummary()`
-return Promises. They use Expo's stock
+`configureUpload()`, `flushUploads()`, `disableUploads()`, `purgeAccountState()`,
+`getDataPathStats()` and `getDeviceSummary()` return Promises. They share one
+module-owned serial queue through Expo's stock
 [`AsyncFunction`](https://docs.expo.dev/modules/module-api/#asyncfunction)
-to keep queue waits and disk work off the JavaScript thread. Await configuration
+to keep queue waits and disk work off the JavaScript thread and other modules'
+async queue. Erasure runs in the same FIFO and holds its queue item until the
+store mutation succeeds or its failure is fenced. Await configuration
 before starting capture and await disable before completing session cleanup.
 Disable resolves only after the existing native purge and body removal return;
-failures reject. This does not change synchronous sample persistence.
+failures reject and block later configuration until an explicit successful
+disable. Capture starts suspended until configuration succeeds. This does not
+change synchronous sample persistence.
+
+[Session persistence](../../lib/auth-session.ts) can adopt replacement credentials
+after removing the old credentials and persisting an opaque cleanup intent through
+the Dofek app's private [WHOOP upload-session policy](../../lib/whoop-upload-session.ts),
+without waiting for the bulk purge. The SDK's public bridge remains independent of
+app storage policy. Live replacement configuration queues behind native cleanup.
+After an app restart, unfinished cleanup blocks WHOOP configuration while signed-in
+navigation remains available; sign out to perform explicit cleanup before
+configuring again. The intent uses
+[SecureStore](https://docs.expo.dev/versions/latest/sdk/securestore/) and clears
+only for its matching successful cleanup. Account deletion retains its separate
+awaited cleanup lease. Native cleanup and credential failures remain awaited and
+reported; there is no automatic purge retry.
 
 Automatic reconnection keeps the Core Bluetooth connection request pending
 while the strap is unavailable. Service discovery and notification subscription
@@ -138,8 +156,10 @@ For stalled session cleanup, query Sentry's `dofek-mobile` logs with
 `completed` or `failed` with `failedStage`. Inside `uploader_disable`,
 `uploader_queue_wait` records entry before waiting for the uploader's serial queue;
 `uploader_cancel_tasks` records entry after acquiring it, before requesting transfer
-cancellation and reading reserved identities. `uploader_store_purge` precedes the
-SQLite purge, and `uploader_remove_bodies` precedes file cleanup. Within the store,
+cancellation and reading reserved identities. When a device erasure cutoff is
+retained, `uploader_advance_erasure_cutoff` marks its transactional SQLite update
+after cancellation and before `uploader_store_purge`. `uploader_remove_bodies`
+precedes file cleanup. Within the store,
 `store_lock_wait` precedes the mutex wait, `store_begin` follows lock acquisition
 before `BEGIN IMMEDIATE`, and `store_reset_stats`, `store_delete_samples`,
 `store_delete_batches`, `store_clear_binding` and `store_rotate_generation`
@@ -159,6 +179,14 @@ an asynchronously requested transfer cancellation has finished. These use
 the installed SDK's [native structured logger](https://docs.sentry.io/platforms/apple/guides/ios/logs/),
 independent of JavaScript log-export timers. Attributes contain no credentials
 or sample payloads. Native changes require a new iOS build.
+
+During native Sentry initialization, call
+`WhoopBleModule.configureCleanupLogAttribution(options)` from
+[`RNSentrySDK.start(configureOptions:)`](https://github.com/getsentry/sentry-react-native/blob/8.29.0/packages/core/ios/RNSentrySDK.h).
+It uses the supported [log callback](https://docs.sentry.io/platforms/apple/guides/ios/logs/#beforesendlog)
+to remove `user.id`, `user.name` and `user.email` from `disableUploads` logs,
+while preserving the previous callback and attribution of unrelated logs.
+Cleanup stages remain correlated by their operation ID across account changes.
 
 The [native uploader](ios/WhoopBleBackgroundUploader.swift) uses independent
 500-sample batches for IMU and realtime streams. Sensor-record batches contain

@@ -57,6 +57,33 @@ final class WhoopBleBackgroundUploaderTests: XCTestCase {
 }
 
 extension WhoopBleBackgroundUploaderTests {
+    func testDisableAdvancesAndPersistsCutoffBeforeStorePurge() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try FileManager.default.removeItem(at: directory) }
+        let store = try WhoopBleSampleStore(directory: directory)
+        let uploader = try WhoopBleBackgroundUploader(
+            store: store, directory: directory.appendingPathComponent("bodies"),
+            transport: TestWhoopUploadTransport(), reportError: { _ in }
+        )
+        let cutoff = Date(timeIntervalSince1970: 1_800_000_000)
+        let stages = CleanupStageRecorder()
+
+        try uploader.disable(cutoff: cutoff) { stages.append($0) }
+        try assertUploaderCutoffStageOrder(stages.snapshot)
+        try store.configure(WhoopUploadBinding(userId: "alice", serverURL: "https://example.com"))
+        try store.append(deviceId: "a", samplesByStream: [.realtime: uploaderCutoffBoundaryRows(cutoff)])
+        XCTAssertEqual(try store.statistics(stream: .realtime)["receivedCount"] as? Int, 3)
+        XCTAssertEqual(try store.statistics(stream: .realtime)["erasureDiscardedCount"] as? Int, 2)
+        XCTAssertEqual(try store.queuedCount(stream: .realtime), 1)
+
+        let reopened = try WhoopBleSampleStore(directory: directory)
+        try reopened.append(deviceId: "a", samplesByStream: [.realtime: [uploaderCutoffBoundaryRows(cutoff)[1]]])
+        XCTAssertEqual(try reopened.statistics(stream: .realtime)["erasureDiscardedCount"] as? Int, 3)
+        XCTAssertEqual(try reopened.queuedCount(stream: .realtime), 1)
+    }
+}
+
+extension WhoopBleBackgroundUploaderTests {
     func testSensorUploadUsesOwnRouteAndAcknowledgesWhileRealtimeFails() throws {
         let (uploader, store, transport) = try setup()
         try uploader.append(deviceId: "a", samplesByStream: [.realtime: rows])
@@ -79,23 +106,6 @@ extension WhoopBleBackgroundUploaderTests {
         try settle(uploader)
         XCTAssertEqual(try store.queuedCount(stream: .sensorRecords), 0)
         XCTAssertEqual(try store.queuedCount(stream: .realtime), 1)
-    }
-    private func setup(
-        reportError: @escaping (Error) -> Void = { _ in },
-        now: @escaping () -> Date = Date.init
-    ) throws -> (WhoopBleBackgroundUploader, WhoopBleSampleStore, TestWhoopUploadTransport) {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        addTeardownBlock { try FileManager.default.removeItem(at: directory) }
-        let store = try WhoopBleSampleStore(directory: directory)
-        let transport = TestWhoopUploadTransport()
-        let uploader = try WhoopBleBackgroundUploader(
-            store: store, directory: directory.appendingPathComponent("bodies"), transport: transport, reportError: reportError, now: now)
-        try uploader.configure(userId: "alice", serverURL: "https://example.com", token: "secret", headers: [:])
-        return (uploader, store, transport)
-    }
-    private func settle(_ uploader: WhoopBleBackgroundUploader) throws {
-        // Reconciliation and delegate work return to the serial queue.
-        for _ in 0..<4 { _ = try uploader.diagnostics() }
     }
     func testCaptureCoalescesAndValidZeroAcknowledgesOnlyReservedRows() throws {
         let (uploader, store, transport) = try setup()

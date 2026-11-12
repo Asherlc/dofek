@@ -260,6 +260,7 @@ describe("ios telemetry", () => {
 
     expect(mocks.mockInit).toHaveBeenCalledTimes(1);
     expect(mocks.mockInit).toHaveBeenCalledWith({
+      autoInitializeNativeSdk: false,
       dsn: "https://key@sentry.example/789",
       debug: true,
       tracesSampler: expect.any(Function),
