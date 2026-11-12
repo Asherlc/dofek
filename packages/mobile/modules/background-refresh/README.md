@@ -61,6 +61,71 @@ subscription.remove();
   completes it unsuccessfully. Remove the returned subscription during
   teardown.
 
+## Apple Health continued processing
+
+The same native module owns one user-started Apple Health sync lifetime on iOS
+26 and later. It uses
+[`BGContinuedProcessingTask`](https://developer.apple.com/documentation/backgroundtasks/bgcontinuedprocessingtask),
+which starts in the foreground in response to a person's Sync/Resume tap and can
+continue while the app is backgrounded. The periodic accelerometer refresh task
+is independent and keeps its own identifier.
+
+```ts
+import {
+  addHealthKitSyncExpirationListener,
+  completeHealthKitSync,
+  startHealthKitSync,
+  updateHealthKitSyncProgress,
+} from "./modules/background-refresh";
+
+const expiration = addHealthKitSyncExpirationListener(({ taskId }) => {
+  // pause and wait for an explicit Resume tap; do not restart automatically
+});
+const { supported } = await startHealthKitSync(taskId);
+if (supported) {
+  updateHealthKitSyncProgress(taskId, completedStages, totalStages, "Uploading workouts");
+  completeHealthKitSync(taskId, true);
+}
+expiration.remove();
+```
+
+- `startHealthKitSync(taskId)`: Promise. It resolves `{ supported: true }` only
+  after the native launch handler grants the task, and `{ supported: false }` on
+  iOS versions without continued processing (nothing is submitted). Invalid task
+  IDs, registration failures, submission failures, and abandoned starts reject
+  with a specific message. Submission uses the `.fail` strategy so a second job
+  is never queued behind work JavaScript already began.
+- Each request submits the exact identifier
+  `com.dofek.app.healthkit-sync.<taskId>`, covered by the permitted wildcard
+  `com.dofek.app.healthkit-sync.*`. The exact identifier is registered once in
+  the foreground immediately before submission. Apple exempts
+  `BGContinuedProcessingTask` registrations from the launch-time registration
+  rule and warns that a second registration of the same identifier kills the
+  app, so retries reuse the recorded registration. Apple documents the wildcard
+  identifier form in the
+  [`BGContinuedProcessingTaskRequest` initializer](https://developer.apple.com/documentation/backgroundtasks/bgcontinuedprocessingtaskrequest/init(identifier:title:subtitle:))
+  and registration in
+  [`BGTaskScheduler.register(forTaskWithIdentifier:using:launchHandler:)`](https://developer.apple.com/documentation/backgroundtasks/bgtaskscheduler/register(fortaskwithidentifier:using:launchhandler:)).
+- `updateHealthKitSyncProgress(taskId, completed, total, message)`: reports
+  completed semantic stages to the system `Progress` and uses `message` as the
+  Live Activity subtitle. Values are clamped, and updates for a different or
+  already-completed task are ignored.
+- `completeHealthKitSync(taskId, success)`: completes the native task at most
+  once. Duplicate and late completions are ignored.
+- `addHealthKitSyncExpirationListener(callback)`: subscribes to
+  `onHealthKitSyncExpired` with the correlated `taskId`. Apple invokes the same
+  expiration callback for system expiration and a person's cancellation, so the
+  app pauses and requires an explicit Resume tap instead of restarting work.
+  Removing the subscription tears down native ownership: a pending start rejects
+  and an active task completes unsuccessfully once. Callback errors go to the
+  mobile Sentry path.
+
+[`HealthKitSyncTaskCoordinator`](ios/HealthKitSyncTaskCoordinator.swift) owns the
+Foundation-testable state machine; the thin
+[`HealthKitContinuedProcessingAdapter`](ios/HealthKitContinuedProcessingAdapter.swift)
+wraps the iOS 26 scheduler and task. A late launch for an abandoned request
+completes its own task unsuccessfully and cannot touch a newer request.
+
 ## Native refresh diagnostics
 
 [`BackgroundRefreshDiagnostics`](ios/BackgroundRefreshDiagnostics.swift) retains
@@ -206,6 +271,10 @@ The task identifier must remain listed in
 `BGTaskSchedulerPermittedIdentifiers`, and `UIBackgroundModes` must include
 `fetch`. These are requirements for `BGAppRefreshTask`; see Apple's
 [background-task setup guide](https://developer.apple.com/documentation/uikit/using-background-tasks-to-update-your-app).
+The Apple Health continued-processing
+[wildcard pattern](https://developer.apple.com/documentation/backgroundtasks/bgcontinuedprocessingtaskrequest/init(identifier:title:subtitle:))
+`com.dofek.app.healthkit-sync.*` is listed alongside the periodic refresh
+identifier. Each submitted request appends its task ID to that pattern.
 
 [`expo-module.config.json`](./expo-module.config.json) registers both the module
 and its app-delegate subscriber. Expo documents this lifecycle hook in
@@ -223,7 +292,7 @@ swift test --package-path packages/mobile/modules/background-refresh
 pnpm --filter dofek-mobile typecheck
 ```
 
-The TypeScript tests cover promise-to-native completion, receipt/settlement diagnostics, replay validation/deduplication, and cleanup ownership. `Package.swift`
-excludes the Expo-bound files and scheduler adapter and tests the background-task coordinator, native
+The TypeScript tests cover promise-to-native completion, receipt/settlement diagnostics, replay validation/deduplication, cleanup ownership, and Apple Health start/progress/completion/expiration correlation. `Package.swift`
+excludes the Expo-bound files and scheduler/continued-processing adapters and tests the background-task coordinator, Apple Health task coordinator, native
 activity query, and complete notification service. Validate the Apple delivery adapter and full native bridge with an
 iOS app build.

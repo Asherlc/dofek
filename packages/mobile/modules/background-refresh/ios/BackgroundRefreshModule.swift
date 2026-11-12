@@ -13,6 +13,10 @@ public class BackgroundRefreshModule: Module {
     static let taskCoordinatorDiagnostics = BackgroundRefreshDiagnostics.shared
     static let taskCoordinator = BackgroundRefreshTaskCoordinator(diagnostics: taskCoordinatorDiagnostics)
     static let taskIdKey = "taskId"
+    static let healthKitSyncTaskCoordinator = HealthKitSyncTaskCoordinator(
+        scheduler: HealthKitContinuedProcessingSchedulerFactory.make()
+    )
+    static let healthKitSyncTaskIdKey = "taskId"
 
     /// NotificationCenter name used by the app delegate subscriber to
     /// relay background refresh events to this module instance.
@@ -23,7 +27,7 @@ public class BackgroundRefreshModule: Module {
     public func definition() -> ModuleDefinition {
         Name("BackgroundRefresh")
 
-        Events("onBackgroundRefresh")
+        Events("onBackgroundRefresh", "onHealthKitSyncExpired")
 
         AsyncFunction("enableCollectionNotifications") { (requestPermission: Bool, promise: Promise) in
             DispatchQueue.main.async {
@@ -63,6 +67,47 @@ public class BackgroundRefreshModule: Module {
         }
         Function("completeRefresh") { (taskId: String, success: Bool) in
             Self.taskCoordinator.completeTask(id: taskId, success: success)
+        }
+
+        AsyncFunction("startHealthKitSync") { (taskId: String, promise: Promise) in
+            // Continued-processing requests are submitted from the foreground.
+            DispatchQueue.main.async {
+                Self.healthKitSyncTaskCoordinator.start(taskId: taskId) { result in
+                    switch result {
+                    case .success(.launched):
+                        promise.resolve(["supported": true])
+                    case .success(.unsupported):
+                        promise.resolve(["supported": false])
+                    case .failure(let error):
+                        promise.reject("HEALTHKIT_SYNC_TASK_FAILED", error.localizedDescription)
+                    }
+                }
+            }
+        }
+
+        Function("updateHealthKitSyncProgress") {
+            (taskId: String, completed: Int, total: Int, message: String) in
+            Self.healthKitSyncTaskCoordinator.updateProgress(
+                taskId: taskId,
+                completed: completed,
+                total: total,
+                message: message
+            )
+        }
+
+        Function("completeHealthKitSync") { (taskId: String, success: Bool) in
+            Self.healthKitSyncTaskCoordinator.complete(taskId: taskId, success: success)
+        }
+
+        OnStartObserving("onHealthKitSyncExpired") {
+            Self.healthKitSyncTaskCoordinator.setExpirationCallback { [weak self] taskId in
+                self?.sendEvent("onHealthKitSyncExpired", [Self.healthKitSyncTaskIdKey: taskId])
+            }
+        }
+
+        OnStopObserving("onHealthKitSyncExpired") {
+            Self.healthKitSyncTaskCoordinator.setExpirationCallback(nil)
+            Self.healthKitSyncTaskCoordinator.teardown()
         }
     }
 

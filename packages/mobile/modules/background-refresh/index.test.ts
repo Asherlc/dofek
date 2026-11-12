@@ -8,6 +8,9 @@ const nativeModule = vi.hoisted(() => ({
   clearDiagnostics: vi.fn(),
   isAvailable: vi.fn(),
   scheduleRefresh: vi.fn(),
+  startHealthKitSync: vi.fn(),
+  updateHealthKitSyncProgress: vi.fn(),
+  completeHealthKitSync: vi.fn(),
 }));
 
 vi.mock("expo", () => ({
@@ -23,7 +26,15 @@ vi.mock("../../lib/telemetry", () => ({
 vi.unmock("./index");
 
 import { captureException, captureTelemetrySessionGuard } from "../../lib/telemetry";
-import { addBackgroundRefreshListener, clearDiagnostics, getDiagnostics } from "./index";
+import {
+  addBackgroundRefreshListener,
+  addHealthKitSyncExpirationListener,
+  clearDiagnostics,
+  completeHealthKitSync,
+  getDiagnostics,
+  startHealthKitSync,
+  updateHealthKitSyncProgress,
+} from "./index";
 
 type BackgroundRefreshEvent = {
   taskId: string;
@@ -156,5 +167,98 @@ describe("addBackgroundRefreshListener", () => {
     const result = addBackgroundRefreshListener(() => Promise.resolve(), vi.fn());
 
     expect(result).toBe(subscription);
+  });
+});
+
+describe("HealthKit sync continued-processing bridge", () => {
+  const subscription = { remove: vi.fn() };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("forwards the exact task ID and returns the native support result", async () => {
+    nativeModule.startHealthKitSync.mockResolvedValue({ supported: true });
+
+    await expect(startHealthKitSync("sync-1")).resolves.toEqual({ supported: true });
+
+    expect(nativeModule.startHealthKitSync).toHaveBeenCalledWith("sync-1");
+  });
+
+  it("forwards progress and completion with the same request correlation", () => {
+    updateHealthKitSyncProgress("sync-1", 2, 5, "Uploading workouts");
+    completeHealthKitSync("sync-1", true);
+
+    expect(nativeModule.updateHealthKitSyncProgress).toHaveBeenCalledWith(
+      "sync-1",
+      2,
+      5,
+      "Uploading workouts",
+    );
+    expect(nativeModule.completeHealthKitSync).toHaveBeenCalledWith("sync-1", true);
+  });
+
+  it("delivers expiration events with their correlated task ID", () => {
+    const callback = vi.fn();
+    nativeModule.addListener.mockImplementation((_eventName, listener) => {
+      listener({ taskId: "sync-1" });
+      return subscription;
+    });
+
+    addHealthKitSyncExpirationListener(callback);
+
+    expect(nativeModule.addListener).toHaveBeenCalledWith(
+      "onHealthKitSyncExpired",
+      expect.any(Function),
+    );
+    expect(callback).toHaveBeenCalledWith({ taskId: "sync-1" });
+  });
+
+  it("returns the native expiration subscription so callers can unsubscribe", () => {
+    nativeModule.addListener.mockReturnValue(subscription);
+
+    const result = addHealthKitSyncExpirationListener(vi.fn());
+    result.remove();
+
+    expect(result).toBe(subscription);
+    expect(subscription.remove).toHaveBeenCalledOnce();
+  });
+
+  it("reports expiration callback failures without dropping the native subscription", () => {
+    const failure = new Error("listener failed");
+    nativeModule.addListener.mockImplementation((_eventName, listener) => {
+      listener({ taskId: "sync-1" });
+      return subscription;
+    });
+
+    const result = addHealthKitSyncExpirationListener(() => {
+      throw failure;
+    });
+
+    expect(result).toBe(subscription);
+    expect(captureException).toHaveBeenCalledWith(failure, {
+      source: "health-kit-sync-expiration",
+      taskId: "sync-1",
+    });
+  });
+
+  it("marks retired-lifetime expiration errors without borrowing a later account", () => {
+    let currentSession = true;
+    vi.mocked(captureTelemetrySessionGuard).mockReturnValueOnce(() => currentSession);
+    nativeModule.addListener.mockImplementation((_eventName, listener) => {
+      currentSession = false;
+      listener({ taskId: "retired-sync" });
+      return subscription;
+    });
+
+    addHealthKitSyncExpirationListener(() => {
+      throw new Error("late listener failure");
+    });
+
+    expect(captureException).toHaveBeenCalledWith(expect.any(Error), {
+      source: "health-kit-sync-expiration",
+      taskId: "retired-sync",
+      retiredLifetime: true,
+    });
   });
 });
