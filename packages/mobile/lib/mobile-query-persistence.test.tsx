@@ -735,11 +735,11 @@ describe("mobile query persistence", () => {
     });
   });
 
-  it("classifies array-shaped bulk deletion errors and rethrows the original array", async () => {
+  it("classifies bulk deletion errors and rethrows the original error", async () => {
     const AsyncStorage = (await import("@react-native-async-storage/async-storage")).default;
     await AsyncStorage.setItem("dofek-query-cache:private-account", "private-data");
-    const original = [new Error("Failed to write manifest file.")];
-    vi.mocked(AsyncStorage.multiRemove).mockRejectedValueOnce(original);
+    const original = new Error("Failed to write manifest file.");
+    vi.mocked(AsyncStorage.removeMany).mockRejectedValueOnce(original);
     await expect(removeAllMobileQueryCaches()).rejects.toBe(original);
     expect(mockCaptureException).toHaveBeenCalledExactlyOnceWith(expect.any(Error), {
       source: "mobile-query-cache-clear-all",

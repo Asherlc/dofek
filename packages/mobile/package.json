@@ -6,6 +6,7 @@
   "expo": {
     "install": {
       "exclude": [
+        "@react-native-async-storage/async-storage",
         "@sentry/react-native",
         "typescript"
       ]
@@ -56,7 +57,7 @@
     "@opentelemetry/resources": "3.1.1",
     "@opentelemetry/sdk-logs": "3.1.1",
     "@opentelemetry/semantic-conventions": "1.45.0",
-    "@react-native-async-storage/async-storage": "2.2.0",
+    "@react-native-async-storage/async-storage": "3.1.1",
     "@react-native-community/datetimepicker": "9.2.1",
     "@react-native-community/slider": "5.2.1",
     "@sentry/cli": "3.7.0",
