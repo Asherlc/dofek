@@ -1,8 +1,12 @@
 # Deploy-owned Kafka topic policy
 
-**Offline infrastructure candidate; not deployed.** The quarantine startup fix
-merged in [#3237](https://github.com/Asherlc/dofek/pull/3237). This follow-up moves
-policy reconciliation into the existing deployment workflow. It replaces the
+The quarantine startup fix merged in
+[#3237](https://github.com/Asherlc/dofek/pull/3237). The production broker
+audit on November 12 observed tiered storage enabled on all six metric-stream
+topics and successful copy/delete activity in its bounded log sample. The
+selected local-retention policy below is pending deployment; the audit observed
+local settings `-2`, which inherit total retention. This document describes the
+canonical policy reconciliation in the existing deployment workflow. It replaces the
 [earlier manual correction proposal](https://github.com/Asherlc/dofek/blob/d4e7a34e49f4e91f57a7b76dbb2735a944b4e224/deploy/kafka/quarantine-config-correction.md);
 no SSH-only repair is required by the intended release path.
 
@@ -15,16 +19,21 @@ three existing source topics and their three quarantine topics:
 | --- | --- | --- |
 | cleanup.policy | delete | delete |
 | retention.ms | 604800000 (seven days) | 604800000 (seven days) |
-| retention.bytes | 4294967296 (4 GiB) | 1073741824 (1 GiB) |
+| retention.bytes | -1 (no byte cap) | 1073741824 (1 GiB) |
+| local.retention.bytes | 1073741824 (1 GiB; pending) | 268435456 (256 MiB; pending) |
+| local.retention.ms | 86400000 (one day; pending) | 86400000 (one day; pending) |
+| segment.ms | 3600000 (one hour; pending) | 3600000 (one hour; pending) |
 | segment.bytes | 134217728 (128 MiB) | 134217728 (128 MiB) |
 | remote.storage.enable | true | true |
 
-The tiered layer changes only `remote.storage.enable` to true, coherently with
-the broker configuration. Other values preserve the selected phase-1 policy.
-See the [phase-2 release packet](tiered-cutover-packet.md). Byte
-limits remain retention targets rather than hard disk caps, and seven days is
-a time ceiling rather than a guaranteed replay window under the byte limits. See
-[Kafka topic configuration](https://kafka.apache.org/44/configuration/topic-configs/).
+The table shows the selected policy in [`topic-policy.json`](topic-policy.json),
+not a claim that its new explicit local limits are live. The audit observed
+`local.retention.bytes=-2` and `local.retention.ms=-2`; total limits were source
+4 GiB and quarantine 1 GiB. The [tiered-storage audit](retention-policy.md)
+records this observation and qualification. Kafka tiering uses separate local
+and total retention controls; byte limits are retention targets rather than
+hard disk caps. See [Kafka tiered storage](https://kafka.apache.org/44/operations/tiered-storage/)
+and [topic configuration](https://kafka.apache.org/44/configuration/topic-configs/).
 The application separately enforces its existing exact quarantine safety
 requirements; it does not rewrite operator settings during startup.
 
@@ -60,10 +69,10 @@ The JSON policy is the single deployment input for mutation and verification.
 There is no new operator CLI, service, credential, Infisical key or persistent
 tracking store. The generated six-topic input is temporary runner data.
 
-The tiered-storage layer consumes this same workflow and policy definition.
-Do not reapply the historical phase-1 remote=false policy after activation.
-The [tiered-backend and erasure-verifier gates](tiered-cutover-packet.md) remain
-prerequisites for the separately approved phase-2 release.
+The active tiered-storage deployment uses this same workflow and policy
+definition. Do not reapply the historical phase-1 remote=false policy. The
+[tiered-backend and erasure-verifier](tiered-cutover-packet.md) safeguards and
+the canonical release workflow remain required.
 
 ## Qualification and limits
 
@@ -93,11 +102,11 @@ prerequisites for the separately approved phase-2 release.
 
 ## Concrete release proposal
 
-After this infrastructure follow-up is reviewed, merged and green, qualify the
-image built from that exact new main revision. Do not deploy the earlier d4e
-image using a newer checkout: the stock resolver requires matching source and
-immutable image identity. Use the existing normal web-release dispatcher and
-leave the manually disabled automatic-workflow setting unchanged.
+Before applying the selected new local limits, review the exact source/image
+through the existing normal web-release workflow. Do not deploy an image built
+from a different source revision: the stock resolver requires matching source
+and immutable image identity. Historical release receipts describe earlier
+state and do not attest to these pending limits.
 
 Before production approval, inspect fresh topic identity/config, service and
 reserve metadata against the selected policy and review the actual delta. The
@@ -106,7 +115,6 @@ no separate manual topic-update step. Keep the existing 20 GiB reserve,
 stop/preserve/forward recovery boundary, original Redpanda/aborted Kafka data,
 retained-RP erasure-completion hold and independent archive/backup checks.
 
-This source change does not authorize deployment, topic writes, OCI apply,
-credential edits, tiering activation, offset resets or old-data retirement.
-The normal shared-app/Cloudflare release remains a separately approved
-production operation. No new Terraform resources or applies are introduced.
+This documentation does not authorize deployment, topic writes, OCI apply,
+credential edits, offset resets or old-data retirement. No new Terraform
+resources or applies are introduced.

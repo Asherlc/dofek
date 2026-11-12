@@ -638,6 +638,40 @@ jobs:
           pnpm tsx scripts/prepare-migration-deployment.ts \
             "$APP_IMAGE" "$STACK_NAME" "$PRE_MIGRATION_APP_IMAGE"
 
+      - name: Install Kafka JMX exporter
+        env:
+          APP_IMAGE: ${{ steps.pull_images.outputs.image_ref }}
+        run: |
+          set -euo pipefail
+          exporter_version="1.7.0"
+          exporter_sha256="0ad843261c567d1924a017d542e14c40f2afff523d940c25ee000742fde4b3a9"
+          exporter_name="jmx_prometheus_javaagent-${exporter_version}.jar"
+          exporter_path="$RUNNER_TEMP/$exporter_name"
+          exporter_url="https://github.com/prometheus/jmx_exporter/releases/download/${exporter_version}/${exporter_name}"
+
+          curl --fail --location --silent --show-error "$exporter_url" --output "$exporter_path"
+          printf '%s  %s\n' "$exporter_sha256" "$exporter_path" | sha256sum --check --strict -
+
+          docker run --rm -i \
+            --user 0:0 \
+            --mount type=bind,source=/mnt/dofek-data/kafka/plugins,target=/plugins \
+            --entrypoint sh \
+            "$APP_IMAGE" \
+            -euc '
+              install_path="/plugins/jmx/1.7.0/jmx_prometheus_javaagent-1.7.0.jar"
+              temporary_path="${install_path}.tmp.$$"
+              expected_sha="0ad843261c567d1924a017d542e14c40f2afff523d940c25ee000742fde4b3a9"
+              mkdir -p "${install_path%/*}"
+              trap "rm -f \"$temporary_path\"" EXIT
+              cat > "$temporary_path"
+              chmod 0444 "$temporary_path"
+              printf "%s  %s\n" "$expected_sha" "$temporary_path" | sha256sum -c -
+              mv -f "$temporary_path" "$install_path"
+              printf "%s  %s\n" "$expected_sha" "$install_path" | sha256sum -c -
+              test "$(stat -c "%a" "$install_path")" = 444
+            ' < "$exporter_path"
+          rm -f "$exporter_path"
+
       - name: Apply dependency stack before migrations
         env:
           APP_IMAGE: ${{ steps.pull_images.outputs.pre_migration_image_ref }}
@@ -1246,7 +1280,7 @@ jobs:
           import { readFileSync, writeFileSync } from 'node:fs';
           import { parseEnv } from 'node:util';
           const policy = JSON.parse(readFileSync('deploy/kafka/topic-policy.json', 'utf8'));
-          const required = ['cleanup.policy', 'retention.ms', 'retention.bytes', 'segment.bytes', 'remote.storage.enable'];
+          const required = ['cleanup.policy', 'retention.ms', 'retention.bytes', 'local.retention.bytes', 'local.retention.ms', 'segment.ms', 'segment.bytes', 'remote.storage.enable'];
           for (const role of ['source', 'quarantine']) {
             for (const key of required) {
               if (typeof policy[role]?.[key] !== 'string' || !policy[role][key]) {

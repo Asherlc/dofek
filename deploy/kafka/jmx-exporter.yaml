@@ -1,0 +1,13 @@
+openTelemetry:
+  endpoint: "http://collector:4317"
+  protocol: "grpc"
+  interval: 60
+  serviceName: "dofek-kafka"
+includeObjectNames:
+  - "kafka.server:type=BrokerTopicMetrics,name=Remote*,*"
+  - "kafka.server:type=BrokerTopicMetrics,name=BytesInPerSec,*"
+  - "kafka.log:type=Log,name=Size,*"
+lowercaseOutputName: true
+lowercaseOutputLabelNames: true
+rules:
+  - pattern: ".*"
