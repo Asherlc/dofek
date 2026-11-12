@@ -3,6 +3,7 @@ import { garminActivitySourceTree } from "../../app-fixtures/activity-source-tre
 import type { ActivityDetailHeader } from "./ActivityDetailHeader";
 
 export const detailHeaderActivity: ComponentProps<typeof ActivityDetailHeader>["activity"] = {
+  id: "00000000-0000-4000-8000-000000000201",
   name: "Morning Ride",
   activityType: "cycling",
   primaryActivityType: null,

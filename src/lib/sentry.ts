@@ -1,5 +1,6 @@
 import * as Sentry from "@sentry/node";
 import { initProductionPostHog } from "./posthog.ts";
+import { sentryDataCollection } from "./sentry-options.ts";
 import {
   redactTelemetryAttributes,
   redactTelemetryQuery,
@@ -44,8 +45,8 @@ function isExpectedAccountErasureFence(error: unknown): boolean {
 }
 
 function redactSentrySpan(span: SentrySpan): SentrySpan {
-  redactTelemetryAttributes(span.data);
-  if (span.description) span.description = redactTelemetryUrl(span.description);
+  redactTelemetryAttributes(span.attributes);
+  span.name = redactTelemetryUrl(span.name);
   return span;
 }
 
@@ -64,7 +65,10 @@ function redactSentryEvent<T extends Sentry.Event>(event: T): T {
   }
   if (event.transaction) event.transaction = redactTelemetryUrl(event.transaction);
   redactTelemetryAttributes(event.contexts?.trace?.data);
-  for (const span of event.spans ?? []) redactSentrySpan(span);
+  for (const span of event.spans ?? []) {
+    redactTelemetryAttributes(span.data);
+    if (span.description) span.description = redactTelemetryUrl(span.description);
+  }
   for (const breadcrumb of event.breadcrumbs ?? []) redactTelemetryAttributes(breadcrumb.data);
   return event;
 }
@@ -84,7 +88,8 @@ export function initProductionSentry(dsn: string | undefined): void {
     dsn,
     environment: SENTRY_ENVIRONMENT,
     release: process.env.SENTRY_RELEASE,
-    skipOpenTelemetrySetup: true,
+    enableOpenTelemetrySetup: false,
+    dataCollection: sentryDataCollection,
   });
   initialized = true;
 }

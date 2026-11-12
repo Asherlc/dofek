@@ -19,6 +19,7 @@ export function ActivityDetailHeader({
   photos?: Omit<ComponentProps<typeof ActivityImages>, "heading">;
   activity: Pick<
     ActivityDetail,
+    | "id"
     | "name"
     | "activityType"
     | "primaryActivityType"
@@ -101,7 +102,7 @@ export function ActivityDetailHeader({
           <Text style={styles.providerAbsentExplanation}>{activity.fitRecoveryWarning}</Text>
         </View>
       ) : null}
-      {activity.providerAbsentAt && <ProviderAbsentBanner activity={activity} />}
+      <ProviderAbsentBanner key={`restore-${activity.id}`} activity={activity} />
     </View>
   );
 }

@@ -12,7 +12,7 @@ export function __resetSentryInitialized() {
 
 /**
  * Initialize Sentry error capture for the server.
- * Uses `skipOpenTelemetrySetup` to avoid conflicting with the existing
+ * Disables Sentry's OpenTelemetry setup to avoid conflicting with the existing
  * OTel→Axiom pipeline in `src/instrumentation.ts`.
  */
 export function initSentry() {

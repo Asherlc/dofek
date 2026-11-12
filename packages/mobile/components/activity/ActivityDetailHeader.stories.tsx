@@ -10,6 +10,7 @@ import {
 import { activityImageFixture } from "../activity-images-test-helpers";
 import { ActivityDetailHeader } from "./ActivityDetailHeader";
 import { detailHeaderActivity, removedDetailHeaderActivity } from "./ActivityDetailHeader.fixtures";
+import { ActivityDetailStoryProviders } from "./ActivityDetailStoryProviders";
 
 const meta = {
   title: "Pages/ActivityDetail/ActivityDetailHeader",
@@ -77,6 +78,7 @@ export const EmptyTree: Story = {
 };
 export const RemovedSource: Story = {
   args: { activity: removedDetailHeaderActivity },
+  decorators: [(Story) => <ActivityDetailStoryProviders>{Story()}</ActivityDetailStoryProviders>],
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement.ownerDocument.body);
     await userEvent.click(await canvas.findByRole("button", { name: "Lineage: Garmin Edge 530" }));

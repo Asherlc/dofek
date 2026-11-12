@@ -141,7 +141,7 @@ export const climbingRouter = router({
   strengths: cachedProtectedQuery({
     maxAge: CacheTTL.LONG,
     outputSchema: climbingStrengthsSchema,
-    keyVersion: "climbing-strengths-v14",
+    keyVersion: "climbing-strengths-v15",
     shouldCache: (data) => !climbingStrengthsSchema.parse(data).enrichmentPending,
   })
     .input(

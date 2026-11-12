@@ -7,9 +7,6 @@ vi.mock("./db/tokens.ts", () => ({ loadTokens: mocks.tokens }));
 vi.mock("./lib/provider-rate-limit-fetch.ts", () => ({
   createProviderRateLimitFetch: mocks.rateLimit,
 }));
-vi.mock("./providers/thecrag/public-transport.ts", () => ({
-  createTheCragPublicFetch: () => fetch,
-}));
 const seed: CatalogueSeed = {
   userId: "owner",
   logEntryId: "entry",
@@ -46,9 +43,9 @@ describe("catalogue source composition", () => {
       createClimbingCatalogueAdapters("owner", Object.create(null)).map(
         (adapter) => adapter.providerId,
       ),
-    ).toEqual(["kaya", "mountain-project", "thecrag", "openbeta", "eight-a"]);
+    ).toEqual(["kaya", "mountain-project", "openbeta", "eight-a"]);
     expect(mocks.rateLimit.mock.calls).toEqual(
-      ["kaya", "mountain-project", "thecrag", "openbeta", "eight-a"].map((providerId) => [
+      ["kaya", "mountain-project", "openbeta", "eight-a"].map((providerId) => [
         providerId,
         globalThis.fetch,
         { userId: "owner" },

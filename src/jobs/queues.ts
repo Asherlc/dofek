@@ -652,11 +652,11 @@ export async function enqueueActivityRestoreAnalyticsRefresh(
   userId: string,
   activityIds: string[],
   queue: Queue<ActivityAnalyticsJobData> = getActivityDeleteAnalyticsQueue(),
-): Promise<void> {
+): Promise<string | null> {
   const uniqueActivityIds = [...new Set(activityIds)];
-  if (uniqueActivityIds.length === 0) return;
+  if (uniqueActivityIds.length === 0) return null;
 
-  await queue.add(
+  const job = await queue.add(
     ACTIVITY_RESTORE_ANALYTICS_JOB_NAME,
     {
       type: "activity-restore-analytics-refresh",
@@ -664,12 +664,13 @@ export async function enqueueActivityRestoreAnalyticsRefresh(
       activityIds: uniqueActivityIds,
     },
     {
-      removeOnComplete: true,
+      removeOnComplete: { age: 604_800, count: 1_000 },
       removeOnFail: { age: 604_800, count: 100 },
       attempts: 5,
       backoff: { type: "fixed", delay: 30_000 },
     },
   );
+  return job.id ?? null;
 }
 
 export async function enqueueActivityRecomputeAnalyticsRefresh(

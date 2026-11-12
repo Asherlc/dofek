@@ -15,8 +15,10 @@ no missing-record tombstones or synthetic workouts are produced. See the
 [provider guide](../../../docs/thecrag.md) and
 [Postgres integration suite](../thecrag-sync.integration.test.ts).
 
-The separate [catalogue reader](../../../packages/climbing-catalogue/src/thecrag.ts) performs disposable public route
-lookups, including multiple/inherited steepness tags. Its
-[Impit transport](public-transport.ts) is not used for official logbook requests;
-see [Impit documentation](https://apify.github.io/impit/js/) and the
-[catalogue lifecycle](../../../docs/climbing-trait-coverage.md#informational-catalogue-cache).
+The official personal API supports this owner's logbook; it does not document
+general cross-provider catalogue discovery. Dofek no longer reads theCrag public
+pages for catalogue enrichment. The site policy prohibits screen scraping for
+programmatic access, and the general integration guide says API access requires
+a legal agreement. See the [usage policy](https://www.thecrag.com/en/terms),
+[API integration guide](https://www.thecrag.com/en/article/extend), and
+[personal logbook API](https://www.thecrag.com/en/article/logbookreadapi).
