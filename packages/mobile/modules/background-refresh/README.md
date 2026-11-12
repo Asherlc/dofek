@@ -95,17 +95,32 @@ expiration.remove();
   IDs, registration failures, submission failures, and abandoned starts reject
   with a specific message. Submission uses the `.fail` strategy so a second job
   is never queued behind work JavaScript already began.
+- **Caller precondition: pass a fresh native `taskId` for every attempt.** The
+  native `taskId` identifies one bounded continued-processing attempt, not a
+  durable sync checkpoint. Keep the durable checkpoint/`requestId` used for
+  resuming work separate, and generate a new native `taskId` (for example a new
+  UUID) each time a person taps Sync or Resume. The coordinator records each
+  submitted native ID for the process lifetime and rejects a repeat with
+  "was already submitted. Use a fresh task ID for each attempt." Apple's
+  registration rule is the reason the ID is single-use: an identifier may be
+  registered only once per process, and a duplicate
+  `BGTaskScheduler.register` terminates the app (see the wildcard and
+  registration links below).
 - Each request submits the exact identifier
   `com.dofek.app.healthkit-sync.<taskId>`, covered by the permitted wildcard
   `com.dofek.app.healthkit-sync.*`. The exact identifier is registered once in
-  the foreground immediately before submission. Apple exempts
+  the foreground immediately before submission; the recorded registration is
+  only there so the launch handler can be recognized when the system later
+  launches that same request, never to rescue a retried ID. Apple exempts
   `BGContinuedProcessingTask` registrations from the launch-time registration
   rule and warns that a second registration of the same identifier kills the
-  app, so retries reuse the recorded registration. Apple documents the wildcard
-  identifier form in the
-  [`BGContinuedProcessingTaskRequest` initializer](https://developer.apple.com/documentation/backgroundtasks/bgcontinuedprocessingtaskrequest/init(identifier:title:subtitle:))
-  and registration in
-  [`BGTaskScheduler.register(forTaskWithIdentifier:using:launchHandler:)`](https://developer.apple.com/documentation/backgroundtasks/bgtaskscheduler/register(fortaskwithidentifier:using:launchhandler:)).
+  app, so a rejected or expired attempt must resume under a new `taskId`. Apple
+  documents the wildcard identifier form in the
+  [`BGContinuedProcessingTaskRequest` initializer](https://developer.apple.com/documentation/backgroundtasks/bgcontinuedprocessingtaskrequest/init(identifier:title:subtitle:)),
+  registration in
+  [`BGTaskScheduler.register(forTaskWithIdentifier:using:launchHandler:)`](https://developer.apple.com/documentation/backgroundtasks/bgtaskscheduler/register(fortaskwithidentifier:using:launchhandler:)),
+  and the foreground submission constraint in
+  [`BGTaskScheduler.submit(_:)`](https://developer.apple.com/documentation/backgroundtasks/bgtaskscheduler/submit(_:)).
 - `updateHealthKitSyncProgress(taskId, completed, total, message)`: reports
   completed semantic stages to the system `Progress` and uses `message` as the
   Live Activity subtitle. Values are clamped, and updates for a different or
@@ -116,15 +131,26 @@ expiration.remove();
   `onHealthKitSyncExpired` with the correlated `taskId`. Apple invokes the same
   expiration callback for system expiration and a person's cancellation, so the
   app pauses and requires an explicit Resume tap instead of restarting work.
-  Removing the subscription tears down native ownership: a pending start rejects
-  and an active task completes unsuccessfully once. Callback errors go to the
-  mobile Sentry path.
+  The live subscription is also the **expiration-listener owner** of native
+  work: a queued `startHealthKitSync` is correlated to the owner that scheduled
+  it, so removing the subscription (or destroying the native module) rejects
+  that pending start even when a replacement subscription already exists, and
+  submits nothing. An active task owned by a retired listener completes
+  unsuccessfully once. Callback errors go to the mobile Sentry path.
+- Native work requires a live owner. Calling `startHealthKitSync` before the
+  expiration subscription is installed rejects with the listener-unavailable
+  message rather than submitting work nobody can observe.
 
 [`HealthKitSyncTaskCoordinator`](ios/HealthKitSyncTaskCoordinator.swift) owns the
 Foundation-testable state machine; the thin
 [`HealthKitContinuedProcessingAdapter`](ios/HealthKitContinuedProcessingAdapter.swift)
-wraps the iOS 26 scheduler and task. A late launch for an abandoned request
-completes its own task unsuccessfully and cannot touch a newer request.
+wraps the iOS 26 scheduler and task. Grant installation and start settlement are
+serialized against retirement, so a teardown or expiration that wins during
+launch setup rejects the start and leaves no expiration handler on the grant. A
+late launch for an abandoned request completes its own task unsuccessfully and
+cannot touch a newer request. The module's `OnDestroy` hook runs the same
+owner-correlated cleanup as subscription removal, so native pending/active
+ownership cannot outlive the JavaScript module.
 
 ## Native refresh diagnostics
 

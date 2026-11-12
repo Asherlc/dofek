@@ -15,14 +15,34 @@ native configuration, and authoritative platform references.
   `HealthKitSyncTaskCoordinator.swift`. Expiration, JavaScript completion, and
   listener teardown may race, but each stored native completion may run at most
   once. Apple Health work starts only after the native launch handler grants it.
+- Own native Apple Health work through an explicit expiration-listener owner.
+  `OnStartObserving`/`OnStopObserving` activate and retire that owner; `OnDestroy`
+  must run the same owner-correlated cleanup. A start queued to the main queue
+  carries the owner that scheduled it and rejects if that owner is no longer the
+  live listener, even when a replacement listener exists. Grant installation and
+  start settlement are serialized against retirement so a teardown or expiration
+  that wins during launch setup rejects the start and retains no handler. Expo
+  documents the module lifecycle hooks in
+  [Module lifecycle](https://docs.expo.dev/modules/module-api/#lifecycle-events);
+  Apple documents the single expiration callback in
+  [`BGContinuedProcessingTask`](https://developer.apple.com/documentation/backgroundtasks/bgcontinuedprocessingtask).
 - Keep the iOS 26 `BGTaskScheduler`/`BGContinuedProcessingTask` calls in
   `HealthKitContinuedProcessingAdapter.swift`; the coordinator stays
   Foundation-testable so `swift test` can exercise lifecycle races.
 - Keep `com.dofek.accelerometer-refresh` and the Apple Health wildcard
   `com.dofek.app.healthkit-sync.*` synchronized with
   `BGTaskSchedulerPermittedIdentifiers` in `packages/mobile/app.json`. Submit
-  `com.dofek.app.healthkit-sync.<taskId>` with the `.fail` strategy and register
-  each exact identifier once before its foreground submission.
+  `com.dofek.app.healthkit-sync.<taskId>` with the `.fail` strategy.
+- Require a **fresh native `taskId` for every submitted attempt**. Keep the
+  durable sync checkpoint/request ID separate from the native task ID, and
+  reject a repeated native ID. An identifier may be registered only once per
+  process and registering it twice terminates the app, so the coordinator never
+  re-registers a submitted ID; see Apple's
+  [`BGContinuedProcessingTaskRequest` identifier](https://developer.apple.com/documentation/backgroundtasks/bgcontinuedprocessingtaskrequest/init(identifier:title:subtitle:))
+  and
+  [`BGTaskScheduler.register(forTaskWithIdentifier:using:launchHandler:)`](https://developer.apple.com/documentation/backgroundtasks/bgtaskscheduler/register(fortaskwithidentifier:using:launchhandler:)).
+  Submission must happen in the foreground; see
+  [`BGTaskScheduler.submit(_:)`](https://developer.apple.com/documentation/backgroundtasks/bgtaskscheduler/submit(_:)).
 - Do not describe the 15-minute earliest date as a guaranteed refresh
   interval. Apple documents
   [`earliestBeginDate`](https://developer.apple.com/documentation/backgroundtasks/bgtaskrequest/earliestbegindate)
@@ -48,8 +68,11 @@ native configuration, and authoritative platform references.
   behavior.
 - Preserve focused cases for success, rejection, expiration, no listener,
   listener removal, duplicate late completion, launch gating, registration and
-  submission failures, invalid task IDs, and stale launches from abandoned
-  requests.
+  submission failures, invalid task IDs, stale launches from abandoned
+  requests, reused native task IDs, and owner interleavings (teardown or
+  expiration during launch-handler installation, queued start followed by
+  listener retirement and replacement, and old-owner destruction not ending a
+  replacement owner's request).
 - `swift test` does not compile the Expo module or app-delegate subscriber
   because `Package.swift` excludes those files. Use an iOS app build when
   changing the native bridge or registration.

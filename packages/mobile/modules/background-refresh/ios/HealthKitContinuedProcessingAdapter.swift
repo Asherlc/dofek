@@ -94,15 +94,17 @@ private final class HealthKitContinuedProcessingGrantAdapter: HealthKitContinued
     func report(completed: Int, total: Int, subtitle: String) {
         let totalUnits = Int64(max(total, 1))
         let completedUnits = Int64(min(max(completed, 0), max(total, 1)))
-        lock.lock()
-        let shouldReport = !isCompleted
-        lock.unlock()
-        guard shouldReport else { return }
-        DispatchQueue.main.async { [task] in
-            task.progress.totalUnitCount = totalUnits
-            task.progress.completedUnitCount = completedUnits
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            // Re-check terminal state on the queue that mutates the native task.
+            self.lock.lock()
+            let shouldReport = !self.isCompleted
+            self.lock.unlock()
+            guard shouldReport else { return }
+            self.task.progress.totalUnitCount = totalUnits
+            self.task.progress.completedUnitCount = completedUnits
             if !subtitle.isEmpty {
-                task.updateTitle(task.title, subtitle: subtitle)
+                self.task.updateTitle(self.task.title, subtitle: subtitle)
             }
         }
     }

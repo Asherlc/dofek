@@ -185,6 +185,17 @@ describe("HealthKit sync continued-processing bridge", () => {
     expect(nativeModule.startHealthKitSync).toHaveBeenCalledWith("sync-1");
   });
 
+  it("surfaces a specific native start rejection", async () => {
+    const failure = new Error(
+      "Apple Health sync requires an active expiration listener owned by this app session.",
+    );
+    nativeModule.startHealthKitSync.mockRejectedValue(failure);
+
+    await expect(startHealthKitSync("sync-1")).rejects.toThrow(
+      "requires an active expiration listener",
+    );
+  });
+
   it("forwards progress and completion with the same request correlation", () => {
     updateHealthKitSyncProgress("sync-1", 2, 5, "Uploading workouts");
     completeHealthKitSync("sync-1", true);

@@ -18,6 +18,10 @@ public class BackgroundRefreshModule: Module {
     )
     static let healthKitSyncTaskIdKey = "taskId"
 
+    /// Identifies this native module/bridge instance as the owner of any Apple
+    /// Health request it starts. A replacement module gets a new owner ID.
+    private let healthKitSyncOwnerId = UUID()
+
     /// NotificationCenter name used by the app delegate subscriber to
     /// relay background refresh events to this module instance.
     static let backgroundRefreshNotification = Notification.Name("BackgroundRefreshModule.onRefresh")
@@ -70,9 +74,13 @@ public class BackgroundRefreshModule: Module {
         }
 
         AsyncFunction("startHealthKitSync") { (taskId: String, promise: Promise) in
+            // Capture the owner on the caller's thread. If this bridge is retired
+            // before the main-queue block runs, the start must be rejected even if
+            // a replacement listener has appeared.
+            let ownerId = self.healthKitSyncOwnerId
             // Continued-processing requests are submitted from the foreground.
             DispatchQueue.main.async {
-                Self.healthKitSyncTaskCoordinator.start(taskId: taskId) { result in
+                Self.healthKitSyncTaskCoordinator.start(taskId: taskId, ownerId: ownerId) { result in
                     switch result {
                     case .success(.launched):
                         promise.resolve(["supported": true])
@@ -89,6 +97,7 @@ public class BackgroundRefreshModule: Module {
             (taskId: String, completed: Int, total: Int, message: String) in
             Self.healthKitSyncTaskCoordinator.updateProgress(
                 taskId: taskId,
+                ownerId: self.healthKitSyncOwnerId,
                 completed: completed,
                 total: total,
                 message: message
@@ -96,18 +105,26 @@ public class BackgroundRefreshModule: Module {
         }
 
         Function("completeHealthKitSync") { (taskId: String, success: Bool) in
-            Self.healthKitSyncTaskCoordinator.complete(taskId: taskId, success: success)
+            Self.healthKitSyncTaskCoordinator.complete(
+                taskId: taskId,
+                ownerId: self.healthKitSyncOwnerId,
+                success: success
+            )
         }
 
         OnStartObserving("onHealthKitSyncExpired") {
-            Self.healthKitSyncTaskCoordinator.setExpirationCallback { [weak self] taskId in
+            let ownerId = self.healthKitSyncOwnerId
+            Self.healthKitSyncTaskCoordinator.activateOwner(ownerId: ownerId) { [weak self] taskId in
                 self?.sendEvent("onHealthKitSyncExpired", [Self.healthKitSyncTaskIdKey: taskId])
             }
         }
 
         OnStopObserving("onHealthKitSyncExpired") {
-            Self.healthKitSyncTaskCoordinator.setExpirationCallback(nil)
-            Self.healthKitSyncTaskCoordinator.teardown()
+            Self.healthKitSyncTaskCoordinator.deactivateOwner(ownerId: self.healthKitSyncOwnerId)
+        }
+
+        OnDestroy {
+            Self.healthKitSyncTaskCoordinator.destroyOwner(ownerId: self.healthKitSyncOwnerId)
         }
     }
 
