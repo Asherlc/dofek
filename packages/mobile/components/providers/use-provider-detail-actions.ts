@@ -67,6 +67,8 @@ export interface ProviderDetailActionsResult {
   isConnected: boolean;
   primaryActionLabel: "Sync" | "Connect" | "Reconnect";
   isSyncing: boolean;
+  isRequestingPermissions: boolean;
+  permissionMessage: string | null;
   syncMessage: string | null;
   syncProgress: number | null;
   syncDateRange: ProviderSyncDateRange | null;
@@ -74,6 +76,7 @@ export interface ProviderDetailActionsResult {
   shouldShowFullSync: boolean;
   shouldShowAppleHealthPermissionBanner: boolean;
   handlePrimaryAction: () => Promise<void>;
+  handleReviewPermissions: () => Promise<void>;
   handleFullSync: () => Promise<void>;
   modals: ProviderDetailModals;
 }
@@ -100,6 +103,8 @@ export function useProviderDetailActions(
   const syncMutation = trpc.sync.triggerSync.useMutation();
 
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isRequestingPermissions, setIsRequestingPermissions] = useState(false);
+  const [permissionMessage, setPermissionMessage] = useState<string | null>(null);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [syncProgress, setSyncProgress] = useState<number | null>(null);
   const [rangeSinceDate, setRangeSinceDate] = useState(() => {
@@ -203,28 +208,28 @@ export function useProviderDetailActions(
   );
 
   const handleHealthKitConnect = useCallback(async () => {
-    setIsSyncing(true);
-    setSyncProgress(null);
-    setSyncMessage("Requesting permissions...");
+    if (isRequestingPermissions) return;
+    setIsRequestingPermissions(true);
+    setPermissionMessage("Requesting permissions...");
 
     try {
       const result = await appleHealth.connect();
       if (result.state.requestStatus === "unavailable") {
-        setSyncMessage("Apple Health is unavailable on this device");
+        setPermissionMessage("Apple Health is unavailable on this device");
       } else if (!result.granted) {
-        setSyncMessage("Apple Health permissions were not granted");
+        setPermissionMessage("Apple Health permissions were not granted");
       } else {
-        setSyncMessage(result.state.isConnected() ? "Connected" : null);
+        setPermissionMessage(null);
       }
 
       invalidateProviderData();
     } catch (error: unknown) {
       captureException(error, { context: "healthkit-connect" });
-      setSyncMessage(userFacingErrorMessage(error, "Failed to connect to Apple Health"));
+      setPermissionMessage(userFacingErrorMessage(error, "Failed to connect to Apple Health"));
     } finally {
-      setIsSyncing(false);
+      setIsRequestingPermissions(false);
     }
-  }, [appleHealth, invalidateProviderData]);
+  }, [appleHealth, invalidateProviderData, isRequestingPermissions]);
 
   const handleConnect = useCallback(async () => {
     if (!displayProvider || isSyncing) return;
@@ -435,6 +440,8 @@ export function useProviderDetailActions(
           ? "Sync"
           : "Connect",
     isSyncing,
+    isRequestingPermissions,
+    permissionMessage,
     syncMessage,
     syncProgress,
     syncDateRange:
@@ -460,6 +467,7 @@ export function useProviderDetailActions(
     shouldShowAppleHealthPermissionBanner:
       providerId === "apple_health" && appleHealth.model.shouldShowPermissionBanner(),
     handlePrimaryAction,
+    handleReviewPermissions: handleHealthKitConnect,
     handleFullSync,
     modals: {
       credentialAuthProvider,
