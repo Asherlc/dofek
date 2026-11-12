@@ -10,13 +10,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useAppleHealthProviderModel } from "../../lib/apple-health-provider";
 import { createProviderHandoffCode } from "../../lib/auth";
 import { useAuth } from "../../lib/auth-context";
-import {
-  HEALTHKIT_DATABASE_INACCESSIBLE_MESSAGE,
-  isHealthKitDatabaseInaccessible,
-} from "../../lib/health-kit-errors";
+import { useHealthKitManualSync } from "../../lib/health-kit-manual-sync-context";
 import { ManualHealthKitSyncInterruptedError } from "../../lib/health-kit-sync-types";
 import { captureException } from "../../lib/telemetry";
 import { trpc } from "../../lib/trpc";
+import { appleHealthManualSyncPresentation } from "./provider-card";
 
 interface ProviderRecord extends ProviderSyncHistory {
   id: string;
@@ -66,7 +64,7 @@ export interface ProviderDetailActionsResult {
   isLoading: boolean;
   inventoryError: unknown;
   isConnected: boolean;
-  primaryActionLabel: "Sync" | "Connect" | "Reconnect";
+  primaryActionLabel: "Sync" | "Connect" | "Reconnect" | "Resume";
   isSyncing: boolean;
   syncMessage: string | null;
   syncProgress: number | null;
@@ -100,9 +98,12 @@ export function useProviderDetailActions(
   const providers = trpc.sync.providers.useQuery();
   const syncMutation = trpc.sync.triggerSync.useMutation();
 
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [syncMessage, setSyncMessage] = useState<string | null>(null);
-  const [syncProgress, setSyncProgress] = useState<number | null>(null);
+  const [localIsSyncing, setLocalIsSyncing] = useState(false);
+  const [localSyncMessage, setLocalSyncMessage] = useState<string | null>(null);
+  const [localSyncProgress, setLocalSyncProgress] = useState<number | null>(null);
+  const [manualActionError, setManualActionError] = useState<string | null>(null);
+  const { controller: manualSyncController, state: manualSyncState } = useHealthKitManualSync();
+  const manualSyncControllerRef = useRef(manualSyncController);
   const [rangeSinceDate, setRangeSinceDate] = useState(() => {
     const start = new Date();
     start.setDate(start.getDate() - 7);
@@ -132,6 +133,15 @@ export function useProviderDetailActions(
 
   const isConnected = Boolean(displayProvider?.authorized);
   const needsReauth = Boolean(provider?.needsReauth);
+  const isAppleHealth = providerId === "apple_health";
+  const appleHealthPresentation = appleHealthManualSyncPresentation(
+    manualSyncState,
+    manualActionError,
+    localSyncMessage,
+  );
+  const isSyncing = localIsSyncing || (isAppleHealth && appleHealthPresentation.isRunning);
+  const syncMessage = isAppleHealth ? appleHealthPresentation.detailMessage : localSyncMessage;
+  const syncProgress = isAppleHealth ? appleHealthPresentation.percentage : localSyncProgress;
 
   useEffect(() => {
     isMounted.current = true;
@@ -140,6 +150,15 @@ export function useProviderDetailActions(
       pollingRef.current = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (manualSyncControllerRef.current !== manualSyncController) {
+      manualSyncControllerRef.current = manualSyncController;
+      setLocalSyncMessage(null);
+      setLocalSyncProgress(null);
+      setManualActionError(null);
+    }
+  }, [manualSyncController]);
 
   const invalidateProviderData = useCallback(() => {
     trpcUtils.sync.providers.invalidate();
@@ -165,7 +184,9 @@ export function useProviderDetailActions(
         } catch (error: unknown) {
           captureException(error, { context: "provider-sync-poll" });
           if (!isMounted.current) return;
-          setSyncMessage(userFacingErrorMessage(error, "Sync status is temporarily unavailable."));
+          setLocalSyncMessage(
+            userFacingErrorMessage(error, "Sync status is temporarily unavailable."),
+          );
           await new Promise((resolve) => setTimeout(resolve, 1000));
           if (!isMounted.current) return;
           return poll();
@@ -174,20 +195,20 @@ export function useProviderDetailActions(
         if (!isMounted.current) return;
         if (!status) {
           pollingRef.current = false;
-          setIsSyncing(false);
+          setLocalIsSyncing(false);
           return;
         }
 
-        setSyncProgress(status.percentage ?? null);
+        setLocalSyncProgress(status.percentage ?? null);
         const providerStatus = providerId ? status.providers[providerId] : null;
         if (providerStatus?.message) {
-          setSyncMessage(providerStatus.message);
+          setLocalSyncMessage(providerStatus.message);
         }
 
         if (status.status === "completed" || status.status === "failed") {
           pollingRef.current = false;
-          setIsSyncing(false);
-          setSyncMessage(status.status === "completed" ? "Sync complete" : "Sync failed");
+          setLocalIsSyncing(false);
+          setLocalSyncMessage(status.status === "completed" ? "Sync complete" : "Sync failed");
           invalidateProviderData();
           return;
         }
@@ -202,26 +223,26 @@ export function useProviderDetailActions(
   );
 
   const handleHealthKitConnect = useCallback(async () => {
-    setIsSyncing(true);
-    setSyncProgress(null);
-    setSyncMessage("Requesting permissions...");
+    setLocalIsSyncing(true);
+    setLocalSyncProgress(null);
+    setLocalSyncMessage("Requesting permissions...");
 
     try {
       const result = await appleHealth.connect();
       if (result.state.requestStatus === "unavailable") {
-        setSyncMessage("Apple Health is unavailable on this device");
+        setLocalSyncMessage("Apple Health is unavailable on this device");
       } else if (!result.granted) {
-        setSyncMessage("Apple Health permissions were not granted");
+        setLocalSyncMessage("Apple Health permissions were not granted");
       } else {
-        setSyncMessage(result.state.isConnected() ? "Connected" : null);
+        setLocalSyncMessage(result.state.isConnected() ? "Connected" : null);
       }
 
       invalidateProviderData();
     } catch (error: unknown) {
       captureException(error, { context: "healthkit-connect" });
-      setSyncMessage(userFacingErrorMessage(error, "Failed to connect to Apple Health"));
+      setLocalSyncMessage(userFacingErrorMessage(error, "Failed to connect to Apple Health"));
     } finally {
-      setIsSyncing(false);
+      setLocalIsSyncing(false);
     }
   }, [appleHealth, invalidateProviderData]);
 
@@ -249,7 +270,7 @@ export function useProviderDetailActions(
           await trpcUtils.sync.providers.invalidate();
         } catch (error: unknown) {
           captureException(error, { context: "connect-provider-detail" });
-          setSyncMessage(userFacingErrorMessage(error, "Provider connection failed"));
+          setLocalSyncMessage(userFacingErrorMessage(error, "Provider connection failed"));
         }
         break;
       }
@@ -275,7 +296,7 @@ export function useProviderDetailActions(
             context: "connect-provider-detail",
             providerId: displayProvider.id,
           });
-          setSyncMessage(userFacingErrorMessage(error));
+          setLocalSyncMessage(userFacingErrorMessage(error));
         }
         break;
       case "custom:whoop":
@@ -288,20 +309,20 @@ export function useProviderDetailActions(
     async (syncWindow: SyncWindowInput) => {
       if (!providerId || isSyncing) return;
 
-      setIsSyncing(true);
-      setSyncMessage("Starting sync...");
-      setSyncProgress(0);
+      const isAppleHealthSync = providerId === "apple_health";
+      if (!isAppleHealthSync) setLocalIsSyncing(true);
+      setLocalSyncMessage(null);
+      setManualActionError(null);
+      setLocalSyncProgress(isAppleHealthSync ? null : 0);
 
       try {
         if (providerId === "apple_health") {
           const result = await appleHealth.sync({
             syncRangeDays: syncWindow.sinceDays ?? null,
-            onProgress: setSyncMessage,
           });
 
-          setSyncMessage(`Done — ${result.inserted} records synced`);
-          setSyncProgress(null);
-          setIsSyncing(false);
+          setLocalSyncMessage(`Done — ${result.inserted} records synced`);
+          setLocalSyncProgress(null);
           invalidateProviderData();
           return;
         }
@@ -314,9 +335,9 @@ export function useProviderDetailActions(
           (entry) => entry.providerId === providerId,
         );
         if (providerResult?.status === "skippedCooldown" || providerResult?.status === "failed") {
-          setIsSyncing(false);
-          setSyncProgress(null);
-          setSyncMessage(providerResult.message);
+          setLocalIsSyncing(false);
+          setLocalSyncProgress(null);
+          setLocalSyncMessage(providerResult.message);
           return;
         }
         const jobId =
@@ -326,31 +347,60 @@ export function useProviderDetailActions(
         if (!jobId) return;
         await pollSyncJob(jobId);
       } catch (error: unknown) {
-        setIsSyncing(false);
+        if (providerId !== "apple_health") setLocalIsSyncing(false);
         if (error instanceof ManualHealthKitSyncInterruptedError) {
-          setSyncProgress(null);
-          setSyncMessage("Apple Health sync paused");
+          setLocalSyncProgress(null);
           return;
         }
-        if (!isHealthKitDatabaseInaccessible(error)) {
-          captureException(error, {
-            context:
-              providerId === "apple_health" ? "healthkit-manual-sync" : "provider-sync-start",
-          });
-          setSyncMessage("Failed to start sync");
-          return;
+        captureException(error, {
+          context: providerId === "apple_health" ? "healthkit-manual-sync" : "provider-sync-start",
+        });
+        if (providerId === "apple_health" && !manualSyncController) {
+          setManualActionError(userFacingErrorMessage(error, "Apple Health sync failed"));
+        } else if (providerId !== "apple_health") {
+          setLocalSyncMessage(userFacingErrorMessage(error, "Sync failed"));
         }
-        setSyncMessage(HEALTHKIT_DATABASE_INACCESSIBLE_MESSAGE);
       }
     },
-    [appleHealth, invalidateProviderData, isSyncing, pollSyncJob, providerId, syncMutation],
+    [
+      appleHealth,
+      invalidateProviderData,
+      isSyncing,
+      manualSyncController,
+      pollSyncJob,
+      providerId,
+      syncMutation,
+    ],
   );
 
+  const handleResume = useCallback(async () => {
+    if (manualSyncState.status === "running") return;
+    if (!manualSyncController) {
+      setManualActionError("Apple Health sync is unavailable for this account. Sign in and retry.");
+      return;
+    }
+    setManualActionError(null);
+    try {
+      await manualSyncController.resume();
+      invalidateProviderData();
+    } catch (error: unknown) {
+      if (error instanceof ManualHealthKitSyncInterruptedError) return;
+      captureException(error, { context: "healthkit-manual-sync" });
+      if (manualSyncController.getSnapshot().status !== "error") {
+        setManualActionError(userFacingErrorMessage(error, "Apple Health sync failed"));
+      }
+    }
+  }, [invalidateProviderData, manualSyncController, manualSyncState.status]);
+
   const handlePrimaryAction = useCallback(async () => {
+    if (isAppleHealth && manualSyncState.status === "paused") {
+      await handleResume();
+      return;
+    }
     if (isConnected && !needsReauth && !displayProvider?.pushOnly) {
       if (providerId === "whoop") {
         if (rangeSinceDate > rangeUntilDate) {
-          setSyncMessage('"From" date must be on or before "To" date');
+          setLocalSyncMessage('"From" date must be on or before "To" date');
           return;
         }
         await handleSync({
@@ -367,8 +417,11 @@ export function useProviderDetailActions(
   }, [
     displayProvider?.pushOnly,
     handleConnect,
+    handleResume,
     handleSync,
     isConnected,
+    isAppleHealth,
+    manualSyncState.status,
     needsReauth,
     providerId,
     rangeSinceDate,
@@ -383,7 +436,7 @@ export function useProviderDetailActions(
     (date: string) => {
       setRangeSinceDate(date);
       if (date <= rangeUntilDate) {
-        setSyncMessage(null);
+        setLocalSyncMessage(null);
       }
     },
     [rangeUntilDate],
@@ -393,7 +446,7 @@ export function useProviderDetailActions(
     (date: string) => {
       setRangeUntilDate(date);
       if (rangeSinceDate <= date) {
-        setSyncMessage(null);
+        setLocalSyncMessage(null);
       }
     },
     [rangeSinceDate],
@@ -433,11 +486,13 @@ export function useProviderDetailActions(
     inventoryError: providers.error,
     isConnected,
     primaryActionLabel:
-      needsReauth || (isConnected && displayProvider?.pushOnly)
-        ? "Reconnect"
-        : isConnected
-          ? "Sync"
-          : "Connect",
+      isAppleHealth && manualSyncState.status === "paused"
+        ? "Resume"
+        : needsReauth || (isConnected && displayProvider?.pushOnly)
+          ? "Reconnect"
+          : isConnected
+            ? "Sync"
+            : "Connect",
     isSyncing,
     syncMessage,
     syncProgress,

@@ -2,7 +2,7 @@ import { renderHook, waitFor } from "@testing-library/react";
 import { createElement, type ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { HealthKitManualSyncProvider } from "./health-kit-manual-sync-context";
-import type { SyncResult } from "./health-kit-sync-types";
+import type { ManualHealthKitSyncContext, SyncResult } from "./health-kit-sync-types";
 import { ManualHealthKitSyncInterruptedError } from "./health-kit-sync-types";
 
 vi.mock("expo-crypto", () => ({ randomUUID: () => "test-uuid" }));
@@ -93,6 +93,14 @@ function createTrpcClient(): AppleHealthTrpcClient {
     },
   };
 }
+
+const manualExecution: ManualHealthKitSyncContext = {
+  startDate: "2026-07-01T00:00:00.000Z",
+  endDate: "2026-07-31T23:59:59.999Z",
+  nextStage: "additive-and-category",
+  onStageComplete: vi.fn(async () => {}),
+  assertCanContinue: vi.fn(async () => {}),
+};
 
 describe("AppleHealthAuthorizationState", () => {
   it("is connected when the current HealthKit request is unnecessary even if the legacy marker is false", () => {
@@ -188,25 +196,21 @@ describe("AppleHealthSyncService", () => {
     mockCaptureException.mockClear();
   });
 
-  it("records a successful manual sync after HealthKit data is uploaded", async () => {
+  it("records the successful terminal outcome for a resumable manual sync", async () => {
     const trpcClient = createTrpcClient();
-    const syncFunction = vi.fn<AppleHealthSyncFunction>(async () => ({
+    const syncResult: SyncResult = {
       deleted: 3,
       inserted: 39,
       errors: [],
-    }));
-    const service = new AppleHealthSyncService({
-      trpcClient,
-      loadDeviceErasureCutoff: vi.fn(async () => null),
-      syncFunction,
-    });
+    };
+    const service = new AppleHealthSyncService({ trpcClient });
 
-    await service.sync({ syncRangeDays: 7 });
+    await service.recordManualOutcome(syncResult, null, 42);
 
     expect(trpcClient.healthKitSync.recordSync.mutate).toHaveBeenCalledWith({
       status: "success",
       recordCount: 42,
-      durationMs: expect.any(Number),
+      durationMs: 42,
       origin: "manual",
     });
   });
@@ -222,7 +226,7 @@ describe("AppleHealthSyncService", () => {
       syncFunction: vi.fn<AppleHealthSyncFunction>(async () => syncResult),
     });
 
-    await expect(service.sync({ syncRangeDays: 7 })).resolves.toEqual(syncResult);
+    await service.recordManualOutcome(syncResult, null, 42);
 
     expect(mockCaptureException).toHaveBeenCalledWith(recordError, {
       source: "apple-health-sync-log",
@@ -230,26 +234,17 @@ describe("AppleHealthSyncService", () => {
     });
   });
 
-  it("records a failed manual sync before rethrowing the upload error", async () => {
+  it("records the error outcome after a resumable manual sync fails", async () => {
     const trpcClient = createTrpcClient();
     const syncError = new Error("HealthKit upload failed");
-    const syncFunction = vi.fn<AppleHealthSyncFunction>().mockRejectedValue(syncError);
-    const service = new AppleHealthSyncService({
-      trpcClient,
-      loadDeviceErasureCutoff: vi.fn(async () => null),
-      syncFunction,
-    });
+    const service = new AppleHealthSyncService({ trpcClient });
 
-    await expect(service.sync({ syncRangeDays: 7 })).rejects.toBe(syncError);
+    await service.recordManualOutcome(null, syncError, 42);
     expect(trpcClient.healthKitSync.recordSync.mutate).toHaveBeenCalledWith({
       status: "error",
       recordCount: 0,
-      durationMs: expect.any(Number),
+      durationMs: 42,
       errorMessage: "HealthKit upload failed",
-      origin: "manual",
-    });
-    expect(mockCaptureException).toHaveBeenCalledWith(syncError, {
-      source: "apple-health-sync",
       origin: "manual",
     });
   });
@@ -263,7 +258,9 @@ describe("AppleHealthSyncService", () => {
       syncFunction: vi.fn<AppleHealthSyncFunction>().mockRejectedValue(interrupted),
     });
 
-    await expect(service.sync({ syncRangeDays: null })).rejects.toBe(interrupted);
+    await expect(
+      service.syncManualCheckpointed({ syncRangeDays: null, manualExecution }),
+    ).rejects.toBe(interrupted);
     expect(trpcClient.healthKitSync.recordSync.mutate).not.toHaveBeenCalled();
     expect(mockCaptureException).not.toHaveBeenCalled();
   });
@@ -381,23 +378,18 @@ describe("AppleHealthSyncService", () => {
 
   it("records a partial manual sync as degraded with its errors", async () => {
     const trpcClient = createTrpcClient();
-    const syncFunction = vi.fn<AppleHealthSyncFunction>(async () => ({
-      deleted: 0,
-      inserted: 4,
-      errors: ["Route query failed"],
-    }));
-    const service = new AppleHealthSyncService({
-      trpcClient,
-      loadDeviceErasureCutoff: vi.fn(async () => null),
-      syncFunction,
-    });
+    const service = new AppleHealthSyncService({ trpcClient });
 
-    await service.sync({ syncRangeDays: 7 });
+    await service.recordManualOutcome(
+      { deleted: 0, inserted: 4, errors: ["Route query failed"] },
+      null,
+      42,
+    );
 
     expect(trpcClient.healthKitSync.recordSync.mutate).toHaveBeenCalledWith({
       status: "degraded",
       recordCount: 4,
-      durationMs: expect.any(Number),
+      durationMs: 42,
       errorMessage: "Route query failed",
       origin: "manual",
     });
@@ -430,7 +422,9 @@ describe("AppleHealthSyncService", () => {
       syncFunction,
     });
 
-    await expect(service.sync({ syncRangeDays: 7 })).resolves.toEqual({
+    await expect(
+      service.syncManualCheckpointed({ syncRangeDays: 7, manualExecution }),
+    ).resolves.toEqual({
       deleted: 0,
       inserted: 1,
       errors: [],
@@ -442,7 +436,7 @@ describe("AppleHealthSyncService", () => {
     );
   });
 
-  it("delegates sync with shared native adapter and tRPC client shape", async () => {
+  it("delegates a resumable sync with the shared native adapter and tRPC client", async () => {
     const trpcClient = createTrpcClient();
     const syncResult: SyncResult = { deleted: 0, inserted: 2, errors: [] };
     const syncFunction = vi.fn<AppleHealthSyncFunction>(async () => syncResult);
@@ -468,16 +462,17 @@ describe("AppleHealthSyncService", () => {
       },
       syncFunction,
     });
-    const onProgress = vi.fn();
-
-    const result = await service.sync({ syncRangeDays: 1, onProgress });
+    const result = await service.syncManualCheckpointed({
+      syncRangeDays: 1,
+      manualExecution,
+    });
 
     expect(result).toEqual(syncResult);
     expect(syncFunction).toHaveBeenCalledWith(
       expect.objectContaining({
         syncRangeDays: 1,
         minimumSampleDate: "2026-07-26T12:00:00.000Z",
-        onProgress,
+        manualExecution,
         trpcClient: expect.objectContaining({
           healthKitSync: expect.objectContaining({
             pushWorkouts: expect.objectContaining({ mutate: expect.any(Function) }),
@@ -495,7 +490,9 @@ describe("AppleHealthSyncService", () => {
       trpcClient: createTrpcClient(),
     });
 
-    await expect(service.sync({ syncRangeDays: 1 })).rejects.toThrow("SecureStore unavailable");
+    await expect(
+      service.syncManualCheckpointed({ syncRangeDays: 1, manualExecution }),
+    ).rejects.toThrow("SecureStore unavailable");
     expect(syncFunction).not.toHaveBeenCalled();
   });
 });

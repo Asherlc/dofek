@@ -55,9 +55,9 @@ export interface HealthKitManualSyncDependencies {
   isForeground(): boolean;
   waitUntilForegroundConnected(signal: AbortSignal, requireNewActivation?: boolean): Promise<void>;
   runSync(
-    input: Parameters<AppleHealthSyncService["sync"]>[0] & {
+    input: Parameters<AppleHealthSyncService["syncManualCheckpointed"]>[0] & {
       manualExecution: NonNullable<
-        Parameters<AppleHealthSyncService["sync"]>[0]["manualExecution"]
+        Parameters<AppleHealthSyncService["syncManualCheckpointed"]>[0]["manualExecution"]
       >;
     },
   ): Promise<SyncResult>;
@@ -514,7 +514,6 @@ export class HealthKitManualSyncController {
           );
         },
       },
-      onProgress: (message) => this.#publish({ status: "running", message, error: null }),
       onStage: (stage) => {
         attempt.activeUpload =
           stage.operation.startsWith("push") || stage.operation.startsWith("delete");

@@ -181,30 +181,9 @@ export class AppleHealthSyncService {
     this.#syncFunction = input.syncFunction ?? syncHealthKitToServer;
   }
 
-  async sync(options: {
-    syncRangeDays: number | null;
-    onProgress?: (message: string) => void;
-    onStage?: SyncOptions["onStage"];
-    manualExecution?: ManualHealthKitSyncContext;
-  }): Promise<SyncResult> {
-    return this.#runAndRecordSync("manual", async () => {
-      const minimumSampleDate = await this.#loadDeviceErasureCutoff();
-      return this.#syncFunction({
-        trpcClient: this.#trpcClient,
-        healthKit: this.#healthKit,
-        syncRangeDays: options.syncRangeDays,
-        minimumSampleDate,
-        onProgress: options.onProgress,
-        onStage: options.onStage,
-        manualExecution: options.manualExecution,
-      });
-    });
-  }
-
   /** Runs one resumable attempt without logging pauses or retryable interruptions. */
   async syncManualCheckpointed(options: {
     syncRangeDays: number | null;
-    onProgress?: (message: string) => void;
     onStage?: SyncOptions["onStage"];
     manualExecution: ManualHealthKitSyncContext;
   }): Promise<SyncResult> {
@@ -214,7 +193,6 @@ export class AppleHealthSyncService {
       healthKit: this.#healthKit,
       syncRangeDays: options.syncRangeDays,
       minimumSampleDate,
-      onProgress: options.onProgress,
       onStage: options.onStage,
       manualExecution: options.manualExecution,
     });
@@ -263,7 +241,7 @@ export class AppleHealthSyncService {
   }
 
   async #runAndRecordSync(
-    origin: "manual" | "unknown",
+    origin: "unknown",
     operation: () => Promise<SyncResult>,
     assertCanContinue?: () => Promise<void>,
   ): Promise<SyncResult> {
@@ -276,11 +254,7 @@ export class AppleHealthSyncService {
       if (error instanceof ManualHealthKitSyncInterruptedError) {
         throw error;
       }
-      if (origin === "manual" && isHealthKitDatabaseInaccessible(error)) {
-        throw error;
-      }
-      const isExpectedBackgroundFailure =
-        origin === "unknown" && isBackgroundHealthKitTransientNetworkError(error);
+      const isExpectedBackgroundFailure = isBackgroundHealthKitTransientNetworkError(error);
       if (!isHealthKitDatabaseInaccessible(error) && !isExpectedBackgroundFailure) {
         captureException(error, { source: "apple-health-sync", origin });
       }
@@ -376,10 +350,7 @@ export interface UseAppleHealthProviderModelResult {
   model: AppleHealthProviderModel;
   refreshAuthorizationState(): Promise<AppleHealthAuthorizationState>;
   connect(): Promise<AppleHealthPermissionRequestResult>;
-  sync(options: {
-    syncRangeDays: number | null;
-    onProgress?: (message: string) => void;
-  }): Promise<SyncResult>;
+  sync(options: { syncRangeDays: number | null }): Promise<SyncResult>;
 }
 
 export function useAppleHealthProviderModel(
@@ -443,7 +414,7 @@ export function useAppleHealthProviderModel(
   }, [model]);
 
   const sync = useCallback(
-    (syncOptions: { syncRangeDays: number | null; onProgress?: (message: string) => void }) => {
+    (syncOptions: { syncRangeDays: number | null }) => {
       if (!manualSyncController) {
         return Promise.reject(new Error("Apple Health sync is unavailable for this account."));
       }

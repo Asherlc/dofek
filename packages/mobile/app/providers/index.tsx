@@ -32,6 +32,7 @@ import {
 import { FileImportProviderCard } from "../../components/providers/file-import-provider-card.tsx";
 import { getFileImportProviderConfig } from "../../components/providers/file-import-providers.ts";
 import {
+  appleHealthManualSyncPresentation,
   importProviderLabel,
   type Provider,
   ProviderCard,
@@ -45,10 +46,7 @@ import { useAppleHealthProviderModel } from "../../lib/apple-health-provider";
 import { createProviderHandoffCode } from "../../lib/auth";
 import { useAuth } from "../../lib/auth-context";
 import { createExpoUploadableMobileFile } from "../../lib/expo-uploadable-file";
-import {
-  HEALTHKIT_DATABASE_INACCESSIBLE_MESSAGE,
-  isHealthKitDatabaseInaccessible,
-} from "../../lib/health-kit-errors";
+import { useHealthKitManualSync } from "../../lib/health-kit-manual-sync-context";
 import { ManualHealthKitSyncInterruptedError } from "../../lib/health-kit-sync-types";
 import type { FileUploadApi } from "../../lib/resumable-file-upload";
 import {
@@ -161,6 +159,16 @@ export default function ProvidersScreen() {
 
   const [healthKitSyncing, setHealthKitSyncing] = useState(false);
   const [healthKitProgress, setHealthKitProgress] = useState<string | undefined>();
+  const [healthKitActionError, setHealthKitActionError] = useState<string | null>(null);
+  const { controller: healthKitManualSyncController, state: healthKitManualSyncState } =
+    useHealthKitManualSync();
+  const healthKitControllerRef = useRef(healthKitManualSyncController);
+  useEffect(() => {
+    if (healthKitControllerRef.current !== healthKitManualSyncController) {
+      healthKitControllerRef.current = healthKitManualSyncController;
+      setHealthKitActionError(null);
+    }
+  }, [healthKitManualSyncController]);
   const appleHealth = useAppleHealthProviderModel({
     onAuthorizationError: (error) => {
       captureException(error, { context: "healthkit-permission-check" });
@@ -189,14 +197,19 @@ export default function ProvidersScreen() {
   }, [appleHealth, healthKitSyncing]);
 
   const handleHealthKitSync = useCallback(async () => {
-    setHealthKitSyncing(true);
-    setAnySyncing(true);
-    setHealthKitProgress("Starting HealthKit sync...");
+    if (healthKitManualSyncState.status === "running") return;
+    setHealthKitActionError(null);
+    setHealthKitProgress(undefined);
     try {
-      const result = await appleHealth.sync({
-        syncRangeDays: 7,
-        onProgress: setHealthKitProgress,
-      });
+      let result: Awaited<ReturnType<typeof appleHealth.sync>>;
+      if (healthKitManualSyncState.status === "paused") {
+        if (!healthKitManualSyncController) {
+          throw new Error("Apple Health sync is unavailable for this account. Sign in and retry.");
+        }
+        result = await healthKitManualSyncController.resume();
+      } else {
+        result = await appleHealth.sync({ syncRangeDays: 7 });
+      }
       setHealthKitProgress(
         result.errors.length > 0
           ? `${result.inserted} records synced; ${result.errors.join("; ")}`
@@ -204,21 +217,11 @@ export default function ProvidersScreen() {
       );
       trpcUtils.invalidate();
     } catch (error: unknown) {
-      if (error instanceof ManualHealthKitSyncInterruptedError) {
-        setHealthKitProgress("Apple Health sync paused");
-        return;
-      }
-      if (!isHealthKitDatabaseInaccessible(error)) {
-        captureException(error, { context: "healthkit-manual-sync" });
-        setHealthKitProgress(userFacingErrorMessage(error, "Sync failed"));
-        return;
-      }
-      setHealthKitProgress(HEALTHKIT_DATABASE_INACCESSIBLE_MESSAGE);
-    } finally {
-      setHealthKitSyncing(false);
-      setAnySyncing(false);
+      if (error instanceof ManualHealthKitSyncInterruptedError) return;
+      captureException(error, { context: "healthkit-manual-sync" });
+      setHealthKitActionError(userFacingErrorMessage(error, "Apple Health sync failed"));
     }
-  }, [appleHealth, trpcUtils]);
+  }, [appleHealth, healthKitManualSyncController, healthKitManualSyncState.status, trpcUtils]);
 
   const pollJob = useCallback(
     async (jobId: string, providerIds: string[]) => {
@@ -712,6 +715,21 @@ export default function ProvidersScreen() {
         recentLogs: appleHealthLogsQuery.data,
       })
     : appleHealth.model.toProviderCard();
+  const appleHealthPresentation = appleHealthManualSyncPresentation(
+    healthKitManualSyncState,
+    healthKitActionError,
+    healthKitProgress ?? null,
+  );
+  const appleHealthCardProvider: Provider = {
+    ...appleHealthProvider,
+    ...(appleHealthPresentation.actionLabel
+      ? { syncActionLabel: appleHealthPresentation.actionLabel }
+      : {}),
+    ...(appleHealthPresentation.syncStageProgress
+      ? { syncStageProgress: appleHealthPresentation.syncStageProgress }
+      : {}),
+    syncStatusMessage: appleHealthPresentation.syncStatusMessage,
+  };
   const appleHealthHistoryError =
     appleHealthLogsQuery.error && appleHealthLogsQuery.data === undefined;
   const activeImportRows = activeImports.error ? [] : (activeImports.data ?? []);
@@ -747,15 +765,20 @@ export default function ProvidersScreen() {
         <>
           <View>
             <FileImportProviderCard
-              provider={{
-                ...appleHealthProvider,
-              }}
+              provider={appleHealthCardProvider}
               stats={statsMap.apple_health}
-              syncing={healthKitSyncing}
+              syncing={healthKitSyncing || appleHealthPresentation.isRunning}
               importing={appleHealthImportProgress !== undefined}
               syncProgress={
                 appleHealthImportProgress ??
-                (healthKitSyncing || healthKitProgress ? { message: healthKitProgress } : undefined)
+                (appleHealthPresentation.isRunning ||
+                healthKitProgress !== undefined ||
+                healthKitActionError !== null
+                  ? {
+                      percentage: appleHealthPresentation.percentage ?? undefined,
+                      message: appleHealthPresentation.message ?? undefined,
+                    }
+                  : undefined)
               }
               onSync={() => handleHealthKitSync()}
               onConnect={handleHealthKitConnect}
@@ -846,7 +869,7 @@ export default function ProvidersScreen() {
       <View testID="provider-sync-controls-region" style={{ minHeight: 140 * fontScale }}>
         {enabledProviders.length > 0 && (
           <SyncAllControls
-            busy={anySyncing}
+            busy={anySyncing || appleHealthPresentation.isRunning}
             errorMessage={syncAllError}
             onRecentSync={() => void handleSyncAll(false)}
             onFullSync={() => void handleSyncAll(true)}

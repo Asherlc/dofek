@@ -62,6 +62,39 @@ export const Syncing: Story = {
   },
 };
 
+export const AppleHealthRunning: Story = {
+  args: {
+    isSyncing: true,
+    syncMessage: "Uploading health records\n2 of 5 stages complete",
+    syncProgress: 40,
+    shouldShowFullSync: true,
+  },
+};
+
+export const AppleHealthPaused: Story = {
+  args: {
+    primaryActionLabel: "Resume",
+    syncMessage: "Apple Health sync paused",
+    shouldShowFullSync: true,
+  },
+};
+
+export const AppleHealthLocked: Story = {
+  args: {
+    primaryActionLabel: "Resume",
+    syncMessage: "Apple Health sync paused\nUnlock your phone to continue Apple Health sync",
+    shouldShowFullSync: true,
+  },
+};
+
+export const AppleHealthActionableError: Story = {
+  args: {
+    syncMessage:
+      "Another Apple Health sync is active for this account. Resume it on your other device.",
+    shouldShowFullSync: true,
+  },
+};
+
 export const InvalidRange: Story = {
   args: {
     syncMessage: '"From" date must be on or before "To" date',

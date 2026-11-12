@@ -24,7 +24,7 @@ export function ProviderDetailActionsCard({
   onFullSync,
   onOpenClinicalRecords,
 }: {
-  primaryActionLabel: "Sync" | "Connect" | "Reconnect";
+  primaryActionLabel: "Sync" | "Connect" | "Reconnect" | "Resume";
   isSyncing: boolean;
   syncMessage: string | null;
   syncProgress: number | null;

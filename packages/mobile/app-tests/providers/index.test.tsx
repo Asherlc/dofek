@@ -189,6 +189,40 @@ const mockAuthState = vi.hoisted((): { sessionToken: string | null } => ({
   sessionToken: "test-token",
 }));
 
+const mockManualSync = vi.hoisted(() => {
+  const state: {
+    status: "idle" | "running" | "paused" | "error" | "complete";
+    message: string | null;
+    completedStageCount: number;
+    totalStageCount: number;
+    error: string | null;
+  } = {
+    status: "idle",
+    message: null,
+    completedStageCount: 0,
+    totalStageCount: 0,
+    error: null,
+  };
+  return {
+    state,
+    controller: {
+      userId: "user-1",
+      start: vi.fn(),
+      resume: vi.fn(),
+      getSnapshot: vi.fn(),
+      subscribe: vi.fn(),
+      retire: vi.fn(),
+    },
+  };
+});
+
+vi.mock("../../lib/health-kit-manual-sync-context", () => ({
+  useHealthKitManualSync: () => ({
+    controller: mockManualSync.controller,
+    state: mockManualSync.state,
+  }),
+}));
+
 vi.mock("../../lib/auth-context", () => ({
   useAuth: () => ({
     serverUrl: "https://test.example.com",
@@ -542,6 +576,97 @@ describe("providerActionLabel", () => {
 
   it("returns Reconnect for expired providers", () => {
     expect(providerActionLabel("expired")).toBe("Reconnect");
+  });
+});
+
+describe("shared Apple Health manual sync", () => {
+  beforeEach(() => {
+    mockWindowDimensions.mockReturnValue({ width: 390, height: 844, scale: 1, fontScale: 1 });
+    Object.assign(mockManualSync.state, {
+      status: "idle",
+      message: null,
+      completedStageCount: 0,
+      totalStageCount: 0,
+      error: null,
+    });
+    setupDefaultMocks();
+    Object.assign(mockManualSync.state, {
+      status: "idle",
+      message: null,
+      completedStageCount: 0,
+      totalStageCount: 0,
+      error: null,
+    });
+    mockManualSync.controller.start.mockReset();
+    mockManualSync.controller.start.mockImplementation((range) =>
+      mockSyncHealthKit({ syncRangeDays: range }),
+    );
+    mockManualSync.controller.resume.mockReset().mockResolvedValue({ inserted: 0, errors: [] });
+  });
+
+  it("disables the list action while the shared sync is running", async () => {
+    Object.assign(mockManualSync.state, {
+      status: "running",
+      message: "Uploading health records",
+      completedStageCount: 2,
+      totalStageCount: 5,
+    });
+    await renderProvidersScreen();
+
+    expect(screen.getByText("Uploading health records")).toBeTruthy();
+    const sync = screen.getByRole("button", { name: "Sync Apple Health" });
+    expect(sync.getAttribute("disabled")).not.toBeNull();
+    expect(sync.getAttribute("aria-busy")).toBe("true");
+  });
+
+  it("shows controller progress again after returning from a route unmount", async () => {
+    Object.assign(mockManualSync.state, {
+      status: "running",
+      message: "Uploading health records",
+      completedStageCount: 2,
+      totalStageCount: 5,
+    });
+    const firstRoute = await renderProvidersScreen();
+    firstRoute.unmount();
+
+    await renderProvidersScreen();
+    expect(screen.getByText("Uploading health records")).toBeTruthy();
+    expect(screen.getByText("2 of 5 stages complete")).toBeTruthy();
+  });
+
+  it("shows an actionable shared admission error", async () => {
+    Object.assign(mockManualSync.state, {
+      status: "error",
+      error:
+        "Apple Health sync is already active for this account. Resume it from the other device.",
+    });
+    await renderProvidersScreen();
+
+    expect(
+      screen.getByText(
+        "Apple Health sync is already active for this account. Resume it from the other device.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("resumes a paused Apple Health sync from the list", async () => {
+    Object.assign(mockManualSync.state, {
+      status: "paused",
+      message: "Unlock your phone to continue Apple Health sync",
+    });
+    await renderProvidersScreen();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Resume Apple Health" }));
+      await mockManualSync.controller.resume.mock.results[0]?.value;
+    });
+    expect(mockManualSync.controller.resume).toHaveBeenCalledOnce();
+    expect(mockManualSync.controller.start).not.toHaveBeenCalled();
+    expect(
+      screen.getByText(
+        /Apple Health sync paused\s+Unlock your phone to continue Apple Health sync/,
+      ),
+    ).toBeTruthy();
   });
 });
 
@@ -1011,6 +1136,13 @@ describe("ProviderCard", () => {
 describe("ProvidersScreen", () => {
   beforeEach(() => {
     mockWindowDimensions.mockReturnValue({ width: 390, height: 844, scale: 1, fontScale: 1 });
+    Object.assign(mockManualSync.state, {
+      status: "idle",
+      message: null,
+      completedStageCount: 0,
+      totalStageCount: 0,
+      error: null,
+    });
     vi.stubGlobal(
       "fetch",
       vi
@@ -1069,6 +1201,9 @@ describe("ProvidersScreen", () => {
     mockHasEverAuthorized.mockReset().mockReturnValue(true);
     mockRequestPermissions.mockReset().mockResolvedValue(true);
     mockSyncHealthKit.mockReset().mockResolvedValue({ inserted: 0, errors: [] });
+    mockManualSync.controller.start
+      .mockReset()
+      .mockImplementation((range) => mockSyncHealthKit({ syncRangeDays: range }));
     setupDefaultMocks();
   });
 
@@ -3137,24 +3272,23 @@ describe("ProvidersScreen", () => {
     const { captureException } = await import("../../lib/telemetry");
     const mockCaptureException = vi.mocked(captureException);
     mockCaptureException.mockClear();
-    mockSyncHealthKit.mockRejectedValueOnce(
-      Object.assign(new Error("HealthKit data is unavailable while the device is locked"), {
-        code: "HEALTHKIT_DATABASE_INACCESSIBLE",
-      }),
-    );
+    Object.assign(mockManualSync.state, {
+      status: "paused",
+      message: "Unlock your phone to continue Apple Health sync",
+    });
     await renderProvidersScreen();
 
     await waitFor(() => {
       const appleCard = within(screen.getByTestId("provider-card-apple_health"));
-      expect(appleCard.getByText("Sync")).toBeTruthy();
+      expect(appleCard.getByText("Resume")).toBeTruthy();
     });
 
     const appleCard = within(screen.getByTestId("provider-card-apple_health"));
-    fireEvent.click(appleCard.getByText("Sync"));
-
-    await waitFor(() => {
-      expect(appleCard.getByText("Device locked — unlock to sync Apple Health data")).toBeTruthy();
-    });
+    expect(
+      appleCard.getByText(
+        /Apple Health sync paused\s+Unlock your phone to continue Apple Health sync/,
+      ),
+    ).toBeTruthy();
     expect(mockCaptureException).not.toHaveBeenCalled();
   });
 
