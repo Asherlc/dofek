@@ -1,7 +1,7 @@
 # Task 3 report — shared Apple Health sync ownership
 
 **Status:** complete, verified, committed, and pushed.
-**Commit:** pending commit SHA.
+**Commit:** `197785c2c` — `fix(mobile): own resumable Apple Health sync`.
 **Scope:** authenticated app-owned manual sync controller, shared observer gate,
   account retirement/erasure ordering, production route delegation, and focused tests.
 
