@@ -2,11 +2,14 @@
 
 Infrastructure-as-code and deployment configuration for Dofek.
 
-The approved Kafka-only phase-1 cutover is recorded in the
-[execution receipt](kafka/phase1-execution.md). Kafka now serves the hot ingest
-log; the old Redpanda data remains retained in place. Existing service and
-environment names retain their legacy Redpanda spelling. Tiered storage is a
-separate phase-2 release; shared application deployment and old-data retirement
+Kafka serves the production ingest log with upstream Aiven tiered storage to
+Cloudflare R2. A November 12 broker audit observed remote storage enabled on all
+six metric-stream topics and successful copy/delete operations in its bounded
+log sample; it does not establish an exact activation date or prove the newly
+selected local-retention limits are deployed. See the [broker audit](kafka/retention-policy.md)
+and [selected topic policy](kafka/topic-policy.json). The old Redpanda data
+remains retained in place, and existing service/environment names retain their
+legacy Redpanda spelling. Shared application deployment and old-data retirement
 retain their own review boundaries.
 
 ## Architecture
@@ -19,7 +22,7 @@ infrastructure has been retired.
 - **Compute**: Production runs on an OCI Ampere A1 ARM64 host provisioned by `deploy/oracle-free/` and addressed through the `ORACLE_SERVER_HOST` GitHub Actions variable. The server runs `dockerd` initialized as a single-node swarm manager and has no deploy scripts or secrets on disk.
 - **Storage**:
   - **PostgreSQL**: Managed via TimescaleDB with PostGIS enabled for geospatial metric data.
-  - **ClickHouse**: Runs in the swarm as the stored analytics read-model service for heavy activity stream reads. The raw `metric_stream` copy is populated by the Redpanda ClickHouse sink for Redpanda-first sources and remains compatible with tracked ClickHouse migrations and chunk-range backfills. See [docs/clickhouse-metric-stream.md](../docs/clickhouse-metric-stream.md).
+  - **ClickHouse**: Runs in the swarm as the stored analytics read-model service for heavy activity stream reads. The raw `metric_stream` copy is populated by the Kafka ClickHouse sink for Kafka-first sources and remains compatible with tracked ClickHouse migrations and chunk-range backfills. See [docs/clickhouse-metric-stream.md](../docs/clickhouse-metric-stream.md).
   - **Kafka**: Runs internally in the swarm as the hot ingest log for high-volume `metric_stream` events. Separate legacy, live, and history ClickHouse sink services consume their designated topics, and matching Redpanda Connect services archive them to R2. Use the current [phase-1 route/command record](kafka/operator-proposal.md); the [legacy route contract](../docs/metric-stream-redpanda-r2-runbook.md#required-services) explains the retained service names.
   - **PeerDB**: Runs internally in the swarm as the Postgres-to-ClickHouse CDC service for lower-volume raw fitness tables into `postgres_fitness.*`.
   - **Volume**: Production uses the OCI data volume mounted at `/mnt/dofek-data`.
@@ -164,6 +167,12 @@ infrastructure has been retired.
 - Parsed with `json_parser` and `regex_parser` (to extract container IDs).
 - Filters out noisy Postgres `NOTICE` lines to reduce volume.
 - Exports to Axiom via `otlphttp`.
+- The Kafka retention change adds stock JMX Exporter 1.7.0 in OTLP-only mode,
+  exporting native backlog, error and log-size metrics through the collector to
+  the existing `dofek-host-metrics` dataset. No JMX control port or additional
+  service is exposed. Production rollout and stored-query readback remain
+  pending; see the [policy and native qualification](kafka/retention-policy.md)
+  and [upstream agent configuration](https://prometheus.github.io/jmx_exporter/configuration/opentelemetry/).
 - Logs use `dofek-logs`, with metadata grouped into the `attributes.custom` map;
   traces use `dofek-traces`. Axiom requires a dedicated dataset per OTel signal:
   [OTel ingestion](https://axiom.co/docs/send-data/opentelemetry). Both retain

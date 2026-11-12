@@ -383,6 +383,7 @@ services:
     env_file: ${KAFKA_ENV_FILE:?KAFKA_ENV_FILE is required}
     environment:
       KAFKA_HEAP_OPTS: "-Xmx1G -Xms1G"
+      KAFKA_OPTS: "-javaagent:/plugins/jmx/1.7.0/jmx_prometheus_javaagent-1.7.0.jar=/etc/kafka/jmx-exporter.yaml"
       KAFKA_LOG_DIRS: "/var/lib/kafka/data"
       KAFKA_PROCESS_ROLES: "broker,controller"
       KAFKA_NODE_ID: "1"
@@ -411,6 +412,9 @@ services:
       KAFKA_RSM_CONFIG_STORAGE_S3_PATH_STYLE_ACCESS_ENABLED: "true"
       AWS_REQUEST_CHECKSUM_CALCULATION: "WHEN_REQUIRED"
       AWS_RESPONSE_CHECKSUM_VALIDATION: "WHEN_REQUIRED"
+    configs:
+      - source: kafka_jmx_exporter_v1
+        target: /etc/kafka/jmx-exporter.yaml
     volumes:
       # Fresh tiered generation; retain both original broker trees separately.
       - /mnt/dofek-data/kafka-broker/data:/var/lib/kafka/data
@@ -817,7 +821,7 @@ services:
     volumes:
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
     configs:
-      - source: otel_collector_config_v3
+      - source: otel_collector_config_v4
         target: /etc/otelcol-contrib/config.yaml
 
   ota:
@@ -923,8 +927,10 @@ configs:
   # Swarm config objects are immutable: when otel-collector-config.yaml changes,
   # bump this key's version suffix (e.g. _v2) so a new config object is created
   # and the collector rolls onto it — same convention as netdata_db_limits_v2.
-  otel_collector_config_v3:
+  otel_collector_config_v4:
     file: ./otel-collector-config.yaml
+  kafka_jmx_exporter_v1:
+    file: ./kafka/jmx-exporter.yaml
   # Swarm config objects are immutable: when metric-stream-r2-archive.connect.yml
   # changes, bump this key's version suffix so a new config object is created and
   # the service rolls onto it — same convention as netdata_db_limits_v2.

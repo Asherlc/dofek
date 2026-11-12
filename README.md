@@ -38,7 +38,7 @@ API and import providers ──> sync/import workers ──> Postgres (fitness.*
                                   │                       │
                                   │                       └─ PeerDB CDC
                                   │                              │
-High-volume sensor samples ──────┴─> Redpanda ────────────────> ClickHouse
+High-volume sensor samples ──────┴─> Kafka ────────────────────> ClickHouse
                                         │                         │
                                         └─> Cloudflare R2 archive │
                                                                   │
@@ -48,9 +48,9 @@ High-volume sensor samples ──────┴─> Redpanda ──────
 ```
 
 - Postgres owns relational application state and lower-volume raw health data.
-- High-volume `metric_stream` events bypass Postgres. Redpanda is the hot ingest
-  log, Cloudflare R2 is the durable archive, and ClickHouse is the
-  serving copy.
+- High-volume `metric_stream` events bypass Postgres. Kafka is the ingest log
+  with tiered storage in Cloudflare R2; ClickHouse is the serving copy. See the
+  [Kafka retention audit](deploy/kafka/retention-policy.md).
 - PeerDB mirrors lower-volume `fitness.*` tables into `postgres_fitness.*` in
   ClickHouse.
 - Incremental dbt models under `analytics/models/` produce expensive derived

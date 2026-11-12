@@ -2,7 +2,10 @@
   "source": {
     "cleanup.policy": "delete",
     "retention.ms": "604800000",
-    "retention.bytes": "4294967296",
+    "retention.bytes": "-1",
+    "local.retention.bytes": "1073741824",
+    "local.retention.ms": "86400000",
+    "segment.ms": "3600000",
     "segment.bytes": "134217728",
     "remote.storage.enable": "true"
   },
@@ -10,6 +13,9 @@
     "cleanup.policy": "delete",
     "retention.ms": "604800000",
     "retention.bytes": "1073741824",
+    "local.retention.bytes": "268435456",
+    "local.retention.ms": "86400000",
+    "segment.ms": "3600000",
     "segment.bytes": "134217728",
     "remote.storage.enable": "true"
   }

@@ -11,6 +11,94 @@ import { z } from "zod";
 const workflowText = readFileSync(".github/workflows/deploy-web-stack.yml", "utf8");
 const otaImage = `${deployTestRepository}-ota@${deployTestDigest}`;
 
+describe("Kafka JMX exporter installer", () => {
+  function runInstaller(failure: "checksum" | "install" | "" = "") {
+    const directory = mkdtempSync(join(tmpdir(), "deploy-kafka-jmx-installer-"));
+    const trace = join(directory, "calls.jsonl");
+    const curl = join(directory, "curl");
+    const sha256sum = join(directory, "sha256sum");
+    const docker = join(directory, "docker");
+
+    try {
+      writeFileSync(curl, `#!/usr/bin/env node
+const fs = require('node:fs');
+const args = process.argv.slice(2);
+fs.appendFileSync(process.env.JMX_TRACE, JSON.stringify(['curl', ...args]) + '\\n');
+const output = args[args.indexOf('--output') + 1];
+fs.writeFileSync(output, 'fixture jar');
+`);
+      writeFileSync(sha256sum, `#!/usr/bin/env node
+const fs = require('node:fs');
+const input = fs.readFileSync(0, 'utf8');
+fs.appendFileSync(process.env.JMX_TRACE, JSON.stringify(['sha256sum', input]) + '\\n');
+if (process.env.JMX_FAILURE === 'checksum') process.exit(1);
+console.log(input.trim().split(/\\s+/)[0] + '  ' + input.trim().split(/\\s+/).at(-1) + ': OK');
+`);
+      writeFileSync(docker, `#!/usr/bin/env node
+const { spawnSync } = require('node:child_process');
+const fs = require('node:fs');
+const args = process.argv.slice(2);
+fs.appendFileSync(process.env.JMX_TRACE, JSON.stringify(['docker', ...args]) + '\\n');
+const shellScriptIndex = args.indexOf('-euc') + 1;
+const syntax = spawnSync('sh', ['-n', '-c', args[shellScriptIndex]], { encoding: 'utf8' });
+if (syntax.status !== 0) { process.stderr.write(syntax.stderr); process.exit(syntax.status ?? 1); }
+if (args[0] === 'run' && process.env.JMX_FAILURE === 'install') process.exit(42);
+`);
+      for (const executable of [curl, sha256sum, docker]) chmodSync(executable, 0o755);
+
+      const result = spawnSync("bash", ["-e", "-o", "pipefail", "-c", workflowRunScript("Install Kafka JMX exporter")], {
+        cwd: process.cwd(),
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          PATH: `${directory}:${process.env.PATH ?? ""}`,
+          APP_IMAGE: `${deployTestRepository}@${deployTestDigest}`,
+          RUNNER_TEMP: directory,
+          JMX_TRACE: trace,
+          JMX_FAILURE: failure,
+        },
+        timeout: 30_000,
+      });
+      const calls = readFileSync(trace, "utf8").trim().split("\n").filter(Boolean).map((line) => z.array(z.string()).parse(JSON.parse(line)));
+      return { ...result, calls };
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  }
+
+  it("rejects a bad runner download before creating a Docker installer", () => {
+    const result = runInstaller("checksum");
+    expect(result.status).not.toBe(0);
+    expect(result.calls.some((call) => call[0] === "docker")).toBe(false);
+  });
+
+  it("installs and verifies the pinned jar through the requested app image", () => {
+    const result = runInstaller();
+    expect(result.status, result.stderr).toBe(0);
+    const curlCall = result.calls.find((call) => call[0] === "curl");
+    expect(curlCall).toContain("--fail");
+    expect(curlCall).toContain("--location");
+    expect(curlCall?.join(" ")).toContain("/releases/download/1.7.0/jmx_prometheus_javaagent-1.7.0.jar");
+    expect(result.calls.find((call) => call[0] === "sha256sum")?.[1]).toContain(
+      "0ad843261c567d1924a017d542e14c40f2afff523d940c25ee000742fde4b3a9",
+    );
+    const dockerCall = result.calls.find((call) => call[0] === "docker");
+    expect(dockerCall).toContain("run");
+    expect(dockerCall).toContain("--rm");
+    expect(dockerCall).toContain("-i");
+    expect(dockerCall).toContain("--user");
+    expect(dockerCall).toContain("0:0");
+    expect(dockerCall).toContain(`${deployTestRepository}@${deployTestDigest}`);
+    expect(dockerCall?.join(" ")).toContain("source=/mnt/dofek-data/kafka/plugins,target=/plugins");
+    expect(dockerCall?.join(" ")).toContain("/plugins/jmx/1.7.0/jmx_prometheus_javaagent-1.7.0.jar");
+  });
+
+  it("propagates Docker installer failures", () => {
+    const result = runInstaller("install");
+    expect(result.status).toBe(42);
+  });
+});
+
 describe("consumed Kafka tiered backend", () => {
   it.each(["", "bucket", "prefix", "credential", "worker"])("checks actual broker and worker scope: %s", (drift) => {
     const result = runKafkaBackendFixture(workflowRunScript("Verify Kafka tiered backend before migrations"), drift);
@@ -31,12 +119,12 @@ describe("deploy-owned Kafka topic policy", () => {
     expect(result.status, result.stderr).toBe(0);
     const updates = result.calls.filter((call) => call.includes("--alter"));
     expect(updates.map((call) => [call[call.indexOf("--entity-name") + 1], call[call.indexOf("--add-config") + 1]])).toEqual([
-      ["source", "cleanup.policy=delete,retention.ms=604800000,retention.bytes=4294967296,segment.bytes=134217728,remote.storage.enable=true"],
-      ["source.quarantine.v1", "cleanup.policy=delete,retention.ms=604800000,retention.bytes=1073741824,segment.bytes=134217728,remote.storage.enable=true"],
-      ["live", "cleanup.policy=delete,retention.ms=604800000,retention.bytes=4294967296,segment.bytes=134217728,remote.storage.enable=true"],
-      ["live.quarantine.v1", "cleanup.policy=delete,retention.ms=604800000,retention.bytes=1073741824,segment.bytes=134217728,remote.storage.enable=true"],
-      ["history", "cleanup.policy=delete,retention.ms=604800000,retention.bytes=4294967296,segment.bytes=134217728,remote.storage.enable=true"],
-      ["history.quarantine.v1", "cleanup.policy=delete,retention.ms=604800000,retention.bytes=1073741824,segment.bytes=134217728,remote.storage.enable=true"],
+      ["source", "cleanup.policy=delete,retention.ms=604800000,retention.bytes=-1,local.retention.bytes=1073741824,local.retention.ms=86400000,segment.ms=3600000,segment.bytes=134217728,remote.storage.enable=true"],
+      ["source.quarantine.v1", "cleanup.policy=delete,retention.ms=604800000,retention.bytes=1073741824,local.retention.bytes=268435456,local.retention.ms=86400000,segment.ms=3600000,segment.bytes=134217728,remote.storage.enable=true"],
+      ["live", "cleanup.policy=delete,retention.ms=604800000,retention.bytes=-1,local.retention.bytes=1073741824,local.retention.ms=86400000,segment.ms=3600000,segment.bytes=134217728,remote.storage.enable=true"],
+      ["live.quarantine.v1", "cleanup.policy=delete,retention.ms=604800000,retention.bytes=1073741824,local.retention.bytes=268435456,local.retention.ms=86400000,segment.ms=3600000,segment.bytes=134217728,remote.storage.enable=true"],
+      ["history", "cleanup.policy=delete,retention.ms=604800000,retention.bytes=-1,local.retention.bytes=1073741824,local.retention.ms=86400000,segment.ms=3600000,segment.bytes=134217728,remote.storage.enable=true"],
+      ["history.quarantine.v1", "cleanup.policy=delete,retention.ms=604800000,retention.bytes=1073741824,local.retention.bytes=268435456,local.retention.ms=86400000,segment.ms=3600000,segment.bytes=134217728,remote.storage.enable=true"],
     ]);
     for (const update of updates) {
       expect(update).toContain("/opt/kafka/bin/kafka-configs.sh");
