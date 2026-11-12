@@ -13,6 +13,17 @@ import {
 } from "./climbing-log-contracts.ts";
 
 describe("versioned climbing detail responses", () => {
+  it("retains explicit area membership in V5 while preserving strict older responses", () => {
+    const original = climbingLogEntryFixture();
+    const entry = { ...original, areaGroupId: "30000000-0000-4000-8000-000000000001" };
+    expect(decodeClimbingLogEntryDetailResponse(entry)).toEqual(entry);
+    expect(serializeClimbingLogEntryDetailResponse(entry, 5)).toEqual(entry);
+    for (const version of [1, 2, 3, 4] as const) {
+      expect(serializeClimbingLogEntryDetailResponse(entry, version)).toEqual(
+        serializeClimbingLogEntryDetailResponse(original, version),
+      );
+    }
+  });
   it("parses required source-session fields at the runtime contract boundary", async () => {
     vi.resetModules();
     const { climbingLogActivitySessionSchema } = await import("./climbing-log-contracts.ts");

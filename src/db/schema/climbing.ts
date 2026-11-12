@@ -29,6 +29,18 @@ import {
 } from "./enums.ts";
 import { provider, userProfile } from "./reference.ts";
 
+export const areaGroup = fitness.table(
+  "area_group",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .$defaultFn(resolveImplicitUserId)
+      .references(() => userProfile.id),
+  },
+  (table) => [uniqueIndex("area_group_owner_id_idx").on(table.userId, table.id)],
+);
+
 export const area = fitness.table(
   "area",
   {
@@ -43,6 +55,7 @@ export const area = fitness.table(
     externalId: text("external_id"),
     name: text("name").notNull(),
     parentAreaId: uuid("parent_area_id"),
+    groupId: uuid("group_id"),
     // Native point: x = longitude, y = latitude, in decimal degrees.
     coordinates: point("coordinates", { mode: "xy" }),
   },
@@ -52,6 +65,12 @@ export const area = fitness.table(
       .on(table.userId, table.providerId, table.externalId)
       .where(sql`${table.externalId} IS NOT NULL`),
     index("area_parent_idx").on(table.parentAreaId),
+    index("area_group_idx").on(table.groupId),
+    foreignKey({
+      name: "area_group_owner_fk",
+      columns: [table.userId, table.groupId],
+      foreignColumns: [areaGroup.userId, areaGroup.id],
+    }),
     foreignKey({
       name: "area_parent_owner_provider_fk",
       columns: [table.userId, table.providerId, table.parentAreaId],

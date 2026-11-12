@@ -939,17 +939,29 @@ table fitness.area {
   external_id text
   name text [not null]
   parent_area_id uuid
+  group_id uuid
   coordinates point
 
   indexes {
     (user_id, provider_id, id) [name: 'area_owner_provider_id_idx', unique]
     (user_id, provider_id, external_id) [name: 'area_source_external_id_idx', unique]
     parent_area_id [name: 'area_parent_idx']
+    group_id [name: 'area_group_idx']
 
 
 
 
 
+
+  }
+}
+
+table fitness.area_group {
+  id uuid [pk, not null, default: `gen_random_uuid()`]
+  user_id uuid [not null]
+
+  indexes {
+    (user_id, id) [name: 'area_group_owner_id_idx', unique]
   }
 }
 
@@ -2201,7 +2213,11 @@ ref area_user_id_user_profile_id_fk: fitness.area.user_id > fitness.user_profile
 
 ref area_provider_id_provider_id_fk: fitness.area.provider_id > fitness.provider.id [delete: no action, update: no action]
 
+ref area_group_owner_fk: fitness.area.(user_id, group_id) > fitness.area_group.(user_id, id) [delete: no action, update: no action]
+
 ref area_parent_owner_provider_fk: fitness.area.(user_id, provider_id, parent_area_id) > fitness.area.(user_id, provider_id, id) [delete: no action, update: no action]
+
+ref area_group_user_id_user_profile_id_fk: fitness.area_group.user_id > fitness.user_profile.id [delete: no action, update: no action]
 
 ref climb_user_id_user_profile_id_fk: fitness.climb.user_id > fitness.user_profile.id [delete: no action, update: no action]
 
