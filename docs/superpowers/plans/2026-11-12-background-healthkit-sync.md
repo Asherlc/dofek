@@ -10,6 +10,8 @@
 
 **Spec:** [Approved design](../specs/2026-11-12-background-healthkit-sync-design.md).
 
+**Qualification (2026-11-12):** Implementation, code review, automated checks, browser-story inspection, and the current-head Release Simulator build are complete. Physical iPhone background, lock/unlock, cancellation, relaunch, and account-teardown acceptance remain unverified. A native binary release is required; no merge, deployment, or production recovery is claimed. See the [incident qualification](../../production-incident-baseline.md#2026-11-12--manual-apple-health-sync-fails-across-backgrounding-unresolved) and [Expo runtime compatibility](https://docs.expo.dev/eas-update/runtime-versions/).
+
 ## Global Constraints
 
 - Use `BGContinuedProcessingTask` on iOS 26+, preserving the current iOS 16.4 minimum.
@@ -81,14 +83,14 @@
 - Distinguish resource disposal from account departure: effect replay or same-account reinitialization must retain durable paused intent, while sign-out/account replacement and explicit erasure purge it. Do not assume development effect replay is impossible. Purge already-queued old writes in order and do not let late cleanup erase a replacement request.
 - Prefer the authenticated root's existing context/lifetime and explicit erasure caller. Do not add a global current-controller registry or additional post-acceptance purge plumbing without an actual caller requirement that the existing flow cannot meet; any shared teardown must match its owner rather than retiring an arbitrary replacement account.
 
-- [ ] Write failing tests proving grant before HealthKit, duplicate start rejection, pause ownership release, manual/observer serial ordering, expired observer catch-up, native expiry requiring Resume, process checkpoint restoration, sign-out and late account writes.
-- [ ] Test transport recovery only for known transient errors on requests crossing background state: wait for active+connected, retry once, surface a failed fresh attempt. Test actual HealthKit locked error separately; generic background state does not prove lock.
-- [ ] Implement with existing AppState/network lifecycle primitives and task bridge; use stock cancellation and promise mechanisms instead of timers. Native unsupported path pauses while in the background and resumes foreground work.
-- [ ] Root setup/teardown and existing erasure path retire controller, stop native work, remove listeners, and purge matching request state. Mounted route hooks subscribe rather than creating independent manual operations.
-- [ ] Erasure cleanup must strictly purge the checkpoint while the existing unattempted preparation still has `ownerUserId`, before `markMobileAccountErasureConfirmationAttempted` strips that identity. Stop the owned manual operation first and reuse the existing cleanup-lease checks. Do not add identifying fields to erased/attempted capability storage or a new key index. Test failure/crash ordering at this boundary and signed-out recovery. Modify concrete erasure callers as needed instead of blindly requiring an identity-free post-acceptance purge to discover the old account.
-- [ ] Record sync once at terminal successful/degraded/error outcome as appropriate; do not record a pause as success. A final logging failure must not replay accepted health data. Preserve existing unexpected-error Sentry reporting and actionable error messages.
-- [ ] Pause/interruption stays inside the app-owned operation; do not call a wrapper that records/captures an error for each interrupted data attempt. Guard final log writes by the current account too. Observers also need retirement checks at query/upload/anchor boundaries, in addition to serial gate admission.
-- [ ] Run controller, AppleHealthProvider, background HealthKit, account purge, and root lifetime tests; mobile typecheck/lint. Commit/push and report before review gate.
+- [x] Write failing tests proving grant before HealthKit, duplicate start rejection, pause ownership release, manual/observer serial ordering, expired observer catch-up, native expiry requiring Resume, process checkpoint restoration, sign-out and late account writes.
+- [x] Test transport recovery only for known transient errors on requests crossing background state: wait for active+connected, retry once, surface a failed fresh attempt. Test actual HealthKit locked error separately; generic background state does not prove lock.
+- [x] Implement with existing AppState/network lifecycle primitives and task bridge; use stock cancellation and promise mechanisms instead of timers. Native unsupported path pauses while in the background and resumes foreground work.
+- [x] Root setup/teardown and existing erasure path retire controller, stop native work, remove listeners, and purge matching request state. Mounted route hooks subscribe rather than creating independent manual operations.
+- [x] Erasure cleanup must strictly purge the checkpoint while the existing unattempted preparation still has `ownerUserId`, before `markMobileAccountErasureConfirmationAttempted` strips that identity. Stop the owned manual operation first and reuse the existing cleanup-lease checks. Do not add identifying fields to erased/attempted capability storage or a new key index. Test failure/crash ordering at this boundary and signed-out recovery. Modify concrete erasure callers as needed instead of blindly requiring an identity-free post-acceptance purge to discover the old account.
+- [x] Record sync once at terminal successful/degraded/error outcome as appropriate; do not record a pause as success. A final logging failure must not replay accepted health data. Preserve existing unexpected-error Sentry reporting and actionable error messages.
+- [x] Pause/interruption stays inside the app-owned operation; do not call a wrapper that records/captures an error for each interrupted data attempt. Guard final log writes by the current account too. Observers also need retirement checks at query/upload/anchor boundaries, in addition to serial gate admission.
+- [x] Run controller, AppleHealthProvider, background HealthKit, account purge, and root lifetime tests; mobile typecheck/lint. Commit/push and report before review gate.
 
 ### Task 4: Shared provider presentation and final validation
 
@@ -96,10 +98,10 @@
 
 **Interfaces:** Existing provider cards accept a Resume action/label for paused Apple Health, while both list and detail render shared controller state. Use existing progress and disclosure controls.
 
-- [ ] Write failing interaction tests for running and duplicate prevention, route navigation retention, paused Resume preserving window, confirmed locked text, and specific server errors.
-- [ ] Implement running progress, “Apple Health sync paused” with Resume, and confirmed “Unlock your phone to continue Apple Health sync”. Add existing-style stories for each state; no custom status framework.
-- [ ] Inspect equivalent web sync/import paths and document why native lifecycle changes have no browser equivalent; do not make unrelated web edits.
-- [ ] Run focused UI/mobile/native tests, mobile typecheck, relevant lint, spelling and diff checks, then the Docker-free suite. Run iOS build with supported signing instructions; read ios-simulator-audit before simulator runtime work. Report exact external blockers without claiming device validation from compilation.
-- [ ] Review stories visually using existing tooling. If serving, run/retain quick tunnel and give only direct story URLs under its emitted HTTPS host.
-- [ ] Final fresh Architect review against approved spec and actual diff. Resolve important findings with regression evidence, then update incident baseline with actual verification and physical-device acceptance limitations.
-- [ ] Commit/push final reviewed changes. Do not merge/deploy without explicit instruction. Explain native release requirement and any unexecuted physical-device checks.
+- [x] Write failing interaction tests for running and duplicate prevention, route navigation retention, paused Resume preserving window, confirmed locked text, and specific server errors.
+- [x] Implement running progress, “Apple Health sync paused” with Resume, and confirmed “Unlock your phone to continue Apple Health sync”. Add existing-style stories for each state; no custom status framework.
+- [x] Inspect equivalent web sync/import paths and document why native lifecycle changes have no browser equivalent; do not make unrelated web edits.
+- [x] Run focused UI/mobile/native tests, mobile typecheck, relevant lint, spelling and diff checks, then the Docker-free suite. Run iOS build with supported signing instructions; read ios-simulator-audit before simulator runtime work. Report exact external blockers without claiming device validation from compilation.
+- [x] Review stories visually using existing tooling. If serving, run/retain quick tunnel and give only direct story URLs under its emitted HTTPS host.
+- [x] Final fresh Architect review against approved spec and actual diff. Resolve important findings with regression evidence, then update incident baseline with actual verification and physical-device acceptance limitations.
+- [x] Commit/push final reviewed changes. Do not merge/deploy without explicit instruction. Explain native release requirement and any unexecuted physical-device checks.
