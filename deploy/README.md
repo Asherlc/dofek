@@ -7,8 +7,9 @@ Cloudflare R2. A November 12 broker audit observed remote storage enabled on all
 six metric-stream topics and successful copy/delete operations in its bounded
 log sample; it does not establish an exact activation date or prove the newly
 selected local-retention limits are deployed. See the [broker audit](kafka/retention-policy.md)
-and [selected topic policy](kafka/topic-policy.json). The old Redpanda data
-remains retained in place, and existing service/environment names retain their
+and [selected topic policy](kafka/topic-policy.json). The old Redpanda contents
+were retired on November 12 after archive-range verification; its original
+directory and read-only worker mount remain. Existing service/environment names retain their
 legacy Redpanda spelling. Shared application deployment and old-data retirement
 retain their own review boundaries.
 
@@ -155,7 +156,7 @@ infrastructure has been retired.
   scheduled retry. A reconciliation failure never changes CDC state.
 - Netdata has a 768 MiB container memory limit and a checked-in `deploy/netdata/netdata.conf` that bounds dbengine retention to two tiers: one day of per-second data capped at 96 MiB and seven days of per-minute data capped at 128 MiB. The stack mounts this file as a Docker Swarm config, so changing it must also rotate the config key in `deploy/stack.yml` (for example `netdata_db_limits_v2`).
 - PeerDB uses an internal catalog Postgres service, Temporal, worker services, and a private SeaweedFS S3 staging bucket (service hostname `peerdb-minio`). Its persistent catalog and staging data live under `/mnt/dofek-data/peerdb-catalog` and `/mnt/dofek-data/peerdb-minio`. The catalog uses the PostgreSQL 18 image layout: mount the host directory at `/var/lib/postgresql`, not `/var/lib/postgresql/data`, so the image can manage its versioned data directory. Production mirrors use 100,000-row CDC batches and single-worker 100,000-row initial snapshot partitions so PeerDB can stay inside its fixed memory limits at the cost of slower catch-up.
-- Redpanda stores hot `metric_stream` ingest data under `/mnt/dofek-data/redpanda` (a bind mount on the large data disk — a default named volume lands on the small root disk and fills during a metric-stream backfill). Redpanda local retention is not the long-term source of truth; Redpanda Connect writes the `metric-stream-v1` topic to the `dofek-metric-stream-archive` R2 bucket for canonical replay. The ClickHouse sink and R2 archive services must be healthy before any metric-stream writer change is considered deployed safely.
+- Kafka stores local `metric_stream` ingest data under `/mnt/dofek-data/kafka-broker/data` and uses R2 for its remote log tier. Redpanda Connect independently archives the three routed source topics to `dofek-metric-stream-archive`; it is not the broker's remote-segment reader. The original `/mnt/dofek-data/redpanda` directory is now an empty read-only worker hold mount. See the [retention and cleanup record](kafka/retention-policy.md) and [Kafka tiering documentation](https://kafka.apache.org/44/operations/tiered-storage/). The ClickHouse sink and R2 archive services must be healthy before any metric-stream writer change is considered deployed safely.
 - The historical Postgres `fitness.metric_stream` hypertable has been retired; metric-stream durability is Redpanda plus the R2 archive, and ClickHouse is the serving copy. The `cdc-health` service alerts on remaining PeerDB slot lag at 16 GiB and fails the check at 32 GiB so operators have headroom before Postgres reaches the 64 GiB per-slot WAL cap.
 - The Oracle override scales Portainer, CloudBeaver, pgAdmin, PeerDB UI, and
   Netdata to zero. Databasus remains at one replica because it owns the backup
@@ -170,8 +171,8 @@ infrastructure has been retired.
 - The Kafka retention change adds stock JMX Exporter 1.7.0 in OTLP-only mode,
   exporting native backlog, error and log-size metrics through the collector to
   the existing `dofek-host-metrics` dataset. No JMX control port or additional
-  service is exposed. Production rollout and stored-query readback remain
-  pending; see the [policy and native qualification](kafka/retention-policy.md)
+  service is exposed. Verify fresh samples after each release; stored-query
+  readback needs query permission. See the [policy and native qualification](kafka/retention-policy.md)
   and [upstream agent configuration](https://prometheus.github.io/jmx_exporter/configuration/opentelemetry/).
 - Logs use `dofek-logs`, with metadata grouped into the `attributes.custom` map;
   traces use `dofek-traces`. Axiom requires a dedicated dataset per OTel signal:

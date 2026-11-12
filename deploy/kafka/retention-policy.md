@@ -5,7 +5,7 @@ retention inherited total retention. The selected change uses stock Kafka
 retention controls and the existing deployment reconciliation. No replacement
 broker, storage controller or plugin fork is needed ([Kafka tiering](https://kafka.apache.org/44/operations/tiered-storage/)).
 
-## Selected policy (production rollout pending)
+## Selected policy
 
 | Setting | Source topics | Quarantine topics |
 | --- | --- | --- |
@@ -104,8 +104,8 @@ Successful copies establish progress, not a zero upload backlog. Quantitative
 copy backlog and error rates use Kafka's existing `RemoteCopyLagBytes`,
 `RemoteCopyLagSegments`, `RemoteCopyErrorsPerSec`, `RemoteFetchErrorsPerSec` and
 `RemoteDeleteErrorsPerSec` JMX metrics. This change adds the stock JMX agent and
-the [collector metrics pipeline](../otel-collector-config.yaml); production
-monitoring remains pending deployment. The agent exports every 60 seconds to the
+the [collector metrics pipeline](../otel-collector-config.yaml). Verify fresh
+samples after each release. The agent exports every 60 seconds to the
 existing Axiom `dofek-host-metrics` dataset with service name `dofek-kafka`, without
 opening a JMX control or HTTP metrics port. See
 [Kafka monitoring](https://kafka.apache.org/44/operations/monitoring/),
@@ -155,7 +155,26 @@ filesystem reserve before declaring a production rollout verified. Retention
 targets cannot cap disk growth during an offload outage; investigate the first
 fatal error rather than disabling tiering or extending retry/timeout settings.
 
-## Retained Redpanda retirement proposal
+## Retired Redpanda cleanup
+
+The operator explicitly approved cleanup on November 12. At 21:29 UTC, the
+original Redpanda contents were deleted after checking the cutover receipts,
+current R2 object-range coverage, absence of a running Redpanda broker, no
+writable container references and no nested mounts. Only
+`/mnt/dofek-data/redpanda` contents were removed. Its directory inode and the
+worker's read-only mount were preserved; active and aborted Kafka allocations
+were unchanged. This reclaimed 30,980,030,464 bytes (28.9 GiB), increasing
+filesystem availability from 28,259,467,264 to 59,239,497,728 bytes.
+
+The metadata scan inspected 403,000 archive objects. Nonempty object ranges cover
+every retained old live offset `[212186947, 247794777)` and history offset
+`[55609019, 74445631)`, matching both sink and archive final cutover commitments
+in the [phase-1 receipt](phase1-execution.md). This verifies retained-range
+coverage, not payload decoding, a full restore or forensic overwrite. The
+independent JSONL archive and both Kafka trees remain intact. See the
+[incident record](../../docs/production-incident-baseline.md#2026-11-12--kafka-tiering-retains-the-full-replay-window-locally-rollout-pending).
+
+### Pre-retirement review (historical)
 
 The audit found approximately 29 GiB under the original
 `/mnt/dofek-data/redpanda` root and no running Redpanda container. This is a
@@ -174,4 +193,5 @@ rename the tree, substitute an empty mount, remove the completion hold, delete
 the active Kafka root or include the aborted Kafka tree in this scope. Actual
 mount sources and retained bytes are part of the
 [erasure boundary](README.md#erasure-boundary), not disposable Docker cache.
-No deletion is authorized or performed by this policy change.
+The deletion above was a separately authorized operator action, not a topic-policy
+deployment hook or automatic cleanup service.
