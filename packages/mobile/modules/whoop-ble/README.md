@@ -101,13 +101,18 @@ after removing the old credentials and persisting an opaque cleanup intent throu
 the Dofek app's private [WHOOP upload-session policy](../../lib/whoop-upload-session.ts),
 without waiting for the bulk purge. The SDK's public bridge remains independent of
 app storage policy. Live replacement configuration queues behind native cleanup.
-After an app restart, unfinished cleanup blocks WHOOP configuration while signed-in
-navigation remains available; sign out to perform explicit cleanup before
-configuring again. The intent uses
+After an app restart, the app resumes unfinished cleanup once from asynchronous
+WHOOP initialization, awaiting the existing native disable before configuration.
+Authentication, splash dismissal and navigation do not await this work. The intent uses
 [SecureStore](https://docs.expo.dev/versions/latest/sdk/securestore/) and clears
-only for its matching successful cleanup. Account deletion retains its separate
-awaited cleanup lease. Native cleanup and credential failures remain awaited and
-reported; there is no automatic purge retry.
+only for its matching successful cleanup, serialized with replacement intents.
+Concurrent initialization shares recovery; only the latest configuration can
+proceed. Failure retains the marker and is reported without another automatic
+attempt in the same JavaScript lifetime; explicit sign-out cleanup remains
+available. The [app hook](../../lib/useWhoopBleSync.ts) uses
+[React's effect lifecycle](https://react.dev/reference/react/useEffect), independently
+of the app startup gate. Account deletion retains its separate awaited cleanup
+lease. Native cleanup and credential failures remain awaited and reported.
 
 Automatic reconnection keeps the Core Bluetooth connection request pending
 while the strap is unavailable. Service discovery and notification subscription

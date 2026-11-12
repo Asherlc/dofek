@@ -36700,6 +36700,84 @@ Local documentation validation was blocked by `pnpm compose -- up -d --wait clic
 - **Local regression proof:** The real Hermes bridge tests first reproduced unrelated Expo async work blocking behind cleanup, configuration resuming after failed cleanup, and capture starting without configuration. All 13 pass after the fix, including a final run against Expo 58.0.24 / Modules Core 58.1.0 using the exact shared SDK correction from [PR #3268](https://github.com/Asherlc/dofek/pull/3268). All 201 standalone WHOOP Swift tests pass, including real SQLite reopen, rollback, owner changes, erasure cutoff and late acknowledgments. The 155 focused JavaScript tests include actual login completion during pending cleanup, retained replacement credentials after late cleanup, restart intent, stale configure dispatch, error aggregation and explicit cleanup recovery. The host retains stock Expo test-thread QoS warnings; Vitest retains existing configuration warnings. These are not physical-device recovery results.
 - **Limits / status:** Older device watchdog build 1794347190 was symbolicated with its exact dSYM and shows uploader SQLite deletion, a waiting BLE snapshot and a main-thread wait during application termination. It is not a current foreground stack. Live LLDB/Time Profiler attempts did not produce a valid current stack. No release or affected-device acceptance has been performed. Native changes require a new binary under the existing [fingerprint runtime policy](https://docs.expo.dev/eas-update/runtime-versions/); the installed build 1794383939 has not been replaced. MOBILE-20's historical native authorization error remains distinct from this observed post-authorization stall, and it and the separately owned startup/WHOOP issues remain open pending operation-specific evidence.
 
+## 2026-11-12 — WHOOP startup blocked by retained cleanup intent (unresolved)
+
+- **Failure / impact:** [DOFEK-MOBILE-2E](https://east-bay-software.sentry.io/issues/7844955301/) contains one handled event at 17:01:14.661 UTC on release `789d68671a87923cfd7ba905efb8273fa7194d32`, build `1794477595`. The failing operation is `configureWhoopUploads` during `whoop-ble-sync-init`; the first exception is `WHOOP upload setup is blocked by pending sensor cleanup. Sign out and sign in again after cleanup finishes.` WHOOP initialization stops; this event does not establish loss of previously uploaded data.
+- **Evidence / cause boundary:** Axiom's live schema query succeeded. Filtering `dofek-logs` from 17:00 through 17:06 UTC by `attributes.custom.runtimeId=9ba8c1ff-d9a4-43d4-89d6-ff2c0fc6e00d` shows authentication completing at 17:01:14.540 and the matching exception at 17:01:14.662. The [upload-session guard](../packages/mobile/lib/whoop-upload-session.ts) rejects a persisted intent unknown to the current JavaScript lifetime. This is the deliberate restart fence in the [approved cleanup design](superpowers/specs/2026-11-11-sign-in-cleanup-isolation-design.md), introduced by [PR #3276](https://github.com/Asherlc/dofek/pull/3276). It prevents reconfiguration without confirmed cleanup; startup does not resume that cleanup. Why this device retained its intent is unconfirmed. A Sentry log search for `message:"WHOOP cleanup"` over two days returned no results; an Axiom mobile cleanup/disable search from midnight through 17:06 found only this guard exception. Missing logs do not prove native cleanup completed or failed.
+- **Disposition / proposed repair:** No runtime behavior, production release, or Sentry status changed. Proposed for operator approval: when startup encounters an unknown pending intent, await the existing native disable/cleanup operation and clear only that intent after success before configuring uploads. Preserve failure reporting and account-change/erasure fencing. This changes the prior explicit no-automatic-purge-retry policy; it requires tests for restart recovery, cleanup failure and concurrent account changes. The [existing native disable path](../packages/mobile/modules/whoop-ble/ios/WhoopBleBackgroundUploader.swift) cancels owned transfers and purges the queued sensor store and transport bodies, so resuming it completes the destructive cleanup already requested by sign-out. Do not simply remove the marker. Physical-device cleanup and subsequent upload acceptance remain necessary before claiming recovery. No new timeout, retry loop or resilience setting was added.
+- **Validation / retrospective:** `pnpm exec vitest run --project mobile packages/mobile/lib/whoop-upload-session.test.ts packages/mobile/lib/auth-session.test.ts packages/mobile/lib/useWhoopBleSync.test.ts --maxWorkers 1` passed all 55 tests across three files. The existing restart test explicitly expects the pending-intent rejection; passing tests do not establish recovery. Correlating Sentry with Axiom separated successful authentication from failed WHOOP initialization, and reading the approved design established that this is an enforced safety policy. Proposed addition to the [Sentry runbook](sentry.md): “For persisted cleanup fences, identify the initiating cleanup, its completion evidence and the approved recovery policy before clearing state or changing retry behavior.” Reuse systematic debugging and the Axiom runbook for similar incidents; no new diagnostic tool is needed.
+
+### Approved asynchronous recovery
+
+The operator approved resuming cleanup, with an explicit requirement to avoid
+reintroducing the earlier startup/login freeze. The
+[upload-session boundary](../packages/mobile/lib/whoop-upload-session.ts) now
+shares one automatic native-cleanup attempt across asynchronous WHOOP
+initialization. It clears the matching marker only after cleanup succeeds.
+Marker access is serialized independently of credential persistence, and a newer
+configuration, sign-out or erasure supersedes stale configuration. A failed
+attempt retains its original error and marker without another automatic attempt
+in the same JavaScript lifetime. Normal startup without a marker skips cleanup.
+The existing [native FIFO](../packages/mobile/modules/whoop-ble/ios/WhoopBleModule.swift)
+and erasure-cutoff behavior remain intact; there is no native-code change,
+new dependency, timer, retry loop or timeout. The single attempt resumes the
+already-requested destructive cleanup rather than masking an unknown failure.
+
+The initial upload-session regression run failed nine tests against the original
+implementation. A further newer-session regression failed against the initial
+recovery implementation and passed after extending the existing configuration
+generation fence. Both new consumer regressions also failed against the original
+source and passed after restoration of the fix. The final focused run passed 146
+tests across upload/session/auth/root-layout/WHOOP lifecycle suites. With native
+cleanup held pending, actual login persists its session, splash dismissal and
+navigation rendering/route updates complete, and unrelated HealthKit
+initialization proceeds; native upload configuration remains blocked. These
+tests exercise the [React effect boundary](https://react.dev/reference/react/useEffect)
+and mocked native Promises; they do not establish device thread behavior.
+Full lint, root/server/web/mobile typechecks and changed-source/module-doc
+spelling pass. A whole-file app-README spelling probe flags four unchanged
+historical tool names outside this change; the added documentation text passes
+separately. Independent review found no blocking issues and independently passed
+81 consumer/source tests with retries disabled. Its additional ordinary-startup
+assertion now explicitly guards against purging a retained queue without a
+marker. Full unit/mobile validation is tracked with this branch. Release, native cleanup completion and
+subsequent real upload acceptance on the affected signed device remain unverified;
+the Sentry issue stays unresolved.
+
+Retrospective: holding cleanup pending in the real auth and root-layout consumers
+directly checks the regression the operator wanted to avoid. Proposed addition
+to the loading runbook: “Test background cleanup completion separately from
+interactive startup; hold cleanup pending while verifying login, splash dismissal
+and navigation.” Reuse the existing mobile tests and native bridge isolation
+suite for future changes; no additional recovery framework is needed.
+
+PR qualification note: GitHub reported PR #3286 as conflicting, and no `pull_request` CI run existed for `e5c5173ce`. A stock `git merge-tree --write-tree HEAD origin/main` identified only an append conflict in this incident baseline. Merged main while preserving both records; the upstream changes contain provider-lock ordering and a native test-fixture correction, with no native runtime change. GitHub documents that [merge conflicts prevent pull-request workflows](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request). Workflow configuration and required checks remain unchanged. Final qualification must use the combined head.
+
+The resulting [Metro job](https://github.com/Asherlc/dofek/actions/runs/43270259995/job/131365155123)
+failed before bundle export in `Verify dependencies match Expo SDK` at
+`cd packages/mobile && pnpm expo install --check`. At 17:33:15 UTC the first
+fatal diagnostic was `Found outdated dependencies`, followed by exit 1: installed
+Expo `58.0.24` and development client `58.0.19` did not match the expected
+`~58.0.25` and `~58.0.20`. This command checks the SDK's supported package versions:
+[Expo dependency validation](https://docs.expo.dev/more/expo-cli/#version-validation).
+Registry `latest` metadata confirmed both requested patch versions. Reused only
+the package pins, lockfile and existing version-specific release-age entries from
+the independently reviewed [shared correction](https://github.com/Asherlc/dofek/commit/dae4865c8469a71131cddad7c82dc61760897a79)
+in [PR #3284](https://github.com/Asherlc/dofek/pull/3284); no legal-link code or
+unrelated incident entry was copied. No validation exclusion, retry, timeout or
+workflow change was added. Before changing installed dependencies, the full
+unit/mobile tier completed successfully: 24,302 tests passed across 1,470 files,
+with 19 skipped tests and two skipped files, in 857.30 seconds. After the main
+merge, 169 focused mobile/provider-token tests passed with retries disabled,
+and full lint and root typecheck passed. After alignment, frozen installation,
+the unchanged Expo compatibility command (`Dependencies are up to date`), full
+lint and root/server/web/mobile typechecks pass. The complete mobile tier passed
+2,190 tests across 213 files in 161.79 seconds. The package files exactly match
+the shared correction, verified with `git diff --cached --exit-code` against
+its commit. Final-head CI and signed-device acceptance remain separate gates.
+
+[Matching-head CI on `4ec08a690`](https://github.com/Asherlc/dofek/actions/runs/43272626285) passed 104 checks with seven expected skips, including the Release archive and WHOOP Expo bridge tests in Simulator. Main subsequently merged [PR #3284](https://github.com/Asherlc/dofek/pull/3284); the SDK files already match exactly, and the only conflict is these incident entries. Preserved both records and consolidated WHOOP qualification notes under their own heading beside the other November 12 incidents, leaving the common append point unchanged. The combined mobile tree passes all 2,190 tests across 213 files (81.54 seconds), mobile typecheck and scoped lint; no WHOOP runtime or dependency change was needed.
+
 ## 2026-11-11 — Sign-in cleanup ordering and retired logout reporting
 
 - **Native ordering / attribution evidence:** WHOOP disk work and `purgeAccountState` share native FIFO ordering in [WhoopBleModule.swift](../packages/mobile/modules/whoop-ble/ios/WhoopBleModule.swift), addressing [PR review 4541941238](https://github.com/Asherlc/dofek/pull/3276#discussion_r4541941238). Disable and purge failure events use event-local Sentry user clearing. The existing [Hermes bridge tests](../packages/mobile/modules/whoop-ble/ios/BridgeTests/WhoopBleModuleTests.swift), `testCleanupFailureLogsTheStageAndStillThrows` and `testFailedErasureRejectsConfigurationQueuedBehindPurge`, switch the active scope from account A to account B before failure capture; they assert the cleanup event is not attributed to B and a subsequent control event still carries B.
