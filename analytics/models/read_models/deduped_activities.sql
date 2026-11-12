@@ -167,11 +167,6 @@ absent_source_links AS (
     GROUP BY group_id
 ),
 
-tombstoned_groups AS (
-    SELECT DISTINCT group_id
-    FROM absent_group_members
-),
-
 best AS (
     SELECT *
     FROM (
@@ -281,8 +276,8 @@ merged AS (
         ) AS provider_type,
         any(best.modality) AS modality,
         coalesce(
-            minOrNullIf(ranked.started_at, ranked.activity_id IS NOT NULL AND coalesce(ranked.provider_type, '') != 'climbing_log'),
-            minIf(ranked.started_at, ranked.activity_id IS NOT NULL)
+            minOrNullIf(ranked.started_at, ranked.activity_id IS NOT null AND coalesce(ranked.provider_type, '') != 'climbing_log'),
+            minIf(ranked.started_at, ranked.activity_id IS NOT null)
         ) AS started_at,
         maxOrNullIf(ranked.ended_at, ranked.activity_id IS NOT null AND coalesce(ranked.provider_type, '') != 'climbing_log') AS ended_at,
         any(best.source_name) AS source_name,
@@ -399,7 +394,6 @@ current_deduped_activities AS (
         AND primary_member.group_id = merged.group_id
         AND primary_member.user_id = merged.user_id
         AND primary_member.is_deleted = 0
-    WHERE merged.group_id NOT IN (SELECT group_id FROM tombstoned_groups)
 ),
 
 {% if activity_refresh_scoped %}

@@ -1303,6 +1303,13 @@
       "when": 1794433425118,
       "tag": "0185_climbing_area_groups",
       "breakpoints": true
+    },
+    {
+      "idx": 186,
+      "version": "7",
+      "when": 1794439529814,
+      "tag": "0186_preserve_active_activity_sources",
+      "breakpoints": true
     }
   ]
 }

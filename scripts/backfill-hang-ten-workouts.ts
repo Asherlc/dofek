@@ -5,6 +5,7 @@ import { z } from "zod";
 import { createDatabaseFromEnv } from "../src/db/index.ts";
 import { activity } from "../src/db/schema/activity.ts";
 import { executeWithSchema, timestampStringSchema } from "../src/db/typed-sql.ts";
+import { sentryDataCollection } from "../src/lib/sentry-options.ts";
 import { replaceHangTenIntervals } from "../src/providers/apple-health/hang-ten-intervals.ts";
 import { applyWorkoutMetadata } from "../src/providers/apple-health/workouts.ts";
 
@@ -22,7 +23,11 @@ const hangTenWorkoutRowSchema = z.object({
 function initializeSentry(): void {
   const sentryDsn = process.env.SENTRY_DSN || process.env.SENTRY_DSN_unencrypted;
   if (sentryDsn) {
-    Sentry.init({ dsn: sentryDsn, skipOpenTelemetrySetup: true });
+    Sentry.init({
+      dsn: sentryDsn,
+      enableOpenTelemetrySetup: false,
+      dataCollection: sentryDataCollection,
+    });
   }
 }
 

@@ -10,6 +10,7 @@ import {
 import { createDatabaseFromEnv } from "../src/db/index.ts";
 import { createImportUploadStorageFromEnv } from "../src/file-upload-storage.ts";
 import { captureException } from "../src/lib/error-reporting.ts";
+import { sentryDataCollection } from "../src/lib/sentry-options.ts";
 
 interface RetryFailedFileUploadCommand {
   execute: boolean;
@@ -104,7 +105,8 @@ function validateRetainedRetry(
 
 function initializeSentry(): void {
   const dsn = process.env.SENTRY_DSN || process.env.SENTRY_DSN_unencrypted;
-  if (dsn) Sentry.init({ dsn, skipOpenTelemetrySetup: true });
+  if (dsn)
+    Sentry.init({ dsn, enableOpenTelemetrySetup: false, dataCollection: sentryDataCollection });
 }
 
 export async function main(args = process.argv.slice(2)): Promise<void> {

@@ -20,6 +20,7 @@ import { createClickHouseClientFromEnv } from "../src/db/clickhouse.ts";
 import { createDatabaseFromEnv } from "../src/db/index.ts";
 import { userProfile } from "../src/db/schema/reference.ts";
 import { captureException } from "../src/lib/error-reporting.ts";
+import { sentryDataCollection } from "../src/lib/sentry-options.ts";
 import { closeResources } from "./close-resources.ts";
 
 type Group = FindRepeatedEffortsOutput["groups"][number];
@@ -290,7 +291,8 @@ async function main(): Promise<void> {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const dsn = process.env.SENTRY_DSN || process.env.SENTRY_DSN_unencrypted;
-  if (dsn) Sentry.init({ dsn, skipOpenTelemetrySetup: true });
+  if (dsn)
+    Sentry.init({ dsn, enableOpenTelemetrySetup: false, dataCollection: sentryDataCollection });
   main().catch(async (error: unknown) => {
     captureException(error);
     const message = error instanceof Error ? error.message : "Unknown repository error";

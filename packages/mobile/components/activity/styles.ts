@@ -151,6 +151,18 @@ export const styles = StyleSheet.create({
     color: colors.textSecondary,
     lineHeight: 16,
   },
+  providerAbsentRestoreButton: {
+    alignSelf: "flex-start",
+    backgroundColor: colors.surface,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  providerAbsentRestoreButtonText: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: "600",
+  },
   recomputeButton: {
     backgroundColor: colors.surface,
     borderRadius: 12,

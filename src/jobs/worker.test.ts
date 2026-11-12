@@ -103,7 +103,8 @@ describe("worker startup", () => {
       beforeSendTransaction: expect.any(Function),
       dsn: "https://test@sentry.io/123",
       environment: "production",
-      skipOpenTelemetrySetup: true,
+      enableOpenTelemetrySetup: false,
+      dataCollection: expect.any(Object),
     });
     expect(initProductionPostHog).toHaveBeenCalledWith("dofek-worker");
   });

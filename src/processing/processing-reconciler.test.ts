@@ -38,8 +38,15 @@ import {
 } from "./processing-reconciler.ts";
 
 const operationId = "30000000-0000-4000-8000-000000000001";
-const recentOperationCreatedAt = new Date();
-const staleOperationCreatedAt = new Date(Date.now() - STALE_OPERATION_THRESHOLD_MS - 60_000);
+const recentEventOccurredAt = new Date();
+const recentOutputCreatedAt = new Date();
+const staleOutputCreatedAt = new Date(Date.now() - STALE_OPERATION_THRESHOLD_MS - 60_000);
+function pendingOperationRow(lastOutputAt: Date): {
+  operation_id: string;
+  last_output_at: Date;
+} {
+  return { operation_id: operationId, last_output_at: lastOutputAt };
+}
 
 function storedStageEvent(
   overrides: Partial<StoredProcessingStageEvent> = {},
@@ -53,7 +60,7 @@ function storedStageEvent(
     datasetKey: null,
     outputPath: null,
     modelName: null,
-    occurredAt: recentOperationCreatedAt,
+    occurredAt: recentEventOccurredAt,
     progressPercentage: 100,
     sourceWatermark: null,
     servingWatermark: null,
@@ -289,9 +296,7 @@ describe("reconcilePendingProcessingOperations", () => {
 
   function arrangeStoredExpectations() {
     mockExecuteWithSchema
-      .mockResolvedValueOnce([
-        { operation_id: operationId, operation_created_at: recentOperationCreatedAt },
-      ])
+      .mockResolvedValueOnce([pendingOperationRow(recentOutputCreatedAt)])
       .mockResolvedValueOnce([
         { dataset_key: "activity", output_path: "metric_stream" },
         { dataset_key: "activity", output_path: "relational" },
@@ -452,9 +457,7 @@ describe("reconcilePendingProcessingOperations", () => {
 
   it("queues distinct analytics events when datasets share a serving watermark", async () => {
     mockExecuteWithSchema
-      .mockResolvedValueOnce([
-        { operation_id: operationId, operation_created_at: recentOperationCreatedAt },
-      ])
+      .mockResolvedValueOnce([pendingOperationRow(recentOutputCreatedAt)])
       .mockResolvedValueOnce([
         { dataset_key: "activity", output_path: "relational" },
         { dataset_key: "hiking", output_path: "relational" },
@@ -552,9 +555,7 @@ describe("reconcilePendingProcessingOperations", () => {
 
   it("abandons an operation that has not reconciled within the staleness threshold", async () => {
     mockExecuteWithSchema
-      .mockResolvedValueOnce([
-        { operation_id: operationId, operation_created_at: staleOperationCreatedAt },
-      ])
+      .mockResolvedValueOnce([pendingOperationRow(staleOutputCreatedAt)])
       .mockResolvedValueOnce([{ dataset_key: "activity", output_path: "metric_stream" }])
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([
@@ -589,6 +590,41 @@ describe("reconcilePendingProcessingOperations", () => {
     );
     expect(reconciliationDatabase.execute).toHaveBeenCalledOnce();
   });
+
+  it.each([
+    { ageMs: STALE_OPERATION_THRESHOLD_MS, abandoned: 0 },
+    { ageMs: STALE_OPERATION_THRESHOLD_MS + 1, abandoned: 1 },
+  ])(
+    "uses the strict 12-hour last-output boundary for age $ageMs ms",
+    async ({ ageMs, abandoned }) => {
+      const now = new Date("2026-11-11T12:00:00.000Z");
+      vi.useFakeTimers();
+      vi.setSystemTime(now);
+      try {
+        mockExecuteWithSchema
+          .mockResolvedValueOnce([pendingOperationRow(new Date(now.getTime() - ageMs))])
+          .mockResolvedValueOnce([{ dataset_key: "activity", output_path: "metric_stream" }])
+          .mockResolvedValueOnce([])
+          .mockResolvedValueOnce([
+            {
+              batch_id: "metric-batch-1",
+              dataset_keys: ["activity"],
+              expected_event_count: 12,
+            },
+          ]);
+
+        await expect(
+          reconcilePendingProcessingOperations({
+            requestAnalyticsRefresh,
+            database: database(),
+            clickHouseClient: { query: clickHouseQueryWithEvidence(false) },
+          }),
+        ).resolves.toMatchObject({ abandoned });
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
 
   it.each([0, 1_001, 1.5])("rejects an invalid reconciliation limit of %s", async (limit) => {
     await expect(
