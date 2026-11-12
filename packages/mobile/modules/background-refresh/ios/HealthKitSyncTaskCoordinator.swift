@@ -108,6 +108,7 @@ final class HealthKitSyncTaskCoordinator: @unchecked Sendable {
 
     private struct PendingStart {
         let taskId: String
+        let token: UUID
         let completion: (Result<HealthKitSyncStartOutcome, HealthKitSyncStartError>) -> Void
     }
 
@@ -157,7 +158,8 @@ final class HealthKitSyncTaskCoordinator: @unchecked Sendable {
             return
         }
         let needsRegistration = !registeredTaskIds.contains(taskId)
-        pendingStart = PendingStart(taskId: taskId, completion: completion)
+        let token = UUID()
+        pendingStart = PendingStart(taskId: taskId, token: token, completion: completion)
         lock.unlock()
 
         if needsRegistration {
@@ -166,7 +168,7 @@ final class HealthKitSyncTaskCoordinator: @unchecked Sendable {
                 self?.handleLaunch(taskId: taskId, grant: grant)
             }
             guard registered else {
-                rejectPendingStart(taskId: taskId, error: .registrationFailed)
+                rejectPendingStart(token: token, error: .registrationFailed)
                 return
             }
             lock.lock()
@@ -175,7 +177,7 @@ final class HealthKitSyncTaskCoordinator: @unchecked Sendable {
         }
 
         lock.lock()
-        let stillPending = pendingStart?.taskId == taskId
+        let stillPending = pendingStart?.token == token
         lock.unlock()
         guard stillPending else { return }
 
@@ -187,7 +189,7 @@ final class HealthKitSyncTaskCoordinator: @unchecked Sendable {
                 strategy: .fail
             )
         } catch {
-            rejectPendingStart(taskId: taskId, error: .submissionFailed(error.localizedDescription))
+            rejectPendingStart(token: token, error: .submissionFailed(error.localizedDescription))
         }
     }
 
@@ -279,9 +281,9 @@ final class HealthKitSyncTaskCoordinator: @unchecked Sendable {
         pending.completion(.success(.launched))
     }
 
-    private func rejectPendingStart(taskId: String, error: HealthKitSyncStartError) {
+    private func rejectPendingStart(token: UUID, error: HealthKitSyncStartError) {
         lock.lock()
-        guard let pending = pendingStart, pending.taskId == taskId else {
+        guard let pending = pendingStart, pending.token == token else {
             lock.unlock()
             return
         }

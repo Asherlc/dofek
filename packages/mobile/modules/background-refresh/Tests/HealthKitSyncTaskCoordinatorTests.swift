@@ -234,6 +234,31 @@ final class HealthKitSyncTaskCoordinatorTests: XCTestCase {
         XCTAssertNil(activeGrant.expirationHandler)
     }
 
+    func testStaleRegistrationFailureCannotRejectANewerStartWithTheSameTaskId() throws {
+        let scheduler = FakeContinuedProcessingScheduler()
+        let coordinator = HealthKitSyncTaskCoordinator(scheduler: scheduler)
+        var outcomes: [Result<HealthKitSyncStartOutcome, HealthKitSyncStartError>] = []
+        var registrationCalls = 0
+        scheduler.onRegister = { _ in
+            registrationCalls += 1
+            guard registrationCalls == 1 else { return true }
+            coordinator.teardown()
+            coordinator.start(taskId: "sync-1") { outcomes.append($0) }
+            return false
+        }
+
+        coordinator.start(taskId: "sync-1") { outcomes.append($0) }
+        let grant = try XCTUnwrap(scheduler.launch(taskId: "sync-1"))
+
+        XCTAssertEqual(scheduler.registrations, [
+            "com.dofek.app.healthkit-sync.sync-1",
+            "com.dofek.app.healthkit-sync.sync-1",
+        ])
+        XCTAssertEqual(scheduler.submissions.count, 1)
+        XCTAssertEqual(outcomes, [.failure(.cancelledBeforeTeardown), .success(.launched)])
+        XCTAssertNotNil(grant.expirationHandler)
+    }
+
     func testClearingTheExpirationCallbackKeepsNativeCompletionButStopsNotifications() throws {
         let scheduler = FakeContinuedProcessingScheduler()
         let coordinator = HealthKitSyncTaskCoordinator(scheduler: scheduler)
@@ -260,6 +285,7 @@ private final class FakeContinuedProcessingScheduler: HealthKitContinuedProcessi
 
     var isSupported = true
     var registrationSucceeds = true
+    var onRegister: ((String) -> Bool?)?
     var submitError: Error?
     private(set) var registrations: [String] = []
     private(set) var submissions: [Submission] = []
@@ -270,7 +296,8 @@ private final class FakeContinuedProcessingScheduler: HealthKitContinuedProcessi
         launchHandler: @escaping (HealthKitContinuedProcessingGrant) -> Void
     ) -> Bool {
         registrations.append(identifier)
-        guard registrationSucceeds else { return false }
+        let succeeds = onRegister?(identifier) ?? registrationSucceeds
+        guard succeeds else { return false }
         launchHandlers[identifier] = launchHandler
         return true
     }
