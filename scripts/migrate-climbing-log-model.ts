@@ -13,6 +13,7 @@ import { createDatabaseFromEnv } from "../src/db/index.ts";
 import { runMigrations } from "../src/db/migrate.ts";
 import { withMigrationPrefix } from "../src/db/migration-prefix.ts";
 import { captureException } from "../src/lib/error-reporting.ts";
+import { sentryDataCollection } from "../src/lib/sentry-options.ts";
 
 function printReport(report: ClimbingLogConversionReport) {
   console.log(JSON.stringify(report, null, 2));
@@ -82,7 +83,8 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
 const script = process.argv[1];
 if (script && import.meta.url === pathToFileURL(resolve(script)).href) {
   const dsn = process.env.SENTRY_DSN || process.env.SENTRY_DSN_unencrypted;
-  if (dsn) Sentry.init({ dsn, skipOpenTelemetrySetup: true });
+  if (dsn)
+    Sentry.init({ dsn, enableOpenTelemetrySetup: false, dataCollection: sentryDataCollection });
   main()
     .catch(async (error: unknown) => {
       captureException(error);
