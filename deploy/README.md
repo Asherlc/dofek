@@ -108,6 +108,21 @@ infrastructure has been retired.
   Keep abandoned ownership blocked until executor and request termination are
   verified. See SwarmKit's [task model](https://github.com/moby/swarmkit/blob/master/design/task_model.md)
   and the [verified recovery record](../docs/incidents/2026-11-10-sentry-remediation.md#analytics-recovery-and-prevention).
+- The anchored metric-stream ClickHouse sink gives both live and history
+  consumers a 30-minute stop grace. Shutdown requests mark readiness unavailable,
+  then KafkaJS `consumer.stop()` drains the active `eachBatch` callback before
+  the sink closes its database and ClickHouse connections. KafkaJS leaves
+  offsets unresolved when `eachBatch` fails. The sink resolves offsets only
+  after `handleEvents` succeeds in
+  [`redpanda-consumer.ts`](../src/metric-stream/redpanda-consumer.ts); see
+  KafkaJS's [consumer batch processing guide](https://kafka.js.org/docs/consuming)
+  and Docker's [`stop_grace_period`](https://docs.docker.com/reference/compose-file/services/#stop_grace_period).
+  Existing Swarm tasks retain their old stop-grace specification, so before the
+  first rollout verify the old sink task has no active owned publication or
+  perform a controlled drain before replacement. If a hard kill or unknown
+  request outcome occurs, keep publication ownership blocked until Kafka and
+  ClickHouse state are verified through the separate recovery gate; the new
+  grace period does not establish recovery evidence.
 - The worker healthcheck calls the worker process's loopback-only `/readyz` endpoint on port 3001. That endpoint verifies every existing BullMQ Worker's running state and Redis clients; the healthcheck must not start a second Node runtime or construct fresh queue clients inside the worker's 512 MiB cgroup. See the [Docker healthcheck reference](https://docs.docker.com/reference/compose-file/services/#healthcheck) and [BullMQ Worker API](https://api.docs.bullmq.io/classes/v5.Worker.html).
 - The `default` overlay network is declared `attachable: true` so CI can run one-shot migration containers on it from a remote Docker context.
 - The `db` service has a 2 GiB container memory limit to prevent one PostgreSQL workload from exhausting the single-node host. If it hits that limit, treat it as a query/workload incident rather than increasing the cap by default.

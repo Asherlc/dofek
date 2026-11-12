@@ -51,6 +51,7 @@ function startup(response: unknown = describedConfig()) {
   };
   const producer = {
     connect: vi.fn(async () => undefined),
+    disconnect: vi.fn(async () => undefined),
     send: vi.fn(async (_request: QuarantineSendRequest) => undefined),
   };
   const writer = new KafkaMetricStreamQuarantineWriter({
@@ -77,6 +78,12 @@ describe("KafkaMetricStreamQuarantineWriter", () => {
     });
     expect(producer.connect).toHaveBeenCalledOnce();
     expect(admin.disconnect).toHaveBeenCalledOnce();
+  });
+
+  it("disconnects the Kafka producer through the writer lifecycle", async () => {
+    const { producer, writer } = startup();
+    await writer.disconnect();
+    expect(producer.disconnect).toHaveBeenCalledOnce();
   });
 
   it.each([
@@ -186,6 +193,7 @@ describe("KafkaMetricStreamQuarantineWriter", () => {
     vi.setSystemTime(new Date("2026-07-25T00:00:00.000Z"));
     const producer = {
       connect: vi.fn(async () => undefined),
+      disconnect: vi.fn(async () => undefined),
       send: vi.fn(async (_request: QuarantineSendRequest) => undefined),
     };
     const writer = new KafkaMetricStreamQuarantineWriter({
@@ -232,6 +240,7 @@ describe("KafkaMetricStreamQuarantineWriter", () => {
   it("serializes non-Error parse failures without losing their reason", async () => {
     const producer = {
       connect: vi.fn(async () => undefined),
+      disconnect: vi.fn(async () => undefined),
       send: vi.fn(async (_request: QuarantineSendRequest) => undefined),
     };
     const writer = new KafkaMetricStreamQuarantineWriter({
