@@ -166,6 +166,61 @@ describe("auth-context", () => {
         unmount?.();
       }
     });
+    it("completes login while interrupted WHOOP cleanup is recovering", async () => {
+      const [actualSession, uploadSession, apis, native, store] = await Promise.all([
+        vi.importActual<typeof import("./auth-session")>("./auth-session"),
+        import("./whoop-upload-session"),
+        importAuthApis(),
+        import("../modules/whoop-ble"),
+        import("expo-secure-store"),
+      ]);
+      const user = { id: "recovered-user", name: "Recovered", email: null };
+      let finishCleanup!: () => void;
+      let recovering: Promise<void> | undefined;
+      let unmount: (() => void) | undefined;
+      try {
+        mockAuthSession.saveSessionToken.mockImplementation(actualSession.saveSessionToken);
+        mockAuthSession.saveSessionUser.mockImplementation(actualSession.saveSessionUser);
+        vi.mocked(apis.fetchCurrentUser).mockResolvedValue(user);
+        await store.setItemAsync("dofek_whoop_cleanup_intent_v1", "interrupted-cleanup");
+        vi.mocked(native.disableUploads)
+          .mockReset()
+          .mockImplementationOnce(() => new Promise<void>((resolve) => (finishCleanup = resolve)));
+        vi.mocked(native.configureUpload).mockClear();
+        const hook = renderHook(() => useAuth(), { wrapper });
+        unmount = hook.unmount;
+        await waitForAuthLoaded(hook.result);
+        recovering = uploadSession.configureWhoopUploads({
+          userId: user.id,
+          token: "recovered-session",
+          serverURL: "https://dofek.test",
+          headers: {},
+        });
+        const outcome = Promise.allSettled([recovering]);
+        try {
+          await waitFor(() => expect(native.disableUploads).toHaveBeenCalledOnce());
+          await act(async () => hook.result.current.onLoginSuccess("recovered-session"));
+          expect(hook.result.current).toMatchObject({ sessionToken: "recovered-session", user });
+          expect(await store.getItemAsync("dofek_session_token")).toBe("recovered-session");
+          expect(native.configureUpload).not.toHaveBeenCalled();
+          expect(await store.getItemAsync("dofek_whoop_cleanup_intent_v1")).toBe(
+            "interrupted-cleanup",
+          );
+        } finally {
+          finishCleanup?.();
+          await outcome;
+        }
+        await recovering;
+      } finally {
+        finishCleanup?.();
+        mockAuthSession.saveSessionToken.mockReset().mockResolvedValue();
+        mockAuthSession.saveSessionUser.mockReset().mockResolvedValue();
+        vi.mocked(apis.fetchCurrentUser).mockReset().mockResolvedValue(null);
+        vi.mocked(native.disableUploads).mockReset().mockResolvedValue(undefined);
+        unmount?.();
+      }
+    });
+
     it("does not re-save when no token exists", async () => {
       const { getSessionToken, saveSessionToken } = await importAuthApis();
 

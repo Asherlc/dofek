@@ -37083,3 +37083,47 @@ Final review also identified a classification-priority regression: the new trans
 - **Evidence / cause boundary:** Axiom's live schema query succeeded. Filtering `dofek-logs` from 17:00 through 17:06 UTC by `attributes.custom.runtimeId=9ba8c1ff-d9a4-43d4-89d6-ff2c0fc6e00d` shows authentication completing at 17:01:14.540 and the matching exception at 17:01:14.662. The [upload-session guard](../packages/mobile/lib/whoop-upload-session.ts) rejects a persisted intent unknown to the current JavaScript lifetime. This is the deliberate restart fence in the [approved cleanup design](superpowers/specs/2026-11-11-sign-in-cleanup-isolation-design.md), introduced by [PR #3276](https://github.com/Asherlc/dofek/pull/3276). It prevents reconfiguration without confirmed cleanup; startup does not resume that cleanup. Why this device retained its intent is unconfirmed. A Sentry log search for `message:"WHOOP cleanup"` over two days returned no results; an Axiom mobile cleanup/disable search from midnight through 17:06 found only this guard exception. Missing logs do not prove native cleanup completed or failed.
 - **Disposition / proposed repair:** No runtime behavior, production release, or Sentry status changed. Proposed for operator approval: when startup encounters an unknown pending intent, await the existing native disable/cleanup operation and clear only that intent after success before configuring uploads. Preserve failure reporting and account-change/erasure fencing. This changes the prior explicit no-automatic-purge-retry policy; it requires tests for restart recovery, cleanup failure and concurrent account changes. The [existing native disable path](../packages/mobile/modules/whoop-ble/ios/WhoopBleBackgroundUploader.swift) cancels owned transfers and purges the queued sensor store and transport bodies, so resuming it completes the destructive cleanup already requested by sign-out. Do not simply remove the marker. Physical-device cleanup and subsequent upload acceptance remain necessary before claiming recovery. No new timeout, retry loop or resilience setting was added.
 - **Validation / retrospective:** `pnpm exec vitest run --project mobile packages/mobile/lib/whoop-upload-session.test.ts packages/mobile/lib/auth-session.test.ts packages/mobile/lib/useWhoopBleSync.test.ts --maxWorkers 1` passed all 55 tests across three files. The existing restart test explicitly expects the pending-intent rejection; passing tests do not establish recovery. Correlating Sentry with Axiom separated successful authentication from failed WHOOP initialization, and reading the approved design established that this is an enforced safety policy. Proposed addition to the [Sentry runbook](sentry.md): “For persisted cleanup fences, identify the initiating cleanup, its completion evidence and the approved recovery policy before clearing state or changing retry behavior.” Reuse systematic debugging and the Axiom runbook for similar incidents; no new diagnostic tool is needed.
+
+### Approved asynchronous recovery
+
+The operator approved resuming cleanup, with an explicit requirement to avoid
+reintroducing the earlier startup/login freeze. The
+[upload-session boundary](../packages/mobile/lib/whoop-upload-session.ts) now
+shares one automatic native-cleanup attempt across asynchronous WHOOP
+initialization. It clears the matching marker only after cleanup succeeds.
+Marker access is serialized independently of credential persistence, and a newer
+configuration, sign-out or erasure supersedes stale configuration. A failed
+attempt retains its original error and marker without another automatic attempt
+in the same JavaScript lifetime. Normal startup without a marker skips cleanup.
+The existing [native FIFO](../packages/mobile/modules/whoop-ble/ios/WhoopBleModule.swift)
+and erasure-cutoff behavior remain intact; there is no native-code change,
+new dependency, timer, retry loop or timeout. The single attempt resumes the
+already-requested destructive cleanup rather than masking an unknown failure.
+
+The initial upload-session regression run failed nine tests against the original
+implementation. A further newer-session regression failed against the initial
+recovery implementation and passed after extending the existing configuration
+generation fence. Both new consumer regressions also failed against the original
+source and passed after restoration of the fix. The final focused run passed 146
+tests across upload/session/auth/root-layout/WHOOP lifecycle suites. With native
+cleanup held pending, actual login persists its session, splash dismissal and
+navigation rendering/route updates complete, and unrelated HealthKit
+initialization proceeds; native upload configuration remains blocked. These
+tests exercise the [React effect boundary](https://react.dev/reference/react/useEffect)
+and mocked native Promises; they do not establish device thread behavior.
+Full lint, root/server/web/mobile typechecks and changed-source/module-doc
+spelling pass. A whole-file app-README spelling probe flags four unchanged
+historical tool names outside this change; the added documentation text passes
+separately. Independent review found no blocking issues and independently passed
+81 consumer/source tests with retries disabled. Its additional ordinary-startup
+assertion now explicitly guards against purging a retained queue without a
+marker. Full unit/mobile validation is tracked with this branch. Release, native cleanup completion and
+subsequent real upload acceptance on the affected signed device remain unverified;
+the Sentry issue stays unresolved.
+
+Retrospective: holding cleanup pending in the real auth and root-layout consumers
+directly checks the regression the operator wanted to avoid. Proposed addition
+to the loading runbook: “Test background cleanup completion separately from
+interactive startup; hold cleanup pending while verifying login, splash dismissal
+and navigation.” Reuse the existing mobile tests and native bridge isolation
+suite for future changes; no additional recovery framework is needed.
