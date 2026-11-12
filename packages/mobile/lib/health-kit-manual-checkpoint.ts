@@ -1,14 +1,45 @@
+import * as SecureStore from "expo-secure-store";
 import { z } from "zod";
 import { MANUAL_HEALTH_KIT_SYNC_STAGES } from "./health-kit-sync";
 import type { ManualHealthKitSyncStage } from "./health-kit-sync-types";
-import {
-  deleteSecureStoreItem,
-  readSecureStoreItem,
-  writeSecureStoreItem,
-} from "./secure-store-access";
+import { readSecureStoreItem, writeSecureStoreItem } from "./secure-store-access";
 import { captureException } from "./telemetry";
 
-const MANUAL_HEALTH_KIT_CHECKPOINT_KEY = "dofek_manual_health_kit_checkpoint_v1";
+const CHECKPOINT_KEY_PREFIX = "dofek_manual_health_kit_checkpoint_v1";
+const INVALID_CHECKPOINT_MESSAGE = "Stored Apple Health sync checkpoint is invalid.";
+
+/**
+ * Each account owns its own SecureStore key, so one account can never occupy,
+ * block, or purge another account's pending request.
+ */
+function checkpointKey(userId: string): string {
+  return `${CHECKPOINT_KEY_PREFIX}.${userId}`;
+}
+
+/**
+ * SecureStore offers no compare-and-swap, so whole read/compare/write/delete
+ * operations are ordered through one chain. A failed operation must not block
+ * later cleanup, so the chain continues after both outcomes.
+ */
+let storageOperationChain: Promise<unknown> = Promise.resolve();
+
+function orderStorageOperation<Result>(operation: () => Promise<Result>): Promise<Result> {
+  const result = storageOperationChain.then(operation, operation);
+  storageOperationChain = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  return result;
+}
+
+/**
+ * Deletion must report failure: the shared helper intentionally ignores
+ * keychain lock errors, which would let cleanup claim success while the
+ * request is still stored.
+ */
+async function deleteCheckpointItem(key: string): Promise<void> {
+  await SecureStore.deleteItemAsync(key);
+}
 
 export interface ManualHealthKitCheckpoint {
   requestId: string;
@@ -46,74 +77,75 @@ function parseStoredCheckpoint(raw: string): ManualHealthKitCheckpoint {
     value = JSON.parse(raw);
   } catch (error) {
     captureException(error, { source: "health-kit-manual-checkpoint-parse" });
-    throw new Error("Stored Apple Health sync checkpoint is invalid.");
+    throw new Error(INVALID_CHECKPOINT_MESSAGE);
   }
   const parsed = ManualHealthKitCheckpointSchema.safeParse(value);
   if (!parsed.success) {
-    throw new Error("Stored Apple Health sync checkpoint is invalid.");
+    throw new Error(INVALID_CHECKPOINT_MESSAGE);
   }
   return parsed.data;
 }
 
-function parseStoredCheckpointForPurge(raw: string): ManualHealthKitCheckpoint | null {
-  try {
-    return parseStoredCheckpoint(raw);
-  } catch (error) {
-    captureException(error, { source: "health-kit-manual-checkpoint-purge" });
-    return null;
-  }
-}
-
 /** Loads the pending request only when it belongs to the authenticated account. */
-export async function loadManualHealthKitCheckpoint(
+export function loadManualHealthKitCheckpoint(
   userId: string,
 ): Promise<ManualHealthKitCheckpoint | null> {
-  const raw = await readSecureStoreItem(MANUAL_HEALTH_KIT_CHECKPOINT_KEY);
-  if (raw === null) return null;
-  const checkpoint = parseStoredCheckpoint(raw);
-  return checkpoint.userId === userId ? checkpoint : null;
+  return orderStorageOperation(async () => {
+    const raw = await readSecureStoreItem(checkpointKey(userId));
+    if (raw === null) return null;
+    const checkpoint = parseStoredCheckpoint(raw);
+    if (checkpoint.userId !== userId) {
+      throw new Error(INVALID_CHECKPOINT_MESSAGE);
+    }
+    return checkpoint;
+  });
 }
 
 /**
  * Persists progress for one request. A different pending request must be
  * cleared first so a retired operation cannot overwrite its replacement.
  */
-export async function saveManualHealthKitCheckpoint(
+export function saveManualHealthKitCheckpoint(
   checkpoint: ManualHealthKitCheckpoint,
 ): Promise<void> {
-  const next = ManualHealthKitCheckpointSchema.parse(checkpoint);
-  const raw = await readSecureStoreItem(MANUAL_HEALTH_KIT_CHECKPOINT_KEY);
-  if (raw !== null) {
-    const existing = parseStoredCheckpoint(raw);
-    if (existing.requestId !== next.requestId) {
-      throw new Error("A different Apple Health sync request is already pending. Clear it first.");
+  return orderStorageOperation(async () => {
+    const next = ManualHealthKitCheckpointSchema.parse(checkpoint);
+    const key = checkpointKey(next.userId);
+    const raw = await readSecureStoreItem(key);
+    if (raw !== null) {
+      const existing = parseStoredCheckpoint(raw);
+      if (existing.userId !== next.userId) {
+        throw new Error(INVALID_CHECKPOINT_MESSAGE);
+      }
+      if (existing.requestId !== next.requestId) {
+        throw new Error(
+          "A different Apple Health sync request is already pending. Clear it first.",
+        );
+      }
     }
-  }
-  await writeSecureStoreItem(MANUAL_HEALTH_KIT_CHECKPOINT_KEY, JSON.stringify(next));
+    await writeSecureStoreItem(key, JSON.stringify(next));
+  });
 }
 
 /** Clears the pending request only when both the account and request match. */
-export async function clearManualHealthKitCheckpoint(
-  userId: string,
-  requestId: string,
-): Promise<void> {
-  const raw = await readSecureStoreItem(MANUAL_HEALTH_KIT_CHECKPOINT_KEY);
-  if (raw === null) return;
-  const existing = parseStoredCheckpoint(raw);
-  if (existing.userId === userId && existing.requestId === requestId) {
-    await deleteSecureStoreItem(MANUAL_HEALTH_KIT_CHECKPOINT_KEY);
-  }
+export function clearManualHealthKitCheckpoint(userId: string, requestId: string): Promise<void> {
+  return orderStorageOperation(async () => {
+    const key = checkpointKey(userId);
+    const raw = await readSecureStoreItem(key);
+    if (raw === null) return;
+    const existing = parseStoredCheckpoint(raw);
+    if (existing.userId === userId && existing.requestId === requestId) {
+      await deleteCheckpointItem(key);
+    }
+  });
 }
 
 /**
- * Account cleanup deletes the pending request even when its payload can no
- * longer be parsed, because a corrupt request can never be resumed.
+ * Account cleanup deletes this account's key unconditionally: a corrupt
+ * payload can never be resumed, so it must not outlive sign-out or erasure.
  */
-export async function purgeManualHealthKitCheckpoint(userId: string): Promise<void> {
-  const raw = await readSecureStoreItem(MANUAL_HEALTH_KIT_CHECKPOINT_KEY);
-  if (raw === null) return;
-  const existing = parseStoredCheckpointForPurge(raw);
-  if (existing === null || existing.userId === userId) {
-    await deleteSecureStoreItem(MANUAL_HEALTH_KIT_CHECKPOINT_KEY);
-  }
+export function purgeManualHealthKitCheckpoint(userId: string): Promise<void> {
+  return orderStorageOperation(async () => {
+    await deleteCheckpointItem(checkpointKey(userId));
+  });
 }
