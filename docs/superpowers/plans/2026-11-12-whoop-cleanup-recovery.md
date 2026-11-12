@@ -33,5 +33,14 @@ Files: `packages/mobile/lib/auth-context.test.ts`, `packages/mobile/app-tests/_l
 
 - [x] Exercise actual recovery with cleanup held pending while login completes; assert upload configuration remains blocked.
 - [x] Render root navigation through a pending actual WHOOP recovery and verify splash dismissal, navigation rendering/route updates, and unrelated service initialization before releasing cleanup. Retain existing native bridge isolation evidence; no native dispatch changes are needed.
-- [ ] Run focused mobile regressions, mobile typecheck, source lint and spelling. Run required broader pre-push checks where available.
-- [ ] Update current README and incident evidence with actual results and physical-device limits. Obtain a fresh whole-diff review, fix substantive findings with regression tests, commit and push. Do not claim affected-device recovery without signed-device acceptance.
+- [x] Run focused mobile regressions, mobile typecheck, source lint and spelling. Run required broader pre-push checks where available.
+- [x] Update current README and incident evidence with actual results and physical-device limits. Obtain a fresh whole-diff review, fix substantive findings with regression tests, commit and push. Do not claim affected-device recovery without signed-device acceptance.
+
+Qualification prerequisite: Metro CI requires the newly published Expo `58.0.25`
+and development client `58.0.20`. Reuse the exact package-only correction from
+`dae4865c8469a71131cddad7c82dc61760897a79` (PR #3284), after the active original
+unit/mobile suite finishes. Verify frozen installation, the unchanged Expo
+compatibility check, the mobile tier, lint and types; preserve all native patches
+and validation gates. No recovery implementation change is needed for this
+independent SDK prerequisite; see the incident baseline for the failing command
+and first fatal diagnostic.

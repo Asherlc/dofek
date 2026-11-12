@@ -37166,3 +37166,26 @@ tracks remote qualification of commit `00ccb57b86e970d30ce9cd20241213c5fdd5cc4b`
 - **CI restart prerequisite:** While the fixture fix was being qualified, main advanced to `84d385adb2fd8666073030b00e86233203ddeaba` and appended another incident record to this file. GitHub reported the PR as conflicting, and no new ordinary CI run was created for `9b6eaf6`; only the separate automerge workflow ran. A local merge preview confirmed the incident log was the sole conflict. Merged main into the existing branch, preserving both appended records without changing either implementation. GitHub documents that [pull-request workflows do not run with merge conflicts](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request); no workflow trigger, gate or retry policy changed.
 
 PR qualification note: GitHub reported PR #3286 as conflicting, and no `pull_request` CI run existed for `e5c5173ce`. A stock `git merge-tree --write-tree HEAD origin/main` identified only an append conflict in this incident baseline. Merged main while preserving both records; the upstream changes contain provider-lock ordering and a native test-fixture correction, with no native runtime change. GitHub documents that [merge conflicts prevent pull-request workflows](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request). Workflow configuration and required checks remain unchanged. Final qualification must use the combined head.
+
+The resulting [Metro job](https://github.com/Asherlc/dofek/actions/runs/43270259995/job/131365155123)
+failed before bundle export in `Verify dependencies match Expo SDK` at
+`cd packages/mobile && pnpm expo install --check`. At 17:33:15 UTC the first
+fatal diagnostic was `Found outdated dependencies`, followed by exit 1: installed
+Expo `58.0.24` and development client `58.0.19` did not match the expected
+`~58.0.25` and `~58.0.20`. This command checks the SDK's supported package versions:
+[Expo dependency validation](https://docs.expo.dev/more/expo-cli/#version-validation).
+Registry `latest` metadata confirmed both requested patch versions. Reused only
+the package pins, lockfile and existing version-specific release-age entries from
+the independently reviewed [shared correction](https://github.com/Asherlc/dofek/commit/dae4865c8469a71131cddad7c82dc61760897a79)
+in [PR #3284](https://github.com/Asherlc/dofek/pull/3284); no legal-link code or
+unrelated incident entry was copied. No validation exclusion, retry, timeout or
+workflow change was added. Before changing installed dependencies, the full
+unit/mobile tier completed successfully: 24,302 tests passed across 1,470 files,
+with 19 skipped tests and two skipped files, in 857.30 seconds. After the main
+merge, 169 focused mobile/provider-token tests passed with retries disabled,
+and full lint and root typecheck passed. After alignment, frozen installation,
+the unchanged Expo compatibility command (`Dependencies are up to date`), full
+lint and root/server/web/mobile typechecks pass. The complete mobile tier passed
+2,190 tests across 213 files in 161.79 seconds. The package files exactly match
+the shared correction, verified with `git diff --cached --exit-code` against
+its commit. Final-head CI and signed-device acceptance remain separate gates.
