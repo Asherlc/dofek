@@ -4,7 +4,7 @@ The quarantine startup fix merged in
 [#3237](https://github.com/Asherlc/dofek/pull/3237). The production broker
 audit on November 12 observed tiered storage enabled on all six metric-stream
 topics and successful copy/delete activity in its bounded log sample. The
-selected local-retention policy below is pending deployment; the audit observed
+audit preceded the selected local-retention policy below; it observed
 local settings `-2`, which inherit total retention. This document describes the
 canonical policy reconciliation in the existing deployment workflow. It replaces the
 [earlier manual correction proposal](https://github.com/Asherlc/dofek/blob/d4e7a34e49f4e91f57a7b76dbb2735a944b4e224/deploy/kafka/quarantine-config-correction.md);
@@ -20,9 +20,9 @@ three existing source topics and their three quarantine topics:
 | cleanup.policy | delete | delete |
 | retention.ms | 604800000 (seven days) | 604800000 (seven days) |
 | retention.bytes | -1 (no byte cap) | 1073741824 (1 GiB) |
-| local.retention.bytes | 1073741824 (1 GiB; pending) | 268435456 (256 MiB; pending) |
-| local.retention.ms | 86400000 (one day; pending) | 86400000 (one day; pending) |
-| segment.ms | 3600000 (one hour; pending) | 3600000 (one hour; pending) |
+| local.retention.bytes | 1073741824 (1 GiB) | 268435456 (256 MiB) |
+| local.retention.ms | 86400000 (one day) | 86400000 (one day) |
+| segment.ms | 3600000 (one hour) | 3600000 (one hour) |
 | segment.bytes | 134217728 (128 MiB) | 134217728 (128 MiB) |
 | remote.storage.enable | true | true |
 
@@ -106,7 +106,7 @@ Before applying the selected new local limits, review the exact source/image
 through the existing normal web-release workflow. Do not deploy an image built
 from a different source revision: the stock resolver requires matching source
 and immutable image identity. Historical release receipts describe earlier
-state and do not attest to these pending limits.
+state; use the canonical policy readbacks to establish the effective limits.
 
 Before production approval, inspect fresh topic identity/config, service and
 reserve metadata against the selected policy and review the actual delta. The

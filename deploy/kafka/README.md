@@ -27,7 +27,8 @@ The [deploy-owned topic policy](quarantine-config-correction.md) describes the
 incremental reconciliation and readback before and after consumer startup. The
 audit observed both local retention settings at `-2` (inherit total limits).
 The selected explicit local limits in [`topic-policy.json`](topic-policy.json)
-are desired configuration and have not been confirmed deployed.
+are the deployment definition; verify effective values through the canonical
+release readbacks rather than treating that earlier audit as current policy.
 
 ## Intended configuration
 
@@ -49,6 +50,9 @@ Keep original Redpanda `/mnt/dofek-data/redpanda` and aborted Kafka
 read-only retired root has any entry. No tree is moved, reused, formatted or
 deleted by the tiered-storage rollout. Managed R2/Terraform resources remain declared and
 protected in [`../kafka-ts-r2-offload.tf`](../kafka-ts-r2-offload.tf).
+The operator separately authorized [Redpanda cleanup](retention-policy.md#retired-redpanda-cleanup)
+on November 12: its contents are now removed, while the original directory and
+read-only mount remain. The aborted Kafka tree is still retained.
 
 The existing [environment renderer](../../scripts/deploy-service-environment.ts)
 supplies both broker and worker from `KAFKA_CLUSTER_ID` and the five existing
