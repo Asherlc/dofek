@@ -1,6 +1,6 @@
 # Processing Inactivity Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+Execute the steps in order and record the tested revision, test results and review decisions. Use the [testing guide](../../testing.md#integration-dependencies) to prepare the focused database tests. Checkboxes record completed steps.
 
 **Goal:** Keep old, productive processing operations eligible for downstream reconciliation while abandoning genuinely inactive work after 12 hours.
 
@@ -55,4 +55,4 @@ rtk proxy pnpm vitest run --project unit src/processing/processing-reconciler.te
 rtk proxy sh -c 'set -a; . ./.env.local; set +a; TEST_DATABASE_URL="$DATABASE_URL" pnpm vitest run --project integration src/processing/processing-reconciler.integration.test.ts --maxWorkers 1'
 ```
 
-Prepare dependencies through `pnpm compose --` and the current testing guide/integration skill. Keep the plan ledger's test/check/review gates explicit. The lead owns production recovery approval after this change is reviewed and validated.
+Prepare dependencies through `pnpm compose --` as described in the [integration dependency guide](../../testing.md#integration-dependencies). Record test commands, results and review decisions alongside each completed step. Production recovery requires separate operator approval after this change is reviewed and validated.
