@@ -245,28 +245,34 @@ export class AppleHealthSyncService {
     onStage?: SyncOptions["onStage"];
     assertCanContinue?: () => Promise<void>;
   }): Promise<SyncResult> {
-    return this.#runAndRecordSync("unknown", async () => {
-      const minimumSampleDate = await this.#loadDeviceErasureCutoff();
-      return syncHealthKitObserverChanges({
-        trpcClient: this.#trpcClient,
-        healthKit: this.#healthKit,
-        minimumSampleDate,
-        typeIdentifiers: options.typeIdentifiers,
-        onStage: options.onStage,
-        assertCanContinue: options.assertCanContinue,
-      });
-    });
+    return this.#runAndRecordSync(
+      "unknown",
+      async () => {
+        const minimumSampleDate = await this.#loadDeviceErasureCutoff();
+        return syncHealthKitObserverChanges({
+          trpcClient: this.#trpcClient,
+          healthKit: this.#healthKit,
+          minimumSampleDate,
+          typeIdentifiers: options.typeIdentifiers,
+          onStage: options.onStage,
+          assertCanContinue: options.assertCanContinue,
+        });
+      },
+      options.assertCanContinue,
+    );
   }
 
   async #runAndRecordSync(
     origin: "manual" | "unknown",
     operation: () => Promise<SyncResult>,
+    assertCanContinue?: () => Promise<void>,
   ): Promise<SyncResult> {
     const startedAt = Date.now();
     let result: SyncResult;
     try {
       result = await operation();
     } catch (error) {
+      await assertCanContinue?.();
       if (error instanceof ManualHealthKitSyncInterruptedError) {
         throw error;
       }
@@ -279,6 +285,7 @@ export class AppleHealthSyncService {
         captureException(error, { source: "apple-health-sync", origin });
       }
       try {
+        await assertCanContinue?.();
         await this.#trpcClient.healthKitSync.recordSync.mutate({
           status: "error",
           recordCount: 0,
@@ -292,6 +299,7 @@ export class AppleHealthSyncService {
       throw error;
     }
 
+    await assertCanContinue?.();
     try {
       await this.#trpcClient.healthKitSync.recordSync.mutate({
         status: result.errors.length > 0 ? "degraded" : "success",

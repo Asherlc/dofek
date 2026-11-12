@@ -107,13 +107,22 @@ function createMockClient() {
 
 function createDeferred<T>() {
   let resolve: ((value: T) => void) | undefined;
-  const promise = new Promise<T>((promiseResolve) => {
+  let reject: ((error: unknown) => void) | undefined;
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
     resolve = promiseResolve;
+    reject = promiseReject;
   });
-  if (!resolve) {
+  if (!resolve || !reject) {
     throw new Error("deferred resolver was not initialized");
   }
-  return { promise, resolve };
+  return { promise, resolve, reject };
+}
+
+function createManualObserverOwner() {
+  return {
+    assertAccountCurrent: vi.fn(),
+    runObserverAttempt: vi.fn(async <Result>(operation: () => Promise<Result>) => operation()),
+  } satisfies NonNullable<Parameters<typeof initBackgroundHealthKitSync>[2]>;
 }
 
 describe("initBackgroundHealthKitSync", () => {
@@ -148,6 +157,70 @@ describe("initBackgroundHealthKitSync", () => {
 
     expect(mockAddSampleUpdateListener.mock.invocationCallOrder[0]).toBeLessThan(
       mockSetupBackgroundObservers.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+    );
+  });
+
+  it("does not install an initializer whose authorization resolves after its owner is cancelled", async () => {
+    const oldAuthorization = createDeferred<"shouldRequest">();
+    mockGetRequestStatus.mockReturnValueOnce(oldAuthorization.promise);
+    const oldOwner = createManualObserverOwner();
+    const oldLifetime = new AbortController();
+    const oldInit = initBackgroundHealthKitSync(
+      createMockClient(),
+      undefined,
+      oldOwner,
+      oldLifetime.signal,
+    );
+    await vi.waitFor(() => expect(mockGetRequestStatus).toHaveBeenCalledOnce());
+    oldLifetime.abort();
+
+    await initBackgroundHealthKitSync(
+      createMockClient(),
+      undefined,
+      createManualObserverOwner(),
+      new AbortController().signal,
+    );
+    oldAuthorization.resolve("unnecessary");
+    await oldInit;
+
+    expect(mockAddSampleUpdateListener).toHaveBeenCalledOnce();
+    expect(mockSetupBackgroundObservers).toHaveBeenCalledOnce();
+  });
+
+  it("does not let a cancelled initializer's late setup failure tear down its replacement", async () => {
+    const oldSetup = createDeferred<boolean>();
+    const oldRemoval = vi.fn();
+    const replacementRemoval = vi.fn();
+    mockAddSampleUpdateListener
+      .mockReturnValueOnce({ remove: oldRemoval })
+      .mockReturnValueOnce({ remove: replacementRemoval });
+    mockSetupBackgroundObservers.mockReturnValueOnce(oldSetup.promise);
+    const oldOwner = createManualObserverOwner();
+    const oldLifetime = new AbortController();
+    const oldInit = initBackgroundHealthKitSync(
+      createMockClient(),
+      undefined,
+      oldOwner,
+      oldLifetime.signal,
+    );
+    await vi.waitFor(() => expect(mockSetupBackgroundObservers).toHaveBeenCalledOnce());
+
+    oldLifetime.abort();
+    teardownBackgroundHealthKitSync(oldOwner);
+    const replacementInit = initBackgroundHealthKitSync(
+      createMockClient(),
+      undefined,
+      createManualObserverOwner(),
+      new AbortController().signal,
+    );
+    oldSetup.reject(new Error("old observer setup failed late"));
+    await expect(oldInit).rejects.toThrow("old observer setup failed late");
+    await replacementInit;
+
+    expect(oldRemoval).toHaveBeenCalledOnce();
+    expect(replacementRemoval).not.toHaveBeenCalled();
+    expect(mockTeardownBackgroundObservers.mock.invocationCallOrder.at(-1)).toBeLessThan(
+      mockSetupBackgroundObservers.mock.invocationCallOrder.at(-1) ?? Number.POSITIVE_INFINITY,
     );
   });
 

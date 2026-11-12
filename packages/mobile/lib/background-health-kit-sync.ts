@@ -27,6 +27,7 @@ interface SyncContext {
     "assertAccountCurrent" | "runObserverAttempt"
   >;
   trpcClient: SyncTrpcClient;
+  lifetime: AbortSignal;
 }
 
 let subscription: EventSubscription | null = null;
@@ -34,6 +35,19 @@ let currentSyncContext: SyncContext | undefined;
 let pendingCatchUp: SyncContext | undefined;
 const pendingUpdates = new Map<string, string>();
 let syncing: true | undefined;
+let observerLifecycle: Promise<void> = Promise.resolve();
+let observerSetupPending = 0;
+
+function enqueueObserverLifecycle(operation: () => Promise<void> | void): Promise<void> {
+  const next = observerLifecycle.then(operation, operation);
+  observerLifecycle = next.then(
+    () => undefined,
+    (error: unknown) => {
+      captureException(error, { source: TAG, operation: "observer-lifecycle" });
+    },
+  );
+  return next;
+}
 
 type BackgroundHealthKitSyncStage =
   | HealthKitSyncStage
@@ -215,28 +229,28 @@ async function drainSyncQueue(): Promise<void> {
       typeIdentifiers,
       context.onSyncComplete
         ? async () => {
-            if (currentSyncContext === context) {
+            if (isCurrentContext(context)) {
               await context.onSyncComplete?.();
             }
           }
         : undefined,
       context.manualController,
     );
-    if (!succeeded && currentSyncContext === context) {
+    if (!succeeded && isCurrentContext(context)) {
       pendingCatchUp = context;
       drainAgain = false;
     }
-    if (currentSyncContext === context && updateIds.length > 0) {
+    if (isCurrentContext(context) && updateIds.length > 0) {
       acknowledgeObserverUpdates(updateIds, succeeded);
     }
   } catch (error) {
-    if (currentSyncContext === context) pendingCatchUp = context;
+    if (isCurrentContext(context)) pendingCatchUp = context;
     drainAgain = false;
     captureException(error, {
       source: TAG,
       operation: "drainSyncQueue",
     });
-    if (currentSyncContext === context && updateIds.length > 0) {
+    if (isCurrentContext(context) && updateIds.length > 0) {
       acknowledgeObserverUpdates(updateIds, false);
     }
   } finally {
@@ -261,26 +275,28 @@ export async function initBackgroundHealthKitSync(
     HealthKitManualSyncController,
     "assertAccountCurrent" | "runObserverAttempt"
   >,
+  lifetime: AbortSignal = new AbortController().signal,
 ) {
   const authorizationState = await new AppleHealthAuthorizationService().resolve();
+  if (lifetime.aborted) return;
   if (!authorizationState.canAttemptSync()) {
     logger.info(TAG, "HealthKit not available, skipping init");
     return;
   }
 
   // Clean up any existing listener
-  if (subscription) {
+  if (currentSyncContext || subscription) {
     logger.info(TAG, "Removing previous listener before re-init");
     teardownBackgroundHealthKitSync();
   }
 
-  const context: SyncContext = { trpcClient, onSyncComplete, manualController };
+  const context: SyncContext = { trpcClient, onSyncComplete, manualController, lifetime };
   currentSyncContext = context;
 
   // Listen before registering native observers so an immediate HealthKit
   // delivery can never race ahead of the JavaScript callback.
   subscription = addSampleUpdateListener((event) => {
-    if (currentSyncContext !== context) {
+    if (!isCurrentContext(context)) {
       return;
     }
     logger.info(TAG, "Sample update event received, queueing type-scoped sync", {
@@ -292,15 +308,24 @@ export async function initBackgroundHealthKitSync(
   });
 
   try {
-    await setupBackgroundObservers();
+    observerSetupPending++;
+    await enqueueObserverLifecycle(async () => {
+      try {
+        if (!isCurrentContext(context)) return;
+        await setupBackgroundObservers();
+      } finally {
+        observerSetupPending--;
+      }
+    });
   } catch (error) {
     captureException(error, {
       source: TAG,
       operation: "setupBackgroundObservers",
     });
-    teardownBackgroundHealthKitSync();
+    teardownContext(context);
     throw error;
   }
+  if (!isCurrentContext(context)) return;
   logger.info(TAG, "Background observers registered");
   pendingCatchUp = context;
   void drainSyncQueue();
@@ -309,8 +334,19 @@ export async function initBackgroundHealthKitSync(
 }
 
 /** Clean up background sync listeners and observers. */
-export function teardownBackgroundHealthKitSync() {
-  currentSyncContext = undefined;
+export function teardownBackgroundHealthKitSync(owner?: SyncContext["manualController"]) {
+  const context = currentSyncContext;
+  if (owner && context?.manualController !== owner) return;
+  teardownContext(context);
+}
+
+function isCurrentContext(context: SyncContext): boolean {
+  return currentSyncContext === context && !context.lifetime.aborted;
+}
+
+function teardownContext(context: SyncContext | undefined) {
+  if (context && currentSyncContext !== context) return;
+  if (context) currentSyncContext = undefined;
   if (subscription) {
     logger.info(TAG, "Tearing down: removing listener");
     subscription.remove();
@@ -318,12 +354,13 @@ export function teardownBackgroundHealthKitSync() {
   }
   pendingCatchUp = undefined;
   pendingUpdates.clear();
-  try {
-    teardownBackgroundObservers();
-  } catch (error) {
-    captureException(error, {
-      source: TAG,
-      operation: "teardownBackgroundObservers",
-    });
-  }
+  const tearDown = () => {
+    try {
+      teardownBackgroundObservers();
+    } catch (error) {
+      captureException(error, { source: TAG, operation: "teardownBackgroundObservers" });
+    }
+  };
+  tearDown();
+  if (observerSetupPending > 0) void enqueueObserverLifecycle(tearDown);
 }

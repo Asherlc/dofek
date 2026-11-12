@@ -398,6 +398,7 @@ function AuthGate() {
       userId,
       trpcClient: healthKitSyncClient,
     });
+    const healthKitObserverLifetime = new AbortController();
     manualSyncOwner.current = { userId, controller };
     setManualSyncController(controller);
     const healthKitBootstrap = initBackgroundHealthKitSync(
@@ -406,6 +407,7 @@ function AuthGate() {
         return invalidateSyncedHealthData(queryClient);
       },
       controller,
+      healthKitObserverLifetime.signal,
     ).catch((error: unknown) => {
       serviceBootstrapFailed = true;
       logger.warn(
@@ -481,7 +483,8 @@ function AuthGate() {
 
     return () => {
       refreshDiagnostics.remove();
-      teardownBackgroundHealthKitSync();
+      healthKitObserverLifetime.abort();
+      teardownBackgroundHealthKitSync(controller);
       controller.dispose();
       setManualSyncController((current) => (current === controller ? null : current));
       teardownBackgroundAccelerometerSync();

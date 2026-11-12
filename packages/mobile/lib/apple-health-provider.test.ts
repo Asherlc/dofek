@@ -35,7 +35,7 @@ vi.mock("../modules/health-kit", () => ({
   requestPermissions: vi.fn(async () => true),
 }));
 
-import { queryClinicalRecords } from "../modules/health-kit";
+import { queryClinicalRecords, querySleepSamples } from "../modules/health-kit";
 import {
   type AppleHealthAuthorizationNative,
   AppleHealthAuthorizationService,
@@ -285,6 +285,68 @@ describe("AppleHealthSyncService", () => {
         },
       }),
     ).rejects.toBe(interrupted);
+    expect(trpcClient.healthKitSync.recordSync.mutate).not.toHaveBeenCalled();
+    expect(mockCaptureException).not.toHaveBeenCalled();
+  });
+
+  it("does not record observer success after retirement during the final upload", async () => {
+    vi.mocked(querySleepSamples).mockClear();
+    const trpcClient = createTrpcClient();
+    const upload = Promise.withResolvers<{ inserted: number }>();
+    const retirement = new ManualHealthKitSyncInterruptedError();
+    let retired = false;
+    vi.mocked(querySleepSamples).mockResolvedValueOnce([
+      {
+        uuid: "sleep-1",
+        startDate: "2026-03-22T22:00:00Z",
+        endDate: "2026-03-23T06:00:00Z",
+        value: "asleep",
+        sourceName: "Apple Watch",
+      },
+    ]);
+    trpcClient.healthKitSync.pushSleepSamples.mutate.mockReturnValueOnce(upload.promise);
+    const service = new AppleHealthSyncService({
+      trpcClient,
+      loadDeviceErasureCutoff: vi.fn(async () => null),
+    });
+    const sync = service.syncObserverChanges({
+      typeIdentifiers: ["HKCategoryTypeIdentifierSleepAnalysis"],
+      assertCanContinue: async () => {
+        if (retired) throw retirement;
+      },
+    });
+    await vi.waitFor(() =>
+      expect(trpcClient.healthKitSync.pushSleepSamples.mutate).toHaveBeenCalledOnce(),
+    );
+    retired = true;
+    upload.resolve({ inserted: 1 });
+
+    await expect(sync).rejects.toBe(retirement);
+    expect(trpcClient.healthKitSync.recordSync.mutate).not.toHaveBeenCalled();
+  });
+
+  it("does not record an observer query failure that settles after retirement", async () => {
+    vi.mocked(querySleepSamples).mockClear();
+    const trpcClient = createTrpcClient();
+    const query = Promise.withResolvers<Awaited<ReturnType<typeof querySleepSamples>>>();
+    const retirement = new ManualHealthKitSyncInterruptedError();
+    let retired = false;
+    vi.mocked(querySleepSamples).mockReturnValueOnce(query.promise);
+    const service = new AppleHealthSyncService({
+      trpcClient,
+      loadDeviceErasureCutoff: vi.fn(async () => null),
+    });
+    const sync = service.syncObserverChanges({
+      typeIdentifiers: ["HKCategoryTypeIdentifierSleepAnalysis"],
+      assertCanContinue: async () => {
+        if (retired) throw retirement;
+      },
+    });
+    await vi.waitFor(() => expect(querySleepSamples).toHaveBeenCalledOnce());
+    retired = true;
+    query.reject(new Error("late HealthKit query failure"));
+
+    await expect(sync).rejects.toBe(retirement);
     expect(trpcClient.healthKitSync.recordSync.mutate).not.toHaveBeenCalled();
     expect(mockCaptureException).not.toHaveBeenCalled();
   });

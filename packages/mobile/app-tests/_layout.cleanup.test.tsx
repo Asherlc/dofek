@@ -421,6 +421,8 @@ describe("RootLayout background cleanup", () => {
     await waitFor(() => expect(mockInitBackgroundHealthKitSync).toHaveBeenCalledOnce());
     expect(mockManualSyncControllers).toHaveLength(1);
     const previousController = mockManualSyncControllers[0];
+    const previousLifetime = mockInitBackgroundHealthKitSync.mock.calls[0]?.[3];
+    expect(previousLifetime).toBeInstanceOf(AbortSignal);
 
     mockAuthState.value.accountSessionOwnerNonce = "22222222-2222-4222-8222-222222222222";
     await act(async () => rendered.rerender(<RootLayout />));
@@ -429,6 +431,8 @@ describe("RootLayout background cleanup", () => {
     await waitFor(() => expect(mockManualSyncControllers.length).toBeGreaterThanOrEqual(2));
     expect(previousController?.dispose).toHaveBeenCalledOnce();
     expect(previousController?.retire).not.toHaveBeenCalled();
+    expect(previousLifetime?.aborted).toBe(true);
+    expect(mockTeardownBackgroundHealthKitSync).toHaveBeenCalledWith(previousController);
     expect(mockManualSyncControllers.every((controller) => controller.userId === "user-1")).toBe(
       true,
     );

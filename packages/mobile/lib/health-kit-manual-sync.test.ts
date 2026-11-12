@@ -232,6 +232,111 @@ describe("HealthKitManualSyncController", () => {
     expect(harness.starts[1]).not.toBe(harness.starts[0]);
   });
 
+  it("settles an expired in-flight query before a Resume tap starts its new native task", async () => {
+    const harness = makeHarness();
+    const expiredQuery = Promise.withResolvers<typeof success>();
+    const resumedQuery = Promise.withResolvers<typeof success>();
+    harness.deps.runSync
+      .mockReturnValueOnce(expiredQuery.promise)
+      .mockReturnValueOnce(resumedQuery.promise);
+    const first = harness.controller.start(7);
+    void first.catch(() => undefined);
+    await vi.waitFor(() => expect(harness.deps.runSync).toHaveBeenCalledTimes(1));
+    harness.expire(harness.starts[0] ?? "");
+    const resumed = harness.controller.resume();
+
+    try {
+      expect(harness.starts).toHaveLength(1);
+      expiredQuery.resolve(success);
+      await vi.waitFor(() => expect(harness.deps.runSync).toHaveBeenCalledTimes(2));
+      expect(harness.controller.getSnapshot().status).toBe("running");
+      expect(harness.deps.completeNative).not.toHaveBeenCalledWith(harness.starts[1], true);
+    } finally {
+      expiredQuery.resolve(success);
+      resumedQuery.resolve(success);
+      await Promise.allSettled([first, resumed]);
+    }
+  });
+
+  it("replaces a foreground-recovery wait before admitting the resumed attempt", async () => {
+    const harness = makeHarness();
+    const firstUpload = Promise.withResolvers<typeof success>();
+    const resumedQuery = Promise.withResolvers<typeof success>();
+    let recoverySignal: AbortSignal | undefined;
+    vi.mocked(harness.deps.waitUntilForegroundConnected).mockImplementationOnce(
+      (signal) =>
+        new Promise<void>((_resolve, reject) => {
+          recoverySignal = signal;
+          signal.addEventListener("abort", () => reject(new Error("recovery wait aborted")), {
+            once: true,
+          });
+        }),
+    );
+    harness.deps.runSync
+      .mockImplementationOnce(async (input) => {
+        input.onStage?.({ operation: "pushQuantitySamples" });
+        return firstUpload.promise;
+      })
+      .mockReturnValueOnce(resumedQuery.promise);
+    const first = harness.controller.start(7);
+    void first.catch(() => undefined);
+    await vi.waitFor(() => expect(harness.deps.runSync).toHaveBeenCalledTimes(1));
+    harness.appState("background");
+    firstUpload.reject(new Error("fetch failed: The network connection was lost."));
+    await vi.waitFor(() => expect(recoverySignal).toBeDefined());
+    const resumed = harness.controller.resume();
+    void resumed.catch(() => undefined);
+
+    try {
+      await vi.waitFor(() => expect(harness.deps.runSync).toHaveBeenCalledTimes(2));
+      expect(recoverySignal?.aborted).toBe(true);
+      expect(harness.starts).toHaveLength(2);
+      expect(harness.controller.getSnapshot().status).toBe("running");
+    } finally {
+      firstUpload.resolve(success);
+      resumedQuery.resolve(success);
+      await harness.controller.retire();
+      await Promise.allSettled([first, resumed]);
+    }
+  });
+
+  it("keeps storage cursors semantic while reporting readable raw and clinical progress", async () => {
+    const harness = makeHarness();
+    const raw = "raw:HKQuantityTypeIdentifierBodyMass" as const;
+    const clinical = "clinical:HKClinicalTypeIdentifierMedicationRecord" as const;
+    harness.deps.runSync.mockImplementation(async ({ manualExecution }) => {
+      await manualExecution?.onStageComplete({
+        stage: raw,
+        completedStageCount: 11,
+        totalStageCount: 32,
+      });
+      await manualExecution?.onStageComplete({
+        stage: clinical,
+        completedStageCount: 28,
+        totalStageCount: 32,
+      });
+      return success;
+    });
+
+    await harness.controller.start(7);
+
+    expect(harness.deps.updateProgress).toHaveBeenNthCalledWith(
+      1,
+      "id-2",
+      11,
+      32,
+      "Synced body mass",
+    );
+    expect(harness.deps.updateProgress).toHaveBeenNthCalledWith(
+      2,
+      "id-2",
+      28,
+      32,
+      "Synced medication records",
+    );
+    expect(harness.saved()).toBeNull();
+  });
+
   it("retries one known transport failure after foreground and connectivity return, without holding the gate", async () => {
     const harness = makeHarness();
     const foreground = Promise.withResolvers<void>();
