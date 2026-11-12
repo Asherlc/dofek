@@ -115,17 +115,16 @@ export async function syncRunningSteps(
           );
       }
     } catch (error) {
-      if (error instanceof ManualHealthKitSyncInterruptedError) throw error;
-      captureException(error, { source: "health-kit-running-step-sync" });
       if (changes.queryId) {
         try {
-          await options.assertCanContinue?.();
           await healthKit.completeAnchoredQuery(typeIdentifier, changes.queryId, false);
         } catch (completionError) {
           if (completionError instanceof ManualHealthKitSyncInterruptedError) throw completionError;
           captureException(completionError, { source: "health-kit-running-step-anchor" });
         }
       }
+      if (error instanceof ManualHealthKitSyncInterruptedError) throw error;
+      captureException(error, { source: "health-kit-running-step-sync" });
       throw error;
     }
     if (!changes.hasMore) break;

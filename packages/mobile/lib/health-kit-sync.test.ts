@@ -1635,6 +1635,46 @@ describe("manual staged sync", () => {
 });
 
 describe("syncHealthKitObserverChanges", () => {
+  it("discards its pending anchored page when retirement interrupts the commit", async () => {
+    vi.mocked(captureException).mockClear();
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    const interrupted = new ManualHealthKitSyncInterruptedError();
+    const type = "HKQuantityTypeIdentifierRunningSpeed";
+    let checks = 0;
+    healthKit.queryAnchoredSamples.mockResolvedValue({
+      queryId: "retired-observer-query",
+      samples: [],
+      deletedUUIDs: [],
+    });
+
+    await expect(
+      syncHealthKitObserverChanges({
+        trpcClient: client,
+        healthKit,
+        typeIdentifiers: [type],
+        assertCanContinue: vi.fn(async () => {
+          checks += 1;
+          if (checks >= 2) throw interrupted;
+        }),
+      }),
+    ).rejects.toBe(interrupted);
+
+    expect(healthKit.completeAnchoredQuery).toHaveBeenCalledExactlyOnceWith(
+      type,
+      "retired-observer-query",
+      false,
+    );
+    expect(healthKit.completeAnchoredQuery).not.toHaveBeenCalledWith(
+      type,
+      "retired-observer-query",
+      true,
+    );
+    expect(client.healthKitSync.pushQuantitySamples.mutate).not.toHaveBeenCalled();
+    expect(client.healthKitSync.deleteQuantitySamples.mutate).not.toHaveBeenCalled();
+    expect(vi.mocked(captureException)).not.toHaveBeenCalled();
+  });
+
   it.each(runningQuantities)(
     "applies the erasure cutoff to %s in historical and anchored sync",
     async (type, unit, value) => {

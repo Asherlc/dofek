@@ -34,6 +34,8 @@ import { getFileImportProviderConfig } from "../../components/providers/file-imp
 import {
   appleHealthManualSyncPresentation,
   importProviderLabel,
+  isAppleHealthActionErrorPublished,
+  isAppleHealthLockedPause,
   type Provider,
   ProviderCard,
   type SyncLog,
@@ -162,13 +164,13 @@ export default function ProvidersScreen() {
   const [healthKitActionError, setHealthKitActionError] = useState<string | null>(null);
   const { controller: healthKitManualSyncController, state: healthKitManualSyncState } =
     useHealthKitManualSync();
-  const healthKitControllerRef = useRef(healthKitManualSyncController);
+  const healthKitStateRef = useRef(healthKitManualSyncState);
   useEffect(() => {
-    if (healthKitControllerRef.current !== healthKitManualSyncController) {
-      healthKitControllerRef.current = healthKitManualSyncController;
+    if (healthKitStateRef.current !== healthKitManualSyncState) {
+      healthKitStateRef.current = healthKitManualSyncState;
       setHealthKitActionError(null);
     }
-  }, [healthKitManualSyncController]);
+  }, [healthKitManualSyncState]);
   const appleHealth = useAppleHealthProviderModel({
     onAuthorizationError: (error) => {
       captureException(error, { context: "healthkit-permission-check" });
@@ -210,14 +212,15 @@ export default function ProvidersScreen() {
       } else {
         result = await appleHealth.sync({ syncRangeDays: 7 });
       }
-      setHealthKitProgress(
-        result.errors.length > 0
-          ? `${result.inserted} records synced; ${result.errors.join("; ")}`
-          : `Done — ${result.inserted} records synced`,
-      );
+      if (result.errors.length > 0) {
+        setHealthKitProgress(`${result.inserted} records synced; ${result.errors.join("; ")}`);
+      }
       trpcUtils.invalidate();
     } catch (error: unknown) {
       if (error instanceof ManualHealthKitSyncInterruptedError) return;
+      const controllerState = healthKitManualSyncController?.getSnapshot();
+      if (isAppleHealthLockedPause(controllerState)) return;
+      if (isAppleHealthActionErrorPublished(controllerState, error)) return;
       captureException(error, { context: "healthkit-manual-sync" });
       setHealthKitActionError(userFacingErrorMessage(error, "Apple Health sync failed"));
     }
@@ -728,7 +731,7 @@ export default function ProvidersScreen() {
     ...(appleHealthPresentation.syncStageProgress
       ? { syncStageProgress: appleHealthPresentation.syncStageProgress }
       : {}),
-    syncStatusMessage: appleHealthPresentation.syncStatusMessage,
+    syncStatusMessage: appleHealthPresentation.syncStatusMessage ?? undefined,
   };
   const appleHealthHistoryError =
     appleHealthLogsQuery.error && appleHealthLogsQuery.data === undefined;
@@ -772,8 +775,8 @@ export default function ProvidersScreen() {
               syncProgress={
                 appleHealthImportProgress ??
                 (appleHealthPresentation.isRunning ||
-                healthKitProgress !== undefined ||
-                healthKitActionError !== null
+                (healthKitManualSyncState.status !== "paused" &&
+                  (healthKitProgress !== undefined || healthKitActionError !== null))
                   ? {
                       percentage: appleHealthPresentation.percentage ?? undefined,
                       message: appleHealthPresentation.message ?? undefined,

@@ -145,6 +145,40 @@ describe("syncRunningSteps manual interruption", () => {
       "pending",
       false,
     );
+    expect(input.healthKit.completeAnchoredQuery).not.toHaveBeenCalledWith(
+      "HKQuantityTypeIdentifierStepCount",
+      "pending",
+      true,
+    );
+    expect(input.trpcClient.healthKitSync.pushRunningStepSamples.mutate).not.toHaveBeenCalled();
+    expect(input.trpcClient.healthKitSync.deleteQuantitySamples.mutate).not.toHaveBeenCalled();
+    expect(captureException).not.toHaveBeenCalled();
+  });
+
+  it("discards its pending page after account retirement interrupts the anchor commit", async () => {
+    const input = options();
+    let checks = 0;
+    input.healthKit.queryRunningStepChanges.mockResolvedValueOnce({
+      hasMore: false,
+      workouts: [],
+      samples: [],
+      deletedUUIDs: [],
+      queryId: "retired-query",
+    });
+    input.assertCanContinue = vi.fn(async () => {
+      checks += 1;
+      if (checks >= 3) throw interrupted;
+    });
+
+    await expect(syncRunningSteps(input, start, end, manualExecution())).rejects.toBe(interrupted);
+
+    expect(input.healthKit.completeAnchoredQuery).toHaveBeenCalledExactlyOnceWith(
+      "HKQuantityTypeIdentifierStepCount",
+      "retired-query",
+      false,
+    );
+    expect(input.trpcClient.healthKitSync.pushRunningStepSamples.mutate).not.toHaveBeenCalled();
+    expect(input.trpcClient.healthKitSync.deleteQuantitySamples.mutate).not.toHaveBeenCalled();
     expect(captureException).not.toHaveBeenCalled();
   });
 

@@ -676,8 +676,6 @@ async function syncAnchoredSampleType(
   } catch (error) {
     if (changes.queryId) {
       try {
-        await options.assertCanContinue?.();
-        onStage?.({ operation: "completeAnchoredQuery", typeIdentifier });
         await healthKit.completeAnchoredQuery(typeIdentifier, changes.queryId, false);
       } catch (completionError) {
         if (completionError instanceof ManualHealthKitSyncInterruptedError) throw completionError;

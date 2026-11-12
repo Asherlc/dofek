@@ -89,21 +89,24 @@ export function appleHealthManualSyncPresentation(
   const isRunning = state.status === "running";
   const isPaused = state.status === "paused";
   const hasStageCount = isRunning && state.totalStageCount > 0;
+  const pauseDetails = [
+    ...new Set([state.error, actionError, state.error ? localMessage : null].filter(Boolean)),
+  ];
   const message = isRunning
     ? (state.message ?? "Syncing Apple Health")
     : isPaused
-      ? (actionError ?? "Apple Health sync paused")
-      : state.status === "error"
-        ? (state.error ?? actionError)
-        : state.status === "complete"
-          ? (state.message ?? localMessage)
-          : (actionError ?? localMessage ?? state.message);
+      ? ["Apple Health sync paused", ...pauseDetails].join("\n")
+      : actionError
+        ? actionError
+        : state.status === "error"
+          ? state.error
+          : state.status === "complete"
+            ? (state.message ?? localMessage)
+            : (localMessage ?? state.message);
   const detailMessage =
     isRunning && hasStageCount
       ? `${message}\n${state.completedStageCount} of ${state.totalStageCount} stages complete`
-      : isPaused &&
-          !actionError &&
-          state.message === "Unlock your phone to continue Apple Health sync"
+      : isPaused && state.message === "Unlock your phone to continue Apple Health sync"
         ? `${message}\n${state.message}`
         : message;
 
@@ -114,11 +117,11 @@ export function appleHealthManualSyncPresentation(
     message,
     percentage: hasStageCount ? (state.completedStageCount / state.totalStageCount) * 100 : null,
     syncStatusMessage: isPaused
-      ? !actionError && state.message === "Unlock your phone to continue Apple Health sync"
-        ? `${message ?? "Apple Health sync paused"}\n${state.message}`
-        : (message ?? "Apple Health sync paused")
+      ? state.message === "Unlock your phone to continue Apple Health sync"
+        ? detailMessage
+        : message
       : state.status === "error"
-        ? (state.error ?? actionError ?? undefined)
+        ? (actionError ?? state.error ?? undefined)
         : state.message === "Unlock your phone to continue Apple Health sync"
           ? state.message
           : undefined,
@@ -126,6 +129,21 @@ export function appleHealthManualSyncPresentation(
       ? { completed: state.completedStageCount, total: state.totalStageCount }
       : undefined,
   };
+}
+
+export function isAppleHealthLockedPause(state: HealthKitManualSyncState | null | undefined) {
+  return (
+    state?.status === "paused" &&
+    state.message === "Unlock your phone to continue Apple Health sync"
+  );
+}
+
+export function isAppleHealthActionErrorPublished(
+  state: HealthKitManualSyncState | null | undefined,
+  error: unknown,
+) {
+  const message = error instanceof Error ? error.message : String(error);
+  return state?.status === "error" && state.error === message;
 }
 
 function formatDuration(ms: number): string {

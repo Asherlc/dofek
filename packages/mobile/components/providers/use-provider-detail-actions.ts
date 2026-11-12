@@ -14,7 +14,11 @@ import { useHealthKitManualSync } from "../../lib/health-kit-manual-sync-context
 import { ManualHealthKitSyncInterruptedError } from "../../lib/health-kit-sync-types";
 import { captureException } from "../../lib/telemetry";
 import { trpc } from "../../lib/trpc";
-import { appleHealthManualSyncPresentation } from "./provider-card";
+import {
+  appleHealthManualSyncPresentation,
+  isAppleHealthActionErrorPublished,
+  isAppleHealthLockedPause,
+} from "./provider-card";
 
 interface ProviderRecord extends ProviderSyncHistory {
   id: string;
@@ -104,6 +108,7 @@ export function useProviderDetailActions(
   const [manualActionError, setManualActionError] = useState<string | null>(null);
   const { controller: manualSyncController, state: manualSyncState } = useHealthKitManualSync();
   const manualSyncControllerRef = useRef(manualSyncController);
+  const manualSyncStateRef = useRef(manualSyncState);
   const [rangeSinceDate, setRangeSinceDate] = useState(() => {
     const start = new Date();
     start.setDate(start.getDate() - 7);
@@ -152,13 +157,17 @@ export function useProviderDetailActions(
   }, []);
 
   useEffect(() => {
+    if (manualSyncStateRef.current !== manualSyncState) {
+      manualSyncStateRef.current = manualSyncState;
+      setManualActionError(null);
+    }
     if (manualSyncControllerRef.current !== manualSyncController) {
       manualSyncControllerRef.current = manualSyncController;
       setLocalSyncMessage(null);
       setLocalSyncProgress(null);
       setManualActionError(null);
     }
-  }, [manualSyncController]);
+  }, [manualSyncController, manualSyncState]);
 
   const invalidateProviderData = useCallback(() => {
     trpcUtils.sync.providers.invalidate();
@@ -352,11 +361,17 @@ export function useProviderDetailActions(
           setLocalSyncProgress(null);
           return;
         }
+        const controllerState = manualSyncController?.getSnapshot();
+        if (providerId === "apple_health" && isAppleHealthLockedPause(controllerState)) {
+          return;
+        }
         captureException(error, {
           context: providerId === "apple_health" ? "healthkit-manual-sync" : "provider-sync-start",
         });
-        if (providerId === "apple_health" && !manualSyncController) {
-          setManualActionError(userFacingErrorMessage(error, "Apple Health sync failed"));
+        if (providerId === "apple_health") {
+          if (!manualSyncController || !isAppleHealthActionErrorPublished(controllerState, error)) {
+            setManualActionError(userFacingErrorMessage(error, "Apple Health sync failed"));
+          }
         } else if (providerId !== "apple_health") {
           setLocalSyncMessage(userFacingErrorMessage(error, "Sync failed"));
         }
@@ -385,8 +400,10 @@ export function useProviderDetailActions(
       invalidateProviderData();
     } catch (error: unknown) {
       if (error instanceof ManualHealthKitSyncInterruptedError) return;
+      const controllerState = manualSyncController.getSnapshot();
+      if (isAppleHealthLockedPause(controllerState)) return;
       captureException(error, { context: "healthkit-manual-sync" });
-      if (manualSyncController.getSnapshot().status !== "error") {
+      if (!isAppleHealthActionErrorPublished(controllerState, error)) {
         setManualActionError(userFacingErrorMessage(error, "Apple Health sync failed"));
       }
     }
