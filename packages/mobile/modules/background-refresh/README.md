@@ -93,8 +93,19 @@ expiration.remove();
   after the native launch handler grants the task, and `{ supported: false }` on
   iOS versions without continued processing (nothing is submitted). Invalid task
   IDs, registration failures, submission failures, and abandoned starts reject
-  with a specific message. Submission uses the `.fail` strategy so a second job
-  is never queued behind work JavaScript already began.
+  with a specific message; calling it with no expiration listener installed
+  rejects immediately with the listener-unavailable message. Submission uses the
+  `.fail` strategy so a second job is never queued behind work JavaScript
+  already began.
+- Listener ownership is captured **before the first asynchronous dispatch.** Expo
+  queues an `AsyncFunction` body, so a body that read the live generation would
+  bind an invocation to a listener that replaced it while the body was queued.
+  The public wrapper therefore snapshots the live generation synchronously with
+  the internal `getHealthKitSyncListenerGeneration()` native function and passes
+  it as the native start's second argument; the native side validates exactly
+  that generation and never re-reads the current one. Apple/Expo's threading and
+  queue behavior is documented in
+  [`AsyncFunction`](https://docs.expo.dev/modules/module-api/#asyncfunction).
 - **Caller precondition: pass a fresh native `taskId` for every attempt.** The
   native `taskId` identifies one bounded continued-processing attempt, not a
   durable sync checkpoint. Keep the durable checkpoint/`requestId` used for

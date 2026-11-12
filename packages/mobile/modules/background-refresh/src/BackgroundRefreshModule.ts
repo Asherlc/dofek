@@ -49,7 +49,8 @@ declare class BackgroundRefreshNativeModule extends NativeModule<BackgroundRefre
   completeRefresh(taskId: string, success: boolean): void;
   isAvailable(): boolean;
   scheduleRefresh(): void;
-  startHealthKitSync(taskId: string): Promise<HealthKitSyncStartResult>;
+  startHealthKitSync(taskId: string, listenerGeneration: string): Promise<HealthKitSyncStartResult>;
+  getHealthKitSyncListenerGeneration(): string | null;
   updateHealthKitSyncProgress(
     taskId: string,
     completed: number,

@@ -26,7 +26,13 @@ native configuration, and authoritative platform references.
   if that generation is no longer live, even when a replacement listener exists.
   Grant installation and start settlement are serialized against retirement so a
   teardown or expiration that wins during launch setup rejects the start and
-  retains no handler. Expo documents the module lifecycle hooks in
+  retains no handler. Capture the generation in `index.ts` **before** the native
+  `AsyncFunction` is dispatched: Expo queues that body, so reading the live
+  generation inside it would rebind a retired invocation to its replacement
+  ([Expo `AsyncFunction`](https://docs.expo.dev/modules/module-api/#asyncfunction)).
+  The internal `getHealthKitSyncListenerGeneration()` native function is the
+  synchronous snapshot the public wrapper passes as the start argument. Expo
+  documents the module lifecycle hooks in
   [Module lifecycle](https://docs.expo.dev/modules/module-api/#lifecycle-events);
   Apple documents the single expiration callback in
   [`BGContinuedProcessingTask`](https://developer.apple.com/documentation/backgroundtasks/bgcontinuedprocessingtask).
@@ -75,8 +81,9 @@ native configuration, and authoritative platform references.
   submission failures, invalid task IDs, stale launches from abandoned
   requests, reused native task IDs, and owner interleavings (teardown or
   expiration during launch-handler installation, queued start followed by
-  listener retirement and replacement on the same module, and old-owner
-  destruction not ending a replacement owner's request).
+  listener retirement and replacement on the same module, a deferred native
+  async start body after that replacement, and old-owner destruction not ending
+  a replacement owner's request).
 - `swift test` does not compile the Expo module or app-delegate subscriber
   because `Package.swift` excludes those files. Use an iOS app build when
   changing the native bridge or registration.

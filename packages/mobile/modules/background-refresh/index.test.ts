@@ -9,6 +9,7 @@ const nativeModule = vi.hoisted(() => ({
   isAvailable: vi.fn(),
   scheduleRefresh: vi.fn(),
   startHealthKitSync: vi.fn(),
+  getHealthKitSyncListenerGeneration: vi.fn(),
   updateHealthKitSyncProgress: vi.fn(),
   completeHealthKitSync: vi.fn(),
 }));
@@ -177,15 +178,58 @@ describe("HealthKit sync continued-processing bridge", () => {
     vi.clearAllMocks();
   });
 
-  it("forwards the exact task ID and returns the native support result", async () => {
+  it("snapshots the listener generation before dispatching the native start", async () => {
+    nativeModule.getHealthKitSyncListenerGeneration.mockReturnValue("generation-a");
     nativeModule.startHealthKitSync.mockResolvedValue({ supported: true });
 
     await expect(startHealthKitSync("sync-1")).resolves.toEqual({ supported: true });
 
-    expect(nativeModule.startHealthKitSync).toHaveBeenCalledWith("sync-1");
+    expect(nativeModule.startHealthKitSync).toHaveBeenCalledWith("sync-1", "generation-a");
+  });
+
+  it("rejects before calling native when no expiration listener is installed", async () => {
+    nativeModule.getHealthKitSyncListenerGeneration.mockReturnValue(null);
+
+    await expect(startHealthKitSync("sync-1")).rejects.toThrow(
+      "requires an active expiration listener",
+    );
+
+    expect(nativeModule.startHealthKitSync).not.toHaveBeenCalled();
+  });
+
+  it("keeps a queued invocation bound to the listener generation that started it", async () => {
+    let rejectQueuedStart: ((reason: unknown) => void) | undefined;
+    nativeModule.getHealthKitSyncListenerGeneration.mockReturnValue("generation-a");
+    nativeModule.startHealthKitSync.mockImplementation(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectQueuedStart = reject;
+        }),
+    );
+
+    const queuedStart = startHealthKitSync("sync-old");
+    expect(nativeModule.startHealthKitSync).toHaveBeenCalledWith("sync-old", "generation-a");
+
+    // The subscription is removed and re-added while Expo still holds the native
+    // async body: the live generation is now B.
+    nativeModule.getHealthKitSyncListenerGeneration.mockReturnValue("generation-b");
+    rejectQueuedStart?.(
+      new Error(
+        "Apple Health sync requires an active expiration listener owned by this app session.",
+      ),
+    );
+
+    await expect(queuedStart).rejects.toThrow("requires an active expiration listener");
+    expect(nativeModule.startHealthKitSync).toHaveBeenCalledTimes(1);
+
+    // A fresh invocation snapshots B, so it starts as the replacement's work.
+    nativeModule.startHealthKitSync.mockResolvedValue({ supported: true });
+    await expect(startHealthKitSync("sync-new")).resolves.toEqual({ supported: true });
+    expect(nativeModule.startHealthKitSync).toHaveBeenLastCalledWith("sync-new", "generation-b");
   });
 
   it("surfaces a specific native start rejection", async () => {
+    nativeModule.getHealthKitSyncListenerGeneration.mockReturnValue("generation-a");
     const failure = new Error(
       "Apple Health sync requires an active expiration listener owned by this app session.",
     );

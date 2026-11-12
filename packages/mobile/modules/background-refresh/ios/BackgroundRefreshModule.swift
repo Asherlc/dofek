@@ -74,11 +74,11 @@ public class BackgroundRefreshModule: Module {
             Self.taskCoordinator.completeTask(id: taskId, success: success)
         }
 
-        AsyncFunction("startHealthKitSync") { (taskId: String, promise: Promise) in
-            // Capture the listener generation on the caller's thread. If that
-            // listener is retired before the main-queue block runs, the start must
-            // be rejected even when a replacement listener has appeared.
-            guard let ownerId = self.healthKitSyncListenerLifecycle.current() else {
+        // The listener generation is snapshotted by the TypeScript wrapper before
+        // Expo queues this async body. Re-reading it here would rebind an invocation
+        // made by a retired listener to its replacement.
+        AsyncFunction("startHealthKitSync") { (taskId: String, listenerGeneration: String, promise: Promise) in
+            guard let ownerId = UUID(uuidString: listenerGeneration) else {
                 promise.reject(
                     "HEALTHKIT_SYNC_TASK_FAILED",
                     HealthKitSyncStartError.listenerUnavailable.localizedDescription
@@ -98,6 +98,12 @@ public class BackgroundRefreshModule: Module {
                     }
                 }
             }
+        }
+
+        // Synchronous on the JS thread, so the caller can bind its invocation to the
+        // listener that is live *now* rather than after Expo's async dispatch.
+        Function("getHealthKitSyncListenerGeneration") { () -> String? in
+            self.healthKitSyncListenerLifecycle.current()?.uuidString
         }
 
         Function("updateHealthKitSyncProgress") {
