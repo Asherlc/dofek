@@ -28,13 +28,16 @@ describe("activity calendar entries", () => {
     ]);
   });
 
-  it("uses canonical per-activity power stress even without heart rate", () => {
-    const row = activityRowSchema.parse({
-      ...makeActivityRow({ avg_hr: null, max_hr: null, avg_power: 50 }),
-      power_tss: 83.25,
-    });
-    expect(createActiveCalendarEntry(row, {}).tss).toBe(83.3);
-  });
+  it.each([50, null])(
+    "uses canonical power stress without heart rate and average power %s",
+    (avgPower) => {
+      const row = activityRowSchema.parse({
+        ...makeActivityRow({ avg_hr: null, max_hr: null, avg_power: avgPower }),
+        power_tss: 83.25,
+      });
+      expect(createActiveCalendarEntry(row, {}).tss).toBe(83.3);
+    },
+  );
 
   it("keeps the primary source type separate from the representative classification", () => {
     const row = activityRowSchema.parse(
@@ -277,24 +280,40 @@ describe("activity calendar entries", () => {
     );
   });
 
-  it("explains cycling power prerequisites when stress data is unavailable", () => {
-    const rows = [makeActivityRow({ avg_power: null, avg_hr: null })];
-
-    const entries = rows.map((row) => createActiveCalendarEntry(activityRowSchema.parse(row), {}));
-    expect(entries[0]).toEqual(
-      expect.objectContaining({
-        tss: null,
-        stats: [
-          {
-            status: "missing",
-            label: "Training Stress Score",
-            reason:
-              "Record cycling power with sufficient sustained-effort evidence for computed eFTP.",
-          },
-        ],
-      }),
+  it.each([60, 0, null])("omits TSS without recorded power for duration %s", (durationMin) => {
+    const row = activityRowSchema.parse(
+      makeActivityRow({ avg_power: null, power_tss: null, duration_min: durationMin }),
     );
+
+    expect(createActiveCalendarEntry(row, {})).toMatchObject({ tss: null, stats: [] });
+    expect(
+      createProviderAbsentCalendarEntry({ ...row, provider_absent_at: "2026-11-01T00:00:00Z" }, {}),
+    ).toMatchObject({ tss: null, stats: [] });
   });
+
+  it.each([250, 0])(
+    "explains prerequisites when recorded power %s has no stress score",
+    (avgPower) => {
+      const rows = [makeActivityRow({ avg_power: avgPower, avg_hr: null })];
+
+      const entries = rows.map((row) =>
+        createActiveCalendarEntry(activityRowSchema.parse(row), {}),
+      );
+      expect(entries[0]).toEqual(
+        expect.objectContaining({
+          tss: null,
+          stats: [
+            {
+              status: "missing",
+              label: "Training Stress Score",
+              reason:
+                "Record cycling power with sufficient sustained-effort evidence for computed eFTP.",
+            },
+          ],
+        }),
+      );
+    },
+  );
 
   it("does not compute stress for zero-duration activities", () => {
     const rows = [makeActivityRow({ duration_min: 0 })];
