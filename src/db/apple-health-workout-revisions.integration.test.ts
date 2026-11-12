@@ -158,14 +158,20 @@ describe("Apple Health workout revisions in v_activity", () => {
     );
   });
 
-  it("applies the latest revision's absence to its direct-provider group despite an active older sibling", async () => {
+  it("keeps the direct recording visible when its latest Apple Health copy is absent", async () => {
     await revision({ version: 1834 });
     const latest = await revision({ version: 1835, current: true });
     await directWorkout(latest.groupId);
     await context.db.execute(sql`UPDATE fitness.activity SET provider_absent_at = now()
       WHERE id = ${latest.id}`);
 
-    expect(await visible()).toEqual([]);
+    expect(await visible()).toEqual([
+      {
+        id: latest.groupId,
+        started_at: new Date("2026-09-29T14:28:31.000Z"),
+        ended_at: new Date("2026-09-29T15:23:48.000Z"),
+      },
+    ]);
   });
 
   it.each([false, true])(

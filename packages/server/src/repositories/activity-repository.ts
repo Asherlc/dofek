@@ -911,25 +911,43 @@ export class ActivityRepository extends BaseRepository {
   }
 
   /** Clear provider tombstones so hidden activities become visible again. */
-  async restoreProviderAbsent(activityIds: string[]): Promise<{ restoredCount: number }> {
+  async restoreProviderAbsent(
+    activityIds: string[],
+  ): Promise<{ restoredCount: number; memberActivityIds: string[] }> {
     const uniqueActivityIds = [...new Set(activityIds)];
     if (uniqueActivityIds.length === 0) {
-      return { restoredCount: 0 };
+      return { restoredCount: 0, memberActivityIds: [] };
     }
+
+    const selectedIds = sql.join(
+      uniqueActivityIds.map((activityId) => sql`${activityId}::uuid`),
+      sql`, `,
+    );
 
     const restoredRows = await this.query(
       z.object({ id: z.string() }),
-      sql`UPDATE fitness.activity
-          SET provider_absent_at = NULL
+      sql`WITH selected_groups AS (
+            SELECT group_id AS id FROM fitness.activity
+            WHERE user_id = ${this.userId}::uuid AND id IN (${selectedIds})
+            UNION
+            SELECT id FROM fitness.activity_group
+            WHERE user_id = ${this.userId}::uuid AND id IN (${selectedIds})
+            UNION
+            SELECT group_id FROM fitness.activity_group_alias
+            WHERE user_id = ${this.userId}::uuid AND alias_id IN (${selectedIds})
+          )
+          UPDATE fitness.activity
+          SET provider_absent_at = NULL, absence_provider_id = NULL
           WHERE user_id = ${this.userId}::uuid
             AND provider_absent_at IS NOT NULL
-            AND id IN (${sql.join(
-              uniqueActivityIds.map((activityId) => sql`${activityId}::uuid`),
-              sql`, `,
-            )})
+            AND deleted_at IS NULL
+            AND group_id IN (SELECT id FROM selected_groups)
           RETURNING id::text AS id`,
     );
-    return { restoredCount: restoredRows.length };
+    return {
+      restoredCount: restoredRows.length,
+      memberActivityIds: restoredRows.map((row) => row.id),
+    };
   }
 
   /** Delete activities by visible activity IDs, including all members of matching deduped groups. */

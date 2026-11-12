@@ -964,7 +964,8 @@ describe("queues", () => {
         await import("./queues.ts");
 
       const queue = createActivityDeleteAnalyticsQueue({ host: "test", port: 9999 });
-      await enqueueActivityRestoreAnalyticsRefresh(
+      mockQueueAdd.mockResolvedValueOnce({ id: "restore-job-1" });
+      const jobId = await enqueueActivityRestoreAnalyticsRefresh(
         "user-123",
         ["00000000-0000-0000-0000-000000000002", "00000000-0000-0000-0000-000000000002"],
         queue,
@@ -978,12 +979,13 @@ describe("queues", () => {
           activityIds: ["00000000-0000-0000-0000-000000000002"],
         },
         {
-          removeOnComplete: true,
+          removeOnComplete: { age: 604_800, count: 1_000 },
           removeOnFail: { age: 604_800, count: 100 },
           attempts: 5,
           backoff: { type: "fixed", delay: 30_000 },
         },
       );
+      expect(jobId).toBe("restore-job-1");
     });
 
     it("does not enqueue a job when no activity ids are provided", async () => {
