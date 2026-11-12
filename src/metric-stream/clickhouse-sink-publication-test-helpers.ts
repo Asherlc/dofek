@@ -13,9 +13,19 @@ export function startPublicationSink(input: {
   const script = `
     import {bypass,http,passthrough} from 'msw';
     import {setupServer} from 'msw/node';
-    import {runMetricStreamClickHouseSinkFromEnv} from './src/metric-stream/clickhouse-sink.ts';
+    import {runMetricStreamClickHouseSinkFromEnv} from './src/metric-stream/clickhouse-sink-runtime.ts';
     import {MetricStreamConsumerReadiness} from './src/metric-stream/consumer-readiness.ts';
     import {ACCOUNT_ERASURE_FENCE_TABLE} from './src/metric-stream/clickhouse-table.ts';
+    class PublicationTestReadiness extends MetricStreamConsumerReadiness {
+      markGroupJoined() {
+        super.markGroupJoined();
+        if (!started) {
+          started = true;
+          process.send('started');
+        }
+      }
+    }
+    let started = false;
     let release;
     const held=new Promise(resolve=>{release=resolve;});
     process.on('message',message=>{if(message==='release-fence')release();});
@@ -37,8 +47,12 @@ export function startPublicationSink(input: {
       return passthrough();
     }));
     server.listen({onUnhandledRequest:'bypass'});
-    await runMetricStreamClickHouseSinkFromEnv(new MetricStreamConsumerReadiness());
-    process.send('started');
+    try {
+      await runMetricStreamClickHouseSinkFromEnv(new PublicationTestReadiness());
+    } finally {
+      server.close();
+      if (process.connected) process.disconnect();
+    }
   `;
   const child = spawn(
     process.execPath,

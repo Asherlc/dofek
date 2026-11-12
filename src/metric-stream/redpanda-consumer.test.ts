@@ -13,6 +13,8 @@ const kafkaConsumerConnect = vi.hoisted(() => vi.fn(async () => undefined));
 const kafkaConsumerOn = vi.hoisted(() => vi.fn());
 const kafkaConsumerSubscribe = vi.hoisted(() => vi.fn(async () => undefined));
 const kafkaConsumerRun = vi.hoisted(() => vi.fn(async () => undefined));
+const kafkaConsumerStop = vi.hoisted(() => vi.fn(async () => undefined));
+const kafkaConsumerDisconnect = vi.hoisted(() => vi.fn(async () => undefined));
 const kafkaAdminConnect = vi.hoisted(() => vi.fn(async () => undefined));
 const kafkaAdminCreateTopics = vi.hoisted(() => vi.fn(async () => true));
 const kafkaAdminDescribeConfigs = vi.hoisted(() =>
@@ -36,6 +38,7 @@ const kafkaAdminDescribeConfigs = vi.hoisted(() =>
 
 const kafkaAdminDisconnect = vi.hoisted(() => vi.fn(async () => undefined));
 const kafkaProducerConnect = vi.hoisted(() => vi.fn(async () => undefined));
+const kafkaProducerDisconnect = vi.hoisted(() => vi.fn(async () => undefined));
 const kafkaProducerSend = vi.hoisted(() => vi.fn(async () => undefined));
 const kafkaConsumerFactory = vi.hoisted(() =>
   vi.fn(() => ({
@@ -50,6 +53,8 @@ const kafkaConsumerFactory = vi.hoisted(() =>
     on: kafkaConsumerOn,
     subscribe: kafkaConsumerSubscribe,
     run: kafkaConsumerRun,
+    stop: kafkaConsumerStop,
+    disconnect: kafkaConsumerDisconnect,
   })),
 );
 const kafkaConstructor = vi.hoisted(() =>
@@ -62,7 +67,11 @@ const kafkaConstructor = vi.hoisted(() =>
         disconnect: kafkaAdminDisconnect,
       }),
       consumer: kafkaConsumerFactory,
-      producer: () => ({ connect: kafkaProducerConnect, send: kafkaProducerSend }),
+      producer: () => ({
+        connect: kafkaProducerConnect,
+        disconnect: kafkaProducerDisconnect,
+        send: kafkaProducerSend,
+      }),
     };
   }),
 );
@@ -691,11 +700,14 @@ describe("createKafkaMetricStreamConsumerFromEnv", () => {
     kafkaConsumerOn.mockClear();
     kafkaConsumerSubscribe.mockClear();
     kafkaConsumerRun.mockClear();
+    kafkaConsumerStop.mockClear();
+    kafkaConsumerDisconnect.mockClear();
     kafkaAdminConnect.mockClear();
     kafkaAdminCreateTopics.mockClear();
     kafkaAdminDescribeConfigs.mockClear();
     kafkaAdminDisconnect.mockClear();
     kafkaProducerConnect.mockClear();
+    kafkaProducerDisconnect.mockClear();
     kafkaProducerSend.mockClear();
   });
 
@@ -780,6 +792,8 @@ describe("createKafkaMetricStreamConsumerFromEnv", () => {
       eachBatchAutoResolve: false,
       eachBatch: async () => undefined,
     });
+    await consumer.stop();
+    await consumer.disconnect();
 
     expect(kafkaConsumerConnect).toHaveBeenCalledOnce();
     expect(kafkaConsumerSubscribe).toHaveBeenCalledWith({
@@ -790,8 +804,11 @@ describe("createKafkaMetricStreamConsumerFromEnv", () => {
       eachBatchAutoResolve: false,
       eachBatch: expect.any(Function),
     });
+    expect(kafkaConsumerStop).toHaveBeenCalledOnce();
+    expect(kafkaConsumerDisconnect).toHaveBeenCalledOnce();
 
     await quarantine.connect();
+    await quarantine.disconnect();
     expect(kafkaAdminCreateTopics).toHaveBeenCalledWith({
       topics: [
         {
@@ -816,6 +833,7 @@ describe("createKafkaMetricStreamConsumerFromEnv", () => {
       ],
     });
     expect(kafkaProducerConnect).toHaveBeenCalledOnce();
+    expect(kafkaProducerDisconnect).toHaveBeenCalledOnce();
   });
 
   it("forwards Kafka group lifecycle events to sink readiness", () => {
