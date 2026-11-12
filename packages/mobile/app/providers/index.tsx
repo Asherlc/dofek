@@ -159,6 +159,8 @@ export default function ProvidersScreen() {
   const sharedFileUri = Array.isArray(params.sharedFile) ? params.sharedFile[0] : params.sharedFile;
 
   const [healthKitSyncing, setHealthKitSyncing] = useState(false);
+  const [healthKitAuthorizing, setHealthKitAuthorizing] = useState(false);
+  const [healthKitPermissionMessage, setHealthKitPermissionMessage] = useState<string>();
   const [healthKitProgress, setHealthKitProgress] = useState<string | undefined>();
   const trpcClient = trpcUtils.client;
   const appleHealth = useAppleHealthProviderModel({
@@ -169,25 +171,27 @@ export default function ProvidersScreen() {
   });
 
   const handleHealthKitConnect = useCallback(async () => {
-    if (healthKitSyncing) return;
-    setHealthKitSyncing(true);
-    setHealthKitProgress("Requesting permissions...");
+    if (healthKitAuthorizing) return;
+    setHealthKitAuthorizing(true);
+    setHealthKitPermissionMessage("Requesting permissions...");
     try {
       const result = await appleHealth.connect();
       if (result.state.requestStatus === "unavailable") {
-        setHealthKitProgress("Apple Health is unavailable on this device");
+        setHealthKitPermissionMessage("Apple Health is unavailable on this device");
       } else if (!result.granted) {
-        setHealthKitProgress("Apple Health permissions were not granted");
+        setHealthKitPermissionMessage("Apple Health permissions were not granted");
       } else {
-        setHealthKitProgress(result.state.isConnected() ? "Connected" : undefined);
+        setHealthKitPermissionMessage(undefined);
       }
     } catch (error: unknown) {
       captureException(error, { context: "healthkit-connect" });
-      setHealthKitProgress(userFacingErrorMessage(error, "Failed to connect to Apple Health"));
+      setHealthKitPermissionMessage(
+        userFacingErrorMessage(error, "Failed to connect to Apple Health"),
+      );
     } finally {
-      setHealthKitSyncing(false);
+      setHealthKitAuthorizing(false);
     }
-  }, [appleHealth, healthKitSyncing]);
+  }, [appleHealth, healthKitAuthorizing]);
 
   const handleHealthKitSync = useCallback(async () => {
     setHealthKitSyncing(true);
@@ -748,11 +752,17 @@ export default function ProvidersScreen() {
                 ...appleHealthProvider,
               }}
               stats={statsMap.apple_health}
-              syncing={healthKitSyncing}
+              syncing={healthKitSyncing || healthKitAuthorizing}
               importing={appleHealthImportProgress !== undefined}
               syncProgress={
                 appleHealthImportProgress ??
-                (healthKitSyncing || healthKitProgress ? { message: healthKitProgress } : undefined)
+                (healthKitSyncing || healthKitProgress || healthKitPermissionMessage
+                  ? {
+                      message: healthKitSyncing
+                        ? healthKitProgress
+                        : (healthKitPermissionMessage ?? healthKitProgress),
+                    }
+                  : undefined)
               }
               onSync={() => handleHealthKitSync()}
               onConnect={handleHealthKitConnect}
@@ -775,16 +785,19 @@ export default function ProvidersScreen() {
             <TouchableOpacity
               style={styles.permissionBanner}
               onPress={handleHealthKitConnect}
-              disabled={healthKitSyncing}
+              disabled={healthKitAuthorizing}
               accessibilityRole="button"
               accessibilityLabel="Review Apple Health permissions"
-              accessibilityState={{ busy: healthKitSyncing, disabled: healthKitSyncing }}
+              accessibilityState={{ busy: healthKitAuthorizing, disabled: healthKitAuthorizing }}
             >
               <Text style={styles.permissionBannerText}>
                 Apple Health permissions need updating — tap to review
               </Text>
             </TouchableOpacity>
           )}
+          {(healthKitSyncing || appleHealthImportProgress) && healthKitPermissionMessage ? (
+            <Text style={styles.permissionBannerText}>{healthKitPermissionMessage}</Text>
+          ) : null}
         </>
       );
     }

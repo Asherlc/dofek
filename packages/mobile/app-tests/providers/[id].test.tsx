@@ -1320,6 +1320,55 @@ describe("ProviderDetailScreen", () => {
       expect(screen.getByText("Full sync")).toBeTruthy();
     });
 
+    it.each([false, true])(
+      "reviews permissions rather than syncing when a sync is active: %s",
+      async (syncing) => {
+        mockUseLocalSearchParams.mockReturnValue({ id: "apple_health" });
+        mockProvidersQuery.mockReturnValue({ data: [authorizedProvider], isLoading: false });
+        mockProviderStatsQuery.mockReturnValue({ data: [appleHealthStats], isLoading: false });
+        mockGetRequestStatus.mockResolvedValue("shouldRequest");
+        const sync = Promise.withResolvers<{ inserted: number; errors: string[] }>();
+        const permission = Promise.withResolvers<boolean>();
+        mockSyncHealthKit.mockImplementation(
+          (options: { onProgress: (message: string) => void }) => {
+            options.onProgress("Pushing 27 samples...");
+            return sync.promise;
+          },
+        );
+        mockRequestPermissions.mockReturnValue(permission.promise);
+        const { default: ProviderDetailScreen } = await import("../../app/providers/[id]");
+        render(<ProviderDetailScreen />);
+        const permissionButton = await screen.findByRole("button", {
+          name: "Review Apple Health permissions",
+        });
+        const syncButton = screen.getByRole("button", { name: "Sync" });
+        if (syncing) {
+          fireEvent.click(syncButton);
+          await waitFor(() => expect(mockSyncHealthKit).toHaveBeenCalledOnce());
+        }
+
+        expect(permissionButton).toHaveProperty("disabled", false);
+        fireEvent.click(permissionButton);
+        fireEvent.click(permissionButton);
+        expect(mockRequestPermissions).toHaveBeenCalledOnce();
+        expect(permissionButton).toHaveProperty("disabled", true);
+        expect(mockSyncHealthKit).toHaveBeenCalledTimes(syncing ? 1 : 0);
+        mockGetRequestStatus.mockResolvedValue("unnecessary");
+        await act(async () => permission.resolve(true));
+        await waitFor(() => {
+          expect(
+            screen.queryByRole("button", { name: "Review Apple Health permissions" }),
+          ).toBeNull();
+        });
+        expect(syncButton).toHaveProperty("disabled", syncing);
+        if (syncing) {
+          expect(screen.getByText("Pushing 27 samples...")).toBeTruthy();
+          await act(async () => sync.resolve({ inserted: 27, errors: [] }));
+          await waitFor(() => expect(syncButton).toHaveProperty("disabled", false));
+        }
+      },
+    );
+
     it("requests Apple Health permissions when Connect is clicked", async () => {
       mockUseLocalSearchParams.mockReturnValue({ id: "apple_health" });
       mockProvidersQuery.mockReturnValue({ data: [authorizedProvider], isLoading: false });

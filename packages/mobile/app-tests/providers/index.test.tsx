@@ -3201,6 +3201,41 @@ describe("ProvidersScreen", () => {
     });
   });
 
+  it("reviews Apple Health permissions during a sync without ending the sync", async () => {
+    const sync = Promise.withResolvers<{ inserted: number; errors: string[] }>();
+    const permission = Promise.withResolvers<boolean>();
+    mockGetRequestStatus.mockResolvedValue("shouldRequest");
+    mockSyncHealthKit.mockImplementation((options: { onProgress: (message: string) => void }) => {
+      options.onProgress("Pushing 27 samples...");
+      return sync.promise;
+    });
+    mockRequestPermissions.mockReturnValue(permission.promise);
+    await renderProvidersScreen();
+
+    const syncButton = await screen.findByRole("button", { name: "Sync Apple Health" });
+    fireEvent.click(syncButton);
+    await waitFor(() => expect(mockSyncHealthKit).toHaveBeenCalledOnce());
+    const permissionButton = screen.getByRole("button", {
+      name: "Review Apple Health permissions",
+    });
+    expect(permissionButton).toHaveProperty("disabled", false);
+    fireEvent.click(permissionButton);
+    fireEvent.click(permissionButton);
+    expect(mockRequestPermissions).toHaveBeenCalledOnce();
+    expect(permissionButton).toHaveProperty("disabled", true);
+
+    mockGetRequestStatus.mockResolvedValue("unnecessary");
+    await act(async () => permission.resolve(true));
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "Review Apple Health permissions" })).toBeNull();
+    });
+    expect(syncButton).toHaveProperty("disabled", true);
+    expect(syncButton.getAttribute("aria-busy")).toBe("true");
+    expect(screen.getByText("Pushing 27 samples...")).toBeTruthy();
+    await act(async () => sync.resolve({ inserted: 27, errors: [] }));
+    await waitFor(() => expect(syncButton).toHaveProperty("disabled", false));
+  });
+
   it("blocks duplicate Apple Health permission requests while connecting", async () => {
     let finishPermissionRequest: (granted: boolean) => void = () => undefined;
     mockHasEverAuthorized.mockReturnValue(true);

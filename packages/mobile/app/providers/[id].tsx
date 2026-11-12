@@ -599,6 +599,8 @@ function ProviderDetailContent({
     isConnected,
     primaryActionLabel,
     isSyncing,
+    isRequestingPermissions,
+    permissionMessage,
     syncMessage,
     syncProgress,
     syncDateRange,
@@ -606,6 +608,7 @@ function ProviderDetailContent({
     shouldShowFullSync,
     shouldShowAppleHealthPermissionBanner,
     handlePrimaryAction,
+    handleReviewPermissions,
     handleFullSync,
     modals,
   } = providerActions;
@@ -766,6 +769,8 @@ function ProviderDetailContent({
         <ProviderDetailActionsCard
           primaryActionLabel={primaryActionLabel}
           isSyncing={isSyncing}
+          isRequestingPermissions={isRequestingPermissions}
+          permissionMessage={permissionMessage}
           syncMessage={syncMessage}
           syncProgress={syncProgress}
           syncDateRange={syncDateRange}
@@ -776,6 +781,7 @@ function ProviderDetailContent({
             providerId === "apple_health" && (providerStats?.clinicalRecords ?? 0) > 0
           }
           onPrimaryAction={() => void handlePrimaryAction()}
+          onReviewPermissions={() => void handleReviewPermissions()}
           onFullSync={() => void handleFullSync()}
           onOpenClinicalRecords={onOpenClinicalRecords}
         />
