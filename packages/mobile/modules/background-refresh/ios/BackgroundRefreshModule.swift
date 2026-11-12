@@ -18,9 +18,10 @@ public class BackgroundRefreshModule: Module {
     )
     static let healthKitSyncTaskIdKey = "taskId"
 
-    /// Identifies this native module/bridge instance as the owner of any Apple
-    /// Health request it starts. A replacement module gets a new owner ID.
-    private let healthKitSyncOwnerId = UUID()
+    /// Issues a fresh ownership generation for each `onHealthKitSyncExpired`
+    /// listener activation. A shared module can outlive one subscription, so the
+    /// generation — not the module instance — owns queued native work.
+    private let healthKitSyncListenerLifecycle = HealthKitSyncListenerLifecycle()
 
     /// NotificationCenter name used by the app delegate subscriber to
     /// relay background refresh events to this module instance.
@@ -74,10 +75,16 @@ public class BackgroundRefreshModule: Module {
         }
 
         AsyncFunction("startHealthKitSync") { (taskId: String, promise: Promise) in
-            // Capture the owner on the caller's thread. If this bridge is retired
-            // before the main-queue block runs, the start must be rejected even if
-            // a replacement listener has appeared.
-            let ownerId = self.healthKitSyncOwnerId
+            // Capture the listener generation on the caller's thread. If that
+            // listener is retired before the main-queue block runs, the start must
+            // be rejected even when a replacement listener has appeared.
+            guard let ownerId = self.healthKitSyncListenerLifecycle.current() else {
+                promise.reject(
+                    "HEALTHKIT_SYNC_TASK_FAILED",
+                    HealthKitSyncStartError.listenerUnavailable.localizedDescription
+                )
+                return
+            }
             // Continued-processing requests are submitted from the foreground.
             DispatchQueue.main.async {
                 Self.healthKitSyncTaskCoordinator.start(taskId: taskId, ownerId: ownerId) { result in
@@ -95,9 +102,10 @@ public class BackgroundRefreshModule: Module {
 
         Function("updateHealthKitSyncProgress") {
             (taskId: String, completed: Int, total: Int, message: String) in
+            guard let ownerId = self.healthKitSyncListenerLifecycle.current() else { return }
             Self.healthKitSyncTaskCoordinator.updateProgress(
                 taskId: taskId,
-                ownerId: self.healthKitSyncOwnerId,
+                ownerId: ownerId,
                 completed: completed,
                 total: total,
                 message: message
@@ -105,26 +113,31 @@ public class BackgroundRefreshModule: Module {
         }
 
         Function("completeHealthKitSync") { (taskId: String, success: Bool) in
+            guard let ownerId = self.healthKitSyncListenerLifecycle.current() else { return }
             Self.healthKitSyncTaskCoordinator.complete(
                 taskId: taskId,
-                ownerId: self.healthKitSyncOwnerId,
+                ownerId: ownerId,
                 success: success
             )
         }
 
         OnStartObserving("onHealthKitSyncExpired") {
-            let ownerId = self.healthKitSyncOwnerId
+            let ownerId = self.healthKitSyncListenerLifecycle.begin()
             Self.healthKitSyncTaskCoordinator.activateOwner(ownerId: ownerId) { [weak self] taskId in
                 self?.sendEvent("onHealthKitSyncExpired", [Self.healthKitSyncTaskIdKey: taskId])
             }
         }
 
         OnStopObserving("onHealthKitSyncExpired") {
-            Self.healthKitSyncTaskCoordinator.deactivateOwner(ownerId: self.healthKitSyncOwnerId)
+            guard let ownerId = self.healthKitSyncListenerLifecycle.end() else { return }
+            Self.healthKitSyncTaskCoordinator.deactivateOwner(ownerId: ownerId)
         }
 
         OnDestroy {
-            Self.healthKitSyncTaskCoordinator.destroyOwner(ownerId: self.healthKitSyncOwnerId)
+            // Retires only the generation this module still owns; a stale module's
+            // destruction can never end a replacement listener's request.
+            guard let ownerId = self.healthKitSyncListenerLifecycle.end() else { return }
+            Self.healthKitSyncTaskCoordinator.destroyOwner(ownerId: ownerId)
         }
     }
 

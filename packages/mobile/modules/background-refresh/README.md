@@ -132,11 +132,14 @@ expiration.remove();
   expiration callback for system expiration and a person's cancellation, so the
   app pauses and requires an explicit Resume tap instead of restarting work.
   The live subscription is also the **expiration-listener owner** of native
-  work: a queued `startHealthKitSync` is correlated to the owner that scheduled
-  it, so removing the subscription (or destroying the native module) rejects
-  that pending start even when a replacement subscription already exists, and
-  submits nothing. An active task owned by a retired listener completes
-  unsuccessfully once. Callback errors go to the mobile Sentry path.
+  work, and every listener activation gets its own ownership generation — even
+  when the same native module is reused after a sign-out/sign-in, which removes
+  and re-adds the subscription without recreating the module. A queued
+  `startHealthKitSync` retains the generation that scheduled it, so removing
+  the subscription (or destroying the native module) rejects that pending start
+  even when a replacement listener already exists, and submits nothing. An
+  active task owned by a retired listener completes unsuccessfully once.
+  Callback errors go to the mobile Sentry path.
 - Native work requires a live owner. Calling `startHealthKitSync` before the
   expiration subscription is installed rejects with the listener-unavailable
   message rather than submitting work nobody can observe.
