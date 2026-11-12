@@ -10,6 +10,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useAppleHealthProviderModel } from "../../lib/apple-health-provider";
 import { createProviderHandoffCode } from "../../lib/auth";
 import { useAuth } from "../../lib/auth-context";
+import { isHealthKitDatabaseInaccessible } from "../../lib/health-kit-errors";
 import { useHealthKitManualSync } from "../../lib/health-kit-manual-sync-context";
 import { ManualHealthKitSyncInterruptedError } from "../../lib/health-kit-sync-types";
 import { captureException } from "../../lib/telemetry";
@@ -362,7 +363,11 @@ export function useProviderDetailActions(
           return;
         }
         const controllerState = manualSyncController?.getSnapshot();
-        if (providerId === "apple_health" && isAppleHealthLockedPause(controllerState)) {
+        if (
+          providerId === "apple_health" &&
+          isHealthKitDatabaseInaccessible(error) &&
+          isAppleHealthLockedPause(controllerState)
+        ) {
           return;
         }
         captureException(error, {
@@ -401,7 +406,9 @@ export function useProviderDetailActions(
     } catch (error: unknown) {
       if (error instanceof ManualHealthKitSyncInterruptedError) return;
       const controllerState = manualSyncController.getSnapshot();
-      if (isAppleHealthLockedPause(controllerState)) return;
+      if (isHealthKitDatabaseInaccessible(error) && isAppleHealthLockedPause(controllerState)) {
+        return;
+      }
       captureException(error, { context: "healthkit-manual-sync" });
       if (!isAppleHealthActionErrorPublished(controllerState, error)) {
         setManualActionError(userFacingErrorMessage(error, "Apple Health sync failed"));

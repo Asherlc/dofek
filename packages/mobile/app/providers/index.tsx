@@ -48,6 +48,7 @@ import { useAppleHealthProviderModel } from "../../lib/apple-health-provider";
 import { createProviderHandoffCode } from "../../lib/auth";
 import { useAuth } from "../../lib/auth-context";
 import { createExpoUploadableMobileFile } from "../../lib/expo-uploadable-file";
+import { isHealthKitDatabaseInaccessible } from "../../lib/health-kit-errors";
 import { useHealthKitManualSync } from "../../lib/health-kit-manual-sync-context";
 import { ManualHealthKitSyncInterruptedError } from "../../lib/health-kit-sync-types";
 import type { FileUploadApi } from "../../lib/resumable-file-upload";
@@ -213,13 +214,14 @@ export default function ProvidersScreen() {
         result = await appleHealth.sync({ syncRangeDays: 7 });
       }
       if (result.errors.length > 0) {
-        setHealthKitProgress(`${result.inserted} records synced; ${result.errors.join("; ")}`);
+        setHealthKitProgress(`${result.inserted} records synced`);
       }
       trpcUtils.invalidate();
     } catch (error: unknown) {
       if (error instanceof ManualHealthKitSyncInterruptedError) return;
       const controllerState = healthKitManualSyncController?.getSnapshot();
-      if (isAppleHealthLockedPause(controllerState)) return;
+      if (isHealthKitDatabaseInaccessible(error) && isAppleHealthLockedPause(controllerState))
+        return;
       if (isAppleHealthActionErrorPublished(controllerState, error)) return;
       captureException(error, { context: "healthkit-manual-sync" });
       setHealthKitActionError(userFacingErrorMessage(error, "Apple Health sync failed"));

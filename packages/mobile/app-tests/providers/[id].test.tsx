@@ -913,6 +913,33 @@ describe("ProviderDetailScreen", () => {
       },
     );
 
+    it("shows a Full sync rejection over an unchanged locked pause", async () => {
+      mockUseLocalSearchParams.mockReturnValue({ id: "apple_health" });
+      const startError = new Error("Could not clear the saved Apple Health checkpoint");
+      mockManualSync.setSnapshot({
+        ...mockManualSync.state,
+        status: "paused",
+        message: "Unlock your phone to continue Apple Health sync",
+      });
+      mockManualSync.controller.start.mockRejectedValueOnce(startError);
+      const { default: ProviderDetailScreen } = await import("../../app/providers/[id]");
+      await act(async () => {
+        render(<ProviderDetailScreen />);
+        await Promise.resolve();
+      });
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Full sync" }));
+        await mockManualSync.controller.start.mock.results[0]?.value.catch(() => undefined);
+      });
+
+      expect(screen.getByText(/Could not clear the saved Apple Health checkpoint/)).toBeTruthy();
+      expect(screen.getByText(/Unlock your phone to continue Apple Health sync/)).toBeTruthy();
+      expect(mockCaptureException).toHaveBeenCalledWith(startError, {
+        context: "healthkit-manual-sync",
+      });
+    });
+
     it("clears an action rejection after a newer shared sync completes", async () => {
       mockUseLocalSearchParams.mockReturnValue({ id: "apple_health" });
       mockManualSync.setSnapshot({
@@ -973,6 +1000,33 @@ describe("ProviderDetailScreen", () => {
 
       expect(screen.getByText(/Unlock your phone to continue Apple Health sync/)).toBeTruthy();
       expect(mockCaptureException).not.toHaveBeenCalled();
+    });
+
+    it("shows an unrelated Resume rejection over an unchanged locked pause", async () => {
+      mockUseLocalSearchParams.mockReturnValue({ id: "apple_health" });
+      const resumeError = new Error("Could not restore the saved Apple Health checkpoint");
+      mockManualSync.setSnapshot({
+        ...mockManualSync.state,
+        status: "paused",
+        message: "Unlock your phone to continue Apple Health sync",
+      });
+      mockManualSync.controller.resume.mockRejectedValueOnce(resumeError);
+      const { default: ProviderDetailScreen } = await import("../../app/providers/[id]");
+      await act(async () => {
+        render(<ProviderDetailScreen />);
+        await Promise.resolve();
+      });
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Resume" }));
+        await mockManualSync.controller.resume.mock.results[0]?.value.catch(() => undefined);
+      });
+
+      expect(screen.getByText(/Could not restore the saved Apple Health checkpoint/)).toBeTruthy();
+      expect(screen.getByText(/Unlock your phone to continue Apple Health sync/)).toBeTruthy();
+      expect(mockCaptureException).toHaveBeenCalledWith(resumeError, {
+        context: "healthkit-manual-sync",
+      });
     });
 
     it("exposes provider actions by accessible role and name", async () => {

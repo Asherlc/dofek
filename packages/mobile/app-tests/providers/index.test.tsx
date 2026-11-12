@@ -687,11 +687,11 @@ describe("shared Apple Health manual sync", () => {
       await mockManualSync.controller.start.mock.results[0]?.value;
     });
 
-    expect(
-      screen.getByText(
-        /Apple Health sync paused\s+Route service unavailable\s+3 records synced; Route service unavailable/,
-      ),
-    ).toBeTruthy();
+    const partialStatus = screen.getByText(
+      /Apple Health sync paused\s+Route service unavailable\s+3 records synced/,
+    );
+    expect(partialStatus.textContent?.match(/Route service unavailable/g)).toHaveLength(1);
+    expect(partialStatus.textContent).toContain("3 records synced");
   });
 
   it("keeps the controller-confirmed locked pause when Resume rejects", async () => {
@@ -720,6 +720,30 @@ describe("shared Apple Health manual sync", () => {
       ),
     ).toBeTruthy();
     expect(vi.mocked(captureException)).not.toHaveBeenCalled();
+  });
+
+  it("shows an unrelated Resume rejection over an unchanged locked pause", async () => {
+    const resumeError = new Error("Could not restore the saved Apple Health checkpoint");
+    mockManualSync.setSnapshot({
+      ...mockManualSync.state,
+      status: "paused",
+      message: "Unlock your phone to continue Apple Health sync",
+    });
+    mockManualSync.controller.resume.mockRejectedValueOnce(resumeError);
+    const { captureException } = await import("../../lib/telemetry");
+    vi.mocked(captureException).mockClear();
+    await renderProvidersScreen();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Resume Apple Health" }));
+      await mockManualSync.controller.resume.mock.results[0]?.value.catch(() => undefined);
+    });
+
+    expect(screen.getByText(/Could not restore the saved Apple Health checkpoint/)).toBeTruthy();
+    expect(screen.getByText(/Unlock your phone to continue Apple Health sync/)).toBeTruthy();
+    expect(vi.mocked(captureException)).toHaveBeenCalledWith(resumeError, {
+      context: "healthkit-manual-sync",
+    });
   });
 
   it("resumes a paused Apple Health sync from the list", async () => {
@@ -3327,17 +3351,26 @@ describe("ProvidersScreen", () => {
   });
 
   it("shows partial HealthKit errors and refreshes queries for successful writes", async () => {
-    mockSyncHealthKit.mockResolvedValueOnce({
-      inserted: 4,
-      deleted: 0,
-      errors: ["Route service unavailable"],
+    const result = { inserted: 4, deleted: 0, errors: ["Route service unavailable"] };
+    mockManualSync.controller.start.mockImplementationOnce(async () => {
+      mockManualSync.setSnapshot({
+        ...mockManualSync.state,
+        status: "paused",
+        message: "Apple Health sync paused",
+        error: "Route service unavailable",
+      });
+      return result;
     });
     await renderProvidersScreen();
     const appleCard = within(screen.getByTestId("provider-card-apple_health"));
     await waitFor(() => expect(appleCard.getByText("Sync")).toBeTruthy());
     fireEvent.click(appleCard.getByText("Sync"));
     await waitFor(() => {
-      expect(appleCard.getByText("4 records synced; Route service unavailable")).toBeTruthy();
+      const partialStatus = appleCard.getByText(
+        /Apple Health sync paused\s+Route service unavailable\s+4 records synced/,
+      );
+      expect(partialStatus.textContent?.match(/Route service unavailable/g)).toHaveLength(1);
+      expect(partialStatus.textContent).toContain("4 records synced");
       expect(mockInvalidate).toHaveBeenCalled();
     });
   });
