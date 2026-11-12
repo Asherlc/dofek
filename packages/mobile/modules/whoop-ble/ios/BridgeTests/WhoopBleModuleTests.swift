@@ -486,9 +486,10 @@ extension WhoopBleModuleTests {
             SentrySDK.close()
         }
 
+        try uploader.disable()
+        try fixture.installFailureTrigger()
         let configured = try await outcome(fixture.configurationCall, in: context)
         XCTAssertEqual(configured, "unexpected success")
-        try fixture.installFailureTrigger()
         try await fixture.assertPurgeFailure(context: context, module: module)
         try await fixture.assertDisableFailure(context: context, module: module, logs: logs)
         try fixture.dropFailureTrigger()
