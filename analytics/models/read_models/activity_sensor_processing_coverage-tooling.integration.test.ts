@@ -105,7 +105,7 @@ describe.each(["activity_sensor_processing_coverage", "activity_sensor_key_verif
           },
         })}\n`,
       );
-      expect(catalog.metadata.dbt_version).toBe("1.11.12");
+      expect(catalog.metadata.dbt_version).toBe("1.12.6");
       expect(catalog.errors ?? []).toEqual([]);
     });
 

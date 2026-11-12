@@ -84,7 +84,7 @@ services:
   peerdb-minio:
     # SeaweedFS S3 API stand-in; service hostname kept for PeerDB endpoint URLs.
     # https://github.com/seaweedfs/seaweedfs/releases/tag/4.47
-    image: chrislusf/seaweedfs:4.48@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d
+    image: chrislusf/seaweedfs:4.50@sha256:c2658820e763294a9e9de7b36c81e59b879e3459148351aee4e31a126ca64860
     environment:
       # Credential names retained for PeerDB client env wiring; SeaweedFS accepts
       # these as S3 access/secret keys for path-style clients.
@@ -222,7 +222,7 @@ services:
         condition: service_completed_successfully
 
   peerdb-flow-snapshot-worker:
-    image: ghcr.io/peerdb-io/flow-snapshot-worker:stable-v0.37.12
+    image: ghcr.io/peerdb-io/flow-snapshot-worker:stable-v0.37.15
     environment: *peerdb-flow-environment
     restart: unless-stopped
     depends_on:
@@ -242,7 +242,7 @@ services:
         condition: service_started
 
   peerdb:
-    image: ghcr.io/peerdb-io/peerdb-server:stable-v0.37.13
+    image: ghcr.io/peerdb-io/peerdb-server:stable-v0.37.15
     stop_signal: SIGINT
     environment:
       PEERDB_CATALOG_HOST: peerdb-catalog
@@ -266,7 +266,7 @@ services:
         condition: service_started
 
   peerdb-ui:
-    image: ghcr.io/peerdb-io/peerdb-ui:stable-v0.37.13
+    image: ghcr.io/peerdb-io/peerdb-ui:stable-v0.37.15
     environment:
       PEERDB_CATALOG_HOST: peerdb-catalog
       PEERDB_CATALOG_PORT: "5432"
