@@ -1506,7 +1506,7 @@ jobs:
 
       - name: Record Sentry production release
         if: steps.deploy_stack_full.outcome == 'success' && steps.deploy_stack_quiesced.outputs.web_convergence_failed != 'true' && (env.DEPLOY_ENVIRONMENT == 'prod' || env.DEPLOY_ENVIRONMENT == 'production')
-        uses: getsentry/action-release@6fb9aeade7061441cf3864e34fbe11a1457ad7dc # v3.7.1
+        uses: getsentry/action-release@e6703d0b00208e0b3687ba660d18ab5af7892821 # v3.7.2
         env:
           DOCKER_HOST: unix:///var/run/docker.sock
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
