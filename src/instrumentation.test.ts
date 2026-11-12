@@ -15,7 +15,7 @@ import {
 } from "@opentelemetry/sdk-logs";
 import { PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics";
 import { NodeSDK } from "@opentelemetry/sdk-node";
-import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-node";
+import { BatchSpanProcessor } from "@opentelemetry/sdk-trace";
 import { PostHogSpanProcessor } from "@posthog/ai/otel";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PostHogAiSpanProcessor } from "./lib/posthog-ai-observability.ts";
@@ -30,7 +30,7 @@ const instrumentationRequire = createRequire(
   require.resolve("@opentelemetry/auto-instrumentations-node"),
 );
 const httpUtils = require(
-  join(dirname(instrumentationRequire.resolve("@opentelemetry/instrumentation-http")), "utils.js"),
+  join(dirname(instrumentationRequire.resolve("@opentelemetry/instrumentation-http")), "utils.cjs"),
 );
 const aiTelemetryMocks = vi.hoisted(() => ({
   registerTelemetry: vi.fn(),
@@ -85,7 +85,7 @@ vi.mock("@opentelemetry/exporter-metrics-otlp-proto", () => ({
   OTLPMetricExporter: vi.fn(),
 }));
 
-vi.mock("@opentelemetry/sdk-trace-node", () => ({
+vi.mock("@opentelemetry/sdk-trace", () => ({
   BatchSpanProcessor: vi.fn(),
 }));
 
@@ -237,9 +237,9 @@ describe("instrumentation", () => {
     const config = vi.mocked(NodeSDK).mock.calls.at(-1)?.[0];
     expect(config?.spanProcessors).toHaveLength(2);
     expect(config?.logRecordProcessors).toHaveLength(1);
-    expect(config?.metricReader).toBeDefined();
+    expect(config?.metricReaders).toHaveLength(1);
     expect(config?.instrumentations).toEqual([mockAutoInstrumentations]);
-    expect(BatchSpanProcessor).toHaveBeenCalledWith(expect.any(OTLPTraceExporter));
+    expect(BatchSpanProcessor).toHaveBeenCalledWith({ exporter: expect.any(OTLPTraceExporter) });
     expect(PostHogSpanProcessor).not.toHaveBeenCalled();
     expect(BatchLogRecordProcessor).toHaveBeenCalledWith({
       exporter: expect.any(AxiomLogExporter),
@@ -405,7 +405,7 @@ describe("instrumentation", () => {
     const config = vi.mocked(NodeSDK).mock.calls.at(-1)?.[0];
     expect(config?.spanProcessors).toHaveLength(3);
     expect(config?.instrumentations).toEqual([mockAutoInstrumentations]);
-    expect(BatchSpanProcessor).toHaveBeenCalledWith(expect.any(OTLPTraceExporter));
+    expect(BatchSpanProcessor).toHaveBeenCalledWith({ exporter: expect.any(OTLPTraceExporter) });
     expect(PostHogSpanProcessor).toHaveBeenCalledWith({
       projectToken: POSTHOG_API_KEY,
       host: POSTHOG_HOST,
@@ -511,7 +511,7 @@ describe("instrumentation", () => {
       const config = vi.mocked(NodeSDK).mock.calls.at(-1)?.[0];
       expect(config?.spanProcessors).toHaveLength(3);
       expect(config?.instrumentations).toEqual([mockAutoInstrumentations]);
-      expect(BatchSpanProcessor).toHaveBeenCalledWith(expect.any(OTLPTraceExporter));
+      expect(BatchSpanProcessor).toHaveBeenCalledWith({ exporter: expect.any(OTLPTraceExporter) });
       expect(OTLPTraceExporter).toHaveBeenCalledWith(
         expect.objectContaining({
           url: POSTHOG_TRACES_URL,
@@ -569,7 +569,7 @@ describe("instrumentation", () => {
     const config = vi.mocked(NodeSDK).mock.calls.at(-1)?.[0];
     expect(config?.spanProcessors).toHaveLength(2);
     expect(config?.logRecordProcessors).toHaveLength(0);
-    expect(config?.metricReader).toBeUndefined();
+    expect(config?.metricReaders).toEqual([]);
     expect(config?.instrumentations).toEqual([mockAutoInstrumentations]);
     expect(getNodeAutoInstrumentations).toHaveBeenCalledOnce();
   });
@@ -598,7 +598,7 @@ describe("instrumentation", () => {
     const config = vi.mocked(NodeSDK).mock.calls.at(-1)?.[0];
     expect(config?.spanProcessors).toHaveLength(0);
     expect(config?.logRecordProcessors).toHaveLength(0);
-    expect(config?.metricReader).toBeDefined();
+    expect(config?.metricReaders).toHaveLength(1);
     expect(config?.instrumentations).toEqual([]);
     expect(PeriodicExportingMetricReader).toHaveBeenCalledWith(
       expect.objectContaining({

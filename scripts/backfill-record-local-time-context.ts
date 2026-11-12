@@ -2,6 +2,7 @@ import * as Sentry from "@sentry/node";
 import { createDatabaseFromEnv } from "../src/db/index.ts";
 import { backfillRecordLocalTimeContext } from "../src/db/record-local-time-context-backfill.ts";
 import { captureException } from "../src/lib/error-reporting.ts";
+import { sentryDataCollection } from "../src/lib/sentry-options.ts";
 
 function positiveIntegerOption(args: string[], name: string, defaultValue: number): number {
   const prefix = `--${name}=`;
@@ -54,7 +55,11 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
   };
   const sentryDsn = process.env.SENTRY_DSN || process.env.SENTRY_DSN_unencrypted;
   if (sentryDsn) {
-    Sentry.init({ dsn: sentryDsn, skipOpenTelemetrySetup: true });
+    Sentry.init({
+      dsn: sentryDsn,
+      enableOpenTelemetrySetup: false,
+      dataCollection: sentryDataCollection,
+    });
   }
 
   try {

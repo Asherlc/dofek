@@ -19,6 +19,7 @@ import {
 import { createClickHouseClientFromEnv } from "../src/db/clickhouse.ts";
 import { createDatabaseFromEnv } from "../src/db/index.ts";
 import { captureException } from "../src/lib/error-reporting.ts";
+import { sentryDataCollection } from "../src/lib/sentry-options.ts";
 
 type ActivityDataIntegrityCommand =
   | { kind: "repair"; options: ActivityIntegrityRepairOptions }
@@ -191,7 +192,12 @@ export function parseActivityDataIntegrityCommand(
 
 function initializeSentry(): void {
   const sentryDsn = process.env.SENTRY_DSN || process.env.SENTRY_DSN_unencrypted;
-  if (sentryDsn) Sentry.init({ dsn: sentryDsn, skipOpenTelemetrySetup: true });
+  if (sentryDsn)
+    Sentry.init({
+      dsn: sentryDsn,
+      enableOpenTelemetrySetup: false,
+      dataCollection: sentryDataCollection,
+    });
 }
 
 export async function main(args = process.argv.slice(2)): Promise<void> {
