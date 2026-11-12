@@ -1,4 +1,5 @@
 import { and, eq, sql } from "drizzle-orm";
+import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { isEncryptedCredentialValue } from "../security/credential-encryption.ts";
@@ -9,7 +10,7 @@ import {
   providerConnection,
   webhookSubscription,
 } from "./schema/reference.ts";
-import { setupTestDatabase, type TestContext } from "./test-helpers.ts";
+import { hasDatabaseLockWaiter, setupTestDatabase, type TestContext } from "./test-helpers.ts";
 import {
   connectProviderWithTokens,
   deleteProviderAuthorization,
@@ -37,6 +38,87 @@ describe("Token storage (integration)", () => {
     await ensureProvider(ctx.db, "wahoo", "Wahoo", undefined, TEST_USER_ID);
     const again = await ensureProvider(ctx.db, "wahoo", "Wahoo", undefined, TEST_USER_ID);
     expect(again).toBe("wahoo");
+  });
+
+  it("ensures a provider while a concurrent sync-log writer holds the user fence", async () => {
+    const providerId = "concurrent-sync-log";
+    await ensureProvider(ctx.db, providerId, "Concurrent Sync", undefined, TEST_USER_ID);
+    const writer = new Client({ connectionString: ctx.connectionString });
+    await writer.connect();
+    let ensuring: Promise<PromiseSettledResult<string>[]> | undefined;
+    try {
+      await writer.query("BEGIN");
+      await writer.query("SELECT fitness.lock_and_reject_account_erasure_write($1::uuid)", [
+        TEST_USER_ID,
+      ]);
+      ensuring = Promise.allSettled([
+        ensureProvider(
+          ctx.db,
+          providerId,
+          "Updated Concurrent Sync",
+          "https://updated.example.test",
+          TEST_USER_ID,
+        ),
+      ]);
+      // Observe the blocked ensure before the writer checks the provider FK.
+      await expect.poll(() => hasDatabaseLockWaiter(ctx.db)).toBe(true);
+      await writer.query(
+        `INSERT INTO fitness.sync_log (provider_id, user_id, data_type, status)
+         VALUES ($1, $2, 'sync', 'success')`,
+        [providerId, TEST_USER_ID],
+      );
+      await writer.query("COMMIT");
+      expect(await ensuring).toEqual([{ status: "fulfilled", value: providerId }]);
+      await expect(
+        ctx.db
+          .select({ name: provider.name, apiBaseUrl: provider.apiBaseUrl })
+          .from(provider)
+          .where(eq(provider.id, providerId)),
+      ).resolves.toEqual([
+        { name: "Updated Concurrent Sync", apiBaseUrl: "https://updated.example.test" },
+      ]);
+      const recorded = await executeWithSchema(
+        ctx.db,
+        z.object({ status: z.string() }),
+        sql`SELECT status FROM fitness.sync_log
+            WHERE provider_id = ${providerId} AND user_id = ${TEST_USER_ID}`,
+      );
+      expect(recorded).toEqual([{ status: "success" }]);
+    } finally {
+      await writer.query("ROLLBACK");
+      await ensuring;
+      await writer.end();
+    }
+  });
+
+  it("rejects provider setup for an account being erased without changing catalog metadata", async () => {
+    const userId = "64000000-0000-4000-8000-000000000001";
+    const providerId = "erasure-fenced-provider";
+    await ctx.db.execute(
+      sql`INSERT INTO fitness.user_profile (id, name) VALUES (${userId}, 'Erasing User')`,
+    );
+    await ensureProvider(ctx.db, providerId, "Original Provider", undefined, userId);
+    await ctx.db.execute(
+      sql`INSERT INTO fitness.account_erasure_request (
+            user_id, user_hash, user_hash_key_id, write_fence_hash, status_token_hash,
+            replay_retained_until, completion_deadline
+          ) VALUES (
+            ${userId}, repeat('a', 64), 'test-v1',
+            encode(public.digest(${userId}, 'sha256'), 'hex'), repeat('b', 64),
+            now() + interval '7 days', now() + interval '30 days'
+          )`,
+    );
+
+    await expect(
+      ensureProvider(ctx.db, providerId, "Rejected Update", undefined, userId),
+    ).rejects.toMatchObject({
+      cause: {
+        cause: { code: "55000", message: expect.stringContaining("Account erasure is active") },
+      },
+    });
+    await expect(
+      ctx.db.select({ name: provider.name }).from(provider).where(eq(provider.id, providerId)),
+    ).resolves.toEqual([{ name: "Original Provider" }]);
   });
 
   it("saveTokens inserts and loadTokens retrieves", async () => {

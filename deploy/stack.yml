@@ -436,6 +436,7 @@ services:
   metric-stream-clickhouse-sink: &metric-stream-clickhouse-sink
     image: ${APP_IMAGE:?APP_IMAGE must be the resolved immutable deployment image}
     command: ["metric-stream-clickhouse-sink"]
+    stop_grace_period: 30m
     env_file: ${METRIC_STREAM_CLICKHOUSE_SINK_ENV_FILE:?METRIC_STREAM_CLICKHOUSE_SINK_ENV_FILE is required}
     environment: &metric-stream-clickhouse-sink-environment
       NODE_ENV: production

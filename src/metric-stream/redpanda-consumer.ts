@@ -1,5 +1,5 @@
 import { performance } from "node:perf_hooks";
-import { Kafka } from "kafkajs";
+import { type Consumer, Kafka } from "kafkajs";
 import { captureException } from "../lib/error-reporting.ts";
 import { logger } from "../logger.ts";
 import {
@@ -216,8 +216,8 @@ function readRequiredEnvironmentValue(
 }
 
 export function createKafkaMetricStreamConsumerFromEnv(env: NodeJS.ProcessEnv = process.env): {
-  consumer: MetricStreamConsumerLike;
-  quarantine: MetricStreamQuarantineWriter;
+  consumer: MetricStreamConsumerLike & Pick<Consumer, "stop" | "disconnect">;
+  quarantine: KafkaMetricStreamQuarantineWriter;
   topic: string;
 } {
   const topic = readRequiredEnvironmentValue(env, "METRIC_STREAM_TOPIC");
@@ -248,6 +248,8 @@ export function createKafkaMetricStreamConsumerFromEnv(env: NodeJS.ProcessEnv = 
       },
       subscribe: (options) => kafkaConsumer.subscribe(options),
       run: (options) => kafkaConsumer.run(options),
+      stop: () => kafkaConsumer.stop(),
+      disconnect: () => kafkaConsumer.disconnect(),
     },
     quarantine: new KafkaMetricStreamQuarantineWriter({
       admin: kafka.admin(),

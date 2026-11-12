@@ -63,6 +63,17 @@ file-backed [iOS background uploads](https://developer.apple.com/documentation/f
 Unacknowledged samples survive process recreation. Sign-out/account changes
 cancel the former account's requests and purge its queue; see the
 [WHOOP durability contract](modules/whoop-ble/README.md).
+If sign-out cleanup was interrupted, the [upload-session boundary](lib/whoop-upload-session.ts)
+resumes the existing native cleanup once during asynchronous WHOOP initialization.
+Capture waits for cleanup and matching intent deletion; authentication, splash
+dismissal and navigation remain independent. The native work stays on its dedicated
+[Expo async queue](https://docs.expo.dev/modules/module-api/#asyncfunction), invoked
+by the [WHOOP effect](lib/useWhoopBleSync.ts) after rendering, following
+[React's effect lifecycle](https://react.dev/reference/react/useEffect).
+Failure retains the marker and reaches the existing capture-stop alert and error
+reporting; another initialization in the same JavaScript lifetime does not
+automatically repeat failed cleanup. Normal restarts without a pending marker
+preserve queued samples.
 The separate standard Bluetooth heart-rate monitor still uses an in-memory
 [buffer](modules/ble-heart-rate/ios/BleHeartRateSampleBuffer.swift).
 

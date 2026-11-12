@@ -53,19 +53,133 @@ describe("WHOOP upload session", () => {
   it("configures native uploads when no cleanup intent exists", async () => {
     await session.configureWhoopUploads(uploadContext);
     expect(whoopBle.configureUpload).toHaveBeenCalledWith(uploadContext);
+    expect(whoopBle.disableUploads).not.toHaveBeenCalled();
   });
 
-  it("allows a live intent but blocks it after loading a fresh module instance", async () => {
+  it("allows a live intent and resumes its cleanup after loading a fresh module instance", async () => {
     await session.persistWhoopCleanupIntent();
     await session.configureWhoopUploads(uploadContext);
     expect(whoopBle.configureUpload).toHaveBeenCalledOnce();
 
     vi.resetModules();
     const freshSession = await import("./whoop-upload-session");
-    await expect(freshSession.configureWhoopUploads(uploadContext)).rejects.toThrow(
-      /pending sensor cleanup/i,
+    await freshSession.configureWhoopUploads(uploadContext);
+    expect(whoopBle.disableUploads).toHaveBeenCalledOnce();
+    expect(storedValues.has(cleanupIntentKey)).toBe(false);
+    expect(whoopBle.configureUpload).toHaveBeenCalledTimes(2);
+  });
+
+  it("shares pending restart recovery and configures only the latest session after cleanup", async () => {
+    storedValues.set(cleanupIntentKey, "interrupted-cleanup");
+    let finishCleanup!: () => void;
+    vi.mocked(whoopBle.disableUploads).mockImplementationOnce(
+      () => new Promise<void>((resolve) => (finishCleanup = resolve)),
     );
-    expect(whoopBle.configureUpload).toHaveBeenCalledOnce();
+    const first = session.configureWhoopUploads(uploadContext);
+    const firstOutcome = Promise.allSettled([first]);
+    let second: Promise<void> | undefined;
+    try {
+      await vi.waitFor(() => expect(whoopBle.disableUploads).toHaveBeenCalledOnce());
+      const replacementContext = { ...uploadContext, userId: "replacement", token: "new-token" };
+      second = session.configureWhoopUploads(replacementContext);
+      await vi.waitFor(() => expect(secureStore.getItemAsync).toHaveBeenCalledTimes(2));
+      expect(whoopBle.configureUpload).not.toHaveBeenCalled();
+      expect(storedValues.get(cleanupIntentKey)).toBe("interrupted-cleanup");
+      finishCleanup();
+      await second;
+      expect(await firstOutcome).toEqual([
+        {
+          status: "rejected",
+          reason: expect.objectContaining({ message: expect.stringMatching(/superseded/i) }),
+        },
+      ]);
+      expect(storedValues.has(cleanupIntentKey)).toBe(false);
+      expect(whoopBle.disableUploads).toHaveBeenCalledOnce();
+      expect(whoopBle.configureUpload).toHaveBeenCalledExactlyOnceWith(replacementContext);
+      expect(whoopBle.configureUpload.mock.invocationCallOrder[0]).toBeGreaterThan(
+        secureStore.deleteItemAsync.mock.invocationCallOrder[0] ?? 0,
+      );
+    } finally {
+      finishCleanup?.();
+      await Promise.allSettled([firstOutcome, second]);
+    }
+  });
+
+  it.each(["native", "intent deletion"])(
+    "retains the restart fence after %s failure without repeating automatic cleanup",
+    async (stage) => {
+      storedValues.set(cleanupIntentKey, "interrupted-cleanup");
+      const failure = new Error(`${stage} failed`);
+      if (stage === "native") vi.mocked(whoopBle.disableUploads).mockRejectedValueOnce(failure);
+      else secureStore.deleteItemAsync.mockRejectedValueOnce(failure);
+
+      await expect(session.configureWhoopUploads(uploadContext)).rejects.toBe(failure);
+      await expect(session.configureWhoopUploads(uploadContext)).rejects.toBe(failure);
+      expect(whoopBle.disableUploads).toHaveBeenCalledOnce();
+      expect(whoopBle.configureUpload).not.toHaveBeenCalled();
+      expect(storedValues.get(cleanupIntentKey)).toBe("interrupted-cleanup");
+
+      // The existing explicit sign-out cleanup can still recover this lifetime.
+      await session.disableWhoopUploads();
+      await session.clearWhoopCleanupIntent("interrupted-cleanup");
+      await session.configureWhoopUploads(uploadContext);
+      expect(whoopBle.configureUpload).toHaveBeenCalledWith(uploadContext);
+    },
+  );
+
+  it.each(["disable", "purge"] as const)(
+    "rejects recovery configuration overtaken by %s and preserves a newer intent",
+    async (operation) => {
+      storedValues.set(cleanupIntentKey, "interrupted-cleanup");
+      let finishCleanup!: () => void;
+      vi.mocked(whoopBle.disableUploads).mockImplementationOnce(
+        () => new Promise<void>((resolve) => (finishCleanup = resolve)),
+      );
+      const configuring = session.configureWhoopUploads(uploadContext);
+      const outcome = Promise.allSettled([configuring]);
+      try {
+        await vi.waitFor(() => expect(whoopBle.disableUploads).toHaveBeenCalledOnce());
+        if (operation === "disable") await session.disableWhoopUploads();
+        else await session.purgeWhoopAccountState("2026-11-12T00:00:00.000Z");
+        const newerIntent = await session.persistWhoopCleanupIntent();
+        finishCleanup();
+        await expect(configuring).rejects.toThrow(/superseded/i);
+        expect(storedValues.get(cleanupIntentKey)).toBe(newerIntent);
+        expect(whoopBle.configureUpload).not.toHaveBeenCalled();
+      } finally {
+        finishCleanup?.();
+        await outcome;
+      }
+    },
+  );
+
+  it("serializes intent deletion before a newer intent write", async () => {
+    const oldIntent = await session.persistWhoopCleanupIntent();
+    let finishDelete!: () => void;
+    secureStore.deleteItemAsync.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishDelete = () => {
+            storedValues.delete(cleanupIntentKey);
+            resolve();
+          };
+        }),
+    );
+    const clearing = session.clearWhoopCleanupIntent(oldIntent);
+    let newer: Promise<string> | undefined;
+    try {
+      await vi.waitFor(() => expect(secureStore.deleteItemAsync).toHaveBeenCalledOnce());
+      vi.mocked(Crypto.randomUUID).mockReturnValueOnce("newer-cleanup");
+      newer = session.persistWhoopCleanupIntent();
+      await Promise.resolve();
+      expect(secureStore.setItemAsync).toHaveBeenCalledOnce();
+      finishDelete();
+      await clearing;
+      expect(storedValues.get(cleanupIntentKey)).toBe(await newer);
+    } finally {
+      finishDelete?.();
+      await Promise.allSettled([clearing, newer]);
+    }
   });
 
   it("clears only the intent owned by the completed cleanup", async () => {
@@ -84,7 +198,7 @@ describe("WHOOP upload session", () => {
     await session.configureWhoopUploads(uploadContext);
   });
 
-  it("allows a live intent read to finish after its successful clear", async () => {
+  it("preserves live configuration when intent clearing is queued during its read", async () => {
     const cleanupIntentId = await session.persistWhoopCleanupIntent();
     let finishRead!: (value: string | null) => void;
     vi.mocked(secureStore.getItemAsync).mockImplementationOnce(
@@ -93,8 +207,9 @@ describe("WHOOP upload session", () => {
     const checking = session.configureWhoopUploads(uploadContext);
     try {
       await vi.waitFor(() => expect(secureStore.getItemAsync).toHaveBeenCalledOnce());
-      await session.clearWhoopCleanupIntent(cleanupIntentId);
+      const clearing = session.clearWhoopCleanupIntent(cleanupIntentId);
       finishRead(cleanupIntentId);
+      await clearing;
       await expect(checking).resolves.toBeUndefined();
     } finally {
       finishRead?.(cleanupIntentId);
@@ -107,6 +222,7 @@ describe("WHOOP upload session", () => {
     vi.mocked(secureStore.getItemAsync).mockRejectedValueOnce(readFailure);
     await expect(session.configureWhoopUploads(uploadContext)).rejects.toBe(readFailure);
     expect(whoopBle.configureUpload).not.toHaveBeenCalled();
+    expect(whoopBle.disableUploads).not.toHaveBeenCalled();
 
     const cleanupIntentId = await session.persistWhoopCleanupIntent();
     const deleteFailure = new Error("Intent deletion failed");
@@ -152,8 +268,8 @@ describe("WHOOP upload session", () => {
           await session.purgeWhoopAccountState("2026-11-11T00:00:00.000Z");
           expect(whoopBle.purgeAccountState).toHaveBeenCalledOnce();
         }
-        finishRead?.(null);
-        await expect(configuring).rejects.toThrow(/superseded by account cleanup/i);
+        finishRead?.("interrupted-cleanup");
+        await expect(configuring).rejects.toThrow(/superseded/i);
         expect(whoopBle.configureUpload).not.toHaveBeenCalled();
       } finally {
         finishRead?.(null);

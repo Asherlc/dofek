@@ -267,6 +267,7 @@ vi.mock("../modules/background-refresh", () => ({
 
 vi.mock("../modules/whoop-ble", () => ({
   configureUpload: vi.fn().mockResolvedValue(undefined),
+  disableUploads: vi.fn().mockResolvedValue(undefined),
   flushUploads: vi.fn().mockResolvedValue(undefined),
   addCaptureErrorListener: vi.fn(),
   retryConnection: vi.fn(),
@@ -458,6 +459,43 @@ describe("RootLayout background cleanup", () => {
       mockManualSyncControllers.slice(1).every((controller) => controller.userId === "user-2"),
     ).toBe(true);
     rendered.unmount();
+  });
+
+  it("dismisses splash and updates navigation while WHOOP restart cleanup is blocked", async () => {
+    const RootLayout = await importRootLayout();
+    const [store, native, sync, hook] = await Promise.all([
+      import("expo-secure-store"),
+      import("../modules/whoop-ble"),
+      vi.importActual<typeof import("../lib/background-whoop-ble-sync")>(
+        "../lib/background-whoop-ble-sync",
+      ),
+      vi.importActual<typeof import("../lib/useWhoopBleSync")>("../lib/useWhoopBleSync"),
+    ]);
+    await store.setItemAsync("dofek_whoop_cleanup_intent_v1", "interrupted-cleanup");
+    let finishCleanup!: () => void;
+    vi.mocked(native.disableUploads).mockImplementationOnce(
+      () => new Promise<void>((resolve) => (finishCleanup = resolve)),
+    );
+    mockUseWhoopBleSync.mockImplementation(hook.useWhoopBleSync);
+    mockInitBackgroundWhoopBleSync.mockImplementationOnce(sync.initBackgroundWhoopBleSync);
+    mockTeardownBackgroundWhoopBleSync.mockImplementationOnce(sync.teardownBackgroundWhoopBleSync);
+    const rendered = render(<RootLayout />);
+    try {
+      await waitFor(() => expect(native.disableUploads).toHaveBeenCalledOnce());
+      expect(native.configureUpload).not.toHaveBeenCalled();
+      expect(rendered.getByTestId("app-navigation")).toBeTruthy();
+      await waitFor(() => expect(mockHideAsync).toHaveBeenCalled());
+      await waitFor(() => expect(mockInitBackgroundHealthKitSync).toHaveBeenCalledOnce());
+      expect(mockMarkAppInteractive).toHaveBeenCalled();
+      mockPathname.value = "/activities";
+      rendered.rerender(<RootLayout />);
+      await waitFor(() => expect(mockSetTelemetryRoute).toHaveBeenCalledWith("/activities"));
+      expect(await store.getItemAsync("dofek_whoop_cleanup_intent_v1")).toBe("interrupted-cleanup");
+    } finally {
+      rendered.unmount();
+      await act(async () => finishCleanup?.());
+      mockUseWhoopBleSync.mockReset();
+    }
   });
 
   it("owns diagnostics alongside the authenticated refresh listener and retires them on cleanup", async () => {

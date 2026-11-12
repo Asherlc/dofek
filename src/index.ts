@@ -11,7 +11,7 @@ import { runWithTokenUser } from "./db/token-user-context.ts";
 import { ensureProvider, saveTokens } from "./db/tokens.ts";
 import { ensureProvidersRegistered } from "./jobs/provider-registration.ts";
 import { logger } from "./logger.ts";
-import { startMetricStreamClickHouseSinkFromEnv } from "./metric-stream/clickhouse-sink.ts";
+import { startMetricStreamClickHouseSinkFromEnv } from "./metric-stream/clickhouse-sink-runtime.ts";
 import { getAllProviders } from "./providers/index.ts";
 
 export async function handleAuthCommand(args: string[]): Promise<number> {

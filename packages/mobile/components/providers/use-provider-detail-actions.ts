@@ -71,6 +71,8 @@ export interface ProviderDetailActionsResult {
   isConnected: boolean;
   primaryActionLabel: "Sync" | "Connect" | "Reconnect" | "Resume";
   isSyncing: boolean;
+  isRequestingPermissions: boolean;
+  permissionMessage: string | null;
   syncMessage: string | null;
   syncProgress: number | null;
   syncDateRange: ProviderSyncDateRange | null;
@@ -78,6 +80,7 @@ export interface ProviderDetailActionsResult {
   shouldShowFullSync: boolean;
   shouldShowAppleHealthPermissionBanner: boolean;
   handlePrimaryAction: () => Promise<void>;
+  handleReviewPermissions: () => Promise<void>;
   handleFullSync: () => Promise<void>;
   modals: ProviderDetailModals;
 }
@@ -110,6 +113,8 @@ export function useProviderDetailActions(
   const { controller: manualSyncController, state: manualSyncState } = useHealthKitManualSync();
   const manualSyncControllerRef = useRef(manualSyncController);
   const manualSyncStateRef = useRef(manualSyncState);
+  const [isRequestingPermissions, setIsRequestingPermissions] = useState(false);
+  const [permissionMessage, setPermissionMessage] = useState<string | null>(null);
   const [rangeSinceDate, setRangeSinceDate] = useState(() => {
     const start = new Date();
     start.setDate(start.getDate() - 7);
@@ -233,31 +238,31 @@ export function useProviderDetailActions(
   );
 
   const handleHealthKitConnect = useCallback(async () => {
-    setLocalIsSyncing(true);
-    setLocalSyncProgress(null);
-    setLocalSyncMessage("Requesting permissions...");
+    if (isRequestingPermissions) return;
+    setIsRequestingPermissions(true);
+    setPermissionMessage("Requesting permissions...");
 
     try {
       const result = await appleHealth.connect();
       if (result.state.requestStatus === "unavailable") {
-        setLocalSyncMessage("Apple Health is unavailable on this device");
+        setPermissionMessage("Apple Health is unavailable on this device");
       } else if (!result.granted) {
-        setLocalSyncMessage("Apple Health permissions were not granted");
+        setPermissionMessage("Apple Health permissions were not granted");
       } else {
-        setLocalSyncMessage(result.state.isConnected() ? "Connected" : null);
+        setPermissionMessage(null);
       }
 
       invalidateProviderData();
     } catch (error: unknown) {
       captureException(error, { context: "healthkit-connect" });
-      setLocalSyncMessage(userFacingErrorMessage(error, "Failed to connect to Apple Health"));
+      setPermissionMessage(userFacingErrorMessage(error, "Failed to connect to Apple Health"));
     } finally {
-      setLocalIsSyncing(false);
+      setIsRequestingPermissions(false);
     }
-  }, [appleHealth, invalidateProviderData]);
+  }, [appleHealth, invalidateProviderData, isRequestingPermissions]);
 
   const handleConnect = useCallback(async () => {
-    if (!displayProvider || isSyncing) return;
+    if (!displayProvider || isSyncing || isRequestingPermissions) return;
 
     if (displayProvider.id === "apple_health") {
       await handleHealthKitConnect();
@@ -313,7 +318,15 @@ export function useProviderDetailActions(
         setWhoopAuthOpen(true);
         break;
     }
-  }, [displayProvider, handleHealthKitConnect, isSyncing, serverUrl, sessionToken, trpcUtils]);
+  }, [
+    displayProvider,
+    handleHealthKitConnect,
+    isRequestingPermissions,
+    isSyncing,
+    serverUrl,
+    sessionToken,
+    trpcUtils,
+  ]);
 
   const handleSync = useCallback(
     async (syncWindow: SyncWindowInput) => {
@@ -518,6 +531,8 @@ export function useProviderDetailActions(
             ? "Sync"
             : "Connect",
     isSyncing,
+    isRequestingPermissions,
+    permissionMessage,
     syncMessage,
     syncProgress,
     syncDateRange:
@@ -543,6 +558,7 @@ export function useProviderDetailActions(
     shouldShowAppleHealthPermissionBanner:
       providerId === "apple_health" && appleHealth.model.shouldShowPermissionBanner(),
     handlePrimaryAction,
+    handleReviewPermissions: handleHealthKitConnect,
     handleFullSync,
     modals: {
       credentialAuthProvider,

@@ -143,6 +143,6 @@ vi.mock("../providers/apple-health/import.ts", () => ({
 }));
 
 export const mockRunMetricStreamClickHouseSinkFromEnv = vi.fn(async () => undefined);
-vi.mock("../metric-stream/clickhouse-sink.ts", () => ({
+vi.mock("../metric-stream/clickhouse-sink-runtime.ts", () => ({
   startMetricStreamClickHouseSinkFromEnv: mockRunMetricStreamClickHouseSinkFromEnv,
 }));

@@ -9,6 +9,8 @@ const meta = {
   args: {
     primaryActionLabel: "Sync",
     isSyncing: false,
+    isRequestingPermissions: false,
+    permissionMessage: null,
     syncMessage: null,
     syncProgress: null,
     syncDateRange: null,
@@ -17,6 +19,7 @@ const meta = {
     shouldShowAppleHealthClinicalRecords: false,
     shouldShowClinicalRecordsLink: false,
     onPrimaryAction: () => {},
+    onReviewPermissions: () => {},
     onFullSync: () => {},
     onOpenClinicalRecords: () => {},
   },
@@ -34,6 +37,22 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
+
+export const AppleHealthSyncing: Story = {
+  args: {
+    isSyncing: true,
+    syncMessage: "Pushing 27 samples...",
+    shouldShowAppleHealthPermissionBanner: true,
+  },
+};
+
+export const AppleHealthReviewingPermissions: Story = {
+  args: {
+    ...AppleHealthSyncing.args,
+    isRequestingPermissions: true,
+    permissionMessage: "Requesting permissions...",
+  },
+};
 
 export const WhoopRange: Story = {
   args: {

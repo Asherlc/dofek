@@ -29,18 +29,23 @@ const mockManualSync = vi.hoisted(() => {
     error: null,
   };
   let snapshot = state;
+  const listeners = new Set<() => void>();
   return {
     state,
     getSnapshot: () => snapshot,
     setSnapshot: (next: typeof state) => {
       snapshot = next;
+      for (const listener of listeners) listener();
     },
     controller: {
       userId: "user-1",
       start: vi.fn(),
       resume: vi.fn(),
       getSnapshot: vi.fn(() => snapshot),
-      subscribe: vi.fn(),
+      subscribe: (listener: () => void) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
       retire: vi.fn(),
     },
   };
@@ -253,12 +258,19 @@ vi.mock("expo-router", () => ({
   useLocalSearchParams: (...args: unknown[]) => mockUseLocalSearchParams(...args),
 }));
 
-vi.mock("../../lib/health-kit-manual-sync-context", () => ({
-  useHealthKitManualSync: () => ({
-    controller: mockManualSync.controller,
-    state: mockManualSync.getSnapshot(),
-  }),
-}));
+vi.mock("../../lib/health-kit-manual-sync-context", async () => {
+  const React = await import("react");
+  return {
+    useHealthKitManualSync: () => ({
+      controller: mockManualSync.controller,
+      state: React.useSyncExternalStore(
+        mockManualSync.controller.subscribe,
+        mockManualSync.controller.getSnapshot,
+        mockManualSync.controller.getSnapshot,
+      ),
+    }),
+  };
+});
 
 vi.mock("expo-web-browser", () => ({
   openBrowserAsync: (...args: unknown[]) => mockOpenBrowserAsync(...args),
@@ -1597,6 +1609,66 @@ describe("ProviderDetailScreen", () => {
       });
       expect(screen.getByText("Full sync")).toBeTruthy();
     });
+
+    it.each([false, true])(
+      "reviews permissions rather than syncing when a sync is active: %s",
+      async (syncing) => {
+        mockUseLocalSearchParams.mockReturnValue({ id: "apple_health" });
+        mockProvidersQuery.mockReturnValue({ data: [authorizedProvider], isLoading: false });
+        mockProviderStatsQuery.mockReturnValue({ data: [appleHealthStats], isLoading: false });
+        mockGetRequestStatus.mockResolvedValue("shouldRequest");
+        const sync = Promise.withResolvers<{ inserted: number; errors: string[] }>();
+        const permission = Promise.withResolvers<boolean>();
+        mockSyncHealthKit.mockImplementation(() => sync.promise);
+        mockManualSync.controller.start.mockImplementationOnce((range) => {
+          const result = mockSyncHealthKit({ syncRangeDays: range });
+          mockManualSync.setSnapshot({
+            ...mockManualSync.state,
+            status: "running",
+            message: "Pushing 27 samples...",
+          });
+          return result.then((value) => {
+            mockManualSync.setSnapshot({
+              ...mockManualSync.state,
+              status: "complete",
+              message: "Apple Health sync complete",
+            });
+            return value;
+          });
+        });
+        mockRequestPermissions.mockReturnValue(permission.promise);
+        const { default: ProviderDetailScreen } = await import("../../app/providers/[id]");
+        render(<ProviderDetailScreen />);
+        const permissionButton = await screen.findByRole("button", {
+          name: "Review Apple Health permissions",
+        });
+        const syncButton = screen.getByRole("button", { name: "Sync" });
+        if (syncing) {
+          fireEvent.click(syncButton);
+          await waitFor(() => expect(mockSyncHealthKit).toHaveBeenCalledOnce());
+        }
+
+        expect(permissionButton).toHaveProperty("disabled", false);
+        fireEvent.click(permissionButton);
+        fireEvent.click(permissionButton);
+        expect(mockRequestPermissions).toHaveBeenCalledOnce();
+        expect(permissionButton).toHaveProperty("disabled", true);
+        expect(mockSyncHealthKit).toHaveBeenCalledTimes(syncing ? 1 : 0);
+        mockGetRequestStatus.mockResolvedValue("unnecessary");
+        await act(async () => permission.resolve(true));
+        await waitFor(() => {
+          expect(
+            screen.queryByRole("button", { name: "Review Apple Health permissions" }),
+          ).toBeNull();
+        });
+        expect(syncButton).toHaveProperty("disabled", syncing);
+        if (syncing) {
+          expect(screen.getByText("Pushing 27 samples...")).toBeTruthy();
+          await act(async () => sync.resolve({ inserted: 27, errors: [] }));
+          await waitFor(() => expect(syncButton).toHaveProperty("disabled", false));
+        }
+      },
+    );
 
     it("requests Apple Health permissions when Connect is clicked", async () => {
       mockUseLocalSearchParams.mockReturnValue({ id: "apple_health" });

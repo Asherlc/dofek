@@ -160,7 +160,8 @@ export default function ProvidersScreen() {
 
   const sharedFileUri = Array.isArray(params.sharedFile) ? params.sharedFile[0] : params.sharedFile;
 
-  const [healthKitSyncing, setHealthKitSyncing] = useState(false);
+  const [healthKitAuthorizing, setHealthKitAuthorizing] = useState(false);
+  const [healthKitPermissionMessage, setHealthKitPermissionMessage] = useState<string>();
   const [healthKitProgress, setHealthKitProgress] = useState<string | undefined>();
   const [healthKitActionError, setHealthKitActionError] = useState<string | null>(null);
   const { controller: healthKitManualSyncController, state: healthKitManualSyncState } =
@@ -179,25 +180,27 @@ export default function ProvidersScreen() {
   });
 
   const handleHealthKitConnect = useCallback(async () => {
-    if (healthKitSyncing) return;
-    setHealthKitSyncing(true);
-    setHealthKitProgress("Requesting permissions...");
+    if (healthKitAuthorizing) return;
+    setHealthKitAuthorizing(true);
+    setHealthKitPermissionMessage("Requesting permissions...");
     try {
       const result = await appleHealth.connect();
       if (result.state.requestStatus === "unavailable") {
-        setHealthKitProgress("Apple Health is unavailable on this device");
+        setHealthKitPermissionMessage("Apple Health is unavailable on this device");
       } else if (!result.granted) {
-        setHealthKitProgress("Apple Health permissions were not granted");
+        setHealthKitPermissionMessage("Apple Health permissions were not granted");
       } else {
-        setHealthKitProgress(result.state.isConnected() ? "Connected" : undefined);
+        setHealthKitPermissionMessage(result.state.isConnected() ? "Connected" : undefined);
       }
     } catch (error: unknown) {
       captureException(error, { context: "healthkit-connect" });
-      setHealthKitProgress(userFacingErrorMessage(error, "Failed to connect to Apple Health"));
+      setHealthKitPermissionMessage(
+        userFacingErrorMessage(error, "Failed to connect to Apple Health"),
+      );
     } finally {
-      setHealthKitSyncing(false);
+      setHealthKitAuthorizing(false);
     }
-  }, [appleHealth, healthKitSyncing]);
+  }, [appleHealth, healthKitAuthorizing]);
 
   const handleHealthKitSync = useCallback(async () => {
     if (healthKitManualSyncState.status === "running") return;
@@ -723,7 +726,7 @@ export default function ProvidersScreen() {
   const appleHealthPresentation = appleHealthManualSyncPresentation(
     healthKitManualSyncState,
     healthKitActionError,
-    healthKitProgress ?? null,
+    healthKitProgress ?? healthKitPermissionMessage ?? null,
   );
   const appleHealthCardProvider: Provider = {
     ...appleHealthProvider,
@@ -772,13 +775,15 @@ export default function ProvidersScreen() {
             <FileImportProviderCard
               provider={appleHealthCardProvider}
               stats={statsMap.apple_health}
-              syncing={healthKitSyncing || appleHealthPresentation.isRunning}
+              syncing={healthKitAuthorizing || appleHealthPresentation.isRunning}
               importing={appleHealthImportProgress !== undefined}
               syncProgress={
                 appleHealthImportProgress ??
                 (appleHealthPresentation.isRunning ||
                 (healthKitManualSyncState.status !== "paused" &&
-                  (healthKitProgress !== undefined || healthKitActionError !== null))
+                  (healthKitProgress !== undefined ||
+                    healthKitActionError !== null ||
+                    healthKitPermissionMessage !== undefined))
                   ? {
                       percentage: appleHealthPresentation.percentage ?? undefined,
                       message: appleHealthPresentation.message ?? undefined,
@@ -806,16 +811,19 @@ export default function ProvidersScreen() {
             <TouchableOpacity
               style={styles.permissionBanner}
               onPress={handleHealthKitConnect}
-              disabled={healthKitSyncing}
+              disabled={healthKitAuthorizing}
               accessibilityRole="button"
               accessibilityLabel="Review Apple Health permissions"
-              accessibilityState={{ busy: healthKitSyncing, disabled: healthKitSyncing }}
+              accessibilityState={{ busy: healthKitAuthorizing, disabled: healthKitAuthorizing }}
             >
               <Text style={styles.permissionBannerText}>
                 Apple Health permissions need updating — tap to review
               </Text>
             </TouchableOpacity>
           )}
+          {(healthKitAuthorizing || appleHealthImportProgress) && healthKitPermissionMessage ? (
+            <Text style={styles.permissionBannerText}>{healthKitPermissionMessage}</Text>
+          ) : null}
         </>
       );
     }

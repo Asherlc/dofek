@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { Linking, useWindowDimensions } from "react-native";
+import * as WebBrowser from "expo-web-browser";
+import { useWindowDimensions } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { mockCaptureException } = vi.hoisted(() => ({
@@ -17,7 +18,7 @@ const mockRegisterWithPassword = vi.fn();
 const mockRequestPasswordReset = vi.fn();
 const mockRouterReplace = vi.fn();
 const mockUseWindowDimensions = vi.mocked(useWindowDimensions);
-const mockOpenUrl = vi.spyOn(Linking, "openURL");
+const mockOpenBrowser = vi.mocked(WebBrowser.openBrowserAsync);
 
 vi.mock("../lib/auth-context", () => ({
   useAuth: () => ({
@@ -64,7 +65,7 @@ const { default: LoginScreen } = await import("../app/login");
 describe("LoginScreen", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockOpenUrl.mockResolvedValue();
+    mockOpenBrowser.mockResolvedValue({ type: WebBrowser.WebBrowserResultType.DISMISS });
     mockIsNativeAppleSignInAvailable.mockResolvedValue(false);
     mockUseWindowDimensions.mockReturnValue({
       width: 390,
@@ -166,7 +167,7 @@ describe("LoginScreen", () => {
     expect(screen.getByText("Sign in to Dofek")).toBeTruthy();
   });
 
-  it("opens registration policies on the configured Dofek instance", async () => {
+  it("opens registration policies in the in-app browser on the configured Dofek instance", async () => {
     mockFetchConfiguredProviders.mockResolvedValue({
       identity: [],
       data: [],
@@ -178,18 +179,20 @@ describe("LoginScreen", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Create account" }));
     fireEvent.click(screen.getByRole("link", { name: "Terms of Service" }));
 
-    await waitFor(() => expect(mockOpenUrl).toHaveBeenCalledWith("https://test.example.com/terms"));
+    await waitFor(() =>
+      expect(mockOpenBrowser).toHaveBeenCalledWith("https://test.example.com/terms"),
+    );
 
     fireEvent.click(screen.getByRole("link", { name: "Privacy Policy" }));
 
     await waitFor(() =>
-      expect(mockOpenUrl).toHaveBeenCalledWith("https://test.example.com/privacy"),
+      expect(mockOpenBrowser).toHaveBeenCalledWith("https://test.example.com/privacy"),
     );
   });
 
   it("reports a legal-document launch failure and explains it to the user", async () => {
     const openError = new Error("Browser unavailable");
-    mockOpenUrl.mockRejectedValueOnce(openError).mockResolvedValueOnce();
+    mockOpenBrowser.mockRejectedValueOnce(openError);
     mockFetchConfiguredProviders.mockResolvedValue({
       identity: [],
       data: [],
