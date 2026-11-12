@@ -72,6 +72,7 @@
 
 **Interfaces:**
 - Manual controller is owned by authenticated app lifetime, bound to userId and SyncTrpcClient; exposes observable state plus `start(syncRangeDays: number | null)`, `resume()`, and `dispose()`.
+- Each native start attempt gets a fresh taskId, distinct from the durable checkpoint requestId; Resume never reuses a native task identifier whose old grant could arrive late.
 - State distinguishes idle/running/paused/error/complete and carries progress message and actual completed stage count. Both list and detail consume this single production state.
 - Shared execution gate serializes manual attempts and existing observer attempts; preserve observer IDs/types through waits and native expiry. Dispose/retire breaks pending waits and prevents new old-account side effects.
 
