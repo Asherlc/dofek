@@ -284,8 +284,8 @@ export class AppleHealthSyncService {
       if (!isHealthKitDatabaseInaccessible(error) && !isExpectedBackgroundFailure) {
         captureException(error, { source: "apple-health-sync", origin });
       }
+      await assertCanContinue?.();
       try {
-        await assertCanContinue?.();
         await this.#trpcClient.healthKitSync.recordSync.mutate({
           status: "error",
           recordCount: 0,

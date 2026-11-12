@@ -100,18 +100,20 @@ function isExpectedOrRetryableManualAttemptError(error: unknown, transient: bool
 }
 
 function describeManualStage(stage: string): string {
-  if (stage.startsWith("clinical:") && /medication/i.test(stage)) {
-    return "Synced medication records";
-  }
   const labels: Record<string, string> = {
-    "raw:HKQuantityTypeIdentifierBodyMass": "Synced body mass",
-    "clinical:medication": "Synced medication records",
+    "additive-and-category": "Synced health metrics and categories",
+    workouts: "Synced workouts",
+    sleep: "Synced sleep",
+    "running-steps": "Synced running steps",
   };
   if (labels[stage]) return labels[stage];
   const name = stage
-    .replace(/^(raw|clinical):/, "")
-    .replace(/^HK(?:Quantity|Category)TypeIdentifier/, "");
-  const readable = name.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/Record$/, " records");
+    .replace(/^(?:raw|clinical):/, "")
+    .replace(/^HK(?:Clinical|Quantity|Category)TypeIdentifier/, "");
+  const readable = name
+    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/\s*Record$/, " records");
   return `Synced ${readable.toLowerCase()}`;
 }
 
@@ -226,9 +228,13 @@ export class HealthKitManualSyncController {
     await this.ready;
     this.#assertAvailable();
     await this.#replaceInterruptedAttempt();
+    this.#assertAvailable();
     if (this.#attempt) throw new Error("Apple Health sync is already running.");
     const existing = this.#checkpoint;
-    if (existing) await this.#deps.clearCheckpoint(this.userId, existing.requestId);
+    if (existing) {
+      await this.#deps.clearCheckpoint(this.userId, existing.requestId);
+      this.#assertAvailable();
+    }
     const endDate = new Date().toISOString();
     const startDate =
       syncRangeDays === null
@@ -247,8 +253,11 @@ export class HealthKitManualSyncController {
       nextStage: "additive-and-category",
       requiresResume: false,
     };
+    this.#assertAvailable();
     await this.#deps.saveCheckpoint(checkpoint);
+    this.#assertAvailable();
     this.#checkpoint = checkpoint;
+    this.#assertAvailable();
     return this.#beginAttempt(checkpoint);
   }
 
@@ -256,8 +265,10 @@ export class HealthKitManualSyncController {
     await this.ready;
     this.#assertAvailable();
     await this.#replaceInterruptedAttempt();
+    this.#assertAvailable();
     if (this.#attempt) throw new Error("Apple Health sync is already running.");
     if (!this.#checkpoint) throw new Error("There is no paused Apple Health sync to resume.");
+    this.#assertAvailable();
     return this.#beginAttempt(this.#checkpoint);
   }
 
@@ -325,6 +336,7 @@ export class HealthKitManualSyncController {
   }
 
   async #beginAttempt(checkpoint: ManualHealthKitCheckpoint): Promise<SyncResult> {
+    this.#assertAvailable();
     const taskId = this.#deps.createId();
     const attempt: ManualAttempt = {
       taskId,
@@ -340,7 +352,6 @@ export class HealthKitManualSyncController {
     };
     this.#attempt = attempt;
     attempt.promise = this.#runAttempt(attempt, checkpoint);
-    void attempt.promise.catch(() => undefined);
     return attempt.promise;
   }
 
@@ -550,7 +561,7 @@ export class HealthKitManualSyncController {
     attempt.interrupted = true;
     attempt.abort.abort();
     if (!attempt.expired) this.#completeNative(attempt, false);
-    await attempt.promise.catch(() => undefined);
+    await Promise.allSettled([attempt.promise]);
   }
 
   #completeNative(attempt: ManualAttempt, success: boolean): void {

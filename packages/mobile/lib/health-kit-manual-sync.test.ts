@@ -40,12 +40,13 @@ function makeHarness(checkpoint: ManualHealthKitCheckpoint | null = null) {
   let foreground = true;
   const runSync = vi.fn<HealthKitManualSyncDependencies["runSync"]>();
   const starts: string[] = [];
+  const persistCheckpoint = async (value: ManualHealthKitCheckpoint) => {
+    if (saved && saved.requestId !== value.requestId) throw new Error("pending request");
+    saved = value;
+  };
   const deps: HealthKitManualSyncDependencies = {
     loadCheckpoint: vi.fn(async () => saved),
-    saveCheckpoint: vi.fn(async (value) => {
-      if (saved && saved.requestId !== value.requestId) throw new Error("pending request");
-      saved = value;
-    }),
+    saveCheckpoint: vi.fn(persistCheckpoint),
     clearCheckpoint: vi.fn(async (_userId, requestId) => {
       if (saved?.requestId === requestId) saved = null;
     }),
@@ -82,6 +83,7 @@ function makeHarness(checkpoint: ManualHealthKitCheckpoint | null = null) {
       deps,
     }),
     deps,
+    persistCheckpoint,
     expire(taskId: string) {
       expired?.(taskId);
     },
@@ -300,39 +302,115 @@ describe("HealthKitManualSyncController", () => {
     }
   });
 
+  it("does not admit a replacement range after retirement while an expired query settles", async () => {
+    const harness = makeHarness();
+    const expiredQuery = Promise.withResolvers<typeof success>();
+    harness.deps.runSync.mockReturnValueOnce(expiredQuery.promise);
+    const first = harness.controller.start(7);
+    void first.catch(() => undefined);
+    await vi.waitFor(() => expect(harness.deps.runSync).toHaveBeenCalledOnce());
+    harness.expire(harness.starts[0] ?? "");
+    const replacement = harness.controller.start(30);
+    void replacement.catch(() => undefined);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const retirement = harness.controller.retire();
+    await retirement;
+    expiredQuery.resolve(success);
+    await Promise.allSettled([first, replacement]);
+
+    expect(harness.starts).toEqual(["id-2"]);
+    expect(harness.deps.runSync).toHaveBeenCalledOnce();
+    expect(harness.deps.saveCheckpoint).toHaveBeenCalledOnce();
+    expect(harness.saved()).toBeNull();
+  });
+
+  it("does not write a replacement checkpoint when retirement wins a clear wait", async () => {
+    const saved: ManualHealthKitCheckpoint = {
+      requestId: "durable-request",
+      userId: "user-1",
+      startDate: "2026-11-01T00:00:00.000Z",
+      endDate: "2026-11-02T00:00:00.000Z",
+      nextStage: "sleep",
+      requiresResume: true,
+    };
+    const harness = makeHarness(saved);
+    const checkpointClear = Promise.withResolvers<void>();
+    vi.mocked(harness.deps.clearCheckpoint).mockImplementationOnce(async () => {
+      await checkpointClear.promise;
+    });
+    await harness.controller.ready;
+    const replacement = harness.controller.start(30);
+    void replacement.catch(() => undefined);
+    await vi.waitFor(() => expect(harness.deps.clearCheckpoint).toHaveBeenCalledOnce());
+
+    await harness.controller.retire();
+    checkpointClear.resolve();
+    await Promise.allSettled([replacement]);
+
+    expect(harness.deps.saveCheckpoint).not.toHaveBeenCalled();
+    expect(harness.starts).toHaveLength(0);
+    expect(harness.saved()).toBeNull();
+  });
+
+  it("does not start native work when retirement wins a replacement checkpoint save", async () => {
+    const harness = makeHarness();
+    const checkpointSave = Promise.withResolvers<void>();
+    let saves = 0;
+    vi.mocked(harness.deps.saveCheckpoint).mockImplementation(async (checkpoint) => {
+      saves += 1;
+      const write = harness.persistCheckpoint(checkpoint);
+      if (saves === 3) await checkpointSave.promise;
+      await write;
+    });
+    const expiredQuery = Promise.withResolvers<typeof success>();
+    harness.deps.runSync.mockReturnValueOnce(expiredQuery.promise);
+    const first = harness.controller.start(7);
+    void first.catch(() => undefined);
+    await vi.waitFor(() => expect(harness.deps.runSync).toHaveBeenCalledOnce());
+    harness.expire(harness.starts[0] ?? "");
+    const replacement = harness.controller.start(30);
+    void replacement.catch(() => undefined);
+    expiredQuery.resolve(success);
+    await vi.waitFor(() => expect(saves).toBe(3));
+
+    const retirement = harness.controller.retire();
+    checkpointSave.resolve();
+    await retirement;
+    await Promise.allSettled([first, replacement]);
+
+    expect(harness.starts).toEqual(["id-2"]);
+  });
+
   it("keeps storage cursors semantic while reporting readable raw and clinical progress", async () => {
     const harness = makeHarness();
-    const raw = "raw:HKQuantityTypeIdentifierBodyMass" as const;
-    const clinical = "clinical:HKClinicalTypeIdentifierMedicationRecord" as const;
+    const stages = [
+      ["additive-and-category", 1, "Synced health metrics and categories"],
+      ["raw:HKQuantityTypeIdentifierBodyMass", 11, "Synced body mass"],
+      ["raw:HKQuantityTypeIdentifierWalkingSpeed", 12, "Synced walking speed"],
+      ["clinical:HKClinicalTypeIdentifierAllergyRecord", 20, "Synced allergy records"],
+      ["clinical:HKClinicalTypeIdentifierConditionRecord", 21, "Synced condition records"],
+      ["clinical:HKClinicalTypeIdentifierMedicationRecord", 28, "Synced medication records"],
+      ["workouts", 29, "Synced workouts"],
+      ["sleep", 30, "Synced sleep"],
+      ["running-steps", 31, "Synced running steps"],
+    ] as const;
     harness.deps.runSync.mockImplementation(async ({ manualExecution }) => {
-      await manualExecution?.onStageComplete({
-        stage: raw,
-        completedStageCount: 11,
-        totalStageCount: 32,
-      });
-      await manualExecution?.onStageComplete({
-        stage: clinical,
-        completedStageCount: 28,
-        totalStageCount: 32,
-      });
+      for (const [stage, completedStageCount] of stages) {
+        await manualExecution?.onStageComplete({
+          stage,
+          completedStageCount,
+          totalStageCount: 32,
+        });
+      }
       return success;
     });
 
     await harness.controller.start(7);
 
-    expect(harness.deps.updateProgress).toHaveBeenNthCalledWith(
-      1,
-      "id-2",
-      11,
-      32,
-      "Synced body mass",
-    );
-    expect(harness.deps.updateProgress).toHaveBeenNthCalledWith(
-      2,
-      "id-2",
-      28,
-      32,
-      "Synced medication records",
+    expect(harness.deps.updateProgress.mock.calls).toEqual(
+      stages.map(([, completedStageCount, message]) => ["id-2", completedStageCount, 32, message]),
     );
     expect(harness.saved()).toBeNull();
   });

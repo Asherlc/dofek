@@ -351,6 +351,34 @@ describe("AppleHealthSyncService", () => {
     expect(mockCaptureException).not.toHaveBeenCalled();
   });
 
+  it("propagates retirement detected at the observer error-record guard", async () => {
+    vi.mocked(querySleepSamples).mockClear();
+    const trpcClient = createTrpcClient();
+    const interrupted = new ManualHealthKitSyncInterruptedError();
+    let ownershipChecks = 0;
+    vi.mocked(querySleepSamples).mockRejectedValueOnce(
+      new Error("fetch failed: The request timed out."),
+    );
+    const service = new AppleHealthSyncService({
+      trpcClient,
+      loadDeviceErasureCutoff: vi.fn(async () => null),
+    });
+
+    await expect(
+      service.syncObserverChanges({
+        typeIdentifiers: ["HKCategoryTypeIdentifierSleepAnalysis"],
+        assertCanContinue: async () => {
+          ownershipChecks += 1;
+          if (ownershipChecks === 3) throw interrupted;
+        },
+      }),
+    ).rejects.toBe(interrupted);
+
+    expect(ownershipChecks).toBe(3);
+    expect(trpcClient.healthKitSync.recordSync.mutate).not.toHaveBeenCalled();
+    expect(mockCaptureException).not.toHaveBeenCalled();
+  });
+
   it("records a partial manual sync as degraded with its errors", async () => {
     const trpcClient = createTrpcClient();
     const syncFunction = vi.fn<AppleHealthSyncFunction>(async () => ({
