@@ -26,7 +26,7 @@ const missing: ClimbingCatalogueContext = {
 export function catalogueSeedCacheKey(seed: CatalogueSeed): string {
   const { logEntryId: _logEntryId, ...source } = catalogueSeedSchema.parse(seed);
   const fingerprint = createHash("sha256").update(JSON.stringify(source)).digest("hex");
-  return `${seed.userId}:climbing.catalogueContext:v5:${fingerprint}`;
+  return `${seed.userId}:climbing.catalogueContext:v6:${fingerprint}`;
 }
 
 /** Disposable source context. It never writes facts, matches, or winners to the database. */

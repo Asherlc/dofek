@@ -239,6 +239,7 @@ function projectCalendarEntry(
   const trainingStress = computeActivityTrainingStress({
     activityType: row.canonical_type,
     durationMin: row.duration_min,
+    avgPower: row.avg_power,
     powerTss: row.power_tss,
   });
   const tss = trainingStress.status === "available" ? trainingStress.score : null;
@@ -278,6 +279,7 @@ function projectCalendarEntry(
 interface TssInput {
   activityType: string;
   durationMin: number | null;
+  avgPower: number | null;
   powerTss: number | null;
 }
 
@@ -294,6 +296,9 @@ type ActivityTrainingStress =
 
 function computeActivityTrainingStress(input: TssInput): ActivityTrainingStress {
   if (input.activityType !== "cycling") {
+    return { status: "not_applicable" };
+  }
+  if (input.avgPower === null && input.powerTss === null) {
     return { status: "not_applicable" };
   }
   if (input.durationMin === null || input.durationMin <= 0) {
