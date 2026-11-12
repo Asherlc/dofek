@@ -13,7 +13,6 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ActivityIndicator,
   Alert,
   RefreshControl,
   ScrollView,
@@ -38,9 +37,8 @@ import {
   isAppleHealthLockedPause,
   type Provider,
   ProviderCard,
-  type SyncLog,
-  SyncLogRow,
 } from "../../components/providers/provider-card.tsx";
+import { ProviderSyncHistory } from "../../components/providers/provider-sync-history.tsx";
 import { styles } from "../../components/providers/styles.ts";
 import { SyncAllControls } from "../../components/providers/sync-all-controls.tsx";
 import { getQueryErrorMessage, QueryStatePanel } from "../../components/QueryStatePanel";
@@ -692,7 +690,6 @@ export default function ProvidersScreen() {
   for (const s of stats.data ?? []) {
     statsMap[s.providerId] = s;
   }
-  const logList: SyncLog[] = logs.data ?? [];
   const appleHealthLogsQuery = trpc.providerDetail.logs.useQuery({
     providerId: "apple_health",
     limit: 3,
@@ -713,8 +710,7 @@ export default function ProvidersScreen() {
   });
 
   const isLoading = providers.isLoading;
-  const visibleProviderList = providerList;
-  const enabledProviders = visibleProviderList.filter((p) => p.enabled);
+  const enabledProviders = providerList.filter((p) => p.enabled);
   const appleHealthProvider = appleHealthLogsQuery.data
     ? appleHealth.model.toProviderCard({
         lastSyncAt: appleHealthLogsQuery.data[0]?.syncedAt ?? null,
@@ -738,8 +734,6 @@ export default function ProvidersScreen() {
       : {}),
     syncStatusMessage: appleHealthPresentation.syncStatusMessage ?? undefined,
   };
-  const appleHealthHistoryError =
-    appleHealthLogsQuery.error && appleHealthLogsQuery.data === undefined;
   const activeImportRows = activeImports.error ? [] : (activeImports.data ?? []);
   const activeImportByProvider = new Map(
     activeImportRows.map((activeImport) => [activeImport.providerId, activeImport]),
@@ -765,7 +759,7 @@ export default function ProvidersScreen() {
       : undefined;
   const appleHealthImportProgress =
     appleHealthLocalImportProgress ?? appleHealthActiveImportProgress;
-  const providerGroups = groupProviderEntries([appleHealthProvider, ...visibleProviderList]);
+  const providerGroups = groupProviderEntries([appleHealthProvider, ...providerList]);
 
   const renderProviderCard = (provider: Provider) => {
     if (provider.id === "apple_health") {
@@ -795,7 +789,7 @@ export default function ProvidersScreen() {
               onImportProvider={handleFileImportProvider}
               onPress={() => router.push("/providers/apple_health")}
             />
-            {appleHealthHistoryError ? (
+            {appleHealthLogsQuery.error && appleHealthLogsQuery.data === undefined ? (
               <QueryStatePanel
                 variant="error"
                 title="Could not load Apple Health sync history"
@@ -1010,34 +1004,7 @@ export default function ProvidersScreen() {
         );
       })}
 
-      {/* Sync History */}
-      <Text style={[styles.sectionTitle, { marginTop: 24 }]}>Sync History</Text>
-      {logs.error ? (
-        <View style={styles.card}>
-          <QueryStatePanel
-            variant="error"
-            title={
-              logs.data === undefined
-                ? "Could not load sync history"
-                : "Could not refresh sync history"
-            }
-            message={getQueryErrorMessage(logs.error, "Failed to load sync history.")}
-          />
-        </View>
-      ) : null}
-      {logs.isLoading && logs.data === undefined ? (
-        <ActivityIndicator color={colors.accent} style={{ marginTop: 12 }} />
-      ) : logs.error && logs.data === undefined ? null : logList.length === 0 ? (
-        <View style={styles.card}>
-          <Text style={styles.emptyText}>No sync history yet.</Text>
-        </View>
-      ) : (
-        <View style={styles.card}>
-          {logList.map((log) => (
-            <SyncLogRow key={log.id} log={log} />
-          ))}
-        </View>
-      )}
+      <ProviderSyncHistory data={logs.data} error={logs.error} isLoading={logs.isLoading} />
       {/* Credential Auth Modal */}
       {credentialAuthProvider && (
         <CredentialAuthModal

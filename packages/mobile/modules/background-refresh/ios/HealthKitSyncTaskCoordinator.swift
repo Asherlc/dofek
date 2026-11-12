@@ -180,6 +180,12 @@ final class HealthKitSyncTaskCoordinator: @unchecked Sendable {
         )
         lock.unlock()
 
+        registerAndSubmitStart(taskId: taskId, token: token, needsRegistration: needsRegistration)
+    }
+
+    /// Scheduler calls stay outside the lock; lock sections only verify or commit
+    /// this token's pending request so retired generations cannot settle a replacement.
+    private func registerAndSubmitStart(taskId: String, token: UUID, needsRegistration: Bool) {
         if needsRegistration {
             let identifier = Self.taskIdentifier(for: taskId)
             let registered = scheduler.register(identifier: identifier) { [weak self] grant in

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import type { HealthKitManualSyncState } from "../../lib/health-kit-manual-sync";
+import type { HealthKitManualSyncState } from "../../lib/health-kit-sync-types";
 import {
   appleHealthManualSyncPresentation,
   type Provider,

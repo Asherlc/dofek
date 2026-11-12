@@ -153,6 +153,24 @@ export interface ManualHealthKitSyncContext {
   shouldRetryWorkoutRouteError: (error: unknown) => boolean;
 }
 
+export type HealthKitManualSyncState = {
+  status: "idle" | "running" | "paused" | "error" | "complete";
+  message: string | null;
+  completedStageCount: number;
+  totalStageCount: number;
+  error: string | null;
+};
+
+/** Shared observable contract for the root-owned manual sync controller. */
+export interface HealthKitManualSyncOwner {
+  readonly userId: string;
+  getSnapshot(): HealthKitManualSyncState;
+  subscribe(listener: () => void): () => void;
+  start(syncRangeDays: number | null): Promise<SyncResult>;
+  resume(): Promise<SyncResult>;
+  retire(): Promise<void>;
+}
+
 /**
  * Expected control flow when the manual operation paused, expired, or lost its
  * account between two side effects. It is not an unexpected failure.

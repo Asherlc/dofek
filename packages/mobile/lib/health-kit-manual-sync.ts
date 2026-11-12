@@ -22,19 +22,13 @@ import {
 } from "./health-kit-manual-checkpoint";
 import { MANUAL_HEALTH_KIT_SYNC_STAGES } from "./health-kit-sync";
 import {
+  type HealthKitManualSyncOwner,
+  type HealthKitManualSyncState,
   ManualHealthKitSyncInterruptedError,
   type SyncResult,
   type SyncTrpcClient,
 } from "./health-kit-sync-types";
 import { captureException } from "./telemetry";
-
-export type HealthKitManualSyncState = {
-  status: "idle" | "running" | "paused" | "error" | "complete";
-  message: string | null;
-  completedStageCount: number;
-  totalStageCount: number;
-  error: string | null;
-};
 
 const INITIAL_STATE: HealthKitManualSyncState = {
   status: "idle",
@@ -189,7 +183,7 @@ function createDefaultDependencies(trpcClient: SyncTrpcClient): HealthKitManualS
   };
 }
 
-export class HealthKitManualSyncController {
+export class HealthKitManualSyncController implements HealthKitManualSyncOwner {
   readonly userId: string;
   readonly trpcClient: SyncTrpcClient;
   readonly ready: Promise<void>;

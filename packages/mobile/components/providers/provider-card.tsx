@@ -11,7 +11,7 @@ import { OperationProgressBar } from "../../components/OperationProgressBar";
 import { ProviderLogo } from "../../components/ProviderLogo";
 import { ProviderStatsBreakdown } from "../../components/ProviderStatsBreakdown";
 import { useAuth } from "../../lib/auth-context";
-import type { HealthKitManualSyncState } from "../../lib/health-kit-manual-sync";
+import type { HealthKitManualSyncState } from "../../lib/health-kit-sync-types";
 import { colors } from "../../theme";
 import { FileImportButton } from "./file-import-button.tsx";
 import { styles } from "./styles.ts";

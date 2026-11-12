@@ -35,16 +35,7 @@ public class BackgroundRefreshModule: Module {
         Events("onBackgroundRefresh", "onHealthKitSyncExpired")
 
         AsyncFunction("enableCollectionNotifications") { (requestPermission: Bool, promise: Promise) in
-            DispatchQueue.main.async {
-                CollectionNotificationService.shared.enable(requestPermission: requestPermission) { result in
-                    switch result {
-                    case .success(let granted):
-                        promise.resolve(granted)
-                    case .failure(let error):
-                        promise.reject("COLLECTION_NOTIFICATIONS_UNAVAILABLE", error.localizedDescription)
-                    }
-                }
-            }
+            self.enableCollectionNotifications(requestPermission: requestPermission, promise: promise)
         }
 
         Function("disableCollectionNotifications") {
@@ -78,26 +69,11 @@ public class BackgroundRefreshModule: Module {
         // Expo queues this async body. Re-reading it here would rebind an invocation
         // made by a retired listener to its replacement.
         AsyncFunction("startHealthKitSync") { (taskId: String, listenerGeneration: String, promise: Promise) in
-            guard let ownerId = UUID(uuidString: listenerGeneration) else {
-                promise.reject(
-                    "HEALTHKIT_SYNC_TASK_FAILED",
-                    HealthKitSyncStartError.listenerUnavailable.localizedDescription
-                )
-                return
-            }
-            // Continued-processing requests are submitted from the foreground.
-            DispatchQueue.main.async {
-                Self.healthKitSyncTaskCoordinator.start(taskId: taskId, ownerId: ownerId) { result in
-                    switch result {
-                    case .success(.launched):
-                        promise.resolve(["supported": true])
-                    case .success(.unsupported):
-                        promise.resolve(["supported": false])
-                    case .failure(let error):
-                        promise.reject("HEALTHKIT_SYNC_TASK_FAILED", error.localizedDescription)
-                    }
-                }
-            }
+            self.startHealthKitSync(
+                taskId: taskId,
+                listenerGeneration: listenerGeneration,
+                promise: promise
+            )
         }
 
         // Synchronous on the JS thread, so the caller can bind its invocation to the
@@ -106,12 +82,9 @@ public class BackgroundRefreshModule: Module {
             self.healthKitSyncListenerLifecycle.current()?.uuidString
         }
 
-        Function("updateHealthKitSyncProgress") {
-            (taskId: String, completed: Int, total: Int, message: String) in
-            guard let ownerId = self.healthKitSyncListenerLifecycle.current() else { return }
-            Self.healthKitSyncTaskCoordinator.updateProgress(
+        Function("updateHealthKitSyncProgress") { (taskId: String, completed: Int, total: Int, message: String) in
+            self.updateHealthKitSyncProgress(
                 taskId: taskId,
-                ownerId: ownerId,
                 completed: completed,
                 total: total,
                 message: message
@@ -119,32 +92,104 @@ public class BackgroundRefreshModule: Module {
         }
 
         Function("completeHealthKitSync") { (taskId: String, success: Bool) in
-            guard let ownerId = self.healthKitSyncListenerLifecycle.current() else { return }
-            Self.healthKitSyncTaskCoordinator.complete(
-                taskId: taskId,
-                ownerId: ownerId,
-                success: success
-            )
+            self.completeHealthKitSync(taskId: taskId, success: success)
         }
 
         OnStartObserving("onHealthKitSyncExpired") {
-            let ownerId = self.healthKitSyncListenerLifecycle.begin()
-            Self.healthKitSyncTaskCoordinator.activateOwner(ownerId: ownerId) { [weak self] taskId in
-                self?.sendEvent("onHealthKitSyncExpired", [Self.healthKitSyncTaskIdKey: taskId])
-            }
+            self.startHealthKitSyncExpirationObserver()
         }
 
         OnStopObserving("onHealthKitSyncExpired") {
-            guard let ownerId = self.healthKitSyncListenerLifecycle.end() else { return }
-            Self.healthKitSyncTaskCoordinator.deactivateOwner(ownerId: ownerId)
+            self.stopHealthKitSyncExpirationObserver()
         }
 
         OnDestroy {
-            // Retires only the generation this module still owns; a stale module's
-            // destruction can never end a replacement listener's request.
-            guard let ownerId = self.healthKitSyncListenerLifecycle.end() else { return }
-            Self.healthKitSyncTaskCoordinator.destroyOwner(ownerId: ownerId)
+            self.destroyHealthKitSyncOwner()
         }
+    }
+
+    private func enableCollectionNotifications(requestPermission: Bool, promise: Promise) {
+        DispatchQueue.main.async {
+            CollectionNotificationService.shared.enable(requestPermission: requestPermission) { result in
+                switch result {
+                case .success(let granted):
+                    promise.resolve(granted)
+                case .failure(let error):
+                    promise.reject("COLLECTION_NOTIFICATIONS_UNAVAILABLE", error.localizedDescription)
+                }
+            }
+        }
+    }
+
+    /// Parses the captured listener generation before preserving the main-queue submission boundary.
+    private func startHealthKitSync(
+        taskId: String,
+        listenerGeneration: String,
+        promise: Promise
+    ) {
+        guard let ownerId = UUID(uuidString: listenerGeneration) else {
+            promise.reject(
+                "HEALTHKIT_SYNC_TASK_FAILED",
+                HealthKitSyncStartError.listenerUnavailable.localizedDescription
+            )
+            return
+        }
+        DispatchQueue.main.async {
+            Self.healthKitSyncTaskCoordinator.start(taskId: taskId, ownerId: ownerId) { result in
+                switch result {
+                case .success(.launched):
+                    promise.resolve(["supported": true])
+                case .success(.unsupported):
+                    promise.resolve(["supported": false])
+                case .failure(let error):
+                    promise.reject("HEALTHKIT_SYNC_TASK_FAILED", error.localizedDescription)
+                }
+            }
+        }
+    }
+
+    private func updateHealthKitSyncProgress(
+        taskId: String,
+        completed: Int,
+        total: Int,
+        message: String
+    ) {
+        guard let ownerId = healthKitSyncListenerLifecycle.current() else { return }
+        Self.healthKitSyncTaskCoordinator.updateProgress(
+            taskId: taskId,
+            ownerId: ownerId,
+            completed: completed,
+            total: total,
+            message: message
+        )
+    }
+
+    private func completeHealthKitSync(taskId: String, success: Bool) {
+        guard let ownerId = healthKitSyncListenerLifecycle.current() else { return }
+        Self.healthKitSyncTaskCoordinator.complete(
+            taskId: taskId,
+            ownerId: ownerId,
+            success: success
+        )
+    }
+
+    private func startHealthKitSyncExpirationObserver() {
+        let ownerId = healthKitSyncListenerLifecycle.begin()
+        Self.healthKitSyncTaskCoordinator.activateOwner(ownerId: ownerId) { [weak self] taskId in
+            self?.sendEvent("onHealthKitSyncExpired", [Self.healthKitSyncTaskIdKey: taskId])
+        }
+    }
+
+    private func stopHealthKitSyncExpirationObserver() {
+        guard let ownerId = healthKitSyncListenerLifecycle.end() else { return }
+        Self.healthKitSyncTaskCoordinator.deactivateOwner(ownerId: ownerId)
+    }
+
+    private func destroyHealthKitSyncOwner() {
+        // Retires only the generation this module still owns; a stale module's
+        // destruction can never end a replacement listener's request.
+        guard let ownerId = healthKitSyncListenerLifecycle.end() else { return }
+        Self.healthKitSyncTaskCoordinator.destroyOwner(ownerId: ownerId)
     }
 
     private func startRefreshObserver() {

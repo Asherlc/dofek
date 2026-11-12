@@ -1,13 +1,5 @@
 import { createContext, type ReactNode, useContext, useSyncExternalStore } from "react";
-import type {
-  HealthKitManualSyncController,
-  HealthKitManualSyncState,
-} from "./health-kit-manual-sync";
-
-type HealthKitManualSyncOwner = Pick<
-  HealthKitManualSyncController,
-  "userId" | "getSnapshot" | "subscribe" | "start" | "resume" | "retire"
->;
+import type { HealthKitManualSyncOwner, HealthKitManualSyncState } from "./health-kit-sync-types";
 
 const INITIAL_STATE: HealthKitManualSyncState = {
   status: "idle",
