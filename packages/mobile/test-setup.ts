@@ -81,7 +81,7 @@ vi.mock("@react-native-async-storage/async-storage", () => {
         return Promise.resolve();
       }),
       getAllKeys: vi.fn(() => Promise.resolve([...asyncStorageValues.keys()])),
-      multiRemove: vi.fn((keys: string[]) => {
+      removeMany: vi.fn((keys: string[]) => {
         for (const key of keys) asyncStorageValues.delete(key);
         return Promise.resolve();
       }),
