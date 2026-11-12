@@ -40,7 +40,7 @@
 - `updateHealthKitSyncProgress(taskId: string, completed: number, total: number, message: string): void`.
 - `completeHealthKitSync(taskId: string, success: boolean): void`.
 - `addHealthKitSyncExpirationListener(callback: (event: { taskId: string }) => void): EventSubscription`.
-- Use registered task identifier `com.dofek.app.healthkit-sync`, separate from periodic refresh. Preserve taskId request correlation across all native transitions.
+- Use permitted task identifier pattern `com.dofek.app.healthkit-sync.*`, separate from periodic refresh, with each submitted identifier suffixed by its unique taskId. Register each exact request identifier once under iOS 26's continued-processing registration exception. Preserve taskId correlation across all native transitions. See Apple's [request identifier contract](https://developer.apple.com/documentation/backgroundtasks/bgcontinuedprocessingtaskrequest/init(identifier:title:subtitle:)) and [registration contract](https://developer.apple.com/documentation/backgroundtasks/bgtaskscheduler/register(fortaskwithidentifier:using:launchhandler:)).
 
 - [ ] Write Swift lifecycle tests for launch gating, rejection, expiration before grant, duplicate completion, teardown, and late launch. Write bridge tests for correlation and unsubscribe.
 - [ ] Run `rtk proxy swift test --package-path packages/mobile/modules/background-refresh` and `rtk proxy pnpm test:mobile -- packages/mobile/modules/background-refresh/index.test.ts`; record expected new behavior failing before implementation.
