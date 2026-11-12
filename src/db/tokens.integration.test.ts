@@ -77,11 +77,13 @@ describe("Token storage (integration)", () => {
       ).resolves.toEqual([
         { name: "Updated Concurrent Sync", apiBaseUrl: "https://updated.example.test" },
       ]);
-      const recorded = await writer.query<{ status: string }>(
-        "SELECT status FROM fitness.sync_log WHERE provider_id = $1 AND user_id = $2",
-        [providerId, TEST_USER_ID],
+      const recorded = await executeWithSchema(
+        ctx.db,
+        z.object({ status: z.string() }),
+        sql`SELECT status FROM fitness.sync_log
+            WHERE provider_id = ${providerId} AND user_id = ${TEST_USER_ID}`,
       );
-      expect(recorded.rows).toEqual([{ status: "success" }]);
+      expect(recorded).toEqual([{ status: "success" }]);
     } finally {
       await writer.query("ROLLBACK");
       await ensuring;

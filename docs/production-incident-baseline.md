@@ -37076,3 +37076,24 @@ Final review also identified a classification-priority regression: the new trans
 - **Exact evidence / root cause:** `docker service logs --raw --timestamps --since 2026-11-12T14:40:55Z dofek_db` reports `ERROR: deadlock detected` at 14:41:04.742 UTC. Process 3825024, executing the provider-upsert/provider-connection CTE, waits for an exclusive advisory lock held by process 3824986. That second process is inserting `fitness.sync_log` and waits for transaction 4906774 held by 3825024. The first process's context identifies `fitness.lock_and_reject_account_erasure_write` as the advisory-lock acquisition. The [provider upsert](../src/db/tokens.ts) touches the shared provider before the connection's [write-fence trigger](../drizzle/0062_account_erasure.sql) acquires the user lock; the concurrent sync-log write holds the user lock before its provider foreign-key check. A read-only production catalog query confirms that foreign key. These opposite lock orders form the reported cycle. PostgreSQL recommends consistent lock acquisition order to prevent [deadlocks](https://www.postgresql.org/docs/current/explicit-locking.html#LOCKING-DEADLOCKS).
 - **Approved direct fix / local validation:** The [provider statement](../src/db/tokens.ts) now reads a materialized CTE calling the existing account-erasure user write fence before it upserts the provider, preserving atomic catalog/connection creation. The [real PostgreSQL concurrency regression](../src/db/tokens.integration.test.ts) first failed with `40P01` and the same advisory-lock/transaction-lock cycle, then passed after this change. All 16 token integration tests pass with `--retry 0`, covering metadata updates, independent user connections, token transaction rollback and active-erasure rejection without metadata changes; all 23 token unit tests and root typecheck pass. The erasure assertion checks the nested PostgreSQL `55000` cause because the outer Drizzle message contains the failed query. The full unit/mobile run (`pnpm test --run --maxWorkers 4 --retry 0`) passed 24,291 tests across 1,470 files in 425.73 seconds, with 19 skipped tests and two skipped files. Full lint, canonical source spelling (3,195 files), changed incident-text spelling and whitespace checks pass; independent read-only review found no issues. No schema, production state, retry or timeout changed; no resilience setting is needed. The inspected production database is running at 1/1 replicas and web at 2/2, which establishes service availability only. Leave Sentry unresolved until release and production acceptance.
 - **Retrospective / proposed guidance:** The nested Sentry cause and retained PostgreSQL deadlock DETAIL identified both competing statements without adding instrumentation. Add to the database troubleshooting runbook: capture the full deadlock DETAIL and CONTEXT, then compare trigger/advisory-lock order with foreign-key row locks before adding retries. Reuse the production-log and integration-test workflows for similar failures; no new diagnostic tool is needed.
+
+### DOFEK-SERVER-85 PostgreSQL log
+
+Primary production evidence captured with the `docker service logs` command
+above at investigation time (UTC). This excerpt supports the lock cycle in the
+[incident diagnosis](#2026-11-12--apple-health-sync-recording-deadlocks-with-a-concurrent-sync-log-write-unresolved):
+
+```text
+2026-11-12 14:41:04.742 UTC [3825024] ERROR:  deadlock detected
+DETAIL:  Process 3825024 waits for ExclusiveLock on advisory lock [481073,1401094636,3470104893,1]; blocked by process 3824986.
+Process 3824986 waits for ShareLock on transaction 4906774; blocked by process 3825024.
+Process 3824986: insert into "fitness"."sync_log" ("id", "provider_id", "user_id", "data_type", "status", "origin", "record_count", "error_message", "auth_failure_reason", "degradation_kind", "duration_ms", "synced_at") values (default, $1, $2, $3, $4, $5, $6, $7, default, default, $8, default)
+CONTEXT:  SQL statement "SELECT pg_advisory_xact_lock(hashtextextended(target_user_id::text, 0))"
+PL/pgSQL function fitness.lock_and_reject_account_erasure_write(uuid) line 8 at PERFORM
+```
+
+The [exact Sentry event](https://east-bay-software.sentry.io/issues/7844736436/events/cbcbe0c7f2454d8aa4b86253014d9519/)
+records the failing provider CTE. Local validation commands and results are
+recorded in [PR #3283](https://github.com/Asherlc/dofek/pull/3283);
+[CI run 43245159477](https://github.com/Asherlc/dofek/actions/runs/43245159477)
+tracks remote qualification of commit `00ccb57b86e970d30ce9cd20241213c5fdd5cc4b`.
