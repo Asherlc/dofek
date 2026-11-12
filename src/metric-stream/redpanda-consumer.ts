@@ -234,7 +234,13 @@ export function createKafkaMetricStreamConsumerFromEnv(env: NodeJS.ProcessEnv = 
     brokers,
     clientId: "dofek-metric-stream-consumer",
   });
-  const kafkaConsumer = kafka.consumer({ groupId });
+  let stopping = false;
+  const kafkaConsumer = kafka.consumer({
+    groupId,
+    retry: {
+      restartOnFailure: async () => !stopping,
+    },
+  });
 
   return {
     consumer: {
@@ -248,8 +254,14 @@ export function createKafkaMetricStreamConsumerFromEnv(env: NodeJS.ProcessEnv = 
       },
       subscribe: (options) => kafkaConsumer.subscribe(options),
       run: (options) => kafkaConsumer.run(options),
-      stop: () => kafkaConsumer.stop(),
-      disconnect: () => kafkaConsumer.disconnect(),
+      stop: () => {
+        stopping = true;
+        return kafkaConsumer.stop();
+      },
+      disconnect: () => {
+        stopping = true;
+        return kafkaConsumer.disconnect();
+      },
     },
     quarantine: new KafkaMetricStreamQuarantineWriter({
       admin: kafka.admin(),
