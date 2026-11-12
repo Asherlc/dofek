@@ -541,19 +541,32 @@ export class HealthKitManualSyncController {
         attempt.interrupted ||
         isHealthKitDatabaseInaccessible(error) ||
         error instanceof ManualHealthKitSyncInterruptedError;
-      if (current && paused && !this.#retired) {
+      if (current && paused && !this.#retired && !this.#disposed) {
         if (!dataFinalized) {
           await this.#savePausedCheckpoint({ ...checkpoint, requiresResume: true });
           if (this.#attempt !== attempt || this.#retired) throw error;
         }
         if (this.#attempt === attempt && !this.#retired) {
-          this.#publish({
-            status: "paused",
-            message: isHealthKitDatabaseInaccessible(error)
-              ? "Unlock your phone to continue Apple Health sync"
-              : "Apple Health sync paused",
-            error: null,
-          });
+          this.#publish(
+            dataFinalized
+              ? {
+                  status: "error",
+                  message: null,
+                  error:
+                    error instanceof ManualHealthKitSyncInterruptedError
+                      ? "Apple Health data was synced, but completion was interrupted. Start a new sync to check for additional data."
+                      : error instanceof Error
+                        ? error.message
+                        : String(error),
+                }
+              : {
+                  status: "paused",
+                  message: isHealthKitDatabaseInaccessible(error)
+                    ? "Unlock your phone to continue Apple Health sync"
+                    : "Apple Health sync paused",
+                  error: null,
+                },
+          );
         }
       } else if (current && !this.#retired && !attempt.expired) {
         let visibleError = error instanceof Error ? error.message : String(error);

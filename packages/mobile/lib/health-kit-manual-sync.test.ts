@@ -428,7 +428,7 @@ describe("HealthKitManualSyncController", () => {
     });
   });
 
-  it("does not publish success when the native task expires during outcome recording", async () => {
+  it("reports a terminal error when the native task expires during outcome recording", async () => {
     const harness = makeHarness();
     const recording = Promise.withResolvers<void>();
     harness.deps.runSync.mockResolvedValue(success);
@@ -440,7 +440,32 @@ describe("HealthKitManualSyncController", () => {
     recording.resolve();
 
     await expect(started).rejects.toThrow(/interrupted/i);
-    expect(harness.controller.getSnapshot()).toMatchObject({ status: "paused" });
+    expect(harness.controller.getSnapshot()).toMatchObject({
+      status: "error",
+      error: expect.stringContaining("data was synced, but completion was interrupted"),
+    });
+    expect(harness.saved()).toBeNull();
+    expect(harness.deps.runSync).toHaveBeenCalledOnce();
+    expect(harness.deps.completeNative).toHaveBeenCalledWith(harness.starts[0], false);
+    expect(harness.deps.completeNative).not.toHaveBeenCalledWith(harness.starts[0], true);
+  });
+
+  it("preserves the outcome-recording failure after native expiration", async () => {
+    const harness = makeHarness();
+    const recording = Promise.withResolvers<void>();
+    harness.deps.runSync.mockResolvedValue(success);
+    harness.deps.recordOutcome.mockReturnValueOnce(recording.promise);
+
+    const started = harness.controller.start(7);
+    await vi.waitFor(() => expect(harness.deps.recordOutcome).toHaveBeenCalledOnce());
+    harness.expire(harness.starts[0] ?? "");
+    recording.reject(new Error("Sync history unavailable"));
+
+    await expect(started).rejects.toThrow("Sync history unavailable");
+    expect(harness.controller.getSnapshot()).toMatchObject({
+      status: "error",
+      error: expect.stringContaining("Sync history unavailable"),
+    });
     expect(harness.saved()).toBeNull();
     expect(harness.deps.runSync).toHaveBeenCalledOnce();
     expect(harness.deps.completeNative).toHaveBeenCalledWith(harness.starts[0], false);
