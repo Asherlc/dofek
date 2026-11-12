@@ -36709,6 +36709,28 @@ Local documentation validation was blocked by `pnpm compose -- up -d --wait clic
 
 ### Approved asynchronous recovery
 
+**Affected-device follow-up, 20:37 UTC:** The operator rejected the sign-out
+instruction shown by the app. [Exact Sentry event
+`6fcb0eb113434120b9cb95c5bc16b024`](https://east-bay-software.sentry.io/issues/7844955301/events/6fcb0eb113434120b9cb95c5bc16b024/)
+confirms build `1794511994`, release `caac0999cf99a45ea3584ed7dc708d0dda47f964`,
+an embedded launch, and the old pending-intent exception at
+`requireWhoopCleanupToBeResolved:44`. This event runs the predecessor of the
+recovery fix, not the recovery implementation below. [PR #3286](https://github.com/Asherlc/dofek/pull/3286)
+merged as `b669931415a3773272f9c8aeec96b89163eefef9`; its
+[CI](https://github.com/Asherlc/dofek/actions/runs/43297958874) passed, while
+[Release Production](https://github.com/Asherlc/dofek/actions/runs/43301636803)
+was still deploying the server when checked at 20:39 UTC. OTA publication waits
+for that rollout under the existing [release procedure](../deploy/README.md).
+A fresh focused run passed 127 tests across upload-session, auth-session,
+auth-context, root-layout cleanup and WHOOP initialization with retries disabled.
+No new behavior, timeout, retry or state-clearing operator action was introduced.
+Device cleanup completion and subsequent upload acceptance remain unresolved.
+Retrospective: exact release and embedded-launch evidence separated release
+delivery from recovery execution. Proposed runbook clarification: compare the
+affected event's source release with the fix and publisher status before asking
+the user to change authentication state. Reuse systematic debugging and the
+[OTA recovery runbook](mobile-ota-recovery.md) for the next occurrence.
+
 The operator approved resuming cleanup, with an explicit requirement to avoid
 reintroducing the earlier startup/login freeze. The
 [upload-session boundary](../packages/mobile/lib/whoop-upload-session.ts) now
