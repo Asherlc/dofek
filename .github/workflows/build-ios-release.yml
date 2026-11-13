@@ -152,19 +152,21 @@ jobs:
         with:
           cache-key-prefix: ccache-ios
       - name: Archive (Release, signed)
+        id: archive
         env:
           SENTRY_RELEASE: ${{ steps.checked-out-sha.outputs.sha }}
           SENTRY_DIST: ${{ steps.build-number.outputs.value }}
           EXPO_PUBLIC_SENTRY_RELEASE: ${{ steps.checked-out-sha.outputs.sha }}
           EXPO_PUBLIC_SENTRY_DIST: ${{ steps.build-number.outputs.value }}
         run: |
-          set -o pipefail
           TEAM_ID=$(/usr/libexec/PlistBuddy -c "Print :teamID" packages/mobile/build/ExportOptions.plist)
           xcodebuild archive \
+            -hideShellScriptEnvironment \
             -workspace packages/mobile/ios/Dofek.xcworkspace \
             -scheme Dofek \
             -configuration Release \
             -archivePath "$RUNNER_TEMP/Dofek.xcarchive" \
+            -resultBundlePath "$RUNNER_TEMP/ios-archive.xcresult" \
             -destination 'generic/platform=iOS' \
             -allowProvisioningUpdates \
             -authenticationKeyPath "$HOME/private_keys/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8" \
@@ -176,7 +178,16 @@ jobs:
             C_COMPILER_LAUNCHER="$(command -v ccache)" \
             CXX_COMPILER_LAUNCHER="$(command -v ccache)" \
             CLANG_ENABLE_EXPLICIT_MODULES_WITH_COMPILER_LAUNCHER=YES \
-            2>&1 | tail -40
+            2>&1
+      - name: Show archive failure details
+        if: failure() && steps.archive.outcome == 'failure'
+        run: |
+          RESULT_BUNDLE="$RUNNER_TEMP/ios-archive.xcresult"
+          if [ -d "$RESULT_BUNDLE" ]; then
+            xcrun xcresulttool get build-results --path "$RESULT_BUNDLE"
+          else
+            echo "No result bundle was created; full xcodebuild output is available in this job log."
+          fi
       - name: Package signed archive
         run: tar -cf "$RUNNER_TEMP/testflight-signed-archive.tar" -C "$RUNNER_TEMP" Dofek.xcarchive
       - name: Upload signed archive

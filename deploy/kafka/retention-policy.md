@@ -83,6 +83,13 @@ successfully at 00:31 UTC on November 13, including the final broker and policy
 checks after consumer startup. This is the server result; mobile publication
 has separate jobs.
 
+The [dated evidence packet](../../docs/evidence/kafka-retention-20261112/README.md)
+retains the initial operator snapshot and timestamped raw follow-up readbacks.
+The [initial observation](../../docs/evidence/kafka-retention-20261112/production-initial-observation.json)
+is a transcription of the command outputs for the figures below; its individual
+command timestamps were not retained. Later raw samples can have advancing
+offsets and allocation.
+
 | Partition 0 | Global earliest offset | Local earliest offset after eviction | Fresh remote-only read |
 | --- | --- | --- | --- |
 | Live | 1,696,520 | 7,493,452 | Offset 1,696,520 returned |

@@ -37257,7 +37257,8 @@ that intent with the same reservation, retired it, and advanced normally to a
 new reservation. It then drained and exited at 22:41:10 UTC; final ownership
 was terminal/quiescent with no pending intent, and the live commit advanced
 from 8,450,409 to 8,454,055. No offset reset or bulk owner clearing was used.
-See the [recovery safety requirements](plans/2026-11-09-erasure-safety-decisions.md#recovery-cutover-and-key-changes).
+See the contemporaneous [operator execution notes](evidence/kafka-retention-20261112/owner-recovery-notes.md)
+and the separate [recovery safety requirements](plans/2026-11-09-erasure-safety-decisions.md#recovery-cutover-and-key-changes).
 
 Web returned to two replicas with HTTP 200 health; the named activity resync
 container was restarted on its unchanged image, and six background services
@@ -37313,6 +37314,11 @@ passed. This pre-release validation does not establish production shutdown of
 the corrected image; that requires its own CI and canonical release. The existing grace and gates remain unchanged;
 they protect genuine in-flight work rather than compensating for these leaks.
 
+The [regression execution report](evidence/kafka-retention-20261112/analytics-cleanup-worker-report.md)
+retains the RED/GREEN commands and scope; the
+[full unit/mobile rerun](evidence/kafka-retention-20261112/unit-mobile-summary.txt)
+passed 24,315 tests after correcting two transitive test mocks.
+
 ### Separate signed iOS archive failure
 
 The same release's [signed iOS archive job](https://github.com/Asherlc/dofek/actions/runs/43330045743/job/131572633294)
@@ -37330,3 +37336,11 @@ shows that an initial DNS fetch failure can be masked by validation of a missing
 cache directory; that mechanism is a hypothesis, not proof of this runner's
 failure. The user authorized investigation and a direct fix. No retries,
 cache-disabling flags or timeout changes have been used as remediation.
+
+The approved diagnostic follow-up removes signed-archive truncation, keeps its
+temporary result bundle on the runner, and reports useful stock summary output
+through GitHub's existing masked job log. Raw log/result-bundle artifacts are
+not uploaded: log masking does not sanitize their original file contents.
+This improves evidence retention; it does not establish the original fetch
+cause. See the [signed archive diagnostic boundary](ci-debugging.md#signed-archive-diagnostic-confidentiality)
+and [GitHub masking semantics](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands#masking-a-value-in-a-log).
