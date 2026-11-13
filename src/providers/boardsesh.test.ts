@@ -3,7 +3,12 @@ import { z } from "zod";
 import { BoardSeshProvider } from "./boardsesh.ts";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
-import { createMockDatabase } from "./test-helpers.ts";
+import {
+  boardSeshAscentFixture,
+  boardSeshBoardFixture,
+  createBoardSeshMetadataFetch,
+  createMockDatabase,
+} from "./test-helpers.ts";
 
 const databaseMocks = vi.hoisted(() => ({
   ensureProvider: vi.fn(),
@@ -457,6 +462,345 @@ describe("BoardSeshProvider", () => {
           reportedAttemptCounts: [{ scope: "climb", count: 2 }],
         }),
       ]),
+    );
+  });
+
+  describe("log metadata", () => {
+    beforeEach(() => {
+      databaseMocks.loadTokens.mockResolvedValue({
+        accessToken: "access",
+        refreshToken: "refresh",
+        expiresAt: new Date(Date.now() + 60_000),
+        scopes: null,
+        providerAccountId: "owner-1",
+      });
+    });
+
+    it("pages exact tick metadata, reuses a recorded board, and retains source facts", async () => {
+      const fetchFn = createBoardSeshMetadataFetch({
+        ticks: [makeTick(), makeTick({ uuid: "tick-2", isMirror: true })],
+        pages: {
+          0: {
+            items: [boardSeshAscentFixture({ uuid: "unrelated" }), boardSeshAscentFixture()],
+            hasMore: true,
+          },
+          2: {
+            items: [
+              boardSeshAscentFixture({ uuid: "tick-2", isMirror: true, climbName: "Mirror name" }),
+            ],
+            hasMore: false,
+          },
+        },
+      });
+      expect(await syncRun(new BoardSeshProvider(fetchFn))).toMatchObject({
+        recordsSynced: 2,
+        errors: [],
+      });
+      const { entries } = z
+        .object({ entries: z.array(z.record(z.string(), z.unknown())) })
+        .parse(databaseMocks.persistSnapshot.mock.calls[0]?.[1]);
+      expect(entries).toMatchObject([
+        {
+          externalId: "boardsesh:tick:tick-1",
+          climb: { name: "Moon Dust", externalId: "kilter:climb-1:normal" },
+          board: { name: "Training Kilter", externalId: "board-42" },
+          areas: [
+            {
+              externalId: "board:board-42",
+              name: "Movement Sunnyvale",
+              coordinates: { latitude: 37.37, longitude: -122.04 },
+            },
+          ],
+          raw: {
+            uuid: "tick-1",
+            climbedAt: "2026-11-01 10:00:00",
+            metadata: {
+              ascent: { uuid: "tick-1", climbName: "  Moon Dust  " },
+              board: { uuid: "board-42", locationName: " Movement Sunnyvale " },
+            },
+          },
+        },
+        {
+          externalId: "boardsesh:tick:tick-2",
+          climb: { name: "Mirror name", externalId: "kilter:climb-1:mirror" },
+          board: { name: "Training Kilter", externalId: "board-42" },
+          areas: [{ name: "Movement Sunnyvale" }],
+        },
+      ]);
+      const requests = fetchFn.mock.calls.map(([, init]) =>
+        z
+          .object({ query: z.string(), variables: z.record(z.string(), z.unknown()) })
+          .parse(JSON.parse(String(init?.body))),
+      );
+      expect(
+        requests
+          .filter(({ query }) => query.includes("BoardSeshMetadata"))
+          .map(({ variables }) => variables),
+      ).toEqual([
+        { userId: "owner-1", input: { limit: 50, offset: 0, statusMode: "both" } },
+        { userId: "owner-1", input: { limit: 50, offset: 2, statusMode: "both" } },
+      ]);
+      expect(
+        requests
+          .filter(({ query }) => query.includes("BoardSeshTickBoard"))
+          .map(({ variables }) => variables),
+      ).toEqual([{ tickUuid: "tick-1" }]);
+      expect(
+        requests
+          .filter(({ query }) => query.includes("BoardSeshBoard"))
+          .map(({ variables }) => variables),
+      ).toEqual([{ boardUuid: "board-42" }]);
+    });
+
+    it.each([
+      [
+        "gym name",
+        {},
+        { locationName: " ", gymName: " Gym name ", latitude: null, longitude: null },
+        "available",
+        {
+          name: "Moon Dust",
+          board: { name: "Training Kilter", externalId: "board-42" },
+          areas: [{ externalId: "board:board-42", name: "Gym name", coordinates: null }],
+        },
+      ],
+      [
+        "coordinate-only board at zero",
+        {},
+        { locationName: null, gymName: null, latitude: 0, longitude: 0 },
+        "available",
+        {
+          name: "Moon Dust",
+          board: { name: "Training Kilter", externalId: "board-42" },
+          areas: [
+            {
+              externalId: "board:board-42",
+              name: "Training Kilter",
+              coordinates: { latitude: 0, longitude: 0 },
+            },
+          ],
+        },
+      ],
+      [
+        "missing latitude",
+        {},
+        { latitude: null, longitude: 0 },
+        "available",
+        {
+          name: "Moon Dust",
+          board: { name: "Training Kilter", externalId: "board-42" },
+          areas: [{ name: "Movement Sunnyvale", coordinates: null }],
+        },
+      ],
+      [
+        "missing longitude",
+        {},
+        { latitude: 0, longitude: null },
+        "available",
+        {
+          name: "Moon Dust",
+          board: { name: "Training Kilter", externalId: "board-42" },
+          areas: [{ name: "Movement Sunnyvale", coordinates: null }],
+        },
+      ],
+      [
+        "unknown location",
+        {},
+        { locationName: null, gymName: null, latitude: null, longitude: null },
+        "available",
+        {
+          name: "Moon Dust",
+          board: { name: "Training Kilter", externalId: "board-42" },
+          areas: [],
+        },
+      ],
+      [
+        "inaccessible board",
+        {},
+        {},
+        "inaccessible",
+        { name: "Moon Dust", board: { name: "Display board", externalId: null }, areas: [] },
+      ],
+      [
+        "deleted board",
+        {},
+        {},
+        "deleted",
+        { name: "Moon Dust", board: { name: "Display board", externalId: null }, areas: [] },
+      ],
+      [
+        "unattributed board",
+        { boardId: null, boardDisplayName: null },
+        {},
+        "available",
+        { name: "Moon Dust", board: null, areas: [] },
+      ],
+      [
+        "recorded display name only",
+        { boardId: null, boardDisplayName: " Shared wall " },
+        {},
+        "available",
+        { name: "Moon Dust", board: { name: "Shared wall", externalId: null }, areas: [] },
+      ],
+      [
+        "unavailable display name",
+        { boardDisplayName: null },
+        {},
+        "inaccessible",
+        { name: "Moon Dust", board: null, areas: [] },
+      ],
+      [
+        "unknown climb name",
+        { climbName: "Unknown Climb" },
+        {},
+        "available",
+        {
+          name: null,
+          board: { name: "Training Kilter", externalId: "board-42" },
+          areas: [{ name: "Movement Sunnyvale" }],
+        },
+      ],
+      [
+        "blank climb name",
+        { climbName: "   " },
+        {},
+        "available",
+        {
+          name: null,
+          board: { name: "Training Kilter", externalId: "board-42" },
+          areas: [{ name: "Movement Sunnyvale" }],
+        },
+      ],
+    ] as const)(
+      "preserves recorded metadata with %s",
+      async (_name, ascent, board, availability, expected) => {
+        const fetchFn = createBoardSeshMetadataFetch({
+          ticks: [makeTick()],
+          pages: { 0: { items: [boardSeshAscentFixture(ascent)], hasMore: false } },
+          currentBoard:
+            availability === "inaccessible"
+              ? null
+              : { uuid: "board-42", name: "Training Kilter", boardType: "kilter" },
+          board: availability === "deleted" ? null : boardSeshBoardFixture(board),
+        });
+        expect(await syncRun(new BoardSeshProvider(fetchFn))).toMatchObject({
+          recordsSynced: 1,
+          errors: [],
+        });
+        expect(databaseMocks.persistSnapshot.mock.calls[0]?.[1]).toMatchObject({
+          entries: [
+            { climb: { name: expected.name }, board: expected.board, areas: expected.areas },
+          ],
+        });
+        if ("boardId" in ascent && ascent.boardId === null) {
+          expect(
+            fetchFn.mock.calls.some(([, init]) =>
+              String(init?.body).includes("BoardSeshTickBoard"),
+            ),
+          ).toBe(false);
+        }
+      },
+    );
+
+    it.each([
+      [
+        "empty page claiming more results",
+        { items: [], hasMore: true },
+        {},
+        {},
+        /pagination did not advance/,
+      ],
+      [
+        "different climb",
+        { items: [boardSeshAscentFixture({ climbUuid: "other" })], hasMore: false },
+        {},
+        {},
+        /metadata did not match/,
+      ],
+      [
+        "different board type",
+        { items: [boardSeshAscentFixture({ boardType: "tension" })], hasMore: false },
+        {},
+        {},
+        /metadata did not match/,
+      ],
+      [
+        "different mirror",
+        { items: [boardSeshAscentFixture({ isMirror: true })], hasMore: false },
+        {},
+        {},
+        /metadata did not match/,
+      ],
+      [
+        "current board type mismatch",
+        { items: [boardSeshAscentFixture()], hasMore: false },
+        { boardType: "tension" },
+        {},
+        /different board/,
+      ],
+      [
+        "board identity mismatch",
+        { items: [boardSeshAscentFixture()], hasMore: false },
+        {},
+        { uuid: "other" },
+        /different board/,
+      ],
+      [
+        "board type mismatch",
+        { items: [boardSeshAscentFixture()], hasMore: false },
+        {},
+        { boardType: "tension" },
+        /different board/,
+      ],
+      [
+        "out-of-range latitude",
+        { items: [boardSeshAscentFixture()], hasMore: false },
+        {},
+        { latitude: 91 },
+        /latitude/,
+      ],
+      [
+        "out-of-range longitude",
+        { items: [boardSeshAscentFixture()], hasMore: false },
+        {},
+        { longitude: -181 },
+        /longitude/,
+      ],
+      [
+        "latitude below the lower bound",
+        { items: [boardSeshAscentFixture()], hasMore: false },
+        {},
+        { latitude: -91 },
+        /latitude/,
+      ],
+      [
+        "longitude above the upper bound",
+        { items: [boardSeshAscentFixture()], hasMore: false },
+        {},
+        { longitude: 181 },
+        /longitude/,
+      ],
+      ["invalid ascent", { items: [{ uuid: "tick-1" }], hasMore: false }, {}, {}, /climbUuid/],
+      ["invalid page", { items: null, hasMore: false }, {}, {}, /items/],
+    ] as const)(
+      "rejects %s before snapshot persistence",
+      async (_name, page, currentBoard, board, error) => {
+        const fetchFn = createBoardSeshMetadataFetch({
+          ticks: [makeTick()],
+          pages: { 0: page },
+          currentBoard: {
+            uuid: "board-42",
+            name: "Training Kilter",
+            boardType: "kilter",
+            ...currentBoard,
+          },
+          board: boardSeshBoardFixture(board),
+        });
+        const result = await syncRun(new BoardSeshProvider(fetchFn));
+        expect(result.errors).toHaveLength(1);
+        expect(result.errors[0]?.message).toMatch(error);
+        expect(databaseMocks.persistSnapshot).not.toHaveBeenCalled();
+      },
     );
   });
 

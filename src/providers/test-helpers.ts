@@ -8,6 +8,7 @@
 import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { vi } from "vitest";
+import { z } from "zod";
 import { drizzleSchema } from "../db/drizzle-schema.ts";
 import type { SyncDatabase, TransactionDatabase } from "../db/index.ts";
 import type {
@@ -24,6 +25,71 @@ import {
 import type { MetricStreamEventPublisher } from "../metric-stream/publisher.ts";
 
 export const OPENBETA_TEST_USER_UUID = "00000000-0000-0000-0000-000000000002";
+
+export function boardSeshAscentFixture(overrides: Record<string, unknown> = {}) {
+  return {
+    uuid: "tick-1",
+    climbUuid: "climb-1",
+    boardType: "kilter",
+    isMirror: false,
+    climbName: "  Moon Dust  ",
+    boardId: 42,
+    boardDisplayName: " Display board ",
+    ...overrides,
+  };
+}
+
+export function boardSeshBoardFixture(overrides: Record<string, unknown> = {}) {
+  return {
+    uuid: "board-42",
+    name: "Training Kilter",
+    boardType: "kilter",
+    locationName: " Movement Sunnyvale ",
+    gymName: null,
+    latitude: 37.37,
+    longitude: -122.04,
+    ...overrides,
+  };
+}
+
+export function createBoardSeshMetadataFetch({
+  ticks,
+  pages,
+  currentBoard = { uuid: "board-42", name: "Training Kilter", boardType: "kilter" },
+  board = boardSeshBoardFixture(),
+}: {
+  ticks: unknown[];
+  pages: Record<number, unknown>;
+  currentBoard?: unknown;
+  board?: unknown;
+}) {
+  return vi.fn<typeof fetch>(async (_input, init) => {
+    const { query, variables } = z
+      .object({
+        query: z.string(),
+        variables: z.record(z.string(), z.unknown()),
+      })
+      .parse(JSON.parse(String(init?.body)));
+    let data: Record<string, unknown>;
+    if (query.includes("BoardSeshTicks")) {
+      const input = z.object({ boardType: z.string() }).parse(variables.input);
+      data = { ticks: input.boardType === "kilter" ? ticks : [] };
+    } else if (query.includes("BoardSeshGrades")) {
+      data = { grades: [] };
+    } else if (query.includes("BoardSeshMetadata")) {
+      const input = z.object({ offset: z.number() }).parse(variables.input);
+      if (!(input.offset in pages)) throw new Error("Unexpected metadata page");
+      data = { userAscentsFeed: pages[input.offset] };
+    } else if (query.includes("BoardSeshTickBoard")) {
+      data = { tickBoardOptions: { currentBoard } };
+    } else if (query.includes("BoardSeshBoard")) {
+      data = { board };
+    } else {
+      throw new Error("Unexpected BoardSesh operation");
+    }
+    return Response.json({ data: { authenticatedUserId: "owner-1", ...data } });
+  });
+}
 
 export function openBetaGrades(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
