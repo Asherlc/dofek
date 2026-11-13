@@ -1,12 +1,6 @@
 {
   "version": 1,
   "skills": {
-    "sandbox-sdk": {
-      "source": "cloudflare/skills",
-      "sourceType": "github",
-      "skillPath": "skills/sandbox-sdk/SKILL.md",
-      "computedHash": "e44cceebe7e47d815034027c303315139d35c1d92a3ee287dc6d3e9a02f0667b"
-    },
     "stripe-projects": {
       "source": "docs.stripe.com",
       "sourceType": "well-known",
