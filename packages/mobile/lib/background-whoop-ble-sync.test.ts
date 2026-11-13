@@ -214,10 +214,10 @@ describe("native WHOOP lifecycle", () => {
   });
   it("propagates configuration failure before capture starts", async () => {
     const native = deps();
-    native.configureUpload.mockImplementation(() => {
-      throw new Error("queue unavailable");
-    });
+    native.configureUpload.mockRejectedValueOnce(new Error("queue unavailable"));
     await expect(initBackgroundWhoopBleSync(context, native)).rejects.toThrow("queue unavailable");
+    await retryWhoopBleConnection();
+    expect(native.retryConnection).not.toHaveBeenCalled();
     expect(native.findWhoop).not.toHaveBeenCalled();
   });
   it("removes partially installed listeners when startup fails", async () => {
