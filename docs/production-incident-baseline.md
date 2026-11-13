@@ -37573,6 +37573,12 @@ No timeouts, retries, test exclusions, or runtime
 resilience settings were changed. Review fixes also strengthened tombstone
 identity assertions and parsed SQL results with the existing Zod helper.
 
+## 2026-11-13 — Activity-type label PR exposed stale duration expectations
+
+PR #3133 could not merge because its new Cardio test overlapped the later duration-formatting tests in [the web chart suite](../packages/web/src/components/SportVolumeChart.test.tsx). After preserving both sets of assertions, `pnpm exec vitest run --project unit --project mobile packages/web/src/components/SportVolumeChart.test.tsx packages/mobile/components/SportVolumeChart.test.tsx` passed six cases and failed the new mobile Cardio case with `Unable to find a label with the text of: 2026-10-19: 90 min`. The rendered label was `2026-10-19: 1:30 h:mm`, matching the current [mobile chart](../packages/mobile/components/SportVolumeChart.tsx) and its existing assertions. There was no production impact.
+
+The direct fix retains the activity-type labels on both platforms and updates only the new test expectations to the current fixture value and duration format. The same focused command then passed all seven cases; repository sandbox lint and root/server/web/mobile typechecks also passed. Full-suite and matching-head CI qualification remain separate gates. No runtime workaround, timeout, retry, or test exclusion was added. Future conflict resolution should preserve both the newer display-format regressions and the incoming interaction coverage before running the paired suites.
+
 ## 2026-11-13 — Kafka release drain-check task-disappearance race
 
 [Release 43458032214, attempt 1](https://github.com/Asherlc/dofek/actions/runs/43458032214/attempts/1)
