@@ -1,12 +1,6 @@
 {
   "version": 1,
   "skills": {
-    "caveman-compress": {
-      "source": "JuliusBrussee/caveman",
-      "sourceType": "github",
-      "skillPath": "skills/caveman-compress/SKILL.md",
-      "computedHash": "1e9b3e2bf68b75dc0252c4328c8514bea79d4d8f7d7259da616ba7d12cad6865"
-    },
     "caveman-help": {
       "source": "JuliusBrussee/caveman",
       "sourceType": "github",
