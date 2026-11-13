@@ -37527,3 +37527,34 @@ test user identifier; matching the actual database result types corrected both.
 No timeouts, retries, test exclusions, or runtime
 resilience settings were changed. Review fixes also strengthened tombstone
 identity assertions and parsed SQL results with the existing Zod helper.
+
+## 2026-11-13 — Kafka release drain-check task-disappearance race
+
+[Release 43458032214, attempt 1](https://github.com/Asherlc/dofek/actions/runs/43458032214/attempts/1)
+failed at `Wait for migration readers and writers to stop`, running
+`pnpm tsx scripts/wait-migration-quiescence.ts`. The first fatal output at
+16:14:46 UTC was `Error response from daemon: task emq6x21tzcbfbq44pnchei164 not found`.
+The checker listed task IDs, then separately inspected them; the analytics task
+disappeared between those commands. The exception stopped the release before
+migrations and consumer restoration. Web remained at two replicas and both R2
+archive groups had zero lag, but sync, analytics and ClickHouse sinks were stopped.
+
+At 16:16:54 UTC, a read-only PostgreSQL check showed the shared publication owner
+quiescent, its query terminal and its backend absent. Both sink groups were inactive:
+live commit 8,848,230/end 11,323,889/lag 2,475,659; history commit 6,174,509/end
+7,353,960/lag 1,179,451. The canonical failed jobs were rerun after confirming no
+overlapping release; that is operational recovery, not a durable correction.
+Attempt 2 passed the unchanged drain gate at 16:23:41 UTC and reached migrations;
+consumer restoration and the durable drain-check correction remain unresolved
+at this observation.
+No owner recovery, offset reset, timeout increase or manual service restoration
+was performed. Docker exposes task state through the stock
+[`service ps` formatter](https://docs.docker.com/reference/cli/docker/service/ps/).
+Proposed runbook improvement: distinguish a task-list/inspection race from an
+executor that has not stopped, and retain timestamped owner/quiescence evidence.
+
+At 16:32:20 UTC, both sink containers were healthy on revision `6b740c88d` and
+their commits had advanced to live 8,869,251 and history 6,190,257; archive lag
+remained zero. The canonical server job was still verifying restored services,
+and analytics reported starting. This establishes resumed sink flow, not a
+completed rollout, sustained net drain or catch-up ETA.
