@@ -37419,7 +37419,43 @@ Account sync remains unavailable. The direct next step is a new provider using
 the existing connection and climbing persistence contracts, after direction is
 confirmed and the research's authenticated-read, mapping, refresh, deletion, and
 erasure gaps are resolved. No runtime changes or resilience settings were made.
-Retrospective: checking implementation and registration established the gap;
-start similar investigations with `fix-provider` and the provider research.
+Retrospective: checking implementation, registration, and provider research
+established the gap before any deployment configuration changes were attempted.
 Proposed guide refinement: check whether a provider exists before investigating
 deployment secrets, and distinguish researched integrations from implemented ones.
+
+### Implementation follow-up
+
+The [BoardSesh provider](../src/providers/boardsesh.ts) now connects per-user
+email/password credentials through the existing climbing account helper. Both
+registries include it, and the shared catalogue supplies web/mobile connection
+instructions. A local real-registry check returned `visible: true`,
+`authType: credential`, and `validation: null` without application secrets.
+Complete per-board snapshots reconcile source removals only after all responses
+validate; see the [protocol and acceptance limits](boardsesh.md) and
+[real-Postgres regressions](../src/providers/boardsesh.integration.test.ts).
+
+Local final validation passed 24,460 unit/mobile tests (19 skipped), 48 focused
+Postgres/MSW integration cases, root/server/web/mobile typechecks, and
+`lint:sandbox`. Scoped mutation testing passed the unchanged 75% gate at
+79.15%; 44 mutations survived and five were uncovered. The initial 64.11% result
+prompted stronger boundary assertions and removal of redundant branches rather
+than a gate change. These results do not establish populated-account acceptance.
+
+Independent review also identified stale inferred attempt facts after status
+edits and response-content disclosure through native JSON parser errors. The
+[provider](../src/providers/boardsesh.ts) now retracts superseded source facts
+and reports sanitized decoding errors without retaining the original parser
+cause. [Database regressions](../src/providers/boardsesh.integration.test.ts)
+reproduced the flash-to-send edit failure before the fix; [unit
+regressions](../src/providers/boardsesh.test.ts) reproduced malformed login,
+refresh, and GraphQL disclosure before the fix. Both findings passed scoped
+re-review after RED/GREEN verification. Future provider checks should include
+edits that retract inferred facts and non-JSON credential/data responses.
+
+Production availability remains unresolved until the implementation is released;
+no deployment or real BoardSesh sign-in was performed. Existing credentials,
+snapshot persistence, queue serialization, and client forms kept the change
+within the current architecture. Future investigations should start with the
+implementation, registration, and provider-specific research; the proposed guide
+refinement above remains applicable.
