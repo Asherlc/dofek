@@ -71,8 +71,7 @@
     ".kilocode/**",
     ".qwen/**",
     ".windsurf/**",
-    ".agents/**",
-    "**/skills/stripe-projects"
+    ".agents/**"
   ],
   "mutator": {
     "excludedMutations": ["StringLiteral"]
