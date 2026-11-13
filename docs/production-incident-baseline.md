@@ -37552,3 +37552,9 @@ was performed. Docker exposes task state through the stock
 [`service ps` formatter](https://docs.docker.com/reference/cli/docker/service/ps/).
 Proposed runbook improvement: distinguish a task-list/inspection race from an
 executor that has not stopped, and retain timestamped owner/quiescence evidence.
+
+At 16:32:20 UTC, both sink containers were healthy on revision `6b740c88d` and
+their commits had advanced to live 8,869,251 and history 6,190,257; archive lag
+remained zero. The canonical server job was still verifying restored services,
+and analytics reported starting. This establishes resumed sink flow, not a
+completed rollout, sustained net drain or catch-up ETA.

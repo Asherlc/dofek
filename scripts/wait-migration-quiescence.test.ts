@@ -45,10 +45,11 @@ beforeEach(() => {
       return taskIds
         .map((id) => {
           const task = tasks.get(id);
+          if (!task) throw new Error(`Missing task fixture for ${id}`);
           return JSON.stringify({
             ID: id,
-            CurrentState: task?.Status.State ?? "shutdown",
-            DesiredState: task?.DesiredState ?? "shutdown",
+            CurrentState: task.Status.State,
+            DesiredState: task.DesiredState,
           });
         })
         .join("\n");
