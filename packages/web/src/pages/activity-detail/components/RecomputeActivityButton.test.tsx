@@ -94,7 +94,7 @@ function detailInvalidations() {
 }
 
 function recomputeButton(): HTMLButtonElement {
-  return screen.getByRole<HTMLButtonElement>("button", { name: /^Recomput/ });
+  return screen.getByRole<HTMLButtonElement>("button", { name: /^Recompute|^Recomputing/ });
 }
 
 function lastStatusQueryOptions(): {
