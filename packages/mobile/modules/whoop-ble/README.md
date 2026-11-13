@@ -169,7 +169,12 @@ precedes file cleanup. Within the store,
 before `BEGIN IMMEDIATE`, and `store_reset_stats`, `store_delete_samples`,
 `store_delete_batches`, `store_clear_binding` and `store_rotate_generation`
 precede the corresponding writes. `store_commit` precedes `COMMIT`;
-`store_completed` establishes that commit returned successfully. Failed writes
+`store_completed` establishes that commit returned successfully. `store_vacuum`
+precedes `VACUUM` and a truncating WAL checkpoint after that commit. The purge
+deletes rows with [`secure_delete`](https://www.sqlite.org/pragma.html#pragma_secure_delete)
+set to `FAST`, so SQLite does not rewrite each freed page through the WAL;
+[`VACUUM`](https://www.sqlite.org/lang_vacuum.html) then removes the freed pages
+and shrinks the file. Failed writes
 retain the existing rollback and error propagation, following SQLite's
 [transaction semantics](https://www.sqlite.org/lang_transaction.html).
 Each entry includes `isMainThread` and the current native `threadId`, captured at

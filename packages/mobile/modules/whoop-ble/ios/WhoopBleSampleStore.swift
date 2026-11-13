@@ -221,7 +221,22 @@ final class WhoopBleSampleStore {
     }
     /// Stage observers run inside the store lock and must not re-enter the store.
     func purge(onStage: (String) -> Void = { _ in }) throws {
-        try transaction(onStage: onStage) { try purgeLocked(onStage: onStage) }
+        try transaction(onStage: onStage) {
+            // secure_delete rewrites every freed page through the WAL, about the size of the whole queue.
+            // FAST frees them without writes; VACUUM then removes them from the file.
+            let secureDelete: Int = try field("secure_delete", in: rows("PRAGMA secure_delete").first ?? [:])
+            try execute("PRAGMA secure_delete = FAST")
+            defer { sqlite3_exec(database, "PRAGMA secure_delete = \(secureDelete)", nil, nil, nil) }
+            try purgeLocked(onStage: onStage)
+        }
+        onStage("store_vacuum")
+        try synchronized {
+            try execute("VACUUM")
+            guard let checkpoint = try rows("PRAGMA wal_checkpoint(TRUNCATE)").first,
+                  try field("busy", in: checkpoint) as Int == 0 else {
+                throw StoreError("WHOOP sample storage could not checkpoint the purged queue")
+            }
+        }
     }
 
     func advanceErasureCutoff(to date: Date) throws {

@@ -425,6 +425,32 @@ final class WhoopBleSampleStoreTests: XCTestCase {
 }
 
 extension WhoopBleSampleStoreTests {
+    func testPurgeWritesFewPagesAndLeavesNoFreedPagesUnderSecureDelete() throws {
+        let url = try directory()
+        let (store, probe) = try SQLiteWorkProbe.opening { try WhoopBleSampleStore(directory: url) }
+        try store.configure(owner)
+        try probe.executeFixture("PRAGMA secure_delete = ON")
+        for stream in WhoopUploadStream.allCases {
+            try seedPersistedSamples(10_000, stream: stream, second: 3, probe: probe)
+            XCTAssertNotNil(try store.reserve(stream: stream))
+        }
+        try probe.executeFixture("PRAGMA wal_checkpoint(TRUNCATE)")
+        let pages = try probe.integer("PRAGMA page_count")
+        let pageSize = try probe.integer("PRAGMA page_size")
+        let before = probe.cacheWrites
+
+        try store.purge()
+
+        XCTAssertLessThan((probe.cacheWrites - before) * 10, pages)
+        XCTAssertEqual(try probe.integer("PRAGMA freelist_count"), 0)
+        XCTAssertLessThan(try probe.integer("PRAGMA page_count") * 10, pages)
+        XCTAssertEqual(try probe.integer("PRAGMA secure_delete"), 1)
+        let file = try FileManager.default.attributesOfItem(atPath: url.appendingPathComponent("samples.sqlite").path)
+        XCTAssertLessThan(try XCTUnwrap(file[.size] as? Int) * 10, pages * pageSize)
+        XCTAssertEqual(try probe.integer("SELECT COUNT(*) FROM samples"), 0)
+        XCTAssertNil(try store.binding)
+    }
+
     func testPurgeIdentifiesFailedSqliteOperationAndRollsBackTheStore() throws {
         let failures = [
             ("""
