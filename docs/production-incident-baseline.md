@@ -37610,6 +37610,103 @@ remained zero. The canonical server job was still verifying restored services,
 and analytics reported starting. This establishes resumed sink flow, not a
 completed rollout, sustained net drain or catch-up ETA.
 
+## 2026-11-13 — Analytics scan work still limits Kafka catch-up
+
+The [batching release](https://github.com/Asherlc/dofek/actions/runs/43458032214/attempts/2)
+completed successfully, with the server stack finishing at 16:42:41 UTC and
+analytics reporting its first successful build at 16:44:57. High-volume serving
+ingestion remained delayed: between 16:32:20 and 17:10:29, the live sink consumed
+25,765 records while 54,931 arrived, increasing lag by 29,166 to 2,538,388.
+History lag was 1,141,380 and both matching R2 archive groups had zero lag.
+Timestamped native readings and Axiom metadata are retained in the operator's
+temporary backlog log; no individual health payload was selected.
+
+PostgreSQL showed both sinks waiting on the shared advisory lock held by the
+analytics build. That build runs ordered dbt phases with one thread under the
+existing publication owner. This was active processing, not evidence of an
+abandoned executor; builds reported success and no fatal application error was
+observed. Completed sink batches reached about 707 seconds, including ownership
+wait, while most recent live events were ordinary samples rather than deletions.
+
+Native `system.query_log` metadata since 16:30 showed three canonical-activity
+model writes reading 725,294,684 rows in 165,766 ms total, and three VO2 model
+writes reading 454,524,959 rows in 131,404 ms total. A non-executing EXPLAIN of
+the current compiled canonical-activity SELECT contained two `deduped_sensor`
+reads, 22 activity-source reads and 40 field-priority reads. The sensor table
+contained 118,674,815 physical rows. These are work and server-execution
+measurements, not an end-to-end speedup ratio. ClickHouse documents
+[query-log metrics](https://clickhouse.com/docs/operations/system-tables/query_log)
+and [non-executing query plans](https://clickhouse.com/docs/reference/statements/explain#explain-plan).
+
+The approved follow-up profiles and reduces existing model work while retaining
+the publication lock, erasure fences, processing-success gates and source
+semantics. The [plan](superpowers/plans/2026-11-13-analytics-build-work-reuse.md)
+first requires native regressions for repeated activity-level computation;
+runtime corrections and production qualification remain pending. The selected
+stock capability is [query-local CTE reuse](https://clickhouse.com/docs/reference/statements/select/with#materialized-common-table-expressions),
+which requires explicit feature context and native result/read/memory checks.
+Local Docker initially remained stopped as directed; the user later reauthorized
+local native validation. Existing GitHub CI still qualifies the production engine. No manual owner recovery, offset reset, analytics pause, new scheduler,
+timeout or retry was used. No catch-up ETA is supported by the observed net growth.
+
+Proposed runbook refinement: incremental output suppression does not establish
+bounded input work; inspect native reads and repeated plan branches before
+adding another read model or changing publication concurrency.
+
+The drain-check correction merged as `cf1c4e758` after successful PR and main CI.
+Its automatic release was skipped because main advanced during CI; the documented
+manual stack release selected the matching source ref and image.
+[Run 43478321512](https://github.com/Asherlc/dofek/actions/runs/43478321512)
+passed the normal drain gate at 18:16:23 UTC and then migrations. Full rollout
+and restored-source verification were still pending at this observation.
+
+The manual server release completed at 18:37:09 UTC. Web, worker, analytics and
+both serving sinks were verified healthy on `cf1c4e758`; analytics recorded a
+successful build at 18:36:53. A subsequent automatic
+[release of main](https://github.com/Asherlc/dofek/actions/runs/43486110079)
+started at 18:48 and quiesced consumers again; that separate rollout remained
+in progress at the next observation.
+
+The analytics [baseline CI](https://github.com/Asherlc/dofek/actions/runs/43483468401/job/132088054841)
+used ClickHouse 26.6.1.1193 and reproduced both scoped and unscoped excessive-read
+failures: 16,447 and 16,432 rows against the unchanged 13,312-row bound, after
+the result assertions passed. The correction materializes the existing canonical
+activity selection once within its query. Local native execution reduced reads
+to 8,233 and 8,221 with lower query memory; all 34 canonical tests then passed.
+A partial native query also needed the model's existing one-thread setting,
+which extraction had discarded. Earlier local whole-suite runs hit the server
+memory cap or slow fixture mutations; the precise contribution of other server
+allocations remains unqualified. No memory cap, timeout or retry was increased.
+Production-engine GREEN, review and actual whole-cycle net drain remain gates
+for the analytics correction in [PR #3305](https://github.com/Asherlc/dofek/pull/3305).
+
+The marker-only candidate then failed the same read bounds on 26.6 despite
+receiving the feature setting. The [upstream cross-UNION fix](https://github.com/ClickHouse/ClickHouse/pull/102107)
+explains the version difference: separate WITH copies were inlined in each
+UNION branch. A read-only plan of the actual compiled production query confirmed
+two sensor reads; giving the unchanged UNION a parent SELECT scope produced one
+shared materialization and one sensor read. This retains the existing engine and
+query-local reuse strategy. The scope correction still requires native semantic,
+read and memory qualification before release; the earlier local-only GREEN is
+not treated as a production pass.
+
+The scope candidate's [26.6 native shard](https://github.com/Asherlc/dofek/actions/runs/43494791068/job/132128082794)
+then passed all 34 canonical cases and all 687 shard tests. Scoped/unscoped reads
+fell to 8,233/8,221 and query memory to about 127.5/96.6 MB, compared with the
+same-engine baseline's 245.9/235.6 MB. These are fixture results; production
+capacity and actual net backlog drain remain unverified.
+
+The scope candidate's [unit job](https://github.com/Asherlc/dofek/actions/runs/43494791068/job/132125697825)
+then failed `pnpm exec vitest run --project unit --coverage` in the existing
+column-order regression: “Could not locate a final SELECT projection in
+deduped_activities.sql.” Its test helper required an explicit projection at
+column zero; the unchanged projection now sits inside the parent SELECT.
+This blocks merge qualification, with no production change from the candidate.
+The helper now reads the nested explicit projection while retaining the exact
+ordered-column comparison for all three models; runtime SQL and migration
+statements remain unchanged. All seven focused tests pass. Final-head CI remains
+a merge gate.
+
 ## 2026-11-13 — BoardSesh log metadata omitted from import and display
 
 Reported climbing cards showed “Climbing log”, no recorded location, no time,

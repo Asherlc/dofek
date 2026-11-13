@@ -5,7 +5,8 @@
     order_by='(user_id, activity_id)',
     query_settings={
         'max_threads': 1,
-        'join_use_nulls': 1
+        'join_use_nulls': 1,
+        'enable_materialized_cte': 1
     }
 ) }}
 
@@ -423,7 +424,7 @@ affected_member_ids AS (
 ),
 {% endif %}
 
-scoped_current_deduped_activities AS (
+scoped_current_deduped_activities AS MATERIALIZED (
     SELECT *
     FROM current_deduped_activities
     {% if activity_refresh_scoped %}
@@ -576,81 +577,85 @@ versioned_current_deduped_activities AS (
     CROSS JOIN refresh_clock
 )
 
-SELECT
-    activity_id,
-    provider_id,
-    assumeNotNull(user_id) AS user_id,
-    primary_activity_id,
-    canonical_type,
-    provider_type,
-    modality,
-    started_at,
-    ended_at,
-    source_name,
-    name,
-    notes,
-    timezone,
-    start_utc_offset_minutes,
-    end_utc_offset_minutes,
-    local_time_source,
-    raw,
-    source_synced_at,
-    source_providers,
-    source_external_ids,
-    absent_source_external_ids,
-    member_activity_ids,
-    representative_activity_id,
-    primary_provider_id,
-    primary_source_name,
-    origin_candidate_member_ids,
-    origin_evidence,
-    lifecycle_refresh_version AS refresh_version,
-    0 AS is_deleted,
-    lifecycle_refreshed_at AS refreshed_at,
-    primary_canonical_type
-FROM versioned_current_deduped_activities
-{% if is_incremental() %}
-WHERE has_changed = 1
-{% endif %}
+-- Keep both reconciliation branches in this parent query scope to share the CTE.
+SELECT *
+FROM (
+    SELECT
+        activity_id,
+        provider_id,
+        assumeNotNull(user_id) AS user_id,
+        primary_activity_id,
+        canonical_type,
+        provider_type,
+        modality,
+        started_at,
+        ended_at,
+        source_name,
+        name,
+        notes,
+        timezone,
+        start_utc_offset_minutes,
+        end_utc_offset_minutes,
+        local_time_source,
+        raw,
+        source_synced_at,
+        source_providers,
+        source_external_ids,
+        absent_source_external_ids,
+        member_activity_ids,
+        representative_activity_id,
+        primary_provider_id,
+        primary_source_name,
+        origin_candidate_member_ids,
+        origin_evidence,
+        lifecycle_refresh_version AS refresh_version,
+        0 AS is_deleted,
+        lifecycle_refreshed_at AS refreshed_at,
+        primary_canonical_type
+    FROM versioned_current_deduped_activities
+    {% if is_incremental() %}
+    WHERE has_changed = 1
+    {% endif %}
 
-{% if is_incremental() %}
-UNION ALL
+    {% if is_incremental() %}
+    UNION ALL
 
-SELECT
-    activity_id,
-    provider_id,
-    assumeNotNull(user_id) AS user_id,
-    primary_activity_id,
-    canonical_type,
-    provider_type,
-    modality,
-    started_at,
-    ended_at,
-    source_name,
-    name,
-    notes,
-    timezone,
-    start_utc_offset_minutes,
-    end_utc_offset_minutes,
-    local_time_source,
-    raw,
-    source_synced_at,
-    source_providers,
-    source_external_ids,
-    absent_source_external_ids,
-    member_activity_ids,
-    representative_activity_id,
-    primary_provider_id,
-    primary_source_name,
-    origin_candidate_member_ids,
-    origin_evidence,
-    greatest(
-        stale_deduped_activities.refresh_version + 1,
-        refresh_clock.refresh_version
-    ) AS refresh_version,
-    1 AS is_deleted,
-    refresh_clock.refreshed_at AS refreshed_at,
-    primary_canonical_type
-FROM stale_deduped_activities
-CROSS JOIN refresh_clock
-{% endif %}
+    SELECT
+        activity_id,
+        provider_id,
+        assumeNotNull(user_id) AS user_id,
+        primary_activity_id,
+        canonical_type,
+        provider_type,
+        modality,
+        started_at,
+        ended_at,
+        source_name,
+        name,
+        notes,
+        timezone,
+        start_utc_offset_minutes,
+        end_utc_offset_minutes,
+        local_time_source,
+        raw,
+        source_synced_at,
+        source_providers,
+        source_external_ids,
+        absent_source_external_ids,
+        member_activity_ids,
+        representative_activity_id,
+        primary_provider_id,
+        primary_source_name,
+        origin_candidate_member_ids,
+        origin_evidence,
+        greatest(
+            stale_deduped_activities.refresh_version + 1,
+            refresh_clock.refresh_version
+        ) AS refresh_version,
+        1 AS is_deleted,
+        refresh_clock.refreshed_at AS refreshed_at,
+        primary_canonical_type
+    FROM stale_deduped_activities
+    CROSS JOIN refresh_clock
+    {% endif %}
+)

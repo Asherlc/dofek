@@ -318,6 +318,16 @@ jobs:
         uses: ./.github/actions/setup-node-pnpm
       - name: Setup uv
         uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - name: Check ClickHouse migration column order regression
+        run: pnpm exec vitest run --project unit src/db/clickhouse-migrations/0067_repair_local_time_column_order.test.ts --retry=0
+      - name: Check deduped activity read model regression
+        run: pnpm exec vitest run --project integration src/db/deduped-activities-read-model.integration.test.ts --retry=0
+        env:
+          CLICKHOUSE_URL: http://default:${{ github.run_id }}@127.0.0.1:8123
+      - name: Check payload dbt microbatch tombstone regression
+        run: pnpm exec vitest run --project integration src/db/activity-payload-dbt-microbatch.integration.test.ts -t "does not append payload-free tombstones across an unchanged production dependency slice" --retry=0
+        env:
+          CLICKHOUSE_URL: http://default:${{ github.run_id }}@127.0.0.1:8123
       - name: Run lint policies
         run: pnpm lint
         env:
