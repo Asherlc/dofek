@@ -223,7 +223,6 @@ final class WhoopBleSampleStore {
     func purge(onStage: (String) -> Void = { _ in }) throws {
         try transaction(onStage: onStage) {
             // secure_delete rewrites every freed page through the WAL, about the size of the whole queue.
-            // FAST frees them without writes; VACUUM then removes them from the file.
             let secureDelete: Int = try field("secure_delete", in: rows("PRAGMA secure_delete").first ?? [:])
             try execute("PRAGMA secure_delete = FAST")
             defer { sqlite3_exec(database, "PRAGMA secure_delete = \(secureDelete)", nil, nil, nil) }

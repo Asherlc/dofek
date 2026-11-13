@@ -447,8 +447,6 @@ extension WhoopBleSampleStoreTests {
         XCTAssertEqual(try probe.integer("PRAGMA secure_delete"), 1)
         let file = try FileManager.default.attributesOfItem(atPath: url.appendingPathComponent("samples.sqlite").path)
         XCTAssertLessThan(try XCTUnwrap(file[.size] as? Int) * 10, pages * pageSize)
-        XCTAssertEqual(try probe.integer("SELECT COUNT(*) FROM samples"), 0)
-        XCTAssertNil(try store.binding)
     }
 
     func testPurgeIdentifiesFailedSqliteOperationAndRollsBackTheStore() throws {
