@@ -32,7 +32,11 @@ updates:
       - dependency-name: "python"
         versions: [">=3.14"]
   - package-ecosystem: "docker"
-    directory: "/packages/ml"
+    directories:
+      - "/packages/ml"
+      - "/.devcontainer"
+      - "/deploy/ota"
+      - "/deploy/pulsar"
     schedule:
       interval: "weekly"
     cooldown:
