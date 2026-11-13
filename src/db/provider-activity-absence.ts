@@ -116,6 +116,29 @@ async function confirmOriginPresence(
   `);
 }
 
+/**
+ * Clear absence for activities a provider lists again. The caller invalidates
+ * activity visibility caches after its transaction commits.
+ */
+export async function restoreProviderActivityPresence(
+  db: SyncDatabase,
+  presence: { userId: string; providerId: string; externalIds: readonly string[] },
+): Promise<void> {
+  const { userId, providerId, externalIds } = presence;
+  if (externalIds.length === 0) return;
+  await db.execute(sql`
+    UPDATE fitness.activity AS candidate
+    SET provider_absent_at = NULL, absence_provider_id = NULL
+    WHERE user_id = ${userId}
+      AND provider_id = ${providerId}
+      AND ${sourceIdentityMatchesSql(userId, externalIds)}
+      AND provider_absent_at IS NOT NULL
+      AND deleted_at IS NULL
+      AND ${originAllowsRestoreSql}
+  `);
+  await confirmOriginPresence(db, userId, providerId, externalIds);
+}
+
 /** Skip tombstoning Apple Health rows superseded by another identity in the current push. */
 export function appleHealthDuplicateTombstoneGuardSql(
   identities: readonly AppleHealthWorkoutIdentity[],
@@ -190,19 +213,11 @@ export async function reconcileProviderActivityAbsence(
       ? appleHealthDuplicateTombstoneGuardSql(reconciliation.presentAppleHealthIdentities ?? [])
       : sql``;
 
-  if (presentExternalIds.length > 0) {
-    await db.execute(sql`
-    UPDATE fitness.activity AS candidate
-    SET provider_absent_at = NULL, absence_provider_id = NULL
-    WHERE user_id = ${userId}
-      AND provider_id = ${reconciliation.providerId}
-      AND ${sourceIdentityMatchesSql(userId, presentExternalIds)}
-      AND provider_absent_at IS NOT NULL
-      AND deleted_at IS NULL
-      AND ${originAllowsRestoreSql}
-  `);
-    await confirmOriginPresence(db, userId, reconciliation.providerId, presentExternalIds);
-  }
+  await restoreProviderActivityPresence(db, {
+    userId,
+    providerId: reconciliation.providerId,
+    externalIds: presentExternalIds,
+  });
 
   await db.execute(sql`
     WITH linked_copies AS (
@@ -285,18 +300,10 @@ export async function markProviderActivityPresent(
   mark: ProviderActivityAbsenceMark,
 ): Promise<void> {
   const userId = resolveUserId(mark.userId);
-  await db.execute(sql`
-    UPDATE fitness.activity AS candidate
-    SET provider_absent_at = NULL, absence_provider_id = NULL
-    WHERE user_id = ${userId}
-      AND provider_id = ${mark.providerId}
-      AND ${sourceIdentityMatchesSql(userId, [mark.externalId])}
-      AND provider_absent_at IS NOT NULL
-      AND deleted_at IS NULL
-      AND ${originAllowsRestoreSql}
-  `);
-
-  await confirmOriginPresence(db, userId, mark.providerId, [mark.externalId]);
-
+  await restoreProviderActivityPresence(db, {
+    userId,
+    providerId: mark.providerId,
+    externalIds: [mark.externalId],
+  });
   await invalidateActivityVisibilityCaches(userId);
 }

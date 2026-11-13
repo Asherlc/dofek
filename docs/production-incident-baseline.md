@@ -37609,3 +37609,9 @@ their commits had advanced to live 8,869,251 and history 6,190,257; archive lag
 remained zero. The canonical server job was still verifying restored services,
 and analytics reported starting. This establishes resumed sink flow, not a
 completed rollout, sustained net drain or catch-up ETA.
+
+## 2026-11-13 — Climbing batch presence PR lacked orchestration coverage
+
+[PR #3300](https://github.com/Asherlc/dofek/pull/3300) reported `codecov/patch` failure at 73.33333% with four uncovered added lines in [climbing-log-sync.ts](../src/db/climbing-log-sync.ts). The existing helper tests exercised observation results and restore SQL separately, but no unit case executed the public batch writer that collects observed identities and restores them once. This blocked merge qualification; no production impact was established.
+
+The added [batch-writer tests](../src/db/climbing-log-sync.test.ts) cover multiple observed logs alongside a user-selected activity, restoration after all writes, and propagation of a failed restore. Both retained regressions fail against the pre-change writer. The correction adds tests only; coverage thresholds, SQL, and runtime behavior remain unchanged. Matching-head combined coverage and CI remain the release gates. For future batching changes, test the caller that collects and dispatches the batch as well as its individual helpers.

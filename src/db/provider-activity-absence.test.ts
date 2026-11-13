@@ -18,6 +18,7 @@ import {
   markProviderActivityAbsent,
   markProviderActivityPresent,
   reconcileProviderActivityAbsence,
+  restoreProviderActivityPresence,
 } from "./provider-activity-absence.ts";
 
 const userId = "00000000-0000-0000-0000-000000000001";
@@ -148,5 +149,32 @@ describe("provider activity absence cache invalidation", () => {
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith(`${userId}:training.`);
     expect(mockInvalidateByPrefix).toHaveBeenCalledWith(`${userId}:running.`);
     expect(mockInvalidateByPrefix).toHaveBeenCalledTimes(4);
+  });
+
+  it("restores every listed activity in one statement pair without invalidating caches", async () => {
+    await restoreProviderActivityPresence(makeMockDb(), {
+      userId,
+      providerId: "test-provider",
+      externalIds: ["first-activity", "second-activity"],
+    });
+
+    expect(mockExecute).toHaveBeenCalledTimes(2);
+    for (const [query] of mockExecute.mock.calls) {
+      expect(new PgDialect().sqlToQuery(query).params).toContainEqual([
+        "first-activity",
+        "second-activity",
+      ]);
+    }
+    expect(mockInvalidateByPrefix).not.toHaveBeenCalled();
+  });
+
+  it("skips presence SQL when no activities are listed", async () => {
+    await restoreProviderActivityPresence(makeMockDb(), {
+      userId,
+      providerId: "test-provider",
+      externalIds: [],
+    });
+
+    expect(mockExecute).not.toHaveBeenCalled();
   });
 });
