@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { formatDateTime } from "@dofek/format/format";
 import { render, screen } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import {
@@ -20,8 +21,7 @@ it("shows BoardSesh's recorded time in standalone log details", () => {
       })}
     />,
   );
-  expect(screen.getByText(/Nov 1, 2026/)).toBeTruthy();
-  expect(screen.getByText(/:\d{2}\s?[AP]M/)).toBeTruthy();
+  expect(screen.getByText(formatDateTime("2026-11-01T18:00:00Z"))).toBeTruthy();
 });
 
 it("renders the board and visited gym instead of the shared problem location", () => {

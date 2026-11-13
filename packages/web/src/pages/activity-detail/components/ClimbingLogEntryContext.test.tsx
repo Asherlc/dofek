@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { formatDateTime } from "@dofek/format/format";
 import { render, screen } from "@testing-library/react";
 import { expect, it } from "vitest";
 import {
@@ -17,8 +18,7 @@ it("shows the recorded climb time supplied by the server", () => {
       })}
     />,
   );
-  expect(screen.getByText(/Nov 1, 2026/)).toBeTruthy();
-  expect(screen.getByText(/:\d{2}\s?[AP]M/)).toBeTruthy();
+  expect(screen.getByText(formatDateTime("2026-11-01T17:00:00Z"))).toBeTruthy();
 });
 
 it("renders the recorded board with unknown angle units", () => {
