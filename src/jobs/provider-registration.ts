@@ -37,6 +37,7 @@ async function doRegisterProviders() {
       "moonboard",
       () => import("../providers/moonboard/provider.ts").then((m) => new m.MoonBoardProvider()),
     ],
+    ["boardsesh", () => import("../providers/boardsesh.ts").then((m) => new m.BoardSeshProvider())],
     ["wahoo", () => import("../providers/wahoo/provider.ts").then((m) => new m.WahooProvider())],
     ["withings", () => import("../providers/withings.ts").then((m) => new m.WithingsProvider())],
     ["peloton", () => import("../providers/peloton.ts").then((m) => new m.PelotonProvider())],

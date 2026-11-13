@@ -138,6 +138,9 @@ vi.mock("dofek/providers/kaya/provider", () => ({
 vi.mock("dofek/providers/zos-app/provider", () => ({
   ZosAppProvider: mockProviderConstructor("zos-app"),
 }));
+vi.mock("dofek/providers/boardsesh", () => ({
+  BoardSeshProvider: mockProviderConstructor("boardsesh"),
+}));
 
 describe("ensureProvidersRegistered failure path", () => {
   afterEach(() => {
@@ -174,10 +177,11 @@ describe("ensureProvidersRegistered failure path", () => {
     await ensureProvidersRegistered();
 
     const registeredIds = mockRegisterProvider.mock.calls.map(([provider]) => provider.id);
-    expect(registeredIds).toHaveLength(41);
+    expect(registeredIds).toHaveLength(42);
     expect(registeredIds).toEqual(
       expect.arrayContaining([
         "bodyspec",
+        "boardsesh",
         "cycling_analytics",
         "openbeta",
         "thecrag",

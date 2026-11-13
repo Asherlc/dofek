@@ -408,6 +408,7 @@ export function datasetsForProvider(
 }
 
 const PROVIDER_DATASET_CAPABILITIES: Readonly<Record<string, readonly ProcessingDatasetKey[]>> = {
+  boardsesh: ["activity", "training", "providers"],
   kilter: ["activity", "training", "providers"],
   tension: ["activity", "training", "providers"],
   grasshopper: ["activity", "training", "providers"],

@@ -598,6 +598,7 @@ describe("account-erasure remote snapshot persistence (integration)", () => {
     ["soill", "So iLL Board"],
     ["touchstone", "Touchstone Board"],
     ["aurora-board", "Aurora Board"],
+    ["boardsesh", "BoardSesh"],
   ])(
     "requires disconnecting an active %s session before account erasure",
     async (providerId, name) => {
