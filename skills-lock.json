@@ -1,12 +1,6 @@
 {
   "version": 1,
   "skills": {
-    "cloudflare": {
-      "source": "cloudflare/skills",
-      "sourceType": "github",
-      "skillPath": "skills/cloudflare/SKILL.md",
-      "computedHash": "a1646a6a2fb7cc683de5bf8357e5d6ae02db6fd0bf771d633c1890318e25bff2"
-    },
     "durable-objects": {
       "source": "cloudflare/skills",
       "sourceType": "github",
