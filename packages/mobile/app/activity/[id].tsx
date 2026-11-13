@@ -41,6 +41,7 @@ import {
 } from "../../components/activity/ActivityDetailCharts";
 import { ActivityDetailHeader } from "../../components/activity/ActivityDetailHeader";
 import { ActivityMetricSourcePicker } from "../../components/activity/ActivityMetricSourcePicker";
+import { RecomputeActivityButton } from "../../components/activity/RecomputeActivityButton";
 import { statsStyles, styles } from "../../components/activity/styles";
 import { useActivityMapHover } from "../../components/activity/useActivityMapHover";
 import { HrZonesChart, PowerZonesChart } from "../../components/activity/ZoneDistributionCharts";
@@ -305,7 +306,6 @@ export default function ActivityDetailScreen() {
   const trpcUtils = trpc.useUtils();
   const [exportingFormat, setExportingFormat] = useState<ActivityExportFormat | null>(null);
   const [exportModalVisible, setExportModalVisible] = useState(false);
-  const [isRecomputing, setIsRecomputing] = useState(false);
   const deleteMutation = trpc.activity.delete.useMutation({
     onSuccess: async () => {
       if (id) {
@@ -320,40 +320,6 @@ export default function ActivityDetailScreen() {
       router.back();
     },
   });
-  const recomputeMutation = trpc.activity.recompute.useMutation({
-    onSuccess: async () => {
-      if (!id) {
-        return;
-      }
-      setIsRecomputing(true);
-      try {
-        await Promise.all([
-          trpcUtils.activity.byId.invalidate({ id }),
-          trpcUtils.activity.stream.invalidate({ id, maxPoints: 200 }),
-          trpcUtils.activity.heartRateContext.invalidate({ id }),
-          trpcUtils.activity.hrZones.invalidate({ id }),
-          trpcUtils.activity.powerZones.invalidate({ id }),
-          trpcUtils.activity.powerWork.invalidate({ id }),
-          trpcUtils.activity.strengthExercises.invalidate({ id }),
-          trpcUtils.activity.hangboardDetails.invalidate({ id }),
-          trpcUtils.activity.list.invalidate(),
-          trpcUtils.calendar.weekListV2.invalidate(),
-          trpcUtils.calendar.activityOverview.invalidate(),
-        ]);
-      } finally {
-        setIsRecomputing(false);
-      }
-    },
-    onError: (error) => {
-      setIsRecomputing(false);
-      captureException(error);
-      Alert.alert(
-        "Recompute Failed",
-        userFacingErrorMessage(error, "Unable to recompute activity."),
-      );
-    },
-  });
-
   const handleDelete = () => {
     Alert.alert(
       "Delete Activity",
@@ -606,11 +572,6 @@ export default function ActivityDetailScreen() {
   const handleExport = () => {
     if (!id || !sessionToken) return;
     setExportModalVisible(true);
-  };
-
-  const handleRecompute = () => {
-    if (!id) return;
-    recomputeMutation.mutate({ id });
   };
 
   const handleExportFormatSelect = (format: ActivityExportFormat) => {
@@ -1032,25 +993,7 @@ export default function ActivityDetailScreen() {
         </View>
       )}
 
-      <Pressable
-        onPress={handleRecompute}
-        disabled={recomputeMutation.isPending || isRecomputing}
-        accessibilityRole="button"
-        accessibilityLabel="Recompute activity"
-        accessibilityState={{
-          busy: recomputeMutation.isPending || isRecomputing,
-          disabled: recomputeMutation.isPending || isRecomputing,
-        }}
-        style={({ pressed }) => [
-          styles.recomputeButton,
-          pressed && styles.recomputeButtonPressed,
-          (recomputeMutation.isPending || isRecomputing) && styles.recomputeButtonDisabled,
-        ]}
-      >
-        <Text style={styles.recomputeButtonText}>
-          {recomputeMutation.isPending || isRecomputing ? "Recomputing..." : "Recompute"}
-        </Text>
-      </Pressable>
+      {id ? <RecomputeActivityButton key={`recompute-${id}`} activityId={id} /> : null}
 
       <Pressable
         onPress={handleExport}

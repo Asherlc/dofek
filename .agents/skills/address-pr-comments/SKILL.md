@@ -9,10 +9,17 @@ Review every actionable comment on the current PR. That includes unresolved inli
 
 ## Current state
 
-- Branch: !`git branch --show-current`
-- Status: !`git status --short`
-- Repo: !`gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null || echo "unknown"`
-- PR: !`gh pr view --json number,url -q '"#\(.number) \(.url)"' 2>/dev/null || echo "no PR found"`
+Run these commands to collect the current branch, working tree status, repository,
+and PR before reviewing feedback:
+
+```bash
+rtk git branch --show-current
+rtk git status --short
+rtk gh repo view --json nameWithOwner -q .nameWithOwner
+rtk gh pr view --json number,url
+```
+
+If there is no PR for the branch, report that and stop.
 
 ## Steps
 

@@ -86,11 +86,29 @@ async function scheduleActivityRestoreAnalyticsRefresh(
   }
 }
 
-async function scheduleActivityRecomputeAnalyticsRefresh(
+const activityAnalyticsJobStatusSchema = z.object({
+  status: z.enum(["pending", "completed", "failed"]),
+  error: z.string().nullable(),
+});
+
+async function getActivityAnalyticsJobStatus(
   userId: string,
-  activityIds: string[],
-): Promise<void> {
-  await enqueueActivityRecomputeAnalyticsRefresh(userId, activityIds);
+  jobId: string,
+  type: "activity-restore-analytics-refresh" | "activity-recompute-analytics-refresh",
+  messages: { unavailable: string; failed: string },
+): Promise<z.infer<typeof activityAnalyticsJobStatusSchema>> {
+  const job = await getActivityDeleteAnalyticsQueue().getJob(jobId);
+  if (!job || job.data.userId !== userId || job.data.type !== type) {
+    throw new TRPCError({ code: "NOT_FOUND", message: messages.unavailable });
+  }
+  const state = await job.getState();
+  if (state === "unknown") {
+    throw new TRPCError({ code: "NOT_FOUND", message: messages.unavailable });
+  }
+  return {
+    status: state === "completed" || state === "failed" ? state : "pending",
+    error: state === "failed" ? messages.failed : null,
+  };
 }
 
 export interface StrengthExerciseDetail {
@@ -461,9 +479,12 @@ export const activityRouter = router({
             return memberActivityIds;
           },
         );
-        await scheduleActivityRecomputeAnalyticsRefresh(ctx.userId, memberActivityIds);
+        const analyticsJobId = await enqueueActivityRecomputeAnalyticsRefresh(
+          ctx.userId,
+          memberActivityIds,
+        );
         await invalidateActivityListCaches(ctx.userId);
-        return { success: true };
+        return { success: true, analyticsJobId };
       } catch (error) {
         if (error instanceof TRPCError) {
           throw error;
@@ -567,7 +588,7 @@ export const activityRouter = router({
             return repo.mergeActivities(input.ids);
           },
         );
-        await scheduleActivityRecomputeAnalyticsRefresh(ctx.userId, [
+        await enqueueActivityRecomputeAnalyticsRefresh(ctx.userId, [
           ...new Set([...merged.memberActivityIds, ...merged.affectedGroupIds]),
         ]);
         await invalidateActivityListCaches(ctx.userId);
@@ -636,39 +657,26 @@ export const activityRouter = router({
     }),
   restoreStatus: protectedProcedure
     .input(z.object({ jobId: z.string().min(1).max(200) }))
-    .output(
-      z.object({
-        status: z.enum(["pending", "completed", "failed"]),
-        error: z.string().nullable(),
+    .output(activityAnalyticsJobStatusSchema)
+    .query(({ ctx, input }) =>
+      getActivityAnalyticsJobStatus(ctx.userId, input.jobId, "activity-restore-analytics-refresh", {
+        unavailable:
+          "Restore refresh status is unavailable. Reload the activity to check its charts.",
+        failed: "Activity restored, but refreshing charts failed. Use Recompute to retry.",
       }),
-    )
-    .query(async ({ ctx, input }) => {
-      const job = await getActivityDeleteAnalyticsQueue().getJob(input.jobId);
-      if (
-        !job ||
-        job.data.userId !== ctx.userId ||
-        job.data.type !== "activity-restore-analytics-refresh"
-      ) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message:
-            "Restore refresh status is unavailable. Reload the activity to check its charts.",
-        });
-      }
-      const state = await job.getState();
-      if (state === "unknown") {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message:
-            "Restore refresh status is unavailable. Reload the activity to check its charts.",
-        });
-      }
-      return {
-        status: state === "completed" || state === "failed" ? state : "pending",
-        error:
-          state === "failed"
-            ? "Activity restored, but refreshing charts failed. Use Recompute to retry."
-            : null,
-      };
-    }),
+    ),
+  recomputeStatus: protectedProcedure
+    .input(z.object({ jobId: z.string().min(1).max(200) }))
+    .output(activityAnalyticsJobStatusSchema)
+    .query(({ ctx, input }) =>
+      getActivityAnalyticsJobStatus(
+        ctx.userId,
+        input.jobId,
+        "activity-recompute-analytics-refresh",
+        {
+          unavailable: "Recompute status is unavailable. Reload the activity to check its metrics.",
+          failed: "Recomputing this activity failed. Use Recompute to try again.",
+        },
+      ),
+    ),
 });

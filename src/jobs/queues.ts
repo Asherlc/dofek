@@ -683,11 +683,21 @@ export async function enqueueActivityRecomputeAnalyticsRefresh(
   userId: string,
   activityIds: string[],
   queue: Queue<ActivityAnalyticsJobData> = getActivityDeleteAnalyticsQueue(),
-): Promise<void> {
+): Promise<string | null> {
   const uniqueActivityIds = [...new Set(activityIds)];
-  if (uniqueActivityIds.length === 0) return;
+  if (uniqueActivityIds.length === 0) return null;
 
-  await queue.add(
+  // BullMQ ignores an add whose custom id already exists, so a retained terminal
+  // job must go before a new recompute can run. An unfinished job stays and
+  // deduplicates the request.
+  const jobId = activityRecomputeAnalyticsJobId(userId, uniqueActivityIds);
+  const previousJob = await queue.getJob(jobId);
+  const previousState = await previousJob?.getState();
+  if (previousState === "completed" || previousState === "failed") {
+    await queue.remove(jobId);
+  }
+
+  const job = await queue.add(
     ACTIVITY_RECOMPUTE_ANALYTICS_JOB_NAME,
     {
       type: "activity-recompute-analytics-refresh",
@@ -695,13 +705,14 @@ export async function enqueueActivityRecomputeAnalyticsRefresh(
       activityIds: uniqueActivityIds,
     },
     {
-      removeOnComplete: true,
+      removeOnComplete: { age: 604_800, count: 1_000 },
       removeOnFail: { age: 604_800, count: 100 },
       attempts: 5,
       backoff: { type: "fixed", delay: 30_000 },
-      jobId: activityRecomputeAnalyticsJobId(userId, uniqueActivityIds),
+      jobId,
     },
   );
+  return job.id ?? null;
 }
 
 export async function enqueueDebouncedPostSyncMaintenance(
