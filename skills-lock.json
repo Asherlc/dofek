@@ -1,12 +1,6 @@
 {
   "version": 1,
   "skills": {
-    "durable-objects": {
-      "source": "cloudflare/skills",
-      "sourceType": "github",
-      "skillPath": "skills/durable-objects/SKILL.md",
-      "computedHash": "72efa2277fea08f43b393c74abaacc9fa575e20bc63bdc9d46829b8a39352852"
-    },
     "sandbox-sdk": {
       "source": "cloudflare/skills",
       "sourceType": "github",
