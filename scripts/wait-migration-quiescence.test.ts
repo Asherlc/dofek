@@ -41,10 +41,17 @@ beforeEach(() => {
       ]);
     }
     if (arguments_[0] === "service" && arguments_[1] === "ps") {
-      return (services.get(arguments_.at(-1) ?? "")?.tasks ?? []).join("\n");
-    }
-    if (arguments_[0] === "inspect") {
-      return JSON.stringify(arguments_.slice(3).map((id: string) => tasks.get(id)));
+      const taskIds = services.get(arguments_.at(-1) ?? "")?.tasks ?? [];
+      return taskIds
+        .map((id) => {
+          const task = tasks.get(id);
+          return JSON.stringify({
+            ID: id,
+            CurrentState: task?.Status.State ?? "shutdown",
+            DesiredState: task?.DesiredState ?? "shutdown",
+          });
+        })
+        .join("\n");
     }
     throw new Error(`Unexpected Docker command: ${arguments_.join(" ")}`);
   });
@@ -56,6 +63,36 @@ afterEach(() => {
 });
 
 describe("migration service quiescence", () => {
+  it("waits for a running task marked for removal to disappear from the next snapshot", async () => {
+    const snapshots = new Map<string, number>();
+    docker.mockImplementation((_command, arguments_) => {
+      if (!Array.isArray(arguments_)) throw new Error("Expected Docker arguments");
+      if (arguments_[0] === "service" && arguments_[1] === "inspect") {
+        return '[{"Spec":{"Mode":{"Replicated":{"Replicas":0}}}}]';
+      }
+      if (arguments_[0] === "service" && arguments_[1] === "ps") {
+        if (arguments_.includes("--format")) {
+          const serviceName = arguments_.at(-1) ?? "";
+          const snapshotCount = (snapshots.get(serviceName) ?? 0) + 1;
+          snapshots.set(serviceName, snapshotCount);
+          return serviceName === "dofek_worker" && snapshotCount === 1
+            ? '{"ID":"running-task","CurrentState":"Running 3 minutes ago","DesiredState":"Remove"}'
+            : "";
+        }
+        return "running-task";
+      }
+      if (arguments_[0] === "inspect") {
+        throw new Error("Error response from daemon: task running-task not found");
+      }
+      throw new Error(`Unexpected Docker command: ${arguments_.join(" ")}`);
+    });
+
+    const waiting = waitForMigrationQuiescence("dofek", "rolling");
+    await vi.advanceTimersByTimeAsync(5_000);
+    await expect(waiting).resolves.toBeUndefined();
+    expect([...snapshots.entries()]).toEqual(consumers.map((consumer) => [`dofek_${consumer}`, 2]));
+  });
+
   it("checks the worker and every CDC consumer in rolling mode", async () => {
     const terminalStates = ["shutdown", "complete", "failed", "rejected", "remove"];
     for (const [index, state] of terminalStates.entries()) {
@@ -69,6 +106,11 @@ describe("migration service quiescence", () => {
       docker.mock.calls
         .filter(([, args]) => Array.isArray(args) && args[0] === "service" && args[1] === "inspect")
         .map(([, args]) => (Array.isArray(args) ? args[2] : undefined)),
+    ).toEqual(consumers.map((consumer) => `dofek_${consumer}`));
+    expect(
+      docker.mock.calls
+        .filter(([, args]) => Array.isArray(args) && args[0] === "service" && args[1] === "ps")
+        .map(([, args]) => (Array.isArray(args) ? args.at(-1) : undefined)),
     ).toEqual(consumers.map((consumer) => `dofek_${consumer}`));
   });
 
@@ -96,7 +138,7 @@ describe("migration service quiescence", () => {
     expect(finished).toBe(false);
     expect(docker).toHaveBeenCalledWith(
       "docker",
-      ["service", "ps", "--quiet", "--no-trunc", `dofek_${consumer}`],
+      ["service", "ps", "--no-trunc", "--format", "{{json .}}", `dofek_${consumer}`],
       expect.any(Object),
     );
     recordTask("draining-task", "shutdown");
@@ -146,19 +188,36 @@ describe("migration service quiescence", () => {
     },
   );
 
-  it("rejects task inspection that omits a task returned by service ps", async () => {
-    services.set("dofek_worker", { tasks: ["missing-task"] });
-    recordTask("missing-task", "shutdown");
-    docker.mockImplementation((command, arguments_, options) => {
-      if (Array.isArray(arguments_) && arguments_[0] === "inspect") return "[]";
-      if (Array.isArray(arguments_) && arguments_[1] === "inspect") {
+  it.each([
+    "not-json",
+    '{"CurrentState":"Running"}',
+    '{"ID":"missing-state"}',
+    '{"ID":"unknown-state","CurrentState":"FutureState"}',
+  ])("rejects malformed task snapshot evidence %s", async (evidence) => {
+    docker.mockImplementation((_command, arguments_) => {
+      if (!Array.isArray(arguments_)) throw new Error("Expected Docker arguments");
+      if (arguments_[0] === "service" && arguments_[1] === "inspect") {
         return '[{"Spec":{"Mode":{"Replicated":{"Replicas":0}}}}]';
       }
-      if (Array.isArray(arguments_) && arguments_[1] === "ps") return "missing-task";
-      throw new Error(`Unexpected Docker command ${command} ${arguments_} ${options}`);
+      if (arguments_[0] === "service" && arguments_[1] === "ps") return evidence;
+      throw new Error(`Unexpected Docker command: ${arguments_.join(" ")}`);
+    });
+    await expect(waitForMigrationQuiescence("dofek", "rolling")).rejects.toThrow();
+  });
+
+  it("fails loudly when Docker cannot read a required task snapshot", async () => {
+    docker.mockImplementation((_command, arguments_) => {
+      if (!Array.isArray(arguments_)) throw new Error("Expected Docker arguments");
+      if (arguments_[0] === "service" && arguments_[1] === "inspect") {
+        return '[{"Spec":{"Mode":{"Replicated":{"Replicas":0}}}}]';
+      }
+      if (arguments_[0] === "service" && arguments_[1] === "ps") {
+        throw new Error("Error response from daemon: cannot list service tasks");
+      }
+      throw new Error(`Unexpected Docker command: ${arguments_.join(" ")}`);
     });
     await expect(waitForMigrationQuiescence("dofek", "rolling")).rejects.toThrow(
-      /dofek_worker.*missing-task/,
+      "Error response from daemon: cannot list service tasks",
     );
   });
 

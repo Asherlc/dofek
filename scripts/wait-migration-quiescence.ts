@@ -32,31 +32,27 @@ const serviceInspectionSchema = z.tuple([
       .optional(),
   }),
 ]);
-const taskInspectionsSchema = z.array(
-  z.object({
-    ID: z.string().min(1),
-    Status: z.object({
-      State: z.enum([
-        "new",
-        "allocated",
-        "pending",
-        "assigned",
-        "accepted",
-        "preparing",
-        "ready",
-        "starting",
-        "running",
-        "complete",
-        "shutdown",
-        "failed",
-        "rejected",
-        "remove",
-        "orphaned",
-      ]),
-    }),
-  }),
-);
-
+const taskStateSchema = z.enum([
+  "new",
+  "allocated",
+  "pending",
+  "assigned",
+  "accepted",
+  "preparing",
+  "ready",
+  "starting",
+  "running",
+  "complete",
+  "shutdown",
+  "failed",
+  "rejected",
+  "remove",
+  "orphaned",
+]);
+const taskSnapshotSchema = z.object({
+  ID: z.string().min(1),
+  CurrentState: z.string().min(1),
+});
 function inspectService(serviceName: string, deadline: number): string[] {
   const docker = (arguments_: string[]) =>
     execFileSync("docker", arguments_, {
@@ -77,22 +73,19 @@ function inspectService(serviceName: string, deadline: number): string[] {
   ) {
     throw new Error(`${serviceName} cannot quiesce while its update state is ${updateState}.`);
   }
-  const taskIds = docker(["service", "ps", "--quiet", "--no-trunc", serviceName])
-    .split(/\s+/)
-    .filter(Boolean);
-  if (taskIds.length === 0) return [];
-  const tasks = taskInspectionsSchema.parse(
-    JSON.parse(docker(["inspect", "--type", "task", ...taskIds])),
-  );
-  const observedIds = new Set(tasks.map((task) => task.ID));
-  if (tasks.length !== taskIds.length || taskIds.some((id) => !observedIds.has(id))) {
-    throw new Error(
-      `${serviceName} task inspection did not return every task: ${taskIds.join(", ")}`,
-    );
-  }
+  const tasks = docker(["service", "ps", "--no-trunc", "--format", "{{json .}}", serviceName])
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map((line) => {
+      const task = taskSnapshotSchema.parse(JSON.parse(line));
+      const state = taskStateSchema.parse(
+        task.CurrentState.trim().split(/\s+/, 1)[0]?.toLowerCase(),
+      );
+      return { ID: task.ID, State: state };
+    });
   return tasks
-    .filter((task) => !TERMINAL_TASK_STATES.has(task.Status.State))
-    .map((task) => `${serviceName}: ${task.ID}=${task.Status.State}`);
+    .filter((task) => !TERMINAL_TASK_STATES.has(task.State))
+    .map((task) => `${serviceName}: ${task.ID}=${task.State}`);
 }
 
 export async function waitForMigrationQuiescence(
