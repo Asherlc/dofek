@@ -224,6 +224,20 @@ describe("ActivitiesScreen", () => {
     expect(screen.getByRole("button", { name: /^Select Running,/ })).toBeDefined();
   });
 
+  it("labels an unknown duration as unavailable in the text and the accessible name", () => {
+    mockQuery = activityListQuery([
+      activity({ name: "Kilter climbing", activityType: "climbing", durationMin: null }),
+    ]);
+
+    render(<ActivitiesScreen />);
+
+    expect(screen.getByText(/· Duration unavailable$/)).toBeDefined();
+    expect(screen.queryByText(/· --$/)).toBeNull();
+    const row = screen.getByRole("button", { name: /^Open Kilter climbing,/ });
+    expect(row.getAttribute("aria-label")).toContain(", Duration unavailable,");
+    expect(row.getAttribute("aria-label")).not.toContain("--");
+  });
+
   it("shows one downloaded photo for activities without a map", () => {
     mockQuery = activityListQuery([activity({ location: null })]);
     mockImagesQuery.mockReturnValue({
