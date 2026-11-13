@@ -124,6 +124,30 @@ describe("provider auth modals", () => {
     });
   });
 
+  it("shows BoardSesh password guidance and submits the user's email", async () => {
+    render(
+      <CredentialAuthModal
+        providerId="boardsesh"
+        providerName="BoardSesh"
+        onClose={vi.fn()}
+        onSuccess={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/Apple\/Google-only accounts need a BoardSesh password/)).toBeTruthy();
+    fireEvent.change(screen.getByPlaceholderText("Email"), {
+      target: { value: "  climber@example.com  " },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Password"), { target: { value: "secret" } });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in to BoardSesh" }));
+    await waitFor(() =>
+      expect(credentialSignIn).toHaveBeenCalledWith({
+        providerId: "boardsesh",
+        username: "climber@example.com",
+        password: "secret",
+      }),
+    );
+  });
+
   it("uses a distinct disabled treatment and guidance until credentials are entered", () => {
     render(
       <CredentialAuthModal

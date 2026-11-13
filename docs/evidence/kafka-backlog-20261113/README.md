@@ -111,3 +111,19 @@ timeout or production behavior change was made to obtain this result.
 All seven identity cases passed in the preceding combined run. Qualification
 through the real publication owner, whole-repository checks, CI and production
 rollout remain pending. These passing local results do not establish catch-up.
+
+## Validation environment update
+
+The local full unit/mobile process ended without a completion report. A
+standalone 1,823-event owner comparison terminated with `Connection terminated
+unexpectedly` from its local PostgreSQL client before producing comparative
+results. Neither attempt counts as passing evidence. Docker was subsequently
+unavailable locally; its socket was absent. The operator directed that local
+Docker remain stopped and validation continue through the existing
+[GitHub CI workflow](../../../.github/workflows/ci.yml).
+
+Required unit/mobile, native publication-owner and EOF/error regressions remain
+merge gates in CI. The standalone comparison remains incomplete; no owner-level
+speedup is claimed. Post-release observations must verify actual production
+batch work and sustained net drain. No new benchmark runner, workflow, timeout,
+retry or production recovery action was added to replace the interrupted probe.

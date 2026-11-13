@@ -39,6 +39,7 @@ const mockProviders = {
   "amazfit-zepp": { id: "amazfit-zepp" },
   "kaya-export": { id: "kaya-export" },
   "zos-app": { id: "zos-app" },
+  boardsesh: { id: "boardsesh" },
 };
 
 function mockProviderConstructor(provider: { id: string }) {
@@ -137,6 +138,9 @@ vi.mock("../providers/kaya/provider.ts", () => ({
 vi.mock("../providers/zos-app/provider.ts", () => ({
   ZosAppProvider: mockProviderConstructor(mockProviders["zos-app"]),
 }));
+vi.mock("../providers/boardsesh.ts", () => ({
+  BoardSeshProvider: mockProviderConstructor(mockProviders.boardsesh),
+}));
 
 // The real constructor verifies theCrag exposes its per-user auth contract.
 const PROVIDER_COUNT = Object.keys(mockProviders).length + 11;
@@ -176,6 +180,7 @@ describe("provider-registration", () => {
         "crimpd",
         "eight-a",
         "moonboard",
+        "boardsesh",
       ]),
     );
   });

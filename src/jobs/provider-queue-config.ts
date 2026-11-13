@@ -61,6 +61,7 @@ const PROVIDER_QUEUE_CONFIGS: ReadonlyMap<string, ProviderQueueConfig> = new Map
   ["soill", { concurrency: 1, syncTier: "daily" }],
   ["touchstone", { concurrency: 1, syncTier: "daily" }],
   ["aurora-board", { concurrency: 1, syncTier: "daily" }],
+  ["boardsesh", { concurrency: 1, syncTier: "daily" }],
   // ── Providers with documented rate limits ──
   // Strava: 100 req/15min (using 90 for safety margin)
   ["strava", realtimeProvider(2, { max: 90, duration: 15 * 60_000 })],

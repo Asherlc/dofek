@@ -74,6 +74,14 @@ Files: same existing sink and integration test; reuse Task 1 interfaces.
 
 ## Task 3: Qualify, document, review and release
 
+Operator validation update: the local standalone owner comparison lost its
+PostgreSQL connection and produced no result. The operator then directed that
+local Docker remain stopped and validation continue through GitHub CI. Use the
+existing CI publication/owner regression suites and post-release production
+observations; retain the incomplete standalone comparison as a limitation.
+Do not add a replacement benchmark workflow or claim an unmeasured owner-level
+speedup. The original intended comparison below is not recorded as completed.
+
 - Qualify a synthetic 1,823-delete run matching the observed batch size, with
   real ClickHouse and the real ownership adapter where feasible. Compare native
   reads/requests and elapsed time against the original source; preserve a clean

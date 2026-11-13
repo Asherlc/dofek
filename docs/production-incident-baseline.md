@@ -37440,3 +37440,90 @@ Runbook follow-up: check committed-offset deltas and publication-lock ownership,
 then use [query-log work metrics](https://clickhouse.com/docs/operations/system-tables/query_log)
 and [batching guidance](https://clickhouse.com/docs/optimize/bulk-inserts) to
 qualify a fix rather than infer flow from readiness alone.
+
+The standalone local owner comparison terminated on a PostgreSQL connection
+error without comparative results, and the full local unit/mobile run ended
+without a completion report. Local Docker became unavailable. The operator
+directed keeping it stopped and continuing validation through existing GitHub
+CI. Those attempts are not counted as passing evidence; see the
+[validation update](evidence/kafka-backlog-20261113/README.md#validation-environment-update).
+No production action, retry or timeout change resulted from this interruption.
+
+## 2026-11-12 — BoardSesh absent from provider list
+
+The user reported that BoardSesh was missing from available providers. Repository
+inspection found protocol research only: [the research](boardsesh.md) explicitly
+states that no provider was implemented, and the [server registration
+list](../packages/server/src/routers/sync-helpers.ts) has no BoardSesh entry.
+There is no BoardSesh validation failure to repair. Read-only Swarm inspection
+showed both web replicas running; the connected provider-list tool required
+reauthentication, so no authenticated live provider response was obtained.
+No failing application command or fatal application log was established.
+
+Account sync remains unavailable. The direct next step is a new provider using
+the existing connection and climbing persistence contracts, after direction is
+confirmed and the research's authenticated-read, mapping, refresh, deletion, and
+erasure gaps are resolved. No runtime changes or resilience settings were made.
+Retrospective: checking implementation, registration, and provider research
+established the gap before any deployment configuration changes were attempted.
+Proposed guide refinement: check whether a provider exists before investigating
+deployment secrets, and distinguish researched integrations from implemented ones.
+
+### Implementation follow-up
+
+The [BoardSesh provider](../src/providers/boardsesh.ts) now connects per-user
+email/password credentials through the existing climbing account helper. Both
+registries include it, and the shared catalogue supplies web/mobile connection
+instructions. A local real-registry check returned `visible: true`,
+`authType: credential`, and `validation: null` without application secrets.
+Complete per-board snapshots reconcile source removals only after all responses
+validate; see the [protocol and acceptance limits](boardsesh.md) and
+[real-Postgres regressions](../src/providers/boardsesh.integration.test.ts).
+
+Local final validation passed 24,460 unit/mobile tests (19 skipped), 48 focused
+Postgres/MSW integration cases, root/server/web/mobile typechecks, and
+`lint:sandbox`. Scoped mutation testing passed the unchanged 75% gate at
+79.15%; 44 mutations survived and five were uncovered. The initial 64.11% result
+prompted stronger boundary assertions and removal of redundant branches rather
+than a gate change. These results do not establish populated-account acceptance.
+
+Independent review also identified stale inferred attempt facts after status
+edits and response-content disclosure through native JSON parser errors. The
+[provider](../src/providers/boardsesh.ts) now retracts superseded source facts
+and reports sanitized decoding errors without retaining the original parser
+cause. [Database regressions](../src/providers/boardsesh.integration.test.ts)
+reproduced the flash-to-send edit failure before the fix; [unit
+regressions](../src/providers/boardsesh.test.ts) reproduced malformed login,
+refresh, and GraphQL disclosure before the fix. Both findings passed scoped
+re-review after RED/GREEN verification. Future provider checks should include
+edits that retract inferred facts and non-JSON credential/data responses.
+
+Production availability remains unresolved until the implementation is released;
+no deployment or real BoardSesh sign-in was performed. Existing credentials,
+snapshot persistence, queue serialization, and client forms kept the change
+within the current architecture. Future investigations should start with the
+implementation, registration, and provider-specific research; the proposed guide
+refinement above remains applicable.
+
+### PR validation follow-up
+
+[PR #3294](https://github.com/Asherlc/dofek/pull/3294) initially failed
+`pnpm exec cspell --no-progress`: an unknown-word diagnostic named the
+malformed-response canary. Replacing it with `PRIVATE7` preserved the privacy regression;
+the longer marker then required Biome to wrap two assertions. Full lint and
+spell check passed after formatting, and all checks passed on commit
+[`46b2fcc33`](https://github.com/Asherlc/dofek/commit/46b2fcc33e0e8b53e94c036316782f216f225f14).
+No application outage or production change resulted. Run formatting and spell
+check together after fixture-text edits to avoid separate CI failures.
+
+A subsequent local full unit/mobile run passed 24,454 tests but timed out in
+three tests and one suite setup; provider database setup also exceeded its
+unchanged 120-second hook limit. Docker statistics showed many active workspace
+services, but no blocked PostgreSQL session was observed afterward. The exact
+resource bottleneck remains unproven. All 70 tests in the four timed-out unit
+files and all 15 provider database tests subsequently passed in isolated runs.
+The new SQL schemas initially rejected a nullable attempt index and the fixed
+test user identifier; matching the actual database result types corrected both.
+No timeouts, retries, test exclusions, or runtime
+resilience settings were changed. Review fixes also strengthened tombstone
+identity assertions and parsed SQL results with the existing Zod helper.

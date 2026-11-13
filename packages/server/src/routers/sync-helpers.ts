@@ -63,6 +63,7 @@ async function doRegisterProviders() {
     ["crimpd", () => import("dofek/providers/crimpd").then((m) => new m.CrimpdProvider())],
     ["eight-a", () => import("dofek/providers/eight-a").then((m) => new m.EightAProvider())],
     ["moonboard", () => import("dofek/providers/moonboard").then((m) => new m.MoonBoardProvider())],
+    ["boardsesh", () => import("dofek/providers/boardsesh").then((m) => new m.BoardSeshProvider())],
     ["wahoo", () => import("dofek/providers/wahoo/provider").then((m) => new m.WahooProvider())],
     ["withings", () => import("dofek/providers/withings").then((m) => new m.WithingsProvider())],
     ["peloton", () => import("dofek/providers/peloton").then((m) => new m.PelotonProvider())],
