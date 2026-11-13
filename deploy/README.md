@@ -2,6 +2,19 @@
 
 Infrastructure-as-code and deployment configuration for Dofek.
 
+Kafka serves the production ingest log with upstream Aiven tiered storage to
+Cloudflare R2. A November 12 broker audit observed remote storage enabled on all
+six metric-stream topics and successful copy/delete operations in its bounded
+log sample; it does not establish an exact activation date. The subsequent
+canonical release applied explicit local-retention limits, and fresh consumers
+read remote-only offsets after native local eviction. See the
+[production observation](kafka/retention-policy.md#production-observation-november-12-november-13-utc)
+and [topic policy](kafka/topic-policy.json). The old Redpanda contents
+were retired on November 12 after archive-range verification; its original
+directory and read-only worker mount remain. Existing service/environment names retain their
+legacy Redpanda spelling. Shared application deployment and old-data retirement
+retain their own review boundaries.
+
 ## Architecture
 
 Dofek production is deployed as a **single-node Docker Swarm** stack on an
@@ -12,8 +25,8 @@ infrastructure has been retired.
 - **Compute**: Production runs on an OCI Ampere A1 ARM64 host provisioned by `deploy/oracle-free/` and addressed through the `ORACLE_SERVER_HOST` GitHub Actions variable. The server runs `dockerd` initialized as a single-node swarm manager and has no deploy scripts or secrets on disk.
 - **Storage**:
   - **PostgreSQL**: Managed via TimescaleDB with PostGIS enabled for geospatial metric data.
-  - **ClickHouse**: Runs in the swarm as the stored analytics read-model service for heavy activity stream reads. The raw `metric_stream` copy is populated by the Redpanda ClickHouse sink for Redpanda-first sources and remains compatible with tracked ClickHouse migrations and chunk-range backfills. See [docs/clickhouse-metric-stream.md](../docs/clickhouse-metric-stream.md).
-  - **Redpanda**: Runs internally in the swarm as the hot ingest log for high-volume `metric_stream` events. Separate legacy, live, and history ClickHouse sink services consume their designated topics, and matching Redpanda Connect services archive them to R2; see the [route contract](../docs/metric-stream-redpanda-r2-runbook.md#required-services).
+  - **ClickHouse**: Runs in the swarm as the stored analytics read-model service for heavy activity stream reads. The raw `metric_stream` copy is populated by the Kafka ClickHouse sink for Kafka-first sources and remains compatible with tracked ClickHouse migrations and chunk-range backfills. See [docs/clickhouse-metric-stream.md](../docs/clickhouse-metric-stream.md).
+  - **Kafka**: Runs internally in the swarm as the hot ingest log for high-volume `metric_stream` events. Separate legacy, live, and history ClickHouse sink services consume their designated topics, and matching Redpanda Connect services archive them to R2. Use the current [phase-1 route/command record](kafka/operator-proposal.md); the [legacy route contract](../docs/metric-stream-redpanda-r2-runbook.md#required-services) explains the retained service names.
   - **PeerDB**: Runs internally in the swarm as the Postgres-to-ClickHouse CDC service for lower-volume raw fitness tables into `postgres_fitness.*`.
   - **Volume**: Production uses the OCI data volume mounted at `/mnt/dofek-data`.
   - **DB data path**: The `db` service bind-mounts Postgres data to `/mnt/dofek-data/postgres`.
@@ -85,13 +98,44 @@ infrastructure has been retired.
 - Traefik consumes the swarm provider and routes traffic from labels declared on stack services.
 - Zero-downtime updates for `web` and `worker` are configured via `deploy.update_config` (`order: start-first`, `failure_action: rollback`, healthcheck-gated `monitor` window).
 - The BullMQ worker has a 30-minute stop grace period. BullMQ's graceful `Worker.close()` stops accepting new jobs and waits for active jobs, while Docker otherwise sends `SIGKILL` after a 10-second default. Provider HTTP calls have a shared two-minute deadline, and provider-data deletion advances through one durable 1,000-row continuation job per batch, so the grace period covers bounded work instead of masking unbounded requests or multi-hour loops. The initial rollout convergence deadline is 35 minutes so CI can observe the full graceful-drain result. See [BullMQ graceful shutdown](https://docs.bullmq.io/guide/workers/graceful-shutdown), [Docker `stop_grace_period`](https://docs.docker.com/reference/compose-file/services/#stop_grace_period), and [Node.js `AbortSignal.timeout()`](https://nodejs.org/api/globals.html#static-method-abortsignaltimeoutdelay).
+- Analytics uses the same 30-minute stop grace so its existing consumer shutdown
+  can finish the active dbt/projector cycle and release publication ownership.
+  The migration quiescence gate already waits up to 35 minutes; neither that
+  deadline nor query/health limits are extended. A forced termination or unknown
+  request outcome still requires verified recovery. See the
+  [consumer drain](../src/analytics-refresh-queue.ts),
+  [quiescence gate](../scripts/wait-migration-quiescence.ts), and Docker's
+  [stop-grace behavior](https://docs.docker.com/reference/compose-file/services/#stop_grace_period).
+  A grace-period change protects newly created tasks; it does not change an
+  existing task's immutable specification. Before the first rollout, establish
+  that the old task has no active build, or complete a controlled drain before
+  replacing it. Inspect the replacement task's `Spec.ContainerSpec.StopGracePeriod`
+  and require `1800000000000` nanoseconds before admitting a recovered build.
+  Keep abandoned ownership blocked until executor and request termination are
+  verified. See SwarmKit's [task model](https://github.com/moby/swarmkit/blob/master/design/task_model.md)
+  and the [verified recovery record](../docs/incidents/2026-11-10-sentry-remediation.md#analytics-recovery-and-prevention).
+- The anchored metric-stream ClickHouse sink gives both live and history
+  consumers a 30-minute stop grace. Shutdown requests mark readiness unavailable,
+  then KafkaJS `consumer.stop()` drains the active `eachBatch` callback before
+  the sink closes its database and ClickHouse connections. KafkaJS leaves
+  offsets unresolved when `eachBatch` fails. The sink resolves offsets only
+  after `handleEvents` succeeds in
+  [`redpanda-consumer.ts`](../src/metric-stream/redpanda-consumer.ts); see
+  KafkaJS's [consumer batch processing guide](https://kafka.js.org/docs/consuming)
+  and Docker's [`stop_grace_period`](https://docs.docker.com/reference/compose-file/services/#stop_grace_period).
+  Existing Swarm tasks retain their old stop-grace specification, so before the
+  first rollout verify the old sink task has no active owned publication or
+  perform a controlled drain before replacement. If a hard kill or unknown
+  request outcome occurs, keep publication ownership blocked until Kafka and
+  ClickHouse state are verified through the separate recovery gate; the new
+  grace period does not establish recovery evidence.
 - The worker healthcheck calls the worker process's loopback-only `/readyz` endpoint on port 3001. That endpoint verifies every existing BullMQ Worker's running state and Redis clients; the healthcheck must not start a second Node runtime or construct fresh queue clients inside the worker's 512 MiB cgroup. See the [Docker healthcheck reference](https://docs.docker.com/reference/compose-file/services/#healthcheck) and [BullMQ Worker API](https://api.docs.bullmq.io/classes/v5.Worker.html).
 - The `default` overlay network is declared `attachable: true` so CI can run one-shot migration containers on it from a remote Docker context.
 - The `db` service has a 2 GiB container memory limit to prevent one PostgreSQL workload from exhausting the single-node host. If it hits that limit, treat it as a query/workload incident rather than increasing the cap by default.
 - PostgreSQL runs `timescale/timescaledb-ha:pg18.3-ts2.26.4-all` so TimescaleDB and PostGIS are both available. It is configured with `max_connections=40`, `work_mem=4MB`, `maintenance_work_mem=64MB`, `max_locks_per_transaction=4096` for large Timescale chunk scans, and logical replication settings needed by ClickHouse change-data capture. Production keeps six logical slots/senders and caps each slot at 64 GiB of retained WAL so PeerDB has recovery headroom without allowing an inactive slot to retain unbounded WAL.
 - ClickHouse runs the pinned `26.6.1.1193-alpine` stable image with a 13 GiB container memory limit, a 1.5 CPU Swarm limit, and a checked-in `clickhouse_memory_limits_13g` profile with a 13 GiB `max_server_memory_usage` cap so large analytics queries fail or throttle inside ClickHouse instead of triggering host-level OOM kills or CPU-starving SSH/Docker on the single-node host. Version 26.6 is required for the provider-deletion live-candidate projection to stop an ordered read at its batch limit; ClickHouse 26.3 selected the same projection but read the provider's entire qualifying range. The pinned release is published by ClickHouse: <https://github.com/ClickHouse/ClickHouse/releases/tag/v26.6.1.1193-stable>. Docker defines `deploy.resources.limits.cpus` as the maximum CPU allocation: <https://docs.docker.com/reference/compose-file/deploy/#cpus>. The service also loads checked-in server profile settings from `deploy/clickhouse/users.d/` and server settings from `deploy/clickhouse/config.d/`; the production stack mounts these as Docker Swarm configs so app-managed geospatial `Nullable(Point)` columns, bounded memory, and seven-day system-log TTL retention work without manual server changes. Docker Swarm config contents are immutable, so changing a checked-in config file must also rotate the config key in `deploy/stack.yml` (for example `clickhouse_memory_limits_13g`) instead of reusing the same config name with new contents.
 - The default ClickHouse profile cancels read-only HTTP queries when their client disconnects and applies a four-minute elapsed-time ceiling to every query. This keeps a timed-out web/dbt client from leaving server work alive across later retry cycles; ClickHouse documents both [`cancel_http_readonly_queries_on_client_close`](https://clickhouse.com/docs/operations/settings/settings#cancel_http_readonly_queries_on_client_close) and the elapsed-time behavior controlled by [`max_execution_time`](https://clickhouse.com/docs/operations/settings/settings#max_execution_time) with `timeout_before_checking_execution_speed=0`.
-- All production entrypoint modes that run dbt build the ordered activity and sleep/dashboard model groups with `--threads 1` to avoid concurrent or unsafe ClickHouse model builds on the single-node host. `analytics-worker` also has a 0.5 CPU Swarm limit and currently runs the dbt-native microbatched `sensor_scalar_sample` and `deduped_sensor` models plus the dirty-keyed dashboard and cycling serving models every 15 minutes. `analytics.activity_summary` is served from the incremental `analytics.activity_summary_rows` table through a thin view; `analytics.cycling_activity` and `analytics.daily_cycling` serve the cycling page; and `analytics.daily_recovery`, `analytics.daily_strain`, `analytics.daily_sleep`, and `analytics.weekly_healthspan` serve dashboard recovery, strain, sleep, and healthspan reads. After both dbt groups succeed, the analytics worker sequentially refreshes every live app query cache key registered in Redis, preserving the previous cached value unless recomputation succeeds. The worker's loopback `/readyz` endpoint exposes the current step, last failure, and last successful cycle; Swarm probes that endpoint instead of process liveness. A first-cycle failure is unhealthy immediately. While idle, a previous success becomes unhealthy when its age exceeds the configured build interval plus retry delay; while a cycle is running, that same budget is measured from the current cycle's start so the normal interval does not consume its execution watchdog. Failed model builds and cache refreshes are captured by Sentry with their failing step before entering the bounded retry path, so retries remain recovery rather than the health signal. Docker documents healthcheck exit-status behavior, dbt documents `build` as running selected models and their tests, Sentry documents captured exceptions, and Redis documents TTL-based key expiration: <https://docs.docker.com/reference/dockerfile/#healthcheck>, <https://docs.getdbt.com/reference/commands/build>, <https://docs.sentry.io/platforms/javascript/guides/node/usage/#capturing-errors>, and <https://redis.io/docs/latest/commands/expire/>. The `cdc-health` service runs `scripts/check-clickhouse-cdc.ts` every five minutes and atomically records the latest result. Its container probe fails after two consecutive failed reports or when the state is more than one interval plus 60 seconds old, so PeerDB slot loss, stale mirrors, and a stuck monitor become visible to Swarm instead of being hidden behind process liveness. Docker documents that a container becomes unhealthy after the configured consecutive probe failures and that Swarm replaces a task whose container fails its healthcheck: <https://docs.docker.com/reference/dockerfile/#healthcheck> and <https://docs.docker.com/engine/swarm/how-swarm-mode-works/services/#tasks-and-scheduling>.
+- All production entrypoint modes that run dbt build the ordered activity and sleep/dashboard model groups with `--threads 1` to avoid concurrent or unsafe ClickHouse model builds on the single-node host. `analytics-worker` also has a 0.5 CPU Swarm limit and currently runs the dbt-native microbatched `sensor_scalar_sample` and `deduped_sensor` models plus the dirty-keyed dashboard and cycling serving models every 15 minutes. `analytics.activity_summary` is served from the incremental `analytics.activity_summary_rows` table through a thin view; `analytics.cycling_activity` and `analytics.daily_cycling` serve the cycling page; and `analytics.daily_recovery`, `analytics.daily_strain`, and `analytics.daily_sleep` serve dashboard recovery, strain, and sleep reads. After both dbt groups succeed, the analytics worker sequentially refreshes every live app query cache key registered in Redis, preserving the previous cached value unless recomputation succeeds. The worker's loopback `/readyz` endpoint exposes the current step, last failure, and last successful cycle; Swarm probes that endpoint instead of process liveness. A first-cycle failure is unhealthy immediately. While idle, a previous success becomes unhealthy when its age exceeds the configured build interval plus retry delay; while a cycle is running, that same budget is measured from the current cycle's start so the normal interval does not consume its execution watchdog. Failed model builds and cache refreshes are captured by Sentry with their failing step before entering the bounded retry path, so retries remain recovery rather than the health signal. Docker documents healthcheck exit-status behavior, dbt documents `build` as running selected models and their tests, Sentry documents captured exceptions, and Redis documents TTL-based key expiration: <https://docs.docker.com/reference/dockerfile/#healthcheck>, <https://docs.getdbt.com/reference/commands/build>, <https://docs.sentry.io/platforms/javascript/guides/node/usage/#capturing-errors>, and <https://redis.io/docs/latest/commands/expire/>. The `cdc-health` service runs `scripts/check-clickhouse-cdc.ts` every five minutes and atomically records the latest result. Its container probe fails after two consecutive failed reports or when the state is more than one interval plus 60 seconds old, so PeerDB slot loss, stale mirrors, and a stuck monitor become visible to Swarm instead of being hidden behind process liveness. Docker documents that a container becomes unhealthy after the configured consecutive probe failures and that Swarm replaces a task whose container fails its healthcheck: <https://docs.docker.com/reference/dockerfile/#healthcheck> and <https://docs.docker.com/engine/swarm/how-swarm-mode-works/services/#tasks-and-scheduling>.
 - Reconciled datasets request an immediate analytics build through the shared
   `analytics-refresh` queue. Periodic maintenance requests use that same queue;
   there is no additional interval sleep after a successful build. Pending
@@ -114,7 +158,7 @@ infrastructure has been retired.
   scheduled retry. A reconciliation failure never changes CDC state.
 - Netdata has a 768 MiB container memory limit and a checked-in `deploy/netdata/netdata.conf` that bounds dbengine retention to two tiers: one day of per-second data capped at 96 MiB and seven days of per-minute data capped at 128 MiB. The stack mounts this file as a Docker Swarm config, so changing it must also rotate the config key in `deploy/stack.yml` (for example `netdata_db_limits_v2`).
 - PeerDB uses an internal catalog Postgres service, Temporal, worker services, and a private SeaweedFS S3 staging bucket (service hostname `peerdb-minio`). Its persistent catalog and staging data live under `/mnt/dofek-data/peerdb-catalog` and `/mnt/dofek-data/peerdb-minio`. The catalog uses the PostgreSQL 18 image layout: mount the host directory at `/var/lib/postgresql`, not `/var/lib/postgresql/data`, so the image can manage its versioned data directory. Production mirrors use 100,000-row CDC batches and single-worker 100,000-row initial snapshot partitions so PeerDB can stay inside its fixed memory limits at the cost of slower catch-up.
-- Redpanda stores hot `metric_stream` ingest data under `/mnt/dofek-data/redpanda` (a bind mount on the large data disk — a default named volume lands on the small root disk and fills during a metric-stream backfill). Redpanda local retention is not the long-term source of truth; Redpanda Connect writes the `metric-stream-v1` topic to the `dofek-metric-stream-archive` R2 bucket for canonical replay. The ClickHouse sink and R2 archive services must be healthy before any metric-stream writer change is considered deployed safely.
+- Kafka stores local `metric_stream` ingest data under `/mnt/dofek-data/kafka-broker/data` and uses R2 for its remote log tier. Redpanda Connect independently archives the three routed source topics to `dofek-metric-stream-archive`; it is not the broker's remote-segment reader. The original `/mnt/dofek-data/redpanda` directory is now an empty read-only worker hold mount. See the [retention and cleanup record](kafka/retention-policy.md) and [Kafka tiering documentation](https://kafka.apache.org/44/operations/tiered-storage/). The ClickHouse sink and R2 archive services must be healthy before any metric-stream writer change is considered deployed safely.
 - The historical Postgres `fitness.metric_stream` hypertable has been retired; metric-stream durability is Redpanda plus the R2 archive, and ClickHouse is the serving copy. The `cdc-health` service alerts on remaining PeerDB slot lag at 16 GiB and fails the check at 32 GiB so operators have headroom before Postgres reaches the 64 GiB per-slot WAL cap.
 - The Oracle override scales Portainer, CloudBeaver, pgAdmin, PeerDB UI, and
   Netdata to zero. Databasus remains at one replica because it owns the backup
@@ -126,11 +170,23 @@ infrastructure has been retired.
 - Parsed with `json_parser` and `regex_parser` (to extract container IDs).
 - Filters out noisy Postgres `NOTICE` lines to reduce volume.
 - Exports to Axiom via `otlphttp`.
+- The Kafka retention change adds stock JMX Exporter 1.7.0 in OTLP-only mode,
+  exporting native backlog, error and log-size metrics through the collector to
+  the existing `dofek-host-metrics` dataset. No JMX control port or additional
+  service is exposed. Verify fresh samples after each release; stored-query
+  readback needs query permission. See the [policy and native qualification](kafka/retention-policy.md)
+  and [upstream agent configuration](https://prometheus.github.io/jmx_exporter/configuration/opentelemetry/).
 - Logs use `dofek-logs`, with metadata grouped into the `attributes.custom` map;
   traces use `dofek-traces`. Axiom requires a dedicated dataset per OTel signal:
   [OTel ingestion](https://axiom.co/docs/send-data/opentelemetry). Both retain
   data for 29 days; see the [Axiom runbook](../docs/axiom-observability-runbook.md)
   for map configuration, query paths, and field-limit diagnosis.
+
+- Traefik forwards only `500`–`599` access logs as OTLP logs with
+  `service.name=traefik`, joining the unsampled `logs/app` pipeline. Fields and
+  headers default to `drop`; path, query, client identity, and headers are not
+  exported. See the [Axiom runbook](../docs/axiom-observability-runbook.md#traefik-server-error-access-logs)
+  for fields, types, and queries.
 
 ## Deployment
 
@@ -233,7 +289,10 @@ and deployment workflows:
 
 ```text
 CI (main) -> build dofek (+ dofek-ml for local ML tooling)
-         -> deploy-web production check (dofek app image tag must exist)
+         -> Release Production requires successful push CI at its own main workflow SHA
+            |-> build-ios-release: native-change check -> signed iOS archive artifact
+            |   (runs alongside the production job below)
+         -> production job acquires deploy-web-production
          -> deploy-terraform (shared prerequisite)
          -> deploy-web-stack
               -> export and validate Infisical dotenv via OIDC
@@ -253,51 +312,56 @@ CI (main) -> build dofek (+ dofek-ml for local ML tooling)
               -> validate the final schema; write and observe exact causal markers
               -> final deploy restores analytics-worker, all metric-stream ClickHouse sinks, and processing-reconciliation
               -> verify backup freshness and record Sentry release
+         -> production job releases deploy-web-production
+         -> matching OTA publication under deploy-ota
+         -> matching TestFlight upload under deploy-ios, once the signed archive also succeeds
 ```
 
 Production web deployments are serialized and never cancel an in-progress
-deployment. Automatic and manual triggers share the same production concurrency
-group, using GitHub's default single pending run. New requests replace pending
+deployment. The server jobs in Deploy and Release Production share the
+`deploy-web-production` concurrency group. The lock ends when the server job
+finishes; OTA and TestFlight publication use their existing `deploy-ota` and
+`deploy-ios` groups. A queued or slow mobile job cannot hold the production
+lock. GitHub's default single pending job means new requests replace pending
 work while the active deployment finishes. A rollout intentionally quiesces
 `analytics-worker`,
 all three metric-stream ClickHouse sinks, and `processing-reconciliation` before
 migrations and restores all five only after the final stack converges, so a
-newer run must wait rather than interrupt that state transition. After acquiring
-the deployment slot, automatic runs fetch the current `main` branch with full
-history, walk its first-parent commits newest first, and check the CI workflow's
-successful runs for each exact `head_sha`. The first passing commit is selected;
-the triggering commit bounds the search so an API response cannot roll a release
-back to an older commit. Each returned run must match the queried commit and be
-a successful `main` push. This uses one API call per candidate and avoids relying
-on a broad run list's recency. Git documents
-[first-parent traversal](https://git-scm.com/docs/git-rev-list), and checkout documents
-[full history fetching](https://github.com/actions/checkout#fetch-all-history-for-all-tags-and-branches).
-A newer untested commit does not block that release,
-and an older CI completion cannot select an older image than the latest passing
-release. The selected commit and CI run are recorded in the workflow summary.
-GitHub documents the default
-[pending-run replacement](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)
-and the [workflow-run API](https://docs.github.com/en/rest/actions/workflow-runs#list-workflow-runs-for-a-workflow).
+newer job must wait rather than interrupt that state transition. GitHub documents
+[job-level concurrency and pending-job replacement](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).
 
-Requests triggered by unsuccessful CI use an isolated concurrency group so they
-cannot replace valid pending production work. They cancel their own workflow
-before deployment and retain a nonzero step result while cancellation is
-processed. Superseded pending requests are cancelled by GitHub concurrency;
-inspect the server deployment job to confirm the rollout outcome. GitHub documents
-the cancellation API and its required Actions write permission:
-<https://docs.github.com/en/rest/actions/workflow-runs#cancel-a-workflow-run>.
+Automatic releases require successful push CI on `main` whose `head_sha` equals
+the Release Production workflow's `github.sha`. GitHub runs `workflow_run` workflows
+from the default branch and resolves local reusable workflows from their caller's
+commit. This equality keeps the executing workflows, checked-out source, and
+immutable application image aligned without release tags or another dispatched
+workflow. If main advanced while CI ran, that older completion is skipped;
+deployment waits for successful CI at the current main commit. Failed and non-push
+CI completions also skip the production job before acquiring its lock. See
+[workflow_run revision semantics](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_run)
+and [local reusable workflow revisions](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows#calling-a-reusable-workflow).
+Inspect the server deployment job's actual conclusion: skipped or cancelled
+production jobs do not establish that a release deployed.
 For a reported stale page, compare the live HTML's `web/<tag>/` asset prefix with
-the selected workflow tag, verify the running Swarm image digest matches the
+the CI commit's image tag, verify the running Swarm image digest matches the
 resolved `APP_IMAGE`, and inspect the production job's actual conclusion in the
 [canonical deployment workflow](../.github/workflows/deploy-web-stack.yml).
 
 ### Checking the Latest Production Deployment
 
-Start with the parent [Deploy Web workflow](../.github/workflows/deploy-web.yml),
-which calls the environment and stack workflows. Listing only
-`deploy-web-stack.yml` runs can return old standalone runs and miss deployments
-inside parent runs. GitHub describes how called jobs appear in the caller's run
-in its [reusable workflow documentation](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows).
+Start with the [Release Production workflow](../.github/workflows/deploy-web.yml).
+Automatic and manual requests call the environment and stack workflows directly.
+Inspect `Deploy Web Production / Deploy Web Stack / Deploy Web Stack` in that
+same run. `Deploy Matching OTA` and `Publish Matching iOS` report mobile
+publication separately and do not retain the server's production lock. Listing
+only `deploy-web-stack.yml` runs can miss called
+jobs; see GitHub's [reusable workflow documentation](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows).
+
+If the server job is pending, inspect unfinished jobs in other Release Production and
+Deploy runs before rerunning it. Historical workflow versions can retain the
+production lock through mobile publication; changing main does not alter those
+already-started workflows. Compare the lock groups in each run's source revision
+with [GitHub's concurrency rules](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).
 
 ```bash
 gh api repos/Asherlc/dofek/actions/workflows/deploy-web.yml \
@@ -329,25 +393,44 @@ ssh dofek-server 'docker ps -q --filter label=com.docker.swarm.service.name=dofe
 
 Container start times and service update times are supporting evidence, not proof
 of a completed deployment: tasks can restart and service specifications can
-change independently. Correlate the live revision and digest with the parent
-run's selected release and server stack job. Report the server job's completion
+change independently. Correlate the live revision and digest with the
+Release Production run's source commit and server stack job. Report the
+server job's completion
 time separately from container start times, OTA publication, signed iOS upload,
-and the overall run conclusion. Automatic `Deploy Web` runs also publish matching
+and the overall run conclusion. Automatic `Release Production` runs also publish matching
 mobile releases after the server succeeds; manual mobile releases use the
 separate [Deploy workflow](../.github/workflows/deploy.yml).
-See the [web deployment jobs](../.github/workflows/deploy-web.yml)
+See the [production release jobs](../.github/workflows/deploy-web.yml)
 and Docker's [service inspect](https://docs.docker.com/reference/cli/docker/service/inspect/)
 and [container inspect](https://docs.docker.com/reference/cli/docker/container/inspect/)
 references.
 
-Automatic `Deploy Web` runs publish mobile OTA updates and check whether a signed
-iOS build is needed after a successful server rollout. Manually dispatched
-`Deploy Web` runs deploy only the server. Explicit mobile releases remain available
+Automatic `Release Production` runs start the signed iOS build alongside the
+server rollout. The [release builder](../.github/workflows/build-ios-release.yml)
+compares native changes with the last successful TestFlight upload and returns
+the signed archive's artifact ID, source SHA and build number. Build detection
+uses the last successful receipt, skipping unresolved intents without taking the
+publication lock. Only the publisher enters `deploy-ios` and checks unresolved
+intents immediately before upload; a build cannot replace a pending publisher.
+GitHub documents [pending-job replacement in concurrency groups](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).
+A skipped native
+build produces no artifact and skips TestFlight publication. The
+[iOS publisher](../.github/workflows/deploy-ios.yml) waits for both the archive
+and successful server rollout, then rejects a source SHA mismatch before upload
+setup. OTA publication waits only for the server. These branches use GitHub's
+[job dependencies](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#jobsjob_idneeds),
+[reusable workflow outputs](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows#using-outputs-from-a-reusable-workflow)
+and [artifact IDs](https://github.com/actions/download-artifact#download-artifacts-by-id).
+Manually dispatched
+`Release Production` runs deploy only the server. Explicit mobile releases remain available
 through the [Deploy workflow](../.github/workflows/deploy.yml) with target `ota`,
 `ios`, or `all`. Both release paths complete the matching server
 rollout before publishing and pass the server image's validated
-`SENTRY_RELEASE` commit to the selected reusable mobile publishers. Each publisher
-checks out that exact commit. A failed or cancelled server rollout prevents
+`SENTRY_RELEASE` commit to the selected reusable mobile publishers. Manual iOS
+releases also build after the rollout so an explicit image tag supplies the
+verified source rather than assuming the dispatch commit; human dispatches
+retain forced signed builds. Each publisher checks out that exact commit.
+A failed or cancelled server rollout prevents
 publishing. GitHub documents reusable workflow
 [outputs](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows#using-outputs-from-a-reusable-workflow)
 and job [dependencies](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#jobsjob_idneeds).
@@ -380,14 +463,16 @@ For a manual mobile release, dispatch **Deploy** (`deploy.yml`) with target `ota
 or `ios` from the desired source ref. Without an `image_tag`, the workflow builds
 and deploys that commit's server image before publishing the selected mobile
 release. Target `all` publishes both mobile releases after the server. When
-reusing an existing `image_tag`, select its matching source ref in the dispatch:
+reusing an existing `image_tag`, select a branch or release tag pointing to its
+matching source commit in the dispatch:
 the immutable image's `SENTRY_RELEASE` must equal the checked-out source commit,
 or deployment fails before migrations. The OTA, signed iOS, and stack workflows
 are reusable only. For a server-only manual rollout, dispatch **Deploy** with
 target `web` (including infrastructure) or `web-stack` (stack only).
-Automatic and manual server/mobile releases share the production concurrency
-group until publishing completes, using GitHub's
-[workflow concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)
+Automatic and manual server jobs share the production concurrency group only
+until server deployment completes. Mobile publication uses the independent
+`deploy-ota` and `deploy-ios` groups, using GitHub's
+[job and workflow concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)
 and [manual workflow ref selection](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow).
 
 Signed iOS builds and uploads run in separate macOS jobs, each with a 30-minute
@@ -459,17 +544,17 @@ a visible release blocker until this reconciliation is complete. Absence from
 App Store Connect while processing is uncertain does not establish that no upload
 occurred; retain the pending record when the evidence is inconclusive.
 
-1. **Build**: GitHub Actions builds the `server` image for every `main` push and pushes it to GHCR with the commit-derived tag (`<tag>`). A successful main CI completion requests deployment; when its slot starts, `Deploy Web` selects the latest passing main push and resolves that tag to the immutable image it deploys. The web build inside the image uses `VITE_ASSET_BASE_URL=https://assets.dofek.fit/web/<tag>/`, so Vite-generated JavaScript and CSS references point at immutable R2-backed CDN assets instead of the Express origin; Vite's `base` option controls the public base path for built assets: https://vite.dev/config/shared-options.html#base. `<tag>` is the image tag used consistently for both the GHCR image and the web asset prefix. See GitHub's `workflow_run` event documentation for the trigger behavior: https://docs.github.com/en/actions/reference/events-that-trigger-workflows#workflow_run. The `ml` image is built only when ML image inputs change.
-   Automatic deploys check out the selected CI run's full commit SHA for both
-   Terraform and stack configuration. GitHub documents that a
-   `workflow_run` workflow's `GITHUB_SHA` is the last commit on the default
-   branch rather than necessarily the selected release's commit, so using
-   the selected run's `head_sha` as the deploy commit keeps image code,
-   healthchecks, entrypoints, and stack configuration from different revisions
-   from being mixed:
-   <https://docs.github.com/en/actions/reference/events-that-trigger-workflows#workflow_run>.
-   Manual image-tag deploys must dispatch the workflow with `--ref` set to the
-   full source commit for that image. After pulling the app image, the workflow
+1. **Build**: GitHub Actions builds the `server` image for every `main` push and pushes it to GHCR with the commit-derived tag (`<tag>`). Successful main-push CI requests direct deployment only when its source matches the Release Production workflow's SHA; superseded CI completions wait for the current main commit to pass. The matching image tag resolves to an immutable digest before rollout. The web build inside the image uses `VITE_ASSET_BASE_URL=https://assets.dofek.fit/web/<tag>/`, so Vite-generated JavaScript and CSS references point at immutable R2-backed CDN assets instead of the Express origin; Vite's `base` option controls the public base path for built assets: https://vite.dev/config/shared-options.html#base. `<tag>` is the image tag used consistently for both the GHCR image and the web asset prefix. See GitHub's [workflow_run revision semantics](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_run). The `ml` image is built only when ML image inputs change.
+   The production job calls the existing environment workflow directly and holds
+   `deploy-web-production` until the server rollout completes. Matching mobile
+   publication then runs under separate locks. Local reusable workflows resolve
+   from their caller's commit, so requiring the successful CI SHA to equal that
+   commit also aligns Terraform, stack configuration, and image source. See
+   [reusable workflow revision selection](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows#calling-a-reusable-workflow)
+   and [GitHub job concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).
+   Manual image-tag deploys must dispatch the workflow with `--ref` set to a
+   branch or release tag pointing to the source commit for that image. After
+   pulling the app image, the workflow
    compares its full `SENTRY_RELEASE` with the checked-out Git commit and fails
    before asset upload, migrations, or stack deployment when they differ.
 2. **Terraform apply** (if infra changed): updates Cloudflare-managed production DNS and storage. `ORACLE_SERVER_HOST` is required for production DNS and deploy targeting.
@@ -633,6 +718,12 @@ occurred; retain the pending record when the evidence is inconclusive.
       [ClickHouse migration 0109](../src/db/clickhouse-migrations/0109_remove_heart_rate_tss.ts)
       drops their query inputs. Its settings cleanup uses PostgreSQL's
       [JSON deletion operators](https://www.postgresql.org/docs/current/functions-json.html).
+      The [Healthspan retirement boundary](../drizzle/0181_healthspan_retirement_boundary.sql)
+      also selects maintenance before [ClickHouse migration 0112](../src/db/clickhouse-migrations/0112_remove_healthspan.ts)
+      drops the retired tables. This journal entry coordinates deployment and
+      changes no PostgreSQL schema. After that forward-only drop, rerun the
+      canonical release with its matching application image if rollout fails;
+      an older image still queries those tables for its Recovery response.
       The workflow compares the requested image's journal with the deployed web
       image's journal, so a retry after a committed migration still selects
       maintenance until the app image advances. Missing or divergent image
@@ -703,6 +794,14 @@ occurred; retain the pending record when the evidence is inconclusive.
        mirror's assigned destination before consumers can resume. See the
        [checked-in CDC setup](../src/db/clickhouse-cdc.ts) and
        [contract deployment](../src/db/peerdb/mirror-deployment.ts).
+       Before restoring consumers, reconcile the six existing Kafka topics from
+       [`kafka/topic-policy.json`](kafka/topic-policy.json). The workflow uses
+       stock incremental SET operations, preserving unrelated overrides, then
+       reads back each selected value and its explicit topic-config source.
+       This runs only after old sink tasks have exited and the requested image
+       and CDC prerequisites have passed. See the [policy ownership and
+       qualification](kafka/quarantine-config-correction.md) and
+       [Kafka's incremental implementation](https://github.com/apache/kafka/blob/4.4.0/tools/src/main/java/org/apache/kafka/tools/ConfigCommand.java#L558-L564).
    15. Run the final `docker stack deploy -c deploy/stack.yml ...` to restore
        `analytics-worker`, all three metric-stream ClickHouse sinks, and
        `processing-reconciliation` only when every post-quiesce readiness step
@@ -712,7 +811,8 @@ occurred; retain the pending record when the evidence is inconclusive.
        each of the five services and the three metric-stream R2 archive services
        must keep the same Swarm task at `1/1` continuously for 60 seconds. The
        [workflow](../.github/workflows/deploy-web-stack.yml) checks all eight
-       services serially; a replacement task or any
+       services serially, then verifies the selected Kafka policy again to
+       detect startup code clearing overrides; a replacement task or any
        replica loss restarts the stability window. Swarm creates a new task when
        a task crashes, so a transient `1/1` sample is not deployment convergence
        ([Docker Swarm tasks and scheduling](https://docs.docker.com/engine/swarm/how-swarm-mode-works/services/#tasks-and-scheduling)).

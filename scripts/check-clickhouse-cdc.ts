@@ -6,6 +6,7 @@ import {
   checkClickHouseCdcHealth,
 } from "../src/db/clickhouse-cdc-health.ts";
 import { captureException } from "../src/lib/error-reporting.ts";
+import { sentryDataCollection } from "../src/lib/sentry-options.ts";
 
 function requireEnvironmentVariable(environmentVariableName: string): string {
   const value = process.env[environmentVariableName];
@@ -73,7 +74,11 @@ function buildPeerDbUrl(databaseUrl: string): string {
 export async function main(): Promise<void> {
   const sentryDsn = process.env.SENTRY_DSN || process.env.SENTRY_DSN_unencrypted;
   if (sentryDsn) {
-    Sentry.init({ dsn: sentryDsn, skipOpenTelemetrySetup: true });
+    Sentry.init({
+      dsn: sentryDsn,
+      enableOpenTelemetrySetup: false,
+      dataCollection: sentryDataCollection,
+    });
   }
 
   let postgresClient: Client | null = null;

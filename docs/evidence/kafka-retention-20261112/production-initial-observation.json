@@ -1,0 +1,17 @@
+{
+  "provenance": "Operator transcription of native command outputs during this task, after policy convergence and before 2026-11-13T00:30:30Z; individual command timestamps were not retained. Separate timestamped raw follow-up files accompany this record.",
+  "releaseRun": 43330045743,
+  "serverJob": 131572442558,
+  "source": "c7909fdafb0ad868407c9de493e3bd4e72f83b51",
+  "live": { "globalEarliest": 1696520, "localEarliest": 7493452, "remoteReadOffset": 1696520, "remoteReadMessages": 1 },
+  "history": { "globalEarliest": 427815, "localEarliest": 7353960, "remoteReadOffset": 427815, "remoteReadMessages": 1 },
+  "kafkaAllocatedBytes": 1257779200,
+  "filesystemAvailableBytes": 66485805056,
+  "collector": { "acceptedMetricPoints": 49228, "sentMetricPoints": 49228, "receiverFailedMetricPoints": 0, "receiverRefusedMetricPoints": 0 },
+  "groups": {
+    "liveSink": { "committedOffset": 8461347, "endOffset": 9671237, "lag": 1209890 },
+    "historySink": { "committedOffset": 5913085, "endOffset": 7353960, "lag": 1440875 },
+    "liveArchiveLag": 0,
+    "historyArchiveLag": 0
+  }
+}

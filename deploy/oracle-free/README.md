@@ -51,8 +51,8 @@ terraform apply
 The public IP is printed as an output; copy it into the `ORACLE_SERVER_HOST`
 GitHub Actions variable so Cloudflare DNS and production deploys target this
 host. All deploy logic lives in CI and talks to the remote Docker API over SSH
-(never a local `docker stack deploy`). The `Build + Deploy` workflow
-(`build-deploy.yml`, target `web`) runs the production `Deploy Web Stack` job,
+(never a local `docker stack deploy`). The [Deploy workflow](../../.github/workflows/deploy.yml)
+(`deploy.yml`, target `web`) runs the production `Deploy Web Stack` job,
 which applies the Oracle override (`-c deploy/stack.yml -c deploy/stack.oracle.yml`)
 over SSH to this host. See the "Stable address + DNS + CI" section below.
 
@@ -106,7 +106,13 @@ after capacity changes. See
 The defaults split 200 GB into a 50 GB boot volume and 150 GB data volume.
 Oracle documents that boot and block volumes share the current Always Free
 allowance, but eligibility depends on tenancy and home region; review the
-Terraform plan and OCI usage before applying. To keep everything on the boot
-disk instead, set
-`data_volume_size_gb = 0`; cloud-init then skips the volume mount and
-`/mnt/dofek-data` is just a directory on the boot volume.
+Terraform plan and OCI usage before applying. The historical boot-only option
+`data_volume_size_gb = 0` skips the volume mount. This is incompatible with the
+Kafka stack: bootstrap and deployment require `/mnt/dofek-data` to be a mounted
+data filesystem before creating Kafka's UID/GID 1000 data directory. The
+[checked-in bootstrap](cloud-init.yml) and
+[deployment preflight](../../.github/workflows/deploy-web-stack.yml) enforce this
+boundary. Changing cloud-init affects OCI instance `user_data`; review an OCI
+plan for possible instance replacement before any apply. The normal application
+release applies the separate Cloudflare root, not this OCI root; see the
+[release workflow](../../.github/workflows/deploy-web-environment.yml).

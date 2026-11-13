@@ -7,19 +7,19 @@
 **Probe evidence:** [`docs/r2-to-b2-b2-erasure-probe.md`](r2-to-b2-b2-erasure-probe.md) · [`docs/evidence/b2-erasure-probe-20261106t180758z/`](evidence/b2-erasure-probe-20261106t180758z/)  
 **Frozen probe SHA256:** `5fd159e002ecd97d97a6c23b2358fbcb1eed5b36ffe68f5824b675eef521ec44`
 
-### Current plan vs historical migration intent
+### Historical proposal and current scope
 
 | Item | Status |
 |---|---|
 | **Original “migrate all ~13 R2 buckets to B2”** | **Historical / deferred** — **not** approved as imminent work; do not claim it in this PR |
-| **Current Pulsar plan** | **Add B2** only as stock `aws-s3` **tiered sealed BookKeeper ledger/offload** — owned by **Pulsar PR [#3231](https://github.com/Asherlc/dofek/pull/3231) / B7**; not configured in #3232 |
+| **Historical Pulsar proposal** | B2 sealed BookKeeper offload was proposed in the [superseded PR #3231](https://github.com/Asherlc/dofek/pull/3231). It is not an active plan or configured by #3232. The current [architecture](../README.md#architecture) uses Kafka with R2 tiered storage. |
 | **Canonical JSONL metric archive** | **Unchanged on R2** — CF dest CAS retained |
 | **Account-erasure restore ledger** | **Unchanged on R2** — no B2 placement / weaken approved |
 | **Other R2 buckets** | **Deferred** — probe blockers still factual if revisited later; not silently approved |
 
 B2 offload (immutable UUID keys): native Delete **hides** prior versions — physical version cleanup / lifecycle qualification remains; **no** erasure-complete claims. No new bulk B2 download budget.
 
-Root: **Alt A rejected**; **Alt C unproven/invalid**; ledger Alt B = different threat contract (**no** equivalence); pointer/audit tables **not** approved.
+Recorded operator decisions: **Alt A rejected**; **Alt C unproven/invalid**; ledger Alt B = different threat contract (**no** equivalence); pointer/audit tables **not** approved.
 
 ---
 
@@ -39,7 +39,7 @@ Primary B2 docs: native [`b2_upload_file`](https://www.backblaze.com/apidocs/b2-
 
 ---
 
-## 2. Current caller contracts
+## 2. Caller contracts at the November 6 probe
 
 ### 2.1 Connect archive writer (unconditional)
 
@@ -100,7 +100,7 @@ Single-part Put/Copy are **not** enumerated by multipart listing. A finite quiet
 - Legal hold as rewrite authorizer or current-key freeze (probe: overwrite Put still 200).  
 - GET→PUT / Head-then-write races to emulate dest CAS.  
 - New custom CAS microservice / general lock framework.  
-- Silent removal of destination CAS without a Root-accepted replacement that actually rejects late conflicting commits.  
+- Silent removal of destination CAS without an operator-approved replacement that actually rejects late conflicting commits.  
 - Claiming `CopySourceIfMatch` **enforcement** from good-path 200 alone.
 
 ---
@@ -123,16 +123,16 @@ These do **not** solve destination replace-if-etag. `CopySourceIfMatch` may rema
 
 R2 today: current-key create-once (`IfNoneMatch`) + bucket lock ⇒ clients with object write still cannot overwrite/delete the locked current object under the runbook’s lock model.
 
-B2 Put `IfNoneMatch` is **501**. A version+legal-hold sketch is **not** claimed equivalent. Open requirements if Root explores it:
+B2 Put `IfNoneMatch` is **501**. A version+legal-hold sketch is **not** claimed equivalent. Open requirements if the operator explores it:
 
 | Topic | Requirement / threat note |
 |---|---|
-| Where pinned VersionId lives | Must survive **Postgres restore / PG loss**: cannot live only in volatile memory. Candidates (for Root, not chosen here): sealed object metadata only; durable store outside the wiped user row; reconcile-from-storage discovery. Must specify restore-reconciler behavior when PG request rows are missing or replayed. |
+| Where pinned VersionId lives | Must survive **Postgres restore / PG loss**: cannot live only in volatile memory. Candidates (not chosen here): sealed object metadata only; durable store outside the wiped user row; reconcile-from-storage discovery. Must specify restore-reconciler behavior when PG request rows are missing or replayed. |
 | Discovery of all held versions | Startup / reconcile must **list all versions** under the ledger key (and any known prefix), identify every legal-held VersionId, not trust “current” HEAD alone. |
 | Conflicting duplicates | Multiple versions with **unequal** sealed intents → **fail closed** (incident). Equal duplicates: define compare path (ledger already GETs bodies on R2). |
 | Hold timing | Legal hold applied **after** Put leaves a window where the VersionId exists **unheld** (delete/overwrite races). Native/S3 “hold at upload” headers exist in B2 docs for some paths — any design must state whether hold is atomic with Put or accept the window as a distinct threat. |
 | Capability to OFF hold | Probe/child keys used `writeFileLegalHolds`. A writer that can **OFF its own hold** is a **different threat model** than R2 bucket lock that blocks overwrite/delete for ordinary object writers. Account for who holds `writeFileLegalHolds` / `writeFileRetentions` in production. |
-| Equivalence | **No claim** that version+hold equals R2 current-key lock. Material contract change requires Root/user decision — not silent adoption. |
+| Equivalence | **No claim** that version+hold equals R2 current-key lock. Material contract change requires operator approval — not silent adoption. |
 
 ---
 
@@ -143,7 +143,7 @@ B2 Put `IfNoneMatch` is **501**. A version+legal-hold sketch is **not** claimed 
 | Metric-archive dest CAS on B2 | **N/A for current plan** — archive stays R2 |
 | Account-erasure ledger on B2 | **Not in current plan** — stays R2; IfNoneMatch findings preserved if revisited |
 | Broader R2→B2 bucket migration | **Deferred** |
-| Pulsar B2 tiered offload | **#3231 / B7** — separate endpoints/credentials when provisioned; version hide ≠ physical cleanup done |
+| Pulsar B2 tiered offload | **Historical, superseded** with [#3231](https://github.com/Asherlc/dofek/pull/3231); not an active provisioning plan |
 | Alt A / Alt C / pointer-audit | **Rejected / unproven / not approved** |
 
 ---
@@ -154,7 +154,7 @@ B2 Put `IfNoneMatch` is **501**. A version+legal-hold sketch is **not** claimed 
 |---|---|
 | This PR (#3232) | **Document B2 compatibility findings** — draft, no product changes |
 | All-13 R2→B2 migration | **Deferred** (historical intent only) |
-| Add B2 Pulsar tiered offload | **#3231 / B7**, not here |
+| Add B2 Pulsar tiered offload | **Historical, superseded** with [#3231](https://github.com/Asherlc/dofek/pull/3231); not authorized here |
 | R2 archive + erasure ledger | **Unchanged** |
 | Alt A / Alt C / custom CAS frameworks | **REJECTED** / **not approved** |
 | Product / Infisical / copy / new probes / bulk download | **Out of scope** |

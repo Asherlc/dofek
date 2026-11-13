@@ -1,5 +1,66 @@
 # Account Erasure Runbook
 
+## Pending hardening candidate
+
+The [independent extraction](plans/2026-11-08-account-erasure-hardening.md) is
+**not merge-ready**. Its [executable publication-race evidence](evidence/erasure-extraction-20261108/README.md)
+shows why passing catalog and isolated erasure tests do not establish exclusion
+of concurrent writers. Production release procedures below do not authorize
+deploying this candidate.
+
+Writable analytics must use the [normal build](../scripts/run-analytics-build.ts),
+[local build](../scripts/run-local-analytics-build.ts), or
+[bounded repair CLI](../scripts/repair-activity-data-integrity.ts). These acquire
+the existing publication owner before source reads/builds and retain its child
+admission until the pinned adapter and fresh artifacts establish completion.
+Direct privileged dbt/SQL execution bypasses that cooperative boundary and is
+excluded during an erasure release; do not use it as recovery. A failed child,
+lost executor or unknown remote outcome requires verified recovery and must not
+be cleared merely because its PG lock is available. See the
+[approved safety contract](plans/2026-11-09-erasure-safety-decisions.md#exact-publication-boundary)
+and [PostgreSQL session-lock semantics](https://www.postgresql.org/docs/current/explicit-locking.html#ADVISORY-LOCKS).
+
+The candidate stores activity/sleep/operation and physical-deletion identifiers
+in encrypted, request-owned pages using the [identifier store](../src/account-erasure/identifier-store.ts),
+with [snapshot admission budgets](../src/account-erasure/snapshot-budget.ts).
+[Migration 0179](../drizzle/0179_account_erasure_identifiers.sql) fails closed
+on every unfinished or identifying/unconverted request, including already
+scrubbed unfinished requests with legacy route-less checkpoints. Drain them with
+their original worker; do not reconstruct routes or rewrite checkpoint JSON.
+Request producers and old workers must
+remain quiescent through an independently approved cutover. Do not clear request
+identifiers to bypass this guard. No cutover or quiescence is authorized here.
+
+0179 carries the existing maintenance deployment marker. The canonical workflow
+therefore stops old web request producers and workers before migration and keeps
+them stopped until the requested image can replace them. This requires a planned
+web availability interruption. An earlier empty-request check is insufficient:
+the old producer does not populate the new identifier capture and can otherwise
+create a request after the migration guard releases its lock. Use the existing
+[deployment-mode selector](../scripts/migration-deployment.ts),
+[maintenance overlay](../deploy/stack.maintenance.yml) and
+[release workflow](../.github/workflows/deploy-web-stack.yml); do not remove the
+marker or substitute manual service changes. The migration's locked guard still
+refuses unfinished or identifying legacy requests.
+
+The [request processing transaction](../src/db/account-erasure-processing.ts)
+deletes retained identifiers when request PII is scrubbed. See PostgreSQL's
+[transaction guarantees](https://www.postgresql.org/docs/current/tutorial-transactions.html).
+
+Initial parent capture atomically retains a request-scoped binding to the
+credential master key and resolved key namespace/name in its existing checkpoint.
+The [store](../src/account-erasure/identifier-store.ts) checks that binding under
+the request lock before retained reads, writes, physical progress or capture
+reentry, including empty lookups. Missing or changed configuration stops work;
+restore the original configuration to resume. Normal PII scrub removes the
+binding with the other identifying checkpoint details. This does not re-key
+retained identifiers or permit mixed-key workers. Before a future rotation,
+drain all identifying requests and retained identifiers using the original key,
+then keep original producers/workers quiescent across the transition. No key
+change or production drain is authorized by this candidate. See the
+[credential rotation contract](credential-encryption.md#required-configuration)
+and [database regressions](../src/account-erasure/identifier-store.integration.test.ts).
+
 <!-- cspell:ignore peerdbbucket -->
 
 Account erasure is a durable, fail-closed workflow. Confirmation immediately
@@ -82,7 +143,25 @@ The public states are:
 | `failed` | A phase failed and is scheduled for automatic retry, or requires support if no retry time is present. The fences remain active. |
 | `completed` | Replay, active-store, quarantine, processor-retention, and backup-retention verification passed. |
 
+A retained snapshot marked as requiring support is excluded from automatic
+dispatch and worker claims, including already queued work. Passing the deadline
+does not overwrite that reason or replace the contact-support remedy with a
+promise of automatic retries. Support must repair the underlying snapshot within
+the unchanged budgets and explicitly clear the hold before processing resumes;
+clearing the reason alone does not repair an oversized snapshot. These boundaries
+are exercised by the [real PostgreSQL lease/status tests](../src/db/account-erasure-processing.integration.test.ts).
+No automated snapshot-repair or production key-change procedure is implied.
+
 ## Phase Map
+
+The separately reviewed Kafka/Aiven tiered-storage layer records one accepted
+exception: an earlier unknown-outcome remote upload may commit after deletion
+and final verification. This is not an observed production incident or a general
+waiver of deletion checks. See the [migration decision and verification scope](../deploy/kafka/tiered-fencing-proposal.md#accepted-exception-and-intended-stock-path)
+and [R2's in-flight-write contract](https://developers.cloudflare.com/r2/reference/consistency/#negative-reads-and-in-flight-writes).
+The user selected upstream Aiven after the adoption discussion. This exception
+does not approve a release or change current production behavior. Other
+late-work/replay prevention requirements below remain in force.
 
 The persisted phase names are deliberately stable so operators can correlate a
 status, checkpoint, and Sentry event.

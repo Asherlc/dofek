@@ -77,6 +77,29 @@ describe("ProviderLogo", () => {
   });
 
   describe("image logos", () => {
+    it.each([
+      ["kilter", "kilter.png"],
+      ["tension", "tension.png"],
+      ["grasshopper", "grasshopper.png"],
+      ["decoy", "decoy.png"],
+      ["soill", "soill.png"],
+      ["touchstone", "touchstone.png"],
+      ["aurora-board", "aurora-board.png"],
+      ["crimpd", "crimpd.png"],
+      ["eight-a", "eight-a.png"],
+      ["moonboard", "moonboard.png"],
+      ["thecrag", "thecrag.png"],
+      ["ziva", "ziva.png"],
+      ["github", "github.png"],
+      ["slack", "slack.png"],
+      ["intervals.icu", "intervals.icu.svg"],
+      ["cycling-analytics", "cycling_analytics.png"],
+      ["apple-health", "apple_health.png"],
+    ])("renders the bundled brand icon for %s", (provider, asset) => {
+      const { container } = render(<ProviderLogo provider={provider} />);
+      expect(queryImg(container).getAttribute("src")).toBe(`/logos/${asset}`);
+    });
+
     it("renders an SVG img for providers with SVG logos", () => {
       const { container } = render(<ProviderLogo provider="strava" />);
       const img = queryImg(container);
@@ -113,15 +136,15 @@ describe("ProviderLogo", () => {
 
   describe("letter fallback", () => {
     it("renders a styled letter for providers without a logo", () => {
-      const { container } = render(<ProviderLogo provider="mountain-project" />);
+      const { container } = render(<ProviderLogo provider="dofek" />);
       const span = querySpan(container);
-      expect(span.textContent).toBe("M");
+      expect(span.textContent).toBe("D");
     });
 
     it("uses the brand color when available", () => {
-      const { container } = render(<ProviderLogo provider="mountain-project" />);
+      const { container } = render(<ProviderLogo provider="dofek" />);
       const span = querySpan(container);
-      expect(span.style.backgroundColor).toBe("rgb(31, 90, 136)");
+      expect(span.style.backgroundColor).toBe("rgb(74, 157, 142)");
     });
 
     it("uses the default gray for unknown providers", () => {
@@ -137,7 +160,7 @@ describe("ProviderLogo", () => {
     });
 
     it("scales font size to 55% of size", () => {
-      const { container } = render(<ProviderLogo provider="mountain-project" size={40} />);
+      const { container } = render(<ProviderLogo provider="dofek" size={40} />);
       const span = querySpan(container);
       expect(span.style.fontSize).toBe("22px");
     });

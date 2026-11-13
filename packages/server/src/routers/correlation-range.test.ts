@@ -70,7 +70,7 @@ describe("correlation.computeV2 selected ranges", () => {
     );
     const { text: spo2QueryText, params: spo2QueryParams } = findSensorQuery(
       sensorStore,
-      "FROM ingest.metric_stream",
+      "FROM analytics.daily_health_sensor",
     );
     const { text: sleepQueryText } = findSensorQuery(sensorStore, "FROM analytics.daily_sleep");
     const { text: activityQueryText, params: activityQueryParams } = findSensorQuery(
@@ -110,7 +110,7 @@ describe("correlation.computeV2 selected ranges", () => {
     );
     const { text: spo2QueryText, params: spo2QueryParams } = findSensorQuery(
       sensorStore,
-      "FROM ingest.metric_stream",
+      "FROM analytics.daily_health_sensor",
     );
     const { text: sleepQueryText, params: sleepQueryParams } = findSensorQuery(
       sensorStore,

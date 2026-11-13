@@ -1,6 +1,11 @@
 import type { RunningStepSnapshot } from "../modules/health-kit";
 import { isAfterDeviceErasureCutoff } from "./device-erasure-cutoff";
-import type { ObserverSyncOptions, SyncResult } from "./health-kit-sync-types";
+import {
+  type ManualHealthKitSyncContext,
+  ManualHealthKitSyncInterruptedError,
+  type ObserverSyncOptions,
+  type SyncResult,
+} from "./health-kit-sync-types";
 import { captureException } from "./telemetry";
 
 const BATCH_SIZE = 500;
@@ -10,6 +15,7 @@ export async function syncRunningSteps(
   options: Omit<ObserverSyncOptions, "typeIdentifiers">,
   startDate: string,
   endDate: string,
+  manualExecution?: ManualHealthKitSyncContext,
 ): Promise<SyncResult> {
   const { healthKit, trpcClient, minimumSampleDate = null, onStage } = options;
   const typeIdentifier = "HKQuantityTypeIdentifierStepCount";
@@ -50,6 +56,8 @@ export async function syncRunningSteps(
     for (let offset = 0; offset < samples.length; offset += BATCH_SIZE) {
       const batch = samples.slice(offset, offset + BATCH_SIZE);
       const batchIds = new Set(batch.flatMap((sample) => sample.workoutUuids));
+      await manualExecution?.assertCanContinue();
+      await options.assertCanContinue?.();
       onStage?.({ operation: "pushRunningStepSamples", itemCount: batch.length });
       const result = await trpcClient.healthKitSync.pushRunningStepSamples.mutate({
         workouts: workouts.filter((workout) => batchIds.has(workout.uuid)),
@@ -59,10 +67,14 @@ export async function syncRunningSteps(
     }
     return inserted;
   }
+  await manualExecution?.assertCanContinue();
+  await options.assertCanContinue?.();
   onStage?.({ operation: "queryRunningStepSamples", typeIdentifier });
   let inserted = await upload(await healthKit.queryRunningStepSamples(startDate, endDate));
   let deleted = 0;
   while (true) {
+    await manualExecution?.assertCanContinue();
+    await options.assertCanContinue?.();
     onStage?.({ operation: "queryRunningStepChanges", typeIdentifier });
     const changes = await healthKit.queryRunningStepChanges(minimumSampleDate ?? startDate);
     try {
@@ -74,6 +86,8 @@ export async function syncRunningSteps(
       inserted += await upload(changes);
       for (let offset = 0; offset < changes.deletedUUIDs.length; offset += BATCH_SIZE) {
         const deletedUUIDs = changes.deletedUUIDs.slice(offset, offset + BATCH_SIZE);
+        await manualExecution?.assertCanContinue();
+        await options.assertCanContinue?.();
         onStage?.({
           operation: "deleteQuantitySamples",
           typeIdentifier,
@@ -87,6 +101,8 @@ export async function syncRunningSteps(
         ).deleted;
       }
       if (changes.queryId) {
+        await manualExecution?.assertCanContinue();
+        await options.assertCanContinue?.();
         onStage?.({ operation: "completeAnchoredQuery", typeIdentifier });
         const committed = await healthKit.completeAnchoredQuery(
           typeIdentifier,
@@ -99,14 +115,16 @@ export async function syncRunningSteps(
           );
       }
     } catch (error) {
-      captureException(error, { source: "health-kit-running-step-sync" });
       if (changes.queryId) {
         try {
           await healthKit.completeAnchoredQuery(typeIdentifier, changes.queryId, false);
         } catch (completionError) {
+          if (completionError instanceof ManualHealthKitSyncInterruptedError) throw completionError;
           captureException(completionError, { source: "health-kit-running-step-anchor" });
         }
       }
+      if (error instanceof ManualHealthKitSyncInterruptedError) throw error;
+      captureException(error, { source: "health-kit-running-step-sync" });
       throw error;
     }
     if (!changes.hasMore) break;

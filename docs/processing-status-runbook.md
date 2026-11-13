@@ -53,6 +53,10 @@ only; it never contains metric payloads.
    the next run. A dataset with terminal analytics does not request another
    build while other datasets are still waiting for replication. These checks
    use the [latest operation facts](../src/processing/processing-reconciler.ts).
+   The 12-hour `processing_stalled` cutoff measures inactivity from the newest
+   producer reconciliation-outbox row, so fresh output keeps an older operation
+   active. Reconciliation polls and dispatch bookkeeping do not refresh this
+   clock; see the [pending-output selection and cutoff](../src/processing/processing-reconciler.ts).
 4. Independently, the `cdc-health` service runs
    `scripts/check-clickhouse-cdc.ts` every five minutes and records only the
    bounded CDC result for its health probe.

@@ -195,6 +195,7 @@ export function initTelemetry() {
   }
 
   Sentry.init({
+    autoInitializeNativeSdk: false,
     dsn: SENTRY_DSN,
     ...(SENTRY_RELEASE ? { release: SENTRY_RELEASE } : {}),
     ...(SENTRY_DIST ? { dist: SENTRY_DIST } : {}),
@@ -272,7 +273,7 @@ export function captureException(
   );
   const source = typeof context.source === "string" ? context.source : undefined;
   const handledFailure =
-    classifyHandledFailure(error) ??
+    classifyHandledFailure(error, source) ??
     (shouldSuppressBackgroundTransientNetworkError(error, source) ? "background_transport" : null);
   if (handledFailure) {
     if (!retiredLifetime) posthogClient?.capture("handled_failure", { kind: handledFailure });

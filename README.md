@@ -38,7 +38,7 @@ API and import providers ──> sync/import workers ──> Postgres (fitness.*
                                   │                       │
                                   │                       └─ PeerDB CDC
                                   │                              │
-High-volume sensor samples ──────┴─> Redpanda ────────────────> ClickHouse
+High-volume sensor samples ──────┴─> Kafka ────────────────────> ClickHouse
                                         │                         │
                                         └─> Cloudflare R2 archive │
                                                                   │
@@ -48,16 +48,16 @@ High-volume sensor samples ──────┴─> Redpanda ──────
 ```
 
 - Postgres owns relational application state and lower-volume raw health data.
-- High-volume `metric_stream` events bypass Postgres. Redpanda is the hot ingest
-  log, Cloudflare R2 is the durable archive, and ClickHouse is the
-  serving copy.
+- High-volume `metric_stream` events bypass Postgres. Kafka is the ingest log
+  with tiered storage in Cloudflare R2; ClickHouse is the serving copy. See the
+  [Kafka retention audit](deploy/kafka/retention-policy.md).
 - PeerDB mirrors lower-volume `fitness.*` tables into `postgres_fitness.*` in
   ClickHouse.
 - Incremental dbt models under `analytics/models/` produce expensive derived
   analytics outside request paths. The serialized analytics worker also calls
   the pure [`@dofek/cycling-power`](packages/cycling-power/README.md) algorithms
   through its [bounded projector](src/analytics/README.md); dbt inputs precede
-  projection and dependent healthspan models follow it. Derived sensor analytics
+  projection and dependent threshold/activity-power models follow it. Derived sensor analytics
   are never written back to Postgres.
 - Express and tRPC serve both clients. BullMQ workers use Redis for scheduled
   syncs, imports, exports, post-sync work, and analytics cleanup.
@@ -256,7 +256,7 @@ injection, health gates, rollback boundaries, and diagnostics.
 
 To check when production last deployed or why merged changes have not released,
 follow [Checking the Latest Production Deployment](deploy/README.md#checking-the-latest-production-deployment).
-Correlate the parent workflow's server job with the running image; the procedure
+Inspect Release Production's server job and correlate it with the running image; the procedure
 also checks whether automatic deployment is disabled.
 
 ## Documentation Policy

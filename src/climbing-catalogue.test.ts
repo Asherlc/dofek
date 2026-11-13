@@ -1,5 +1,9 @@
 import type { CatalogueCandidate } from "@dofek/climbing-catalogue/contracts";
 import { MountainProjectCatalogueAdapter } from "@dofek/climbing-catalogue/mountain-project";
+import {
+  ProviderRateLimitError,
+  ProviderServiceUnavailableError,
+} from "@dofek/provider-http/rate-limit";
 import type { CatalogueSeed } from "@dofek/training/climbing-catalogue";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ClimbingCatalogueService } from "./climbing-catalogue.ts";
@@ -56,6 +60,52 @@ const candidate: CatalogueCandidate = {
 };
 
 describe("ClimbingCatalogueService", () => {
+  it.each([
+    { ErrorType: ProviderRateLimitError, statusCode: 429 },
+    { ErrorType: ProviderServiceUnavailableError, statusCode: 502 },
+  ])(
+    "reports safe HTTP $statusCode metadata separately from upstream content",
+    async ({ ErrorType, statusCode }) => {
+      const failure = new ErrorType({
+        message: `OpenBeta is unavailable (${statusCode}). Retry later.`,
+        providerId: "openbeta",
+        statusCode,
+        responseBody: "🔒private-token=secret",
+        scope: "user",
+        userId: "private-user",
+        retryAfterSeconds: 30,
+      });
+      const service = new ClimbingCatalogueService(new MemoryCacheStore(), [
+        {
+          providerId: "openbeta",
+          search: async () => {
+            throw failure;
+          },
+        },
+      ]);
+      await expect(service.refresh(seed)).rejects.toMatchObject({ errors: [failure] });
+      const context = {
+        tags: { phase: "climbing-catalogue-refresh" },
+        extra: {
+          providerFailures: [
+            {
+              providerId: "openbeta",
+              statusCode,
+              scope: "user",
+              retryAfterSeconds: 30,
+              responseBodyBytes: 24,
+            },
+          ],
+        },
+      };
+      expect(captureException).toHaveBeenCalledWith(
+        expect.objectContaining({ errors: [failure] }),
+        context,
+      );
+      await service.markFailed(seed, failure);
+      expect(captureException).toHaveBeenLastCalledWith(failure, context);
+    },
+  );
   it("retains unnamed native source information without inventing discovery names", async () => {
     const { KayaCatalogueAdapter } = await import("@dofek/climbing-catalogue/kaya");
     const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(
@@ -339,6 +389,34 @@ describe("ClimbingCatalogueService", () => {
     });
     expect(search).not.toHaveBeenCalled();
   });
+
+  it("caches fresh partial sources with error status for one day and reports the original failure", async () => {
+    const cache = new MemoryCacheStore();
+    const failure = new Error("OpenBeta API service unavailable (502). Try again later.");
+    const service = new ClimbingCatalogueService(cache, [
+      { providerId: "thecrag", search: async () => ({ candidates: [candidate], complete: true }) },
+      {
+        providerId: "openbeta",
+        search: async () => {
+          throw failure;
+        },
+      },
+    ]);
+    await expect(service.refresh(seed)).rejects.toBeInstanceOf(AggregateError);
+    const retained = await service.read(seed);
+    expect(retained).toMatchObject({
+      status: "error",
+      fetchedAt: "2026-10-27T12:00:00.000Z",
+      expiresAt: "2026-10-28T12:00:00.000Z",
+      error: expect.stringContaining("502"),
+      sources: [{ providerId: "thecrag", matches: [{ candidate }] }],
+    });
+    expect(captureException).toHaveBeenCalledWith(expect.objectContaining({ errors: [failure] }), {
+      tags: { phase: "climbing-catalogue-refresh" },
+    });
+    vi.advanceTimersByTime(86400000);
+    expect((await service.read(seed)).status).toBe("missing");
+  });
   it("reports a rejected refresh request without leaving the cache pending", async () => {
     const { service } = setup();
     await service.markFailed(seed, new Error("Catalogue refresh could not be queued."));
@@ -422,9 +500,7 @@ describe("ClimbingCatalogueService", () => {
     await service.refresh(seed);
     search.mockResolvedValueOnce({ candidates: [{ ...candidate, tags: [] }], complete: true });
     expect((await service.refresh(seed)).sources[0]?.matches[0]?.candidate.tags).toEqual([]);
-    search.mockRejectedValueOnce(
-      new Error("theCrag catalogue request failed (403). Try again later."),
-    );
+    search.mockRejectedValueOnce(new Error("Provider request failed (403). Try again later."));
     await expect(service.refresh(seed)).rejects.toThrow("403");
     const retained = await service.read(seed);
     expect(retained.status).toBe("error");
@@ -683,11 +759,11 @@ describe("ClimbingCatalogueService", () => {
     vi.advanceTimersByTime(2 * 86400000);
     const error = new Error("theCrag is unavailable. Retry later.");
     search.mockRejectedValue(error);
-    await expect(service.refresh(seed)).rejects.toBe(error);
-    const retained = { ...successful, status: "error", error: error.message };
+    await expect(service.refresh(seed)).rejects.toMatchObject({ errors: [error] });
+    const retained = { ...successful, status: "error", error: `thecrag: ${error.message}` };
     expect(await service.read(seed)).toEqual(retained);
     expect(set).toHaveBeenLastCalledWith(expect.any(String), retained, 5 * 86400000);
-    expect(captureException).toHaveBeenCalledWith(error, {
+    expect(captureException).toHaveBeenCalledWith(expect.objectContaining({ errors: [error] }), {
       tags: { phase: "climbing-catalogue-refresh" },
     });
     vi.advanceTimersByTime(5 * 86400000);

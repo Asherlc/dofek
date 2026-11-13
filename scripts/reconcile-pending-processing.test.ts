@@ -137,7 +137,8 @@ describe("reconcile-pending-processing", () => {
 
     expect(mockedSentryInit).toHaveBeenCalledWith({
       dsn: "dsn",
-      skipOpenTelemetrySetup: true,
+      enableOpenTelemetrySetup: false,
+      dataCollection: expect.any(Object),
     });
   });
 });

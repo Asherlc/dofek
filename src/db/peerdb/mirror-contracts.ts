@@ -40,7 +40,7 @@ export const peerDbMirrorContracts = [
         sourceTableIdentifier: "fitness.activity",
         destinationTableIdentifier: "activity",
         exclude: [],
-        requiredNullableColumns: ["ended_at"],
+        requiredNullableColumns: ["ended_at", "fit_recovery_error"],
       },
       {
         sourceTableIdentifier: "fitness.sleep_session",

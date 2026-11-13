@@ -1,6 +1,6 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
-import { Client } from "pg";
+import { Client, escapeLiteral } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
@@ -18,6 +18,7 @@ import {
   findAccountErasureStatus,
   initiateAccountErasure,
   isAccountErasureIdentityFenced,
+  prepareAccountErasure,
   withAccountErasureIdentityWriteFence,
 } from "./account-erasure.ts";
 import {
@@ -207,6 +208,119 @@ describe("account erasure persistence (integration)", () => {
 
   afterAll(async () => {
     await context?.cleanup();
+  });
+
+  it.each([
+    { path: "direct", input: "count" },
+    { path: "confirmation", input: "provider account bytes" },
+    { path: "restore", input: "email bytes" },
+  ] as const)(
+    "checks prerequisites for external identity $input before $path activation payload reads",
+    async ({ path, input }) => {
+      const identityUserId = randomUUID();
+      const sessionId = `identity-budget-${randomUUID()}`;
+      await context.db.execute(sql`INSERT INTO fitness.user_profile(id,name)
+      VALUES (${identityUserId}::uuid,'Identity source budget fixture')`);
+      await context.db.execute(sql`INSERT INTO fitness.session(id,user_id,expires_at)
+      VALUES (${sessionId},${identityUserId}::uuid,now()+interval '1 day')`);
+      if (input === "count") {
+        await context.db.execute(sql`INSERT INTO fitness.auth_account(user_id,auth_provider,provider_account_id)
+        SELECT ${identityUserId}::uuid,'fixture',${identityUserId}||'-'||ordinal::text
+        FROM generate_series(1,129) AS ordinal`);
+      } else {
+        // An invalid email makes the unguarded payload loader fail validation first.
+        await context.db.execute(sql`INSERT INTO fitness.auth_account(user_id,auth_provider,provider_account_id,email)
+        SELECT ${identityUserId}::uuid,'fixture',
+          ${input === "provider account bytes" ? sql`repeat('x',400*1024)` : sql`${identityUserId}`}||ordinal::text,
+          ${input === "email bytes" ? sql`repeat('x',400*1024)||ordinal::text` : sql`'invalid-email'`}
+        FROM generate_series(1,3) AS ordinal`);
+      }
+      let snapshotReads = 0;
+      let restoreWrites = 0;
+      const snapshot = async () => {
+        snapshotReads += 1;
+        return "unvalidated-snapshot-fixture";
+      };
+      const persistRestoreIntent = async () => {
+        restoreWrites += 1;
+      };
+      const activation = async () => {
+        if (path === "confirmation") {
+          const prepared = await prepareAccountErasure(context.db, identityUserId, async () => []);
+          return confirmAccountErasure(context.db, prepared.preparationToken, {
+            createEncryptedRemoteSnapshot: snapshot,
+            findRestoreIntent: async () => null,
+            persistRestoreIntent,
+          });
+        }
+        return initiateAccountErasure(
+          context.db,
+          identityUserId,
+          snapshot,
+          persistRestoreIntent,
+          path === "restore" ? { recoveredFromRestore: true } : {},
+        );
+      };
+      await expect(activation()).rejects.toThrow(
+        /Account deletion snapshot exceeds.*limit.*Contact support/,
+      );
+      expect(snapshotReads).toBe(0);
+      expect(restoreWrites).toBe(0);
+      const rows = await context.db.execute(sql`SELECT
+      (SELECT count(*)::integer FROM fitness.account_erasure_request WHERE user_id=${identityUserId}::uuid) AS requests,
+      (SELECT count(*)::integer FROM fitness.session WHERE id=${sessionId}) AS sessions`);
+      expect(rows).toEqual([expect.objectContaining({ requests: 0, sessions: 1 })]);
+    },
+  );
+
+  it("commits parent capture proof atomically with activation and its outbox", async () => {
+    const rows = await context.db.execute(sql`SELECT EXISTS (
+      SELECT 1 FROM fitness.account_erasure_checkpoint
+      WHERE request_id=${requestId}::uuid AND phase='postgres_identifier_capture'
+    ) AS captured`);
+    expect(rows).toEqual([expect.objectContaining({ captured: true })]);
+  });
+
+  it("rolls back activation and session revocation if retained parent capture cannot commit", async () => {
+    const captureUserId = randomUUID();
+    const captureRequestId = randomUUID();
+    const sessionId = `capture-${randomUUID()}`;
+    await context.db.execute(
+      sql`INSERT INTO fitness.user_profile(id,name) VALUES (${captureUserId}::uuid,'Capture rollback fixture')`,
+    );
+    await context.db.execute(sql`INSERT INTO fitness.session(id,user_id,expires_at)
+      VALUES (${sessionId},${captureUserId}::uuid,now()+interval '1 day')`);
+    await context.db.execute(sql`INSERT INTO fitness.activity(id,user_id,provider_id,external_id,canonical_type,provider_type,started_at)
+      VALUES (${randomUUID()}::uuid,${captureUserId}::uuid,'apple_health',${randomUUID()},'cycling','cycling',now())`);
+    await context.db.execute(sql`ALTER TABLE fitness.account_erasure_identifier
+      ADD CONSTRAINT activation_capture_fixture_failure CHECK (
+        request_id<>${sql.raw(escapeLiteral(captureRequestId))}::uuid OR family<>'activity'
+      )`);
+    try {
+      await expect(
+        initiateAccountErasure(
+          context.db,
+          captureUserId,
+          async () => "retained-snapshot",
+          async () => undefined,
+          { requestId: captureRequestId },
+        ),
+      ).rejects.toMatchObject({
+        cause: { code: "23514", constraint: "activation_capture_fixture_failure" },
+      });
+      const rows = await context.db.execute(sql`SELECT
+        (SELECT count(*)::integer FROM fitness.account_erasure_request WHERE id=${captureRequestId}::uuid) AS requests,
+        (SELECT count(*)::integer FROM fitness.account_erasure_outbox WHERE request_id=${captureRequestId}::uuid) AS outbox,
+        (SELECT count(*)::integer FROM fitness.account_erasure_identifier WHERE request_id=${captureRequestId}::uuid) AS identifiers,
+        (SELECT count(*)::integer FROM fitness.session WHERE id=${sessionId}) AS sessions`);
+      expect(rows).toEqual([
+        expect.objectContaining({ requests: 0, outbox: 0, identifiers: 0, sessions: 1 }),
+      ]);
+    } finally {
+      await context.db.execute(
+        sql`ALTER TABLE fitness.account_erasure_identifier DROP CONSTRAINT activation_capture_fixture_failure`,
+      );
+    }
   });
 
   it("atomically revokes every session and creates a seven-day replay boundary", async () => {
@@ -749,14 +863,50 @@ describe("account erasure persistence (integration)", () => {
             request_id, phase, details
           )
           VALUES
-            (${requestId}::uuid, 'consumer_drain', '{"quarantineHighWatermarks":[{"low":"4","offset":"12","partition":0}],"unexpected":"must-not-survive"}'::jsonb),
+            (${requestId}::uuid, 'ingest_fence', ${JSON.stringify({
+              unexpected: "must-not-survive",
+              highWatermarks: [
+                {
+                  topic: "metric-stream-live-v2",
+                  partition: 0,
+                  low: "0",
+                  offset: "100",
+                  clusterId: "0000000000000000000000",
+                  topicId: "dI2O6HVWQkuC7XgSy7cJ3w",
+                  userEmail: "must-not-survive@example.test",
+                },
+              ],
+            })}::jsonb),
+            (${requestId}::uuid, 'consumer_drain', ${JSON.stringify({
+              drained: true,
+              unexpected: "must-not-survive",
+              quarantineHighWatermarks: [
+                {
+                  // Checkpoints identify the source route; retention derives its quarantine name.
+                  topic: "metric-stream-live-v2",
+                  partition: 0,
+                  low: "0",
+                  offset: "42",
+                  clusterId: "0000000000000000000000",
+                  topicId: "aaaaaaaaaaaaaaaaaaaaaa",
+                  userEmail: "must-not-survive@example.test",
+                },
+              ],
+            })}::jsonb),
             (${requestId}::uuid, 'work_verification', '{"path":"pii-like-path"}'::jsonb),
             (${requestId}::uuid, 'consumer_drain_verification', '{"offset":"123"}'::jsonb),
             (${requestId}::uuid, 'stripe_erasure_verification', '{"customer":"pii-like-customer"}'::jsonb),
             (${requestId}::uuid, 'remote_revocation_verification', '{"email":"pii@example.test"}'::jsonb),
             (${requestId}::uuid, 'processor_erasure_verification', '{"contact":"pii@example.test"}'::jsonb),
             (${requestId}::uuid, 'postgres_profile_delete', ${JSON.stringify({ userId: deletingUserId })}::jsonb),
-            (${requestId}::uuid, 'peerdb_drain_verification', '{"stage":"pii-like-stage"}'::jsonb),
+            (${requestId}::uuid, 'peerdb_drain_verification', ${JSON.stringify({
+              stagingBoundary: {
+                cutoff: "2026-08-02T00:00:00.000Z",
+                eTag: '"pii-like-etag"',
+                key: "pii-like-key",
+              },
+              verified: true,
+            })}::jsonb),
             (${requestId}::uuid, 'clickhouse_verification', '{"part":"pii-like-part"}'::jsonb),
             (${requestId}::uuid, 'archive_verification', '{"key":"pii-like-key"}'::jsonb)`,
     );
@@ -785,8 +935,35 @@ describe("account erasure persistence (integration)", () => {
     expect(scrubbedRows).toEqual([
       {
         checkpoint_details: expect.objectContaining({
+          // Post-scrub retention/TS absence needs main ingest HWM + quarantine HWM + PeerDB cutoff.
+          ingest_fence: {
+            highWatermarks: [
+              {
+                topic: "metric-stream-live-v2",
+                partition: 0,
+                low: "0",
+                offset: "100",
+                clusterId: "0000000000000000000000",
+                topicId: "dI2O6HVWQkuC7XgSy7cJ3w",
+              },
+            ],
+          },
           consumer_drain: {
-            quarantineHighWatermarks: [{ low: "4", offset: "12", partition: 0 }],
+            quarantineHighWatermarks: [
+              {
+                topic: "metric-stream-live-v2",
+                partition: 0,
+                low: "0",
+                offset: "42",
+                clusterId: "0000000000000000000000",
+                topicId: "aaaaaaaaaaaaaaaaaaaaaa",
+              },
+            ],
+          },
+          peerdb_drain_verification: {
+            stagingBoundary: {
+              cutoff: "2026-08-02T00:00:00.000Z",
+            },
           },
           processor_erasure: null,
           remote_revocation_verification: null,

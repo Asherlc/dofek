@@ -12,9 +12,43 @@ vi.mock("react-native", async () => {
 });
 
 vi.mock("../ProviderLogo", () => ({ ProviderLogo: () => null }));
+vi.mock("../../lib/trpc", () => ({
+  trpc: {
+    useUtils: () => ({
+      activity: { byId: { invalidate: vi.fn() }, list: { invalidate: vi.fn() } },
+      calendar: {
+        weekListV2: { invalidate: vi.fn() },
+        activityOverview: { invalidate: vi.fn() },
+        calendarData: { invalidate: vi.fn() },
+      },
+    }),
+    activity: {
+      restoreStatus: { useQuery: () => ({ data: undefined, error: null }) },
+      restoreProviderAbsent: {
+        useMutation: () => ({ mutate: vi.fn(), isPending: false, error: null, reset: vi.fn() }),
+      },
+    },
+  },
+}));
+vi.mock("@dofek/providers/providers", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@dofek/providers/providers")>()),
+  providerLabel: (id: string) => (id === "kilter" ? "Kilter Board" : id),
+}));
 
 describe("ActivityDetailHeader", () => {
   beforeEach(() => vi.clearAllMocks());
+
+  it("shows a server-projected FIT recovery warning and omits it for a clean activity", () => {
+    const warning = "Some FIT data could not be recovered from the original file.";
+    const { rerender } = render(
+      <ActivityDetailHeader activity={{ ...detailHeaderActivity, fitRecoveryWarning: warning }} />,
+    );
+
+    expect(screen.getByRole("alert").textContent).toBe(warning);
+
+    rerender(<ActivityDetailHeader activity={detailHeaderActivity} />);
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
 
   it("keeps the activity identity with an inline tree of distinct source branches", () => {
     render(<ActivityDetailHeader activity={detailHeaderActivity} />);
@@ -73,6 +107,36 @@ describe("ActivityDetailHeader", () => {
     );
     expect(screen.getByText("Morning Ride")).toBeDefined();
     expect(screen.queryByRole("button", { name: /Lineage/ })).toBeNull();
+  });
+
+  it("shows each projected Kilter log window and keeps a single log to one timestamp", () => {
+    const session = {
+      id: "00000000-0000-4000-8000-000000000101",
+      providerId: "kilter",
+      memberActivityIds: ["00000000-0000-4000-8000-000000000102"],
+      firstLoggedAt: "2026-04-14T10:00:00.000Z",
+      lastLoggedAt: "2026-04-14T10:04:33.000Z",
+    };
+    const singleLogSession = {
+      ...session,
+      id: "00000000-0000-4000-8000-000000000103",
+      memberActivityIds: ["00000000-0000-4000-8000-000000000104"],
+      firstLoggedAt: "2026-04-14T10:10:00.000Z",
+      lastLoggedAt: "2026-04-14T10:10:00.000Z",
+    };
+    render(
+      <ActivityDetailHeader
+        activity={{
+          ...detailHeaderActivity,
+          name: "Gym session",
+          activityType: "climbing",
+          climbingLogSessions: [session, singleLogSession],
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Kilter Board · Logged climbs · 3:00 AM – 3:04 AM")).toBeTruthy();
+    expect(screen.getByText("Kilter Board · Logged climbs · 3:10 AM")).toBeTruthy();
   });
 
   it("expands disconnected sources when recording attribution is unresolved", () => {

@@ -71,7 +71,7 @@ jobs:
         with:
           ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || '' }}
           persist-credentials: false
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
       - name: Validate action-pinning regression fixtures
         run: |
           set -euo pipefail
@@ -199,7 +199,7 @@ jobs:
           buildkitd-config-inline: |
             [registry."docker.io"]
               mirrors = ["mirror.gcr.io"]
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -317,7 +317,7 @@ jobs:
       - name: Setup Node and pnpm
         uses: ./.github/actions/setup-node-pnpm
       - name: Setup uv
-        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
       - name: Run lint policies
         run: pnpm lint
         env:
@@ -343,7 +343,7 @@ jobs:
         with:
           ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || '' }}
           persist-credentials: false
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
       - name: Run yamllint
         run: uv tool run yamllint -c .yamllint.yml --no-warnings .
 
@@ -411,7 +411,7 @@ jobs:
           ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || '' }}
           persist-credentials: false
           fetch-depth: 0
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
       - name: Lint new migration SQL
         run: |
           # Migration 0099 was applied in production before this repository restored its lineage.
@@ -540,7 +540,7 @@ jobs:
         with:
           ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || '' }}
           persist-credentials: false
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
       - name: Install dependencies
         run: uv sync --locked --extra matching
       - name: Lint
@@ -702,6 +702,7 @@ jobs:
         with:
           files: coverage/lcov.info
           flags: unit
+          fail_ci_if_error: true
           use_oidc: true
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -749,7 +750,7 @@ jobs:
           path: .build/fit-decoder/bin/dofek-fit-decoder
 
   test-integration:
-    name: Integration Tests (${{ matrix.shard }}/4)
+    name: Integration Tests (${{ matrix.shard }}/5)
     needs: test-fit-decoder
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -759,7 +760,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5]
     services:
       postgres:
         image: timescale/timescaledb-ha:pg18.3-ts2.26.4-all
@@ -819,7 +820,7 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup-node-pnpm
       - name: Setup uv
-        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
       - name: Download FIT decoder binary
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -828,7 +829,7 @@ jobs:
       - name: Make FIT decoder executable
         run: chmod +x .build/fit-decoder/bin/dofek-fit-decoder
       - id: integration-tests
-        run: pnpm exec vitest run --project integration --coverage --shard=${{ matrix.shard }}/4
+        run: pnpm exec vitest run --project integration --coverage --shard=${{ matrix.shard }}/5
         timeout-minutes: 12
         env:
           VITEST_COVERAGE_SKIP_THRESHOLDS: "true"
@@ -847,18 +848,19 @@ jobs:
         with:
           files: coverage/lcov.info
           flags: integration
+          fail_ci_if_error: true
           use_oidc: true
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: coverage-integration-${{ matrix.shard }}
           path: coverage/
       - name: Export fresh integration timings
-        run: pnpm tsx scripts/update-integration-test-timings.ts export reports/integration-sharding/${{ matrix.shard }}-of-4
+        run: pnpm tsx scripts/update-integration-test-timings.ts export reports/integration-sharding/${{ matrix.shard }}-of-5
       - name: Upload integration timings
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: integration-timings-${{ matrix.shard }}
-          path: reports/integration-sharding/${{ matrix.shard }}-of-4/
+          path: reports/integration-sharding/${{ matrix.shard }}-of-5/
           if-no-files-found: error
 
   test-peerdb-integration:
@@ -941,6 +943,7 @@ jobs:
           pnpm tsx scripts/update-integration-test-timings.ts merge integration-test-timings.json
           integration-timings/integration-timings-1 integration-timings/integration-timings-2
           integration-timings/integration-timings-3 integration-timings/integration-timings-4
+          integration-timings/integration-timings-5
       - name: Upload complete integration timing refresh
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -1045,7 +1048,7 @@ jobs:
           buildkitd-config-inline: |
             [registry."docker.io"]
               mirrors = ["mirror.gcr.io"]
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -1423,7 +1426,7 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
       - uses: ./.github/actions/setup-node-pnpm
-      - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
+      - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
         with:
           version: 2026.10.23
           install_args: github:juntaki/mutantkit
@@ -1467,7 +1470,7 @@ jobs:
             packages/mobile/targets/*/.build
           key: swift-mutation-build-v3-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/mobile/modules/*/Package.swift', 'packages/mobile/targets/*/Package.swift') }}
           restore-keys: swift-mutation-build-v3-${{ runner.os }}-${{ runner.arch }}-
-      - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
+      - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
         with:
           version: 2026.10.23
           install_args: github:juntaki/mutantkit
@@ -1517,7 +1520,7 @@ jobs:
           path: reports/swift-mutation/
           merge-multiple: true
       - name: Install pinned MutantKit
-        uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
+        uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
         with:
           version: 2026.10.23
           install_args: github:juntaki/mutantkit

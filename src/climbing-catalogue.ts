@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto";
-import { ClimbingCatalogueSearch } from "@dofek/climbing-catalogue";
+import { CatalogueSearchError, ClimbingCatalogueSearch } from "@dofek/climbing-catalogue";
 import type { ClimbingCatalogueAdapter } from "@dofek/climbing-catalogue/contracts";
+import {
+  ProviderRateLimitError,
+  ProviderServiceUnavailableError,
+} from "@dofek/provider-http/rate-limit";
 import {
   type CatalogueSeed,
   type ClimbingCatalogueContext,
@@ -22,7 +26,7 @@ const missing: ClimbingCatalogueContext = {
 export function catalogueSeedCacheKey(seed: CatalogueSeed): string {
   const { logEntryId: _logEntryId, ...source } = catalogueSeedSchema.parse(seed);
   const fingerprint = createHash("sha256").update(JSON.stringify(source)).digest("hex");
-  return `${seed.userId}:climbing.catalogueContext:v4:${fingerprint}`;
+  return `${seed.userId}:climbing.catalogueContext:v6:${fingerprint}`;
 }
 
 /** Disposable source context. It never writes facts, matches, or winners to the database. */
@@ -48,16 +52,37 @@ export class ClimbingCatalogueService {
   }
 
   async markFailed(seed: CatalogueSeed, error: unknown): Promise<void> {
-    captureException(error, { tags: { phase: "climbing-catalogue-refresh" } });
+    const failures: unknown[] = error instanceof CatalogueSearchError ? error.errors : [error];
+    const providerFailures = failures.flatMap((failure) =>
+      failure instanceof ProviderRateLimitError ||
+      failure instanceof ProviderServiceUnavailableError
+        ? [
+            {
+              providerId: failure.providerId,
+              statusCode: failure.statusCode,
+              scope: failure.scope,
+              retryAfterSeconds: failure.retryAfterSeconds,
+              responseBodyBytes: Buffer.byteLength(failure.responseBody, "utf8"),
+            },
+          ]
+        : [],
+    );
+    captureException(error, {
+      tags: { phase: "climbing-catalogue-refresh" },
+      ...(providerFailures.length > 0 ? { extra: { providerFailures } } : {}),
+    });
     const previous = await this.read(seed);
+    const partialSources =
+      error instanceof CatalogueSearchError && error.sources.length > 0 ? error.sources : null;
     const expiresAt =
-      previous.fetchedAt && previous.expiresAt
+      !partialSources && previous.fetchedAt && previous.expiresAt
         ? previous.expiresAt
         : new Date(Date.now() + DAY).toISOString();
     await this.cache.set(
       catalogueSeedCacheKey(seed),
       {
         ...previous,
+        ...(partialSources ? { sources: partialSources, fetchedAt: new Date().toISOString() } : {}),
         status: "error",
         expiresAt,
         error:

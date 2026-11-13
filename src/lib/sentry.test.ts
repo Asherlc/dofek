@@ -91,7 +91,15 @@ describe("initProductionSentry", () => {
           dsn: "https://key@sentry.example/456",
           environment: "production",
           release: "0123456789abcdef",
-          skipOpenTelemetrySetup: true,
+          enableOpenTelemetrySetup: false,
+          dataCollection: expect.objectContaining({
+            userInfo: false,
+            cookies: false,
+            httpBodies: [],
+            databaseQueryData: false,
+            queues: false,
+            genAI: { inputs: false, outputs: false },
+          }),
         }),
       );
     },
@@ -268,8 +276,10 @@ describe("initProductionSentry", () => {
       trace_id: "trace",
       span_id: "span",
       start_timestamp: 1,
-      description: "GET https://apis.garmin.com/file?token=synthetic-span-secret&feed=fit",
-      data: {
+      status: "ok",
+      is_segment: false,
+      name: "GET https://apis.garmin.com/file?token=synthetic-span-secret&feed=fit",
+      attributes: {
         "url.full": "https://apis.garmin.com/file?token=synthetic-span-secret&feed=fit",
         "http.url": "https://apis.garmin.com/file?token=synthetic-span-secret",
         "http.target": "/file?token=synthetic-span-secret",
@@ -279,8 +289,8 @@ describe("initProductionSentry", () => {
     };
     const result = beforeSendSpan?.(span) ?? span;
     expect(JSON.stringify(result)).not.toContain("synthetic-span-secret");
-    expect(result.data["url.full"]).toContain("feed=fit");
-    expect(result.description).toContain("token=REDACTED");
+    expect(result.attributes["url.full"]).toContain("feed=fit");
+    expect(result.name).toContain("token=REDACTED");
   });
 
   it("redacts root transaction data and child spans before sending a transaction", async () => {
@@ -308,6 +318,7 @@ describe("initProductionSentry", () => {
           trace_id: "trace",
           span_id: "span",
           start_timestamp: 1,
+          status: "ok",
           data: {
             "http.url": "https://apis.garmin.com/file?token=synthetic-transaction-secret&feed=fit",
           },

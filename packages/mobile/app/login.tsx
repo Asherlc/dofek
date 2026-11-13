@@ -11,10 +11,10 @@ import { groupConfiguredAuthProviders } from "@dofek/providers/auth-provider-gro
 import { providerLabel } from "@dofek/providers/providers";
 import * as AppleAuthentication from "expo-apple-authentication";
 import { useRouter } from "expo-router";
+import * as WebBrowser from "expo-web-browser";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
-  Linking,
   ScrollView,
   StyleSheet,
   Text,
@@ -196,7 +196,7 @@ export default function LoginScreen() {
     const documentTitle = document === "privacy" ? "Privacy Policy" : "Terms of Service";
     setError(null);
     try {
-      await Linking.openURL(`${serverUrl}/${document}`);
+      await WebBrowser.openBrowserAsync(`${serverUrl}/${document}`);
     } catch (error_: unknown) {
       captureException(error_, {
         source: "login-screen-open-legal-document",

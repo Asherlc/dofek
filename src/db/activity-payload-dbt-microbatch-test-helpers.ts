@@ -93,11 +93,11 @@ export async function seedLocationFixture(
        toDateTime64('2026-09-03 11:00:00', 6, 'UTC'),
        toDateTime64('2026-09-03 12:00:00', 9, 'UTC'),
        ['${routeMemberId}', '${retainedRouteMemberId}'], 1, 0,
-       toDateTime64('2026-09-03 12:00:00', 9, 'UTC')),
+       toDateTime64('2026-09-03 12:00:00', 9, 'UTC'), NULL),
       ('${unrelatedRouteGroupId}', '${userId}', toDateTime64('2026-09-04 10:00:00', 6, 'UTC'),
        toDateTime64('2026-09-04 11:00:00', 6, 'UTC'),
        toDateTime64('2026-09-04 12:00:00', 9, 'UTC'), ['${unrelatedRouteMemberId}'], 1, 0,
-       toDateTime64('2026-09-04 12:00:00', 9, 'UTC'))`,
+       toDateTime64('2026-09-04 12:00:00', 9, 'UTC'), NULL)`,
     `INSERT INTO ${database}.deduped_activity_members VALUES
       ('${routeGroupId}', '${userId}', toDateTime64('2026-09-03 10:00:00', 6, 'UTC'),
        toDateTime64('2026-09-03 11:00:00', 6, 'UTC'),
@@ -121,7 +121,7 @@ export async function moveRouteMember(client: ClickHouseClient, database: string
         toDateTime64('2026-09-03 10:00:00', 6, 'UTC'),
         toNullable(toDateTime64('2026-09-03 11:00:00', 6, 'UTC')),
         move_refreshed_at, [toUUID('${retainedRouteMemberId}')], toUInt64(2), toUInt8(0),
-        move_refreshed_at
+        move_refreshed_at, CAST(NULL AS Nullable(String))
       FROM (
         SELECT max(refreshed_at) + INTERVAL 1 MICROSECOND AS move_refreshed_at
         FROM ${database}.activity_location_sample
@@ -131,7 +131,7 @@ export async function moveRouteMember(client: ClickHouseClient, database: string
         toDateTime64('2026-09-03 10:00:00', 6, 'UTC'),
         toNullable(toDateTime64('2026-09-03 11:00:00', 6, 'UTC')),
         move_refreshed_at, [toUUID('${routeMemberId}')], toUInt64(2), toUInt8(0),
-        move_refreshed_at
+        move_refreshed_at, CAST(NULL AS Nullable(String))
       FROM (
         SELECT max(refreshed_at) + INTERVAL 1 MICROSECOND AS move_refreshed_at
         FROM ${database}.activity_location_sample
@@ -158,7 +158,7 @@ export async function setRouteGroupDeleted(
     query: `INSERT INTO ${database}.deduped_activities
       SELECT activity_id, user_id, started_at, ended_at, source_synced_at, member_activity_ids,
         stream_state.next_refresh_version, toUInt8(${isDeleted ? 1 : 0}),
-        refreshed_at + INTERVAL 1 MICROSECOND
+        refreshed_at + INTERVAL 1 MICROSECOND, provider_type
       FROM ${database}.deduped_activities FINAL
       CROSS JOIN (
         SELECT max(refresh_version) + 1 AS next_refresh_version
@@ -179,7 +179,7 @@ export async function seedTombstoneOnlyCurrentGroup(
        toDateTime64('2026-09-03 10:00:00', 6, 'UTC'),
        toDateTime64('2026-09-03 11:00:00', 6, 'UTC'),
        toDateTime64('2026-09-03 12:00:00', 9, 'UTC'), ['${tombstoneOnlyMemberId}'], 2, 0,
-       toDateTime64('2026-09-03 12:00:00', 9, 'UTC'))`,
+       toDateTime64('2026-09-03 12:00:00', 9, 'UTC'), NULL)`,
     `INSERT INTO ${database}.activity_stream_points
       SELECT toUUID('${userId}'), toUUID('${tombstoneOnlyGroupId}'),
         CAST([], 'Array(Tuple(DateTime64(6, ''UTC''), Nullable(Float64), Nullable(Float64), Nullable(Float64), Nullable(Float64), Nullable(Float64), Nullable(Float64), Nullable(Float64)))'),
@@ -608,12 +608,12 @@ export async function seedSensorFixture(client: ClickHouseClient, database: stri
        toDateTime64('2026-09-04 11:00:00', 6, 'UTC'),
        toDateTime64('2026-09-04 12:00:00', 9, 'UTC'),
        ['${movedMemberId}', '${retainedMemberId}'], 1, 0,
-       toDateTime64('2026-09-04 12:00:00', 9, 'UTC')),
+       toDateTime64('2026-09-04 12:00:00', 9, 'UTC'), NULL),
       ('${unrelatedGroupId}', '${userId}', toDateTime64('2026-09-05 10:00:00', 6, 'UTC'),
        toDateTime64('2026-09-05 11:00:00', 6, 'UTC'),
        toDateTime64('2026-09-05 12:00:00', 9, 'UTC'),
        ['${unrelatedMemberId}'], 1, 0,
-       toDateTime64('2026-09-05 12:00:00', 9, 'UTC'))`,
+       toDateTime64('2026-09-05 12:00:00', 9, 'UTC'), NULL)`,
     `INSERT INTO ${database}.deduped_sensor
       (user_id, recorded_at, recorded_date, channel, scalar, source_activity_id,
        refresh_version, is_deleted, refreshed_at) VALUES
@@ -633,12 +633,12 @@ export async function moveMember(client: ClickHouseClient, database: string): Pr
        toDateTime64('2026-09-04 11:00:00', 6, 'UTC'),
        toDateTime64('2026-09-06 12:00:00', 9, 'UTC'),
        ['${retainedMemberId}'], 2, 0,
-       toDateTime64('2026-09-06 12:00:00', 9, 'UTC')),
+       toDateTime64('2026-09-06 12:00:00', 9, 'UTC'), NULL),
       ('${newGroupId}', '${userId}', toDateTime64('2026-09-04 10:00:00', 6, 'UTC'),
        toDateTime64('2026-09-04 11:00:00', 6, 'UTC'),
        toDateTime64('2026-09-06 12:00:00', 9, 'UTC'),
        ['${movedMemberId}'], 2, 0,
-       toDateTime64('2026-09-06 12:00:00', 9, 'UTC'))`,
+       toDateTime64('2026-09-06 12:00:00', 9, 'UTC'), NULL)`,
   });
 }
 
@@ -808,7 +808,8 @@ export function createDedupedActivitiesSql(database: string): string {
     member_activity_ids Array(UUID),
     refresh_version UInt64,
     is_deleted UInt8,
-    refreshed_at DateTime64(9, 'UTC')
+    refreshed_at DateTime64(9, 'UTC'),
+    provider_type Nullable(String)
   ) ENGINE = ReplacingMergeTree(refresh_version) ORDER BY (user_id, activity_id)`;
 }
 

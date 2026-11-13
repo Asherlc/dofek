@@ -1,4 +1,5 @@
 import {
+  type CatalogueProviderId,
   type CatalogueSearchResult,
   type CatalogueSeed,
   type CatalogueSourceResult,
@@ -7,6 +8,28 @@ import {
   catalogueSeedSchema,
 } from "./contracts.ts";
 import { matchCatalogueCandidates } from "./matching.ts";
+
+/** Failed sources stay observable while callers retain the sources that succeeded. */
+export class CatalogueSearchError extends AggregateError {
+  readonly sources: CatalogueSourceResult[];
+
+  constructor(
+    failures: { providerId: CatalogueProviderId; error: unknown }[],
+    sources: CatalogueSourceResult[],
+  ) {
+    super(
+      failures.map(({ error }) => error),
+      failures
+        .map(
+          ({ providerId, error }) =>
+            `${providerId}: ${error instanceof Error ? error.message.replace(/\s+/g, " ").trim() : "Catalogue lookup failed. Try refreshing again."}`,
+        )
+        .join("\n"),
+    );
+    this.name = "CatalogueSearchError";
+    this.sources = sources;
+  }
+}
 
 async function search(
   adapter: ClimbingCatalogueAdapter,
@@ -29,7 +52,10 @@ export class ClimbingCatalogueSearch {
     const nativeAdapter = seed.externalId
       ? this.#adapters.find((adapter) => adapter.providerId === seed.providerId)
       : undefined;
-    const nativeFound = nativeAdapter ? await search(nativeAdapter, seed) : undefined;
+    const [nativeOutcome] = await Promise.allSettled(
+      nativeAdapter ? [search(nativeAdapter, seed)] : [],
+    );
+    const nativeFound = nativeOutcome?.status === "fulfilled" ? nativeOutcome.value : undefined;
     const native = nativeFound?.candidates
       .filter((candidate) => candidate.externalId === seed.externalId)
       .at(-1);
@@ -60,8 +86,10 @@ export class ClimbingCatalogueSearch {
             : seed.locations,
         }
       : seed;
-    const sources = await Promise.all(
+    const outcomes = await Promise.allSettled(
       this.#adapters.map(async (adapter) => {
+        if (adapter === nativeAdapter && nativeOutcome?.status === "rejected")
+          throw nativeOutcome.reason;
         const found =
           adapter === nativeAdapter && nativeFound
             ? nativeFound
@@ -74,7 +102,15 @@ export class ClimbingCatalogueSearch {
         };
       }),
     );
-
+    const sources: CatalogueSourceResult[] = [];
+    const failures: { providerId: CatalogueProviderId; error: unknown }[] = [];
+    for (const [index, adapter] of this.#adapters.entries()) {
+      const outcome = outcomes[index];
+      if (outcome?.status === "fulfilled") sources.push(outcome.value);
+      else if (outcome?.status === "rejected")
+        failures.push({ providerId: adapter.providerId, error: outcome.reason });
+    }
+    if (failures.length) throw new CatalogueSearchError(failures, sources);
     return sources;
   }
 }

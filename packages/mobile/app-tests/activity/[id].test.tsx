@@ -227,7 +227,8 @@ vi.mock("@dofek/format/units", () => ({}));
 
 vi.mock("@dofek/providers/providers", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@dofek/providers/providers")>()),
-  providerLabel: (id: string) => (id === "strava" ? "Strava" : id),
+  providerLabel: (id: string) =>
+    id === "strava" ? "Strava" : id === "kilter" ? "Kilter Board" : id,
   providerSourceLabel: (id: string, subsource?: string | null) =>
     id === "apple_health" && subsource
       ? `${subsource} (via Apple Health)`
@@ -319,10 +320,16 @@ const mockStrengthExercisesQuery = vi.fn();
 const mockClimbingEntriesQuery = vi.fn();
 const mockHangboardDetailsQuery = vi.fn();
 const mockDeleteMutate = vi.fn();
+const mockRestoreProviderAbsentMutate = vi.fn();
+const mockRestoreResult = vi.fn<() => { analyticsJobId: string } | undefined>(() => undefined);
+const mockRestoreStatus = vi.fn<
+  () => { data: { status: "pending" | "completed"; error: null } | undefined; error: null }
+>(() => ({ data: undefined, error: null }));
 const mockRecomputeMutate = vi.fn();
 const mockRecomputeShouldFail = vi.fn(() => false);
 const mockRouterBack = vi.fn();
 const mockActivityByIdInvalidate = vi.fn().mockResolvedValue(undefined);
+const mockActivityInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockActivityStreamInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockActivityHrZonesInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockActivityPowerZonesInvalidate = vi.fn().mockResolvedValue(undefined);
@@ -414,6 +421,22 @@ vi.mock("../../lib/trpc", () => ({
           isPending: false,
         }),
       },
+      restoreStatus: { useQuery: mockRestoreStatus },
+      restoreProviderAbsent: {
+        useMutation: (options?: {
+          onSuccess?: () => Promise<void>;
+          onError?: (error: Error) => void;
+        }) => ({
+          mutate: (input: { ids: string[] }) => {
+            mockRestoreProviderAbsentMutate(input);
+            void options?.onSuccess?.();
+          },
+          data: mockRestoreResult(),
+          isPending: false,
+          error: null,
+          reset: vi.fn(),
+        }),
+      },
     },
     climbing: {
       activityLogEntries: { useQuery: (...args: unknown[]) => mockClimbingEntriesQuery(...args) },
@@ -448,6 +471,7 @@ vi.mock("../../lib/trpc", () => ({
         trainingV2: { invalidate: mockMobileTrainingInvalidate },
       },
       activity: {
+        invalidate: mockActivityInvalidate,
         images: { invalidate: mockActivityImagesInvalidate },
         byId: { invalidate: mockActivityByIdInvalidate },
         stream: { invalidate: mockActivityStreamInvalidate },
@@ -483,6 +507,8 @@ const baseCyclingActivity = {
   displayedDate: "2026-04-14",
   startedAt: "2026-04-14T10:00:00.000Z",
   endedAt: "2026-04-14T11:00:00.000Z",
+  durationMin: 60,
+  climbingLogSessions: [],
   localTimeContext: {
     timezone: "America/Los_Angeles",
     startUtcOffsetMinutes: -420,
@@ -497,6 +523,7 @@ const baseCyclingActivity = {
   sourceProviders: ["wahoo"],
   sourceLinks: [],
   sourceDecision: null,
+  fitRecoveryWarning: null,
   sourceTree: { primary: null, otherSources: [] },
   avgHr: 145,
   avgHrState: { status: "available" },
@@ -606,6 +633,10 @@ function getPlaceholderData(
 }
 
 beforeEach(() => {
+  activityRouteParams.id = "00000000-0000-0000-0000-000000000001";
+  mockRestoreProviderAbsentMutate.mockClear();
+  mockRestoreResult.mockReturnValue(undefined);
+  mockRestoreStatus.mockReturnValue({ data: undefined, error: null });
   mockHardwareRefetch.mockClear();
   mockHardwareQuery.mockReturnValue({
     data: { items: [], power: [] },
@@ -660,6 +691,7 @@ beforeEach(() => {
   mockRecomputeShouldFail.mockReset();
   mockRecomputeShouldFail.mockReturnValue(false);
   mockActivityByIdInvalidate.mockClear();
+  mockActivityInvalidate.mockClear();
   mockActivityStreamInvalidate.mockClear();
   mockActivityHrZonesInvalidate.mockClear();
   mockActivityPowerZonesInvalidate.mockClear();
@@ -688,6 +720,50 @@ beforeEach(() => {
 });
 
 describe("ActivityDetailScreen", () => {
+  it("shows Kilter's logged window and keeps point-only duration unknown beside Kaya climbs", async () => {
+    mockByIdQuery.mockReturnValue({
+      data: {
+        ...baseCyclingActivity,
+        activityType: "climbing",
+        endedAt: null,
+        durationMin: null,
+        climbingLogSessions: [
+          {
+            id: "kilter-session-1",
+            providerId: "kilter",
+            memberActivityIds: ["kilter-point-1"],
+            firstLoggedAt: "2026-04-14T10:02:00.000Z",
+            lastLoggedAt: "2026-04-14T10:02:00.000Z",
+          },
+        ],
+      },
+      isLoading: false,
+      error: null,
+    });
+    mockClimbingEntriesQuery.mockReturnValue({
+      data: [
+        climbingLogEntryFixture({ id: "kaya-climb", providerId: "kaya", title: "Kaya wall climb" }),
+        climbingLogEntryFixture({
+          id: "kilter-climb",
+          providerId: "kilter",
+          title: "Kilter board climb",
+        }),
+      ],
+      isLoading: false,
+      error: null,
+    });
+    const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
+
+    render(<ActivityDetailScreen />);
+
+    expect(screen.getByText("Kilter Board · Logged climbs · 3:02 AM")).toBeTruthy();
+    expect(screen.getByText("Duration")).toBeTruthy();
+    expect(screen.getByText("Unavailable")).toBeTruthy();
+    expect(screen.getByText("Kaya wall climb")).toBeTruthy();
+    expect(screen.getByText("Kilter board climb")).toBeTruthy();
+    expect(screen.queryByText("0m")).toBeNull();
+  });
+
   it("shows surrounding HR readings supplied by the server for climbing", async () => {
     mockByIdQuery.mockReturnValue({
       data: { ...baseCyclingActivity, activityType: "climbing" },
@@ -906,11 +982,11 @@ describe("ActivityDetailScreen", () => {
     render(React.createElement(ActivityDetailScreen));
     expect(getQueryEnabledFlag(mockClimbingEntriesQuery.mock.calls[0]?.[1])).toBe(true);
     expect(mockClimbingEntriesQuery).toHaveBeenCalledWith(
-      { activityId: baseCyclingActivity.id, responseVersion: 3 },
+      { activityId: baseCyclingActivity.id, responseVersion: 5 },
       expect.objectContaining({ enabled: true, select: decodeClimbingLogEntriesResponse }),
     );
     expect(mockEntrySuggestionsQuery).toHaveBeenCalledWith(
-      { activityId: baseCyclingActivity.id, responseVersion: 3 },
+      { activityId: baseCyclingActivity.id, responseVersion: 5 },
       expect.objectContaining({ enabled: true, select: decodeClimbingLogEntriesResponse }),
     );
     expect(screen.getByText("Summit outing")).toBeTruthy();
@@ -1416,11 +1492,11 @@ describe("ActivityDetailScreen", () => {
     await waitFor(() => {
       expect(mockClimbingEntriesInvalidate).toHaveBeenCalledWith({
         activityId: baseCyclingActivity.id,
-        responseVersion: 3,
+        responseVersion: 5,
       });
       expect(mockEntrySuggestionsInvalidate).toHaveBeenCalledWith({
         activityId: baseCyclingActivity.id,
-        responseVersion: 3,
+        responseVersion: 5,
       });
       expect(mockActivityImagesInvalidate).toHaveBeenCalledWith({ id: baseCyclingActivity.id });
       expect(mockClimbingSessionSummaryInvalidate).toHaveBeenCalledWith();
@@ -1532,7 +1608,7 @@ describe("ActivityDetailScreen", () => {
     await waitFor(() => {
       expect(mockClimbingEntriesInvalidate).toHaveBeenCalledWith({
         activityId: baseCyclingActivity.id,
-        responseVersion: 3,
+        responseVersion: 5,
       });
     });
   });
@@ -2278,7 +2354,7 @@ describe("ActivityDetailScreen", () => {
       name: "Swiss Cheese route on mountain-project",
     }))
       fireEvent.click(link);
-    for (const link of screen.getAllByRole("link", { name: "mountain-project" }))
+    for (const link of screen.getAllByRole("link", { name: "Climb on mountain-project" }))
       fireEvent.click(link);
     expect(Linking.openURL).toHaveBeenCalledWith(
       "https://www.mountainproject.com/route/105734732/swiss-cheese",
@@ -2568,6 +2644,52 @@ describe("ActivityDetailScreen", () => {
     expect(screen.getByText("Removed")).toBeTruthy();
     expect(screen.getByText("Strava")).toBeTruthy();
     expect(screen.getByText(/March 5, 2026/)).toBeTruthy();
+  });
+
+  it("keeps restore completion tracking mounted after PostgreSQL makes the activity visible", async () => {
+    mockRestoreResult.mockReturnValue({ analyticsJobId: "restore-job-1" });
+    mockRestoreStatus.mockReturnValue({ data: { status: "pending", error: null }, error: null });
+    mockByIdQuery.mockReturnValue({
+      data: { ...baseCyclingActivity, providerAbsentAt: "2026-03-05T14:30:00.000Z" },
+      isLoading: false,
+      error: null,
+    });
+    const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
+    const { rerender } = render(React.createElement(ActivityDetailScreen));
+    mockByIdQuery.mockReturnValue({
+      data: { ...baseCyclingActivity, providerAbsentAt: null },
+      isLoading: false,
+      error: null,
+    });
+    rerender(React.createElement(ActivityDetailScreen));
+    expect(screen.getByText("Refreshing restored activity charts…")).toBeTruthy();
+    const invalidations = mockActivityInvalidate.mock.calls.length;
+    mockRestoreStatus.mockReturnValue({ data: { status: "completed", error: null }, error: null });
+    rerender(React.createElement(ActivityDetailScreen));
+    await waitFor(() => expect(mockActivityInvalidate).toHaveBeenCalledTimes(invalidations + 1));
+  });
+
+  it("restores the canonical activity while refreshing detail cached under its route alias", async () => {
+    const canonicalActivityId = "00000000-0000-4000-8000-000000000201";
+    activityRouteParams.id = "00000000-0000-4000-8000-000000000999";
+    mockByIdQuery.mockReturnValue({
+      data: {
+        ...baseCyclingActivity,
+        id: canonicalActivityId,
+        providerId: "strava",
+        providerAbsentAt: "2026-03-05T14:30:00.000Z",
+      },
+      isLoading: false,
+      error: null,
+    });
+
+    const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
+    render(React.createElement(ActivityDetailScreen));
+
+    fireEvent.click(screen.getByRole("button", { name: "Restore activity" }));
+
+    expect(mockRestoreProviderAbsentMutate).toHaveBeenCalledWith({ ids: [canonicalActivityId] });
+    expect(mockActivityInvalidate).toHaveBeenCalledWith();
   });
 });
 

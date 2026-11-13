@@ -321,7 +321,6 @@ let sharedRedisConnection: RedisConnection | null = null;
 export function getSharedRedisConnection(): RedisConnection {
   if (!sharedRedisConnection) {
     sharedRedisConnection = new RedisConnection(getRedisCommandConnection(), {
-      shared: true,
       blocking: false,
       skipVersionCheck: true,
     });
@@ -334,6 +333,13 @@ export function getSharedRedisConnection(): RedisConnection {
 /** Creates the shared sync queue used by the CLI and queue dashboard. */
 export function createSyncQueue(connection?: ConnectionOptions): Queue<SyncJobData> {
   return new Queue(SYNC_QUEUE, { connection: connection ?? getRedisConnection() });
+}
+
+let cachedSyncQueue: Queue<SyncJobData> | null = null;
+
+export function getSyncQueue(): Queue<SyncJobData> {
+  cachedSyncQueue ??= createSyncQueue();
+  return cachedSyncQueue;
 }
 
 /** Create a per-provider sync queue (e.g., sync:strava, sync:garmin). */
@@ -652,11 +658,11 @@ export async function enqueueActivityRestoreAnalyticsRefresh(
   userId: string,
   activityIds: string[],
   queue: Queue<ActivityAnalyticsJobData> = getActivityDeleteAnalyticsQueue(),
-): Promise<void> {
+): Promise<string | null> {
   const uniqueActivityIds = [...new Set(activityIds)];
-  if (uniqueActivityIds.length === 0) return;
+  if (uniqueActivityIds.length === 0) return null;
 
-  await queue.add(
+  const job = await queue.add(
     ACTIVITY_RESTORE_ANALYTICS_JOB_NAME,
     {
       type: "activity-restore-analytics-refresh",
@@ -664,12 +670,13 @@ export async function enqueueActivityRestoreAnalyticsRefresh(
       activityIds: uniqueActivityIds,
     },
     {
-      removeOnComplete: true,
+      removeOnComplete: { age: 604_800, count: 1_000 },
       removeOnFail: { age: 604_800, count: 100 },
       attempts: 5,
       backoff: { type: "fixed", delay: 30_000 },
     },
   );
+  return job.id ?? null;
 }
 
 export async function enqueueActivityRecomputeAnalyticsRefresh(
@@ -793,6 +800,7 @@ export async function closeAllQueueResources(): Promise<void> {
   }
   cachedProviderQueues.clear();
 
+  if (cachedSyncQueue) closePromises.push(cachedSyncQueue.close());
   if (cachedPostSyncQueue) closePromises.push(cachedPostSyncQueue.close());
   if (cachedActivityDeleteAnalyticsQueue)
     closePromises.push(cachedActivityDeleteAnalyticsQueue.close());
@@ -808,6 +816,7 @@ export async function closeAllQueueResources(): Promise<void> {
     closePromises.push(cachedAnalyticsRefreshQueueEvents.close());
 
   cachedPostSyncQueue = null;
+  cachedSyncQueue = null;
   cachedActivityDeleteAnalyticsQueue = null;
   cachedProviderDataDeletionQueue = null;
   cachedAccountErasureQueue = null;

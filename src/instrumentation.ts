@@ -7,7 +7,7 @@ import { resourceFromAttributes } from "@opentelemetry/resources";
 import { BatchLogRecordProcessor, type LogRecordProcessor } from "@opentelemetry/sdk-logs";
 import { PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics";
 import { NodeSDK } from "@opentelemetry/sdk-node";
-import { BatchSpanProcessor, type SpanProcessor } from "@opentelemetry/sdk-trace-node";
+import { BatchSpanProcessor, type SpanProcessor } from "@opentelemetry/sdk-trace";
 import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
 import { AiContextSpanProcessor, registerAiTelemetry } from "./lib/ai-observability.ts";
 import { PostHogAiSpanProcessor } from "./lib/posthog-ai-observability.ts";
@@ -38,19 +38,19 @@ function createSpanProcessors(env: Record<string, string | undefined>): SpanProc
   const processors: SpanProcessor[] = [new AiContextSpanProcessor()];
 
   if (hasAxiomTraceExport) {
-    processors.push(new BatchSpanProcessor(new OTLPTraceExporter()));
+    processors.push(new BatchSpanProcessor({ exporter: new OTLPTraceExporter() }));
   }
 
   if (hasPostHogTraceExport) {
     processors.push(
-      new BatchSpanProcessor(
-        new OTLPTraceExporter({
+      new BatchSpanProcessor({
+        exporter: new OTLPTraceExporter({
           url: POSTHOG_TRACES_URL,
           headers: {
             Authorization: `Bearer ${POSTHOG_API_KEY}`,
           },
         }),
-      ),
+      }),
     );
     processors.push(
       new PostHogAiSpanProcessor({
@@ -127,12 +127,14 @@ export function startInstrumentation(
     }),
     spanProcessors,
     logRecordProcessors,
-    metricReader: hasMetricExport
-      ? new PeriodicExportingMetricReader({
-          exporter: new OTLPMetricExporter(),
-          exportIntervalMillis: 30_000,
-        })
-      : undefined,
+    metricReaders: hasMetricExport
+      ? [
+          new PeriodicExportingMetricReader({
+            exporter: new OTLPMetricExporter(),
+            exportIntervalMillis: 30_000,
+          }),
+        ]
+      : [],
     instrumentations: [
       // Winston logs are bridged via @opentelemetry/winston-transport in logger.ts
       ...(hasTraceExport

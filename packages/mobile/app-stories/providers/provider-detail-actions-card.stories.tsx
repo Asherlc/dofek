@@ -9,6 +9,8 @@ const meta = {
   args: {
     primaryActionLabel: "Sync",
     isSyncing: false,
+    isRequestingPermissions: false,
+    permissionMessage: null,
     syncMessage: null,
     syncProgress: null,
     syncDateRange: null,
@@ -17,6 +19,7 @@ const meta = {
     shouldShowAppleHealthClinicalRecords: false,
     shouldShowClinicalRecordsLink: false,
     onPrimaryAction: () => {},
+    onReviewPermissions: () => {},
     onFullSync: () => {},
     onOpenClinicalRecords: () => {},
   },
@@ -34,6 +37,22 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
+
+export const AppleHealthSyncing: Story = {
+  args: {
+    isSyncing: true,
+    syncMessage: "Pushing 27 samples...",
+    shouldShowAppleHealthPermissionBanner: true,
+  },
+};
+
+export const AppleHealthReviewingPermissions: Story = {
+  args: {
+    ...AppleHealthSyncing.args,
+    isRequestingPermissions: true,
+    permissionMessage: "Requesting permissions...",
+  },
+};
 
 export const WhoopRange: Story = {
   args: {
@@ -59,6 +78,39 @@ export const Syncing: Story = {
       onUntilDateChange: () => {},
     },
     shouldShowFullSync: false,
+  },
+};
+
+export const AppleHealthRunning: Story = {
+  args: {
+    isSyncing: true,
+    syncMessage: "Uploading health records\n2 of 5 stages complete",
+    syncProgress: 40,
+    shouldShowFullSync: true,
+  },
+};
+
+export const AppleHealthPaused: Story = {
+  args: {
+    primaryActionLabel: "Resume",
+    syncMessage: "Apple Health sync paused",
+    shouldShowFullSync: true,
+  },
+};
+
+export const AppleHealthLocked: Story = {
+  args: {
+    primaryActionLabel: "Resume",
+    syncMessage: "Apple Health sync paused\nUnlock your phone to continue Apple Health sync",
+    shouldShowFullSync: true,
+  },
+};
+
+export const AppleHealthActionableError: Story = {
+  args: {
+    syncMessage:
+      "Another Apple Health sync is active for this account. Resume it on your other device.",
+    shouldShowFullSync: true,
   },
 };
 

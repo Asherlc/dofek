@@ -14,6 +14,42 @@ const mockGetRequestStatus = vi.fn().mockResolvedValue("unnecessary");
 const mockHasEverAuthorized = vi.fn().mockReturnValue(true);
 const mockRequestPermissions = vi.fn().mockResolvedValue(true);
 const mockSyncHealthKit = vi.fn();
+const mockManualSync = vi.hoisted(() => {
+  const state: {
+    status: "idle" | "running" | "paused" | "error" | "complete";
+    message: string | null;
+    completedStageCount: number;
+    totalStageCount: number;
+    error: string | null;
+  } = {
+    status: "idle",
+    message: null,
+    completedStageCount: 0,
+    totalStageCount: 0,
+    error: null,
+  };
+  let snapshot = state;
+  const listeners = new Set<() => void>();
+  return {
+    state,
+    getSnapshot: () => snapshot,
+    setSnapshot: (next: typeof state) => {
+      snapshot = next;
+      for (const listener of listeners) listener();
+    },
+    controller: {
+      userId: "user-1",
+      start: vi.fn(),
+      resume: vi.fn(),
+      getSnapshot: vi.fn(() => snapshot),
+      subscribe: (listener: () => void) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+      retire: vi.fn(),
+    },
+  };
+});
 const mockDatePickerSelections = vi.hoisted(() => ({
   From: new Date(2026, 5, 1, 12),
   To: new Date(2026, 5, 15, 12),
@@ -221,6 +257,20 @@ vi.mock("expo-router", () => ({
   }),
   useLocalSearchParams: (...args: unknown[]) => mockUseLocalSearchParams(...args),
 }));
+
+vi.mock("../../lib/health-kit-manual-sync-context", async () => {
+  const React = await import("react");
+  return {
+    useHealthKitManualSync: () => ({
+      controller: mockManualSync.controller,
+      state: React.useSyncExternalStore(
+        mockManualSync.controller.subscribe,
+        mockManualSync.controller.getSnapshot,
+        mockManualSync.controller.getSnapshot,
+      ),
+    }),
+  };
+});
 
 vi.mock("expo-web-browser", () => ({
   openBrowserAsync: (...args: unknown[]) => mockOpenBrowserAsync(...args),
@@ -542,6 +592,19 @@ function setupDefaultMocks() {
 
 describe("ProviderDetailScreen", () => {
   beforeEach(() => {
+    Object.assign(mockManualSync.state, {
+      status: "idle",
+      message: null,
+      completedStageCount: 0,
+      totalStageCount: 0,
+      error: null,
+    });
+    mockManualSync.setSnapshot(mockManualSync.state);
+    mockManualSync.controller.start.mockReset();
+    mockManualSync.controller.start.mockImplementation((range) =>
+      mockSyncHealthKit({ syncRangeDays: range }),
+    );
+    mockManualSync.controller.resume.mockReset();
     mockRecordDetailQuery.mockReset();
     mockRecordDetailQuery.mockReturnValue({
       data: { id: "activity-123", name: "Morning Ride", notes: null, raw: { source: "wahoo" } },
@@ -747,6 +810,237 @@ describe("ProviderDetailScreen", () => {
   });
 
   describe("Actions", () => {
+    it("shows shared running progress and prevents a duplicate manual sync", async () => {
+      mockUseLocalSearchParams.mockReturnValue({ id: "apple_health" });
+      Object.assign(mockManualSync.state, {
+        status: "running",
+        message: "Uploading health records",
+        completedStageCount: 2,
+        totalStageCount: 5,
+      });
+      const { default: ProviderDetailScreen } = await import("../../app/providers/[id]");
+      render(<ProviderDetailScreen />);
+
+      await waitFor(() => expect(screen.getByRole("button", { name: "Sync" })).toBeTruthy());
+      expect(screen.getByText(/Uploading health records/)).toBeTruthy();
+      expect(screen.getByText(/2 of 5 stages complete/)).toBeTruthy();
+      const action = screen.getByRole("button", { name: "Sync" });
+      expect(action.getAttribute("disabled")).not.toBeNull();
+      expect(action.getAttribute("aria-busy")).toBe("true");
+    });
+
+    it("resumes a paused sync without choosing a new window", async () => {
+      mockUseLocalSearchParams.mockReturnValue({ id: "apple_health" });
+      Object.assign(mockManualSync.state, {
+        status: "paused",
+        message: "Unlock your phone to continue Apple Health sync",
+      });
+      mockManualSync.controller.resume.mockResolvedValue({ inserted: 0, errors: [] });
+      const { default: ProviderDetailScreen } = await import("../../app/providers/[id]");
+      await act(async () => {
+        render(<ProviderDetailScreen />);
+        await Promise.resolve();
+      });
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Resume" }));
+        await mockManualSync.controller.resume.mock.results[0]?.value;
+      });
+      expect(mockManualSync.controller.resume).toHaveBeenCalledOnce();
+      expect(mockManualSync.controller.start).not.toHaveBeenCalled();
+      expect(screen.getByText(/Apple Health sync paused/)).toBeTruthy();
+      expect(screen.getByText(/Unlock your phone to continue Apple Health sync/)).toBeTruthy();
+    });
+
+    it("shows a controller admission error instead of the previous paused message", async () => {
+      mockUseLocalSearchParams.mockReturnValue({ id: "apple_health" });
+      Object.assign(mockManualSync.state, {
+        status: "error",
+        message: "Apple Health sync paused",
+        error: "Another sync is active for this account. Resume it on your other device.",
+      });
+      const { default: ProviderDetailScreen } = await import("../../app/providers/[id]");
+      await act(async () => {
+        render(<ProviderDetailScreen />);
+        await Promise.resolve();
+      });
+
+      expect(
+        screen.getByText(
+          "Another sync is active for this account. Resume it on your other device.",
+        ),
+      ).toBeTruthy();
+      expect(screen.queryByText("Apple Health sync paused")).toBeNull();
+    });
+
+    it("shows a controller partial-result error with the paused Resume action", async () => {
+      mockUseLocalSearchParams.mockReturnValue({ id: "apple_health" });
+      mockManualSync.setSnapshot({
+        ...mockManualSync.state,
+        status: "paused",
+        message: "Apple Health sync paused",
+        error: "Route service unavailable",
+      });
+      const { default: ProviderDetailScreen } = await import("../../app/providers/[id]");
+      await act(async () => {
+        render(<ProviderDetailScreen />);
+        await Promise.resolve();
+      });
+
+      expect(screen.getByRole("button", { name: "Resume" })).toBeTruthy();
+      expect(screen.getByText(/Apple Health sync paused\s+Route service unavailable/)).toBeTruthy();
+    });
+
+    it.each(["paused", "complete", "error"] as const)(
+      "shows a Full sync start rejection over the unchanged %s snapshot",
+      async (status) => {
+        mockUseLocalSearchParams.mockReturnValue({ id: "apple_health" });
+        mockManualSync.setSnapshot({
+          ...mockManualSync.state,
+          status,
+          message: status === "paused" ? "Apple Health sync paused" : "Old controller message",
+          error: status === "error" ? "Old controller error" : null,
+        });
+        mockManualSync.controller.start.mockRejectedValueOnce(
+          new Error("Could not clear the saved Apple Health checkpoint"),
+        );
+        const { default: ProviderDetailScreen } = await import("../../app/providers/[id]");
+        await act(async () => {
+          render(<ProviderDetailScreen />);
+          await Promise.resolve();
+        });
+
+        await act(async () => {
+          fireEvent.click(screen.getByRole("button", { name: "Full sync" }));
+          await mockManualSync.controller.start.mock.results[0]?.value.catch(() => undefined);
+        });
+
+        expect(
+          screen.getByText(
+            status === "paused"
+              ? /Apple Health sync paused\s+Could not clear the saved Apple Health checkpoint/
+              : "Could not clear the saved Apple Health checkpoint",
+          ),
+        ).toBeTruthy();
+      },
+    );
+
+    it("shows a Full sync rejection over an unchanged locked pause", async () => {
+      mockUseLocalSearchParams.mockReturnValue({ id: "apple_health" });
+      const startError = new Error("Could not clear the saved Apple Health checkpoint");
+      mockManualSync.setSnapshot({
+        ...mockManualSync.state,
+        status: "paused",
+        message: "Unlock your phone to continue Apple Health sync",
+      });
+      mockManualSync.controller.start.mockRejectedValueOnce(startError);
+      const { default: ProviderDetailScreen } = await import("../../app/providers/[id]");
+      await act(async () => {
+        render(<ProviderDetailScreen />);
+        await Promise.resolve();
+      });
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Full sync" }));
+        await mockManualSync.controller.start.mock.results[0]?.value.catch(() => undefined);
+      });
+
+      expect(screen.getByText(/Could not clear the saved Apple Health checkpoint/)).toBeTruthy();
+      expect(screen.getByText(/Unlock your phone to continue Apple Health sync/)).toBeTruthy();
+      expect(mockCaptureException).toHaveBeenCalledWith(startError, {
+        context: "healthkit-manual-sync",
+      });
+    });
+
+    it("clears an action rejection after a newer shared sync completes", async () => {
+      mockUseLocalSearchParams.mockReturnValue({ id: "apple_health" });
+      mockManualSync.setSnapshot({
+        ...mockManualSync.state,
+        status: "complete",
+        message: "Old complete snapshot",
+      });
+      mockManualSync.controller.start.mockRejectedValueOnce(new Error("Checkpoint save failed"));
+      const { default: ProviderDetailScreen } = await import("../../app/providers/[id]");
+      const rendered = render(<ProviderDetailScreen />);
+      await waitFor(() => expect(screen.getByRole("button", { name: "Full sync" })).toBeTruthy());
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Full sync" }));
+        await mockManualSync.controller.start.mock.results[0]?.value.catch(() => undefined);
+      });
+      expect(screen.getByText("Checkpoint save failed")).toBeTruthy();
+
+      mockManualSync.setSnapshot({
+        ...mockManualSync.getSnapshot(),
+        status: "complete",
+        message: "Apple Health sync complete",
+        error: null,
+      });
+      await act(async () => {
+        rendered.rerender(<ProviderDetailScreen />);
+        await Promise.resolve();
+      });
+
+      await waitFor(() => {
+        expect(screen.queryByText("Checkpoint save failed")).toBeNull();
+        expect(screen.getByText("Apple Health sync complete")).toBeTruthy();
+      });
+    });
+
+    it("keeps the controller-confirmed locked pause when Resume rejects", async () => {
+      mockUseLocalSearchParams.mockReturnValue({ id: "apple_health" });
+      const lockedError = Object.assign(
+        new Error("HealthKit data is unavailable while the device is locked"),
+        { code: "HEALTHKIT_DATABASE_INACCESSIBLE" },
+      );
+      mockManualSync.setSnapshot({
+        ...mockManualSync.state,
+        status: "paused",
+        message: "Unlock your phone to continue Apple Health sync",
+      });
+      mockManualSync.controller.resume.mockRejectedValueOnce(lockedError);
+      const { default: ProviderDetailScreen } = await import("../../app/providers/[id]");
+      await act(async () => {
+        render(<ProviderDetailScreen />);
+        await Promise.resolve();
+      });
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Resume" }));
+        await mockManualSync.controller.resume.mock.results[0]?.value.catch(() => undefined);
+      });
+
+      expect(screen.getByText(/Unlock your phone to continue Apple Health sync/)).toBeTruthy();
+      expect(mockCaptureException).not.toHaveBeenCalled();
+    });
+
+    it("shows an unrelated Resume rejection over an unchanged locked pause", async () => {
+      mockUseLocalSearchParams.mockReturnValue({ id: "apple_health" });
+      const resumeError = new Error("Could not restore the saved Apple Health checkpoint");
+      mockManualSync.setSnapshot({
+        ...mockManualSync.state,
+        status: "paused",
+        message: "Unlock your phone to continue Apple Health sync",
+      });
+      mockManualSync.controller.resume.mockRejectedValueOnce(resumeError);
+      const { default: ProviderDetailScreen } = await import("../../app/providers/[id]");
+      await act(async () => {
+        render(<ProviderDetailScreen />);
+        await Promise.resolve();
+      });
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Resume" }));
+        await mockManualSync.controller.resume.mock.results[0]?.value.catch(() => undefined);
+      });
+
+      expect(screen.getByText(/Could not restore the saved Apple Health checkpoint/)).toBeTruthy();
+      expect(screen.getByText(/Unlock your phone to continue Apple Health sync/)).toBeTruthy();
+      expect(mockCaptureException).toHaveBeenCalledWith(resumeError, {
+        context: "healthkit-manual-sync",
+      });
+    });
+
     it("exposes provider actions by accessible role and name", async () => {
       const { default: ProviderDetailScreen } = await import("../../app/providers/[id]");
       render(<ProviderDetailScreen />);
@@ -1245,24 +1539,20 @@ describe("ProviderDetailScreen", () => {
       mockUseLocalSearchParams.mockReturnValue({ id: "apple_health" });
       mockProvidersQuery.mockReturnValue({ data: [authorizedProvider], isLoading: false });
       mockProviderStatsQuery.mockReturnValue({ data: [appleHealthStats], isLoading: false });
-      mockSyncHealthKit.mockRejectedValueOnce(
-        Object.assign(new Error("HealthKit data is unavailable while the device is locked"), {
-          code: "HEALTHKIT_DATABASE_INACCESSIBLE",
-        }),
-      );
+      Object.assign(mockManualSync.state, {
+        status: "paused",
+        message: "Unlock your phone to continue Apple Health sync",
+      });
 
       const { default: ProviderDetailScreen } = await import("../../app/providers/[id]");
-      render(<ProviderDetailScreen />);
-
-      await waitFor(() => {
-        expect(screen.getByText("Sync")).toBeTruthy();
+      await act(async () => {
+        render(<ProviderDetailScreen />);
+        await Promise.resolve();
       });
 
-      fireEvent.click(screen.getByText("Sync"));
-
-      await waitFor(() => {
-        expect(screen.getByText("Device locked — unlock to sync Apple Health data")).toBeTruthy();
-      });
+      expect(screen.getByText("Resume")).toBeTruthy();
+      expect(screen.getByText(/Apple Health sync paused/)).toBeTruthy();
+      expect(screen.getByText(/Unlock your phone to continue Apple Health sync/)).toBeTruthy();
       expect(mockCaptureException).not.toHaveBeenCalled();
     });
 
@@ -1319,6 +1609,66 @@ describe("ProviderDetailScreen", () => {
       });
       expect(screen.getByText("Full sync")).toBeTruthy();
     });
+
+    it.each([false, true])(
+      "reviews permissions rather than syncing when a sync is active: %s",
+      async (syncing) => {
+        mockUseLocalSearchParams.mockReturnValue({ id: "apple_health" });
+        mockProvidersQuery.mockReturnValue({ data: [authorizedProvider], isLoading: false });
+        mockProviderStatsQuery.mockReturnValue({ data: [appleHealthStats], isLoading: false });
+        mockGetRequestStatus.mockResolvedValue("shouldRequest");
+        const sync = Promise.withResolvers<{ inserted: number; errors: string[] }>();
+        const permission = Promise.withResolvers<boolean>();
+        mockSyncHealthKit.mockImplementation(() => sync.promise);
+        mockManualSync.controller.start.mockImplementationOnce((range) => {
+          const result = mockSyncHealthKit({ syncRangeDays: range });
+          mockManualSync.setSnapshot({
+            ...mockManualSync.state,
+            status: "running",
+            message: "Pushing 27 samples...",
+          });
+          return result.then((value) => {
+            mockManualSync.setSnapshot({
+              ...mockManualSync.state,
+              status: "complete",
+              message: "Apple Health sync complete",
+            });
+            return value;
+          });
+        });
+        mockRequestPermissions.mockReturnValue(permission.promise);
+        const { default: ProviderDetailScreen } = await import("../../app/providers/[id]");
+        render(<ProviderDetailScreen />);
+        const permissionButton = await screen.findByRole("button", {
+          name: "Review Apple Health permissions",
+        });
+        const syncButton = screen.getByRole("button", { name: "Sync" });
+        if (syncing) {
+          fireEvent.click(syncButton);
+          await waitFor(() => expect(mockSyncHealthKit).toHaveBeenCalledOnce());
+        }
+
+        expect(permissionButton).toHaveProperty("disabled", false);
+        fireEvent.click(permissionButton);
+        fireEvent.click(permissionButton);
+        expect(mockRequestPermissions).toHaveBeenCalledOnce();
+        expect(permissionButton).toHaveProperty("disabled", true);
+        expect(mockSyncHealthKit).toHaveBeenCalledTimes(syncing ? 1 : 0);
+        mockGetRequestStatus.mockResolvedValue("unnecessary");
+        await act(async () => permission.resolve(true));
+        await waitFor(() => {
+          expect(
+            screen.queryByRole("button", { name: "Review Apple Health permissions" }),
+          ).toBeNull();
+        });
+        expect(syncButton).toHaveProperty("disabled", syncing);
+        if (syncing) {
+          expect(screen.getByText("Pushing 27 samples...")).toBeTruthy();
+          await act(async () => sync.resolve({ inserted: 27, errors: [] }));
+          await waitFor(() => expect(syncButton).toHaveProperty("disabled", false));
+        }
+      },
+    );
 
     it("requests Apple Health permissions when Connect is clicked", async () => {
       mockUseLocalSearchParams.mockReturnValue({ id: "apple_health" });
@@ -1544,7 +1894,7 @@ describe("ProviderDetailScreen", () => {
         providerId: "wahoo",
         dataType: "climbingLogEntries",
         recordId: log.id,
-        responseVersion: 3,
+        responseVersion: 4,
       });
       expect(screen.getByRole("dialog").textContent).toContain("Grades");
       expect(mockRecordFilterOptionsQuery).toHaveBeenCalledWith({

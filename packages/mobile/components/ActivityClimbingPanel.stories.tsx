@@ -11,6 +11,21 @@ const entries = [
   { ...climbingLogFixture, id: "repeat" },
   { ...climbingLogFixture, id: "indoor", climb: null, title: "Indoor board log" },
 ];
+const rootArea = climbingLogFixture.climb?.areaPath[0];
+if (!rootArea) throw new Error("Expected area fixture");
+const longAreaPath = [
+  "California",
+  "San Francisco Bay Area",
+  "East Bay Area",
+  "Berkeley",
+  "Grizzly Peak Boulders",
+  "Main Rock (aka Scary Boulder)",
+].map((name, index) => ({
+  ...rootArea,
+  id: `long-area-${index}`,
+  name,
+  parentAreaId: index === 0 ? null : `long-area-${index - 1}`,
+}));
 const meta = {
   title: "Activity/Climbing layout",
   component: ActivityClimbingPanel,
@@ -28,6 +43,29 @@ const meta = {
 } satisfies Meta<typeof ActivityClimbingPanel>;
 export default meta;
 type Story = StoryObj<typeof meta>;
+export const ExplicitLocationGroup: Story = {
+  args: {
+    locations: {},
+    entries: ["Touchstone Great Western Power Company", "Great Western Power Company"].map(
+      (name, index) => {
+        const providerId = index === 0 ? "kaya" : "kilter";
+        const area = { ...rootArea, id: `gym-${index}`, providerId, name };
+        return {
+          ...climbingLogFixture,
+          id: `log-${index}`,
+          providerId,
+          sourceName: index === 0 ? "Kaya" : "Kilter Board",
+          areaGroupId: "30000000-0000-4000-8000-000000000001",
+          areaPath: [area],
+          sourceLinks: [],
+          climb: climbingLogFixture.climb
+            ? { ...climbingLogFixture.climb, providerId, areaId: area.id, areaPath: [area] }
+            : null,
+        };
+      },
+    ),
+  },
+};
 export const GroupedListAndMap: Story = {};
 export const ApproximateArea: Story = {
   args: {
@@ -35,6 +73,20 @@ export const ApproximateArea: Story = {
       [climbingLogFixture.id]: { ...exactClimbingLocation, scope: "area", name: "Goat Rock" },
       repeat: { ...exactClimbingLocation, scope: "area", name: "Goat Rock" },
     },
+  },
+};
+export const LongAreaPath: Story = {
+  args: {
+    entries: [
+      {
+        ...climbingLogFixture,
+        climb: climbingLogFixture.climb && {
+          ...climbingLogFixture.climb,
+          areaPath: longAreaPath,
+        },
+      },
+    ],
+    locations: { [climbingLogFixture.id]: exactClimbingLocation },
   },
 };
 export const Empty: Story = { args: { entries: [], locations: {} } };

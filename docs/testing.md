@@ -176,7 +176,7 @@ On startup or test failure, the runner prints container status and service logs
 before teardown, preserving evidence from failed initialization services; see
 [Compose logs](https://docs.docker.com/reference/cli/docker/compose/logs/).
 
-The Vitest projects remain separate in CI: unit, mobile, four database integration
+The Vitest projects remain separate in CI: unit, mobile, five database integration
 shards, and the PeerDB CDC integration tier are invoked explicitly. Stryker uses the Docker-free mutation config and
 must not collect `*.integration.test.ts` files. CI mutation discovery therefore
 only sends changed TypeScript files with a colocated `.test.ts` or `.test.tsx`
@@ -222,7 +222,7 @@ and the [reproduced allocation incident](production-incident-baseline.md#2026-10
 
 ### Duration-balanced integration shards
 
-The four integration jobs use one committed measured baseline,
+The five integration jobs use one committed measured baseline,
 [`scripts/integration-test-timings.json`](../scripts/integration-test-timings.json).
 The [sequencer](../scripts/integration-test-sequencer.ts) allocates discovered
 files by descending duration to the least-loaded shard, with stable path and
@@ -249,11 +249,11 @@ overhead remain outside that estimate. See Vitest's
 and [reporter API](https://vitest.dev/api/advanced/reporters).
 
 After a complete successful CI run, download `integration-timings-1` through
-`integration-timings-4` from the same run attempt into four separate directories.
+`integration-timings-5` from the same run attempt into five separate directories.
 Refresh and review the committed baseline with:
 
 ```bash
-pnpm tsx scripts/update-integration-test-timings.ts merge scripts/integration-test-timings.json <shard1-directory> <shard2-directory> <shard3-directory> <shard4-directory>
+pnpm tsx scripts/update-integration-test-timings.ts merge scripts/integration-test-timings.json <shard1-directory> <shard2-directory> <shard3-directory> <shard4-directory> <shard5-directory>
 ```
 
 The command requires coherent revision, run, attempt, runtime, baseline and
@@ -267,7 +267,7 @@ and [CI wiring](../.github/workflows/test.yml).
 
 For Vitest 4.1.11, `list --filesOnly --shard` bypasses the sequencer and reports
 the full inventory; it does not prove shard membership. Verify allocation through
-actual runtime assignment manifests and their four-way union. A lightweight
+actual runtime assignment manifests and their five-way union. A lightweight
 operator probe may use public `createVitest`, discovered specifications and the
 configured sequencer without collecting database suites; see Vitest's
 [files-only listing path](https://github.com/vitest-dev/vitest/blob/v4.1.11/packages/vitest/src/node/cli/cli-api.ts)
@@ -568,6 +568,47 @@ Router integration tests that exercise activity sensor analytics use ClickHouse-
 test stores. The test helper isolates ClickHouse databases per test database, creates
 the current ClickHouse schema/read models directly, syncs the seeded Postgres fixtures,
 and drops the isolated databases during test cleanup.
+
+Fixture build commands use `max_threads=1`, matching the bounded dbt build
+policy in the [analytics models](../analytics/README.md). Their temporary
+join/aggregation buffers must not scale with the developer machine's core
+count inside the small local ClickHouse profile. Read queries keep their
+caller-supplied settings. ClickHouse documents the relationship between
+[query parallelism and per-thread buffers](https://clickhouse.com/resources/engineering/clickhouse-query-optimisation-definitive-guide).
+
+Sensor fixtures use the ClickHouse client's
+[`insert` API with `JSONEachRow`](https://clickhouse.com/integrations/nodejs)
+instead of constructing SQL `VALUES` expressions for every sample. This follows
+the production metric-stream sink's bulk-insert path and avoids parsing large
+SQL expressions during fixture setup.
+
+The local [ClickHouse memory profile](../deploy/clickhouse/config.d/memory-limits.xml)
+allows vertical merges for small `system.metric_log` parts. This table has
+thousands of columns; merging them together can exhaust the local ceiling even
+when the test query itself is small. Vertical merges trade throughput for lower
+memory use; see ClickHouse's
+[`vertical_merge_algorithm_min_rows_to_activate` setting](https://clickhouse.com/docs/reference/settings/merge-tree-settings/vertical-merge#vertical_merge_algorithm_min_rows_to_activate).
+The profile retains metrics logging and the existing memory ceiling.
+
+For an existing local volume, apply the table setting **before restarting**
+ClickHouse with the new profile:
+
+```bash
+pnpm compose -- exec -T clickhouse clickhouse-client --max_query_size 1048576 \
+  --query 'ALTER TABLE system.metric_log MODIFY SETTING vertical_merge_algorithm_min_rows_to_activate = 0'
+```
+
+If ClickHouse has already restarted, inspect `SHOW TABLES FROM system LIKE
+'metric_log%'` and apply the same `ALTER` to each retained `metric_log_N` table.
+Changing the configured engine settings can rotate the old table rather than
+alter it; see [ClickHouse's log-table preparation](https://github.com/ClickHouse/ClickHouse/blob/26.9/src/Interpreters/SystemLog.cpp#L788-L901).
+
+The command's metadata-size allowance accommodates this unusually wide table;
+it does not change the server's runtime query or memory limits. ClickHouse
+documents [system-log table settings](https://clickhouse.com/docs/operations/server-configuration-parameters/settings#metric_log)
+and [`max_query_size`](https://clickhouse.com/docs/operations/settings/settings#max_query_size).
+When diagnosing another ceiling failure, compare `system.processes` with
+`system.merges` and `system.part_log` before attributing it to the foreground query.
 
 Do not make router integration setup call the tracked production ClickHouse migration
 runner. Historical one-off migrations and backfills should not be replayed by broad

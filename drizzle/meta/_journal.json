@@ -1247,6 +1247,69 @@
       "when": 1793716200000,
       "tag": "0177_remove_daily_score_parameters",
       "breakpoints": true
+    },
+    {
+      "idx": 178,
+      "version": "7",
+      "when": 1793899500000,
+      "tag": "0178_native_metric_stream_delivery",
+      "breakpoints": true
+    },
+    {
+      "idx": 179,
+      "version": "7",
+      "when": 1793899501000,
+      "tag": "0179_account_erasure_identifiers",
+      "breakpoints": true
+    },
+    {
+      "idx": 180,
+      "version": "7",
+      "when": 1794286379502,
+      "tag": "0180_climbing_log_location",
+      "breakpoints": true
+    },
+    {
+      "idx": 181,
+      "version": "7",
+      "when": 1794289910392,
+      "tag": "0181_healthspan_retirement_boundary",
+      "breakpoints": true
+    },
+    {
+      "idx": 182,
+      "version": "7",
+      "when": 1794331466000,
+      "tag": "0182_climbing_log_activity",
+      "breakpoints": true
+    },
+    {
+      "idx": 183,
+      "version": "7",
+      "when": 1794331467000,
+      "tag": "0183_activity_measured_bounds",
+      "breakpoints": true
+    },
+    {
+      "idx": 184,
+      "version": "7",
+      "when": 1794416457995,
+      "tag": "0184_activity_fit_recovery_error",
+      "breakpoints": true
+    },
+    {
+      "idx": 185,
+      "version": "7",
+      "when": 1794433425118,
+      "tag": "0185_climbing_area_groups",
+      "breakpoints": true
+    },
+    {
+      "idx": 186,
+      "version": "7",
+      "when": 1794439529814,
+      "tag": "0186_preserve_active_activity_sources",
+      "breakpoints": true
     }
   ]
 }

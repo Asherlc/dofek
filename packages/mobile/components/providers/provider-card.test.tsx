@@ -1,7 +1,13 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { type Provider, ProviderCard, type SyncLog } from "./provider-card";
+import type { HealthKitManualSyncState } from "../../lib/health-kit-sync-types";
+import {
+  appleHealthManualSyncPresentation,
+  type Provider,
+  ProviderCard,
+  type SyncLog,
+} from "./provider-card";
 
 vi.mock("../../lib/auth-context", () => ({
   useAuth: () => ({ serverUrl: "https://example.com" }),
@@ -93,6 +99,25 @@ describe("ProviderCard sync summary", () => {
     fireEvent.click(screen.getByRole("button", { name: "Reconnect Strava" }));
     expect(onConnect).toHaveBeenCalledOnce();
   });
+});
+
+it("does not offer Resume for a finalized data interruption error", () => {
+  const message = "Apple Health data was synced, but completion was interrupted.";
+  const presentation = appleHealthManualSyncPresentation(
+    {
+      status: "error",
+      message: null,
+      completedStageCount: 0,
+      totalStageCount: 0,
+      error: message,
+    } satisfies HealthKitManualSyncState,
+    null,
+    null,
+  );
+
+  expect(presentation.message).toBe(message);
+  expect(presentation.syncStatusMessage).toBe(message);
+  expect(presentation.actionLabel).toBeUndefined();
 });
 
 describe("OAuth notification providers", () => {

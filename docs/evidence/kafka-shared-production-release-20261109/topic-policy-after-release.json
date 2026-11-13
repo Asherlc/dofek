@@ -1,0 +1,192 @@
+{
+  "at": "2026-11-09T05:31:25.350Z",
+  "topics": [
+    {
+      "topic": "metric-stream-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3",
+      "error": 0,
+      "config": {
+        "remote.storage.enable": {
+          "value": "false",
+          "source": 1,
+          "isDefault": false
+        },
+        "cleanup.policy": {
+          "value": "delete",
+          "source": 1,
+          "isDefault": false
+        },
+        "segment.bytes": {
+          "value": "134217728",
+          "source": 1,
+          "isDefault": false
+        },
+        "retention.ms": {
+          "value": "604800000",
+          "source": 1,
+          "isDefault": false
+        },
+        "retention.bytes": {
+          "value": "4294967296",
+          "source": 1,
+          "isDefault": false
+        }
+      }
+    },
+    {
+      "topic": "metric-stream-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3.quarantine.v1",
+      "error": 0,
+      "config": {
+        "remote.storage.enable": {
+          "value": "false",
+          "source": 5,
+          "isDefault": true
+        },
+        "cleanup.policy": {
+          "value": "delete",
+          "source": 1,
+          "isDefault": false
+        },
+        "segment.bytes": {
+          "value": "1073741824",
+          "source": 5,
+          "isDefault": true
+        },
+        "retention.ms": {
+          "value": "604800000",
+          "source": 1,
+          "isDefault": false
+        },
+        "retention.bytes": {
+          "value": "1073741824",
+          "source": 1,
+          "isDefault": false
+        }
+      }
+    },
+    {
+      "topic": "metric-stream-live-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3",
+      "error": 0,
+      "config": {
+        "remote.storage.enable": {
+          "value": "false",
+          "source": 1,
+          "isDefault": false
+        },
+        "cleanup.policy": {
+          "value": "delete",
+          "source": 1,
+          "isDefault": false
+        },
+        "segment.bytes": {
+          "value": "134217728",
+          "source": 1,
+          "isDefault": false
+        },
+        "retention.ms": {
+          "value": "604800000",
+          "source": 1,
+          "isDefault": false
+        },
+        "retention.bytes": {
+          "value": "4294967296",
+          "source": 1,
+          "isDefault": false
+        }
+      }
+    },
+    {
+      "topic": "metric-stream-live-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3.quarantine.v1",
+      "error": 0,
+      "config": {
+        "remote.storage.enable": {
+          "value": "false",
+          "source": 5,
+          "isDefault": true
+        },
+        "cleanup.policy": {
+          "value": "delete",
+          "source": 1,
+          "isDefault": false
+        },
+        "segment.bytes": {
+          "value": "1073741824",
+          "source": 5,
+          "isDefault": true
+        },
+        "retention.ms": {
+          "value": "604800000",
+          "source": 1,
+          "isDefault": false
+        },
+        "retention.bytes": {
+          "value": "1073741824",
+          "source": 1,
+          "isDefault": false
+        }
+      }
+    },
+    {
+      "topic": "metric-stream-history-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3",
+      "error": 0,
+      "config": {
+        "remote.storage.enable": {
+          "value": "false",
+          "source": 1,
+          "isDefault": false
+        },
+        "cleanup.policy": {
+          "value": "delete",
+          "source": 1,
+          "isDefault": false
+        },
+        "segment.bytes": {
+          "value": "134217728",
+          "source": 1,
+          "isDefault": false
+        },
+        "retention.ms": {
+          "value": "604800000",
+          "source": 1,
+          "isDefault": false
+        },
+        "retention.bytes": {
+          "value": "4294967296",
+          "source": 1,
+          "isDefault": false
+        }
+      }
+    },
+    {
+      "topic": "metric-stream-history-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3.quarantine.v1",
+      "error": 0,
+      "config": {
+        "remote.storage.enable": {
+          "value": "false",
+          "source": 5,
+          "isDefault": true
+        },
+        "cleanup.policy": {
+          "value": "delete",
+          "source": 1,
+          "isDefault": false
+        },
+        "segment.bytes": {
+          "value": "1073741824",
+          "source": 5,
+          "isDefault": true
+        },
+        "retention.ms": {
+          "value": "604800000",
+          "source": 1,
+          "isDefault": false
+        },
+        "retention.bytes": {
+          "value": "1073741824",
+          "source": 1,
+          "isDefault": false
+        }
+      }
+    }
+  ],
+  "productionWrites": false
+}

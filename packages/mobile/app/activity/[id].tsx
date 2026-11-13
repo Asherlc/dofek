@@ -4,7 +4,7 @@ import {
   formatActivityMetric,
   groupActivityMetrics,
 } from "@dofek/format/activity-data-state";
-import { formatDurationRange, formatDurationSeconds, formatNumber } from "@dofek/format/format";
+import { formatDurationMinutes, formatDurationSeconds, formatNumber } from "@dofek/format/format";
 import type { UnitConverter } from "@dofek/format/units";
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { processingPollInterval } from "@dofek/providers/processing-status";
@@ -89,7 +89,7 @@ function StatsGrid({ stats }: { stats: StatItem[] }) {
           <View
             key={stat.label}
             style={statsStyles.card}
-            accessible={isUnavailable}
+            accessible={isUnavailable || accessibleLabel !== undefined}
             accessibilityLabel={accessibleLabel}
           >
             <Text style={statsStyles.label}>
@@ -450,11 +450,11 @@ export default function ActivityDetailScreen() {
     { enabled: !!id && isClimbingActivity, placeholderData: activityQueryPlaceholder(id) },
   );
   const climbingEntries = trpc.climbing.activityLogEntries.useQuery(
-    { activityId: id ?? "", responseVersion: 3 },
+    { activityId: id ?? "", responseVersion: 5 },
     { enabled: !!id && isClimbingActivity, select: decodeClimbingLogEntriesResponse },
   );
   const entrySuggestions = trpc.climbing.unattachedClimbingLogEntries.useQuery(
-    { activityId: id, responseVersion: 3 },
+    { activityId: id, responseVersion: 5 },
     { enabled: !!id && isClimbingActivity, select: decodeClimbingLogEntriesResponse },
   );
   const climbingEntriesLoading = climbingEntries.isLoading && !climbingEntries.data;
@@ -491,7 +491,7 @@ export default function ActivityDetailScreen() {
         trpcUtils.activity.images.invalidate({ id: input.activityId }),
         trpcUtils.climbing.activityLogEntries.invalidate({
           activityId: input.activityId,
-          responseVersion: 3,
+          responseVersion: 5,
         }),
         trpcUtils.climbing.sessionSummary.invalidate(),
         trpcUtils.mobileDashboard.trainingV2.invalidate(),
@@ -499,7 +499,7 @@ export default function ActivityDetailScreen() {
         trpcUtils.climbing.strengths.invalidate(),
         trpcUtils.climbing.unattachedClimbingLogEntries.invalidate({
           activityId: input.activityId,
-          responseVersion: 3,
+          responseVersion: 5,
         }),
       ]);
     },
@@ -638,12 +638,11 @@ export default function ActivityDetailScreen() {
   // Build stats array
   const stats: StatItem[] = [];
 
-  if (activity.startedAt && activity.endedAt) {
-    stats.push({
-      label: "Duration",
-      value: formatDurationRange(activity.startedAt, activity.endedAt),
-    });
-  }
+  stats.push({
+    label: "Duration",
+    value:
+      activity.durationMin === null ? "Unavailable" : formatDurationMinutes(activity.durationMin),
+  });
   if (!(isCycling && isIndoorCyclingModality(activity.modality))) {
     stats.push(
       formatActivityMetric(

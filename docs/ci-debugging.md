@@ -16,39 +16,42 @@ gh api repos/Asherlc/dofek/actions/jobs/<JOB_ID>/logs > /tmp/ci-job.log
 rg -n 'Error:|error:|Process completed' /tmp/ci-job.log
 ```
 
-The "iOS Native Build" CI job runs `xcodebuild archive` piped through `tail -40`, which only keeps the last 40 lines. Swift compiler errors are printed **mid-build** and get truncated. The job log only shows the final summary ("The following build commands failed") and exit code 65, not the actual error messages.
+The [native CI archive](../.github/workflows/build-mobile.yml) retains complete
+build output. The [signed release archive](../.github/workflows/build-ios-release.yml)
+also sends complete output directly to the GitHub job log, suppresses shell
+environment display, and prints a stock result-bundle summary after archive
+failure when a bundle exists. The original archive status still fails the job.
+Older signed runs used `tail -40`; downloading their job logs cannot recover
+output discarded before reaching GitHub.
 
-### How to get the actual Swift errors
+Read the first causal diagnostic, not only the final failed-target summary.
+For package-resolution failures, compare cold-fetch behavior with the exact
+source, Xcode version and runner image. A successful archive using restored
+DerivedData does not establish that a fresh dependency fetch succeeds. The
+[November 12 incident](production-incident-baseline.md#separate-signed-ios-archive-failure)
+records a missing SwiftPM repository path whose initial fetch cause was not
+preserved. Do not infer stale-cache corruption from that path alone.
 
-**Option 1: Download the full job log and search it**
-```bash
-gh run view <RUN_ID> --job <JOB_ID> --log > /tmp/ios-build-log.txt
-grep "error:" /tmp/ios-build-log.txt | grep -v "Werror\|error_\|error-limit\|error="
-```
-Note: even the full job log may not contain inline Swift errors because the workflow itself pipes `xcodebuild` through `tail -40` before the output reaches GitHub.
+### Signed archive diagnostic confidentiality
 
-**Option 2: Reproduce locally**
-The most reliable approach — build the iOS project locally:
-```bash
-cd packages/mobile/ios
-xcodebuild build \
-  -workspace Dofek.xcworkspace \
-  -scheme Dofek \
-  -configuration Debug \
-  -destination 'platform=iOS Simulator,name=iPhone 16' \
-  CODE_SIGNING_ALLOWED=NO 2>&1 | grep "error:"
-```
-
-**Option 3: Look at the "build commands failed" section**
-The last 40 lines usually include which **target** failed (e.g., `ExpoHealthKit`, `ExpoWhoopBle`). From the target name, you can infer which Swift files have errors and check them manually.
+Use the downloaded GitHub job log for signed-build diagnostics. The existing
+secret loader registers known values with GitHub's log masker, but this does
+not sanitize a raw file captured by `tee` or an uploaded `.xcresult` bundle.
+Do not upload raw signed-build diagnostic files. Inspect the temporary bundle
+on the runner and send useful stock summary output through the same masked
+job-log channel. Literal masks are not a guarantee for transformed or encoded
+secret values; avoid environment dumps and credential traces. See
+[GitHub log masking](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands#masking-a-value-in-a-log),
+[secure use](https://docs.github.com/en/actions/reference/security/secure-use),
+and Apple's [result-bundle tooling](https://developer.apple.com/documentation/xcode-release-notes/xcode-16_3-release-notes).
 
 ### Common iOS build failures
 
-| Symptom | Cause |
-|---------|-------|
-| `ExpoWhoopBle` compile failure | Duplicate method definition (e.g., merge conflict leaving two `ensureCentralManager()` functions) |
-| `ExpoHealthKit` compile failure | Invalid iOS 26 API usage (wrong factory methods, types referenced outside `if #available` blocks) |
-| Exit code 65 with no visible errors | xcodebuild output truncated by `tail -40` — reproduce locally |
+| Symptom | Next check |
+|---------|------------|
+| `ExpoWhoopBle` compile failure | Read the first Swift diagnostic and the named source/target. |
+| `ExpoHealthKit` compile failure | Check the exact compiler diagnostic, API availability and deployment target. |
+| Exit code 65 with no visible errors | Download the full job log; historical `tail -40` output may require a new evidence-preserving reproduction. |
 
 ## Getting Job IDs
 
@@ -69,6 +72,19 @@ gh run view <RUN_ID> --json jobs -q '.jobs[] | select(.conclusion == "failure") 
 | Swift Tests | Same — XCTest failures are inline |
 | Coverage | Usually fails because upstream test/build jobs failed; fix those first |
 | Unit & Integration Tests | Depends on unit/integration test jobs; check if they passed individually |
+
+### Partial Codecov coverage while integration shards run
+
+The [test workflow](../.github/workflows/test.yml) uploads five coverage reports:
+one unit report and four integration shards. Codecov [merges these uploads](https://docs.codecov.com/docs/merging-reports)
+for the commit. Check all five upload steps before diagnosing a project-coverage
+regression; an early partial report can fall below the target even when the
+complete report passes. The [repository configuration](../codecov.yml) uses
+Codecov's [`after_n_builds: 5`](https://docs.codecov.com/docs/notifications#preventing-notifications-until-after-n-builds)
+to wait for those reports before sending status notifications. Keep this count
+aligned with the workflow's coverage uploads when changing the shard matrix.
+Both upload steps enable [`fail_ci_if_error`](https://github.com/codecov/codecov-action/blob/303a32d7a59b442fa8d48b6a1cc6825c09c847a5/action.yml#L51-L54)
+so an upload error fails its job instead of leaving a missing report unnoticed.
 
 ## Deploy Rollout Healthcheck Failures
 

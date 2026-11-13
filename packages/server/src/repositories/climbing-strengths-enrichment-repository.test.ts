@@ -1,3 +1,4 @@
+import { CatalogueSearchError } from "@dofek/climbing-catalogue";
 import type { CatalogueSeed } from "@dofek/training/climbing-catalogue";
 import { ClimbingCatalogueService } from "dofek/climbing-catalogue";
 import { MemoryCacheStore } from "dofek/lib/cache";
@@ -97,6 +98,32 @@ describe("ClimbingStrengthsEnrichmentRepository", () => {
     expect(result.contexts.get("log-b")?.status).toBe("error");
     expect(result.pending).toBe(false);
     expect(mocks.enqueue).not.toHaveBeenCalled();
+  });
+
+  it("deduplicates overlapping provider failures across different cached climb lookups", async () => {
+    const { service, repository } = setup();
+    const other = { ...repeat, externalId: "456" };
+    mocks.seeds.mockResolvedValue([seed, other]);
+    const kaya = new Error("Kaya rejected climb details. Try again later.");
+    const openbeta = new Error("OpenBeta is unavailable (502). Try again later.");
+    await service.markFailed(
+      seed,
+      new CatalogueSearchError(
+        [
+          { providerId: "kaya", error: kaya },
+          { providerId: "openbeta", error: openbeta },
+        ],
+        [],
+      ),
+    );
+    await service.markFailed(
+      other,
+      new CatalogueSearchError([{ providerId: "openbeta", error: openbeta }], []),
+    );
+    expect((await repository.getContexts([seed.logEntryId, other.logEntryId])).errors).toEqual([
+      `kaya: ${kaya.message}`,
+      `openbeta: ${openbeta.message}`,
+    ]);
   });
   it("reports queue errors and records failure rather than claiming pending", async () => {
     const { service, repository } = setup();

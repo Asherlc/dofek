@@ -6,7 +6,7 @@ import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client
 import { createElement, type ReactNode, useMemo } from "react";
 import { captureException, logger } from "./telemetry";
 
-export const MOBILE_QUERY_CACHE_CONTRACT_VERSION = 26;
+export const MOBILE_QUERY_CACHE_CONTRACT_VERSION = 27;
 export const MOBILE_QUERY_CACHE_MAX_PERSISTED_BYTES = 5 * 1024 * 1024;
 
 export function mobileQueryCacheBuster(userId: string) {
@@ -33,8 +33,7 @@ function reportQueryPersistenceFailure(
 ): void {
   // AsyncStorage's iOS bridge keeps its fixed message but discards NSError codes.
   // Never send its error object: messages, keys and userInfo can contain health data.
-  // AsyncStorage multiRemove rejects an error array; classify its first error for telemetry.
-  const failure: unknown = Array.isArray(error) ? error[0] : error;
+  const failure: unknown = error;
   const category =
     failure instanceof SyntaxError
       ? "invalid-json"
@@ -139,7 +138,7 @@ export async function removeAllMobileQueryCaches(): Promise<void> {
     const keys = await AsyncStorage.getAllKeys();
     const accountCacheKeys = keys.filter((key) => key.startsWith(QUERY_CACHE_KEY_PREFIX));
     if (accountCacheKeys.length > 0) {
-      await AsyncStorage.multiRemove(accountCacheKeys);
+      await AsyncStorage.removeMany(accountCacheKeys);
     }
   } catch (error: unknown) {
     reportQueryPersistenceFailure(error, "mobile-query-cache-clear-all");

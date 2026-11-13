@@ -13,6 +13,8 @@ function localDateFromYmd(value: string): Date {
 export function ProviderDetailActionsCard({
   primaryActionLabel,
   isSyncing,
+  isRequestingPermissions,
+  permissionMessage,
   syncMessage,
   syncProgress,
   syncDateRange,
@@ -21,11 +23,14 @@ export function ProviderDetailActionsCard({
   shouldShowAppleHealthClinicalRecords,
   shouldShowClinicalRecordsLink,
   onPrimaryAction,
+  onReviewPermissions,
   onFullSync,
   onOpenClinicalRecords,
 }: {
-  primaryActionLabel: "Sync" | "Connect" | "Reconnect";
+  primaryActionLabel: "Sync" | "Connect" | "Reconnect" | "Resume";
   isSyncing: boolean;
+  isRequestingPermissions: boolean;
+  permissionMessage: string | null;
   syncMessage: string | null;
   syncProgress: number | null;
   syncDateRange: ProviderSyncDateRange | null;
@@ -34,9 +39,11 @@ export function ProviderDetailActionsCard({
   shouldShowAppleHealthClinicalRecords: boolean;
   shouldShowClinicalRecordsLink: boolean;
   onPrimaryAction: () => void;
+  onReviewPermissions: () => void;
   onFullSync: () => void;
   onOpenClinicalRecords: () => void;
 }) {
+  const isBusy = isSyncing || isRequestingPermissions;
   return (
     <View style={styles.actionCard}>
       <Text style={styles.actionTitle}>Actions</Text>
@@ -46,7 +53,7 @@ export function ProviderDetailActionsCard({
             <Text style={styles.dateLabel}>From</Text>
             <DateTimePicker
               accessibilityLabel="From"
-              disabled={isSyncing}
+              disabled={isBusy}
               display="compact"
               maximumDate={localDateFromYmd(syncDateRange.untilDate)}
               mode="date"
@@ -62,7 +69,7 @@ export function ProviderDetailActionsCard({
             <Text style={styles.dateLabel}>To</Text>
             <DateTimePicker
               accessibilityLabel="To"
-              disabled={isSyncing}
+              disabled={isBusy}
               display="compact"
               maximumDate={localDateFromYmd(formatDateYmd())}
               minimumDate={localDateFromYmd(syncDateRange.sinceDate)}
@@ -79,25 +86,25 @@ export function ProviderDetailActionsCard({
       ) : null}
       <View style={styles.syncButtonRow}>
         <TouchableOpacity
-          style={[styles.syncButton, isSyncing && styles.syncButtonDisabled]}
+          style={[styles.syncButton, isBusy && styles.syncButtonDisabled]}
           onPress={onPrimaryAction}
           activeOpacity={0.7}
-          disabled={isSyncing}
+          disabled={isBusy}
           accessibilityRole="button"
           accessibilityLabel={primaryActionLabel}
-          accessibilityState={{ busy: isSyncing, disabled: isSyncing }}
+          accessibilityState={{ busy: isBusy, disabled: isBusy }}
         >
           <Text style={styles.syncButtonText}>{primaryActionLabel}</Text>
         </TouchableOpacity>
         {shouldShowFullSync && (
           <TouchableOpacity
-            style={[styles.secondaryButton, isSyncing && styles.syncButtonDisabled]}
+            style={[styles.secondaryButton, isBusy && styles.syncButtonDisabled]}
             onPress={onFullSync}
             activeOpacity={0.7}
-            disabled={isSyncing}
+            disabled={isBusy}
             accessibilityRole="button"
             accessibilityLabel="Full sync"
-            accessibilityState={{ busy: isSyncing, disabled: isSyncing }}
+            accessibilityState={{ busy: isBusy, disabled: isBusy }}
           >
             <Text style={styles.secondaryButtonText}>Full sync</Text>
           </TouchableOpacity>
@@ -114,16 +121,19 @@ export function ProviderDetailActionsCard({
       )}
       {shouldShowAppleHealthPermissionBanner && (
         <TouchableOpacity
-          onPress={onPrimaryAction}
+          onPress={onReviewPermissions}
+          disabled={isRequestingPermissions}
           activeOpacity={0.7}
           accessibilityRole="button"
           accessibilityLabel="Review Apple Health permissions"
+          accessibilityState={{ busy: isRequestingPermissions, disabled: isRequestingPermissions }}
         >
           <Text style={styles.permissionBannerText}>
             Apple Health permissions need updating — tap to review
           </Text>
         </TouchableOpacity>
       )}
+      {permissionMessage ? <Text style={styles.syncMessageText}>{permissionMessage}</Text> : null}
       {shouldShowAppleHealthClinicalRecords ? (
         <View style={styles.clinicalRecordsSection}>
           <Text style={styles.clinicalRecordsDescription}>

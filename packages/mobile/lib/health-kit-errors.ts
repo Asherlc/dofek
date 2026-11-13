@@ -1,8 +1,5 @@
 const HEALTHKIT_DATABASE_INACCESSIBLE_CODE = "HEALTHKIT_DATABASE_INACCESSIBLE";
 
-export const HEALTHKIT_DATABASE_INACCESSIBLE_MESSAGE =
-  "Device locked — unlock to sync Apple Health data";
-
 export function isHealthKitDatabaseInaccessible(error: unknown): boolean {
   return (
     typeof error === "object" &&
@@ -44,6 +41,7 @@ function isBackgroundSyncSource(source: string | undefined): boolean {
     source === "bg-accel-sync" ||
     source === "whoop-ble-imu-upload" ||
     source === "whoop-ble-realtime-upload" ||
+    source === "apple-health-sync-log" ||
     (source?.startsWith("health-kit-") ?? false)
   );
 }

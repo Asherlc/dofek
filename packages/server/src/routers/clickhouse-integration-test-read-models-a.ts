@@ -45,6 +45,7 @@ sensor_bearing_members AS (
     ON members.user_id = samples.user_id
    AND members.activity_id = samples.source_activity_id
   WHERE samples.is_deleted = 0
+    AND coalesce(members.provider_type, '') != 'climbing_log'
     AND samples.recorded_at >= members.started_at
     AND samples.recorded_at <= greatest(
       coalesce(members.ended_at, members.started_at + INTERVAL 12 HOUR),
@@ -62,6 +63,7 @@ best AS (
       row_number() OVER (
         PARTITION BY members.group_id
         ORDER BY
+          coalesce(members.provider_type, '') = 'climbing_log' ASC,
           sensor_sample_count > 0 DESC,
           sensor_sample_count DESC,
           has_elevation DESC,
@@ -134,7 +136,7 @@ export function buildTestActivitySensorSampleSelectSql(
     ended_at,
     member_activity_ids
   FROM ${databases.analytics}.deduped_activities FINAL
-  WHERE is_deleted = 0
+  WHERE is_deleted = 0 AND coalesce(provider_type, '') != 'climbing_log'
 )
 SELECT
   current_activity.activity_id AS activity_id,

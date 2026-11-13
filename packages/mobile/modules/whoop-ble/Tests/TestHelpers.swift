@@ -4,6 +4,82 @@ import SQLite3
 import XCTest
 @testable import WhoopBLE
 
+extension WhoopBleBackgroundUploaderTests {
+    func setup(
+        reportError: @escaping (Error) -> Void = { _ in },
+        now: @escaping () -> Date = Date.init
+    ) throws -> (WhoopBleBackgroundUploader, WhoopBleSampleStore, TestWhoopUploadTransport) {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try FileManager.default.removeItem(at: directory) }
+        let store = try WhoopBleSampleStore(directory: directory)
+        let transport = TestWhoopUploadTransport()
+        let uploader = try WhoopBleBackgroundUploader(
+            store: store, directory: directory.appendingPathComponent("bodies"), transport: transport,
+            reportError: reportError, now: now
+        )
+        try uploader.configure(userId: "alice", serverURL: "https://example.com", token: "secret", headers: [:])
+        return (uploader, store, transport)
+    }
+
+    func settle(_ uploader: WhoopBleBackgroundUploader) throws {
+        // Reconciliation and delegate work return to the serial queue.
+        for _ in 0..<4 { _ = try uploader.diagnostics() }
+    }
+}
+
+func assertUploaderCutoffStageOrder(_ stages: [String]) throws {
+    let cancel = try XCTUnwrap(stages.firstIndex(of: "uploader_cancel_tasks"))
+    let advance = try XCTUnwrap(stages.firstIndex(of: "uploader_advance_erasure_cutoff"))
+    let purge = try XCTUnwrap(stages.firstIndex(of: "uploader_store_purge"))
+    XCTAssertLessThan(cancel, advance)
+    XCTAssertLessThan(advance, purge)
+}
+
+func uploaderCutoffBoundaryRows(_ cutoff: Date) -> [[String: Any]] {
+    let formatter = ISO8601DateFormatter()
+    return [-1.0, 0.0, 1.0].map {
+        ["timestamp": formatter.string(from: cutoff.addingTimeInterval($0)), "heartRateBpm": 70]
+    }
+}
+
+final class CleanupStageRecorder {
+    private let lock = NSLock()
+    private var stages: [String] = []
+
+    func append(_ stage: String) { lock.withLock { stages.append(stage) } }
+    var snapshot: [String] { lock.withLock { stages } }
+}
+
+final class TestWhoopUploadTransport: WhoopUploadTransport {
+    var onCompletion: ((String, Int?, Data, URL?, Error?) -> Void)?
+    var onFinishEvents: (() -> Void)?
+    var tasks: [String] = []
+    var requests: [(URLRequest, URL, String)] = []
+    var reconciliationCount = 0
+    var delayCancellation = false
+    var delayedCancellations: [() -> Void] = []
+    var cancellations: [String] = []
+    var beforeAllTasks: (() -> Void)?
+    func allTasks(_ completion: @escaping ([String]) -> Void) {
+        reconciliationCount += 1
+        beforeAllTasks?()
+        completion(tasks)
+    }
+    func start(request: URLRequest, file: URL, identity: String) {
+        tasks.append(identity); requests.append((request, file, identity))
+    }
+    func cancel(identity: String) {
+        cancellations.append(identity)
+        let cancel = { self.tasks.removeAll { $0 == identity } }
+        if delayCancellation { delayedCancellations.append(cancel) } else { cancel() }
+    }
+    func complete(_ index: Int, status: Int = 200, body: String = "{\"result\":{\"data\":{\"inserted\":0}}}") {
+        let task = requests[index]
+        tasks.removeAll { $0 == task.2 }
+        onCompletion?(task.2, status, Data(body.utf8), task.0.url, nil)
+    }
+}
+
 final class TestWhoopPeripheralConnection: WhoopBlePeripheralConnection {
     let identifier: UUID
     let name: String? = "WHOOP test peripheral"

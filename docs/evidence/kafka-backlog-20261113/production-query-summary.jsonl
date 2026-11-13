@@ -1,0 +1,5 @@
+{"executions":3646,"total_seconds":13.6,"max_seconds":0.1,"read_rows":3646,"shape":"INSERT INTO ingest.`?` (event_id) VALUES "}
+{"executions":2,"total_seconds":0.1,"max_seconds":0,"read_rows":10000,"shape":"INSERT INTO ingest.metric_stream FORMAT JSONEachRow "}
+{"executions":38,"total_seconds":0.2,"max_seconds":0,"read_rows":3646,"shape":"INSERT INTO ingest.metric_stream_delete_scope FORMAT JSONEachRow "}
+{"executions":2,"total_seconds":0,"max_seconds":0,"read_rows":2,"shape":"INSERT INTO ingest.`?` ( operation_id, batch_id, dataset_keys, expected_event_count, topic, topic_partition, marker_offset ) VALUES "}
+{"executions":38,"total_seconds":313,"max_seconds":10.7,"read_rows":2771302724,"shape":"INSERT INTO ingest.metric_stream (id, activity_id, user_id, recorded_at, channel, provider_id, external_id, device_id, source_type, scalar, vector, point, metad"}

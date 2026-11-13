@@ -81,7 +81,7 @@ vi.mock("@react-native-async-storage/async-storage", () => {
         return Promise.resolve();
       }),
       getAllKeys: vi.fn(() => Promise.resolve([...asyncStorageValues.keys()])),
-      multiRemove: vi.fn((keys: string[]) => {
+      removeMany: vi.fn((keys: string[]) => {
         for (const key of keys) asyncStorageValues.delete(key);
         return Promise.resolve();
       }),
@@ -452,10 +452,10 @@ vi.mock("react-native-svg", () => {
   const React = require("react");
 
   function svgComponent(name: string) {
-    const component = ({ children, onPress, ...props }: Record<string, unknown>) =>
+    const component = ({ children, onPress, accessible, ...props }: Record<string, unknown>) =>
       React.createElement(
         name,
-        { ...props, onClick: onPress },
+        { ...props, "data-accessible": accessible, onClick: onPress },
         ...(children != null ? [children] : []),
       );
     component.displayName = name;
@@ -691,11 +691,11 @@ vi.mock("expo-updates", () => ({
 
 // ── WHOOP BLE native module mock ───────────────────────────────────
 vi.mock("./modules/whoop-ble", () => ({
-  configureUpload: vi.fn(),
+  configureUpload: vi.fn().mockResolvedValue(undefined),
   addCaptureErrorListener: vi.fn(() => ({ remove: vi.fn() })),
-  flushUploads: vi.fn(),
-  disableUploads: vi.fn(),
-  getDataPathStats: vi.fn(() => makeWhoopCaptureStats()),
+  flushUploads: vi.fn().mockResolvedValue(undefined),
+  disableUploads: vi.fn().mockResolvedValue(undefined),
+  getDataPathStats: vi.fn().mockImplementation(async () => makeWhoopCaptureStats()),
   isBluetoothAvailable: vi.fn(() => false),
   findWhoop: vi.fn(() => Promise.resolve(null)),
   connect: vi.fn(() => Promise.resolve(false)),

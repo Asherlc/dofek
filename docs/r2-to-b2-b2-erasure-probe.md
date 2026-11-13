@@ -5,7 +5,7 @@
 **SHA256:** `5fd159e002ecd97d97a6c23b2358fbcb1eed5b36ffe68f5824b675eef521ec44`  
 **Raw sanitized evidence:** [`docs/evidence/b2-erasure-probe-20261106t180758z/`](evidence/b2-erasure-probe-20261106t180758z/)
 
-Factual B2 compatibility probe record only. Does **not** authorize an R2→B2 bucket migration, CAS replacement, or product cutover. Broader migration remains **deferred**; current Pulsar work adds B2 tiered offload elsewhere (PR #3231 / B7).
+Factual B2 compatibility probe record only. Does **not** authorize an R2→B2 bucket migration, CAS replacement, or product cutover. Broader migration remains **deferred**. The Pulsar/B2 offload proposal belonged to the [superseded PR #3231](https://github.com/Asherlc/dofek/pull/3231), not the current [Kafka architecture](../README.md#architecture).
 
 No Object GET · no MPU · no retention · no R2/prod ops · no secret key material in artifacts · no probe rerun.
 

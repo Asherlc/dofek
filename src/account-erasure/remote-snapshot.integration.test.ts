@@ -361,6 +361,88 @@ describe("account-erasure remote snapshot persistence (integration)", () => {
     },
   );
 
+  async function createBudgetUser() {
+    const budgetUserId = randomUUID();
+    await context.db.execute(sql`INSERT INTO fitness.user_profile(id,name)
+      VALUES (${budgetUserId}::uuid,'Snapshot budget fixture')`);
+    return budgetUserId;
+  }
+
+  it.each(["é", "\n"])(
+    "checks prerequisites for exact encoded session-item bytes for %j",
+    async (character) => {
+      const budgetUserId = await createBudgetUser();
+      const sessionId = character.repeat(2047);
+      await context.db.execute(sql`INSERT INTO fitness.session(id,user_id,expires_at)
+      VALUES (${sessionId},${budgetUserId}::uuid,now()+interval '1 day')`);
+      const encrypted = await context.db.transaction((transaction) =>
+        createEncryptedAccountErasureSnapshot(transaction, budgetUserId, providers),
+      );
+      const captured = await decryptAccountErasureSnapshot(encrypted, budgetUserId);
+      expect(captured.localIdentifiers.sessionIds).toEqual([sessionId]);
+      await context.db.execute(
+        sql`UPDATE fitness.session SET id=id||${character} WHERE user_id=${budgetUserId}::uuid`,
+      );
+      await expect(
+        context.db
+          .transaction((transaction) =>
+            createEncryptedAccountErasureSnapshot(transaction, budgetUserId, providers),
+          )
+          .then(() => undefined),
+      ).rejects.toThrow(/Account deletion snapshot exceeds.*4 KiB.*Contact support/);
+    },
+  );
+
+  it("rejects an oversized encrypted Apple credential before decrypting its payload", async () => {
+    const budgetUserId = await createBudgetUser();
+    await context.db.execute(sql`INSERT INTO fitness.auth_account
+      (user_id,auth_provider,provider_account_id,revocation_access_token,revocation_client_id)
+      VALUES (${budgetUserId}::uuid,'apple',${budgetUserId},${`enc:v1:${"A".repeat(65536)}`},'fixture-client')`);
+    await expect(
+      context.db.transaction((transaction) =>
+        createEncryptedAccountErasureSnapshot(transaction, budgetUserId, providers),
+      ),
+    ).rejects.toThrow(/Account deletion snapshot exceeds.*credential.*limit.*Contact support/);
+  });
+
+  it("rejects the combined encrypted credential input before loading provider tokens", async () => {
+    const budgetUserId = await createBudgetUser();
+    const budgetProviders: Provider[] = Array.from({ length: 9 }, (_, index) => ({
+      id: `snapshot-budget-${index}`,
+      name: `Budget fixture ${index}`,
+      validate: () => null,
+      authSetup: () => ({}),
+      sync: async () => ({
+        provider: `snapshot-budget-${index}`,
+        recordsSynced: 0,
+        duration: 0,
+        errors: [],
+      }),
+    }));
+    for (const provider of budgetProviders) {
+      await ensureProvider(context.db, provider.id, provider.name, undefined, budgetUserId);
+      await context.db.execute(sql`INSERT INTO fitness.oauth_token(user_id,provider_id,access_token,expires_at)
+        VALUES (${budgetUserId}::uuid,${provider.id},${`enc:v1:${"A".repeat(65536 - 7)}`},now()+interval '1 day')`);
+    }
+    await expect(
+      context.db.transaction((transaction) =>
+        createEncryptedAccountErasureSnapshot(transaction, budgetUserId, budgetProviders),
+      ),
+    ).rejects.toThrow(/Account deletion snapshot exceeds.*credential.*limit.*Contact support/);
+  });
+
+  it("rejects oversized identity metadata before loading Apple credential payloads", async () => {
+    const budgetUserId = await createBudgetUser();
+    await context.db.execute(sql`INSERT INTO fitness.auth_account
+      (user_id,auth_provider,provider_account_id,revocation_access_token,revocation_client_id)
+      VALUES (${budgetUserId}::uuid,'apple',${budgetUserId},'enc:v1:AAAA',${"x".repeat(1048577)})`);
+    await expect(
+      context.db.transaction((transaction) =>
+        createEncryptedAccountErasureSnapshot(transaction, budgetUserId, providers),
+      ),
+    ).rejects.toThrow(/Account deletion snapshot exceeds.*limit.*Contact support/);
+  });
+
   it("snapshots public profiles without remote authorization", async () => {
     const encrypted = await context.db.transaction((transaction) =>
       createEncryptedAccountErasureSnapshot(transaction, publicProfileUserId, providers),
@@ -516,6 +598,7 @@ describe("account-erasure remote snapshot persistence (integration)", () => {
     ["soill", "So iLL Board"],
     ["touchstone", "Touchstone Board"],
     ["aurora-board", "Aurora Board"],
+    ["boardsesh", "BoardSesh"],
   ])(
     "requires disconnecting an active %s session before account erasure",
     async (providerId, name) => {

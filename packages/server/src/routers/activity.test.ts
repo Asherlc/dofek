@@ -24,7 +24,8 @@ vi.mock("dofek/lib/cache", () => ({
 }));
 
 const mockEnqueueActivityDeleteAnalyticsRefresh = vi.fn().mockResolvedValue(undefined);
-const mockEnqueueActivityRestoreAnalyticsRefresh = vi.fn().mockResolvedValue(undefined);
+const mockEnqueueActivityRestoreAnalyticsRefresh = vi.fn().mockResolvedValue("restore-job-default");
+const mockGetRestoreJob = vi.fn();
 const mockEnqueueActivityRecomputeAnalyticsRefresh = vi.fn().mockResolvedValue(undefined);
 const mockWithUserWriteFence = vi.fn();
 
@@ -33,6 +34,7 @@ vi.mock("dofek/db/account-erasure", () => ({
 }));
 
 vi.mock("dofek/jobs/queues", () => ({
+  getActivityDeleteAnalyticsQueue: () => ({ getJob: mockGetRestoreJob }),
   enqueueActivityDeleteAnalyticsRefresh: (...args: unknown[]) =>
     mockEnqueueActivityDeleteAnalyticsRefresh(...args),
   enqueueActivityRestoreAnalyticsRefresh: (...args: unknown[]) =>
@@ -146,6 +148,7 @@ function makeResolvedCaller(
   rows: Record<string, unknown>[],
   sensorStore: unknown = makeSensorStoreStub(),
   requestedId = "00000000-0000-0000-0000-000000000001",
+  climbingLogSessions: Record<string, unknown>[] = [],
 ) {
   const resolvedGroupId = typeof rows[0]?.id === "string" ? rows[0].id : requestedId;
   return makeTestCaller(
@@ -161,6 +164,7 @@ function makeResolvedCaller(
           ]
         : [],
       rows,
+      climbingLogSessions,
     ],
     (db) => ({ db, sensorStore, userId: "user-1", timezone: "UTC" }),
   ).caller;
@@ -618,6 +622,54 @@ describe("activityRouter", () => {
   });
 
   describe("byId", () => {
+    it("hydrates source sessions for the canonical activity ID", async () => {
+      const activityId = "30000000-0000-4000-8000-000000000001";
+      const session = {
+        activityId,
+        id: "40000000-0000-4000-8000-000000000001",
+        providerId: "kilter",
+        memberActivityIds: ["50000000-0000-4000-8000-000000000001"],
+        firstLoggedAt: "2026-11-09T18:00:00.000Z",
+        lastLoggedAt: "2026-11-09T18:04:00.000Z",
+      };
+      const row = {
+        id: activityId,
+        canonical_type: "climbing",
+        started_at: "2026-11-09T18:00:00.000Z",
+        ended_at: null,
+        name: "Kilter Board",
+        notes: null,
+        primary_activity_id: "50000000-0000-4000-8000-000000000001",
+        primary_provider_id: "kilter",
+        primary_source_name: "Kilter Board",
+        origin_candidate_member_ids: [],
+        provider_id: "kilter",
+        subsource: null,
+        source_providers: ["kilter"],
+        member_activity_ids: ["50000000-0000-4000-8000-000000000001"],
+        origin_evidence: [],
+        source_external_ids: [],
+        avg_hr: null,
+        max_hr: null,
+        avg_power: null,
+        max_power: null,
+        avg_speed: null,
+        max_speed: null,
+        avg_cadence: null,
+        total_distance: null,
+        elevation_gain_m: null,
+        elevation_loss_m: null,
+        sample_count: null,
+      };
+      const caller = makeResolvedCaller([row], makeSensorStoreStub(), activityId, [session]);
+
+      const result = await caller.byId({ id: activityId });
+
+      expect(result.climbingLogSessions).toEqual([
+        expect.objectContaining({ id: session.id, providerId: "kilter" }),
+      ]);
+    });
+
     it("returns mapped activity detail with source links", async () => {
       const row = {
         id: "abc-123",
@@ -1475,6 +1527,14 @@ describe("activityRouter", () => {
   });
 
   describe("restoreProviderAbsent", () => {
+    it("returns the analytics job handle for completion tracking", async () => {
+      mockEnqueueActivityRestoreAnalyticsRefresh.mockResolvedValueOnce("restore-job-1");
+      const caller = makeCaller([{ id: "00000000-0000-0000-0000-000000000001" }]);
+      await expect(
+        caller.restoreProviderAbsent({ ids: ["00000000-0000-0000-0000-000000000001"] }),
+      ).resolves.toMatchObject({ analyticsJobId: "restore-job-1" });
+    });
+
     it("restores hidden activities and returns the restored count", async () => {
       const execute = vi
         .fn()
@@ -1492,7 +1552,7 @@ describe("activityRouter", () => {
         caller.restoreProviderAbsent({
           ids: ["00000000-0000-0000-0000-000000000001", "00000000-0000-0000-0000-000000000002"],
         }),
-      ).resolves.toEqual({ success: true, restoredCount: 2 });
+      ).resolves.toMatchObject({ success: true, restoredCount: 2 });
     });
 
     it("invalidates activity and calendar caches after restore", async () => {
@@ -1511,7 +1571,7 @@ describe("activityRouter", () => {
       expect(queryCache.invalidateByPrefix).toHaveBeenCalledWith("user-1:calendar.");
     });
 
-    it("enqueues an activity restore analytics refresh after restore", async () => {
+    it("enqueues every restored member rather than the requested group alias", async () => {
       const execute = vi
         .fn()
         .mockResolvedValue([
@@ -1525,7 +1585,7 @@ describe("activityRouter", () => {
       });
 
       await caller.restoreProviderAbsent({
-        ids: ["00000000-0000-0000-0000-000000000001", "00000000-0000-0000-0000-000000000002"],
+        ids: ["00000000-0000-0000-0000-000000000099"],
       });
 
       expect(mockEnqueueActivityRestoreAnalyticsRefresh).toHaveBeenCalledWith("user-1", [
@@ -1550,7 +1610,13 @@ describe("activityRouter", () => {
         caller.restoreProviderAbsent({
           ids: ["00000000-0000-0000-0000-000000000001"],
         }),
-      ).resolves.toEqual({ success: true, restoredCount: 1 });
+      ).resolves.toMatchObject({
+        success: true,
+        restoredCount: 1,
+        analyticsJobId: null,
+        analyticsError:
+          "Activity restored, but refreshing charts could not start. Use Recompute to retry.",
+      });
 
       expect(Sentry.captureException).toHaveBeenCalledWith(enqueueError, {
         tags: { phase: "activity-restore-analytics-enqueue" },
@@ -1594,6 +1660,33 @@ describe("activityRouter", () => {
           ids: ["00000000-0000-0000-0000-000000000001"],
         }),
       ).rejects.toThrow("connection refused");
+    });
+  });
+
+  describe("restoreStatus", () => {
+    it.each(["waiting", "active", "delayed", "completed", "failed"])(
+      "reports %s restore state",
+      async (state) => {
+        mockGetRestoreJob.mockResolvedValueOnce({
+          data: { userId: "user-1", type: "activity-restore-analytics-refresh" },
+          getState: vi.fn().mockResolvedValue(state),
+        });
+        const result = await makeCaller().restoreStatus({ jobId: "restore-job-1" });
+        expect(result.status).toBe(state === "completed" || state === "failed" ? state : "pending");
+        if (state === "failed") expect(result.error).toContain("Recompute");
+        expect(mockGetRestoreJob).toHaveBeenCalledWith("restore-job-1");
+      },
+    );
+
+    it.each([
+      undefined,
+      { data: { userId: "other-user", type: "activity-restore-analytics-refresh" } },
+      { data: { userId: "user-1", type: "activity-delete-analytics-refresh" } },
+    ])("rejects missing, foreign, and unrelated jobs", async (job) => {
+      mockGetRestoreJob.mockResolvedValueOnce(job);
+      await expect(makeCaller().restoreStatus({ jobId: "restore-job-1" })).rejects.toMatchObject({
+        code: "NOT_FOUND",
+      });
     });
   });
 

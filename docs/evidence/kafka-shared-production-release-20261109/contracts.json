@@ -1,0 +1,78 @@
+{
+  "at": "2026-11-09T05:26:05.786Z",
+  "stage": "restoration stability check",
+  "images": [
+    {
+      "service": "dofek_web",
+      "image": "ghcr.io/asherlc/dofek@sha256:9dec51d5dba7ac3b234be2defbdaa63c5d677675470f35bff320df4c365eaa20",
+      "expectedDigest": true,
+      "replicas": 2
+    },
+    {
+      "service": "dofek_worker",
+      "image": "ghcr.io/asherlc/dofek@sha256:9dec51d5dba7ac3b234be2defbdaa63c5d677675470f35bff320df4c365eaa20",
+      "expectedDigest": true,
+      "replicas": 1
+    },
+    {
+      "service": "dofek_analytics-worker",
+      "image": "ghcr.io/asherlc/dofek@sha256:9dec51d5dba7ac3b234be2defbdaa63c5d677675470f35bff320df4c365eaa20",
+      "expectedDigest": true,
+      "replicas": 1
+    },
+    {
+      "service": "dofek_cdc-health",
+      "image": "ghcr.io/asherlc/dofek@sha256:9dec51d5dba7ac3b234be2defbdaa63c5d677675470f35bff320df4c365eaa20",
+      "expectedDigest": true,
+      "replicas": 1
+    },
+    {
+      "service": "dofek_processing-reconciliation",
+      "image": "ghcr.io/asherlc/dofek@sha256:9dec51d5dba7ac3b234be2defbdaa63c5d677675470f35bff320df4c365eaa20",
+      "expectedDigest": true,
+      "replicas": 1
+    },
+    {
+      "service": "dofek_metric-stream-clickhouse-sink",
+      "image": "ghcr.io/asherlc/dofek@sha256:9dec51d5dba7ac3b234be2defbdaa63c5d677675470f35bff320df4c365eaa20",
+      "expectedDigest": true,
+      "replicas": 1
+    },
+    {
+      "service": "dofek_metric-stream-live-clickhouse-sink",
+      "image": "ghcr.io/asherlc/dofek@sha256:9dec51d5dba7ac3b234be2defbdaa63c5d677675470f35bff320df4c365eaa20",
+      "expectedDigest": true,
+      "replicas": 1
+    },
+    {
+      "service": "dofek_metric-stream-history-clickhouse-sink",
+      "image": "ghcr.io/asherlc/dofek@sha256:9dec51d5dba7ac3b234be2defbdaa63c5d677675470f35bff320df4c365eaa20",
+      "expectedDigest": true,
+      "replicas": 1
+    }
+  ],
+  "workerCommand": null,
+  "workerArgs": [
+    "worker"
+  ],
+  "workerMounts": [
+    {
+      "Type": "bind",
+      "Source": "/mnt/dofek-data/kafka-broker/data",
+      "Target": "/var/lib/dofek/kafka-data",
+      "ReadOnly": true
+    },
+    {
+      "Type": "bind",
+      "Source": "/mnt/dofek-data/redpanda",
+      "Target": "/var/lib/dofek/retired-broker-data",
+      "ReadOnly": true
+    }
+  ],
+  "kafkaImageUnchanged": true,
+  "kafkaEnvironmentUnchanged": true,
+  "kafkaMountsUnchanged": true,
+  "remoteStorage": "false",
+  "redpandaServicePresent": false,
+  "historyCanonicalBrokerKey": true
+}

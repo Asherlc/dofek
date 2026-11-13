@@ -108,6 +108,7 @@ tombstoned AS (
   FROM fitness.activity AS a
   WHERE
     a.provider_absent_at IS NOT null
+    AND a.provider_type <> 'climbing_log'
     AND a.deleted_at IS null
     AND a.external_id IS NOT null
     AND a.external_id <> ''
@@ -253,6 +254,7 @@ best_per_group AS (
   INNER JOIN ranked AS r ON fg.activity_id = r.id
   ORDER BY
     fg.group_id ASC,
+    (r.provider_type IS NOT DISTINCT FROM 'climbing_log') ASC,
     r.complete_working_set_count DESC,
     r.set_count DESC,
     r.exercise_count DESC,
@@ -296,8 +298,11 @@ best_context_per_group AS (
 group_bounds AS (
   SELECT
     fg.group_id,
-    MIN(r.started_at) AS started_at,
-    MAX(r.ended_at) AS ended_at
+    COALESCE(
+      MIN(r.started_at) FILTER (WHERE r.provider_type IS DISTINCT FROM 'climbing_log'),
+      MIN(r.started_at)
+    ) AS started_at,
+    MAX(r.ended_at) FILTER (WHERE r.provider_type IS DISTINCT FROM 'climbing_log') AS ended_at
   FROM final_groups AS fg
   INNER JOIN ranked AS r ON fg.activity_id = r.id
   GROUP BY fg.group_id
@@ -319,12 +324,6 @@ absent_source_links AS (
   FROM final_groups AS fg
   INNER JOIN effective_tombstoned AS t ON fg.activity_id = t.id
   GROUP BY fg.group_id
-),
-
-tombstoned_groups AS (
-  SELECT DISTINCT fg.group_id
-  FROM final_groups AS fg
-  INNER JOIN effective_tombstoned AS t ON fg.activity_id = t.id
 ),
 
 merged AS (
@@ -414,10 +413,6 @@ merged AS (
   INNER JOIN group_bounds AS bounds ON b.group_id = bounds.group_id
   INNER JOIN best_context_per_group AS context ON b.group_id = context.group_id
   LEFT JOIN absent_source_links ON b.group_id = absent_source_links.group_id
-  WHERE NOT EXISTS (
-    SELECT 1 FROM tombstoned_groups AS tg
-    WHERE tg.group_id = b.group_id
-  )
 )
 
 SELECT
@@ -469,7 +464,9 @@ CROSS JOIN
         )
       ) ORDER BY r.id) AS members
     FROM fitness.activity AS r
-    WHERE r.id = ANY(m.member_activity_ids) AND r.user_id = m.user_id
+    WHERE
+      r.id = ANY(m.member_activity_ids) AND r.user_id = m.user_id
+      AND r.provider_absent_at IS null AND r.deleted_at IS null
   ) AS origin_group
 CROSS JOIN LATERAL fitness.resolve_activity_origin(origin_group.members) AS origin
 LEFT JOIN fitness.activity AS primary_activity

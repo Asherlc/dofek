@@ -24,6 +24,7 @@ source_records AS (
         coalesce(ended_at, started_at + INTERVAL 12 HOUR) AS ended_at
     FROM {{ ref('activity_source_records') }} FINAL
     WHERE is_deleted = 0
+        AND coalesce(provider_type, '') != 'climbing_log'
 ),
 
 tombstoned_records AS (
@@ -36,6 +37,7 @@ tombstoned_records AS (
         coalesce(activity.ended_at, activity.started_at + INTERVAL 12 HOUR) AS ended_at
     FROM {{ source('postgres_fitness', 'activity') }} AS activity FINAL
     WHERE activity._peerdb_is_deleted = 0
+        AND coalesce(activity.provider_type, '') != 'climbing_log'
         AND coalesce(activity.provider_absent_at, toDateTime64(0, 6, 'UTC')) != toDateTime64(0, 6, 'UTC')
         AND coalesce(activity.deleted_at, toDateTime64(0, 6, 'UTC')) = toDateTime64(0, 6, 'UTC')
 ),
