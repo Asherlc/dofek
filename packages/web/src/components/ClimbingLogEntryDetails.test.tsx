@@ -8,6 +8,22 @@ import {
 } from "../../../server/src/repositories/climbing-test-helpers.ts";
 import { ClimbingLogEntryDetails } from "./ClimbingLogEntryDetails.tsx";
 
+it("shows BoardSesh's recorded time in standalone log details", () => {
+  render(
+    <ClimbingLogEntryDetails
+      entry={climbingLogEntryFixture({
+        providerId: "boardsesh",
+        climbedOn: null,
+        chartAnnotations: [
+          { id: "tick", label: "Moon Dust", startedAt: "2026-11-01T18:00:00Z", endedAt: null },
+        ],
+      })}
+    />,
+  );
+  expect(screen.getByText(/Nov 1, 2026/)).toBeTruthy();
+  expect(screen.getByText(/:\d{2}\s?[AP]M/)).toBeTruthy();
+});
+
 it("renders the board and visited gym instead of the shared problem location", () => {
   const climb = climbingClimbFixture();
   const location = climb.areaPath[0];

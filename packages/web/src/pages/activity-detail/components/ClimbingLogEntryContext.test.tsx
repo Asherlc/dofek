@@ -7,6 +7,20 @@ import {
 } from "../../../../../server/src/repositories/climbing-test-helpers.ts";
 import { ClimbingLogEntryContext } from "./ClimbingLogEntryContext.tsx";
 
+it("shows the recorded climb time supplied by the server", () => {
+  render(
+    <ClimbingLogEntryContext
+      entry={climbingLogEntryFixture({
+        chartAnnotations: [
+          { id: "tick", label: "Moon Dust", startedAt: "2026-11-01T17:00:00Z", endedAt: null },
+        ],
+      })}
+    />,
+  );
+  expect(screen.getByText(/Nov 1, 2026/)).toBeTruthy();
+  expect(screen.getByText(/:\d{2}\s?[AP]M/)).toBeTruthy();
+});
+
 it("renders the recorded board with unknown angle units", () => {
   const entry = climbingLogEntryFixture({
     climb: climbingClimbFixture(),

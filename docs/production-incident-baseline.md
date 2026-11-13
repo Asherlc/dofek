@@ -37603,3 +37603,42 @@ their commits had advanced to live 8,869,251 and history 6,190,257; archive lag
 remained zero. The canonical server job was still verifying restored services,
 and analytics reported starting. This establishes resumed sink flow, not a
 completed rollout, sustained net drain or catch-up ETA.
+
+## 2026-11-13 — BoardSesh log metadata omitted from import and display
+
+Reported climbing cards showed “Climbing log”, no recorded location, no time,
+and no BoardSesh icon. Source inspection confirmed that the importer requested
+ticks without enriching climb names, always wrote `board: null`, and omitted
+log-specific areas. The server did not generate BoardSesh timing annotations;
+cards and standalone details did not display precise log time. The shared
+provider catalog had no BoardSesh logo asset. The direct corrections enrich
+exact tick identities through the existing upstream reads, preserve recorded
+location and coordinates on the log, reuse server timing annotations on both
+clients, and register the official icon. See the
+[BoardSesh mapping and primary sources](boardsesh.md#implemented-in-dofek).
+Real PostgreSQL/MSW regression fixtures verify enrichment of the same stored
+tick, incomplete metadata, pagination, failed/mismatched reads, and coordinate-only
+locations. No retries, timeouts, schema migrations, or production configuration
+were added. Live-account acceptance and deployment remain unverified in this
+workspace; existing records require a successful sync with the corrected importer.
+
+The initial local `pnpm test:integration src/providers/boardsesh.integration.test.ts`
+failed during dependency startup, before Vitest. The first fatal Compose output
+was `container zealous-shrimp-redpanda-1 is unhealthy`; its log reported
+`Could not setup Async I/O`. Read-only checks showed `aio-nr = aio-max-nr = 65536`
+inside the shared Docker VM. Linux documents this as a system-wide AIO resource
+limit that can prevent `io_setup` in its
+[sysctl reference](https://docs.kernel.org/admin-guide/sysctl/fs.html#aio-nr-aio-max-nr).
+Only the task-created, restarting Redpanda container was stopped. The suite runs
+against real workspace PostgreSQL with `.env.local` and `TEST_DATABASE_URL` loaded
+using the documented [direct integration invocation](testing.md#integration-dependencies).
+No other workspace containers, database volumes, or shared kernel limits were
+changed; full Compose startup remains limited by shared AIO capacity. There was
+no production impact from this local setup failure.
+
+The full unit/mobile run also completed with two failures in unchanged tests:
+`Garmin dump provider finishes streaming a multi-chunk nested Garmin ZIP` and
+`integration MSW startup intercepts a retained Garmin client across successive files without leaking handlers`.
+Both complete suites passed on an isolated rerun without code, retry, or timeout
+changes. Their full-run failure cause remains unconfirmed; this validation does
+not establish that the broad suite is consistently green under parallel load.

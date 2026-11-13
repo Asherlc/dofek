@@ -11,7 +11,9 @@ const entries = [
   { ...climbingLogFixture, id: "repeat" },
   { ...climbingLogFixture, id: "indoor", climb: null, title: "Indoor board log" },
 ];
-const rootArea = climbingLogFixture.climb?.areaPath[0];
+const rootClimb = climbingLogFixture.climb;
+if (!rootClimb) throw new Error("Expected climb fixture");
+const rootArea = rootClimb.areaPath[0];
 if (!rootArea) throw new Error("Expected area fixture");
 const longAreaPath = [
   "California",
@@ -43,6 +45,42 @@ const meta = {
 } satisfies Meta<typeof ActivityClimbingPanel>;
 export default meta;
 type Story = StoryObj<typeof meta>;
+export const BoardSesh: Story = {
+  args: {
+    entries: [
+      {
+        ...climbingLogFixture,
+        providerId: "boardsesh",
+        sourceName: "BoardSesh",
+        externalId: "boardsesh:tick:tick-1",
+        climb: {
+          ...rootClimb,
+          providerId: "boardsesh",
+          name: "Moon Dust",
+          kind: "boulder",
+          areaPath: [],
+        },
+        attempts: climbingLogFixture.attempts.map((attempt) => ({ ...attempt, ropeMethod: null })),
+        areaPath: [
+          { ...rootArea, providerId: "boardsesh", name: "Movement Sunnyvale", coordinates: null },
+        ],
+        sourceLinks: [],
+        displayGrade: "V5",
+        board: { name: "Training Kilter", externalId: "board-42" },
+        wallAngle: { value: 40, unit: "degrees" },
+        chartAnnotations: [
+          {
+            id: climbingLogFixture.id,
+            label: "Moon Dust · V5",
+            startedAt: "2026-11-01T18:00:00Z",
+            endedAt: null,
+          },
+        ],
+      },
+    ],
+    locations: {},
+  },
+};
 export const ExplicitLocationGroup: Story = {
   args: {
     locations: {},

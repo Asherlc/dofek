@@ -319,6 +319,10 @@ describe("BoardSeshProvider", () => {
         signal: init?.signal,
         body: String(init?.body),
       });
+      if (String(init?.body).includes("BoardSeshMetadata"))
+        return Response.json({
+          data: { authenticatedUserId: "owner-1", userAscentsFeed: { items: [], hasMore: false } },
+        });
       const body = z
         .object({
           query: z.string(),
@@ -364,7 +368,7 @@ describe("BoardSeshProvider", () => {
       .object({ entries: z.array(z.record(z.string(), z.unknown())) })
       .parse(databaseMocks.persistSnapshot.mock.calls[0]?.[1]);
     expect(result).toMatchObject({ recordsSynced: 3, errors: [] });
-    expect(requests).toHaveLength(18);
+    expect(requests).toHaveLength(19);
     expect(
       requests.every(
         ({ url, method, headers, signal }) =>
@@ -514,6 +518,10 @@ describe("BoardSeshProvider", () => {
       providerAccountId: "owner-1",
     });
     const provider = new BoardSeshProvider(async (_input, init) => {
+      if (String(init?.body).includes("BoardSeshMetadata"))
+        return Response.json({
+          data: { authenticatedUserId: "owner-1", userAscentsFeed: { items: [], hasMore: false } },
+        });
       const body = z
         .object({
           query: z.string(),

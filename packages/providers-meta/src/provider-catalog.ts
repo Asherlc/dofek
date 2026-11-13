@@ -79,6 +79,7 @@ export const PROVIDER_CATALOG: Readonly<Record<string, ProviderCatalogEntry>> = 
   moonboard: { label: "MoonBoard", logo: { type: "png" } },
   boardsesh: {
     label: "BoardSesh",
+    logo: { type: "png" },
     credentialIdentifier: "email",
     credentialInstructions:
       "Sign in with your BoardSesh email and password. Apple/Google-only accounts need a BoardSesh password.",

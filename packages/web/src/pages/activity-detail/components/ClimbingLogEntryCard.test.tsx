@@ -9,6 +9,22 @@ import {
 } from "../../../../../server/src/repositories/climbing-test-helpers.ts";
 import { ClimbingLogEntryCard } from "./ClimbingLogEntryCard.tsx";
 
+it("keeps a named location without GPS distinct from an unrecorded location", () => {
+  const climb = climbingClimbFixture();
+  render(
+    <ul>
+      <ClimbingLogEntryCard
+        hideMap
+        entry={climbingLogEntryFixture({
+          climb,
+          areaPath: climb.areaPath,
+        })}
+      />
+    </ul>,
+  );
+  expect(screen.queryByText("No recorded location")).toBeNull();
+});
+
 it("keeps an attempt-free project visible without an invented count or outcome", () => {
   render(
     <ul>

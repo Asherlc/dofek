@@ -9,6 +9,7 @@ export function ClimbingLogEntrySources({
   name,
   climbKind,
   sourceName,
+  providerId,
   links,
   titleControl,
 }: {
@@ -16,6 +17,7 @@ export function ClimbingLogEntrySources({
   name: string;
   climbKind: ClimbKind | null;
   sourceName: string | null;
+  providerId?: string;
   links: ClimbingSourceLink[];
 }) {
   const climbLabel = climbKind === "boulder" ? "Problem" : "Route";
@@ -54,7 +56,7 @@ export function ClimbingLogEntrySources({
         {visibleSources.length > 0 && (
           <p className="flex flex-wrap items-center gap-2 text-xs text-dim">
             {visibleSources.map(({ label, tickSource }) => (
-              <span key={label}>
+              <span key={label} className="inline-flex items-center gap-1.5">
                 {tickSource ? (
                   <a
                     href={tickSource.url}
@@ -70,7 +72,12 @@ export function ClimbingLogEntrySources({
                     </span>
                   </a>
                 ) : (
-                  label
+                  <>
+                    {providerId && label === providerSourceLabel(providerId) && (
+                      <ProviderLogo provider={providerId} size={14} />
+                    )}
+                    {label}
+                  </>
                 )}
               </span>
             ))}
