@@ -14,7 +14,9 @@ const sdk = vi.hoisted(() => {
     syncStream: vi.fn(() => ({ subscribe })),
     registerListener: vi.fn<
       (listener: {
-        statusChanged: (status: { dataFlowStatus: { downloadError?: Error } }) => void;
+        statusChanged: (status: {
+          dataFlowStatus: { downloadError?: { name: string; message: string; stack?: string } };
+        }) => void;
       }) => () => void
     >(() => dispose),
     getAll: vi.fn<(query: string) => Promise<unknown[]>>(),
@@ -373,14 +375,19 @@ describe("KilterBoardDirectory", () => {
     expect(existsSync(mirror())).toBe(false);
   });
 
-  it("propagates sync errors instead of waiting for reconnects", async () => {
-    const failure = new Error("Directory authorization rejected");
+  it("propagates serialized sync errors as errors instead of waiting for reconnects", async () => {
+    const downloadError = { name: "Error", message: "Connection aborted", stack: "Error: at sdk" };
     sdk.subscription.waitForFirstSync.mockImplementationOnce(async () => {
       sdk.database.registerListener.mock.calls[0]?.[0].statusChanged({
-        dataFlowStatus: { downloadError: failure },
+        dataFlowStatus: { downloadError },
       });
     });
-    await expect(new KilterBoardDirectory().fetch(credentials)).rejects.toBe(failure);
+    const error = await new KilterBoardDirectory().fetch(credentials).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(Error);
+    expect(error).toMatchObject({
+      message: "Kilter Board app sync failed: Connection aborted",
+      cause: downloadError,
+    });
     expect(existsSync(mirror())).toBe(false);
   });
 
