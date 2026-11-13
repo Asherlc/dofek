@@ -123,6 +123,8 @@ pending connection. This follows Apple's
 the [native handshake lifecycle](ios/WhoopBleConnectionManager+Handshake.swift) owns the
 application deadlines and cancellation. A pending request alone does not prove
 capture has resumed: check new data notifications and parsed sample timestamps.
+Explicit Disconnect also [stops active scanning](https://developer.apple.com/documentation/corebluetooth/cbcentralmanager/stopscan())
+before completing cleanup.
 
 Requested IMU capture survives unsuccessful automatic reconnect attempts and
 resumes after notification readiness. Explicit Stop and Disconnect cancel
@@ -299,6 +301,8 @@ Bluetooth delivery separately on a device.
 
 The standalone `swift test` suite remains separate: its target excludes the Expo
 bridge and the app-hosted tests, as declared in [Package.swift](Package.swift).
+Central-manager tests use the [production central boundary](ios/WhoopBleCentralManaging.swift)
+instead of [unsupported Core Bluetooth subclassing](https://developer.apple.com/documentation/corebluetooth).
 Its [peripheral callback regressions](Tests/WhoopBleConnectionManager+CoreBluetoothTests.swift)
 exercise ownership, stale callbacks, cancellation and reconnect through the same
 [peripheral interface](ios/WhoopBlePeripheralConnection.swift) used by the native

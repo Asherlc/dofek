@@ -26,7 +26,7 @@ final class WhoopBleConnectionManager {
 
     static let bleQueueKey = DispatchSpecificKey<Bool>()
 
-    var centralManager: CBCentralManager?
+    var centralManager: (any WhoopBleCentralManaging)?
     var cmdResponseCharacteristic: CBCharacteristic?
     var dataCharacteristic: CBCharacteristic?
     var notificationSubscriptionTracker: WhoopBleNotificationSubscriptionTracker?
@@ -238,6 +238,7 @@ final class WhoopBleConnectionManager {
             self.recordConnectionEvent("disconnect_requested", reason: "intentional_disconnect")
             self.autoReconnect = false
             self.wasStreaming = false
+            self.centralManager?.stopScan()
             if let peripheral = self.connectedPeripheral {
                 peripheral.cancelConnection()
             }

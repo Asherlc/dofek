@@ -4,6 +4,20 @@ import SQLite3
 import XCTest
 @testable import WhoopBLE
 
+final class TestWhoopCentralManager: WhoopBleCentralManaging {
+    var state: CBManagerState = .poweredOn
+    private(set) var isScanning = false
+
+    func scanForPeripherals(withServices serviceUUIDs: [CBUUID]?, options: [String: Any]?) {
+        isScanning = true
+    }
+    func stopScan() { isScanning = false }
+    func retrievePeripherals(withIdentifiers identifiers: [UUID]) -> [CBPeripheral] { [] }
+    func retrieveConnectedPeripherals(withServices serviceUUIDs: [CBUUID]) -> [CBPeripheral] { [] }
+    func connect(_ peripheral: CBPeripheral, options: [String: Any]?) { XCTFail("Unexpected peripheral connection") }
+    func cancelPeripheralConnection(_ peripheral: CBPeripheral) { XCTFail("Unexpected peripheral cancellation") }
+}
+
 extension WhoopBleBackgroundUploaderTests {
     func setup(
         reportError: @escaping (Error) -> Void = { _ in },
