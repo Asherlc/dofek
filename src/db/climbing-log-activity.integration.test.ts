@@ -3,6 +3,8 @@ import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { persistClimbingLogSnapshot } from "./climbing-log-snapshot.ts";
 import { persistClimbingLogEntries, type SourceClimbingLogEntry } from "./climbing-log-sync.ts";
+import { loadUserHomeTimezone } from "./home-timezone.ts";
+import { runWithProviderIngestContext } from "./provider-ingest-context.ts";
 import { activity } from "./schema/activity.ts";
 import { climbingAttempt, climbingLogEntry } from "./schema/climbing.ts";
 import { setupTestDatabase, type TestContext } from "./test-helpers.ts";
@@ -75,10 +77,11 @@ describe("native climbing log activity observations", () => {
     ).toEqual(attempts);
   });
 
-  it("uses the configured geographic home zone rather than the timestamp's UTC serialization", async () => {
+  it("uses the ingest context home zone rather than the timestamp's UTC serialization", async () => {
     await context.db.execute(sql`INSERT INTO fitness.user_settings (user_id, key, value)
       VALUES (${userId}, 'homeTimezone', '"America/Los_Angeles"'::jsonb)`);
-    await write();
+    const homeTimezone = await loadUserHomeTimezone(context.db, userId);
+    await runWithProviderIngestContext({ homeTimezone }, () => write());
     expect(await points()).toEqual([
       expect.objectContaining({
         timezone: "America/Los_Angeles",
