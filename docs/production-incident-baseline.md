@@ -37354,3 +37354,52 @@ not uploaded: log masking does not sanitize their original file contents.
 This improves evidence retention; it does not establish the original fetch
 cause. See the [signed archive diagnostic boundary](ci-debugging.md#signed-archive-diagnostic-confidentiality)
 and [GitHub masking semantics](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands#masking-a-value-in-a-log).
+
+### November 13 UTC: shutdown follow-up deployed and cold archive qualified
+
+[PR #3291](https://github.com/Asherlc/dofek/pull/3291) merged as
+`6ddbac5a32942167b9573712fb30fcf15194de0c` after 103 successful PR checks;
+the merged-source CI also passed. The canonical
+[server job](https://github.com/Asherlc/dofek/actions/runs/43349572540/job/131637412851)
+passed at 02:58:31 UTC, deploying image
+`sha256:8df15225790843028ad17ecb673578dea87f24a7a88caa2bfa1bda4d2f0f789a`.
+The outgoing analytics task was still the older image: the
+[Docker journal receipt](evidence/kafka-retention-20261112/followup-analytics-stop.txt) records
+its normal 30-minute deadline force-stop at 02:40:18.829915800 UTC. The drain
+gate passed at 02:40:40; no manual signal, owner mutation, offset reset, grace
+change or gate bypass was used. The retained grace protects bounded active work.
+
+The [runtime receipt](evidence/kafka-retention-20261112/followup-production-after.txt)
+shows all seven application services on the requested digest at their normal
+replicas, with web, worker, analytics and sinks healthy. A later
+[public web-health check](evidence/kafka-retention-20261112/followup-web-health.txt)
+at 03:31 UTC returned HTTP 200 with TLS verification successful. The same broker
+container remained healthy in the runtime receipt. Analytics
+completed its first cycle at 03:01:51.930 UTC; a later
+[readiness sample](evidence/kafka-retention-20261112/followup-analytics-health.json)
+reported `ok`, HTTP 200 and no recorded failure. Redis jobs and data were not
+deleted. Local full unit/mobile validation passed 24,314 tests; the native
+Redis and enabled-OTLP natural-exit probes remain the shutdown evidence.
+
+At 03:01 UTC, [consumer readback](evidence/kafka-retention-20261112/followup-groups.txt)
+showed live/history commits 8,483,651 / 5,925,097, advancing from the earlier
+snapshot, with remaining lag 1,525,234 / 1,428,863. Both nonempty archive groups
+had zero lag. Kafka allocation was 1,152,061,440 bytes, with 66,151,940,096 bytes
+available. [Collector counters](evidence/kafka-retention-20261112/followup-collector.txt)
+reached 103,427 accepted/sent metric points with zero receiver failures/refusals.
+These observations establish progress and transport acceptance, not catch-up,
+per-series backlog/error readback or a full restore. Metrics-query permission
+remains unavailable under the existing token.
+
+The [cold signed archive](https://github.com/Asherlc/dofek/actions/runs/43349572540/job/131637457790)
+also passed, including packaging and upload of `testflight-signed-archive-1`
+(artifact 14003624412). It freshly fetched Sentry 9.30.0 and MapLibre Native
+6.31.0 and resolved both at 02:11:50 UTC. Known signing identifiers were masked
+in the retained job log, shell environment display was suppressed, and no raw
+log/result-bundle diagnostic artifact was uploaded. This validates the cold
+archive path on Xcode 26.6; it does not identify the original fetch failure's
+underlying cause. The matching
+[TestFlight upload](https://github.com/Asherlc/dofek/actions/runs/43349572540/job/131657422670)
+passed at 03:11:59 UTC, and matching OTA publication also passed. The
+[complete canonical release](https://github.com/Asherlc/dofek/actions/runs/43349572540)
+concluded successfully.

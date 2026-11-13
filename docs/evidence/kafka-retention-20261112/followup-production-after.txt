@@ -1,0 +1,21 @@
+Fri Nov 13 02:59:48 UTC 2026
+dofek_web image=ghcr.io/asherlc/dofek@sha256:8df15225790843028ad17ecb673578dea87f24a7a88caa2bfa1bda4d2f0f789a replicas=2
+dofek_worker image=ghcr.io/asherlc/dofek@sha256:8df15225790843028ad17ecb673578dea87f24a7a88caa2bfa1bda4d2f0f789a replicas=1
+dofek_analytics-worker image=ghcr.io/asherlc/dofek@sha256:8df15225790843028ad17ecb673578dea87f24a7a88caa2bfa1bda4d2f0f789a replicas=1
+dofek_metric-stream-clickhouse-sink image=ghcr.io/asherlc/dofek@sha256:8df15225790843028ad17ecb673578dea87f24a7a88caa2bfa1bda4d2f0f789a replicas=1
+dofek_metric-stream-live-clickhouse-sink image=ghcr.io/asherlc/dofek@sha256:8df15225790843028ad17ecb673578dea87f24a7a88caa2bfa1bda4d2f0f789a replicas=1
+dofek_metric-stream-history-clickhouse-sink image=ghcr.io/asherlc/dofek@sha256:8df15225790843028ad17ecb673578dea87f24a7a88caa2bfa1bda4d2f0f789a replicas=1
+dofek_processing-reconciliation image=ghcr.io/asherlc/dofek@sha256:8df15225790843028ad17ecb673578dea87f24a7a88caa2bfa1bda4d2f0f789a replicas=1
+e25381e41f8d dofek_metric-stream-clickhouse-sink.1.mgnwtu1m32m4uv9c5dbwqa5cs Up 12 minutes (healthy)
+57acfd3a0936 dofek_processing-reconciliation.1.poowfrrnk1xjlqd74txtcfnc2 Up 12 minutes
+5c641aca9a39 dofek_metric-stream-live-clickhouse-sink.1.ly61c1oq0eaf10wxgci5cg7ce Up 12 minutes (healthy)
+4dcba025e922 dofek_metric-stream-history-clickhouse-sink.1.oz00swnzi97dsd6rw4fpnjflq Up 12 minutes (healthy)
+219d32c18d86 dofek_analytics-worker.1.ij7l6igs3oja0jq1k8v9blrsu Up 12 minutes (healthy)
+16c838f63e4a dofek_web.1.ce8ijikvnjf93zl60085ck13y Up 17 minutes (healthy)
+295064f13d59 dofek_web.2.xbqqurlc10yxtbkfa7kt8uwmc Up 17 minutes (healthy)
+81d3813117e1 dofek_worker.1.1zk1zic08h627t5syjgvwdqvz Up 17 minutes (healthy)
+44e6e648ad05 dofek_collector.1.pjo1so7vhi0x5958z5ddnyelb Up 5 hours
+b791ad08f0a1 dofek_kafka.1.nboy55gpodjohb5l6zaenmsx7 Up 5 hours (healthy)
+1152061440	/mnt/dofek-data/kafka-broker/data
+      Avail
+66151940096
