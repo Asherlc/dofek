@@ -2,6 +2,7 @@ import { Alert, AppState } from "react-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   initBackgroundWhoopBleSync,
+  retryWhoopBleConnection,
   syncWhoopBle,
   teardownBackgroundWhoopBleSync,
 } from "./background-whoop-ble-sync";
@@ -40,6 +41,7 @@ function deps() {
     stopImuStreaming: vi.fn().mockResolvedValue(true),
     disconnect: vi.fn(),
     addConnectionStateListener: vi.fn().mockReturnValue({ remove: vi.fn() }),
+    retryConnection: vi.fn().mockResolvedValue(true),
   };
 }
 function deferred<T>() {
@@ -160,6 +162,23 @@ describe("native WHOOP lifecycle", () => {
     await syncWhoopBle();
     expect(native.flushUploads).toHaveBeenCalledOnce();
     expect(native.findWhoop).not.toHaveBeenCalled();
+  });
+  it("retries background connection only while uploads are configured", async () => {
+    AppState.currentState = "background";
+    await retryWhoopBleConnection();
+    const native = deps();
+    const configured = deferred<void>();
+    native.configureUpload.mockImplementationOnce(() => configured.promise);
+    const initializing = initBackgroundWhoopBleSync(context, native);
+    await retryWhoopBleConnection();
+    expect(native.retryConnection).not.toHaveBeenCalled();
+    configured.resolve();
+    await initializing;
+    await retryWhoopBleConnection();
+    expect(native.retryConnection).toHaveBeenCalledOnce();
+    teardownBackgroundWhoopBleSync();
+    await retryWhoopBleConnection();
+    expect(native.retryConnection).toHaveBeenCalledOnce();
   });
   it("propagates configuration failure before capture starts", async () => {
     const native = deps();

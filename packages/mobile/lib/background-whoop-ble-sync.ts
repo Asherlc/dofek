@@ -9,6 +9,7 @@ interface WhoopBleSyncSession {
   deps: WhoopBleSyncDeps;
   diagnostics: WhoopBleDiagnostics;
   active: boolean;
+  uploadsConfigured: boolean;
   connected: boolean;
   connectionIntent: boolean;
   syncing: boolean;
@@ -50,6 +51,7 @@ export async function initBackgroundWhoopBleSync(
     deps,
     diagnostics: new WhoopBleDiagnostics(),
     active: true,
+    uploadsConfigured: false,
     connected: false,
     connectionIntent: false,
     syncing: false,
@@ -58,6 +60,7 @@ export async function initBackgroundWhoopBleSync(
   try {
     await deps.configureUpload(context);
     if (!session.active) return;
+    session.uploadsConfigured = true;
     session.captureErrorSubscription = deps.addCaptureErrorListener(({ message }) => {
       if (!session.active) return;
       captureException(new Error(message), { source: "whoop-ble-native-capture" });
@@ -117,6 +120,13 @@ export async function syncWhoopBle(): Promise<void> {
   if (!session?.active) return;
   void captureSnapshot(session, "background");
   await session.deps.flushUploads();
+}
+
+/** Native capture stays suspended until uploads are configured, so only retry after that. */
+export async function retryWhoopBleConnection(): Promise<void> {
+  const session = currentSession;
+  if (!session?.active || !session.uploadsConfigured) return;
+  await session.deps.retryConnection();
 }
 
 async function syncOnForeground(

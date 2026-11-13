@@ -53,5 +53,6 @@ export function makeMockDeps(): WhoopBleSyncDeps {
     disconnect: vi.fn(),
     addConnectionStateListener: vi.fn().mockReturnValue({ remove: vi.fn() }),
     getDataPathStats: vi.fn().mockImplementation(async () => makeWhoopCaptureStats()),
+    retryConnection: vi.fn().mockResolvedValue(true),
   };
 }
