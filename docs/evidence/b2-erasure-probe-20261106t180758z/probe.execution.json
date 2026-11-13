@@ -1,0 +1,198 @@
+{
+  "exitCode": 0,
+  "signal": null,
+  "error": null,
+  "summary": {
+    "type": "summary",
+    "ownedKeyCount": 11,
+    "uploadedBytes": 168,
+    "fatalUnexpected": null,
+    "cleanupFailed": false,
+    "caseCount": 17,
+    "exitCode": 0
+  },
+  "cases": [
+    {
+      "type": "case",
+      "case": "IfNoneMatch.new",
+      "ok": false,
+      "httpStatus": 501,
+      "errorCode": "NotImplemented",
+      "errorName": "NotImplemented"
+    },
+    {
+      "type": "case",
+      "case": "IfNoneMatch.existing",
+      "ok": true,
+      "httpStatus": 501,
+      "errorCode": "NotImplemented",
+      "errorName": "NotImplemented",
+      "versionId": "4_z3f1b04eb1362bd2ea1130015_f41350f98ba4e5795_d20261106_m181913_c004_v0402039_t0047_u01793989153115",
+      "note": "seeded-unconditional-v1-then-conditional",
+      "extra": {
+        "seedVersionId": "4_z3f1b04eb1362bd2ea1130015_f41350f98ba4e5795_d20261106_m181913_c004_v0402039_t0047_u01793989153115",
+        "seedCurrentVersionId": "4_z3f1b04eb1362bd2ea1130015_f41350f98ba4e5795_d20261106_m181913_c004_v0402039_t0047_u01793989153115",
+        "currentVersionId": "4_z3f1b04eb1362bd2ea1130015_f41350f98ba4e5795_d20261106_m181913_c004_v0402039_t0047_u01793989153115",
+        "headVersionId": "4_z3f1b04eb1362bd2ea1130015_f41350f98ba4e5795_d20261106_m181913_c004_v0402039_t0047_u01793989153115",
+        "versionCount": 1,
+        "conditionalSucceeded": false
+      }
+    },
+    {
+      "type": "case",
+      "case": "IfNoneMatch.concurrent",
+      "ok": false,
+      "httpStatus": 403,
+      "errorName": "Unknown"
+    },
+    {
+      "type": "case",
+      "case": "CopySource.setup",
+      "ok": true,
+      "etag": "\"7af7033e9c1fa31c8892d4f353d0a2df\"",
+      "versionId": "4_z3f1b04eb1362bd2ea1130015_f40793c53fd53e1ed_d20261106_m181913_c004_v0402037_t0051_u01793989153671",
+      "httpStatus": 200,
+      "note": "mapped-input=probe-c-v3",
+      "extra": {
+        "currentVersionId": "4_z3f1b04eb1362bd2ea1130015_f40793c53fd53e1ed_d20261106_m181913_c004_v0402037_t0051_u01793989153671"
+      }
+    },
+    {
+      "type": "case",
+      "case": "CopySourceIfMatch.good",
+      "ok": true,
+      "httpStatus": 200,
+      "etag": "\"7af7033e9c1fa31c8892d4f353d0a2df\"",
+      "versionId": "4_z3f1b04eb1362bd2ea1130015_f415a3aed06ecb872_d20261106_m181913_c004_v0402033_t0032_u01793989153786",
+      "extra": {
+        "currentVersionId": "4_z3f1b04eb1362bd2ea1130015_f415a3aed06ecb872_d20261106_m181913_c004_v0402033_t0032_u01793989153786"
+      }
+    },
+    {
+      "type": "case",
+      "case": "CopySourceIfMatch.bad",
+      "ok": false,
+      "httpStatus": 403,
+      "errorName": "Unknown"
+    },
+    {
+      "type": "case",
+      "case": "DestIfMatch.setup",
+      "ok": true,
+      "etag": "\"2d6fff2f50d4545198fe5a1490d3cb5e\"",
+      "versionId": "4_z3f1b04eb1362bd2ea1130015_f4137db012d1d23b0_d20261106_m181914_c004_v0402027_t0013_u01793989154010",
+      "httpStatus": 200,
+      "extra": {
+        "currentVersionId": "4_z3f1b04eb1362bd2ea1130015_f4137db012d1d23b0_d20261106_m181914_c004_v0402027_t0013_u01793989154010"
+      }
+    },
+    {
+      "type": "case",
+      "case": "DestIfMatch.good",
+      "ok": false,
+      "httpStatus": 501,
+      "errorCode": "NotImplemented",
+      "errorName": "NotImplemented"
+    },
+    {
+      "type": "case",
+      "case": "DestIfMatch.bad",
+      "ok": true,
+      "httpStatus": 501,
+      "errorCode": "NotImplemented",
+      "errorName": "NotImplemented",
+      "note": "wrong-quoted-32hex-dest-etag",
+      "extra": {
+        "beforeVersionId": "4_z3f1b04eb1362bd2ea1130015_f4137db012d1d23b0_d20261106_m181914_c004_v0402027_t0013_u01793989154010",
+        "currentVersionId": "4_z3f1b04eb1362bd2ea1130015_f4137db012d1d23b0_d20261106_m181914_c004_v0402027_t0013_u01793989154010",
+        "versionCount": 1
+      }
+    },
+    {
+      "type": "case",
+      "case": "CF.destHeader.control",
+      "ok": true,
+      "httpStatus": 200,
+      "etag": "\"7af7033e9c1fa31c8892d4f353d0a2df\"",
+      "versionId": "4_z3f1b04eb1362bd2ea1130015_f4079adf89b91f06a_d20261106_m181914_c004_v0402010_t0050_u01793989154647",
+      "note": "cf-header-accepted-or-ignored",
+      "extra": {
+        "currentVersionId": "4_z3f1b04eb1362bd2ea1130015_f4079adf89b91f06a_d20261106_m181914_c004_v0402010_t0050_u01793989154647"
+      }
+    },
+    {
+      "type": "case",
+      "case": "LegalHold.setup",
+      "ok": true,
+      "etag": "\"2d6fff2f50d4545198fe5a1490d3cb5e\"",
+      "versionId": "4_z3f1b04eb1362bd2ea1130015_f412b0f75824fa2ba_d20261106_m181914_c004_v0402038_t0035_u01793989154921",
+      "note": "legal-hold=ON"
+    },
+    {
+      "type": "case",
+      "case": "LegalHold.overwritePut",
+      "ok": true,
+      "httpStatus": 200,
+      "etag": "\"98695611ecce1a2cfcd05aa414e980ab\"",
+      "versionId": "4_z3f1b04eb1362bd2ea1130015_f41798757012babed_d20261106_m181915_c004_v0402040_t0055_u01793989155064",
+      "note": "success-would-mean-current-view-not-blocked-by-version-legal-hold",
+      "extra": {
+        "currentVersionId": "4_z3f1b04eb1362bd2ea1130015_f41798757012babed_d20261106_m181915_c004_v0402040_t0055_u01793989155064"
+      }
+    },
+    {
+      "type": "case",
+      "case": "LegalHold.deleteExactVersion",
+      "ok": false,
+      "httpStatus": 403,
+      "errorCode": "AccessDenied",
+      "errorName": "AccessDenied"
+    },
+    {
+      "type": "case",
+      "case": "LegalHold.off",
+      "ok": true,
+      "httpStatus": 200,
+      "versionId": "4_z3f1b04eb1362bd2ea1130015_f412b0f75824fa2ba_d20261106_m181914_c004_v0402038_t0035_u01793989154921",
+      "note": "OFF confirmed; removed from cleanup tracking"
+    },
+    {
+      "type": "case",
+      "case": "Gzip.headEncoding",
+      "ok": true,
+      "httpStatus": 200,
+      "etag": "\"d714fadd209eb8d74f2f8c571f2e0a9a\"",
+      "versionId": "4_z3f1b04eb1362bd2ea1130015_f1007401bcfbe5a3e_d20261106_m181915_c004_v0402037_t0051_u01793989155223",
+      "note": "contentEncoding=gzip; putOk=true"
+    },
+    {
+      "type": "case",
+      "case": "History.keyOnlyThenAllVersions",
+      "ok": true,
+      "note": "key-only hide then all-version purge",
+      "extra": {
+        "firstVersionId": "4_z3f1b04eb1362bd2ea1130015_f41273aa6471d3aa3_d20261106_m181915_c004_v0402035_t0032_u01793989155616",
+        "secondVersionId": "4_z3f1b04eb1362bd2ea1130015_f4154c746c9f0f9b5_d20261106_m181915_c004_v0402035_t0007_u01793989155653",
+        "versionsAfterKeyOnlyDelete": 2,
+        "markersAfterKeyOnlyDelete": 1,
+        "deletedCount": 3,
+        "versionsAfterAllDelete": 0,
+        "markersAfterAllDelete": 0
+      }
+    },
+    {
+      "type": "case",
+      "case": "Staging.retainNewPurgeOld",
+      "ok": true,
+      "etag": "\"98695611ecce1a2cfcd05aa414e980ab\"",
+      "versionId": "4_z3f1b04eb1362bd2ea1130015_f4199ac55f6eb7afe_d20261106_m181915_c004_v0402028_t0047_u01793989155884",
+      "extra": {
+        "retained": "4_z3f1b04eb1362bd2ea1130015_f4199ac55f6eb7afe_d20261106_m181915_c004_v0402028_t0047_u01793989155884",
+        "deletedSuperseded": 1,
+        "listCount": 1
+      },
+      "note": "must retain intended new VersionId; delete only superseded"
+    }
+  ],
+  "fatalRecords": []
+}
