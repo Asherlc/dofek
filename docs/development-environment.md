@@ -43,7 +43,8 @@ mise run cloud:init
 1. Installs pnpm dependencies with the frozen lockfile.
 2. Builds a workspace-local CodeGraph index when one does not exist.
 3. Verifies that RTK is executable.
-4. Fails immediately if the Docker daemon is unavailable.
+4. Fails immediately if the Docker daemon is unavailable, unless the documented
+   `SANDBOX=1` mode explicitly skips the service startup phase.
 5. Starts the canonical workspace-isolated Compose services.
 6. Applies the Postgres and ClickHouse migrations with Infisical secrets.
 7. Runs the complete environment doctor.
@@ -123,6 +124,86 @@ Set `INFISICAL_TOKEN` to a short-lived machine-identity token before
 for authentication, as documented by
 [Infisical's login command](https://infisical.com/docs/cli/commands/login).
 Do not commit the token or write it to an environment file.
+
+## Provider-Specific Environments
+
+The checked-in toolchain and Compose definitions above are canonical. Older
+VM snapshots can have different PATH ordering, Docker privileges, or secrets;
+verify those capabilities before following snapshot-specific notes.
+
+### Cursor Cloud VM
+
+Earlier snapshots supplied Node, pnpm, uv, and Docker but ran only
+`pnpm install` during updates. Services needed starting separately, and the
+Infisical CLI was absent. These are recorded snapshot observations, not
+promises about every Cursor environment. Use the versions declared by
+[`package.json`](../package.json) and [`mise.toml`](../mise.toml) rather than
+copying historical version numbers.
+
+If an inherited `/exec-daemon/node` takes precedence over the required Node
+version, use `mise exec -- <command>` with the locked toolchain; see
+[mise environment activation](https://mise.jdx.dev/cli/exec.html).
+The analytics commands use uv, so their first run may need package downloads.
+
+On a VM without systemd, start its Docker daemon through the VM's supported
+service mechanism, or run `sudo dockerd` with logs redirected to a file, then
+check `docker info` before starting Compose. Diagnose socket ownership and
+group membership if access is denied; follow Docker's
+[Linux post-installation instructions](https://docs.docker.com/engine/install/linux-postinstall/)
+rather than making the daemon socket world-writable. Docker documents
+[manual daemon startup](https://docs.docker.com/engine/daemon/start/).
+
+Full initialization requires Infisical authentication. Install the locked CLI
+and authenticate before `mise run cloud:init`; the
+[environment wrapper](../scripts/with-env.ts) deliberately fails when export
+is unavailable. Existing local services can provide non-secret URLs through
+`.env.local`, but this does not replace provider credentials or make
+secret-gated commands available. After database setup, export the local URLs
+and run the [seed command](../scripts/seed-dev-db.ts):
+
+```bash
+set -a
+. ./.env.local
+set +a
+pnpm seed
+```
+
+Then start the API and web client using [the README commands](../README.md).
+Visit `/auth/dev-login` through the web client to use the seeded `dev-session`;
+[the server route](../packages/server/src/index.ts) sets the session cookie and
+redirects to the dashboard. It is enabled outside production (or with the
+explicit preview configuration). Provider OAuth credentials are still required
+for real provider authentication.
+
+### Codex Cloud Without Docker Privileges
+
+The repository previously observed a cloud container where Docker startup
+failed because user namespace creation was blocked. Treat that as a capability
+of that container, not a general OpenAI platform restriction. When the current
+environment has this limitation, use:
+
+```bash
+SANDBOX=1 mise run cloud:init
+mise run test:sandbox
+```
+
+[`scripts/dev-environment.ts`](../scripts/dev-environment.ts) makes
+`SANDBOX=1` skip only the Docker-backed startup phase. Prebuild still installs
+dependencies and initializes CodeGraph/RTK. The
+[`test:sandbox` task](../mise.toml) runs each declared package typecheck,
+`pnpm lint:sandbox`, and Docker-free unit/mobile tests.
+`lint:sandbox` omits `lint:analytics-sql`, which needs uv and ClickHouse; see
+[the script definitions](../package.json).
+
+Database-backed integration, Compose, web E2E, and the full environment doctor
+require unavailable services in that environment. Record which checks were not
+run locally and use the [CI integration tier](testing.md#integration-dependencies)
+for real-engine validation.
+
+For the legacy setup-script environment, OpenAI's [cloud environment documentation](https://developers.openai.com/codex/cloud/environments)
+describes setup-only secrets: they are removed before the agent phase. Arrange
+required setup artifacts during setup without printing or committing secrets;
+commands that require unavailable credentials must still fail explicitly.
 
 ## Included Toolchain
 
@@ -209,7 +290,7 @@ and the
 |---|---|
 | Linux Dev Container/cloud | Web, server, providers, analytics, databases, native FIT decoder, unit and integration tests |
 | macOS | The Linux-equivalent toolchain plus native iOS work when Xcode is installed |
-| Linux without privileged Docker | Tool installation and Docker-free unit tests only; `cloud:start` fails before database setup |
+| Linux without privileged Docker | Tool installation and Docker-free tests through `SANDBOX=1`; database-backed startup is unavailable |
 
 Xcode, iOS Simulator runtimes, signing identities, CocoaPods, SwiftLint,
 Periphery, and MutantKit remain a macOS-native profile. The configured MutantKit
