@@ -52,6 +52,127 @@ export function boardSeshBoardFixture(overrides: Record<string, unknown> = {}) {
   };
 }
 
+export const boardSeshMetadataCases = [
+  [
+    "gym name",
+    {},
+    { locationName: " ", gymName: " Gym name ", latitude: null, longitude: null },
+    "available",
+    {
+      name: "Moon Dust",
+      board: { name: "Training Kilter", externalId: "board-42" },
+      areas: [{ externalId: "board:board-42", name: "Gym name", coordinates: null }],
+    },
+  ],
+  [
+    "coordinate-only board at zero",
+    {},
+    { locationName: null, gymName: null, latitude: 0, longitude: 0 },
+    "available",
+    {
+      name: "Moon Dust",
+      board: { name: "Training Kilter", externalId: "board-42" },
+      areas: [
+        {
+          externalId: "board:board-42",
+          name: "Training Kilter",
+          coordinates: { latitude: 0, longitude: 0 },
+        },
+      ],
+    },
+  ],
+  [
+    "missing latitude",
+    {},
+    { latitude: null, longitude: 0 },
+    "available",
+    {
+      name: "Moon Dust",
+      board: { name: "Training Kilter", externalId: "board-42" },
+      areas: [{ name: "Movement Sunnyvale", coordinates: null }],
+    },
+  ],
+  [
+    "missing longitude",
+    {},
+    { latitude: 0, longitude: null },
+    "available",
+    {
+      name: "Moon Dust",
+      board: { name: "Training Kilter", externalId: "board-42" },
+      areas: [{ name: "Movement Sunnyvale", coordinates: null }],
+    },
+  ],
+  [
+    "unknown location",
+    {},
+    { locationName: null, gymName: null, latitude: null, longitude: null },
+    "available",
+    {
+      name: "Moon Dust",
+      board: { name: "Training Kilter", externalId: "board-42" },
+      areas: [],
+    },
+  ],
+  [
+    "inaccessible board",
+    {},
+    {},
+    "inaccessible",
+    { name: "Moon Dust", board: { name: "Display board", externalId: null }, areas: [] },
+  ],
+  [
+    "deleted board",
+    {},
+    {},
+    "deleted",
+    { name: "Moon Dust", board: { name: "Display board", externalId: null }, areas: [] },
+  ],
+  [
+    "unattributed board",
+    { boardId: null, boardDisplayName: null },
+    {},
+    "available",
+    { name: "Moon Dust", board: null, areas: [] },
+  ],
+  [
+    "recorded display name only",
+    { boardId: null, boardDisplayName: " Shared wall " },
+    {},
+    "available",
+    { name: "Moon Dust", board: { name: "Shared wall", externalId: null }, areas: [] },
+  ],
+  [
+    "unavailable display name",
+    { boardDisplayName: null },
+    {},
+    "inaccessible",
+    { name: "Moon Dust", board: null, areas: [] },
+  ],
+  [
+    "unknown climb name",
+    { climbName: "Unknown Climb" },
+    {},
+    "available",
+    {
+      name: null,
+      board: { name: "Training Kilter", externalId: "board-42" },
+      areas: [{ name: "Movement Sunnyvale" }],
+    },
+  ],
+  [
+    "blank climb name",
+    { climbName: "   " },
+    {},
+    "available",
+    {
+      name: null,
+      board: { name: "Training Kilter", externalId: "board-42" },
+      areas: [{ name: "Movement Sunnyvale" }],
+    },
+  ],
+] as const;
+
 export function createBoardSeshMetadataFetch({
   ticks,
   pages,
