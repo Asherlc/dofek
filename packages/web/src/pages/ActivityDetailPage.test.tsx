@@ -362,7 +362,6 @@ const mockMetricSourcesUseQuery = vi.fn(
     isLoading: false,
   }),
 );
-const mockRecomputeMutate = vi.fn();
 const mockHardwareUseQuery = vi.fn(
   (): {
     data: ActivityHardware;
@@ -378,7 +377,6 @@ const mockImagesUseQuery = vi.fn(() => ({
   isFetching: false,
   refetch: vi.fn(),
 }));
-const mockRecomputeShouldFail = vi.fn(() => false);
 const mockRestoreProviderAbsentMutate = vi.fn();
 const mockRestoreResult = vi.fn<() => { analyticsJobId: string } | undefined>(() => undefined);
 const mockRestoreStatus = vi.fn<
@@ -410,23 +408,9 @@ vi.mock("../lib/trpc.ts", () => ({
       powerWork: { useQuery: mockPowerWorkUseQuery },
       strengthExercises: { useQuery: mockStrengthExercisesUseQuery },
       hangboardDetails: { useQuery: mockHangboardDetailsUseQuery },
-      recompute: {
-        useMutation: (options?: {
-          onSuccess?: () => Promise<void>;
-          onError?: (error: Error) => void;
-        }) => ({
-          mutate: (input: { id: string }) => {
-            mockRecomputeMutate(input);
-            if (mockRecomputeShouldFail()) {
-              options?.onError?.(new Error("Network unavailable"));
-              return;
-            }
-            void options?.onSuccess?.();
-          },
-          isPending: false,
-        }),
-      },
+      recompute: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
       delete: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
+      recomputeStatus: { useQuery: () => ({ data: undefined, error: null }) },
       restoreStatus: { useQuery: mockRestoreStatus },
       restoreProviderAbsent: {
         useMutation: (options?: {
@@ -636,9 +620,6 @@ function renderWithUnits(ui: ReactNode, unitSystem: UnitSystem = "metric") {
   mockClimbingEntriesUseQuery.mockClear();
   mockHrZonesUseQuery.mockClear();
   mockPowerZonesUseQuery.mockClear();
-  mockRecomputeMutate.mockClear();
-  mockRecomputeShouldFail.mockReset();
-  mockRecomputeShouldFail.mockReturnValue(false);
   mockActivityByIdInvalidate.mockClear();
   mockActivityInvalidate.mockClear();
   mockActivityStreamInvalidate.mockClear();
@@ -1774,49 +1755,6 @@ describe("ActivityDetailPage", () => {
     expect(screen.queryByText("Power Zones")).toBeNull();
     Object.assign(mockActivity, originalActivity);
     mockStreamPoints.splice(0, mockStreamPoints.length, ...originalStream);
-  });
-
-  it("recomputes the activity and invalidates detail caches", async () => {
-    const ActivityDetailPage = await importPage();
-    renderWithUnits(<ActivityDetailPage />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Recompute" }));
-
-    expect(mockRecomputeMutate).toHaveBeenCalledWith({ id: "test-123" });
-    await waitFor(() => {
-      expect(mockActivityByIdInvalidate).toHaveBeenCalledWith({ id: "test-123" });
-    });
-    expect(mockActivityStreamInvalidate).toHaveBeenCalledWith({
-      id: "test-123",
-      maxPoints: 500,
-    });
-    expect(mockActivityHrZonesInvalidate).toHaveBeenCalledWith({ id: "test-123" });
-    expect(mockActivityPowerZonesInvalidate).toHaveBeenCalledWith({ id: "test-123" });
-    expect(mockActivityPowerWorkInvalidate).toHaveBeenCalledWith({ id: "test-123" });
-    expect(mockActivityStrengthExercisesInvalidate).toHaveBeenCalledWith({ id: "test-123" });
-    expect(mockActivityListInvalidate).toHaveBeenCalled();
-    expect(mockCalendarWeekListInvalidate).toHaveBeenCalled();
-    expect(mockCalendarActivityOverviewInvalidate).toHaveBeenCalled();
-    await waitFor(() => {
-      expect(screen.getByRole<HTMLButtonElement>("button", { name: "Recompute" }).disabled).toBe(
-        false,
-      );
-    });
-  });
-
-  it("reports recompute failures and shows the server error", async () => {
-    const ActivityDetailPage = await importPage();
-    renderWithUnits(<ActivityDetailPage />);
-    mockRecomputeShouldFail.mockReturnValue(true);
-
-    fireEvent.click(screen.getByRole("button", { name: "Recompute" }));
-
-    await waitFor(() => {
-      expect(screen.getByText("Network unavailable")).toBeDefined();
-    });
-    expect(screen.getByRole<HTMLButtonElement>("button", { name: "Recompute" }).disabled).toBe(
-      false,
-    );
   });
 
   it("keeps previous stream and zone data visible while refetching", async () => {

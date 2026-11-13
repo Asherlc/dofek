@@ -13,7 +13,7 @@ Query production logs to diagnose errors. Three sources are available (in priori
 
 ## Arguments
 
-`$ARGUMENTS` should describe what to search for (e.g., "apple health import errors", "OAuth failures", "sync errors for strava"). If not provided, ask the user.
+Use the search description from the user's request (e.g., "apple health import errors", "OAuth failures", "sync errors for strava"). If not provided, ask the user.
 
 ## Steps
 

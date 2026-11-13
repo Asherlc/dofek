@@ -43,7 +43,8 @@ mise run cloud:init
 1. Installs pnpm dependencies with the frozen lockfile.
 2. Builds a workspace-local CodeGraph index when one does not exist.
 3. Verifies that RTK is executable.
-4. Fails immediately if the Docker daemon is unavailable.
+4. Fails immediately if the Docker daemon is unavailable, unless the documented
+   `SANDBOX=1` mode explicitly skips the service startup phase.
 5. Starts the canonical workspace-isolated Compose services.
 6. Applies the Postgres and ClickHouse migrations with Infisical secrets.
 7. Runs the complete environment doctor.
@@ -124,6 +125,86 @@ for authentication, as documented by
 [Infisical's login command](https://infisical.com/docs/cli/commands/login).
 Do not commit the token or write it to an environment file.
 
+## Provider-Specific Environments
+
+The checked-in toolchain and Compose definitions above are canonical. Older
+VM snapshots can have different PATH ordering, Docker privileges, or secrets;
+verify those capabilities before following snapshot-specific notes.
+
+### Cursor Cloud VM
+
+Earlier snapshots supplied Node, pnpm, uv, and Docker but ran only
+`pnpm install` during updates. Services needed starting separately, and the
+Infisical CLI was absent. These are recorded snapshot observations, not
+promises about every Cursor environment. Use the versions declared by
+[`package.json`](../package.json) and [`mise.toml`](../mise.toml) rather than
+copying historical version numbers.
+
+If an inherited `/exec-daemon/node` takes precedence over the required Node
+version, use `mise exec -- <command>` with the locked toolchain; see
+[mise environment activation](https://mise.jdx.dev/cli/exec.html).
+The analytics commands use uv, so their first run may need package downloads.
+
+On a VM without systemd, start its Docker daemon through the VM's supported
+service mechanism, or run `sudo dockerd` with logs redirected to a file, then
+check `docker info` before starting Compose. Diagnose socket ownership and
+group membership if access is denied; follow Docker's
+[Linux post-installation instructions](https://docs.docker.com/engine/install/linux-postinstall/)
+rather than making the daemon socket world-writable. Docker documents
+[manual daemon startup](https://docs.docker.com/engine/daemon/start/).
+
+Full initialization requires Infisical authentication. Install the locked CLI
+and authenticate before `mise run cloud:init`; the
+[environment wrapper](../scripts/with-env.ts) deliberately fails when export
+is unavailable. Existing local services can provide non-secret URLs through
+`.env.local`, but this does not replace provider credentials or make
+secret-gated commands available. After database setup, export the local URLs
+and run the [seed command](../scripts/seed-dev-db.ts):
+
+```bash
+set -a
+. ./.env.local
+set +a
+pnpm seed
+```
+
+Then start the API and web client using [the README commands](../README.md).
+Visit `/auth/dev-login` through the web client to use the seeded `dev-session`;
+[the server route](../packages/server/src/index.ts) sets the session cookie and
+redirects to the dashboard. It is enabled outside production (or with the
+explicit preview configuration). Provider OAuth credentials are still required
+for real provider authentication.
+
+### Codex Cloud Without Docker Privileges
+
+The repository previously observed a cloud container where Docker startup
+failed because user namespace creation was blocked. Treat that as a capability
+of that container, not a general OpenAI platform restriction. When the current
+environment has this limitation, use:
+
+```bash
+SANDBOX=1 mise run cloud:init
+mise run test:sandbox
+```
+
+[`scripts/dev-environment.ts`](../scripts/dev-environment.ts) makes
+`SANDBOX=1` skip only the Docker-backed startup phase. Prebuild still installs
+dependencies and initializes CodeGraph/RTK. The
+[`test:sandbox` task](../mise.toml) runs each declared package typecheck,
+`pnpm lint:sandbox`, and Docker-free unit/mobile tests.
+`lint:sandbox` omits `lint:analytics-sql`, which needs uv and ClickHouse; see
+[the script definitions](../package.json).
+
+Database-backed integration, Compose, web E2E, and the full environment doctor
+require unavailable services in that environment. Record which checks were not
+run locally and use the [CI integration tier](testing.md#integration-dependencies)
+for real-engine validation.
+
+For the legacy setup-script environment, OpenAI's [cloud environment documentation](https://developers.openai.com/codex/cloud/environments)
+describes setup-only secrets: they are removed before the agent phase. Arrange
+required setup artifacts during setup without printing or committing secrets;
+commands that require unavailable credentials must still fail explicitly.
+
 ## Included Toolchain
 
 Portable tool versions live in `mise.toml`; the lockfile is their installation
@@ -157,6 +238,26 @@ environment. Local users can opt into the same global integration explicitly;
 ordinary repository initialization does not mutate their global Codex
 configuration.
 
+## Shared Agent Skills
+
+Repository skills live in `.agents/skills/<name>/SKILL.md`. Each skill uses
+YAML metadata with `name` and `description`, followed by Markdown
+instructions; scripts, references, and assets stay beside that file, following
+the [Agent Skills specification](https://agentskills.io/specification).
+
+[Codex](https://learn.chatgpt.com/docs/build-skills#where-to-save-skills),
+[Cursor](https://cursor.com/docs/skills#skill-directories),
+[Gemini CLI](https://geminicli.com/docs/cli/skills/#discovery-tiers), and
+[OpenCode](https://opencode.ai/docs/skills/#discovery) document discovery from
+`.agents/skills`. The repository's `.claude/skills` symlink points to
+`../.agents/skills`, exposing the same files through
+[Claude Code's project skill location](https://code.claude.com/docs/en/skills#choose-where-skills-load).
+
+Keep shared instructions explicit: describe how to obtain inputs from the
+request and which commands to run. Claude Code's
+[argument substitutions and command injection](https://code.claude.com/docs/en/skills#available-string-substitutions)
+are harness features, rather than part of the shared skill format.
+
 ## Commands
 
 ```bash
@@ -189,7 +290,7 @@ and the
 |---|---|
 | Linux Dev Container/cloud | Web, server, providers, analytics, databases, native FIT decoder, unit and integration tests |
 | macOS | The Linux-equivalent toolchain plus native iOS work when Xcode is installed |
-| Linux without privileged Docker | Tool installation and Docker-free unit tests only; `cloud:start` fails before database setup |
+| Linux without privileged Docker | Tool installation and Docker-free tests through `SANDBOX=1`; database-backed startup is unavailable |
 
 Xcode, iOS Simulator runtimes, signing identities, CocoaPods, SwiftLint,
 Periphery, and MutantKit remain a macOS-native profile. The configured MutantKit
@@ -230,3 +331,27 @@ Start the usual Storybook command, then run `paseo-quick-tunnel <port>` if that
 helper is installed on your workstation; keep the tunnel running while reviewing
 the UI. Cloudflare describes the generated public hostname and tunnel lifetime
 in its [quick tunnel guide](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/).
+
+## Development Policy
+
+These conventions apply to application and repository tooling changes. Source paths in inline code are repository-relative. Testing requirements and approved exceptions live in [Test Policy](testing.md#test-policy); storage invariants live in [Storage and Ingestion Policy](schema.md#storage-and-ingestion-policy).
+
+- **Keep list views concise**: State information once. Cards identify the record, key metrics, and status; place supporting detail behind existing disclosures or on detail screens. Show instructions while their action is active; preserve actionable errors and qualifiers. Review visible text and screen-reader labels on web/mobile with browser checks and TDD for interaction changes. Follow the [WAI disclosure pattern](https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/).
+- **Server-side metric computation**: Compute every displayed metric on the server. Web/iOS clients render colors, labels, formatting, and layout; they must not derive, aggregate, score, or transform raw metric data. Return all required values in the API response.
+- **Good architecture and modeling**: Model real domain concepts with focused types/interfaces, decouple shared logic, and extract scattered checks representing one concept. Apply SOLID: single responsibility, composition-based extension, substitutable implementations, small interfaces, and dependency inversion. Prefer composition, dependency injection, strategies, and mixins over inheritance; add abstractions only for actual callers.
+- **Dual-platform parity (web + mobile)**: Implement each feature, bug fix, page, chart, and UI change in both `packages/web` and `packages/mobile` in the same PR; check parity in review. Reuse the domain packages listed in [README.md](../README.md) for shared logic. Keep native integrations and rendering libraries platform-specific.
+- **Mobile Expo Router route hygiene**: `packages/mobile/app/` contains only routes/layouts/special Router files. Put route tests in `app-tests/`, stories in `app-stories/`, and fixtures in `app-fixtures/`; move helpers out rather than hiding them with `href: null`. [Expo Router treats files under app as routes](https://docs.expo.dev/router/basics/core-concepts/#6-non-navigation-components-live-outside-the-srcapp-directory).
+- **Always report errors to Sentry**: Every catch handling an unexpected error must call `captureException()` (`./telemetry` on mobile or the server equivalent). Do not silently catch or only log unexpected failures.
+- **Surface errors to the user by default**: Return specific, actionable server error messages with an appropriate `TRPCError` code. Clients display `error.message` rather than hardcoded generic failures.
+- **Tie remedies to observed state**: Recommend corrective actions only when the observed state supports them. When the cause is unknown, offer checks without claiming a diagnosis or promising recovery. For example, a generic Bluetooth disconnect does not justify an "Open Dofek" instruction; confirmed app closure can. See the [collection notification policy](../packages/mobile/modules/background-refresh/README.md#data-collection-notifications).
+- **Never bump size limits**: Fix `size-limit` failures by reducing actual bundle size through deduplication, shared components, lazy loading, or tree shaking. Never raise `.size-limit.json` thresholds.
+- **No empty strings as absent values**: Use `null`/`undefined` for absence in storage and application code, never empty-string defaults. Empty strings remain valid for genuine protocol, concatenation, or form-input meaning.
+- **No `any` types**: Use proper types, generics, interfaces, or `unknown`; never TypeScript `any`.
+- **Minimize `as` type assertions**: Prefer narrowing, guards, discriminated unions, generics, or `satisfies`. Document unavoidable specific assertions in review; never use `as any`, `as never`, or double casts such as `as unknown as X` (enforced by `plugins/no-double-cast.grit`).
+- **Zod for runtime data boundaries**: Parse data TypeScript cannot guarantee with Zod: external API responses, SQL results, uploads, webhooks, postMessage/BroadcastChannel, and other runtime boundaries. Prefer `executeWithSchema()` from `packages/server/src/lib/typed-sql.ts` over `db.execute<T>()`; generics do not validate runtime shapes.
+- **Avoid acronyms and single-letter variables**: Use descriptive names for variables, parameters, types, and interfaces; spell out domain acronyms. Common unit abbreviations are fine; `_` is the only single-letter exception for unused bindings. See `plugins/no-single-letter-variables.grit`.
+- **Layman-readable UI text**: Make titles, axes, legends, tooltips, badges, empty states, and captions understandable without domain expertise. Spell out domain acronyms or put them after a readable name in parentheses. Unit abbreviations such as W, bpm, ms, and km are fine.
+- **Storybook stories for every component**: Add/update colocated `.stories.tsx` files for components in `packages/web/src/components/` and `packages/mobile/components/` in the same PR. Cover default, loading, empty, and significant visual variants. Context providers and non-visual utilities are exempt.
+- **Avoid generic `View` component names**: Use a domain-specific component name (`Content`, `Panel`, `Body`, `Card`, or its concrete concept), never a generic `View` suffix.
+- **No barrel files**: Do not create `index.ts` re-export barrels when splitting modules. Update consumers to import the specific submodule directly.
+- **Max 1000 lines per file**: No TypeScript file may exceed 1000 lines; split focused modules proactively.

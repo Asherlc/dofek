@@ -13,6 +13,11 @@ const config: StorybookConfig = {
     autodocs: "tag",
   },
   viteFinal: (viteConfig) => {
+    // Preview bundled provider assets before they exist on the production server.
+    viteConfig.define = {
+      ...viteConfig.define,
+      "process.env.EXPO_PUBLIC_SERVER_URL": JSON.stringify("/"),
+    };
     viteConfig.resolve ??= {};
     viteConfig.plugins ??= [];
     const existingAliases = Array.isArray(viteConfig.resolve.alias)

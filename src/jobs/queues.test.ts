@@ -5,6 +5,7 @@ import type { ImportJobData } from "./queues.ts";
 const {
   mockQueueGetJob,
   mockQueueAdd,
+  mockQueueRemove,
   mockQueueClose,
   MockQueue,
   mockFlowProducerClose,
@@ -15,11 +16,13 @@ const {
 } = vi.hoisted(() => {
   const mockQueueGetJob = vi.fn();
   const mockQueueAdd = vi.fn();
+  const mockQueueRemove = vi.fn();
   const mockQueueClose = vi.fn().mockResolvedValue(undefined);
   const mockQueueInstance = {
     name: "mock-queue",
     add: mockQueueAdd,
     getJob: mockQueueGetJob,
+    remove: mockQueueRemove,
     close: mockQueueClose,
   };
   const MockQueue = vi.fn(function vitestConstructor() {
@@ -41,6 +44,7 @@ const {
   return {
     mockQueueGetJob,
     mockQueueAdd,
+    mockQueueRemove,
     mockQueueClose,
     MockQueue,
     mockFlowProducerClose,
@@ -810,17 +814,23 @@ describe("queues", () => {
   });
 
   describe("enqueueActivityRecomputeAnalyticsRefresh", () => {
-    it("adds an activity recompute analytics refresh job with an activity-scoped BullMQ-safe custom id", async () => {
+    const recomputeJobId = "activity-recompute-analytics-refresh-user-123-c67f2fc391b67892";
+
+    it("adds a retained activity recompute job with an activity-scoped custom id and returns its id", async () => {
       const { enqueueActivityRecomputeAnalyticsRefresh, createActivityDeleteAnalyticsQueue } =
         await import("./queues.ts");
 
       const queue = createActivityDeleteAnalyticsQueue({ host: "test", port: 9999 });
-      await enqueueActivityRecomputeAnalyticsRefresh(
+      mockQueueGetJob.mockResolvedValueOnce(undefined);
+      mockQueueAdd.mockResolvedValueOnce({ id: recomputeJobId });
+      const jobId = await enqueueActivityRecomputeAnalyticsRefresh(
         "user-123",
         ["00000000-0000-0000-0000-000000000003", "00000000-0000-0000-0000-000000000003"],
         queue,
       );
 
+      expect(mockQueueGetJob).toHaveBeenCalledWith(recomputeJobId);
+      expect(mockQueueRemove).not.toHaveBeenCalled();
       expect(mockQueueAdd).toHaveBeenCalledWith(
         "activity-recompute-analytics-refresh",
         {
@@ -829,20 +839,65 @@ describe("queues", () => {
           activityIds: ["00000000-0000-0000-0000-000000000003"],
         },
         {
-          removeOnComplete: true,
+          removeOnComplete: { age: 604_800, count: 1_000 },
           removeOnFail: { age: 604_800, count: 100 },
           attempts: 5,
           backoff: { type: "fixed", delay: 30_000 },
-          jobId: "activity-recompute-analytics-refresh-user-123-c67f2fc391b67892",
+          jobId: recomputeJobId,
         },
       );
+      expect(jobId).toBe(recomputeJobId);
     });
+
+    it.each(["completed", "failed"])(
+      "removes a retained %s job before it re-adds the same activity set",
+      async (state) => {
+        const { enqueueActivityRecomputeAnalyticsRefresh, createActivityDeleteAnalyticsQueue } =
+          await import("./queues.ts");
+
+        const queue = createActivityDeleteAnalyticsQueue({ host: "test", port: 9999 });
+        mockQueueGetJob.mockResolvedValueOnce({ getState: vi.fn().mockResolvedValue(state) });
+        mockQueueAdd.mockResolvedValueOnce({ id: recomputeJobId });
+        await enqueueActivityRecomputeAnalyticsRefresh(
+          "user-123",
+          ["00000000-0000-0000-0000-000000000003"],
+          queue,
+        );
+
+        expect(mockQueueRemove).toHaveBeenCalledWith(recomputeJobId);
+        expect(mockQueueRemove.mock.invocationCallOrder[0]).toBeLessThan(
+          mockQueueAdd.mock.invocationCallOrder[0] ?? 0,
+        );
+      },
+    );
+
+    it.each(["waiting", "active", "delayed"])(
+      "keeps a %s job so BullMQ deduplicates the active recompute",
+      async (state) => {
+        const { enqueueActivityRecomputeAnalyticsRefresh, createActivityDeleteAnalyticsQueue } =
+          await import("./queues.ts");
+
+        const queue = createActivityDeleteAnalyticsQueue({ host: "test", port: 9999 });
+        mockQueueGetJob.mockResolvedValueOnce({ getState: vi.fn().mockResolvedValue(state) });
+        mockQueueAdd.mockResolvedValueOnce({ id: recomputeJobId });
+        await expect(
+          enqueueActivityRecomputeAnalyticsRefresh(
+            "user-123",
+            ["00000000-0000-0000-0000-000000000003"],
+            queue,
+          ),
+        ).resolves.toBe(recomputeJobId);
+
+        expect(mockQueueRemove).not.toHaveBeenCalled();
+      },
+    );
 
     it("uses different job ids for different recompute activity sets from the same user", async () => {
       const { enqueueActivityRecomputeAnalyticsRefresh, createActivityDeleteAnalyticsQueue } =
         await import("./queues.ts");
 
       const queue = createActivityDeleteAnalyticsQueue({ host: "test", port: 9999 });
+      mockQueueAdd.mockResolvedValue({ id: "recompute-job" });
       await enqueueActivityRecomputeAnalyticsRefresh(
         "user-123",
         ["00000000-0000-0000-0000-000000000003"],

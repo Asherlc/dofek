@@ -47,6 +47,22 @@ const tickSchema = z
     layoutId: z.number().int().nullable().optional(),
   })
   .passthrough();
+const ascentMetadataSchema = z.object({
+  uuid: identifier,
+  climbUuid: identifier,
+  boardType: identifier,
+  isMirror: z.boolean(),
+  climbName: z.string(),
+  boardId: z.number().int().nullable(),
+  boardDisplayName: z.string().nullable(),
+});
+const boardIdentitySchema = z.object({ uuid: identifier, name: identifier, boardType: identifier });
+const boardMetadataSchema = boardIdentitySchema.extend({
+  locationName: z.string().nullable(),
+  gymName: z.string().nullable(),
+  latitude: z.number().min(-90).max(90).nullable(),
+  longitude: z.number().min(-180).max(180).nullable(),
+});
 const graphQlSchema = z
   .object({
     data: z
@@ -309,6 +325,91 @@ class BoardSeshClient implements ClimbingBoardClient {
           },
           raw: z.record(z.string(), z.json()).parse(raw),
         });
+      }
+    }
+    // The tick snapshot owns completeness. Display metadata may omit inaccessible climbs.
+    if (entries.length) {
+      const byId = new Map(entries.map((entry) => [entry.externalId, entry]));
+      const boards = new Map<number, z.infer<typeof boardMetadataSchema> | null>();
+      let offset = 0;
+      while (true) {
+        const data = await request(
+          "query BoardSeshMetadata($userId: ID!, $input: AscentFeedInput!) { authenticatedUserId userAscentsFeed(userId: $userId, input: $input) { items { uuid climbUuid boardType isMirror climbName boardId boardDisplayName } hasMore } }",
+          { userId: current.providerAccountId, input: { limit: 50, offset, statusMode: "both" } },
+        );
+        const page = z
+          .object({ items: z.array(ascentMetadataSchema), hasMore: z.boolean() })
+          .parse(data.userAscentsFeed);
+        if (page.hasMore && page.items.length === 0)
+          throw new Error(
+            "BoardSesh metadata pagination did not advance; no logbook records were reconciled.",
+          );
+        for (const metadata of page.items) {
+          const entry = byId.get(`boardsesh:tick:${metadata.uuid}`);
+          if (!entry?.climb) continue;
+          if (
+            entry.climb.externalId !==
+            `${metadata.boardType}:${metadata.climbUuid}:${metadata.isMirror ? "mirror" : "normal"}`
+          )
+            throw new Error(
+              "BoardSesh metadata did not match its tick; no logbook records were reconciled.",
+            );
+          if (metadata.boardId !== null && !boards.has(metadata.boardId)) {
+            const options = await request(
+              "query BoardSeshTickBoard($tickUuid: ID!) { authenticatedUserId tickBoardOptions(tickUuid: $tickUuid, limit: 1) { currentBoard { uuid name boardType } } }",
+              { tickUuid: metadata.uuid },
+            );
+            const { currentBoard } = z
+              .object({ currentBoard: boardIdentitySchema.nullable() })
+              .parse(options.tickBoardOptions);
+            let board: z.infer<typeof boardMetadataSchema> | null = null;
+            if (currentBoard) {
+              const data = await request(
+                "query BoardSeshBoard($boardUuid: ID!) { authenticatedUserId board(boardUuid: $boardUuid) { uuid name boardType locationName gymName latitude longitude } }",
+                { boardUuid: currentBoard.uuid },
+              );
+              board = boardMetadataSchema.nullable().parse(data.board);
+              if (
+                currentBoard.boardType !== metadata.boardType ||
+                (board &&
+                  (board.uuid !== currentBoard.uuid || board.boardType !== metadata.boardType))
+              )
+                throw new Error(
+                  "BoardSesh returned a different board for this tick; no logbook records were reconciled.",
+                );
+            }
+            boards.set(metadata.boardId, board);
+          }
+          const board = metadata.boardId === null ? null : boards.get(metadata.boardId);
+          const name = metadata.climbName.trim();
+          entry.climb.name = name && name !== "Unknown Climb" ? name : null;
+          const boardName = board?.name ?? metadata.boardDisplayName?.trim();
+          entry.board = boardName ? { name: boardName, externalId: board?.uuid ?? null } : null;
+          const coordinates =
+            board && board.latitude !== null && board.longitude !== null
+              ? { latitude: board.latitude, longitude: board.longitude }
+              : null;
+          const location =
+            board?.locationName?.trim() ||
+            board?.gymName?.trim() ||
+            (coordinates ? board?.name : null);
+          entry.areas =
+            board && location
+              ? [
+                  {
+                    externalId: `board:${board.uuid}`,
+                    name: location,
+                    coordinates,
+                  },
+                ]
+              : [];
+          entry.raw = z.json().parse({
+            ...z.record(z.string(), z.json()).parse(entry.raw),
+            metadata: { ascent: metadata, board: board ?? null },
+          });
+        }
+        if (!page.hasMore) break;
+        offset += page.items.length;
       }
     }
     return { entries, absentExternalIds: [], authoritative: true };

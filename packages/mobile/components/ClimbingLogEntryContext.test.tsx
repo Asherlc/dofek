@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { formatDateTime } from "@dofek/format/format";
 import { render, screen } from "@testing-library/react";
 import { expect, it } from "vitest";
 import {
@@ -6,6 +7,19 @@ import {
   climbingLogEntryFixture,
 } from "../../server/src/repositories/climbing-test-helpers.ts";
 import { ClimbingLogEntryContext } from "./ClimbingLogEntryContext";
+
+it("shows the recorded climb time supplied by the server", () => {
+  render(
+    <ClimbingLogEntryContext
+      entry={climbingLogEntryFixture({
+        chartAnnotations: [
+          { id: "tick", label: "Moon Dust", startedAt: "2026-11-01T17:00:00Z", endedAt: null },
+        ],
+      })}
+    />,
+  );
+  expect(screen.getByText(formatDateTime("2026-11-01T17:00:00Z"))).toBeTruthy();
+});
 
 it("renders the recorded board with unknown angle units", () => {
   const entry = climbingLogEntryFixture({

@@ -13,6 +13,7 @@ export function ClimbingLogEntrySources({
   name,
   climbKind,
   sourceName,
+  providerId,
   links,
   selected,
   titleControl,
@@ -21,6 +22,7 @@ export function ClimbingLogEntrySources({
   name: string;
   climbKind: ClimbKind | null;
   sourceName: string | null;
+  providerId?: string;
   links: ClimbingSourceLink[];
   selected?: boolean;
 }) {
@@ -89,9 +91,12 @@ export function ClimbingLogEntrySources({
                   </Text>
                 </Pressable>
               ) : (
-                <Text key={label} style={styles.source}>
-                  {label}
-                </Text>
+                <View key={label} style={styles.links}>
+                  {providerId && label === providerSourceLabel(providerId) && (
+                    <ProviderLogo provider={providerId} serverUrl={SERVER_URL} size={14} />
+                  )}
+                  <Text style={styles.source}>{label}</Text>
+                </View>
               ),
             )}
           </View>

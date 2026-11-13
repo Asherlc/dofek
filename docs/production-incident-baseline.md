@@ -37707,8 +37707,60 @@ ordered-column comparison for all three models; runtime SQL and migration
 statements remain unchanged. All seven focused tests pass. Final-head CI remains
 a merge gate.
 
+## 2026-11-13 — BoardSesh log metadata omitted from import and display
+
+Reported climbing cards showed “Climbing log”, no recorded location, no time,
+and no BoardSesh icon. Source inspection confirmed that the importer requested
+ticks without enriching climb names, always wrote `board: null`, and omitted
+log-specific areas. The server did not generate BoardSesh timing annotations;
+cards and standalone details did not display precise log time. The shared
+provider catalog had no BoardSesh logo asset. The direct corrections enrich
+exact tick identities through the existing upstream reads, preserve recorded
+location and coordinates on the log, reuse server timing annotations on both
+clients, and register the official icon. See the
+[BoardSesh mapping and primary sources](boardsesh.md#implemented-in-dofek).
+Real PostgreSQL/MSW regression fixtures verify enrichment of the same stored
+tick, incomplete metadata, pagination, failed/mismatched reads, and coordinate-only
+locations. No retries, timeouts, schema migrations, or production configuration
+were added. Live-account acceptance and deployment remain unverified in this
+workspace; existing records require a successful sync with the corrected importer.
+
+The initial local `pnpm test:integration src/providers/boardsesh.integration.test.ts`
+failed during dependency startup, before Vitest. The first fatal Compose output
+was `container zealous-shrimp-redpanda-1 is unhealthy`; its log reported
+`Could not setup Async I/O`. Read-only checks showed `aio-nr = aio-max-nr = 65536`
+inside the shared Docker VM. Linux documents this as a system-wide AIO resource
+limit that can prevent `io_setup` in its
+[sysctl reference](https://docs.kernel.org/admin-guide/sysctl/fs.html#aio-nr-aio-max-nr).
+Only the task-created, restarting Redpanda container was stopped. The suite runs
+against real workspace PostgreSQL with `.env.local` and `TEST_DATABASE_URL` loaded
+using the documented [direct integration invocation](testing.md#integration-dependencies).
+No other workspace containers, database volumes, or shared kernel limits were
+changed; full Compose startup remains limited by shared AIO capacity. There was
+no production impact from this local setup failure.
+
+The full unit/mobile run also completed with two failures in unchanged tests:
+`Garmin dump provider finishes streaming a multi-chunk nested Garmin ZIP` and
+`integration MSW startup intercepts a retained Garmin client across successive files without leaking handlers`.
+Both complete suites passed on an isolated rerun without code, retry, or timeout
+changes. Their full-run failure cause remains unconfirmed; this validation does
+not establish that the broad suite is consistently green under parallel load.
+
 ## 2026-11-13 — Climbing batch presence PR lacked orchestration coverage
 
 [PR #3300](https://github.com/Asherlc/dofek/pull/3300) reported `codecov/patch` failure at 73.33333% with four uncovered added lines in [climbing-log-sync.ts](../src/db/climbing-log-sync.ts). The existing helper tests exercised observation results and restore SQL separately, but no unit case executed the public batch writer that collects observed identities and restores them once. This blocked merge qualification; no production impact was established.
 
 The added [batch-writer tests](../src/db/climbing-log-sync.test.ts) cover multiple observed logs alongside a user-selected activity, restoration after all writes, and propagation of a failed restore. Both retained regressions fail against the pre-change writer. The correction adds tests only; coverage thresholds, SQL, and runtime behavior remain unchanged. Matching-head combined coverage and CI remain the release gates. For future batching changes, test the caller that collects and dispatches the batch as well as its individual helpers.
+
+## 2026-11-13 — BoardSesh enrichment lacked unit mutation coverage
+
+[PR #3306's Stryker shard 0](https://github.com/Asherlc/dofek/actions/runs/43487467089/job/132102547066) failed during `pnpm exec stryker run stryker.ci.config.json --mutate "$MUTATE_FILES"`, with `MUTATE_FILES=src/providers/boardsesh.ts:50-65,src/providers/boardsesh.ts:330-414`. The first fatal line was `Final mutation score 10.53 under breaking threshold 75, setting exit code to 1 (failure).` This blocked merge qualification; no production impact was established.
+
+The BoardSesh metadata path was exercised by database integration tests, while its unit fetch fixtures returned no ascent metadata. The [mutation configuration](../vitest.config.mutation.ts) intentionally excludes integration tests, leaving 88 active mutants uncovered. Added [provider unit cases](../src/providers/boardsesh.test.ts) exercise paginated metadata, exact tick and board identities, board lookup reuse, recorded names and locations, missing boards, coordinate bounds, and rejection before persistence. The 52 provider unit tests pass with 96.25% line coverage; the exact CI mutation selection passes locally at 90.35%, with no uncovered mutants. Runtime behavior, mutation exclusions, thresholds, retries, and timeouts are unchanged. Matching-head CI remains the release gate. For future provider enrichment changes, cover the mapping through the public sync interface in the Docker-free unit tier as well as verifying database persistence in integration tests.
+
+## 2026-11-13: Recompute PR spelling check blocked CI
+
+- Symptoms and impact: [PR #3301](https://github.com/Asherlc/dofek/pull/3301) remained unmergeable because its spelling check failed; no production impact was observed.
+- Evidence: [CI run 43465301919](https://github.com/Asherlc/dofek/actions/runs/43465301919) failed `Test / Spell Check` with an unknown-word diagnostic at `RecomputeActivityButton.test.tsx:97:66`. Lint, test, and CI aggregate gates propagated that failure; the actual lint, typecheck, unit, mobile, integration, and mutation jobs succeeded.
+- Root cause and fix: the button selector used a truncated word in its button-name pattern. It now explicitly matches both complete button-state words with `/^Recompute|^Recomputing/`; dictionaries and CI gates are unchanged.
+- Validation and remaining risk: the corrected test file passes CSpell with zero issues and Biome formatting, and the selector matches both idle and busy labels. Final matching-head CI is required before merge; no retry, timeout, or other resilience change was introduced.

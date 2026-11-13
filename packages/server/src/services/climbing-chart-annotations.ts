@@ -5,6 +5,7 @@ import type { ClimbingLogEntryDetail } from "../contracts/climbing-log-contracts
 
 const kayaTimingSchema = z.object({ date: z.string().trim() });
 const kilterTimingSchema = z.object({ createdAt: z.string().trim() });
+const boardSeshTimingSchema = z.object({ climbedAt: z.string().trim() });
 const preciseInstantSchema = z.iso.datetime({ offset: true });
 const exportedInstantPattern =
   /^[A-Z][a-z]{2} [A-Z][a-z]{2} \d{2} \d{4} \d{2}:\d{2}:\d{2} GMT[+-](?:[01]\d|2[0-3])[0-5]\d(?: \([^)]*\))?$/;
@@ -14,10 +15,24 @@ export function climbingChartAnnotations(log: ClimbingLogEntryDetail): ClimbingC
   const isAscent = log.providerId === "kaya" && log.externalId?.startsWith("kaya:ascent:");
   const isExport = log.providerId === "kaya-export" && log.externalId?.startsWith("kaya:entry:");
   const isKilter = log.providerId === "kilter" && log.externalId?.startsWith("kilter:log:");
-  if (!isAscent && !isExport && !isKilter) return [];
-  const timing = (isKilter ? kilterTimingSchema : kayaTimingSchema).safeParse(log.raw);
+  const isBoardSesh =
+    log.providerId === "boardsesh" && log.externalId?.startsWith("boardsesh:tick:");
+  if (!isAscent && !isExport && !isKilter && !isBoardSesh) return [];
+  const timing = (
+    isBoardSesh ? boardSeshTimingSchema : isKilter ? kilterTimingSchema : kayaTimingSchema
+  ).safeParse(log.raw);
   if (!timing.success) return [];
-  const date = "createdAt" in timing.data ? timing.data.createdAt : timing.data.date;
+  let date =
+    "climbedAt" in timing.data
+      ? timing.data.climbedAt
+      : "createdAt" in timing.data
+        ? timing.data.createdAt
+        : timing.data.date;
+  if (isBoardSesh) {
+    // BoardSesh stores climbed_at as a UTC timestamp without a zone.
+    date = date.replace(" ", "T");
+    if (!/(?:Z|[+-]\d{2}:?\d{2})$/i.test(date)) date = `${date}Z`;
+  }
   if (
     !preciseInstantSchema.safeParse(date).success &&
     !(isExport && exportedInstantPattern.test(date))

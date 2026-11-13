@@ -98,9 +98,11 @@ unavailable 27 Crags/Griptonite/current MoonBoard contracts. See the
 [8a.nu export](https://www.8a.nu/faq).
 
 BoardSesh connects with the user's email and password and reads complete per-board
-tick snapshots through its native auth and GraphQL endpoints. The current read
-does not supply physical board identity consistently, so unknown board names and
-IDs remain unknown. Account sign-in and populated-history acceptance remain
+tick snapshots through its native auth and GraphQL endpoints. Exact tick matches
+in the ascent feed supply climb names; the current-board and board reads supply
+accessible physical board identity and location. Missing metadata remains unknown;
+see the [metadata mapping and upstream sources](../../docs/boardsesh.md#implemented-in-dofek).
+Account sign-in and populated-history acceptance remain
 unverified because this implementation session had no authorized account; see
 the [pinned upstream auth and resolver source](../../docs/boardsesh.md#native-authentication).
 

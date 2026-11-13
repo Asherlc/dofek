@@ -47,6 +47,11 @@ describe("BoardSesh snapshot persistence", () => {
   let context: TestContext;
   let mode:
     | "complete"
+    | "metadata"
+    | "metadata-mismatch"
+    | "metadata-error"
+    | "metadata-no-board"
+    | "metadata-coordinates"
     | "empty"
     | "partial"
     | "late-error"
@@ -86,8 +91,63 @@ describe("BoardSesh snapshot persistence", () => {
           .object({ query: z.string(), variables: z.record(z.string(), z.unknown()).optional() })
           .parse(await request.json());
         const input = z
-          .object({ input: z.object({ boardType: z.string() }).optional() })
+          .object({ input: z.object({ boardType: z.string().optional() }).optional() })
           .parse(body.variables ?? {});
+        if (body.query.includes("userAscentsFeed")) {
+          const offset = z.object({ input: z.object({ offset: z.number() }) }).parse(body.variables)
+            .input.offset;
+          if (mode === "metadata-error")
+            return HttpResponse.json({ data: null, errors: [{ message: "metadata unavailable" }] });
+          const withMetadata = mode.startsWith("metadata");
+          return HttpResponse.json({
+            data: {
+              authenticatedUserId: "owner-1",
+              userAscentsFeed: {
+                items: withMetadata
+                  ? [
+                      {
+                        uuid: offset === 0 ? "unrelated-tick" : "tick-1",
+                        climbUuid: mode === "metadata-mismatch" ? "another-climb" : "climb-1",
+                        boardType: "kilter",
+                        isMirror: false,
+                        climbName: "Moon Dust",
+                        boardId: 42,
+                        boardDisplayName: "Training Kilter",
+                      },
+                    ]
+                  : [],
+                hasMore: withMetadata && offset === 0,
+              },
+            },
+          });
+        }
+        if (body.query.includes("tickBoardOptions"))
+          return HttpResponse.json({
+            data: {
+              authenticatedUserId: "owner-1",
+              tickBoardOptions: {
+                currentBoard:
+                  mode === "metadata-no-board"
+                    ? null
+                    : { uuid: "board-42", name: "Training Kilter", boardType: "kilter" },
+              },
+            },
+          });
+        if (body.query.includes("board(boardUuid:"))
+          return HttpResponse.json({
+            data: {
+              authenticatedUserId: "owner-1",
+              board: {
+                uuid: "board-42",
+                name: "Training Kilter",
+                boardType: "kilter",
+                locationName: mode === "metadata-coordinates" ? null : "Movement Sunnyvale",
+                gymName: null,
+                latitude: 37.37,
+                longitude: -122.04,
+              },
+            },
+          });
         if (body.query.includes("grades")) {
           requestOrder.push("grades");
           return HttpResponse.json({
@@ -170,6 +230,73 @@ describe("BoardSesh snapshot persistence", () => {
       },
       userId,
     );
+  });
+
+  it("enriches an existing tick with its name, board, location and retained timestamp", async () => {
+    expect((await run()).errors).toEqual([]);
+    const originalId = (await rows())[0]?.id;
+    mode = "metadata";
+    expect((await run()).errors).toEqual([]);
+    const details = await executeWithSchema(
+      context.db,
+      z.object({
+        id: z.string(),
+        name: z.string().nullable(),
+        board: z.json().nullable(),
+        location: z.string().nullable(),
+        recorded_at: timestampStringSchema,
+        raw: z.json().nullable(),
+      }),
+      sql`SELECT l.id, c.name, l.board, a.name AS location, activity.started_at AS recorded_at, l.raw
+      FROM fitness.climbing_log_entry l
+      JOIN fitness.climb c ON c.id = l.climb_id
+      JOIN fitness.activity activity ON activity.id = l.activity_id
+      LEFT JOIN fitness.area a ON a.id = l.area_id
+      WHERE l.user_id = ${userId}::uuid AND l.provider_id = 'boardsesh'`,
+    );
+    expect(details).toEqual([
+      expect.objectContaining({
+        id: originalId,
+        name: "Moon Dust",
+        board: { name: "Training Kilter", externalId: "board-42" },
+        location: "Movement Sunnyvale",
+        recorded_at: "2026-11-01T10:00:00.000Z",
+        raw: expect.objectContaining({ uuid: "tick-1", climbedAt: "2026-11-01 10:00:00" }),
+      }),
+    ]);
+  });
+
+  it.each(["metadata-mismatch", "metadata-error"] as const)(
+    "preserves the previous snapshot after %s",
+    async (failure) => {
+      expect((await run()).errors).toEqual([]);
+      const original = await rows();
+      mode = failure;
+      expect((await run()).errors).toHaveLength(1);
+      expect(await rows()).toEqual(original);
+    },
+  );
+
+  it("keeps an inaccessible board location unknown while retaining its recorded display name", async () => {
+    mode = "metadata-no-board";
+    expect((await run()).errors).toEqual([]);
+    const logs = await executeWithSchema(
+      context.db,
+      z.object({ board: z.json().nullable(), area_id: z.string().nullable() }),
+      sql`SELECT board, area_id FROM fitness.climbing_log_entry WHERE user_id = ${userId}::uuid AND provider_id = 'boardsesh'`,
+    );
+    expect(logs).toEqual([{ board: { name: "Training Kilter", externalId: null }, area_id: null }]);
+  });
+
+  it("retains recorded board coordinates when its location has no separate name", async () => {
+    mode = "metadata-coordinates";
+    expect((await run()).errors).toEqual([]);
+    const locations = await executeWithSchema(
+      context.db,
+      z.object({ name: z.string(), latitude: z.number(), longitude: z.number() }),
+      sql`SELECT a.name, a.coordinates[1] AS latitude, a.coordinates[0] AS longitude FROM fitness.area a JOIN fitness.climbing_log_entry l ON l.area_id = a.id WHERE l.user_id = ${userId}::uuid AND l.provider_id = 'boardsesh'`,
+    );
+    expect(locations).toEqual([{ name: "Training Kilter", latitude: 37.37, longitude: -122.04 }]);
   });
 
   afterEach(async () => {

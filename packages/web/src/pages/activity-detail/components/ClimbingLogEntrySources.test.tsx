@@ -3,6 +3,20 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { ClimbingLogEntrySources } from "./ClimbingLogEntrySources.tsx";
 
+it("shows the BoardSesh icon even without an external climb link", () => {
+  const { container } = render(
+    <ClimbingLogEntrySources
+      name="Moon Dust"
+      climbKind="boulder"
+      providerId="boardsesh"
+      sourceName="BoardSesh"
+      links={[]}
+    />,
+  );
+  expect(screen.getByText("BoardSesh")).toBeVisible();
+  expect(container.querySelector('img[src="/logos/boardsesh.png"]')).toBeTruthy();
+});
+
 describe("ClimbingLogEntrySources", () => {
   it.each([
     ["mountain-project", "Mountain Project", "png"],
