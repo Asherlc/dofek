@@ -1484,9 +1484,11 @@ describe("activityRouter", () => {
         timezone: "UTC",
       });
 
+      mockEnqueueActivityRecomputeAnalyticsRefresh.mockResolvedValueOnce("recompute-job-1");
+
       await expect(
         caller.recompute({ id: "00000000-0000-0000-0000-000000000001" }),
-      ).resolves.toEqual({ success: true });
+      ).resolves.toEqual({ success: true, analyticsJobId: "recompute-job-1" });
 
       expect(mockEnqueueActivityRecomputeAnalyticsRefresh).toHaveBeenCalledWith("user-1", [
         "00000000-0000-0000-0000-000000000001",
@@ -1686,6 +1688,51 @@ describe("activityRouter", () => {
       mockGetRestoreJob.mockResolvedValueOnce(job);
       await expect(makeCaller().restoreStatus({ jobId: "restore-job-1" })).rejects.toMatchObject({
         code: "NOT_FOUND",
+      });
+    });
+  });
+
+  describe("recomputeStatus", () => {
+    it.each(["waiting", "active", "delayed", "completed", "failed"])(
+      "reports %s recompute state",
+      async (state) => {
+        mockGetRestoreJob.mockResolvedValueOnce({
+          data: { userId: "user-1", type: "activity-recompute-analytics-refresh" },
+          getState: vi.fn().mockResolvedValue(state),
+        });
+        const result = await makeCaller().recomputeStatus({ jobId: "recompute-job-1" });
+        expect(result).toEqual({
+          status: state === "completed" || state === "failed" ? state : "pending",
+          error:
+            state === "failed"
+              ? "Recomputing this activity failed. Use Recompute to try again."
+              : null,
+        });
+        expect(mockGetRestoreJob).toHaveBeenCalledWith("recompute-job-1");
+      },
+    );
+
+    it.each([
+      undefined,
+      {
+        data: { userId: "other-user", type: "activity-recompute-analytics-refresh" },
+        getState: vi.fn().mockResolvedValue("completed"),
+      },
+      {
+        data: { userId: "user-1", type: "activity-restore-analytics-refresh" },
+        getState: vi.fn().mockResolvedValue("completed"),
+      },
+      {
+        data: { userId: "user-1", type: "activity-recompute-analytics-refresh" },
+        getState: vi.fn().mockResolvedValue("unknown"),
+      },
+    ])("rejects missing, foreign, unrelated, and unknown jobs", async (job) => {
+      mockGetRestoreJob.mockResolvedValueOnce(job);
+      await expect(
+        makeCaller().recomputeStatus({ jobId: "recompute-job-1" }),
+      ).rejects.toMatchObject({
+        code: "NOT_FOUND",
+        message: "Recompute status is unavailable. Reload the activity to check its metrics.",
       });
     });
   });
