@@ -1,6 +1,6 @@
 # Retained local release qualification — November 11, 2026
 
-These excerpts were copied on November 13 from the original operator-workstation logs. They preserve local test results, not affected-device acceptance. The source hashes identify the full retained logs; only the bounded summary lines are committed here. The [incident record](../incidents/2026-11-10-sentry-remediation.md#approved-follow-up-native-purge-boundary-tracing) supplies the investigation context.
+These excerpts were copied on November 13 from the original operator-workstation logs. They preserve local test results, not affected-device acceptance. The source hashes identify the full retained logs; only the bounded summary lines are committed here. The [incident record](../incidents/2026-11-10-sentry-remediation.md#approved-native-purge-tracing) supplies the investigation context.
 
 ## One-worker unit/mobile run
 
