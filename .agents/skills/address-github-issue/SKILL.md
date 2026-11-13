@@ -7,12 +7,13 @@ description: Start work on a GitHub issue, attach the branch, move it to In Prog
 
 ## Arguments
 
-`$ARGUMENTS` is an issue number or URL. If missing, ask the user.
+Use the issue number or URL from the user's request. If missing, ask the user.
 
 Resolve the issue number (works for both forms):
 
 ```bash
-ISSUE_NUMBER=$(gh issue view "$ARGUMENTS" --json number -q .number)
+issue_ref='<ISSUE_NUMBER_OR_URL>'
+ISSUE_NUMBER=$(rtk gh issue view "$issue_ref" --json number -q .number)
 ISSUE_URL=$(gh issue view "$ISSUE_NUMBER" --json url -q .url)
 ISSUE_ID=$(gh issue view "$ISSUE_NUMBER" --json id -q .id)
 export ISSUE_URL

@@ -9,12 +9,16 @@ Diagnose why a provider isn't showing in the UI and fix the root cause. Provider
 
 ## Current state
 
-- Branch: !`git branch --show-current`
-- Status: !`git status --short`
+Run these commands before diagnosis:
+
+```bash
+rtk git branch --show-current
+rtk git status --short
+```
 
 ## Arguments
 
-`$ARGUMENTS` should be the provider name or ID (e.g., "peloton", "garmin", "strava"). If not provided, ask the user which provider.
+Use the provider name or ID from the user's request (e.g., "peloton", "garmin", "strava"). If not provided, ask the user which provider.
 
 ## Steps
 
@@ -23,8 +27,10 @@ Diagnose why a provider isn't showing in the UI and fix the root cause. Provider
 Look up the provider file under `src/providers/`. Each provider is self-contained in its own file.
 
 ```bash
-ls src/providers/ | grep -i "$ARGUMENTS"
+rtk rg --files src/providers
 ```
+
+Select the implementation matching the requested provider.
 
 ### 2. Check the validate() method
 

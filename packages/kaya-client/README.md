@@ -29,3 +29,9 @@ beside `attempts: session_attempts`. The importer retains this source status;
 older imports acquire it on their next sync. See the
 [attempt occurrence contract](../../docs/kaya.md#attempt-occurrences) and Kaya's
 [attempt/send logging guide](https://kayaclimb.com/support-articles/logging-your-climbs-on-kaya).
+
+## Development
+
+Keep the reverse-engineered HTTP/GraphQL contract isolated in this package.
+Validate responses with Zod and never log passwords or bearer tokens; follow
+the [shared development policy](../../docs/development-environment.md#development-policy).

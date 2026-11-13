@@ -1,116 +1,95 @@
 ---
 name: ship-pr
-description: Run all pre-push checks (lint, typecheck, tests), open a PR, and monitor CI until checks finish.
+description: Validate a branch, push it, open or update its pull request, and monitor required CI checks and actionable review feedback.
 ---
 
 # Ship PR
 
-Run all checks, open a PR, and monitor CI to completion.
+Follow the root [agent guidance](../../../AGENTS.md),
+[test policy](../../../docs/testing.md#test-policy), and
+[development workflow](../../../README.md#development).
+Never switch/rebase branches, change repository settings, force-push, skip
+hooks, enable auto-merge, or merge without the user's required approval.
 
-## Current state
-
-- Branch: !`git branch --show-current`
-- Status: !`git status --short`
-- Remote: !`git remote -v | head -1`
-
-## Steps
-
-### 1. Start checks
-
-Run the fast checks first:
-
-```
-pnpm lint
-pnpm tsc --noEmit
-cd packages/server && pnpm tsc --noEmit
-cd packages/web && pnpm tsc --noEmit
-```
-
-If any fast check fails, stop and fix or report before pushing. After the fast
-checks pass, start the longer test commands:
-
-```
-pnpm test
-```
-
-Long-running checks such as integration tests and E2E tests do not need to
-finish before creating the PR. Once they are running, proceed with committing,
-pushing, and opening the PR while continuing to monitor their results. Do not
-report the PR as ready for review or merge until every required check passes.
-
-If the full workspace/PR diff contains only Markdown files (`*.md`), skip test
-commands such as `pnpm test`; report that tests were skipped because the change
-is documentation-only.
-
-ALL errors must be fixed before reporting the PR ready — regardless of whether
-they were introduced in this branch or already existed on main. Fix lint/type
-errors automatically. If a long-running test fails after the PR is opened, stop
-the readiness/merge workflow, report the failure, and fix it before continuing.
-
-### 2. Push and open PR
-
-- Push the current branch: `git push -u origin HEAD`
-- Build PR body in a temp markdown file and create the PR with `--body-file` (never inline multiline `--body`, to avoid shell interpolation/mangling):
-  ```bash
-  pr_body_file="$(mktemp)"
-  cat > "$pr_body_file" <<'EOF'
-  ## Summary
-  - ...
-  EOF
-  gh pr create --base main --title "$PR_TITLE" --body-file "$pr_body_file"
-  rm -f "$pr_body_file"
-  ```
-- If `gh pr create` reports an existing PR for the branch, update it instead of failing:
-  ```bash
-  pr_number="$(gh pr view --json number --jq .number)"
-  gh pr edit "$pr_number" --title "$PR_TITLE" --body-file "$pr_body_file"
-  ```
-- Do not enable auto-merge. Never run `gh pr merge --auto --squash` in this skill.
-
-### 3. Monitor CI and PR comments
-
-After opening the PR, monitor both CI status and PR comments in a loop until all checks complete or a failure appears.
-
-#### CI monitoring
-
-Poll CI status using `gh pr checks` until all checks pass or one fails:
+## 1. Inspect the branch and choose validation
 
 ```bash
-gh pr checks --watch
+rtk git branch --show-current
+rtk git status --short
+rtk git remote -v
+rtk git diff origin/main...HEAD --stat
 ```
 
-- If CI passes and the PR is merged manually, report success.
-- If CI fails, report which check failed and show relevant logs using `gh run view <run-id> --log-failed`.
-- If CI passes, report that the PR is ready for manual merge/review.
+Assess the whole PR and current uncommitted work. Reuse successful evidence
+for unchanged code/configuration; later prose/link edits alone do not require
+repeating heavyweight suites.
 
-#### PR comment monitoring
-
-While waiting for CI and merge, periodically check for new PR review comments:
+- For prose, non-executable skill metadata, and guidance/config symlink-only
+  changes: inspect the diff, validate metadata with existing schema-aware tools,
+  check link targets, and verify affected native discovery. Application lint,
+  typechecks, and tests are unnecessary when runtime behavior, test selection,
+  permissions, deployment, and CI are unaffected.
+- Executable tooling still requires relevant lint, typechecks, and behavior tests.
+- Application changes require the applicable checks below, focused tests for
+  changed behavior, and the integration tier for database semantics. Keep the
+  full regression scope when the change warrants it.
+- Declarative files that alter runtime behavior, permissions, deployment,
+  test selection, or CI do not receive the metadata-only exemption.
 
 ```bash
-gh api repos/{owner}/{repo}/pulls/{pr_number}/comments
-gh pr review list
+rtk pnpm lint
+rtk pnpm --recursive --include-workspace-root --if-present typecheck
+rtk pnpm test run
+# When database behavior changes:
+rtk pnpm test:integration
 ```
 
-For each new comment:
+Run local E2E/Cypress only when E2E tests change; preserve the separate
+Dockerfile/entrypoint end-to-end validation requirement. Required CI gates
+remain unchanged for every PR.
 
-1. **Assess validity** — Read the comment carefully. Determine whether it identifies a real issue (bug, style violation, missing edge case, etc.) or is a misunderstanding.
-2. **If valid** — Fix the issue, commit, push, and reply to the comment with a link to the fix commit. Then re-run pre-push checks before pushing.
-3. **If not valid** — Reply to the comment explaining why you're not making the change. Be respectful and specific.
-4. **Resolve the comment** — After replying (whether with a fix or an explanation), resolve the review thread:
-   ```bash
-   gh api graphql -f query='mutation { resolveReviewThread(input: {threadId: "THREAD_ID"}) { thread { isResolved } } }'
-   ```
+All errors must be addressed before reporting readiness, including pre-existing
+ones. Diagnose and fix within the approved scope; report blockers and seek
+alignment when a fix would require a new non-trivial strategy or permissions.
+Never suppress failures or treat a rerun as the fix. Long-running checks may
+continue while the PR is opened, but the PR is not ready until they pass.
 
-After addressing comments that required code changes, monitor CI again for the new push.
+## 2. Commit, push, and open or update the PR
 
-## Arguments
+Review the final diff, commit meaningful changes, and push the current branch:
 
-If `$ARGUMENTS` is provided, use it as the PR title. Otherwise, generate one from the branch commits.
+```bash
+rtk git push -u origin HEAD
+```
 
-## Important
+Write the exact PR description to a temporary Markdown file, then use
+`rtk gh pr create --base main --title "<title>" --body-file <file>`.
+If this branch already has an open PR, update it with
+`rtk gh pr edit <number> --title "<title>" --body-file <file>`.
+Use real values in place of placeholders. Do not pass multiline bodies inline.
+Describe final behavior and validation, including checks intentionally not run.
 
-- Never force push or skip hooks.
-- Never merge without CI passing.
-- Never enable auto-merge from this skill.
-- For PR descriptions, always use `--body-file`; do not pass multiline markdown directly via `--body`.
+## 3. Monitor CI and review feedback
+
+```bash
+rtk gh pr checks <number> --watch
+rtk gh pr view <number> --json comments,reviews
+rtk gh api repos/<owner>/<repo>/pulls/<number>/comments
+```
+
+Use `gh pr view --json reviews` for review bodies; `gh pr review` submits a
+review and has no `list` subcommand. Inspect both PR-level review bodies and
+inline threads, not just inline comments.
+
+For failures, read the failing job with `rtk gh run view <run-id> --log-failed`,
+identify the first fatal error and cause, then make and validate the direct fix.
+Do not call the PR ready while required checks fail or remain pending.
+
+Assess actionable feedback on its merits. In an invoked PR workflow, fix valid
+issues within scope, reply with the fix commit or a concrete reason for skipping,
+and resolve addressed threads. Preserve authorization boundaries for external
+messages. If fixes require another push, rerun relevant checks and monitor the
+new revision. Paid-review quota/size-limit notices are not code findings.
+
+Once required checks pass and material feedback is addressed, report the PR as
+ready for manual review/merge. Do not merge it automatically.
