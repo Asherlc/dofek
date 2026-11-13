@@ -37817,3 +37817,13 @@ was added. Retrospective improvement proposed for approval: run mutation snapsho
 creation after filesystem-mutating test suites finish, and keep broad validation
 on a stable source revision. Existing debugging, integration and PR skills cover
 these checks; no additional skill is needed.
+
+Final branch validation: the 78 tests in the three unchanged failing suites pass
+when run separately, without source or timeout changes; broad-run stability
+remains unresolved. Targeted mutation validation passes the unchanged 75 gate
+with a score of 78.99. A read-only production location/session projection for
+the reported activity was evaluated locally: all 15 source records remain,
+the resolver produces one gym group, and the two missing locations are filled.
+This checks location inputs before existing log consolidation, not a deployed
+or authenticated browser result. [Draft PR #3338](https://github.com/Asherlc/dofek/pull/3338)
+contains the correction; required CI is queued and production remains unchanged.
