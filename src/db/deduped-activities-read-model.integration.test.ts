@@ -783,7 +783,7 @@ ${renderDedupedActivitiesSelectSql(targetSchema)}`,
       FROM ranked LEFT JOIN sensor_bearing_members
         ON ranked.activity_id = sensor_bearing_members.activity_id
         AND ranked.user_id = sensor_bearing_members.user_id
-      ORDER BY memberId SETTINGS join_use_nulls = 1`,
+      ORDER BY memberId SETTINGS max_threads = 1, join_use_nulls = 1`,
       format: "JSONEachRow",
     });
     expect(await credits.json()).toEqual([

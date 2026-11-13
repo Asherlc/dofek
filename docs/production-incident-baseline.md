@@ -37660,6 +37660,26 @@ manual stack release selected the matching source ref and image.
 passed the normal drain gate at 18:16:23 UTC and then migrations. Full rollout
 and restored-source verification were still pending at this observation.
 
+The manual server release completed at 18:37:09 UTC. Web, worker, analytics and
+both serving sinks were verified healthy on `cf1c4e758`; analytics recorded a
+successful build at 18:36:53. A subsequent automatic
+[release of main](https://github.com/Asherlc/dofek/actions/runs/43486110079)
+started at 18:48 and quiesced consumers again; that separate rollout remained
+in progress at the next observation.
+
+The analytics [baseline CI](https://github.com/Asherlc/dofek/actions/runs/43483468401/job/132088054841)
+used ClickHouse 26.6.1.1193 and reproduced both scoped and unscoped excessive-read
+failures: 16,447 and 16,432 rows against the unchanged 13,312-row bound, after
+the result assertions passed. The correction materializes the existing canonical
+activity selection once within its query. Local native execution reduced reads
+to 8,233 and 8,221 with lower query memory; all 34 canonical tests then passed.
+A partial native query also needed the model's existing one-thread setting,
+which extraction had discarded. Earlier local whole-suite runs hit the server
+memory cap or slow fixture mutations; the precise contribution of other server
+allocations remains unqualified. No memory cap, timeout or retry was increased.
+Production-engine GREEN, review and actual whole-cycle net drain remain gates
+for the analytics correction in [PR #3305](https://github.com/Asherlc/dofek/pull/3305).
+
 ## 2026-11-13 — Climbing batch presence PR lacked orchestration coverage
 
 [PR #3300](https://github.com/Asherlc/dofek/pull/3300) reported `codecov/patch` failure at 73.33333% with four uncovered added lines in [climbing-log-sync.ts](../src/db/climbing-log-sync.ts). The existing helper tests exercised observation results and restore SQL separately, but no unit case executed the public batch writer that collects observed identities and restores them once. This blocked merge qualification; no production impact was established.

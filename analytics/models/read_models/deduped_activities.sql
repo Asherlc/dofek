@@ -5,7 +5,8 @@
     order_by='(user_id, activity_id)',
     query_settings={
         'max_threads': 1,
-        'join_use_nulls': 1
+        'join_use_nulls': 1,
+        'enable_materialized_cte': 1
     }
 ) }}
 
@@ -423,7 +424,7 @@ affected_member_ids AS (
 ),
 {% endif %}
 
-scoped_current_deduped_activities AS (
+scoped_current_deduped_activities AS MATERIALIZED (
     SELECT *
     FROM current_deduped_activities
     {% if activity_refresh_scoped %}
