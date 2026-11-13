@@ -33,19 +33,20 @@ BoardSesh upstream revision `af2f7adf95eac77990b91da8d254d97ead25b938`.
   exit 0.
 - Targeted Biome check: `/tmp/opencode/boardsesh/task-1-mutation-final-biome.log`,
   exit 0.
-- Lead-run full unit/mobile tier and web/mobile package typechecks were green
-  before this correction batch: `/tmp/opencode/boardsesh/full-tests.json`,
-  `web-typecheck.log`, and `mobile-typecheck.log`. The lead has started final
-  reruns against this correction batch; current results are at
-  `/tmp/opencode/boardsesh/full-final-tests.json` and `mutation-final.log` when
-  those runs complete.
+- Lead-run final full unit/mobile tier:
+  `/tmp/opencode/boardsesh/full-final-tests.json`; 24,457 passed, 19 skipped,
+  0 failed. Web/mobile package typechecks are green in
+  `/tmp/opencode/boardsesh/web-typecheck.log` and `mobile-typecheck.log`.
 
 The initial scoped Stryker run did not meet the 75% threshold (159 killed, 72
 survived, 17 uncovered, 64 ignored). The provider was simplified where a branch
 was unreachable from the inspected resolver/schema, and public-sync tests were
 added for meaningful token, HTTP, GraphQL, timestamp, grade, and raw-tick
-boundaries. The lead is rerunning Stryker on this version. Do not treat the
-initial failed score as final; report the final rerun outcome when available.
+boundaries. The final rerun passed the 75% gate at 78.85%: 179 killed, 43
+survived, 5 uncovered, 0 timed out, and 64 ignored. The full report is
+`/tmp/opencode/boardsesh/mutation-final.log`; the remaining survivors should be
+reviewed for equivalence or meaningful missing coverage rather than assumed
+dead. The five uncovered branches remain a mutation-coverage limitation.
 
 The first mutation-correction RED attempt also contained an incorrect expected
 request count and a zero-attempt fixture that violated the upstream minimum of
@@ -65,5 +66,5 @@ account-wide revoke endpoint is intentionally not called.
 
 ## Review handoff
 
-The lead is rerunning final Stryker and full unit/mobile tiers and will perform
-independent Architect review of the committed diff. No deployment was performed.
+The lead owns independent Architect review of the committed diff. No deployment
+was performed.
