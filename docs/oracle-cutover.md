@@ -7,7 +7,7 @@ The production cutover from Hetzner to Oracle Cloud is complete.
 - Production deploys target the OCI host in the `ORACLE_SERVER_HOST` GitHub
   Actions variable.
 - Production deploys use `ssh_user: ubuntu` and apply
-  `deploy/stack.oracle.yml` over `deploy/stack.yml`.
+  `deploy/stack.oracle.yml` over `deploy/docker-compose.yml`.
 - Production DNS records in `deploy/dns.tf` point at `var.oracle_server_host`.
 - The main `deploy/` Terraform root no longer manages Hetzner servers,
   Hetzner volumes, or staging DNS records.

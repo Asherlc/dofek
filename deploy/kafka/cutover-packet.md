@@ -42,7 +42,7 @@ Connect individually pinned; do not roll them onto the new worker image.
 
 ## Canonical candidate specification
 
-The normal deployment uses `deploy/stack.yml` plus `deploy/stack.oracle.yml`;
+The normal deployment uses `deploy/docker-compose.yml` plus `deploy/stack.oracle.yml`;
 there is no hot-log overlay or mode flag to omit on a later release. A schema
 render of those two files verified the following effective bindings:
 
@@ -172,7 +172,7 @@ Swarm/Kafka tools and leaves automation unchanged.
    proof; afterward preserve both logs and execute the forward plan approved before
    first-write authority, escalating beyond its explicit restoration scope.
 4. **Separate release qualification and approval required:** qualify the normal
-   application release that will follow merge. The [base stack](../stack.yml)
+   application release that will follow merge. The [base stack](../docker-compose.yml)
    shares `APP_IMAGE` across web, worker and all ClickHouse sinks, and the
    [normal deployment](../../.github/workflows/deploy-web-stack.yml) verifies that
    shared release. It cannot preserve the broker packet's separate history image

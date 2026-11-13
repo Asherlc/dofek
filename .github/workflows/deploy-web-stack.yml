@@ -239,7 +239,7 @@ jobs:
             exit 1
           fi
 
-          STACK_FILE_FLAGS="-c deploy/stack.yml"
+          STACK_FILE_FLAGS="-c deploy/docker-compose.yml"
 
           # Optional caller-supplied override (e.g. deploy/stack.oracle.yml for
           # the Always Free OCI host, which scales operator UIs to zero).
@@ -1390,7 +1390,7 @@ jobs:
             exit "$status"
           fi
 
-          expected_ota_image="$(pnpm tsx scripts/stack-service-image.ts deploy/stack.yml ota)"
+          expected_ota_image="$(pnpm tsx scripts/stack-service-image.ts deploy/docker-compose.yml ota)"
           wait_deadline_seconds=$((SECONDS + 1200))
           stability_window_seconds=60
           for service in kafka ota analytics-worker metric-stream-clickhouse-sink metric-stream-live-clickhouse-sink metric-stream-history-clickhouse-sink metric-stream-r2-archive metric-stream-live-r2-archive metric-stream-history-r2-archive processing-reconciliation; do

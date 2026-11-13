@@ -305,7 +305,7 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
   see [Compose shutdown options](https://docs.docker.com/reference/cli/docker/compose/down/).
   - Usage: `mise exec -- pnpm tsx scripts/workspace-archive.ts` from the workspace being archived.
 - `run-tests.ts`: Starts the workspace Compose dependencies, validates `.env.local`, and runs the requested integration-inclusive Vitest tier with `TEST_DATABASE_URL` set.
-- `check-dns-records.sh`: Validates that every domain in `deploy/stack.yml` has a matching record in `deploy/dns.tf`. Prevents 521 errors due to missing DNS records.
+- `check-dns-records.sh`: Validates that every domain in `deploy/docker-compose.yml` has a matching record in `deploy/dns.tf`. Prevents 521 errors due to missing DNS records.
 - `generate-schema-diagram.ts`: Generates DBML and PlantUML diagrams from the Drizzle schema modules (`src/db/schema/`).
   - Uses `drizzle-dbml-generator` and custom parsing logic to build a high-quality ERD.
   - Outputs: `docs/schema.dbml`, `docs/schema.puml`.
@@ -364,7 +364,7 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
 - `stack-service-image.ts`: Reads a service’s canonical immutable image from a Compose
   stack, including [YAML merge keys](https://yaml.org/type/merge.html), for the existing
   Swarm running-task verifier. Missing or mutable references fail explicitly.
-  - Usage: `pnpm tsx scripts/stack-service-image.ts deploy/stack.yml ota`
+  - Usage: `pnpm tsx scripts/stack-service-image.ts deploy/docker-compose.yml ota`
 - `verify-published-ota.ts`: Audits the exact published UUID/runtime, signed manifest,
   and asset hashes against the [Expo Updates protocol](https://docs.expo.dev/technical-specs/expo-updates-1/).
   EOAS [returns without writing a receipt for unchanged content](https://github.com/mercuretechnologies/xprem/blob/v3.2.7/apps/eoas/src/commands/publish.ts).
