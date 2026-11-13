@@ -37309,6 +37309,24 @@ Redis integration passed. A separate actual-entrypoint probe with enabled OTLP
 also exited naturally after SIGTERM; the local collector received 8 spans,
 1 log and 69 metric points. Sentry was initialized with a synthetic DSN;
 Sentry/PostHog dispatch or delivery was not established. Independent review
-passed. Production qualification of this Redis follow-up remains pending its
-own CI and canonical release. The existing grace and gates remain unchanged;
+passed. This pre-release validation does not establish production shutdown of
+the corrected image; that requires its own CI and canonical release. The existing grace and gates remain unchanged;
 they protect genuine in-flight work rather than compensating for these leaks.
+
+### Separate signed iOS archive failure
+
+The same release's [signed iOS archive job](https://github.com/Asherlc/dofek/actions/runs/43330045743/job/131572633294)
+failed before compilation during `xcodebuild archive` package resolution, with
+exit 74. Its first fatal line was `git -C
+/Users/runner/Library/Caches/org.swift.swiftpm/repositories/sentry-cocoa-447a335c
+config --get remote.origin.url` failing because that directory did not exist.
+The server job succeeded, but matching iOS publication was skipped. The missing
+repository directory is established; its underlying cause remains unknown.
+The signed job was a cold fetch, while the preceding successful CI archive
+restored DerivedData with package checkouts. The signed command retained only
+its last 40 lines and did not upload its error result bundle. Public SwiftPM
+[repository-manager source](https://github.com/swiftlang/swift-package-manager/blob/swift-6.3-RELEASE/Sources/SourceControl/RepositoryManager.swift)
+shows that an initial DNS fetch failure can be masked by validation of a missing
+cache directory; that mechanism is a hypothesis, not proof of this runner's
+failure. The user authorized investigation and a direct fix. No retries,
+cache-disabling flags or timeout changes have been used as remediation.
