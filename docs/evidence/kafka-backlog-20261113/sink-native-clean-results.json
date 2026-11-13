@@ -1,0 +1,98 @@
+{
+  "scope": "Clean full sink native qualification; local ClickHouse26.9.19.9; retries0",
+  "success": true,
+  "numPassedTests": 18,
+  "numFailedTests": 0,
+  "cases": [
+    {
+      "title": "retains Zepp vectors and units, distinct same-millisecond records, and deduplicated retries",
+      "status": "passed",
+      "duration": 184.225958
+    },
+    {
+      "title": "inserts events whose recordedAt carries a UTC Z suffix",
+      "status": "passed",
+      "duration": 95.92954099999997
+    },
+    {
+      "title": "retains distinct device timestamp identities while coalescing repeated timestamp identities",
+      "status": "passed",
+      "duration": 1798.209292
+    },
+    {
+      "title": "tombstones the latest provider-scoped metric version",
+      "status": "passed",
+      "duration": 172.52637500000037
+    },
+    {
+      "title": "preserves the latest activity when only an older version matches the delete scope",
+      "status": "passed",
+      "duration": 4239.75375
+    },
+    {
+      "title": "tombstones rows scoped to a null external ID",
+      "status": "passed",
+      "duration": 293.32324999999946
+    },
+    {
+      "title": "tombstones multiple external-ID scopes in one ordered delete batch",
+      "status": "passed",
+      "duration": 180.98666700000103
+    },
+    {
+      "title": "reactivates the same deterministic row ID after a scoped replacement",
+      "status": "passed",
+      "duration": 302.774875000001
+    },
+    {
+      "title": "keeps the newer live replacement when an older history replacement arrives last",
+      "status": "passed",
+      "duration": 812.8711249999997
+    },
+    {
+      "title": "guards rows omitted by a newer live replacement before older history first arrives",
+      "status": "passed",
+      "duration": 3034.659749999999
+    },
+    {
+      "title": "does not amplify incoming rows against deletion scopes older than the batch",
+      "status": "passed",
+      "duration": 5958.166292
+    },
+    {
+      "title": "guards older rows in a mixed-version batch while retaining same-operation and newer rows",
+      "status": "passed",
+      "duration": 11418.431540999998
+    },
+    {
+      "title": "applies deletion chunks within HTTP limits before their replacement rows",
+      "status": "passed",
+      "duration": 655.7412909999985
+    },
+    {
+      "title": "matches nullable and bounded scopes precisely without deleting equal-revision replacements",
+      "status": "passed",
+      "duration": 6963.815417000002
+    },
+    {
+      "title": "acknowledges a deletion event only after applying it",
+      "status": "passed",
+      "duration": 72.41191699999763
+    },
+    {
+      "title": "profiles 101 unacknowledged adjacent same-revision deletes",
+      "status": "passed",
+      "duration": 12817.904750000002
+    },
+    {
+      "title": "profiles 101 partially acknowledged adjacent same-revision deletes",
+      "status": "passed",
+      "duration": 15861.201667000001
+    },
+    {
+      "title": "profiles 101 fully acknowledged adjacent same-revision deletes",
+      "status": "passed",
+      "duration": 15570.128375
+    }
+  ]
+}

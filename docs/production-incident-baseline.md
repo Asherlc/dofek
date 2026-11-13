@@ -37404,6 +37404,51 @@ passed at 03:11:59 UTC, and matching OTA publication also passed. The
 [complete canonical release](https://github.com/Asherlc/dofek/actions/runs/43349572540)
 concluded successfully.
 
+### November 13 UTC: healthy Kafka consumers could not drain the live backlog
+
+After the subsequent [canonical release](https://github.com/Asherlc/dofek/actions/runs/43364317917)
+passed, read-only monitoring found active, healthy consumers but inadequate
+throughput. Between 04:49:03 and 05:50:11 UTC, the live backlog grew by 53,142
+records while history declined by only 23,023. R2 archive groups remained at
+zero lag. This delayed ClickHouse ingestion and downstream derived-data
+freshness; container health alone did not establish catch-up. The
+[evidence packet](evidence/kafka-backlog-20261113/README.md) distinguishes retained
+raw query/batch metadata from operator-transcribed offset and lock observations.
+
+The confirmed causes are repeated scope-candidate reads and per-event receipt
+requests inside deletion batches, combined with the existing shared publication
+lock. Axiom showed 1,823-deletion live batches taking 850–872 seconds including
+ownership wait. A fixed 05:30–06:00 UTC ClickHouse query-log window showed
+38 tombstone queries reading 2,771,302,724 rows and 3,646 separate receipt writes.
+PostgreSQL readings observed both analytics and sink batches owning the shared
+resource while other writers waited. This preserves the accepted
+[publication safety boundary](plans/2026-11-09-erasure-safety-decisions.md);
+it does not justify clearing ownership or bypassing locks.
+
+The user authorized a targeted deletion-throughput fix retaining ordering,
+revision boundaries, acknowledgements and erasure fences. Local fixtures reduce
+101 events' acknowledgement requests from 202 to four and candidate reads from
+844,077 to 33,069. Clean sink and identity suites pass; the evidence packet also
+retains earlier native timeouts whose exact cause remains unknown. Owner-level
+qualification, whole-repository checks, CI and production throughput verification
+remain pending. No analytics pause, offset reset, owner recovery or production
+mutation was used for this fix.
+The [design and native acceptance criteria](superpowers/specs/2026-11-13-kafka-deletion-throughput-design.md)
+use bounded acknowledgement batches and one candidate scan per deletion chunk.
+No catch-up ETA is supported while live arrivals exceed measured consumption.
+Runbook follow-up: check committed-offset deltas and publication-lock ownership,
+then use [query-log work metrics](https://clickhouse.com/docs/operations/system-tables/query_log)
+and [batching guidance](https://clickhouse.com/docs/optimize/bulk-inserts) to
+qualify a fix rather than infer flow from readiness alone.
+
+The standalone local owner comparison terminated on a PostgreSQL connection
+error without comparative results, and the full local unit/mobile run ended
+without a completion report. Local Docker became unavailable. The operator
+directed keeping it stopped and continuing validation through existing GitHub
+CI. Those attempts are not counted as passing evidence; see the
+[validation update](evidence/kafka-backlog-20261113/README.md#validation-environment-update).
+No production action, retry or timeout change resulted from this interruption.
+
 ## 2026-11-12 — BoardSesh absent from provider list
 
 The user reported that BoardSesh was missing from available providers. Repository
