@@ -154,6 +154,48 @@ describe("provider climbing log records", () => {
     ).toEqual([ids[0]]);
   });
 
+  it("sorts and filters observed board logs by their source timestamp", async () => {
+    const boardUserId = randomUUID();
+    await context.db.execute(sql`INSERT INTO fitness.user_profile (id, name)
+      VALUES (${boardUserId}::uuid, 'Board log owner')`);
+    await context.db.execute(sql`INSERT INTO fitness.provider (id, name)
+      VALUES ('kilter', 'Kilter Board') ON CONFLICT (id) DO NOTHING`);
+    const observed = await persistClimbingLogEntries(context.db, {
+      userId: boardUserId,
+      providerId: "kilter",
+      entries: [
+        "2026-11-09T18:00:00.000Z",
+        "2026-11-10T01:48:51.544Z",
+        "2026-11-08T12:00:00.000Z",
+      ].map((recordedAt, index) => ({
+        externalId: `kilter:log:${index}`,
+        climbedOn: null,
+        sourceName: "Kilter Board",
+        activityObservation: { recordedAt },
+        attempts: [{ scope: "climb" as const, sourceCompleted: true }],
+      })),
+    });
+    const [evening, lateNight, earlier] = observed.logEntryIds;
+    const repository = new ProviderDetailRepository(context.db, boardUserId, store);
+
+    const rows = await repository.getRecords("kilter", "climbingLogEntries", 10, 0);
+    expect(rows.map((row) => row.id)).toEqual([lateNight, evening, earlier]);
+    expect(rows.map((row) => row.climbed_on)).toEqual([null, null, null]);
+    expect(rows.map((row) => new Date(String(row.recorded_at)).toISOString())).toEqual([
+      "2026-11-10T01:48:51.544Z",
+      "2026-11-09T18:00:00.000Z",
+      "2026-11-08T12:00:00.000Z",
+    ]);
+    expect(
+      (
+        await repository.getRecords("kilter", "climbingLogEntries", 10, 0, {
+          recorded_at_from: "2026-11-09T12:00:00.000Z",
+          recorded_at_to: "2026-11-09T23:59:59.999Z",
+        })
+      ).map((row) => row.id),
+    ).toEqual([evening]);
+  });
+
   it("loads full owned pitch and grade details from a concise row", async () => {
     const repository = new ProviderDetailRepository(context.db, userId, store);
     const detail = await repository.getRecordDetail(
