@@ -37558,3 +37558,53 @@ their commits had advanced to live 8,869,251 and history 6,190,257; archive lag
 remained zero. The canonical server job was still verifying restored services,
 and analytics reported starting. This establishes resumed sink flow, not a
 completed rollout, sustained net drain or catch-up ETA.
+
+## 2026-11-13 — Analytics scan work still limits Kafka catch-up
+
+The [batching release](https://github.com/Asherlc/dofek/actions/runs/43458032214/attempts/2)
+completed successfully, with the server stack finishing at 16:42:41 UTC and
+analytics reporting its first successful build at 16:44:57. High-volume serving
+ingestion remained delayed: between 16:32:20 and 17:10:29, the live sink consumed
+25,765 records while 54,931 arrived, increasing lag by 29,166 to 2,538,388.
+History lag was 1,141,380 and both matching R2 archive groups had zero lag.
+Timestamped native readings and Axiom metadata are retained in the operator's
+temporary backlog log; no individual health payload was selected.
+
+PostgreSQL showed both sinks waiting on the shared advisory lock held by the
+analytics build. That build runs ordered dbt phases with one thread under the
+existing publication owner. This was active processing, not evidence of an
+abandoned executor; builds reported success and no fatal application error was
+observed. Completed sink batches reached about 707 seconds, including ownership
+wait, while most recent live events were ordinary samples rather than deletions.
+
+Native `system.query_log` metadata since 16:30 showed three canonical-activity
+model writes reading 725,294,684 rows in 165,766 ms total, and three VO2 model
+writes reading 454,524,959 rows in 131,404 ms total. A non-executing EXPLAIN of
+the current compiled canonical-activity SELECT contained two `deduped_sensor`
+reads, 22 activity-source reads and 40 field-priority reads. The sensor table
+contained 118,674,815 physical rows. These are work and server-execution
+measurements, not an end-to-end speedup ratio. ClickHouse documents
+[query-log metrics](https://clickhouse.com/docs/operations/system-tables/query_log)
+and [non-executing query plans](https://clickhouse.com/docs/reference/statements/explain#explain-plan).
+
+The approved follow-up profiles and reduces existing model work while retaining
+the publication lock, erasure fences, processing-success gates and source
+semantics. The [plan](superpowers/plans/2026-11-13-analytics-build-work-reuse.md)
+first requires native regressions for repeated activity-level computation;
+runtime corrections and production qualification remain pending. The selected
+stock capability is [query-local CTE reuse](https://clickhouse.com/docs/reference/statements/select/with#materialized-common-table-expressions),
+which requires explicit feature context and native result/read/memory checks.
+Local Docker remains stopped as directed, so executable validation uses existing
+GitHub CI. No manual owner recovery, offset reset, analytics pause, new scheduler,
+timeout or retry was used. No catch-up ETA is supported by the observed net growth.
+
+Proposed runbook refinement: incremental output suppression does not establish
+bounded input work; inspect native reads and repeated plan branches before
+adding another read model or changing publication concurrency.
+
+The drain-check correction merged as `cf1c4e758` after successful PR and main CI.
+Its automatic release was skipped because main advanced during CI; the documented
+manual stack release selected the matching source ref and image.
+[Run 43478321512](https://github.com/Asherlc/dofek/actions/runs/43478321512)
+passed the normal drain gate at 18:16:23 UTC and then migrations. Full rollout
+and restored-source verification were still pending at this observation.

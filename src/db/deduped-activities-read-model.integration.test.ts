@@ -6,11 +6,16 @@ import { buildActivityOriginViewSql } from "./clickhouse-activity-origin.ts";
 import { buildActivitySummaryRowsTableSql } from "./clickhouse-activity-summary.ts";
 import {
   activityId,
+  dedupedActivitiesWorkReuseReadRowsLimit,
+  dedupedActivitiesWorkReuseSampleCount,
   groupId,
   linkedActivityId,
+  priorOnlyGroupId,
   renderDedupedActivitiesSelectSql,
   requireClickHouseUrl,
   requireClient,
+  runDedupedActivitiesWorkReuseDbtAppend,
+  seedDedupedActivitiesWorkReuseFixture,
   seedMissingSourceNameFixture,
   seedNamedTimezoneContextFixture,
   seedSensorBearingRepresentativeFixture,
@@ -614,6 +619,75 @@ ${renderDedupedActivitiesSelectSql(targetSchema)}`,
       },
     ]);
   }, 180_000);
+
+  it.each([false, true])(
+    "reuses canonical dbt work with dense sensor input and prior state, scoped=%s",
+    async (scoped) => {
+      const activeClient = requireClient(client);
+      await seedDedupedActivitiesWorkReuseFixture(activeClient, targetSchema);
+      const prior = await activeClient.query({
+        query: `SELECT toString(activity_id) AS activityId, provider_id AS providerId,
+            toString(representative_activity_id) AS representativeId, is_deleted AS isDeleted
+          FROM ${targetSchema}.deduped_activities FINAL
+          WHERE activity_id = toUUID('${groupId}')`,
+        format: "JSONEachRow",
+      });
+      expect(await prior.json()).toEqual([
+        {
+          activityId: groupId,
+          providerId: "peloton",
+          representativeId: activityId,
+          isDeleted: 0,
+        },
+      ]);
+      const stalePrior = await activeClient.query({
+        query: `SELECT toString(activity_id) AS activityId, is_deleted AS isDeleted
+          FROM ${targetSchema}.deduped_activities FINAL
+          WHERE activity_id = toUUID('${priorOnlyGroupId}')`,
+        format: "JSONEachRow",
+      });
+      expect(await stalePrior.json()).toEqual([{ activityId: priorOnlyGroupId, isDeleted: 0 }]);
+      const staleSource = await activeClient.query({
+        query: `SELECT toUInt32(count()) AS source_count FROM ${targetSchema}.activity_source_records FINAL
+          WHERE activity_id = toUUID('${priorOnlyGroupId}') OR group_id = toUUID('${priorOnlyGroupId}')`,
+        format: "JSONEachRow",
+      });
+      expect(
+        z.array(z.object({ source_count: z.coerce.number() })).parse(await staleSource.json()),
+      ).toEqual([{ source_count: 0 }]);
+      const metrics = await runDedupedActivitiesWorkReuseDbtAppend(
+        activeClient,
+        targetSchema,
+        scoped,
+      );
+      const output = await activeClient.query({
+        query: `SELECT toString(activity_id) AS activityId, provider_id AS providerId,
+            toString(representative_activity_id) AS representativeId, is_deleted AS isDeleted
+          FROM ${targetSchema}.deduped_activities FINAL
+          WHERE activity_id IN (toUUID('${groupId}'), toUUID('${priorOnlyGroupId}'))
+          ORDER BY activity_id`,
+        format: "JSONEachRow",
+      });
+      expect(await output.json()).toEqual([
+        {
+          activityId: groupId,
+          providerId: "whoop",
+          representativeId: linkedActivityId,
+          isDeleted: 0,
+        },
+        {
+          activityId: priorOnlyGroupId,
+          providerId: "peloton",
+          representativeId: priorOnlyGroupId,
+          isDeleted: 1,
+        },
+      ]);
+      expect(metrics.denseSampleCount).toBe(dedupedActivitiesWorkReuseSampleCount);
+      expect(metrics.readRows).toBeGreaterThanOrEqual(dedupedActivitiesWorkReuseSampleCount);
+      expect(metrics.readRows).toBeLessThanOrEqual(dedupedActivitiesWorkReuseReadRowsLimit);
+    },
+    120_000,
+  );
 
   it("keeps a named timezone and its offsets from the same member", async () => {
     const activeClient = requireClient(client);
