@@ -249,6 +249,11 @@ describe("metric stream scoped deletion identity (integration)", () => {
           WHERE user_id = {userId:UUID} SETTINGS mutations_sync = 1`,
         query_params: { userId },
       });
+      await client.command({
+        query: `ALTER TABLE ${METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE} DELETE
+          WHERE event_id IN {ids:Array(UUID)} SETTINGS mutations_sync = 1`,
+        query_params: { ids: deletes.map((event) => event.eventId) },
+      });
     }
   });
 
@@ -343,6 +348,11 @@ describe("metric stream scoped deletion identity (integration)", () => {
         query: `ALTER TABLE ${METRIC_STREAM_DELETE_SCOPE_TABLE} DELETE
           WHERE user_id = {userId:UUID} SETTINGS mutations_sync = 1`,
         query_params: { userId },
+      });
+      await client.command({
+        query: `ALTER TABLE ${METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE} DELETE
+          WHERE event_id IN {ids:Array(UUID)} SETTINGS mutations_sync = 1`,
+        query_params: { ids: deleteScopes.map((event) => event.eventId) },
       });
     }
   });
