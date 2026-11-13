@@ -38,11 +38,11 @@ class TestClickHouseClient implements ClickHouseCommandClient {
 function readModelColumns(name: string): string[] {
   const modelUrl = new URL(`../../../analytics/models/read_models/${name}.sql`, import.meta.url);
   const sql = readFileSync(modelUrl, "utf8");
-  // Each model ends with one or two top-level `SELECT ... FROM` projections (an
-  // incremental tombstone branch adds a UNION ALL with the same column aliases).
-  // Only the final projections start at column 0, so a line-anchored `SELECT` is
-  // unambiguous. Take the first one and read its ordered output column aliases.
-  const projection = sql.match(/\nSELECT\n(?<body>[\s\S]*?)\nFROM /);
+  // Direct projections keep their column-zero anchor. The parent-wrapped
+  // projection is matched only when its outer query closes at EOF, avoiding CTEs.
+  const projection =
+    sql.match(/\nSELECT \*\nFROM \(\n {4}SELECT\n(?<body>[\s\S]*?)\n {4}FROM [\s\S]*\n\)\s*$/) ??
+    sql.match(/\nSELECT\n(?<body>[\s\S]*?)\nFROM /);
   const body = projection?.groups?.body;
   if (!body) {
     throw new Error(`Could not locate a final SELECT projection in ${name}.sql`);

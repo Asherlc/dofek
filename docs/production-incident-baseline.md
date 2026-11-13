@@ -37690,6 +37690,16 @@ query-local reuse strategy. The scope correction still requires native semantic,
 read and memory qualification before release; the earlier local-only GREEN is
 not treated as a production pass.
 
+The scope candidate's [unit job](https://github.com/Asherlc/dofek/actions/runs/43494791068/job/132125697825)
+then failed `pnpm exec vitest run --project unit --coverage` in the existing
+column-order regression: “Could not locate a final SELECT projection in
+deduped_activities.sql.” Its test helper required an explicit projection at
+column zero; the unchanged projection now sits inside the parent SELECT.
+This blocks merge qualification, with no production change from the candidate.
+The helper must read the nested explicit projection while retaining the exact
+ordered-column comparison for all three models; runtime SQL and migration
+statements remain unchanged. Focused validation and final-head CI remain gates.
+
 ## 2026-11-13 — Climbing batch presence PR lacked orchestration coverage
 
 [PR #3300](https://github.com/Asherlc/dofek/pull/3300) reported `codecov/patch` failure at 73.33333% with four uncovered added lines in [climbing-log-sync.ts](../src/db/climbing-log-sync.ts). The existing helper tests exercised observation results and restore SQL separately, but no unit case executed the public batch writer that collects observed identities and restores them once. This blocked merge qualification; no production impact was established.
