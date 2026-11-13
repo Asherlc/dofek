@@ -33,13 +33,14 @@ struct WhoopStoredBatch {
 /// The database owns samples and reservations. Transport files are disposable projections.
 final class WhoopBleSampleStore {
     private var database: OpaquePointer?
+    var secureDeleteToRestore: Int?
     private let lock = NSLock()
     private let formatter: ISO8601DateFormatter = {
         let value = ISO8601DateFormatter()
         value.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return value
     }()
-    private struct StoreError: LocalizedError {
+    struct StoreError: LocalizedError {
         let errorDescription: String?
         init(_ message: String) { errorDescription = message }
     }
@@ -92,6 +93,13 @@ final class WhoopBleSampleStore {
             try execute("INSERT OR IGNORE INTO stats(stream) VALUES (?)", [stream.rawValue])
         }
         if try metadata("generation") == nil { try setMetadata("generation", UUID().uuidString) }
+        do {
+            try finishPendingPurgeLocked()
+        } catch {
+            sqlite3_close(database)
+            database = nil
+            throw error
+        }
         #if os(iOS)
         try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: path)
         #endif
@@ -219,25 +227,6 @@ final class WhoopBleSampleStore {
             return min(limit, try field("count", in: row) as Int)
         }
     }
-    /// Stage observers run inside the store lock and must not re-enter the store.
-    func purge(onStage: (String) -> Void = { _ in }) throws {
-        try transaction(onStage: onStage) {
-            // secure_delete rewrites every freed page through the WAL, about the size of the whole queue.
-            let secureDelete: Int = try field("secure_delete", in: rows("PRAGMA secure_delete").first ?? [:])
-            try execute("PRAGMA secure_delete = FAST")
-            defer { sqlite3_exec(database, "PRAGMA secure_delete = \(secureDelete)", nil, nil, nil) }
-            try purgeLocked(onStage: onStage)
-        }
-        onStage("store_vacuum")
-        try synchronized {
-            try execute("VACUUM")
-            guard let checkpoint = try rows("PRAGMA wal_checkpoint(TRUNCATE)").first,
-                  try field("busy", in: checkpoint) as Int == 0 else {
-                throw StoreError("WHOOP sample storage could not checkpoint the purged queue")
-            }
-        }
-    }
-
     func advanceErasureCutoff(to date: Date) throws {
         try transaction {
             let cutoff = max(try metadata("cutoff").flatMap(Double.init) ?? -Double.greatestFiniteMagnitude, date.timeIntervalSince1970)
@@ -285,18 +274,6 @@ final class WhoopBleSampleStore {
         }
     }
 
-    private func purgeLocked(onStage: (String) -> Void = { _ in }) throws {
-        onStage("store_reset_stats")
-        try execute("UPDATE stats SET received = 0, confirmed = 0, erased = 0, cleared = 0, lastConfirmed = NULL")
-        onStage("store_delete_samples")
-        try execute("DELETE FROM samples")
-        onStage("store_delete_batches")
-        try execute("DELETE FROM batches")
-        onStage("store_clear_binding")
-        try execute("DELETE FROM metadata WHERE key = ?", ["binding"])
-        onStage("store_rotate_generation")
-        try setMetadata("generation", UUID().uuidString)
-    }
     private func readBinding() throws -> WhoopUploadBinding? {
         guard let value = try metadata("binding") else { return nil }
         return try JSONDecoder().decode(WhoopUploadBinding.self, from: Data(value.utf8))
@@ -317,37 +294,42 @@ final class WhoopBleSampleStore {
             )
         }
     }
-    private func field<T>(_ name: String, in row: [String: Any]) throws -> T {
+    func field<T>(_ name: String, in row: [String: Any]) throws -> T {
         guard let value = row[name] as? T else {
             throw StoreError("WHOOP queue has invalid or missing \(name); sample storage could not be read")
         }
         return value
     }
-    private func metadata(_ key: String) throws -> String? {
+    func metadata(_ key: String) throws -> String? {
         guard let row = try rows("SELECT value FROM metadata WHERE key = ?", [key]).first else { return nil }
         return try field("value", in: row)
     }
-    private func setMetadata(_ key: String, _ value: String) throws {
+    func setMetadata(_ key: String, _ value: String) throws {
         try execute("INSERT OR REPLACE INTO metadata VALUES (?, ?)", [key, value])
     }
-    private func synchronized<T>(_ action: () throws -> T) rethrows -> T {
+    func synchronized<T>(_ action: () throws -> T) rethrows -> T {
         lock.lock(); defer { lock.unlock() }
         return try action()
     }
     private func transaction<T>(onStage: (String) -> Void = { _ in }, _ action: () throws -> T) throws -> T {
         onStage("store_lock_wait")
         return try synchronized {
-            onStage("store_begin")
-            try execute("BEGIN IMMEDIATE")
-            var committed = false
-            defer { if !committed { sqlite3_exec(database, "ROLLBACK", nil, nil, nil) } }
-            let result = try action()
-            onStage("store_commit")
-            try execute("COMMIT")
-            committed = true
-            onStage("store_completed")
-            return result
+            try restoreSecureDeleteLocked()
+            try finishPendingPurgeLocked()
+            return try transactionLocked(onStage: onStage, action)
         }
+    }
+    func transactionLocked<T>(onStage: (String) -> Void = { _ in }, _ action: () throws -> T) throws -> T {
+        onStage("store_begin")
+        try execute("BEGIN IMMEDIATE")
+        var committed = false
+        defer { if !committed { sqlite3_exec(database, "ROLLBACK", nil, nil, nil) } }
+        let result = try action()
+        onStage("store_commit")
+        try execute("COMMIT")
+        committed = true
+        onStage("store_completed")
+        return result
     }
     private func prepare(_ sql: String) throws -> OpaquePointer {
         var statement: OpaquePointer?
@@ -376,12 +358,12 @@ final class WhoopBleSampleStore {
         while result == SQLITE_ROW { result = sqlite3_step(statement) }
         guard result == SQLITE_DONE else { throw databaseError() }
     }
-    private func execute(_ sql: String, _ values: [Any] = []) throws {
+    func execute(_ sql: String, _ values: [Any] = []) throws {
         let statement = try prepare(sql); defer { sqlite3_finalize(statement) }
         try bind(values, to: statement)
         try finish(statement)
     }
-    private func rows(_ sql: String, _ values: [Any] = []) throws -> [[String: Any]] {
+    func rows(_ sql: String, _ values: [Any] = []) throws -> [[String: Any]] {
         let statement = try prepare(sql); defer { sqlite3_finalize(statement) }
         try bind(values, to: statement)
         var rows: [[String: Any]] = []

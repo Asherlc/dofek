@@ -123,37 +123,6 @@ final class WhoopBleSampleStoreTests: XCTestCase {
         XCTAssertFalse(try store.acknowledge(id: old.id, generation: old.generation))
         XCTAssertEqual(try store.queuedCount(stream: .sensorRecords), 0)
     }
-    private let owner = WhoopUploadBinding(userId: "alice", serverURL: "https://example.com")
-    private func directory() throws -> URL {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        addTeardownBlock { try FileManager.default.removeItem(at: url) }
-        return url
-    }
-    private func samples(_ seconds: [Int]) -> [[String: Any]] {
-        seconds.map { ["timestamp": String(format: "2026-10-28T00:00:%02d.000Z", $0), "heartRateBpm": 70] }
-    }
-
-    private func seedPersistedSamples(_ count: Int, stream: WhoopUploadStream, second: Int, probe: SQLiteWorkProbe) throws {
-        let sample = samples([second])[0]
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let timestamp = try XCTUnwrap(formatter.date(from: XCTUnwrap(sample["timestamp"] as? String)))
-        let payload = try JSONSerialization.data(withJSONObject: sample, options: [.sortedKeys])
-            .map { String(format: "%02x", $0) }.joined()
-        // Restore a real persisted backlog without replaying its ingestion in
-        // every query test and every isolated mutation. Public append is tested separately.
-        try probe.executeFixture("""
-            BEGIN IMMEDIATE;
-            WITH RECURSIVE sequence(value) AS (
-                VALUES(1) UNION ALL SELECT value + 1 FROM sequence LIMIT \(count)
-            )
-            INSERT INTO samples(stream, device, timestamp, payload)
-                SELECT '\(stream.rawValue)', 'a', \(timestamp.timeIntervalSince1970), X'\(payload)' FROM sequence;
-            UPDATE stats SET received = received + \(count) WHERE stream = '\(stream.rawValue)';
-            COMMIT;
-            """)
-    }
-
     func testStoreDirectoryIsExcludedFromBackup() throws {
         let url = try directory()
         let store = try WhoopBleSampleStore(directory: url)
@@ -421,68 +390,5 @@ final class WhoopBleSampleStoreTests: XCTestCase {
         XCTAssertEqual(samples.count, 1)
         XCTAssertEqual(samples.first?["timestamp"] as? String, "2026-10-28T00:00:02.430Z")
         XCTAssertEqual(try store.statistics(stream: .realtime)["erasureDiscardedCount"] as? Int, 2)
-    }
-}
-
-extension WhoopBleSampleStoreTests {
-    func testPurgeWritesFewPagesAndLeavesNoFreedPagesUnderSecureDelete() throws {
-        let url = try directory()
-        let (store, probe) = try SQLiteWorkProbe.opening { try WhoopBleSampleStore(directory: url) }
-        try store.configure(owner)
-        try probe.executeFixture("PRAGMA secure_delete = ON")
-        for stream in WhoopUploadStream.allCases {
-            try seedPersistedSamples(10_000, stream: stream, second: 3, probe: probe)
-            XCTAssertNotNil(try store.reserve(stream: stream))
-        }
-        try probe.executeFixture("PRAGMA wal_checkpoint(TRUNCATE)")
-        let pages = try probe.integer("PRAGMA page_count")
-        let pageSize = try probe.integer("PRAGMA page_size")
-        let before = probe.cacheWrites
-
-        try store.purge()
-
-        XCTAssertLessThan((probe.cacheWrites - before) * 10, pages)
-        XCTAssertEqual(try probe.integer("PRAGMA freelist_count"), 0)
-        XCTAssertLessThan(try probe.integer("PRAGMA page_count") * 10, pages)
-        XCTAssertEqual(try probe.integer("PRAGMA secure_delete"), 1)
-        let file = try FileManager.default.attributesOfItem(atPath: url.appendingPathComponent("samples.sqlite").path)
-        XCTAssertLessThan(try XCTUnwrap(file[.size] as? Int) * 10, pages * pageSize)
-    }
-
-    func testPurgeIdentifiesFailedSqliteOperationAndRollsBackTheStore() throws {
-        let failures = [
-            ("""
-            CREATE TRIGGER reject_sample_delete BEFORE DELETE ON samples
-            BEGIN SELECT RAISE(ABORT, 'purge fixture rejected delete'); END;
-            """, "store_delete_samples", "purge fixture rejected delete"),
-            ("""
-            PRAGMA foreign_keys = ON;
-            CREATE TABLE purge_commit_guard (
-                stream TEXT REFERENCES stats(stream) DEFERRABLE INITIALLY DEFERRED);
-            CREATE TRIGGER reject_purge_commit AFTER DELETE ON samples
-            BEGIN INSERT INTO purge_commit_guard VALUES ('missing'); END;
-            """, "store_commit", "FOREIGN KEY constraint failed"),
-        ]
-        for (fixture, failedStage, message) in failures {
-            let (store, probe) = try SQLiteWorkProbe.opening { try WhoopBleSampleStore(directory: directory()) }
-            try store.configure(owner)
-            try store.append(deviceId: "a", samplesByStream: [.realtime: samples([1])])
-            let binding = try store.binding
-            let generation = try store.generation
-            try probe.executeFixture(fixture)
-            let stages = CleanupStageRecorder()
-
-            XCTAssertThrowsError(try store.purge(onStage: stages.append)) { error in
-                XCTAssertTrue(error.localizedDescription.contains(message))
-            }
-
-            XCTAssertEqual(stages.snapshot.last, failedStage)
-            XCTAssertFalse(stages.snapshot.contains("store_completed"))
-            XCTAssertEqual(try store.binding, binding)
-            XCTAssertEqual(try store.generation, generation)
-            XCTAssertEqual(try store.queuedCount(stream: .realtime), 1)
-            XCTAssertEqual(try store.statistics(stream: .realtime)["receivedCount"] as? Int, 1)
-            XCTAssertEqual(try probe.integer("SELECT COUNT(*) FROM samples"), 1)
-        }
     }
 }
