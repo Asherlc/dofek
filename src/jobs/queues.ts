@@ -321,7 +321,6 @@ let sharedRedisConnection: RedisConnection | null = null;
 export function getSharedRedisConnection(): RedisConnection {
   if (!sharedRedisConnection) {
     sharedRedisConnection = new RedisConnection(getRedisCommandConnection(), {
-      shared: true,
       blocking: false,
       skipVersionCheck: true,
     });
@@ -334,6 +333,13 @@ export function getSharedRedisConnection(): RedisConnection {
 /** Creates the shared sync queue used by the CLI and queue dashboard. */
 export function createSyncQueue(connection?: ConnectionOptions): Queue<SyncJobData> {
   return new Queue(SYNC_QUEUE, { connection: connection ?? getRedisConnection() });
+}
+
+let cachedSyncQueue: Queue<SyncJobData> | null = null;
+
+export function getSyncQueue(): Queue<SyncJobData> {
+  cachedSyncQueue ??= createSyncQueue();
+  return cachedSyncQueue;
 }
 
 /** Create a per-provider sync queue (e.g., sync:strava, sync:garmin). */
@@ -794,6 +800,7 @@ export async function closeAllQueueResources(): Promise<void> {
   }
   cachedProviderQueues.clear();
 
+  if (cachedSyncQueue) closePromises.push(cachedSyncQueue.close());
   if (cachedPostSyncQueue) closePromises.push(cachedPostSyncQueue.close());
   if (cachedActivityDeleteAnalyticsQueue)
     closePromises.push(cachedActivityDeleteAnalyticsQueue.close());
@@ -809,6 +816,7 @@ export async function closeAllQueueResources(): Promise<void> {
     closePromises.push(cachedAnalyticsRefreshQueueEvents.close());
 
   cachedPostSyncQueue = null;
+  cachedSyncQueue = null;
   cachedActivityDeleteAnalyticsQueue = null;
   cachedProviderDataDeletionQueue = null;
   cachedAccountErasureQueue = null;

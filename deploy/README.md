@@ -5,9 +5,11 @@ Infrastructure-as-code and deployment configuration for Dofek.
 Kafka serves the production ingest log with upstream Aiven tiered storage to
 Cloudflare R2. A November 12 broker audit observed remote storage enabled on all
 six metric-stream topics and successful copy/delete operations in its bounded
-log sample; it does not establish an exact activation date or prove the newly
-selected local-retention limits are deployed. See the [broker audit](kafka/retention-policy.md)
-and [selected topic policy](kafka/topic-policy.json). The old Redpanda contents
+log sample; it does not establish an exact activation date. The subsequent
+canonical release applied explicit local-retention limits, and fresh consumers
+read remote-only offsets after native local eviction. See the
+[production observation](kafka/retention-policy.md#production-observation-november-12-november-13-utc)
+and [topic policy](kafka/topic-policy.json). The old Redpanda contents
 were retired on November 12 after archive-range verification; its original
 directory and read-only worker mount remain. Existing service/environment names retain their
 legacy Redpanda spelling. Shared application deployment and old-data retirement

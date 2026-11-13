@@ -37254,3 +37254,103 @@ The installed KafkaJS 2.2.4 `consumer/index.js` performs `await disconnect()` in
 The focused consumer/runtime suites passed 36 tests, including held stop/disconnect promises and the existing owned-batch drain regression. An isolated Kafka 4.4.0 probe using the actual KafkaJS factory injected a retriable batch failure and application shutdown at the SDK's restart-decision boundary. The original factory restarted, rejoined and delivered a second batch; the corrected factory stayed stopped after one batch/one join. A separate active-consumer failure recovered and delivered its second batch. Independent spec and quality review passed. This controlled interleaving establishes the lifecycle correction, not production rollout.
 
 Read-only release preparation also found a pre-existing nonterminal owner `76f6989e-4dbc-41ae-b073-3588ddb038c4` for `metric-stream-source`, with absent PostgreSQL backend `3839851`, reservation `2026-11-12 16:33:51.483685+00`, and retained intent `metric-stream:d83d1881e0d75557b973ae33c529654fe2f753bd00d9ddda29bea1d29a1e5a18`. ClickHouse records its query `efba1812-37b4-4b11-b719-438796aa0388` finishing successfully at 16:36:28 UTC with 100 written rows; its durable owner still has `quiescent=false` and `query_terminal=false`. This predates the cancelled release. No owner was cleared. Executor termination and the separate [recovery safety requirements](plans/2026-11-09-erasure-safety-decisions.md#recovery-cutover-and-key-changes) remain necessary before safe publication replay.
+
+### Exact-owner recovery and successful Kafka release
+
+The operator separately approved recovery of that exact owner. Web and both
+standalone publishers were stopped, executor exit was verified, and native
+ClickHouse checks found no remaining requests, mutations, queued distribution
+work or asynchronous inserts. Under the existing advisory lock, a conditional
+update made only that owner terminal/quiescent while preserving its pending
+intent and original ingestion reservation. The matching live sink replayed
+that intent with the same reservation, retired it, and advanced normally to a
+new reservation. It then drained and exited at 22:41:10 UTC; final ownership
+was terminal/quiescent with no pending intent, and the live commit advanced
+from 8,450,409 to 8,454,055. No offset reset or bulk owner clearing was used.
+See the contemporaneous [operator execution notes](evidence/kafka-retention-20261112/owner-recovery-notes.md)
+and the separate [recovery safety requirements](plans/2026-11-09-erasure-safety-decisions.md#recovery-cutover-and-key-changes).
+
+Web returned to two replicas with HTTP 200 health; the named activity resync
+container was restarted on its unchanged image, and six background services
+returned to their normal replicas before the next release. One stopped
+standalone Node executor had `--rm` and received its program only on stdin;
+Docker removed it on stop and its program was unavailable. Its purpose remains
+unconfirmed and it was not recreated with a guessed command. Future operator
+runs should retain their program and invocation before stopping; Docker
+documents [automatic removal](https://docs.docker.com/reference/cli/docker/container/run/#clean-up---rm).
+
+[PR #3290](https://github.com/Asherlc/dofek/pull/3290) merged the KafkaJS lifecycle
+fix after CI. Automatic deployment was restored, and the canonical
+[server release](https://github.com/Asherlc/dofek/actions/runs/43330045743/job/131572442558)
+for `c7909fdafb0ad868407c9de493e3bd4e72f83b51` passed at November 13 00:31 UTC.
+The three old sinks drained normally. The sole broker remained healthy with
+the previously installed agent; no second broker restart was needed. All six
+topic IDs were preserved, explicit policy readback passed before and after
+consumer startup, local allocation fell from 8.81 GB to 1.26 GB, and fresh
+consumers read live/history remote-only offsets with automatic commits disabled.
+The [production receipt](../deploy/kafka/retention-policy.md#production-observation-november-12-november-13-utc)
+records the exact offsets, disk measurements, remaining sink backlog and Axiom
+query-permission limitation. This does not qualify a complete restore.
+
+### Analytics shutdown retained Redis connections
+
+That release's drain gate separately exposed an analytics lifecycle leak:
+dbt and cache work finished at 23:44:09 UTC, readiness closed, and no database
+requests or dbt children remained, but the Node process retained two Redis and
+two OTLP sockets. The unchanged Docker 30-minute grace eventually force-stopped
+the old task at November 13 00:10:05.119431770 UTC, verified in the Docker
+journal. No manual signal, grace extension or gate bypass was used. This
+delayed background processing and release while the existing web service stayed
+available; sink backlogs remained after restoration.
+
+The process-created BullMQ `RedisConnection` was marked externally shared, so
+its `close()` skipped client shutdown; importing the sync router also created
+an independent Queue outside the existing cleanup owner. The direct follow-up
+uses stock owned-client closure, registers that Queue through the existing
+cached getter pattern, and invokes process cleanup after analytics work, its
+refresh Queue and readiness server drain, before Sentry closes. Redis jobs,
+cache data and reservations are not deleted. See the installed
+[BullMQ RedisConnection ownership behavior](https://github.com/taskforcesh/bullmq/blob/v6.3.14/src/classes/redis-connection.ts)
+and [graceful shutdown](https://docs.bullmq.io/guide/workers/graceful-shutdown).
+
+The native regression reached cleanup with the original source, printed client
+status `ready` and failed to exit naturally; the corrected source printed `end`
+and exited with code 0 and no signal. All 184 focused unit tests and the real
+Redis integration passed. A separate actual-entrypoint probe with enabled OTLP
+also exited naturally after SIGTERM; the local collector received 8 spans,
+1 log and 69 metric points. Sentry was initialized with a synthetic DSN;
+Sentry/PostHog dispatch or delivery was not established. Independent review
+passed. This pre-release validation does not establish production shutdown of
+the corrected image; that requires its own CI and canonical release. The existing grace and gates remain unchanged;
+they protect genuine in-flight work rather than compensating for these leaks.
+
+The [regression execution report](evidence/kafka-retention-20261112/analytics-cleanup-worker-report.md)
+retains the RED/GREEN commands and scope; the
+[full unit/mobile rerun](evidence/kafka-retention-20261112/unit-mobile-summary.txt)
+passed 24,315 tests after correcting two transitive test mocks.
+
+### Separate signed iOS archive failure
+
+The same release's [signed iOS archive job](https://github.com/Asherlc/dofek/actions/runs/43330045743/job/131572633294)
+failed before compilation during `xcodebuild archive` package resolution, with
+exit 74. Its first fatal line was `git -C
+/Users/runner/Library/Caches/org.swift.swiftpm/repositories/sentry-cocoa-447a335c
+config --get remote.origin.url` failing because that directory did not exist.
+The server job succeeded, but matching iOS publication was skipped. The missing
+repository directory is established; its underlying cause remains unknown.
+The signed job was a cold fetch, while the preceding successful CI archive
+restored DerivedData with package checkouts. The signed command retained only
+its last 40 lines and did not upload its error result bundle. Public SwiftPM
+[repository-manager source](https://github.com/swiftlang/swift-package-manager/blob/swift-6.3-RELEASE/Sources/SourceControl/RepositoryManager.swift)
+shows that an initial DNS fetch failure can be masked by validation of a missing
+cache directory; that mechanism is a hypothesis, not proof of this runner's
+failure. The user authorized investigation and a direct fix. No retries,
+cache-disabling flags or timeout changes have been used as remediation.
+
+The approved diagnostic follow-up removes signed-archive truncation, keeps its
+temporary result bundle on the runner, and reports useful stock summary output
+through GitHub's existing masked job log. Raw log/result-bundle artifacts are
+not uploaded: log masking does not sanitize their original file contents.
+This improves evidence retention; it does not establish the original fetch
+cause. See the [signed archive diagnostic boundary](ci-debugging.md#signed-archive-diagnostic-confidentiality)
+and [GitHub masking semantics](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands#masking-a-value-in-a-log).

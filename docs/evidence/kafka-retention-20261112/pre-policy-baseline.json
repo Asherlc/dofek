@@ -1,0 +1,10 @@
+{
+  "phase": "Main fix CI running; new local-retention policy not yet reconciled",
+  "kafkaAllocatedBytes": 8805670912,
+  "filesystemAvailableBytes": 57266929664,
+  "live": { "earliest": 1696520, "latest": 9566693, "oldestLocalSegmentBase": 1696520 },
+  "history": { "earliest": 427815, "latest": 7353960, "oldestLocalSegmentBase": 427815 },
+  "legacy": { "earliest": 0, "latest": 0 },
+  "allQuarantines": { "earliest": 0, "latest": 0 },
+  "collector": { "acceptedMetricPoints": 24426, "sentMetricPoints": 24426, "receiverFailedMetricPoints": 0, "receiverRefusedMetricPoints": 0 }
+}

@@ -62,14 +62,11 @@ import {
   ANALYTICS_REFRESH_QUEUE,
   closeAllQueueResources,
   createProviderDataDeletionQueue,
-  EXPORT_QUEUE,
   enqueueDataExport,
   enqueueProviderDataDeletion,
   enqueueProviderDataDeletionContinuation,
   getAnalyticsRefreshQueue,
   getAnalyticsRefreshQueueEvents,
-  getDataExportQueue,
-  getProviderDataDeletionQueue,
   PROVIDER_DATA_DELETION_QUEUE,
   providerDataDeletionJobDataSchema,
 } from "./queues.ts";
@@ -258,142 +255,77 @@ describe("queues", () => {
   });
 
   describe("getRedisConnection", () => {
-    it("parses REDIS_URL environment variable with password", async () => {
-      process.env.REDIS_URL = "redis://:secret@myredis.host:6380";
+    it.each([
+      {
+        label: "parses a password",
+        url: "redis://:secret@myredis.host:6380",
+        expected: { host: "myredis.host", port: 6380, password: "secret" },
+      },
+      {
+        label: "defaults to localhost:6379",
+        url: undefined,
+        expected: { host: "localhost", port: 6379, password: undefined },
+      },
+      {
+        label: "handles a URL without a password",
+        url: "redis://redis-host:6379",
+        expected: { host: "redis-host", port: 6379, password: undefined },
+      },
+      {
+        label: "defaults the port to 6379",
+        url: "redis://localhost",
+        expected: { host: "localhost", port: 6379 },
+      },
+    ])("$label", async ({ url, expected }) => {
+      if (url === undefined) delete process.env.REDIS_URL;
+      else process.env.REDIS_URL = url;
       const { getRedisConnection } = await import("./queues.ts");
 
-      const conn = getRedisConnection();
-
-      expect(conn).toEqual({
-        host: "myredis.host",
-        port: 6380,
-        password: "secret",
+      expect(getRedisConnection()).toEqual({
+        ...expected,
         maxRetriesPerRequest: null,
         connectTimeout: 5000,
         lazyConnect: true,
       });
     });
-
-    it("defaults to localhost:6379 when REDIS_URL is not set", async () => {
-      delete process.env.REDIS_URL;
-      const { getRedisConnection } = await import("./queues.ts");
-
-      const conn = getRedisConnection();
-
-      expect(conn).toEqual({
-        host: "localhost",
-        port: 6379,
-        password: undefined,
-        maxRetriesPerRequest: null,
-        connectTimeout: 5000,
-        lazyConnect: true,
-      });
-    });
-
-    it("handles REDIS_URL without password", async () => {
-      process.env.REDIS_URL = "redis://redis-host:6379";
-      const { getRedisConnection } = await import("./queues.ts");
-
-      const conn = getRedisConnection();
-      expect("host" in conn).toBe(true);
-      if ("host" in conn) {
-        expect(conn.host).toBe("redis-host");
-        expect(conn.port).toBe(6379);
-        expect(conn.password).toBeUndefined();
-      }
-    });
-
-    it("defaults port to 6379 when not specified", async () => {
-      process.env.REDIS_URL = "redis://localhost";
-      const { getRedisConnection } = await import("./queues.ts");
-
-      const conn = getRedisConnection();
-      if ("port" in conn) {
-        expect(conn.port).toBe(6379);
-      }
-    });
   });
 
-  describe("createSyncQueue", () => {
-    it("creates a Queue with the sync queue name", async () => {
-      const { createSyncQueue, SYNC_QUEUE } = await import("./queues.ts");
+  describe("queue factories", () => {
+    const queueForFactory = {
+      createSyncQueue: "SYNC_QUEUE",
+      createImportQueue: "IMPORT_QUEUE",
+      createFitFileImportQueue: "FIT_FILE_IMPORT_QUEUE",
+      createFitFileImportBatchQueue: "FIT_FILE_IMPORT_BATCH_QUEUE",
+      createZipEntryExtractQueue: "ZIP_ENTRY_EXTRACT_QUEUE",
+      createExportQueue: "EXPORT_QUEUE",
+      createScheduledSyncQueue: "SCHEDULED_SYNC_QUEUE",
+      createPostSyncQueue: "POST_SYNC_QUEUE",
+      createActivityDeleteAnalyticsQueue: "ACTIVITY_DELETE_ANALYTICS_QUEUE",
+    } as const;
 
-      createSyncQueue({ host: "test", port: 1234 });
+    it.each([
+      ["createSyncQueue", 1234],
+      ["createSyncQueue", undefined],
+      ["createImportQueue", 5678],
+      ["createImportQueue", undefined],
+      ["createFitFileImportQueue", 2468],
+      ["createFitFileImportBatchQueue", 8642],
+      ["createZipEntryExtractQueue", 9753],
+      ["createExportQueue", 1111],
+      ["createExportQueue", undefined],
+      ["createScheduledSyncQueue", 2222],
+      ["createPostSyncQueue", 9999],
+      ["createActivityDeleteAnalyticsQueue", 9999],
+      ["createActivityDeleteAnalyticsQueue", undefined],
+    ] as const)("%s uses its queue and connection options", async (factory, port) => {
+      if (port === undefined) process.env.REDIS_URL = "redis://localhost:6379";
+      const queues = await import("./queues.ts");
+      const connection = port === undefined ? undefined : { host: "test", port };
 
-      expect(MockQueue).toHaveBeenCalledWith(SYNC_QUEUE, {
-        connection: { host: "test", port: 1234 },
-      });
-    });
+      queues[factory](connection);
 
-    it("uses default redis connection when none provided", async () => {
-      process.env.REDIS_URL = "redis://localhost:6379";
-      const { createSyncQueue, SYNC_QUEUE } = await import("./queues.ts");
-
-      createSyncQueue();
-
-      expect(MockQueue).toHaveBeenCalledWith(SYNC_QUEUE, {
-        connection: expect.objectContaining({ host: "localhost", port: 6379 }),
-      });
-    });
-  });
-
-  describe("createImportQueue", () => {
-    it("creates a Queue with the import queue name", async () => {
-      const { createImportQueue, IMPORT_QUEUE } = await import("./queues.ts");
-
-      createImportQueue({ host: "test", port: 5678 });
-
-      expect(MockQueue).toHaveBeenCalledWith(IMPORT_QUEUE, {
-        connection: { host: "test", port: 5678 },
-      });
-    });
-
-    it("uses default redis connection when none provided", async () => {
-      process.env.REDIS_URL = "redis://localhost:6379";
-      const { createImportQueue, IMPORT_QUEUE } = await import("./queues.ts");
-
-      createImportQueue();
-
-      expect(MockQueue).toHaveBeenCalledWith(IMPORT_QUEUE, {
-        connection: expect.objectContaining({ host: "localhost", port: 6379 }),
-      });
-    });
-  });
-
-  describe("createFitFileImportQueue", () => {
-    it("creates a Queue with the FIT file import queue name", async () => {
-      const { createFitFileImportQueue, FIT_FILE_IMPORT_QUEUE } = await import("./queues.ts");
-
-      createFitFileImportQueue({ host: "test", port: 2468 });
-
-      expect(MockQueue).toHaveBeenCalledWith(FIT_FILE_IMPORT_QUEUE, {
-        connection: { host: "test", port: 2468 },
-      });
-    });
-  });
-
-  describe("createFitFileImportBatchQueue", () => {
-    it("creates a Queue with the FIT file import batch queue name", async () => {
-      const { createFitFileImportBatchQueue, FIT_FILE_IMPORT_BATCH_QUEUE } = await import(
-        "./queues.ts"
-      );
-
-      createFitFileImportBatchQueue({ host: "test", port: 8642 });
-
-      expect(MockQueue).toHaveBeenCalledWith(FIT_FILE_IMPORT_BATCH_QUEUE, {
-        connection: { host: "test", port: 8642 },
-      });
-    });
-  });
-
-  describe("createZipEntryExtractQueue", () => {
-    it("creates a Queue with the ZIP entry extract queue name", async () => {
-      const { createZipEntryExtractQueue, ZIP_ENTRY_EXTRACT_QUEUE } = await import("./queues.ts");
-
-      createZipEntryExtractQueue({ host: "test", port: 9753 });
-
-      expect(MockQueue).toHaveBeenCalledWith(ZIP_ENTRY_EXTRACT_QUEUE, {
-        connection: { host: "test", port: 9753 },
+      expect(MockQueue).toHaveBeenCalledWith(queues[queueForFactory[factory]], {
+        connection: connection ?? expect.objectContaining({ host: "localhost", port: 6379 }),
       });
     });
   });
@@ -463,63 +395,21 @@ describe("queues", () => {
     });
   });
 
-  describe("getImportQueue", () => {
-    it("reuses one import queue instance", async () => {
+  describe("cached queue support resources", () => {
+    it("reuses queue-events and flow-producer instances", async () => {
       process.env.REDIS_URL = "redis://localhost:6379";
-      const { getImportQueue, IMPORT_QUEUE } = await import("./queues.ts");
+      const { FIT_FILE_IMPORT_QUEUE, getFitFileImportQueueEvents, getFlowProducer } = await import(
+        "./queues.ts"
+      );
 
-      const first = getImportQueue();
-      const second = getImportQueue();
-
-      expect(first).toBe(second);
-      expect(MockQueue).toHaveBeenCalledTimes(1);
-      expect(MockQueue).toHaveBeenCalledWith(IMPORT_QUEUE, {
-        connection: expect.objectContaining({ host: "localhost", port: 6379 }),
-      });
-    });
-  });
-
-  describe("getFitFileImportQueue", () => {
-    it("reuses one FIT file import queue instance", async () => {
-      process.env.REDIS_URL = "redis://localhost:6379";
-      const { getFitFileImportQueue, FIT_FILE_IMPORT_QUEUE } = await import("./queues.ts");
-
-      const first = getFitFileImportQueue();
-      const second = getFitFileImportQueue();
-
-      expect(first).toBe(second);
-      expect(MockQueue).toHaveBeenCalledTimes(1);
-      expect(MockQueue).toHaveBeenCalledWith(FIT_FILE_IMPORT_QUEUE, {
-        connection: expect.objectContaining({ host: "localhost", port: 6379 }),
-      });
-    });
-  });
-
-  describe("getFitFileImportQueueEvents", () => {
-    it("reuses one FIT file import queue-events listener", async () => {
-      process.env.REDIS_URL = "redis://localhost:6379";
-      const { FIT_FILE_IMPORT_QUEUE, getFitFileImportQueueEvents } = await import("./queues.ts");
-
-      const first = getFitFileImportQueueEvents();
-      const second = getFitFileImportQueueEvents();
-
-      expect(first).toBe(second);
+      const queueEvents = getFitFileImportQueueEvents();
+      expect(getFitFileImportQueueEvents()).toBe(queueEvents);
       expect(MockQueueEvents).toHaveBeenCalledTimes(1);
       expect(MockQueueEvents).toHaveBeenCalledWith(FIT_FILE_IMPORT_QUEUE, {
         connection: expect.objectContaining({ host: "localhost", port: 6379 }),
       });
-    });
-  });
-
-  describe("getFlowProducer", () => {
-    it("reuses one flow producer instance", async () => {
-      process.env.REDIS_URL = "redis://localhost:6379";
-      const { getFlowProducer } = await import("./queues.ts");
-
-      const first = getFlowProducer();
-      const second = getFlowProducer();
-
-      expect(first).toBe(second);
+      const flowProducer = getFlowProducer();
+      expect(getFlowProducer()).toBe(flowProducer);
       expect(MockFlowProducer).toHaveBeenCalledTimes(1);
       expect(MockFlowProducer).toHaveBeenCalledWith({
         connection: expect.objectContaining({ host: "localhost", port: 6379 }),
@@ -544,86 +434,126 @@ describe("queues", () => {
       expect(MockRedisConnection).toHaveBeenCalledTimes(1);
       expect(MockRedisConnection).toHaveBeenCalledWith(
         expect.objectContaining({ commandTimeout: 5000 }),
-        { shared: true, blocking: false, skipVersionCheck: true },
+        { blocking: false, skipVersionCheck: true },
       );
       await closeAllQueueResources();
     });
   });
 
+  describe("cached queue shutdown", () => {
+    it.each([
+      {
+        getter: "getImportQueue",
+        queue: "IMPORT_QUEUE",
+        expectedConnection: { host: "localhost", port: 6379 },
+      },
+      {
+        getter: "getFitFileImportQueue",
+        queue: "FIT_FILE_IMPORT_QUEUE",
+        expectedConnection: { host: "localhost", port: 6379 },
+      },
+      {
+        getter: "getPostSyncQueue",
+        queue: "POST_SYNC_QUEUE",
+        expectedConnection: { host: "localhost", port: 6379 },
+      },
+      {
+        getter: "getActivityDeleteAnalyticsQueue",
+        queue: "ACTIVITY_DELETE_ANALYTICS_QUEUE",
+        expectedConnection: { host: "localhost", port: 6379 },
+      },
+      {
+        getter: "getSyncQueue",
+        queue: "SYNC_QUEUE",
+        expectedConnection: { host: "localhost", port: 6379 },
+      },
+      {
+        getter: "getDataExportQueue",
+        queue: "EXPORT_QUEUE",
+        expectedConnection: { host: "localhost", port: 6379 },
+      },
+      {
+        getter: "getProviderDataDeletionQueue",
+        queue: "PROVIDER_DATA_DELETION_QUEUE",
+        expectedConnection: { host: "localhost", port: 6379 },
+      },
+      {
+        getter: "getActivityImageQueue",
+        queue: "ACTIVITY_IMAGE_QUEUE",
+        expectedConnection: { host: "localhost", port: 6379, commandTimeout: 5000 },
+      },
+    ] as const)(
+      "$getter closes and recreates its cached queue",
+      async ({ getter, queue, expectedConnection }) => {
+        await closeAllQueueResources();
+        vi.clearAllMocks();
+        const queues = await import("./queues.ts");
+        const first = queues[getter]();
+
+        expect(queues[getter]()).toBe(first);
+        expect(MockQueue).toHaveBeenCalledOnce();
+        expect(MockQueue).toHaveBeenCalledWith(queues[queue], {
+          connection: expect.objectContaining(expectedConnection),
+        });
+        await closeAllQueueResources();
+        expect(mockQueueClose).toHaveBeenCalledOnce();
+        await closeAllQueueResources();
+        expect(mockQueueClose).toHaveBeenCalledOnce();
+        queues[getter]();
+        expect(MockQueue).toHaveBeenCalledTimes(2);
+      },
+    );
+  });
+
   describe("createProviderSyncQueue", () => {
-    it("creates a Queue with per-provider queue name", async () => {
-      const { createProviderSyncQueue } = await import("./queues.ts");
-
-      createProviderSyncQueue("strava", { host: "test", port: 1234 });
-
-      expect(MockQueue).toHaveBeenCalledWith("sync-strava", {
+    it.each([
+      {
+        providerId: "strava",
         connection: { host: "test", port: 1234 },
-      });
-    });
-
-    it("uses default redis connection when none provided", async () => {
-      process.env.REDIS_URL = "redis://localhost:6379";
+        expected: { host: "test", port: 1234 },
+      },
+      {
+        providerId: "garmin",
+        url: "redis://localhost:6379",
+        expected: { host: "localhost", port: 6379, commandTimeout: 5000 },
+      },
+    ])("creates the $providerId queue with expected connection options", async (testCase) => {
+      if ("url" in testCase) process.env.REDIS_URL = testCase.url;
       const { createProviderSyncQueue } = await import("./queues.ts");
 
-      createProviderSyncQueue("garmin");
+      createProviderSyncQueue(
+        testCase.providerId,
+        "connection" in testCase ? testCase.connection : undefined,
+      );
 
-      expect(MockQueue).toHaveBeenCalledWith("sync-garmin", {
-        connection: expect.objectContaining({
-          host: "localhost",
-          port: 6379,
-          commandTimeout: 5000,
-        }),
+      expect(MockQueue).toHaveBeenCalledWith(`sync-${testCase.providerId}`, {
+        connection:
+          "connection" in testCase
+            ? testCase.connection
+            : expect.objectContaining(testCase.expected),
       });
     });
   });
 
   describe("getProviderSyncQueue", () => {
-    it("reuses a cached queue for the same provider", async () => {
+    it.each([
+      { providers: ["strava", "strava"], queueCount: 1 },
+      { providers: ["garmin", "wahoo"], queueCount: 2 },
+    ])("caches queues for providers: $providers", async ({ providers, queueCount }) => {
       const { getProviderSyncQueue } = await import("./queues.ts");
+      const queues = providers.map(getProviderSyncQueue);
 
-      const firstQueue = getProviderSyncQueue("strava");
-      const secondQueue = getProviderSyncQueue("strava");
-
-      expect(firstQueue).toBe(secondQueue);
-      expect(MockQueue).toHaveBeenCalledTimes(1);
-      expect(MockQueue).toHaveBeenCalledWith("sync-strava", {
-        connection: expect.objectContaining({ host: "localhost", port: 6379 }),
+      if (providers[0] === providers[1]) expect(queues[0]).toBe(queues[1]);
+      expect(MockQueue).toHaveBeenCalledTimes(queueCount);
+      providers.forEach((providerId) => {
+        expect(MockQueue).toHaveBeenCalledWith(`sync-${providerId}`, {
+          connection: expect.objectContaining({ host: "localhost", port: 6379 }),
+        });
       });
-    });
-
-    it("creates separate cached queues for different providers", async () => {
-      const { getProviderSyncQueue } = await import("./queues.ts");
-
-      getProviderSyncQueue("garmin");
-      getProviderSyncQueue("wahoo");
-
-      expect(MockQueue).toHaveBeenCalledWith("sync-garmin", expect.any(Object));
-      expect(MockQueue).toHaveBeenCalledWith("sync-wahoo", expect.any(Object));
     });
   });
 
   describe("createExportQueue", () => {
-    it("creates a Queue with the export queue name", async () => {
-      const { createExportQueue, EXPORT_QUEUE } = await import("./queues.ts");
-
-      createExportQueue({ host: "test", port: 1111 });
-
-      expect(MockQueue).toHaveBeenCalledWith(EXPORT_QUEUE, {
-        connection: { host: "test", port: 1111 },
-      });
-    });
-
-    it("uses default redis connection when none provided", async () => {
-      process.env.REDIS_URL = "redis://localhost:6379";
-      const { createExportQueue, EXPORT_QUEUE } = await import("./queues.ts");
-
-      createExportQueue();
-
-      expect(MockQueue).toHaveBeenCalledWith(EXPORT_QUEUE, {
-        connection: expect.objectContaining({ host: "localhost", port: 6379 }),
-      });
-    });
-
     it("uses the export id as the BullMQ idempotency key", async () => {
       const { createExportQueue } = await import("./queues.ts");
       const queue = createExportQueue({ host: "test", port: 1111 });
@@ -648,104 +578,6 @@ describe("queues", () => {
           removeOnFail: true,
         },
       );
-    });
-
-    it("creates and closes one cached export queue", async () => {
-      await closeAllQueueResources();
-      vi.clearAllMocks();
-
-      const firstQueue = getDataExportQueue();
-      const secondQueue = getDataExportQueue();
-
-      expect(firstQueue).toBe(secondQueue);
-      expect(MockQueue).toHaveBeenCalledOnce();
-      expect(MockQueue).toHaveBeenCalledWith(EXPORT_QUEUE, {
-        connection: expect.objectContaining({ host: "localhost", port: 6379 }),
-      });
-
-      await closeAllQueueResources();
-      expect(mockQueueClose).toHaveBeenCalledOnce();
-    });
-  });
-
-  describe("createScheduledSyncQueue", () => {
-    it("creates a Queue with the scheduled sync queue name", async () => {
-      const { createScheduledSyncQueue, SCHEDULED_SYNC_QUEUE } = await import("./queues.ts");
-
-      createScheduledSyncQueue({ host: "test", port: 2222 });
-
-      expect(MockQueue).toHaveBeenCalledWith(SCHEDULED_SYNC_QUEUE, {
-        connection: { host: "test", port: 2222 },
-      });
-    });
-  });
-
-  describe("createPostSyncQueue", () => {
-    it("creates a Queue with the post-sync queue name", async () => {
-      const { createPostSyncQueue, POST_SYNC_QUEUE } = await import("./queues.ts");
-
-      createPostSyncQueue({ host: "test", port: 9999 });
-
-      expect(MockQueue).toHaveBeenCalledWith(POST_SYNC_QUEUE, {
-        connection: { host: "test", port: 9999 },
-      });
-    });
-  });
-
-  describe("createActivityDeleteAnalyticsQueue", () => {
-    it("creates a Queue with the activity delete analytics queue name", async () => {
-      const { createActivityDeleteAnalyticsQueue, ACTIVITY_DELETE_ANALYTICS_QUEUE } = await import(
-        "./queues.ts"
-      );
-
-      createActivityDeleteAnalyticsQueue({ host: "test", port: 9999 });
-
-      expect(MockQueue).toHaveBeenCalledWith(ACTIVITY_DELETE_ANALYTICS_QUEUE, {
-        connection: { host: "test", port: 9999 },
-      });
-    });
-
-    it("uses default redis connection when none provided", async () => {
-      process.env.REDIS_URL = "redis://localhost:6379";
-      const { createActivityDeleteAnalyticsQueue, ACTIVITY_DELETE_ANALYTICS_QUEUE } = await import(
-        "./queues.ts"
-      );
-
-      createActivityDeleteAnalyticsQueue();
-
-      expect(MockQueue).toHaveBeenCalledWith(ACTIVITY_DELETE_ANALYTICS_QUEUE, {
-        connection: expect.objectContaining({ host: "localhost", port: 6379 }),
-      });
-    });
-  });
-
-  describe("getPostSyncQueue", () => {
-    it("reuses the cached post-sync queue", async () => {
-      const { getPostSyncQueue, POST_SYNC_QUEUE } = await import("./queues.ts");
-
-      const firstQueue = getPostSyncQueue();
-      const secondQueue = getPostSyncQueue();
-
-      expect(firstQueue).toBe(secondQueue);
-      expect(MockQueue).toHaveBeenCalledWith(POST_SYNC_QUEUE, {
-        connection: expect.objectContaining({ host: "localhost", port: 6379 }),
-      });
-    });
-  });
-
-  describe("getActivityDeleteAnalyticsQueue", () => {
-    it("reuses the cached activity delete analytics queue", async () => {
-      const { getActivityDeleteAnalyticsQueue, ACTIVITY_DELETE_ANALYTICS_QUEUE } = await import(
-        "./queues.ts"
-      );
-
-      const firstQueue = getActivityDeleteAnalyticsQueue();
-      const secondQueue = getActivityDeleteAnalyticsQueue();
-
-      expect(firstQueue).toBe(secondQueue);
-      expect(MockQueue).toHaveBeenCalledWith(ACTIVITY_DELETE_ANALYTICS_QUEUE, {
-        connection: expect.objectContaining({ host: "localhost", port: 6379 }),
-      });
     });
   });
 
@@ -832,16 +664,6 @@ describe("queues", () => {
         },
       );
     });
-
-    it("does not enqueue a job when no activity ids are provided", async () => {
-      const { enqueueActivityDeleteAnalyticsRefresh, createActivityDeleteAnalyticsQueue } =
-        await import("./queues.ts");
-
-      const queue = createActivityDeleteAnalyticsQueue({ host: "test", port: 9999 });
-      await enqueueActivityDeleteAnalyticsRefresh("user-123", [], queue);
-
-      expect(mockQueueAdd).not.toHaveBeenCalled();
-    });
   });
 
   describe("enqueueProviderDeleteAnalyticsRefresh", () => {
@@ -873,6 +695,21 @@ describe("queues", () => {
           backoff: { type: "fixed", delay: 30_000 },
         },
       );
+    });
+  });
+
+  describe("activity analytics refreshes without activity ids", () => {
+    it.each([
+      "enqueueActivityDeleteAnalyticsRefresh",
+      "enqueueActivityRestoreAnalyticsRefresh",
+      "enqueueActivityRecomputeAnalyticsRefresh",
+    ] as const)("%s does not enqueue a job", async (enqueue) => {
+      const queues = await import("./queues.ts");
+      const queue = queues.createActivityDeleteAnalyticsQueue({ host: "test", port: 9999 });
+
+      await queues[enqueue]("user-123", [], queue);
+
+      expect(mockQueueAdd).not.toHaveBeenCalled();
     });
   });
 
@@ -939,23 +776,6 @@ describe("queues", () => {
         removeOnFail: { age: 2_592_000, count: 1_000 },
       });
     });
-
-    it("creates and closes one cached provider deletion queue", async () => {
-      await closeAllQueueResources();
-      vi.clearAllMocks();
-
-      const firstQueue = getProviderDataDeletionQueue();
-      const secondQueue = getProviderDataDeletionQueue();
-
-      expect(firstQueue).toBe(secondQueue);
-      expect(MockQueue).toHaveBeenCalledOnce();
-      expect(MockQueue).toHaveBeenCalledWith(PROVIDER_DATA_DELETION_QUEUE, {
-        connection: expect.objectContaining({ host: "localhost", port: 6379 }),
-      });
-
-      await closeAllQueueResources();
-      expect(mockQueueClose).toHaveBeenCalledOnce();
-    });
   });
 
   describe("enqueueActivityRestoreAnalyticsRefresh", () => {
@@ -987,16 +807,6 @@ describe("queues", () => {
       );
       expect(jobId).toBe("restore-job-1");
     });
-
-    it("does not enqueue a job when no activity ids are provided", async () => {
-      const { enqueueActivityRestoreAnalyticsRefresh, createActivityDeleteAnalyticsQueue } =
-        await import("./queues.ts");
-
-      const queue = createActivityDeleteAnalyticsQueue({ host: "test", port: 9999 });
-      await enqueueActivityRestoreAnalyticsRefresh("user-123", [], queue);
-
-      expect(mockQueueAdd).not.toHaveBeenCalled();
-    });
   });
 
   describe("enqueueActivityRecomputeAnalyticsRefresh", () => {
@@ -1026,16 +836,6 @@ describe("queues", () => {
           jobId: "activity-recompute-analytics-refresh-user-123-c67f2fc391b67892",
         },
       );
-    });
-
-    it("does not enqueue a job when no activity ids are provided", async () => {
-      const { enqueueActivityRecomputeAnalyticsRefresh, createActivityDeleteAnalyticsQueue } =
-        await import("./queues.ts");
-
-      const queue = createActivityDeleteAnalyticsQueue({ host: "test", port: 9999 });
-      await enqueueActivityRecomputeAnalyticsRefresh("user-123", [], queue);
-
-      expect(mockQueueAdd).not.toHaveBeenCalled();
     });
 
     it("uses different job ids for different recompute activity sets from the same user", async () => {
@@ -1077,25 +877,6 @@ describe("queues", () => {
         connection: getRedisCommandConnection(),
       });
       await closeAllQueueResources();
-    });
-    it("reuses the cached image queue until shutdown, closes it once, and creates it again", async () => {
-      const { getActivityImageQueue } = await import("./queues.ts");
-      await closeAllQueueResources();
-      vi.clearAllMocks();
-      try {
-        const first = getActivityImageQueue();
-        expect(getActivityImageQueue()).toBe(first);
-        expect(MockQueue).toHaveBeenCalledOnce();
-        expect(MockQueue).toHaveBeenCalledWith("activity-images", expect.any(Object));
-        await closeAllQueueResources();
-        expect(mockQueueClose).toHaveBeenCalledOnce();
-        await closeAllQueueResources();
-        expect(mockQueueClose).toHaveBeenCalledOnce();
-        getActivityImageQueue();
-        expect(MockQueue).toHaveBeenCalledTimes(2);
-      } finally {
-        await closeAllQueueResources();
-      }
     });
   });
 

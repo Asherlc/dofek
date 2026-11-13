@@ -26,8 +26,10 @@ three existing source topics and their three quarantine topics:
 | segment.bytes | 134217728 (128 MiB) | 134217728 (128 MiB) |
 | remote.storage.enable | true | true |
 
-The table shows the selected policy in [`topic-policy.json`](topic-policy.json),
-not a claim that its new explicit local limits are live. The audit observed
+The table shows the policy in [`topic-policy.json`](topic-policy.json), applied
+by the subsequent canonical release and independently read back on all six
+topics. See the [production observation](retention-policy.md#production-observation-november-12-november-13-utc).
+The earlier audit observed
 `local.retention.bytes=-2` and `local.retention.ms=-2`; total limits were source
 4 GiB and quarantine 1 GiB. The [tiered-storage audit](retention-policy.md)
 records this observation and qualification. Kafka tiering uses separate local
