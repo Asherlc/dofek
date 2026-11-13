@@ -150,3 +150,86 @@ export function climbingActivityFixture(overrides: Partial<ActivityRow> = {}): A
     ...overrides,
   };
 }
+
+export function climbingNamedLogEntryFixture(
+  providerId: string,
+  id = "20000000-0000-4000-8000-000000000001",
+  completed = false,
+): ClimbingLogEntryDetail {
+  const climb = climbingClimbFixture(providerId);
+  return climbingLogEntryFixture({
+    id,
+    providerId,
+    climb,
+    climbId: climb.id,
+    discipline: "rock_climbing",
+    sourceName: providerId,
+    attempts: [
+      climbingAttemptFixture(id, {
+        ropeMethod: "lead",
+        ...(completed ? { outcome: "completed", usedAid: false, fellOrHung: false } : {}),
+      }),
+    ],
+  });
+}
+export function climbingKayaHistoryFixture() {
+  const send = climbingNamedLogEntryFixture("kaya", "20000000-0000-4000-8000-000000000001", true);
+  if (!send.climb) throw new Error("Expected climb");
+  send.climb.externalId = "2001";
+  send.externalId = "kaya:ascent:3001";
+  send.activityId = "20000000-0000-4000-8000-000000000099";
+  send.raw = {
+    session_id: "1000",
+    attempts: null,
+    ascent_type: { name: " rEdPoInT " },
+    date: "2026-10-01T17:15:00Z",
+  };
+  const failed = climbingNamedLogEntryFixture("kaya", "20000000-0000-4000-8000-000000000011");
+  failed.climb = send.climb;
+  failed.activityId = send.activityId;
+  failed.externalId = "kaya:session:1000:attempted:1000_2001";
+  failed.raw = { attempts: 1, sent: false };
+  failed.attempts = [
+    climbingAttemptFixture(failed.id, {
+      id: "20000000-0000-4000-8000-000000000006",
+      outcome: "failed",
+      ropeMethod: "lead",
+    }),
+  ];
+  return { send, failed };
+}
+
+export function climbingActivitySessionFixtures() {
+  const activityId = "20000000-0000-4000-8000-000000000020";
+  const otherActivityId = "20000000-0000-4000-8000-000000000021";
+  const firstSessionId = "30000000-0000-4000-8000-000000000001";
+  const secondSessionId = "30000000-0000-4000-8000-000000000002";
+  const rows = [
+    {
+      activityId,
+      id: firstSessionId,
+      providerId: "kilter",
+      memberActivityIds: ["40000000-0000-4000-8000-000000000001"],
+      firstLoggedAt: "2026-11-09T18:00:00.000Z",
+      lastLoggedAt: "2026-11-09T18:04:00.000Z",
+    },
+    {
+      activityId,
+      id: secondSessionId,
+      providerId: "kilter",
+      memberActivityIds: ["40000000-0000-4000-8000-000000000002"],
+      firstLoggedAt: "2026-11-09T18:20:00.000Z",
+      lastLoggedAt: "2026-11-09T18:25:00.000Z",
+    },
+    {
+      activityId: otherActivityId,
+      id: "30000000-0000-4000-8000-000000000003",
+      providerId: "kilter",
+      memberActivityIds: ["40000000-0000-4000-8000-000000000003"],
+      firstLoggedAt: "2026-11-10T18:00:00.000Z",
+      lastLoggedAt: "2026-11-10T18:01:00.000Z",
+    },
+  ];
+
+  return { activityId, otherActivityId, firstSessionId, secondSessionId, rows };
+}

@@ -37772,3 +37772,48 @@ The BoardSesh metadata path was exercised by database integration tests, while i
 - **Remediation / status:** Diagnosis complete; no production data or runtime behavior changed. Proposed correction is to link the confirmed source Areas through the existing location group. Displaying the other two logs within that location would additionally require an approved inference rule or explicit user attribution. A repeat sync alone does not resolve the missing source attribution in the retained snapshot.
 - **Validation / remaining risk:** Inspected source metadata and effective Area identities against the live database in read-only transactions, then separately reviewed the importer and shared grouping helper. Browser and Dofek connector access were unauthenticated; served-result verification remains pending. Current CI runs were queued, so no green CI claim is made. No retries, timeouts, infrastructure changes, or inference were introduced.
 - **Retrospective / proposed guidance:** Retained raw metadata and source session IDs distinguished an unmapped gym identity from missing upstream board attribution. Proposed runbook wording for approval: “Compare effective Area group membership, raw tick attribution, enriched ascent attribution, and source session identity before changing climbing location matching.” Existing systematic-debugging and check-logs workflows cover the investigation; no additional skill is needed.
+
+The user superseded the manual-mapping proposal and approved automatic matching,
+including session location recovery without an additional display label. The
+[server resolver](../packages/server/src/services/climbing-location-resolution.ts)
+now computes the existing response grouping/path/map fields at read time using
+corroborating indoor Area names and coordinates, compatible parent paths, and
+unambiguous owner/provider-scoped source sessions. It preserves recorded names,
+raw payloads, native Climb map points and database references. No manual
+production mapping, migration, dependency or background job is required. The
+[location guide](climbing-context.md#ownership-and-location) records the matching
+heuristic and conservative ambiguity behavior.
+
+Separate review reproduced two material edge cases: identical wall names within
+conflicting gym parents could merge, and session recovery could replace a native
+Climb map point. Three new resolver regressions failed before their direct
+corrections and passed afterward. The final focused server unit run passes 137
+tests; paired server-contract/web/mobile tests pass 168; real PostgreSQL passes
+50 projection tests, including standalone context, access restrictions, deletion,
+absence, source ownership and native-coordinate preservation. Full lint and
+recursive package typechecks passed; focused checks cover the later corrections.
+Production deployment and authenticated served-result validation remain pending.
+
+The canonical local integration wrapper failed before Vitest at
+`pnpm test:integration -- packages/server/src/repositories/climbing-area-group.integration.test.ts`:
+`container subdued-turkey-redpanda-1 is unhealthy`. Its first causal broker error
+was `Could not setup Async I/O`, reporting capacity exhaustion at
+`/proc/sys/fs/aio-max-nr 65536`. This matches the existing shared-workstation
+[AIO incident](#2026-11-13--boardsesh-log-metadata-omitted-from-import-and-display)
+and the [Linux AIO limit documentation](https://docs.kernel.org/admin-guide/sysctl/fs.html#aio-nr-aio-max-nr).
+Only this task's restarting broker was stopped. PostgreSQL-only regressions then
+ran against the healthy workspace database using the generated `.env.local`;
+shared kernel limits, other workspaces, production and CI gates were unchanged.
+
+The broad local unit/mobile run also reported failures in unchanged R2 archive
+pagination, nested Garmin ZIP streaming, and the retained Garmin MSW client
+regression. Three additional failures were the review regressions running against
+the earlier resolver snapshot; their final focused run is green. The unchanged
+suite failures remain under investigation, and the broad run is not reported as
+green. A mutation run overlapping broad tests also failed while copying a
+temporary dependency-cruiser fixture removed by that test; mutation validation is
+now run after the broad test process exits. No timeout, retry or test exclusion
+was added. Retrospective improvement proposed for approval: run mutation snapshot
+creation after filesystem-mutating test suites finish, and keep broad validation
+on a stable source revision. Existing debugging, integration and PR skills cover
+these checks; no additional skill is needed.
