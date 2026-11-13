@@ -2,9 +2,9 @@
 
 > **DRAFT — documentation only.** Not an imminent all-13 R2→B2 migration. Alternatives **A** / **C** remain **REJECTED / unproven**. No pointer-table, dual-backend, custom CAS, or audit framework. No product/coordination code here.
 
-**Branch:** `r2-to-b2` (PR [#3232](https://github.com/Asherlc/dofek/pull/3232) — document findings)  
-**Region context:** `us-west-004`  
-**Probe evidence:** [`docs/r2-to-b2-b2-erasure-probe.md`](r2-to-b2-b2-erasure-probe.md) · [`docs/evidence/b2-erasure-probe-20261106t180758z/`](evidence/b2-erasure-probe-20261106t180758z/)  
+**Branch:** `r2-to-b2` (PR [#3232](https://github.com/Asherlc/dofek/pull/3232) — document findings)
+**Region context:** `us-west-004`
+**Probe evidence:** [`docs/r2-to-b2-b2-erasure-probe.md`](r2-to-b2-b2-erasure-probe.md) · [`docs/evidence/b2-erasure-probe-20261106t180758z/`](evidence/b2-erasure-probe-20261106t180758z/)
 **Frozen probe SHA256:** `5fd159e002ecd97d97a6c23b2358fbcb1eed5b36ffe68f5824b675eef521ec44`
 
 ### Historical proposal and current scope
@@ -71,9 +71,9 @@ Primary B2 docs: native [`b2_upload_file`](https://www.backblaze.com/apidocs/b2-
 
 Actors: archive object contains Alice+Bob lines. Worker **A** erases Alice. Worker **B** erases Bob (lease steal / separate claim after A’s lease expires).
 
-1. **A** reads current `V0`, stages rewrite that removes **Alice only**, sends `Copy` (in flight / delayed).  
-2. **A**’s lease expires (or session dies). **A** may never run follow-up.  
-3. **B** reads `V0` (or current), removes **Bob**, commits `Vb`, completes **`archive_verification`** and **PII scrub**.  
+1. **A** reads current `V0`, stages rewrite that removes **Alice only**, sends `Copy` (in flight / delayed).
+2. **A**’s lease expires (or session dies). **A** may never run follow-up.
+3. **B** reads `V0` (or current), removes **Bob**, commits `Vb`, completes **`archive_verification`** and **PII scrub**.
 4. Delayed **Copy A** lands: current view becomes “remove Alice only” content that still contains **Bob**, **after** B’s verification believed the object clean.
 
 On **R2**, destination CAS would reject Copy A after `Vb` changed the destination ETag — so this is **not** equivalent to the Connect-after-successful-commit gap.
@@ -96,11 +96,11 @@ Single-part Put/Copy are **not** enumerated by multipart listing. A finite quiet
 
 ### 4.3 Other standing rejects
 
-- PG advisory/lease **alone** as storage fence.  
-- Legal hold as rewrite authorizer or current-key freeze (probe: overwrite Put still 200).  
-- GET→PUT / Head-then-write races to emulate dest CAS.  
-- New custom CAS microservice / general lock framework.  
-- Silent removal of destination CAS without an operator-approved replacement that actually rejects late conflicting commits.  
+- PG advisory/lease **alone** as storage fence.
+- Legal hold as rewrite authorizer or current-key freeze (probe: overwrite Put still 200).
+- GET→PUT / Head-then-write races to emulate dest CAS.
+- New custom CAS microservice / general lock framework.
+- Silent removal of destination CAS without an operator-approved replacement that actually rejects late conflicting commits.
 - Claiming `CopySourceIfMatch` **enforcement** from good-path 200 alone.
 
 ---
@@ -109,10 +109,10 @@ Single-part Put/Copy are **not** enumerated by multipart listing. A finite quiet
 
 Independent of the open dest-CAS problem:
 
-1. Exact-key `ListObjectVersions` with fail-closed pagination / missing VersionId.  
-2. All-version delete + post-list emptiness proof.  
-3. After a **correct** content replace, retain intended new VersionId and delete only superseded (probe retain-new case).  
-4. Remove CF `cf-copy-destination-if-match` (not a B2 guard).  
+1. Exact-key `ListObjectVersions` with fail-closed pagination / missing VersionId.
+2. All-version delete + post-list emptiness proof.
+3. After a **correct** content replace, retain intended new VersionId and delete only superseded (probe retain-new case).
+4. Remove CF `cf-copy-destination-if-match` (not a B2 guard).
 5. PeerDB Seaweed stays out of B2 migration.
 
 These do **not** solve destination replace-if-etag. `CopySourceIfMatch` may remain as a **request** for staging identity where the platform accepts it; mismatch **enforcement** is **unproven** on this fixture (bad case UNQUALIFIED).

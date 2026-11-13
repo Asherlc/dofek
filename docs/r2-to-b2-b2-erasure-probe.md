@@ -1,8 +1,8 @@
 # B2 zero-download erasure probe report
 
-**Executed once:** `2026-11-06T18:19:18.773Z` · full cleanup complete  
-**Frozen source:** ephemeral `/tmp/b2-erasure-probe.ts` (not a maintained repo CLI)  
-**SHA256:** `5fd159e002ecd97d97a6c23b2358fbcb1eed5b36ffe68f5824b675eef521ec44`  
+**Executed once:** `2026-11-06T18:19:18.773Z` · full cleanup complete
+**Frozen source:** ephemeral `/tmp/b2-erasure-probe.ts` (not a maintained repo CLI)
+**SHA256:** `5fd159e002ecd97d97a6c23b2358fbcb1eed5b36ffe68f5824b675eef521ec44`
 **Raw sanitized evidence:** [`docs/evidence/b2-erasure-probe-20261106t180758z/`](evidence/b2-erasure-probe-20261106t180758z/)
 
 Factual B2 compatibility probe record only. Does **not** authorize an R2→B2 bucket migration, CAS replacement, or product cutover. Broader migration remains **deferred**. The Pulsar/B2 offload proposal belonged to the [superseded PR #3231](https://github.com/Asherlc/dofek/pull/3231), not the current [Kafka architecture](../README.md#architecture).
@@ -11,9 +11,9 @@ No Object GET · no MPU · no retention · no R2/prod ops · no secret key mater
 
 ## Primary vendor references
 
-- Put (Native API): [b2_upload_file](https://www.backblaze.com/apidocs/b2-upload-file)  
-- Copy (Native API): [b2_copy_file](https://www.backblaze.com/apidocs/b2-copy-file)  
-- Object Lock / legal hold: [Object Lock](https://www.backblaze.com/docs/cloud-storage-object-lock) · [Enable Object Lock with the Native API](https://www.backblaze.com/docs/cloud-storage-enable-object-lock-with-the-native-api)  
+- Put (Native API): [b2_upload_file](https://www.backblaze.com/apidocs/b2-upload-file)
+- Copy (Native API): [b2_copy_file](https://www.backblaze.com/apidocs/b2-copy-file)
+- Object Lock / legal hold: [Object Lock](https://www.backblaze.com/docs/cloud-storage-object-lock) · [Enable Object Lock with the Native API](https://www.backblaze.com/docs/cloud-storage-enable-object-lock-with-the-native-api)
 - S3-compatible API (versioned-by-default note): [Introduction to the S3-Compatible API](https://www.backblaze.com/apidocs/introduction-to-the-s3-compatible-api)
 
 ## Scope
