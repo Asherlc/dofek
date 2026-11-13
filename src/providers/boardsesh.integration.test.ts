@@ -353,7 +353,7 @@ describe("BoardSesh snapshot persistence", () => {
           id: z.string().uuid(),
           source_result: z.string(),
           source_completed: z.boolean().nullable(),
-          attempt_index: z.number().int(),
+          attempt_index: z.number().int().nullable(),
           received_beta: z.boolean().nullable(),
           fell_or_hung: z.boolean().nullable(),
           used_aid: z.boolean().nullable(),
@@ -571,7 +571,7 @@ describe("BoardSesh snapshot persistence", () => {
     ]);
     const owned = await executeWithSchema(
       context.db,
-      z.object({ user_id: z.string().uuid(), external_id: z.string() }),
+      z.object({ user_id: z.string(), external_id: z.string() }),
       sql`SELECT user_id, external_id FROM fitness.climbing_log_entry WHERE provider_id = 'boardsesh' AND user_id IN (${userId}::uuid, ${otherUserId}::uuid) ORDER BY user_id`,
     );
     expect(owned).toEqual([

@@ -37459,3 +37459,26 @@ snapshot persistence, queue serialization, and client forms kept the change
 within the current architecture. Future investigations should start with the
 implementation, registration, and provider-specific research; the proposed guide
 refinement above remains applicable.
+
+### PR validation follow-up
+
+[PR #3294](https://github.com/Asherlc/dofek/pull/3294) initially failed
+`pnpm exec cspell --no-progress`: an unknown-word diagnostic named the
+malformed-response canary. Replacing it with `PRIVATE7` preserved the privacy regression;
+the longer marker then required Biome to wrap two assertions. Full lint and
+spell check passed after formatting, and all checks passed on commit
+[`46b2fcc33`](https://github.com/Asherlc/dofek/commit/46b2fcc33e0e8b53e94c036316782f216f225f14).
+No application outage or production change resulted. Run formatting and spell
+check together after fixture-text edits to avoid separate CI failures.
+
+A subsequent local full unit/mobile run passed 24,454 tests but timed out in
+three tests and one suite setup; provider database setup also exceeded its
+unchanged 120-second hook limit. Docker statistics showed many active workspace
+services, but no blocked PostgreSQL session was observed afterward. The exact
+resource bottleneck remains unproven. All 70 tests in the four timed-out unit
+files and all 15 provider database tests subsequently passed in isolated runs.
+The new SQL schemas initially rejected a nullable attempt index and the fixed
+test user identifier; matching the actual database result types corrected both.
+No timeouts, retries, test exclusions, or runtime
+resilience settings were changed. Review fixes also strengthened tombstone
+identity assertions and parsed SQL results with the existing Zod helper.
