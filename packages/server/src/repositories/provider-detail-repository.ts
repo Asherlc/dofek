@@ -122,6 +122,7 @@ function listColumnNames(
       return [
         "id",
         "name",
+        "recorded_at",
         "climbed_on",
         "result",
         "discipline",
@@ -291,7 +292,8 @@ export function getRecordSelectFilterColumns(dataType: DataType): readonly strin
 
 /** Curated columns shown in the provider detail records table. */
 export function getRecordDisplayColumns(dataType: DataType): readonly string[] {
-  if (dataType === "climbingLogEntries") return ["name", "climbed_on", "result", "discipline"];
+  if (dataType === "climbingLogEntries")
+    return ["name", "recorded_at", "climbed_on", "result", "discipline"];
   const candidates = getRecordFilterColumns(dataType).filter(
     (column) => !RECORD_DISPLAY_EXCLUDED.has(column),
   );
@@ -527,17 +529,23 @@ export class ProviderDetailRepository {
       dataType === "climbingLogEntries"
         ? sql`(
       SELECT entry.*, COALESCE(entry.climb_name, entry.title) AS name,
+        observation.started_at AS recorded_at,
         CASE WHEN entry.recorded_climb_attempt_count > 0 THEN
           'Whole climb ' || COALESCE(entry.recorded_climb_outcome, 'outcome unknown')
         ELSE 'Pitch ' || COALESCE((SELECT CASE WHEN BOOL_OR(attempt.outcome = 'completed') THEN 'completed'
           WHEN BOOL_AND(COALESCE(attempt.outcome = 'failed', false)) THEN 'failed' END
           FROM fitness.v_climbing_attempt AS attempt WHERE attempt.climbing_log_entry_id = entry.id AND attempt.scope = 'pitch'), 'outcome unknown') END AS result
       FROM fitness.v_climbing_log_entry AS entry
+      LEFT JOIN fitness.activity AS observation
+        ON observation.user_id = entry.user_id
+        AND observation.provider_id = entry.provider_id
+        AND observation.external_id = entry.external_id
+        AND observation.provider_type = 'climbing_log'
     ) AS log_records`
         : sql`${sql.raw(info.table)}`;
     const ordering =
       dataType === "climbingLogEntries"
-        ? sql`climbed_on DESC NULLS LAST, id`
+        ? sql`recorded_at DESC NULLS LAST, climbed_on DESC NULLS LAST, id`
         : sql`${sql.raw(info.orderColumn)} DESC`;
     const query = sql`SELECT ${sql.raw(listColumns(dataType))} FROM ${source}
               WHERE ${sql.join(whereConditions, sql` AND `)}
