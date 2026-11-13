@@ -63,6 +63,8 @@ passed on `6ddbac5a32942167b9573712fb30fcf15194de0c` at November 13
   grace deadline stopped the older process; no manual signal was used.
 - [Restored services and allocation](followup-production-after.txt): selected
   image/replica/health fields, broker continuity, disk allocation and free space.
+- [Public web health](followup-web-health.txt): a separate later check at
+  03:31 UTC with the effective public URL, HTTP 200 and successful TLS verification.
 - [Analytics readiness](followup-analytics-health.json): a completed first cycle,
   HTTP 200, status `ok` and no recorded failure.
 - [Consumer progress and backlog](followup-groups.txt): advancing commits,

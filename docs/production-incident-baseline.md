@@ -37353,15 +37353,18 @@ the merged-source CI also passed. The canonical
 [server job](https://github.com/Asherlc/dofek/actions/runs/43349572540/job/131637412851)
 passed at 02:58:31 UTC, deploying image
 `sha256:8df15225790843028ad17ecb673578dea87f24a7a88caa2bfa1bda4d2f0f789a`.
-The outgoing analytics task was still the older image: Docker's journal records
+The outgoing analytics task was still the older image: the
+[Docker journal receipt](evidence/kafka-retention-20261112/followup-analytics-stop.txt) records
 its normal 30-minute deadline force-stop at 02:40:18.829915800 UTC. The drain
 gate passed at 02:40:40; no manual signal, owner mutation, offset reset, grace
 change or gate bypass was used. The retained grace protects bounded active work.
 
 The [runtime receipt](evidence/kafka-retention-20261112/followup-production-after.txt)
 shows all seven application services on the requested digest at their normal
-replicas, with web, worker, analytics and sinks healthy. Public web health
-returned HTTP 200. The same broker container remained healthy. Analytics
+replicas, with web, worker, analytics and sinks healthy. A later
+[public web-health check](evidence/kafka-retention-20261112/followup-web-health.txt)
+at 03:31 UTC returned HTTP 200 with TLS verification successful. The same broker
+container remained healthy in the runtime receipt. Analytics
 completed its first cycle at 03:01:51.930 UTC; a later
 [readiness sample](evidence/kafka-retention-20261112/followup-analytics-health.json)
 reported `ok`, HTTP 200 and no recorded failure. Redis jobs and data were not
