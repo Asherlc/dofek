@@ -8,6 +8,7 @@
 import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { vi } from "vitest";
+import { z } from "zod";
 import { drizzleSchema } from "../db/drizzle-schema.ts";
 import type { SyncDatabase, TransactionDatabase } from "../db/index.ts";
 import type {
@@ -24,6 +25,192 @@ import {
 import type { MetricStreamEventPublisher } from "../metric-stream/publisher.ts";
 
 export const OPENBETA_TEST_USER_UUID = "00000000-0000-0000-0000-000000000002";
+
+export function boardSeshAscentFixture(overrides: Record<string, unknown> = {}) {
+  return {
+    uuid: "tick-1",
+    climbUuid: "climb-1",
+    boardType: "kilter",
+    isMirror: false,
+    climbName: "  Moon Dust  ",
+    boardId: 42,
+    boardDisplayName: " Display board ",
+    ...overrides,
+  };
+}
+
+export function boardSeshBoardFixture(overrides: Record<string, unknown> = {}) {
+  return {
+    uuid: "board-42",
+    name: "Training Kilter",
+    boardType: "kilter",
+    locationName: " Movement Sunnyvale ",
+    gymName: null,
+    latitude: 37.37,
+    longitude: -122.04,
+    ...overrides,
+  };
+}
+
+export const boardSeshMetadataCases = [
+  [
+    "gym name",
+    {},
+    { locationName: " ", gymName: " Gym name ", latitude: null, longitude: null },
+    "available",
+    {
+      name: "Moon Dust",
+      board: { name: "Training Kilter", externalId: "board-42" },
+      areas: [{ externalId: "board:board-42", name: "Gym name", coordinates: null }],
+    },
+  ],
+  [
+    "coordinate-only board at zero",
+    {},
+    { locationName: null, gymName: null, latitude: 0, longitude: 0 },
+    "available",
+    {
+      name: "Moon Dust",
+      board: { name: "Training Kilter", externalId: "board-42" },
+      areas: [
+        {
+          externalId: "board:board-42",
+          name: "Training Kilter",
+          coordinates: { latitude: 0, longitude: 0 },
+        },
+      ],
+    },
+  ],
+  [
+    "missing latitude",
+    {},
+    { latitude: null, longitude: 0 },
+    "available",
+    {
+      name: "Moon Dust",
+      board: { name: "Training Kilter", externalId: "board-42" },
+      areas: [{ name: "Movement Sunnyvale", coordinates: null }],
+    },
+  ],
+  [
+    "missing longitude",
+    {},
+    { latitude: 0, longitude: null },
+    "available",
+    {
+      name: "Moon Dust",
+      board: { name: "Training Kilter", externalId: "board-42" },
+      areas: [{ name: "Movement Sunnyvale", coordinates: null }],
+    },
+  ],
+  [
+    "unknown location",
+    {},
+    { locationName: null, gymName: null, latitude: null, longitude: null },
+    "available",
+    {
+      name: "Moon Dust",
+      board: { name: "Training Kilter", externalId: "board-42" },
+      areas: [],
+    },
+  ],
+  [
+    "inaccessible board",
+    {},
+    {},
+    "inaccessible",
+    { name: "Moon Dust", board: { name: "Display board", externalId: null }, areas: [] },
+  ],
+  [
+    "deleted board",
+    {},
+    {},
+    "deleted",
+    { name: "Moon Dust", board: { name: "Display board", externalId: null }, areas: [] },
+  ],
+  [
+    "unattributed board",
+    { boardId: null, boardDisplayName: null },
+    {},
+    "available",
+    { name: "Moon Dust", board: null, areas: [] },
+  ],
+  [
+    "recorded display name only",
+    { boardId: null, boardDisplayName: " Shared wall " },
+    {},
+    "available",
+    { name: "Moon Dust", board: { name: "Shared wall", externalId: null }, areas: [] },
+  ],
+  [
+    "unavailable display name",
+    { boardDisplayName: null },
+    {},
+    "inaccessible",
+    { name: "Moon Dust", board: null, areas: [] },
+  ],
+  [
+    "unknown climb name",
+    { climbName: "Unknown Climb" },
+    {},
+    "available",
+    {
+      name: null,
+      board: { name: "Training Kilter", externalId: "board-42" },
+      areas: [{ name: "Movement Sunnyvale" }],
+    },
+  ],
+  [
+    "blank climb name",
+    { climbName: "   " },
+    {},
+    "available",
+    {
+      name: null,
+      board: { name: "Training Kilter", externalId: "board-42" },
+      areas: [{ name: "Movement Sunnyvale" }],
+    },
+  ],
+] as const;
+
+export function createBoardSeshMetadataFetch({
+  ticks,
+  pages,
+  currentBoard = { uuid: "board-42", name: "Training Kilter", boardType: "kilter" },
+  board = boardSeshBoardFixture(),
+}: {
+  ticks: unknown[];
+  pages: Record<number, unknown>;
+  currentBoard?: unknown;
+  board?: unknown;
+}) {
+  return vi.fn<typeof fetch>(async (_input, init) => {
+    const { query, variables } = z
+      .object({
+        query: z.string(),
+        variables: z.record(z.string(), z.unknown()),
+      })
+      .parse(JSON.parse(String(init?.body)));
+    let data: Record<string, unknown>;
+    if (query.includes("BoardSeshTicks")) {
+      const input = z.object({ boardType: z.string() }).parse(variables.input);
+      data = { ticks: input.boardType === "kilter" ? ticks : [] };
+    } else if (query.includes("BoardSeshGrades")) {
+      data = { grades: [] };
+    } else if (query.includes("BoardSeshMetadata")) {
+      const input = z.object({ offset: z.number() }).parse(variables.input);
+      if (!(input.offset in pages)) throw new Error("Unexpected metadata page");
+      data = { userAscentsFeed: pages[input.offset] };
+    } else if (query.includes("BoardSeshTickBoard")) {
+      data = { tickBoardOptions: { currentBoard } };
+    } else if (query.includes("BoardSeshBoard")) {
+      data = { board };
+    } else {
+      throw new Error("Unexpected BoardSesh operation");
+    }
+    return Response.json({ data: { authenticatedUserId: "owner-1", ...data } });
+  });
+}
 
 export function openBetaGrades(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {

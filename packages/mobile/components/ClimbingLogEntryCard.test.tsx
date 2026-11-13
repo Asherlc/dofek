@@ -8,6 +8,10 @@ import { ClimbingLogEntryCard } from "./ClimbingLogEntryCard";
 import { climbingLogFixture, exactClimbingLocation } from "./climbing-log-entry-fixtures";
 
 describe("ClimbingLogEntryCard", () => {
+  it("keeps a named location without GPS distinct from an unrecorded location", () => {
+    render(<ClimbingLogEntryCard hideMap entry={climbingLogFixture} />);
+    expect(screen.queryByText("No recorded location")).toBeNull();
+  });
   it("keeps an attempt-free project visible without an invented count or outcome", () => {
     render(
       <ClimbingLogEntryCard

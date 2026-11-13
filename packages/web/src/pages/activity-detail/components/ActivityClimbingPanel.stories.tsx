@@ -62,6 +62,42 @@ const meta = {
 } satisfies Meta<typeof ActivityClimbingPanel>;
 export default meta;
 type Story = StoryObj<typeof meta>;
+export const BoardSesh: Story = {
+  args: {
+    entries: [
+      {
+        ...first,
+        providerId: "boardsesh",
+        sourceName: "BoardSesh",
+        externalId: "boardsesh:tick:tick-1",
+        climb: {
+          ...firstClimb,
+          providerId: "boardsesh",
+          name: "Moon Dust",
+          kind: "boulder",
+          areaPath: [],
+        },
+        attempts: first.attempts.map((attempt) => ({ ...attempt, ropeMethod: null })),
+        areaPath: [
+          { ...rootArea, providerId: "boardsesh", name: "Movement Sunnyvale", coordinates: null },
+        ],
+        sourceLinks: [],
+        displayGrade: "V5",
+        board: { name: "Training Kilter", externalId: "board-42" },
+        wallAngle: { value: 40, unit: "degrees" },
+        chartAnnotations: [
+          {
+            id: first.id,
+            label: "Moon Dust · V5",
+            startedAt: "2026-11-01T18:00:00Z",
+            endedAt: null,
+          },
+        ],
+      },
+    ],
+    locations: {},
+  },
+};
 export const ExplicitLocationGroup: Story = {
   args: {
     locations: {},

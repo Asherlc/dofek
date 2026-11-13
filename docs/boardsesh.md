@@ -157,13 +157,31 @@ the [hosted-service policy][legal] and [partner API status][partner-api].
 The provider composes the shared `ClimbingBoardAccount` graph persistence,
 retrieves a full snapshot for each of the nine supported board types, and
 reconciles only after all responses validate. It keeps each source tick and maps
-only the returned personal grade label, assigns no physical board identity when
-the resolver omits it, and does not call the account-wide native revoke endpoint.
+only the returned personal grade label. After reading the authoritative ticks,
+it pages `userAscentsFeed` with both sends and attempts to enrich exact tick/climb
+identities with names. The feed does not control deletion or completeness.
+For a recorded board ID, `tickBoardOptions.currentBoard` resolves its accessible
+UUID, and `board(boardUuid)` supplies the physical board and available location.
+Locations belong to the log entry, since the same problem can be climbed on
+different boards. Inaccessible boards and absent locations remain unknown;
+enrichment responses are retained alongside the original tick in `raw.metadata`.
+These reads follow the upstream [ascent feed][tick-queries],
+[current-board resolver](https://github.com/boardsesh/boardsesh/blob/main/packages/backend/src/graphql/resolvers/ticks/board-options.ts),
+and [board projection](https://github.com/boardsesh/boardsesh/blob/main/packages/backend/src/graphql/resolvers/social/boards.ts).
+
+The original `climbedAt` supplies the card timestamp and chart annotation on both
+clients. Zone-less timestamps represent UTC in the upstream
+[tick query](https://github.com/boardsesh/boardsesh/blob/main/packages/backend/src/graphql/resolvers/ticks/queries.ts).
+The provider does not call the account-wide native revoke endpoint.
 Apple/Google-only accounts need a BoardSesh email/password connection. These
 constraints match the pinned
 [native auth handler](https://github.com/boardsesh/boardsesh/blob/af2f7adf95eac77990b91da8d254d97ead25b938/packages/backend/src/handlers/native-auth.ts),
 [tick schema](https://github.com/boardsesh/boardsesh/blob/af2f7adf95eac77990b91da8d254d97ead25b938/packages/shared-schema/src/schema/ticks.ts),
 and [tick query resolver](https://github.com/boardsesh/boardsesh/blob/af2f7adf95eac77990b91da8d254d97ead25b938/packages/backend/src/graphql/resolvers/ticks/queries.ts).
+
+The shared provider catalog uses the official
+[BoardSesh app icon](https://github.com/boardsesh/boardsesh/blob/main/packages/mobile/assets/icon.png)
+for web and mobile, including source labels without an external climb link.
 
 [mobile-auth]: https://github.com/boardsesh/boardsesh/blob/af2f7adf95eac77990b91da8d254d97ead25b938/packages/mobile/src/lib/auth.ts
 [env]: https://github.com/boardsesh/boardsesh/blob/af2f7adf95eac77990b91da8d254d97ead25b938/packages/mobile/src/lib/env.ts
