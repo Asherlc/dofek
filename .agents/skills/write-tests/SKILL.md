@@ -1,109 +1,69 @@
 ---
 name: write-tests
-description: Write tests for changed or untested code — unit tests, integration tests, or both depending on what the code does.
+description: Write tests for changed or untested behavior, choosing unit, mobile, or real-database integration tests to match the implementation.
 ---
 
 # Write Tests
 
-Write tests for code that lacks coverage. Follows the project's TDD rules and test separation conventions.
+Read the [test policy](../../../docs/testing.md#test-policy) and nearby tests
+before editing. Preserve its approved exceptions, test separation, and
+production API boundaries.
 
-## Current state
+## Scope and evidence
 
-Run these commands before inspecting test coverage:
+Use the requested file, function, or behavior. Otherwise inspect the current
+branch's diff against `origin/main`:
 
 ```bash
 rtk git branch --show-current
 rtk git status --short
+rtk git diff origin/main...HEAD --name-only
 ```
 
-## Arguments
+Identify changed behavior that lacks coverage, including previously untested
+code being modified. For a feature or bug fix, write a regression test first
+and observe it fail for the expected reason before implementation.
+Do not add tests for deleted features or declarative configuration; use the
+policy's schema, link, or diff checks instead. Preserve the standing
+transitional-code testing exception.
 
-Use the file path, function name, or description of what needs tests from the user's request. If not provided, look at the current branch's diff against `main` and identify untested changes.
+## Choose the boundary
 
-## Rules
+- Pure logic and public UI behavior: focused colocated unit/mobile tests.
+- SQL execution, dbt semantics, and database-dependent API behavior: integration
+  tests against the real engine with minimal fixtures.
+- Third-party services in integration tests: network-level MSW mocks, not
+  module mocks or injected fetch replacements. Keep the specifically approved
+  PowerSync exception scoped to its named suite.
 
-- **Never dismiss missing coverage as "pre-existing"**: If code is being changed, it needs tests for the changed behavior.
-- **SQL/query bugs need integration tests**: Don't dismiss SQL-level issues as "can't be unit tested" — that's what integration tests (`*.integration.test.ts`) are for. Run queries against a real database.
-- **Unit vs integration**: Unit tests (`*.test.ts`) mock external services and test TypeScript logic. Integration tests (`*.integration.test.ts`) hit real databases and never use `vi.mock`. For 3rd party services in integration tests, mock at the network level with MSW.
-- **Colocated unit tests**: Place `<source>.test.ts` next to the source file. No `__tests__/` directories.
-- **No coverage exclusions**: Never add coverage ignore comments (Stryker disable, istanbul ignore, c8 ignore).
+Match a nearby maintained test. Test through production public interfaces;
+do not export helpers solely for tests or add test-only production branches.
+For chart behavior, test an existing public builder only when it has a
+production consumer; otherwise exercise the component's public behavior.
 
-## Steps
+## Run and verify
 
-### 1. Identify what needs tests
-
-If the user provided a file path, read it. Otherwise, find untested changes:
+Run from the repository root, replacing example paths with the changed tests:
 
 ```bash
-MERGE_BASE=$(git merge-base origin/main HEAD)
-git diff $MERGE_BASE HEAD --name-only
+# Focused unit test
+rtk pnpm test:unit src/example.test.ts
+
+# Focused mobile test
+rtk pnpm test:mobile packages/mobile/example.test.tsx
+
+# Real-database test; the wrapper starts dependencies and supplies URLs
+rtk pnpm test:integration -- src/example.integration.test.ts
 ```
 
-For each changed file, check if tests exist:
+Use `rtk pnpm test run` for the full Docker-free unit/mobile tier and the
+[explicit integration tiers](../../../docs/testing.md#integration-dependencies)
+when database behavior is involved. Follow the repository's pre-push policy
+for lint/typechecks and the broader regression scope. Do not use the unit/mobile
+`pnpm test` command to run an integration file. For the direct unit/mobile
+scripts, place file paths directly after the script name; an extra `--` before
+the paths is not a reliable Vitest file filter.
 
-```bash
-# For src/foo/bar.ts, look for src/foo/bar.test.ts and src/foo/bar.integration.test.ts
-```
-
-### 2. Determine test type
-
-- **TypeScript logic** (field mapping, formula computation, data transformation): Unit test
-- **SQL queries** (zone calculations, aggregations, joins, filters): Integration test against real DB
-- **UI components** (labels, tooltips, rendering logic): Unit test with the component's exported builder functions
-- **API endpoints** (end-to-end request/response): Integration test
-
-### 3. Read existing test patterns
-
-Before writing tests, read a nearby existing test file to match the project's conventions:
-
-- Unit tests: Check the source file's sibling `.test.ts`
-- Integration tests: Check `packages/server/src/routers/router-data.integration.test.ts` for the DB setup pattern
-- UI tests: Check `packages/web/src/components/chart-options.test.ts` for the chart testing pattern
-
-### 4. Write the tests (TDD style)
-
-Write failing tests first, then verify they fail for the right reason. Key patterns:
-
-**Unit test (server router)**:
-```typescript
-vi.mock("../trpc.ts", async () => { /* mock tRPC */ });
-vi.mock("../lib/typed-sql.ts", () => ({ executeWithSchema: vi.fn(async (db) => db.execute()) }));
-const caller = createCaller({ db: { execute: vi.fn().mockResolvedValue(rows) }, userId: "user-1" });
-```
-
-**Integration test (real DB)**:
-```typescript
-import { setupTestDatabase } from "../../../../src/db/test-helpers.ts";
-// Insert test data with known values → call endpoint → verify computed results
-```
-
-**UI component test**:
-```typescript
-import { buildSomeOption } from "./SomeChart.tsx";
-const option = buildSomeOption(testData);
-// Test the returned ECharts config object, tooltip formatters, labels, etc.
-```
-
-### 5. Run and verify
-
-```bash
-# Unit tests
-pnpm test -- --run <test-file>
-
-# Integration tests (needs Docker or TEST_DATABASE_URL)
-pnpm test -- --run <integration-test-file>
-
-# Lint
-pnpm lint
-```
-
-### 6. Commit
-
-Commit the tests separately from the implementation when possible, with a clear message describing what's being tested.
-
-## Important
-
-- Every changed behavior needs a test — no exceptions
-- Test the actual behavior, not just that code runs without errors
-- For boundary conditions (e.g., zone thresholds at exactly 80% HRmax), write explicit boundary tests
-- Verify Treff/formula calculations with hand-computed expected values
+Confirm boundary/formula expectations independently, inspect failures, and
+report the commands and results. Commit tests separately when practical,
+without leaving the branch in an unverified state.

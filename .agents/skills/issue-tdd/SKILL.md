@@ -36,7 +36,7 @@ The plan must be executable by another agent without rediscovering the whole pro
 ```markdown
 # <Feature or Fix> TDD Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:test-driven-development before implementation. If executing this plan task-by-task, also use superpowers:executing-plans or superpowers:subagent-driven-development as appropriate. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Execution checkpoints:** Confirm approved scope and acceptance criteria before starting. For each behavior change, observe the regression test fail, implement the minimum fix, and verify it passes; preserve the repository test-policy exceptions. After each task, review scope/spec compliance, maintainability, and verification evidence, resolving material findings before continuing. Finish with an independent whole-change review when available and authorized, or explicitly report a separate self-review. Resolve material findings and confirm required checks before readiness. Use checkbox (`- [ ]`) syntax to record progress. Available plugin workflows may implement these checkpoints but are not required.
 
 **Goal:** <one-sentence outcome>
 
@@ -84,7 +84,8 @@ The plan must be executable by another agent without rediscovering the whole pro
 
 ### Task 3: Final Verification
 
-- [ ] Run relevant lint, typecheck, and test commands.
+- [ ] Run relevant lint, typecheck, and test commands under the repository validation policy.
+- [ ] Review the complete change and resolve material findings; record independent or separate self-review evidence.
 - [ ] Update docs or stories required by the touched area.
 - [ ] Commit and push if the user requested implementation work.
 ```
