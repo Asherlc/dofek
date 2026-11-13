@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("expo-crypto", () => ({ randomUUID: () => "test-uuid" }));
+
 const mockSetupBackgroundObservers = vi.fn().mockResolvedValue(true);
 const mockAddSampleUpdateListener = vi.fn().mockReturnValue({ remove: vi.fn() });
 const mockCompleteObserverUpdates = vi.fn().mockReturnValue(0);
@@ -36,6 +38,14 @@ vi.mock("../modules/health-kit", () => ({
   queryDailyStatistics: vi.fn().mockResolvedValue([]),
   queryCategorySamples: vi.fn().mockResolvedValue([]),
   queryQuantitySamples: vi.fn().mockResolvedValue([]),
+  queryRunningStepSamples: vi.fn().mockResolvedValue({ workouts: [], samples: [] }),
+  queryRunningStepChanges: vi.fn().mockResolvedValue({
+    hasMore: false,
+    workouts: [],
+    samples: [],
+    deletedUUIDs: [],
+    queryId: null,
+  }),
   queryWorkouts: vi.fn().mockResolvedValue([]),
   queryWorkoutRoutes: vi.fn().mockResolvedValue([]),
   querySleepSamples: vi.fn().mockResolvedValue([]),
@@ -81,6 +91,7 @@ function createMockClient() {
       deleteQuantitySamples: {
         mutate: vi.fn().mockResolvedValue({ deleted: 0 }),
       },
+      pushRunningStepSamples: { mutate: vi.fn().mockResolvedValue({ inserted: 0 }) },
       pushWorkouts: {
         mutate: vi.fn().mockResolvedValue({ inserted: 0 }),
       },
@@ -96,13 +107,22 @@ function createMockClient() {
 
 function createDeferred<T>() {
   let resolve: ((value: T) => void) | undefined;
-  const promise = new Promise<T>((promiseResolve) => {
+  let reject: ((error: unknown) => void) | undefined;
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
     resolve = promiseResolve;
+    reject = promiseReject;
   });
-  if (!resolve) {
+  if (!resolve || !reject) {
     throw new Error("deferred resolver was not initialized");
   }
-  return { promise, resolve };
+  return { promise, resolve, reject };
+}
+
+function createManualObserverOwner() {
+  return {
+    assertAccountCurrent: vi.fn(),
+    runObserverAttempt: vi.fn(async <Result>(operation: () => Promise<Result>) => operation()),
+  } satisfies NonNullable<Parameters<typeof initBackgroundHealthKitSync>[2]>;
 }
 
 describe("initBackgroundHealthKitSync", () => {
@@ -137,6 +157,70 @@ describe("initBackgroundHealthKitSync", () => {
 
     expect(mockAddSampleUpdateListener.mock.invocationCallOrder[0]).toBeLessThan(
       mockSetupBackgroundObservers.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+    );
+  });
+
+  it("does not install an initializer whose authorization resolves after its owner is cancelled", async () => {
+    const oldAuthorization = createDeferred<"shouldRequest">();
+    mockGetRequestStatus.mockReturnValueOnce(oldAuthorization.promise);
+    const oldOwner = createManualObserverOwner();
+    const oldLifetime = new AbortController();
+    const oldInit = initBackgroundHealthKitSync(
+      createMockClient(),
+      undefined,
+      oldOwner,
+      oldLifetime.signal,
+    );
+    await vi.waitFor(() => expect(mockGetRequestStatus).toHaveBeenCalledOnce());
+    oldLifetime.abort();
+
+    await initBackgroundHealthKitSync(
+      createMockClient(),
+      undefined,
+      createManualObserverOwner(),
+      new AbortController().signal,
+    );
+    oldAuthorization.resolve("unnecessary");
+    await oldInit;
+
+    expect(mockAddSampleUpdateListener).toHaveBeenCalledOnce();
+    expect(mockSetupBackgroundObservers).toHaveBeenCalledOnce();
+  });
+
+  it("does not let a cancelled initializer's late setup failure tear down its replacement", async () => {
+    const oldSetup = createDeferred<boolean>();
+    const oldRemoval = vi.fn();
+    const replacementRemoval = vi.fn();
+    mockAddSampleUpdateListener
+      .mockReturnValueOnce({ remove: oldRemoval })
+      .mockReturnValueOnce({ remove: replacementRemoval });
+    mockSetupBackgroundObservers.mockReturnValueOnce(oldSetup.promise);
+    const oldOwner = createManualObserverOwner();
+    const oldLifetime = new AbortController();
+    const oldInit = initBackgroundHealthKitSync(
+      createMockClient(),
+      undefined,
+      oldOwner,
+      oldLifetime.signal,
+    );
+    await vi.waitFor(() => expect(mockSetupBackgroundObservers).toHaveBeenCalledOnce());
+
+    oldLifetime.abort();
+    teardownBackgroundHealthKitSync(oldOwner);
+    const replacementInit = initBackgroundHealthKitSync(
+      createMockClient(),
+      undefined,
+      createManualObserverOwner(),
+      new AbortController().signal,
+    );
+    oldSetup.reject(new Error("old observer setup failed late"));
+    await expect(oldInit).rejects.toThrow("old observer setup failed late");
+    await replacementInit;
+
+    expect(oldRemoval).toHaveBeenCalledOnce();
+    expect(replacementRemoval).not.toHaveBeenCalled();
+    expect(mockTeardownBackgroundObservers.mock.invocationCallOrder.at(-1)).toBeLessThan(
+      mockSetupBackgroundObservers.mock.invocationCallOrder.at(-1) ?? Number.POSITIVE_INFINITY,
     );
   });
 
@@ -576,7 +660,7 @@ describe("initBackgroundHealthKitSync", () => {
       "bg-healthkit-sync",
       "Sync stage completed",
       expect.objectContaining({
-        operation: "queryWorkoutRoutes",
+        operation: "queryRunningStepChanges",
         outcome: "failed",
       }),
     );
@@ -664,7 +748,7 @@ describe("initBackgroundHealthKitSync", () => {
     await initBackgroundHealthKitSync(secondClient, secondOnSyncComplete);
     const secondListener = mockAddSampleUpdateListener.mock.calls[1][0];
     secondListener({
-      typeIdentifier: "HKQuantityTypeIdentifierHeartRate",
+      typeIdentifier: "HKQuantityTypeIdentifierBodyMass",
       updateId: "second-context-update",
     });
     expect(secondClient.healthKitSync.pushWorkouts.mutate).not.toHaveBeenCalled();
@@ -1022,5 +1106,48 @@ describe("teardownBackgroundHealthKitSync", () => {
       source: "bg-healthkit-sync",
       operation: "teardownBackgroundObservers",
     });
+  });
+
+  it("keeps observer type work pending while its native callback expires behind the manual gate", async () => {
+    const gate = createDeferred<void>();
+    const enteredGate = createDeferred<void>();
+    let attempts = 0;
+    const manualController = {
+      assertAccountCurrent: vi.fn(),
+      runObserverAttempt: vi.fn(async <Result>(operation: () => Promise<Result>) => {
+        attempts += 1;
+        if (attempts === 1) {
+          enteredGate.resolve();
+          await gate.promise;
+        }
+        return operation();
+      }),
+    } satisfies NonNullable<Parameters<typeof initBackgroundHealthKitSync>[2]>;
+    await initBackgroundHealthKitSync(createMockClient(), undefined, manualController);
+    await enteredGate.promise;
+
+    const observerListener = mockAddSampleUpdateListener.mock.calls[0][0];
+    observerListener({
+      typeIdentifier: "HKQuantityTypeIdentifierHeartRate",
+      updateId: "expired-update",
+    });
+    mockCompleteObserverUpdates(["expired-update"], false);
+    gate.resolve();
+
+    await vi.waitFor(() => expect(manualController.runObserverAttempt).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() =>
+      expect(mockQueryAnchoredSamples).toHaveBeenCalledWith(
+        "HKQuantityTypeIdentifierHeartRate",
+        expect.any(String),
+      ),
+    );
+    expect(
+      mockQueryAnchoredSamples.mock.calls.filter(
+        ([type]) => type === "HKQuantityTypeIdentifierHeartRate",
+      ),
+    ).toHaveLength(2);
+    await vi.waitFor(() =>
+      expect(mockCompleteObserverUpdates).toHaveBeenCalledWith(["expired-update"], true),
+    );
   });
 });

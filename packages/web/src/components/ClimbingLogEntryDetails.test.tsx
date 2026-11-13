@@ -8,6 +8,22 @@ import {
 } from "../../../server/src/repositories/climbing-test-helpers.ts";
 import { ClimbingLogEntryDetails } from "./ClimbingLogEntryDetails.tsx";
 
+it("renders the board and visited gym instead of the shared problem location", () => {
+  const climb = climbingClimbFixture();
+  const location = climb.areaPath[0];
+  if (!location) throw new Error("Expected fixture location");
+  const gym = { ...location, name: "Visited gym" };
+  const entry = climbingLogEntryFixture({
+    climb,
+    board: { name: "Original 12 x 12", externalId: "wall" },
+    areaPath: [gym],
+  });
+  render(<ClimbingLogEntryDetails entry={entry} />);
+  expect(screen.getByText("Board: Original 12 x 12")).toBeTruthy();
+  expect(screen.getByText("Visited gym")).toBeTruthy();
+  expect(screen.queryByText("Wall")).toBeNull();
+});
+
 it("renders the climb name, date, location, grades and known attempt facts", () => {
   const climb = climbingClimbFixture();
   climb.coordinates = { latitude: 37.5, longitude: -122.25 };
@@ -136,4 +152,88 @@ it("displays all recorded grips and the source wall category", () => {
   );
   expect(screen.getByText("Hold types: crimp, volume, no grips")).toBeInTheDocument();
   expect(screen.getByText("Wall angle: Roof")).toBeInTheDocument();
+});
+
+it("groups source tags once and keeps custom and unknown grip labels visible", () => {
+  render(
+    <ClimbingLogEntryDetails
+      entry={climbingLogEntryFixture({
+        holdTypes: ["crimp"],
+        tags: [
+          {
+            providerId: "kaya",
+            sourceKey: "known-grip",
+            label: "Crimp",
+            categoryKey: "3",
+            categoryLabel: "Grip",
+          },
+          {
+            providerId: "kaya",
+            sourceKey: "unknown-grip",
+            label: "Moon scoop",
+            categoryKey: "3",
+            categoryLabel: "Grip",
+          },
+          {
+            providerId: "kaya",
+            sourceKey: "move",
+            label: "Bicycle",
+            categoryKey: "2",
+            categoryLabel: "Movement",
+          },
+          {
+            providerId: "kaya",
+            sourceKey: "move",
+            label: "Bicycle",
+            categoryKey: "2",
+            categoryLabel: "Movement",
+          },
+          {
+            providerId: "kaya",
+            sourceKey: "custom",
+            label: "Crimp",
+            categoryKey: "custom",
+            categoryLabel: "My category",
+          },
+          {
+            providerId: "custom-source",
+            sourceKey: "free",
+            label: "Mystery label",
+            categoryKey: null,
+            categoryLabel: null,
+          },
+        ],
+      })}
+    />,
+  );
+  expect(screen.getByText("Hold types: crimp")).toBeTruthy();
+  expect(screen.getByText("Kaya · Grip")).toBeTruthy();
+  expect(screen.getByText("Moon scoop")).toBeTruthy();
+  expect(screen.getByText("Kaya · Movement")).toBeTruthy();
+  expect(screen.getAllByText("Bicycle")).toHaveLength(1);
+  expect(screen.getAllByText("Crimp")).toHaveLength(1);
+  expect(screen.getByText("Kaya · My category")).toBeTruthy();
+  expect(screen.getByText("custom-source · Uncategorized tags")).toBeTruthy();
+  expect(screen.getByText("Mystery label")).toBeTruthy();
+});
+
+it("shows two unordered attempts with one successful send", () => {
+  const entry = climbingLogEntryFixture({ providerId: "kaya", recordedClimbAttemptCount: 2 });
+  entry.attempts = [
+    climbingAttemptFixture(entry.id, {
+      outcome: "completed",
+      rockResultLabels: ["sent"],
+      ropeMethod: "top_rope",
+    }),
+    climbingAttemptFixture(entry.id, {
+      id: "20000000-0000-4000-8000-000000000006",
+      outcome: "failed",
+      ropeMethod: "top_rope",
+    }),
+  ];
+  render(<ClimbingLogEntryDetails entry={entry} />);
+  expect(screen.getByText("Attempts: 2")).toBeTruthy();
+  expect(screen.getAllByText("Attempt (order unknown)")).toHaveLength(2);
+  expect(screen.getByText("sent")).toBeTruthy();
+  expect(screen.getByText("Failed")).toBeTruthy();
 });

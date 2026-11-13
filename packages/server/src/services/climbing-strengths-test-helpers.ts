@@ -45,3 +45,13 @@ export const mixedSettingObservations = () =>
       holdTypes: ["crimp"],
     }),
   );
+
+/** Literal expectations for the server's monthly cell contract. */
+export const progressCell = (
+  grade: string,
+  sends: number,
+  climbs: number,
+  unknownOutcomes: number,
+  successRate: number | null,
+  sampleStatus: "no_data" | "limited" | "available",
+) => ({ grade, sends, climbs, unknownOutcomes, successRate, sampleStatus });

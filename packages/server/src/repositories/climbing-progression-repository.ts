@@ -1,5 +1,8 @@
 import { createHash } from "node:crypto";
-import type { ClimbingFilters } from "@dofek/training/climbing-filters";
+import {
+  type ClimbingFilters,
+  isClimbingBoardFilterActive,
+} from "@dofek/training/climbing-filters";
 import {
   type ClimbingGradePreference,
   convertClimbingGrade,
@@ -523,7 +526,8 @@ export class ClimbingProgressionRepository {
           )`;
     const projection = rockClimbingLogProjection(this.#gradePreference, input.filters);
     const requiresLog =
-      Object.keys(input.filters).length > 0 ||
+      isClimbingBoardFilterActive(input.filters) ||
+      Object.keys(input.filters).some((key) => key !== "board") ||
       input.locations.length > 0 ||
       input.gradeSystems.length > 0;
     const activityPredicate = sql`(a.canonical_type = 'climbing' OR (a.canonical_type = 'hiking' AND ce.id IS NOT NULL))`;

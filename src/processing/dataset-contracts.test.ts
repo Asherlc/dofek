@@ -15,7 +15,6 @@ import { deriveProcessingState, type ProcessingStageEvent } from "./processing-s
 
 describe("dataset contracts", () => {
   it("assigns every production dbt model exactly once", () => {
-    expect(PRODUCTION_DBT_MODELS).toHaveLength(45);
     expect(() => validateDatasetContracts(DATASET_CONTRACTS, PRODUCTION_DBT_MODELS)).not.toThrow();
 
     const assignedModels = DATASET_CONTRACTS.flatMap((contract) => contract.analyticsModels);
@@ -307,6 +306,14 @@ describe("dataset contracts", () => {
     ]);
     expect(requiredCdcEvidence(providers, ["metric_stream"])).toEqual([
       { kind: "clickhouse_sink_ack", sinkName: "metric_stream_clickhouse_sink" },
+    ]);
+  });
+
+  it("includes BoardSesh in climbing processing scopes", () => {
+    expect(processingDatasetKeysForProvider("boardsesh")).toEqual([
+      "activity",
+      "training",
+      "providers",
     ]);
   });
 

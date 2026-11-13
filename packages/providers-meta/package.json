@@ -20,6 +20,7 @@
     "./sync-log-presentation": "./src/sync-log-presentation.ts",
     "./sync-card-summary": "./src/sync-card-summary.ts",
     "./whoop": "./src/whoop.ts",
+    "./whoop-sensors": "./src/whoop-sensors.ts",
     "./push-providers": "./src/push-providers.ts",
     "./processing-alerts": "./src/processing-alerts.ts",
     "./processing-status": "./src/processing-status.ts",

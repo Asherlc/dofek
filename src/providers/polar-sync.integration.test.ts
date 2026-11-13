@@ -1,10 +1,10 @@
 import { eq } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
-import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { activity, dailyMetrics, sleepSession } from "../db/schema/activity.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
+import { createIntegrationMswFixture } from "../test/early-msw-lifecycle.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import { PolarProvider } from "./polar/provider.ts";
 import type {
@@ -159,7 +159,7 @@ function polarHandlers(opts?: {
   ];
 }
 
-const server = setupServer();
+const server = createIntegrationMswFixture();
 
 describe("PolarProvider.sync() (integration)", () => {
   let ctx: TestContext;
@@ -168,7 +168,7 @@ describe("PolarProvider.sync() (integration)", () => {
     process.env.POLAR_CLIENT_ID = "test-polar-client";
     process.env.POLAR_CLIENT_SECRET = "test-polar-secret";
     ctx = await setupTestDatabase();
-    server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "polar", "Polar", "https://www.polaraccesslink.com/v3");
   }, 60_000);
 
@@ -178,7 +178,7 @@ describe("PolarProvider.sync() (integration)", () => {
   });
 
   afterAll(async () => {
-    server.close();
+    server.deactivate();
     if (ctx) await ctx.cleanup();
   });
 
@@ -556,13 +556,13 @@ function polarCoverageHandlers(opts: {
 
 describe("PolarProvider.sync() — daily_activity error paths (integration)", () => {
   let ctx: TestContext;
-  const errorServer = setupServer();
+  const errorServer = createIntegrationMswFixture();
 
   beforeAll(async () => {
     process.env.POLAR_CLIENT_ID = "test-polar-client";
     process.env.POLAR_CLIENT_SECRET = "test-polar-secret";
     ctx = await setupTestDatabase();
-    errorServer.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    errorServer.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "polar", "Polar", "https://www.polaraccesslink.com/v3");
   }, 60_000);
 
@@ -571,7 +571,7 @@ describe("PolarProvider.sync() — daily_activity error paths (integration)", ()
   });
 
   afterAll(async () => {
-    errorServer.close();
+    errorServer.deactivate();
     if (ctx) await ctx.cleanup();
   });
 

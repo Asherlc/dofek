@@ -9,6 +9,8 @@ const rideRowSchema = z.object({
   elapsed_seconds: z.coerce.number(),
   average_power: z.coerce.number().nullable(),
   normalized_power: z.coerce.number().nullable(),
+  eftp: z.coerce.number().nullable(),
+  intensity_factor: z.coerce.number().nullable(),
   elevation_gain_meters: z.coerce.number().nullable(),
 });
 
@@ -61,20 +63,24 @@ function effortLabel(durationSeconds: number): EffortLabel | null {
 
 const ridesQuery = `
 SELECT
-  toString(activity_id) AS activity_id,
-  toString(toDate(toTimeZone(started_at, {timezone:String}))) AS activity_date,
-  activity_name AS activity_name,
-  modality AS modality,
-  elapsed_seconds AS elapsed_seconds,
-  average_power AS average_power,
-  normalized_power AS normalized_power,
-  elevation_gain_meters AS elevation_gain_meters
-FROM analytics.cycling_activity FINAL
-WHERE user_id = {userId:UUID}
-  AND is_deleted = 0
-  AND toDate(toTimeZone(started_at, {timezone:String})) BETWEEN
-    toDate({lookbackStartDate:String}) AND toDate({endDate:String})
-ORDER BY started_at ASC`;
+  toString(ride.activity_id) AS activity_id,
+  toString(toDate(toTimeZone(ride.started_at, {timezone:String}))) AS activity_date,
+  ride.activity_name AS activity_name,
+  ride.modality AS modality,
+  ride.elapsed_seconds AS elapsed_seconds,
+  ride.average_power AS average_power,
+  metrics.normalized_power AS normalized_power,
+  metrics.eftp AS eftp,
+  metrics.intensity_factor AS intensity_factor,
+  ride.elevation_gain_meters AS elevation_gain_meters
+FROM analytics.cycling_activity AS ride FINAL
+LEFT JOIN analytics.cycling_activity_power_metrics AS metrics
+  ON metrics.user_id = ride.user_id AND metrics.activity_id = ride.activity_id
+WHERE ride.user_id = {userId:UUID}
+  AND ride.is_deleted = 0
+  AND toDate(toTimeZone(ride.started_at, {timezone:String})) BETWEEN
+    toDate({startDate:String}) AND toDate({endDate:String})
+ORDER BY ride.started_at ASC`;
 
 const effortsQuery = `
 SELECT
@@ -93,22 +99,24 @@ ORDER BY started_at ASC, duration_seconds ASC`;
 const powerAvailabilityQuery = `
 WITH
   multiIf(
-    modality IN ('indoor', 'virtual'), 'indoor',
-    modality IN ('outdoor', 'road', 'mountain', 'gravel', 'electric', 'cyclocross', 'track', 'bmx'), 'outdoor',
+    ride.modality IN ('indoor', 'virtual'), 'indoor',
+    ride.modality IN ('outdoor', 'road', 'mountain', 'gravel', 'electric', 'cyclocross', 'track', 'bmx'), 'outdoor',
     'unknown'
   ) AS power_modality,
-  (power_samples > 0 OR average_power IS NOT NULL OR normalized_power IS NOT NULL OR best_twenty_minute_power IS NOT NULL) AS has_power
+  (ride.power_samples > 0 OR ride.average_power IS NOT NULL OR metrics.normalized_power IS NOT NULL OR ride.best_twenty_minute_power IS NOT NULL) AS has_power
 SELECT
   power_modality AS modality,
-  nullIf(toString(minIf(toDate(toTimeZone(started_at, {timezone:String})), has_power)), '1970-01-01') AS first_observed,
-  nullIf(toString(maxIf(toDate(toTimeZone(started_at, {timezone:String})), has_power)), '1970-01-01') AS last_observed,
+  nullIf(toString(minIf(toDate(toTimeZone(ride.started_at, {timezone:String})), has_power)), '1970-01-01') AS first_observed,
+  nullIf(toString(maxIf(toDate(toTimeZone(ride.started_at, {timezone:String})), has_power)), '1970-01-01') AS last_observed,
   countIf(has_power) AS activities_with_power,
   count() AS activities_total,
-  arraySort(arrayDistinct(arrayFlatten(groupArrayIf(source_providers, has_power)))) AS source_providers
-FROM analytics.cycling_activity FINAL
-WHERE user_id = {userId:UUID}
-  AND is_deleted = 0
-  AND toDate(toTimeZone(started_at, {timezone:String})) BETWEEN
+  arraySort(arrayDistinct(arrayFlatten(groupArrayIf(ride.source_providers, has_power)))) AS source_providers
+FROM analytics.cycling_activity AS ride FINAL
+LEFT JOIN analytics.cycling_activity_power_metrics AS metrics
+  ON metrics.user_id = ride.user_id AND metrics.activity_id = ride.activity_id
+WHERE ride.user_id = {userId:UUID}
+  AND ride.is_deleted = 0
+  AND toDate(toTimeZone(ride.started_at, {timezone:String})) BETWEEN
     toDate({startDate:String}) AND toDate({endDate:String})
 GROUP BY power_modality
 ORDER BY power_modality ASC`;
@@ -171,19 +179,7 @@ export class CyclingPerformanceRepository {
       (ride) => ride.activity_date >= startDate && ride.activity_date <= endDate,
     );
     const activities = requestedRides.map((ride) => {
-      const ftpWindowStart = daysBefore(ride.activity_date, 89);
-      const twentyMinuteBest = effortRows
-        .filter(
-          (effort) =>
-            effort.duration_seconds === 1200 &&
-            effort.activity_date >= ftpWindowStart &&
-            effort.activity_date <= ride.activity_date,
-        )
-        .reduce<number | null>(
-          (best, effort) => (best === null || effort.best_power > best ? effort.best_power : best),
-          null,
-        );
-      const estimatedFtp = twentyMinuteBest === null ? null : round(twentyMinuteBest * 0.95, 1);
+      const estimatedFtp = ride.eftp;
       return {
         activity_id: ride.activity_id,
         date: ride.activity_date,
@@ -193,11 +189,8 @@ export class CyclingPerformanceRepository {
         average_power_watts: ride.average_power,
         normalized_power_watts: ride.normalized_power,
         estimated_ftp_watts: estimatedFtp,
-        estimated_ftp_source: estimatedFtp === null ? null : "rolling_90_day_best_20_min_x_0.95",
-        intensity_factor:
-          ride.normalized_power === null || estimatedFtp === null || estimatedFtp <= 0
-            ? null
-            : round(ride.normalized_power / estimatedFtp, 3),
+        estimated_ftp_source: estimatedFtp === null ? null : "computed_eftp",
+        intensity_factor: ride.intensity_factor,
         elevation_gain_m: ride.elevation_gain_meters,
         best_efforts_watts: effortsByActivity.get(ride.activity_id) ?? emptyEfforts(),
       };

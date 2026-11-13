@@ -1,0 +1,4 @@
+(node:40199) TimeoutNegativeWarning: -1794239233784 is a negative number.
+Timeout duration was set to 1.
+(Use `node --trace-warnings ...` to show where the warning was created)
+{"broker":"apache/kafka:4.4.0@sha256:833b867a9585a141da455dc2b57431c65cbccb27f11c91f694444cca9f777e0f","workflowSource":"working tree based on d4e7a34e","topics":6,"stockIncrementalConvergence":true,"structuredReadback":true,"fixedWriterConnectReconnect":true,"negativeReadbackDetectsDrift":true,"reconvergenceRepairsDrift":true,"topicIdsPreserved":true,"offsetsPreserved":true,"unrelatedCompressionPreserved":true,"qualificationLimit":"CLI workflow ran in native Docker fixture. Verifier logic ran on host Node26/KafkaJS2.2.4 with only broker endpoint changed to the fixture address; packaged APP_IMAGE invocation not run locally due Docker disk headroom."}

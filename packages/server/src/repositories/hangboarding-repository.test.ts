@@ -9,6 +9,27 @@ function makeDb(responses: Record<string, unknown>[][]) {
   return { execute };
 }
 
+function makeSensorStore(
+  heartRates: Array<{ activity_id: string; avg_hr: number | null; max_hr: number | null }> = [],
+) {
+  return {
+    getActivitySummaries: vi.fn().mockResolvedValue(
+      heartRates.map((row) => ({
+        avg_power: null,
+        max_power: null,
+        avg_speed: null,
+        max_speed: null,
+        avg_cadence: null,
+        total_distance: null,
+        elevation_gain_m: null,
+        elevation_loss_m: null,
+        sample_count: null,
+        ...row,
+      })),
+    ),
+  };
+}
+
 function makeDetailRow(overrides: Record<string, unknown> = {}) {
   return {
     activity_id: "activity-1",
@@ -38,7 +59,7 @@ function queryText(db: ReturnType<typeof makeDb>, callIndex = 0) {
 describe("HangboardingRepository", () => {
   it("looks up the displayed activity group as well as source member IDs", async () => {
     const db = makeDb([]);
-    await new HangboardingRepository(db, "user-1", "UTC").getDetail("group-1");
+    await new HangboardingRepository(db, "user-1", "UTC", makeSensorStore()).getDetail("group-1");
     const query = queryText(db);
     expect(query.sql).toMatch(/a\.id = \$\d+::uuid/);
     expect(query.sql).toContain("ANY(a.member_activity_ids)");
@@ -84,7 +105,7 @@ describe("HangboardingRepository", () => {
     ]);
 
     await expect(
-      new HangboardingRepository(db, "user-1", "UTC").getDetail("activity-1"),
+      new HangboardingRepository(db, "user-1", "UTC", makeSensorStore()).getDetail("activity-1"),
     ).resolves.toEqual({
       planName: "7/3 Repeaters",
       boardName: "Tension Board",
@@ -101,7 +122,7 @@ describe("HangboardingRepository", () => {
 
   it("returns null for an activity that is not owned or not Hangboarding", async () => {
     const db = makeDb([]);
-    const repository = new HangboardingRepository(db, "user-1", "UTC");
+    const repository = new HangboardingRepository(db, "user-1", "UTC", makeSensorStore());
 
     await expect(repository.getDetail("not-visible")).resolves.toBeNull();
   });
@@ -117,9 +138,13 @@ describe("HangboardingRepository", () => {
     } as const;
 
     await expect(
-      new HangboardingRepository(db, "user-1", "America/Los_Angeles", accessWindow).getDetail(
-        "activity-1",
-      ),
+      new HangboardingRepository(
+        db,
+        "user-1",
+        "America/Los_Angeles",
+        makeSensorStore(),
+        accessWindow,
+      ).getDetail("activity-1"),
     ).resolves.toBeNull();
 
     const query = queryText(db);
@@ -132,7 +157,7 @@ describe("HangboardingRepository", () => {
     const db = makeDb([[makeDetailRow({ canonical_type: "climbing" })]]);
 
     await expect(
-      new HangboardingRepository(db, "user-1", "UTC").getDetail("activity-1"),
+      new HangboardingRepository(db, "user-1", "UTC", makeSensorStore()).getDetail("activity-1"),
     ).resolves.toBeNull();
   });
 
@@ -153,7 +178,7 @@ describe("HangboardingRepository", () => {
     ]);
 
     await expect(
-      new HangboardingRepository(db, "user-1", "UTC").getDetail("activity-1"),
+      new HangboardingRepository(db, "user-1", "UTC", makeSensorStore()).getDetail("activity-1"),
     ).resolves.toMatchObject({
       summary: { workIntervalCount: 1, totalWorkDurationSeconds: 7 },
     });
@@ -163,14 +188,13 @@ describe("HangboardingRepository", () => {
     const db = makeDb([
       [
         {
+          activity_ids: ["activity-1", "activity-2"],
           session_count: 2,
           total_duration_seconds: 1500,
           average_duration_seconds: 750,
           total_work_duration_seconds: 17,
           total_rest_duration_seconds: 103,
           work_interval_count: 2,
-          average_heart_rate: 125,
-          peak_heart_rate: 150,
           latest_activity_id: "activity-2",
           latest_started_at: "2026-08-08T14:00:00.000Z",
           latest_plan_name: "Repeaters",
@@ -196,7 +220,13 @@ describe("HangboardingRepository", () => {
       ],
     ]);
 
-    await expect(new HangboardingRepository(db, "user-1", "UTC").getSummary(30)).resolves.toEqual({
+    const sensorStore = makeSensorStore([
+      { activity_id: "activity-1", avg_hr: 120, max_hr: 150 },
+      { activity_id: "activity-2", avg_hr: 130, max_hr: 145 },
+    ]);
+    await expect(
+      new HangboardingRepository(db, "user-1", "UTC", sensorStore).getSummary(30),
+    ).resolves.toEqual({
       sessionCount: 2,
       totalDurationSeconds: 1500,
       averageDurationSeconds: 750,
@@ -229,20 +259,20 @@ describe("HangboardingRepository", () => {
         },
       ],
     });
+    expect(sensorStore.getActivitySummaries).toHaveBeenCalledWith(["activity-1", "activity-2"]);
   });
 
   it("preserves null aggregates when interval durations or heart rates are unavailable", async () => {
     const db = makeDb([
       [
         {
+          activity_ids: ["activity-1"],
           session_count: 1,
           total_duration_seconds: 600,
           average_duration_seconds: 600,
           total_work_duration_seconds: null,
           total_rest_duration_seconds: null,
           work_interval_count: null,
-          average_heart_rate: null,
-          peak_heart_rate: null,
           latest_activity_id: "activity-1",
           latest_started_at: "2026-08-07T14:00:00.000Z",
           latest_plan_name: null,
@@ -261,7 +291,12 @@ describe("HangboardingRepository", () => {
       ],
     ]);
 
-    const result = await new HangboardingRepository(db, "user-1", "UTC").getSummary(30);
+    const result = await new HangboardingRepository(
+      db,
+      "user-1",
+      "UTC",
+      makeSensorStore(),
+    ).getSummary(30);
     expect(result.totalWorkDurationSeconds).toBeNull();
     expect(result.totalRestDurationSeconds).toBeNull();
     expect(result.workIntervalCount).toBeNull();
@@ -271,6 +306,69 @@ describe("HangboardingRepository", () => {
       workDurationSeconds: null,
       restDurationSeconds: null,
     });
+  });
+
+  it.each([
+    { average: 120, peak: 150 },
+    { average: null, peak: 150 },
+    { average: 120, peak: null },
+    { average: null, peak: null },
+  ])("keeps missing session HR out of the aggregates: %j", async ({ average, peak }) => {
+    const db = makeDb([
+      [
+        {
+          activity_ids: ["activity-1", "activity-2", "activity-3"],
+          session_count: 3,
+          total_duration_seconds: 1800,
+          average_duration_seconds: 600,
+          total_work_duration_seconds: null,
+          total_rest_duration_seconds: null,
+          work_interval_count: null,
+          latest_activity_id: null,
+          latest_started_at: null,
+          latest_plan_name: null,
+          latest_board_name: null,
+          latest_duration_seconds: null,
+        },
+      ],
+      [],
+    ]);
+    const sensorStore = makeSensorStore([
+      { activity_id: "activity-1", avg_hr: average, max_hr: peak },
+      { activity_id: "activity-2", avg_hr: null, max_hr: null },
+    ]);
+
+    await expect(
+      new HangboardingRepository(db, "user-1", "UTC", sensorStore).getSummary(30),
+    ).resolves.toMatchObject({ sessionCount: 3, averageHeartRate: average, peakHeartRate: peak });
+  });
+
+  it("surfaces sensor-store failures instead of returning missing HR", async () => {
+    const db = makeDb([
+      [
+        {
+          activity_ids: ["activity-1"],
+          session_count: 1,
+          total_duration_seconds: 600,
+          average_duration_seconds: 600,
+          total_work_duration_seconds: null,
+          total_rest_duration_seconds: null,
+          work_interval_count: null,
+          latest_activity_id: null,
+          latest_started_at: null,
+          latest_plan_name: null,
+          latest_board_name: null,
+          latest_duration_seconds: null,
+        },
+      ],
+      [],
+    ]);
+    const sensorStore = makeSensorStore();
+    sensorStore.getActivitySummaries.mockRejectedValue(new Error("ClickHouse unavailable"));
+
+    await expect(
+      new HangboardingRepository(db, "user-1", "UTC", sensorStore).getSummary(30),
+    ).rejects.toThrow("ClickHouse unavailable");
   });
 
   it("maps daily rows when no sessions are available", async () => {
@@ -287,7 +385,9 @@ describe("HangboardingRepository", () => {
       ],
     ]);
 
-    await expect(new HangboardingRepository(db, "user-1", "UTC").getSummary(30)).resolves.toEqual({
+    await expect(
+      new HangboardingRepository(db, "user-1", "UTC", makeSensorStore()).getSummary(30),
+    ).resolves.toEqual({
       sessionCount: 0,
       totalDurationSeconds: 0,
       averageDurationSeconds: null,
@@ -313,14 +413,13 @@ describe("HangboardingRepository", () => {
     const db = makeDb([
       [
         {
+          activity_ids: ["activity-1"],
           session_count: 1,
           total_duration_seconds: 600,
           average_duration_seconds: 600,
           total_work_duration_seconds: null,
           total_rest_duration_seconds: null,
           work_interval_count: null,
-          average_heart_rate: null,
-          peak_heart_rate: null,
           latest_activity_id: null,
           latest_started_at: null,
           latest_plan_name: null,
@@ -332,7 +431,7 @@ describe("HangboardingRepository", () => {
     ]);
 
     await expect(
-      new HangboardingRepository(db, "user-1", "UTC").getSummary(30),
+      new HangboardingRepository(db, "user-1", "UTC", makeSensorStore()).getSummary(30),
     ).resolves.toMatchObject({ latestSession: null });
   });
 });

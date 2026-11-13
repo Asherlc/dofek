@@ -56,6 +56,9 @@ export interface ImportJobData {
     | "strong-csv"
     | "cronometer-csv"
     | "kaya-export"
+    | "crimpd"
+    | "eight-a"
+    | "moonboard"
     | "zos-app"
     | "garmin-dump"
     | "fit-file";
@@ -318,7 +321,6 @@ let sharedRedisConnection: RedisConnection | null = null;
 export function getSharedRedisConnection(): RedisConnection {
   if (!sharedRedisConnection) {
     sharedRedisConnection = new RedisConnection(getRedisCommandConnection(), {
-      shared: true,
       blocking: false,
       skipVersionCheck: true,
     });
@@ -331,6 +333,13 @@ export function getSharedRedisConnection(): RedisConnection {
 /** Creates the shared sync queue used by the CLI and queue dashboard. */
 export function createSyncQueue(connection?: ConnectionOptions): Queue<SyncJobData> {
   return new Queue(SYNC_QUEUE, { connection: connection ?? getRedisConnection() });
+}
+
+let cachedSyncQueue: Queue<SyncJobData> | null = null;
+
+export function getSyncQueue(): Queue<SyncJobData> {
+  cachedSyncQueue ??= createSyncQueue();
+  return cachedSyncQueue;
 }
 
 /** Create a per-provider sync queue (e.g., sync:strava, sync:garmin). */
@@ -458,7 +467,34 @@ let cachedImportQueue: Queue<ImportJobData> | null = null;
 let cachedDataExportQueue: Queue<ExportJobData> | null = null;
 let cachedFitFileImportQueue: Queue<FitFileImportJobData, FitFileImportJobResult> | null = null;
 let cachedFitFileImportQueueEvents: QueueEvents | null = null;
+let cachedAnalyticsRefreshQueue: Queue<AnalyticsRefreshJobData> | null = null;
+let cachedAnalyticsRefreshQueueEvents: QueueEvents | null = null;
+let analyticsRefreshWaitController = new AbortController();
+
+export function getAnalyticsRefreshWaitSignal(): AbortSignal {
+  return analyticsRefreshWaitController.signal;
+}
 let cachedFlowProducer: FlowProducer | null = null;
+
+export function createAnalyticsRefreshQueue(
+  connection?: ConnectionOptions,
+): Queue<AnalyticsRefreshJobData> {
+  return new Queue(ANALYTICS_REFRESH_QUEUE, {
+    connection: connection ?? getRedisCommandConnection(),
+  });
+}
+
+export function getAnalyticsRefreshQueue(): Queue<AnalyticsRefreshJobData> {
+  cachedAnalyticsRefreshQueue ??= createAnalyticsRefreshQueue();
+  return cachedAnalyticsRefreshQueue;
+}
+
+export function getAnalyticsRefreshQueueEvents(): QueueEvents {
+  cachedAnalyticsRefreshQueueEvents ??= new QueueEvents(ANALYTICS_REFRESH_QUEUE, {
+    connection: getRedisConnection(),
+  });
+  return cachedAnalyticsRefreshQueueEvents;
+}
 
 export function getImportQueue(): Queue<ImportJobData> {
   if (!cachedImportQueue) {
@@ -622,11 +658,11 @@ export async function enqueueActivityRestoreAnalyticsRefresh(
   userId: string,
   activityIds: string[],
   queue: Queue<ActivityAnalyticsJobData> = getActivityDeleteAnalyticsQueue(),
-): Promise<void> {
+): Promise<string | null> {
   const uniqueActivityIds = [...new Set(activityIds)];
-  if (uniqueActivityIds.length === 0) return;
+  if (uniqueActivityIds.length === 0) return null;
 
-  await queue.add(
+  const job = await queue.add(
     ACTIVITY_RESTORE_ANALYTICS_JOB_NAME,
     {
       type: "activity-restore-analytics-refresh",
@@ -634,12 +670,13 @@ export async function enqueueActivityRestoreAnalyticsRefresh(
       activityIds: uniqueActivityIds,
     },
     {
-      removeOnComplete: true,
+      removeOnComplete: { age: 604_800, count: 1_000 },
       removeOnFail: { age: 604_800, count: 100 },
       attempts: 5,
       backoff: { type: "fixed", delay: 30_000 },
     },
   );
+  return job.id ?? null;
 }
 
 export async function enqueueActivityRecomputeAnalyticsRefresh(
@@ -744,6 +781,13 @@ export async function enqueueDebouncedUserRefit(
 }
 
 /** Close all cached queues, flow producers, and the shared Redis connection. */
+/** Cancel read-only analytics waits before draining the workers awaiting them. */
+export async function closeAnalyticsRefreshWaiters(): Promise<void> {
+  analyticsRefreshWaitController.abort(
+    new Error("Analytics refresh wait cancelled because the worker is shutting down"),
+  );
+}
+
 export async function closeAllQueueResources(): Promise<void> {
   if (cachedActivityImageQueue) {
     await cachedActivityImageQueue.close();
@@ -756,6 +800,7 @@ export async function closeAllQueueResources(): Promise<void> {
   }
   cachedProviderQueues.clear();
 
+  if (cachedSyncQueue) closePromises.push(cachedSyncQueue.close());
   if (cachedPostSyncQueue) closePromises.push(cachedPostSyncQueue.close());
   if (cachedActivityDeleteAnalyticsQueue)
     closePromises.push(cachedActivityDeleteAnalyticsQueue.close());
@@ -766,8 +811,12 @@ export async function closeAllQueueResources(): Promise<void> {
   if (cachedFitFileImportQueue) closePromises.push(cachedFitFileImportQueue.close());
   if (cachedFitFileImportQueueEvents) closePromises.push(cachedFitFileImportQueueEvents.close());
   if (cachedFlowProducer) closePromises.push(cachedFlowProducer.close());
+  if (cachedAnalyticsRefreshQueue) closePromises.push(cachedAnalyticsRefreshQueue.close());
+  if (cachedAnalyticsRefreshQueueEvents)
+    closePromises.push(cachedAnalyticsRefreshQueueEvents.close());
 
   cachedPostSyncQueue = null;
+  cachedSyncQueue = null;
   cachedActivityDeleteAnalyticsQueue = null;
   cachedProviderDataDeletionQueue = null;
   cachedAccountErasureQueue = null;
@@ -776,8 +825,11 @@ export async function closeAllQueueResources(): Promise<void> {
   cachedFitFileImportQueue = null;
   cachedFitFileImportQueueEvents = null;
   cachedFlowProducer = null;
-
   await Promise.allSettled(closePromises);
+
+  cachedAnalyticsRefreshQueue = null;
+  cachedAnalyticsRefreshQueueEvents = null;
+  analyticsRefreshWaitController = new AbortController();
 
   if (sharedRedisConnection) {
     await sharedRedisConnection.close();

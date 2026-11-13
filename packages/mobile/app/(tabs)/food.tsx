@@ -149,36 +149,6 @@ export default function FoodScreen() {
           </>
         )}
 
-        {resolution &&
-          resolution.sourceProviders.length > 0 &&
-          resolution.status === "available" && (
-            <View
-              style={styles.sourceResolution}
-              accessible
-              accessibilityLabel={[
-                "Source coverage",
-                resolution.contributionLabel,
-                resolution.message,
-                resolution.excludedSourceLabels.length > 0
-                  ? `Excluded overlapping sources: ${resolution.excludedSourceLabels.join(", ")}`
-                  : null,
-              ]
-                .filter(Boolean)
-                .join(". ")}
-            >
-              <Text style={styles.sourceResolutionHeading}>Source coverage</Text>
-              {resolution.contributionLabel ? (
-                <Text style={styles.sourceResolutionTitle}>{resolution.contributionLabel}</Text>
-              ) : null}
-              <Text style={styles.sourceResolutionMessage}>{resolution.message}</Text>
-              {resolution.excludedSourceLabels.length > 0 ? (
-                <Text style={styles.sourceResolutionSources}>
-                  Excluded overlapping sources: {resolution.excludedSourceLabels.join(", ")}
-                </Text>
-              ) : null}
-            </View>
-          )}
-
         {resolution?.status === "source_conflict" && (
           <View
             style={styles.sourceConflict}
@@ -257,24 +227,6 @@ const styles = StyleSheet.create({
     borderColor: colors.accent,
   },
   sectionLinkText: { fontSize: 14, color: colors.accent, fontWeight: "600" },
-  sourceResolution: {
-    backgroundColor: colors.surface,
-    borderColor: colors.surfaceSecondary,
-    borderRadius: 12,
-    borderWidth: 1,
-    padding: 12,
-    gap: 4,
-  },
-  sourceResolutionHeading: {
-    color: colors.textTertiary,
-    fontSize: 11,
-    fontWeight: "600",
-    letterSpacing: 0.5,
-    textTransform: "uppercase",
-  },
-  sourceResolutionTitle: { color: colors.text, fontSize: 14, fontWeight: "600" },
-  sourceResolutionMessage: { color: colors.textSecondary, fontSize: 13 },
-  sourceResolutionSources: { color: colors.textTertiary, fontSize: 12 },
   sourceConflict: {
     borderRadius: 16,
     borderWidth: 1,

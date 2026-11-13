@@ -109,11 +109,32 @@ Dofek decodes FIT files with a separate C++ executable built from Garmin's offic
 [FIT C++ SDK](https://github.com/garmin/fit-cpp-sdk). The native project lives in
 [`native/fit-decoder`](../../native/fit-decoder/README.md) and uses CMake plus manifest-mode vcpkg.
 
+## Incomplete activity recovery
+
+Garmin documents [recovering complete messages from damaged activity files](https://developer.garmin.com/fit/articles/cookbook/isfit_checkintegrity_read.html).
+The decoder can recover a single-segment declared activity when at least one complete,
+timestamped record precedes a decoding failure. It keeps normal header and footer
+handling, so checksum bytes cannot become the tail of an incomplete record.
+Damaged chained inputs, weight files, unsupported files, unusable activities,
+and I/O or protocol failures remain errors. Intact chained files retain normal
+SDK decoding. The [native contract](../../native/fit-decoder/README.md#protocol)
+defines the required recovery metadata and unchanged streaming bounds.
+
+Recovery does not repair the archived original or establish that all source data
+is intact. The [importer](../jobs/process-fit-file-import-job.ts) stores the source
+failure in the nullable `activity.fit_recovery_error` metadata column and reports
+it as a handled warning. Ordinary provider-payload updates preserve that status.
+The [activity detail API](../../packages/server/src/models/activity.ts) exposes a
+plain warning when any active member source was recovered; both clients display
+that warning on activity details. A later intact import clears the marker.
+Imports still require a valid start time from a decoded session or provider
+summary; recovery does not invent a missing session.
+
 ## Data flow
 
-1. The native decoder validates the complete file in a metadata-only first pass. It reports the
-   FIT file type, first raw `file_id` (or `null`), and activity session without retaining record
-   messages.
+1. The native decoder reads the file in a metadata-only first pass. It reports the
+   FIT file type, first raw `file_id` (or `null`), activity session, and nullable
+   recovery error without retaining record messages.
 2. The Node adapter classifies the file as an activity or weight file and initializes the
    corresponding database writes.
 3. The decoder makes a second pass and emits newline-delimited JSON batches bounded to 250
@@ -142,8 +163,9 @@ Garmin distinguishes the file creator from device observations in its
 - `records.ts`: conversion from normalized FIT records to provider-agnostic metric rows.
 - `fixtures/`: non-user FIT fixtures used by native and TypeScript tests.
 
-The decoder has a 120-second idle timeout. A malformed file, invalid protocol message, oversized
-native message, or stalled child process fails the import instead of relaxing the memory bound.
+The decoder has a 120-second idle timeout. An unrecoverable malformed file, invalid protocol
+message, oversized native message, or stalled child process fails the import instead of relaxing
+the memory bound.
 Providers that download FIT files stage them in the shared job-files directory and wait on the
 same `fit-file-import` queue used by uploaded Garmin dumps. The import job owns decoding, activity
 replacement, retry classification, and cleanup of provider-staged files.

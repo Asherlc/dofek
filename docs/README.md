@@ -13,6 +13,9 @@ the exact section.
 
 ## Start Here
 
+- [pulsar-foundation-qualification.md](pulsar-foundation-qualification.md):
+  isolated Pulsar infrastructure, R2 payload correction and native storage tests;
+  production cutover remains separately gated.
 - [../README.md](../README.md): repository overview, local development, and the high-level architecture.
 - [development-environment.md](development-environment.md): reproducible local
   and cloud tools, Dev Containers, CodeGraph, RTK, and initialization commands.
@@ -40,16 +43,19 @@ the exact section.
 | [climbing-ascent-photo-retrieval.md](climbing-ascent-photo-retrieval.md) | Provider photo retrieval evidence and limits on ascent attribution. |
 | [schema.md](schema.md) | Database layout, raw-data-only rules, and view/dedup behavior. |
 | [climbing-context.md](climbing-context.md) | Canonical climbing graph, grade ownership, scoped attempts, execution facts and server projections. |
+| [cross-source-matching-evaluation.md](cross-source-matching-evaluation.md) | Fixture-backed matching cases, cross-domain research, and an evaluation procedure for source identity and ambiguity. |
 | [climbing-trait-coverage.md](climbing-trait-coverage.md) | Observed climbing source fields, verified Kaya metadata, intentional exclusions, and hold/angle interpretation. |
 | [climbing-log-model-cutover.md](climbing-log-model-cutover.md) | Tested preparation, bounded conversion, validation and finalization for populated upgrades. |
 | [altitude-provenance.md](altitude-provenance.md) | Provider-by-provider altitude source confidence and modeling implications. |
+| [cycling-power-algorithms-research.md](cycling-power-algorithms-research.md) | Exploratory eFTP calibration, competing power algorithms, and the proposed unified calculation owner. |
+| [cycling-power-cutover.md](cycling-power-cutover.md) | Computed-only cycling power ownership, maintenance migration, bounded replay and verification. |
 | [record-local-time.md](record-local-time.md) | Trusted per-record local clock context, provenance, and bounded historical activity backfill. |
 | [body-metrics-decision-context.md](body-metrics-decision-context.md) | Server-authored Trend Weight methodology, measurement provenance, and personalized variation context. |
 | [schema.dbml](schema.dbml) / [schema.puml](schema.puml) | Generated schema diagrams for quick visual orientation. |
 | [adding-a-provider.md](adding-a-provider.md) | Step-by-step provider implementation guide. |
 | [exercise-metadata.md](exercise-metadata.md) | Strength exercise metadata source, override format, and upstream refresh workflow. |
 | [chart-range-framework.md](chart-range-framework.md) | Backend framework for selected chart ranges, endpoint defaults, and All-history semantics. |
-| [data-exploration.md](data-exploration.md) | Research-backed chart choices, filter scope, comparisons, missingness and climbing navigation. |
+| [data-exploration.md](data-exploration.md) | Research-backed chart choices, filter scope, comparisons, missing data and climbing navigation. |
 | [daily-heart-rate.md](daily-heart-rate.md) | Daily Heart Rate navigation and local calendar-day semantics across web and mobile. |
 | [mcp.md](mcp.md) | Remote MCP endpoint setup, scopes, and tools. |
 | [file-upload-architecture.md](file-upload-architecture.md) | Durable browser import uploads, R2 object verification, transactional outbox delivery, and recovery. |
@@ -65,6 +71,9 @@ the exact section.
 
 | Provider | Doc | Focus |
 |----------|-----|-------|
+| Climbing boards and exports | [climbing-providers.md](climbing-providers.md) | Kilter/Aurora accounts, Crimpd/8a.nu/historical MoonBoard files, field limits, and remaining vendor access. |
+| Climbing logbook APIs | [climbing-logbook-api-research.md](climbing-logbook-api-research.md) | Authenticated Crimpd checks, Vertical-Life access requirements, and current MoonBoard API/device/export evidence. |
+| BoardSesh | [boardsesh.md](boardsesh.md) | App authentication, live GraphQL sync probes, deletion retention, and account-verification gaps. |
 | Amazfit/Zepp | [src/providers/README.md](../src/providers/README.md#amazfitzepp) | Current US2 credential flow, API hosts, and account limitations. |
 | WHOOP | [whoop.md](whoop.md) | Internal auth, strength data, and raw IMU capture. |
 | WHOOP BLE | [whoop-ble-protocol.md](whoop-ble-protocol.md) | BLE protocol, frames, CRCs, and packet formats. |
@@ -73,7 +82,7 @@ the exact section.
 | Mountain Project | [mountain-project.md](mountain-project.md) | Observed tick-export fields, standalone tick storage, and exact-day activity matching. |
 | OpenBeta | [openbeta.md](openbeta.md) | Public-profile GraphQL tick sync, shared definitions, GPS and standalone climbing logs. |
 | Kaya | [kaya.md](kaya.md) | Authenticated logbook sync, separate ascent grades, grip tags, categorical outdoor angles and source metadata coverage. |
-| theCrag | [thecrag.md](thecrag.md) | Public-profile tick sync, browser-free HTTP, additive climbing logs and feed limitations. |
+| theCrag | [thecrag.md](thecrag.md) | Official personal-key logbook sync, incremental updates, supporter requirements and private notes. |
 | BodySpec | [bodyspec.md](bodyspec.md) | OAuth setup and DEXA/body-composition sync. |
 | FatSecret | [fatsecret.md](fatsecret.md) | OAuth 1.0 flow and nutrition import details. |
 | Oura | [oura.md](oura.md) | Sleep, readiness, and recovery metrics. |
@@ -136,6 +145,12 @@ Cross-provider reverse-engineering references:
 These files explain why the current system exists but are not current
 instructions:
 
+- [algorithm-evidence-audit-2026-11-02.md](algorithm-evidence-audit-2026-11-02.md):
+  dated catalogue of algorithm implementations, primary sources, validation gaps,
+  and scientific naming mismatches; assessments refer to the recorded code snapshot.
+- [tss-evidence-review-2026-11-02.md](tss-evidence-review-2026-11-02.md):
+  primary studies of TSS, HR-based alternatives, adaptation and fatigue, including
+  formula mismatches and limits on recovery claims.
 - [alltrails.md](alltrails.md): investigation of the retired AllTrails provider,
   including its verification block and former implementation.
 - `superpowers/plans/` and `superpowers/specs/`: dated implementation plans and

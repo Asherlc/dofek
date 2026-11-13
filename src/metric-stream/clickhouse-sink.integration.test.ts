@@ -21,7 +21,16 @@ import {
   createMetricStreamEvent,
   type MetricStreamDeleteScopeInput,
   type MetricStreamRowInput,
+  metricStreamDeletedEventV3Schema,
+  metricStreamEventV2Schema,
 } from "./events.ts";
+import {
+  assertQueryFinishes,
+  createAcknowledgementDeleteFixture,
+  expectDeletionReceiptIds,
+  expectMetricStreamDeleteState,
+  profileDeletionAcknowledgements,
+} from "./test-helpers.ts";
 
 const testUserId = randomUUID();
 const testEventId = "5e6f7a8b-0c1d-4e2f-8a3b-4c5d6e7f8a90";
@@ -68,7 +77,14 @@ const zeppSamples = [
   ),
 );
 
-function createCurrentMetricStreamEvent(row: MetricStreamRowInput, revision = operationRevision) {
+function createCurrentMetricStreamEvent(
+  row: MetricStreamRowInput & { id?: string },
+  revision = operationRevision,
+) {
+  // Historical wire fixtures retain stored IDs, including moved-identity versions.
+  if (row.id !== undefined) {
+    return metricStreamEventV2Schema.parse({ ...row, version: 2, operationRevision: revision });
+  }
   return createMetricStreamEvent(row, revision);
 }
 
@@ -176,6 +192,61 @@ describe("metric stream ClickHouse sink (integration)", () => {
     expect(Number(rows[0]?.count)).toBe(1);
   });
 
+  it("retains distinct device timestamp identities while coalescing repeated timestamp identities", async () => {
+    const userId = randomUUID();
+    const reading = (deviceId: string, recordedAt: string, scalar: number) =>
+      createCurrentMetricStreamEvent({
+        userId,
+        providerId: "whoop_ble",
+        deviceId,
+        recordedAt,
+        externalId: `whoop_ble:${deviceId}:heart_rate:${recordedAt}`,
+        sourceType: "ble",
+        channel: "heart_rate",
+        scalar,
+      });
+    const sameTime = "2026-10-28T12:05:00.000Z";
+    const clamped = [reading("clamped", sameTime, 60), reading("clamped", sameTime, 61)];
+    const raw = [
+      reading("raw", "2026-10-28T12:00:00.000Z", 60),
+      reading("raw", "2026-10-28T12:00:01.000Z", 61),
+    ];
+    expect(clamped[0]?.id).toBe(clamped[1]?.id);
+    expect(raw[0]?.id).not.toBe(raw[1]?.id);
+    try {
+      await insertMetricStreamEventsIntoClickHouse(client, [...clamped, ...raw]);
+      const counts = await client.query({
+        query: `SELECT device_id, count() AS count FROM ${METRIC_STREAM_TABLE} FINAL
+          WHERE user_id = {userId:UUID} GROUP BY device_id ORDER BY device_id`,
+        query_params: { userId },
+        format: "JSONEachRow",
+      });
+      expect(
+        z
+          .array(z.object({ device_id: z.string(), count: z.coerce.number() }))
+          .parse(await counts.json()),
+      ).toEqual([
+        { device_id: "clamped", count: 1 },
+        { device_id: "raw", count: 2 },
+      ]);
+      const readings = await client.query({
+        query: `SELECT scalar FROM ${METRIC_STREAM_TABLE} FINAL
+          WHERE user_id = {userId:UUID} AND device_id = 'raw' ORDER BY recorded_at`,
+        query_params: { userId },
+        format: "JSONEachRow",
+      });
+      expect(z.array(z.object({ scalar: z.number() })).parse(await readings.json())).toEqual([
+        { scalar: 60 },
+        { scalar: 61 },
+      ]);
+    } finally {
+      await client.command({
+        query: `ALTER TABLE ${METRIC_STREAM_TABLE} DELETE WHERE user_id = {userId:UUID} SETTINGS mutations_sync = 1`,
+        query_params: { userId },
+      });
+    }
+  });
+
   it("tombstones the latest provider-scoped metric version", async () => {
     const event = createCurrentMetricStreamEvent({
       id: testEventId,
@@ -207,7 +278,9 @@ describe("metric stream ClickHouse sink (integration)", () => {
     expect(row).toEqual({ is_deleted: 1, latest_version: 2_000_000_000_000_002 });
   });
 
-  it("preserves the latest row when only an older version matches the delete scope", async () => {
+  it("preserves the latest activity when only an older version matches the delete scope", async () => {
+    const oldActivityId = randomUUID();
+    const newActivityId = randomUUID();
     await client.command({
       query: `ALTER TABLE ${METRIC_STREAM_TABLE}
         DELETE WHERE id = {id:UUID}
@@ -220,12 +293,13 @@ describe("metric stream ClickHouse sink (integration)", () => {
       recordedAt: "2026-06-08T14:36:12.000Z",
       userId: testUserId,
       providerId: "withings",
+      activityId: oldActivityId,
       externalId: "integration-latest-scope",
       sourceType: "api",
       channel: "body_weight",
       scalar: 84.862,
     });
-    const latestEvent = { ...matchingEvent, providerId: "garmin" };
+    const latestEvent = { ...matchingEvent, activityId: newActivityId };
     try {
       const matchingRow = {
         ...mapMetricStreamEventToClickHouseRow(matchingEvent),
@@ -251,10 +325,10 @@ describe("metric stream ClickHouse sink (integration)", () => {
       });
 
       const historyResult = await client.query<{
-        provider_id: string;
+        activity_id: string;
         version: string;
       }>({
-        query: `SELECT provider_id, version
+        query: `SELECT activity_id, version
           FROM ${METRIC_STREAM_TABLE}
           WHERE id = {id:UUID}
           ORDER BY version`,
@@ -262,23 +336,32 @@ describe("metric stream ClickHouse sink (integration)", () => {
         format: "JSONEachRow",
       });
       expect(await historyResult.json()).toEqual([
-        { provider_id: "withings", version: 1 },
-        { provider_id: "garmin", version: 2 },
+        { activity_id: oldActivityId, version: 1 },
+        { activity_id: newActivityId, version: 2 },
       ]);
 
       await markMetricStreamScopeDeletedInClickHouse(client, {
         userId: testUserId,
-        providerId: "withings",
+        activityId: oldActivityId,
       });
 
-      const result = await client.query<{ is_deleted: number; provider_id: string }>({
-        query: `SELECT provider_id, is_deleted
-          FROM ${METRIC_STREAM_TABLE} FINAL
+      const result = await client.query({
+        query: `SELECT argMax(tuple(activity_id), tuple(version, ingested_at)).1 AS activity_id,
+            countIf(is_deleted = 1) AS deleted_versions
+          FROM ${METRIC_STREAM_TABLE}
           WHERE id = {id:UUID}`,
         query_params: { id: latestScopeTestEventId },
         format: "JSONEachRow",
       });
-      expect(await result.json()).toEqual([{ provider_id: "garmin", is_deleted: 0 }]);
+      const rows = z
+        .array(
+          z.object({
+            activity_id: z.string(),
+            deleted_versions: z.coerce.number(),
+          }),
+        )
+        .parse(await result.json());
+      expect(rows).toEqual([{ activity_id: newActivityId, deleted_versions: 0 }]);
     } finally {
       await client.command({ query: `SYSTEM START MERGES ${METRIC_STREAM_TABLE}` });
     }
@@ -438,7 +521,7 @@ describe("metric stream ClickHouse sink (integration)", () => {
       externalId: "integration-cross-route-replacement",
       sourceType: "api",
       channel: "heart_rate",
-    } satisfies Omit<MetricStreamRowInput, "scalar">;
+    } satisfies Omit<MetricStreamRowInput, "scalar"> & { id: string };
     const scope = {
       userId: row.userId,
       providerId: row.providerId,
@@ -670,9 +753,10 @@ describe("metric stream ClickHouse sink (integration)", () => {
     }
   });
 
-  it("applies a long delete run within HTTP limits before its replacement rows", async () => {
+  it("applies deletion chunks within HTTP limits before their replacement rows", async () => {
     const ids = longDeleteTestEventIds;
-    const scopeIndexes = [0, 100, 349];
+    const deleteCount = 101; // Cross the 100-scope write boundary once.
+    const scopeIndexes = [0, 99, 100];
     const rows = ids.map((id, index) =>
       createCurrentMetricStreamEvent({
         id,
@@ -687,7 +771,7 @@ describe("metric stream ClickHouse sink (integration)", () => {
     );
     await insertMetricStreamEventsIntoClickHouse(client, rows);
     const revision = "1000000000000003";
-    const deletes = Array.from({ length: 350 }, (_, index) =>
+    const deletes = Array.from({ length: deleteCount }, (_, index) =>
       createCurrentMetricStreamDeletedEvent(
         {
           userId: testUserId,
@@ -703,7 +787,7 @@ describe("metric stream ClickHouse sink (integration)", () => {
         recordedAt: "2026-06-10T14:36:12.000Z",
         userId: testUserId,
         providerId: "bounded-delete-test",
-        externalId: "bounded-delete-349",
+        externalId: "bounded-delete-100",
         sourceType: "file",
         channel: "heart_rate",
         scalar: 99,
@@ -728,8 +812,8 @@ describe("metric stream ClickHouse sink (integration)", () => {
     );
     expect(rowsSchema.parse(await result.json())).toEqual([
       { external_id: "bounded-delete-0", is_deleted: 1, scalar: 94 },
-      { external_id: "bounded-delete-100", is_deleted: 1, scalar: 94 },
-      { external_id: "bounded-delete-349", is_deleted: 0, scalar: 99 },
+      { external_id: "bounded-delete-100", is_deleted: 0, scalar: 99 },
+      { external_id: "bounded-delete-99", is_deleted: 1, scalar: 94 },
     ]);
     const acknowledgements = await client.query({
       query: `SELECT count() AS count FROM ${METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE} FINAL
@@ -738,7 +822,7 @@ describe("metric stream ClickHouse sink (integration)", () => {
       format: "JSONEachRow",
     });
     const countSchema = z.array(z.object({ count: z.coerce.number() }));
-    expect(countSchema.parse(await acknowledgements.json())).toEqual([{ count: 350 }]);
+    expect(countSchema.parse(await acknowledgements.json())).toEqual([{ count: deleteCount }]);
   });
 
   it("matches nullable and bounded scopes precisely without deleting equal-revision replacements", async () => {
@@ -814,4 +898,94 @@ describe("metric stream ClickHouse sink (integration)", () => {
     });
     expect(Number((await result.json())[0]?.acknowledgement_count)).toBe(1);
   });
+
+  it.each([
+    { label: "unacknowledged", acknowledgedIndexes: [], expectedReceiptWrites: 2 },
+    { label: "partially acknowledged", acknowledgedIndexes: [0, 2], expectedReceiptWrites: 1 },
+    {
+      label: "fully acknowledged",
+      acknowledgedIndexes: Array.from({ length: 101 }, (_, index) => index),
+      expectedReceiptWrites: 0,
+    },
+  ])(
+    "profiles 101 $label adjacent same-revision deletes",
+    async ({ acknowledgedIndexes, expectedReceiptWrites }) => {
+      const userId = randomUUID();
+      const providerId = `ack-batch-${userId}`;
+      const { deletedRows, unaffectedRows, events } = createAcknowledgementDeleteFixture(
+        userId,
+        providerId,
+      );
+      const profiling = profileDeletionAcknowledgements(client);
+      const expectedAcknowledgedIds = events
+        .filter((_, index) => acknowledgedIndexes.includes(index))
+        .map(({ eventId }) => eventId);
+      const expectedDeletedRowIds = deletedRows.map(({ id }) => id);
+
+      try {
+        await client.insert({
+          table: METRIC_STREAM_TABLE,
+          values: [...deletedRows, ...unaffectedRows].map(mapMetricStreamEventToClickHouseRow),
+          format: "JSONEachRow",
+          clickhouse_settings: { date_time_input_format: "best_effort" },
+        });
+        if (expectedAcknowledgedIds.length > 0) {
+          await applyMetricStreamEventsToClickHouse(
+            client,
+            events.filter((_, index) => acknowledgedIndexes.includes(index)),
+          );
+        }
+
+        await applyMetricStreamEventsToClickHouse(profiling.client, events);
+
+        await expectMetricStreamDeleteState(
+          client,
+          [...deletedRows, ...unaffectedRows].map(({ id }) => id),
+          expectedDeletedRowIds,
+        );
+
+        const queryIds = [...profiling.readQueryIds, ...profiling.writeQueryIds];
+        await assertQueryFinishes(client, queryIds);
+        expect({
+          acknowledgementReads: profiling.readQueryIds.length,
+          acknowledgementWrites: profiling.writeQueryIds.length,
+        }).toEqual({ acknowledgementReads: 2, acknowledgementWrites: expectedReceiptWrites });
+        await expectDeletionReceiptIds(
+          client,
+          events.map(({ eventId }) => eventId),
+          events.map(({ eventId }) => eventId),
+        );
+
+        if (expectedAcknowledgedIds.length === events.length) {
+          const event = events[0];
+          if (!event) throw new Error("expected a deletion event for uppercase replay");
+          const uppercaseReplay = metricStreamDeletedEventV3Schema.parse({
+            ...event,
+            eventId: event.eventId.toUpperCase(),
+          });
+          await applyMetricStreamEventsToClickHouse(profiling.client, [uppercaseReplay]);
+          expect(profiling.writeQueryIds).toHaveLength(0);
+          const replayQueryId = profiling.readQueryIds.at(-1);
+          if (!replayQueryId) throw new Error("expected a native query ID for uppercase replay");
+          await assertQueryFinishes(client, [replayQueryId]);
+        }
+      } finally {
+        await client.command({
+          query: `ALTER TABLE ${METRIC_STREAM_DELETE_SCOPE_TABLE}
+          DELETE WHERE user_id = {userId:UUID} SETTINGS mutations_sync = 1`,
+          query_params: { userId },
+        });
+        await client.command({
+          query: `ALTER TABLE ${METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE}
+          DELETE WHERE event_id IN {eventIds:Array(UUID)} SETTINGS mutations_sync = 1`,
+          query_params: { eventIds: events.map((event) => event.eventId) },
+        });
+        await client.command({
+          query: `ALTER TABLE ${METRIC_STREAM_TABLE}
+          DELETE WHERE id IN {ids:Array(UUID)} SETTINGS mutations_sync = 1`,
+          query_params: { ids: [...deletedRows, ...unaffectedRows].map((row) => row.id) },
+        });
+      }
+    },
+  );
 });

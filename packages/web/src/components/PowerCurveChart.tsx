@@ -1,5 +1,4 @@
-import { POWER_UNIT_LABEL, WORK_UNIT_LABEL } from "@dofek/format/units";
-import { TRAINING_TERMINOLOGY } from "@dofek/training/terminology";
+import { POWER_UNIT_LABEL } from "@dofek/format/units";
 import type { TrainingChartAvailability } from "dofek-server/types";
 import {
   chartColors,
@@ -12,7 +11,6 @@ import {
   escapeTooltipHtml,
 } from "../lib/chartTheme.ts";
 import { DofekChart } from "./DofekChart.tsx";
-import { MethodExplanation } from "./MethodExplanation.tsx";
 import { TrainingChartEmptyState } from "./TrainingChartEmptyState.tsx";
 
 interface PowerCurvePoint {
@@ -136,25 +134,12 @@ export function PowerCurveChart({
   };
 
   return (
-    <div>
-      <DofekChart
-        option={option}
-        loading={loading}
-        empty={data.length === 0}
-        height={280}
-        emptyMessage="No power data"
-      />
-      {modelCurveData.length > 0 && model ? (
-        <MethodExplanation
-          className="mt-2"
-          technicalName={`${TRAINING_TERMINOLOGY.criticalPower.technicalName} + ${TRAINING_TERMINOLOGY.anaerobicWorkCapacity.technicalName}`}
-          lines={[
-            TRAINING_TERMINOLOGY.criticalPower.details,
-            TRAINING_TERMINOLOGY.anaerobicWorkCapacity.details,
-            `Current fit: ${model.cp}${POWER_UNIT_LABEL} sustainable cycling power and ${Math.round(model.wPrime / 1000)}${WORK_UNIT_LABEL} short-burst power reserve.`,
-          ]}
-        />
-      ) : null}
-    </div>
+    <DofekChart
+      option={option}
+      loading={loading}
+      empty={data.length === 0}
+      height={280}
+      emptyMessage="No power data"
+    />
   );
 }

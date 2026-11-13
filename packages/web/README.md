@@ -2,6 +2,13 @@
 
 The web dashboard for Dofek. A modern React SPA built with Vite, TypeScript, and Tailwind CSS.
 
+The [dashboard](src/pages/Dashboard.tsx) presents processing status, recorded
+health measurements, personal-baseline comparisons, and insights. The
+[Recovery view](src/routes/training/recovery.tsx) retains HRV and sleep analytics;
+custom recovery, 0–21 strain, and sleep-performance scores and their daily
+recommendations have been retired as described in the
+[removal scope](../../docs/superpowers/specs/2026-11-03-remove-daily-scores-design.md).
+
 ## Architecture
 
 - **React + TypeScript**: Functional components with hooks.
@@ -18,10 +25,11 @@ The web dashboard for Dofek. A modern React SPA built with Vite, TypeScript, and
 - **Nutrition history**: The Nutrition page renders read-only nutrition history, totals, source resolution, and analytics.
 - **Unit System**: A global `UnitProvider` handles conversion between metric and imperial units across the application.
 - **Charts**: Custom visualization components (e.g., `TimeSeriesChart`, `PmcChart`, `Hypnogram`) built on top of ECharts and `react-native-svg` (shared patterns).
+- **Route comparison**: The hiking page's [route picker](src/components/ActivityComparisonChart.tsx) shows one GPS-matched route at a time, with dated pace dots and faster pace higher on the axis. Route choices include distance, the server's attempt count, and dates to distinguish repeated generic names. The attempts disclosure includes start times, exact formatted metrics, unavailable values, and activity links. Route IDs, timestamps, counts, and nullable pace come from the [shared server-computed contract](../training/src/route-comparison.ts); the chart uses an ECharts [time axis](https://echarts.apache.org/handbook/en/concepts/axis/).
 - **Resting heart rate trend**: The dashboard renders the server's trailing seven-calendar-day average as a line without visible point markers. The card and hover labels identify the average; daily readings remain on the heart-rate detail page. See [`Dashboard`](src/pages/Dashboard.tsx) and the [server window calculation](../server/src/repositories/daily-metrics-repository.ts).
-- **Climbing progression**: Grade-colored stacked bars show sends per recorded climbing day in separate kind, scope, rope-method, solo, aid, and grade-system lanes. Charts display bouldering and routes with recorded rope methods, each with recorded aid status; ordinary climbs use their style name and aided climbs retain an "Aid" qualifier. Patterns distinguish indoor, outdoor, and unknown settings. The server supplies counts and chart values; [shared chart selection and labels](../training/src/climbing-progression.ts) keep both clients consistent. See [`ClimbingGradeProgressionChart`](src/components/ClimbingGradeProgressionChart.tsx).
-- **Climbing strengths**: The climbing page shows a compact type/setting summary and one Filters popover above all charts. Every filter uses independent checkboxes; each All checkbox selects or clears its group and exposes a mixed state for a partial selection, following the [WAI checkbox pattern](https://www.w3.org/WAI/ARIA/apg/patterns/checkbox/). Type includes Bouldering, Lead, Top rope, Follow, and Unroped; overlapping kind/method selectors and the broader Discipline selector are omitted. Attempt scope, Solo status, Protection used, and Route protection stay under More filters with the same checkboxes. Choices match any selected value within a group and intersect across groups, as implemented by the [shared server projection](../server/src/repositories/climbing-rock-observations.ts). Whole climb remains the default scope; selecting both scopes explicitly includes pitch observations. Its [strengths section](src/components/ClimbingStrengths.tsx) has one fixed visualization per tab: Styles uses a grade-adjusted radar, Grades uses the grade/style heatmap, and Progress uses one monthly send-rate chart. Wall angle and Hold type apply to every tab; there is no grade picker or format menu. The strengths views combine the types selected in Filters into one chart per tab; the server retains type-specific grade baselines and qualifies grade labels when multiple contexts are selected. The radar compares observed sends with expected sends from the same-grade baseline, computed by the [server](../server/src/services/climbing-strength-profile.ts). Zero on the radar is the usual same-grade result; outside the dashed baseline is stronger and inside weaker. Progress explicitly combines grades, so its changes can reflect difficulty mix. Point and exact-value selection retain source-climb details; climbing contexts, zeros, missing data and unknown results stay distinct. Values come from the [shared server-computed contract](../training/src/climbing-strengths.ts). See the [data exploration guidance](../../docs/data-exploration.md) for the research and interaction rules, including [ONS guidance](https://service-manual.ons.gov.uk/data-visualisation/guidance/interactive-charts-and-animations).
-- **Climbing locations**: The training page renders server-sized circles that split into smaller groups and individual climb locations as the map zooms in. Selecting a location lists its recorded climbs, source-location scope, and attached activities. The [shared response contract](../training/src/climbing-location-map.ts) supplies the zoom bands, counts, and radii; [ClimbingLocationMap](src/components/ClimbingLocationMap.tsx) renders them with [Leaflet circle markers](https://leafletjs.com/reference.html#circlemarker).
+- **Climbing strengths**: The climbing page shows a compact type/setting summary and one Filters popover above all charts. Every filter uses independent checkboxes; each All checkbox selects or clears its group and exposes a mixed state for a partial selection, following the [WAI checkbox pattern](https://www.w3.org/WAI/ARIA/apg/patterns/checkbox/). Type includes Bouldering, Lead, Top rope, Follow, and Unroped; overlapping kind/method selectors and the broader Discipline selector are omitted. Attempt scope, Solo status, Protection used, and Route protection stay under More filters with the same checkboxes. Choices match any selected value within a group and intersect across groups, as implemented by the [shared server projection](../server/src/repositories/climbing-rock-observations.ts). Whole climb remains the default scope; selecting both scopes explicitly includes pitch observations. Its [strengths section](src/components/ClimbingStrengths.tsx) offers Styles with a grade-adjusted radar and Progress with a monthly send-rate chart. Wall angle, Hold type, and observed source tag categories apply to every tab; there is no grade picker or format menu. The existing page filters define one selected view; the [server aggregation](../server/src/services/climbing-strengths.ts) supplies one panel per breakdown dimension. The radar compares observed sends with expected sends from context-specific same-grade baselines, computed by the [server](../server/src/services/climbing-strength-profile.ts). Zero on the radar is the usual same-grade result; outside the dashed baseline is stronger and inside weaker. Progress explicitly combines grades, so its changes can reflect difficulty mix. Point and exact-value selection retain source-climb details; climbing contexts, zeros, missing data and unknown results stay distinct. Values come from the [shared server-computed contract](../training/src/climbing-strengths.ts). See the [data exploration guidance](../../docs/data-exploration.md) for the research and interaction rules, including [ONS guidance](https://service-manual.ons.gov.uk/data-visualisation/guidance/interactive-charts-and-animations).
+- **Climbing progression**: One grade-colored stack per period combines all types and settings selected in the page filters. The [server projection](../server/src/repositories/climbing-grade-progression.ts) counts distinct recorded climbing dates across that selection before calculating sends per day, so a mixed climbing day counts once. Grades follow the [saved display preferences](../server/src/repositories/climbing-repository.ts); the [shared contract and labels](../training/src/climbing-progression.ts) keep boulder, route, and retained source scales distinct and qualify label collisions. Both clients render the supplied totals and rates; the [web chart](src/components/ClimbingGradeProgressionChart.tsx) stacks the segment rates in ECharts, while the [mobile chart](../mobile/components/ClimbingGradeProgressionChart.tsx) positions segments using the server's stack bounds. The current web page calls `climbing.gradeProgressionV2`; the [router](../server/src/routers/climbing.ts) preserves the complete V1 lane-array response on `climbing.gradeProgression` for older clients.
+- **Climbing locations**: The training page renders server-sized circles that split into smaller groups and individual climb locations as the map zooms in. Selecting a location lists its recorded climbs, source-location scope, and attached activities. The [shared response contract](../training/src/climbing-location-map.ts) supplies the zoom bands, counts, and radii; [ClimbingLocationMap](src/components/ClimbingLocationMap.tsx) renders them with [MapLibre markers](https://maplibre.org/maplibre-gl-js/docs/API/classes/Marker/).
   Unattached logs offer **Attach to activity**, which opens the
   [activity picker](src/components/ClimbingLogAttachment.tsx) for that log's
   date. It lists eligible same-day activities with source and local start
@@ -32,6 +40,12 @@ The web dashboard for Dofek. A modern React SPA built with Vite, TypeScript, and
   [WAI modal-dialog pattern](https://www.w3.org/WAI/ARIA/apg/patterns/dialog-modal/).
 - **Error Boundaries**: Granular error handling using `QueryErrorBoundary` and a top-level `ErrorBoundary` in `App.tsx`.
 
+
+Recorded climbing tags retain source/category attribution in the strengths
+breakdown and grouped climb details through the
+[shared presentation helpers](../training/src/climbing-tag-presentation.ts).
+Catalogue tags stay inside their reference disclosure and do not affect
+strengths; see the [source coverage contract](../../docs/climbing-trait-coverage.md).
 
 ## Offline behavior
 
@@ -55,12 +69,28 @@ Activity details show attached climbing logs and same-day attachment suggestions
 for climbing activities. Cards group under Area headings and show the
 published display grade, concise attempt counts, pitch labels, and server-derived
 rock labels through the [shared grouping helper](../training/src/climbing-log-groups.ts)
-and [card](src/pages/activity-detail/components/ClimbingLogEntryCard.tsx).
-Areas flow as blocks, with singleton areas sharing a row and larger areas
-wrapping their cards internally. The
-[breakdown](src/pages/activity-detail/components/ClimbingLogEntryBreakdown.tsx)
-uses [ResizeObserver](https://www.w3.org/TR/resize-observer/) to keep each block's
-column span within the available grid and preserve consistent card widths.
+and [card](src/pages/activity-detail/components/ClimbingLogEntryCard.tsx). Each
+Area heading renders the complete recorded root-to-leaf lineage, emphasizing the
+final area, and keeps long paths on one focusable line with
+[CSS horizontal overflow](https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/overflow-x).
+The activity panel and breakdown use named, focusable scroll sections, following
+[MDN's keyboard-scrolling guidance](https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/overflow#accessibility).
+Those two files have an approved exception for Biome's
+[`noNoninteractiveTabindex`](https://biomejs.dev/linter/rules/no-noninteractive-tabindex/javascript/)
+rule; all other rules remain enabled.
+The activity [climbing panel](src/pages/activity-detail/components/ActivityClimbingPanel.tsx)
+uses a single-column list grouped by Area beside its shared map; other log
+collections retain the responsive [breakdown](src/pages/activity-detail/components/ClimbingLogEntryBreakdown.tsx).
+Hovering or keyboard focusing a climb also emphasizes its existing HR chart
+line or time range, preserving the current zoom. The
+[metrics chart](src/pages/activity-detail/components/ActivityDetailCharts.tsx)
+matches the server-supplied annotation ID. Selecting a chart line, time range,
+or exact-value climb selects that occurrence in the list and scrolls only the
+list to reveal it. Selections expand the chart's zoom only when the selected
+climb is outside the visible window. The chart merges updates and disables marker
+animation to retain existing elements, following the ECharts
+[data update guidance](https://echarts.apache.org/handbook/en/how-to/animation/transition/).
+Climbs without recorded timing do not acquire an inferred position.
 The provider data viewer's
 [record details](src/components/ClimbingLogEntryDetails.tsx) show source links,
 published and reported grade collections, known attempt facts, and notes.
@@ -69,9 +99,6 @@ viewer. Missing totals retain one recorded occurrence. Provider
 records fetch the selected log's complete graph and retain cached rows during
 refresh errors. See the [canonical response contract](../server/src/contracts/climbing-log-contracts.ts).
 
-
-The recent climbing activity table omits distance and keeps its climbing metrics,
-as configured by the [climbing page](src/routes/training/climbing.tsx).
 
 Activity-list cards use the stored cycling modality to show training stats instead
 of distance and elevation for indoor and virtual rides, including reported zeros.
@@ -112,36 +139,30 @@ pending map, and ready maps remain visible during background refreshes. The shar
 [route map](src/components/ActivityRouteMap.tsx), and training
 [location map](src/components/ClimbingLocationMap.tsx) expose the status to assistive
 technology using the [WAI status-message pattern](https://www.w3.org/WAI/WCAG22/Techniques/aria/ARIA22.html).
-Interactive-map initialization waits for Leaflet's initial tile
-[`load` event](https://leafletjs.com/reference.html#gridlayer-load); tile errors
-retain their connection message and usable route/source points.
+Interactive maps and thumbnail snapshots use the [shared light/dark style](../training/src/map-style.ts)
+with [OpenFreeMap vector tiles](https://openfreemap.org/quick_start/). Interactive maps wait for
+MapLibre's [load event](https://maplibre.org/maplibre-gl-js/docs/API/classes/Map/#load);
+resource errors retain their connection message and usable route/source points.
+Thumbnails render near the viewport through one snapshot queue, capture the map on
+[idle](https://maplibre.org/maplibre-gl-js/docs/API/classes/Map/#idle), and release the WebGL
+context. Their server-authored center/zoom and SVG overlays share an aspect-preserved frame.
 
-Activity-detail climbing logs and attachment suggestions share the
-[canonical log-card grid](src/pages/activity-detail/components/ClimbingLogEntryBreakdown.tsx).
-Their component inputs accept source locations keyed by entry ID; the
-[shared location types](../training/src/climbing-map.ts) retain coordinates,
-the owning Climb or Area, and provider attribution.
-[ActivityRouteMap](src/components/ActivityRouteMap.tsx) renders source dots
-independently of recorded GPS tracks and loads compact tick maps as they
-approach the viewport. A unique point opens its climbing log details immediately;
-coincident locations show a counted marker. Its tooltip lists every climb name and
-source-location label. Selecting that marker offers each log by climb name, including repeated names,
-without an entry-number heading. The [shared marker grouping](../training/src/climbing-map.ts)
-preserves source coordinates and log identities; the web count uses a
-[Leaflet DivIcon](https://leafletjs.com/reference.html#divicon).
-Selection opens the exact log's
-[record dialog](src/pages/RecordDetailModal.tsx) and highlights its
-[climbing card](src/pages/activity-detail/components/ClimbingLogEntryCard.tsx),
-including repeated names at the same point. Closing the dialog returns keyboard
-focus to its triggering map point or occurrence button; the [activity tests](src/pages/ActivityDetailPage.test.tsx)
-cover closing and reopening the same occurrence.
-The activity screen supplies each log's server-projected location to the
-overview and compact maps, including when no recorded GPS route exists.
-The [server projection](../server/src/repositories/climbing-activity-log-entry-repository.ts)
-uses a source Climb point or its nearest containing Area with coordinates;
-labels identify the owning source and distinguish Area from Climb locations.
-Unattached suggestions show their own compact source-location maps. The
-colocated map and climbing-log Storybook stories exercise these component inputs.
+Activity-detail climbing logs and same-day attachment suggestions share
+[ActivityClimbingPanel](src/pages/activity-detail/components/ActivityClimbingPanel.tsx):
+a grouped list on the left of one interactive map in wide containers, and the
+map above the list on narrow screens. Row hover/focus highlights its point;
+selecting either a row or marker selects the same occurrence. Numbered list rows
+keep repeated names at coincident coordinates individually selectable using
+[MapLibre HTML markers](https://maplibre.org/maplibre-gl-js/docs/API/classes/Marker/)
+and the [shared grouping model](../training/src/climbing-map.ts).
+Area locations are explicitly approximate and retain their provider attribution.
+Missing GPS retains the row and its Log details control. Log details opens the existing
+[record dialog](src/pages/RecordDetailModal.tsx); closing restores focus to that
+control. Source links, status labels, photos and independent Attach states remain
+available. The [activity tests](src/pages/ActivityDetailPage.test.tsx) cover route
+refresh states, attachment actions and source details. The full
+[layout story](src/pages/activity-detail/components/ActivityClimbingPanel.stories.tsx)
+exercises hover, focus, selection and repeated coordinate selection on a real map.
 
 ```bash
 cd packages/web && pnpm dev      # Start Vite dev server (proxies /api to server)
@@ -150,16 +171,17 @@ cd packages/web && pnpm storybook # Start Storybook
 pnpm test                        # Run repo-wide Vitest suites from the repo root
 ```
 
-Activity cards lead with the shared rounded-outline activity icon. A source row
-below the content and map expands inside the same card to show propagation
-branches. The row shows the recording source once and serves as the root when
-expanded. Separate copies from the same provider remain distinct, while
+Activity cards lead with the shared rounded-outline activity icon. A Lineage control
+below the content and map opens an anchored flyout to show explicitly
+labeled Original and Shared to branches. Separate copies from the same provider remain distinct, while
 unconnected records appear as other matching sources. Dofek remains implicit.
 See [ActivityCardContent](src/components/ActivityCardContent.tsx) and
 [ActivitySourceDisclosure](src/components/ActivitySourceDisclosure.tsx).
 
-The [activity detail header](src/pages/ActivityDetailPage.tsx) uses the same
-disclosure in place of flat source links. Its required `sourceTree` comes from
+The [activity detail header](src/pages/ActivityDetailPage.tsx) places Lineage
+beside the title and opens its tree in an anchored flyout. It reuses
+[Radix Popover](https://www.radix-ui.com/primitives/docs/components/popover)
+for positioning, outside-click dismissal, Escape, and focus restoration. Its required `sourceTree` comes from
 the [detail model](../server/src/models/activity.ts); removed records retain
 their removal information without an actionable source URL. Empty trees omit
 the source row, while unresolved trees with matching records remain expandable.
@@ -168,9 +190,9 @@ Both clients render the [shared source-tree contract](../providers-meta/src/acti
 from the [server projection](../server/src/models/activity-source-tree.ts).
 Retained origin evidence establishes links between source records; membership
 and metric priorities do not. Recording-app/device metadata can identify an
-earlier source without claiming its record is available. The inline button
-follows the [WAI disclosure pattern](https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/)
-and stays independent of activity navigation and selection.
+earlier source without claiming its record is available. The card button reuses
+the same [Radix Popover](https://www.radix-ui.com/primitives/docs/components/popover)
+as the detail header and stays independent of activity navigation and selection.
 
 ## Activity metric sources
 
@@ -203,9 +225,11 @@ the cadence-based gap rule used by both clients. This follows the distinction
 between [differing reporting intervals and missing observations](https://www.datawrapper.de/academy/patchy-data).
 The `IndependentMetricTimelines` and `SparseReadings` stories show both cases.
 
-Activity details use one Sources disclosure for the device/provider inheritance
-tree and reported hardware facts. Device facts attach to their device node by
-activity ID; reported hardware appears beneath the provider that reports it.
-Metadata without a matching source record retains a provider branch. The [source disclosure](src/components/ActivitySourceDisclosure.tsx)
-keeps query errors and retry actions visible while collapsed and follows the
+Activity details use one [Lineage disclosure](src/components/ActivitySourceDisclosure.tsx)
+with an explicit Original heading, labeled Shared to branches, and, when an Original is known, one divider
+and Other heading for additional recordings. Unresolved origins show Original
+unknown above the available recordings. The [shared projection](../providers-meta/src/activity-source-hardware.ts)
+uses reported recording hardware to name entries without turning device inventory
+into sharing steps. Metadata rows are omitted. Errors and retry actions remain
+visible while collapsed, following the
 [WAI disclosure pattern](https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/).

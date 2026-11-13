@@ -11,6 +11,9 @@ permissions:
   contents: read
   id-token: write
 
+env:
+  RCT_REACT_NATIVE_MAVEN_MIRROR_ENABLED: "false"
+
 jobs:
   build-metro-bundle:
     name: Metro Bundle
@@ -26,6 +29,7 @@ jobs:
       - uses: ./.github/actions/load-infisical-secrets
         with:
           keys: |
+            EXPO_APP_ID
             EXPO_PUBLIC_SENTRY_DSN
             EXPO_PUBLIC_OTEL_ENDPOINT
             EXPO_PUBLIC_OTEL_HEADERS
@@ -60,6 +64,7 @@ jobs:
       - uses: ./.github/actions/load-infisical-secrets
         with:
           keys: |
+            EXPO_APP_ID
             EXPO_PUBLIC_SENTRY_DSN
             EXPO_PUBLIC_OTEL_ENDPOINT
             EXPO_PUBLIC_OTEL_HEADERS
@@ -73,13 +78,13 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: packages/mobile/ios/Pods
-          key: pods-v10-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.ts', 'pnpm-lock.yaml') }}
+          key: pods-v10-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.js', 'pnpm-lock.yaml') }}
           restore-keys: pods-v10-
       - name: Cache DerivedData
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.DERIVED_DATA_PATH }}
-          key: deriveddata-v2-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.ts', 'pnpm-lock.yaml', 'packages/mobile/modules/*/ios/**/*.swift', 'packages/mobile/modules/*/ios/**/*.m', 'packages/mobile/modules/*/ios/**/*.h') }}
+          key: deriveddata-v2-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.js', 'pnpm-lock.yaml', 'packages/mobile/modules/*/ios/**/*.swift', 'packages/mobile/modules/*/ios/**/*.m', 'packages/mobile/modules/*/ios/**/*.h') }}
           restore-keys: deriveddata-v2-
       - name: Install CocoaPods dependencies
         run: cd packages/mobile/ios && pod install
@@ -122,6 +127,20 @@ jobs:
             CLANG_ENABLE_EXPLICIT_MODULES_WITH_COMPILER_LAUNCHER=YES \
             2>&1 | tee "$RUNNER_TEMP/ios-archive.log"
         timeout-minutes: 25
+      - name: Test WHOOP Expo bridge in Simulator
+        id: bridge-tests
+        run: |
+          set -o pipefail
+          pnpm --filter dofek-mobile test:ios:bridge 2>&1 | tee "$RUNNER_TEMP/ios-bridge-test.log"
+      - name: Upload bridge test diagnostics
+        if: failure() && steps.bridge-tests.outcome == 'failure'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ios-bridge-test-diagnostics
+          path: |
+            ${{ runner.temp }}/ios-bridge-test.log
+            packages/mobile/ios/build/bridge-tests/Logs/Test/*.xcresult
+          retention-days: 7
       - name: Record native build resources
         if: always()
         run: |
@@ -159,7 +178,9 @@ jobs:
       - uses: ./.github/actions/setup-node-pnpm
       - uses: ./.github/actions/load-infisical-secrets
         with:
-          keys: EXPO_PUBLIC_SENTRY_DSN
+          keys: |
+            EXPO_APP_ID
+            EXPO_PUBLIC_SENTRY_DSN
       - uses: ./.github/actions/setup-ccache
         with:
           cache-key-prefix: ccache-watchos
@@ -170,7 +191,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: packages/mobile/ios/Pods
-          key: pods-watch-v1-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.ts', 'packages/mobile/targets/DofekWatch/pods.rb', 'pnpm-lock.yaml') }}
+          key: pods-watch-v1-${{ hashFiles('packages/mobile/app.json', 'packages/mobile/app.config.js', 'packages/mobile/targets/DofekWatch/pods.rb', 'pnpm-lock.yaml') }}
           restore-keys: pods-watch-v1-
       - name: Install CocoaPods dependencies
         run: cd packages/mobile/ios && pod install

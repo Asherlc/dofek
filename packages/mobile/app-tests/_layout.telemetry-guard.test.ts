@@ -19,6 +19,10 @@ describe("app bootstrap telemetry guard", () => {
       registerMobileQueryLifecycle: vi.fn(() => vi.fn()),
     }));
 
+    vi.doMock("../lib/health-kit-manual-sync", () => ({
+      HealthKitManualSyncController: vi.fn(),
+    }));
+
     vi.doMock("expo-crypto", () => ({
       randomUUID: vi.fn(() => "11111111-1111-4111-8111-111111111111"),
     }));

@@ -155,9 +155,11 @@ enum HealthKitQueries {
             return .percent()
         case HKQuantityTypeIdentifier.height.rawValue:
             return .meterUnit(with: .centi)
-        case HKQuantityTypeIdentifier.heartRateVariabilitySDNN.rawValue:
+        case HKQuantityTypeIdentifier.heartRateVariabilitySDNN.rawValue,
+             HKQuantityTypeIdentifier.runningGroundContactTime.rawValue:
             return .secondUnit(with: .milli)
-        case HKQuantityTypeIdentifier.distanceWalkingRunning.rawValue:
+        case HKQuantityTypeIdentifier.distanceWalkingRunning.rawValue,
+             HKQuantityTypeIdentifier.runningStrideLength.rawValue:
             return .meter()
         case HKQuantityTypeIdentifier.dietaryEnergyConsumed.rawValue:
             return .kilocalorie()
@@ -171,8 +173,13 @@ enum HealthKitQueries {
             return HKUnit.count().unitDivided(by: .minute())
         case HKQuantityTypeIdentifier.vo2Max.rawValue:
             return HKUnit(from: "mL/kg*min")
-        case HKQuantityTypeIdentifier.walkingSpeed.rawValue:
+        case HKQuantityTypeIdentifier.walkingSpeed.rawValue,
+             HKQuantityTypeIdentifier.runningSpeed.rawValue:
             return HKUnit.meter().unitDivided(by: .second())
+        case HKQuantityTypeIdentifier.runningPower.rawValue:
+            return .watt()
+        case HKQuantityTypeIdentifier.runningVerticalOscillation.rawValue:
+            return .meterUnit(with: .milli)
         case HKQuantityTypeIdentifier.walkingStepLength.rawValue:
             return .meterUnit(with: .centi)
         case HKQuantityTypeIdentifier.bodyTemperature.rawValue,

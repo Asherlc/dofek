@@ -75,8 +75,11 @@ pnpm tsx scripts/with-env.ts -- pnpm check:clickhouse-cdc
 
 Obtain the source activity IDs or canonical `group_id` values for the reviewed
 window through an approved read-only database session. The scope macro accepts
-either form with the same user ID. Then run the models in dependency order in
-the analytics environment, replacing the placeholders with the reviewed IDs:
+either form with the same user ID. Encode the reviewed UUID using the
+[scoped activity input procedure](../analytics/README.md#scoped-activity-input).
+Then run the models in dependency order in the analytics environment, replacing
+the placeholders with the user UUID and the printed base64 value. This example
+uses a small scope:
 
 ```bash
 pnpm tsx scripts/with-env.ts -- env \
@@ -86,7 +89,7 @@ pnpm tsx scripts/with-env.ts -- env \
   --project-dir analytics \
   --profiles-dir analytics \
   --threads 1 \
-  --vars '{"activity_refresh_user_id":"<user-uuid>","activity_refresh_activity_ids":["<activity-or-group-uuid>"]}' \
+  --vars '{"activity_refresh_user_id":"<user-uuid>","activity_refresh_activity_ids_base64":"<encoded-reviewed-scope>"}' \
   --select activity_source_records activity_effort_identity activity_route_identity
 ```
 

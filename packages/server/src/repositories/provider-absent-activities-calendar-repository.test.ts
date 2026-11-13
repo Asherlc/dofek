@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { osmTilePreview } from "../lib/osm-tile.ts";
+import { routeMapPreview } from "../lib/map-preview.ts";
 import {
   makeActivityRow,
   makeDatabase,
@@ -37,7 +37,6 @@ describe("ProviderAbsentActivitiesCalendarRepository", () => {
         },
       ],
       [],
-      [{ max_hr: null, resting_hr: null, ftp: null }],
       [],
     ]);
     const repository = new ProviderAbsentActivitiesCalendarRepository(
@@ -83,17 +82,11 @@ describe("ProviderAbsentActivitiesCalendarRepository", () => {
     expect(sensorStore.query).toHaveBeenNthCalledWith(
       2,
       expect.anything(),
-      expect.stringContaining("FROM analytics.activity_summary_rows FINAL"),
+      expect.stringContaining("FROM analytics.activity_summary_rows AS summary FINAL"),
       expect.objectContaining({
         userId: "user-1",
         activityIds: ["hidden-1"],
       }),
-    );
-    expect(sensorStore.query).toHaveBeenNthCalledWith(
-      3,
-      expect.anything(),
-      expect.stringContaining("FROM postgres_fitness.user_profile_current"),
-      { userId: "user-1" },
     );
     expect(sensorStore.query).toHaveBeenNthCalledWith(
       1,
@@ -114,7 +107,7 @@ describe("ProviderAbsentActivitiesCalendarRepository", () => {
       { lat: 37.801, lng: -122.399 },
       { lat: 37.802, lng: -122.398 },
     ];
-    const routePreview = osmTilePreview(routePoints);
+    const routePreview = routeMapPreview(routePoints);
     const database = makeDatabase([]);
     const sensorStore = makeSensorStore([
       [
@@ -149,7 +142,6 @@ describe("ProviderAbsentActivitiesCalendarRepository", () => {
           centroid_lng: -122.4,
         },
       ],
-      [{ max_hr: null, resting_hr: null, ftp: null }],
       routePoints.map((point) => ({
         activity_id: "hidden-outdoor",
         lat: point.lat,
@@ -185,7 +177,7 @@ describe("ProviderAbsentActivitiesCalendarRepository", () => {
     });
   });
 
-  it("passes the user id to hidden activity enrichment queries", async () => {
+  it("passes the user id to hidden activity summary queries", async () => {
     const database = makeDatabase([]);
     const sensorStore = makeSensorStore([
       [
@@ -209,7 +201,6 @@ describe("ProviderAbsentActivitiesCalendarRepository", () => {
         },
       ],
       [],
-      [{ max_hr: 180, resting_hr: 55, ftp: 250 }],
       [],
     ]);
     const repository = new ProviderAbsentActivitiesCalendarRepository(
@@ -226,10 +217,10 @@ describe("ProviderAbsentActivitiesCalendarRepository", () => {
     });
 
     expect(sensorStore.query).toHaveBeenNthCalledWith(
-      3,
+      2,
       expect.anything(),
-      expect.stringContaining("FROM postgres_fitness.user_profile_current"),
-      { userId: "user-1" },
+      expect.stringContaining("FROM analytics.activity_summary_rows"),
+      { userId: "user-1", activityIds: ["hidden-1"] },
     );
   });
 
@@ -257,7 +248,6 @@ describe("ProviderAbsentActivitiesCalendarRepository", () => {
         },
       ],
       [],
-      [{ max_hr: null, resting_hr: null, ftp: null }],
       [],
     ]);
     const repository = new ProviderAbsentActivitiesCalendarRepository(
@@ -312,7 +302,6 @@ describe("ProviderAbsentActivitiesCalendarRepository", () => {
         },
       ],
       [],
-      [{ max_hr: null, resting_hr: null, ftp: null }],
       [],
     ]);
     const repository = new ProviderAbsentActivitiesCalendarRepository(
@@ -366,7 +355,6 @@ describe("ProviderAbsentActivitiesCalendarRepository", () => {
         },
       ],
       [],
-      [{ max_hr: null, resting_hr: null, ftp: null }],
       [],
     ]);
     const repository = new ProviderAbsentActivitiesCalendarRepository(
@@ -418,7 +406,6 @@ describe("ProviderAbsentActivitiesCalendarRepository", () => {
           }),
         ],
         [],
-        [{ max_hr: null, resting_hr: null, ftp: null }],
         [],
         [{ activity_id: "absent-member", status }],
       ]);
@@ -471,7 +458,6 @@ describe("ProviderAbsentActivitiesCalendarRepository", () => {
         elevation_gain_m: null,
         ...row,
       })),
-      [{ max_hr: null, resting_hr: null, ftp: null }],
       [],
       ["no-centroid", "missing-latitude", "missing-longitude"].map((id) => ({
         activity_id: id,

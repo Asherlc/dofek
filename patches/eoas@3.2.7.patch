@@ -1,0 +1,95 @@
+diff --git a/dist/commands/publish.js b/dist/commands/publish.js
+index 69ddb322d58cc72532c6196760b357a2d6d131bb..bad53aa456985b5f38be1c423c09ca7cf91000f2 100644
+--- a/dist/commands/publish.js
++++ b/dist/commands/publish.js
+@@ -301,6 +301,7 @@ class Publish extends core_1.Command {
+         // Collected rather than logged inline: writing to the terminal under a
+         // running spinner interleaves with its frames.
+         const unchangedPlatforms = [];
++        const unchangedUpdates = [];
+         try {
+             const outcomes = await Promise.all(platformsToUpload.map(async ({ runtimeVersion, platform }) => {
+                 if (!runtimeVersion) {
+@@ -330,6 +331,12 @@ class Publish extends core_1.Command {
+                 catch (error) {
+                     if (error instanceof assets_1.NoChangesDetectedError) {
+                         unchangedPlatforms.push(platform);
++                        if (emitMetadata) {
++                            if (!error.updateUUID) {
++                                throw new Error('The server did not return the unchanged update id. Upgrade the server to use --emitMetadata.');
++                            }
++                            unchangedUpdates.push({ id: error.updateUUID, platform, runtimeVersion, branch });
++                        }
+                         return null;
+                     }
+                     throw error;
+@@ -339,6 +346,9 @@ class Publish extends core_1.Command {
+                 return entry !== null;
+             });
+             if (!uploadUrls.length) {
++                if (emitMetadata) {
++                    await (0, updateMetadata_1.writeUpdateMetadata)(path_1.default.join(projectDir, outputDir), unchangedUpdates);
++                }
+                 uploadFilesSpinner.warn('⚠️ No changes found in the update, nothing to deploy');
+                 for (const skipped of missingBundlePlatforms) {
+                     log_1.default.withInfo(`⚠️ No bundle exported for ${skipped}, skipping.`);
+@@ -520,7 +530,10 @@ class Publish extends core_1.Command {
+                         group: groupAcknowledged ? publishGroupId : undefined,
+                         message: resolvedMessage,
+                     }));
+-                    await (0, updateMetadata_1.writeUpdateMetadata)(path_1.default.join(projectDir, outputDir), metadata);
++                    await (0, updateMetadata_1.writeUpdateMetadata)(path_1.default.join(projectDir, outputDir), [
++                        ...metadata,
++                        ...unchangedUpdates,
++                    ]);
+                     log_1.default.withInfo(`📝 ${updateMetadata_1.UPDATE_METADATA_FILE} written to ${outputDir}`);
+                 }
+             }
+diff --git a/dist/lib/assets.d.ts b/dist/lib/assets.d.ts
+index 2c3e319a4279d4b0afe2bb074466f58135b87f6c..5381c5cf8bd788db80f0cfc63e7df99e656ac46a 100644
+--- a/dist/lib/assets.d.ts
++++ b/dist/lib/assets.d.ts
+@@ -64,7 +64,8 @@ export declare function resolveUploadRequests({ uploadRequests, exportDir, manif
+ export declare function activeRolloutConflictMessage(branch: string): string;
+ export declare class NoChangesDetectedError extends Error {
+     readonly platform: string;
+-    constructor(platform: string);
++    readonly updateUUID?: string | undefined;
++    constructor(platform: string, updateUUID?: string | undefined);
+ }
+ export declare function requestUploadUrls({ body, requestUploadUrl, auth, runtimeVersion, platform, commitHash, message, rolloutPercentage, publishGroup, branch, }: {
+     body: {
+diff --git a/dist/lib/assets.js b/dist/lib/assets.js
+index 91f96410ced961a31895d2709969319308b12a19..9cfadc93642b7e2e5cd1befba7cd0505684e5a0b 100644
+--- a/dist/lib/assets.js
++++ b/dist/lib/assets.js
+@@ -10,6 +10,7 @@ const crypto_1 = require("./crypto");
+ const expoConfig_1 = require("./expoConfig");
+ const fetch_1 = require("./fetch");
+ const log_1 = tslib_1.__importStar(require("./log"));
++const updateMetadata_1 = require("./updateMetadata");
+ const fileMetadataJoi = joi_1.default.object({
+     assets: joi_1.default.array()
+         .required()
+@@ -312,9 +313,11 @@ function activeRolloutConflictMessage(branch) {
+ exports.activeRolloutConflictMessage = activeRolloutConflictMessage;
+ class NoChangesDetectedError extends Error {
+     platform;
+-    constructor(platform) {
++    updateUUID;
++    constructor(platform, updateUUID) {
+         super(`There is no change in the update for ${platform}`);
+         this.platform = platform;
++        this.updateUUID = updateUUID;
+         this.name = 'NoChangesDetectedError';
+     }
+ }
+@@ -346,7 +349,7 @@ async function requestUploadUrls({ body, requestUploadUrl, auth, runtimeVersion,
+         throw new Error(activeRolloutConflictMessage(branch));
+     }
+     if (response.status === 406) {
+-        throw new NoChangesDetectedError(platform);
++        throw new NoChangesDetectedError(platform, await (0, updateMetadata_1.readUpdateUUID)(response));
+     }
+     if (!response.ok) {
+         const text = (await response.text()).trimEnd();

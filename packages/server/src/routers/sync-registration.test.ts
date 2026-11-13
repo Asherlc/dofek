@@ -138,6 +138,9 @@ vi.mock("dofek/providers/kaya/provider", () => ({
 vi.mock("dofek/providers/zos-app/provider", () => ({
   ZosAppProvider: mockProviderConstructor("zos-app"),
 }));
+vi.mock("dofek/providers/boardsesh", () => ({
+  BoardSeshProvider: mockProviderConstructor("boardsesh"),
+}));
 
 describe("ensureProvidersRegistered failure path", () => {
   afterEach(() => {
@@ -174,10 +177,11 @@ describe("ensureProvidersRegistered failure path", () => {
     await ensureProvidersRegistered();
 
     const registeredIds = mockRegisterProvider.mock.calls.map(([provider]) => provider.id);
-    expect(registeredIds).toHaveLength(31);
+    expect(registeredIds).toHaveLength(42);
     expect(registeredIds).toEqual(
       expect.arrayContaining([
         "bodyspec",
+        "boardsesh",
         "cycling_analytics",
         "openbeta",
         "thecrag",
@@ -195,10 +199,10 @@ describe("ensureProvidersRegistered failure path", () => {
     })?.[0];
     expect(theCrag?.validate()).toBeNull();
     const setup = theCrag?.authSetup?.();
-    expect(getProviderAuthTypeFromSetup(setup)).toBe("public-profile");
+    expect(getProviderAuthTypeFromSetup(setup)).toBe("token");
     expect(setup?.manualToken).toMatchObject({
-      label: "theCrag profile URL or username",
-      instructionsUrl: "https://www.thecrag.com/",
+      label: "Personal API key",
+      instructionsUrl: "https://www.thecrag.com/en/article/logbookreadapi",
     });
   });
 });

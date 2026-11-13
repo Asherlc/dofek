@@ -27,6 +27,8 @@ export function ClimbingFilters({
   const keys = climbingAdvancedFilterKeys;
   const selectedSettings = value.setting ?? climbingFilterOptions.setting.map(([option]) => option);
   const allSettings = selectedSettings.length === climbingFilterOptions.setting.length;
+  const selectedBoards = climbingFilterSelection(value, "board");
+  const allBoards = selectedBoards.length === climbingFilterOptions.board.length;
   const chipKeys = keys;
   function remove(key: ClimbingFilterKey) {
     const next = { ...value };
@@ -146,6 +148,37 @@ export function ClimbingFilters({
                     </TouchableOpacity>
                   );
                 })}
+              </View>
+              <Text style={styles.label}>{climbingFilterLabels.board}</Text>
+              <View style={styles.row}>
+                {([["all", "All"], ...climbingFilterOptions.board] as const).map(
+                  ([option, label]) => {
+                    const checked = option === "all" ? allBoards : selectedBoards.includes(option);
+                    const mixed = option === "all" && !allBoards && selectedBoards.length > 0;
+                    return (
+                      <TouchableOpacity
+                        key={option}
+                        accessibilityRole="checkbox"
+                        accessibilityLabel={
+                          option === "all" ? `All ${climbingFilterLabels.board}` : label
+                        }
+                        accessibilityState={{ checked: mixed ? "mixed" : checked }}
+                        aria-checked={mixed ? "mixed" : checked}
+                        onPress={() => onChange(toggleClimbingFilter(value, "board", option))}
+                        style={styles.setting}
+                      >
+                        <Text
+                          accessibilityElementsHidden
+                          importantForAccessibility="no"
+                          style={styles.text}
+                        >
+                          {mixed ? "▣" : checked ? "☑" : "☐"}
+                        </Text>
+                        <Text style={styles.text}>{label}</Text>
+                      </TouchableOpacity>
+                    );
+                  },
+                )}
               </View>
               <View style={styles.row}>
                 <TouchableOpacity

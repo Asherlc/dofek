@@ -1,11 +1,125 @@
 import { describe, expect, it } from "vitest";
 import {
+  ALL_CLIMBING_GRADES,
   climbingStrengthsAdjustedLabel,
   climbingStrengthsCountLabel,
   climbingStrengthsDifferenceLabel,
+  climbingStrengthsGradePanel,
   climbingStrengthsRateLabel,
   climbingStrengthsResultLabel,
+  climbingStrengthsSchema,
+  climbingStrengthsSendLabel,
 } from "./climbing-strengths.ts";
+
+it("retains source-scoped evidence on contributing climbs and style panels", () => {
+  const example = {
+    logEntryId: "log",
+    activityId: null,
+    name: "Route",
+    grade: "5.10a",
+    date: "2026-10-20",
+    providerId: "eight-a",
+    sourceName: "Vertical-Life",
+    sourceUrl: null,
+    outcome: "sent",
+  };
+  const cell = {
+    grade: "5.10a",
+    sends: 1,
+    climbs: 1,
+    unknownOutcomes: 0,
+    successRate: 100,
+    differencePercentagePoints: 0,
+    sampleStatus: "limited",
+    examples: [],
+  };
+  const profile = { grades: [], rows: [], progress: [] };
+  const panel = {
+    ...profile,
+    key: "style",
+    contextKey: "routes",
+    contextLabel: "Routes",
+    dimension: "style",
+    setting: null,
+    allGrades: profile,
+    gradeAdjustedStrengths: [],
+    coverage: { missingTraits: 0, unknownOutcomes: 0 },
+  };
+  const evidence = [
+    {
+      providerId: "eight-a",
+      url: "https://www.8a.nu/crags/test",
+      scope: "area",
+      name: "Quarry",
+      trait: "Crimps",
+    },
+  ];
+  const enriched = {
+    coverage: { missingGrades: 0, missingIdentity: 0, unknownOutcomes: 0 },
+    panels: [
+      {
+        ...panel,
+        rows: [
+          {
+            key: "technical",
+            label: "Technical",
+            cells: [{ ...cell, examples: [{ ...example, traitSources: evidence }] }],
+          },
+        ],
+      },
+    ],
+  };
+  const parsed = climbingStrengthsSchema.parse(enriched);
+  expect(parsed.panels[0]?.rows[0]?.cells[0]?.examples[0]).toMatchObject({
+    traitSources: evidence,
+  });
+});
+it("retains actionable enrichment state without adding display metrics", () => {
+  const state = {
+    panels: [],
+    coverage: { missingGrades: 0, missingIdentity: 0, unknownOutcomes: 0 },
+    enrichmentPending: true,
+    enrichmentErrors: ["Source unavailable; retry later."],
+  };
+  expect(climbingStrengthsSchema.parse(state)).toEqual(state);
+});
+
+it("preserves additive recorded tag panels and selects their supplied pooled profile", () => {
+  const profile = { grades: [], rows: [], progress: [] };
+  const tagPanel = {
+    ...profile,
+    key: "tag-style",
+    contextKey: "boulder",
+    contextLabel: "Bouldering",
+    dimension: "tag" as const,
+    setting: null,
+    category: { providerId: "kaya", key: "style", label: "Style" },
+    allGrades: { ...profile, rows: [{ key: "technical", label: "Technical", cells: [] }] },
+    gradeAdjustedStrengths: [
+      {
+        key: "technical",
+        expectedSuccessRate: 50,
+        differencePercentagePoints: 50,
+        sampleStatus: "limited" as const,
+      },
+    ],
+    coverage: { missingTraits: 0, unknownOutcomes: 0 },
+  };
+  const parsed = climbingStrengthsSchema.parse({
+    panels: [],
+    tagPanels: [tagPanel],
+    coverage: { unknownOutcomes: 0, missingGrades: 0, missingIdentity: 0 },
+  });
+  expect(parsed.tagPanels).toEqual([tagPanel]);
+  expect(climbingStrengthsGradePanel(tagPanel, ALL_CLIMBING_GRADES)).toMatchObject({
+    dimension: "tag",
+    category: tagPanel.category,
+    rows: tagPanel.allGrades.rows,
+  });
+  expect(climbingStrengthsAdjustedLabel(parsed.tagPanels?.[0]?.gradeAdjustedStrengths[0])).toBe(
+    "Too few climbs to judge strengths yet",
+  );
+});
 
 describe("climbing strengths labels", () => {
   it.each([
@@ -17,7 +131,7 @@ describe("climbing strengths labels", () => {
     expect(climbingStrengthsDifferenceLabel(value)).toBe(label);
   });
   it("labels unavailable, zero, limited and available adjusted observations", () => {
-    expect(climbingStrengthsAdjustedLabel(undefined)).toBe("No comparable results");
+    expect(climbingStrengthsAdjustedLabel(undefined)).toBe("No results to compare yet");
     expect(
       climbingStrengthsAdjustedLabel({
         key: "slab",
@@ -25,7 +139,7 @@ describe("climbing strengths labels", () => {
         expectedSuccessRate: null,
         sampleStatus: "no_data",
       }),
-    ).toBe("No comparable results");
+    ).toBe("No results to compare yet");
     expect(
       climbingStrengthsAdjustedLabel({
         key: "slab",
@@ -33,9 +147,7 @@ describe("climbing strengths labels", () => {
         expectedSuccessRate: 0,
         sampleStatus: "limited",
       }),
-    ).toBe(
-      "0 percentage points vs same-grade baseline · Expected send rate at these grades: 0% · Limited sample",
-    );
+    ).toBe("Too few climbs to judge strengths yet");
     expect(
       climbingStrengthsAdjustedLabel({
         key: "slab",
@@ -43,9 +155,20 @@ describe("climbing strengths labels", () => {
         expectedSuccessRate: 62.8,
         sampleStatus: "available",
       }),
-    ).toBe(
-      "-7.2 percentage points vs same-grade baseline · Expected send rate at these grades: 62.8%",
-    );
+    ).toBe("Sending less often than usual at these grades (-7.2 percentage points)");
+  });
+  it.each([
+    [0, "Sending as often as usual at these grades"],
+    [12.5, "Sending more often than usual at these grades (+12.5 percentage points)"],
+  ] as const)("explains an available adjusted difference of %s", (difference, label) => {
+    expect(
+      climbingStrengthsAdjustedLabel({
+        key: "slab",
+        differencePercentagePoints: difference,
+        expectedSuccessRate: 50,
+        sampleStatus: "available",
+      }),
+    ).toBe(label);
   });
   it("distinguishes missing climbs, unknown results and recorded rates", () => {
     expect(climbingStrengthsRateLabel({ climbs: 0, successRate: null })).toBe("No data");
@@ -66,6 +189,13 @@ describe("climbing strengths labels", () => {
     expect(climbingStrengthsCountLabel({ sends: 0, climbs: 1, unknownOutcomes: 1 })).toBe(
       "0 sends / 1 climb · 1 result unknown",
     );
+  });
+  it.each([
+    [{ sends: 1, climbs: 1, unknownOutcomes: 0 }, "Sent 1 of 1 climb"],
+    [{ sends: 2, climbs: 5, unknownOutcomes: 2 }, "Sent 2 of 5 climbs · 2 results unknown"],
+    [{ sends: 0, climbs: 1, unknownOutcomes: 1 }, "Sent 0 of 1 climb · 1 result unknown"],
+  ])("describes recorded sends with their result coverage", (value, label) => {
+    expect(climbingStrengthsSendLabel(value)).toBe(label);
   });
   it("preserves unknown outcomes in source examples", () => {
     expect(climbingStrengthsResultLabel(null)).toBe("Result unknown");

@@ -1,12 +1,10 @@
 import { CYCLING_ACTIVITY_TYPES } from "@dofek/training/training";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { makeMockSensorStore } from "../lib/test-helpers.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import {
   ActivityVariabilityModel,
   PedalDynamicsModel,
-  RampRateWeekModel,
-  TrainingMonotonyWeekModel,
   VerticalAscentModel,
 } from "./cycling-advanced-models.ts";
 import { CyclingAdvancedRepository } from "./cycling-advanced-repository.ts";
@@ -19,86 +17,6 @@ import {
 // Domain models
 // ---------------------------------------------------------------------------
 
-describe("RampRateWeekModel", () => {
-  it("serializes to API shape", () => {
-    const model = new RampRateWeekModel({
-      week: "2024-03-04",
-      ctlStart: 45.5,
-      ctlEnd: 48.2,
-      rampRate: 2.7,
-    });
-    expect(model.toDetail()).toEqual({
-      week: "2024-03-04",
-      ctlStart: 45.5,
-      ctlEnd: 48.2,
-      rampRate: 2.7,
-    });
-  });
-
-  it("exposes getters", () => {
-    const model = new RampRateWeekModel({
-      week: "2024-03-04",
-      ctlStart: 45.5,
-      ctlEnd: 48.2,
-      rampRate: 2.7,
-    });
-    expect(model.week).toBe("2024-03-04");
-    expect(model.ctlStart).toBe(45.5);
-    expect(model.ctlEnd).toBe(48.2);
-    expect(model.rampRate).toBe(2.7);
-  });
-});
-
-describe("TrainingMonotonyWeekModel", () => {
-  it("serializes to API shape", () => {
-    const model = new TrainingMonotonyWeekModel({
-      week: "2024-03-04",
-      monotony: 1.8,
-      strain: 450.5,
-      weeklyLoad: 250.3,
-      dailyMeanLoad: 35.76,
-      dailyLoadStandardDeviation: 19.87,
-    });
-    expect(model.toDetail()).toEqual({
-      week: "2024-03-04",
-      monotony: 1.8,
-      strain: 450.5,
-      weeklyLoad: 250.3,
-      dailyMeanLoad: 35.76,
-      dailyLoadStandardDeviation: 19.87,
-      method: {
-        formula:
-          "Monotony = 7-day mean daily cycling load ÷ population standard deviation of daily cycling load. Strain = weekly cycling load × monotony.",
-        calendar: "Monday–Sunday calendar weeks include zero-load days.",
-        activityScope: "Cycling activities with computed endurance training load.",
-        interpretation: "Daily training-load variability within each calendar week.",
-        source: {
-          title: "Foster (1998), Monitoring training in athletes",
-          url: "https://pubmed.ncbi.nlm.nih.gov/9662690/",
-        },
-      },
-    });
-  });
-
-  it("returns fresh method metadata for each detail", () => {
-    const model = new TrainingMonotonyWeekModel({
-      week: "2024-03-04",
-      monotony: 1.8,
-      strain: 450.5,
-      weeklyLoad: 250.3,
-      dailyMeanLoad: 35.76,
-      dailyLoadStandardDeviation: 19.87,
-    });
-
-    const firstDetail = model.toDetail();
-    firstDetail.method.source.title = "Mutated source";
-
-    expect(model.toDetail().method.source.title).toBe(
-      "Foster (1998), Monitoring training in athletes",
-    );
-  });
-});
-
 describe("ActivityVariabilityModel", () => {
   it("computes variability index as NP / avg power", () => {
     const model = new ActivityVariabilityModel(
@@ -109,12 +27,12 @@ describe("ActivityVariabilityModel", () => {
         normalizedPower: 220,
         averagePower: 200,
       },
-      250,
+      0.88,
     );
     expect(model.variabilityIndex).toBeCloseTo(1.1, 3);
   });
 
-  it("computes intensity factor as NP / FTP", () => {
+  it("renders canonical intensity factor", () => {
     const model = new ActivityVariabilityModel(
       {
         activityId: "ride-1",
@@ -123,7 +41,7 @@ describe("ActivityVariabilityModel", () => {
         normalizedPower: 220,
         averagePower: 200,
       },
-      250,
+      0.88,
     );
     expect(model.intensityFactor).toBeCloseTo(0.88, 2);
   });
@@ -137,7 +55,7 @@ describe("ActivityVariabilityModel", () => {
         normalizedPower: 220,
         averagePower: 200,
       },
-      250,
+      0.88,
     );
     const detail = model.toDetail();
     expect(detail.activityId).toBe("ride-1");
@@ -158,7 +76,7 @@ describe("ActivityVariabilityModel", () => {
         normalizedPower: 220,
         averagePower: 200,
       },
-      250,
+      0.88,
     );
     expect(model.activityId).toBe("ride-1");
     expect(model.date).toBe("2024-03-15");
@@ -171,6 +89,7 @@ describe("ActivityVariabilityModel", () => {
 describe("VerticalAscentModel", () => {
   it("computes VAM in meters/hour", () => {
     const model = new VerticalAscentModel({
+      activityId: "00000000-0000-4000-8000-000000000001",
       date: "2024-03-15",
       activityName: "Hill Climb",
       activityType: "cycling",
@@ -184,6 +103,7 @@ describe("VerticalAscentModel", () => {
 
   it("computes climbing minutes", () => {
     const model = new VerticalAscentModel({
+      activityId: "00000000-0000-4000-8000-000000000002",
       date: "2024-03-15",
       activityName: "Hill Climb",
       activityType: "cycling",
@@ -196,6 +116,7 @@ describe("VerticalAscentModel", () => {
 
   it("returns 0 VAM when no elapsed seconds", () => {
     const model = new VerticalAscentModel({
+      activityId: "00000000-0000-4000-8000-000000000003",
       date: "2024-03-15",
       activityName: "Flat Ride",
       activityType: "cycling",
@@ -208,6 +129,7 @@ describe("VerticalAscentModel", () => {
 
   it("serializes to API shape", () => {
     const model = new VerticalAscentModel({
+      activityId: "ascent-activity",
       date: "2024-03-15",
       activityName: "Hill Climb",
       activityType: "cycling",
@@ -216,6 +138,7 @@ describe("VerticalAscentModel", () => {
       elapsedSeconds: 1800,
     });
     const detail = model.toDetail();
+    expect(detail.activityId).toBe("ascent-activity");
     expect(detail.date).toBe("2024-03-15");
     expect(detail.activityName).toBe("Hill Climb");
     expect(detail.activityType).toBe("cycling");
@@ -279,409 +202,62 @@ describe("CyclingAdvancedRepository", () => {
     expect(activityTypes).not.toContain("hiking");
   }
 
-  describe("getRampRate", () => {
-    beforeEach(() => {
-      vi.useFakeTimers();
-      vi.setSystemTime(new Date("2026-05-07T12:00:00.000Z"));
-    });
-
-    afterEach(() => {
-      vi.useRealTimers();
-    });
-
-    it("returns no-data result when no ramp rate rows exist", async () => {
-      const { repo } = makeRepository([]);
-      const result = await repo.getRampRate(90);
-      expect(result.weeks).toEqual([]);
-      expect(result.currentRampRate).toBe(0);
-      expect(result.recommendation).toBe("No data");
-    });
-
-    it("issues exactly one CH query for the weekly read model", async () => {
-      const { repo, sensorStore } = makeRepository([]);
-      await repo.getRampRate(30);
-      expect(sensorStore.query).toHaveBeenCalledTimes(1);
-    });
-
-    it("queries ClickHouse weekly endurance ramp rate read model", async () => {
-      const { repo, sensorStore } = makeRepository([]);
-      await repo.getRampRate(30);
-      const [, query, params] = sensorStore.query.mock.calls[0];
-      expect(query).toContain("analytics.daily_endurance_load");
-      expect(query).toContain("ramp.is_deleted = 0");
-      expect(query).toContain("ramp.week > toMonday(today() - INTERVAL {days:Int32} DAY)");
-      expect(query).not.toContain("resting_heart_rate");
-      expect(query).toContain("analytics.activity_summary");
-      expect(query).toContain("has({activityTypes:Array(String)}, activity.canonical_type)");
-      expect(query).toContain("load.date > today() - INTERVAL {loadDays:Int32} DAY");
-      expect(params).toMatchObject({
-        userId: "user-1",
-        timezone: "UTC",
-        days: 30,
-        loadDays: 72,
-      });
-      expectCyclingOnlyActivityTypes(params.activityTypes);
-    });
-
-    it("applies finite selected-range lower-bound filters", async () => {
-      const { repo, sensorStore } = makeRepository([]);
-
-      await repo.getRampRate(30);
-
-      const [, query, params] = sensorStore.query.mock.calls[0];
-      expect(query).toContain("load.date > today() - INTERVAL {loadDays:Int32} DAY");
-      expect(query).toContain("ramp.week > toMonday(today() - INTERVAL {days:Int32} DAY)");
-      expect(params).toMatchObject({ days: 30, loadDays: 72 });
-    });
-
-    it("omits selected-range lower-bound filters when days is null", async () => {
-      const { repo, sensorStore } = makeRepository([]);
-
-      await repo.getRampRate(null);
-
-      const [, query, params] = sensorStore.query.mock.calls[0];
-      expect(query).not.toContain("load.date > today() - INTERVAL {loadDays:Int32} DAY");
-      expect(query).not.toContain("ramp.week > toMonday(today() - INTERVAL {days:Int32} DAY)");
-      expect(params).not.toHaveProperty("days");
-      expect(params).not.toHaveProperty("loadDays");
-    });
-
-    it("describes a positive weekly load change", async () => {
-      const { repo } = makeRepository([
-        { week: "2026-04-20", ctl_start: 12.1, ctl_end: 14.4, ramp_rate: 2.3 },
-      ]);
-      const result = await repo.getRampRate(30);
-      expect(result.weeks).toHaveLength(1);
-      expect(result.currentRampRate).toBeGreaterThan(0);
-      expect(result.currentRampRate).toBeLessThan(5);
-      expect(result.recommendation).toBe("Weekly training-load change: +2.3 points");
-      expect(result.weeks[0]?.toDetail()).toEqual({
-        week: "2026-04-20",
-        ctlStart: 12.1,
-        ctlEnd: 14.4,
-        rampRate: 2.3,
-      });
-    });
-
-    it("describes a moderate positive weekly load change", async () => {
-      const { repo } = makeRepository([
-        { week: "2026-04-20", ctl_start: 20, ctl_end: 26.2, ramp_rate: 6.2 },
-      ]);
-      const result = await repo.getRampRate(30);
-      expect(result.currentRampRate).toBeGreaterThanOrEqual(5);
-      expect(result.currentRampRate).toBeLessThanOrEqual(7);
-      expect(result.recommendation).toBe("Weekly training-load change: +6.2 points");
-    });
-
-    it.each([8.4, -8.4, 0])(
-      "preserves the direction of a %s point weekly change",
-      async (change) => {
-        const { repo } = makeRepository([
-          { week: "2026-04-20", ctl_start: 20, ctl_end: 20 + change, ramp_rate: change },
-        ]);
-        const result = await repo.getRampRate(30);
-        expect(result.currentRampRate).toBe(change);
-        expect(result.recommendation).toBe(
-          `Weekly training-load change: ${change > 0 ? "+" : ""}${change} points`,
-        );
-      },
-    );
-  });
-
-  describe("getTrainingMonotony", () => {
-    it("returns empty array when no data", async () => {
-      const { repo } = makeRepository([]);
-      const result = await repo.getTrainingMonotony(90);
-      expect(result).toEqual([]);
-    });
-
-    it("returns TrainingMonotonyWeekModel instances", async () => {
-      const { repo } = makeRepository([
-        {
-          week: "2024-03-04",
-          monotony: 1.8,
-          strain: 450.5,
-          weekly_load: 250.3,
-          daily_mean_load: 35.76,
-          daily_load_standard_deviation: 19.87,
-        },
-      ]);
-      const result = await repo.getTrainingMonotony(90);
-      expect(result).toHaveLength(1);
-      expect(result[0]).toBeInstanceOf(TrainingMonotonyWeekModel);
-      expect(result[0]?.toDetail().monotony).toBe(1.8);
-      expect(result[0]?.toDetail().dailyMeanLoad).toBe(35.76);
-      expect(result[0]?.toDetail().dailyLoadStandardDeviation).toBe(19.87);
-    });
-
-    it("queries training monotony from weekly read model with user parameters", async () => {
-      const { repo, sensorStore } = makeRepository([]);
-      await repo.getTrainingMonotony(45);
-      const [, query, params] = sensorStore.query.mock.calls[0];
-      expect(query).toContain("analytics.daily_endurance_load");
-      expect(query).toContain("monotony.is_deleted = 0");
-      expect(query).toContain("monotony.week >= toMonday(today() - INTERVAL {days:Int32} DAY)");
-      expect(query).not.toContain("resting_heart_rate");
-      expect(query).toContain("analytics.activity_summary");
-      expect(query).toContain("has({activityTypes:Array(String)}, activity.canonical_type)");
-      expect(query).toContain("round(mean_load, 2) AS daily_mean_load");
-      expect(query).toContain("round(stdev_load, 2) AS daily_load_standard_deviation");
-      expect(params).toMatchObject({
-        userId: "user-1",
-        timezone: "UTC",
-        days: 45,
-      });
-      expectCyclingOnlyActivityTypes(params.activityTypes);
-    });
-
-    it("applies finite selected-range lower-bound filters", async () => {
-      const { repo, sensorStore } = makeRepository([]);
-
-      await repo.getTrainingMonotony(30);
-
-      const [, query, params] = sensorStore.query.mock.calls[0];
-      expect(query).toContain("monotony.week >= toMonday(today() - INTERVAL {days:Int32} DAY)");
-      expect(params).toHaveProperty("days", 30);
-    });
-
-    it("omits selected-range lower-bound filters when days is null", async () => {
-      const { repo, sensorStore } = makeRepository([]);
-
-      await repo.getTrainingMonotony(null);
-
-      const [, query, params] = sensorStore.query.mock.calls[0];
-      expect(query).not.toContain("monotony.week >= toMonday(today() - INTERVAL {days:Int32} DAY)");
-      expect(params).not.toHaveProperty("days");
-    });
-  });
-
-  describe("getEstimatedFtp", () => {
-    it("returns null when no power data", async () => {
-      const { repo } = makeRepository([]);
-      const result = await repo.getEstimatedFtp(90);
-      expect(result).toBeNull();
-    });
-
-    it("returns FTP value when data exists", async () => {
-      const { repo } = makeRepository([{ ftp: 250 }]);
-      const result = await repo.getEstimatedFtp(90);
-      expect(result).toBe(250);
-    });
-
-    it("queries estimated FTP as ninety-five percent of precomputed best twenty-minute power", async () => {
-      const { repo, sensorStore } = makeRepository([]);
-      await repo.getEstimatedFtp(60);
-      const [, query, params] = sensorStore.query.mock.calls[0];
-      expect(query).toContain("analytics.activity_summary");
-      expect(query).toContain("max(asum.best_twenty_minute_power) * 0.95");
-      expect(query).toContain("asum.best_twenty_minute_power IS NOT NULL");
-      expect(params).toMatchObject({
-        userId: "user-1",
-        days: 60,
-      });
-      expectCyclingOnlyActivityTypes(params.activityTypes);
-    });
-
-    it("omits selected-range lower-bound filters when days is null", async () => {
-      const { repo, sensorStore } = makeRepository([]);
-
-      await repo.getEstimatedFtp(null);
-
-      const [, query, params] = sensorStore.query.mock.calls[0];
-      expect(query).not.toContain("asum.started_at > now() - INTERVAL {days:Int32} DAY");
-      expect(params).not.toHaveProperty("days");
-    });
-  });
-
   describe("getActivityVariability", () => {
-    it("does not estimate FTP or scan sensors when no raw activities exist", async () => {
-      const { repo } = makeRepository([]);
-      const result = await repo.getActivityVariability(90, 20, 0);
-      expect(result.models).toEqual([]);
-      expect(result.totalCount).toBe(0);
-      expect(result.emptyReason).toBe("no_cycling_activities");
-    });
-
-    it("returns empty result when raw activities exist but no FTP", async () => {
-      const { repo } = makeRepository([], 1);
-      const result = await repo.getActivityVariability(90, 20, 0);
-      expect(result.models).toEqual([]);
-      expect(result.totalCount).toBe(0);
-      expect(result.emptyReason).toBe("no_ftp_estimate");
-    });
-
-    it("does not scan activity_summary or deduped_sensor when no raw activities exist", async () => {
-      const { repo, sensorStore } = makeRepository([]);
-      await repo.getActivityVariability(90, 20, 0);
-
-      expect(sensorStore.query).not.toHaveBeenCalled();
-    });
-
-    it("returns ActivityVariabilityModel instances when data exists", async () => {
-      // First sensorStore.query call -> FTP estimate; second -> variability rows.
-      const sensorStore = makeSensorStore([]);
-      sensorStore.query = vi
-        .fn()
-        .mockImplementationOnce(async (schema: { parse: (row: unknown) => unknown }) =>
-          [{ ftp: 250 }].map((row) => schema.parse(row)),
-        )
-        .mockImplementationOnce(async (schema: { parse: (row: unknown) => unknown }) =>
-          [
-            {
-              activity_id: "ride-2",
-              date: "2024-03-15",
-              name: "Morning Ride",
-              np: 220,
-              avg_power: 200,
-              total_count: 1,
-            },
-          ].map((row) => schema.parse(row)),
-        );
-      const repo = new CyclingAdvancedRepository(
-        { execute: vi.fn().mockResolvedValue([{ activity_count: 1 }]) },
-        "user-1",
-        "UTC",
-        sensorStore,
+    it("renders activity-applicable canonical intensity factors", async () => {
+      const { repo } = makeRepository(
+        [
+          {
+            activity_id: "ride-1",
+            date: "2024-03-15",
+            name: "Ride",
+            np: 220,
+            avg_power: 200,
+            intensity_factor: 0.73,
+            total_count: 1,
+          },
+        ],
+        1,
       );
       const result = await repo.getActivityVariability(90, 20, 0);
-      expect(result.models).toHaveLength(1);
-      expect(result.models[0]).toBeInstanceOf(ActivityVariabilityModel);
-      expect(result.totalCount).toBe(1);
-      expect(result.emptyReason).toBeNull();
-      expect(sensorStore.query).toHaveBeenCalledTimes(2);
-      const [, query, params] = sensorStore.query.mock.calls[1];
-      expect(query).toContain("analytics.activity_summary");
-      expect(query).toContain("round(asum.normalized_power, 1)");
-      expect(query).toContain("round(asum.smoothed_avg_power, 1)");
-      expect(query).toContain("asum.normalized_power IS NOT NULL");
-      expect(query).toContain("LIMIT {limit:Int32}");
-      expect(query).toContain("OFFSET {offset:Int32}");
-      expect(params).toMatchObject({
-        userId: "user-1",
-        timezone: "UTC",
-        days: 90,
-        limit: 20,
-        offset: 0,
+      expect(result.models[0]?.intensityFactor).toBe(0.73);
+    });
+    it("reports insufficient threshold evidence when normalized power exists", async () => {
+      const { repo, sensorStore } = makeRepository([], 1);
+      sensorStore.query = vi
+        .fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ total: 0, power_total: 1 }]);
+      expect((await repo.getActivityVariability(90, 20, 0)).emptyReason).toBe("no_ftp_estimate");
+    });
+    it("keeps pagination totals beyond the last page", async () => {
+      const { repo, sensorStore } = makeRepository([], 1);
+      sensorStore.query = vi
+        .fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ total: 4, power_total: 5 }]);
+      expect(await repo.getActivityVariability(90, 20, 10)).toMatchObject({
+        models: [],
+        totalCount: 4,
+        emptyReason: null,
       });
-      expectCyclingOnlyActivityTypes(params.activityTypes);
     });
-
-    it("applies finite selected-range lower-bound filters", async () => {
-      const sensorStore = makeSensorStore([]);
-      sensorStore.query = vi
-        .fn()
-        .mockImplementationOnce(async (schema: { parse: (row: unknown) => unknown }) =>
-          [{ ftp: 250 }].map((row) => schema.parse(row)),
-        )
-        .mockImplementationOnce(async (schema: { parse: (row: unknown) => unknown }) =>
-          [
-            {
-              activity_id: "ride-2",
-              date: "2024-03-15",
-              name: "Morning Ride",
-              np: 220,
-              avg_power: 200,
-              total_count: 1,
-            },
-          ].map((row) => schema.parse(row)),
-        );
-      const repo = new CyclingAdvancedRepository(
-        { execute: vi.fn().mockResolvedValue([{ activity_count: 1 }]) },
-        "user-1",
-        "UTC",
-        sensorStore,
-      );
-
-      await repo.getActivityVariability(30, 20, 0);
-
-      const [, ftpQuery, ftpParams] = sensorStore.query.mock.calls[0];
-      const [, variabilityQuery, variabilityParams] = sensorStore.query.mock.calls[1];
-      expectClickHouseFiniteDaysFilter(ftpQuery, ftpParams);
-      expectClickHouseFiniteDaysFilter(variabilityQuery, variabilityParams);
+    it.each([
+      { label: "zero normalized-power activities", rows: [{ total: 0, power_total: 0 }] },
+      { label: "no aggregate row", rows: [] },
+    ])("reports missing normalized power with $label", async ({ rows }) => {
+      const { repo, sensorStore } = makeRepository([], 1);
+      sensorStore.query = vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce(rows);
+      expect(await repo.getActivityVariability(90, 20, 0)).toMatchObject({
+        models: [],
+        totalCount: 0,
+        emptyReason: "no_normalized_power",
+      });
     });
-
-    it("omits selected-range lower-bound filters when days is null", async () => {
-      const sensorStore = makeSensorStore([]);
-      sensorStore.query = vi
-        .fn()
-        .mockImplementationOnce(async (schema: { parse: (row: unknown) => unknown }) =>
-          [{ ftp: 250 }].map((row) => schema.parse(row)),
-        )
-        .mockImplementationOnce(async (schema: { parse: (row: unknown) => unknown }) =>
-          [
-            {
-              activity_id: "ride-2",
-              date: "2024-03-15",
-              name: "Morning Ride",
-              np: 220,
-              avg_power: 200,
-              total_count: 1,
-            },
-          ].map((row) => schema.parse(row)),
-        );
-      const repo = new CyclingAdvancedRepository(
-        { execute: vi.fn().mockResolvedValue([{ activity_count: 1 }]) },
-        "user-1",
-        "UTC",
-        sensorStore,
+    it("returns an empty state without activities", async () => {
+      const { repo } = makeRepository([]);
+      expect((await repo.getActivityVariability(90, 20, 0)).emptyReason).toBe(
+        "no_cycling_activities",
       );
-
-      await repo.getActivityVariability(null, 20, 0);
-
-      const [, ftpQuery, ftpParams] = sensorStore.query.mock.calls[0];
-      const [, variabilityQuery, variabilityParams] = sensorStore.query.mock.calls[1];
-      expectClickHouseUnboundedDaysFilter(ftpQuery, ftpParams);
-      expectClickHouseUnboundedDaysFilter(variabilityQuery, variabilityParams);
-    });
-
-    it("reports missing normalized power when FTP exists but variability rows are empty", async () => {
-      const sensorStore = makeSensorStore([]);
-      sensorStore.query = vi
-        .fn()
-        .mockImplementationOnce(async (schema: { parse: (row: unknown) => unknown }) =>
-          [{ ftp: 250 }].map((row) => schema.parse(row)),
-        )
-        .mockImplementationOnce(async () => [])
-        .mockImplementationOnce(async (schema: { parse: (row: unknown) => unknown }) =>
-          [{ total: 0 }].map((row) => schema.parse(row)),
-        );
-      const repo = new CyclingAdvancedRepository(
-        { execute: vi.fn().mockResolvedValue([{ activity_count: 1 }]) },
-        "user-1",
-        "UTC",
-        sensorStore,
-      );
-
-      const result = await repo.getActivityVariability(90, 20, 0);
-
-      expect(result.models).toEqual([]);
-      expect(result.totalCount).toBe(0);
-      expect(result.emptyReason).toBe("no_normalized_power");
-    });
-
-    it("does not report no_normalized_power when offset is past the data", async () => {
-      const sensorStore = makeSensorStore([]);
-      sensorStore.query = vi
-        .fn()
-        .mockImplementationOnce(async (schema: { parse: (row: unknown) => unknown }) =>
-          [{ ftp: 250 }].map((row) => schema.parse(row)),
-        )
-        .mockImplementationOnce(async () => [])
-        .mockImplementationOnce(async (schema: { parse: (row: unknown) => unknown }) =>
-          [{ total: 5 }].map((row) => schema.parse(row)),
-        );
-      const repo = new CyclingAdvancedRepository(
-        { execute: vi.fn().mockResolvedValue([{ activity_count: 1 }]) },
-        "user-1",
-        "UTC",
-        sensorStore,
-      );
-
-      const result = await repo.getActivityVariability(90, 20, 40);
-
-      expect(result.models).toEqual([]);
-      expect(result.totalCount).toBe(5);
-      expect(result.emptyReason).toBeNull();
     });
   });
 
@@ -702,6 +278,7 @@ describe("CyclingAdvancedRepository", () => {
     it("returns VerticalAscentModel instances", async () => {
       const { repo } = makeRepository([
         {
+          activity_id: "ascent-activity",
           date: "2024-03-15",
           name: "Hill Climb",
           canonical_type: "cycling",
@@ -713,12 +290,14 @@ describe("CyclingAdvancedRepository", () => {
       const result = await repo.getVerticalAscentRates(90);
       expect(result).toHaveLength(1);
       expect(result[0]).toBeInstanceOf(VerticalAscentModel);
+      expect(result[0]?.toDetail().activityId).toBe("ascent-activity");
       expect(result[0]?.toDetail().verticalAscentRate).toBe(1000);
     });
 
     it("excludes indoor and virtual cycling workouts", async () => {
       const { repo } = makeRepository([
         {
+          activity_id: "00000000-0000-4000-8000-000000000004",
           date: "2024-03-15",
           name: "Spin Class",
           canonical_type: "cycling",
@@ -727,6 +306,7 @@ describe("CyclingAdvancedRepository", () => {
           elapsed_seconds: 1800,
         },
         {
+          activity_id: "00000000-0000-4000-8000-000000000005",
           date: "2024-03-16",
           name: "Virtual Climb",
           canonical_type: "cycling",
@@ -735,6 +315,7 @@ describe("CyclingAdvancedRepository", () => {
           elapsed_seconds: 3600,
         },
         {
+          activity_id: "00000000-0000-4000-8000-000000000006",
           date: "2024-03-17",
           name: "Outdoor Climb",
           canonical_type: "cycling",
@@ -756,6 +337,7 @@ describe("CyclingAdvancedRepository", () => {
       const { repo, sensorStore } = makeRepository(
         [
           {
+            activity_id: "00000000-0000-4000-8000-000000000007",
             date: "2024-04-01",
             name: "Garmin Ride",
             canonical_type: "cycling",
@@ -797,6 +379,7 @@ describe("CyclingAdvancedRepository", () => {
     it("includes rides with elevation gain when climb seconds are short", async () => {
       const { repo } = makeRepository([
         {
+          activity_id: "00000000-0000-4000-8000-000000000008",
           date: "2026-04-20",
           name: "Rolling Gravel",
           canonical_type: "cycling",

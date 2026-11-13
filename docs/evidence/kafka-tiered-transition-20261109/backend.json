@@ -1,0 +1,27 @@
+{
+  "at": "2026-11-09T17:52:54.809Z",
+  "check": "actual generated broker properties and credentials compared by canonical workflow Node body",
+  "brokerInput": "docker cp server.properties and docker inspect Config.Env",
+  "workerInput": "synthetic expected fixture environment, not running application worker",
+  "comparedWorkerKeys": [
+    "KAFKA_CLUSTER_ID",
+    "KAFKA_TIERED_STORAGE_BUCKET",
+    "KAFKA_TIERED_STORAGE_ENDPOINT",
+    "KAFKA_TIERED_STORAGE_REGION",
+    "KAFKA_TIERED_STORAGE_ACCESS_KEY_ID",
+    "KAFKA_TIERED_STORAGE_SECRET_ACCESS_KEY"
+  ],
+  "comparedProperties": [
+    "rsm.config.storage.backend.class",
+    "rsm.config.storage.s3.bucket.name",
+    "rsm.config.storage.s3.endpoint.url",
+    "rsm.config.storage.s3.region",
+    "rsm.config.key.prefix"
+  ],
+  "passed": true,
+  "pluginFilesVerified": 173,
+  "checksumChangedArtifactRejected": true,
+  "checksumMissingArtifactRejected": true,
+  "checksumUtility": "shasum -a 256 --check (macOS equivalent; deployment uses sha256sum --check --strict -)",
+  "allPluginFilesPassedLinuxStrictCheck": true
+}

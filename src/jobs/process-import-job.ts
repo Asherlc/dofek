@@ -1,3 +1,5 @@
+import { CLIMBING_IMPORT_VALIDATION_ERROR_NAME } from "@dofek/format/user-facing-error";
+import { providerLabel } from "@dofek/providers/providers";
 import { UnrecoverableError } from "bullmq";
 import { withAccountErasureUserWriteFence } from "../db/account-erasure.ts";
 import { loadUserHomeTimezone } from "../db/home-timezone.ts";
@@ -27,6 +29,7 @@ import {
 import { accountErasureAllowsQueuedUserWork } from "./account-erasure-work-guard.ts";
 import {
   createAppleHealthImportValidationError,
+  createClimbingImportValidationError,
   createStrongCsvImportValidationError,
   isImportValidationError,
 } from "./import-validation-error.ts";
@@ -274,6 +277,46 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
             importStart,
             userId,
           );
+        } else if (
+          importType === "crimpd" ||
+          importType === "eight-a" ||
+          importType === "moonboard"
+        ) {
+          const label = providerLabel(importType);
+          await reportImportProgress(job, 0, `Starting ${label} import...`);
+          let result: ImportCompletionResult;
+          try {
+            if (importType === "crimpd") {
+              const { importCrimpdExportFile } = await import("../providers/crimpd/provider.ts");
+              result = await importCrimpdExportFile(db, filePath, userId);
+            } else {
+              const { readFile } = await import("node:fs/promises");
+              const csvText = await readFile(filePath, "utf-8");
+              await reportImportProgress(job, 25, `Importing ${label} climbing logs...`);
+              if (importType === "eight-a") {
+                const { importEightAExportFile } = await import("../providers/eight-a/provider.ts");
+                result = await importEightAExportFile(db, csvText, userId);
+              } else {
+                const { importMoonBoardExportFile } = await import(
+                  "../providers/moonboard/provider.ts"
+                );
+                result = await importMoonBoardExportFile(db, csvText, userId);
+              }
+            }
+          } catch (error) {
+            if (error instanceof Error && error.name === CLIMBING_IMPORT_VALIDATION_ERROR_NAME)
+              throw createClimbingImportValidationError(error.message);
+            throw error;
+          }
+          importedRecordCount = result.recordsSynced;
+          await logImportCompletion(db, importType, label, "records", result, importStart, userId);
+          if (result.errors?.length) {
+            terminalImportError = createClimbingImportValidationError(
+              `${label} import completed with errors: ${result.errors.map((error) => error.message).join("; ")}`,
+            );
+          } else {
+            await reportImportProgress(job, 90, `${label} import complete.`);
+          }
         } else if (importType === "kaya-export") {
           await reportImportProgress(job, 0, "Starting Kaya export import...");
           const { readFile } = await import("node:fs/promises");
@@ -475,9 +518,7 @@ export async function processImportJob(job: ImportJob, db: SyncDatabase): Promis
     status: terminalImportError ? "failed" : "succeeded",
     progressPercentage: 100,
     errorCode: terminalImportError ? "file_import_failed" : undefined,
-    errorMessage: terminalImportError
-      ? "Some files could not be imported. Review the import result and try again."
-      : undefined,
+    errorMessage: terminalImportError ? importFailureErrorMessage(terminalImportError) : undefined,
     idempotencyKey: terminalImportError ? "worker-failed" : "worker-succeeded",
   });
   if (!(await accountErasureAllowsQueuedUserWork(db, userId, "post-import cache invalidation"))) {

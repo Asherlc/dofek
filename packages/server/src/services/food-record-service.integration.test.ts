@@ -17,7 +17,7 @@ const hash = "a".repeat(64);
 const explainPlanRowSchema = z.object({ "QUERY PLAN": z.string() });
 const changeCountRowSchema = z.object({ count: z.coerce.number().int().nonnegative() });
 
-describe.sequential("FoodRecordService with Postgres", () => {
+describe("FoodRecordService with Postgres", { concurrent: false }, () => {
   let context: TestContext;
 
   beforeAll(async () => {

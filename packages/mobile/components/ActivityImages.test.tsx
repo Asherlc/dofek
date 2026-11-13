@@ -8,6 +8,71 @@ import { activityImageFixture } from "./activity-images-test-helpers";
 vi.mock("../lib/telemetry", () => ({ captureException: vi.fn() }));
 
 describe("ActivityImages", () => {
+  it("keeps other photos reachable when the summary preview fails", () => {
+    render(
+      <ActivityImages
+        heading={<span>Morning ride</span>}
+        images={[
+          activityImageFixture,
+          {
+            ...activityImageFixture,
+            id: "photo-2",
+            url: "https://images.example.test/finish.jpg",
+            sources: activityImageFixture.sources.map((source) => ({
+              ...source,
+              caption: "Finish",
+            })),
+          },
+        ]}
+        onRetry={vi.fn()}
+      />,
+    );
+    fireEvent.error(screen.getByLabelText("View from the summit"));
+    fireEvent.click(screen.getByRole("button", { name: "View 2 photos" }));
+    const viewer = screen.getByLabelText("Activity photo");
+    fireEvent.click(within(viewer).getByRole("button", { name: "Open photo 2: Finish" }));
+    expect(within(viewer).getByText("Finish")).toBeTruthy();
+  });
+  it("refreshes a failed viewer photo when its signed URL is unchanged", () => {
+    const retry = vi.fn();
+    render(
+      <ActivityImages
+        images={[activityImageFixture]}
+        heading={<span>Morning ride</span>}
+        onRetry={retry}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "View 1 photo" }));
+    const viewer = screen.getByLabelText("Activity photo");
+    fireEvent.error(within(viewer).getByLabelText("View from the summit"));
+    fireEvent.click(within(viewer).getByRole("button", { name: "Refresh photos" }));
+    expect(within(viewer).getByLabelText("View from the summit")).toBeTruthy();
+    expect(retry).toHaveBeenCalledOnce();
+  });
+  it("opens all photos from a single summary preview", () => {
+    render(
+      <ActivityImages
+        images={[
+          activityImageFixture,
+          {
+            ...activityImageFixture,
+            id: "photo-2",
+            sources: activityImageFixture.sources.map((source) => ({
+              ...source,
+              caption: "Finish",
+            })),
+          },
+        ]}
+        heading={<span>Morning ride</span>}
+        onRetry={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Morning ride")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "View 2 photos" }));
+    const viewer = screen.getByLabelText("Activity photo");
+    fireEvent.click(within(viewer).getByRole("button", { name: "Open photo 2: Finish" }));
+    expect(within(viewer).getByText("Finish")).toBeTruthy();
+  });
   afterEach(() => vi.restoreAllMocks());
 
   it("opens a downloaded image full screen and closes the photo viewer", () => {

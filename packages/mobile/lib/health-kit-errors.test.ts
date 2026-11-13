@@ -30,22 +30,23 @@ describe("health-kit-errors", () => {
     cyclic.cause = cyclic;
     expect(shouldSuppressBackgroundTransientNetworkError(cyclic, "bg-healthkit-sync")).toBe(false);
   });
-  it.each(["bg-healthkit-sync", "whoop-ble-imu-upload", "whoop-ble-realtime-upload"])(
-    "classifies handled cancellation and offline delivery from %s",
-    (source) => {
-      for (const message of [
-        "HealthKit observer sync completed with 1 error(s): Push workout routes: fetch failed: cancelled",
-        "fetch failed: The Internet connection appears to be offline.",
-      ]) {
-        expect(shouldSuppressBackgroundTransientNetworkError(new Error(message), source)).toBe(
-          true,
-        );
-      }
-      expect(
-        shouldSuppressBackgroundTransientNetworkError(new SyntaxError("Invalid response"), source),
-      ).toBe(false);
-    },
-  );
+  it.each([
+    "bg-healthkit-sync",
+    "whoop-ble-imu-upload",
+    "whoop-ble-realtime-upload",
+    "apple-health-sync-log",
+  ])("classifies handled cancellation and offline delivery from %s", (source) => {
+    for (const message of [
+      "HealthKit observer sync completed with 1 error(s): Push workout routes: fetch failed: cancelled",
+      "fetch failed: The Internet connection appears to be offline.",
+      "fetch failed: The network connection was lost.",
+    ]) {
+      expect(shouldSuppressBackgroundTransientNetworkError(new Error(message), source)).toBe(true);
+    }
+    expect(
+      shouldSuppressBackgroundTransientNetworkError(new SyntaxError("Invalid response"), source),
+    ).toBe(false);
+  });
 
   it("detects transient background fetch timeout messages", () => {
     expect(

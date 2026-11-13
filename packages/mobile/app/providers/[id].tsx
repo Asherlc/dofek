@@ -35,6 +35,7 @@ import {
   useProviderDetailActions,
 } from "../../components/providers/use-provider-detail-actions";
 import { getQueryErrorMessage, QueryStatePanel } from "../../components/QueryStatePanel";
+import { WhoopSensorPanel } from "../../components/WhoopSensorDetails";
 import { useAuth } from "../../lib/auth-context";
 import { trpc } from "../../lib/trpc";
 import { useProcessingStatus } from "../../lib/useProcessingStatus";
@@ -598,6 +599,8 @@ function ProviderDetailContent({
     isConnected,
     primaryActionLabel,
     isSyncing,
+    isRequestingPermissions,
+    permissionMessage,
     syncMessage,
     syncProgress,
     syncDateRange,
@@ -605,6 +608,7 @@ function ProviderDetailContent({
     shouldShowFullSync,
     shouldShowAppleHealthPermissionBanner,
     handlePrimaryAction,
+    handleReviewPermissions,
     handleFullSync,
     modals,
   } = providerActions;
@@ -634,6 +638,7 @@ function ProviderDetailContent({
         trpcUtils.sync.providers.invalidate(),
         trpcUtils.sync.providerStats.invalidate(),
         trpcUtils.processing.status.invalidate(),
+        ...(providerId === "whoop_ble" ? [trpcUtils.whoopBleSync.sensorSnapshot.invalidate()] : []),
       ]).then(() => undefined),
   });
 
@@ -764,6 +769,8 @@ function ProviderDetailContent({
         <ProviderDetailActionsCard
           primaryActionLabel={primaryActionLabel}
           isSyncing={isSyncing}
+          isRequestingPermissions={isRequestingPermissions}
+          permissionMessage={permissionMessage}
           syncMessage={syncMessage}
           syncProgress={syncProgress}
           syncDateRange={syncDateRange}
@@ -774,6 +781,7 @@ function ProviderDetailContent({
             providerId === "apple_health" && (providerStats?.clinicalRecords ?? 0) > 0
           }
           onPrimaryAction={() => void handlePrimaryAction()}
+          onReviewPermissions={() => void handleReviewPermissions()}
           onFullSync={() => void handleFullSync()}
           onOpenClinicalRecords={onOpenClinicalRecords}
         />
@@ -781,6 +789,7 @@ function ProviderDetailContent({
 
       {/* Provider-specific extras */}
       <ProviderDetailExtras providerId={providerId} />
+      {providerId === "whoop_ble" && <WhoopSensorPanel />}
 
       {/* Stats overview */}
       {providerStats && <ProviderStatsBreakdown stats={providerStats} variant="full" />}

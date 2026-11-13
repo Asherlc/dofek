@@ -1,85 +1,126 @@
+import { providerLabel } from "@dofek/providers/providers";
 import type {
-  ClimbingStrengthsPanel,
+  ClimbingStrengthsDisplayPanel,
+  ClimbingStrengthsExample,
   ClimbingStrengths as Strengths,
 } from "@dofek/training/climbing-strengths";
 import {
   ALL_CLIMBING_GRADES,
+  climbingStrengthsAdjustedLabel,
   climbingStrengthsCountLabel,
-  climbingStrengthsDifferenceLabel,
   climbingStrengthsGradePanel,
   climbingStrengthsRateLabel,
   climbingStrengthsResultLabel,
+  climbingStrengthsSendLabel,
 } from "@dofek/training/climbing-strengths";
+import {
+  climbingStrengthsBreakdownKey,
+  climbingStrengthsBreakdownOptions,
+  climbingStrengthsDefaultBreakdown,
+  climbingStrengthsPanelLabel,
+  climbingStrengthsObserved as observed,
+} from "@dofek/training/climbing-strengths-presentation";
 import {
   CLIMBING_STRENGTHS_TABS,
   type ClimbingStrengthsTab,
 } from "@dofek/training/climbing-strengths-views";
 import { useRouter } from "expo-router";
 import { type ReactNode, useState } from "react";
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import { openExternalUrl } from "../lib/open-external-url";
 import { colors, radius, spacing } from "../theme";
 import { ClimbingStrengthsChart } from "./ClimbingStrengthsChart";
 import { QueryStatePanel } from "./QueryStatePanel";
 
-const dimensions = {
-  wall_angle: "Wall angle",
-  hold_type: "Hold type",
-  setting: "Setting",
-} as const;
-function observed(panel: ClimbingStrengthsPanel) {
-  return panel.rows.some((row) => row.cells.some((cell) => cell.sampleStatus !== "no_data"));
-}
-function defaultPanel(panels: ClimbingStrengthsPanel[]) {
-  return (
-    panels.find((panel) => panel.dimension === "wall_angle" && observed(panel)) ??
-    panels.find((panel) => panel.dimension === "hold_type" && observed(panel)) ??
-    panels.find((panel) => panel.dimension !== "setting")
-  );
-}
 export function ClimbingStrengths({
   data,
   loading = false,
   error,
   rangeControl,
+  includeAreaMetadata = true,
+  onIncludeAreaMetadataChange,
 }: {
   data: Strengths | undefined;
   loading?: boolean;
   error?: { message: string } | null;
   rangeControl?: ReactNode;
+  includeAreaMetadata?: boolean;
+  onIncludeAreaMetadataChange?: (value: boolean) => void;
 }) {
   const [view, setView] = useState<ClimbingStrengthsTab>("radar");
-  const [selectedDimension, setDimension] = useState<ClimbingStrengthsPanel["dimension"] | null>(
-    null,
-  );
-  const panels = data?.panels ?? [];
-  const dimension = selectedDimension ?? defaultPanel(panels)?.dimension ?? "wall_angle";
+  const [selectedBreakdown, setBreakdown] = useState<string | null>(null);
+  const [errorDetailsExpanded, setErrorDetailsExpanded] = useState(false);
+  const enrichmentErrors = [...new Set(data?.enrichmentErrors)];
+  const panels = [...(data?.panels ?? []), ...(data?.tagPanels ?? [])];
+  const options = climbingStrengthsBreakdownOptions(panels);
+  const breakdown = options.some((option) => option.key === selectedBreakdown)
+    ? (selectedBreakdown ?? "wall_angle")
+    : climbingStrengthsDefaultBreakdown(panels);
+  const breakdownLabel = options.find((option) => option.key === breakdown)?.label ?? "Wall angle";
   return (
     <View style={styles.card}>
       <Text style={styles.title}>Climbing strengths</Text>
       {rangeControl ? <Text style={styles.meta}>Strengths period</Text> : null}
       {rangeControl}
+      <Pressable
+        accessibilityRole="switch"
+        accessibilityLabel="Include area metadata"
+        accessibilityState={{ checked: includeAreaMetadata }}
+        onPress={() => onIncludeAreaMetadataChange?.(!includeAreaMetadata)}
+        style={[styles.controls, { minHeight: 44, alignItems: "center" }]}
+      >
+        <Text style={styles.link}>{includeAreaMetadata ? "☑" : "☐"}</Text>
+        <Text style={styles.text}>Include area metadata</Text>
+      </Pressable>
+      {data?.enrichmentPending ? (
+        <Text accessibilityLiveRegion="polite" style={styles.meta}>
+          Updating catalogue metadata…
+        </Text>
+      ) : null}
+      {enrichmentErrors.length > 0 ? (
+        <View style={styles.metadataWarning}>
+          <Text accessibilityLiveRegion="polite" style={styles.text}>
+            Catalogue metadata incomplete
+          </Text>
+          <Text style={styles.meta}>Recorded results remain available.</Text>
+          <Pressable
+            accessibilityRole="button"
+            aria-expanded={errorDetailsExpanded}
+            onPress={() => setErrorDetailsExpanded(!errorDetailsExpanded)}
+            style={styles.chip}
+          >
+            <Text style={styles.link}>
+              {errorDetailsExpanded ? "Hide provider details" : "Provider details"}
+            </Text>
+          </Pressable>
+          {errorDetailsExpanded
+            ? enrichmentErrors.map((message) => (
+                <Text key={message} style={styles.meta}>
+                  {message}
+                </Text>
+              ))
+            : null}
+        </View>
+      ) : null}
       {error && <QueryStatePanel variant="error" message={error.message} minHeight={80} />}
       {data != null || !loading ? (
         <>
           <Text style={styles.meta}>Break down by</Text>
           <View style={styles.controls}>
-            {Object.entries(dimensions)
-              .filter(([item]) => item !== "setting")
-              .map(([item, label]) => (
-                <Pressable
-                  key={item}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: dimension === item }}
-                  style={[styles.chip, dimension === item && styles.selected]}
-                  onPress={() => {
-                    if (item === "wall_angle" || item === "hold_type" || item === "setting")
-                      setDimension(item);
-                  }}
-                >
-                  <Text style={styles.text}>{label}</Text>
-                </Pressable>
-              ))}
+            {options.map((option) => (
+              <Pressable
+                key={option.key}
+                accessibilityRole="button"
+                accessibilityState={{ selected: breakdown === option.key }}
+                style={[styles.chip, breakdown === option.key && styles.selected]}
+                onPress={() => setBreakdown(option.key)}
+              >
+                <Text style={styles.text}>
+                  {option.providerId ? `${providerLabel(option.providerId)} · ` : ""}
+                  {option.label}
+                </Text>
+              </Pressable>
+            ))}
           </View>
           <View style={styles.controls}>
             {CLIMBING_STRENGTHS_TABS.map((tab) => (
@@ -101,7 +142,12 @@ export function ClimbingStrengths({
           {panels.some((panel) => panel.grades.some((grade) => grade.unknownOutcomes > 0)) ? (
             <Text style={styles.meta}>Success rates use climbs with known results.</Text>
           ) : null}
-          <ClimbingStrengthsBreakdown panels={panels} dimension={dimension} view={view} />
+          <ClimbingStrengthsBreakdown
+            panels={panels}
+            breakdown={breakdown}
+            label={breakdownLabel}
+            view={view}
+          />
         </>
       ) : loading && data == null ? (
         <QueryStatePanel variant="loading" />
@@ -114,14 +160,18 @@ export function ClimbingStrengths({
 
 function ClimbingStrengthsBreakdown({
   panels,
-  dimension,
+  breakdown,
+  label,
   view,
 }: {
-  panels: ClimbingStrengthsPanel[];
-  dimension: ClimbingStrengthsPanel["dimension"];
+  panels: ClimbingStrengthsDisplayPanel[];
+  breakdown: string;
+  label: string;
   view: ClimbingStrengthsTab;
 }) {
-  const selectedPanels = panels.filter((panel) => panel.dimension === dimension);
+  const selectedPanels = panels.filter(
+    (panel) => climbingStrengthsBreakdownKey(panel) === breakdown,
+  );
   return (
     <View style={{ gap: spacing.md }}>
       {selectedPanels.length ? (
@@ -133,7 +183,7 @@ function ClimbingStrengthsBreakdown({
       ) : (
         <Text
           style={styles.meta}
-        >{`No recorded ${dimensions[dimension].toLowerCase()} observations in this context.`}</Text>
+        >{`No recorded ${label.toLowerCase()} observations in this context.`}</Text>
       )}
     </View>
   );
@@ -143,116 +193,60 @@ function ClimbingStrengthsPanelContent({
   panel,
   view,
 }: {
-  panel: ClimbingStrengthsPanel;
+  panel: ClimbingStrengthsDisplayPanel;
   view: ClimbingStrengthsTab;
 }) {
-  const router = useRouter();
   const [selectedDetail, setSelectedDetail] = useState<{ rowKey: string; grade: string } | null>(
     null,
   );
-  const displayPanel =
-    view === "profile" ? panel : climbingStrengthsGradePanel(panel, ALL_CLIMBING_GRADES);
-  const selectedRow = displayPanel.rows.find((row) => row.key === selectedDetail?.rowKey);
-  const selectedCell = selectedRow?.cells.find((cell) => cell.grade === selectedDetail?.grade);
+  const displayPanel = climbingStrengthsGradePanel(panel, ALL_CLIMBING_GRADES);
+  const selectedRow =
+    displayPanel.rows.find((row) => row.key === selectedDetail?.rowKey) ??
+    displayPanel.rows.find((row) =>
+      row.cells.some((cell) => cell.climbs > 0 || cell.unknownOutcomes > 0),
+    );
+  const selectedCell =
+    selectedRow?.cells.find((cell) => cell.grade === selectedDetail?.grade) ??
+    selectedRow?.cells.find((cell) => cell.climbs > 0 || cell.unknownOutcomes > 0);
+  if (
+    selectedDetail &&
+    (selectedRow?.key !== selectedDetail.rowKey || selectedCell?.grade !== selectedDetail.grade)
+  )
+    setSelectedDetail(null);
   if (!observed(panel))
     return (
-      <Text
-        style={styles.meta}
-      >{`No recorded ${dimensions[panel.dimension].toLowerCase()} observations in this context.`}</Text>
+      <Text style={styles.meta}>
+        {panel.coverage.missingTraits > 0
+          ? `${climbingStrengthsPanelLabel(panel)} is missing for ${panel.coverage.missingTraits} ${panel.coverage.missingTraits === 1 ? "climb" : "climbs"}.`
+          : `No recorded ${climbingStrengthsPanelLabel(panel).toLowerCase()} observations in this context.`}
+      </Text>
     );
   return (
     <View style={{ gap: spacing.md }}>
-      {view === "profile" ? (
-        <>
-          <Text style={styles.text}>Send rate by grade and style</Text>
-          <ScrollView horizontal accessibilityLabel="Send rate by grade and style">
-            <View style={{ gap: spacing.xs }}>
-              <View style={styles.heatmapRow}>
-                <Text style={[styles.meta, styles.heatmapLabel]}>Style</Text>
-                {panel.grades.map((grade) => (
-                  <Text key={grade.grade} style={styles.heatmapCell}>
-                    {grade.grade}
-                  </Text>
-                ))}
-              </View>
-              {panel.rows.map((row) => (
-                <View key={row.key} style={styles.heatmapRow}>
-                  <Text style={[styles.text, styles.heatmapLabel]}>{row.label}</Text>
-                  {row.cells.map((cell) => (
-                    <Pressable
-                      key={cell.grade}
-                      accessibilityRole="button"
-                      accessibilityLabel={`${row.label} · ${cell.grade} · ${climbingStrengthsRateLabel(cell)} · ${climbingStrengthsCountLabel(cell)}${cell.sampleStatus === "limited" ? " · Limited sample" : ""}`}
-                      accessibilityState={{
-                        selected:
-                          selectedRow?.key === row.key && selectedCell?.grade === cell.grade,
-                      }}
-                      onPress={() => setSelectedDetail({ rowKey: row.key, grade: cell.grade })}
-                      style={[
-                        styles.heatmapCell,
-                        styles.heatmapValue,
-                        selectedRow?.key === row.key &&
-                          selectedCell?.grade === cell.grade &&
-                          styles.selected,
-                      ]}
-                    >
-                      <View
-                        pointerEvents="none"
-                        style={[
-                          StyleSheet.absoluteFill,
-                          {
-                            backgroundColor: colors.accent,
-                            opacity: cell.successRate === null ? 0 : cell.successRate * 0.004,
-                          },
-                        ]}
-                      />
-                      <Text style={styles.text}>{climbingStrengthsRateLabel(cell)}</Text>
-                      {cell.sampleStatus === "limited" ? (
-                        <Text style={styles.meta}>Limited sample</Text>
-                      ) : null}
-                    </Pressable>
-                  ))}
-                </View>
-              ))}
-            </View>
-          </ScrollView>
-        </>
-      ) : (
-        <>
-          {view === "radar" ? (
-            <Text style={styles.meta}>
-              Compared with your usual results at the same grades. Outside the dashed line is
-              stronger; inside is weaker.
-            </Text>
-          ) : (
-            <Text style={styles.meta}>
-              Combines all grades; changes can reflect the difficulty of climbs recorded each month.
-            </Text>
-          )}
-          <ClimbingStrengthsChart
-            panel={displayPanel}
-            view={view}
-            grade={ALL_CLIMBING_GRADES}
-            onSelect={(rowKey, grade) => setSelectedDetail({ rowKey, grade })}
-          />
-        </>
-      )}
+      <ClimbingStrengthsChart
+        panel={displayPanel}
+        view={view}
+        grade={ALL_CLIMBING_GRADES}
+        onSelect={(rowKey, grade) => setSelectedDetail({ rowKey, grade })}
+      />
       {selectedCell && (
         <View style={styles.examples}>
           <Text style={styles.text}>
-            {selectedRow?.label} · {selectedCell.grade}
+            {selectedRow?.label}
+            {view === "radar" ? "" : ` · ${selectedCell.grade}`}
+          </Text>
+          <Text style={styles.meta}>
+            {view === "radar"
+              ? climbingStrengthsSendLabel(selectedCell)
+              : `${climbingStrengthsRateLabel(selectedCell)} · ${climbingStrengthsCountLabel(selectedCell)}`}
           </Text>
           {view === "radar" ? (
             <Text style={styles.meta}>
-              {climbingStrengthsDifferenceLabel(
-                panel.gradeAdjustedStrengths.find((entry) => entry.key === selectedRow?.key)
-                  ?.differencePercentagePoints ?? null,
+              {climbingStrengthsAdjustedLabel(
+                panel.gradeAdjustedStrengths.find((entry) => entry.key === selectedRow?.key),
               )}
             </Text>
           ) : null}
-          <Text style={styles.meta}>
-            {climbingStrengthsRateLabel(selectedCell)} · {climbingStrengthsCountLabel(selectedCell)}
-          </Text>
           <Text style={styles.text}>
             {view === "progress"
               ? "Recorded climbs · Across the selected period"
@@ -262,43 +256,7 @@ function ClimbingStrengthsPanelContent({
             <Text style={styles.meta}>No examples available for this selection.</Text>
           ) : (
             selectedCell.examples.map((example) => (
-              <View key={example.logEntryId} style={styles.row}>
-                <Text style={styles.text}>{example.name}</Text>
-                <Text style={styles.meta}>
-                  {example.grade} · {example.date} · {climbingStrengthsResultLabel(example.outcome)}
-                </Text>
-                {example.sourceUrl ? (
-                  <Pressable
-                    accessibilityRole="link"
-                    accessibilityLabel={`${example.sourceName} source for ${example.name}`}
-                    style={styles.chip}
-                    onPress={async () => {
-                      if (
-                        example.sourceUrl &&
-                        !(await openExternalUrl(example.sourceUrl, "climbing-strengths-source"))
-                      )
-                        Alert.alert(
-                          "Unable to open source",
-                          `Open this source in your browser: ${example.sourceUrl}`,
-                        );
-                    }}
-                  >
-                    <Text style={styles.link}>{example.sourceName}</Text>
-                  </Pressable>
-                ) : (
-                  <Text style={styles.meta}>{example.sourceName}</Text>
-                )}
-                {example.activityId && (
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={`View activity for ${example.name}`}
-                    onPress={() => router.push(`/activity/${example.activityId}`)}
-                    style={styles.chip}
-                  >
-                    <Text style={styles.link}>View activity</Text>
-                  </Pressable>
-                )}
-              </View>
+              <ClimbingStrengthsExampleSources key={example.logEntryId} example={example} />
             ))
           )}
         </View>
@@ -306,17 +264,88 @@ function ClimbingStrengthsPanelContent({
     </View>
   );
 }
+
+function ClimbingStrengthsExampleSources({ example }: { example: ClimbingStrengthsExample }) {
+  const hasAreaMetadata = example.traitSources?.some((source) => source.scope === "area");
+  const [expanded, setExpanded] = useState(false);
+  const router = useRouter();
+  const sourceLink = (url: string, label: string, accessibilityLabel = label) => (
+    <Pressable
+      accessibilityRole="link"
+      accessibilityLabel={accessibilityLabel}
+      style={styles.chip}
+      onPress={async () => {
+        if (!(await openExternalUrl(url, "climbing-strengths-source")))
+          Alert.alert("Unable to open source", `Open this source in your browser: ${url}`);
+      }}
+    >
+      <Text style={styles.link}>{label}</Text>
+    </Pressable>
+  );
+  return (
+    <View style={styles.row}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`Sources for ${example.name}${hasAreaMetadata ? " · Area metadata" : ""}`}
+        accessibilityState={{ expanded }}
+        onPress={() => setExpanded(!expanded)}
+        style={{ minHeight: 44, gap: spacing.xs }}
+      >
+        <Text style={styles.text}>{example.name}</Text>
+        {hasAreaMetadata ? <Text style={styles.meta}>Area metadata</Text> : null}
+        <Text style={styles.meta}>
+          {example.grade} · {example.date} · {climbingStrengthsResultLabel(example.outcome)}
+        </Text>
+      </Pressable>
+      {expanded ? (
+        <View style={{ gap: spacing.sm }}>
+          {example.traitSources?.length ? (
+            example.traitSources.map((source) => (
+              <View
+                key={`${source.providerId}:${source.url}:${source.trait}`}
+                style={{ gap: spacing.xs }}
+              >
+                {sourceLink(source.url, providerLabel(source.providerId))}
+                <View style={styles.controls}>
+                  <Text style={styles.text}>{source.name}</Text>
+                  <Text style={styles.trait}>{source.trait}</Text>
+                </View>
+                {source.scope === "area" ? (
+                  <Text style={[styles.text, { paddingLeft: spacing.md }]}>↳ {example.name}</Text>
+                ) : null}
+              </View>
+            ))
+          ) : example.sourceUrl ? (
+            sourceLink(
+              example.sourceUrl,
+              example.sourceName,
+              `${example.sourceName} source for ${example.name}`,
+            )
+          ) : (
+            <Text style={styles.meta}>{example.sourceName}</Text>
+          )}
+          {example.activityId ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`View activity for ${example.name}`}
+              onPress={() => router.push(`/activity/${example.activityId}`)}
+              style={styles.chip}
+            >
+              <Text style={styles.link}>View activity</Text>
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
+    </View>
+  );
+}
 const styles = StyleSheet.create({
-  heatmapRow: { flexDirection: "row", alignItems: "stretch", gap: spacing.xs },
-  heatmapLabel: { width: 90, alignSelf: "center" },
-  heatmapCell: { width: 116, color: colors.text, textAlign: "center", padding: spacing.xs },
-  heatmapValue: {
-    minHeight: 64,
-    justifyContent: "center",
+  metadataWarning: {
+    padding: spacing.sm,
     gap: spacing.xs,
+    borderWidth: 1,
+    borderColor: colors.surfaceSecondary,
     borderRadius: radius.md,
-    overflow: "hidden",
-    backgroundColor: colors.surfaceSecondary,
   },
   card: {
     backgroundColor: colors.surface,
@@ -337,6 +366,18 @@ const styles = StyleSheet.create({
   text: { color: colors.text, fontSize: 14 },
   meta: { color: colors.textSecondary, fontSize: 12 },
   row: { padding: spacing.sm, borderRadius: radius.md, gap: spacing.xs },
-  examples: { gap: spacing.sm },
+  examples: {
+    gap: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.surfaceSecondary,
+    paddingTop: spacing.md,
+  },
+  trait: {
+    color: colors.accent,
+    fontSize: 12,
+    backgroundColor: colors.surfaceSecondary,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radius.sm,
+  },
   link: { color: colors.accent, fontSize: 13 },
 });

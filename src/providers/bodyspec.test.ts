@@ -907,7 +907,7 @@ describe("BodySpecProvider", () => {
       );
 
       expect(result.errors.length).toBeGreaterThan(0);
-      expect(result.errors[0]?.message).toContain("API error 500");
+      expect(result.errors[0]?.message).toContain("API service unavailable (500)");
       expect(result.recordsSynced).toBe(1);
       expect(listCallCount).toBe(2);
       expect(fetchFn).toHaveBeenCalledWith(
@@ -1218,7 +1218,7 @@ describe("BodySpecProvider", () => {
           );
         }
         // All endpoints return error with long body
-        return Promise.resolve(new Response(longBody, { status: 500 }));
+        return Promise.resolve(new Response(longBody, { status: 400 }));
       });
 
       const provider = new BodySpecProvider(fetchFn);

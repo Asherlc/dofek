@@ -1,5 +1,4 @@
 import { HttpResponse, http } from "msw";
-import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { CorosProvider } from "../providers/coros.ts";
 import { DecathlonProvider } from "../providers/decathlon.ts";
@@ -8,6 +7,7 @@ import { KomootProvider } from "../providers/komoot.ts";
 import { MapMyFitnessProvider } from "../providers/mapmyfitness.ts";
 import { SuuntoProvider } from "../providers/suunto.ts";
 import type { Provider } from "../providers/types.ts";
+import { createIntegrationMswFixture } from "../test/early-msw-lifecycle.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import { eraseStripeAccount, revokeRemoteAccounts } from "./remote-revocation.ts";
 import type { AccountErasureRemoteSnapshot } from "./remote-snapshot.ts";
@@ -34,12 +34,9 @@ const snapshot: AccountErasureRemoteSnapshot = {
   ],
   externalEffects: [],
   localIdentifiers: {
-    activityIds: [],
     exportObjects: [],
     fileUploads: [],
-    processingOperationIds: [],
     sessionIds: [],
-    sleepSessionIds: [],
     userId: "10000000-0000-4000-8000-000000001994",
   },
   processorEmails: ["erase@example.test"],
@@ -52,11 +49,11 @@ const snapshot: AccountErasureRemoteSnapshot = {
   webhooks: [],
 };
 
-const server = setupServer();
+const server = createIntegrationMswFixture();
 
 describe("remote account revocation (integration)", () => {
   beforeAll(async () => {
-    server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
     process.env.APPLE_TEAM_ID = "APPLE_TEAM";
     process.env.APPLE_KEY_ID = "APPLE_KEY";
     process.env.APPLE_PRIVATE_KEY = await generateTestKeyPem();
@@ -80,7 +77,7 @@ describe("remote account revocation (integration)", () => {
   });
 
   afterAll(() => {
-    server.close();
+    server.deactivate();
   });
 
   it("revokes Apple refresh credentials, cancels Stripe, and deletes the customer", async () => {

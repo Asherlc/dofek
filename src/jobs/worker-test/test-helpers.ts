@@ -392,6 +392,7 @@ vi.mock("../queues.ts", () => ({
   enqueueProviderDeleteAnalyticsRefresh: vi.fn(() => Promise.resolve()),
   getProviderDataDeletionQueue: vi.fn(() => ({})),
   closeAllQueueResources: vi.fn(() => Promise.resolve()),
+  closeAnalyticsRefreshWaiters: vi.fn(() => Promise.resolve()),
 }));
 
 vi.mock("@sentry/node", () => ({

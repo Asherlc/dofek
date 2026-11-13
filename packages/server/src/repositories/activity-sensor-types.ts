@@ -5,6 +5,7 @@ export interface ActivitySensorWindow {
   userId: string;
   startedAt: string;
   endedAt: string | null;
+  providerType: string | null;
   memberActivityIds: string[];
 }
 

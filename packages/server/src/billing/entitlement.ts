@@ -79,6 +79,29 @@ export function dateAccessPredicate(window: AccessWindow | undefined, column: SQ
              AND ${column} < ${window.endDateExclusive}::date`;
 }
 
+export function clickHouseAccessPredicate(
+  window: AccessWindow | undefined,
+  column: string,
+): string {
+  return window?.kind === "limited"
+    ? `AND ${column} >= parseDateTime64BestEffort({accessStartDate:String}, 6, {accessTimezone:String})
+       AND ${column} < parseDateTime64BestEffort({accessEndDateExclusive:String}, 6, {accessTimezone:String})`
+    : "";
+}
+
+export function clickHouseAccessParams(
+  window: AccessWindow | undefined,
+  timezone: string,
+): Record<string, string> {
+  return window?.kind === "limited"
+    ? {
+        accessStartDate: window.startDate,
+        accessEndDateExclusive: window.endDateExclusive,
+        accessTimezone: timezone,
+      }
+    : {};
+}
+
 export function resolveAccessWindow(input: ResolveAccessWindowInput): AccessWindow {
   if (input.paidGrantReason) {
     return { kind: "full", paid: true, reason: "paid_grant" };

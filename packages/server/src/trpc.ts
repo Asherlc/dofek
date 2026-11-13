@@ -7,7 +7,7 @@ import { queryCache } from "dofek/lib/cache";
 import { captureException } from "dofek/lib/error-reporting";
 import { ZodError, type ZodType } from "zod";
 import type { AccountErasureRestoreLedger } from "../../../src/account-erasure/restore-ledger.ts";
-import type { MetricStreamEventPublisher } from "../../../src/metric-stream/redpanda-producer.ts";
+import type { MetricStreamEventPublisher } from "../../../src/metric-stream/publisher.ts";
 import { InvalidCredentialsError } from "./auth/password-credential.ts";
 import type { AccessWindow } from "./billing/entitlement.ts";
 import {
@@ -271,6 +271,7 @@ interface CachePolicy {
   expiresAt?: CacheExpiry;
   keyVersion?: string;
   outputSchema?: ZodType;
+  shouldCache?: (data: unknown) => boolean;
 }
 
 function localDateString(date: Date, timezone: string): string {
@@ -382,7 +383,7 @@ function cached(policy: CachePolicy) {
       { procedure: path, type, cache_hit: "false" },
       totalDurationMs / 1000,
     );
-    if (result.ok) {
+    if (result.ok && (policy.shouldCache?.(result.data) ?? true)) {
       await queryCache.set(key, result.data, requestCacheTtl(policy, ctx.timezone));
     }
     return result;

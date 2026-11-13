@@ -1,7 +1,9 @@
-import kafkaJs, { type ConfigResourceTypes } from "kafkajs";
+import { randomUUID } from "node:crypto";
+import kafkaJs, { type Admin, type Consumer } from "kafkajs";
 import { z } from "zod";
 import {
-  METRIC_STREAM_QUARANTINE_TOPIC_CONFIG,
+  assertQuarantineTopicConfiguration,
+  type KafkaQuarantineConfigAdmin,
   metricStreamQuarantineTopic,
 } from "../metric-stream/redpanda-quarantine.ts";
 
@@ -19,27 +21,29 @@ const highWatermarkSchema = z.object({
 const topicOffsetSchema = highWatermarkSchema.extend({
   high: offsetSchema,
 });
-const describedTopicConfigSchema = z.object({
-  resources: z.array(
-    z.object({
-      configEntries: z.array(
-        z.object({
-          configName: z.string(),
-          configValue: z.string(),
-        }),
-      ),
-      errorCode: z.number().int(),
-      errorMessage: z.string().nullable(),
-      resourceName: z.string(),
-      resourceType: z.number().int(),
-    }),
-  ),
+export type AccountErasureHighWatermark = z.infer<typeof highWatermarkSchema>;
+
+export const accountErasureRouteHighWatermarkSchema = highWatermarkSchema.extend({
+  topic: z.string().min(1).max(249),
+  clusterId: z
+    .string()
+    .regex(/^[A-Za-z0-9_-]{22}$/)
+    .optional(),
+  topicId: z
+    .string()
+    .regex(/^[A-Za-z0-9_-]{22}$/)
+    .optional(),
+});
+export type AccountErasureRouteHighWatermark = z.infer<
+  typeof accountErasureRouteHighWatermarkSchema
+>;
+
+/** Durable ingest_fence checkpoint written by the Kafka phase runner. */
+export const accountErasureIngestFenceCheckpointSchema = z.object({
+  highWatermarks: z.array(accountErasureRouteHighWatermarkSchema).min(1).max(3),
 });
 
-export type AccountErasureHighWatermark = z.infer<typeof highWatermarkSchema>;
-export type AccountErasureRouteHighWatermark = AccountErasureHighWatermark & { topic: string };
-
-interface RedpandaOffsetAdmin {
+interface KafkaOffsetAdmin {
   fetchOffsets(options: { groupId: string; topics: string[] }): Promise<
     Array<{
       partitions: Array<{ offset: string; partition: number }>;
@@ -51,66 +55,10 @@ interface RedpandaOffsetAdmin {
   ): Promise<Array<{ high: string; low: string; offset: string; partition: number }>>;
 }
 
-export interface RedpandaAdmin extends RedpandaOffsetAdmin {
-  describeConfigs(options: {
-    includeSynonyms: boolean;
-    resources: Array<{
-      configNames: string[];
-      name: string;
-      type: ConfigResourceTypes;
-    }>;
-  }): Promise<unknown>;
-}
-
-async function assertQuarantineTopicConfiguration(
-  admin: RedpandaAdmin,
-  sourceTopic: string,
-): Promise<string> {
-  const quarantineTopic = metricStreamQuarantineTopic(sourceTopic);
-  const expectedConfig = new Map(
-    METRIC_STREAM_QUARANTINE_TOPIC_CONFIG.map((entry) => [entry.name, entry.value]),
-  );
-  const response = describedTopicConfigSchema.parse(
-    await admin.describeConfigs({
-      includeSynonyms: false,
-      resources: [
-        {
-          configNames: [...expectedConfig.keys()],
-          name: quarantineTopic,
-          type: kafkaJs.ConfigResourceTypes.TOPIC,
-        },
-      ],
-    }),
-  );
-  const resource = response.resources.find(
-    (entry) =>
-      entry.resourceName === quarantineTopic &&
-      entry.resourceType === kafkaJs.ConfigResourceTypes.TOPIC,
-  );
-  if (!resource) {
-    throw new Error(`Account erasure could not verify quarantine topic ${quarantineTopic}`);
-  }
-  if (resource.errorCode !== 0) {
-    throw new Error(
-      `Account erasure could not verify quarantine topic ${quarantineTopic}: ${resource.errorMessage ?? `broker error ${resource.errorCode}`}`,
-    );
-  }
-  const actualConfig = new Map(
-    resource.configEntries.map((entry) => [entry.configName, entry.configValue]),
-  );
-  for (const [name, expectedValue] of expectedConfig) {
-    const actualValue = actualConfig.get(name);
-    if (actualValue !== expectedValue) {
-      throw new Error(
-        `Account erasure quarantine topic ${name} must be ${expectedValue}; found ${actualValue ?? "missing"}`,
-      );
-    }
-  }
-  return quarantineTopic;
-}
+export interface RedpandaAdmin extends KafkaOffsetAdmin, KafkaQuarantineConfigAdmin {}
 
 export async function captureAccountErasureHighWatermarks(
-  admin: Pick<RedpandaOffsetAdmin, "fetchTopicOffsets">,
+  admin: Pick<KafkaOffsetAdmin, "fetchTopicOffsets">,
   topic: string,
 ): Promise<AccountErasureHighWatermark[]> {
   return z
@@ -128,12 +76,13 @@ export async function captureAccountErasureQuarantineHighWatermarks(
   admin: RedpandaAdmin,
   sourceTopic: string,
 ): Promise<AccountErasureHighWatermark[]> {
-  const quarantineTopic = await assertQuarantineTopicConfiguration(admin, sourceTopic);
+  const quarantineTopic = metricStreamQuarantineTopic(sourceTopic);
+  await assertQuarantineTopicConfiguration(admin, quarantineTopic);
   return captureAccountErasureHighWatermarks(admin, quarantineTopic);
 }
 
 export async function assertAccountErasureConsumersDrained(
-  admin: Pick<RedpandaOffsetAdmin, "fetchOffsets">,
+  admin: Pick<KafkaOffsetAdmin, "fetchOffsets">,
   topic: string,
   highWatermarks: readonly AccountErasureHighWatermark[],
   consumerGroups: readonly string[] = ACCOUNT_ERASURE_CONSUMER_GROUPS,
@@ -168,7 +117,7 @@ export async function assertAccountErasureConsumersDrained(
 }
 
 export async function assertAccountErasureReplayExpired(
-  admin: Pick<RedpandaOffsetAdmin, "fetchTopicOffsets">,
+  admin: Pick<KafkaOffsetAdmin, "fetchTopicOffsets">,
   topic: string,
   highWatermarks: readonly AccountErasureHighWatermark[],
 ): Promise<void> {
@@ -202,7 +151,8 @@ export async function assertAccountErasureQuarantineExpired(
   sourceTopic: string,
   highWatermarks: readonly AccountErasureHighWatermark[],
 ): Promise<void> {
-  const quarantineTopic = await assertQuarantineTopicConfiguration(admin, sourceTopic);
+  const quarantineTopic = metricStreamQuarantineTopic(sourceTopic);
+  await assertQuarantineTopicConfiguration(admin, quarantineTopic);
   try {
     await assertAccountErasureReplayExpired(admin, quarantineTopic, highWatermarks);
   } catch (error: unknown) {
@@ -214,14 +164,15 @@ export async function assertAccountErasureQuarantineExpired(
 }
 
 export interface AccountErasureRedpandaAdmin {
-  admin: RedpandaAdmin;
+  admin: RedpandaAdmin & Pick<Admin, "describeCluster" | "fetchTopicMetadata">;
   close(): Promise<void>;
   connect(): Promise<void>;
+  createMetadataConsumer(): Consumer;
   routes: Array<{ topic: string; consumerGroups: readonly string[] }>;
 }
 
 export function createAccountErasureRedpandaAdminFromEnv(
-  env: NodeJS.ProcessEnv = process.env,
+  env: Record<string, string | undefined> = process.env,
 ): AccountErasureRedpandaAdmin {
   const routes = (["LEGACY", "LIVE", "HISTORY"] as const).map((route) => {
     const key = `METRIC_STREAM_${route}_TOPIC`;
@@ -236,14 +187,20 @@ export function createAccountErasureRedpandaAdminFromEnv(
   if (!brokers || brokers.length === 0) {
     throw new Error("REDPANDA_BROKERS is required for account erasure");
   }
-  const admin = new kafkaJs.Kafka({
+  const kafka = new kafkaJs.Kafka({
     brokers,
     clientId: "dofek-account-erasure",
-  }).admin();
+  });
+  const admin = kafka.admin();
   return {
     admin,
     close: () => admin.disconnect(),
     connect: () => admin.connect(),
+    createMetadataConsumer: () =>
+      kafka.consumer({
+        groupId: `dofek-account-erasure-storage-${randomUUID()}`,
+        maxBytes: 1024 * 1024,
+      }),
     routes,
   };
 }

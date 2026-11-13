@@ -2,16 +2,23 @@ import { formatDateTime, formatNumber, formatTimeOnly } from "@dofek/format/form
 import { activityMetricColors } from "@dofek/scoring/colors";
 import {
   type ActivityChartSeries,
+  type ActivityChartWindow,
   activityChartSeries,
 } from "@dofek/training/activity-chart-series";
-import { useMemo } from "react";
+import {
+  type ClimbingChartAnnotation,
+  climbingChartPositions,
+} from "@dofek/training/climbing-chart";
+import { useCallback, useMemo, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import Svg, {
   Circle,
   Defs,
+  G,
   Line,
   LinearGradient,
   Path,
+  Rect,
   Stop,
   Text as SvgText,
 } from "react-native-svg";
@@ -23,6 +30,7 @@ import { useChartScrub } from "./useChartScrub";
 const CHART_WIDTH = ACTIVITY_CHART_WIDTH;
 const CHART_HEIGHT = 180;
 const CHART_PADDING = { top: 20, right: 16, bottom: 28, left: 44 };
+const NO_CLIMB_ANNOTATIONS: readonly ClimbingChartAnnotation[] = [];
 
 export const CHART_COLORS = {
   heartRate: activityMetricColors.heartRate,
@@ -49,11 +57,16 @@ export const chartStyles = StyleSheet.create({
 });
 
 interface ChartProps {
+  activityWindow?: ActivityChartWindow;
+  climbAnnotations?: readonly ClimbingChartAnnotation[];
+  highlightedClimbId?: string | null;
+  onSelectClimb?: (entryId: string | null) => void;
   data: Array<{ recordedAt: string; value: number | null }>;
   color: string;
   label: string;
   unit: string;
   onHoverIndex?: (index: number | null) => void;
+  onHoverTime?: (timestamp: number | null) => void;
   onScrubStart?: () => void;
   onScrubEnd?: () => void;
 }
@@ -90,18 +103,68 @@ function TimeAxis({ series }: { series: ActivityChartSeries }) {
 
 export function LineChart({
   data,
+  activityWindow,
   color,
   label,
   unit,
   onHoverIndex,
+  onHoverTime,
   onScrubStart,
   onScrubEnd,
+  climbAnnotations = NO_CLIMB_ANNOTATIONS,
+  highlightedClimbId,
+  onSelectClimb,
 }: ChartProps) {
-  const series = useMemo(() => activityChartSeries(data), [data]);
+  const [selectedClimbId, setSelectedClimbId] = useState<string | null>(null);
+  const selectClimb = useCallback(
+    (entryId: string | null) => {
+      setSelectedClimbId(entryId);
+      onSelectClimb?.(entryId);
+    },
+    [onSelectClimb],
+  );
+  const series = useMemo(() => activityChartSeries(data, activityWindow), [data, activityWindow]);
+  const climbs = useMemo(
+    () => climbingChartPositions(climbAnnotations, series.startedAt, series.endedAt),
+    [climbAnnotations, series.startedAt, series.endedAt],
+  );
+  const selectedClimb = climbs.find(
+    ({ annotation }) =>
+      annotation.id === (highlightedClimbId === undefined ? selectedClimbId : highlightedClimbId),
+  )?.annotation;
+  const climbTimeLabel = (annotation: ClimbingChartAnnotation) =>
+    `${formatDateTime(new Date(annotation.startedAt))}${annotation.endedAt ? ` – ${formatDateTime(new Date(annotation.endedAt))}` : ""}`;
   const plotWidth = CHART_WIDTH - CHART_PADDING.left - CHART_PADDING.right;
+  const handleHoverTime = useCallback(
+    (timestamp: number | null) => {
+      onHoverTime?.(timestamp);
+      if (timestamp === null) return;
+      const tolerance = (10 / plotWidth) * (series.endedAt - series.startedAt);
+      let selected: ClimbingChartAnnotation | undefined;
+      let closestDistance = Number.POSITIVE_INFINITY;
+      for (const { annotation } of climbs) {
+        if (annotation.endedAt !== null) continue;
+        const start = Date.parse(annotation.startedAt);
+        const distance = Math.abs(timestamp - start);
+        if (distance <= tolerance && distance < closestDistance) {
+          selected = annotation;
+          closestDistance = distance;
+        }
+      }
+      selected ??= climbs.find(
+        ({ annotation }) =>
+          annotation.endedAt !== null &&
+          timestamp >= Date.parse(annotation.startedAt) &&
+          timestamp <= Date.parse(annotation.endedAt),
+      )?.annotation;
+      selectClimb(selected?.id ?? null);
+    },
+    [climbs, plotWidth, series.startedAt, series.endedAt, onHoverTime, selectClimb],
+  );
   const { touchIndex, panResponder } = useChartScrub({
     plotWidth,
     series,
+    onHoverTime: handleHoverTime,
     onHoverIndex,
     onScrubStart,
     onScrubEnd,
@@ -137,12 +200,47 @@ export function LineChart({
     <AccessibleChart
       title={label}
       summary={`${label} over activity time. Dots mark recorded samples; gaps indicate unobserved time.`}
-      rows={accessibleRows(series, unit)}
+      rows={[
+        ...accessibleRows(series, unit),
+        ...climbs.map(({ annotation }) => ({
+          label: annotation.label,
+          value: climbTimeLabel(annotation),
+          onPress: () => selectClimb(annotation.id),
+        })),
+      ]}
     >
       <View style={chartStyles.container}>
         <Text style={chartStyles.title}>{label}</Text>
         <View {...panResponder.panHandlers}>
           <Svg width={CHART_WIDTH} height={CHART_HEIGHT}>
+            {climbs.map(({ annotation, startPosition, endPosition }) => {
+              const climbX = CHART_PADDING.left + startPosition * plotWidth;
+              const width = (endPosition - startPosition) * plotWidth;
+              return (
+                <G key={annotation.id}>
+                  {annotation.endedAt === null ? (
+                    <Line
+                      x1={climbX}
+                      x2={climbX}
+                      y1={CHART_PADDING.top}
+                      y2={CHART_PADDING.top + plotHeight}
+                      stroke="#a78bfa"
+                      strokeWidth={annotation.id === selectedClimb?.id ? 3 : 1.5}
+                      strokeDasharray={annotation.id === selectedClimb?.id ? undefined : "4,4"}
+                    />
+                  ) : (
+                    <Rect
+                      x={climbX}
+                      y={CHART_PADDING.top}
+                      width={width}
+                      height={plotHeight}
+                      fill="#a78bfa"
+                      fillOpacity={annotation.id === selectedClimb?.id ? 0.36 : 0.16}
+                    />
+                  )}
+                </G>
+              );
+            })}
             {yTicks.map((tick) => (
               <Line
                 key={tick.value}
@@ -218,6 +316,16 @@ export function LineChart({
             )}
           </Svg>
         </View>
+        {climbs.length > 0 && (
+          <Text style={{ color: colors.textSecondary, fontSize: 12 }}>
+            Climbs · tap a marker or band
+          </Text>
+        )}
+        {selectedClimb && (
+          <Text style={{ color: colors.text, fontSize: 12 }}>
+            {selectedClimb.label} · {climbTimeLabel(selectedClimb)}
+          </Text>
+        )}
       </View>
     </AccessibleChart>
   );

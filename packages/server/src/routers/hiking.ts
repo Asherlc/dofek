@@ -1,7 +1,7 @@
+import { routeComparisonsSchema } from "@dofek/training/route-comparison";
 import { TRPCError } from "@trpc/server";
 import { selectedChartRangeQuery } from "../lib/chart-range.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
-import type { RouteInstance } from "../repositories/hiking-repository.ts";
 import { HikingRepository } from "../repositories/hiking-repository.ts";
 import { CacheTTL, router } from "../trpc.ts";
 
@@ -51,12 +51,10 @@ export interface WalkingBiomechanicsRow {
   steadiness: number | null;
 }
 
-export type { RouteInstance as ActivityComparisonInstance };
-
-export interface ActivityComparisonRow {
-  activityName: string;
-  instances: RouteInstance[];
-}
+export type {
+  RouteComparison as ActivityComparisonRow,
+  RouteComparisonInstance as ActivityComparisonInstance,
+} from "@dofek/training/route-comparison";
 
 // ---------------------------------------------------------------------------
 // Router
@@ -102,8 +100,8 @@ export const hikingRouter = router({
     async ({ ctx, range }) => {
       const sensorStore = requireSensorStore(ctx.sensorStore, "hiking.activityComparison");
       const repo = new HikingRepository(ctx.db, ctx.userId, ctx.timezone, sensorStore);
-      const routes = await repo.getRepeatedRoutes(range.days);
-      return routes.map((route) => route.toDetail());
+      return repo.getRepeatedRoutes(range.days);
     },
+    { outputSchema: routeComparisonsSchema, keyVersion: "gps-routes-v1" },
   ),
 });

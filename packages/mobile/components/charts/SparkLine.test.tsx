@@ -3,6 +3,25 @@ import { describe, expect, it } from "vitest";
 import { SparkLine } from "./SparkLine";
 
 describe("SparkLine", () => {
+  it.each([
+    { data: [172], count: 1 },
+    { data: [172, null, 180], count: 2 },
+    { data: [0], count: 1 },
+  ])("renders $count measured points for isolated observations $data", ({ data, count }) => {
+    const { container } = render(<SparkLine data={data} width={140} height={40} />);
+    const points = container.querySelectorAll("circle");
+    expect(points).toHaveLength(count);
+    expect(container.querySelectorAll("polyline")).toHaveLength(0);
+    for (const point of points) {
+      expect(Number.isFinite(Number(point.getAttribute("cx")))).toBe(true);
+      expect(Number.isFinite(Number(point.getAttribute("cy")))).toBe(true);
+      expect(Number(point.getAttribute("cx"))).toBeGreaterThanOrEqual(3);
+      expect(Number(point.getAttribute("cx"))).toBeLessThanOrEqual(137);
+      expect(Number(point.getAttribute("cy"))).toBeGreaterThanOrEqual(3);
+      expect(Number(point.getAttribute("cy"))).toBeLessThanOrEqual(37);
+    }
+  });
+
   it("renders separate line segments around unavailable values", () => {
     const { container } = render(
       <SparkLine data={[10, 20, null, 30, 40]} width={140} height={40} />,

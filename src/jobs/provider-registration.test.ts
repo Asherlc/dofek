@@ -39,6 +39,7 @@ const mockProviders = {
   "amazfit-zepp": { id: "amazfit-zepp" },
   "kaya-export": { id: "kaya-export" },
   "zos-app": { id: "zos-app" },
+  boardsesh: { id: "boardsesh" },
 };
 
 function mockProviderConstructor(provider: { id: string }) {
@@ -137,9 +138,12 @@ vi.mock("../providers/kaya/provider.ts", () => ({
 vi.mock("../providers/zos-app/provider.ts", () => ({
   ZosAppProvider: mockProviderConstructor(mockProviders["zos-app"]),
 }));
+vi.mock("../providers/boardsesh.ts", () => ({
+  BoardSeshProvider: mockProviderConstructor(mockProviders.boardsesh),
+}));
 
 // The real constructor verifies theCrag exposes its per-user auth contract.
-const PROVIDER_COUNT = Object.keys(mockProviders).length + 1;
+const PROVIDER_COUNT = Object.keys(mockProviders).length + 11;
 
 describe("provider-registration", () => {
   beforeEach(() => {
@@ -160,7 +164,28 @@ describe("provider-registration", () => {
     expect(mockRegisterProvider).toHaveBeenCalledWith(mockProviders.ziva);
   });
 
-  it("registers theCrag with a usable public-profile connection", async () => {
+  it("loads account-connected boards and climbing file providers", async () => {
+    const { ensureProvidersRegistered } = await import("./provider-registration.ts");
+    await ensureProvidersRegistered();
+    const ids = mockRegisterProvider.mock.calls.map(([provider]) => provider.id);
+    expect(ids).toEqual(
+      expect.arrayContaining([
+        "kilter",
+        "tension",
+        "grasshopper",
+        "decoy",
+        "soill",
+        "touchstone",
+        "aurora-board",
+        "crimpd",
+        "eight-a",
+        "moonboard",
+        "boardsesh",
+      ]),
+    );
+  });
+
+  it("registers theCrag with a personal API key connection", async () => {
     const { ensureProvidersRegistered } = await import("./provider-registration.ts");
     await ensureProvidersRegistered();
 
@@ -170,10 +195,10 @@ describe("provider-registration", () => {
 
     expect(provider?.validate()).toBeNull();
     const setup = provider?.authSetup?.();
-    expect(getProviderAuthTypeFromSetup(setup)).toBe("public-profile");
+    expect(getProviderAuthTypeFromSetup(setup)).toBe("token");
     expect(setup?.manualToken).toMatchObject({
-      label: "theCrag profile URL or username",
-      instructionsUrl: "https://www.thecrag.com/",
+      label: "Personal API key",
+      instructionsUrl: "https://www.thecrag.com/en/article/logbookreadapi",
     });
   });
 
@@ -197,6 +222,6 @@ describe("provider-registration", () => {
       "Failed to register peloton provider: Peloton init failed",
     );
 
-    expect(mockRegisterProvider).toHaveBeenCalledTimes(3);
+    expect(mockRegisterProvider.mock.calls.at(-1)?.[0].id).toBe("peloton");
   });
 });

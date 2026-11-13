@@ -28,7 +28,6 @@ export function buildActivitySensorSummaryRowsTableSql(): string {
   first_sample_at Nullable(DateTime64(6, 'UTC')),
   last_sample_at Nullable(DateTime64(6, 'UTC')),
   best_twenty_minute_power Nullable(Float64),
-  normalized_power Nullable(Float64),
   smoothed_avg_power Nullable(Float64),
   climbing_elevation_gain_m Nullable(Float64),
   climbing_seconds Nullable(Int32),

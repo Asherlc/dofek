@@ -133,6 +133,7 @@ vi.mock("dofek/jobs/queues", () => ({
   createPostSyncQueue: vi.fn(() => mockQueue),
   createScheduledSyncQueue: vi.fn(() => mockQueue),
   createSyncQueue: vi.fn(() => mockQueue),
+  getSyncQueue: vi.fn(() => mockQueue),
   createZipEntryExtractQueue: vi.fn(() => mockZipEntryExtractQueue),
 }));
 vi.mock("../repositories/clickhouse-activity-sensor-store.ts", () => ({

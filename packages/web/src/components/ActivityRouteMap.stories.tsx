@@ -1,7 +1,7 @@
 import type { ClimbingMapMarker } from "@dofek/training/climbing-map";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, fn, userEvent, waitFor, within } from "storybook/test";
-import "leaflet/dist/leaflet.css";
+import "maplibre-gl/dist/maplibre-gl.css";
 import { ActivityRouteMap } from "./ActivityRouteMap.tsx";
 
 const markers: ClimbingMapMarker[] = [
@@ -44,6 +44,12 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 export const Default: Story = {};
 export const RoutePlusDots: Story = { args: { climbMarkers: markers } };
+export const SelectedClimb: Story = {
+  args: { climbMarkers: markers, selectedEntryId: "tick-1" },
+};
+export const SelectedArea: Story = {
+  args: { climbMarkers: markers, selectedEntryId: "tick-2" },
+};
 export const PointsOnly: Story = {
   args: { points: [], climbMarkers: markers, onSelectEntry: fn() },
   play: async ({ args, canvasElement }) => {
@@ -51,7 +57,6 @@ export const PointsOnly: Story = {
       name: "Swiss Cheese · Climb location: Swiss Cheese · Mountain Project",
     });
     const bounds = dot.getBoundingClientRect();
-    // Preserve enumerable native coordinates for Leaflet's preclick event copy.
     dot.dispatchEvent(
       new MouseEvent("click", {
         bubbles: true,
@@ -119,7 +124,6 @@ export const RepeatedPoint: Story = {
       name: "2 climbs · Swiss Cheese · Swiss Cheese · Climb location: Swiss Cheese · Mountain Project",
     });
     const bounds = dot.getBoundingClientRect();
-    // Preserve enumerable native coordinates for Leaflet's preclick event copy.
     dot.dispatchEvent(
       new MouseEvent("click", {
         bubbles: true,
@@ -161,7 +165,6 @@ export const SharedAreaClimbs: Story = {
       "Bits and Bits · Kibbles and Bits · Blue Arete · Left Arete",
     );
     const markerBounds = marker.getBoundingClientRect();
-    // Preserve enumerable native coordinates for Leaflet's preclick event copy.
     marker.dispatchEvent(
       new MouseEvent("click", {
         bubbles: true,
@@ -190,12 +193,14 @@ export const LazyOffscreenPreview: Story = {
   ),
   play: async ({ canvasElement }) => {
     const preview = within(canvasElement).getByRole("region", { name: "Climbing locations" });
-    await expect(preview).not.toHaveClass("leaflet-container");
+    await expect(preview).not.toHaveClass("maplibregl-map");
     await expect(within(canvasElement).getByRole("status")).toHaveTextContent("Processing map…");
-    await expect(canvasElement.querySelector("img.leaflet-tile")).toBeNull();
+    await expect(canvasElement.querySelector("canvas.maplibregl-canvas")).toBeNull();
     preview.scrollIntoView({ block: "center" });
-    await waitFor(() => expect(preview).toHaveClass("leaflet-container"));
-    await waitFor(() => expect(canvasElement.querySelector("img.leaflet-tile")).not.toBeNull());
+    await waitFor(() => expect(preview).toHaveClass("maplibregl-map"));
+    await waitFor(() =>
+      expect(canvasElement.querySelector("canvas.maplibregl-canvas")).not.toBeNull(),
+    );
   },
 };
 export const Narrow: Story = {
@@ -217,17 +222,4 @@ export const Wide: Story = {
       </div>
     ),
   ],
-};
-export const TileError: Story = {
-  ...RoutePlusDots,
-  play: async ({ canvasElement }) => {
-    await waitFor(() => expect(canvasElement.querySelector("img.leaflet-tile")).not.toBeNull());
-    canvasElement.querySelector("img.leaflet-tile")?.dispatchEvent(new Event("error"));
-    await expect(within(canvasElement).findByRole("status")).resolves.toHaveTextContent(
-      "Some map tiles could not load",
-    );
-    await expect(
-      within(canvasElement).getByRole("region", { name: "Climbing locations" }),
-    ).toBeVisible();
-  },
 };

@@ -9,6 +9,23 @@ import {
 } from "../../../../../server/src/repositories/climbing-test-helpers.ts";
 import { ClimbingLogEntryCard } from "./ClimbingLogEntryCard.tsx";
 
+it("keeps an attempt-free project visible without an invented count or outcome", () => {
+  render(
+    <ul>
+      <ClimbingLogEntryCard
+        entry={climbingLogEntryFixture({
+          title: "Untried project",
+          attempts: [],
+          recordedClimbAttemptCount: null,
+          recordedClimbOutcome: null,
+        })}
+      />
+    </ul>,
+  );
+  expect(screen.getByText("Untried project")).toBeInTheDocument();
+  expect(screen.queryByText(/Attempts:|Attempted|Completed/)).not.toBeInTheDocument();
+});
+
 it.each(["lead", "top_rope", "follow"] as const)(
   "shows recorded falls or hangs on %s without inventing completion",
   (ropeMethod) => {
@@ -248,3 +265,24 @@ it.each([
     expect(screen.getByText("Attempted")).toBeInTheDocument();
   },
 );
+
+it.each([
+  { kind: "boulder" as const, label: "Problem" },
+  { kind: "route" as const, label: "Route" },
+  { kind: null, label: "Route" },
+])("labels source links as $label for climb kind $kind", ({ kind, label }) => {
+  const entry = climbingLogEntryFixture({
+    climb: { ...climbingClimbFixture("mountain-project"), name: "Corner", kind },
+    sourceLinks: [
+      {
+        providerId: "mountain-project",
+        kind: "route" as const,
+        url: "https://www.mountainproject.com/route/1/corner",
+      },
+    ],
+  });
+  render(<ClimbingLogEntryCard entry={entry} onSelect={vi.fn()} />);
+  expect(
+    screen.getByRole("link", { name: `Corner ${label.toLowerCase()} on Mountain Project` }),
+  ).toHaveTextContent(label);
+});

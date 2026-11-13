@@ -31,7 +31,7 @@ const cascadeCountSchema = z.object({
   redirect_count: z.coerce.number(),
 });
 
-describe.sequential("DeveloperClientRepository", () => {
+describe("DeveloperClientRepository", { concurrent: false }, () => {
   let context: TestContext;
   let repository: DeveloperClientRepository;
 

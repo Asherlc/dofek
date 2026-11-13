@@ -8,7 +8,6 @@ export function defaultMockTrainingData(): Record<string, unknown> {
         recentDays: 7,
         baselineDays: 28,
       },
-      displayedStrain: 16,
       displayedDate: "2026-03-28",
       timeSeries: [
         {
@@ -16,17 +15,15 @@ export function defaultMockTrainingData(): Record<string, unknown> {
           acuteLoad: 27.4,
           chronicLoad: 24.9,
           workloadRatio: 1.1,
-          strain: 16,
         },
       ],
     },
-    strainTarget: undefined,
     activities: [],
     weeklyVolume: [],
     progressiveOverload: [],
     verticalAscent: [],
     climbing: {
-      gradeProgression: [],
+      gradeProgression: null,
       volumeByGrade: [],
       sessionSummary: [],
       hangboarding: {

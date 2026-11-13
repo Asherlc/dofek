@@ -31,12 +31,12 @@ export function ClimbingLogAttachment({
         utils.climbing.activityLogEntries.invalidate(),
         utils.climbing.unattachedClimbingLogEntries.invalidate(),
         utils.climbing.sessionSummary.invalidate(),
-        utils.climbing.gradeProgression.invalidate(),
+        utils.climbing.gradeProgressionV2.invalidate(),
         utils.climbing.volumeByGrade.invalidate(),
         utils.climbing.strengths.invalidate(),
         utils.activity.images.invalidate({ id: input.activityId }),
         utils.activity.list.invalidate(),
-        utils.calendar.weekList.invalidate(),
+        utils.calendar.weekListV2.invalidate(),
       ]);
       onClose();
     },

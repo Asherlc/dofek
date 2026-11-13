@@ -10,6 +10,7 @@ import {
   formatDateTime,
   formatDateYmd,
   formatDateYmdInTimeZone,
+  formatDurationHoursMinutes,
   formatDurationMinutes,
   formatDurationRange,
   formatDurationSeconds,
@@ -24,8 +25,6 @@ import {
   formatPace,
   formatRelativeTime,
   formatSigned,
-  formatSleepDebt,
-  formatSleepDebtInline,
   formatSpO2,
   formatSpO2Measurement,
   formatStandardDeviation,
@@ -209,7 +208,33 @@ describe("date and time formatters", () => {
   });
 });
 
+describe("formatDurationHoursMinutes", () => {
+  it.each([
+    [0, "0:00"],
+    [5, "0:05"],
+    [45, "0:45"],
+    [59, "0:59"],
+    [60, "1:00"],
+    [61, "1:01"],
+    [85.86666666666666, "1:26"],
+    [90, "1:30"],
+    [59.9, "1:00"],
+    [119.7, "2:00"],
+    [600, "10:00"],
+    [1445, "24:05"],
+    [Number.NaN, "--"],
+    [Number.POSITIVE_INFINITY, "--"],
+  ])("formats %s minutes as %s", (minutes, expected) => {
+    expect(formatDurationHoursMinutes(minutes)).toBe(expected);
+  });
+});
+
 describe("formatDurationMinutes", () => {
+  it("keeps an unknown duration distinct from zero", () => {
+    expect(formatDurationMinutes(null)).toBe("--");
+    expect(formatDurationMinutes(0)).toBe("0m");
+  });
+
   it("formats minutes only when < 60", () => {
     expect(formatDurationMinutes(45)).toBe("45m");
   });
@@ -232,6 +257,13 @@ describe("formatDurationMinutes", () => {
 
   it("rounds fractional minutes", () => {
     expect(formatDurationMinutes(90.7)).toBe("1h 31m");
+  });
+
+  it.each([
+    [59.9, "1h 0m"],
+    [119.9, "2h 0m"],
+  ])("carries rounded minutes into the next hour for %s", (minutes, expected) => {
+    expect(formatDurationMinutes(minutes)).toBe(expected);
   });
 });
 
@@ -284,32 +316,6 @@ describe("formatDurationSeconds", () => {
   });
 });
 
-describe("formatSleepDebt", () => {
-  it("returns no debt for zero", () => {
-    expect(formatSleepDebt(0)).toBe("No sleep debt");
-  });
-
-  it("returns no debt for negative", () => {
-    expect(formatSleepDebt(-30)).toBe("No sleep debt");
-  });
-
-  it("formats positive debt in hours and minutes", () => {
-    expect(formatSleepDebt(90)).toBe("1h 30m debt");
-  });
-
-  it("formats small debt", () => {
-    expect(formatSleepDebt(15)).toBe("0h 15m debt");
-  });
-
-  it("returns no debt at exactly 0", () => {
-    expect(formatSleepDebt(0)).toBe("No sleep debt");
-  });
-
-  it("formats debt at exactly 1 minute", () => {
-    expect(formatSleepDebt(1)).toBe("0h 1m debt");
-  });
-});
-
 describe("formatHour", () => {
   it("formats midnight (0) as 12:00 AM in en-US", () => {
     expect(formatHour(0, "en-US")).toBe("12:00 AM");
@@ -358,16 +364,6 @@ describe("formatHour", () => {
   it("uses device locale when no locale specified", () => {
     // Should not throw regardless of environment locale
     expect(() => formatHour(12)).not.toThrow();
-  });
-});
-
-describe("formatSleepDebtInline", () => {
-  it("formats with 14-day context", () => {
-    expect(formatSleepDebtInline(90)).toBe("1h 30m sleep debt (14 days)");
-  });
-
-  it("formats zero minutes", () => {
-    expect(formatSleepDebtInline(0)).toBe("0h 0m sleep debt (14 days)");
   });
 });
 

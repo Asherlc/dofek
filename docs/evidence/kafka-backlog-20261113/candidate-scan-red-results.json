@@ -1,0 +1,12 @@
+{
+  "scope": "Task2 original candidate scans; local ClickHouse26.9.19.9; retries0",
+  "success": false,
+  "numPassedTests": 0,
+  "numFailedTests": 1,
+  "failures": [
+    {
+      "title": "bounds candidate reads for a multi-scope deletion",
+      "assertion": "AssertionError: {\"queryIds\":[\"53af9b55-49d4-4a31-a63c-71f54c181384\",\"e8edfc09-0a89-4939-84ad-5108a76708e2\"],\"profiles\":[{\"query_id\":\"53af9b55-49d4-4a31-a63c-71f54c181384\",\"read_rows\":827492},{\"query_id\":\"e8edfc09-0a89-4939-84ad-5108a76708e2\",\"read_rows\":16585}]}: expected 844077 to be less than or equal to 49152"
+    }
+  ]
+}

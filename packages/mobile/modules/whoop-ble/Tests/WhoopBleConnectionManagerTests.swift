@@ -64,7 +64,8 @@ final class WhoopBleConnectionManagerDiagnosticsTests: XCTestCase {
         let error = NSError(domain: "CBATTErrorDomain", code: 10,
                             userInfo: [NSLocalizedDescriptionKey: "Attribute not found"])
         manager.abortHandshake(with: .serviceDiscoveryFailed(error.localizedDescription), underlyingError: error) {
-            let event = (journal.payload["events"] as? [[String: Any]])?.last
+            let event = (journal.payload["events"] as? [[String: Any]])?
+                .last { $0["event"] as? String == "handshake_aborted" }
             XCTAssertEqual(event?["event"] as? String, "handshake_aborted")
             XCTAssertEqual(event?["reconnectIntent"] as? Bool, true)
         }

@@ -1,0 +1,34 @@
+Historical local output excerpts retained from task 1, candidate 7b8c26cc678f957d6dbc428e5c1152967d9ef3aa, 2026-11-09. These are local results, not latest-head CI or production proof.
+
+Command: pnpm vitest run --project unit src/account-erasure/archive-erasure.test.ts src/jobs/account-erasure-phase-runner.test.ts --retry=0
+ RUN  v5.0.5 /Users/asherlc/.paseo/worktrees/3b2webx6/account-erasure-hardening
+
+ ✓ |unit| src/jobs/account-erasure-phase-runner.test.ts (23 tests) 21ms
+ ✓ |unit| src/account-erasure/archive-erasure.test.ts (47 tests) 5182ms
+   ✓ eraseMetricStreamArchive (34)
+     ✓ enforces the 900000-byte line payload boundary before replacement 1270ms
+     ✓ uploads equal-sized non-final parts for a large rewrite 1969ms
+   ✓ R2MetricStreamArchiveStorage listing (4)
+     ✓ fails closed when an archive listing exceeds the bounded page limit 1720ms
+
+ Test Files  2 passed (2)
+      Tests  70 passed (70)
+   Start at  09:44:38
+   Duration  5.53s (tests 91%, setup 4%, import 3%, transform 1%)
+
+
+
+Changed-line Stryker archive-erasure.ts run, original local command/output recorded in task ledger. Output excerpt:
+Ran 3.54 tests per mutant on average.
+--------------------|------------------|----------|-----------|------------|----------|----------|
+                    | % Mutation score |          |           |            |          |          |
+File                |  total | covered | # killed | # timeout | # survived | # no cov | # errors |
+--------------------|--------|---------|----------|-----------|------------|----------|----------|
+All files           | 100.00 |  100.00 |       13 |         0 |          0 |        0 |        0 |
+ archive-erasure.ts | 100.00 |  100.00 |       13 |         0 |          0 |        0 |        0 |
+--------------------|--------|---------|----------|-----------|------------|----------|----------|
+
+09:45:02 (37258) INFO MutationTestReportHelper Final mutation score of 100.00 is greater than or equal to break threshold 75
+09:45:02 (37258) INFO JsonReporter Your report can be found at: reports/mutation/mutation.json
+09:45:02 (37258) INFO MutationTestExecutor Done in 25 seconds.
+

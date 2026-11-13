@@ -40,30 +40,21 @@ describe("PersonalizationPanel", () => {
     fittedAt: "2026-03-19T12:00:00Z",
     parameters: {
       exponentialMovingAverage: { sampleCount: 100, correlation: 0.85 },
-      readinessWeights: { sampleCount: 90, correlation: 0.75 },
-      sleepTarget: { sampleCount: 30 },
       stressThresholds: { sampleCount: 60 },
-      trainingImpulseConstants: { sampleCount: 50, r2: 0.9 },
     },
     effective: {
       exponentialMovingAverage: { chronicTrainingLoadDays: 42, acuteTrainingLoadDays: 7 },
-      readinessWeights: { hrv: 0.4, restingHr: 0.2, sleep: 0.3, respiratoryRate: 0.1 },
-      sleepTarget: { minutes: 480 },
       stressThresholds: {
         hrvThresholds: [-2, -1.25, -0.5],
         rhrThresholds: [2, 1.25, 0.5],
       },
-      trainingImpulseConstants: { genderFactor: 1.0, exponent: 1.9 },
     },
     defaults: {
       exponentialMovingAverage: { chronicTrainingLoadDays: 42, acuteTrainingLoadDays: 7 },
-      readinessWeights: { hrv: 0.3, restingHr: 0.2, sleep: 0.3, respiratoryRate: 0.2 },
-      sleepTarget: { minutes: 480 },
       stressThresholds: {
         hrvThresholds: [-2, -1.5, -1],
         rhrThresholds: [2, 1.5, 1],
       },
-      trainingImpulseConstants: { genderFactor: 1.0, exponent: 1.9 },
     },
     modelCards: [
       {
@@ -80,32 +71,6 @@ describe("PersonalizationPanel", () => {
         excludedData: ["Days without a nonzero performance observation", "Unfinished activities"],
       },
       {
-        key: "readinessWeights",
-        title: "Readiness Score Weights",
-        description: "How much each factor contributes to your daily readiness score",
-        status: "personalized",
-        lastSuccessfulFitAt: null,
-        lastFitSummary: "Successful fit time unavailable until this model is refit",
-        dataWindow: "Past 365 days after a 60-day rolling-baseline warm-up",
-        dataSufficiency: "90 qualifying days used; minimum 60 days",
-        fitEvidence: "Pearson correlation: 0.750",
-        uncertainty: "No calibrated uncertainty interval is available.",
-        excludedData: ["Days without heart-rate variability or resting heart rate"],
-      },
-      {
-        key: "sleepTarget",
-        title: "Sleep Target",
-        description: "The amount of sleep associated with your best recovery",
-        status: "personalized",
-        lastSuccessfulFitAt: null,
-        lastFitSummary: "Successful fit time unavailable until this model is refit",
-        dataWindow: "Past 365 days; next-day recovery uses up to 60 days of baseline history",
-        dataSufficiency: "30 qualifying nights used; minimum 14 nights",
-        fitEvidence: "This average-based fit does not calculate a goodness-of-fit statistic.",
-        uncertainty: "No calibrated uncertainty interval is available.",
-        excludedData: ["Naps and shorter duplicate sleep sessions"],
-      },
-      {
         key: "stressThresholds",
         title: "Stress Sensitivity",
         description: "How far each threshold is from your usual baseline (in standard deviations)",
@@ -117,19 +82,6 @@ describe("PersonalizationPanel", () => {
         fitEvidence: "This percentile-based fit does not calculate a goodness-of-fit statistic.",
         uncertainty: "No calibrated uncertainty interval is available.",
         excludedData: ["Days without nonzero rolling variability"],
-      },
-      {
-        key: "trainingImpulseConstants",
-        title: "Heart Rate Effort Model",
-        description: "How heart rate intensity translates to training load",
-        status: "personalized",
-        lastSuccessfulFitAt: null,
-        lastFitSummary: "Successful fit time unavailable until this model is refit",
-        dataWindow: "All qualifying activities; the power reference uses the past 365 days",
-        dataSufficiency: "50 qualifying activities used; minimum 20 activities",
-        fitEvidence: "R²: 0.900",
-        uncertainty: "No calibrated uncertainty interval is available.",
-        excludedData: ["Activities without heart-rate samples or normalized power"],
       },
     ],
   };
@@ -167,7 +119,7 @@ describe("PersonalizationPanel", () => {
 
   it("reports incomplete model evidence and renders an actionable panel error", () => {
     vi.mocked(trpc.personalization.status.useQuery).mockReturnValue({
-      data: { ...mockData, modelCards: mockData.modelCards.slice(0, 4) },
+      data: { ...mockData, modelCards: mockData.modelCards.slice(0, 1) },
       isLoading: false,
     });
 
@@ -180,7 +132,7 @@ describe("PersonalizationPanel", () => {
     ).toBeTruthy();
     expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error), {
       context: "personalization-model-cards",
-      missingModelCard: "trainingImpulseConstants",
+      missingModelCard: "stressThresholds",
     });
   });
 

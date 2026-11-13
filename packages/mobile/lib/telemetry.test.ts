@@ -157,6 +157,11 @@ describe("ios telemetry", () => {
     [new Error("fetch failed: cancelled"), "cancelled"],
     [new Error("fetch failed: The Internet connection appears to be offline."), "offline"],
     [
+      new Error("fetch failed: The network connection was lost."),
+      "connection_lost",
+      "auth-state-restore",
+    ],
+    [
       Object.assign(new Error("Check credentials"), {
         data: { handledFailure: "invalid_credentials" },
       }),
@@ -164,13 +169,13 @@ describe("ios telemetry", () => {
     ],
   ])(
     "counts handled outcome %# and retains a log without an exception issue",
-    async (error, kind) => {
+    async (error, kind, source = "whoop-ble-realtime-upload") => {
       vi.stubGlobal("__DEV__", false);
       process.env.EXPO_PUBLIC_SENTRY_DSN = "https://key@sentry.example/789";
       process.env.EXPO_PUBLIC_OTEL_ENDPOINT = "https://api.axiom.co/v1/logs";
       const mod = await import("./telemetry");
       mod.initTelemetry();
-      mod.captureException(error, { source: "whoop-ble-realtime-upload" });
+      mod.captureException(error, { source });
       expect(posthogMocks.capture).toHaveBeenCalledWith("handled_failure", { kind });
       expect(mocks.mockCaptureException).not.toHaveBeenCalled();
       expect(posthogMocks.captureException).not.toHaveBeenCalled();
@@ -178,7 +183,7 @@ describe("ios telemetry", () => {
         expect.objectContaining({
           severityText: "INFO",
           body: "[handled-failure] Handled operational failure",
-          attributes: expect.objectContaining({ kind }),
+          attributes: expect.objectContaining({ ...runtimeContext, kind, source }),
         }),
       );
     },
@@ -255,6 +260,7 @@ describe("ios telemetry", () => {
 
     expect(mocks.mockInit).toHaveBeenCalledTimes(1);
     expect(mocks.mockInit).toHaveBeenCalledWith({
+      autoInitializeNativeSdk: false,
       dsn: "https://key@sentry.example/789",
       debug: true,
       tracesSampler: expect.any(Function),

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
@@ -27,6 +28,7 @@ const withingsUserId = "b0000000-0000-4000-8000-000000001995";
 const zivaUserId = "c0000000-0000-4000-8000-000000001995";
 const publicProfileUserId = "d0000000-0000-4000-8000-000000001995";
 const legacyTheCragConnections = [
+  { userId: "14000000-0000-4000-8000-000000001995", scopes: "thecrag:logbook-read" },
   { userId: "e0000000-0000-4000-8000-000000001995", scopes: "logbook:read" },
   { userId: "f0000000-0000-4000-8000-000000001995", scopes: null },
   {
@@ -337,7 +339,7 @@ describe("account-erasure remote snapshot persistence (integration)", () => {
       ).rejects.toMatchObject({
         name: ProviderRevocationPrerequisiteError.name,
         message: expect.stringMatching(
-          /revoke.*personal.*key.*theCrag.*Settings.*API Keys.*disconnect.*reconnect/i,
+          /revoke.*personal.*key.*theCrag.*Settings.*API Keys.*disconnect.*before deleting/i,
         ),
       });
       expect(await loadTokens(context.db, "thecrag", theCragUserId)).toMatchObject({
@@ -358,6 +360,88 @@ describe("account-erasure remote snapshot persistence (integration)", () => {
       ]);
     },
   );
+
+  async function createBudgetUser() {
+    const budgetUserId = randomUUID();
+    await context.db.execute(sql`INSERT INTO fitness.user_profile(id,name)
+      VALUES (${budgetUserId}::uuid,'Snapshot budget fixture')`);
+    return budgetUserId;
+  }
+
+  it.each(["é", "\n"])(
+    "checks prerequisites for exact encoded session-item bytes for %j",
+    async (character) => {
+      const budgetUserId = await createBudgetUser();
+      const sessionId = character.repeat(2047);
+      await context.db.execute(sql`INSERT INTO fitness.session(id,user_id,expires_at)
+      VALUES (${sessionId},${budgetUserId}::uuid,now()+interval '1 day')`);
+      const encrypted = await context.db.transaction((transaction) =>
+        createEncryptedAccountErasureSnapshot(transaction, budgetUserId, providers),
+      );
+      const captured = await decryptAccountErasureSnapshot(encrypted, budgetUserId);
+      expect(captured.localIdentifiers.sessionIds).toEqual([sessionId]);
+      await context.db.execute(
+        sql`UPDATE fitness.session SET id=id||${character} WHERE user_id=${budgetUserId}::uuid`,
+      );
+      await expect(
+        context.db
+          .transaction((transaction) =>
+            createEncryptedAccountErasureSnapshot(transaction, budgetUserId, providers),
+          )
+          .then(() => undefined),
+      ).rejects.toThrow(/Account deletion snapshot exceeds.*4 KiB.*Contact support/);
+    },
+  );
+
+  it("rejects an oversized encrypted Apple credential before decrypting its payload", async () => {
+    const budgetUserId = await createBudgetUser();
+    await context.db.execute(sql`INSERT INTO fitness.auth_account
+      (user_id,auth_provider,provider_account_id,revocation_access_token,revocation_client_id)
+      VALUES (${budgetUserId}::uuid,'apple',${budgetUserId},${`enc:v1:${"A".repeat(65536)}`},'fixture-client')`);
+    await expect(
+      context.db.transaction((transaction) =>
+        createEncryptedAccountErasureSnapshot(transaction, budgetUserId, providers),
+      ),
+    ).rejects.toThrow(/Account deletion snapshot exceeds.*credential.*limit.*Contact support/);
+  });
+
+  it("rejects the combined encrypted credential input before loading provider tokens", async () => {
+    const budgetUserId = await createBudgetUser();
+    const budgetProviders: Provider[] = Array.from({ length: 9 }, (_, index) => ({
+      id: `snapshot-budget-${index}`,
+      name: `Budget fixture ${index}`,
+      validate: () => null,
+      authSetup: () => ({}),
+      sync: async () => ({
+        provider: `snapshot-budget-${index}`,
+        recordsSynced: 0,
+        duration: 0,
+        errors: [],
+      }),
+    }));
+    for (const provider of budgetProviders) {
+      await ensureProvider(context.db, provider.id, provider.name, undefined, budgetUserId);
+      await context.db.execute(sql`INSERT INTO fitness.oauth_token(user_id,provider_id,access_token,expires_at)
+        VALUES (${budgetUserId}::uuid,${provider.id},${`enc:v1:${"A".repeat(65536 - 7)}`},now()+interval '1 day')`);
+    }
+    await expect(
+      context.db.transaction((transaction) =>
+        createEncryptedAccountErasureSnapshot(transaction, budgetUserId, budgetProviders),
+      ),
+    ).rejects.toThrow(/Account deletion snapshot exceeds.*credential.*limit.*Contact support/);
+  });
+
+  it("rejects oversized identity metadata before loading Apple credential payloads", async () => {
+    const budgetUserId = await createBudgetUser();
+    await context.db.execute(sql`INSERT INTO fitness.auth_account
+      (user_id,auth_provider,provider_account_id,revocation_access_token,revocation_client_id)
+      VALUES (${budgetUserId}::uuid,'apple',${budgetUserId},'enc:v1:AAAA',${"x".repeat(1048577)})`);
+    await expect(
+      context.db.transaction((transaction) =>
+        createEncryptedAccountErasureSnapshot(transaction, budgetUserId, providers),
+      ),
+    ).rejects.toThrow(/Account deletion snapshot exceeds.*limit.*Contact support/);
+  });
 
   it("snapshots public profiles without remote authorization", async () => {
     const encrypted = await context.db.transaction((transaction) =>
@@ -503,6 +587,46 @@ describe("account-erasure remote snapshot persistence (integration)", () => {
       "Manually unlink Dofek from your Decathlon account (contact Decathlon support if no unlink control is available), then disconnect Decathlon in Dofek before deleting your account.",
     );
   });
+
+  it.each([
+    ["kilter", "Kilter Board"],
+    ["crimpd", "Crimpd"],
+    ["eight-a", "8a.nu / Vertical-Life"],
+    ["tension", "Tension Board"],
+    ["grasshopper", "Grasshopper Board"],
+    ["decoy", "Decoy Board"],
+    ["soill", "So iLL Board"],
+    ["touchstone", "Touchstone Board"],
+    ["aurora-board", "Aurora Board"],
+    ["boardsesh", "BoardSesh"],
+  ])(
+    "requires disconnecting an active %s session before account erasure",
+    async (providerId, name) => {
+      const boardUserId = randomUUID();
+      await context.db.execute(
+        sql`INSERT INTO fitness.user_profile (id, name) VALUES (${boardUserId}::uuid, 'Board User')`,
+      );
+      await ensureProvider(context.db, providerId, name, undefined, boardUserId);
+      await saveTokens(
+        context.db,
+        providerId,
+        {
+          accessToken: "board-session",
+          refreshToken: null,
+          expiresAt: new Date("2099-01-01T00:00:00Z"),
+          scopes: null,
+        },
+        boardUserId,
+      );
+      await expect(
+        context.db.transaction((transaction) =>
+          createEncryptedAccountErasureSnapshot(transaction, boardUserId, providers),
+        ),
+      ).rejects.toThrow(
+        `Disconnect ${name} in Dofek before deleting your account because remote session revocation is unavailable.`,
+      );
+    },
+  );
 
   it("blocks Ziva before registry lookup because remote revocation is not advertised", async () => {
     await expect(

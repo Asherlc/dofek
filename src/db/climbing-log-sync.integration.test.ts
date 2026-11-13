@@ -4,6 +4,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { persistClimbingLogEntries, type SourceClimbingLogEntry } from "./climbing-log-sync.ts";
 import {
+  CLIMBING_SYNC_OTHER_USER_ID,
   clearClimbingLogSyncTestContext,
   createClimbingLogSyncTestContext,
   CLIMBING_SYNC_PROVIDER_ID as providerId,
@@ -46,6 +47,154 @@ describe("atomic climbing log synchronization", () => {
       .where(eq(climbingAttempt.climbingLogEntryId, logEntryId))
       .orderBy(asc(climbingAttempt.id));
   }
+  it("preserves log-specific gyms for one shared board problem", async () => {
+    const problem = {
+      externalId: "board-problem",
+      name: "Shared problem",
+      kind: "boulder" as const,
+      areas: [{ externalId: "catalogue-area", name: "Catalogue area" }],
+    };
+    await write([
+      {
+        externalId: "visit-a",
+        climb: problem,
+        areas: [
+          { externalId: "gym-a", name: "Gym A", coordinates: { latitude: 0, longitude: -120 } },
+        ],
+        attempts: [],
+      },
+      {
+        externalId: "visit-b",
+        climb: problem,
+        areas: [
+          { externalId: "gym-b", name: "Gym B", coordinates: { latitude: 10, longitude: -121 } },
+        ],
+        attempts: [],
+      },
+    ]);
+    expect(await context.db.select().from(climb)).toHaveLength(1);
+    const rows = await executeWithSchema(
+      context.db,
+      z.object({
+        external_id: z.string(),
+        area_path: z.array(z.object({ name: z.string() })),
+        climb_area_path: z.array(z.object({ name: z.string() })),
+      }),
+      sql`SELECT external_id, area_path, climb_area_path FROM fitness.v_climbing_log_entry ORDER BY external_id`,
+    );
+    expect(rows).toEqual([
+      {
+        external_id: "visit-a",
+        area_path: [{ name: "Gym A" }],
+        climb_area_path: [{ name: "Catalogue area" }],
+      },
+      {
+        external_id: "visit-b",
+        area_path: [{ name: "Gym B" }],
+        climb_area_path: [{ name: "Catalogue area" }],
+      },
+    ]);
+  });
+
+  it("preserves omitted log locations, clears explicit locations and protects areas referenced by another log", async () => {
+    const gym = { externalId: "gym", name: "Shared gym" };
+    await write([
+      { externalId: "one", areas: [gym], attempts: [] },
+      { externalId: "two", areas: [gym], attempts: [] },
+    ]);
+    await write([{ externalId: "one", attempts: [] }]);
+    expect(await context.db.select().from(area)).toHaveLength(1);
+    expect(
+      await executeWithSchema(
+        context.db,
+        projectionSchema.pick({ area_path: true }),
+        sql`SELECT area_path FROM fitness.v_climbing_log_entry WHERE external_id='one'`,
+      ),
+    ).toEqual([{ area_path: [{ name: "Shared gym" }] }]);
+    await write([{ externalId: "one", areas: [], attempts: [] }]);
+    expect(await context.db.select().from(area)).toHaveLength(1);
+    expect(
+      await executeWithSchema(
+        context.db,
+        projectionSchema.pick({ area_path: true }),
+        sql`SELECT area_path FROM fitness.v_climbing_log_entry WHERE external_id='one'`,
+      ),
+    ).toEqual([{ area_path: [] }]);
+    await write([
+      { externalId: "two", areas: [{ externalId: "new", name: "New gym" }], attempts: [] },
+    ]);
+    expect(await context.db.select({ name: area.name }).from(area)).toEqual([{ name: "New gym" }]);
+    expect(
+      await executeWithSchema(
+        context.db,
+        projectionSchema.pick({ area_path: true }),
+        sql`SELECT area_path FROM fitness.v_climbing_log_entry WHERE external_id='two'`,
+      ),
+    ).toEqual([{ area_path: [{ name: "New gym" }] }]);
+    await expect(
+      context.db.execute(sql`
+      UPDATE fitness.climbing_log_entry SET user_id=${CLIMBING_SYNC_OTHER_USER_ID}::uuid
+      WHERE user_id=${TEST_USER_ID}::uuid AND provider_id=${providerId} AND external_id='two'
+    `),
+    ).rejects.toThrow();
+  });
+  it("preserves a source occurrence with unknown attempts without counting a try", async () => {
+    const result = await write([
+      {
+        externalId: "project:unknown",
+        title: "Untried project",
+        attempts: [],
+        raw: { project: true, tries: 0 },
+      },
+    ]);
+    expect(result.recordsSynced).toBe(1);
+    const id = result.logEntryIds[0];
+    if (!id) throw new Error("Expected project occurrence");
+    expect(await attempts(id)).toEqual([]);
+    expect(
+      await executeWithSchema(
+        context.db,
+        z.object({ title: z.string(), recorded_climb_attempt_count: z.coerce.number() }),
+        sql`SELECT title, recorded_climb_attempt_count FROM fitness.v_climbing_log_entry WHERE id = ${id}::uuid`,
+      ),
+    ).toEqual([{ title: "Untried project", recorded_climb_attempt_count: 0 }]);
+    expect(
+      await write([{ externalId: "project:unknown", title: "Untried project", attempts: [] }]),
+    ).toEqual({ recordsSynced: 1, logEntryIds: [id] });
+    await write([
+      { externalId: "project:unknown", attempts: [{ scope: "climb", notes: "Recorded try" }] },
+    ]);
+    const recorded = await attempts(id);
+    expect(recorded).toHaveLength(1);
+    await write([{ externalId: "project:unknown", attempts: [] }]);
+    expect(await attempts(id)).toEqual(recorded);
+  });
+  it("rejects unsafe source count expansion before any graph writes", async () => {
+    await expect(
+      write([
+        { externalId: "valid-before-overflow", attempts: [{ scope: "climb" }] },
+        {
+          externalId: "oversized-count",
+          climb: { externalId: null, name: "Offending project", kind: "boulder" },
+          attempts: [],
+          reportedAttemptCounts: [{ scope: "climb", count: 1001 }],
+        },
+      ]),
+    ).rejects.toThrow(/Offending project.*oversized-count.*1,000/);
+    expect(await context.db.select().from(climbingLogEntry)).toEqual([]);
+  });
+  it("persists the supported count boundary of 1,000 attempts", async () => {
+    const result = await write([
+      {
+        externalId: "maximum-count",
+        attempts: [],
+        reportedAttemptCounts: [{ scope: "climb", count: 1000 }],
+      },
+    ]);
+    const id = result.logEntryIds[0];
+    if (!id) throw new Error("Expected maximum-count occurrence");
+    expect(await attempts(id)).toHaveLength(1000);
+  });
   it("preserves microsecond creation times through full and partial source updates", async () => {
     const logId = "00000000-0000-4000-8000-000000001991";
     const attemptId = "00000000-0000-4000-8000-000000001992";
@@ -459,6 +608,122 @@ describe("atomic climbing log synchronization", () => {
       expect((await attempts(later.logEntryIds[0] ?? ""))[0]?.receivedBeta).toBeNull();
     },
   );
+
+  it.each([
+    { sourceCompleted: true, sourceResult: null, outcome: "completed" },
+    { sourceCompleted: false, sourceResult: null, outcome: "failed" },
+    { sourceCompleted: null, sourceResult: null, outcome: null },
+    { sourceCompleted: true, sourceResult: "Failed", outcome: "completed" },
+    { sourceCompleted: false, sourceResult: "Flash", outcome: "failed" },
+    { sourceCompleted: null, sourceResult: "Send", outcome: "completed" },
+  ])("projects explicit source completion before textual evidence: %j", async (scenario) => {
+    const result = await write([
+      {
+        externalId: "completion:source",
+        raw: { topped: scenario.sourceCompleted },
+        attempts: [
+          {
+            scope: "climb",
+            sourceCompleted: scenario.sourceCompleted,
+            sourceResult: scenario.sourceResult,
+          },
+        ],
+      },
+    ]);
+    const id = result.logEntryIds[0];
+    if (!id) throw new Error("Expected an imported completion log");
+    expect(await attempts(id)).toEqual([
+      expect.objectContaining({
+        sourceCompleted: scenario.sourceCompleted,
+        sourceResult: scenario.sourceResult,
+        usedAid: null,
+        fellOrHung: null,
+        dabbed: null,
+      }),
+    ]);
+    expect(
+      await executeWithSchema(
+        context.db,
+        z.object({ outcome: z.string().nullable() }),
+        sql`SELECT outcome FROM fitness.v_climbing_attempt WHERE climbing_log_entry_id = ${id}::uuid`,
+      ),
+    ).toEqual([{ outcome: scenario.outcome }]);
+  });
+
+  it("preserves boolean completion and occurrence identity through partial refreshes", async () => {
+    const source: SourceClimbingLogEntry = {
+      externalId: "completion:refresh",
+      attempts: [{ scope: "climb", sourceCompleted: false }],
+      reportedAttemptCounts: [{ scope: "climb", count: 3 }],
+    };
+    const result = await write([source]);
+    const id = result.logEntryIds[0];
+    if (!id) throw new Error("Expected an imported completion log");
+    const original = (await attempts(id)).find((attempt) => attempt.sourceCompleted === false);
+    if (!original) throw new Error("Expected a described occurrence");
+    await write([{ ...source, attempts: [{ scope: "climb", sourceCompleted: true }] }]);
+    expect(await attempts(id)).toContainEqual(
+      expect.objectContaining({ id: original.id, sourceCompleted: true, sourceResult: null }),
+    );
+    await write([{ ...source, attempts: [{ scope: "climb", notes: "Updated note" }] }]);
+    expect(await attempts(id)).toContainEqual(
+      expect.objectContaining({ id: original.id, sourceCompleted: true, notes: "Updated note" }),
+    );
+    await write([{ ...source, attempts: [{ scope: "climb", sourceCompleted: null }] }]);
+    expect(await attempts(id)).toContainEqual(
+      expect.objectContaining({ id: original.id, sourceCompleted: null, notes: "Updated note" }),
+    );
+    expect(await attempts(id)).toHaveLength(3);
+  });
+
+  it("keeps anonymous counted occurrences unknown beside a boolean completion", async () => {
+    const source: SourceClimbingLogEntry = {
+      externalId: "completion:count",
+      attempts: [{ scope: "climb", sourceCompleted: true }],
+      reportedAttemptCounts: [{ scope: "climb", count: 4 }],
+    };
+    const result = await write([source]);
+    const id = result.logEntryIds[0];
+    if (!id) throw new Error("Expected an imported completion log");
+    const before = await attempts(id);
+    const expectedOutcomes = [
+      { outcome: "completed", count: 1 },
+      { outcome: null, count: 3 },
+    ];
+    const project = () =>
+      executeWithSchema(
+        context.db,
+        z.object({ outcome: z.string().nullable(), count: z.number() }),
+        sql`SELECT outcome, count(*)::int AS count FROM fitness.v_climbing_attempt
+            WHERE climbing_log_entry_id = ${id}::uuid GROUP BY outcome ORDER BY outcome NULLS LAST`,
+      );
+    expect(await project()).toEqual(expectedOutcomes);
+    await write([source]);
+    expect(await project()).toEqual(expectedOutcomes);
+    expect((await attempts(id)).map((attempt) => attempt.id)).toEqual(
+      before.map((attempt) => attempt.id),
+    );
+  });
+
+  it.each([
+    { label: "f", outcome: "completed" },
+    { label: "os", outcome: "completed" },
+    { label: "rp", outcome: "completed" },
+    { label: " RP ", outcome: "completed" },
+    { label: "unverified", outcome: null },
+  ])("interprets native textual completion %j", async ({ label, outcome }) => {
+    const result = await write([
+      { externalId: "completion:label", attempts: [{ scope: "climb", sourceResult: label }] },
+    ]);
+    expect(
+      await executeWithSchema(
+        context.db,
+        z.object({ outcome: z.string().nullable(), source_result: z.string().nullable() }),
+        sql`SELECT outcome, source_result FROM fitness.v_climbing_attempt
+            WHERE climbing_log_entry_id = ${result.logEntryIds[0]}::uuid`,
+      ),
+    ).toEqual([{ outcome, source_result: label }]);
+  });
 
   it("expands count summaries without duplicating tries on resync", async () => {
     const source: SourceClimbingLogEntry = {

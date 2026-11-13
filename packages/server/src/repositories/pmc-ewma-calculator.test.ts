@@ -1,39 +1,47 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PmcEwmaCalculator } from "./pmc-ewma-calculator.ts";
 
 function dateStringDaysAgo(daysAgo: number): string {
   const date = new Date();
-  date.setDate(date.getDate() - daysAgo);
+  date.setUTCDate(date.getUTCDate() - daysAgo);
   return date.toISOString().slice(0, 10);
 }
 
 describe("PmcEwmaCalculator", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-02T00:30:00Z"));
+  });
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllEnvs();
   });
 
-  it("applies exact exponential moving average formulas for chronic and acute load", () => {
-    const firstDate = dateStringDaysAgo(2);
-    const secondDate = dateStringDaysAgo(1);
-    const thirdDate = dateStringDaysAgo(0);
-    const calculator = new PmcEwmaCalculator({
-      chronicTrainingLoadDays: 4,
-      acuteTrainingLoadDays: 2,
-    });
+  it.each(["UTC", "America/Los_Angeles"])(
+    "applies exact exponential moving average formulas in %s",
+    (timezone) => {
+      vi.stubEnv("TZ", timezone);
+      const firstDate = dateStringDaysAgo(2);
+      const secondDate = dateStringDaysAgo(1);
+      const thirdDate = dateStringDaysAgo(0);
+      const calculator = new PmcEwmaCalculator({
+        chronicTrainingLoadDays: 4,
+        acuteTrainingLoadDays: 2,
+      });
 
-    const result = calculator.compute({
-      dailyLoad: new Map([[firstDate, 100]]),
-      queryDays: 2,
-      displayDays: 2,
-    });
+      const result = calculator.compute({
+        dailyLoad: new Map([[firstDate, 100]]),
+        queryDays: 2,
+        displayDays: 2,
+      });
 
-    expect(result).toEqual([
-      { date: firstDate, load: 100, ctl: 25, atl: 50, tsb: -25 },
-      { date: secondDate, load: 0, ctl: 18.8, atl: 25, tsb: -6.2 },
-      { date: thirdDate, load: 0, ctl: 14.1, atl: 12.5, tsb: 1.6 },
-    ]);
-  });
+      expect(result).toEqual([
+        { date: firstDate, load: 100, ctl: 25, atl: 50, tsb: -25 },
+        { date: secondDate, load: 0, ctl: 18.8, atl: 25, tsb: -6.2 },
+        { date: thirdDate, load: 0, ctl: 14.1, atl: 12.5, tsb: 1.6 },
+      ]);
+    },
+  );
 
   it("trims leading display days before chronic load becomes meaningful", () => {
     const firstMeaningfulDate = dateStringDaysAgo(2);

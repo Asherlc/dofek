@@ -7,12 +7,7 @@ export const trpc: CreateTRPCReact<AppRouter, unknown> = createTRPCReact<AppRout
 
 const clientTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-const unbatchedDashboardQueryPaths = new Set([
-  "recovery.readinessScore",
-  "recovery.workloadRatio",
-  "recovery.strainTarget",
-  "sleepNeed.performance",
-]);
+const unbatchedQueryPaths = new Set(["recovery.workloadRatio"]);
 
 export function createTRPCClient() {
   const buildCommonOptions = () => ({
@@ -37,7 +32,7 @@ export function createTRPCClient() {
         }),
         false: splitLink({
           condition: (operation) =>
-            operation.type === "query" && unbatchedDashboardQueryPaths.has(operation.path),
+            operation.type === "query" && unbatchedQueryPaths.has(operation.path),
           true: httpLink({
             ...buildCommonOptions(),
             fetch: async (url, options) => {

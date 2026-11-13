@@ -7,6 +7,8 @@ on:
         value: ${{ jobs.detect.outputs.analytics }}
       docker_ml:
         value: ${{ jobs.detect.outputs.docker_ml }}
+      docker_ota:
+        value: ${{ jobs.detect.outputs.docker_ota }}
       docker_server:
         value: ${{ jobs.detect.outputs.docker_server }}
       e2e_web:
@@ -33,6 +35,7 @@ jobs:
     outputs:
       analytics: ${{ steps.detect.outputs.analytics }}
       docker_ml: ${{ steps.detect.outputs.docker_ml }}
+      docker_ota: ${{ steps.detect.outputs.docker_ota }}
       docker_server: ${{ steps.detect.outputs.docker_server }}
       e2e_web: ${{ steps.detect.outputs.e2e_web }}
       ml: ${{ steps.detect.outputs.ml }}

@@ -1,16 +1,26 @@
+import { providerLabel } from "@dofek/providers/providers";
 import type {
   ClimbingStrengthsCell,
-  ClimbingStrengthsPanel,
+  ClimbingStrengthsDisplayPanel,
+  ClimbingStrengthsExample,
   ClimbingStrengths as Strengths,
 } from "@dofek/training/climbing-strengths";
 import {
   ALL_CLIMBING_GRADES,
+  climbingStrengthsAdjustedLabel,
   climbingStrengthsCountLabel,
-  climbingStrengthsDifferenceLabel,
   climbingStrengthsGradePanel,
   climbingStrengthsRateLabel,
   climbingStrengthsResultLabel,
+  climbingStrengthsSendLabel,
 } from "@dofek/training/climbing-strengths";
+import {
+  climbingStrengthsBreakdownKey,
+  climbingStrengthsBreakdownOptions,
+  climbingStrengthsDefaultBreakdown,
+  climbingStrengthsPanelLabel,
+  climbingStrengthsObserved as observed,
+} from "@dofek/training/climbing-strengths-presentation";
 import {
   CLIMBING_STRENGTHS_TABS,
   type ClimbingStrengthsTab,
@@ -19,21 +29,6 @@ import { useState } from "react";
 import { ClimbingStrengthsChart } from "./ClimbingStrengthsChart.tsx";
 import { QueryStatePanel } from "./QueryStatePanel.tsx";
 
-const dimensions = {
-  wall_angle: "Wall angle",
-  hold_type: "Hold type",
-  setting: "Setting",
-};
-function observed(panel: ClimbingStrengthsPanel) {
-  return panel.rows.some((row) => row.cells.some((cell) => cell.sampleStatus !== "no_data"));
-}
-function preferred(panels: ClimbingStrengthsPanel[]) {
-  return (
-    panels.find((panel) => panel.dimension === "wall_angle" && observed(panel)) ??
-    panels.find((panel) => panel.dimension === "hold_type" && observed(panel)) ??
-    panels.find((panel) => panel.dimension !== "setting")
-  );
-}
 function rateLabel(cell: ClimbingStrengthsCell) {
   return climbingStrengthsRateLabel(cell);
 }
@@ -41,16 +36,23 @@ function rateLabel(cell: ClimbingStrengthsCell) {
 export function ClimbingStrengths({
   data,
   loading,
+  includeAreaMetadata = true,
+  onIncludeAreaMetadataChange,
 }: {
   data: Strengths | undefined;
   loading?: boolean;
+  includeAreaMetadata?: boolean;
+  onIncludeAreaMetadataChange?: (value: boolean) => void;
 }) {
   const [view, setView] = useState<ClimbingStrengthsTab>("radar");
-  const [selectedDimension, setDimension] = useState<ClimbingStrengthsPanel["dimension"] | null>(
-    null,
-  );
-  const panels = data?.panels ?? [];
-  const dimension = selectedDimension ?? preferred(panels)?.dimension ?? "wall_angle";
+  const [selectedBreakdown, setBreakdown] = useState<string | null>(null);
+  const enrichmentErrors = [...new Set(data?.enrichmentErrors)];
+  const panels = [...(data?.panels ?? []), ...(data?.tagPanels ?? [])];
+  const options = climbingStrengthsBreakdownOptions(panels);
+  const breakdown = options.some((option) => option.key === selectedBreakdown)
+    ? (selectedBreakdown ?? "wall_angle")
+    : climbingStrengthsDefaultBreakdown(panels);
+  const breakdownLabel = options.find((option) => option.key === breakdown)?.label ?? "Wall angle";
   if (!data && loading)
     return <QueryStatePanel variant="loading" contextLabel="Climbing strengths" />;
   return (
@@ -58,31 +60,57 @@ export function ClimbingStrengths({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <fieldset className="flex flex-wrap gap-2">
           <legend className="mb-2 text-xs text-muted">Break down by</legend>
-          {Object.entries(dimensions)
-            .filter(([item]) => item !== "setting")
-            .map(([item, label]) => (
-              <button
-                key={item}
-                type="button"
-                aria-pressed={dimension === item}
-                className={
-                  "min-h-10 rounded-lg border px-3 text-sm " +
-                  (dimension === item
-                    ? "border-accent bg-accent/10 text-accent"
-                    : "border-border text-muted")
-                }
-                onClick={() => {
-                  const next = panels.find((panel) => panel.dimension === item)?.dimension;
-                  if (next) setDimension(next);
-                  else if (item === "wall_angle" || item === "hold_type" || item === "setting")
-                    setDimension(item);
-                }}
-              >
-                {label}
-              </button>
-            ))}
+          {options.map((option) => (
+            <button
+              key={option.key}
+              type="button"
+              aria-pressed={breakdown === option.key}
+              className={
+                "min-h-10 rounded-lg border px-3 text-sm " +
+                (breakdown === option.key
+                  ? "border-accent bg-accent/10 text-accent"
+                  : "border-border text-muted")
+              }
+              onClick={() => setBreakdown(option.key)}
+            >
+              {option.providerId ? `${providerLabel(option.providerId)} · ` : ""}
+              {option.label}
+            </button>
+          ))}
         </fieldset>
       </div>
+      <label className="flex min-h-11 items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={includeAreaMetadata}
+          onChange={(event) => onIncludeAreaMetadataChange?.(event.target.checked)}
+        />
+        Include area metadata
+      </label>
+      {data?.enrichmentPending ? (
+        <p role="status" className="text-xs text-muted">
+          Updating catalogue metadata…
+        </p>
+      ) : null}
+      {enrichmentErrors.length > 0 ? (
+        <section
+          aria-label="Catalogue metadata"
+          className="rounded-lg border border-border p-3 text-sm"
+        >
+          <p className="font-medium">Catalogue metadata incomplete</p>
+          <p className="text-muted">Recorded results remain available.</p>
+          <details className="mt-2">
+            <summary className="cursor-pointer">Provider details</summary>
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-muted">
+              {enrichmentErrors.map((message) => (
+                <li key={message} className="whitespace-pre-line">
+                  {message}
+                </li>
+              ))}
+            </ul>
+          </details>
+        </section>
+      ) : null}
       <fieldset aria-label="Strengths view" className="flex gap-6 border-b border-border">
         {CLIMBING_STRENGTHS_TABS.map((tab) => (
           <button
@@ -103,7 +131,12 @@ export function ClimbingStrengths({
         <p className="text-xs text-muted">Success rates use climbs with known results.</p>
       ) : null}
       {panels.length > 0 ? (
-        <ClimbingStrengthsBreakdown panels={panels} dimension={dimension} view={view} />
+        <ClimbingStrengthsBreakdown
+          panels={panels}
+          breakdown={breakdown}
+          label={breakdownLabel}
+          view={view}
+        />
       ) : null}
     </div>
   );
@@ -111,26 +144,30 @@ export function ClimbingStrengths({
 
 function ClimbingStrengthsBreakdown({
   panels,
-  dimension,
+  breakdown,
+  label,
   view,
 }: {
-  panels: ClimbingStrengthsPanel[];
-  dimension: ClimbingStrengthsPanel["dimension"];
+  panels: ClimbingStrengthsDisplayPanel[];
+  breakdown: string;
+  label: string;
   view: ClimbingStrengthsTab;
 }) {
-  const selectedPanels = panels.filter((panel) => panel.dimension === dimension);
+  const selectedPanels = panels.filter(
+    (panel) => climbingStrengthsBreakdownKey(panel) === breakdown,
+  );
   return (
     <section className="space-y-3">
       {selectedPanels.length ? (
         selectedPanels.map((panel) => (
-          <div key={panel.key} className="space-y-3">
+          <div key={panel.key} className="min-w-0 space-y-3">
             <ClimbingStrengthsPanelContent panel={panel} view={view} />
           </div>
         ))
       ) : (
         <QueryStatePanel
           variant="empty"
-          message={`No recorded ${dimensions[dimension].toLowerCase()} observations for this context.`}
+          message={`No recorded ${label.toLowerCase()} observations for this context.`}
         />
       )}
     </section>
@@ -141,93 +178,37 @@ function ClimbingStrengthsPanelContent({
   panel,
   view,
 }: {
-  panel: ClimbingStrengthsPanel;
+  panel: ClimbingStrengthsDisplayPanel;
   view: ClimbingStrengthsTab;
 }) {
   const [selected, setSelected] = useState<{ row: string; grade: string } | null>(null);
-  const displayPanel =
-    view === "profile" ? panel : climbingStrengthsGradePanel(panel, ALL_CLIMBING_GRADES);
-  const row = displayPanel.rows.find((item) => item.key === selected?.row);
-  const cell = row?.cells.find((item) => item.grade === selected?.grade);
+  const displayPanel = climbingStrengthsGradePanel(panel, ALL_CLIMBING_GRADES);
+  const row =
+    displayPanel.rows.find((item) => item.key === selected?.row) ??
+    displayPanel.rows.find((item) =>
+      item.cells.some((cell) => cell.climbs > 0 || cell.unknownOutcomes > 0),
+    );
+  const cell =
+    row?.cells.find((item) => item.grade === selected?.grade) ??
+    row?.cells.find((item) => item.climbs > 0 || item.unknownOutcomes > 0);
+  if (selected && (row?.key !== selected.row || cell?.grade !== selected.grade)) setSelected(null);
   return (
-    <div className="space-y-3">
-      {!observed(panel) ? (
-        <QueryStatePanel
-          variant="empty"
-          message={`No recorded ${dimensions[panel.dimension].toLowerCase()} observations for this context.`}
-        />
-      ) : (
-        <>
-          <h4 className="font-medium">
-            {view === "radar"
-              ? "Strengths and weaknesses"
-              : view === "profile"
-                ? "Send rate by grade and style"
-                : "Monthly send rate"}
-          </h4>
-          {view === "radar" ? (
-            <p className="text-sm text-muted">
-              Compared with your usual results at the same grades. Outside the dashed line is
-              stronger; inside is weaker.
-            </p>
-          ) : view === "progress" ? (
-            <p className="text-sm text-muted">
-              Combines all grades; changes can reflect the difficulty of climbs recorded each month.
-            </p>
-          ) : null}
-          {view === "profile" ? (
-            <div className="overflow-x-auto">
-              <table className="w-full border-separate border-spacing-1 text-sm">
-                <caption className="sr-only">
-                  Success by grade and {dimensions[panel.dimension].toLowerCase()}
-                </caption>
-                <thead>
-                  <tr>
-                    <th scope="col" className="text-left text-muted">
-                      Style
-                    </th>
-                    {panel.grades.map((grade) => (
-                      <th scope="col" key={grade.grade} className="p-2 text-muted">
-                        {grade.grade}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {panel.rows.map((item) => (
-                    <tr key={item.key}>
-                      <th scope="row" className="pr-3 text-left font-medium">
-                        {item.label}
-                      </th>
-                      {item.cells.map((value) => (
-                        <td key={value.grade}>
-                          <button
-                            type="button"
-                            aria-label={`${item.label} · ${value.grade} · ${rateLabel(value)} · ${climbingStrengthsCountLabel(value)}${value.sampleStatus === "limited" ? " · Limited sample" : ""}`}
-                            aria-pressed={row?.key === item.key && cell?.grade === value.grade}
-                            onClick={() => setSelected({ row: item.key, grade: value.grade })}
-                            className={`min-h-14 w-full min-w-24 rounded-lg border p-2 text-center ${row?.key === item.key && cell?.grade === value.grade ? "ring-2 ring-accent" : ""} ${value.sampleStatus === "no_data" ? "border-dashed border-border text-dim" : "border-accent/20 text-foreground"}`}
-                            style={
-                              value.successRate === null
-                                ? undefined
-                                : {
-                                    backgroundColor: `color-mix(in srgb, var(--color-accent) calc(${value.successRate}% * 0.4), var(--color-surface-solid))`,
-                                  }
-                            }
-                          >
-                            <span className="block text-lg font-semibold">{rateLabel(value)}</span>
-                            {value.sampleStatus === "limited" ? (
-                              <span className="block text-xs">Limited sample</span>
-                            ) : null}
-                          </button>
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
+    <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)]">
+      <div className="min-w-0">
+        {!observed(panel) ? (
+          <QueryStatePanel
+            variant="empty"
+            message={
+              panel.coverage.missingTraits > 0
+                ? `${climbingStrengthsPanelLabel(panel)} is missing for ${panel.coverage.missingTraits} ${panel.coverage.missingTraits === 1 ? "climb" : "climbs"}.`
+                : `No recorded ${climbingStrengthsPanelLabel(panel).toLowerCase()} observations for this context.`
+            }
+          />
+        ) : (
+          <>
+            <h3 className="font-medium">
+              {view === "radar" ? "Strengths and weaknesses" : "Monthly send rate"}
+            </h3>
             <ClimbingStrengthsChart
               panel={displayPanel}
               view={view}
@@ -235,16 +216,17 @@ function ClimbingStrengthsPanelContent({
               selectedRow={cell ? (row?.key ?? null) : null}
               onSelectCell={(row, grade) => setSelected({ row, grade })}
             />
-          )}
-        </>
-      )}
+          </>
+        )}
+      </div>
       {cell && row ? (
         <section
           aria-label="Selected climbs"
           className="rounded-lg border border-border bg-surface p-4 space-y-3"
         >
           <h3 className="font-semibold">
-            {row.label} · {cell.grade}
+            {row.label}
+            {view === "radar" ? "" : ` · ${cell.grade}`}
           </h3>
           {view === "progress" ? (
             <p className="text-xs text-muted">
@@ -252,13 +234,14 @@ function ClimbingStrengthsPanelContent({
             </p>
           ) : null}
           <p>
-            {rateLabel(cell)} · {climbingStrengthsCountLabel(cell)}
+            {view === "radar"
+              ? climbingStrengthsSendLabel(cell)
+              : `${rateLabel(cell)} · ${climbingStrengthsCountLabel(cell)}`}
           </p>
           {view === "radar" ? (
             <p className="text-xs text-muted">
-              {climbingStrengthsDifferenceLabel(
-                panel.gradeAdjustedStrengths.find((entry) => entry.key === row.key)
-                  ?.differencePercentagePoints ?? null,
+              {climbingStrengthsAdjustedLabel(
+                panel.gradeAdjustedStrengths.find((entry) => entry.key === row.key),
               )}
             </p>
           ) : null}
@@ -270,27 +253,67 @@ function ClimbingStrengthsPanelContent({
             </p>
           ) : null}
           {cell.examples.map((example) => (
-            <div key={example.logEntryId} className="border-t border-border pt-3 text-sm">
-              <p className="font-medium">{example.name}</p>
-              <p className="text-xs text-muted">
-                {example.grade} · {example.date} · {climbingStrengthsResultLabel(example.outcome)}
-              </p>
-              <div className="mt-1 flex gap-3 text-xs text-accent">
-                {example.sourceUrl ? (
-                  <a href={example.sourceUrl} target="_blank" rel="noreferrer">
-                    {example.sourceName}
-                  </a>
-                ) : (
-                  <span className="text-muted">{example.sourceName}</span>
-                )}
-                {example.activityId ? (
-                  <a href={`/activity/${example.activityId}`}>View activity</a>
-                ) : null}
-              </div>
-            </div>
+            <ClimbingStrengthsExampleSources key={example.logEntryId} example={example} />
           ))}
         </section>
       ) : null}
     </div>
+  );
+}
+
+function ClimbingStrengthsExampleSources({ example }: { example: ClimbingStrengthsExample }) {
+  const hasAreaMetadata = example.traitSources?.some((source) => source.scope === "area");
+  return (
+    <details className="border-t border-border pt-3 text-sm">
+      <summary
+        aria-label={`Sources for ${example.name}${hasAreaMetadata ? " · Area metadata" : ""}`}
+        className="min-h-11 cursor-pointer"
+      >
+        <span className="font-medium">{example.name}</span>
+        {hasAreaMetadata ? <span className="ml-2 text-xs text-muted">Area metadata</span> : null}
+        <span className="mt-1 block text-xs text-muted">
+          {example.grade} · {example.date} · {climbingStrengthsResultLabel(example.outcome)}
+        </span>
+      </summary>
+      <div className="space-y-3 py-2">
+        {example.traitSources?.length ? (
+          example.traitSources.map((source) => (
+            <div key={`${source.providerId}:${source.url}:${source.trait}`} className="space-y-1">
+              <a href={source.url} target="_blank" rel="noreferrer" className="text-xs text-accent">
+                {providerLabel(source.providerId)}
+              </a>
+              <p>
+                {source.name}{" "}
+                <span className="ml-2 rounded bg-accent/10 px-2 py-0.5 text-xs text-accent">
+                  {source.trait}
+                </span>
+              </p>
+              {source.scope === "area" ? (
+                <p className="pl-3">
+                  <span aria-hidden="true">↳ </span>
+                  {example.name}
+                </p>
+              ) : null}
+            </div>
+          ))
+        ) : example.sourceUrl ? (
+          <a
+            href={example.sourceUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="text-xs text-accent"
+          >
+            {example.sourceName}
+          </a>
+        ) : (
+          <span className="text-xs text-muted">{example.sourceName}</span>
+        )}
+        {example.activityId ? (
+          <a href={`/activity/${example.activityId}`} className="block text-xs text-accent">
+            View activity
+          </a>
+        ) : null}
+      </div>
+    </details>
   );
 }

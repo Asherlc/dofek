@@ -1,11 +1,8 @@
 import { summaryDateContextSchema } from "@dofek/format/summary-date-context";
 import { climbingFiltersSchema } from "@dofek/training/climbing-filters";
 import { TRPCError } from "@trpc/server";
-import { getEffectiveParams } from "dofek/personalization/params";
-import { loadPersonalizedParams } from "dofek/personalization/storage";
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
-import { sleepNeedV1Schema, sleepNeedV2Schema } from "../contracts/sleep-need-contract.ts";
 import { dateWindowInput, endDateSchema } from "../lib/date-window.ts";
 import { logger } from "../logger.ts";
 import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
@@ -20,13 +17,16 @@ import {
 } from "../services/mobile-recovery-tab.ts";
 import {
   loadMobileTrainingTab,
+  loadMobileTrainingTabV2,
   mobileTrainingTabOutputSchema,
+  mobileTrainingTabV2OutputSchema,
 } from "../services/mobile-training-tab.ts";
 import { CacheTTL, cachedProtectedQuery, router } from "../trpc.ts";
 
-const MOBILE_TRAINING_CACHE_KEY_VERSION = "training-primary-title-v6";
-const MOBILE_DASHBOARD_CACHE_KEY_VERSION = "mobile-dashboard-contract-v1";
-const MOBILE_DASHBOARD_V2_CACHE_KEY_VERSION = "mobile-dashboard-contract-v2";
+const MOBILE_TRAINING_CACHE_KEY_VERSION = "training-vertical-ascent-links-v9";
+const MOBILE_TRAINING_V2_CACHE_KEY_VERSION = "training-combined-climbing-ascent-links-v3";
+const MOBILE_DASHBOARD_CACHE_KEY_VERSION = "mobile-dashboard-observed-sleep-v2";
+const MOBILE_DASHBOARD_V2_CACHE_KEY_VERSION = "mobile-dashboard-observed-sleep-v3";
 
 function requireSensorStore(
   sensorStore: ActivitySensorStore | undefined,
@@ -71,24 +71,6 @@ const anomalyCheckOutputSchema = z.object({
 
 const mobileDashboardSharedOutputSchema = z.object({
   summaryDateContext: summaryDateContextSchema,
-  readiness: z
-    .object({
-      score: z.number(),
-      date: z.string(),
-      components: z.object({
-        hrvScore: z.number(),
-        restingHrScore: z.number(),
-        sleepScore: z.number(),
-        respiratoryRateScore: z.number(),
-      }),
-      weights: z.object({
-        hrv: z.number(),
-        restingHr: z.number(),
-        sleep: z.number(),
-        respiratoryRate: z.number(),
-      }),
-    })
-    .nullable(),
   sleep: z
     .object({
       lastNight: z
@@ -102,30 +84,14 @@ const mobileDashboardSharedOutputSchema = z.object({
           stagingAvailable: z.boolean(),
         })
         .nullable(),
-      sleepDebt: z.number(),
     })
     .nullable(),
-  strain: z.object({
-    dailyStrain: z.number(),
-    acuteLoad: z.number(),
-    chronicLoad: z.number(),
-    workloadRatio: z.number().nullable(),
-    date: z.string().nullable(),
-  }),
   anomalies: anomalyCheckOutputSchema.nullable(),
   latestDate: z.string().nullable(),
 });
 
-const mobileDashboardOutputSchema = mobileDashboardSharedOutputSchema.extend({
-  sleepNeed: sleepNeedV1Schema.nullable(),
-});
-
-const mobileDashboardV2OutputSchema = mobileDashboardSharedOutputSchema.extend({
-  sleepNeed: sleepNeedV2Schema,
-});
-
-export type MobileDashboardResult = z.infer<typeof mobileDashboardOutputSchema>;
-export type MobileDashboardV2Result = z.infer<typeof mobileDashboardV2OutputSchema>;
+export type MobileDashboardResult = z.infer<typeof mobileDashboardSharedOutputSchema>;
+export type MobileDashboardV2Result = z.infer<typeof mobileDashboardSharedOutputSchema>;
 
 export const mobileDashboardRouter = router({
   dashboard: cachedProtectedQuery({
@@ -133,17 +99,15 @@ export const mobileDashboardRouter = router({
     keyVersion: MOBILE_DASHBOARD_CACHE_KEY_VERSION,
   })
     .input(z.object({ endDate: endDateSchema }))
-    .output(mobileDashboardOutputSchema)
+    .output(mobileDashboardSharedOutputSchema)
     .query(async ({ ctx, input }): Promise<MobileDashboardResult> => {
       const { endDate } = input;
       const sensorStore = requireSensorStore(ctx.sensorStore, "mobileDashboard.dashboard");
       const accessWindow = ctx.accessWindow ?? { kind: "full" as const };
       const dashboardStart = performance.now();
-      const storedParams = await loadPersonalizedParams(ctx.db, ctx.userId);
       const result = await loadDashboardOverview({
         accessWindow,
         endDate,
-        readinessWeights: getEffectiveParams(storedParams).readinessWeights,
         sensorStore,
         timezone: ctx.timezone ?? "UTC",
         userId: ctx.userId,
@@ -159,17 +123,15 @@ export const mobileDashboardRouter = router({
     keyVersion: MOBILE_DASHBOARD_V2_CACHE_KEY_VERSION,
   })
     .input(z.object({ endDate: endDateSchema }))
-    .output(mobileDashboardV2OutputSchema)
+    .output(mobileDashboardSharedOutputSchema)
     .query(async ({ ctx, input }): Promise<MobileDashboardV2Result> => {
       const { endDate } = input;
       const sensorStore = requireSensorStore(ctx.sensorStore, "mobileDashboard.dashboardV2");
       const accessWindow = ctx.accessWindow ?? { kind: "full" as const };
       const dashboardStart = performance.now();
-      const storedParams = await loadPersonalizedParams(ctx.db, ctx.userId);
       const result = await loadDashboardOverview({
         accessWindow,
         endDate,
-        readinessWeights: getEffectiveParams(storedParams).readinessWeights,
         sensorStore,
         timezone: ctx.timezone ?? "UTC",
         userId: ctx.userId,
@@ -177,10 +139,7 @@ export const mobileDashboardRouter = router({
       logger.info(
         `[mobile-dashboard] dashboardV2 timings userId=${ctx.userId} endDate=${endDate} total=${Math.round(performance.now() - dashboardStart)}ms`,
       );
-      return {
-        ...result,
-        sleepNeed: result.sleepNeedV2,
-      };
+      return result;
     }),
 
   recovery: cachedProtectedQuery({
@@ -236,6 +195,32 @@ export const mobileDashboardRouter = router({
       );
       logger.info(
         `[mobile-dashboard] training timings userId=${ctx.userId} endDate=${input.endDate} days=${input.days} total=${Math.round(performance.now() - tabStart)}ms`,
+      );
+      return result;
+    }),
+  trainingV2: cachedProtectedQuery({
+    maxAge: CacheTTL.MEDIUM,
+    keyVersion: MOBILE_TRAINING_V2_CACHE_KEY_VERSION,
+  })
+    .input(dateWindowInput.extend({ climbingFilters: climbingFiltersSchema.optional() }))
+    .output(mobileTrainingTabV2OutputSchema)
+    .query(async ({ ctx, input }) => {
+      const sensorStore = requireSensorStore(ctx.sensorStore, "mobileDashboard.trainingV2");
+      const tabStart = performance.now();
+      const result = await loadMobileTrainingTabV2(
+        {
+          db: ctx.db,
+          userId: ctx.userId,
+          timezone: ctx.timezone ?? "UTC",
+          accessWindow: requireAccessWindow(ctx.accessWindow, "mobileDashboard.trainingV2"),
+          sensorStore,
+        },
+        input.days,
+        input.endDate,
+        input.climbingFilters,
+      );
+      logger.info(
+        `[mobile-dashboard] trainingV2 timings userId=${ctx.userId} endDate=${input.endDate} days=${input.days} total=${Math.round(performance.now() - tabStart)}ms`,
       );
       return result;
     }),

@@ -9,16 +9,17 @@ describe("SourceProcessingStatusCard", () => {
     render(
       <SourceProcessingStatusCard
         heading="Updating activities, recovery, and training"
-        message="Your existing data is still available."
+        message="Importing recent activities."
         progress={60}
         status="active"
         details={<p>Last ready: 5m ago</p>}
       />,
     );
 
+    expect(screen.getByText("Importing recent activities.")).toBeVisible();
+
     const toggle = screen.getByRole("button", { name: "Show processing details", expanded: false });
     expect(screen.queryByText("Last ready: 5m ago")).toBeNull();
-    expect(screen.getByText("Your existing data is still available.")).toBeVisible();
     expect(screen.getByRole("progressbar")).toBeVisible();
 
     fireEvent.click(toggle);
@@ -73,7 +74,7 @@ describe("SourceProcessingStatusCard", () => {
     rerender(
       <SourceProcessingStatusCard
         heading="Importing Apple Health is waiting to continue"
-        message="Your existing data is still available."
+        message={null}
         progress={null}
         status="blocked"
       />,

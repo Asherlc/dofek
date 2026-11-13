@@ -1,24 +1,28 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const nativeModule = vi.hoisted(() => ({
+  configureUpload: vi.fn(),
+  flushUploads: vi.fn(),
+  disableUploads: vi.fn(),
+  purgeAccountState: vi.fn(),
   addListener: vi.fn(),
-  getBufferedSamples: vi.fn(),
   getDataPathStats: vi.fn(),
   getDeviceSummary: vi.fn(),
-  peekBufferedSamples: vi.fn(),
-  peekBufferedRealtimeData: vi.fn(),
 }));
-
 vi.unmock("../whoop-ble");
 vi.mock("./src/WhoopBleModule", () => ({ default: nativeModule }));
 
-import {
-  addDeviceStateListener,
-  getDataPathStats,
-  getDeviceSummary,
-  peekBufferedRealtimeData,
-  peekBufferedSamples,
-} from "./index";
+import { addDeviceStateListener, getDataPathStats, getDeviceSummary } from "./index";
+
+beforeEach(() => {
+  nativeModule.configureUpload.mockReset().mockResolvedValue(undefined);
+  nativeModule.flushUploads.mockReset().mockResolvedValue(undefined);
+  nativeModule.disableUploads.mockReset().mockResolvedValue(undefined);
+  nativeModule.purgeAccountState.mockReset().mockResolvedValue(true);
+  nativeModule.addListener.mockReset();
+  nativeModule.getDataPathStats.mockReset();
+  nativeModule.getDeviceSummary.mockReset();
+});
 
 function makeBufferStreamDiagnostics() {
   return {
@@ -41,6 +45,7 @@ function makeBufferCheckpoint() {
     bufferCreatedAt: "2026-10-23T02:00:00.000Z",
     checkpointAt: "2026-10-23T03:00:00.000Z",
     imu: makeBufferStreamDiagnostics(),
+    sensorRecords: makeBufferStreamDiagnostics(),
     realtime: {
       ...makeBufferStreamDiagnostics(),
       count: 1,
@@ -99,40 +104,47 @@ function makeDataPathStats() {
       ],
     },
     buffers: {
+      activeUploadCount: 0,
+      blockedUploadStreams: [],
+      lastUploadError: null,
       ...makeBufferCheckpoint(),
-      previousCheckpoint: makeBufferCheckpoint(),
     },
   };
 }
 
 describe("WhoopBle native bridge", () => {
-  beforeEach(() => {
-    nativeModule.addListener.mockReset();
-    nativeModule.getDataPathStats.mockReset();
-    nativeModule.getDeviceSummary.mockReset();
-    nativeModule.peekBufferedSamples.mockReset();
-    nativeModule.peekBufferedRealtimeData.mockReset();
-  });
-
-  it("preserves validated capture diagnostics and current and previous buffer checkpoints", () => {
+  it("reports a blocked sensor-record upload without losing capture diagnostics", async () => {
     const stats = makeDataPathStats();
-    nativeModule.getDataPathStats.mockReturnValue(stats);
+    nativeModule.getDataPathStats.mockResolvedValue({
+      ...stats,
+      buffers: { ...stats.buffers, blockedUploadStreams: ["sensorRecords"] },
+    });
+    expect((await getDataPathStats()).buffers.blockedUploadStreams).toEqual(["sensorRecords"]);
+  });
+  it("preserves validated capture diagnostics and durable queue metadata", async () => {
+    const stats = makeDataPathStats();
+    nativeModule.getDataPathStats.mockResolvedValue(stats);
 
-    expect(getDataPathStats()).toEqual(stats);
+    await expect(getDataPathStats()).resolves.toEqual(stats);
   });
 
-  it("accepts unavailable device, capture dates and previous checkpoint as null", () => {
+  it("accepts unavailable device and capture dates as null", async () => {
     const stats = {
       ...makeDataPathStats(),
       lastKnownDeviceId: null,
       lastDataNotificationAt: null,
       lastParsedRealtimeAt: null,
       lastValidHeartRateAt: null,
-      buffers: { ...makeBufferCheckpoint(), previousCheckpoint: null },
+      buffers: {
+        activeUploadCount: 0,
+        blockedUploadStreams: [],
+        lastUploadError: null,
+        ...makeBufferCheckpoint(),
+      },
     };
-    nativeModule.getDataPathStats.mockReturnValue(stats);
+    nativeModule.getDataPathStats.mockResolvedValue(stats);
 
-    expect(getDataPathStats()).toEqual(stats);
+    await expect(getDataPathStats()).resolves.toEqual(stats);
   });
 
   it.each([
@@ -164,12 +176,12 @@ describe("WhoopBle native bridge", () => {
         ],
       },
     })),
-  ])("rejects malformed native connection journal $field", ({ field, value }) => {
-    nativeModule.getDataPathStats.mockReturnValue({
+  ])("rejects malformed native connection journal $field", async ({ field, value }) => {
+    nativeModule.getDataPathStats.mockResolvedValue({
       ...makeDataPathStats(),
       connectionDiagnostics: value,
     });
-    expect(() => getDataPathStats()).toThrow(String(field));
+    await expect(getDataPathStats()).rejects.toThrow(String(field));
   });
 
   it.each([
@@ -177,10 +189,10 @@ describe("WhoopBle native bridge", () => {
     { field: "isNotifying", invalid: { isNotifying: "true" } },
     { field: "lastDataNotificationAt", invalid: { lastDataNotificationAt: "yesterday" } },
     { field: "totalSamplesExtracted", invalid: { totalSamplesExtracted: -1 } },
-  ])("rejects malformed native capture field $field", ({ field, invalid }) => {
-    nativeModule.getDataPathStats.mockReturnValue({ ...makeDataPathStats(), ...invalid });
+  ])("rejects malformed native capture field $field", async ({ field, invalid }) => {
+    nativeModule.getDataPathStats.mockResolvedValue({ ...makeDataPathStats(), ...invalid });
 
-    expect(() => getDataPathStats()).toThrow(field);
+    await expect(getDataPathStats()).rejects.toThrow(field);
   });
 
   it.each([
@@ -194,52 +206,26 @@ describe("WhoopBle native bridge", () => {
       field: "confirmedCount",
       invalid: { realtime: { ...makeBufferStreamDiagnostics(), confirmedCount: 0.5 } },
     },
-  ])("rejects malformed current buffer checkpoint field $field", ({ field, invalid }) => {
+  ])("rejects malformed current buffer checkpoint field $field", async ({ field, invalid }) => {
     const stats = makeDataPathStats();
-    nativeModule.getDataPathStats.mockReturnValue({
-      ...stats,
-      buffers: { ...stats.buffers, ...invalid },
-    });
-
-    expect(() => getDataPathStats()).toThrow(field);
-  });
-
-  it("rejects malformed previous buffer checkpoint counters", () => {
-    const stats = makeDataPathStats();
-    nativeModule.getDataPathStats.mockReturnValue({
+    nativeModule.getDataPathStats.mockResolvedValue({
       ...stats,
       buffers: {
+        activeUploadCount: 0,
+        blockedUploadStreams: [],
+        lastUploadError: null,
         ...stats.buffers,
-        previousCheckpoint: {
-          ...makeBufferCheckpoint(),
-          imu: { ...makeBufferStreamDiagnostics(), overflowDiscardedCount: "1" },
-        },
+        ...invalid,
       },
     });
 
-    expect(() => getDataPathStats()).toThrow(/previousCheckpoint/);
+    await expect(getDataPathStats()).rejects.toThrow(field);
   });
 
-  it("rejects malformed native summaries", () => {
-    nativeModule.getDeviceSummary.mockReturnValue({ connectionState: "ready" });
+  it("rejects malformed native summaries", async () => {
+    nativeModule.getDeviceSummary.mockResolvedValue({ connectionState: "ready" });
 
-    expect(() => getDeviceSummary()).toThrow(/id/);
-  });
-
-  it("rejects buffered samples without a captured device ID", async () => {
-    nativeModule.peekBufferedSamples.mockResolvedValue([
-      {
-        timestamp: "2026-08-24T19:00:00.000Z",
-        accelerometerX: 0,
-        accelerometerY: 0,
-        accelerometerZ: 0,
-        gyroscopeX: 0,
-        gyroscopeY: 0,
-        gyroscopeZ: 0,
-      },
-    ]);
-
-    await expect(peekBufferedSamples()).rejects.toThrow(/deviceId/);
+    await expect(getDeviceSummary()).rejects.toThrow(/id/);
   });
 
   it("rejects malformed native device-state events", () => {
@@ -254,39 +240,29 @@ describe("WhoopBle native bridge", () => {
 
     expect(() => onDeviceState({ connectionState: "ready" })).toThrow(/id/);
   });
+});
 
-  it("preserves native reported heart rate without requiring beat intervals", async () => {
-    const sample = {
-      deviceId: "whoop-a",
-      timestamp: "2026-10-20T16:03:26.000Z",
-      heartRateBpm: 128,
-      rrIntervalMs: 0,
-      quaternionW: 0,
-      quaternionX: 0,
-      quaternionY: 0,
-      quaternionZ: 0,
-      opticalRawHex: "000000000000000000000000000000000000",
+describe("native upload ownership", () => {
+  it("awaits configuring, flushing, and disabling native uploads", async () => {
+    const bridge = await import("./index");
+    const context = {
+      userId: "user",
+      token: "secret",
+      serverURL: "https://example.com",
+      headers: { "x-app-version": "1" },
     };
-    nativeModule.peekBufferedRealtimeData.mockResolvedValue([sample]);
-
-    expect(await peekBufferedRealtimeData()).toEqual([sample]);
+    await bridge.configureUpload(context);
+    await bridge.flushUploads();
+    await bridge.disableUploads();
+    expect(nativeModule.configureUpload).toHaveBeenCalledWith(context);
+    expect(nativeModule.flushUploads).toHaveBeenCalledOnce();
+    expect(nativeModule.disableUploads).toHaveBeenCalledOnce();
   });
-
-  it("rejects malformed native reported heart rate", async () => {
-    nativeModule.peekBufferedRealtimeData.mockResolvedValue([
-      {
-        deviceId: "whoop-a",
-        timestamp: "2026-10-20T16:03:26.000Z",
-        heartRateBpm: "128",
-        rrIntervalMs: 0,
-        quaternionW: 0,
-        quaternionX: 0,
-        quaternionY: 0,
-        quaternionZ: 0,
-        opticalRawHex: "000000000000000000000000000000000000",
-      },
-    ]);
-
-    await expect(peekBufferedRealtimeData()).rejects.toThrow(/heartRateBpm/);
+  it("rejects with the native disable failure", async () => {
+    const bridge = await import("./index");
+    nativeModule.disableUploads.mockImplementationOnce(() => {
+      throw new Error("queue unavailable");
+    });
+    await expect(bridge.disableUploads()).rejects.toThrow("queue unavailable");
   });
 });

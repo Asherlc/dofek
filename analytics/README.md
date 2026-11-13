@@ -1,5 +1,15 @@
 # ClickHouse Analytics Models
 
+Overview oxygen and WHOOP temperature use the incremental
+[`daily_health_sensor`](models/read_models/daily_health_sensor.sql) model. It
+rebuilds at most 32 changed user/provider/receipt-day keys per invocation using
+existing day markers and indexed raw replacement-key lookup. Typed measurement
+timestamps preserve caller timezone grouping and delayed offload dates without
+request-time raw-frame decoding. The [cutover procedure](../docs/clickhouse-read-model-deploy-runbook.md#overview-oxygen-and-temperature-cutover)
+requires schema preparation, projection coverage and backlog initialization
+before API release. See [dbt incremental models](https://docs.getdbt.com/docs/build/incremental-models)
+and [ClickHouse projections](https://clickhouse.com/docs/data-modeling/projections).
+
 This directory is a dbt project. Files under `analytics/models/` are not imported by
 TypeScript directly; dbt discovers them by path and runs them as models.
 
@@ -185,7 +195,9 @@ documents tuple arguments as the way to return associated columns from the row
 selected by
 [`argMax`](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/argmax).
 `activity_route_identity` follows `activity_location_sample` at canonical
-cycling-activity grain. It reads `deduped_activities FINAL`, selected
+activity grain for cycling, walking, hiking, and trail running (`running` with
+`modality = 'trail'`), as defined by the
+[route model](models/read_models/activity_route_identity.sql). It reads `deduped_activities FINAL`, selected
 `activity_location_sample FINAL` rows, `activity_effort_identity FINAL`, and
 selected `altitude` rows from `activity_sensor_sample FINAL`, preserving explicit provider route/course
 claims separately from a deterministic, 64-point coordinate-quantized ordered
@@ -194,7 +206,8 @@ provider/device provenance, and lifecycle watermark refresh only when an
 activity, deduplicated location state, altitude evidence, or explicit route evidence changes; a
 route whose live geometry disappears emits a `ReplacingMergeTree` tombstone.
 Scoped builds resolve `activity_refresh_user_id` and
-`activity_refresh_activity_ids` (canonical or member IDs) before reading route
+`activity_refresh_activity_ids_base64` (packed canonical or member IDs; see
+[scoped activity input](#scoped-activity-input)) before reading route
 points, and include scoped prior route keys so removed activities can be
 tombstoned. Unscoped incremental builds discover dirty keys from activity,
 location, altitude, and identity watermarks through per-activity source
@@ -220,6 +233,47 @@ Its model-local
 being re-evaluated across current-row and tombstone branches; ClickHouse
 introduced this explicit single-evaluation behavior in
 [version 26.3](https://clickhouse.com/blog/clickhouse-release-26-03).
+`activity_step_cadence_rows` materializes one observed step rate per canonical
+run from workout-associated raw `step_count` intervals. It selects at most 100
+oldest dirty activity keys before reading raw histories, resolves every child's
+associations against all current user-owned workout mappings, and rejects
+cross-group ambiguity and sources containing overlapping intervals (including
+nested overlaps). Each raw child contributes once across member associations;
+distinct raw parents retain their identities through overlap validation. One provider and
+source bundle wins by configured cadence priority, disjoint observed duration,
+then stable source identity. Rates use the ratio of total steps to observed
+seconds, retaining zero counts. These are derived values in ClickHouse only.
+
+All actual device names retained in a source bundle participate in priority
+selection. Each name uses its most-specific configured rule; the best configured
+priority across names wins, with stable lexical name/rule ties. Provider/default
+fallback applies only when no retained name has a configured match. Missing-name
+bundles keep nullable provenance and existing empty-name matching; the raw source
+grain remains unchanged. See the [model](models/read_models/activity_step_cadence_rows.sql)
+and [executable cases](models/read_models/activity_step_cadence_rows.integration.test.ts).
+
+The [activity-integrity repair runner](../src/db/activity-data-integrity-dbt.ts)
+retains historical aliases and verifies finite, exact cadence batches before
+dependent summaries. It uses the same 100-key ceiling without treating one
+successful dbt invocation as completion of an expanded scope. See the
+[repair rebuild contract](../docs/activity-data-integrity-repair-runbook.md#cadence-completeness-during-rebuild)
+for scope bounds, empty-target behavior and failure states. Ordinary analytics
+cycles retain their existing dirty-key selection.
+
+Each row independently consumes its raw day watermark, stable activity lifecycle
+watermark, per-user membership signature, and active cadence-priority signature.
+Routine source-row build timestamps do not trigger work. Processed-empty rows
+consume inputs; removals emit tombstones, and restores become eligible again.
+The shared summary atomically publishes `avg_cadence`, `cadence_basis`,
+`cadence_observed_seconds`, and `cadence_coverage_percent`, preferring finite
+positive direct cadence. Apply [migration 0107](../src/db/clickhouse-migrations/0107_running_step_cadence.ts)
+before the next build. This follows [dbt's incremental contract](https://docs.getdbt.com/docs/build/incremental-models)
+and uses [ReplacingMergeTree with FINAL](https://clickhouse.com/docs/engines/table-engines/mergetree-family/replacingmergetree)
+for replacement and tombstone reads. Raw step intervals bypass point-sensor
+deduplication, and requests read only the shared summary. Historical raw
+observations still require an authorized bounded device sync; rebuilding
+analytics cannot recreate missing ingestion.
+
 `provider_metric_stream_daily` then recomputes at most 32 dirty
 `(user_id, provider_id, recorded_date)` keys per build from exact latest metric
 state, including replacements, tombstones, resurrection, and late arrivals.
@@ -317,18 +371,18 @@ only after fresh Axiom or recorded incident evidence names a request-time
 ClickHouse bottleneck, and the model should materialize the domain/grain needed
 by that route instead of becoming a generic `_summary`, `_aggregate`, or
 `_read_model` table.
-`daily_recovery`, `daily_strain`, `daily_sleep`, and
-`weekly_healthspan` are the named dashboard serving models. They build on compact ingredient
-models such as `daily_recovery_inputs`, `daily_activity_load`, and
-`healthspan_activity_zone_minutes` so dashboard, recovery, stress,
-sleep-need, and healthspan routes do not recompute broad windows at request
+`daily_recovery`, `daily_strain`, and `daily_sleep` are the named dashboard
+serving models. They build on compact ingredient models such as
+`daily_recovery_inputs` and `daily_activity_load` so dashboard, recovery, stress,
+and sleep routes do not recompute broad windows at request
 time. `provider_stats` materializes provider record counts for the sync
 provider inventory route so the API does not compute all-provider counts on
 request.
-`daily_recovery_inputs`, `daily_activity_load`, and
-`healthspan_activity_zone_minutes` are compact serving models over daily
+`daily_recovery_inputs` and `daily_activity_load` are compact serving models over daily
 metrics, sleep, activity summaries, and bounded activity samples for dashboard,
-recovery, stress, sleep-need, and healthspan routes.
+recovery, stress, and sleep routes. Healthspan scoring and its derived models
+are retired; [migration 0112](../src/db/clickhouse-migrations/0112_remove_healthspan.ts)
+drops their stored tables while preserving source measurements.
 
 ## Cycling power-duration semantics and refresh
 
@@ -355,10 +409,32 @@ Per-activity MCP workout metrics intentionally do not add another stored source 
 server pages canonical rows from `cycling_activity`, resolves identity and timezone evidence from
 `deduped_activities`, and reads only power, heart-rate, and cadence channels for those selected
 activity IDs from `activity_sensor_sample FINAL`. It joins standard-duration evidence from
-`activity_power_curve FINAL` and effective-dated thresholds from Postgres at request time. This
+`activity_power_curve FINAL` and canonical computed eFTP projections at request time. This
 bounded fan-out keeps native samples out of the LLM payload while preserving missing-time and
 measurement-kind evidence. The duplicate test fixture inserts the same ride through two source
 members and verifies that canonical activity duration and work are calculated once.
+
+Cycling FTP, normalized power, intensity factor and power stress have one
+[pure TypeScript algorithm owner](../packages/cycling-power/README.md). The
+[application projector](../src/analytics/README.md) supplies versioned empirical
+reference data, source selection and ClickHouse persistence. No manual cycling
+FTP setting is used. NP observation freshness and complete-user history
+publication prevent mixed input revisions; threshold and activity-power models run after
+the projection stage. See the [implementation design](../docs/superpowers/specs/2026-11-01-computed-cycling-eftp-design.md).
+
+Heart-rate-derived TSS is retired. The daily endurance-load and dependent weekly
+ramp-rate/monotony dbt models are removed; [migration 0109](../src/db/clickhouse-migrations/0109_remove_heart_rate_tss.ts)
+drops their stored tables. Canonical cycling power metrics remain the source
+for power TSS. See the [TSS evidence review](../docs/tss-evidence-review-2026-11-02.md).
+
+The paired [PostgreSQL migration 0176](../drizzle/0176_remove_heart_rate_tss_parameters.sql)
+removes retired calibration fields from personalization settings and marks the
+release for the existing maintenance deployment path. The
+[deployment selector](../scripts/migration-deployment.ts) reads that marker before
+rollout; [migration execution](../src/db/run-migrate.ts) applies PostgreSQL changes
+before ClickHouse changes. Old web replicas must stop before migration 0109
+drops their former query inputs, as described in the
+[deployment procedure](../deploy/README.md#implementation-details).
 
 Because `activity_power_curve` is append-incremental, a formula or
 standard-duration change does not rewrite unchanged historical activities.
@@ -411,8 +487,7 @@ Production `DBT_SAFE_MODELS` currently selects `sensor_scalar_sample`,
 `activity_aerobic_efficiency`, `activity_polarization_zones`,
 `activity_power_curve`, `activity_pace_curve`, `activity_heart_rate_distribution`,
 `cycling_activity`, `daily_cycling`, `provider_stats`,
-`daily_activity_load`, `daily_strain`, `healthspan_activity_zone_minutes`,
-and `weekly_healthspan`. `activity_pace_curve` reads canonical `deduped_sensor FINAL`
+`daily_activity_load`, and `daily_strain`. `activity_pace_curve` reads canonical `deduped_sensor FINAL`
 speed samples within each canonical activity's inclusive temporal window, using
 the exact effective end (`ended_at`, or start plus twelve hours). Eligible types
 are cycling, running, swimming, walking and hiking; only positive live speeds
@@ -564,8 +639,8 @@ and `max_threads=1` to keep the offline aggregate work out of web/API requests.
 `activity_vo2max_estimate` also uses dirty activity/user keys and
 `max_threads=1`; it materializes reusable per-activity VO2 max estimates, not
 final API responses. `daily_recovery`, `daily_strain`,
-`daily_sleep`, and `weekly_healthspan` are the final route-facing dashboard models; the
-lower-level recovery, activity-load, and zone-minute models remain internal
+and `daily_sleep` are the final route-facing dashboard models; the
+lower-level recovery and activity-load models remain internal
 ingredients. `provider_stats` remains the route-facing provider inventory model
 so request paths do not recompute provider counts from raw source tables.
 
@@ -848,7 +923,42 @@ documented `ReplacingMergeTree` behavior, where replacement occurs during merges
 and `FINAL` forces query-time replacement:
 <https://clickhouse.com/docs/engines/table-engines/mergetree-family/replacingmergetree>.
 
+## Scoped activity input
+
+Scoped models accept the user UUID and one `activity_refresh_activity_ids_base64`
+value. Generate that value with the [canonical encoder](../src/db/activity-refresh-scope.ts),
+which validates and packs complete UUIDs in network byte order. For a small
+reviewed scope, replace the placeholder UUID and run from the repository root:
+
+```sh
+pnpm tsx -e 'import { encodeActivityRefreshScope } from "./src/db/activity-refresh-scope.ts"; console.log(encodeActivityRefreshScope(["<activity-or-group-uuid>"]));'
+```
+
+Use the printed value in the `activity_refresh_activity_ids_base64` variable of
+the small direct-dbt examples. The old UUID-list variable is no longer accepted.
+The encoding uses the standard [Node Buffer API](https://nodejs.org/api/buffer.html);
+models decode UUIDs with explicit big-endian
+[UUIDNumToString](https://clickhouse.com/docs/reference/functions/regular-functions/uuid-functions#UUIDNumToString).
+Each scoped model contains the packed payload once, retaining existing user
+fencing and related HealthKit workout expansion.
+
+The [operational repair runner](../src/db/activity-data-integrity-dbt.ts) transports
+all scopes through a private native dbt project, preserving the 10,000-ID limit
+without a large command-line argument. The inline examples above are for small
+scopes; a maximum-size scope must use that private-project transport. See the
+[repair procedure](../docs/activity-data-integrity-repair-runbook.md#cadence-completeness-during-rebuild),
+[dbt project variables](https://docs.getdbt.com/docs/build/project-variables) and
+[Linux argument limits](https://man7.org/linux/man-pages/man2/execve.2.html).
+
 ## Activity recording origin
+
+Dofek treats Kaya sync (`kaya`) and file-import (`kaya-export`) sessions as
+initiating activity sources in the [origin selector](macros/activity_origin.sql).
+A single Kaya session can establish the primary identity alongside non-initiating
+wearables such as WHOOP and their copies. Multiple initiating records, including
+Apple Watch recordings, remain unresolved under the existing policy; this does not invent transfer edges or
+change sensor selection. The [shared real-engine fixtures](../src/test-fixtures/activity-origin.json)
+cover the policy in PostgreSQL and ClickHouse.
 
 The [origin selector](macros/activity_origin.sql) resolves the closest available
 record using supported source-app and recording-device evidence within an existing

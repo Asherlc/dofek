@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   climbingAttemptFixture,
   climbingClimbFixture,
@@ -13,6 +13,73 @@ import {
 } from "./climbing-log-contracts.ts";
 
 describe("versioned climbing detail responses", () => {
+  it("retains explicit area membership in V5 while preserving strict older responses", () => {
+    const original = climbingLogEntryFixture();
+    const entry = { ...original, areaGroupId: "30000000-0000-4000-8000-000000000001" };
+    expect(decodeClimbingLogEntryDetailResponse(entry)).toEqual(entry);
+    expect(serializeClimbingLogEntryDetailResponse(entry, 5)).toEqual(entry);
+    for (const version of [1, 2, 3, 4] as const) {
+      expect(serializeClimbingLogEntryDetailResponse(entry, version)).toEqual(
+        serializeClimbingLogEntryDetailResponse(original, version),
+      );
+    }
+  });
+  it("parses required source-session fields at the runtime contract boundary", async () => {
+    vi.resetModules();
+    const { climbingLogActivitySessionSchema } = await import("./climbing-log-contracts.ts");
+    const session = {
+      id: "30000000-0000-4000-8000-000000000001",
+      providerId: "kilter",
+      memberActivityIds: ["40000000-0000-4000-8000-000000000001"],
+      firstLoggedAt: "2026-11-09T18:00:00.000Z",
+      lastLoggedAt: "2026-11-09T18:04:00.000Z",
+    };
+
+    expect(climbingLogActivitySessionSchema.parse(session)).toEqual(session);
+    expect(climbingLogActivitySessionSchema.safeParse({}).success).toBe(false);
+  });
+
+  it("preserves log-specific location in V4 while projecting the strict V3 payload", () => {
+    const original = climbingLogEntryFixture();
+    const entry = { ...original, areaPath: climbingClimbFixture().areaPath };
+    expect(
+      decodeClimbingLogEntryDetailResponse(serializeClimbingLogEntryDetailResponse(entry, 4)),
+    ).toEqual(entry);
+    expect(serializeClimbingLogEntryDetailResponse(entry, 3)).toEqual(original);
+  });
+  it("retains attributed recorded tags in V3 without changing stored log traits", () => {
+    const tags = [
+      {
+        providerId: "kaya",
+        sourceKey: "custom",
+        label: "Funky",
+        categoryKey: "81",
+        categoryLabel: null,
+      },
+    ];
+    const entry = { ...climbingLogEntryFixture(), tags };
+    const response = serializeClimbingLogEntryDetailResponse(entry, 3);
+    expect(response).toEqual(entry);
+    expect(decodeClimbingLogEntryDetailResponse(response)).toEqual(entry);
+    expect(decodeClimbingLogEntriesResponse([response])).toEqual([entry]);
+  });
+  it.each([1, 2] as const)("omits attributed tags from the strict V%s contract", (version) => {
+    const entry = {
+      ...climbingLogEntryFixture(),
+      tags: [
+        {
+          providerId: "kaya",
+          sourceKey: "937",
+          label: "Crimp",
+          categoryKey: "3",
+          categoryLabel: "Grip",
+        },
+      ],
+    };
+    const response = serializeClimbingLogEntryDetailResponse(entry, version);
+    const { tags: _tags, ...withoutTags } = entry;
+    expect(decodeClimbingLogEntryDetailResponse(response)).toEqual(withoutTags);
+  });
   it("decodes an old-server scalar response into canonical traits for an updated client", () => {
     const { holdTypes: _holds, ...entry } = climbingLogEntryFixture({
       wallAngle: { value: -10, unit: "degrees" },
@@ -51,6 +118,29 @@ describe("versioned climbing detail responses", () => {
       holdTypes: null,
       wallAngle: null,
     });
+  });
+
+  it.each([
+    { holdTypes: ["crimp"] },
+    {
+      tags: [
+        {
+          providerId: "kaya",
+          sourceKey: "937",
+          label: "Crimp",
+          categoryKey: "3",
+          categoryLabel: "Grip",
+        },
+      ],
+    },
+  ])("rejects newer trait fields in the strict original contract: %j", async (newerFields) => {
+    vi.resetModules();
+    const { legacyClimbingLogEntryDetailSchema: legacySchema } = await import(
+      "./climbing-log-contracts.ts"
+    );
+    const legacy = serializeClimbingLogEntryDetailResponse(climbingLogEntryFixture(), 1);
+    expect(legacySchema.parse(legacy)).toEqual(legacy);
+    expect(legacySchema.safeParse({ ...legacy, ...newerFields }).success).toBe(false);
   });
 
   it.each([1, 2] as const)("preserves the owned graph through a V%s response", (version) => {

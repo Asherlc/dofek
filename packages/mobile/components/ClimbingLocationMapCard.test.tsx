@@ -1,74 +1,19 @@
 import { QueryClientProvider } from "@tanstack/react-query";
-import { act, fireEvent, render, screen } from "@testing-library/react";
-import { createElement, forwardRef, type ReactNode, useImperativeHandle } from "react";
-import type { Region } from "react-native-maps";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { trpc } from "../lib/trpc";
 import { ClimbingLocationMapCard } from "./ClimbingLocationMapCard";
 import { climbingLocationMapFixture } from "./climbing-location-map-fixtures";
 import { createClimbingAttachmentTestClient } from "./climbing-log-attachment-test-helpers";
 
-const nativeMap = vi.hoisted<{
-  animateToRegion: ReturnType<typeof vi.fn>;
-  onRegionChangeComplete: ((region: Region) => void) | null;
-  onMapReady: (() => void) | null;
-}>(() => ({
-  animateToRegion: vi.fn(),
-  onRegionChangeComplete: null,
-  onMapReady: null,
-}));
-const push = vi.hoisted(() => vi.fn());
+import { nativeCamera } from "./native-map-test-helpers";
 
+const push = vi.hoisted(() => vi.fn());
 vi.mock("expo-router", () => ({ useRouter: () => ({ push }) }));
-vi.mock("react-native-maps", () => ({
-  default: forwardRef(function MockMap(
-    {
-      children,
-      onRegionChangeComplete,
-      scrollEnabled,
-      zoomEnabled,
-      onMapReady,
-      loadingEnabled,
-    }: {
-      children: ReactNode;
-      onRegionChangeComplete: (region: Region) => void;
-      scrollEnabled: boolean;
-      zoomEnabled: boolean;
-      onMapReady?: () => void;
-      loadingEnabled?: boolean;
-    },
-    ref,
-  ) {
-    nativeMap.onRegionChangeComplete = onRegionChangeComplete;
-    nativeMap.onMapReady = onMapReady ?? null;
-    useImperativeHandle(ref, () => nativeMap);
-    return createElement(
-      "div",
-      {
-        "data-testid": "map",
-        "data-interactive": scrollEnabled && zoomEnabled,
-        "data-native-loading-enabled": String(loadingEnabled),
-      },
-      children,
-    );
-  }),
-  Marker: ({
-    title,
-    accessibilityLabel,
-    children,
-    onPress,
-  }: {
-    title: string;
-    accessibilityLabel: string;
-    children: ReactNode;
-    onPress: () => void;
-  }) =>
-    createElement(
-      "button",
-      { title, "aria-label": accessibilityLabel, type: "button", onClick: onPress },
-      children,
-    ),
-}));
+vi.mock("@maplibre/maplibre-react-native", async () => {
+  const { nativeMapMock } = await import("./native-map-test-helpers");
+  return nativeMapMock;
+});
 
 function measure(container: HTMLElement, width = 320) {
   const wrapper = container.querySelector('[data-testid="climbing-location-map-wrapper"]');
@@ -77,21 +22,12 @@ function measure(container: HTMLElement, width = 320) {
 }
 
 function zoomToClimbs() {
-  act(() =>
-    nativeMap.onRegionChangeComplete?.({
-      latitude: 37.5,
-      longitude: -122.5,
-      latitudeDelta: 0.005,
-      longitudeDelta: 0.005,
-    }),
-  );
+  fireEvent(screen.getByTestId("map"), new CustomEvent("mapmove", { detail: 14 }));
 }
 
 describe("ClimbingLocationMapCard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    nativeMap.onRegionChangeComplete = null;
-    nativeMap.onMapReady = null;
   });
 
   it("reserves its viewport and shows processing through layout and native startup", () => {
@@ -104,9 +40,11 @@ describe("ClimbingLocationMapCard", () => {
     measure(view.container);
     const map = screen.getByTestId("map");
     expect(screen.getByRole("progressbar", { name: "Processing map" })).toBeTruthy();
-    act(() => nativeMap.onMapReady?.());
+    fireEvent(screen.getByTestId("map"), new Event("mapready"));
     expect(screen.queryByRole("progressbar", { name: "Processing map" })).toBeNull();
-    expect(map.getAttribute("data-native-loading-enabled")).toBe("true");
+    expect(
+      JSON.parse(map.getAttribute("data-map-style") ?? "null").sources.openmaptiles,
+    ).toBeTruthy();
   });
 
   it("keeps one interactive map and the same dot color as clusters separate into climbs", () => {
@@ -118,18 +56,18 @@ describe("ClimbingLocationMapCard", () => {
     const clusterDot = cluster.firstElementChild;
     expect(clusterDot?.getAttribute("style")).toContain("width: 44px");
     fireEvent.click(cluster);
-    expect(nativeMap.animateToRegion).toHaveBeenLastCalledWith(
-      expect.objectContaining({ latitude: 37.5, longitude: -122.5, longitudeDelta: 0.2197265625 }),
-      300,
-    );
-    const targetRegion = nativeMap.animateToRegion.mock.lastCall?.[0];
-    act(() => nativeMap.onRegionChangeComplete?.(targetRegion));
+    expect(nativeCamera.easeTo).toHaveBeenLastCalledWith({
+      center: [-122.5, 37.5],
+      zoom: 10,
+      duration: 300,
+    });
+    fireEvent(map, new CustomEvent("mapmove", { detail: 10 }));
     expect(screen.getByTitle("2 climbs at this location")).toBeTruthy();
 
-    nativeMap.animateToRegion.mockClear();
+    nativeCamera.fitBounds.mockClear();
     zoomToClimbs();
     expect(screen.getByTestId("map")).toBe(map);
-    expect(nativeMap.animateToRegion).not.toHaveBeenCalled();
+    expect(nativeCamera.fitBounds).not.toHaveBeenCalled();
     const leaf = screen.getByTitle("2 climbs at this location");
     expect(leaf.firstElementChild?.getAttribute("style")).toContain("width: 24px");
     expect(leaf.firstElementChild?.getAttribute("style")).toContain(
@@ -191,7 +129,7 @@ describe("ClimbingLocationMapCard", () => {
     const view = render(<ClimbingLocationMapCard data={climbingLocationMapFixture} />);
     measure(view.container);
     const map = screen.getByTestId("map");
-    nativeMap.animateToRegion.mockClear();
+    nativeCamera.fitBounds.mockClear();
     view.rerender(
       <ClimbingLocationMapCard
         data={{
@@ -201,9 +139,9 @@ describe("ClimbingLocationMapCard", () => {
       />,
     );
     expect(screen.getByTestId("map")).toBe(map);
-    expect(nativeMap.animateToRegion).toHaveBeenCalledWith(
-      expect.objectContaining({ latitude: 40.5, longitude: -73.5 }),
-      300,
+    expect(nativeCamera.fitBounds).toHaveBeenCalledWith(
+      expect.arrayContaining([-74.15, 39.85, -72.85, 41.15]),
+      expect.objectContaining({ duration: 300 }),
     );
   });
 
@@ -211,7 +149,7 @@ describe("ClimbingLocationMapCard", () => {
     const view = render(<ClimbingLocationMapCard data={climbingLocationMapFixture} />);
     measure(view.container);
     const map = screen.getByTestId("map");
-    act(() => nativeMap.onMapReady?.());
+    fireEvent(screen.getByTestId("map"), new Event("mapready"));
     view.rerender(
       <ClimbingLocationMapCard
         data={climbingLocationMapFixture}
@@ -230,15 +168,25 @@ describe("ClimbingLocationMapCard", () => {
     const view = render(<ClimbingLocationMapCard data={climbingLocationMapFixture} />);
     measure(view.container);
     const originalMap = screen.getByTestId("map");
-    act(() => nativeMap.onMapReady?.());
+    fireEvent(screen.getByTestId("map"), new Event("mapready"));
     expect(screen.queryByRole("progressbar", { name: "Processing map" })).toBeNull();
     view.rerender(<ClimbingLocationMapCard data={{ bounds: null, nodes: [] }} />);
     expect(screen.getByText("No climbing locations in this period")).toBeTruthy();
     view.rerender(<ClimbingLocationMapCard data={climbingLocationMapFixture} />);
     expect(screen.getByTestId("map")).not.toBe(originalMap);
     expect(screen.getByRole("progressbar", { name: "Processing map" })).toBeTruthy();
-    act(() => nativeMap.onMapReady?.());
+    fireEvent(screen.getByTestId("map"), new Event("mapready"));
     expect(screen.queryByRole("progressbar", { name: "Processing map" })).toBeNull();
+  });
+
+  it("reports native map failures without hiding cached climb data", () => {
+    const view = render(<ClimbingLocationMapCard data={climbingLocationMapFixture} />);
+    measure(view.container);
+    fireEvent(screen.getByTestId("map"), new Event("maperror"));
+    expect(
+      screen.getByText("Map unavailable. Check your connection and reopen climbing locations."),
+    ).toBeTruthy();
+    expect(screen.queryByRole("progressbar")).toBeNull();
   });
 
   it("distinguishes first-load, failed and empty map states", () => {

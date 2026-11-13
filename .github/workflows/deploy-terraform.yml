@@ -18,9 +18,17 @@ on:
   workflow_dispatch:
     inputs:
       commit_sha:
-        description: "Commit SHA to deploy (defaults to workflow ref HEAD)"
+        description: "Commit SHA to check out (defaults to workflow ref HEAD)"
         required: false
         type: string
+      operation:
+        description: "plan = readonly human terraform plan (default); apply = terraform apply -auto-approve"
+        required: false
+        type: choice
+        options:
+          - plan
+          - apply
+        default: plan
 
 concurrency:
   group: deploy-terraform
@@ -28,10 +36,24 @@ concurrency:
 
 jobs:
   terraform:
-    name: Terraform Apply
+    # github.event_name is the CALLER event inside reusable workflows — never
+    # 'workflow_call' (https://docs.github.com/en/actions/reference/workflows-and-actions/reusing-workflow-configurations#github-context).
+    # workflow_call declares no operation input → empty → apply. Dispatch choice
+    # default plan supplies plan when omitted.
+    name: ${{ inputs.operation == 'plan' && 'Terraform Plan' || 'Terraform Apply' }}
     runs-on: ubuntu-latest
+    # Environment-scoped CLOUDFLARE_TERRAFORM_R2_API_TOKEN (not repo-level) so
+    # Infisical dofek-github-sync overwrite cannot prune it. No required
+    # reviewers. Default CLOUDFLARE_API_TOKEN stays a repo secret (sync-owned).
+    # https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-secrets#using-secrets-in-a-workflow
+    environment: terraform
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
     env:
       TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.terraform-plugin-cache
+      TF_OPERATION: ${{ inputs.operation || 'apply' }}
     outputs:
       server_host: ${{ steps.tf_outputs.outputs.server_host }}
     steps:
@@ -39,6 +61,10 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ inputs.commit_sha != '' && inputs.commit_sha || github.sha }}
+      - name: Load OTA lifecycle identity through OIDC
+        uses: ./.github/actions/load-infisical-secrets
+        with:
+          keys: EXPO_APP_ID
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4
         with:
           cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
@@ -47,22 +73,65 @@ jobs:
           path: ${{ env.TF_PLUGIN_CACHE_DIR }}
           key: terraform-provider-v1-${{ runner.os }}-${{ hashFiles('deploy/.terraform.lock.hcl') }}
           restore-keys: terraform-provider-v1-${{ runner.os }}-
-      - name: Terraform Apply
+      - name: Terraform ${{ env.TF_OPERATION == 'plan' && 'Plan' || 'Apply' }}
         working-directory: deploy
         env:
           TF_VAR_cloudflare_api_token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          TF_VAR_cloudflare_terraform_r2_api_token: ${{ secrets.CLOUDFLARE_TERRAFORM_R2_API_TOKEN }}
           TF_VAR_cloudflare_account_id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           TF_VAR_oracle_server_host: ${{ vars.ORACLE_SERVER_HOST }}
+          # Infisical OIDC machine identity (same default as load-infisical-secrets).
+          # Kafka TS R2: docs/kafka-ts-r2-offload-iac.md (provider.cloudflare.r2).
+          INFISICAL_MACHINE_IDENTITY_ID: 46b66f72-0c77-4cfe-be1b-a43395e77be7
         run: |
+          set -euo pipefail
           test -n "$TF_VAR_cloudflare_api_token" || { echo "ERROR: missing required GitHub secret CLOUDFLARE_API_TOKEN" >&2; exit 1; }
+          test -n "$TF_VAR_cloudflare_terraform_r2_api_token" || { echo "ERROR: missing required GitHub secret CLOUDFLARE_TERRAFORM_R2_API_TOKEN" >&2; exit 1; }
           test -n "$TF_VAR_oracle_server_host" || { echo "ERROR: missing required GitHub variable ORACLE_SERVER_HOST" >&2; exit 1; }
+          test -n "$EXPO_APP_ID" || { echo "ERROR: EXPO_APP_ID is required" >&2; exit 1; }
+          export TF_VAR_expo_app_id="$EXPO_APP_ID"
+
+          case "$TF_OPERATION" in
+            plan|apply) ;;
+            *)
+              echo "ERROR: TF_OPERATION must be plan or apply (got: ${TF_OPERATION:-})" >&2
+              exit 1
+              ;;
+          esac
+
           # -lock-timeout: HCP Terraform briefly holds the workspace lock during init/state ops.
           # When init is followed immediately by apply, apply can race the init lock release
           # (or collide with a stale lock from a prior failed run). Waiting up to 5 minutes
           # is benign in CI and avoids spurious "workspace already locked" failures.
+          # Init/plugin download can exceed GitHub OIDC JWT lifetime (~5m), so mint the JWT
+          # only after init succeeds and immediately before plan/apply.
           mkdir -p "$TF_PLUGIN_CACHE_DIR"
           terraform init -lock-timeout=5m
-          terraform apply -auto-approve -lock-timeout=5m
+
+          if [ -z "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ] || [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]; then
+            echo "ERROR: Missing GitHub OIDC request env; ensure id-token: write" >&2
+            exit 1
+          fi
+          oidc_jwt="$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL" | jq -r '.value')"
+          if [ -z "$oidc_jwt" ] || [ "$oidc_jwt" = "null" ]; then
+            echo "ERROR: Failed to mint GitHub OIDC token for Infisical Terraform auth" >&2
+            exit 1
+          fi
+          echo "::add-mask::$oidc_jwt"
+          export INFISICAL_AUTH_METHOD=oidc
+          export INFISICAL_AUTH_JWT="$oidc_jwt"
+
+          # Never print plan/apply JSON, TF secret values, or Infisical credentials.
+          # No -json / -out / plan artifacts. No sensitive terraform outputs on this path.
+          # Plain `terraform plan` (no -detailed-exitcode) exits 0 when a diff exists.
+          case "$TF_OPERATION" in
+            plan)
+              terraform plan -lock-timeout=5m
+              ;;
+            apply)
+              terraform apply -auto-approve -lock-timeout=5m
+              ;;
+          esac
 
       - name: Terraform Outputs
         id: tf_outputs

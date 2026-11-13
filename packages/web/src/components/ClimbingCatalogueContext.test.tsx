@@ -4,6 +4,63 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ClimbingCatalogueContext } from "./ClimbingCatalogueContext";
 
+it.each([false, true])(
+  "renders mixed confidence candidates in the supplied server order (reversed=%s)",
+  (reversed) => {
+    const source = ready.sources[0];
+    const match = source?.matches[0];
+    if (!source || !match) throw new Error("Missing fixture match");
+    const mixed = [
+      { confidence: "corroborated" as const, name: "Swiss Cheese at Goat Rock" },
+      { confidence: "possible" as const, name: "Swiss Cheese at Distant Wall" },
+      { confidence: "possible" as const, name: "Swiss Cheese at Other Crag" },
+    ];
+    if (reversed) mixed.reverse();
+    useQuery.mockReturnValue({
+      isFetchedAfterMount: true,
+      refetch,
+      error: null,
+      isLoading: false,
+      data: {
+        ...ready,
+        sources: [
+          {
+            ...source,
+            matches: mixed.map((item, index) => ({
+              ...match,
+              confidence: item.confidence,
+              evidence: [
+                item.confidence === "corroborated"
+                  ? "Local areas align within 100 m: Goat Rock / Goat Rock."
+                  : "Nearest local areas conflict.",
+              ],
+              candidate: { ...match.candidate, externalId: String(index), name: item.name },
+            })),
+          },
+        ],
+      },
+    });
+    render(<ClimbingCatalogueContext id="log-1" />);
+    open();
+    expect(screen.getAllByRole("link").map((link) => link.textContent)).toEqual(
+      reversed
+        ? [
+            "Swiss Cheese at Other Crag",
+            "Swiss Cheese at Distant Wall",
+            "Swiss Cheese at Goat Rock",
+          ]
+        : [
+            "Swiss Cheese at Goat Rock",
+            "Swiss Cheese at Distant Wall",
+            "Swiss Cheese at Other Crag",
+          ],
+    );
+    expect(screen.getByText("Location corroborated")).toBeTruthy();
+    expect(screen.getAllByText("Possible match")).toHaveLength(2);
+    expect(screen.getByText("Local areas align within 100 m: Goat Rock / Goat Rock.")).toBeTruthy();
+  },
+);
+
 const { useQuery, useMutation, mutate, setData, refetch } = vi.hoisted(() => ({
   useQuery: vi.fn(),
   useMutation: vi.fn(),
@@ -69,6 +126,22 @@ const ready: Context = {
                 scope: "inherited",
                 inheritedFrom: "The Valley",
               },
+              {
+                kind: "other",
+                sourceKey: "movement-1",
+                label: "Source movement",
+                category: "Movement",
+                scope: "direct",
+                inheritedFrom: null,
+              },
+              {
+                kind: "other",
+                sourceKey: "arete",
+                label: "Arête",
+                category: null,
+                scope: "inherited",
+                inheritedFrom: "The Valley",
+              },
             ],
           },
         },
@@ -88,7 +161,7 @@ beforeEach(() => {
   useMutation.mockReturnValue({ mutate, error: null, isPending: false });
 });
 function open() {
-  fireEvent.click(screen.getByRole("button", { name: "Catalogue context" }));
+  fireEvent.click(screen.getByRole("button", { name: "Catalogue information" }));
 }
 it("opens cached context only on disclosure and explicitly requests discovery", () => {
   render(<ClimbingCatalogueContext id="log-1" />);
@@ -96,11 +169,10 @@ it("opens cached context only on disclosure and explicitly requests discovery", 
   open();
   expect(useQuery.mock.lastCall?.[1].enabled).toBe(true);
   expect(useQuery.mock.lastCall?.[1].staleTime).toBe(0);
-  expect(screen.queryByText(/^Fetched /)).toBeNull();
   expect(
-    screen.getByRole("button", { name: "Catalogue context" }).getAttribute("aria-expanded"),
+    screen.getByRole("button", { name: "Catalogue information" }).getAttribute("aria-expanded"),
   ).toBe("true");
-  fireEvent.click(screen.getByRole("button", { name: "Find catalogue info" }));
+  fireEvent.click(screen.getByRole("button", { name: "Look up climb" }));
   expect(mutate).toHaveBeenCalledWith({ id: "log-1" });
 });
 it("qualifies possible matches, inherited tags, multiple steepness and unknown angle units", () => {
@@ -118,6 +190,8 @@ it("qualifies possible matches, inherited tags, multiple steepness and unknown a
   expect(screen.getByText(/Slab/)).toBeTruthy();
   expect(screen.getByText(/Overhang/)).toBeTruthy();
   expect(screen.getByText(/Crimps \(inherited from The Valley\)/)).toBeTruthy();
+  expect(screen.getByText("Movement: Source movement")).toBeTruthy();
+  expect(screen.getByText("Tag: Arête (inherited from The Valley)")).toBeTruthy();
   expect(screen.getByText("Source angle: 25 (units not supplied)")).toBeTruthy();
   expect(screen.getByText(/Search incomplete/)).toBeTruthy();
 });
@@ -133,7 +207,7 @@ it("retains cached context and exact errors when refresh fails", () => {
   open();
   expect(screen.getByText("Catalogue lookup unavailable.")).toBeTruthy();
   expect(screen.getByText("Catalogue grade: V4")).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Refresh catalogue info" }));
+  fireEvent.click(screen.getByRole("button", { name: "Update climb information" }));
   expect(mutate).toHaveBeenCalledWith({ id: "log-1" });
 });
 it("polls pending lookups and stops on terminal status or errors", () => {
@@ -157,7 +231,7 @@ it("polls pending lookups and stops on terminal status or errors", () => {
   useMutation.mock.lastCall?.[0].onSuccess(pending);
   expect(setData).toHaveBeenCalledWith({ id: "log-1" }, pending);
 });
-it("distinguishes a completed empty catalogue lookup", () => {
+it("renders the empty state when no catalogue sources were searched", () => {
   useQuery.mockReturnValue({
     isFetchedAfterMount: true,
     refetch,
@@ -167,11 +241,27 @@ it("distinguishes a completed empty catalogue lookup", () => {
   });
   render(<ClimbingCatalogueContext id="log-1" />);
   open();
-  expect(screen.getByText("No exact-name catalogue matches found.")).toBeTruthy();
+  expect(screen.getByText("No catalogue candidates to display.")).toBeTruthy();
+});
+it("renders the empty state after a completed source search", () => {
+  useQuery.mockReturnValue({
+    isFetchedAfterMount: true,
+    refetch,
+    data: {
+      ...ready,
+      sources: ready.sources.map((source) => ({ ...source, searchComplete: true, matches: [] })),
+    },
+    error: null,
+    isLoading: false,
+  });
+  render(<ClimbingCatalogueContext id="log-1" />);
+  open();
+  expect(screen.getByText("No catalogue candidates to display.")).toBeTruthy();
 });
 
 it.each([
   ["source", "Own source"],
+  ["reference", "Provider reference"],
   ["corroborated", "Location corroborated"],
 ] as const)("labels %s evidence separately from possible matches", (confidence, label) => {
   const source = ready.sources[0];
@@ -227,22 +317,8 @@ it("offers recovery when polling fails during a pending lookup", () => {
   render(<ClimbingCatalogueContext id="log-1" />);
   open();
   expect(screen.getByText("Reconnect to check catalogue status.")).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Refresh catalogue info" }));
+  fireEvent.click(screen.getByRole("button", { name: "Update climb information" }));
   expect(mutate).toHaveBeenCalledWith({ id: "log-1" });
-});
-
-it("shows the cached fetch date once", () => {
-  const fetchedAt = "2026-10-27T12:30:00Z";
-  useQuery.mockReturnValue({
-    isFetchedAfterMount: true,
-    refetch,
-    data: { ...ready, fetchedAt },
-    error: null,
-    isLoading: false,
-  });
-  render(<ClimbingCatalogueContext id="log-1" />);
-  open();
-  expect(screen.getAllByText(`Fetched ${new Date(fetchedAt).toLocaleString()}`)).toHaveLength(1);
 });
 
 afterEach(() => vi.useRealTimers());
@@ -272,7 +348,7 @@ it("withholds prior context until ownership is revalidated after mount", () => {
   const view = render(<ClimbingCatalogueContext id="log-1" />);
   open();
   expect(screen.queryByText("Catalogue grade: V4")).toBeNull();
-  expect(screen.getByText("Loading catalogue context…")).toBeTruthy();
+  expect(screen.getByText("Loading climb information…")).toBeTruthy();
   useQuery.mockReturnValue({
     data: ready,
     isFetchedAfterMount: true,
@@ -363,4 +439,191 @@ it("shows all catalogue climb types separately from wall and personal ascent fac
   render(<ClimbingCatalogueContext id="log-1" />);
   open();
   for (const label of labels) expect(screen.getByText(`Climb type: ${label}`)).toBeTruthy();
+});
+
+it.each([
+  [
+    "reference",
+    [
+      "Explicit Mountain Project reference 105736399.",
+      "Catalogue name differs from the logged name.",
+    ],
+  ],
+  [
+    "possible",
+    [
+      "Explicit Mountain Project reference 105736399.",
+      "Conflict: local areas differ: Goat Rock and Chew Tooth.",
+    ],
+  ],
+] as const)(
+  "displays server evidence for a %s match within the local search area",
+  (confidence, evidence) => {
+    const source = ready.sources[0];
+    const match = source?.matches[0];
+    if (!source || !match) throw new Error("Missing fixture match");
+    useQuery.mockReturnValue({
+      isFetchedAfterMount: true,
+      refetch,
+      error: null,
+      data: {
+        ...ready,
+        sources: [
+          {
+            ...source,
+            searchArea: {
+              externalId: "goat-rock",
+              name: "Goat Rock",
+              scope: "area",
+              coordinates: null,
+            },
+            matches: [
+              {
+                ...match,
+                confidence,
+                evidence: [...evidence],
+                candidate: { ...match.candidate, name: "Corner Route" },
+              },
+            ],
+          },
+        ],
+      },
+    });
+    render(<ClimbingCatalogueContext id="log-1" />);
+    open();
+    expect(screen.getByText("Search area: Goat Rock")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Corner Route" })).toBeTruthy();
+    for (const reason of evidence) expect(screen.getByText(reason)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Catalogue information" }));
+    expect(
+      screen.getByRole("button", { name: "Catalogue information" }).getAttribute("aria-expanded"),
+    ).toBe("false");
+    expect(screen.queryByText(evidence[0])).toBeNull();
+  },
+);
+
+it("qualifies empty results when local discovery is incomplete", () => {
+  useQuery.mockReturnValue({
+    isFetchedAfterMount: true,
+    refetch,
+    error: null,
+    data: {
+      ...ready,
+      sources: [
+        {
+          providerId: "openbeta",
+          searchComplete: false,
+          searchArea: {
+            externalId: "goat-rock",
+            name: "Goat Rock",
+            scope: "area",
+            coordinates: null,
+          },
+          matches: [],
+        },
+      ],
+    },
+  });
+  render(<ClimbingCatalogueContext id="log-1" />);
+  open();
+  expect(screen.getByText("No catalogue candidates to display.")).toBeTruthy();
+  expect(screen.getByText("Search area: Goat Rock")).toBeTruthy();
+  expect(screen.getByText("Search incomplete; more candidates may exist.")).toBeTruthy();
+});
+
+it("keeps unnamed source climbs accessible through their catalogue link", () => {
+  const context = structuredClone(ready);
+  const candidate = context.sources[0]?.matches[0]?.candidate;
+  if (!candidate) throw new Error("Expected catalogue candidate");
+  candidate.name = null;
+  useQuery.mockReturnValue({
+    isFetchedAfterMount: true,
+    refetch,
+    data: context,
+    error: null,
+    isLoading: false,
+  });
+  render(<ClimbingCatalogueContext id="log-1" />);
+  open();
+  expect(screen.getByRole("link", { name: "View climb" }).getAttribute("href")).toBe(candidate.url);
+});
+
+it("discloses source-owned area information with literal counts and inheritance", () => {
+  const context = structuredClone(ready);
+  const candidate = context.sources[0]?.matches[0]?.candidate;
+  if (!candidate) throw new Error("Expected catalogue candidate");
+  candidate.locations = [
+    { externalId: "country", name: "Country", scope: "area", coordinates: null },
+    {
+      externalId: "area",
+      name: "The Valley",
+      scope: "area",
+      coordinates: null,
+      context: {
+        url: "https://kaya-app.kayaclimb.com/location/area",
+        type: "Crag",
+        sections: [
+          {
+            sourceKey: "description",
+            label: "Description",
+            text: "Shaded granite walls.",
+            inheritedFrom: null,
+          },
+          {
+            sourceKey: "access",
+            label: "Access",
+            text: "Check seasonal restrictions.",
+            inheritedFrom: "National Park",
+          },
+        ],
+        tags: [
+          {
+            sourceKey: "slab",
+            label: "Slab",
+            kind: "steepness",
+            category: "slab",
+            count: 0,
+            scope: "inherited",
+            inheritedFrom: "Upper Valley",
+          },
+          {
+            sourceKey: "unknown",
+            label: "Local character",
+            kind: "other",
+            category: null,
+            count: null,
+            scope: "direct",
+            inheritedFrom: null,
+          },
+        ],
+        statistics: [{ sourceKey: "routes", label: "Routes", value: 13 }],
+      },
+    },
+  ];
+  useQuery.mockReturnValue({ isFetchedAfterMount: true, refetch, data: context, error: null });
+  render(<ClimbingCatalogueContext id="log-1" />);
+  open();
+  const disclosure = screen.getByRole("button", { name: "Area information: The Valley" });
+  expect(disclosure.getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByText("Shaded granite walls.")).toBeNull();
+  fireEvent.click(disclosure);
+  expect(disclosure.getAttribute("aria-expanded")).toBe("true");
+  expect(screen.getByText("Area type: Crag")).toBeTruthy();
+  expect(screen.getByText("Shaded granite walls.")).toBeTruthy();
+  const contentId = disclosure.getAttribute("aria-controls");
+  expect(contentId && document.getElementById(contentId)?.textContent).toContain(
+    "Shaded granite walls.",
+  );
+  expect(screen.getByText("Check seasonal restrictions.")).toBeTruthy();
+  expect(screen.getByText("Slab (0)")).toBeTruthy();
+  expect(screen.getByText("Local character")).toBeTruthy();
+  expect(screen.getByText("↳ Inherited from National Park")).toBeTruthy();
+  expect(screen.getByText("↳ Inherited from Upper Valley")).toBeTruthy();
+  expect(screen.getByText("Routes: 13")).toBeTruthy();
+  expect(screen.getAllByText("The Valley")).toHaveLength(1);
+  const source = screen.getByRole("link", { name: "View area on source" });
+  expect(source.getAttribute("href")).toBe("https://kaya-app.kayaclimb.com/location/area");
+  fireEvent.click(disclosure);
+  expect(disclosure.getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByText("Shaded granite walls.")).toBeNull();
 });

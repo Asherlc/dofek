@@ -11,7 +11,11 @@
 
 {% set activity_refresh_scoped = activity_refresh_scope_enabled() %}
 
-WITH apple_health_revisions AS (
+WITH
+{% if activity_refresh_scoped %}
+{{ activity_refresh_scope_ctes() }}
+{% endif %}
+apple_health_revisions AS (
     {{ apple_health_workout_revisions(activity_refresh_scoped) }}
 ),
 
@@ -71,6 +75,7 @@ absent_activity AS (
     SELECT *
     FROM {{ source('postgres_fitness', 'activity') }} FINAL
     WHERE _peerdb_is_deleted = 0
+        AND coalesce(provider_type, '') != 'climbing_log'
         AND coalesce(deleted_at, toDateTime64(0, 6, 'UTC')) = toDateTime64(0, 6, 'UTC')
         AND coalesce(provider_absent_at, toDateTime64(0, 6, 'UTC')) != toDateTime64(0, 6, 'UTC')
         AND id NOT IN (
@@ -107,6 +112,7 @@ sensor_bearing_members AS (
         ON ranked.user_id = samples.user_id
         AND ranked.activity_id = samples.source_activity_id
     WHERE samples.is_deleted = 0
+        AND coalesce(ranked.provider_type, '') != 'climbing_log'
         AND samples.recorded_at >= ranked.started_at
         AND samples.recorded_at <= greatest(
             coalesce(ranked.ended_at, ranked.started_at + INTERVAL 12 HOUR),
@@ -161,11 +167,6 @@ absent_source_links AS (
     GROUP BY group_id
 ),
 
-tombstoned_groups AS (
-    SELECT DISTINCT group_id
-    FROM absent_group_members
-),
-
 best AS (
     SELECT *
     FROM (
@@ -186,6 +187,7 @@ best AS (
             row_number() OVER (
                 PARTITION BY ranked.group_id
                 ORDER BY
+                    coalesce(ranked.provider_type, '') = 'climbing_log' ASC,
                     sensor_sample_count > 0 DESC,
                     sensor_sample_count DESC,
                     has_elevation DESC,
@@ -261,6 +263,7 @@ merged AS (
                     toString(ranked.activity_id)
                 ),
                 ranked.provider_type IS NOT null
+                AND (ranked.provider_type != 'climbing_log' OR best.provider_type = 'climbing_log')
                 AND trim(BOTH ' ' FROM ranked.provider_type) != ''
                 AND (
                     ranked.canonical_type = best.canonical_type
@@ -272,8 +275,11 @@ merged AS (
             ''
         ) AS provider_type,
         any(best.modality) AS modality,
-        minIf(ranked.started_at, ranked.activity_id IS NOT null) AS started_at,
-        maxIf(ranked.ended_at, ranked.activity_id IS NOT null) AS ended_at,
+        coalesce(
+            minOrNullIf(ranked.started_at, ranked.activity_id IS NOT null AND coalesce(ranked.provider_type, '') != 'climbing_log'),
+            minIf(ranked.started_at, ranked.activity_id IS NOT null)
+        ) AS started_at,
+        maxOrNullIf(ranked.ended_at, ranked.activity_id IS NOT null AND coalesce(ranked.provider_type, '') != 'climbing_log') AS ended_at,
         any(best.source_name) AS source_name,
         argMinIf(
             ranked.name,
@@ -388,7 +394,6 @@ current_deduped_activities AS (
         AND primary_member.group_id = merged.group_id
         AND primary_member.user_id = merged.user_id
         AND primary_member.is_deleted = 0
-    WHERE merged.group_id NOT IN (SELECT group_id FROM tombstoned_groups)
 ),
 
 {% if activity_refresh_scoped %}

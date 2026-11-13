@@ -467,7 +467,10 @@ export function lintMigrationPolicyFile(
       .filter((relation): relation is string => relation != null),
   );
 
-  if (filePath.startsWith("analytics/models/")) {
+  const isCyclingPowerPublicationView =
+    filePath === "analytics/models/read_models/cycling_threshold_history.sql" ||
+    filePath === "analytics/models/read_models/cycling_activity_power_metrics.sql";
+  if (filePath.startsWith("analytics/models/") && !isCyclingPowerPublicationView) {
     const isCoverageView =
       filePath === "analytics/models/read_models/activity_sensor_processing_coverage.sql" ||
       filePath === "analytics/models/read_models/activity_sensor_key_verification.sql";

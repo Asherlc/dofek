@@ -15,6 +15,9 @@
 
 WITH
 {% if activity_refresh_scoped %}
+{{ activity_refresh_scope_ctes() }}
+{% endif %}
+{% if activity_refresh_scoped %}
 prior_scope_members AS (
     {% if is_incremental() %}
         SELECT activity_id

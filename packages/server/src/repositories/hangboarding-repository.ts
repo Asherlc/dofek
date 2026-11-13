@@ -3,6 +3,8 @@ import { type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { AccessWindow } from "../billing/entitlement.ts";
 import { dateStringSchema, executeWithSchema, timestampStringSchema } from "../lib/typed-sql.ts";
+import type { ActivitySensorStore } from "./activity-repository.ts";
+import { activitySummaryReadModelRowSchema } from "./activity-repository-schemas.ts";
 
 export interface HangboardingDetail {
   planName: string | null;
@@ -63,14 +65,13 @@ const detailRowSchema = z.object({
 });
 
 const summaryRowSchema = z.object({
+  activity_ids: z.array(z.string()),
   session_count: z.coerce.number().int().nonnegative(),
   total_duration_seconds: z.coerce.number().nonnegative(),
   average_duration_seconds: z.coerce.number().nullable(),
   total_work_duration_seconds: z.coerce.number().nullable(),
   total_rest_duration_seconds: z.coerce.number().nullable(),
   work_interval_count: z.coerce.number().int().nullable(),
-  average_heart_rate: z.coerce.number().nullable(),
-  peak_heart_rate: z.coerce.number().nullable(),
   latest_activity_id: z.string().nullable(),
   latest_started_at: timestampStringSchema.nullable(),
   latest_plan_name: z.string().nullable(),
@@ -144,17 +145,20 @@ export class HangboardingRepository {
   readonly #db: Pick<Database, "execute">;
   readonly #userId: string;
   readonly #timezone: string;
+  readonly #sensorStore: Pick<ActivitySensorStore, "getActivitySummaries">;
   readonly #accessWindow: AccessWindow;
 
   constructor(
     database: Pick<Database, "execute">,
     userId: string,
     timezone: string,
+    sensorStore: Pick<ActivitySensorStore, "getActivitySummaries">,
     accessWindow?: AccessWindow,
   ) {
     this.#db = database;
     this.#userId = userId;
     this.#timezone = timezone;
+    this.#sensorStore = sensorStore;
     this.#accessWindow = accessWindow ?? { kind: "full", paid: true, reason: "paid_grant" };
   }
 
@@ -262,17 +266,7 @@ export class HangboardingRepository {
                 ELSE member.ended_at
               END AS ended_at,
               NULLIF(member.raw->'hangTen'->>'planName', '') AS plan_name,
-              NULLIF(member.raw->'hangTen'->>'boardName', '') AS board_name,
-              CASE
-                WHEN member.raw->>'avgHeartRate' ~ '^[0-9]+(\\.[0-9]+)?$'
-                THEN (member.raw->>'avgHeartRate')::double precision
-                ELSE NULL
-              END AS average_heart_rate,
-              CASE
-                WHEN member.raw->>'maxHeartRate' ~ '^[0-9]+(\\.[0-9]+)?$'
-                THEN (member.raw->>'maxHeartRate')::double precision
-                ELSE NULL
-              END AS peak_heart_rate
+              NULLIF(member.raw->'hangTen'->>'boardName', '') AS board_name
             FROM fitness.v_activity AS a
             ${memberSource}
             WHERE a.user_id = ${this.#userId}::uuid
@@ -306,14 +300,13 @@ export class HangboardingRepository {
             LEFT JOIN interval_totals ON interval_totals.activity_id = sessions.activity_id
           ), aggregate AS (
             SELECT
+              COALESCE(ARRAY_AGG(activity_id), ARRAY[]::text[]) AS activity_ids,
               COUNT(*)::int AS session_count,
               COALESCE(SUM(duration_seconds), 0)::double precision AS total_duration_seconds,
               AVG(duration_seconds)::double precision AS average_duration_seconds,
               SUM(work_duration_seconds)::double precision AS total_work_duration_seconds,
               SUM(rest_duration_seconds)::double precision AS total_rest_duration_seconds,
-              SUM(work_interval_count)::int AS work_interval_count,
-              AVG(average_heart_rate)::double precision AS average_heart_rate,
-              MAX(peak_heart_rate)::double precision AS peak_heart_rate
+              SUM(work_interval_count)::int AS work_interval_count
             FROM session_metrics
           ), latest AS (
             SELECT
@@ -393,6 +386,16 @@ export class HangboardingRepository {
       };
     }
 
+    const activitySummaries = (
+      await this.#sensorStore.getActivitySummaries(summary.activity_ids)
+    ).map((row) => activitySummaryReadModelRowSchema.parse(row));
+    const averageHeartRates = activitySummaries.flatMap((row) =>
+      row.avg_hr === null ? [] : [row.avg_hr],
+    );
+    const peakHeartRates = activitySummaries.flatMap((row) =>
+      row.max_hr === null ? [] : [row.max_hr],
+    );
+
     return {
       sessionCount: summary.session_count,
       totalDurationSeconds: summary.total_duration_seconds,
@@ -400,8 +403,11 @@ export class HangboardingRepository {
       totalWorkDurationSeconds: summary.total_work_duration_seconds,
       totalRestDurationSeconds: summary.total_rest_duration_seconds,
       workIntervalCount: summary.work_interval_count,
-      averageHeartRate: summary.average_heart_rate,
-      peakHeartRate: summary.peak_heart_rate,
+      averageHeartRate:
+        averageHeartRates.length > 0
+          ? averageHeartRates.reduce((total, rate) => total + rate, 0) / averageHeartRates.length
+          : null,
+      peakHeartRate: peakHeartRates.length > 0 ? Math.max(...peakHeartRates) : null,
       latestSession:
         summary.latest_activity_id && summary.latest_started_at
           ? {

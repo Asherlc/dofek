@@ -2,6 +2,10 @@ name: Deploy Web Environment
 
 on:
   workflow_call:
+    outputs:
+      commit_sha:
+        description: "Source commit verified against the deployed immutable image"
+        value: ${{ jobs.deploy-web-stack.outputs.commit_sha }}
     inputs:
       environment_name:
         description: "Human-readable deploy environment name"

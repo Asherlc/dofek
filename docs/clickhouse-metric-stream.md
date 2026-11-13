@@ -434,15 +434,23 @@ downstream provider-inventory freshness before declaring the rollout complete.
 
 ### Deletion protocol
 
-New metric-stream deletions are version 2 Redpanda events with a unique event
-ID. The ClickHouse sink first filters `ingest.metric_stream` to the deletion
-scope, selects the latest version of each matching ID, inserts a newer
-`is_deleted = 1` version, and then writes the event ID to
-`ingest.metric_stream_delete_acknowledgement`. The provider deletion worker
-waits for that acknowledgement before rebuilding dbt models and invalidating
-the user's analytics cache; it does not scan the full raw table to infer that
-the event was applied. Archived version 1 deletion events remain replayable,
-but do not have acknowledgement IDs.
+Current deletions are [version 3 Kafka events](../src/metric-stream/events.ts)
+with a unique event ID and operation revision. The
+[ClickHouse sink](../src/metric-stream/clickhouse-sink.ts) reads persisted receipt
+IDs in groups of at most 100 for adjacent, same-revision deletion runs. For each
+unacknowledged chunk it persists scopes, discovers candidate identities with
+combined scope predicates, resolves each complete latest row, inserts newer
+`is_deleted = 1` versions, and then writes receipt rows in one JSONEachRow
+command to `ingest.metric_stream_delete_acknowledgement`. This uses ClickHouse's
+[client-side batching](https://clickhouse.com/docs/optimize/bulk-inserts) while
+preserving the latest-scope recheck and account-erasure fence.
+
+The provider deletion worker waits for acknowledgements before rebuilding dbt
+models and invalidating the user's analytics cache; it does not scan the full
+raw table to infer that the event was applied. Legacy version 1 and 2 events
+remain replayable; version 1 deletion events have no acknowledgement IDs. See
+the [dated throughput evidence](evidence/kafka-backlog-20261113/README.md) for
+rollout status and qualification limits.
 
 The native-table backfill is resumable within a successful migration attempt,
 but migration `0006_backfill_native_metric_stream` intentionally drops the

@@ -11,6 +11,7 @@ import { OperationProgressBar } from "../../components/OperationProgressBar";
 import { ProviderLogo } from "../../components/ProviderLogo";
 import { ProviderStatsBreakdown } from "../../components/ProviderStatsBreakdown";
 import { useAuth } from "../../lib/auth-context";
+import type { HealthKitManualSyncState } from "../../lib/health-kit-sync-types";
 import { colors } from "../../theme";
 import { FileImportButton } from "./file-import-button.tsx";
 import { styles } from "./styles.ts";
@@ -34,6 +35,9 @@ export interface Provider {
   lastSuccessfulSyncAt: string | null;
   lastProcessedUpdateAt?: string | null;
   syncFreshness: ProviderSyncFreshness | null;
+  syncActionLabel?: "Resume";
+  syncStatusMessage?: string;
+  syncStageProgress?: { completed: number; total: number };
   importOnly: boolean;
   pushOnly: boolean;
   recentLogs: SyncLog[];
@@ -77,12 +81,80 @@ export function providerActionLabel(authStatus: AuthStatus): "Sync" | "Connect" 
   return authStatus === "connected" ? "Sync" : authStatus === "expired" ? "Reconnect" : "Connect";
 }
 
+export function appleHealthManualSyncPresentation(
+  state: HealthKitManualSyncState,
+  actionError: string | null,
+  localMessage: string | null,
+) {
+  const isRunning = state.status === "running";
+  const isPaused = state.status === "paused";
+  const hasStageCount = isRunning && state.totalStageCount > 0;
+  const pauseDetails = [
+    ...new Set([state.error, actionError, state.error ? localMessage : null].filter(Boolean)),
+  ];
+  const message = isRunning
+    ? (state.message ?? "Syncing Apple Health")
+    : isPaused
+      ? ["Apple Health sync paused", ...pauseDetails].join("\n")
+      : actionError
+        ? actionError
+        : state.status === "error"
+          ? state.error
+          : state.status === "complete"
+            ? (state.message ?? localMessage)
+            : (localMessage ?? state.message);
+  const detailMessage =
+    isRunning && hasStageCount
+      ? `${message}\n${state.completedStageCount} of ${state.totalStageCount} stages complete`
+      : isPaused && state.message === "Unlock your phone to continue Apple Health sync"
+        ? `${message}\n${state.message}`
+        : message;
+
+  return {
+    actionLabel: isPaused ? ("Resume" as const) : undefined,
+    detailMessage,
+    isRunning,
+    message,
+    percentage: hasStageCount ? (state.completedStageCount / state.totalStageCount) * 100 : null,
+    syncStatusMessage: isPaused
+      ? state.message === "Unlock your phone to continue Apple Health sync"
+        ? detailMessage
+        : message
+      : state.status === "error"
+        ? (actionError ?? state.error ?? undefined)
+        : state.message === "Unlock your phone to continue Apple Health sync"
+          ? state.message
+          : undefined,
+    syncStageProgress: hasStageCount
+      ? { completed: state.completedStageCount, total: state.totalStageCount }
+      : undefined,
+  };
+}
+
+export function isAppleHealthLockedPause(state: HealthKitManualSyncState | null | undefined) {
+  return (
+    state?.status === "paused" &&
+    state.message === "Unlock your phone to continue Apple Health sync"
+  );
+}
+
+export function isAppleHealthActionErrorPublished(
+  state: HealthKitManualSyncState | null | undefined,
+  error: unknown,
+) {
+  const message = error instanceof Error ? error.message : String(error);
+  return state?.status === "error" && state.error === message;
+}
+
 function formatDuration(ms: number): string {
   if (ms < 1000) return `${ms}ms`;
   return formatDurationSeconds(ms / 1000);
 }
 
 const IMPORT_PROVIDER_LABELS: Readonly<Record<string, string>> = {
+  crimpd: "Crimpd",
+  "eight-a": "8a.nu / Vertical-Life",
+  moonboard: "MoonBoard",
   "apple-health": "Apple Health",
   "strong-csv": "Strong",
   "cronometer-csv": "Cronometer",
@@ -137,7 +209,7 @@ export function ProviderCard({
     provider.authType !== "none" &&
     provider.authType !== "push:mobile" &&
     (!isAutomaticSource || provider.authStatus !== "connected");
-  const actionLabel = providerActionLabel(provider.authStatus);
+  const actionLabel = provider.syncActionLabel ?? providerActionLabel(provider.authStatus);
   const canImport = onImport !== undefined;
   const showingProgress = (syncing || importing) && syncProgress !== undefined;
 
@@ -195,6 +267,13 @@ export function ProviderCard({
             percentage={syncProgress.percentage}
             message={syncProgress.message}
           />
+          {provider.syncStageProgress ? (
+            <Text>
+              {provider.syncStageProgress.completed} of {provider.syncStageProgress.total} stages
+              complete
+            </Text>
+          ) : null}
+          {provider.syncStatusMessage ? <Text>{provider.syncStatusMessage}</Text> : null}
           {typeof syncProgress.failedCount === "number" && syncProgress.failedCount > 0 && (
             <Text style={styles.syncProgressFailedCount}>
               {syncProgress.failedCount.toLocaleString()} file
@@ -211,7 +290,14 @@ export function ProviderCard({
                 "The sync or import failed. Please try again.",
               )}
             </Text>
-          ) : provider.authStatus !== "connected" || syncFreshness === null ? (
+          ) : null}
+          {!showingProgress && provider.syncStatusMessage ? (
+            <Text style={styles.cardMetaText}>{provider.syncStatusMessage}</Text>
+          ) : null}
+          {!showingProgress &&
+          !syncProgress?.message &&
+          !provider.syncStatusMessage &&
+          (provider.authStatus !== "connected" || syncFreshness === null) ? (
             <Text style={styles.cardMetaText}>
               {provider.importOnly
                 ? "Import only"

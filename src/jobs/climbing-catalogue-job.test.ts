@@ -38,6 +38,31 @@ describe("processClimbingCatalogueJob", () => {
     expect((await new ClimbingCatalogueService(cache, []).read(seed)).status).toBe("ready");
     expect(mocks.seed).toHaveBeenCalledWith(expect.anything(), "user-a", "log-a");
   });
+  it.each([false, true])(
+    "invalidates cached strengths when a worker finishes (failure=%s)",
+    async (failed) => {
+      const cache = new MemoryCacheStore();
+      const key = "user-a:climbing.strengths:request";
+      await cache.set(key, { stale: true }, 60_000);
+      await cache.set("other-user:climbing.strengths:request", { keep: true }, 60_000);
+      if (failed)
+        mocks.adapters.mockReturnValue([
+          {
+            providerId: "kaya",
+            search: async () => {
+              throw new Error("Unavailable source");
+            },
+          },
+        ]);
+      if (failed)
+        await expect(processClimbingCatalogueJob(data, Object.create(null), cache)).rejects.toThrow(
+          "Unavailable source",
+        );
+      else await processClimbingCatalogueJob(data, Object.create(null), cache);
+      expect(await cache.get(key)).toBeUndefined();
+      expect(await cache.get("other-user:climbing.strengths:request")).toEqual({ keep: true });
+    },
+  );
   it("does not fetch catalogue data for an erased user or missing active source", async () => {
     mocks.allowed.mockResolvedValueOnce(false);
     await processClimbingCatalogueJob(data, Object.create(null), new MemoryCacheStore());

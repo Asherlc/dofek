@@ -11,16 +11,6 @@ on:
         description: "Run ID of the workflow run that dispatched this workflow"
         required: false
         type: string
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
-    branches: [main]
-  workflow_dispatch:
-    inputs:
-      commit_sha:
-        description: "Commit SHA to deploy (defaults to main HEAD)"
-        required: false
-        type: string
 
 concurrency:
   group: deploy-ota
@@ -32,62 +22,28 @@ permissions:
   id-token: write
 
 jobs:
-  check:
-    name: Deploy Check
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
-    runs-on: ubuntu-latest
-    outputs:
-      commit_sha: ${{ steps.resolve.outputs.sha }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          fetch-depth: 1
-      - name: Resolve commit SHA
-        id: resolve
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          INPUT_SHA: ${{ inputs.commit_sha }}
-          WORKFLOW_RUN_SHA: ${{ github.event.workflow_run.head_sha }}
-        run: |
-          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            SHA="$INPUT_SHA"
-            if [ -z "$SHA" ]; then
-              SHA=$(git ls-remote origin refs/heads/main | awk '{ print $1 }')
-            fi
-          else
-            SHA="$WORKFLOW_RUN_SHA"
-          fi
-          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
-
   deploy:
     name: Publish OTA
-    needs: [check]
-    if: needs.check.result == 'success'
     runs-on: ubuntu-latest
     steps:
-      - name: Resolve commit SHA
-        id: sha
+      - name: Validate deployed source commit
         env:
-          CHECK_SHA: ${{ needs.check.outputs.commit_sha }}
-          INPUT_SHA: ${{ inputs.commit_sha }}
+          COMMIT_SHA: ${{ inputs.commit_sha }}
         run: |
-          if [ -n "$CHECK_SHA" ]; then
-            echo "ref=$CHECK_SHA" >> "$GITHUB_OUTPUT"
-          elif [ -n "$INPUT_SHA" ]; then
-            echo "ref=$INPUT_SHA" >> "$GITHUB_OUTPUT"
-          else
-            echo "ref=$(git ls-remote origin refs/heads/main | awk '{ print $1 }')" >> "$GITHUB_OUTPUT"
+          if [[ ! "$COMMIT_SHA" =~ ^[a-f0-9]{40}$ ]]; then
+            echo "::error::commit_sha must be the full source SHA verified by the successful server rollout"
+            exit 1
           fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          ref: ${{ steps.sha.outputs.ref }}
+          ref: ${{ inputs.commit_sha }}
       - uses: ./.github/actions/setup-node-pnpm
       - uses: ./.github/actions/load-infisical-secrets
         with:
           keys: |
             EXPO_TOKEN
+            EXPO_APP_ID
             SENTRY_AUTH_TOKEN
             EXPO_PUBLIC_SENTRY_DSN
             EXPO_PUBLIC_OTEL_ENDPOINT
@@ -106,21 +62,17 @@ jobs:
             echo "::error::Missing SENTRY_AUTH_TOKEN secret required for mobile OTA sourcemap upload"
             exit 1
           fi
-      - name: Wait for OTA server
+      # The caller has already completed the matching server rollout. Validate
+      # once: an unavailable or invalid manifest stops publication for diagnosis.
+      - name: Validate OTA server
+        id: runtime
+        working-directory: packages/mobile
         run: |
-          for attempt in $(seq 1 30); do
-            if pnpm tsx scripts/check-ota-manifest.ts; then
-              exit 0
-            fi
-            echo "Waiting for OTA server... (attempt $attempt/30)"
-            sleep 2
-          done
-          echo "OTA server did not become healthy in time"
-          exit 1
-      # eoas runs `pnpx expo export` internally and swallows its output, so a
-      # failing export only shows up as a generic "exited with non-zero code: 1".
-      # Run an isolated preflight so the real Metro/expo error is visible. The
-      # publish step below owns the final dist directory and its source maps.
+          RUNTIME_VERSION=$(pnpm exec expo-updates runtimeversion:resolve --platform ios --workflow managed | jq -er '.runtimeVersion | strings | select(length > 0)')
+          echo "runtime_version=$RUNTIME_VERSION" >> "$GITHUB_OUTPUT"
+          pnpm tsx ../../scripts/check-ota-manifest.ts --app-id "$EXPO_APP_ID" --runtime-version "$RUNTIME_VERSION"
+      # Keep export diagnostics visible before the publisher owns dist and its
+      # source maps. Both commands use the installed Expo version.
       - name: Export iOS bundle (surfaces the error eoas hides)
         working-directory: packages/mobile
         run: pnpm expo export --output-dir /tmp/dofek-ota-preflight --platform ios
@@ -129,19 +81,18 @@ jobs:
         env:
           DEBUG: true
           RELEASE_CHANNEL: production
-          SENTRY_RELEASE: ${{ steps.sha.outputs.ref }}
-          EXPO_PUBLIC_SENTRY_RELEASE: ${{ steps.sha.outputs.ref }}
-        # EOAS 2.3.22 is the compatible Expo Open OTA publisher; eoas@3.1.0
-        # is a different npm project. Keep the invocation on the pinned pnpm
-        # toolchain and pass the sourcemap alias to the published export.
-        run: pnpm dlx eoas@2.3.22 publish --branch main --platform ios --nonInteractive --packageRunner pnpm --dumpSourcemap
+          SENTRY_RELEASE: ${{ inputs.commit_sha }}
+          EXPO_PUBLIC_SENTRY_RELEASE: ${{ inputs.commit_sha }}
+        run: pnpm exec eoas publish --branch main --platform ios --nonInteractive --packageRunner "pnpm exec" --dumpSourcemap --emitMetadata
+      - name: Verify published device update
+        run: pnpm tsx scripts/verify-published-ota.ts packages/mobile/dist/xprem-update-metadata.json production "${{ steps.runtime.outputs.runtime_version }}"
       - name: Upload OTA sourcemaps to Sentry
         working-directory: packages/mobile
         env:
-          SENTRY_RELEASE: ${{ steps.sha.outputs.ref }}
+          SENTRY_RELEASE: ${{ inputs.commit_sha }}
         run: pnpm exec sentry-expo-upload-sourcemaps dist
 
       - uses: ./.github/actions/append-dispatcher-run-summary
         if: always()
         with:
-          dispatching_run_id: ${{ inputs.dispatching_run_id != '' && inputs.dispatching_run_id || github.event.workflow_run.id }}
+          dispatching_run_id: ${{ inputs.dispatching_run_id }}

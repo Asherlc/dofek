@@ -94,13 +94,10 @@ describe("processing status presentation", () => {
   const firstOperationId = "10000000-0000-4000-8000-000000000001";
   const secondOperationId = "10000000-0000-4000-8000-000000000002";
 
-  it("gives failures and delays actionable copy", () => {
+  it("gives failures actionable copy", () => {
     expect(processingHeading("failed")).toBe("Your data update didn’t finish");
     expect(processingStatusMessage({ status: "failed", errorMessage: "Reconnect WHOOP." })).toBe(
       "Reconnect WHOOP.",
-    );
-    expect(processingStatusMessage({ status: "delayed", errorMessage: null })).toContain(
-      "existing data",
     );
   });
 
@@ -117,7 +114,8 @@ describe("processing status presentation", () => {
   });
 
   it.each([
-    ["blocked", "Your existing data is still available."],
+    ["blocked", null],
+    ["delayed", null],
     ["partial", null],
     ["active", null],
     ["waiting", null],
@@ -128,9 +126,9 @@ describe("processing status presentation", () => {
   });
 
   it("keeps blocked work neutral despite a stale server error", () => {
-    expect(processingStatusMessage({ status: "blocked", errorMessage: "Reconnect Garmin." })).toBe(
-      "Your existing data is still available.",
-    );
+    expect(
+      processingStatusMessage({ status: "blocked", errorMessage: "Reconnect Garmin." }),
+    ).toBeNull();
   });
 
   it("ignores stale errors while work is active", () => {

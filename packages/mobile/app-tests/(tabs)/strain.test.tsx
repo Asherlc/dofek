@@ -8,10 +8,14 @@ import {
   recentCyclingActivityFixture,
 } from "../../app-fixtures/(tabs)/strain-test-helpers";
 import { climbingProgressionFixture } from "../../components/climbing-progression-test-helpers";
-
 import { climbingStrengthsFixture } from "../../components/climbing-strengths-fixtures";
+import { routeComparisonFixture } from "../../components/route-comparison-fixtures";
+import { intervalRun, runningData } from "../../components/running-training-test-helpers";
 
 let mockTodayQueryDate = "2026-03-28";
+let mockRunningData: unknown;
+let mockRunningLoading = false;
+let mockRunningError: Error | null = null;
 const mockStrengthsState: {
   data: unknown;
   isLoading: boolean;
@@ -24,16 +28,21 @@ const mockTrainingInvalidate = vi.fn();
 const mockLocationMapInvalidate = vi.fn();
 const mockHrZonesInvalidate = vi.fn();
 const mockPolarizationInvalidate = vi.fn();
-const mockMonotonyInvalidate = vi.fn();
 const mockProcessingStatusInvalidate = vi.fn();
+const mockRunningInvalidate = vi.fn();
+const mockRouteComparisonInvalidate = vi.fn();
+const mockRouteComparisonQuery = vi.fn();
 let mockRefreshInvalidate: (() => Promise<void> | void) | null | undefined;
 let mockTrainingDataDays = 90;
 type MockRangeQueryOptions = {
   enabled?: boolean;
+  refetchInterval?: (query: {
+    state: { data?: { enrichmentPending?: boolean } };
+  }) => number | false;
   placeholderData?: (previousData: unknown) => unknown;
 };
 let mockRangeQueryCalls: Record<
-  "training" | "hrZones" | "polarization" | "monotony" | "locationMap" | "strengths",
+  "running" | "training" | "hrZones" | "polarization" | "locationMap" | "strengths",
   Array<{ input: { days: number | null; endDate?: string }; options: MockRangeQueryOptions }>
 >;
 let mockTimeRangePreference = {
@@ -83,14 +92,6 @@ const mockPolarizationState: MockTrainingState = {
   error: null,
 };
 
-const mockMonotonyState: MockTrainingState = {
-  data: undefined,
-  isLoading: false,
-  isFetching: false,
-  isError: false,
-  error: null,
-};
-
 function resetMockTrainingState() {
   mockTodayQueryDate = "2026-03-28";
   Object.assign(mockStrengthsState, {
@@ -106,7 +107,7 @@ function resetMockTrainingState() {
   mockTrainingState.isFetching = false;
   mockTrainingState.isError = false;
   mockTrainingState.error = null;
-  for (const state of [mockHrZonesState, mockPolarizationState, mockMonotonyState]) {
+  for (const state of [mockHrZonesState, mockPolarizationState]) {
     state.data = undefined;
     state.isLoading = false;
     state.isFetching = false;
@@ -128,6 +129,21 @@ vi.mock("expo-router", () => ({
 
 vi.mock("../../lib/trpc", () => ({
   trpc: {
+    running: {
+      dynamicsV2: {
+        useQuery: (input: { days: number }, options: MockRangeQueryOptions) => {
+          mockRangeQueryCalls.running.push({ input, options });
+          return {
+            data: mockRunningData,
+            isLoading: mockRunningLoading,
+            isError: mockRunningError !== null,
+            error: mockRunningError,
+            refetch: vi.fn(),
+          };
+        },
+      },
+    },
+    hiking: { activityComparison: { useQuery: mockRouteComparisonQuery } },
     climbing: {
       volumeOverTime: {
         useQuery: () => ({
@@ -163,7 +179,7 @@ vi.mock("../../lib/trpc", () => ({
       },
     },
     mobileDashboard: {
-      training: {
+      trainingV2: {
         useQuery: (input: { days: number; endDate?: string }, options: MockRangeQueryOptions) => {
           mockRangeQueryCalls.training.push({ input, options });
           return {
@@ -198,14 +214,6 @@ vi.mock("../../lib/trpc", () => ({
         },
       },
     },
-    cyclingAdvanced: {
-      trainingMonotony: {
-        useQuery: (input: { days: number }, options: MockRangeQueryOptions) => {
-          mockRangeQueryCalls.monotony.push({ input, options });
-          return { ...mockMonotonyState };
-        },
-      },
-    },
     processing: {
       status: {
         useQuery: () => ({ data: undefined, isLoading: false, error: null }),
@@ -215,6 +223,8 @@ vi.mock("../../lib/trpc", () => ({
       },
     },
     useUtils: () => ({
+      running: { dynamicsV2: { invalidate: mockRunningInvalidate } },
+      hiking: { activityComparison: { invalidate: mockRouteComparisonInvalidate } },
       climbing: {
         volumeOverTime: { invalidate: vi.fn() },
         locationMap: { invalidate: mockLocationMapInvalidate },
@@ -222,7 +232,7 @@ vi.mock("../../lib/trpc", () => ({
       },
       strength: { volumeOverTime: { invalidate: vi.fn() } },
       mobileDashboard: {
-        training: { invalidate: mockTrainingInvalidate },
+        trainingV2: { invalidate: mockTrainingInvalidate },
       },
       training: {
         sportVolume: { invalidate: vi.fn() },
@@ -231,9 +241,7 @@ vi.mock("../../lib/trpc", () => ({
       efficiency: {
         polarizationTrend: { invalidate: mockPolarizationInvalidate },
       },
-      cyclingAdvanced: {
-        trainingMonotony: { invalidate: mockMonotonyInvalidate },
-      },
+      cyclingAdvanced: {},
       processing: {
         status: { invalidate: mockProcessingStatusInvalidate },
       },
@@ -265,6 +273,8 @@ vi.mock("../../lib/units", () => ({
     formatDistance: (km: number) => ({ text: `${km.toFixed(1)} km`, parts: [] }),
     formatElevation: (meters: number) => ({ text: `${meters} m`, parts: [] }),
     convertDistance: (km: number) => km,
+    convertPace: (seconds: number) => seconds,
+    paceLabel: "/km",
     distanceLabel: "km",
     formatWeight: (kg: number) => ({
       text: `${kg.toFixed(1)} kg`,
@@ -277,72 +287,83 @@ vi.mock("../../lib/units", () => ({
 
 import { captureException } from "../../lib/telemetry";
 
-describe("StrainScreen recent activity navigation", () => {
-  it.each([
-    { name: "Morning Run", expectedTitle: "Morning Run" },
-    { name: null, expectedTitle: "Walking" },
-  ])(
-    "renders $expectedTitle from an older response without primary-type metadata",
-    async ({ name, expectedTitle }) => {
-      const { primary_canonical_type: _primaryType, ...olderActivity } =
-        recentCyclingActivityFixture();
-      mockTrainingState.data = {
-        ...defaultMockTrainingData(),
-        activities: [{ ...olderActivity, name, canonical_type: "walking" }],
-      };
-
-      const { default: StrainScreen } = await import("../../app/(tabs)/strain");
-      render(<StrainScreen />);
-
-      expect(screen.getByText(expectedTitle)).toBeDefined();
-      expect(screen.getByRole("button", { name: `Open ${expectedTitle}` })).toBeDefined();
-    },
-  );
-
-  it("uses the primary activity type for missing recent-activity titles and accessible actions", async () => {
-    mockTrainingState.data = {
-      ...defaultMockTrainingData(),
-      activities: [
-        {
-          ...recentCyclingActivityFixture(),
-          name: null,
-          canonical_type: "walking",
-          primary_canonical_type: "running",
-        },
-      ],
-    };
-
+describe("StrainScreen", () => {
+  it("requests current running response for the selected range", async () => {
+    mockTimeRangePreference.days = 30;
     const { default: StrainScreen } = await import("../../app/(tabs)/strain");
     render(<StrainScreen />);
-
-    expect(screen.getByText("Running")).toBeDefined();
-    expect(screen.getByRole("button", { name: "Open Running" })).toBeDefined();
+    expect(mockRangeQueryCalls.running.at(-1)?.input).toEqual({ days: 30, responseVersion: 2 });
+  });
+  it("reports malformed restored running data once and shows the actionable error", async () => {
+    mockRunningData = { data: runningData.data, availability: runningData.availability };
+    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    const view = render(<StrainScreen />);
+    expect(
+      screen.getByText(
+        "Running data has an unexpected format. Refresh and try again. If it continues, contact support.",
+      ),
+    ).toBeTruthy();
+    expect(captureException).toHaveBeenCalledOnce();
+    view.rerender(<StrainScreen />);
+    expect(captureException).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("button", { name: "Open Park Run" })).toBeNull();
+  });
+  it("preserves valid stale running rows and exact refetch error", async () => {
+    mockRunningData = runningData;
+    mockRunningLoading = true;
+    mockRunningError = new Error("Running sync is still processing. Try again shortly.");
+    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    render(<StrainScreen />);
+    expect(screen.getByText(mockRunningError.message)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Open Park Run" })).toBeTruthy();
+    expect(screen.getByText("Steps · 30% coverage")).toBeTruthy();
+  });
+  it("shows running cadence and form on the training screen", async () => {
+    mockRunningData = { ...runningData, data: [intervalRun] };
+    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    render(<StrainScreen />);
+    expect(screen.getByText("Running Form")).toBeTruthy();
+    expect(screen.getByText("200 spm")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Park Run/ }));
+    expect(mockRouterPush).toHaveBeenCalledWith("/activity/run-2");
   });
 
   beforeEach(() => {
+    mockRunningData = { ...runningData, data: [] };
+    mockRunningLoading = false;
+    mockRunningError = null;
     mockRouterPush.mockReset();
     vi.mocked(captureException).mockReset();
+    mockRunningInvalidate.mockReset();
+    mockRunningInvalidate.mockResolvedValue(undefined);
     mockTrainingInvalidate.mockReset();
     mockLocationMapInvalidate.mockReset();
     mockProcessingStatusInvalidate.mockReset();
+    mockRouteComparisonInvalidate.mockReset();
+    mockRouteComparisonInvalidate.mockResolvedValue(undefined);
+    mockRouteComparisonQuery.mockReset();
+    mockRouteComparisonQuery.mockReturnValue({
+      data: [],
+      isLoading: false,
+      isFetching: false,
+      error: null,
+    });
     mockHrZonesInvalidate.mockReset();
     mockPolarizationInvalidate.mockReset();
-    mockMonotonyInvalidate.mockReset();
     mockTrainingInvalidate.mockResolvedValue(undefined);
     mockLocationMapInvalidate.mockResolvedValue(undefined);
     mockProcessingStatusInvalidate.mockResolvedValue(undefined);
     mockHrZonesInvalidate.mockResolvedValue(undefined);
     mockPolarizationInvalidate.mockResolvedValue(undefined);
-    mockMonotonyInvalidate.mockResolvedValue(undefined);
     mockRefreshInvalidate = undefined;
     mockTrainingDataDays = 90;
     mockRangeQueryCalls = {
+      running: [],
       training: [],
       locationMap: [],
       strengths: [],
       hrZones: [],
       polarization: [],
-      monotony: [],
     };
     mockTimeRangePreference = {
       days: 90,
@@ -384,6 +405,24 @@ describe("StrainScreen recent activity navigation", () => {
     }
   });
 
+  it("toggles area metadata and polls pending enrichment without losing previous data", async () => {
+    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    render(<StrainScreen />);
+    expect(mockRangeQueryCalls.strengths.at(-1)?.input).toMatchObject({
+      includeAreaMetadata: true,
+      responseVersion: 2,
+    });
+    fireEvent.click(screen.getByRole("switch", { name: "Include area metadata" }));
+    expect(mockRangeQueryCalls.strengths.at(-1)?.input).toMatchObject({
+      includeAreaMetadata: false,
+      responseVersion: 2,
+    });
+    const options = mockRangeQueryCalls.strengths.at(-1)?.options;
+    expect(options?.refetchInterval?.({ state: { data: { enrichmentPending: true } } })).toBe(1500);
+    expect(options?.refetchInterval?.({ state: { data: { enrichmentPending: false } } })).toBe(
+      false,
+    );
+  });
   it("offers all time for strengths without changing the other training ranges", async () => {
     const { default: StrainScreen } = await import("../../app/(tabs)/strain");
     render(<StrainScreen />);
@@ -391,6 +430,8 @@ describe("StrainScreen recent activity navigation", () => {
     expect(mockRangeQueryCalls.strengths.at(-1)?.input).toEqual({
       days: null,
       endDate: "2026-03-28",
+      includeAreaMetadata: true,
+      responseVersion: 2,
     });
     expect(mockRangeQueryCalls.training.at(-1)?.input.days).toBe(90);
     fireEvent.click(screen.getByRole("radio", { name: "90 days" }));
@@ -402,18 +443,24 @@ describe("StrainScreen recent activity navigation", () => {
     expect(mockRangeQueryCalls.strengths.at(-1)?.input).toEqual({
       days: 90,
       endDate: "2026-03-28",
+      includeAreaMetadata: true,
+      responseVersion: 2,
     });
     mockTodayQueryDate = "2026-03-29";
     rerender(<StrainScreen />);
     expect(mockRangeQueryCalls.strengths.at(-1)?.input).toEqual({
       days: 90,
       endDate: "2026-03-29",
+      includeAreaMetadata: true,
+      responseVersion: 2,
     });
     mockTodayQueryDate = "2025-12-31";
     rerender(<StrainScreen />);
     expect(mockRangeQueryCalls.strengths.at(-1)?.input).toEqual({
       days: 90,
       endDate: "2025-12-31",
+      includeAreaMetadata: true,
+      responseVersion: 2,
     });
   });
 
@@ -426,10 +473,12 @@ describe("StrainScreen recent activity navigation", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "All climbing" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "Lead" }));
     expect(screen.getByText("Updating climbing strengths…")).toBeTruthy();
-    expect(screen.getAllByRole("image", { name: /^Strengths and weaknesses/ })).toHaveLength(1);
+    expect(screen.getByRole("button", { name: /^Slab: Sent 2 of 7 climbs/ })).toBeTruthy();
     expect(mockRangeQueryCalls.strengths.at(-1)?.input).toEqual({
       days: 90,
       endDate: "2026-03-28",
+      includeAreaMetadata: true,
+      responseVersion: 2,
       types: ["lead"],
     });
   });
@@ -450,7 +499,7 @@ describe("StrainScreen recent activity navigation", () => {
     );
     rerender(<StrainScreen />);
     expect(captureException).toHaveBeenCalledOnce();
-    expect(screen.queryByRole("button", { name: /Slab · 40%/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Slab:/ })).toBeNull();
   });
 
   it("sends climbing selections to the server while keeping other training queries unchanged", async () => {
@@ -468,14 +517,16 @@ describe("StrainScreen recent activity navigation", () => {
     expect(mockRangeQueryCalls.strengths.at(-1)?.input).toEqual({
       days: 90,
       endDate: "2026-03-28",
+      includeAreaMetadata: true,
+      responseVersion: 2,
       types: ["lead"],
     });
-    expect(screen.getAllByRole("image", { name: /^Strengths and weaknesses/ })).toHaveLength(1);
+    expect(screen.getByRole("button", { name: /^Slab: Sent 2 of 7 climbs/ })).toBeTruthy();
     expect(screen.getByText("Climbing strengths")).toBeTruthy();
     expect(screen.getByText("Climbing locations")).toBeTruthy();
   });
 
-  it("refreshes training, intensity, polarization, monotony, and processing status together", async () => {
+  it("refreshes training, intensity, polarization, and processing status together", async () => {
     const { default: StrainScreen } = await import("../../app/(tabs)/strain");
     render(<StrainScreen />);
 
@@ -486,8 +537,27 @@ describe("StrainScreen recent activity navigation", () => {
     expect(mockLocationMapInvalidate).toHaveBeenCalledOnce();
     expect(mockHrZonesInvalidate).toHaveBeenCalledOnce();
     expect(mockPolarizationInvalidate).toHaveBeenCalledOnce();
-    expect(mockMonotonyInvalidate).toHaveBeenCalledOnce();
     expect(mockProcessingStatusInvalidate).toHaveBeenCalledOnce();
+    expect(mockRouteComparisonInvalidate).toHaveBeenCalledOnce();
+    expect(mockRunningInvalidate).toHaveBeenCalledOnce();
+  });
+
+  it("renders the route comparison with the selected training period and opens attempts", async () => {
+    mockRouteComparisonQuery.mockReturnValue({
+      data: routeComparisonFixture,
+      isLoading: false,
+      isFetching: false,
+      error: null,
+    });
+    mockTimeRangePreference.days = 30;
+    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
+    render(<StrainScreen />);
+    expect(screen.getByText("Route comparison")).toBeTruthy();
+    expect(mockRouteComparisonQuery.mock.calls.at(-1)?.[0]).toEqual({ days: 30 });
+    expect(mockRouteComparisonQuery.mock.calls.at(-1)?.[1].enabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "View Route comparison data" }));
+    fireEvent.click(screen.getByRole("button", { name: /Morning river run:/ }));
+    expect(mockRouterPush).toHaveBeenCalledWith("/activity/22222222-2222-4222-8222-222222222222");
   });
 
   it("renders model labels, values, and calculation details", async () => {
@@ -533,26 +603,6 @@ describe("StrainScreen recent activity navigation", () => {
         },
       ],
     };
-    mockMonotonyState.data = [
-      {
-        week: "2026-07-20",
-        monotony: 1.5,
-        strain: 300,
-        weeklyLoad: 200,
-        dailyMeanLoad: 28.57,
-        dailyLoadStandardDeviation: 19.05,
-        method: {
-          formula: "Mobile Foster formula.",
-          calendar: "Mobile calendar choice.",
-          activityScope: "Mobile activity scope.",
-          interpretation: "Mobile descriptive monotony interpretation.",
-          source: {
-            title: "Foster source",
-            url: "https://pubmed.ncbi.nlm.nih.gov/9662690/",
-          },
-        },
-      },
-    ];
 
     const { default: StrainScreen } = await import("../../app/(tabs)/strain");
     const alertSpy = vi.spyOn(Alert, "alert").mockImplementation(() => {});
@@ -560,8 +610,6 @@ describe("StrainScreen recent activity navigation", () => {
 
     expect(screen.getByText("Heart-rate zone distribution")).toBeTruthy();
     expect(screen.getByText("Not polarized")).toBeTruthy();
-    expect(screen.getByText("Training variety and total load")).toBeTruthy();
-    expect(screen.queryByText("Mobile Foster formula.")).toBeNull();
 
     fireEvent.click(
       screen.getByRole("button", {
@@ -576,25 +624,20 @@ describe("StrainScreen recent activity navigation", () => {
     alertSpy.mockRestore();
   });
 
-  it("renders intensity, polarization, and monotony query failures separately", async () => {
+  it("renders intensity and polarization query failures separately", async () => {
     mockHrZonesState.isError = true;
     mockHrZonesState.error = new Error("Intensity distribution failed");
     mockPolarizationState.isError = true;
     mockPolarizationState.error = new Error("Cycling polarization failed");
-    mockMonotonyState.isError = true;
-    mockMonotonyState.error = new Error("Training monotony failed");
 
     const { default: StrainScreen } = await import("../../app/(tabs)/strain");
     render(<StrainScreen />);
 
     expect(screen.getByText("Intensity distribution failed")).toBeTruthy();
     expect(screen.getByText("Cycling polarization failed")).toBeTruthy();
-    expect(screen.getByText("Training monotony failed")).toBeTruthy();
     expect(screen.getByText("Could not load easy-to-hard training balance")).toBeTruthy();
-    expect(screen.getByText("Could not load training variety and total load")).toBeTruthy();
     expect(captureException).toHaveBeenCalledWith(mockHrZonesState.error);
     expect(captureException).toHaveBeenCalledWith(mockPolarizationState.error);
-    expect(captureException).toHaveBeenCalledWith(mockMonotonyState.error);
   });
 
   it("does not report transient or cancelled training query errors", async () => {
@@ -602,8 +645,6 @@ describe("StrainScreen recent activity navigation", () => {
     mockHrZonesState.error = new Error("User canceled");
     mockPolarizationState.isError = true;
     mockPolarizationState.error = new Error("User cancelled");
-    mockMonotonyState.isError = true;
-    mockMonotonyState.error = new Error("Network request failed");
 
     const { default: StrainScreen } = await import("../../app/(tabs)/strain");
     render(<StrainScreen />);
@@ -682,18 +723,6 @@ describe("StrainScreen recent activity navigation", () => {
     mockTrainingState.isFetching = true;
     mockTrainingState.data = {
       ...defaultMockTrainingData(),
-      strainTarget: {
-        targetStrain: 14,
-        currentStrain: 10,
-        progressPercent: 71,
-        zone: "Push",
-        explanation: "Based on the recovery score.",
-        dailyLoad: 50,
-        acuteLoad: 90,
-        chronicLoad: 80,
-        workloadRatio: 1.13,
-        readinessScore: 78,
-      },
       activities: [recentCyclingActivityFixture()],
     };
 
@@ -701,65 +730,12 @@ describe("StrainScreen recent activity navigation", () => {
     render(<StrainScreen />);
 
     expect(screen.queryByTestId("query-state-loading")).toBeNull();
-    expect(screen.getByText("Suggested strain")).toBeTruthy();
-    expect(screen.getByText("71% reached")).toBeTruthy();
-    expect(screen.getByText("Morning Ride")).toBeTruthy();
-  });
-
-  it("navigates to detail screen when a recent activity card is tapped", async () => {
-    mockTrainingState.data = {
-      ...defaultMockTrainingData(),
-      activities: [recentCyclingActivityFixture()],
-    };
-
-    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
-    render(<StrainScreen />);
-
-    fireEvent.click(screen.getByText("Morning Ride"));
-
-    expect(mockRouterPush).toHaveBeenCalledWith("/activity/42");
-  });
-
-  it("renders strain target card when target data is available", async () => {
-    mockTrainingState.data = {
-      ...defaultMockTrainingData(),
-      strainTarget: {
-        targetStrain: 14,
-        currentStrain: 10,
-        progressPercent: 71,
-        zone: "Push",
-        explanation: "Based on a recovery score of 78/100.",
-        dailyLoad: 50,
-        acuteLoad: 90,
-        chronicLoad: 80,
-        workloadRatio: 1.13,
-        readinessScore: 78,
-      },
-    };
-
-    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
-    render(<StrainScreen />);
-
-    expect(screen.getByText("Suggested strain")).toBeTruthy();
-    expect(screen.getByText("14")).toBeTruthy();
-    expect(screen.getByText("Push")).toBeTruthy();
-    expect(screen.getByText("71% reached")).toBeTruthy();
+    expect(screen.getByText("Training Load")).toBeTruthy();
+    expect(screen.getByText("27")).toBeTruthy();
   });
 
   it("shows the neutral server-owned workload comparison", async () => {
     mockTrainingState.data = {
-      strainTarget: {
-        targetStrain: 12,
-        currentStrain: 0,
-        progressPercent: 0,
-        zone: "Maintain",
-        explanation: "Based on a recovery score of 50/100.",
-        dailyLoad: 0,
-        acuteLoad: 133,
-        chronicLoad: 33,
-        workloadRatio: 4,
-        readinessScore: 50,
-      },
       workloadRatio: {
         context: {
           label: "Recent-to-baseline workload ratio",
@@ -768,7 +744,6 @@ describe("StrainScreen recent activity navigation", () => {
           recentDays: 5,
           baselineDays: 20,
         },
-        displayedStrain: 0,
         displayedDate: "2026-03-28",
         timeSeries: [
           {
@@ -777,7 +752,6 @@ describe("StrainScreen recent activity navigation", () => {
             acuteLoad: 133,
             chronicLoad: 33,
             workloadRatio: 4,
-            strain: 0,
           },
         ],
       },
@@ -814,81 +788,6 @@ describe("StrainScreen recent activity navigation", () => {
       expect(labelElement.parentElement?.style.flex).toBe("1 1 0%");
       expect(labelElement.style.textAlign).toBe("center");
     }
-  });
-
-  it("does not use a prior displayed strain as today's strain fallback", async () => {
-    mockTrainingState.data = {
-      strainTarget: undefined,
-      workloadRatio: {
-        context: {
-          label: "Recent-to-baseline workload ratio",
-          description:
-            "Compares load from the latest 7 days with an equivalent 7-day baseline from the latest 28 days.",
-          recentDays: 7,
-          baselineDays: 28,
-        },
-        displayedStrain: 13,
-        displayedDate: "2026-03-27",
-        timeSeries: [
-          {
-            date: "2026-03-28",
-            dailyLoad: 0,
-            acuteLoad: 133,
-            chronicLoad: 33,
-            workloadRatio: 4,
-            strain: 0,
-          },
-        ],
-      },
-      activities: [],
-      weeklyVolume: [],
-      verticalAscent: [],
-    };
-
-    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
-    render(<StrainScreen />);
-
-    expect(screen.queryByText("13.0")).toBeNull();
-    expect(screen.getAllByText("0.0").length).toBeGreaterThan(0);
-  });
-
-  it("does not render strain target card when no target data", async () => {
-    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
-    render(<StrainScreen />);
-
-    expect(screen.queryByText("Suggested strain")).toBeNull();
-  });
-
-  it("navigates to activities list when tapping View all", async () => {
-    mockTrainingState.data = {
-      ...defaultMockTrainingData(),
-      activities: [recentCyclingActivityFixture()],
-    };
-
-    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
-    render(<StrainScreen />);
-
-    fireEvent.click(screen.getByText("View all"));
-
-    expect(mockRouterPush).toHaveBeenCalledWith("/activities");
-  });
-
-  it("shows empty state and View all link when no activities exist", async () => {
-    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
-    render(<StrainScreen />);
-
-    expect(screen.getByText("Recent Activities")).toBeTruthy();
-    expect(screen.getByText("No recent activities")).toBeTruthy();
-    expect(screen.getByText("View all")).toBeTruthy();
-  });
-
-  it("navigates to activities list from View all when no activities exist", async () => {
-    const { default: StrainScreen } = await import("../../app/(tabs)/strain");
-    render(<StrainScreen />);
-
-    fireEvent.click(screen.getByText("View all"));
-
-    expect(mockRouterPush).toHaveBeenCalledWith("/activities");
   });
 
   it("preserves cached Hangboarding data during a failed training refresh", async () => {
@@ -957,7 +856,6 @@ describe("StrainScreen recent activity navigation", () => {
     expect(screen.queryByText("Training Load")).toBeNull();
     expect(screen.queryByText("Climbing")).toBeNull();
     expect(screen.getByText("Weekly Volume")).toBeTruthy();
-    expect(screen.queryByText("Recent Activities")).toBeNull();
     expect(captureException).toHaveBeenCalledWith(expect.any(Error));
   });
 
@@ -1009,7 +907,7 @@ describe("StrainScreen recent activity navigation", () => {
     mockTrainingState.data = {
       ...defaultMockTrainingData(),
       climbing: {
-        gradeProgression: [climbingProgressionFixture()],
+        gradeProgression: climbingProgressionFixture(),
         volumeByGrade: [],
         sessionSummary: [],
       },

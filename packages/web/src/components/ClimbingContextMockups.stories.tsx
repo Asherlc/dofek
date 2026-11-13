@@ -228,7 +228,7 @@ function ClimbingContextMockup({ variant }: { variant: "filters" | "picker" }) {
       </section>
       <p className="text-xs text-muted">
         Design prototype · Illustrative data reused across contexts and periods. Try changing
-        context, view, or grade, then select a cell to inspect climbs.
+        context or view, then select an exact value to inspect climbs.
       </p>
     </main>
   );
@@ -264,8 +264,6 @@ export const FiltersInteraction: Story = {
       "aria-pressed",
       "true",
     );
-    await userEvent.click(canvas.getByRole("button", { name: "Grades" }));
-    await expect(canvas.getByRole("columnheader", { name: "5.10a" })).toBeVisible();
     await userEvent.selectOptions(canvas.getByLabelText("Period"), "All time");
     await expect(canvas.getByLabelText("Period")).toHaveValue("All time");
   },
@@ -280,7 +278,5 @@ export const PickerInteraction: Story = {
       "aria-expanded",
       "false",
     );
-    await userEvent.click(canvas.getByRole("button", { name: "Grades" }));
-    await expect(canvas.getByRole("columnheader", { name: "5.10a" })).toBeVisible();
   },
 };

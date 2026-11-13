@@ -1,19 +1,25 @@
-import type { ClimbingGradeProgressionLane } from "@dofek/training/climbing-progression";
+import type { ClimbingGradeProgressionData } from "@dofek/training/climbing-progression";
 
 export function climbingProgressionFixture(
-  climbKind: ClimbingGradeProgressionLane["climbKind"] = "boulder",
-  facts: Partial<ClimbingGradeProgressionLane> = {},
-): ClimbingGradeProgressionLane {
-  const grade = climbKind === "boulder" ? "V4" : "5.11a";
+  overrides: Partial<ClimbingGradeProgressionData> = {},
+): ClimbingGradeProgressionData {
   return {
-    attemptScope: "climb",
-    ropeMethod: null,
-    solo: null,
-    usedAid: false,
-    climbKind,
-    gradeSystem: climbKind === "boulder" ? "v_scale" : "yds",
-    grades: [{ grade, gradeSortValue: 65 }],
-    settings: ["indoor", "outdoor"],
+    grades: [
+      {
+        key: "boulder-v4",
+        climbKind: "boulder",
+        gradeSystem: "v_scale",
+        grade: "V4",
+        gradeSortValue: 65,
+      },
+      {
+        key: "route-5.11a",
+        climbKind: "route",
+        gradeSystem: "yds",
+        grade: "5.11a",
+        gradeSortValue: 65,
+      },
+    ],
     axisMax: 3,
     axisInterval: 1,
     axisTicks: [0, 1, 2, 3],
@@ -21,48 +27,46 @@ export function climbingProgressionFixture(
       {
         startDate: "2026-07-01",
         endDate: "2026-07-31",
-        settings: [
-          {
-            setting: "indoor",
-            climbingDays: 2,
-            sends: 4,
-            unknownOutcomes: 0,
-            sendsPerDay: 2,
-            segments: [{ grade, sends: 4, sendsPerDay: 2, stackStart: 0, stackEnd: 2 }],
-          },
-          {
-            setting: "outdoor",
-            climbingDays: 1,
-            sends: 0,
-            unknownOutcomes: 0,
-            sendsPerDay: 0,
-            segments: [{ grade, sends: 0, sendsPerDay: 0, stackStart: 0, stackEnd: 0 }],
-          },
+        climbingDays: 3,
+        sends: 6,
+        unknownOutcomes: 0,
+        sendsPerDay: 2,
+        segments: [
+          { gradeKey: "boulder-v4", sends: 4, sendsPerDay: 4 / 3, stackStart: 0, stackEnd: 4 / 3 },
+          { gradeKey: "route-5.11a", sends: 2, sendsPerDay: 2 / 3, stackStart: 4 / 3, stackEnd: 2 },
         ],
       },
       {
         startDate: "2026-08-01",
         endDate: "2026-08-31",
-        settings: [
+        climbingDays: 1,
+        sends: 0,
+        unknownOutcomes: 0,
+        sendsPerDay: 0,
+        segments: [
+          { gradeKey: "boulder-v4", sends: 0, sendsPerDay: 0, stackStart: 0, stackEnd: 0 },
+          { gradeKey: "route-5.11a", sends: 0, sendsPerDay: 0, stackStart: 0, stackEnd: 0 },
+        ],
+      },
+      {
+        startDate: "2026-09-01",
+        endDate: "2026-09-30",
+        climbingDays: 0,
+        sends: 0,
+        unknownOutcomes: 0,
+        sendsPerDay: null,
+        segments: [
+          { gradeKey: "boulder-v4", sends: 0, sendsPerDay: null, stackStart: null, stackEnd: null },
           {
-            setting: "indoor",
-            climbingDays: 0,
+            gradeKey: "route-5.11a",
             sends: 0,
-            unknownOutcomes: 0,
             sendsPerDay: null,
-            segments: [{ grade, sends: 0, sendsPerDay: null, stackStart: null, stackEnd: null }],
-          },
-          {
-            setting: "outdoor",
-            climbingDays: 0,
-            sends: 0,
-            unknownOutcomes: 0,
-            sendsPerDay: null,
-            segments: [{ grade, sends: 0, sendsPerDay: null, stackStart: null, stackEnd: null }],
+            stackStart: null,
+            stackEnd: null,
           },
         ],
       },
     ],
-    ...facts,
+    ...overrides,
   };
 }

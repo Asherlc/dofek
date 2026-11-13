@@ -1,26 +1,37 @@
+import type { ClimbingChartAnnotation } from "@dofek/training/climbing-chart";
 import {
   type ClimbingGradePreference,
   DEFAULT_CLIMBING_GRADE_PREFERENCE,
 } from "@dofek/training/climbing-grades";
 import {
+  areaSchema,
   type ClimbingAttempt,
   climbingAttemptSchema,
   climbingLogEntrySchema,
 } from "@dofek/training/climbing-log";
 import type { ClimbingMapLocation } from "@dofek/training/climbing-map";
+import { recordedClimbingTags } from "dofek/climbing-tags";
 import { type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
+  type ClimbingLogActivitySession,
   type ClimbingLogEntryDetail,
   type ClimbingPitchResult,
+  climbingLogActivitySessionSchema,
   climbingLogClimbDetailSchema,
   climbingLogEntryDetailSchema,
 } from "../contracts/climbing-log-contracts.ts";
 import { BaseRepository } from "../lib/base-repository.ts";
 import { timestampStringSchema } from "../lib/typed-sql.ts";
+import { climbingChartAnnotations } from "../services/climbing-chart-annotations.ts";
 import { postgresActivityCalendarDate } from "./activity-local-date.ts";
 import { displayGradeComponents, selectRockClimbingGrade } from "./climbing-grade-display.ts";
 import { climbingSourceLinks } from "./climbing-source-links.ts";
+
+type HydratedLogEntry = ClimbingLogEntryDetail & {
+  tags: ReturnType<typeof recordedClimbingTags>;
+  chartAnnotations: ClimbingChartAnnotation[];
+};
 
 const databaseRowSchema = z.object({
   log: climbingLogEntrySchema.extend({
@@ -28,6 +39,9 @@ const databaseRowSchema = z.object({
     providerAbsentAt: timestampStringSchema.nullable(),
   }),
   climb: climbingLogClimbDetailSchema.nullable(),
+  areaPath: z.array(areaSchema),
+  logAreaId: z.guid().nullable(),
+  areaGroupId: z.guid().nullable(),
   freeSend: z.boolean().nullable(),
   attempts: z.array(
     z
@@ -52,9 +66,10 @@ function climbingDetailRaw(
 
 function mapLocation(
   climb: ClimbingLogEntryDetail["climb"],
+  areaPath: z.infer<typeof areaSchema>[],
+  logAreaId: string | null,
 ): ClimbingLogEntryDetail["mapLocation"] {
-  if (!climb) return null;
-  if (climb.coordinates)
+  if (logAreaId === null && climb?.coordinates)
     return {
       coordinates: climb.coordinates,
       scope: "climb",
@@ -62,7 +77,7 @@ function mapLocation(
       providerId: climb.providerId,
       name: climb.name,
     };
-  const area = climb.areaPath
+  const area = areaPath
     .slice()
     .reverse()
     .find((area) => area.coordinates !== null);
@@ -134,14 +149,73 @@ function identity(log: ClimbingLogEntryDetail): string | null {
     normalized(log.displayGrade),
     normalized(log.climb.name),
     log.climb.areaPath.map((area) => normalized(area.name)),
+    log.areaGroupId ?? null,
     targets,
   ]);
 }
-function consolidate(logs: ClimbingLogEntryDetail[]): ClimbingLogEntryDetail[] {
-  const output: ClimbingLogEntryDetail[] = [];
+function kayaFailedSessionSource(log: ClimbingLogEntryDetail): string | null {
+  if (
+    log.providerId !== "kaya" ||
+    log.providerAbsentAt !== null ||
+    !log.externalId?.startsWith("kaya:ascent:")
+  )
+    return null;
+  const source = z
+    .object({
+      session_id: z.string(),
+      attempts: z.null(),
+      ascent_type: z.object({ name: z.string() }),
+    })
+    .safeParse(log.raw);
+  if (
+    !source.success ||
+    !log.climb?.externalId ||
+    !["redpoint", "send", "repeat"].includes(source.data.ascent_type.name.trim().toLowerCase())
+  )
+    return null;
+  return `kaya:session:${source.data.session_id}:attempted:${source.data.session_id}_${log.climb.externalId}`;
+}
+
+/** Join observed failures to an uncounted send without assigning attempt order. */
+function combineKayaSessionAttempts(logs: HydratedLogEntry[]): HydratedLogEntry[] {
+  const combined = new Map<string, HydratedLogEntry>();
+  const consumed = new Set<string>();
+  for (const log of logs) {
+    const sourceId = kayaFailedSessionSource(log);
+    if (
+      sourceId === null ||
+      logs.filter((candidate) => kayaFailedSessionSource(candidate) === sourceId).length !== 1
+    )
+      continue;
+    const failed = logs.find(
+      (candidate) => candidate.providerId === "kaya" && candidate.externalId === sourceId,
+    );
+    if (
+      !failed ||
+      !z.object({ attempts: z.number().int().positive() }).safeParse(failed.raw).success ||
+      failed.climbId !== log.climbId ||
+      failed.activityId !== log.activityId ||
+      !failed.attempts.length ||
+      !failed.attempts.every((attempt) => attempt.scope === "climb" && attempt.outcome === "failed")
+    )
+      continue;
+    const attempts = [...log.attempts, ...failed.attempts];
+    combined.set(log.id, {
+      ...log,
+      attempts,
+      recordedClimbAttemptCount: attempts.filter((attempt) => attempt.scope === "climb").length,
+      recordedClimbOutcome: recordedOutcome(attempts),
+      chartAnnotations: [...log.chartAnnotations, ...failed.chartAnnotations],
+    });
+    consumed.add(failed.id);
+  }
+  return logs.filter((log) => !consumed.has(log.id)).map((log) => combined.get(log.id) ?? log);
+}
+function consolidate(logs: HydratedLogEntry[]): HydratedLogEntry[] {
+  const output: HydratedLogEntry[] = [];
   const groups = new Map<
     string,
-    { log: ClimbingLogEntryDetail; providers: Set<string>; sources: Set<string> }[]
+    { log: HydratedLogEntry; providers: Set<string>; sources: Set<string> }[]
   >();
   const completeness = (log: ClimbingLogEntryDetail) => [
     Number(log.recordedClimbOutcome !== null),
@@ -151,7 +225,7 @@ function consolidate(logs: ClimbingLogEntryDetail[]): ClimbingLogEntryDetail[] {
     ),
     log.attempts.length,
   ];
-  for (const log of logs) {
+  for (const log of combineKayaSessionAttempts(logs)) {
     const key = identity(log);
     if (key === null) {
       output.push(log);
@@ -181,10 +255,28 @@ function consolidate(logs: ClimbingLogEntryDetail[]): ClimbingLogEntryDetail[] {
       ).values(),
     ];
     const photoLogEntryId = match.log.photoLogEntryId ?? log.photoLogEntryId;
+    const tags = [
+      ...new Map(
+        [...match.log.tags, ...log.tags].map((tag) => [
+          JSON.stringify([tag.providerId, tag.categoryKey, tag.sourceKey]),
+          tag,
+        ]),
+      ).values(),
+    ];
+    const chartAnnotations = [
+      ...new Map(
+        [...match.log.chartAnnotations, ...log.chartAnnotations].map((annotation) => [
+          JSON.stringify([annotation.startedAt, annotation.endedAt]),
+          annotation,
+        ]),
+      ).values(),
+    ];
     Object.assign(match.log, preferred, {
       photoLogEntryId,
       sourceName: [...match.sources].join(", ") || null,
       sourceLinks,
+      tags,
+      chartAnnotations,
     });
   }
   return output;
@@ -220,6 +312,37 @@ export class ClimbingActivityLogEntryRepository extends BaseRepository {
         )})`,
       )
     ).map((log) => new ClimbingActivityLogEntry(log));
+  }
+  async getActivityLogSessions(
+    activityIds: readonly string[],
+  ): Promise<Map<string, ClimbingLogActivitySession[]>> {
+    if (!activityIds.length) return new Map();
+    const rows = await this.query(
+      climbingLogActivitySessionSchema.extend({ activityId: z.guid() }),
+      sql`SELECT grouped.id AS "activityId", observation.session_id AS id,
+        observation.provider_id AS "providerId",
+        array_agg(observation.activity_id ORDER BY observation.recorded_at, point.external_id) AS "memberActivityIds",
+        MIN(observation.recorded_at) AS "firstLoggedAt", MAX(observation.recorded_at) AS "lastLoggedAt"
+      FROM fitness.v_activity AS grouped
+      JOIN fitness.v_climbing_log_activity AS observation
+        ON observation.user_id = grouped.user_id AND observation.activity_id = ANY(grouped.member_activity_ids)
+      JOIN fitness.activity AS point ON point.id = observation.activity_id AND point.user_id = observation.user_id
+      WHERE grouped.user_id = ${this.userId}::uuid
+        AND grouped.id IN (${sql.join(
+          activityIds.map((id) => sql`${id}::uuid`),
+          sql`, `,
+        )})
+        ${this.dateAccessPredicate(postgresActivityCalendarDate(sql`grouped`, this.timezone))}
+      GROUP BY grouped.id, observation.provider_id, observation.session_id
+      ORDER BY grouped.id, MIN(observation.recorded_at), observation.session_id`,
+    );
+    const sessions = new Map<string, ClimbingLogActivitySession[]>();
+    for (const { activityId, ...session } of rows) {
+      const group = sessions.get(activityId) ?? [];
+      group.push(session);
+      sessions.set(activityId, group);
+    }
+    return sessions;
   }
   async getActivityMapLocations(
     activityIds: readonly string[],
@@ -272,7 +395,17 @@ export class ClimbingActivityLogEntryRepository extends BaseRepository {
       sql`entry.provider_id=${providerId} AND entry.id=${id}::uuid`,
       "retained",
     );
-    return log ?? null;
+    if (!log) return null;
+    const failedSource = kayaFailedSessionSource(log);
+    if (failedSource === null) return log;
+    const related = await this.#load(
+      sql`entry.provider_id=${providerId} AND entry.id <> ${id}::uuid AND (
+        entry.external_id=${failedSource} OR (
+          entry.climb_id=${log.climbId}::uuid AND entry.activity_id IS NOT DISTINCT FROM ${log.activityId}::uuid
+        )
+      )`,
+    );
+    return combineKayaSessionAttempts([log, ...related])[0] ?? log;
   }
   async getActivityLogEntries(activityId: string): Promise<ClimbingActivityLogEntry[]> {
     const logs = await this.#load(
@@ -296,7 +429,7 @@ export class ClimbingActivityLogEntryRepository extends BaseRepository {
   async #load(
     predicate: SQL,
     visibility: "active" | "retained" = "active",
-  ): Promise<ClimbingLogEntryDetail[]> {
+  ): Promise<HydratedLogEntry[]> {
     const eligibility =
       visibility === "retained"
         ? sql``
@@ -317,11 +450,13 @@ export class ClimbingActivityLogEntryRepository extends BaseRepository {
         'externalId',catalogue.external_id,'name',catalogue.name,'kind',catalogue.kind,'areaId',catalogue.area_id,
         'publishedGrades',entry.published_grades,'setting',entry.setting,'routeProtection',catalogue.route_protection,
         'coordinates',CASE WHEN catalogue.coordinates IS NOT NULL THEN jsonb_build_object('latitude',catalogue.coordinates[1],'longitude',catalogue.coordinates[0]) END,
-        'areaPath',entry.area_path,'pitches',COALESCE((SELECT jsonb_agg(jsonb_build_object(
+        'areaPath',entry.climb_area_path,'pitches',COALESCE((SELECT jsonb_agg(jsonb_build_object(
           'id',pitch.id,'climbId',pitch.climb_id,'externalId',pitch.external_id,'number',pitch.number,'name',pitch.name,
           'publishedGrades',COALESCE((SELECT jsonb_agg(jsonb_build_object('value',component.value,'system',component.system) ORDER BY component.position) FROM fitness.pitch_grade AS component WHERE component.pitch_id=pitch.id),'[]'::jsonb)
         ) ORDER BY pitch.number NULLS LAST,pitch.id) FROM fitness.pitch AS pitch WHERE pitch.climb_id=catalogue.id),'[]'::jsonb)
       ) END AS climb,
+      entry.area_path AS "areaPath", entry.log_area_id AS "logAreaId",
+      location.group_id AS "areaGroupId",
       entry.free_send AS "freeSend",
       COALESCE((SELECT jsonb_agg(jsonb_build_object(
         'id',attempt.id,'climbingLogEntryId',attempt.climbing_log_entry_id,'scope',attempt.scope,'pitchId',attempt.pitch_id,
@@ -334,6 +469,8 @@ export class ClimbingActivityLogEntryRepository extends BaseRepository {
       ) ORDER BY attempt.attempt_index NULLS LAST,attempt.created_at,attempt.id) FROM fitness.v_climbing_attempt AS attempt WHERE attempt.climbing_log_entry_id=entry.id),'[]'::jsonb) AS attempts
       FROM fitness.v_climbing_log_entry AS entry
       LEFT JOIN fitness.climb AS catalogue ON catalogue.id=entry.climb_id
+      LEFT JOIN fitness.area AS location ON location.id=COALESCE(entry.log_area_id,catalogue.area_id)
+        AND location.user_id=entry.user_id
       LEFT JOIN fitness.activity AS attached ON attached.id=entry.activity_id AND attached.user_id=entry.user_id
       LEFT JOIN fitness.v_activity AS grouped ON grouped.user_id=entry.user_id AND attached.id=ANY(grouped.member_activity_ids)
       WHERE entry.user_id=${this.userId}::uuid AND ${predicate} ${eligibility}
@@ -364,11 +501,13 @@ export class ClimbingActivityLogEntryRepository extends BaseRepository {
           ),
         };
       });
-      return climbingLogEntryDetailSchema.parse({
+      const detail = climbingLogEntryDetailSchema.parse({
         ...row.log,
         raw: climbingDetailRaw(row.log),
         climb: row.climb,
-        mapLocation: mapLocation(row.climb),
+        areaPath: row.areaPath,
+        areaGroupId: row.areaGroupId,
+        mapLocation: mapLocation(row.climb, row.areaPath, row.logAreaId),
         photoLogEntryId:
           row.log.providerId === "kaya" && row.log.externalId?.startsWith("kaya:ascent:")
             ? row.log.id
@@ -378,7 +517,10 @@ export class ClimbingActivityLogEntryRepository extends BaseRepository {
           rockResultLabels: resultLabels(row, attempt),
         })),
         // Mountain Project ticks retain result facts, but do not record attempt counts.
-        recordedClimbAttemptCount: row.log.providerId === "mountain-project" ? null : whole.length,
+        recordedClimbAttemptCount:
+          row.log.providerId === "mountain-project" || row.attempts.length === 0
+            ? null
+            : whole.length,
         recordedPitchAttemptCount: row.attempts.length - whole.length,
         recordedClimbOutcome: recordedOutcome(whole),
         freeSend: row.freeSend,
@@ -390,6 +532,11 @@ export class ClimbingActivityLogEntryRepository extends BaseRepository {
         ),
         sourceLinks: climbingSourceLinks(row.log.providerId, row.log.raw),
       });
+      return {
+        ...detail,
+        chartAnnotations: climbingChartAnnotations(detail),
+        tags: recordedClimbingTags(row.log.providerId, row.log.raw),
+      };
     });
   }
 }

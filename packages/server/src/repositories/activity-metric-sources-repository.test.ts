@@ -2,20 +2,58 @@ import type { ActivityHardware } from "@dofek/providers/activity-hardware";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { normalizeActivityHardware } from "../models/activity-hardware.ts";
+import { buildActivitySourceTree } from "../models/activity-source-tree.ts";
 import {
   activityMetricParams,
+  getActivityHeartRateContext,
   getActivityMetricSources,
   getActivityPowerWork,
   getActivitySourceHrZones,
 } from "./activity-metric-sources-repository.ts";
 
 const window = {
+  providerType: null,
   activityId: "22222222-2222-2222-2222-222222222222",
   userId: "11111111-1111-1111-1111-111111111111",
   startedAt: "2026-10-20T12:00:00.000Z",
   endedAt: "2026-10-20T13:00:00.000Z",
   memberActivityIds: ["22222222-2222-2222-2222-222222222222"],
 };
+
+describe("activity heart-rate context", () => {
+  it("requests five minutes around the activity using the selected HR source", async () => {
+    const getStream = vi.fn().mockResolvedValue([
+      { recorded_at: "2026-10-20T11:55:00.000Z", heart_rate: 90 },
+      { recorded_at: "2026-10-20T13:05:00.000Z", heart_rate: 100 },
+    ]);
+    const result = await getActivityHeartRateContext({ getStream }, window, 500, "whoop");
+    expect(result).toEqual({
+      window: { startedAt: "2026-10-20T11:55:00.000Z", endedAt: "2026-10-20T13:05:00.000Z" },
+      points: [
+        { recordedAt: "2026-10-20T11:55:00.000Z", value: 90 },
+        { recordedAt: "2026-10-20T13:05:00.000Z", value: 100 },
+      ],
+    });
+    expect(getStream).toHaveBeenCalledWith({ ...window, ...result.window }, 500, {
+      heartRate: "whoop",
+    });
+    expect(window.startedAt).toBe("2026-10-20T12:00:00.000Z");
+    expect(window.endedAt).toBe("2026-10-20T13:00:00.000Z");
+  });
+
+  it("does not invent an end for an open session or HR when no source exists", async () => {
+    const getStream = vi.fn();
+    const result = await getActivityHeartRateContext(
+      { getStream },
+      { ...window, endedAt: null },
+      500,
+      undefined,
+    );
+    expect(result.window).toEqual({ startedAt: "2026-10-20T11:55:00.000Z", endedAt: null });
+    expect(result.points).toEqual([]);
+    expect(getStream).not.toHaveBeenCalled();
+  });
+});
 function storeWithRows(rows: unknown[]) {
   return {
     query: vi.fn(
@@ -27,12 +65,334 @@ function storeWithRows(rows: unknown[]) {
         rows.map((row) =>
           schema.parse({
             activity_ids: window.memberActivityIds,
+            sample_count: 1,
             ...z.record(z.string(), z.unknown()).parse(row),
           }),
         ),
     ),
   };
 }
+
+describe("canonical metric source inheritance", () => {
+  it.each(["recorder", "creator"] as const)(
+    "retains %s hardware qualifiers alongside inherited attribution",
+    async (role) => {
+      const tree = buildActivitySourceTree(
+        { status: "resolved", memberActivityId: "original", providerId: "wahoo", sourceName: null },
+        [
+          {
+            memberActivityId: "original",
+            providerId: "wahoo",
+            externalId: "original",
+            subsource: null,
+            label: "Wahoo",
+            url: null,
+          },
+          {
+            memberActivityId: "copy",
+            providerId: "strava",
+            externalId: "copy",
+            subsource: null,
+            label: "Strava",
+            url: null,
+          },
+        ],
+        [
+          {
+            upstreamMemberActivityId: "original",
+            downstreamMemberActivityId: "copy",
+            field: "external_id",
+            value: "original",
+          },
+        ],
+      );
+      const hardware = normalizeActivityHardware([
+        {
+          activityId: "copy",
+          providerId: "strava",
+          sourceName: null,
+          raw: role === "recorder" ? { device_name: "Edge 530" } : null,
+          observations:
+            role === "creator"
+              ? [{ sequence: 0, messageType: "file_id", raw: { product_name: "Export platform" } }]
+              : [],
+        },
+      ]);
+      const result = await getActivityMetricSources(
+        storeWithRows([
+          {
+            channel: "heart_rate",
+            provider_id: "strava",
+            device_id: null,
+            source_id: "copy-recording",
+            activity_ids: ["copy"],
+          },
+        ]),
+        window,
+        hardware,
+        tree,
+      );
+      expect(result[0]?.sources[0]).toMatchObject({
+        id: "copy-recording",
+        label:
+          role === "recorder"
+            ? "Wahoo via Strava · recorded by Edge 530"
+            : "Wahoo via Strava · file created by Export platform",
+        presentation: {
+          displayName: role === "recorder" ? "Edge 530" : "Wahoo",
+          providerId: "wahoo",
+          attribution: { kind: "provider", providerId: "strava" },
+        },
+      });
+    },
+  );
+  it("preserves per-sample device attribution instead of replacing it with workout ancestry", async () => {
+    const tree = buildActivitySourceTree(
+      {
+        status: "resolved",
+        memberActivityId: "whoop-member",
+        providerId: "whoop",
+        sourceName: null,
+      },
+      ["whoop", "apple_health"].map((providerId) => ({
+        memberActivityId: `${providerId}-member`,
+        providerId,
+        externalId: providerId,
+        subsource: null,
+        label: providerId,
+        url: null,
+      })),
+      [
+        {
+          upstreamMemberActivityId: "whoop-member",
+          downstreamMemberActivityId: "apple_health-member",
+          field: "external_id",
+          value: "reference",
+        },
+      ],
+    );
+    const result = await getActivityMetricSources(
+      storeWithRows([
+        {
+          channel: "heart_rate",
+          provider_id: "apple_health",
+          device_id: "Apple Watch",
+          source_id: "watch-recording",
+          activity_ids: ["apple_health-member"],
+        },
+      ]),
+      window,
+      { items: [], power: [] },
+      tree,
+    );
+    expect(result[0]?.sources[0]?.presentation).toMatchObject({
+      displayName: "Apple Watch",
+      providerId: "apple_health",
+      sourceName: "Apple Watch",
+      attribution: { kind: "apple_health" },
+    });
+  });
+  it("keeps a sample provider distinct from its member activity's delivery provider", async () => {
+    const tree = buildActivitySourceTree(
+      { status: "resolved", memberActivityId: "original", providerId: "whoop", sourceName: null },
+      [
+        {
+          memberActivityId: "original",
+          providerId: "whoop",
+          externalId: "original",
+          subsource: null,
+          label: "WHOOP",
+          url: null,
+        },
+        {
+          memberActivityId: "copy",
+          providerId: "peloton",
+          externalId: "copy",
+          subsource: null,
+          label: "Peloton",
+          url: null,
+        },
+      ],
+      [
+        {
+          upstreamMemberActivityId: "original",
+          downstreamMemberActivityId: "copy",
+          field: "external_id",
+          value: "original",
+        },
+      ],
+    );
+    const result = await getActivityMetricSources(
+      storeWithRows([
+        {
+          channel: "heart_rate",
+          provider_id: "strava",
+          device_id: null,
+          source_id: "strava-recording",
+          activity_ids: ["copy"],
+        },
+      ]),
+      window,
+      { items: [], power: [] },
+      tree,
+    );
+    expect(result[0]?.sources[0]).toMatchObject({
+      id: "strava-recording",
+      label: "Strava",
+      presentation: { providerId: "strava", attribution: null },
+    });
+  });
+  it.each(["peloton", "strava"])(
+    "projects WHOOP ancestry through %s without changing selection identity",
+    async (providerId) => {
+      const tree = buildActivitySourceTree(
+        {
+          status: "resolved",
+          memberActivityId: "whoop-member",
+          providerId: "whoop",
+          sourceName: null,
+        },
+        ["whoop", providerId].map((provider) => ({
+          memberActivityId: `${provider}-member`,
+          providerId: provider,
+          externalId: provider,
+          subsource: null,
+          label: provider,
+          url: null,
+        })),
+        [
+          {
+            upstreamMemberActivityId: "whoop-member",
+            downstreamMemberActivityId: `${providerId}-member`,
+            field: "external_id",
+            value: "reference",
+          },
+        ],
+      );
+      const result = await getActivityMetricSources(
+        storeWithRows([
+          {
+            channel: "heart_rate",
+            provider_id: providerId,
+            device_id: null,
+            source_id: "held-recording",
+            activity_ids: [`${providerId}-member`],
+          },
+        ]),
+        window,
+        { items: [], power: [] },
+        tree,
+      );
+      expect(result[0]?.sources[0]).toEqual({
+        id: "held-recording",
+        label: `WHOOP via ${providerId === "peloton" ? "Peloton" : "Strava"}`,
+        presentation: {
+          displayName: "WHOOP",
+          providerId: "whoop",
+          sourceName: null,
+          attribution: {
+            kind: "provider",
+            providerId,
+            label: providerId === "peloton" ? "Peloton" : "Strava",
+          },
+        },
+      });
+      expect(result[0]?.defaultSourceId).toBe("held-recording");
+    },
+  );
+});
+
+describe("heart-rate default ranking", () => {
+  it.each([
+    { name: "standalone samples", linked: false, role: null, expected: "whoop" },
+    { name: "activity-linked samples", linked: true, role: null, expected: "watch" },
+    { name: "reported recorder", linked: false, role: "recorder", expected: "watch" },
+    {
+      name: "recorder label without matching source identity",
+      linked: false,
+      role: "recorder",
+      expected: "whoop",
+    },
+    { name: "file creator only", linked: false, role: "creator", expected: "whoop" },
+    { name: "observed sensor only", linked: false, role: "sensor", expected: "whoop" },
+  ] as const)(
+    "prefers the appropriate source for $name",
+    async ({ name, linked, role, expected }) => {
+      const hardware: ActivityHardware = {
+        items: role
+          ? [
+              {
+                id: "watch-recorder",
+                activityId: window.activityId,
+                providerId: "apple_health",
+                sourceName:
+                  name === "recorder label without matching source identity" ? null : "Watch",
+                role,
+                label: "Watch",
+                model: null,
+                manufacturer: null,
+                evidence: "Reported hardware",
+                details: [],
+              },
+            ]
+          : [],
+        power: [],
+      };
+      const metrics = await getActivityMetricSources(
+        storeWithRows([
+          {
+            channel: "heart_rate",
+            provider_id: "whoop",
+            device_id: null,
+            source_id: "whoop",
+            activity_ids: [],
+            sample_count: 10,
+          },
+          {
+            channel: "heart_rate",
+            provider_id: "apple_health",
+            device_id: "Watch",
+            source_id: "watch",
+            activity_ids: linked ? [window.activityId] : [],
+            sample_count: 1,
+          },
+        ]),
+        window,
+        hardware,
+      );
+      expect(metrics[0]?.defaultSourceId).toBe(expected);
+    },
+  );
+
+  it.each([false, true])(
+    "uses sample count within the direct-recording tier (%s)",
+    async (linked) => {
+      const activityIds = linked ? [window.activityId] : [];
+      const metrics = await getActivityMetricSources(
+        storeWithRows([
+          {
+            channel: "heart_rate",
+            provider_id: "apple_health",
+            device_id: "Watch",
+            source_id: "watch",
+            activity_ids: activityIds,
+            sample_count: 1,
+          },
+          {
+            channel: "heart_rate",
+            provider_id: "whoop",
+            device_id: null,
+            source_id: "whoop",
+            activity_ids: activityIds,
+            sample_count: 10,
+          },
+        ]),
+        window,
+      );
+      expect(metrics[0]?.defaultSourceId).toBe("whoop");
+    },
+  );
+});
 
 describe("activity power work", () => {
   it("integrates fully covered power seconds while preserving zero and recording gaps", async () => {
@@ -564,7 +924,7 @@ it("uses the reported BLE name while keeping the peripheral UUID source identity
         source_id: '["ble_heart_rate","uuid"]',
         activity_ids: [],
       },
-    ].map((row) => schema.parse(row)),
+    ].map((row) => schema.parse({ sample_count: 1, ...row })),
   );
   store.query.mockImplementationOnce(async (schema) =>
     [{ provider_id: "ble_heart_rate", device_id: "uuid", device_name: "Polar H10" }].map((row) =>
@@ -761,7 +1121,9 @@ describe("BLE peripheral label lookup", () => {
       },
     ];
     const store = storeWithRows([]);
-    store.query.mockImplementationOnce(async (schema) => rows.map((row) => schema.parse(row)));
+    store.query.mockImplementationOnce(async (schema) =>
+      rows.map((row) => schema.parse({ sample_count: 1, ...row })),
+    );
     store.query.mockImplementationOnce(async (schema) =>
       [
         { provider_id: "ble_heart_rate", device_id: "strap-b", device_name: "Polar H10" },
@@ -770,6 +1132,7 @@ describe("BLE peripheral label lookup", () => {
     );
     const result = await getActivityMetricSources(store, window);
     expect(store.query.mock.calls[1]?.[2]).toEqual({
+      isPointOnly: false,
       userId: window.userId,
       windowStartedAt: window.startedAt,
       windowEndedAt: window.endedAt,
@@ -804,6 +1167,7 @@ describe("BLE peripheral label lookup", () => {
           device_id: "strap-a",
           source_id: "source",
           activity_ids: [],
+          sample_count: 1,
         },
       ].map((row) => schema.parse(row)),
     );

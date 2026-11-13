@@ -1,6 +1,8 @@
 import CoreBluetooth
+import Darwin
 import ExpoModulesCore
 import Foundation
+import RNSentry
 
 /// Expo native module that connects to a WHOOP strap via CoreBluetooth
 /// and streams raw IMU (accelerometer + gyroscope) data.
@@ -11,8 +13,14 @@ import Foundation
 public class WhoopBleModule: Module {
     private static let deviceErasureCutoffKey = "dofek_device_erasure_cutoff_v1"
 
+    private let moduleQueue = DispatchQueue(label: "com.dofek.whoop-ble.module")
     internal let connectionManager = WhoopBleConnectionManager()
-    internal let sampleBuffer = WhoopBleSampleBuffer()
+    internal var captureFailure: String?
+    internal var captureSuspended = true
+    private var cleanupFailure: String?
+    internal var uploader: WhoopBleBackgroundUploader {
+        get throws { try WhoopBleUploadRuntime.shared() }
+    }
     internal let orientationProcessor = WhoopBleOrientationProcessor()
     internal lazy var watchdog = WhoopBleDataWatchdog(queue: connectionManager.bleQueue)
 
@@ -37,15 +45,13 @@ public class WhoopBleModule: Module {
     public func definition() -> ModuleDefinition {
         Name("WhoopBle")
 
-        Events("onConnectionStateChanged", "onDeviceStateChanged", "onOrientation")
+        Events("onConnectionStateChanged", "onDeviceStateChanged", "onOrientation", "onCaptureError")
 
         OnCreate {
             self.connectionManager.delegate = self
             self.watchdog.delegate = self
-            if let cutoff = UserDefaults.standard.object(
-                forKey: Self.deviceErasureCutoffKey
-            ) as? Date {
-                self.sampleBuffer.advanceErasureCutoff(to: cutoff)
+            WhoopBleUploadRuntime.prepare { [weak self] error in
+                self?.connectionManager.bleQueue.async { [weak self] in self?.failCapture(error) }
             }
         }
 
@@ -66,17 +72,7 @@ public class WhoopBleModule: Module {
         // MARK: - Connection
 
         AsyncFunction("connect") { (peripheralId: String, promise: Promise) in
-            self.connectionManager.connect(peripheralId: peripheralId) { result in
-                switch result {
-                case .success(let value):
-                    self.emitDeviceState()
-                    promise.resolve(value)
-                case .failure(let error):
-                    self.emitDeviceState()
-                    let rejection = error.rejection
-                    promise.reject(rejection.code, rejection.message)
-                }
-            }
+            self.connect(peripheralId: peripheralId, promise: promise)
         }
 
         // MARK: - IMU streaming
@@ -147,15 +143,15 @@ public class WhoopBleModule: Module {
         }
 
         Function("getBufferedSampleCount") { () -> Int in
-            self.sampleBuffer.imuSampleCount
+            try self.uploader.sampleCount(stream: .imu)
         }
 
-        Function("getDeviceSummary") { () -> [String: Any] in
-            self.deviceSummaryPayload()
-        }
+        AsyncFunction("getDeviceSummary") { () -> [String: Any] in
+            try self.deviceSummaryPayload()
+        }.runOnQueue(self.moduleQueue)
 
-        Function("getDataPathStats") { () -> [String: Any] in
-            self.connectionManager.syncOnBleQueue {
+        AsyncFunction("getDataPathStats") { () -> [String: Any] in
+            try self.connectionManager.syncOnBleQueue {
                 let packetTypeSummary = self.packetTypeCounts
                     .sorted(by: { $0.key < $1.key })
                     .map { String(format: "0x%02X:%llu", $0.key, $0.value) }
@@ -167,7 +163,7 @@ public class WhoopBleModule: Module {
                     "totalFramesParsed": Int(self.totalFramesParsed),
                     "totalSamplesExtracted": Int(self.totalSamplesExtracted),
                     "emptyExtractions": Int(self.emptyExtractions),
-                    "bufferOverflows": Int(self.sampleBuffer.overflowCount),
+                    "bufferOverflows": 0,
                     "packetTypes": packetTypeSummary,
                     "lastCommandResponse": self.lastCommandResponse,
                     "connectionState": self.connectionManager.state.rawValue,
@@ -177,19 +173,19 @@ public class WhoopBleModule: Module {
                     "hasCmdCharacteristic": self.connectionManager.hasCmdCharacteristic,
                     "hasCmdResponseCharacteristic": self.connectionManager.hasCmdResponseCharacteristic,
                     "lastWriteError": self.connectionManager.lastWriteError ?? "none",
-                    "realtimeBufferCount": self.sampleBuffer.realtimeSampleCount,
+                    "realtimeBufferCount": try self.uploader.sampleCount(stream: .realtime),
                     "watchdogRetryCount": Int(self.watchdog.retryCount),
                     "malformedFrames": Int(self.frameParser.malformedFrameCount),
                     "malformedCmdFrames": Int(self.cmdFrameParser.malformedFrameCount),
                     "coalescedFrames": Int(self.frameParser.coalescedFrameCount),
                     "coalescedCmdFrames": Int(self.cmdFrameParser.coalescedFrameCount),
-                    "buffers": self.sampleBuffer.diagnosticSnapshot(),
+                    "buffers": try self.uploader.diagnostics(),
                     "connectionDiagnostics": self.connectionManager.connectionDiagnostics.payload,
                 ]
                 stats.merge(self.captureDiagnostics.payload) { _, captured in captured }
                 return stats
             }
-        }
+        }.runOnQueue(self.moduleQueue)
 
         // MARK: - Realtime HR / Optical commands
 
@@ -223,58 +219,96 @@ public class WhoopBleModule: Module {
             }
         }
 
-        // MARK: - Buffer access (peek-then-confirm for atomic uploads)
+        // MARK: - Durable capture and native background delivery
 
-        AsyncFunction("peekBufferedSamples") { (maxCount: Int?, promise: Promise) in
-            let result = self.sampleBuffer.peekImuSamples(maxCount: maxCount ?? 1000)
-            promise.resolve(result)
-        }
+        AsyncFunction("configureUpload") { (context: [String: Any]) in
+            guard let userId = context["userId"] as? String,
+                  let serverURL = context["serverURL"] as? String,
+                  let token = context["token"] as? String,
+                  let headers = context["headers"] as? [String: String] else {
+                throw WhoopUploadError(message: "WHOOP upload configuration is incomplete")
+            }
+            if let cleanupFailure = self.cleanupFailure {
+                throw WhoopUploadError(
+                    message: "WHOOP upload configuration is blocked because cleanup failed: \(cleanupFailure)"
+                )
+            }
+            do {
+                self.connectionManager.syncOnBleQueue { self.captureSuspended = true }
+                try self.uploader.configure(userId: userId, serverURL: serverURL, token: token, headers: headers)
+                self.connectionManager.syncOnBleQueue {
+                    self.captureFailure = nil
+                    self.captureSuspended = false
+                }
+            } catch {
+                SentrySDK.capture(error: error)
+                throw error
+            }
+        }.runOnQueue(self.moduleQueue)
 
-        Function("confirmSamplesDrain") { (count: Int) in
-            self.sampleBuffer.confirmImuDrain(count: count)
-            self.emitDeviceState()
-        }
+        AsyncFunction("flushUploads") {
+            do { try self.uploader.flush() } catch {
+                SentrySDK.capture(error: error)
+                throw error
+            }
+        }.runOnQueue(self.moduleQueue)
 
-        AsyncFunction("peekBufferedRealtimeData") { (maxCount: Int?, promise: Promise) in
-            let result = self.sampleBuffer.peekRealtimeData(maxCount: maxCount ?? 1000)
-            promise.resolve(result)
-        }
+        AsyncFunction("disableUploads") {
+            let operationId = UUID().uuidString
+            let startedAt = ProcessInfo.processInfo.systemUptime
+            var stage = "ble_suspend"
+            func recordStage(_ nextStage: String) {
+                stage = nextStage
+                SentrySDK.logger.info("WHOOP cleanup stage", attributes: [
+                    "operation": "disableUploads", "operationId": operationId, "stage": stage,
+                    "isMainThread": Thread.isMainThread, "threadId": Int(pthread_mach_thread_np(pthread_self())),
+                    "durationMs": (ProcessInfo.processInfo.systemUptime - startedAt) * 1_000
+                ])
+            }
 
-        Function("confirmRealtimeDataDrain") { (count: Int) in
-            self.sampleBuffer.confirmRealtimeDataDrain(count: count)
-            self.emitDeviceState()
-        }
-
-        // Legacy drain (used by getBufferedSamples/getBufferedRealtimeData)
-        AsyncFunction("getBufferedRealtimeData") { (maxCount: Int?, promise: Promise) in
-            let result = self.sampleBuffer.drainRealtimeData(maxCount: maxCount ?? 1000)
-            self.emitDeviceState()
-            promise.resolve(result)
-        }
-
-        AsyncFunction("getBufferedSamples") { (maxCount: Int?, promise: Promise) in
-            let result = self.sampleBuffer.drainImuSamples(maxCount: maxCount ?? 1000)
-            self.emitDeviceState()
-            promise.resolve(result)
-        }
+            recordStage("ble_suspend")
+            self.connectionManager.syncOnBleQueue {
+                self.captureSuspended = true
+                self.watchdog.stop()
+            }
+            recordStage("disconnect")
+            self.connectionManager.disconnect()
+            do {
+                recordStage("uploader_bootstrap")
+                let uploader = try self.uploader
+                recordStage("uploader_disable")
+                let cutoff = UserDefaults.standard.object(forKey: Self.deviceErasureCutoffKey) as? Date
+                try uploader.disable(cutoff: cutoff, onStage: recordStage)
+                recordStage("completed")
+                self.cleanupFailure = nil
+            } catch {
+                self.cleanupFailure = error.localizedDescription
+                SentrySDK.logger.error("WHOOP cleanup failed", attributes: [
+                    "operation": "disableUploads", "operationId": operationId,
+                    "stage": "failed", "failedStage": stage,
+                    "isMainThread": Thread.isMainThread, "threadId": Int(pthread_mach_thread_np(pthread_self())),
+                    "durationMs": (ProcessInfo.processInfo.systemUptime - startedAt) * 1_000
+                ])
+                SentrySDK.capture(error: error) { scope in scope.setUser(nil) }
+                throw error
+            }
+        }.runOnQueue(self.moduleQueue)
 
         // MARK: - Background reconnection
 
         AsyncFunction("retryConnection") { (promise: Promise) in
-            self.connectionManager.retryConnection { success in
-                promise.resolve(success)
-            }
+            self.retryConnection(promise: promise)
         }
 
         // MARK: - Disconnect
 
-        Function("disconnect") {
+        Function("disconnect") { [self] in
             self.connectionManager.disconnect { [weak self] in
                 self?.emitDeviceState()
             }
         }
 
-        AsyncFunction("purgeAccountState") { (cutoffString: String, promise: Promise) in
+        AsyncFunction("purgeAccountState") { [self] (cutoffString: String, promise: Promise) in
             guard let cutoff = self.parseIsoDate(cutoffString) else {
                 promise.reject(
                     "WHOOP_BLE_INVALID_ERASURE_CUTOFF",
@@ -290,28 +324,61 @@ public class WhoopBleModule: Module {
                 forKey: Self.deviceErasureCutoffKey
             )
 
-            self.connectionManager.bleQueue.async {
-                self.watchdog.stop()
-                self.sampleBuffer.advanceErasureCutoff(to: retainedCutoff)
-                self.sampleBuffer.resetDiagnosticHistory()
-                self.frameParser.reset()
-                self.cmdFrameParser.reset()
-                self.orientationProcessor.reset()
-                self.dataNotificationCount = 0
-                self.cmdNotificationCount = 0
-                self.totalFramesParsed = 0
-                self.totalSamplesExtracted = 0
-                self.emptyExtractions = 0
-                self.packetTypeCounts.removeAll()
-                self.lastCommandResponse = "none"
-                self.captureDiagnostics = WhoopBleCaptureDiagnostics()
-                self.lastKnownDeviceId = nil
-                self.lastKnownDeviceName = nil
-                self.connectionManager.disconnect { [weak self] in
-                    self?.connectionManager.connectionDiagnostics.clear()
-                    self?.emitDeviceState()
-                    promise.resolve(true)
+            do {
+                try self.connectionManager.syncOnBleQueue {
+                    self.captureSuspended = true
+                    self.watchdog.stop()
+                    try self.uploader.purge(cutoff: retainedCutoff)
+                    self.frameParser.reset()
+                    self.cmdFrameParser.reset()
+                    self.orientationProcessor.reset()
+                    self.dataNotificationCount = 0
+                    self.cmdNotificationCount = 0
+                    self.totalFramesParsed = 0
+                    self.totalSamplesExtracted = 0
+                    self.emptyExtractions = 0
+                    self.packetTypeCounts.removeAll()
+                    self.lastCommandResponse = "none"
+                    self.captureDiagnostics = WhoopBleCaptureDiagnostics()
+                    self.lastKnownDeviceId = nil
+                    self.lastKnownDeviceName = nil
+                    self.connectionManager.disconnect { [weak self] in
+                        self?.connectionManager.connectionDiagnostics.clear()
+                        self?.emitDeviceState()
+                        promise.resolve(true)
+                    }
                 }
+            } catch {
+                self.cleanupFailure = error.localizedDescription
+                SentrySDK.capture(error: error) { scope in scope.setUser(nil) }
+                promise.reject("WHOOP_BLE_PURGE_FAILED", error.localizedDescription)
+            }
+        }.runOnQueue(self.moduleQueue)
+    }
+
+    private func connect(peripheralId: String, promise: Promise) {
+        connectionManager.syncOnBleQueue {
+            guard !rejectUnavailableCapture(promise) else { return }
+            connectionManager.connect(peripheralId: peripheralId) { result in
+                self.emitDeviceState()
+                guard !self.rejectUnavailableCapture(promise) else { return }
+                switch result {
+                case .success(let value):
+                    promise.resolve(value)
+                case .failure(let error):
+                    let rejection = error.rejection
+                    promise.reject(rejection.code, rejection.message)
+                }
+            }
+        }
+    }
+
+    private func retryConnection(promise: Promise) {
+        connectionManager.syncOnBleQueue {
+            guard !rejectUnavailableCapture(promise) else { return }
+            connectionManager.retryConnection { success in
+                guard !self.rejectUnavailableCapture(promise) else { return }
+                promise.resolve(success)
             }
         }
     }
@@ -326,8 +393,24 @@ public class WhoopBleModule: Module {
         return formatter.date(from: value)
     }
 
-    private func deviceSummaryPayload() -> [String: Any] {
-        connectionManager.syncOnBleQueue {
+    /// Read capture eligibility on the BLE queue, including when a queued request settles.
+    private func rejectUnavailableCapture(_ promise: Promise) -> Bool {
+        if let captureFailure {
+            promise.reject("WHOOP_BLE_CAPTURE_FAILED", captureFailure)
+            return true
+        }
+        if captureSuspended {
+            promise.reject(
+                "WHOOP_BLE_CAPTURE_SUSPENDED",
+                "WHOOP capture is suspended. Configure uploads before reconnecting."
+            )
+            return true
+        }
+        return false
+    }
+
+    private func deviceSummaryPayload() throws -> [String: Any] {
+        try connectionManager.syncOnBleQueue {
             let connectedPeripheral = connectionManager.connectedPeripheral
             let peripheralId = connectedPeripheral?.identifier.uuidString ?? lastKnownDeviceId
             let peripheralName = connectedPeripheral?.name ?? lastKnownDeviceName
@@ -335,17 +418,19 @@ public class WhoopBleModule: Module {
                 "id": (peripheralId as Any?) ?? NSNull(),
                 "name": (peripheralName as Any?) ?? NSNull(),
                 "connectionState": connectionManager.state.rawValue,
-                "imuBufferedSamples": sampleBuffer.imuSampleCount,
-                "realtimeBufferedSamples": sampleBuffer.realtimeSampleCount,
+                "imuBufferedSamples": try uploader.sampleCount(stream: .imu),
+                "realtimeBufferedSamples": try uploader.sampleCount(stream: .realtime),
             ]
         }
     }
 
     internal func emitDeviceState() {
-        let payload = deviceSummaryPayload()
-        MainThreadEventEmitter.emit(payload) { [weak self] payload in
-            self?.sendEvent("onDeviceStateChanged", payload)
-        }
+        do {
+            let payload = try deviceSummaryPayload()
+            MainThreadEventEmitter.emit(payload) { [weak self] payload in
+                self?.sendEvent("onDeviceStateChanged", payload)
+            }
+        } catch { failCapture(error) }
     }
 
     /// Buffer-count changes arrive at packet rate; publish them at a bounded cadence.
@@ -353,10 +438,23 @@ public class WhoopBleModule: Module {
     internal func scheduleDeviceStatePublication() {
         guard !deviceStatePublicationScheduled else { return }
         deviceStatePublicationScheduled = true
-        connectionManager.bleQueue.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+        connectionManager.bleQueue.asyncAfter(deadline: .now() + 5) { [weak self] in
             guard let self else { return }
             self.deviceStatePublicationScheduled = false
             self.emitDeviceState()
+        }
+    }
+
+    internal func failCapture(_ error: Error) {
+        connectionManager.syncOnBleQueue {
+            guard captureFailure == nil else { return }
+            captureFailure = error.localizedDescription
+            SentrySDK.capture(error: error)
+            watchdog.stop()
+            connectionManager.disconnect()
+            MainThreadEventEmitter.emit(["message": error.localizedDescription]) { [weak self] payload in
+                self?.sendEvent("onCaptureError", payload)
+            }
         }
     }
 
@@ -379,6 +477,22 @@ public class WhoopBleModule: Module {
             connectionManager.writeToStrap(
                 WhoopBleFrameParser.buildCommandData(command: WhoopBleConstants.commandToggleImuMode)
             )
+        }
+    }
+}
+
+extension WhoopBleModule {
+    /// Install during native Sentry initialization so retired cleanup logs cannot inherit the current account.
+    public static func configureCleanupLogAttribution(_ options: Sentry.Options) {
+        let beforeSendLog = options.beforeSendLog
+        options.beforeSendLog = { log in
+            if log.attributes["operation"]?.value as? String == "disableUploads" {
+                for key in ["user.id", "user.name", "user.email"] {
+                    log.attributes.removeValue(forKey: key)
+                }
+            }
+            if let beforeSendLog { return beforeSendLog(log) }
+            return log
         }
     }
 }

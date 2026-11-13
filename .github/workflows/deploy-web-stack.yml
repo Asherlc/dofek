@@ -2,6 +2,10 @@ name: Deploy Web Stack
 
 on:
   workflow_call:
+    outputs:
+      commit_sha:
+        description: "Source commit verified against the deployed immutable image"
+        value: ${{ jobs.release.outputs.commit_sha }}
     inputs:
       commit_sha:
         description: "Commit SHA to deploy (used to compute image tag if image_tag not provided)"
@@ -94,42 +98,6 @@ on:
         description: "Run ID of the workflow run that dispatched this workflow"
         required: false
         type: string
-  workflow_dispatch:
-    inputs:
-      image_tag:
-        description: "Docker image tag (e.g. sha-abc1234). Defaults to latest."
-        required: false
-        default: "latest"
-        type: string
-      server_host:
-        description: "Docker SSH host (defaults to ORACLE_SERVER_HOST variable)"
-        required: false
-        type: string
-      ssh_user:
-        description: "SSH user for the remote Docker context"
-        required: false
-        type: string
-        default: ubuntu
-      stack_override:
-        description: "Optional extra compose override appended to the stack deploy (e.g. deploy/stack.oracle.yml)"
-        required: false
-        type: string
-        default: ""
-      infisical_environment:
-        description: "Infisical environment to export for the stack"
-        required: false
-        default: prod
-        type: string
-      stack_name:
-        description: "Docker stack name"
-        required: false
-        default: dofek
-        type: string
-      public_url:
-        description: "Public app URL"
-        required: false
-        default: ""
-        type: string
 
 concurrency:
   # Key on the target host so deploys to different hosts (production vs staging) run in
@@ -138,6 +106,30 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # The deploy job masks exported dotenv values. Keep public release metadata
+  # in a separate runner so those masks cannot suppress its job output.
+  release:
+    name: Report deployed source commit
+    needs: [web-stack]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      commit_sha: ${{ steps.source.outputs.sha }}
+    steps:
+      # resolve-deploy-image.ts requires this exact source commit to match the
+      # immutable image's SENTRY_RELEASE before the rollout can succeed.
+      - name: Report validated source commit
+        id: source
+        env:
+          COMMIT_SHA: ${{ inputs.commit_sha != '' && inputs.commit_sha || github.sha }}
+        run: |
+          if [[ ! "$COMMIT_SHA" =~ ^[a-f0-9]{40}$ ]]; then
+            echo "::error::commit_sha must be the full source SHA verified by the successful server rollout"
+            exit 1
+          fi
+          echo "sha=$COMMIT_SHA" >> "$GITHUB_OUTPUT"
+
   web-stack:
     name: Deploy Web Stack
     runs-on: ubuntu-latest
@@ -210,6 +202,7 @@ jobs:
             echo "R2_OPERATIONS_ENV_FILE=$SERVICE_ENV_DIRECTORY/r2-operations.env"
             echo "WEB_ENV_FILE=$SERVICE_ENV_DIRECTORY/web.env"
             echo "WEB_PRE_MIGRATION_ENV_FILE=$SERVICE_ENV_DIRECTORY/web-pre-migration.env"
+            echo "KAFKA_ENV_FILE=$SERVICE_ENV_DIRECTORY/kafka.env"
             echo "WORKER_ENV_FILE=$SERVICE_ENV_DIRECTORY/worker.env"
             echo "METRIC_STREAM_CLICKHOUSE_SINK_ENV_FILE=$SERVICE_ENV_DIRECTORY/metric-stream-clickhouse-sink.env"
             echo "METRIC_STREAM_LIVE_CLICKHOUSE_SINK_ENV_FILE=$SERVICE_ENV_DIRECTORY/metric-stream-live-clickhouse-sink.env"
@@ -329,6 +322,130 @@ jobs:
           process.exit(result.status ?? 1);
           NODE
 
+      - name: Require an already activated Kafka broker
+        run: |
+          set -euo pipefail
+          # Normal application deployments cannot perform the first broker cutover.
+          services="$(docker service ls --format "{{.Name}}")"
+          running_redpanda="$(docker ps --filter "label=com.docker.swarm.service.name=${STACK_NAME}_redpanda" --filter status=running --quiet)"
+          if [ -n "$running_redpanda" ]; then
+            echo "::error::Redpanda tasks are still running; broker-only cutover must finish before application deployment"
+            exit 1
+          fi
+          if printf "%s\n" "$services" | grep -Fxq "${STACK_NAME}_redpanda"; then
+            replicas="$(docker service inspect "${STACK_NAME}_redpanda" --format "{{.Spec.Mode.Replicated.Replicas}}")"
+            if [ "$replicas" != "0" ]; then
+              echo "::error::Redpanda is active; complete the separately qualified broker-only cutover before application deployment. See deploy/kafka/README.md."
+              exit 1
+            fi
+          fi
+          docker service inspect "${STACK_NAME}_kafka" >/dev/null
+          replicas="$(docker service inspect "${STACK_NAME}_kafka" --format "{{.Spec.Mode.Replicated.Replicas}}")"
+          if [ "$replicas" != "1" ]; then
+            echo "::error::Kafka must already be activated with one replica before application deployment"
+            exit 1
+          fi
+
+      - name: Validate host bind mount paths
+        run: |
+          server_host="${DOCKER_HOST#"ssh://${SSH_USER}@"}"
+          if [ -z "$server_host" ] || [ "$server_host" = "$DOCKER_HOST" ]; then
+            echo "::error::Unable to derive SSH host from DOCKER_HOST"
+            exit 1
+          fi
+
+          ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10 "${SSH_USER}@${server_host}" 'sudo -n bash -se' <<'REMOTE'
+          set -euo pipefail
+          # Broker activation owns provisioning; application deploys only validate.
+          test -d /mnt/dofek-data/kafka/plugins/1.2.0/core
+          test -d /mnt/dofek-data/kafka/plugins/1.2.0/s3
+          mountpoint -q /mnt/dofek-data || { echo "::error::Required data filesystem is not mounted"; exit 1; }
+          for path in /mnt/dofek-data/postgres /mnt/dofek-data/clickhouse /mnt/dofek-data/redpanda /mnt/dofek-data/kafka-broker/data /mnt/dofek-data/kafka/data /mnt/dofek-data/databasus /mnt/dofek-data/cloudbeaver /mnt/dofek-data/redis /mnt/dofek-data/peerdb-catalog /mnt/dofek-data/peerdb-minio; do
+            if [ ! -d "$path" ]; then
+              echo "::error::Required host bind mount path is missing: $path"
+              exit 1
+            fi
+          done
+          REMOTE
+
+          ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10 "${SSH_USER}@${server_host}" \
+            'cd /mnt/dofek-data/kafka/plugins && sha256sum --check --strict -' \
+            < deploy/kafka/plugin-sha256.txt
+
+      - name: Wait for Kafka API readiness (external client)
+        run: &kafka_api_readiness |
+          # Outside the broker cgroup. Broker TCP health is port-liveness only.
+          set -euo pipefail
+          image="apache/kafka:4.4.0@sha256:833b867a9585a141da455dc2b57431c65cbccb27f11c91f694444cca9f777e0f"
+          network="${STACK_NAME}_default"
+          attempts=0
+          while true; do
+            broker_image="$(docker service inspect "${STACK_NAME}_kafka" --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}')"
+            update_state="$(docker service inspect "${STACK_NAME}_kafka" --format '{{if .UpdateStatus}}{{.UpdateStatus.State}}{{end}}')"
+            replicas="$(docker service ls --filter "name=${STACK_NAME}_kafka" --format '{{.Replicas}}')"
+            if [ "${broker_image##*@}" != "${image##*@}" ]; then
+              echo "::error::Kafka does not use the qualified broker image"
+              exit 1
+            fi
+            case "$update_state" in
+              paused|rollback_*)
+                echo "::error::Kafka rollout did not complete: $update_state"
+                exit 1
+                ;;
+            esac
+            if [ "$replicas" = "1/1" ] && { [ -z "$update_state" ] || [ "$update_state" = completed ]; } && \
+              docker run --rm --network "$network" --memory=384m \
+                -e KAFKA_HEAP_OPTS="-Xms32m -Xmx256m" \
+                --entrypoint /opt/kafka/bin/kafka-broker-api-versions.sh \
+                "$image" --bootstrap-server kafka:9092 >/dev/null; then
+              break
+            fi
+            attempts=$((attempts + 1))
+            if [ "$attempts" -ge 60 ]; then
+              echo "::error::Kafka API not ready on kafka:9092"
+              exit 1
+            fi
+            sleep 2
+          done
+
+      - name: Verify Kafka metric-stream topics
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+          import { parseEnv } from 'node:util';
+          for (const key of [
+            'WEB_ENV_FILE', 'WORKER_ENV_FILE',
+            'METRIC_STREAM_CLICKHOUSE_SINK_ENV_FILE', 'METRIC_STREAM_LIVE_CLICKHOUSE_SINK_ENV_FILE',
+            'METRIC_STREAM_HISTORY_CLICKHOUSE_SINK_ENV_FILE', 'METRIC_STREAM_R2_ARCHIVE_ENV_FILE',
+            'METRIC_STREAM_LIVE_R2_ARCHIVE_ENV_FILE', 'METRIC_STREAM_HISTORY_R2_ARCHIVE_ENV_FILE',
+          ]) {
+            const environment = parseEnv(readFileSync(process.env[key], 'utf8'));
+            if (environment.REDPANDA_BROKERS !== 'kafka:9092') {
+              throw new Error(`${key}: REDPANDA_BROKERS must target the activated kafka:9092 broker`);
+            }
+          }
+          NODE
+          image="apache/kafka:4.4.0@sha256:833b867a9585a141da455dc2b57431c65cbccb27f11c91f694444cca9f777e0f"
+          available_topics="$(docker run --rm --network "${STACK_NAME}_default" --memory=384m \
+            -e KAFKA_HEAP_OPTS="-Xms32m -Xmx256m" \
+            --entrypoint /opt/kafka/bin/kafka-topics.sh "$image" \
+            --bootstrap-server kafka:9092 --list)"
+          for file in "$METRIC_STREAM_CLICKHOUSE_SINK_ENV_FILE" "$METRIC_STREAM_LIVE_CLICKHOUSE_SINK_ENV_FILE" "$METRIC_STREAM_HISTORY_CLICKHOUSE_SINK_ENV_FILE"; do
+            topic="$(node --input-type=module -e 'import {readFileSync} from "node:fs"; import {parseEnv} from "node:util"; const topic=parseEnv(readFileSync(process.argv[1],"utf8")).METRIC_STREAM_TOPIC; if (!topic) throw new Error("METRIC_STREAM_TOPIC is required"); process.stdout.write(topic);' "$file")"
+            for name in "$topic" "${topic}.quarantine.v1"; do
+              if ! printf "%s\n" "$available_topics" | grep -Fx -- "$name" >/dev/null; then
+                echo "::error::Required Kafka topic is missing: $name"
+                exit 1
+              fi
+              docker run --rm --network "${STACK_NAME}_default" --memory=384m \
+                -e KAFKA_HEAP_OPTS="-Xms32m -Xmx256m" \
+                --entrypoint /opt/kafka/bin/kafka-topics.sh "$image" \
+                --bootstrap-server kafka:9092 --describe --topic "$name"
+            done
+          done
+
+
       - name: Create Apple private key Swarm secret
         run: |
           set -euo pipefail
@@ -351,7 +468,7 @@ jobs:
           echo "CLICKHOUSE_PASSWORD_ENCODED=$encoded_clickhouse_password" >> "$GITHUB_ENV"
 
       - name: Login to GHCR
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -361,7 +478,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          server_host="${DOCKER_HOST#ssh://${SSH_USER}@}"
+          server_host="${DOCKER_HOST#"ssh://${SSH_USER}@"}"
           if [ -z "$server_host" ] || [ "$server_host" = "$DOCKER_HOST" ]; then
             echo "::error::Unable to derive SSH host from DOCKER_HOST"
             exit 1
@@ -403,7 +520,7 @@ jobs:
           pnpm tsx scripts/resolve-deploy-image.ts \
             "ghcr.io/asherlc/dofek:${IMAGE_TAG}" "$(git rev-parse HEAD)" "${STACK_NAME}_web"
 
-          server_host="${DOCKER_HOST#ssh://${SSH_USER}@}"
+          server_host="${DOCKER_HOST#"ssh://${SSH_USER}@"}"
           if [ -z "$server_host" ] || [ "$server_host" = "$DOCKER_HOST" ]; then
             echo "::error::Unable to derive SSH host from DOCKER_HOST"
             exit 1
@@ -437,10 +554,12 @@ jobs:
         env:
           APP_IMAGE: ${{ steps.pull_images.outputs.image_ref }}
         run: |
+          stack_file_flags=()
+          read -r -a stack_file_flags <<< "$STACK_FILE_FLAGS"
           node "$RUNNER_TEMP/run-with-dotenv-env.mjs" \
-            env APP_IMAGE="$APP_IMAGE" docker stack config $STACK_FILE_FLAGS >/dev/null
+            env APP_IMAGE="$APP_IMAGE" docker stack config "${stack_file_flags[@]}" >/dev/null
           node "$RUNNER_TEMP/run-with-dotenv-env.mjs" \
-            env APP_IMAGE="$APP_IMAGE" docker stack config $STACK_FILE_FLAGS -c deploy/stack.cdc-quiesce.yml >/dev/null
+            env APP_IMAGE="$APP_IMAGE" docker stack config "${stack_file_flags[@]}" -c deploy/stack.cdc-quiesce.yml >/dev/null
 
       - name: Upload web assets to R2
         env:
@@ -510,24 +629,6 @@ jobs:
           --bucket "$DB_BACKUPS_R2_BUCKET"
           --retention-days 21
 
-      - name: Validate host bind mount paths
-        run: |
-          server_host="${DOCKER_HOST#ssh://${SSH_USER}@}"
-          if [ -z "$server_host" ] || [ "$server_host" = "$DOCKER_HOST" ]; then
-            echo "::error::Unable to derive SSH host from DOCKER_HOST"
-            exit 1
-          fi
-
-          ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10 "${SSH_USER}@${server_host}" 'bash -se' <<'REMOTE'
-          set -euo pipefail
-          for path in /mnt/dofek-data/postgres /mnt/dofek-data/clickhouse /mnt/dofek-data/redpanda /mnt/dofek-data/databasus /mnt/dofek-data/cloudbeaver /mnt/dofek-data/redis /mnt/dofek-data/peerdb-catalog /mnt/dofek-data/peerdb-minio; do
-            if [ ! -d "$path" ]; then
-              echo "::error::Required host bind mount path is missing: $path"
-              exit 1
-            fi
-          done
-          REMOTE
-
       - name: Select migration deployment mode from image histories
         id: migration_deployment
         env:
@@ -537,15 +638,51 @@ jobs:
           pnpm tsx scripts/prepare-migration-deployment.ts \
             "$APP_IMAGE" "$STACK_NAME" "$PRE_MIGRATION_APP_IMAGE"
 
+      - name: Install Kafka JMX exporter
+        env:
+          APP_IMAGE: ${{ steps.pull_images.outputs.image_ref }}
+        run: |
+          set -euo pipefail
+          exporter_version="1.7.0"
+          exporter_sha256="0ad843261c567d1924a017d542e14c40f2afff523d940c25ee000742fde4b3a9"
+          exporter_name="jmx_prometheus_javaagent-${exporter_version}.jar"
+          exporter_path="$RUNNER_TEMP/$exporter_name"
+          exporter_url="https://github.com/prometheus/jmx_exporter/releases/download/${exporter_version}/${exporter_name}"
+
+          curl --fail --location --silent --show-error "$exporter_url" --output "$exporter_path"
+          printf '%s  %s\n' "$exporter_sha256" "$exporter_path" | sha256sum --check --strict -
+
+          docker run --rm -i \
+            --user 0:0 \
+            --mount type=bind,source=/mnt/dofek-data/kafka/plugins,target=/plugins \
+            --entrypoint sh \
+            "$APP_IMAGE" \
+            -euc '
+              install_path="/plugins/jmx/1.7.0/jmx_prometheus_javaagent-1.7.0.jar"
+              temporary_path="${install_path}.tmp.$$"
+              expected_sha="0ad843261c567d1924a017d542e14c40f2afff523d940c25ee000742fde4b3a9"
+              mkdir -p "${install_path%/*}"
+              trap "rm -f \"$temporary_path\"" EXIT
+              cat > "$temporary_path"
+              chmod 0444 "$temporary_path"
+              printf "%s  %s\n" "$expected_sha" "$temporary_path" | sha256sum -c -
+              mv -f "$temporary_path" "$install_path"
+              printf "%s  %s\n" "$expected_sha" "$install_path" | sha256sum -c -
+              test "$(stat -c "%a" "$install_path")" = 444
+            ' < "$exporter_path"
+          rm -f "$exporter_path"
+
       - name: Apply dependency stack before migrations
         env:
           APP_IMAGE: ${{ steps.pull_images.outputs.pre_migration_image_ref }}
           MIGRATION_DEPLOYMENT_MODE: ${{ steps.migration_deployment.outputs.mode }}
           MIGRATION_MAINTENANCE_BOUNDARY: ${{ steps.migration_deployment.outputs.maintenance_boundary }}
         run: |
-          maintenance_flags=""
+          stack_file_flags=()
+          read -r -a stack_file_flags <<< "$STACK_FILE_FLAGS"
+          maintenance_flags=()
           if [ "$MIGRATION_DEPLOYMENT_MODE" = "maintenance" ]; then
-            maintenance_flags="-c deploy/stack.maintenance.yml"
+            maintenance_flags=(-c deploy/stack.maintenance.yml)
           fi
 
           echo "Applying dependency changes with app image ${APP_IMAGE} before migrations (${MIGRATION_DEPLOYMENT_MODE})."
@@ -553,11 +690,59 @@ jobs:
             node "$RUNNER_TEMP/run-with-dotenv-env.mjs" \
             env APP_IMAGE="$APP_IMAGE" WEB_ENV_FILE="$WEB_PRE_MIGRATION_ENV_FILE" \
               MIGRATION_MAINTENANCE_BOUNDARY="$MIGRATION_MAINTENANCE_BOUNDARY" \
-            docker stack deploy $STACK_FILE_FLAGS \
+            docker stack deploy "${stack_file_flags[@]}" \
               -c deploy/stack.cdc-quiesce.yml \
               -c deploy/stack.migration-quiesce.yml \
-              $maintenance_flags \
+              "${maintenance_flags[@]}" \
               --with-registry-auth --detach=true "$STACK_NAME"
+
+      - name: Verify Kafka after dependency stack apply
+        run: *kafka_api_readiness
+
+      - name: Verify Kafka tiered backend before migrations
+        run: &kafka_backend_verification |
+          set -euo pipefail
+          backend_directory="$(mktemp -d "$RUNNER_TEMP/kafka-backend.XXXXXX")"
+          trap 'rm -rf "$backend_directory"' EXIT
+          broker_task="$(docker service ps --no-trunc --filter desired-state=running --format '{{.ID}}' "${STACK_NAME}_kafka")"
+          if [ -z "$broker_task" ] || [[ "$broker_task" == *$'\n'* ]]; then
+            echo "::error::Expected one running Kafka task for backend verification"
+            exit 1
+          fi
+          broker_container="$(docker inspect --format '{{.Status.ContainerStatus.ContainerID}}' "$broker_task")"
+          docker cp "${broker_container}:/opt/kafka/config/server.properties" "$backend_directory/server.properties"
+          docker inspect --format '{{json .Config.Env}}' "$broker_container" > "$backend_directory/broker.json"
+          docker service inspect "${STACK_NAME}_worker" --format '{{json .Spec.TaskTemplate.ContainerSpec.Env}}' > "$backend_directory/worker.json"
+          node --input-type=module - "$backend_directory" <<'NODE'
+          import { readFileSync } from 'node:fs';
+          import { parseEnv } from 'node:util';
+          const directory = process.argv[2];
+          const expected = parseEnv(readFileSync(process.env.WORKER_ENV_FILE, 'utf8'));
+          const assignments = (file) => new Map(JSON.parse(readFileSync(`${directory}/${file}`, 'utf8')).map((line) => {
+            const separator = line.indexOf('=');
+            return [line.slice(0, separator), line.slice(separator + 1)];
+          }));
+          const broker = assignments('broker.json');
+          const worker = assignments('worker.json');
+          for (const key of ['KAFKA_CLUSTER_ID', 'KAFKA_TIERED_STORAGE_BUCKET', 'KAFKA_TIERED_STORAGE_ENDPOINT', 'KAFKA_TIERED_STORAGE_REGION', 'KAFKA_TIERED_STORAGE_ACCESS_KEY_ID', 'KAFKA_TIERED_STORAGE_SECRET_ACCESS_KEY']) {
+            if (!expected[key] || worker.get(key) !== expected[key]) throw new Error(`Kafka worker backend mismatch: ${key}`);
+          }
+          for (const [brokerKey, workerKey] of [['CLUSTER_ID', 'KAFKA_CLUSTER_ID'], ['AWS_ACCESS_KEY_ID', 'KAFKA_TIERED_STORAGE_ACCESS_KEY_ID'], ['AWS_SECRET_ACCESS_KEY', 'KAFKA_TIERED_STORAGE_SECRET_ACCESS_KEY']]) {
+            if (broker.get(brokerKey) !== worker.get(workerKey)) throw new Error(`Kafka broker backend mismatch: ${brokerKey}`);
+          }
+          const properties = readFileSync(`${directory}/server.properties`, 'utf8').split(/\r?\n/);
+          for (const [key, value] of [
+            ['rsm.config.storage.backend.class', 'io.aiven.kafka.tieredstorage.storage.s3.S3Storage'],
+            ['rsm.config.storage.s3.bucket.name', worker.get('KAFKA_TIERED_STORAGE_BUCKET')],
+            ['rsm.config.storage.s3.endpoint.url', worker.get('KAFKA_TIERED_STORAGE_ENDPOINT')],
+            ['rsm.config.storage.s3.region', worker.get('KAFKA_TIERED_STORAGE_REGION')],
+            ['rsm.config.key.prefix', `${worker.get('KAFKA_CLUSTER_ID')}/`],
+          ]) {
+            const matches = properties.filter((line) => line.startsWith(`${key}=`));
+            if (matches.length !== 1 || matches[0] !== `${key}=${value}`) throw new Error(`Kafka consumed backend mismatch: ${key}`);
+          }
+          console.log('Kafka broker and worker tiered backend match');
+          NODE
 
       - name: Wait for pre-migration web convergence
         if: steps.migration_deployment.outputs.mode == 'rolling'
@@ -765,8 +950,10 @@ jobs:
           MIGRATION_DEPLOYMENT_MODE: ${{ steps.migration_deployment.outputs.mode }}
         run: |
           echo "web_convergence_failed=false" >> "$GITHUB_OUTPUT"
+          stack_file_flags=()
+          read -r -a stack_file_flags <<< "$STACK_FILE_FLAGS"
           set +e
-          timeout 35m node "$RUNNER_TEMP/run-with-dotenv-env.mjs" env APP_IMAGE="$APP_IMAGE" docker stack deploy $STACK_FILE_FLAGS -c deploy/stack.cdc-quiesce.yml --with-registry-auth --prune --detach=true "$STACK_NAME"
+          timeout 35m node "$RUNNER_TEMP/run-with-dotenv-env.mjs" env APP_IMAGE="$APP_IMAGE" docker stack deploy "${stack_file_flags[@]}" -c deploy/stack.cdc-quiesce.yml --with-registry-auth --prune --detach=true "$STACK_NAME"
           status=$?
           set -e
           if [ "$status" -eq 124 ]; then
@@ -777,7 +964,7 @@ jobs:
           fi
 
           wait_deadline_seconds=$((SECONDS + 2100))
-          for service in web worker cdc-health analytics-worker metric-stream-clickhouse-sink metric-stream-live-clickhouse-sink metric-stream-history-clickhouse-sink metric-stream-r2-archive metric-stream-live-r2-archive metric-stream-history-r2-archive processing-reconciliation clickhouse databasus; do
+          for service in kafka web worker cdc-health analytics-worker metric-stream-clickhouse-sink metric-stream-live-clickhouse-sink metric-stream-history-clickhouse-sink metric-stream-r2-archive metric-stream-live-r2-archive metric-stream-history-r2-archive processing-reconciliation clickhouse databasus; do
             service_name="${STACK_NAME}_${service}"
             while true; do
               update_state="$(
@@ -877,6 +1064,12 @@ jobs:
               sleep 10
             done
           done
+
+      - name: Verify Kafka after requested-image stack apply
+        run: *kafka_api_readiness
+
+      - name: Verify Kafka tiered backend after requested-image stack apply
+        run: *kafka_backend_verification
 
       - name: Wait for Postgres writable after stack deploy
         run: |
@@ -1074,7 +1267,93 @@ jobs:
             "${APP_IMAGE}" \
             -euc 'export DATABASE_URL="postgres://health:${POSTGRES_PASSWORD}@db:5432/health"; export CLICKHOUSE_URL="http://default:${CLICKHOUSE_PASSWORD_ENCODED}@clickhouse:8123"; exec ./entrypoint.sh peerdb-cdc-contract verify /run/dofek-peerdb-cdc/artifact.json'
 
-      - name: Deploy ClickHouse consumer services
+      - name: Verify Kafka before restoring consumers
+        run: *kafka_api_readiness
+
+      - name: Converge Kafka metric-stream topic policy
+        if: success() && steps.deploy_stack_quiesced.conclusion == 'success' && steps.configure_clickhouse_cdc.conclusion == 'success' && steps.verify_peerdb_cdc_contract.conclusion == 'success'
+        run: |
+          set -euo pipefail
+          # Old sink tasks have exited at migration quiescence. The requested
+          # image contains the validating writer; consumers remain stopped here.
+          commands="$(node --input-type=module <<'NODE'
+          import { readFileSync, writeFileSync } from 'node:fs';
+          import { parseEnv } from 'node:util';
+          const policy = JSON.parse(readFileSync('deploy/kafka/topic-policy.json', 'utf8'));
+          const required = ['cleanup.policy', 'retention.ms', 'retention.bytes', 'local.retention.bytes', 'local.retention.ms', 'segment.ms', 'segment.bytes', 'remote.storage.enable'];
+          for (const role of ['source', 'quarantine']) {
+            for (const key of required) {
+              if (typeof policy[role]?.[key] !== 'string' || !policy[role][key]) {
+                throw new Error(`Kafka ${role} policy is missing ${key}`);
+              }
+            }
+          }
+          const targets = [
+            'METRIC_STREAM_CLICKHOUSE_SINK_ENV_FILE',
+            'METRIC_STREAM_LIVE_CLICKHOUSE_SINK_ENV_FILE',
+            'METRIC_STREAM_HISTORY_CLICKHOUSE_SINK_ENV_FILE',
+          ].flatMap((key) => {
+            const environment = parseEnv(readFileSync(process.env[key], 'utf8'));
+            const topic = environment.METRIC_STREAM_TOPIC;
+            if (!topic || environment.REDPANDA_BROKERS !== 'kafka:9092') {
+              throw new Error(`${key}: Kafka topic and kafka:9092 broker are required`);
+            }
+            return [{ topic, config: policy.source }, { topic: `${topic}.quarantine.v1`, config: policy.quarantine }];
+          });
+          if (new Set(targets.map(({ topic }) => topic)).size !== targets.length) {
+            throw new Error('Kafka metric-stream topic routes must be distinct');
+          }
+          const commands = targets.map(({ topic, config }) => `${topic}\t${Object.entries(config).map(([key, value]) => `${key}=${value}`).join(',')}`);
+          writeFileSync(`${process.env.RUNNER_TEMP}/kafka-topic-policy-targets.json`, JSON.stringify(targets));
+          process.stdout.write(commands.join('\n'));
+          NODE
+          )" || exit "$?"
+          image="apache/kafka:4.4.0@sha256:833b867a9585a141da455dc2b57431c65cbccb27f11c91f694444cca9f777e0f"
+          while IFS=$'\t' read -r topic configuration; do
+            docker run --rm --network "${STACK_NAME}_default" --memory=384m \
+              -e KAFKA_HEAP_OPTS="-Xms32m -Xmx256m" \
+              --entrypoint /opt/kafka/bin/kafka-configs.sh "$image" \
+              --bootstrap-server kafka:9092 --entity-type topics --entity-name "$topic" \
+              --alter --add-config "$configuration" || exit "$?"
+          done <<< "$commands"
+
+      - name: Verify Kafka metric-stream topic policy
+        if: success() && steps.deploy_stack_quiesced.conclusion == 'success' && steps.configure_clickhouse_cdc.conclusion == 'success' && steps.verify_peerdb_cdc_contract.conclusion == 'success'
+        env:
+          APP_IMAGE: ${{ steps.pull_images.outputs.image_ref }}
+        run: &verify_kafka_topic_policy |
+          set -euo pipefail
+          targets="$(cat "$RUNNER_TEMP/kafka-topic-policy-targets.json")" || exit "$?"
+          docker run --rm -i --network "${STACK_NAME}_default" --memory=384m \
+            --entrypoint node "${APP_IMAGE:?APP_IMAGE is required}" \
+            --input-type=module - "$targets" <<'NODE' || exit "$?"
+          import kafkaJs from 'kafkajs';
+          const targets = JSON.parse(process.argv[2]);
+          const admin = new kafkaJs.Kafka({ brokers: ['kafka:9092'], clientId: 'dofek-deploy-topic-policy' }).admin();
+          await admin.connect();
+          try {
+            const { resources } = await admin.describeConfigs({
+              includeSynonyms: false,
+              resources: targets.map(({ topic, config }) => ({ type: kafkaJs.ConfigResourceTypes.TOPIC, name: topic, configNames: Object.keys(config) })),
+            });
+            if (resources.length !== targets.length) throw new Error('Incomplete Kafka topic-policy readback');
+            for (const { topic, config } of targets) {
+              const matches = resources.filter((resource) => resource.resourceName === topic && resource.resourceType === kafkaJs.ConfigResourceTypes.TOPIC);
+              if (matches.length !== 1 || matches[0].errorCode !== 0) throw new Error(`Cannot verify Kafka policy for ${topic}`);
+              for (const [key, expected] of Object.entries(config)) {
+                const entries = matches[0].configEntries.filter((entry) => entry.configName === key);
+                if (entries.length !== 1 || entries[0].configValue !== expected || entries[0].configSource !== kafkaJs.ConfigSource.TOPIC_CONFIG) {
+                  throw new Error(`${topic}: ${key} must be explicitly configured as ${expected}; found ${entries[0]?.configValue ?? 'missing'} (source ${entries[0]?.configSource ?? 'missing'})`);
+                }
+              }
+            }
+            console.log(`Verified selected policy on ${targets.length} Kafka topics`);
+          } finally {
+            await admin.disconnect();
+          }
+          NODE
+
+      - name: Deploy and verify remaining services
         id: deploy_stack_full
         if: success() && steps.deploy_stack_quiesced.conclusion == 'success' && steps.configure_clickhouse_cdc.conclusion == 'success' && steps.verify_peerdb_cdc_contract.conclusion == 'success'
         env:
@@ -1111,9 +1390,10 @@ jobs:
             exit "$status"
           fi
 
+          expected_ota_image="$(pnpm tsx scripts/stack-service-image.ts deploy/stack.yml ota)"
           wait_deadline_seconds=$((SECONDS + 1200))
           stability_window_seconds=60
-          for service in analytics-worker metric-stream-clickhouse-sink metric-stream-live-clickhouse-sink metric-stream-history-clickhouse-sink metric-stream-r2-archive metric-stream-live-r2-archive metric-stream-history-r2-archive processing-reconciliation; do
+          for service in kafka ota analytics-worker metric-stream-clickhouse-sink metric-stream-live-clickhouse-sink metric-stream-history-clickhouse-sink metric-stream-r2-archive metric-stream-live-r2-archive metric-stream-history-r2-archive processing-reconciliation; do
             service_name="${STACK_NAME}_${service}"
             stable_task_id=""
             stable_since_seconds=0
@@ -1183,6 +1463,9 @@ jobs:
                 stable_elapsed_seconds=$((SECONDS - stable_since_seconds))
                 if [ "$stable_elapsed_seconds" -ge "$stability_window_seconds" ]; then
                   case "$service" in
+                    ota)
+                      pnpm tsx scripts/verify-deploy-image.ts "$expected_ota_image" "$service_name"
+                      ;;
                     analytics-worker|metric-stream-clickhouse-sink|metric-stream-live-clickhouse-sink|metric-stream-history-clickhouse-sink|processing-reconciliation)
                       pnpm tsx scripts/verify-deploy-image.ts "$APP_IMAGE" "$service_name"
                       ;;
@@ -1212,6 +1495,15 @@ jobs:
             fi
             pnpm tsx scripts/verify-deploy-image.ts "$APP_IMAGE" "${STACK_NAME}_${service}"
           done
+
+      - name: Verify Kafka after full stack apply
+        run: *kafka_api_readiness
+
+      - name: Verify Kafka topic policy after consumer startup
+        if: success() && steps.deploy_stack_full.conclusion == 'success'
+        env:
+          APP_IMAGE: ${{ steps.pull_images.outputs.image_ref }}
+        run: *verify_kafka_topic_policy
 
       - name: Remove unused Apple private key Swarm secrets
         if: steps.deploy_stack_full.outcome == 'success'
@@ -1248,7 +1540,7 @@ jobs:
 
       - name: Record Sentry production release
         if: steps.deploy_stack_full.outcome == 'success' && steps.deploy_stack_quiesced.outputs.web_convergence_failed != 'true' && (env.DEPLOY_ENVIRONMENT == 'prod' || env.DEPLOY_ENVIRONMENT == 'production')
-        uses: getsentry/action-release@6fb9aeade7061441cf3864e34fbe11a1457ad7dc # v3.7.1
+        uses: getsentry/action-release@e6703d0b00208e0b3687ba660d18ab5af7892821 # v3.7.2
         env:
           DOCKER_HOST: unix:///var/run/docker.sock
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
@@ -1269,7 +1561,7 @@ jobs:
       - name: Report quiesced processing services
         if: failure() && steps.deploy_stack_quiesced.conclusion == 'success' && steps.deploy_stack_full.conclusion == 'skipped'
         run: |
-          message="analytics-worker, all three metric-stream ClickHouse sinks, and processing-reconciliation remain quiesced because a post-quiesce prerequisite failed. Resolve the failed readiness or CDC setup step, then rerun the deployment."
+          message="analytics-worker, all three metric-stream ClickHouse sinks, and processing-reconciliation remain quiesced because a post-quiesce prerequisite failed. Resolve the failed readiness, CDC setup, or topic-policy convergence/verification step, then rerun the deployment."
           if [ "${{ steps.deploy_stack_quiesced.outputs.web_convergence_failed }}" = "true" ]; then
             message="$message The web service rolled back or reverted to its previous image; its prior Swarm configuration remains in place."
           fi

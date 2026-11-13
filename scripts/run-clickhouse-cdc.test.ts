@@ -103,7 +103,8 @@ describe("run-clickhouse-cdc", () => {
     expect(mockSetupClickHouseCdcFromEnv).toHaveBeenCalledTimes(1);
     expect(mockSentryInit).toHaveBeenCalledWith({
       dsn: "dsn-local",
-      skipOpenTelemetrySetup: true,
+      enableOpenTelemetrySetup: false,
+      dataCollection: expect.any(Object),
     });
     expect(process.env.DATABASE_URL).toBe(
       "postgres://user:postgres-password@localhost:5439/health",
@@ -130,7 +131,8 @@ describe("run-clickhouse-cdc", () => {
     expect(mockSentryClose).toHaveBeenCalledWith(2_000);
     expect(mockSentryInit).toHaveBeenCalledWith({
       dsn: "dsn-local",
-      skipOpenTelemetrySetup: true,
+      enableOpenTelemetrySetup: false,
+      dataCollection: expect.any(Object),
     });
     expect(process.exit).toHaveBeenCalledWith(1);
   });

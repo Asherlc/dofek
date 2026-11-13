@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { encodeActivityRefreshScope } from "./activity-refresh-scope.ts";
 
 export function readModelSql(modelFileName: string): string {
   try {
@@ -18,9 +19,35 @@ export function compactWhitespace(value: string): string {
 
 export function renderDbtModelSql(
   modelSql: string,
-  options: { isIncremental: boolean; activityRefreshScoped?: boolean },
+  options: {
+    isIncremental: boolean;
+    activityRefreshScoped?: boolean;
+    activityRefreshIds?: readonly string[];
+    activityStepCadenceRepairScoped?: boolean;
+  },
 ): string {
-  const withOrigin = modelSql.replace(/\{\{\s*activity_origin\(\)\s*\}\}/g, () => {
+  // Focused fixtures supply their already-resolved scope. Actual dbt integration tests
+  // exercise the user-fenced HealthKit expansion against the complete source schema.
+  const withScope = modelSql
+    .replace("{{ activity_refresh_scope_ctes() }}", () => {
+      if (!options.activityRefreshScoped) return "";
+      if (!options.activityRefreshIds)
+        throw new Error("Scoped model rendering requires activity IDs");
+      const macro = readFileSync(
+        new URL("../../analytics/macros/activity_refresh_scope.sql", import.meta.url),
+        "utf8",
+      );
+      const body = macro.match(
+        /\{% macro activity_refresh_requested_id_ctes\(\) %\}([\s\S]*?)\{% endmacro %\}/,
+      )?.[1];
+      if (!body) throw new Error("Could not find packed activity scope macro body");
+      return `${body.replace(
+        '{{ var("activity_refresh_activity_ids_base64") }}',
+        encodeActivityRefreshScope(options.activityRefreshIds),
+      )}dofek_refresh_requested_ids AS dofek_refresh_ids,`;
+    })
+    .replaceAll("{{ activity_refresh_ids() }}", "dofek_refresh_ids");
+  const withOrigin = withScope.replace(/\{\{\s*activity_origin\(\)\s*\}\}/g, () => {
     const macro = readFileSync(
       new URL("../../analytics/macros/activity_origin.sql", import.meta.url),
       "utf8",
@@ -60,7 +87,11 @@ interface DbtBooleanFrame {
 
 function renderDbtBooleanBranches(
   modelSql: string,
-  options: { isIncremental: boolean; activityRefreshScoped?: boolean },
+  options: {
+    isIncremental: boolean;
+    activityRefreshScoped?: boolean;
+    activityStepCadenceRepairScoped?: boolean;
+  },
 ): string {
   const frames: DbtBooleanFrame[] = [];
   let renderedSql = "";
@@ -103,6 +134,7 @@ function renderDbtBooleanBranches(
     frames.pop();
     const booleanConditions = new Map<string, boolean | undefined>([
       ["is_incremental()", options.isIncremental],
+      ["activity_step_cadence_repair_scoped", options.activityStepCadenceRepairScoped ?? false],
       ["activity_refresh_scoped", options.activityRefreshScoped],
       [
         "not activity_refresh_scoped",

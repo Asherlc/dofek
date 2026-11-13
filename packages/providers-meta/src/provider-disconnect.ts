@@ -11,7 +11,7 @@ export function providerDangerZoneCopy(providerName: string): ProviderDangerZone
   return {
     deleteDescription: `Permanently delete every ${providerName} record from Dofek. This does not change whether ${providerName} is connected.`,
     disconnectActionLabel: `Disconnect ${providerName}`,
-    disconnectDescription: `Disconnecting ${providerName} removes its saved authorization and stops future syncs. Data already imported into Dofek is kept.`,
+    disconnectDescription: `Disconnecting ${providerName} removes its saved authorization and stops future syncs. Data already imported into Dofek is kept.${providerName === "theCrag" ? " If you issued a personal API key, revoke it in theCrag Settings > API Keys before disconnecting." : ""}`,
     disconnectPendingLabel: `Disconnecting ${providerName}...`,
     disconnectTitle: `Disconnect ${providerName}?`,
   };

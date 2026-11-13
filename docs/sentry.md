@@ -91,9 +91,21 @@ data loss. Repeated reports of the same operation can produce multiple events.
 No user ID, request URL, or error text is supplied as a custom count property.
 The existing SDK identity/consent behavior still applies.
 
-Mobile also records informational logs and breadcrumbs. The existing background
-sync policy counts known timeouts and lost connections as `background_transport`;
-it includes WHOOP IMU/realtime uploads. This does not promise subsequent delivery.
+Mobile also records informational logs and breadcrumbs.
+
+Auth restore's exact `fetch failed: The network connection was lost.` outcome
+counts as `connection_lost` only with source `auth-state-restore`. Other sources
+retain their existing reporting policy; unknown underlying causes remain
+exceptions. This policy changes reporting only; it does not establish recovery.
+Verify session preservation and subsequent
+successful server authentication separately. Apple describes the underlying
+[connection-loss outcome](https://developer.apple.com/library/archive/qa/qa1941/_index.html).
+
+The existing background sync policy counts known timeouts and lost connections
+as `background_transport`;
+it includes WHOOP IMU/realtime uploads and Apple Health sync-status uploads
+(`apple-health-sync-log`). The [classifier](../packages/mobile/lib/health-kit-errors.ts)
+keeps parsing, schema and storage failures reportable. This does not promise subsequent delivery.
 Inspect retained buffers and sync progress when investigating sustained failure.
 Query the existing log destination using its [map-field contract](axiom-observability-runbook.md):
 
@@ -126,6 +138,24 @@ message copied onto an outer wrapper does not make an underlying storage or
 authorization failure expected. Parse/schema evidence anywhere in the chain
 remains reportable; a generic wrapper around a genuine abort remains a handled
 cancellation. See the [shared classifier](../packages/telemetry/src/handled-failure.ts).
+
+## Provider sync failures
+
+Users receive failed-sync status and reconnect/retry guidance through the shared
+sync API and the web/mobile history presentation. Per-attempt exception reporting
+uses the [provider reporting predicate](../src/lib/provider-error-reporting.ts):
+recognized typed auth failures, transport outages/timeouts, rate limits, and
+direct cancellation remain in operational status, logs, and metrics. Unexpected
+schema, parsing, database, and unexplained authorization failures remain
+reportable. A generic HTTP 401/403 alone does not establish an expected account
+failure. This preserves Sentry's role for actionable exceptions; see its
+[capture API](https://docs.sentry.io/platforms/javascript/guides/node/usage/#capturing-errors).
+
+The [sync-log policy](../src/db/sync-log.ts) separately raises a warning at exactly
+two consecutive scheduled overall-sync failures. The
+[user notification policy](../src/db/provider-issue-notification.ts) deduplicates
+notifications until recovery. Suppressing an expected per-attempt exception does
+not disable either persistence escalation or user-facing failure information.
 
 ## Access failures
 

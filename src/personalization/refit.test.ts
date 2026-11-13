@@ -18,14 +18,7 @@ vi.mock("../logger.ts", () => ({
   },
 }));
 
-import {
-  parseExponentialMovingAverageRows,
-  parseReadinessRows,
-  parseSleepRows,
-  parseStressRows,
-  parseTrainingImpulseRows,
-  refitAllParams,
-} from "./refit.ts";
+import { parseExponentialMovingAverageRows, parseStressRows, refitAllParams } from "./refit.ts";
 
 function createMockDb(queryResults: Record<string, unknown>[][] = []) {
   let callIndex = 0;
@@ -66,18 +59,8 @@ describe("refitAllParams", () => {
     expect(result).not.toBeNull();
     expect(result.version).toBe(2);
     expect(result.exponentialMovingAverage).toBeNull();
-    expect(result.readinessWeights).toBeNull();
-    expect(result.sleepTarget).toBeNull();
     expect(result.stressThresholds).toBeNull();
-    expect(result.trainingImpulseConstants).toBeNull();
     expect(result.fittedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
-    expect(result.successfulFitAt).toEqual({
-      exponentialMovingAverage: null,
-      readinessWeights: null,
-      sleepTarget: null,
-      stressThresholds: null,
-      trainingImpulseConstants: null,
-    });
   });
 
   it("calls execute for data queries and save", async () => {
@@ -94,7 +77,7 @@ describe("refitAllParams", () => {
 
     await refitAllParams(db, "user-1", sensorStore);
 
-    expect(sensorStore.query).toHaveBeenCalledTimes(6);
+    expect(sensorStore.query).toHaveBeenCalledTimes(2);
     expect(sensorStore.query).toHaveBeenCalledWith(
       expect.anything(),
       expect.stringContaining("analytics.activity_summary asum"),
@@ -105,25 +88,6 @@ describe("refitAllParams", () => {
       expect.stringContaining("FROM analytics.activity_summary asum"),
       expect.objectContaining({ userId: "user-1" }),
     );
-    const trainingImpulseQuery = sensorStore.query.mock.calls
-      .map(([, query]) => query)
-      .find((query) => query.includes("ftp_estimate AS"));
-    expect(trainingImpulseQuery).toContain("asum.normalized_power");
-    expect(trainingImpulseQuery).not.toContain("analytics.deduped_sensor");
-    expect(trainingImpulseQuery).not.toContain("rolling_power");
-
-    const sleepQueries = sensorStore.query.mock.calls
-      .map(([, query]) => query)
-      .filter((query) => query.includes("analytics.daily_sleep"));
-    expect(sleepQueries).toHaveLength(2);
-    expect(sleepQueries.every((query) => query.includes("FINAL"))).toBe(true);
-    expect(sleepQueries).toEqual(
-      expect.arrayContaining([
-        expect.stringContaining("sleep.date >= toDate(now() - INTERVAL 425 DAY)"),
-        expect.stringContaining("sleep.date >= toDate(now() - INTERVAL 365 DAY)"),
-      ]),
-    );
-    expect(sleepQueries.every((query) => !query.includes("sleep.started_at > now()"))).toBe(true);
   });
 
   it("handles individual fitter errors gracefully", async () => {
@@ -152,14 +116,11 @@ describe("refitAllParams", () => {
   });
 
   it("handles save failure gracefully (logs but does not throw)", async () => {
-    // 3 PG fitters (readiness, sleep, stress) each call db.execute once,
-    // then loadPersonalizedParams and savePersonalizedParams each call execute.
-    // Reject the save call (the 5th).
     let callCount = 0;
     const db = {
       execute: vi.fn().mockImplementation(() => {
         callCount++;
-        if (callCount === 5) return Promise.reject(new Error("Save failed"));
+        if (callCount === 3) return Promise.reject(new Error("Save failed"));
         return Promise.resolve([]);
       }),
     };
@@ -180,7 +141,7 @@ describe("refitAllParams", () => {
     const db = {
       execute: vi.fn().mockImplementation(() => {
         callCount++;
-        if (callCount === 4) return Promise.reject(loadError);
+        if (callCount === 2) return Promise.reject(loadError);
         return Promise.resolve([]);
       }),
     };
@@ -201,10 +162,7 @@ describe("refitAllParams", () => {
       fittedAt: "2026-01-01T00:00:00.000Z",
       successfulFitAt: {
         exponentialMovingAverage: "2025-12-15T00:00:00.000Z",
-        readinessWeights: null,
-        sleepTarget: "2025-12-20T00:00:00.000Z",
         stressThresholds: null,
-        trainingImpulseConstants: null,
       },
       exponentialMovingAverage: {
         chronicTrainingLoadDays: 35,
@@ -212,43 +170,32 @@ describe("refitAllParams", () => {
         sampleCount: 40,
         correlation: 0.5,
       },
-      readinessWeights: null,
-      sleepTarget: { minutes: 500, sampleCount: 20 },
       stressThresholds: null,
-      trainingImpulseConstants: null,
     };
-    const db = createMockDb([[], [], [], [{ value: existingParams }], []]);
+    const db = createMockDb([[], [{ value: existingParams }], []]);
 
     const result = await refitAllParams(db, "user-1", createMockSensorStore());
 
     expect(result.exponentialMovingAverage).toEqual(existingParams.exponentialMovingAverage);
-    expect(result.sleepTarget).toEqual(existingParams.sleepTarget);
     expect(result.fittedAt).not.toBe(existingParams.fittedAt);
     expect(result.successfulFitAt?.exponentialMovingAverage).toBe(
       existingParams.successfulFitAt.exponentialMovingAverage,
     );
-    expect(result.successfulFitAt?.sleepTarget).toBe(existingParams.successfulFitAt.sleepTarget);
   });
 
   it("preserves every successful fit timestamp when fulfilled refits return no fit", async () => {
     const successfulFitAt = {
       exponentialMovingAverage: "2025-12-15T00:00:00.000Z",
-      readinessWeights: "2025-12-16T00:00:00.000Z",
-      sleepTarget: "2025-12-17T00:00:00.000Z",
       stressThresholds: "2025-12-18T00:00:00.000Z",
-      trainingImpulseConstants: "2025-12-19T00:00:00.000Z",
     };
     const existingParams = {
       version: 2,
       fittedAt: "2026-01-01T00:00:00.000Z",
       successfulFitAt,
       exponentialMovingAverage: null,
-      readinessWeights: null,
-      sleepTarget: null,
       stressThresholds: null,
-      trainingImpulseConstants: null,
     };
-    const db = createMockDb([[], [], [], [{ value: existingParams }], []]);
+    const db = createMockDb([[], [{ value: existingParams }], []]);
 
     const result = await refitAllParams(db, "user-1", createMockSensorStore());
 
@@ -258,27 +205,20 @@ describe("refitAllParams", () => {
   it("preserves every successful fit timestamp when all refits reject", async () => {
     const successfulFitAt = {
       exponentialMovingAverage: "2025-12-15T00:00:00.000Z",
-      readinessWeights: "2025-12-16T00:00:00.000Z",
-      sleepTarget: "2025-12-17T00:00:00.000Z",
       stressThresholds: "2025-12-18T00:00:00.000Z",
-      trainingImpulseConstants: "2025-12-19T00:00:00.000Z",
     };
     const existingParams = {
       version: 2,
       fittedAt: "2026-01-01T00:00:00.000Z",
       successfulFitAt,
       exponentialMovingAverage: null,
-      readinessWeights: null,
-      sleepTarget: null,
       stressThresholds: null,
-      trainingImpulseConstants: null,
     };
     let dbCallCount = 0;
     const db = {
       execute: vi.fn().mockImplementation(() => {
         dbCallCount++;
-        if (dbCallCount === 1) return Promise.reject(new Error("Fitter query failed"));
-        if (dbCallCount === 2) return Promise.resolve([{ value: existingParams }]);
+        if (dbCallCount === 1) return Promise.resolve([{ value: existingParams }]);
         return Promise.resolve([]);
       }),
     };
@@ -296,21 +236,14 @@ describe("refitAllParams", () => {
       version: 1,
       fittedAt: "2026-01-01T00:00:00.000Z",
       exponentialMovingAverage: null,
-      readinessWeights: null,
-      sleepTarget: null,
       stressThresholds: null,
-      trainingImpulseConstants: null,
     };
-    const db = createMockDb([[], [], [], [{ value: existingParams }], []]);
+    const db = createMockDb([[], [{ value: existingParams }], []]);
 
     const result = await refitAllParams(db, "user-1", createMockSensorStore());
-
     expect(result.successfulFitAt).toEqual({
       exponentialMovingAverage: null,
-      readinessWeights: null,
-      sleepTarget: null,
       stressThresholds: null,
-      trainingImpulseConstants: null,
     });
   });
 
@@ -326,7 +259,6 @@ describe("refitAllParams", () => {
 
     expect(result.exponentialMovingAverage).not.toBeNull();
     expect(result.successfulFitAt?.exponentialMovingAverage).toBe(result.fittedAt);
-    expect(result.successfulFitAt?.readinessWeights).toBeNull();
   });
 
   it("records the same attempt timestamp when every fitter accepts a new fit", async () => {
@@ -337,41 +269,17 @@ describe("refitAllParams", () => {
         sampleCount: 120,
         correlation: 0.8,
       },
-      readinessWeights: {
-        hrv: 0.4,
-        restingHr: 0.2,
-        sleep: 0.2,
-        respiratoryRate: 0.2,
-        sampleCount: 90,
-        correlation: 0.7,
-      },
-      sleepTarget: { minutes: 480, sampleCount: 30 },
       stressThresholds: {
         hrvThresholds: [-1.8, -1.1, -0.4] satisfies [number, number, number],
         rhrThresholds: [1.8, 1.1, 0.4] satisfies [number, number, number],
         sampleCount: 90,
       },
-      trainingImpulseConstants: {
-        genderFactor: 0.64,
-        exponent: 1.92,
-        sampleCount: 30,
-        r2: 0.9,
-      },
     };
     vi.doMock("./fit-ewma.ts", () => ({
       fitExponentialMovingAverage: vi.fn(() => accepted.exponentialMovingAverage),
     }));
-    vi.doMock("./fit-readiness-weights.ts", () => ({
-      fitReadinessWeights: vi.fn(() => accepted.readinessWeights),
-    }));
-    vi.doMock("./fit-sleep-target.ts", () => ({
-      fitSleepTarget: vi.fn(() => accepted.sleepTarget),
-    }));
     vi.doMock("./fit-stress-thresholds.ts", () => ({
       fitStressThresholds: vi.fn(() => accepted.stressThresholds),
-    }));
-    vi.doMock("./fit-trimp.ts", () => ({
-      fitTrainingImpulseConstants: vi.fn(() => accepted.trainingImpulseConstants),
     }));
 
     try {
@@ -387,19 +295,13 @@ describe("refitAllParams", () => {
       expect(result).toMatchObject(accepted);
       const successfulFitAt = {
         exponentialMovingAverage: result.fittedAt,
-        readinessWeights: result.fittedAt,
-        sleepTarget: result.fittedAt,
         stressThresholds: result.fittedAt,
-        trainingImpulseConstants: result.fittedAt,
       };
       expect(result.successfulFitAt).toEqual(successfulFitAt);
       expect(personalizedParamsSchema.parse(result).successfulFitAt).toEqual(successfulFitAt);
     } finally {
       vi.doUnmock("./fit-ewma.ts");
-      vi.doUnmock("./fit-readiness-weights.ts");
-      vi.doUnmock("./fit-sleep-target.ts");
       vi.doUnmock("./fit-stress-thresholds.ts");
-      vi.doUnmock("./fit-trimp.ts");
       vi.resetModules();
     }
   });
@@ -413,10 +315,7 @@ describe("refitAllParams", () => {
     const result = await refitAllParams(db, "user-1", createMockSensorStore());
     expect(result.version).toBe(2);
     expect(result.exponentialMovingAverage).toBeNull();
-    expect(result.readinessWeights).toBeNull();
-    expect(result.sleepTarget).toBeNull();
     expect(result.stressThresholds).toBeNull();
-    expect(result.trainingImpulseConstants).toBeNull();
   });
 
   it("sets rejected fitters to null", async () => {
@@ -433,10 +332,7 @@ describe("refitAllParams", () => {
     const result = await refitAllParams(db, "user-1", createMockSensorStore());
     // All should be null (either rejected or insufficient data)
     expect(result.exponentialMovingAverage).toBeNull();
-    expect(result.readinessWeights).toBeNull();
-    expect(result.sleepTarget).toBeNull();
     expect(result.stressThresholds).toBeNull();
-    expect(result.trainingImpulseConstants).toBeNull();
   });
 
   it("writes the current personalization schema version", async () => {
@@ -539,240 +435,6 @@ describe("parseExponentialMovingAverageRows", () => {
   });
 });
 
-// --- parseReadinessRows ---
-
-describe("parseReadinessRows", () => {
-  /** Build a fully populated readiness row where all null-check fields are non-null. */
-  function validReadinessRow(overrides: Record<string, unknown> = {}): Record<string, unknown> {
-    return {
-      hrv: 60,
-      resting_hr: 55,
-      hrv_mean: 50,
-      hrv_sd: 10,
-      rhr_mean: 55,
-      rhr_sd: 5,
-      efficiency_pct: 85,
-      respiratory_rate: 16,
-      rr_mean: 16,
-      rr_sd: 1,
-      next_day_hrv: 65,
-      next_day_hrv_mean: 50,
-      next_day_hrv_sd: 10,
-      ...overrides,
-    };
-  }
-
-  it("returns empty array for empty input", () => {
-    expect(parseReadinessRows([])).toEqual([]);
-  });
-
-  it("parses a fully valid row", () => {
-    const result = parseReadinessRows([validReadinessRow()]);
-    expect(result).toHaveLength(1);
-    expect(result[0]).toHaveProperty("hrvScore");
-    expect(result[0]).toHaveProperty("rhrScore");
-    expect(result[0]).toHaveProperty("sleepScore");
-    expect(result[0]).toHaveProperty("respiratoryRateScore");
-    expect(result[0]).toHaveProperty("nextDayHrvZScore");
-  });
-
-  it("filters rows with null hrv", () => {
-    expect(parseReadinessRows([validReadinessRow({ hrv: null })])).toHaveLength(0);
-  });
-
-  it("filters rows with null hrv_mean", () => {
-    expect(parseReadinessRows([validReadinessRow({ hrv_mean: null })])).toHaveLength(0);
-  });
-
-  it("filters rows with null hrv_sd", () => {
-    expect(parseReadinessRows([validReadinessRow({ hrv_sd: null })])).toHaveLength(0);
-  });
-
-  it("filters rows with hrv_sd of 0", () => {
-    expect(parseReadinessRows([validReadinessRow({ hrv_sd: 0 })])).toHaveLength(0);
-  });
-
-  it("filters rows with null resting_hr", () => {
-    expect(parseReadinessRows([validReadinessRow({ resting_hr: null })])).toHaveLength(0);
-  });
-
-  it("filters rows with null rhr_mean", () => {
-    expect(parseReadinessRows([validReadinessRow({ rhr_mean: null })])).toHaveLength(0);
-  });
-
-  it("filters rows with null rhr_sd", () => {
-    expect(parseReadinessRows([validReadinessRow({ rhr_sd: null })])).toHaveLength(0);
-  });
-
-  it("filters rows with rhr_sd of 0", () => {
-    expect(parseReadinessRows([validReadinessRow({ rhr_sd: 0 })])).toHaveLength(0);
-  });
-
-  it("filters rows with null next_day_hrv", () => {
-    expect(parseReadinessRows([validReadinessRow({ next_day_hrv: null })])).toHaveLength(0);
-  });
-
-  it("filters rows with null next_day_hrv_mean", () => {
-    expect(parseReadinessRows([validReadinessRow({ next_day_hrv_mean: null })])).toHaveLength(0);
-  });
-
-  it("filters rows with null next_day_hrv_sd", () => {
-    expect(parseReadinessRows([validReadinessRow({ next_day_hrv_sd: null })])).toHaveLength(0);
-  });
-
-  it("filters rows with next_day_hrv_sd of 0", () => {
-    expect(parseReadinessRows([validReadinessRow({ next_day_hrv_sd: 0 })])).toHaveLength(0);
-  });
-
-  it("computes hrvScore correctly using sigmoid z-score formula", () => {
-    // hrv=70, hrv_mean=50, hrv_sd=10 => zHrv=2 => zScoreToRecoveryScore(2) = 92
-    const result = parseReadinessRows([validReadinessRow({ hrv: 70, hrv_mean: 50, hrv_sd: 10 })]);
-    expect(result[0]?.hrvScore).toBe(92);
-  });
-
-  it("hrvScore near 0 for very negative z-score", () => {
-    // hrv=10, mean=50, sd=10 => z=-4 => zScoreToRecoveryScore(-4) ≈ 2
-    const result = parseReadinessRows([validReadinessRow({ hrv: 10, hrv_mean: 50, hrv_sd: 10 })]);
-    expect(result[0]?.hrvScore).toBeLessThanOrEqual(5);
-  });
-
-  it("hrvScore reaches 100 for very positive z-score", () => {
-    // hrv=100, mean=50, sd=10 => z=5 => zScoreToRecoveryScore(5) = 100
-    const result = parseReadinessRows([validReadinessRow({ hrv: 100, hrv_mean: 50, hrv_sd: 10 })]);
-    expect(result[0]?.hrvScore).toBe(100);
-  });
-
-  it("computes rhrScore with inverted sign (higher RHR = lower score)", () => {
-    // resting_hr=65, rhr_mean=55, rhr_sd=5 => zRhr=2, -zRhr=-2 => zScoreToRecoveryScore(-2) = 12
-    const result = parseReadinessRows([
-      validReadinessRow({ resting_hr: 65, rhr_mean: 55, rhr_sd: 5 }),
-    ]);
-    expect(result[0]?.rhrScore).toBe(12);
-  });
-
-  it("rhrScore near 0 for very high resting HR z-score", () => {
-    // resting_hr=80, mean=55, sd=5 => z=5, -z=-5 => zScoreToRecoveryScore(-5) ≈ 1
-    const result = parseReadinessRows([
-      validReadinessRow({ resting_hr: 80, rhr_mean: 55, rhr_sd: 5 }),
-    ]);
-    expect(result[0]?.rhrScore).toBeLessThanOrEqual(5);
-  });
-
-  it("rhrScore reaches 100 for very low resting HR z-score", () => {
-    // resting_hr=30, mean=55, sd=5 => z=-5, -z=5 => zScoreToRecoveryScore(5) = 100
-    const result = parseReadinessRows([
-      validReadinessRow({ resting_hr: 30, rhr_mean: 55, rhr_sd: 5 }),
-    ]);
-    expect(result[0]?.rhrScore).toBe(100);
-  });
-
-  it("uses efficiency_pct directly as sleepScore when present", () => {
-    const result = parseReadinessRows([validReadinessRow({ efficiency_pct: 92 })]);
-    expect(result[0]?.sleepScore).toBe(92);
-  });
-
-  it("defaults sleepScore to 62 when efficiency_pct is null", () => {
-    const result = parseReadinessRows([validReadinessRow({ efficiency_pct: null })]);
-    expect(result[0]?.sleepScore).toBe(62);
-  });
-
-  it("clamps sleepScore at 0 for negative efficiency_pct", () => {
-    const result = parseReadinessRows([validReadinessRow({ efficiency_pct: -10 })]);
-    expect(result[0]?.sleepScore).toBe(0);
-  });
-
-  it("clamps sleepScore at 100 for efficiency_pct above 100", () => {
-    const result = parseReadinessRows([validReadinessRow({ efficiency_pct: 120 })]);
-    expect(result[0]?.sleepScore).toBe(100);
-  });
-
-  it("computes respiratoryRateScore using sigmoid z-score (lower RR = better, inverted)", () => {
-    // respiratory_rate=15, rr_mean=16, rr_sd=1 => z=-1, -z=1 => zScoreToRecoveryScore(1) = 81
-    const result = parseReadinessRows([
-      validReadinessRow({ respiratory_rate: 15, rr_mean: 16, rr_sd: 1 }),
-    ]);
-    expect(result[0]?.respiratoryRateScore).toBe(81);
-  });
-
-  it("computes respiratoryRateScore as 62 when respiratory rate equals mean", () => {
-    // respiratory_rate=16, rr_mean=16, rr_sd=1 => z=0 => zScoreToRecoveryScore(0) = 62
-    const result = parseReadinessRows([
-      validReadinessRow({ respiratory_rate: 16, rr_mean: 16, rr_sd: 1 }),
-    ]);
-    expect(result[0]?.respiratoryRateScore).toBe(62);
-  });
-
-  it("defaults respiratoryRateScore to 62 when respiratory_rate is null", () => {
-    const result = parseReadinessRows([validReadinessRow({ respiratory_rate: null })]);
-    expect(result[0]?.respiratoryRateScore).toBe(62);
-  });
-
-  it("computes nextDayHrvZScore correctly", () => {
-    // next_day_hrv=65, mean=50, sd=10 => (65-50)/10 = 1.5
-    const result = parseReadinessRows([
-      validReadinessRow({ next_day_hrv: 65, next_day_hrv_mean: 50, next_day_hrv_sd: 10 }),
-    ]);
-    expect(result[0]?.nextDayHrvZScore).toBe(1.5);
-  });
-
-  it("skips rows with invalid schema (e.g. missing required fields)", () => {
-    const result = parseReadinessRows([{ hrv: 60 }]); // missing many fields
-    expect(result).toHaveLength(0);
-  });
-});
-
-// --- parseSleepRows ---
-
-describe("parseSleepRows", () => {
-  it("returns empty array for empty input", () => {
-    expect(parseSleepRows([])).toEqual([]);
-  });
-
-  it("parses valid rows", () => {
-    const rows = [
-      { duration_minutes: 480, hrv_above_median: true },
-      { duration_minutes: 420, hrv_above_median: false },
-    ];
-    const result = parseSleepRows(rows);
-    expect(result).toEqual([
-      { durationMinutes: 480, nextDayHrvAboveMedian: true },
-      { durationMinutes: 420, nextDayHrvAboveMedian: false },
-    ]);
-  });
-
-  it("coerces string numbers to numbers", () => {
-    const rows = [{ duration_minutes: "480", hrv_above_median: "true" }];
-    const result = parseSleepRows(rows);
-    expect(result[0]?.durationMinutes).toBe(480);
-    expect(result[0]?.nextDayHrvAboveMedian).toBe(true);
-  });
-
-  it("skips rows that fail Zod validation (completely wrong shape)", () => {
-    const rows = [
-      { foo: "bar" }, // completely wrong shape — coerce still produces values
-      { duration_minutes: 420, hrv_above_median: false }, // valid
-    ];
-    // z.coerce.number() coerces undefined to NaN and z.coerce.boolean() coerces undefined to false,
-    // so only truly malformed shapes fail. Test that valid rows are included.
-    const result = parseSleepRows(rows);
-    const validResults = result.filter((r) => !Number.isNaN(r.durationMinutes));
-    expect(validResults).toHaveLength(1);
-    expect(validResults[0]?.durationMinutes).toBe(420);
-  });
-
-  it("maps duration_minutes to durationMinutes", () => {
-    const rows = [{ duration_minutes: 450, hrv_above_median: true }];
-    const result = parseSleepRows(rows);
-    expect(result[0]?.durationMinutes).toBe(450);
-  });
-
-  it("maps hrv_above_median to nextDayHrvAboveMedian", () => {
-    const rows = [{ duration_minutes: 450, hrv_above_median: false }];
-    const result = parseSleepRows(rows);
-    expect(result[0]?.nextDayHrvAboveMedian).toBe(false);
-  });
-});
-
 // --- parseStressRows ---
 
 describe("parseStressRows", () => {
@@ -814,106 +476,5 @@ describe("parseStressRows", () => {
     const rows = [{ hrv_z: -0.7, rhr_z: 1.1 }];
     const result = parseStressRows(rows);
     expect(result[0]).toEqual({ hrvZScore: -0.7, rhrZScore: 1.1 });
-  });
-});
-
-// --- parseTrainingImpulseRows ---
-
-describe("parseTrainingImpulseRows", () => {
-  function validTrimpRow(overrides: Record<string, unknown> = {}): Record<string, unknown> {
-    return {
-      duration_min: 60,
-      avg_hr: 155,
-      max_hr: 190,
-      resting_hr: 55,
-      power_tss: 80,
-      ...overrides,
-    };
-  }
-
-  it("returns empty array for empty input", () => {
-    expect(parseTrainingImpulseRows([])).toEqual([]);
-  });
-
-  it("parses valid rows", () => {
-    const result = parseTrainingImpulseRows([validTrimpRow()]);
-    expect(result).toEqual([
-      { durationMin: 60, avgHr: 155, maxHr: 190, restingHr: 55, powerTss: 80 },
-    ]);
-  });
-
-  it("filters rows where duration_min is 0", () => {
-    expect(parseTrainingImpulseRows([validTrimpRow({ duration_min: 0 })])).toHaveLength(0);
-  });
-
-  it("filters rows where duration_min is negative", () => {
-    expect(parseTrainingImpulseRows([validTrimpRow({ duration_min: -10 })])).toHaveLength(0);
-  });
-
-  it("includes rows where duration_min is positive", () => {
-    expect(parseTrainingImpulseRows([validTrimpRow({ duration_min: 0.1 })])).toHaveLength(1);
-  });
-
-  it("filters rows where max_hr equals resting_hr", () => {
-    expect(parseTrainingImpulseRows([validTrimpRow({ max_hr: 60, resting_hr: 60 })])).toHaveLength(
-      0,
-    );
-  });
-
-  it("filters rows where max_hr is less than resting_hr", () => {
-    expect(parseTrainingImpulseRows([validTrimpRow({ max_hr: 50, resting_hr: 60 })])).toHaveLength(
-      0,
-    );
-  });
-
-  it("includes rows where max_hr is greater than resting_hr", () => {
-    expect(parseTrainingImpulseRows([validTrimpRow({ max_hr: 61, resting_hr: 60 })])).toHaveLength(
-      1,
-    );
-  });
-
-  it("filters rows where power_tss is 0", () => {
-    expect(parseTrainingImpulseRows([validTrimpRow({ power_tss: 0 })])).toHaveLength(0);
-  });
-
-  it("filters rows where power_tss is negative", () => {
-    expect(parseTrainingImpulseRows([validTrimpRow({ power_tss: -5 })])).toHaveLength(0);
-  });
-
-  it("includes rows where power_tss is positive", () => {
-    expect(parseTrainingImpulseRows([validTrimpRow({ power_tss: 0.1 })])).toHaveLength(1);
-  });
-
-  it("coerces string numbers to numbers", () => {
-    const row = validTrimpRow({
-      duration_min: "60",
-      avg_hr: "155",
-      max_hr: "190",
-      resting_hr: "55",
-      power_tss: "80",
-    });
-    const result = parseTrainingImpulseRows([row]);
-    expect(result).toHaveLength(1);
-    expect(result[0]?.durationMin).toBe(60);
-  });
-
-  it("skips rows with invalid schema (missing fields)", () => {
-    const rows = [
-      { duration_min: 60, avg_hr: 155 }, // missing max_hr, resting_hr, power_tss
-      validTrimpRow(), // valid
-    ];
-    const result = parseTrainingImpulseRows(rows);
-    expect(result).toHaveLength(1);
-  });
-
-  it("maps snake_case fields to camelCase", () => {
-    const result = parseTrainingImpulseRows([validTrimpRow()]);
-    expect(result[0]).toEqual({
-      durationMin: 60,
-      avgHr: 155,
-      maxHr: 190,
-      restingHr: 55,
-      powerTss: 80,
-    });
   });
 });

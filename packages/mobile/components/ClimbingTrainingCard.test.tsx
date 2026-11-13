@@ -10,7 +10,7 @@ const mockTrainingState: { data: Record<string, unknown> | undefined } = { data:
 function defaultMockTrainingData() {
   return {
     climbing: {
-      gradeProgression: [],
+      gradeProgression: null,
       volumeByGrade: [],
       sessionSummary: [],
       hangboarding: {
@@ -34,11 +34,11 @@ describe("ClimbingTrainingCard", () => {
     vi.clearAllMocks();
     mockTrainingState.data = defaultMockTrainingData();
   });
-  it("renders server-provided climbing grade progression, volume, and sessions", async () => {
+  it("renders server-provided climbing grade progression and volume", async () => {
     mockTrainingState.data = {
       ...defaultMockTrainingData(),
       climbing: {
-        gradeProgression: [climbingProgressionFixture()],
+        gradeProgression: climbingProgressionFixture(),
         volumeByGrade: [
           {
             climbKind: "boulder",
@@ -70,18 +70,17 @@ describe("ClimbingTrainingCard", () => {
     render(<ClimbingTrainingCard data={mockTrainingState.data?.climbing} />);
 
     expect(screen.getByText("Climbing")).toBeTruthy();
-    expect(screen.getByText("Bouldering")).toBeTruthy();
+    expect(screen.getByRole("image", { name: /^Grade progression/ })).toBeTruthy();
     expect(screen.getAllByText("V4").length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText("8 attempts")).toBeTruthy();
     expect(screen.getByText("5 sends")).toBeTruthy();
-    expect(screen.getByText("Kaya climbing at Touchstone Pacific Pipe")).toBeTruthy();
   });
 
   it("reports malformed climbing rows while rendering valid partial climbing data", async () => {
     mockTrainingState.data = {
       ...defaultMockTrainingData(),
       climbing: {
-        gradeProgression: [climbingProgressionFixture()],
+        gradeProgression: climbingProgressionFixture(),
         volumeByGrade: [{ climbKind: "boulder", grade: "V4", gradeSortValue: "bad" }],
         sessionSummary: [],
       },
@@ -89,7 +88,7 @@ describe("ClimbingTrainingCard", () => {
 
     render(<ClimbingTrainingCard data={mockTrainingState.data?.climbing} />);
 
-    expect(screen.getByText("Bouldering")).toBeTruthy();
+    expect(screen.getByRole("image", { name: /^Grade progression/ })).toBeTruthy();
     expect(screen.getByText("V4")).toBeTruthy();
     expect(screen.getByText("Climbing data could not be loaded. Please try again.")).toBeTruthy();
     expect(screen.queryByText(/Zod parse failed/)).toBeNull();
@@ -99,11 +98,11 @@ describe("ClimbingTrainingCard", () => {
     });
   });
 
-  it("omits unknown grade attempts while retaining sends, recorded zero attempts, and sessions", async () => {
+  it("omits unknown grade attempts while retaining sends and recorded zero attempts", async () => {
     mockTrainingState.data = {
       ...defaultMockTrainingData(),
       climbing: {
-        gradeProgression: [],
+        gradeProgression: null,
         volumeByGrade: [
           {
             climbKind: "boulder",
@@ -146,8 +145,6 @@ describe("ClimbingTrainingCard", () => {
     expect(unknownGrade?.textContent).toBe("VB1 sends");
     expect(screen.getByText("0 attempts")).toBeTruthy();
     expect(screen.getByText("0 sends")).toBeTruthy();
-    expect(screen.getByText("Kaya climbing")).toBeTruthy();
-    expect(screen.getByText("— attempts · 6 sends")).toBeTruthy();
   });
 
   it("renders recorded climbing attempt subtotals while complete totals are unknown", async () => {
@@ -286,6 +283,5 @@ describe("ClimbingTrainingCard", () => {
 
     expect(screen.getByText("No recorded climbing grades")).toBeTruthy();
     expect(screen.getByText("No climbing volume by grade")).toBeTruthy();
-    expect(screen.getByText("No climbing sessions")).toBeTruthy();
   });
 });

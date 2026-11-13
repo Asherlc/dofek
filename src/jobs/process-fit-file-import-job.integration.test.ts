@@ -29,7 +29,7 @@ function archivedKey(bytes: Buffer, providerId = "fit-file") {
 }
 
 beforeAll(async () => {
-  archive.server.listen({ onUnhandledRequest: "error" });
+  archive.server.activate({ onUnhandledFrame: "error" });
   context = await setupTestDatabase();
   await ensureProvider(context.db, "fit-file", "FIT File", undefined, TEST_USER_ID);
 }, 60_000);
@@ -47,7 +47,7 @@ afterEach(async () => {
 });
 
 afterAll(async () => {
-  archive.server.close();
+  archive.server.deactivate();
   archive.client.destroy();
   await context?.cleanup();
 });

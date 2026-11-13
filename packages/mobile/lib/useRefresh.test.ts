@@ -22,10 +22,10 @@ vi.mock("./trpc", () => ({
       mobileDashboard: {
         dashboard: { invalidate: mockDashboardInvalidate },
         recovery: { invalidate: mockRecoveryInvalidate },
-        training: { invalidate: mockTrainingInvalidate },
+        trainingV2: { invalidate: mockTrainingInvalidate },
       },
       calendar: {
-        weekList: { invalidate: mockCalendarWeekListInvalidate },
+        weekListV2: { invalidate: mockCalendarWeekListInvalidate },
         activityOverview: { invalidate: mockCalendarActivityOverviewInvalidate },
       },
       activity: { list: { invalidate: mockActivityListInvalidate } },

@@ -11,7 +11,8 @@ import {
 } from "../repositories/climbing-test-helpers.ts";
 import { HangboardingRepository } from "../repositories/hangboarding-repository.ts";
 import type { ClimbingStrengthsObservation } from "../services/climbing-strengths.ts";
-import { createTestCallerFactory } from "./test-helpers.ts";
+import { observation } from "../services/climbing-strengths-test-helpers.ts";
+import { createTestCallerFactory, makeMockSensorStore } from "./test-helpers.ts";
 
 const { signActivityImage, readActivityImage } = vi.hoisted(() => ({
   signActivityImage: vi.fn(
@@ -25,6 +26,22 @@ vi.mock("dofek/activity-images/storage", () => ({
 }));
 
 const catalogue = vi.hoisted(() => ({ read: vi.fn(), requestRefresh: vi.fn() }));
+const enrichment = vi.hoisted(() => ({
+  getContexts: vi.fn(async () => {
+    const errors: string[] = [];
+    return {
+      seeds: new Map(),
+      contexts: new Map(),
+      pending: false,
+      errors,
+    };
+  }),
+}));
+vi.mock("../repositories/climbing-strengths-enrichment-repository.ts", () => ({
+  ClimbingStrengthsEnrichmentRepository: class {
+    getContexts = enrichment.getContexts;
+  },
+}));
 vi.mock("../repositories/climbing-catalogue-repository.ts", () => ({
   ClimbingCatalogueRepository: class {
     read = catalogue.read;
@@ -91,12 +108,14 @@ function makeCallerWithResponses(responses: Record<string, unknown>[][]) {
   const execute = vi.fn();
   for (const response of responses) execute.mockResolvedValueOnce(response);
   execute.mockResolvedValue([]);
+  const sensorStore = makeMockSensorStore();
   const caller = createCaller({
     db: { execute },
     userId: "user-1",
     timezone: "America/Los_Angeles",
+    sensorStore,
   });
-  return { caller, execute };
+  return { caller, execute, sensorStore };
 }
 
 const groupId = "00000000-0000-4000-8000-000000000701";
@@ -278,6 +297,7 @@ describe("climbingRouter", () => {
       "activityLogEntries",
       "unattachedClimbingLogEntries",
       "gradeProgression",
+      "gradeProgressionV2",
       "volumeByGrade",
       "volumeOverTime",
       "sessionSummary",
@@ -285,7 +305,10 @@ describe("climbingRouter", () => {
     ])
       expect(invalidateByPrefix).toHaveBeenCalledWith(`user-1:climbing.${procedure}:`);
     expect(invalidateByPrefix).toHaveBeenCalledWith("user-1:activity.list:");
+    expect(invalidateByPrefix).toHaveBeenCalledWith("user-1:mobileDashboard.training:");
+    expect(invalidateByPrefix).toHaveBeenCalledWith("user-1:mobileDashboard.trainingV2:");
     expect(invalidateByPrefix).toHaveBeenCalledWith("user-1:calendar.weekList:");
+    expect(invalidateByPrefix).toHaveBeenCalledWith("user-1:calendar.weekListV2:");
   });
   it("returns server-computed volume with the canonical kind", async () => {
     const { caller } = makeCaller([
@@ -325,6 +348,123 @@ describe("climbingRouter", () => {
     });
     expect(lookup).toHaveBeenCalledWith(null, { days: null, endDate: "2025-02-05" }, "2025-02-05");
   });
+  it.each([undefined, 1, 2] as const)(
+    "negotiates the strengths panel vocabulary for response version %s",
+    async (responseVersion) => {
+      vi.spyOn(ClimbingStrengthsRepository.prototype, "getObservations").mockResolvedValue([
+        observation({
+          catalogueTraits: [
+            {
+              dimension: "style",
+              value: "technical",
+              source: {
+                providerId: "openbeta",
+                scope: "route",
+                name: "Problem",
+                url: "https://openbeta.io/climb/route",
+              },
+            },
+          ],
+        }),
+      ]);
+      const result = await makeCaller().caller.strengths({
+        days: 30,
+        ...(responseVersion === undefined ? {} : { responseVersion }),
+      });
+      expect(result.panels.filter((p) => p.dimension === "style")).toHaveLength(
+        responseVersion === 2 ? 1 : 0,
+      );
+    },
+  );
+  it.each([true, false])(
+    "calculates training with includeAreaMetadata=%s and reports pending source reads",
+    async (includeAreaMetadata) => {
+      const entry = observation();
+      vi.spyOn(ClimbingStrengthsRepository.prototype, "getObservations").mockResolvedValue([entry]);
+      const seed = {
+        userId: "user-1",
+        logEntryId: "log",
+        providerId: "openbeta",
+        externalId: "route",
+        sourceUrl: null,
+        name: "Problem",
+        kind: "boulder",
+        setting: "indoor",
+        locations: [],
+      };
+      const context = {
+        status: "ready",
+        fetchedAt: null,
+        expiresAt: null,
+        error: null,
+        sources: [
+          {
+            providerId: "openbeta",
+            searchComplete: true,
+            matches: [
+              {
+                confidence: "source",
+                candidate: {
+                  providerId: "openbeta",
+                  externalId: "route",
+                  url: "https://openbeta.io/climb/route",
+                  name: "Problem",
+                  kind: "boulder",
+                  setting: "indoor",
+                  grade: null,
+                  angle: null,
+                  tags: [],
+                  locations: [
+                    {
+                      scope: "area",
+                      externalId: "area",
+                      name: "Wall",
+                      coordinates: null,
+                      context: {
+                        url: "https://openbeta.io/area/area",
+                        type: null,
+                        sections: [],
+                        tags: [
+                          {
+                            kind: "hold",
+                            sourceKey: "crimp",
+                            label: "Crimps",
+                            category: null,
+                            scope: "direct",
+                            inheritedFrom: null,
+                            count: null,
+                          },
+                        ],
+                        statistics: [],
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        ],
+      };
+      enrichment.getContexts.mockResolvedValueOnce({
+        seeds: new Map([["log", seed]]),
+        contexts: new Map([["log", context]]),
+        pending: true,
+        errors: ["Catalogue source is unavailable; retry later."],
+      });
+      const result = await makeCaller().caller.strengths({
+        days: 30,
+        endDate: "2026-10-20",
+        includeAreaMetadata,
+      });
+      expect(
+        result.panels.find((p) => p.dimension === "hold_type")?.rows.map((r) => r.key),
+      ).toEqual(includeAreaMetadata ? ["crimp"] : []);
+      expect(result).toMatchObject({
+        enrichmentPending: true,
+        enrichmentErrors: ["Catalogue source is unavailable; retry later."],
+      });
+    },
+  );
   it("builds strengths panels from owned repository observations with the selected period and filters", async () => {
     const example = {
       logEntryId: "send-log",
@@ -348,6 +488,15 @@ describe("climbingRouter", () => {
       gradeSortValue: 4,
       wallAngle: null,
       holdTypes: ["crimp"],
+      tags: [
+        {
+          providerId: "kaya",
+          sourceKey: "technical",
+          label: "Technical",
+          categoryKey: "6",
+          categoryLabel: "Style",
+        },
+      ],
       outcome: "sent",
       example,
     };
@@ -388,6 +537,16 @@ describe("climbingRouter", () => {
     );
     expect(execute).toHaveBeenCalledOnce();
     expect(result.coverage).toEqual({ unknownOutcomes: 1, missingGrades: 0, missingIdentity: 0 });
+    expect(result.tagPanels?.[0]).toMatchObject({
+      dimension: "tag",
+      category: { providerId: "kaya", key: "6", label: "Style" },
+      rows: [
+        {
+          label: "Technical",
+          cells: [{ climbs: 3, sends: 1, unknownOutcomes: 1, successRate: 50 }],
+        },
+      ],
+    });
     const panel = result.panels.find((panel) => panel.dimension === "hold_type");
     expect(panel?.progress.map(({ startDate, endDate }) => ({ startDate, endDate }))).toEqual([
       { startDate: "2025-01-07", endDate: "2025-01-31" },
@@ -546,8 +705,8 @@ describe("climbingRouter", () => {
     });
     expect(captureException).toHaveBeenCalledWith(error);
   });
-  it("returns progression with independently recorded method and solo status", async () => {
-    const { caller } = makeCaller([
+  it("preserves legacy grade progression lanes alongside the combined V2 response", async () => {
+    const { caller, execute } = makeCaller([
       {
         session_date: "2026-07-09",
         climb_kind: "route",
@@ -557,31 +716,59 @@ describe("climbingRouter", () => {
         grade: "5.10a",
         attempt_observations: [
           { ropeMethod: "lead", solo: true, usedAid: false, sends: 1, unknownOutcomes: 0 },
+          { ropeMethod: "top_rope", solo: false, usedAid: false, sends: 1, unknownOutcomes: 0 },
         ],
       },
     ]);
     expect(await caller.gradeProgression({ days: 90 })).toMatchObject([
       {
         climbKind: "route",
+        attemptScope: "climb",
         ropeMethod: "lead",
         solo: true,
         usedAid: false,
+        gradeSystem: "yds",
+        grades: [{ grade: "5.10a" }],
+        settings: ["indoor"],
+        periods: [
+          {
+            settings: [
+              {
+                setting: "indoor",
+                sends: 1,
+                climbingDays: 1,
+                sendsPerDay: 1,
+                segments: [
+                  { grade: "5.10a", sends: 1, sendsPerDay: 1, stackStart: 0, stackEnd: 1 },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+      {
+        ropeMethod: "top_rope",
+        solo: false,
         periods: [{ settings: [{ sends: 1, climbingDays: 1 }] }],
       },
     ]);
+    expect(await caller.gradeProgressionV2({ days: 90 })).toMatchObject({
+      grades: [{ climbKind: "route", gradeSystem: "yds", grade: "5.10a" }],
+      periods: [{ sends: 2, climbingDays: 1, sendsPerDay: 2 }],
+    });
+    expect(execute).toHaveBeenCalledTimes(4);
   });
   it("returns the Hangboarding summary contract", async () => {
-    const { caller, execute } = makeCallerWithResponses([
+    const { caller, execute, sensorStore } = makeCallerWithResponses([
       [
         {
+          activity_ids: ["activity-1", "activity-2"],
           session_count: 2,
           total_duration_seconds: 1500,
           average_duration_seconds: 750,
           total_work_duration_seconds: 17,
           total_rest_duration_seconds: 103,
           work_interval_count: 2,
-          average_heart_rate: 125,
-          peak_heart_rate: 150,
           latest_activity_id: "activity-2",
           latest_started_at: "2026-08-08T14:00:00.000Z",
           latest_plan_name: "Repeaters",
@@ -607,6 +794,24 @@ describe("climbingRouter", () => {
       ],
     ]);
 
+    vi.mocked(sensorStore.getActivitySummaries).mockResolvedValue([
+      {
+        activity_id: "activity-1",
+        avg_hr: 125,
+        max_hr: 150,
+        avg_power: null,
+        max_power: null,
+        avg_speed: null,
+        max_speed: null,
+        avg_cadence: null,
+        total_distance: null,
+        elevation_gain_m: null,
+        elevation_loss_m: null,
+        sample_count: 100,
+        centroid_lat: null,
+        centroid_lng: null,
+      },
+    ]);
     await expect(caller.hangboardingSummary({ days: 30 })).resolves.toMatchObject({
       sessionCount: 2,
       totalDurationSeconds: 1500,
@@ -626,6 +831,7 @@ describe("climbingRouter", () => {
       ]),
     });
     expect(execute).toHaveBeenCalledTimes(2);
+    expect(sensorStore.getActivitySummaries).toHaveBeenCalledWith(["activity-1", "activity-2"]);
   });
 
   it("rejects malformed hangboarding summary output", async () => {
@@ -655,13 +861,14 @@ describe("climbingRouter", () => {
       getSummary.mockRestore();
     }
   });
-  it("returns empty arrays when there is no climbing data", async () => {
+  it("returns empty projections when there is no climbing data", async () => {
     const { caller, execute } = makeCaller([]);
 
     await expect(caller.gradeProgression({ days: 90 })).resolves.toEqual([]);
+    await expect(caller.gradeProgressionV2({ days: 90 })).resolves.toBeNull();
     await expect(caller.volumeByGrade({ days: 90 })).resolves.toEqual([]);
     await expect(caller.sessionSummary({ days: 90 })).resolves.toEqual([]);
-    expect(execute).toHaveBeenCalledTimes(6);
+    expect(execute).toHaveBeenCalledTimes(8);
   });
 
   it("returns a controlled error when climbing data cannot load", async () => {

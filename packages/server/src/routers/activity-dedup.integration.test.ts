@@ -8,7 +8,10 @@ import { setupTestDatabase, type TestContext } from "../../../../src/db/test-hel
 import { createSession } from "../auth/session.ts";
 import { createApp } from "../index.ts";
 import { executeWithSchema } from "../lib/typed-sql.ts";
-import type { ActivitySensorStore } from "../repositories/activity-repository.ts";
+import {
+  ActivityRepository,
+  type ActivitySensorStore,
+} from "../repositories/activity-repository.ts";
 import { makeMockSensorStore } from "./test-helpers.ts";
 
 describe("Persisted PostgreSQL activity representatives", () => {
@@ -81,6 +84,76 @@ describe("Persisted PostgreSQL activity representatives", () => {
       id: groupId,
       representative_activity_id: secondId,
     });
+  });
+
+  it.each(["group", "member", "alias"])(
+    "restores absent group members through a %s detail URL",
+    async (identityKind) => {
+      const aliasId = "00000000-0000-4000-8000-000000000306";
+      await context.db.execute(sql`INSERT INTO fitness.activity_group_alias
+        (alias_id, group_id, user_id, reason)
+        VALUES (${aliasId}::uuid, ${groupId}::uuid, ${TEST_USER_ID}, 'merge')
+        ON CONFLICT (alias_id) DO NOTHING`);
+      await context.db.execute(sql`UPDATE fitness.activity
+        SET provider_absent_at = NOW(), absence_provider_id = provider_id
+        WHERE id IN (${firstId}::uuid, ${secondId}::uuid)`);
+      const requestedId =
+        identityKind === "group" ? groupId : identityKind === "member" ? firstId : aliasId;
+      const repository = new ActivityRepository(context.db, TEST_USER_ID);
+      await expect(repository.restoreProviderAbsent([requestedId, requestedId])).resolves.toEqual({
+        restoredCount: 2,
+        memberActivityIds: expect.arrayContaining([firstId, secondId]),
+      });
+      expect(await readProjection()).toEqual([expect.objectContaining({ id: groupId })]);
+      const restored = await context.db.execute(sql`SELECT id FROM fitness.activity
+        WHERE group_id = ${groupId}::uuid AND (provider_absent_at IS NOT NULL OR absence_provider_id IS NOT NULL)`);
+      expect(restored).toHaveLength(0);
+    },
+  );
+
+  it("does not restore another user's or explicitly deleted activity", async () => {
+    await context.db.execute(sql`UPDATE fitness.activity SET provider_absent_at = NOW(),
+      deleted_at = CASE WHEN id = ${secondId}::uuid THEN NOW() ELSE NULL END`);
+    const otherUser = new ActivityRepository(context.db, "00000000-0000-4000-8000-000000000399");
+    await expect(otherUser.restoreProviderAbsent([groupId, firstId])).resolves.toEqual({
+      restoredCount: 0,
+      memberActivityIds: [],
+    });
+    const repository = new ActivityRepository(context.db, TEST_USER_ID);
+    await expect(repository.restoreProviderAbsent([groupId])).resolves.toEqual({
+      restoredCount: 1,
+      memberActivityIds: [firstId],
+    });
+    const deleted = await context.db.execute(sql`SELECT id FROM fitness.activity
+      WHERE id = ${secondId}::uuid AND provider_absent_at IS NOT NULL AND deleted_at IS NOT NULL`);
+    expect(deleted).toHaveLength(1);
+  });
+
+  it("selects the surviving recording origin without using an absent Peloton title", async () => {
+    await context.db.execute(sql`INSERT INTO fitness.provider (id, name, user_id)
+      VALUES ('peloton', 'Peloton', ${TEST_USER_ID}) ON CONFLICT DO NOTHING`);
+    await context.db.execute(sql`UPDATE fitness.activity SET name = 'Surviving ride'
+      WHERE id = ${firstId}::uuid`);
+    await context.db.execute(sql`UPDATE fitness.activity SET provider_id = 'peloton',
+      name = 'Removed Peloton ride', raw = '{"platform":"home_bike","deviceType":"bike"}',
+      provider_absent_at = NOW() WHERE id = ${secondId}::uuid`);
+    const rows = await executeWithSchema(
+      context.db,
+      z.object({
+        primary_activity_id: z.string().nullable(),
+        primary_provider_id: z.string().nullable(),
+        name: z.string().nullable(),
+      }),
+      sql`SELECT primary_activity_id, primary_provider_id, name FROM fitness.v_activity
+      WHERE id = ${groupId}::uuid`,
+    );
+    expect(rows).toEqual([
+      {
+        primary_activity_id: firstId,
+        primary_provider_id: "wahoo",
+        name: "Surviving ride",
+      },
+    ]);
   });
 
   it("prefers strength payload and preserves all member evidence when it arrives", async () => {
@@ -311,31 +384,8 @@ describe("Activity summary deduplication", () => {
 
     const previousLoadDate = dateDaysAgo(14);
     const recentLoadDate = dateDaysAgo(3);
-    const previousLoadWeek = dateDaysAgo(14);
-    const recentLoadWeek = dateDaysAgo(3);
 
     const queryMock: ActivitySensorStore["query"] = async (_schema, queryText) => {
-      if (
-        queryText.includes("analytics.weekly_endurance_ramp_rate") ||
-        queryText.includes("analytics.daily_endurance_load")
-      ) {
-        return [
-          {
-            week: previousLoadWeek,
-            ctl_start: 50,
-            ctl_end: 50,
-            ramp_rate: 0,
-            is_deleted: 0,
-          },
-          {
-            week: recentLoadWeek,
-            ctl_start: 50,
-            ctl_end: 52,
-            ramp_rate: 2,
-            is_deleted: 0,
-          },
-        ];
-      }
       if (queryText.includes("SELECT date, resting_hr")) {
         return [{ date: previousLoadDate, resting_hr: 50 }];
       }
@@ -763,22 +813,6 @@ describe("Activity summary deduplication", () => {
     }
   });
 
-  it("ramp rate does not double-count overlapping activities", async () => {
-    await queryCache.invalidateAll();
-    const { status, result } = await query("cyclingAdvanced.rampRate", {
-      days: 30,
-    });
-    expect(status).toBe(200);
-
-    const data = result.result.data;
-    // With two 30-min activities at ~155 bpm across 2 ISO weeks, the ramp rate
-    // should be modest. If double-counted, the load would be 2x and spike.
-    expect(data.weeks.length).toBeGreaterThan(0);
-    for (const week of data.weeks) {
-      expect(Math.abs(week.rampRate)).toBeLessThan(10);
-    }
-  });
-
   it("resolves activity endpoints from a non-canonical member activity id", async () => {
     await queryCache.invalidateAll();
 
@@ -829,7 +863,7 @@ describe("Activity summary deduplication", () => {
     );
   });
 
-  it("hides deduped activities when any grouped provider source is tombstoned", async () => {
+  it("keeps the surviving source visible when a grouped provider source is tombstoned", async () => {
     await testCtx.db.execute(
       sql`INSERT INTO fitness.provider (id, name, user_id)
           VALUES ('whoop', 'WHOOP', ${TEST_USER_ID})
@@ -875,14 +909,26 @@ describe("Activity summary deduplication", () => {
 
       const viewRows = await testCtx.db.execute<{
         id: string;
+        source_providers: string[];
+        absent_source_external_ids: Array<{ providerId: string; memberActivityId: string }>;
       }>(
-        sql`SELECT id
+        sql`SELECT id, source_providers, absent_source_external_ids
             FROM fitness.v_activity
             WHERE user_id = ${TEST_USER_ID}
               AND ${wahooActivityId}::uuid = ANY(member_activity_ids)`,
       );
 
-      expect(viewRows).toHaveLength(0);
+      expect(viewRows).toEqual([
+        expect.objectContaining({
+          source_providers: ["wahoo"],
+          absent_source_external_ids: [
+            expect.objectContaining({
+              providerId: "whoop",
+              memberActivityId: whoopActivityId,
+            }),
+          ],
+        }),
+      ]);
     } finally {
       await testCtx.db.execute(
         sql`DELETE FROM fitness.activity WHERE id IN (${wahooActivityId}::uuid, ${whoopActivityId}::uuid)`,

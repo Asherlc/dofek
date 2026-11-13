@@ -1,6 +1,5 @@
 import { eq, sql } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
-import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { persistClimbingLogEntries } from "../db/climbing-log-sync.ts";
@@ -16,20 +15,21 @@ import { TEST_USER_ID as userId } from "../db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, saveTokens } from "../db/tokens.ts";
 import { executeWithSchema } from "../db/typed-sql.ts";
+import { createIntegrationMswFixture } from "../test/early-msw-lifecycle.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import { KayaSyncProvider } from "./kaya-sync.ts";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
 import { kayaAscentFixture, kayaClimbFixture, kayaSessionFixture } from "./test-helpers.ts";
 
-const server = setupServer();
+const server = createIntegrationMswFixture();
 describe("KayaSyncProvider canonical persistence", () => {
   let context: TestContext;
   let sessions: Record<string, unknown>[];
   let ascents: Record<string, unknown>[];
   beforeAll(async () => {
     context = await setupTestDatabase();
-    server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
     await ensureProvider(context.db, "kaya", "Kaya", "https://kaya-beta.kayaclimb.com", userId);
     await saveTokens(
       context.db,
@@ -70,7 +70,7 @@ describe("KayaSyncProvider canonical persistence", () => {
     await context.db.delete(activity).where(eq(activity.providerId, "kaya"));
   });
   afterAll(async () => {
-    server.close();
+    server.deactivate();
     await context.cleanup();
   });
   function run(window = SyncWindow.full(new Date("2026-08-02T00:00:00Z"))) {
@@ -84,6 +84,109 @@ describe("KayaSyncProvider canonical persistence", () => {
   }
   const logs = () =>
     context.db.select().from(climbingLogEntry).orderBy(climbingLogEntry.externalId);
+
+  it("preserves and combines a failed session occurrence when a count-free send replaces it", async () => {
+    const route = kayaClimbFixture({ lead: false, climb_type: { id: "2", name: "Routes" } });
+    const failed = { ...route, id: "1000_2001", attempts: 1, sent: false };
+    sessions = [kayaSessionFixture({ attempted_climbs: [failed] })];
+    ascents = [];
+    expect(await run()).toMatchObject({ errors: [] });
+    const failure = (await logs())[0];
+    if (!failure) throw new Error("Expected failed log");
+    const [failedAttempt] = await context.db.select().from(climbingAttempt);
+    // Recover the same state as an installation that already retired the failure.
+    await context.db
+      .update(climbingLogEntry)
+      .set({ providerAbsentAt: new Date() })
+      .where(eq(climbingLogEntry.id, failure.id));
+    sessions = [kayaSessionFixture({ attempted_climbs: [] })];
+    ascents = [
+      kayaAscentFixture({
+        climb: route,
+        attempts: null,
+        ascent_type: { id: "3", name: "Redpoint" },
+      }),
+    ];
+    expect(await run()).toMatchObject({ errors: [] });
+    expect((await logs()).find((log) => log.id === failure.id)?.providerAbsentAt).toBeNull();
+    const sent = (await logs()).find((log) => log.externalId === "kaya:ascent:3001");
+    if (!sent) throw new Error("Expected send");
+    const projected = await executeWithSchema(
+      context.db,
+      z.object({
+        id: z.string(),
+        outcome: z.string().nullable(),
+        attemptIndex: z.number().nullable(),
+      }),
+      sql`SELECT id, outcome, attempt_index AS "attemptIndex" FROM fitness.v_climbing_attempt WHERE climbing_log_entry_id = ANY(${sql.param([failure.id, sent.id])}::uuid[])`,
+    );
+    expect(projected.map((attempt) => attempt.outcome).sort()).toEqual(["completed", "failed"]);
+    expect(projected.every((attempt) => attempt.attemptIndex === null)).toBe(true);
+    expect(projected.find((attempt) => attempt.outcome === "failed")?.id).toBe(failedAttempt?.id);
+    expect(await run()).toMatchObject({ errors: [] });
+    expect(await context.db.select().from(climbingAttempt)).toHaveLength(2);
+    // A later explicit count replaces the inferred combined count, rather than adding to it.
+    ascents = [
+      kayaAscentFixture({ climb: route, attempts: 3, ascent_type: { id: "3", name: "Redpoint" } }),
+    ];
+    expect(await run()).toMatchObject({ errors: [] });
+    expect((await logs()).find((log) => log.id === failure.id)?.providerAbsentAt).not.toBeNull();
+    expect(
+      await context.db
+        .select()
+        .from(climbingAttempt)
+        .where(eq(climbingAttempt.climbingLogEntryId, sent.id)),
+    ).toHaveLength(3);
+    ascents = [];
+    expect(await run()).toMatchObject({ errors: [] });
+    expect((await logs()).every((log) => log.providerAbsentAt !== null)).toBe(true);
+  });
+
+  it.each(["Onsight", "Redpoint", "Unfamiliar"])(
+    "refreshes counted %s methods while preserving identities and attachments",
+    async (result) => {
+      sessions = [kayaSessionFixture({ attempted_climbs: [] })];
+      const route = kayaClimbFixture({
+        climb_type: { id: "2", name: "Routes" },
+        lead: false,
+        grade: { id: "25", name: "5.11a", climb_type_group: "3" },
+      });
+      const source = kayaAscentFixture({
+        attempts: 3,
+        lead: null,
+        climb: route,
+        ascent_type: { id: "result", name: result },
+      });
+      ascents = [source];
+      expect(await run()).toMatchObject({ errors: [] });
+      const [entry] = await logs();
+      const before = await context.db.select().from(climbingAttempt);
+      expect(before).toHaveLength(3);
+      expect(before.map((attempt) => attempt.ropeMethod)).toEqual([
+        "top_rope",
+        "top_rope",
+        "top_rope",
+      ]);
+
+      for (const [lead, routeLead, method] of [
+        [true, false, "lead"],
+        [null, false, "top_rope"],
+        [null, null, null],
+      ] as const) {
+        ascents = [{ ...source, lead, climb: { ...route, lead: routeLead } }];
+        expect(await run()).toMatchObject({ errors: [] });
+        expect(await logs()).toEqual([
+          expect.objectContaining({ id: entry?.id, activityId: entry?.activityId }),
+        ]);
+        const after = await context.db.select().from(climbingAttempt);
+        expect(after.map((attempt) => attempt.id).sort()).toEqual(
+          before.map((attempt) => attempt.id).sort(),
+        );
+        expect(after.map((attempt) => attempt.ropeMethod)).toEqual([method, method, method]);
+        expect((await logs())[0]?.raw).toMatchObject({ lead, climb: { lead: routeLead } });
+      }
+    },
+  );
 
   it("discovers historical and standalone photos during normal sync without per-ascent requests", async () => {
     sessions = [kayaSessionFixture({ attempted_climbs: [] })];

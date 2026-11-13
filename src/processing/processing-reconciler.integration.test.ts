@@ -1,7 +1,11 @@
+import { randomUUID } from "node:crypto";
+import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { z } from "zod";
 import { type ClickHouseClient, createClickHouseClientFromEnv } from "../db/clickhouse.ts";
 import { buildPostgresFitnessRawTableStatements } from "../db/clickhouse-raw-tables.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
+import { executeWithSchema } from "../db/typed-sql.ts";
 import { buildMetricStreamProcessingAcknowledgementTableSql } from "../metric-stream/clickhouse-table.ts";
 import {
   appendProcessingStageEvent,
@@ -208,6 +212,169 @@ describe("processing reconciler (integration)", () => {
         clickHouseClient,
       }),
     ).resolves.toMatchObject({ completed: 1, waiting: 0 });
+  });
+
+  it("keeps an old operation pending when a fresh metric batch was published", async () => {
+    const operation = await createProcessingOperation(testContext.db, {
+      userId: null,
+      providerId: "fit-file",
+      kind: "file_import",
+      externalCorrelationKey: `reconciler-old-operation-fresh-output-${randomUUID()}`,
+      datasetKeys: ["recovery"],
+    });
+    operationIds.push(operation.id);
+    await appendProcessingStageEvent(testContext.db, {
+      operationId: operation.id,
+      stage: "ingest",
+      status: "running",
+      idempotencyKey: "ingest-running",
+    });
+    await recordMetricStreamBatchPublished(testContext.db, {
+      operationId: operation.id,
+      batchId: "metric-batch-old",
+      datasetKeys: ["recovery"],
+      expectedEventCount: 2,
+    });
+    await testContext.db.execute(sql`UPDATE fitness.processing_operation
+      SET created_at = now() - interval '8 days'
+      WHERE id = ${operation.id}::uuid`);
+    await testContext.db.execute(sql`UPDATE fitness.processing_queue_outbox
+      SET created_at = now() - interval '8 days'
+      WHERE operation_id = ${operation.id}::uuid
+        AND queue_name = 'processing-reconcile'
+        AND job_id = ${`${operation.id}:metric-batch-old`}`);
+    await recordMetricStreamBatchPublished(testContext.db, {
+      operationId: operation.id,
+      batchId: "metric-batch-fresh",
+      datasetKeys: ["recovery"],
+      expectedEventCount: 3,
+    });
+
+    await expect(
+      reconcilePendingProcessingOperations({
+        requestAnalyticsRefresh: async () => {},
+        database: testContext.db,
+        clickHouseClient,
+      }),
+    ).resolves.toMatchObject({ abandoned: 0, waiting: 1 });
+    const eventsBeforeReceipts = await getLatestProcessingEvents(testContext.db, operation.id);
+    expect(eventsBeforeReceipts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ stage: "cdc", status: "running", errorCode: null }),
+      ]),
+    );
+    expect(eventsBeforeReceipts).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ errorCode: "processing_stalled" })]),
+    );
+    await expect(
+      executeWithSchema(
+        testContext.db,
+        z.object({ pending_count: z.coerce.number() }),
+        sql`SELECT count(*) AS pending_count
+            FROM fitness.processing_queue_outbox
+            WHERE operation_id = ${operation.id}::uuid
+              AND queue_name = 'processing-reconcile'
+              AND status IN ('pending', 'dispatched', 'failed')`,
+      ),
+    ).resolves.toEqual([{ pending_count: 2 }]);
+
+    await clickHouseClient.command({
+      query: `INSERT INTO ingest.metric_stream_processing_acknowledgement (
+          operation_id, batch_id, dataset_keys, expected_event_count,
+          topic, topic_partition, marker_offset
+        ) VALUES
+          ({operation_id:UUID}, 'metric-batch-old', ['recovery'], 2, 'metric-stream-v1', 0, 12),
+          ({operation_id:UUID}, 'metric-batch-fresh', ['recovery'], 3, 'metric-stream-v1', 0, 13)`,
+      query_params: { operation_id: operation.id },
+    });
+    await appendProcessingStageEvent(testContext.db, {
+      operationId: operation.id,
+      stage: "ingest",
+      status: "succeeded",
+      idempotencyKey: "ingest-succeeded",
+    });
+    let refreshRequests = 0;
+    await expect(
+      reconcilePendingProcessingOperations({
+        requestAnalyticsRefresh: async () => {
+          refreshRequests += 1;
+        },
+        database: testContext.db,
+        clickHouseClient,
+      }),
+    ).resolves.toMatchObject({ completed: 1, waiting: 0 });
+    expect(refreshRequests).toBe(1);
+    expect(await listProcessingDatasetsAwaitingAnalytics(testContext.db)).toEqual(
+      expect.arrayContaining([{ operationId: operation.id, datasetKey: "recovery" }]),
+    );
+  });
+
+  it("stalls old output despite fresh CDC and dispatch bookkeeping", async () => {
+    const operation = await createProcessingOperation(testContext.db, {
+      userId: null,
+      providerId: "fit-file",
+      kind: "file_import",
+      externalCorrelationKey: "reconciler-stale-output",
+      datasetKeys: ["recovery"],
+    });
+    operationIds.push(operation.id);
+    await appendProcessingStageEvent(testContext.db, {
+      operationId: operation.id,
+      stage: "ingest",
+      status: "succeeded",
+      idempotencyKey: "ingest-succeeded",
+    });
+    await recordMetricStreamBatchPublished(testContext.db, {
+      operationId: operation.id,
+      batchId: "metric-batch-stale",
+      datasetKeys: ["recovery"],
+      expectedEventCount: 2,
+    });
+    await expect(
+      reconcilePendingProcessingOperations({
+        requestAnalyticsRefresh: async () => {},
+        database: testContext.db,
+        clickHouseClient,
+      }),
+    ).resolves.toMatchObject({ abandoned: 0, waiting: 1 });
+
+    await testContext.db.execute(sql`UPDATE fitness.processing_operation
+      SET created_at = now() - interval '8 days'
+      WHERE id = ${operation.id}::uuid`);
+    await testContext.db.execute(sql`UPDATE fitness.processing_queue_outbox
+      SET created_at = now() - interval '8 days',
+          dispatched_at = now(), status = 'dispatched'
+      WHERE operation_id = ${operation.id}::uuid
+        AND queue_name = 'processing-reconcile'
+        AND status IN ('pending', 'dispatched', 'failed')`);
+
+    await expect(
+      reconcilePendingProcessingOperations({
+        requestAnalyticsRefresh: async () => {},
+        database: testContext.db,
+        clickHouseClient,
+      }),
+    ).resolves.toMatchObject({ abandoned: 1, waiting: 0 });
+    expect(await getLatestProcessingEvents(testContext.db, operation.id)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          stage: "cdc",
+          status: "failed",
+          errorCode: "processing_stalled",
+        }),
+      ]),
+    );
+    await expect(
+      executeWithSchema(
+        testContext.db,
+        z.object({ completed_count: z.coerce.number() }),
+        sql`SELECT count(*) AS completed_count
+            FROM fitness.processing_queue_outbox
+            WHERE operation_id = ${operation.id}::uuid
+              AND queue_name = 'processing-reconcile'
+              AND status = 'completed'`,
+      ),
+    ).resolves.toEqual([{ completed_count: 1 }]);
   });
 
   it("waits for each applicable PeerDB flow before provider analytics", async () => {

@@ -1,0 +1,3 @@
+Fri Nov 13 02:41:20 UTC 2026
+2026-11-13T02:40:18.829974+00:00 dofek dockerd[3994]: time="2026-11-13T02:40:18.829915800Z" level=info msg="Container failed to exit within 30m0s of signal 15 - using the force" container=0e9980f3246e600faf431c440c1ae0d5e5fe84b95f3cb26f909b95151a0c8405
+2026-11-13T02:40:18.880257+00:00 dofek dockerd[3994]: time="2026-11-13T02:40:18.880206937Z" level=info msg="received task-delete event from containerd" container=0e9980f3246e600faf431c440c1ae0d5e5fe84b95f3cb26f909b95151a0c8405 module=libcontainerd namespace=moby topic=/tasks/delete type="*events.TaskDelete"

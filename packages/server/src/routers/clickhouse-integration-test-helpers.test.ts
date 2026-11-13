@@ -3,6 +3,8 @@ import { runClickHouseMigrations } from "../../../../src/db/clickhouse-migration
 import {
   createClickHouseTestActivityPowerCurveStore,
   createClickHouseTestActivitySensorStore,
+  getClickHouseTestClient,
+  insertClickHouseMetricStreamRows,
   syncClickHouseTestActivityPowerCurveStore,
   syncClickHouseTestActivitySensorStore,
 } from "./clickhouse-integration-test-helpers.ts";
@@ -15,6 +17,7 @@ const clickHouseMocks = vi.hoisted(() => ({
   close: vi.fn(),
   command: vi.fn(),
   createClickHouseClientFromEnv: vi.fn(),
+  insert: vi.fn(),
   query: vi.fn(),
 }));
 
@@ -71,13 +74,113 @@ function analyticsInsertTargets(): string[] {
 describe("clickhouse integration test helpers", () => {
   beforeEach(() => {
     clickHouseMocks.command.mockReset().mockResolvedValue(undefined);
+    clickHouseMocks.insert.mockReset().mockResolvedValue(undefined);
     clickHouseMocks.query.mockReset().mockResolvedValue({ json: vi.fn().mockResolvedValue([]) });
     clickHouseMocks.close.mockReset().mockResolvedValue(undefined);
     clickHouseMocks.createClickHouseClientFromEnv.mockReset().mockReturnValue({
       close: clickHouseMocks.close,
       command: clickHouseMocks.command,
+      insert: clickHouseMocks.insert,
       query: clickHouseMocks.query,
     });
+  });
+
+  it("inserts sensor fixtures as JSON rows in the isolated database", async () => {
+    const context = {
+      addCleanup: vi.fn(),
+      connectionString: "postgres://health:fixture@db:5432/health",
+    };
+    await createClickHouseTestActivitySensorStore(context);
+    const base = {
+      userId: "00000000-0000-0000-0000-000000000001",
+      recordedAt: "2026-11-10T12:00:00.123456Z",
+      channel: "power",
+      providerId: "fixture",
+    };
+    await insertClickHouseMetricStreamRows(context, [
+      base,
+      {
+        ...base,
+        id: "00000000-0000-0000-0000-000000000002",
+        activityId: "00000000-0000-0000-0000-000000000003",
+        externalId: "external'\\id",
+        deviceId: "device",
+        sourceType: "sensor",
+        scalar: 0,
+        vector: [0, 2],
+        point: '{"lat":0,"lng":1}',
+        metadata: '{"label":"test"}',
+        isDeleted: true,
+        version: 0,
+        generation: 0,
+      },
+    ]);
+
+    const common = {
+      user_id: base.userId,
+      recorded_at: base.recordedAt,
+      channel: base.channel,
+      provider_id: base.providerId,
+      ingested_at: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+    };
+    expect(clickHouseMocks.insert).toHaveBeenCalledWith({
+      table: expect.stringMatching(/^ingest_test_[^.]+\.metric_stream$/),
+      format: "JSONEachRow",
+      clickhouse_settings: { date_time_input_format: "best_effort" },
+      values: [
+        {
+          ...common,
+          id: expect.any(String),
+          activity_id: null,
+          external_id: null,
+          device_id: null,
+          source_type: null,
+          scalar: null,
+          vector: [],
+          point: "",
+          metadata: "",
+          is_deleted: 0,
+          version: 1,
+          generation: 0,
+        },
+        {
+          ...common,
+          id: "00000000-0000-0000-0000-000000000002",
+          activity_id: "00000000-0000-0000-0000-000000000003",
+          external_id: "external'\\id",
+          device_id: "device",
+          source_type: "sensor",
+          scalar: 0,
+          vector: [0, 2],
+          point: '{"lat":0,"lng":1}',
+          metadata: '{"label":"test"}',
+          is_deleted: 1,
+          version: 0,
+          generation: 0,
+        },
+      ],
+    });
+  });
+
+  it("bounds fixture builds while preserving read-query settings", async () => {
+    const context = {
+      addCleanup: vi.fn(),
+      connectionString: "postgres://health:fixture@db:5432/health",
+    };
+    await createClickHouseTestActivitySensorStore(context);
+
+    const activityBuild = clickHouseMocks.command.mock.calls.find(([options]) =>
+      /INSERT INTO .*\.v_activity\n/.test(options.query),
+    );
+    expect(activityBuild?.[0]).toMatchObject({ clickhouse_settings: { max_threads: 1 } });
+
+    const read = {
+      query: "SELECT 1 AS value",
+      format: "JSONEachRow" as const,
+      clickhouse_settings: { max_threads: 3 },
+    };
+    await getClickHouseTestClient(context).query(read);
+    expect(clickHouseMocks.query).toHaveBeenCalledWith(expect.objectContaining(read));
   });
 
   it("initializes the activity power-curve store with only its analytics dependencies", async () => {
@@ -106,7 +209,7 @@ describe("clickhouse integration test helpers", () => {
       "deduped_activities",
       "activity_sensor_sample",
       "activity_sensor_summary_rows",
-      "activity_summary",
+      "activity_summary_rows",
     ]);
   });
 
@@ -127,7 +230,7 @@ describe("clickhouse integration test helpers", () => {
       "deduped_activities",
       "activity_sensor_sample",
       "activity_sensor_summary_rows",
-      "activity_summary",
+      "activity_summary_rows",
     ]);
   });
 
@@ -203,8 +306,8 @@ describe("clickhouse integration test helpers", () => {
       setupCommands.some(
         (command) =>
           command.includes("CREATE TABLE IF NOT EXISTS analytics_test_") &&
-          command.includes(".activity_summary") &&
-          command.includes("refreshed_at DateTime64(9)"),
+          command.includes(".activity_summary_rows") &&
+          command.includes("refreshed_at DateTime64(9, 'UTC')"),
       ),
     ).toBe(true);
     expect(
@@ -258,20 +361,6 @@ describe("clickhouse integration test helpers", () => {
         (command) =>
           command.includes("CREATE TABLE IF NOT EXISTS analytics_test_") &&
           command.includes(".v_body_measurement"),
-      ),
-    ).toBe(true);
-    expect(
-      setupCommands.some(
-        (command) =>
-          command.includes("CREATE TABLE IF NOT EXISTS analytics_test_") &&
-          command.includes(".healthspan_activity_zone_minutes"),
-      ),
-    ).toBe(true);
-    expect(
-      setupCommands.some(
-        (command) =>
-          command.includes("CREATE TABLE IF NOT EXISTS analytics_test_") &&
-          command.includes(".weekly_healthspan"),
       ),
     ).toBe(true);
 
@@ -553,23 +642,6 @@ describe("clickhouse integration test helpers", () => {
           command.includes("INSERT INTO analytics_test_") &&
           command.includes(".daily_strain") &&
           command.includes(".daily_activity_load"),
-      ),
-    ).toBe(true);
-    expect(
-      commands.some(
-        (command) =>
-          command.includes("INSERT INTO analytics_test_") &&
-          command.includes(".healthspan_activity_zone_minutes") &&
-          command.includes(".activity_sensor_sample"),
-      ),
-    ).toBe(true);
-    expect(
-      commands.some(
-        (command) =>
-          command.includes("INSERT INTO analytics_test_") &&
-          command.includes(".weekly_healthspan") &&
-          command.includes(".v_daily_metrics") &&
-          (command.match(/daily_body_measurement FINAL/g)?.length ?? 0) === 2,
       ),
     ).toBe(true);
     expect(

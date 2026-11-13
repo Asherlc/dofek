@@ -6,7 +6,7 @@ import {
 import type { EightSleepTrendDay } from "@dofek/eight-sleep/types";
 import { ProviderRateLimitError } from "@dofek/provider-http/rate-limit";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { MetricStreamEventPublisher } from "../metric-stream/redpanda-producer.ts";
+import type { MetricStreamEventPublisher } from "../metric-stream/publisher.ts";
 import { EightSleepProvider } from "./eight-sleep.ts";
 import { SyncRun } from "./sync-run.ts";
 import { SyncWindow } from "./sync-window.ts";
@@ -675,7 +675,9 @@ describe("EightSleepProvider.sync()", () => {
 
     expect(result.recordsSynced).toBe(0);
     expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]?.message).toBe("getTrends: Eight Sleep API error (500): upstream down");
+    expect(result.errors[0]?.message).toBe(
+      "getTrends: eight-sleep API service unavailable (500). Try again later.",
+    );
     expect(spies.execute).toHaveBeenCalled();
     expect(spies.values).not.toHaveBeenCalledWith(
       expect.objectContaining({ externalId: "eightsleep-2026-03-01" }),

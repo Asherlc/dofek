@@ -7,7 +7,7 @@ COPY package.json ./
 # Node Alpine omits Corepack; npm is used only to install the pinned bootstrap tools.
 RUN npm install -g npm@12.0.1 corepack@0.35.0 && corepack enable && corepack prepare --activate
 
-FROM python:3.13.16-alpine3.24 AS dbt-tools
+FROM python:3.13.18-alpine3.24 AS dbt-tools
 # dbt 1.12.6 requires parser wheels unavailable on Alpine; use the compatible 1.11 line.
 # https://pypi.org/project/dbt-core-experimental-parser/2.0.8/
 RUN apk add --no-cache build-base && \
@@ -82,6 +82,8 @@ COPY packages/filter-columns/package.json ./packages/filter-columns/
 COPY packages/scoring/package.json ./packages/scoring/
 COPY packages/nutrition/package.json ./packages/nutrition/
 COPY packages/training/package.json ./packages/training/
+COPY packages/cycling-power/package.json ./packages/cycling-power/
+COPY packages/climbing-catalogue/package.json ./packages/climbing-catalogue/
 COPY packages/stats/package.json ./packages/stats/
 COPY packages/onboarding/package.json ./packages/onboarding/
 COPY packages/providers-meta/package.json ./packages/providers-meta/
@@ -185,6 +187,10 @@ COPY --from=source --chown=node:node /app/packages/auth/src ./packages/auth/src
 COPY --from=source --chown=node:node /app/packages/auth/package.json ./packages/auth/
 COPY --from=source --chown=node:node /app/packages/training/src ./packages/training/src
 COPY --from=source --chown=node:node /app/packages/training/package.json ./packages/training/
+COPY --from=source --chown=node:node /app/packages/cycling-power/src ./packages/cycling-power/src
+COPY --from=source --chown=node:node /app/packages/cycling-power/package.json ./packages/cycling-power/
+COPY --from=source --chown=node:node /app/packages/climbing-catalogue/src ./packages/climbing-catalogue/src
+COPY --from=source --chown=node:node /app/packages/climbing-catalogue/package.json ./packages/climbing-catalogue/
 COPY --from=source --chown=node:node /app/packages/heart-rate-variability/src ./packages/heart-rate-variability/src
 COPY --from=source --chown=node:node /app/packages/heart-rate-variability/package.json ./packages/heart-rate-variability/
 COPY --from=source --chown=node:node /app/packages/imu/src ./packages/imu/src
@@ -215,6 +221,8 @@ RUN ln -sfn /app node_modules/dofek && \
     ln -sfn /app/packages/nutrition node_modules/@dofek/nutrition && \
     ln -sfn /app/packages/onboarding node_modules/@dofek/onboarding && \
     ln -sfn /app/packages/training node_modules/@dofek/training && \
+    ln -sfn /app/packages/cycling-power node_modules/@dofek/cycling-power && \
+    ln -sfn /app/packages/climbing-catalogue node_modules/@dofek/climbing-catalogue && \
     ln -sfn /app/packages/auth node_modules/@dofek/auth && \
     ln -sfn /app/packages/heart-rate-variability node_modules/@dofek/heart-rate-variability && \
     ln -sfn /app/packages/imu node_modules/@dofek/imu && \

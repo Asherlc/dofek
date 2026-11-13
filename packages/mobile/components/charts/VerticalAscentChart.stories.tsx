@@ -5,6 +5,7 @@ import { VerticalAscentChart, type VerticalAscentDataPoint } from "./VerticalAsc
 
 const SAMPLE_DATA: VerticalAscentDataPoint[] = [
   {
+    activityId: "00000000-0000-4000-8000-000000000001",
     date: "2024-05-01",
     activityName: "Alpe d'Huez",
     activityType: "road_cycling",
@@ -14,6 +15,7 @@ const SAMPLE_DATA: VerticalAscentDataPoint[] = [
     elapsedMinutes: 61,
   },
   {
+    activityId: "00000000-0000-4000-8000-000000000002",
     date: "2024-05-08",
     activityName: "Col du Galibier",
     activityType: "road_cycling",
@@ -23,6 +25,7 @@ const SAMPLE_DATA: VerticalAscentDataPoint[] = [
     elapsedMinutes: 78,
   },
   {
+    activityId: "00000000-0000-4000-8000-000000000003",
     date: "2024-05-15",
     activityName: "Hill Repeats",
     activityType: "mountain_biking",
@@ -32,6 +35,7 @@ const SAMPLE_DATA: VerticalAscentDataPoint[] = [
     elapsedMinutes: 14,
   },
   {
+    activityId: "00000000-0000-4000-8000-000000000004",
     date: "2024-05-22",
     activityName: "Mont Ventoux",
     activityType: "gravel_cycling",
@@ -41,6 +45,7 @@ const SAMPLE_DATA: VerticalAscentDataPoint[] = [
     elapsedMinutes: 110,
   },
   {
+    activityId: "00000000-0000-4000-8000-000000000005",
     date: "2024-06-01",
     activityName: "Local Climb",
     activityType: "gravel_cycling",

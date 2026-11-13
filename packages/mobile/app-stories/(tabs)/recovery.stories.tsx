@@ -38,20 +38,13 @@ function createRecoveryErrorStoryLink(recoveryUnavailable: boolean): TRPCLink<Ap
     };
 }
 
-function createSeededProviders(healthspanInsufficient = false, recoveryUnavailable = false) {
+function createSeededProviders(recoveryUnavailable = false) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Number.POSITIVE_INFINITY } },
   });
   const dates = createFixtureDates(new Date());
   const endDate = dates.date();
   const trendDates = Array.from({ length: 14 }, (_, index) => dates.date(index - 13));
-  const readinessComponents = {
-    hrvScore: 84,
-    restingHrScore: 78,
-    sleepScore: 88,
-    respiratoryRateScore: 74,
-  };
-  const readinessWeights = { hrv: 0.5, restingHr: 0.2, sleep: 0.15, respiratoryRate: 0.15 };
   const stressDaily = trendDates.map((date, index) => ({
     date,
     stressScore: 1 + (index % 4) * 0.3,
@@ -64,68 +57,6 @@ function createSeededProviders(healthspanInsufficient = false, recoveryUnavailab
     "sleep",
     "recovery",
   ]);
-  const healthspan = healthspanInsufficient
-    ? {
-        healthspanScore: null,
-        yearsDelta: null,
-        metrics: [],
-        history: [],
-        trend: null,
-        availability: {
-          status: "insufficient_data" as const,
-          availableMetricCount: 2,
-          requiredMetricCount: 3 as const,
-          missingMetricLabels: ["VO2 Max", "Daily Steps"],
-          summary: "2 of 3 required Healthspan metrics are available.",
-          nextCondition:
-            "The score becomes available after 1 more supported metric syncs successfully.",
-        },
-      }
-    : {
-        healthspanScore: 84,
-        yearsDelta: 1.8,
-        metrics: [
-          {
-            name: "Sleep Duration",
-            value: 450,
-            unit: "min/night",
-            score: 100,
-            status: "excellent" as const,
-            yearsDelta: -2.5,
-          },
-          {
-            name: "Daily Steps",
-            value: 9200,
-            unit: "steps/day",
-            score: 85,
-            status: "excellent" as const,
-            yearsDelta: -1.75,
-          },
-          {
-            name: "Resting Heart Rate",
-            value: 54,
-            unit: "bpm",
-            score: 90,
-            status: "excellent" as const,
-            yearsDelta: -2,
-          },
-        ],
-        history: [
-          { weekStart: "2026-03-02", score: 73 },
-          { weekStart: "2026-03-09", score: 75 },
-          { weekStart: "2026-03-16", score: 78 },
-          { weekStart: "2026-03-23", score: 80 },
-        ],
-        trend: "improving" as const,
-        availability: {
-          status: "available" as const,
-          availableMetricCount: 3,
-          requiredMetricCount: 3 as const,
-          missingMetricLabels: [],
-          summary: "3 of 3 required Healthspan metrics are available.",
-          nextCondition: null,
-        },
-      };
   const fixture = mobileRecoveryFixtureSchema.parse({
     input: { days: 30, endDate },
     data: {
@@ -145,12 +76,6 @@ function createSeededProviders(healthspanInsufficient = false, recoveryUnavailab
         resting_hr_mean_7d: 53 + Math.sin(index / 4) * 0.5,
       })),
       restingHeartRateTrendDirection: "down",
-      readinessScore: trendDates.map((date, index) => ({
-        date,
-        readinessScore: 68 + (index % 5) * 4,
-        components: readinessComponents,
-        weights: readinessWeights,
-      })),
       stress: {
         daily: stressDaily,
         weekly: [],
@@ -327,7 +252,6 @@ function createSeededProviders(healthspanInsufficient = false, recoveryUnavailab
         },
       ],
       healthStatus: [],
-      healthspan,
     },
   });
 
@@ -343,15 +267,13 @@ function createSeededProviders(healthspanInsufficient = false, recoveryUnavailab
 
 function MockProviders({
   children,
-  healthspanInsufficient = false,
   recoveryUnavailable = false,
 }: {
   children: React.ReactNode;
-  healthspanInsufficient?: boolean;
   recoveryUnavailable?: boolean;
 }) {
   const { queryClient, trpcClient } = useMemo(() => {
-    const seededProviders = createSeededProviders(healthspanInsufficient, recoveryUnavailable);
+    const seededProviders = createSeededProviders(recoveryUnavailable);
     return {
       ...seededProviders,
       trpcClient: trpc.createClient({
@@ -361,7 +283,7 @@ function MockProviders({
         ],
       }),
     };
-  }, [healthspanInsufficient, recoveryUnavailable]);
+  }, [recoveryUnavailable]);
 
   return (
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
@@ -378,10 +300,7 @@ const meta = {
   },
   decorators: [
     (Story, context) => (
-      <MockProviders
-        healthspanInsufficient={context.parameters.healthspanInsufficient === true}
-        recoveryUnavailable={context.parameters.recoveryUnavailable === true}
-      >
+      <MockProviders recoveryUnavailable={context.parameters.recoveryUnavailable === true}>
         <View style={{ minHeight: 1400, backgroundColor: colors.background }}>
           <Story />
         </View>
@@ -395,12 +314,6 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
-
-export const InsufficientHealthspanData: Story = {
-  parameters: {
-    healthspanInsufficient: true,
-  },
-};
 
 export const RecoveryUnavailable: Story = {
   parameters: {

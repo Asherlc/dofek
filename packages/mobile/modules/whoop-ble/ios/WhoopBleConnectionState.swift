@@ -5,6 +5,7 @@ enum ConnectionState: String {
     case connecting
     case discoveringServices
     case subscribing
+    case disconnecting
     case ready
     case streaming
 }
@@ -20,6 +21,15 @@ enum WhoopBleConnectionError: Error {
     case characteristicsNotFound
     case notificationSubscriptionFailed(String)
     case disconnected(String?)
+
+    var isTransientSetupFailure: Bool {
+        switch self {
+        case .timeout, .serviceDiscoveryFailed, .characteristicDiscoveryFailed, .notificationSubscriptionFailed:
+            true
+        case .invalidPeripheralId, .peripheralNotFound, .serviceNotFound, .characteristicsNotFound, .disconnected:
+            false
+        }
+    }
 
     var rejection: (code: String, message: String) {
         switch self {

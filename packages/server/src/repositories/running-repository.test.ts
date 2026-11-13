@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import {
   PaceTrendActivity,
   RunningDynamicsActivity,
@@ -22,6 +23,9 @@ describe("RunningDynamicsActivity", () => {
       date: "2024-06-10",
       activityName: "Morning Run",
       avgCadence: 180,
+      cadenceBasis: "cadence_samples" as const,
+      cadenceObservedSeconds: null,
+      cadenceCoveragePercent: null,
       avgStrideLengthMeters: 1.2 satisfies number | null,
       avgStanceTimeMs: 220 satisfies number | null,
       avgVerticalOscillationMm: 85 satisfies number | null,
@@ -30,6 +34,25 @@ describe("RunningDynamicsActivity", () => {
       ...overrides,
     };
   }
+
+  it("preserves missing cadence, pace and distance while retaining form and server evidence", () => {
+    const activity = new RunningDynamicsActivity(
+      makeRow({
+        avgCadence: null,
+        avgSpeed: null,
+        totalDistance: null,
+        activityName: null,
+        cadenceBasis: "unknown",
+      }),
+    );
+    expect(activity.toDetail()).toMatchObject({
+      activityName: "Running",
+      cadence: null,
+      paceSecondsPerKm: null,
+      distanceKm: null,
+      stanceTimeMs: 220,
+    });
+  });
 
   it("exposes date and activityName", () => {
     const activity = new RunningDynamicsActivity(makeRow());
@@ -84,9 +107,9 @@ describe("RunningDynamicsActivity", () => {
     expect(activity.paceSecondsPerKm).not.toBe(5000);
   });
 
-  it("returns 0 pace when speed is 0", () => {
+  it("returns unknown pace when speed is 0", () => {
     const activity = new RunningDynamicsActivity(makeRow({ avgSpeed: 0 }));
-    expect(activity.paceSecondsPerKm).toBe(0);
+    expect(activity.paceSecondsPerKm).toBeNull();
   });
 
   it("computes distance in km by dividing by 1000 (m to km)", () => {
@@ -107,16 +130,15 @@ describe("RunningDynamicsActivity", () => {
     expect(activity.distanceKm).toBe(7.6);
   });
 
-  it("returns 0 pace for negative speed (same as 0)", () => {
+  it("returns unavailable pace for negative speed", () => {
     const activity = new RunningDynamicsActivity(makeRow({ avgSpeed: -1 }));
-    // -1 is not > 0, so falls into the else branch returning 0
-    expect(activity.paceSecondsPerKm).toBe(0);
+    // A zero or negative speed cannot define pace.
+    expect(activity.paceSecondsPerKm).toBeNull();
   });
 
-  it("pace check uses > 0 (speed of exactly 0 returns 0, not Infinity)", () => {
+  it("keeps pace unavailable when speed is exactly zero", () => {
     const activity = new RunningDynamicsActivity(makeRow({ avgSpeed: 0 }));
-    expect(activity.paceSecondsPerKm).toBe(0);
-    expect(Number.isFinite(activity.paceSecondsPerKm)).toBe(true);
+    expect(activity.paceSecondsPerKm).toBeNull();
   });
 
   it("distance divides by 1000 then multiplies by 10 for rounding (correct order)", () => {
@@ -152,6 +174,9 @@ describe("RunningDynamicsActivity", () => {
       date: "2024-06-10",
       activityName: "Morning Run",
       cadence: 180,
+      cadenceBasis: "cadence_samples",
+      cadenceObservedSeconds: null,
+      cadenceCoveragePercent: null,
       strideLengthMeters: 1.2,
       stanceTimeMs: 220,
       verticalOscillationMm: 85,
@@ -286,7 +311,13 @@ describe("PaceTrendActivity", () => {
 
 describe("RunningRepository", () => {
   function makeRepository(rows: Record<string, unknown>[] = []) {
-    const query = vi.fn().mockResolvedValue(rows);
+    const query = vi.fn(
+      async <TSchema extends z.ZodType>(
+        schema: TSchema,
+        _query: string,
+        _params?: Record<string, unknown>,
+      ) => z.array(schema).parse(rows),
+    );
     const execute = vi
       .fn()
       .mockImplementation(async () =>
@@ -310,6 +341,42 @@ describe("RunningRepository", () => {
   }
 
   describe("getDynamics", () => {
+    it("retains dynamics for an unnamed run with a running display label", async () => {
+      const { repo } = makeRepository([
+        {
+          activity_id: "unnamed-run",
+          date: "2024-06-10",
+          name: null,
+          avg_cadence: 180,
+          cadence_basis: "cadence_samples",
+          cadence_observed_seconds: 2400,
+          cadence_coverage_percent: 100,
+          avg_stride_length: 1.2,
+          avg_stance_time: 220,
+          avg_vertical_osc: 85,
+          avg_speed: 4,
+          total_distance: 8000,
+        },
+      ]);
+
+      expect((await repo.getDynamics(90)).map((activity) => activity.toDetail())).toEqual([
+        {
+          activityId: "unnamed-run",
+          date: "2024-06-10",
+          activityName: "Running",
+          cadence: 180,
+          cadenceBasis: "cadence_samples",
+          cadenceObservedSeconds: 2400,
+          cadenceCoveragePercent: 100,
+          strideLengthMeters: 1.2,
+          stanceTimeMs: 220,
+          verticalOscillationMm: 85,
+          paceSecondsPerKm: 250,
+          distanceKm: 8,
+        },
+      ]);
+    });
+
     it("returns empty array when no data", async () => {
       const { repo } = makeRepository([]);
       const result = await repo.getDynamics(90);
@@ -323,6 +390,9 @@ describe("RunningRepository", () => {
           date: "2024-06-10",
           name: "Morning Run",
           avg_cadence: 180,
+          cadence_basis: "cadence_samples",
+          cadence_observed_seconds: null,
+          cadence_coverage_percent: null,
           avg_stride_length: 1.2,
           avg_stance_time: 220,
           avg_vertical_osc: 85,
@@ -363,6 +433,29 @@ describe("RunningRepository", () => {
   });
 
   describe("getPaceTrend", () => {
+    it("retains pace metrics for an unnamed run with a running display label", async () => {
+      const { repo } = makeRepository([
+        {
+          activity_id: "unnamed-run",
+          date: "2024-06-10",
+          name: null,
+          avg_speed: 4,
+          total_distance: 8000,
+          duration_seconds: 2400,
+        },
+      ]);
+
+      expect((await repo.getPaceTrend(90)).map((activity) => activity.toDetail())).toEqual([
+        {
+          date: "2024-06-10",
+          activityName: "Running",
+          paceSecondsPerKm: 250,
+          distanceKm: 8,
+          durationMinutes: 40,
+        },
+      ]);
+    });
+
     it("returns empty array when no data", async () => {
       const { repo } = makeRepository([]);
       const result = await repo.getPaceTrend(90);

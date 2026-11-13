@@ -71,9 +71,12 @@ presets while retaining independent factual facets. Setting narrows all climbing
 queries; it is separate from Wall angle and Hold type breakdowns.
 
 The [shared strengths navigation](../packages/training/src/climbing-strengths-views.ts)
-offers Styles, Grades and Progress. Styles starts at an individual grade; All
-grades is an explicit pooled view with a mixed-difficulty qualifier. Chart options
-discloses additional formats and setting comparison. The existing strengths-only
+offers Styles and Progress. Styles shows grade-adjusted strengths, and Progress
+shows monthly send rates with a mixed-difficulty qualifier. The
+[server aggregation](../packages/server/src/services/climbing-strengths.ts)
+supplies one selected view per breakdown dimension from the existing page
+filters. Same-grade radar baselines retain each climbing context
+and grading system. The existing strengths-only
 All time override on mobile is labeled locally; the training date selector still
 controls the other charts. Values and counts come from the
 [server response contract](../packages/training/src/climbing-strengths.ts).

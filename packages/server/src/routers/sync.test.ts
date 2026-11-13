@@ -115,8 +115,7 @@ vi.mock("dofek/jobs/queues", () => ({
     removeOnFail: { age: 604_800, count: 1_000 },
   },
   IMPORT_QUEUE: "import",
-  createSyncQueue: vi.fn(() => ({
-    add: mockAdd,
+  getSyncQueue: vi.fn(() => ({
     getJob: mockGetJob,
     getJobs: mockGetJobs,
   })),
@@ -1710,10 +1709,10 @@ describe("syncRouter", () => {
     });
 
     it("uses same queue instance across calls (not recreated)", async () => {
-      const { createSyncQueue } = await import("dofek/jobs/queues");
+      const { getSyncQueue } = await import("dofek/jobs/queues");
       mockGetAllProviders.mockReturnValue([{ id: "wahoo", name: "Wahoo", validate: () => null }]);
 
-      const callCountBefore = vi.mocked(createSyncQueue).mock.calls.length;
+      const callCountBefore = vi.mocked(getSyncQueue).mock.calls.length;
 
       const caller = createCaller({
         db: { execute: vi.fn().mockResolvedValue([]) },
@@ -1724,8 +1723,7 @@ describe("syncRouter", () => {
       await caller.triggerSync({});
       await caller.triggerSync({});
 
-      // No additional queue creation calls — the module-level instance is reused
-      expect(vi.mocked(createSyncQueue).mock.calls.length).toBe(callCountBefore);
+      expect(vi.mocked(getSyncQueue).mock.calls.length).toBe(callCountBefore);
     });
 
     it("throws for unknown provider", async () => {

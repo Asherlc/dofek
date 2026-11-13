@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { type LayoutChangeEvent, StyleSheet, Text, View } from "react-native";
-import Svg, { Line, Polyline, Rect } from "react-native-svg";
+import Svg, { Circle, Line, Polyline, Rect } from "react-native-svg";
 import { colors } from "../../theme";
 
 interface ChartDomain {
@@ -37,7 +37,12 @@ interface SparkLineProps {
   formatYLabel?: (value: number) => string;
 }
 
-/** Split data into contiguous non-null segments for gap rendering */
+interface ChartPoint {
+  x: number;
+  y: number;
+}
+
+/** Split data into contiguous non-null segments for gap rendering. */
 function splitSegments(
   data: (number | null)[],
   padding: number,
@@ -46,26 +51,27 @@ function splitSegments(
   min: number,
   max: number,
   range: number,
-): string[] {
-  const segments: string[] = [];
-  let current: string[] = [];
+): ChartPoint[][] {
+  const segments: ChartPoint[][] = [];
+  let current: ChartPoint[] = [];
 
   for (let i = 0; i < data.length; i++) {
     const value = data[i];
     if (value != null) {
       const clampedValue = Math.max(min, Math.min(max, value));
-      const pointX = padding + (i / (data.length - 1)) * chartWidth;
+      const pointX =
+        padding + (data.length === 1 ? chartWidth / 2 : (i / (data.length - 1)) * chartWidth);
       const pointY = padding + chartHeight - ((clampedValue - min) / range) * chartHeight;
-      current.push(`${pointX},${pointY}`);
+      current.push({ x: pointX, y: pointY });
     } else {
-      if (current.length >= 2) {
-        segments.push(current.join(" "));
+      if (current.length > 0) {
+        segments.push(current);
       }
       current = [];
     }
   }
-  if (current.length >= 2) {
-    segments.push(current.join(" "));
+  if (current.length > 0) {
+    segments.push(current);
   }
   return segments;
 }
@@ -95,7 +101,7 @@ export function SparkLine({
 
   const nonNullValues = data.filter((v): v is number => v != null);
 
-  if (nonNullValues.length < 2 || currentWidth === 0 || currentHeight === 0) {
+  if (nonNullValues.length === 0 || currentWidth === 0 || currentHeight === 0) {
     return (
       <View
         style={{ width: fixedWidth, height: fixedHeight, flex: fixedWidth ? undefined : 1 }}
@@ -104,7 +110,7 @@ export function SparkLine({
     );
   }
 
-  const padding = 2;
+  const padding = 3;
   const chartWidth = currentWidth - padding * 2;
   const chartHeight = currentHeight - padding * 2;
 
@@ -156,17 +162,25 @@ export function SparkLine({
           strokeDasharray="4,4"
         />
       )}
-      {segments.map((points) => (
-        <Polyline
-          key={points}
-          points={points}
-          fill="none"
-          stroke={color}
-          strokeWidth={lineWidth}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      ))}
+      {segments.flatMap((points) => {
+        const pointString = points.map((point) => `${point.x},${point.y}`).join(" ");
+        if (points.length === 1) {
+          return points.map((point) => (
+            <Circle key={pointString} cx={point.x} cy={point.y} r={3} fill={color} />
+          ));
+        }
+        return [
+          <Polyline
+            key={pointString}
+            points={pointString}
+            fill="none"
+            stroke={color}
+            strokeWidth={lineWidth}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />,
+        ];
+      })}
     </Svg>
   );
 

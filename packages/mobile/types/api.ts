@@ -10,8 +10,6 @@ import { z } from "zod";
 
 export type {
   HrvVariabilityRow as HeartRateVariabilityRow,
-  ReadinessComponents,
-  ReadinessRow,
   SleepAnalyticsDataState,
   SleepAnalyticsResult,
   SleepConsistencyRow,

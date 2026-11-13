@@ -13,6 +13,36 @@ export interface HealthKitSample {
   metadata?: Record<string, string | number | boolean>;
 }
 
+export interface RunningStepSample extends HealthKitSample {
+  type: "HKQuantityTypeIdentifierStepCount";
+  unit: "count";
+  workoutUuids: string[];
+}
+
+export interface RunningStepSnapshot {
+  workouts: WorkoutSample[];
+  samples: RunningStepSample[];
+}
+
+export interface RunningStepChanges extends RunningStepSnapshot {
+  hasMore: boolean;
+  deletedUUIDs: string[];
+  queryId: string | null;
+}
+
+export async function queryRunningStepSamples(
+  startDate: string,
+  endDate: string,
+): Promise<RunningStepSnapshot> {
+  return HealthKitModule.queryRunningStepSamples(startDate, endDate);
+}
+
+export async function queryRunningStepChanges(
+  initialStartDate: string,
+): Promise<RunningStepChanges> {
+  return HealthKitModule.queryRunningStepChanges(initialStartDate);
+}
+
 /** A sub-activity within a workout (iOS 16+). Each represents a distinct
  *  segment — e.g. a different exercise or interval within a single workout. */
 export interface WorkoutActivity {

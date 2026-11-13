@@ -40,8 +40,8 @@ const config: StorybookConfig = {
         replacement: resolve(currentDir, "./mocks/expo-updates.ts"),
       },
       {
-        find: "react-native-maps",
-        replacement: resolve(currentDir, "./mocks/react-native-maps.tsx"),
+        find: "@maplibre/maplibre-react-native",
+        replacement: resolve(currentDir, "./mocks/maplibre-react-native.tsx"),
       },
       {
         find: "react-native-reanimated",
@@ -69,6 +69,8 @@ const config: StorybookConfig = {
       name: "storybook-asset-registry",
       enforce: "post",
       config: () => ({
+        // React Native's global also needs to work in Vite's module workers.
+        define: { global: "globalThis" },
         resolve: {
           alias: [
             {

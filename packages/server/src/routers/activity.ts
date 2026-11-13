@@ -8,20 +8,20 @@ import {
   enqueueActivityDeleteAnalyticsRefresh,
   enqueueActivityRecomputeAnalyticsRefresh,
   enqueueActivityRestoreAnalyticsRefresh,
+  getActivityDeleteAnalyticsQueue,
 } from "dofek/jobs/queues";
 import { queryCache } from "dofek/lib/cache";
 import { getProvider } from "dofek/providers/registry";
 import { z } from "zod";
 import {
+  activityHeartRateContextSchema,
   activityMetricSourceSelectionSchema,
   activityMetricSourcesSchema,
   activityPowerWorkSchema,
+  activityPowerZonesSchema,
 } from "../contracts/activity-metric-sources.ts";
-import {
-  ChartRange,
-  selectedChartCustomRangeQuery,
-  selectedChartRangeSchema,
-} from "../lib/chart-range.ts";
+import type { CyclingThresholdEvidence } from "../contracts/cycling-threshold.ts";
+import { selectedChartCustomRangeQuery, selectedChartRangeSchema } from "../lib/chart-range.ts";
 import { endDateSchema } from "../lib/date-window.ts";
 import { Activity, type ActivityDetail } from "../models/activity.ts";
 import {
@@ -29,11 +29,18 @@ import {
   getOwnedActivityImages,
   listActivityImages,
 } from "../repositories/activity-images-repository.ts";
-import { getActivityPowerWork } from "../repositories/activity-metric-sources-repository.ts";
+import {
+  getActivityHeartRateContext,
+  getActivityPowerWork,
+} from "../repositories/activity-metric-sources-repository.ts";
 import { ActivityRepository } from "../repositories/activity-repository.ts";
 import { getActivityRoute } from "../repositories/activity-route-repository.ts";
+import { ClimbingActivityLogEntryRepository } from "../repositories/climbing-activity-log-entry-repository.ts";
+import {
+  CyclingThresholdRepository,
+  cyclingThresholdEvidenceFromMetrics,
+} from "../repositories/cycling-threshold-repository.ts";
 import { HangboardingRepository } from "../repositories/hangboarding-repository.ts";
-import { PowerRepository } from "../repositories/power-repository.ts";
 import { StrengthRepository } from "../repositories/strength-repository.ts";
 import { CacheTTL, cachedProtectedQuery, protectedProcedure, router } from "../trpc.ts";
 import { ensureProvidersRegistered } from "./sync-helpers.ts";
@@ -66,15 +73,16 @@ async function scheduleActivityAnalyticsRefresh(
 async function scheduleActivityRestoreAnalyticsRefresh(
   userId: string,
   activityIds: string[],
-): Promise<void> {
+): Promise<string | null> {
   try {
-    await enqueueActivityRestoreAnalyticsRefresh(userId, activityIds);
+    return await enqueueActivityRestoreAnalyticsRefresh(userId, activityIds);
   } catch (error) {
     const { captureException } = await import("@sentry/node");
     captureException(error, {
       tags: { phase: "activity-restore-analytics-enqueue" },
       extra: { userId, activityCount: activityIds.length },
     });
+    return null;
   }
 }
 
@@ -110,7 +118,8 @@ export type ActivityHrZones = import("@dofek/zones/zones").ActivityHrZone[];
 
 export interface ActivityPowerZonesResult {
   zones: import("@dofek/zones/zones").ActivityPowerZone[];
-  ftp: number;
+  ftp: number | null;
+  thresholdEvidence: CyclingThresholdEvidence;
 }
 
 export const activityRouter = router({
@@ -158,12 +167,12 @@ export const activityRouter = router({
       }
     },
     undefined,
-    { keyVersion: "activity-list-primary-title-v2" },
+    { keyVersion: "activity-list-maplibre-v4" },
   ),
 
   byId: cachedProtectedQuery({
     maxAge: CacheTTL.MEDIUM,
-    keyVersion: "activity-primary-title-v4",
+    keyVersion: "activity-maplibre-v6",
   })
     .input(z.object({ id: z.guid() }))
     .query(async ({ ctx, input }): Promise<ActivityDetail> => {
@@ -181,7 +190,13 @@ export const activityRouter = router({
       }
 
       await ensureProvidersRegistered();
-      return new Activity(row, getProvider).toDetail();
+      const sessions = await new ClimbingActivityLogEntryRepository(
+        ctx.db,
+        ctx.userId,
+        ctx.timezone,
+        ctx.accessWindow,
+      ).getActivityLogSessions([row.id]);
+      return new Activity(row, getProvider).toDetail(sessions.get(row.id) ?? []);
     }),
 
   hangboardDetails: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
@@ -191,6 +206,7 @@ export const activityRouter = router({
         ctx.db,
         ctx.userId,
         ctx.timezone,
+        ctx.sensorStore,
         ctx.accessWindow,
       );
       const detail = await repository.getDetail(input.id);
@@ -228,6 +244,39 @@ export const activityRouter = router({
       );
       const points = await repo.getStream(input.id, input.maxPoints, input.sources);
       return points.map((point) => point.toDetail());
+    }),
+
+  heartRateContext: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
+    .input(
+      z.object({
+        id: z.guid(),
+        maxPoints: z.number().int().min(10).max(10000).default(500),
+        heartRateSourceId: z.string().min(1).max(4096).optional(),
+      }),
+    )
+    .output(activityHeartRateContextSchema)
+    .query(async ({ ctx, input }) => {
+      if (!ctx.sensorStore) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            "ClickHouse activity analytics store is required for heart-rate context. Set CLICKHOUSE_URL and retry.",
+        });
+      }
+      const repo = new ActivityRepository(
+        ctx.db,
+        ctx.userId,
+        ctx.timezone,
+        ctx.accessWindow,
+        ctx.sensorStore,
+      );
+      const window = await repo.findSensorWindow(input.id);
+      if (!window) throw new TRPCError({ code: "NOT_FOUND", message: "Activity not found" });
+      const sourceId =
+        input.heartRateSourceId ??
+        (await repo.getMetricSources(input.id)).find((metric) => metric.key === "heartRate")
+          ?.defaultSourceId;
+      return getActivityHeartRateContext(ctx.sensorStore, window, input.maxPoints, sourceId);
     }),
 
   route: protectedProcedure
@@ -274,9 +323,11 @@ export const activityRouter = router({
 
   metricSources: cachedProtectedQuery({
     maxAge: CacheTTL.MEDIUM,
-    keyVersion: "source-presentation-v2",
+    keyVersion: "source-inheritance-v5",
   })
-    .input(z.object({ id: z.guid() }))
+    .input(
+      z.object({ id: z.guid(), responseVersion: z.union([z.literal(1), z.literal(2)]).default(1) }),
+    )
     .output(activityMetricSourcesSchema)
     .query(({ ctx, input }) =>
       new ActivityRepository(
@@ -285,7 +336,7 @@ export const activityRouter = router({
         ctx.timezone,
         ctx.accessWindow,
         ctx.sensorStore,
-      ).getMetricSources(input.id),
+      ).getMetricSources(input.id, input.responseVersion),
     ),
 
   hrZones: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
@@ -308,8 +359,9 @@ export const activityRouter = router({
       return repo.getHrZones(input.id, input.heartRateSourceId);
     }),
 
-  powerZones: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
+  powerZones: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM, keyVersion: "computed-eftp-v1" })
     .input(z.object({ id: z.guid(), powerSourceId: z.string().min(1).max(4096).optional() }))
+    .output(activityPowerZonesSchema)
     .query(async ({ ctx, input }): Promise<ActivityPowerZonesResult | null> => {
       const activityRepo = new ActivityRepository(
         ctx.db,
@@ -332,12 +384,13 @@ export const activityRouter = router({
         });
       }
 
-      const powerRepo = new PowerRepository(ctx.userId, ctx.timezone, ctx.sensorStore);
-      const { currentEftp } = await powerRepo.getEftpTrend(ChartRange.fromDays(90));
-      if (currentEftp == null) return null;
-
-      const zones = await activityRepo.getPowerZones(activity.id, currentEftp, input.powerSourceId);
-      return { zones, ftp: currentEftp };
+      const thresholds = new CyclingThresholdRepository(ctx.sensorStore, ctx.userId, ctx.timezone);
+      const metrics = (await thresholds.getForActivities([activity.id])).get(activity.id) ?? null;
+      const thresholdEvidence = cyclingThresholdEvidenceFromMetrics(metrics);
+      const ftp = thresholdEvidence.value;
+      const zones =
+        ftp === null ? [] : await activityRepo.getPowerZones(activity.id, ftp, input.powerSourceId);
+      return { zones, ftp, thresholdEvidence };
     }),
 
   powerWork: cachedProtectedQuery({ maxAge: CacheTTL.MEDIUM })
@@ -533,9 +586,17 @@ export const activityRouter = router({
 
   restoreProviderAbsent: protectedProcedure
     .input(z.object({ ids: z.array(z.guid()).min(1).max(MAX_BULK_DELETE_ACTIVITY_IDS) }))
+    .output(
+      z.object({
+        success: z.boolean(),
+        restoredCount: z.number(),
+        analyticsJobId: z.string().nullable(),
+        analyticsError: z.string().nullable(),
+      }),
+    )
     .mutation(async ({ ctx, input }) => {
       try {
-        const restoredCount = await withAccountErasureUserWriteFence(
+        const restoration = await withAccountErasureUserWriteFence(
           ctx.db,
           ctx.userId,
           async (transaction) => {
@@ -545,13 +606,23 @@ export const activityRouter = router({
               ctx.timezone,
               ctx.accessWindow,
             );
-            const { restoredCount } = await repo.restoreProviderAbsent(input.ids);
-            return restoredCount;
+            return repo.restoreProviderAbsent(input.ids);
           },
         );
         await invalidateActivityListCaches(ctx.userId);
-        await scheduleActivityRestoreAnalyticsRefresh(ctx.userId, input.ids);
-        return { success: true, restoredCount };
+        const analyticsJobId = await scheduleActivityRestoreAnalyticsRefresh(
+          ctx.userId,
+          restoration.memberActivityIds,
+        );
+        return {
+          success: true,
+          restoredCount: restoration.restoredCount,
+          analyticsJobId,
+          analyticsError:
+            restoration.restoredCount > 0 && !analyticsJobId
+              ? "Activity restored, but refreshing charts could not start. Use Recompute to retry."
+              : null,
+        };
       } catch (error) {
         if (isRelationMissingError(error)) {
           throw new TRPCError({
@@ -562,5 +633,42 @@ export const activityRouter = router({
         }
         throw error;
       }
+    }),
+  restoreStatus: protectedProcedure
+    .input(z.object({ jobId: z.string().min(1).max(200) }))
+    .output(
+      z.object({
+        status: z.enum(["pending", "completed", "failed"]),
+        error: z.string().nullable(),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const job = await getActivityDeleteAnalyticsQueue().getJob(input.jobId);
+      if (
+        !job ||
+        job.data.userId !== ctx.userId ||
+        job.data.type !== "activity-restore-analytics-refresh"
+      ) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message:
+            "Restore refresh status is unavailable. Reload the activity to check its charts.",
+        });
+      }
+      const state = await job.getState();
+      if (state === "unknown") {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message:
+            "Restore refresh status is unavailable. Reload the activity to check its charts.",
+        });
+      }
+      return {
+        status: state === "completed" || state === "failed" ? state : "pending",
+        error:
+          state === "failed"
+            ? "Activity restored, but refreshing charts failed. Use Recompute to retry."
+            : null,
+      };
     }),
 });

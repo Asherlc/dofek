@@ -58,6 +58,113 @@ describe("ClimbingRepository PostgreSQL scoped rock summaries", () => {
   const volume = async (filters: ClimbingFilters = {}) =>
     (await repo().getVolumeByGrade(30, filters)).map((row) => row.toDetail());
 
+  it("maps a logged gym ahead of shared climb coordinates and withholds unlocated gyms", async () => {
+    const problem = { ...route, coordinates: { latitude: 40, longitude: 10 } };
+    await write({
+      externalId: "located",
+      climb: problem,
+      areas: [
+        { externalId: "gym-a", name: "Gym A", coordinates: { latitude: 0, longitude: -120 } },
+      ],
+    });
+    await write({
+      externalId: "unlocated",
+      climb: problem,
+      areas: [{ externalId: "gym-b", name: "Gym B", coordinates: null }],
+    });
+    const entries = await repo().getMapEntries(30);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.location).toMatchObject({
+      name: "Gym A",
+      scope: "area",
+      coordinates: { latitude: 0, longitude: -120 },
+    });
+  });
+
+  it.each([
+    { filters: {}, grades: ["V1", "V2", "V3", "V4"], minutes: 300 },
+    {
+      filters: { board: ["recorded", "not_recorded"] },
+      grades: ["V1", "V2", "V3", "V4"],
+      minutes: 300,
+    },
+    { filters: { board: [] }, grades: [], minutes: 0 },
+    { filters: { board: ["recorded"] }, grades: ["V1", "V3"], minutes: 120 },
+    { filters: { board: ["not_recorded"] }, grades: ["V2", "V4"], minutes: 120 },
+    { filters: { board: ["recorded"], setting: ["indoor"] }, grades: ["V1"], minutes: 60 },
+    { filters: { board: ["recorded"], setting: ["outdoor"] }, grades: ["V3"], minutes: 60 },
+    { filters: { board: ["not_recorded"], setting: ["outdoor"] }, grades: ["V4"], minutes: 60 },
+    {
+      filters: { board: ["recorded", "not_recorded"], setting: ["indoor"] },
+      grades: ["V1", "V2"],
+      minutes: 120,
+    },
+    { filters: { board: ["recorded", "not_recorded"], setting: [] }, grades: [], minutes: 0 },
+  ] satisfies { filters: ClimbingFilters; grades: string[]; minutes: number }[])(
+    "filters recorded board metadata independently of provider before aggregating $filters",
+    async ({ filters, grades, minutes }) => {
+      const date = await climbingTestDate(context.db);
+      await seedClimbingActivity(
+        context.db,
+        "climbing-summary-test",
+        "unlogged-board-outing",
+        new Date(`${date}T12:00:00Z`),
+      );
+      for (const [grade, provider, board, setting] of [
+        ["V1", "climbing-summary-test", { name: "Training Board", externalId: null }, "indoor"],
+        ["V2", "climbing-summary-test", null, "indoor"],
+        ["V3", "openbeta", { name: "Imported Board", externalId: "board-3" }, "outdoor"],
+        ["V4", "openbeta", null, "outdoor"],
+      ] as const) {
+        const outing = await seedClimbingActivity(
+          context.db,
+          provider,
+          `board-${grade}`,
+          new Date(`${date}T12:00:00Z`),
+        );
+        await write(
+          {
+            externalId: `board-${grade}`,
+            activityId: outing.id,
+            board,
+            climb: {
+              externalId: `board-${grade}`,
+              name: `Climb ${grade}`,
+              kind: "boulder",
+              setting,
+              publishedGrades: [{ value: grade, system: "v_scale" }],
+              coordinates: { latitude: 37, longitude: -122 },
+            },
+            attempts: [{ scope: "climb", sourceResult: "Send", qualifier: "free-send" }],
+          },
+          provider,
+        );
+      }
+      expect((await volume(filters)).map((row) => row.grade)).toEqual(grades);
+      expect((await volume(filters)).map((row) => row.recordedAttempts)).toEqual(
+        grades.map(() => 1),
+      );
+      expect((await repo().getMapEntries(30, filters)).map((row) => row.grade).sort()).toEqual(
+        grades,
+      );
+      const progression = (await repo().getGradeProgressionV2(30, filters))?.toDetail();
+      expect(progression?.grades.map((row) => row.grade) ?? []).toEqual(grades);
+      expect(progression?.periods.reduce((sum, period) => sum + period.sends, 0) ?? 0).toBe(
+        grades.length,
+      );
+      expect(progression?.periods.reduce((sum, period) => sum + period.climbingDays, 0) ?? 0).toBe(
+        grades.length === 0 ? 0 : 1,
+      );
+      const sessions = await repo().getSessionSummaries(30, filters);
+      expect(sessions.map((session) => session.toDetail().hardestBoulderGrade).sort()).toEqual(
+        grades,
+      );
+      expect(await repo().getVolumeOverTime(30, filters)).toEqual(
+        grades.length === 0 ? [] : [expect.objectContaining({ attempts: grades.length, minutes })],
+      );
+    },
+  );
+
   it("labels an unnamed Kaya climb from raw color without inventing a catalogue name", async () => {
     const id = await write(
       {
@@ -322,9 +429,9 @@ describe("ClimbingRepository PostgreSQL scoped rock summaries", () => {
       expect.objectContaining({ grade: "5.12a", sends: 1, recordedAttempts: 1 }),
     ]);
     expect(
-      (await repo().getGradeProgression(30, { attemptScope: ["pitch"] })).flatMap((row) =>
-        row.toDetail().grades.map((grade) => grade.grade),
-      ),
+      (await repo().getGradeProgressionV2(30, { attemptScope: ["pitch"] }))
+        ?.toDetail()
+        .grades.map((grade) => grade.grade),
     ).toEqual(["5.12a"]);
   });
   it("requires combined method and solo filters on the same attempt", async () => {
@@ -466,7 +573,7 @@ describe("ClimbingRepository PostgreSQL scoped rock summaries", () => {
       attempts: [{ scope: "climb", sourceResult: "Send", qualifier: "free-send" }],
     });
     expect(await volume()).toEqual([]);
-    expect(await repo().getGradeProgression(30)).toEqual([]);
+    expect(await repo().getGradeProgressionV2(30)).toBeNull();
   });
   it("counts known rock ungraded participation without treating opinions as published difficulty", async () => {
     const outing = await seedClimbingActivity(
@@ -506,8 +613,8 @@ describe("ClimbingRepository PostgreSQL scoped rock summaries", () => {
     expect(await volume()).toEqual([
       expect.objectContaining({ attempts: 1, recordedAttempts: 1, sends: 0 }),
     ]);
-    const [lane] = await repo().getGradeProgression(30);
-    expect(lane?.toDetail().periods[0]?.settings[0]).toMatchObject({
+    const chart = await repo().getGradeProgressionV2(30);
+    expect(chart?.toDetail().periods[0]).toMatchObject({
       climbingDays: 1,
       unknownOutcomes: 1,
       sends: 0,
@@ -579,6 +686,19 @@ describe("ClimbingRepository PostgreSQL scoped rock summaries", () => {
     expect(await volume()).toEqual([
       expect.objectContaining({ attempts: null, recordedAttempts: null, sends: 1 }),
     ]);
+    expect(await repo().getVolumeOverTime(30)).toEqual([
+      expect.objectContaining({ attempts: null }),
+    ]);
+
+    await write({
+      externalId: "known-attempts",
+      attempts: [
+        { scope: "climb", ropeMethod: "lead" },
+        { scope: "climb", ropeMethod: "lead" },
+        { scope: "climb", ropeMethod: "lead" },
+      ],
+    });
+    expect(await repo().getVolumeOverTime(30)).toEqual([expect.objectContaining({ attempts: 3 })]);
   });
   it("preserves standalone source observations without cross-provider merging", async () => {
     await write({}, "mountain-project");
@@ -646,7 +766,7 @@ describe("ClimbingRepository PostgreSQL scoped rock summaries", () => {
     await write({ externalId: "boundary-standalone", climbedOn: boundaryDate });
     await write({ externalId: "undated", climbedOn: null });
     expect(await volume()).toEqual([]);
-    expect(await repo().getGradeProgression(30)).toEqual([]);
+    expect(await repo().getGradeProgressionV2(30)).toBeNull();
     expect(await repo().getSessionSummaries(30)).toEqual([]);
   });
   it("uses source-resolved activity dates independently of the log source date", async () => {

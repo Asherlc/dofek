@@ -1,13 +1,12 @@
 import {
   formatDateShort,
   formatDurationMinutes,
-  formatIntensity,
   formatNumber,
   formatTrainingLoad,
 } from "@dofek/format/format";
 import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { shouldShowBlockingLoading } from "@dofek/scoring/loading-policy";
-import { aggregateWeeklyVolume, StrainScore } from "@dofek/scoring/scoring";
+import { aggregateWeeklyVolume } from "@dofek/scoring/scoring";
 import type { ClimbingFilters as ClimbingFilterValues } from "@dofek/training/climbing-filters";
 import { climbingStrengthsSchema } from "@dofek/training/climbing-strengths";
 import { TRAINING_TERMINOLOGY } from "@dofek/training/terminology";
@@ -17,28 +16,19 @@ import {
 } from "@dofek/training/training";
 import { useRouter } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  ActivityIndicator,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
-import { ActivityCard } from "../../components/ActivityCard";
+import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { ChartTitleWithTooltip } from "../../components/ChartTitleWithTooltip";
 import { ClimbingFilters } from "../../components/ClimbingFilters";
 import { ClimbingLocationMapCard } from "../../components/ClimbingLocationMapCard";
 import { ClimbingStrengths } from "../../components/ClimbingStrengths";
 import { ClimbingTrainingCard } from "../../components/ClimbingTrainingCard";
-import { SparkLine } from "../../components/charts/SparkLine";
-import { StrainGauge } from "../../components/charts/StrainGauge";
 import { VerticalAscentChart } from "../../components/charts/VerticalAscentChart";
 import { DaySelector } from "../../components/DaySelector";
 import { ProcessingStatusWidget } from "../../components/ProcessingStatusWidget";
 import { ProgressiveOverloadCards } from "../../components/ProgressiveOverloadCards";
 import { QueryStatePanel } from "../../components/QueryStatePanel";
+import { RouteComparisonCard } from "../../components/RouteComparisonCard";
+import { RunningTrainingCard } from "../../components/RunningTrainingCard";
 import { SportVolumeChart } from "../../components/SportVolumeChart";
 import { TrainingChartEmptyState } from "../../components/TrainingChartEmptyState";
 import { TrainingDistributionCards } from "../../components/TrainingDistributionCards";
@@ -53,7 +43,7 @@ import { useRefresh } from "../../lib/useRefresh";
 import { useTimeRangePreference } from "../../lib/useTimeRangePreference";
 import { useTodayQueryDate } from "../../lib/useTodayQueryDate";
 import { colors } from "../../theme";
-import { ActivityRowSchema, WeeklyVolumeRowSchema } from "../../types/api";
+import { WeeklyVolumeRowSchema } from "../../types/api";
 
 const reportedTrainingErrors = new WeakSet<object>();
 
@@ -74,6 +64,7 @@ function useReportQueryError(query: { isError: boolean; error: object | null }) 
 export default function StrainScreen() {
   const [climbingFilters, setClimbingFilters] = useState<ClimbingFilterValues>({});
   const [strengthsAllTime, setStrengthsAllTime] = useState(false);
+  const [includeAreaMetadata, setIncludeAreaMetadata] = useState(true);
   const router = useRouter();
   const utils = trpc.useUtils();
   const { days, isHydrated, setDays } = useTimeRangePreference("training");
@@ -85,17 +76,32 @@ export default function StrainScreen() {
     hasCommittedHydratedRange.current = isHydrated;
   }, [isHydrated]);
 
-  const trainingQuery = trpc.mobileDashboard.training.useQuery(
+  const trainingQuery = trpc.mobileDashboard.trainingV2.useQuery(
     { days, endDate, ...(Object.keys(climbingFilters).length ? { climbingFilters } : {}) },
     {
       enabled: isHydrated,
       placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
     },
   );
-  const climbingStrengthsQuery = trpc.climbing.strengths.useQuery(
-    { days: strengthsAllTime ? null : days, endDate, ...climbingFilters },
+  const runningQuery = trpc.running.dynamicsV2.useQuery(
+    { days, responseVersion: 2 },
     {
       enabled: isHydrated,
+      placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
+    },
+  );
+  useReportQueryError(runningQuery);
+  const climbingStrengthsQuery = trpc.climbing.strengths.useQuery(
+    {
+      days: strengthsAllTime ? null : days,
+      endDate,
+      responseVersion: 2,
+      ...climbingFilters,
+      includeAreaMetadata,
+    },
+    {
+      enabled: isHydrated,
+      refetchInterval: (query) => (query.state.data?.enrichmentPending ? 1500 : false),
       placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
     },
   );
@@ -143,13 +149,6 @@ export default function StrainScreen() {
       placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
     },
   );
-  const monotonyQuery = trpc.cyclingAdvanced.trainingMonotony.useQuery(
-    { days },
-    {
-      enabled: isHydrated,
-      placeholderData: preservePreviousRangeData ? (previousData) => previousData : undefined,
-    },
-  );
   const processingStatus = useProcessingStatus({ datasets: ["activity", "recovery", "training"] });
 
   useReportQueryError(trainingQuery);
@@ -157,7 +156,6 @@ export default function StrainScreen() {
   useReportQueryError(climbingStrengthsQuery);
   useReportQueryError(hrZonesQuery);
   useReportQueryError(polarizationQuery);
-  useReportQueryError(monotonyQuery);
 
   const trainingData = isHydrated ? trainingQuery.data : undefined;
 
@@ -170,14 +168,6 @@ export default function StrainScreen() {
       ? "Baseline load"
       : `${workloadResult.context.baselineDays}-day baseline load`;
   const todayWorkload = workloadData[workloadData.length - 1];
-  const strainTarget = trainingData?.strainTarget;
-
-  const activitiesParsed = safeParseRows(
-    ActivityRowSchema,
-    trainingData == null ? [] : trainingData.activities,
-    "strain:activities",
-  );
-  const activities = activitiesParsed.data;
 
   const weeklyVolumeParsed = safeParseRows(
     WeeklyVolumeRowSchema,
@@ -202,24 +192,9 @@ export default function StrainScreen() {
     .sort((a, b) => b[1] - a[1])
     .map(([activityType, hours]) => ({ activityType, hours }));
 
-  const dailyStrain =
-    strainTarget?.currentStrain ??
-    (workloadResult?.displayedDate != null && workloadResult.displayedDate === endDate
-      ? workloadResult.displayedStrain
-      : 0);
   const acuteLoad = todayWorkload?.acuteLoad ?? 0;
   const chronicLoad = todayWorkload?.chronicLoad ?? 0;
   const workloadRatio = todayWorkload?.workloadRatio;
-  const displayedDate = workloadResult?.displayedDate;
-  const strainDateLabel =
-    displayedDate == null
-      ? "No training load to display"
-      : displayedDate === todayWorkload?.date
-        ? "Today"
-        : `Last training day: ${formatDateShort(displayedDate)}`;
-
-  const strainTrend = workloadData.map((d) => d.strain);
-  const strainTrendAvailability = trainingData?.chartAvailability?.strainTrend;
   const verticalAscentAvailability = trainingData?.chartAvailability?.verticalAscent;
 
   const isLoading = shouldShowBlockingLoading({
@@ -230,15 +205,16 @@ export default function StrainScreen() {
   const { refreshing, onRefresh } = useRefresh({
     invalidate: () =>
       Promise.all([
-        utils.mobileDashboard.training.invalidate(),
+        utils.mobileDashboard.trainingV2.invalidate(),
+        utils.running.dynamicsV2.invalidate(),
         utils.climbing.locationMap.invalidate(),
         utils.climbing.strengths.invalidate(),
         utils.climbing.volumeOverTime.invalidate(),
         utils.strength.volumeOverTime.invalidate(),
         utils.training.hrZones.invalidate(),
         utils.training.sportVolume.invalidate(),
+        utils.hiking.activityComparison.invalidate(),
         utils.efficiency.polarizationTrend.invalidate(),
-        utils.cyclingAdvanced.trainingMonotony.invalidate(),
         utils.processing.status.invalidate(),
       ]).then(() => undefined),
   });
@@ -284,60 +260,6 @@ export default function StrainScreen() {
         />
       ) : (
         <>
-          {/* Current strain gauge */}
-          <View style={styles.gaugeSection}>
-            <StrainGauge strain={dailyStrain} size={160} />
-            <Text style={styles.gaugeCaption}>{strainDateLabel}</Text>
-          </View>
-
-          {/* Strain Target */}
-          {strainTarget && (
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>Suggested strain</Text>
-              <View style={styles.targetHeader}>
-                <View style={styles.targetValueRow}>
-                  <Text style={styles.targetValue}>{strainTarget.targetStrain}</Text>
-                  <Text
-                    style={[
-                      styles.zoneBadge,
-                      {
-                        backgroundColor:
-                          strainTarget.zone === "Push"
-                            ? colors.positiveSubtle
-                            : strainTarget.zone === "Recovery"
-                              ? colors.dangerSubtle
-                              : colors.warningSubtle,
-                        color:
-                          strainTarget.zone === "Push"
-                            ? colors.positive
-                            : strainTarget.zone === "Recovery"
-                              ? colors.danger
-                              : colors.warning,
-                      },
-                    ]}
-                  >
-                    {strainTarget.zone}
-                  </Text>
-                </View>
-                <Text style={styles.targetProgress}>
-                  {formatIntensity(strainTarget.progressPercent)} reached
-                </Text>
-              </View>
-              <View style={styles.targetBarTrack}>
-                <View
-                  style={[
-                    styles.targetBarFill,
-                    {
-                      width: `${Math.min(strainTarget.progressPercent, 100)}%`,
-                      backgroundColor: new StrainScore(strainTarget.currentStrain).color,
-                    },
-                  ]}
-                />
-              </View>
-              <Text style={styles.targetExplanation}>{strainTarget.explanation}</Text>
-            </View>
-          )}
-
           {/* Workload breakdown */}
           <View style={styles.card}>
             <ChartTitleWithTooltip
@@ -372,24 +294,6 @@ export default function StrainScreen() {
             )}
           </View>
 
-          {/* Strain trend */}
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>{`Daily Strain (${days} Days)`}</Text>
-            {strainTrendAvailability?.status === "available" ? (
-              <SparkLine
-                data={strainTrend}
-                height={60}
-                color={colors.accent}
-                showBaseline
-                showYAxis
-              />
-            ) : strainTrendAvailability ? (
-              <TrainingChartEmptyState availability={strainTrendAvailability} />
-            ) : (
-              <Text style={styles.emptyChartText}>No training data yet for this period</Text>
-            )}
-          </View>
-
           {/* Vertical Ascent Rate */}
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Vertical Ascent Rate</Text>
@@ -411,6 +315,7 @@ export default function StrainScreen() {
       )}
 
       <SportVolumeChart days={days} enabled={isHydrated} />
+      <RouteComparisonCard days={days} enabled={isHydrated} />
       <ClimbingFilters value={climbingFilters} onChange={setClimbingFilters} />
       {climbingVolumeQuery.error ? (
         <QueryStatePanel variant="error" message={climbingVolumeQuery.error.message} />
@@ -437,6 +342,8 @@ export default function StrainScreen() {
       ) : null}
       <ClimbingStrengths
         data={climbingStrengths.data}
+        includeAreaMetadata={includeAreaMetadata}
+        onIncludeAreaMetadataChange={setIncludeAreaMetadata}
         rangeControl={
           <View
             accessibilityRole="radiogroup"
@@ -490,6 +397,16 @@ export default function StrainScreen() {
         loading={climbingLocationMapQuery.isLoading}
         error={climbingLocationMapQuery.error}
       />
+      <RunningTrainingCard
+        units={units}
+        data={isHydrated ? runningQuery.data : undefined}
+        loading={!isHydrated || runningQuery.isLoading}
+        error={runningQuery.error}
+        onRetry={() => {
+          void runningQuery.refetch();
+        }}
+        onOpenActivity={(id) => router.push(`/activity/${id}`)}
+      />
       {shouldShowClimbingSection && !isLoading ? (
         <ClimbingTrainingCard
           data={trainingData?.climbing}
@@ -539,62 +456,6 @@ export default function StrainScreen() {
               )}
             </View>
           )}
-
-          {/* Recent activities */}
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Recent Activities</Text>
-              <TouchableOpacity
-                activeOpacity={0.7}
-                onPress={() => router.push("/activities")}
-                style={styles.sectionLinkButton}
-                accessibilityRole="button"
-                accessibilityLabel="View all activities"
-              >
-                <Text style={styles.sectionLinkButtonText}>View all</Text>
-              </TouchableOpacity>
-            </View>
-            {isLoading ? (
-              <ActivityIndicator color={colors.accent} style={styles.activitiesLoader} />
-            ) : activitiesParsed.error ? (
-              <Text style={styles.errorText}>
-                {userFacingErrorMessage(
-                  activitiesParsed.error,
-                  "Recent activities could not be loaded. Please try again.",
-                )}
-              </Text>
-            ) : activities.length > 0 ? (
-              <View style={styles.activitiesStack}>
-                {activities.slice(0, 5).map((activity) => (
-                  <TouchableOpacity
-                    key={String(activity.id)}
-                    activeOpacity={0.7}
-                    onPress={() => router.push(`/activity/${activity.id}`)}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Open ${activity.name ?? formatActivityTypeLabel(activity.primary_canonical_type ?? activity.canonical_type ?? "other")}`}
-                  >
-                    <ActivityCard
-                      name={activity.name ?? null}
-                      activityType={activity.canonical_type ?? ""}
-                      primaryActivityType={activity.primary_canonical_type}
-                      startedAt={activity.started_at}
-                      endedAt={activity.ended_at ?? null}
-                      avgHr={activity.avg_hr ?? null}
-                      maxHr={activity.max_hr ?? null}
-                      avgPower={activity.avg_power ?? null}
-                      distanceKm={
-                        activity.distance_meters == null ? null : activity.distance_meters / 1000
-                      }
-                      distanceState={activity.distance_state}
-                      units={units}
-                    />
-                  </TouchableOpacity>
-                ))}
-              </View>
-            ) : (
-              <Text style={styles.activitiesEmpty}>No recent activities</Text>
-            )}
-          </View>
         </>
       )}
 
@@ -618,20 +479,9 @@ export default function StrainScreen() {
         <QueryStatePanel variant="loading" minHeight={120} />
       ) : null}
 
-      {monotonyQuery.isError ? (
-        <QueryStatePanel
-          variant="error"
-          title={`Could not load ${TRAINING_TERMINOLOGY.monotony.plainLabel.toLowerCase()}`}
-          message={monotonyQuery.error.message}
-        />
-      ) : monotonyQuery.isLoading && monotonyQuery.data == null ? (
-        <QueryStatePanel variant="loading" minHeight={120} />
-      ) : null}
-
       <TrainingDistributionCards
         intensityDistribution={hrZonesQuery.data?.intensityDistribution ?? null}
         polarization={polarizationQuery.data ?? null}
-        monotony={monotonyQuery.data ?? null}
       />
     </ScrollView>
   );
@@ -646,15 +496,6 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingBottom: 100,
     gap: 16,
-  },
-  gaugeSection: {
-    alignItems: "center",
-    paddingVertical: 16,
-    gap: 8,
-  },
-  gaugeCaption: {
-    fontSize: 12,
-    color: colors.textSecondary,
   },
   card: {
     backgroundColor: colors.surface,
@@ -693,55 +534,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.textSecondary,
     textAlign: "center",
-  },
-  targetHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  targetValueRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  targetValue: {
-    fontSize: 28,
-    fontWeight: "700",
-    color: colors.text,
-    fontVariant: ["tabular-nums"],
-  },
-  zoneBadge: {
-    fontSize: 11,
-    fontWeight: "700",
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-    overflow: "hidden",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  targetProgress: {
-    fontSize: 13,
-    color: colors.textSecondary,
-    fontVariant: ["tabular-nums"],
-  },
-  targetBarTrack: {
-    height: 8,
-    backgroundColor: colors.surfaceSecondary,
-    borderRadius: 4,
-    overflow: "hidden",
-  },
-  targetBarFill: {
-    height: "100%",
-    borderRadius: 4,
-  },
-  targetExplanation: {
-    fontSize: 12,
-    color: colors.textSecondary,
-    lineHeight: 18,
-  },
-  sparkContainer: {
-    alignItems: "center",
   },
   emptyChartText: {
     fontSize: 13,
@@ -797,41 +589,12 @@ const styles = StyleSheet.create({
   section: {
     gap: 12,
   },
-  sectionHeader: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
   sectionTitle: {
     fontSize: 13,
     fontWeight: "600",
     color: colors.textSecondary,
     textTransform: "uppercase",
     letterSpacing: 0.5,
-  },
-  sectionLinkButton: {
-    borderColor: colors.surfaceSecondary,
-    borderRadius: 10,
-    borderWidth: 1,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-  },
-  sectionLinkButtonText: {
-    color: colors.textSecondary,
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  activitiesStack: {
-    gap: 8,
-  },
-  activitiesLoader: {
-    paddingVertical: 24,
-  },
-  activitiesEmpty: {
-    color: colors.textTertiary,
-    fontSize: 13,
-    textAlign: "center",
-    paddingVertical: 24,
   },
   errorText: {
     color: "#f87171",

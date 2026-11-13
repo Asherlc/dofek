@@ -52,9 +52,9 @@ describe("AnalyticalTrainingLoadRepository database semantics", () => {
     `);
     await postgres.db.execute(sql`
       INSERT INTO fitness.sport_settings (
-        user_id, sport, ftp, threshold_hr, power_zone_pcts, hr_zone_pcts, effective_from
+        user_id, sport, threshold_hr, power_zone_pcts, hr_zone_pcts, effective_from
       ) VALUES (
-        ${userId}::uuid, 'cycling', 250, 175,
+        ${userId}::uuid, 'cycling', 175,
         '[0.55,0.75,0.9,1.05,1.2,1.5]'::jsonb,
         '[0.6,0.7,0.8,0.9]'::jsonb,
         '2026-01-01'
@@ -156,6 +156,15 @@ describe("AnalyticalTrainingLoadRepository database semantics", () => {
     `);
 
     await clickhouse.command({ query: `CREATE DATABASE ${analyticsDatabase}` });
+    await clickhouse.command({
+      query: `CREATE TABLE ${analyticsDatabase}.cycling_activity_power_metrics
+      (user_id UUID, activity_id UUID, power_tss Nullable(Float64)) ENGINE=Memory`,
+    });
+    await clickhouse.insert({
+      table: `${analyticsDatabase}.cycling_activity_power_metrics`,
+      values: [{ user_id: userId, activity_id: cyclingActivityId, power_tss: 100 }],
+      format: "JSONEachRow",
+    });
     await clickhouse.command({
       query: `CREATE TABLE ${analyticsDatabase}.cycling_activity (
         activity_id UUID,
@@ -279,8 +288,8 @@ describe("AnalyticalTrainingLoadRepository database semantics", () => {
       },
       climbing_attempts: {
         daily_value: 4,
-        status: "available",
-        coverage: { contributing_records: 3, supported_records: 3 },
+        status: "partial",
+        coverage: { contributing_records: 3, supported_records: 2 },
       },
       finger_load: {
         daily_value: null,
@@ -429,6 +438,36 @@ describe("AnalyticalTrainingLoadRepository database semantics", () => {
       climbing_attempts: { daily_value: 0, status: "not_observed" },
       finger_load: { daily_value: 0, status: "not_observed" },
       strength_volume: { daily_value: 0, status: "not_observed" },
+    });
+  });
+  it("keeps an attached project with no recorded tries unavailable", async () => {
+    const activityId = randomUUID();
+    await postgres.db.execute(
+      sql`INSERT INTO fitness.activity (id, group_id, provider_id, user_id, external_id, canonical_type, provider_type, started_at, ended_at, raw) VALUES (${activityId}::uuid, ${activityId}::uuid, ${providerId}, ${userId}::uuid, ${activityId}, 'climbing', 'rock_climbing', '2026-06-17T18:00:00Z', '2026-06-17T19:00:00Z', '{}'::jsonb)`,
+    );
+    await persistClimbingLogEntries(postgres.db, {
+      userId,
+      providerId,
+      entries: [
+        {
+          externalId: activityId,
+          activityId,
+          discipline: "rock_climbing",
+          climb: { externalId: activityId, kind: "boulder" },
+          attempts: [],
+        },
+      ],
+    });
+    const result = await new AnalyticalTrainingLoadRepository(
+      postgres.db,
+      store,
+      userId,
+      "UTC",
+    ).listRange("2026-06-17", "2026-06-17", { providers: [], modalities: [] }, "source_context");
+    expect(result.rows[0]?.channels.climbing_attempts).toMatchObject({
+      daily_value: null,
+      status: "unavailable",
+      coverage: { contributing_records: 1, supported_records: 0 },
     });
   });
 });

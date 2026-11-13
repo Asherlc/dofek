@@ -73,20 +73,20 @@ describe("ClimbingLogAttachment", () => {
       getQueryKey(trpc.climbing.locationMap, { days: 90 }, "query"),
       getQueryKey(
         trpc.climbing.activityLogEntries,
-        { activityId: "activity-1", responseVersion: 2 },
+        { activityId: "activity-1", responseVersion: 4 },
         "query",
       ),
       getQueryKey(
         trpc.climbing.unattachedClimbingLogEntries,
-        { activityId: "activity-1", responseVersion: 2 },
+        { activityId: "activity-1", responseVersion: 4 },
         "query",
       ),
       getQueryKey(trpc.climbing.sessionSummary, { days: 90 }, "query"),
-      getQueryKey(trpc.climbing.gradeProgression, { days: 90 }, "query"),
+      getQueryKey(trpc.climbing.gradeProgressionV2, { days: 90 }, "query"),
       getQueryKey(trpc.climbing.strengths),
       getQueryKey(trpc.climbing.volumeByGrade, { days: 90 }, "query"),
       getQueryKey(trpc.activity.list, { limit: 10 }, "query"),
-      getQueryKey(trpc.calendar.weekList, undefined, "query"),
+      getQueryKey(trpc.calendar.weekListV2, undefined, "query"),
     ];
     for (const key of keys) fixture.queryClient.setQueryData(key, []);
     fireEvent.click(await screen.findByRole("radio", { name: /Approach hike/ }));

@@ -12,16 +12,23 @@ Metadata and statistics for data providers.
   evidence, not per-sample attribution; see
   [Garmin's activity-file description](https://developer.garmin.com/fit/articles/file-types/activity.html).
   [`activitySourceTreeWithHardware(tree, hardware)`](src/activity-source-hardware.ts)
-  clones the source tree and nests hardware beneath its reporting record. Recording
-  device facts enrich existing Apple Watch or Garmin device nodes; specific models,
-  reported details, and power evidence use optional node `details`. Unmatched
-  records remain separate reporting-source roots rather than implying import
-  ancestry. This projection preserves the distinction between FIT creators and
-  device inventory described in the linked Garmin activity-file specification.
+  names retained Garmin and Peloton recordings from their reported hardware.
+  Hardware inventory does not create sharing branches; those come from the
+  [server's retained origin evidence](../server/src/models/activity-source-tree.ts).
+  Unmatched reporting records remain separate roots with unresolved ancestry.
 
 - **Activity origin**: The [origin contract](src/activity-origin.ts) identifies
   the closest available recording or explicitly unresolved attribution. Field
   priorities never establish recording origin.
+
+  Metric source inheritance projects the same [canonical source tree](../server/src/models/activity-source-tree.ts)
+  used by the activity source disclosure through the [shared tree projection](src/activity-source-tree.ts).
+  It retains recording selection IDs and explicit per-sample device attribution;
+  clients render the original provider with a delivery-provider badge.
+  The [metric-sources API](../server/src/routers/activity.ts) serves this presentation
+  to `responseVersion: 2` requests; omitted/version-1 requests retain the installed
+  clients' original attribution contract. Publish the API before updating clients
+  to request version 2.
 
 - **Provider Identity**: Mapping of provider IDs to human-readable labels and logo types (SVG vs PNG).
 - **WHOOP Wear Locations**: Definitions and parsing for WHOOP-specific sensor placement (wrist, bicep, etc.).
@@ -34,6 +41,37 @@ Metadata and statistics for data providers.
 - `PROVIDER_LABELS` provides the canonical display name for each provider.
 - [`providerLogoType` and `providerLogoId`](src/providers.ts) resolve provider icons from the [provider catalog](src/provider-catalog.ts).
 - [`BRAND_COLORS`](src/provider-catalog.ts) provides fallback colors for providers without dedicated logos (e.g., `dofek` uses `#4A9D8E`).
+
+The climbing source links reuse these icons. The Mountain Project icon comes
+from its [official touch icon](https://www.mountainproject.com/img/climb/favicons/favicon-180.png);
+the OpenBeta quickdraw mark comes from its [official site's header](https://openbeta.io/).
+
+Bundled provider icons live in [`packages/web/src/public/logos`](../web/src/public/logos/),
+served to both clients through the existing logo renderer. The additional brand
+assets use official app artwork or site icons:
+
+| Asset | Official source |
+| --- | --- |
+| Kilter | [Kilter Board app](https://apps.apple.com/us/app/id6755110303) |
+| Tension | [Tension Board 2 app](https://apps.apple.com/us/app/id1488028660) |
+| Grasshopper | [Grasshopper Board app](https://apps.apple.com/us/app/id1507596418) |
+| Decoy | [Decoy Board app](https://apps.apple.com/us/app/id1539249879) |
+| So iLL | [So iLL Board app](https://apps.apple.com/us/app/id1358056082) |
+| Touchstone | [Touchstone Board app](https://apps.apple.com/ag/app/id1494642775) |
+| Aurora | [Aurora Board app](https://apps.apple.com/us/app/id1219531784) |
+| Crimpd | [Crimpd app](https://apps.apple.com/us/app/id1252333138) |
+| 8a.nu / Vertical-Life | [Vertical-Life Climbing app](https://apps.apple.com/us/app/id710386774) |
+| MoonBoard | [Moon Board app](https://apps.apple.com/us/app/id6446842142) |
+| theCrag | [Site touch icon](https://static.thecrag.com/cids/images/logo-114-1.1.1.png) |
+| Ziva | [Site touch icon](https://ziva.fit/apple-touch-icon.png) |
+| GitHub | [GitHub mark](https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png) |
+| Slack | [Slack icon](https://a.slack-edge.com/80588/marketing/img/icons/icon_slack_hash_colored.png) |
+| Intervals.icu | [Site logo](https://www.intervals.icu/_astro/intervals-logo-round.B4Qne2Qz.svg) |
+
+Cycling Analytics and Apple Health IDs reuse their existing asset through the
+[catalog's `logo.id` field](src/provider-catalog.ts). Generic sources and unknown
+providers retain the initial fallback. The **Brand/ProviderLogo → All Providers**
+stories in both clients show the catalog for visual review.
 
 ### Garmin recording-device thumbnails
 

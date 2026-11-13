@@ -1,0 +1,39 @@
+diff --git a/React-Core-prebuilt.podspec b/React-Core-prebuilt.podspec
+index 81ffdbd933d9ac4ff7efd12d4574a93ef961cdbd..97ef11be7a5f6aa2d0a5b98402b5d11d976e7719 100644
+--- a/React-Core-prebuilt.podspec
++++ b/React-Core-prebuilt.podspec
+@@ -34,7 +34,7 @@ Pod::Spec.new do |s|
+   # There is no clang VFS overlay.
+   s.vendored_frameworks    = "React.xcframework"
+ 
+-  s.preserve_paths       = '**/*.*'
++  s.preserve_paths       = ['**/*.*', '.last_build_configuration']
+   s.header_mappings_dir  = 'Headers'
+   s.source_files         = 'Headers/**/*.{h,hpp}'
+   s.public_header_files  = 'Headers/**/*.h'
+diff --git a/sdks/hermes-engine/hermes-engine.podspec b/sdks/hermes-engine/hermes-engine.podspec
+index d1fe0708e5812a15744e30f4b22cc87235b15f38..c9d9149a6dd693a82c3caa789f65019e2de94dba 100644
+--- a/sdks/hermes-engine/hermes-engine.podspec
++++ b/sdks/hermes-engine/hermes-engine.podspec
+@@ -39,7 +39,7 @@ Pod::Spec.new do |spec|
+   spec.source      = source
+   spec.platforms   = { :osx => "10.13", :ios => "15.1", :visionos => "1.0", :tvos => "15.1" }
+ 
+-  spec.preserve_paths      = '**/*.*'
++  spec.preserve_paths      = ['**/*.*', '.last_build_configuration']
+   spec.source_files        = ''
+ 
+   spec.pod_target_xcconfig = {
+diff --git a/third-party-podspecs/ReactNativeDependencies.podspec b/third-party-podspecs/ReactNativeDependencies.podspec
+index a006f2c1e4ca32dbdaedf58a9e001457b5dffa4d..69445c5b0ee10db8af4b6e12b380f3aff98a26f2 100644
+--- a/third-party-podspecs/ReactNativeDependencies.podspec
++++ b/third-party-podspecs/ReactNativeDependencies.podspec
+@@ -37,7 +37,7 @@ Pod::Spec.new do |spec|
+   }
+ 
+   spec.source               = source
+-  spec.preserve_paths       = '**/*.*'
++  spec.preserve_paths       = ['**/*.*', '.last_build_configuration']
+   spec.vendored_frameworks  = 'framework/packages/react-native/ReactNativeDependencies.xcframework'
+   spec.header_mappings_dir  = 'Headers'
+   spec.source_files         = 'Headers/**/*.{h,hpp}'

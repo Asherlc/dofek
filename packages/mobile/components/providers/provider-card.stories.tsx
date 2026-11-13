@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-native";
 import type { ComponentType } from "react";
 import { View } from "react-native";
+import { expect, within } from "storybook/test";
 import { AuthProvider } from "../../lib/auth-context";
 import { ProviderCard } from "./provider-card.tsx";
 
@@ -56,6 +57,84 @@ type ProviderCardStory = StoryObj<typeof providerCardMeta>;
 
 export const Connected: ProviderCardStory = {};
 
+export const CrimpdConnected: ProviderCardStory = {
+  args: {
+    provider: {
+      ...providerCardMeta.args.provider,
+      id: "crimpd",
+      label: "Crimpd",
+      authType: "credential",
+    },
+    onImport: () => {},
+  },
+};
+
+export const VerticalLifeConnected: ProviderCardStory = {
+  args: {
+    provider: {
+      ...providerCardMeta.args.provider,
+      id: "eight-a",
+      label: "8a.nu / Vertical-Life",
+      authType: "credential",
+    },
+    onImport: () => {},
+  },
+};
+
+export const VerticalLifeNarrow: ProviderCardStory = {
+  ...VerticalLifeConnected,
+  decorators: [
+    (Story: ComponentType) => (
+      <View style={{ width: 340 }}>
+        <Story />
+      </View>
+    ),
+  ],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const title = canvas.getByText("8a.nu / Vertical-Life");
+    const sync = canvas.getByRole("button", { name: "Sync 8a.nu / Vertical-Life" });
+    await expect(title.getBoundingClientRect().right).toBeLessThanOrEqual(
+      sync.getBoundingClientRect().left,
+    );
+  },
+};
+
+export const VerticalLifeNotConnected: ProviderCardStory = {
+  args: {
+    provider: {
+      ...providerCardMeta.args.provider,
+      id: "eight-a",
+      label: "8a.nu / Vertical-Life",
+      authType: "credential",
+      enabled: false,
+      authStatus: "not_connected",
+      lastSyncAt: null,
+      lastSuccessfulSyncAt: null,
+      syncFreshness: null,
+    },
+    onImport: () => {},
+    onConnect: () => {},
+  },
+};
+
+export const CrimpdNotConnected: ProviderCardStory = {
+  args: {
+    provider: {
+      ...providerCardMeta.args.provider,
+      id: "crimpd",
+      label: "Crimpd",
+      authType: "credential",
+      enabled: false,
+      authStatus: "not_connected",
+      lastSyncAt: null,
+      lastSuccessfulSyncAt: null,
+      syncFreshness: null,
+    },
+    onImport: () => {},
+  },
+};
+
 export const NotConnected: ProviderCardStory = {
   args: {
     provider: {
@@ -107,6 +186,58 @@ export const SyncingNoProgress: ProviderCardStory = {
   args: {
     syncing: true,
     syncProgress: { message: "Preparing sync..." },
+  },
+};
+
+export const AppleHealthRunning: ProviderCardStory = {
+  args: {
+    provider: {
+      ...providerCardMeta.args.provider,
+      id: "apple_health",
+      label: "Apple Health",
+      authType: "none",
+      syncStageProgress: { completed: 2, total: 5 },
+    },
+    syncing: true,
+    syncProgress: { percentage: 40, message: "Uploading health records" },
+  },
+};
+
+export const AppleHealthPaused: ProviderCardStory = {
+  args: {
+    provider: {
+      ...providerCardMeta.args.provider,
+      id: "apple_health",
+      label: "Apple Health",
+      authType: "none",
+      syncActionLabel: "Resume",
+    },
+    syncProgress: { message: "Apple Health sync paused" },
+  },
+};
+
+export const AppleHealthLocked: ProviderCardStory = {
+  args: {
+    ...AppleHealthPaused.args,
+    provider: {
+      ...AppleHealthPaused.args.provider,
+      syncStatusMessage: "Unlock your phone to continue Apple Health sync",
+    },
+  },
+};
+
+export const AppleHealthActionableError: ProviderCardStory = {
+  args: {
+    provider: {
+      ...providerCardMeta.args.provider,
+      id: "apple_health",
+      label: "Apple Health",
+      authType: "none",
+    },
+    syncProgress: {
+      message:
+        "Another Apple Health sync is active for this account. Resume it on your other device.",
+    },
   },
 };
 

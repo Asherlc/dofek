@@ -15,8 +15,8 @@ const memberSchema = z.object({
 });
 const aliasSchema = z.object({ alias_id: z.guid(), group_id: z.guid() });
 
-/** Must run inside the canonical commit transaction; the lock lasts until commit/rollback. */
-export async function reconcileActivityGroups(
+/** Acquire before activity writes that share the grouping transaction. */
+export async function lockActivityGroups(
   transaction: SchemaExecutionDatabase,
   userId: string,
 ): Promise<void> {
@@ -24,6 +24,14 @@ export async function reconcileActivityGroups(
   await transaction.execute(
     sql`SELECT pg_advisory_xact_lock(hashtextextended(${`activity-groups:${userId}`}, 0))`,
   );
+}
+
+/** Must run inside the canonical commit transaction; the lock lasts until commit/rollback. */
+export async function reconcileActivityGroups(
+  transaction: SchemaExecutionDatabase,
+  userId: string,
+): Promise<void> {
+  await lockActivityGroups(transaction, userId);
   // Members, ownership anchors, and edges must share a statement snapshot. Provider
   // writers do not acquire this advisory lock, so separate reads can invent a split.
   // The oldest active member owns a split. Fully inactive groups remain untouched.
@@ -35,9 +43,11 @@ export async function reconcileActivityGroups(
       SELECT a.id, a.group_id, a.created_at, g.created_at AS group_created_at, g.manual_merge,
         first_value(a.id) OVER (PARTITION BY g.id ORDER BY a.created_at, a.id) AS manual_merge_anchor_id,
         first_value(a.id) OVER (PARTITION BY g.id ORDER BY a.created_at, a.id) AS anchor_activity_id,
-        a.provider_id, a.external_id, a.canonical_type, a.started_at,
+        a.provider_id, a.external_id, a.canonical_type, a.provider_type, a.started_at,
+        a.ended_at AS recorded_ended_at,
         copy.provider_id AS upstream_provider_id, copy.external_id AS upstream_external_id,
-        COALESCE(a.ended_at, a.started_at + interval '1 hour') AS ended_at
+        CASE WHEN a.provider_type <> 'climbing_log'
+          THEN COALESCE(a.ended_at, a.started_at + interval '1 hour') END AS ended_at
       FROM fitness.activity_group g
       JOIN fitness.activity a ON a.group_id = g.id AND a.user_id = g.user_id
       LEFT JOIN LATERAL fitness.activity_copy_identity(a.provider_id, a.external_id, a.raw) AS copy ON true
@@ -52,6 +62,7 @@ export async function reconcileActivityGroups(
           EXTRACT(EPOCH FROM (b.ended_at - b.started_at))) AS shorter_duration_seconds
       FROM active a JOIN active b ON a.id < b.id
         AND a.started_at < b.ended_at AND a.ended_at > b.started_at
+        AND a.provider_type <> 'climbing_log' AND b.provider_type <> 'climbing_log'
     ), matching_pairs AS (
       SELECT activity_id, overlapping_activity_id
       FROM pair_metrics
@@ -63,6 +74,20 @@ export async function reconcileActivityGroups(
       FROM active AS copy JOIN active AS origin
         ON origin.provider_id = copy.upstream_provider_id
         AND LOWER(REPLACE(origin.external_id, '-', '')) = copy.upstream_external_id
+      WHERE copy.provider_type <> 'climbing_log' AND origin.provider_type <> 'climbing_log'
+      UNION
+      SELECT observation.activity_id, observation.session_id
+      FROM fitness.v_climbing_log_activity AS observation
+      WHERE observation.user_id = ${userId}::uuid
+        AND observation.activity_id <> observation.session_id
+      UNION
+      SELECT observation.activity_id, recorded.id
+      FROM fitness.v_climbing_log_activity AS observation
+      JOIN active AS recorded ON recorded.canonical_type = 'climbing'
+        AND recorded.provider_type <> 'climbing_log'
+        AND recorded.recorded_ended_at IS NOT NULL
+        AND observation.recorded_at BETWEEN recorded.started_at AND recorded.recorded_ended_at
+      WHERE observation.user_id = ${userId}::uuid
     ), overlap_edges AS (
       SELECT activity_id, array_agg(overlapping_activity_id) AS overlapping_activity_ids
       FROM matching_pairs

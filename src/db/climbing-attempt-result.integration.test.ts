@@ -315,6 +315,9 @@ describe("computed climbing attempt results (integration)", () => {
       await client.query(
         readFileSync(resolve(migrationDirectory, "0166_openbeta_tick_completion.sql"), "utf8"),
       );
+      await client.query(
+        readFileSync(resolve(migrationDirectory, "0172_source_climbing_completion.sql"), "utf8"),
+      );
     }
 
     async function insertRecordedAttempt(
@@ -352,6 +355,27 @@ describe("computed climbing attempt results (integration)", () => {
       );
       return { id, logId };
     }
+
+    it.each([
+      { provider: "mountain-project", sourceCompleted: true, outcome: "completed" },
+      { provider: "mountain-project", sourceCompleted: false, outcome: "failed" },
+      { provider: "openbeta", sourceCompleted: true, outcome: "completed" },
+      { provider: "openbeta", sourceCompleted: false, outcome: "failed" },
+    ])("keeps boolean completion independent of implied execution facts: %j", async (scenario) => {
+      const { id } = await insertRecordedAttempt(scenario.provider, { raw: {} });
+      await applyCompletionProjection();
+      await client.query(
+        "UPDATE fitness.climbing_attempt SET source_completed = $1 WHERE id = $2",
+        [scenario.sourceCompleted, id],
+      );
+      const projected = await client.query(
+        "SELECT outcome, used_aid, fell_or_hung, source_result FROM fitness.v_climbing_attempt WHERE id = $1",
+        [id],
+      );
+      expect(projected.rows).toEqual([
+        { outcome: scenario.outcome, used_aid: null, fell_or_hung: null, source_result: null },
+      ]);
+    });
 
     it("projects a clean completed top-rope climb without changing retained raw facts", async () => {
       const { id, logId } = await insertRecordedAttempt("mountain-project");

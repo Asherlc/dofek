@@ -191,13 +191,10 @@ function renderModel(database: string, scopedActivityIds?: readonly string[]): s
   return renderDbtModelSql(readModelSql("activity_vo2max_estimate.sql"), {
     isIncremental: true,
     activityRefreshScoped: scopedActivityIds != null,
+    activityRefreshIds: scopedActivityIds,
   })
     .replaceAll("{{ initial_lookback_days }}", "365")
     .replaceAll('{{ var("activity_refresh_user_id") }}', userId)
-    .replaceAll(
-      "{{ activity_refresh_ids() }}",
-      `CAST([${(scopedActivityIds ?? []).map((id) => `'${id}'`).join(", ")}], 'Array(UUID)')`,
-    )
     .replaceAll("{{ this }}", `${database}.activity_vo2max_estimate`)
     .replace(/\{\{ ref\('([^']+)'\) \}\}/g, `${database}.$1`)
     .replace(/\{\{ source\('[^']+', '([^']+)'\) \}\}/g, `${database}.$1`)

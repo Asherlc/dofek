@@ -12,6 +12,7 @@ interface PmcChartCalculatorOptions {
 }
 
 interface PmcChartInput {
+  currentEftp: number | null;
   activityRows: PmcActivityRow[];
   normalizedPowerRows: PmcNormalizedPowerRow[];
   queryDays: number;
@@ -19,13 +20,11 @@ interface PmcChartInput {
 }
 
 interface PmcChartModel {
-  type: "learned" | "generic";
-  pairedActivities: number;
-  r2: number | null;
   ftp: number | null;
 }
 
 interface PmcChart {
+  unavailableReason: string | null;
   data: ReturnType<PmcEwmaCalculator["compute"]>;
   model: PmcChartModel;
 }
@@ -43,57 +42,36 @@ export class PmcChartCalculator {
   }
 
   buildChart(input: PmcChartInput): PmcChart {
-    const globalMaxHeartRate =
-      input.activityRows.length > 0 ? Number(input.activityRows[0]?.global_max_hr) : null;
-    if (!globalMaxHeartRate) {
+    const powerTssByActivity = new Map(
+      input.normalizedPowerRows.flatMap((row) =>
+        row.power_tss == null ? [] : [[row.activity_id, row.power_tss] as const],
+      ),
+    );
+    const thresholdPower = input.currentEftp;
+    const unsupportedCount = input.activityRows.filter(
+      (activity) => !powerTssByActivity.has(activity.id),
+    ).length;
+    if (unsupportedCount > 0) {
       return {
         data: [],
-        model: { type: "generic", pairedActivities: 0, r2: null, ftp: null },
+        unavailableReason: `Training load is unavailable for ${unsupportedCount} cycling ${unsupportedCount === 1 ? "activity" : "activities"}: power-derived training stress is missing. Record cycling power with a usable threshold to calculate training load.`,
+        model: { ftp: thresholdPower },
       };
     }
-
-    const restingHeartRate =
-      input.activityRows.length > 0 ? Number(input.activityRows[0]?.resting_hr) : 60;
-    const normalizedPowerByActivity = new Map(
-      input.normalizedPowerRows.map((row) => [row.activity_id, Number(row.np)]),
-    );
-    const thresholdPower = this.#trainingLoadCalculator.estimateThresholdPower(input.activityRows);
-    const { trainingStressModel, pairedData } =
-      this.#trainingLoadCalculator.buildTrainingStressModel(
-        input.activityRows,
-        normalizedPowerByActivity,
-        thresholdPower,
-        globalMaxHeartRate,
-        restingHeartRate,
-      );
     const dailyLoad = this.#trainingLoadCalculator.calculateDailyLoad({
       activities: input.activityRows,
-      normalizedPowerByActivity,
-      thresholdPower,
-      trainingStressModel,
-      globalMaxHeartRate,
-      restingHeartRate,
+      powerTssByActivity,
     });
-    const data = this.#ewmaCalculator.compute({
-      dailyLoad,
-      queryDays: input.queryDays,
-      displayDays: input.displayDays,
-    });
-    const model: PmcChartModel =
-      trainingStressModel != null
-        ? {
-            type: "learned",
-            pairedActivities: pairedData.length,
-            r2: Math.round(trainingStressModel.r2 * 1000) / 1000,
-            ftp: thresholdPower,
-          }
-        : {
-            type: "generic",
-            pairedActivities: pairedData.length,
-            r2: null,
-            ftp: thresholdPower,
-          };
+    const data =
+      dailyLoad.size === 0
+        ? []
+        : this.#ewmaCalculator.compute({
+            dailyLoad,
+            queryDays: input.queryDays,
+            displayDays: input.displayDays,
+          });
+    const model: PmcChartModel = { ftp: thresholdPower };
 
-    return { data, model };
+    return { data, model, unavailableReason: null };
   }
 }

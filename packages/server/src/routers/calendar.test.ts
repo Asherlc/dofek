@@ -34,6 +34,16 @@ vi.mock("../repositories/activities-calendar-repository.ts", () => ({
       repositoryInputMock(input);
       return repositoryResultMock();
     }
+    async getPage(input: { page: number; pageSize: number }) {
+      repositoryInputMock(input);
+      const days = await repositoryResultMock();
+      return {
+        days,
+        totalCount: days.flatMap((day: { activities: unknown[] }) => day.activities).length,
+        page: input.page,
+        pageSize: input.pageSize,
+      };
+    }
   },
 }));
 
@@ -56,31 +66,72 @@ describe("calendarRouter", () => {
     repositoryInputMock.mockReset();
   });
 
+  it("keeps the released unpaged API and returns a page envelope from V2", async () => {
+    const caller = createCaller({
+      db: {},
+      userId: "user-1",
+      timezone: "UTC",
+      sensorStore: { query: vi.fn() },
+    });
+    repositoryResultMock.mockResolvedValueOnce([]);
+    await expect(caller.weekList({ weeks: 4, endDate: "2026-03-20" })).resolves.toEqual([]);
+    repositoryResultMock.mockResolvedValueOnce([]);
+    await expect(
+      caller.weekListV2({ weeks: 4, endDate: "2026-03-20", page: 2, pageSize: 10 }),
+    ).resolves.toEqual({ days: [], totalCount: 0, page: 2, pageSize: 10 });
+    expect(repositoryInputMock).toHaveBeenLastCalledWith({
+      weeks: 4,
+      endDate: "2026-03-20",
+      includeProviderAbsent: false,
+      page: 2,
+      pageSize: 10,
+    });
+  });
+
+  it.each([{ page: -1 }, { page: 0.5 }, { pageSize: 0 }, { pageSize: 101 }])(
+    "rejects invalid pagination %j",
+    async (pagination) => {
+      const caller = createCaller({
+        db: {},
+        userId: "user-1",
+        timezone: "UTC",
+        sensorStore: { query: vi.fn() },
+      });
+      await expect(
+        caller.weekListV2({ weeks: 4, endDate: "2026-03-20", ...pagination }),
+      ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+      expect(repositoryInputMock).not.toHaveBeenCalled();
+    },
+  );
+
   it("versions the activity state cache contract", () => {
     expect(cachedQueryOptions).toHaveBeenCalledWith({
       maxAge: 600_000,
-      keyVersion: "activity-calendar-primary-title-v8",
+      keyVersion: "activity-calendar-page-power-stress-v3",
     });
     expect(cachedQueryOptions).toHaveBeenCalledWith({
       maxAge: 600_000,
-      keyVersion: "activity-calendar-states-v2",
+      keyVersion: "activity-calendar-primary-type-v4",
     });
     expect(cachedQueryOptions).toHaveBeenCalledWith({
       maxAge: 3_600_000,
       keyVersion: "calendar-calendarData-v2",
     });
-    expect(cachedQueryOptions).toHaveBeenCalledTimes(3);
+    expect(cachedQueryOptions).toHaveBeenCalledTimes(4);
   });
 
-  it("surfaces missing ClickHouse analytics store as a precondition error", async () => {
-    const caller = createCaller({ db: {}, userId: "user-1", timezone: "UTC" });
+  it.each(["weekList", "weekListV2"] as const)(
+    "surfaces missing ClickHouse analytics store for %s as a precondition error",
+    async (procedure) => {
+      const caller = createCaller({ db: {}, userId: "user-1", timezone: "UTC" });
 
-    await expect(caller.weekList({ weeks: 4, endDate: "2026-03-20" })).rejects.toMatchObject({
-      code: "PRECONDITION_FAILED",
-      message:
-        "Activity calendar requires the ClickHouse activity analytics store. Set CLICKHOUSE_URL and retry.",
-    });
-  });
+      await expect(caller[procedure]({ weeks: 4, endDate: "2026-03-20" })).rejects.toMatchObject({
+        code: "PRECONDITION_FAILED",
+        message:
+          "Activity calendar requires the ClickHouse activity analytics store. Set CLICKHOUSE_URL and retry.",
+      });
+    },
+  );
 
   it("validates weekList output at the API boundary", async () => {
     repositoryResultMock.mockResolvedValueOnce([{ date: "2026-03-18", activities: [{ id: 123 }] }]);
@@ -91,7 +142,7 @@ describe("calendarRouter", () => {
       sensorStore: { query: vi.fn() },
     });
 
-    await expect(caller.weekList({ weeks: 4, endDate: "2026-03-20" })).rejects.toBeInstanceOf(
+    await expect(caller.weekListV2({ weeks: 4, endDate: "2026-03-20" })).rejects.toBeInstanceOf(
       TRPCError,
     );
   });
@@ -151,7 +202,9 @@ describe("calendarRouter", () => {
         sensorStore: { query: vi.fn() },
       });
 
-      await expect(caller.weekList({ weeks: 4, endDate: "2026-03-20" })).resolves.toEqual([
+      await expect(
+        caller.weekListV2({ weeks: 4, endDate: "2026-03-20" }).then((result) => result.days),
+      ).resolves.toEqual([
         {
           date: "2026-03-18",
           activities: [
@@ -229,7 +282,9 @@ describe("calendarRouter", () => {
       sensorStore: { query: vi.fn() },
     });
 
-    await expect(caller.weekList({ weeks: 4, endDate: "2026-03-20" })).resolves.toEqual([
+    await expect(
+      caller.weekListV2({ weeks: 4, endDate: "2026-03-20" }).then((result) => result.days),
+    ).resolves.toEqual([
       {
         date: "2026-03-18",
         activities: [
@@ -287,15 +342,8 @@ describe("calendarRouter", () => {
               mapPreview: {
                 width: 1024,
                 height: 576,
-                tiles: [
-                  {
-                    url: "https://tile.openstreetmap.org/15/5241/12665.png",
-                    x: 256,
-                    y: 160,
-                    width: 256,
-                    height: 256,
-                  },
-                ],
+                center: [-122.40966797, 37.77505678],
+                zoom: 14,
                 routePath: [
                   { x: 400, y: 250 },
                   { x: 480, y: 220 },
@@ -322,7 +370,9 @@ describe("calendarRouter", () => {
       sensorStore: { query: vi.fn() },
     });
 
-    await expect(caller.weekList({ weeks: 4, endDate: "2026-03-20" })).resolves.toEqual([
+    await expect(
+      caller.weekListV2({ weeks: 4, endDate: "2026-03-20" }).then((result) => result.days),
+    ).resolves.toEqual([
       {
         date: "2026-03-18",
         activities: [
@@ -334,15 +384,8 @@ describe("calendarRouter", () => {
               mapPreview: {
                 width: 1024,
                 height: 576,
-                tiles: [
-                  {
-                    url: "https://tile.openstreetmap.org/15/5241/12665.png",
-                    x: 256,
-                    y: 160,
-                    width: 256,
-                    height: 256,
-                  },
-                ],
+                center: [-122.40966797, 37.77505678],
+                zoom: 14,
                 routePath: [
                   { x: 400, y: 250 },
                   { x: 480, y: 220 },
@@ -364,13 +407,15 @@ describe("calendarRouter", () => {
       sensorStore: { query: vi.fn() },
     });
 
-    await caller.weekList({ weeks: 8, endDate: "2026-03-20", activityType: "running" });
+    await caller.weekListV2({ weeks: 8, endDate: "2026-03-20", activityType: "running" });
 
     expect(repositoryInputMock).toHaveBeenCalledWith({
       weeks: 8,
       endDate: "2026-03-20",
       activityType: "running",
       includeProviderAbsent: false,
+      page: 0,
+      pageSize: 20,
     });
   });
 

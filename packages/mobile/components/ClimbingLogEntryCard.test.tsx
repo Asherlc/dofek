@@ -8,6 +8,22 @@ import { ClimbingLogEntryCard } from "./ClimbingLogEntryCard";
 import { climbingLogFixture, exactClimbingLocation } from "./climbing-log-entry-fixtures";
 
 describe("ClimbingLogEntryCard", () => {
+  it("keeps an attempt-free project visible without an invented count or outcome", () => {
+    render(
+      <ClimbingLogEntryCard
+        entry={{
+          ...climbingLogFixture,
+          title: "Untried project",
+          climb: null,
+          attempts: [],
+          recordedClimbAttemptCount: null,
+          recordedClimbOutcome: null,
+        }}
+      />,
+    );
+    expect(screen.getByText("Untried project")).toBeTruthy();
+    expect(screen.queryByText(/Attempts:|Attempted|Completed/)).toBeNull();
+  });
   it.each(["lead", "top_rope", "follow"] as const)(
     "shows recorded falls or hangs on %s without inventing completion",
     (ropeMethod) => {
@@ -46,7 +62,7 @@ describe("ClimbingLogEntryCard", () => {
     expect(climb.getAttribute("aria-selected")).toBe("true");
     climb.focus();
     expect(document.activeElement).toBe(climb);
-    const source = screen.getByRole("link", { name: "Mountain Project" });
+    const source = screen.getByRole("link", { name: "Climb on Mountain Project" });
     source.focus();
     expect(document.activeElement).toBe(source);
     fireEvent.click(screen.getByRole("button", { name: "Attach Swiss Cheese to this activity" }));
@@ -127,7 +143,7 @@ describe("ClimbingLogEntryCard", () => {
   it("preserves source links, climbing context and recorded attempt summary", () => {
     render(<ClimbingLogEntryCard entry={climbingLogFixture} />);
     expect(screen.getByRole("link", { name: "Swiss Cheese on Mountain Project" })).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Mountain Project" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Climb on Mountain Project" })).toBeTruthy();
     expect(screen.getByText("5.4")).toBeTruthy();
     expect(screen.getByText("Sent")).toBeTruthy();
     expect(screen.getByText("Sent").parentElement?.style.borderRadius).toBe("999px");
@@ -217,20 +233,18 @@ describe("ClimbingLogEntryCard", () => {
     expect(screen.getByText("Attempted")).toBeTruthy();
   });
 
-  it("shows a compact single-point map", () => {
+  it("shows a compact single-point map", async () => {
     const { container } = render(
       <ClimbingLogEntryCard entry={climbingLogFixture} location={exactClimbingLocation} />,
     );
-    expect(container.querySelector("mapview")).toBeNull();
-    const wrapper = container.querySelector('[style*="overflow: hidden"]')?.firstElementChild;
+    expect(container.querySelector("nativemap")).toBeNull();
+    const wrapper = container.querySelector('[pointer-events="none"]');
     if (!wrapper) throw new Error("Expected the compact map layout wrapper");
     fireEvent(wrapper, new CustomEvent("layout", { detail: { width: 280, height: 140 } }));
-    const map = container.querySelector("mapview");
-    expect(map?.getAttribute("style")).toContain("height: 140px");
-    expect(container.querySelectorAll("marker")).toHaveLength(1);
-    expect(container.querySelector("polyline")).toBeNull();
-    expect(container.querySelector('[title="Start"]')).toBeNull();
-    expect(container.querySelector('[title="Finish"]')).toBeNull();
+    const preview = await screen.findByTestId("compact-route-preview");
+    fireEvent.load(preview);
+    expect(preview.parentElement?.getAttribute("style")).toContain("height: 140px");
+    expect(preview.parentElement?.getAttribute("pointer-events")).toBe("none");
   });
 
   it("keeps the retry action available after an attachment error", () => {
@@ -273,3 +287,26 @@ it.each(["Onsight", "Flash"] as const)(
     expect(screen.queryByText(/Attempts:|completed/i)).toBeNull();
   },
 );
+
+it.each([
+  { kind: "boulder" as const, label: "Problem" },
+  { kind: "route" as const, label: "Route" },
+  { kind: null, label: "Route" },
+])("labels source links as $label for climb kind $kind", ({ kind, label }) => {
+  const entry = {
+    ...climbingLogFixture,
+    climb: { ...climbingClimbFixture("mountain-project"), name: "Corner", kind },
+    sourceLinks: [
+      {
+        providerId: "mountain-project",
+        kind: "route" as const,
+        url: "https://www.mountainproject.com/route/1/corner",
+      },
+    ],
+  };
+  render(<ClimbingLogEntryCard entry={entry} onSelect={vi.fn()} />);
+  expect(
+    screen.getByRole("link", { name: `Corner ${label.toLowerCase()} on Mountain Project` })
+      .textContent,
+  ).toContain(label);
+});

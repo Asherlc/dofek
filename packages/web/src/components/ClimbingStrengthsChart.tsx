@@ -1,11 +1,11 @@
-import type { ClimbingStrengthsPanel } from "@dofek/training/climbing-strengths";
+import type { ClimbingStrengthsDisplayPanel } from "@dofek/training/climbing-strengths";
 import {
   ALL_CLIMBING_GRADES,
   climbingStrengthsAdjustedLabel,
   climbingStrengthsBaselineLabel,
-  climbingStrengthsCountLabel,
-  climbingStrengthsRateLabel,
+  climbingStrengthsSendLabel,
 } from "@dofek/training/climbing-strengths";
+import { climbingStrengthsPanelLabel } from "@dofek/training/climbing-strengths-presentation";
 import type { ClimbingStrengthsView } from "@dofek/training/climbing-strengths-views";
 import {
   climbingStrengthsChartOption,
@@ -20,8 +20,8 @@ export function ClimbingStrengthsChart({
   selectedRow,
   onSelectCell,
 }: {
-  panel: ClimbingStrengthsPanel;
-  view: Exclude<ClimbingStrengthsView, "profile">;
+  panel: ClimbingStrengthsDisplayPanel;
+  view: ClimbingStrengthsView;
   grade: string;
   selectedRow: string | null;
   onSelectCell: (rowKey: string, grade: string) => void;
@@ -72,21 +72,23 @@ export function ClimbingStrengthsChart({
           : 340;
   const adjustedLabel = (key: string) =>
     climbingStrengthsAdjustedLabel(panel.gradeAdjustedStrengths.find((entry) => entry.key === key));
+  const option = climbingStrengthsChartOption(panel, view, grade, selectedRow);
   const dataDisclosure = (
-    <details className="text-xs text-muted">
+    <details className="text-xs text-muted" open={sparseRadar || undefined}>
       <summary className="cursor-pointer py-2 font-medium text-foreground">Exact values</summary>
       <div className="max-h-96 overflow-auto">
         <table className="w-full text-left">
           <caption className="sr-only">
-            Selectable climbing strengths values
+            Climbing results by style
             {view === "progress" ? " by calendar month; selection opens whole-period climbs" : ""}
           </caption>
           <thead>
             <tr>
-              <th scope="col">Style / grade{view === "progress" ? " / month" : ""}</th>
               <th scope="col">
-                {adjustedRadar ? "Grade-adjusted difference and sample" : "Success and sample"}
+                {adjustedRadar ? "Style" : "Style / grade"}
+                {view === "progress" ? " / month" : ""}
               </th>
+              <th scope="col">{adjustedRadar ? "Results" : "Success and sample"}</th>
               {view !== "progress" && !adjustedRadar ? (
                 <th scope="col">Gap vs {baselineLabel.toLowerCase()}</th>
               ) : null}
@@ -111,19 +113,28 @@ export function ClimbingStrengthsChart({
                   <button
                     type="button"
                     className="min-h-11 py-2 pr-3 text-left text-accent"
-                    aria-label={`${row.label} · ${cell.grade}${period ? ` · ${period}` : ""} · ${adjustedRadar ? `${adjustedLabel(row.key)} · ` : ""}${climbingStrengthsValueLabel(cell)}`}
+                    aria-label={
+                      adjustedRadar
+                        ? `${row.label} · ${climbingStrengthsSendLabel(cell)} · ${adjustedLabel(row.key)}`
+                        : `${row.label} · ${cell.grade}${period ? ` · ${period}` : ""} · ${climbingStrengthsValueLabel(cell)}`
+                    }
                     aria-pressed={selectedRow === row.key && grade === cell.grade}
                     onClick={() => onSelectCell(row.key, cell.grade)}
                   >
-                    {row.label} · {cell.grade}
+                    {row.label}
+                    {adjustedRadar ? "" : ` · ${cell.grade}`}
                     {period ? ` · ${period}` : ""}
                   </button>
                 </th>
                 <td className="py-2 pr-3">
-                  {adjustedRadar ? <span className="block">{adjustedLabel(row.key)}</span> : null}
-                  {adjustedRadar
-                    ? `${climbingStrengthsRateLabel(cell)} · ${climbingStrengthsCountLabel(cell)}`
-                    : climbingStrengthsValueLabel(cell)}
+                  {adjustedRadar ? (
+                    <>
+                      <span className="block">{climbingStrengthsSendLabel(cell)}</span>{" "}
+                      <span className="block text-muted">{adjustedLabel(row.key)}</span>
+                    </>
+                  ) : (
+                    climbingStrengthsValueLabel(cell)
+                  )}
                 </td>
                 {view !== "progress" && !adjustedRadar ? (
                   <td>
@@ -142,16 +153,10 @@ export function ClimbingStrengthsChart({
   );
   return (
     <div className="space-y-3">
-      {view === "progress" ? (
-        <p className="text-xs text-muted">
-          Each climb counts once in each month it was tried; monthly counts need not sum to the
-          whole period. Select a point for climbs across the selected period.
-        </p>
-      ) : null}
-      {view === "radar" ? (
+      {view === "radar" && !sparseRadar ? (
         <p className="text-xs text-muted">
           {adjustedRadar
-            ? "Grade-adjusted difference on a −100 to +100 percentage-point scale. Dashed line: your same-grade baseline at zero."
+            ? "Compared with your own climbs of the same difficulty. Outside the dashed line means you send more often than usual; inside means less often."
             : `Success on a shared 0–100% scale. Dashed line: ${baselineLabel.toLowerCase()}. Groups without a success rate are omitted from the polygon.`}{" "}
           Select a style label to see its climbs.
         </p>
@@ -159,16 +164,19 @@ export function ClimbingStrengthsChart({
       {sparseRadar ? (
         <>
           <p className="rounded-lg border border-border p-4 text-sm text-muted">
+            {panel.coverage.missingTraits > 0
+              ? `${climbingStrengthsPanelLabel(panel)} is missing for ${panel.coverage.missingTraits} ${panel.coverage.missingTraits === 1 ? "climb" : "climbs"}. `
+              : ""}
             {adjustedRadar
-              ? "Radar needs at least three styles with known results. Explore the recorded values below."
-              : "Radar needs at least three style groups with recorded success at this grade. Choose another grade or use the exact values below."}
+              ? "Log results in at least three styles to see this chart. Your recorded climbs are listed below."
+              : "A radar chart needs at least three styles with known results."}
           </p>
           {dataDisclosure}
         </>
       ) : (
         <div className="overflow-auto">
           <DofekChart
-            option={climbingStrengthsChartOption(panel, view, grade, selectedRow)}
+            option={option}
             height={height}
             timeRangeMode="data"
             dataDisclosure={dataDisclosure}
@@ -179,7 +187,11 @@ export function ClimbingStrengthsChart({
                   event.componentType === "radar" &&
                   event.targetType === "axisName"
                 ) {
-                  const row = panel.rows.find((row) => row.label === event.name);
+                  const radar = "radar" in option ? option.radar : undefined;
+                  const axis = radar?.indicator.find(
+                    (axis) => radar.axisName.formatter(axis.name) === event.name,
+                  );
+                  const row = panel.rows.find((row) => row.key === axis?.name);
                   if (row?.cells.some((cell) => cell.grade === grade)) onSelectCell(row.key, grade);
                   return;
                 }

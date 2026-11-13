@@ -2,6 +2,14 @@ import { parseArgs } from "node:util";
 import * as Sentry from "@sentry/node";
 import { z } from "zod";
 import {
+  ANALYTICS_PUBLICATION_RESOURCE,
+  withAnalyticsQueryOwner,
+} from "../src/analytics/analytics-query-owner.ts";
+import {
+  type ActivityIntegrityDbtBuildInput,
+  runActivityIntegrityDbtBuild,
+} from "../src/db/activity-data-integrity-dbt.ts";
+import {
   ACTIVITY_INTEGRITY_MAX_ACCEPTANCE_WINDOW_MS,
   type ActivityIntegrityRepairOptions,
   repairActivityDataIntegrity,
@@ -11,6 +19,7 @@ import {
 import { createClickHouseClientFromEnv } from "../src/db/clickhouse.ts";
 import { createDatabaseFromEnv } from "../src/db/index.ts";
 import { captureException } from "../src/lib/error-reporting.ts";
+import { sentryDataCollection } from "../src/lib/sentry-options.ts";
 
 type ActivityDataIntegrityCommand =
   | { kind: "repair"; options: ActivityIntegrityRepairOptions }
@@ -183,7 +192,12 @@ export function parseActivityDataIntegrityCommand(
 
 function initializeSentry(): void {
   const sentryDsn = process.env.SENTRY_DSN || process.env.SENTRY_DSN_unencrypted;
-  if (sentryDsn) Sentry.init({ dsn: sentryDsn, skipOpenTelemetrySetup: true });
+  if (sentryDsn)
+    Sentry.init({
+      dsn: sentryDsn,
+      enableOpenTelemetrySetup: false,
+      dataCollection: sentryDataCollection,
+    });
 }
 
 export async function main(args = process.argv.slice(2)): Promise<void> {
@@ -206,12 +220,23 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
 
     const clickHouse = createClickHouseClientFromEnv();
     try {
+      const rebuildReadModels = (input: ActivityIntegrityDbtBuildInput) =>
+        withAnalyticsQueryOwner(
+          db,
+          clickHouse,
+          { resourceId: ANALYTICS_PUBLICATION_RESOURCE, intentId: "activity-integrity-build" },
+          (owner) => runActivityIntegrityDbtBuild(input, owner.client, owner),
+        );
       if (command.kind === "rollback") {
-        const result = await rollbackActivityDataIntegrity(db, clickHouse, command.artifactPath);
+        const result = await rollbackActivityDataIntegrity(db, clickHouse, command.artifactPath, {
+          rebuildReadModels,
+        });
         console.log(JSON.stringify({ kind: "rollback", ...result }));
         return;
       }
-      const result = await repairActivityDataIntegrity(db, clickHouse, command.options);
+      const result = await repairActivityDataIntegrity(db, clickHouse, command.options, {
+        rebuildReadModels,
+      });
       console.log(
         JSON.stringify({
           kind: command.options.execute ? "execute" : "dry-run",

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import {
   climbingClimbFixture,
   climbingLogEntryFixture,
@@ -41,21 +41,10 @@ it("highlights the selected suggestion using the full order across a missing-GPS
 });
 
 afterEach(() => vi.unstubAllGlobals());
-let originalCreateSvgRect: PropertyDescriptor | undefined;
-beforeAll(() => {
-  originalCreateSvgRect = Object.getOwnPropertyDescriptor(SVGSVGElement.prototype, "createSVGRect");
-  Object.defineProperty(SVGSVGElement.prototype, "createSVGRect", {
-    configurable: true,
-    value: () => ({}),
-  });
-});
-afterAll(() => {
-  if (originalCreateSvgRect) {
-    Object.defineProperty(SVGSVGElement.prototype, "createSVGRect", originalCreateSvgRect);
-  } else {
-    Reflect.deleteProperty(SVGSVGElement.prototype, "createSVGRect");
-  }
-});
+vi.mock("../../../lib/maplibre.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../lib/maplibre.ts")>()),
+  loadMapLibre: async () => (await import("../../../lib/maplibre-test-helpers.ts")).maplibreMock,
+}));
 
 it("loads a canonical suggestion's preview near the viewport and keeps its map during Attach updates", async () => {
   let enterViewport = () => {};
@@ -87,12 +76,12 @@ it("loads a canonical suggestion's preview near the viewport and keeps its map d
   };
   const view = render(<UnattachedClimbingLogEntries {...props} state={{}} />);
   await act(async () => {
-    await import("leaflet");
+    await import("../../../lib/maplibre.ts");
   });
-  expect(view.container.querySelector("img.leaflet-tile")).toBeNull();
+  expect(view.container.querySelector(".maplibregl-map")).toBeNull();
   act(() => enterViewport());
-  await waitFor(() => expect(view.container.querySelector("img.leaflet-tile")).not.toBeNull());
-  const tile = view.container.querySelector("img.leaflet-tile");
+  await waitFor(() => expect(view.container.querySelector(".maplibregl-map")).not.toBeNull());
+  const tile = view.container.querySelector(".maplibregl-map");
   view.rerender(
     <UnattachedClimbingLogEntries
       {...props}
@@ -100,7 +89,7 @@ it("loads a canonical suggestion's preview near the viewport and keeps its map d
     />,
   );
   expect(screen.getByText("Attaching...")).toBeInTheDocument();
-  expect(view.container.querySelector("img.leaflet-tile")).toBe(tile);
+  expect(view.container.querySelector(".maplibregl-map")).toBe(tile);
 });
 
 it("keeps located repeated suggestions in a shared grid with independent Attach states", () => {

@@ -57,11 +57,105 @@ final class WhoopBlePendingReconnectTests: XCTestCase {
             manager.syncOnBleQueue {
                 manager.setState(stage)
                 manager.autoReconnect = true
+                manager.wasStreaming = true
                 manager.startHandshakeTimeout { cancelled.fulfill() }
             }
 
             wait(for: [cancelled], timeout: 1)
             manager.syncOnBleQueue {
+                XCTAssertEqual(manager.state.rawValue, "disconnecting")
+                XCTAssertEqual(WhoopBleClientState(manager.state), .connecting)
+                XCTAssertTrue(manager.autoReconnect)
+                XCTAssertTrue(manager.wasStreaming)
+                manager.handleDisconnection(peripheralId: "strap-id", error: nil) {
+                    manager.startHandshakeTimeout { XCTFail("Recovery connection must stay pending") }
+                }
+                XCTAssertEqual(manager.state, .connecting)
+            }
+        }
+    }
+
+    func testTransientAutomaticSetupFailuresRecoverRepeatedlyAndRestoreStreaming() {
+        let manager = WhoopBleConnectionManager()
+        manager.syncOnBleQueue {
+            manager.autoReconnect = true
+            manager.wasStreaming = true
+            let failures: [WhoopBleConnectionError] = [
+                .timeout, .serviceDiscoveryFailed("temporary failure"),
+                .characteristicDiscoveryFailed("temporary failure"),
+                .notificationSubscriptionFailed("temporary failure"),
+            ]
+            for failure in failures {
+                manager.setState(.discoveringServices)
+                var cancellations = 0
+                manager.abortHandshake(with: failure) { cancellations += 1 }
+                XCTAssertEqual(manager.state.rawValue, "disconnecting")
+                XCTAssertTrue(manager.autoReconnect)
+                manager.abortHandshake(with: failure) { cancellations += 1 }
+                XCTAssertEqual(cancellations, 1, "Late setup failures must not cancel twice")
+                var reconnects = 0
+                manager.handleDisconnection(peripheralId: "strap-id", error: nil) { reconnects += 1 }
+                XCTAssertEqual(reconnects, 1)
+                XCTAssertEqual(manager.state, .connecting)
+                XCTAssertTrue(manager.wasStreaming)
+            }
+            manager.setState(.subscribing)
+            let wasStreaming = manager.settleNotificationSubscriptionUpdate(
+                .ready, failureDetail: "unused", cancelPeripheral: { XCTFail("Ready connection must remain active") })
+            XCTAssertEqual(wasStreaming, true)
+            WhoopBleStreamRestorer.restoreIfNeeded(
+                wasStreaming: wasStreaming ?? false, startStreaming: manager.startStreaming,
+                activateImu: {}, emitDeviceState: {})
+            XCTAssertEqual(manager.state, .streaming)
+        }
+    }
+
+    func testStopDuringAutomaticHandshakeCancellationDoesNotRestoreImu() {
+        let manager = WhoopBleConnectionManager()
+        manager.syncOnBleQueue {
+            manager.autoReconnect = true
+            manager.wasStreaming = true
+            manager.setState(.subscribing)
+            manager.abortHandshake(with: .timeout) {}
+            XCTAssertTrue(manager.autoReconnect)
+            manager.stopStreaming()
+            manager.handleDisconnection(peripheralId: "strap-id", error: nil) {}
+            manager.setState(.subscribing)
+            XCTAssertEqual(manager.settleNotificationSubscriptionUpdate(
+                .ready, failureDetail: "unused", cancelPeripheral: {}), false)
+            XCTAssertEqual(manager.state, .ready)
+        }
+    }
+
+    func testDisconnectDuringAutomaticHandshakeCancellationPreventsReconnect() {
+        let manager = WhoopBleConnectionManager()
+        manager.syncOnBleQueue {
+            manager.autoReconnect = true
+            manager.wasStreaming = true
+            manager.setState(.subscribing)
+            manager.abortHandshake(with: .timeout) {}
+            XCTAssertTrue(manager.autoReconnect)
+        }
+        let disconnected = expectation(description: "explicit disconnect overrides recovery")
+        manager.disconnect {
+            manager.handleDisconnection(peripheralId: "strap-id", error: nil) {
+                XCTFail("Explicit disconnect must prevent recovery")
+            }
+            XCTAssertEqual(manager.state, .idle)
+            XCTAssertFalse(manager.autoReconnect)
+            XCTAssertFalse(manager.wasStreaming)
+            disconnected.fulfill()
+        }
+        wait(for: [disconnected], timeout: 1)
+    }
+
+    func testIncompatiblePeripheralStopsAutomaticRecovery() {
+        for failure in [WhoopBleConnectionError.serviceNotFound, .characteristicsNotFound] {
+            let manager = WhoopBleConnectionManager()
+            manager.syncOnBleQueue {
+                manager.autoReconnect = true
+                manager.setState(.discoveringServices)
+                manager.abortHandshake(with: failure) {}
                 XCTAssertEqual(manager.state, .idle)
                 XCTAssertFalse(manager.autoReconnect)
             }
@@ -111,6 +205,63 @@ final class WhoopBlePendingReconnectTests: XCTestCase {
 }
 
 final class WhoopBleHandshakeTests: XCTestCase {
+    func testOptionalMetadataDiscoveryErrorPreservesPendingHandshakeAndReconnect() {
+        for stage in [ConnectionState.discoveringServices, .subscribing] {
+            let manager = WhoopBleConnectionManager()
+            manager.setState(stage)
+            manager.autoReconnect = true
+            var completed = false
+            manager.connectCompletion = { _ in completed = true }
+            manager.handleCharacteristicDiscoveryError(
+                serviceUUID: CBUUID(string: "180A"),
+                error: NSError(domain: "CBATTErrorDomain", code: 10),
+                cancelPeripheral: { XCTFail("Optional metadata must not cancel capture") }
+            )
+            XCTAssertEqual(manager.state, stage)
+            XCTAssertTrue(manager.autoReconnect)
+            XCTAssertFalse(completed)
+            manager.setState(.subscribing)
+            _ = manager.settleNotificationSubscriptionUpdate(
+                .ready, failureDetail: "unused", cancelPeripheral: {}
+            )
+            XCTAssertTrue(completed)
+            XCTAssertEqual(manager.state, .ready)
+        }
+    }
+
+    func testHandshakeDeadlineRetainsItsCallbackAdapterUntilCancellation() {
+        let manager = WhoopBleConnectionManager(connectTimeoutSeconds: 0.01)
+        let cancelled = expectation(description: "callback adapter cancels its native connection")
+        manager.syncOnBleQueue {
+            let callbackAdapter = TestWhoopPeripheralConnection()
+            callbackAdapter.onCancel = { cancelled.fulfill() }
+            manager.autoReconnect = true
+            manager.setState(.discoveringServices)
+            manager.startHandshakeTimeout(for: callbackAdapter)
+        }
+        wait(for: [cancelled], timeout: 0.2)
+    }
+
+    func testPeripheralHandshakeDeadlineCancelsOwnedPeripheralAndPreservesRecovery() {
+        let manager = WhoopBleConnectionManager(connectTimeoutSeconds: 0.01)
+        let peripheral = TestWhoopPeripheralConnection()
+        let checked = expectation(description: "peripheral deadline cancelled")
+        manager.syncOnBleQueue {
+            manager.setConnectedPeripheral(peripheral)
+            manager.autoReconnect = true
+            manager.setState(.discoveringServices)
+            manager.startHandshakeTimeout(for: peripheral)
+            manager.bleQueue.asyncAfter(deadline: .now() + 0.05) {
+                XCTAssertEqual(peripheral.cancellations, 1)
+                XCTAssertTrue(manager.connectedPeripheral === peripheral)
+                XCTAssertEqual(manager.state, .disconnecting)
+                XCTAssertTrue(manager.autoReconnect)
+                checked.fulfill()
+            }
+        }
+        wait(for: [checked], timeout: 1)
+    }
+
     func testServiceDiscoveryErrorCancelsAndSettlesExactlyOnce() {
         let manager = WhoopBleConnectionManager()
         var results: [Result<Bool, WhoopBleConnectionError>] = []
@@ -143,8 +294,10 @@ final class WhoopBleHandshakeTests: XCTestCase {
         manager.connectCompletion = { results.append($0) }
         manager.setState(.discoveringServices)
 
-        manager.abortHandshake(
-            with: .characteristicDiscoveryFailed("characteristic discovery unavailable")
+        manager.handleCharacteristicDiscoveryError(
+            serviceUUID: WhoopBleConstants.allServiceUUIDs[0],
+            error: NSError(domain: "CBATTErrorDomain", code: 10,
+                           userInfo: [NSLocalizedDescriptionKey: "characteristic discovery unavailable"])
         ) {
             cancellationCount += 1
         }

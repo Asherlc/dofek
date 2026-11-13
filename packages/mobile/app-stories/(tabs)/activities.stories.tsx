@@ -17,113 +17,8 @@ import { trpc } from "../../lib/trpc";
 const mapPreview = {
   width: 1024,
   height: 576,
-  tiles: [
-    {
-      url: "https://tile.openstreetmap.org/19/83856/202646.png",
-      x: -179.332,
-      y: -132.862,
-      width: 256,
-      height: 256,
-    },
-    {
-      url: "https://tile.openstreetmap.org/19/83857/202646.png",
-      x: 76.668,
-      y: -132.862,
-      width: 256,
-      height: 256,
-    },
-    {
-      url: "https://tile.openstreetmap.org/19/83858/202646.png",
-      x: 332.668,
-      y: -132.862,
-      width: 256,
-      height: 256,
-    },
-    {
-      url: "https://tile.openstreetmap.org/19/83859/202646.png",
-      x: 588.668,
-      y: -132.862,
-      width: 256,
-      height: 256,
-    },
-    {
-      url: "https://tile.openstreetmap.org/19/83860/202646.png",
-      x: 844.668,
-      y: -132.862,
-      width: 256,
-      height: 256,
-    },
-    {
-      url: "https://tile.openstreetmap.org/19/83856/202647.png",
-      x: -179.332,
-      y: 123.138,
-      width: 256,
-      height: 256,
-    },
-    {
-      url: "https://tile.openstreetmap.org/19/83857/202647.png",
-      x: 76.668,
-      y: 123.138,
-      width: 256,
-      height: 256,
-    },
-    {
-      url: "https://tile.openstreetmap.org/19/83858/202647.png",
-      x: 332.668,
-      y: 123.138,
-      width: 256,
-      height: 256,
-    },
-    {
-      url: "https://tile.openstreetmap.org/19/83859/202647.png",
-      x: 588.668,
-      y: 123.138,
-      width: 256,
-      height: 256,
-    },
-    {
-      url: "https://tile.openstreetmap.org/19/83860/202647.png",
-      x: 844.668,
-      y: 123.138,
-      width: 256,
-      height: 256,
-    },
-    {
-      url: "https://tile.openstreetmap.org/19/83856/202648.png",
-      x: -179.332,
-      y: 379.138,
-      width: 256,
-      height: 256,
-    },
-    {
-      url: "https://tile.openstreetmap.org/19/83857/202648.png",
-      x: 76.668,
-      y: 379.138,
-      width: 256,
-      height: 256,
-    },
-    {
-      url: "https://tile.openstreetmap.org/19/83858/202648.png",
-      x: 332.668,
-      y: 379.138,
-      width: 256,
-      height: 256,
-    },
-    {
-      url: "https://tile.openstreetmap.org/19/83859/202648.png",
-      x: 588.668,
-      y: 379.138,
-      width: 256,
-      height: 256,
-    },
-    {
-      url: "https://tile.openstreetmap.org/19/83860/202648.png",
-      x: 844.668,
-      y: 379.138,
-      width: 256,
-      height: 256,
-    },
-  ],
+  center: [-122.4188, 37.77525] satisfies [number, number],
+  zoom: 18,
   routePath: [
     { x: 288.304, y: 453.089 },
     { x: 512, y: 311.585 },
@@ -137,113 +32,8 @@ const climbingSourceLocation = {
   mapPreview: {
     width: 1024,
     height: 576,
-    tiles: [
-      {
-        url: "https://tile.openstreetmap.org/14/3393/6201.png",
-        x: -32.996,
-        y: -25.606,
-        width: 256,
-        height: 256,
-      },
-      {
-        url: "https://tile.openstreetmap.org/14/3394/6201.png",
-        x: 223.004,
-        y: -25.606,
-        width: 256,
-        height: 256,
-      },
-      {
-        url: "https://tile.openstreetmap.org/14/3395/6201.png",
-        x: 479.004,
-        y: -25.606,
-        width: 256,
-        height: 256,
-      },
-      {
-        url: "https://tile.openstreetmap.org/14/3396/6201.png",
-        x: 735.004,
-        y: -25.606,
-        width: 256,
-        height: 256,
-      },
-      {
-        url: "https://tile.openstreetmap.org/14/3397/6201.png",
-        x: 991.004,
-        y: -25.606,
-        width: 256,
-        height: 256,
-      },
-      {
-        url: "https://tile.openstreetmap.org/14/3393/6202.png",
-        x: -32.996,
-        y: 230.394,
-        width: 256,
-        height: 256,
-      },
-      {
-        url: "https://tile.openstreetmap.org/14/3394/6202.png",
-        x: 223.004,
-        y: 230.394,
-        width: 256,
-        height: 256,
-      },
-      {
-        url: "https://tile.openstreetmap.org/14/3395/6202.png",
-        x: 479.004,
-        y: 230.394,
-        width: 256,
-        height: 256,
-      },
-      {
-        url: "https://tile.openstreetmap.org/14/3396/6202.png",
-        x: 735.004,
-        y: 230.394,
-        width: 256,
-        height: 256,
-      },
-      {
-        url: "https://tile.openstreetmap.org/14/3397/6202.png",
-        x: 991.004,
-        y: 230.394,
-        width: 256,
-        height: 256,
-      },
-      {
-        url: "https://tile.openstreetmap.org/14/3393/6203.png",
-        x: -32.996,
-        y: 486.394,
-        width: 256,
-        height: 256,
-      },
-      {
-        url: "https://tile.openstreetmap.org/14/3394/6203.png",
-        x: 223.004,
-        y: 486.394,
-        width: 256,
-        height: 256,
-      },
-      {
-        url: "https://tile.openstreetmap.org/14/3395/6203.png",
-        x: 479.004,
-        y: 486.394,
-        width: 256,
-        height: 256,
-      },
-      {
-        url: "https://tile.openstreetmap.org/14/3396/6203.png",
-        x: 735.004,
-        y: 486.394,
-        width: 256,
-        height: 256,
-      },
-      {
-        url: "https://tile.openstreetmap.org/14/3397/6203.png",
-        x: 991.004,
-        y: 486.394,
-        width: 256,
-        height: 256,
-      },
-    ],
+    center: [-105.39999996, 40.00700003],
+    zoom: 13,
     routePath: null,
   },
   sourcePoints: [
@@ -326,7 +116,7 @@ function createStoryData(
             otherSources: [],
           };
 
-  const weekList: AppRouterOutputs["calendar"]["weekList"] = [
+  const weekListV2: AppRouterOutputs["calendar"]["weekListV2"]["days"] = [
     {
       date: today,
       activities: [
@@ -438,7 +228,7 @@ function createStoryData(
   ];
 
   if (climbingActivity) {
-    weekList[0].activities = [
+    weekListV2[0].activities = [
       {
         id: "a1220000-0000-4000-8000-000000000001",
         name: "Boulder Canyon climbing",
@@ -550,7 +340,12 @@ function createStoryData(
   return {
     today,
     queryInput,
-    weekList,
+    weekListV2: {
+      days: weekListV2,
+      totalCount: weekListV2.reduce((count, day) => count + day.activities.length, 0),
+      page: 0,
+      pageSize: 20,
+    },
     activityOverview,
     calendarData,
     processingStatus,
@@ -570,8 +365,8 @@ function createMockObservable(
 ): OperationResultObservable<AppRouter, unknown> {
   const result: OperationResultObservable<AppRouter, unknown> = {
     subscribe(observer) {
-      if (path === "calendar.weekList") {
-        observer.next?.({ result: { data: storyData.weekList } });
+      if (path === "calendar.weekListV2") {
+        observer.next?.({ result: { data: storyData.weekListV2 } });
       } else if (path === "calendar.activityOverview") {
         observer.next?.({ result: { data: storyData.activityOverview } });
       } else if (path === "calendar.calendarData") {
@@ -624,8 +419,11 @@ function MockProviders({
       defaultOptions: { queries: { retry: false, staleTime: Number.POSITIVE_INFINITY } },
     });
     client.setQueryData(
-      [["calendar", "weekList"], { input: storyData.queryInput, type: "query" }],
-      storyData.weekList,
+      [
+        ["calendar", "weekListV2"],
+        { input: { ...storyData.queryInput, page: 0, pageSize: 20 }, type: "query" },
+      ],
+      storyData.weekListV2,
     );
     client.setQueryData(
       [["calendar", "activityOverview"], { input: storyData.queryInput, type: "query" }],
@@ -708,12 +506,12 @@ export const SelectionMode: Story = {
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
     await userEvent.click(await canvas.findByRole("button", { name: "Select activities" }));
-    await userEvent.click(await canvas.findByRole("button", { name: "Sources: WHOOP (Cloud)" }));
-    await expect(canvas.getByRole("button", { name: "Sources: WHOOP (Cloud)" })).toHaveAttribute(
+    await userEvent.click(await canvas.findByRole("button", { name: "Lineage: WHOOP (Cloud)" }));
+    await expect(canvas.getByRole("button", { name: "Lineage: WHOOP (Cloud)" })).toHaveAttribute(
       "aria-expanded",
       "true",
     );
-    await userEvent.click(canvas.getByRole("button", { name: "Sources: WHOOP (Cloud)" }));
+    await userEvent.click(canvas.getByRole("button", { name: "Lineage: WHOOP (Cloud)" }));
     await expect(canvas.getByText("0 activities selected")).toBeVisible();
   },
 };
@@ -742,7 +540,7 @@ export const HangTenViaAppleHealth: Story = {
   parameters: { originProvider: "apple_health", originSourceName: "Hang Ten Training" },
   play: async ({ canvasElement, userEvent }) => {
     await userEvent.click(
-      await within(canvasElement).findByRole("button", { name: "Sources: Hang Ten" }),
+      await within(canvasElement).findByRole("button", { name: "Lineage: Hang Ten" }),
     );
     const canvas = within(canvasElement);
     await expect(await canvas.findByText("Apple Health")).toBeVisible();
@@ -756,10 +554,10 @@ export const BranchingSourcesExpanded: Story = {
   parameters: { branchingSources: true },
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
-    const trigger = await canvas.findByRole("button", { name: "Sources: Hang Ten" });
+    const trigger = await canvas.findByRole("button", { name: "Lineage: Hang Ten" });
     await userEvent.click(trigger);
     await expect(trigger).toHaveAttribute("aria-expanded", "true");
-    await expect(canvas.getAllByText("Hang Ten")).toHaveLength(1);
+    await expect(canvas.getAllByText("Hang Ten")).toHaveLength(2);
     await expect(canvas.getAllByText("Strava")).toHaveLength(2);
     await expect(canvas.getByText("WHOOP")).toBeVisible();
   },

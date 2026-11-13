@@ -1,5 +1,8 @@
 import { formatDateYmdInTimeZone } from "@dofek/format/format";
-import type { ClimbingFilters } from "@dofek/training/climbing-filters";
+import {
+  type ClimbingFilters,
+  isClimbingBoardFilterActive,
+} from "@dofek/training/climbing-filters";
 import {
   type ClimbingGradePreference,
   DEFAULT_CLIMBING_GRADE_PREFERENCE,
@@ -17,10 +20,14 @@ import {
   ropeMethodSchema,
 } from "@dofek/training/climbing-log";
 import {
-  type ClimbingGradeProgressionLane,
+  type ClimbingGradeProgressionData,
   climbingGradeProgressionSchema,
   climbingProgressionSettings,
 } from "@dofek/training/climbing-progression";
+import {
+  type ClimbingGradeProgressionV1Lane,
+  climbingGradeProgressionV1Schema,
+} from "@dofek/training/climbing-progression-v1";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import type { ClimbingLogEntryDetail } from "../contracts/climbing-log-contracts.ts";
@@ -37,10 +44,12 @@ import {
   buildClimbingGradeProgression,
   type ClimbingProgressionEntry,
 } from "./climbing-grade-progression.ts";
+import { buildClimbingGradeProgressionV1 } from "./climbing-grade-progression-v1.ts";
 
 export type { ClimbingLogEntryDetail, FreeRockGradeSystem, RockClimbKind };
-export { climbingGradeProgressionSchema };
-export type ClimbingGradeProgressionRow = ClimbingGradeProgressionLane;
+export { climbingGradeProgressionSchema, climbingGradeProgressionV1Schema };
+export type ClimbingGradeProgressionRow = ClimbingGradeProgressionV1Lane;
+export type ClimbingGradeProgressionV2Row = ClimbingGradeProgressionData;
 export interface AttachedRockClimbingObservation {
   activityId: string;
   date: string;
@@ -55,6 +64,15 @@ export interface AttachedRockClimbingObservation {
 export class ClimbingGradeProgression {
   readonly #row: ClimbingGradeProgressionRow;
   constructor(row: ClimbingGradeProgressionRow) {
+    this.#row = row;
+  }
+  toDetail() {
+    return this.#row;
+  }
+}
+export class ClimbingGradeProgressionV2 {
+  readonly #row: ClimbingGradeProgressionV2Row;
+  constructor(row: ClimbingGradeProgressionV2Row) {
     this.#row = row;
   }
   toDetail() {
@@ -220,6 +238,23 @@ export class ClimbingRepository extends BaseRepository {
     days: number,
     filters: ClimbingFilters = {},
   ): Promise<ClimbingGradeProgression[]> {
+    const entries = await this.#getGradeProgressionEntries(days, filters);
+    return buildClimbingGradeProgressionV1(entries).map(
+      (lane) => new ClimbingGradeProgression(lane),
+    );
+  }
+  async getGradeProgressionV2(
+    days: number,
+    filters: ClimbingFilters = {},
+  ): Promise<ClimbingGradeProgressionV2 | null> {
+    const entries = await this.#getGradeProgressionEntries(days, filters);
+    const chart = buildClimbingGradeProgression(entries);
+    return chart === null ? null : new ClimbingGradeProgressionV2(chart);
+  }
+  async #getGradeProgressionEntries(
+    days: number,
+    filters: ClimbingFilters,
+  ): Promise<ClimbingProgressionEntry[]> {
     const rows = await executeWithSchema(
       this.db,
       progressionRowSchema,
@@ -227,7 +262,7 @@ export class ClimbingRepository extends BaseRepository {
       SELECT session_date, climb_kind, attempt_scope, COALESCE(setting::text, 'unknown') AS setting,
         grade_system, grade, attempt_observations FROM canonical_logs WHERE grade IS NOT NULL`,
     );
-    const entries = rows.flatMap((row): ClimbingProgressionEntry[] => {
+    return rows.flatMap((row): ClimbingProgressionEntry[] => {
       const display = displayClimbingGrade(
         this.#gradePreference,
         row.climb_kind,
@@ -245,7 +280,6 @@ export class ClimbingRepository extends BaseRepository {
           }))
         : [];
     });
-    return buildClimbingGradeProgression(entries).map((row) => new ClimbingGradeProgression(row));
   }
   async getMapEntries(
     days: number,
@@ -259,7 +293,7 @@ export class ClimbingRepository extends BaseRepository {
         ce.canonical_activity_id::text AS activity_id, ce.session_date,
         ce.climb_name, ce.title, ce.provider_id, ce.raw,
         ce.climb_kind, ce.grade_system, ce.grade,
-        CASE WHEN ce.coordinates IS NOT NULL THEN jsonb_build_object(
+        CASE WHEN ce.log_area_id IS NULL AND ce.coordinates IS NOT NULL THEN jsonb_build_object(
           'coordinates', jsonb_build_object('latitude', ce.coordinates[1], 'longitude', ce.coordinates[0]),
           'scope', 'climb', 'objectId', ce.climb_id, 'providerId', ce.provider_id, 'name', ce.climb_name)
         ELSE jsonb_build_object(
@@ -272,7 +306,7 @@ export class ClimbingRepository extends BaseRepository {
         WHERE node->'coordinates' IS NOT NULL AND node->'coordinates' <> 'null'::jsonb
         ORDER BY position DESC LIMIT 1
       ) AS nearest_area ON true
-      WHERE ce.coordinates IS NOT NULL OR nearest_area.node IS NOT NULL
+      WHERE (ce.log_area_id IS NULL AND ce.coordinates IS NOT NULL) OR nearest_area.node IS NOT NULL
       ORDER BY ce.id, ce.pitch_number NULLS FIRST, ce.pitch_id, ce.unknown_pitch_attempt_id`,
     );
     return rows.map((row) => ({
@@ -347,20 +381,20 @@ export class ClimbingRepository extends BaseRepository {
   async getVolumeOverTime(days: number | null, filters: ClimbingFilters = {}) {
     const endDate = formatDateYmdInTimeZone(new Date(), this.timezone);
     const range = days ?? { endDate };
-    const hasFilters = Object.values(filters).some((value) => value !== undefined);
+    const hasFilters =
+      isClimbingBoardFilterActive(filters) ||
+      Object.entries(filters).some(([key, value]) => key !== "board" && value !== undefined);
     const rows = await executeWithSchema(
       this.db,
       weeklyVolumeRowSchema,
       sql`WITH ${this.#canonicalLogCtes(range, filters)},
       weekly_attempts AS (
         SELECT date_trunc('week', session_date::date)::date AS week,
-          CASE WHEN COUNT(canonical_attempt_count) = COUNT(*)
-            THEN SUM(canonical_attempt_count)::int END AS attempts
+          SUM(canonical_attempt_count)::int AS attempts
         FROM canonical_logs GROUP BY 1
       ), weekly_time AS (
         SELECT date_trunc('week', (a.started_at AT TIME ZONE ${this.timezone})::date)::date AS week,
-          CASE WHEN COUNT(a.ended_at) = COUNT(*) THEN SUM(EXTRACT(EPOCH FROM (a.ended_at - a.started_at)) / 60)::real END AS minutes,
-          COUNT(*) FILTER (WHERE NOT EXISTS (SELECT 1 FROM canonical_logs logs WHERE logs.canonical_activity_id = a.id)) AS activities_without_logs
+          CASE WHEN COUNT(a.ended_at) = COUNT(*) THEN SUM(EXTRACT(EPOCH FROM (a.ended_at - a.started_at)) / 60)::real END AS minutes
         FROM fitness.v_activity a
         WHERE a.user_id = ${this.userId} AND a.canonical_type = 'climbing'
           ${ChartRange.fromDays(days).postgresDateAfterEndDate(sql`(a.started_at AT TIME ZONE ${this.timezone})::date`, endDate)}
@@ -370,7 +404,7 @@ export class ClimbingRepository extends BaseRepository {
         GROUP BY 1
       )
       SELECT COALESCE(weekly_attempts.week, weekly_time.week)::text AS week,
-        CASE WHEN COALESCE(weekly_time.activities_without_logs, 0) = 0 THEN weekly_attempts.attempts END AS attempts, weekly_time.minutes
+        weekly_attempts.attempts, weekly_time.minutes
       FROM weekly_attempts FULL JOIN weekly_time USING (week) ORDER BY week`,
     );
     return rows;

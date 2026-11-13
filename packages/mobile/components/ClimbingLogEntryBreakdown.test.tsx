@@ -141,6 +141,43 @@ describe("ClimbingLogEntryBreakdown", () => {
     );
     expect(onAttach).toHaveBeenCalledWith("openbeta-log");
   });
+  it("renders the complete recorded area path in one horizontal heading", () => {
+    const climb = climbingLogFixture.climb;
+    const baseArea = climb?.areaPath[0];
+    if (!climb || !baseArea) throw new Error("Expected a climb fixture");
+    const areaPath = [
+      { ...baseArea, id: "california", name: "California", parentAreaId: null },
+      {
+        ...baseArea,
+        id: "sf-bay",
+        name: "San Francisco Bay Area",
+        parentAreaId: "california",
+      },
+      { ...baseArea, id: "east-bay", name: "East Bay Area", parentAreaId: "sf-bay" },
+      { ...baseArea, id: "berkeley", name: "Berkeley", parentAreaId: "east-bay" },
+      {
+        ...baseArea,
+        id: "cragmont",
+        name: "Cragmont Park",
+        parentAreaId: "berkeley",
+      },
+      {
+        ...baseArea,
+        id: "northeast-face",
+        name: "Northeast Face",
+        parentAreaId: "cragmont",
+      },
+    ];
+    const fullPath =
+      "California › San Francisco Bay Area › East Bay Area › Berkeley › Cragmont Park › Northeast Face";
+    render(
+      <ClimbingLogEntryBreakdown
+        entries={[{ ...climbingLogFixture, climb: { ...climb, areaPath } }]}
+      />,
+    );
+    const heading = screen.getByRole("header", { name: `Area: ${fullPath}` });
+    expect(heading.textContent).toBe(fullPath);
+  });
   it("groups nonadjacent climbs under their area heading and keeps attachment identities", () => {
     const climb = climbingLogFixture.climb;
     const area = climb?.areaPath.at(-1);
@@ -247,7 +284,7 @@ describe("ClimbingLogEntryBreakdown", () => {
     const groups = container.firstElementChild;
     if (!groups) throw new Error("Expected a measured area-block container");
     for (const area of [goatRock, northWall, caveWall]) {
-      expect(area.firstElementChild?.getAttribute("role")).toBe("header");
+      expect(within(area).getByRole("header")).toBeTruthy();
     }
 
     fireEvent(groups, new CustomEvent("layout", { detail: { width: 900, height: 600 } }));

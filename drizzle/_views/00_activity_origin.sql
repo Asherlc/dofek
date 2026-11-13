@@ -102,10 +102,10 @@ WITH RECURSIVE labels AS (
         WHERE reached.upstream_id = member.member_id AND reached.downstream_id = other.member_id)
   )
 ), initiating_origins AS (
-  -- Strong, Hang Ten, Apple Watch, and native Peloton bikes initiate by policy. Prefer a direct export over
+  -- Kaya, Strong, Hang Ten, Apple Watch, and native Peloton bikes initiate by policy. Prefer a direct export over
   -- its Apple Health copy, without inventing transfer edges to other providers.
   SELECT member_id FROM members
-  WHERE provider_id = 'strong-csv'
+  WHERE provider_id IN ('strong-csv', 'kaya', 'kaya-export')
     OR is_watch_recording
     OR is_native_peloton_recording
     OR (provider_id = 'apple_health' AND source_label IN ('hang ten', 'hang ten training'))

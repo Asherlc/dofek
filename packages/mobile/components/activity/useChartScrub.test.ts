@@ -78,9 +78,20 @@ function touch(locationX: number) {
     numberActiveTouches: 1,
   };
   native.callbacks.onPanResponderGrant?.(event, gesture);
+  return { event, gesture };
 }
 
 describe("useChartScrub", () => {
+  it("reports the touched time independently of the nearest sample and clears it on release", () => {
+    const onHoverTime = vi.fn();
+    renderHook(() => useChartScrub({ plotWidth: 280, series: recording([0, 60]), onHoverTime }));
+    act(() => {
+      const { event, gesture } = touch(184);
+      expect(onHoverTime).toHaveBeenLastCalledWith(startedAt + 30000);
+      native.callbacks.onPanResponderRelease?.(event, gesture);
+    });
+    expect(onHoverTime).toHaveBeenLastCalledWith(null);
+  });
   it("selects the measured sample nearest the touched time", () => {
     const onHoverIndex = vi.fn();
     const { result } = renderHook(() =>

@@ -19,7 +19,6 @@ import {
 } from "@dofek/training/activity-types";
 import { isIndoorCyclingModality } from "@dofek/training/endurance-types";
 import { createActivityTypeMapper, STRAVA_ACTIVITY_TYPE_MAP } from "@dofek/training/training";
-import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { fetchStravaActivityImages } from "../../activity-images/providers.ts";
 import type { ImageDiscovery } from "../../activity-images/types.ts";
@@ -38,7 +37,6 @@ import {
   markProviderActivityAbsent,
   upsertProviderActivity,
 } from "../../db/provider-activity-sync.ts";
-import { activity } from "../../db/schema/activity.ts";
 import { SOURCE_TYPE_API } from "../../db/sensor-channels.ts";
 import { getTokenUserId } from "../../db/token-user-context.ts";
 import { createProviderRateLimitFetch } from "../../lib/provider-rate-limit-fetch.ts";
@@ -55,7 +53,11 @@ import type {
   WebhookEvent,
   WebhookProvider,
 } from "../types.ts";
+import { upsertStravaActivity } from "./activity-persistence.ts";
 import { isStreamKey } from "./streams.ts";
+import { StravaSyncCheckpoint } from "./sync-checkpoint.ts";
+
+const STRAVA_MAX_ACTIVITY_PAGES = 100;
 
 // ============================================================
 // Strava API types
@@ -370,7 +372,6 @@ export class StravaNotFoundError extends Error {
 // ============================================================
 
 const STRAVA_AUTH_BASE = "https://www.strava.com/oauth";
-const STRAVA_MAX_ACTIVITY_PAGES = 100;
 
 export function stravaOAuthConfig(host?: string): OAuthConfig | null {
   const clientId = process.env.STRAVA_CLIENT_ID;
@@ -741,6 +742,9 @@ export class StravaProvider implements WebhookProvider {
     const errors: SyncError[] = [];
     let recordsSynced = 0;
 
+    const checkpoint = await StravaSyncCheckpoint.load(window, options.checkpoint);
+    const completedActivityExternalIds = checkpoint.completedActivityExternalIds;
+
     let client: StravaClient;
     try {
       client = await this.#createClient(db);
@@ -803,79 +807,78 @@ export class StravaProvider implements WebhookProvider {
 
       for (const act of parsed.activities) {
         presentActivityExternalIds.add(act.externalId);
+        const completed = completedActivityExternalIds.has(act.externalId);
+        const previousErrorCount = errors.length;
         try {
           // Fetch detailed activity to get device_name for source tracking
           let sourceName: string | undefined = act.sourceName;
           let detailedActivity: StravaDetailedActivity | undefined;
-          try {
-            const detail = await client.getActivity(Number(act.externalId));
-            sourceName = detail.device_name;
-            detailedActivity = detail;
-          } catch (detailErr) {
-            if (detailErr instanceof StravaRateLimitError) {
-              errors.push({
-                message:
-                  "Strava API rate limit hit while fetching activity detail — stopping sync.",
-                cause: detailErr,
-              });
-              shouldStop = true;
-              break;
-            }
-            if (detailErr instanceof StravaUnauthorizedError) {
-              errors.push({
-                message: "Strava authorization failed while fetching activity detail.",
-                cause: new ProviderAuthorizationFailedError("Strava", { cause: detailErr }),
-              });
-              shouldStop = true;
-              break;
-            }
-            if (detailErr instanceof StravaNotFoundError) {
-              logger.warn(`[strava] Activity ${act.externalId} not found (404) — skipping detail`);
-            } else {
-              errors.push({
-                message: `Detail for activity ${act.externalId}: ${detailErr instanceof Error ? detailErr.message : String(detailErr)}`,
-                externalId: act.externalId,
-                cause: detailErr,
-              });
+          if (!completed) {
+            try {
+              const detail = await client.getActivity(Number(act.externalId));
+              sourceName = detail.device_name;
+              detailedActivity = detail;
+            } catch (detailErr) {
+              if (detailErr instanceof StravaRateLimitError) {
+                errors.push({
+                  message:
+                    "Strava API rate limit hit while fetching activity detail — stopping sync.",
+                  cause: detailErr,
+                });
+                shouldStop = true;
+                break;
+              }
+              if (detailErr instanceof StravaUnauthorizedError) {
+                errors.push({
+                  message: "Strava authorization failed while fetching activity detail.",
+                  cause: new ProviderAuthorizationFailedError("Strava", { cause: detailErr }),
+                });
+                shouldStop = true;
+                break;
+              }
+              if (detailErr instanceof StravaNotFoundError) {
+                logger.warn(
+                  `[strava] Activity ${act.externalId} not found (404) — skipping detail`,
+                );
+              } else {
+                errors.push({
+                  message: `Detail for activity ${act.externalId}: ${detailErr instanceof Error ? detailErr.message : String(detailErr)}`,
+                  externalId: act.externalId,
+                  cause: detailErr,
+                });
+              }
             }
           }
 
-          const row = await upsertProviderActivity(
+          const row = await upsertStravaActivity(
             db,
-            {
-              providerId: this.id,
-              externalId: act.externalId,
-              activityType: act.activityType,
-              startedAt: act.startedAt,
-              endedAt: act.endedAt,
-              name: act.name,
-              sourceName,
-              raw: detailedActivity ?? rawActivities.find((r) => String(r.id) === act.externalId),
-            },
-            {
-              activityType: act.activityType,
-              startedAt: act.startedAt,
-              endedAt: act.endedAt,
-              name: act.name,
-              sourceName: sql`coalesce(excluded.source_name, ${activity.sourceName})`,
-              raw:
-                detailedActivity ??
-                sql`${activity.raw} || ${JSON.stringify(rawActivities.find((r) => String(r.id) === act.externalId) ?? {})}::jsonb`,
-            },
+            act,
+            rawActivities.find((entry) => String(entry.id) === act.externalId),
+            detailedActivity,
+            sourceName,
           );
+          if (completed) continue;
 
           if (row?.id && userId && detailedActivity?.photos) {
             try {
+              const discovery = await client.getActivityImages(
+                Number(act.externalId),
+                detailedActivity.photos.count ?? null,
+                detailedActivity.photos.primary,
+              );
               await recordActivityImageDiscovery(db, {
                 userId,
                 activityId: row.id,
                 providerId: this.id,
-                discovery: await client.getActivityImages(
-                  Number(act.externalId),
-                  detailedActivity?.photos?.count ?? null,
-                  detailedActivity?.photos?.primary,
-                ),
+                discovery,
               });
+              if (discovery.retryable) {
+                errors.push({
+                  message: "Photos could not be fully discovered; retry this activity.",
+                  externalId: act.externalId,
+                  cause: new Error(discovery.reason ?? "Strava photo discovery incomplete"),
+                });
+              }
             } catch (error) {
               errors.push({
                 message: "Strava image discovery persistence failed",
@@ -888,7 +891,7 @@ export class StravaProvider implements WebhookProvider {
           // no-mutate: Progress reporting is UX-only and can't fail in a testable way
           if (onProgress) {
             // no-mutate
-            onProgress(0, `${recordsSynced} activities synced`);
+            onProgress(0, `${completedActivityExternalIds.size + 1} activities synced`);
           }
 
           // Fetch streams for sensor data
@@ -951,6 +954,9 @@ export class StravaProvider implements WebhookProvider {
             cause: err,
           });
         }
+        if (errors.length === previousErrorCount) {
+          await checkpoint.completeActivity(act.externalId);
+        }
       }
 
       hasMore = parsed.hasMore && !shouldStop;
@@ -976,6 +982,7 @@ export class StravaProvider implements WebhookProvider {
         windowEnd: syncWindowEnd,
         presentExternalIds: presentActivityExternalIds,
       });
+      if (errors.length === 0) await checkpoint.clear();
     }
 
     return {

@@ -41,6 +41,42 @@ describe("complete climbing log snapshots", () => {
   };
   const second: SourceClimbingLogEntry = { externalId: "second", attempts: [{ scope: "climb" }] };
 
+  it("restores only retained rows belonging to the selected user and provider", async () => {
+    await write([first, second]);
+    await persistClimbingLogSnapshot(context.db, {
+      userId: otherUserId,
+      providerId,
+      entries: [first],
+    });
+    await persistClimbingLogSnapshot(context.db, {
+      userId: TEST_USER_ID,
+      providerId: otherProviderId,
+      entries: [first],
+    });
+    await context.db.update(climbingLogEntry).set({
+      providerAbsentAt: new Date("2026-10-01T00:00:00Z"),
+    });
+    const before = await rows();
+    await persistClimbingLogSnapshot(
+      context.db,
+      {
+        userId: TEST_USER_ID,
+        providerId,
+        entries: [],
+      },
+      ["first"],
+    );
+    expect(await rows()).toEqual(
+      before.map((entry) =>
+        entry.userId === TEST_USER_ID &&
+        entry.providerId === providerId &&
+        entry.externalId === "first"
+          ? { ...entry, providerAbsentAt: null }
+          : entry,
+      ),
+    );
+  });
+
   it("reconciles populated and empty lists without retiring another user, provider, or local record", async () => {
     await write([first, second]);
     await persistClimbingLogSnapshot(context.db, {

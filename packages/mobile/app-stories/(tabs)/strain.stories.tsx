@@ -2,7 +2,7 @@ import { sportVolumeMetricSchema, sportVolumeMetrics } from "@dofek/training/spo
 import type { Meta, StoryObj } from "@storybook/react-native";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { type OperationResultObservable, TRPCClientError, type TRPCLink } from "@trpc/client";
-import { mobileTrainingFixtureSchema } from "dofek-server/mobile-dashboard-contracts";
+import { mobileTrainingV2FixtureSchema } from "dofek-server/mobile-dashboard-contracts";
 import type { AppRouter } from "dofek-server/router";
 import { useMemo } from "react";
 import { View } from "react-native";
@@ -20,9 +20,13 @@ import {
   climbingAttachmentSafeAreaMetrics,
 } from "../../components/climbing-log-attachment-test-helpers";
 import { climbingStrengthsFixture } from "../../components/climbing-strengths-fixtures";
+import { routeComparisonFixture } from "../../components/route-comparison-fixtures";
+import { runningData } from "../../components/running-training-test-helpers";
 import { trpc } from "../../lib/trpc";
 
 const STRAIN_COMPANION_RESPONSES = {
+  "running.dynamicsV2": runningData,
+  "hiking.activityComparison": routeComparisonFixture,
   "climbing.attachmentActivities": climbingAttachmentActivities,
   "climbing.attachClimbingLogEntry": { attached: true },
   "climbing.locationMap": climbingLocationMapFixture,
@@ -71,13 +75,12 @@ const STRAIN_COMPANION_RESPONSES = {
       },
     },
   },
-  "cyclingAdvanced.trainingMonotony": [],
 } satisfies Parameters<typeof createProcessingStatusStoryLink>[1];
 
 function createTrainingFailureStoryLink(): TRPCLink<AppRouter> {
   return () =>
     ({ op, next }) => {
-      if (op.path !== "mobileDashboard.training") {
+      if (op.path !== "mobileDashboard.trainingV2") {
         return next(op);
       }
 
@@ -137,7 +140,6 @@ function createMockWorkloadData(dates: FixtureDates) {
     return {
       date: dates.date(index - 6),
       dailyLoad: isLatest ? 450 : 330 + index * 18,
-      strain: isLatest ? 12.5 : 10.2 + index * 0.3,
       acuteLoad: isLatest ? 380 : 350 + index * 5,
       chronicLoad: 400,
       workloadRatio: isLatest ? 0.95 : 0.88 + index * 0.01,
@@ -152,7 +154,6 @@ function createMockWorkloadData(dates: FixtureDates) {
       recentDays: 7,
       baselineDays: 28,
     },
-    displayedStrain: 12.5,
     displayedDate: dates.date(),
     timeSeries,
   };
@@ -175,6 +176,7 @@ function createMockActivities(dates: FixtureDates) {
       hr_samples: 5400,
       power_samples: 5400,
       distance_meters: 42000,
+      distance_state: { status: "available" },
     },
     {
       id: "a2",
@@ -191,6 +193,7 @@ function createMockActivities(dates: FixtureDates) {
       hr_samples: 2700,
       power_samples: null,
       distance_meters: 7500,
+      distance_state: { status: "available" },
     },
   ];
 }
@@ -212,30 +215,13 @@ function createSeededProviders(
     ? mockWorkloadData
     : {
         context: mockWorkloadData.context,
-        displayedStrain: 0,
         displayedDate: null,
         timeSeries: [],
       };
-  const fixture = mobileTrainingFixtureSchema.parse({
+  const fixture = mobileTrainingV2FixtureSchema.parse({
     input: { days: 90, endDate },
     data: {
       workloadRatio,
-      strainTarget: hasActivities
-        ? {
-            targetStrain: 13.5,
-            currentStrain: 12.5,
-            currentStrainSource: "activity",
-            currentPhysiologyLoad: 450,
-            progressPercent: 93,
-            zone: "Push",
-            explanation: "Based on a recovery score of 78/100.",
-            dailyLoad: 450,
-            acuteLoad: 380,
-            chronicLoad: 400,
-            workloadRatio: 0.95,
-            readinessScore: 78,
-          }
-        : undefined,
       activities,
       weeklyVolume: hasActivities
         ? [
@@ -251,7 +237,7 @@ function createSeededProviders(
       verticalAscent: [],
       progressiveOverload: [],
       climbing: {
-        gradeProgression: [],
+        gradeProgression: null,
         volumeByGrade:
           withUnknownClimbingAttempts || withRecordedClimbingAttempts
             ? [
@@ -303,7 +289,7 @@ function createSeededProviders(
 
   if (!trainingUnavailable) {
     queryClient.setQueryData(
-      [["mobileDashboard", "training"], { input: { days: 90, endDate }, type: "query" }],
+      [["mobileDashboard", "trainingV2"], { input: { days: 90, endDate }, type: "query" }],
       fixture.data,
     );
   }

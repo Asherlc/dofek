@@ -5,7 +5,8 @@ import {
   type ActivitySourceTreeNode,
   activitySourceNodePresentation,
 } from "@dofek/providers/activity-source-tree";
-import { useId, useState } from "react";
+import * as Popover from "@radix-ui/react-popover";
+import { type ReactNode, useState } from "react";
 import { AttributionIcon } from "./ActivityMetricSourcePicker.tsx";
 import { ProviderLogo } from "./ProviderLogo.tsx";
 import { QueryStatePanel } from "./QueryStatePanel.tsx";
@@ -14,6 +15,7 @@ const EMPTY_HARDWARE: ActivityHardware = { items: [], power: [] };
 
 interface Props {
   tree: ActivitySourceTree;
+  heading?: ReactNode;
   hardware?: ActivityHardware;
   hardwareLoading?: boolean;
   hardwareError?: unknown;
@@ -22,118 +24,135 @@ interface Props {
 
 export function ActivitySourceDisclosure({
   tree,
+  heading,
   hardware,
   hardwareLoading = false,
   hardwareError,
   onRetryHardware,
 }: Props) {
   const [expanded, setExpanded] = useState(false);
-  const contentId = useId();
   const { primary, otherSources } = activitySourceTreeWithHardware(
     tree,
     hardware ?? EMPTY_HARDWARE,
   );
-  if (!primary && otherSources.length === 0 && !hardwareLoading && !hardwareError) return null;
+  if (!primary && otherSources.length === 0 && !hardwareLoading && !hardwareError)
+    return <>{heading}</>;
 
-  return (
-    <div className="relative z-20 min-w-0 border-t border-border/60 text-sm">
-      <button
-        type="button"
-        aria-label={primary ? `${primary.label} Sources` : "Sources"}
-        aria-expanded={expanded}
-        aria-controls={contentId}
-        onClick={() => setExpanded((current) => !current)}
-        className="flex min-h-12 w-full items-center gap-2 px-4 py-3 text-left hover:bg-surface-hover focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent sm:px-5"
-      >
-        {primary ? (
-          <>
-            <ProviderLogo provider={primary.providerId} sourceName={primary.sourceName} size={18} />
-            <span className="min-w-0 flex-1 font-medium [overflow-wrap:anywhere]">
-              <SourceLabel node={primary} />
-            </span>
-          </>
-        ) : null}
-        <span className={primary ? "ml-auto shrink-0 text-xs text-muted" : "flex-1 font-medium"}>
-          Sources
-        </span>
-        <svg
-          width="12"
-          height="12"
-          viewBox="0 0 12 12"
-          fill="none"
-          aria-hidden="true"
-          className={expanded ? "shrink-0 rotate-180 text-muted" : "shrink-0 text-muted"}
-        >
-          <path
-            d="m3 4.5 3 3 3-3"
-            stroke="currentColor"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      </button>
-      {hardwareError ? (
-        <QueryStatePanel
-          contextLabel="Device details"
-          error={hardwareError}
-          onRetry={onRetryHardware}
-          height={72}
-        />
+  const trigger = (
+    <button
+      type="button"
+      aria-label={primary ? `${primary.label} Lineage` : "Lineage"}
+      className={
+        heading
+          ? "flex min-h-8 max-w-64 items-center gap-2 rounded px-2 text-left hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-accent"
+          : "flex min-h-12 w-full items-center gap-2 px-4 py-3 text-left hover:bg-surface-hover focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent sm:px-5"
+      }
+    >
+      {primary ? (
+        <>
+          <ProviderLogo provider={primary.providerId} sourceName={primary.sourceName} size={18} />
+          <span className="min-w-0 flex-1 font-medium [overflow-wrap:anywhere]">
+            <SourceLabel node={primary} />
+          </span>
+        </>
       ) : null}
-      <div id={contentId} hidden={!expanded}>
-        {expanded ? (
-          <div className="px-4 pb-4 sm:px-5">
-            {!hardware && hardwareLoading && !hardwareError ? (
-              <QueryStatePanel variant="loading" contextLabel="Device details" height={72} />
-            ) : null}
-            {primary ? (
-              <>
-                {primary.description ? (
-                  <p className="ml-[26px] text-xs text-muted [overflow-wrap:anywhere]">
-                    {primary.description}
-                  </p>
-                ) : null}
-                {primary.url ? (
-                  <a
-                    href={primary.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    aria-label={`View activity for ${primary.label}`}
-                    className="ml-[26px] mt-1 inline-block text-xs text-accent hover:underline focus-visible:outline-2 focus-visible:outline-accent"
-                  >
-                    View activity ↗
-                  </a>
-                ) : null}
-                <SourceNodeDetails node={primary} />
-                <SourceTreeNodes nodes={primary.children} connected />
-              </>
-            ) : null}
-            {otherSources.length > 0 ? (
-              <section
-                aria-label="Additional sources"
-                className={primary ? "mt-4 border-t border-border/60 pt-3" : ""}
-              >
-                <SourceTreeNodes nodes={otherSources} />
-              </section>
-            ) : null}
-          </div>
-        ) : null}
+      <span className={primary ? "ml-auto shrink-0 text-xs text-muted" : "flex-1 font-medium"}>
+        Lineage
+      </span>
+      <svg
+        width="12"
+        height="12"
+        viewBox="0 0 12 12"
+        fill="none"
+        aria-hidden="true"
+        className={expanded ? "shrink-0 rotate-180 text-muted" : "shrink-0 text-muted"}
+      >
+        <path
+          d="m3 4.5 3 3 3-3"
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    </button>
+  );
+  const details = (
+    <div className="px-4 pb-4 sm:px-5">
+      {!hardware && hardwareLoading && !hardwareError ? (
+        <QueryStatePanel variant="loading" contextLabel="Device details" height={72} />
+      ) : null}
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <h2 className="text-base font-semibold">Lineage</h2>
+        <Popover.Close
+          type="button"
+          aria-label="Close lineage"
+          className="flex size-8 items-center justify-center rounded text-muted hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-accent"
+        >
+          <span aria-hidden="true">×</span>
+        </Popover.Close>
       </div>
+      {primary ? (
+        <section aria-label="Original">
+          <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted">
+            Original
+          </h3>
+          <SourceTreeNodes nodes={[primary]} />
+        </section>
+      ) : (
+        <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted">
+          Original unknown
+        </h3>
+      )}
+      {otherSources.length > 0 ? (
+        <section
+          aria-label={primary ? "Other" : "Available recordings"}
+          className={primary ? "mt-4 border-t border-border/60 pt-3" : ""}
+        >
+          {primary ? (
+            <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted">
+              Other
+            </h3>
+          ) : null}
+          <SourceTreeNodes nodes={otherSources} />
+        </section>
+      ) : null}
     </div>
   );
-}
 
-function SourceNodeDetails({ node }: { node: ActivitySourceTreeNode }) {
-  if (!node.details?.length) return null;
   return (
-    <dl className="ml-[26px] mt-1 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1 text-xs text-muted [overflow-wrap:anywhere]">
-      {node.details.map((detail) => (
-        <div className="contents" key={detail.label}>
-          <dt>{detail.label}</dt>
-          <dd>{detail.value}</dd>
-        </div>
-      ))}
-    </dl>
+    <Popover.Root open={expanded} onOpenChange={setExpanded}>
+      <div
+        className={
+          heading
+            ? "relative z-20 grid min-w-0 grid-cols-1 items-start gap-x-3 gap-y-2 text-sm sm:grid-cols-[minmax(0,1fr)_auto]"
+            : "relative z-20 min-w-0 border-t border-border/60 text-sm"
+        }
+      >
+        {heading}
+        <Popover.Trigger asChild>{trigger}</Popover.Trigger>
+        {hardwareError ? (
+          <div className="col-span-full">
+            <QueryStatePanel
+              contextLabel="Device details"
+              error={hardwareError}
+              onRetry={onRetryHardware}
+              height={72}
+            />
+          </div>
+        ) : null}
+        <Popover.Portal>
+          <Popover.Content
+            aria-label="Lineage"
+            align="end"
+            sideOffset={6}
+            collisionPadding={16}
+            className="z-50 w-96 max-w-[calc(100vw-2rem)] max-h-[var(--radix-popover-content-available-height)] overflow-y-auto rounded-xl border border-border bg-surface-solid pt-4 text-sm text-foreground shadow-xl"
+          >
+            {details}
+          </Popover.Content>
+        </Popover.Portal>
+      </div>
+    </Popover.Root>
   );
 }
 
@@ -152,10 +171,11 @@ function SourceTreeNodes({
           key={node.id}
           className={
             connected
-              ? "relative pt-3 before:absolute before:-left-4 before:top-[23px] before:w-3 before:border-t before:border-border"
+              ? "relative pt-3 before:absolute before:-left-4 before:top-[20px] before:w-3 before:border-t before:border-border"
               : ""
           }
         >
+          {connected ? <p className="mb-1 text-xs text-accent">Shared to</p> : null}
           <div className="flex min-w-0 items-center gap-2">
             <ProviderLogo provider={node.providerId} sourceName={node.sourceName} size={18} />
             {node.url ? (
@@ -166,6 +186,9 @@ function SourceTreeNodes({
                 className="min-w-0 font-medium text-accent [overflow-wrap:anywhere] hover:underline focus-visible:outline-2 focus-visible:outline-accent"
               >
                 <SourceLabel node={node} />
+                <span aria-hidden="true" className="ml-1">
+                  ↗
+                </span>
               </a>
             ) : (
               <span className="min-w-0 font-medium [overflow-wrap:anywhere]">
@@ -178,7 +201,6 @@ function SourceTreeNodes({
               {node.description}
             </p>
           ) : null}
-          <SourceNodeDetails node={node} />
           <SourceTreeNodes nodes={node.children} connected />
         </li>
       ))}

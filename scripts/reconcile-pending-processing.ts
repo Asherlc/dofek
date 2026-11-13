@@ -1,10 +1,9 @@
 import * as Sentry from "@sentry/node";
-import {
-  createAnalyticsRefreshQueue,
-  enqueueAnalyticsRefresh,
-} from "../src/analytics-refresh-queue.ts";
+import { enqueueAnalyticsRefresh } from "../src/analytics-refresh-queue.ts";
 import { createClickHouseClientFromEnv } from "../src/db/clickhouse.ts";
+import { createAnalyticsRefreshQueue } from "../src/jobs/queues.ts";
 import { captureException } from "../src/lib/error-reporting.ts";
+import { sentryDataCollection } from "../src/lib/sentry-options.ts";
 import {
   createProcessingReconciliationDatabaseFromEnv,
   reconcilePendingProcessingOperations,
@@ -13,7 +12,11 @@ import {
 export async function main(): Promise<void> {
   const sentryDsn = process.env.SENTRY_DSN || process.env.SENTRY_DSN_unencrypted;
   if (sentryDsn) {
-    Sentry.init({ dsn: sentryDsn, skipOpenTelemetrySetup: true });
+    Sentry.init({
+      dsn: sentryDsn,
+      enableOpenTelemetrySetup: false,
+      dataCollection: sentryDataCollection,
+    });
   }
 
   let clickHouseClient: ReturnType<typeof createClickHouseClientFromEnv> | null = null;

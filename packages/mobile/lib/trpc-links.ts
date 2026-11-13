@@ -43,7 +43,7 @@ export function createMobileTrpcLinks(
           (operation.path === "mobileDashboard.dashboard" ||
             operation.path === "mobileDashboard.dashboardV2" ||
             operation.path === "mobileDashboard.recovery" ||
-            operation.path === "mobileDashboard.training")),
+            operation.path === "mobileDashboard.trainingV2")),
       true: individualLink,
       false: batchLink,
     }),

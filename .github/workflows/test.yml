@@ -71,7 +71,7 @@ jobs:
         with:
           ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || '' }}
           persist-credentials: false
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
       - name: Validate action-pinning regression fixtures
         run: |
           set -euo pipefail
@@ -199,7 +199,7 @@ jobs:
           buildkitd-config-inline: |
             [registry."docker.io"]
               mirrors = ["mirror.gcr.io"]
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -219,10 +219,7 @@ jobs:
           load: true
           tags: e2e-server:latest
           build-args: DEPENDENCY_CACHE_BUST=${{ hashFiles('package.json', 'pnpm-lock.yaml', 'Dockerfile') }}
-          cache-from: |
-            type=gha,scope=e2e
-            type=registry,ref=${{ steps.image-name.outputs.name }}:e2e-buildcache
-          cache-to: type=gha,mode=max,scope=e2e
+          cache-from: type=registry,ref=${{ steps.image-name.outputs.name }}:e2e-buildcache
       - name: Scan server image (Grype)
         env:
           GRYPE_IMAGE: mirror.gcr.io/anchore/grype:v0.111.1@sha256:3c1cd2ff38196e753751fb1619b3b6787a6e3e79149f2a2aec57946d2c154cd2
@@ -320,7 +317,7 @@ jobs:
       - name: Setup Node and pnpm
         uses: ./.github/actions/setup-node-pnpm
       - name: Setup uv
-        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
       - name: Run lint policies
         run: pnpm lint
         env:
@@ -346,7 +343,7 @@ jobs:
         with:
           ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || '' }}
           persist-credentials: false
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
       - name: Run yamllint
         run: uv tool run yamllint -c .yamllint.yml --no-warnings .
 
@@ -414,7 +411,7 @@ jobs:
           ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || '' }}
           persist-credentials: false
           fetch-depth: 0
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
       - name: Lint new migration SQL
         run: |
           # Migration 0099 was applied in production before this repository restored its lineage.
@@ -508,6 +505,7 @@ jobs:
         env:
           CLICKHOUSE_URL: http://default:health@localhost:8123
           EXPO_PUBLIC_SENTRY_DSN: https://public@example.invalid/1
+          EXPO_APP_ID: dependency-analysis-fixture
 
   spellcheck:
     name: Spell Check
@@ -542,17 +540,17 @@ jobs:
         with:
           ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || '' }}
           persist-credentials: false
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
       - name: Install dependencies
-        run: uv sync
+        run: uv sync --locked --extra matching
       - name: Lint
-        run: uv run ruff check src/ tests/
+        run: uv run --locked --extra matching ruff check src/ tests/
       - name: Format check
-        run: uv run ruff format --check src/ tests/
+        run: uv run --locked --extra matching ruff format --check src/ tests/
       - name: Type check
-        run: uv run mypy src/ tests/
+        run: uv run --locked --extra matching mypy src/ tests/
       - name: Tests
-        run: uv run pytest --cov --cov-report=xml
+        run: uv run --locked --extra matching pytest --cov --cov-report=xml
 
   hadolint:
     name: Dockerfile Lint
@@ -704,6 +702,7 @@ jobs:
         with:
           files: coverage/lcov.info
           flags: unit
+          fail_ci_if_error: true
           use_oidc: true
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -751,7 +750,7 @@ jobs:
           path: .build/fit-decoder/bin/dofek-fit-decoder
 
   test-integration:
-    name: Integration Tests (${{ matrix.shard }}/4)
+    name: Integration Tests (${{ matrix.shard }}/5)
     needs: test-fit-decoder
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -761,7 +760,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5]
     services:
       postgres:
         image: timescale/timescaledb-ha:pg18.3-ts2.26.4-all
@@ -821,7 +820,7 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup-node-pnpm
       - name: Setup uv
-        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
       - name: Download FIT decoder binary
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -829,20 +828,40 @@ jobs:
           path: .build/fit-decoder/bin
       - name: Make FIT decoder executable
         run: chmod +x .build/fit-decoder/bin/dofek-fit-decoder
-      - run: pnpm exec vitest run --project integration --coverage --shard=${{ matrix.shard }}/4
+      - id: integration-tests
+        run: pnpm exec vitest run --project integration --coverage --shard=${{ matrix.shard }}/5
         timeout-minutes: 12
         env:
           VITEST_COVERAGE_SKIP_THRESHOLDS: "true"
+      - name: Capture ClickHouse failure diagnostics
+        if: ${{ failure() && steps.integration-tests.outcome == 'failure' }}
+        run: pnpm tsx scripts/collect-clickhouse-ci-diagnostics.ts '${{ job.services.clickhouse.id }}' '${{ runner.temp }}/clickhouse-diagnostics-${{ matrix.shard }}'
+      - name: Upload ClickHouse failure diagnostics
+        if: ${{ always() && steps.integration-tests.outcome == 'failure' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: clickhouse-diagnostics-${{ matrix.shard }}
+          path: ${{ runner.temp }}/clickhouse-diagnostics-${{ matrix.shard }}/
+          if-no-files-found: error
       - name: Upload integration coverage to Codecov
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           files: coverage/lcov.info
           flags: integration
+          fail_ci_if_error: true
           use_oidc: true
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: coverage-integration-${{ matrix.shard }}
           path: coverage/
+      - name: Export fresh integration timings
+        run: pnpm tsx scripts/update-integration-test-timings.ts export reports/integration-sharding/${{ matrix.shard }}-of-5
+      - name: Upload integration timings
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: integration-timings-${{ matrix.shard }}
+          path: reports/integration-sharding/${{ matrix.shard }}-of-5/
+          if-no-files-found: error
 
   test-peerdb-integration:
     name: PeerDB CDC Integration
@@ -913,10 +932,61 @@ jobs:
             cat diff-coverage.md >> "$GITHUB_STEP_SUMMARY"
           fi
           exit ${DIFF_FAILED:-0}
+      - name: Download integration timings
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: integration-timings-*
+          path: integration-timings
+          merge-multiple: false
+      - name: Validate complete integration timings
+        run: >-
+          pnpm tsx scripts/update-integration-test-timings.ts merge integration-test-timings.json
+          integration-timings/integration-timings-1 integration-timings/integration-timings-2
+          integration-timings/integration-timings-3 integration-timings/integration-timings-4
+          integration-timings/integration-timings-5
+      - name: Upload complete integration timing refresh
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: integration-timings-complete
+          path: integration-test-timings.json
+          if-no-files-found: error
+
+  test-bookie-evacuation:
+    name: Native BookKeeper Evacuation
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || '' }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup-node-pnpm
+      - name: Select installed JDK compiler
+        run: |
+          test -n "$JAVA_HOME_25_X64"
+          test -x "$JAVA_HOME_25_X64/bin/javac"
+          echo "$JAVA_HOME_25_X64/bin" >> "$GITHUB_PATH"
+          "$JAVA_HOME_25_X64/bin/javac" -version
+      - name: Qualify native replacement without retries
+        run: pnpm exec vitest run --project=pulsar-integration src/metric-stream/bookie-evacuation.pulsar.integration.test.ts --retry=0
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: native-bookie-evacuation-evidence
+          path: |
+            reports/bookie-evacuation/**/fixture/
+            reports/bookie-evacuation/**/*.stdout
+            reports/bookie-evacuation/**/*.stderr
+            reports/bookie-evacuation/**/*.json
+            reports/bookie-evacuation/**/*.txt
+          if-no-files-found: warn
+          retention-days: 7
 
   test-gate:
     name: Unit & Integration Tests
-    needs: [test-unit, test-fit-decoder, test-integration, test-peerdb-integration, coverage]
+    needs: [test-unit, test-fit-decoder, test-integration, test-peerdb-integration, test-bookie-evacuation, coverage]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -927,12 +997,17 @@ jobs:
             "${{ needs.test-fit-decoder.result }}" \
             "${{ needs.test-integration.result }}" \
             "${{ needs.test-peerdb-integration.result }}" \
+            "${{ needs.test-bookie-evacuation.result }}" \
             "${{ needs.coverage.result }}"; do
             if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
               echo "A required job failed or was cancelled"
               exit 1
             fi
           done
+          if [ "${{ needs.test-bookie-evacuation.result }}" != "success" ]; then
+            echo "Required native BookKeeper qualification did not succeed"
+            exit 1
+          fi
 
   # ── E2E ────────────────────────────────────────────────────────────────
 
@@ -944,6 +1019,7 @@ jobs:
       COMPOSE_PROJECT_NAME: dofek-ci-e2e
     permissions:
       contents: read
+      packages: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -972,6 +1048,18 @@ jobs:
           buildkitd-config-inline: |
             [registry."docker.io"]
               mirrors = ["mirror.gcr.io"]
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Compute image name
+        id: image-name
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          echo "name=ghcr.io/$(printf '%s' "$REPOSITORY" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
       - name: Build E2E images with cache
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
@@ -980,9 +1068,7 @@ jobs:
           load: true
           tags: e2e-server:latest
           build-args: DEPENDENCY_CACHE_BUST=${{ hashFiles('package.json', 'pnpm-lock.yaml', 'Dockerfile') }}
-          cache-from: |
-            type=gha,scope=e2e
-          cache-to: type=gha,mode=max,scope=e2e
+          cache-from: type=registry,ref=${{ steps.image-name.outputs.name }}:e2e-buildcache
       - name: Start e2e dependencies
         run: docker compose -f docker-compose.e2e.yml up -d --wait --no-build db clickhouse redis account-erasure-minio redpanda
       - name: Run e2e migrations
@@ -1074,6 +1160,9 @@ jobs:
         run: swift test
       - name: Run Core Motion Swift tests
         working-directory: packages/mobile/modules/core-motion
+        run: swift test
+      - name: Run WHOOP BLE Swift tests
+        working-directory: packages/mobile/modules/whoop-ble
         run: swift test
       - name: Run Swift tests with coverage
         id: healthkit-coverage
@@ -1323,58 +1412,160 @@ jobs:
           path: reports/mutation/
           retention-days: 7
 
-  mutation-swift:
-    name: Swift Mutation Testing
+  mutation-swift-prep:
+    name: Prepare Swift mutation shards
     needs: check-mobile-changes
     runs-on: macos-latest
     if: github.event_name == 'pull_request' && needs.check-mobile-changes.outputs.changed == 'true'
+    outputs:
+      jobs: ${{ steps.discover.outputs.jobs }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || '' }}
+          ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
           fetch-depth: 0
       - uses: ./.github/actions/setup-node-pnpm
+      - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
+        with:
+          version: 2026.10.23
+          install_args: github:juntaki/mutantkit
+      - name: Prepare verified native candidate partitions
+        id: discover
+        run: |
+          JOBS=$(pnpm tsx scripts/run-swift-mutation.ts --base origin/main --prepare)
+          echo "jobs=$JOBS" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: swift-mutation-plan
+          path: reports/swift-mutation/
+          if-no-files-found: error
+          retention-days: 7
+
+  mutation-swift:
+    name: Swift Mutation Testing (${{ matrix.file }}, shard ${{ matrix.shard }})
+    needs: mutation-swift-prep
+    runs-on: macos-latest
+    if: needs.mutation-swift-prep.outputs.jobs != '' && needs.mutation-swift-prep.outputs.jobs != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.mutation-swift-prep.outputs.jobs) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-node-pnpm
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: swift-mutation-plan
+          path: reports/swift-mutation/
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             packages/mobile/modules/*/.build
             packages/mobile/targets/*/.build
-            !packages/mobile/modules/*_mutated/.build
-            !packages/mobile/targets/*_mutated/.build
           key: swift-mutation-build-v3-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/mobile/modules/*/Package.swift', 'packages/mobile/targets/*/Package.swift') }}
           restore-keys: swift-mutation-build-v3-${{ runner.os }}-${{ runner.arch }}-
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        id: muter-cache
+      - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
         with:
-          path: /opt/homebrew/Cellar/muter
-          key: muter-v2-${{ runner.os }}-${{ runner.arch }}
-      - name: Install Muter
-        if: steps.muter-cache.outputs.cache-hit != 'true'
-        run: brew install muter-mutation-testing/formulae/muter
-      - name: Link Muter from cache
-        if: steps.muter-cache.outputs.cache-hit == 'true'
-        run: brew link --overwrite muter 2>/dev/null || ln -sf /opt/homebrew/Cellar/muter/*/bin/muter /opt/homebrew/bin/muter
+          version: 2026.10.23
+          install_args: github:juntaki/mutantkit
       - name: Run native mutation tests
         timeout-minutes: 30
-        run: pnpm tsx scripts/run-swift-mutation.ts --base origin/main
+        env:
+          MUTATION_JOB: ${{ toJSON(matrix) }}
+        run: pnpm tsx scripts/run-swift-mutation.ts --job "$MUTATION_JOB"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: always() && hashFiles('reports/swift-mutation/*.json') != ''
+        if: always()
         with:
-          name: muter-report
+          name: swift-mutation-worker-${{ strategy.job-index }}
+          path: |
+            reports/swift-mutation/campaign.json
+            reports/swift-mutation/files/${{ matrix.file }}/workers/${{ matrix.shard }}/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
+
+  mutation-swift-merge:
+    name: Verify complete Swift mutation campaign
+    needs: [mutation-swift-prep, mutation-swift]
+    if: >-
+      always() && needs.mutation-swift-prep.result == 'success' &&
+      (needs.mutation-swift.result == 'success' ||
+       (needs.mutation-swift-prep.outputs.jobs == '[]' && needs.mutation-swift.result == 'skipped'))
+    runs-on: macos-latest
+    steps:
+      - name: Check out pull request head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Set up Node and pnpm
+        uses: ./.github/actions/setup-node-pnpm
+      - name: Download prepared Swift mutation plans
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: swift-mutation-plan
           path: reports/swift-mutation/
+      - name: Download Swift mutation worker evidence
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: needs.mutation-swift-prep.outputs.jobs != '[]'
+        with:
+          pattern: swift-mutation-worker-*
+          path: reports/swift-mutation/
+          merge-multiple: true
+      - name: Install pinned MutantKit
+        uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5.2.6
+        with:
+          version: 2026.10.23
+          install_args: github:juntaki/mutantkit
+      - name: Reverify shard evidence and merge every original candidate
+        timeout-minutes: 30
+        run: pnpm tsx scripts/run-swift-mutation.ts --merge
+      - name: Upload verified Swift mutation campaign
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: swift-mutation-campaign
+          path: reports/swift-mutation/
+          include-hidden-files: true
+          if-no-files-found: error
           retention-days: 7
 
   mutation-gate:
     name: Mutation Testing
-    needs: [mutation-prep, mutation]
+    needs: [mutation-prep, mutation, mutation-swift-prep, mutation-swift, mutation-swift-merge]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Check results
         run: |
-          if [ "${{ needs.mutation.result }}" = "failure" ] || [ "${{ needs.mutation.result }}" = "cancelled" ]; then
-            echo "Mutation testing failed or was cancelled"
+          for result in \
+            "${{ needs.mutation-prep.result }}" \
+            "${{ needs.mutation.result }}" \
+            "${{ needs.mutation-swift-prep.result }}" \
+            "${{ needs.mutation-swift.result }}" \
+            "${{ needs.mutation-swift-merge.result }}"; do
+            if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
+              echo "Mutation discovery or testing failed or was cancelled"
+              exit 1
+            fi
+          done
+          if [ "${{ needs.mutation-prep.result == 'success' && needs.mutation-prep.outputs.shards != '[]' && needs.mutation.result != 'success' }}" = "true" ]; then
+            echo "Selected TypeScript mutation work did not succeed"
+            exit 1
+          fi
+          if [ "${{ needs.mutation-swift-prep.result == 'success' && needs.mutation-swift-prep.outputs.jobs != '[]' && needs.mutation-swift.result != 'success' }}" = "true" ]; then
+            echo "Selected native mutation work did not succeed"
+            exit 1
+          fi
+          if [ "${{ needs.mutation-swift-prep.result == 'success' && needs.mutation-swift-merge.result != 'success' }}" = "true" ]; then
+            echo "Complete native mutation campaign verification did not succeed"
             exit 1
           fi
 
@@ -1409,7 +1600,7 @@ jobs:
 
   test-all-gate:
     name: Test Gate
-    needs: [security-gate, quality-gate, test-gate, test-e2e-web, test-mobile, test-swift, mutation-gate, mutation-swift, migration-lint]
+    needs: [security-gate, quality-gate, test-gate, test-e2e-web, test-mobile, test-swift, mutation-gate, mutation-swift-prep, mutation-swift, migration-lint]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -1423,6 +1614,7 @@ jobs:
             "${{ needs.test-mobile.result }}" \
             "${{ needs.test-swift.result }}" \
             "${{ needs.mutation-gate.result }}" \
+            "${{ needs.mutation-swift-prep.result }}" \
             "${{ needs.mutation-swift.result }}" \
             "${{ needs.migration-lint.result }}"; do
             if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then

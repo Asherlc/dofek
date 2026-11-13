@@ -330,6 +330,29 @@ SELECT 1 AS value
     }
   });
 
+  it.each(["cycling_threshold_history", "cycling_activity_power_metrics"])(
+    "allows the approved %s publication model while retaining risky SQL checks",
+    (name) => {
+      const path = `analytics/models/read_models/${name}.sql`;
+      expect(lintMigrationPolicyFile(path, "SELECT 1")).toEqual([]);
+      expect(
+        lintMigrationPolicyFile(
+          path,
+          "SELECT 1; INSERT INTO analytics.target SELECT * FROM analytics.source;",
+        ),
+      ).toEqual([expect.objectContaining({ ruleName: "insert-select" })]);
+    },
+  );
+
+  it("keeps implicit view materialization disallowed for other publication models", () => {
+    expect(
+      lintMigrationPolicyFile(
+        "analytics/models/read_models/another_cycling_power_view.sql",
+        "SELECT 1",
+      ),
+    ).toEqual([expect.objectContaining({ ruleName: "analytics-dbt-incremental-model" })]);
+  });
+
   it("requires bounded key verification to be the exact named read-only view", () => {
     const path = "analytics/models/read_models/activity_sensor_key_verification.sql";
     expect(lintMigrationPolicyFile(path, "{{ config(materialized='view') }} SELECT 1")).toEqual([]);

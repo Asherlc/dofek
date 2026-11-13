@@ -65,6 +65,13 @@ describe("getProviderQueueConfig", () => {
 
     expect(config).toStrictEqual({ concurrency: 1, syncTier: "frequent" });
   });
+
+  it("runs complete BoardSesh snapshots daily with one worker", () => {
+    expect(getProviderQueueConfig("boardsesh")).toMatchObject({
+      concurrency: 1,
+      syncTier: "daily",
+    });
+  });
 });
 
 describe("config values are reasonable", () => {
@@ -97,7 +104,9 @@ describe("config values are reasonable", () => {
 describe("getConfiguredProviderIds", () => {
   it("returns all known provider IDs", () => {
     const ids = getConfiguredProviderIds();
-    expect(ids).toHaveLength(25);
+    expect(ids).toHaveLength(35);
+    expect(ids).toContain("crimpd");
+    expect(ids).toContain("eight-a");
     expect(ids).toContain("strava");
     expect(ids).toContain("garmin");
     expect(ids).toContain("whoop");
@@ -106,6 +115,7 @@ describe("getConfiguredProviderIds", () => {
     expect(ids).toContain("openbeta");
     expect(ids).toContain("thecrag");
     expect(ids).toContain("ziva");
+    expect(ids).toContain("boardsesh");
     expect(ids).toContain(new CyclingAnalyticsProvider().id);
   });
 

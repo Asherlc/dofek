@@ -13,7 +13,6 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ActivityIndicator,
   Alert,
   RefreshControl,
   ScrollView,
@@ -32,12 +31,14 @@ import {
 import { FileImportProviderCard } from "../../components/providers/file-import-provider-card.tsx";
 import { getFileImportProviderConfig } from "../../components/providers/file-import-providers.ts";
 import {
+  appleHealthManualSyncPresentation,
   importProviderLabel,
+  isAppleHealthActionErrorPublished,
+  isAppleHealthLockedPause,
   type Provider,
   ProviderCard,
-  type SyncLog,
-  SyncLogRow,
 } from "../../components/providers/provider-card.tsx";
+import { ProviderSyncHistory } from "../../components/providers/provider-sync-history.tsx";
 import { styles } from "../../components/providers/styles.ts";
 import { SyncAllControls } from "../../components/providers/sync-all-controls.tsx";
 import { getQueryErrorMessage, QueryStatePanel } from "../../components/QueryStatePanel";
@@ -45,10 +46,9 @@ import { useAppleHealthProviderModel } from "../../lib/apple-health-provider";
 import { createProviderHandoffCode } from "../../lib/auth";
 import { useAuth } from "../../lib/auth-context";
 import { createExpoUploadableMobileFile } from "../../lib/expo-uploadable-file";
-import {
-  HEALTHKIT_DATABASE_INACCESSIBLE_MESSAGE,
-  isHealthKitDatabaseInaccessible,
-} from "../../lib/health-kit-errors";
+import { isHealthKitDatabaseInaccessible } from "../../lib/health-kit-errors";
+import { useHealthKitManualSync } from "../../lib/health-kit-manual-sync-context";
+import { ManualHealthKitSyncInterruptedError } from "../../lib/health-kit-sync-types";
 import type { FileUploadApi } from "../../lib/resumable-file-upload";
 import {
   type ImportProviderId,
@@ -158,64 +158,76 @@ export default function ProvidersScreen() {
 
   const sharedFileUri = Array.isArray(params.sharedFile) ? params.sharedFile[0] : params.sharedFile;
 
-  const [healthKitSyncing, setHealthKitSyncing] = useState(false);
+  const [healthKitAuthorizing, setHealthKitAuthorizing] = useState(false);
+  const [healthKitPermissionMessage, setHealthKitPermissionMessage] = useState<string>();
   const [healthKitProgress, setHealthKitProgress] = useState<string | undefined>();
-  const trpcClient = trpcUtils.client;
+  const [healthKitActionError, setHealthKitActionError] = useState<string | null>(null);
+  const { controller: healthKitManualSyncController, state: healthKitManualSyncState } =
+    useHealthKitManualSync();
+  const healthKitStateRef = useRef(healthKitManualSyncState);
+  useEffect(() => {
+    if (healthKitStateRef.current !== healthKitManualSyncState) {
+      healthKitStateRef.current = healthKitManualSyncState;
+      setHealthKitActionError(null);
+    }
+  }, [healthKitManualSyncState]);
   const appleHealth = useAppleHealthProviderModel({
-    trpcClient,
     onAuthorizationError: (error) => {
       captureException(error, { context: "healthkit-permission-check" });
     },
   });
 
   const handleHealthKitConnect = useCallback(async () => {
-    if (healthKitSyncing) return;
-    setHealthKitSyncing(true);
-    setHealthKitProgress("Requesting permissions...");
+    if (healthKitAuthorizing) return;
+    setHealthKitAuthorizing(true);
+    setHealthKitPermissionMessage("Requesting permissions...");
     try {
       const result = await appleHealth.connect();
       if (result.state.requestStatus === "unavailable") {
-        setHealthKitProgress("Apple Health is unavailable on this device");
+        setHealthKitPermissionMessage("Apple Health is unavailable on this device");
       } else if (!result.granted) {
-        setHealthKitProgress("Apple Health permissions were not granted");
+        setHealthKitPermissionMessage("Apple Health permissions were not granted");
       } else {
-        setHealthKitProgress(result.state.isConnected() ? "Connected" : undefined);
+        setHealthKitPermissionMessage(result.state.isConnected() ? "Connected" : undefined);
       }
     } catch (error: unknown) {
       captureException(error, { context: "healthkit-connect" });
-      setHealthKitProgress(userFacingErrorMessage(error, "Failed to connect to Apple Health"));
+      setHealthKitPermissionMessage(
+        userFacingErrorMessage(error, "Failed to connect to Apple Health"),
+      );
     } finally {
-      setHealthKitSyncing(false);
+      setHealthKitAuthorizing(false);
     }
-  }, [appleHealth, healthKitSyncing]);
+  }, [appleHealth, healthKitAuthorizing]);
 
   const handleHealthKitSync = useCallback(async () => {
-    setHealthKitSyncing(true);
-    setAnySyncing(true);
-    setHealthKitProgress("Starting HealthKit sync...");
+    if (healthKitManualSyncState.status === "running") return;
+    setHealthKitActionError(null);
+    setHealthKitProgress(undefined);
     try {
-      const result = await appleHealth.sync({
-        syncRangeDays: 7,
-        onProgress: setHealthKitProgress,
-      });
-      setHealthKitProgress(
-        result.errors.length > 0
-          ? `${result.inserted} records synced; ${result.errors.join("; ")}`
-          : `Done — ${result.inserted} records synced`,
-      );
+      let result: Awaited<ReturnType<typeof appleHealth.sync>>;
+      if (healthKitManualSyncState.status === "paused") {
+        if (!healthKitManualSyncController) {
+          throw new Error("Apple Health sync is unavailable for this account. Sign in and retry.");
+        }
+        result = await healthKitManualSyncController.resume();
+      } else {
+        result = await appleHealth.sync({ syncRangeDays: 7 });
+      }
+      if (result.errors.length > 0) {
+        setHealthKitProgress(`${result.inserted} records synced`);
+      }
       trpcUtils.invalidate();
     } catch (error: unknown) {
-      if (!isHealthKitDatabaseInaccessible(error)) {
-        captureException(error, { context: "healthkit-manual-sync" });
-        setHealthKitProgress(userFacingErrorMessage(error, "Sync failed"));
+      if (error instanceof ManualHealthKitSyncInterruptedError) return;
+      const controllerState = healthKitManualSyncController?.getSnapshot();
+      if (isHealthKitDatabaseInaccessible(error) && isAppleHealthLockedPause(controllerState))
         return;
-      }
-      setHealthKitProgress(HEALTHKIT_DATABASE_INACCESSIBLE_MESSAGE);
-    } finally {
-      setHealthKitSyncing(false);
-      setAnySyncing(false);
+      if (isAppleHealthActionErrorPublished(controllerState, error)) return;
+      captureException(error, { context: "healthkit-manual-sync" });
+      setHealthKitActionError(userFacingErrorMessage(error, "Apple Health sync failed"));
     }
-  }, [appleHealth, trpcUtils]);
+  }, [appleHealth, healthKitManualSyncController, healthKitManualSyncState.status, trpcUtils]);
 
   const pollJob = useCallback(
     async (jobId: string, providerIds: string[]) => {
@@ -634,6 +646,7 @@ export default function ProvidersScreen() {
               name: provider.label,
               label: provider.tokenAuth.label,
               instructionsUrl: provider.tokenAuth.instructionsUrl,
+              description: provider.tokenAuth.description,
             });
           } else {
             const error = new Error(
@@ -677,7 +690,6 @@ export default function ProvidersScreen() {
   for (const s of stats.data ?? []) {
     statsMap[s.providerId] = s;
   }
-  const logList: SyncLog[] = logs.data ?? [];
   const appleHealthLogsQuery = trpc.providerDetail.logs.useQuery({
     providerId: "apple_health",
     limit: 3,
@@ -698,8 +710,7 @@ export default function ProvidersScreen() {
   });
 
   const isLoading = providers.isLoading;
-  const visibleProviderList = providerList;
-  const enabledProviders = visibleProviderList.filter((p) => p.enabled);
+  const enabledProviders = providerList.filter((p) => p.enabled);
   const appleHealthProvider = appleHealthLogsQuery.data
     ? appleHealth.model.toProviderCard({
         lastSyncAt: appleHealthLogsQuery.data[0]?.syncedAt ?? null,
@@ -708,8 +719,21 @@ export default function ProvidersScreen() {
         recentLogs: appleHealthLogsQuery.data,
       })
     : appleHealth.model.toProviderCard();
-  const appleHealthHistoryError =
-    appleHealthLogsQuery.error && appleHealthLogsQuery.data === undefined;
+  const appleHealthPresentation = appleHealthManualSyncPresentation(
+    healthKitManualSyncState,
+    healthKitActionError,
+    healthKitProgress ?? healthKitPermissionMessage ?? null,
+  );
+  const appleHealthCardProvider: Provider = {
+    ...appleHealthProvider,
+    ...(appleHealthPresentation.actionLabel
+      ? { syncActionLabel: appleHealthPresentation.actionLabel }
+      : {}),
+    ...(appleHealthPresentation.syncStageProgress
+      ? { syncStageProgress: appleHealthPresentation.syncStageProgress }
+      : {}),
+    syncStatusMessage: appleHealthPresentation.syncStatusMessage ?? undefined,
+  };
   const activeImportRows = activeImports.error ? [] : (activeImports.data ?? []);
   const activeImportByProvider = new Map(
     activeImportRows.map((activeImport) => [activeImport.providerId, activeImport]),
@@ -735,9 +759,68 @@ export default function ProvidersScreen() {
       : undefined;
   const appleHealthImportProgress =
     appleHealthLocalImportProgress ?? appleHealthActiveImportProgress;
-  const providerGroups = groupProviderEntries(visibleProviderList);
+  const providerGroups = groupProviderEntries([appleHealthProvider, ...providerList]);
 
   const renderProviderCard = (provider: Provider) => {
+    if (provider.id === "apple_health") {
+      return (
+        <>
+          <View>
+            <FileImportProviderCard
+              provider={appleHealthCardProvider}
+              stats={statsMap.apple_health}
+              syncing={healthKitAuthorizing || appleHealthPresentation.isRunning}
+              importing={appleHealthImportProgress !== undefined}
+              syncProgress={
+                appleHealthImportProgress ??
+                (appleHealthPresentation.isRunning ||
+                (healthKitManualSyncState.status !== "paused" &&
+                  (healthKitProgress !== undefined ||
+                    healthKitActionError !== null ||
+                    healthKitPermissionMessage !== undefined))
+                  ? {
+                      percentage: appleHealthPresentation.percentage ?? undefined,
+                      message: appleHealthPresentation.message ?? undefined,
+                    }
+                  : undefined)
+              }
+              onSync={() => handleHealthKitSync()}
+              onConnect={handleHealthKitConnect}
+              onImportProvider={handleFileImportProvider}
+              onPress={() => router.push("/providers/apple_health")}
+            />
+            {appleHealthLogsQuery.error && appleHealthLogsQuery.data === undefined ? (
+              <QueryStatePanel
+                variant="error"
+                title="Could not load Apple Health sync history"
+                message={getQueryErrorMessage(
+                  appleHealthLogsQuery.error,
+                  "Failed to load Apple Health sync history.",
+                )}
+                minHeight={72}
+              />
+            ) : null}
+          </View>
+          {appleHealth.model.shouldShowPermissionBanner() && (
+            <TouchableOpacity
+              style={styles.permissionBanner}
+              onPress={handleHealthKitConnect}
+              disabled={healthKitAuthorizing}
+              accessibilityRole="button"
+              accessibilityLabel="Review Apple Health permissions"
+              accessibilityState={{ busy: healthKitAuthorizing, disabled: healthKitAuthorizing }}
+            >
+              <Text style={styles.permissionBannerText}>
+                Apple Health permissions need updating — tap to review
+              </Text>
+            </TouchableOpacity>
+          )}
+          {(healthKitAuthorizing || appleHealthImportProgress) && healthKitPermissionMessage ? (
+            <Text style={styles.permissionBannerText}>{healthKitPermissionMessage}</Text>
+          ) : null}
+        </>
+      );
+    }
     const fileImportProviderConfig = getFileImportProviderConfig(provider.id);
     const activeImport = activeImportByProvider.get(provider.id);
     const activeImportProgress = activeImport
@@ -793,7 +876,7 @@ export default function ProvidersScreen() {
       <View testID="provider-sync-controls-region" style={{ minHeight: 140 * fontScale }}>
         {enabledProviders.length > 0 && (
           <SyncAllControls
-            busy={anySyncing}
+            busy={anySyncing || appleHealthPresentation.isRunning}
             errorMessage={syncAllError}
             onRecentSync={() => void handleSyncAll(false)}
             onFullSync={() => void handleSyncAll(true)}
@@ -856,49 +939,6 @@ export default function ProvidersScreen() {
           minHeight={96}
         />
       ) : null}
-      <View>
-        <FileImportProviderCard
-          provider={{
-            ...appleHealthProvider,
-          }}
-          stats={statsMap.apple_health}
-          syncing={healthKitSyncing}
-          importing={appleHealthImportProgress !== undefined}
-          syncProgress={
-            appleHealthImportProgress ??
-            (healthKitSyncing || healthKitProgress ? { message: healthKitProgress } : undefined)
-          }
-          onSync={() => handleHealthKitSync()}
-          onConnect={handleHealthKitConnect}
-          onImportProvider={handleFileImportProvider}
-          onPress={() => router.push("/providers/apple_health")}
-        />
-        {appleHealthHistoryError ? (
-          <QueryStatePanel
-            variant="error"
-            title="Could not load Apple Health sync history"
-            message={getQueryErrorMessage(
-              appleHealthLogsQuery.error,
-              "Failed to load Apple Health sync history.",
-            )}
-            minHeight={72}
-          />
-        ) : null}
-      </View>
-      {appleHealth.model.shouldShowPermissionBanner() && (
-        <TouchableOpacity
-          style={styles.permissionBanner}
-          onPress={handleHealthKitConnect}
-          disabled={healthKitSyncing}
-          accessibilityRole="button"
-          accessibilityLabel="Review Apple Health permissions"
-          accessibilityState={{ busy: healthKitSyncing, disabled: healthKitSyncing }}
-        >
-          <Text style={styles.permissionBannerText}>
-            Apple Health permissions need updating — tap to review
-          </Text>
-        </TouchableOpacity>
-      )}
       {providers.error ? (
         <View style={styles.card}>
           <QueryStatePanel
@@ -964,34 +1004,7 @@ export default function ProvidersScreen() {
         );
       })}
 
-      {/* Sync History */}
-      <Text style={[styles.sectionTitle, { marginTop: 24 }]}>Sync History</Text>
-      {logs.error ? (
-        <View style={styles.card}>
-          <QueryStatePanel
-            variant="error"
-            title={
-              logs.data === undefined
-                ? "Could not load sync history"
-                : "Could not refresh sync history"
-            }
-            message={getQueryErrorMessage(logs.error, "Failed to load sync history.")}
-          />
-        </View>
-      ) : null}
-      {logs.isLoading && logs.data === undefined ? (
-        <ActivityIndicator color={colors.accent} style={{ marginTop: 12 }} />
-      ) : logs.error && logs.data === undefined ? null : logList.length === 0 ? (
-        <View style={styles.card}>
-          <Text style={styles.emptyText}>No sync history yet.</Text>
-        </View>
-      ) : (
-        <View style={styles.card}>
-          {logList.map((log) => (
-            <SyncLogRow key={log.id} log={log} />
-          ))}
-        </View>
-      )}
+      <ProviderSyncHistory data={logs.data} error={logs.error} isLoading={logs.isLoading} />
       {/* Credential Auth Modal */}
       {credentialAuthProvider && (
         <CredentialAuthModal
@@ -1011,6 +1024,7 @@ export default function ProvidersScreen() {
           providerName={tokenAuthProvider.name}
           tokenLabel={tokenAuthProvider.label}
           instructionsUrl={tokenAuthProvider.instructionsUrl}
+          description={tokenAuthProvider.description}
           onClose={() => setTokenAuthProvider(null)}
           onSuccess={() => {
             setTokenAuthProvider(null);

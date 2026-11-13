@@ -57,7 +57,9 @@ coordination appropriate to their runtime.
 ## Error and request behavior
 
 - HTTP `429` throws `ProviderRateLimitError`.
-- HTTP `502`, `503`, and `504` throw `ProviderServiceUnavailableError`.
+- Every HTTP `500`–`599` response throws `ProviderServiceUnavailableError`,
+  including nonstandard upstream codes such as Cloudflare's `525`. The server
+  error class is defined by [HTTP Semantics](https://www.rfc-editor.org/rfc/rfc9110.html#section-15.6).
 - Every request made through `createRateLimitAwareFetch` has a shared two-minute
   deadline. The wrapper composes its timeout signal with a caller-provided
   signal and throws
@@ -66,6 +68,9 @@ coordination appropriate to their runtime.
 - HTTP errors expose the provider, status, response body, scope, optional user,
   and parsed `retryAfterSeconds`. Timeout errors expose the provider, scope,
   optional user, `timeoutMs`, and original cause.
+- Default HTTP error messages contain the provider, status and retry guidance;
+  upstream bodies remain in `responseBody` for diagnostics rather than appearing
+  in display messages. See the [error factories](src/rate-limit.ts).
 - Other HTTP error responses are returned unchanged, so callers must check
   `response.ok`.
 - These helpers do not retry automatically. The caller decides whether and when

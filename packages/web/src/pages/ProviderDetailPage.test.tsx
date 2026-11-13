@@ -182,6 +182,9 @@ const mockRecordDetailQuery = vi.fn();
 
 vi.mock("../lib/trpc.ts", () => ({
   trpc: {
+    whoopBleSync: {
+      sensorSnapshot: { useQuery: () => ({ data: undefined, error: null, isLoading: false }) },
+    },
     processing: {
       status: { useQuery: () => mockDataHealth },
       dismiss: { useMutation: () => mockProcessingDismissMutation },
@@ -278,6 +281,23 @@ afterEach(() => {
 describe("ProviderDetailPage import-only providers", () => {
   afterEach(() => {
     mockProviders.data = [];
+  });
+
+  it.each([
+    ["crimpd", "Crimpd"],
+    ["eight-a", "8a.nu / Vertical-Life"],
+  ])("retains file uploads for connected %s", async (id, name) => {
+    mockUseParams.mockReturnValue({ id });
+    mockProviders.data = [
+      { id, name, authorized: true, authType: "credential", lastSyncedAt: null, importOnly: false },
+    ];
+    const { ProviderDetailPage } = await import("./ProviderDetailPage");
+    render(<ProviderDetailPage />);
+    expect(screen.getByRole("heading", { name: "Import" })).toBeTruthy();
+    expect(screen.getByText("Import file")).toBeTruthy();
+    expect(mockFileImportProviderCard).toHaveBeenCalledWith(
+      expect.objectContaining({ providerId: id, showDetailsLink: false }),
+    );
   });
 
   it("hides sync controls for import-only providers", async () => {
@@ -1215,6 +1235,7 @@ describe("ProviderDetailPage import-only providers", () => {
     render(<ProviderDetailPage />);
 
     expect(screen.getByRole("heading", { name: "Mobile sync" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Background sensors" })).toBeTruthy();
     expect(screen.getByText(/Streams live sensor data\. Open the Dofek app/)).toBeTruthy();
     expect(screen.getByText(/Last received:/)).toBeTruthy();
     expect(screen.queryByText("Sync Controls")).toBeNull();
@@ -1581,7 +1602,7 @@ describe("ProviderDetailPage activity records", () => {
       providerId: "wahoo",
       dataType: "activities",
       recordId: "activity-123",
-      responseVersion: 2,
+      responseVersion: 4,
     });
 
     expect(screen.getByRole("link", { name: "Open activity" }).getAttribute("href")).toBe(

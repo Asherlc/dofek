@@ -7,9 +7,6 @@ vi.mock("./db/tokens.ts", () => ({ loadTokens: mocks.tokens }));
 vi.mock("./lib/provider-rate-limit-fetch.ts", () => ({
   createProviderRateLimitFetch: mocks.rateLimit,
 }));
-vi.mock("./providers/thecrag/public-transport.ts", () => ({
-  createTheCragPublicFetch: () => fetch,
-}));
 const seed: CatalogueSeed = {
   userId: "owner",
   logEntryId: "entry",
@@ -46,9 +43,9 @@ describe("catalogue source composition", () => {
       createClimbingCatalogueAdapters("owner", Object.create(null)).map(
         (adapter) => adapter.providerId,
       ),
-    ).toEqual(["kaya", "mountain-project", "thecrag", "openbeta"]);
+    ).toEqual(["kaya", "mountain-project", "openbeta", "eight-a"]);
     expect(mocks.rateLimit.mock.calls).toEqual(
-      ["kaya", "mountain-project", "thecrag", "openbeta"].map((providerId) => [
+      ["kaya", "mountain-project", "openbeta", "eight-a"].map((providerId) => [
         providerId,
         globalThis.fetch,
         { userId: "owner" },
@@ -74,7 +71,7 @@ describe("catalogue source composition", () => {
       .fn<typeof fetch>()
       .mockResolvedValueOnce(Response.json({ data: { webSearchForClimb: [source] } }))
       .mockResolvedValueOnce(
-        Response.json({ data: { climb: { ...source, lead: true, is_trad: false } } }),
+        Response.json({ data: { climb: { ...source, lead: true, is_trad: false, tags: [] } } }),
       );
     vi.stubGlobal("fetch", fetchFn);
     const adapter = createClimbingCatalogueAdapters("owner", Object.create(null)).find(

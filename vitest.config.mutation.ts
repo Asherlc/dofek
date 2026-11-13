@@ -37,6 +37,7 @@ const sharedTestConfig = {
   fileParallelism: true,
   pool: "forks" as const,
   execArgv: ["--no-experimental-webstorage"],
+  clearMocks: false,
   env: {
     ACCOUNT_ERASURE_LEDGER_KEYRING_JSON: JSON.stringify({
       activeKeyId: "test-v1",
@@ -57,12 +58,15 @@ const sharedTestConfig = {
 };
 
 const nodeTestIncludes = [
+  "scripts/**/*.test.ts",
   "analytics/models/**/*.test.ts",
   "src/**/*.test.ts",
   "packages/format/src/**/*.test.ts",
   "packages/scoring/src/**/*.test.ts",
   "packages/nutrition/src/**/*.test.ts",
   "packages/training/src/**/*.test.ts",
+  "packages/cycling-power/src/**/*.test.ts",
+  "packages/climbing-catalogue/src/**/*.test.ts",
   "packages/recovery/src/**/*.test.ts",
   "packages/zones/src/**/*.test.ts",
   "packages/stats/src/**/*.test.ts",
@@ -98,6 +102,7 @@ export default defineConfig({
   test: {
     projects: [
       {
+        extends: false,
         test: {
           ...sharedTestConfig,
           name: "node",
@@ -107,6 +112,7 @@ export default defineConfig({
         },
       },
       {
+        extends: false,
         test: {
           ...sharedTestConfig,
           name: "web",
@@ -116,6 +122,7 @@ export default defineConfig({
         },
       },
       {
+        extends: false,
         test: {
           ...sharedTestConfig,
           name: "mobile",

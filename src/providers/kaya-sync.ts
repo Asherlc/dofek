@@ -1,3 +1,4 @@
+import { gpsCoordinatesSchema } from "@dofek/climbing-catalogue/geometry";
 import {
   localTimeContextUnknown,
   offsetMinutesFromTimestamp,
@@ -14,7 +15,6 @@ import {
 } from "@dofek/kaya-client";
 import { resolveProviderActivityType } from "@dofek/training/activity-types";
 import { isValidClimbingGrade } from "@dofek/training/climbing-grades";
-import { gpsCoordinatesSchema } from "@dofek/training/gps-coordinates";
 import { sql } from "drizzle-orm";
 import timezoneAt from "tz-lookup";
 import { z } from "zod";
@@ -262,6 +262,7 @@ export class KayaSyncProvider implements SyncProvider {
                 date: ascent.date,
                 label: ascent.ascent_type.name,
                 attempts: ascent.attempts,
+                lead: ascent.lead,
                 reportedGrade: ascent.grade,
                 gym: ascent.climb.gym ?? ascent.gym ?? session.gym,
                 notes: ascent.comment,
@@ -298,6 +299,7 @@ export class KayaSyncProvider implements SyncProvider {
               date: ascent.date,
               label: ascent.ascent_type.name,
               attempts: ascent.attempts,
+              lead: ascent.lead,
               reportedGrade: ascent.grade,
               gym: ascent.climb.gym ?? ascent.gym ?? null,
               notes: ascent.comment,
@@ -328,11 +330,42 @@ export class KayaSyncProvider implements SyncProvider {
             sourceAttachedIds.has(entry.externalId) ? { ...entry, activityId: null } : entry,
           ),
         ];
-        const result = await persistClimbingLogSnapshot(transaction, {
-          userId,
-          providerId: this.id,
-          entries: snapshotEntries,
-        });
+        // A send can remove the climb from attempted_climbs without carrying its
+        // failed attempts into the ascent's count. Retain that observed history.
+        const priorAttemptIds = ascents
+          .filter(
+            (ascent) =>
+              ascent.session_id &&
+              knownSessions.has(ascent.session_id) &&
+              ascent.attempts === null &&
+              ["redpoint", "send", "repeat"].includes(ascent.ascent_type.name.trim().toLowerCase()),
+          )
+          .map(
+            (ascent) =>
+              `kaya:session:${ascent.session_id}:attempted:${ascent.session_id}_${ascent.climb.id}`,
+          );
+        const retainedAttempts = priorAttemptIds.length
+          ? await executeWithSchema(
+              transaction,
+              z.object({ externalId: z.string() }),
+              sql`
+              SELECT external_id AS "externalId" FROM fitness.climbing_log_entry
+              WHERE user_id = ${userId} AND provider_id = ${this.id}
+                AND external_id = ANY(${sql.param(priorAttemptIds)}::text[])
+                AND raw ->> 'sent' = 'false'
+                AND (raw ->> 'attempts') ~ '^[1-9][0-9]*$'
+            `,
+            )
+          : [];
+        const result = await persistClimbingLogSnapshot(
+          transaction,
+          {
+            userId,
+            providerId: this.id,
+            entries: snapshotEntries,
+          },
+          retainedAttempts.map((entry) => entry.externalId),
+        );
         const ascentByExternalId = new Map(
           ascents.map((ascent) => [`kaya:ascent:${ascent.id}`, ascent]),
         );
@@ -396,6 +429,7 @@ function kayaLogEntry(
     label?: string;
     attempts: number | null;
     sent?: boolean;
+    lead?: boolean | null;
     gym: KayaAscent["climb"]["gym"];
     notes?: string | null;
     raw: SourceClimbingLogEntry["raw"];
@@ -443,7 +477,8 @@ function kayaLogEntry(
     const category = categories[climb.angle];
     if (category) wallAngle = { category };
   }
-  const ropeMethod = boulder || climb.lead == null ? null : climb.lead ? "lead" : "top_rope";
+  const lead = source.lead ?? climb.lead;
+  const ropeMethod = boulder || lead == null ? null : lead ? "lead" : "top_rope";
   const attempts: SourceClimbingAttempt[] = [
     {
       scope: "climb",
@@ -453,7 +488,7 @@ function kayaLogEntry(
       ...(label === "repeat" ? { hadCompletedBefore: true } : {}),
     },
   ];
-  if ((ropeMethod !== null || source.sent === false) && source.attempts !== null)
+  if (source.attempts !== null)
     for (let attemptCount = 1; attemptCount < source.attempts; attemptCount++)
       attempts.push({
         scope: "climb",

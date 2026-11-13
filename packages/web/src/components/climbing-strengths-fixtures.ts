@@ -30,7 +30,7 @@ export const climbingStrengthsFixture: ClimbingStrengths = {
     {
       key: "boulder-angle-indoor",
       contextKey: "boulder",
-      contextLabel: "Bouldering · V scale",
+      contextLabel: "Bouldering",
       dimension: "wall_angle",
       setting: "indoor",
       gradeAdjustedStrengths: [],
@@ -280,6 +280,9 @@ if (!unknownBase) throw new Error("Missing climbing strengths panel");
 const unknownRow = unknownBase.rows[0];
 const unknownExample = unknownRow?.cells.flatMap((cell) => cell.examples)[0];
 if (!unknownRow || !unknownExample) throw new Error("Missing climbing strengths examples");
+const pooledExampleCell = unknownBase.allGrades.rows[0]?.cells[0];
+if (!pooledExampleCell) throw new Error("Missing pooled climbing strengths cell");
+pooledExampleCell.examples = [unknownExample];
 const unknownCells: ClimbingStrengthsPanel["rows"][number]["cells"] = [
   {
     grade: "V3",
@@ -403,3 +406,98 @@ export const climbingStrengthsUnknownResultsFixture: ClimbingStrengths = {
   if (!panel) throw new Error("Missing strengths fixture panel");
   panel.gradeAdjustedStrengths = summary;
 });
+
+// Source categories preserve their provider and category identities in every view.
+const tagBase = climbingStrengthsFixture.panels[0];
+if (!tagBase) throw new Error("Missing tag panel fixture");
+export const climbingStrengthsTagsFixture = {
+  ...climbingStrengthsFixture,
+  tagPanels: [
+    {
+      ...tagBase,
+      key: "kaya-movement",
+      dimension: "tag" as const,
+      category: { providerId: "kaya", key: "2", label: "Movement" },
+      rows: tagBase.rows.map((row) => ({ ...row, label: `Custom movement ${row.label}` })),
+      allGrades: {
+        ...tagBase.allGrades,
+        rows: tagBase.allGrades.rows.map((row) => ({
+          ...row,
+          label: `Custom movement ${row.label}`,
+        })),
+      },
+    },
+    {
+      ...tagBase,
+      key: "other-movement",
+      dimension: "tag" as const,
+      category: { providerId: "custom-source", key: "2", label: "Movement" },
+      rows: tagBase.rows.map((row) => ({ ...row, label: `Other movement ${row.label}` })),
+      allGrades: {
+        ...tagBase.allGrades,
+        rows: tagBase.allGrades.rows.map((row) => ({
+          ...row,
+          label: `Other movement ${row.label}`,
+        })),
+      },
+    },
+    {
+      ...tagBase,
+      key: "kaya-custom",
+      dimension: "tag" as const,
+      category: { providerId: "kaya", key: "new-category", label: "Session mood" },
+      rows: tagBase.rows.map((row) => ({ ...row, label: `Unfamiliar ${row.label}` })),
+      allGrades: {
+        ...tagBase.allGrades,
+        rows: tagBase.allGrades.rows.map((row) => ({ ...row, label: `Unfamiliar ${row.label}` })),
+      },
+    },
+  ],
+};
+
+const sparseTagBase = climbingStrengthsUnknownResultsFixture.panels[0];
+if (!sparseTagBase) throw new Error("Missing sparse tag panel fixture");
+export const climbingStrengthsSparseTagsFixture = {
+  ...climbingStrengthsUnknownResultsFixture,
+  panels: [],
+  tagPanels: [
+    {
+      ...sparseTagBase,
+      key: "unknown-category",
+      dimension: "tag" as const,
+      category: { providerId: "custom-source", key: null, label: "Uncategorized tags" },
+      rows: sparseTagBase.rows.map((row) => ({ ...row, label: "Unknown source tag" })),
+      allGrades: {
+        ...sparseTagBase.allGrades,
+        rows: sparseTagBase.allGrades.rows.map((row) => ({ ...row, label: "Unknown source tag" })),
+      },
+    },
+  ],
+};
+
+const singleClimb = cell("All grades", 1, 1, 100, 0, "limited");
+export const climbingStrengthsSingleClimbFixture: ClimbingStrengths = {
+  coverage: { unknownOutcomes: 0, missingGrades: 0, missingIdentity: 0 },
+  panels: [
+    {
+      ...unknownBase,
+      grades: [{ ...singleClimb, gradeSortValue: 0 }],
+      rows: [{ key: "slab", label: "Slab", cells: [singleClimb] }],
+      progress: [],
+      coverage: { missingTraits: 0, unknownOutcomes: 0 },
+      gradeAdjustedStrengths: [
+        {
+          key: "slab",
+          expectedSuccessRate: 100,
+          differencePercentagePoints: 0,
+          sampleStatus: "limited",
+        },
+      ],
+      allGrades: {
+        grades: [{ ...singleClimb, gradeSortValue: 0 }],
+        rows: [{ key: "slab", label: "Slab", cells: [singleClimb] }],
+        progress: [],
+      },
+    },
+  ],
+};

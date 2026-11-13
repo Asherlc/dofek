@@ -24,3 +24,11 @@ export const Selected: Story = {
   ...Default,
   args: { value: { types: ["lead"], protectionUsed: ["trad"], setting: ["outdoor"] } },
 };
+export const BoardOnly: Story = {
+  ...Default,
+  args: { value: { types: ["bouldering"], setting: ["indoor"], board: ["recorded"] } },
+};
+export const NoBoardRecorded: Story = {
+  ...Default,
+  args: { value: { types: ["bouldering"], setting: ["indoor"], board: ["not_recorded"] } },
+};

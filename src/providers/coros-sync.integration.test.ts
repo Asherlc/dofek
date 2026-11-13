@@ -154,7 +154,7 @@ describe("CorosProvider.sync() (integration)", () => {
     process.env.COROS_CLIENT_ID = "test-client-id";
     process.env.COROS_CLIENT_SECRET = "test-client-secret";
     ctx = await setupTestDatabase();
-    server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
     await ensureProvider(ctx.db, "coros", "COROS", "https://open.coros.com");
   }, 60_000);
 
@@ -170,7 +170,7 @@ describe("CorosProvider.sync() (integration)", () => {
   });
 
   afterAll(async () => {
-    server.close();
+    server.deactivate();
     archive.client.destroy();
     vi.unstubAllEnvs();
     if (ctx) await ctx.cleanup();

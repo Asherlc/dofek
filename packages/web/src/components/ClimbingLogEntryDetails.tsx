@@ -7,7 +7,9 @@ import {
   climbingAttemptDetailFields,
   formatClimbingGradeComponents,
 } from "@dofek/format/climbing-log";
-import { climbingLogEntryName } from "@dofek/training/climbing-log";
+import { providerLabel } from "@dofek/providers/providers";
+import { climbingLogEntryAreaPath, climbingLogEntryName } from "@dofek/training/climbing-log";
+import { climbingTagGroups } from "@dofek/training/climbing-tag-presentation";
 import type { ClimbingLogEntryDetail } from "../../../server/src/contracts/climbing-log-contracts.ts";
 import { ClimbingLogEntrySources } from "../pages/activity-detail/components/ClimbingLogEntrySources.tsx";
 
@@ -30,13 +32,15 @@ function Fields({ values }: { values: Array<{ label: string; value: string }> })
 
 export function ClimbingLogEntryDetails({ entry }: { entry: ClimbingLogEntryDetail }) {
   const climb = entry.climb;
-  const path = formatClimbingLocationPath(climb?.areaPath ?? []);
+  const path = formatClimbingLocationPath(climbingLogEntryAreaPath(entry));
   const angle = formatClimbingWallAngle(entry.wallAngle);
   const holds = formatClimbingHoldTypes(entry.holdTypes);
+  const tagGroups = climbingTagGroups(entry.tags ?? [], entry.holdTypes);
   const gradedPitches = climb?.pitches.filter((pitch) => pitch.publishedGrades.length > 0) ?? [];
   return (
     <section className="space-y-4 text-sm" aria-label="Climbing log details">
       <ClimbingLogEntrySources
+        climbKind={climb?.kind ?? null}
         name={climbingLogEntryName(entry)}
         sourceName={entry.sourceName}
         links={entry.sourceLinks}
@@ -53,6 +57,18 @@ export function ClimbingLogEntryDetails({ entry }: { entry: ClimbingLogEntryDeta
       {entry.board && <p className="text-xs">Board: {entry.board.name}</p>}
       {angle && <p className="text-xs">{angle}</p>}
       {holds && <p className="text-xs">{holds}</p>}
+      {tagGroups.map((group) => (
+        <section key={group.key}>
+          <h4 className="font-medium">
+            {providerLabel(group.providerId)} · {group.categoryLabel}
+          </h4>
+          <ul className="flex flex-wrap gap-x-3 gap-y-1 text-xs">
+            {group.tags.map((tag) => (
+              <li key={tag.sourceKey}>{tag.label}</li>
+            ))}
+          </ul>
+        </section>
+      ))}
       {climb && (
         <>
           <Fields
@@ -97,9 +113,13 @@ export function ClimbingLogEntryDetails({ entry }: { entry: ClimbingLogEntryDeta
       {entry.attempts.length > 0 && (
         <section className="space-y-3">
           <h4 className="font-medium">
-            {entry.recordedClimbAttemptCount === null ? "Recorded result" : "Attempts"}
+            {entry.recordedClimbAttemptCount === null
+              ? "Recorded result"
+              : entry.recordedClimbAttemptCount > 0
+                ? `Attempts: ${entry.recordedClimbAttemptCount}`
+                : "Attempts"}
           </h4>
-          {entry.attempts.map((attempt, index) => {
+          {entry.attempts.map((attempt) => {
             const pitch = climb?.pitches.find((candidate) => candidate.id === attempt.pitchId);
             const name =
               pitch?.name ??
@@ -109,7 +129,9 @@ export function ClimbingLogEntryDetails({ entry }: { entry: ClimbingLogEntryDeta
                   ? "Pitch attempt"
                   : entry.recordedClimbAttemptCount === null && attempt.attemptIndex === null
                     ? "Climb"
-                    : `Attempt ${attempt.attemptIndex ?? index + 1}`);
+                    : attempt.attemptIndex === null
+                      ? "Attempt (order unknown)"
+                      : `Attempt ${attempt.attemptIndex}`);
             return (
               <div key={attempt.id} className="space-y-2 rounded border border-border p-3">
                 <h5 className="text-xs font-medium">

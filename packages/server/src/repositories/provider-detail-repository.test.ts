@@ -371,7 +371,13 @@ describe("ProviderDetailRepository", () => {
       });
       log.attempts = [climbingAttemptFixture(log.id, { outcome: "failed", fellOrHung: true })];
       const { repo } = makeRepository([climbingLogDatabaseFixture(log)]);
-      expect(await repo.getRecordDetail("openbeta", "climbingLogEntries", log.id)).toEqual(log);
+      expect(await repo.getRecordDetail("openbeta", "climbingLogEntries", log.id)).toEqual({
+        ...log,
+        areaPath: climb.areaPath,
+        areaGroupId: null,
+        tags: [],
+        chartAnnotations: [],
+      });
     });
     it("returns null for a missing climbing log", async () => {
       const { repo } = makeRepository([]);

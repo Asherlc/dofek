@@ -4,6 +4,14 @@ export interface BackgroundRefreshEvent {
   taskId: string;
 }
 
+export interface HealthKitSyncExpiredEvent {
+  taskId: string;
+}
+
+export interface HealthKitSyncStartResult {
+  supported: boolean;
+}
+
 export interface BackgroundRefreshDiagnosticEvent {
   eventId: string;
   occurredAt: string;
@@ -29,6 +37,7 @@ export interface BackgroundRefreshDiagnosticHistory {
 
 type BackgroundRefreshEvents = {
   onBackgroundRefresh: (event: BackgroundRefreshEvent) => void;
+  onHealthKitSyncExpired: (event: HealthKitSyncExpiredEvent) => void;
 };
 
 declare class BackgroundRefreshNativeModule extends NativeModule<BackgroundRefreshEvents> {
@@ -40,6 +49,15 @@ declare class BackgroundRefreshNativeModule extends NativeModule<BackgroundRefre
   completeRefresh(taskId: string, success: boolean): void;
   isAvailable(): boolean;
   scheduleRefresh(): void;
+  startHealthKitSync(taskId: string, listenerGeneration: string): Promise<HealthKitSyncStartResult>;
+  getHealthKitSyncListenerGeneration(): string | null;
+  updateHealthKitSyncProgress(
+    taskId: string,
+    completed: number,
+    total: number,
+    message: string,
+  ): void;
+  completeHealthKitSync(taskId: string, success: boolean): void;
 }
 
 export default requireNativeModule<BackgroundRefreshNativeModule>("BackgroundRefresh");

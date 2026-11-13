@@ -1,12 +1,28 @@
 /** @vitest-environment jsdom */
 
 import type { UnitSystem } from "@dofek/format/units";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { maps, resetMaps } from "../lib/maplibre-test-helpers.ts";
 import { UnitContext } from "../lib/unitContext.ts";
 import { type Activity, ActivityList } from "./ActivityList";
 import type { ActivityTableColumn } from "./ActivityTable.tsx";
+
+vi.mock("maplibre-gl", async () => (await import("../lib/maplibre-test-helpers.ts")).maplibreMock);
+
+beforeEach(() => {
+  resetMaps();
+  vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(512);
+  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(288);
+});
+
+async function finishMapSnapshot() {
+  await waitFor(() => expect(maps.length).toBeGreaterThan(0));
+  act(() => {
+    for (const map of maps) map.fire("idle");
+  });
+}
 
 // Mock @tanstack/react-router
 const mockNavigate = vi.fn();
@@ -25,15 +41,8 @@ function renderWithUnits(ui: ReactNode, unitSystem: UnitSystem = "metric") {
 const mapPreview = {
   width: 1024,
   height: 576,
-  tiles: [
-    {
-      url: "https://tile.openstreetmap.org/15/5241/12665.png",
-      x: 0,
-      y: 0,
-      width: 256,
-      height: 256,
-    },
-  ],
+  center: [-122.39868164, 37.76962919] satisfies [number, number],
+  zoom: 14,
   routePath: null,
 };
 
@@ -168,13 +177,16 @@ describe("ActivityList", () => {
     expect(onBulkDelete).toHaveBeenCalledWith(["1"]);
   });
 
-  it("renders a compact map tile when an activity has a location summary", () => {
+  it("renders a compact map snapshot when an activity has a location summary", async () => {
     renderWithUnits(<ActivityList activities={mockActivities} />);
-    const image = screen.getByTestId("activity-map-preview-tile");
-    expect(image.getAttribute("src")).toBe("https://tile.openstreetmap.org/15/5241/12665.png");
+    await finishMapSnapshot();
+    expect(screen.getByTestId("activity-map-snapshot")).toHaveAttribute(
+      "src",
+      "data:image/png;base64,map",
+    );
   });
 
-  it("shows a compact processing state while a map is prepared and its tiles load", () => {
+  it("shows a compact processing state until the map snapshot is ready", async () => {
     const first = mockActivities[0];
     if (!first) throw new Error("Expected an activity");
     const view = renderWithUnits(
@@ -187,17 +199,11 @@ describe("ActivityList", () => {
       </UnitContext.Provider>,
     );
     expect(screen.getByRole("status")).toHaveTextContent("Processing map…");
-    fireEvent.load(screen.getByTestId("activity-map-preview-tile"));
+    await finishMapSnapshot();
     expect(screen.queryByRole("status")).toBeNull();
   });
 
-  it("allows compact map tile requests to include the page origin as the referrer", () => {
-    renderWithUnits(<ActivityList activities={mockActivities} />);
-    const image = screen.getByTestId("activity-map-preview-tile");
-    expect(image.getAttribute("referrerpolicy")).toBe("origin");
-  });
-
-  it("draws a compact route overlay when an activity has route path points", () => {
+  it("draws a compact route overlay over the map snapshot", async () => {
     const mockActivity = mockActivities[0];
     if (!mockActivity) throw new Error("Missing mock activity");
 
@@ -224,6 +230,11 @@ describe("ActivityList", () => {
       />,
     );
 
+    await finishMapSnapshot();
+    expect(screen.getByTestId("activity-map-snapshot")).toHaveAttribute(
+      "src",
+      "data:image/png;base64,map",
+    );
     expect(screen.getByTestId("activity-route-path").getAttribute("d")).toBe(
       "M 278.54 379.51 C 283.093 376.633, 287.648 374.238, 292.2 370.88 C 296.752 367.522, 301.3 363.2, 305.85 359.36",
     );
@@ -260,8 +271,10 @@ describe("ActivityList", () => {
     );
   });
 
-  it("navigates to activity detail on row click", () => {
+  it("navigates to activity detail after the map snapshot is ready", async () => {
     renderWithUnits(<ActivityList activities={mockActivities} />);
+    await finishMapSnapshot();
+    expect(screen.getByTestId("activity-map-snapshot")).toBeInTheDocument();
     const row = screen.getByText("Morning Run").closest("tr");
     if (!row) throw new Error("Row not found");
     fireEvent.click(row);
@@ -271,10 +284,10 @@ describe("ActivityList", () => {
     });
   });
 
-  it("explains bulk deletion and exposes the selected count as a status", () => {
+  it("explains bulk deletion and exposes the selected count as a status", async () => {
     const onBulkDelete = vi.fn();
     renderWithUnits(<ActivityList activities={mockActivities} onBulkDelete={onBulkDelete} />);
-    fireEvent.load(screen.getByTestId("activity-map-preview-tile"));
+    await finishMapSnapshot();
 
     expect(screen.getByText("Choose one or more activities to delete.")).toBeDefined();
     fireEvent.click(screen.getByRole("button", { name: "Select activities" }));

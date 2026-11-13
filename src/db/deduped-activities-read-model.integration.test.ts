@@ -61,6 +61,151 @@ describe("deduped_activities read model", () => {
     }
   });
 
+  it.each(["climbing_log", "climbing"])(
+    "keeps a surviving recording visible with an absent %s member",
+    async (providerType) => {
+      const activeClient = requireClient(client);
+      await seedSpecificActivityTypeFixture(activeClient, targetSchema, "climbing", "climbing");
+      await activeClient.command({
+        query: `ALTER TABLE ${targetSchema}.activity_source_records UPDATE is_deleted=1 WHERE activity_id='${activityId}' SETTINGS mutations_sync=2`,
+      });
+      await activeClient.insert({
+        table: `${targetSchema}.source_activity`,
+        format: "JSONEachRow",
+        values: [
+          {
+            id: activityId,
+            user_id: testUserId,
+            provider_id: "kilter",
+            provider_type: providerType,
+            external_id: "log:one",
+            provider_absent_at: "2026-07-06 00:00:00",
+            created_at: "2026-07-05 15:00:00",
+          },
+        ],
+      });
+      const result = await activeClient.query({
+        query: renderDedupedActivitiesSelectSql(targetSchema),
+        format: "JSONEachRow",
+      });
+      const rows = z
+        .array(z.object({ activity_id: z.string(), ended_at: z.string().nullable() }))
+        .parse(await result.json());
+      expect(rows).toEqual([{ activity_id: groupId, ended_at: "2026-07-05 17:00:00.000000" }]);
+    },
+  );
+
+  it.each([false, true])(
+    "keeps Peloton visible after WHOOP removal and revives an inactive group, scoped=%s",
+    async (scoped) => {
+      const activeClient = requireClient(client);
+      await seedSpecificActivityTypeFixture(activeClient, targetSchema, "cycling", "cycling");
+      const refresh = () =>
+        activeClient.command({
+          query: `INSERT INTO ${targetSchema}.deduped_activities ${renderDedupedActivitiesSelectSql(targetSchema, scoped ? [groupId] : undefined)}`,
+        });
+      const readGroup = async () => {
+        const result = await activeClient.query({
+          query: `SELECT activity_id, provider_id, name, source_providers,
+            source_external_ids, absent_source_external_ids, is_deleted
+            FROM ${targetSchema}.deduped_activities FINAL`,
+          format: "JSONEachRow",
+        });
+        return result.json();
+      };
+      await refresh();
+      await activeClient.command({
+        query: `ALTER TABLE ${targetSchema}.activity_source_records UPDATE is_deleted = 1
+          WHERE activity_id = '${linkedActivityId}' SETTINGS mutations_sync = 2`,
+      });
+      await activeClient.insert({
+        table: `${targetSchema}.source_activity`,
+        format: "JSONEachRow",
+        values: [
+          {
+            id: linkedActivityId,
+            group_id: groupId,
+            user_id: testUserId,
+            provider_id: "whoop",
+            provider_type: "cycling",
+            external_id: "whoop-rock-climbing-workout",
+            provider_absent_at: "2026-07-06 00:00:00",
+            created_at: "2026-07-05 15:00:00",
+          },
+        ],
+      });
+      await refresh();
+      const visible = {
+        activity_id: groupId,
+        provider_id: "peloton",
+        name: "Power Zone Ride",
+        source_providers: ["peloton"],
+        source_external_ids: [expect.objectContaining({ providerId: "peloton" })],
+        absent_source_external_ids: [
+          expect.objectContaining({
+            providerId: "whoop",
+            memberActivityId: linkedActivityId,
+            providerAbsentAt: "2026-07-06 00:00:00.000000",
+          }),
+        ],
+        is_deleted: 0,
+      };
+      expect(await readGroup()).toEqual([visible]);
+      await activeClient.command({
+        query: `ALTER TABLE ${targetSchema}.activity_source_records UPDATE is_deleted = 1
+          WHERE activity_id = '${activityId}' SETTINGS mutations_sync = 2`,
+      });
+      await refresh();
+      expect(await readGroup()).toEqual([
+        expect.objectContaining({ activity_id: groupId, is_deleted: 1 }),
+      ]);
+      await activeClient.command({
+        query: `ALTER TABLE ${targetSchema}.activity_source_records UPDATE is_deleted = 0
+          WHERE activity_id = '${activityId}' SETTINGS mutations_sync = 2`,
+      });
+      await refresh();
+      expect(await readGroup()).toEqual([visible]);
+    },
+  );
+
+  it.each([false, true])("uses only recording bounds when point-only is %s", async (pointOnly) => {
+    const activeClient = requireClient(client);
+    await seedSpecificActivityTypeFixture(activeClient, targetSchema, "climbing", "climbing");
+    await activeClient.command({ query: `TRUNCATE TABLE ${targetSchema}.deduped_sensor` });
+    await activeClient.command({
+      query: `ALTER TABLE ${targetSchema}.activity_source_records UPDATE
+      provider_id = if(activity_id = toUUID('${activityId}'), 'kilter', 'whoop'),
+      provider_type = if(activity_id = toUUID('${activityId}') OR ${pointOnly ? 1 : 0}, 'climbing_log', 'climbing'),
+      started_at = if(activity_id = toUUID('${activityId}'), toDateTime64('2026-07-05 15:59:00',6,'UTC'), started_at),
+      ended_at = if(activity_id = toUUID('${activityId}') OR ${pointOnly ? 1 : 0}, NULL, ended_at)
+      WHERE 1 SETTINGS mutations_sync = 2`,
+    });
+    const result = await activeClient.query({
+      query: renderDedupedActivitiesSelectSql(targetSchema),
+      format: "JSONEachRow",
+    });
+    const rows = z
+      .array(
+        z.object({
+          started_at: z.string(),
+          ended_at: z.string().nullable(),
+          provider_type: z.string(),
+          source_providers: z.array(z.string()),
+          member_activity_ids: z.array(z.string()),
+        }),
+      )
+      .parse(await result.json());
+    expect(rows).toEqual([
+      {
+        started_at: pointOnly ? "2026-07-05 15:59:00.000000" : "2026-07-05 16:00:00.000000",
+        ended_at: pointOnly ? null : "2026-07-05 17:00:00.000000",
+        provider_type: pointOnly ? "climbing_log" : "climbing",
+        source_providers: ["kilter", "whoop"],
+        member_activity_ids: [activityId, linkedActivityId],
+      },
+    ]);
+  });
+
   it.each(["Afternoon run", " Afternoon run ", null, "", "   "])(
     "uses primary title %s independently of representative fields",
     async (primaryTitle) => {
@@ -730,11 +875,11 @@ ${renderDedupedActivitiesSelectSql(targetSchema)}`,
       renderDbtModelSql(readModelSql("deduped_activity_members.sql"), {
         isIncremental: incremental,
         activityRefreshScoped: true,
+        activityRefreshIds: [groupId],
       })
         .replaceAll("{{ ref('deduped_activities') }}", `${targetSchema}.deduped_activities`)
         .replaceAll("{{ this }}", `${targetSchema}.deduped_activity_members`)
         .replaceAll('{{ var("activity_refresh_user_id") }}', testUserId)
-        .replaceAll("{{ activity_refresh_ids() }}", `CAST(['${groupId}'], 'Array(UUID)')`)
         .concat("\nSETTINGS max_threads = 1, join_use_nulls = 1");
     await activeClient.command({
       query: `CREATE TABLE ${targetSchema}.deduped_activity_members

@@ -7,7 +7,9 @@ import {
   climbingAttemptDetailFields,
   formatClimbingGradeComponents,
 } from "@dofek/format/climbing-log";
-import { climbingLogEntryName } from "@dofek/training/climbing-log";
+import { providerLabel } from "@dofek/providers/providers";
+import { climbingLogEntryAreaPath, climbingLogEntryName } from "@dofek/training/climbing-log";
+import { climbingTagGroups } from "@dofek/training/climbing-tag-presentation";
 import { StyleSheet, Text, View } from "react-native";
 import type { ClimbingLogEntryDetail } from "../../server/src/contracts/climbing-log-contracts.ts";
 import { colors } from "../theme";
@@ -31,13 +33,15 @@ function Fields({ values }: { values: Array<{ label: string; value: string }> })
 
 export function ClimbingLogEntryDetails({ entry }: { entry: ClimbingLogEntryDetail }) {
   const climb = entry.climb;
-  const path = formatClimbingLocationPath(climb?.areaPath ?? []);
+  const path = formatClimbingLocationPath(climbingLogEntryAreaPath(entry));
   const angle = formatClimbingWallAngle(entry.wallAngle);
   const holds = formatClimbingHoldTypes(entry.holdTypes);
+  const tagGroups = climbingTagGroups(entry.tags ?? [], entry.holdTypes);
   const gradedPitches = climb?.pitches.filter((pitch) => pitch.publishedGrades.length > 0) ?? [];
   return (
     <View style={styles.container}>
       <ClimbingLogEntrySources
+        climbKind={climb?.kind ?? null}
         name={climbingLogEntryName(entry)}
         sourceName={entry.sourceName}
         links={entry.sourceLinks}
@@ -54,6 +58,18 @@ export function ClimbingLogEntryDetails({ entry }: { entry: ClimbingLogEntryDeta
       {entry.board && <Text style={styles.value}>Board: {entry.board.name}</Text>}
       {angle && <Text style={styles.value}>{angle}</Text>}
       {holds && <Text style={styles.value}>{holds}</Text>}
+      {tagGroups.map((group) => (
+        <View key={group.key} style={styles.section}>
+          <Text style={styles.heading}>
+            {providerLabel(group.providerId)} · {group.categoryLabel}
+          </Text>
+          {group.tags.map((tag) => (
+            <Text key={tag.sourceKey} style={styles.value}>
+              {tag.label}
+            </Text>
+          ))}
+        </View>
+      ))}
       {climb && (
         <>
           <Fields
@@ -100,9 +116,13 @@ export function ClimbingLogEntryDetails({ entry }: { entry: ClimbingLogEntryDeta
       {entry.attempts.length > 0 && (
         <View style={styles.section}>
           <Text style={styles.heading}>
-            {entry.recordedClimbAttemptCount === null ? "Recorded result" : "Attempts"}
+            {entry.recordedClimbAttemptCount === null
+              ? "Recorded result"
+              : entry.recordedClimbAttemptCount > 0
+                ? `Attempts: ${entry.recordedClimbAttemptCount}`
+                : "Attempts"}
           </Text>
-          {entry.attempts.map((attempt, index) => {
+          {entry.attempts.map((attempt) => {
             const pitch = climb?.pitches.find((candidate) => candidate.id === attempt.pitchId);
             const title =
               attempt.scope === "pitch"
@@ -110,7 +130,9 @@ export function ClimbingLogEntryDetails({ entry }: { entry: ClimbingLogEntryDeta
                   (pitch?.number == null ? "Pitch attempt" : `Pitch ${pitch.number}`))
                 : entry.recordedClimbAttemptCount === null && attempt.attemptIndex === null
                   ? "Climb"
-                  : `Attempt ${attempt.attemptIndex ?? index + 1}`;
+                  : attempt.attemptIndex === null
+                    ? "Attempt (order unknown)"
+                    : `Attempt ${attempt.attemptIndex}`;
             return (
               <View key={attempt.id} style={styles.attempt}>
                 <Text style={styles.heading}>

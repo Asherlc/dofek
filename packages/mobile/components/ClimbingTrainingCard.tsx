@@ -2,7 +2,7 @@ import { userFacingErrorMessage } from "@dofek/format/user-facing-error";
 import { climbingGradeProgressionSchema } from "@dofek/training/climbing-progression";
 import { StyleSheet, Text, View } from "react-native";
 import { z } from "zod";
-import { safeParseRows } from "../lib/safe-parse";
+import { safeParseData, safeParseRows } from "../lib/safe-parse";
 import { captureException } from "../lib/telemetry";
 import { colors } from "../theme";
 import { ClimbingGradeProgressionChart } from "./ClimbingGradeProgressionChart";
@@ -17,17 +17,6 @@ const mobileClimbingVolumeByGradeRowSchema = z.object({
   attempts: z.number().nullable(),
   recordedAttempts: z.number().nullable(),
   sends: z.number(),
-});
-
-const mobileClimbingSessionSummaryRowSchema = z.object({
-  activityId: z.string(),
-  date: z.string(),
-  name: z.string(),
-  locationName: z.string().nullable(),
-  attempts: z.number().nullable(),
-  sends: z.number(),
-  hardestBoulderGrade: z.string().nullable(),
-  hardestRouteGrade: z.string().nullable(),
 });
 
 const mobileHangboardingDailyRowSchema = z.object({
@@ -60,9 +49,8 @@ const mobileHangboardingSummarySchema = z.object({
 });
 
 const mobileClimbingDataSchema = z.object({
-  gradeProgression: z.array(climbingGradeProgressionSchema),
+  gradeProgression: climbingGradeProgressionSchema.nullable(),
   volumeByGrade: z.array(mobileClimbingVolumeByGradeRowSchema),
-  sessionSummary: z.array(mobileClimbingSessionSummaryRowSchema),
   hangboarding: z.object({
     ...mobileHangboardingSummarySchema.shape,
     daily: z.array(mobileHangboardingDailyRowSchema),
@@ -72,12 +60,10 @@ const mobileClimbingDataSchema = z.object({
 const mobileClimbingPayloadSchema = z.object({
   gradeProgression: z.unknown().optional(),
   volumeByGrade: z.unknown().optional(),
-  sessionSummary: z.unknown().optional(),
   hangboarding: z.unknown().optional(),
 });
 
 type MobileClimbingVolumeByGradeRow = z.infer<typeof mobileClimbingVolumeByGradeRowSchema>;
-type MobileClimbingSessionSummaryRow = z.infer<typeof mobileClimbingSessionSummaryRowSchema>;
 type MobileHangboardingSummary = z.infer<typeof mobileClimbingDataSchema>["hangboarding"];
 type MobileClimbingData = z.infer<typeof mobileClimbingDataSchema>;
 
@@ -87,9 +73,8 @@ interface MobileClimbingParseResult {
 }
 
 const emptyClimbingData: MobileClimbingData = {
-  gradeProgression: [],
+  gradeProgression: null,
   volumeByGrade: [],
-  sessionSummary: [],
   hangboarding: {
     sessionCount: 0,
     totalDurationSeconds: 0,
@@ -121,20 +106,15 @@ function parseMobileClimbingData(value: unknown): MobileClimbingParseResult {
     return { data: emptyClimbingData, error: parseError };
   }
 
-  const gradeProgression = safeParseRows(
-    climbingGradeProgressionSchema,
-    payloadResult.data.gradeProgression ?? [],
+  const gradeProgression = safeParseData(
+    climbingGradeProgressionSchema.nullable(),
+    payloadResult.data.gradeProgression ?? null,
     "strain:climbing.gradeProgression",
   );
   const volumeByGrade = safeParseRows(
     mobileClimbingVolumeByGradeRowSchema,
     payloadResult.data.volumeByGrade ?? [],
     "strain:climbing.volumeByGrade",
-  );
-  const sessionSummary = safeParseRows(
-    mobileClimbingSessionSummaryRowSchema,
-    payloadResult.data.sessionSummary ?? [],
-    "strain:climbing.sessionSummary",
   );
   const hangboardingResult = mobileHangboardingSummarySchema.safeParse(
     payloadResult.data.hangboarding ?? emptyClimbingData.hangboarding,
@@ -164,13 +144,11 @@ function parseMobileClimbingData(value: unknown): MobileClimbingParseResult {
 
   return {
     data: {
-      gradeProgression: gradeProgression.data,
+      gradeProgression: gradeProgression.data ?? null,
       volumeByGrade: volumeByGrade.data,
-      sessionSummary: sessionSummary.data,
       hangboarding,
     },
-    error:
-      gradeProgression.error ?? volumeByGrade.error ?? sessionSummary.error ?? hangboardingError,
+    error: gradeProgression.error ?? volumeByGrade.error ?? hangboardingError,
   };
 }
 
@@ -189,10 +167,6 @@ class ClimbingSectionModel {
     return [...this.#data.volumeByGrade].sort(
       (left, right) => left.gradeSortValue - right.gradeSortValue,
     );
-  }
-
-  get sessions(): MobileClimbingSessionSummaryRow[] {
-    return this.#data.sessionSummary;
   }
 
   get hangboarding(): MobileHangboardingSummary {
@@ -247,29 +221,6 @@ function ClimbingSection({ model, loading }: { model: ClimbingSectionModel; load
                 </Text>
               )}
               <Text style={styles.climbingMetaText}>{row.sends} sends</Text>
-            </View>
-          ))
-        )}
-      </View>
-
-      <View style={styles.climbingSubsection}>
-        <Text style={styles.climbingSubsectionTitle}>Recent Climbing Sessions</Text>
-        {model.sessions.length === 0 ? (
-          <Text style={styles.activitiesEmpty}>No climbing sessions</Text>
-        ) : (
-          model.sessions.slice(0, 3).map((session) => (
-            <View key={session.activityId} style={styles.climbingSessionRow}>
-              <Text style={styles.climbingSessionName}>{session.name}</Text>
-              {session.locationName && (
-                <Text style={styles.climbingMetaText}>{session.locationName}</Text>
-              )}
-              <Text style={styles.climbingMetaText}>
-                {session.attempts ?? "—"} attempts · {session.sends} sends
-              </Text>
-              <Text style={styles.climbingMetaText}>
-                Boulder {session.hardestBoulderGrade ?? "None"} · Route{" "}
-                {session.hardestRouteGrade ?? "None"}
-              </Text>
             </View>
           ))
         )}
@@ -332,13 +283,5 @@ const styles = StyleSheet.create({
   climbingMetaText: {
     color: colors.textSecondary,
     fontSize: 12,
-  },
-  climbingSessionRow: {
-    gap: 3,
-  },
-  climbingSessionName: {
-    color: colors.text,
-    fontSize: 14,
-    fontWeight: "600",
   },
 });

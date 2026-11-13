@@ -1,6 +1,5 @@
-import { TrainingStressCalculator } from "@dofek/training/training-load";
 import { describe, expect, it } from "vitest";
-import { osmTilePreview } from "../lib/osm-tile.ts";
+import { routeMapPreview } from "../lib/map-preview.ts";
 import {
   activityRowSchema,
   createActiveCalendarEntry,
@@ -9,6 +8,37 @@ import {
 import { makeActivityRow } from "./activity-calendar-test-helpers.ts";
 
 describe("activity calendar entries", () => {
+  it("retains unknown duration through SQL row parsing, calendar output and training stress", () => {
+    const row = activityRowSchema.parse({
+      ...makeActivityRow(),
+      duration_min: null,
+      ended_at: null,
+      power_tss: 88,
+    });
+    expect(row.duration_min).toBeNull();
+    const entry = createActiveCalendarEntry(row, {});
+    expect(entry.durationMin).toBeNull();
+    expect(entry.tss).toBeNull();
+    expect(entry.stats).toEqual([
+      {
+        status: "missing",
+        label: "Training Stress Score",
+        reason: "Record an activity duration greater than zero.",
+      },
+    ]);
+  });
+
+  it.each([50, null])(
+    "uses canonical power stress without heart rate and average power %s",
+    (avgPower) => {
+      const row = activityRowSchema.parse({
+        ...makeActivityRow({ avg_hr: null, max_hr: null, avg_power: avgPower }),
+        power_tss: 83.25,
+      });
+      expect(createActiveCalendarEntry(row, {}).tss).toBe(83.3);
+    },
+  );
+
   it("keeps the primary source type separate from the representative classification", () => {
     const row = activityRowSchema.parse(
       makeActivityRow({
@@ -17,15 +47,14 @@ describe("activity calendar entries", () => {
         name: null,
       }),
     );
-    const entry = createActiveCalendarEntry(row, {
-      baseline: { max_hr: null, resting_hr: null, ftp: null },
-      calculator: new TrainingStressCalculator(),
-    });
+    const entry = createActiveCalendarEntry(row, {});
 
     expect(entry).toMatchObject({
       name: null,
       activityType: "walking",
       primaryActivityType: "running",
+      tss: null,
+      stats: [],
     });
   });
 
@@ -37,8 +66,6 @@ describe("activity calendar entries", () => {
   ] as const)("projects active and absent map readiness %s", (mapReadiness, active, absent) => {
     const row = activityRowSchema.parse(makeActivityRow());
     const context = {
-      baseline: { max_hr: null, resting_hr: null, ftp: null },
-      calculator: new TrainingStressCalculator(),
       mapReadiness,
     };
 
@@ -75,14 +102,8 @@ describe("activity calendar entries", () => {
         local_time_source: "user_home_timezone",
       }),
     ];
-    const baseline = { max_hr: null, resting_hr: null, ftp: 250 };
 
-    const entries = rows.map((row) =>
-      createActiveCalendarEntry(activityRowSchema.parse(row), {
-        baseline,
-        calculator: new TrainingStressCalculator(),
-      }),
-    );
+    const entries = rows.map((row) => createActiveCalendarEntry(activityRowSchema.parse(row), {}));
     const contextById = new Map(entries.map((entry) => [entry.id, entry.localTimeContext]));
     expect(contextById.get("offset-context")).toEqual({
       timezone: null,
@@ -116,14 +137,8 @@ describe("activity calendar entries", () => {
         local_date: "2026-03-19",
       }),
     ];
-    const baseline = { max_hr: null, resting_hr: null, ftp: null };
 
-    const entries = rows.map((row) =>
-      createActiveCalendarEntry(activityRowSchema.parse(row), {
-        baseline,
-        calculator: new TrainingStressCalculator(),
-      }),
-    );
+    const entries = rows.map((row) => createActiveCalendarEntry(activityRowSchema.parse(row), {}));
     expect(entries[0]).toEqual(
       expect.objectContaining({
         distanceMeters: 5000,
@@ -136,7 +151,7 @@ describe("activity calendar entries", () => {
       kind: "recorded_gps",
       centroidLat: 90,
       centroidLng: 180,
-      mapPreview: osmTilePreview([{ lat: 90, lng: 180 }]),
+      mapPreview: routeMapPreview([{ lat: 90, lng: 180 }]),
     });
   });
 
@@ -152,7 +167,6 @@ describe("activity calendar entries", () => {
         avg_power: null,
       }),
     ];
-    const baseline = { max_hr: null, resting_hr: null, ftp: null };
     const routeRows = [
       {
         activity_id: "00000000-0000-0000-0000-000000000001",
@@ -172,13 +186,11 @@ describe("activity calendar entries", () => {
     ];
     const entries = rows.map((row) =>
       createActiveCalendarEntry(activityRowSchema.parse(row), {
-        baseline,
-        calculator: new TrainingStressCalculator(),
-        routePreview: osmTilePreview(routeRows),
+        routePreview: routeMapPreview(routeRows),
       }),
     );
     expect(entries[0]?.location).toMatchObject({
-      mapPreview: osmTilePreview([
+      mapPreview: routeMapPreview([
         { lat: 37.7749, lng: -122.4194 },
         { lat: 37.7752, lng: -122.4188 },
         { lat: 37.7756, lng: -122.4182 },
@@ -205,14 +217,8 @@ describe("activity calendar entries", () => {
         centroid_lng: null,
       }),
     ];
-    const baseline = { max_hr: null, resting_hr: null, ftp: null };
 
-    const entries = rows.map((row) =>
-      createActiveCalendarEntry(activityRowSchema.parse(row), {
-        baseline,
-        calculator: new TrainingStressCalculator(),
-      }),
-    );
+    const entries = rows.map((row) => createActiveCalendarEntry(activityRowSchema.parse(row), {}));
     const activities = entries;
     expect(activities.find((activity) => activity.id === "indoor-zero")).toEqual(
       expect.objectContaining({
@@ -253,14 +259,8 @@ describe("activity calendar entries", () => {
         centroid_lng: -122.4194,
       }),
     ];
-    const baseline = { max_hr: null, resting_hr: null, ftp: null };
 
-    const entries = rows.map((row) =>
-      createActiveCalendarEntry(activityRowSchema.parse(row), {
-        baseline,
-        calculator: new TrainingStressCalculator(),
-      }),
-    );
+    const entries = rows.map((row) => createActiveCalendarEntry(activityRowSchema.parse(row), {}));
     const activities = entries;
     expect(activities.find((activity) => activity.id === "missing-route-measurements")).toEqual(
       expect.objectContaining({
@@ -280,41 +280,45 @@ describe("activity calendar entries", () => {
     );
   });
 
-  it("explains every missing prerequisite when activities have no usable stress data", () => {
-    const rows = [makeActivityRow({ avg_power: null, avg_hr: null })];
-    const baseline = { max_hr: null, resting_hr: null, ftp: 250 };
+  it.each([60, 0, null])("omits TSS without recorded power for duration %s", (durationMin) => {
+    const row = activityRowSchema.parse(
+      makeActivityRow({ avg_power: null, power_tss: null, duration_min: durationMin }),
+    );
 
-    const entries = rows.map((row) =>
-      createActiveCalendarEntry(activityRowSchema.parse(row), {
-        baseline,
-        calculator: new TrainingStressCalculator(),
-      }),
-    );
-    expect(entries[0]).toEqual(
-      expect.objectContaining({
-        tss: null,
-        stats: [
-          {
-            status: "missing",
-            label: "Training Stress Score",
-            reason:
-              "Record average power, or record average heart rate and set maximum heart rate.",
-          },
-        ],
-      }),
-    );
+    expect(createActiveCalendarEntry(row, {})).toMatchObject({ tss: null, stats: [] });
+    expect(
+      createProviderAbsentCalendarEntry({ ...row, provider_absent_at: "2026-11-01T00:00:00Z" }, {}),
+    ).toMatchObject({ tss: null, stats: [] });
   });
+
+  it.each([250, 0])(
+    "explains prerequisites when recorded power %s has no stress score",
+    (avgPower) => {
+      const rows = [makeActivityRow({ avg_power: avgPower, avg_hr: null })];
+
+      const entries = rows.map((row) =>
+        createActiveCalendarEntry(activityRowSchema.parse(row), {}),
+      );
+      expect(entries[0]).toEqual(
+        expect.objectContaining({
+          tss: null,
+          stats: [
+            {
+              status: "missing",
+              label: "Training Stress Score",
+              reason:
+                "Record cycling power with sufficient sustained-effort evidence for computed eFTP.",
+            },
+          ],
+        }),
+      );
+    },
+  );
 
   it("does not compute stress for zero-duration activities", () => {
     const rows = [makeActivityRow({ duration_min: 0 })];
-    const baseline = { max_hr: null, resting_hr: null, ftp: 250 };
 
-    const entries = rows.map((row) =>
-      createActiveCalendarEntry(activityRowSchema.parse(row), {
-        baseline,
-        calculator: new TrainingStressCalculator(),
-      }),
-    );
+    const entries = rows.map((row) => createActiveCalendarEntry(activityRowSchema.parse(row), {}));
     expect(entries[0]).toEqual(
       expect.objectContaining({
         tss: null,
@@ -329,168 +333,9 @@ describe("activity calendar entries", () => {
     );
   });
 
-  it("does not compute power stress from zero power", () => {
-    const rows = [makeActivityRow({ avg_power: 0, avg_hr: null })];
-    const baseline = { max_hr: null, resting_hr: null, ftp: 250 };
-
-    const entries = rows.map((row) =>
-      createActiveCalendarEntry(activityRowSchema.parse(row), {
-        baseline,
-        calculator: new TrainingStressCalculator(),
-      }),
-    );
-    expect(entries[0]?.tss).toBeNull();
-  });
-
-  it("does not compute power stress from zero functional threshold power", () => {
-    const rows = [makeActivityRow({ avg_power: 250, avg_hr: null })];
-    const baseline = { max_hr: null, resting_hr: null, ftp: 0 };
-
-    const entries = rows.map((row) =>
-      createActiveCalendarEntry(activityRowSchema.parse(row), {
-        baseline,
-        calculator: new TrainingStressCalculator(),
-      }),
-    );
-    expect(entries[0]).toEqual(
-      expect.objectContaining({
-        tss: null,
-        stats: [
-          {
-            status: "missing",
-            label: "Training Stress Score",
-            reason:
-              "Set functional threshold power, or record average heart rate and set maximum heart rate.",
-          },
-        ],
-      }),
-    );
-  });
-
-  it("falls back to heart-rate stress when power stress cannot be computed", () => {
-    const rows = [
-      makeActivityRow({
-        duration_min: 45,
-        avg_power: null,
-        avg_hr: 150,
-        max_hr: 190,
-      }),
-    ];
-    const baseline = { max_hr: null, resting_hr: null, ftp: 250 };
-
-    const entries = rows.map((row) =>
-      createActiveCalendarEntry(activityRowSchema.parse(row), {
-        baseline,
-        calculator: new TrainingStressCalculator(),
-      }),
-    );
-    expect(entries[0]).toEqual(
-      expect.objectContaining({
-        tss: 45.1,
-        stats: [{ status: "available", label: "Training Stress Score", value: "45.1" }],
-      }),
-    );
-  });
-
-  it("uses profile heart-rate baseline before activity max heart rate", () => {
-    const rows = [
-      makeActivityRow({
-        duration_min: 45,
-        avg_power: null,
-        avg_hr: 150,
-        max_hr: 190,
-      }),
-    ];
-    const baseline = { max_hr: 200, resting_hr: 50, ftp: null };
-
-    const entries = rows.map((row) =>
-      createActiveCalendarEntry(activityRowSchema.parse(row), {
-        baseline,
-        calculator: new TrainingStressCalculator(),
-      }),
-    );
-    expect(entries[0]?.tss).toBe(41.4);
-  });
-
-  it("does not compute heart-rate stress from zero average heart rate", () => {
-    const rows = [
-      makeActivityRow({
-        avg_power: null,
-        avg_hr: 0,
-        max_hr: 190,
-      }),
-    ];
-    const baseline = { max_hr: null, resting_hr: null, ftp: null };
-
-    const entries = rows.map((row) =>
-      createActiveCalendarEntry(activityRowSchema.parse(row), {
-        baseline,
-        calculator: new TrainingStressCalculator(),
-      }),
-    );
-    expect(entries[0]?.tss).toBeNull();
-  });
-
-  it("does not compute heart-rate stress without a max heart-rate baseline", () => {
-    const rows = [
-      makeActivityRow({
-        avg_power: null,
-        avg_hr: 150,
-        max_hr: null,
-      }),
-    ];
-    const baseline = { max_hr: null, resting_hr: null, ftp: null };
-
-    const entries = rows.map((row) =>
-      createActiveCalendarEntry(activityRowSchema.parse(row), {
-        baseline,
-        calculator: new TrainingStressCalculator(),
-      }),
-    );
-    expect(entries[0]).toEqual(
-      expect.objectContaining({
-        tss: null,
-        stats: [
-          {
-            status: "missing",
-            label: "Training Stress Score",
-            reason:
-              "Record average power and set functional threshold power, or set maximum heart rate.",
-          },
-        ],
-      }),
-    );
-  });
-
-  it("does not compute heart-rate stress when max heart rate equals resting heart rate", () => {
-    const rows = [
-      makeActivityRow({
-        avg_power: null,
-        avg_hr: 150,
-        max_hr: 60,
-      }),
-    ];
-    const baseline = { max_hr: null, resting_hr: null, ftp: null };
-
-    const entries = rows.map((row) =>
-      createActiveCalendarEntry(activityRowSchema.parse(row), {
-        baseline,
-        calculator: new TrainingStressCalculator(),
-      }),
-    );
-    expect(entries[0]).toEqual(
-      expect.objectContaining({
-        tss: null,
-        stats: [
-          {
-            status: "missing",
-            label: "Training Stress Score",
-            reason:
-              "Record average power and set functional threshold power, or set maximum heart rate above resting heart rate.",
-          },
-        ],
-      }),
-    );
+  it("retains canonical zero stress even when heart rate is available", () => {
+    const row = activityRowSchema.parse(makeActivityRow({ power_tss: 0, avg_hr: 150 }));
+    expect(createActiveCalendarEntry(row, {}).tss).toBe(0);
   });
 
   it("includes partial absence summaries for canonical activities with absent source links", () => {
@@ -513,14 +358,8 @@ describe("activity calendar entries", () => {
         ],
       }),
     ];
-    const baseline = { max_hr: null, resting_hr: null, ftp: 250 };
 
-    const entries = rows.map((row) =>
-      createActiveCalendarEntry(activityRowSchema.parse(row), {
-        baseline,
-        calculator: new TrainingStressCalculator(),
-      }),
-    );
+    const entries = rows.map((row) => createActiveCalendarEntry(activityRowSchema.parse(row), {}));
     expect(entries[0]?.partialAbsentSources).toEqual([
       {
         providerId: "strava",
@@ -533,6 +372,7 @@ describe("activity calendar entries", () => {
     const rows = [
       makeActivityRow({
         id: "hidden-power",
+        power_tss: 100,
         name: "Hidden Ride",
         canonical_type: "cycling",
         started_at: "2026-03-18T07:00:00.000Z",
@@ -551,7 +391,6 @@ describe("activity calendar entries", () => {
         last_processed_at: null,
       }),
     ];
-    const baseline = { max_hr: null, resting_hr: null, ftp: 250 };
 
     const entries = rows.map((row) =>
       createProviderAbsentCalendarEntry(
@@ -559,10 +398,7 @@ describe("activity calendar entries", () => {
           ...activityRowSchema.parse(row),
           provider_absent_at: row.provider_absent_at,
         },
-        {
-          baseline,
-          calculator: new TrainingStressCalculator(),
-        },
+        {},
       ),
     );
     expect(entries[0]).toEqual({
@@ -636,7 +472,6 @@ describe("activity calendar entries", () => {
         last_processed_at: null,
       }),
     ];
-    const baseline = { max_hr: null, resting_hr: null, ftp: null };
 
     const entries = rows.map((row) =>
       createProviderAbsentCalendarEntry(
@@ -644,10 +479,7 @@ describe("activity calendar entries", () => {
           ...activityRowSchema.parse(row),
           provider_absent_at: row.provider_absent_at,
         },
-        {
-          baseline,
-          calculator: new TrainingStressCalculator(),
-        },
+        {},
       ),
     );
     expect(entries[0]?.location).toBeNull();
@@ -659,7 +491,7 @@ describe("activity calendar entries", () => {
       { lat: 37.7752, lng: -122.4188 },
       { lat: 37.7756, lng: -122.4182 },
     ];
-    const routePreview = osmTilePreview(routePoints);
+    const routePreview = routeMapPreview(routePoints);
     const rows = [
       makeActivityRow({
         id: "hidden-outdoor-route",
@@ -681,7 +513,6 @@ describe("activity calendar entries", () => {
         last_processed_at: null,
       }),
     ];
-    const baseline = { max_hr: null, resting_hr: null, ftp: null };
 
     const routeRows = routePoints.map((point) => ({
       activity_id: "hidden-outdoor-route",
@@ -695,9 +526,7 @@ describe("activity calendar entries", () => {
           provider_absent_at: row.provider_absent_at,
         },
         {
-          baseline,
-          calculator: new TrainingStressCalculator(),
-          routePreview: osmTilePreview(routeRows),
+          routePreview: routeMapPreview(routeRows),
         },
       ),
     );
@@ -739,7 +568,6 @@ describe("activity calendar entries", () => {
         last_processed_at: null,
       }),
     ];
-    const baseline = { max_hr: null, resting_hr: null, ftp: null };
 
     const entries = rows.map((row) =>
       createProviderAbsentCalendarEntry(
@@ -747,10 +575,7 @@ describe("activity calendar entries", () => {
           ...activityRowSchema.parse(row),
           provider_absent_at: row.provider_absent_at,
         },
-        {
-          baseline,
-          calculator: new TrainingStressCalculator(),
-        },
+        {},
       ),
     );
     expect(entries[0]).toEqual(
@@ -765,7 +590,7 @@ describe("activity calendar entries", () => {
       kind: "recorded_gps",
       centroidLat: 37.8,
       centroidLng: -122.4,
-      mapPreview: osmTilePreview([{ lat: 37.8, lng: -122.4 }]),
+      mapPreview: routeMapPreview([{ lat: 37.8, lng: -122.4 }]),
     });
   });
 
@@ -791,7 +616,6 @@ describe("activity calendar entries", () => {
         last_processed_at: null,
       }),
     ];
-    const baseline = { max_hr: null, resting_hr: null, ftp: null };
 
     const entries = rows.map((row) =>
       createProviderAbsentCalendarEntry(
@@ -799,57 +623,9 @@ describe("activity calendar entries", () => {
           ...activityRowSchema.parse(row),
           provider_absent_at: row.provider_absent_at,
         },
-        {
-          baseline,
-          calculator: new TrainingStressCalculator(),
-        },
+        {},
       ),
     );
     expect(entries[0]?.location).toBeNull();
-  });
-
-  it("computes hidden heart-rate stress from enriched summary metrics when baseline is missing", () => {
-    const rows = [
-      makeActivityRow({
-        id: "hidden-hr",
-        name: "Hidden Run",
-        canonical_type: "running",
-        started_at: "2026-03-18T07:00:00.000Z",
-        ended_at: "2026-03-18T08:00:00.000Z",
-        duration_min: 45,
-        avg_hr: 150,
-        max_hr: 190,
-        avg_power: null,
-        total_distance: null,
-        elevation_gain_m: null,
-        centroid_lat: null,
-        centroid_lng: null,
-        local_date: "2026-03-18",
-        provider_id: "strava",
-        provider_absent_at: "2026-03-05T14:30:00.000Z",
-        last_processed_at: null,
-      }),
-    ];
-    const baseline = { max_hr: null, resting_hr: null, ftp: null };
-
-    const entries = rows.map((row) =>
-      createProviderAbsentCalendarEntry(
-        {
-          ...activityRowSchema.parse(row),
-          provider_absent_at: row.provider_absent_at,
-        },
-        {
-          baseline,
-          calculator: new TrainingStressCalculator(),
-        },
-      ),
-    );
-    expect(entries[0]).toEqual(
-      expect.objectContaining({
-        id: "hidden-hr",
-        tss: 45.1,
-        stats: [{ status: "available", label: "Training Stress Score", value: "45.1" }],
-      }),
-    );
   });
 });

@@ -1,0 +1,101 @@
+{
+  "schemaVersion": 1,
+  "model": "Morton3P",
+  "equation": "powerWatts = criticalPowerWatts + workCapacityJoules / (durationSeconds + timeOffsetSeconds)",
+  "eftpDefinition": "Modeled power at 3600 seconds from reference curve interpolation",
+  "population": "Pooled reported sexes; original GoldenCheetah OpenData CC0; all available history",
+  "sourceManifestSha256": "2c4843dc2fb080b2d1c4ee992b989d6453b847de08a9ab801e0ea69ece4ca2bb",
+  "trainingAthletes": 161,
+  "heldoutAthletes": 51,
+  "fitDurationSeconds": [180, 300, 480, 600, 900, 1200, 1800, 2400, 3000, 3600],
+  "fitMethod": "Positive CP, Wprime, tau; relative squared error; 1401 log tau grid points 0.001..10000 seconds; conditional weighted linear least squares",
+  "percentiles": [
+    {
+      "percentile": 10,
+      "criticalPowerWatts": 134.85211193798693,
+      "workCapacityJoules": 116657.98127593864,
+      "timeOffsetSeconds": 851.1380382023759,
+      "maximumPowerWatts": 271.9132889032687,
+      "relativeRmse": 0.027838420058933486,
+      "searchBoundary": false
+    },
+    {
+      "percentile": 20,
+      "criticalPowerWatts": 152.54670881117494,
+      "workCapacityJoules": 149076.8249237713,
+      "timeOffsetSeconds": 1096.4781961431852,
+      "maximumPowerWatts": 288.5063890384176,
+      "relativeRmse": 0.012383039138113346,
+      "searchBoundary": false
+    },
+    {
+      "percentile": 30,
+      "criticalPowerWatts": 175.4445584189499,
+      "workCapacityJoules": 109689.23514199513,
+      "timeOffsetSeconds": 716.1434102129027,
+      "maximumPowerWatts": 328.6111359196568,
+      "relativeRmse": 0.021768607715676187,
+      "searchBoundary": false
+    },
+    {
+      "percentile": 40,
+      "criticalPowerWatts": 192.9503712336851,
+      "workCapacityJoules": 96829.7225177935,
+      "timeOffsetSeconds": 595.6621435290109,
+      "maximumPowerWatts": 355.50849847024926,
+      "relativeRmse": 0.014948221712411813,
+      "searchBoundary": false
+    },
+    {
+      "percentile": 50,
+      "criticalPowerWatts": 198.98112385301047,
+      "workCapacityJoules": 115538.39536993465,
+      "timeOffsetSeconds": 691.8309709189363,
+      "maximumPowerWatts": 365.9849155688812,
+      "relativeRmse": 0.009898342242399112,
+      "searchBoundary": false
+    },
+    {
+      "percentile": 60,
+      "criticalPowerWatts": 217.5268824112711,
+      "workCapacityJoules": 103958.07929079188,
+      "timeOffsetSeconds": 609.5368972401693,
+      "maximumPowerWatts": 388.079444137211,
+      "relativeRmse": 0.012103880338804319,
+      "searchBoundary": false
+    },
+    {
+      "percentile": 70,
+      "criticalPowerWatts": 237.6133751660393,
+      "workCapacityJoules": 90131.93497891545,
+      "timeOffsetSeconds": 506.99070827470445,
+      "maximumPowerWatts": 415.3916529684778,
+      "relativeRmse": 0.010191191406334036,
+      "searchBoundary": false
+    },
+    {
+      "percentile": 80,
+      "criticalPowerWatts": 251.01947954989575,
+      "workCapacityJoules": 96562.07579381291,
+      "timeOffsetSeconds": 473.15125896148027,
+      "maximumPowerWatts": 455.102368403995,
+      "relativeRmse": 0.013435319933052869,
+      "searchBoundary": false
+    },
+    {
+      "percentile": 90,
+      "criticalPowerWatts": 258.33057821537886,
+      "workCapacityJoules": 172376.64741547406,
+      "timeOffsetSeconds": 653.130552647473,
+      "maximumPowerWatts": 522.2543017599951,
+      "relativeRmse": 0.019198913075241228,
+      "searchBoundary": false
+    }
+  ],
+  "limitations": [
+    "Observed MMP capacity lower bounds, not physiological FTP validation",
+    "Pooled sexes and self-selected GoldenCheetah users",
+    "Finite 10th–90th percentile anchor coverage; outside-bank policy is not calibrated",
+    "No individual histories or raw activity streams contained in this bank"
+  ]
+}

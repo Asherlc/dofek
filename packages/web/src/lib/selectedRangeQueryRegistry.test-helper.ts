@@ -16,11 +16,7 @@ export const SELECTED_RANGE_QUERY_REGISTRY = {
     "cyclingAdvanced.activityVariability",
     "cyclingAdvanced.verticalAscentRate",
   ],
-  endurance: [
-    "efficiency.polarizationTrend",
-    "cyclingAdvanced.rampRate",
-    "cyclingAdvanced.trainingMonotony",
-  ],
+  endurance: ["efficiency.polarizationTrend"],
   hiking: [
     "hiking.gradeAdjustedPace",
     "hiking.elevationProfile",
@@ -38,7 +34,6 @@ export const SELECTED_RANGE_QUERY_REGISTRY = {
     "dailyMetrics.hrvBaseline",
     "recovery.workloadRatio",
     "recovery.sleepAnalytics",
-    "recovery.readinessScore",
   ],
   sleep: ["sleep.list", "insights.compute"],
   strength: [

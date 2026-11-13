@@ -10,17 +10,20 @@ vi.mock("../../db/provider-data-deletion.ts", async (importOriginal) => {
   return { ...actual, getProviderDataGenerations: resolveProviderDataGenerationsForTest };
 });
 
-const { metricStreamReplacementCalls, replaceMetricStreamBatchCalls } = vi.hoisted<{
-  metricStreamReplacementCalls: Array<{ scope: unknown; rows: unknown[] }>;
-  replaceMetricStreamBatchCalls: Array<{
-    scope: unknown;
-    metricRows: unknown[];
-    sourceType: unknown;
-  }>;
-}>(() => ({
-  metricStreamReplacementCalls: [],
-  replaceMetricStreamBatchCalls: [],
-}));
+const { metricStreamReplacementCalls, replaceMetricStreamBatchCalls, publishedMetricRows } =
+  vi.hoisted<{
+    publishedMetricRows: unknown[];
+    metricStreamReplacementCalls: Array<{ scope: unknown; rows: unknown[] }>;
+    replaceMetricStreamBatchCalls: Array<{
+      scope: unknown;
+      metricRows: unknown[];
+      sourceType: unknown;
+    }>;
+  }>(() => ({
+    publishedMetricRows: [],
+    metricStreamReplacementCalls: [],
+    replaceMetricStreamBatchCalls: [],
+  }));
 
 vi.mock("../../db/token-user-context.ts", () => ({
   getTokenUserId: () => "00000000-0000-0000-0000-000000000001",
@@ -29,7 +32,10 @@ vi.mock("../../db/token-user-context.ts", () => ({
 
 vi.mock("../../metric-stream/redpanda-producer.ts", () => ({
   getDefaultMetricStreamEventPublisher: async () => ({
-    publishRows: async (rows: readonly unknown[]) => rows,
+    publishRows: async (rows: readonly unknown[]) => {
+      publishedMetricRows.push(...rows);
+      return rows;
+    },
     replaceRows: async (_scope: unknown, rows: readonly unknown[]) => {
       metricStreamReplacementCalls.push({ scope: _scope, rows: [...rows] });
       return {
@@ -63,6 +69,7 @@ vi.mock("../../db/metric-stream-writer.ts", async (importOriginal) => {
 });
 
 afterEach(() => {
+  publishedMetricRows.length = 0;
   metricStreamReplacementCalls.length = 0;
   replaceMetricStreamBatchCalls.length = 0;
 });
@@ -1002,6 +1009,157 @@ describe("runImport", () => {
     expect(spies.deleteFn).toHaveBeenCalled();
   });
 
+  it("routes all running quantities from XML through file stream replacement", async () => {
+    const xmlPath = join(tmpDir, "running-import.xml");
+    const quantities = [
+      ["RunningSpeed", "km/hr", "18"],
+      ["RunningPower", "W", "250.5"],
+      ["RunningStrideLength", "cm", "125"],
+      ["RunningGroundContactTime", "s", "0.245"],
+      ["RunningVerticalOscillation", "cm", "7.5"],
+    ];
+    writeFileSync(
+      xmlPath,
+      `<HealthData>${quantities
+        .map(
+          ([suffix, unit, value]) =>
+            `<Record type="HKQuantityTypeIdentifier${suffix}" sourceName="Apple Watch" unit="${unit}" value="${value}" startDate="2026-10-28 10:00:00 +0000" endDate="2026-10-28 10:00:01 +0000"/>`,
+        )
+        .join("")}</HealthData>`,
+    );
+    const { db } = createRunImportMockDb();
+    const result = await runImport(db, "apple_health", xmlPath, new Date("2024-01-01"));
+    expect(result.errors).toEqual([]);
+    expect(result.recordsSynced).toBe(5);
+    expect(replaceMetricStreamBatchCalls).toHaveLength(1);
+    expect(metricStreamReplacementCalls).toHaveLength(1);
+    expect(publishedMetricRows).toEqual([
+      expect.objectContaining({
+        channel: "speed",
+        scalar: 5,
+        deviceId: "Apple Watch",
+        sourceType: "file",
+      }),
+      expect.objectContaining({ channel: "power", scalar: 250.5 }),
+      expect.objectContaining({ channel: "stride_length", scalar: 1.25 }),
+      expect.objectContaining({ channel: "ground_contact_time", scalar: 245 }),
+      expect.objectContaining({ channel: "vertical_oscillation", scalar: 75 }),
+    ]);
+  });
+
+  it.each(
+    [
+      "RunningSpeed",
+      "RunningPower",
+      "RunningStrideLength",
+      "RunningGroundContactTime",
+      "RunningVerticalOscillation",
+    ].flatMap((suffix) => [
+      { suffix, unit: "missing", unitAttribute: "" },
+      { suffix, unit: "kg", unitAttribute: 'unit="kg"' },
+    ]),
+  )("preserves existing data when $suffix has unit $unit", async ({ suffix, unitAttribute }) => {
+    const xmlPath = join(tmpDir, "invalid-running-unit.xml");
+    writeFileSync(
+      xmlPath,
+      `<HealthData>
+      <Record type="HKQuantityTypeIdentifierHeartRate" unit="count/min" value="72" startDate="2026-10-28 10:00:00 +0000"/>
+      <Record type="HKQuantityTypeIdentifierDietaryProtein" unit="g" value="20" startDate="2026-10-28 10:00:00 +0000"/>
+      <Record type="HKQuantityTypeIdentifier${suffix}" ${unitAttribute} value="3" startDate="2026-10-28 10:00:00 +0000"/>
+    </HealthData>`,
+    );
+    const { db, spies } = createRunImportMockDb();
+    const result = await runImport(db, "apple_health", xmlPath, new Date("2024-01-01"));
+
+    expect(result.errors).toEqual([
+      expect.objectContaining({ message: expect.stringMatching(/Unsupported unit.*Expected/) }),
+    ]);
+    expect(result.recordsSynced).toBe(0);
+    expect(replaceMetricStreamBatchCalls).toEqual([]);
+    expect(metricStreamReplacementCalls).toEqual([]);
+    expect(publishedMetricRows).toEqual([]);
+    expect(spies.deleteFn).not.toHaveBeenCalled();
+    expect(spies.insertFn).not.toHaveBeenCalled();
+    expect(spies.execute).not.toHaveBeenCalled();
+  });
+
+  it("validates later XML batches before replacing any existing data", async () => {
+    const xmlPath = join(tmpDir, "late-invalid-running-unit.xml");
+    const validRecord =
+      '<Record type="HKQuantityTypeIdentifierHeartRate" sourceName="Watch" unit="count/min" value="72" startDate="2026-10-28 10:00:00 +0000"/>';
+    writeFileSync(
+      xmlPath,
+      `<HealthData>${validRecord.repeat(5000)}
+      <Record type="HKQuantityTypeIdentifierRunningSpeed" unit="kg" value="3" startDate="2026-10-28 10:00:00 +0000"/>
+    </HealthData>`,
+    );
+    const { db, spies } = createRunImportMockDb();
+    const result = await runImport(db, "apple_health", xmlPath, new Date("2024-01-01"));
+
+    expect(result.errors).toEqual([
+      expect.objectContaining({ message: expect.stringMatching(/Unsupported unit.*Expected/) }),
+    ]);
+    expect(result.recordsSynced).toBe(0);
+    expect(replaceMetricStreamBatchCalls).toEqual([]);
+    expect(metricStreamReplacementCalls).toEqual([]);
+    expect(publishedMetricRows).toEqual([]);
+    expect(spies.deleteFn).not.toHaveBeenCalled();
+    expect(spies.insertFn).not.toHaveBeenCalled();
+    expect(spies.execute).not.toHaveBeenCalled();
+  });
+
+  it("excludes invalid running units before since while importing native units at the boundary", async () => {
+    const xmlPath = join(tmpDir, "running-unit-since.xml");
+    writeFileSync(
+      xmlPath,
+      `<HealthData>
+      <Record type="HKQuantityTypeIdentifierRunningSpeed" unit="kg" value="3" startDate="2024-01-01 09:59:59 +0000"/>
+      <Record type="HKQuantityTypeIdentifierRunningSpeed" unit="m/s" value="3.5" startDate="2024-01-01 10:00:00 +0000"/>
+      <Record type="HKQuantityTypeIdentifierRunningPower" unit="W" value="250" startDate="2024-01-01 10:00:00 +0000"/>
+      <Record type="HKQuantityTypeIdentifierRunningStrideLength" unit="m" value="1.25" startDate="2024-01-01 10:00:00 +0000"/>
+      <Record type="HKQuantityTypeIdentifierRunningGroundContactTime" unit="ms" value="245" startDate="2024-01-01 10:00:00 +0000"/>
+      <Record type="HKQuantityTypeIdentifierRunningVerticalOscillation" unit="mm" value="75" startDate="2024-01-01 10:00:00 +0000"/>
+    </HealthData>`,
+    );
+    const { db } = createRunImportMockDb();
+    const result = await runImport(db, "apple_health", xmlPath, new Date("2024-01-01T10:00:00Z"));
+
+    expect(result.errors).toEqual([]);
+    expect(result.recordsSynced).toBe(5);
+    expect(replaceMetricStreamBatchCalls).toHaveLength(1);
+    expect(metricStreamReplacementCalls).toHaveLength(1);
+    expect(publishedMetricRows).toEqual([
+      expect.objectContaining({ channel: "speed", scalar: 3.5 }),
+      expect.objectContaining({ channel: "power", scalar: 250 }),
+      expect.objectContaining({ channel: "stride_length", scalar: 1.25 }),
+      expect.objectContaining({ channel: "ground_contact_time", scalar: 245 }),
+      expect.objectContaining({ channel: "vertical_oscillation", scalar: 75 }),
+    ]);
+  });
+
+  it.each(["Infinity", "-Infinity", "1e309", "-1e309"])(
+    "skips nonfinite XML quantity %s while publishing valid records",
+    async (value) => {
+      const xmlPath = join(tmpDir, "nonfinite-import.xml");
+      writeFileSync(
+        xmlPath,
+        `<HealthData>${[value, "250.5"]
+          .map(
+            (quantity) =>
+              `<Record type="HKQuantityTypeIdentifierRunningPower" sourceName="Apple Watch" unit="W" value="${quantity}" startDate="2026-10-28 10:00:00 +0000" endDate="2026-10-28 10:00:01 +0000"/>`,
+          )
+          .join("")}</HealthData>`,
+      );
+      const { db } = createRunImportMockDb();
+      const result = await runImport(db, "apple_health", xmlPath, new Date("2024-01-01"));
+      expect(result.errors).toEqual([]);
+      expect(result.recordsSynced).toBe(1);
+      expect(publishedMetricRows).toEqual([
+        expect.objectContaining({ channel: "power", scalar: 250.5 }),
+      ]);
+    },
+  );
+
   it("imports heart rate records from XML", async () => {
     const xmlPath = join(tmpDir, "hr-import.xml");
     writeFileSync(
@@ -1462,6 +1620,20 @@ describe("runImport (control-flow mutation killers)", () => {
 
     const firstMetricRecord = { type: "metric.type", marker: "first" };
     const secondMetricRecord = { type: "metric.type", marker: "second" };
+    const runningRecords = (
+      [
+        ["RunningSpeed", "m/s"],
+        ["RunningPower", "W"],
+        ["RunningStrideLength", "m"],
+        ["RunningGroundContactTime", "ms"],
+        ["RunningVerticalOscillation", "mm"],
+      ] as const
+    ).map(([suffix, unit]) => ({
+      type: `HKQuantityTypeIdentifier${suffix}`,
+      marker: suffix,
+      unit,
+      value: 1,
+    }));
     const bodyRecord = { type: "body.type", marker: "body" };
     const upsertMetricStreamBatch = vi.fn().mockResolvedValue(1);
     const upsertBodyMeasurementBatch = vi.fn().mockResolvedValue(1);
@@ -1469,7 +1641,10 @@ describe("runImport (control-flow mutation killers)", () => {
     const aggregateSkinTempToDailyMetrics = vi.fn().mockResolvedValue(undefined);
 
     vi.doMock("./db-insertion.ts", () => ({
-      METRIC_STREAM_TYPES: { "metric.type": true },
+      METRIC_STREAM_TYPES: {
+        "metric.type": true,
+        ...Object.fromEntries(runningRecords.map((record) => [record.type, true])),
+      },
       BODY_MEASUREMENT_TYPES: new Set(["body.type"]),
       DAILY_METRIC_TYPES: new Set(["daily.type"]),
       NUTRITION_TYPES: { "nutrition.type": true },
@@ -1494,7 +1669,7 @@ describe("runImport (control-flow mutation killers)", () => {
             onRecordBatch: (records: Array<{ type: string; marker: string }>) => Promise<void>;
           },
         ) => {
-          await handlers.onRecordBatch([firstMetricRecord]);
+          await handlers.onRecordBatch([firstMetricRecord, ...runningRecords]);
           await handlers.onRecordBatch([bodyRecord]);
           await handlers.onRecordBatch([secondMetricRecord]);
           return { recordCount: 3, workoutCount: 0, sleepCount: 0, categoryCount: 0 };
@@ -1518,7 +1693,7 @@ describe("runImport (control-flow mutation killers)", () => {
     expect(upsertMetricStreamBatch).toHaveBeenCalledWith(
       db,
       "apple_health",
-      [firstMetricRecord],
+      [firstMetricRecord, ...runningRecords],
       expect.objectContaining({ providerId: "apple_health" }),
       undefined,
     );

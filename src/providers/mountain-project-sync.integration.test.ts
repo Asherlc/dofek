@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { eq, sql } from "drizzle-orm";
 import { HttpResponse, http } from "msw";
-import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { activity } from "../db/schema/activity.ts";
@@ -24,6 +23,7 @@ import {
   createAccountErasureWorkLockPool,
   runQueuedUserWorkUnlessAccountErasing,
 } from "../jobs/account-erasure-work-guard.ts";
+import { createIntegrationMswFixture } from "../test/early-msw-lifecycle.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import { MountainProjectProvider } from "./mountain-project.ts";
 import { SyncRun } from "./sync-run.ts";
@@ -33,7 +33,7 @@ const fixtureCsv = readFileSync(
   join(import.meta.dirname, "fixtures/mountain-project-ticks.csv"),
   "utf8",
 );
-const server = setupServer();
+const server = createIntegrationMswFixture();
 const exportUrl = "https://www.mountainproject.com/user/110186720/ticks/tick-export";
 
 describe("MountainProjectProvider canonical persistence", () => {
@@ -41,7 +41,7 @@ describe("MountainProjectProvider canonical persistence", () => {
   let currentExport: string;
   beforeAll(async () => {
     ctx = await setupTestDatabase();
-    server.listen({ onUnhandledRequest: failOnUnhandledExternalRequest });
+    server.activate({ onUnhandledFrame: failOnUnhandledExternalRequest });
     await ensureProvider(
       ctx.db,
       "mountain-project",
@@ -69,7 +69,7 @@ describe("MountainProjectProvider canonical persistence", () => {
     await ctx.db.delete(area);
   });
   afterAll(async () => {
-    server.close();
+    server.deactivate();
     await ctx.cleanup();
   });
   function run() {
@@ -654,26 +654,36 @@ describe("MountainProjectProvider canonical persistence", () => {
     ]);
   });
 
-  it("rejects an Aid route tick without a method and preserves the prior import", async () => {
+  it("imports an Aid route tick with an unknown method while refreshing existing records", async () => {
     currentExport = fixtureCsv;
     serve();
     await expect(run()).resolves.toMatchObject({ recordsSynced: 3, errors: [] });
     const previous = await records();
-    const previousAttempts = await ctx.db.select().from(climbingAttempt);
     currentExport = [
       fixtureCsv.split("\n")[0],
       fixtureCsv.split("\n")[1]?.replace("placeholder note", "Updated source note"),
       "2026-08-10,Aid route,5.10 A2,,https://www.mountainproject.com/route/123/aid-route,3,Crag,2,-1,Aid,Flash,Trad,5.9,,3000",
     ].join("\n");
-    await expect(run()).resolves.toMatchObject({
-      recordsSynced: 0,
-      errors: [
+    await expect(run()).resolves.toMatchObject({ recordsSynced: 2, errors: [] });
+    const refreshed = await records();
+    expect(refreshed).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ log: expect.objectContaining({ id: previous[0]?.log.id }) }),
         expect.objectContaining({
-          message: expect.stringMatching(/missing a rope method.*record.+source.+import/i),
+          log: expect.objectContaining({ raw: expect.objectContaining({ Route: "Aid route" }) }),
         }),
-      ],
-    });
-    expect(await records()).toEqual(previous);
-    expect(await ctx.db.select().from(climbingAttempt)).toEqual(previousAttempts);
+      ]),
+    );
+    const aid = refreshed.find(
+      (entry) => z.object({ Route: z.literal("Aid route") }).safeParse(entry.log.raw).success,
+    );
+    if (!aid) throw new Error("Expected imported Aid route");
+    const attempts = await ctx.db
+      .select()
+      .from(climbingAttempt)
+      .where(eq(climbingAttempt.climbingLogEntryId, aid.log.id));
+    expect(attempts).toEqual([
+      expect.objectContaining({ ropeMethod: null, sourceResult: "Flash" }),
+    ]);
   });
 });

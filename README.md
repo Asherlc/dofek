@@ -38,7 +38,7 @@ API and import providers ──> sync/import workers ──> Postgres (fitness.*
                                   │                       │
                                   │                       └─ PeerDB CDC
                                   │                              │
-High-volume sensor samples ──────┴─> Redpanda ────────────────> ClickHouse
+High-volume sensor samples ──────┴─> Kafka ────────────────────> ClickHouse
                                         │                         │
                                         └─> Cloudflare R2 archive │
                                                                   │
@@ -48,14 +48,17 @@ High-volume sensor samples ──────┴─> Redpanda ──────
 ```
 
 - Postgres owns relational application state and lower-volume raw health data.
-- High-volume `metric_stream` events bypass Postgres. Redpanda is the hot ingest
-  log, Cloudflare R2 is the durable archive, and ClickHouse is the
-  serving copy.
+- High-volume `metric_stream` events bypass Postgres. Kafka is the ingest log
+  with tiered storage in Cloudflare R2; ClickHouse is the serving copy. See the
+  [Kafka retention audit](deploy/kafka/retention-policy.md).
 - PeerDB mirrors lower-volume `fitness.*` tables into `postgres_fitness.*` in
   ClickHouse.
 - Incremental dbt models under `analytics/models/` produce expensive derived
-  analytics outside request paths. Derived sensor analytics are never written
-  back to Postgres.
+  analytics outside request paths. The serialized analytics worker also calls
+  the pure [`@dofek/cycling-power`](packages/cycling-power/README.md) algorithms
+  through its [bounded projector](src/analytics/README.md); dbt inputs precede
+  projection and dependent threshold/activity-power models follow it. Derived sensor analytics
+  are never written back to Postgres.
 - Express and tRPC serve both clients. BullMQ workers use Redis for scheduled
   syncs, imports, exports, post-sync work, and analytics cleanup.
 
@@ -178,6 +181,12 @@ Shared cross-client logic belongs in domain packages such as
 `@dofek/stats`, `@dofek/onboarding`, and `@dofek/providers`. Web and mobile
 clients render server-computed metric values rather than recomputing them.
 
+[`@dofek/climbing-catalogue`](packages/climbing-catalogue/README.md) is an
+independent public library for climbing route discovery and identity evidence.
+Dofek's [catalogue service](src/climbing-catalogue.ts) supplies application cache
+policy; [source composition](src/climbing-catalogue-sources.ts) supplies credentials
+and rate-limited transport.
+
 ## Data and Provider Contracts
 
 - Providers implement the interfaces in
@@ -244,6 +253,11 @@ release to the OCI host.
 Do not deploy production manually from this overview. Follow
 [`deploy/README.md`](deploy/README.md) for migration ordering, Infisical
 injection, health gates, rollback boundaries, and diagnostics.
+
+To check when production last deployed or why merged changes have not released,
+follow [Checking the Latest Production Deployment](deploy/README.md#checking-the-latest-production-deployment).
+Inspect Release Production's server job and correlate it with the running image; the procedure
+also checks whether automatic deployment is disabled.
 
 ## Documentation Policy
 

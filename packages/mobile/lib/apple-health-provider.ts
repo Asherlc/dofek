@@ -9,6 +9,8 @@ import {
   queryClinicalRecords,
   queryDailyStatistics,
   queryQuantitySamples,
+  queryRunningStepChanges,
+  queryRunningStepSamples,
   querySleepSamples,
   queryWorkoutRoutes,
   queryWorkouts,
@@ -19,14 +21,16 @@ import {
   isBackgroundHealthKitTransientNetworkError,
   isHealthKitDatabaseInaccessible,
 } from "./health-kit-errors";
-import {
-  type HealthKitAdapter,
-  type SyncOptions,
-  type SyncResult,
-  type SyncTrpcClient,
-  syncHealthKitObserverChanges,
-  syncHealthKitToServer,
-} from "./health-kit-sync";
+import { useHealthKitManualSync } from "./health-kit-manual-sync-context";
+import { syncHealthKitObserverChanges, syncHealthKitToServer } from "./health-kit-sync";
+import type {
+  HealthKitAdapter,
+  ManualHealthKitSyncContext,
+  SyncOptions,
+  SyncResult,
+  SyncTrpcClient,
+} from "./health-kit-sync-types";
+import { ManualHealthKitSyncInterruptedError } from "./health-kit-sync-types";
 import { captureException } from "./telemetry";
 
 export type AppleHealthRequestStatus = "unnecessary" | "shouldRequest" | "unavailable" | "unknown";
@@ -177,54 +181,80 @@ export class AppleHealthSyncService {
     this.#syncFunction = input.syncFunction ?? syncHealthKitToServer;
   }
 
-  async sync(options: {
+  /** Runs one resumable attempt without logging pauses or retryable interruptions. */
+  async syncManualCheckpointed(options: {
     syncRangeDays: number | null;
-    onProgress?: (message: string) => void;
     onStage?: SyncOptions["onStage"];
+    manualExecution: ManualHealthKitSyncContext;
   }): Promise<SyncResult> {
-    return this.#runAndRecordSync("manual", async () => {
-      const minimumSampleDate = await this.#loadDeviceErasureCutoff();
-      return this.#syncFunction({
-        trpcClient: this.#trpcClient,
-        healthKit: this.#healthKit,
-        syncRangeDays: options.syncRangeDays,
-        minimumSampleDate,
-        onProgress: options.onProgress,
-        onStage: options.onStage,
-      });
+    const minimumSampleDate = await this.#loadDeviceErasureCutoff();
+    return this.#syncFunction({
+      trpcClient: this.#trpcClient,
+      healthKit: this.#healthKit,
+      syncRangeDays: options.syncRangeDays,
+      minimumSampleDate,
+      onStage: options.onStage,
+      manualExecution: options.manualExecution,
+    });
+  }
+
+  /** Writes the single terminal log entry after the controller settles retries and pauses. */
+  async recordManualOutcome(
+    result: SyncResult | null,
+    error: unknown | null,
+    durationMs: number,
+  ): Promise<void> {
+    await this.#trpcClient.healthKitSync.recordSync.mutate({
+      status: error ? "error" : result?.errors.length ? "degraded" : "success",
+      recordCount: result ? result.inserted + result.deleted : 0,
+      durationMs,
+      ...(error ? { errorMessage: error instanceof Error ? error.message : String(error) } : {}),
+      ...(result?.errors.length ? { errorMessage: result.errors.join("; ") } : {}),
+      origin: "manual",
     });
   }
 
   async syncObserverChanges(options: {
     typeIdentifiers: readonly string[];
     onStage?: SyncOptions["onStage"];
+    assertCanContinue?: () => Promise<void>;
   }): Promise<SyncResult> {
-    return this.#runAndRecordSync("unknown", async () => {
-      const minimumSampleDate = await this.#loadDeviceErasureCutoff();
-      return syncHealthKitObserverChanges({
-        trpcClient: this.#trpcClient,
-        healthKit: this.#healthKit,
-        minimumSampleDate,
-        typeIdentifiers: options.typeIdentifiers,
-        onStage: options.onStage,
-      });
-    });
+    return this.#runAndRecordSync(
+      "unknown",
+      async () => {
+        const minimumSampleDate = await this.#loadDeviceErasureCutoff();
+        return syncHealthKitObserverChanges({
+          trpcClient: this.#trpcClient,
+          healthKit: this.#healthKit,
+          minimumSampleDate,
+          typeIdentifiers: options.typeIdentifiers,
+          onStage: options.onStage,
+          assertCanContinue: options.assertCanContinue,
+        });
+      },
+      options.assertCanContinue,
+    );
   }
 
   async #runAndRecordSync(
-    origin: "manual" | "unknown",
+    origin: "unknown",
     operation: () => Promise<SyncResult>,
+    assertCanContinue?: () => Promise<void>,
   ): Promise<SyncResult> {
     const startedAt = Date.now();
     let result: SyncResult;
     try {
       result = await operation();
     } catch (error) {
-      const isExpectedBackgroundFailure =
-        origin === "unknown" && isBackgroundHealthKitTransientNetworkError(error);
+      await assertCanContinue?.();
+      if (error instanceof ManualHealthKitSyncInterruptedError) {
+        throw error;
+      }
+      const isExpectedBackgroundFailure = isBackgroundHealthKitTransientNetworkError(error);
       if (!isHealthKitDatabaseInaccessible(error) && !isExpectedBackgroundFailure) {
         captureException(error, { source: "apple-health-sync", origin });
       }
+      await assertCanContinue?.();
       try {
         await this.#trpcClient.healthKitSync.recordSync.mutate({
           status: "error",
@@ -239,6 +269,7 @@ export class AppleHealthSyncService {
       throw error;
     }
 
+    await assertCanContinue?.();
     try {
       await this.#trpcClient.healthKitSync.recordSync.mutate({
         status: result.errors.length > 0 ? "degraded" : "success",
@@ -257,16 +288,13 @@ export class AppleHealthSyncService {
 export class AppleHealthProviderModel {
   readonly authorizationState: AppleHealthAuthorizationState;
   #authorizationService: AppleHealthAuthorizationService;
-  #syncService: AppleHealthSyncService;
 
   constructor(input: {
     authorizationState: AppleHealthAuthorizationState;
     authorizationService: AppleHealthAuthorizationService;
-    syncService: AppleHealthSyncService;
   }) {
     this.authorizationState = input.authorizationState;
     this.#authorizationService = input.authorizationService;
-    this.#syncService = input.syncService;
   }
 
   toProviderCard(syncStatus?: AppleHealthSyncStatus): AppleHealthProviderCard {
@@ -305,19 +333,10 @@ export class AppleHealthProviderModel {
   connect(): Promise<AppleHealthPermissionRequestResult> {
     return this.#authorizationService.requestPermissions();
   }
-
-  sync(options: {
-    syncRangeDays: number | null;
-    onProgress?: (message: string) => void;
-  }): Promise<SyncResult> {
-    return this.#syncService.sync(options);
-  }
 }
 
 export interface UseAppleHealthProviderModelOptions {
-  trpcClient: AppleHealthTrpcClient;
   authorizationService?: AppleHealthAuthorizationService;
-  syncService?: AppleHealthSyncService;
   enabled?: boolean;
   onAuthorizationError?: (error: unknown) => void;
 }
@@ -327,10 +346,7 @@ export interface UseAppleHealthProviderModelResult {
   model: AppleHealthProviderModel;
   refreshAuthorizationState(): Promise<AppleHealthAuthorizationState>;
   connect(): Promise<AppleHealthPermissionRequestResult>;
-  sync(options: {
-    syncRangeDays: number | null;
-    onProgress?: (message: string) => void;
-  }): Promise<SyncResult>;
+  sync(options: { syncRangeDays: number | null }): Promise<SyncResult>;
 }
 
 export function useAppleHealthProviderModel(
@@ -338,19 +354,15 @@ export function useAppleHealthProviderModel(
 ): UseAppleHealthProviderModelResult {
   const {
     authorizationService: inputAuthorizationService,
-    syncService: inputSyncService,
-    trpcClient,
     enabled = true,
     onAuthorizationError,
   } = options;
+  const contextualManualSync = useHealthKitManualSync().controller;
+  const manualSyncController = contextualManualSync;
   const authorizationErrorHandlerRef = useRef(onAuthorizationError);
   const authorizationService = useMemo(
     () => inputAuthorizationService ?? new AppleHealthAuthorizationService(),
     [inputAuthorizationService],
-  );
-  const syncService = useMemo(
-    () => inputSyncService ?? new AppleHealthSyncService({ trpcClient }),
-    [inputSyncService, trpcClient],
   );
   const [authorizationState, setAuthorizationState] = useState(() =>
     AppleHealthAuthorizationState.unknown(),
@@ -387,9 +399,8 @@ export function useAppleHealthProviderModel(
       new AppleHealthProviderModel({
         authorizationState,
         authorizationService,
-        syncService,
       }),
-    [authorizationState, authorizationService, syncService],
+    [authorizationState, authorizationService],
   );
 
   const connect = useCallback(async () => {
@@ -399,9 +410,13 @@ export function useAppleHealthProviderModel(
   }, [model]);
 
   const sync = useCallback(
-    (syncOptions: { syncRangeDays: number | null; onProgress?: (message: string) => void }) =>
-      model.sync(syncOptions),
-    [model],
+    (syncOptions: { syncRangeDays: number | null }) => {
+      if (!manualSyncController) {
+        return Promise.reject(new Error("Apple Health sync is unavailable for this account."));
+      }
+      return manualSyncController.start(syncOptions.syncRangeDays);
+    },
+    [manualSyncController],
   );
 
   return {
@@ -429,6 +444,8 @@ export const defaultAppleHealthAdapter: HealthKitAdapter = {
   queryDailyStatistics,
   queryQuantitySamples,
   queryWorkouts,
+  queryRunningStepSamples,
+  queryRunningStepChanges,
   querySleepSamples,
   queryWorkoutRoutes,
 };

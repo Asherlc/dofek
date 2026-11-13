@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { formatDateTime } from "@dofek/format/format";
 import { UnitConverter } from "@dofek/format/units";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { init, setPlatformAPI } from "echarts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { StreamPoint } from "../../../../../server/src/routers/activity.ts";
@@ -11,19 +11,27 @@ import { ElevationChart, MetricsChart } from "./ActivityDetailCharts.tsx";
 const captured = vi.hoisted(() => {
   const option: Record<string, unknown> = {};
   const events: Record<string, (params: Record<string, unknown>) => void> = {};
-  return { option, events };
+  const replaceMerge: string[] = [];
+  return { option, events, notMerge: true, renders: 0, replaceMerge };
 });
 
 vi.mock("echarts-for-react", () => ({
   default: ({
     option,
     onEvents,
+    notMerge,
+    replaceMerge,
   }: {
     option: Record<string, unknown>;
     onEvents: typeof captured.events;
+    notMerge: boolean;
+    replaceMerge?: string[];
   }) => {
+    captured.renders += 1;
     captured.option = option;
     captured.events = onEvents;
+    captured.notMerge = notMerge;
+    captured.replaceMerge = replaceMerge ?? [];
     return null;
   },
 }));
@@ -61,6 +69,269 @@ const args = {
   loading: false,
   units: new UnitConverter("metric"),
 };
+
+it("records drag zoom without rebuilding the metrics chart", () => {
+  const view = render(<MetricsChart {...args} />);
+  const renders = captured.renders;
+  act(() => captured.events.datazoom?.({ start: 25, end: 75 }));
+  expect(captured.renders).toBe(renders);
+  view.rerender(<MetricsChart {...args} highlightedClimbId="first" />);
+  expect(captured.option.dataZoom).toEqual(
+    expect.arrayContaining([expect.objectContaining({ start: 25, end: 75 })]),
+  );
+});
+
+it("selects annotation IDs from line and range clicks, including repeated names", () => {
+  const onSelectClimb = vi.fn();
+  render(
+    <MetricsChart
+      {...args}
+      onSelectClimb={onSelectClimb}
+      climbAnnotations={[
+        { id: "first", label: "Same route", startedAt: points[0].recordedAt, endedAt: null },
+        { id: "repeat", label: "Same route", startedAt: points[1].recordedAt, endedAt: null },
+        {
+          id: "range",
+          label: "Timed route",
+          startedAt: points[0].recordedAt,
+          endedAt: points[1].recordedAt,
+        },
+      ]}
+    />,
+  );
+  const series = captured.option.series;
+  if (!Array.isArray(series)) throw new Error("Expected series");
+  act(() =>
+    captured.events.click?.({ componentType: "markLine", data: series[0].markLine.data[1] }),
+  );
+  expect(onSelectClimb).toHaveBeenLastCalledWith("repeat");
+  act(() =>
+    captured.events.click?.({ componentType: "markArea", data: series[0].markArea.data[0][0] }),
+  );
+  expect(onSelectClimb).toHaveBeenLastCalledWith("range");
+  onSelectClimb.mockClear();
+  act(() => captured.events.click?.({ componentType: "series", data: series[0].data[0] }));
+  expect(onSelectClimb).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: /Timed route/ }));
+  expect(onSelectClimb).toHaveBeenLastCalledWith("range");
+});
+
+it("expands zoom only enough to reveal a selected climb and updates existing chart elements", () => {
+  const climbAnnotations = [
+    { id: "first", label: "First", startedAt: points[0].recordedAt, endedAt: null },
+    { id: "middle", label: "Middle", startedAt: "2026-10-18T17:30:30Z", endedAt: null },
+    {
+      id: "range",
+      label: "Range",
+      startedAt: "2026-10-18T17:30:45Z",
+      endedAt: points[1].recordedAt,
+    },
+  ];
+  const view = render(<MetricsChart {...args} climbAnnotations={climbAnnotations} />);
+  act(() => captured.events.datazoom?.({ start: 25, end: 75 }));
+  view.rerender(
+    <MetricsChart {...args} climbAnnotations={climbAnnotations} selectedClimbId="middle" />,
+  );
+  expect(captured.option.dataZoom).toEqual(
+    expect.arrayContaining([expect.objectContaining({ start: 25, end: 75 })]),
+  );
+  view.rerender(
+    <MetricsChart {...args} climbAnnotations={climbAnnotations} selectedClimbId="first" />,
+  );
+  expect(captured.option.dataZoom).toEqual(
+    expect.arrayContaining([expect.objectContaining({ start: 0, end: 75 })]),
+  );
+  view.rerender(
+    <MetricsChart {...args} climbAnnotations={climbAnnotations} selectedClimbId="range" />,
+  );
+  expect(captured.option.dataZoom).toEqual(
+    expect.arrayContaining([expect.objectContaining({ start: 0, end: 100 })]),
+  );
+  expect(captured.notMerge).toBe(false);
+  expect(captured.replaceMerge).toEqual(["series"]);
+  const series = captured.option.series;
+  if (!Array.isArray(series)) throw new Error("Expected series");
+  expect(series[0].markLine.animation).toBe(false);
+  expect(series[0].markArea.animation).toBe(false);
+});
+
+it("retains climbs at activity boundaries outside the HR sample range", () => {
+  render(
+    <MetricsChart
+      {...args}
+      activityWindow={{ startedAt: "2026-10-18T17:29:57Z", endedAt: "2026-10-18T17:31:05Z" }}
+      climbAnnotations={[
+        { id: "first", label: "First climb", startedAt: "2026-10-18T17:29:57Z", endedAt: null },
+        { id: "last", label: "Last climb", startedAt: "2026-10-18T17:31:05Z", endedAt: null },
+      ]}
+    />,
+  );
+  expect(screen.getByText("Climbs (2)")).toBeDefined();
+  expect(screen.getByText(/First climb/)).toBeDefined();
+  expect(screen.getByText(/Last climb/)).toBeDefined();
+  expect(captured.option.xAxis).toMatchObject({
+    min: Date.parse("2026-10-18T17:29:57Z"),
+    max: Date.parse("2026-10-18T17:31:05Z"),
+  });
+  const series = captured.option.series;
+  if (!Array.isArray(series)) throw new Error("Expected chart series");
+  expect(series[0].markLine.data).toHaveLength(2);
+  expect(renderChartSvg().querySelectorAll('path[stroke="#a78bfa"]')).toHaveLength(2);
+  expect(series[0].data.map((sample: { value: [number, number | null] }) => sample.value)).toEqual([
+    [Date.parse(points[0].recordedAt), 140],
+    [Date.parse("2026-10-18T17:30:30Z"), null],
+    [Date.parse(points[1].recordedAt), 150],
+  ]);
+});
+
+it("plots server-provided HR context without extending other metrics", () => {
+  render(
+    <MetricsChart
+      {...args}
+      highlightedClimbId="first"
+      climbAnnotations={[
+        { id: "first", label: "First climb", startedAt: "2026-10-18T17:30:00Z", endedAt: null },
+        { id: "last", label: "Last climb", startedAt: "2026-10-18T17:31:00Z", endedAt: null },
+      ]}
+      heartRateContext={{
+        window: { startedAt: "2026-10-18T17:25:00Z", endedAt: "2026-10-18T17:36:00Z" },
+        points: [
+          { recordedAt: "2026-10-18T17:25:00Z", value: 90 },
+          { recordedAt: "2026-10-18T17:36:00Z", value: 100 },
+        ],
+      }}
+    />,
+  );
+  expect(captured.option.xAxis).toMatchObject({
+    min: Date.parse("2026-10-18T17:25:00Z"),
+    max: Date.parse("2026-10-18T17:36:00Z"),
+  });
+  const series = captured.option.series;
+  if (!Array.isArray(series)) throw new Error("Expected chart series");
+  expect(series[0].markLine.data[0]).toMatchObject({
+    name: "First climb",
+    lineStyle: { width: 3, type: "solid" },
+    label: { show: true },
+  });
+  expect(series[0].markLine.data[1].label.show).toBe(false);
+  expect(series[0].data[0].value).toEqual([Date.parse("2026-10-18T17:25:00Z"), 90]);
+  expect(series[0].data.at(-1).value).toEqual([Date.parse("2026-10-18T17:36:00Z"), 100]);
+  expect(series[1].data[0].value).toEqual([Date.parse(points[0].recordedAt), 200]);
+});
+
+it.each([false, true])(
+  "preserves user zoom while highlighting a climb (batched: %s)",
+  (batched) => {
+    const view = render(<MetricsChart {...args} />);
+    setPlatformAPI({ measureText: (text) => ({ width: text.length * 7 }) });
+    const chart = init(null, null, { renderer: "svg", ssr: true, width: 800, height: 380 });
+    try {
+      chart.setOption(captured.option);
+      chart.on("datazoom", (event) => {
+        if (typeof event === "object" && event !== null) captured.events.datazoom?.({ ...event });
+      });
+      act(() =>
+        chart.dispatchAction(
+          batched
+            ? { type: "dataZoom", batch: [{ start: 25, end: 75 }] }
+            : { type: "dataZoom", start: 25, end: 75 },
+        ),
+      );
+      view.rerender(<MetricsChart {...args} highlightedClimbId="first" />);
+      chart.setOption(captured.option, true);
+      expect(chart.getOption().dataZoom).toEqual([
+        expect.objectContaining({ start: 25, end: 75 }),
+        expect.objectContaining({ start: 25, end: 75 }),
+      ]);
+    } finally {
+      chart.dispose();
+    }
+  },
+);
+
+it("emphasizes only the active climb line or band and restores it on exit", () => {
+  const climbAnnotations = [
+    { id: "first", label: "First", startedAt: "2026-10-18T17:30:20Z", endedAt: null },
+    { id: "repeat", label: "Repeat", startedAt: "2026-10-18T17:30:40Z", endedAt: null },
+    {
+      id: "range",
+      label: "Range",
+      startedAt: "2026-10-18T17:30:00Z",
+      endedAt: "2026-10-18T17:30:30Z",
+    },
+  ];
+  const view = render(
+    <MetricsChart {...args} climbAnnotations={climbAnnotations} highlightedClimbId="repeat" />,
+  );
+  const hrSeries = () => {
+    const series = captured.option.series;
+    if (!Array.isArray(series)) throw new Error("Expected chart series");
+    return series[0];
+  };
+  expect(hrSeries().markLine.data[1]).toMatchObject({
+    lineStyle: { width: 3, type: "solid" },
+    label: { show: true, formatter: "Repeat" },
+  });
+  expect(hrSeries().markLine.data[0].label.show).toBe(false);
+  expect(renderChartSvg().documentElement.textContent).toContain("Repeat");
+  view.rerender(
+    <MetricsChart {...args} climbAnnotations={climbAnnotations} highlightedClimbId="range" />,
+  );
+  expect(hrSeries().markArea.data[0][0]).toMatchObject({
+    itemStyle: { color: "rgba(167,139,250,0.36)" },
+    label: { show: true, formatter: "Range" },
+  });
+  expect(hrSeries().markLine.data[1].lineStyle.width).toBe(1.5);
+  expect(renderChartSvg().documentElement.textContent).toContain("Range");
+  view.rerender(
+    <MetricsChart {...args} climbAnnotations={climbAnnotations} highlightedClimbId={null} />,
+  );
+  expect(hrSeries().markArea.data[0][0].label.show).toBe(false);
+  expect(hrSeries().markLine.data[1].label.show).toBe(false);
+  view.rerender(
+    <MetricsChart {...args} climbAnnotations={climbAnnotations} highlightedClimbId="no-timing" />,
+  );
+  expect(
+    hrSeries().markLine.data.every((line: { label: { show: boolean } }) => !line.label.show),
+  ).toBe(true);
+});
+
+it("overlays timed climbs on heart rate and exposes exact climb labels", () => {
+  render(
+    <MetricsChart
+      {...args}
+      activityType="climbing"
+      climbAnnotations={[
+        { id: "ascent", label: "Corner · V3", startedAt: "2026-10-18T17:30:20Z", endedAt: null },
+        {
+          id: "range",
+          label: "Arete · V4",
+          startedAt: "2026-10-18T17:29:00Z",
+          endedAt: "2026-10-18T17:30:40Z",
+        },
+        { id: "outside", label: "Outside", startedAt: "2026-10-18T17:32:00Z", endedAt: null },
+      ]}
+    />,
+  );
+  const series = captured.option.series;
+  if (!Array.isArray(series)) throw new Error("Expected chart series");
+  expect(series[0].markLine.tooltip.trigger).toBe("item");
+  expect(series[0].markArea.tooltip.trigger).toBe("item");
+  expect(series[0].markLine.data).toEqual([
+    expect.objectContaining({ name: "Corner · V3", xAxis: Date.parse("2026-10-18T17:30:20Z") }),
+  ]);
+  expect(series[0].markArea.data).toEqual([
+    [
+      expect.objectContaining({ name: "Arete · V4", xAxis: Date.parse(points[0].recordedAt) }),
+      { xAxis: Date.parse("2026-10-18T17:30:40Z") },
+    ],
+  ]);
+  expect(screen.getByText(/Corner · V3/)).toBeDefined();
+  expect(screen.getByText(/Arete · V4/)).toBeDefined();
+  expect(screen.queryByText(/Outside/)).toBeNull();
+  const svg = renderChartSvg();
+  expect(svg.querySelectorAll("path").length).toBeGreaterThan(0);
+});
 
 function customLegend({
   isVisible,

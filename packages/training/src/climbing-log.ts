@@ -1,7 +1,7 @@
+import { gpsCoordinatesSchema } from "@dofek/climbing-catalogue/geometry";
 import { z } from "zod";
 import { climbingBoardSchema, climbingWallAngleSchema } from "./climbing-experience.ts";
 import { gradeSystemSchema, isValidClimbingGrade } from "./climbing-grades.ts";
-import { gpsCoordinatesSchema } from "./gps-coordinates.ts";
 
 export const CLIMB_KINDS = ["boulder", "route", "summit"] as const;
 export const CLIMB_SETTINGS = ["indoor", "outdoor"] as const;
@@ -136,6 +136,7 @@ export const climbingAttemptSchema = z
 export const recordedClimbingAttemptSchema = z
   .strictObject({
     ...climbingAttemptFields,
+    sourceCompleted: z.boolean().nullable(),
     sourceResult: z
       .string()
       .refine((value) => value.trim().length > 0)
@@ -161,6 +162,14 @@ export function isClimbingLogActivity(activityType: string): boolean {
 }
 export type AttemptScope = z.infer<typeof attemptScopeSchema>;
 export type AttemptOutcome = z.infer<typeof attemptOutcomeSchema>;
+
+/** A board log can record a location independently of its globally shared problem. */
+export function climbingLogEntryAreaPath<TArea>(entry: {
+  areaPath?: readonly TArea[];
+  climb: { areaPath: readonly TArea[] } | null;
+}): readonly TArea[] {
+  return entry.areaPath ?? entry.climb?.areaPath ?? [];
+}
 
 const kayaColorSchema = z.union([
   recordedTextSchema,

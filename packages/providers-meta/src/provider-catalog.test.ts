@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { groupProviderEntries, providerFamily } from "./provider-catalog.ts";
+import { groupProviderEntries, providerCatalogEntry, providerFamily } from "./provider-catalog.ts";
+
+describe("BoardSesh catalog metadata", () => {
+  it("uses the email credential form", () => {
+    expect(providerCatalogEntry("boardsesh")).toMatchObject({
+      label: "BoardSesh",
+      credentialIdentifier: "email",
+    });
+  });
+});
 
 describe("providerFamily", () => {
   it("groups Garmin connection methods under one user-facing provider", () => {
@@ -59,19 +68,38 @@ describe("providerFamily", () => {
     ).toEqual([
       {
         kind: "family",
-        family: { id: "zepp", label: "Zepp" },
-        providers: [{ id: "amazfit-zepp" }, { id: "zos-app" }],
+        family: { id: "kaya", label: "Kaya" },
+        providers: [{ id: "kaya" }, { id: "kaya-export" }],
       },
       {
         kind: "family",
-        family: { id: "kaya", label: "Kaya" },
-        providers: [{ id: "kaya" }, { id: "kaya-export" }],
+        family: { id: "zepp", label: "Zepp" },
+        providers: [{ id: "amazfit-zepp" }, { id: "zos-app" }],
       },
     ]);
   });
 });
 
 describe("groupProviderEntries", () => {
+  it("sorts cards by display label, including family labels, without changing the input", () => {
+    const providers = [
+      { id: "amazfit-zepp" },
+      { id: "wahoo" },
+      { id: "zos-app" },
+      { id: "fatsecret" },
+      { id: "apple_health" },
+      { id: "eight-a" },
+      { id: "custom", label: "Body tracker" },
+    ];
+    const original = [...providers];
+    expect(
+      groupProviderEntries(providers).map((group) =>
+        group.kind === "family" ? group.family.id : group.provider.id,
+      ),
+    ).toEqual(["eight-a", "apple_health", "custom", "fatsecret", "wahoo", "zepp"]);
+    expect(providers).toEqual(original);
+  });
+
   it("creates one Garmin family and leaves a single Kaya method alone", () => {
     expect(
       groupProviderEntries([
@@ -86,8 +114,8 @@ describe("groupProviderEntries", () => {
         family: { id: "garmin", label: "Garmin" },
         providers: [{ id: "garmin" }, { id: "garmin-dump" }],
       },
-      { kind: "provider", provider: { id: "wahoo" } },
       { kind: "provider", provider: { id: "kaya-export" } },
+      { kind: "provider", provider: { id: "wahoo" } },
     ]);
   });
 });

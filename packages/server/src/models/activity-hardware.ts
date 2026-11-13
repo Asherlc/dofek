@@ -35,7 +35,7 @@ function pelotonEquipmentLabel(value: unknown): string | null {
   const code = text(value);
   if (code === null) return null;
   if (code === "home_bike_plus") return "Peloton Bike+";
-  if (code === "home_bike_v1" || code === "home_bike") return "Peloton Bike";
+  if (code === "bike" || code === "home_bike_v1" || code === "home_bike") return "Peloton Bike";
   return readable(code);
 }
 function reportedSourceLabel(value: unknown): string | null {

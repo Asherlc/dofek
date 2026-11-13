@@ -59,8 +59,6 @@ vi.mock("../PageSection.tsx", () => ({
 vi.mock("../QueryStatePanel.tsx", () => ({ QueryStatePanel: () => <div /> }));
 vi.mock("../SleepChart.tsx", () => ({ SleepChart: () => <div /> }));
 vi.mock("../SleepDataSourcesTable.tsx", () => ({ SleepDataSourcesTable: () => <div /> }));
-vi.mock("../SleepNeedCard.tsx", () => ({ SleepNeedCard: () => <div /> }));
-vi.mock("../SleepPerformanceCard.tsx", () => ({ SleepPerformanceCard: () => <div /> }));
 vi.mock("../SmoothedWeightChart.tsx", () => ({ SmoothedWeightChart: () => <div /> }));
 vi.mock("../StressChart.tsx", () => ({ StressChart: () => <div /> }));
 vi.mock("../TimeSeriesChart.tsx", () => ({ TimeSeriesChart: () => <div /> }));
@@ -162,10 +160,6 @@ vi.mock("../../lib/trpc.ts", () => {
       sleep: {
         latestStages: recordQuery("sleep.latestStages"),
         list: recordQuery("sleep.list"),
-      },
-      sleepNeed: {
-        calculateV2: recordQuery("sleepNeed.calculateV2"),
-        performance: recordQuery("sleepNeed.performance"),
       },
       stress: {
         scores: recordQuery("stress.scores"),

@@ -87,7 +87,7 @@ export class ActivityOverviewRepository extends BaseRepository {
     );
 
     const activityTypeFilter = input.activityType
-      ? "AND activity.canonical_type = {activityType:String}"
+      ? "AND coalesce(activity.primary_canonical_type, activity.canonical_type) = {activityType:String}"
       : "";
     const queryParams = {
       userId: this.userId,
@@ -181,7 +181,7 @@ export class ActivityOverviewRepository extends BaseRepository {
           WHERE activity.user_id = {userId:UUID}
             AND activity.activity_id IN {activityIds:Array(UUID)}
             AND activity.is_deleted = 0
-            AND activity.ended_at IS NOT NULL
+            AND (activity.ended_at IS NOT NULL OR activity.provider_type = 'climbing_log')
             AND activity_date >= toDate({previousWindowStart:String})
             AND activity_date < toDate({endDateExclusive:String})
             ${activityTypeFilter}`,
@@ -191,12 +191,12 @@ export class ActivityOverviewRepository extends BaseRepository {
         activityTypeRowSchema,
         `WITH ${activityDate} AS activity_date
           SELECT DISTINCT
-            activity.canonical_type AS canonical_type
+            coalesce(activity.primary_canonical_type, activity.canonical_type) AS canonical_type
           FROM analytics.deduped_activities AS activity FINAL
           WHERE activity.user_id = {userId:UUID}
             AND activity.activity_id IN {activityIds:Array(UUID)}
             AND activity.is_deleted = 0
-            AND activity.ended_at IS NOT NULL
+            AND (activity.ended_at IS NOT NULL OR activity.provider_type = 'climbing_log')
             AND activity_date >= toDate({currentWindowStart:String})
             AND activity_date < toDate({endDateExclusive:String})
           ORDER BY canonical_type ASC`,

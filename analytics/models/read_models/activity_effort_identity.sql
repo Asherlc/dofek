@@ -14,6 +14,9 @@
 
 WITH
 {% if activity_refresh_scoped %}
+{{ activity_refresh_scope_ctes() }}
+{% endif %}
+{% if activity_refresh_scoped %}
 scoped_source_ids AS MATERIALIZED (
     SELECT arrayJoin({{ activity_refresh_ids() }}) AS source_activity_id
     UNION DISTINCT

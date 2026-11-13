@@ -52,6 +52,21 @@ describe("validateImportArchive", () => {
     );
   });
 
+  it("distinguishes malformed archive input from unexpected filesystem failures", async () => {
+    await expect(validateImportArchive(await temporaryFile("not-a-zip"))).rejects.toMatchObject({
+      name: "ArchiveValidationError",
+      message: "Upload does not have a valid ZIP file signature",
+    });
+    await expect(
+      validateImportArchive(await temporaryFile(Buffer.from([0x50, 0x4b, 0x03, 0x04, 0]))),
+    ).rejects.toMatchObject({ name: "ArchiveValidationError" });
+    await expect(
+      validateImportArchive(join(tmpdir(), "missing-dofek-archive", "missing.zip")),
+    ).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
   it("rejects traversal entry paths", async () => {
     const archive = await zipBuffer("safe.txt");
     const unsafeArchive = Buffer.from(archive);
@@ -150,7 +165,10 @@ describe("validateImportArchive", () => {
     );
     await expect(
       validateWithMocks({ openError: new Error("central directory invalid") }),
-    ).rejects.toThrow("central directory invalid");
+    ).rejects.toMatchObject({
+      name: "ArchiveValidationError",
+      message: "central directory invalid",
+    });
     await expect(validateWithMocks({ omitZipFile: true })).rejects.toThrow(
       "ZIP archive could not be opened",
     );
@@ -158,7 +176,10 @@ describe("validateImportArchive", () => {
       validateWithMocks({
         entries: [{ fileName: "large.bin", uncompressedSize: 4 * 1024 * 1024 * 1024 + 1 }],
       }),
-    ).rejects.toThrow("maximum expanded size");
+    ).rejects.toMatchObject({
+      name: "ArchiveValidationError",
+      message: "ZIP archive exceeds the maximum expanded size",
+    });
     for (const unsafePath of ["/absolute/file", "C:/windows/file", "..", "../escape/file"]) {
       await expect(
         validateWithMocks({ entries: [{ fileName: unsafePath, uncompressedSize: 1 }] }),
@@ -166,6 +187,13 @@ describe("validateImportArchive", () => {
     }
     await expect(validateWithMocks({ parserError: new Error("parser failed") })).rejects.toThrow(
       "parser failed",
+    );
+    const filesystemFailure = Object.assign(new Error("disk read failed"), { code: "EIO" });
+    await expect(validateWithMocks({ openError: filesystemFailure })).rejects.toBe(
+      filesystemFailure,
+    );
+    await expect(validateWithMocks({ parserError: filesystemFailure })).rejects.toBe(
+      filesystemFailure,
     );
 
     vi.doUnmock("node:fs/promises");

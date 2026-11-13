@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
 import { NodeSDK } from "@opentelemetry/sdk-node";
-import { InMemorySpanExporter, SimpleSpanProcessor } from "@opentelemetry/sdk-trace-node";
+import { InMemorySpanExporter, SimpleSpanProcessor } from "@opentelemetry/sdk-trace";
 import { expect, it } from "vitest";
 import {
   type AccountErasureProcessorProgress,
@@ -37,7 +37,7 @@ it("keeps processor erasure URLs out of exported spans without disabling ordinar
   }
 
   const exporter = new InMemorySpanExporter();
-  const spanProcessor = new SimpleSpanProcessor(exporter);
+  const spanProcessor = new SimpleSpanProcessor({ exporter });
   const sdk = new NodeSDK({
     autoDetectResources: false,
     instrumentations,
@@ -52,12 +52,9 @@ it("keeps processor erasure URLs out of exported spans without disabling ordinar
       authIdentities: [],
       externalEffects: [],
       localIdentifiers: {
-        activityIds: [],
         exportObjects: [],
         fileUploads: [],
-        processingOperationIds: [],
         sessionIds: [],
-        sleepSessionIds: [],
         userId: "10000000-0000-4000-8000-000000001994",
       },
       posthogDistinctId: "10000000-0000-4000-8000-000000001994",

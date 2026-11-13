@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { ClimbingFilters } from "@dofek/training/climbing-filters";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { persistClimbingLogEntries } from "../../../../src/db/climbing-log-sync.ts";
@@ -93,6 +94,76 @@ describe("ClimbingProgressionRepository database semantics", () => {
   afterAll(async () => {
     await context?.cleanup();
   });
+
+  it.each([
+    { filters: {}, sessions: 2, entries: 1 },
+    { filters: { board: ["recorded", "not_recorded"] }, sessions: 2, entries: 1 },
+    { filters: { board: ["recorded"] }, sessions: 1, entries: 1 },
+    { filters: { board: ["not_recorded"] }, sessions: 0, entries: 0 },
+    { filters: { board: [] }, sessions: 0, entries: 0 },
+    {
+      filters: { board: ["recorded", "not_recorded"], setting: ["outdoor"] },
+      sessions: 0,
+      entries: 0,
+    },
+    {
+      filters: { board: ["recorded", "not_recorded"], setting: ["indoor"] },
+      sessions: 1,
+      entries: 1,
+    },
+  ] satisfies { filters: ClimbingFilters; sessions: number; entries: number }[])(
+    "retains unlogged sessions for unrestricted board choices and applies other filters $filters",
+    async ({ filters, sessions, entries }) => {
+      const fixtureProvider = `board-session-${randomUUID()}`;
+      const loggedActivity = randomUUID();
+      const unloggedActivity = randomUUID();
+      await context.db.execute(sql`INSERT INTO fitness.provider (id, name, user_id)
+        VALUES (${fixtureProvider}, ${fixtureProvider}, ${userId}::uuid)`);
+      await context.db.execute(sql`INSERT INTO fitness.activity
+        (id, group_id, provider_id, user_id, external_id, canonical_type, provider_type,
+          started_at, ended_at, raw)
+        VALUES
+          (${loggedActivity}::uuid, ${loggedActivity}::uuid, ${fixtureProvider}, ${userId}::uuid,
+            'logged', 'climbing', 'climbing', '2026-07-15T18:00:00Z', '2026-07-15T19:00:00Z', '{}'::jsonb),
+          (${unloggedActivity}::uuid, ${unloggedActivity}::uuid, ${fixtureProvider}, ${userId}::uuid,
+            'unlogged', 'climbing', 'climbing', '2026-07-15T20:00:00Z', '2026-07-15T21:00:00Z', '{}'::jsonb)`);
+      await persistClimbingLogEntries(context.db, {
+        userId,
+        providerId: fixtureProvider,
+        entries: [
+          {
+            externalId: "board-entry",
+            activityId: loggedActivity,
+            discipline: "rock_climbing",
+            board: { name: "Training Board", externalId: null },
+            climb: {
+              externalId: "board-climb",
+              kind: "boulder",
+              name: "Board climb",
+              setting: "indoor",
+              publishedGrades: [{ value: "V4", system: "v_scale" }],
+            },
+            attempts: [{ scope: "climb", sourceResult: "Send", qualifier: "free-send" }],
+          },
+        ],
+      });
+      const result = await new ClimbingProgressionRepository(context.db, userId, "UTC").listRange({
+        startDate: "2026-07-15",
+        endDate: "2026-07-15",
+        providers: [fixtureProvider],
+        filters,
+        locations: [],
+        gradeSystems: [],
+        cursor: null,
+        limit: 100,
+      });
+      expect(result.coverage).toMatchObject({ sessions, entries });
+      expect(result.sessions).toHaveLength(sessions);
+      expect(result.daily.map((day) => ({ sessions: day.sessions, entries: day.entries }))).toEqual(
+        sessions === 0 ? [{ sessions: null, entries: null }] : [{ sessions, entries }],
+      );
+    },
+  );
 
   it("deduplicates the canonical session and exact mirrored entry without inventing missing attempts", async () => {
     const result = await new ClimbingProgressionRepository(

@@ -3,8 +3,13 @@ import Foundation
 import PackageDescription
 
 let expoFiles = [
+    "BridgeTests",
+    "BridgeTestHost",
     "WhoopBleModule.swift",
     "WhoopBleModule+ConnectionManagerDelegate.swift",
+    "WhoopBleUploadAppDelegateSubscriber.swift",
+    "WhoopBleUploadRuntime.swift",
+    "WhoopURLSessionTransport.swift",
     "ExpoWhoopBle.podspec",
 ]
 let packageDirectory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()

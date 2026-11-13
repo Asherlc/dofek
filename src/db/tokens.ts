@@ -94,10 +94,15 @@ export async function ensureProvider(
 ): Promise<string> {
   const resolvedUserId = resolveUserId(userId);
   try {
+    // Take the user fence before the provider row, matching user-owned writes.
     await db.execute(
-      sql`WITH ensured_provider AS (
+      sql`WITH user_write_fence AS MATERIALIZED (
+            SELECT fitness.lock_and_reject_account_erasure_write(${resolvedUserId}::uuid)
+          ), ensured_provider AS (
             INSERT INTO fitness.provider (id, name, api_base_url, user_id)
-            VALUES (${id}, ${name}, ${apiBaseUrl ?? null}, NULL)
+            SELECT ${id}, ${name}, ${apiBaseUrl ?? null}, NULL
+            FROM user_write_fence
+            WHERE true
             ON CONFLICT (id) DO UPDATE
               SET name = EXCLUDED.name,
                   api_base_url = EXCLUDED.api_base_url

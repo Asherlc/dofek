@@ -41,8 +41,13 @@ export function TrainingVolumeChart(props: Props) {
                 ? null
                 : units.convertWeight(row.recordedVolumeKg),
         );
-  const unit =
-    metric === "time"
+  const showHoursMinutes =
+    props.sport === "climbing" &&
+    metric === "time" &&
+    values.some((value) => value != null && value >= 60);
+  const unit = showHoursMinutes
+    ? "h:mm"
+    : metric === "time"
       ? "minutes"
       : props.sport === "strength" && metric === "primary"
         ? units.weightLabel
@@ -76,7 +81,7 @@ export function TrainingVolumeChart(props: Props) {
       </View>
       {props.data.length ? (
         <>
-          <Text style={styles.text}>{unit} per week</Text>
+          <Text style={styles.text}>{showHoursMinutes ? "hours:minutes" : unit} per week</Text>
           <WeeklyVolumeBars
             weeks={props.data.map((row, index) => ({
               week: row.week,

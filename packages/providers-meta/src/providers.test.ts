@@ -163,14 +163,6 @@ describe("providerLogoType", () => {
   it("returns null for providers without logos", () => {
     expect(providerLogoType("ble_heart_rate")).toBeNull();
     expect(providerLogoType("unknown")).toBeNull();
-    expect(providerLogoType("ziva")).toBeNull();
-  });
-});
-
-describe("Ziva catalog metadata", () => {
-  it("uses the generic provider presentation without guessed branding", () => {
-    expect(BRAND_COLORS.ziva).toBeUndefined();
-    expect(providerLogoType("ziva")).toBeNull();
   });
 });
 

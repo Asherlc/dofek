@@ -67,6 +67,26 @@ type Story = StoryObj<typeof meta>;
 export const Default: Story = {};
 export const AppleHealth: Story = { args: { selectedId: watch.id } };
 export const Bluetooth: Story = { args: { selectedId: bluetooth.id } };
+export const InheritedViaPeloton: Story = {
+  args: {
+    selectedId: "peloton-copy",
+    sources: [
+      {
+        id: "peloton-copy",
+        label: "WHOOP via Peloton",
+        presentation: {
+          displayName: "WHOOP",
+          providerId: "whoop",
+          sourceName: null,
+          attribution: { kind: "provider", providerId: "peloton", label: "Peloton" },
+        },
+      },
+      cloud,
+      bluetooth,
+      watch,
+    ],
+  },
+};
 export const PelotonAndStrava: Story = {
   args: {
     label: "Power",
