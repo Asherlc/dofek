@@ -73,6 +73,7 @@ the exact section.
 |----------|-----|-------|
 | Climbing boards and exports | [climbing-providers.md](climbing-providers.md) | Kilter/Aurora accounts, Crimpd/8a.nu/historical MoonBoard files, field limits, and remaining vendor access. |
 | Climbing logbook APIs | [climbing-logbook-api-research.md](climbing-logbook-api-research.md) | Authenticated Crimpd checks, Vertical-Life access requirements, and current MoonBoard API/device/export evidence. |
+| BoardSesh | [boardsesh.md](boardsesh.md) | App authentication, live GraphQL sync probes, deletion retention, and account-verification gaps. |
 | Amazfit/Zepp | [src/providers/README.md](../src/providers/README.md#amazfitzepp) | Current US2 credential flow, API hosts, and account limitations. |
 | WHOOP | [whoop.md](whoop.md) | Internal auth, strength data, and raw IMU capture. |
 | WHOOP BLE | [whoop-ble-protocol.md](whoop-ble-protocol.md) | BLE protocol, frames, CRCs, and packet formats. |
