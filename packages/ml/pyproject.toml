@@ -18,7 +18,7 @@ training = [
     "torch>=2.13.0",
 ]
 matching = [
-    "btrees==6.4",
+    "btrees==6.5",
     "dedupe==3.0.3",
     "duckdb==2.0.0",
     "leuvenmapmatching==1.1.4",
