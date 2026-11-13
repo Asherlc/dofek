@@ -325,8 +325,6 @@ const mockRestoreResult = vi.fn<() => { analyticsJobId: string } | undefined>(()
 const mockRestoreStatus = vi.fn<
   () => { data: { status: "pending" | "completed"; error: null } | undefined; error: null }
 >(() => ({ data: undefined, error: null }));
-const mockRecomputeMutate = vi.fn();
-const mockRecomputeShouldFail = vi.fn(() => false);
 const mockRouterBack = vi.fn();
 const mockActivityByIdInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockActivityInvalidate = vi.fn().mockResolvedValue(undefined);
@@ -396,22 +394,8 @@ vi.mock("../../lib/trpc", () => ({
       powerWork: { useQuery: (...args: unknown[]) => mockPowerWorkQuery(...args) },
       strengthExercises: { useQuery: (...args: unknown[]) => mockStrengthExercisesQuery(...args) },
       hangboardDetails: { useQuery: (...args: unknown[]) => mockHangboardDetailsQuery(...args) },
-      recompute: {
-        useMutation: (options?: {
-          onSuccess?: () => Promise<void>;
-          onError?: (error: Error) => void;
-        }) => ({
-          mutate: (input: { id: string }) => {
-            mockRecomputeMutate(input);
-            if (mockRecomputeShouldFail()) {
-              options?.onError?.(new Error("Network unavailable"));
-              return;
-            }
-            void options?.onSuccess?.();
-          },
-          isPending: false,
-        }),
-      },
+      recompute: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
+      recomputeStatus: { useQuery: () => ({ data: undefined, error: null }) },
       delete: {
         useMutation: (options?: { onSuccess?: () => Promise<void> }) => ({
           mutate: (input: { id: string }) => {
@@ -687,9 +671,6 @@ beforeEach(() => {
   mockClimbingVolumeByGradeInvalidate.mockClear();
   mockHangboardDetailsQuery.mockClear();
   mockDeleteMutate.mockClear();
-  mockRecomputeMutate.mockClear();
-  mockRecomputeShouldFail.mockReset();
-  mockRecomputeShouldFail.mockReturnValue(false);
   mockActivityByIdInvalidate.mockClear();
   mockActivityInvalidate.mockClear();
   mockActivityStreamInvalidate.mockClear();
@@ -1652,51 +1633,6 @@ describe("ActivityDetailScreen", () => {
       if (error) expect(screen.getByText("Climbs unavailable")).toBeTruthy();
     },
   );
-
-  it("recomputes the activity and invalidates detail caches", async () => {
-    let finishByIdInvalidation: () => void = () => {};
-    const byIdInvalidation = new Promise<void>((resolve) => {
-      finishByIdInvalidation = resolve;
-    });
-    mockActivityByIdInvalidate.mockReturnValueOnce(byIdInvalidation);
-    const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
-    render(React.createElement(ActivityDetailScreen));
-
-    fireEvent.click(screen.getByText("Recompute"));
-
-    const activityId = "00000000-0000-0000-0000-000000000001";
-    expect(mockRecomputeMutate).toHaveBeenCalledWith({ id: activityId });
-    await waitFor(() => {
-      expect(mockActivityByIdInvalidate).toHaveBeenCalledWith({ id: activityId });
-    });
-    expect(mockActivityStreamInvalidate).toHaveBeenCalledWith({
-      id: activityId,
-      maxPoints: 200,
-    });
-    expect(mockActivityHrZonesInvalidate).toHaveBeenCalledWith({ id: activityId });
-    expect(mockActivityPowerZonesInvalidate).toHaveBeenCalledWith({ id: activityId });
-    expect(mockActivityStrengthExercisesInvalidate).toHaveBeenCalledWith({ id: activityId });
-    expect(mockActivityHangboardDetailsInvalidate).toHaveBeenCalledWith({ id: activityId });
-    expect(mockActivityListInvalidate).toHaveBeenCalled();
-    expect(mockCalendarWeekListInvalidate).toHaveBeenCalled();
-    expect(mockCalendarActivityOverviewInvalidate).toHaveBeenCalled();
-    expect(screen.getByText("Recomputing...")).toBeTruthy();
-    finishByIdInvalidation();
-    await waitFor(() => {
-      expect(screen.getByText("Recompute")).toBeTruthy();
-    });
-  });
-
-  it("reports recompute failures and shows the server error", async () => {
-    mockRecomputeShouldFail.mockReturnValue(true);
-    const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");
-    render(React.createElement(ActivityDetailScreen));
-
-    fireEvent.click(screen.getByText("Recompute"));
-
-    expect(captureException).toHaveBeenCalledWith(expect.any(Error));
-    expect(Alert.alert).toHaveBeenCalledWith("Recompute Failed", "Network unavailable");
-  });
 
   it("keeps previous stream and zone data visible while refetching", async () => {
     const { default: ActivityDetailScreen } = await import("../../app/activity/[id]");

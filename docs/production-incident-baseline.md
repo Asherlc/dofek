@@ -37615,3 +37615,10 @@ completed rollout, sustained net drain or catch-up ETA.
 [PR #3300](https://github.com/Asherlc/dofek/pull/3300) reported `codecov/patch` failure at 73.33333% with four uncovered added lines in [climbing-log-sync.ts](../src/db/climbing-log-sync.ts). The existing helper tests exercised observation results and restore SQL separately, but no unit case executed the public batch writer that collects observed identities and restores them once. This blocked merge qualification; no production impact was established.
 
 The added [batch-writer tests](../src/db/climbing-log-sync.test.ts) cover multiple observed logs alongside a user-selected activity, restoration after all writes, and propagation of a failed restore. Both retained regressions fail against the pre-change writer. The correction adds tests only; coverage thresholds, SQL, and runtime behavior remain unchanged. Matching-head combined coverage and CI remain the release gates. For future batching changes, test the caller that collects and dispatches the batch as well as its individual helpers.
+
+## 2026-11-13: Recompute PR spelling check blocked CI
+
+- Symptoms and impact: [PR #3301](https://github.com/Asherlc/dofek/pull/3301) remained unmergeable because its spelling check failed; no production impact was observed.
+- Evidence: [CI run 43465301919](https://github.com/Asherlc/dofek/actions/runs/43465301919) failed `Test / Spell Check` with an unknown-word diagnostic at `RecomputeActivityButton.test.tsx:97:66`. Lint, test, and CI aggregate gates propagated that failure; the actual lint, typecheck, unit, mobile, integration, and mutation jobs succeeded.
+- Root cause and fix: the button selector used a truncated word in its button-name pattern. It now explicitly matches both complete button-state words with `/^Recompute|^Recomputing/`; dictionaries and CI gates are unchanged.
+- Validation and remaining risk: the corrected test file passes CSpell with zero issues and Biome formatting, and the selector matches both idle and busy labels. Final matching-head CI is required before merge; no retry, timeout, or other resilience change was introduced.
