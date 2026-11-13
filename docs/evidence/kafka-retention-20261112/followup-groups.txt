@@ -1,0 +1,19 @@
+Fri Nov 13 03:01:03 UTC 2026
+
+GROUP                         TOPIC                                                    PARTITION  CURRENT-OFFSET  LOG-END-OFFSET  LAG             CONSUMER-ID                                                       HOST            CLIENT-ID
+metric-stream-clickhouse-sink metric-stream-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3 0          -               0               -               dofek-metric-stream-consumer-fdc2f411-46cf-47b0-9e08-aa9a16b2e9c3 /10.0.1.117     dofek-metric-stream-consumer
+
+GROUP                                 TOPIC                                                            PARTITION  CURRENT-OFFSET  LOG-END-OFFSET  LAG             CONSUMER-ID                                                       HOST            CLIENT-ID
+metric-stream-history-clickhouse-sink metric-stream-history-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3 0          5925097         7353960         1428863         dofek-metric-stream-consumer-ff13076f-b30a-433d-af6a-9a947abd265d /10.0.1.4       dofek-metric-stream-consumer
+
+GROUP                            TOPIC                                                            PARTITION  CURRENT-OFFSET  LOG-END-OFFSET  LAG             CONSUMER-ID                                           HOST            CLIENT-ID
+metric-stream-history-r2-archive metric-stream-history-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3 0          7353960         7353960         0               redpanda-connect-4f49ec60-b67a-4bee-8a7d-caa864b196c2 /10.0.1.4       redpanda-connect
+
+GROUP                              TOPIC                                                         PARTITION  CURRENT-OFFSET  LOG-END-OFFSET  LAG             CONSUMER-ID                                                       HOST            CLIENT-ID
+metric-stream-live-clickhouse-sink metric-stream-live-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3 0          8483651         10008885        1525234         dofek-metric-stream-consumer-72b99954-6e39-4005-8b79-22836a721593 /10.0.1.114     dofek-metric-stream-consumer
+
+GROUP                         TOPIC                                                         PARTITION  CURRENT-OFFSET  LOG-END-OFFSET  LAG             CONSUMER-ID                                           HOST            CLIENT-ID
+metric-stream-live-r2-archive metric-stream-live-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3 0          10008885        10008885        0               redpanda-connect-59042ad6-1575-4cef-addf-6a7690a207c3 /10.0.1.4       redpanda-connect
+
+GROUP                    TOPIC                                                    PARTITION  CURRENT-OFFSET  LOG-END-OFFSET  LAG             CONSUMER-ID                                           HOST            CLIENT-ID
+metric-stream-r2-archive metric-stream-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3 0          -               0               -               redpanda-connect-6f6755b3-1635-4c5c-819f-d45ba88f7eb6 /10.0.1.4       redpanda-connect

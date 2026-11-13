@@ -52,3 +52,27 @@ No health payloads, credentials, environment exports or standalone publisher
 stdin were included. Transport acceptance does not establish Axiom metrics
 query readback, which the existing token could not perform. Native remote reads
 do not establish RF1 disk-loss recovery or full JSONL archive restoration.
+
+## Shutdown follow-up release
+
+The [server follow-up](https://github.com/Asherlc/dofek/actions/runs/43349572540/job/131637412851)
+passed on `6ddbac5a32942167b9573712fb30fcf15194de0c` at November 13
+02:58:31 UTC. These later read-only receipts retain their observation times:
+
+- [Outgoing analytics stop](followup-analytics-stop.txt): Docker's unchanged
+  grace deadline stopped the older process; no manual signal was used.
+- [Restored services and allocation](followup-production-after.txt): selected
+  image/replica/health fields, broker continuity, disk allocation and free space.
+- [Analytics readiness](followup-analytics-health.json): a completed first cycle,
+  HTTP 200, status `ok` and no recorded failure.
+- [Consumer progress and backlog](followup-groups.txt): advancing commits,
+  remaining sink lag and zero lag for both nonempty source archive groups.
+- [Collector transport](followup-collector.txt): accepted/exported metric points
+  and receiver failures/refusals; stored metrics queries remain unqualified.
+
+The [matching signed archive](https://github.com/Asherlc/dofek/actions/runs/43349572540/job/131637457790)
+passed cold package resolution and archive/package/upload. Its full diagnostics
+remain in GitHub's masked log channel; raw signed-build log files or result
+bundles are not copied into this packet. The original failed fetch cause remains
+unknown. Matching TestFlight and OTA publication subsequently passed, and the
+complete canonical release succeeded. See the [incident conclusion](../../production-incident-baseline.md#november-13-utc-shutdown-follow-up-deployed-and-cold-archive-qualified).

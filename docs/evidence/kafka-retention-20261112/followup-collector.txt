@@ -1,0 +1,5 @@
+2026-11-13T03:00:50.111Z
+otelcol_exporter_sent_metric_points{exporter="otlphttp/metrics"} 103427
+otelcol_receiver_accepted_metric_points{receiver="otlp",transport="grpc"} 103427
+otelcol_receiver_failed_metric_points{receiver="otlp",transport="grpc"} 0
+otelcol_receiver_refused_metric_points{receiver="otlp",transport="grpc"} 0
