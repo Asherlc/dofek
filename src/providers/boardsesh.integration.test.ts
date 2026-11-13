@@ -55,6 +55,10 @@ describe("BoardSesh snapshot persistence", () => {
     | "invalid-date"
     | "variants"
     | "edited"
+    | "edited-send"
+    | "edited-attempt"
+    | "malformed-json"
+    | "malformed-refresh-json"
     | "auth-reject"
     | "auth-reject-always";
   let requestOrder: string[];
@@ -66,6 +70,10 @@ describe("BoardSesh snapshot persistence", () => {
     server.use(
       http.post(authUrl, () => {
         requestOrder.push("refresh");
+        if (mode === "malformed-refresh-json")
+          return HttpResponse.text("PVTQ7", {
+            headers: { "Content-Type": "application/json" },
+          });
         return HttpResponse.json({
           jwt: "rotated-access",
           refreshToken: "rotated-refresh",
@@ -98,6 +106,10 @@ describe("BoardSesh snapshot persistence", () => {
           });
         if (mode === "empty")
           return HttpResponse.json({ data: { authenticatedUserId: "owner-1", ticks: [] } });
+        if (mode === "malformed-json" && input.input?.boardType === "kilter")
+          return HttpResponse.text("PVTQ7", {
+            headers: { "Content-Type": "application/json" },
+          });
         let rows = input.input?.boardType === "kilter" ? [tick()] : [];
         if (input.input?.boardType === "kilter" && mode === "variants")
           rows = [
@@ -119,6 +131,10 @@ describe("BoardSesh snapshot persistence", () => {
           ];
         if (input.input?.boardType === "kilter" && mode === "edited")
           rows = [tick({ comment: "edited note" })];
+        if (input.input?.boardType === "kilter" && mode === "edited-send")
+          rows = [tick({ status: "send", attemptCount: 3 })];
+        if (input.input?.boardType === "kilter" && mode === "edited-attempt")
+          rows = [tick({ status: "attempt", attemptCount: 3 })];
         if (input.input?.boardType === "kilter" && mode === "invalid-date")
           rows = [tick({ climbedAt: "2026-02-31 10:00:00" })];
         if (mode === "wrong-owner") rows = [tick({ userId: "another-owner" })];
@@ -299,6 +315,119 @@ describe("BoardSesh snapshot persistence", () => {
     expect((await rows())[0]?.raw).toMatchObject({ comment: "edited note" });
     mode = "invalid-date";
     expect((await run()).errors).toHaveLength(1);
+    expect((await rows())[0]?.provider_absent_at).toBeNull();
+  });
+
+  it("replaces status-derived attempt facts when one tick changes from flash to send to attempt", async () => {
+    expect(await run()).toMatchObject({ errors: [], recordsSynced: 1 });
+    const describedAttempts = async () =>
+      context.db.execute(sql`
+        SELECT a.id, a.source_result, a.source_completed, a.attempt_index::int AS attempt_index,
+               a.received_beta, a.fell_or_hung, a.used_aid, a.dabbed
+        FROM fitness.climbing_attempt a
+        JOIN fitness.climbing_log_entry l ON l.id = a.climbing_log_entry_id
+        WHERE l.user_id = ${userId}::uuid AND l.provider_id = 'boardsesh'
+          AND l.external_id = 'boardsesh:tick:tick-1' AND a.source_result IS NOT NULL
+      `);
+    const allAttemptCount = async () =>
+      context.db.execute(sql`
+        SELECT count(*)::int AS count
+        FROM fitness.climbing_attempt a
+        JOIN fitness.climbing_log_entry l ON l.id = a.climbing_log_entry_id
+        WHERE l.user_id = ${userId}::uuid AND l.provider_id = 'boardsesh'
+          AND l.external_id = 'boardsesh:tick:tick-1' AND a.scope = 'climb'
+      `);
+    const first = await describedAttempts();
+    const stableAttemptId = first[0]?.id;
+    expect(first).toMatchObject([
+      {
+        source_result: "flash",
+        source_completed: true,
+        attempt_index: 1,
+        received_beta: true,
+        fell_or_hung: false,
+        used_aid: false,
+      },
+    ]);
+    expect(await allAttemptCount()).toEqual([{ count: 1 }]);
+
+    mode = "edited-send";
+    expect(await run()).toMatchObject({ errors: [], recordsSynced: 1 });
+    const send = await describedAttempts();
+    expect(send).toMatchObject([
+      {
+        id: stableAttemptId,
+        source_result: "send",
+        source_completed: true,
+        attempt_index: null,
+        received_beta: null,
+        fell_or_hung: false,
+        used_aid: false,
+        dabbed: false,
+      },
+    ]);
+    expect(await allAttemptCount()).toEqual([{ count: 3 }]);
+    expect(await rows()).toMatchObject([
+      {
+        external_id: "boardsesh:tick:tick-1",
+        provider_absent_at: null,
+        raw: { status: "send", attemptCount: 3 },
+      },
+    ]);
+
+    mode = "edited-attempt";
+    expect(await run()).toMatchObject({ errors: [], recordsSynced: 1 });
+    const attempt = await describedAttempts();
+    expect(attempt).toMatchObject([
+      {
+        id: stableAttemptId,
+        source_result: "attempt",
+        source_completed: false,
+        attempt_index: null,
+        received_beta: null,
+        fell_or_hung: null,
+        used_aid: null,
+        dabbed: null,
+      },
+    ]);
+    expect(await allAttemptCount()).toEqual([{ count: 3 }]);
+    expect(await rows()).toHaveLength(1);
+    expect(await rows()).toMatchObject([
+      {
+        external_id: "boardsesh:tick:tick-1",
+        provider_absent_at: null,
+        raw: { status: "attempt", attemptCount: 3 },
+      },
+    ]);
+  });
+
+  it("does not retire existing rows when a tick response contains malformed JSON", async () => {
+    await run();
+    mode = "malformed-json";
+    const result = await run();
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.message).not.toContain("PVTQ7");
+    expect((await rows())[0]?.provider_absent_at).toBeNull();
+  });
+
+  it("does not retire existing rows when a refresh response contains malformed JSON", async () => {
+    await run();
+    await saveTokens(
+      context.db,
+      provider.id,
+      {
+        accessToken: "expired",
+        refreshToken: "old-refresh",
+        expiresAt: new Date(0),
+        scopes: null,
+        providerAccountId: "owner-1",
+      },
+      userId,
+    );
+    mode = "malformed-refresh-json";
+    const result = await run();
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]?.message).not.toContain("PVTQ7");
     expect((await rows())[0]?.provider_absent_at).toBeNull();
   });
 

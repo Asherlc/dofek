@@ -11,6 +11,7 @@ const databaseMocks = vi.hoisted(() => ({
   saveTokens: vi.fn(),
   persistSnapshot: vi.fn(),
   persistEntries: vi.fn(),
+  captureException: vi.fn(),
 }));
 
 vi.mock("../db/tokens.ts", () => ({
@@ -31,6 +32,9 @@ vi.mock("../db/sync-log.ts", () => ({
     _type: string,
     operation: () => Promise<{ result: number }>,
   ) => (await operation()).result,
+}));
+vi.mock("../lib/error-reporting.ts", () => ({
+  captureException: databaseMocks.captureException,
 }));
 
 const validTokenResponse = {
@@ -156,6 +160,82 @@ describe("BoardSeshProvider", () => {
     await expect(
       provider.authSetup().automatedLogin?.("climber@example.com", "secret"),
     ).rejects.not.toThrow("must not appear");
+  });
+
+  it("sanitizes malformed native login JSON before exposing or reporting the error", async () => {
+    const provider = new BoardSeshProvider(
+      async () =>
+        new Response("PVTQ7", {
+          headers: { "Content-Type": "application/json" },
+        }),
+    );
+    const login = provider.authSetup().automatedLogin;
+    await expect(login?.("climber@example.com", "secret")).rejects.toThrow(
+      "BoardSesh returned an invalid login response.",
+    );
+    await expect(login?.("climber@example.com", "secret")).rejects.not.toThrow("PVTQ7");
+    const [reportedError, context] = databaseMocks.captureException.mock.calls[0] ?? [];
+    expect(reportedError).toMatchObject({
+      message: "BoardSesh returned an invalid login response.",
+    });
+    expect(reportedError).not.toHaveProperty("cause");
+    expect(context).toMatchObject({ tags: { provider: "boardsesh", operation: "login" } });
+  });
+
+  it("sanitizes malformed refresh JSON on public sync and skips snapshot persistence", async () => {
+    databaseMocks.loadTokens.mockResolvedValue({
+      accessToken: "expired",
+      refreshToken: "refresh",
+      expiresAt: new Date(0),
+      scopes: null,
+      providerAccountId: "owner-1",
+    });
+    const provider = new BoardSeshProvider(
+      async () =>
+        new Response("PVTQ7", {
+          headers: { "Content-Type": "application/json" },
+        }),
+    );
+    const result = await syncRun(provider);
+    expect(result.errors[0]?.message).toBe("BoardSesh returned an invalid refresh response.");
+    expect(result.errors[0]?.message).not.toContain("PVTQ7");
+    const reportedErrors = databaseMocks.captureException.mock.calls.map(([error]) => error);
+    expect(reportedErrors).toContainEqual(
+      expect.objectContaining({ message: "BoardSesh returned an invalid refresh response." }),
+    );
+    expect(
+      reportedErrors.every((error) => error instanceof Error && !error.message.includes("PVTQ7")),
+    ).toBe(true);
+    for (const error of reportedErrors) expect(error).not.toHaveProperty("cause");
+    expect(databaseMocks.persistSnapshot).not.toHaveBeenCalled();
+  });
+
+  it("sanitizes malformed GraphQL JSON on public sync and skips snapshot persistence", async () => {
+    databaseMocks.loadTokens.mockResolvedValue({
+      accessToken: "access",
+      refreshToken: "refresh",
+      expiresAt: new Date(Date.now() + 60_000),
+      scopes: null,
+      providerAccountId: "owner-1",
+    });
+    const provider = new BoardSeshProvider(
+      async () =>
+        new Response("PVTQ7", {
+          headers: { "Content-Type": "application/json" },
+        }),
+    );
+    const result = await syncRun(provider);
+    expect(result.errors[0]?.message).toBe("BoardSesh returned an invalid GraphQL response.");
+    expect(result.errors[0]?.message).not.toContain("PVTQ7");
+    const reportedErrors = databaseMocks.captureException.mock.calls.map(([error]) => error);
+    expect(reportedErrors).toContainEqual(
+      expect.objectContaining({ message: "BoardSesh returned an invalid GraphQL response." }),
+    );
+    expect(
+      reportedErrors.every((error) => error instanceof Error && !error.message.includes("PVTQ7")),
+    ).toBe(true);
+    for (const error of reportedErrors) expect(error).not.toHaveProperty("cause");
+    expect(databaseMocks.persistSnapshot).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -323,6 +403,11 @@ describe("BoardSeshProvider", () => {
               scope: "climb",
               sourceCompleted: true,
               sourceResult: "flash",
+              attemptIndex: null,
+              receivedBeta: null,
+              fellOrHung: null,
+              usedAid: null,
+              dabbed: null,
               qualifier: "free-flash",
             },
           ],
@@ -333,13 +418,34 @@ describe("BoardSeshProvider", () => {
           climb: expect.objectContaining({ externalId: "kilter:climb-1:mirror" }),
           notes: "repeat send",
           attempts: [
-            { scope: "climb", sourceCompleted: true, sourceResult: "send", qualifier: "free-send" },
+            {
+              scope: "climb",
+              sourceCompleted: true,
+              sourceResult: "send",
+              attemptIndex: null,
+              receivedBeta: null,
+              fellOrHung: null,
+              usedAid: null,
+              dabbed: null,
+              qualifier: "free-send",
+            },
           ],
           reportedAttemptCounts: [{ scope: "climb", count: 3 }],
         }),
         expect.objectContaining({
           externalId: "boardsesh:tick:tick-attempt",
-          attempts: [{ scope: "climb", sourceCompleted: false, sourceResult: "attempt" }],
+          attempts: [
+            {
+              scope: "climb",
+              sourceCompleted: false,
+              sourceResult: "attempt",
+              attemptIndex: null,
+              receivedBeta: null,
+              fellOrHung: null,
+              usedAid: null,
+              dabbed: null,
+            },
+          ],
           reportedAttemptCounts: [{ scope: "climb", count: 2 }],
         }),
       ]),

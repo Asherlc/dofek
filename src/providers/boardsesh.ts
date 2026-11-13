@@ -3,6 +3,7 @@ import type { GradeComponent } from "@dofek/training/climbing-log";
 import { z } from "zod";
 import type { BoardLogbook, ClimbingBoardClient } from "../lib/climbing-board-account.ts";
 import { ClimbingBoardAccount } from "../lib/climbing-board-account.ts";
+import { captureException } from "../lib/error-reporting.ts";
 import { createProviderRateLimitFetch } from "../lib/provider-rate-limit-fetch.ts";
 import { ProviderAuthError } from "./auth-errors.ts";
 import type { ProviderAuthSetup, SyncProvider, SyncResult, SyncRun, TokenSet } from "./types.ts";
@@ -62,6 +63,24 @@ function authError(message: string): ProviderAuthError {
     "authentication_failed",
     `BoardSesh ${message}. Reconnect in Settings → Data Sources.`,
   );
+}
+
+async function readResponseJson(
+  response: Response,
+  operation: "login" | "refresh" | "GraphQL",
+): Promise<unknown> {
+  try {
+    return await response.json();
+  } catch (error) {
+    if (error instanceof SyntaxError) {
+      const sanitized = new Error(`BoardSesh returned an invalid ${operation} response.`);
+      captureException(sanitized, {
+        tags: { provider: "boardsesh", operation },
+      });
+      throw sanitized;
+    }
+    throw error;
+  }
 }
 
 function tokenSet(response: unknown, previous?: TokenSet): TokenSet {
@@ -131,7 +150,7 @@ class BoardSeshClient implements ClimbingBoardClient {
     if ([401, 403].includes(response.status)) return { authRejected: true as const };
     if (!response.ok)
       throw new Error(`BoardSesh GraphQL request failed (HTTP ${response.status}).`);
-    const parsed = graphQlSchema.safeParse(await response.json());
+    const parsed = graphQlSchema.safeParse(await readResponseJson(response, "GraphQL"));
     if (!parsed.success) throw new Error("BoardSesh returned an invalid GraphQL response.");
     const result = parsed.data;
     const messages = result.errors?.map(({ message }) => message) ?? [];
@@ -159,7 +178,7 @@ class BoardSeshClient implements ClimbingBoardClient {
     if ([400, 401, 403].includes(response.status))
       throw authError("login failed; check your email and password");
     if (!response.ok) throw new Error(`BoardSesh login request failed (HTTP ${response.status}).`);
-    const tokens = tokenSet(await response.json());
+    const tokens = tokenSet(await readResponseJson(response, "login"));
     const result = await this.#graphql(
       tokens,
       "query { authenticatedUserId }",
@@ -194,7 +213,7 @@ class BoardSeshClient implements ClimbingBoardClient {
         throw authError("refresh authorization expired or was revoked");
       if (!response.ok)
         throw new Error(`BoardSesh refresh request failed (HTTP ${response.status}).`);
-      current = tokenSet(await response.json(), current);
+      current = tokenSet(await readResponseJson(response, "refresh"), current);
       await persistTokens(current);
       refreshed = true;
     };
@@ -274,6 +293,11 @@ class BoardSeshClient implements ClimbingBoardClient {
               scope: "climb",
               sourceCompleted: statusCompleted,
               sourceResult: tick.status,
+              attemptIndex: null,
+              receivedBeta: null,
+              fellOrHung: null,
+              usedAid: null,
+              dabbed: null,
               ...(tick.status === "flash" ? { qualifier: "free-flash" as const } : {}),
               ...(tick.status === "send" ? { qualifier: "free-send" as const } : {}),
             },
