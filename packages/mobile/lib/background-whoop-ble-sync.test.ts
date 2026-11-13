@@ -1,5 +1,6 @@
 import { Alert, AppState } from "react-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { retryConnection as nativeRetryConnection } from "../modules/whoop-ble";
 import {
   initBackgroundWhoopBleSync,
   retryWhoopBleConnection,
@@ -166,7 +167,9 @@ describe("native WHOOP lifecycle", () => {
   it("retries background connection only while uploads are configured", async () => {
     AppState.currentState = "background";
     await retryWhoopBleConnection();
+    expect(nativeRetryConnection).not.toHaveBeenCalled();
     const native = deps();
+    native.retryConnection = vi.mocked(nativeRetryConnection).mockResolvedValue(true);
     const configured = deferred<void>();
     native.configureUpload.mockImplementationOnce(() => configured.promise);
     const initializing = initBackgroundWhoopBleSync(context, native);
@@ -214,6 +217,7 @@ describe("native WHOOP lifecycle", () => {
   });
   it("propagates configuration failure before capture starts", async () => {
     const native = deps();
+    native.retryConnection = vi.mocked(nativeRetryConnection).mockResolvedValue(true);
     native.configureUpload.mockRejectedValueOnce(new Error("queue unavailable"));
     await expect(initBackgroundWhoopBleSync(context, native)).rejects.toThrow("queue unavailable");
     await retryWhoopBleConnection();
