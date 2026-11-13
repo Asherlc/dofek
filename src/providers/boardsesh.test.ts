@@ -204,7 +204,9 @@ describe("BoardSeshProvider", () => {
       expect.objectContaining({ message: "BoardSesh returned an invalid refresh response." }),
     );
     expect(
-      reportedErrors.every((error) => error instanceof Error && !error.message.includes("PRIVATE7")),
+      reportedErrors.every(
+        (error) => error instanceof Error && !error.message.includes("PRIVATE7"),
+      ),
     ).toBe(true);
     for (const error of reportedErrors) expect(error).not.toHaveProperty("cause");
     expect(databaseMocks.persistSnapshot).not.toHaveBeenCalled();
@@ -232,7 +234,9 @@ describe("BoardSeshProvider", () => {
       expect.objectContaining({ message: "BoardSesh returned an invalid GraphQL response." }),
     );
     expect(
-      reportedErrors.every((error) => error instanceof Error && !error.message.includes("PRIVATE7")),
+      reportedErrors.every(
+        (error) => error instanceof Error && !error.message.includes("PRIVATE7"),
+      ),
     ).toBe(true);
     for (const error of reportedErrors) expect(error).not.toHaveProperty("cause");
     expect(databaseMocks.persistSnapshot).not.toHaveBeenCalled();
