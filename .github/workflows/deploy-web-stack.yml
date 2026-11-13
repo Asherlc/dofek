@@ -239,7 +239,7 @@ jobs:
             exit 1
           fi
 
-          STACK_FILE_FLAGS="-c deploy/stack.yml"
+          STACK_FILE_FLAGS="-c deploy/docker-compose.yml"
 
           # Optional caller-supplied override (e.g. deploy/stack.oracle.yml for
           # the Always Free OCI host, which scales operator UIs to zero).
@@ -372,11 +372,27 @@ jobs:
             'cd /mnt/dofek-data/kafka/plugins && sha256sum --check --strict -' \
             < deploy/kafka/plugin-sha256.txt
 
+      - name: Resolve Kafka deployment images
+        run: |
+          set -euo pipefail
+          kafka_image="$(pnpm tsx scripts/stack-service-image.ts deploy/docker-compose.yml kafka)"
+          current_kafka_image="$(docker service inspect "${STACK_NAME}_kafka" --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}')"
+          case "$current_kafka_image" in
+            apache/kafka@sha256:*|apache/kafka:*@sha256:*) ;;
+            *) echo "::error::Running Kafka must use an immutable apache/kafka image"; exit 1 ;;
+          esac
+          {
+            echo "KAFKA_IMAGE=$kafka_image"
+            echo "CURRENT_KAFKA_IMAGE=$current_kafka_image"
+          } >> "$GITHUB_ENV"
+
       - name: Wait for Kafka API readiness (external client)
+        env:
+          KAFKA_IMAGE: ${{ env.CURRENT_KAFKA_IMAGE }}
         run: &kafka_api_readiness |
           # Outside the broker cgroup. Broker TCP health is port-liveness only.
           set -euo pipefail
-          image="apache/kafka:4.4.0@sha256:833b867a9585a141da455dc2b57431c65cbccb27f11c91f694444cca9f777e0f"
+          image="${KAFKA_IMAGE:?KAFKA_IMAGE is required}"
           network="${STACK_NAME}_default"
           attempts=0
           while true; do
@@ -409,6 +425,8 @@ jobs:
           done
 
       - name: Verify Kafka metric-stream topics
+        env:
+          KAFKA_IMAGE: ${{ env.CURRENT_KAFKA_IMAGE }}
         run: |
           set -euo pipefail
           node --input-type=module <<'NODE'
@@ -426,7 +444,7 @@ jobs:
             }
           }
           NODE
-          image="apache/kafka:4.4.0@sha256:833b867a9585a141da455dc2b57431c65cbccb27f11c91f694444cca9f777e0f"
+          image="${KAFKA_IMAGE:?KAFKA_IMAGE is required}"
           available_topics="$(docker run --rm --network "${STACK_NAME}_default" --memory=384m \
             -e KAFKA_HEAP_OPTS="-Xms32m -Xmx256m" \
             --entrypoint /opt/kafka/bin/kafka-topics.sh "$image" \
@@ -1308,7 +1326,7 @@ jobs:
           process.stdout.write(commands.join('\n'));
           NODE
           )" || exit "$?"
-          image="apache/kafka:4.4.0@sha256:833b867a9585a141da455dc2b57431c65cbccb27f11c91f694444cca9f777e0f"
+          image="${KAFKA_IMAGE:?KAFKA_IMAGE is required}"
           while IFS=$'\t' read -r topic configuration; do
             docker run --rm --network "${STACK_NAME}_default" --memory=384m \
               -e KAFKA_HEAP_OPTS="-Xms32m -Xmx256m" \
@@ -1390,7 +1408,7 @@ jobs:
             exit "$status"
           fi
 
-          expected_ota_image="$(pnpm tsx scripts/stack-service-image.ts deploy/stack.yml ota)"
+          expected_ota_image="$(pnpm tsx scripts/stack-service-image.ts deploy/docker-compose.yml ota)"
           wait_deadline_seconds=$((SECONDS + 1200))
           stability_window_seconds=60
           for service in kafka ota analytics-worker metric-stream-clickhouse-sink metric-stream-live-clickhouse-sink metric-stream-history-clickhouse-sink metric-stream-r2-archive metric-stream-live-r2-archive metric-stream-history-r2-archive processing-reconciliation; do

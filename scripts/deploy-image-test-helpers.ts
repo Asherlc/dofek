@@ -99,7 +99,7 @@ export function runDeployImageFixture({
         RUNNER_TEMP: directory,
         INFISICAL_ENV_FILE: dotenvPath,
         WEB_PRE_MIGRATION_ENV_FILE: "old-web.env",
-        STACK_FILE_FLAGS: "-c deploy/stack.yml",
+        STACK_FILE_FLAGS: "-c deploy/docker-compose.yml",
         ...environment,
       },
     };

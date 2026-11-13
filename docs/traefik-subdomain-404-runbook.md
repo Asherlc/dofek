@@ -61,7 +61,7 @@ Then compare them with the canonical base-stack rules:
 
 ```bash
 rg -n 'traefik.http.routers.(web|ota|databasus)|loadbalancer.server.port' \
-  deploy/stack.yml
+  deploy/docker-compose.yml
 ```
 
 Verify:
@@ -98,7 +98,7 @@ The source ref must resolve exactly to the commit encoded by the image's
 `SENTRY_RELEASE`, not merely contain that commit; see the
 [`gh workflow run` reference](https://cli.github.com/manual/gh_workflow_run).
 
-Do not run a direct `docker stack deploy -c deploy/stack.yml`: that omits
+Do not run a direct `docker stack deploy -c deploy/docker-compose.yml`: that omits
 `deploy/stack.oracle.yml` and the production release gates.
 
 ## 5. Verify

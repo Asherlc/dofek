@@ -3,7 +3,7 @@
 # Catches drift where a domain is added to the stack file but not to dns.tf.
 set -euo pipefail
 
-STACK="deploy/stack.yml"
+STACK="deploy/docker-compose.yml"
 DNS_TF="deploy/dns.tf"
 
 # Extract all hostnames from Traefik Host(`...`) labels and deduplicate them
