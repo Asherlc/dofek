@@ -1,0 +1,29 @@
+{
+  "fixture": "local ClickHouse26.9.19.9",
+  "scope": "Task1 focused qualification, retries0",
+  "success": true,
+  "numPassedTests": 5,
+  "numFailedTests": 0,
+  "cases": [
+    {
+      "title": "preserves the latest activity when only an older version matches the delete scope",
+      "status": "passed"
+    },
+    {
+      "title": "guards rows omitted by a newer live replacement before older history first arrives",
+      "status": "passed"
+    },
+    {
+      "title": "profiles 101 unacknowledged adjacent same-revision deletes",
+      "status": "passed"
+    },
+    {
+      "title": "profiles 101 partially acknowledged adjacent same-revision deletes",
+      "status": "passed"
+    },
+    {
+      "title": "profiles 101 fully acknowledged adjacent same-revision deletes",
+      "status": "passed"
+    }
+  ]
+}

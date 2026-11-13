@@ -161,7 +161,8 @@ const providerDataGenerationRowsSchema = z.array(
     user_id: z.uuid(),
   }),
 );
-const deletionAcknowledgementRowsSchema = z.array(
+const deletionAcknowledgementRowsSchema = z.array(z.object({ event_id: z.uuid() }));
+const deletionAcknowledgementCountRowsSchema = z.array(
   z.object({ acknowledgement_count: z.coerce.number().int().nonnegative() }),
 );
 const accountErasureFenceRowsSchema = z.array(z.object({ user_hash: z.string().length(64) }));
@@ -171,6 +172,35 @@ const accountErasureOperationFenceRowsSchema = z.array(
 
 function providerGenerationKey(userId: string, providerId: string): string {
   return `${userId}\0${providerId}`;
+}
+
+async function getMetricStreamDeletionAcknowledgements(
+  client: ClickHouseMetricStreamInsertClient,
+  eventIds: readonly string[],
+): Promise<Set<string>> {
+  const acknowledgedIds = new Set<string>();
+  if (!client.query) return acknowledgedIds;
+  for (
+    let offset = 0;
+    offset < eventIds.length;
+    offset += MAX_METRIC_STREAM_DELETE_SCOPES_PER_WRITE
+  ) {
+    const result = await client.query({
+      query: `SELECT event_id
+        FROM ${METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE}
+        WHERE event_id IN {event_ids:Array(UUID)}`,
+      query_params: {
+        event_ids: eventIds.slice(offset, offset + MAX_METRIC_STREAM_DELETE_SCOPES_PER_WRITE),
+      },
+      format: "JSONEachRow",
+    });
+    for (const { event_id: eventId } of deletionAcknowledgementRowsSchema.parse(
+      await result.json(),
+    )) {
+      acknowledgedIds.add(eventId.toLowerCase());
+    }
+  }
+  return acknowledgedIds;
 }
 
 async function isMetricStreamDeletionAcknowledged(
@@ -186,7 +216,7 @@ async function isMetricStreamDeletionAcknowledged(
     query_params: { event_id: eventId },
     format: "JSONEachRow",
   });
-  return deletionAcknowledgementRowsSchema
+  return deletionAcknowledgementCountRowsSchema
     .parse(await result.json())
     .some((row) => row.acknowledgement_count > 0);
 }
@@ -583,20 +613,16 @@ async function markMetricStreamDeleteCommandsInClickHouse(
       isBatch ? `_${index}` : "",
     ),
   );
-  // IDs bind user/provider/time. Resolve every version of each identity tuple
-  // before rechecking mutable deletion-scope fields on its complete latest row.
-  // Candidate discovery can still scan broadly for scopes without leading keys;
-  // tuple membership avoids a second global scan, not every possible scope scan.
-  const scopedCandidates = candidatePredicates
-    .map(
-      (conditions) => `SELECT candidate_row.id AS id, candidate_row.user_id AS user_id,
+  // IDs bind user/provider/time. Resolve candidate tuples in one scan, then
+  // recheck mutable scope fields against each identity's complete latest row.
+  const scopedCandidates = `SELECT candidate_row.id AS id, candidate_row.user_id AS user_id,
             candidate_row.provider_id AS provider_id, candidate_row.recorded_at AS recorded_at
           FROM ${METRIC_STREAM_TABLE} AS candidate_row
-          WHERE ${conditions.join(" AND ")}
+          WHERE ${candidatePredicates
+            .map((conditions) => `(${conditions.join(" AND ")})`)
+            .join(" OR ")}
           GROUP BY candidate_row.id, candidate_row.user_id,
-            candidate_row.provider_id, candidate_row.recorded_at`,
-    )
-    .join("\n          UNION ALL\n          ");
+            candidate_row.provider_id, candidate_row.recorded_at`;
   const latestScopePredicate = latestPredicates
     .map((conditions) => `(${conditions.join(" AND ")})`)
     .join(" OR ");
@@ -683,14 +709,14 @@ async function markMetricStreamDeleteCommandsInClickHouse(
         )`,
     query_params: queryParams,
   });
-  for (const { eventId } of deletes) {
-    if (eventId) {
-      await client.command({
-        query: `INSERT INTO ${METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE} (event_id)
-          VALUES ({event_id:UUID})`,
-        query_params: { event_id: eventId },
-      });
-    }
+  const acknowledgementRows = deletes
+    .flatMap(({ eventId }) => (eventId ? [{ event_id: eventId }] : []))
+    .map((row) => JSON.stringify(row));
+  if (acknowledgementRows.length > 0) {
+    await client.command({
+      query: `INSERT INTO ${METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE} (event_id)
+        FORMAT JSONEachRow\n${acknowledgementRows.join("\n")}`,
+    });
   }
 }
 
@@ -836,16 +862,16 @@ export async function applyMetricStreamEventsToClickHouse(
           deleteRun.push(candidate);
           nextEventIndex += 1;
         }
-        const unacknowledgedDeletes: MetricStreamDeletedEventV3[] = [];
-        for (const deleteEvent of deleteRun) {
-          const acknowledged = await keepMetricStreamHeartbeatAlive(context, () =>
-            isMetricStreamDeletionAcknowledged(client, deleteEvent.eventId),
-          );
-          if (!acknowledged) {
-            unacknowledgedDeletes.push(deleteEvent);
-          }
-          await heartbeat();
-        }
+        const acknowledgedIds = await keepMetricStreamHeartbeatAlive(context, () =>
+          getMetricStreamDeletionAcknowledgements(
+            client,
+            deleteRun.map((deleteEvent) => deleteEvent.eventId),
+          ),
+        );
+        const unacknowledgedDeletes = deleteRun.filter(
+          ({ eventId }) => !acknowledgedIds.has(eventId.toLowerCase()),
+        );
+        await heartbeat();
         await keepMetricStreamHeartbeatAlive(context, () =>
           markMetricStreamScopesDeletedInClickHouse(client, unacknowledgedDeletes),
         );

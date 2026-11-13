@@ -129,6 +129,224 @@ describe("metric stream scoped deletion identity (integration)", () => {
     }
   });
 
+  it("bounds candidate reads for a multi-scope deletion", async () => {
+    const userId = randomUUID();
+    const providerId = `candidate-read-bound-${userId}`;
+    const fixtureRows = 8_192;
+    const deleteScopes = 101;
+    const queryIds: string[] = [];
+    const rows = Array.from({ length: fixtureRows }, (_, index) =>
+      createCurrentMetricStreamEvent({
+        userId,
+        providerId,
+        externalId: index < deleteScopes ? `scope-${index}` : `unmatched-${index}`,
+        recordedAt: "2026-06-08T12:00:00.000Z",
+        sourceType: "api",
+        channel: "heart_rate",
+        scalar: index,
+      }),
+    );
+    const deletes = Array.from({ length: deleteScopes }, (_, index) =>
+      createCurrentMetricStreamDeletedEvent(
+        { userId, providerId, externalId: `scope-${index}` },
+        "1000000000000001",
+      ),
+    );
+    const profiledClient: ClickHouseMetricStreamInsertClient = {
+      command: (options) => {
+        if (options.query.startsWith(`INSERT INTO ${METRIC_STREAM_TABLE} (`)) {
+          const ownedQueryId =
+            "query_id" in options && typeof options.query_id === "string"
+              ? options.query_id
+              : undefined;
+          const queryId = ownedQueryId ?? randomUUID();
+          queryIds.push(queryId);
+          return client.command({
+            ...options,
+            ...(ownedQueryId === undefined ? { query_id: queryId } : {}),
+            clickhouse_settings: {
+              ...options.clickhouse_settings,
+              log_queries: 1,
+              log_profile_events: 1,
+            },
+          });
+        }
+        return client.command(options);
+      },
+      insert: (options) => client.insert(options),
+    };
+
+    try {
+      await insertMetricStreamEventsIntoClickHouse(client, rows);
+      await markMetricStreamScopesDeletedInClickHouse(profiledClient, deletes);
+      const result = await client.query({
+        query: `SELECT countIf(is_deleted = 1) AS deleted, countIf(is_deleted = 0) AS live
+          FROM ${METRIC_STREAM_TABLE} FINAL WHERE user_id = {userId:UUID}`,
+        query_params: { userId },
+        format: "JSONEachRow",
+      });
+      expect(
+        z
+          .array(z.object({ deleted: z.coerce.number(), live: z.coerce.number() }))
+          .parse(await result.json()),
+      ).toEqual([{ deleted: deleteScopes, live: fixtureRows - deleteScopes }]);
+      const states = await client.query({
+        query: `SELECT id, is_deleted FROM ${METRIC_STREAM_TABLE} FINAL
+          WHERE user_id = {userId:UUID} ORDER BY id`,
+        query_params: { userId },
+        format: "JSONEachRow",
+      });
+      const actualStates = z
+        .array(z.object({ id: z.uuid(), is_deleted: z.number() }))
+        .parse(await states.json());
+      const actualDeletedIds = actualStates
+        .filter(({ is_deleted }) => is_deleted === 1)
+        .map(({ id }) => id)
+        .sort();
+      const actualPreservedIds = actualStates
+        .filter(({ is_deleted }) => is_deleted === 0)
+        .map(({ id }) => id)
+        .sort();
+      expect(actualDeletedIds).toEqual(
+        rows
+          .slice(0, deleteScopes)
+          .map(({ id }) => id)
+          .sort(),
+      );
+      expect(actualPreservedIds).toEqual(
+        rows
+          .slice(deleteScopes)
+          .map(({ id }) => id)
+          .sort(),
+      );
+
+      expect(queryIds).toHaveLength(2);
+      expect(new Set(queryIds).size).toBe(queryIds.length);
+      await client.command({ query: "SYSTEM FLUSH LOGS" });
+      const profile = await client.query({
+        query: `SELECT query_id, read_rows FROM system.query_log
+          WHERE query_id IN {queryIds:Array(String)} AND type = 'QueryFinish'`,
+        query_params: { queryIds },
+        format: "JSONEachRow",
+      });
+      const profiles = z
+        .array(z.object({ query_id: z.string().min(1), read_rows: z.coerce.number().positive() }))
+        .parse(await profile.json());
+      expect(profiles).toHaveLength(queryIds.length);
+      expect(new Set(profiles.map(({ query_id }) => query_id))).toEqual(new Set(queryIds));
+      expect(
+        profiles.reduce((total, { read_rows }) => total + read_rows, 0),
+        JSON.stringify({ queryIds, profiles }),
+      ).toBeLessThanOrEqual(fixtureRows * 6);
+    } finally {
+      await client.command({
+        query: `ALTER TABLE ${METRIC_STREAM_TABLE} DELETE
+          WHERE user_id = {userId:UUID} SETTINGS mutations_sync = 1`,
+        query_params: { userId },
+      });
+      await client.command({
+        query: `ALTER TABLE ${METRIC_STREAM_DELETE_SCOPE_TABLE} DELETE
+          WHERE user_id = {userId:UUID} SETTINGS mutations_sync = 1`,
+        query_params: { userId },
+      });
+    }
+  });
+
+  it("keeps combined deletion scopes bound to their matching latest identities", async () => {
+    const userId = randomUUID();
+    const providerId = `combined-scope-${userId}`;
+    const deletionRevision = "1000000000000001";
+    const makeRow = (
+      channel: string,
+      externalId: string | null,
+      recordedAt = "2026-06-08T12:00:00.000Z",
+      id = randomUUID(),
+    ) =>
+      createCurrentMetricStreamEvent(
+        { id, userId, providerId, channel, externalId, recordedAt, sourceType: "api", scalar: 72 },
+        operationRevision,
+      );
+    const deleted = [
+      makeRow("A", "X"),
+      makeRow("B", "Y"),
+      makeRow("nullable", null),
+      makeRow("bounded", "at-start", "2026-06-08T12:00:00.000Z"),
+      makeRow("overlap", "overlap-id"),
+    ];
+    const preserved = [
+      makeRow("A", "Y"),
+      makeRow("B", "X"),
+      makeRow("bounded", "at-end", "2026-06-08T12:00:01.000Z"),
+    ];
+    const movedOutId = randomUUID();
+    const movedOutBefore = makeRow("A", "X", undefined, movedOutId);
+    const movedOutAfter = makeRow("C", "outside", undefined, movedOutId);
+    const movedOut = [movedOutBefore, movedOutAfter];
+    const movedInId = randomUUID();
+    const movedInBefore = makeRow("C", "outside", undefined, movedInId);
+    const movedInAfter = makeRow("B", "Y", undefined, movedInId);
+    const movedIn = [movedInBefore, movedInAfter];
+    const rows = [...deleted, ...preserved, ...movedOut, ...movedIn];
+    const deleteScopes = [
+      { userId, providerId, channel: "A", externalId: "X" },
+      { userId, providerId, channel: "B", externalId: "Y" },
+      { userId, providerId, channel: "nullable", externalId: null },
+      {
+        userId,
+        providerId,
+        channel: "bounded",
+        recordedAtStart: "2026-06-08T12:00:00.000Z",
+        recordedAtEnd: "2026-06-08T12:00:01.000Z",
+      },
+      { userId, providerId, channel: "overlap" },
+      { userId, providerId, externalId: "overlap-id" },
+    ].map((scope) => createCurrentMetricStreamDeletedEvent(scope, deletionRevision));
+
+    try {
+      await client.insert({
+        table: METRIC_STREAM_TABLE,
+        values: rows.map((row, index) => ({
+          ...mapMetricStreamEventToClickHouseRow(row),
+          ingested_at: `2026-06-08T12:00:00.${String(index).padStart(9, "0")}Z`,
+        })),
+        format: "JSONEachRow",
+        clickhouse_settings: { date_time_input_format: "best_effort" },
+      });
+      await markMetricStreamScopesDeletedInClickHouse(client, deleteScopes);
+      const result = await client.query({
+        query: `SELECT id, argMax(is_deleted, tuple(version, ingested_at)) AS is_deleted
+          FROM ${METRIC_STREAM_TABLE} WHERE user_id = {userId:UUID}
+          GROUP BY id ORDER BY id`,
+        query_params: { userId },
+        format: "JSONEachRow",
+      });
+      const actual = z
+        .array(z.object({ id: z.uuid(), is_deleted: z.number() }))
+        .parse(await result.json());
+      const actualDeleted = actual
+        .filter(({ is_deleted }) => is_deleted === 1)
+        .map(({ id }) => id)
+        .sort();
+      const actualPreserved = actual
+        .filter(({ is_deleted }) => is_deleted === 0)
+        .map(({ id }) => id)
+        .sort();
+      expect(actualDeleted).toEqual([...deleted, movedInAfter].map(({ id }) => id).sort());
+      expect(actualPreserved).toEqual([...preserved, movedOutAfter].map(({ id }) => id).sort());
+    } finally {
+      await client.command({
+        query: `ALTER TABLE ${METRIC_STREAM_TABLE} DELETE
+          WHERE user_id = {userId:UUID} SETTINGS mutations_sync = 1`,
+        query_params: { userId },
+      });
+      await client.command({
+        query: `ALTER TABLE ${METRIC_STREAM_DELETE_SCOPE_TABLE} DELETE
+          WHERE user_id = {userId:UUID} SETTINGS mutations_sync = 1`,
+        query_params: { userId },
+      });
+    }
+  });
+
   it.each(["channel", "externalId", "scalar"] as const)(
     "resolves the latest %s correction with native timestamp precision",
     async (field) => {

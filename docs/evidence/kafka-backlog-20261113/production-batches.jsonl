@@ -1,0 +1,6 @@
+{"_time":"2026-11-13T05:29:29.199Z","deletes":1823,"events":1823,"sink_ms":850433.2715980001,"topic":"metric-stream-live-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3"}
+{"_time":"2026-11-13T05:29:32.355Z","deletes":0,"events":1001,"sink_ms":850640.6633760002,"topic":"metric-stream-history-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3"}
+{"_time":"2026-11-13T05:43:43.657Z","deletes":1823,"events":1823,"sink_ms":854075.2671389999,"topic":"metric-stream-live-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3"}
+{"_time":"2026-11-13T05:43:47.341Z","deletes":0,"events":1001,"sink_ms":854428.673645,"topic":"metric-stream-history-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3"}
+{"_time":"2026-11-13T05:58:16.171Z","deletes":1823,"events":1823,"sink_ms":872002.396807,"topic":"metric-stream-live-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3"}
+{"_time":"2026-11-13T05:58:19.098Z","deletes":0,"events":1001,"sink_ms":871183.1982900007,"topic":"metric-stream-history-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3"}
