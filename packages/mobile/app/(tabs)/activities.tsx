@@ -80,6 +80,10 @@ function displayRecordLocalTime(
   return localTime === "--" ? "Local time unavailable" : localTime;
 }
 
+function displayDuration(durationMin: number | null): string {
+  return durationMin === null ? "Duration unavailable" : formatDurationMinutes(durationMin);
+}
+
 function formatActivityAccessibilityLabel(
   action: "Open" | "Select" | "Deselect",
   activity: {
@@ -105,7 +109,7 @@ function formatActivityAccessibilityLabel(
   const labelParts = [
     activity.name ?? activityTypeLabel,
     displayRecordLocalTime(activity.startedAt, activity.localTimeContext),
-    formatDurationMinutes(activity.durationMin),
+    displayDuration(activity.durationMin),
   ];
 
   if (activity.name !== null && activity.name !== activityTypeLabel) {
@@ -516,7 +520,7 @@ export default function ActivitiesScreen() {
                         >
                           <Text style={styles.activityMeta}>
                             {displayRecordLocalTime(activity.startedAt, activity.localTimeContext)}{" "}
-                            · {formatDurationMinutes(activity.durationMin)}
+                            · {displayDuration(activity.durationMin)}
                           </Text>
                         </View>
                       </View>
