@@ -382,7 +382,9 @@ describe("KilterBoardDirectory", () => {
         dataFlowStatus: { downloadError },
       });
     });
-    const error = await new KilterBoardDirectory().fetch(credentials).catch((e: unknown) => e);
+    const error = await new KilterBoardDirectory()
+      .fetch(credentials)
+      .catch((caughtError: unknown) => caughtError);
     expect(error).toBeInstanceOf(Error);
     expect(error).toMatchObject({
       message: "Kilter Board app sync failed: Connection aborted",
