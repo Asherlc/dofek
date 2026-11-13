@@ -37690,15 +37690,22 @@ query-local reuse strategy. The scope correction still requires native semantic,
 read and memory qualification before release; the earlier local-only GREEN is
 not treated as a production pass.
 
+The scope candidate's [26.6 native shard](https://github.com/Asherlc/dofek/actions/runs/43494791068/job/132128082794)
+then passed all 34 canonical cases and all 687 shard tests. Scoped/unscoped reads
+fell to 8,233/8,221 and query memory to about 127.5/96.6 MB, compared with the
+same-engine baseline's 245.9/235.6 MB. These are fixture results; production
+capacity and actual net backlog drain remain unverified.
+
 The scope candidate's [unit job](https://github.com/Asherlc/dofek/actions/runs/43494791068/job/132125697825)
 then failed `pnpm exec vitest run --project unit --coverage` in the existing
 column-order regression: “Could not locate a final SELECT projection in
 deduped_activities.sql.” Its test helper required an explicit projection at
 column zero; the unchanged projection now sits inside the parent SELECT.
 This blocks merge qualification, with no production change from the candidate.
-The helper must read the nested explicit projection while retaining the exact
+The helper now reads the nested explicit projection while retaining the exact
 ordered-column comparison for all three models; runtime SQL and migration
-statements remain unchanged. Focused validation and final-head CI remain gates.
+statements remain unchanged. All seven focused tests pass. Final-head CI remains
+a merge gate.
 
 ## 2026-11-13 — Climbing batch presence PR lacked orchestration coverage
 
