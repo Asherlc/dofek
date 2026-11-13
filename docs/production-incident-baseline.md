@@ -37573,6 +37573,12 @@ No timeouts, retries, test exclusions, or runtime
 resilience settings were changed. Review fixes also strengthened tombstone
 identity assertions and parsed SQL results with the existing Zod helper.
 
+## 2026-11-13 — Activity-type label PR exposed stale duration expectations
+
+PR #3133 could not merge because its new Cardio test overlapped the later duration-formatting tests in [the web chart suite](../packages/web/src/components/SportVolumeChart.test.tsx). After preserving both sets of assertions, `pnpm exec vitest run --project unit --project mobile packages/web/src/components/SportVolumeChart.test.tsx packages/mobile/components/SportVolumeChart.test.tsx` passed six cases and failed the new mobile Cardio case with `Unable to find a label with the text of: 2026-10-19: 90 min`. The rendered label was `2026-10-19: 1:30 h:mm`, matching the current [mobile chart](../packages/mobile/components/SportVolumeChart.tsx) and its existing assertions. There was no production impact.
+
+The direct fix retains the activity-type labels on both platforms and updates only the new test expectations to the current fixture value and duration format. The same focused command then passed all seven cases; repository sandbox lint and root/server/web/mobile typechecks also passed. Full-suite and matching-head CI qualification remain separate gates. No runtime workaround, timeout, retry, or test exclusion was added. Future conflict resolution should preserve both the newer display-format regressions and the incoming interaction coverage before running the paired suites.
+
 ## 2026-11-13 — Kafka release drain-check task-disappearance race
 
 [Release 43458032214, attempt 1](https://github.com/Asherlc/dofek/actions/runs/43458032214/attempts/1)
@@ -37642,3 +37648,9 @@ The full unit/mobile run also completed with two failures in unchanged tests:
 Both complete suites passed on an isolated rerun without code, retry, or timeout
 changes. Their full-run failure cause remains unconfirmed; this validation does
 not establish that the broad suite is consistently green under parallel load.
+
+## 2026-11-13 — Climbing batch presence PR lacked orchestration coverage
+
+[PR #3300](https://github.com/Asherlc/dofek/pull/3300) reported `codecov/patch` failure at 73.33333% with four uncovered added lines in [climbing-log-sync.ts](../src/db/climbing-log-sync.ts). The existing helper tests exercised observation results and restore SQL separately, but no unit case executed the public batch writer that collects observed identities and restores them once. This blocked merge qualification; no production impact was established.
+
+The added [batch-writer tests](../src/db/climbing-log-sync.test.ts) cover multiple observed logs alongside a user-selected activity, restoration after all writes, and propagation of a failed restore. Both retained regressions fail against the pre-change writer. The correction adds tests only; coverage thresholds, SQL, and runtime behavior remain unchanged. Matching-head combined coverage and CI remain the release gates. For future batching changes, test the caller that collects and dispatches the batch as well as its individual helpers.

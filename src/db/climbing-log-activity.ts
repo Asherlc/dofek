@@ -1,11 +1,13 @@
 import { and, eq, sql } from "drizzle-orm";
-import { loadUserHomeTimezone } from "./home-timezone.ts";
 import type { SyncDatabase } from "./index.ts";
-import { markProviderActivityPresent } from "./provider-activity-absence.ts";
 import { upsertProviderActivity } from "./provider-activity-sync.ts";
 import { activity } from "./schema/activity.ts";
 
-/** Persist a source observation without replacing a user's selected activity. */
+/**
+ * Persist a source observation without replacing a user's selected activity.
+ * The home timezone comes from the provider ingest context. `observed` tells the
+ * batch to confirm provider presence for the source external ID.
+ */
 export async function persistClimbingLogActivityObservation(
   db: SyncDatabase,
   input: {
@@ -21,9 +23,9 @@ export async function persistClimbingLogActivityObservation(
     };
     activityId: string | null;
   },
-): Promise<string | null> {
+): Promise<{ activityId: string | null; observed: boolean }> {
   const { userId, providerId, source, activityId } = input;
-  if (!source.activityObservation) return activityId;
+  if (!source.activityObservation) return { activityId, observed: false };
   const [known] = await db
     .select({ id: activity.id })
     .from(activity)
@@ -39,7 +41,7 @@ export async function persistClimbingLogActivityObservation(
     if (known)
       await db.execute(sql`UPDATE fitness.activity SET deleted_at = COALESCE(deleted_at, NOW())
         WHERE id = ${known.id}::uuid`);
-    return activityId;
+    return { activityId, observed: false };
   }
   const facts = {
     startedAt: new Date(source.activityObservation.recordedAt),
@@ -61,11 +63,9 @@ export async function persistClimbingLogActivityObservation(
       providerId,
       externalId: source.externalId,
       ...facts,
-      homeTimezone: await loadUserHomeTimezone(db, userId),
     },
     facts,
   );
   if (!row) throw new Error("Climbing log activity insert returned no row.");
-  await markProviderActivityPresent(db, { userId, providerId, externalId: source.externalId });
-  return row.id;
+  return { activityId: row.id, observed: true };
 }

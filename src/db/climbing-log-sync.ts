@@ -13,6 +13,7 @@ import { and, asc, eq, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { persistClimbingLogActivityObservation } from "./climbing-log-activity.ts";
 import type { SyncDatabase, TransactionDatabase } from "./index.ts";
+import { restoreProviderActivityPresence } from "./provider-activity-absence.ts";
 import {
   area,
   climb,
@@ -904,6 +905,7 @@ export async function persistClimbingLogEntries(
       climb: ClimbRow | undefined;
       source: SourceClimbingLogEntry;
     }> = [];
+    const observedExternalIds: string[] = [];
     for (const source of parsed.entries) {
       const [known] = await tx
         .select()
@@ -942,7 +944,7 @@ export async function persistClimbingLogEntries(
         for (const node of prior) oldAreas.add(node.id);
         areaId = await resolveAreas(tx, scope, areas, prior);
       }
-      const activityId = await persistClimbingLogActivityObservation(tx, {
+      const { activityId, observed } = await persistClimbingLogActivityObservation(tx, {
         ...scope,
         source,
         activityId: source.activityObservation
@@ -951,6 +953,7 @@ export async function persistClimbingLogEntries(
             ? (known?.activityId ?? null)
             : source.activityId,
       });
+      if (observed) observedExternalIds.push(source.externalId);
       const changes = {
         ...facts,
         areaId,
@@ -963,6 +966,7 @@ export async function persistClimbingLogEntries(
       await replaceLogGrades(tx, id, reportedGrades);
       resolved.push({ id, climb: definition, source });
     }
+    await restoreProviderActivityPresence(tx, { ...scope, externalIds: observedExternalIds });
     const prepared: PreparedLog[] = [];
     for (const entry of resolved) prepared.push(await prepareLog(tx, entry));
     // Every scoped occurrence is resolved before the first conditional Flash normalization.
