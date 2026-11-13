@@ -37403,3 +37403,23 @@ underlying cause. The matching
 passed at 03:11:59 UTC, and matching OTA publication also passed. The
 [complete canonical release](https://github.com/Asherlc/dofek/actions/runs/43349572540)
 concluded successfully.
+
+## 2026-11-12 — BoardSesh absent from provider list
+
+The user reported that BoardSesh was missing from available providers. Repository
+inspection found protocol research only: [the research](boardsesh.md) explicitly
+states that no provider was implemented, and the [server registration
+list](../packages/server/src/routers/sync-helpers.ts) has no BoardSesh entry.
+There is no BoardSesh validation failure to repair. Read-only Swarm inspection
+showed both web replicas running; the connected provider-list tool required
+reauthentication, so no authenticated live provider response was obtained.
+No failing application command or fatal application log was established.
+
+Account sync remains unavailable. The direct next step is a new provider using
+the existing connection and climbing persistence contracts, after direction is
+confirmed and the research's authenticated-read, mapping, refresh, deletion, and
+erasure gaps are resolved. No runtime changes or resilience settings were made.
+Retrospective: checking implementation and registration established the gap;
+start similar investigations with `fix-provider` and the provider research.
+Proposed guide refinement: check whether a provider exists before investigating
+deployment secrets, and distinguish researched integrations from implemented ones.
