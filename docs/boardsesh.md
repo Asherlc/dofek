@@ -1,8 +1,9 @@
 # BoardSesh app protocol research
 
-Research date: **2026-11-12**. Dofek does not yet implement a BoardSesh provider.
-The app protocol provides a plausible automatic logbook-sync path; successful
-account authentication and populated-history reads remain unverified.
+Research date: **2026-11-12**. Dofek implements the password-based BoardSesh
+provider using the inspected app protocol. Successful account authentication and
+populated-history reads remain unverified because no authorized account was
+available for acceptance testing.
 
 ## Method and evidence
 
@@ -140,19 +141,29 @@ service; the official app API draft describes scoped OAuth access but is not
 generally open. These are separate questions from endpoint reachability. See
 the [hosted-service policy][legal] and [partner API status][partner-api].
 
-Before implementing an account provider:
+## Remaining live-account acceptance
 
 1. Verify sign-in and refresh with an authorized account containing real history.
 2. Compare a complete tick pull with the app/export; check flashes, sends,
    unsuccessful attempts, repeats, edited records, aliases, and imported logs.
 3. Verify targeted metadata reads preserve raw IDs, personal grades, board/gym
    context, and accessible spray-wall records without catalogue mirroring.
-4. Validate deletion recovery and settle disconnect/account-erasure behavior
-   without invoking the account-wide native revoke endpoint by accident.
+4. Confirm account-level deletion semantics against a real account. Dofek's
+   disconnect-before-erasure gate is covered by the existing real-Postgres
+   account-erasure regression, and the provider never calls account-wide revoke.
 
-Use Dofek's existing credential-provider and climbing persistence contracts if
-this approach is selected. No provider, runtime code, dependencies, or secrets
-were added during this research.
+## Implemented in Dofek
+
+The provider composes the shared `ClimbingBoardAccount` graph persistence,
+retrieves a full snapshot for each of the nine supported board types, and
+reconciles only after all responses validate. It keeps each source tick and maps
+only the returned personal grade label, assigns no physical board identity when
+the resolver omits it, and does not call the account-wide native revoke endpoint.
+Apple/Google-only accounts need a BoardSesh email/password connection. These
+constraints match the pinned
+[native auth handler](https://github.com/boardsesh/boardsesh/blob/af2f7adf95eac77990b91da8d254d97ead25b938/packages/backend/src/handlers/native-auth.ts),
+[tick schema](https://github.com/boardsesh/boardsesh/blob/af2f7adf95eac77990b91da8d254d97ead25b938/packages/shared-schema/src/schema/ticks.ts),
+and [tick query resolver](https://github.com/boardsesh/boardsesh/blob/af2f7adf95eac77990b91da8d254d97ead25b938/packages/backend/src/graphql/resolvers/ticks/queries.ts).
 
 [mobile-auth]: https://github.com/boardsesh/boardsesh/blob/af2f7adf95eac77990b91da8d254d97ead25b938/packages/mobile/src/lib/auth.ts
 [env]: https://github.com/boardsesh/boardsesh/blob/af2f7adf95eac77990b91da8d254d97ead25b938/packages/mobile/src/lib/env.ts

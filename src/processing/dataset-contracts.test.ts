@@ -309,6 +309,14 @@ describe("dataset contracts", () => {
     ]);
   });
 
+  it("includes BoardSesh in climbing processing scopes", () => {
+    expect(processingDatasetKeysForProvider("boardsesh")).toEqual([
+      "activity",
+      "training",
+      "providers",
+    ]);
+  });
+
   it("tracks food records as a nutrition input", () => {
     const nutrition = DATASET_CONTRACTS.find((contract) => contract.key === "nutrition");
     if (!nutrition) throw new Error("Missing nutrition dataset contract");

@@ -102,6 +102,7 @@ describe("data source auth dialogs", () => {
     { id: "eight-sleep", name: "Eight Sleep" },
     { id: "zwift", name: "Zwift" },
     { id: "kilter", name: "Kilter Board" },
+    { id: "boardsesh", name: "BoardSesh" },
   ])("submits $name credentials with a trimmed email and protected password", async (provider) => {
     const onSuccess = vi.fn();
     render(
@@ -114,6 +115,11 @@ describe("data source auth dialogs", () => {
     );
 
     expect(screen.getByLabelText("Email")).toHaveAttribute("type", "email");
+    if (provider.id === "boardsesh") {
+      expect(
+        screen.getByText(/Apple\/Google-only accounts need a BoardSesh password/),
+      ).toBeInTheDocument();
+    }
     expect(screen.getByLabelText("Password")).toHaveAttribute("type", "password");
     fireEvent.change(screen.getByLabelText("Email"), {
       target: { value: "  athlete@example.com  " },

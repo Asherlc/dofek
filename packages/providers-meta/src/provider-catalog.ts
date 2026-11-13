@@ -77,6 +77,12 @@ export const PROVIDER_CATALOG: Readonly<Record<string, ProviderCatalogEntry>> = 
   crimpd: { label: "Crimpd", logo: { type: "png" } },
   "eight-a": { label: "8a.nu / Vertical-Life", logo: { type: "png" } },
   moonboard: { label: "MoonBoard", logo: { type: "png" } },
+  boardsesh: {
+    label: "BoardSesh",
+    credentialIdentifier: "email",
+    credentialInstructions:
+      "Sign in with your BoardSesh email and password. Apple/Google-only accounts need a BoardSesh password.",
+  },
   google: { label: "Google", logo: { type: "svg" } },
   apple: { label: "Apple", logo: { type: "svg" } },
   github: { label: "GitHub", logo: { type: "png" } },
