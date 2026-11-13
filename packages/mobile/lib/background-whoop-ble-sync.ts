@@ -126,6 +126,7 @@ export async function syncWhoopBle(): Promise<void> {
 export async function retryWhoopBleConnection(): Promise<void> {
   const session = currentSession;
   if (!session?.active || !session.uploadsConfigured) return;
+  session.connectionIntent = true;
   await session.deps.retryConnection();
 }
 

@@ -180,6 +180,38 @@ describe("native WHOOP lifecycle", () => {
     await retryWhoopBleConnection();
     expect(native.retryConnection).toHaveBeenCalledOnce();
   });
+  it.each(["teardown", "replacement"])(
+    "disconnects a pending background retry on session %s",
+    async (retirement) => {
+      AppState.currentState = "background";
+      const native = deps();
+      const retried = deferred<boolean>();
+      native.retryConnection.mockReturnValueOnce(retried.promise);
+      await initBackgroundWhoopBleSync(context, native);
+      const retrying = retryWhoopBleConnection();
+      try {
+        expect(native.retryConnection).toHaveBeenCalledOnce();
+        if (retirement === "replacement") {
+          await initBackgroundWhoopBleSync({ ...context, userId: "user-2" }, deps());
+        } else {
+          teardownBackgroundWhoopBleSync();
+        }
+        expect(native.disconnect).toHaveBeenCalledOnce();
+      } finally {
+        retried.resolve(false);
+        await retrying;
+      }
+    },
+  );
+  it("disconnects a background scan when retry returns false", async () => {
+    AppState.currentState = "background";
+    const native = deps();
+    native.retryConnection.mockResolvedValueOnce(false);
+    await initBackgroundWhoopBleSync(context, native);
+    await retryWhoopBleConnection();
+    teardownBackgroundWhoopBleSync();
+    expect(native.disconnect).toHaveBeenCalledOnce();
+  });
   it("propagates configuration failure before capture starts", async () => {
     const native = deps();
     native.configureUpload.mockImplementation(() => {
