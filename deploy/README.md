@@ -100,6 +100,12 @@ infrastructure has been retired.
   its [Compose file fetcher](https://github.com/dependabot/dependabot-core/blob/main/docker/lib/dependabot/docker_compose/file_fetcher.rb)
   does not recognize `stack.yml`. Application images remain resolved by the
   release workflow through `APP_IMAGE`.
+- The [deployment workflow](../.github/workflows/deploy-web-stack.yml) resolves
+  Kafka's requested immutable image from the base manifest with the existing
+  [image reader](../scripts/stack-service-image.ts). Pre-apply readiness and
+  topic probes use the running broker image; post-apply verification and topic
+  policy updates use the requested image, so image updates need no duplicated
+  workflow digest edits.
 - Traefik consumes the swarm provider and routes traffic from labels declared on stack services.
 - Zero-downtime updates for `web` and `worker` are configured via `deploy.update_config` (`order: start-first`, `failure_action: rollback`, healthcheck-gated `monitor` window).
 - The BullMQ worker has a 30-minute stop grace period. BullMQ's graceful `Worker.close()` stops accepting new jobs and waits for active jobs, while Docker otherwise sends `SIGKILL` after a 10-second default. Provider HTTP calls have a shared two-minute deadline, and provider-data deletion advances through one durable 1,000-row continuation job per batch, so the grace period covers bounded work instead of masking unbounded requests or multi-hour loops. The initial rollout convergence deadline is 35 minutes so CI can observe the full graceful-drain result. See [BullMQ graceful shutdown](https://docs.bullmq.io/guide/workers/graceful-shutdown), [Docker `stop_grace_period`](https://docs.docker.com/reference/compose-file/services/#stop_grace_period), and [Node.js `AbortSignal.timeout()`](https://nodejs.org/api/globals.html#static-method-abortsignaltimeoutdelay).
