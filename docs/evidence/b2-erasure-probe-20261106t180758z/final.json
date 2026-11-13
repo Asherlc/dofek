@@ -1,0 +1,31 @@
+{
+  "completedAt": "2026-11-06T18:19:18.773Z",
+  "bucketName": "dofek-b2-erasure-probe-20261106t180758z",
+  "bucketId": "3f1b04eb1362bd2ea1130015",
+  "keyName": "codex-b2-erasure-probe-20261106t180758z",
+  "probeKeyId": "004fb4b32de13050000000002",
+  "sourceHash": "5fd159e002ecd97d97a6c23b2358fbcb1eed5b36ffe68f5824b675eef521ec44",
+  "primaryError": null,
+  "probeExitCode": 0,
+  "summary": {
+    "type": "summary",
+    "ownedKeyCount": 11,
+    "uploadedBytes": 168,
+    "fatalUnexpected": null,
+    "cleanupFailed": false,
+    "caseCount": 17,
+    "exitCode": 0
+  },
+  "cleanup": {
+    "holdsCleared": [],
+    "versionsDeleted": [],
+    "errors": [],
+    "bucketDeleted": true,
+    "keyRevoked": true,
+    "remainingVersions": 0,
+    "remainingUnfinishedUploads": 0,
+    "ownedBucketMatches": 0,
+    "ownedKeyMatches": 0
+  },
+  "objectBodyGetCommands": 0
+}

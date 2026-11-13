@@ -60,6 +60,7 @@ function createStoryData(
   photoActivity = false,
   originSourceName: string | null = null,
   branchingSources = false,
+  unknownDuration = false,
 ) {
   const today = formatDateYmd();
   const yesterday = formatDateYmd(new Date(Date.now() - 86_400_000));
@@ -242,7 +243,7 @@ function createStoryData(
           endUtcOffsetMinutes: -360,
           source: "device_timezone",
         },
-        durationMin: 120,
+        durationMin: unknownDuration ? null : 120,
         source: {
           tree: {
             primary: {
@@ -395,6 +396,7 @@ function MockProviders({
   photoActivity,
   originSourceName,
   branchingSources,
+  unknownDuration,
 }: {
   children: React.ReactNode;
   climbingActivity: boolean;
@@ -402,6 +404,7 @@ function MockProviders({
   photoActivity: boolean;
   originSourceName: string | null;
   branchingSources: boolean;
+  unknownDuration: boolean;
 }) {
   const storyData = useMemo(
     () =>
@@ -411,8 +414,16 @@ function MockProviders({
         photoActivity,
         originSourceName,
         branchingSources,
+        unknownDuration,
       ),
-    [climbingActivity, originProvider, photoActivity, originSourceName, branchingSources],
+    [
+      climbingActivity,
+      originProvider,
+      photoActivity,
+      originSourceName,
+      branchingSources,
+      unknownDuration,
+    ],
   );
   const queryClient = useMemo(() => {
     const client = new QueryClient({
@@ -462,6 +473,7 @@ const meta = {
       <MockProviders
         climbingActivity={context.parameters.climbingActivity === true}
         branchingSources={context.parameters.branchingSources === true}
+        unknownDuration={context.parameters.unknownDuration === true}
         photoActivity={context.parameters.photoActivity === true}
         originProvider={
           context.parameters.originProvider === null
@@ -522,6 +534,17 @@ export const ClimbingActivity: Story = {
     await checkFullWidthMap(canvasElement, "Boulder Canyon climbing");
     await within(canvasElement).findByRole("button", {
       name: /Boulder Canyon climbing.*Climbing/,
+    });
+  },
+};
+
+export const ClimbingUnknownDuration: Story = {
+  parameters: { climbingActivity: true, unknownDuration: true },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(await canvas.findByText(/· Duration unavailable$/)).toBeVisible();
+    await canvas.findByRole("button", {
+      name: /^Open Boulder Canyon climbing, .*, Duration unavailable,/,
     });
   },
 };
