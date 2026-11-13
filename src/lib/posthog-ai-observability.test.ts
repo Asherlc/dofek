@@ -1,7 +1,7 @@
 import { context, SpanKind } from "@opentelemetry/api";
 import { AsyncLocalStorageContextManager } from "@opentelemetry/context-async-hooks";
 import { resourceFromAttributes } from "@opentelemetry/resources";
-import type { ReadableSpan, Span, SpanProcessor } from "@opentelemetry/sdk-trace-base";
+import type { ReadableSpan, Span, SpanProcessor } from "@opentelemetry/sdk-trace";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const posthogMocks = vi.hoisted(() => ({

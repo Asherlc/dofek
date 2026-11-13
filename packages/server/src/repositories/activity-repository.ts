@@ -536,6 +536,15 @@ export class ActivityRepository extends BaseRepository {
             a.source_external_ids,
             a.absent_source_external_ids,
             a.member_activity_ids,
+            EXISTS (
+              SELECT 1
+              FROM fitness.activity member
+              WHERE member.id = ANY(a.member_activity_ids)
+                AND member.user_id = a.user_id
+                AND member.deleted_at IS NULL
+                AND member.provider_absent_at IS NULL
+                AND member.fit_recovery_error IS NOT NULL
+            ) AS fit_recovery_error,
             NULL::double precision AS avg_hr,
             NULL::smallint AS max_hr,
             NULL::double precision AS avg_power,
@@ -617,6 +626,7 @@ export class ActivityRepository extends BaseRepository {
               ELSE NULL
             END AS absent_source_external_ids,
             ARRAY[a.id]::uuid[] AS member_activity_ids,
+            false AS fit_recovery_error,
             NULL::double precision AS avg_hr,
             NULL::smallint AS max_hr,
             NULL::double precision AS avg_power,
@@ -901,25 +911,43 @@ export class ActivityRepository extends BaseRepository {
   }
 
   /** Clear provider tombstones so hidden activities become visible again. */
-  async restoreProviderAbsent(activityIds: string[]): Promise<{ restoredCount: number }> {
+  async restoreProviderAbsent(
+    activityIds: string[],
+  ): Promise<{ restoredCount: number; memberActivityIds: string[] }> {
     const uniqueActivityIds = [...new Set(activityIds)];
     if (uniqueActivityIds.length === 0) {
-      return { restoredCount: 0 };
+      return { restoredCount: 0, memberActivityIds: [] };
     }
+
+    const selectedIds = sql.join(
+      uniqueActivityIds.map((activityId) => sql`${activityId}::uuid`),
+      sql`, `,
+    );
 
     const restoredRows = await this.query(
       z.object({ id: z.string() }),
-      sql`UPDATE fitness.activity
-          SET provider_absent_at = NULL
+      sql`WITH selected_groups AS (
+            SELECT group_id AS id FROM fitness.activity
+            WHERE user_id = ${this.userId}::uuid AND id IN (${selectedIds})
+            UNION
+            SELECT id FROM fitness.activity_group
+            WHERE user_id = ${this.userId}::uuid AND id IN (${selectedIds})
+            UNION
+            SELECT group_id FROM fitness.activity_group_alias
+            WHERE user_id = ${this.userId}::uuid AND alias_id IN (${selectedIds})
+          )
+          UPDATE fitness.activity
+          SET provider_absent_at = NULL, absence_provider_id = NULL
           WHERE user_id = ${this.userId}::uuid
             AND provider_absent_at IS NOT NULL
-            AND id IN (${sql.join(
-              uniqueActivityIds.map((activityId) => sql`${activityId}::uuid`),
-              sql`, `,
-            )})
+            AND deleted_at IS NULL
+            AND group_id IN (SELECT id FROM selected_groups)
           RETURNING id::text AS id`,
     );
-    return { restoredCount: restoredRows.length };
+    return {
+      restoredCount: restoredRows.length,
+      memberActivityIds: restoredRows.map((row) => row.id),
+    };
   }
 
   /** Delete activities by visible activity IDs, including all members of matching deduped groups. */

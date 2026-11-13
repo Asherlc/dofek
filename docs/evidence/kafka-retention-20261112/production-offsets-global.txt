@@ -1,0 +1,7 @@
+Fri Nov 13 00:46:36 UTC 2026
+metric-stream-history-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3:0:427815
+metric-stream-history-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3.quarantine.v1:0:0
+metric-stream-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3:0:0
+metric-stream-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3.quarantine.v1:0:0
+metric-stream-live-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3:0:1696520
+metric-stream-live-kafka-76012b6a-8894-4834-93b1-2260f79ff7d3.quarantine.v1:0:0

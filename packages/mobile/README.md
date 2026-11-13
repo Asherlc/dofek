@@ -29,6 +29,22 @@ see the [removal scope](../../docs/superpowers/specs/2026-11-03-remove-daily-sco
 - **Mobile Dashboard**: Simplified mobile-first health and recovery tracking with SVG-based charts (`react-native-svg`).
 - **Nutrition history**: Read-only nutrition history, totals, source resolution, and analytics.
 
+## Manual HealthKit Sync
+
+The authenticated app root owns the manual HealthKit controller and its published
+progress, pause, and error state. Provider list and detail screens read that same
+state, so leaving a route does not discard progress. Resume continues the
+controller's saved date window; choosing Full sync starts a new all-history
+window. See the [controller context](lib/health-kit-manual-sync-context.tsx),
+[resumable sync controller](lib/health-kit-manual-sync.ts), and [provider actions](components/providers/use-provider-detail-actions.ts).
+
+The iOS HealthKit bridge directly queries protected HealthKit data. Changes to
+that native bridge require a rebuilt app binary; an OTA JavaScript update cannot
+install Swift changes. Expo documents update compatibility in its
+[runtime-version guide](https://docs.expo.dev/eas-update/runtime-versions/),
+and Apple documents HealthKit access through its
+[authorization flow](https://developer.apple.com/documentation/healthkit/authorizing-access-to-health-data).
+
 ## Offline startup
 
 After a successful sign-in or online session restore, the app saves the verified
@@ -47,6 +63,17 @@ file-backed [iOS background uploads](https://developer.apple.com/documentation/f
 Unacknowledged samples survive process recreation. Sign-out/account changes
 cancel the former account's requests and purge its queue; see the
 [WHOOP durability contract](modules/whoop-ble/README.md).
+If sign-out cleanup was interrupted, the [upload-session boundary](lib/whoop-upload-session.ts)
+resumes the existing native cleanup once during asynchronous WHOOP initialization.
+Capture waits for cleanup and matching intent deletion; authentication, splash
+dismissal and navigation remain independent. The native work stays on its dedicated
+[Expo async queue](https://docs.expo.dev/modules/module-api/#asyncfunction), invoked
+by the [WHOOP effect](lib/useWhoopBleSync.ts) after rendering, following
+[React's effect lifecycle](https://react.dev/reference/react/useEffect).
+Failure retains the marker and reaches the existing capture-stop alert and error
+reporting; another initialization in the same JavaScript lifetime does not
+automatically repeat failed cleanup. Normal restarts without a pending marker
+preserve queued samples.
 The separate standard Bluetooth heart-rate monitor still uses an in-memory
 [buffer](modules/ble-heart-rate/ios/BleHeartRateSampleBuffer.swift).
 
@@ -468,17 +495,24 @@ require a new binary with the resulting runtime, following Expo's
 [runtime compatibility guidance](https://docs.expo.dev/eas-update/runtime-versions/).
 
 The current stable [Expo SDK 58](https://expo.dev/changelog/sdk-58)
-native dependency set uses Expo 58.0.23, Expo Router 58.0.30, Expo Updates
-58.0.21, React Native 0.88.1, and React Native SVG 15.16.0, pinned in
+native dependency set uses Expo 58.0.24, Expo Router 58.0.31, Expo Updates
+58.0.22, React Native 0.88.1, and React Native SVG 15.16.0, pinned in
 [package.json](./package.json). The
-[Expo dependency matrix](https://github.com/expo/expo/blob/expo%4058.0.23/packages/expo/bundledNativeModules.json)
+[Expo dependency matrix](https://github.com/expo/expo/blob/expo%4058.0.24/packages/expo/bundledNativeModules.json)
 and the [lockfile](../../pnpm-lock.yaml) define the corresponding SDK-managed
 versions, including the updated native Modules Core and JSI packages.
 Validate SDK-managed versions with
 `pnpm tsx ../../scripts/with-env.ts -- pnpm expo install --check` from this package, following Expo's
 [dependency validation guidance](https://docs.expo.dev/more/expo-cli/#configuring-dependency-validation).
 The native dependency set also includes ExpoNetwork, the pnpm patch to
-`expo-apple-authentication@58.0.2`, and [MapLibre Native](https://maplibre.org/maplibre-react-native/docs/setup/expo/).
+`expo-apple-authentication@58.0.3`, and [MapLibre Native](https://maplibre.org/maplibre-react-native/docs/setup/expo/).
+
+The `@expo/plist` 0.10.1 and 0.10.2 consumers share the existing
+[XML parser patch](../../patches/@expo__plist@0.10.1.patch), selected by the
+exact version mappings in [pnpm-workspace.yaml](../../pnpm-workspace.yaml).
+It retains leading-whitespace normalization and passes the explicit XML media type required by the pinned
+parser's [`parseFromString`](https://github.com/xmldom/xmldom/blob/0.9.12/lib/dom-parser.js)
+API; older plist consumers retain their existing patches.
 
 Runtime 1.12 retains the HealthKit authorization-not-determined classification
 introduced in 1.10, with the stable code consumed by anchored sync. A type awaiting authorization leaves
@@ -492,6 +526,17 @@ build and release that binary before testing updates against its interface.
 Follow the [release and recovery runbook](../../docs/mobile-ota-recovery.md).
 Use [pnpm patch/patch-commit](https://pnpm.io/cli/patch-commit) when updating the
 patch, then rerun the native regression and existing Release archive job.
+
+The [notification hook](lib/useCollectionNotifications.ts) records
+`collection_notifications_enable_completed` through the existing mobile logger
+after the current native authorization check resolves. `requestPermission`
+records whether prompting was allowed; `granted` records the returned permission
+state. A denied result proves the call completed but does not mean alerts are
+enabled. Existing telemetry adds `appBuild`, `runtimeVersion`, and `assetsVersion`
+(the [Expo update ID](https://docs.expo.dev/versions/latest/sdk/updates/#updateid)).
+Rejected, superseded, or retired checks do not emit this completion event.
+Correlate it with the installed build and launched runtime before claiming
+recovery from an unavailable native method; see the [Axiom query contract](../../docs/axiom-observability-runbook.md#queries).
 
 The SVG 15.16.0 dependency patch separates its Android tap-sound binding from
 the web module graph. It preserves the native press behavior introduced by
@@ -517,7 +562,7 @@ and Swift metadata ([Swift compiler guidance](https://forums.swift.org/t/linker-
 When upgrading Sentry, update the React Native package patch and binary
 podspec together, then verify all native consumers and the Release archive.
 
-The [Apple patch](../../patches/expo-apple-authentication@58.0.2.patch) preserves
+The [Apple patch](../../patches/expo-apple-authentication@58.0.3.patch) preserves
 Expo's authorization exception mapping and cancellation. Other authorization
 errors carry only an allowlisted NSError domain, numeric code, and optional
 immediate underlying domain/code. Unknown domains become `other`; native
@@ -531,6 +576,28 @@ server error messages and silent user cancellation. See the
 [Expo Apple authentication behavior](https://docs.expo.dev/versions/latest/sdk/apple-authentication/).
 These diagnostics do not establish the cause of historical Apple failures;
 device sign-in validation remains separate from helper tests and archive validation.
+
+For an Apple sign-in investigation, record the following during the next
+affected-device attempt:
+
+- The login method: native Apple sign-in, browser-based Apple sign-in, or another
+  method. Include the installed signed build number and Expo runtime version.
+- The UTC attempt time, whether Apple's authorization sheet appeared, whether
+  authorization completed, and the displayed error or resulting screen state.
+- The observed failure stage: native authorization, returned credential, server
+  exchange, or session restoration. Correlate existing Sentry/Axiom records with
+  the attempt; retain safe native domain/code and underlying domain/code plus
+  server response status, without copying credentials, tokens, authorization
+  codes, or raw native error payloads.
+
+An unknown authorization error does not establish cancellation or its cause;
+see [Apple's error definition](https://developer.apple.com/documentation/authenticationservices/asauthorizationerror-swift.struct/code/unknown).
+Require an actual end-to-end Apple sign-in result on the affected signed device
+before declaring recovery. Missing error events alone are insufficient, and a
+frozen login screen does not identify which login method failed. Expo documents
+[physical-device testing and separate cancellation handling](https://docs.expo.dev/versions/latest/sdk/apple-authentication/).
+Use the existing [Axiom field/query guidance](../../docs/axiom-observability-runbook.md)
+when correlating an attempt.
 
 Query persistence records allowlisted failure categories/codes and aggregate
 attempted-write counts and UTF-8 byte measurements per persister lifetime.
@@ -570,6 +637,16 @@ Sentry breadcrumbs omit account IDs, and PostHog resets restore the shared
 runtime properties. These boundaries are covered by the
 [telemetry regressions](./lib/telemetry.test.ts) and
 [transport regressions](./lib/trpc-fetch.test.ts).
+
+Native Sentry starts in the AppDelegate with the cleanup-log callback installed
+by [the Expo plugin](./plugins/with-whoop-cleanup-logging.ts). It removes user
+attributes only from WHOOP disable/cleanup logs after Cocoa enriches them;
+unrelated logs and events keep their account attribution. JavaScript uses
+`autoInitializeNativeSdk: false` to preserve that native configuration in both
+development and release builds. Both layers still initialize with a DSN, as
+required by Sentry's [native initialization options](https://docs.sentry.io/platforms/react-native/configuration/options/#autoinitializenativesdk).
+The callback uses Sentry's supported
+[`beforeSendLog` hook](https://docs.sentry.io/platforms/apple/guides/ios/logs/#beforesendlog).
 
 WHOOP diagnostics connect native capture/queue snapshots, background task state,
 upload batches, HTTP responses, and server broker publication without logging

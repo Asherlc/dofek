@@ -189,6 +189,58 @@ export const SyncingNoProgress: ProviderCardStory = {
   },
 };
 
+export const AppleHealthRunning: ProviderCardStory = {
+  args: {
+    provider: {
+      ...providerCardMeta.args.provider,
+      id: "apple_health",
+      label: "Apple Health",
+      authType: "none",
+      syncStageProgress: { completed: 2, total: 5 },
+    },
+    syncing: true,
+    syncProgress: { percentage: 40, message: "Uploading health records" },
+  },
+};
+
+export const AppleHealthPaused: ProviderCardStory = {
+  args: {
+    provider: {
+      ...providerCardMeta.args.provider,
+      id: "apple_health",
+      label: "Apple Health",
+      authType: "none",
+      syncActionLabel: "Resume",
+    },
+    syncProgress: { message: "Apple Health sync paused" },
+  },
+};
+
+export const AppleHealthLocked: ProviderCardStory = {
+  args: {
+    ...AppleHealthPaused.args,
+    provider: {
+      ...AppleHealthPaused.args.provider,
+      syncStatusMessage: "Unlock your phone to continue Apple Health sync",
+    },
+  },
+};
+
+export const AppleHealthActionableError: ProviderCardStory = {
+  args: {
+    provider: {
+      ...providerCardMeta.args.provider,
+      id: "apple_health",
+      label: "Apple Health",
+      authType: "none",
+    },
+    syncProgress: {
+      message:
+        "Another Apple Health sync is active for this account. Resume it on your other device.",
+    },
+  },
+};
+
 export const ImportOnly: ProviderCardStory = {
   args: {
     provider: {

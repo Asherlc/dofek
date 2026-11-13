@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { groupProviderEntries, providerFamily } from "./provider-catalog.ts";
+import { groupProviderEntries, providerCatalogEntry, providerFamily } from "./provider-catalog.ts";
+
+describe("BoardSesh catalog metadata", () => {
+  it("uses the email credential form", () => {
+    expect(providerCatalogEntry("boardsesh")).toMatchObject({
+      label: "BoardSesh",
+      credentialIdentifier: "email",
+    });
+  });
+});
 
 describe("providerFamily", () => {
   it("groups Garmin connection methods under one user-facing provider", () => {

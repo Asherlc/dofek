@@ -359,6 +359,7 @@ async function loadProviderConnections(
           "soill",
           "touchstone",
           "aurora-board",
+          "boardsesh",
         ].includes(connection.provider_id)
       ) {
         throw new ProviderRevocationPrerequisiteError(

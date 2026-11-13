@@ -12,6 +12,24 @@ vi.mock("react-native", async () => {
 });
 
 vi.mock("../ProviderLogo", () => ({ ProviderLogo: () => null }));
+vi.mock("../../lib/trpc", () => ({
+  trpc: {
+    useUtils: () => ({
+      activity: { byId: { invalidate: vi.fn() }, list: { invalidate: vi.fn() } },
+      calendar: {
+        weekListV2: { invalidate: vi.fn() },
+        activityOverview: { invalidate: vi.fn() },
+        calendarData: { invalidate: vi.fn() },
+      },
+    }),
+    activity: {
+      restoreStatus: { useQuery: () => ({ data: undefined, error: null }) },
+      restoreProviderAbsent: {
+        useMutation: () => ({ mutate: vi.fn(), isPending: false, error: null, reset: vi.fn() }),
+      },
+    },
+  },
+}));
 vi.mock("@dofek/providers/providers", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@dofek/providers/providers")>()),
   providerLabel: (id: string) => (id === "kilter" ? "Kilter Board" : id),
@@ -19,6 +37,18 @@ vi.mock("@dofek/providers/providers", async (importOriginal) => ({
 
 describe("ActivityDetailHeader", () => {
   beforeEach(() => vi.clearAllMocks());
+
+  it("shows a server-projected FIT recovery warning and omits it for a clean activity", () => {
+    const warning = "Some FIT data could not be recovered from the original file.";
+    const { rerender } = render(
+      <ActivityDetailHeader activity={{ ...detailHeaderActivity, fitRecoveryWarning: warning }} />,
+    );
+
+    expect(screen.getByRole("alert").textContent).toBe(warning);
+
+    rerender(<ActivityDetailHeader activity={detailHeaderActivity} />);
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
 
   it("keeps the activity identity with an inline tree of distinct source branches", () => {
     render(<ActivityDetailHeader activity={detailHeaderActivity} />);

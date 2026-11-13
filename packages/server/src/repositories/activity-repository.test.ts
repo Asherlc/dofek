@@ -112,6 +112,7 @@ describe("ActivityRepository", () => {
             primary_provider_id: null,
             primary_source_name: null,
             origin_candidate_member_ids: [],
+            fit_recovery_error: false,
             start_utc_offset_minutes: null,
             end_utc_offset_minutes: null,
             local_time_source: "unknown",
@@ -1181,6 +1182,7 @@ describe("ActivityRepository", () => {
               elevation_gain_m: null,
               elevation_loss_m: null,
               sample_count: null,
+              fit_recovery_error: false,
               provider_absent_at: "2024-01-16T08:00:00.000Z",
             },
           ]);
@@ -2155,7 +2157,10 @@ describe("ActivityRepository", () => {
     it("restoreProviderAbsent skips SQL when no activity ids are provided", async () => {
       const { repo, execute } = makeRepository([]);
 
-      await expect(repo.restoreProviderAbsent([])).resolves.toEqual({ restoredCount: 0 });
+      await expect(repo.restoreProviderAbsent([])).resolves.toEqual({
+        restoredCount: 0,
+        memberActivityIds: [],
+      });
 
       expect(execute).not.toHaveBeenCalled();
     });
@@ -2165,7 +2170,7 @@ describe("ActivityRepository", () => {
 
       await expect(
         repo.restoreProviderAbsent(["activity-id", "activity-id", "other-id"]),
-      ).resolves.toEqual({ restoredCount: 2 });
+      ).resolves.toEqual({ restoredCount: 2, memberActivityIds: ["activity-id", "other-id"] });
 
       const sqlObject = execute.mock.calls[0]?.[0];
       const compiledQuery = dialect.sqlToQuery(sqlObject);

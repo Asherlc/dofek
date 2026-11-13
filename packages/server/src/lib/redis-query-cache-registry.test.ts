@@ -91,7 +91,7 @@ describe("RedisQueryCacheRegistry", () => {
     expect(fakeRedis.mgetBatches).toEqual([]);
   });
 
-  it("uses the shared production Redis connection", async () => {
+  it("reuses the process-owned production Redis connection", async () => {
     const fakeRedis = createFakeRedisClient(
       new Map([["query-cache:data:user-1:cycling.performance:UTC:{}", '"cycling"']]),
       ["query-cache:data:user-1:cycling.performance:UTC:{}"],
@@ -104,7 +104,6 @@ describe("RedisQueryCacheRegistry", () => {
     await new RedisQueryCacheRegistry().listKeys();
     expect(redisMocks.RedisConnection).toHaveBeenCalledTimes(1);
     expect(redisMocks.RedisConnection).toHaveBeenCalledWith(expect.any(Object), {
-      shared: true,
       blocking: false,
       skipVersionCheck: true,
     });

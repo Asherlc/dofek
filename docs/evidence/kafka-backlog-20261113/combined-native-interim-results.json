@@ -1,0 +1,133 @@
+{
+  "scope": "Task2 combined native sink/identity qualification; local ClickHouse26.9.19.9; retries0",
+  "success": false,
+  "numPassedTests": 24,
+  "numFailedTests": 1,
+  "cases": [
+    {
+      "title": "prunes unrelated identities while applying a scoped deletion",
+      "status": "passed",
+      "duration": 17563.076792000007
+    },
+    {
+      "title": "bounds candidate reads for a multi-scope deletion",
+      "status": "passed",
+      "duration": 5357.975166999997
+    },
+    {
+      "title": "keeps combined deletion scopes bound to their matching latest identities",
+      "status": "passed",
+      "duration": 6303.156125000009
+    },
+    {
+      "title": "resolves the latest channel correction with native timestamp precision",
+      "status": "passed",
+      "duration": 1679.8709589999926
+    },
+    {
+      "title": "resolves the latest externalId correction with native timestamp precision",
+      "status": "passed",
+      "duration": 14092.114875
+    },
+    {
+      "title": "resolves the latest scalar correction with native timestamp precision",
+      "status": "passed",
+      "duration": 27509.114165999985
+    },
+    {
+      "title": "applies an activity-only scope across users in a mixed scope batch",
+      "status": "passed",
+      "duration": 16811.544790999964
+    },
+    {
+      "title": "retains Zepp vectors and units, distinct same-millisecond records, and deduplicated retries",
+      "status": "passed",
+      "duration": 765.4684580000003
+    },
+    {
+      "title": "inserts events whose recordedAt carries a UTC Z suffix",
+      "status": "passed",
+      "duration": 138.31554200000028
+    },
+    {
+      "title": "retains distinct device timestamp identities while coalescing repeated timestamp identities",
+      "status": "passed",
+      "duration": 6379.701625
+    },
+    {
+      "title": "tombstones the latest provider-scoped metric version",
+      "status": "passed",
+      "duration": 233.60441600000013
+    },
+    {
+      "title": "preserves the latest activity when only an older version matches the delete scope",
+      "status": "passed",
+      "duration": 21669.990583
+    },
+    {
+      "title": "tombstones rows scoped to a null external ID",
+      "status": "passed",
+      "duration": 260.18441699999676
+    },
+    {
+      "title": "tombstones multiple external-ID scopes in one ordered delete batch",
+      "status": "passed",
+      "duration": 260.3105829999986
+    },
+    {
+      "title": "reactivates the same deterministic row ID after a scoped replacement",
+      "status": "passed",
+      "duration": 608.7847079999992
+    },
+    {
+      "title": "keeps the newer live replacement when an older history replacement arrives last",
+      "status": "passed",
+      "duration": 2093.560540999999
+    },
+    {
+      "title": "guards rows omitted by a newer live replacement before older history first arrives",
+      "status": "passed",
+      "duration": 25284.712333000003
+    },
+    {
+      "title": "does not amplify incoming rows against deletion scopes older than the batch",
+      "status": "passed",
+      "duration": 13155.99679199999
+    },
+    {
+      "title": "guards older rows in a mixed-version batch while retaining same-operation and newer rows",
+      "status": "passed",
+      "duration": 21765.249041999996
+    },
+    {
+      "title": "applies deletion chunks within HTTP limits before their replacement rows",
+      "status": "passed",
+      "duration": 3654.87612500001
+    },
+    {
+      "title": "matches nullable and bounded scopes precisely without deleting equal-revision replacements",
+      "status": "passed",
+      "duration": 15574.793999999994
+    },
+    {
+      "title": "acknowledges a deletion event only after applying it",
+      "status": "passed",
+      "duration": 158.30333300000348
+    },
+    {
+      "title": "profiles 101 unacknowledged adjacent same-revision deletes",
+      "status": "passed",
+      "duration": 28963.790999999997
+    },
+    {
+      "title": "profiles 101 partially acknowledged adjacent same-revision deletes",
+      "status": "failed",
+      "duration": 30002.601000000024
+    },
+    {
+      "title": "profiles 101 fully acknowledged adjacent same-revision deletes",
+      "status": "passed",
+      "duration": 9183.516166999994
+    }
+  ]
+}

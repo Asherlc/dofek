@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { EventEmitter } from "node:events";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import {
   applyMetricStreamEventsToClickHouse,
   insertMetricStreamEventsIntoClickHouse,
@@ -10,11 +10,11 @@ import {
 } from "./clickhouse-sink.ts";
 import {
   ACCOUNT_ERASURE_FENCE_TABLE,
+  METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE,
   METRIC_STREAM_DELETE_SCOPE_TABLE,
   METRIC_STREAM_PROCESSING_ACKNOWLEDGEMENT_TABLE,
   METRIC_STREAM_TABLE,
 } from "./clickhouse-table.ts";
-import { MetricStreamConsumerReadiness } from "./consumer-readiness.ts";
 import {
   createMetricStreamBatchCompletedEvent,
   createMetricStreamDeletedEvent,
@@ -22,7 +22,18 @@ import {
   type MetricStreamDeleteScopeInput,
   type MetricStreamEventV1,
 } from "./events.ts";
-import type { RunMetricStreamEventConsumerOptions } from "./redpanda-consumer.ts";
+import {
+  createProcessingMarker,
+  expectDeletionAcknowledgementQuery,
+  expectMetricStreamInsert,
+  firstCommandQuery,
+  insertedValues,
+  makeActiveGenerationQuery,
+  makeEmptyGenerationQuery,
+  parseDeletionAcknowledgementInsert,
+  processingMarkerFailureCases,
+  replacementScopeTestCases,
+} from "./test-helpers.ts";
 
 const captureException = vi.hoisted(() => vi.fn());
 
@@ -60,35 +71,6 @@ function createCurrentMetricStreamDeletedEvent(scope: MetricStreamDeleteScopeInp
   return createMetricStreamDeletedEvent(scope, operationRevision);
 }
 
-function firstCommandQuery(command: CallableVitestMock): string {
-  const call = command.mock.calls
-    .map((args: unknown[]) => args[0])
-    .find(
-      (arg: unknown) =>
-        typeof arg === "object" &&
-        arg !== null &&
-        "query" in arg &&
-        typeof arg.query === "string" &&
-        arg.query.startsWith(`INSERT INTO ${METRIC_STREAM_TABLE} (`),
-    );
-  if (!call || typeof call !== "object" || !("query" in call) || typeof call.query !== "string") {
-    throw new Error("expected command call");
-  }
-  return call.query;
-}
-
-function insertedValues(insert: CallableVitestMock, callIndex: number): unknown[] {
-  const call = insert.mock.calls[callIndex]?.[0];
-  if (!call || typeof call !== "object" || !("values" in call) || !Array.isArray(call.values)) {
-    throw new Error("expected an insert call with row values");
-  }
-  return call.values;
-}
-
-function makeEmptyGenerationQuery() {
-  return vi.fn(async () => ({ json: async () => [] }));
-}
-
 afterEach(() => {
   vi.useRealTimers();
   captureException.mockClear();
@@ -107,23 +89,18 @@ describe("insertMetricStreamEventsIntoClickHouse", () => {
     const inserted = await insertMetricStreamEventsIntoClickHouse({ insert }, [heartRateEvent]);
 
     expect(inserted).toBe(1);
-    expect(insert).toHaveBeenCalledWith({
-      table: METRIC_STREAM_TABLE,
-      format: "JSONEachRow",
-      clickhouse_settings: { date_time_input_format: "best_effort" },
-      values: [
-        expect.objectContaining({
-          id: heartRateEvent.id,
-          recorded_at: heartRateEvent.recordedAt,
-          channel: "heart_rate",
-          external_id: "hk:heart-rate-1",
-          device_id: "Apple Watch",
-          scalar: 72,
-          generation: 0,
-          is_deleted: 0,
-        }),
-      ],
-    });
+    expectMetricStreamInsert(insert, [
+      expect.objectContaining({
+        id: heartRateEvent.id,
+        recorded_at: heartRateEvent.recordedAt,
+        channel: "heart_rate",
+        external_id: "hk:heart-rate-1",
+        device_id: "Apple Watch",
+        scalar: 72,
+        generation: 0,
+        is_deleted: 0,
+      }),
+    ]);
   });
 
   it("skips IMU events because the analytics mirror intentionally excludes them", async () => {
@@ -173,31 +150,33 @@ describe("insertMetricStreamEventsIntoClickHouse", () => {
     expect(row.point).toBe('{"type":"Point","coordinates":[-122.4,37.8]}');
   });
 
-  it("maps omitted optional fields into null ClickHouse values", () => {
-    const row = mapMetricStreamEventToClickHouseRow({
-      version: 1,
-      id: "10000000-0000-4000-8000-000000000003",
-      recordedAt: "2026-06-06T19:00:00.000Z",
-      userId: "00000000-0000-0000-0000-000000000001",
-      providerId: "apple_health",
-      generation: 0,
-      sourceType: "api",
-      channel: "heart_rate",
-    });
-
-    expect(row.external_id).toBeNull();
-    expect(row.device_id).toBeNull();
-    expect(row.activity_id).toBeNull();
-    expect(row.scalar).toBeNull();
-    expect(row.point).toBeNull();
+  it.each([
+    {
+      label: "omitted optional fields",
+      event: {
+        version: 1 as const,
+        id: "10000000-0000-4000-8000-000000000003",
+        recordedAt: "2026-06-06T19:00:00.000Z",
+        userId: "00000000-0000-0000-0000-000000000001",
+        providerId: "apple_health",
+        generation: 0,
+        sourceType: "api",
+        channel: "heart_rate",
+      },
+      expectNullable: true,
+    },
+    { label: "explicit null vector and metadata", event: heartRateEvent, expectNullable: false },
+  ])("maps $label into ClickHouse values", ({ event, expectNullable }) => {
+    const row = mapMetricStreamEventToClickHouseRow(event);
     expect(row.vector).toEqual([]);
     expect(row.metadata).toBe("null");
-  });
-
-  it("maps explicit null vectors and metadata to the current ClickHouse column types", () => {
-    const row = mapMetricStreamEventToClickHouseRow(heartRateEvent);
-    expect(row.vector).toEqual([]);
-    expect(row.metadata).toBe("null");
+    if (expectNullable) {
+      expect(row.external_id).toBeNull();
+      expect(row.device_id).toBeNull();
+      expect(row.activity_id).toBeNull();
+      expect(row.scalar).toBeNull();
+      expect(row.point).toBeNull();
+    }
   });
 });
 
@@ -338,22 +317,14 @@ describe("applyMetricStreamEventsToClickHouse", () => {
     await expect(applying).resolves.toBe(1);
   });
 
-  it("does not query ClickHouse for an empty batch", async () => {
+  it.each([
+    { label: "empty", events: [] },
+    { label: "IMU-only", events: [imuEvent] },
+  ])("does not query ClickHouse for $label batches", async ({ events }) => {
     const insert = vi.fn(async () => undefined);
     const query = makeEmptyGenerationQuery();
 
-    await expect(applyMetricStreamEventsToClickHouse({ insert, query }, [])).resolves.toBe(0);
-    expect(insert).not.toHaveBeenCalled();
-    expect(query).not.toHaveBeenCalled();
-  });
-
-  it("does not query ClickHouse for IMU-only batches", async () => {
-    const insert = vi.fn(async () => undefined);
-    const query = makeEmptyGenerationQuery();
-
-    await expect(applyMetricStreamEventsToClickHouse({ insert, query }, [imuEvent])).resolves.toBe(
-      0,
-    );
+    await expect(applyMetricStreamEventsToClickHouse({ insert, query }, events)).resolves.toBe(0);
     expect(insert).not.toHaveBeenCalled();
     expect(query).not.toHaveBeenCalled();
   });
@@ -431,75 +402,15 @@ describe("applyMetricStreamEventsToClickHouse", () => {
     });
   });
 
-  it("requires Kafka position evidence before acknowledging a correlated batch", async () => {
-    const marker = createMetricStreamBatchCompletedEvent(
-      {
-        operationId: "30000000-0000-4000-8000-000000000001",
-        batchId: "heart-rate-1",
-        datasetKeys: ["recovery"],
-      },
-      1,
-    );
-
-    await expect(
-      applyMetricStreamEventsToClickHouse(
-        {
-          command: vi.fn(async () => undefined),
-          insert: vi.fn(async () => undefined),
-        },
-        [marker],
-      ),
-    ).rejects.toThrow("processing marker requires Kafka batch context");
-  });
-
-  it("requires the marker's Kafka offset before acknowledging a correlated batch", async () => {
-    const marker = createMetricStreamBatchCompletedEvent(
-      {
-        operationId: "30000000-0000-4000-8000-000000000001",
-        batchId: "heart-rate-1",
-        datasetKeys: ["recovery"],
-      },
-      1,
-    );
-
-    await expect(
-      applyMetricStreamEventsToClickHouse(
-        {
-          command: vi.fn(async () => undefined),
-          insert: vi.fn(async () => undefined),
-        },
-        [marker],
-        {
-          topic: "metric-stream-v1",
-          partition: 2,
-          eventOffsets: [],
-          heartbeat: vi.fn(async () => undefined),
-        },
-      ),
-    ).rejects.toThrow("processing marker is missing its Kafka offset");
-  });
-
-  it("requires a command-capable client before acknowledging a correlated batch", async () => {
-    const marker = createMetricStreamBatchCompletedEvent(
-      {
-        operationId: "30000000-0000-4000-8000-000000000001",
-        batchId: "heart-rate-1",
-        datasetKeys: ["recovery"],
-      },
-      1,
-    );
-
-    await expect(
-      applyMetricStreamEventsToClickHouse({ insert: vi.fn(async () => undefined) }, [marker], {
-        topic: "metric-stream-v1",
-        partition: 2,
-        eventOffsets: ["42"],
-        heartbeat: vi.fn(async () => undefined),
-      }),
-    ).rejects.toThrow(
-      "ClickHouse metric-stream processing acknowledgement requires a command-capable client",
-    );
-  });
+  const processingMarker = createProcessingMarker();
+  it.each(processingMarkerFailureCases)(
+    "requires $reason before acknowledging a correlated batch",
+    async ({ client, context, error }) => {
+      await expect(
+        applyMetricStreamEventsToClickHouse(client, [processingMarker], context),
+      ).rejects.toThrow(error);
+    },
+  );
 
   it("does not acknowledge a correlated batch fenced by account erasure", async () => {
     const command = vi.fn(async () => undefined);
@@ -533,19 +444,7 @@ describe("applyMetricStreamEventsToClickHouse", () => {
   it("tombstones an event when the provider generation fence advances during insertion", async () => {
     const command = vi.fn(async () => undefined);
     const insert = vi.fn(async () => undefined);
-    const query = vi.fn(async (options: { query: string }) => ({
-      json: async () =>
-        options.query.includes(ACCOUNT_ERASURE_FENCE_TABLE) ||
-        options.query.includes(METRIC_STREAM_DELETE_SCOPE_TABLE)
-          ? []
-          : [
-              {
-                generation: "1",
-                provider_id: heartRateEvent.providerId,
-                user_id: heartRateEvent.userId,
-              },
-            ],
-    }));
+    const query = makeActiveGenerationQuery("1", heartRateEvent.providerId, heartRateEvent.userId);
 
     const applied = await applyMetricStreamEventsToClickHouse({ command, insert, query }, [
       heartRateEvent,
@@ -589,19 +488,7 @@ describe("applyMetricStreamEventsToClickHouse", () => {
   it("tombstones events older than the active provider generation fence", async () => {
     const command = vi.fn(async () => undefined);
     const insert = vi.fn(async () => undefined);
-    const query = vi.fn(async (options: { query: string }) => ({
-      json: async () =>
-        options.query.includes(ACCOUNT_ERASURE_FENCE_TABLE) ||
-        options.query.includes(METRIC_STREAM_DELETE_SCOPE_TABLE)
-          ? []
-          : [
-              {
-                generation: "2",
-                provider_id: heartRateEvent.providerId,
-                user_id: heartRateEvent.userId,
-              },
-            ],
-    }));
+    const query = makeActiveGenerationQuery("2", heartRateEvent.providerId, heartRateEvent.userId);
 
     const applied = await applyMetricStreamEventsToClickHouse({ command, insert, query }, [
       { ...heartRateEvent, generation: 1 },
@@ -662,7 +549,7 @@ describe("applyMetricStreamEventsToClickHouse", () => {
         query: string;
         query_params?: Record<string, unknown>;
         format: "JSONEachRow";
-      }) => ({ json: async () => [{ acknowledgement_count: 1 }] }),
+      }) => ({ json: async () => [{ event_id: deleteEvent.eventId }] }),
     );
     const deleteEvent = createCurrentMetricStreamDeletedEvent({
       userId: heartRateEvent.userId,
@@ -674,17 +561,66 @@ describe("applyMetricStreamEventsToClickHouse", () => {
     ]);
 
     expect(applied).toBe(0);
-    expect(query).toHaveBeenCalledWith({
-      query: expect.stringMatching(
-        /SELECT 1 AS acknowledgement_count[\s\S]+metric_stream_delete_acknowledgement[\s\S]+LIMIT 1/,
-      ),
-      query_params: { event_id: deleteEvent.eventId },
-      format: "JSONEachRow",
-    });
+    expectDeletionAcknowledgementQuery(query, [deleteEvent.eventId]);
     expect(query.mock.calls[0]?.[0]?.query).not.toContain("FINAL");
     expect(command).not.toHaveBeenCalled();
     expect(insert).not.toHaveBeenCalled();
   });
+
+  it.each([
+    { label: "partial", eventCount: 3, acknowledgedIndexes: [1] },
+    { label: "fully", eventCount: 3, acknowledgedIndexes: [0, 1, 2] },
+    { label: "100-event boundary", eventCount: 100, acknowledgedIndexes: [] },
+    { label: "101-event boundary", eventCount: 101, acknowledgedIndexes: [] },
+  ])(
+    "replays exact unacknowledged IDs for a $label v3 run",
+    async ({ eventCount, acknowledgedIndexes }) => {
+      const deletes = Array.from({ length: eventCount }, (_, index) =>
+        createCurrentMetricStreamDeletedEvent({
+          userId: heartRateEvent.userId,
+          providerId: heartRateEvent.providerId,
+          externalId: `ack-boundary-${index}`,
+        }),
+      );
+      const acknowledgedIds = new Set(
+        deletes
+          .filter((_, index) => acknowledgedIndexes.includes(index))
+          .map(({ eventId }) => eventId),
+      );
+      const lookups: string[][] = [];
+      const query = vi.fn(async (options: { query_params?: Record<string, unknown> }) => ({
+        json: async () => {
+          const ids = z.array(z.uuid()).parse(options.query_params?.event_ids);
+          lookups.push(ids);
+          return ids.filter((id) => acknowledgedIds.has(id)).map((event_id) => ({ event_id }));
+        },
+      }));
+      const command = vi.fn(async (_options: { query: string }) => undefined);
+
+      await applyMetricStreamEventsToClickHouse(
+        { command, insert: vi.fn(async () => undefined), query },
+        deletes,
+      );
+
+      const eventIds = deletes.map(({ eventId }) => eventId);
+      const expectedLookupBatches = Array.from(
+        { length: Math.ceil(eventCount / 100) },
+        (_, batch) => eventIds.slice(batch * 100, (batch + 1) * 100),
+      );
+      const expectedReceiptBatches = expectedLookupBatches
+        .map((batch) => batch.filter((eventId) => !acknowledgedIds.has(eventId)))
+        .filter((batch) => batch.length > 0);
+      expect(lookups).toEqual(expectedLookupBatches);
+      expect(
+        command.mock.calls
+          .map(([options]) => options.query)
+          .filter((query) => query.includes(METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE))
+          .map(parseDeletionAcknowledgementInsert),
+      ).toEqual(expectedReceiptBatches);
+      expect(query).toHaveBeenCalledTimes(expectedLookupBatches.length);
+      if (expectedReceiptBatches.length === 0) expect(command).not.toHaveBeenCalled();
+    },
+  );
 
   it("applies a current delete when no acknowledgement exists", async () => {
     const command = vi.fn(async () => undefined);
@@ -714,60 +650,48 @@ describe("applyMetricStreamEventsToClickHouse", () => {
     expect(firstCommandQuery(command)).toContain(`INSERT INTO ${METRIC_STREAM_TABLE}`);
   });
 
-  it("tombstones an older row when a persisted delete scope is newer", async () => {
-    const command = vi.fn(async () => undefined);
-    const insert = vi.fn(async () => undefined);
-    const query = vi.fn(async (options: { query: string }) => ({
-      json: async () =>
-        options.query.includes(METRIC_STREAM_DELETE_SCOPE_TABLE)
-          ? [{ row_index: 0, version: "1" }]
-          : [],
-    }));
+  it.each([
+    { label: "older", scopeVersion: "1", tombstoned: true },
+    { label: "equal", scopeVersion: "0", tombstoned: false },
+  ])(
+    "tombstones an $label row only when its persisted delete scope is newer",
+    async ({ scopeVersion, tombstoned }) => {
+      const insert = vi.fn(async () => undefined);
+      const query = vi.fn(async (options: { query: string }) => ({
+        json: async () =>
+          options.query.includes(METRIC_STREAM_DELETE_SCOPE_TABLE)
+            ? [{ row_index: 0, version: scopeVersion }]
+            : [],
+      }));
 
-    await applyMetricStreamEventsToClickHouse({ command, insert, query }, [heartRateEvent]);
+      await applyMetricStreamEventsToClickHouse({ insert, query }, [heartRateEvent]);
 
-    expect(query).toHaveBeenCalledWith({
-      query: expect.stringContaining(`FROM ${METRIC_STREAM_DELETE_SCOPE_TABLE} FINAL`),
-      query_params: {
-        row_indexes: [0],
-        row_user_ids: [heartRateEvent.userId],
-        provider_ids: [heartRateEvent.providerId],
-        activity_ids: [null],
-        channels: [heartRateEvent.channel],
-        external_ids: [heartRateEvent.externalId],
-        recorded_ats: [heartRateEvent.recordedAt],
-        versions: ["0"],
-        user_ids: [heartRateEvent.userId],
-      },
-      format: "JSONEachRow",
-    });
-    expect(insert).toHaveBeenNthCalledWith(2, {
-      table: METRIC_STREAM_TABLE,
-      values: [
-        expect.objectContaining({
-          id: heartRateEvent.id,
-          is_deleted: 1,
-          version: "1",
-        }),
-      ],
-      format: "JSONEachRow",
-      clickhouse_settings: { date_time_input_format: "best_effort" },
-    });
-  });
-
-  it("does not tombstone a row whose version equals its persisted delete scope", async () => {
-    const insert = vi.fn(async () => undefined);
-    const query = vi.fn(async (options: { query: string }) => ({
-      json: async () =>
-        options.query.includes(METRIC_STREAM_DELETE_SCOPE_TABLE)
-          ? [{ row_index: 0, version: "0" }]
-          : [],
-    }));
-
-    await applyMetricStreamEventsToClickHouse({ insert, query }, [heartRateEvent]);
-
-    expect(insert).toHaveBeenCalledOnce();
-  });
+      expect(query).toHaveBeenCalledWith({
+        query: expect.stringContaining(`FROM ${METRIC_STREAM_DELETE_SCOPE_TABLE} FINAL`),
+        query_params: {
+          row_indexes: [0],
+          row_user_ids: [heartRateEvent.userId],
+          provider_ids: [heartRateEvent.providerId],
+          activity_ids: [null],
+          channels: [heartRateEvent.channel],
+          external_ids: [heartRateEvent.externalId],
+          recorded_ats: [heartRateEvent.recordedAt],
+          versions: ["0"],
+          user_ids: [heartRateEvent.userId],
+        },
+        format: "JSONEachRow",
+      });
+      if (tombstoned) {
+        expectMetricStreamInsert(
+          insert,
+          [expect.objectContaining({ id: heartRateEvent.id, is_deleted: 1, version: "1" })],
+          2,
+        );
+      } else {
+        expect(insert).toHaveBeenCalledOnce();
+      }
+    },
+  );
 
   it("rejects an invalid persisted delete-scope version", async () => {
     const query = vi.fn(async (options: { query: string }) => ({
@@ -807,9 +731,12 @@ describe("applyMetricStreamEventsToClickHouse", () => {
 
     await markMetricStreamScopesDeletedInClickHouse({ command }, [firstDelete, secondDelete]);
 
-    expect(command).toHaveBeenCalledTimes(4);
+    expect(command).toHaveBeenCalledTimes(3);
     expect(firstCommandQuery(command)).toContain(
       "candidate_row.external_id = {external_id_0:String}",
+    );
+    expect(firstCommandQuery(command)).toContain(
+      "WHERE (candidate_row.user_id = {user_id_0:UUID} AND candidate_row.provider_id = {provider_id_0:String} AND candidate_row.external_id = {external_id_0:String}) OR (candidate_row.user_id = {user_id_1:UUID} AND candidate_row.provider_id = {provider_id_1:String} AND candidate_row.external_id = {external_id_1:String})\n          GROUP BY candidate_row.id, candidate_row.user_id,\n            candidate_row.provider_id, candidate_row.recorded_at",
     );
     expect(firstCommandQuery(command)).toContain("latest_row.2 = {user_id_0:UUID}");
     expect(firstCommandQuery(command)).toContain("latest_row.6 = {external_id_0:String}");
@@ -849,7 +776,7 @@ describe("applyMetricStreamEventsToClickHouse", () => {
       [firstDelete, secondDelete],
     );
 
-    expect(command).toHaveBeenCalledTimes(4);
+    expect(command).toHaveBeenCalledTimes(3);
     expect(firstCommandQuery(command)).toContain("external_id_0");
     expect(firstCommandQuery(command)).toContain("external_id_1");
   });
@@ -869,8 +796,8 @@ describe("applyMetricStreamEventsToClickHouse", () => {
         if (options.query.startsWith(`INSERT INTO ${METRIC_STREAM_TABLE} (`)) {
           streamWrites += 1;
           if (streamWrites === 2) throw new Error("second chunk rejected");
-        } else if (options.query_params?.event_id) {
-          acknowledgedIds.push(String(options.query_params?.event_id));
+        } else if (options.query.includes(METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE)) {
+          acknowledgedIds.push(...parseDeletionAcknowledgementInsert(options.query));
         }
       },
     );
@@ -883,6 +810,29 @@ describe("applyMetricStreamEventsToClickHouse", () => {
 
     expect(streamWrites).toBe(2);
     expect(acknowledgedIds).toEqual(deletes.slice(0, 100).map((event) => event.eventId));
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it("stops before following rows when receipt insertion fails", async () => {
+    const deleteEvent = createCurrentMetricStreamDeletedEvent({
+      userId: heartRateEvent.userId,
+      providerId: heartRateEvent.providerId,
+    });
+    const command = vi.fn(async (options: { query: string }) => {
+      if (options.query.includes(METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE)) {
+        throw new Error("receipt rejected");
+      }
+    });
+    const insert = vi.fn(async () => undefined);
+
+    await expect(
+      applyMetricStreamEventsToClickHouse({ command, insert, query: makeEmptyGenerationQuery() }, [
+        deleteEvent,
+        heartRateEvent,
+      ]),
+    ).rejects.toThrow("receipt rejected");
+
+    expect(firstCommandQuery(command)).toContain(`INSERT INTO ${METRIC_STREAM_TABLE}`);
     expect(insert).not.toHaveBeenCalled();
   });
 
@@ -977,15 +927,9 @@ describe("applyMetricStreamEventsToClickHouse", () => {
     );
     expect(String(firstCommandQuery(command))).toContain("latest_row.1 = {activity_id:UUID}");
     expect(command).toHaveBeenNthCalledWith(3, {
-      query: expect.stringContaining("ingest.metric_stream_delete_acknowledgement"),
-      query_params: { event_id: deleteEvent.eventId },
+      query: `INSERT INTO ${METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE} (event_id)\n        FORMAT JSONEachRow\n${JSON.stringify({ event_id: deleteEvent.eventId })}`,
     });
-    expect(insert).toHaveBeenCalledWith({
-      table: METRIC_STREAM_TABLE,
-      values: [expect.objectContaining({ id: heartRateEvent.id })],
-      format: "JSONEachRow",
-      clickhouse_settings: { date_time_input_format: "best_effort" },
-    });
+    expectMetricStreamInsert(insert, [expect.objectContaining({ id: heartRateEvent.id })]);
   });
 
   it("flushes row batches on both sides of a replacement delete", async () => {
@@ -1008,110 +952,32 @@ describe("applyMetricStreamEventsToClickHouse", () => {
 
     expect(applied).toBe(2);
     expect(insert).toHaveBeenCalledTimes(2);
-    expect(insert).toHaveBeenNthCalledWith(1, {
-      table: METRIC_STREAM_TABLE,
-      values: [expect.objectContaining({ id: heartRateEvent.id })],
-      format: "JSONEachRow",
-      clickhouse_settings: { date_time_input_format: "best_effort" },
-    });
-    expect(insert).toHaveBeenNthCalledWith(2, {
-      table: METRIC_STREAM_TABLE,
-      values: [expect.objectContaining({ id: secondHeartRateEvent.id })],
-      format: "JSONEachRow",
-      clickhouse_settings: { date_time_input_format: "best_effort" },
-    });
+    expectMetricStreamInsert(insert, [expect.objectContaining({ id: heartRateEvent.id })], 1);
+    expectMetricStreamInsert(insert, [expect.objectContaining({ id: secondHeartRateEvent.id })], 2);
     expect(command).toHaveBeenCalledTimes(3);
   });
 
-  it("renders every supported replacement scope predicate into the tombstone insert", async () => {
-    const command = vi.fn(async () => undefined);
-    const insert = vi.fn(async () => undefined);
+  it.each(replacementScopeTestCases)(
+    "renders $label replacement scope predicates",
+    async ({ scope, params, candidate, latest, accountFence }) => {
+      const command = vi.fn(async () => undefined);
+      const insert = vi.fn(async () => undefined);
+      await applyMetricStreamEventsToClickHouse(
+        { command, insert, query: makeEmptyGenerationQuery() },
+        [createCurrentMetricStreamDeletedEvent(scope)],
+      );
 
-    await applyMetricStreamEventsToClickHouse({ command, insert }, [
-      createCurrentMetricStreamDeletedEvent({
-        userId: "10000000-0000-4000-8000-000000000001",
-        providerId: "fitbit",
-        externalId: null,
-        channel: "body_weight",
-        activityId: "20000000-0000-4000-8000-000000000001",
-        recordedAtStart: "2026-03-01T00:00:00.000Z",
-        recordedAtEnd: "2026-03-02T00:00:00.000Z",
-      }),
-    ]);
-
-    expect(insert).not.toHaveBeenCalled();
-    expect(command).toHaveBeenCalledWith({
-      query: expect.stringContaining(`INSERT INTO ${METRIC_STREAM_TABLE}`),
-      query_params: {
-        user_id: "10000000-0000-4000-8000-000000000001",
-        provider_id: "fitbit",
-        channel: "body_weight",
-        activity_id: "20000000-0000-4000-8000-000000000001",
-        recorded_at_start: "2026-03-01T00:00:00.000Z",
-        recorded_at_end: "2026-03-02T00:00:00.000Z",
-        replacement_version: "2000000000000000",
-      },
-    });
-    const query = firstCommandQuery(command);
-    expect(query).toContain("candidate_row.user_id = {user_id:UUID}");
-    expect(query).toContain("candidate_row.provider_id = {provider_id:String}");
-    expect(query).toContain("candidate_row.external_id IS NULL");
-    expect(query).toContain("candidate_row.channel = {channel:String}");
-    expect(query).toContain("candidate_row.activity_id = {activity_id:UUID}");
-    expect(query).toContain(
-      "candidate_row.recorded_at >= parseDateTime64BestEffort({recorded_at_start:String})",
-    );
-    expect(query).toContain(
-      "candidate_row.recorded_at < parseDateTime64BestEffort({recorded_at_end:String})",
-    );
-    expect(query).toContain("latest_row.2 = {user_id:UUID}");
-    expect(query).toContain("latest_row.5 = {provider_id:String}");
-    expect(query).toContain("latest_row.6 IS NULL");
-    expect(query).toContain("latest_row.4 = {channel:String}");
-    expect(query).toContain("latest_row.1 = {activity_id:UUID}");
-    expect(query).toContain(
-      "latest_row.3 >= parseDateTime64BestEffort({recorded_at_start:String})",
-    );
-    expect(query).toContain("latest_row.3 < parseDateTime64BestEffort({recorded_at_end:String})");
-  });
-
-  it("binds non-null external IDs in replacement scopes", async () => {
-    const command = vi.fn(async () => undefined);
-
-    await applyMetricStreamEventsToClickHouse({ command, insert: vi.fn(async () => undefined) }, [
-      createCurrentMetricStreamDeletedEvent({
-        providerId: "fitbit",
-        externalId: "measurement-1",
-      }),
-    ]);
-
-    expect(command).toHaveBeenCalledWith({
-      query: expect.stringContaining("candidate_row.external_id = {external_id:String}"),
-      query_params: {
-        provider_id: "fitbit",
-        external_id: "measurement-1",
-        replacement_version: "2000000000000000",
-      },
-    });
-    expect(firstCommandQuery(command)).toContain("latest_row.6 = {external_id:String}");
-  });
-
-  it("applies an account-wide replacement delete using only the user predicate", async () => {
-    const command = vi.fn(async () => undefined);
-
-    await applyMetricStreamEventsToClickHouse(
-      { command, insert: vi.fn(async () => undefined), query: makeEmptyGenerationQuery() },
-      [
-        createCurrentMetricStreamDeletedEvent({
-          userId: "10000000-0000-4000-8000-000000000001",
-        }),
-      ],
-    );
-
-    expect(firstCommandQuery(command)).toContain("candidate_row.user_id = {user_id:UUID}");
-    expect(firstCommandQuery(command)).toContain("latest_row.2 = {user_id:UUID}");
-    expect(firstCommandQuery(command)).toContain(`FROM ${ACCOUNT_ERASURE_FENCE_TABLE} FINAL`);
-  });
+      expect(insert).not.toHaveBeenCalled();
+      expect(command).toHaveBeenCalledWith({
+        query: expect.stringContaining(`INSERT INTO ${METRIC_STREAM_TABLE}`),
+        query_params: { ...params, replacement_version: "2000000000000000" },
+      });
+      const query = firstCommandQuery(command);
+      for (const predicate of candidate) expect(query).toContain(predicate);
+      for (const predicate of latest) expect(query).toContain(predicate);
+      if (accountFence) expect(query).toContain(`FROM ${ACCOUNT_ERASURE_FENCE_TABLE} FINAL`);
+    },
+  );
 
   it("rejects replacement delete scopes that produce no ClickHouse conditions", async () => {
     await expect(
@@ -1130,315 +996,5 @@ describe("applyMetricStreamEventsToClickHouse", () => {
         }),
       ]),
     ).rejects.toThrow("ClickHouse metric-stream deletion requires a command-capable client");
-  });
-});
-
-describe("runMetricStreamClickHouseSinkFromEnv", () => {
-  beforeEach(() => {
-    vi.doMock("../db/index.ts", () => ({
-      createDatabaseFromEnv: () => ({ $client: { end: vi.fn(async () => undefined) } }),
-    }));
-    vi.doMock("../analytics/analytics-query-owner.ts", () => ({
-      ANALYTICS_PUBLICATION_RESOURCE: "metric-stream-source",
-      withAnalyticsQueryOwner: async (
-        _database: unknown,
-        client: unknown,
-        _input: unknown,
-        operation: (owner: { client: unknown }) => Promise<unknown>,
-      ) => operation({ client }),
-    }));
-  });
-  it("admits publication before batch effects and keeps heartbeats active while waiting", async () => {
-    vi.resetModules();
-    vi.useFakeTimers();
-    let release!: () => void;
-    const held = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const raw = {
-      insert: vi.fn(async () => undefined),
-      query: makeEmptyGenerationQuery(),
-      close: vi.fn(async () => undefined),
-    };
-    const owned = { insert: vi.fn(async () => undefined), query: makeEmptyGenerationQuery() };
-    const database = { $client: { end: vi.fn(async () => undefined) } };
-    const withOwner = vi.fn(
-      async (
-        _database: unknown,
-        _client: unknown,
-        _input: { resourceId: string; intentId: string },
-        operation: (owner: { client: typeof owned }) => Promise<unknown>,
-      ) => {
-        await held;
-        return operation({ client: owned });
-      },
-    );
-    const runConsumer = vi.fn(async (_options: RunMetricStreamEventConsumerOptions) => undefined);
-    vi.doMock("../db/clickhouse.ts", () => ({ createClickHouseClientFromEnv: () => raw }));
-    vi.doMock("../db/index.ts", () => ({ createDatabaseFromEnv: () => database }));
-    vi.doMock("../analytics/analytics-query-owner.ts", () => ({
-      ANALYTICS_PUBLICATION_RESOURCE: "metric-stream-source",
-      withAnalyticsQueryOwner: withOwner,
-    }));
-    vi.doMock("./redpanda-consumer.ts", () => ({
-      createKafkaMetricStreamConsumerFromEnv: () => ({
-        consumer: { observeGroupLifecycle: vi.fn() },
-        quarantine: {},
-        topic: "metric-stream-v1",
-      }),
-      runMetricStreamEventConsumer: runConsumer,
-    }));
-    const { runMetricStreamClickHouseSinkFromEnv } = await import("./clickhouse-sink.ts");
-    await runMetricStreamClickHouseSinkFromEnv(new MetricStreamConsumerReadiness());
-    const options = runConsumer.mock.calls[0]?.[0];
-    if (!options) throw new Error("Missing actual sink callback");
-    const context = {
-      topic: "metric-stream-v1",
-      partition: 0,
-      eventOffsets: ["42"],
-      heartbeat: vi.fn(async () => undefined),
-    };
-    const pending = options.handleEvents([heartRateEvent], context);
-    try {
-      expect(withOwner).toHaveBeenCalledOnce();
-      expect(owned.insert).not.toHaveBeenCalled();
-      expect(raw.insert).not.toHaveBeenCalled();
-      await vi.advanceTimersByTimeAsync(3000);
-      expect(context.heartbeat).toHaveBeenCalled();
-    } finally {
-      release();
-      await pending;
-    }
-    expect(owned.insert).toHaveBeenCalledOnce();
-    expect(raw.insert).not.toHaveBeenCalled();
-    expect(database.$client.end).not.toHaveBeenCalled();
-    expect(raw.close).not.toHaveBeenCalled();
-    await options.handleEvents([heartRateEvent, imuEvent], {
-      ...context,
-      eventOffsets: ["42", "43"],
-    });
-    expect(withOwner.mock.calls[1]?.[2].intentId).toBe(withOwner.mock.calls[0]?.[2].intentId);
-    await options.handleEvents([heartRateEvent], { ...context, eventOffsets: ["43"] });
-    expect(withOwner.mock.calls[2]?.[2].intentId).not.toBe(withOwner.mock.calls[0]?.[2].intentId);
-  });
-  it("consumes Redpanda events and inserts them into ClickHouse", async () => {
-    const client = {
-      insert: vi.fn(async () => undefined),
-      query: makeEmptyGenerationQuery(),
-    };
-    const consumer = {
-      connect: vi.fn(async () => undefined),
-      observeGroupLifecycle: vi.fn(),
-      subscribe: vi.fn(async () => undefined),
-      run: vi.fn(async () => undefined),
-    };
-    const runMetricStreamEventConsumer = vi.fn(
-      async (_options: RunMetricStreamEventConsumerOptions) => undefined,
-    );
-    const createKafkaMetricStreamConsumerFromEnv = vi.fn(() => ({
-      consumer,
-      quarantine: {
-        connect: vi.fn(async () => undefined),
-        write: vi.fn(async () => undefined),
-      },
-      topic: "metric-stream-v1",
-    }));
-
-    vi.doMock("../db/clickhouse.ts", () => ({
-      createClickHouseClientFromEnv: vi.fn(() => client),
-    }));
-    vi.doMock("./redpanda-consumer.ts", () => ({
-      createKafkaMetricStreamConsumerFromEnv,
-      runMetricStreamEventConsumer,
-    }));
-
-    const { runMetricStreamClickHouseSinkFromEnv } = await import("./clickhouse-sink.ts");
-
-    await runMetricStreamClickHouseSinkFromEnv(new MetricStreamConsumerReadiness());
-
-    expect(createKafkaMetricStreamConsumerFromEnv).toHaveBeenCalledWith();
-    expect(runMetricStreamEventConsumer).toHaveBeenCalledWith({
-      consumer,
-      quarantine: expect.any(Object),
-      topic: "metric-stream-v1",
-      lifecycleListener: expect.any(Object),
-      handleEvents: expect.any(Function),
-    });
-
-    const options = runMetricStreamEventConsumer.mock.calls[0]?.[0];
-    if (!options) {
-      throw new Error("expected consumer options");
-    }
-    await options.handleEvents([heartRateEvent], {
-      topic: "metric-stream-v1",
-      partition: 2,
-      eventOffsets: ["42"],
-      heartbeat: vi.fn(async () => undefined),
-    });
-    expect(client.insert).toHaveBeenCalledOnce();
-  });
-
-  it("requires an insert-capable ClickHouse client", async () => {
-    vi.doMock("../db/clickhouse.ts", () => ({
-      createClickHouseClientFromEnv: vi.fn(() => ({})),
-    }));
-    vi.doMock("./redpanda-consumer.ts", () => ({
-      createKafkaMetricStreamConsumerFromEnv: vi.fn(),
-      runMetricStreamEventConsumer: vi.fn(),
-    }));
-
-    const { runMetricStreamClickHouseSinkFromEnv } = await import("./clickhouse-sink.ts");
-
-    await expect(
-      runMetricStreamClickHouseSinkFromEnv(new MetricStreamConsumerReadiness()),
-    ).rejects.toThrow("ClickHouse metric-stream sink requires an insert-capable client");
-  });
-
-  it("closes its database and ClickHouse client when consumer startup fails", async () => {
-    const failure = new Error("Consumer startup failed");
-    const end = vi.fn(async () => undefined),
-      close = vi.fn(async () => undefined);
-    vi.doMock("../db/index.ts", () => ({ createDatabaseFromEnv: () => ({ $client: { end } }) }));
-    vi.doMock("../db/clickhouse.ts", () => ({
-      createClickHouseClientFromEnv: () => ({ insert: vi.fn(), close }),
-    }));
-    vi.doMock("./redpanda-consumer.ts", () => ({
-      createKafkaMetricStreamConsumerFromEnv: () => ({
-        consumer: { observeGroupLifecycle: vi.fn() },
-        quarantine: {},
-        topic: "metric-stream-v1",
-      }),
-      runMetricStreamEventConsumer: vi.fn(async () => {
-        throw failure;
-      }),
-    }));
-    const { runMetricStreamClickHouseSinkFromEnv } = await import("./clickhouse-sink.ts");
-    await expect(
-      runMetricStreamClickHouseSinkFromEnv(new MetricStreamConsumerReadiness()),
-    ).rejects.toBe(failure);
-    expect(end).toHaveBeenCalledOnce();
-    expect(close).toHaveBeenCalledOnce();
-  });
-
-  it("requires Kafka group lifecycle events for the readiness check", async () => {
-    vi.doMock("../db/clickhouse.ts", () => ({
-      createClickHouseClientFromEnv: vi.fn(() => ({ insert: vi.fn(async () => undefined) })),
-    }));
-    vi.doMock("./redpanda-consumer.ts", () => ({
-      createKafkaMetricStreamConsumerFromEnv: vi.fn(() => ({
-        consumer: {
-          connect: vi.fn(async () => undefined),
-          subscribe: vi.fn(async () => undefined),
-          run: vi.fn(async () => undefined),
-        },
-        quarantine: {
-          connect: vi.fn(async () => undefined),
-          write: vi.fn(async () => undefined),
-        },
-        topic: "metric-stream-v1",
-      })),
-      runMetricStreamEventConsumer: vi.fn(),
-    }));
-
-    const { runMetricStreamClickHouseSinkFromEnv } = await import("./clickhouse-sink.ts");
-
-    await expect(
-      runMetricStreamClickHouseSinkFromEnv(new MetricStreamConsumerReadiness()),
-    ).rejects.toThrow("ClickHouse metric-stream sink requires Kafka group lifecycle events");
-  });
-
-  it("starts the readiness server before starting the ClickHouse sink", async () => {
-    const readinessServer = Object.assign(new EventEmitter(), {
-      listen: vi.fn(() => readinessServer),
-      unref: vi.fn(),
-    });
-    const listen = readinessServer.listen;
-    const unref = vi.fn();
-    readinessServer.unref = unref;
-    const createMetricStreamConsumerReadinessServer = vi.fn(() => readinessServer);
-    const runMetricStreamEventConsumer = vi.fn(async () => undefined);
-    const consumer = {
-      connect: vi.fn(async () => undefined),
-      observeGroupLifecycle: vi.fn(),
-      subscribe: vi.fn(async () => undefined),
-      run: vi.fn(async () => undefined),
-    };
-
-    vi.doMock("../db/clickhouse.ts", () => ({
-      createClickHouseClientFromEnv: vi.fn(() => ({ insert: vi.fn(async () => undefined) })),
-    }));
-    vi.doMock("./consumer-readiness.ts", () => ({
-      MetricStreamConsumerReadiness: class MetricStreamConsumerReadiness {},
-      createMetricStreamConsumerReadinessServer,
-    }));
-    vi.doMock("./redpanda-consumer.ts", () => ({
-      createKafkaMetricStreamConsumerFromEnv: vi.fn(() => ({
-        consumer,
-        quarantine: {
-          connect: vi.fn(async () => undefined),
-          write: vi.fn(async () => undefined),
-        },
-        topic: "metric-stream-v1",
-      })),
-      runMetricStreamEventConsumer,
-    }));
-
-    const { startMetricStreamClickHouseSinkFromEnv } = await import("./clickhouse-sink.ts");
-
-    const starting = startMetricStreamClickHouseSinkFromEnv();
-    await Promise.resolve();
-
-    expect(runMetricStreamEventConsumer).not.toHaveBeenCalled();
-    readinessServer.emit("listening");
-    await starting;
-
-    expect(listen).toHaveBeenCalledWith(3001, "0.0.0.0");
-    expect(unref).toHaveBeenCalledOnce();
-    expect(listen.mock.invocationCallOrder[0]).toBeLessThan(
-      runMetricStreamEventConsumer.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
-    );
-    expect(runMetricStreamEventConsumer).toHaveBeenCalledWith(
-      expect.objectContaining({ lifecycleListener: expect.any(Object) }),
-    );
-  });
-
-  it("fails before consuming when the readiness server cannot bind", async () => {
-    const readinessServer = Object.assign(new EventEmitter(), {
-      listen: vi.fn(() => readinessServer),
-      unref: vi.fn(),
-    });
-    const runMetricStreamEventConsumer = vi.fn(async () => undefined);
-
-    vi.doMock("../db/clickhouse.ts", () => ({
-      createClickHouseClientFromEnv: vi.fn(() => ({ insert: vi.fn(async () => undefined) })),
-    }));
-    vi.doMock("./consumer-readiness.ts", () => ({
-      MetricStreamConsumerReadiness: class MetricStreamConsumerReadiness {},
-      createMetricStreamConsumerReadinessServer: vi.fn(() => readinessServer),
-    }));
-    vi.doMock("./redpanda-consumer.ts", () => ({
-      createKafkaMetricStreamConsumerFromEnv: vi.fn(() => ({
-        consumer: {
-          connect: vi.fn(async () => undefined),
-          observeGroupLifecycle: vi.fn(),
-          subscribe: vi.fn(async () => undefined),
-          run: vi.fn(async () => undefined),
-        },
-        quarantine: {
-          connect: vi.fn(async () => undefined),
-          write: vi.fn(async () => undefined),
-        },
-        topic: "metric-stream-v1",
-      })),
-      runMetricStreamEventConsumer,
-    }));
-
-    const { startMetricStreamClickHouseSinkFromEnv } = await import("./clickhouse-sink.ts");
-    const starting = startMetricStreamClickHouseSinkFromEnv();
-    const error = new Error("listen EADDRINUSE: address already in use 0.0.0.0:3001");
-    readinessServer.emit("error", error);
-
-    await expect(starting).rejects.toThrow(error.message);
-    expect(runMetricStreamEventConsumer).not.toHaveBeenCalled();
   });
 });

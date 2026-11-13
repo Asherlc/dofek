@@ -11,6 +11,7 @@ import {
   parsePostgresTimestamp,
 } from "../src/db/clickhouse-migrations/sql.ts";
 import { captureException } from "../src/lib/error-reporting.ts";
+import { sentryDataCollection } from "../src/lib/sentry-options.ts";
 import { INGEST_DATABASE, METRIC_STREAM_TABLE } from "../src/metric-stream/clickhouse-table.ts";
 
 export interface MetricStreamCatchUpOptions {
@@ -291,7 +292,11 @@ async function runMetricStreamCatchUp(
 function initializeSentry(): void {
   const sentryDsn = process.env.SENTRY_DSN || process.env.SENTRY_DSN_unencrypted;
   if (sentryDsn) {
-    Sentry.init({ dsn: sentryDsn, skipOpenTelemetrySetup: true });
+    Sentry.init({
+      dsn: sentryDsn,
+      enableOpenTelemetrySetup: false,
+      dataCollection: sentryDataCollection,
+    });
   }
 }
 

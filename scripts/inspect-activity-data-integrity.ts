@@ -6,6 +6,7 @@ import { type ClickHouseClient, createClickHouseClientFromEnv } from "../src/db/
 import { createDatabaseFromEnv } from "../src/db/index.ts";
 import { executeWithSchema, type SchemaExecutionDatabase } from "../src/db/typed-sql.ts";
 import { captureException } from "../src/lib/error-reporting.ts";
+import { sentryDataCollection } from "../src/lib/sentry-options.ts";
 
 const activityRowSchema = z.object({
   requested_activity_id: z.string(),
@@ -295,7 +296,11 @@ export function parseInspectionArgs(args: readonly string[]): ActivityIntegrityI
 function initializeSentry(): void {
   const sentryDsn = process.env.SENTRY_DSN || process.env.SENTRY_DSN_unencrypted;
   if (sentryDsn) {
-    Sentry.init({ dsn: sentryDsn, skipOpenTelemetrySetup: true });
+    Sentry.init({
+      dsn: sentryDsn,
+      enableOpenTelemetrySetup: false,
+      dataCollection: sentryDataCollection,
+    });
   }
 }
 

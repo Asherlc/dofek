@@ -61,8 +61,9 @@ vi.mock("echarts-for-react", () => ({
   },
 }));
 
+const activityRouteParams = vi.hoisted(() => ({ id: "test-123" }));
 vi.mock("@tanstack/react-router", () => ({
-  useParams: () => ({ id: "test-123" }),
+  useParams: () => activityRouteParams,
   useNavigate: () => vi.fn(),
   Link: ({ children, ...props }: { children: ReactNode; to: string }) => (
     <a href={props.to}>{children}</a>
@@ -118,6 +119,7 @@ const mockActivity: ActivityDetail & { displayedDate?: string } = {
   sourceLinks: [],
   sourceTree: { primary: null, otherSources: [] },
   sourceDecision: null,
+  fitRecoveryWarning: null,
 };
 
 const mockStreamPoints: Array<{
@@ -377,7 +379,13 @@ const mockImagesUseQuery = vi.fn(() => ({
   refetch: vi.fn(),
 }));
 const mockRecomputeShouldFail = vi.fn(() => false);
+const mockRestoreProviderAbsentMutate = vi.fn();
+const mockRestoreResult = vi.fn<() => { analyticsJobId: string } | undefined>(() => undefined);
+const mockRestoreStatus = vi.fn<
+  () => { data: { status: "pending" | "completed"; error: null } | undefined; error: null }
+>(() => ({ data: undefined, error: null }));
 const mockActivityByIdInvalidate = vi.fn().mockResolvedValue(undefined);
+const mockActivityInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockActivityStreamInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockActivityHrZonesInvalidate = vi.fn().mockResolvedValue(undefined);
 const mockActivityPowerZonesInvalidate = vi.fn().mockResolvedValue(undefined);
@@ -419,6 +427,22 @@ vi.mock("../lib/trpc.ts", () => ({
         }),
       },
       delete: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
+      restoreStatus: { useQuery: mockRestoreStatus },
+      restoreProviderAbsent: {
+        useMutation: (options?: {
+          onSuccess?: () => Promise<void>;
+          onError?: (error: Error) => void;
+        }) => ({
+          mutate: (input: { ids: string[] }) => {
+            mockRestoreProviderAbsentMutate(input);
+            void options?.onSuccess?.();
+          },
+          data: mockRestoreResult(),
+          isPending: false,
+          error: null,
+          reset: vi.fn(),
+        }),
+      },
     },
     climbing: {
       activityLogEntries: { useQuery: mockClimbingEntriesUseQuery },
@@ -454,6 +478,7 @@ vi.mock("../lib/trpc.ts", () => ({
     },
     useUtils: () => ({
       activity: {
+        invalidate: mockActivityInvalidate,
         images: { invalidate: mockActivityImagesInvalidate },
         byId: { invalidate: mockActivityByIdInvalidate },
         stream: { invalidate: mockActivityStreamInvalidate },
@@ -467,6 +492,7 @@ vi.mock("../lib/trpc.ts", () => ({
       calendar: {
         weekListV2: { invalidate: mockCalendarWeekListInvalidate },
         activityOverview: { invalidate: mockCalendarActivityOverviewInvalidate },
+        calendarData: { invalidate: vi.fn().mockResolvedValue(undefined) },
       },
       climbing: {
         activityLogEntries: { invalidate: mockClimbingEntriesInvalidate },
@@ -490,6 +516,14 @@ vi.mock("react-body-highlighter", () => ({
 }));
 
 afterEach(() => {
+  activityRouteParams.id = "test-123";
+  mockActivity.id = "test-123";
+  mockActivity.providerAbsentAt = null;
+  mockActivity.providerId = "whoop";
+  mockActivity.subsource = null;
+  mockRestoreProviderAbsentMutate.mockClear();
+  mockRestoreResult.mockReturnValue(undefined);
+  mockRestoreStatus.mockReturnValue({ data: undefined, error: null });
   mockHardwareUseQuery.mockReset();
   mockHardwareUseQuery.mockReturnValue({
     data: { items: [], power: [] },
@@ -606,6 +640,7 @@ function renderWithUnits(ui: ReactNode, unitSystem: UnitSystem = "metric") {
   mockRecomputeShouldFail.mockReset();
   mockRecomputeShouldFail.mockReturnValue(false);
   mockActivityByIdInvalidate.mockClear();
+  mockActivityInvalidate.mockClear();
   mockActivityStreamInvalidate.mockClear();
   mockActivityHrZonesInvalidate.mockClear();
   mockActivityPowerZonesInvalidate.mockClear();
@@ -749,6 +784,28 @@ async function importActivityHeader() {
 }
 
 describe("ActivityDetailPage", () => {
+  it("shows the server-projected FIT recovery warning on the activity detail header", async () => {
+    const ActivityHeader = await importActivityHeader();
+    const warning = "Some FIT data could not be recovered from the original file.";
+
+    renderWithUnits(
+      <ActivityHeader
+        activity={{ ...mockActivity, fitRecoveryWarning: warning }}
+        units={new UnitConverter("metric")}
+      />,
+    );
+
+    expect(screen.getByRole("alert").textContent).toBe(warning);
+  });
+
+  it("does not show a FIT recovery warning for a clean activity", async () => {
+    const ActivityHeader = await importActivityHeader();
+
+    renderWithUnits(<ActivityHeader activity={mockActivity} units={new UnitConverter("metric")} />);
+
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
   it("shows Kilter logged windows on a connected climbing detail header", async () => {
     const ActivityHeader = await importActivityHeader();
     renderWithUnits(
@@ -1845,6 +1902,47 @@ describe("ActivityDetailPage", () => {
       expect(screen.getByText("Strava")).toBeDefined();
       expect(screen.getByText(formatDateTime("2026-03-05T14:30:00.000Z"))).toBeDefined();
     });
+
+    it("keeps restore completion tracking mounted after PostgreSQL makes the activity visible", async () => {
+      mockActivity.providerAbsentAt = "2026-03-05T14:30:00.000Z";
+      mockRestoreResult.mockReturnValue({ analyticsJobId: "restore-job-1" });
+      mockRestoreStatus.mockReturnValue({ data: { status: "pending", error: null }, error: null });
+      const ActivityDetailPage = await importPage();
+      const { rerender } = renderWithUnits(<ActivityDetailPage />);
+      mockActivity.providerAbsentAt = null;
+      rerender(
+        <UnitContext.Provider value={{ unitSystem: "metric", setUnitSystem: () => {} }}>
+          <ActivityDetailPage />
+        </UnitContext.Provider>,
+      );
+      expect(screen.getByText("Refreshing restored activity charts…")).toBeDefined();
+      const invalidations = mockActivityInvalidate.mock.calls.length;
+      mockRestoreStatus.mockReturnValue({
+        data: { status: "completed", error: null },
+        error: null,
+      });
+      rerender(
+        <UnitContext.Provider value={{ unitSystem: "metric", setUnitSystem: () => {} }}>
+          <ActivityDetailPage />
+        </UnitContext.Provider>,
+      );
+      await waitFor(() => expect(mockActivityInvalidate).toHaveBeenCalledTimes(invalidations + 1));
+    });
+
+    it("restores the canonical activity while refreshing detail cached under its route alias", async () => {
+      activityRouteParams.id = "legacy-member-alias";
+      mockActivity.providerAbsentAt = "2026-03-05T14:30:00.000Z";
+      mockActivity.id = "canonical-group-id";
+      mockActivity.providerId = "strava";
+
+      const ActivityDetailPage = await importPage();
+      renderWithUnits(<ActivityDetailPage />);
+
+      fireEvent.click(screen.getByRole("button", { name: "Restore activity" }));
+
+      expect(mockRestoreProviderAbsentMutate).toHaveBeenCalledWith({ ids: ["canonical-group-id"] });
+      expect(mockActivityInvalidate).toHaveBeenCalledWith();
+    });
   });
 
   describe("ActivityHeader unit display", () => {
@@ -2555,11 +2653,11 @@ describe("ActivityDetailPage", () => {
       renderWithUnits(<ActivityDetailPage />);
       expect(getQueryEnabledFlag(mockClimbingEntriesUseQuery.mock.calls[0]?.[1])).toBe(true);
       expect(mockClimbingEntriesUseQuery).toHaveBeenCalledWith(
-        { activityId: "test-123", responseVersion: 4 },
+        { activityId: "test-123", responseVersion: 5 },
         expect.objectContaining({ enabled: true, select: decodeClimbingLogEntriesResponse }),
       );
       expect(mockEntrySuggestionsUseQuery).toHaveBeenCalledWith(
-        { activityId: "test-123", responseVersion: 4 },
+        { activityId: "test-123", responseVersion: 5 },
         expect.objectContaining({ enabled: true, select: decodeClimbingLogEntriesResponse }),
       );
       expect(screen.getByText("Summit outing")).toBeInTheDocument();
@@ -2818,12 +2916,12 @@ describe("ActivityDetailPage", () => {
       await waitFor(() => {
         expect(mockClimbingEntriesInvalidate).toHaveBeenCalledWith({
           activityId: "test-123",
-          responseVersion: 4,
+          responseVersion: 5,
         });
         expect(mockActivityImagesInvalidate).toHaveBeenCalledWith({ id: "test-123" });
         expect(mockEntrySuggestionsInvalidate).toHaveBeenCalledWith({
           activityId: "test-123",
-          responseVersion: 4,
+          responseVersion: 5,
         });
         expect(mockClimbingSessionSummaryInvalidate).toHaveBeenCalledWith();
         expect(mockClimbingGradeProgressionInvalidate).toHaveBeenCalledWith();
@@ -2926,7 +3024,7 @@ describe("ActivityDetailPage", () => {
         await waitFor(() =>
           expect(mockClimbingEntriesInvalidate).toHaveBeenCalledWith({
             activityId: "test-123",
-            responseVersion: 4,
+            responseVersion: 5,
           }),
         );
         Object.assign(mockActivity, originalActivity);

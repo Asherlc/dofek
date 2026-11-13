@@ -500,9 +500,7 @@ describe("ClimbingCatalogueService", () => {
     await service.refresh(seed);
     search.mockResolvedValueOnce({ candidates: [{ ...candidate, tags: [] }], complete: true });
     expect((await service.refresh(seed)).sources[0]?.matches[0]?.candidate.tags).toEqual([]);
-    search.mockRejectedValueOnce(
-      new Error("theCrag catalogue request failed (403). Try again later."),
-    );
+    search.mockRejectedValueOnce(new Error("Provider request failed (403). Try again later."));
     await expect(service.refresh(seed)).rejects.toThrow("403");
     const retained = await service.read(seed);
     expect(retained.status).toBe("error");

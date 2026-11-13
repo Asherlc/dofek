@@ -5,25 +5,15 @@ import {
   ConfiguredProvidersSchema,
 } from "@dofek/auth/auth";
 import * as AppleAuthentication from "expo-apple-authentication";
-import * as Crypto from "expo-crypto";
-import * as SecureStore from "expo-secure-store";
 import * as WebBrowser from "expo-web-browser";
 import { Platform } from "react-native";
 import { z } from "zod";
-import { disableUploads } from "../modules/whoop-ble";
-import {
-  deleteSecureStoreItem,
-  readSecureStoreItem,
-  writeSecureStoreItem,
-} from "./secure-store-access";
+import { clearSessionToken } from "./auth-session";
 import { captureException } from "./telemetry";
 
 export type { AuthUser, ConfiguredProviders };
 export { AuthUserSchema, ConfiguredProvidersSchema };
 
-const SESSION_TOKEN_KEY = "dofek_session_token";
-const SESSION_USER_KEY = "dofek_session_user_v1";
-const SESSION_OWNER_NONCE_KEY = "dofek_session_owner_nonce_v1";
 const APP_SCHEME = "dofek";
 const ErrorResponseSchema = z.object({ error: z.string().min(1) });
 const invalidSessionResponseMessage =
@@ -56,168 +46,9 @@ async function requestNativeAppleCredential() {
   }
 }
 
-// In-memory cache avoids SecureStore reads while iOS has the device locked in background.
-// Reads still fall back to SecureStore on cold start in the foreground.
-let cachedSessionToken: string | null | undefined;
-let sessionPersistenceGeneration = 0;
-let sessionPersistenceTail: Promise<void> = Promise.resolve();
-
-function serializeSessionPersistence<T>(operation: () => Promise<T>): Promise<T> {
-  const result = sessionPersistenceTail.then(operation, operation);
-  sessionPersistenceTail = result.then(
-    () => undefined,
-    () => undefined,
-  );
-  return result;
-}
-
-/** Invalidate auth persistence synchronously before account-owned cleanup begins. */
-export function invalidateSessionPersistence(): void {
-  sessionPersistenceGeneration += 1;
-  cachedSessionToken = null;
-}
-
 export interface AuthResult {
   session: string;
   isNewUser: boolean;
-}
-
-/** Save the session token to secure storage. */
-export async function saveSessionToken(token: string): Promise<void> {
-  const writeGeneration = sessionPersistenceGeneration;
-  await serializeSessionPersistence(async () => {
-    if (writeGeneration !== sessionPersistenceGeneration) return;
-    const storedToken = await readSecureStoreItem(SESSION_TOKEN_KEY);
-    if (writeGeneration !== sessionPersistenceGeneration) return;
-    if (storedToken !== token) {
-      await SecureStore.deleteItemAsync(SESSION_USER_KEY);
-      if (writeGeneration !== sessionPersistenceGeneration) return;
-    }
-    await writeSecureStoreItem(SESSION_TOKEN_KEY, token);
-    if (writeGeneration === sessionPersistenceGeneration) {
-      cachedSessionToken = token;
-    }
-  });
-}
-
-/** Get the saved session token, or null if not logged in. */
-export async function getSessionToken(): Promise<string | null> {
-  const readGeneration = sessionPersistenceGeneration;
-  return serializeSessionPersistence(async () => {
-    if (readGeneration !== sessionPersistenceGeneration) return null;
-    if (cachedSessionToken !== undefined) {
-      return cachedSessionToken;
-    }
-
-    const token = await readSecureStoreItem(SESSION_TOKEN_KEY);
-    if (readGeneration !== sessionPersistenceGeneration) return null;
-    if (token !== null) {
-      cachedSessionToken = token;
-    }
-    return token;
-  });
-}
-
-/** Save a verified user only while their session token remains persisted. */
-export async function saveSessionUser(token: string, user: AuthUser): Promise<void> {
-  const writeGeneration = sessionPersistenceGeneration;
-  await serializeSessionPersistence(async () => {
-    if (writeGeneration !== sessionPersistenceGeneration) return;
-    const storedToken = await readSecureStoreItem(SESSION_TOKEN_KEY);
-    if (writeGeneration !== sessionPersistenceGeneration || storedToken !== token) return;
-    await writeSecureStoreItem(SESSION_USER_KEY, JSON.stringify(AuthUserSchema.parse(user)));
-    if (writeGeneration !== sessionPersistenceGeneration) {
-      await SecureStore.deleteItemAsync(SESSION_USER_KEY);
-    }
-  });
-}
-
-/** Restore the saved user belonging to the persisted token without a network request. */
-export async function getSavedSessionUser(token: string): Promise<AuthUser | null> {
-  const readGeneration = sessionPersistenceGeneration;
-  return serializeSessionPersistence(async () => {
-    if (readGeneration !== sessionPersistenceGeneration) return null;
-    const storedToken = await readSecureStoreItem(SESSION_TOKEN_KEY);
-    if (readGeneration !== sessionPersistenceGeneration || storedToken !== token) return null;
-    const storedUser = await readSecureStoreItem(SESSION_USER_KEY);
-    if (readGeneration !== sessionPersistenceGeneration || storedUser === null) return null;
-    try {
-      const data: unknown = JSON.parse(storedUser);
-      return AuthUserSchema.parse(data);
-    } catch (error: unknown) {
-      captureException(error, { source: "auth-saved-user-restore" });
-      return null;
-    }
-  });
-}
-
-/** Clear the session token (logout). */
-export async function clearSessionToken(): Promise<void> {
-  invalidateSessionPersistence();
-  // Start native cleanup immediately and reserve persistence ordering before yielding.
-  // Adopting its Promise keeps later session writes behind completed native cleanup.
-  const nativeCleanup = Promise.allSettled([disableUploads()]);
-  const cleanupResults = await serializeSessionPersistence(async () => {
-    const nativeResults = await nativeCleanup;
-    cachedSessionToken = null;
-    const credentialResults = await Promise.allSettled([
-      deleteSecureStoreItem(SESSION_TOKEN_KEY),
-      SecureStore.deleteItemAsync(SESSION_USER_KEY),
-      deleteSecureStoreItem(SESSION_OWNER_NONCE_KEY),
-    ]);
-    return [...nativeResults, ...credentialResults];
-  });
-  cachedSessionToken = null;
-  const failures = cleanupResults
-    .filter((result) => result.status === "rejected")
-    .map((result) => result.reason);
-  if (failures.length > 0) {
-    const error =
-      failures.length === 1 ? failures[0] : new AggregateError(failures, "Session cleanup failed");
-    captureException(error, { source: "auth-session-cleanup" });
-    throw error;
-  }
-}
-
-/** Generate an opaque local marker without retaining an account identifier. */
-export function createAccountErasureCleanupNonce(): string {
-  return Crypto.randomUUID();
-}
-
-/** Rotate the opaque local owner marker whenever a server session is adopted. */
-export async function rotateSessionOwnerNonce(): Promise<string> {
-  const nonce = createAccountErasureCleanupNonce();
-  const writeGeneration = sessionPersistenceGeneration;
-  await serializeSessionPersistence(async () => {
-    if (writeGeneration !== sessionPersistenceGeneration) return;
-    await writeSecureStoreItem(SESSION_OWNER_NONCE_KEY, nonce);
-  });
-  return nonce;
-}
-
-/** Restore the owner marker that belongs to a session surviving an app restart. */
-export async function getOrCreateSessionOwnerNonce(): Promise<string> {
-  const readGeneration = sessionPersistenceGeneration;
-  return serializeSessionPersistence(async () => {
-    const stored = await readSecureStoreItem(SESSION_OWNER_NONCE_KEY);
-    const parsed = stored === null ? null : z.uuid().safeParse(stored);
-    if (parsed?.success && readGeneration === sessionPersistenceGeneration) {
-      return parsed.data;
-    }
-
-    const nonce = createAccountErasureCleanupNonce();
-    if (readGeneration === sessionPersistenceGeneration) {
-      await writeSecureStoreItem(SESSION_OWNER_NONCE_KEY, nonce);
-    }
-    return nonce;
-  });
-}
-
-/** @internal Resets the in-memory session cache between tests. */
-export function resetSessionTokenCacheForTests(): void {
-  cachedSessionToken = undefined;
-  sessionPersistenceGeneration = 0;
-  sessionPersistenceTail = Promise.resolve();
 }
 
 /** Validate the stored session token by calling /api/auth/me. Returns the user or null. */
@@ -488,7 +319,7 @@ export async function logout(serverUrl: string, token: string): Promise<void> {
       headers: { Authorization: `Bearer ${token}` },
     });
   } catch (error: unknown) {
-    captureException(error, { source: "logout" });
+    captureException(error, { source: "logout", retiredLifetime: true });
   }
   await clearLocalSession;
 }

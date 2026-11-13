@@ -10,6 +10,7 @@ import {
 import { activityImageFixture } from "../activity-images-test-helpers";
 import { ActivityDetailHeader } from "./ActivityDetailHeader";
 import { detailHeaderActivity, removedDetailHeaderActivity } from "./ActivityDetailHeader.fixtures";
+import { ActivityDetailStoryProviders } from "./ActivityDetailStoryProviders";
 
 const meta = {
   title: "Pages/ActivityDetail/ActivityDetailHeader",
@@ -28,6 +29,19 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const BranchingSourcesCollapsed: Story = {};
+export const FitRecoveryWarning: Story = {
+  args: {
+    activity: {
+      ...detailHeaderActivity,
+      fitRecoveryWarning:
+        "Some activity data could not be recovered from the original file. The available data was imported; this activity may be incomplete.",
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement.ownerDocument.body);
+    await expect(canvas.getByRole("alert")).toBeVisible();
+  },
+};
 export const BranchingSourcesExpanded: Story = {
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement.ownerDocument.body);
@@ -64,6 +78,7 @@ export const EmptyTree: Story = {
 };
 export const RemovedSource: Story = {
   args: { activity: removedDetailHeaderActivity },
+  decorators: [(Story) => <ActivityDetailStoryProviders>{Story()}</ActivityDetailStoryProviders>],
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement.ownerDocument.body);
     await userEvent.click(await canvas.findByRole("button", { name: "Lineage: Garmin Edge 530" }));

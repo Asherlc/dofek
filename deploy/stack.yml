@@ -30,6 +30,32 @@ services:
       - --certificatesresolvers.le.acme.dnschallenge.delaybeforecheck=10
       - --certificatesresolvers.le.acme.email=asherlc@asherlc.com
       - --certificatesresolvers.le.acme.storage=/letsencrypt/acme.json
+      # Server-error access logs only. Field and header defaults are dropped so
+      # no request path, query, client identity or header reaches the exporter:
+      # RequestPath includes URL.RawQuery. The pinned 3.6 image (3.6.25) can
+      # drop query parameters, but earlier 3.6 patches cannot, so the path field
+      # is omitted entirely. Sentry keeps the failing operation endpoint.
+      - --accesslog=true
+      - --accesslog.format=json
+      - --accesslog.filters.statuscodes=500-599
+      - --accesslog.fields.defaultmode=drop
+      - --accesslog.fields.headers.defaultmode=drop
+      - --accesslog.fields.names.StartUTC=keep
+      - --accesslog.fields.names.Duration=keep
+      - --accesslog.fields.names.OriginDuration=keep
+      - --accesslog.fields.names.RouterName=keep
+      - --accesslog.fields.names.ServiceName=keep
+      - --accesslog.fields.names.ServiceAddr=keep
+      - --accesslog.fields.names.RequestMethod=keep
+      - --accesslog.fields.names.OriginStatus=keep
+      - --accesslog.fields.names.DownstreamStatus=keep
+      - --accesslog.fields.names.TraceId=keep
+      - --accesslog.fields.names.SpanId=keep
+      # Native OTLP export reuses the unsampled logs/app pipeline. Setting it
+      # makes Traefik discard the duplicate stdout access log line.
+      - --experimental.otlplogs=true
+      - --accesslog.otlp.http.endpoint=http://collector:4318/v1/logs
+      - --accesslog.otlp.servicename=traefik
     environment:
       CF_DNS_API_TOKEN: ${CLOUDFLARE_API_TOKEN:?CLOUDFLARE_API_TOKEN is required}
     ports:
@@ -357,6 +383,7 @@ services:
     env_file: ${KAFKA_ENV_FILE:?KAFKA_ENV_FILE is required}
     environment:
       KAFKA_HEAP_OPTS: "-Xmx1G -Xms1G"
+      KAFKA_OPTS: "-javaagent:/plugins/jmx/1.7.0/jmx_prometheus_javaagent-1.7.0.jar=/etc/kafka/jmx-exporter.yaml"
       KAFKA_LOG_DIRS: "/var/lib/kafka/data"
       KAFKA_PROCESS_ROLES: "broker,controller"
       KAFKA_NODE_ID: "1"
@@ -385,6 +412,9 @@ services:
       KAFKA_RSM_CONFIG_STORAGE_S3_PATH_STYLE_ACCESS_ENABLED: "true"
       AWS_REQUEST_CHECKSUM_CALCULATION: "WHEN_REQUIRED"
       AWS_RESPONSE_CHECKSUM_VALIDATION: "WHEN_REQUIRED"
+    configs:
+      - source: kafka_jmx_exporter_v1
+        target: /etc/kafka/jmx-exporter.yaml
     volumes:
       # Fresh tiered generation; retain both original broker trees separately.
       - /mnt/dofek-data/kafka-broker/data:/var/lib/kafka/data
@@ -410,6 +440,7 @@ services:
   metric-stream-clickhouse-sink: &metric-stream-clickhouse-sink
     image: ${APP_IMAGE:?APP_IMAGE must be the resolved immutable deployment image}
     command: ["metric-stream-clickhouse-sink"]
+    stop_grace_period: 30m
     env_file: ${METRIC_STREAM_CLICKHOUSE_SINK_ENV_FILE:?METRIC_STREAM_CLICKHOUSE_SINK_ENV_FILE is required}
     environment: &metric-stream-clickhouse-sink-environment
       NODE_ENV: production
@@ -790,7 +821,7 @@ services:
     volumes:
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
     configs:
-      - source: otel_collector_config_v3
+      - source: otel_collector_config_v4
         target: /etc/otelcol-contrib/config.yaml
 
   ota:
@@ -896,8 +927,10 @@ configs:
   # Swarm config objects are immutable: when otel-collector-config.yaml changes,
   # bump this key's version suffix (e.g. _v2) so a new config object is created
   # and the collector rolls onto it — same convention as netdata_db_limits_v2.
-  otel_collector_config_v3:
+  otel_collector_config_v4:
     file: ./otel-collector-config.yaml
+  kafka_jmx_exporter_v1:
+    file: ./kafka/jmx-exporter.yaml
   # Swarm config objects are immutable: when metric-stream-r2-archive.connect.yml
   # changes, bump this key's version suffix so a new config object is created and
   # the service rolls onto it — same convention as netdata_db_limits_v2.

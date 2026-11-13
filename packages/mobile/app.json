@@ -38,7 +38,10 @@
         "NSLocationWhenInUseUsageDescription": "Dofek uses your location to show your position on activity maps while you use the app.",
         "NSBluetoothAlwaysUsageDescription": "Dofek connects to Bluetooth heart-rate monitors to record your heart rate during workouts.",
         "UIBackgroundModes": ["bluetooth-central", "fetch"],
-        "BGTaskSchedulerPermittedIdentifiers": ["com.dofek.accelerometer-refresh"],
+        "BGTaskSchedulerPermittedIdentifiers": [
+          "com.dofek.accelerometer-refresh",
+          "com.dofek.app.healthkit-sync.*"
+        ],
         "LSSupportsOpeningDocumentsInPlace": false,
         "CADisableMinimumFrameDurationOnPhone": true,
         "CFBundleDocumentTypes": [
@@ -62,6 +65,8 @@
     },
     "plugins": [
       "expo-router",
+      "expo-font",
+      "expo-secure-store",
       "@maplibre/maplibre-react-native",
       [
         "expo-splash-screen",
@@ -74,6 +79,7 @@
           }
         }
       ],
+      "./plugins/with-whoop-cleanup-logging.ts",
       [
         "@sentry/react-native/expo",
         {

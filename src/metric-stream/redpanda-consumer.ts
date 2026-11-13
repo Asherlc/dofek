@@ -1,5 +1,5 @@
 import { performance } from "node:perf_hooks";
-import { Kafka } from "kafkajs";
+import { type Consumer, Kafka } from "kafkajs";
 import { captureException } from "../lib/error-reporting.ts";
 import { logger } from "../logger.ts";
 import {
@@ -216,8 +216,8 @@ function readRequiredEnvironmentValue(
 }
 
 export function createKafkaMetricStreamConsumerFromEnv(env: NodeJS.ProcessEnv = process.env): {
-  consumer: MetricStreamConsumerLike;
-  quarantine: MetricStreamQuarantineWriter;
+  consumer: MetricStreamConsumerLike & Pick<Consumer, "stop" | "disconnect">;
+  quarantine: KafkaMetricStreamQuarantineWriter;
   topic: string;
 } {
   const topic = readRequiredEnvironmentValue(env, "METRIC_STREAM_TOPIC");
@@ -234,7 +234,13 @@ export function createKafkaMetricStreamConsumerFromEnv(env: NodeJS.ProcessEnv = 
     brokers,
     clientId: "dofek-metric-stream-consumer",
   });
-  const kafkaConsumer = kafka.consumer({ groupId });
+  let stopping = false;
+  const kafkaConsumer = kafka.consumer({
+    groupId,
+    retry: {
+      restartOnFailure: async () => !stopping,
+    },
+  });
 
   return {
     consumer: {
@@ -248,6 +254,14 @@ export function createKafkaMetricStreamConsumerFromEnv(env: NodeJS.ProcessEnv = 
       },
       subscribe: (options) => kafkaConsumer.subscribe(options),
       run: (options) => kafkaConsumer.run(options),
+      stop: () => {
+        stopping = true;
+        return kafkaConsumer.stop();
+      },
+      disconnect: () => {
+        stopping = true;
+        return kafkaConsumer.disconnect();
+      },
     },
     quarantine: new KafkaMetricStreamQuarantineWriter({
       admin: kafka.admin(),

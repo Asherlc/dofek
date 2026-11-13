@@ -169,7 +169,8 @@ describe("check-clickhouse-cdc", () => {
     expect(mockedSentryCaptureException).toHaveBeenCalledWith(healthError);
     expect(mockedSentryInit).toHaveBeenCalledWith({
       dsn: "dsn",
-      skipOpenTelemetrySetup: true,
+      enableOpenTelemetrySetup: false,
+      dataCollection: expect.any(Object),
     });
     expect(mockedSentryClose).toHaveBeenCalledWith(2_000);
     expect(process.exit).toHaveBeenCalledWith(1);

@@ -1,0 +1,2 @@
+Fri Nov 13 03:31:45 UTC 2026
+url=https://dofek.fit/health http=200 tls_verify=0

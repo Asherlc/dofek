@@ -2,11 +2,17 @@
 
 Infrastructure-as-code and deployment configuration for Dofek.
 
-The approved Kafka-only phase-1 cutover is recorded in the
-[execution receipt](kafka/phase1-execution.md). Kafka now serves the hot ingest
-log; the old Redpanda data remains retained in place. Existing service and
-environment names retain their legacy Redpanda spelling. Tiered storage is a
-separate phase-2 release; shared application deployment and old-data retirement
+Kafka serves the production ingest log with upstream Aiven tiered storage to
+Cloudflare R2. A November 12 broker audit observed remote storage enabled on all
+six metric-stream topics and successful copy/delete operations in its bounded
+log sample; it does not establish an exact activation date. The subsequent
+canonical release applied explicit local-retention limits, and fresh consumers
+read remote-only offsets after native local eviction. See the
+[production observation](kafka/retention-policy.md#production-observation-november-12-november-13-utc)
+and [topic policy](kafka/topic-policy.json). The old Redpanda contents
+were retired on November 12 after archive-range verification; its original
+directory and read-only worker mount remain. Existing service/environment names retain their
+legacy Redpanda spelling. Shared application deployment and old-data retirement
 retain their own review boundaries.
 
 ## Architecture
@@ -19,7 +25,7 @@ infrastructure has been retired.
 - **Compute**: Production runs on an OCI Ampere A1 ARM64 host provisioned by `deploy/oracle-free/` and addressed through the `ORACLE_SERVER_HOST` GitHub Actions variable. The server runs `dockerd` initialized as a single-node swarm manager and has no deploy scripts or secrets on disk.
 - **Storage**:
   - **PostgreSQL**: Managed via TimescaleDB with PostGIS enabled for geospatial metric data.
-  - **ClickHouse**: Runs in the swarm as the stored analytics read-model service for heavy activity stream reads. The raw `metric_stream` copy is populated by the Redpanda ClickHouse sink for Redpanda-first sources and remains compatible with tracked ClickHouse migrations and chunk-range backfills. See [docs/clickhouse-metric-stream.md](../docs/clickhouse-metric-stream.md).
+  - **ClickHouse**: Runs in the swarm as the stored analytics read-model service for heavy activity stream reads. The raw `metric_stream` copy is populated by the Kafka ClickHouse sink for Kafka-first sources and remains compatible with tracked ClickHouse migrations and chunk-range backfills. See [docs/clickhouse-metric-stream.md](../docs/clickhouse-metric-stream.md).
   - **Kafka**: Runs internally in the swarm as the hot ingest log for high-volume `metric_stream` events. Separate legacy, live, and history ClickHouse sink services consume their designated topics, and matching Redpanda Connect services archive them to R2. Use the current [phase-1 route/command record](kafka/operator-proposal.md); the [legacy route contract](../docs/metric-stream-redpanda-r2-runbook.md#required-services) explains the retained service names.
   - **PeerDB**: Runs internally in the swarm as the Postgres-to-ClickHouse CDC service for lower-volume raw fitness tables into `postgres_fitness.*`.
   - **Volume**: Production uses the OCI data volume mounted at `/mnt/dofek-data`.
@@ -108,6 +114,21 @@ infrastructure has been retired.
   Keep abandoned ownership blocked until executor and request termination are
   verified. See SwarmKit's [task model](https://github.com/moby/swarmkit/blob/master/design/task_model.md)
   and the [verified recovery record](../docs/incidents/2026-11-10-sentry-remediation.md#analytics-recovery-and-prevention).
+- The anchored metric-stream ClickHouse sink gives both live and history
+  consumers a 30-minute stop grace. Shutdown requests mark readiness unavailable,
+  then KafkaJS `consumer.stop()` drains the active `eachBatch` callback before
+  the sink closes its database and ClickHouse connections. KafkaJS leaves
+  offsets unresolved when `eachBatch` fails. The sink resolves offsets only
+  after `handleEvents` succeeds in
+  [`redpanda-consumer.ts`](../src/metric-stream/redpanda-consumer.ts); see
+  KafkaJS's [consumer batch processing guide](https://kafka.js.org/docs/consuming)
+  and Docker's [`stop_grace_period`](https://docs.docker.com/reference/compose-file/services/#stop_grace_period).
+  Existing Swarm tasks retain their old stop-grace specification, so before the
+  first rollout verify the old sink task has no active owned publication or
+  perform a controlled drain before replacement. If a hard kill or unknown
+  request outcome occurs, keep publication ownership blocked until Kafka and
+  ClickHouse state are verified through the separate recovery gate; the new
+  grace period does not establish recovery evidence.
 - The worker healthcheck calls the worker process's loopback-only `/readyz` endpoint on port 3001. That endpoint verifies every existing BullMQ Worker's running state and Redis clients; the healthcheck must not start a second Node runtime or construct fresh queue clients inside the worker's 512 MiB cgroup. See the [Docker healthcheck reference](https://docs.docker.com/reference/compose-file/services/#healthcheck) and [BullMQ Worker API](https://api.docs.bullmq.io/classes/v5.Worker.html).
 - The `default` overlay network is declared `attachable: true` so CI can run one-shot migration containers on it from a remote Docker context.
 - The `db` service has a 2 GiB container memory limit to prevent one PostgreSQL workload from exhausting the single-node host. If it hits that limit, treat it as a query/workload incident rather than increasing the cap by default.
@@ -137,7 +158,7 @@ infrastructure has been retired.
   scheduled retry. A reconciliation failure never changes CDC state.
 - Netdata has a 768 MiB container memory limit and a checked-in `deploy/netdata/netdata.conf` that bounds dbengine retention to two tiers: one day of per-second data capped at 96 MiB and seven days of per-minute data capped at 128 MiB. The stack mounts this file as a Docker Swarm config, so changing it must also rotate the config key in `deploy/stack.yml` (for example `netdata_db_limits_v2`).
 - PeerDB uses an internal catalog Postgres service, Temporal, worker services, and a private SeaweedFS S3 staging bucket (service hostname `peerdb-minio`). Its persistent catalog and staging data live under `/mnt/dofek-data/peerdb-catalog` and `/mnt/dofek-data/peerdb-minio`. The catalog uses the PostgreSQL 18 image layout: mount the host directory at `/var/lib/postgresql`, not `/var/lib/postgresql/data`, so the image can manage its versioned data directory. Production mirrors use 100,000-row CDC batches and single-worker 100,000-row initial snapshot partitions so PeerDB can stay inside its fixed memory limits at the cost of slower catch-up.
-- Redpanda stores hot `metric_stream` ingest data under `/mnt/dofek-data/redpanda` (a bind mount on the large data disk — a default named volume lands on the small root disk and fills during a metric-stream backfill). Redpanda local retention is not the long-term source of truth; Redpanda Connect writes the `metric-stream-v1` topic to the `dofek-metric-stream-archive` R2 bucket for canonical replay. The ClickHouse sink and R2 archive services must be healthy before any metric-stream writer change is considered deployed safely.
+- Kafka stores local `metric_stream` ingest data under `/mnt/dofek-data/kafka-broker/data` and uses R2 for its remote log tier. Redpanda Connect independently archives the three routed source topics to `dofek-metric-stream-archive`; it is not the broker's remote-segment reader. The original `/mnt/dofek-data/redpanda` directory is now an empty read-only worker hold mount. See the [retention and cleanup record](kafka/retention-policy.md) and [Kafka tiering documentation](https://kafka.apache.org/44/operations/tiered-storage/). The ClickHouse sink and R2 archive services must be healthy before any metric-stream writer change is considered deployed safely.
 - The historical Postgres `fitness.metric_stream` hypertable has been retired; metric-stream durability is Redpanda plus the R2 archive, and ClickHouse is the serving copy. The `cdc-health` service alerts on remaining PeerDB slot lag at 16 GiB and fails the check at 32 GiB so operators have headroom before Postgres reaches the 64 GiB per-slot WAL cap.
 - The Oracle override scales Portainer, CloudBeaver, pgAdmin, PeerDB UI, and
   Netdata to zero. Databasus remains at one replica because it owns the backup
@@ -149,11 +170,23 @@ infrastructure has been retired.
 - Parsed with `json_parser` and `regex_parser` (to extract container IDs).
 - Filters out noisy Postgres `NOTICE` lines to reduce volume.
 - Exports to Axiom via `otlphttp`.
+- The Kafka retention change adds stock JMX Exporter 1.7.0 in OTLP-only mode,
+  exporting native backlog, error and log-size metrics through the collector to
+  the existing `dofek-host-metrics` dataset. No JMX control port or additional
+  service is exposed. Verify fresh samples after each release; stored-query
+  readback needs query permission. See the [policy and native qualification](kafka/retention-policy.md)
+  and [upstream agent configuration](https://prometheus.github.io/jmx_exporter/configuration/opentelemetry/).
 - Logs use `dofek-logs`, with metadata grouped into the `attributes.custom` map;
   traces use `dofek-traces`. Axiom requires a dedicated dataset per OTel signal:
   [OTel ingestion](https://axiom.co/docs/send-data/opentelemetry). Both retain
   data for 29 days; see the [Axiom runbook](../docs/axiom-observability-runbook.md)
   for map configuration, query paths, and field-limit diagnosis.
+
+- Traefik forwards only `500`–`599` access logs as OTLP logs with
+  `service.name=traefik`, joining the unsampled `logs/app` pipeline. Fields and
+  headers default to `drop`; path, query, client identity, and headers are not
+  exported. See the [Axiom runbook](../docs/axiom-observability-runbook.md#traefik-server-error-access-logs)
+  for fields, types, and queries.
 
 ## Deployment
 

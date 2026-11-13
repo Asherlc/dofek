@@ -107,6 +107,18 @@ exporters:
       enabled: true
       num_consumers: 4
       queue_size: 5000
+  otlphttp/metrics:
+    endpoint: https://api.axiom.co
+    headers:
+      authorization: "Bearer ${env:AXIOM_API_TOKEN}"
+      x-axiom-metrics-dataset: dofek-host-metrics
+    retry_on_failure:
+      enabled: true
+      max_elapsed_time: 300s
+    sending_queue:
+      enabled: true
+      num_consumers: 4
+      queue_size: 5000
 
 service:
   extensions: [health_check]
@@ -123,3 +135,7 @@ service:
       receivers: [filelog]
       processors: [filter/drop-app-console-logs, resource/docker, probabilistic_sampler/docker-logs, transform/log-attributes, batch]
       exporters: [otlphttp/logs]
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlphttp/metrics]

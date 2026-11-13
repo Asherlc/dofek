@@ -374,6 +374,7 @@ describe("ProviderDetailRepository", () => {
       expect(await repo.getRecordDetail("openbeta", "climbingLogEntries", log.id)).toEqual({
         ...log,
         areaPath: climb.areaPath,
+        areaGroupId: null,
         tags: [],
         chartAnnotations: [],
       });

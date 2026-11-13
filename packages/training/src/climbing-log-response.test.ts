@@ -7,7 +7,8 @@ describe("climbing response versions", () => {
     expect(climbingResponseVersionSchema.parse(2)).toBe(2);
     expect(climbingResponseVersionSchema.parse(3)).toBe(3);
     expect(climbingResponseVersionSchema.parse(4)).toBe(4);
-    expect(climbingResponseVersionSchema.safeParse(5).success).toBe(false);
+    expect(climbingResponseVersionSchema.parse(5)).toBe(5);
+    expect(climbingResponseVersionSchema.safeParse(6).success).toBe(false);
   });
 
   it.each([

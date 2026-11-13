@@ -21,8 +21,16 @@ import {
   createMetricStreamEvent,
   type MetricStreamDeleteScopeInput,
   type MetricStreamRowInput,
+  metricStreamDeletedEventV3Schema,
   metricStreamEventV2Schema,
 } from "./events.ts";
+import {
+  assertQueryFinishes,
+  createAcknowledgementDeleteFixture,
+  expectDeletionReceiptIds,
+  expectMetricStreamDeleteState,
+  profileDeletionAcknowledgements,
+} from "./test-helpers.ts";
 
 const testUserId = randomUUID();
 const testEventId = "5e6f7a8b-0c1d-4e2f-8a3b-4c5d6e7f8a90";
@@ -890,4 +898,94 @@ describe("metric stream ClickHouse sink (integration)", () => {
     });
     expect(Number((await result.json())[0]?.acknowledgement_count)).toBe(1);
   });
+
+  it.each([
+    { label: "unacknowledged", acknowledgedIndexes: [], expectedReceiptWrites: 2 },
+    { label: "partially acknowledged", acknowledgedIndexes: [0, 2], expectedReceiptWrites: 1 },
+    {
+      label: "fully acknowledged",
+      acknowledgedIndexes: Array.from({ length: 101 }, (_, index) => index),
+      expectedReceiptWrites: 0,
+    },
+  ])(
+    "profiles 101 $label adjacent same-revision deletes",
+    async ({ acknowledgedIndexes, expectedReceiptWrites }) => {
+      const userId = randomUUID();
+      const providerId = `ack-batch-${userId}`;
+      const { deletedRows, unaffectedRows, events } = createAcknowledgementDeleteFixture(
+        userId,
+        providerId,
+      );
+      const profiling = profileDeletionAcknowledgements(client);
+      const expectedAcknowledgedIds = events
+        .filter((_, index) => acknowledgedIndexes.includes(index))
+        .map(({ eventId }) => eventId);
+      const expectedDeletedRowIds = deletedRows.map(({ id }) => id);
+
+      try {
+        await client.insert({
+          table: METRIC_STREAM_TABLE,
+          values: [...deletedRows, ...unaffectedRows].map(mapMetricStreamEventToClickHouseRow),
+          format: "JSONEachRow",
+          clickhouse_settings: { date_time_input_format: "best_effort" },
+        });
+        if (expectedAcknowledgedIds.length > 0) {
+          await applyMetricStreamEventsToClickHouse(
+            client,
+            events.filter((_, index) => acknowledgedIndexes.includes(index)),
+          );
+        }
+
+        await applyMetricStreamEventsToClickHouse(profiling.client, events);
+
+        await expectMetricStreamDeleteState(
+          client,
+          [...deletedRows, ...unaffectedRows].map(({ id }) => id),
+          expectedDeletedRowIds,
+        );
+
+        const queryIds = [...profiling.readQueryIds, ...profiling.writeQueryIds];
+        await assertQueryFinishes(client, queryIds);
+        expect({
+          acknowledgementReads: profiling.readQueryIds.length,
+          acknowledgementWrites: profiling.writeQueryIds.length,
+        }).toEqual({ acknowledgementReads: 2, acknowledgementWrites: expectedReceiptWrites });
+        await expectDeletionReceiptIds(
+          client,
+          events.map(({ eventId }) => eventId),
+          events.map(({ eventId }) => eventId),
+        );
+
+        if (expectedAcknowledgedIds.length === events.length) {
+          const event = events[0];
+          if (!event) throw new Error("expected a deletion event for uppercase replay");
+          const uppercaseReplay = metricStreamDeletedEventV3Schema.parse({
+            ...event,
+            eventId: event.eventId.toUpperCase(),
+          });
+          await applyMetricStreamEventsToClickHouse(profiling.client, [uppercaseReplay]);
+          expect(profiling.writeQueryIds).toHaveLength(0);
+          const replayQueryId = profiling.readQueryIds.at(-1);
+          if (!replayQueryId) throw new Error("expected a native query ID for uppercase replay");
+          await assertQueryFinishes(client, [replayQueryId]);
+        }
+      } finally {
+        await client.command({
+          query: `ALTER TABLE ${METRIC_STREAM_DELETE_SCOPE_TABLE}
+          DELETE WHERE user_id = {userId:UUID} SETTINGS mutations_sync = 1`,
+          query_params: { userId },
+        });
+        await client.command({
+          query: `ALTER TABLE ${METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE}
+          DELETE WHERE event_id IN {eventIds:Array(UUID)} SETTINGS mutations_sync = 1`,
+          query_params: { eventIds: events.map((event) => event.eventId) },
+        });
+        await client.command({
+          query: `ALTER TABLE ${METRIC_STREAM_TABLE}
+          DELETE WHERE id IN {ids:Array(UUID)} SETTINGS mutations_sync = 1`,
+          query_params: { ids: [...deletedRows, ...unaffectedRows].map((row) => row.id) },
+        });
+      }
+    },
+  );
 });

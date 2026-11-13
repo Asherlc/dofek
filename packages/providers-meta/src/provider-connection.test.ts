@@ -6,6 +6,15 @@ import {
 } from "./provider-connection.ts";
 
 describe("credential input presentation", () => {
+  it("uses the BoardSesh email form and explains the password requirement", () => {
+    expect(providerCredentialInput("boardsesh")).toEqual({
+      identifier: "email",
+      label: "Email",
+      placeholder: "you@example.com",
+      instructions:
+        "Sign in with your BoardSesh email and password. Apple/Google-only accounts need a BoardSesh password.",
+    });
+  });
   it("defaults unfamiliar providers to email", () => {
     expect(providerCredentialInput("unfamiliar-provider")).toMatchObject({
       identifier: "email",

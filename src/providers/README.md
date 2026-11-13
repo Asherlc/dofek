@@ -60,7 +60,7 @@ upload need not contain the complete remote logbook; see the
 
 ## Supported Providers
 
-- **API/credential/OAuth sync providers**: Amazfit/Zepp, Aurora Board, BodySpec, Concept2, Crimpd, Cycling Analytics, Decoy Board, Eight Sleep, 8a.nu/Vertical-Life, FatSecret, Grasshopper Board, Kaya, Kilter Board, Mountain Project, OpenBeta, Oura, Peloton, Polar, Ride with GPS, So iLL Board, Strava, Tension Board, theCrag, Touchstone Board, TrainerRoad, Ultrahuman, Wahoo, Wger, WHOOP, Withings, Xert, Ziva, Zwift. See the [registration list](../jobs/provider-registration.ts).
+- **API/credential/OAuth sync providers**: Amazfit/Zepp, Aurora Board, BodySpec, BoardSesh, Concept2, Crimpd, Cycling Analytics, Decoy Board, Eight Sleep, 8a.nu/Vertical-Life, FatSecret, Grasshopper Board, Kaya, Kilter Board, Mountain Project, OpenBeta, Oura, Peloton, Polar, Ride with GPS, So iLL Board, Strava, Tension Board, theCrag, Touchstone Board, TrainerRoad, Ultrahuman, Wahoo, Wger, WHOOP, Withings, Xert, Ziva, Zwift. See the [registration list](../jobs/provider-registration.ts).
 - **OAuth push providers**: Garmin uses official Health and Activity notifications through its dedicated queue, with no scheduled/manual polling. Connection controls remain available. See the [provider](garmin/provider.ts) and [Garmin guide](../../docs/garmin.md).
 - **Import-only providers**: Historical MoonBoard BoardLib CSV, Cronometer CSV, FIT files, Garmin account exports, Kaya CSV (`kaya-export`), Strong CSV, and Zepp OS App exports. Crimpd and 8a.nu/Vertical-Life retain uploads alongside account sync ([Crimpd](crimpd/provider.ts), [Vertical-Life](eight-a/provider.ts)). FIT imports use Garmin's open FIT protocol and SDK-compatible files ([FIT SDK](https://developer.garmin.com/fit/overview/)).
 - **Upload/native-mobile data sources**: Apple Health import and WHOOP BLE capture live outside this registry path in the web/mobile upload and native module flows.
@@ -96,6 +96,13 @@ unavailable 27 Crags/Griptonite/current MoonBoard contracts. See the
 [Aurora app directory](https://auroraclimbing.com/),
 [Crimpd export](https://crimpd.com/docs/data-export/), and
 [8a.nu export](https://www.8a.nu/faq).
+
+BoardSesh connects with the user's email and password and reads complete per-board
+tick snapshots through its native auth and GraphQL endpoints. The current read
+does not supply physical board identity consistently, so unknown board names and
+IDs remain unknown. Account sign-in and populated-history acceptance remain
+unverified because this implementation session had no authorized account; see
+the [pinned upstream auth and resolver source](../../docs/boardsesh.md#native-authentication).
 
 8a.nu/Vertical-Life also connects per user and reads the four shared logbook
 categories. Its strict CSV/native transition requires unique exact matches,

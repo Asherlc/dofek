@@ -1,3 +1,4 @@
+import type { ConsumerConfig } from "kafkajs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMetricStreamDeletedEvent, createMetricStreamEvent } from "./events.ts";
 import {
@@ -13,6 +14,8 @@ const kafkaConsumerConnect = vi.hoisted(() => vi.fn(async () => undefined));
 const kafkaConsumerOn = vi.hoisted(() => vi.fn());
 const kafkaConsumerSubscribe = vi.hoisted(() => vi.fn(async () => undefined));
 const kafkaConsumerRun = vi.hoisted(() => vi.fn(async () => undefined));
+const kafkaConsumerStop = vi.hoisted(() => vi.fn(async (): Promise<void> => undefined));
+const kafkaConsumerDisconnect = vi.hoisted(() => vi.fn(async (): Promise<void> => undefined));
 const kafkaAdminConnect = vi.hoisted(() => vi.fn(async () => undefined));
 const kafkaAdminCreateTopics = vi.hoisted(() => vi.fn(async () => true));
 const kafkaAdminDescribeConfigs = vi.hoisted(() =>
@@ -36,9 +39,10 @@ const kafkaAdminDescribeConfigs = vi.hoisted(() =>
 
 const kafkaAdminDisconnect = vi.hoisted(() => vi.fn(async () => undefined));
 const kafkaProducerConnect = vi.hoisted(() => vi.fn(async () => undefined));
+const kafkaProducerDisconnect = vi.hoisted(() => vi.fn(async () => undefined));
 const kafkaProducerSend = vi.hoisted(() => vi.fn(async () => undefined));
 const kafkaConsumerFactory = vi.hoisted(() =>
-  vi.fn(() => ({
+  vi.fn((_config: ConsumerConfig) => ({
     connect: kafkaConsumerConnect,
     events: {
       CRASH: "consumer.crash",
@@ -50,6 +54,8 @@ const kafkaConsumerFactory = vi.hoisted(() =>
     on: kafkaConsumerOn,
     subscribe: kafkaConsumerSubscribe,
     run: kafkaConsumerRun,
+    stop: kafkaConsumerStop,
+    disconnect: kafkaConsumerDisconnect,
   })),
 );
 const kafkaConstructor = vi.hoisted(() =>
@@ -62,7 +68,11 @@ const kafkaConstructor = vi.hoisted(() =>
         disconnect: kafkaAdminDisconnect,
       }),
       consumer: kafkaConsumerFactory,
-      producer: () => ({ connect: kafkaProducerConnect, send: kafkaProducerSend }),
+      producer: () => ({
+        connect: kafkaProducerConnect,
+        disconnect: kafkaProducerDisconnect,
+        send: kafkaProducerSend,
+      }),
     };
   }),
 );
@@ -691,11 +701,14 @@ describe("createKafkaMetricStreamConsumerFromEnv", () => {
     kafkaConsumerOn.mockClear();
     kafkaConsumerSubscribe.mockClear();
     kafkaConsumerRun.mockClear();
+    kafkaConsumerStop.mockClear();
+    kafkaConsumerDisconnect.mockClear();
     kafkaAdminConnect.mockClear();
     kafkaAdminCreateTopics.mockClear();
     kafkaAdminDescribeConfigs.mockClear();
     kafkaAdminDisconnect.mockClear();
     kafkaProducerConnect.mockClear();
+    kafkaProducerDisconnect.mockClear();
     kafkaProducerSend.mockClear();
   });
 
@@ -755,7 +768,9 @@ describe("createKafkaMetricStreamConsumerFromEnv", () => {
         handleEvents: vi.fn(async () => undefined),
       });
 
-      expect(kafkaConsumerFactory).toHaveBeenCalledWith({ groupId });
+      expect(kafkaConsumerFactory).toHaveBeenCalledWith(
+        expect.objectContaining({ groupId, retry: expect.any(Object) }),
+      );
       expect(kafkaConsumerSubscribe).toHaveBeenCalledWith({ topic, fromBeginning: true });
     },
   );
@@ -772,7 +787,12 @@ describe("createKafkaMetricStreamConsumerFromEnv", () => {
       brokers: ["redpanda:9092", "redpanda:9093"],
       clientId: "dofek-metric-stream-consumer",
     });
-    expect(kafkaConsumerFactory).toHaveBeenCalledWith({ groupId: "metric-stream-clickhouse-sink" });
+    expect(kafkaConsumerFactory).toHaveBeenCalledWith(
+      expect.objectContaining({
+        groupId: "metric-stream-clickhouse-sink",
+        retry: expect.any(Object),
+      }),
+    );
 
     await consumer.connect();
     await consumer.subscribe({ topic: "metric-stream-v1", fromBeginning: false });
@@ -780,6 +800,8 @@ describe("createKafkaMetricStreamConsumerFromEnv", () => {
       eachBatchAutoResolve: false,
       eachBatch: async () => undefined,
     });
+    await consumer.stop();
+    await consumer.disconnect();
 
     expect(kafkaConsumerConnect).toHaveBeenCalledOnce();
     expect(kafkaConsumerSubscribe).toHaveBeenCalledWith({
@@ -790,8 +812,11 @@ describe("createKafkaMetricStreamConsumerFromEnv", () => {
       eachBatchAutoResolve: false,
       eachBatch: expect.any(Function),
     });
+    expect(kafkaConsumerStop).toHaveBeenCalledOnce();
+    expect(kafkaConsumerDisconnect).toHaveBeenCalledOnce();
 
     await quarantine.connect();
+    await quarantine.disconnect();
     expect(kafkaAdminCreateTopics).toHaveBeenCalledWith({
       topics: [
         {
@@ -816,7 +841,41 @@ describe("createKafkaMetricStreamConsumerFromEnv", () => {
       ],
     });
     expect(kafkaProducerConnect).toHaveBeenCalledOnce();
+    expect(kafkaProducerDisconnect).toHaveBeenCalledOnce();
   });
+
+  it.each(["stop", "disconnect"] as const)(
+    "prevents KafkaJS restart recovery as soon as public %s begins",
+    async (method) => {
+      let resolveNativeOperation: (() => void) | undefined;
+      const nativeOperation = new Promise<void>((resolve) => {
+        resolveNativeOperation = resolve;
+      });
+      const nativeMethod = method === "stop" ? kafkaConsumerStop : kafkaConsumerDisconnect;
+      nativeMethod.mockReturnValueOnce(nativeOperation);
+
+      const { consumer } = createKafkaMetricStreamConsumerFromEnv({
+        METRIC_STREAM_CONSUMER_GROUP: "metric-stream-clickhouse-sink",
+        METRIC_STREAM_TOPIC: "metric-stream-v1",
+        REDPANDA_BROKERS: "redpanda:9092",
+      });
+      const consumerConfig = kafkaConsumerFactory.mock.calls[0]?.[0];
+      const restartOnFailure = consumerConfig?.retry?.restartOnFailure;
+
+      expect(restartOnFailure).toBeTypeOf("function");
+      await expect(restartOnFailure?.(new Error("consumer crashed"))).resolves.toBe(true);
+
+      const shutdown = method === "stop" ? consumer.stop() : consumer.disconnect();
+
+      expect(nativeMethod).toHaveBeenCalledOnce();
+      await expect(restartOnFailure?.(new Error("consumer crashed"))).resolves.toBe(false);
+
+      resolveNativeOperation?.();
+      await shutdown;
+
+      await expect(restartOnFailure?.(new Error("consumer crashed"))).resolves.toBe(false);
+    },
+  );
 
   it("forwards Kafka group lifecycle events to sink readiness", () => {
     const { consumer } = createKafkaMetricStreamConsumerFromEnv({
@@ -864,5 +923,28 @@ describe("createKafkaMetricStreamConsumerFromEnv", () => {
 
     expect(readiness.markGroupJoined).toHaveBeenCalledOnce();
     expect(readiness.markUnavailable).toHaveBeenCalledTimes(4);
+  });
+
+  it("keeps automatic recovery enabled when KafkaJS reports a crash", async () => {
+    const { consumer } = createKafkaMetricStreamConsumerFromEnv({
+      METRIC_STREAM_CONSUMER_GROUP: "metric-stream-clickhouse-sink",
+      METRIC_STREAM_TOPIC: "metric-stream-v1",
+      REDPANDA_BROKERS: "redpanda:9092",
+    });
+    const restartOnFailure = kafkaConsumerFactory.mock.calls[0]?.[0].retry?.restartOnFailure;
+
+    consumer.observeGroupLifecycle?.({
+      markGroupJoined: vi.fn(),
+      markUnavailable: vi.fn(),
+    });
+    const crashListener = kafkaConsumerOn.mock.calls.find(
+      ([eventName]) => eventName === "consumer.crash",
+    )?.[1];
+    if (typeof crashListener !== "function") {
+      throw new Error("expected Kafka crash listener");
+    }
+    crashListener();
+
+    await expect(restartOnFailure?.(new Error("consumer crashed"))).resolves.toBe(true);
   });
 });

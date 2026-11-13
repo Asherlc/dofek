@@ -1,15 +1,40 @@
 import { describe, expect, it, vi } from "vitest";
+import type { ManualHealthKitCheckpoint } from "./health-kit-manual-checkpoint";
+import {
+  HealthKitManualSyncController,
+  type HealthKitManualSyncDependencies,
+} from "./health-kit-manual-sync";
 import {
   ADDITIVE_QUANTITY_TYPES,
   BACKGROUND_HEALTH_KIT_TYPES,
+  MANUAL_HEALTH_KIT_SYNC_STAGE_COUNT,
+  MANUAL_HEALTH_KIT_SYNC_STAGES,
   MENSTRUAL_FLOW_TYPE_IDENTIFIER,
   NON_ADDITIVE_QUANTITY_TYPES,
   syncHealthKitObserverChanges,
   syncHealthKitToServer,
 } from "./health-kit-sync";
+import {
+  type ManualHealthKitSyncContext,
+  ManualHealthKitSyncInterruptedError,
+  type ManualHealthKitSyncStage,
+  type ManualHealthKitSyncStageCompletion,
+} from "./health-kit-sync-types";
 import { captureException } from "./telemetry";
 
 vi.mock("./telemetry", () => ({ captureException: vi.fn() }));
+vi.mock("expo-crypto", () => ({ randomUUID: () => "test-uuid" }));
+vi.mock("expo-network", () => ({
+  addNetworkStateListener: vi.fn(() => ({ remove: vi.fn() })),
+  getNetworkStateAsync: vi.fn(async () => ({ isConnected: true, isInternetReachable: true })),
+}));
+vi.mock("../modules/background-refresh", () => ({
+  addHealthKitSyncExpirationListener: vi.fn(() => ({ remove: vi.fn() })),
+  completeHealthKitSync: vi.fn(),
+  startHealthKitSync: vi.fn(async () => ({ supported: true })),
+  updateHealthKitSyncProgress: vi.fn(),
+}));
+vi.mock("./apple-health-provider", () => ({ AppleHealthSyncService: class {} }));
 
 const runningQuantities = [
   ["HKQuantityTypeIdentifierRunningSpeed", "m/s", 3.5],
@@ -175,7 +200,8 @@ describe("syncHealthKitToServer", () => {
       syncRangeDays: 7,
       onStage: stages,
     });
-    expect(events.slice(0, 5)).toEqual([
+    expect(events.slice(0, 6)).toEqual([
+      `push:${ADDITIVE_QUANTITY_TYPES[0]}:${ADDITIVE_QUANTITY_TYPES.length + 1}`,
       `query:${firstType}`,
       `push:${firstType}:500`,
       `push:${firstType}:1`,
@@ -185,11 +211,11 @@ describe("syncHealthKitToServer", () => {
     const uploads = client.healthKitSync.pushQuantitySamples.mutate.mock.calls.map(
       ([input]) => input.samples,
     );
-    expect(uploads[0]).toEqual(firstSamples.slice(0, 500));
-    expect(uploads[1]).toEqual(firstSamples.slice(500));
-    expect(uploads[2]).toEqual([secondSample]);
-    expect(uploads.at(-1)).toHaveLength(ADDITIVE_QUANTITY_TYPES.length + 1);
-    expect(uploads.at(-1)).toContainEqual(categorySample);
+    expect(uploads[0]).toHaveLength(ADDITIVE_QUANTITY_TYPES.length + 1);
+    expect(uploads[0]).toContainEqual(categorySample);
+    expect(uploads[1]).toEqual(firstSamples.slice(0, 500));
+    expect(uploads[2]).toEqual(firstSamples.slice(500));
+    expect(uploads[3]).toEqual([secondSample]);
     expect(result).toEqual({
       inserted: 503 + ADDITIVE_QUANTITY_TYPES.length,
       deleted: 0,
@@ -199,11 +225,10 @@ describe("syncHealthKitToServer", () => {
       stages.mock.calls
         .map(([stage]) => stage)
         .filter((stage) => stage.operation === "pushQuantitySamples")
-        .slice(0, 3),
+        .slice(1, 3),
     ).toEqual([
       { operation: "pushQuantitySamples", batchIndex: 1, batchCount: 2, itemCount: 500 },
       { operation: "pushQuantitySamples", batchIndex: 2, batchCount: 2, itemCount: 1 },
-      { operation: "pushQuantitySamples", batchIndex: 1, batchCount: 1, itemCount: 1 },
     ]);
   });
 
@@ -211,12 +236,13 @@ describe("syncHealthKitToServer", () => {
     const client = createMockClient();
     const healthKit = createMockHealthKit();
     const failure = new Error("Raw upload rejected");
-    client.healthKitSync.pushQuantitySamples.mutate.mockRejectedValue(failure);
+    client.healthKitSync.pushQuantitySamples.mutate
+      .mockResolvedValueOnce({ inserted: ADDITIVE_QUANTITY_TYPES.length + 1, errors: [] })
+      .mockRejectedValue(failure);
     await expect(
       syncHealthKitToServer({ trpcClient: client, healthKit, syncRangeDays: 7 }),
     ).rejects.toBe(failure);
     expect(healthKit.queryQuantitySamples).toHaveBeenCalledTimes(1);
-    expect(healthKit.queryCategorySamples).not.toHaveBeenCalled();
     expect(healthKit.queryWorkouts).not.toHaveBeenCalled();
     expect(client.healthKitSync.recordSync.mutate).not.toHaveBeenCalled();
   });
@@ -1303,7 +1329,492 @@ describe("syncHealthKitToServer", () => {
   });
 });
 
+describe("manual staged sync", () => {
+  const WINDOW_START = "2026-03-01T00:00:00.000Z";
+  const WINDOW_END = "2026-03-02T00:00:00.000Z";
+
+  function manualContext(
+    overrides: Partial<ManualHealthKitSyncContext> = {},
+  ): ManualHealthKitSyncContext {
+    return {
+      startDate: WINDOW_START,
+      endDate: WINDOW_END,
+      nextStage: "additive-and-category",
+      onStageComplete: vi.fn(),
+      assertCanContinue: vi.fn(),
+      shouldRetryWorkoutRouteError: vi.fn(() => false),
+      ...overrides,
+    };
+  }
+
+  function stageCompletions(
+    manual: ManualHealthKitSyncContext,
+  ): ManualHealthKitSyncStageCompletion[] {
+    return vi.mocked(manual.onStageComplete).mock.calls.map(([completion]) => completion);
+  }
+
+  function createMockClient() {
+    return {
+      clinicalRecords: {
+        push: {
+          mutate: vi.fn().mockResolvedValue({ upserted: 1 }),
+        },
+      },
+      healthKitSync: {
+        recordSync: {
+          mutate: vi.fn().mockResolvedValue({ recorded: true }),
+        },
+        pushQuantitySamples: {
+          mutate: vi.fn().mockResolvedValue({ inserted: 1, errors: [] }),
+        },
+        deleteQuantitySamples: {
+          mutate: vi.fn().mockResolvedValue({ deleted: 0 }),
+        },
+        pushRunningStepSamples: { mutate: vi.fn().mockResolvedValue({ inserted: 0 }) },
+        pushWorkouts: {
+          mutate: vi.fn().mockResolvedValue({ inserted: 0 }),
+        },
+        pushWorkoutRoutes: {
+          mutate: vi.fn().mockResolvedValue({ inserted: 0 }),
+        },
+        pushSleepSamples: {
+          mutate: vi.fn().mockResolvedValue({ inserted: 0 }),
+        },
+      },
+    };
+  }
+
+  function createMockHealthKit() {
+    return {
+      queryClinicalRecords: vi.fn().mockResolvedValue([]),
+      queryDailyStatistics: vi.fn().mockResolvedValue([{ date: "2026-03-01", value: 5000 }]),
+      queryQuantitySamples: vi.fn().mockResolvedValue([
+        {
+          type: "HKQuantityTypeIdentifierBodyMass",
+          value: 72,
+          unit: "kg",
+          startDate: "2026-03-01T10:00:00.000Z",
+          endDate: "2026-03-01T10:00:00.000Z",
+          sourceName: "Apple Watch",
+          sourceBundle: "com.apple.health",
+          uuid: "raw-sample",
+        },
+      ]),
+      queryCategorySamples: vi.fn().mockResolvedValue([]),
+      queryAnchoredSamples: vi.fn().mockResolvedValue({
+        queryId: "query-1",
+        samples: [],
+        deletedUUIDs: [],
+      }),
+      completeAnchoredQuery: vi.fn().mockResolvedValue(true),
+      queryRunningStepSamples: vi.fn().mockResolvedValue({ workouts: [], samples: [] }),
+      queryRunningStepChanges: vi.fn().mockResolvedValue({
+        hasMore: false,
+        workouts: [],
+        samples: [],
+        deletedUUIDs: [],
+        queryId: null,
+      }),
+      queryWorkouts: vi.fn().mockResolvedValue([]),
+      querySleepSamples: vi.fn().mockResolvedValue([]),
+      queryWorkoutRoutes: vi.fn().mockResolvedValue([]),
+    };
+  }
+
+  it("retries a background-crossing route upload once through the controller and surfaces a failed fresh attempt", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    let appStateListener: ((state: string) => void) | undefined;
+    let saved: ManualHealthKitCheckpoint | null = null;
+    let nextId = 0;
+    const transportError = new Error("fetch failed: The network connection was lost.");
+    healthKit.queryDailyStatistics.mockResolvedValue([]);
+    healthKit.queryQuantitySamples.mockResolvedValue([]);
+    healthKit.queryWorkouts.mockResolvedValue([
+      {
+        uuid: "route-workout",
+        workoutType: "running",
+        startDate: "2026-03-21T07:00:00Z",
+        endDate: "2026-03-21T08:00:00Z",
+        duration: 3600,
+        totalDistance: 10000,
+        sourceName: "Apple Watch",
+        sourceBundle: "com.apple.health",
+      },
+    ]);
+    healthKit.queryWorkoutRoutes.mockResolvedValue([
+      { date: "2026-03-21T07:30:00Z", lat: 37.8, lng: -122.4 },
+    ]);
+    client.healthKitSync.pushWorkoutRoutes.mutate
+      .mockImplementationOnce(async () => {
+        appStateListener?.("background");
+        throw transportError;
+      })
+      .mockRejectedValueOnce(transportError);
+    const deps: HealthKitManualSyncDependencies = {
+      loadCheckpoint: vi.fn(async () => null),
+      saveCheckpoint: vi.fn(async (checkpoint) => {
+        saved = checkpoint;
+      }),
+      clearCheckpoint: vi.fn(async () => {
+        saved = null;
+      }),
+      purgeCheckpoint: vi.fn(async () => {
+        saved = null;
+      }),
+      startNative: vi.fn(async () => ({ supported: true })),
+      completeNative: vi.fn(),
+      listenForExpiration: vi.fn(() => ({ remove: vi.fn() })),
+      listenForAppState: vi.fn((listener) => {
+        appStateListener = listener;
+        return { remove: vi.fn() };
+      }),
+      isForeground: vi.fn(() => true),
+      waitUntilForegroundConnected: vi.fn(async () => {
+        appStateListener?.("active");
+      }),
+      runSync: (input) =>
+        syncHealthKitToServer({
+          trpcClient: client,
+          healthKit,
+          syncRangeDays: null,
+          ...input,
+        }),
+      recordOutcome: vi.fn(async () => undefined),
+      updateProgress: vi.fn(),
+      createId: () => `route-test-${++nextId}`,
+    };
+    const controller = new HealthKitManualSyncController({
+      userId: "user-1",
+      trpcClient: client,
+      deps,
+    });
+
+    const result = await controller.start(7);
+
+    expect(client.healthKitSync.pushWorkoutRoutes.mutate).toHaveBeenCalledTimes(2);
+    expect(deps.waitUntilForegroundConnected).toHaveBeenCalledOnce();
+    expect(result.errors).toEqual([
+      "Push workout routes: fetch failed: The network connection was lost.",
+    ]);
+    expect(controller.getSnapshot()).toMatchObject({ status: "paused", error: expect.any(String) });
+    expect(saved?.nextStage).toBe("workouts");
+    expect(deps.completeNative).toHaveBeenCalledWith("route-test-2", false);
+  });
+
+  it("keeps an active-app route upload failure partial and continues later stages", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    const routeError = new Error("The server rejected workout routes");
+    vi.mocked(captureException).mockClear();
+    healthKit.queryDailyStatistics.mockResolvedValue([]);
+    healthKit.queryQuantitySamples.mockResolvedValue([]);
+    healthKit.queryWorkouts.mockResolvedValue([
+      {
+        uuid: "route-workout",
+        workoutType: "running",
+        startDate: "2026-03-21T07:00:00Z",
+        endDate: "2026-03-21T08:00:00Z",
+        duration: 3600,
+        totalDistance: 10000,
+        sourceName: "Apple Watch",
+        sourceBundle: "com.apple.health",
+      },
+    ]);
+    healthKit.queryWorkoutRoutes.mockResolvedValue([
+      { date: "2026-03-21T07:30:00Z", lat: 37.8, lng: -122.4 },
+    ]);
+    client.healthKitSync.pushWorkoutRoutes.mutate.mockRejectedValue(routeError);
+    const manual = manualContext();
+
+    const result = await syncHealthKitToServer({
+      trpcClient: client,
+      healthKit,
+      syncRangeDays: 7,
+      manualExecution: manual,
+    });
+
+    expect(result.errors).toEqual(["Push workout routes: The server rejected workout routes"]);
+    expect(healthKit.querySleepSamples).toHaveBeenCalledOnce();
+    expect(stageCompletions(manual).some(({ stage }) => stage === "workouts")).toBe(false);
+    expect(captureException).toHaveBeenCalledWith(
+      routeError,
+      expect.objectContaining({ source: "health-kit-workout-route-push" }),
+    );
+  });
+
+  it("reuses the original fixed window when resuming a stored request", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    const manual = manualContext({ nextStage: "sleep" });
+
+    await syncHealthKitToServer({
+      trpcClient: client,
+      healthKit,
+      syncRangeDays: 7,
+      manualExecution: manual,
+    });
+
+    expect(healthKit.queryDailyStatistics).not.toHaveBeenCalled();
+    expect(healthKit.queryQuantitySamples).not.toHaveBeenCalled();
+    expect(healthKit.queryWorkouts).not.toHaveBeenCalled();
+    expect(healthKit.querySleepSamples).toHaveBeenCalledWith(WINDOW_START, WINDOW_END);
+    expect(healthKit.queryClinicalRecords).toHaveBeenCalledWith(
+      expect.any(String),
+      WINDOW_START,
+      WINDOW_END,
+    );
+    expect(healthKit.queryRunningStepSamples).toHaveBeenCalledWith(WINDOW_START, WINDOW_END);
+    expect(stageCompletions(manual)[0]).toEqual({
+      stage: "sleep",
+      completedStageCount: MANUAL_HEALTH_KIT_SYNC_STAGES.indexOf("sleep") + 1,
+      totalStageCount: MANUAL_HEALTH_KIT_SYNC_STAGE_COUNT,
+    });
+  });
+
+  it("skips completed stages and replays the unfinished raw stage", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    const resumedType = NON_ADDITIVE_QUANTITY_TYPES[1];
+    if (!resumedType) throw new Error("Expected a second raw quantity type");
+    const resumedStage: ManualHealthKitSyncStage = `raw:${resumedType}`;
+    const manual = manualContext({ nextStage: resumedStage });
+
+    await syncHealthKitToServer({
+      trpcClient: client,
+      healthKit,
+      syncRangeDays: 7,
+      manualExecution: manual,
+    });
+
+    expect(healthKit.queryDailyStatistics).not.toHaveBeenCalled();
+    expect(healthKit.queryCategorySamples).not.toHaveBeenCalled();
+    expect(healthKit.queryQuantitySamples).toHaveBeenCalledTimes(
+      NON_ADDITIVE_QUANTITY_TYPES.length - 1,
+    );
+    expect(healthKit.queryQuantitySamples).toHaveBeenNthCalledWith(
+      1,
+      resumedType,
+      WINDOW_START,
+      WINDOW_END,
+    );
+    expect(healthKit.queryWorkouts).toHaveBeenCalledTimes(1);
+    expect(stageCompletions(manual)[0]?.stage).toBe(resumedStage);
+  });
+
+  it("advances the checkpoint only after every semantic stage succeeds", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    const manual = manualContext();
+
+    await syncHealthKitToServer({
+      trpcClient: client,
+      healthKit,
+      syncRangeDays: 7,
+      manualExecution: manual,
+    });
+
+    expect(stageCompletions(manual)).toEqual(
+      MANUAL_HEALTH_KIT_SYNC_STAGES.map((stage, index) => ({
+        stage,
+        completedStageCount: index + 1,
+        totalStageCount: MANUAL_HEALTH_KIT_SYNC_STAGE_COUNT,
+      })),
+    );
+  });
+
+  it("keeps the checkpoint at the first stage with partial errors", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    const manual = manualContext();
+    client.healthKitSync.pushQuantitySamples.mutate
+      .mockResolvedValueOnce({ inserted: 1, errors: [] })
+      .mockResolvedValueOnce({ inserted: 0, errors: ["Rejected sample"] })
+      .mockResolvedValue({ inserted: 1, errors: [] });
+
+    const result = await syncHealthKitToServer({
+      trpcClient: client,
+      healthKit,
+      syncRangeDays: 7,
+      manualExecution: manual,
+    });
+
+    expect(result.errors).toEqual(["Rejected sample"]);
+    expect(stageCompletions(manual).map(({ stage }) => stage)).toEqual(["additive-and-category"]);
+  });
+
+  it("stops before the first query when the operation is interrupted", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    const interrupted = new ManualHealthKitSyncInterruptedError();
+    const manual = manualContext({ assertCanContinue: vi.fn().mockRejectedValue(interrupted) });
+
+    await expect(
+      syncHealthKitToServer({
+        trpcClient: client,
+        healthKit,
+        syncRangeDays: 7,
+        manualExecution: manual,
+      }),
+    ).rejects.toBe(interrupted);
+
+    expect(healthKit.queryDailyStatistics).not.toHaveBeenCalled();
+    expect(healthKit.queryCategorySamples).not.toHaveBeenCalled();
+  });
+
+  it("stops before uploading a queried stage when the operation is interrupted", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    const interrupted = new ManualHealthKitSyncInterruptedError();
+    let shouldStop = false;
+    healthKit.queryCategorySamples.mockImplementation(async () => {
+      shouldStop = true;
+      return [];
+    });
+    const manual = manualContext({
+      assertCanContinue: vi.fn(async () => {
+        if (shouldStop) throw interrupted;
+      }),
+    });
+
+    await expect(
+      syncHealthKitToServer({
+        trpcClient: client,
+        healthKit,
+        syncRangeDays: 7,
+        manualExecution: manual,
+      }),
+    ).rejects.toBe(interrupted);
+
+    expect(healthKit.queryCategorySamples).toHaveBeenCalledTimes(1);
+    expect(client.healthKitSync.pushQuantitySamples.mutate).not.toHaveBeenCalled();
+    expect(manual.onStageComplete).not.toHaveBeenCalled();
+  });
+
+  it("does not checkpoint a stage when interruption follows its last side effect", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    const interrupted = new ManualHealthKitSyncInterruptedError();
+    let shouldStop = false;
+    client.healthKitSync.pushQuantitySamples.mutate.mockImplementation(async () => {
+      shouldStop = true;
+      return { inserted: 4, errors: [] };
+    });
+    const manual = manualContext({
+      assertCanContinue: vi.fn(async () => {
+        if (shouldStop) throw interrupted;
+      }),
+    });
+
+    await expect(
+      syncHealthKitToServer({
+        trpcClient: client,
+        healthKit,
+        syncRangeDays: 7,
+        manualExecution: manual,
+      }),
+    ).rejects.toBe(interrupted);
+
+    expect(client.healthKitSync.pushQuantitySamples.mutate).toHaveBeenCalledTimes(1);
+    expect(manual.onStageComplete).not.toHaveBeenCalled();
+  });
+
+  it("awaits the stage checkpoint before starting the next stage", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    const manual = manualContext({
+      nextStage: "clinical:HKClinicalTypeIdentifierAllergyRecord",
+    });
+    let releaseCheckpoint: () => void = () => {};
+    const checkpointGate = new Promise<void>((resolve) => {
+      releaseCheckpoint = resolve;
+    });
+    let firstCheckpoint = true;
+    manual.onStageComplete = vi.fn(async () => {
+      if (firstCheckpoint) {
+        firstCheckpoint = false;
+        await checkpointGate;
+      }
+    });
+
+    const sync = syncHealthKitToServer({
+      trpcClient: client,
+      healthKit,
+      syncRangeDays: 7,
+      manualExecution: manual,
+    });
+    try {
+      await vi.waitFor(() => expect(manual.onStageComplete).toHaveBeenCalledTimes(1));
+      expect(healthKit.queryClinicalRecords).toHaveBeenCalledTimes(1);
+    } finally {
+      releaseCheckpoint();
+    }
+
+    await sync;
+    expect(healthKit.queryClinicalRecords).toHaveBeenCalledTimes(9);
+  });
+
+  it("rejects an unrecognized resume stage before running any work", async () => {
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    const manual = manualContext({
+      nextStage: "raw:HKQuantityTypeIdentifierNotARealType",
+    });
+
+    await expect(
+      syncHealthKitToServer({
+        trpcClient: client,
+        healthKit,
+        syncRangeDays: 7,
+        manualExecution: manual,
+      }),
+    ).rejects.toThrow(/not recognized/i);
+
+    expect(healthKit.queryDailyStatistics).not.toHaveBeenCalled();
+  });
+});
+
 describe("syncHealthKitObserverChanges", () => {
+  it("discards its pending anchored page when retirement interrupts the commit", async () => {
+    vi.mocked(captureException).mockClear();
+    const client = createMockClient();
+    const healthKit = createMockHealthKit();
+    const interrupted = new ManualHealthKitSyncInterruptedError();
+    const type = "HKQuantityTypeIdentifierRunningSpeed";
+    let checks = 0;
+    healthKit.queryAnchoredSamples.mockResolvedValue({
+      queryId: "retired-observer-query",
+      samples: [],
+      deletedUUIDs: [],
+    });
+
+    await expect(
+      syncHealthKitObserverChanges({
+        trpcClient: client,
+        healthKit,
+        typeIdentifiers: [type],
+        assertCanContinue: vi.fn(async () => {
+          checks += 1;
+          if (checks >= 2) throw interrupted;
+        }),
+      }),
+    ).rejects.toBe(interrupted);
+
+    expect(healthKit.completeAnchoredQuery).toHaveBeenCalledExactlyOnceWith(
+      type,
+      "retired-observer-query",
+      false,
+    );
+    expect(healthKit.completeAnchoredQuery).not.toHaveBeenCalledWith(
+      type,
+      "retired-observer-query",
+      true,
+    );
+    expect(client.healthKitSync.pushQuantitySamples.mutate).not.toHaveBeenCalled();
+    expect(client.healthKitSync.deleteQuantitySamples.mutate).not.toHaveBeenCalled();
+    expect(vi.mocked(captureException)).not.toHaveBeenCalled();
+  });
+
   it.each(runningQuantities)(
     "applies the erasure cutoff to %s in historical and anchored sync",
     async (type, unit, value) => {

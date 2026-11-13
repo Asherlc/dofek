@@ -82,3 +82,99 @@ describe("createAnalyticsWorkerFromEnvironment", () => {
     ).toThrow("ANALYTICS_BUILD_INTERVAL_SECONDS must be an integer from 0 through 2147483 seconds");
   });
 });
+
+describe("runAnalyticsWorker shutdown", () => {
+  it("drains active refresh work and its queue before global cleanup and Sentry", async () => {
+    const calls: string[] = [];
+    let releaseWork!: () => void;
+    const heldWork = new Promise<void>((resolve) => {
+      releaseWork = resolve;
+    });
+    const run = vi.fn(async () => {
+      calls.push("worker-start");
+      await heldWork;
+      calls.push("worker-drained");
+    });
+    const refreshQueueClose = vi.fn(async () => {
+      calls.push("refresh-queue-close");
+    });
+    const resourceCleanup = vi.fn(async () => {
+      calls.push("queue-resources-close");
+    });
+    const sentryClose = vi.fn(async () => {
+      calls.push("sentry-close");
+    });
+    const originalSignalListeners = {
+      SIGINT: process.listeners("SIGINT"),
+      SIGTERM: process.listeners("SIGTERM"),
+    };
+
+    vi.resetModules();
+    vi.doMock("@sentry/node", () => ({ close: sentryClose }));
+    vi.doMock("../src/analytics-refresh-queue.ts", () => ({
+      runAnalyticsRefreshJobs: vi.fn(),
+    }));
+    vi.doMock("../src/jobs/queues.ts", () => ({
+      closeAllQueueResources: resourceCleanup,
+      createAnalyticsRefreshQueue: () => ({
+        on: vi.fn(),
+        close: refreshQueueClose,
+      }),
+      getRedisConnection: vi.fn(),
+    }));
+    vi.doMock("../src/analytics-worker.ts", () => ({
+      AnalyticsWorker: class {
+        run = run;
+      },
+      createAnalyticsWorkerHealthServer: () => ({
+        listen: (_port: number, _host: string, callback: () => void) => callback(),
+        close: (callback: () => void) => {
+          calls.push("health-server-close");
+          callback();
+        },
+      }),
+    }));
+    vi.doMock("../src/lib/sentry.ts", () => ({ initProductionSentry: vi.fn() }));
+    vi.doMock("../src/lib/error-reporting.ts", () => ({ captureException: vi.fn() }));
+    vi.doMock("../src/logger.ts", () => ({ logger: { info: vi.fn(), error: vi.fn() } }));
+    vi.doMock("./analytics-error-context.ts", () => ({
+      buildAnalyticsFailureCaptureContext: vi.fn(),
+    }));
+
+    try {
+      const { runAnalyticsWorker } = await import("./run-analytics-worker.ts");
+      const running = runAnalyticsWorker();
+      await vi.waitFor(() => expect(calls).toContain("worker-start"));
+      expect(resourceCleanup).not.toHaveBeenCalled();
+
+      releaseWork();
+      await running;
+
+      expect(calls).toEqual([
+        "worker-start",
+        "worker-drained",
+        "refresh-queue-close",
+        "health-server-close",
+        "queue-resources-close",
+        "sentry-close",
+      ]);
+    } finally {
+      for (const signal of ["SIGINT", "SIGTERM"] as const) {
+        for (const listener of process.listeners(signal)) {
+          if (!originalSignalListeners[signal].includes(listener)) {
+            process.removeListener(signal, listener);
+          }
+        }
+      }
+      vi.doUnmock("@sentry/node");
+      vi.doUnmock("../src/analytics-refresh-queue.ts");
+      vi.doUnmock("../src/jobs/queues.ts");
+      vi.doUnmock("../src/analytics-worker.ts");
+      vi.doUnmock("../src/lib/sentry.ts");
+      vi.doUnmock("../src/lib/error-reporting.ts");
+      vi.doUnmock("../src/logger.ts");
+      vi.doUnmock("./analytics-error-context.ts");
+      vi.resetModules();
+    }
+  });
+});

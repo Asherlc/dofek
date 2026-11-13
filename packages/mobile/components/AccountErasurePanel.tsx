@@ -12,6 +12,8 @@ import {
   saveMobileAccountErasureStatusCapability,
 } from "../lib/account-erasure-storage";
 import { type AccountErasureCleanupLease, useAuth } from "../lib/auth-context";
+import { purgeManualHealthKitCheckpoint } from "../lib/health-kit-manual-checkpoint";
+import { useHealthKitManualSync } from "../lib/health-kit-manual-sync-context";
 import { purgeMobileAccountState } from "../lib/mobile-account-purge";
 import { captureException } from "../lib/telemetry";
 import { trpc } from "../lib/trpc";
@@ -19,6 +21,7 @@ import { colors } from "../theme";
 
 export function AccountErasurePanel() {
   const auth = useAuth();
+  const { controller: manualSyncController } = useHealthKitManualSync();
   const router = useRouter();
   const queryClient = useQueryClient();
   const userId = auth.user?.id;
@@ -71,6 +74,17 @@ export function AccountErasurePanel() {
     let cleanupLease: AccountErasureCleanupLease | null = null;
     try {
       cleanupLease = auth.beginAccountErasureCleanup(preparation.ownerUserId);
+      if (!auth.isAccountErasureCleanupLeaseCurrent(cleanupLease)) {
+        throw new Error("Account deletion cleanup ownership changed. Please try again.");
+      }
+      if (manualSyncController?.userId === preparation.ownerUserId) {
+        await manualSyncController.retire();
+      } else {
+        await purgeManualHealthKitCheckpoint(preparation.ownerUserId);
+      }
+      if (!auth.isAccountErasureCleanupLeaseCurrent(cleanupLease)) {
+        throw new Error("Account deletion cleanup ownership changed. Please try again.");
+      }
       const attempted = await markMobileAccountErasureConfirmationAttempted(
         cleanupLease.cleanupOwnerNonce,
       );

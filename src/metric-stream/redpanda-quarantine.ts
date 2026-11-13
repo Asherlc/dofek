@@ -104,6 +104,7 @@ interface KafkaQuarantineAdmin extends KafkaQuarantineConfigAdmin {
 
 interface KafkaQuarantineProducer {
   connect(): Promise<void>;
+  disconnect(): Promise<void>;
   send(options: {
     topic: string;
     acks: -1;
@@ -194,5 +195,9 @@ export class KafkaMetricStreamQuarantineWriter implements MetricStreamQuarantine
       ],
       topic: this.#topic,
     });
+  }
+
+  disconnect(): Promise<void> {
+    return this.#producer.disconnect();
   }
 }

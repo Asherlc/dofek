@@ -144,11 +144,11 @@ export function ActivityDetailPage() {
     { enabled: isClimbingActivity, placeholderData: activityQueryPlaceholder(id) },
   );
   const climbingEntries = trpc.climbing.activityLogEntries.useQuery(
-    { activityId: id, responseVersion: 4 },
+    { activityId: id, responseVersion: 5 },
     { enabled: isClimbingActivity, select: decodeClimbingLogEntriesResponse },
   );
   const entrySuggestions = trpc.climbing.unattachedClimbingLogEntries.useQuery(
-    { activityId: id, responseVersion: 4 },
+    { activityId: id, responseVersion: 5 },
     { enabled: isClimbingActivity, select: decodeClimbingLogEntriesResponse },
   );
   const climbingEntriesLoading = climbingEntries.isLoading && !climbingEntries.data;
@@ -187,7 +187,7 @@ export function ActivityDetailPage() {
         trpcUtils.activity.images.invalidate({ id: input.activityId }),
         trpcUtils.climbing.activityLogEntries.invalidate({
           activityId: input.activityId,
-          responseVersion: 4,
+          responseVersion: 5,
         }),
         trpcUtils.climbing.sessionSummary.invalidate(),
         trpcUtils.climbing.gradeProgressionV2.invalidate(),
@@ -195,7 +195,7 @@ export function ActivityDetailPage() {
         trpcUtils.climbing.strengths.invalidate(),
         trpcUtils.climbing.unattachedClimbingLogEntries.invalidate({
           activityId: input.activityId,
-          responseVersion: 4,
+          responseVersion: 5,
         }),
       ]);
     },
@@ -303,7 +303,7 @@ export function ActivityDetailPage() {
         </div>
       </div>
 
-      {activity.providerAbsentAt ? <ProviderAbsentBanner activity={activity} /> : null}
+      <ProviderAbsentBanner key={`restore-${activity.id}`} activity={activity} />
 
       <ActivityHeader
         key={id}
@@ -713,6 +713,14 @@ export function ActivityHeader({
   return (
     <div>
       {photos ? <ActivityPhotos {...photos} heading={heading} /> : heading}
+      {activity.fitRecoveryWarning ? (
+        <p
+          className="mt-3 rounded border border-amber-400/50 bg-amber-400/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300"
+          role="alert"
+        >
+          {activity.fitRecoveryWarning}
+        </p>
+      ) : null}
 
       {stats.length > 0 && (
         <div className="mt-5 grid grid-cols-2 gap-x-6 gap-y-4 border-t border-border/60 pt-4 sm:grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] sm:gap-x-0">

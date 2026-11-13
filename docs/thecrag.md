@@ -8,6 +8,14 @@ The API is account-scoped and read-only, includes public and private ascent
 notes, and is intended for third-party dashboards without a separate commercial
 agreement, according to that reference.
 
+This official personal API remains the only theCrag source used for climbing
+data. Automated public-page catalogue enrichment has been removed: the site
+policy prohibits screen scraping for programmatic access, the general API guide
+requires a legal agreement, and the personal logbook API is scoped to its owner's
+ascents rather than general catalogue discovery. See the [usage policy](https://www.thecrag.com/en/terms),
+[API integration guide](https://www.thecrag.com/en/article/extend), and
+[personal logbook API](https://www.thecrag.com/en/article/logbookreadapi).
+
 ## Connect and reconnect
 
 In Data Sources, choose **theCrag**, open the linked instructions, create a key
@@ -28,6 +36,30 @@ Keys have upstream expiry and a weekly usage budget; the official guide does
 not disclose the budget or an exact key lifetime. Check theCrag's API Keys page
 for status and usage. Dofek reports access errors with those checks rather than
 assuming a particular cause. See the [official limits and key management](https://www.thecrag.com/en/article/logbookreadapi).
+
+### Account-status API investigation — 2026-11-11
+
+A read-only production probe using the connected account's saved key returned
+HTTP 400 from the official logbook endpoint at 15:57:07 UTC, requiring minimum
+access level `logbook`. The JSON contained error/request fields only; neither
+the body nor response headers supplied supporter status, key expiry or weekly
+budget. No raw response or key was retained in this record.
+
+The [general API guide](https://www.thecrag.com/en/article/api) documents
+`GET /api/climber/id/{accountID}/subscriptions/thecrag`, and the
+[endpoint reference](https://www.thecrag.com/api-wadl.xml) includes subscription
+reads. Native requests to that endpoint and the account endpoint returned HTML
+403 blocks. A comparison using the existing Impit Chrome transport reached
+both APIs at 15:59:04–05 UTC, but both returned JSON HTTP 400 access denials
+with the same saved key and no account-status metadata. This comparison did
+not change the logbook sync transport.
+
+The public guide links to `/settings/apikey/`; a logged-out read redirects to
+sign-in. The guide and endpoint reference inspected here did not document a
+personal-key status/budget endpoint. Adding Dofek API or MCP fields alone
+cannot recover these missing values: a readable upstream source must first
+be verified. An access denial does not establish an expired subscription or
+exhausted budget. See the [personal-key guide](https://www.thecrag.com/en/article/logbookreadapi).
 
 ## Sync behavior
 
@@ -79,6 +111,16 @@ notes from user-facing errors and telemetry. HTTP access errors distinguish
 observed status from an unconfirmed cause; an access denial alone does not prove
 that supporter status expired.
 
+When the official API explicitly reports the recognized minimum-`logbook`
+access denial, the [client](../src/providers/thecrag/client.ts) returns
+“theCrag requires logbook access for this key” with the observed HTTP status
+and a Settings > API Keys instruction. Other access denials retain the generic
+access message. The fixed message flows through the existing sync error used
+by the [MCP provider-status response](../packages/server/src/mcp/provider-status.ts);
+no new endpoint or account-status fields are required. The
+[client tests](../src/providers/thecrag/client.test.ts) cover recognized and
+unrecognized denials, response privacy, malformed JSON and cancellation.
+
 ## Disconnect and account deletion
 
 Revoke the personal key in theCrag **Settings > API Keys** before disconnecting
@@ -96,10 +138,11 @@ to verify an owner-managed upstream revocation.
 
 ## Informational catalogue
 
-The separate [catalogue reader](../packages/climbing-catalogue/src/thecrag.ts) still
-provides disposable public route context; it is not used by logbook sync. Its
-public HTTP client remains necessary for those lookups. See the
-[catalogue contract](climbing-trait-coverage.md#informational-catalogue-cache).
+Automated public-page catalogue enrichment has been removed. Historical
+observations about route tags and the old reader are retained in the
+[trait coverage inventory](climbing-trait-coverage.md), but they do not describe
+current imported catalogue context. The supported scope and access references
+are summarized above.
 
 ## Public read path
 

@@ -32,7 +32,8 @@ describe("backfill-hang-ten-workouts", () => {
 
     expect(sentryMocks.init).toHaveBeenCalledWith({
       dsn: "https://public@example.ingest.sentry.io/1",
-      skipOpenTelemetrySetup: true,
+      enableOpenTelemetrySetup: false,
+      dataCollection: expect.any(Object),
     });
     expect(sentryMocks.close).toHaveBeenCalledWith(2_000);
   });

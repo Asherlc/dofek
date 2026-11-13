@@ -34,6 +34,7 @@ const fixture = {
   markerBatch: "10000000-0000-4000-8000-000000000011",
   markerWatermark: "10000000-0000-4000-8000-000000000012",
   sourceAccountKey: "peerdb-contract-source-account",
+  recoveryError: "Malformed final FIT record",
   upgradeMarkerBatch: "10000000-0000-4000-8000-000000000013",
   upgradeMarkerWatermark: "10000000-0000-4000-8000-000000000014",
 } as const;
@@ -85,10 +86,11 @@ describe("PeerDB CDC production contract", () => {
         provider_id, source_name_pattern, channel, priority
       ) VALUES ('${fixture.provider}', 'PeerDB Test Device', 'heart_rate', 10);
       INSERT INTO fitness.activity (
-        id, provider_id, user_id, external_id, canonical_type, provider_type, started_at
+        id, provider_id, user_id, external_id, canonical_type, provider_type, started_at,
+        fit_recovery_error
       ) VALUES (
         '${fixture.activity}', 'peerdb-contract-test', '${fixture.user}',
-        'activity-1', 'running', 'run', '2026-09-13T12:00:00Z'
+        'activity-1', 'running', 'run', '2026-09-13T12:00:00Z', '${fixture.recoveryError}'
       );
       INSERT INTO fitness.daily_metrics (
         id, date, provider_id, user_id, steps,
@@ -195,8 +197,16 @@ describe("PeerDB CDC production contract", () => {
     );
   });
 
-  it("preserves missing activity end times during snapshot and CDC updates", async () => {
-    await waitForClickHouseFixture(clickHouseClient, fixture);
+  it("preserves nullable activity snapshot fields and CDC updates", async () => {
+    const readRecoveryError = async () => {
+      const result = await clickHouseClient.query<{ fit_recovery_error: string | null }>({
+        query:
+          "SELECT fit_recovery_error FROM postgres_fitness.activity FINAL WHERE id = {id:UUID}",
+        query_params: { id: fixture.activity },
+        format: "JSONEachRow",
+      });
+      return result.json();
+    };
     const readEndTime = async () => {
       const result = await clickHouseClient.query<{ ended_at: string | null }>({
         query: "SELECT ended_at FROM postgres_fitness.activity FINAL WHERE id = {id:UUID}",
@@ -205,7 +215,34 @@ describe("PeerDB CDC production contract", () => {
       });
       return result.json();
     };
+
+    await waitForClickHouseRows(clickHouseClient, [
+      {
+        table: "activity",
+        predicate: "id = {id:UUID} AND fit_recovery_error = {error:String}",
+        queryParams: { id: fixture.activity, error: fixture.recoveryError },
+      },
+      {
+        table: "activity",
+        predicate: "id = {id:UUID} AND ended_at IS NULL",
+        queryParams: { id: fixture.activity },
+      },
+    ]);
+    expect(await readRecoveryError()).toEqual([{ fit_recovery_error: fixture.recoveryError }]);
     expect(await readEndTime()).toEqual([{ ended_at: null }]);
+
+    await postgresClient.query(
+      "UPDATE fitness.activity SET fit_recovery_error = NULL WHERE id = $1",
+      [fixture.activity],
+    );
+    await waitForClickHouseRows(clickHouseClient, [
+      {
+        table: "activity",
+        predicate: "id = {id:UUID} AND fit_recovery_error IS NULL",
+        queryParams: { id: fixture.activity },
+      },
+    ]);
+    expect(await readRecoveryError()).toEqual([{ fit_recovery_error: null }]);
 
     await postgresClient.query(
       "UPDATE fitness.activity SET ended_at = '2026-09-13T13:00:00Z' WHERE id = $1",

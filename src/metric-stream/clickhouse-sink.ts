@@ -1,12 +1,5 @@
 import { createHash } from "node:crypto";
-import type { Server } from "node:http";
 import { z } from "zod";
-import {
-  ANALYTICS_PUBLICATION_RESOURCE,
-  withAnalyticsQueryOwner,
-} from "../analytics/analytics-query-owner.ts";
-import { type ClickHouseClient, createClickHouseClientFromEnv } from "../db/clickhouse.ts";
-import { createDatabaseFromEnv } from "../db/index.ts";
 import { captureException } from "../lib/error-reporting.ts";
 import {
   ACCOUNT_ERASURE_FENCE_TABLE,
@@ -18,10 +11,6 @@ import {
   PROVIDER_DATA_GENERATION_TABLE,
 } from "./clickhouse-table.ts";
 import {
-  createMetricStreamConsumerReadinessServer,
-  MetricStreamConsumerReadiness,
-} from "./consumer-readiness.ts";
-import {
   isMetricStreamBatchCompletedEvent,
   isMetricStreamDeletedEvent,
   type MetricStreamBatchCompletedEventV1,
@@ -30,11 +19,7 @@ import {
   type MetricStreamRedpandaEvent,
   type MetricStreamRowEvent,
 } from "./events.ts";
-import {
-  createKafkaMetricStreamConsumerFromEnv,
-  type MetricStreamConsumerBatchContext,
-  runMetricStreamEventConsumer,
-} from "./redpanda-consumer.ts";
+import type { MetricStreamConsumerBatchContext } from "./redpanda-consumer.ts";
 
 export interface ClickHouseMetricStreamInsertClient {
   command?(options: {
@@ -121,7 +106,7 @@ export function mapMetricStreamEventToClickHouseRow(
   };
 }
 
-async function keepMetricStreamHeartbeatAlive<T>(
+export async function keepMetricStreamHeartbeatAlive<T>(
   context: MetricStreamConsumerBatchContext | undefined,
   operation: () => Promise<T>,
 ): Promise<T> {
@@ -176,7 +161,8 @@ const providerDataGenerationRowsSchema = z.array(
     user_id: z.uuid(),
   }),
 );
-const deletionAcknowledgementRowsSchema = z.array(
+const deletionAcknowledgementRowsSchema = z.array(z.object({ event_id: z.uuid() }));
+const deletionAcknowledgementCountRowsSchema = z.array(
   z.object({ acknowledgement_count: z.coerce.number().int().nonnegative() }),
 );
 const accountErasureFenceRowsSchema = z.array(z.object({ user_hash: z.string().length(64) }));
@@ -186,6 +172,35 @@ const accountErasureOperationFenceRowsSchema = z.array(
 
 function providerGenerationKey(userId: string, providerId: string): string {
   return `${userId}\0${providerId}`;
+}
+
+async function getMetricStreamDeletionAcknowledgements(
+  client: ClickHouseMetricStreamInsertClient,
+  eventIds: readonly string[],
+): Promise<Set<string>> {
+  const acknowledgedIds = new Set<string>();
+  if (!client.query) return acknowledgedIds;
+  for (
+    let offset = 0;
+    offset < eventIds.length;
+    offset += MAX_METRIC_STREAM_DELETE_SCOPES_PER_WRITE
+  ) {
+    const result = await client.query({
+      query: `SELECT event_id
+        FROM ${METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE}
+        WHERE event_id IN {event_ids:Array(UUID)}`,
+      query_params: {
+        event_ids: eventIds.slice(offset, offset + MAX_METRIC_STREAM_DELETE_SCOPES_PER_WRITE),
+      },
+      format: "JSONEachRow",
+    });
+    for (const { event_id: eventId } of deletionAcknowledgementRowsSchema.parse(
+      await result.json(),
+    )) {
+      acknowledgedIds.add(eventId.toLowerCase());
+    }
+  }
+  return acknowledgedIds;
 }
 
 async function isMetricStreamDeletionAcknowledged(
@@ -201,7 +216,7 @@ async function isMetricStreamDeletionAcknowledged(
     query_params: { event_id: eventId },
     format: "JSONEachRow",
   });
-  return deletionAcknowledgementRowsSchema
+  return deletionAcknowledgementCountRowsSchema
     .parse(await result.json())
     .some((row) => row.acknowledgement_count > 0);
 }
@@ -598,20 +613,16 @@ async function markMetricStreamDeleteCommandsInClickHouse(
       isBatch ? `_${index}` : "",
     ),
   );
-  // IDs bind user/provider/time. Resolve every version of each identity tuple
-  // before rechecking mutable deletion-scope fields on its complete latest row.
-  // Candidate discovery can still scan broadly for scopes without leading keys;
-  // tuple membership avoids a second global scan, not every possible scope scan.
-  const scopedCandidates = candidatePredicates
-    .map(
-      (conditions) => `SELECT candidate_row.id AS id, candidate_row.user_id AS user_id,
+  // IDs bind user/provider/time. Resolve candidate tuples in one scan, then
+  // recheck mutable scope fields against each identity's complete latest row.
+  const scopedCandidates = `SELECT candidate_row.id AS id, candidate_row.user_id AS user_id,
             candidate_row.provider_id AS provider_id, candidate_row.recorded_at AS recorded_at
           FROM ${METRIC_STREAM_TABLE} AS candidate_row
-          WHERE ${conditions.join(" AND ")}
+          WHERE ${candidatePredicates
+            .map((conditions) => `(${conditions.join(" AND ")})`)
+            .join(" OR ")}
           GROUP BY candidate_row.id, candidate_row.user_id,
-            candidate_row.provider_id, candidate_row.recorded_at`,
-    )
-    .join("\n          UNION ALL\n          ");
+            candidate_row.provider_id, candidate_row.recorded_at`;
   const latestScopePredicate = latestPredicates
     .map((conditions) => `(${conditions.join(" AND ")})`)
     .join(" OR ");
@@ -698,14 +709,14 @@ async function markMetricStreamDeleteCommandsInClickHouse(
         )`,
     query_params: queryParams,
   });
-  for (const { eventId } of deletes) {
-    if (eventId) {
-      await client.command({
-        query: `INSERT INTO ${METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE} (event_id)
-          VALUES ({event_id:UUID})`,
-        query_params: { event_id: eventId },
-      });
-    }
+  const acknowledgementRows = deletes
+    .flatMap(({ eventId }) => (eventId ? [{ event_id: eventId }] : []))
+    .map((row) => JSON.stringify(row));
+  if (acknowledgementRows.length > 0) {
+    await client.command({
+      query: `INSERT INTO ${METRIC_STREAM_DELETE_ACKNOWLEDGEMENT_TABLE} (event_id)
+        FORMAT JSONEachRow\n${acknowledgementRows.join("\n")}`,
+    });
   }
 }
 
@@ -851,16 +862,16 @@ export async function applyMetricStreamEventsToClickHouse(
           deleteRun.push(candidate);
           nextEventIndex += 1;
         }
-        const unacknowledgedDeletes: MetricStreamDeletedEventV3[] = [];
-        for (const deleteEvent of deleteRun) {
-          const acknowledged = await keepMetricStreamHeartbeatAlive(context, () =>
-            isMetricStreamDeletionAcknowledged(client, deleteEvent.eventId),
-          );
-          if (!acknowledged) {
-            unacknowledgedDeletes.push(deleteEvent);
-          }
-          await heartbeat();
-        }
+        const acknowledgedIds = await keepMetricStreamHeartbeatAlive(context, () =>
+          getMetricStreamDeletionAcknowledgements(
+            client,
+            deleteRun.map((deleteEvent) => deleteEvent.eventId),
+          ),
+        );
+        const unacknowledgedDeletes = deleteRun.filter(
+          ({ eventId }) => !acknowledgedIds.has(eventId.toLowerCase()),
+        );
+        await heartbeat();
         await keepMetricStreamHeartbeatAlive(context, () =>
           markMetricStreamScopesDeletedInClickHouse(client, unacknowledgedDeletes),
         );
@@ -899,80 +910,4 @@ export async function applyMetricStreamEventsToClickHouse(
 
   await flushRows();
   return inserted;
-}
-
-function hasClickHouseInsertClient(
-  client: ClickHouseClient,
-): client is ClickHouseClient & ClickHouseMetricStreamInsertClient {
-  return typeof client.insert === "function";
-}
-
-export async function runMetricStreamClickHouseSinkFromEnv(
-  readiness: MetricStreamConsumerReadiness,
-): Promise<void> {
-  const client = createClickHouseClientFromEnv();
-  if (!hasClickHouseInsertClient(client)) {
-    throw new Error("ClickHouse metric-stream sink requires an insert-capable client");
-  }
-
-  const { consumer, quarantine, topic } = createKafkaMetricStreamConsumerFromEnv();
-  if (!consumer.observeGroupLifecycle) {
-    throw new Error("ClickHouse metric-stream sink requires Kafka group lifecycle events");
-  }
-  const database = createDatabaseFromEnv();
-  try {
-    await runMetricStreamEventConsumer({
-      consumer,
-      quarantine,
-      topic,
-      lifecycleListener: readiness,
-      handleEvents: async (events, context) => {
-        const firstOffset = context.eventOffsets[0];
-        if (firstOffset === undefined)
-          throw new Error("ClickHouse metric-stream sink is missing its first Kafka offset");
-        const intentId = `metric-stream:${createHash("sha256")
-          .update(JSON.stringify([context.topic, context.partition, firstOffset]))
-          .digest("hex")}`;
-        await keepMetricStreamHeartbeatAlive(context, () =>
-          withAnalyticsQueryOwner(
-            database,
-            client,
-            { resourceId: ANALYTICS_PUBLICATION_RESOURCE, intentId },
-            async (owner) => {
-              await applyMetricStreamEventsToClickHouse(owner.client, events, context);
-            },
-          ),
-        );
-      },
-    });
-  } catch (error) {
-    captureException(error, { tags: { source: "metric-stream-sink-startup" } });
-    await database.$client.end();
-    await client.close?.();
-    throw error;
-  }
-}
-
-export async function startMetricStreamClickHouseSinkFromEnv(): Promise<void> {
-  const readiness = new MetricStreamConsumerReadiness();
-  const readinessServer = createMetricStreamConsumerReadinessServer(readiness);
-  await listenReadinessServer(readinessServer);
-  readinessServer.unref();
-  await runMetricStreamClickHouseSinkFromEnv(readiness);
-}
-
-function listenReadinessServer(server: Server): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const onError = (error: Error): void => {
-      server.off("listening", onListening);
-      reject(error);
-    };
-    const onListening = (): void => {
-      server.off("error", onError);
-      resolve();
-    };
-    server.once("error", onError);
-    server.once("listening", onListening);
-    server.listen(3001, "0.0.0.0");
-  });
 }

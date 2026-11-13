@@ -8,6 +8,7 @@ import {
   enqueueActivityDeleteAnalyticsRefresh,
   enqueueActivityRecomputeAnalyticsRefresh,
   enqueueActivityRestoreAnalyticsRefresh,
+  getActivityDeleteAnalyticsQueue,
 } from "dofek/jobs/queues";
 import { queryCache } from "dofek/lib/cache";
 import { getProvider } from "dofek/providers/registry";
@@ -72,15 +73,16 @@ async function scheduleActivityAnalyticsRefresh(
 async function scheduleActivityRestoreAnalyticsRefresh(
   userId: string,
   activityIds: string[],
-): Promise<void> {
+): Promise<string | null> {
   try {
-    await enqueueActivityRestoreAnalyticsRefresh(userId, activityIds);
+    return await enqueueActivityRestoreAnalyticsRefresh(userId, activityIds);
   } catch (error) {
     const { captureException } = await import("@sentry/node");
     captureException(error, {
       tags: { phase: "activity-restore-analytics-enqueue" },
       extra: { userId, activityCount: activityIds.length },
     });
+    return null;
   }
 }
 
@@ -584,9 +586,17 @@ export const activityRouter = router({
 
   restoreProviderAbsent: protectedProcedure
     .input(z.object({ ids: z.array(z.guid()).min(1).max(MAX_BULK_DELETE_ACTIVITY_IDS) }))
+    .output(
+      z.object({
+        success: z.boolean(),
+        restoredCount: z.number(),
+        analyticsJobId: z.string().nullable(),
+        analyticsError: z.string().nullable(),
+      }),
+    )
     .mutation(async ({ ctx, input }) => {
       try {
-        const restoredCount = await withAccountErasureUserWriteFence(
+        const restoration = await withAccountErasureUserWriteFence(
           ctx.db,
           ctx.userId,
           async (transaction) => {
@@ -596,13 +606,23 @@ export const activityRouter = router({
               ctx.timezone,
               ctx.accessWindow,
             );
-            const { restoredCount } = await repo.restoreProviderAbsent(input.ids);
-            return restoredCount;
+            return repo.restoreProviderAbsent(input.ids);
           },
         );
         await invalidateActivityListCaches(ctx.userId);
-        await scheduleActivityRestoreAnalyticsRefresh(ctx.userId, input.ids);
-        return { success: true, restoredCount };
+        const analyticsJobId = await scheduleActivityRestoreAnalyticsRefresh(
+          ctx.userId,
+          restoration.memberActivityIds,
+        );
+        return {
+          success: true,
+          restoredCount: restoration.restoredCount,
+          analyticsJobId,
+          analyticsError:
+            restoration.restoredCount > 0 && !analyticsJobId
+              ? "Activity restored, but refreshing charts could not start. Use Recompute to retry."
+              : null,
+        };
       } catch (error) {
         if (isRelationMissingError(error)) {
           throw new TRPCError({
@@ -613,5 +633,42 @@ export const activityRouter = router({
         }
         throw error;
       }
+    }),
+  restoreStatus: protectedProcedure
+    .input(z.object({ jobId: z.string().min(1).max(200) }))
+    .output(
+      z.object({
+        status: z.enum(["pending", "completed", "failed"]),
+        error: z.string().nullable(),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const job = await getActivityDeleteAnalyticsQueue().getJob(input.jobId);
+      if (
+        !job ||
+        job.data.userId !== ctx.userId ||
+        job.data.type !== "activity-restore-analytics-refresh"
+      ) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message:
+            "Restore refresh status is unavailable. Reload the activity to check its charts.",
+        });
+      }
+      const state = await job.getState();
+      if (state === "unknown") {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message:
+            "Restore refresh status is unavailable. Reload the activity to check its charts.",
+        });
+      }
+      return {
+        status: state === "completed" || state === "failed" ? state : "pending",
+        error:
+          state === "failed"
+            ? "Activity restored, but refreshing charts failed. Use Recompute to retry."
+            : null,
+      };
     }),
 });

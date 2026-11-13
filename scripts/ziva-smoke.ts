@@ -9,6 +9,7 @@ import type { TokenSet } from "../src/auth/oauth.ts";
 import { createDatabaseFromEnv, type SyncDatabase } from "../src/db/index.ts";
 import { loadTokens } from "../src/db/tokens.ts";
 import { captureException } from "../src/lib/error-reporting.ts";
+import { sentryDataCollection } from "../src/lib/sentry-options.ts";
 import { zivaSubjectFromAccessToken } from "../src/providers/ziva/auth.ts";
 import { ZivaMcpClient } from "../src/providers/ziva/client.ts";
 import {
@@ -169,7 +170,8 @@ const isDirectExecution =
 
 if (isDirectExecution) {
   const dsn = process.env.SENTRY_DSN || process.env.SENTRY_DSN_unencrypted;
-  if (dsn) Sentry.init({ dsn, skipOpenTelemetrySetup: true });
+  if (dsn)
+    Sentry.init({ dsn, enableOpenTelemetrySetup: false, dataCollection: sentryDataCollection });
   main().catch(async (error: unknown) => {
     console.error(`[ziva-smoke] ${error instanceof Error ? error.message : SAFE_FAILURE_MESSAGE}`);
     await Sentry.close(2_000);
