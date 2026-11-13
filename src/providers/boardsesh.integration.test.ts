@@ -5,6 +5,7 @@ import { z } from "zod";
 import { TEST_USER_ID as userId } from "../db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../db/test-helpers.ts";
 import { ensureProvider, loadTokens, saveTokens } from "../db/tokens.ts";
+import { executeWithSchema, timestampStringSchema } from "../db/typed-sql.ts";
 import { createIntegrationMswFixture } from "../test/early-msw-lifecycle.ts";
 import { failOnUnhandledExternalRequest } from "../test/msw.ts";
 import { BoardSeshProvider } from "./boardsesh.ts";
@@ -196,8 +197,15 @@ describe("BoardSesh snapshot persistence", () => {
   const run = () =>
     provider.sync(new SyncRun({ db: context.db, userId, window: SyncWindow.full() }));
   const rows = () =>
-    context.db.execute(
-      sql`SELECT external_id, provider_absent_at, raw FROM fitness.climbing_log_entry WHERE user_id = ${userId}::uuid AND provider_id = 'boardsesh' ORDER BY external_id`,
+    executeWithSchema(
+      context.db,
+      z.object({
+        id: z.string().uuid(),
+        external_id: z.string(),
+        provider_absent_at: timestampStringSchema.nullable(),
+        raw: z.json(),
+      }),
+      sql`SELECT id, external_id, provider_absent_at, raw FROM fitness.climbing_log_entry WHERE user_id = ${userId}::uuid AND provider_id = 'boardsesh' ORDER BY external_id`,
     );
 
   it("reads all board types and preserves raw tick identity, grades, statuses, layout, and UTC time", async () => {
@@ -223,25 +231,33 @@ describe("BoardSesh snapshot persistence", () => {
         },
       },
     ]);
-    const attempts = await context.db.execute(
+    const attempts = await executeWithSchema(
+      context.db,
+      z.object({
+        source_completed: z.boolean().nullable(),
+        source_result: z.string().nullable(),
+        received_beta: z.boolean().nullable(),
+      }),
       sql`SELECT source_completed, source_result, received_beta FROM fitness.climbing_attempt a JOIN fitness.climbing_log_entry l ON l.id = a.climbing_log_entry_id WHERE l.user_id = ${userId}::uuid AND l.provider_id = 'boardsesh'`,
     );
     expect(attempts).toMatchObject([
       { source_completed: true, source_result: "flash", received_beta: true },
     ]);
-    const gradeRows = await context.db.execute(
+    const gradeRows = await executeWithSchema(
+      context.db,
+      z.object({ value: z.string(), system: z.string() }),
       sql`SELECT value, system FROM fitness.climbing_log_entry_grade g JOIN fitness.climbing_log_entry l ON l.id = g.climbing_log_entry_id WHERE l.user_id = ${userId}::uuid AND l.provider_id = 'boardsesh' ORDER BY position`,
     );
     expect(gradeRows).toEqual([
       { value: "6c", system: "font" },
       { value: "V5", system: "v_scale" },
     ]);
-    const activityRows = await context.db.execute(
+    const activityRows = await executeWithSchema(
+      context.db,
+      z.object({ started_at: timestampStringSchema }),
       sql`SELECT started_at FROM fitness.activity WHERE user_id = ${userId}::uuid`,
     );
-    expect(new Date(String(activityRows[0]?.started_at)).toISOString()).toBe(
-      "2026-11-01T10:00:00.000Z",
-    );
+    expect(activityRows[0]?.started_at).toBe("2026-11-01T10:00:00.000Z");
   });
 
   it.each(["partial", "wrong-owner", "wrong-board", "duplicate"] as const)(
@@ -269,7 +285,13 @@ describe("BoardSesh snapshot persistence", () => {
   it("preserves send and failed statuses, source counts, mirror identity, and unknown grades", async () => {
     mode = "variants";
     expect(await run()).toMatchObject({ errors: [], recordsSynced: 3 });
-    const attempts = await context.db.execute(
+    const attempts = await executeWithSchema(
+      context.db,
+      z.object({
+        external_id: z.string(),
+        source_completed: z.boolean().nullable(),
+        source_result: z.string(),
+      }),
       sql`SELECT DISTINCT l.external_id, a.source_completed, a.source_result FROM fitness.climbing_attempt a JOIN fitness.climbing_log_entry l ON l.id = a.climbing_log_entry_id WHERE l.user_id = ${userId}::uuid AND l.provider_id = 'boardsesh' AND a.source_result IS NOT NULL ORDER BY l.external_id`,
     );
     expect(attempts).toEqual([
@@ -281,7 +303,9 @@ describe("BoardSesh snapshot persistence", () => {
       },
       { external_id: "boardsesh:tick:tick-send", source_completed: true, source_result: "send" },
     ]);
-    const climbs = await context.db.execute(
+    const climbs = await executeWithSchema(
+      context.db,
+      z.object({ external_id: z.string(), tick_id: z.string() }),
       sql`SELECT c.external_id, l.external_id AS tick_id FROM fitness.climbing_log_entry l JOIN fitness.climb c ON c.id = l.climb_id WHERE l.user_id = ${userId}::uuid AND l.provider_id = 'boardsesh' ORDER BY tick_id`,
     );
     expect(climbs).toContainEqual({
@@ -302,7 +326,9 @@ describe("BoardSesh snapshot persistence", () => {
       effectiveDifficulty: 21,
     });
     expect(
-      await context.db.execute(
+      await executeWithSchema(
+        context.db,
+        z.object({ value: z.string() }),
         sql`SELECT value FROM fitness.climbing_log_entry_grade g JOIN fitness.climbing_log_entry l ON l.id = g.climbing_log_entry_id WHERE l.user_id = ${userId}::uuid AND l.provider_id = 'boardsesh'`,
       ),
     ).toHaveLength(2);
@@ -321,22 +347,39 @@ describe("BoardSesh snapshot persistence", () => {
   it("replaces status-derived attempt facts when one tick changes from flash to send to attempt", async () => {
     expect(await run()).toMatchObject({ errors: [], recordsSynced: 1 });
     const describedAttempts = async () =>
-      context.db.execute(sql`
+      executeWithSchema(
+        context.db,
+        z.object({
+          id: z.string().uuid(),
+          source_result: z.string(),
+          source_completed: z.boolean().nullable(),
+          attempt_index: z.number().int(),
+          received_beta: z.boolean().nullable(),
+          fell_or_hung: z.boolean().nullable(),
+          used_aid: z.boolean().nullable(),
+          dabbed: z.boolean().nullable(),
+        }),
+        sql`
         SELECT a.id, a.source_result, a.source_completed, a.attempt_index::int AS attempt_index,
                a.received_beta, a.fell_or_hung, a.used_aid, a.dabbed
         FROM fitness.climbing_attempt a
         JOIN fitness.climbing_log_entry l ON l.id = a.climbing_log_entry_id
         WHERE l.user_id = ${userId}::uuid AND l.provider_id = 'boardsesh'
           AND l.external_id = 'boardsesh:tick:tick-1' AND a.source_result IS NOT NULL
-      `);
+      `,
+      );
     const allAttemptCount = async () =>
-      context.db.execute(sql`
+      executeWithSchema(
+        context.db,
+        z.object({ count: z.number().int() }),
+        sql`
         SELECT count(*)::int AS count
         FROM fitness.climbing_attempt a
         JOIN fitness.climbing_log_entry l ON l.id = a.climbing_log_entry_id
         WHERE l.user_id = ${userId}::uuid AND l.provider_id = 'boardsesh'
           AND l.external_id = 'boardsesh:tick:tick-1' AND a.scope = 'climb'
-      `);
+      `,
+      );
     const first = await describedAttempts();
     const stableAttemptId = first[0]?.id;
     expect(first).toMatchObject([
@@ -433,12 +476,17 @@ describe("BoardSesh snapshot persistence", () => {
 
   it("reconciles a complete empty snapshot and restores a later returned UUID", async () => {
     await run();
+    const original = await rows();
+    expect(original).toHaveLength(1);
+    const originalId = original[0]?.id;
     mode = "empty";
     await run();
-    expect((await rows())[0]?.provider_absent_at).not.toBeNull();
+    const absent = await rows();
+    expect(absent).toHaveLength(1);
+    expect(absent[0]).toMatchObject({ id: originalId, provider_absent_at: expect.any(String) });
     mode = "complete";
     await run();
-    expect((await rows())[0]?.provider_absent_at).toBeNull();
+    expect(await rows()).toMatchObject([{ id: originalId, provider_absent_at: null }]);
     expect(await rows()).toHaveLength(1);
   });
 
@@ -521,7 +569,9 @@ describe("BoardSesh snapshot persistence", () => {
         new SyncRun({ db: context.db, userId: otherUserId, window: SyncWindow.full() }),
       ),
     ]);
-    const owned = await context.db.execute(
+    const owned = await executeWithSchema(
+      context.db,
+      z.object({ user_id: z.string().uuid(), external_id: z.string() }),
       sql`SELECT user_id, external_id FROM fitness.climbing_log_entry WHERE provider_id = 'boardsesh' AND user_id IN (${userId}::uuid, ${otherUserId}::uuid) ORDER BY user_id`,
     );
     expect(owned).toEqual([

@@ -1,19 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { groupProviderEntries, providerCatalogEntry, providerFamily } from "./provider-catalog.ts";
-import { providerCredentialInput } from "./provider-connection.ts";
 
-describe("BoardSesh connection metadata", () => {
-  it("uses the shared email credential form and explains the password requirement", () => {
+describe("BoardSesh catalog metadata", () => {
+  it("uses the email credential form", () => {
     expect(providerCatalogEntry("boardsesh")).toMatchObject({
       label: "BoardSesh",
       credentialIdentifier: "email",
-    });
-    expect(providerCredentialInput("boardsesh")).toEqual({
-      identifier: "email",
-      label: "Email",
-      placeholder: "you@example.com",
-      instructions:
-        "Sign in with your BoardSesh email and password. Apple/Google-only accounts need a BoardSesh password.",
     });
   });
 });
