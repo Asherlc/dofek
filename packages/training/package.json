@@ -1,6 +1,6 @@
 {
   "name": "@dofek/training",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Training-science calculations for power, load, performance, and workout planning",
   "type": "module",
   "license": "MIT",
