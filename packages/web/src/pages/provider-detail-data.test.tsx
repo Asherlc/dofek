@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { formatTableCellValue } from "@dofek/format/format";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -99,12 +100,13 @@ describe("RecordsBrowser", () => {
           {
             id: log.id,
             name: "Corner",
+            recorded_at: "2026-11-10 01:48:51.544+00",
             climbed_on: null,
             result: "Pitch completed",
             discipline: null,
           },
         ],
-        columns: ["name", "climbed_on", "result", "discipline"],
+        columns: ["name", "recorded_at", "climbed_on", "result", "discipline"],
         filterColumns: ["name"],
       },
       isLoading: false,
@@ -113,6 +115,8 @@ describe("RecordsBrowser", () => {
     });
     render(<RecordsBrowser providerId="openbeta" stats={undefined} />);
     expect(screen.getByText("Corner")).toBeTruthy();
+    expect(screen.getByText("Recorded At")).toBeTruthy();
+    expect(screen.getByText(formatTableCellValue("2026-11-10 01:48:51.544+00"))).toBeTruthy();
     expect(screen.getByText("Pitch completed")).toBeTruthy();
     expect(screen.getByText("Availability refresh failed")).toBeTruthy();
     expect(screen.getByText("Records refresh failed")).toBeTruthy();

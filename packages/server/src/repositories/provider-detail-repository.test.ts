@@ -188,6 +188,7 @@ describe("ProviderDetailRepository", () => {
     expect(getRecordFilterColumns("climbingLogEntries")).toEqual([
       "id",
       "name",
+      "recorded_at",
       "climbed_on",
       "result",
       "discipline",
@@ -198,6 +199,7 @@ describe("ProviderDetailRepository", () => {
     ]);
     expect(getRecordDisplayColumns("climbingLogEntries")).toEqual([
       "name",
+      "recorded_at",
       "climbed_on",
       "result",
       "discipline",
