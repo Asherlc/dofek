@@ -9,12 +9,16 @@ Write tests for code that lacks coverage. Follows the project's TDD rules and te
 
 ## Current state
 
-- Branch: !`git branch --show-current`
-- Status: !`git status --short`
+Run these commands before inspecting test coverage:
+
+```bash
+rtk git branch --show-current
+rtk git status --short
+```
 
 ## Arguments
 
-`$ARGUMENTS` should be a file path, function name, or description of what needs tests. If not provided, look at the current branch's diff against `main` and identify untested changes.
+Use the file path, function name, or description of what needs tests from the user's request. If not provided, look at the current branch's diff against `main` and identify untested changes.
 
 ## Rules
 
@@ -28,7 +32,7 @@ Write tests for code that lacks coverage. Follows the project's TDD rules and te
 
 ### 1. Identify what needs tests
 
-If `$ARGUMENTS` is a file path, read it. Otherwise, find untested changes:
+If the user provided a file path, read it. Otherwise, find untested changes:
 
 ```bash
 MERGE_BASE=$(git merge-base origin/main HEAD)

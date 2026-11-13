@@ -3,9 +3,9 @@ dist/
 # OTA code signing keys (secrets — only certificate.pem is committed)
 packages/mobile/certs/private-key.pem
 packages/mobile/certs/public-key.pem
-# Track .claude/skills (custom skills), ignore everything else
+# Track the shared skills link, ignore local Claude settings
 .claude/*
-!.claude/skills/
+!.claude/skills
 .codex/
 .antigravitycli/
 .context/

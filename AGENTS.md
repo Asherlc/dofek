@@ -30,6 +30,7 @@ Provider-agnostic fitness/health data pipeline. Syncs data from various provider
 - **Use TypeScript for repository scripts**: New or updated repository automation scripts must be written in TypeScript (`.ts`) and run with `pnpm tsx`. Do not add new Python scripts for repo tooling unless the work is explicitly inside the Python ML package (`packages/ml`).
 
 ## Agent Documentation
+- **Portable skills**: Keep repository skills in `.agents/skills/<name>/SKILL.md`, using the shared [Agent Skills format](https://agentskills.io/specification). Keep `.claude/skills` as a relative symlink to that directory for [Claude Code discovery](https://code.claude.com/docs/en/skills#choose-where-skills-load); [Codex discovers `.agents/skills` directly](https://learn.chatgpt.com/docs/build-skills#where-to-save-skills). Use plain instructions for request inputs and command execution instead of [Claude-specific substitutions](https://code.claude.com/docs/en/skills#available-string-substitutions). See [the shared layout](docs/development-environment.md#shared-agent-skills) before adding skills or harness aliases.
 - **Local AGENTS.md files**: Packages and logical directories should have their own `AGENTS.md` and `README.md` files.
 - **Symlinks**: `AGENTS.md` must be symlinked to `GEMINI.md` and `CLAUDE.md` in the same directory.
 - **Agent-only content**: Populate `AGENTS.md` with information useful *only* to an agent.

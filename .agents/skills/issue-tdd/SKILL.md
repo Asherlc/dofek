@@ -9,7 +9,7 @@ Create a concrete test-driven development plan, save it in the appropriate docs 
 
 ## Arguments
 
-`$ARGUMENTS` should describe the problem, feature, bug, investigation, or rough idea. If the request lacks enough information to define expected behavior, ask concise clarifying questions before writing the plan.
+Use the problem, feature, bug, investigation, or rough idea from the user's request. If the request lacks enough information to define expected behavior, ask concise clarifying questions before writing the plan.
 
 ## Steps
 

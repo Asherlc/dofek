@@ -157,6 +157,26 @@ environment. Local users can opt into the same global integration explicitly;
 ordinary repository initialization does not mutate their global Codex
 configuration.
 
+## Shared Agent Skills
+
+Repository skills live in `.agents/skills/<name>/SKILL.md`. Each skill uses
+YAML metadata with `name` and `description`, followed by Markdown
+instructions; scripts, references, and assets stay beside that file, following
+the [Agent Skills specification](https://agentskills.io/specification).
+
+[Codex](https://learn.chatgpt.com/docs/build-skills#where-to-save-skills),
+[Cursor](https://cursor.com/docs/skills#skill-directories),
+[Gemini CLI](https://geminicli.com/docs/cli/skills/#discovery-tiers), and
+[OpenCode](https://opencode.ai/docs/skills/#discovery) document discovery from
+`.agents/skills`. The repository's `.claude/skills` symlink points to
+`../.agents/skills`, exposing the same files through
+[Claude Code's project skill location](https://code.claude.com/docs/en/skills#choose-where-skills-load).
+
+Keep shared instructions explicit: describe how to obtain inputs from the
+request and which commands to run. Claude Code's
+[argument substitutions and command injection](https://code.claude.com/docs/en/skills#available-string-substitutions)
+are harness features, rather than part of the shared skill format.
+
 ## Commands
 
 ```bash

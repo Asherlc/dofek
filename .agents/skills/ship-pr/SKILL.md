@@ -9,9 +9,13 @@ Run all checks, open a PR, and monitor CI to completion.
 
 ## Current state
 
-- Branch: !`git branch --show-current`
-- Status: !`git status --short`
-- Remote: !`git remote -v | head -1`
+Run these commands before starting checks:
+
+```bash
+rtk git branch --show-current
+rtk git status --short
+rtk git remote -v
+```
 
 ## Steps
 
@@ -106,7 +110,7 @@ After addressing comments that required code changes, monitor CI again for the n
 
 ## Arguments
 
-If `$ARGUMENTS` is provided, use it as the PR title. Otherwise, generate one from the branch commits.
+If the user provides a PR title, use it. Otherwise, generate one from the branch commits.
 
 ## Important
 
