@@ -37680,6 +37680,16 @@ allocations remains unqualified. No memory cap, timeout or retry was increased.
 Production-engine GREEN, review and actual whole-cycle net drain remain gates
 for the analytics correction in [PR #3305](https://github.com/Asherlc/dofek/pull/3305).
 
+The marker-only candidate then failed the same read bounds on 26.6 despite
+receiving the feature setting. The [upstream cross-UNION fix](https://github.com/ClickHouse/ClickHouse/pull/102107)
+explains the version difference: separate WITH copies were inlined in each
+UNION branch. A read-only plan of the actual compiled production query confirmed
+two sensor reads; giving the unchanged UNION a parent SELECT scope produced one
+shared materialization and one sensor read. This retains the existing engine and
+query-local reuse strategy. The scope correction still requires native semantic,
+read and memory qualification before release; the earlier local-only GREEN is
+not treated as a production pass.
+
 ## 2026-11-13 — Climbing batch presence PR lacked orchestration coverage
 
 [PR #3300](https://github.com/Asherlc/dofek/pull/3300) reported `codecov/patch` failure at 73.33333% with four uncovered added lines in [climbing-log-sync.ts](../src/db/climbing-log-sync.ts). The existing helper tests exercised observation results and restore SQL separately, but no unit case executed the public batch writer that collects observed identities and restores them once. This blocked merge qualification; no production impact was established.
