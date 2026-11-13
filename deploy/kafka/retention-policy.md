@@ -72,6 +72,42 @@ of an RF1 disk loss. Kafka documents the
 
 ## Rollout and observation
 
+### Production observation: November 12 (November 13 UTC)
+
+The canonical [server release](https://github.com/Asherlc/dofek/actions/runs/43330045743/job/131572442558)
+for `c7909fdafb0ad868407c9de493e3bd4e72f83b51` applied the policy above.
+Independent native readback found all eight intended values on all six topics,
+with their original topic IDs and one-member ISR preserved. The release also
+passed the private broker/worker backend comparison. The server job completed
+successfully at 00:31 UTC on November 13, including the final broker and policy
+checks after consumer startup. This is the server result; mobile publication
+has separate jobs.
+
+| Partition 0 | Global earliest offset | Local earliest offset after eviction | Fresh remote-only read |
+| --- | --- | --- | --- |
+| Live | 1,696,520 | 7,493,452 | Offset 1,696,520 returned |
+| History | 427,815 | 7,353,960 | Offset 427,815 returned |
+
+The independent console consumers disabled automatic commits and suppressed
+payload output. These reads establish production remote replay after native
+local eviction; they are not a complete restore or an RF1 disk-loss test.
+Allocated Kafka bytes fell from 8,805,670,912 before reconciliation to
+1,257,779,200 afterward; the filesystem had 66,485,805,056 available bytes.
+These are point-in-time allocated-byte measurements, not permanent quotas.
+Kafka describes the [local/remote retention and read behavior](https://kafka.apache.org/44/operations/tiered-storage/).
+
+At 00:30 UTC, both nonempty source archive groups had zero lag. Sink commits
+were progressing (live 8,461,347; history 5,913,085) while their respective
+backlogs remained 1,209,890 and 1,440,875 offsets. Retention deployment does not
+establish that ingestion has caught up. A bounded broker sample showed a
+successful history segment copy and no matching error lines. The collector's
+OTLP accepted/sent metric-point counters advanced from 24,426 to 49,228, with
+zero receiver failures/refusals. This confirms continuing transport acceptance;
+the existing token still lacks metrics-query permission, so Axiom stored-query
+readback and per-series production backlog/error values remain unverified.
+See [Axiom ingestion](https://axiom.co/docs/send-data/opentelemetry) and
+[metrics query permissions](https://axiom.co/docs/query-data/metrics).
+
 Use the [canonical production release](../README.md#checking-the-latest-production-deployment)
 with the matching source/image after review and passing CI. The existing workflow
 incrementally applies this policy and verifies all selected keys before and after

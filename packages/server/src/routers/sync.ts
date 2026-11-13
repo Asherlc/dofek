@@ -5,9 +5,9 @@ import { withAccountErasureUserWriteFence } from "dofek/db/account-erasure";
 import { enqueueSyncJob } from "dofek/jobs/enqueue-sync-job";
 import { providerRateLimitCooldownStore } from "dofek/jobs/provider-rate-limit-cooldown";
 import {
-  createSyncQueue,
   getImportQueue,
   getProviderSyncQueue,
+  getSyncQueue,
   IMPORT_QUEUE,
   type ImportJobData,
   providerSyncQueueName,
@@ -244,7 +244,7 @@ const queueBackpressureStates = ["waiting", "active", "delayed", "failed"] as co
 export { sanitizeErrorMessage };
 
 /** Shared CLI queue included in sync status and active-sync listings. */
-const sharedSyncQueue = createSyncQueue();
+const sharedSyncQueue = getSyncQueue();
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);

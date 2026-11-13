@@ -70,6 +70,7 @@ import {
   getAnalyticsRefreshQueueEvents,
   getDataExportQueue,
   getProviderDataDeletionQueue,
+  getSyncQueue,
   PROVIDER_DATA_DELETION_QUEUE,
   providerDataDeletionJobDataSchema,
 } from "./queues.ts";
@@ -544,9 +545,27 @@ describe("queues", () => {
       expect(MockRedisConnection).toHaveBeenCalledTimes(1);
       expect(MockRedisConnection).toHaveBeenCalledWith(
         expect.objectContaining({ commandTimeout: 5000 }),
-        { shared: true, blocking: false, skipVersionCheck: true },
+        { blocking: false, skipVersionCheck: true },
       );
       await closeAllQueueResources();
+    });
+  });
+
+  describe("getSyncQueue", () => {
+    it("caches the sync queue and closes it with process resources", async () => {
+      const { SYNC_QUEUE } = await import("./queues.ts");
+
+      const first = getSyncQueue();
+      expect(getSyncQueue()).toBe(first);
+      expect(MockQueue).toHaveBeenCalledWith(SYNC_QUEUE, {
+        connection: expect.objectContaining({ host: "localhost", port: 6379 }),
+      });
+
+      await closeAllQueueResources();
+
+      expect(mockQueueClose).toHaveBeenCalledOnce();
+      getSyncQueue();
+      expect(MockQueue).toHaveBeenCalledTimes(2);
     });
   });
 

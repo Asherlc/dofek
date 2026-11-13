@@ -26,9 +26,12 @@ quarantine topic-configuration defect.
 The [deploy-owned topic policy](quarantine-config-correction.md) describes the
 incremental reconciliation and readback before and after consumer startup. The
 audit observed both local retention settings at `-2` (inherit total limits).
-The selected explicit local limits in [`topic-policy.json`](topic-policy.json)
-are the deployment definition; verify effective values through the canonical
-release readbacks rather than treating that earlier audit as current policy.
+The explicit local limits in [`topic-policy.json`](topic-policy.json) were
+subsequently applied by the canonical release. Independent readback and fresh
+remote-only reads after local eviction are recorded in the
+[production observation](retention-policy.md#production-observation-november-12-november-13-utc).
+Verify effective values through each release's readbacks rather than treating
+the earlier audit as current policy.
 
 ## Intended configuration
 
