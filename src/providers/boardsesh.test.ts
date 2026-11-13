@@ -165,7 +165,7 @@ describe("BoardSeshProvider", () => {
   it("sanitizes malformed native login JSON before exposing or reporting the error", async () => {
     const provider = new BoardSeshProvider(
       async () =>
-        new Response("PVTQ7", {
+        new Response("PRIVATE7", {
           headers: { "Content-Type": "application/json" },
         }),
     );
@@ -173,7 +173,7 @@ describe("BoardSeshProvider", () => {
     await expect(login?.("climber@example.com", "secret")).rejects.toThrow(
       "BoardSesh returned an invalid login response.",
     );
-    await expect(login?.("climber@example.com", "secret")).rejects.not.toThrow("PVTQ7");
+    await expect(login?.("climber@example.com", "secret")).rejects.not.toThrow("PRIVATE7");
     const [reportedError, context] = databaseMocks.captureException.mock.calls[0] ?? [];
     expect(reportedError).toMatchObject({
       message: "BoardSesh returned an invalid login response.",
@@ -192,19 +192,19 @@ describe("BoardSeshProvider", () => {
     });
     const provider = new BoardSeshProvider(
       async () =>
-        new Response("PVTQ7", {
+        new Response("PRIVATE7", {
           headers: { "Content-Type": "application/json" },
         }),
     );
     const result = await syncRun(provider);
     expect(result.errors[0]?.message).toBe("BoardSesh returned an invalid refresh response.");
-    expect(result.errors[0]?.message).not.toContain("PVTQ7");
+    expect(result.errors[0]?.message).not.toContain("PRIVATE7");
     const reportedErrors = databaseMocks.captureException.mock.calls.map(([error]) => error);
     expect(reportedErrors).toContainEqual(
       expect.objectContaining({ message: "BoardSesh returned an invalid refresh response." }),
     );
     expect(
-      reportedErrors.every((error) => error instanceof Error && !error.message.includes("PVTQ7")),
+      reportedErrors.every((error) => error instanceof Error && !error.message.includes("PRIVATE7")),
     ).toBe(true);
     for (const error of reportedErrors) expect(error).not.toHaveProperty("cause");
     expect(databaseMocks.persistSnapshot).not.toHaveBeenCalled();
@@ -220,19 +220,19 @@ describe("BoardSeshProvider", () => {
     });
     const provider = new BoardSeshProvider(
       async () =>
-        new Response("PVTQ7", {
+        new Response("PRIVATE7", {
           headers: { "Content-Type": "application/json" },
         }),
     );
     const result = await syncRun(provider);
     expect(result.errors[0]?.message).toBe("BoardSesh returned an invalid GraphQL response.");
-    expect(result.errors[0]?.message).not.toContain("PVTQ7");
+    expect(result.errors[0]?.message).not.toContain("PRIVATE7");
     const reportedErrors = databaseMocks.captureException.mock.calls.map(([error]) => error);
     expect(reportedErrors).toContainEqual(
       expect.objectContaining({ message: "BoardSesh returned an invalid GraphQL response." }),
     );
     expect(
-      reportedErrors.every((error) => error instanceof Error && !error.message.includes("PVTQ7")),
+      reportedErrors.every((error) => error instanceof Error && !error.message.includes("PRIVATE7")),
     ).toBe(true);
     for (const error of reportedErrors) expect(error).not.toHaveProperty("cause");
     expect(databaseMocks.persistSnapshot).not.toHaveBeenCalled();

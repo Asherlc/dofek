@@ -71,7 +71,7 @@ describe("BoardSesh snapshot persistence", () => {
       http.post(authUrl, () => {
         requestOrder.push("refresh");
         if (mode === "malformed-refresh-json")
-          return HttpResponse.text("PVTQ7", {
+          return HttpResponse.text("PRIVATE7", {
             headers: { "Content-Type": "application/json" },
           });
         return HttpResponse.json({
@@ -107,7 +107,7 @@ describe("BoardSesh snapshot persistence", () => {
         if (mode === "empty")
           return HttpResponse.json({ data: { authenticatedUserId: "owner-1", ticks: [] } });
         if (mode === "malformed-json" && input.input?.boardType === "kilter")
-          return HttpResponse.text("PVTQ7", {
+          return HttpResponse.text("PRIVATE7", {
             headers: { "Content-Type": "application/json" },
           });
         let rows = input.input?.boardType === "kilter" ? [tick()] : [];
@@ -406,7 +406,7 @@ describe("BoardSesh snapshot persistence", () => {
     mode = "malformed-json";
     const result = await run();
     expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]?.message).not.toContain("PVTQ7");
+    expect(result.errors[0]?.message).not.toContain("PRIVATE7");
     expect((await rows())[0]?.provider_absent_at).toBeNull();
   });
 
@@ -427,7 +427,7 @@ describe("BoardSesh snapshot persistence", () => {
     mode = "malformed-refresh-json";
     const result = await run();
     expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]?.message).not.toContain("PVTQ7");
+    expect(result.errors[0]?.message).not.toContain("PRIVATE7");
     expect((await rows())[0]?.provider_absent_at).toBeNull();
   });
 
