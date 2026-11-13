@@ -699,6 +699,7 @@ vi.mock("./modules/whoop-ble", () => ({
   isBluetoothAvailable: vi.fn(() => false),
   findWhoop: vi.fn(() => Promise.resolve(null)),
   connect: vi.fn(() => Promise.resolve(false)),
+  retryConnection: vi.fn(() => Promise.resolve(false)),
   startImuStreaming: vi.fn(() => Promise.resolve(false)),
   stopImuStreaming: vi.fn(() => Promise.resolve(false)),
   peekBufferedSamples: vi.fn(() => Promise.resolve([])),

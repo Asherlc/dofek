@@ -12,6 +12,7 @@ export interface WhoopBleSyncDeps {
   getDataPathStats(): Promise<WhoopCaptureStats>;
   findWhoop(): Promise<{ id: string; name: string | null } | null>;
   connect(peripheralId: string): Promise<boolean>;
+  retryConnection(): Promise<boolean>;
   startImuStreaming(): Promise<boolean>;
   stopImuStreaming(): Promise<boolean>;
   addConnectionStateListener(

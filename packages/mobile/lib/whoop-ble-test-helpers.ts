@@ -48,6 +48,7 @@ export function makeMockDeps(): WhoopBleSyncDeps {
     flushUploads: vi.fn().mockResolvedValue(undefined),
     findWhoop: vi.fn().mockResolvedValue({ id: "whoop-123", name: "WHOOP 4.0" }),
     connect: vi.fn().mockResolvedValue(true),
+    retryConnection: vi.fn().mockResolvedValue(true),
     startImuStreaming: vi.fn().mockResolvedValue(true),
     stopImuStreaming: vi.fn().mockResolvedValue(true),
     disconnect: vi.fn(),

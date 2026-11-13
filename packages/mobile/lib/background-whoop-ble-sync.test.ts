@@ -2,6 +2,7 @@ import { Alert, AppState } from "react-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   initBackgroundWhoopBleSync,
+  retryWhoopBleConnection,
   syncWhoopBle,
   teardownBackgroundWhoopBleSync,
 } from "./background-whoop-ble-sync";
@@ -36,6 +37,7 @@ function deps() {
     getDataPathStats: vi.fn().mockImplementation(async () => makeWhoopCaptureStats()),
     findWhoop: vi.fn().mockResolvedValue({ id: "strap", name: "WHOOP" }),
     connect: vi.fn().mockResolvedValue(true),
+    retryConnection: vi.fn().mockResolvedValue(true),
     startImuStreaming: vi.fn().mockResolvedValue(true),
     stopImuStreaming: vi.fn().mockResolvedValue(true),
     disconnect: vi.fn(),
@@ -160,6 +162,27 @@ describe("native WHOOP lifecycle", () => {
     await syncWhoopBle();
     expect(native.flushUploads).toHaveBeenCalledOnce();
     expect(native.findWhoop).not.toHaveBeenCalled();
+  });
+  it("background refresh retries the connection of a configured session", async () => {
+    AppState.currentState = "background";
+    const native = deps();
+    await initBackgroundWhoopBleSync(context, native);
+    await retryWhoopBleConnection();
+    expect(native.retryConnection).toHaveBeenCalledOnce();
+  });
+  it("background refresh skips the retry while configuration is pending or failed", async () => {
+    const native = deps();
+    const configured = deferred<undefined>();
+    native.configureUpload.mockReturnValue(configured.promise);
+    const pending = initBackgroundWhoopBleSync(context, native);
+    await retryWhoopBleConnection();
+    configured.resolve(undefined);
+    await pending;
+    teardownBackgroundWhoopBleSync();
+    native.configureUpload.mockRejectedValue(new Error("sensor cleanup pending"));
+    await expect(initBackgroundWhoopBleSync(context, native)).rejects.toThrow();
+    await retryWhoopBleConnection();
+    expect(native.retryConnection).not.toHaveBeenCalled();
   });
   it("propagates configuration failure before capture starts", async () => {
     const native = deps();

@@ -31,7 +31,7 @@ import {
   initBackgroundWatchInertialMeasurementUnitSync,
   teardownBackgroundWatchInertialMeasurementUnitSync,
 } from "../lib/background-watch-inertial-measurement-unit-sync";
-import { syncWhoopBle } from "../lib/background-whoop-ble-sync";
+import { retryWhoopBleConnection, syncWhoopBle } from "../lib/background-whoop-ble-sync";
 import { HealthKitManualSyncController } from "../lib/health-kit-manual-sync";
 import { HealthKitManualSyncProvider } from "../lib/health-kit-manual-sync-context";
 import type { SyncTrpcClient } from "../lib/health-kit-sync-types";
@@ -69,6 +69,7 @@ import {
   findWhoop,
   flushUploads,
   getDataPathStats as getWhoopDataPathStats,
+  retryConnection,
   startImuStreaming,
   stopImuStreaming,
   connect as whoopConnect,
@@ -104,6 +105,7 @@ const whoopDeps = {
   getDataPathStats: getWhoopDataPathStats,
   findWhoop,
   connect: whoopConnect,
+  retryConnection,
   startImuStreaming,
   stopImuStreaming,
   addConnectionStateListener: addWhoopConnectionStateListener,
@@ -465,10 +467,7 @@ function AuthGate() {
         },
         {
           source: "bg-refresh-whoop-retry",
-          run: async () => {
-            const { retryConnection } = await import("../modules/whoop-ble");
-            await retryConnection();
-          },
+          run: () => retryWhoopBleConnection(),
         },
         {
           source: "bg-refresh-whoop-flush",
