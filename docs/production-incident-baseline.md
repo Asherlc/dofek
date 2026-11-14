@@ -37874,3 +37874,69 @@ Git history was checked before choosing another fix. [PR #2999](https://github.c
 The real Redis regression reproduced two build starts only 2ms apart with a configured 500ms interval before the correction. Native qualification also exercises periodic execution, competing consumers, replacement consumers, pending completion and graceful shutdown. A separate unit regression showed the first-cycle health watchdog incorrectly measured from process startup after delayed admission; it now uses the active cycle's start with the existing budget. Waiting startup, overdue cycles and immediate first-failure checks remain enforced. No timeout, retry budget, publication-lock scope or query limit was increased.
 
 Local qualification and CI are separate from production throughput acceptance. The PeerDB compatibility recovery is rolling out independently through [release 43558976976](https://github.com/Asherlc/dofek/actions/runs/43558976976); the pacing correction is not yet deployed. Require the exact pacing revision, healthy services, successful cycles, actual build spacing and sustained live/history net drain against arrivals before claiming a speed solution or catch-up ETA. The earlier canonical-query memory increase remains an explicit separate acceptance item.
+
+## 2026-11-14 — WHOOP BLE collection and upload gap; full root cause unresolved
+
+- **Symptoms/user impact:** the 02:48:08–14:48:08 UTC backend window contained
+  only 32 WHOOP BLE heart-rate rows, 29 R-R rows and 32 raw records, sampled
+  14:27:10–14:27:42.815 UTC. A 15:00:42 UTC follow-up was unchanged. This
+  provider/source filter excludes WHOOP IMU, which currently enters through
+  the shared Apple Motion/API route.
+- **Evidence:** native cleanup suspended capture and showed an observed
+  13:51:04–14:20:55 UTC interval between bootstrap and disable stages, with no
+  returned completion for that operation. A later cleanup completed at
+  14:27:10 UTC and capture connected. At 14:38:11 UTC, a different process
+  started in background with Bluetooth idle/uninitialized; the same durable
+  queue retained 62,400 IMU and 1,232 each realtime/raw records, three active
+  uploads and no recorded upload error. Capture had continued after backgrounding.
+- **Root cause/status:** background initialization currently flushes but defers
+  connection until foregrounding, explaining the observed idle restart path.
+  The full overnight cause, bootstrap wait and deferred upload execution remain
+  unresolved. Handled MetricKit disk/CPU diagnostics do not establish crashes.
+- **Fix/mitigation:** no runtime or production change made. Recommend aligning
+  an authenticated background-start restoration correction that reuses existing
+  native connection ownership and preserves cleanup/readiness fences. Existing
+  lifecycle/account-cleanup suites pass 36/36; physical-device restoration and
+  eventual queue acknowledgment remain required. No resilience knob changed.
+- **Follow-up/retrospective:** obtain a real-device bootstrap stack/profile and
+  task completion evidence before changing cleanup or transport. The
+  [investigation record](evidence/ble-collection-20261114/README.md) contains
+  timing, history, official Apple references, evidence limitations and a proposed
+  runbook improvement. Correlating native occurrence times, queue counters and
+  structured upload bounds worked; provider attribution and replayed histories
+  required investigation. No new skill/framework is needed.
+
+## 2026-11-14 — Correct authenticated WHOOP background-start collection
+
+- **Root cause:** WHOOP initialization configured uploads but returned before
+  discovery unless React Native's app state was active; its connection path
+  also cancelled setup when the app became backgrounded. This matches the
+  different process starting idle with an uninitialized central at 14:38:11 UTC
+  in the [earlier investigation](evidence/ble-collection-20261114/README.md).
+- **Reproduction/direct fix:** four regression cases failed before the fix for
+  background startup and backgrounding during discovery, connection and stream
+  setup. A fifth caught native background retry competing with discovery.
+  [Initialization](../packages/mobile/lib/background-whoop-ble-sync.ts) now uses
+  the existing native readiness-aware connection path across app-state changes;
+  retry yields while that setup owns the connection. Session retirement and
+  cleanup/configuration failures still fence capture. No timer, storage,
+  transport, native API or production change was added.
+- **Validation/remaining risk:** focused lifecycle/account/hook tests pass
+  43/43, full unit/mobile tests pass 24,609 (19 skipped), all package typechecks
+  pass, and source/policy plus analytics SQL lint pass. A separate self-review
+  found no further material issue. Physical-device background restoration and
+  queue delivery are not verified; the original cleanup trigger, bootstrap wait
+  and deferred-transfer cause remain unresolved. Apple retains control over
+  [Bluetooth relaunch eligibility](https://developer.apple.com/documentation/technotes/tn3115-bluetooth-state-restoration-app-relaunch-rules)
+  and [background transfer timing](https://developer.apple.com/documentation/foundation/urlsessionconfiguration/isdiscretionary).
+- **Local validation interruption:** `pnpm lint` first stopped at SQLFluff/dbt
+  connection with ClickHouse error 75, `No space left on device`. Stock builder
+  pruning reclaimed 0 bytes; unused-image pruning reclaimed 1.532 GB. The
+  analytics lint command then passed. Running containers and named volumes were
+  preserved, and no validation gate or runtime limit changed.
+- **Retrospective/follow-up:** red/green lifecycle tests isolated the concrete
+  bug without retreading prior cleanup fixes. Keep phone-level acknowledgment
+  and restoration checks separate from source/test acceptance. The module README
+  now describes background-start ownership; the earlier proposed BLE diagnostic
+  checklist remains a documentation improvement for user approval. Existing
+  debugging, testing and production-log skills cover this work.

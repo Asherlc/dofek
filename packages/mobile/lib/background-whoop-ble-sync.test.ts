@@ -59,21 +59,25 @@ describe("native WHOOP lifecycle", () => {
     AppState.currentState = "active";
   });
   afterEach(() => teardownBackgroundWhoopBleSync());
-  it("waits for configuration and does not connect a session retired while it is pending", async () => {
-    const native = deps();
-    const configured = deferred<void>();
-    native.configureUpload.mockImplementationOnce(() => configured.promise);
-    const initializing = initBackgroundWhoopBleSync(context, native);
-    try {
-      await Promise.resolve();
-      expect(native.findWhoop).not.toHaveBeenCalled();
-      teardownBackgroundWhoopBleSync();
-    } finally {
-      configured.resolve();
-      await initializing;
-    }
-    expect(native.connect).not.toHaveBeenCalled();
-  });
+  it.each(["active", "background"] as const)(
+    "does not connect a session retired during configuration while %s",
+    async (appState) => {
+      AppState.currentState = appState;
+      const native = deps();
+      const configured = deferred<void>();
+      native.configureUpload.mockImplementationOnce(() => configured.promise);
+      const initializing = initBackgroundWhoopBleSync(context, native);
+      try {
+        await Promise.resolve();
+        expect(native.findWhoop).not.toHaveBeenCalled();
+        teardownBackgroundWhoopBleSync();
+      } finally {
+        configured.resolve();
+        await initializing;
+      }
+      expect(native.connect).not.toHaveBeenCalled();
+    },
+  );
   it("does not retire a replacement when an older configuration rejects", async () => {
     const old = deps();
     let reject!: (error: Error) => void;
@@ -138,16 +142,19 @@ describe("native WHOOP lifecycle", () => {
     expect(native.startImuStreaming).toHaveBeenCalledOnce();
     expect(native.flushUploads).toHaveBeenCalled();
   });
-  it("configures and flushes in background, deferring connection until foreground", async () => {
+  it("starts collection after configured background startup without waiting for foreground", async () => {
     AppState.currentState = "background";
     const native = deps();
     await initBackgroundWhoopBleSync(context, native);
     expect(native.configureUpload).toHaveBeenCalledWith(context);
     expect(native.flushUploads).toHaveBeenCalledOnce();
-    expect(native.findWhoop).not.toHaveBeenCalled();
+    expect(native.findWhoop).toHaveBeenCalledOnce();
+    expect(native.connect).toHaveBeenCalledWith("strap");
+    expect(native.startImuStreaming).toHaveBeenCalledOnce();
     AppState.currentState = "active";
-    stateChanged("active");
-    await vi.waitFor(() => expect(native.startImuStreaming).toHaveBeenCalledOnce());
+    await stateChanged("active");
+    expect(native.connect).toHaveBeenCalledOnce();
+    expect(native.startImuStreaming).toHaveBeenCalledOnce();
   });
   it("flushes queued uploads when no strap is available", async () => {
     const native = deps();
@@ -158,8 +165,10 @@ describe("native WHOOP lifecycle", () => {
   it("background refresh flushes without requiring a connection", async () => {
     AppState.currentState = "background";
     const native = deps();
+    native.findWhoop.mockResolvedValue(null);
     await initBackgroundWhoopBleSync(context, native);
     native.flushUploads.mockClear();
+    native.findWhoop.mockClear();
     await syncWhoopBle();
     expect(native.flushUploads).toHaveBeenCalledOnce();
     expect(native.findWhoop).not.toHaveBeenCalled();
@@ -255,7 +264,41 @@ describe("native WHOOP lifecycle", () => {
     expect(native.connect).toHaveBeenCalledOnce();
     expect(native.startImuStreaming).toHaveBeenCalledOnce();
   });
-  it("does not duplicate foreground discovery when the initial flush finishes later", async () => {
+  it("does not start a background retry while initial discovery owns the connection", async () => {
+    const native = deps();
+    const found = deferred<{ id: string; name: string }>();
+    native.findWhoop.mockReturnValueOnce(found.promise);
+    const initializing = initBackgroundWhoopBleSync(context, native);
+    try {
+      await vi.waitFor(() => expect(native.findWhoop).toHaveBeenCalledOnce());
+      await retryWhoopBleConnection();
+      expect(native.retryConnection).not.toHaveBeenCalled();
+    } finally {
+      found.resolve({ id: "strap", name: "WHOOP" });
+      await initializing;
+    }
+    expect(native.connect).toHaveBeenCalledOnce();
+    expect(native.startImuStreaming).toHaveBeenCalledOnce();
+  });
+  it("does not start a background retry while the initial flush is pending", async () => {
+    AppState.currentState = "background";
+    const native = deps();
+    const flushed = deferred<void>();
+    native.flushUploads.mockReturnValueOnce(flushed.promise);
+    const initializing = initBackgroundWhoopBleSync(context, native);
+    try {
+      await vi.waitFor(() => expect(native.flushUploads).toHaveBeenCalledOnce());
+      await retryWhoopBleConnection();
+      expect(native.retryConnection).not.toHaveBeenCalled();
+      expect(native.findWhoop).not.toHaveBeenCalled();
+    } finally {
+      flushed.resolve();
+      await initializing;
+    }
+    expect(native.findWhoop).toHaveBeenCalledOnce();
+    expect(native.connect).toHaveBeenCalledOnce();
+  });
+  it("keeps startup ownership when foregrounding during the initial flush", async () => {
     const native = deps();
     const flushed = deferred<void>();
     const found = deferred<null>();
@@ -265,10 +308,10 @@ describe("native WHOOP lifecycle", () => {
     await vi.waitFor(() => expect(native.flushUploads).toHaveBeenCalledOnce());
     const foregroundSync = stateChanged("active");
     try {
-      await vi.waitFor(() => expect(native.findWhoop).toHaveBeenCalledOnce());
+      await Promise.resolve();
+      expect(native.findWhoop).not.toHaveBeenCalled();
       flushed.resolve();
-      await initializing;
-      expect(native.findWhoop).toHaveBeenCalledOnce();
+      await vi.waitFor(() => expect(native.findWhoop).toHaveBeenCalledOnce());
     } finally {
       flushed.resolve();
       found.resolve(null);
@@ -277,7 +320,7 @@ describe("native WHOOP lifecycle", () => {
     }
   });
   it.each(["find", "connect", "stream"])(
-    "stops foreground connection work after backgrounding during %s",
+    "continues collection startup after backgrounding during %s",
     async (stage) => {
       const native = deps();
       const gate = deferred<boolean>();
@@ -300,24 +343,29 @@ describe("native WHOOP lifecycle", () => {
       if (stage === "find") found.resolve({ id: "strap", name: "WHOOP" });
       else gate.resolve(true);
       await initializing;
-      if (stage === "find") expect(native.connect).not.toHaveBeenCalled();
-      else expect(native.disconnect).toHaveBeenCalledOnce();
+      expect(native.connect).toHaveBeenCalledWith("strap");
+      expect(native.startImuStreaming).toHaveBeenCalledOnce();
+      expect(native.disconnect).not.toHaveBeenCalled();
     },
   );
-  it("ignores stale connection completion after a replacement session starts", async () => {
-    const old = deps();
-    const gate = deferred<boolean>();
-    old.connect.mockReturnValue(gate.promise);
-    const initializing = initBackgroundWhoopBleSync(context, old);
-    await vi.waitFor(() => expect(old.connect).toHaveBeenCalled());
-    const next = deps();
-    await initBackgroundWhoopBleSync({ ...context, userId: "user-2" }, next);
-    gate.resolve(true);
-    await initializing;
-    expect(old.startImuStreaming).not.toHaveBeenCalled();
-    expect(old.disconnect).toHaveBeenCalledOnce();
-    expect(next.startImuStreaming).toHaveBeenCalledOnce();
-  });
+  it.each(["active", "background"] as const)(
+    "ignores stale connection completion after a replacement session starts while %s",
+    async (appState) => {
+      AppState.currentState = appState;
+      const old = deps();
+      const gate = deferred<boolean>();
+      old.connect.mockReturnValue(gate.promise);
+      const initializing = initBackgroundWhoopBleSync(context, old);
+      await vi.waitFor(() => expect(old.connect).toHaveBeenCalled());
+      const next = deps();
+      await initBackgroundWhoopBleSync({ ...context, userId: "user-2" }, next);
+      gate.resolve(true);
+      await initializing;
+      expect(old.startImuStreaming).not.toHaveBeenCalled();
+      expect(old.disconnect).toHaveBeenCalledOnce();
+      expect(next.startImuStreaming).toHaveBeenCalledOnce();
+    },
+  );
   it("surfaces durable capture failure and removes its listener on retirement", async () => {
     const native = deps();
     await initBackgroundWhoopBleSync(context, native);
