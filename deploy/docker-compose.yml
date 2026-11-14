@@ -695,7 +695,7 @@ services:
           memory: 512M
 
   peerdb-flow-worker:
-    image: ghcr.io/peerdb-io/flow-worker:stable-v0.36.19
+    image: ghcr.io/peerdb-io/flow-worker:stable-v0.37.15
     environment: *peerdb-flow-environment
     deploy:
       resources:
