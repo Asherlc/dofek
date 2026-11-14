@@ -37954,8 +37954,11 @@ Local qualification and CI are separate from production throughput acceptance. T
   event. The test asserts the total number of captured Sentry events before its
   existing separate check for exactly one matching cleanup error. Counting all
   independent SDK diagnostics makes that assertion nondeterministic.
-- **Fix/status:** after explicit branch approval, the follow-up removes both
-  total-event-count assertions in this test. Exact cleanup/control error counts,
+- **Fix/status:** after explicit branch approval, the follow-up removes the
+  total-event-count assertions in this test and its erasure-attribution helper.
+  Review identified the helper's identical defect, and a controlled unrelated
+  event reproduced its failure in `testFailedErasureRejectsConfigurationQueuedBehindPurge`.
+  Exact cleanup/control error counts,
   thrown rejection and attribution assertions remain. A controlled unrelated
   Sentry event and its presence assertion reproduce the same failure without
   depending on an actual app hang. No production behavior changed, and no
