@@ -843,6 +843,33 @@ jobs:
             sleep 5
           done
 
+      - name: Wait for PeerDB catalog
+        run: |
+          for attempt in $(seq 1 36); do
+            if timeout 15s docker run --rm --network "${STACK_NAME}_default" \
+              postgres:18-alpine pg_isready --host=peerdb-catalog --username=postgres --dbname=postgres --quiet; then
+              break
+            fi
+            if [ "$attempt" -eq 36 ]; then
+              echo "::error::PeerDB catalog did not become reachable within 180s"
+              exit 1
+            fi
+            sleep 5
+          done
+
+      - name: Migrate PeerDB flow catalog
+        run: |
+          migration_image=$(docker service inspect "${STACK_NAME}_peerdb-flow-api" \
+            --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}')
+          docker run --rm --network "${STACK_NAME}_default" \
+            --env-file <(grep '^POSTGRES_PASSWORD=' "$DATABASE_OPERATIONS_ENV_FILE") \
+            --env PEERDB_CATALOG_HOST=peerdb-catalog \
+            --env PEERDB_CATALOG_PORT=5432 \
+            --env PEERDB_CATALOG_USER=postgres \
+            --env PEERDB_CATALOG_DATABASE=postgres \
+            --entrypoint sh "$migration_image" \
+            -euc 'export PEERDB_CATALOG_PASSWORD="${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}"; exec /home/peerdb/peer-flow migrate'
+
       - name: Wait for PeerDB before migrations
         run: |
           for attempt in $(seq 1 36); do

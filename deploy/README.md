@@ -765,7 +765,16 @@ occurred; retain the pending record when the evidence is inconclusive.
       describes the service/task relationship in
       [Swarm services and tasks](https://docs.docker.com/engine/swarm/how-swarm-mode-works/services/).
    8. Wait until Postgres is writable (`SELECT NOT pg_is_in_recovery()`) and
-      ClickHouse answers `/ping`; wait for PeerDB SQL and its Flow API, then
+      ClickHouse answers `/ping`. Wait for the PeerDB catalog, then run its
+      stock `/home/peerdb/peer-flow migrate` command using the Flow API service's
+      immutable image and only the existing catalog password. This runs before
+      API readiness and CDC contract checks so an existing catalog receives
+      the migrations required by the selected API version. The upstream
+      [migrator](https://github.com/PeerDB-io/peerdb/blob/v0.37.15/flow/db/migrations.go)
+      bootstraps the current journal from legacy refinery history; Nexus startup
+      migration was removed in [PeerDB PR #4827](https://github.com/PeerDB-io/peerdb/pull/4827).
+      Migration failure stops the release with consumers still gated. Wait for
+      PeerDB SQL and its Flow API, then
       run `peerdb-cdc-contract prepare` against existing mapping identities
       only. Apply registered additive `pre-cdc` destination migrations and
       preserve existing projection checks; defer every new table mapping until
@@ -923,7 +932,8 @@ Postgres backup status:
 - Terraform creates that directory and performs a one-time copy from the legacy `databasus_data` Docker volume when the bind-mount path is still empty.
 - If that path is empty or replaced, Databasus comes up as a fresh install and scheduled DB backups stop even if the `dofek-db-backups` bucket still exists.
 - After any Databasus storage or deploy change, verify the latest object in `dofek-db-backups` is less than 24 hours old.
-- PeerDB uses its private MinIO bucket only as transient staging while loading
+- PeerDB uses its private SeaweedFS S3 bucket (service hostname `peerdb-minio`)
+  only as transient staging while loading
   ClickHouse. The bucket is unversioned and its deterministic lifecycle expires
   objects after one day; MinIO applies that expiration to incomplete multipart
   uploads on unversioned buckets as well. Account-erasure completion also lists
@@ -931,6 +941,11 @@ Postgres backup status:
   anything past the boundary:
   [PeerDB ClickHouse staging](https://docs.peerdb.io/connect/clickhouse/clickhouse),
   [MinIO lifecycle rule patterns](https://docs.min.io/aistor/administration/object-lifecycle-management/lifecycle-rule-patterns/).
+  The existing AWS CLI initializer checks the bucket before creating it and
+  applies the lifecycle rule after storage is ready. Storage startup does not
+  recreate the bucket: SeaweedFS deliberately [rejects duplicate creation](https://github.com/seaweedfs/seaweedfs/pull/11455)
+  to preserve its metadata. PeerDB services use the same release cohort, with
+  catalog migration owned by the explicit workflow step described above.
 - Database-backup objects expire at 21 days. Account-erasure active-store
   verification scrubs the raw user ID, encrypted remote snapshot, checkpoint
   details, and phase progress by day 7; the 21-day backup window plus
