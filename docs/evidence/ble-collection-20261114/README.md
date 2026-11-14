@@ -1,5 +1,124 @@
 # WHOOP BLE collection and upload gap — November 14, 2026
 
+## Confirmed background-transfer scheduling limitation
+
+The native background transport is a plausible cause of the observed 6:27 AM
+delivery stall, not an established cause of the missing completions. The
+confirmed finding is a scheduling-class mismatch for continuous live delivery.
+The background `URLSession` transport was introduced
+**October 28, 2026, at 10:06 PM PDT** in
+[PR #3147](https://github.com/Asherlc/dofek/pull/3147), commit
+`cf421b73aaec8e637e2a8085ed2f10490d5a118b`. This changed delivery to file-backed
+OS-managed background transfers. Its configuration sets
+`isDiscretionary = false`, but Apple explicitly
+[ignores that value for transfers started while the app is backgrounded](https://developer.apple.com/documentation/foundation/urlsessionconfiguration/isdiscretionary):
+those transfers are scheduled at the system's discretion. This is a delivery
+semantics mismatch for continuous live publication, not evidence that the flag
+was accidentally enabled.
+
+Authenticated physical-device logs establish the scheduling-class change:
+
+- The app is foregrounded at 6:27:10 AM PST. The uploader's background session
+  attaches to process 73130 at the same time as its initial queue snapshot.
+- Tasks 1–10, created from 6:27:16 through 6:27:48 AM, are classified
+  `non-discretionary`; all ten complete successfully, the last at
+  6:27:49.134 AM. This matches the current-sample server upload burst and the
+  queue's final acknowledgment counters.
+- The app becomes not visible at 6:27:52.716 AM. Tasks 11–13, created at
+  6:27:53.930, 6:27:58.953 and 6:28:14.964 AM, are classified
+  `discretionary (opt-in: 0)`. None has a recorded completion in the returned
+  session history. Native statistics independently show three active tasks,
+  queued samples and no upload error.
+- At 6:38:10.486 AM the client disconnects as the CPU-fatal report records
+  process termination. The same OS session subsequently attaches to process
+  73283; the new process is suspended at 6:38:20 AM. Thus the pre-kill delivery
+  stall precedes, and is distinct from, the HealthKit CPU termination.
+
+The WHOOP transport is the only background `URLSession` configuration in the
+repository's mobile modules. The session's app/process identity, initialization
+time, task counts and completion bounds corroborate attribution. OS task UUIDs
+are different from persisted batch identities; private log fields do not expose
+a per-task mapping to the three individual streams. The precise discretionary
+condition delaying each task, such as a particular power/network condition, is
+not established and must not be invented. The evidence establishes the forced
+scheduling class and the absence of a returned completion, not an HTTP failure
+for these three tasks.
+
+The original [durable upload design](../../superpowers/specs/2026-10-28-whoop-durable-upload-design.md)
+explicitly accepted eventual OS scheduling, so the complete overnight incident
+must not be attributed to a single new merge. Earlier November 3 HTTP 401s and
+unfinished cleanup remain separate boundaries. The exact introducing commit of
+the background-transfer scheduling choice is now established; changing the
+same discretionary flag, adding retries, or increasing timeouts cannot remove
+Apple's override.
+
+Candidate correction for continuous live delivery: use ordinary native `URLSession` delivery for
+live samples while the BLE collector is executing, and retain the canonical
+SQLite reservations/account generations. The existing contract also requires
+process-independent delivery, so preserve a background-transfer fallback without
+introducing a second outbox or competing batch owners. Simply replacing every background
+session would change that existing durability/delivery contract. This is a
+native transport change requiring native regression checks and a new iOS build;
+it is not part of the already-merged JavaScript collection-start correction.
+Separately, reuse one invocation-local formatter in the proven HealthKit CPU
+path described below.
+
+The candidate is not a verified remedy for the observed stall. A physical
+comparison must first establish whether an immediate native path removes the
+wait under the same account/queue conditions. Required validation for a transport
+correction: live background capture must
+create immediate-path requests and continue receiving server acknowledgments
+after locking the phone; reserved batches must survive process recreation;
+restored/fallback tasks must reconcile without double ownership; credential
+rotation, sign-out and erasure must fence both paths; and failed or malformed
+acknowledgments must retain rows. Preserve existing deterministic replay
+identities and bounded batching. Physical validation can use existing operational
+queue counters and server telemetry rather than more administrator log captures.
+
+Collection notes below describe the observed collector build, rather than
+guaranteeing behavior across versions. The
+20 MiB capture's ordinary logs started at 9:17 AM; 128 MiB reached only 7:41 AM.
+The last authenticated capture retained ordinary logs from 6:20 AM through
+10:48 AM. Inspection was filtered to the WHOOP session, known task identities
+and Dofek network-control metadata, excluding credential/payload messages.
+The broader temporary archives were removed; only filtered operational evidence
+and metadata remain outside Git. The user permits no further administrator
+authentication. No phone launch, transport retry, queue mutation, instrumentation
+profile, production change or runtime fix was performed by this investigation.
+
+### Collector method and primary observations
+
+The collection host was macOS 27.0.1, build `26A434`. The archive recorded
+`OSLoggingSupportVersion: 1966.4`, `OSLoggingSupportProject:
+libtrace-1966.40.15.0.2` and archive version 6. The initial historical command
+was the following; the paired-device name and temporary output path are elided.
+It is a record of the completed investigation, not an instruction to rerun it.
+
+```sh
+rtk proxy sudo /usr/bin/log collect --device-name '<paired-device>' \
+  --last 12h --size 20m \
+  --predicate 'eventMessage CONTAINS "app.dofek.whoop-ble.upload.v1"' \
+  --output '<temporary-archive>.logarchive'
+```
+
+The collector's own output was `Warning: --predicate is ignored when collecting
+from attached device`. Its `Info.plist` set each of `PersistSizeLimit`,
+`HighVolumeSizeLimit`, `SpecialSizeLimit` and `SignpostSizeLimit` to 20,971,520
+bytes. Stock `du -sk` measured the whole archive at 409,848 KiB. These primary
+observations establish that the requested predicate was not applied during
+device collection and that `--size 20m` was not a 20 MiB whole-archive bound.
+The separately named stream-limit fields are why later captures reported their
+limits per stream. They do not establish undocumented enforcement details.
+
+After collection, stock `log show --archive ... --style json --info --debug`
+applied the exact session/task filters locally. The final capture also included
+signposts and Dofek CFNetwork control-plane labels while excluding credential
+and payload terms. Archive `OldestTimeRef.WallTime`/`EndTimeRef.WallTime`
+metadata established the retained windows quoted above. A shell `EXIT` trap
+removed each later broader archive in the same privileged operation. Only
+filtered operational results and metadata were inspected; those operator-local
+receipts are not raw sensor records or credential evidence.
+
 ## Physical-device source attribution follow-up
 
 The subsequent source investigation establishes a cause for the **6:38 AM
@@ -56,14 +175,15 @@ database and WAL last changed at 6:38:10 AM and remain readable; raw sensor
 values and credentials were not inspected. The app is no longer running.
 The read-only database copy was checked through aggregate counters only.
 
-Remaining evidence for the **pre-kill native upload stall** is the system
+At that checkpoint, remaining evidence for the **pre-kill native upload stall** was the system
 URLSession daemon's task scheduling/completion history. App telemetry still has
 only the five original checkpoints and no recorded upload error for these
 tasks. Stock filtered device-log collection requires administrator
 authentication and did not run: unprivileged `log collect` requires root, and
 noninteractive `sudo` requires a password. No app launch, debugger attachment,
 queue mutation, system setting, production change or credential inspection was
-used to work around this boundary. The raw device files remain operator-local;
+used to work around that boundary. The subsequent authenticated capture above
+resolved the scheduling-class attribution. The raw device files remain operator-local;
 only these derived operational facts are recorded here.
 
 ## Follow-up: background collection root cause and correction

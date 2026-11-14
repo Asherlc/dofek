@@ -38011,3 +38011,38 @@ Local qualification and CI are separate from production throughput acceptance. T
   improvement: check accessible physical crash reports and matching release
   symbols before leaving process recreation unexplained. No new custom tooling
   or operational service is needed.
+
+## 2026-11-14 — WHOOP live uploads become OS-discretionary after backgrounding
+
+- **Symptoms/impact:** capture continues and the durable queue grows after the
+  app backgrounds, while the three next uploads remain active without returned
+  completions. Uploaded data covers only the short foreground burst.
+- **Evidence/confirmed limitation:** physical `nsurlsessiond` logs show all ten foreground
+  tasks completing, then the three tasks created after 6:27:52 AM PST becoming
+  `discretionary (opt-in: 0)`. The code already sets `isDiscretionary = false`;
+  Apple [ignores that setting for background-started transfers](https://developer.apple.com/documentation/foundation/urlsessionconfiguration/isdiscretionary).
+  The native background-transfer choice was introduced October 28 at 10:06 PM
+  PDT in [PR #3147](https://github.com/Asherlc/dofek/pull/3147), `cf421b73a`.
+  The precise per-task power/network scheduling condition remains unproven;
+  discretionary status alone does not establish why the tasks stayed pending.
+  The transport is a plausible cause, not a verified cause of this stall.
+- **Fix/status:** recommend an ordinary native live-delivery path while BLE
+  capture executes, retaining the same durable reservations and account fences.
+  Preserve the existing process-independent background-delivery fallback;
+  do not create competing outbox consumers or treat a flag/timeout change as a
+  fix. This candidate needs a physical comparison before it can be called a
+  remedy for the observed stall. No transport behavior change has been made. The independently confirmed
+  HealthKit CPU defect and older HTTP 401s remain separate findings.
+- **Validation/follow-up:** ten foreground completions versus zero recorded
+  completions for the three discretionary tasks corroborate native queue and
+  backend bounds. A native correction requires live/background routing,
+  restoration, acknowledgment and account-fence regressions, plus physical
+  locked-phone acknowledgment checks. The existing JavaScript collection-start
+  correction and CI assertion repair do not fix this transport limitation.
+- **Collection/retrospective:** attached-device `log collect` ignores predicates
+  and limits each stream separately. Filtering preceded inspection, and broader
+  temporary archives were removed. The user permits no more administrator
+  authentication. Existing app/server telemetry can validate a future correction.
+  Proposed runbook improvement: distinguish foreground tasks from tasks created
+  after backgrounding, and verify actual OS scheduling class before attributing
+  an active task to a network failure. See [the complete evidence record](evidence/ble-collection-20261114/README.md).
