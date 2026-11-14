@@ -5,8 +5,8 @@
 The native background transport is a plausible cause of the observed 6:27 AM
 delivery stall, not an established cause of the missing completions. The
 confirmed finding is a scheduling-class mismatch for continuous live delivery.
-The background
-`URLSession` transport introduced **October 28, 2026, at 10:06 PM PDT** in
+The background `URLSession` transport was introduced
+**October 28, 2026, at 10:06 PM PDT** in
 [PR #3147](https://github.com/Asherlc/dofek/pull/3147), commit
 `cf421b73aaec8e637e2a8085ed2f10490d5a118b`. This changed delivery to file-backed
 OS-managed background transfers. Its configuration sets
@@ -65,7 +65,8 @@ path described below.
 
 The candidate is not a verified remedy for the observed stall. A physical
 comparison must first establish whether an immediate native path removes the
-wait under the same account/queue conditions. Required validation for a transport correction: live background capture must
+wait under the same account/queue conditions. Required validation for a transport
+correction: live background capture must
 create immediate-path requests and continue receiving server acknowledgments
 after locking the phone; reserved batches must survive process recreation;
 restored/fallback tasks must reconcile without double ownership; credential
