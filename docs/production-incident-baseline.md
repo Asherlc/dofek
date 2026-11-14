@@ -38046,3 +38046,34 @@ Local qualification and CI are separate from production throughput acceptance. T
   Proposed runbook improvement: distinguish foreground tasks from tasks created
   after backgrounding, and verify actual OS scheduling class before attributing
   an active task to a network failure. See [the complete evidence record](evidence/ble-collection-20261114/README.md).
+
+## 2026-11-14 — Current WHOOP capture continues while native uploads accumulate; CPU kill repeats
+
+- **Symptoms/impact:** on installed TestFlight build `1794683328`, backend
+  WHOOP freshness still lags current phone capture. At 1:27 PM PST the phone
+  reports background streaming and 508,500 IMU, 5,019 realtime and 9,749 raw
+  records queued behind three active uploads, with confirmations last at 1:07 PM.
+- **Evidence/root cause boundaries:** the live Kafka sink/archive are caught up
+  at offset 14,340,223 at 1:30 PM; history is also caught up. Earlier consumer
+  pauses align with a successful 510.67-second analytics build and existing
+  publication ownership. The remaining accumulated wait is in native delivery;
+  the exact OS scheduling condition remains unproven. API acknowledgments do
+  not wait for ClickHouse or analytics. A new physical CPU-fatal report explicitly
+  records process termination at 1:27:17 PM after 48 CPU seconds in 50.55 seconds.
+  Exact UUID-matched release symbols resolve its hot stack to HealthKit running
+  timestamp formatting, the same path introduced October 30 in PR #3144.
+- **Fix/status:** no runtime or production change. Recommend invocation-local
+  formatter reuse for the proven CPU defect, with unchanged timestamp output
+  and physical CPU-budget validation. The separate live-upload-path candidate
+  requires a controlled physical comparison and preservation of durable
+  reservations, account fences and background delivery; it is not a verified
+  remedy. Do not reset offsets, change owners or retune pacing for this evidence.
+- **Remaining risk/follow-up:** the new process resumes background streaming
+  within two seconds, but upload freshness and CPU-budget recovery are not
+  verified. Two incomplete live database copies were removed without inspection;
+  existing operational logs and app-specific crash reports supplied evidence
+  without administrator authentication. Six-hour Sentry silence did not exclude
+  the physical kill. See the [current-build evidence](evidence/ble-collection-20261114/README.md#current-build-follow-up--130-pm-pst).
+- **Retrospective/proposed runbook wording:** “Check cloud capture counters,
+  last confirmations and accessible app-specific crash reports before requesting
+  broad device logs; separate native-delivery latency from transient sink lag.”
