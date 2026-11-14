@@ -16,7 +16,7 @@
   },
   "dependencies": {
     "@apple/app-store-server-library": "3.1.0",
-    "@bull-board/api": "9.10.1",
+    "@bull-board/api": "9.11.0",
     "@bull-board/express": "9.10.1",
     "@dofek/auth": "workspace:*",
     "@dofek/climbing-catalogue": "workspace:*",
