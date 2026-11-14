@@ -117,16 +117,6 @@ services:
           fi
           sleep 1
         done
-        attempts=0
-        until printf 's3.bucket.create -name %s\n' "$$PEERDB_CLICKHOUSE_AWS_S3_BUCKET_NAME" | weed shell -master=localhost:9333; do
-          attempts=$$((attempts + 1))
-          if [ $$attempts -ge 30 ]; then
-            echo peerdb-minio bucket create failed >&2
-            kill $$weed_pid 2>/dev/null || true
-            exit 1
-          fi
-          sleep 1
-        done
         touch /tmp/peerdb-minio-ready
         wait
     healthcheck:
@@ -154,7 +144,8 @@ services:
         {"Rules":[{"Expiration":{"Days":1},"Filter":{"Prefix":""},"ID":"peerdb-transient-stage-retention","Status":"Enabled","AbortIncompleteMultipartUpload":{"DaysAfterInitiation":1}}]}
         EOF
         attempts=0
-        until aws --endpoint-url=http://peerdb-minio:9000 s3api head-bucket --bucket "$$PEERDB_CLICKHOUSE_AWS_S3_BUCKET_NAME" >/dev/null 2>&1; do
+        until aws --endpoint-url=http://peerdb-minio:9000 s3api head-bucket --bucket "$$PEERDB_CLICKHOUSE_AWS_S3_BUCKET_NAME" >/dev/null 2>&1 ||
+          aws --endpoint-url=http://peerdb-minio:9000 s3api create-bucket --bucket "$$PEERDB_CLICKHOUSE_AWS_S3_BUCKET_NAME"; do
           attempts=$$((attempts + 1))
           if [ $$attempts -ge 30 ]; then
             echo peerdb-minio bucket was not ready for lifecycle setup >&2

@@ -9,6 +9,38 @@ import { parseEnv } from "node:util";
 export const requestedKafkaImage = `apache/kafka@sha256:${"c".repeat(64)}`;
 export const currentKafkaImage = `apache/kafka:4.4.0@sha256:${"b".repeat(64)}`;
 
+export function runPeerdbMigrationFixture(script: string, image: string, migrationStatus = 0) {
+  const directory = mkdtempSync(join(tmpdir(), "deploy-peerdb-migration-"));
+  const trace = join(directory, "calls");
+  const passwordFile = join(directory, "database.env");
+  try {
+    writeFileSync(trace, "");
+    writeFileSync(passwordFile, "POSTGRES_PASSWORD=fixture-catalog-password\n", { mode: 0o600 });
+    const docker = join(directory, "docker");
+    writeFileSync(docker, `#!/usr/bin/env node
+const fs = require('node:fs');
+const args = process.argv.slice(2);
+fs.appendFileSync(process.env.MIGRATION_TRACE, JSON.stringify(args) + '\\n');
+if (args[0] === 'service' && args[1] === 'inspect') console.log(process.env.MIGRATION_IMAGE);
+else if (args[0] === 'run') process.exit(Number(process.env.MIGRATION_STATUS));
+else process.exit(65);
+`);
+    chmodSync(docker, 0o755);
+    const result = spawnSync("bash", ["-e", "-o", "pipefail", "-c", `${script}\nprintf 'CDC-PREPARE\\n'`], {
+      cwd: directory, encoding: "utf8", timeout: 30_000,
+      env: {
+        ...process.env, PATH: `${directory}:${process.env.PATH}`, STACK_NAME: "fixture",
+        DATABASE_OPERATIONS_ENV_FILE: passwordFile,
+        MIGRATION_TRACE: trace, MIGRATION_IMAGE: image, MIGRATION_STATUS: String(migrationStatus),
+      },
+    });
+    const calls = z.array(z.array(z.string())).parse(
+      readFileSync(trace, "utf8").trim().split("\n").filter(Boolean).map(line => JSON.parse(line)),
+    );
+    return { ...result, calls };
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+}
+
 export function runKafkaImageFixture(
   script: string,
   brokerImage = requestedKafkaImage,
