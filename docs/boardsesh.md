@@ -165,6 +165,11 @@ UUID, and `board(boardUuid)` supplies the physical board and available location.
 Locations belong to the log entry, since the same problem can be climbed on
 different boards. Inaccessible boards and absent locations remain unknown;
 enrichment responses are retained alongside the original tick in `raw.metadata`.
+When an individual tick lacks a location, Dofek's server can use the unique gym
+identified by eligible peers in that exact source session. This changes the
+display projection, not the retained tick or imported location reference, and
+does not add a separate label. See [automatic location resolution](climbing-context.md#ownership-and-location)
+for the matching and ambiguity rules.
 These reads follow the upstream [ascent feed][tick-queries],
 [current-board resolver](https://github.com/boardsesh/boardsesh/blob/main/packages/backend/src/graphql/resolvers/ticks/board-options.ts),
 and [board projection](https://github.com/boardsesh/boardsesh/blob/main/packages/backend/src/graphql/resolvers/social/boards.ts).

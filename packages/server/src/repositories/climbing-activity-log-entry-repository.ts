@@ -24,6 +24,10 @@ import {
 import { BaseRepository } from "../lib/base-repository.ts";
 import { timestampStringSchema } from "../lib/typed-sql.ts";
 import { climbingChartAnnotations } from "../services/climbing-chart-annotations.ts";
+import {
+  climbingSourceSession,
+  resolveClimbingLocations,
+} from "../services/climbing-location-resolution.ts";
 import { postgresActivityCalendarDate } from "./activity-local-date.ts";
 import { displayGradeComponents, selectRockClimbingGrade } from "./climbing-grade-display.ts";
 import { climbingSourceLinks } from "./climbing-source-links.ts";
@@ -429,6 +433,7 @@ export class ClimbingActivityLogEntryRepository extends BaseRepository {
   async #load(
     predicate: SQL,
     visibility: "active" | "retained" = "active",
+    resolveLocations = true,
   ): Promise<HydratedLogEntry[]> {
     const eligibility =
       visibility === "retained"
@@ -478,7 +483,7 @@ export class ClimbingActivityLogEntryRepository extends BaseRepository {
       ORDER BY entry.climbed_on DESC NULLS LAST,entry.id
     `,
     );
-    return rows.map((row) => {
+    const hydrated = rows.map((row) => {
       const whole = row.attempts.filter((attempt) => attempt.scope === "climb");
       const pitchGroups = new Map<string, ClimbingAttempt[]>();
       for (const attempt of row.attempts.filter((attempt) => attempt.scope === "pitch")) {
@@ -538,5 +543,43 @@ export class ClimbingActivityLogEntryRepository extends BaseRepository {
         tags: recordedClimbingTags(row.log.providerId, row.log.raw),
       };
     });
+    if (!resolveLocations) return hydrated;
+    const sessions = new Map<string, { providerId: string; sessionId: string }>();
+    for (const log of hydrated) {
+      if (
+        log.providerAbsentAt !== null ||
+        log.climb?.setting !== "indoor" ||
+        log.mapLocation !== null ||
+        (log.areaPath ?? log.climb.areaPath).length
+      )
+        continue;
+      const sessionId = climbingSourceSession(log);
+      if (sessionId)
+        sessions.set(JSON.stringify([log.providerId, sessionId]), {
+          providerId: log.providerId,
+          sessionId,
+        });
+    }
+    const peers = sessions.size
+      ? await this.#load(
+          sql`(${sql.join(
+            [...sessions.values()].map(
+              ({ providerId, sessionId }) => sql`(
+        entry.provider_id=${providerId} AND (
+          btrim(entry.raw->>'sessionId')=${sessionId} OR btrim(entry.raw->>'session_id')=${sessionId}
+        )
+      )`,
+            ),
+            sql` OR `,
+          )})`,
+          "active",
+          false,
+        )
+      : [];
+    const requestedIds = new Set(hydrated.map((log) => log.id));
+    return resolveClimbingLocations([
+      ...hydrated,
+      ...peers.filter((log) => !requestedIds.has(log.id)),
+    ]).filter((log) => requestedIds.has(log.id));
   }
 }

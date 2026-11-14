@@ -37764,3 +37764,66 @@ The BoardSesh metadata path was exercised by database integration tests, while i
 - Evidence: [CI run 43465301919](https://github.com/Asherlc/dofek/actions/runs/43465301919) failed `Test / Spell Check` with an unknown-word diagnostic at `RecomputeActivityButton.test.tsx:97:66`. Lint, test, and CI aggregate gates propagated that failure; the actual lint, typecheck, unit, mobile, integration, and mutation jobs succeeded.
 - Root cause and fix: the button selector used a truncated word in its button-name pattern. It now explicitly matches both complete button-state words with `/^Recompute|^Recomputing/`; dictionaries and CI gates are unchanged.
 - Validation and remaining risk: the corrected test file passes CSpell with zero issues and Biome formatting, and the selector matches both idle and busy labels. Final matching-head CI is required before merge; no retry, timeout, or other resilience change was introduced.
+
+## 2026-11-13 — Pacific Pipe climbing logs split across location headings
+
+- **Symptoms / impact:** Activity group `3c0bf805-15ee-4a3f-b3d5-3e225d6ace19` displays eight Kaya logs under Touchstone Pacific Pipe, four BoardSesh logs under Pacific Pipe Climbing, and two BoardSesh logs under Other climbs.
+- **Evidence / cause:** Read-only production PostgreSQL queries confirmed that the effective Kaya Area `07ebc526-0478-4408-a0b7-d13d6948a898` and BoardSesh Area `8879230c-3460-4709-b949-05c376d0431f` both have null `group_id`. Their different source names therefore remain separate under the existing [explicit grouping policy](climbing-context.md#assigning-a-confirmed-location-group). The retained BoardSesh ascent metadata for the 16:46 and 16:50 local logs has null `boardId`, `boardDisplayName`, and board metadata. All six BoardSesh ticks share source session `36f0042a-0593-49d9-be8c-2451dde0897b`; four have enriched metadata for the same physical Touchstone board. This supports investigating session-based inference, but does not make the two missing locations source-recorded facts. The upstream [board resolver](https://github.com/boardsesh/boardsesh/blob/main/packages/backend/src/graphql/resolvers/ticks/board-options.ts) likewise returns no current board for a tick without stored board attribution.
+- **Remediation / status:** Diagnosis complete; no production data or runtime behavior changed. Proposed correction is to link the confirmed source Areas through the existing location group. Displaying the other two logs within that location would additionally require an approved inference rule or explicit user attribution. A repeat sync alone does not resolve the missing source attribution in the retained snapshot.
+- **Validation / remaining risk:** Inspected source metadata and effective Area identities against the live database in read-only transactions, then separately reviewed the importer and shared grouping helper. Browser and Dofek connector access were unauthenticated; served-result verification remains pending. Current CI runs were queued, so no green CI claim is made. No retries, timeouts, infrastructure changes, or inference were introduced.
+- **Retrospective / proposed guidance:** Retained raw metadata and source session IDs distinguished an unmapped gym identity from missing upstream board attribution. Proposed runbook wording for approval: “Compare effective Area group membership, raw tick attribution, enriched ascent attribution, and source session identity before changing climbing location matching.” Existing systematic-debugging and check-logs workflows cover the investigation; no additional skill is needed.
+
+The user superseded the manual-mapping proposal and approved automatic matching,
+including session location recovery without an additional display label. The
+[server resolver](../packages/server/src/services/climbing-location-resolution.ts)
+now computes the existing response grouping/path/map fields at read time using
+corroborating indoor Area names and coordinates, compatible parent paths, and
+unambiguous owner/provider-scoped source sessions. It preserves recorded names,
+raw payloads, native Climb map points and database references. No manual
+production mapping, migration, dependency or background job is required. The
+[location guide](climbing-context.md#ownership-and-location) records the matching
+heuristic and conservative ambiguity behavior.
+
+Separate review reproduced two material edge cases: identical wall names within
+conflicting gym parents could merge, and session recovery could replace a native
+Climb map point. Three new resolver regressions failed before their direct
+corrections and passed afterward. The final focused server unit run passes 137
+tests; paired server-contract/web/mobile tests pass 168; real PostgreSQL passes
+50 projection tests, including standalone context, access restrictions, deletion,
+absence, source ownership and native-coordinate preservation. Full lint and
+recursive package typechecks passed; focused checks cover the later corrections.
+Production deployment and authenticated served-result validation remain pending.
+
+The canonical local integration wrapper failed before Vitest at
+`pnpm test:integration -- packages/server/src/repositories/climbing-area-group.integration.test.ts`:
+`container subdued-turkey-redpanda-1 is unhealthy`. Its first causal broker error
+was `Could not setup Async I/O`, reporting capacity exhaustion at
+`/proc/sys/fs/aio-max-nr 65536`. This matches the existing shared-workstation
+[AIO incident](#2026-11-13--boardsesh-log-metadata-omitted-from-import-and-display)
+and the [Linux AIO limit documentation](https://docs.kernel.org/admin-guide/sysctl/fs.html#aio-nr-aio-max-nr).
+Only this task's restarting broker was stopped. PostgreSQL-only regressions then
+ran against the healthy workspace database using the generated `.env.local`;
+shared kernel limits, other workspaces, production and CI gates were unchanged.
+
+The broad local unit/mobile run also reported failures in unchanged R2 archive
+pagination, nested Garmin ZIP streaming, and the retained Garmin MSW client
+regression. Three additional failures were the review regressions running against
+the earlier resolver snapshot; their final focused run is green. The unchanged
+suite failures remain under investigation, and the broad run is not reported as
+green. A mutation run overlapping broad tests also failed while copying a
+temporary dependency-cruiser fixture removed by that test; mutation validation is
+now run after the broad test process exits. No timeout, retry or test exclusion
+was added. Retrospective improvement proposed for approval: run mutation snapshot
+creation after filesystem-mutating test suites finish, and keep broad validation
+on a stable source revision. Existing debugging, integration and PR skills cover
+these checks; no additional skill is needed.
+
+Final branch validation: the 78 tests in the three unchanged failing suites pass
+when run separately, without source or timeout changes; broad-run stability
+remains unresolved. Targeted mutation validation passes the unchanged 75 gate
+with a score of 78.99. A read-only production location/session projection for
+the reported activity was evaluated locally: all 15 source records remain,
+the resolver produces one gym group, and the two missing locations are filled.
+This checks location inputs before existing log consolidation, not a deployed
+or authenticated browser result. [Draft PR #3338](https://github.com/Asherlc/dofek/pull/3338)
+contains the correction; required CI is queued and production remains unchanged.

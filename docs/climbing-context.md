@@ -27,6 +27,41 @@ See the [schema](../src/db/schema/climbing.ts),
 [shared grouping](../packages/training/src/climbing-log-groups.ts), and
 [PostgreSQL foreign keys](https://www.postgresql.org/docs/current/ddl-constraints.html#DDL-CONSTRAINTS-FK).
 
+The [server location resolver](../packages/server/src/services/climbing-location-resolution.ts)
+also groups indoor gym Areas automatically in the requested log projection.
+It requires both nearby recorded leaf-Area coordinates (within 200 metres) and
+compatible normalized names. Generic facility words do not distinguish gyms;
+remaining name tokens must agree or share at least two words covering the smaller
+name. This is an application matching heuristic, not proof from distance alone.
+The existing [catalogue normalization](../packages/climbing-catalogue/src/matching.ts)
+is reused without changing its separate outdoor route proximity policy.
+Ambiguous source identities, incompatible branches, and proximity chains remain
+separate. Corresponding parent paths must also agree, so a common wall name
+cannot merge different gyms. All members of an automatic group must agree pairwise, and conflicting
+explicit groups never merge. Outdoor Areas retain their existing behavior.
+
+Response `areaGroupId` is a display grouping identity: explicit membership wins;
+automatic groups use a deterministic source Area UUID without inserting an
+`area_group` row. A singleton indoor Area also receives a display identity so
+the older name-only grouping cannot override a rejected geographic match.
+Source names, IDs, coordinates and stored membership remain unchanged.
+
+An unlocated indoor log can use a location from its exact upstream session when
+the eligible peers resolve to one gym. Source sessions are scoped to the owner
+and provider, using a consistent nonempty `sessionId` or `session_id` in retained
+raw metadata. The [repository](../packages/server/src/repositories/climbing-activity-log-entry-repository.ts)
+loads eligible session peers even for a single-log detail request; absent,
+deleted and access-restricted records cannot supply context. Multiple known gyms
+leave the location unknown. Resolved locations display normally on web and
+mobile through the existing response fields, without an additional label.
+The projected location path and map can be filled; raw records, recorded board
+identity and database location references are never rewritten. Existing history
+keeps its native Climb map points; a native point without an identified Area
+also prevents assigning an unproven gym to other unlocated session peers. History
+therefore benefits on read without a resync or manual gym mapping. The
+[PostgreSQL regressions](../packages/server/src/repositories/climbing-area-group.integration.test.ts)
+verify the read projection and preservation of stored source facts.
+
 ### Assigning a confirmed location group
 
 After the schema is deployed, an operator can assign a confirmed pair with
