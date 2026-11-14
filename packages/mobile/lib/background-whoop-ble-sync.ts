@@ -37,10 +37,6 @@ async function captureSnapshot(
     });
   }
 }
-function foreground(): boolean {
-  return AppState.currentState === "active";
-}
-
 /** Configure native account ownership before any BLE capture can begin. */
 export async function initBackgroundWhoopBleSync(
   context: WhoopUploadContext,
@@ -87,7 +83,7 @@ export async function initBackgroundWhoopBleSync(
       }
       if (!session.active || session.syncing) return;
       session.syncing = true;
-      await syncOnForeground(session, foreground)
+      await connectWhoop(session)
         .catch((error: unknown) => {
           captureException(error, {
             source: "whoop-ble-foreground-sync",
@@ -99,10 +95,10 @@ export async function initBackgroundWhoopBleSync(
         });
     });
     await deps.flushUploads();
-    if (!session.active || !foreground() || session.syncing) return;
+    if (!session.active || session.syncing) return;
     session.syncing = true;
     try {
-      await syncOnForeground(session, foreground);
+      await connectWhoop(session);
     } catch (error: unknown) {
       captureException(error, { source: "whoop-ble-init-sync", retiredLifetime: !session.active });
     } finally {
@@ -125,15 +121,13 @@ export async function syncWhoopBle(): Promise<void> {
 /** Native capture stays suspended until uploads are configured, so only retry after that. */
 export async function retryWhoopBleConnection(): Promise<void> {
   const session = currentSession;
-  if (!session?.active || !session.uploadsConfigured) return;
+  if (!session?.active || !session.uploadsConfigured || session.syncing) return;
   session.connectionIntent = true;
   await session.deps.retryConnection();
 }
 
-async function syncOnForeground(
-  session: WhoopBleSyncSession,
-  shouldContinueConnecting: () => boolean,
-): Promise<void> {
+/** Authenticated collection continues across app-state changes; retirement stops it. */
+async function connectWhoop(session: WhoopBleSyncSession): Promise<void> {
   const { deps: whoopDeps } = session;
   // Connect if not already connected.
   //
@@ -145,12 +139,12 @@ async function syncOnForeground(
   // the sync before findWhoop() can even run. Instead, we let findWhoop()
   // handle unavailable Bluetooth by returning null (it checks state internally
   // after the manager has had time to initialize).
-  if (!session.active || !shouldContinueConnecting()) return;
+  if (!session.active) return;
 
   if (!session.connected) {
     logger.info(LOG_CATEGORY, "not connected, searching for WHOOP strap");
     const device = await whoopDeps.findWhoop();
-    if (!session.active || !shouldContinueConnecting()) return;
+    if (!session.active) return;
     if (!device) {
       logger.warn(LOG_CATEGORY, "no WHOOP strap found");
       Sentry.addBreadcrumb({
@@ -160,7 +154,7 @@ async function syncOnForeground(
       });
       return;
     }
-    if (!session.active || !shouldContinueConnecting()) return;
+    if (!session.active) return;
 
     const deviceLabel = device.name ?? device.id;
     logger.info(LOG_CATEGORY, `connecting to ${deviceLabel}`);
@@ -172,11 +166,6 @@ async function syncOnForeground(
     session.connectionIntent = true;
     await whoopDeps.connect(device.id);
     if (!session.active) return;
-    if (!shouldContinueConnecting()) {
-      whoopDeps.disconnect();
-      session.connected = false;
-      return;
-    }
     logger.info(LOG_CATEGORY, "connected, sending TOGGLE_IMU_MODE");
     // Send TOGGLE_IMU_MODE to keep IMU data flowing even when the WHOOP
     // app isn't actively syncing. R21 data also flows passively during
@@ -194,11 +183,6 @@ async function syncOnForeground(
       logger.warn(LOG_CATEGORY, `startImuStreaming failed (passive data may still work): ${error}`);
     }
     if (!session.active) return;
-    if (!shouldContinueConnecting()) {
-      whoopDeps.disconnect();
-      session.connected = false;
-      return;
-    }
     session.connected = true;
     logger.info(LOG_CATEGORY, "listening for IMU data");
     Sentry.addBreadcrumb({

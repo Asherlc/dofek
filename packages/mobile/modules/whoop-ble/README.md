@@ -114,6 +114,15 @@ available. The [app hook](../../lib/useWhoopBleSync.ts) uses
 of the app startup gate. Account deletion retains its separate awaited cleanup
 lease. Native cleanup and credential failures remain awaited and reported.
 
+The Dofek [collection lifecycle](../../lib/background-whoop-ble-sync.ts) starts
+discovery and streaming after upload configuration on both foreground and
+background launches. Moving the app to the background during startup does not
+cancel collection; retiring the authenticated session still does. Discovery
+uses the native Bluetooth power-readiness wait, and background refresh does not
+start a competing retry while that connection setup is running. This lets the
+existing restoration-enabled central be recreated after background launch;
+actual relaunch eligibility follows Apple's [Bluetooth restoration rules](https://developer.apple.com/documentation/technotes/tn3115-bluetooth-state-restoration-app-relaunch-rules).
+
 Automatic reconnection keeps the Core Bluetooth connection request pending
 while the strap is unavailable. Service discovery and notification subscription
 have a ten-second deadline after Bluetooth connects; explicit `connect()` calls

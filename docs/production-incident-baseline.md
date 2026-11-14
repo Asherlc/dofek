@@ -37905,3 +37905,38 @@ Local qualification and CI are separate from production throughput acceptance. T
   runbook improvement. Correlating native occurrence times, queue counters and
   structured upload bounds worked; provider attribution and replayed histories
   required investigation. No new skill/framework is needed.
+
+## 2026-11-14 — Correct authenticated WHOOP background-start collection
+
+- **Root cause:** WHOOP initialization configured uploads but returned before
+  discovery unless React Native's app state was active; its connection path
+  also cancelled setup when the app became backgrounded. This matches the
+  different process starting idle with an uninitialized central at 14:38:11 UTC
+  in the [earlier investigation](evidence/ble-collection-20261114/README.md).
+- **Reproduction/direct fix:** four regression cases failed before the fix for
+  background startup and backgrounding during discovery, connection and stream
+  setup. A fifth caught native background retry competing with discovery.
+  [Initialization](../packages/mobile/lib/background-whoop-ble-sync.ts) now uses
+  the existing native readiness-aware connection path across app-state changes;
+  retry yields while that setup owns the connection. Session retirement and
+  cleanup/configuration failures still fence capture. No timer, storage,
+  transport, native API or production change was added.
+- **Validation/remaining risk:** focused lifecycle/account/hook tests pass
+  43/43, full unit/mobile tests pass 24,609 (19 skipped), all package typechecks
+  pass, and source/policy plus analytics SQL lint pass. A separate self-review
+  found no further material issue. Physical-device background restoration and
+  queue delivery are not verified; the original cleanup trigger, bootstrap wait
+  and deferred-transfer cause remain unresolved. Apple retains control over
+  [Bluetooth relaunch eligibility](https://developer.apple.com/documentation/technotes/tn3115-bluetooth-state-restoration-app-relaunch-rules)
+  and [background transfer timing](https://developer.apple.com/documentation/foundation/urlsessionconfiguration/isdiscretionary).
+- **Local validation interruption:** `pnpm lint` first stopped at SQLFluff/dbt
+  connection with ClickHouse error 75, `No space left on device`. Stock builder
+  pruning reclaimed 0 bytes; unused-image pruning reclaimed 1.532 GB. The
+  analytics lint command then passed. Running containers and named volumes were
+  preserved, and no validation gate or runtime limit changed.
+- **Retrospective/follow-up:** red/green lifecycle tests isolated the concrete
+  bug without retreading prior cleanup fixes. Keep phone-level acknowledgment
+  and restoration checks separate from source/test acceptance. The module README
+  now describes background-start ownership; the earlier proposed BLE diagnostic
+  checklist remains a documentation improvement for user approval. Existing
+  debugging, testing and production-log skills cover this work.

@@ -1,5 +1,45 @@
 # WHOOP BLE collection and upload gap — November 14, 2026
 
+## Follow-up: background collection root cause and correction
+
+The user subsequently requested root-cause analysis and a fix. The reproducible
+collection defect is the app-state gate in
+[`initBackgroundWhoopBleSync`](../../../packages/mobile/lib/background-whoop-ble-sync.ts):
+after configuring uploads and flushing the queue, it returned unless the app
+was active. The shared connection function also cancelled discovery/connection
+when the app became inactive/backgrounded. A background-launched process could
+therefore authenticate and schedule uploads while never creating its Bluetooth
+central, matching the observed idle/uninitialized session at 6:38:11 AM PST.
+
+Four regression cases reproduced the defect before production changes: initial
+background startup never discovered the strap, and backgrounding during find,
+connect or stream setup prevented collection or disconnected it. A fifth
+regression showed background refresh could launch native retry during initial
+discovery. The correction uses the existing readiness-aware discovery/connect
+path regardless of app state and suppresses competing background retry while
+that setup owns the connection. Authenticated-session retirement, configuration
+failure and native cleanup remain the capture fences. No native API, timeout,
+retry timer, transport, storage or production change is required.
+
+This establishes and corrects the background-start collection failure. It does
+not establish the original cleanup trigger, explain the bootstrap stage interval,
+or prove why the operating system deferred the three queued uploads. Those
+remain separate evidence gaps from the original investigation below. A phone
+restart's cause is not inferred from MetricKit diagnostics. Physical-device
+background restoration and eventual upload acknowledgment remain unverified.
+
+Validation: the focused lifecycle/account/hook suites pass 43/43. The full
+unit/mobile tier passes 24,609 tests (19 skipped), and all workspace package
+typechecks pass. Repository source/policy lint passed; analytics SQL lint first
+failed when local ClickHouse had no disk space. Stock build-cache cleanup freed
+0 bytes and unused-image pruning reclaimed 1.532 GB, preserving running
+containers and database volumes. Analytics SQL lint then passed without changing
+checks, timeouts or source. The separate self-review found no remaining material
+scope or correctness issue in the diff. No independent reviewer was authorized.
+
+The following sections retain the original read-only investigation and its
+then-pending recommendation; this follow-up describes the implemented correction.
+
 ## Scope and conclusion
 
 Read-only investigation on `investigate-ble-collection-gaps`, based on
