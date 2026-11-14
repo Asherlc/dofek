@@ -331,7 +331,7 @@
     "@testing-library/jest-dom": "7.0.1",
     "@testing-library/react": "16.3.2",
     "@types/archiver": "8.0.0",
-    "@types/node": "26.1.2",
+    "@types/node": "26.6.6",
     "@types/pg": "8.23.1",
     "@types/sax": "1.2.7",
     "@types/tz-lookup": "6.1.2",
