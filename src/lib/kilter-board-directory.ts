@@ -114,8 +114,14 @@ export class KilterBoardDirectory {
       });
       try {
         const dispose = db.registerListener({
-          statusChanged: ({ dataFlowStatus }) => {
-            if (dataFlowStatus.downloadError) failure.abort(dataFlowStatus.downloadError);
+          statusChanged: ({ dataFlowStatus: { downloadError } }) => {
+            // The SDK rebuilds status from SyncStatus.toJSON(), so this is a plain serialized object.
+            if (downloadError)
+              failure.abort(
+                new Error(`Kilter Board app sync failed: ${downloadError.message}`, {
+                  cause: downloadError,
+                }),
+              );
           },
         });
         try {

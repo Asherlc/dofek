@@ -4,35 +4,16 @@ import type { ClimbingLogEntryDetail } from "../contracts/climbing-log-contracts
 import { serializeClimbingLogEntryDetailResponse } from "../contracts/climbing-log-contracts.ts";
 import { ClimbingActivityLogEntryRepository } from "./climbing-activity-log-entry-repository.ts";
 import {
+  climbingActivitySessionFixtures,
   climbingAttemptFixture,
   climbingClimbFixture,
   climbingLogDatabaseFixture,
   climbingLogEntryFixture,
+  climbingKayaHistoryFixture as kayaHistory,
+  climbingNamedLogEntryFixture as named,
 } from "./climbing-test-helpers.ts";
 
-function named(
-  providerId: string,
-  id = "20000000-0000-4000-8000-000000000001",
-  completed = false,
-): ClimbingLogEntryDetail {
-  const climb = climbingClimbFixture(providerId);
-  return climbingLogEntryFixture({
-    id,
-    providerId,
-    climb,
-    climbId: climb.id,
-    discipline: "rock_climbing",
-    sourceName: providerId,
-    attempts: [
-      climbingAttemptFixture(id, {
-        ropeMethod: "lead",
-        ...(completed ? { outcome: "completed", usedAid: false, fellOrHung: false } : {}),
-      }),
-    ],
-  });
-}
-function repository(logs: ClimbingLogEntryDetail[]) {
-  const execute = vi.fn().mockResolvedValue(logs.map(climbingLogDatabaseFixture));
+function repositoryForQuery(execute: ReturnType<typeof vi.fn>) {
   return new ClimbingActivityLogEntryRepository(
     { execute },
     "20000000-0000-4000-8000-000000000002",
@@ -40,73 +21,72 @@ function repository(logs: ClimbingLogEntryDetail[]) {
   );
 }
 
-function kayaHistory() {
-  const send = named("kaya", "20000000-0000-4000-8000-000000000001", true);
-  if (!send.climb) throw new Error("Expected climb");
-  send.climb.externalId = "2001";
-  send.externalId = "kaya:ascent:3001";
-  send.activityId = "20000000-0000-4000-8000-000000000099";
-  send.raw = {
-    session_id: "1000",
-    attempts: null,
-    ascent_type: { name: " rEdPoInT " },
-    date: "2026-10-01T17:15:00Z",
-  };
-  const failed = named("kaya", "20000000-0000-4000-8000-000000000011");
-  failed.climb = send.climb;
-  failed.activityId = send.activityId;
-  failed.externalId = "kaya:session:1000:attempted:1000_2001";
-  failed.raw = { attempts: 1, sent: false };
-  failed.attempts = [
-    climbingAttemptFixture(failed.id, {
-      id: "20000000-0000-4000-8000-000000000006",
-      outcome: "failed",
-      ropeMethod: "lead",
-    }),
-  ];
-  return { send, failed };
+function repository(logs: ClimbingLogEntryDetail[]) {
+  const execute = vi.fn().mockResolvedValue(logs.map(climbingLogDatabaseFixture));
+  return repositoryForQuery(execute);
 }
 
 describe("ClimbingActivityLogEntryRepository", () => {
+  it("batches exact session peers and returns only the requested log occurrences", async () => {
+    const unknown = named("boardsesh");
+    if (!unknown.climb) throw new Error("Expected climb fixture");
+    unknown.climb = { ...unknown.climb, setting: "indoor", areaPath: [] };
+    unknown.areaPath = [];
+    unknown.raw = { sessionId: "first-session" };
+    const repeat = { ...unknown, id: "20000000-0000-4000-8000-000000000011" };
+    const other = {
+      ...unknown,
+      id: "20000000-0000-4000-8000-000000000012",
+      raw: { session_id: "second-session" },
+    };
+    const known = named("boardsesh", "20000000-0000-4000-8000-000000000013");
+    if (!known.climb) throw new Error("Expected climb fixture");
+    known.climb = { ...known.climb, setting: "indoor" };
+    known.raw = { session_id: "first-session" };
+    const otherKnown = {
+      ...known,
+      id: "20000000-0000-4000-8000-000000000014",
+      raw: { sessionId: "second-session" },
+    };
+    const execute = vi
+      .fn()
+      .mockResolvedValueOnce([unknown, repeat, other].map(climbingLogDatabaseFixture))
+      .mockResolvedValueOnce([known, otherKnown, unknown].map(climbingLogDatabaseFixture));
+    const repo = new ClimbingActivityLogEntryRepository({ execute }, unknown.userId, "UTC");
+    const resolved = await repo.getLogEntries([unknown.id, repeat.id, other.id]);
+    expect(resolved.map((log) => log.toDetail().id)).toEqual([unknown.id, repeat.id, other.id]);
+    for (const log of resolved) {
+      expect(log.toDetail().areaPath).toEqual(known.climb.areaPath);
+    }
+    expect(new PgDialect().sqlToQuery(execute.mock.calls[1]?.[0]).params).toEqual(
+      expect.arrayContaining([unknown.providerId, "first-session", "second-session"]),
+    );
+  });
+
+  it("propagates a session context read failure instead of returning a partial location", async () => {
+    const unknown = named("boardsesh");
+    if (!unknown.climb) throw new Error("Expected climb fixture");
+    unknown.climb = { ...unknown.climb, setting: "indoor", areaPath: [] };
+    unknown.areaPath = [];
+    unknown.raw = { sessionId: "session" };
+    const execute = vi
+      .fn()
+      .mockResolvedValueOnce([climbingLogDatabaseFixture(unknown)])
+      .mockRejectedValueOnce(new Error("Session context unavailable"));
+    await expect(
+      new ClimbingActivityLogEntryRepository({ execute }, unknown.userId, "UTC").getLogEntries([
+        unknown.id,
+      ]),
+    ).rejects.toThrow("Session context unavailable");
+  });
+
   describe("getActivityLogSessions", () => {
-    const activityId = "20000000-0000-4000-8000-000000000020";
-    const otherActivityId = "20000000-0000-4000-8000-000000000021";
-    const firstSessionId = "30000000-0000-4000-8000-000000000001";
-    const secondSessionId = "30000000-0000-4000-8000-000000000002";
-    const rows = [
-      {
-        activityId,
-        id: firstSessionId,
-        providerId: "kilter",
-        memberActivityIds: ["40000000-0000-4000-8000-000000000001"],
-        firstLoggedAt: "2026-11-09T18:00:00.000Z",
-        lastLoggedAt: "2026-11-09T18:04:00.000Z",
-      },
-      {
-        activityId,
-        id: secondSessionId,
-        providerId: "kilter",
-        memberActivityIds: ["40000000-0000-4000-8000-000000000002"],
-        firstLoggedAt: "2026-11-09T18:20:00.000Z",
-        lastLoggedAt: "2026-11-09T18:25:00.000Z",
-      },
-      {
-        activityId: otherActivityId,
-        id: "30000000-0000-4000-8000-000000000003",
-        providerId: "kilter",
-        memberActivityIds: ["40000000-0000-4000-8000-000000000003"],
-        firstLoggedAt: "2026-11-10T18:00:00.000Z",
-        lastLoggedAt: "2026-11-10T18:01:00.000Z",
-      },
-    ];
+    const { activityId, otherActivityId, firstSessionId, secondSessionId, rows } =
+      climbingActivitySessionFixtures();
 
     it("groups multiple source sessions under their canonical activities", async () => {
       const execute = vi.fn().mockResolvedValue(rows);
-      const repo = new ClimbingActivityLogEntryRepository(
-        { execute },
-        "20000000-0000-4000-8000-000000000002",
-        "UTC",
-      );
+      const repo = repositoryForQuery(execute);
 
       const sessions = await repo.getActivityLogSessions([activityId, otherActivityId]);
 
@@ -129,11 +109,7 @@ describe("ClimbingActivityLogEntryRepository", () => {
 
     it("returns an empty map without querying for an empty activity selection", async () => {
       const execute = vi.fn();
-      const repo = new ClimbingActivityLogEntryRepository(
-        { execute },
-        "20000000-0000-4000-8000-000000000002",
-        "UTC",
-      );
+      const repo = repositoryForQuery(execute);
 
       await expect(repo.getActivityLogSessions([])).resolves.toEqual(new Map());
       expect(execute).not.toHaveBeenCalled();
@@ -143,11 +119,7 @@ describe("ClimbingActivityLogEntryRepository", () => {
       const execute = vi
         .fn()
         .mockResolvedValue([{ ...rows[0], activityId: "invalid-activity-id" }]);
-      const repo = new ClimbingActivityLogEntryRepository(
-        { execute },
-        "20000000-0000-4000-8000-000000000002",
-        "UTC",
-      );
+      const repo = repositoryForQuery(execute);
 
       await expect(repo.getActivityLogSessions([activityId])).rejects.toThrow();
     });
@@ -634,11 +606,7 @@ describe("ClimbingActivityLogEntryRepository", () => {
   it.each([true, false, null])("retains the database free-send state %s", async (freeSend) => {
     const log = named("openbeta");
     const execute = vi.fn().mockResolvedValue([{ ...climbingLogDatabaseFixture(log), freeSend }]);
-    const repo = new ClimbingActivityLogEntryRepository(
-      { execute },
-      "20000000-0000-4000-8000-000000000002",
-      "UTC",
-    );
+    const repo = repositoryForQuery(execute);
     const [result] = await repo.getLogEntries([log.id]);
     expect(result?.toDetail()).toMatchObject({ freeSend });
   });

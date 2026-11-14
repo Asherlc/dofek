@@ -1,7 +1,6 @@
 import {
   formatClimbingHoldTypes,
   formatClimbingLocationPath,
-  formatClimbingWallAngle,
 } from "@dofek/format/climbing-context";
 import {
   climbingAttemptDetailFields,
@@ -14,6 +13,7 @@ import { StyleSheet, Text, View } from "react-native";
 import type { ClimbingLogEntryDetail } from "../../server/src/contracts/climbing-log-contracts.ts";
 import { colors } from "../theme";
 import { ClimbingCatalogueContext } from "./ClimbingCatalogueContext";
+import { ClimbingLogEntryContext } from "./ClimbingLogEntryContext";
 import { ClimbingLogEntrySources } from "./ClimbingLogEntrySources";
 import { ClimbingPhotos } from "./ClimbingPhotos";
 
@@ -34,7 +34,6 @@ function Fields({ values }: { values: Array<{ label: string; value: string }> })
 export function ClimbingLogEntryDetails({ entry }: { entry: ClimbingLogEntryDetail }) {
   const climb = entry.climb;
   const path = formatClimbingLocationPath(climbingLogEntryAreaPath(entry));
-  const angle = formatClimbingWallAngle(entry.wallAngle);
   const holds = formatClimbingHoldTypes(entry.holdTypes);
   const tagGroups = climbingTagGroups(entry.tags ?? [], entry.holdTypes);
   const gradedPitches = climb?.pitches.filter((pitch) => pitch.publishedGrades.length > 0) ?? [];
@@ -44,19 +43,21 @@ export function ClimbingLogEntryDetails({ entry }: { entry: ClimbingLogEntryDeta
         climbKind={climb?.kind ?? null}
         name={climbingLogEntryName(entry)}
         sourceName={entry.sourceName}
+        providerId={entry.providerId}
         links={entry.sourceLinks}
       />
       <Fields
         values={[
-          ...(entry.climbedOn ? [{ label: "Date", value: entry.climbedOn }] : []),
+          ...(entry.climbedOn && !entry.chartAnnotations?.length
+            ? [{ label: "Date", value: entry.climbedOn }]
+            : []),
           ...(entry.discipline
             ? [{ label: "Discipline", value: entry.discipline.replaceAll("_", " ") }]
             : []),
         ]}
       />
       {path && <Text style={styles.label}>{path}</Text>}
-      {entry.board && <Text style={styles.value}>Board: {entry.board.name}</Text>}
-      {angle && <Text style={styles.value}>{angle}</Text>}
+      <ClimbingLogEntryContext entry={entry} />
       {holds && <Text style={styles.value}>{holds}</Text>}
       {tagGroups.map((group) => (
         <View key={group.key} style={styles.section}>

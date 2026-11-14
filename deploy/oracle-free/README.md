@@ -8,7 +8,7 @@ usage, and payment model before applying. Oracle publishes the current free
 allowances and payment-model caveats in
 [Always Free Resources](https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm).
 
-This is the production host topology for the main `deploy/stack.yml` stack.
+This is the production host topology for the main `deploy/docker-compose.yml` stack.
 
 This root is **isolated** from the primary `deploy/` root: it uses a local
 backend and the `oracle/oci` provider. The primary `deploy/` root manages
@@ -53,7 +53,7 @@ GitHub Actions variable so Cloudflare DNS and production deploys target this
 host. All deploy logic lives in CI and talks to the remote Docker API over SSH
 (never a local `docker stack deploy`). The [Deploy workflow](../../.github/workflows/deploy.yml)
 (`deploy.yml`, target `web`) runs the production `Deploy Web Stack` job,
-which applies the Oracle override (`-c deploy/stack.yml -c deploy/stack.oracle.yml`)
+which applies the Oracle override (`-c deploy/docker-compose.yml -c deploy/stack.oracle.yml`)
 over SSH to this host. See the "Stable address + DNS + CI" section below.
 
 OCI's Ubuntu image disables root SSH, so the remote Docker context connects as

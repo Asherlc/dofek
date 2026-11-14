@@ -27,7 +27,7 @@ defines a single optional `Content-Type` field per MIME entity.
 Real-router regressions assert one parseable JSON Content-Type for complete
 manifests and empty/incomplete update directives, as well as the existing
 storage fault cases. Keep the client parser strict. The production image pin
-in [stack.yml](../stack.yml) is the release source of truth.
+in [docker-compose.yml](../docker-compose.yml) is the release source of truth.
 
 Stateless publisher authentication resolves Expo's `meActor` identity and compares
 its nonempty ID with the actor of the access token configured for that app.

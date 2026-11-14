@@ -37610,11 +37610,153 @@ remained zero. The canonical server job was still verifying restored services,
 and analytics reported starting. This establishes resumed sink flow, not a
 completed rollout, sustained net drain or catch-up ETA.
 
+## 2026-11-13 — Analytics scan work still limits Kafka catch-up
+
+The [batching release](https://github.com/Asherlc/dofek/actions/runs/43458032214/attempts/2)
+completed successfully, with the server stack finishing at 16:42:41 UTC and
+analytics reporting its first successful build at 16:44:57. High-volume serving
+ingestion remained delayed: between 16:32:20 and 17:10:29, the live sink consumed
+25,765 records while 54,931 arrived, increasing lag by 29,166 to 2,538,388.
+History lag was 1,141,380 and both matching R2 archive groups had zero lag.
+Timestamped native readings and Axiom metadata are retained in the operator's
+temporary backlog log; no individual health payload was selected.
+
+PostgreSQL showed both sinks waiting on the shared advisory lock held by the
+analytics build. That build runs ordered dbt phases with one thread under the
+existing publication owner. This was active processing, not evidence of an
+abandoned executor; builds reported success and no fatal application error was
+observed. Completed sink batches reached about 707 seconds, including ownership
+wait, while most recent live events were ordinary samples rather than deletions.
+
+Native `system.query_log` metadata since 16:30 showed three canonical-activity
+model writes reading 725,294,684 rows in 165,766 ms total, and three VO2 model
+writes reading 454,524,959 rows in 131,404 ms total. A non-executing EXPLAIN of
+the current compiled canonical-activity SELECT contained two `deduped_sensor`
+reads, 22 activity-source reads and 40 field-priority reads. The sensor table
+contained 118,674,815 physical rows. These are work and server-execution
+measurements, not an end-to-end speedup ratio. ClickHouse documents
+[query-log metrics](https://clickhouse.com/docs/operations/system-tables/query_log)
+and [non-executing query plans](https://clickhouse.com/docs/reference/statements/explain#explain-plan).
+
+The approved follow-up profiles and reduces existing model work while retaining
+the publication lock, erasure fences, processing-success gates and source
+semantics. The [plan](superpowers/plans/2026-11-13-analytics-build-work-reuse.md)
+first requires native regressions for repeated activity-level computation;
+runtime corrections and production qualification remain pending. The selected
+stock capability is [query-local CTE reuse](https://clickhouse.com/docs/reference/statements/select/with#materialized-common-table-expressions),
+which requires explicit feature context and native result/read/memory checks.
+Local Docker initially remained stopped as directed; the user later reauthorized
+local native validation. Existing GitHub CI still qualifies the production engine. No manual owner recovery, offset reset, analytics pause, new scheduler,
+timeout or retry was used. No catch-up ETA is supported by the observed net growth.
+
+Proposed runbook refinement: incremental output suppression does not establish
+bounded input work; inspect native reads and repeated plan branches before
+adding another read model or changing publication concurrency.
+
+The drain-check correction merged as `cf1c4e758` after successful PR and main CI.
+Its automatic release was skipped because main advanced during CI; the documented
+manual stack release selected the matching source ref and image.
+[Run 43478321512](https://github.com/Asherlc/dofek/actions/runs/43478321512)
+passed the normal drain gate at 18:16:23 UTC and then migrations. Full rollout
+and restored-source verification were still pending at this observation.
+
+The manual server release completed at 18:37:09 UTC. Web, worker, analytics and
+both serving sinks were verified healthy on `cf1c4e758`; analytics recorded a
+successful build at 18:36:53. A subsequent automatic
+[release of main](https://github.com/Asherlc/dofek/actions/runs/43486110079)
+started at 18:48 and quiesced consumers again; that separate rollout remained
+in progress at the next observation.
+
+The analytics [baseline CI](https://github.com/Asherlc/dofek/actions/runs/43483468401/job/132088054841)
+used ClickHouse 26.6.1.1193 and reproduced both scoped and unscoped excessive-read
+failures: 16,447 and 16,432 rows against the unchanged 13,312-row bound, after
+the result assertions passed. The correction materializes the existing canonical
+activity selection once within its query. Local native execution reduced reads
+to 8,233 and 8,221 with lower query memory; all 34 canonical tests then passed.
+A partial native query also needed the model's existing one-thread setting,
+which extraction had discarded. Earlier local whole-suite runs hit the server
+memory cap or slow fixture mutations; the precise contribution of other server
+allocations remains unqualified. No memory cap, timeout or retry was increased.
+Production-engine GREEN, review and actual whole-cycle net drain remain gates
+for the analytics correction in [PR #3305](https://github.com/Asherlc/dofek/pull/3305).
+
+The marker-only candidate then failed the same read bounds on 26.6 despite
+receiving the feature setting. The [upstream cross-UNION fix](https://github.com/ClickHouse/ClickHouse/pull/102107)
+explains the version difference: separate WITH copies were inlined in each
+UNION branch. A read-only plan of the actual compiled production query confirmed
+two sensor reads; giving the unchanged UNION a parent SELECT scope produced one
+shared materialization and one sensor read. This retains the existing engine and
+query-local reuse strategy. The scope correction still requires native semantic,
+read and memory qualification before release; the earlier local-only GREEN is
+not treated as a production pass.
+
+The scope candidate's [26.6 native shard](https://github.com/Asherlc/dofek/actions/runs/43494791068/job/132128082794)
+then passed all 34 canonical cases and all 687 shard tests. Scoped/unscoped reads
+fell to 8,233/8,221 and query memory to about 127.5/96.6 MB, compared with the
+same-engine baseline's 245.9/235.6 MB. These are fixture results; production
+capacity and actual net backlog drain remain unverified.
+
+The scope candidate's [unit job](https://github.com/Asherlc/dofek/actions/runs/43494791068/job/132125697825)
+then failed `pnpm exec vitest run --project unit --coverage` in the existing
+column-order regression: “Could not locate a final SELECT projection in
+deduped_activities.sql.” Its test helper required an explicit projection at
+column zero; the unchanged projection now sits inside the parent SELECT.
+This blocks merge qualification, with no production change from the candidate.
+The helper now reads the nested explicit projection while retaining the exact
+ordered-column comparison for all three models; runtime SQL and migration
+statements remain unchanged. All seven focused tests pass. Final-head CI remains
+a merge gate.
+
+## 2026-11-13 — BoardSesh log metadata omitted from import and display
+
+Reported climbing cards showed “Climbing log”, no recorded location, no time,
+and no BoardSesh icon. Source inspection confirmed that the importer requested
+ticks without enriching climb names, always wrote `board: null`, and omitted
+log-specific areas. The server did not generate BoardSesh timing annotations;
+cards and standalone details did not display precise log time. The shared
+provider catalog had no BoardSesh logo asset. The direct corrections enrich
+exact tick identities through the existing upstream reads, preserve recorded
+location and coordinates on the log, reuse server timing annotations on both
+clients, and register the official icon. See the
+[BoardSesh mapping and primary sources](boardsesh.md#implemented-in-dofek).
+Real PostgreSQL/MSW regression fixtures verify enrichment of the same stored
+tick, incomplete metadata, pagination, failed/mismatched reads, and coordinate-only
+locations. No retries, timeouts, schema migrations, or production configuration
+were added. Live-account acceptance and deployment remain unverified in this
+workspace; existing records require a successful sync with the corrected importer.
+
+The initial local `pnpm test:integration src/providers/boardsesh.integration.test.ts`
+failed during dependency startup, before Vitest. The first fatal Compose output
+was `container zealous-shrimp-redpanda-1 is unhealthy`; its log reported
+`Could not setup Async I/O`. Read-only checks showed `aio-nr = aio-max-nr = 65536`
+inside the shared Docker VM. Linux documents this as a system-wide AIO resource
+limit that can prevent `io_setup` in its
+[sysctl reference](https://docs.kernel.org/admin-guide/sysctl/fs.html#aio-nr-aio-max-nr).
+Only the task-created, restarting Redpanda container was stopped. The suite runs
+against real workspace PostgreSQL with `.env.local` and `TEST_DATABASE_URL` loaded
+using the documented [direct integration invocation](testing.md#integration-dependencies).
+No other workspace containers, database volumes, or shared kernel limits were
+changed; full Compose startup remains limited by shared AIO capacity. There was
+no production impact from this local setup failure.
+
+The full unit/mobile run also completed with two failures in unchanged tests:
+`Garmin dump provider finishes streaming a multi-chunk nested Garmin ZIP` and
+`integration MSW startup intercepts a retained Garmin client across successive files without leaking handlers`.
+Both complete suites passed on an isolated rerun without code, retry, or timeout
+changes. Their full-run failure cause remains unconfirmed; this validation does
+not establish that the broad suite is consistently green under parallel load.
+
 ## 2026-11-13 — Climbing batch presence PR lacked orchestration coverage
 
 [PR #3300](https://github.com/Asherlc/dofek/pull/3300) reported `codecov/patch` failure at 73.33333% with four uncovered added lines in [climbing-log-sync.ts](../src/db/climbing-log-sync.ts). The existing helper tests exercised observation results and restore SQL separately, but no unit case executed the public batch writer that collects observed identities and restores them once. This blocked merge qualification; no production impact was established.
 
 The added [batch-writer tests](../src/db/climbing-log-sync.test.ts) cover multiple observed logs alongside a user-selected activity, restoration after all writes, and propagation of a failed restore. Both retained regressions fail against the pre-change writer. The correction adds tests only; coverage thresholds, SQL, and runtime behavior remain unchanged. Matching-head combined coverage and CI remain the release gates. For future batching changes, test the caller that collects and dispatches the batch as well as its individual helpers.
+
+## 2026-11-13 — BoardSesh enrichment lacked unit mutation coverage
+
+[PR #3306's Stryker shard 0](https://github.com/Asherlc/dofek/actions/runs/43487467089/job/132102547066) failed during `pnpm exec stryker run stryker.ci.config.json --mutate "$MUTATE_FILES"`, with `MUTATE_FILES=src/providers/boardsesh.ts:50-65,src/providers/boardsesh.ts:330-414`. The first fatal line was `Final mutation score 10.53 under breaking threshold 75, setting exit code to 1 (failure).` This blocked merge qualification; no production impact was established.
+
+The BoardSesh metadata path was exercised by database integration tests, while its unit fetch fixtures returned no ascent metadata. The [mutation configuration](../vitest.config.mutation.ts) intentionally excludes integration tests, leaving 88 active mutants uncovered. Added [provider unit cases](../src/providers/boardsesh.test.ts) exercise paginated metadata, exact tick and board identities, board lookup reuse, recorded names and locations, missing boards, coordinate bounds, and rejection before persistence. The 52 provider unit tests pass with 96.25% line coverage; the exact CI mutation selection passes locally at 90.35%, with no uncovered mutants. Runtime behavior, mutation exclusions, thresholds, retries, and timeouts are unchanged. Matching-head CI remains the release gate. For future provider enrichment changes, cover the mapping through the public sync interface in the Docker-free unit tier as well as verifying database persistence in integration tests.
 
 ## 2026-11-13: Recompute PR spelling check blocked CI
 
@@ -37631,3 +37773,66 @@ The added [batch-writer tests](../src/db/climbing-log-sync.test.ts) cover multip
 - Fix: [`WhoopBleSampleStore.purge`](../packages/mobile/modules/whoop-ble/ios/WhoopBleSampleStore+Purge.swift) sets `secure_delete = FAST` inside the purge transaction and restores the exact previous mode with checked SQL. After commit, it runs [`VACUUM`](https://www.sqlite.org/lang_vacuum.html) and a [truncating checkpoint](https://www.sqlite.org/pragma.html#pragma_wal_checkpoint), which removes the freed pages that hold the old account's rows and shrinks the file. The original synthetic optimization wrote 0.2 MB in total and kept a 0.06 MB file. A `purge_pending` metadata record now commits atomically with the deletion and clears only after successful compaction/checkpoint; initialization and later writes complete pending cleanup before proceeding. Failed restoration retains the intended connection-local mode and blocks writes until it is restored. Synchronous durability, generation rotation, the erasure cutoff and the other delete paths remain intact. The `store_vacuum` cleanup stage traces compaction.
 - Review and recovery validation: real SQLite tests reproduced the original unchecked restoration, incorrect numeric restoration of `FAST`, missing recovery intent, and retained payload bytes after an interrupted checkpoint. The corrected store passes success/rollback checks for modes 0, 1 and 2; denied-restoration retry checks; failed-vacuum account-replacement checks; and failed-reopen/recovery checks with a pinned SQLite reader. Existing write-budget, cutoff and generation-isolation tests also pass. These are storage-level fault tests, not a physical-device crash reproduction.
 - Remaining risk and follow-up: the regression test models the iOS default with `PRAGMA secure_delete = ON`, because the macOS test runtime can use a different default. Device improvement needs new MetricKit evidence after release; with one event in 30 days, silence is weak evidence. The capture (MOBILE-27) and reservation (MOBILE-29) disk-write investigations stay separate.
+
+## 2026-11-13 — Pacific Pipe climbing logs split across location headings
+
+- **Symptoms / impact:** Activity group `3c0bf805-15ee-4a3f-b3d5-3e225d6ace19` displays eight Kaya logs under Touchstone Pacific Pipe, four BoardSesh logs under Pacific Pipe Climbing, and two BoardSesh logs under Other climbs.
+- **Evidence / cause:** Read-only production PostgreSQL queries confirmed that the effective Kaya Area `07ebc526-0478-4408-a0b7-d13d6948a898` and BoardSesh Area `8879230c-3460-4709-b949-05c376d0431f` both have null `group_id`. Their different source names therefore remain separate under the existing [explicit grouping policy](climbing-context.md#assigning-a-confirmed-location-group). The retained BoardSesh ascent metadata for the 16:46 and 16:50 local logs has null `boardId`, `boardDisplayName`, and board metadata. All six BoardSesh ticks share source session `36f0042a-0593-49d9-be8c-2451dde0897b`; four have enriched metadata for the same physical Touchstone board. This supports investigating session-based inference, but does not make the two missing locations source-recorded facts. The upstream [board resolver](https://github.com/boardsesh/boardsesh/blob/main/packages/backend/src/graphql/resolvers/ticks/board-options.ts) likewise returns no current board for a tick without stored board attribution.
+- **Remediation / status:** Diagnosis complete; no production data or runtime behavior changed. Proposed correction is to link the confirmed source Areas through the existing location group. Displaying the other two logs within that location would additionally require an approved inference rule or explicit user attribution. A repeat sync alone does not resolve the missing source attribution in the retained snapshot.
+- **Validation / remaining risk:** Inspected source metadata and effective Area identities against the live database in read-only transactions, then separately reviewed the importer and shared grouping helper. Browser and Dofek connector access were unauthenticated; served-result verification remains pending. Current CI runs were queued, so no green CI claim is made. No retries, timeouts, infrastructure changes, or inference were introduced.
+- **Retrospective / proposed guidance:** Retained raw metadata and source session IDs distinguished an unmapped gym identity from missing upstream board attribution. Proposed runbook wording for approval: “Compare effective Area group membership, raw tick attribution, enriched ascent attribution, and source session identity before changing climbing location matching.” Existing systematic-debugging and check-logs workflows cover the investigation; no additional skill is needed.
+
+The user superseded the manual-mapping proposal and approved automatic matching,
+including session location recovery without an additional display label. The
+[server resolver](../packages/server/src/services/climbing-location-resolution.ts)
+now computes the existing response grouping/path/map fields at read time using
+corroborating indoor Area names and coordinates, compatible parent paths, and
+unambiguous owner/provider-scoped source sessions. It preserves recorded names,
+raw payloads, native Climb map points and database references. No manual
+production mapping, migration, dependency or background job is required. The
+[location guide](climbing-context.md#ownership-and-location) records the matching
+heuristic and conservative ambiguity behavior.
+
+Separate review reproduced two material edge cases: identical wall names within
+conflicting gym parents could merge, and session recovery could replace a native
+Climb map point. Three new resolver regressions failed before their direct
+corrections and passed afterward. The final focused server unit run passes 137
+tests; paired server-contract/web/mobile tests pass 168; real PostgreSQL passes
+50 projection tests, including standalone context, access restrictions, deletion,
+absence, source ownership and native-coordinate preservation. Full lint and
+recursive package typechecks passed; focused checks cover the later corrections.
+Production deployment and authenticated served-result validation remain pending.
+
+The canonical local integration wrapper failed before Vitest at
+`pnpm test:integration -- packages/server/src/repositories/climbing-area-group.integration.test.ts`:
+`container subdued-turkey-redpanda-1 is unhealthy`. Its first causal broker error
+was `Could not setup Async I/O`, reporting capacity exhaustion at
+`/proc/sys/fs/aio-max-nr 65536`. This matches the existing shared-workstation
+[AIO incident](#2026-11-13--boardsesh-log-metadata-omitted-from-import-and-display)
+and the [Linux AIO limit documentation](https://docs.kernel.org/admin-guide/sysctl/fs.html#aio-nr-aio-max-nr).
+Only this task's restarting broker was stopped. PostgreSQL-only regressions then
+ran against the healthy workspace database using the generated `.env.local`;
+shared kernel limits, other workspaces, production and CI gates were unchanged.
+
+The broad local unit/mobile run also reported failures in unchanged R2 archive
+pagination, nested Garmin ZIP streaming, and the retained Garmin MSW client
+regression. Three additional failures were the review regressions running against
+the earlier resolver snapshot; their final focused run is green. The unchanged
+suite failures remain under investigation, and the broad run is not reported as
+green. A mutation run overlapping broad tests also failed while copying a
+temporary dependency-cruiser fixture removed by that test; mutation validation is
+now run after the broad test process exits. No timeout, retry or test exclusion
+was added. Retrospective improvement proposed for approval: run mutation snapshot
+creation after filesystem-mutating test suites finish, and keep broad validation
+on a stable source revision. Existing debugging, integration and PR skills cover
+these checks; no additional skill is needed.
+
+Final branch validation: the 78 tests in the three unchanged failing suites pass
+when run separately, without source or timeout changes; broad-run stability
+remains unresolved. Targeted mutation validation passes the unchanged 75 gate
+with a score of 78.99. A read-only production location/session projection for
+the reported activity was evaluated locally: all 15 source records remain,
+the resolver produces one gym group, and the two missing locations are filled.
+This checks location inputs before existing log consolidation, not a deployed
+or authenticated browser result. [Draft PR #3338](https://github.com/Asherlc/dofek/pull/3338)
+contains the correction; required CI is queued and production remains unchanged.

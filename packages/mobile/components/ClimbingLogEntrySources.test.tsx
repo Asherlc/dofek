@@ -4,6 +4,22 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { captureException } from "../lib/telemetry";
 import { ClimbingLogEntrySources } from "./ClimbingLogEntrySources";
 
+it("shows the BoardSesh icon even without an external climb link", () => {
+  const { container } = render(
+    <ClimbingLogEntrySources
+      name="Moon Dust"
+      climbKind="boulder"
+      providerId="boardsesh"
+      sourceName="BoardSesh"
+      links={[]}
+    />,
+  );
+  expect(screen.getByText("BoardSesh")).toBeTruthy();
+  expect(container.querySelector("Image")?.getAttribute("data-source-uri")).toContain(
+    "/logos/boardsesh.png",
+  );
+});
+
 vi.mock("../lib/telemetry", () => ({ captureException: vi.fn(), logger: { warn: vi.fn() } }));
 const links = [
   {

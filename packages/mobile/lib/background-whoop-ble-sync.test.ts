@@ -1,7 +1,9 @@
 import { Alert, AppState } from "react-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { retryConnection as nativeRetryConnection } from "../modules/whoop-ble";
 import {
   initBackgroundWhoopBleSync,
+  retryWhoopBleConnection,
   syncWhoopBle,
   teardownBackgroundWhoopBleSync,
 } from "./background-whoop-ble-sync";
@@ -40,6 +42,7 @@ function deps() {
     stopImuStreaming: vi.fn().mockResolvedValue(true),
     disconnect: vi.fn(),
     addConnectionStateListener: vi.fn().mockReturnValue({ remove: vi.fn() }),
+    retryConnection: vi.fn().mockResolvedValue(true),
   };
 }
 function deferred<T>() {
@@ -161,12 +164,64 @@ describe("native WHOOP lifecycle", () => {
     expect(native.flushUploads).toHaveBeenCalledOnce();
     expect(native.findWhoop).not.toHaveBeenCalled();
   });
+  it("retries background connection only while uploads are configured", async () => {
+    AppState.currentState = "background";
+    await retryWhoopBleConnection();
+    expect(nativeRetryConnection).not.toHaveBeenCalled();
+    const native = deps();
+    native.retryConnection = vi.mocked(nativeRetryConnection).mockResolvedValue(true);
+    const configured = deferred<void>();
+    native.configureUpload.mockImplementationOnce(() => configured.promise);
+    const initializing = initBackgroundWhoopBleSync(context, native);
+    await retryWhoopBleConnection();
+    expect(native.retryConnection).not.toHaveBeenCalled();
+    configured.resolve();
+    await initializing;
+    await retryWhoopBleConnection();
+    expect(native.retryConnection).toHaveBeenCalledOnce();
+    teardownBackgroundWhoopBleSync();
+    await retryWhoopBleConnection();
+    expect(native.retryConnection).toHaveBeenCalledOnce();
+  });
+  it.each(["teardown", "replacement"])(
+    "disconnects a pending background retry on session %s",
+    async (retirement) => {
+      AppState.currentState = "background";
+      const native = deps();
+      const retried = deferred<boolean>();
+      native.retryConnection.mockReturnValueOnce(retried.promise);
+      await initBackgroundWhoopBleSync(context, native);
+      const retrying = retryWhoopBleConnection();
+      try {
+        expect(native.retryConnection).toHaveBeenCalledOnce();
+        if (retirement === "replacement") {
+          await initBackgroundWhoopBleSync({ ...context, userId: "user-2" }, deps());
+        } else {
+          teardownBackgroundWhoopBleSync();
+        }
+        expect(native.disconnect).toHaveBeenCalledOnce();
+      } finally {
+        retried.resolve(false);
+        await retrying;
+      }
+    },
+  );
+  it("disconnects a background scan when retry returns false", async () => {
+    AppState.currentState = "background";
+    const native = deps();
+    native.retryConnection.mockResolvedValueOnce(false);
+    await initBackgroundWhoopBleSync(context, native);
+    await retryWhoopBleConnection();
+    teardownBackgroundWhoopBleSync();
+    expect(native.disconnect).toHaveBeenCalledOnce();
+  });
   it("propagates configuration failure before capture starts", async () => {
     const native = deps();
-    native.configureUpload.mockImplementation(() => {
-      throw new Error("queue unavailable");
-    });
+    native.retryConnection = vi.mocked(nativeRetryConnection).mockResolvedValue(true);
+    native.configureUpload.mockRejectedValueOnce(new Error("queue unavailable"));
     await expect(initBackgroundWhoopBleSync(context, native)).rejects.toThrow("queue unavailable");
+    await retryWhoopBleConnection();
+    expect(native.retryConnection).not.toHaveBeenCalled();
     expect(native.findWhoop).not.toHaveBeenCalled();
   });
   it("removes partially installed listeners when startup fails", async () => {

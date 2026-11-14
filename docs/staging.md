@@ -29,7 +29,7 @@ When re-enabled, the workflow:
 2. Provisions staging infrastructure in a dedicated Terraform root or explicitly
    reintroduces staging resources to `deploy/`.
 3. Exports Infisical secrets from the `staging` environment.
-4. Deploys `deploy/stack.yml` as the `dofek-staging` Docker stack.
+4. Deploys `deploy/docker-compose.yml` as the `dofek-staging` Docker stack.
 5. Runs migrations against the staging database before updating services.
 
 ## Secrets

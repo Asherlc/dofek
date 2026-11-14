@@ -1,4 +1,12 @@
+import { randomBytes } from "node:crypto";
+import { rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { createClient } from "@clickhouse/client";
+import { expect } from "vitest";
+import { z } from "zod";
+import { runDbtBatch } from "./activity-payload-dbt-microbatch-test-helpers.ts";
+import { readDbtStatementTarget } from "./activity-refresh-scope-dbt-test-helpers.ts";
 import { buildPostgresFitnessProviderFieldPriorityRawTableStatement } from "./clickhouse-raw-tables.ts";
 import { readModelSql, renderDbtModelSql } from "./read-model-sql-test-helpers.ts";
 
@@ -7,6 +15,11 @@ export const activityId = "00000000-0000-0000-0000-000000000101";
 export const linkedActivityId = "00000000-0000-0000-0000-000000000102";
 export const groupId = "00000000-0000-0000-0000-000000000202";
 export const testUserId = "00000000-0000-0000-0000-000000000303";
+export const priorOnlyGroupId = "00000000-0000-0000-0000-000000000404";
+
+export const dedupedActivitiesWorkReuseSampleCount = 8192;
+export const dedupedActivitiesWorkReuseReadRowsLimit =
+  dedupedActivitiesWorkReuseSampleCount * 1.5 + 1024;
 
 export function requireClickHouseUrl(): string {
   const url = process.env.CLICKHOUSE_URL?.trim();
@@ -27,7 +40,8 @@ export async function waitForClickHouse(client: ClickHouseClient): Promise<void>
   let lastError: unknown;
   for (let attemptIndex = 0; attemptIndex < 60; attemptIndex += 1) {
     try {
-      await client.query({ query: "SELECT 1", format: "JSONEachRow" });
+      const result = await client.query({ query: "SELECT 1", format: "JSONEachRow" });
+      await result.json();
       return;
     } catch (error) {
       lastError = error;
@@ -60,7 +74,7 @@ export function renderDedupedActivitiesSelectSql(
       `${targetSchema}.provider_field_priority`,
     )
     .replace(/{{ source\('ingest', 'metric_stream_current'\) }}/g, `${targetSchema}.metric_stream`)
-    .concat("\nSETTINGS max_threads = 1, join_use_nulls = 1");
+    .concat("\nSETTINGS max_threads = 1, join_use_nulls = 1, enable_materialized_cte = 1");
 }
 
 export async function seedMissingSourceNameFixture(
@@ -136,6 +150,159 @@ export async function seedSensorBearingRepresentativeFixture(
   targetSchema: string,
 ): Promise<void> {
   await seedSpecificActivityTypeFixture(client, targetSchema, "cycling", "cycling");
+}
+
+export async function seedDedupedActivitiesWorkReuseFixture(
+  client: ClickHouseClient,
+  targetSchema: string,
+): Promise<void> {
+  await seedSensorBearingRepresentativeFixture(client, targetSchema);
+  await client.command({ query: `TRUNCATE TABLE ${targetSchema}.deduped_sensor` });
+  await client.command({
+    query: `INSERT INTO ${targetSchema}.deduped_sensor
+      (user_id, provider_id, recorded_at, channel)
+      VALUES ('${testUserId}', 'peloton', toDateTime64('2026-07-05 16:05:00', 6, 'UTC'), 'heart_rate')`,
+  });
+  await client.command({
+    query: `INSERT INTO ${targetSchema}.deduped_activities
+      ${renderDedupedActivitiesSelectSql(targetSchema)}`,
+  });
+  await client.command({
+    query: `INSERT INTO ${targetSchema}.deduped_activities
+      SELECT * REPLACE (
+        toUUID('${priorOnlyGroupId}') AS activity_id,
+        toUUID('${priorOnlyGroupId}') AS primary_activity_id,
+        toUUID('${priorOnlyGroupId}') AS representative_activity_id,
+        [toUUID('${priorOnlyGroupId}')] AS member_activity_ids,
+        [toUUID('${priorOnlyGroupId}')] AS origin_candidate_member_ids
+      )
+      FROM (
+        SELECT * FROM ${targetSchema}.deduped_activities FINAL
+        WHERE activity_id = toUUID('${groupId}') AND is_deleted = 0
+      )`,
+  });
+  await client.command({
+    query: `CREATE VIEW ${targetSchema}.activity AS
+      SELECT * FROM ${targetSchema}.source_activity`,
+  });
+}
+
+export async function runDedupedActivitiesWorkReuseDbtAppend(
+  client: ClickHouseClient,
+  targetSchema: string,
+  scoped: boolean,
+): Promise<{
+  denseSampleCount: number;
+  queryId: string;
+  readRows: number;
+  readBytes: number;
+  queryDurationMs: number;
+  memoryUsage: number;
+  settings: Record<string, string>;
+}> {
+  await client.command({
+    query: `INSERT INTO ${targetSchema}.deduped_sensor
+      (user_id, provider_id, recorded_at, channel)
+      SELECT '${testUserId}', 'whoop',
+        toDateTime64('2026-07-05 16:00:00', 6, 'UTC') + toIntervalMicrosecond(number * 439000),
+        'heart_rate'
+      FROM numbers(${dedupedActivitiesWorkReuseSampleCount})`,
+  });
+  const sampleResult = await client.query({
+    query: `SELECT count() AS sample_count FROM ${targetSchema}.deduped_sensor FINAL
+      WHERE user_id = toUUID('${testUserId}') AND provider_id = 'whoop'
+        AND source_activity_id = toUUID('${linkedActivityId}')`,
+    format: "JSONEachRow",
+  });
+  const sampleRows = z
+    .array(z.object({ sample_count: z.coerce.number() }))
+    .parse(await sampleResult.json());
+  const sampleRow = sampleRows[0];
+  if (!sampleRow) throw new Error("Dense sensor count query returned no row");
+  const denseSampleCount = sampleRow.sample_count;
+  if (denseSampleCount !== dedupedActivitiesWorkReuseSampleCount) {
+    throw new Error(
+      `Expected ${dedupedActivitiesWorkReuseSampleCount} surviving WHOOP samples, found ${denseSampleCount}`,
+    );
+  }
+
+  const startedResult = await client.query({
+    query: "SELECT toString(now64(6, 'UTC')) AS started_at",
+    format: "JSONEachRow",
+  });
+  const startedRows = z
+    .array(z.object({ started_at: z.string().min(1) }))
+    .parse(await startedResult.json());
+  const startedRow = startedRows[0];
+  if (!startedRow) throw new Error("ClickHouse timestamp query returned no row");
+  const startedAt = startedRow.started_at;
+  const artifactDirectory = join(
+    tmpdir(),
+    `deduped-activities-work-${randomBytes(6).toString("hex")}`,
+  );
+  try {
+    await runDbtBatch(
+      targetSchema,
+      artifactDirectory,
+      ["deduped_activities"],
+      "2026-07-05",
+      "2026-07-06",
+      scoped ? [groupId, priorOnlyGroupId] : undefined,
+      undefined,
+      testUserId,
+    );
+    await client.command({ query: "SYSTEM FLUSH LOGS" });
+    const logResult = await client.query({
+      query: `SELECT query, query_id, read_rows, read_bytes, query_duration_ms, memory_usage, Settings
+        FROM system.query_log
+        WHERE type = 'QueryFinish' AND is_initial_query = 1 AND query_kind = 'Insert'
+          AND query_start_time_microseconds >= toDateTime64({startedAt:String}, 6, 'UTC')
+          AND position(query, {targetSchema:String}) > 0`,
+      query_params: { startedAt, targetSchema },
+      format: "JSONEachRow",
+    });
+    const records = z
+      .array(
+        z.object({
+          query: z.string(),
+          query_id: z.string().min(1),
+          read_rows: z.coerce.number(),
+          read_bytes: z.coerce.number(),
+          query_duration_ms: z.coerce.number(),
+          memory_usage: z.coerce.number(),
+          Settings: z.record(z.string(), z.string()),
+        }),
+      )
+      .parse(await logResult.json())
+      .filter(({ query }) => {
+        const target = readDbtStatementTarget(query);
+        return (
+          target?.operation === "insert" &&
+          target.database === targetSchema &&
+          target.model === "deduped_activities"
+        );
+      });
+    expect(records).toHaveLength(1);
+    const record = records[0];
+    if (!record) throw new Error("Missing dbt model QueryFinish record");
+    const metrics = {
+      denseSampleCount,
+      queryId: record.query_id,
+      readRows: record.read_rows,
+      readBytes: record.read_bytes,
+      queryDurationMs: record.query_duration_ms,
+      memoryUsage: record.memory_usage,
+      settings: record.Settings,
+    };
+    process.stdout.write(`${JSON.stringify({ dedupedActivitiesWorkReuse: metrics })}\n`);
+    expect(metrics.readRows).toBeGreaterThan(0);
+    expect(metrics.readBytes).toBeGreaterThan(0);
+    expect(metrics.queryDurationMs).toBeGreaterThan(0);
+    expect(metrics.memoryUsage).toBeGreaterThan(0);
+    return metrics;
+  } finally {
+    await rm(artifactDirectory, { recursive: true, force: true });
+  }
 }
 
 export async function seedNamedTimezoneContextFixture(

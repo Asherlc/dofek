@@ -85,7 +85,7 @@ The worker returns from the phase-1 explicit Node command to the image's normal
 read-only Kafka/retained-Redpanda mounts remain in the canonical stack. Confirm
 the actual resulting command, mounts, image and routes after release; a rendered
 stack alone is not task-state evidence. See [entrypoint.sh](../../entrypoint.sh),
-[stack.yml](../stack.yml) and the [migration overlay](../stack.migration-quiesce.yml).
+[docker-compose.yml](../docker-compose.yml) and the [migration overlay](../stack.migration-quiesce.yml).
 
 The broker stays on the same data directory, cluster/topic identities, six
 application topics and approved 4 GiB/1 GiB limits with remote storage disabled.

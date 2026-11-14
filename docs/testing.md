@@ -108,6 +108,41 @@ correctness or completion within CI deadlines. Validate cold builds separately.
 
 ## Integration Dependencies
 
+### ClickHouse version parity and early CI feedback
+
+Local Compose pins ClickHouse to the same exact version and image digest used
+by the CI lint job. Keeping these engines aligned makes local checks exercise
+the database version that CI uses. See [ClickHouse Docker version tags](https://clickhouse.com/docs/get-started/setup/self-managed/docker#versions).
+
+Before the broader lint policies, that job runs three focused regressions
+against its existing ClickHouse service: the migration column-order unit test,
+the deduped-activity read-model integration test, and the payload dbt microbatch
+tombstone integration test. The full lint step and all other required CI jobs
+remain unchanged as merge gates. GitHub Actions runs steps in the order they
+are declared, so these focused checks report failures earlier in the same job;
+see [workflow step ordering](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#jobsjob_idsteps).
+
+If an existing local ClickHouse volume was created by a newer engine, keep that
+volume and its data intact. Create a fresh Compose project suffix for the pinned
+engine so it gets a separate volume; [Compose project names isolate environments](https://docs.docker.com/compose/how-tos/project-name/):
+
+```bash
+pnpm compose:env -- --project-suffix analytics-feedback --write
+pnpm compose -- --project-suffix analytics-feedback up -d --wait clickhouse
+set -a
+source .env.analytics-feedback.local
+set +a
+pnpm exec vitest run --project unit src/db/clickhouse-migrations/0067_repair_local_time_column_order.test.ts --retry=0
+pnpm exec vitest run --project integration src/db/deduped-activities-read-model.integration.test.ts --retry=0
+pnpm exec vitest run --project integration src/db/activity-payload-dbt-microbatch.integration.test.ts -t "does not append payload-free tombstones across an unchanged production dependency slice" --retry=0
+```
+
+Run the source and test commands in the same shell so the focused checks use
+the generated suffix environment and its ClickHouse endpoint. Do not use the
+default full integration wrapper to qualify this suffix: it selects the
+default workspace environment. These focused checks supplement the full CI
+merge gates; they do not replace them.
+
 The default and changed-test commands are intentionally Docker-free:
 
 ```bash

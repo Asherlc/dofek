@@ -3,7 +3,7 @@ import {
   formatClimbingRecordedResult,
   formatClimbingResultOutcome,
 } from "@dofek/format/climbing-log";
-import { climbingLogEntryName } from "@dofek/training/climbing-log";
+import { climbingLogEntryAreaPath, climbingLogEntryName } from "@dofek/training/climbing-log";
 import type { ClimbingMapLocation } from "@dofek/training/climbing-map";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { ClimbingLogEntryDetail } from "../../server/src/contracts/climbing-log-contracts.ts";
@@ -103,6 +103,7 @@ export function ClimbingLogEntryCard({
             climbKind={entry.climb?.kind ?? null}
             name={name}
             sourceName={entry.sourceName}
+            providerId={entry.providerId}
             links={entry.sourceLinks}
             selected={selected}
           />
@@ -110,7 +111,7 @@ export function ClimbingLogEntryCard({
         </View>
         {entry.displayGrade && <Text style={styles.grade}>{entry.displayGrade}</Text>}
       </View>
-      {hideMap && location?.scope !== "area" && (
+      {hideMap && location?.scope !== "area" && climbingLogEntryAreaPath(entry).length === 0 && (
         <Text style={styles.summary}>{location ? "Climb location" : "No recorded location"}</Text>
       )}
       {location && !hideMap && (

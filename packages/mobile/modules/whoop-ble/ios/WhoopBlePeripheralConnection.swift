@@ -22,9 +22,9 @@ protocol WhoopBlePeripheralConnection: AnyObject {
 /// Keeps CoreBluetooth objects and connection operations at the native boundary.
 final class WhoopBleCoreBluetoothPeripheral: WhoopBlePeripheralConnection {
     private let peripheral: CBPeripheral
-    private let central: CBCentralManager
+    private let central: any WhoopBleCentralManaging
 
-    init(_ peripheral: CBPeripheral, central: CBCentralManager) {
+    init(_ peripheral: CBPeripheral, central: any WhoopBleCentralManaging) {
         self.peripheral = peripheral
         self.central = central
     }

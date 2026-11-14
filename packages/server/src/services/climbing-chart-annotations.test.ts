@@ -4,6 +4,34 @@ import { climbingChartAnnotations } from "./climbing-chart-annotations.ts";
 
 describe("climbing chart annotations", () => {
   it.each([
+    ["2026-11-01 10:00:00", "2026-11-01T10:00:00.000Z"],
+    ["2026-11-01T10:00:00-07:00", "2026-11-01T17:00:00.000Z"],
+  ])("plots BoardSesh's recorded climb time %s", (climbedAt, startedAt) => {
+    const entry = climbingLogEntryFixture({
+      providerId: "boardsesh",
+      externalId: "boardsesh:tick:123",
+      title: "Moon Dust",
+      raw: { climbedAt },
+    });
+    expect(climbingChartAnnotations(entry)).toEqual([
+      { id: entry.id, label: "Moon Dust", startedAt, endedAt: null },
+    ]);
+  });
+  it.each(["2026-11-01", "2026-02-31 10:00:00", "not a time"])(
+    "does not plot incomplete or invalid BoardSesh timing %s",
+    (climbedAt) => {
+      expect(
+        climbingChartAnnotations(
+          climbingLogEntryFixture({
+            providerId: "boardsesh",
+            externalId: "boardsesh:tick:123",
+            raw: { climbedAt },
+          }),
+        ),
+      ).toEqual([]);
+    },
+  );
+  it.each([
     ["Twist by Two", "2026-11-10T01:48:51.544160Z", "2026-11-10T01:48:51.544Z"],
     ["warm 1", "2026-11-10T01:53:24.245074Z", "2026-11-10T01:53:24.245Z"],
   ])("plots Kilter log time for %s", (title, createdAt, startedAt) => {

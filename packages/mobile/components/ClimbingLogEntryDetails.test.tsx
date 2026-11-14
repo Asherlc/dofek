@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { formatDateTime } from "@dofek/format/format";
 import { render, screen } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import {
@@ -7,6 +8,21 @@ import {
   climbingLogEntryFixture,
 } from "../../server/src/repositories/climbing-test-helpers.ts";
 import { ClimbingLogEntryDetails } from "./ClimbingLogEntryDetails";
+
+it("shows BoardSesh's recorded time in standalone log details", () => {
+  render(
+    <ClimbingLogEntryDetails
+      entry={climbingLogEntryFixture({
+        providerId: "boardsesh",
+        climbedOn: null,
+        chartAnnotations: [
+          { id: "tick", label: "Moon Dust", startedAt: "2026-11-01T18:00:00Z", endedAt: null },
+        ],
+      })}
+    />,
+  );
+  expect(screen.getByText(formatDateTime("2026-11-01T18:00:00Z"))).toBeTruthy();
+});
 
 it("renders the board and visited gym instead of the shared problem location", () => {
   const climb = climbingClimbFixture();

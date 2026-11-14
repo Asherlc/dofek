@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/devcontainers/base:3.0.3-ubuntu24.04
+FROM mcr.microsoft.com/devcontainers/base:3.0.13-ubuntu24.04
 
 ARG TARGETARCH
 ARG MISE_VERSION=2026.7.15

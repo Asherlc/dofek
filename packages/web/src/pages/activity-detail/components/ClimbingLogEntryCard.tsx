@@ -4,7 +4,7 @@ import {
   formatClimbingResultOutcome,
 } from "@dofek/format/climbing-log";
 import { operationalStatusColors } from "@dofek/scoring/colors";
-import { climbingLogEntryName } from "@dofek/training/climbing-log";
+import { climbingLogEntryAreaPath, climbingLogEntryName } from "@dofek/training/climbing-log";
 import type { ClimbingMapLocation, ClimbingMapMarker } from "@dofek/training/climbing-map";
 import { useMemo } from "react";
 import type { ClimbingLogEntryDetail } from "../../../../../server/src/contracts/climbing-log-contracts.ts";
@@ -118,6 +118,7 @@ export function ClimbingLogEntryCard({
             climbKind={entry.climb?.kind ?? null}
             name={name}
             sourceName={entry.sourceName}
+            providerId={entry.providerId}
             links={entry.sourceLinks}
           />
           <ClimbingLogEntryContext entry={entry} />
@@ -128,7 +129,7 @@ export function ClimbingLogEntryCard({
           </span>
         )}
       </div>
-      {hideMap && location?.scope !== "area" && (
+      {hideMap && location?.scope !== "area" && climbingLogEntryAreaPath(entry).length === 0 && (
         <p className="text-xs text-subtle">
           {location ? "Climb location" : "No recorded location"}
         </p>

@@ -29,7 +29,7 @@ deployment, custom plugin, fallback mode or new release flag is introduced.
 
 ## Canonical configuration
 
-[`../stack.yml`](../stack.yml) pins Kafka 4.4.0 and upstream Aiven 1.2.0.
+[`../docker-compose.yml`](../docker-compose.yml) pins Kafka 4.4.0 and upstream Aiven 1.2.0.
 The [checksum manifest](plugin-sha256.txt) covers every file extracted from the
 core and S3 release archives. Their verified archive SHA256 values are:
 
