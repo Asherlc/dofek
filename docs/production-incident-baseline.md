@@ -37940,3 +37940,36 @@ Local qualification and CI are separate from production throughput acceptance. T
   now describes background-start ownership; the earlier proposed BLE diagnostic
   checklist remains a documentation improvement for user approval. Existing
   debugging, testing and production-log skills cover this work.
+
+## 2026-11-14 — WHOOP release blocked by an overbroad Sentry bridge-test assertion
+
+- **Symptoms/impact:** merged WHOOP background-start correction `ea0f1cb06`
+  did not reach automatic release. Main [CI 43613523858](https://github.com/Asherlc/dofek/actions/runs/43613523858)
+  failed in [Test WHOOP Expo bridge in Simulator](https://github.com/Asherlc/dofek/actions/runs/43613523858/job/132503828371)
+  at 16:31:16 UTC; production remains on the preceding revision.
+- **Evidence/root cause:** the stock xcresult summary reports 15 passing tests
+  and one failure in `testCleanupFailureLogsTheStageAndStillThrows`. Its first
+  assertion failure is `XCTAssertEqual failed: ("2") is not equal to ("1")`:
+  the SDK captured the expected `bodies` cleanup error plus an automatic app-hang
+  event. The test asserts the total number of captured Sentry events before its
+  existing separate check for exactly one matching cleanup error. Counting all
+  independent SDK diagnostics makes that assertion nondeterministic.
+- **Fix/status:** after explicit branch approval, the follow-up removes both
+  total-event-count assertions in this test. Exact cleanup/control error counts,
+  thrown rejection and attribution assertions remain. A controlled unrelated
+  Sentry event and its presence assertion reproduce the same failure without
+  depending on an actual app hang. No production behavior changed, and no
+  workflow rerun or gate bypass is used as a fix.
+- **Validation:** the real Expo/Hermes simulator suite failed 15/16 before the
+  correction with the controlled unrelated event, then passed all 16 tests after
+  it. Strict SwiftLint passed on all 179 tracked Swift files. Generated native
+  project/CocoaPods files remain ignored, and the prebuild's incidental tracked
+  icon newline change was restored. No dependency, retry, timeout or CI gate
+  changed. Separate self-review retained all specific behavioral assertions.
+- **Follow-up/retrospective:** run the real simulator bridge suite after the
+  correction, obtain green main CI through a reviewed follow-up PR, then resume
+  canonical release monitoring. The full job log identified the failing test,
+  while the downloaded xcresult exposed the assertion and extra SDK event.
+  Proposed runbook improvement: use the existing xcresult artifact's stock test
+  summary when quiet xcodebuild output shows only a test name. Existing
+  `gh-fix-ci` and simulator-audit skills cover the work.
