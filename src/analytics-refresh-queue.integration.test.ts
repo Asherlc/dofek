@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { EventEmitter } from "node:events";
+import { EventEmitter, once } from "node:events";
 import { Queue, QueueEvents, Worker } from "bullmq";
 import { describe, expect, it } from "vitest";
 import {
@@ -18,6 +18,207 @@ function deferred() {
 }
 
 describe("analytics refresh queue (Redis integration)", () => {
+  it("shuts down while rate limited without consuming the pending refresh", async () => {
+    const connection = getRedisConnection();
+    const queue = new Queue<AnalyticsRefreshJobData>(`test-analytics-cooldown-${randomUUID()}`, {
+      connection,
+    });
+    const events = new QueueEvents(queue.name, { connection });
+    const controller = new AbortController();
+    const errors: Error[] = [];
+    await events.waitUntilReady();
+    const completed = once(events, "completed");
+    const consumer = runAnalyticsRefreshJobs({
+      queue,
+      connection,
+      intervalMilliseconds: 60_000,
+      signal: controller.signal,
+      reportFailure: (error) => errors.push(error),
+      processRefresh: async () => {},
+    });
+    try {
+      await completed;
+      expect(await queue.getRateLimitTtl(1)).toBeGreaterThan(0);
+      await enqueueAnalyticsRefresh(queue);
+      controller.abort();
+      await consumer;
+      expect(await queue.getActiveCount()).toBe(0);
+      expect(await queue.getRateLimitTtl(1)).toBeGreaterThan(0);
+      expect((await queue.getWaiting()).map((job) => job.name)).toEqual(["analytics-refresh"]);
+      expect(errors).toEqual([]);
+    } finally {
+      controller.abort();
+      await consumer;
+      await events.close();
+      await queue.obliterate();
+      await queue.close();
+    }
+  });
+
+  it("uses periodic admissions for real builds at the configured cadence", async () => {
+    const connection = getRedisConnection();
+    const queue = new Queue<AnalyticsRefreshJobData>(`test-analytics-periodic-${randomUUID()}`, {
+      connection,
+    });
+    const controller = new AbortController();
+    const secondStarted = deferred();
+    const admittedNames: string[] = [];
+    const errors: Error[] = [];
+    const consumer = runAnalyticsRefreshJobs({
+      queue,
+      connection,
+      intervalMilliseconds: 500,
+      signal: controller.signal,
+      reportFailure: (error) => errors.push(error),
+      processRefresh: async () => {
+        const [active] = await queue.getActive();
+        if (!active) throw new Error("A refresh must have an active queue job");
+        admittedNames.push(active.name);
+        if (admittedNames.length === 2) secondStarted.resolve();
+      },
+    });
+    try {
+      await secondStarted.promise;
+      expect(admittedNames).toEqual(["analytics-refresh", "analytics-refresh-periodic"]);
+      expect(errors).toEqual([]);
+    } finally {
+      controller.abort();
+      await consumer;
+      await queue.obliterate();
+      await queue.close();
+    }
+  });
+
+  it("preserves the admission limit across a replacement consumer", async () => {
+    const connection = getRedisConnection();
+    const queue = new Queue<AnalyticsRefreshJobData>(`test-analytics-replacement-${randomUUID()}`, {
+      connection,
+    });
+    const firstController = new AbortController();
+    const replacementController = new AbortController();
+    const firstStarted = deferred();
+    const replacementStarted = deferred();
+    const errors: Error[] = [];
+    const intervalMilliseconds = 2_000;
+    let firstStart = 0;
+    let replacementStart = 0;
+    const consumers: Promise<void>[] = [];
+    try {
+      const first = runAnalyticsRefreshJobs({
+        queue,
+        connection,
+        intervalMilliseconds,
+        signal: firstController.signal,
+        reportFailure: (error) => errors.push(error),
+        processRefresh: async () => {
+          firstStart = Date.now();
+          firstStarted.resolve();
+        },
+      });
+      consumers.push(first);
+      await firstStarted.promise;
+      expect(await queue.getRateLimitTtl(1)).toBeGreaterThan(0);
+      firstController.abort();
+      await first;
+      consumers.push(
+        runAnalyticsRefreshJobs({
+          queue,
+          connection,
+          intervalMilliseconds,
+          signal: replacementController.signal,
+          reportFailure: (error) => errors.push(error),
+          processRefresh: async () => {
+            replacementStart = Date.now();
+            replacementStarted.resolve();
+          },
+        }),
+      );
+      await replacementStarted.promise;
+      expect(replacementStart - firstStart).toBeGreaterThanOrEqual(intervalMilliseconds - 10);
+      expect(errors).toEqual([]);
+    } finally {
+      firstController.abort();
+      replacementController.abort();
+      await Promise.all(consumers);
+      await queue.obliterate();
+      await queue.close();
+    }
+  });
+
+  it("paces actual builds across consumers while preserving the next request's completion", async () => {
+    const connection = getRedisConnection();
+    const queue = new Queue<AnalyticsRefreshJobData>(`test-analytics-paced-${randomUUID()}`, {
+      connection,
+    });
+    const events = new QueueEvents(queue.name, { connection });
+    const controller = new AbortController();
+    const firstStarted = deferred();
+    const nextStarted = deferred();
+    const finishFirst = deferred();
+    const finishNext = deferred();
+    const starts: number[] = [];
+    const errors: Error[] = [];
+    const intervalMilliseconds = 500;
+    let settled = false;
+    const processRefresh = async () => {
+      starts.push(Date.now());
+      if (starts.length === 1) {
+        firstStarted.resolve();
+        await finishFirst.promise;
+      } else {
+        nextStarted.resolve();
+        await finishNext.promise;
+      }
+    };
+    let consumers: Promise<void>[] = [];
+    try {
+      await events.waitUntilReady();
+      consumers = Array.from({ length: 2 }, () =>
+        runAnalyticsRefreshJobs({
+          queue,
+          connection,
+          processRefresh,
+          intervalMilliseconds,
+          reportFailure: (error) => errors.push(error),
+          signal: controller.signal,
+        }),
+      );
+      await firstStarted.promise;
+      const followup = enqueueAnalyticsRefreshAndWait(
+        queue,
+        events,
+        new AbortController().signal,
+      ).then(
+        () => {
+          settled = true;
+        },
+        (error) => {
+          errors.push(error);
+        },
+      );
+      finishFirst.resolve();
+      await nextStarted.promise;
+      const [firstStart, nextStart] = starts;
+      if (firstStart === undefined || nextStart === undefined) {
+        throw new Error("Both analytics builds must have started");
+      }
+      expect(nextStart - firstStart).toBeGreaterThanOrEqual(intervalMilliseconds - 10);
+      expect(settled).toBe(false);
+      finishNext.resolve();
+      await followup;
+      expect(settled).toBe(true);
+      expect(errors).toEqual([]);
+    } finally {
+      controller.abort();
+      finishFirst.resolve();
+      finishNext.resolve();
+      await Promise.all(consumers);
+      await events.close();
+      await queue.obliterate();
+      await queue.close();
+    }
+  });
+
   it("drains the active build on shutdown and leaves its follow-up for the replacement", async () => {
     const connection = getRedisConnection();
     const queue = new Queue<AnalyticsRefreshJobData>(`test-analytics-drain-${randomUUID()}`, {
@@ -106,7 +307,7 @@ describe("analytics refresh queue (Redis integration)", () => {
           queue,
           connection,
           processRefresh,
-          intervalMilliseconds: 900_000,
+          intervalMilliseconds: 500,
           reportFailure: (error) => errors.push(error),
           signal: controller.signal,
         }),
@@ -163,7 +364,7 @@ describe("awaited analytics refresh", () => {
       consumer = runAnalyticsRefreshJobs({
         queue,
         connection,
-        intervalMilliseconds: 900_000,
+        intervalMilliseconds: 500,
         signal: controller.signal,
         reportFailure: () => {},
         processRefresh: async () => {

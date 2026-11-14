@@ -120,7 +120,7 @@ describe("runAnalyticsRefreshJobs", () => {
     expect(queue.setGlobalConcurrency).toHaveBeenCalledWith(1);
     expect(queue.upsertJobScheduler).toHaveBeenCalledWith(
       "analytics-refresh-periodic",
-      { every: 900_000 },
+      { every: 900_000, startDate: expect.any(Number) },
       expect.objectContaining({ name: "analytics-refresh-periodic" }),
     );
     expect(queue.add).toHaveBeenCalledWith(
@@ -132,6 +132,7 @@ describe("runAnalyticsRefreshJobs", () => {
       connection: { host: "redis" },
       concurrency: 1,
       autorun: false,
+      limiter: { max: 1, duration: 900_000 },
     });
     expect(removeDeduplicationKey).toHaveBeenCalledOnce();
     expect(removeDeduplicationKey.mock.invocationCallOrder[0]).toBeLessThan(
@@ -142,13 +143,16 @@ describe("runAnalyticsRefreshJobs", () => {
     expect(mocks.close).toHaveBeenCalledOnce();
   });
 
-  it("routes periodic maintenance through the same combined refresh request", async () => {
+  it("uses a periodic admission to perform the actual refresh", async () => {
     const controller = new AbortController();
     const queue = createQueue();
     const processRefresh = vi.fn().mockResolvedValue(undefined);
     mocks.run.mockImplementation(async () => {
       const processor = mocks.Worker.mock.calls[0]?.[1];
-      await processor({ name: "analytics-refresh-periodic" });
+      await processor({
+        name: "analytics-refresh-periodic",
+        removeDeduplicationKey: vi.fn().mockResolvedValue(false),
+      });
       controller.abort();
     });
     await runAnalyticsRefreshJobs({
@@ -159,8 +163,8 @@ describe("runAnalyticsRefreshJobs", () => {
       reportFailure: vi.fn(),
       signal: controller.signal,
     });
-    expect(queue.add).toHaveBeenCalledTimes(2);
-    expect(processRefresh).not.toHaveBeenCalled();
+    expect(queue.add).toHaveBeenCalledOnce();
+    expect(processRefresh).toHaveBeenCalledOnce();
   });
 
   it("reports queue job failures and closes the consumer when its run fails", async () => {
