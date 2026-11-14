@@ -37976,3 +37976,38 @@ Local qualification and CI are separate from production throughput acceptance. T
   Proposed runbook improvement: use the existing xcresult artifact's stock test
   summary when quiet xcodebuild output shows only a test name. Existing
   `gh-fix-ci` and simulator-audit skills cover the work.
+
+## 2026-11-14 — Physical WHOOP investigation identifies HealthKit CPU termination
+
+- **Symptoms/impact:** WHOOP delivery remains intermittent; the physical phone's
+  queue retains captured samples, and its app is no longer running.
+- **Evidence/root cause:** the raw CPU-fatal device report explicitly records
+  process termination at 6:38:10 AM PST after 48 CPU seconds over 54 seconds.
+  The exact installed binary UUID matches the canonical release dSYM. Stock
+  symbolication attributes the heaviest application stack to expanded HealthKit
+  running-series timestamp formatting, which constructs a new ISO formatter for
+  every start and end timestamp. This path was introduced October 30 in
+  [PR #3144](https://github.com/Asherlc/dofek/pull/3144), commit `860c1029b`.
+- **Historical delivery boundary:** normal same-account WHOOP heart-rate rows
+  stop November 3 at 4:45 PM PST. All three upload streams first report HTTP 401
+  that night at 10:02 PM in [MOBILE-2B](https://east-bay-software.sentry.io/issues/DOFEK-MOBILE-2B).
+  The rejected requests' exact session and credential failure cause remain
+  unproven. The native 401 block dates to October 28's PR #3147; a release label
+  alone does not prove the introducing change, and no main commit occurred
+  between last normal delivery and the first observed 401.
+- **Fix/status/validation:** recommend one invocation-local configured formatter
+  for the expanded series. A stock Foundation benchmark over 10,000 synthetic
+  timestamps measured 3,497.97 ms before and 14.34 ms with reuse, with identical
+  output. Runtime code remains unchanged; native regression checks and physical
+  iPhone CPU-budget validation are still required for an approved correction.
+- **Remaining risk/follow-up:** CPU termination proves today's process-death
+  cause; it does not prove the earlier three native tasks' scheduling delay or
+  the entire historical upload failure. Filtered system URLSession logs require
+  administrator authentication, which is unavailable noninteractively. Preserve
+  the queue and request task history before changing upload transport or retry
+  policy. See [the expanded evidence record](evidence/ble-collection-20261114/README.md).
+- **Retrospective:** exact physical-device reports plus a UUID-matched dSYM
+  resolved a boundary that MetricKit alone could not establish. Proposed runbook
+  improvement: check accessible physical crash reports and matching release
+  symbols before leaving process recreation unexplained. No new custom tooling
+  or operational service is needed.

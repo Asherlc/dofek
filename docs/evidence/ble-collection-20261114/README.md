@@ -1,5 +1,71 @@
 # WHOOP BLE collection and upload gap — November 14, 2026
 
+## Physical-device source attribution follow-up
+
+The subsequent source investigation establishes a cause for the **6:38 AM
+process death**, beyond the original MetricKit-only evidence: the phone's raw
+`Dofek.cpu_resource_fatal-2026-11-14-063816.ips` explicitly records **Process
+killed**, ending at 6:38:10.465 AM PST after 48 CPU seconds over 54 seconds.
+The next logged native session starts at 6:38:11 AM. This does not identify the
+earlier cleanup trigger or prove why already-submitted URLSession tasks had
+stopped acknowledging before the process died.
+
+The installed app build is `1794632551`. Its binary UUID
+`616AC45C-8AE7-3690-9EBA-13423284F14E` exactly matches the dSYM from canonical
+[release 43558976976](https://github.com/Asherlc/dofek/actions/runs/43558976976)
+at `3cdb5f70e`. Stock `atos` resolves the killed process's heaviest application
+frames to `HealthKitModule.swift:756`,
+`HealthKitQuantitySeriesTransport.swift:37`, and its timestamp formatting at
+lines 43–44. The transport constructs a new configured `ISO8601DateFormatter`
+for each start and end timestamp of every expanded running-series observation.
+Git blame attributes this entire path to **October 30, 2026, 12:04 AM PDT**,
+[PR #3144](https://github.com/Asherlc/dofek/pull/3144),
+commit `860c1029bb709b5bd144e5c993b7d0317cddf51f`.
+
+A diagnostic benchmark on macOS formatted 10,000 synthetic timestamps with
+the existing per-timestamp construction versus one invocation-local formatter.
+Elapsed times were 3,497.97 ms versus 14.34 ms, with every output identical.
+This supports the direct minimum correction: reuse one formatter within each
+transport invocation, retaining fractional seconds and the current time zone.
+It does not establish the corrected iPhone CPU budget. Apple also recommends
+[reusing configured date formatters](https://developer.apple.com/library/archive/qa/qa1480/_index.html)
+instead of constructing and discarding them for each value. No runtime change
+has been applied during this follow-up.
+
+Historical read-only backend aggregates also date the **earlier delivery
+failure** more precisely: the same account's last normal WHOOP heart-rate
+sample was November 3 at 4:45:14 PM PST, stored at 4:45:19 PM. There are no
+subsequent stored WHOOP heart-rate rows until the November 14 burst. Sentry
+[MOBILE-2B](https://east-bay-software.sentry.io/issues/DOFEK-MOBILE-2B) records
+all three native upload streams returning HTTP 401 on November 3 at
+10:02:43 PM PST in release `f02798b72`; the first events match the queue's
+account, as do the later November 11 errors. The native 401 block and recovery
+on reconfiguration were introduced by October 28's
+[PR #3147](https://github.com/Asherlc/dofek/pull/3147). No main commit occurred
+between the last normal delivery and the first 401, so those timestamps do not
+identify a newly deployed introducing commit. Session metadata includes an
+expiry at November 3, 8:45:07 PM PST, but request credentials were never read;
+which session those rejected requests used remains unproven. Do not equate an
+observed release label with an introducing commit or call intentional rejection
+of invalid credentials itself a defect.
+
+The current physical queue independently confirms 62,400 IMU and 1,232 each
+realtime/raw records queued, with last confirmations at 6:27:49 AM for IMU and
+6:27:43 AM for the other streams. All three streams retain reservations. The
+database and WAL last changed at 6:38:10 AM and remain readable; raw sensor
+values and credentials were not inspected. The app is no longer running.
+The read-only database copy was checked through aggregate counters only.
+
+Remaining evidence for the **pre-kill native upload stall** is the system
+URLSession daemon's task scheduling/completion history. App telemetry still has
+only the five original checkpoints and no recorded upload error for these
+tasks. Stock filtered device-log collection requires administrator
+authentication and did not run: unprivileged `log collect` requires root, and
+noninteractive `sudo` requires a password. No app launch, debugger attachment,
+queue mutation, system setting, production change or credential inspection was
+used to work around this boundary. The raw device files remain operator-local;
+only these derived operational facts are recorded here.
+
 ## Follow-up: background collection root cause and correction
 
 The user subsequently requested root-cause analysis and a fix. The reproducible
