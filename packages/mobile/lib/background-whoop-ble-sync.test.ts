@@ -280,7 +280,25 @@ describe("native WHOOP lifecycle", () => {
     expect(native.connect).toHaveBeenCalledOnce();
     expect(native.startImuStreaming).toHaveBeenCalledOnce();
   });
-  it("does not duplicate foreground discovery when the initial flush finishes later", async () => {
+  it("does not start a background retry while the initial flush is pending", async () => {
+    AppState.currentState = "background";
+    const native = deps();
+    const flushed = deferred<void>();
+    native.flushUploads.mockReturnValueOnce(flushed.promise);
+    const initializing = initBackgroundWhoopBleSync(context, native);
+    try {
+      await vi.waitFor(() => expect(native.flushUploads).toHaveBeenCalledOnce());
+      await retryWhoopBleConnection();
+      expect(native.retryConnection).not.toHaveBeenCalled();
+      expect(native.findWhoop).not.toHaveBeenCalled();
+    } finally {
+      flushed.resolve();
+      await initializing;
+    }
+    expect(native.findWhoop).toHaveBeenCalledOnce();
+    expect(native.connect).toHaveBeenCalledOnce();
+  });
+  it("keeps startup ownership when foregrounding during the initial flush", async () => {
     const native = deps();
     const flushed = deferred<void>();
     const found = deferred<null>();
@@ -290,10 +308,10 @@ describe("native WHOOP lifecycle", () => {
     await vi.waitFor(() => expect(native.flushUploads).toHaveBeenCalledOnce());
     const foregroundSync = stateChanged("active");
     try {
-      await vi.waitFor(() => expect(native.findWhoop).toHaveBeenCalledOnce());
+      await Promise.resolve();
+      expect(native.findWhoop).not.toHaveBeenCalled();
       flushed.resolve();
-      await initializing;
-      expect(native.findWhoop).toHaveBeenCalledOnce();
+      await vi.waitFor(() => expect(native.findWhoop).toHaveBeenCalledOnce());
     } finally {
       flushed.resolve();
       found.resolve(null);

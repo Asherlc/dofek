@@ -40,6 +40,15 @@ scope or correctness issue in the diff. No independent reviewer was authorized.
 The following sections retain the original read-only investigation and its
 then-pending recommendation; this follow-up describes the implemented correction.
 
+PR review found a remaining ownership window while the initial upload flush
+was pending. Two regressions reproduced background retry and foreground reentry
+starting discovery before that flush completed. Startup now acquires the same
+existing setup guard before flushing and retains it through discovery/connect;
+there is no additional flag or retry mechanism. The focused lifecycle/account/
+hook suites pass 44/44 after this correction, and mobile typecheck and source/
+policy lint pass again. The unchanged unit and analytics SQL checks retain their
+earlier successful results; the full mobile tier is rerun for this correction.
+
 ## Scope and conclusion
 
 Read-only investigation on `investigate-ble-collection-gaps`, based on

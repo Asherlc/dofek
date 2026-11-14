@@ -94,9 +94,9 @@ export async function initBackgroundWhoopBleSync(
           session.syncing = false;
         });
     });
-    await deps.flushUploads();
-    if (!session.active || session.syncing) return;
     session.syncing = true;
+    await deps.flushUploads();
+    if (!session.active) return;
     try {
       await connectWhoop(session);
     } catch (error: unknown) {
