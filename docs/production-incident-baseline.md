@@ -38017,18 +38017,21 @@ Local qualification and CI are separate from production throughput acceptance. T
 - **Symptoms/impact:** capture continues and the durable queue grows after the
   app backgrounds, while the three next uploads remain active without returned
   completions. Uploaded data covers only the short foreground burst.
-- **Evidence/root cause:** physical `nsurlsessiond` logs show all ten foreground
+- **Evidence/confirmed limitation:** physical `nsurlsessiond` logs show all ten foreground
   tasks completing, then the three tasks created after 6:27:52 AM PST becoming
   `discretionary (opt-in: 0)`. The code already sets `isDiscretionary = false`;
   Apple [ignores that setting for background-started transfers](https://developer.apple.com/documentation/foundation/urlsessionconfiguration/isdiscretionary).
   The native background-transfer choice was introduced October 28 at 10:06 PM
   PDT in [PR #3147](https://github.com/Asherlc/dofek/pull/3147), `cf421b73a`.
-  The precise per-task power/network scheduling condition remains unproven.
+  The precise per-task power/network scheduling condition remains unproven;
+  discretionary status alone does not establish why the tasks stayed pending.
+  The transport is a plausible cause, not a verified cause of this stall.
 - **Fix/status:** recommend an ordinary native live-delivery path while BLE
   capture executes, retaining the same durable reservations and account fences.
   Preserve the existing process-independent background-delivery fallback;
   do not create competing outbox consumers or treat a flag/timeout change as a
-  fix. No transport behavior change has been made. The independently confirmed
+  fix. This candidate needs a physical comparison before it can be called a
+  remedy for the observed stall. No transport behavior change has been made. The independently confirmed
   HealthKit CPU defect and older HTTP 401s remain separate findings.
 - **Validation/follow-up:** ten foreground completions versus zero recorded
   completions for the three discretionary tasks corroborate native queue and
