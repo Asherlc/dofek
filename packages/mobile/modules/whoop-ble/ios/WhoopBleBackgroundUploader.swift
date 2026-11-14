@@ -1,10 +1,17 @@
 import Foundation
 import CoreFoundation
 
+struct WhoopUploadTaskSnapshot {
+    let identities: Set<String>
+    /// Reservations with both a live request and an OS-managed fallback.
+    let pairedIdentities: Set<String>
+}
+
 protocol WhoopUploadTransport: AnyObject {
     var onCompletion: ((String, Int?, Data, URL?, Error?) -> Void)? { get set }
+    var onAttemptFailure: ((String, Error) -> Void)? { get set }
     var onFinishEvents: (() -> Void)? { get set }
-    func allTasks(_ completion: @escaping ([String]) -> Void)
+    func allTasks(_ completion: @escaping (WhoopUploadTaskSnapshot) -> Void)
     func start(request: URLRequest, file: URL, identity: String)
     func cancel(identity: String)
 }
@@ -25,6 +32,7 @@ final class WhoopBleBackgroundUploader: NSObject {
     private var token: String?
     private var headers: [String: String] = [:]
     private var active = Set<String>()
+    private var pairedActive = Set<String>()
     private var blocked = Set<WhoopUploadStream>()
     private var retryAfter: [WhoopUploadStream: Date] = [:]
     private var lastSubmission: [WhoopUploadStream: Date] = [:]
@@ -32,6 +40,7 @@ final class WhoopBleBackgroundUploader: NSObject {
     private var reconciling = false
     private var rerun = false
     private var wantsPartial = false
+    private var wantsActiveRefresh = false
     private var completionHandler: (() -> Void)?
     private var finishedEventsPending = false
     private var lastError: String?
@@ -56,6 +65,17 @@ final class WhoopBleBackgroundUploader: NSObject {
         super.init()
         transport.onCompletion = { [weak self] identity, status, data, url, error in
             self?.queue.async { self?.completed(identity: identity, status: status, data: data, url: url, error: error) }
+        }
+        transport.onAttemptFailure = { [weak self] identity, error in
+            self?.queue.async {
+                guard let self else { return }
+                do {
+                    guard let batch = try self.store.pendingBatches().first(where: { self.identity($0) == identity }) else { return }
+                    self.pairedActive.remove(identity)
+                    self.retryAfter[batch.stream] = self.now().addingTimeInterval(30)
+                    self.record(error)
+                } catch { self.record(error) }
+            }
         }
         transport.onFinishEvents = { [weak self] in
             self?.queue.async {
@@ -85,14 +105,14 @@ final class WhoopBleBackgroundUploader: NSObject {
             if try store.binding != binding {
                 self.token = nil; self.headers = [:]
                 try cancelOwnedTasks()
-                active.removeAll(); submittedEpoch.removeAll(); authRetriedEpoch.removeAll()
+                active.removeAll(); pairedActive.removeAll(); submittedEpoch.removeAll(); authRetriedEpoch.removeAll()
                 try removeBodies()
             }
             try store.configure(binding)
             tokenEpoch += 1
             self.token = token; self.headers = headers
             blocked.removeAll(); retryAfter.removeAll(); lastError = nil
-            schedule(partial: true)
+            schedule(partial: true, refreshActive: true)
         }
     }
 
@@ -115,7 +135,7 @@ final class WhoopBleBackgroundUploader: NSObject {
             // Validate storage synchronously so callers receive storage failures.
             _ = try store.generation
             retryAfter.removeAll()
-            schedule(partial: true)
+            schedule(partial: true, refreshActive: true)
         }
     }
 
@@ -133,6 +153,7 @@ final class WhoopBleBackgroundUploader: NSObject {
             try store.advanceErasureCutoff(to: cutoff)
         }
         active.removeAll()
+        pairedActive.removeAll()
         tokenEpoch += 1; submittedEpoch.removeAll()
         authRetriedEpoch.removeAll()
         retryAfter.removeAll()
@@ -192,21 +213,26 @@ final class WhoopBleBackgroundUploader: NSObject {
         }
     }
 
-    private func schedule(partial: Bool) {
+    private func schedule(partial: Bool, refreshActive: Bool = false) {
         wantsPartial = wantsPartial || partial
+        wantsActiveRefresh = wantsActiveRefresh || refreshActive
         if reconciling { rerun = true; return }
         reconciling = true
-        transport.allTasks { [weak self] tasks in
+        transport.allTasks { [weak self] snapshot in
             guard let self else { return }
             self.queue.async {
-                self.active = Set(tasks)
+                self.active = snapshot.identities
+                self.pairedActive = snapshot.pairedIdentities
                 let partial = self.wantsPartial
+                let refreshActive = self.wantsActiveRefresh
                 self.wantsPartial = false
+                self.wantsActiveRefresh = false
                 do {
                     let known = Set(try self.store.pendingBatches().map(self.identity))
-                    for identity in tasks where !known.contains(identity) {
+                    for identity in snapshot.identities where !known.contains(identity) {
                         self.transport.cancel(identity: identity)
                         self.active.remove(identity)
+                        self.pairedActive.remove(identity)
                     }
                     do {
                         for file in try FileManager.default.contentsOfDirectory(at: self.directory, includingPropertiesForKeys: nil)
@@ -214,7 +240,7 @@ final class WhoopBleBackgroundUploader: NSObject {
                         do { try FileManager.default.removeItem(at: file) } catch { self.record(error) }
                         }
                     } catch { self.record(error) }
-                    try self.submitAvailable(partial: partial)
+                    try self.submitAvailable(partial: partial, refreshActive: refreshActive)
                 } catch { self.record(error) }
                 self.reconciling = false
                 if self.rerun { self.rerun = false; self.schedule(partial: false) }
@@ -222,19 +248,20 @@ final class WhoopBleBackgroundUploader: NSObject {
         }
     }
 
-    private func submitAvailable(partial: Bool) throws {
+    private func submitAvailable(partial: Bool, refreshActive: Bool) throws {
         guard let token, let binding = try store.binding else { return }
         let pending = try store.pendingBatches()
         for stream in WhoopUploadStream.allCases {
             do {
                 guard !blocked.contains(stream), retryAfter[stream].map({ $0 <= now() }) ?? true else { continue }
-                if let batch = pending.first(where: { $0.stream == stream }), active.contains(identity(batch)) { continue }
+                if let batch = pending.first(where: { $0.stream == stream }),
+                   pairedActive.contains(identity(batch)), !refreshActive { continue }
                 let count = try store.queuedCount(stream: stream, limit: stream.batchLimit)
                 let since = lastSubmission[stream] ?? firstArrival[stream] ?? now()
                 guard count >= stream.batchLimit || partial || now().timeIntervalSince(since) >= 30 else { continue }
                 guard let batch = try store.reserve(stream: stream) else { continue }
                 let identity = identity(batch)
-                guard !active.contains(identity) else { continue }
+                guard !pairedActive.contains(identity) || refreshActive else { continue }
                 let file = directory.appendingPathComponent(identity + ".json")
                 // Always regenerate atomically; the database is the only source of truth.
                 try batch.body.write(to: file, options: .atomic)
@@ -252,6 +279,7 @@ final class WhoopBleBackgroundUploader: NSObject {
                 request.setValue("application/json", forHTTPHeaderField: "Content-Type")
                 request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
                 active.insert(identity); lastSubmission[stream] = now()
+                pairedActive.insert(identity)
                 submittedEpoch[identity] = tokenEpoch
                 transport.start(request: request, file: file, identity: identity)
             } catch {
@@ -262,7 +290,13 @@ final class WhoopBleBackgroundUploader: NSObject {
     }
 
     private func completed(identity: String, status: Int?, data: Data, url: URL?, error: Error?) {
+        var nextPartial: Bool?
+        defer {
+            transport.cancel(identity: identity)
+            if let partial = nextPartial { schedule(partial: partial) }
+        }
         active.remove(identity)
+        pairedActive.remove(identity)
         let usedEpoch = submittedEpoch.removeValue(forKey: identity)
         do {
             guard let batch = try store.pendingBatches().first(where: { self.identity($0) == identity }) else { return }
@@ -277,7 +311,7 @@ final class WhoopBleBackgroundUploader: NSObject {
                        authRetriedEpoch[identity] != tokenEpoch {
                         authRetriedEpoch[identity] = tokenEpoch
                         record(WhoopUploadError(message: "WHOOP upload used an expired session token"))
-                        schedule(partial: true)
+                        nextPartial = true
                         return
                     }
                     blocked.insert(batch.stream)
@@ -303,7 +337,7 @@ final class WhoopBleBackgroundUploader: NSObject {
             }
             retryAfter[batch.stream] = nil
             // Continue full batches only; partial tails wait for capture/lifecycle triggers.
-            schedule(partial: false)
+            nextPartial = false
         } catch {
             do {
                 if let batch = try store.pendingBatches().first(where: { self.identity($0) == identity }) {

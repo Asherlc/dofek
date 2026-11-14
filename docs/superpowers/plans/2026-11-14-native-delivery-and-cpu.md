@@ -14,7 +14,7 @@
 
 - Existing branch/workspace only; no administrator prompts, raw sensor/credential inspection, production mutations, HTTP development servers or new background loops.
 - One canonical outbox/reservation identity; no token persistence. Both network paths share the request and body. Concurrent replay is possible and existing deterministic server identities must remain valid.
-- First completion owns handling; cancel its counterpart after durable handling. Ignore retired callbacks, preserve response bounds/origin checks, and keep per-stream progress independent.
+- First terminal response owns handling; a network error on one path is reported immediately while its counterpart remains available. Cancel counterparts after durable handling. Ignore retired callbacks, preserve response bounds/origin checks, and keep per-stream progress independent.
 - Keep the URLSession adapter excluded from standalone SwiftPM; validate it in the real iOS bridge host.
 
 ## Review focus
@@ -28,23 +28,23 @@
 ### Task 1: HealthKit formatter
 
 Files: HealthKitQuantitySeriesTransport.swift and its existing XCTest suite.
-- [ ] Add a synthetic large-series regression with a generous host formatting budget; preserve existing exact fractional timestamp/source/identity tests.
-- [ ] Observe failure on the old per-timestamp formatter implementation.
-- [ ] Configure one formatter after the async read and reuse it for both timestamps throughout the invocation.
-- [ ] Run the complete HealthKit Swift suite, review behavior/scope, commit and push.
+- [x] Add a synthetic large-series regression with a generous host formatting budget; preserve existing exact fractional timestamp/source/identity tests.
+- [x] Observe failure on the old per-timestamp formatter implementation.
+- [x] Configure one formatter after the async read and reuse it for both timestamps throughout the invocation.
+- [x] Run the complete HealthKit Swift suite, review behavior/scope, commit and push (`b18c879c1`, 122 tests).
 
 ### Task 2: Immediate native transport
 
 Files: WhoopURLSessionTransport.swift, WhoopBleBackgroundUploader.swift, existing uploader tests/helpers, and iOS BridgeTests.
-- [ ] Add failing tests for immediate delivery while fallback is pending, restored-task acceleration, one logical completion and cross-session response isolation.
-- [ ] Serialize transport state on one queue; retain/adopt fallback tasks, add one ordinary task, and retire counterparts only after the uploader handles the completion.
-- [ ] Explicit configuration/flush may refresh an active reservation; ordinary capture preserves coalescing and one active logical batch per stream.
-- [ ] Test generation/token replacement, stale/duplicate callbacks, malformed/oversized acknowledgments, native background-only restoration and independent streams.
+- [x] Add failing tests for immediate delivery while fallback is pending, restored-task acceleration, one logical completion and cross-session response isolation.
+- [x] Serialize transport state on one queue; retain/adopt fallback tasks, add one ordinary task, and retire counterparts only after the uploader handles the completion.
+- [x] Explicit configuration/flush may refresh an active reservation; ordinary capture preserves coalescing and one active logical batch per stream. Network attempt errors preserve the other path and the existing backoff.
+- [x] Test generation/token replacement, stale/duplicate callbacks, malformed/oversized acknowledgments, native background-only restoration and independent streams. Delayed cancellation retires an adopted old task while protecting a replacement.
 - [ ] Run standalone WHOOP tests and the real iOS bridge suite; review actual diff and commit/push.
 
 ### Task 3: Whole change validation and handoff
 
-- [ ] Update module README and incident baseline with final behavior and Apple primary-source links.
+- [x] Update module README and incident baseline with final behavior and Apple primary-source links.
 - [ ] Run required lint, recursive typechecks, relevant unit/mobile and native checks. Keep failures explicit and fix their proven causes.
 - [ ] Separate whole-change self-review; use automatic included PR review when available. No paid/repeated reviewer requests.
 - [ ] Open/update PR and monitor required checks. Do not claim real-device CPU/background recovery from host or Simulator tests; record physical acceptance requirements.

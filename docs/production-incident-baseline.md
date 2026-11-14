@@ -38077,3 +38077,46 @@ Local qualification and CI are separate from production throughput acceptance. T
 - **Retrospective/proposed runbook wording:** “Check cloud capture counters,
   last confirmations and accessible app-specific crash reports before requesting
   broad device logs; separate native-delivery latency from transient sink lag.”
+
+## 2026-11-14 — Native WHOOP delivery and HealthKit CPU corrections prepared
+
+- **Symptoms/impact:** the installed build continued collecting fresh BLE samples
+  while three native uploads remained active and queue confirmations lagged;
+  the separate HealthKit running-series CPU termination repeated. See the
+  [current-build evidence](evidence/ble-collection-20261114/README.md#current-build-follow-up--130-pm-pst).
+- **Root cause boundaries:** UUID-matched symbols identify per-timestamp
+  formatter construction in the CPU-fatal stack, introduced in PR #3144.
+  A 10,000-point synthetic regression failed its two-second host budget before
+  invocation-local formatter reuse and passed afterward. The uploader depended
+  solely on background transfers; Apple makes background-started transfers
+  [discretionary](https://developer.apple.com/documentation/foundation/urlsessionconfiguration/isdiscretionary).
+  The precise OS condition delaying the observed phone tasks remains unresolved.
+  Kafka independently caught up without intervention; this correction does not
+  change its sink, offsets, publication ownership or pacing.
+- **Direct changes:** reuse one formatter per extraction. Give each existing
+  WHOOP reservation an ordinary native request alongside its existing OS-managed
+  file-upload fallback, preserving the same replay identity and native durable
+  owner. Retire counterparts after terminal response handling, isolate response
+  buffers by session, and fence canceled/restored/replacement requests. Network
+  attempt errors remain visible while a surviving path can finish. No production
+  deployment or physical-device recovery is established by these local changes.
+- **Validation:** 122 HealthKit Swift tests, 210 WHOOP Swift tests and 26 real iOS
+  bridge-host tests passed, including delayed cancellation, credential changes,
+  independent streams, malformed acknowledgments and live-path network failure.
+  Focused mobile/server tests, repository lint, recursive typechecks and changed
+  native strict SwiftLint passed. The additional real-ClickHouse replay check did
+  not start: the local Redpanda prerequisite exhausted Docker VM asynchronous I/O
+  capacity (`aio-nr = aio-max-nr = 65536`). No host settings or other workspaces
+  were changed to bypass that limit; CI and physical acceptance remain pending.
+- **Remaining resilience settings:** retain five-second capture scheduling to
+  coalesce BLE arrivals, the existing 30-second partial/error interval to bound
+  submission churn, and the 64 KiB acknowledgment bound to cap response memory.
+  The ordinary session [waits for initial connectivity](https://developer.apple.com/documentation/foundation/urlsessionconfiguration/waitsforconnectivity)
+  as background sessions do. Concurrent identical HTTP submissions can occur;
+  deterministic server IDs preserve replay semantics. No new retry timer is added.
+- **Follow-up/retrospective:** use the matching released native build to verify
+  locked-phone confirmations, process recreation, account cancellation and the
+  absence of another CPU-budget kill. Stock URLProtocol plus real URLSession
+  tasks reproduced transport races without another administrator prompt.
+  Proposed runbook wording: “Host and Simulator regressions validate ownership
+  and formatting; verify background scheduling and CPU recovery on the device.”

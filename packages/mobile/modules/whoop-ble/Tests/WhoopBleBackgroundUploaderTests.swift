@@ -185,37 +185,70 @@ extension WhoopBleBackgroundUploaderTests {
         try uploader.flush(); try settle(uploader)
         try uploader.configure(userId: "alice", serverURL: "https://example.com", token: "new", headers: [:])
         try settle(uploader)
-        XCTAssertEqual(transport.requests.count, 1)
+        XCTAssertEqual(transport.requests.count, 2)
         transport.complete(0, status: 401); try settle(uploader)
         XCTAssertEqual(transport.requests.count, 2)
         XCTAssertEqual(transport.requests.last?.0.value(forHTTPHeaderField: "Authorization"), "Bearer new")
+        XCTAssertEqual(try uploader.diagnostics()["blockedUploadStreams"] as? [String], [])
     }
 
     func testRestoredTaskRetainsReservationAndMissingFileIsRegeneratedAfterFailure() throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        addTeardownBlock { try FileManager.default.removeItem(at: directory) }
-        let store = try WhoopBleSampleStore(directory: directory)
-        try store.configure(WhoopUploadBinding(userId: "alice", serverURL: "https://example.com"))
-        try store.append(deviceId: "a", samplesByStream: [.realtime: rows])
-        let batch = try XCTUnwrap(store.reserve(stream: .realtime))
+        var orphan: URL?
+        let (uploader, store, transport) = try restoredSetup(samples: rows) { bodies in
+            let file = bodies.appendingPathComponent("orphan.json")
+            try Data("erased sample".utf8).write(to: file)
+            orphan = file
+        }
+        let batch = try XCTUnwrap(store.pendingBatches().first)
         let identity = batch.generation + "." + batch.id
-        let transport = TestWhoopUploadTransport()
-        transport.tasks = [identity]
-        let bodies = directory.appendingPathComponent("bodies")
-        try FileManager.default.createDirectory(at: bodies, withIntermediateDirectories: true)
-        let orphan = bodies.appendingPathComponent("orphan.json")
-        try Data("erased sample".utf8).write(to: orphan)
-        let uploader = try WhoopBleBackgroundUploader(
-            store: store, directory: bodies, transport: transport, reportError: { _ in })
         try uploader.configure(userId: "alice", serverURL: "https://example.com", token: "new", headers: [:])
         try settle(uploader)
-        XCTAssertTrue(transport.requests.isEmpty)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: orphan.path))
+        XCTAssertEqual(transport.requests.count, 1)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: try XCTUnwrap(orphan).path))
+        try FileManager.default.removeItem(at: transport.requests[0].1)
         transport.tasks = []
         try uploader.flush(); try settle(uploader)
+        XCTAssertEqual(transport.requests.count, 2)
+        guard transport.requests.count == 2 else { return }
+        XCTAssertEqual(transport.requests[1].2, identity)
+        XCTAssertEqual(try Data(contentsOf: transport.requests[1].1), batch.body)
+    }
+
+    func testLiveFailureRetainsFallbackAndUsesExistingRetryBackoff() throws {
+        var now = Date(timeIntervalSince1970: 1_800_000_000)
+        let (uploader, store, transport) = try setup(now: { now })
+        try uploader.append(deviceId: "a", samplesByStream: [.realtime: Array(repeating: rows[0], count: 500)])
+        try settle(uploader)
+        let identity = try XCTUnwrap(transport.requests.first?.2)
+        transport.failOnePath(identity: identity)
+        try settle(uploader)
+        XCTAssertTrue(transport.tasks.contains(identity))
+        XCTAssertNotNil(try uploader.diagnostics()["lastUploadError"] as? String)
+        now.addTimeInterval(5)
+        try uploader.append(deviceId: "a", samplesByStream: [.realtime: rows])
+        try settle(uploader)
         XCTAssertEqual(transport.requests.count, 1)
-        XCTAssertEqual(transport.requests[0].2, identity)
-        XCTAssertEqual(try Data(contentsOf: transport.requests[0].1), batch.body)
+        now.addTimeInterval(26)
+        try uploader.append(deviceId: "a", samplesByStream: [.realtime: rows])
+        try settle(uploader)
+        XCTAssertEqual(transport.requests.count, 2)
+        XCTAssertEqual(transport.requests.last?.2, identity)
+        XCTAssertEqual(try store.pendingBatches().count, 1)
+    }
+
+    func testConfigurationAcceleratesRestoredReservationWithCurrentCredentials() throws {
+        let (uploader, store, transport) = try restoredSetup(samples: rows)
+        let batch = try XCTUnwrap(store.pendingBatches().first)
+        let identity = batch.generation + "." + batch.id
+        try uploader.configure(userId: "alice", serverURL: "https://example.com", token: "current", headers: [:])
+        try settle(uploader)
+        XCTAssertEqual(transport.requests.count, 1, "A restored OS-only transfer must not suppress immediate delivery")
+        guard let request = transport.requests.first else { return }
+        XCTAssertEqual(request.2, identity)
+        XCTAssertEqual(request.0.value(forHTTPHeaderField: "Authorization"), "Bearer current")
+        XCTAssertEqual(try Data(contentsOf: request.1), batch.body)
+        XCTAssertEqual(try store.pendingBatches().map(\.id), [batch.id])
+        XCTAssertEqual(try uploader.sampleCount(stream: .realtime), rows.count)
     }
 
     func testHundredArrivalsCommitWithoutRepeatedOSReconciliation() throws {
@@ -231,15 +264,8 @@ extension WhoopBleBackgroundUploaderTests {
     }
 
     func testFullBatchAndPartialTailAreScheduledFromCoalescedArrivals() throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        addTeardownBlock { try FileManager.default.removeItem(at: directory) }
-        let store = try WhoopBleSampleStore(directory: directory)
-        let transport = TestWhoopUploadTransport()
         var clock = Date(timeIntervalSince1970: 1_800_000_000)
-        let uploader = try WhoopBleBackgroundUploader(
-            store: store, directory: directory.appendingPathComponent("bodies"), transport: transport,
-            reportError: { _ in }, now: { clock })
-        try uploader.configure(userId: "alice", serverURL: "https://example.com", token: "s", headers: [:])
+        let (uploader, store, transport) = try setup(now: { clock })
         try settle(uploader)
         try uploader.append(deviceId: "a", samplesByStream: [.realtime: rows])
         try settle(uploader)
@@ -290,22 +316,17 @@ extension WhoopBleBackgroundUploaderTests {
         }
     }
 
-    func testRestoredUnauthorizedTaskRetriesCurrentCredentialsOnceThenBlocks() throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        addTeardownBlock { try FileManager.default.removeItem(at: directory) }
-        let store = try WhoopBleSampleStore(directory: directory)
-        try store.configure(WhoopUploadBinding(userId: "alice", serverURL: "https://example.com"))
-        try store.append(deviceId: "a", samplesByStream: [.realtime: rows])
-        let batch = try XCTUnwrap(store.reserve(stream: .realtime))
+    func testRestoredUnauthorizedTaskWaitsForConfigurationThenBlocksCurrentRejection() throws {
+        let (uploader, store, transport) = try restoredSetup(samples: rows)
+        let batch = try XCTUnwrap(store.pendingBatches().first)
         let identity = batch.generation + "." + batch.id
-        let transport = TestWhoopUploadTransport()
-        transport.tasks = [identity]
-        let uploader = try WhoopBleBackgroundUploader(
-            store: store, directory: directory.appendingPathComponent("bodies"), transport: transport, reportError: { _ in })
-        try uploader.configure(userId: "alice", serverURL: "https://example.com", token: "new", headers: [:])
         try settle(uploader)
         transport.tasks = []
         transport.onCompletion?(identity, 401, Data(), URL(string: "https://example.com/api/trpc/whoopBleSync.pushRealtimeData"), nil)
+        try settle(uploader)
+        XCTAssertTrue(transport.requests.isEmpty)
+        XCTAssertEqual(try uploader.diagnostics()["blockedUploadStreams"] as? [String], ["realtime"])
+        try uploader.configure(userId: "alice", serverURL: "https://example.com", token: "new", headers: [:])
         try settle(uploader)
         XCTAssertEqual(transport.requests.count, 1)
         guard transport.requests.count == 1 else { return }
@@ -331,19 +352,6 @@ extension WhoopBleBackgroundUploaderTests {
             completion.fulfill()
         }
         wait(for: [completion], timeout: 0.5)
-    }
-
-    private func obstructRemoval(at path: URL) throws {
-        let manager = FileManager.default
-        if manager.fileExists(atPath: path.path) { try manager.removeItem(at: path) }
-        try manager.createDirectory(at: path, withIntermediateDirectories: true)
-        try Data("retained projection".utf8).write(to: path.appendingPathComponent("body"))
-        try manager.setAttributes([.posixPermissions: 0o500], ofItemAtPath: path.path)
-        addTeardownBlock {
-            if manager.fileExists(atPath: path.path) {
-                try manager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: path.path)
-            }
-        }
     }
 
     func testErasurePersistsCutoffWhenBodyRemovalFailsAndCancelsReservedIdentity() throws {
