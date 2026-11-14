@@ -355,7 +355,7 @@
     "structured-headers": "2.1.1",
     "stylelint": "17.14.0",
     "supports-color": "11.0.0",
-    "testcontainers": "12.2.0",
+    "testcontainers": "12.2.1",
     "tsx": "4.23.15",
     "typescript": "6.0.3",
     "vitest": "5.0.5",
