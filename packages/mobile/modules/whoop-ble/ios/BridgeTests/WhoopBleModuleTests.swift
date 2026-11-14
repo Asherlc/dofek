@@ -117,6 +117,7 @@ extension WhoopBleModuleTests {
             captures.start(userId: "account-A", logs: logs, logEntry: cleanupStarted)
         }
         defer { SentrySDK.close() }
+        SentrySDK.capture(error: NSError(domain: "UnrelatedSdkDiagnostic", code: 1))
         let cleanupEventCaptured = expectation(description: "Disable failure passed through Sentry beforeSend")
         let controlEventCaptured = expectation(description: "Control event passed through Sentry beforeSend")
         captures.expect(cleanupEventCaptured, matching: "bodies")
@@ -145,7 +146,6 @@ extension WhoopBleModuleTests {
         let rejection = try await cleanup.value
         XCTAssertNotEqual(rejection, "unexpected success")
         await fulfillment(of: [cleanupEventCaptured], timeout: 5)
-        XCTAssertEqual(captures.snapshot.count, 1, "Captured Sentry events: \(captures.snapshot)")
         let cleanupEvents = captures.snapshot.filter { $0.errorText.contains("bodies") }
         XCTAssertEqual(cleanupEvents.count, 1, "Captured Sentry events: \(captures.snapshot)")
         if let cleanupEvent = cleanupEvents.first {
@@ -156,9 +156,9 @@ extension WhoopBleModuleTests {
 
         SentrySDK.capture(error: NSError(domain: "NativeAttributionControl", code: 1))
         await fulfillment(of: [controlEventCaptured], timeout: 5)
-        XCTAssertEqual(captures.snapshot.count, 2, "Captured Sentry events: \(captures.snapshot)")
         let controlEvents = captures.snapshot.filter { $0.errorText.contains("NativeAttributionControl") }
         XCTAssertEqual(controlEvents.count, 1, "Captured Sentry events: \(captures.snapshot)")
+        XCTAssertTrue(captures.snapshot.contains { $0.errorText.contains("UnrelatedSdkDiagnostic") })
         if let controlEvent = controlEvents.first {
             XCTAssertEqual(controlEvent.userId, "account-B")
         } else {

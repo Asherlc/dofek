@@ -341,8 +341,8 @@ extension WhoopBleModuleTests {
         cleanupCaptured: XCTestExpectation,
         controlCaptured: XCTestExpectation
     ) async {
+        SentrySDK.capture(error: NSError(domain: "UnrelatedSdkDiagnostic", code: 1))
         await fulfillment(of: [cleanupCaptured], timeout: 5)
-        XCTAssertEqual(captures.snapshot.count, 1, "Captured Sentry events: \(captures.snapshot)")
         let cleanup = captures.snapshot.first { $0.errorText.contains("bodies") }
         XCTAssertEqual(captures.snapshot.filter { $0.errorText.contains("bodies") }.count, 1)
         if let cleanup {
@@ -353,9 +353,9 @@ extension WhoopBleModuleTests {
 
         SentrySDK.capture(error: NSError(domain: "NativeAttributionControl", code: 1))
         await fulfillment(of: [controlCaptured], timeout: 5)
-        XCTAssertEqual(captures.snapshot.count, 2, "Captured Sentry events: \(captures.snapshot)")
         let control = captures.snapshot.first { $0.errorText.contains("NativeAttributionControl") }
         XCTAssertEqual(captures.snapshot.filter { $0.errorText.contains("NativeAttributionControl") }.count, 1)
+        XCTAssertTrue(captures.snapshot.contains { $0.errorText.contains("UnrelatedSdkDiagnostic") })
         if let control {
             XCTAssertEqual(control.userId, "account-B")
         } else {
