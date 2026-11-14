@@ -208,6 +208,37 @@ final class SQLiteWorkProbe {
         return (value, SQLiteWorkProbe(database: database))
     }
 
+    func withDeniedVacuum<T>(_ operation: () throws -> T) rethrows -> T {
+        XCTAssertEqual(sqlite3_set_authorizer(database, { _, action, _, _, _, _ in
+            action == SQLITE_ATTACH ? SQLITE_DENY : SQLITE_OK
+        }, nil), SQLITE_OK)
+        defer { XCTAssertEqual(sqlite3_set_authorizer(database, nil, nil), SQLITE_OK) }
+        return try operation()
+    }
+
+    func withDeniedSecureDeleteRestoration<T>(_ operation: () throws -> T) rethrows -> T {
+        XCTAssertEqual(sqlite3_set_authorizer(database, { _, action, name, value, _, _ in
+            guard action == SQLITE_PRAGMA, let name, let value else { return SQLITE_OK }
+            return String(cString: name) == "secure_delete" && String(cString: value).uppercased() != "FAST"
+                ? SQLITE_DENY : SQLITE_OK
+        }, nil), SQLITE_OK)
+        defer { XCTAssertEqual(sqlite3_set_authorizer(database, nil, nil), SQLITE_OK) }
+        return try operation()
+    }
+
+    static func withReadSnapshot<T>(directory: URL, _ operation: () throws -> T) throws -> T {
+        var handle: OpaquePointer?
+        XCTAssertEqual(sqlite3_open_v2(directory.appendingPathComponent("samples.sqlite").path,
+                                      &handle, SQLITE_OPEN_READONLY, nil), SQLITE_OK)
+        let reader = try XCTUnwrap(handle)
+        defer {
+            XCTAssertEqual(sqlite3_exec(reader, "ROLLBACK", nil, nil, nil), SQLITE_OK)
+            XCTAssertEqual(sqlite3_close(reader), SQLITE_OK)
+        }
+        try SQLiteWorkProbe(database: reader).executeFixture("BEGIN; SELECT COUNT(*) FROM samples")
+        return try operation()
+    }
+
     func withInstructionLimit<T>(_ limit: Int, _ operation: () throws -> T) rethrows -> T {
         let remaining = UnsafeMutablePointer<Int>.allocate(capacity: 1)
         remaining.initialize(to: limit)
@@ -223,5 +254,38 @@ final class SQLiteWorkProbe {
             remaining.deallocate()
         }
         return try operation()
+    }
+}
+
+extension WhoopBleSampleStoreTests {
+    var owner: WhoopUploadBinding { WhoopUploadBinding(userId: "alice", serverURL: "https://example.com") }
+    func directory() throws -> URL {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { try FileManager.default.removeItem(at: url) }
+        return url
+    }
+    func samples(_ seconds: [Int]) -> [[String: Any]] {
+        seconds.map { ["timestamp": String(format: "2026-10-28T00:00:%02d.000Z", $0), "heartRateBpm": 70] }
+    }
+
+    func seedPersistedSamples(_ count: Int, stream: WhoopUploadStream, second: Int, probe: SQLiteWorkProbe) throws {
+        let sample = samples([second])[0]
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let timestamp = try XCTUnwrap(formatter.date(from: XCTUnwrap(sample["timestamp"] as? String)))
+        let payload = try JSONSerialization.data(withJSONObject: sample, options: [.sortedKeys])
+            .map { String(format: "%02x", $0) }.joined()
+        // Restore a real persisted backlog without replaying its ingestion in
+        // every query test and every isolated mutation. Public append is tested separately.
+        try probe.executeFixture("""
+            BEGIN IMMEDIATE;
+            WITH RECURSIVE sequence(value) AS (
+                VALUES(1) UNION ALL SELECT value + 1 FROM sequence LIMIT \(count)
+            )
+            INSERT INTO samples(stream, device, timestamp, payload)
+                SELECT '\(stream.rawValue)', 'a', \(timestamp.timeIntervalSince1970), X'\(payload)' FROM sequence;
+            UPDATE stats SET received = received + \(count) WHERE stream = '\(stream.rawValue)';
+            COMMIT;
+            """)
     }
 }
