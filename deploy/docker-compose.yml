@@ -572,7 +572,7 @@ services:
     # service's own name deadlocks the first start (the task cannot resolve
     # itself and never becomes a task). The S3 API still binds 0.0.0.0:9000.
     # https://github.com/seaweedfs/seaweedfs/releases/tag/4.47
-    image: chrislusf/seaweedfs:4.47@sha256:ce9e796f1fe6f06968f4c04bdaf8f678dad9c8acdfef3d244133d71bfa6bf882
+    image: chrislusf/seaweedfs:4.52@sha256:57877e32bb90073b37dc109b438ba66e84fd5ed9ced5f5c04f56444ef243ce59
     environment:
       # Credential names retained for PeerDB client env wiring; SeaweedFS accepts
       # these as S3 access/secret keys for path-style clients.
