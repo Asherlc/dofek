@@ -93,17 +93,17 @@ export class AnalyticsWorker {
       : null;
     const lastSuccessAt = this.#lastSuccessfulAt?.toISOString() ?? null;
     let status: AnalyticsHealth["body"]["status"];
+    const maximumHealthAge =
+      this.#options.intervalMilliseconds + this.#options.retryDelayMilliseconds;
 
     if (!this.#lastSuccessfulAt) {
       const initialSuccessBudget =
-        this.#options.startupDelayMilliseconds +
-        this.#options.intervalMilliseconds +
-        this.#options.retryDelayMilliseconds;
-      const startupAge = this.#options.now().getTime() - this.#startedAt.getTime();
-      status = this.#lastFailure || startupAge > initialSuccessBudget ? "unhealthy" : "starting";
+        maximumHealthAge +
+        (this.#currentCycleStartedAt ? 0 : this.#options.startupDelayMilliseconds);
+      const healthReference = this.#currentCycleStartedAt ?? this.#startedAt;
+      const referenceAge = this.#options.now().getTime() - healthReference.getTime();
+      status = this.#lastFailure || referenceAge > initialSuccessBudget ? "unhealthy" : "starting";
     } else {
-      const maximumHealthAge =
-        this.#options.intervalMilliseconds + this.#options.retryDelayMilliseconds;
       const healthReference = this.#currentCycleStartedAt ?? this.#lastSuccessfulAt;
       const successAge = this.#options.now().getTime() - healthReference.getTime();
       if (successAge > maximumHealthAge) {

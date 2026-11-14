@@ -85,7 +85,7 @@ export async function runAnalyticsRefreshJobs({
   await queue.setGlobalConcurrency(1);
   await queue.upsertJobScheduler(
     "analytics-refresh-periodic",
-    { every: intervalMilliseconds },
+    { every: intervalMilliseconds, startDate: Date.now() + intervalMilliseconds },
     {
       name: "analytics-refresh-periodic",
       data: { type: "analytics-refresh" },
@@ -97,16 +97,17 @@ export async function runAnalyticsRefreshJobs({
   const consumer = new Worker<AnalyticsRefreshJobData>(
     queue.name,
     async (job) => {
-      if (job.name === "analytics-refresh-periodic") {
-        await enqueueAnalyticsRefresh(queue);
-        return;
-      }
       // Release only this job's deduplication key so updates arriving during
       // the build can create one subsequent batch.
       await job.removeDeduplicationKey();
       await processRefresh();
     },
-    { connection, concurrency: 1, autorun: false },
+    {
+      connection,
+      concurrency: 1,
+      autorun: false,
+      limiter: { max: 1, duration: intervalMilliseconds },
+    },
   );
   consumer.on("error", reportFailure);
   consumer.on("failed", (_job, error) => {

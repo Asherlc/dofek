@@ -167,6 +167,18 @@ infrastructure has been retired.
   waits 300 seconds before its next run with its own resource budget; its script
   reports failures to Sentry and its loop logs the nonzero exit before the next
   scheduled retry. A reconciliation failure never changes CDC state.
+- Analytics refresh admission uses the existing configured interval as a
+  queue-wide rate limit on build starts (15 minutes in production). Startup
+  still queues an immediate request; later data-ready requests coalesce into a
+  pending follow-up, and periodic jobs perform actual refreshes. Long builds
+  can still occupy the entire interval, so catch-up must be measured rather
+  than inferred from the setting. Waiting callers complete only when their
+  queued refresh finishes. The publication lock is unchanged. BullMQ documents
+  [global rate limiting](https://docs.bullmq.io/guide/rate-limiting) and
+  [periodic job scheduling](https://docs.bullmq.io/guide/job-schedulers/).
+  Before the first admission, health retains its startup deadline; an active
+  first cycle receives the same interval-plus-retry watchdog as later cycles,
+  measured from its own start. See the [worker health implementation](../src/analytics-worker.ts).
 - Netdata has a 768 MiB container memory limit and a checked-in `deploy/netdata/netdata.conf` that bounds dbengine retention to two tiers: one day of per-second data capped at 96 MiB and seven days of per-minute data capped at 128 MiB. The stack mounts this file as a Docker Swarm config, so changing it must also rotate the config key in `deploy/docker-compose.yml` (for example `netdata_db_limits_v2`).
 - PeerDB uses an internal catalog Postgres service, Temporal, worker services, and a private SeaweedFS S3 staging bucket (service hostname `peerdb-minio`). Its persistent catalog and staging data live under `/mnt/dofek-data/peerdb-catalog` and `/mnt/dofek-data/peerdb-minio`. The catalog uses the PostgreSQL 18 image layout: mount the host directory at `/var/lib/postgresql`, not `/var/lib/postgresql/data`, so the image can manage its versioned data directory. Production mirrors use 100,000-row CDC batches and single-worker 100,000-row initial snapshot partitions so PeerDB can stay inside its fixed memory limits at the cost of slower catch-up.
 - Kafka stores local `metric_stream` ingest data under `/mnt/dofek-data/kafka-broker/data` and uses R2 for its remote log tier. Redpanda Connect independently archives the three routed source topics to `dofek-metric-stream-archive`; it is not the broker's remote-segment reader. The original `/mnt/dofek-data/redpanda` directory is now an empty read-only worker hold mount. See the [retention and cleanup record](kafka/retention-policy.md) and [Kafka tiering documentation](https://kafka.apache.org/44/operations/tiered-storage/). The ClickHouse sink and R2 archive services must be healthy before any metric-stream writer change is considered deployed safely.

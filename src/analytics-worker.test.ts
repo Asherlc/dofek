@@ -136,6 +136,34 @@ describe("AnalyticsWorker", () => {
     await cycle;
   });
 
+  it("gives a delayed first cycle its active health budget after admission", async () => {
+    let now = new Date("2026-07-24T18:00:00.000Z");
+    let finishBuild = () => {};
+    const pending = new Promise<void>((resolve) => {
+      finishBuild = resolve;
+    });
+    const worker = new AnalyticsWorker(
+      createWorkerOptions({ now: () => now, runAnalyticsBuild: () => pending }),
+    );
+    now = new Date("2026-07-24T18:15:00.000Z");
+    const cycle = worker.runCycle();
+    try {
+      now = new Date("2026-07-24T18:20:00.001Z");
+      expect(worker.getHealth()).toMatchObject({
+        body: { currentStep: "analytics-build", status: "starting" },
+        statusCode: 200,
+      });
+      now = new Date("2026-07-24T18:35:00.001Z");
+      expect(worker.getHealth()).toMatchObject({
+        body: { currentStep: "analytics-build", status: "unhealthy" },
+        statusCode: 503,
+      });
+    } finally {
+      finishBuild();
+      await cycle;
+    }
+  });
+
   it("gives a running cycle the full health budget after the normal interval", async () => {
     let now = new Date("2026-07-24T18:00:00.000Z");
     let finishSecondBuild = () => {};
