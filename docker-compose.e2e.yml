@@ -51,7 +51,7 @@ services:
       retries: 15
 
   redpanda:
-    image: docker.io/redpandadata/redpanda:v26.2.5@sha256:badca2d958f81da675c3055a9ecb6ebb590325582bcf16936148ffd65e96e920
+    image: docker.io/redpandadata/redpanda:v26.2.6@sha256:8b1076e0d61bfceb66594dc01536427ce0b529f8ead35fdab9763ab6085891ce
     command:
       - redpanda
       - start
@@ -75,7 +75,7 @@ services:
   account-erasure-minio:
     # SeaweedFS S3 API stand-in; service hostname kept for R2_ENDPOINT wiring.
     # https://github.com/seaweedfs/seaweedfs/releases/tag/4.47
-    image: chrislusf/seaweedfs:4.50@sha256:c2658820e763294a9e9de7b36c81e59b879e3459148351aee4e31a126ca64860
+    image: chrislusf/seaweedfs:4.52@sha256:57877e32bb90073b37dc109b438ba66e84fd5ed9ced5f5c04f56444ef243ce59
     environment:
       MINIO_ROOT_USER: accounterasure
       MINIO_ROOT_PASSWORD: account-erasure-e2e-secret

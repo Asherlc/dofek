@@ -123,6 +123,8 @@ pending connection. This follows Apple's
 the [native handshake lifecycle](ios/WhoopBleConnectionManager+Handshake.swift) owns the
 application deadlines and cancellation. A pending request alone does not prove
 capture has resumed: check new data notifications and parsed sample timestamps.
+Explicit Disconnect also [stops active scanning](https://developer.apple.com/documentation/corebluetooth/cbcentralmanager/stopscan())
+before completing cleanup.
 
 Requested IMU capture survives unsuccessful automatic reconnect attempts and
 resumes after notification readiness. Explicit Stop and Disconnect cancel
@@ -169,9 +171,23 @@ precedes file cleanup. Within the store,
 before `BEGIN IMMEDIATE`, and `store_reset_stats`, `store_delete_samples`,
 `store_delete_batches`, `store_clear_binding` and `store_rotate_generation`
 precede the corresponding writes. `store_commit` precedes `COMMIT`;
-`store_completed` establishes that commit returned successfully. Failed writes
-retain the existing rollback and error propagation, following SQLite's
-[transaction semantics](https://www.sqlite.org/lang_transaction.html).
+`store_completed` establishes that commit returned successfully. `store_vacuum`
+precedes `VACUUM` and a truncating WAL checkpoint after that commit. The purge
+deletes rows with [`secure_delete`](https://www.sqlite.org/pragma.html#pragma_secure_delete)
+set to `FAST`, so SQLite does not rewrite each freed page through the WAL;
+[`VACUUM`](https://www.sqlite.org/lang_vacuum.html) then removes the freed pages
+and shrinks the file. The [purge implementation](ios/WhoopBleSampleStore+Purge.swift)
+commits a `purge_pending` record in the existing metadata table with the deletion.
+It clears that record only after compaction and a successful
+[truncating checkpoint](https://www.sqlite.org/pragma.html#pragma_wal_checkpoint).
+Store initialization completes pending cleanup before returning; later writes
+and explicit cleanup retries also complete it before proceeding. Failed recovery
+rejects configuration and capture instead of losing the cleanup intent.
+The prior connection-local secure-delete mode is restored with checked SQL on
+success and failure, including the `FAST` literal for mode 2. An unsuccessful
+restoration blocks later writes until that original mode is restored.
+Transaction failures retain the existing rollback and error propagation,
+following SQLite's [transaction semantics](https://www.sqlite.org/lang_transaction.html).
 Each entry includes `isMainThread` and the current native `threadId`, captured at
 that boundary rather than inherited from the initial caller. Apple's
 [hang investigation guidance](https://developer.apple.com/documentation/xcode/understanding-hangs-in-your-app)
@@ -299,6 +315,8 @@ Bluetooth delivery separately on a device.
 
 The standalone `swift test` suite remains separate: its target excludes the Expo
 bridge and the app-hosted tests, as declared in [Package.swift](Package.swift).
+Central-manager tests use the [production central boundary](ios/WhoopBleCentralManaging.swift)
+instead of [unsupported Core Bluetooth subclassing](https://developer.apple.com/documentation/corebluetooth).
 Its [peripheral callback regressions](Tests/WhoopBleConnectionManager+CoreBluetoothTests.swift)
 exercise ownership, stale callbacks, cancellation and reconnect through the same
 [peripheral interface](ios/WhoopBlePeripheralConnection.swift) used by the native

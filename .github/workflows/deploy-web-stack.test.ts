@@ -1,4 +1,19 @@
-import { MOCK_DOCKER, runKafkaBackendFixture, runTopicPolicyFixture } from "./deploy-web-stack-test-helpers.ts";
+import {
+  STABLE_OBSERVATION,
+  serializeScenario,
+  runDeployConsumers as runDeployConsumersFixture,
+  type ConsumerScenarios,
+  type DeployConsumerOptions,
+  type DeployQuiescedOptions,
+  type ServiceObservation,
+  currentKafkaImage,
+  requestedKafkaImage,
+  runKafkaImageFixture,
+  runKafkaInstallerFixture,
+  MOCK_DOCKER,
+  runKafkaBackendFixture,
+  runTopicPolicyFixture,
+} from "./deploy-web-stack-test-helpers.ts";
 import { deployTestDigest, deployTestOldImage, deployTestRepository, runDeployImageFixture } from "../../scripts/deploy-image-test-helpers.ts";
 import { spawnSync } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -11,59 +26,53 @@ import { z } from "zod";
 const workflowText = readFileSync(".github/workflows/deploy-web-stack.yml", "utf8");
 const otaImage = `${deployTestRepository}-ota@${deployTestDigest}`;
 
+describe("Kafka image upgrades", () => {
+  it("resolves the requested manifest image separately from the running broker", () => {
+    const result = runKafkaImageFixture(
+      workflowRunScript("Resolve Kafka deployment images"), currentKafkaImage,
+    );
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.environment.KAFKA_IMAGE).toBe(requestedKafkaImage);
+    expect(result.environment.CURRENT_KAFKA_IMAGE).toBe(currentKafkaImage);
+  });
+  it("rejects a mutable running broker image before probing", () => {
+    const result = runKafkaImageFixture(
+      workflowRunScript("Resolve Kafka deployment images"), "apache/kafka:4.4.0",
+    );
+    expect(result.status).not.toBe(0);
+    expect(result.environment).toEqual({});
+  });
+  it.each([
+    "Wait for Kafka API readiness (external client)",
+    "Verify Kafka after dependency stack apply",
+    "Verify Kafka after requested-image stack apply",
+    "Verify Kafka before restoring consumers",
+    "Verify Kafka after full stack apply",
+  ])("uses the selected image for %s", step => {
+    const result = runKafkaImageFixture(workflowRunScript(step));
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.calls.find(call => call[0] === "run")).toContain(requestedKafkaImage);
+  });
+  it("probes the running version before an upgrade", () => {
+    const result = runKafkaImageFixture(
+      workflowRunScript("Wait for Kafka API readiness (external client)"),
+      currentKafkaImage, currentKafkaImage,
+    );
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.calls.find(call => call[0] === "run")).toContain(currentKafkaImage);
+  });
+  it("rejects a stale broker after the dependency stack apply", () => {
+    const result = runKafkaImageFixture(
+      workflowRunScript("Verify Kafka after dependency stack apply"), currentKafkaImage,
+    );
+    expect(result.status).not.toBe(0);
+    expect(result.calls.some(call => call[0] === "run")).toBe(false);
+  });
+});
+
 describe("Kafka JMX exporter installer", () => {
   function runInstaller(failure: "checksum" | "install" | "" = "") {
-    const directory = mkdtempSync(join(tmpdir(), "deploy-kafka-jmx-installer-"));
-    const trace = join(directory, "calls.jsonl");
-    const curl = join(directory, "curl");
-    const sha256sum = join(directory, "sha256sum");
-    const docker = join(directory, "docker");
-
-    try {
-      writeFileSync(curl, `#!/usr/bin/env node
-const fs = require('node:fs');
-const args = process.argv.slice(2);
-fs.appendFileSync(process.env.JMX_TRACE, JSON.stringify(['curl', ...args]) + '\\n');
-const output = args[args.indexOf('--output') + 1];
-fs.writeFileSync(output, 'fixture jar');
-`);
-      writeFileSync(sha256sum, `#!/usr/bin/env node
-const fs = require('node:fs');
-const input = fs.readFileSync(0, 'utf8');
-fs.appendFileSync(process.env.JMX_TRACE, JSON.stringify(['sha256sum', input]) + '\\n');
-if (process.env.JMX_FAILURE === 'checksum') process.exit(1);
-console.log(input.trim().split(/\\s+/)[0] + '  ' + input.trim().split(/\\s+/).at(-1) + ': OK');
-`);
-      writeFileSync(docker, `#!/usr/bin/env node
-const { spawnSync } = require('node:child_process');
-const fs = require('node:fs');
-const args = process.argv.slice(2);
-fs.appendFileSync(process.env.JMX_TRACE, JSON.stringify(['docker', ...args]) + '\\n');
-const shellScriptIndex = args.indexOf('-euc') + 1;
-const syntax = spawnSync('sh', ['-n', '-c', args[shellScriptIndex]], { encoding: 'utf8' });
-if (syntax.status !== 0) { process.stderr.write(syntax.stderr); process.exit(syntax.status ?? 1); }
-if (args[0] === 'run' && process.env.JMX_FAILURE === 'install') process.exit(42);
-`);
-      for (const executable of [curl, sha256sum, docker]) chmodSync(executable, 0o755);
-
-      const result = spawnSync("bash", ["-e", "-o", "pipefail", "-c", workflowRunScript("Install Kafka JMX exporter")], {
-        cwd: process.cwd(),
-        encoding: "utf8",
-        env: {
-          ...process.env,
-          PATH: `${directory}:${process.env.PATH ?? ""}`,
-          APP_IMAGE: `${deployTestRepository}@${deployTestDigest}`,
-          RUNNER_TEMP: directory,
-          JMX_TRACE: trace,
-          JMX_FAILURE: failure,
-        },
-        timeout: 30_000,
-      });
-      const calls = readFileSync(trace, "utf8").trim().split("\n").filter(Boolean).map((line) => z.array(z.string()).parse(JSON.parse(line)));
-      return { ...result, calls };
-    } finally {
-      rmSync(directory, { recursive: true, force: true });
-    }
+    return runKafkaInstallerFixture(workflowRunScript("Install Kafka JMX exporter"), failure);
   }
 
   it("rejects a bad runner download before creating a Docker installer", () => {
@@ -115,6 +124,9 @@ describe("deploy-owned Kafka topic policy", () => {
   }
 
   it("incrementally configures each actual route with its role policy before readback", () => {
+    const topics = runTopicPolicyFixture(workflowRunScript("Verify Kafka metric-stream topics"));
+    expect(topics.status, topics.stderr).toBe(0);
+    expect(topics.calls.every(call => call.includes(requestedKafkaImage))).toBe(true);
     const result = runTopicPolicyFixture(policyScript());
     expect(result.status, result.stderr).toBe(0);
     const updates = result.calls.filter((call) => call.includes("--alter"));
@@ -127,6 +139,7 @@ describe("deploy-owned Kafka topic policy", () => {
       ["history.quarantine.v1", "cleanup.policy=delete,retention.ms=604800000,retention.bytes=1073741824,local.retention.bytes=268435456,local.retention.ms=86400000,segment.ms=3600000,segment.bytes=134217728,remote.storage.enable=true"],
     ]);
     for (const update of updates) {
+      expect(update).toContain(requestedKafkaImage);
       expect(update).toContain("/opt/kafka/bin/kafka-configs.sh");
       expect(update).toContain("fixture_default");
       expect(update).toContain("--rm");
@@ -150,34 +163,6 @@ describe("deploy-owned Kafka topic policy", () => {
     expect(result.stdout).not.toContain("RESTORE-CONSUMERS");
   });
 });
-
-interface ServiceObservation {
-  readonly desiredReplicas?: string;
-  readonly image?: string;
-  readonly replicas: string;
-  readonly taskId: string;
-  readonly updateState: string;
-}
-
-interface ConsumerScenarios {
-  readonly analyticsWorker: readonly ServiceObservation[];
-  readonly metricStreamClickhouseSink: readonly ServiceObservation[];
-  readonly processingReconciliation?: readonly ServiceObservation[];
-}
-
-interface DeployConsumerOptions {
-  readonly failTaskInspection?: boolean;
-  readonly failOtaImageVerification?: boolean;
-  readonly sleepSeconds?: number;
-  readonly webConvergenceFailed?: boolean;
-}
-
-interface DeployQuiescedOptions extends DeployConsumerOptions {
-  readonly deploymentMode?: "rolling" | "maintenance";
-  readonly serviceObservations?: Readonly<Record<string, readonly ServiceObservation[]>>;
-  readonly stackDeployStatus?: number;
-}
-
 
 function deployConsumersRunScript(): string {
   const workflow = z.object({
@@ -217,132 +202,8 @@ function deployQuiescedRunScript(): string {
     .join("\n");
 }
 
-function serializeScenario(observations: readonly ServiceObservation[]): string {
-  return `${observations
-    .map(
-      ({
-        desiredReplicas = "1",
-        image = "ghcr.io/asherlc/dofek@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        replicas,
-        taskId,
-        updateState,
-      }) => `${updateState}|${replicas}|${taskId}|${image}|${desiredReplicas}`,
-    )
-    .join("\n")}\n`;
-}
-
 function runDeployConsumers(scenarios: ConsumerScenarios, options: DeployConsumerOptions = {}) {
-  const temporaryDirectory = mkdtempSync(join(tmpdir(), "dofek-deploy-consumers-"));
-  const scenarioDirectory = join(temporaryDirectory, "scenarios");
-  const stateDirectory = join(temporaryDirectory, "state");
-  const dockerPath = join(temporaryDirectory, "docker");
-  const nodePath = join(temporaryDirectory, "node");
-  const stackDeployCapturePath = join(temporaryDirectory, "stack-deploy-args");
-  const imageVerificationCapturePath = join(temporaryDirectory, "image-verification-args");
-
-  try {
-    mkdirSync(scenarioDirectory);
-    mkdirSync(stateDirectory);
-    writeFileSync(dockerPath, MOCK_DOCKER);
-    writeFileSync(
-      nodePath,
-      "#!/usr/bin/env bash\nif [ \"$2\" = docker ] || [ \"$2\" = env ]; then shift; exec \"$@\"; fi\nexit 0\n",
-    );
-    chmodSync(dockerPath, 0o755);
-    chmodSync(nodePath, 0o755);
-    const pnpmPath = join(temporaryDirectory, "pnpm");
-    writeFileSync(imageVerificationCapturePath, "");
-    writeFileSync(pnpmPath, `#!/usr/bin/env bash
-set -euo pipefail
-[ "$1" = tsx ]
-case "$2" in
-  scripts/stack-service-image.ts) printf '%s\\n' "$MOCK_OTA_IMAGE" ;;
-  scripts/verify-deploy-image.ts)
-    printf '%s\\n' "$*" >> "$IMAGE_VERIFICATION_CAPTURE"
-    if [ "$4" = dofek_ota ] && [ "$FAIL_OTA_IMAGE_VERIFICATION" = 1 ]; then
-      printf '%s\\n' "OTA running image mismatch" >&2
-      exit 1
-    fi
-    ;;
-  *) exit 1 ;;
-esac
-`);
-    writeFileSync(
-      join(scenarioDirectory, "dofek_ota"),
-      serializeScenario([{ ...STABLE_OBSERVATION, image: otaImage }]),
-    );
-    chmodSync(pnpmPath, 0o755);
-    writeFileSync(
-      join(scenarioDirectory, "dofek_analytics-worker"),
-      serializeScenario(scenarios.analyticsWorker),
-    );
-    writeFileSync(
-      join(scenarioDirectory, "dofek_metric-stream-clickhouse-sink"),
-      serializeScenario(scenarios.metricStreamClickhouseSink),
-    );
-    writeFileSync(
-      join(scenarioDirectory, "dofek_processing-reconciliation"),
-      serializeScenario(scenarios.processingReconciliation ?? [STABLE_OBSERVATION]),
-    );
-    for (const serviceName of [
-      "dofek_kafka",
-      "dofek_metric-stream-live-clickhouse-sink",
-      "dofek_metric-stream-history-clickhouse-sink",
-      "dofek_metric-stream-r2-archive",
-      "dofek_metric-stream-live-r2-archive",
-      "dofek_metric-stream-history-r2-archive",
-    ]) {
-      writeFileSync(join(scenarioDirectory, serviceName), serializeScenario([STABLE_OBSERVATION]));
-    }
-
-    const result = spawnSync(
-      "bash",
-      [
-        "-c",
-        `docker() (
-${MOCK_DOCKER}
-)
-SECONDS=0
-simulated_seconds=0
-echo() {
-  builtin echo "[\${simulated_seconds}s] $*"
-}
-sleep() {
-  SECONDS=$((SECONDS + MOCK_SLEEP_SECONDS))
-  simulated_seconds=$((simulated_seconds + MOCK_SLEEP_SECONDS))
-}
-${deployConsumersRunScript()}`,
-      ],
-      {
-        encoding: "utf8",
-        env: {
-          ...process.env,
-          PATH: `${temporaryDirectory}:${process.env.PATH ?? ""}`,
-          FAIL_TASK_INSPECTION: options.failTaskInspection ? "1" : "0",
-          FAIL_OTA_IMAGE_VERIFICATION: options.failOtaImageVerification ? "1" : "0",
-          MOCK_OTA_IMAGE: otaImage,
-          IMAGE_VERIFICATION_CAPTURE: imageVerificationCapturePath,
-          APP_IMAGE: deployTestRepository + "@" + deployTestDigest,
-          MOCK_SLEEP_SECONDS: (options.sleepSeconds ?? 10).toString(),
-          STACK_DEPLOY_CAPTURE: stackDeployCapturePath,
-          WEB_CONVERGENCE_FAILED: options.webConvergenceFailed ? "true" : "false",
-          RUNNER_TEMP: temporaryDirectory,
-          SCENARIO_DIR: scenarioDirectory,
-          STACK_FILE_FLAGS: "-c deploy/stack.yml",
-          STACK_NAME: "dofek",
-          STATE_DIR: stateDirectory,
-        },
-      },
-    );
-
-    return {
-      ...result,
-      stackDeployArgs: readFileSync(stackDeployCapturePath, "utf8"),
-      imageVerificationArgs: readFileSync(imageVerificationCapturePath, "utf8"),
-    };
-  } finally {
-    rmSync(temporaryDirectory, { force: true, recursive: true });
-  }
+  return runDeployConsumersFixture(deployConsumersRunScript(), scenarios, options);
 }
 
 function runDeployQuiesced(
@@ -434,11 +295,6 @@ function runDeployQuiesced(
   }
 }
 
-const STABLE_OBSERVATION = {
-  replicas: "1/1",
-  taskId: "stable-task",
-  updateState: "completed",
-} satisfies ServiceObservation;
 
 describe("deploy-web-stack workflow contract", () => {
   it("keeps PeerDB contract gates around migrations and before consumer restoration", () => {
@@ -534,7 +390,7 @@ ${workflowRunScript(step)}
           WEB_PRE_MIGRATION_ENV_FILE: "/synthetic/web-pre-migration.env",
           RUNNER_TEMP: "/synthetic",
           STACK_NAME: "dofek",
-          STACK_FILE_FLAGS: "-c deploy/stack.yml",
+          STACK_FILE_FLAGS: "-c deploy/docker-compose.yml",
         },
       },
     );

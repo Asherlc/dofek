@@ -1,7 +1,7 @@
 # Docker Swarm stack for production.
 #
 # Deployed from CI via a remote Docker context:
-#   docker --context prod stack deploy -c deploy/stack.yml --with-registry-auth dofek
+#   docker --context prod stack deploy -c deploy/docker-compose.yml --with-registry-auth dofek
 #
 # Secrets come from Infisical. CI keeps the complete export on the runner for
 # compose-style ${VAR} interpolation and renders least-privilege env_file inputs
@@ -572,7 +572,7 @@ services:
     # service's own name deadlocks the first start (the task cannot resolve
     # itself and never becomes a task). The S3 API still binds 0.0.0.0:9000.
     # https://github.com/seaweedfs/seaweedfs/releases/tag/4.47
-    image: chrislusf/seaweedfs:4.47@sha256:ce9e796f1fe6f06968f4c04bdaf8f678dad9c8acdfef3d244133d71bfa6bf882
+    image: chrislusf/seaweedfs:4.52@sha256:57877e32bb90073b37dc109b438ba66e84fd5ed9ced5f5c04f56444ef243ce59
     environment:
       # Credential names retained for PeerDB client env wiring; SeaweedFS accepts
       # these as S3 access/secret keys for path-style clients.
@@ -626,7 +626,7 @@ services:
           memory: 512M
 
   peerdb-minio-lifecycle:
-    image: amazon/aws-cli:2.37.1@sha256:b0dd5a4d216a1786863541a201baa7b7b4c5032bec9c6e72c38d01cafd7e8db8
+    image: amazon/aws-cli:2.39.6@sha256:eccdb3ec77e159d43ca6a750a70738c546883138be7f094498294a1477ec7e42
     environment:
       AWS_ACCESS_KEY_ID: peerdb
       AWS_SECRET_ACCESS_KEY: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
@@ -660,7 +660,7 @@ services:
           memory: 128M
 
   peerdb-flow-api:
-    image: ghcr.io/peerdb-io/flow-api:stable-v0.36.19
+    image: ghcr.io/peerdb-io/flow-api:stable-v0.37.15
     environment: &peerdb-flow-environment
       PEERDB_CATALOG_HOST: peerdb-catalog
       PEERDB_CATALOG_PORT: "5432"
@@ -695,7 +695,7 @@ services:
           memory: 512M
 
   peerdb-flow-worker:
-    image: ghcr.io/peerdb-io/flow-worker:stable-v0.36.19
+    image: ghcr.io/peerdb-io/flow-worker:stable-v0.37.15
     environment: *peerdb-flow-environment
     deploy:
       resources:

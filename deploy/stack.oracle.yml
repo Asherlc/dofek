@@ -1,4 +1,4 @@
-# Oracle Cloud Always Free overrides applied on top of stack.yml.
+# Oracle Cloud Always Free overrides applied on top of docker-compose.yml.
 #
 # The Always Free Ampere A1 node has 24 GB RAM and 4 OCPUs, so the core app +
 # PeerDB CDC + ClickHouse + Postgres fit comfortably and we do NOT need to
@@ -12,7 +12,7 @@
 # only its management UI is turned off.
 #
 # Apply with:
-#   docker stack deploy -c deploy/stack.yml -c deploy/stack.oracle.yml dofek
+#   docker stack deploy -c deploy/docker-compose.yml -c deploy/stack.oracle.yml dofek
 services:
   cloudbeaver:
     deploy:

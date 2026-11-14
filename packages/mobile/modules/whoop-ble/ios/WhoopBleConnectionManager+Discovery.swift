@@ -6,7 +6,7 @@ extension WhoopBleConnectionManager {
     }
 
     @discardableResult
-    func ensureCentralManager() -> CBCentralManager {
+    func ensureCentralManager() -> any WhoopBleCentralManaging {
         if let existing = centralManager {
             return existing
         }
@@ -24,7 +24,7 @@ extension WhoopBleConnectionManager {
     }
 
     func performFind(
-        manager: CBCentralManager,
+        manager: any WhoopBleCentralManaging,
         completion: @escaping ([String: Any?]?) -> Void
     ) {
         if let peripheral = connectedPeripheral {

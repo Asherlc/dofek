@@ -37765,6 +37765,78 @@ The BoardSesh metadata path was exercised by database integration tests, while i
 - Root cause and fix: the button selector used a truncated word in its button-name pattern. It now explicitly matches both complete button-state words with `/^Recompute|^Recomputing/`; dictionaries and CI gates are unchanged.
 - Validation and remaining risk: the corrected test file passes CSpell with zero issues and Biome formatting, and the selector matches both idle and busy labels. Final matching-head CI is required before merge; no retry, timeout, or other resilience change was introduced.
 
+## 2026-11-13 — WHOOP session-cleanup purge rewrote the whole sample queue
+
+- Symptoms and impact: [MOBILE-2C](https://east-bay-software.sentry.io/issues/DOFEK-MOBILE-2C) is a MetricKit disk-write diagnostic, not a crash. One device on native release `789d6867` reported about 1.07 GB of writes on November 12. Cleanup completed and no data was lost. Large writes use the app's iOS disk-write budget and wear flash storage.
+- Evidence: the synthetic stack goes from `WhoopBleBackgroundUploader.disable` through `WhoopBleSampleStore.purgeLocked` (`DELETE FROM samples`) to `clearDatabasePage` → `getAndInitPage` → `pagerStress` → `walWriteOneFrame`. A cache spill inside `clearDatabasePage` occurs only when SQLite dirties each freed page, which is what [`secure_delete`](https://www.sqlite.org/pragma.html#pragma_secure_delete) does. A synthetic store with the production schema (300,000 rows, 92 MB) wrote 92.3 MB of WAL frames with `secure_delete` on, and 0.1 MB with `FAST`. The file kept its full size in both cases.
+- Root cause: with `secure_delete` on, the purge zeroes every freed page through the WAL, so one purge writes about the size of the whole queue, and the checkpoint writes it again.
+- Fix: [`WhoopBleSampleStore.purge`](../packages/mobile/modules/whoop-ble/ios/WhoopBleSampleStore+Purge.swift) sets `secure_delete = FAST` inside the purge transaction and restores the exact previous mode with checked SQL. After commit, it runs [`VACUUM`](https://www.sqlite.org/lang_vacuum.html) and a [truncating checkpoint](https://www.sqlite.org/pragma.html#pragma_wal_checkpoint), which removes the freed pages that hold the old account's rows and shrinks the file. The original synthetic optimization wrote 0.2 MB in total and kept a 0.06 MB file. A `purge_pending` metadata record now commits atomically with the deletion and clears only after successful compaction/checkpoint; initialization and later writes complete pending cleanup before proceeding. Failed restoration retains the intended connection-local mode and blocks writes until it is restored. Synchronous durability, generation rotation, the erasure cutoff and the other delete paths remain intact. The `store_vacuum` cleanup stage traces compaction.
+- Review and recovery validation: real SQLite tests reproduced the original unchecked restoration, incorrect numeric restoration of `FAST`, missing recovery intent, and retained payload bytes after an interrupted checkpoint. The corrected store passes success/rollback checks for modes 0, 1 and 2; denied-restoration retry checks; failed-vacuum account-replacement checks; and failed-reopen/recovery checks with a pinned SQLite reader. Existing write-budget, cutoff and generation-isolation tests also pass. These are storage-level fault tests, not a physical-device crash reproduction.
+- Remaining risk and follow-up: the regression test models the iOS default with `PRAGMA secure_delete = ON`, because the macOS test runtime can use a different default. Device improvement needs new MetricKit evidence after release; with one event in 30 days, silence is weak evidence. The capture (MOBILE-27) and reservation (MOBILE-29) disk-write investigations stay separate.
+
+## 2026-11-13 — Pacific Pipe climbing logs split across location headings
+
+- **Symptoms / impact:** Activity group `3c0bf805-15ee-4a3f-b3d5-3e225d6ace19` displays eight Kaya logs under Touchstone Pacific Pipe, four BoardSesh logs under Pacific Pipe Climbing, and two BoardSesh logs under Other climbs.
+- **Evidence / cause:** Read-only production PostgreSQL queries confirmed that the effective Kaya Area `07ebc526-0478-4408-a0b7-d13d6948a898` and BoardSesh Area `8879230c-3460-4709-b949-05c376d0431f` both have null `group_id`. Their different source names therefore remain separate under the existing [explicit grouping policy](climbing-context.md#assigning-a-confirmed-location-group). The retained BoardSesh ascent metadata for the 16:46 and 16:50 local logs has null `boardId`, `boardDisplayName`, and board metadata. All six BoardSesh ticks share source session `36f0042a-0593-49d9-be8c-2451dde0897b`; four have enriched metadata for the same physical Touchstone board. This supports investigating session-based inference, but does not make the two missing locations source-recorded facts. The upstream [board resolver](https://github.com/boardsesh/boardsesh/blob/main/packages/backend/src/graphql/resolvers/ticks/board-options.ts) likewise returns no current board for a tick without stored board attribution.
+- **Remediation / status:** Diagnosis complete; no production data or runtime behavior changed. Proposed correction is to link the confirmed source Areas through the existing location group. Displaying the other two logs within that location would additionally require an approved inference rule or explicit user attribution. A repeat sync alone does not resolve the missing source attribution in the retained snapshot.
+- **Validation / remaining risk:** Inspected source metadata and effective Area identities against the live database in read-only transactions, then separately reviewed the importer and shared grouping helper. Browser and Dofek connector access were unauthenticated; served-result verification remains pending. Current CI runs were queued, so no green CI claim is made. No retries, timeouts, infrastructure changes, or inference were introduced.
+- **Retrospective / proposed guidance:** Retained raw metadata and source session IDs distinguished an unmapped gym identity from missing upstream board attribution. Proposed runbook wording for approval: “Compare effective Area group membership, raw tick attribution, enriched ascent attribution, and source session identity before changing climbing location matching.” Existing systematic-debugging and check-logs workflows cover the investigation; no additional skill is needed.
+
+The user superseded the manual-mapping proposal and approved automatic matching,
+including session location recovery without an additional display label. The
+[server resolver](../packages/server/src/services/climbing-location-resolution.ts)
+now computes the existing response grouping/path/map fields at read time using
+corroborating indoor Area names and coordinates, compatible parent paths, and
+unambiguous owner/provider-scoped source sessions. It preserves recorded names,
+raw payloads, native Climb map points and database references. No manual
+production mapping, migration, dependency or background job is required. The
+[location guide](climbing-context.md#ownership-and-location) records the matching
+heuristic and conservative ambiguity behavior.
+
+Separate review reproduced two material edge cases: identical wall names within
+conflicting gym parents could merge, and session recovery could replace a native
+Climb map point. Three new resolver regressions failed before their direct
+corrections and passed afterward. The final focused server unit run passes 137
+tests; paired server-contract/web/mobile tests pass 168; real PostgreSQL passes
+50 projection tests, including standalone context, access restrictions, deletion,
+absence, source ownership and native-coordinate preservation. Full lint and
+recursive package typechecks passed; focused checks cover the later corrections.
+Production deployment and authenticated served-result validation remain pending.
+
+The canonical local integration wrapper failed before Vitest at
+`pnpm test:integration -- packages/server/src/repositories/climbing-area-group.integration.test.ts`:
+`container subdued-turkey-redpanda-1 is unhealthy`. Its first causal broker error
+was `Could not setup Async I/O`, reporting capacity exhaustion at
+`/proc/sys/fs/aio-max-nr 65536`. This matches the existing shared-workstation
+[AIO incident](#2026-11-13--boardsesh-log-metadata-omitted-from-import-and-display)
+and the [Linux AIO limit documentation](https://docs.kernel.org/admin-guide/sysctl/fs.html#aio-nr-aio-max-nr).
+Only this task's restarting broker was stopped. PostgreSQL-only regressions then
+ran against the healthy workspace database using the generated `.env.local`;
+shared kernel limits, other workspaces, production and CI gates were unchanged.
+
+The broad local unit/mobile run also reported failures in unchanged R2 archive
+pagination, nested Garmin ZIP streaming, and the retained Garmin MSW client
+regression. Three additional failures were the review regressions running against
+the earlier resolver snapshot; their final focused run is green. The unchanged
+suite failures remain under investigation, and the broad run is not reported as
+green. A mutation run overlapping broad tests also failed while copying a
+temporary dependency-cruiser fixture removed by that test; mutation validation is
+now run after the broad test process exits. No timeout, retry or test exclusion
+was added. Retrospective improvement proposed for approval: run mutation snapshot
+creation after filesystem-mutating test suites finish, and keep broad validation
+on a stable source revision. Existing debugging, integration and PR skills cover
+these checks; no additional skill is needed.
+
+Final branch validation: the 78 tests in the three unchanged failing suites pass
+when run separately, without source or timeout changes; broad-run stability
+remains unresolved. Targeted mutation validation passes the unchanged 75 gate
+with a score of 78.99. A read-only production location/session projection for
+the reported activity was evaluated locally: all 15 source records remain,
+the resolver produces one gym group, and the two missing locations are filled.
+This checks location inputs before existing log consolidation, not a deployed
+or authenticated browser result. [Draft PR #3338](https://github.com/Asherlc/dofek/pull/3338)
+contains the correction; required CI is queued and production remains unchanged.
+
 ## 2026-11-14 — Analytics work reuse released; catch-up qualification remains open
 
 The canonical [production release 43541954506](https://github.com/Asherlc/dofek/actions/runs/43541954506) succeeded at 02:10 UTC for the explicitly selected revision `a3cb635541a5cae85ffe63051602a3821822a288`, after its [complete CI run](https://github.com/Asherlc/dofek/actions/runs/43519045691) passed. The [analytics correction in PR #3305](https://github.com/Asherlc/dofek/pull/3305) reuses repeated canonical activity computation within the existing query and publication lock. The earlier marker-only implementation did not share that computation across the final UNION branches on the pinned engine; the parent SELECT establishes the shared scope. Lock ownership, scheduling, query limits, retries, and deployment gates remain unchanged.

@@ -35,7 +35,7 @@ the earlier audit as current policy.
 
 ## Intended configuration
 
-[`../stack.yml`](../stack.yml) uses the pinned Apache Kafka 4.4.0 image and
+[`../docker-compose.yml`](../docker-compose.yml) uses the pinned Apache Kafka 4.4.0 image and
 upstream Aiven 1.2.0 core/S3 artifacts. Broker remote storage is enabled. Keep the
 already qualified [plugin provenance/checksums](https://github.com/Asherlc/dofek/blob/ed26f38b8/docs/evidence/kafka-ts-lab-20261106/plugin-provenance.json)
 and original `hostname: kafka` fix. Operator JVMs run outside the broker cgroup.

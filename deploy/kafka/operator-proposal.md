@@ -67,7 +67,7 @@ explicit mutation requiring approval. The intended fresh directory is
 
 The existing service has precisely the old data and plugin mounts. After
 reviewing its frozen specification, these stock Bash/jq/Docker commands replace
-the service environment with the [canonical broker stanza](../stack.yml), keeping
+the service environment with the [canonical broker stanza](../docker-compose.yml), keeping
 the existing cluster ID private. Remove the old data mount in the first stopped
 update, then add the replacement in a separate stopped update. The first execution
 observed `Mounts: null` when removal and addition targeted the same path in one

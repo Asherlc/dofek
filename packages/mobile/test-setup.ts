@@ -710,6 +710,7 @@ vi.mock("./modules/whoop-ble", () => ({
   addConnectionStateListener: vi.fn(() => ({ remove: vi.fn() })),
   disconnect: vi.fn(),
   purgeAccountState: vi.fn(),
+  retryConnection: vi.fn(() => Promise.resolve(false)),
 }));
 
 // ── BLE heart-rate native module mock ──────────────────────────────

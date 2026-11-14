@@ -47,7 +47,7 @@ final class WhoopBleBackgroundUploaderTests: XCTestCase {
             "uploader_queue_wait", "uploader_cancel_tasks", "uploader_store_purge",
             "store_lock_wait", "store_begin", "store_reset_stats", "store_delete_samples",
             "store_delete_batches", "store_clear_binding", "store_rotate_generation",
-            "store_commit", "store_completed", "uploader_remove_bodies"
+            "store_commit", "store_completed", "store_vacuum", "uploader_remove_bodies"
         ])
         XCTAssertNil(try store.binding)
         XCTAssertEqual(try store.queuedCount(stream: .realtime), 0)

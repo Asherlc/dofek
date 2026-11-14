@@ -58,7 +58,7 @@ topic-qualified batches to the same R2 bucket. Each consumer's group is its
 service name, preserving the legacy groups and giving the new routes independent
 offsets. Redpanda Connect resumes from committed offsets for the configured
 [consumer group](https://docs.redpanda.com/connect/components/inputs/redpanda/#consumer-groups).
-The [stack](../deploy/stack.yml) raises only ClickHouse's CPU limit to `1.5`;
+The [stack](../deploy/docker-compose.yml) raises only ClickHouse's CPU limit to `1.5`;
 its memory settings and each consumer's existing resource limits are retained.
 Docker documents this as a maximum CPU allocation, not a reservation:
 [Compose CPU limits](https://docs.docker.com/reference/compose-file/deploy/#cpus).
@@ -300,7 +300,7 @@ Historical refreshes now have their own topic and consumer pair, while the
 legacy pair continues from its existing offsets. This separates the consumer
 queues, but all routes still share ClickHouse and host capacity; verify live
 freshness while history drains using the per-route lag and sink-latency evidence
-above. The [stack](../deploy/stack.yml) and
+above. The [stack](../deploy/docker-compose.yml) and
 [producer routing](../src/metric-stream/redpanda-producer.ts) define these routes.
 
 Keep each scoped delete and its replacement rows on the same route and partition

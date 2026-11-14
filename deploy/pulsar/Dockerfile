@@ -1,4 +1,4 @@
-FROM eclipse-temurin:25-jdk-alpine@sha256:425f0b733cb23843bd78dbe5552513976d0cf12b9722752c48a5161cf5cd2f32 AS offloader-build
+FROM eclipse-temurin:25-jdk-alpine@sha256:c7c3d0bdf7f2bbc5a05a6712ed334d198360105634ea9adf76fca94f381b1e3f AS offloader-build
 
 RUN apk add --no-cache patch=2.8.1-r0
 WORKDIR /src
