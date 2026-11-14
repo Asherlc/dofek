@@ -18,4 +18,5 @@ export interface WhoopBleSyncDeps {
     callback: (event: { state: string; peripheralId?: string; error?: string }) => void,
   ): { remove(): void };
   disconnect(): void;
+  retryConnection(): Promise<boolean>;
 }

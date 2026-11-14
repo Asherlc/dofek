@@ -97,6 +97,28 @@ final class WhoopBleConnectionManagerDiagnosticsTests: XCTestCase {
 }
 
 final class WhoopBleConnectionManagerTests: XCTestCase {
+    func testDisconnectStopsBackgroundRetryScanBeforeCompletion() {
+        let manager = WhoopBleConnectionManager()
+        let central = TestWhoopCentralManager()
+        manager.centralManager = central
+        let retried = expectation(description: "background retry started a scan")
+        manager.retryConnection { connected in
+            XCTAssertFalse(connected)
+            XCTAssertTrue(central.isScanning)
+            retried.fulfill()
+        }
+        wait(for: [retried], timeout: 1)
+        let disconnected = expectation(description: "scan cancelled on disconnect")
+
+        manager.disconnect {
+            XCTAssertFalse(central.isScanning)
+            XCTAssertFalse(manager.autoReconnect)
+            disconnected.fulfill()
+        }
+
+        wait(for: [disconnected], timeout: 1)
+    }
+
     func testRestoredStreamingEmitsFinalStreamingSnapshotAfterReconnect() {
         let manager = WhoopBleConnectionManager()
         manager.setState(.ready)
