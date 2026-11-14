@@ -861,6 +861,10 @@ jobs:
         run: |
           migration_image=$(docker service inspect "${STACK_NAME}_peerdb-flow-api" \
             --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}')
+          if [[ ! "$migration_image" =~ ^[^[:space:]@]+@sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::PeerDB Flow API must use an immutable image with a valid SHA-256 digest"
+            exit 1
+          fi
           docker run --rm --network "${STACK_NAME}_default" \
             --env-file <(grep '^POSTGRES_PASSWORD=' "$DATABASE_OPERATIONS_ENV_FILE") \
             --env PEERDB_CATALOG_HOST=peerdb-catalog \

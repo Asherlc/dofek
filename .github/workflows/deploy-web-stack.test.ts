@@ -13,6 +13,7 @@ import {
   MOCK_DOCKER,
   runKafkaBackendFixture,
   runTopicPolicyFixture,
+  runPeerdbMigrationFixture,
 } from "./deploy-web-stack-test-helpers.ts";
 import { deployTestDigest, deployTestOldImage, deployTestRepository, runDeployImageFixture } from "../../scripts/deploy-image-test-helpers.ts";
 import { spawnSync } from "node:child_process";
@@ -25,6 +26,38 @@ import { z } from "zod";
 
 const workflowText = readFileSync(".github/workflows/deploy-web-stack.yml", "utf8");
 const otaImage = `${deployTestRepository}-ota@${deployTestDigest}`;
+
+describe("PeerDB catalog migration image", () => {
+  const image = `ghcr.io/peerdb-io/flow-api:stable-v0.37.15@sha256:${"d".repeat(64)}`;
+
+  it("runs the inspected immutable image before CDC preparation", () => {
+    const result = runPeerdbMigrationFixture(workflowRunScript("Migrate PeerDB flow catalog"), image);
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.calls[0]).toContain("fixture_peerdb-flow-api");
+    expect(result.calls.find(call => call[0] === "run")).toContain(image);
+    expect(result.stdout).toContain("CDC-PREPARE");
+    expect(result.stdout + result.stderr).not.toContain("fixture-catalog-password");
+  });
+
+  it.each([
+    "ghcr.io/peerdb-io/flow-api:stable-v0.37.15",
+    "",
+    "ghcr.io/peerdb-io/flow-api@sha256:abc",
+    `ghcr.io/peerdb-io/flow-api@sha256:${"g".repeat(64)}`,
+    `${image}suffix`,
+  ])("rejects an unresolved or invalid image before migration: %s", candidate => {
+    const result = runPeerdbMigrationFixture(workflowRunScript("Migrate PeerDB flow catalog"), candidate);
+    expect(result.status).not.toBe(0);
+    expect(result.calls.some(call => call[0] === "run")).toBe(false);
+    expect(result.stdout).not.toContain("CDC-PREPARE");
+  });
+
+  it("stops before CDC preparation when the stock migration fails", () => {
+    const result = runPeerdbMigrationFixture(workflowRunScript("Migrate PeerDB flow catalog"), image, 42);
+    expect(result.status).toBe(42);
+    expect(result.stdout).not.toContain("CDC-PREPARE");
+  });
+});
 
 describe("Kafka image upgrades", () => {
   it("resolves the requested manifest image separately from the running broker", () => {
