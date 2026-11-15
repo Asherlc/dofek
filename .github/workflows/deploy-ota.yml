@@ -318,7 +318,7 @@ jobs:
           RUNTIME_VERSION: ${{ steps.runtime.outputs.runtime_version }}
           DECISION: ${{ steps.publication.outputs.decision }}
           DEPLOYMENT_ID: ${{ steps.publication.outputs.deployment_id }}
-          UPDATE_ID: ${{ steps.finalize.outputs.update_id || steps.publication.outputs.update_id }}
+          UPDATE_ID: ${{ steps.finalize.outputs.update_id || steps.verify.outputs.update_id || steps.publication.outputs.update_id }}
           SUPERSEDING_SOURCE_SHA: ${{ steps.publication.outputs.superseding_source_sha }}
           SUPERSEDING_RUNTIME_VERSION: ${{ steps.publication.outputs.superseding_runtime_version }}
           SUPERSEDING_UPDATE_ID: ${{ steps.publication.outputs.superseding_update_id }}
