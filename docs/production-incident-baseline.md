@@ -38160,3 +38160,15 @@ Local qualification and CI are separate from production throughput acceptance. T
   replay time, account/strap attribution and publication versus serving.
   Proposed runbook wording: “Check capture and acknowledgment progress
   separately; a draining queue does not prove an uninterrupted Bluetooth link.”
+- **Bounded observation, 6:30–7:00 PM PST:** all three streams published fresh
+  sample timestamps at every five-minute check, including the final check at
+  7:00 PM. Repeated app-specific device metadata checks found no new Dofek crash
+  report after installation; no new connection event followed the 6:17 PM
+  transition to streaming. Current IMU samples reached publication by 6:30 PM,
+  but no newer event-driven queue snapshot arrived, so an empty IMU queue is
+  not established. This validates stable publication during the observed window,
+  not ClickHouse serving, uninterrupted sampling or sustained large-history
+  CPU-budget recovery. The scheduled observation stopped at its deadline.
+  Separate self-review retained these boundaries; no further runtime change was
+  warranted. Proposed monitoring refinement: use uniquely labeled queries with
+  execution timestamps so cached relative-window results cannot mimic a stall.
