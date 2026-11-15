@@ -16,7 +16,7 @@ const asset = {
   hash: createHash("sha256").update(bytes).digest("base64url"),
 };
 const manifest = {
-  id: "preserved-update-id",
+  id: "00000000-0000-0000-0000-000000000000",
   createdAt: "2026-10-29T12:00:00.000Z",
   runtimeVersion: "runtime-current",
   launchAsset: asset,
