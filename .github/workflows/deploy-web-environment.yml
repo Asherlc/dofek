@@ -260,11 +260,18 @@ jobs:
           for (;;) {
             const page = gh(['graphql', '--input', '-'], { query, variables: { owner, name, environment, after } })?.data?.repository?.deployments;
             if (!page || !Array.isArray(page.nodes) || !page.pageInfo) throw new Error('server deployment history is incomplete');
-            history.push(...page.nodes.filter((record) => record.task === 'server-stack-publish').map((record) => ({
-              ...record,
-              payload: typeof record.payload === 'string' ? JSON.parse(record.payload || '{}') : record.payload,
-              state: record.latestStatus?.state ?? null,
-            })));
+            history.push(...page.nodes.filter((record) => record.task === 'server-stack-publish').map((record) => {
+              const firstDecoded = typeof record.payload === 'string'
+                ? JSON.parse(record.payload)
+                : record.payload;
+              const payload = typeof firstDecoded === 'string'
+                ? JSON.parse(firstDecoded)
+                : firstDecoded;
+              if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+                throw new Error(`server deployment ${record.databaseId} payload is invalid`);
+              }
+              return { ...record, payload, state: record.latestStatus?.state ?? null };
+            }));
             if (!page.pageInfo.hasNextPage) break;
             if (!page.pageInfo.endCursor || page.pageInfo.endCursor === after) throw new Error('server deployment history cursor did not advance');
             after = page.pageInfo.endCursor;

@@ -369,6 +369,7 @@ describe("independent lane selection", () => {
     ".github/workflows/deploy-web-environment.yml",
     ".github/workflows/build-ios-release.yml",
     ".github/workflows/check-repository.yaml",
+    ".github/workflows/deploy-publication.test-helpers.ts",
   ])("selects root/tooling checks for executable workflow source %s only", (changedFile) => {
     expect(detectChangedAreas(changedFile)).toEqual({
       ...noChanges,

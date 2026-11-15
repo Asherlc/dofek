@@ -1,5 +1,66 @@
 # Production Incident Baseline
 
+## 2026-11-15 — OTA publisher rejected a nested trusted checkout
+
+- **Symptoms / impact:** Production OTA run
+  [43745526857](https://github.com/Asherlc/dofek/actions/runs/43745526857)
+  stopped before upload, so it did not publish its selected update. The
+  existing intent `7808135811` was later reconciled once to `inactive` with
+  `auto_inactive: false`; the operator read back exactly one inactive status.
+  The production server baseline was initialized as deployment `7808336097`
+  for source `d049f86a57461e6e15e72b9f0707e26b4a085a82` and image digest
+  `sha256:027b41d0f5762ef4560fdc33168cfd16a8f8ba9c060cead0c434d2906a11cdef`,
+  then independently read back.
+  These root-owned recovery writes are recorded in
+  `/tmp/opencode/ota-followup/operational-recovery-result.json` and reviewed in
+  `/tmp/opencode/ota-followup/recovery-evidence-independent-review.md`.
+- **Failing job / step / evidence:** Workflow run
+  [43745526857](https://github.com/Asherlc/dofek/actions/runs/43745526857),
+  OTA job `132917033920`, step **Publish OTA update**. The retained log at
+  `/tmp/opencode/task7/monitor-ota-publisher.log` (lines 3192–3196) showed
+  `?? ../../.release-tools/` followed by `Error: Commit all changes. Aborting...`.
+- **Root cause / direct fixes:** The workflow checked out current trusted
+  release controls as a nested `.release-tools` directory inside a historical
+  mobile candidate. EOAS treated that auxiliary checkout as candidate source
+  dirt. The workflow now adds only `/.release-tools/` to that runner clone's
+  Git `info/exclude`, found with `git rev-parse --git-path info/exclude`, before
+  candidate verification. Git documents `info/exclude` as a local exclude
+  source and `/`-anchored patterns as worktree-root paths
+  ([Git ignore documentation](https://git-scm.com/docs/gitignore)). The
+  tracked `.gitignore`, global Git configuration, and EOAS dirty-source guard
+  are unchanged. Tests execute the actual step in a historical temporary Git
+  candidate without a `.gitignore`; tracked edits and untracked candidate app
+  files independently remain dirty and are rejected by the installed EOAS
+  guard.
+  A local `expo-updates runtimeversion:resolve --platform ios --workflow
+  managed` comparison on the same isolated candidate, with identical synthetic
+  public app ID and Sentry DSN, returned the same runtime hash and identical
+  tracked fingerprint-source paths and hashes before and after the exclude
+  entry. Full outputs are in `/tmp/opencode/ota-followup/runtime-before-exclude.json`
+  and `runtime-after-exclude.json`; summarized comparison is in
+  `runtime-before-summary.json` and `runtime-after-summary.json`.
+- **Server retry failure and parser fix:** The root's server admission retry
+  job `132922667909` failed because the GraphQL `Deployment.payload` value is
+  JSON encoded twice; one decode left a string, so the baseline source check
+  reported that deployment `7808336097` did not contain a full source SHA.
+  The captured API response and decoding proof are in
+  `/tmp/opencode/ota-followup/server-baseline-graphql-exact-query.json` and
+  `graphql-payload-decoding-proof.json`. This was a parser-boundary defect,
+  not a missing or invalid baseline. Both server and OTA history readers now
+  accept the observed two-layer encoding (and existing object or one-layer
+  object-string forms), then reject malformed, triple-encoded, or non-object
+  payloads before mutation. Source SHA, commit OID, digest/runtime, UUID,
+  current-live identity, and intent-ordering checks remain in force.
+- **Validation boundary / remaining risk:** The aux-checkout and payload
+  regressions, workflow checks, and focused local suites validate fixtures and
+  code only. No post-fix production publisher run or production OTA republish
+  has occurred; the existing server retry used the old control source and
+  failed before the parser fix. A future production retry requires the new
+  trusted controls and fresh normal release admission. The TestFlight upload
+  receipt `7808157768` succeeded and was not re-uploaded. The earlier disclosed
+  credential exposure remains a separate, unresolved owner-led follow-up; this
+  work did not read or rotate production credentials.
+
 ## 2026-11-15 — Local Docker disk pressure during CI gate validation
 
 - **Symptoms / impact:** Local ClickHouse reported `errno 28` and restarted
