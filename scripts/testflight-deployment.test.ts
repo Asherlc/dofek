@@ -443,21 +443,35 @@ describe("TestFlight upload receipts", () => {
 
   it("keeps the existing prepare CLI output while recording the real upload intent", () => {
     const directory = mkdtempSync(join(tmpdir(), "testflight-cli-"));
+    const repository = join(directory, "repository");
     const ghPath = join(directory, "gh");
     const logPath = join(directory, "gh.jsonl");
-    const sourceSha = String(
-      realExecute("git", ["rev-parse", "HEAD"], {
-        encoding: "utf8",
-        stdio: ["ignore", "pipe", "pipe"],
-      }),
-    ).trim();
-    const baselineSha = String(
-      realExecute("git", ["rev-parse", "HEAD^"], {
-        encoding: "utf8",
-        stdio: ["ignore", "pipe", "pipe"],
-      }),
-    ).trim();
+    mkdirSync(repository);
+    const git = (arguments_: string[]) =>
+      String(
+        realExecute("git", arguments_, {
+          cwd: repository,
+          encoding: "utf8",
+          env: {
+            ...process.env,
+            GIT_DIR: join(repository, ".git"),
+            GIT_WORK_TREE: repository,
+          },
+          stdio: ["ignore", "pipe", "pipe"],
+        }),
+      ).trim();
     try {
+      git(["init", "--initial-branch=main"]);
+      git(["config", "user.name", "Deploy Test"]);
+      git(["config", "user.email", "deploy@example.test"]);
+      writeFileSync(join(repository, "release.txt"), "verified baseline\n");
+      git(["add", "release.txt"]);
+      git(["commit", "-m", "verified baseline"]);
+      const baselineSha = git(["rev-parse", "HEAD"]);
+      writeFileSync(join(repository, "release.txt"), "upload candidate\n");
+      git(["add", "release.txt"]);
+      git(["commit", "-m", "upload candidate"]);
+      const sourceSha = git(["rev-parse", "HEAD"]);
       writeFileSync(
         ghPath,
         `#!/usr/bin/env node
@@ -492,6 +506,8 @@ else if (args.some((arg) => arg.endsWith('/deployments')) && args.includes('--me
             PATH: `${directory}:${process.env.PATH ?? ""}`,
             GH_LOG: logPath,
             GH_HISTORY: page([receipt(baselineSha)]),
+            GIT_DIR: join(repository, ".git"),
+            GIT_WORK_TREE: repository,
           },
         },
       );
