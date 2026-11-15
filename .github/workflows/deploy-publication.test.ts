@@ -214,6 +214,7 @@ describe("server publication workflow step", () => {
         RUN_ID: "123",
         RUN_ATTEMPT: "1",
         RUN_URL: "https://github.com/owner/dofek/actions/runs/123/attempts/1",
+        ENVIRONMENT_URL: "https://dofek.fit",
         CANDIDATE_DIGEST: candidateDigest,
         LIVE_SHA: parentSha,
         LIVE_DIGEST: liveDigest,
@@ -229,6 +230,12 @@ describe("server publication workflow step", () => {
       const statuses = calls.filter((call) => call.args.some((arg: string) => arg.endsWith("/statuses")));
       expect(statuses).toHaveLength(1);
       expect(JSON.parse(statuses[0].input).state).toBe("pending");
+      expect(JSON.parse(statuses[0].input)).toEqual(
+        expect.objectContaining({
+          log_url: "https://github.com/owner/dofek/actions/runs/123/attempts/1",
+          environment_url: "https://dofek.fit",
+        }),
+      );
       const historyQuery = calls.find((call) => call.args.includes("graphql"));
       expect(JSON.parse(historyQuery.input).variables.environment).toBe("server-production");
       const creation = calls.find((call) => call.args.includes("repos/owner/dofek/deployments"));
@@ -510,6 +517,7 @@ describe("server publication workflow step", () => {
         SSH_USER: "ubuntu",
         SERVER_HOST: "fixture-host",
         RUN_URL: "https://github.com/owner/dofek/actions/runs/136/attempts/1",
+        ENVIRONMENT_URL: "https://dofek.fit",
         RUNNER_TEMP: directory,
         LIVE_SHA: headSha,
         LIVE_DIGEST: liveDigest,
@@ -520,7 +528,15 @@ describe("server publication workflow step", () => {
       const success = calls.find((call) => call.args.some((arg: string) => arg.endsWith("/statuses") && call.args.includes("--method")));
       expect(success.args).toContain("repos/owner/dofek/deployments/99/statuses");
       const body = JSON.parse(success.input);
-      expect(body).toEqual(expect.objectContaining({ state: "success", auto_inactive: false, description: `Verified server ${headSha}` }));
+      expect(body).toEqual(
+        expect.objectContaining({
+          state: "success",
+          auto_inactive: false,
+          log_url: "https://github.com/owner/dofek/actions/runs/136/attempts/1",
+          environment_url: "https://dofek.fit",
+          description: `Verified server ${headSha}`,
+        }),
+      );
       expect(body.description.length).toBeLessThanOrEqual(140);
     } finally {
       rmSync(directory, { recursive: true, force: true });

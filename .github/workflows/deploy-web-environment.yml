@@ -246,7 +246,7 @@ jobs:
             if (!/^[a-f0-9]{40}$/.test(value ?? '')) throw new Error(`${label} is not a full source SHA`);
           }
 
-          const { SOURCE_SHA, STACK_NAME, SERVER_HOST, SSH_USER, REPOSITORY, RUN_ID, RUN_ATTEMPT, RUN_URL, IMAGE_REF, GITHUB_OUTPUT } = process.env;
+          const { SOURCE_SHA, STACK_NAME, SERVER_HOST, SSH_USER, REPOSITORY, RUN_ID, RUN_ATTEMPT, RUN_URL, ENVIRONMENT_URL, IMAGE_REF, GITHUB_OUTPUT } = process.env;
           sha(SOURCE_SHA, 'server candidate');
           command('git', ['cat-file', '-e', `${SOURCE_SHA}^{commit}`]);
           const imageRef = IMAGE_REF;
@@ -423,7 +423,6 @@ jobs:
       SERVER_HOST: ${{ needs.terraform.outputs.server_host || inputs.server_host || vars.ORACLE_SERVER_HOST }}
       DOCKER_HOST: ssh://${{ inputs.ssh_user != '' && inputs.ssh_user || 'ubuntu' }}@${{ needs.terraform.outputs.server_host || inputs.server_host || vars.ORACLE_SERVER_HOST }}
       DOCKER_SSH_COMMAND: ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10
-      ENVIRONMENT_URL: ${{ inputs.public_url || 'https://dofek.fit' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -439,6 +438,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
+          ENVIRONMENT_URL: ${{ inputs.public_url || 'https://dofek.fit' }}
           REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
