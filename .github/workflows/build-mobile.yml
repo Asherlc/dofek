@@ -300,7 +300,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check results
+        env:
+          MOBILE_BUILDS_SELECTED: ${{ inputs.changed }}
         run: |
+          if [ "$MOBILE_BUILDS_SELECTED" = "true" ]; then
+            for result in \
+              "${{ needs.build-metro-bundle.result }}" \
+              "${{ needs.build-ios-native.result }}" \
+              "${{ needs.build-watchos.result }}" \
+              "${{ needs.lint-ios-podspecs.result }}"; do
+              if [ "$result" != "success" ]; then
+                echo "A selected mobile build prerequisite did not succeed"
+                exit 1
+              fi
+            done
+          fi
           for result in \
             "${{ needs.build-metro-bundle.result }}" \
             "${{ needs.build-ios-native.result }}" \

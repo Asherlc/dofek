@@ -229,7 +229,7 @@ jobs:
           }
           const deployment = post('POST', `repos/${REPOSITORY}/deployments`, {
             ref: SOURCE_SHA, environment, task: 'ota-publish', auto_merge: false,
-            required_contexts: [], production_environment: false,
+            required_contexts: [], production_environment: true,
             payload: { source_sha: SOURCE_SHA, runtime_version: RUNTIME_VERSION, run_id: RUN_ID, run_attempt: RUN_ATTEMPT, run_url: RUN_URL },
           });
           if (!Number.isInteger(deployment.id)) throw new Error('GitHub did not acknowledge OTA intent');

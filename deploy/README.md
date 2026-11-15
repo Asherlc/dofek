@@ -290,8 +290,9 @@ safe server or OTA publication, the owner must initialize the existing live
 baseline receipt from verifiable current target identity while retaining the
 admission checks. Empty history or a successful workflow alone is not a live
 baseline. Do not bypass the guards to initialize it or to produce release
-examples. The outstanding credential-exposure incident also remains an
-owner-led security follow-up; no credential was read or rotated for this work.
+examples. The outstanding credential-exposure incident remains an owner-led
+security follow-up. Task 7 accessed no production secret values and did not
+change credentials.
 
 ### Production Secrets
 
@@ -488,16 +489,16 @@ come from the existing [Infisical OIDC action](../.github/actions/load-infisical
 GitHub automatically supplies the scoped `GITHUB_TOKEN` to reusable workflows,
 as documented in its [reusable workflow context](https://docs.github.com/en/actions/reference/workflows-and-actions/reusing-workflow-configurations#github-context).
 
-For a manual mobile release, dispatch **Deploy** (`deploy.yml`) with target `ota`
-or `ios` from the desired source ref. Without an `image_tag`, the workflow builds
-and deploys that commit's server image before publishing the selected mobile
-release. Target `all` publishes both mobile releases after the server. When
-reusing an existing `image_tag`, select a branch or release tag pointing to its
-matching source commit in the dispatch:
-the immutable image's `SENTRY_RELEASE` must equal the checked-out source commit,
-or deployment fails before migrations. The OTA, signed iOS, and stack workflows
-are reusable only. For a server-only manual rollout, dispatch **Deploy** with
-target `web` (including infrastructure) or `web-stack` (stack only).
+For a manual mobile release, dispatch **Deploy** (`deploy.yml`) from `main` with
+target `ota` or `ios`. Without an `image_tag`, the selected source is the main
+revision that started the dispatch. Supplying an `image_tag` resolves its full
+source SHA from the immutable image's OCI revision and `SENTRY_RELEASE`, then
+runs the selected checks and build against that source. Targets `ota` and `ios`
+run the selected mobile checks and publisher without server checks, server-image
+builds, or server deployment. Target `all` runs the server release first, then
+the selected mobile publishers. The OTA, signed iOS, and stack workflows are
+reusable only. For a server-only manual rollout, dispatch **Deploy** with target
+`web` (including infrastructure) or `web-stack` (stack only).
 Automatic and manual server jobs share the production concurrency group only
 until server deployment completes. Mobile publication uses the independent
 `deploy-ota` and `deploy-ios` groups, using GitHub's
@@ -631,7 +632,12 @@ ssh dofek-server 'docker ps -q --filter label=com.docker.swarm.service.name=dofe
 ```
 
 After recording the evidence above, initialize the existing stock GitHub
-deployment record (there is no separate baseline store). Set `REPOSITORY`,
+deployment record (there is no separate baseline store). GitHub's
+[`production_environment` field](https://docs.github.com/en/rest/deployments/deployments#create-a-deployment)
+marks whether end users directly interact with the deployment environment;
+use `true` for `server-production` and `ota-production`. This request metadata
+does not create or modify repository environment protection settings. Set
+`REPOSITORY`,
 `SOURCE_SHA`, `IMAGE_DIGEST`, `RUN_ID`, `RUN_ATTEMPT`, and `RUN_URL` from the
 verified immutable task identity and the original fully verified release run.
 The payload ref must equal `source_sha`; record success only after all listed
@@ -639,7 +645,7 @@ server verification gates have been confirmed:
 
 ```bash
 deployment="$(gh api --method POST "repos/$REPOSITORY/deployments" --input - <<JSON
-{"ref":"$SOURCE_SHA","environment":"server-production","task":"server-stack-publish","auto_merge":false,"required_contexts":[],"production_environment":false,"payload":{"source_sha":"$SOURCE_SHA","image_digest":"$IMAGE_DIGEST","run_id":"$RUN_ID","run_attempt":"$RUN_ATTEMPT","run_url":"$RUN_URL"}}
+{"ref":"$SOURCE_SHA","environment":"server-production","task":"server-stack-publish","auto_merge":false,"required_contexts":[],"production_environment":true,"payload":{"source_sha":"$SOURCE_SHA","image_digest":"$IMAGE_DIGEST","run_id":"$RUN_ID","run_attempt":"$RUN_ATTEMPT","run_url":"$RUN_URL"}}
 JSON
  )"
 deployment_id="$(jq -er '.id' <<<"$deployment")"
@@ -663,23 +669,37 @@ payload record `source_sha`, `update_id`, and `runtime_version`. Use
 `auto_inactive: false`; do not infer the source from the workflow that happened
 to publish or create repository environments/protection settings. If immutable
 provenance cannot establish the source commit, stop and keep publication
-blocked. With the checkout at that exact source SHA, the required production
-`EXPO_APP_ID` available in the environment, and `RUNTIME_VERSION` taken from
-that release, perform the same manifest, export, and device verification used by
-the publisher:
+blocked. Use two checkouts as the existing
+[`deploy-ota.yml` publisher](../.github/workflows/deploy-ota.yml) does:
+`SOURCE_ROOT` is an absolute checkout at the exact historical `SOURCE_SHA` and
+supplies the mobile app configuration, lockfile, dependencies, and Expo export;
+`CONTROL_ROOT="$SOURCE_ROOT/.release-tools"` is a second checkout at the
+approved current main workflow SHA (`github.workflow_sha` in Actions) and
+supplies the trusted manifest and publication-verification scripts. Use the
+trusted `setup-node-pnpm` action from `CONTROL_ROOT` at the `SOURCE_ROOT` working
+directory, so dependencies come from the candidate's lockfile; use the trusted
+`load-infisical-secrets` action from `CONTROL_ROOT` for the mobile credentials.
+Do not execute the new helper from an older source checkout or install the
+control checkout's dependencies over the candidate's. With `EXPO_APP_ID`
+available in the workflow environment and `RUNTIME_VERSION` taken from that
+release, run the manifest check from the candidate package directory as the
+publisher does:
 
 ```bash
+CONTROL_ROOT="$SOURCE_ROOT/.release-tools"
 manifest_output="$(mktemp)"
-GITHUB_OUTPUT="$manifest_output" pnpm tsx scripts/check-ota-manifest.ts \
+cd "$SOURCE_ROOT/packages/mobile"
+GITHUB_OUTPUT="$manifest_output" pnpm tsx "$CONTROL_ROOT/scripts/check-ota-manifest.ts" \
   --app-id "$EXPO_APP_ID" --runtime-version "$RUNTIME_VERSION"
 update_id="$(sed -n 's/^manifest_id=//p' "$manifest_output")"
 manifest_runtime="$(sed -n 's/^manifest_runtime=//p' "$manifest_output")"
 test -n "$update_id" && test "$update_id" != none
 test "$manifest_runtime" = "$RUNTIME_VERSION"
 EXPO_NO_DOTENV=1 SENTRY_RELEASE="$SOURCE_SHA" EXPO_PUBLIC_SENTRY_RELEASE="$SOURCE_SHA" \
-  pnpm --dir packages/mobile exec expo export \
-    --dump-sourcemap --output-dir "$RUNNER_TEMP/dofek-ota-initialization" --platform ios
-pnpm tsx scripts/verify-published-ota.ts \
+  pnpm expo export --dump-sourcemap \
+    --output-dir "$RUNNER_TEMP/dofek-ota-initialization" --platform ios
+cd "$SOURCE_ROOT"
+pnpm tsx "$CONTROL_ROOT/scripts/verify-published-ota.ts" \
   "$RUNNER_TEMP/dofek-ota-initialization/xprem-update-metadata.json" \
   production "$RUNTIME_VERSION"
 test "$(jq -er '.[0].id' "$RUNNER_TEMP/dofek-ota-initialization/xprem-update-metadata.json")" = "$update_id"
@@ -696,7 +716,7 @@ read as the authoritative receipt:
 
 ```bash
 deployment="$(gh api --method POST "repos/$GITHUB_REPOSITORY/deployments" --input - <<JSON
-{"ref":"$SOURCE_SHA","environment":"ota-production","task":"ota-publish","auto_merge":false,"required_contexts":[],"production_environment":false,"payload":{"source_sha":"$SOURCE_SHA","update_id":"$update_id","runtime_version":"$RUNTIME_VERSION"}}
+{"ref":"$SOURCE_SHA","environment":"ota-production","task":"ota-publish","auto_merge":false,"required_contexts":[],"production_environment":true,"payload":{"source_sha":"$SOURCE_SHA","update_id":"$update_id","runtime_version":"$RUNTIME_VERSION"}}
 JSON
 )"
 deployment_id="$(jq -er '.id' <<<"$deployment")"
@@ -737,10 +757,13 @@ and [status reporting](https://docs.github.com/en/rest/deployments/statuses#crea
    publisher is involved. Local reusable workflows use the caller's revision;
    see [reusable workflow revision selection](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows#calling-a-reusable-workflow)
    and [GitHub job concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).
-   Manual image-tag deploys must select a branch or release tag pointing at the
-   same source commit as that image. The workflow compares the image's full
-   `SENTRY_RELEASE` with the selected source and fails before asset upload,
-   migrations, or stack deployment when they differ.
+   Manual Deploy runs must be dispatched from `main`. To select the historical
+   source associated with an immutable image, provide its `image_tag`; source
+   resolution uses the OCI revision and full `SENTRY_RELEASE` recorded in that
+   image. The workflow rejects a mismatch before any server mutation. Targets
+   `ios` and `ota` do not run server checks, build a server image, or deploy the
+   server; only target `all` sequences the server release before both mobile
+   publishers.
 2. **Terraform apply** (if infra changed): updates Cloudflare-managed production DNS and storage. `ORACLE_SERVER_HOST` is required for production DNS and deploy targeting.
 3. **Deploy Web Stack** (`deploy-web-stack.yml`):
    1. Install the Infisical CLI, login with OIDC machine identity (`identity-id=46b66f72-0c77-4cfe-be1b-a43395e77be7`), and render `${{ github.workspace }}/.env.<env>` from `.github/templates/infisical-dotenv.tmpl`.

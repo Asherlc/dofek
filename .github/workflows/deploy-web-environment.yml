@@ -310,7 +310,7 @@ jobs:
           const record = (sourceSha, imageDigest, state, description) => {
             const deployment = post('POST', `repos/${REPOSITORY}/deployments`, {
               ref: sourceSha, environment, task: 'server-stack-publish', auto_merge: false,
-              required_contexts: [], production_environment: false,
+              required_contexts: [], production_environment: true,
               payload: { source_sha: sourceSha, image_digest: imageDigest, run_id: RUN_ID, run_attempt: RUN_ATTEMPT, run_url: RUN_URL },
             });
             if (!Number.isInteger(deployment.id)) throw new Error('GitHub did not acknowledge the server deployment');

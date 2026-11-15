@@ -240,6 +240,7 @@ describe("server publication workflow step", () => {
       expect(JSON.parse(historyQuery.input).variables.environment).toBe("server-production");
       const creation = calls.find((call) => call.args.includes("repos/owner/dofek/deployments"));
       expect(JSON.parse(creation.input).environment).toBe("server-production");
+      expect(JSON.parse(creation.input).production_environment).toBe(true);
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }
@@ -641,9 +642,12 @@ describe("OTA publication workflow step", () => {
       expect(readFileSync(outputPath, "utf8")).toContain("decision=publish");
       const calls = readFileSync(logPath, "utf8").trim().split("\n").map((line) => JSON.parse(line));
       expect(calls).toHaveLength(3);
-      expect(JSON.parse(calls[1].input).payload).toEqual(
+      const deployment = JSON.parse(calls[1].input);
+      expect(deployment.payload).toEqual(
         expect.objectContaining({ source_sha: headSha, runtime_version: runtime, run_id: "125", run_attempt: "1" }),
       );
+      expect(deployment.environment).toBe("ota-production");
+      expect(deployment.production_environment).toBe(true);
       expect(JSON.parse(calls[2].input).state).toBe("pending");
     } finally {
       rmSync(directory, { recursive: true, force: true });

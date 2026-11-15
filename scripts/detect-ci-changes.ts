@@ -309,11 +309,11 @@ function classifyChanges(
       ),
   );
   // Root/tooling unit tests live in the full `unit` project, which the server
-  // lane runs. Without this, a change such as scripts/migration-policy.ts would
-  // select no lane even though its colocated test must run.
+  // lane runs. Executable workflow YAML can own runtime behavior and fixtures,
+  // so it selects root tests; documentation-only files remain unselected.
   const toolingChange = hasMatchingFile(
     changedFiles,
-    /^(?:scripts\/|entrypoint\.test\.ts$|\.github\/workflows\/[^/]+\.test\.ts$)/,
+    /^(?:scripts\/|entrypoint\.test\.ts$|\.github\/workflows\/[^/]+(?:\.test\.ts|\.ya?ml)$)/,
   );
   const nativeFitChange = hasMatchingFile(changedFiles, /^native\/fit-decoder\//);
   // Compose and Swarm runtime inputs feed the server/integration lanes. A

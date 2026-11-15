@@ -189,8 +189,12 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
   - Usage: `pnpm tsx scripts/detect-ci-changes.ts --changed-file packages/mobile/modules/whoop-ble/ios/WhoopBleConnectionManager.swift --json`
   - `--diff-range <base>...<head>` classifies the complete Git range used by CI,
     including renamed and deleted paths. Missing revisions or an invalid range
-    fail instead of returning an empty selection. `--json` prints lane
-    selections and affected packages for review.
+    fail instead of returning an empty selection. `--json` prints only the
+    boolean lane-selection flags for review.
+  - Executable `.yml`/`.yaml` files directly under `.github/workflows/` select
+    root/tooling unit checks through the server and shared lanes. This ownership
+    rule does not itself select image builds or publishers; workflow Markdown
+    remains unselected.
 - `resolve-deploy-image.ts`: Resolves a requested registry image once, pulls the
   immutable manifest reference through the configured Docker daemon, verifies
   its full source release, and retains the existing web service's desired digest

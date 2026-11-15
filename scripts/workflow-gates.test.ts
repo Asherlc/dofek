@@ -46,6 +46,17 @@ function runGate(
 const ciGate = readGate(".github/workflows/ci.yml", "ci-gate", "Check all CI results");
 const testGate = readGate(".github/workflows/test.yml", "test-all-gate", "Check all test results");
 const sharedGate = readGate(".github/workflows/check-shared.yml", "shared-checks", "Check results");
+const mobileBuildGate = readGate(
+  ".github/workflows/build-mobile.yml",
+  "mobile-gate",
+  "Check results",
+);
+const selectedMobileBuildJobs = [
+  "build-metro-bundle",
+  "build-ios-native",
+  "build-watchos",
+  "lint-ios-podspecs",
+];
 
 const successfulCi = {
   BUILD_MOBILE_RESULT: "success",
@@ -73,6 +84,42 @@ const successfulCi = {
 };
 
 describe("runtime Actions result gates", () => {
+  it.each(
+    selectedMobileBuildJobs.flatMap((job) =>
+      ["missing", "skipped", "failure", "cancelled"].map((result) => ({ job, result })),
+    ),
+  )("blocks selected mobile job $job with $result result", ({ job, result }) => {
+    const needsResults = Object.fromEntries(
+      selectedMobileBuildJobs.map((selectedJob) => [selectedJob, "success"]),
+    );
+    if (result === "missing") delete needsResults[job];
+    else needsResults[job] = result;
+
+    const outcome = runGate(mobileBuildGate, { MOBILE_BUILDS_SELECTED: "true" }, needsResults);
+
+    expect(outcome.status, outcome.stderr).toBe(1);
+  });
+
+  it("accepts all selected mobile builds after they succeed", () => {
+    const outcome = runGate(
+      mobileBuildGate,
+      { MOBILE_BUILDS_SELECTED: "true" },
+      Object.fromEntries(selectedMobileBuildJobs.map((job) => [job, "success"])),
+    );
+
+    expect(outcome.status, outcome.stderr).toBe(0);
+  });
+
+  it("accepts skipped mobile builds when no mobile changes were selected", () => {
+    const outcome = runGate(
+      mobileBuildGate,
+      { MOBILE_BUILDS_SELECTED: "false" },
+      Object.fromEntries(selectedMobileBuildJobs.map((job) => [job, "skipped"])),
+    );
+
+    expect(outcome.status, outcome.stderr).toBe(0);
+  });
+
   it.each(["failure", "cancelled", "skipped"])(
     "blocks a selected server lane whose result is %s",
     (result) => {

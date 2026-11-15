@@ -25,6 +25,7 @@ jobs:
       - name: Resolve and validate the event commit
         id: resolve
         env:
+          EVENT_NAME: ${{ github.event_name }}
           EVENT_SHA: ${{ github.sha }}
         run: |
           # For pull_request events github.sha is the candidate merge commit.

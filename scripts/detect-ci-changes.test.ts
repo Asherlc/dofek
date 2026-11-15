@@ -355,8 +355,40 @@ describe("independent lane selection", () => {
     },
   );
 
-  it("keeps repository-only checks outside application builds", () => {
-    expect(detectChangedAreas(".github/workflows/check-repository.yml")).toEqual(noChanges);
+  it("selects root/tooling checks for repository workflow YAML without application builds", () => {
+    expect(detectChangedAreas(".github/workflows/check-repository.yml")).toEqual({
+      ...noChanges,
+      server: true,
+      shared: true,
+    });
+  });
+
+  it.each([
+    ".github/workflows/deploy-ota.yml",
+    ".github/workflows/deploy-ios.yml",
+    ".github/workflows/deploy-web-environment.yml",
+    ".github/workflows/build-ios-release.yml",
+    ".github/workflows/check-repository.yaml",
+  ])("selects root/tooling checks for executable workflow source %s only", (changedFile) => {
+    expect(detectChangedAreas(changedFile)).toEqual({
+      ...noChanges,
+      server: true,
+      shared: true,
+    });
+  });
+
+  it("keeps workflow documentation-only changes unselected", () => {
+    expect(detectChangedAreas(".github/workflows/README.md")).toEqual(noChanges);
+  });
+
+  it("adds mobile checks for its workflow while keeping release builds unselected", () => {
+    expect(detectChangedAreas(".github/workflows/build-mobile.yml")).toEqual({
+      ...noChanges,
+      mobile: true,
+      server: true,
+      shared: true,
+      storybook_mobile: true,
+    });
   });
 
   it("selects shared application consumers for the shared check workflow", () => {
@@ -389,6 +421,7 @@ describe("independent lane selection", () => {
     expect(detectChangedAreas(".github/workflows/check-mobile.yml")).toEqual({
       ...noChanges,
       mobile: true,
+      server: true,
       shared: true,
       storybook_mobile: true,
     });

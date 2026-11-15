@@ -20,8 +20,9 @@
 ## 2026-11-15 — CI release refactor startup and fixture failures
 
 - **Symptoms / impact:** Several CI attempts during PR #3348's workflow refactor
-  failed before useful validation or at a workflow/test gate. No publisher ran
-  and there was no production impact. Runs
+  failed before useful validation or at a workflow/test gate. PR preview
+  publishing ran, but no production publisher ran; there was no production
+  impact. Runs
   [43700412759](https://github.com/Asherlc/dofek/actions/runs/43700412759) and
   [43701761919](https://github.com/Asherlc/dofek/actions/runs/43701761919)
   created zero jobs. GitHub's workflow validation banner identified the
