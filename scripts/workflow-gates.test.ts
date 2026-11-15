@@ -48,8 +48,6 @@ const testGate = readGate(".github/workflows/test.yml", "test-all-gate", "Check 
 const sharedGate = readGate(".github/workflows/check-shared.yml", "shared-checks", "Check results");
 
 const successfulCi = {
-  BUILD_DOCKER_ML_RESULT: "skipped",
-  BUILD_DOCKER_RESULT: "skipped",
   BUILD_MOBILE_RESULT: "success",
   BUILD_OTA_RESULT: "skipped",
   BUILD_STORYBOOK_MOBILE_RESULT: "skipped",
@@ -58,13 +56,9 @@ const successfulCi = {
   BUILD_ZEPP_RESULT: "skipped",
   DEPENDABOT: "false",
   DETECT_RESULT: "success",
-  DOCKER_ML_SELECTED: "false",
-  DOCKER_SERVER: "false",
-  MAIN_PUSH: "false",
   MOBILE_RESULT: "skipped",
   MOBILE_SELECTED: "false",
   OTA_SELECTED: "false",
-  PULL_REQUEST: "true",
   REPOSITORY_RESULT: "success",
   RESOLVE_RESULT: "success",
   SERVER_RESULT: "skipped",
@@ -94,6 +88,18 @@ describe("runtime Actions result gates", () => {
 
   it("accepts an expected unselected lane skip", () => {
     const outcome = runGate(ciGate, successfulCi);
+
+    expect(outcome.status, outcome.stderr).toBe(0);
+  });
+
+  it("does not make Docker image publishers new merge gates", () => {
+    const outcome = runGate(ciGate, {
+      ...successfulCi,
+      BUILD_DOCKER_RESULT: "skipped",
+      BUILD_DOCKER_ML_RESULT: "skipped",
+      DOCKER_SERVER: "true",
+      DOCKER_ML_SELECTED: "true",
+    });
 
     expect(outcome.status, outcome.stderr).toBe(0);
   });

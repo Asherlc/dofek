@@ -187,9 +187,7 @@ jobs:
       - build-mobile
       - build-web
       - build-zepp
-      - build-docker
       - build-ota
-      - build-docker-ml
       - build-storybook
       - build-storybook-mobile
     if: always()
@@ -205,21 +203,15 @@ jobs:
       BUILD_MOBILE_RESULT: ${{ needs.build-mobile.result }}
       BUILD_WEB_RESULT: ${{ needs.build-web.result }}
       BUILD_ZEPP_RESULT: ${{ needs.build-zepp.result }}
-      BUILD_DOCKER_RESULT: ${{ needs.build-docker.result }}
       BUILD_OTA_RESULT: ${{ needs.build-ota.result }}
-      BUILD_DOCKER_ML_RESULT: ${{ needs.build-docker-ml.result }}
       BUILD_STORYBOOK_RESULT: ${{ needs.build-storybook.result }}
       BUILD_STORYBOOK_MOBILE_RESULT: ${{ needs.build-storybook-mobile.result }}
-      MAIN_PUSH: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-      PULL_REQUEST: ${{ github.event_name == 'pull_request' }}
-      DOCKER_SERVER: ${{ needs.detect-changes.outputs.docker_server == 'true' }}
       SHARED_SELECTED: ${{ needs.detect-changes.outputs.shared == 'true' }}
       SERVER_SELECTED: ${{ needs.detect-changes.outputs.server == 'true' }}
       MOBILE_SELECTED: ${{ needs.detect-changes.outputs.mobile == 'true' }}
       WEB_SELECTED: ${{ needs.detect-changes.outputs.web == 'true' }}
       ZEPP_SELECTED: ${{ needs.detect-changes.outputs.zepp == 'true' }}
       OTA_SELECTED: ${{ needs.detect-changes.outputs.docker_ota == 'true' }}
-      DOCKER_ML_SELECTED: ${{ needs.detect-changes.outputs.docker_ml == 'true' }}
       STORYBOOK_SELECTED: ${{ github.event_name == 'pull_request' && (needs.detect-changes.outputs.storybook_web == 'true' || needs.detect-changes.outputs.storybook_mobile == 'true') }}
     steps:
       - name: Check all CI results
@@ -257,14 +249,6 @@ jobs:
           check_selected build-web "$WEB_SELECTED" "$BUILD_WEB_RESULT"
           check_selected build-zepp "$ZEPP_SELECTED" "$BUILD_ZEPP_RESULT"
           check_selected build-ota "$OTA_SELECTED" "$BUILD_OTA_RESULT"
-          check_selected build-docker-ml "$DOCKER_ML_SELECTED" "$BUILD_DOCKER_ML_RESULT"
-
-          if [ "$MAIN_PUSH" = "true" ] || [ "$DOCKER_SERVER" = "true" ]; then
-            require_success build-docker "$BUILD_DOCKER_RESULT"
-          elif [ "$BUILD_DOCKER_RESULT" = "failure" ] || [ "$BUILD_DOCKER_RESULT" = "cancelled" ]; then
-            echo "::error::Unexpected build-docker result ($BUILD_DOCKER_RESULT)"
-            fail=1
-          fi
 
           if [ "$STORYBOOK_SELECTED" = "true" ]; then
             require_success build-storybook "$BUILD_STORYBOOK_RESULT"
