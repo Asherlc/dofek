@@ -38300,14 +38300,23 @@ Local qualification and CI are separate from production throughput acceptance. T
   PostgreSQL work, rather than an expensive initial ClickHouse activity
   scan. Plan interpretation follows PostgreSQL's
   [EXPLAIN documentation](https://www.postgresql.org/docs/18/using-explain.html).
-- **Fix / mitigation:** Diagnosis only; no runtime, schema, cache, timeout,
-  retry or production configuration changes were applied. Implementation
-  direction awaits confirmation under the repository's planning policy.
-- **Remaining risk / follow-up:** Cold requests remain slow. Reduce repeated
-  full-view/provenance work in the existing activity visibility and climbing
-  list queries, preserving current deduplication, source lifecycle, access
-  windows and local-date semantics. Require real-PostgreSQL result-equivalence
-  regressions and before/after plans before claiming improvement.
+- **Direct fix:** Following approval, extract the existing canonical grouping
+  into `fitness.v_activity_group`; the full activity view adds its unchanged
+  provenance and title fields. Visibility and climbing log/session/location
+  queries use the group projection. Migration 0187 installs both definitions.
+  No cache, timeout, retry, analytics model or production configuration changes
+  were added.
+- **Validation:** Five real-PostgreSQL assertions first failed on unnecessary
+  resolver calls (three visibility checks and two climbing projections).
+  A read-only comparison on production data returned identical sets of 80
+  current-period IDs. Three before/after visibility-query plan samples took
+  2,266/82 ms, 2,153/75 ms and 2,214/84 ms. The candidate query embedded the new
+  group-view definition; no production DDL was executed for this measurement.
+  This verifies the query improvement, not a deployed page-load measurement.
+- **Remaining risk / follow-up:** Release the migration with the repository
+  changes through the normal deployment workflow, then measure uncached
+  `calendar.weekListV2` and `calendar.activityOverview` again. Production
+  remains on the previous implementation until that release.
 - **Retrospective:** Correlating Axiom procedure timings with both engines'
   query logs located the bottleneck; the tRPC `db_duration_ms` label alone
   did not identify the engine. Proposed loading-runbook addition for review:

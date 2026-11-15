@@ -24,7 +24,7 @@ export class ActivityVisibilityRepository extends BaseRepository {
     const rows = await this.query(
       z.object({ id: z.string() }),
       sql`SELECT id::text AS id
-          FROM fitness.v_activity
+          FROM fitness.v_activity_group
           WHERE user_id = ${this.userId}::uuid
             AND id IN (${activityIdFilter})
             ${this.timestampAccessPredicate(sql`started_at`)}`,
@@ -74,7 +74,7 @@ export class ActivityVisibilityRepository extends BaseRepository {
     const visibleRows = await this.query(
       z.object({ id: z.string() }),
       sql`SELECT a.id::text AS id
-          FROM fitness.v_activity a
+          FROM fitness.v_activity_group a
           WHERE a.user_id = ${this.userId}::uuid
             AND a.id IN (${activityIdFilter})
             ${this.dateAccessPredicate(postgresActivityCalendarDate(sql`a`, this.timezone))}`,
@@ -94,7 +94,7 @@ export class ActivityVisibilityRepository extends BaseRepository {
     const rows = await this.query(
       z.object({ id: z.string() }),
       sql`SELECT a.id::text AS id
-          FROM fitness.v_activity a
+          FROM fitness.v_activity_group a
           WHERE a.user_id = ${this.userId}::uuid
             AND ${activityDate} >= ${localStartDate}::date
             ${endDatePredicate}
