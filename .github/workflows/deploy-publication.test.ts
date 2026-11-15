@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import {
   existsSync,
   chmodSync,
@@ -11,16 +11,24 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { parse } from "yaml";
 
 const repositoryRoot = process.cwd();
-const git = (...args: string[]) =>
-  String(
-    spawnSync("git", args, { cwd: repositoryRoot, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).stdout,
-  ).trim();
-const headSha = git("rev-parse", "HEAD");
-const parentSha = git("rev-parse", "HEAD^");
+const gitFixtureRoot = mkdtempSync(join(tmpdir(), "release-publication-git-"));
+const gitFixtureCommand = (...args: string[]) =>
+  execFileSync("git", args, { cwd: gitFixtureRoot, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+gitFixtureCommand("init", "--initial-branch=main");
+gitFixtureCommand("config", "user.name", "Release fixture");
+gitFixtureCommand("config", "user.email", "release-fixture@example.test");
+writeFileSync(join(gitFixtureRoot, "release.txt"), "verified parent\n");
+gitFixtureCommand("add", "release.txt");
+gitFixtureCommand("commit", "-m", "verified parent");
+const parentSha = gitFixtureCommand("rev-parse", "HEAD");
+writeFileSync(join(gitFixtureRoot, "release.txt"), "candidate\n");
+gitFixtureCommand("commit", "-am", "candidate");
+const headSha = gitFixtureCommand("rev-parse", "HEAD");
+afterAll(() => rmSync(gitFixtureRoot, { recursive: true, force: true }));
 const candidateDigest = `sha256:${"c".repeat(64)}`;
 const liveDigest = `sha256:${"b".repeat(64)}`;
 const runtime = "ee28bafccebbd4101e0003e134c554ed38303780";
@@ -141,6 +149,8 @@ function runWorkflowStep(
       ...process.env,
       PATH: `${bin}:${process.env.PATH ?? ""}`,
       GITHUB_OUTPUT: outputPath,
+      GIT_DIR: join(gitFixtureRoot, ".git"),
+      GIT_WORK_TREE: gitFixtureRoot,
       IMAGE_REF: `ghcr.io/owner/dofek@${env.CANDIDATE_DIGEST ?? candidateDigest}`,
       ...env,
     },
@@ -219,6 +229,10 @@ describe("server publication workflow step", () => {
       const statuses = calls.filter((call) => call.args.some((arg: string) => arg.endsWith("/statuses")));
       expect(statuses).toHaveLength(1);
       expect(JSON.parse(statuses[0].input).state).toBe("pending");
+      const historyQuery = calls.find((call) => call.args.includes("graphql"));
+      expect(JSON.parse(historyQuery.input).variables.environment).toBe("server-production");
+      const creation = calls.find((call) => call.args.includes("repos/owner/dofek/deployments"));
+      expect(JSON.parse(creation.input).environment).toBe("server-production");
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }
@@ -426,9 +440,7 @@ describe("server publication workflow step", () => {
     const repo = join(directory, "repo");
     mkdirSync(repo);
     const gitIn = (...args: string[]) =>
-      String(
-        spawnSync("git", args, { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).stdout,
-      ).trim();
+      execFileSync("git", args, { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
     const commit = (message: string) => {
       writeFileSync(join(repo, "release.txt"), `${message}\n`);
       gitIn("add", "release.txt");
@@ -486,6 +498,7 @@ describe("server publication workflow step", () => {
         GH_DEPLOYMENT: JSON.stringify({
           id: 99,
           sha: headSha,
+          environment: "server-production",
           payload: { source_sha: headSha, image_digest: liveDigest },
         }),
         GH_STATUSES: JSON.stringify([{ state: "pending" }]),
@@ -528,7 +541,7 @@ describe("server publication workflow step", () => {
       const result = runWorkflowStep(finalize, bin, join(directory, "output"), {
         GH_TOKEN: "fixture",
         GH_LOG: logPath,
-        GH_DEPLOYMENT: JSON.stringify({ id: 99, sha: headSha, payload: { source_sha: headSha, image_digest: liveDigest } }),
+        GH_DEPLOYMENT: JSON.stringify({ id: 99, sha: headSha, environment: "server-production", payload: { source_sha: headSha, image_digest: liveDigest } }),
         GH_STATUSES: JSON.stringify([{ state: "pending" }]),
         REPOSITORY: "owner/dofek",
         DEPLOYMENT_ID: "99",

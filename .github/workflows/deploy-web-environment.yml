@@ -241,7 +241,7 @@ jobs:
           const imageRef = IMAGE_REF;
           const candidateDigest = imageRef?.split('@')[1];
           if (!/^sha256:[a-f0-9]{64}$/.test(candidateDigest ?? '')) throw new Error('server image manifest digest is missing or invalid');
-          const environment = `server-${STACK_NAME}`;
+          const environment = 'server-production';
           const query = `query($owner:String!,$name:String!,$environment:String!,$after:String){repository(owner:$owner,name:$name){deployments(environments:[$environment],first:100,after:$after,orderBy:{field:CREATED_AT,direction:DESC}){nodes{databaseId task commitOid payload latestStatus{state}}pageInfo{hasNextPage endCursor}}}}`;
           const [owner, name] = REPOSITORY.split('/');
           let after = null;
@@ -440,7 +440,7 @@ jobs:
           done
           deployment="$(gh api "repos/$REPOSITORY/deployments/$DEPLOYMENT_ID")"
           jq -e --arg source "$SOURCE_SHA" --arg digest "$image_digest" \
-            '.sha == $source and .payload.source_sha == $source and .payload.image_digest == $digest' \
+            '.environment == "server-production" and .sha == $source and .payload.source_sha == $source and .payload.image_digest == $digest' \
             <<<"$deployment" >/dev/null || { echo "::error::Server deployment ref or payload does not match the admitted identity"; exit 1; }
           statuses="$(gh api "repos/$REPOSITORY/deployments/$DEPLOYMENT_ID/statuses")"
           latest_state="$(jq -er '.[0].state // "missing"' <<<"$statuses")"
