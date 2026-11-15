@@ -8,11 +8,11 @@ struct WhoopUploadTaskSnapshot {
 }
 
 protocol WhoopUploadTransport: AnyObject {
-    var onCompletion: ((String, Int?, Data, URL?, Error?) -> Void)? { get set }
-    var onAttemptFailure: ((String, Error) -> Void)? { get set }
+    var onCompletion: ((String, Int?, Data, (attempt: Int?, responseURL: URL?), Error?) -> Void)? { get set }
+    var onAttemptFailure: ((String, Error, Int?) -> Void)? { get set }
     var onFinishEvents: (() -> Void)? { get set }
     func allTasks(_ completion: @escaping (WhoopUploadTaskSnapshot) -> Void)
-    func start(request: URLRequest, file: URL, identity: String)
+    func start(request: URLRequest, file: URL, identity: String, attempt: Int)
     func cancel(identity: String)
 }
 
@@ -45,7 +45,8 @@ final class WhoopBleBackgroundUploader: NSObject {
     private var finishedEventsPending = false
     private var lastError: String?
     private var tokenEpoch = 0
-    private var submittedEpoch: [String: Int] = [:]
+    private var submitted: [String: (epoch: Int, attempt: Int)] = [:]
+    private var submissionSequence = 0
     private var authRetriedEpoch: [String: Int] = [:]
     private var lastCaptureSchedule: Date?
     private let createdAt = Date()
@@ -63,12 +64,12 @@ final class WhoopBleBackgroundUploader: NSObject {
             [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: directory.path)
         #endif
         super.init()
-        transport.onCompletion = { [weak self] identity, status, data, url, error in
-            self?.queue.async { self?.completed(identity: identity, status: status, data: data, url: url, error: error) }
+        transport.onCompletion = { [weak self] identity, status, data, context, error in
+            self?.queue.async { self?.completed(identity: identity, status: status, data: data, context: context, error: error) }
         }
-        transport.onAttemptFailure = { [weak self] identity, error in
+        transport.onAttemptFailure = { [weak self] identity, error, attempt in
             self?.queue.async {
-                guard let self else { return }
+                guard let self, !self.isSuperseded(identity, attempt: attempt) else { return }
                 do {
                     guard let batch = try self.store.pendingBatches().first(where: { self.identity($0) == identity }) else { return }
                     self.pairedActive.remove(identity)
@@ -105,7 +106,7 @@ final class WhoopBleBackgroundUploader: NSObject {
             if try store.binding != binding {
                 self.token = nil; self.headers = [:]
                 try cancelOwnedTasks()
-                active.removeAll(); pairedActive.removeAll(); submittedEpoch.removeAll(); authRetriedEpoch.removeAll()
+                active.removeAll(); pairedActive.removeAll(); submitted.removeAll(); authRetriedEpoch.removeAll()
                 try removeBodies()
             }
             try store.configure(binding)
@@ -154,7 +155,7 @@ final class WhoopBleBackgroundUploader: NSObject {
         }
         active.removeAll()
         pairedActive.removeAll()
-        tokenEpoch += 1; submittedEpoch.removeAll()
+        tokenEpoch += 1; submitted.removeAll()
         authRetriedEpoch.removeAll()
         retryAfter.removeAll()
         firstArrival.removeAll()
@@ -280,8 +281,9 @@ final class WhoopBleBackgroundUploader: NSObject {
                 request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
                 active.insert(identity); lastSubmission[stream] = now()
                 pairedActive.insert(identity)
-                submittedEpoch[identity] = tokenEpoch
-                transport.start(request: request, file: file, identity: identity)
+                submissionSequence += 1
+                submitted[identity] = (tokenEpoch, submissionSequence)
+                transport.start(request: request, file: file, identity: identity, attempt: submissionSequence)
             } catch {
                 retryAfter[stream] = now().addingTimeInterval(30)
                 record(error)
@@ -289,7 +291,15 @@ final class WhoopBleBackgroundUploader: NSObject {
         }
     }
 
-    private func completed(identity: String, status: Int?, data: Data, url: URL?, error: Error?) {
+    private func isSuperseded(_ identity: String, attempt: Int?) -> Bool {
+        guard let latest = submitted[identity] else { return false }
+        return latest.attempt != attempt
+    }
+
+    private func completed(identity: String, status: Int?, data: Data,
+                           context: (attempt: Int?, responseURL: URL?), error: Error?) {
+        // A callback can already be queued when configuration replaces its request.
+        guard !isSuperseded(identity, attempt: context.attempt) else { return }
         var nextPartial: Bool?
         defer {
             transport.cancel(identity: identity)
@@ -297,11 +307,11 @@ final class WhoopBleBackgroundUploader: NSObject {
         }
         active.remove(identity)
         pairedActive.remove(identity)
-        let usedEpoch = submittedEpoch.removeValue(forKey: identity)
+        let usedEpoch = submitted.removeValue(forKey: identity)?.epoch
         do {
             guard let batch = try store.pendingBatches().first(where: { self.identity($0) == identity }) else { return }
             if let error { throw error }
-            guard let url, try Self.validatedOrigin(url.originString) == batch.binding.serverURL else {
+            guard let url = context.responseURL, try Self.validatedOrigin(url.originString) == batch.binding.serverURL else {
                 blocked.insert(batch.stream)
                 throw WhoopUploadError(message: "WHOOP upload response changed origin")
             }

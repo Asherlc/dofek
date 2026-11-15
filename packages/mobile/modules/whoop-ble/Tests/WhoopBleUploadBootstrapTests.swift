@@ -3,13 +3,13 @@ import XCTest
 @testable import WhoopBLE
 
 private final class BootstrapTransport: WhoopUploadTransport {
-    var onCompletion: ((String, Int?, Data, URL?, Error?) -> Void)?
-    var onAttemptFailure: ((String, Error) -> Void)?
+    var onCompletion: ((String, Int?, Data, (attempt: Int?, responseURL: URL?), Error?) -> Void)?
+    var onAttemptFailure: ((String, Error, Int?) -> Void)?
     var onFinishEvents: (() -> Void)?
     func allTasks(_ completion: @escaping (WhoopUploadTaskSnapshot) -> Void) {
         completion(WhoopUploadTaskSnapshot(identities: [], pairedIdentities: []))
     }
-    func start(request: URLRequest, file: URL, identity: String) {}
+    func start(request: URLRequest, file: URL, identity: String, attempt: Int) {}
     func cancel(identity: String) {}
 }
 

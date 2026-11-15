@@ -2,7 +2,7 @@ import XCTest
 @testable import WhoopBLE
 
 final class WhoopBleBackgroundUploaderTests: XCTestCase {
-    private let rows: [[String: Any]] = [["timestamp": "2026-10-28T00:00:01.000Z", "heartRateBpm": 70]]
+    let rows: [[String: Any]] = [["timestamp": "2026-10-28T00:00:01.000Z", "heartRateBpm": 70]]
 
     func testDisableReportsQueueWaitBeforeBlockedCleanupAndThenPurgesStorage() throws {
         let (uploader, store, transport) = try setup()
@@ -179,17 +179,16 @@ extension WhoopBleBackgroundUploaderTests {
         XCTAssertThrowsError(try uploader.configure(userId: "alice", serverURL: "https://example.com", token: "s", headers: ["Authorization": "bad"]))
     }
 
-    func testTokenRotationBeforeOldAuthFailureUsesNewTokenWithoutBlocking() throws {
-        let (uploader, _, transport) = try setup()
-        try uploader.append(deviceId: "a", samplesByStream: [.realtime: rows])
-        try uploader.flush(); try settle(uploader)
-        try uploader.configure(userId: "alice", serverURL: "https://example.com", token: "new", headers: [:])
-        try settle(uploader)
-        XCTAssertEqual(transport.requests.count, 2)
-        transport.complete(0, status: 401); try settle(uploader)
-        XCTAssertEqual(transport.requests.count, 2)
-        XCTAssertEqual(transport.requests.last?.0.value(forHTTPHeaderField: "Authorization"), "Bearer new")
-        XCTAssertEqual(try uploader.diagnostics()["blockedUploadStreams"] as? [String], [])
+    func testTokenRotationBeforeQueuedOldAuthFailureUsesNewTokenWithoutBlocking() throws {
+        try assertQueuedCredentialFailure(attemptFailure: false)
+    }
+
+    func testTokenRotationBeforeQueuedOldNetworkFailureDoesNotDelayReplacement() throws {
+        try assertQueuedCredentialFailure(attemptFailure: true)
+    }
+
+    func testQueuedOldRejectionCannotCancelRefreshedIdenticalRequest() throws {
+        try assertQueuedCredentialFailure(attemptFailure: false, replacementToken: "secret")
     }
 
     func testRestoredTaskRetainsReservationAndMissingFileIsRegeneratedAfterFailure() throws {
@@ -322,7 +321,7 @@ extension WhoopBleBackgroundUploaderTests {
         let identity = batch.generation + "." + batch.id
         try settle(uploader)
         transport.tasks = []
-        transport.onCompletion?(identity, 401, Data(), URL(string: "https://example.com/api/trpc/whoopBleSync.pushRealtimeData"), nil)
+        transport.onCompletion?(identity, 401, Data(), (nil, URL(string: "https://example.com/api/trpc/whoopBleSync.pushRealtimeData")), nil)
         try settle(uploader)
         XCTAssertTrue(transport.requests.isEmpty)
         XCTAssertEqual(try uploader.diagnostics()["blockedUploadStreams"] as? [String], ["realtime"])
@@ -481,7 +480,7 @@ extension WhoopBleBackgroundUploaderTests {
         let identity = try XCTUnwrap(transport.requests.first?.2)
         transport.tasks.removeAll()
         transport.onCompletion?(identity, 200, Data("{\"result\":{\"data\":{\"inserted\":1}}}".utf8),
-                                URL(string: "https://other.example/api/trpc/whoopBleSync.pushRealtimeData"), nil)
+                                (transport.attempts[identity], URL(string: "https://other.example/api/trpc/whoopBleSync.pushRealtimeData")), nil)
         try settle(uploader)
         XCTAssertEqual(try store.queuedCount(stream: .realtime), 1)
         XCTAssertEqual(try store.pendingBatches().count, 1)

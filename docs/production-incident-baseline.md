@@ -38100,9 +38100,14 @@ Local qualification and CI are separate from production throughput acceptance. T
   buffers by session, and fence canceled/restored/replacement requests. Network
   attempt errors remain visible while a surviving path can finish. No production
   deployment or physical-device recovery is established by these local changes.
-- **Validation:** 122 HealthKit Swift tests, 210 WHOOP Swift tests and 26 real iOS
+- **Validation:** 122 HealthKit Swift tests, 212 WHOOP Swift tests and 26 real iOS
   bridge-host tests passed, including delayed cancellation, credential changes,
   independent streams, malformed acknowledgments and live-path network failure.
+  Review reproduced a queued old HTTP 401 blocking replacement credentials;
+  submission-attempt fencing now rejects that result before state mutation or
+  cancellation. Regressions also cover unchanged-credential refreshes and queued
+  network errors. Attempt numbers remain in memory; OS restoration and server
+  replay continue to use the existing durable batch identity.
   Focused mobile/server tests, repository lint, recursive typechecks and changed
   native strict SwiftLint passed. The additional real-ClickHouse replay check did
   not start: the local Redpanda prerequisite exhausted Docker VM asynchronous I/O

@@ -81,23 +81,27 @@ final class CleanupStageRecorder {
 }
 
 final class TestWhoopUploadTransport: WhoopUploadTransport {
-    var onCompletion: ((String, Int?, Data, URL?, Error?) -> Void)?
-    var onAttemptFailure: ((String, Error) -> Void)?
+    var onCompletion: ((String, Int?, Data, (attempt: Int?, responseURL: URL?), Error?) -> Void)?
+    var onAttemptFailure: ((String, Error, Int?) -> Void)?
     var onFinishEvents: (() -> Void)?
     var tasks: [String] = []
     var pairedTasks = Set<String>()
+    var attempts: [String: Int] = [:]
     var requests: [(URLRequest, URL, String)] = []
     var reconciliationCount = 0
     var delayCancellation = false
     var delayedCancellations: [() -> Void] = []
     var cancellations: [String] = []
     var beforeAllTasks: (() -> Void)?
+    var afterAllTasks: (() -> Void)?
     func allTasks(_ completion: @escaping (WhoopUploadTaskSnapshot) -> Void) {
         reconciliationCount += 1
         beforeAllTasks?()
         completion(WhoopUploadTaskSnapshot(identities: Set(tasks), pairedIdentities: pairedTasks.intersection(tasks)))
+        afterAllTasks?()
     }
-    func start(request: URLRequest, file: URL, identity: String) {
+    func start(request: URLRequest, file: URL, identity: String, attempt: Int) {
+        attempts[identity] = attempt
         if tasks.contains(identity), pairedTasks.contains(identity),
            let previous = requests.last(where: { $0.2 == identity }), previous.0 == request { return }
         if !tasks.contains(identity) { tasks.append(identity) }
@@ -106,7 +110,7 @@ final class TestWhoopUploadTransport: WhoopUploadTransport {
     }
     func cancel(identity: String) {
         cancellations.append(identity)
-        let cancel = { self.tasks.removeAll { $0 == identity }; self.pairedTasks.remove(identity) }
+        let cancel = { self.tasks.removeAll { $0 == identity }; self.pairedTasks.remove(identity); self.attempts[identity] = nil }
         if delayCancellation { delayedCancellations.append(cancel) } else { cancel() }
     }
     func complete(_ index: Int, status: Int = 200, body: String = "{\"result\":{\"data\":{\"inserted\":0}}}") {
@@ -114,11 +118,11 @@ final class TestWhoopUploadTransport: WhoopUploadTransport {
         guard requests.last(where: { $0.2 == task.2 })?.0 == task.0 else { return }
         tasks.removeAll { $0 == task.2 }
         pairedTasks.remove(task.2)
-        onCompletion?(task.2, status, Data(body.utf8), task.0.url, nil)
+        onCompletion?(task.2, status, Data(body.utf8), (attempts[task.2], task.0.url), nil)
     }
     func failOnePath(identity: String) {
         pairedTasks.remove(identity)
-        onAttemptFailure?(identity, URLError(.networkConnectionLost))
+        onAttemptFailure?(identity, URLError(.networkConnectionLost), attempts[identity])
     }
 }
 
@@ -319,6 +323,27 @@ extension WhoopBleSampleStoreTests {
 }
 
 extension WhoopBleBackgroundUploaderTests {
+    func assertQueuedCredentialFailure(attemptFailure: Bool, replacementToken: String = "new") throws {
+        let (uploader, _, transport) = try setup()
+        try uploader.append(deviceId: "a", samplesByStream: [.realtime: rows])
+        try uploader.flush(); try settle(uploader)
+        transport.afterAllTasks = {
+            transport.afterAllTasks = nil
+            if attemptFailure {
+                let request = transport.requests[0]
+                transport.onAttemptFailure?(request.2, URLError(.networkConnectionLost), transport.attempts[request.2])
+            } else { transport.complete(0, status: 401) }
+        }
+        try uploader.configure(userId: "alice", serverURL: "https://example.com", token: replacementToken, headers: [:])
+        try settle(uploader)
+        XCTAssertEqual(transport.requests.count, 2)
+        XCTAssertEqual(transport.requests.last?.0.value(forHTTPHeaderField: "Authorization"), "Bearer " + replacementToken)
+        XCTAssertEqual(try uploader.diagnostics()["blockedUploadStreams"] as? [String], [])
+        XCTAssertNil(try uploader.diagnostics()["lastUploadError"] as? String)
+        transport.complete(1); try settle(uploader)
+        XCTAssertEqual(try uploader.sampleCount(stream: .realtime), 0)
+    }
+
     func obstructRemoval(at path: URL) throws {
         let manager = FileManager.default
         if manager.fileExists(atPath: path.path) { try manager.removeItem(at: path) }

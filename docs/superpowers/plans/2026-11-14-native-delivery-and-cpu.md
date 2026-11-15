@@ -40,11 +40,11 @@ Files: WhoopURLSessionTransport.swift, WhoopBleBackgroundUploader.swift, existin
 - [x] Serialize transport state on one queue; retain/adopt fallback tasks, add one ordinary task, and retire counterparts only after the uploader handles the completion.
 - [x] Explicit configuration/flush may refresh an active reservation; ordinary capture preserves coalescing and one active logical batch per stream. Network attempt errors preserve the other path and the existing backoff.
 - [x] Test generation/token replacement, stale/duplicate callbacks, malformed/oversized acknowledgments, native background-only restoration and independent streams. Delayed cancellation retires an adopted old task while protecting a replacement.
-- [ ] Run standalone WHOOP tests and the real iOS bridge suite; review actual diff and commit/push.
+- [x] Run standalone WHOOP tests and the real iOS bridge suite; review actual diff and commit/push. Included review additionally reproduced queued old credential results; each in-memory submission now fences its callbacks, including unchanged-credential refreshes.
 
 ### Task 3: Whole change validation and handoff
 
 - [x] Update module README and incident baseline with final behavior and Apple primary-source links.
-- [ ] Run required lint, recursive typechecks, relevant unit/mobile and native checks. Keep failures explicit and fix their proven causes.
-- [ ] Separate whole-change self-review; use automatic included PR review when available. No paid/repeated reviewer requests.
+- [x] Run required lint, recursive typechecks, relevant unit/mobile and native checks. Keep failures explicit and fix their proven causes. Additional local real-engine replay validation could not start because Docker VM asynchronous I/O capacity was exhausted; preserve the limitation and use required CI integration evidence.
+- [x] Separate whole-change self-review; use automatic included PR review when available. Included CodeRabbit review confirmed the callback race and its concrete regression. No paid/repeated reviewer requests.
 - [ ] Open/update PR and monitor required checks. Do not claim real-device CPU/background recovery from host or Simulator tests; record physical acceptance requirements.

@@ -2,14 +2,15 @@ import Foundation
 
 /// One durable reservation may use two network paths, but reports one completion.
 final class WhoopURLSessionTransport: NSObject, WhoopUploadTransport, URLSessionDataDelegate {
-    var onCompletion: ((String, Int?, Data, URL?, Error?) -> Void)?
-    var onAttemptFailure: ((String, Error) -> Void)?
+    var onCompletion: ((String, Int?, Data, (attempt: Int?, responseURL: URL?), Error?) -> Void)?
+    var onAttemptFailure: ((String, Error, Int?) -> Void)?
     var onFinishEvents: (() -> Void)?
     private final class Delivery {
         var request: URLRequest?
         var tasks: [String: URLSessionTask] = [:]
         var reported = false
         var startedHere = false
+        var attempt: Int?
         init(request: URLRequest?) { self.request = request }
     }
     private let queue = DispatchQueue(label: "app.dofek.whoop-ble.transport")
@@ -96,7 +97,7 @@ final class WhoopURLSessionTransport: NSObject, WhoopUploadTransport, URLSession
         }
     }
 
-    func start(request: URLRequest, file: URL, identity: String) {
+    func start(request: URLRequest, file: URL, identity: String, attempt: Int) {
         queue.async {
             if let prior = self.deliveries[identity], prior.request != request || prior.reported {
                 self.retire(prior)
@@ -104,6 +105,7 @@ final class WhoopURLSessionTransport: NSObject, WhoopUploadTransport, URLSession
             }
             let delivery = self.deliveries[identity] ?? Delivery(request: request)
             delivery.startedHere = true
+            delivery.attempt = attempt
             self.deliveries[identity] = delivery
             for session in [self.backgroundSession, self.liveSession] {
                 let prefix = session === self.backgroundSession ? "background." : "live."
@@ -190,12 +192,12 @@ final class WhoopURLSessionTransport: NSObject, WhoopUploadTransport, URLSession
         defer { if delivery.tasks.isEmpty { deliveries[identity] = nil } }
         guard !delivery.reported else { return }
         if let error, !wasOversized, !delivery.tasks.isEmpty {
-            onAttemptFailure?(identity, error)
+            onAttemptFailure?(identity, error, delivery.attempt)
             return
         }
         delivery.reported = true
         let response = task.response as? HTTPURLResponse
-        onCompletion?(identity, response?.statusCode, data, response?.url,
+        onCompletion?(identity, response?.statusCode, data, (delivery.attempt, response?.url),
                       wasOversized ? WhoopUploadError(message: "WHOOP upload response exceeds 64 KiB") : error)
     }
 

@@ -24,12 +24,13 @@ final class WhoopURLSessionTransportTests: XCTestCase {
                 completion.fulfill()
             }
         }
-        transport.onAttemptFailure = { identity, error in
+        transport.onAttemptFailure = { identity, error, attempt in
             XCTAssertEqual(identity, "generation.batch")
             XCTAssertEqual((error as? URLError)?.code, .networkConnectionLost)
+            XCTAssertEqual(attempt, 1)
             attemptFailure.fulfill()
         }
-        transport.start(request: request, file: file, identity: "generation.batch")
+        transport.start(request: request, file: file, identity: "generation.batch", attempt: 1)
         await fulfillment(of: [background, attemptFailure, premature], timeout: 1)
         lock.withLock { fallback }?.succeed(Data("durable".utf8))
         await fulfillment(of: [completion], timeout: 3)
@@ -47,14 +48,16 @@ final class WhoopURLSessionTransportTests: XCTestCase {
                 source.succeed(Data("live".utf8))
             }
         }
-        transport.onCompletion = { identity, status, data, _, error in
+        transport.onCompletion = { identity, status, data, context, error in
             XCTAssertEqual(identity, "generation.batch")
             XCTAssertEqual(status, 200)
             XCTAssertNil(error)
             XCTAssertEqual(data, Data("live".utf8))
+            XCTAssertEqual(context.attempt, 1)
+            XCTAssertEqual(context.responseURL, request.url)
             completion.fulfill()
         }
-        transport.start(request: request, file: file, identity: "generation.batch")
+        transport.start(request: request, file: file, identity: "generation.batch", attempt: 1)
         await fulfillment(of: [background, live, completion], timeout: 3)
         let retained = expectation(description: "Fallback retained until owner handles acknowledgment")
         transport.allTasks { snapshot in
@@ -97,7 +100,7 @@ final class WhoopURLSessionTransportTests: XCTestCase {
                 completion.fulfill()
             } else { duplicate.fulfill() }
         }
-        transport.start(request: request, file: file, identity: "generation.batch")
+        transport.start(request: request, file: file, identity: "generation.batch", attempt: 1)
         await fulfillment(of: [completion], timeout: 3)
         lock.withLock { sources[true] }?.finish(Data("-tail".utf8))
         await fulfillment(of: [duplicate], timeout: 1)
@@ -124,14 +127,15 @@ final class WhoopURLSessionTransportTests: XCTestCase {
             restored.fulfill()
         }
         await fulfillment(of: [restored, background], timeout: 3)
-        transport.onCompletion = { identity, status, _, _, error in
+        transport.onCompletion = { identity, status, _, context, error in
             XCTAssertEqual(identity, "generation.batch")
             XCTAssertEqual(status, 200)
             XCTAssertNil(error)
+            XCTAssertEqual(context.attempt, 2)
             completion.fulfill()
         }
-        transport.start(request: request, file: file, identity: "generation.batch")
-        transport.start(request: request, file: file, identity: "generation.batch")
+        transport.start(request: request, file: file, identity: "generation.batch", attempt: 1)
+        transport.start(request: request, file: file, identity: "generation.batch", attempt: 2)
         await fulfillment(of: [live], timeout: 3)
         lock.withLock { liveSource }?.succeed(Data("restored".utf8))
         await fulfillment(of: [completion], timeout: 3)
@@ -164,7 +168,7 @@ final class WhoopURLSessionTransportTests: XCTestCase {
         }
         var current = request
         current.setValue("current", forHTTPHeaderField: "X-Test-Credential")
-        transport.start(request: current, file: file, identity: "generation.batch")
+        transport.start(request: current, file: file, identity: "generation.batch", attempt: 1)
         await fulfillment(of: [oldCanceled, completion], timeout: 3)
         transport.cancel(identity: "generation.batch")
     }
@@ -199,7 +203,7 @@ final class WhoopURLSessionTransportTests: XCTestCase {
             if source.request.url == request.url { canceled.fulfill() }
         }
         transport.onCompletion = { _, _, _, _, _ in completion.fulfill() }
-        transport.start(request: request, file: file, identity: "generation.batch")
+        transport.start(request: request, file: file, identity: "generation.batch", attempt: 1)
         await fulfillment(of: [started], timeout: 3)
         transport.cancel(identity: "generation.batch")
         await fulfillment(of: [canceled, completion], timeout: 1)
@@ -218,7 +222,7 @@ final class WhoopURLSessionTransportTests: XCTestCase {
             XCTAssertTrue(error?.localizedDescription.contains("64 KiB") == true)
             completion.fulfill()
         }
-        transport.start(request: request, file: file, identity: "generation.batch")
+        transport.start(request: request, file: file, identity: "generation.batch", attempt: 1)
         await fulfillment(of: [background, completion], timeout: 3)
         transport.cancel(identity: "generation.batch")
     }
@@ -280,7 +284,7 @@ extension WhoopURLSessionTransportTests {
         WhoopTransportURLProtocol.stopped = { source in
             if source.request.url == request.url { premature.fulfill() }
         }
-        transport.start(request: request, file: file, identity: "generation.batch")
+        transport.start(request: request, file: file, identity: "generation.batch", attempt: 1)
         await fulfillment(of: [started], timeout: 3)
         lock.withLock { background }?.getAllTasks { tasks in
             transport.cancelRestoredTasks(tasks, identity: "generation.batch")

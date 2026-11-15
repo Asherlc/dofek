@@ -243,7 +243,10 @@ Tokens remain in application memory; iOS owns submitted request headers. After a
 restart, native callbacks acknowledge existing batches without React;
 authenticated configuration or an explicit flush can add ordinary delivery to a
 restored reservation. Account changes cancel both paths, and replacement
-credentials retire the old request. Canonical mutation endpoints
+credentials retire the old request. Queued callbacks carry an in-memory submission identity so
+retired results cannot block or cancel a refreshed reservation, including a refresh
+with unchanged credentials. Native background completions remain valid before any
+new submission is configured. Canonical mutation endpoints
 must serve directly: Apple's background service follows redirects, and a
 cross-origin final response is rejected as an acknowledgment.
 
