@@ -38274,3 +38274,42 @@ Local qualification and CI are separate from production throughput acceptance. T
   was not performed during this task because it is outside the approved scope.
 - **Follow-up:** Rotate the affected production credentials through the
   established secret rotation workflow and verify consumers afterward.
+
+## 2026-11-15 — Activities list delayed by PostgreSQL activity expansion
+
+- **Symptoms / impact:** The production web Activities page waits for its
+  activity cards. Two uncached `calendar.weekListV2` requests took 12,316 ms
+  and 8,649 ms; the accompanying `calendar.activityOverview` requests took
+  10,822 ms and 5,867 ms.
+- **Evidence:** Axiom `dofek-logs`, 23:31–23:35 UTC, traces
+  `7553a2d760d85b8b26fdd78cb23f3997` and
+  `97b57b6d30045738a112662ef6d03f74`. PostgreSQL slow-statement logs show
+  `SELECT a.id::text AS id FROM fitness.v_activity a` taking 7,275 ms,
+  3,339 ms, 2,970 ms and 2,681 ms. Climbing-log hydration queries against
+  `fitness.v_climbing_log_entry`, joined to `fitness.v_activity`, took
+  3,770 ms and 3,640 ms during the second request. ClickHouse
+  `system.query_log` records the initial activity SELECT at 457 ms and
+  143 ms respectively. The second request's recorded application queue
+  waits were each below 1 ms.
+- **Root cause:** The request paths repeatedly expand the PostgreSQL
+  activity view, including provenance hydration before the local-date
+  filter. A read-only reproduction of the current-period visibility query
+  took 3,211 ms and returned 80 IDs, while its provenance input aggregate
+  ran 1,885 times. The overview performs two sequential visibility queries;
+  list map/session lookups expand the view again. This is request-time
+  PostgreSQL work, rather than an expensive initial ClickHouse activity
+  scan. Plan interpretation follows PostgreSQL's
+  [EXPLAIN documentation](https://www.postgresql.org/docs/18/using-explain.html).
+- **Fix / mitigation:** Diagnosis only; no runtime, schema, cache, timeout,
+  retry or production configuration changes were applied. Implementation
+  direction awaits confirmation under the repository's planning policy.
+- **Remaining risk / follow-up:** Cold requests remain slow. Reduce repeated
+  full-view/provenance work in the existing activity visibility and climbing
+  list queries, preserving current deduplication, source lifecycle, access
+  windows and local-date semantics. Require real-PostgreSQL result-equivalence
+  regressions and before/after plans before claiming improvement.
+- **Retrospective:** Correlating Axiom procedure timings with both engines'
+  query logs located the bottleneck; the tRPC `db_duration_ms` label alone
+  did not identify the engine. Proposed loading-runbook addition for review:
+  “When ClickHouse queries are short, inspect PostgreSQL visibility and
+  enrichment queries before adding analytics models.”
