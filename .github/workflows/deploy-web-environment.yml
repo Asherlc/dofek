@@ -314,8 +314,7 @@ jobs:
             const baseline = getIdentity(successful);
             if (!live || live.sourceSha !== baseline.source_sha || live.imageDigest !== baseline.image_digest) throw new Error('live server identity does not match the latest successful receipt; reconcile target evidence before publication');
           } else if (live) {
-            command('git', ['cat-file', '-e', `${live.sourceSha}^{commit}`]);
-            record(live.sourceSha, live.imageDigest, 'success', 'Reconciled from live Docker Swarm web and worker task identity');
+            throw new Error(`live server ${live.sourceSha} ${live.imageDigest} has no verified target receipt. Operator initialization required: establish the source from immutable task labels and image digest; verify the original release completed every server deployment gate; then create its server-production/server-stack-publish deployment receipt and success status. Do not infer completed verification from live task identity or workflow conclusion.`);
           }
 
           if (live?.sourceSha === SOURCE_SHA && live.imageDigest === candidateDigest) {
@@ -327,7 +326,7 @@ jobs:
             appendFileSync(GITHUB_OUTPUT, `source_sha=${SOURCE_SHA}\nimage_ref=${imageRef}\ndecision=superseded\n`);
             process.exit(0);
           }
-          const baseline = successful ? getIdentity(successful).source_sha : live?.sourceSha;
+          const baseline = successful ? getIdentity(successful).source_sha : null;
           if (baseline && !git(['merge-base','--is-ancestor',baseline,SOURCE_SHA])) throw new Error(`server candidate ${SOURCE_SHA} is unrelated to target source ${baseline}`);
           if (successful && getIdentity(successful).source_sha === SOURCE_SHA && getIdentity(successful).image_digest === candidateDigest) {
             appendFileSync(GITHUB_OUTPUT, `source_sha=${SOURCE_SHA}\nimage_ref=${imageRef}\ndecision=unchanged\n`);

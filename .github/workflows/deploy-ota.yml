@@ -78,8 +78,10 @@ jobs:
       - name: Export iOS bundle (surfaces the error eoas hides)
         working-directory: packages/mobile
         env:
+          EXPO_NO_DOTENV: "1"
+          SENTRY_RELEASE: ${{ inputs.commit_sha }}
           EXPO_PUBLIC_SENTRY_RELEASE: ${{ inputs.commit_sha }}
-        run: pnpm expo export --source-maps external --output-dir "$RUNNER_TEMP/dofek-ota-preflight" --platform ios
+        run: pnpm expo export --dump-sourcemap --output-dir "$RUNNER_TEMP/dofek-ota-preflight" --platform ios
       - name: Admit forward-only OTA publication and record intent
         id: publication
         env:
@@ -111,6 +113,9 @@ jobs:
             return spawnSync('git', args, { encoding: 'utf8', stdio: 'ignore' }).status === 0;
           }
           const { SOURCE_SHA, RUNTIME_VERSION, CURRENT_MANIFEST_ID, CURRENT_MANIFEST_RUNTIME, REPOSITORY, RUN_ID, RUN_ATTEMPT, RUN_URL, GITHUB_OUTPUT } = process.env;
+          if (!RUNTIME_VERSION) throw new Error('requested OTA runtime version is missing');
+          if (!CURRENT_MANIFEST_ID || !CURRENT_MANIFEST_RUNTIME) throw new Error('live OTA manifest probe outputs are missing; require an explicit manifest UUID/runtime or the explicit none sentinel');
+          if (CURRENT_MANIFEST_RUNTIME !== RUNTIME_VERSION) throw new Error('live OTA manifest probe runtime does not match the requested runtime');
           const preflightDirectory = join(process.env.RUNNER_TEMP, 'dofek-ota-preflight');
           if (!/^[a-f0-9]{40}$/.test(SOURCE_SHA)) throw new Error('OTA source SHA must be a full lowercase commit');
           command('git', ['cat-file', '-e', `${SOURCE_SHA}^{commit}`]);
@@ -147,8 +152,7 @@ jobs:
           };
           const unresolved = history.filter((record) => !['SUCCESS','INACTIVE'].includes(record.state));
           if (unresolved.length > 1) throw new Error('multiple unresolved OTA publication intents require operator reconciliation');
-          const liveExists = CURRENT_MANIFEST_ID && CURRENT_MANIFEST_ID !== 'none';
-          if (liveExists && CURRENT_MANIFEST_RUNTIME !== RUNTIME_VERSION) throw new Error('live OTA manifest runtime does not match the requested production runtime');
+          const liveExists = CURRENT_MANIFEST_ID !== 'none';
           if (unresolved.length === 1) {
             const pending = unresolved[0];
             const identity = source(pending, false);

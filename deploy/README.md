@@ -591,9 +591,18 @@ it does not repeat Terraform or stack mutation. If any existing stack
 verification failed, keep the intent unresolved until the target is reconciled
 and all required verification gates pass. Do not mark it inactive while either
 service may be running the candidate.
-Bootstrap without server history is automatic only after the workflow confirms
-both live services are running the same source revision and image digest; it
-records that observed identity as the baseline before considering the candidate.
+Bootstrap with no successful server receipt is fail-closed whenever a live
+web/worker target exists. Matching task labels and image digests establish only
+the observed live identity; they do not prove that the prior release passed
+CDC, API, health, Sentry, and other deployment gates. Do not retry publication
+until an operator verifies the exact source commit and image digest from the
+live tasks, establishes from the original release run that every applicable
+server verification gate succeeded, and initializes a receipt for that exact
+identity. If either identity or verification evidence is unavailable, stop and
+keep the target blocked. For a never-deployed server with no live web/worker
+tasks and no history, the normal first publication path may create its pending
+intent.
+
 Read live metadata without printing container environment values:
 
 ```bash
@@ -601,6 +610,28 @@ ssh dofek-server 'docker service ps dofek_web dofek_worker --no-trunc'
 ssh dofek-server 'docker ps -q --filter label=com.docker.swarm.service.name=dofek_web --filter status=running | xargs -r docker inspect | jq '\''map({revision: .Config.Labels["org.opencontainers.image.revision"], image: .Config.Image, state: .State.Status})'\'''
 ssh dofek-server 'docker ps -q --filter label=com.docker.swarm.service.name=dofek_worker --filter status=running | xargs -r docker inspect | jq '\''map({revision: .Config.Labels["org.opencontainers.image.revision"], image: .Config.Image, state: .State.Status})'\'''
 ```
+
+After recording the evidence above, initialize the existing stock GitHub
+deployment record (there is no separate baseline store). Set `REPOSITORY`,
+`SOURCE_SHA`, `IMAGE_DIGEST`, `RUN_ID`, `RUN_ATTEMPT`, and `RUN_URL` from the
+verified immutable task identity and the original fully verified release run.
+The payload ref must equal `source_sha`; record success only after all listed
+server verification gates have been confirmed:
+
+```bash
+deployment="$(gh api --method POST "repos/$REPOSITORY/deployments" --input - <<JSON
+{"ref":"$SOURCE_SHA","environment":"server-production","task":"server-stack-publish","auto_merge":false,"required_contexts":[],"production_environment":false,"payload":{"source_sha":"$SOURCE_SHA","image_digest":"$IMAGE_DIGEST","run_id":"$RUN_ID","run_attempt":"$RUN_ATTEMPT","run_url":"$RUN_URL"}}
+JSON
+ )"
+deployment_id="$(jq -er '.id' <<<"$deployment")"
+gh api --method POST "repos/$REPOSITORY/deployments/$deployment_id/statuses" --input - <<JSON
+{"state":"success","auto_inactive":false,"log_url":"$RUN_URL","description":"Verified server $SOURCE_SHA"}
+JSON
+```
+
+Do not create a success receipt from live identity, a green workflow summary
+alone, or an unverified previous run. The exact evidence and new receipt must
+be reviewed before retrying the blocked publisher.
 
 For OTA, the live manifest exposes an update UUID and runtime but the current
 production channel does not expose the source SHA. With no matching success

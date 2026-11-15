@@ -14,14 +14,24 @@ const assetSchema = z.object({
   url: z.url(),
 });
 
+const runtimeVersionSchema = z
+  .string()
+  .min(1)
+  .refine(
+    (runtimeVersion) => !/[\r\n]/.test(runtimeVersion),
+    "OTA runtime version cannot contain line breaks",
+  );
+
 const manifestSchema = z.object({
   assets: z.array(assetSchema),
   createdAt: z.string().min(1),
   extra: z.record(z.string(), z.unknown()),
-  id: z.string().min(1),
+  id: z
+    .string()
+    .regex(/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i, "OTA manifest ID must be a UUID"),
   launchAsset: assetSchema,
   metadata: z.record(z.string(), z.string()),
-  runtimeVersion: z.string().min(1),
+  runtimeVersion: runtimeVersionSchema,
 });
 
 const commandOptionsSchema = z.object({
@@ -30,7 +40,11 @@ const commandOptionsSchema = z.object({
   platform: z.enum(["android", "ios"]),
   runtimeVersion: z
     .string({ error: "--runtime-version is required; resolve the app runtime before checking OTA" })
-    .min(1, "--runtime-version is required; resolve the app runtime before checking OTA"),
+    .min(1, "--runtime-version is required; resolve the app runtime before checking OTA")
+    .refine(
+      (runtimeVersion) => !/[\r\n]/.test(runtimeVersion),
+      "OTA runtime version cannot contain line breaks",
+    ),
   url: z.url(),
 });
 

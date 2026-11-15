@@ -150,6 +150,40 @@ function runWorkflowStep(
 describe("server publication workflow step", () => {
   const script = workflowStep(".github/workflows/deploy-web-environment.yml", "check", "publication");
 
+  it("does not invent a successful baseline from matching live tasks without a verified receipt", () => {
+    const directory = mkdtempSync(join(tmpdir(), "server-unverified-bootstrap-"));
+    try {
+      const bin = fixtureBin(directory);
+      const logPath = join(directory, "gh.jsonl");
+      const outputPath = join(directory, "output");
+      const result = runWorkflowStep(script, bin, outputPath, {
+        GH_TOKEN: "fixture",
+        GH_LOG: logPath,
+        GH_HISTORY: history(),
+        RUNNER_TEMP: directory,
+        SOURCE_SHA: headSha,
+        IMAGE_TAG: "sha-test",
+        STACK_NAME: "dofek",
+        SERVER_HOST: "fixture-host",
+        SSH_USER: "ubuntu",
+        REPOSITORY: "owner/dofek",
+        RUN_ID: "123",
+        RUN_ATTEMPT: "1",
+        RUN_URL: "https://github.com/owner/dofek/actions/runs/123/attempts/1",
+        CANDIDATE_DIGEST: candidateDigest,
+        LIVE_SHA: headSha,
+        LIVE_DIGEST: candidateDigest,
+      });
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain("Operator initialization required");
+      expect(existsSync(outputPath)).toBe(false);
+      const calls = readFileSync(logPath, "utf8").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
+      expect(calls.some((call) => call.args.some((arg: string) => arg.endsWith("/statuses")))).toBe(false);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it("reconciles a live server identity and records a durable intent before Terraform", () => {
     const directory = mkdtempSync(join(tmpdir(), "server-publication-step-"));
     try {
@@ -159,7 +193,7 @@ describe("server publication workflow step", () => {
       const result = runWorkflowStep(script, bin, outputPath, {
         GH_TOKEN: "fixture",
         GH_LOG: logPath,
-        GH_HISTORY: history(),
+        GH_HISTORY: history([record(parentSha, "SUCCESS", { source_sha: parentSha, image_digest: liveDigest })]),
         RUNNER_TEMP: directory,
         SOURCE_SHA: headSha,
         IMAGE_TAG: "sha-test",
@@ -183,8 +217,8 @@ describe("server publication workflow step", () => {
         .map((line) => JSON.parse(line));
       expect(calls.some((call) => call.args.includes("repos/owner/dofek/deployments"))).toBe(true);
       const statuses = calls.filter((call) => call.args.some((arg: string) => arg.endsWith("/statuses")));
-      expect(JSON.parse(statuses[0].input).state).toBe("success");
-      expect(JSON.parse(statuses[1].input).state).toBe("pending");
+      expect(statuses).toHaveLength(1);
+      expect(JSON.parse(statuses[0].input).state).toBe("pending");
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }
@@ -525,6 +559,34 @@ describe("server publication workflow step", () => {
 describe("OTA publication workflow step", () => {
   const script = workflowStep(".github/workflows/deploy-ota.yml", "deploy", "publication");
   const previousRuntime = "2.8.1";
+
+  it("fails closed when the live manifest probe outputs are absent", () => {
+    const directory = mkdtempSync(join(tmpdir(), "ota-missing-live-probe-"));
+    try {
+      const bin = fixtureBin(directory);
+      const logPath = join(directory, "gh.jsonl");
+      const result = runWorkflowStep(script, bin, join(directory, "output"), {
+        GH_TOKEN: "fixture",
+        GH_LOG: logPath,
+        GH_HISTORY: history(),
+        RUNNER_TEMP: directory,
+        SOURCE_SHA: headSha,
+        RUNTIME_VERSION: runtime,
+        REPOSITORY: "owner/dofek",
+        RUN_ID: "125",
+        RUN_ATTEMPT: "1",
+        RUN_URL: "https://github.com/owner/dofek/actions/runs/125/attempts/1",
+      });
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain("live OTA manifest probe outputs are missing");
+      const calls = existsSync(logPath)
+        ? readFileSync(logPath, "utf8").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line))
+        : [];
+      expect(calls.some((call) => call.args.some((arg: string) => arg.endsWith("/deployments")))).toBe(false);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
 
   it("records intent when the live channel has no update", () => {
     const directory = mkdtempSync(join(tmpdir(), "ota-publication-step-"));
