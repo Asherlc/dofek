@@ -3,7 +3,6 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { parse } from "yaml";
 import { describe, expect, it } from "vitest";
 import {
   fixtureBin,
@@ -11,6 +10,7 @@ import {
   headSha,
   history,
   parentSha,
+  readWorkflow,
   runWorkflowStep,
   runtime,
   updateId,
@@ -63,10 +63,7 @@ function createHistoricalCandidate() {
 }
 
 function auxiliaryCheckoutStatusStep() {
-  const workflow = parse(readFileSync(workflowPath, "utf8")) as {
-    jobs: { deploy: { steps: Array<{ name?: string; run?: string }> } };
-  };
-  const step = workflow.jobs.deploy.steps.find(
+  const step = readWorkflow(workflowPath).jobs.deploy?.steps?.find(
     (candidate) => candidate.name === "Exclude trusted OTA controls from candidate status",
   );
   if (!step?.run) throw new Error("trusted OTA checkout status step is missing");

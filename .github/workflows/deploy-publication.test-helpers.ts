@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { afterAll } from "vitest";
 import { parse } from "yaml";
+import { z } from "zod";
 
 const repositoryRoot = process.cwd();
 const gitFixtureRoot = mkdtempSync(join(tmpdir(), "release-publication-git-"));
@@ -34,11 +35,29 @@ export const liveDigest = `sha256:${"b".repeat(64)}`;
 export const runtime = "ee28bafccebbd4101e0003e134c554ed38303780";
 export const updateId = "47a9ab69-6103-6981-398b-a90d59a49a8a";
 
+const workflowSchema = z.object({
+  jobs: z.record(
+    z.string(),
+    z.object({
+      steps: z
+        .array(
+          z.object({
+            id: z.string().optional(),
+            name: z.string().optional(),
+            run: z.string().optional(),
+          }),
+        )
+        .optional(),
+    }),
+  ),
+});
+
+export function readWorkflow(path: string) {
+  return workflowSchema.parse(parse(readFileSync(path, "utf8")));
+}
+
 export function workflowStep(path: string, jobId: string, stepId: string): string {
-  const document = parse(readFileSync(path, "utf8")) as {
-    jobs: Record<string, { steps?: Array<{ id?: string; run?: string }> }>;
-  };
-  const step = document.jobs[jobId]?.steps?.find(({ id }) => id === stepId);
+  const step = readWorkflow(path).jobs[jobId]?.steps?.find(({ id }) => id === stepId);
   if (!step?.run) throw new Error(`Could not find executable workflow step ${jobId}.${stepId}`);
   return step.run;
 }
