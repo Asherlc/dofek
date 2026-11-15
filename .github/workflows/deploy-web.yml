@@ -27,7 +27,6 @@ jobs:
       target: web
       image_tag: ${{ inputs.image_tag }}
     secrets:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
       DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
       GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}

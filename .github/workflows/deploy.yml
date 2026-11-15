@@ -14,8 +14,6 @@ on:
         type: string
         default: ""
     secrets:
-      GITHUB_TOKEN:
-        required: false
       SENTRY_AUTH_TOKEN:
         required: false
       DEPLOY_SSH_KEY:
@@ -207,7 +205,6 @@ jobs:
     with:
       commit_sha: ${{ needs.resolve-source.outputs.commit_sha }}
     secrets:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
 
 
@@ -245,7 +242,6 @@ jobs:
       web_host_rule: "Host(`dofek.fit`) || Host(`www.dofek.fit`) || Host(`dofek.live`) || Host(`www.dofek.live`) || Host(`dofek.asherlc.com`)"
       ci_run_id: ${{ format('{0}', github.run_id) }}
     secrets:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
       GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
       SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
@@ -270,9 +266,6 @@ jobs:
     with:
       commit_sha: ${{ needs.resolve-source.outputs.commit_sha }}
       dispatching_run_id: ${{ github.run_id }}
-    secrets:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
   ios:
     name: Deploy iOS
     needs: [resolve-source, check-repository, check-shared, check-mobile, build-mobile, web-stack, ios-archive]
@@ -296,9 +289,6 @@ jobs:
       build_number: ${{ needs.ios-archive.outputs.build_number }}
       artifact_id: ${{ needs.ios-archive.outputs.artifact_id }}
       ci_run_id: ${{ format('{0}', github.run_id) }}
-    secrets:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
   ota:
     name: Deploy OTA
     needs: [resolve-source, check-repository, check-shared, check-mobile, build-mobile, web-stack]
@@ -317,6 +307,4 @@ jobs:
     with:
       commit_sha: ${{ needs.resolve-source.outputs.commit_sha }}
       dispatching_run_id: ${{ github.run_id }}
-    secrets:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   # Image cleanup runs via daily cron on the server (see cloud-init.yml).

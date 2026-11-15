@@ -11,9 +11,6 @@ on:
         description: "Run ID of the workflow run that dispatched this workflow"
         required: false
         type: string
-    secrets:
-      GITHUB_TOKEN:
-        required: false
     outputs:
       commit_sha:
         description: "Source SHA checked out for the signed archive"

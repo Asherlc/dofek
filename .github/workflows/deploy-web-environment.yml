@@ -120,8 +120,6 @@ on:
         type: string
         default: ""
     secrets:
-      GITHUB_TOKEN:
-        required: false
       DEPLOY_SSH_KEY:
         required: false
       GHCR_TOKEN:

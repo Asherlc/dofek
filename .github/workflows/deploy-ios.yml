@@ -23,10 +23,6 @@ on:
         description: "CI run ID to include in deploy summary (optional)"
         required: false
         type: string
-    secrets:
-      GITHUB_TOKEN:
-        required: false
-
 permissions:
   contents: read
   actions: read

@@ -16,8 +16,6 @@ on:
         description: Immutable server image reference produced by this build.
         value: ${{ jobs.build.outputs.image_ref }}
     secrets:
-      GITHUB_TOKEN:
-        required: false
       SENTRY_AUTH_TOKEN:
         required: false
   workflow_dispatch:

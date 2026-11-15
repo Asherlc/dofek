@@ -151,7 +151,6 @@ jobs:
     with:
       commit_sha: ${{ needs.resolve-commit.outputs.commit_sha }}
     secrets:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
 
   build-ota:
@@ -193,9 +192,6 @@ jobs:
       contents: read
       packages: write
     uses: ./.github/workflows/build-docker-ml.yml
-    secrets:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
   # ── Storybook previews (PR only, depend on builds not tests) ────────────
 
   build-storybook:
@@ -266,7 +262,6 @@ jobs:
       public_url: https://dofek.fit
       web_host_rule: "Host(`dofek.asherlc.com`) || Host(`dofek.fit`) || Host(`www.dofek.fit`) || Host(`dofek.live`) || Host(`www.dofek.live`)"
     secrets:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
       GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
       SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
@@ -288,9 +283,6 @@ jobs:
     with:
       commit_sha: ${{ needs.resolve-commit.outputs.commit_sha }}
       dispatching_run_id: ${{ github.run_id }}
-    secrets:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
   deploy-ota:
     name: Publish Matching OTA
     needs: [resolve-commit, detect-changes, check-repository, check-shared, check-mobile, build-mobile]
@@ -310,9 +302,6 @@ jobs:
     with:
       commit_sha: ${{ needs.resolve-commit.outputs.commit_sha }}
       dispatching_run_id: ${{ github.run_id }}
-    secrets:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
   deploy-ios:
     name: Publish Matching iOS
     needs: [resolve-commit, detect-changes, check-repository, check-shared, check-mobile, build-mobile, build-ios-release]
@@ -338,9 +327,6 @@ jobs:
       build_number: ${{ needs.build-ios-release.outputs.build_number }}
       artifact_id: ${{ needs.build-ios-release.outputs.artifact_id }}
       ci_run_id: ${{ format('{0}', github.run_id) }}
-    secrets:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
   # ── Aggregate PR gate ──────────────────────────────────────────────────
 
   ci-gate:
