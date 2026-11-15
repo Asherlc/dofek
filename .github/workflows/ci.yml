@@ -109,8 +109,21 @@ jobs:
       shared_result: ${{ needs.check-shared.result }}
       server_result: ${{ needs.check-server.result }}
       mobile_result: ${{ needs.check-mobile.result }}
-      shared_selected: ${{ needs.check-shared.result != 'skipped' }}
-      server_selected: ${{ needs.check-server.result != 'skipped' }}
+      shared_selected: >-
+        ${{ needs.detect-changes.outputs.shared == 'true' ||
+            (github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+             (needs.detect-changes.outputs.docker_server == 'true' ||
+              needs.detect-changes.outputs.web == 'true' ||
+              needs.detect-changes.outputs.terraform == 'true' ||
+              needs.detect-changes.outputs.docker_ota == 'true' ||
+              needs.detect-changes.outputs.mobile == 'true')) }}
+      server_selected: >-
+        ${{ needs.detect-changes.outputs.server == 'true' ||
+            (github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+             (needs.detect-changes.outputs.docker_server == 'true' ||
+              needs.detect-changes.outputs.web == 'true' ||
+              needs.detect-changes.outputs.terraform == 'true' ||
+              needs.detect-changes.outputs.docker_ota == 'true')) }}
       mobile_selected: ${{ needs.detect-changes.outputs.mobile == 'true' }}
       e2e_selected: ${{ needs.detect-changes.outputs.e2e_web == 'true' }}
       image_scan_selected: ${{ needs.detect-changes.outputs.docker_server == 'true' }}
@@ -310,7 +323,7 @@ jobs:
       needs.resolve-commit.result == 'success' &&
       needs.detect-changes.result == 'success' && needs.detect-changes.outputs.mobile == 'true' &&
       needs.check-repository.result == 'success' &&
-      (needs.detect-changes.outputs.shared != 'true' || needs.check-shared.result == 'success') &&
+      needs.check-shared.result == 'success' &&
       needs.check-mobile.result == 'success' && needs.build-mobile.result == 'success'
     permissions:
       actions: read
@@ -384,8 +397,21 @@ jobs:
       BUILD_OTA_RESULT: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && needs.detect-changes.outputs.docker_ota == 'true' && needs.build-ota-publish.result || needs.build-ota.result }}
       BUILD_STORYBOOK_RESULT: ${{ needs.build-storybook.result }}
       BUILD_STORYBOOK_MOBILE_RESULT: ${{ needs.build-storybook-mobile.result }}
-      SHARED_SELECTED: ${{ needs.check-shared.result != 'skipped' }}
-      SERVER_SELECTED: ${{ needs.check-server.result != 'skipped' }}
+      SHARED_SELECTED: >-
+        ${{ needs.detect-changes.outputs.shared == 'true' ||
+            (github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+             (needs.detect-changes.outputs.docker_server == 'true' ||
+              needs.detect-changes.outputs.web == 'true' ||
+              needs.detect-changes.outputs.terraform == 'true' ||
+              needs.detect-changes.outputs.docker_ota == 'true' ||
+              needs.detect-changes.outputs.mobile == 'true')) }}
+      SERVER_SELECTED: >-
+        ${{ needs.detect-changes.outputs.server == 'true' ||
+            (github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+             (needs.detect-changes.outputs.docker_server == 'true' ||
+              needs.detect-changes.outputs.web == 'true' ||
+              needs.detect-changes.outputs.terraform == 'true' ||
+              needs.detect-changes.outputs.docker_ota == 'true')) }}
       MOBILE_SELECTED: ${{ needs.detect-changes.outputs.mobile == 'true' }}
       WEB_SELECTED: ${{ needs.detect-changes.outputs.web == 'true' }}
       ZEPP_SELECTED: ${{ needs.detect-changes.outputs.zepp == 'true' }}
