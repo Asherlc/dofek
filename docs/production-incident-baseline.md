@@ -38313,10 +38313,19 @@ Local qualification and CI are separate from production throughput acceptance. T
   2,266/82 ms, 2,153/75 ms and 2,214/84 ms. The candidate query embedded the new
   group-view definition; no production DDL was executed for this measurement.
   This verifies the query improvement, not a deployed page-load measurement.
+  All 203 focused database tests, repository lint, recursive package typechecks,
+  migration policy and migration SQL lint passed; migration 0187 applied locally.
+  Independent review found no actionable issues. The additional local analytics
+  build could not complete its fresh-ClickHouse prerequisite: bootstrap first
+  reported `Cannot reserve 1.00 MiB, not enough space`, then `errno: 28` writing
+  `v_activity.sql.tmp`. The shared Docker VM had zero available bytes. Approved
+  stopped-container/unused-image cleanup briefly recovered 883 MiB, but the
+  filesystem filled again. No database volumes or running services were removed.
 - **Remaining risk / follow-up:** Release the migration with the repository
   changes through the normal deployment workflow, then measure uncached
   `calendar.weekListV2` and `calendar.activityOverview` again. Production
-  remains on the previous implementation until that release.
+  remains on the previous implementation until that release. Complete the
+  additional local analytics check when shared Docker capacity is available.
 - **Retrospective:** Correlating Axiom procedure timings with both engines'
   query logs located the bottleneck; the tRPC `db_duration_ms` label alone
   did not identify the engine. Proposed loading-runbook addition for review:
