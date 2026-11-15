@@ -54,3 +54,7 @@ Treat values emitted by that diagnostic as compromised pending normal owner-led 
 ## Commits
 
 Implementation and report are committed on the assigned PR branch. PR #3348 remains draft and unmerged.
+
+### Post-push CI correction
+
+The first post-push Actions run `43686817719` failed `Check Repository / Knip` at `Run pnpm knip`. The captured failure log was not yet available while the run remained active, but running that exact command locally reproduced Knip's fatal finding: `Unlisted binaries (1) which`, traced to the new executable workflow fixture. The test now locates Git by scanning `PATH` with Node filesystem APIs instead of invoking `which`. After the direct fix, `pnpm knip` exits 0 (with the repository's existing Expo app-config loading diagnostic/configuration hints), and the focused publisher suite passes again: **208/208**. Changes are in the follow-up commit; its CI rerun remains pending at report time.

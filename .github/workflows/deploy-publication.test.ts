@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import {
+  existsSync,
   chmodSync,
   mkdirSync,
   mkdtempSync,
@@ -9,7 +10,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 
@@ -37,7 +38,9 @@ function workflowStep(path: string, jobId: string, stepId: string): string {
 function fixtureBin(directory: string): string {
   const bin = join(directory, "bin");
   mkdirSync(bin);
-  const realGit = spawnSync("which", ["git"], { encoding: "utf8" }).stdout.trim();
+  const gitBinary = process.platform === "win32" ? "git.exe" : "git";
+  const realGit = process.env.PATH?.split(delimiter).map((path) => join(path, gitBinary)).find(existsSync);
+  if (!realGit) throw new Error("Could not find Git on PATH");
   symlinkSync(realGit, join(bin, "git"));
   writeFileSync(
     join(bin, "gh"),
