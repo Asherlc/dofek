@@ -187,6 +187,10 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
   [detector implementation](./detect-ci-changes.ts) and
   [CI workflow](../.github/workflows/ci.yml).
   - Usage: `pnpm tsx scripts/detect-ci-changes.ts --changed-file packages/mobile/modules/whoop-ble/ios/WhoopBleConnectionManager.swift --json`
+  - `--diff-range <base>...<head>` classifies the complete Git range used by CI,
+    including renamed and deleted paths. Missing revisions or an invalid range
+    fail instead of returning an empty selection. `--json` prints lane
+    selections and affected packages for review.
 - `resolve-deploy-image.ts`: Resolves a requested registry image once, pulls the
   immutable manifest reference through the configured Docker daemon, verifies
   its full source release, and retains the existing web service's desired digest
@@ -198,6 +202,10 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
     manifest locally without querying or mutating the remote Docker service;
     the ordinary invocation retains the migration-aware remote service check.
     Docker documents its [platform-specific pull option](https://docs.docker.com/reference/cli/docker/image/pull/#options).
+  - `--resolve-source-only` resolves a manual image tag to its immutable digest
+    and full OCI revision, and checks that revision against the image's
+    `SENTRY_RELEASE`. It emits `image_ref` and `source_sha` through
+    `GITHUB_OUTPUT` before selected-source checks run.
   - Uses Docker's [manifest descriptor JSON](https://docs.docker.com/reference/cli/docker/buildx/imagetools/inspect/#json-output)
     and [immutable pulls](https://docs.docker.com/reference/cli/docker/image/pull/#pull-an-image-by-digest-immutable-identifier).
 - `verify-deploy-image.ts`: Verifies a converged service's desired image and
@@ -386,6 +394,9 @@ for the upstream fixes, regression coverage, and scoped advisory exceptions.
   - Usage: `pnpm check:mobile-update --app-id <app-id> --runtime-version <resolved-runtime>`
   - Required: `--app-id <app-id> --runtime-version <version>`
   - Overrides: `--url <url> --channel <channel> --runtime-version <version> --platform <ios|android>`
+  - When `GITHUB_OUTPUT` is set, writes the returned manifest UUID and runtime
+    as `manifest_id` and `manifest_runtime`; a valid no-update response writes
+    `manifest_id=none` with the requested runtime.
 - `stack-service-image.ts`: Reads a service’s canonical immutable image from a Compose
   stack, including [YAML merge keys](https://yaml.org/type/merge.html), for the existing
   Swarm running-task verifier. Missing or mutable references fail explicitly.

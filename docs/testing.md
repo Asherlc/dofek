@@ -225,6 +225,51 @@ capacity and cache state. The dependency PR had no observable main CI or deploy
 run, so it contributes no release pairing. Raw evidence remains in the
 implementation workspace, not this runbook.
 
+### Independent release validation snapshot (2026-11-15)
+
+PR #3348's last completed pre-Task-7 workflow run was [CI run
+43728671501](https://github.com/Asherlc/dofek/actions/runs/43728671501) on
+`c02d5b35c59cee60f1ba586b730beb52bd660d1a`. It completed 84 jobs: 74
+succeeded and 10 expected jobs were skipped; none failed or were cancelled.
+All nine protected merge contexts listed above passed. The run took 29m11s
+from creation to completion, including 1m25s before its first job and 27m45s
+from first job start to last job completion. Its server unit/integration,
+coverage, E2E, mobile, native, lint, and security jobs provide actual PR-run
+evidence for this revision.
+
+The run's PR-side GitHub navigation was checked in the native UI: PR Checks →
+CI → exact run → rendered release summary → artifacts → the `Build Mobile / iOS
+Native Build` producer job. The summary linked the candidate merge revision to
+PR #3348 and correctly marked server, OTA, and TestFlight production as not
+applicable on a pull request. The producer-job link is
+[here](https://github.com/Asherlc/dofek/actions/runs/43728671501/job/132856778332).
+No signed archive is built on the PR path, so archive navigation was not
+verified there.
+
+This is validation evidence, not a measured release improvement. The run's
+29m11s duration falls within the historical 17m43s–32m03s main-CI range; it
+does not establish a faster full PR-to-deployment path. No post-merge main
+publisher or production rollout has run for this change. The existing baseline
+keeps queue, CI, rollout, and PR-open-to-merge timing separate; the historical
+23m–1h07m PR-open-to-merge spans include both automated validation and human
+review, so review time cannot be isolated from those samples. This draft PR has
+no measured human-review-to-merge interval or after-deployment timing.
+
+The implementation retains explicit shared dependencies: the repository
+safety lane, including its secret and dependency checks, gates the affected
+publishers; SAST and CodeQL remain required PR merge contexts. Shared TypeScript
+mutation still gates mobile, the full server unit/integration/coverage path
+remains, and the existing `Build Mobile / Mobile Build Gate` remains required by
+mobile publishers. These are residual validation costs, not proof of complete
+lane isolation. Main-branch partial-failure, mobile-only/server-only/shared release,
+and live supersession examples remain pending an authorized merge and safe
+initialization of the existing server and OTA live-baseline receipts. Do not
+manufacture production failures or bypass those baseline guards to create
+examples. Task 6's executable fixtures cover rendered partial-success,
+blocked, failure, unchanged, and superseded summary outcomes; workflow gate and
+publication fixtures cover selected failure/cancellation/unexpected skip,
+empty selections, ordering, and recovery without production writes.
+
 ## Native Swift mutation testing
 
 Run the [native mutation runner](../scripts/run-swift-mutation.ts) from the
