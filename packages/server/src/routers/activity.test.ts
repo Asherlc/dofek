@@ -1982,18 +1982,18 @@ describe("activityRouter", () => {
         .mockResolvedValue(
           makeActivityRow({ canonical_type: "running", avg_power: null, max_power: null }),
         );
-      const getEftpTrendSpy = vi.spyOn(CyclingThresholdRepository.prototype, "getForActivities");
+      const powerMetricsSpy = vi.spyOn(CyclingThresholdRepository.prototype, "getForActivities");
       const getPowerZonesSpy = vi.spyOn(ActivityRepository.prototype, "getPowerZones");
 
       const caller = makeCallerWithoutSensorStore();
       const result = await caller.powerZones({ id: "00000000-0000-0000-0000-000000000001" });
 
       expect(result).toBeNull();
-      expect(getEftpTrendSpy).not.toHaveBeenCalled();
+      expect(powerMetricsSpy).not.toHaveBeenCalled();
       expect(getPowerZonesSpy).not.toHaveBeenCalled();
 
       findByIdSpy.mockRestore();
-      getEftpTrendSpy.mockRestore();
+      powerMetricsSpy.mockRestore();
       getPowerZonesSpy.mockRestore();
     });
 
@@ -2001,18 +2001,18 @@ describe("activityRouter", () => {
       const findByIdSpy = vi
         .spyOn(ActivityRepository.prototype, "findById")
         .mockResolvedValue(makeActivityRow({ avg_power: null, max_power: null }));
-      const getEftpTrendSpy = vi.spyOn(CyclingThresholdRepository.prototype, "getForActivities");
+      const powerMetricsSpy = vi.spyOn(CyclingThresholdRepository.prototype, "getForActivities");
       const getPowerZonesSpy = vi.spyOn(ActivityRepository.prototype, "getPowerZones");
 
       const caller = makeCallerWithoutSensorStore();
       const result = await caller.powerZones({ id: "00000000-0000-0000-0000-000000000001" });
 
       expect(result).toBeNull();
-      expect(getEftpTrendSpy).not.toHaveBeenCalled();
+      expect(powerMetricsSpy).not.toHaveBeenCalled();
       expect(getPowerZonesSpy).not.toHaveBeenCalled();
 
       findByIdSpy.mockRestore();
-      getEftpTrendSpy.mockRestore();
+      powerMetricsSpy.mockRestore();
       getPowerZonesSpy.mockRestore();
     });
 
@@ -2046,17 +2046,23 @@ describe("activityRouter", () => {
         const metrics = {
           activity_id: "00000000-0000-0000-0000-000000000001",
           started_at: "2026-01-01T12:00:00.000000Z",
+          activity_date: "2026-01-01",
+          canonical_type: "cycling",
+          ended_at: "2026-01-01T13:00:00.000000Z",
           normalized_power: 240,
-          eftp: 265,
+          power_sample_count: 60,
+          ftp: 265,
           intensity_factor: 240 / 265,
           power_tss: 82,
-          evidence_activity_id: "00000000-0000-4000-8000-000000000002",
-          evidence_at: "2025-12-01T12:00:00.000000Z",
-          evidence_duration_seconds: 1200,
-          evidence_power: 280,
-          model_version: "reference-v1",
+          threshold: {
+            value: 265,
+            unit: "watt",
+            effective_from: "2025-12-01",
+            source_record_id: "00000000-0000-4000-8000-000000000002",
+            kind: "configured",
+          },
         };
-        const getEftpTrendSpy = vi
+        const powerMetricsSpy = vi
           .spyOn(CyclingThresholdRepository.prototype, "getForActivities")
           .mockResolvedValue(new Map([[metrics.activity_id, metrics]]));
         const getPowerZonesSpy = vi
@@ -2072,20 +2078,21 @@ describe("activityRouter", () => {
           powerSourceId,
         });
 
-        expect(getEftpTrendSpy).toHaveBeenCalledWith([metrics.activity_id]);
+        expect(powerMetricsSpy).toHaveBeenCalledWith([metrics.activity_id]);
         expect(getPowerZonesSpy).toHaveBeenCalledWith(
           "00000000-0000-0000-0000-000000000001",
           265,
           powerSourceId,
         );
         expect(result).toEqual({
+          activityDate: "2026-01-01",
           zones,
           ftp: 265,
           thresholdEvidence: cyclingThresholdEvidenceFromMetrics(metrics),
         });
 
         findByIdSpy.mockRestore();
-        getEftpTrendSpy.mockRestore();
+        powerMetricsSpy.mockRestore();
         getPowerZonesSpy.mockRestore();
       },
     );
@@ -2105,6 +2112,7 @@ describe("activityRouter", () => {
       });
       const result = await caller.powerZones({ id: "00000000-0000-0000-0000-000000000001" });
       expect(result).toEqual({
+        activityDate: "2026-04-01",
         zones: [],
         ftp: null,
         thresholdEvidence: cyclingThresholdEvidenceFromMetrics(null),

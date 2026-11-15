@@ -307,7 +307,7 @@ describe("activity calendar entries", () => {
               status: "missing",
               label: "Training Stress Score",
               reason:
-                "Record cycling power with sufficient sustained-effort evidence for computed eFTP.",
+                "Set a dated cycling FTP and record normalized power to calculate training stress.",
             },
           ],
         }),

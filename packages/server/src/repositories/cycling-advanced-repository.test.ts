@@ -1,5 +1,5 @@
 import { CYCLING_ACTIVITY_TYPES } from "@dofek/training/training";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { makeMockSensorStore } from "../lib/test-helpers.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import {
@@ -8,6 +8,9 @@ import {
   VerticalAscentModel,
 } from "./cycling-advanced-models.ts";
 import { CyclingAdvancedRepository } from "./cycling-advanced-repository.ts";
+import type { CyclingActivityPowerMetrics } from "./cycling-threshold-repository.ts";
+import { CyclingThresholdRepository } from "./cycling-threshold-repository.ts";
+import { SportSettingsRepository, type SportSettingsRow } from "./sport-settings-repository.ts";
 import {
   expectClickHouseFiniteDaysFilter,
   expectClickHouseUnboundedDaysFilter,
@@ -173,14 +176,58 @@ describe("PedalDynamicsModel", () => {
 // ---------------------------------------------------------------------------
 
 describe("CyclingAdvancedRepository", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  function mockThresholds(values: Record<string, { ftp: number; np: number }>) {
+    vi.spyOn(CyclingThresholdRepository.prototype, "getForActivities").mockImplementation(
+      async (ids) =>
+        new Map(
+          ids.flatMap((id) => {
+            const value = values[id];
+            if (!value) return [];
+            const metrics: CyclingActivityPowerMetrics = {
+              activity_id: id,
+              started_at: "2026-03-15T10:00:00.000Z",
+              ended_at: "2026-03-15T11:00:00.000Z",
+              activity_date: "2026-03-15",
+              canonical_type: "cycling",
+              normalized_power: value.np,
+              power_sample_count: 1,
+              ftp: value.ftp,
+              intensity_factor: value.np / value.ftp,
+              power_tss: 64,
+              threshold: {
+                value: value.ftp,
+                unit: "watt",
+                effective_from: "2026-01-01",
+                source_record_id: "00000000-0000-4000-8000-000000000001",
+                kind: "configured",
+              },
+            };
+            return [[id, metrics]];
+          }),
+        ),
+    );
+  }
   function makeSensorStore(rows: unknown[], rawActivityCount = rows.length): ActivitySensorStore {
     // Mirror ClickHouseActivitySensorStore.query: parse rows through the
     // supplied Zod schema so coerce/transform validators actually run.
-    const query: ActivitySensorStore["query"] = async (schema, queryText = "") => {
+    const query: ActivitySensorStore["query"] = async (schema, queryText = "", params = {}) => {
       if (queryText.includes("raw_activity_count")) {
         return [schema.parse({ raw_activity_count: rawActivityCount })];
       }
-      return rows.map((row) => schema.parse(row));
+      if (queryText.includes("countIf(")) {
+        return [
+          schema.parse({
+            total: queryText.includes("AND (0)") ? 0 : rows.length,
+            power_total: rows.length,
+          }),
+        ];
+      }
+      const page = queryText.includes("LIMIT {limit:UInt32}")
+        ? rows.slice(Number(params.offset), Number(params.offset) + Number(params.limit))
+        : rows;
+      return page.map((row) => schema.parse(row));
     };
     return {
       ...makeMockSensorStore(),
@@ -188,8 +235,29 @@ describe("CyclingAdvancedRepository", () => {
     };
   }
 
-  function makeRepository(rows: Record<string, unknown>[] = [], rawActivityCount = rows.length) {
+  function makeRepository(
+    rows: Record<string, unknown>[] = [],
+    rawActivityCount = rows.length,
+    settingsHistory: SportSettingsRow[] = [
+      {
+        id: "setting-1",
+        userId: "user-1",
+        sport: "cycling",
+        thresholdHr: null,
+        thresholdPacePerKm: null,
+        ftp: 250,
+        powerZonePcts: null,
+        hrZonePcts: null,
+        paceZonePcts: null,
+        effectiveFrom: "2024-01-01",
+        notes: null,
+        createdAt: "2024-01-01T00:00:00Z",
+        updatedAt: "2024-01-01T00:00:00Z",
+      },
+    ],
+  ) {
     const execute = vi.fn().mockResolvedValue([{ activity_count: rawActivityCount }]);
+    vi.spyOn(SportSettingsRepository.prototype, "history").mockResolvedValue(settingsHistory);
     const sensorStore = makeSensorStore(rows, rawActivityCount);
     const repo = new CyclingAdvancedRepository({ execute }, "user-1", "UTC", sensorStore);
     return { repo, execute, sensorStore };
@@ -204,6 +272,7 @@ describe("CyclingAdvancedRepository", () => {
 
   describe("getActivityVariability", () => {
     it("renders activity-applicable canonical intensity factors", async () => {
+      mockThresholds({ "ride-1": { ftp: 300, np: 220 } });
       const { repo } = makeRepository(
         [
           {
@@ -212,29 +281,40 @@ describe("CyclingAdvancedRepository", () => {
             name: "Ride",
             np: 220,
             avg_power: 200,
-            intensity_factor: 0.73,
             total_count: 1,
           },
         ],
         1,
       );
       const result = await repo.getActivityVariability(90, 20, 0);
-      expect(result.models[0]?.intensityFactor).toBe(0.73);
+      expect(result.models[0]?.intensityFactor).toBeCloseTo(0.733, 3);
     });
     it("reports insufficient threshold evidence when normalized power exists", async () => {
-      const { repo, sensorStore } = makeRepository([], 1);
+      mockThresholds({});
+      const { repo, sensorStore } = makeRepository([], 1, []);
       sensorStore.query = vi
         .fn()
         .mockResolvedValueOnce([])
         .mockResolvedValueOnce([{ total: 0, power_total: 1 }]);
-      expect((await repo.getActivityVariability(90, 20, 0)).emptyReason).toBe("no_ftp_estimate");
+      expect((await repo.getActivityVariability(90, 20, 0)).emptyReason).toBe("no_configured_ftp");
     });
     it("keeps pagination totals beyond the last page", async () => {
-      const { repo, sensorStore } = makeRepository([], 1);
-      sensorStore.query = vi
-        .fn()
-        .mockResolvedValueOnce([])
-        .mockResolvedValueOnce([{ total: 4, power_total: 5 }]);
+      mockThresholds(
+        Object.fromEntries(
+          Array.from({ length: 4 }, (_, index) => [`ride-${index}`, { ftp: 250, np: 200 }]),
+        ),
+      );
+      const { repo } = makeRepository(
+        Array.from({ length: 4 }, (_, index) => ({
+          activity_id: `ride-${index}`,
+          date: "2024-03-15",
+          name: "Ride",
+          np: 200,
+          avg_power: 180,
+          total_count: 4,
+        })),
+        4,
+      );
       expect(await repo.getActivityVariability(90, 20, 10)).toMatchObject({
         models: [],
         totalCount: 4,
@@ -245,7 +325,8 @@ describe("CyclingAdvancedRepository", () => {
       { label: "zero normalized-power activities", rows: [{ total: 0, power_total: 0 }] },
       { label: "no aggregate row", rows: [] },
     ])("reports missing normalized power with $label", async ({ rows }) => {
-      const { repo, sensorStore } = makeRepository([], 1);
+      mockThresholds({});
+      const { repo, sensorStore } = makeRepository([], 1, []);
       sensorStore.query = vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce(rows);
       expect(await repo.getActivityVariability(90, 20, 0)).toMatchObject({
         models: [],

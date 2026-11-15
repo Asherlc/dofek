@@ -28,11 +28,6 @@ const combinedActivityRowSchema = z.object({
   date: z.string(),
 });
 
-const normalizedPowerRowSchema = z.object({
-  activity_id: z.string(),
-  power_tss: z.coerce.number().nullable(),
-});
-
 type PmcRepositoryChartResult = PmcChartResult & {
   unavailableReason: string | null;
   data: PmcDataPoint[];
@@ -43,7 +38,7 @@ export async function buildPmcChartFromRows(input: {
   db: Pick<Database, "execute">;
   userId: string;
   range: ChartRange;
-  currentEftp: number | null;
+  currentFtp: number | null;
   activityRows: PmcActivityRow[];
   normalizedPowerRows: PmcNormalizedPowerRow[];
   parameters?: PmcChartParameters;
@@ -60,7 +55,7 @@ export async function buildPmcChartFromRows(input: {
   });
   const allTimeActivityDays = daysSinceEarliestActivity(input.activityRows);
   return chartCalculator.buildChart({
-    currentEftp: input.currentEftp,
+    currentFtp: input.currentFtp,
     activityRows: input.activityRows,
     normalizedPowerRows: input.normalizedPowerRows,
     queryDays: queryRange.days ?? allTimeActivityDays,
@@ -148,23 +143,20 @@ export class PmcRepository extends BaseRepository {
     ).filterToVisibleActivities(activityRows);
 
     // Canonical per-activity stress retains the threshold applicable to each ride.
-    const normalizedPowerRows = await this.#sensorStore.query(
-      normalizedPowerRowSchema,
-      `SELECT
-        toString(activity_id) AS activity_id,
-        power_tss
-      FROM analytics.cycling_activity_power_metrics
-      WHERE user_id = {userId:UUID}
-        ${queryRange.clickHouseTimestampAfter("started_at", "queryDays")}
-      ORDER BY started_at`,
-      {
-        userId: this.userId,
-        ...queryRange.clickHouseParams("queryDays"),
-        activityTypes: CYCLING_TYPES,
-      },
-    );
+    const activityPowerById = await new CyclingThresholdRepository(
+      this.db,
+      this.#sensorStore,
+      this.userId,
+      this.timezone,
+      this.accessWindow,
+    ).getForActivities(activityRows.map((row) => row.id));
+    const normalizedPowerRows = activityRows.map((row) => ({
+      activity_id: row.id,
+      power_tss: activityPowerById.get(row.id)?.power_tss ?? null,
+    }));
 
     const currentThreshold = await new CyclingThresholdRepository(
+      this.db,
       this.#sensorStore,
       this.userId,
       this.timezone,
@@ -175,7 +167,7 @@ export class PmcRepository extends BaseRepository {
       db: this.db,
       userId: this.userId,
       range,
-      currentEftp: currentThreshold.value,
+      currentFtp: currentThreshold.value,
       activityRows: visibleActivityRows,
       normalizedPowerRows,
       parameters,

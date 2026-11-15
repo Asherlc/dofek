@@ -17,17 +17,6 @@ const policy = {
     gapIntervalMultiplier: 2,
     maximumGapSeconds: 10,
   },
-  referenceCurves: [
-    { criticalPowerWatts: 100, workCapacityJoules: 6000, timeOffsetSeconds: 60 },
-    { criticalPowerWatts: 300, workCapacityJoules: 6000, timeOffsetSeconds: 60 },
-  ],
-  thresholdPolicy: {
-    minimumDurationSeconds: 60,
-    maximumDurationSeconds: 60,
-    targetDurationSeconds: 3600,
-  },
-  historyPolicy: { comparisonWindowDays: 14, minimumHistoryDays: 28, maximumDailyDecayFraction: 0 },
-  modelVersion: "fixture-v1",
 };
 
 describe("cycling power projector", () => {
@@ -47,6 +36,7 @@ describe("cycling power projector", () => {
     insert: (options) => insert.call(real, { ...options, table: rewrite(options.table) }),
   } satisfies ClickHouseClient;
   const asOf = new Date("2026-11-01T12:00:00Z");
+
   function projectCyclingPower(
     target: ClickHouseClient,
     projectionPolicy: Parameters<typeof projectOwnedCyclingPower>[1],
@@ -59,12 +49,11 @@ describe("cycling power projector", () => {
       (owner) => projectOwnedCyclingPower(owner, projectionPolicy, at),
     );
   }
+
   beforeAll(async () => {
     context = await setupTestDatabase();
     await real.command({ query: `CREATE DATABASE ${database}` });
     await client.command({ query: buildAccountErasureFenceTableSql() });
-    for (const statement of cyclingPowerSchemaStatements())
-      await client.command({ query: statement });
     await client.command({
       query: `CREATE TABLE analytics.activity_summary_rows
       (user_id UUID,activity_id UUID,started_at DateTime64(6,'UTC'),ended_at Nullable(DateTime64(6,'UTC')),
@@ -82,7 +71,10 @@ describe("cycling power projector", () => {
       (user_id UUID,activity_id UUID,duration_seconds UInt32,best_power Float64,refresh_version UInt64,is_deleted UInt8)
       ENGINE=ReplacingMergeTree(refresh_version) ORDER BY (user_id,activity_id,duration_seconds)`,
     });
+    for (const statement of cyclingPowerSchemaStatements())
+      await client.command({ query: statement });
   });
+
   beforeEach(async () => {
     for (const table of [
       "account_erasure_fence",
@@ -90,11 +82,11 @@ describe("cycling power projector", () => {
       "activity_sensor_sample",
       "activity_power_curve",
       "cycling_power_observation_rows",
-      "cycling_power_history_rows",
     ]) {
       await client.command({ query: `TRUNCATE TABLE analytics.${table}` });
     }
   });
+
   afterAll(async () => {
     await real.command({ query: `DROP DATABASE IF EXISTS ${database} SYNC` });
     await real.close?.();
@@ -152,7 +144,7 @@ describe("cycling power projector", () => {
     });
   }
 
-  it("publishes one compact observation batch while keeping native reads bounded per activity", async () => {
+  it("projects changed activities in bounded batches", async () => {
     const userId = randomUUID();
     await seed(
       userId,
@@ -173,112 +165,186 @@ describe("cycling power projector", () => {
         return client.exec(options);
       },
     };
-    expect(await projectCyclingPower(measuredClient, policy, asOf)).toMatchObject({
+    expect(await projectCyclingPower(measuredClient, policy, asOf)).toEqual({
       pendingActivities: 1,
-      projectedUsers: 0,
     });
     expect(nativeReads).toBe(100);
     expect(observationWrites).toBe(1);
-    expect(await projectCyclingPower(client, policy, asOf)).toMatchObject({
-      pendingActivities: 0,
-      pendingUsers: 0,
-      projectedUsers: 1,
-    });
+    expect(await projectCyclingPower(client, policy, asOf)).toEqual({ pendingActivities: 0 });
   });
 
-  it("publishes long daily histories with complete evidence and scores", async () => {
+  it("serves normalized power and activity metadata without threshold history", async () => {
     const userId = randomUUID();
-    const earlyId = randomUUID();
-    const latestId = randomUUID();
-    await seed(userId, [earlyId], 100, 200, "cycling", "2009-01-01");
-    await seed(userId, [latestId], 100, 250, "cycling", "2026-10-31");
-    const firstDay = Math.floor(Date.parse("2009-01-01T10:00:00Z") / 1000 / 86_400);
-    const finalDay = Math.floor(asOf.getTime() / 1000 / 86_400);
-    expect(await projectCyclingPower(client, policy, asOf)).toMatchObject({
+    const activityId = randomUUID();
+    await seed(userId, [activityId]);
+    await expect(projectCyclingPower(client, policy, asOf)).resolves.toEqual({
       pendingActivities: 0,
-      pendingUsers: 0,
-      projectedUsers: 1,
     });
-    const published = await client
+    const servingRows = await client
       .query<{
-        as_of_day: string;
-        event_count: number;
-        evidence_bytes: number;
-        latest_evidence_id: string | null;
-        latest_threshold: number | null;
-        latest_intensity: number | null;
-        latest_stress: number | null;
+        normalized_power: number | null;
+        activity_id: string;
+        canonical_type: string;
+        ended_at: string;
       }>({
-        query: `SELECT toString(as_of_day) AS as_of_day,
-          length(events) AS event_count,
-          length(toJSONString(arrayMap(event -> tupleElement(event, 6), events))) AS evidence_bytes,
-          tupleElement(arrayFirst(event -> tupleElement(event, 2) = {latestId:String}, events), 6) AS latest_evidence_id,
-          tupleElement(arrayFirst(event -> tupleElement(event, 2) = {latestId:String}, events), 3) AS latest_threshold,
-          tupleElement(arrayFirst(event -> tupleElement(event, 2) = {latestId:String}, events), 4) AS latest_intensity,
-          tupleElement(arrayFirst(event -> tupleElement(event, 2) = {latestId:String}, events), 5) AS latest_stress
-          FROM analytics.cycling_power_history_rows FINAL WHERE user_id={userId:UUID}`,
+        query: `SELECT normalized_power,activity_id,canonical_type,toString(ended_at) AS ended_at
+          FROM analytics.cycling_activity_power_metrics WHERE user_id={userId:UUID}`,
         format: "JSONEachRow",
-        query_params: { userId, latestId },
+        query_params: { userId },
       })
       .then((result) => result.json());
-    expect(published).toHaveLength(1);
-    expect(published[0]?.as_of_day).toBe("2026-11-01");
-    expect(published[0]?.event_count).toBe(finalDay - firstDay + 1 + 2);
-    expect(published[0]?.evidence_bytes).toBeGreaterThan(131_072);
-    expect(published[0]?.latest_evidence_id).toBe(latestId);
-    const expectedThreshold = 201.6393442623;
-    const expectedIntensityFactor = 250 / expectedThreshold;
-    expect(published[0]?.latest_threshold).toBeCloseTo(expectedThreshold, 6);
-    expect(published[0]?.latest_intensity).toBeCloseTo(expectedIntensityFactor, 6);
-    // Training stress is elapsed hours × intensity factor squared × 100 for this 60-second ride.
-    expect(published[0]?.latest_stress).toBeCloseTo(
-      (60 / 3600) * expectedIntensityFactor ** 2 * 100,
-      6,
-    );
+    expect(servingRows).toHaveLength(1);
+    expect(servingRows[0]).toMatchObject({
+      normalized_power: 250,
+      activity_id: activityId,
+      canonical_type: "cycling",
+    });
   });
 
-  it("converges across the 32-user bound again after daily rollover", async () => {
+  it("hides a published observation immediately after account erasure is fenced", async () => {
+    const userId = randomUUID();
+    const activityId = randomUUID();
+    await seed(userId, [activityId]);
+    await projectCyclingPower(client, policy, asOf);
+
+    const readServingRows = () =>
+      client
+        .query<{ normalized_power: number | null; activity_id: string }>({
+          query: `SELECT normalized_power,activity_id
+            FROM analytics.cycling_activity_power_metrics WHERE user_id={userId:UUID}`,
+          format: "JSONEachRow",
+          query_params: { userId },
+        })
+        .then((result) => result.json());
+
+    expect(await readServingRows()).toEqual([{ normalized_power: 250, activity_id: activityId }]);
+    await client.command({
+      query: `INSERT INTO ingest.account_erasure_fence (user_hash)
+        SELECT lower(hex(SHA256(toString({userId:UUID}))))`,
+      query_params: { userId },
+    });
+    expect(await readServingRows()).toEqual([]);
+  });
+
+  it("refreshes normalized power for changed sources and hides deleted activities", async () => {
+    const userId = randomUUID();
+    const activityId = randomUUID();
+    await seed(userId, [activityId]);
+    await projectCyclingPower(client, policy, asOf);
+    const read = () =>
+      client
+        .query<{ normalized_power: number | null }>({
+          query: `SELECT normalized_power FROM analytics.cycling_activity_power_metrics WHERE user_id={userId:UUID}`,
+          format: "JSONEachRow",
+          query_params: { userId },
+        })
+        .then((result) => result.json());
+    expect((await read())[0]?.normalized_power).toBe(250);
+
+    await seed(userId, [activityId], 200, 300);
+    await projectCyclingPower(client, policy, asOf);
+    expect((await read())[0]?.normalized_power).toBe(300);
+
     await client.insert({
       table: "analytics.activity_summary_rows",
       format: "JSONEachRow",
-      values: Array.from({ length: 33 }, () => ({
-        user_id: randomUUID(),
-        activity_id: randomUUID(),
-        started_at: "2026-10-31 10:00:00",
-        ended_at: "2026-10-31 10:01:00",
-        canonical_type: "cycling",
-        power_sample_count: 0,
-        refresh_version: 100,
-        is_deleted: 0,
-      })),
+      values: [
+        {
+          user_id: userId,
+          activity_id: activityId,
+          started_at: "2026-10-31 10:00:00",
+          ended_at: "2026-10-31 10:01:00",
+          canonical_type: "cycling",
+          power_sample_count: 60,
+          refresh_version: 300,
+          is_deleted: 1,
+        },
+      ],
     });
-    for (const day of [asOf, new Date("2026-11-02T12:00:00Z")]) {
-      expect(await projectCyclingPower(client, policy, day)).toMatchObject({
-        pendingActivities: 0,
-        pendingUsers: 1,
-        projectedUsers: 32,
-      });
-      expect(await projectCyclingPower(client, policy, day)).toMatchObject({
-        pendingActivities: 0,
-        pendingUsers: 0,
-        projectedUsers: 1,
-      });
-    }
+    await projectCyclingPower(client, policy, asOf);
+    expect(await read()).toEqual([]);
+  });
+
+  it("withholds stale normalized power after activity metadata changes until refresh", async () => {
+    const userId = randomUUID();
+    const activityId = randomUUID();
+    await seed(userId, [activityId]);
+    await projectCyclingPower(client, policy, asOf);
+    await client.insert({
+      table: "analytics.activity_summary_rows",
+      format: "JSONEachRow",
+      values: [
+        {
+          user_id: userId,
+          activity_id: activityId,
+          started_at: "2026-10-31 10:00:00",
+          ended_at: "2026-10-31 10:01:00",
+          canonical_type: "cycling",
+          power_sample_count: 60,
+          refresh_version: 200,
+          is_deleted: 0,
+        },
+      ],
+    });
+    const read = () =>
+      client
+        .query<{ normalized_power: number | null }>({
+          query: `SELECT normalized_power FROM analytics.cycling_activity_power_metrics WHERE user_id={userId:UUID}`,
+          format: "JSONEachRow",
+          query_params: { userId },
+        })
+        .then((result) => result.json());
+    expect(await read()).toEqual([]);
+    await projectCyclingPower(client, policy, asOf);
+    expect((await read())[0]?.normalized_power).toBe(250);
+  });
+
+  it("retains invalid-watt barriers and projects power for non-cycling activities", async () => {
+    const userId = randomUUID();
+    const cyclingId = randomUUID();
+    const runningId = randomUUID();
+    await seed(userId, [cyclingId], 100, 250);
+    await seed(userId, [runningId], 100, 300, "running");
+    await client.insert({
+      table: "analytics.activity_sensor_sample",
+      format: "JSONEachRow",
+      values: [
+        {
+          user_id: userId,
+          activity_id: cyclingId,
+          recorded_at: "2026-10-31 10:00:30",
+          channel: "power",
+          scalar: -1,
+          refresh_version: 200,
+          is_deleted: 0,
+        },
+      ],
+    });
+    expect(await projectCyclingPower(client, policy, asOf)).toEqual({ pendingActivities: 0 });
+    const observations = await client
+      .query<{ activity_id: string; normalized_power: number | null }>({
+        query: `SELECT activity_id,normalized_power FROM analytics.cycling_power_observation_rows FINAL WHERE user_id={userId:UUID}`,
+        format: "JSONEachRow",
+        query_params: { userId },
+      })
+      .then((result) => result.json());
+    expect(observations.find((row) => row.activity_id === cyclingId)?.normalized_power).toBeNull();
+    expect(observations.find((row) => row.activity_id === runningId)?.normalized_power).toBe(300);
   });
 
   it.each(["11:00:00", "15:00:00"])(
-    "admits a ride only when completed, including same-day maturity and rewind (%s)",
+    "projects a ride only when completed and removes it after a clock rewind (%s)",
     async (startTime) => {
       const userId = randomUUID();
-      const id = randomUUID();
-      await seed(userId, [id]);
+      const activityId = randomUUID();
+      await seed(userId, [activityId]);
       await client.insert({
         table: "analytics.activity_summary_rows",
         format: "JSONEachRow",
         values: [
           {
             user_id: userId,
-            activity_id: id,
+            activity_id: activityId,
             started_at: `2026-11-01 ${startTime}`,
             ended_at: "2026-11-01 15:45:00",
             canonical_type: "cycling",
@@ -304,14 +370,13 @@ describe("cycling power projector", () => {
             query_params: { userId },
           })
           .then((result) => result.json());
+
       await projectCyclingPower(client, policy, asOf);
       expect((await countObservations())[0]?.count).toBe(0);
       expect((await countMetrics())[0]?.count).toBe(0);
       const afterCompletion = new Date("2026-11-01T16:00:00Z");
-      expect(await projectCyclingPower(client, policy, afterCompletion)).toMatchObject({
+      expect(await projectCyclingPower(client, policy, afterCompletion)).toEqual({
         pendingActivities: 0,
-        pendingUsers: 0,
-        projectedUsers: 1,
       });
       expect((await countMetrics())[0]?.count).toBe(1);
       await projectCyclingPower(client, policy, asOf);
@@ -322,148 +387,7 @@ describe("cycling power projector", () => {
     },
   );
 
-  it("projects native power and replays corrected and deleted effort evidence", async () => {
-    const userId = randomUUID();
-    const id = randomUUID();
-    await seed(userId, [id]);
-    expect(await projectCyclingPower(client, policy, asOf)).toMatchObject({
-      pendingActivities: 0,
-      pendingUsers: 0,
-      projectedUsers: 1,
-    });
-    const read = () =>
-      client
-        .query<{ normalized_power: number; eftp: number; power_tss: number }>({
-          query: `SELECT normalized_power,eftp,power_tss FROM analytics.cycling_activity_power_metrics WHERE user_id={userId:UUID}`,
-          format: "JSONEachRow",
-          query_params: { userId },
-        })
-        .then((result) => result.json());
-    expect((await read())[0]).toMatchObject({ normalized_power: 250 });
-    expect((await read())[0]?.eftp).toBeCloseTo(201.6393442623, 6);
-    await seed(userId, [id], 200, 300);
-    await projectCyclingPower(client, policy, asOf);
-    expect((await read())[0]?.normalized_power).toBe(300);
-    expect((await read())[0]?.eftp).toBeCloseTo(251.6393442623, 6);
-    await client.insert({
-      table: "analytics.activity_summary_rows",
-      format: "JSONEachRow",
-      values: [
-        {
-          user_id: userId,
-          activity_id: id,
-          started_at: "2026-10-31 10:00:00",
-          ended_at: "2026-10-31 10:01:00",
-          canonical_type: "cycling",
-          power_sample_count: 60,
-          refresh_version: 300,
-          is_deleted: 1,
-        },
-      ],
-    });
-    await projectCyclingPower(client, policy, asOf);
-    expect(await read()).toEqual([]);
-  });
-
-  it("caps changed native activities and never publishes an incomplete user", async () => {
-    const userId = randomUUID();
-    await seed(
-      userId,
-      Array.from({ length: 101 }, () => randomUUID()),
-    );
-    expect(await projectCyclingPower(client, policy, asOf)).toMatchObject({
-      pendingActivities: 1,
-      pendingUsers: 1,
-      projectedUsers: 0,
-    });
-    expect(await projectCyclingPower(client, policy, asOf)).toMatchObject({
-      pendingActivities: 0,
-      pendingUsers: 0,
-      projectedUsers: 1,
-    });
-  });
-
-  it("refreshes running NP without adding running effort to cycling history", async () => {
-    const userId = randomUUID();
-    const cyclingId = randomUUID();
-    const runningId = randomUUID();
-    await seed(userId, [cyclingId]);
-    await projectCyclingPower(client, policy, asOf);
-    await seed(userId, [runningId], 200, 300, "running");
-    expect(await projectCyclingPower(client, policy, asOf)).toMatchObject({
-      pendingActivities: 0,
-      pendingUsers: 0,
-      projectedUsers: 1,
-    });
-    const history = await client
-      .query<{ activity_id: string; eftp: number }>({
-        query: `SELECT activity_id,eftp FROM analytics.cycling_activity_power_metrics WHERE user_id={userId:UUID}`,
-        format: "JSONEachRow",
-        query_params: { userId },
-      })
-      .then((result) => result.json());
-    expect(history).toHaveLength(1);
-    expect(history[0]?.activity_id).toBe(cyclingId);
-    expect(history[0]?.eftp).toBeCloseTo(201.6393442623, 6);
-    const observations = await client
-      .query<{ normalized_power: number }>({
-        query: `SELECT normalized_power FROM analytics.cycling_power_observation_rows FINAL WHERE user_id={userId:UUID} AND activity_id={runningId:UUID}`,
-        format: "JSONEachRow",
-        query_params: { userId, runningId },
-      })
-      .then((result) => result.json());
-    expect(observations[0]?.normalized_power).toBe(300);
-  });
-
-  it("limits compact-history publication to 32 ready users", async () => {
-    for (let index = 0; index < 33; index += 1) await seed(randomUUID(), [randomUUID()]);
-    expect(await projectCyclingPower(client, policy, asOf)).toMatchObject({
-      pendingActivities: 0,
-      pendingUsers: 1,
-      projectedUsers: 32,
-    });
-    expect(await projectCyclingPower(client, policy, asOf)).toMatchObject({
-      pendingActivities: 0,
-      pendingUsers: 0,
-      projectedUsers: 1,
-    });
-  });
-
-  it("treats a negative native watt sentinel as a missing-coverage barrier", async () => {
-    const userId = randomUUID();
-    const id = randomUUID();
-    await seed(userId, [id]);
-    await client.insert({
-      table: "analytics.activity_sensor_sample",
-      format: "JSONEachRow",
-      values: [
-        {
-          user_id: userId,
-          activity_id: id,
-          recorded_at: "2026-10-31 10:00:30",
-          channel: "power",
-          scalar: -1,
-          refresh_version: 200,
-          is_deleted: 0,
-        },
-      ],
-    });
-    await expect(projectCyclingPower(client, policy, asOf)).resolves.toMatchObject({
-      pendingActivities: 0,
-      pendingUsers: 0,
-      projectedUsers: 1,
-    });
-    const observations = await client
-      .query<{ normalized_power: number | null }>({
-        query: `SELECT normalized_power FROM analytics.cycling_power_observation_rows FINAL WHERE user_id={userId:UUID}`,
-        format: "JSONEachRow",
-        query_params: { userId },
-      })
-      .then((result) => result.json());
-    expect(observations[0]?.normalized_power).toBeNull();
-  });
-
-  it("records missing cycling power as unknown while preserving recorded zero watts", async () => {
+  it("keeps missing coverage null and measured zero power available", async () => {
     const userId = randomUUID();
     const missingId = randomUUID();
     const zeroId = randomUUID();
@@ -472,10 +396,7 @@ describe("cycling power projector", () => {
       query: `ALTER TABLE analytics.activity_sensor_sample DELETE WHERE activity_id={missingId:UUID} SETTINGS mutations_sync=2`,
       query_params: { missingId },
     });
-    expect(await projectCyclingPower(client, policy, asOf)).toMatchObject({
-      pendingActivities: 0,
-      pendingUsers: 0,
-    });
+    expect(await projectCyclingPower(client, policy, asOf)).toEqual({ pendingActivities: 0 });
     const observations = await client
       .query<{ activity_id: string; normalized_power: number | null }>({
         query: `SELECT activity_id,normalized_power FROM analytics.cycling_power_observation_rows FINAL WHERE user_id={userId:UUID}`,
@@ -487,65 +408,36 @@ describe("cycling power projector", () => {
     expect(observations.find((row) => row.activity_id === zeroId)?.normalized_power).toBe(0);
   });
 
-  it.each(["cycling_power_observation_rows", "cycling_power_history_rows"])(
-    "honors erasure activated immediately before writing %s",
-    async (table) => {
-      const userId = randomUUID();
-      await seed(userId, [randomUUID()]);
-      const fence = () =>
-        client.command({
-          query: `INSERT INTO ingest.account_erasure_fence (user_hash) SELECT lower(hex(SHA256(toString({userId:UUID}))))`,
-          query_params: { userId },
-        });
-      const racingClient = {
-        ...client,
-        exec: async (options: Parameters<typeof client.exec>[0]) => {
-          if (options.query.startsWith(`INSERT INTO analytics.${table}`)) await fence();
-          return client.exec(options);
-        },
-        insert: async (options: Parameters<typeof client.insert>[0]) => {
-          if (options.table === `analytics.${table}`) await fence();
-          return client.insert(options);
-        },
-      };
-      expect(await projectCyclingPower(racingClient, policy, asOf)).toMatchObject({
-        projectedUsers: 0,
-      });
-      const result = await client
-        .query<{ count: number }>({
-          query: `SELECT count() AS count FROM analytics.${table} FINAL WHERE user_id={userId:UUID}`,
-          format: "JSONEachRow",
-          query_params: { userId },
-        })
-        .then((result) => result.json());
-      expect(result[0]?.count).toBe(0);
-    },
-  );
-
-  it("advances clock-only history without scanning unchanged native power", async () => {
+  it("honors account erasure activated immediately before the observation write", async () => {
     const userId = randomUUID();
     await seed(userId, [randomUUID()]);
-    await projectCyclingPower(client, policy, asOf);
-    const before = await client
-      .query<{ refresh_version: string }>({
-        query: `SELECT toString(refresh_version) AS refresh_version FROM analytics.cycling_power_observation_rows FINAL WHERE user_id={userId:UUID}`,
+    const fence = () =>
+      client.command({
+        query: `INSERT INTO ingest.account_erasure_fence (user_hash) SELECT lower(hex(SHA256(toString({userId:UUID}))))`,
+        query_params: { userId },
+      });
+    let fenced = false;
+    const racingClient: typeof client = {
+      ...client,
+      exec: async (options) => {
+        if (
+          !fenced &&
+          options.query.startsWith("INSERT INTO analytics.cycling_power_observation_rows")
+        ) {
+          fenced = true;
+          await fence();
+        }
+        return client.exec(options);
+      },
+    };
+    expect(await projectCyclingPower(racingClient, policy, asOf)).toEqual({ pendingActivities: 0 });
+    const result = await client
+      .query<{ count: number }>({
+        query: `SELECT count() AS count FROM analytics.cycling_power_observation_rows FINAL WHERE user_id={userId:UUID}`,
         format: "JSONEachRow",
         query_params: { userId },
       })
       .then((result) => result.json());
-    const next = new Date("2026-11-02T12:00:00Z");
-    expect(await projectCyclingPower(client, policy, next)).toMatchObject({
-      pendingActivities: 0,
-      pendingUsers: 0,
-      projectedUsers: 1,
-    });
-    const after = await client
-      .query<{ refresh_version: string }>({
-        query: `SELECT toString(refresh_version) AS refresh_version FROM analytics.cycling_power_observation_rows FINAL WHERE user_id={userId:UUID}`,
-        format: "JSONEachRow",
-        query_params: { userId },
-      })
-      .then((result) => result.json());
-    expect(after).toEqual(before);
+    expect(result[0]?.count).toBe(0);
   });
 });

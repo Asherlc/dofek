@@ -96,7 +96,6 @@ export const SELECTED_CHART_RANGE_ENDPOINTS = {
     input: "days",
   },
   "pmc.chart": { defaultDays: 180, routerFile: "pmc.ts", input: "days" },
-  "power.eftpTrend": { defaultDays: 365, routerFile: "power.ts", input: "days" },
   "power.powerCurve": { defaultDays: 90, routerFile: "power.ts", input: "days" },
   "recovery.hrvVariability": { defaultDays: 90, routerFile: "recovery.ts", input: "dateRange" },
   "recovery.sleepAnalytics": { defaultDays: 90, routerFile: "recovery.ts", input: "dateRange" },

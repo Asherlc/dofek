@@ -1,5 +1,12 @@
 # Production Incident Baseline
 
+## 2026-11-15 — Local ClickHouse memory guard blocks FTP integration tests
+
+- **Symptoms / impact:** Local `pnpm test:integration -- packages/server/src/repositories/cycling-threshold-repository.integration.test.ts` failed before assertions with ClickHouse code 241, `MEMORY_LIMIT_EXCEEDED`, at the existing 1.25 GiB server guard. Production was unaffected.
+- **Evidence / root cause:** No concurrent query workload or abandoned test databases was found. Local allocator metrics reported approximately 1.32 GB allocated and 1.70 GB resident; the container limit remained 1.5 GiB. The allocation owner is unresolved. The stock allocator purge operation also hit the guard. Diagnostic logs are retained locally under `/tmp/opencode/manual-ftp/local-clickhouse-*`.
+- **Mitigation / validation:** Restarted only this workspace's ClickHouse service once through `pnpm compose -- restart clickhouse`, then used Compose's health wait. A read query succeeded afterward, with approximately 892 MB allocated. Data, volumes and configuration were retained; no limits, retries or waits were added to application code. The integration test then reached its assertions and exposed a separate SQL alias defect.
+- **Remaining risk / retrospective:** This restored local test execution but does not establish a permanent memory fix. If the guard recurs, capture the allocating workload before further remediation. Separating service readiness from assertion failures prevented treating the resource failure as test-first evidence.
+
 ## 2026-11-15 — Missing cycling power prevents stale eFTP from decaying
 
 - **Symptoms / user impact:** Current computed cycling eFTP can retain a supporting effort more than six years old with only a small modeled decrease. The same threshold feeds intensity factor and power training stress, so the stale estimate also affects those derived values.

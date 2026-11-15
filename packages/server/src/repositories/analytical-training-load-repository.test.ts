@@ -1,7 +1,63 @@
 import { describe, expect, it, vi } from "vitest";
+import type { ActivitySensorStore } from "./activity-repository.ts";
 import { AnalyticalTrainingLoadRepository } from "./analytical-training-load-repository.ts";
+import {
+  type CyclingActivityPowerMetrics,
+  CyclingThresholdRepository,
+} from "./cycling-threshold-repository.ts";
 
 const userId = "00000000-0000-4000-8000-000000000001";
+
+function withManualFtp(query: ActivitySensorStore["query"]): ActivitySensorStore["query"] {
+  const stressByActivity = new Map<string, number | null>();
+  vi.spyOn(CyclingThresholdRepository.prototype, "getForActivities").mockImplementation(
+    async (ids) =>
+      new Map(
+        ids.flatMap((id) => {
+          const stress = stressByActivity.get(id);
+          if (stress === undefined && !stressByActivity.has(id)) return [];
+          const ftp = 250;
+          const durationSeconds = 3600;
+          const np = stress == null ? null : ftp * Math.sqrt((stress * 36) / durationSeconds);
+          const metrics: CyclingActivityPowerMetrics = {
+            activity_id: id,
+            started_at: "2026-06-15T15:00:00.000Z",
+            ended_at: "2026-06-15T16:00:00.000Z",
+            activity_date: "2026-06-15",
+            canonical_type: "cycling",
+            normalized_power: np,
+            power_sample_count: np == null ? 0 : 3600,
+            ftp,
+            intensity_factor: np == null ? null : np / ftp,
+            power_tss: stress,
+            threshold: {
+              value: ftp,
+              unit: "watt",
+              effective_from: "2026-01-01",
+              source_record_id: "00000000-0000-4000-8000-000000000100",
+              kind: "configured",
+            },
+          };
+          return [[id, metrics]];
+        }),
+      ),
+  );
+  const wrappedQuery: ActivitySensorStore["query"] = async (schema, text, params, options) => {
+    const rows = await query(schema, text, params, options);
+    if (text.includes("analytical-load:cycling")) {
+      for (const row of rows) {
+        if (typeof row !== "object" || row === null) continue;
+        const id = "activity_id" in row ? row.activity_id : null;
+        const stress = "power_tss" in row ? row.power_tss : null;
+        if (typeof id === "string") {
+          stressByActivity.set(id, typeof stress === "number" ? stress : null);
+        }
+      }
+    }
+    return rows;
+  };
+  return vi.fn(wrappedQuery);
+}
 
 function queryText(query: unknown): string {
   if (typeof query !== "object" || query === null || !("queryChunks" in query)) {
@@ -109,7 +165,7 @@ describe("AnalyticalTrainingLoadRepository", () => {
     });
     const repository = new AnalyticalTrainingLoadRepository(
       { execute },
-      { query },
+      { query: withManualFtp(query) },
       userId,
       "America/Los_Angeles",
     );
@@ -234,7 +290,12 @@ describe("AnalyticalTrainingLoadRepository", () => {
       }
       return [];
     });
-    const repository = new AnalyticalTrainingLoadRepository({ execute }, { query }, userId, "UTC");
+    const repository = new AnalyticalTrainingLoadRepository(
+      { execute },
+      { query: withManualFtp(query) },
+      userId,
+      "UTC",
+    );
 
     const result = await repository.listRange("2026-06-14", "2026-06-15");
 
@@ -253,7 +314,7 @@ describe("AnalyticalTrainingLoadRepository", () => {
     expect(result.rows[1]?.channels.cycling_power_tss).toMatchObject({
       daily_value: null,
       status: "unavailable",
-      reason: "Computed eFTP or normalized power is unavailable for 1 cycling activity.",
+      reason: "Configured FTP or normalized power is unavailable for 1 cycling activity.",
     });
     expect(result.rows[1]?.channels.climbing_attempts).toMatchObject({
       daily_value: null,
@@ -272,14 +333,14 @@ describe("AnalyticalTrainingLoadRepository", () => {
       loads: [null, null],
       value: null,
       status: "unavailable",
-      reason: "Computed eFTP or normalized power is unavailable for 2 cycling activities.",
+      reason: "Configured FTP or normalized power is unavailable for 2 cycling activities.",
       supportedRecords: 0,
     },
     {
       loads: [80, null, null],
       value: 80,
       status: "partial",
-      reason: "2 cycling activities lacked computed eFTP or normalized power.",
+      reason: "2 cycling activities lacked configured FTP or normalized power.",
       supportedRecords: 1,
     },
   ])("reports cycling coverage for $status load", async (scenario) => {
@@ -299,7 +360,7 @@ describe("AnalyticalTrainingLoadRepository", () => {
     );
     const result = await new AnalyticalTrainingLoadRepository(
       { execute },
-      { query },
+      { query: withManualFtp(query) },
       userId,
       "UTC",
     ).listRange("2026-06-15", "2026-06-15");
@@ -357,7 +418,7 @@ describe("AnalyticalTrainingLoadRepository", () => {
     );
     const result = await new AnalyticalTrainingLoadRepository(
       { execute },
-      { query },
+      { query: withManualFtp(query) },
       userId,
       "UTC",
     ).listRange("2026-06-15", "2026-06-15");
@@ -385,7 +446,12 @@ describe("AnalyticalTrainingLoadRepository", () => {
         },
       ]);
     const query = vi.fn().mockResolvedValue([]);
-    const repository = new AnalyticalTrainingLoadRepository({ execute }, { query }, userId, "UTC");
+    const repository = new AnalyticalTrainingLoadRepository(
+      { execute },
+      { query: withManualFtp(query) },
+      userId,
+      "UTC",
+    );
 
     const result = await repository.listRange("2026-06-01", "2026-06-01", {
       providers: ["peloton"],
@@ -441,7 +507,7 @@ describe("AnalyticalTrainingLoadRepository", () => {
 
     const result = await new AnalyticalTrainingLoadRepository(
       { execute },
-      { query },
+      { query: withManualFtp(query) },
       userId,
       "UTC",
     ).listRange("2026-06-01", "2026-06-01", { providers: [], modalities: [] }, "source_context");

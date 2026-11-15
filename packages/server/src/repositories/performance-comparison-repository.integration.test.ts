@@ -232,11 +232,11 @@ describe("PerformanceComparisonRepository database semantics", () => {
     zeroSampleCanonicalId = String(zeroSampleRows[0]?.id);
 
     await clickhouse.command({ query: `CREATE DATABASE ${analyticsDatabase}` });
-    for (const query of cyclingPowerSchemaStatements())
-      await clickhouse.command({ query: query.replaceAll("analytics.", `${analyticsDatabase}.`) });
     await clickhouse.command({
       query: buildActivitySummaryRowsTableSql().replaceAll("analytics.", `${analyticsDatabase}.`),
     });
+    for (const query of cyclingPowerSchemaStatements())
+      await clickhouse.command({ query: query.replaceAll("analytics.", `${analyticsDatabase}.`) });
     await clickhouse.command({
       query: buildActivitySummaryViewSql().replaceAll("analytics.", `${analyticsDatabase}.`),
     });

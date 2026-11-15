@@ -26,6 +26,7 @@ import {
 } from "react-native";
 import { AccountErasurePanel } from "../components/AccountErasurePanel";
 import { ClimbingGradeSystemSettings } from "../components/ClimbingGradeSystemSettings";
+import { CyclingFtpSettings } from "../components/CyclingFtpSettings";
 import { DataExportSection } from "../components/DataExportSection";
 import { GoalWeightSettingsSection } from "../components/GoalWeightSettingsSection";
 import { McpClientSetupPanel } from "../components/McpClientSetupPanel";
@@ -77,7 +78,7 @@ const SETTINGS_CATEGORIES: readonly {
   {
     id: "models-units",
     label: "Models & Units",
-    searchText: "models units goal weight algorithm personalization",
+    searchText: "models units goal weight algorithm personalization cycling FTP threshold power",
   },
   {
     id: "privacy-export",
@@ -178,8 +179,16 @@ export default function SettingsScreen() {
   const router = useRouter();
   const searchParams = useLocalSearchParams<{
     tab?: string;
+    section?: string;
+    date?: string;
   }>();
-  const normalizedRequestedCategory = normalizeSettingsCategory(searchParams.tab);
+  const sectionDate =
+    searchParams.section === "cycling-ftp" && typeof searchParams.date === "string"
+      ? searchParams.date
+      : undefined;
+  const normalizedRequestedCategory =
+    normalizeSettingsCategory(searchParams.tab) ??
+    (searchParams.section === "cycling-ftp" ? "models-units" : null);
   const requestedCategory: SettingsCategory = normalizedRequestedCategory ?? "account";
   const [categorySearch, setCategorySearch] = useState("");
   const normalizedCategorySearch = categorySearch.trim().toLowerCase();
@@ -395,7 +404,7 @@ export default function SettingsScreen() {
   function handleCategoryChange(category: SettingsCategory) {
     setCategorySearch("");
     setSelectedCategory(category);
-    router.setParams({ tab: category });
+    router.setParams({ tab: category, section: undefined, date: undefined });
   }
 
   const { refreshing, onRefresh } = useRefresh();
@@ -537,6 +546,18 @@ export default function SettingsScreen() {
           preference={climbingGradePreference}
           saving={setSettingMutation.isPending}
         />
+      ) : null}
+
+      {activeCategory === "models-units" ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Cycling FTP</Text>
+          <View style={styles.card}>
+            <CyclingFtpSettings
+              sectionDate={sectionDate}
+              focusSection={searchParams.section === "cycling-ftp"}
+            />
+          </View>
+        </View>
       ) : null}
 
       {/* ── Password ── */}

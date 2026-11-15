@@ -1,10 +1,14 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   type CyclingEffortContext,
   calculateCyclingEffortMetrics,
   evaluateCyclingEffortMetrics,
   prepareCyclingEffortMetrics,
 } from "./cycling-effort-metrics.ts";
+import {
+  type CyclingActivityPowerMetrics,
+  CyclingThresholdRepository,
+} from "./cycling-threshold-repository.ts";
 import { CyclingTrainingMetricsRepository } from "./cycling-training-metrics-repository.ts";
 
 vi.mock("./cycling-effort-metrics.ts", async (importOriginal) => {
@@ -67,6 +71,7 @@ function settingsRow(overrides: Record<string, unknown> = {}) {
     id: "00000000-0000-4000-8000-000000000100",
     user_id: userId,
     sport: "cycling",
+    ftp: 250,
     threshold_hr: 175,
     threshold_pace_per_km: null,
     power_zone_pcts: [0.55, 0.75, 0.9, 1.05, 1.2, 1.5],
@@ -121,27 +126,44 @@ function samples() {
 }
 
 describe("CyclingTrainingMetricsRepository", () => {
-  it("renders canonical activity power metrics with computed threshold evidence", async () => {
+  beforeEach(() => {
+    vi.spyOn(CyclingThresholdRepository.prototype, "getForActivities").mockImplementation(
+      async (ids) =>
+        new Map(
+          ids.map((id) => {
+            const ftp = 250;
+            const np = 200;
+            const metrics: CyclingActivityPowerMetrics = {
+              activity_id: id,
+              started_at: "2026-06-15T15:00:00.000Z",
+              ended_at: "2026-06-15T16:00:00.000Z",
+              activity_date: "2026-06-15",
+              canonical_type: "cycling",
+              normalized_power: np,
+              power_sample_count: 3600,
+              ftp,
+              intensity_factor: np / ftp,
+              power_tss: 64,
+              threshold: {
+                value: ftp,
+                unit: "watt",
+                effective_from: "2026-01-01",
+                source_record_id: userId,
+                kind: "configured",
+              },
+            };
+            return [id, metrics] as const;
+          }),
+        ),
+    );
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it("renders canonical activity power metrics with configured FTP provenance", async () => {
     const execute = vi.fn().mockResolvedValue([]);
     const query = vi.fn(async (_schema, text: string) => {
       if (text.includes("cycling-training-metrics:activities")) return [activityRow()];
       if (text.includes("cycling-training-metrics:samples")) return samples();
-      if (text.includes("analytics.cycling_activity_power_metrics"))
-        return [
-          {
-            activity_id: activityId,
-            started_at: "2026-06-15T15:00:00.000Z",
-            normalized_power: 227,
-            model_version: "test-cycling-model",
-            eftp: 275,
-            power_tss: 68.135,
-            intensity_factor: 0.825455,
-            evidence_activity_id: memberActivityId,
-            evidence_at: "2026-06-14T15:00:00.000Z",
-            evidence_duration_seconds: 600,
-            evidence_power: 320,
-          },
-        ];
       return [];
     });
     const result = await new CyclingTrainingMetricsRepository(
@@ -159,14 +181,77 @@ describe("CyclingTrainingMetricsRepository", () => {
       limit: 10,
     });
     expect(result.activities[0]?.metrics.power).toMatchObject({
-      normalized_watts: 227,
-      intensity_factor: 0.825455,
-      training_stress_score: 68.135,
+      normalized_watts: 200,
+      intensity_factor: 0.8,
+      training_stress_score: 64,
     });
     expect(result.activities[0]?.thresholds.ftp).toMatchObject({
-      value: 275,
-      kind: "computed",
-      evidence_activity_id: memberActivityId,
+      value: 250,
+      kind: "configured",
+      effective_from: "2026-01-01",
+      source_record_id: userId,
+    });
+  });
+
+  it("preserves a real null-valued clear snapshot in training metrics output", async () => {
+    const clear = {
+      value: null,
+      unit: "watt" as const,
+      effective_from: "2026-06-10",
+      source_record_id: "00000000-0000-4000-8000-000000000004",
+      kind: "configured" as const,
+    };
+    vi.spyOn(CyclingThresholdRepository.prototype, "getForActivities").mockResolvedValue(
+      new Map([
+        [
+          activityId,
+          {
+            activity_id: activityId,
+            started_at: "2026-06-15T15:00:00.000Z",
+            ended_at: "2026-06-15T16:00:00.000Z",
+            activity_date: "2026-06-15",
+            canonical_type: "cycling",
+            normalized_power: 200,
+            power_sample_count: 3600,
+            ftp: null,
+            intensity_factor: null,
+            power_tss: null,
+            threshold: clear,
+          },
+        ],
+      ]),
+    );
+    const execute = vi.fn().mockResolvedValue([]);
+    const query = vi.fn(async (_schema, text: string) => {
+      if (text.includes("cycling-training-metrics:activities")) return [activityRow()];
+      if (text.includes("cycling-training-metrics:samples")) return samples();
+      return [];
+    });
+    const result = await new CyclingTrainingMetricsRepository(
+      { execute },
+      { query },
+      userId,
+      "UTC",
+    ).listRange({
+      startDate: "2026-06-01",
+      endDate: "2026-06-30",
+      modalities: [],
+      providers: [],
+      durationsSeconds: [],
+      cursor: null,
+      limit: 10,
+    });
+
+    expect(result.activities[0]?.thresholds.ftp).toEqual({
+      value: null,
+      unit: "W",
+      effective_from: clear.effective_from,
+      source_record_id: clear.source_record_id,
+      kind: "configured",
+    });
+    expect(result.activities[0]?.metrics.unavailable_reasons).toContainEqual({
+      metric: "intensity_factor",
+      reason: expect.stringContaining("cleared"),
     });
   });
 
@@ -529,22 +614,6 @@ describe("CyclingTrainingMetricsRepository", () => {
     const query = vi.fn(async (_schema, queryText: string) => {
       if (queryText.includes("cycling-training-metrics:activities")) return [activityRow()];
       if (queryText.includes("cycling-training-metrics:samples")) return samples();
-      if (queryText.includes("analytics.cycling_activity_power_metrics"))
-        return [
-          {
-            activity_id: activityId,
-            started_at: "2026-06-15T15:00:00.000Z",
-            normalized_power: 200,
-            model_version: "test-cycling-model",
-            eftp: 250,
-            power_tss: 64,
-            intensity_factor: 0.8,
-            evidence_activity_id: memberActivityId,
-            evidence_at: "2026-06-14T15:00:00.000Z",
-            evidence_duration_seconds: 600,
-            evidence_power: 300,
-          },
-        ];
       if (queryText.includes("cycling-training-metrics:power-curve")) {
         return [
           {
@@ -602,10 +671,9 @@ describe("CyclingTrainingMetricsRepository", () => {
       thresholds: {
         ftp: {
           value: 250,
-          effective_from: "2026-06-15T15:00:00.000Z",
-          kind: "computed",
-          method: "computed_eftp",
-          evidence_activity_id: memberActivityId,
+          effective_from: "2026-01-01",
+          kind: "configured",
+          source_record_id: userId,
         },
       },
       metrics: {
@@ -680,6 +748,7 @@ describe("CyclingTrainingMetricsRepository", () => {
   });
 
   it("retains historical heart-rate settings and explains an unpublished canonical power projection", async () => {
+    vi.spyOn(CyclingThresholdRepository.prototype, "getForActivities").mockResolvedValue(new Map());
     const execute = vi
       .fn()
       .mockResolvedValueOnce([
@@ -749,7 +818,7 @@ describe("CyclingTrainingMetricsRepository", () => {
     expect(result.activities[0]?.metrics.unavailable_reasons).toContainEqual({
       metric: "intensity_factor",
       reason:
-        "Computed cycling power metrics are not available yet. Processing may be incomplete or qualifying power evidence may be missing.",
+        "Normalized power is not available for this activity yet. Processing may be incomplete or power coverage may be insufficient.",
     });
   });
 

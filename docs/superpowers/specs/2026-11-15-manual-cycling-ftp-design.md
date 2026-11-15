@@ -50,7 +50,8 @@ limitations and never become saved thresholds automatically.
   or individually validated FTP. Show unavailable methods explicitly when their
   evidence is absent/outside supported coverage. Choosing a suggestion fills the
   input for review; only Save writes the dated manual setting. Running estimates
-  or selecting an option must not change settings, zones, load or cache state.
+  or selecting an option must not change settings, zones or load, or invalidate
+  their dependent caches. Normal caching of suggestion responses is allowed.
   Critical Power remains separately named and does not become an FTP suggestion.
 - Use the existing sport-settings history to edit values applying to earlier
   rides. Do not silently apply a newly entered current value to years of history.

@@ -12,6 +12,10 @@ import {
 } from "./activity-calendar-test-helpers.ts";
 import { ClimbingActivityLogEntryRepository } from "./climbing-activity-log-entry-repository.ts";
 import { climbingClimbFixture, climbingLogEntryFixture } from "./climbing-test-helpers.ts";
+import {
+  type CyclingActivityPowerMetrics,
+  CyclingThresholdRepository,
+} from "./cycling-threshold-repository.ts";
 import { ProviderAbsentActivitiesCalendarRepository } from "./provider-absent-activities-calendar-repository.ts";
 
 const dialect = new PgDialect();
@@ -437,11 +441,32 @@ describe("ActivitiesCalendarRepository", () => {
 
   it("groups activities by normalized local date and returns display-ready indoor stats", async () => {
     const database = makeDatabase([]);
+    const resolvedPower: CyclingActivityPowerMetrics = {
+      activity_id: "activity-1",
+      started_at: "2026-03-18T07:00:00.000Z",
+      ended_at: "2026-03-18T08:00:00.000Z",
+      activity_date: "2026-03-18",
+      canonical_type: "cycling",
+      normalized_power: 251,
+      power_sample_count: 3600,
+      ftp: 250,
+      intensity_factor: 1.004,
+      power_tss: 100.8,
+      threshold: {
+        value: 250,
+        unit: "watt",
+        effective_from: "2026-03-01",
+        source_record_id: "00000000-0000-4000-8000-000000000250",
+        kind: "configured",
+      },
+    };
+    const resolved = vi
+      .spyOn(CyclingThresholdRepository.prototype, "getForActivities")
+      .mockResolvedValue(new Map([["activity-1", resolvedPower]]));
     const sensorStore = makeSensorStore([
       [
         makeActivityRow({
           avg_power: 251,
-          power_tss: 100.8,
           timezone: "America/Los_Angeles",
           start_utc_offset_minutes: -480,
           end_utc_offset_minutes: -420,
@@ -474,6 +499,7 @@ describe("ActivitiesCalendarRepository", () => {
         ],
       },
     ]);
+    expect(resolved).toHaveBeenCalledExactlyOnceWith(["activity-1"]);
   });
 
   it("omits locations when only one centroid coordinate is present", async () => {

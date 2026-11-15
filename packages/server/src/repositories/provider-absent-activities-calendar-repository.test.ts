@@ -1,3 +1,4 @@
+import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it, vi } from "vitest";
 import { routeMapPreview } from "../lib/map-preview.ts";
 import {
@@ -8,13 +9,32 @@ import {
 } from "./activity-calendar-test-helpers.ts";
 import { ProviderAbsentActivitiesCalendarRepository } from "./provider-absent-activities-calendar-repository.ts";
 
+const dialect = new PgDialect();
+
 describe("ProviderAbsentActivitiesCalendarRepository", () => {
   it("includes provider-absent activities from ClickHouse when requested", async () => {
     const database = makeDatabase([]);
+    const hiddenId = "00000000-0000-4000-8000-000000000010";
+    vi.mocked(database.execute).mockImplementation(async (query) => {
+      expect(normalizeSql(dialect.sqlToQuery(query).sql)).toContain("WITH requested AS");
+      return [
+        {
+          requested_id: hiddenId,
+          activity_id: hiddenId,
+          started_at: "2026-03-18T07:00:00.000Z",
+          ended_at: "2026-03-18T08:00:00.000Z",
+          activity_date: "2026-03-18",
+          canonical_type: "cycling",
+          ftp: null,
+          threshold_effective_from: null,
+          threshold_source_record_id: null,
+        },
+      ];
+    });
     const sensorStore = makeSensorStore([
       [
         {
-          id: "hidden-1",
+          id: hiddenId,
           name: "Hidden Ride",
           canonical_type: "cycling",
           started_at: "2026-03-18T07:00:00.000Z",
@@ -38,6 +58,7 @@ describe("ProviderAbsentActivitiesCalendarRepository", () => {
       ],
       [],
       [],
+      [],
     ]);
     const repository = new ProviderAbsentActivitiesCalendarRepository(
       database,
@@ -59,7 +80,7 @@ describe("ProviderAbsentActivitiesCalendarRepository", () => {
         date: "2026-03-18",
         activities: [
           expect.objectContaining({
-            id: "hidden-1",
+            id: hiddenId,
             name: "Hidden Ride",
             isProviderAbsent: true,
             providerId: "strava",
@@ -85,7 +106,7 @@ describe("ProviderAbsentActivitiesCalendarRepository", () => {
       expect.stringContaining("FROM analytics.activity_summary_rows AS summary FINAL"),
       expect.objectContaining({
         userId: "user-1",
-        activityIds: ["hidden-1"],
+        activityIds: [hiddenId],
       }),
     );
     expect(sensorStore.query).toHaveBeenNthCalledWith(
@@ -98,7 +119,14 @@ describe("ProviderAbsentActivitiesCalendarRepository", () => {
         windowStart: "2026-03-13",
       }),
     );
-    expect(database.execute).not.toHaveBeenCalled();
+    expect(database.execute).toHaveBeenCalledExactlyOnceWith(expect.anything());
+    const thresholdQuery = dialect.sqlToQuery(database.execute.mock.calls[0]?.[0]);
+    expect(normalizeSql(thresholdQuery.sql)).toContain("FROM fitness.activity AS absent_activity");
+    expect(normalizeSql(thresholdQuery.sql)).toContain(
+      "absent_activity.provider_absent_at IS NOT NULL",
+    );
+    expect(thresholdQuery.params).toContain(hiddenId);
+    expect(result[0]?.activities[0]).toMatchObject({ isProviderAbsent: true, tss: null });
   });
 
   it("enriches hidden activities with summary metrics and route previews", async () => {

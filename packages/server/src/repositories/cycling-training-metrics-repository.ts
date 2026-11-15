@@ -220,15 +220,9 @@ function thresholdEvidence(
         ? {
             value: ftp.value,
             unit: "W",
-            effective_from: ftp.effectiveFrom,
-            kind: "computed" as const,
-            method: "computed_eftp" as const,
-            model_version: ftp.modelVersion,
-            uncertainty: ftp.uncertainty,
-            evidence_activity_id: ftp.evidenceActivityId,
-            evidence_at: ftp.evidenceAt,
-            evidence_duration_seconds: ftp.evidenceDurationSeconds,
-            evidence_power_watts: ftp.evidencePowerWatts,
+            effective_from: ftp.effective_from,
+            source_record_id: ftp.source_record_id,
+            kind: "configured" as const,
           }
         : null,
     threshold_heart_rate:
@@ -268,7 +262,7 @@ function definitions() {
       "Fourth root of the mean fourth power of complete 30-second rolling average power.",
     variability_index: "Normalized power divided by average power.",
     intensity_factor:
-      "Canonical normalized power divided by computed eFTP effective for the activity.",
+      "Canonical normalized power divided by configured FTP effective for the activity date.",
     training_stress_score: "Elapsed hours multiplied by intensity factor squared and 100.",
     work_kilojoules: "Sum of covered one-second power values divided by 1,000.",
     aerobic_efficiency: "Mean synchronized power divided by mean synchronized heart rate.",
@@ -367,9 +361,12 @@ export class CyclingTrainingMetricsRepository {
           pageRows,
           input.durationsSeconds,
         ),
-        new CyclingThresholdRepository(this.#store, this.#userId, this.#timezone).getForActivities(
-          pageRows.map((activity) => activity.activity_id),
-        ),
+        new CyclingThresholdRepository(
+          this.#db,
+          this.#store,
+          this.#userId,
+          this.#timezone,
+        ).getForActivities(pageRows.map((activity) => activity.activity_id)),
       ]);
 
     const preparedActivities = pageRows.map((activity) => {

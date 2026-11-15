@@ -12,7 +12,7 @@ interface PmcChartCalculatorOptions {
 }
 
 interface PmcChartInput {
-  currentEftp: number | null;
+  currentFtp: number | null;
   activityRows: PmcActivityRow[];
   normalizedPowerRows: PmcNormalizedPowerRow[];
   queryDays: number;
@@ -47,7 +47,7 @@ export class PmcChartCalculator {
         row.power_tss == null ? [] : [[row.activity_id, row.power_tss] as const],
       ),
     );
-    const thresholdPower = input.currentEftp;
+    const thresholdPower = input.currentFtp;
     const unsupportedCount = input.activityRows.filter(
       (activity) => !powerTssByActivity.has(activity.id),
     ).length;

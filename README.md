@@ -57,7 +57,9 @@ High-volume sensor samples ──────┴─> Kafka ───────
   analytics outside request paths. The serialized analytics worker also calls
   the pure [`@dofek/cycling-power`](packages/cycling-power/README.md) algorithms
   through its [bounded projector](src/analytics/README.md); dbt inputs precede
-  projection and dependent threshold/activity-power models follow it. Derived sensor analytics
+  projection and the dependent activity-power model follows it. Dated manual FTP
+  is combined with normalized power by the server; estimates run only on request
+  beside the FTP setting. Derived sensor analytics
   are never written back to Postgres.
 - Express and tRPC serve both clients. BullMQ workers use Redis for scheduled
   syncs, imports, exports, post-sync work, and analytics cleanup.

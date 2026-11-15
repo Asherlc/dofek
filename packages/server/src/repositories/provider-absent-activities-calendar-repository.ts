@@ -13,6 +13,7 @@ import {
 import { clickHouseActivityCalendarDate } from "./activity-local-date.ts";
 import type { ActivitySensorStore } from "./activity-repository.ts";
 import { getActivityMapReadiness, getActivityRoutePreviews } from "./activity-route-preview.ts";
+import { CyclingThresholdRepository } from "./cycling-threshold-repository.ts";
 
 const providerAbsentActivityRowSchema = activityRowSchema.extend({
   route_activity_id: z.string(),
@@ -126,9 +127,16 @@ export class ProviderAbsentActivitiesCalendarRepository extends BaseRepository {
     }
 
     const activityIds = activityRows.map((row) => row.id);
-    const [summaryRows, routePreviewByActivityId] = await Promise.all([
+    const [summaryRows, routePreviewByActivityId, powerMetrics] = await Promise.all([
       this.#fetchSummaryMetricsByActivityId(activityIds),
       getActivityRoutePreviews(this.#sensorStore, this.userId, activityIds),
+      new CyclingThresholdRepository(
+        this.db,
+        this.#sensorStore,
+        this.userId,
+        this.timezone,
+        this.accessWindow,
+      ).getForActivities(activityIds),
     ]);
 
     const summaryByActivityId = new Map(summaryRows.map((row) => [row.id, row] as const));
@@ -140,7 +148,7 @@ export class ProviderAbsentActivitiesCalendarRepository extends BaseRepository {
         avg_hr: summary.avg_hr,
         max_hr: summary.max_hr,
         avg_power: summary.avg_power,
-        power_tss: summary.power_tss,
+        power_tss: powerMetrics.get(row.id)?.power_tss ?? null,
         total_distance: summary.total_distance,
         elevation_gain_m: summary.elevation_gain_m,
         centroid_lat: summary.centroid_lat,
@@ -196,7 +204,7 @@ export class ProviderAbsentActivitiesCalendarRepository extends BaseRepository {
       activitySummaryMetricsRowSchema,
       `SELECT
           toString(summary.activity_id) AS id,
-          metrics.power_tss AS power_tss,
+          NULL AS power_tss,
           avg_hr,
           max_hr,
           avg_power,
@@ -205,8 +213,6 @@ export class ProviderAbsentActivitiesCalendarRepository extends BaseRepository {
           centroid_lat,
           centroid_lng
         FROM analytics.activity_summary_rows AS summary FINAL
-        LEFT JOIN analytics.cycling_activity_power_metrics AS metrics
-          ON metrics.user_id = summary.user_id AND metrics.activity_id = summary.activity_id
         WHERE summary.user_id = {userId:UUID}
           AND summary.activity_id IN {activityIds:Array(UUID)}
         ORDER BY refresh_version DESC

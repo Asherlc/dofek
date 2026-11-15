@@ -31,7 +31,8 @@ so applying a value to a historical ride is an explicit decision.
 
 Release matching server, worker, web and mobile contracts together using the
 [existing maintenance procedure](../deploy/README.md#deployment). The forward
-ClickHouse migration replaces the power serving view with existing normalized-power
+[ClickHouse migration 0114](../src/db/clickhouse-migrations/0114_normalized_power_projection.ts)
+replaces the power serving view with existing normalized-power
 observations and activity metadata, then removes obsolete estimated-threshold
 history storage/views. Preserve raw sensor and activity data; this cutover needs
 no full sensor backfill.
@@ -39,6 +40,10 @@ no full sensor backfill.
 Old mobile clients expect computed-eFTP contracts. Ship the matching mobile
 update and persisted-cache contract change before ending the coordinated cutover;
 do not fabricate legacy estimates or maintain a second threshold source.
+MCP clients must refresh their tool catalog and output schemas: ongoing estimate
+and estimated-threshold-history tools are removed, and cycling metrics identify
+the applicable configured FTP. The settings estimation action is a separate,
+explicit request and does not restore the old maintained estimate contract.
 Production deployment is separate from implementation and local validation.
 
 ## Calculation and validation

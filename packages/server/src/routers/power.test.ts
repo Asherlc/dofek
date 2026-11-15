@@ -51,22 +51,4 @@ describe("powerRouter", () => {
     const queryParams = vi.mocked(sensorStore.query).mock.calls[0]?.[2];
     expect(queryParams).toHaveProperty("days", 90);
   });
-
-  it("accepts null days for all-time eFTP trend requests", async () => {
-    const { caller, sensorStore } = makeCaller();
-
-    await caller.eftpTrend({ days: null });
-
-    const queryParams = vi.mocked(sensorStore.query).mock.calls[0]?.[2];
-    expect(queryParams).not.toHaveProperty("days");
-  });
-
-  it("keeps the existing default eFTP trend window when days is omitted", async () => {
-    const { caller, sensorStore } = makeCaller();
-
-    await caller.eftpTrend({});
-
-    const queryParams = vi.mocked(sensorStore.query).mock.calls[0]?.[2];
-    expect(queryParams).toHaveProperty("days", 365);
-  });
 });

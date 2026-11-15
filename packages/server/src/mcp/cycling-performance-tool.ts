@@ -17,7 +17,7 @@ export function registerCyclingPerformanceTool(server: McpServer, context: Dofek
     {
       title: "Get Cycling Performance",
       description:
-        "Return per-ride normalized power, intensity factor, 5s/1m/5m/20m best efforts, rolling-90-day bests, estimated FTP, elevation gain, selected-range coverage, and all-history power availability by modality.",
+        "Return per-ride normalized power, intensity factor, configured FTP, 5s/1m/5m/20m best efforts, rolling-90-day bests, elevation gain, selected-range coverage, and all-history power availability by modality.",
       annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false },
       inputSchema: z.object({ start_date: dateSchema, end_date: dateSchema }),
       outputSchema: cyclingPerformanceOutputSchema,
@@ -31,6 +31,7 @@ export function registerCyclingPerformanceTool(server: McpServer, context: Dofek
       return jsonToolResult({
         range: { start_date, end_date, timezone: context.timezone },
         ...(await new CyclingPerformanceRepository(
+          context.db,
           context.sensorStore,
           context.userId,
           context.timezone,

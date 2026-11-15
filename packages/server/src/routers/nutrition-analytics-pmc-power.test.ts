@@ -1,9 +1,15 @@
 import type { TRPCError } from "@trpc/server";
 import { describe, expect, it, vi } from "vitest";
-import { pmcThresholdHistoryRows } from "../repositories/pmc-test-helpers.ts";
+import { PmcRepository } from "../repositories/pmc-repository.ts";
 import { createTestCallerFactory } from "./test-helpers.ts";
 
-const cachedQueryOptions = vi.hoisted((): Array<{ maxAge: number; keyVersion?: string }> => []);
+const cachedQueryOptions = vi.hoisted(
+  (): Array<{
+    maxAge: number;
+    expiresAt?: string;
+    keyVersion?: string;
+  }> => [],
+);
 
 vi.mock("../trpc.ts", async () => {
   const { initTRPC } = await import("@trpc/server");
@@ -19,7 +25,11 @@ vi.mock("../trpc.ts", async () => {
   return {
     router: trpc.router,
     protectedProcedure: trpc.procedure,
-    cachedProtectedQuery: (options: { maxAge: number; keyVersion?: string }) => {
+    cachedProtectedQuery: (options: {
+      maxAge: number;
+      expiresAt?: string;
+      keyVersion?: string;
+    }) => {
       cachedQueryOptions.push(options);
       return trpc.procedure;
     },
@@ -116,15 +126,12 @@ function isPmcNormalizedPowerQuery(queryText: string): boolean {
 function makePmcSensorStore(
   activityRows: unknown[],
   normalizedPowerRows: unknown[] = [],
-  currentEftp: number | null = null,
 ): SensorStore {
   return {
     query: vi.fn(
       async (schema: { parse: (row: unknown) => unknown }, queryText = ""): Promise<unknown[]> => {
         let rows: unknown[];
-        if (queryText.includes("cycling_threshold_history")) {
-          rows = pmcThresholdHistoryRows(currentEftp);
-        } else if (isPmcNormalizedPowerQuery(queryText)) {
+        if (isPmcNormalizedPowerQuery(queryText)) {
           rows = normalizedPowerRows;
         } else if (isPmcActivityChartQuery(queryText)) {
           rows = activityRows;
@@ -146,12 +153,9 @@ function makePmcSensorStore(
   };
 }
 
-function makeRawActivityCountDb(activityCount: number, visibleIds: string[] = []) {
+function makeRawActivityCountDb(activityCount: number) {
   const execute = vi.fn();
   execute.mockResolvedValueOnce([{ activity_count: activityCount }]);
-  if (visibleIds.length > 0) {
-    execute.mockResolvedValueOnce(visibleIds.map((id) => ({ id })));
-  }
   execute.mockResolvedValue([]);
   return { execute };
 }
@@ -285,7 +289,8 @@ describe("pmcRouter", () => {
     it("versions the availability response cache contract", () => {
       expect(cachedQueryOptions).toContainEqual({
         maxAge: 3_600_000,
-        keyVersion: "pmc-chart-power-v2",
+        expiresAt: "localDayBoundary",
+        keyVersion: "pmc-chart-manual-ftp-v3",
       });
     });
 
@@ -306,85 +311,35 @@ describe("pmcRouter", () => {
         observedCount: 0,
         minimumCount: 1,
         message:
-          "No training load data is available from the training load read model. Record cycling power with a usable threshold to show this chart.",
+          "No training load data is available from the training load read model. Set a dated FTP and record cycling power to show this chart.",
       });
     });
 
-    it("computes PMC data from activities", async () => {
-      const today = new Date();
-      const rows = [
-        {
-          global_max_hr: 190,
-          resting_hr: 55,
-          id: "a1",
-          date: today.toISOString().slice(0, 10),
-          duration_min: 60,
-          avg_hr: 155,
-          max_hr: 180,
-          avg_power: null,
-          power_samples: 0,
-          hr_samples: 3600,
-        },
-      ];
+    it("maps repository PMC output to an available chart response", async () => {
+      const getChart = vi.spyOn(PmcRepository.prototype, "getChart").mockResolvedValue({
+        data: [{ date: "2026-06-15", load: 64, ctl: 42, atl: 50, tsb: -8 }],
+        model: { ftp: 275 },
+        unavailableReason: null,
+      });
       const caller = createCaller({
-        db: makeRawActivityCountDb(
-          rows.length,
-          rows.map((row) => String(row.id)),
-        ),
+        db: { execute: vi.fn() },
         userId: "user-1",
         timezone: "UTC",
-        sensorStore: makePmcSensorStore(rows, [{ activity_id: "a1", power_tss: 75 }]),
+        sensorStore: makePmcSensorStore([]),
       });
       const result = await caller.chart({ days: 180 });
 
-      expect(result.data.length).toBeGreaterThan(0);
-      expect(result.model).toBeDefined();
+      expect(result.data).toHaveLength(1);
+      expect(result.model).toEqual({ ftp: 275 });
       expect(result.availability).toMatchObject({
         status: "available",
         sourceLabel: "Training load read model",
-        observedCount: result.data.length,
+        observedCount: 1,
         minimumCount: 1,
         message: "Training load data is available from the training load read model.",
       });
-    });
-
-    it("uses power TSS when power data available", async () => {
-      const today = new Date();
-      const rows = [];
-      for (let i = 0; i < 12; i++) {
-        const date = new Date(today);
-        date.setDate(date.getDate() - i);
-        rows.push({
-          global_max_hr: 190,
-          resting_hr: 55,
-          id: `a${i}`,
-          date: date.toISOString().slice(0, 10),
-          duration_min: 60,
-          avg_hr: 155,
-          max_hr: 180,
-          avg_power: 200,
-          power_samples: 3600,
-          hr_samples: 3600,
-        });
-      }
-      const normalizedPowerRows = rows.map((row) => ({
-        activity_id: String(row.id),
-        power_tss: 64,
-        eftp: 250,
-      }));
-      const caller = createCaller({
-        db: makeRawActivityCountDb(
-          rows.length,
-          rows.map((row) => String(row.id)),
-        ),
-        userId: "user-1",
-        timezone: "UTC",
-        sensorStore: makePmcSensorStore(rows, normalizedPowerRows, 275),
-      });
-      const result = await caller.chart({ days: 180 });
-
-      expect(result.model).toMatchObject({ ftp: 275 });
-      expect(result.data.length).toBeGreaterThan(0);
+      expect(getChart).toHaveBeenCalledOnce();
+      getChart.mockRestore();
     });
   });
 
@@ -457,53 +412,6 @@ describe("powerRouter", () => {
       });
 
       await expect(caller.powerCurve({ days: 90 })).rejects.toMatchObject<Partial<TRPCError>>({
-        code: "PRECONDITION_FAILED",
-        message:
-          "ClickHouse activity analytics store is required for power analysis. Set CLICKHOUSE_URL and retry.",
-      });
-    });
-  });
-
-  describe("eftpTrend", () => {
-    it("returns eFTP trend data", async () => {
-      const current = {
-        event_at: "2026-08-01T00:00:00Z",
-        activity_id: null,
-        eftp: 245,
-        evidence_activity_id: null,
-        evidence_at: null,
-        evidence_duration_seconds: null,
-        evidence_power: null,
-        model_version: "v1",
-      };
-      const caller = createCaller({
-        db: makeRawActivityCountDb(1),
-        sensorStore: {
-          query: vi.fn(async (_schema, queryText = "") =>
-            queryText.includes("ORDER BY history.event_at DESC")
-              ? [current]
-              : [{ date: "2024-01-15", eftp: 250, activityName: "Ride" }],
-          ),
-        },
-        userId: "user-1",
-        timezone: "UTC",
-      });
-      const result = await caller.eftpTrend({ days: 365 });
-
-      expect(result.trend).toHaveLength(1);
-      expect(result.trend[0]?.eftp).toBe(250);
-      expect(result.currentEftp).toBe(245);
-      expect(result.currentEvidence.model_version).toBe("v1");
-    });
-
-    it("throws PRECONDITION_FAILED when sensor store is missing", async () => {
-      const caller = createCaller({
-        db: { execute: vi.fn() },
-        userId: "user-1",
-        timezone: "UTC",
-      });
-
-      await expect(caller.eftpTrend({ days: 365 })).rejects.toMatchObject<Partial<TRPCError>>({
         code: "PRECONDITION_FAILED",
         message:
           "ClickHouse activity analytics store is required for power analysis. Set CLICKHOUSE_URL and retry.",
