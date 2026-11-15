@@ -326,7 +326,7 @@ export const sportSettings = fitness.table(
     sport: text("sport").notNull(),
     thresholdHr: smallint("threshold_hr"),
     thresholdPacePerKm: real("threshold_pace_per_km"),
-    ftp: integer("ftp"),
+    ftp: bigint("ftp", { mode: "number" }),
     powerZonePcts: jsonb("power_zone_pcts"),
     hrZonePcts: jsonb("hr_zone_pcts"),
     paceZonePcts: jsonb("pace_zone_pcts"),

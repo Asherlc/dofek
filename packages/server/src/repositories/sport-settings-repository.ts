@@ -181,7 +181,7 @@ export class SportSettingsRepository {
           ${settings.sport},
           CASE WHEN ${settings.thresholdHr !== undefined} THEN ${settings.thresholdHr ?? null}::smallint ELSE previous.threshold_hr END,
           CASE WHEN ${settings.thresholdPacePerKm !== undefined} THEN ${settings.thresholdPacePerKm ?? null}::real ELSE previous.threshold_pace_per_km END,
-          CASE WHEN ${settings.ftp !== undefined} THEN ${settings.ftp ?? null}::integer ELSE previous.ftp END,
+          CASE WHEN ${settings.ftp !== undefined} THEN ${settings.ftp ?? null}::bigint ELSE previous.ftp END,
           CASE WHEN ${settings.powerZonePcts !== undefined} THEN ${powerZonePcts}::jsonb ELSE previous.power_zone_pcts END,
           CASE WHEN ${settings.hrZonePcts !== undefined} THEN ${hrZonePcts}::jsonb ELSE previous.hr_zone_pcts END,
           CASE WHEN ${settings.paceZonePcts !== undefined} THEN ${paceZonePcts}::jsonb ELSE previous.pace_zone_pcts END,

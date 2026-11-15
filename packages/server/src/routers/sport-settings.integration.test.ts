@@ -3,8 +3,10 @@ import { formatDateYmdInTimeZone } from "@dofek/format/format";
 import { queryCache } from "dofek/lib/cache";
 import { sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 import { TEST_USER_ID } from "../../../../src/db/schema/core.ts";
 import { setupTestDatabase, type TestContext } from "../../../../src/db/test-helpers.ts";
+import { executeWithSchema } from "../lib/typed-sql.ts";
 import { SportSettingsRepository } from "../repositories/sport-settings-repository.ts";
 import { sportSettingsRouter } from "./sport-settings.ts";
 import { createTestCallerFactory } from "./test-helpers.ts";
@@ -194,6 +196,61 @@ describe("sport settings FTP integration", () => {
     expect(
       (await caller(OTHER_USER_ID).getBySport({ sport: "cycling", asOfDate: FTP_TEST_DATE }))?.ftp,
     ).toBe(320);
+  });
+
+  it("creates a validated bigint FTP column that stores values and nullable clears", async () => {
+    const schema = await executeWithSchema(
+      testContext.db,
+      z.object({ data_type: z.string(), convalidated: z.boolean() }),
+      sql`
+        SELECT column_info.data_type, constraint_info.convalidated
+        FROM information_schema.columns AS column_info
+        JOIN pg_constraint AS constraint_info
+          ON constraint_info.conname = 'sport_settings_ftp_positive'
+          AND constraint_info.conrelid = 'fitness.sport_settings'::regclass
+        WHERE column_info.table_schema = 'fitness'
+          AND column_info.table_name = 'sport_settings'
+          AND column_info.column_name = 'ftp'
+      `,
+    );
+    expect(schema).toEqual([{ data_type: "bigint", convalidated: true }]);
+
+    const repository = caller();
+    expect(
+      (
+        await repository.upsert({
+          sport: "ftp-storage-check",
+          ftp: 400,
+          effectiveFrom: FTP_TEST_DATE,
+        })
+      ).ftp,
+    ).toBe(400);
+    const aboveIntRange = 2_147_483_648;
+    expect(
+      (
+        await repository.upsert({
+          sport: "ftp-large-value-check",
+          ftp: aboveIntRange,
+          effectiveFrom: FTP_TEST_DATE,
+        })
+      ).ftp,
+    ).toBe(aboveIntRange);
+    expect(
+      (
+        await repository.upsert({
+          sport: "ftp-storage-check",
+          ftp: null,
+          effectiveFrom: FTP_TEST_DATE,
+        })
+      ).ftp,
+    ).toBeNull();
+
+    await expect(
+      testContext.db.execute(sql`
+        INSERT INTO fitness.sport_settings (user_id, sport, ftp, effective_from)
+        VALUES (${TEST_USER_ID}::uuid, 'ftp-constraint-check', 0, ${FTP_TEST_DATE}::date)
+      `),
+    ).rejects.toThrow();
   });
 
   it("invalidates settings and dependent activity, calendar, cycling, and PMC cache entries", async () => {
