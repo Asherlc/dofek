@@ -1,5 +1,195 @@
 # Testing Notes
 
+## CI check ownership
+
+This map records the owner of every check that currently gates merges or
+releases. Ownership labels describe extraction boundaries, not new workflows:
+**Repository safety**, **Server/web**, **Mobile JavaScript**, **Native mobile**,
+**Infrastructure**, **Other packages**, and **Shared prerequisite**. A shared
+prerequisite still combines lanes and must remain wired to every caller until an
+equivalent partition is verified. No check may disappear when the mixed `Test`,
+`Build Mobile`, and `CI` workflows are split; see
+[the release-gates design](superpowers/specs/2026-11-14-independent-release-gates-design.md#release-units-and-gate-ownership).
+
+### Protected merge contexts
+
+Classic branch protection and the active `Required CI checks` ruleset both
+require GitHub Actions contexts (`app_id` 15368). The merge-blocking set is their
+union. `Build Mobile / Mobile Build Gate` appears only in classic branch
+protection today, so removing either protection source without a verified
+replacement would narrow the required set.
+
+| Check context | Protection source |
+| --- | --- |
+| `SAST Scan` | Classic branch protection and ruleset |
+| `CodeQL Analysis (javascript-typescript)` | Classic branch protection and ruleset |
+| `CI Gate` | Classic branch protection and ruleset |
+| `Test / Lint & Static Analysis` | Classic branch protection and ruleset |
+| `Test / Security & Dependencies` | Classic branch protection and ruleset |
+| `Test / Unit & Integration Tests` | Classic branch protection and ruleset |
+| `Test / E2E Tests (Web)` | Classic branch protection and ruleset |
+| `Test / Mutation Testing` | Classic branch protection and ruleset |
+| `Build Mobile / Mobile Build Gate` | Classic branch protection only |
+
+### Job ownership map
+
+`test.yml` owns most test, lint, and policy jobs. Its aggregate jobs must keep
+every listed dependency until the replacement workflow proves the same coverage.
+
+| Workflow | Job ID | Displayed check | Owner |
+| --- | --- | --- | --- |
+| `test.yml` | `secret-scan` | Secret Scan | Repository safety |
+| `test.yml` | `audit` | Dependency Audit | Repository safety |
+| `test.yml` | `license-check` | License Check | Repository safety |
+| `test.yml` | `action-pinning` | Action Pinning | Repository safety |
+| `test.yml` | `image-scan` | Image Vulnerability Scan | Server/web |
+| `test.yml` | `security-gate` | Security & Dependencies | Shared prerequisite (aggregate; repository safety plus server image scan) |
+| `test.yml` | `actionlint` | Actionlint | Repository safety |
+| `test.yml` | `lint` | Lint | Shared prerequisite (database-free root lint plus server SQL/regression checks) |
+| `test.yml` | `stylelint` | Stylelint | Server/web |
+| `test.yml` | `yamllint` | YAMLLint | Repository safety |
+| `test.yml` | `openapi-lint` | OpenAPI Lint | Server/web |
+| `test.yml` | `dotenv-lint` | Dotenv Lint | Repository safety |
+| `test.yml` | `tflint` | TFLint | Infrastructure |
+| `test.yml` | `sqlfluff` | SQLFluff | Server/web |
+| `test.yml` | `typecheck-discover` | Discover packages to typecheck | Shared prerequisite |
+| `test.yml` | `typecheck` | Typecheck (`<package>`) | Shared prerequisite (root plus every package typecheck, including mobile) |
+| `test.yml` | `sherif` | Sherif | Repository safety |
+| `test.yml` | `knip` | Knip | Repository safety |
+| `test.yml` | `spellcheck` | Spell Check | Repository safety |
+| `test.yml` | `import-boundaries` | Import Boundaries | Shared prerequisite (cross-client dependency policy) |
+| `test.yml` | `python-checks` | Python Checks | Other packages (ML) |
+| `test.yml` | `hadolint` | Dockerfile Lint | Infrastructure |
+| `test.yml` | `terraform-validate` | Terraform Validate | Infrastructure |
+| `test.yml` | `check-dns-records` | DNS Record Coverage | Infrastructure |
+| `test.yml` | `swiftlint` | SwiftLint | Native mobile |
+| `test.yml` | `periphery` | Periphery | Native mobile |
+| `test.yml` | `quality-gate` | Lint & Static Analysis | Shared prerequisite (aggregate) |
+| `test.yml` | `test-unit` | Unit Tests | Shared prerequisite (root/shared/server and other package units; excludes mobile) |
+| `test.yml` | `test-fit-decoder` | Native FIT Decoder | Server/web |
+| `test.yml` | `test-integration` | Integration Tests (`<shard>`/5) | Server/web |
+| `test.yml` | `test-peerdb-integration` | PeerDB CDC Integration | Server/web |
+| `test.yml` | `coverage` | Coverage | Shared prerequisite (unit plus integration; excludes mobile) |
+| `test.yml` | `test-bookie-evacuation` | Native BookKeeper Evacuation | Server/web |
+| `test.yml` | `test-gate` | Unit & Integration Tests | Server/web (aggregate; coverage remains shared) |
+| `test.yml` | `test-e2e-web` | E2E Tests (Web) | Server/web |
+| `test.yml` | `check-mobile-changes` | Check Mobile Changes | Mobile JavaScript |
+| `test.yml` | `test-mobile` | Mobile Tests | Mobile JavaScript |
+| `test.yml` | `test-swift` | Swift Tests | Native mobile |
+| `test.yml` | `mutation-prep` | Mutation Prep | Server/web (TypeScript discovery; mobile paths excluded) |
+| `test.yml` | `mutation` | Stryker (`<shard>`) | Server/web (TypeScript) |
+| `test.yml` | `mutation-swift-prep` | Prepare Swift mutation shards | Native mobile |
+| `test.yml` | `mutation-swift` | Swift Mutation Testing (`<file>`, shard `<n>`) | Native mobile |
+| `test.yml` | `mutation-swift-merge` | Verify complete Swift mutation campaign | Native mobile |
+| `test.yml` | `mutation-gate` | Mutation Testing | Shared prerequisite (aggregate) |
+| `test.yml` | `migration-lint` | Migration Lint | Server/web |
+| `test.yml` | `test-all-gate` | Test Gate | Shared prerequisite (aggregate) |
+| `build-mobile.yml` | `build-metro-bundle` | Metro Bundle | Mobile JavaScript |
+| `build-mobile.yml` | `build-ios-native` | iOS Native Build | Native mobile |
+| `build-mobile.yml` | `build-watchos` | watchOS Build | Native mobile |
+| `build-mobile.yml` | `lint-ios-podspecs` | iOS Podspec Lint | Native mobile |
+| `build-mobile.yml` | `mobile-gate` | Mobile Build Gate | Native mobile (aggregate) |
+| `ci.yml` | `detect-changes` | Detect Changes | Shared prerequisite |
+| `ci.yml` | `build-mobile` | Build Mobile | Mobile JavaScript and Native mobile |
+| `ci.yml` | `build-web` | Build Web | Server/web |
+| `ci.yml` | `build-zepp` | Build Zepp | Other packages (Zepp) |
+| `ci.yml` | `test` | Test | Shared prerequisite (calls the mixed `test.yml`) |
+| `ci.yml` | `ci-gate` | CI Gate | Shared prerequisite (aggregate) |
+| `ci.yml` | `build-docker` | Build Docker | Server/web |
+| `ci.yml` | `build-ota` | Build OTA | Server/web (OTA hosting image) |
+| `ci.yml` | `build-docker-ml` | Build Docker ML | Other packages (ML) |
+| `ci.yml` | `build-storybook` | Build Storybook | Server/web |
+| `ci.yml` | `build-storybook-mobile` | Build Mobile Storybook | Mobile JavaScript |
+| `ci.yml` | `storybook-preview` | Storybook Preview | Shared prerequisite (selects web and mobile Storybook) |
+| `semgrep.yml` | `scan` | SAST Scan | Repository safety |
+| `codeql.yml` | `analyze` | CodeQL Analysis (javascript-typescript) | Repository safety |
+
+### Root lint subcommands
+
+`pnpm lint` is not a single owner. Keep these commands with their current lanes
+when the monolithic `Test / Lint` job is split.
+
+| Command | Owner |
+| --- | --- |
+| `pnpm lint:sandbox` | Shared prerequisite (aggregate) |
+| `pnpm lint:exact-versions` | Repository safety |
+| `biome check .` | Shared prerequisite |
+| `pnpm lint:suppressions` | Repository safety |
+| `pnpm lint:workflow-downloads` | Repository safety |
+| `pnpm lint:analytics-policy` | Server/web |
+| `pnpm provider-derived-metric-policy` | Server/web |
+| `pnpm lint:mobile-telemetry` | Mobile JavaScript |
+| `pnpm lint:web-stories` | Server/web |
+| `pnpm lint:review-scenarios` | Shared prerequisite (selects web and mobile) |
+| `pnpm check:mobile-app-routes` | Mobile JavaScript |
+| `pnpm lint:css` | Server/web |
+| `pnpm lint:openapi` | Server/web |
+| `pnpm lint:analytics-sql` | Server/web |
+| `pnpm lint:migrations` | Server/web |
+
+The `lint` job also reruns three targeted TypeScript tests for ClickHouse
+migration ordering and deduped activity payloads; those remain server-owned SQL
+behavior and must not be dropped with the database-free commands.
+
+### Source, test, coverage, and mutation ownership
+
+- **Unit tests**: `vitest run --project unit` covers root `src`, `analytics/models`,
+  `.github/workflows`, `entrypoint.test.ts`, `packages/*/src` except
+  `packages/mobile`, `packages/zepp`, and `scripts`. Mobile has a separate
+  `--project mobile` from [`packages/mobile/vitest.config.ts`](../packages/mobile/vitest.config.ts).
+  The single unit job is shared today; splitting it requires selecting complete
+  affected package suites plus their consumers, not only changed test files.
+- **Integration tests**: the `integration` Vitest project requires real
+  PostgreSQL/ClickHouse/Redis fixtures and runs as five duration-balanced shards.
+  PeerDB and Pulsar/BookKeeper suites are separate projects and jobs. All remain
+  server/web owned.
+- **Coverage**: the `coverage` job merges `coverage-unit` with all five
+  `coverage-integration-*` artifacts and enforces lines 93.5%, branches 89%,
+  functions 94.5%, statements 93.5%, plus 80% diff coverage on changed lines.
+  Mobile coverage is not merged or thresholded. Retain combined accounting until
+  a partition proves identical totals; do not claim the coverage stage is
+  mobile-independent before then.
+- **TypeScript mutation**: `mutation-prep` intersects changed files with the
+  Stryker mutate list, then runs `stryker.ci.config.json` against the unit-only
+  Vitest config with break 75 and high/low 100/90. Discovery excludes
+  `packages/mobile/**` even though the Stryker config lists mobile TypeScript
+  paths, so mobile TypeScript mutation is not currently gated.
+- **Native mutation and tests**: Swift mutation plans and shards run per owning
+  package; `Swift Tests` separately runs Background Refresh, Core Motion, WHOOP
+  BLE, HealthKit coverage, and Watch transfer tests. HealthKit coverage requires
+  90% lines and functions for the three listed Swift sources. Native FIT decoder
+  `ctest` and native BookKeeper evacuation stay with server/web.
+
+### Baseline timing sample
+
+These are representative run totals (`createdAt` to `updatedAt`) from
+2026-11-14–15 UTC, not an SLA. Queue time is the delay before the first job
+starts; active time excludes that queue.
+
+| Lane | PR run | Main CI | Production run |
+| --- | --- | --- | --- |
+| Mobile ([#3346](https://github.com/Asherlc/dofek/pull/3346)) | [2998s, 104s queue](https://github.com/Asherlc/dofek/actions/runs/43656086404) | [1638s](https://github.com/Asherlc/dofek/actions/runs/43660305552) | [2127s](https://github.com/Asherlc/dofek/actions/runs/43662538842) |
+| Server ([#3341](https://github.com/Asherlc/dofek/pull/3341)) | [1287s](https://github.com/Asherlc/dofek/actions/runs/43560142510) | [1923s, 440s queue](https://github.com/Asherlc/dofek/actions/runs/43562021205) | [1945s](https://github.com/Asherlc/dofek/actions/runs/43564535570) |
+| Shared/infra ([#3339](https://github.com/Asherlc/dofek/pull/3339)) | [1091s, 40s queue](https://github.com/Asherlc/dofek/actions/runs/43555905294) | [1063s](https://github.com/Asherlc/dofek/actions/runs/43557566903) | [2193s](https://github.com/Asherlc/dofek/actions/runs/43558976976) |
+| Shared dependency ([#3336](https://github.com/Asherlc/dofek/pull/3336)) | [6509s, 774s queue](https://github.com/Asherlc/dofek/actions/runs/43519854210) | not observed | not observed |
+
+The dominant job is usually `Build Mobile / iOS Native Build` (1213–1462s),
+including on the server-only #3341 PR, where the current change detector maps the
+root server package to mobile through the workspace dependency graph and runs the
+full mobile build. Integration shards reach 842–894s. The production stack
+job reaches 1714–1778s. Terraform and TestFlight deployment records add
+independent timestamps: #3346 recorded Terraform 01:19:34–01:19:52 and
+TestFlight 01:52:09–01:54:45; #3341 recorded Terraform 06:04:45–06:05:07 only;
+#3339 recorded Terraform 04:55:19–04:55:41 and TestFlight 05:28:31–05:31:36.
+
+Baseline limitations: one representative run per lane; totals include queue and
+runner setup; job durations include dependency installation and artifact
+transfer; deployment totals include whichever Terraform/TestFlight records that
+commit produced; sampled run history is bounded and timings drift with runner
+capacity and cache state. The dependency PR had no observable main CI or deploy
+run, so it contributes no release pairing. Raw evidence remains in the
+implementation workspace, not this runbook.
+
 ## Native Swift mutation testing
 
 Run the [native mutation runner](../scripts/run-swift-mutation.ts) from the

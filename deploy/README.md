@@ -273,6 +273,9 @@ If direct SSH fails with `Permission denied`, verify you are using the matching 
   and its state-change API in the [state-change reference](https://docs.peerdb.io/peerdb-api/endpoints/change-mirror-state).
   See the [CDC deploy boundary and interrupted-addition recovery procedure](../docs/clickhouse-read-model-deploy-runbook.md#known-failure-new-peerdb-table-added-before-its-migration).
 
+Each target releases after its own applicable gates; new client API dependencies
+require a verified additive server deployment before client activation.
+
 ### Production Secrets
 
 Production secrets are stored in Infisical and rendered by CI into a temporary
