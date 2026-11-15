@@ -240,8 +240,8 @@ extension WhoopBleModuleTests {
         let release = DispatchSemaphore(value: 0)
         defer { release.signal() }
         let runtime = try await queueErasureWhileBleQueueIsBlocked(
-            context, module: module, blocked: blocked, release: release, cutoff: fixture.cutoff,
-            cutoffWritten: cutoffWritten
+            context, module: module, blocked: blocked, release: release,
+            cutoff: (date: fixture.cutoff, written: cutoffWritten)
         )
         await MainActor.run {
             SentrySDK.configureScope { scope in scope.setUser(Sentry.User(userId: "account-B")) }

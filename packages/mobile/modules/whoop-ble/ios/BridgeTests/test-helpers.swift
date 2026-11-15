@@ -249,13 +249,12 @@ extension WhoopBleModuleTests {
         module: WhoopBleModule,
         blocked: XCTestExpectation,
         release: DispatchSemaphore,
-        cutoff: Date,
-        cutoffWritten: XCTNSPredicateExpectation
+        cutoff: (date: Date, written: XCTNSPredicateExpectation)
     ) async throws -> JavaScriptRuntime {
         blockBleQueue(module, until: release, signals: blocked)
         await fulfillment(of: [blocked], timeout: 5)
         let runtime = try context.runtime
-        let cutoffString = ISO8601DateFormatter().string(from: cutoff)
+        let cutoffString = ISO8601DateFormatter().string(from: cutoff.date)
         try await runtime.execute {
             _ = try runtime.eval("""
                 globalThis.purgeResult = expo.modules.WhoopBle.purgeAccountState('\(cutoffString)').then(
@@ -269,7 +268,7 @@ extension WhoopBleModuleTests {
                 );
                 """)
         }
-        await fulfillment(of: [cutoffWritten], timeout: 5)
+        await fulfillment(of: [cutoff.written], timeout: 5)
         return runtime
     }
 
