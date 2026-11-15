@@ -39,8 +39,22 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
           ref: ${{ inputs.commit_sha }}
-      - uses: ./.github/actions/setup-node-pnpm
-      - uses: ./.github/actions/load-infisical-secrets
+      - name: Check out trusted OTA publication controls
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .release-tools
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            .github/actions/append-dispatcher-run-summary
+            .github/actions/load-infisical-secrets
+            .github/actions/setup-node-pnpm
+            scripts/check-ota-manifest.ts
+            scripts/verify-ota-update.ts
+            scripts/verify-published-ota.ts
+      - uses: ./.release-tools/.github/actions/setup-node-pnpm
+      - uses: ./.release-tools/.github/actions/load-infisical-secrets
         with:
           keys: |
             EXPO_TOKEN
@@ -71,7 +85,7 @@ jobs:
         run: |
           RUNTIME_VERSION=$(pnpm exec expo-updates runtimeversion:resolve --platform ios --workflow managed | jq -er '.runtimeVersion | strings | select(length > 0)')
           echo "runtime_version=$RUNTIME_VERSION" >> "$GITHUB_OUTPUT"
-          pnpm tsx ../../scripts/check-ota-manifest.ts --app-id "$EXPO_APP_ID" --runtime-version "$RUNTIME_VERSION"
+          pnpm tsx ../../.release-tools/scripts/check-ota-manifest.ts --app-id "$EXPO_APP_ID" --runtime-version "$RUNTIME_VERSION"
       # Keep export diagnostics visible before the publisher owns dist and its
       # source maps. Both commands use the installed Expo version.
       - name: Export iOS bundle (surfaces the error eoas hides)
@@ -146,7 +160,7 @@ jobs:
           };
           const verifyCurrent = () => {
             const metadataPath = join(preflightDirectory, 'xprem-update-metadata.json');
-            command('pnpm', ['tsx','scripts/verify-published-ota.ts',metadataPath,'production',RUNTIME_VERSION]);
+            command('pnpm', ['tsx','.release-tools/scripts/verify-published-ota.ts',metadataPath,'production',RUNTIME_VERSION]);
             return JSON.parse(readFileSync(metadataPath,'utf8'))[0];
           };
           const unresolved = history.filter((record) => !['SUCCESS','INACTIVE'].includes(record.state));
@@ -207,7 +221,7 @@ jobs:
         run: pnpm exec eoas publish --branch main --platform ios --nonInteractive --packageRunner "pnpm exec" --dumpSourcemap --emitMetadata
       - name: Verify published device update
         if: steps.publication.outputs.decision == 'publish'
-        run: pnpm tsx scripts/verify-published-ota.ts packages/mobile/dist/xprem-update-metadata.json production "${{ steps.runtime.outputs.runtime_version }}"
+        run: pnpm tsx .release-tools/scripts/verify-published-ota.ts packages/mobile/dist/xprem-update-metadata.json production "${{ steps.runtime.outputs.runtime_version }}"
       - name: Upload OTA sourcemaps to Sentry
         if: steps.publication.outputs.decision == 'publish' || steps.publication.outputs.decision == 'recover'
         working-directory: packages/mobile
@@ -258,7 +272,7 @@ jobs:
           JSON
           )"
           jq -e --arg description "OTA verified $update_id" '.state == "success" and .description == $description and (.description | length <= 140)' <<<"$response" >/dev/null
-      - uses: ./.github/actions/append-dispatcher-run-summary
+      - uses: ./.release-tools/.github/actions/append-dispatcher-run-summary
         if: always()
         with:
           dispatching_run_id: ${{ inputs.dispatching_run_id }}

@@ -274,8 +274,9 @@ jobs:
       needs.resolve-source.result == 'success' && needs.check-repository.result == 'success' &&
       needs.check-shared.result == 'success' && needs.check-mobile.result == 'success' &&
       needs.build-mobile.result == 'success' && needs.ios-archive.result == 'success' &&
+      needs.ios-archive.outputs.should_deploy == 'true' &&
       needs.ios-archive.outputs.commit_sha == needs.resolve-source.outputs.commit_sha &&
-      needs.ios-archive.outputs.artifact_id != '' &&
+      needs.ios-archive.outputs.artifact_id != '' && needs.ios-archive.outputs.build_number != '' &&
       (inputs.target != 'all' || (needs.web-stack.result == 'success' && needs.web-stack.outputs.publication_decision != 'superseded'))
     permissions:
       actions: read

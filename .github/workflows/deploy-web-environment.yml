@@ -158,8 +158,6 @@ jobs:
         env:
           INPUT_TAG: ${{ inputs.image_tag }}
           AUTOMATIC_COMMIT_SHA: ${{ inputs.automatic_commit_sha }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          OWNER: ${{ github.repository_owner }}
           ENVIRONMENT_NAME: ${{ inputs.environment_name }}
         run: |
           if [ -n "$INPUT_TAG" ]; then
@@ -171,19 +169,6 @@ jobs:
             echo "::error::Either image_tag or automatic_commit_sha is required."
             exit 1
           fi
-
-          OWNER_LOWER=$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')
-
-          require_tag() {
-            local package_name="$1"
-            if ! gh api "/users/${OWNER_LOWER}/packages/container/${package_name}/versions" \
-              --jq '.[].metadata.container.tags[]?' 2>/dev/null | grep -Fxq "$TAG"; then
-              echo "::error::Docker image ${package_name}:$TAG not found."
-              exit 1
-            fi
-          }
-
-          require_tag "dofek"
 
           echo "image_tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "Deploying ${ENVIRONMENT_NAME} web stack image tag: $TAG"

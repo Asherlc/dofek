@@ -63,3 +63,34 @@ describe("TestFlight archive source validation", () => {
     if (status !== 0) expect(result.stdout + result.stderr).toContain("::error::");
   });
 });
+
+describe("signed iOS archive artifact validation", () => {
+  const workflow = parse(readFileSync(".github/workflows/build-ios-release.yml", "utf8")) as {
+    jobs: { archive: { steps: Array<{ name?: string; run?: string }> } };
+  };
+  const script = workflow.jobs.archive.steps.find(
+    (step) => step.name === "Validate signed archive identity",
+  )?.run;
+
+  it.each([
+    ["matching source and complete artifact identity", "a".repeat(40), "a".repeat(40), "1784160000", "1234", 0],
+    ["missing archive source", "a".repeat(40), "", "1784160000", "1234", 1],
+    ["different archive source", "a".repeat(40), "b".repeat(40), "1784160000", "1234", 1],
+    ["missing build number", "a".repeat(40), "a".repeat(40), "", "1234", 1],
+    ["missing artifact ID", "a".repeat(40), "a".repeat(40), "1784160000", "", 1],
+  ])("handles %s before exposing archive outputs", (_name, expectedSha, actualSha, buildNumber, artifactId, status) => {
+    expect(script).toBeDefined();
+    const result = spawnSync("bash", ["-e", "-o", "pipefail", "-c", script ?? ""], {
+      encoding: "utf8",
+      timeout: 10_000,
+      env: {
+        ...process.env,
+        EXPECTED_SHA: expectedSha,
+        ARCHIVE_SHA: actualSha,
+        BUILD_NUMBER: buildNumber,
+        ARTIFACT_ID: artifactId,
+      },
+    });
+    expect(result.status, result.stdout + result.stderr).toBe(status);
+  });
+});
