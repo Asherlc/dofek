@@ -613,10 +613,13 @@ jobs:
       - uses: ./.github/actions/setup-node-pnpm
       - name: Compute changed files and split into shards
         id: shard
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            DIFF_RANGE="${{ github.event.pull_request.base.sha }}...HEAD"
-          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            DIFF_RANGE="$PR_BASE_SHA...HEAD"
+          elif [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             DIFF_RANGE="origin/main...HEAD"
           else
             DIFF_RANGE="HEAD~1...HEAD"
@@ -715,8 +718,10 @@ jobs:
           fetch-depth: 0
       - uses: ./.github/actions/setup-node-pnpm
       - name: Lint new migration SQL
+        env:
+          BASE_REF: ${{ github.base_ref }}
         run: |
-          NEW_MIGRATIONS=$(git diff --diff-filter=A --name-only origin/${{ github.base_ref }}...HEAD -- \
+          NEW_MIGRATIONS=$(git diff --diff-filter=A --name-only "origin/$BASE_REF...HEAD" -- \
             'drizzle/*.sql' ':(exclude)drizzle/_history/*.sql' \
             | grep -v '_baseline' \
             || true)
