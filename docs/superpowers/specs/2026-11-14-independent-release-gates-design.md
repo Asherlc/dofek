@@ -151,6 +151,77 @@ operation. A manual path must not bypass target checks or use current-main
 results to authorize a different image/source. Preserve separate explicit
 operator rollback behavior and its database migration restrictions.
 
+## GitHub UI traceability
+
+Traceability is part of acceptance, not optional documentation. A maintainer
+must be able to navigate from a PR through its checks and merged source to the
+release run, producing build/artifact, and deployment result using GitHub's UI,
+without copying SHAs into search or reading raw logs to discover the next run.
+"Move to the next job/workflow" means navigation; it does not introduce manual
+promotion buttons, approvals, or additional release gates.
+
+Prefer the single orchestrator for its native Actions graph. Use real `needs`
+edges and clearly named jobs so the graph shows the independent server,
+mobile OTA, and native publication paths and their actual prerequisites.
+Reusable workflows keep implementation modular; independent top-level runs
+are not required to achieve independent gates. GitHub's graph displays job
+status and dependency edges and lets users open job logs
+([Actions visualization](https://docs.github.com/en/actions/how-tos/monitor-workflows/use-the-visualization-graph)).
+Do not promise a single automatically stitched graph across separate workflow
+runs: this design's primary graph is one run, with explicit links at run
+boundaries.
+
+Use the following native surfaces together:
+
+| Surface | What the maintainer can see and open |
+| --- | --- |
+| PR Checks | Existing required checks; relevant validation run; clear not-applicable versus failed results |
+| Actions run graph | Parallel lanes, gate dependencies, build/publication jobs, live progress, and clickable job/step logs |
+| Run/job summaries | Source commit and PR when known, exact validation/build/publication run links, artifacts, per-target result and reason |
+| Run artifacts | Native archive and existing test/diagnostic artifacts; producer run and immutable artifact identity |
+| Repository Deployments | Per-target source, status, deployment/log URL, and history; separate server, OTA, and TestFlight outcomes |
+
+Write concise summaries with `GITHUB_STEP_SUMMARY`, using existing outputs and
+the existing `append-dispatcher-run-summary` action for backward run links.
+When a real handoff crosses runs, the launching side must expose the exact
+receiving run URL once known, and the receiving side must link to its producer.
+Links to a workflow's run list alone do not meet this requirement. The PR run
+and post-merge run use different revisions: link the originating PR and merged
+commit explicitly rather than implying they are the same validated artifact.
+GitHub supports Markdown job summaries on the run summary page
+([job summaries](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands#adding-a-job-summary)).
+
+Each release summary reports target, full source SHA with commit link,
+validation run, image digest or archive artifact ID/build number or OTA
+UUID/runtime, publisher run/attempt, deployment record, and verified outcome.
+Render only fields applicable to that target. An unchanged, unselected,
+superseded, blocked, or failed target has its own explicit reason. An overall
+run can fail while another target has deployed successfully; the summary must
+preserve that distinction. Write failure context where jobs execute, plus an
+always-running per-run summary; a cancellation may prevent final summaries,
+so deployment intents and native logs remain authoritative.
+
+Use GitHub deployment records for production server, production OTA, and the
+existing `testflight` target, with status `log_url` pointing to the exact
+publisher run/attempt and `environment_url` pointing to the appropriate live
+destination when one exists. Reuse each intent as its visible deployment
+record; do not create a second unrelated "display-only" receipt. Success
+means the target's verification/finalization completed; distinguish an accepted
+TestFlight upload from Apple's later processing/availability. Preserve existing
+environment names/protection settings and inspect them before implementation;
+new environment configuration requires the user's direction under the
+repository's settings policy. No repository settings change is authorized by
+this design. GitHub's deployment history supports source, status, destination,
+and workflow navigation, and its status API supplies log/destination links
+([deployment history](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/view-deployment-history),
+[deployment status fields](https://docs.github.com/en/rest/deployments/statuses#create-a-deployment-status)).
+
+This uses Actions graphs, summaries, artifacts, and deployment records; it
+does not require a custom dashboard, GitHub App, PR-comment bot, or tracing
+database. Reporting links must not control deployment eligibility. Publication
+records still fail closed according to this design's recovery rules; a
+missing optional display link must not conceal or misreport a deployment.
+
 ## Selection, revisions, and recovery
 
 - PRs: classify the full PR diff, including renames and deletions. Validate the
@@ -287,6 +358,14 @@ repository's local plan/apply and stack validation requirements.
    server build/rollout; backend integration failure must not block a validated
    independent mobile release; mobile failure must not block server deployment.
    Failures in applicable security/shared-domain checks must still block both.
+   Walk these runs in GitHub's UI: start from a real PR, open validation, follow
+   the merged source to the main graph, and open each selected target's build,
+   artifact, deployment, and publisher logs. Verify forward/back links for any
+   actual cross-run handoff. Each summary-to-run/artifact/deployment handoff
+   must be a direct link; no SHA search or log scraping is needed. Repeat for
+   a partial failure and a superseded release, confirming the UI distinguishes
+   targets that deployed from targets that did not. Record the example URLs
+   in the implementation PR as acceptance evidence.
 7. Compare the full PR-to-deployed distributions with baseline and inspect
    failure evidence. Optimize duplicate archives or Terraform only if those
    remain material bottlenecks and their own safety criteria are met.
@@ -322,3 +401,5 @@ Independent builder review identified the live-before-finalization ordering
 case; the recovery rule and acceptance scenario above resolve it. A separate
 self-review checked scope, source links, existing required status contexts,
 and the distinction between API, type, and native runtime compatibility.
+The GitHub UI amendment received a separate self-review against GitHub's
+native graph, summaries, deployment history, and deployment status APIs.
