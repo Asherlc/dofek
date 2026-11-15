@@ -13,12 +13,15 @@
         "scripts/check-ota-image-visibility.ts",
         "scripts/verify-published-ota.ts",
         "scripts/stack-service-image.ts",
-        "vitest.config.mutation.ts"
+        "scripts/prepare-mutation-shards.ts",
+        "vitest.config.mutation.ts",
+        "vitest.config.shared-mutation.ts",
+        "stryker.shared.config.cjs"
       ],
       "project": ["src/**/*.ts", "src/**/*.mjs", "*.config.{ts,js}", "scripts/clickhouse-ci-diagnostics.ts", "scripts/verify-ota-update.ts"],
       "ignoreDependencies": ["supports-color"],
       "ignoreBinaries": [
-        "cmake", "dbt", "expo", "infisical", "open", "openssl", "uv",
+        "cmake", "dbt", "expo", "expo-updates", "infisical", "open", "openssl", "sentry-expo-upload-sourcemaps", "uv",
         "GPL-2.0-or-later", "GPL-3.0-only", "GPL-3.0-or-later",
         "AGPL-1.0-only", "AGPL-3.0-only", "AGPL-3.0-or-later"
       ],

@@ -1,5 +1,5 @@
 import {
-  prepareTestFlightUpload,
+  prepareTestFlightUploadDecision,
   recordTestFlightUpload,
   requiresTestFlightUpload,
 } from "./testflight-deployment.ts";
@@ -21,7 +21,8 @@ if (
   third &&
   fourth === undefined
 ) {
-  console.log(prepareTestFlightUpload(repository, first, second, third));
+  const decision = prepareTestFlightUploadDecision(repository, first, second, third);
+  console.log(decision.kind === "upload" ? decision.deploymentId : decision.kind);
 } else if (
   command === "record" &&
   repository &&

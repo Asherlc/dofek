@@ -6,10 +6,14 @@ on:
       changed:
         required: true
         type: boolean
+      commit_sha:
+        description: Full source SHA to build.
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: read
-  id-token: write
 
 env:
   RCT_REACT_NATIVE_MAVEN_MIRROR_ENABLED: "false"
@@ -21,10 +25,14 @@ jobs:
       inputs.changed &&
       (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || '' }}
+          ref: ${{ inputs.commit_sha || github.sha }}
+          persist-credentials: false
       - uses: ./.github/actions/setup-node-pnpm
       - uses: ./.github/actions/load-infisical-secrets
         with:
@@ -51,12 +59,15 @@ jobs:
       inputs.changed &&
       (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: macos-latest
+    permissions:
+      contents: read
+      id-token: write
     env:
       DERIVED_DATA_PATH: ${{ github.workspace }}/DerivedData
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || '' }}
+          ref: ${{ inputs.commit_sha || github.sha }}
           fetch-depth: 0
       - uses: ./.github/actions/setup-node-pnpm
       - name: Test native Apple diagnostic privacy
@@ -168,12 +179,17 @@ jobs:
 
   build-watchos:
     name: watchOS Build
-    if: inputs.changed
+    if: >-
+      inputs.changed &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: macos-latest
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || '' }}
+          ref: ${{ inputs.commit_sha || github.sha }}
           persist-credentials: false
       - uses: ./.github/actions/setup-node-pnpm
       - uses: ./.github/actions/load-infisical-secrets
@@ -260,7 +276,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || '' }}
+          ref: ${{ inputs.commit_sha || github.sha }}
+          persist-credentials: false
       - name: Validate podspec deployment targets
         run: |
           APP_TARGET=$(python3 -c "import json; print(json.load(open('packages/mobile/app.json'))['expo']['ios']['deploymentTarget'])")
@@ -283,7 +300,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check results
+        env:
+          MOBILE_BUILDS_SELECTED: ${{ inputs.changed }}
         run: |
+          if [ "$MOBILE_BUILDS_SELECTED" = "true" ]; then
+            for result in \
+              "${{ needs.build-metro-bundle.result }}" \
+              "${{ needs.build-ios-native.result }}" \
+              "${{ needs.build-watchos.result }}" \
+              "${{ needs.lint-ios-podspecs.result }}"; do
+              if [ "$result" != "success" ]; then
+                echo "A selected mobile build prerequisite did not succeed"
+                exit 1
+              fi
+            done
+          fi
           for result in \
             "${{ needs.build-metro-bundle.result }}" \
             "${{ needs.build-ios-native.result }}" \

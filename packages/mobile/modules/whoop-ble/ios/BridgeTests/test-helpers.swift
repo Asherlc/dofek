@@ -249,14 +249,15 @@ extension WhoopBleModuleTests {
         module: WhoopBleModule,
         blocked: XCTestExpectation,
         release: DispatchSemaphore,
-        cutoffWritten: XCTNSPredicateExpectation
+        cutoff: (date: Date, written: XCTNSPredicateExpectation)
     ) async throws -> JavaScriptRuntime {
         blockBleQueue(module, until: release, signals: blocked)
         await fulfillment(of: [blocked], timeout: 5)
         let runtime = try context.runtime
+        let cutoffString = ISO8601DateFormatter().string(from: cutoff.date)
         try await runtime.execute {
             _ = try runtime.eval("""
-                globalThis.purgeResult = expo.modules.WhoopBle.purgeAccountState('2001-01-01T00:00:00Z').then(
+                globalThis.purgeResult = expo.modules.WhoopBle.purgeAccountState('\(cutoffString)').then(
                     () => 'unexpected success', error => error.code
                 );
                 globalThis.queuedConfigureResult = expo.modules.WhoopBle.configureUpload({
@@ -267,7 +268,7 @@ extension WhoopBleModuleTests {
                 );
                 """)
         }
-        await fulfillment(of: [cutoffWritten], timeout: 5)
+        await fulfillment(of: [cutoff.written], timeout: 5)
         return runtime
     }
 
@@ -343,8 +344,10 @@ extension WhoopBleModuleTests {
     ) async {
         SentrySDK.capture(error: NSError(domain: "UnrelatedSdkDiagnostic", code: 1))
         await fulfillment(of: [cleanupCaptured], timeout: 5)
-        let cleanup = captures.snapshot.first { $0.errorText.contains("bodies") }
-        XCTAssertEqual(captures.snapshot.filter { $0.errorText.contains("bodies") }.count, 1)
+        let cleanupEventsSnapshot = captures.snapshot
+        let cleanupEvents = cleanupEventsSnapshot.filter { $0.errorText.contains("cutoff fixture rejected write") }
+        let cleanup = cleanupEvents.first
+        XCTAssertEqual(cleanupEvents.count, 1, "Captured Sentry events: \(cleanupEventsSnapshot)")
         if let cleanup {
             XCTAssertNotEqual(cleanup.userId, "account-B")
         } else {
@@ -353,9 +356,11 @@ extension WhoopBleModuleTests {
 
         SentrySDK.capture(error: NSError(domain: "NativeAttributionControl", code: 1))
         await fulfillment(of: [controlCaptured], timeout: 5)
-        let control = captures.snapshot.first { $0.errorText.contains("NativeAttributionControl") }
-        XCTAssertEqual(captures.snapshot.filter { $0.errorText.contains("NativeAttributionControl") }.count, 1)
-        XCTAssertTrue(captures.snapshot.contains { $0.errorText.contains("UnrelatedSdkDiagnostic") })
+        let controlEventsSnapshot = captures.snapshot
+        let controlEvents = controlEventsSnapshot.filter { $0.errorText.contains("NativeAttributionControl") }
+        let control = controlEvents.first
+        XCTAssertEqual(controlEvents.count, 1, "Captured Sentry events: \(controlEventsSnapshot)")
+        XCTAssertTrue(controlEventsSnapshot.contains { $0.errorText.contains("UnrelatedSdkDiagnostic") })
         if let control {
             XCTAssertEqual(control.userId, "account-B")
         } else {
@@ -363,13 +368,10 @@ extension WhoopBleModuleTests {
         }
     }
 
-    func assertFailureFencePersistsAfterRestore(
-        directory: URL,
-        backup: URL,
+    func assertFailureFencePersistsAfterRepair(
         context: TestAppContext,
         module: WhoopBleModule
     ) async throws {
-        try restoreBodyDirectory(directory, backup: backup)
         let configure = """
             configureUpload({
                 userId: 'bridge-test-account', serverURL: 'https://example.com',

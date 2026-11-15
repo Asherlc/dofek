@@ -219,6 +219,7 @@
     "test:integration": "tsx scripts/run-tests.ts integration",
     "test:peerdb-integration": "tsx scripts/run-tests.ts peerdb-integration",
     "test:unit": "vitest run --project unit",
+    "test:unit:shared": "vitest run --project unit-shared --coverage --coverage.include='packages/*/src/**/*.ts' --coverage.exclude='**/*.test.ts' --coverage.exclude='**/test-helpers.ts' --coverage.exclude='**/fixtures/**' --coverage.exclude='**/node_modules/**' --coverage.exclude='packages/server/**' --coverage.exclude='packages/web/**' --coverage.exclude='packages/mobile/**'",
     "test:watch": "vitest --watch --project unit --project mobile",
     "test:coverage": "vitest run --project unit --project mobile --coverage",
     "test:coverage:all": "tsx scripts/run-tests.ts all --coverage",

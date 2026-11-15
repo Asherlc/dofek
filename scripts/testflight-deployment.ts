@@ -88,6 +88,10 @@ function findLastTestFlightUpload(repository: string, purpose: "build" | "publis
     .tuple([z.string().min(1), z.string().min(1)])
     .parse(repository.split("/"));
   let after: string | null = null;
+  let latestSuccessfulSha: string | null = null;
+  let unresolvedUpload:
+    | z.infer<typeof deploymentPageSchema>["data"]["repository"]["deployments"]["nodes"][number]
+    | null = null;
   for (;;) {
     const response: z.infer<typeof deploymentPageSchema> = deploymentPageSchema.parse(
       githubApi(["graphql", "--input", "-"], {
@@ -100,19 +104,26 @@ function findLastTestFlightUpload(repository: string, purpose: "build" | "publis
       if (deployment.task !== "testflight-upload") continue;
       const state = deployment.latestStatus?.state;
       if (state === "INACTIVE") continue;
-      if (state === "SUCCESS") return deployment.commitOid;
-      // Building is read-only; admission to upload remains strict below.
-      if (purpose === "build") continue;
-      throw new Error(
-        `Unresolved TestFlight upload deployment ${deployment.databaseId} (${deployment.commitOid}, ${state ?? "no status"}). Check the original upload run and App Store Connect before retrying publication.`,
-      );
+      if (state === "SUCCESS") {
+        latestSuccessfulSha ??= deployment.commitOid;
+        continue;
+      }
+      // Builds may proceed while publication remains blocked, but every page
+      // is still inspected so the read-only decision has complete history.
+      unresolvedUpload ??= deployment;
     }
-    if (!pageInfo.hasNextPage) return null;
+    if (!pageInfo.hasNextPage) break;
     if (!pageInfo.endCursor || pageInfo.endCursor === after) {
       throw new Error("TestFlight deployment history cursor did not advance");
     }
     after = pageInfo.endCursor;
   }
+  if (purpose === "publish" && unresolvedUpload) {
+    throw new Error(
+      `Unresolved TestFlight upload deployment ${unresolvedUpload.databaseId} (${unresolvedUpload.commitOid}, ${unresolvedUpload.latestStatus?.state ?? "no status"}). Check the original upload run and App Store Connect before retrying publication.`,
+    );
+  }
+  return latestSuccessfulSha;
 }
 
 const uploadDeploymentSchema = z.object({
@@ -155,14 +166,41 @@ function verifyUploadDeployment(
  * Caller contract: deploy-ios serializes publisher attempts through finalization;
  * this history read and intent creation are separate, non-atomic API operations.
  */
-export function prepareTestFlightUpload(
+export type TestFlightUploadDecision =
+  | { kind: "upload"; deploymentId: number }
+  | { kind: "unchanged" | "superseded" };
+
+function isAncestor(ancestor: string, descendant: string): boolean {
+  try {
+    execFileSync("git", ["merge-base", "--is-ancestor", ancestor, descendant], {
+      stdio: "inherit",
+    });
+    return true;
+  } catch (error) {
+    if (error && typeof error === "object" && "status" in error && error.status === 1) return false;
+    throw error;
+  }
+}
+
+/** Returns a no-op decision for an already uploaded or superseded source. */
+export function prepareTestFlightUploadDecision(
   repository: string,
   commitSha: string,
   buildNumber: string,
   runUrl: string,
-): number {
+): TestFlightUploadDecision {
   const normalizedSha = validateUploadEvidence(commitSha, buildNumber, runUrl);
-  findLastTestFlightUpload(repository, "publish");
+  const baseline = findLastTestFlightUpload(repository, "publish");
+  if (baseline === normalizedSha) return { kind: "unchanged" };
+  if (baseline !== null) {
+    execFileSync("git", ["cat-file", "-e", `${baseline}^{commit}`], { stdio: "inherit" });
+    if (isAncestor(normalizedSha, baseline)) return { kind: "superseded" };
+    if (!isAncestor(baseline, normalizedSha)) {
+      throw new Error(
+        `TestFlight candidate ${normalizedSha} is not an ancestor or descendant of the latest successful upload ${baseline}`,
+      );
+    }
+  }
   const deployment = verifyUploadDeployment(
     githubApi(["--method", "POST", `repos/${repository}/deployments`, "--input", "-"], {
       ref: normalizedSha,
@@ -194,7 +232,21 @@ export function prepareTestFlightUpload(
       },
     ),
   );
-  return deployment.id;
+  return { kind: "upload", deploymentId: deployment.id };
+}
+
+/** Existing callers still receive the original deployment ID for upload intents. */
+export function prepareTestFlightUpload(
+  repository: string,
+  commitSha: string,
+  buildNumber: string,
+  runUrl: string,
+): number {
+  const decision = prepareTestFlightUploadDecision(repository, commitSha, buildNumber, runUrl);
+  if (decision.kind !== "upload") {
+    throw new Error(`TestFlight upload ${decision.kind}: no new upload intent was created`);
+  }
+  return decision.deploymentId;
 }
 
 /** Finalizes only the original intent after its signed archive upload succeeds. */
