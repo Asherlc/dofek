@@ -155,14 +155,14 @@ function readWorkspaceProjects(workspaceDirectory: string): WorkspaceProject[] {
 }
 
 function changedFilesFromDiff(workspaceDirectory: string, diffRange: string): string[] {
-  const output = execFileSync("git", ["diff", "--name-only", diffRange], {
+  const output = execFileSync("git", ["diff", "--name-only", "--no-renames", "-z", diffRange], {
     cwd: workspaceDirectory,
     encoding: "utf8",
   });
   return output
-    .split("\n")
-    .map(normalizePath)
-    .filter((filePath) => filePath.length > 0);
+    .split("\0")
+    .filter((filePath) => filePath.length > 0)
+    .map(normalizePath);
 }
 
 function findAffectedPackages(changedFiles: string[], projects: WorkspaceProject[]): Set<string> {
@@ -215,7 +215,11 @@ function classifyChanges(
     changedFiles,
     /^(?:\.github\/workflows\/(?:ci|test|detect-changes)\.yml|\.github\/actions\/|scripts\/detect-ci-changes\.ts$)/,
   );
-  if (runAll || criticalCiChange) {
+  const rootToolingChange = hasMatchingFile(
+    changedFiles,
+    /^(?:package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|tsconfig\.json|mise\.toml|mise\.lock|\.nvmrc|biome\.json|vitest\.config(?:\.[\w-]+)?\.ts|stryker(?:\.[\w-]+)?\.config\.json)$/,
+  );
+  if (runAll || criticalCiChange || rootToolingChange) {
     return {
       analytics: true,
       docker_ml: true,
@@ -233,27 +237,35 @@ function classifyChanges(
   }
 
   const affectedPackages = findAffectedPackages(changedFiles, projects);
-  const globalPackageChange = hasMatchingFile(
+  const sharedCheckWorkflowChange = hasMatchingFile(
     changedFiles,
-    /^(?:package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|tsconfig\.json)$/,
+    /^\.github\/workflows\/check-shared\.yml$/,
   );
-  const analyticsChange =
-    globalPackageChange ||
-    hasMatchingFile(
-      changedFiles,
-      /^(?:analytics\/|src\/db\/clickhouse-sql\/|scripts\/migration-policy\.ts$|\.sqlfluff)/,
-    );
+  const serverCheckWorkflowChange = hasMatchingFile(
+    changedFiles,
+    /^\.github\/workflows\/check-server\.yml$/,
+  );
+  const mobileCheckWorkflowChange = hasMatchingFile(
+    changedFiles,
+    /^\.github\/workflows\/check-mobile\.yml$/,
+  );
+  const analyticsChange = hasMatchingFile(
+    changedFiles,
+    /^(?:analytics\/|src\/db\/clickhouse-sql\/|scripts\/migration-policy\.ts$|\.sqlfluff)/,
+  );
   const serverChange =
     affectedPackages.has("dofek") ||
     affectedPackages.has("dofek-server") ||
-    globalPackageChange ||
+    sharedCheckWorkflowChange ||
+    serverCheckWorkflowChange ||
     hasMatchingFile(
       changedFiles,
       /^(?:analytics\/|drizzle\/|Dockerfile$|entrypoint\.sh$|\.github\/workflows\/build-docker\.yml$)/,
     );
   const webChange =
     affectedPackages.has("dofek-web") ||
-    globalPackageChange ||
+    sharedCheckWorkflowChange ||
+    serverCheckWorkflowChange ||
     hasMatchingFile(
       changedFiles,
       /^(?:analytics\/|drizzle\/|\.github\/workflows\/build-web\.yml$)/,
@@ -263,11 +275,11 @@ function classifyChanges(
     changedFiles.some(
       (changedFile) => changedFile.startsWith("packages/mobile/") && !changedFile.endsWith(".md"),
     ) ||
-    globalPackageChange ||
+    sharedCheckWorkflowChange ||
+    mobileCheckWorkflowChange ||
     hasMatchingFile(changedFiles, /^\.github\/workflows\/build-mobile\.yml$/);
   const zeppChange =
     affectedPackages.has("@dofek/zepp") ||
-    globalPackageChange ||
     hasMatchingFile(
       changedFiles,
       /^(?:packages\/zepp-client\/|\.github\/actions\/build-zepp\/|\.github\/workflows\/build-zepp\.yml$)/,
@@ -282,12 +294,10 @@ function classifyChanges(
     analytics: analyticsChange,
     docker_ml:
       mlChange || hasMatchingFile(changedFiles, /^\.github\/workflows\/build-docker-ml\.yml$/),
-    docker_ota:
-      globalPackageChange ||
-      hasMatchingFile(
-        changedFiles,
-        /^(?:deploy\/ota\/|\.github\/workflows\/build-private-ota\.yml$|scripts\/check-ota-image-visibility\.ts$)/,
-      ),
+    docker_ota: hasMatchingFile(
+      changedFiles,
+      /^(?:deploy\/ota\/|\.github\/workflows\/build-private-ota\.yml$|scripts\/check-ota-image-visibility\.ts$)/,
+    ),
     docker_server: serverChange,
     e2e_web:
       serverChange ||

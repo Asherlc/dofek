@@ -2,6 +2,12 @@ name: Detect Changes
 
 on:
   workflow_call:
+    inputs:
+      commit_sha:
+        description: Exact commit to inspect; defaults to the event revision.
+        required: false
+        type: string
+        default: ""
     outputs:
       analytics:
         value: ${{ jobs.detect.outputs.analytics }}
@@ -46,9 +52,20 @@ jobs:
       web: ${{ steps.detect.outputs.web }}
       zepp: ${{ steps.detect.outputs.zepp }}
     steps:
+      - name: Validate exact commit SHA input
+        env:
+          COMMIT_SHA: ${{ inputs.commit_sha }}
+        run: |
+          set -euo pipefail
+
+          if [ -n "$COMMIT_SHA" ] && [[ ! "$COMMIT_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::commit_sha must be a full 40-character lowercase hexadecimal commit SHA."
+            exit 1
+          fi
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.event_name == 'push' && github.sha || '' }}
+          ref: ${{ inputs.commit_sha || github.sha }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -60,7 +77,7 @@ jobs:
         env:
           BASE_REF: ${{ github.base_ref }}
           BEFORE_SHA: ${{ github.event.before }}
-          CURRENT_SHA: ${{ github.sha }}
+          CURRENT_SHA: ${{ inputs.commit_sha || github.sha }}
           EVENT_NAME: ${{ github.event_name }}
         run: |
           set -euo pipefail
