@@ -838,6 +838,8 @@ describe("Activity summary deduplication", () => {
         altitude: 120,
         lat: 47.6,
         lng: -122.3,
+        skinTemperature: null,
+        skinTemperatureRecordedAt: null,
       },
     ]);
 

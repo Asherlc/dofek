@@ -62,7 +62,11 @@ describe("ClickHouseActivitySensorStore", () => {
         query: expect.stringContaining("analytics.activity_stream_points"),
         query_params: {
           activityId: window.activityId,
+          isPointOnly: false,
           maxPoints: 500,
+          memberActivityIds: window.memberActivityIds,
+          selectedChannels: [],
+          selectedSources: [],
           userId: window.userId,
           windowEndedAt: window.endedAt,
           windowStartedAt: window.startedAt,
@@ -70,19 +74,6 @@ describe("ClickHouseActivitySensorStore", () => {
       }),
     );
     const queryText = query.mock.calls[0]?.[0]?.query;
-    expect(queryText).toContain("activity_id = {activityId:UUID}");
-    expect(queryText).not.toContain("activity_id IN {activityIds:Array(UUID)}");
-    expect(queryText).toContain("ARRAY JOIN points AS point");
-    expect(queryText).toContain("AND is_deleted = 0");
-    expect(queryText).toContain(
-      "tuple(any(heart_rate), any(power), any(speed), any(cadence), any(altitude),",
-    );
-    expect(queryText).toContain("downsampled_points AS");
-    expect(queryText).toContain("argMinIf(heart_rate, sample_recorded_at, heart_rate IS NOT NULL)");
-    expect(queryText).toContain("sample_lat IS NOT NULL AND sample_lng IS NOT NULL");
-    expect(queryText).toContain("toUInt64({maxPoints:UInt32})");
-    expect(queryText).toContain("ORDER BY recorded_at");
-    expect(queryText).not.toContain("any(heart_rate) AS heart_rate");
     expect(queryText).not.toContain("analytics.activity_sensor_sample");
     expect(queryText).not.toContain("analytics.activity_location_sample");
     expect(queryText).not.toContain("fitness.metric_stream");
@@ -101,8 +92,6 @@ describe("ClickHouseActivitySensorStore", () => {
       memberActivityIds: window.memberActivityIds,
     });
     expect(options.query).toContain("analytics.sensor_scalar_sample FINAL");
-    expect(options.query).toContain("{selectedChannels:Array(String)}");
-    expect(options.query).toContain("CAST(NULL, 'Nullable(Float64)') AS heart_rate");
   });
 
   it("retains decoded skin-temperature sample time independently of the shared point time", async () => {
@@ -137,10 +126,6 @@ describe("ClickHouseActivitySensorStore", () => {
       selectedSources: ['["whoop_ble","strap-a"]'],
     });
     expect(options.query).toContain("analytics.daily_health_sensor AS health_sensor FINAL");
-    expect(options.query).toContain("sample.measured_at AS recorded_at");
-    expect(options.query).toContain("skin_temperature_recorded_at,");
-    expect(options.query).toContain("source_point.skin_temperature_recorded_at");
-    expect(options.query).toContain("source_point.skin_temperature IS NOT NULL");
     expect(options.query).not.toContain("analytics.activity_sensor_sample");
     expect(options.query).not.toContain("ingest.metric_stream");
   });

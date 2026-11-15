@@ -388,14 +388,13 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
       selected.some((metric) => metric.key === key)
         ? "CAST(NULL, 'Nullable(Float64)')"
         : `point.${index}`;
-    const selectedPoints = ACTIVITY_CHART_METRICS.map((metric) =>
-      metric.key === "skinTemperature"
-        ? `anyIf(toNullable(scalar), channel = '${metric.channel}') AS ${metric.channel}`
-        : `if(countIf(channel = '${metric.channel}') = 0, NULL, anyIf(scalar, channel = '${metric.channel}')) AS ${metric.channel}`,
-    ).join(",\n            ");
-    const selectedSamples =
-      selected.length > 0
-        ? `SELECT recorded_at, ${selectedPoints},
+    const selectedSamples = `SELECT recorded_at,
+          anyIf(toNullable(scalar), channel = 'heart_rate') AS heart_rate,
+          anyIf(toNullable(scalar), channel = 'power') AS power,
+          anyIf(toNullable(scalar), channel = 'speed') AS speed,
+          anyIf(toNullable(scalar), channel = 'cadence') AS cadence,
+          anyIf(toNullable(scalar), channel = 'altitude') AS altitude,
+          anyIf(toNullable(scalar), channel = 'skin_temperature') AS skin_temperature,
           maxIf(recorded_at, channel = 'skin_temperature') AS skin_temperature_recorded_at,
           NULL AS lat, NULL AS lng
         FROM (
@@ -411,6 +410,7 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
             SELECT id, recorded_at, channel, provider_id, device_id, scalar,
               provider_priority, measurement_kind
             FROM (${activitySkinTemperatureSamplesSql})
+            WHERE has({selectedChannels:Array(String)}, 'skin_temperature')
           ) AS candidates
           WHERE channel IN {selectedChannels:Array(String)}
             AND ${activityMetricSourceIdSql} = arrayElement(
@@ -418,8 +418,7 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
             )
           GROUP BY recorded_at, channel
         ) AS source_samples
-        GROUP BY recorded_at`
-        : "";
+        GROUP BY recorded_at`;
     const result = await this.#client.query<Record<string, unknown>>({
       query: `
         WITH expanded_points AS (
@@ -441,7 +440,7 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
             AND is_deleted = 0
             AND point.1 >= parseDateTime64BestEffort({windowStartedAt:String})
             AND point.1 <= parseDateTime64BestEffort({windowEndedAt:String})
-          ${selected.length > 0 ? `UNION ALL ${selectedSamples}` : ""}
+          UNION ALL ${selectedSamples}
         ),
         grouped_point_tuples AS (
           SELECT
@@ -580,13 +579,9 @@ export class ClickHouseActivitySensorStore implements ActivitySensorStore {
       format: "JSONEachRow",
       query_params: queryParams(window, {
         maxPoints,
-        ...(selected.length > 0
-          ? {
-              ...activityMetricParams(window),
-              selectedChannels: selected.map((metric) => metric.channel),
-              selectedSources: selected.map((metric) => metric.provider),
-            }
-          : {}),
+        ...activityMetricParams(window),
+        selectedChannels: selected.map((metric) => metric.channel),
+        selectedSources: selected.map((metric) => metric.provider),
       }),
     });
     const rows = await result.json();

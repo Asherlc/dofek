@@ -370,6 +370,36 @@ describe("activity metric source selection", () => {
     expect(outside.map((point) => point.skin_temperature)).toEqual([32.18]);
     expect(outside[0]?.skin_temperature_recorded_at).toBe("2026-03-29T15:28:13.430Z");
   });
+  it("combines selected zero and missing scalar channels with decoded temperature", async () => {
+    const mixedWindow = {
+      ...temperatureWindow,
+      activityId: randomUUID(),
+      startedAt: "2026-03-29T15:28:12.000Z",
+      endedAt: "2026-03-29T15:28:14.000Z",
+    };
+    await executeCommand(`INSERT INTO analytics.sensor_scalar_sample
+      (id, activity_id, user_id, recorded_at, recorded_date, channel, provider_id, scalar, provider_priority, _peerdb_is_deleted, _peerdb_version)
+      VALUES
+      (generateUUIDv4(), NULL, '${userId}', '2026-03-29 15:28:13.430', '2026-03-29', 'heart_rate', 'mixed-hr', 120, 1, 0, 1),
+      (generateUUIDv4(), NULL, '${userId}', '2026-03-29 15:28:13.430', '2026-03-29', 'power', 'zero-power', 0, 1, 0, 1)`);
+
+    const points = await store.getStream(mixedWindow, 500, {
+      heartRate: "mixed-hr",
+      power: "zero-power",
+      speed: "missing-speed",
+      skinTemperature: '["whoop_ble","strap-a"]',
+    });
+
+    expect(points).toHaveLength(1);
+    expect(points[0]).toMatchObject({
+      recorded_at: "2026-03-29T15:28:13.430Z",
+      heart_rate: 120,
+      power: 0,
+      speed: null,
+      skin_temperature: 32.18,
+      skin_temperature_recorded_at: "2026-03-29T15:28:13.430Z",
+    });
+  });
   it("keeps staggered sparse temperatures at their original times beside dense downsampled HR", async () => {
     const points = await store.getStream(denseTemperatureWindow, 10, {
       skinTemperature: '["whoop_ble","strap-a"]',
