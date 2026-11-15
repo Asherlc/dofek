@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { verifyOtaUpdate } from "./verify-ota-update.ts";
 
@@ -8,9 +9,33 @@ vi.mock("./verify-ota-update.ts", () => ({ verifyOtaUpdate: vi.fn() }));
 
 const originalArguments = process.argv;
 let receipt: unknown;
+let candidateAppConfig: {
+  expo: { updates: { url: string; codeSigningCertificate: string } };
+};
+let candidateCertificate: string;
+
+function selectedSourceFile(path: unknown): string | undefined {
+  const root = process.env.GITHUB_WORKSPACE ?? process.cwd();
+  if (String(path) === join(root, "packages/mobile/app.json"))
+    return JSON.stringify(candidateAppConfig);
+  const certificatePath = candidateAppConfig.expo.updates.codeSigningCertificate;
+  if (String(path) === join(root, "packages/mobile", certificatePath)) return candidateCertificate;
+  return undefined;
+}
+
 beforeEach(() => {
   vi.resetModules();
   vi.stubEnv("EXPO_APP_ID", "release-app-id");
+  vi.stubEnv("GITHUB_WORKSPACE", process.cwd());
+  candidateAppConfig = {
+    expo: {
+      updates: {
+        url: "https://ota.dofek.asherlc.com/manifest",
+        codeSigningCertificate: "./certs/certificate.pem",
+      },
+    },
+  };
+  candidateCertificate = "installed-device-certificate";
   vi.mocked(verifyOtaUpdate).mockReset().mockResolvedValue("published-id");
   receipt = [
     { id: "published-id", platform: "ios", runtimeVersion: "published-runtime", branch: "main" },
@@ -26,9 +51,7 @@ beforeEach(() => {
   vi.mocked(writeFileSync).mockReset();
   vi.mocked(readFileSync)
     .mockReset()
-    .mockImplementation((path) =>
-      path instanceof URL ? "installed-device-certificate" : JSON.stringify(receipt),
-    );
+    .mockImplementation((path) => selectedSourceFile(path) ?? JSON.stringify(receipt));
 });
 afterEach(() => {
   process.argv = originalArguments;
@@ -36,6 +59,40 @@ afterEach(() => {
 });
 
 describe("published OTA receipt audit", () => {
+  it("loads the selected source app URL and certificate for recovery verification", async () => {
+    const historicalWorkspace = "/tmp/historical-mobile-source";
+    vi.stubEnv("GITHUB_WORKSPACE", historicalWorkspace);
+    candidateAppConfig = {
+      expo: {
+        updates: {
+          url: "https://candidate.example/manifest",
+          codeSigningCertificate: "./certs/historical-certificate.pem",
+        },
+      },
+    };
+    candidateCertificate = "historical-candidate-certificate";
+    vi.mocked(existsSync).mockReturnValue(false);
+    vi.mocked(readFileSync).mockImplementation((path) => {
+      const selectedFile = selectedSourceFile(path);
+      if (selectedFile !== undefined) return selectedFile;
+      if (path === "dist/metadata.json")
+        return JSON.stringify({ fileMetadata: { ios: { bundle: "bundle.hbc", assets: [] } } });
+      if (path === "dist/bundle.hbc") return Buffer.from("candidate bundle");
+      throw new Error(`Unexpected fixture file: ${String(path)}`);
+    });
+    await import("./verify-published-ota.ts");
+    expect(verifyOtaUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: "https://candidate.example/manifest",
+        certificate: "historical-candidate-certificate",
+        expectedContent: {
+          launchAssetHash: createHash("sha256").update("candidate bundle").digest("base64url"),
+          assetHashes: [],
+        },
+      }),
+    );
+  });
+
   it("audits the published identity/runtime against the installed certificate", async () => {
     await import("./verify-published-ota.ts");
     expect(verifyOtaUpdate).toHaveBeenCalledWith(
@@ -116,7 +173,8 @@ describe("published OTA receipt audit", () => {
       const bundle = Buffer.from("exported bundle");
       const image = Buffer.from("exported image");
       vi.mocked(readFileSync).mockImplementation((path) => {
-        if (path instanceof URL) return "installed-device-certificate";
+        const selectedFile = selectedSourceFile(path);
+        if (selectedFile !== undefined) return selectedFile;
         if (path === "dist/metadata.json")
           return JSON.stringify({
             fileMetadata: { ios: { bundle: "bundle.hbc", assets: [{ path: "assets/image.png" }] } },
@@ -148,7 +206,9 @@ describe("published OTA receipt audit", () => {
 
   it("fails a missing local export before auditing or creating a receipt", async () => {
     vi.mocked(existsSync).mockReturnValue(false);
-    vi.mocked(readFileSync).mockImplementation(() => {
+    vi.mocked(readFileSync).mockImplementation((path) => {
+      const selectedFile = selectedSourceFile(path);
+      if (selectedFile !== undefined) return selectedFile;
       throw new Error("Export metadata missing");
     });
     await expect(import("./verify-published-ota.ts")).rejects.toThrow("Export metadata missing");
@@ -158,13 +218,13 @@ describe("published OTA receipt audit", () => {
 
   it("does not create a receipt when verification of an unchanged update fails", async () => {
     vi.mocked(existsSync).mockReturnValue(false);
-    vi.mocked(readFileSync).mockImplementation((path) =>
-      path instanceof URL
-        ? "installed-device-certificate"
-        : path === "dist/metadata.json"
-          ? JSON.stringify({ fileMetadata: { ios: { bundle: "bundle.hbc", assets: [] } } })
-          : Buffer.from("bundle"),
-    );
+    vi.mocked(readFileSync).mockImplementation((path) => {
+      const selectedFile = selectedSourceFile(path);
+      if (selectedFile !== undefined) return selectedFile;
+      return path === "dist/metadata.json"
+        ? JSON.stringify({ fileMetadata: { ios: { bundle: "bundle.hbc", assets: [] } } })
+        : Buffer.from("bundle");
+    });
     vi.mocked(verifyOtaUpdate).mockRejectedValue(
       new Error("OTA content does not match the local export"),
     );

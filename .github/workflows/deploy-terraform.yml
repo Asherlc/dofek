@@ -15,6 +15,15 @@ on:
       server_host:
         description: "Oracle production server host/IP for Docker SSH deploys"
         value: ${{ jobs.terraform.outputs.server_host }}
+    secrets:
+      TF_API_TOKEN:
+        required: false
+      CLOUDFLARE_API_TOKEN:
+        required: false
+      CLOUDFLARE_TERRAFORM_R2_API_TOKEN:
+        required: false
+      CLOUDFLARE_ACCOUNT_ID:
+        required: false
   workflow_dispatch:
     inputs:
       commit_sha:

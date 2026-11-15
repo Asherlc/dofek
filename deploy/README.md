@@ -273,6 +273,27 @@ If direct SSH fails with `Permission denied`, verify you are using the matching 
   and its state-change API in the [state-change reference](https://docs.peerdb.io/peerdb-api/endpoints/change-mirror-state).
   See the [CDC deploy boundary and interrupted-addition recovery procedure](../docs/clickhouse-read-model-deploy-runbook.md#known-failure-new-peerdb-table-added-before-its-migration).
 
+The [main CI workflow](../.github/workflows/ci.yml) resolves the pushed source
+revision, runs applicable validation and builds, then starts each publisher
+from its own successful prerequisites. Server production still uses one Swarm
+release for web and worker. OTA and TestFlight use their own publication locks
+and target receipts. New client API dependencies still require a verified,
+additive server release before client activation; shared and repository safety
+checks remain common prerequisites. See the
+[independent release-gates design](../docs/superpowers/specs/2026-11-14-independent-release-gates-design.md#release-units-and-gate-ownership)
+and [check ownership map](../docs/testing.md#ci-check-ownership).
+
+**Cutover evidence snapshot (2026-11-15):** PR #3348 is still a draft and is
+not merged. Its PR Actions run verifies validation and GitHub navigation only;
+it did not run a main-branch publisher or change production. Before the first
+safe server or OTA publication, the owner must initialize the existing live
+baseline receipt from verifiable current target identity while retaining the
+admission checks. Empty history or a successful workflow alone is not a live
+baseline. Do not bypass the guards to initialize it or to produce release
+examples. The outstanding credential-exposure incident remains an owner-led
+security follow-up. Task 7 accessed no production secret values and did not
+change credentials.
+
 ### Production Secrets
 
 Production secrets are stored in Infisical and rendered by CI into a temporary
@@ -311,93 +332,82 @@ and deployment workflows:
 ### Flow Diagram
 
 ```text
-CI (main) -> build dofek (+ dofek-ml for local ML tooling)
-         -> Release Production requires successful push CI at its own main workflow SHA
-            |-> build-ios-release: native-change check -> signed iOS archive artifact
-            |   (runs alongside the production job below)
-         -> production job acquires deploy-web-production
-         -> deploy-terraform (shared prerequisite)
-         -> deploy-web-stack
-              -> export and validate Infisical dotenv via OIDC
-              -> render least-privilege service dotenv files
-              -> upload immutable web assets
-              -> sweep expired backups
-              -> validate host bind sources
-              -> compare deployed/requested image migration histories; select rolling or maintenance
-              -> non-pruning stack apply with analytics-worker, all metric-stream ClickHouse sinks, and processing-reconciliation quiesced
-              -> wait for quiesced tasks to stop (also web in maintenance mode)
-              -> wait for Postgres, ClickHouse, and PeerDB
-              -> reconcile live PeerDB mappings; validate the old destination schema
-              -> migrate requested image on <stack>_default
-              -> prune deploy requested image with analytics-worker, all metric-stream ClickHouse sinks, and processing-reconciliation quiesced
-              -> wait for app convergence and Postgres; run cutover
-              -> wait for ClickHouse, PeerDB, and Temporal; configure CDC
-              -> validate the final schema; write and observe exact causal markers
-              -> final deploy restores analytics-worker, all metric-stream ClickHouse sinks, and processing-reconciliation
-              -> verify backup freshness and record Sentry release
-         -> production job releases deploy-web-production
-         -> matching OTA publication under deploy-ota
-         -> matching TestFlight upload under deploy-ios, once the signed archive also succeeds
+CI pull request -> resolve candidate merge SHA -> detect changes
+                -> repository/shared/server/mobile checks and selected builds
+                -> existing protected reports aggregate the selected results
+
+CI main push -> resolve exact pushed SHA -> detect changes
+             -> repository/shared/server/mobile checks and selected builds run in parallel
+                |-> server: repository + shared + server checks + immutable image
+                |   -> deploy-server-production lock -> Terraform -> one web/worker Swarm release
+                |      -> verify image, schema/CDC, backups and Sentry receipt
+                |-> OTA: repository + shared + mobile checks + OTA build
+                |   -> deploy-ota lock -> publish -> verify manifest/assets -> finalize same receipt
+                |-> TestFlight: repository + shared + mobile checks + native build gate
+                    -> exact signed archive -> deploy-ios lock -> upload -> finalize same receipt
+             -> always-running CI summary reports each target separately
+
+Manual Deploy -> resolve selected source/image before checks
+              -> web/web-stack: server checks -> server release
+              -> ota or ios: target checks and publication without server deployment
+              -> all: coordinated server-first sequence, then selected mobile targets
 ```
 
-Production web deployments are serialized and never cancel an in-progress
-deployment. The server jobs in Deploy and Release Production share the
-`deploy-web-production` concurrency group. The lock ends when the server job
-finishes; OTA and TestFlight publication use their existing `deploy-ota` and
-`deploy-ios` groups. A queued or slow mobile job cannot hold the production
-lock. GitHub's default single pending job means new requests replace pending
-work while the active deployment finishes. A rollout intentionally quiesces
+Production server deployments are serialized and never cancel an in-progress
+deployment. Main CI and manual Deploy route server mutations through the same
+environment workflow and target lock, held from admission through receipt
+finalization. Admission verifies live web and worker identity and writes a
+pending GitHub deployment before Terraform, asset upload, migration, or stack
+mutation. The stack workflow does not acquire a nested copy of that lock. OTA
+and TestFlight publication use their independent `deploy-ota` and `deploy-ios`
+groups. A queued or slow mobile job cannot hold the server lock. GitHub's
+default single pending job means new requests replace pending work while the
+active deployment finishes. A rollout intentionally quiesces
 `analytics-worker`,
 all three metric-stream ClickHouse sinks, and `processing-reconciliation` before
 migrations and restores all five only after the final stack converges, so a
 newer job must wait rather than interrupt that state transition. GitHub documents
 [job-level concurrency and pending-job replacement](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).
 
-Automatic releases require successful push CI on `main` whose `head_sha` equals
-the Release Production workflow's `github.sha`. GitHub runs `workflow_run` workflows
-from the default branch and resolves local reusable workflows from their caller's
-commit. This equality keeps the executing workflows, checked-out source, and
-immutable application image aligned without release tags or another dispatched
-workflow. If main advanced while CI ran, that older completion is skipped;
-deployment waits for successful CI at the current main commit. Failed and non-push
-CI completions also skip the production job before acquiring its lock. See
-[workflow_run revision semantics](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_run)
-and [local reusable workflow revisions](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows#calling-a-reusable-workflow).
-Inspect the server deployment job's actual conclusion: skipped or cancelled
-production jobs do not establish that a release deployed.
-For a reported stale page, compare the live HTML's `web/<tag>/` asset prefix with
-the CI commit's image tag, verify the running Swarm image digest matches the
-resolved `APP_IMAGE`, and inspect the production job's actual conclusion in the
-[canonical deployment workflow](../.github/workflows/deploy-web-stack.yml).
+Automatic releases are direct jobs in `ci.yml` for the exact main push SHA.
+Each selected publisher waits for its own checks and immutable artifact; it
+does not wait for `CI Gate` or for an unrelated publisher. PR required reports
+still aggregate all selected checks. Inspect `Deploy Server Production`,
+`Publish Matching OTA`, and `Publish Matching iOS` individually: skipped or
+cancelled publisher jobs do not establish that a target changed. A successful
+server job deploys one immutable image to web and worker after the target lock,
+Terraform, migrations, and existing convergence/receipt checks. GitHub displays
+the graph through the [Actions visualization](https://docs.github.com/en/actions/how-tos/monitor-workflows/use-the-visualization-graph).
+
+For a reported stale page, compare the live HTML's `web/<tag>/` asset prefix
+with the selected CI source, verify the running Swarm image digest matches the
+resolved immutable image, and inspect the exact server publisher job and
+deployment record.
 
 ### Checking the Latest Production Deployment
 
-Start with the [Release Production workflow](../.github/workflows/deploy-web.yml).
-Automatic and manual requests call the environment and stack workflows directly.
-Inspect `Deploy Web Production / Deploy Web Stack / Deploy Web Stack` in that
-same run. `Deploy Matching OTA` and `Publish Matching iOS` report mobile
-publication separately and do not retain the server's production lock. Listing
-only `deploy-web-stack.yml` runs can miss called
-jobs; see GitHub's [reusable workflow documentation](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows).
+Start with the [CI workflow](../.github/workflows/ci.yml) for automatic main
+releases or the [Deploy workflow](../.github/workflows/deploy.yml) for a manual
+request. On CI, inspect the exact target job and its summary; the summary links
+its producer, immutable artifact, publisher attempt, and existing deployment
+record. Called reusable workflows may appear under the caller run, so inspect
+the job groups in that run rather than searching only for child workflow runs;
+see GitHub's [reusable workflow documentation](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows).
 
-If the server job is pending, inspect unfinished jobs in other Release Production and
-Deploy runs before rerunning it. Historical workflow versions can retain the
-production lock through mobile publication; changing main does not alter those
-already-started workflows. Compare the lock groups in each run's source revision
-with [GitHub's concurrency rules](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).
+If a publisher is pending, inspect its exact CI or manual Deploy run and the
+target's lock group before rerunning. A slow mobile publisher does not hold the
+server lock. A server stack release intentionally retains the server lock
+through verification and receipt finalization; compare lock groups using
+[GitHub's concurrency rules](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).
 
 ```bash
-gh api repos/Asherlc/dofek/actions/workflows/deploy-web.yml \
-  --jq '{name, state, updated_at, html_url}'
-gh run list --repo Asherlc/dofek --workflow deploy-web.yml --limit 10
+gh run list --repo Asherlc/dofek --workflow ci.yml --limit 10
 gh run view RUN_ID --repo Asherlc/dofek --json jobs
 ```
 
-If passing main CI runs have no subsequent deployment, check the workflow's
-`state` before investigating a queue. `disabled_manually` means automatic
-deployment is disabled; `updated_at` alone does not identify who disabled it or
-why. GitHub documents [workflow state](https://docs.github.com/en/rest/actions/workflows#get-a-workflow)
-and [disabling workflows](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/disable-and-enable-workflows).
+If a target publisher is skipped, inspect its selected-check predicates and
+exact source/artifact summary before investigating target state. Do not infer
+deployment from a green aggregate summary or a successful unrelated publisher.
 
 Confirm the live image and each running web container's revision using read-only
 inspection. Print only the selected fields, never the complete container
@@ -417,44 +427,41 @@ ssh dofek-server 'docker ps -q --filter label=com.docker.swarm.service.name=dofe
 Container start times and service update times are supporting evidence, not proof
 of a completed deployment: tasks can restart and service specifications can
 change independently. Correlate the live revision and digest with the
-Release Production run's source commit and server stack job. Report the
+CI run's source commit, server publisher job, and deployment receipt. Report the
 server job's completion
 time separately from container start times, OTA publication, signed iOS upload,
-and the overall run conclusion. Automatic `Release Production` runs also publish matching
-mobile releases after the server succeeds; manual mobile releases use the
+and the overall run conclusion. Automatic main pushes use the independent
+publisher jobs in [CI](../.github/workflows/ci.yml); manual requests use the
 separate [Deploy workflow](../.github/workflows/deploy.yml).
-See the [production release jobs](../.github/workflows/deploy-web.yml)
+See the [production release jobs](../.github/workflows/ci.yml)
 and Docker's [service inspect](https://docs.docker.com/reference/cli/docker/service/inspect/)
 and [container inspect](https://docs.docker.com/reference/cli/docker/container/inspect/)
 references.
 
-Automatic `Release Production` runs start the signed iOS build alongside the
-server rollout. The [release builder](../.github/workflows/build-ios-release.yml)
+Automatic CI runs start the signed iOS build alongside applicable server and
+OTA work. The [release builder](../.github/workflows/build-ios-release.yml)
 compares native changes with the last successful TestFlight upload and returns
 the signed archive's artifact ID, source SHA and build number. Build detection
 uses the last successful receipt, skipping unresolved intents without taking the
 publication lock. Only the publisher enters `deploy-ios` and checks unresolved
 intents immediately before upload; a build cannot replace a pending publisher.
 GitHub documents [pending-job replacement in concurrency groups](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).
-A skipped native
-build produces no artifact and skips TestFlight publication. The
-[iOS publisher](../.github/workflows/deploy-ios.yml) waits for both the archive
-and successful server rollout, then rejects a source SHA mismatch before upload
-setup. OTA publication waits only for the server. These branches use GitHub's
+[iOS publisher](../.github/workflows/deploy-ios.yml) requires the selected
+repository/shared/mobile checks, the existing mobile build gate, and the exact
+signed archive. OTA publication requires its own repository/shared/mobile
+checks and validated OTA build. Neither publisher requires server rollout.
+These branches use GitHub's
 [job dependencies](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#jobsjob_idneeds),
 [reusable workflow outputs](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows#using-outputs-from-a-reusable-workflow)
 and [artifact IDs](https://github.com/actions/download-artifact#download-artifacts-by-id).
-Manually dispatched
-`Release Production` runs deploy only the server. Explicit mobile releases remain available
-through the [Deploy workflow](../.github/workflows/deploy.yml) with target `ota`,
-`ios`, or `all`. Both release paths complete the matching server
-rollout before publishing and pass the server image's validated
-`SENTRY_RELEASE` commit to the selected reusable mobile publishers. Manual iOS
-releases also build after the rollout so an explicit image tag supplies the
-verified source rather than assuming the dispatch commit; human dispatches
-retain forced signed builds. Each publisher checks out that exact commit.
-A failed or cancelled server rollout prevents
-publishing. GitHub documents reusable workflow
+The manual [Deploy workflow](../.github/workflows/deploy.yml) resolves an
+explicit image tag to its immutable digest and source before validation. `ota`
+and `ios` release only the selected mobile target and do not implicitly deploy
+the server. `all` is the explicit coordinated server-first operation. Manual
+mobile publishers check out the selected source; manual iOS builds remain
+forced after the unresolved-intent check. A failed selected prerequisite blocks
+that target, while an unrelated target's result is reported separately. GitHub
+documents reusable workflow
 [outputs](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows#using-outputs-from-a-reusable-workflow)
 and job [dependencies](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#jobsjob_idneeds).
 
@@ -482,21 +489,43 @@ come from the existing [Infisical OIDC action](../.github/actions/load-infisical
 GitHub automatically supplies the scoped `GITHUB_TOKEN` to reusable workflows,
 as documented in its [reusable workflow context](https://docs.github.com/en/actions/reference/workflows-and-actions/reusing-workflow-configurations#github-context).
 
-For a manual mobile release, dispatch **Deploy** (`deploy.yml`) with target `ota`
-or `ios` from the desired source ref. Without an `image_tag`, the workflow builds
-and deploys that commit's server image before publishing the selected mobile
-release. Target `all` publishes both mobile releases after the server. When
-reusing an existing `image_tag`, select a branch or release tag pointing to its
-matching source commit in the dispatch:
-the immutable image's `SENTRY_RELEASE` must equal the checked-out source commit,
-or deployment fails before migrations. The OTA, signed iOS, and stack workflows
-are reusable only. For a server-only manual rollout, dispatch **Deploy** with
-target `web` (including infrastructure) or `web-stack` (stack only).
+For a manual mobile release, dispatch **Deploy** (`deploy.yml`) from `main` with
+target `ota` or `ios`. Without an `image_tag`, the selected source is the main
+revision that started the dispatch. Supplying an `image_tag` resolves its full
+source SHA from the immutable image's OCI revision and `SENTRY_RELEASE`, then
+runs the selected checks and build against that source. Targets `ota` and `ios`
+run the selected mobile checks and publisher without server checks, server-image
+builds, or server deployment. Target `all` runs the server release first, then
+the selected mobile publishers. The OTA, signed iOS, and stack workflows are
+reusable only. For a server-only manual rollout, dispatch **Deploy** with target
+`web` (including infrastructure) or `web-stack` (stack only).
 Automatic and manual server jobs share the production concurrency group only
 until server deployment completes. Mobile publication uses the independent
 `deploy-ota` and `deploy-ios` groups, using GitHub's
 [job and workflow concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)
 and [manual workflow ref selection](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow).
+
+The CI run summary links the pull request (when present), the exact source
+commit and run attempt, lane results, iOS archive artifact, publisher attempt,
+and each existing target deployment record. The repository environment-history
+link opens the filtered history list; the separate API deployment link names
+the exact record ID and returns that record's JSON. GitHub documents the
+[deployment REST endpoint](https://docs.github.com/en/rest/deployments/deployments#get-a-deployment)
+and the [environment history view](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/view-deployment-history).
+Superseded OTA summaries keep the requested candidate source/runtime separate
+from the source/runtime/update UUID on the successful record that superseded it.
+Each publisher also writes its own attempt summary, so an admission ID and
+incomplete verification or receipt remain visible when the parent workflow
+cannot receive outputs from a failed reusable workflow. It reports server, OTA, and
+TestFlight outcomes separately, so a failed lane does not hide a different
+target that completed. The manual Deploy workflow writes the same per-target
+outcome view for the selected targets. These summaries are navigation aids;
+they do not admit a release or replace target verification. If cancellation
+prevents a summary from being written, inspect the publisher attempt and its
+existing deployment status and log URL. GitHub documents
+[workflow job summaries](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands#adding-a-job-summary),
+[deployment history](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/view-deployment-history),
+and [deployment status links](https://docs.github.com/en/rest/deployments/statuses#create-a-deployment-status).
 
 Signed iOS builds and uploads run in separate macOS jobs, each with a 30-minute
 limit. The archive job packages the signed `.xcarchive` in a tar file to preserve
@@ -567,19 +596,174 @@ a visible release blocker until this reconciliation is complete. Absence from
 App Store Connect while processing is uncertain does not establish that no upload
 occurred; retain the pending record when the evidence is inconclusive.
 
-1. **Build**: GitHub Actions builds the `server` image for every `main` push and pushes it to GHCR with the commit-derived tag (`<tag>`). Successful main-push CI requests direct deployment only when its source matches the Release Production workflow's SHA; superseded CI completions wait for the current main commit to pass. The matching image tag resolves to an immutable digest before rollout. The web build inside the image uses `VITE_ASSET_BASE_URL=https://assets.dofek.fit/web/<tag>/`, so Vite-generated JavaScript and CSS references point at immutable R2-backed CDN assets instead of the Express origin; Vite's `base` option controls the public base path for built assets: https://vite.dev/config/shared-options.html#base. `<tag>` is the image tag used consistently for both the GHCR image and the web asset prefix. See GitHub's [workflow_run revision semantics](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_run). The `ml` image is built only when ML image inputs change.
-   The production job calls the existing environment workflow directly and holds
-   `deploy-web-production` until the server rollout completes. Matching mobile
-   publication then runs under separate locks. Local reusable workflows resolve
-   from their caller's commit, so requiring the successful CI SHA to equal that
-   commit also aligns Terraform, stack configuration, and image source. See
-   [reusable workflow revision selection](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows#calling-a-reusable-workflow)
+### Publication Recovery
+
+Server receipts use environment `server-production` and task
+`server-stack-publish`; OTA receipts use `ota-production` and task `ota-publish`.
+Each publisher reads all pages and each deployment's latest status while holding
+its target lock. A pending or otherwise unresolved record blocks later
+publication. A successful workflow conclusion alone is not target evidence.
+
+If the full stack job completed and only receipt finalization failed, rerun only
+the **Finalize verified server receipt** job from that run. It reruns the live
+web and worker image/source checks, then finalizes the same deployment record;
+it does not repeat Terraform or stack mutation. If any existing stack
+verification failed, keep the intent unresolved until the target is reconciled
+and all required verification gates pass. Do not mark it inactive while either
+service may be running the candidate.
+Bootstrap with no successful server receipt is fail-closed whenever a live
+web/worker target exists. Matching task labels and image digests establish only
+the observed live identity; they do not prove that the prior release passed
+CDC, API, health, Sentry, and other deployment gates. Do not retry publication
+until an operator verifies the exact source commit and image digest from the
+live tasks, establishes from the original release run that every applicable
+server verification gate succeeded, and initializes a receipt for that exact
+identity. If either identity or verification evidence is unavailable, stop and
+keep the target blocked. For a never-deployed server with no live web/worker
+tasks and no history, the normal first publication path may create its pending
+intent.
+
+Read live metadata without printing container environment values:
+
+```bash
+ssh dofek-server 'docker service ps dofek_web dofek_worker --no-trunc'
+ssh dofek-server 'docker ps -q --filter label=com.docker.swarm.service.name=dofek_web --filter status=running | xargs -r docker inspect | jq '\''map({revision: .Config.Labels["org.opencontainers.image.revision"], image: .Config.Image, state: .State.Status})'\'''
+ssh dofek-server 'docker ps -q --filter label=com.docker.swarm.service.name=dofek_worker --filter status=running | xargs -r docker inspect | jq '\''map({revision: .Config.Labels["org.opencontainers.image.revision"], image: .Config.Image, state: .State.Status})'\'''
+```
+
+After recording the evidence above, initialize the existing stock GitHub
+deployment record (there is no separate baseline store). GitHub's
+[`production_environment` field](https://docs.github.com/en/rest/deployments/deployments#create-a-deployment)
+marks whether end users directly interact with the deployment environment;
+use `true` for `server-production` and `ota-production`. This request metadata
+does not create or modify repository environment protection settings. Set
+`REPOSITORY`,
+`SOURCE_SHA`, `IMAGE_DIGEST`, `RUN_ID`, `RUN_ATTEMPT`, and `RUN_URL` from the
+verified immutable task identity and the original fully verified release run.
+The payload ref must equal `source_sha`; record success only after all listed
+server verification gates have been confirmed:
+
+```bash
+deployment="$(gh api --method POST "repos/$REPOSITORY/deployments" --input - <<JSON
+{"ref":"$SOURCE_SHA","environment":"server-production","task":"server-stack-publish","auto_merge":false,"required_contexts":[],"production_environment":true,"payload":{"source_sha":"$SOURCE_SHA","image_digest":"$IMAGE_DIGEST","run_id":"$RUN_ID","run_attempt":"$RUN_ATTEMPT","run_url":"$RUN_URL"}}
+JSON
+ )"
+deployment_id="$(jq -er '.id' <<<"$deployment")"
+gh api --method POST "repos/$REPOSITORY/deployments/$deployment_id/statuses" --input - <<JSON
+{"state":"success","auto_inactive":false,"log_url":"$RUN_URL","description":"Verified server $SOURCE_SHA"}
+JSON
+```
+
+Do not create a success receipt from live identity, a green workflow summary
+alone, or an unverified previous run. The exact evidence and new receipt must
+be reviewed before retrying the blocked publisher.
+
+For OTA, the live manifest exposes an update UUID and runtime but the current
+production channel does not expose the source SHA. With no matching success
+receipt, publication therefore stops with `Operator initialization required`.
+An operator must identify the exact source commit from trustworthy immutable
+release provenance, verify the live signed manifest and complete asset set
+against the deployed update using `scripts/verify-published-ota.ts`, then create
+and finalize an `ota-production` deployment for task `ota-publish` whose ref and
+payload record `source_sha`, `update_id`, and `runtime_version`. Use
+`auto_inactive: false`; do not infer the source from the workflow that happened
+to publish or create repository environments/protection settings. If immutable
+provenance cannot establish the source commit, stop and keep publication
+blocked. Use two checkouts as the existing
+[`deploy-ota.yml` publisher](../.github/workflows/deploy-ota.yml) does:
+`SOURCE_ROOT` is an absolute checkout at the exact historical `SOURCE_SHA` and
+supplies the mobile app configuration, lockfile, dependencies, and Expo export;
+`CONTROL_ROOT="$SOURCE_ROOT/.release-tools"` is a second checkout at the
+approved current main workflow SHA (`github.workflow_sha` in Actions) and
+supplies the trusted manifest and publication-verification scripts. Use the
+trusted `setup-node-pnpm` action from `CONTROL_ROOT` at the `SOURCE_ROOT` working
+directory, so dependencies come from the candidate's lockfile; use the trusted
+`load-infisical-secrets` action from `CONTROL_ROOT` for the mobile credentials.
+Do not execute the new helper from an older source checkout or install the
+control checkout's dependencies over the candidate's. With `EXPO_APP_ID`
+available in the workflow environment and `RUNTIME_VERSION` taken from that
+release, run the manifest check from the candidate package directory as the
+publisher does:
+
+```bash
+CONTROL_ROOT="$SOURCE_ROOT/.release-tools"
+manifest_output="$(mktemp)"
+cd "$SOURCE_ROOT/packages/mobile"
+GITHUB_OUTPUT="$manifest_output" pnpm tsx "$CONTROL_ROOT/scripts/check-ota-manifest.ts" \
+  --app-id "$EXPO_APP_ID" --runtime-version "$RUNTIME_VERSION"
+update_id="$(sed -n 's/^manifest_id=//p' "$manifest_output")"
+manifest_runtime="$(sed -n 's/^manifest_runtime=//p' "$manifest_output")"
+test -n "$update_id" && test "$update_id" != none
+test "$manifest_runtime" = "$RUNTIME_VERSION"
+EXPO_NO_DOTENV=1 SENTRY_RELEASE="$SOURCE_SHA" EXPO_PUBLIC_SENTRY_RELEASE="$SOURCE_SHA" \
+  pnpm expo export --dump-sourcemap \
+    --output-dir "$RUNNER_TEMP/dofek-ota-initialization" --platform ios
+cd "$SOURCE_ROOT"
+pnpm tsx "$CONTROL_ROOT/scripts/verify-published-ota.ts" \
+  "$RUNNER_TEMP/dofek-ota-initialization/xprem-update-metadata.json" \
+  production "$RUNTIME_VERSION"
+test "$(jq -er '.[0].id' "$RUNNER_TEMP/dofek-ota-initialization/xprem-update-metadata.json")" = "$update_id"
+```
+
+The installed EOAS publisher passes `--dump-sourcemap`; Expo documents export
+and source-map options in its [CLI reference](https://docs.expo.dev/more/expo-cli/)
+and [workflow syntax](https://docs.expo.dev/eas/workflows/syntax/).
+
+After independently checking the source SHA against immutable release
+provenance, create the deployment and append its success status. The finalizer
+status description must preserve the UUID/runtime/source format that workflows
+read as the authoritative receipt:
+
+```bash
+deployment="$(gh api --method POST "repos/$GITHUB_REPOSITORY/deployments" --input - <<JSON
+{"ref":"$SOURCE_SHA","environment":"ota-production","task":"ota-publish","auto_merge":false,"required_contexts":[],"production_environment":true,"payload":{"source_sha":"$SOURCE_SHA","update_id":"$update_id","runtime_version":"$RUNTIME_VERSION"}}
+JSON
+)"
+deployment_id="$(jq -er '.id' <<<"$deployment")"
+gh api --method POST "repos/$GITHUB_REPOSITORY/deployments/$deployment_id/statuses" --input - <<JSON
+{"state":"success","auto_inactive":false,"log_url":"$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID","description":"OTA verified $update_id"}
+JSON
+```
+
+Once initialized, rerun the candidate workflow; it compares source ancestry and
+exact live UUID/runtime before deciding whether to publish.
+
+If target evidence proves an intent never became live, first stop or wait for
+the original publisher and verify the current target identity independently.
+Then append an `inactive` status to that exact deployment with an explanation
+and the original run URL, using `auto_inactive: false`. If the candidate is live,
+recover by rerunning the original workflow so its existing verifier finalizes
+the same receipt. If a release must be rolled back, create a new descendant
+commit that reverts the undesired changes, then publish that commit through the
+normal migration and target identity guards. The older source itself is
+superseded by design; never rewrite history or clear a pending intent to make
+an older workflow eligible. GitHub documents deployment
+[creation](https://docs.github.com/en/rest/deployments/deployments#create-a-deployment)
+and [status reporting](https://docs.github.com/en/rest/deployments/statuses#create-a-deployment-status).
+
+1. **Build and release selection**: `ci.yml` resolves the exact pushed SHA and
+   uses change selection to start applicable checks and builds concurrently.
+   The server publisher requires repository, shared, and server checks plus the
+   immutable app image; it does not wait for `CI Gate`, mobile checks, or mobile
+   publishers. The server image uses a commit-derived tag (`<tag>`), while all
+   deploy steps consume its immutable digest and verify the embedded full source
+   SHA. The web build uses
+   `VITE_ASSET_BASE_URL=https://assets.dofek.fit/web/<tag>/`, so Vite-generated
+   JavaScript and CSS references point at immutable R2-backed CDN assets
+   instead of the Express origin; Vite's `base` option controls the public base
+   path for built assets: https://vite.dev/config/shared-options.html#base. The
+   `ml` image is built only when ML image inputs change. The main CI run itself
+   owns release jobs, so no `workflow_run` SHA comparison or second automatic
+   publisher is involved. Local reusable workflows use the caller's revision;
+   see [reusable workflow revision selection](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows#calling-a-reusable-workflow)
    and [GitHub job concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).
-   Manual image-tag deploys must dispatch the workflow with `--ref` set to a
-   branch or release tag pointing to the source commit for that image. After
-   pulling the app image, the workflow
-   compares its full `SENTRY_RELEASE` with the checked-out Git commit and fails
-   before asset upload, migrations, or stack deployment when they differ.
+   Manual Deploy runs must be dispatched from `main`. To select the historical
+   source associated with an immutable image, provide its `image_tag`; source
+   resolution uses the OCI revision and full `SENTRY_RELEASE` recorded in that
+   image. The workflow rejects a mismatch before any server mutation. Targets
+   `ios` and `ota` do not run server checks, build a server image, or deploy the
+   server; only target `all` sequences the server release before both mobile
+   publishers.
 2. **Terraform apply** (if infra changed): updates Cloudflare-managed production DNS and storage. `ORACLE_SERVER_HOST` is required for production DNS and deploy targeting.
 3. **Deploy Web Stack** (`deploy-web-stack.yml`):
    1. Install the Infisical CLI, login with OIDC machine identity (`identity-id=46b66f72-0c77-4cfe-be1b-a43395e77be7`), and render `${{ github.workspace }}/.env.<env>` from `.github/templates/infisical-dotenv.tmpl`.

@@ -1,0 +1,835 @@
+name: Check Server
+
+on:
+  workflow_call:
+    inputs:
+      commit_sha:
+        description: Full commit SHA to check; the caller validates it before dispatch.
+        required: true
+        type: string
+      run_e2e_web:
+        description: Run web E2E tests.
+        required: false
+        type: boolean
+        default: true
+      run_image_scan:
+        description: Build and scan the server image.
+        required: false
+        type: boolean
+        default: true
+      mutation_base_sha:
+        description: Parent source SHA used to select changed mutation lines for a historical release.
+        required: false
+        type: string
+        default: ""
+      control_commit_sha:
+        description: Trusted workflow-control revision for selected historical source checks.
+        required: false
+        type: string
+        default: ""
+
+jobs:
+  typecheck:
+    name: Typecheck (server packages)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit_sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup-node-pnpm
+      - name: Typecheck
+        run: pnpm --recursive --include-workspace-root --filter dofek --filter dofek-server --filter dofek-web --if-present run typecheck
+
+  image-scan:
+    name: Image Vulnerability Scan
+    if: inputs.run_image_scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit_sha }}
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@594f3bf4285d9ea8dc53c9a0c9c4092420091003 # v4.4.0
+        with:
+          driver-opts: |
+            image=mirror.gcr.io/moby/buildkit:buildx-stable-1
+          buildkitd-config-inline: |
+            [registry."docker.io"]
+              mirrors = ["mirror.gcr.io"]
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Compute image name
+        id: image-name
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          echo "name=ghcr.io/$(printf '%s' "$REPOSITORY" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+      - name: Build server image with cache
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          target: server
+          load: true
+          tags: e2e-server:latest
+          build-args: DEPENDENCY_CACHE_BUST=${{ hashFiles('package.json', 'pnpm-lock.yaml', 'Dockerfile') }}
+          cache-from: type=registry,ref=${{ steps.image-name.outputs.name }}:e2e-buildcache
+      - name: Scan server image (Grype)
+        env:
+          GRYPE_IMAGE: mirror.gcr.io/anchore/grype:v0.111.1@sha256:3c1cd2ff38196e753751fb1619b3b6787a6e3e79149f2a2aec57946d2c154cd2
+        run: |
+          for attempt in $(seq 1 5); do
+            if docker pull "$GRYPE_IMAGE"; then
+              break
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "::error::Failed to pull $GRYPE_IMAGE after 5 attempts"
+              exit 1
+            fi
+            echo "Grype image pull failed; retrying in 5s..."
+            sleep 5
+          done
+
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            "$GRYPE_IMAGE" \
+            e2e-server:latest \
+            --only-fixed \
+            --fail-on critical \
+            -o table
+
+  # ── Static analysis ────────────────────────────────────────────────────
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    services:
+      clickhouse:
+        image: clickhouse/clickhouse-server:26.6.1.1193-alpine@sha256:1904267fde1d8b794c9e5fda1b5a4bffd9b2e5b3d1057d5911161257125956f3
+        env:
+          CLICKHOUSE_DB: fitness
+          CLICKHOUSE_USER: default
+          CLICKHOUSE_PASSWORD: ${{ github.run_id }}
+        ports:
+          - 8123:8123
+        options: >-
+          --health-cmd "clickhouse-client --password ${{ github.run_id }} --query 'SELECT 1'"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit_sha }}
+          persist-credentials: false
+      - name: Setup Node and pnpm
+        uses: ./.github/actions/setup-node-pnpm
+      - name: Setup uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - name: Check ClickHouse migration column order regression
+        run: pnpm exec vitest run --project unit src/db/clickhouse-migrations/0067_repair_local_time_column_order.test.ts --retry=0
+      - name: Check deduped activity read model regression
+        run: pnpm exec vitest run --project integration src/db/deduped-activities-read-model.integration.test.ts --retry=0
+        env:
+          CLICKHOUSE_URL: http://default:${{ github.run_id }}@127.0.0.1:8123
+      - name: Check payload dbt microbatch tombstone regression
+        run: pnpm exec vitest run --project integration src/db/activity-payload-dbt-microbatch.integration.test.ts -t "does not append payload-free tombstones across an unchanged production dependency slice" --retry=0
+        env:
+          CLICKHOUSE_URL: http://default:${{ github.run_id }}@127.0.0.1:8123
+      - name: Run server SQL and regression lint
+        env:
+          CLICKHOUSE_URL: http://default:${{ github.run_id }}@localhost:8123
+        run: |
+          pnpm lint:analytics-policy
+          pnpm provider-derived-metric-policy
+          pnpm lint:web-stories
+          pnpm lint:analytics-sql
+
+  stylelint:
+    name: Stylelint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit_sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup-node-pnpm
+      - name: Run stylelint
+        run: pnpm lint:css
+
+  openapi-lint:
+    name: OpenAPI Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit_sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup-node-pnpm
+      - name: Validate OpenAPI document
+        run: pnpm lint:openapi
+
+  sqlfluff:
+    name: SQLFluff
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    env:
+      BASE_REF: ${{ github.base_ref }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit_sha }}
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - name: Lint new migration SQL
+        run: |
+          # Migration 0099 was applied in production before this repository restored its lineage.
+          # Its recorded bytes are immutable and cannot be reformatted for SQLFluff.
+          NEW_MIGRATIONS=$(git diff --diff-filter=A --name-only "origin/${BASE_REF}...HEAD" -- \
+            'drizzle/*.sql' ':(exclude)drizzle/_history/*.sql' \
+            | grep -v '_baseline' \
+            | grep -v '^drizzle/0099_canonical_clinical_records.sql$' \
+            || true)
+          if [ -z "$NEW_MIGRATIONS" ]; then
+            echo "No new migrations to lint"
+            exit 0
+          fi
+          echo "Linting migrations:"
+          echo "$NEW_MIGRATIONS"
+          echo "$NEW_MIGRATIONS" | xargs uv tool run sqlfluff lint
+
+  # ── Tests ──────────────────────────────────────────────────────────────
+
+  test-unit:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit_sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup-node-pnpm
+      - run: pnpm exec vitest run --project unit --coverage
+        env:
+          CLICKHOUSE_URL: http://default:health@localhost:8123
+          VITEST_COVERAGE_SKIP_THRESHOLDS: "true"
+          NODE_OPTIONS: --max-old-space-size=8192
+      - name: Upload unit coverage to Codecov
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        with:
+          files: coverage/lcov.info
+          flags: unit
+          fail_ci_if_error: true
+          use_oidc: true
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-unit
+          path: coverage/
+
+  test-fit-decoder:
+    name: Native FIT Decoder
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit_sha }}
+          persist-credentials: false
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ${{ runner.temp }}/vcpkg/downloads
+            ~/.cache/vcpkg/archives
+          key: vcpkg-fit-${{ hashFiles('native/fit-decoder/vcpkg.json', 'native/fit-decoder/vcpkg-configuration.json', 'native/fit-decoder/vcpkg-ports/**') }}
+      - name: Bootstrap vcpkg
+        env:
+          VCPKG_DOWNLOADS: ${{ runner.temp }}/vcpkg/downloads
+          VCPKG_ROOT: ${{ runner.temp }}/vcpkg/repo
+        run: |
+          mkdir -p "$VCPKG_DOWNLOADS"
+          git clone https://github.com/microsoft/vcpkg.git "$VCPKG_ROOT"
+          git -C "$VCPKG_ROOT" checkout 9e593bb18ea69cc5095e012465dcd675a822ed0d
+          "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
+      - name: Build and test FIT decoder
+        working-directory: native/fit-decoder
+        env:
+          VCPKG_DOWNLOADS: ${{ runner.temp }}/vcpkg/downloads
+          VCPKG_ROOT: ${{ runner.temp }}/vcpkg/repo
+        run: |
+          cmake --preset release
+          cmake --build --preset release
+          ctest --preset release
+      - name: Upload FIT decoder binary
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fit-decoder-linux
+          path: .build/fit-decoder/bin/dofek-fit-decoder
+
+  test-integration:
+    name: Integration Tests (${{ matrix.shard }}/5)
+    needs: test-fit-decoder
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5]
+    services:
+      postgres:
+        image: timescale/timescaledb-ha:pg18.3-ts2.26.4-all
+        env:
+          POSTGRES_DB: test
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test -d test"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
+      redis:
+        image: mirror.gcr.io/redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
+      redpanda:
+        image: mirror.gcr.io/redpandadata/redpanda:v26.1.12
+        ports:
+          - 9092:9092
+        options: >-
+          --health-cmd "rpk cluster health | grep -q 'Healthy:.*true'"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+      clickhouse:
+        image: clickhouse/clickhouse-server:26.6.1.1193-alpine@sha256:1904267fde1d8b794c9e5fda1b5a4bffd9b2e5b3d1057d5911161257125956f3
+        env:
+          CLICKHOUSE_DB: fitness
+          CLICKHOUSE_USER: default
+          CLICKHOUSE_PASSWORD: ${{ github.run_id }}
+        ports:
+          - 8123:8123
+          - 9000:9000
+        options: >-
+          --add-host=host.docker.internal:host-gateway
+          --health-cmd "clickhouse-client --password ${{ github.run_id }} --query 'SELECT 1'"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    env:
+      TEST_DATABASE_URL: postgres://test:test@localhost:5432/test
+      CLICKHOUSE_URL: http://default:${{ github.run_id }}@localhost:8123
+      REDPANDA_BROKERS: localhost:9092
+      REDIS_URL: redis://localhost:6379
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit_sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup-node-pnpm
+      - name: Setup uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - name: Download FIT decoder binary
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: fit-decoder-linux
+          path: .build/fit-decoder/bin
+      - name: Make FIT decoder executable
+        run: chmod +x .build/fit-decoder/bin/dofek-fit-decoder
+      - id: integration-tests
+        run: pnpm exec vitest run --project integration --coverage --shard=${{ matrix.shard }}/5
+        timeout-minutes: 12
+        env:
+          VITEST_COVERAGE_SKIP_THRESHOLDS: "true"
+      - name: Capture ClickHouse failure diagnostics
+        if: ${{ failure() && steps.integration-tests.outcome == 'failure' }}
+        run: pnpm tsx scripts/collect-clickhouse-ci-diagnostics.ts '${{ job.services.clickhouse.id }}' '${{ runner.temp }}/clickhouse-diagnostics-${{ matrix.shard }}'
+      - name: Upload ClickHouse failure diagnostics
+        if: ${{ always() && steps.integration-tests.outcome == 'failure' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: clickhouse-diagnostics-${{ matrix.shard }}
+          path: ${{ runner.temp }}/clickhouse-diagnostics-${{ matrix.shard }}/
+          if-no-files-found: error
+      - name: Upload integration coverage to Codecov
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        with:
+          files: coverage/lcov.info
+          flags: integration
+          fail_ci_if_error: true
+          use_oidc: true
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-integration-${{ matrix.shard }}
+          path: coverage/
+      - name: Export fresh integration timings
+        run: pnpm tsx scripts/update-integration-test-timings.ts export reports/integration-sharding/${{ matrix.shard }}-of-5
+      - name: Upload integration timings
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: integration-timings-${{ matrix.shard }}
+          path: reports/integration-sharding/${{ matrix.shard }}-of-5/
+          if-no-files-found: error
+
+  test-peerdb-integration:
+    name: PeerDB CDC Integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit_sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup-node-pnpm
+      - name: Run PeerDB CDC integration tests
+        run: pnpm test:peerdb-integration
+
+  coverage:
+    name: Coverage
+    needs: [test-unit, test-integration]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit_sha }}
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-node-pnpm
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: coverage-unit
+          path: coverage-unit
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: coverage-integration-*
+          path: coverage-integration
+          merge-multiple: false
+      - name: Merge and check coverage
+        run: |
+          mkdir -p .nyc_output
+          cp coverage-unit/coverage-final.json .nyc_output/unit.json
+          index=0
+          for file in coverage-integration/coverage-integration-*/coverage-final.json; do
+            cp "$file" ".nyc_output/integration-${index}.json"
+            index=$((index + 1))
+          done
+          if [ "$index" -eq 0 ]; then
+            echo "No integration coverage artifacts found"
+            exit 1
+          fi
+          pnpm exec nyc merge .nyc_output merged-coverage.json
+          mkdir -p final-coverage
+          cp merged-coverage.json final-coverage/coverage-final.json
+          pnpm exec nyc report --temp-dir final-coverage --reporter=text-summary
+          pnpm exec nyc check-coverage --temp-dir final-coverage \
+            --lines 93.5 --branches 89 --functions 94.5 --statements 93.5
+      - name: Diff coverage (changed lines only)
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          pip install diff-cover
+          pnpm exec nyc report --temp-dir final-coverage --reporter=lcov --report-dir diff-coverage-lcov
+          diff-cover diff-coverage-lcov/lcov.info \
+            --compare-branch=origin/$BASE_REF \
+            --fail-under=80 \
+            --markdown-report diff-coverage.md || DIFF_FAILED=1
+          if [ -f diff-coverage.md ]; then
+            cat diff-coverage.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit ${DIFF_FAILED:-0}
+      - name: Download integration timings
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: integration-timings-*
+          path: integration-timings
+          merge-multiple: false
+      - name: Validate complete integration timings
+        run: >-
+          pnpm tsx scripts/update-integration-test-timings.ts merge integration-test-timings.json
+          integration-timings/integration-timings-1 integration-timings/integration-timings-2
+          integration-timings/integration-timings-3 integration-timings/integration-timings-4
+          integration-timings/integration-timings-5
+      - name: Upload complete integration timing refresh
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: integration-timings-complete
+          path: integration-test-timings.json
+          if-no-files-found: error
+
+  test-bookie-evacuation:
+    name: Native BookKeeper Evacuation
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit_sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup-node-pnpm
+      - name: Select installed JDK compiler
+        run: |
+          test -n "$JAVA_HOME_25_X64"
+          test -x "$JAVA_HOME_25_X64/bin/javac"
+          echo "$JAVA_HOME_25_X64/bin" >> "$GITHUB_PATH"
+          "$JAVA_HOME_25_X64/bin/javac" -version
+      - name: Qualify native replacement without retries
+        run: pnpm exec vitest run --project=pulsar-integration src/metric-stream/bookie-evacuation.pulsar.integration.test.ts --retry=0
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: native-bookie-evacuation-evidence
+          path: |
+            reports/bookie-evacuation/**/fixture/
+            reports/bookie-evacuation/**/*.stdout
+            reports/bookie-evacuation/**/*.stderr
+            reports/bookie-evacuation/**/*.json
+            reports/bookie-evacuation/**/*.txt
+          if-no-files-found: warn
+          retention-days: 7
+
+  # ── E2E ────────────────────────────────────────────────────────────────
+
+  test-e2e-web:
+    name: E2E Tests (Web)
+    if: inputs.run_e2e_web
+    runs-on: ubuntu-latest
+    env:
+      COMPOSE_PROJECT_NAME: dofek-ci-e2e
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit_sha }}
+          persist-credentials: false
+      - name: Free up runner disk space
+        # The e2e stack pulls/builds several GB of images (timescaledb-ha,
+        # clickhouse, the server build). The default runner has too little free
+        # space, causing "no space left on device" while extracting layers.
+        # Remove preinstalled toolchains we don't use to reclaim ~30 GB.
+        run: |
+          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/local/.ghcup \
+            /usr/share/dotnet /usr/share/swift /opt/hostedtoolcache/CodeQL
+          df -h /
+      - uses: ./.github/actions/setup-node-pnpm
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/Cypress
+          key: cypress-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: cypress-${{ runner.os }}-
+      - run: pnpm exec cypress install
+      - uses: docker/setup-buildx-action@594f3bf4285d9ea8dc53c9a0c9c4092420091003 # v4.4.0
+        with:
+          driver-opts: |
+            image=mirror.gcr.io/moby/buildkit:buildx-stable-1
+          buildkitd-config-inline: |
+            [registry."docker.io"]
+              mirrors = ["mirror.gcr.io"]
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Compute image name
+        id: image-name
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          echo "name=ghcr.io/$(printf '%s' "$REPOSITORY" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+      - name: Build E2E images with cache
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          target: server
+          load: true
+          tags: e2e-server:latest
+          build-args: DEPENDENCY_CACHE_BUST=${{ hashFiles('package.json', 'pnpm-lock.yaml', 'Dockerfile') }}
+          cache-from: type=registry,ref=${{ steps.image-name.outputs.name }}:e2e-buildcache
+      - name: Start e2e dependencies
+        run: docker compose -f docker-compose.e2e.yml up -d --wait --no-build db clickhouse redis account-erasure-minio redpanda
+      - name: Run e2e migrations
+        run: |
+          docker compose -f docker-compose.e2e.yml up -d --no-build migrate
+          exit_code=$(docker wait "$(docker compose -f docker-compose.e2e.yml ps -q migrate)")
+          if [ "$exit_code" != "0" ]; then
+            exit "$exit_code"
+          fi
+      - name: Build e2e analytics models
+        run: |
+          docker compose -f docker-compose.e2e.yml up -d --no-build analytics
+          exit_code=$(docker wait "$(docker compose -f docker-compose.e2e.yml ps -q analytics)")
+          if [ "$exit_code" != "0" ]; then
+            exit "$exit_code"
+          fi
+      - name: Start e2e server
+        run: docker compose -f docker-compose.e2e.yml up -d --wait --no-build --no-deps server
+      - run: pnpm e2e:web:run
+      - name: Dump e2e service logs
+        if: failure()
+        run: docker compose -f docker-compose.e2e.yml logs --no-color db clickhouse redis redpanda migrate seed review-seed-clickhouse analytics server
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: cypress-screenshots
+          path: cypress/screenshots/
+          retention-days: 7
+      - name: Teardown
+        if: always()
+        run: docker compose -f docker-compose.e2e.yml down -v
+
+  # ── Mutation testing ───────────────────────────────────────────────────
+
+  mutation-prep:
+    name: Mutation Prep
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      shards: ${{ steps.shard.outputs.shards }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit_sha }}
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-node-pnpm
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: inputs.control_commit_sha != ''
+        with:
+          ref: ${{ inputs.control_commit_sha }}
+          path: .release-tools
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: scripts/prepare-mutation-shards.ts
+      - name: Compute changed files and split into shards
+        id: shard
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          MUTATION_BASE_SHA: ${{ inputs.mutation_base_sha }}
+          CONTROL_COMMIT_SHA: ${{ inputs.control_commit_sha }}
+        run: |
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            DIFF_RANGE="$PR_BASE_SHA...HEAD"
+          elif [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            if [ -n "$MUTATION_BASE_SHA" ]; then
+              DIFF_RANGE="$MUTATION_BASE_SHA...HEAD"
+            else
+              DIFF_RANGE="HEAD^1...HEAD"
+            fi
+          else
+            DIFF_RANGE="HEAD~1...HEAD"
+          fi
+          if [ -n "$CONTROL_COMMIT_SHA" ]; then
+            SHARDS=$(pnpm exec tsx .release-tools/scripts/prepare-mutation-shards.ts --workspace . --scope server --diff-range "$DIFF_RANGE")
+          else
+            SHARDS=$(pnpm tsx scripts/prepare-mutation-shards.ts --scope server --diff-range "$DIFF_RANGE")
+          fi
+          echo "shards=$SHARDS" >> "$GITHUB_OUTPUT"
+
+  mutation:
+    name: Stryker (${{ strategy.job-index }})
+    needs: [mutation-prep, test-fit-decoder]
+    if: needs.mutation-prep.outputs.shards != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: timescale/timescaledb-ha:pg18.3-ts2.26.4-all
+        env:
+          POSTGRES_DB: test
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test -d test"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
+      redis:
+        image: mirror.gcr.io/redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
+      clickhouse:
+        image: clickhouse/clickhouse-server:26.6.1.1193-alpine@sha256:1904267fde1d8b794c9e5fda1b5a4bffd9b2e5b3d1057d5911161257125956f3
+        env:
+          CLICKHOUSE_DB: fitness
+          CLICKHOUSE_USER: default
+          CLICKHOUSE_PASSWORD: ${{ github.run_id }}
+        ports:
+          - 8123:8123
+          - 9000:9000
+        options: >-
+          --add-host=host.docker.internal:host-gateway
+          --health-cmd "clickhouse-client --password ${{ github.run_id }} --query 'SELECT 1'"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    env:
+      TEST_DATABASE_URL: postgres://test:test@localhost:5432/test
+      CLICKHOUSE_URL: http://default:${{ github.run_id }}@localhost:8123
+      REDIS_URL: redis://localhost:6379
+    strategy:
+      fail-fast: false
+      matrix:
+        files: ${{ fromJSON(needs.mutation-prep.outputs.shards) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit_sha }}
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-node-pnpm
+      - name: Download FIT decoder binary
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: fit-decoder-linux
+          path: .build/fit-decoder/bin
+      - name: Make FIT decoder executable
+        run: chmod +x .build/fit-decoder/bin/dofek-fit-decoder
+      - name: Run Stryker
+        env:
+          MUTATE_FILES: ${{ matrix.files }}
+        run: pnpm exec stryker run stryker.ci.config.json --mutate "$MUTATE_FILES"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: mutation-report-${{ strategy.job-index }}
+          path: reports/mutation/
+          retention-days: 7
+
+  migration-lint:
+    name: Migration Lint
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit_sha }}
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-node-pnpm
+      - name: Lint new migration SQL
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          NEW_MIGRATIONS=$(git diff --diff-filter=A --name-only "origin/$BASE_REF...HEAD" -- \
+            'drizzle/*.sql' ':(exclude)drizzle/_history/*.sql' \
+            | grep -v '_baseline' \
+            || true)
+          if [ -z "$NEW_MIGRATIONS" ]; then
+            echo "No new migrations to lint"
+            exit 0
+          fi
+          pnpm tsx scripts/migration-policy.ts $NEW_MIGRATIONS
+          pip install squawk-cli
+          echo "Linting migrations:"
+          echo "$NEW_MIGRATIONS"
+          echo "$NEW_MIGRATIONS" | xargs squawk
+
+  # ── Aggregate ──────────────────────────────────────────────────────────
+
+  server-checks:
+    name: Server Checks
+    needs:
+      - typecheck
+      - image-scan
+      - lint
+      - stylelint
+      - openapi-lint
+      - sqlfluff
+      - test-unit
+      - test-fit-decoder
+      - test-integration
+      - test-peerdb-integration
+      - coverage
+      - test-bookie-evacuation
+      - test-e2e-web
+      - mutation-prep
+      - mutation
+      - migration-lint
+    if: always()
+    runs-on: ubuntu-latest
+    env:
+      EVENT_NAME: ${{ github.event_name }}
+      RUN_IMAGE_SCAN: ${{ inputs.run_image_scan }}
+      RUN_E2E_WEB: ${{ inputs.run_e2e_web }}
+      MUTATION_SHARDS: ${{ needs.mutation-prep.outputs.shards }}
+    steps:
+      - name: Check results
+        run: |
+          fail=0
+          require_success() {
+            name="$1"
+            result="$2"
+            if [ "$result" != "success" ]; then
+              echo "::error::$name did not succeed ($result)"
+              fail=1
+            fi
+          }
+
+          require_success lint "${{ needs.lint.result }}"
+          require_success typecheck "${{ needs.typecheck.result }}"
+          require_success stylelint "${{ needs.stylelint.result }}"
+          require_success openapi-lint "${{ needs.openapi-lint.result }}"
+          require_success test-unit "${{ needs.test-unit.result }}"
+          require_success test-fit-decoder "${{ needs.test-fit-decoder.result }}"
+          require_success test-integration "${{ needs.test-integration.result }}"
+          require_success test-peerdb-integration "${{ needs.test-peerdb-integration.result }}"
+          require_success coverage "${{ needs.coverage.result }}"
+          require_success test-bookie-evacuation "${{ needs.test-bookie-evacuation.result }}"
+          require_success mutation-prep "${{ needs.mutation-prep.result }}"
+
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            require_success sqlfluff "${{ needs.sqlfluff.result }}"
+            require_success migration-lint "${{ needs.migration-lint.result }}"
+          fi
+          if [ "$RUN_IMAGE_SCAN" = "true" ]; then
+            require_success image-scan "${{ needs.image-scan.result }}"
+          fi
+          if [ "$RUN_E2E_WEB" = "true" ]; then
+            require_success test-e2e-web "${{ needs.test-e2e-web.result }}"
+          fi
+          if [ "$MUTATION_SHARDS" != "[]" ]; then
+            require_success mutation "${{ needs.mutation.result }}"
+          fi
+
+          exit "$fail"

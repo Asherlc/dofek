@@ -12,12 +12,19 @@ const outputNames = [
   "e2e_web",
   "ml",
   "mobile",
+  "server",
+  "shared",
   "storybook_mobile",
   "storybook_web",
   "terraform",
   "web",
   "zepp",
 ] as const;
+
+// Package names whose typechecks and tests belong to an application lane rather
+// than the shared package check. Keep in sync with the pnpm filters in
+// .github/workflows/check-shared.yml and check-server.yml.
+const applicationPackageNames = new Set(["dofek", "dofek-server", "dofek-web", "dofek-mobile"]);
 
 const workspaceSchema = z.object({
   packages: z.array(z.string()).min(1),
@@ -155,14 +162,14 @@ function readWorkspaceProjects(workspaceDirectory: string): WorkspaceProject[] {
 }
 
 function changedFilesFromDiff(workspaceDirectory: string, diffRange: string): string[] {
-  const output = execFileSync("git", ["diff", "--name-only", diffRange], {
+  const output = execFileSync("git", ["diff", "--name-only", "--no-renames", "-z", diffRange], {
     cwd: workspaceDirectory,
     encoding: "utf8",
   });
   return output
-    .split("\n")
-    .map(normalizePath)
-    .filter((filePath) => filePath.length > 0);
+    .split("\0")
+    .filter((filePath) => filePath.length > 0)
+    .map(normalizePath);
 }
 
 function findAffectedPackages(changedFiles: string[], projects: WorkspaceProject[]): Set<string> {
@@ -215,7 +222,11 @@ function classifyChanges(
     changedFiles,
     /^(?:\.github\/workflows\/(?:ci|test|detect-changes)\.yml|\.github\/actions\/|scripts\/detect-ci-changes\.ts$)/,
   );
-  if (runAll || criticalCiChange) {
+  const rootToolingChange = hasMatchingFile(
+    changedFiles,
+    /^(?:package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|tsconfig\.json|mise\.toml|mise\.lock|\.nvmrc|biome\.json|vitest\.config(?:\.[\w-]+)?\.ts|stryker(?:\.[\w-]+)?\.config\.(?:json|cjs))$/,
+  );
+  if (runAll || criticalCiChange || rootToolingChange) {
     return {
       analytics: true,
       docker_ml: true,
@@ -224,6 +235,8 @@ function classifyChanges(
       e2e_web: true,
       ml: true,
       mobile: true,
+      server: true,
+      shared: true,
       storybook_mobile: true,
       storybook_web: true,
       terraform: true,
@@ -233,27 +246,35 @@ function classifyChanges(
   }
 
   const affectedPackages = findAffectedPackages(changedFiles, projects);
-  const globalPackageChange = hasMatchingFile(
+  const sharedCheckWorkflowChange = hasMatchingFile(
     changedFiles,
-    /^(?:package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|tsconfig\.json)$/,
+    /^\.github\/workflows\/check-shared\.yml$/,
   );
-  const analyticsChange =
-    globalPackageChange ||
-    hasMatchingFile(
-      changedFiles,
-      /^(?:analytics\/|src\/db\/clickhouse-sql\/|scripts\/migration-policy\.ts$|\.sqlfluff)/,
-    );
+  const serverCheckWorkflowChange = hasMatchingFile(
+    changedFiles,
+    /^\.github\/workflows\/check-server\.yml$/,
+  );
+  const mobileCheckWorkflowChange = hasMatchingFile(
+    changedFiles,
+    /^\.github\/workflows\/check-mobile\.yml$/,
+  );
+  const analyticsChange = hasMatchingFile(
+    changedFiles,
+    /^(?:analytics\/|src\/db\/clickhouse-sql\/|scripts\/migration-policy\.ts$|\.sqlfluff)/,
+  );
   const serverChange =
     affectedPackages.has("dofek") ||
     affectedPackages.has("dofek-server") ||
-    globalPackageChange ||
+    sharedCheckWorkflowChange ||
+    serverCheckWorkflowChange ||
     hasMatchingFile(
       changedFiles,
       /^(?:analytics\/|drizzle\/|Dockerfile$|entrypoint\.sh$|\.github\/workflows\/build-docker\.yml$)/,
     );
   const webChange =
     affectedPackages.has("dofek-web") ||
-    globalPackageChange ||
+    sharedCheckWorkflowChange ||
+    serverCheckWorkflowChange ||
     hasMatchingFile(
       changedFiles,
       /^(?:analytics\/|drizzle\/|\.github\/workflows\/build-web\.yml$)/,
@@ -263,11 +284,11 @@ function classifyChanges(
     changedFiles.some(
       (changedFile) => changedFile.startsWith("packages/mobile/") && !changedFile.endsWith(".md"),
     ) ||
-    globalPackageChange ||
+    sharedCheckWorkflowChange ||
+    mobileCheckWorkflowChange ||
     hasMatchingFile(changedFiles, /^\.github\/workflows\/build-mobile\.yml$/);
   const zeppChange =
     affectedPackages.has("@dofek/zepp") ||
-    globalPackageChange ||
     hasMatchingFile(
       changedFiles,
       /^(?:packages\/zepp-client\/|\.github\/actions\/build-zepp\/|\.github\/workflows\/build-zepp\.yml$)/,
@@ -277,24 +298,54 @@ function classifyChanges(
     /^(?:\.storybook\/|\.github\/workflows\/storybook-preview\.yml$)/,
   );
   const mlChange = hasMatchingFile(changedFiles, /^packages\/ml\//);
+  const sharedPackageChange = changedFiles.some(
+    (changedFile) =>
+      !changedFile.endsWith(".md") &&
+      projects.some(
+        (project) =>
+          project.directory !== "." &&
+          !applicationPackageNames.has(project.name) &&
+          changedFile.startsWith(`${project.directory}/`),
+      ),
+  );
+  // Root/tooling unit tests live in the full `unit` project, which the server
+  // lane runs. Executable workflow YAML can own runtime behavior and fixtures,
+  // so it selects root tests; documentation-only files remain unselected.
+  const toolingChange = hasMatchingFile(
+    changedFiles,
+    /^(?:scripts\/|entrypoint\.test\.ts$|\.github\/workflows\/[^/]+(?:\.test\.ts|\.ya?ml)$)/,
+  );
+  const nativeFitChange = hasMatchingFile(changedFiles, /^native\/fit-decoder\//);
+  // Compose and Swarm runtime inputs feed the server/integration lanes. A
+  // compose-only change does not need a new application image, so it selects
+  // server checks without setting docker_server.
+  const serverRuntimeChange = hasMatchingFile(
+    changedFiles,
+    /^(?:docker-compose(?:\.[\w-]+)?\.ya?ml|deploy\/(?:docker-compose\.yml|stack\.[\w-]+\.yml|otel-collector-config\.ya?ml))$/,
+  );
+  const serverImageChange = serverChange || nativeFitChange;
+  const e2eWebChange =
+    serverChange ||
+    webChange ||
+    hasMatchingFile(changedFiles, /^(?:cypress\/|docker-compose\.e2e\.yml$)/);
+  const serverCheckChange =
+    serverImageChange || e2eWebChange || toolingChange || serverRuntimeChange;
+  const sharedCheckChange = serverCheckChange || mobileChange || zeppChange || sharedPackageChange;
 
   return {
     analytics: analyticsChange,
     docker_ml:
       mlChange || hasMatchingFile(changedFiles, /^\.github\/workflows\/build-docker-ml\.yml$/),
-    docker_ota:
-      globalPackageChange ||
-      hasMatchingFile(
-        changedFiles,
-        /^(?:deploy\/ota\/|\.github\/workflows\/build-private-ota\.yml$|scripts\/check-ota-image-visibility\.ts$)/,
-      ),
-    docker_server: serverChange,
-    e2e_web:
-      serverChange ||
-      webChange ||
-      hasMatchingFile(changedFiles, /^(?:cypress\/|docker-compose\.e2e\.yml$)/),
+    docker_ota: hasMatchingFile(
+      changedFiles,
+      /^(?:deploy\/ota\/|\.github\/workflows\/build-private-ota\.yml$|scripts\/check-ota-image-visibility\.ts$)/,
+    ),
+    docker_server: serverImageChange,
+    e2e_web: e2eWebChange,
     ml: mlChange,
     mobile: mobileChange,
+    server: serverCheckChange,
+    shared: sharedCheckChange,
     storybook_mobile:
       mobileChange ||
       sharedStorybookChange ||

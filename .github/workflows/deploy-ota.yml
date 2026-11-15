@@ -4,42 +4,87 @@ on:
   workflow_call:
     inputs:
       commit_sha:
-        description: "Commit SHA to deploy"
+        description: "Selected mobile release source SHA"
         required: true
         type: string
       dispatching_run_id:
         description: "Run ID of the workflow run that dispatched this workflow"
         required: false
         type: string
-
+    outputs:
+      decision:
+        description: "Verified OTA publication decision"
+        value: ${{ jobs.deploy.outputs.decision }}
+      deployment_id:
+        description: "Existing OTA deployment record for this decision"
+        value: ${{ jobs.deploy.outputs.deployment_id }}
+      update_id:
+        description: "Verified OTA update UUID when available"
+        value: ${{ jobs.deploy.outputs.update_id }}
+      runtime_version:
+        description: "Requested OTA candidate runtime version"
+        value: ${{ jobs.deploy.outputs.runtime_version }}
+      superseding_source_sha:
+        description: "Source SHA of the successful deployment that superseded this candidate"
+        value: ${{ jobs.deploy.outputs.superseding_source_sha }}
+      superseding_runtime_version:
+        description: "Runtime version of the successful deployment that superseded this candidate"
+        value: ${{ jobs.deploy.outputs.superseding_runtime_version }}
+      superseding_update_id:
+        description: "Update UUID belonging to the successful deployment that superseded this candidate"
+        value: ${{ jobs.deploy.outputs.superseding_update_id }}
 concurrency:
   group: deploy-ota
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: read
   actions: read
   id-token: write
+  deployments: write
 
 jobs:
   deploy:
     name: Publish OTA
     runs-on: ubuntu-latest
+    outputs:
+      decision: ${{ steps.publication.outputs.decision }}
+      deployment_id: ${{ steps.publication.outputs.deployment_id }}
+      update_id: ${{ steps.finalize.outputs.update_id || steps.verify.outputs.update_id || steps.publication.outputs.update_id }}
+      runtime_version: ${{ steps.runtime.outputs.runtime_version }}
+      superseding_source_sha: ${{ steps.publication.outputs.superseding_source_sha }}
+      superseding_runtime_version: ${{ steps.publication.outputs.superseding_runtime_version }}
+      superseding_update_id: ${{ steps.publication.outputs.superseding_update_id }}
     steps:
       - name: Validate deployed source commit
         env:
           COMMIT_SHA: ${{ inputs.commit_sha }}
         run: |
           if [[ ! "$COMMIT_SHA" =~ ^[a-f0-9]{40}$ ]]; then
-            echo "::error::commit_sha must be the full source SHA verified by the successful server rollout"
+            echo "::error::commit_sha must be the full selected mobile source SHA"
             exit 1
           fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
           ref: ${{ inputs.commit_sha }}
-      - uses: ./.github/actions/setup-node-pnpm
-      - uses: ./.github/actions/load-infisical-secrets
+      - name: Check out trusted OTA publication controls
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .release-tools
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            .github/actions/append-dispatcher-run-summary
+            .github/actions/load-infisical-secrets
+            .github/actions/setup-node-pnpm
+            scripts/check-ota-manifest.ts
+            scripts/verify-ota-update.ts
+            scripts/verify-published-ota.ts
+      - uses: ./.release-tools/.github/actions/setup-node-pnpm
+      - uses: ./.release-tools/.github/actions/load-infisical-secrets
         with:
           keys: |
             EXPO_TOKEN
@@ -62,21 +107,143 @@ jobs:
             echo "::error::Missing SENTRY_AUTH_TOKEN secret required for mobile OTA sourcemap upload"
             exit 1
           fi
-      # The caller has already completed the matching server rollout. Validate
-      # once: an unavailable or invalid manifest stops publication for diagnosis.
+      # Validate the currently served runtime once. An unavailable or invalid
+      # manifest stops OTA publication without triggering a server rollout.
       - name: Validate OTA server
         id: runtime
         working-directory: packages/mobile
         run: |
           RUNTIME_VERSION=$(pnpm exec expo-updates runtimeversion:resolve --platform ios --workflow managed | jq -er '.runtimeVersion | strings | select(length > 0)')
           echo "runtime_version=$RUNTIME_VERSION" >> "$GITHUB_OUTPUT"
-          pnpm tsx ../../scripts/check-ota-manifest.ts --app-id "$EXPO_APP_ID" --runtime-version "$RUNTIME_VERSION"
+          pnpm tsx ../../.release-tools/scripts/check-ota-manifest.ts --app-id "$EXPO_APP_ID" --runtime-version "$RUNTIME_VERSION"
       # Keep export diagnostics visible before the publisher owns dist and its
       # source maps. Both commands use the installed Expo version.
       - name: Export iOS bundle (surfaces the error eoas hides)
         working-directory: packages/mobile
-        run: pnpm expo export --output-dir /tmp/dofek-ota-preflight --platform ios
+        env:
+          EXPO_NO_DOTENV: "1"
+          SENTRY_RELEASE: ${{ inputs.commit_sha }}
+          EXPO_PUBLIC_SENTRY_RELEASE: ${{ inputs.commit_sha }}
+        run: pnpm expo export --dump-sourcemap --output-dir "$RUNNER_TEMP/dofek-ota-preflight" --platform ios
+      - name: Admit forward-only OTA publication and record intent
+        id: publication
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE_SHA: ${{ inputs.commit_sha }}
+          RUNTIME_VERSION: ${{ steps.runtime.outputs.runtime_version }}
+          CURRENT_MANIFEST_ID: ${{ steps.runtime.outputs.manifest_id }}
+          CURRENT_MANIFEST_RUNTIME: ${{ steps.runtime.outputs.manifest_runtime }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import { appendFileSync, readFileSync } from 'node:fs';
+          import { join } from 'node:path';
+          import { spawnSync } from 'node:child_process';
+
+          function command(name, args, input) {
+            const result = spawnSync(name, args, { encoding: 'utf8', input, stdio: ['pipe', 'pipe', 'pipe'] });
+            if (result.status !== 0) throw new Error(`${name} ${args.join(' ')} failed: ${result.stderr.trim()}`);
+            return result.stdout.trim();
+          }
+          function gh(args, body) {
+            return JSON.parse(command('gh', ['api', ...args], body === undefined ? undefined : JSON.stringify(body)));
+          }
+          function git(args) {
+            return spawnSync('git', args, { encoding: 'utf8', stdio: 'ignore' }).status === 0;
+          }
+          const { SOURCE_SHA, RUNTIME_VERSION, CURRENT_MANIFEST_ID, CURRENT_MANIFEST_RUNTIME, REPOSITORY, RUN_ID, RUN_ATTEMPT, RUN_URL, GITHUB_OUTPUT } = process.env;
+          if (!RUNTIME_VERSION) throw new Error('requested OTA runtime version is missing');
+          if (!CURRENT_MANIFEST_ID || !CURRENT_MANIFEST_RUNTIME) throw new Error('live OTA manifest probe outputs are missing; require an explicit manifest UUID/runtime or the explicit none sentinel');
+          if (CURRENT_MANIFEST_RUNTIME !== RUNTIME_VERSION) throw new Error('live OTA manifest probe runtime does not match the requested runtime');
+          const preflightDirectory = join(process.env.RUNNER_TEMP, 'dofek-ota-preflight');
+          if (!/^[a-f0-9]{40}$/.test(SOURCE_SHA)) throw new Error('OTA source SHA must be a full lowercase commit');
+          command('git', ['cat-file', '-e', `${SOURCE_SHA}^{commit}`]);
+          const environment = 'ota-production';
+          const query = `query($owner:String!,$name:String!,$environment:String!,$after:String){repository(owner:$owner,name:$name){deployments(environments:[$environment],first:100,after:$after,orderBy:{field:CREATED_AT,direction:DESC}){nodes{databaseId task commitOid payload latestStatus{state description}}pageInfo{hasNextPage endCursor}}}}`;
+          const [owner, name] = REPOSITORY.split('/');
+          let after = null;
+          const history = [];
+          for (;;) {
+            const page = gh(['graphql', '--input', '-'], { query, variables: { owner, name, environment, after } })?.data?.repository?.deployments;
+            if (!page || !Array.isArray(page.nodes) || !page.pageInfo) throw new Error('OTA deployment history is incomplete');
+            history.push(...page.nodes.filter((record) => record.task === 'ota-publish').map((record) => ({
+              ...record,
+              payload: typeof record.payload === 'string' ? JSON.parse(record.payload || '{}') : record.payload,
+              state: record.latestStatus?.state ?? null,
+            })));
+            if (!page.pageInfo.hasNextPage) break;
+            if (!page.pageInfo.endCursor || page.pageInfo.endCursor === after) throw new Error('OTA deployment history cursor did not advance');
+            after = page.pageInfo.endCursor;
+          }
+          const post = (method, path, body) => gh(['--method', method, path, '--input', '-'], body);
+          const source = (record, requireUpdateId = true) => {
+            const value = record.payload ?? {};
+            const statusUpdateId = record.latestStatus?.description?.match(/^OTA verified ([a-f0-9-]{36})$/)?.[1];
+            const identity = { ...value, update_id: value.update_id ?? statusUpdateId };
+            if (!/^[a-f0-9]{40}$/.test(identity.source_sha ?? '') || !identity.runtime_version || (requireUpdateId && !identity.update_id)) throw new Error(`OTA deployment ${record.databaseId} has no verified source, update UUID and runtime identity`);
+            if (record.commitOid !== identity.source_sha) throw new Error(`OTA deployment ${record.databaseId} ref does not match its source payload`);
+            return identity;
+          };
+          const verifyCurrent = () => {
+            const metadataPath = join(preflightDirectory, 'xprem-update-metadata.json');
+            command('pnpm', ['tsx','.release-tools/scripts/verify-published-ota.ts',metadataPath,'production',RUNTIME_VERSION]);
+            return JSON.parse(readFileSync(metadataPath,'utf8'))[0];
+          };
+          const unresolved = history.filter((record) => !['SUCCESS','INACTIVE'].includes(record.state));
+          if (unresolved.length > 1) throw new Error('multiple unresolved OTA publication intents require operator reconciliation');
+          const liveExists = CURRENT_MANIFEST_ID !== 'none';
+          if (unresolved.length === 1) {
+            const pending = unresolved[0];
+            const identity = source(pending, false);
+            if (identity.source_sha !== SOURCE_SHA || identity.runtime_version !== RUNTIME_VERSION) throw new Error(`unresolved OTA publication ${pending.databaseId} blocks promotion; reconcile its live update before retrying`);
+            const update = verifyCurrent();
+            if (update.id !== CURRENT_MANIFEST_ID || update.runtimeVersion !== RUNTIME_VERSION) throw new Error('live OTA update does not verify against the unresolved candidate; keep its intent pending and reconcile');
+            appendFileSync(GITHUB_OUTPUT, `decision=recover\ndeployment_id=${pending.databaseId}\nupdate_id=${update.id}\n`);
+            process.exit(0);
+          }
+          const successful = history.filter((record) => record.state === 'SUCCESS');
+          const runtimeSuccessRecord = successful.find((record) => (record.payload ?? {}).runtime_version === RUNTIME_VERSION);
+          if (runtimeSuccessRecord) {
+            const runtimeSuccess = source(runtimeSuccessRecord);
+            if (!liveExists || CURRENT_MANIFEST_ID !== runtimeSuccess.update_id || CURRENT_MANIFEST_RUNTIME !== runtimeSuccess.runtime_version) throw new Error('live OTA UUID/runtime does not match the latest receipt for the requested runtime; reconcile target evidence before publication');
+            if (runtimeSuccess.source_sha === SOURCE_SHA) {
+              const update = verifyCurrent();
+              if (update.id !== runtimeSuccess.update_id || update.runtimeVersion !== runtimeSuccess.runtime_version) throw new Error('same-source OTA content differs from its successful receipt');
+              appendFileSync(GITHUB_OUTPUT, `decision=unchanged\ndeployment_id=${runtimeSuccessRecord.databaseId}\nupdate_id=${update.id}\n`);
+              process.exit(0);
+            }
+          } else if (liveExists) {
+            throw new Error(`production OTA ${CURRENT_MANIFEST_ID} (${CURRENT_MANIFEST_RUNTIME}) is live without a target receipt. Operator initialization required: verify its signed UUID/runtime and source SHA; create a GitHub deployment in environment ota-production, task ota-publish, payload {source_sha, update_id, runtime_version}; append a success status only after verifying that exact live update. Do not infer the source SHA from a completed workflow.`);
+          }
+          const newestSuccessful = successful[0] ? source(successful[0]) : null;
+          if (newestSuccessful && newestSuccessful.source_sha !== SOURCE_SHA) {
+            if (git(['merge-base','--is-ancestor',SOURCE_SHA,newestSuccessful.source_sha])) {
+              appendFileSync(GITHUB_OUTPUT, `decision=superseded\ndeployment_id=${successful[0].databaseId}\nsuperseding_source_sha=${newestSuccessful.source_sha}\nsuperseding_runtime_version=${newestSuccessful.runtime_version}\nsuperseding_update_id=${newestSuccessful.update_id}\n`);
+              process.exit(0);
+            }
+            if (!git(['merge-base','--is-ancestor',newestSuccessful.source_sha,SOURCE_SHA])) throw new Error(`OTA candidate ${SOURCE_SHA} is unrelated to latest successful source ${newestSuccessful.source_sha}`);
+          }
+          const deployment = post('POST', `repos/${REPOSITORY}/deployments`, {
+            ref: SOURCE_SHA, environment, task: 'ota-publish', auto_merge: false,
+            required_contexts: [], production_environment: true,
+            payload: { source_sha: SOURCE_SHA, runtime_version: RUNTIME_VERSION, run_id: RUN_ID, run_attempt: RUN_ATTEMPT, run_url: RUN_URL },
+          });
+          if (!Number.isInteger(deployment.id)) throw new Error('GitHub did not acknowledge OTA intent');
+          appendFileSync(GITHUB_OUTPUT, `deployment_id=${deployment.id}\n`);
+          const status = post('POST', `repos/${REPOSITORY}/deployments/${deployment.id}/statuses`, {
+            state: 'pending', auto_inactive: false, log_url: RUN_URL, environment_url: 'https://ota.dofek.asherlc.com/manifest',
+            description: 'OTA awaiting publication verification',
+          });
+          if (status.state !== 'pending') throw new Error('GitHub did not acknowledge pending OTA intent');
+          appendFileSync(GITHUB_OUTPUT, `decision=publish\ndeployment_id=${deployment.id}\n`);
+          NODE
       - name: Publish OTA update
+        id: publish
+        if: steps.publication.outputs.decision == 'publish'
         working-directory: packages/mobile
         env:
           DEBUG: true
@@ -85,14 +252,136 @@ jobs:
           EXPO_PUBLIC_SENTRY_RELEASE: ${{ inputs.commit_sha }}
         run: pnpm exec eoas publish --branch main --platform ios --nonInteractive --packageRunner "pnpm exec" --dumpSourcemap --emitMetadata
       - name: Verify published device update
-        run: pnpm tsx scripts/verify-published-ota.ts packages/mobile/dist/xprem-update-metadata.json production "${{ steps.runtime.outputs.runtime_version }}"
+        id: verify
+        if: steps.publication.outputs.decision == 'publish'
+        run: |
+          set -euo pipefail
+          pnpm tsx .release-tools/scripts/verify-published-ota.ts packages/mobile/dist/xprem-update-metadata.json production "${{ steps.runtime.outputs.runtime_version }}"
+          echo "update_id=$(jq -er '.[0].id' packages/mobile/dist/xprem-update-metadata.json)" >> "$GITHUB_OUTPUT"
       - name: Upload OTA sourcemaps to Sentry
+        if: steps.publication.outputs.decision == 'publish' || steps.publication.outputs.decision == 'recover'
         working-directory: packages/mobile
         env:
           SENTRY_RELEASE: ${{ inputs.commit_sha }}
-        run: pnpm exec sentry-expo-upload-sourcemaps dist
+        run: |
+          if [ "${{ steps.publication.outputs.decision }}" = "recover" ]; then
+            pnpm exec sentry-expo-upload-sourcemaps "$RUNNER_TEMP/dofek-ota-preflight"
+          else
+            pnpm exec sentry-expo-upload-sourcemaps dist
+          fi
 
-      - uses: ./.github/actions/append-dispatcher-run-summary
+      - name: Finalize verified OTA deployment intent
+        id: finalize
+        if: steps.publication.outputs.decision == 'publish' || steps.publication.outputs.decision == 'recover'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DEPLOYMENT_ID: ${{ steps.publication.outputs.deployment_id }}
+          SOURCE_SHA: ${{ inputs.commit_sha }}
+          RUNTIME_VERSION: ${{ steps.runtime.outputs.runtime_version }}
+          RECOVERED_UPDATE_ID: ${{ steps.publication.outputs.update_id }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.publication.outputs.decision }}" = "recover" ]; then
+            update_id="$RECOVERED_UPDATE_ID"
+          else
+            update_id="$(jq -er '.[0].id' packages/mobile/dist/xprem-update-metadata.json)"
+          fi
+          [[ "$update_id" =~ ^[a-f0-9-]{36}$ ]] || { echo "::error::OTA update UUID is invalid"; exit 1; }
+          deployment="$(gh api "repos/$GITHUB_REPOSITORY/deployments/$DEPLOYMENT_ID")"
+          jq -e --arg source "$SOURCE_SHA" --arg runtime "$RUNTIME_VERSION" \
+            '.sha == $source and .payload.source_sha == $source and .payload.runtime_version == $runtime' \
+            <<<"$deployment" >/dev/null || { echo "::error::OTA intent identity changed"; exit 1; }
+          echo "update_id=$update_id" >> "$GITHUB_OUTPUT"
+          latest_state="$(gh api "repos/$GITHUB_REPOSITORY/deployments/$DEPLOYMENT_ID/statuses" --jq '.[0].state // "missing"')"
+          if [ "$latest_state" = "success" ]; then
+            latest_description="$(gh api "repos/$GITHUB_REPOSITORY/deployments/$DEPLOYMENT_ID/statuses" --jq '.[0].description // ""')"
+            expected_description="OTA verified $update_id"
+            [ "$latest_description" = "$expected_description" ] || { echo "::error::successful OTA receipt does not match the verified update identity"; exit 1; }
+            echo "OTA deployment receipt already finalized."
+            exit 0
+          fi
+          if [ "$latest_state" = "inactive" ]; then
+            echo "::error::OTA deployment was reconciled inactive; do not overwrite it."
+            exit 1
+          fi
+          response="$(gh api --method POST "repos/$GITHUB_REPOSITORY/deployments/$DEPLOYMENT_ID/statuses" --input - <<JSON
+          {"state":"success","auto_inactive":false,"log_url":"$RUN_URL","environment_url":"https://ota.dofek.asherlc.com/manifest","description":"OTA verified $update_id"}
+          JSON
+          )"
+          jq -e --arg description "OTA verified $update_id" '.state == "success" and .description == $description and (.description | length <= 140)' <<<"$response" >/dev/null
+      - name: Write OTA publisher result
+        if: always()
+        continue-on-error: true
+        env:
+          SOURCE_SHA: ${{ inputs.commit_sha }}
+          RUNTIME_VERSION: ${{ steps.runtime.outputs.runtime_version }}
+          DECISION: ${{ steps.publication.outputs.decision }}
+          DEPLOYMENT_ID: ${{ steps.publication.outputs.deployment_id }}
+          UPDATE_ID: ${{ steps.finalize.outputs.update_id || steps.verify.outputs.update_id || steps.publication.outputs.update_id }}
+          SUPERSEDING_SOURCE_SHA: ${{ steps.publication.outputs.superseding_source_sha }}
+          SUPERSEDING_RUNTIME_VERSION: ${{ steps.publication.outputs.superseding_runtime_version }}
+          SUPERSEDING_UPDATE_ID: ${{ steps.publication.outputs.superseding_update_id }}
+          RUNTIME_OUTCOME: ${{ steps.runtime.outcome }}
+          PUBLICATION_OUTCOME: ${{ steps.publication.outcome }}
+          PUBLISH_OUTCOME: ${{ steps.publish.outcome }}
+          VERIFY_OUTCOME: ${{ steps.verify.outcome }}
+          FINALIZE_OUTCOME: ${{ steps.finalize.outcome }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          repo_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
+          candidate="source [\`$SOURCE_SHA\`]($repo_url/commit/$SOURCE_SHA); requested runtime \`${RUNTIME_VERSION:-unresolved}\`"
+          record="—"
+          if [ -n "$DEPLOYMENT_ID" ]; then
+            record="[API deployment #$DEPLOYMENT_ID](${GITHUB_API_URL:-https://api.github.com}/repos/$GITHUB_REPOSITORY/deployments/$DEPLOYMENT_ID) · [Environment history]($repo_url/deployments/activity_log?environments_filter=ota-production)"
+          fi
+          case "$DECISION" in
+            unchanged)
+              outcome="Unchanged — the requested candidate is already verified"
+              ;;
+            superseded)
+              outcome="Superseded — candidate $candidate; later successful record source [\`${SUPERSEDING_SOURCE_SHA:-unknown}\`]($repo_url/commit/${SUPERSEDING_SOURCE_SHA:-$SOURCE_SHA}), runtime \`${SUPERSEDING_RUNTIME_VERSION:-unknown}\`, update UUID \`${SUPERSEDING_UPDATE_ID:-unknown}\`"
+              ;;
+            publish)
+              if [ "$PUBLISH_OUTCOME" = "success" ] && [ "$VERIFY_OUTCOME" = "success" ] && [ "$FINALIZE_OUTCOME" = "success" ]; then
+                outcome="Published and verified — $candidate; update UUID \`${UPDATE_ID:-unknown}\`"
+              elif [ "$PUBLISH_OUTCOME" = "success" ] && [ "$VERIFY_OUTCOME" = "success" ]; then
+                outcome="Incomplete — live update verified, but the GitHub deployment receipt was not finalized ($FINALIZE_OUTCOME); $candidate; update UUID \`${UPDATE_ID:-unknown}\`"
+              elif [ "$PUBLISH_OUTCOME" = "success" ]; then
+                outcome="Failed — update mutation ran, but live verification did not succeed ($VERIFY_OUTCOME); intent remains unverified; $candidate"
+              elif [ "$PUBLICATION_OUTCOME" = "success" ]; then
+                outcome="Failed — admitted intent exists, but update publication did not succeed ($PUBLISH_OUTCOME); $candidate"
+              else
+                outcome="Blocked or failed before intent admission ($PUBLICATION_OUTCOME); $candidate"
+              fi
+              ;;
+            recover)
+              if [ "$FINALIZE_OUTCOME" = "success" ]; then
+                outcome="Recovered and verified — $candidate; update UUID \`${UPDATE_ID:-unknown}\`"
+              else
+                outcome="Incomplete — recovered live update was not finalized ($FINALIZE_OUTCOME); $candidate; update UUID \`${UPDATE_ID:-unknown}\`"
+              fi
+              ;;
+            *)
+              if [ -n "$DEPLOYMENT_ID" ]; then
+                outcome="Incomplete — intent #$DEPLOYMENT_ID exists, but publication admission did not complete ($PUBLICATION_OUTCOME); $candidate"
+              elif [ "$RUNTIME_OUTCOME" != "success" ]; then
+                outcome="Blocked or failed during runtime validation ($RUNTIME_OUTCOME); $candidate"
+              else
+                outcome="Failed before an OTA deployment intent was identified ($PUBLICATION_OUTCOME); $candidate"
+              fi
+              ;;
+          esac
+          {
+            echo "## OTA publisher result"
+            echo
+            echo "- Candidate: $candidate"
+            echo "- Outcome: $outcome"
+            echo "- Publisher attempt: [Open exact run attempt]($RUN_URL)"
+            echo "- Deployment record: $record"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: ./.release-tools/.github/actions/append-dispatcher-run-summary
         if: always()
         with:
           dispatching_run_id: ${{ inputs.dispatching_run_id }}

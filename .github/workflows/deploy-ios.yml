@@ -4,7 +4,7 @@ on:
   workflow_call:
     inputs:
       commit_sha:
-        description: "Actual deployed server source SHA to publish"
+        description: "Selected mobile release source SHA"
         required: true
         type: string
       archive_commit_sha:
@@ -23,7 +23,22 @@ on:
         description: "CI run ID to include in deploy summary (optional)"
         required: false
         type: string
-
+    outputs:
+      decision:
+        description: "TestFlight publication decision"
+        value: ${{ jobs.deploy.outputs.decision }}
+      deployment_id:
+        description: "TestFlight deployment record for the upload decision"
+        value: ${{ jobs.deploy.outputs.deployment_id }}
+      commit_sha:
+        description: "Source SHA used by the TestFlight publisher"
+        value: ${{ jobs.deploy.outputs.commit_sha }}
+      build_number:
+        description: "Build number submitted to TestFlight"
+        value: ${{ jobs.deploy.outputs.build_number }}
+      upload_run_url:
+        description: "Exact TestFlight publisher attempt URL"
+        value: ${{ jobs.deploy.outputs.upload_run_url }}
 permissions:
   contents: read
   actions: read
@@ -47,25 +62,27 @@ jobs:
       commit_sha: ${{ inputs.archive_commit_sha }}
       build_number: ${{ inputs.build_number }}
       upload_succeeded: ${{ steps.upload.outcome == 'success' }}
+      decision: ${{ steps.intent.outputs.decision }}
       deployment_id: ${{ steps.intent.outputs.deployment_id }}
       upload_run_url: ${{ steps.intent.outputs.upload_run_url }}
     steps:
       - name: Validate archive matches deployed source
         env:
-          COMMIT_SHA: ${{ inputs.commit_sha }}
+          MOBILE_COMMIT_SHA: ${{ inputs.commit_sha }}
           ARCHIVE_COMMIT_SHA: ${{ inputs.archive_commit_sha }}
         run: |
-          if [[ ! "$COMMIT_SHA" =~ ^[a-f0-9]{40}$ ]] || [[ ! "$ARCHIVE_COMMIT_SHA" =~ ^[a-f0-9]{40}$ ]]; then
-            echo "::error::commit_sha and archive_commit_sha must be full source SHAs"
+          if [[ ! "$MOBILE_COMMIT_SHA" =~ ^[a-f0-9]{40}$ ]] || [[ ! "$ARCHIVE_COMMIT_SHA" =~ ^[a-f0-9]{40}$ ]]; then
+            echo "::error::mobile commit_sha and archive_commit_sha must be full source SHAs"
             exit 1
           fi
-          if [[ "$COMMIT_SHA" != "$ARCHIVE_COMMIT_SHA" ]]; then
-            echo "::error::Signed iOS archive source $ARCHIVE_COMMIT_SHA does not match deployed server source $COMMIT_SHA"
+          if [[ "$MOBILE_COMMIT_SHA" != "$ARCHIVE_COMMIT_SHA" ]]; then
+            echo "::error::Signed iOS archive source $ARCHIVE_COMMIT_SHA does not match selected mobile source $MOBILE_COMMIT_SHA"
             exit 1
           fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
           ref: ${{ inputs.archive_commit_sha }}
       - uses: ./.github/actions/setup-node-pnpm
       - uses: ./.github/actions/load-infisical-secrets
@@ -116,11 +133,25 @@ jobs:
           BUILD_NUMBER: ${{ inputs.build_number }}
         run: |
           UPLOAD_RUN_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT"
-          DEPLOYMENT_ID=$(pnpm tsx .release-tools/scripts/testflight-deployment-cli.ts prepare "$GITHUB_REPOSITORY" "$COMMIT_SHA" "$BUILD_NUMBER" "$UPLOAD_RUN_URL")
-          echo "deployment_id=$DEPLOYMENT_ID" >> "$GITHUB_OUTPUT"
+          DECISION=$(pnpm tsx .release-tools/scripts/testflight-deployment-cli.ts prepare "$GITHUB_REPOSITORY" "$COMMIT_SHA" "$BUILD_NUMBER" "$UPLOAD_RUN_URL")
+          case "$DECISION" in
+            unchanged|superseded)
+              echo "decision=$DECISION" >> "$GITHUB_OUTPUT"
+              echo "TestFlight upload is $DECISION; no new upload is needed."
+              ;;
+            ''|*[!0-9]*)
+              echo "::error::Unexpected TestFlight upload decision: $DECISION"
+              exit 1
+              ;;
+            *)
+              echo "decision=upload" >> "$GITHUB_OUTPUT"
+              echo "deployment_id=$DECISION" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
           echo "upload_run_url=$UPLOAD_RUN_URL" >> "$GITHUB_OUTPUT"
       - name: Export IPA & Upload to TestFlight
         id: upload
+        if: steps.intent.outputs.decision == 'upload'
         run: |
           xcodebuild -exportArchive \
             -archivePath "$RUNNER_TEMP/Dofek.xcarchive" \
@@ -131,22 +162,49 @@ jobs:
             -authenticationKeyID "$APP_STORE_CONNECT_KEY_ID" \
             -authenticationKeyIssuerID "$APP_STORE_CONNECT_ISSUER_ID"
       - name: Write job summary
-        if: success()
+        if: always()
+        continue-on-error: true
         env:
           BUILD_NUMBER: ${{ inputs.build_number }}
           COMMIT_SHA: ${{ inputs.archive_commit_sha }}
           CI_RUN_ID: ${{ inputs.ci_run_id }}
+          DECISION: ${{ steps.intent.outputs.decision }}
+          DEPLOYMENT_ID: ${{ steps.intent.outputs.deployment_id }}
+          UPLOAD_RUN_URL: ${{ steps.intent.outputs.upload_run_url }}
+          ARTIFACT_ID: ${{ inputs.artifact_id }}
+          INTENT_OUTCOME: ${{ steps.intent.outcome }}
+          UPLOAD_OUTCOME: ${{ steps.upload.outcome }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
         run: |
-          VERSION=$(/usr/libexec/PlistBuddy -c "Print :ApplicationProperties:CFBundleShortVersionString" "$RUNNER_TEMP/Dofek.xcarchive/Info.plist")
           REPO_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
+          API_URL="${GITHUB_API_URL:-https://api.github.com}"
+          if [ "$DECISION" = "unchanged" ]; then
+            OUTCOME="Unchanged — no new upload was required for candidate $COMMIT_SHA"
+          elif [ "$DECISION" = "superseded" ]; then
+            OUTCOME="Superseded — no new upload was required for candidate $COMMIT_SHA"
+          elif [ "$DECISION" = "upload" ] && [ "$UPLOAD_OUTCOME" = "success" ]; then
+            OUTCOME="Upload command succeeded; deployment receipt is recorded separately by the receipt job"
+          elif [ "$DECISION" = "upload" ]; then
+            OUTCOME="Upload failed or did not complete ($UPLOAD_OUTCOME); the intent remains incomplete"
+          else
+            OUTCOME="Upload intent preparation failed or did not complete ($INTENT_OUTCOME); no verified upload decision is available"
+          fi
           {
-            echo "## iOS Deploy"
+            echo "## iOS publisher result"
             echo ""
             echo "| | |"
             echo "|---|---|"
-            echo "| **Version** | $VERSION |"
+            echo "| **Outcome** | $OUTCOME |"
             echo "| **Build** | $BUILD_NUMBER |"
-            echo "| **Commit** | \`${COMMIT_SHA:0:10}\` |"
+            echo "| **Commit** | [\`${COMMIT_SHA}\`](${REPO_URL}/commit/${COMMIT_SHA}) |"
+            echo "| **Signed archive** | [Artifact ${ARTIFACT_ID}](${REPO_URL}/actions/runs/${CI_RUN_ID:-$GITHUB_RUN_ID}/artifacts/${ARTIFACT_ID}) |"
+            if [ -n "$DEPLOYMENT_ID" ]; then
+              echo "| **Deployment record** | [API deployment #${DEPLOYMENT_ID}](${API_URL}/repos/${GITHUB_REPOSITORY}/deployments/${DEPLOYMENT_ID}) · [Environment history](${REPO_URL}/deployments/activity_log?environments_filter=testflight) |"
+              echo "| **Publisher attempt** | [Open upload run](${UPLOAD_RUN_URL}) |"
+            else
+              echo "| **Upload decision** | ${DECISION} |"
+              echo "| **Publisher attempt** | [Open exact run attempt](${RUN_URL}) |"
+            fi
             if [ -n "$CI_RUN_ID" ]; then
               echo "| **Triggered by** | [CI run #${CI_RUN_ID}](${REPO_URL}/actions/runs/${CI_RUN_ID}) |"
             fi
@@ -170,6 +228,7 @@ jobs:
           ref: ${{ github.workflow_sha }}
       - uses: ./.github/actions/setup-node-pnpm
       - name: Record uploaded source commit
+        id: record
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           COMMIT_SHA: ${{ needs.deploy.outputs.commit_sha }}
@@ -178,3 +237,28 @@ jobs:
           UPLOAD_RUN_URL: ${{ needs.deploy.outputs.upload_run_url }}
         run: |
           pnpm tsx scripts/testflight-deployment-cli.ts record "$GITHUB_REPOSITORY" "$DEPLOYMENT_ID" "$COMMIT_SHA" "$BUILD_NUMBER" "$UPLOAD_RUN_URL"
+      - name: Write receipt result
+        if: always()
+        continue-on-error: true
+        env:
+          COMMIT_SHA: ${{ needs.deploy.outputs.commit_sha }}
+          BUILD_NUMBER: ${{ needs.deploy.outputs.build_number }}
+          DEPLOYMENT_ID: ${{ needs.deploy.outputs.deployment_id }}
+          UPLOAD_RUN_URL: ${{ needs.deploy.outputs.upload_run_url }}
+          RECORD_OUTCOME: ${{ steps.record.outcome }}
+        run: |
+          set -euo pipefail
+          repo_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
+          api_url="${GITHUB_API_URL:-https://api.github.com}"
+          if [ "$RECORD_OUTCOME" = "success" ]; then
+            outcome="Uploaded TestFlight receipt recorded for source $COMMIT_SHA, build $BUILD_NUMBER"
+          else
+            outcome="TestFlight upload succeeded, but deployment receipt recording failed or did not complete ($RECORD_OUTCOME) for source $COMMIT_SHA, build $BUILD_NUMBER"
+          fi
+          {
+            echo "## TestFlight receipt result"
+            echo
+            echo "- Outcome: $outcome"
+            echo "- Publisher attempt: [Open exact upload attempt]($UPLOAD_RUN_URL)"
+            echo "- Deployment record: [API deployment #$DEPLOYMENT_ID]($api_url/repos/$GITHUB_REPOSITORY/deployments/$DEPLOYMENT_ID) · [Environment history]($repo_url/deployments/activity_log?environments_filter=testflight)"
+          } >> "$GITHUB_STEP_SUMMARY"

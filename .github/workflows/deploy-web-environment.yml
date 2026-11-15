@@ -5,7 +5,16 @@ on:
     outputs:
       commit_sha:
         description: "Source commit verified against the deployed immutable image"
-        value: ${{ jobs.deploy-web-stack.outputs.commit_sha }}
+        value: ${{ jobs.deploy-web-stack.outputs.commit_sha || jobs.check.outputs.source_sha }}
+      publication_decision:
+        description: "Whether the server target was published, unchanged or superseded"
+        value: ${{ jobs.check.outputs.publication_decision }}
+      image_ref:
+        description: "Immutable server image reference selected for this publication"
+        value: ${{ jobs.check.outputs.image_ref }}
+      deployment_id:
+        description: "Existing server deployment record for this publication decision"
+        value: ${{ jobs.check.outputs.deployment_id }}
     inputs:
       environment_name:
         description: "Human-readable deploy environment name"
@@ -23,6 +32,11 @@ on:
         default: ""
       image_tag:
         description: "Docker image tag to deploy directly"
+        required: false
+        type: string
+        default: ""
+      image_ref:
+        description: "Pre-admitted immutable image reference passed to the stack publisher"
         required: false
         type: string
         default: ""
@@ -46,6 +60,16 @@ on:
         required: false
         type: string
         default: dofek
+      server_host:
+        description: "Docker SSH host when infrastructure apply is disabled"
+        required: false
+        type: string
+        default: ""
+      apply_infrastructure:
+        description: "Apply Terraform after server publication admission"
+        required: false
+        type: boolean
+        default: true
       public_url:
         description: "Public app URL"
         required: false
@@ -101,12 +125,28 @@ on:
         required: false
         type: string
         default: ""
+    secrets:
+      DEPLOY_SSH_KEY:
+        required: false
+      GHCR_TOKEN:
+        required: false
+      SENTRY_AUTH_TOKEN:
+        required: false
+      TF_API_TOKEN:
+        required: false
+      CLOUDFLARE_API_TOKEN:
+        required: false
+      CLOUDFLARE_TERRAFORM_R2_API_TOKEN:
+        required: false
+      CLOUDFLARE_ACCOUNT_ID:
+        required: false
 
 permissions:
   contents: read
   actions: read
   packages: read
   id-token: write
+  deployments: write
 
 jobs:
   check:
@@ -114,14 +154,16 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       image_tag: ${{ steps.resolve.outputs.image_tag }}
+      source_sha: ${{ steps.publication.outputs.source_sha }}
+      image_ref: ${{ steps.publication.outputs.image_ref }}
+      deployment_id: ${{ steps.publication.outputs.deployment_id }}
+      publication_decision: ${{ steps.publication.outputs.decision }}
     steps:
       - name: Resolve deploy target
         id: resolve
         env:
           INPUT_TAG: ${{ inputs.image_tag }}
           AUTOMATIC_COMMIT_SHA: ${{ inputs.automatic_commit_sha }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          OWNER: ${{ github.repository_owner }}
           ENVIRONMENT_NAME: ${{ inputs.environment_name }}
         run: |
           if [ -n "$INPUT_TAG" ]; then
@@ -134,25 +176,182 @@ jobs:
             exit 1
           fi
 
-          OWNER_LOWER=$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')
-
-          require_tag() {
-            local package_name="$1"
-            if ! gh api "/users/${OWNER_LOWER}/packages/container/${package_name}/versions" \
-              --jq '.[].metadata.container.tags[]?' 2>/dev/null | grep -Fxq "$TAG"; then
-              echo "::error::Docker image ${package_name}:$TAG not found."
-              exit 1
-            fi
-          }
-
-          require_tag "dofek"
-
           echo "image_tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "Deploying ${ENVIRONMENT_NAME} web stack image tag: $TAG"
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
+
+      - uses: ./.github/actions/setup-node-pnpm
+
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup SSH for live server identity
+        if: inputs.apply_infrastructure || inputs.server_host != '' || vars.ORACLE_SERVER_HOST != ''
+        uses: ./.github/actions/setup-ssh-host
+        with:
+          host: ${{ inputs.server_host != '' && inputs.server_host || vars.ORACLE_SERVER_HOST }}
+          private_key: ${{ secrets.DEPLOY_SSH_KEY }}
+
+      - name: Resolve and validate immutable server image before production changes
+        id: image
+        env:
+          SOURCE_SHA: ${{ inputs.automatic_commit_sha != '' && inputs.automatic_commit_sha || github.sha }}
+          IMAGE_TAG: ${{ steps.resolve.outputs.image_tag }}
+          PREBUILT_IMAGE_REF: ${{ inputs.image_ref }}
+          STACK_NAME: ${{ inputs.stack_name || 'dofek' }}
+        run: |
+          set -euo pipefail
+          requested_image="${PREBUILT_IMAGE_REF:-ghcr.io/${GITHUB_REPOSITORY,,}:$IMAGE_TAG}"
+          pnpm tsx scripts/resolve-deploy-image.ts "$requested_image" "$SOURCE_SHA" "${STACK_NAME}_web" --candidate-only
+
+      - name: Admit forward-only server publication and record intent
+        id: publication
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE_SHA: ${{ inputs.automatic_commit_sha != '' && inputs.automatic_commit_sha || github.sha }}
+          STACK_NAME: ${{ inputs.stack_name || 'dofek' }}
+          SERVER_HOST: ${{ inputs.server_host != '' && inputs.server_host || vars.ORACLE_SERVER_HOST }}
+          SSH_USER: ${{ inputs.ssh_user != '' && inputs.ssh_user || 'ubuntu' }}
+          IMAGE_REF: ${{ steps.image.outputs.image_ref }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
+          ENVIRONMENT_URL: ${{ inputs.public_url || 'https://dofek.fit' }}
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import { appendFileSync } from 'node:fs';
+          import { spawnSync } from 'node:child_process';
+
+          function command(name, args, input) {
+            const result = spawnSync(name, args, { encoding: 'utf8', input, stdio: ['pipe', 'pipe', 'pipe'] });
+            if (result.status !== 0) throw new Error(`${name} ${args.join(' ')} failed: ${result.stderr.trim()}`);
+            return result.stdout.trim();
+          }
+          function gh(args, body) {
+            return JSON.parse(command('gh', ['api', ...args], body === undefined ? undefined : JSON.stringify(body)));
+          }
+          function git(args) {
+            return spawnSync('git', args, { encoding: 'utf8', stdio: 'ignore' }).status === 0;
+          }
+          function sha(value, label) {
+            if (!/^[a-f0-9]{40}$/.test(value ?? '')) throw new Error(`${label} is not a full source SHA`);
+          }
+
+          const { SOURCE_SHA, STACK_NAME, SERVER_HOST, SSH_USER, REPOSITORY, RUN_ID, RUN_ATTEMPT, RUN_URL, ENVIRONMENT_URL, IMAGE_REF, GITHUB_OUTPUT } = process.env;
+          sha(SOURCE_SHA, 'server candidate');
+          command('git', ['cat-file', '-e', `${SOURCE_SHA}^{commit}`]);
+          const imageRef = IMAGE_REF;
+          const candidateDigest = imageRef?.split('@')[1];
+          if (!/^sha256:[a-f0-9]{64}$/.test(candidateDigest ?? '')) throw new Error('server image manifest digest is missing or invalid');
+          const environment = 'server-production';
+          const query = `query($owner:String!,$name:String!,$environment:String!,$after:String){repository(owner:$owner,name:$name){deployments(environments:[$environment],first:100,after:$after,orderBy:{field:CREATED_AT,direction:DESC}){nodes{databaseId task commitOid payload latestStatus{state}}pageInfo{hasNextPage endCursor}}}}`;
+          const [owner, name] = REPOSITORY.split('/');
+          let after = null;
+          const history = [];
+          for (;;) {
+            const page = gh(['graphql', '--input', '-'], { query, variables: { owner, name, environment, after } })?.data?.repository?.deployments;
+            if (!page || !Array.isArray(page.nodes) || !page.pageInfo) throw new Error('server deployment history is incomplete');
+            history.push(...page.nodes.filter((record) => record.task === 'server-stack-publish').map((record) => ({
+              ...record,
+              payload: typeof record.payload === 'string' ? JSON.parse(record.payload || '{}') : record.payload,
+              state: record.latestStatus?.state ?? null,
+            })));
+            if (!page.pageInfo.hasNextPage) break;
+            if (!page.pageInfo.endCursor || page.pageInfo.endCursor === after) throw new Error('server deployment history cursor did not advance');
+            after = page.pageInfo.endCursor;
+          }
+          const unresolved = history.filter((record) => !['SUCCESS', 'INACTIVE'].includes(record.state));
+          if (unresolved.length > 0) throw new Error(`unresolved server publication ${unresolved[0].databaseId} (${unresolved[0].state ?? 'no status'}); verify the original deploy job before rerunning its receipt finalizer`);
+          const successful = history.find((record) => record.state === 'SUCCESS');
+          const readLive = (service) => {
+            const result = command('ssh', ['-o','BatchMode=yes','-o','ServerAliveInterval=30','-o','ServerAliveCountMax=10',`${SSH_USER}@${SERVER_HOST}`,`docker ps -q --filter label=com.docker.swarm.service.name=${service} | xargs -r docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}} {{.Config.Image}} {{.State.Status}}'`]);
+            if (!result) return null;
+            const rows = result.split('\n').map((line) => {
+              const [sourceSha, image, state] = line.split(' ');
+              return { sourceSha, image, state };
+            });
+            for (const row of rows) {
+              sha(row.sourceSha, `live ${service} task source`);
+              if (row.state !== 'running' || !row.image.includes('@sha256:')) throw new Error(`live ${service} task is not running on an immutable image`);
+            }
+            const identities = new Set(rows.map(({ sourceSha, image }) => `${sourceSha} ${image}`));
+            if (identities.size !== 1) throw new Error(`live ${service} tasks disagree on source or image`);
+            return { sourceSha: rows[0].sourceSha, image: rows[0].image };
+          };
+          const services = SERVER_HOST ? command('ssh', ['-o','BatchMode=yes',`${SSH_USER}@${SERVER_HOST}`,"docker service ls --format '{{.Name}}'"]) : '';
+          const serviceNames = services.split('\n');
+          let live = null;
+          const hasWeb = serviceNames.includes(`${STACK_NAME}_web`);
+          const hasWorker = serviceNames.includes(`${STACK_NAME}_worker`);
+          if (hasWeb !== hasWorker) throw new Error('only one of the live web/worker services exists; reconcile the server target before publication');
+          if (hasWeb && hasWorker) {
+            const web = readLive(`${STACK_NAME}_web`);
+            const worker = readLive(`${STACK_NAME}_worker`);
+            if (!web || !worker || web.sourceSha !== worker.sourceSha || web.image !== worker.image) throw new Error('live web and worker identities cannot be reconciled');
+            live = { sourceSha: web.sourceSha, imageDigest: web.image.split('@')[1] };
+          }
+          const getIdentity = (record) => {
+            const value = record.payload ?? {};
+            sha(value.source_sha, `deployment ${record.databaseId} source`);
+            if (record.commitOid !== value.source_sha) throw new Error(`deployment ${record.databaseId} ref does not match its source payload`);
+            if (!/^sha256:[a-f0-9]{64}$/.test(value.image_digest ?? '')) throw new Error(`deployment ${record.databaseId} has no immutable image digest`);
+            return value;
+          };
+          const post = (method, path, body) => gh(['--method', method, path, '--input', '-'], body);
+          const record = (sourceSha, imageDigest, state, description) => {
+            const deployment = post('POST', `repos/${REPOSITORY}/deployments`, {
+              ref: sourceSha, environment, task: 'server-stack-publish', auto_merge: false,
+              required_contexts: [], production_environment: true,
+              payload: { source_sha: sourceSha, image_digest: imageDigest, run_id: RUN_ID, run_attempt: RUN_ATTEMPT, run_url: RUN_URL },
+            });
+            if (!Number.isInteger(deployment.id)) throw new Error('GitHub did not acknowledge the server deployment');
+            appendFileSync(GITHUB_OUTPUT, `deployment_id=${deployment.id}\n`);
+            const status = post('POST', `repos/${REPOSITORY}/deployments/${deployment.id}/statuses`, {
+              state, auto_inactive: false, log_url: RUN_URL, environment_url: ENVIRONMENT_URL || undefined, description,
+            });
+            if (status.state !== state.toLowerCase()) throw new Error(`GitHub did not acknowledge server ${state}`);
+            return deployment.id;
+          };
+          const existingDeploymentId = successful?.databaseId ?? '';
+
+          if (successful) {
+            const baseline = getIdentity(successful);
+            if (!live || live.sourceSha !== baseline.source_sha || live.imageDigest !== baseline.image_digest) throw new Error('live server identity does not match the latest successful receipt; reconcile target evidence before publication');
+          } else if (live) {
+            throw new Error(`live server ${live.sourceSha} ${live.imageDigest} has no verified target receipt. Operator initialization required: establish the source from immutable task labels and image digest; verify the original release completed every server deployment gate; then create its server-production/server-stack-publish deployment receipt and success status. Do not infer completed verification from live task identity or workflow conclusion.`);
+          }
+
+          if (live?.sourceSha === SOURCE_SHA && live.imageDigest === candidateDigest) {
+            appendFileSync(GITHUB_OUTPUT, `source_sha=${SOURCE_SHA}\nimage_ref=${imageRef}\ndeployment_id=${existingDeploymentId}\ndecision=unchanged\n`);
+            process.exit(0);
+          }
+          if (live?.sourceSha === SOURCE_SHA && live.imageDigest !== candidateDigest) throw new Error('server source matches the live target but its immutable image digest differs; verify the image build before promotion');
+          if (live && git(['merge-base','--is-ancestor',SOURCE_SHA,live.sourceSha])) {
+            appendFileSync(GITHUB_OUTPUT, `source_sha=${SOURCE_SHA}\nimage_ref=${imageRef}\ndeployment_id=${existingDeploymentId}\ndecision=superseded\n`);
+            process.exit(0);
+          }
+          const baseline = successful ? getIdentity(successful).source_sha : null;
+          if (baseline && !git(['merge-base','--is-ancestor',baseline,SOURCE_SHA])) throw new Error(`server candidate ${SOURCE_SHA} is unrelated to target source ${baseline}`);
+          if (successful && getIdentity(successful).source_sha === SOURCE_SHA && getIdentity(successful).image_digest === candidateDigest) {
+            appendFileSync(GITHUB_OUTPUT, `source_sha=${SOURCE_SHA}\nimage_ref=${imageRef}\ndeployment_id=${existingDeploymentId}\ndecision=unchanged\n`);
+            process.exit(0);
+          }
+          if (successful && git(['merge-base','--is-ancestor',SOURCE_SHA,getIdentity(successful).source_sha])) {
+            appendFileSync(GITHUB_OUTPUT, `source_sha=${SOURCE_SHA}\nimage_ref=${imageRef}\ndeployment_id=${existingDeploymentId}\ndecision=superseded\n`);
+            process.exit(0);
+          }
+          const deploymentId = record(SOURCE_SHA, candidateDigest, 'pending', `Server source ${SOURCE_SHA} awaiting stack verification`);
+          appendFileSync(GITHUB_OUTPUT, `source_sha=${SOURCE_SHA}\nimage_ref=${imageRef}\ndeployment_id=${deploymentId}\ndecision=publish\n`);
+          NODE
 
       - uses: ./.github/actions/append-dispatcher-run-summary
         if: inputs.ci_run_id != ''
@@ -162,20 +361,27 @@ jobs:
   terraform:
     name: Deploy Infra
     needs: [check]
+    if: inputs.apply_infrastructure && needs.check.outputs.publication_decision == 'publish'
     uses: ./.github/workflows/deploy-terraform.yml
     with:
       commit_sha: ${{ inputs.automatic_commit_sha }}
       dispatching_run_id: ${{ github.run_id }}
-    secrets: inherit
+    secrets:
+      TF_API_TOKEN: ${{ secrets.TF_API_TOKEN }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_TERRAFORM_R2_API_TOKEN: ${{ secrets.CLOUDFLARE_TERRAFORM_R2_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
   deploy-web-stack:
     name: Deploy Web Stack
     needs: [check, terraform]
+    if: ${{ !cancelled() && needs.check.outputs.publication_decision == 'publish' && (needs.terraform.result == 'success' || needs.terraform.result == 'skipped') }}
     uses: ./.github/workflows/deploy-web-stack.yml
     with:
-      commit_sha: ${{ inputs.automatic_commit_sha }}
+      commit_sha: ${{ needs.check.outputs.source_sha }}
       image_tag: ${{ needs.check.outputs.image_tag }}
-      server_host: ${{ needs.terraform.outputs.server_host }}
+      image_ref: ${{ needs.check.outputs.image_ref }}
+      server_host: ${{ needs.terraform.outputs.server_host || inputs.server_host || vars.ORACLE_SERVER_HOST }}
       ssh_user: ${{ inputs.ssh_user }}
       stack_override: ${{ inputs.stack_override }}
       infisical_environment: ${{ inputs.infisical_environment }}
@@ -192,4 +398,146 @@ jobs:
       peerdb_public_url: ${{ inputs.peerdb_public_url }}
       peerdb_host_rule: ${{ inputs.peerdb_host_rule }}
       dispatching_run_id: ${{ github.run_id }}
-    secrets: inherit
+    secrets:
+      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+
+  finalize-server-receipt:
+    name: Finalize verified server receipt
+    needs: [check, terraform, deploy-web-stack]
+    if: >-
+      !cancelled() &&
+      needs.check.outputs.publication_decision == 'publish' &&
+      needs.deploy-web-stack.result == 'success' &&
+      (needs.terraform.result == 'success' || needs.terraform.result == 'skipped')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+    env:
+      SOURCE_SHA: ${{ needs.check.outputs.source_sha }}
+      IMAGE_REF: ${{ needs.check.outputs.image_ref }}
+      DEPLOYMENT_ID: ${{ needs.check.outputs.deployment_id }}
+      STACK_NAME: ${{ inputs.stack_name || 'dofek' }}
+      SSH_USER: ${{ inputs.ssh_user != '' && inputs.ssh_user || 'ubuntu' }}
+      SERVER_HOST: ${{ needs.terraform.outputs.server_host || inputs.server_host || vars.ORACLE_SERVER_HOST }}
+      DOCKER_HOST: ssh://${{ inputs.ssh_user != '' && inputs.ssh_user || 'ubuntu' }}@${{ needs.terraform.outputs.server_host || inputs.server_host || vars.ORACLE_SERVER_HOST }}
+      DOCKER_SSH_COMMAND: ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ needs.check.outputs.source_sha }}
+      - uses: ./.github/actions/setup-node-pnpm
+      - uses: ./.github/actions/setup-ssh-host
+        with:
+          host: ${{ needs.terraform.outputs.server_host || inputs.server_host || vars.ORACLE_SERVER_HOST }}
+          private_key: ${{ secrets.DEPLOY_SSH_KEY }}
+      - name: Verify live web and worker identity before finalizing
+        id: verify-live
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
+          ENVIRONMENT_URL: ${{ inputs.public_url || 'https://dofek.fit' }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[a-f0-9]{40}$ ]]
+          [[ "$IMAGE_REF" =~ @sha256:[a-f0-9]{64}$ ]]
+          [[ "$DEPLOYMENT_ID" =~ ^[0-9]+$ ]]
+          image_digest="${IMAGE_REF##*@}"
+          for service in web worker; do
+            service_name="${STACK_NAME}_${service}"
+            pnpm tsx scripts/verify-deploy-image.ts "$IMAGE_REF" "$service_name"
+            live_tasks="$(ssh -o BatchMode=yes "${SSH_USER}@${SERVER_HOST}" \
+              "docker ps -q --filter label=com.docker.swarm.service.name=${service_name} --filter status=running | xargs -r docker inspect --format '{{index .Config.Labels \"org.opencontainers.image.revision\"}} {{.Config.Image}} {{.State.Status}}'")"
+            [[ -n "$live_tasks" ]] || { echo "::error::No running ${service_name} task found"; exit 1; }
+            while IFS=' ' read -r live_sha live_image live_state; do
+              [[ "$live_sha" == "$SOURCE_SHA" && "${live_image##*@}" == "$image_digest" && "$live_state" == running ]] || {
+                echo "::error::Live ${service_name} task does not match the admitted source and image"; exit 1;
+              }
+            done <<< "$live_tasks"
+          done
+          deployment="$(gh api "repos/$REPOSITORY/deployments/$DEPLOYMENT_ID")"
+          jq -e --arg source "$SOURCE_SHA" --arg digest "$image_digest" \
+            '.environment == "server-production" and .sha == $source and .payload.source_sha == $source and .payload.image_digest == $digest' \
+            <<<"$deployment" >/dev/null || { echo "::error::Server deployment ref or payload does not match the admitted identity"; exit 1; }
+          statuses="$(gh api "repos/$REPOSITORY/deployments/$DEPLOYMENT_ID/statuses")"
+          latest_state="$(jq -er '.[0].state // "missing"' <<<"$statuses")"
+          if [ "$latest_state" = "success" ]; then
+            jq -e --arg description "Verified server $SOURCE_SHA" '.[0].description == $description' \
+              <<<"$statuses" >/dev/null || { echo "::error::Existing server receipt description does not match source"; exit 1; }
+            echo "Server receipt already finalized."
+            exit 0
+          fi
+          if [ "$latest_state" = "inactive" ]; then
+            echo "::error::Server deployment was reconciled inactive; do not overwrite it."; exit 1
+          fi
+          response="$(gh api --method POST "repos/$REPOSITORY/deployments/$DEPLOYMENT_ID/statuses" --input - <<JSON
+          {"state":"success","auto_inactive":false,"log_url":"$RUN_URL","environment_url":"$ENVIRONMENT_URL","description":"Verified server $SOURCE_SHA"}
+          JSON
+          )"
+          jq -e '.state == "success" and (.description | length <= 140)' <<<"$response" >/dev/null
+
+  publisher-result:
+    name: Server publisher result
+    needs: [check, terraform, deploy-web-stack, finalize-server-receipt]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      SOURCE_SHA: ${{ needs.check.outputs.source_sha || inputs.automatic_commit_sha || github.sha }}
+      REQUESTED_IMAGE: ${{ needs.check.outputs.image_ref || inputs.image_ref || inputs.image_tag }}
+      DECISION: ${{ needs.check.outputs.publication_decision }}
+      DEPLOYMENT_ID: ${{ needs.check.outputs.deployment_id }}
+      CHECK_RESULT: ${{ needs.check.result }}
+      TERRAFORM_RESULT: ${{ needs.terraform.result }}
+      STACK_RESULT: ${{ needs.deploy-web-stack.result }}
+      RECEIPT_RESULT: ${{ needs.finalize-server-receipt.result }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
+    steps:
+      - name: Write server publisher result
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          repo_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
+          candidate="source [\`$SOURCE_SHA\`]($repo_url/commit/$SOURCE_SHA)"
+          [ -z "$REQUESTED_IMAGE" ] || candidate="$candidate; requested image \`$REQUESTED_IMAGE\`"
+          record="—"
+          if [ -n "$DEPLOYMENT_ID" ]; then
+            record="[API deployment #$DEPLOYMENT_ID](${GITHUB_API_URL:-https://api.github.com}/repos/$GITHUB_REPOSITORY/deployments/$DEPLOYMENT_ID) · [Environment history]($repo_url/deployments/activity_log?environments_filter=server-production)"
+          fi
+          case "$DECISION" in
+            unchanged) outcome="Unchanged — requested server candidate is already live and verified; $candidate" ;;
+            superseded) outcome="Superseded — requested candidate $candidate is behind the verified live server record #${DEPLOYMENT_ID:-unknown}" ;;
+            publish)
+              if [ "$TERRAFORM_RESULT" = "failure" ] || [ "$TERRAFORM_RESULT" = "cancelled" ]; then
+                outcome="Blocked — infrastructure prerequisite $TERRAFORM_RESULT after intent admission; server publication was not verified; $candidate"
+              elif [ "$STACK_RESULT" = "failure" ] || [ "$STACK_RESULT" = "cancelled" ]; then
+                outcome="Failed — stack deployment $STACK_RESULT after intent admission; deployment receipt is not verified; $candidate"
+              elif [ "$STACK_RESULT" = "success" ] && [ "$RECEIPT_RESULT" != "success" ]; then
+                outcome="Incomplete — live stack deployment succeeded, but final server verification or receipt recording is $RECEIPT_RESULT; $candidate"
+              elif [ "$STACK_RESULT" = "success" ] && [ "$RECEIPT_RESULT" = "success" ]; then
+                outcome="Published and verified — $candidate"
+              else
+                outcome="Blocked or incomplete — stack result $STACK_RESULT, receipt result $RECEIPT_RESULT after intent admission; $candidate"
+              fi
+              ;;
+            *)
+              if [ -n "$DEPLOYMENT_ID" ]; then
+                outcome="Incomplete — server intent exists, but admission did not complete ($CHECK_RESULT); $candidate"
+              else
+                outcome="Failed before a server deployment intent ID was emitted ($CHECK_RESULT); requested candidate $candidate"
+              fi
+              ;;
+          esac
+          {
+            echo "## Server publisher result"
+            echo
+            echo "- Candidate: $candidate"
+            echo "- Outcome: $outcome"
+            echo "- Publisher attempt: [Open exact run attempt]($RUN_URL)"
+            echo "- Deployment record: $record"
+          } >> "$GITHUB_STEP_SUMMARY"
